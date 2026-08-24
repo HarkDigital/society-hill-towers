@@ -1058,6 +1058,7 @@
   // ------------------------------------------------ ground, water, roads, parks
   step('Laying out the ground', () => {
     const groundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0 });
+    groundMats.push(groundMat);
     const Z0 = CORE_EXT.z0, Z1 = CORE_EXT.z1;
     const flat = (poly, y) => { const g = new THREE.ShapeGeometry(shapeFromPoly(poly, null)); g.rotateX(-Math.PI / 2); g.translate(0, y, 0); return g; };
     // city heightfield (12.5 m) riding the DEM, diving into the trench east of Front St
@@ -1588,6 +1589,7 @@
   // (shared by the generic fabric and landmark walls)
   const nightUniform = { value: 0 };
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
+  const groundMats = [];   // bare-earth planes retinted by time of day (pale day tone reads as water at dusk/night)
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.25 });
   {
     cityMat.onBeforeCompile = (shader) => {
@@ -1628,6 +1630,7 @@
           '    vec3 stoneCol = vec3(0.80, 0.76, 0.68);',
           '    vec3 col = diffuseColor.rgb;',
           '    float lit = 0.0, glass = 0.0;',
+          '    float sbLit = -1.0;   // window-cluster LOD for towers; -1 = style has none',
           '    if (st == 1) {',
           '      float pitch = 4.4;',
           '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
@@ -1673,6 +1676,8 @@
           '      col = mix(col, gc * 0.6, wm * (1.0 - smoothstep(0.03, 0.03 + aa, abs(m.x))) * 0.8);',
           '      col *= 1.0 - 0.10 * det * rectM(m, vec2(0.0, 0.38), vec2(pitch, 0.44), aa);',
           '      glass = max(glass, wm);',
+          '      vec2 sb = floor(cell / vec2(3.0, 2.0));',
+          '      sbLit = step(0.8, shtHash(sb + 4.7)) * (0.5 + 0.3 * shtHash(sb * 1.83 + 9.1));',
           '    } else if (st == 7) {',
           '      float fp = 2.75;',
           '      float nb = local ? max(1.0, floor(vWallL / 3.4)) : 1.0e6;',
@@ -1686,6 +1691,8 @@
           '      vec3 gc7 = vec3(0.10, 0.12, 0.14) + vec3(0.10, 0.09, 0.07) * lit;',
           '      col = mix(col, gc7, gBand * 0.9);',
           '      glass = gBand;',
+          '      vec2 sb7 = floor(vec2(floor(u7 / 3.4), row) / vec2(3.0, 2.0));',
+          '      sbLit = step(0.8, shtHash(sb7 + 4.7)) * (0.5 + 0.3 * shtHash(sb7 * 1.83 + 9.1));',
           '    } else {',
           '      float pitch = (st == 4) ? 3.0 : 1.9;',
           '      float fp = 3.05;',
@@ -1748,7 +1755,12 @@
           // pattern fades with distance the facade keeps a soft aggregate glow instead
           // of dying into a solid mass
           '    float litOn = step(0.82, lit) * (0.4 + 0.6 * fract(lit * 9.7));',
-          '    shtLit = mix(0.115, glass * litOn, det);',
+          '    // tall styles keep resolvable window clusters ~3.5x past the pattern',
+          '    // fade before melting into the aggregate glow — far towers at night',
+          '    // used to collapse into solid dark shapes',
+          '    float det2 = clamp(1.0 - (0.6 * fwidth(v) + 0.004 - 0.55) / 1.5, 0.0, 1.0);',
+          '    float farGlow = sbLit < 0.0 ? 0.115 : mix(0.115, max(sbLit, 0.06), det2);',
+          '    shtLit = mix(farGlow, glass * litOn, det);',
           '    diffuseColor.rgb = col;',
           '  }',
           '}',
@@ -3214,11 +3226,16 @@
               '  diffuseColor.rgb *= 1.0 - det * (spand * 0.22 + mull * 0.16);\n' +
               '  vec2 pid = vec2(floor(u / 1.5), floor(vGWp.y / 4.0));\n' +
               '  float ph = fract(sin(dot(pid, vec2(127.1, 311.7))) * 43758.5453);\n' +
-              // ~28% of curtain-wall panels glow at night, varied; fades to a soft
-              // average with distance so far towers keep a believable shimmer
+              // ~28% of curtain-wall panels glow at night, varied; past the per-panel
+              // fade, 3x2-panel clusters stay resolvable ~3x farther before melting
+              // into the soft average, so distant glass towers keep patchy lights
+              '  vec2 sb = floor(pid / vec2(3.0, 2.0));\n' +
+              '  float sbh = fract(sin(dot(sb, vec2(93.13, 217.7))) * 24634.42);\n' +
+              '  float det2 = clamp(1.0 - (max(aaU, aaV) - 1.0) / 2.8, 0.0, 1.0) * wall;\n' +
+              '  float sbLit = step(0.78, sbh) * (0.45 + 0.35 * fract(sbh * 5.7));\n' +
               '  gWall = wall;\n' +
               '  gSpand = spand;\n' +
-              '  gLit = mix(0.22, step(0.72, ph) * (0.4 + 0.6 * fract(ph * 7.3)), det);\n' +
+              '  gLit = mix(mix(0.22, sbLit, det2), step(0.72, ph) * (0.4 + 0.6 * fract(ph * 7.3)), det);\n' +
               '}')
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= gWall * gLit * (1.0 - gSpand * 0.85) * 3.2;');
         };
@@ -3616,6 +3633,7 @@
     }
     // far ground: 100 m strips around the wide box, down to the riverbed over water
     const farGroundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0 });
+    groundMats.push(farGroundMat);
     for (const [x0, x1, z0, z1] of [
       [W.x0, W.x1, W.z0, WIDEB.z0], [W.x0, W.x1, WIDEB.z1, W.z1],
       [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
@@ -4467,6 +4485,10 @@
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xd3deea), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x8f8166), dayF);
     hemi.intensity = 0.10 + 0.45 * dayF;
+    // bare ground follows the light: near-black at night, warm dark earth through
+    // twilight, the pale sage only in daylight — the fixed pale tone read as water
+    _c1.set(0x232321).lerp(_c2.set(0x55503f), twi).lerp(_c2.set(COLORS.ground), dayF);
+    for (const gm of groundMats) gm.color.copy(_c1);
     renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
     nightUniform.value = night;
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }

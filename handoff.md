@@ -417,4 +417,22 @@ Round 5 (Aug 24, night):
   fenestration). The OSM footprint is dropped via `BRIDGE_SKIP` (−3094, −2225, r 130).
   Colors are stored dark for the legacy pipeline: walls 0x8a744c, roofs 0x2e3d47.
 
+Round 6 (Aug 24, late night):
+- **Night window lights carry ~3.5× farther on tall buildings.** The facade patterns
+  fade with `det` for anti-aliasing, which collapsed distant towers into solid dark
+  shapes at night. Both shaders now have a second LOD: past the per-window fade,
+  3×2-window CLUSTERS (constant per superblock, ~20% lit at window-like brightness)
+  stay resolvable until `det2` (thresholds 0.55/1.5 on fwidth(v) in cityMat;
+  1.0/2.8 on max(aaU,aaV) in the curtain shader) fades them into the aggregate glow.
+  Styles 2/6/7 only (`sbLit = -1` sentinel means "style has no cluster LOD" — do not
+  let the ladder run for rowhouses or the mid-band aggregate glow dies). Balance
+  matters: the first cut used 40% clusters at 0.4–0.9 and towers turned into cream
+  checkerboards even at dusk — keep cluster fraction × brightness ≈ the per-window
+  layer average.
+- **Ground no longer reads as water at dusk/dawn/night:** `groundMats` (core
+  `groundMat` + far `farGroundMat`) are retinted every frame in `applyLighting` —
+  night 0x232321 → twilight warm earth 0x55503f → day `COLORS.ground` — using the
+  same night/twi/dayF blend as the sky. The fixed pale sage albedo caught the cool
+  ambient after sunset and read as flooded terrain.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.
