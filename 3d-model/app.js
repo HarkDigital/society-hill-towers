@@ -431,13 +431,13 @@
   }
 
   // flat road ribbon with round joints
-  function ribbon(pts, w, y) {
+  function ribbon(pts, w, y, yFn) {
     pts = densify(pts, 10);
     // deterministic few-cm lift so no two ribbons are ever exactly coplanar
     y += hash01(pts[0][0] * 0.13 + pts[0][1] * 0.71) * 0.06;
     const hw = w / 2;
     const tris = [];
-    const ys = pts.map(p => y + siteY(p[0], p[1], 'road'));
+    const ys = pts.map(p => y + (yFn ? yFn(p[0], p[1]) : siteY(p[0], p[1], 'road')));
     for (let i = 0; i < pts.length - 1; i++) {
       const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
       let dx = bx - ax, dz = bz - az;
@@ -610,6 +610,8 @@
   }
   aimSun(-120, 0, 640);
 
+  const WX = { cover: 0.22, ok: false };            // live-weather state (see applyWx below)
+  const wxWind = new THREE.Vector2(0.0012, 0.0005);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -620,17 +622,33 @@
       cGround: { value: new THREE.Color(COLORS.skyGround) },
       uSun: { value: sunDir.clone() },
       cSun: { value: new THREE.Color(COLORS.sun) },
+      uCloud: { value: 0.22 },
+      uCloudLight: { value: 1.0 },
+      uCloudOff: { value: new THREE.Vector2(0, 0) },
     },
     vertexShader:
       'varying vec3 vDir;\n' +
       'void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }',
     fragmentShader:
       'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun;\n' +
+      'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
+      'float chash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
+      'float cnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);\n' +
+      '  return mix(mix(chash(i), chash(i+vec2(1.,0.)), f.x), mix(chash(i+vec2(0.,1.)), chash(i+vec2(1.,1.)), f.x), f.y); }\n' +
       'void main(){\n' +
       '  float h = vDir.y;\n' +
       '  vec3 col = h >= 0.0 ? mix(cHorizon, cZenith, pow(h, 0.52)) : mix(cHorizon, cGround, clamp(-h*4.0,0.,1.));\n' +
       '  float s = max(dot(vDir, uSun), 0.0);\n' +
       '  col += cSun * (pow(s, 420.0) * 0.9 + pow(s, 14.0) * 0.14);\n' +
+      '  if (h > 0.01 && uCloud > 0.003) {\n' +
+      '    vec2 cp = vDir.xz / (h + 0.18) * 1.7 + uCloudOff;\n' +
+      '    float d = cnoise(cp) * 0.55 + cnoise(cp * 2.7 + 13.1) * 0.30 + cnoise(cp * 7.3 + 41.7) * 0.15;\n' +
+      '    float cov = clamp(uCloud, 0.0, 1.0);\n' +
+      '    float m = smoothstep(1.0 - cov * 0.88 - 0.06, min(1.0, 1.06 - cov * 0.5), d);\n' +
+      '    float horiz = smoothstep(0.02, 0.15, h);\n' +
+      '    vec3 cc = mix(vec3(0.985, 0.99, 1.0), vec3(0.60, 0.64, 0.70), cov * 0.8) * uCloudLight;\n' +
+      '    col = mix(col, cc, m * horiz * 0.92);\n' +
+      '  }\n' +
       '  gl_FragColor = vec4(col, 1.0);\n' +
       '}',
   });
@@ -662,6 +680,11 @@
   function refreshEnv() {
     for (const k of ['cZenith', 'cHorizon', 'cGround', 'cSun']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
     envSky.material.uniforms.uSun.value.copy(skyMat.uniforms.uSun.value);
+    envSky.material.uniforms.uCloud.value = skyMat.uniforms.uCloud.value;
+    envSky.material.uniforms.uCloudLight.value = skyMat.uniforms.uCloudLight.value;
+    envSky.material.uniforms.uCloudOff.value.copy(skyMat.uniforms.uCloudOff.value);
+    // the env sun ball must dim with cloud cover or overcast glass keeps a clear-sky hotspot
+    envSun.material.color.set(0xfff2d8).multiplyScalar(1 - 0.65 * WX.cover);
     envGround.material.color.copy(skyMat.uniforms.cGround.value);
     envSun.position.copy(skyMat.uniforms.uSun.value).multiplyScalar(44);
     const rt = pmremGen.fromScene(envScene, 0.05);
@@ -825,9 +848,15 @@
   }
   const PLAZA_R = 58;
   function plazaLift(x, z) {
+    // wide smoothstep feather: the draped lawns/ribbons sample this at ~10 m, so a
+    // tight linear falloff aliased into wedges that sliced across the plaza edge
     const d = Math.hypot(x - towersCenter.x, z - towersCenter.z);
-    return d < PLAZA_R ? 1.0 : d < PLAZA_R + 4 ? 1.0 - (d - PLAZA_R) / 4 : 0;
+    if (d < PLAZA_R) return 1.0;
+    if (d >= PLAZA_R + 16) return 0;
+    const t = 1 - (d - PLAZA_R) / 16;
+    return t * t * (3 - 2 * t);
   }
+  const bermSpots = []; // [x, z, rx, rz, rotY] — trees must not sprout through the lawn berms
   // where things sit. mode 'ground' = objects, trees, lawns; 'road' = streets
   // (bridged over the trench, tunnelled under the park cap)
   function siteY(x, z, mode) {
@@ -960,7 +989,10 @@
       const pos = [];
       for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
         const x = X0 + i * cell, z = ZA + j * cell;
-        const y = frontOff(x, z) < TERRAIN.trenchW ? cityY(x, z) - 0.05 : TERRAIN.trenchFloor - 0.05;
+        // east of the trench the shelf mesh takes over; past the shoreline this
+        // field must dive below the water plane or it reads as a slab on the river
+        // (the -4 margin keeps interpolated cell faces from surfacing east of the bulkhead)
+        const y = frontOff(x, z) < TERRAIN.trenchW ? cityY(x, z) - 0.05 : ((inWater(x, z) > -4 || inRiver(x, z)) ? TERRAIN.bed - 0.05 : TERRAIN.trenchFloor - 0.05);
         pos.push(x, y, z);
       }
       const idx = [];
@@ -1008,7 +1040,7 @@
     }
     // trench floor
     const trench = new THREE.Mesh(flat([frontPt(TERRAIN.trenchW, Z0), frontPt(TERRAIN.trenchE, Z0), frontPt(TERRAIN.trenchE, Z1), frontPt(TERRAIN.trenchW, Z1)], TERRAIN.trenchFloor),
-      new THREE.MeshStandardMaterial({ color: 0x3d3a36, roughness: 0.95 }));
+      new THREE.MeshStandardMaterial({ color: 0x4b4843, roughness: 0.95 }));
     trench.receiveShadow = true; groupCity.add(trench);
     // waterfront shelf: heightfield between the trench's east wall and the shoreline, 5 m rows
     {
@@ -1087,7 +1119,16 @@
     const poolParts = [], deckParts = [];
     for (let pi = 0; pi < POOLS.length; pi++) {
       const poly = POOLS[pi];
-      poolParts.push({ geom: flatPoly(poly, null, LAYER.pool), color: new THREE.Color(0x4e93a8) });
+      poolParts.push({ geom: flatPoly(poly, null, LAYER.pool), color: new THREE.Color(0x3fa9c9) });
+      { // white coping ring so the water reads as a pool, not a paint spill
+        const obC = orientedBox(poly);
+        const aC = obbAxis(obC);
+        const cop = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) => [
+          obC.cx + aC.ax * su * (aC.hl + 0.9) + aC.px * sv * (aC.hs + 0.9),
+          obC.cz + aC.az * su * (aC.hl + 0.9) + aC.pz * sv * (aC.hs + 0.9),
+        ]);
+        deckParts.push({ geom: flatPoly(cop, null, LAYER.pool - 0.015), color: new THREE.Color(0xe9e5da) });
+      }
       registerPoly(poly); // keeps trees off the water
       if (pi === 0) { // paved pool deck around the towers' pool
         const ob = orientedBox(poly);
@@ -1160,14 +1201,31 @@
       if (cur.length > 1) runs.push(cur);
       return runs;
     };
+    // I-95 itself runs DOWN in the trench (cross streets bridge over it); without
+    // this its lanes float at city level and the dark trench floor shows between
+    // them as glitchy patches from above
+    const motY = (x, z) => {
+      // band edges must match siteY's trench band exactly, and blend down over a ramp
+      // length (a binary band left 7 m vertex spikes where densified points straddled it);
+      // beyond the trench mesh's z-extent the lanes climb back to grade
+      const o = frontOff(x, z);
+      const base = siteY(x, z, 'road');
+      if (o <= TERRAIN.trenchW || o >= TERRAIN.trenchE) return base;
+      const eo = Math.min(o - TERRAIN.trenchW, TERRAIN.trenchE - o) / 14;
+      const ez = Math.min(z - (CORE_EXT.z0 + 4), (CORE_EXT.z1 - 4) - z) / 60;
+      const t = clamp(Math.min(eo, ez), 0, 1);
+      const ts = t * t * (3 - 2 * t);
+      return lerp(base, TERRAIN.trenchFloor + 0.55, ts);
+    };
     for (const r of D.roads) {
       if (r.pts.length < 2) continue;
       if (/Delancey|Cypress|American|Philip|Stamper|Addison|Panama|Peter's Way|Naudain|Kenilworth/i.test(r.name || '')) r.w = Math.min(r.w, 6);
       const foot = /footway|path|steps|pedestrian|cycleway/.test(r.t);
+      const mot = /motorway/.test(r.t);
       const y = foot ? LAYER.footway : LAYER.road;
       const setts = /Dock Street/i.test(r.name || '') || (/2nd Street/i.test(r.name || '') && r.pts[0][1] > 250 && r.pts[0][1] < 420);
       for (const run of runsOf(r.pts)) {
-        const g = ribbon(run, r.w, y);
+        const g = ribbon(run, r.w, y, mot ? motY : null);
         if (!/footway|path|steps|cycleway/.test(r.t)) {
           for (let i = 0; i < run.length - 1; i++) addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
         }
@@ -1461,7 +1519,11 @@
           '    float uW;',
           '    if (local) { uW = vWallU; } else { vec2 dir = normalize(n.xz); vec2 perp = vec2(-dir.y, dir.x); uW = dot(vWPos.xz, perp); }',
           '    float aa = 0.6 * max(fwidth(uW), fwidth(v)) + 0.004;',
-          '    float det = clamp(1.0 - (aa - 0.16) / 0.42, 0.0, 1.0);',
+          // detail fade keys off the vertical derivative only: fwidth(uW) explodes on
+          // edge-on walls and used to blank whole facades at grazing angles. detU still
+          // gates the BINARY per-column terms (shutters/doors) that would shimmer there.
+          '    float det = clamp(1.0 - (0.6 * fwidth(v) + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
+          '    float detU = clamp(1.0 - (0.6 * fwidth(uW) + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    float wallTop = local ? vWallH - 0.25 : 1.0e4;',
           '    float brickish = step(diffuseColor.g * 1.12, diffuseColor.r);',
           '    vec3 frameCol = vec3(0.90, 0.88, 0.82);',
@@ -1540,7 +1602,7 @@
           '      lit = 0.5 + 0.5 * shtHash(cell * 1.7 + 11.0);',
           '      vec3 gc = vec3(0.06, 0.07, 0.09) + vec3(0.10, 0.09, 0.06) * lit;',
           '      float doorCol = step(2.5, mod(cell.x, 3.0));',
-          '      float isDoor = ground * doorCol * float(st == 0) * brickish * inWall * det;',
+          '      float isDoor = ground * doorCol * float(st == 0) * brickish * inWall * det * detU;',
           '      float isArch = ground * float(st == 4) * inWall * det;',
           '      float isShop = ground * float(st == 5) * inWall * det;',
           '      float sashOn = (1.0 - max(isDoor, max(isArch, isShop))) * okRow;',
@@ -1551,7 +1613,7 @@
           '      float lintel = rectM(m, vec2(0.0, sill + wh + 0.2), vec2(ww + 0.4, 0.24), aa) * sashOn * brickish;',
           '      float sillM = rectM(m, vec2(0.0, sill - 0.08), vec2(ww + 0.26, 0.12), aa) * sashOn * brickish;',
           '      float shut = (rectM(m, vec2(-(ww * 0.5 + 0.31), sill + wh * 0.5), vec2(0.44, wh), aa) + rectM(m, vec2(ww * 0.5 + 0.31, sill + wh * 0.5), vec2(0.44, wh), aa)) * sashOn;',
-          '      float shOn = step(shtHash(vec2(cell.x * 0.37, 7.31)), 0.5) * brickish * float(st == 0);',
+          '      float shOn = step(shtHash(vec2(cell.x * 0.37, 7.31)), 0.5) * brickish * float(st == 0) * detU;',
           '      vec3 shCol = mix(vec3(0.09, 0.13, 0.10), vec3(0.06, 0.06, 0.07), step(0.5, shtHash(vec2(cell.x, 2.17))));',
           '      col = mix(col, stoneCol, max(lintel, sillM) * 0.8);',
           '      col = mix(col, frameCol, frame * 0.9);',
@@ -2381,6 +2443,7 @@
         const berm = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 8), bermMat);
         berm.scale.set(13 + hash01(k) * 6, 1.5, 6 + hash01(k * 7) * 3);
         berm.rotation.y = ang + Math.PI / 2;
+        bermSpots.push([bx, bz, berm.scale.x, berm.scale.z, berm.rotation.y]);
         berm.position.set(bx, cityY(bx, bz) + 0.1, bz);
         berm.receiveShadow = true;
         groupCity.add(berm);
@@ -2429,11 +2492,14 @@
     const glassPal = [0x8fb2cc, 0x9cb9c9, 0xa9bfc9, 0x7ea6c6];
     // OSM maps the suspension-bridge towers/anchorages as building footprints; the
     // bridges build their own steel, so drop any footprint sitting on them
-    const BRIDGE_SKIP = [[620.8, -889.9, 60], [1148.8, -770, 60], [1037.2, 4391.6, 60], [1620.1, 4510.7, 60], [400, -940, 45], [1360, -722, 45]];
+    const BRIDGE_SKIP = [[620.8, -889.9, 60], [1148.8, -770, 60], [1037.2, 4391.6, 60], [1620.1, 4510.7, 60], [400, -940, 45], [1360, -722, 45],
+      // landmark towers rebuilt with real massing below: City Hall tower, One & Two Liberty Place
+      [-1603, -802, 14], [-1995, -785, 25], [-1937, -689, 20], [-1932.3, -718.2, 9]];
     // signature curtain walls, matched by location (local metres east/south of the towers)
     const GLASS_TINTS = [
-      [-2010, -733, 95, 0x6899c4],   // One Liberty Place — blue glass
-      [-1942, -622, 85, 0x6899c4],   // Two Liberty Place
+      [-1995, -785, 60, 0x6899c4],   // One Liberty Place complex — blue glass
+      [-1937, -689, 55, 0x6899c4],   // Two Liberty Place
+      [-1930, -714, 30, 0x6899c4],   // Liberty Place mid-rise element
       [-2087, -965, 85, 0xb4c2c8],   // Comcast Center — silver, near-mirror
       [-2224, -1064, 95, 0xa3b1b8],  // Comcast Technology Center — neutral gray glass
       [-3231, -633, 80, 0xb5d0dc],   // FMC Tower — icy blue-white
@@ -2583,15 +2649,131 @@
         let dx = q[0] - a[0], dz = q[1] - a[1];
         const L = Math.hypot(dx, dz); if (L < 0.01) continue;
         if (demY(a[0], a[1]) < TERRAIN.water + 0.6 && demY(q[0], q[1]) < TERRAIN.water + 0.6) continue; // over water
+        // a wide segment that lies ON a core street is a duplicate and would z-fight it
+        // (the old road flicker) — but wide-only streets the core extract lacks must stay
+        if (a[0] > CORE_EXT.x0 - 38 && a[0] < CORE_EXT.x1 + 38 && a[1] > CORE_EXT.z0 - 38 && a[1] < CORE_EXT.z1 + 38 &&
+            q[0] > CORE_EXT.x0 - 38 && q[0] < CORE_EXT.x1 + 38 && q[1] > CORE_EXT.z0 - 38 && q[1] < CORE_EXT.z1 + 38 &&
+            nearRoad(a[0], a[1], 3.5) && nearRoad(q[0], q[1], 3.5)) continue;
         dx /= L; dz /= L;
         const px = -dz * hw, pz = dx * hw;
-        const jr = LAYER.road + hash01(i * 3.7 + 1.1) * 0.06;
+        // class-separated lifts (motorway highest) so crossing carriageways never z-fight
+        const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 3.7 + 1.1) * 0.1;
         const ya = siteY(a[0], a[1], 'road') + jr, yb = siteY(q[0], q[1], 'road') + jr;
         const b0 = rc.n;
         rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
         for (let m = 0; m < 4; m++) rc.col.push(c.r * 255, c.g * 255, c.b * 255);
         rc.n += 4;
-        rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3, b0, b0 + 2, b0 + 1, b0, b0 + 3, b0 + 2);
+        // one winding only — the doubled reverse faces made computeVertexNormals sum
+        // opposing normals to ~zero, shading random quads black
+        rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+      }
+    }
+    // -------- landmark rebuilds: City Hall tower + One & Two Liberty Place --------
+    // (their OSM parts were skipped above; research-backed massing/colors)
+    const lmGlass = [], lmTrim = [];
+    {
+      const ryG = Math.atan2(-fl.nz, fl.nx);           // rotate local +x onto the grid's east-west
+      const sqPoly = (cx, cz, w, d) => [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]
+        .map(([u, v]) => [cx + fl.nx * u + fl.dx * v, cz + fl.nz * u + fl.dz * v]);
+      const gPrism = (cx, cz, w, len, eaveY, apexY, alongNS) => {
+        // gable prism: ridge through the center, sloping to eaves on both sides
+        const hw = w / 2, hl = len / 2;
+        const t = [
+          -hl, eaveY, -hw, hl, apexY, 0, hl, eaveY, -hw, -hl, eaveY, -hw, -hl, apexY, 0, hl, apexY, 0,
+          hl, eaveY, hw, -hl, apexY, 0, -hl, eaveY, hw, hl, eaveY, hw, hl, apexY, 0, -hl, apexY, 0,
+          hl, eaveY, -hw, hl, apexY, 0, hl, eaveY, hw,
+          -hl, eaveY, hw, -hl, apexY, 0, -hl, eaveY, -hw,
+        ];
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(t), 3));
+        g.computeVertexNormals();
+        g.rotateY(ryG + (alongNS ? Math.PI / 2 : 0));
+        g.translate(cx, 0, cz);
+        return g;
+      };
+      const pyr4 = (cx, cz, w, y0, y1, rT) => {
+        const g = new THREE.CylinderGeometry(rT || 0.01, w * 0.707, y1 - y0, 4, 1);
+        g.rotateY(Math.PI / 4 + ryG);
+        g.translate(cx, (y0 + y1) / 2, cz);
+        return g;
+      };
+      const crown = (cx, cz, base, tiers, gc, wc) => {
+        for (const [w, wallTop, apex] of tiers) {
+          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, false), color: gc, style: 3 });
+          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 3 });
+          // white trim: eave band + crossed ridge caps read as the nested chevrons
+          lmTrim.push({ geom: box(w + 0.9, 1.3, w + 0.9, cx, base + wallTop + 0.2, cz, ryG), color: wc, style: 3 });
+          const rl = Math.hypot(w / 2, apex - wallTop) * 2;
+          for (const ns of [0, 1]) {
+            const rg = box(w, 0.75, 0.75, 0, 0, 0, 0);
+            rg.rotateY(ryG + ns * Math.PI / 2);
+            rg.translate(cx, base + apex - 0.2, cz);
+            lmTrim.push({ geom: rg, color: wc, style: 3, _rl: rl });
+          }
+        }
+      };
+      const cWhite = new THREE.Color(0xdce9f1), cSilver = new THREE.Color(0xcfd6db);
+      // --- One Liberty Place (17th & Market): sheer blue shaft, four gabled tiers, needle spire
+      {
+        const cx = -1995, cz = -785, base = siteY(cx, cz, 'ground');
+        const gc = new THREE.Color(0x4f7897), gcCrown = new THREE.Color(0x35679a);
+        c.set(0x9c9186);
+        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 56, 56), base - 1, base + 12, c, 5, base);
+        c.copy(gc);
+        appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 48.5, 48.5), base - 1, base + 212, c, 3, base);
+        for (const [w, top] of [[36, 223], [26, 233], [17, 242]]) {
+          appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, w, w), base + 180, base + top, c, 3, base);
+        }
+        crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite);
+        lmTrim.push({ geom: pyr4(cx, cz, 8, base + 251, base + 258, 1.0), color: cSilver, style: 3 });
+        const mast = new THREE.CylinderGeometry(0.7, 1.0, 23, 8); mast.translate(cx, base + 258 + 11.5, cz);
+        lmTrim.push({ geom: mast, color: cSilver, style: 3 });
+        const ndl = new THREE.CylinderGeometry(0.05, 0.4, 7, 6); ndl.translate(cx, base + 281 + 3.5, cz);
+        lmTrim.push({ geom: ndl, color: cSilver, style: 3 });
+      }
+      // --- Two Liberty Place (16th & Chestnut): squatter, two big gable tiers, white finial
+      {
+        const cx = -1937, cz = -689, base = siteY(cx, cz, 'ground');
+        const gc = new THREE.Color(0x4a7ba3), gcCrown = new THREE.Color(0x35679a);
+        c.copy(gc);
+        appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 38.5, 38.5), base - 1, base + 150, c, 3, base);
+        appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 36, 36), base + 148, base + 185, c, 3, base);
+        appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 34, 34), base + 183, base + 207, c, 3, base);
+        appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 22, 22), base + 205, base + 224, c, 3, base);
+        crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite);
+        lmTrim.push({ geom: pyr4(cx, cz, 5, base + 253, base + 258, 0.4), color: cWhite, style: 3 });
+      }
+      // --- City Hall tower: masonry shaft, light-gray clock stage, curved top, William Penn
+      {
+        const cx = -1603, cz = -802, base = siteY(cx, cz, 'ground');
+        c.set(0xaea595);
+        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 24, 24), base - 1, base + 102.7, c, 3, base);
+        c.set(0xcdd1d4);
+        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 17, 17), base + 102.7, base + 122, c, 3, base);
+        const cGray = new THREE.Color(0xb9bfc4);
+        for (const ns of [0, 1]) for (const s of [-1, 1]) {   // the four clock faces on dark surrounds
+          const ux = ns ? fl.dx : fl.nx, uz = ns ? fl.dz : fl.nz;
+          const rim = new THREE.CylinderGeometry(4.6, 4.6, 0.4, 20);
+          rim.rotateZ(Math.PI / 2);
+          rim.rotateY(ryG + ns * Math.PI / 2);
+          rim.translate(cx + ux * s * 8.55, base + 110, cz + uz * s * 8.55);
+          lmTrim.push({ geom: rim, color: new THREE.Color(0x474c50), style: 3 });
+          const disc = new THREE.CylinderGeometry(3.95, 3.95, 0.6, 20);
+          disc.rotateZ(Math.PI / 2);
+          disc.rotateY(ryG + ns * Math.PI / 2);
+          disc.translate(cx + ux * s * 8.7, base + 110, cz + uz * s * 8.7);
+          lmTrim.push({ geom: disc, color: new THREE.Color(0xe9dca6), style: 3 });
+        }
+        const frust = new THREE.CylinderGeometry(6.2, 11.7, 30.4, 4, 1);
+        frust.rotateY(Math.PI / 4 + ryG);
+        frust.translate(cx, base + 122 + 15.2, cz);
+        lmTrim.push({ geom: frust, color: cGray, style: 3 });
+        const cup = new THREE.CylinderGeometry(3.4, 4.6, 3.4, 8); cup.translate(cx, base + 152.4 + 1.7, cz);
+        lmTrim.push({ geom: cup, color: cGray, style: 3 });
+        const penn = new THREE.CylinderGeometry(0.9, 1.9, 10.4, 8); penn.translate(cx, base + 155.8 + 5.2, cz);
+        lmTrim.push({ geom: penn, color: new THREE.Color(0x77908a), style: 3 });
+        const hat = new THREE.CylinderGeometry(0.4, 0.85, 0.8, 6); hat.translate(cx, base + 166.4, cz);
+        lmTrim.push({ geom: hat, color: new THREE.Color(0x77908a), style: 3 });
       }
     }
     // parks, water, piers
@@ -2647,6 +2829,18 @@
       groupCity.add(m);
       outerMeshes.push(m);
     }
+    if (lmGlass.length && outerGlassMat) {   // Liberty Place crowns share the curtain-wall glass
+      const m = new THREE.Mesh(mergeColored(lmGlass), outerGlassMat);
+      m.castShadow = true;
+      groupCity.add(m);
+      outerMeshes.push(m);
+    }
+    if (lmTrim.length) {                     // white chevron trim, masts, City Hall metalwork + Penn
+      const m = new THREE.Mesh(mergeColored(lmTrim), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 }));
+      m.castShadow = true;
+      groupCity.add(m);
+      outerMeshes.push(m);
+    }
     for (const ch of chunks.values()) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ch.pos), 3));
@@ -2667,7 +2861,7 @@
       g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
       g.setIndex(rc.idx);
       g.computeVertexNormals();
-      groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
+      groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
     // widen the world: camera clamps and fog
@@ -2871,6 +3065,11 @@
       if (nearBuildingEdge(x, z, 2.4)) return false;
       if (insideBuilding(x, z)) return false;
       if (nearRoad(x, z, 1.2)) return false;
+      for (const [bx, bz, rx, rz, th] of bermSpots) {
+        const dx = x - bx, dz = z - bz, cth = Math.cos(th), sth = Math.sin(th);
+        const u = dx * cth - dz * sth, v = dx * sth + dz * cth;
+        if ((u / rx) * (u / rx) + (v / rz) * (v / rz) < 1.25) return false;
+      }
       for (let i = spots.length - 1; i >= 0 && i > spots.length - 40; i--) {
         const dx = spots[i][0] - x, dz = spots[i][1] - z;
         if (dx * dx + dz * dz < minD2) return false;
@@ -2919,8 +3118,8 @@
 
     const N = Math.min(spots.length, 2400);
     if (!N) return;
-    const trunkG = new THREE.CylinderGeometry(0.17, 0.26, 2.8, 6);
-    trunkG.translate(0, 1.4, 0);
+    const trunkG = new THREE.CylinderGeometry(0.17, 0.28, 3.6, 6);
+    trunkG.translate(0, 1.0, 0);   // extends 0.8 m below grade so raised layers never slice the base
     const canG = new THREE.IcosahedronGeometry(1, 1);
     const trunks = new THREE.InstancedMesh(trunkG, new THREE.MeshStandardMaterial({ color: COLORS.trunk, roughness: 1 }), N);
     const cans = new THREE.InstancedMesh(canG, new THREE.MeshStandardMaterial({ roughness: 0.95 }), N);
@@ -2932,7 +3131,11 @@
       const s = 2.1 + hash01(i * 5.77) * 1.5;
       q.setFromAxisAngle(new V3(0, 1, 0), hash01(i * 9.1) * Math.PI * 2);
       const ty = siteY(x, z, 'ground');
-      m.compose(new V3(x, ty, z), q, new V3(1, 0.9 + hash01(i * 2.3) * 0.35, 1));
+      // over the trench cap decks the below-grade extension would dangle into the
+      // I-95 tunnel — lift those trunks so their base sits at the deck surface
+      const oT = frontOff(x, z);
+      const capLift = (oT > TERRAIN.trenchW - 1 && oT < TERRAIN.trenchE + 1) ? 0.82 : 0;
+      m.compose(new V3(x, ty + capLift, z), q, new V3(1, 0.9 + hash01(i * 2.3) * 0.35, 1));
       trunks.setMatrixAt(i, m);
       m.compose(new V3(x, ty + 2.6 + s * 0.72, z), q, new V3(s, s * (0.92 + hash01(i * 7.7) * 0.3), s));
       cans.setMatrixAt(i, m);
@@ -3567,6 +3770,33 @@
     const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
     return h + ':' + (mm < 10 ? '0' : '') + mm + ' ' + ap;
   }
+  // ---- live weather (Open-Meteo). The claude.ai artifact sandbox blocks external
+  // fetches, so there we keep the fair-weather default; on GitHub Pages / local it
+  // pulls real Philadelphia cloud cover + wind every 15 minutes.
+  // (WX itself is declared before the sky material — refreshEnv reads it at init.)
+  function applyWx(js) {
+    const cur = js && js.current;
+    if (!cur) return;
+    WX.cover = clamp((cur.cloud_cover == null ? 22 : cur.cloud_cover) / 100, 0, 1);
+    if ((cur.precipitation || 0) > 0.1) WX.cover = Math.max(WX.cover, 0.85);
+    const spd = (cur.wind_speed_10m == null ? 8 : cur.wind_speed_10m) / 3.6;
+    const dir = ((cur.wind_direction_10m == null ? 250 : cur.wind_direction_10m) + 180) * Math.PI / 180;
+    const drift = 0.0008 + spd * 0.00035;
+    wxWind.set(Math.sin(dir) * drift, -Math.cos(dir) * drift);
+    WX.ok = true;
+    lastEnvEl = 999;   // rebake glass reflections with the new cloud deck
+    refreshTimeUI();
+  }
+  const wxCanFetch = !/claude|usercontent/i.test(location.hostname);
+  function fetchWeather() {
+    if (!wxCanFetch) return;
+    try {
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,precipitation,weather_code,wind_speed_10m,wind_direction_10m')
+        .then(r => (r && r.ok ? r.json() : null))
+        .then(applyWx)
+        .catch(() => {});
+    } catch (e) { /* sandboxed */ }
+  }
   const PAL = {
     night: { z: new THREE.Color(0x070c1a), h: new THREE.Color(0x121a2e), g: new THREE.Color(0x0a0a0e) },
     twi: { z: new THREE.Color(0x34456e), h: new THREE.Color(0xf3a468), g: new THREE.Color(0x3a322c) },
@@ -3584,7 +3814,7 @@
     const night = 1 - smooth(-9, 1, el);
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 1.7 * smooth(-3, 15, el);
+      sun.intensity = 1.7 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
     } else {
       sunDir.copy(moonDir);
@@ -3595,9 +3825,14 @@
     skyMat.uniforms.uSun.value.copy(sp.dir);
     const mixPal = (k) => _c1.copy(PAL.night[k]).lerp(PAL.twi[k], twi).lerp(PAL.day[k], dayF).clone();
     const cz = mixPal('z'), ch = mixPal('h'), cg = mixPal('g');
+    // overcast grays the sky toward a flat deck
+    cz.lerp(_c2.set(0x93a5b4).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.55);
+    ch.lerp(_c2.set(0xc4ccd2).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.5);
     skyMat.uniforms.cZenith.value.copy(cz);
     skyMat.uniforms.cHorizon.value.copy(ch);
     skyMat.uniforms.cGround.value.copy(cg);
+    skyMat.uniforms.uCloud.value = WX.cover;
+    skyMat.uniforms.uCloudLight.value = 0.10 + 0.95 * dayF + twi * 0.25;
     skyMat.uniforms.cSun.value.copy(_c1.set(0xff8a40)).lerp(_c2.set(COLORS.sun), smooth(0, 20, el));
     scene.fog.color.copy(ch);
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xd3deea), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
@@ -3627,7 +3862,7 @@
     timeSlider.value = String(clock.minutes);
     const dst = tzOffsetMin(clock.y, clock.m, clock.d) === -240;
     timeClockEl.textContent = fmtTime(clock.minutes) + ' ' + (dst ? 'EDT' : 'EST') + (clock.live ? ' · live' : '');
-    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set);
+    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? ' · ☁ ' + Math.round(WX.cover * 100) + '%' : '');
   }
   function toggleTimePanel() { timePanel.classList.toggle('open'); }
   document.getElementById('btnTime').addEventListener('click', toggleTimePanel);
@@ -3728,14 +3963,17 @@
     }
 
     sky.position.copy(camera.position);
+    skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
     updateLabels();
     renderer.render(scene, camera);
   }
 
   setHint();
+  fetchWeather();
+  setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });

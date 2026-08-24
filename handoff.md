@@ -210,6 +210,53 @@ sweep with photo-sampled colors):
   pair with drawing the canvas into a 2D canvas + POSTing the JPEG to a local sink for
   headless screenshot verification).
 
+Realism round 2 (Aug 24, afternoon — driven by Mike's artifact screenshots):
+- **Road flicker root cause found and fixed:** pack_wide never clipped roads against the
+  core, so every core street carried a coplanar wide-set duplicate (THE longstanding
+  shimmer); the app now drops wide road segments whose endpoints are both inside
+  `CORE_EXT`±38 (core's `runsOf` covers to +40). Also: wide road quads were double-wound
+  (both windings shared vertices, so `computeVertexNormals` summed to ~zero and random
+  quads shaded black) — now single-wound on a DoubleSide material; wide road classes get
+  separated lifts (motorway highest) so crossing carriageways never z-fight.
+- **I-95 now runs down IN the trench** (custom ribbon height fn for `/motorway/` within
+  the corridor, floor+0.55); cross streets still bridge at grade; trench floor lightened.
+- **White slab on the Delaware fixed:** the core city heightfield pinned everything east
+  of the trench at trench-floor height (above water) out to the core bbox edge — river
+  cells now drop to `TERRAIN.bed`.
+- **"Missing" building faces fixed:** the facade shader's detail fade keyed on
+  `fwidth(uW)`, which explodes on edge-on walls and blanked whole facades at grazing
+  angles; `det` now keys on `fwidth(v)` only.
+- **City Hall tower** rebuilt at (−1603,−802) (OSM parts skipped): buff masonry shaft to
+  102.7 m, light-gray clock stage to 122 m with 7.9 m amber faces on dark surrounds,
+  4-sided tapering top to 152.4 m, cupola, and an 11.3 m patina-bronze Penn to 167 m —
+  research-backed (548 ft total, two-tone stone/metal split at 337 ft).
+- **One & Two Liberty Place** rebuilt (parts skipped; complex mid-rises kept): blue-glass
+  shafts through the curtain-wall shader, nested cross-gable crown tiers (4 on One to a
+  288 m needle mast, 2 on Two to its 258 m finial) with white eave/ridge trim reading as
+  the real chevrons. Grid frame from the Front-St line fit (`ryG`).
+- **Plaza fixes:** `plazaLift` feather widened 4→16 m with smoothstep (the tight linear
+  falloff aliased into wedges through the 10 m drapes — Mike's "clipping"); tree trunks
+  extended 0.8 m below grade; trees excluded from the berm ellipsoids (`bermSpots`);
+  pool water recolored `#3fa9c9` with a white coping ring (footprint stays OSM-exact —
+  verified: model streets match raw OSM within 4–6 cm mean).
+- **Live weather:** Open-Meteo current cloud cover + wind for the site, fetched at load
+  + every 15 min — gated off claude/usercontent hostnames (artifact CSP), so it is live
+  on GitHub Pages/local and falls back to fair-weather in the artifact. Drives a
+  procedural FBM cloud layer in the sky shader (uCloud/uTime/uWind/uCloudLight), sun
+  dimming (×(1−0.72·cover)), sky graying, and a ☁ % readout in the T panel. `__dbg.WX`
+  lets you force cover in dev.
+
+A second 19-agent adversarial pass on round 2 confirmed and fixed: motY band edges 1 m
+narrower than siteY's trench band (7 m vertex spikes — now exact-edged, blended over 14 m
+laterally and 60 m at the core z-boundaries so I-95 ramps out instead of burying); the
+wide-road core clip erased streets the core extract lacks (now also requires
+`nearRoad(…, 3.5)` so only true duplicates drop); One Liberty's tier-1 eave floated 7 m
+above its shaft; cloud drift phase now accumulates (`uCloudOff += wind·dt` — wind updates
+used to teleport the deck); weather changes force an env rebake and dim the baked env sun;
+grazing-angle shutter/door hash terms re-gated with `detU`; heightfield river margin −4 m;
+cap-deck trunks lifted clear of the I-95 tunnel. NOTE: `WX` must stay declared before the
+sky material — `refreshEnv` reads it during init (TDZ crash otherwise).
+
 South extension (Aug 23): Lincoln Financial Field and Citizens Bank Park are `stadium` relations →
 rendered as seating bowls (type 8) around sunken fields, with the Linc's sideline canopies and
 CBP's light towers; Xfinity Mobile Arena (ex-Wells Fargo Center, type 9) as a flat-topped oval;
