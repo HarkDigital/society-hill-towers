@@ -40,7 +40,7 @@
     bronze: 0x4d3b26,
     skyZenith: 0x4279c4,
     skyHorizon: 0xc8dcea,
-    skyGround: 0x7d786e,
+    skyGround: 0xa9b3ba,   // below-horizon haze — from altitude the dome shows past the world's edge
     haze: 0xdfd4b8,
     sun: 0xffe9c4,
   };
@@ -637,7 +637,7 @@
       '  return mix(mix(chash(i), chash(i+vec2(1.,0.)), f.x), mix(chash(i+vec2(0.,1.)), chash(i+vec2(1.,1.)), f.x), f.y); }\n' +
       'void main(){\n' +
       '  float h = vDir.y;\n' +
-      '  vec3 col = h >= 0.0 ? mix(cHorizon, cZenith, pow(h, 0.52)) : mix(cHorizon, cGround, clamp(-h*4.0,0.,1.));\n' +
+      '  vec3 col = h >= 0.0 ? mix(cHorizon, cZenith, pow(h, 0.52)) : mix(cHorizon, cGround, clamp(-h*1.5,0.,1.));\n' +
       '  float s = max(dot(vDir, uSun), 0.0);\n' +
       '  col += cSun * (pow(s, 420.0) * 0.9 + pow(s, 14.0) * 0.14);\n' +
       '  if (h > 0.01 && uCloud > 0.003) {\n' +

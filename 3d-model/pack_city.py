@@ -58,12 +58,13 @@ for el in ways:
     if not pg.is_valid: pg = pg.buffer(0)
     if pg.is_empty or pg.area < 30: continue
     h = parseH(t)
+    if h < 5 and pg.area < 60: continue   # sheds/garages: invisible at far-ring distances
     bt = BT.get(t.get('building'), 0)
     n_in += 1
     if h > 20 or bt == 5:
         solo.append((pg, h, bt))
     else:
-        key = (int(cx // 250), int(cz // 250), int(round(h / 4)))
+        key = (int(cx // 400), int(cz // 400), int(round(h / 4)))
         merge_groups.setdefault(key, []).append(pg)
 
 body = []
@@ -71,8 +72,8 @@ nb = 0
 def emit(pg, h, mh, bt):
     global nb
     ext = list(pg.exterior.coords)[:-1]
-    if len(ext) < 3 or len(ext) > 60:
-        if len(ext) > 60: ext = ext[::max(1, len(ext) // 60)]
+    if len(ext) < 3 or len(ext) > 32:
+        if len(ext) > 32: ext = ext[::max(1, len(ext) // 32)]
         if len(ext) < 3: return
     body.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt])
     for x, z in ext: body.extend([clip(x / S), clip(z / S)])
@@ -80,11 +81,11 @@ def emit(pg, h, mh, bt):
 
 for (gx, gz, hb), pgs in merge_groups.items():
     h = max(4, hb * 4)
-    merged = unary_union([p.buffer(0.7, join_style=2) for p in pgs]).buffer(-0.7, join_style=2)
+    merged = unary_union([p.buffer(1.8, join_style=2) for p in pgs]).buffer(-1.8, join_style=2)
     geoms = list(merged.geoms) if merged.geom_type == 'MultiPolygon' else [merged]
     for g in geoms:
-        if g.is_empty or g.area < 40: continue
-        emit(Polygon(g.exterior).simplify(0.9), h, 0, 1 if h <= 12 else 2)
+        if g.is_empty or g.area < 70: continue
+        emit(Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2)
 for pg, h, bt in solo:
     emit(pg.simplify(0.8), h, 0, bt)
 print(f'buildings: {n_in} in -> {nb} packed', flush=True)
@@ -125,7 +126,7 @@ for el in ways:
     for run in _runs(raw, lambda q: inBox(q[0], q[1], CITYM)):
         subruns = _runs(run, lambda q: not inBox(q[0], q[1], WIDEM)) if t.get('highway') in ('residential', 'tertiary') else [run]
         for sub in subruns:
-            pts = list(LineString(sub).simplify(1.2).coords) if len(sub) > 2 else sub
+            pts = list(LineString(sub).simplify(1.6).coords) if len(sub) > 2 else sub
             if len(pts) < 2: continue
             for c0 in range(0, len(pts) - 1, 119):
                 chunk = pts[c0:c0 + 120]

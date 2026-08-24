@@ -282,15 +282,31 @@ Round 3 (Aug 24, evening — night lighting, City Hall, stadiums, whole-city gro
   complex etc.; outside the core, low terrain now clamps just above the water plane
   UNLESS east of the `DEL_BANK` Delaware west-bank polyline (there it still dives to the
   bed = river). Wide/far OSM water polygons draw at water+0.55 (above the clamp).
-- **Whole-city pipeline (in progress):** `fetch_city.py` (resumable, per-tile
-  checkpoints in `city_tiles/`) fetches University City/West/SW+airport, North Philly,
-  the Northeast, and Roxborough/Germantown + a 150 m `dem_city.json`;
-  `pack_city.py` (needs shapely: scratchpad venv) MERGES rowhouse rows into block strips
-  (union of ≤12 m buildings per 250 m cell, height-bucketed) and packs at 0.7 m into
-  `city.b64` (magic 0x53485459); app step 'Raising the rest of Philadelphia' decodes it
-  (2400 m chunks, far ground strips at 100 m, far roads with class lifts, far labels),
-  `DEM_CITY` slots into demAbs, bounds/fog widen to the whole city. Artifact page must
-  stay ≤ 16 MB.
+- **Whole city SHIPPED:** `fetch_city.py` (resumable, per-tile checkpoints in
+  `city_tiles/`, both gitignored with the 377 MB `osm_city_raw.json`) fetched University
+  City/West/SW+airport, North Philly, the Northeast, and Roxborough/Germantown + a 150 m
+  `dem_city.json`; `pack_city.py` (needs shapely — venv, `pip install shapely`) MERGES
+  rowhouse rows into block strips (buffer 1.8 union per 400 m cell, height-bucketed /4),
+  drops sheds, and packs at 0.7 m into `city.b64` (magic 0x53485459, 7.1 MB b64:
+  373k buildings → 142k solids, 18k road runs, 964 areas). App step 'Raising the rest of
+  Philadelphia' decodes it (2400 m chunks on cityMat, 100 m far ground strips, far roads
+  with the same continuity treatment, far district labels); `DEM_CITY` slots into demAbs;
+  bounds/fog widen to the full city (fog 2400/13000). Page = 14.25 MB — the artifact cap
+  is 16 MB, so any future data must fit ~1.7 MB or go Pages-only. PHL's runways/taxiways/
+  aprons pack as roads/areas and read beautifully. `COLORS.skyGround` lightened + the
+  dome's below-horizon slope softened (from altitude the dome shows past the world edge).
+- **Road continuity audit (agent) + fixes:** pack_wide's CLOSED-ring simplifier was
+  amputating the final segment of every wide road (now `simplify_open` + run-splitting
+  at bbox exits — THE "roads stop mid-block" bug); river crossings now render as bridge
+  decks (class ≤ primary lifts to water+13/+20 inside `riverCorridor` = east of DEL_BANK
+  or within 260 m of the SCHUYLKILL polyline) instead of vanishing, minor roads still
+  skip; wide/far quad strips get joint fans at bends; duplicate-dropping now requires
+  PARALLEL alignment (`nearRoadAligned`, midpoint too) so crossings/carriageways survive;
+  road heights snap per shared endpoint (`ySnap` maps — no steps at OSM way splits);
+  the wide lift blends to the core formula within 60 m of the seam. pack_city splits
+  runs instead of truncating/point-filtering. FUTURE (for Mike's traffic goal): pack a
+  shared node table + edges with class/oneway/bridge flags and generate both render
+  geometry and a routable graph from it — see the audit in this session's notes.
 
 South extension (Aug 23): Lincoln Financial Field and Citizens Bank Park are `stadium` relations →
 rendered as seating bowls (type 8) around sunken fields, with the Linc's sideline canopies and
