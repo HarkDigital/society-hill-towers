@@ -318,6 +318,21 @@ known offender. Fix: Safari UA now gets a standard depth buffer (near 1.0, far 2
 also raised from 9000 for the citywide view; ?logdepth=1/0 forces either path). If hollow
 walls ever show on Chrome too, this diagnosis is wrong — reopen with an exact-view repro.
 
+**RESOLVED (Aug 24, round 4): the far-ring hollow buildings were a real winding bug, not
+Safari.** `THREE.ShapeUtils.triangulateShape` (earcut) emits triangles in a CANONICAL
+orientation — CCW in the shape plane — regardless of the input ring's winding (verified
+empirically in node: CW and CCW squares/L-shapes all come back CCW). The roof-cap code in
+`appendBuilding` (wide) and `appendB` (far ring) flipped the triangles when
+`ShapeUtils.area(v2) > 0`, i.e. exactly for rings that arrive CW in numeric (x,z). The wide
+set never showed it because process_osm.py `ensure_ccw`-normalizes every outer ring; but
+pack_city.py emits shapely output raw, and GEOS/JTS buffer produces **CW shells** — so every
+merged block strip (and ~half the solo talls) got a downward-facing, backface-culled roof:
+walls stood like cardboard cutouts with the ground showing through. The fix: caps ALWAYS
+emit earcut's triangles forward (CCW in the (x,−z) plane = up-facing in world). The wall
+quads were always correct (their normal and winding both key off the same signed-area sign,
+so they cancel). Gotcha for the future: **never orient earcut output by the input ring's
+winding.**
+
 South extension (Aug 23): Lincoln Financial Field and Citizens Bank Park are `stadium` relations →
 rendered as seating bowls (type 8) around sunken fields, with the Linc's sideline canopies and
 CBP's light towers; Xfinity Mobile Arena (ex-Wells Fargo Center, type 9) as a flat-topped oval;
@@ -340,5 +355,44 @@ Ideas discussed but not built (see also `geo_audit.json`):
   falls off our smaller OSM-footprint deck)
 - Penn's Landing park-cap construction area is bare in current imagery — could model the
   finished park
+
+Round 4 (Aug 24, late — Mike's screenshot-driven fixes):
+- **Far-ring roofs restored** (the cap-winding bug above — the headline fix).
+- **Towers pinned to the researched 18×12 bays.** `bays` was derived from the OSM
+  footprint (`round(inner/1.83)`) and two of the three towers (W 32.91/32.21) rounded to
+  17 wide-face bays; Mike counted 18 on the real building. Now
+  `s.len >= max(W,Dp)-0.01 ? 18 : 12`. Colonnade columns also extend 0.9 m below grade
+  (they sat exactly at podium height and could show a float gap on the drape).
+- **William Penn statue** on City Hall sculpted from primitives (plinth, calves, flared
+  coat, torso, cravat, head, brimmed hat, left arm extended NE + hand, right arm with
+  charter box), `cPenn 0x4c4536`. Feet at +155.8, hat crown ≈ +167 (548 ft) — matches
+  the photo silhouette from skyline distance.
+- **The Ryland** recolored: bars `0x4f7ba1` (Liberty-family blue), mullion grid and
+  3-floor bands `#3d5a73` (darker than the glass, curtain-wall rhythm), parapet screen
+  `0x6c93b4`. It used to read white — Mike: "it does not appear white in real life."
+- **SHT pool terrace rebuilt level.** Root cause of BOTH the "odd shaped pool" and the
+  "pillars clipping": the pool/coping/deck were 4-corner `flatPoly`s lifted per-vertex by
+  `siteY`, and the terrace sits ON the plaza feather (58→74 m), so each plane tilted
+  differently (deck corner +0.5 m, pool corner +0.04) and they sliced each other and the
+  colonnade line. Now: one level skirted slab (`buildingGeom(deck, [pool], ref+0.14,
+  ref-1.8)` at `ref` = highest ground under the deck), pool as a true hole with inner
+  walls, water sunk in-ground at top−0.12, flush coping ring at top+0.012 with the pool
+  hole, and 16 `poolTreeSpots` ringing the deck 3.1 m out (planted through the tree
+  step's `clear()` so none land in buildings/roads).
+- **Grass actually darker.** The pipeline stores colors WITHOUT sRGB→linear conversion
+  (r149 legacy color mode) and ACES+noon sun lift flats ~2.5×: `0x5d7247` rendered pale
+  mint (`0x3b3833` asphalt renders light gray, same reason). `COLORS.park` is now
+  `0x243818` / `parkDark 0x1d2c13`, area brighteners trimmed (core 0.84+0.16·h, far
+  0.82+0.18·h), canopies slightly deeper (base L 0.17-0.23 S 0.46+, lumps L 0.24-0.33).
+  Lesson: pick flat-surface colors by RENDERED swatch, not by hex intuition.
+- **Skyscraper facades.** Tall (h>45) wide/far buildings draw from `palTall` (precast
+  tan, aluminum, blue-gray, dark curtain, bronze, limestone, buff, charcoal, steel blue)
+  with tighter value jitter; style-2 windows enlarged (0.74·pitch × 1.95); and the
+  facade shader's distance fade now converges styles 2/6/7 to the true wall+glass
+  average (`mix(diffuse, vec3(.115,.13,.155), .48)`, weight 0.92) instead of reverting
+  to pale wall — distant towers used to wash to white boxes.
+- **Hidden-tab loads no longer crawl:** both decode steps' `yieldNow` use a
+  MessageChannel ping (setTimeout is clamped to 1 s+ in hidden tabs; the far-ring decode
+  took minutes headless).
 
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.
