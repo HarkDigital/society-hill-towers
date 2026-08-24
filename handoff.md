@@ -6,6 +6,14 @@ Liberties and Fishtown/Kensington, published as a Claude artifact. Built Aug 14�
 
 **Live artifact:** https://claude.ai/code/artifact/04f16de9-5902-4bd0-abf1-09e71f816b50
 
+**GitHub / Pages (added Aug 24):** repo `HarkDigital/society-hill-towers`
+(https://github.com/HarkDigital/society-hill-towers), served at
+https://harkdigital.github.io/society-hill-towers/ (root `index.html` redirects into
+`3d-model/society-hill-towers.html`). The two raw Overpass dumps (`osm_wide_raw.json`,
+`osm_south_raw.json`) are gitignored — everything else, including the built page, is
+committed. To update the site: rebuild, commit, `git push`. Note: unlike the artifact,
+GH Pages has no CSP, so a Pages-only feature could fetch external data (e.g. live weather).
+
 > ⚠️ **Keeping the same URL from a new machine/conversation:** the artifact is keyed to
 > the publishing conversation + file path. From a *different* conversation, republish by
 > passing the URL above as the `url` parameter of the Artifact tool (or tell Claude
