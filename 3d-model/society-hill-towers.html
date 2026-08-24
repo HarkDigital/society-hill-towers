@@ -729,7 +729,14 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
 
   let renderer;
   try {
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: true });
+    // Safari's Metal-backed WebGL2 mishandles the per-fragment depth writes that
+    // logarithmicDepthBuffer requires — near walls randomly lose the depth test and
+    // far faces punch through ("hollow buildings") — so use standard depth there.
+    // Force either path with ?logdepth=1 / ?logdepth=0 for testing.
+    const qsDepth = /[?&]logdepth=(\d)/.exec(location.search);
+    const isSafari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
+    window.__useLogDepth = qsDepth ? qsDepth[1] === '1' : !isSafari;
+    renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: window.__useLogDepth });
     if (!renderer.getContext()) throw new Error('no context');
   } catch (e) {
     document.getElementById('nogl').style.display = 'flex';
@@ -748,7 +755,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.haze, 1250, 4200);
 
-  const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.75, 9000);
+  const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, window.__useLogDepth ? 0.75 : 1.0, 26000);
 
   // flat surfaces are layered with generous gaps to keep the depth buffer honest
   const LAYER = { park: 0.06, plaza: 0.1, deck: 0.14, sidewalk: 0.16, road: 0.24, footway: 0.32, basin: 0.36, pool: 0.38 };

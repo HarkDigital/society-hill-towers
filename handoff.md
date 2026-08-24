@@ -308,6 +308,16 @@ Round 3 (Aug 24, evening — night lighting, City Hall, stadiums, whole-city gro
   shared node table + edges with class/oneway/bridge flags and generate both render
   geometry and a routable graph from it — see the audit in this session's notes.
 
+**"Hollow buildings" on Mike's machine (Aug 24 night):** his screenshots show near walls
+losing the depth test (far walls' fronts punching through, triangle-shaped slivers) SE of
+City Hall. NOT reproducible in the Chromium in-app browser; the packed rings, winding,
+and normals were all verified correct programmatically (3.36 M wall tris, 0 winding/normal
+mismatches; 1 invalid ring in 112k, elsewhere). Diagnosis: `logarithmicDepthBuffer`
+(per-fragment gl_FragDepth writes) misbehaving on his browser — Safari/Metal WebGL2 is the
+known offender. Fix: Safari UA now gets a standard depth buffer (near 1.0, far 26000 —
+also raised from 9000 for the citywide view; ?logdepth=1/0 forces either path). If hollow
+walls ever show on Chrome too, this diagnosis is wrong — reopen with an exact-view repro.
+
 South extension (Aug 23): Lincoln Financial Field and Citizens Bank Park are `stadium` relations →
 rendered as seating bowls (type 8) around sunken fields, with the Linc's sideline canopies and
 CBP's light towers; Xfinity Mobile Arena (ex-Wells Fargo Center, type 9) as a flat-topped oval;
