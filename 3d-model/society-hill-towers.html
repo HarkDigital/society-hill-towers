@@ -698,8 +698,8 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     plaza: 0x96604a,       // brick-paved plaza and circular drive
     asphalt: 0x3b3833,
     footway: 0x7c584a,     // society hill brick sidewalks
-    park: 0x5d7247,
-    parkDark: 0x4d6039,
+    park: 0x243818,        // grass — stored very deep: the legacy-color pipeline + ACES
+    parkDark: 0x1d2c13,    // lift flat lawns ~2.5x at noon (cf. roads: 0x3b3833 -> light gray)
     water: 0x3d5560,
     pier: 0x8f8a7d,
     trunk: 0x5b4a38,
@@ -1539,6 +1539,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     slips.push([x0 - 7, x1 + 7, z0 - 7, z1 + 7]);
   }
   const extraTreeSpots = [];
+  const poolTreeSpots = [];   // pool-terrace ring — planted through clear() so none land in buildings
   function inRiver(x, z) {
     if (x > xShore(z)) return true;
     for (const sl of slips) if (x > sl[0] && x < sl[1] && z > sl[2] && z < sl[3]) return true;
@@ -1846,8 +1847,42 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     const poolParts = [], deckParts = [];
     for (let pi = 0; pi < POOLS.length; pi++) {
       const poly = POOLS[pi];
-      poolParts.push({ geom: flatPoly(poly, null, LAYER.pool), color: new THREE.Color(0x3fa9c9) });
-      { // white coping ring so the water reads as a pool, not a paint spill
+      registerPoly(poly); // keeps trees off the water
+      if (pi === 0) {
+        // The towers' pool terrace sits on the plaza feather, so terrain-following
+        // 4-corner planes tilt every which way and slice each other (the "odd shape").
+        // Build it as one LEVEL terrace instead: a skirted slab at the highest ground
+        // point under it, the pool cut in as a true hole, water sunk in-ground.
+        const ob = orientedBox(poly);
+        const a = obbAxis(ob);
+        const m = 5;
+        const rim = (e) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) => [
+          ob.cx + a.ax * su * (a.hl + e) + a.px * sv * (a.hs + e),
+          ob.cz + a.az * su * (a.hl + e) + a.pz * sv * (a.hs + e),
+        ]);
+        const deck = rim(m);
+        let ref = siteY(ob.cx, ob.cz, 'ground');
+        for (const q of deck) ref = Math.max(ref, siteY(q[0], q[1], 'ground'));
+        const top = ref + 0.14;
+        deckParts.push({ geom: buildingGeom(deck, [poly], top, ref - 1.8), color: new THREE.Color(0xb3ab9c) });
+        deckParts.push({ geom: flatPoly(rim(0.9), [poly], top + 0.012, true), color: new THREE.Color(0xe9e5da) }); // flush coping
+        poolParts.push({ geom: flatPoly(poly, null, top - 0.12, true), color: new THREE.Color(0x3fa9c9) });
+        registerPoly(deck);
+        // shade trees ringing the terrace (planted on the surrounding lawn)
+        for (let side = 0; side < 4; side++) {
+          const n = side % 2 === 0 ? 5 : 3;
+          for (let i = 0; i < n; i++) {
+            const t = (i + 0.5) / n * 2 - 1;
+            const [eu, ev] = side % 2 === 0 ? [t * (a.hl + m), (side === 0 ? -1 : 1) * (a.hs + m + 3.1)]
+              : [(side === 1 ? -1 : 1) * (a.hl + m + 3.1), t * (a.hs + m)];
+            poolTreeSpots.push([
+              ob.cx + a.ax * eu + a.px * ev + (hash01(side * 7.1 + i) - 0.5) * 1.4,
+              ob.cz + a.az * eu + a.pz * ev + (hash01(side * 3.3 + i + 9) - 0.5) * 1.4,
+            ]);
+          }
+        }
+      } else {
+        poolParts.push({ geom: flatPoly(poly, null, LAYER.pool), color: new THREE.Color(0x3fa9c9) });
         const obC = orientedBox(poly);
         const aC = obbAxis(obC);
         const cop = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) => [
@@ -1855,20 +1890,6 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
           obC.cz + aC.az * su * (aC.hl + 0.9) + aC.pz * sv * (aC.hs + 0.9),
         ]);
         deckParts.push({ geom: flatPoly(cop, null, LAYER.pool - 0.015), color: new THREE.Color(0xe9e5da) });
-      }
-      registerPoly(poly); // keeps trees off the water
-      if (pi === 0) { // paved pool deck around the towers' pool
-        const ob = orientedBox(poly);
-        const a = obbAxis(ob);
-        const m = 5;
-        const deck = [
-          [ob.cx - a.ax * (a.hl + m) - a.px * (a.hs + m), ob.cz - a.az * (a.hl + m) - a.pz * (a.hs + m)],
-          [ob.cx + a.ax * (a.hl + m) - a.px * (a.hs + m), ob.cz + a.az * (a.hl + m) - a.pz * (a.hs + m)],
-          [ob.cx + a.ax * (a.hl + m) + a.px * (a.hs + m), ob.cz + a.az * (a.hl + m) + a.pz * (a.hs + m)],
-          [ob.cx - a.ax * (a.hl + m) + a.px * (a.hs + m), ob.cz - a.az * (a.hl + m) + a.pz * (a.hs + m)],
-        ];
-        deckParts.push({ geom: flatPoly(deck, null, LAYER.deck), color: new THREE.Color(0xb3ab9c) });
-        registerPoly(deck);
       }
     }
     const poolMesh = new THREE.Mesh(mergeColored(poolParts.concat(deckParts)),
@@ -2287,7 +2308,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
           '      vec2 cell = vec2(floor(u / pitch), floor(v / fp));',
           '      vec2 m = vec2(u - (cell.x + 0.5) * pitch, v - cell.y * fp);',
           '      float okRow = step(cell.y * fp + 2.5, wallTop) * inWall * det;',
-          '      float wm = rectM(m, vec2(0.0, 1.6), vec2(pitch * 0.66, 1.75), aa) * step(0.9, v) * okRow;',
+          '      float wm = rectM(m, vec2(0.0, 1.55), vec2(pitch * 0.74, 1.95), aa) * step(0.9, v) * okRow;',
           '      lit = 0.45 + 0.55 * shtHash(cell * 1.3 + 7.0);',
           '      vec3 gc = vec3(0.10, 0.12, 0.15) + vec3(0.12, 0.11, 0.08) * lit;',
           '      if (st == 6 && v < 6.3) {',
@@ -2367,8 +2388,12 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
           '      col = mix(col, gc * 1.3, shop * 0.9);',
           '      glass = max(win, max(fanIn, max(arch, shop)));',
           '    }',
-          '    // far away the pattern averages into a slightly darker wall',
-          '    col = mix(col, diffuseColor.rgb * 0.9, (1.0 - det) * 0.35);',
+          '    // far away the pattern averages to the true facade mix — curtain-wall',
+          '    // styles are ~half glass, so they must converge to a visibly darker',
+          '    // average instead of washing back to the pale wall color',
+          '    vec3 farAvg = diffuseColor.rgb * 0.9; float farW = 0.35;',
+          '    if (st == 2 || st == 6 || st == 7) { farAvg = mix(diffuseColor.rgb, vec3(0.115, 0.13, 0.155), 0.48); farW = 0.92; }',
+          '    col = mix(col, farAvg, (1.0 - det) * farW);',
           // only about a third of windows are lit at night, at varied warmth; where the
           // pattern fades with distance the facade keeps a soft aggregate glow instead
           // of dying into a solid mass
@@ -2646,7 +2671,8 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       }
     }
 
-    // The Ryland: two offset pale-glass bars with a white metal grid
+    // The Ryland: two offset blue-glass bars — same curtain-wall family as the
+    // Liberty Place shafts (it reads blue in photos, not white)
     {
       const b = get('The Ryland');
       if (b) {
@@ -2662,22 +2688,23 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         ];
         for (const bar of bars) {
           const bx = ob.cx + a.px * bar.v, bz = ob.cz + a.pz * bar.v;
-          glassParts2.push({ geom: box(L, bar.h, bar.d, bx, bar.h / 2, bz, ry), color: new THREE.Color(0xbccfdb) });
-          // white metal grid: verticals every ~3 m, heavier band every 3 floors
+          glassParts2.push({ geom: box(L, bar.h, bar.d, bx, bar.h / 2, bz, ry), color: new THREE.Color(0x4f7ba1) });
+          // mullion grid a shade darker than the glass: verticals every ~3 m,
+          // spandrel band every 3 floors — curtain-wall rhythm, not white trim
           const nV = Math.round(L / 3);
           for (let i = 0; i <= nV; i++) {
             const u = -L / 2 + (i / nV) * L;
             for (const s of [-1, 1]) {
               ad(box(0.16, bar.h, 0.14,
                 bx + a.ax * u + a.px * s * (bar.d / 2), bar.h / 2,
-                bz + a.az * u + a.pz * s * (bar.d / 2), ry), '#e8eaeb');
+                bz + a.az * u + a.pz * s * (bar.d / 2), ry), '#3d5a73');
             }
           }
           for (let y = 9.4; y < bar.h - 1; y += 9.4) {
             for (const s of [-1, 1]) {
               ad(box(L + 0.1, 0.55, 0.16,
                 bx + a.px * s * (bar.d / 2), y,
-                bz + a.pz * s * (bar.d / 2), ry), '#e8eaeb');
+                bz + a.pz * s * (bar.d / 2), ry), '#3d5a73');
             }
           }
         }
@@ -2685,7 +2712,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         const nb = bars[0], sb = bars[1];
         glassParts2.push({
           geom: box(L - 4, 3.2, 1.2, ob.cx + a.px * nb.v, nb.h + 1.6, ob.cz + a.pz * nb.v, ry),
-          color: new THREE.Color(0xdde6ea),
+          color: new THREE.Color(0x6c93b4),
         });
         ad(box(9, 2.4, 5, ob.cx + a.px * sb.v, sb.h + 1.2, ob.cz + a.pz * sb.v, ry), '#4a4a4c');
         liftB(m0, b);
@@ -3035,7 +3062,9 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       ];
       for (const s of sides) {
         const inner = s.len - 2 * TOWER.cornerW;
-        const bays = Math.max(4, Math.round(inner / TOWER.bayPitch)); // -> 17-18 / 11-12
+        // researched facade: 18 bays on the wide faces, 12 on the narrow — fixed, not
+        // derived from the OSM footprint (which rounds to 17/11 on two of the towers)
+        const bays = s.len >= Math.max(W, Dp) - 0.01 ? 18 : 12;
         const bayW = inner / bays;
         // vertical mullions between window bays, lobby soffit to parapet
         for (let bi = 1; bi < bays; bi++) {
@@ -3092,9 +3121,12 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         const nCols = Math.round(bays / TOWER.colSpacing);
         for (let ci = 0; ci <= nCols; ci++) {
           const u = -inner / 2 + (ci / nCols) * inner;
+          // columns run 0.9 m below grade like every wall — the plaza drape is not
+          // perfectly at podium height everywhere, and a floating column base reads
+          // as clipping at eye level
           const g = s.axis === 'x'
-            ? box(0.55, gridBot, 0.55, u, gridBot / 2, s.off)
-            : box(0.55, gridBot, 0.55, s.off, gridBot / 2, u);
+            ? box(0.55, gridBot + 0.9, 0.55, u, gridBot / 2 - 0.45, s.off)
+            : box(0.55, gridBot + 0.9, 0.55, s.off, gridBot / 2 - 0.45, u);
           add(concreteParts, g, cCon);
         }
       }
@@ -3242,9 +3274,12 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
     const palCom = [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c, 0x9aa0a4, 0xb3aca0];
     const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
+    // real skylines are not white: precast tan, limestone, aluminum, blue-gray steel,
+    // dark curtain wall, bronze — towers draw from this instead of the pale palCom
+    const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
     const c = new THREE.Color();
     const v2 = [];
-    const yieldNow = () => new Promise(r => setTimeout(r, 0));
+    const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); }); // not timer-clamped in hidden tabs
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base) => {
       ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base);
       return ch.n++;
@@ -3287,11 +3322,9 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       const capStart = ch.n;
       for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, r * 0.93, g * 0.93, b * 0.93, 3, base);
       for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, r * 0.93, g * 0.93, b * 0.93, 3, base);
-      const capSign = THREE.ShapeUtils.area(v2) > 0 ? 1 : -1;
-      for (const t of tris) {
-        if (capSign > 0) ch.idx.push(capStart + t[0], capStart + t[2], capStart + t[1]);
-        else ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
-      }
+      // earcut emits CCW triangles in the shape plane regardless of ring winding,
+      // and CCW in (x,-z) maps to up-facing — never flip by ring orientation
+      for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
     };
     const nb = hdr[1];
     for (let i = 0; i < nb; i++) {
@@ -3302,8 +3335,8 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       if (BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) continue;
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
-      const pool = (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
-      c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(0.9 + hash01(i * 11.3) * 0.2);
+      const pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
+      c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 11.3) * 0.12 : 0.9 + hash01(i * 11.3) * 0.2);
       const style = h > 30 ? 2 : (t === 3 ? 5 : 0);
       if (t === 10) { // glass tower parts: reflective material, no painted windows
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
@@ -3587,7 +3620,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         const cTower = new THREE.Color(0xc4bdb0);
         const cWhiteM = new THREE.Color(0xdde0e2);           // painted metal above the masonry limit
         const cDome = new THREE.Color(0xbfc9d3);
-        const cPenn = new THREE.Color(0x41443f);             // dark bronze silhouette
+        const cPenn = new THREE.Color(0x4c4536);             // weathered bronze, warm dark
         // hollow square around the courtyard, arched-window facade style, mansard wings
         c.copy(cStone);
         appendBuilding(getChunk(bx, bz), sqPoly(bx, bz, 148, 143), base - 1, base + 27, c, 1, base, [sqPoly(bx, bz, 64, 59)]);
@@ -3644,11 +3677,35 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         }
         const lant = new THREE.CylinderGeometry(2.0, 2.6, 4.3, 8); lant.translate(cx, base + 151.5 + 2.15, cz);
         lmTrim.push({ geom: lant, color: cWhiteM, style: 3 });
-        // William Penn — reads near-black against the sky
-        const penn = new THREE.CylinderGeometry(0.9, 1.9, 10.6, 8); penn.translate(cx, base + 155.8 + 5.3, cz);
-        lmTrim.push({ geom: penn, color: cPenn, style: 3 });
-        const hat = new THREE.CylinderGeometry(0.42, 0.9, 0.9, 6); hat.translate(cx, base + 166.6, cz);
-        lmTrim.push({ geom: hat, color: cPenn, style: 3 });
+        // William Penn — 37 ft figure sculpted from primitives: stockinged calves under
+        // a knee-length coat flaring at the hem, broad shoulders, brimmed hat, left arm
+        // extended northeast (toward Penn Treaty Park). Reads as the statue, not a post.
+        const y0 = base + 155.8;
+        const pennAt = (g, dx2, y, dz2) => { g.translate(cx + dx2, y, cz + dz2); lmTrim.push({ geom: g, color: cPenn, style: 3 }); };
+        const s2 = Math.SQRT1_2;
+        const nex = (fl.nx - fl.dx) * s2, nez = (fl.nz - fl.dz) * s2;   // northeast, unit
+        const pex = -nez, pez = nex;                                     // perpendicular (NW)
+        pennAt(new THREE.CylinderGeometry(1.35, 1.55, 0.5, 10), 0, y0 + 0.25, 0);            // base plinth
+        for (const sgn of [-1, 1])                                                            // calves
+          pennAt(new THREE.CylinderGeometry(0.30, 0.36, 1.7, 6), pex * sgn * 0.44, y0 + 0.85, pez * sgn * 0.44);
+        pennAt(new THREE.CylinderGeometry(1.02, 1.58, 5.0, 10), 0, y0 + 3.9, 0);             // coat, flared hem
+        pennAt(new THREE.CylinderGeometry(1.24, 1.02, 2.9, 10), 0, y0 + 7.85, 0);            // torso to shoulders
+        pennAt(new THREE.CylinderGeometry(0.46, 0.52, 0.7, 6), 0, y0 + 9.45, 0);             // neck + cravat
+        pennAt(new THREE.SphereGeometry(0.66, 8, 6), 0, y0 + 10.15, 0);                      // head (long hair)
+        pennAt(new THREE.CylinderGeometry(1.12, 1.12, 0.16, 10), 0, y0 + 10.62, 0);          // hat brim
+        pennAt(new THREE.CylinderGeometry(0.72, 0.64, 0.62, 8), 0, y0 + 10.95, 0);           // hat crown
+        {                                                                                     // left arm, extended NE
+          const arm = new THREE.CylinderGeometry(0.24, 0.30, 2.5, 6);
+          arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(nex, -0.34, nez).normalize()));
+          pennAt(arm, nex * 1.55, y0 + 8.35, nez * 1.55);
+          pennAt(new THREE.SphereGeometry(0.30, 6, 5), nex * 2.75, y0 + 7.9, nez * 2.75);     // hand
+        }
+        {                                                                                     // right arm, down along the coat with the charter
+          const arm = new THREE.CylinderGeometry(0.24, 0.28, 2.4, 6);
+          arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(-nex * 0.30, 1, -nez * 0.30).normalize()));
+          pennAt(arm, -nex * 1.25, y0 + 7.5, -nez * 1.25);
+          pennAt(new THREE.BoxGeometry(0.85, 1.05, 0.5), -nex * 1.55, y0 + 6.1, -nez * 1.55); // charter scroll
+        }
       }
     }
     // parks, water, piers
@@ -3662,7 +3719,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       // in there just z-fight the bowls
       if (kind === 0 && (Math.hypot(acx + 1869, acz - 4375) < 140 || Math.hypot(acx + 1920, acz - 4932) < 150 || Math.hypot(acx + 2327, acz - 4880) < 120)) continue;
       try {
-        if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 1500 ? drapedPoly(poly, LAYER.park, 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.9 + hash01(i) * 0.2), style: 3 });
+        if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 1500 ? drapedPoly(poly, LAYER.park, 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.84 + hash01(i) * 0.16), style: 3 });
         else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
         else areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 });
       } catch (e) { /* degenerate polygon */ }
@@ -3964,9 +4021,10 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
     const palCom = [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c, 0x9aa0a4, 0xb3aca0];
     const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
+    const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
     const c = new THREE.Color();
     const v2 = [];
-    const yieldNow = () => new Promise(r => setTimeout(r, 0));
+    const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); }); // not timer-clamped in hidden tabs
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base) => {
       ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base);
       return ch.n++;
@@ -3992,11 +4050,10 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return; }
       const capStart = ch.n;
       for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, r * 0.93, g * 0.93, b * 0.93, 3, base);
-      const capSign = THREE.ShapeUtils.area(v2) > 0 ? 1 : -1;
-      for (const t of tris) {
-        if (capSign > 0) ch.idx.push(capStart + t[0], capStart + t[2], capStart + t[1]);
-        else ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
-      }
+      // earcut emits CCW triangles in the shape plane regardless of ring winding
+      // (pack_city rings arrive in shapely's CW convention — flipping by ring
+      // orientation culled every merged roof); always emit forward = up-facing
+      for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
     };
     // buildings (merged block strips + solo talls/churches)
     const nb = hdr[1];
@@ -4007,8 +4064,8 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       const [cx, cz] = polyCentroid(poly);
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 5.31 + 0.7);
-      const pool = (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
-      c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(0.9 + hash01(i * 13.7) * 0.2);
+      const pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
+      c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 13.7) * 0.12 : 0.9 + hash01(i * 13.7) * 0.2);
       const style = h > 30 ? 2 : (t === 3 ? 5 : 0);
       appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base);
       if (t === 5 && Math.abs(signedArea(poly)) > 350 && h < 60) {
@@ -4097,7 +4154,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       const poly = new Array(n);
       for (let j = 0; j < n; j++) poly[j] = [body[k++] * S, body[k++] * S];
       try {
-        if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 40000 ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.88 + hash01(i) * 0.24), style: 3 });
+        if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 40000 ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
         else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
         else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
       } catch (e) { /* degenerate */ }
@@ -4230,6 +4287,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       const x = towersCenter.x + Math.cos(ang) * rr, z = towersCenter.z + Math.sin(ang) * rr;
       if (clear(x, z)) spots.push([x, z]);
     }
+    for (const sp of poolTreeSpots) if (clear(sp[0], sp[1]) && spots.length < 2400) spots.push(sp);
     for (const sp of extraTreeSpots) if (spots.length < 2400) spots.push(sp);
 
     const N = Math.min(spots.length, 2400);
@@ -4255,7 +4313,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       trunks.setMatrixAt(i, m);
       m.compose(new V3(x, ty + 2.6 + s * 0.72, z), q, new V3(s, s * (0.92 + hash01(i * 7.7) * 0.3), s));
       cans.setMatrixAt(i, m);
-      cCan.setHSL(0.26 + hash01(i * 4.9) * 0.05, 0.4 + hash01(i * 6.1) * 0.14, 0.2 + hash01(i * 8.3) * 0.07);
+      cCan.setHSL(0.26 + hash01(i * 4.9) * 0.05, 0.46 + hash01(i * 6.1) * 0.14, 0.17 + hash01(i * 8.3) * 0.06);
       cans.setColorAt(i, cCan);
     }
     // secondary lobes make the canopies read as foliage rather than balloons
@@ -4270,7 +4328,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         const ls = s * (0.55 + 0.25 * hash01(i * 6.3 + k * 5));
         m.compose(new V3(x + Math.cos(a) * r, baseY - s * 0.15 + hash01(i + k * 3) * s * 0.4, z + Math.sin(a) * r), q, new V3(ls, ls * 0.9, ls));
         lumps.setMatrixAt(i * 2 + k, m);
-        cCan.setHSL(0.26 + hash01(i * 4.9) * 0.045, 0.32 + hash01(i * 6.1) * 0.12, 0.29 + hash01(i * 8.3) * 0.08 + 0.025 * k);
+        cCan.setHSL(0.26 + hash01(i * 4.9) * 0.045, 0.38 + hash01(i * 6.1) * 0.12, 0.24 + hash01(i * 8.3) * 0.07 + 0.02 * k);
         lumps.setColorAt(i * 2 + k, cCan);
       }
     }
