@@ -435,4 +435,22 @@ Round 6 (Aug 24, late night):
   same night/twi/dayF blend as the sky. The fixed pale sage albedo caught the cool
   ambient after sunset and read as flooded terrain.
 
+Round 7 (Aug 25):
+- **Viewpoints dropdown removed from the bar** (Mike's request). The viewpoint list +
+  functions remain in 'Charting the viewpoints' behind an `if (sel)` guard, so a
+  future UI can re-add a `#viewpoints` element and everything rewires itself.
+- **Landmark labels default OFF** (`labelsOn = false`); the Aa button starts dimmed
+  (`syncLabelsBtn`), L key / button still toggle.
+- **Full map on mobile**: the `isTouch` gates that skipped the wide set and the far
+  ring (and `haveWide`) are removed — phones now load all ~250k buildings
+  (~5.9 M tris, verified in mobile emulation). The guards dated from before the
+  merged-strip packing and MessageChannel yields; DPR stays capped at 1.5 and
+  shadows at 2048 on touch.
+- **Fly is now fully usable on touch**: on-screen ▲/▼ hold-buttons (`#flyctl`,
+  right-thumb reach, shown only in fly mode on touch) climb/descend like E/Q, and
+  the left joystick doubles as a THROTTLE — its magnitude now runs past the ring to
+  2.4 (`Math.min(2.4, d/44)`), fly scales speed by it (`jm`), the nub display clamps
+  to the ring, and WALK is unaffected because applyWalk normalizes the wish vector.
+  Verified: ▲ press climbs in emulation; joystick math shared with desktop paths.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

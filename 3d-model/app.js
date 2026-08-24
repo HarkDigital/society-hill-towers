@@ -1287,7 +1287,7 @@
     const cBrickWalk = new THREE.Color(COLORS.footway);
     const cConcWalk = new THREE.Color(0x9b968a);
     // with the outer districts loaded, core streets stop at the core boundary (the wide set draws the rest)
-    const haveWide = typeof WIDE_B64 !== 'undefined' && WIDE_B64 && !isTouch;
+    const haveWide = typeof WIDE_B64 !== 'undefined' && !!WIDE_B64;
     const M = 40;
     const insideM = (q) => q[0] >= CORE_EXT.x0 - M && q[0] <= CORE_EXT.x1 + M && q[1] >= CORE_EXT.z0 - M && q[1] <= CORE_EXT.z1 + M;
     const runsOf = (pts) => {
@@ -2599,7 +2599,7 @@
   // chunks — 8-bit normals/colors, no roofs or cornices, world-space windows.
   const outerMeshes = [];
   step('Raising the outer districts', async () => {
-    if (typeof WIDE_B64 === 'undefined' || !WIDE_B64 || isTouch) return;
+    if (typeof WIDE_B64 === 'undefined' || !WIDE_B64) return;
     const bin = Uint8Array.from(atob(WIDE_B64), ch => ch.charCodeAt(0));
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const body = new Int16Array(bin.buffer, 16);
@@ -3474,7 +3474,7 @@
 
   // ------------------------------------------------ the far ring: the rest of Philadelphia
   step('Raising the rest of Philadelphia', async () => {
-    if (typeof CITY_B64 === 'undefined' || !CITY_B64 || isTouch) return;
+    if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
     const bin = Uint8Array.from(atob(CITY_B64), ch => ch.charCodeAt(0));
     const hdr = new Int32Array(bin.buffer, 0, 4);
     if (hdr[0] !== 0x53485459) return;
@@ -3860,7 +3860,7 @@
     addLabel("Penn's Landing", pl[0], 10, pl[1], '');
   });
 
-  let labelsOn = true;
+  let labelsOn = false;   // landmark tags start hidden; Aa button / L key turn them on
   const tmpV = new V3();
   function updateLabels() {
     const w = window.innerWidth, h = window.innerHeight;
@@ -3992,11 +3992,14 @@
     if (walk.keys['s'] || walk.keys['arrowdown']) wish.sub(f);
     if (walk.keys['d'] || walk.keys['arrowright']) wish.add(r);
     if (walk.keys['a'] || walk.keys['arrowleft']) wish.sub(r);
-    if (walk.keys['e'] || walk.keys[' ']) wish.y += 1;
-    if (walk.keys['q'] || walk.keys['c']) wish.y -= 1;
+    if (walk.keys['e'] || walk.keys[' '] || flyTouch.up) wish.y += 1;
+    if (walk.keys['q'] || walk.keys['c'] || flyTouch.down) wish.y -= 1;
     if (joy.active) wish.add(_wtmp.copy(f).multiplyScalar(-joy.y)).add(_wtmp.copy(r).multiplyScalar(joy.x));
     if (wish.lengthSq() > 0) {
-      wish.normalize().multiplyScalar(fly.speed * boost);
+      // on touch the stick doubles as the throttle: past the ring it pushes to
+      // ~2.4x cruise, so mobile can actually cross the city (no scroll wheel)
+      const jm = joy.active ? Math.max(0.3, Math.min(2.4, Math.hypot(joy.x, joy.y))) : 1;
+      wish.normalize().multiplyScalar(fly.speed * boost * jm);
       fly.vel.lerp(wish, 1 - Math.exp(-dt * 6));
     } else {
       fly.vel.multiplyScalar(Math.exp(-dt * 5));
@@ -4125,10 +4128,13 @@
       for (const t of e.changedTouches) {
         if (t.identifier === joy.id) {
           const dx = t.clientX - joy.ox, dy = t.clientY - joy.oy;
-          const m = Math.min(1, Math.hypot(dx, dy) / 44);
+          // magnitude runs past the ring to 2.4 — fly reads it as a throttle;
+          // walk normalizes the vector so its speed is unaffected
+          const m = Math.min(2.4, Math.hypot(dx, dy) / 44);
           const a = Math.atan2(dy, dx);
           joy.x = Math.cos(a) * m; joy.y = Math.sin(a) * m;
-          stickNub.style.transform = 'translate(' + (joy.x * 30) + 'px,' + (joy.y * 30) + 'px)';
+          const vis = Math.min(1, m);
+          stickNub.style.transform = 'translate(' + (Math.cos(a) * vis * 30) + 'px,' + (Math.sin(a) * vis * 30) + 'px)';
         } else if (t.identifier === lookTouch.id) {
           walk.yaw += (t.clientX - lookTouch.x) * 0.0042;
           walk.pitch = clamp(walk.pitch - (t.clientY - lookTouch.y) * 0.0042, -1.45, 1.45);
@@ -4209,13 +4215,15 @@
   const btnOrbit = document.getElementById('btnOrbit');
   const btnWalk = document.getElementById('btnWalk');
   const btnFly = document.getElementById('btnFly');
+  const flyCtl = document.getElementById('flyctl');
+  const flyTouch = { up: false, down: false };
   function setHint() {
     if (mode === MODE.ORBIT) {
       hintEl.textContent = isTouch
         ? 'drag to orbit · pinch to zoom'
         : 'drag to orbit · scroll to zoom · double-click to focus';
     } else if (mode === MODE.FLY) {
-      if (isTouch) hintEl.textContent = 'left thumb to fly · right thumb to look';
+      if (isTouch) hintEl.textContent = 'left thumb flies (push farther = faster) · right thumb looks · ▲▼ climb';
       else if (walk.locked || walk.dragLook) hintEl.textContent = 'WASD to fly · E/Q up & down · shift to boost · scroll sets speed';
       else hintEl.textContent = 'click the scene to take the controls';
     } else {
@@ -4239,6 +4247,8 @@
     btnWalk.classList.toggle('active', m === MODE.WALK);
     btnFly.classList.toggle('active', m === MODE.FLY);
     crosshair.style.display = (m === MODE.WALK || m === MODE.FLY) && !isTouch ? 'block' : 'none';
+    flyCtl.classList.toggle('show', m === MODE.FLY && isTouch);
+    flyTouch.up = flyTouch.down = false;
     if (m === MODE.WALK) {
       // drop to the ground near where the camera was looking, default to the plaza
       const t = prev === MODE.FLY ? fly.pos : orbit.target;
@@ -4277,6 +4287,18 @@
   btnOrbit.addEventListener('click', () => setMode(MODE.ORBIT));
   btnWalk.addEventListener('click', () => setMode(MODE.WALK));
   btnFly.addEventListener('click', () => setMode(MODE.FLY));
+  // touch fly: hold ▲/▼ to climb and descend (E/Q have no finger equivalent)
+  for (const [bid, key] of [['flyUp', 'up'], ['flyDown', 'down']]) {
+    const b = document.getElementById(bid);
+    const on = (e) => { flyTouch[key] = true; interacted = true; e.preventDefault(); };
+    const off = () => { flyTouch[key] = false; };
+    b.addEventListener('touchstart', on, { passive: false });
+    b.addEventListener('touchend', off);
+    b.addEventListener('touchcancel', off);
+    b.addEventListener('mousedown', on);
+    b.addEventListener('mouseup', off);
+    b.addEventListener('mouseleave', off);
+  }
 
   const viewpoints = [];
   function addViewpoint(name, fn) { viewpoints.push({ name, fn }); }
@@ -4322,27 +4344,33 @@
       orbit.goalTarget.set(p[0], 10, p[1]);
       orbit.goalR = 420; orbit.goalTheta = 2.6; orbit.goalPhi = 1.15;
     });
+    // the viewpoints dropdown is retired from the bar for now; the list stays
+    // wired so a future UI (or __dbg) can jump to them
     const sel = document.getElementById('viewpoints');
-    viewpoints.forEach((v, i) => {
-      const o = document.createElement('option');
-      o.value = String(i); o.textContent = v.name;
-      sel.appendChild(o);
-    });
-    sel.addEventListener('change', () => {
-      const i = parseInt(sel.value, 10);
-      if (!isNaN(i) && viewpoints[i]) { interacted = true; introSpin = false; viewpoints[i].fn(); }
-      sel.value = '';
-      sel.blur();
-    });
+    if (sel) {
+      viewpoints.forEach((v, i) => {
+        const o = document.createElement('option');
+        o.value = String(i); o.textContent = v.name;
+        sel.appendChild(o);
+      });
+      sel.addEventListener('change', () => {
+        const i = parseInt(sel.value, 10);
+        if (!isNaN(i) && viewpoints[i]) { interacted = true; introSpin = false; viewpoints[i].fn(); }
+        sel.value = '';
+        sel.blur();
+      });
+    }
   });
 
   // labels + about wiring
   const btnLabels = document.getElementById('btnLabels');
+  function syncLabelsBtn() { btnLabels.style.color = labelsOn ? '' : 'rgba(239,233,220,0.25)'; }
   function toggleLabels() {
     labelsOn = !labelsOn;
-    btnLabels.style.color = labelsOn ? '' : 'rgba(239,233,220,0.25)';
+    syncLabelsBtn();
   }
   btnLabels.addEventListener('click', toggleLabels);
+  syncLabelsBtn();
   const about = document.getElementById('about');
   function syncAboutInert() { try { about.inert = !about.classList.contains('open'); } catch (e) { } }
   function toggleAbout() { about.classList.toggle('open'); syncAboutInert(); }
