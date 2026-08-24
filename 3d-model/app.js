@@ -4286,7 +4286,18 @@
   let walkSpawned = false;
   btnOrbit.addEventListener('click', () => setMode(MODE.ORBIT));
   btnWalk.addEventListener('click', () => setMode(MODE.WALK));
-  btnFly.addEventListener('click', () => setMode(MODE.FLY));
+  // on touch the first Fly tap shows the control tips; Okay proceeds into fly mode
+  const flyTips = document.getElementById('flytips');
+  let flyTipsSeen = false;
+  btnFly.addEventListener('click', () => {
+    if (isTouch && !flyTipsSeen && flyTips) { flyTips.classList.add('show'); return; }
+    setMode(MODE.FLY);
+  });
+  if (flyTips) document.getElementById('flyTipsOk').addEventListener('click', () => {
+    flyTipsSeen = true;
+    flyTips.classList.remove('show');
+    setMode(MODE.FLY);
+  });
   // touch fly: hold ▲/▼ to climb and descend (E/Q have no finger equivalent)
   for (const [bid, key] of [['flyUp', 'up'], ['flyDown', 'down']]) {
     const b = document.getElementById(bid);

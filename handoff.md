@@ -453,4 +453,15 @@ Round 7 (Aug 25):
   to the ring, and WALK is unaffected because applyWalk normalizes the wish vector.
   Verified: ▲ press climbs in emulation; joystick math shared with desktop paths.
 
+Round 8 (Aug 25):
+- **Touch fly tips modal** (`#flytips`): on touch, the FIRST Fly tap shows a control
+  card (left thumb joystick + throttle, right thumb look, ▲▼ climb) and only the
+  Okay button proceeds into fly mode; later taps skip it (`flyTipsSeen`, per load).
+- **The bar's icon buttons (Aa / ◐ / i) were invisible glyphs**: they carry the
+  `.panel` class but the `.seg button, #bar .iconbtn` reset sets
+  `background: transparent` at higher specificity, so they floated bare over the
+  scene. A follow-up `#bar .iconbtn` rule restores a dark rgba(23,21,18,.85)
+  panel + border. (The seg buttons stay transparent — their wrapper carries the
+  panel.)
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

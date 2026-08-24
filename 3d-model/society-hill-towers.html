@@ -135,6 +135,12 @@ html, body {
   cursor: pointer;
   transition: color 0.15s, background 0.15s;
 }
+/* the icon buttons are standalone panels — the transparent-button reset above
+   outranks their .panel class and left the glyphs floating on the scene */
+#bar .iconbtn {
+  background: rgba(23, 21, 18, 0.85);
+  border: 1px solid var(--line);
+}
 .seg button + button { border-left: 1px solid var(--line); }
 .seg button:hover, #bar .iconbtn:hover { color: var(--paper); }
 .seg button.active {
@@ -172,6 +178,68 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 #flyctl button:active { background: var(--bronze); color: var(--ink); }
+
+/* first-flight tips (touch): shown before fly mode engages, dismissed with Okay */
+#flytips {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 9, 8, 0.45);
+}
+#flytips.show { display: flex; }
+#flytips .card {
+  max-width: 330px;
+  margin: 20px;
+  padding: 20px 22px 18px;
+}
+#flytips .kicker {
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--bronze);
+  margin-bottom: 12px;
+}
+#flytips .tiprow {
+  display: flex;
+  gap: 12px;
+  margin: 9px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--paper-dim);
+}
+#flytips .tipkey {
+  flex: 0 0 92px;
+  color: var(--paper);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding-top: 2px;
+}
+#flyTipsOk {
+  display: block;
+  margin: 16px auto 0;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 2px;
+  background: var(--bronze);
+  color: var(--ink);
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  padding: 11px 38px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
 #bar .iconbtn { font-family: var(--mono); letter-spacing: 0; font-size: 13px; padding: 11px 14px; }
 
 /* ---------- hint line ---------- */
@@ -560,6 +628,16 @@ html, body {
 <div id="flyctl">
   <button id="flyUp" aria-label="Climb">&#9650;</button>
   <button id="flyDown" aria-label="Descend">&#9660;</button>
+</div>
+
+<div id="flytips" role="dialog" aria-label="Fly mode controls">
+  <div class="card panel">
+    <div class="kicker">Fly mode &middot; touch controls</div>
+    <div class="tiprow"><span class="tipkey">Left thumb</span><span>Joystick to fly &mdash; push past the ring to speed up</span></div>
+    <div class="tiprow"><span class="tipkey">Right thumb</span><span>Drag to look &mdash; the stick flies where you look</span></div>
+    <div class="tiprow"><span class="tipkey">&#9650; &#9660;</span><span>Climb &middot; descend</span></div>
+    <button id="flyTipsOk">Okay</button>
+  </div>
 </div>
 
 <div id="bar">
@@ -4964,7 +5042,18 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
   let walkSpawned = false;
   btnOrbit.addEventListener('click', () => setMode(MODE.ORBIT));
   btnWalk.addEventListener('click', () => setMode(MODE.WALK));
-  btnFly.addEventListener('click', () => setMode(MODE.FLY));
+  // on touch the first Fly tap shows the control tips; Okay proceeds into fly mode
+  const flyTips = document.getElementById('flytips');
+  let flyTipsSeen = false;
+  btnFly.addEventListener('click', () => {
+    if (isTouch && !flyTipsSeen && flyTips) { flyTips.classList.add('show'); return; }
+    setMode(MODE.FLY);
+  });
+  if (flyTips) document.getElementById('flyTipsOk').addEventListener('click', () => {
+    flyTipsSeen = true;
+    flyTips.classList.remove('show');
+    setMode(MODE.FLY);
+  });
   // touch fly: hold ▲/▼ to climb and descend (E/Q have no finger equivalent)
   for (const [bid, key] of [['flyUp', 'up'], ['flyDown', 'down']]) {
     const b = document.getElementById(bid);
