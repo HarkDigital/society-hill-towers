@@ -1552,13 +1552,29 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     return top + (TERRAIN.bulkhead - top) * clamp((x - xf) / Math.max(20, xShore(z) - xf), 0, 1);
   }
   const PLAZA_R = 58;
+  // each tower also stands on its own full-height rectangular pad: the radial feather
+  // alone starts INSIDE the south tower's footprint (its SE corner is ~70 m out), so
+  // the lawn dropped away under the fixed-height base and the colonnade/lobby floated
+  const towerPads = towers.map(t => {
+    const ang = -(t.angleRad || 0);
+    return { cx: t.centroid[0], cz: t.centroid[1], hw: t.width_m / 2 + 5, hd: t.depth_m / 2 + 5, cos: Math.cos(ang), sin: Math.sin(ang) };
+  });
   function plazaLift(x, z) {
     // wide smoothstep feather: the draped lawns/ribbons sample this at ~10 m, so a
     // tight linear falloff aliased into wedges that sliced across the plaza edge
     const d = Math.hypot(x - towersCenter.x, z - towersCenter.z);
-    if (d < PLAZA_R) return 1.0;
-    if (d >= PLAZA_R + 16) return 0;
-    const t = 1 - (d - PLAZA_R) / 16;
+    let t = d < PLAZA_R ? 1.0 : (d >= PLAZA_R + 16 ? 0 : 1 - (d - PLAZA_R) / 16);
+    for (const p of towerPads) {
+      if (t >= 1) break;
+      const dx = x - p.cx, dz = z - p.cz;
+      const u = Math.abs(dx * p.cos - dz * p.sin) - p.hw;
+      const v = Math.abs(dx * p.sin + dz * p.cos) - p.hd;
+      const dr = Math.max(u, v);
+      const tp = dr <= 0 ? 1.0 : (dr >= 12 ? 0 : 1 - dr / 12);
+      if (tp > t) t = tp;
+    }
+    if (t <= 0) return 0;
+    if (t >= 1) return 1.0;
     return t * t * (3 - 2 * t);
   }
   const bermSpots = []; // [x, z, rx, rz, rotY] — trees must not sprout through the lawn berms
@@ -3140,9 +3156,10 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       // roof deck + long set-back mechanical penthouse strip
       add(concreteParts, box(W - 0.8, 0.45, Dp - 0.8, 0, gridTop - 0.2, 0), cConD);
       add(concreteParts, box(W * 0.62, TOWER.penthouseH, Dp * 0.44, 0, gridTop + TOWER.penthouseH / 2, 0), cConD);
-      // lobby glass, deeply recessed behind the colonnade
+      // lobby glass, deeply recessed behind the colonnade (runs 0.8 m below grade
+      // like the columns so no ground slit can ever show under it)
       add(glassParts,
-        box(W - TOWER.lobbyInset * 2, gridBot - 0.25, Dp - TOWER.lobbyInset * 2, 0, (gridBot - 0.25) / 2, 0),
+        box(W - TOWER.lobbyInset * 2, gridBot + 0.55, Dp - TOWER.lobbyInset * 2, 0, (gridBot - 1.05) / 2, 0),
         new THREE.Color(COLORS.glassLobby));
       // interior mass, faintly visible through the glass
       add(concreteParts, box(W - 2.2, gridH, Dp - 2.2, 0, gridBot + gridH / 2, 0), new THREE.Color(0x514c45));
@@ -3257,7 +3274,9 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     // bridges build their own steel, so drop any footprint sitting on them
     const BRIDGE_SKIP = [[620.8, -889.9, 60], [1148.8, -770, 60], [1037.2, 4391.6, 60], [1620.1, 4510.7, 60], [400, -940, 45], [1360, -722, 45],
       // landmark towers rebuilt with real massing below: City Hall tower, One & Two Liberty Place
-      [-1603, -802, 24], [-1995, -785, 25], [-1937, -689, 20], [-1932.3, -718.2, 9]];
+      [-1603, -802, 24], [-1995, -785, 25], [-1937, -689, 20], [-1932.3, -718.2, 9],
+      // Philadelphia Museum of Art — custom golden-temple rebuild below owns the hilltop
+      [-3094, -2225, 130]];
     // signature curtain walls, matched by location (local metres east/south of the towers)
     const GLASS_TINTS = [
       [-1995, -785, 60, 0x6899c4],   // One Liberty Place complex — blue glass
@@ -3705,6 +3724,108 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
           arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(-nex * 0.30, 1, -nez * 0.30).normalize()));
           pennAt(arm, -nex * 1.25, y0 + 7.5, -nez * 1.25);
           pennAt(new THREE.BoxGeometry(0.85, 1.05, 0.5), -nex * 1.55, y0 + 6.1, -nez * 1.55); // charter scroll
+        }
+      }
+      // --- Philadelphia Museum of Art: golden Kasota-stone U on Fairmount hill,
+      // blue tile gable roofs, central temple portico, wing pediments, court
+      // fountain, and the Rocky steps cascading toward Eakins Oval. The OSM
+      // footprint (a flat 10 m extrusion) is skipped via BRIDGE_SKIP above.
+      {
+        const O = [-3112, -2242];                          // center of the central block
+        const fu = [0.717, 0.697];                         // unit axis toward the steps (SE, down the Parkway)
+        const pv = [-0.697, 0.717];                        // across-axis unit (same handedness as the grid frame)
+        const pt = (u, v) => [O[0] + fu[0] * u + pv[0] * v, O[1] + fu[1] * u + pv[1] * v];
+        const quad = (u0, u1, v0, v1) => [pt(u0, v0), pt(u1, v0), pt(u1, v1), pt(u0, v1)];
+        let T = -1e9;
+        for (const q of [pt(-70, -95), pt(-70, 95), pt(55, 95), pt(55, -95), pt(0, 0)]) T = Math.max(T, siteY(q[0], q[1], 'ground'));
+        T += 1.0;                                          // terrace deck level
+        const chk = getChunk(O[0], O[1]);
+        const cGold = new THREE.Color(0x8a744c);           // Kasota limestone (legacy pipeline lifts ~2.2x)
+        const cGoldL = new THREE.Color(0x97814f);          // columns, a shade lighter
+        const cStone = new THREE.Color(0x6f6455);          // terrace + steps
+        const cCourt = new THREE.Color(0x7d7264);          // forecourt paving
+        const cRoofM = new THREE.Color(0x2e3d47);          // blue-gray tile
+        const cRed = new THREE.Color(0x5e2f26);            // tympanum brick-red
+        const roof = (cu, cv, w, len, eave, apex, alongU, col) => {
+          // gable prism in the museum's own frame (gPrism is grid-locked)
+          const hl = len / 2, hw = w / 2;
+          const t = [
+            -hl, eave, -hw, hl, apex, 0, hl, eave, -hw, -hl, eave, -hw, -hl, apex, 0, hl, apex, 0,
+            hl, eave, hw, -hl, apex, 0, -hl, eave, hw, hl, eave, hw, hl, apex, 0, -hl, apex, 0,
+            hl, eave, -hw, hl, apex, 0, hl, eave, hw,
+            -hl, eave, hw, -hl, apex, 0, -hl, eave, -hw,
+          ];
+          const pos = [];
+          for (let i2 = 0; i2 < t.length; i2 += 3) {
+            const lu = t[i2], lv = t[i2 + 2];
+            const w2 = alongU ? pt(cu + lu, cv + lv) : pt(cu - lv, cv + lu); // rotate, never mirror
+            pos.push(w2[0], t[i2 + 1], w2[1]);
+          }
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+          g.computeVertexNormals();
+          lmTrim.push({ geom: g, color: col || cRoofM, style: 3 });
+        };
+        const colAt = (u, v, r2, y0c, y1c) => {
+          const g = new THREE.CylinderGeometry(r2, r2 * 1.06, y1c - y0c, 8);
+          const w2 = pt(u, v);
+          g.translate(w2[0], (y0c + y1c) / 2, w2[1]);
+          lmTrim.push({ geom: g, color: cGoldL, style: 3 });
+        };
+        // terrace plinth (skirted well below the hilltop) and forecourt paving
+        c.copy(cStone);
+        appendBuilding(chk, quad(-70, 55, -95, 95), T - 9, T, c, 3, T - 9);
+        c.copy(cCourt);
+        appendBuilding(chk, quad(-15, 55, -45, 45), T, T + 0.12, c, 3, T);
+        // main masses: central temple block, rear range, forward wings — style-1
+        // walls give them the tall arched fenestration
+        c.copy(cGold);
+        appendBuilding(chk, quad(-40, 15, -40, 40), T - 1, T + 25, c, 1, T);
+        appendBuilding(chk, quad(-70, -40, -95, 95), T - 1, T + 19, c, 1, T);
+        appendBuilding(chk, quad(-40, 58, 48, 95), T - 1, T + 19, c, 1, T);
+        appendBuilding(chk, quad(-40, 58, -95, -48), T - 1, T + 19, c, 1, T);
+        roof(-12.5, 0, 80, 55, T + 25, T + 34, true);      // central ridge, pediment ends fore/aft
+        roof(-55, 0, 30, 190, T + 19, T + 25, false);      // rear range, gable ends face NE/SW
+        roof(9, 71.5, 47, 98, T + 19, T + 26, true);       // wings — pediment ends face the steps
+        roof(9, -71.5, 47, 98, T + 19, T + 26, true);
+        // central portico: stepped podium, 8 columns, entablature, pediment + red tympanum
+        c.copy(cStone);
+        appendBuilding(chk, quad(15, 29, -17, 17), T, T + 3.5, c, 3, T);
+        appendBuilding(chk, quad(15, 25, -16, 16), T + 3.5, T + 7, c, 3, T);
+        for (let i2 = 0; i2 < 8; i2++) colAt(19.5, -14 + 4 * i2, 0.95, T + 7, T + 19.5);
+        c.copy(cGold);
+        appendBuilding(chk, quad(12, 24, -17, 17), T + 19.5, T + 21.5, c, 3, T);
+        // golden pediment shell with the brick-red tympanum nested inside: the red
+        // prism is narrower and lower so only its end triangles poke past the shell
+        roof(18, 0, 34, 12, T + 21.5, T + 27.5, true, cGold);
+        roof(18, 0, 29, 12.6, T + 22.0, T + 26.6, true, cRed);
+        // wing-end porticos facing the forecourt steps
+        for (const sv of [-1, 1]) {
+          c.copy(cStone);
+          appendBuilding(chk, quad(54, 64, sv * 71.5 - 19, sv * 71.5 + 19), T, T + 6.5, c, 3, T);
+          for (let i2 = 0; i2 < 6; i2++) colAt(59, sv * 71.5 - 16 + 6.4 * i2, 0.8, T + 6.5, T + 17.5);
+          c.copy(cGold);
+          appendBuilding(chk, quad(56, 61, sv * 71.5 - 18, sv * 71.5 + 18), T + 17.5, T + 19, c, 3, T);
+        }
+        // court fountain: octagonal stone ring + water
+        {
+          const w2 = pt(38, 0);
+          const ring = new THREE.CylinderGeometry(10.5, 10.8, 0.9, 8);
+          ring.translate(w2[0], T + 0.45, w2[1]);
+          lmTrim.push({ geom: ring, color: new THREE.Color(0x8d8272), style: 3 });
+          const water = new THREE.CylinderGeometry(8.8, 8.8, 0.5, 16);
+          water.translate(w2[0], T + 0.55, w2[1]);
+          lmTrim.push({ geom: water, color: new THREE.Color(0x2e6f8a), style: 3 });
+        }
+        // the Rocky steps: eight broad flights descending the hill toward the Oval
+        {
+          const bot = pt(105, 0);
+          const yBot = siteY(bot[0], bot[1], 'ground') + 0.6;
+          c.copy(cStone);
+          for (let i2 = 0; i2 < 8; i2++) {
+            const yT = T + 0.5 + (yBot - (T + 0.5)) * (i2 + 1) / 8;
+            appendBuilding(chk, quad(55 + 6.3 * i2, 55 + 6.3 * (i2 + 1) + 0.4, -34, 34), yT - 6, yT, c, 3, yT - 6);
+          }
         }
       }
     }

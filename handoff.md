@@ -395,4 +395,26 @@ Round 4 (Aug 24, late — Mike's screenshot-driven fixes):
   MessageChannel ping (setTimeout is clamped to 1 s+ in hidden tabs; the far-ring decode
   took minutes headless).
 
+Round 5 (Aug 24, night):
+- **South-tower pillars floating (Mike's screenshot, "stopping short of the ground"):**
+  the podium plateau was purely radial (`PLAZA_R` 58 + 16 m feather from the towers'
+  center) but the south tower's SE corner sits ~70 m out — the lawn feathered DOWN
+  under the fixed-height tower base, so its colonnade and lobby glass hung up to
+  ~0.9 m above the local ground. Fix: `plazaLift` now also carries a full-height
+  rectangular pad per tower (footprint + 5 m, 12 m feather, rotated to each tower's
+  angle; `towerPads`), so ground under every footprint is exactly podium level; the
+  lobby glass also runs 0.8 m below grade like the columns. Verified at the exact
+  vantage: no gap at any column or the glass line, all three towers.
+- **Philadelphia Museum of Art rebuilt** (was a flat 10 m OSM extrusion on the hill):
+  custom golden-temple massing in its own Parkway-rotated frame at (−3112, −2242),
+  axis (0.717, 0.697) — terrace plinth, central temple block (ridge +34) with stepped
+  podium, 8-column portico, golden pediment shell + nested brick-red tympanum, rear
+  range with outward gable ends, two forward wings (ridge +26) with 6-column
+  pavilions facing the court, blue-gray tile gable prisms (`roof()` helper — gPrism
+  is grid-locked, this one rotates into the museum frame; rotate, never mirror, or
+  the winding flips), octagonal court fountain, and the Rocky steps as eight broad
+  flights interpolating down the DEM toward Eakins Oval. Walls are style 1 (arched
+  fenestration). The OSM footprint is dropped via `BRIDGE_SKIP` (−3094, −2225, r 130).
+  Colors are stored dark for the legacy pipeline: walls 0x8a744c, roofs 0x2e3d47.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.
