@@ -1,0 +1,228 @@
+# Society Hill Towers 3D Model — Handoff
+
+Interactive 3D model of Society Hill Towers (I.M. Pei, 1964), ~2,800 detailed Society Hill
+buildings, and ~108,000 simplified buildings across Center City, South Philadelphia, Northern
+Liberties and Fishtown/Kensington, published as a Claude artifact. Built Aug 14–15, 2026.
+
+**Live artifact:** https://claude.ai/code/artifact/04f16de9-5902-4bd0-abf1-09e71f816b50
+
+> ⚠️ **Keeping the same URL from a new machine/conversation:** the artifact is keyed to
+> the publishing conversation + file path. From a *different* conversation, republish by
+> passing the URL above as the `url` parameter of the Artifact tool (or tell Claude
+> "update my existing artifact at <URL>"). Publishing without it creates a second,
+> separate artifact.
+
+## What's in `3d-model/`
+
+| File | Role |
+|---|---|
+| `society-hill-towers.html` | The built, self-contained page (~1.3 MB). This is what gets published. |
+| `template.html` | Page shell with `{{CSS}} {{DATA}} {{THREE}} {{APP}} {{ABOUT_BODY}}` placeholders |
+| `app.js` | All application code (~1,800 lines). Everything interesting is here. |
+| `style.css` | HUD chrome (title block, control bar, labels, About panel) |
+| `about_body.html` | Prose + spec table injected into the About panel |
+| `build.py` | Assembles the final HTML. Run `python3 build.py` in this folder. |
+| `scene.json` | Processed OSM data: buildings/roads/areas/trees in local meters |
+| `process_osm.py` | Raw Overpass JSON → `scene.json` (needs `osm_raw.json`, not kept here — refetch if ever needed) |
+| `meta.json` | Tower-facade research + landmark heights/spires (baked in at build) |
+| `realism_research.json` | Landmark-appearance research (colors, dimensions, roof forms, sources) |
+| `headhouse_blocks_research.json` | Abbotts Square / 410 S Front / New Market blocks — OPA parcels + LiDAR massing with local coords |
+| `fenestration_research.json` | Facade vocabulary (sash sizes, bay pitches, church tiers, storefronts) behind the shader styles |
+| `geo_audit.json` | 35 geography gaps with lat/lon, fixes, priorities — the to-do list for further realism |
+| `dem.json` / `dem_wide.json` | USGS NED 10 m elevation grids (25 m cells core, 50 m wide), meters above sea level |
+| `fetch_wide.py` → `osm_wide_raw.json` (95 MB, not needed after packing) | Tiled Overpass fetch for the wide area + wide DEM |
+| `scene_wide.json` (21 MB) → `pack_wide.py` → `wide.b64` (5 MB) | Outer districts packed as int16 at 0.2 m; `parts_wide.json` = OSM `building:part` skyscraper pieces |
+| `wide_names.json`, `wide_landmarks_research.json` | Outer landmark names for labels; Center City / North / South research |
+| `fetch_south.py` → `osm_south_raw.json`, `scene_south.json`, `dem_south.json`, `wwb.json` | South extension: stadium complex + Walt Whitman Bridge (merged by `pack_wide.py`) |
+| `three.min.js` | Three.js r149 UMD (inlined at build — CSP forbids CDNs in artifacts) |
+
+## Build & preview
+
+```bash
+cd 3d-model && python3 build.py
+python3 -m http.server 8917   # then open http://localhost:8917/society-hill-towers.html
+```
+
+- Append **`?dev=1`** to expose `window.__dbg = { orbit, walk, camera, renderer, goWalk(x,z,yaw) }`
+  for scripted camera placement while debugging. Without the flag nothing is exposed.
+- No build tools/npm needed; plain Python 3 + a browser.
+
+## Architecture (app.js)
+
+- **Coordinates:** x = east, z = south, y = up, meters. Origin = centroid of the three
+  towers (39.94547°N, 75.14475°W). `scene.json` and all hardcoded positions use this frame.
+- **Load pipeline:** `buildSteps[]` run sequentially by `build()` (each step try/caught;
+  veil's Enter button enables at the end). Steps: ground/water/pools → streets+sidewalks →
+  parks/piers → generic buildings → steeples → landmark restorations → the three towers →
+  trees → labels → viewpoints.
+- **Generic fabric:** every OSM footprint extruded and merged into one mesh (vertex colors,
+  one draw call). Small residential quads get OBB-fitted **gable roofs + chimneys**
+  (`orientedBox`/`gableGeom`). A `onBeforeCompile` shader on `cityMat` draws windows,
+  lintels, shutters, and doors procedurally in world space on wall faces.
+- **The towers:** fully procedural in the `TOWER` config + "Casting the concrete grid" step.
+  Facade spec is research-backed: 18×12 bays on a 6 ft module, 0.42 m mullions, deep-set
+  1.4×2.2 m windows, colonnade every 3rd grid line, 94.2 m / 31 stories (OSM tags say 89 —
+  CTBUH says 309 ft; we use 94.2).
+- **Landmarks:** the `REALISM` map (exact OSM names) marks buildings `custom` (skipped by
+  the generic pass, rebuilt in "Restoring the landmarks" with researched forms) or
+  `recolor` (generic geometry, corrected color/height). Notables: The Ryland (two offset
+  glass bars + white grid), Head House + open Shambles arcade, Merchants' Exchange curved
+  colonnade + lantern, St. Peter's white spire (west tower), Old Pine's yellow temple
+  (colonnade faces north), Mother Bethel (spired tower at NW corner).
+- **Navigation:** custom orbit (damped, grab-style pan) + walk mode (pointer lock with
+  drag-look fallback for sandboxed iframes, collision vs building edges via a spatial
+  hash, touch joystick) + **fly mode** (Aug 24: key 3 / Fly button; free 3D WASD flight
+  sharing walk's look state, E/Q or Space/C for up/down, shift boost ×3.2, scroll wheel
+  sets cruise speed 10–500 m/s, clamped above terrain via `siteY`, no collision; takes
+  off from the current camera pose). Landmark labels are HTML divs projected per frame.
+- **Layering (z-fighting):** flat surfaces use the `LAYER` constants (park .06 / plaza .10 /
+  sidewalk .16 / road .24 / footway .32 / pools .38) **and** the renderer runs with
+  `logarithmicDepthBuffer: true`. Don't add coplanar flat geometry without picking a layer.
+- **Terrain (added Aug 15):** the city is a plateau at y=0; east of Front St the I-95 trench
+  drops to -8 between `TERRAIN.trenchW/E` (offsets from the **Front St line fit `fl`** — the
+  grid is ~10° off the axes, so never use world x for this), the Penn's Landing shelf sits at
+  -6.5…-7.5, water at -10. The shoreline is the `SHORE` polyline `x(z)` (Penn's Landing bulge,
+  marina basin notch, pull-back south of the ships). `siteY(x,z,'ground'|'road')` is the one
+  function everything uses to sit on the terrain (roads bridge the trench, tunnel under the
+  park cap; `walkY` for the walker). Cap decks (Foglietta, Vietnam memorial) and the Park at
+  Penn's Landing are in `CAPS`. Ships (`t:'ship'`) get hulls/masts in "Mooring the ships" with
+  water slips carved around them.
+- **Facade styles:** every merged part carries an `aStyle` attribute read by the `cityMat`
+  shader: 0 Georgian rowhouse (1.9 m bays, 6/6 sash, door every 3rd bay with fanlight),
+  1 church (two tiers, arched above), 2 modern slab, 3 blank, 4 civic arched base (Head House),
+  5 storefront, 6 modern over double-height retail (Abbotts Square). Dimensions come from
+  `fenestration_research.json`.
+- **Solar clock:** `solar()` is NOAA's algorithm for the site; `clock` holds Philadelphia local
+  time (US DST rules in `tzOffsetMin`); `applyLighting()` runs every frame and drives sun
+  direction/intensity/color, sky palette (`PAL` night/twilight/day), fog, hemisphere, exposure,
+  `nightUniform` (lit windows in the facade shader via `shtLit` → emissive) and the tower
+  glass emissives. The T panel (`#timepanel`) has a date input, slider, presets, and live mode.
+- **Elevation:** `demAbs()` samples the core 25 m grid, falling back to the wide 50 m grid; the
+  datum is the towers' site (8.34 m ASL) so the towers stay at y=0. `cityY` guards the strip
+  along Front St against DEM samples that fell into the I-95 trench. Every builder lifts its
+  geometry with `siteY()`; building walls extend 1.5 m below grade so slopes never show gaps.
+- **Facade-local coordinates:** `buildingGeom()` builds walls edge by edge with `aWallU/L/H`
+  attributes so the shader centers bays on each facade (no corner-cut windows) and drops rows
+  above the eave; the shader masks are anti-aliased with `fwidth` and fade at distance.
+- **Outer districts:** "Raising the outer districts" decodes `WIDE_B64` (header magic
+  0x53485458: n, h*5, minH*5, type, int16 coords), builds lean indexed chunks (700 m, 8-bit
+  normals/colors) sharing `cityMat`, outer roads, parks/water, the Ben Franklin Bridge, and
+  tall-building labels. Skipped on touch devices. ~2 M triangles / ~90 draw calls in wide views.
+- **Location-matched landmarks:** unnamed OSM footprints (Abbotts Square, 410 at Society Hill,
+  New Market Complex) are matched by centroid + area in `REALISM_NEAR` and built via `getKey()`.
+  Massing/heights come from `headhouse_blocks_research.json` (Philadelphia OPA + 2017 LiDAR).
+  `geo_audit.json` lists the remaining geography gaps with priorities (Washington Square
+  layout, Independence Square fences, Chart House, RiverRink, Ben Franklin Bridge…).
+
+## Hard-won gotchas (do not relearn these)
+
+1. **OBB frame handedness:** for any frame built from a 2D axis `(ax,az)` in this y-up
+   world, the perpendicular must be `(az,-ax)`. Using `(-az,ax)` makes winding depend on
+   the source polygon's direction → half your roofs get backface-culled (invisible).
+2. **Artifact sandbox:** no external requests (inline everything), pointer lock may be
+   denied → the drag-look fallback must stay functional; `target=_blank` links may be dead.
+3. **build.py guards:** it aborts if any embedded blob contains `</script`. Keep it that way.
+4. **OSM data quirks already corrected in code:** Marriott Old City tagged `height=4`
+   (real ~16.5, overridden); Hopkinson House tagged 107 m (two sources say ~92, overridden);
+   Independence Place twins kept at OSM's 96.9 m (agents disagreed: 25 vs 36 floors); the
+   Custom House, Hilton, Independence Hall, Old City Hall (tagged 3.2 m!) and the museum ships
+   all carried OSM's 13 m default and are rebuilt in code; swimming pools needed a separate Overpass query
+   (`leisure=swimming_pool`) — the towers' pool + Delancey pool are hardcoded in the
+   ground step with real OSM geometry.
+5. **Name matching:** `REALISM` uses exact `b.name` equality ('Head House' vs
+   'Head House Market' are different buildings — the latter is the open Shambles shed,
+   `open: true` keeps it walkable and tree-free but uncollidable).
+6. **Flicker = duplicates.** OSM returns whole ways, so the core extract contains streets/parks/
+   buildings that extend beyond its bbox; the wide set must drop anything *touching* the core
+   (`touchesCore` in pack_wide.py, any-vertex rule, not centroid) and the app clips core street
+   ribbons at the core boundary (`runsOf`). Skyscraper `building:part` pieces sit exactly on
+   their outlines → outlines containing a part centroid are dropped. Flat polygons over terrain
+   must be draped with interior vertices (`drapedPoly`, Delaunay) and ribbons densified
+   (`densify`, 10 m) or they cut through the hills. Do NOT use polygonOffset on the layered
+   flats — at grazing angles its slope term overpowers the real 8–16 cm gaps and surfaces
+   visibly swap (that was the Aug 23 road flicker). Instead every ribbon gets a deterministic
+   few-cm lift (hash of its first point) so nothing is ever exactly coplanar.
+7. **Roofs must be built on the footprint, not the OBB.** `quadGable()` fits the gable to the
+   (simplified, 4-vertex) footprint quad itself — eaves and gable ends meet the walls at every
+   vertex. OBB roofs float beside skewed footprints (the grid is rotated ~10°).
+8. **Glass:** `refreshEnv()` re-bakes the PMREM environment (sky + sun ball + dark silhouettes)
+   whenever the sun moves >3°; glass towers flagged from research render as type 10 with a
+   reflective material; style 7 is the balcony-band slab (Dockside, Hopkinson).
+9. **rAF is throttled** in headless/hidden tabs — don't trust FPS probes there; use
+   `renderer.info` (currently ~20 calls / ~330k tris).
+
+## State & backlog
+
+Done and verified: everything above, on desktop + mobile viewports, zero console errors.
+Reviewed by a 25-agent adversarial pass (pan-basis math bug, trees-in-buildings, and debug
+leakage were found and fixed).
+
+Built in the Aug 15 fidelity pass: terrain/trench/shoreline/basin, museum ships, Custom House
+(85 m), Hilton (70 m), Independence Hall steeple, Congress Hall / Old City Hall / Carpenters'
+cupolas, Second & First Bank porticos, the towers' 1 m podium plaza with berms, Abbotts Square
+and its neighbors, flush gable ends + box cornices, the styled facade shader.
+
+Built Aug 23: solar clock + time panel; DEM terrain; facade-local windows + AA; Abbotts' square
+north end; pool clear of berms; the wide expansion (Center City, South Philly, NoLibs,
+Fishtown/Kensington) with `building:part` skyscrapers, generic church steeples, outer labels, and
+the Ben Franklin Bridge on OSM/DRPA geometry.
+
+Realism pass (Aug 24, from the owner's 18th-floor south-tower photos + a 4-agent research
+sweep with photo-sampled colors):
+- **Sky:** day palette now a real clear-noon blue (zenith `#4279c4`, horizon `#c8dcea`,
+  photographic sRGB values for 40°N summer); water material roughened (0.42) with envMap
+  intensity 0.55 so the river reads blue-gray instead of mirroring the bright sky. Note:
+  the pale washed noon look at grazing angles predates this change (verified against a
+  baseline build) — it is the noon sun + fog, not a regression.
+- **Ben Franklin Bridge** rebuilt: "Ben Franklin blue" steel `#8fb4c6` / cables `#7c9bac`
+  (Pantone 550C territory, pixel-sampled), lattice towers with 3 portal struts + 2 X-brace
+  panels above deck and one X below (matches DRPA photos), thin roadway on an 8.5 m open
+  stiffening truss (chords/diagonals/verticals), warm-granite tower piers `#b78771`, and
+  50 m stepped granite anchorage towers `#b0a99e` (61×50 m) the roadway threads through.
+- **Walt Whitman Bridge:** repainted the researched sage green (steel `#75a889`, cables
+  `#6b9478` — DRPA "federal standard green", photo-sampled); towers corrected to the real
+  Ammann form: clean legs with ONE deep top portal + ONE below-deck strut, no mid-height
+  bracing.
+- **Dockside** rebuilt as its real stepped ziggurat (BLT Architects, 16 stories, ~53 m):
+  4-storey cream garage podium (terracotta waterline band, dark opening + oval-porthole
+  bands, seafoam round 'ship's-wheel' vent near the river end), sheer full-height slab on
+  the river half, ~7 two-storey terraced setbacks cascading toward the shore, floors locked
+  to the style-7 2.75 m shader grid, balcony rails per floor, three tilted ship-funnel
+  wind scoops on the river-end roof.
+- **Center City glass:** outer glass towers get a world-space curtain-wall shader
+  (onBeforeCompile on `outerGlassMat`: 4.0 m floor spandrels 22% darker, 1.5 m vertical
+  mullions, fwidth-AA'd, distance-faded) + `GLASS_TINTS` location-matched signature
+  colors (Liberty Place blue `#6899c4`, Comcast silver `#b4c2c8`, CTC `#a3b1b8`, FMC
+  `#b5d0dc`…) over a bluer default `glassPal`.
+- **`BRIDGE_SKIP`:** OSM maps both bridges' towers/anchorages as building footprints which
+  rendered as window-checkered boxes on the towers — the wide pass now drops footprints
+  within 45–60 m of those six points.
+- **Dev harness:** `?dev=1` `__dbg` now also exposes `scene`, `fly`, `goFly(x,y,z,yaw,pitch)`
+  and `frameOnce()` (synchronous update+render — works while the tab is hidden/rAF-throttled;
+  pair with drawing the canvas into a 2D canvas + POSTing the JPEG to a local sink for
+  headless screenshot verification).
+
+South extension (Aug 23): Lincoln Financial Field and Citizens Bank Park are `stadium` relations →
+rendered as seating bowls (type 8) around sunken fields, with the Linc's sideline canopies and
+CBP's light towers; Xfinity Mobile Arena (ex-Wells Fargo Center, type 9) as a flat-topped oval;
+the Walt Whitman Bridge follows OSM's motorway alignment (`wwb.json`) with towers at ±305 m of the
+water-crossing midpoint, deck 46 m over the river.
+
+Wide-area backlog (research in `wide_landmarks_research.json` has heights/massing for ~150
+buildings): the Market-Frankford El viaduct (railway ways were fetched but not packed — add
+`railway=subway` ways as an elevated ribbon at +7 m along Front St / Kensington Ave); City Hall's
+tower is in via `building:part` but the Penn statue / clock stage are plain; church-specific
+heights (St. Michael's 50 m, St. Peter the Apostle 70 m, Assumption BVM twin towers) could replace
+the generic steeple; Piazza/Schmidt's Commons, Waterfront Square towers and Rivers Casino are
+plain OSM boxes; Camden's Battleship New Jersey and Adventure Aquarium are not modeled.
+
+Ideas discussed but not built (see also `geo_audit.json`):
+- Dusk/night mode with lit windows (would suit the bronze-glass towers)
+- Guided fly-through tour of the viewpoints
+- Marriott's hipped wing roofs (currently a flat dark cap); Hopkinson House balcony relief
+  (currently color only); The Ryland's rooftop pool (OSM has it, but its true position
+  falls off our smaller OSM-footprint deck)
+- Penn's Landing park-cap construction area is bare in current imagery — could model the
+  finished park
+
+Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

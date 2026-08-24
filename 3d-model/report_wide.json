@@ -1,0 +1,327 @@
+{
+ "counts": {
+  "buildings": 111078,
+  "roads": 9882,
+  "areas": 1084,
+  "trees": 2
+ },
+ "area_kinds": {
+  "park": 972,
+  "pier": 75,
+  "water": 37
+ },
+ "bounds": {
+  "minX": -7015.13,
+  "maxX": 3219.5,
+  "minZ": -7684.55,
+  "maxZ": 3660.56
+ },
+ "towers": [
+  {
+   "name": "Society Hill Towers North Building",
+   "centroid": [
+    8.58,
+    -41.34
+   ],
+   "corners": [
+    [
+     1.01,
+     -59.48
+    ],
+    [
+     22.14,
+     -55.56
+    ],
+    [
+     16.14,
+     -23.21
+    ],
+    [
+     -4.99,
+     -27.12
+    ]
+   ],
+   "angleRad": 1.7541,
+   "width_m": 32.91,
+   "depth_m": 21.49,
+   "h": 89.0
+  },
+  {
+   "name": "Society Hill Towers West Building",
+   "centroid": [
+    -29.73,
+    -5.08
+   ],
+   "corners": [
+    [
+     -38.12,
+     -23.84
+    ],
+    [
+     -15.56,
+     -19.96
+    ],
+    [
+     -21.34,
+     13.67
+    ],
+    [
+     -43.9,
+     9.79
+    ]
+   ],
+   "angleRad": 1.741,
+   "width_m": 34.12,
+   "depth_m": 22.89,
+   "h": 89.0
+  },
+  {
+   "name": "Society Hill Towers South Building",
+   "centroid": [
+    21.15,
+    46.43
+   ],
+   "corners": [
+    [
+     38.87,
+     37.8
+    ],
+    [
+     35.22,
+     60.23
+    ],
+    [
+     3.43,
+     55.05
+    ],
+    [
+     7.08,
+     32.62
+    ]
+   ],
+   "angleRad": 0.1614,
+   "width_m": 32.21,
+   "depth_m": 22.72,
+   "h": 89.0
+  }
+ ],
+ "columbusXRange": [
+  -26.97,
+  1834.15
+ ],
+ "tallNamed": [
+  {
+   "name": "Comcast Technology Center",
+   "h": 341.0,
+   "centroid": [
+    -2189,
+    -1055
+   ]
+  },
+  {
+   "name": "FMC Tower",
+   "h": 222.5,
+   "centroid": [
+    -3309,
+    -727
+   ]
+  },
+  {
+   "name": "W Hotel & Element by Westin Philadelphia",
+   "h": 189.0,
+   "centroid": [
+    -1729,
+    -636
+   ]
+  },
+  {
+   "name": "The Laurel",
+   "h": 182.0,
+   "centroid": [
+    -2408,
+    -579
+   ]
+  },
+  {
+   "name": "1818 Market Street",
+   "h": 152.4,
+   "centroid": [
+    -2242,
+    -824
+   ]
+  },
+  {
+   "name": "Loews Philadelphia Hotel",
+   "h": 150.0,
+   "centroid": [
+    -1329,
+    -657
+   ]
+  },
+  {
+   "name": "Centre Square I",
+   "h": 149.0,
+   "centroid": [
+    -1795,
+    -720
+   ]
+  },
+  {
+   "name": "Five Penn Center",
+   "h": 149.0,
+   "centroid": [
+    -1928,
+    -847
+   ]
+  },
+  {
+   "name": "Cira Centre",
+   "h": 133.0,
+   "centroid": [
+    -3216,
+    -1311
+   ]
+  },
+  {
+   "name": "Evo Cira Centre South",
+   "h": 128.0,
+   "centroid": [
+    -3289,
+    -842
+   ]
+  },
+  {
+   "name": "Centre Square II",
+   "h": 127.0,
+   "centroid": [
+    -1864,
+    -752
+   ]
+  },
+  {
+   "name": "Kennedy House",
+   "h": 125.0,
+   "centroid": [
+    -2334,
+    -1025
+   ]
+  },
+  {
+   "name": "Sterling Apartment Building",
+   "h": 125.0,
+   "centroid": [
+    -2200,
+    -1005
+   ]
+  },
+  {
+   "name": "Academy House Condominiums",
+   "h": 114.9,
+   "centroid": [
+    -1804,
+    -273
+   ]
+  },
+  {
+   "name": "Roberts Center for Pediatric Research",
+   "h": 114.3,
+   "centroid": [
+    -3571,
+    -18
+   ]
+  },
+  {
+   "name": "Penn Mutual Tower",
+   "h": 114.3,
+   "centroid": [
+    -460,
+    -196
+   ]
+  },
+  {
+   "name": "The Alexander",
+   "h": 114.0,
+   "centroid": [
+    -1811,
+    -1491
+   ]
+  },
+  {
+   "name": "204 South 12th Street",
+   "h": 111.6,
+   "centroid": [
+    -1383,
+    -318
+   ]
+  },
+  {
+   "name": "The Ryland",
+   "h": 110.9,
+   "centroid": [
+    113,
+    -4
+   ]
+  },
+  {
+   "name": "1919 Market",
+   "h": 108.6,
+   "centroid": [
+    -2382,
+    -931
+   ]
+  },
+  {
+   "name": "Hopkinson House",
+   "h": 107.0,
+   "centroid": [
+    -646,
+    -54
+   ]
+  },
+  {
+   "name": "Residence Inn Philadelphia Center City",
+   "h": 106.0,
+   "centroid": [
+    -1494,
+    -789
+   ]
+  },
+  {
+   "name": "Land Title and Trust Building Annex",
+   "h": 104.8,
+   "centroid": [
+    -1681,
+    -545
+   ]
+  },
+  {
+   "name": "Rittenhouse Dorchester Apartments",
+   "h": 103.0,
+   "centroid": [
+    -2468,
+    -396
+   ]
+  },
+  {
+   "name": "2400 Chestnut Apartments",
+   "h": 102.7,
+   "centroid": [
+    -2965,
+    -774
+   ]
+  }
+ ],
+ "origin": {
+  "lat": 39.945473644755005,
+  "lon": -75.14474803850973
+ },
+ "sceneBytes": 20758484,
+ "skipped": {
+  "degenerate_building": 0,
+  "bad_relation": 0,
+  "open_pier": 27,
+  "missing_nodes": 0,
+  "degenerate_area": 0
+ },
+ "notes": []
+}

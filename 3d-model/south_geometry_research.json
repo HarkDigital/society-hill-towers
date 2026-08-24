@@ -1,0 +1,392 @@
+{
+  "coordinate_system": {
+    "origin_lat": 39.945474,
+    "origin_lon": -75.144748,
+    "x_east_m_per_deg_lon": 85350,
+    "z_south_m_per_deg_lat": 110574,
+    "note": "local x = (lon - origin_lon) * 85350; local z = (origin_lat - lat) * 110574. Street grid 'north' in this part of South Philadelphia is rotated ~8-13 deg clockwise from true north (Front St bearing ~N7-9E, Walt Whitman Bridge axis 102.7 deg). OSM lacks height tags on all four venue footprints; heights below come from Philadelphia's LiDAR building-footprint layer (LI_BUILDING_FOOTPRINTS, feet) and published sources."
+  },
+  "stadiums": [
+    {
+      "name": "Lincoln Financial Field",
+      "lat": 39.90067,
+      "lon": -75.16755,
+      "local_x_m": -1946,
+      "local_z_m": 4954,
+      "osm_way": 32891768,
+      "osm_has_height_tag": false,
+      "footprint": {
+        "shape": "rounded rectangle / squared-off bowl with three open (cut-away) corners; two 3-tier sideline grandstands (east and west) and 2-tier end zones",
+        "published_overall_ft": "790 x 825",
+        "published_overall_m": "241 x 251",
+        "published_site_area_ha": 6.1,
+        "lidar_outer_ring": {
+          "along_axis_m": 299,
+          "across_axis_m": 259,
+          "bbox_ew_m": 264,
+          "bbox_ns_m": 286,
+          "area_m2": 53644,
+          "long_axis_bearing_deg": 7.5
+        },
+        "osm_stadium_polygon_area_m2": 52763
+      },
+      "field": {
+        "osm_pitch_way": 708050530,
+        "pitch_centroid_lat": 39.900802,
+        "pitch_centroid_lon": -75.167460,
+        "long_axis_bearing_deg": 352,
+        "note": "field runs N-S rotated ~8 deg counter-clockwise from true north (N8W); the stadium is NOT aligned to the Pattison/Broad grid. Sidelines = east and west stands."
+      },
+      "heights_m": {
+        "building_stated": 45.7,
+        "building_stated_note": "'150 ft tall, 12 stories' (Turner Construction / Tutor Perini)",
+        "lidar_typical_top": 54.6,
+        "lidar_max": 57.1,
+        "lidar_note": "approx_hgt 179 ft / max_hgt 187 ft = top of the sideline canopies",
+        "canopy_top_estimate": 55,
+        "steel_superstructure_masts_claimed": 76.2,
+        "steel_superstructure_note": "architects (NBBJ) say the steel superstructure 'soars up to 250 ft above grade'; LiDAR max of 187 ft suggests only thin masts/finials reach that, or the figure is promotional. Confidence low for 76 m; model masts at ~65-75 m.",
+        "upper_deck_rim_estimate": 42,
+        "base_elevation_m": 2.1
+      },
+      "roof_form": "open bowl; no roof over seats except two large asymmetric 'eagle-wing' cantilevered steel canopies over the upper decks of the east and west sideline stands. Each canopy is supported on a row of inclined/cantilevered steel masts behind the upper deck with tie-back cables, leading edge projects inward over the top ~1/3 of the upper deck; canopies have pointed 'talon' tips at each end. End zones have no canopy; 'Eagle's Nest' balcony over the north end zone; three open plaza corners with views to the skyline.",
+      "notable_elements": [
+        "Two wing-like sideline canopies (east and west), white/light-grey painted steel with exposed I-beam and cable structure, ~280 m long each, leading edge ~50 m above the field",
+        "Sports lighting mounted on canopy leading edges plus steel masts; main mast/finial tops ~65-76 m above grade (low confidence)",
+        "Red-brick headhouse/base (references Philadelphia rowhouses) with exposed steel and glass above",
+        "Two end-zone video boards (27 ft x 96 ft each) between lower and upper decks",
+        "Midnight-green seats with Eagles logo patterned in the upper deck; white/translucent canopy underside",
+        "Parking-lot solar canopies in the north lot between the stadium and Pattison Ave (OSM building=roof, 5 rows ~95 x 28 m)"
+      ],
+      "facade_colors_hex": {
+        "brick_base": "#8E4A3C",
+        "precast_concrete": "#C8C3BA",
+        "exposed_steel": "#B7BBBE",
+        "canopy_steel": "#D9DCDE",
+        "glass": "#6F8FA6",
+        "seats_midnight_green": "#004C54",
+        "field": "#2E7D32"
+      },
+      "sources_used": ["wikipedia Lincoln Financial Field", "lincolnfinancialfield.com stadium facts", "tutorperini.com", "turnerconstruction.com", "re-thinkingthefuture.com NBBJ case study", "stadiumsofprofootball.com", "Philadelphia LI_BUILDING_FOOTPRINTS (bin 1451152)", "OSM way 32891768 / pitch 708050530"]
+    },
+    {
+      "name": "Citizens Bank Park",
+      "lat": 39.90584,
+      "lon": -75.16651,
+      "local_x_m": -1857,
+      "local_z_m": 4383,
+      "osm_way": 255489463,
+      "osm_has_height_tag": false,
+      "footprint": {
+        "shape": "ballpark fitted to a roughly square city block (Pattison Ave south, Citizens Bank Way west, Darien St east, Hartranft St north); grandstand wraps home plate and both foul lines in a horseshoe with a flat (not curved) backstop on the upper 'Terrace' level; low outfield structures (Ashburn Alley, bullpens, left-field scoreboard) close the ring",
+        "published_site_area_ha": 8.5,
+        "published_floor_area_m2": 106800,
+        "lidar_outer_ring": {
+          "along_axis_m": 338,
+          "across_axis_m": 291,
+          "bbox_ew_m": 290,
+          "bbox_ns_m": 262,
+          "area_m2": 37696
+        },
+        "osm_stadium_polygon": {
+          "bbox_ew_m": 282,
+          "bbox_ns_m": 263,
+          "area_m2": 52492,
+          "note": "OSM polygon includes plazas; 72 vertices"
+        }
+      },
+      "field": {
+        "osm_pitch_way": 92483441,
+        "home_plate_lat": 39.905400,
+        "home_plate_lon": -75.166550,
+        "home_plate_local_xz": [-1861, 4429],
+        "center_field_bearing_deg": 5,
+        "center_field_bearing_note": "home plate sits at the middle of the south edge of the block; foul lines point NW (~327 deg) and NE (~48 deg); CF essentially true north (1.7-7.5 deg from the OSM polygon). Confidence medium-high.",
+        "dimensions_ft": {"LF": 329, "LC": 374, "CF": 401, "RC": 369, "RF": 330},
+        "field_below_street_note": "playing field is sunk ~7 m below street level (LiDAR base elevation -8.8 ft vs street ~+12 ft)"
+      },
+      "heights_m": {
+        "lidar_typical_top": 41.1,
+        "lidar_max": 74.0,
+        "lidar_note": "approx_hgt 135 ft = top of the Terrace (upper) deck / canopy; max_hgt 243 ft = tallest steel (scoreboard/light tower) as measured from the depressed field base elevation",
+        "upper_deck_rim": 40,
+        "upper_deck_rim_note": "~130-135 ft above street around the home-plate horseshoe; confidence medium",
+        "light_towers": 50.3,
+        "light_towers_note": "165 ft, 'highest steel' after the scoreboard; 6 towers-style standards on the grandstand roof plus the paired towers framing the Third Base (Pattison) entrance",
+        "scoreboard_structure": 64.6,
+        "scoreboard_note": "212 ft left-field scoreboard steel (original 2004 structure; PhanaVision board replaced 2023 with a 152 x 86 ft display)",
+        "liberty_bell": 31,
+        "liberty_bell_note": "52 ft tall x 35 ft wide neon Liberty Bell replica, top ~102 ft above street, right-center field",
+        "outfield_structures": 12,
+        "base_elevation_m": -2.7
+      },
+      "roof_form": "open ballpark, no roof; small cantilevered steel sun canopy over the top rows of the upper deck behind home plate and along the foul lines (green patina-finish metal roofs on the entry pavilions); outfield open with low Ashburn Alley concourse, bullpens and batter's eye",
+      "notable_elements": [
+        "Red-brick exterior in multiple shades set in precast concrete panels with light stone/granite trim; 'PHILADELPHIA' spelled in contrasting brick across the second story; band of brick baseball diamonds along the parapet",
+        "Large exposed-steel light towers (165 ft) framing the Third Base Gate on Pattison Ave and rising above the grandstand",
+        "Left-field scoreboard tower (212 ft steel) with PhanaVision",
+        "Neon Liberty Bell 52 x 35 ft in right-center, ~31 m above street",
+        "Green copper-patina roofs on entry pavilions; dark-green painted structural steel",
+        "Citizens Phan Field (kids' field) at the NE corner (OSM 965810327)"
+      ],
+      "facade_colors_hex": {
+        "brick_primary": "#9C4A3A",
+        "brick_dark": "#6E3A2E",
+        "precast_granite_trim": "#D5CDC0",
+        "structural_steel_dark_green": "#34423F",
+        "patina_roofs": "#6FA08C",
+        "seats": "#1F4E3D",
+        "field": "#2F7F3A"
+      },
+      "sources_used": ["wikipedia Citizens Bank Park", "baseballparks.com in-depth", "mlb.com Phillies facts & figures", "therightfieldbleachers.wordpress.com", "Philadelphia LI_BUILDING_FOOTPRINTS (bin 1537103)", "OSM way 255489463 / pitch 92483441"]
+    },
+    {
+      "name": "Xfinity Mobile Arena (Wells Fargo Center 2010-2025; CoreStates/First Union/Wachovia Center)",
+      "lat": 39.90123,
+      "lon": -75.17202,
+      "local_x_m": -2327,
+      "local_z_m": 4892,
+      "osm_way": 25312366,
+      "osm_has_height_tag": false,
+      "footprint": {
+        "shape": "near-square rounded rectangle / stadium-oval in plan (long sides bowed, rounded corners); wider E-W than N-S; rink/court long axis runs NNE",
+        "lidar_outer_ring": {
+          "bbox_ew_m": 179,
+          "bbox_ns_m": 163,
+          "along_axis_m": 180,
+          "across_axis_m": 205,
+          "area_m2": 21686
+        },
+        "osm_stadium_polygon": {
+          "bbox_ew_m": 174,
+          "bbox_ns_m": 163,
+          "area_m2": 21085,
+          "vertices": 46
+        },
+        "published_floor_area_m2": 69700,
+        "published_floor_area_note": "~750,000 sq ft total floor area over several levels"
+      },
+      "court_axis": {
+        "osm_way": 1471736142,
+        "long_axis_bearing_deg": 15,
+        "note": "76ers court / Flyers rink long axis N15E; main (Broad St) entrance faces west, 11th St entrance east, Pattison Ave to the north"
+      },
+      "heights_m": {
+        "lidar_typical_top": 37.5,
+        "lidar_max": 37.5,
+        "lidar_note": "approx_hgt and max_hgt both 123 ft -> flat roof, no tall appurtenances",
+        "roof": 37.5,
+        "roof_note": "confidence high (LiDAR). Treat as a 2-step massing: main bowl roof ~37 m, lower concourse/office ring ~18-22 m around the perimeter",
+        "base_elevation_m": 6.5
+      },
+      "roof_form": "flat-topped low arena roof (long-span steel trusses, membrane roof) with a continuous projecting 'eyebrow' roof edge carrying LED uplighting; no dome, no vault visible from outside",
+      "notable_elements": [
+        "Three exterior LED video boards (ANC), each just under 35 ft (10.7 m) tall, wrapping the NE and NW corners and the south facade facing I-95; combined >10,500 sq ft",
+        "Customizable LED 'strut' lighting on all four corners (~1,000 ft total, Jones Sign) that colours the building orange/blue etc.",
+        "Roof-edge 'eyebrow' LED uplighting band around the full perimeter",
+        "Three heated entry canopies (Broad St, 11th St, Premium)",
+        "Facade: precast concrete panels in grey tones with dark charcoal banding and tinted glass; renovated 2017-2024 ($400M)"
+      ],
+      "facade_colors_hex": {
+        "precast_grey": "#9A9DA1",
+        "charcoal_banding_and_roof_edge": "#3C4045",
+        "glass": "#5B7A94",
+        "roof_membrane": "#C9CCCF",
+        "led_accent_flyers_orange": "#F74902",
+        "led_accent_sixers_blue": "#006BB6"
+      },
+      "sources_used": ["wikipedia Xfinity Mobile Arena", "phillyvoice.com exterior upgrades", "xfinitymobilearena.com building renderings", "Philadelphia LI_BUILDING_FOOTPRINTS (bin 1408791)", "OSM way 25312366 / court 1471736142", "wikidata Q818735"]
+    },
+    {
+      "name": "Xfinity Live! Philadelphia (NBC Sports Arena / Victory Beer Hall complex; 1100 Pattison Ave, corner of 11th & Pattison)",
+      "lat": 39.90429,
+      "lon": -75.16934,
+      "local_x_m": -2099,
+      "local_z_m": 4554,
+      "osm_way": 338370048,
+      "osm_has_height_tag": false,
+      "footprint": {
+        "shape": "irregular L/wedge-shaped 2-storey block on the SE corner of the former Spectrum site, long axis NW-SE (bearing ~136-145 deg), with an open outdoor plaza/beer garden and concert stage on its west side facing the Spectrum site parking",
+        "lidar_outer_ring": {
+          "bbox_ew_m": 89,
+          "bbox_ns_m": 85,
+          "along_axis_m": 107,
+          "across_axis_m": 70,
+          "area_m2": 4894,
+          "long_axis_bearing_deg": 136
+        },
+        "osm_building_polygon": {
+          "bbox_ew_m": 67,
+          "bbox_ns_m": 78,
+          "area_m2": 3690,
+          "along_axis_m": 92,
+          "across_axis_m": 55,
+          "vertices": 12
+        },
+        "published_floor_area_m2": 5000,
+        "published_floor_area_note": "52,000-54,000 sq ft (initial press said 80,000 sq ft including outdoor space)"
+      },
+      "heights_m": {
+        "lidar_typical_top": 11.0,
+        "lidar_max": 17.6,
+        "lidar_note": "approx_hgt 36 ft (2 storeys + parapet/roof deck); max_hgt 57.6 ft = sign/tower element",
+        "floors": 2,
+        "base_elevation_m": 3.7
+      },
+      "roof_form": "flat roofs, two storeys, with a taller signage/tower element (~17 m) and a roofed outdoor concert stage/pavilion",
+      "notable_elements": [
+        "32 ft HD video wall inside NBC Sports Arena; 24 ft outdoor LED board (Xfinity On-Demand Theater) facing the plaza",
+        "Miller Lite outdoor concert stage and beer garden on the plaza; 2023-24 $12M expansion added a new covered outdoor pavilion",
+        "Art-Nouveau-inspired steel/glass details with neon and LED accent lighting",
+        "Two small ancillary structures (1300 Pattison, 79 m2 and 106 m2, 4-6 m tall) on the plaza"
+      ],
+      "facade_colors_hex": {
+        "brick": "#8A5843",
+        "dark_metal_and_storefront": "#3A3D42",
+        "glass": "#6B8CA6",
+        "neon_accent": "#FF3B30"
+      },
+      "sources_used": ["wikipedia Xfinity Live! Philadelphia / Stateside Live!", "visitphilly.com", "corporate.comcast.com", "hrcg.com", "designcollective.com", "Philadelphia LI_BUILDING_FOOTPRINTS (bin 1449675, 1449676, 1543183)", "OSM way 338370048"]
+    },
+    {
+      "name": "Former Spectrum site (demolished 2010-11) - now surface parking",
+      "lat": 39.904167,
+      "lon": -75.171111,
+      "local_x_m": -2250,
+      "local_z_m": 4568,
+      "osm_way": null,
+      "osm_has_height_tag": false,
+      "footprint": {
+        "shape": "surface parking lot (no building footprints in the city LiDAR layer within 60 m of the site centroid); block bounded by Pattison Ave (N), S Broad St (W), the arena (S) and Xfinity Live! (E); the Spectrum was a rounded-rectangle arena roughly 140 x 110 m on this block",
+        "note": "Xfinity Live! occupies the eastern ~25% of the old Spectrum block; the remainder is the arena/Xfinity Live! parking lot used for tailgating"
+      },
+      "heights_m": {"ground": 0, "note": "model as flat asphalt at grade, elevation ~4-6 m"},
+      "roof_form": "none",
+      "notable_elements": ["light poles only"],
+      "facade_colors_hex": {"asphalt": "#4A4B4D"},
+      "sources_used": ["wikipedia Spectrum (arena)", "Philadelphia LI_BUILDING_FOOTPRINTS (no hits)"]
+    }
+  ],
+  "bridge": {
+    "name": "Walt Whitman Bridge (I-76)",
+    "type": "steel suspension bridge, single deck, stiffening truss; designer Othmar Ammann (Ammann & Whitney); opened 1957-05-16; deck and suspended spans replaced 2011-2014; repainted 2016-2018",
+    "owner": "Delaware River Port Authority (DRPA)",
+    "axis_bearing_deg": 102.7,
+    "axis_note": "bearing from the Philadelphia tower to the New Jersey tower (clockwise from true north); bridge runs ESE from Packer Ave to Gloucester City",
+    "mid_span": {"lat": 39.905190, "lon": -75.129298, "local_x_m": 1318.6, "local_z_m": 4454.4, "wikipedia_infobox_coord": [39.90528, -75.12972]},
+    "towers": {
+      "height_above_mean_high_water_m": 115.2,
+      "height_ft": 378,
+      "osm_height_tag_m": 115,
+      "form": "two-leg steel portal towers; each leg a tapered cellular box, legs tied by horizontal struts/portal bracing above and below deck (X/diagonal bracing below deck level); cable saddles on top; tower pier (concrete) 174 x 64 ft (53 x 19.5 m) at water level",
+      "leg_spacing_across_bridge_m": 28,
+      "leg_plan_size_m": "~6 x 4 at base tapering upward",
+      "philadelphia_tower": {"lat": 39.905798, "lon": -75.132780, "local_x_m": 1021.5, "local_z_m": 4387.1, "osm_way": 755034376, "pier_footprint_m": "40 x 11 (OSM), 53 x 19.5 published", "pier_bearing_deg": 13},
+      "new_jersey_tower": {"lat": 39.904582, "lon": -75.125816, "local_x_m": 1615.8, "local_z_m": 4521.6, "osm_way": 755034375, "pier_footprint_m": "43 x 11 (OSM), 53 x 19.5 published", "pier_bearing_deg": 11},
+      "tower_to_tower_measured_m": 609.4
+    },
+    "spans": {
+      "main_span_m": 609.6,
+      "main_span_ft": 2000,
+      "side_span_each_m": 234.7,
+      "side_span_each_ft": 770,
+      "anchorage_to_anchorage_m": 1079,
+      "total_bridge_and_approaches_m": 3652,
+      "total_ft": 11981,
+      "cable_length_each_m": 1172,
+      "cable_diameter_m": 0.587,
+      "cable_count": 2,
+      "cable_sag_estimate_m": 67,
+      "cable_sag_note": "tower top 115 m minus cable low point ~48 m at mid-span; sag ratio ~1/9. Estimate, medium confidence"
+    },
+    "anchorages": {
+      "size_m": {"length_along_bridge": 61, "width": 36.6, "height_above_ground": 39.6},
+      "size_note": "each anchorage 200 ft long x 120 ft wide x 130 ft above ground, concrete (phillyroads); anchorage face is 770 ft from the tower centreline",
+      "philadelphia_anchorage": {"face_lat": 39.906266, "face_lon": -75.135462, "center_lat": 39.906327, "center_lon": -75.135810, "center_local_x_m": 762.8, "center_local_z_m": 4328.6, "note": "on the Packer Avenue Marine Terminal / Pier 98-100 waterfront; derived by offsetting 234.7 m + 30 m from the PA tower along bearing 282.7 deg, confidence medium-high (+/-15 m)"},
+      "new_jersey_anchorage": {"face_lat": 39.904114, "face_lon": -75.123134, "center_lat": 39.904053, "center_lon": -75.122786, "center_local_x_m": 1874.5, "center_local_z_m": 4580.1, "note": "Gloucester City waterfront, derived the same way"},
+      "color": "bare concrete #A8A59E"
+    },
+    "deck": {
+      "overall_width_m": 28.09,
+      "overall_width_ft": "92 ft 2 in",
+      "roadway_curb_to_curb_m": 25.3,
+      "roadway_note": "83 ft roadway (phillyroads) / 79 ft travel lanes curb-to-curb (DRPA); no sidewalks",
+      "lanes": 7,
+      "lanes_note": "3 eastbound + 3 westbound + 1 reversible centre lane controlled by a moveable concrete zipper barrier",
+      "stiffening_truss_depth_m": 8,
+      "stiffening_truss_note": "estimate; deck is an orthotropic/grid deck on a through-type stiffening truss below the roadway",
+      "clearance_above_mean_high_water_midspan_m": 45.7,
+      "clearance_ft": 150,
+      "roadway_surface_above_water_midspan_m": 49,
+      "roadway_surface_at_towers_m": 43,
+      "roadway_surface_at_anchorages_m": 37,
+      "profile_note": "vertical curve: roadway crowns at mid-span (~49 m incl. truss depth over the 45.7 m navigation clearance), ~43 m at the towers, ~37 m at the anchorages, then the approaches descend at ~2% toward each shore. Confidence medium for the tower/anchorage values (+/-3 m).",
+      "navigable_channel_width_m": 244
+    },
+    "steel_color": {
+      "description": "painted 'federal standard green' (DRPA CEO: 'it's a federal standard color, it's a green'); a muted medium grey-green, distinctly NOT the Ben Franklin Bridge's blue; FS 595 code not published",
+      "hex_primary": "#6E927F",
+      "hex_sunlit": "#86A893",
+      "hex_shadow": "#4F6F5F",
+      "confidence": "medium (named colour confirmed, exact shade estimated from photos)"
+    },
+    "philadelphia_approach": {
+      "description": "From the PA anchorage the deck continues west on a steel-girder/deck-truss viaduct on concrete piers across the Packer Avenue Marine Terminal, Columbus Boulevard (Delaware Ave), I-95 (Delaware Expressway, itself elevated here) and South Front Street, descending at ~2% and touching down on embankment/retaining walls just west of Front Street (about S 2nd St), immediately east of the 14-lane toll plaza. West of the toll plaza I-76 runs at low elevation on embankment along the north side of Packer Avenue with the cross streets (5th, 7th, 10th) passing UNDER it in short underpasses, then rises to cross over Broad Street and continues west past the Sports Complex to Passyunk Ave and the Schuylkill Expressway.",
+      "viaduct_begins_west_end": {"lat": 39.909119, "lon": -75.152599, "local_x_m": -670, "local_z_m": 4020, "note": "OSM bridge=yes, layer=2 segment start (way 424803351); ~130 m west of South Front Street"},
+      "viaduct_length_anchorage_to_touchdown_m": 1466,
+      "viaduct_length_note": "1,731 m from PA tower to OSM touchdown minus 265 m tower-to-anchorage-centre; published total approaches (both sides) = 3652 - 1079 = 2573 m, so PA approach ~1450-1500 m, NJ approach ~950-1100 m",
+      "pa_approach_deck_heights_m": {"at_anchorage": 37, "over_columbus_blvd_x_-250": 27, "over_i95_x_-406": 22, "over_front_st_x_-537": 19, "touchdown_x_-670": 9, "toll_plaza_x_-840": 6, "note": "estimates interpolated at ~2% grade; confidence medium-low"},
+      "pier_spacing_estimate_m": 45,
+      "pier_note": "deck-girder approach spans on two-column concrete bents roughly every 40-50 m; confidence low",
+      "cross_streets_local_x_m": {"South Front Street": -537, "I-95 Delaware Expressway (crosses under, lat 39.9086 lon -75.1495)": -406, "South Galloway Street": -893, "Toll plaza (14 lanes, lat 39.909755 lon -75.154594)": -840, "South Lawrence Street": -1083, "5th Street underpass": -1177, "7th Street underpass": -1373, "10th Street underpass": -1766, "Broad Street overpass (lat 39.9124 lon -75.1718)": -2312},
+      "packer_avenue": {"note": "Packer Ave runs parallel ~60-120 m south of the I-76 alignment between x=-1315 and x=-893 at lat ~39.9080-39.9091 (z ~4025-4145); the bridge approach sits on the north side of Packer Ave"},
+      "toll_plaza": {"lat": 39.909755, "lon": -75.154594, "local_x_m": -840, "local_z_m": 3950, "lanes": 14, "direction": "westbound only (tolls collected entering Philadelphia)"},
+      "i95_interchange": {"description": "I-76 Exit 351 (Front St / I-95) = I-95 Exit 19: full directional ramps between the WWB approach viaduct and the I-95 Delaware Expressway viaduct, occupying the area east of Front Street and north/south of the approach (approx x -550 to -150, z 3950 to 4200); ramps are elevated concrete/steel girder structures layer 1", "i95_crossing_local_xz": [-406, 4077], "i95_crossing_latlon": [39.9086, -75.1495], "i95_deck_height_estimate_m": 8}
+    },
+    "i76_connection": {
+      "description": "I-76 (Schuylkill Expressway) is continuous across the bridge: eastbound it comes from the Schuylkill Expressway/Passyunk Ave, passes north of the Sports Complex (Broad St overpass at lat 39.9124, lon -75.1718), runs along the north side of Packer Ave through the Whitman neighbourhood, meets I-95 at Exit 351, crosses the Delaware on the Walt Whitman Bridge and becomes the North-South Freeway in Gloucester City, meeting I-676 and NJ 42/Route 130 about 1.2 km east of the NJ anchorage (interchange centred near 39.8995, -75.1100).",
+      "osm_ways_on_bridge": [424803351, 886672857, 886672856, 123617848, 1027616621, 123617847],
+      "lanes_on_approach": "3 per direction on the bridge; 4-5 lanes per direction approaching the toll plaza"
+    },
+    "new_jersey_approach": {
+      "elevated_end": {"lat": 39.901465, "lon": -75.112206, "local_x_m": 2777, "local_z_m": 4866},
+      "length_anchorage_to_touchdown_m": 947,
+      "note": "deck viaduct descends across Gloucester City's waterfront/industrial frontage (Holt/Gloucester Marine Terminal) to grade just before the I-676/NJ 42 interchange"
+    },
+    "osm_bridge_outline": {"way": 575987843, "man_made": "bridge", "length_m": 1305, "width_m": 27, "centroid": [39.905201, -75.129263], "note": "covers anchorage-to-anchorage plus ~110 m of approach each side"},
+    "osm_has_height_tags": "towers only (height=115 on ways 755034375 and 755034376); no deck height tags"
+  },
+  "sources": [
+    "https://en.wikipedia.org/wiki/Walt_Whitman_Bridge",
+    "http://www.phillyroads.com/crossings/walt-whitman/",
+    "https://www.drpa.org/bridges/walt-whitman-bridge.asp",
+    "https://www.drpa.org/projects/walt-whitman-bridge-corridor.html",
+    "https://phillyyimby.com/2021/07/a-look-back-at-the-walt-whitman-bridge-repaint-in-south-philadelphia.html",
+    "https://www.cbsnews.com/philadelphia/news/the-walts-facelift/",
+    "https://galvanizeit.org/project-gallery/walt-whitman-bridge-suspension-spans-deck-and-structural-replacement",
+    "https://turnpikeinfo.com/view-exit.php?state=new-jersey&road_name=walt-whitman-bridge&key=76pa-01",
+    "https://en.wikipedia.org/wiki/Lincoln_Financial_Field",
+    "https://www.lincolnfinancialfield.com/stadium-facts/",
+    "https://www.tutorperini.com/projects/sports/lincoln-financial-field/",
+    "https://www.turnerconstruction.com/projects/lincoln-financial-field",
+    "https://www.re-thinkingthefuture.com/case-studies/a9162-lincoln-financial-field-by-nbbj/",
+    "https://www.stadiumsofprofootball.com/stadiums/lincoln-financial-field/",
+    "https://mckissack.com/portfolio-item/lincoln-financial-field/",
+    "https://en.wikipedia.org/wiki/Citizens_Bank_Park",
+    "https://baseballparks.com/indepth/citizens/",
+    "https://www.mlb.com/phillies/ballpark/information/facts-figures-fun-features",
+    "https://therightfieldbleachers.wordpress.com/citizens-bank-park/",
+    "https://www.ewingcole.com/project/citizens-bank-park/",
+    "https://en.wikipedia.org/wiki/Xfinity_Mobile_Arena",
+    "https://www.phillyvoice.com/flyers-sixers-wells-fargo-center-upgrades-philly-sports-complex/",
+    "https://www.xfinitymobilearena.com/news/detail/new-wells-fargo-center-building-renderings",
+    "https://www.wikidata.org/wiki/Q818735",
+    "https://en.wikipedia.org/wiki/Xfinity_Live!_Philadelphia",
+    "https://en.wikipedia.org/wiki/Spectrum_(arena)",
+    "https://www.visitphilly.com/things-to-do/attractions/xfinity-live-philadelphia/",
+    "https://corporate.comcast.com/news-information/news-feed/xfinity-live-the-ultimate-philadelphia-entertainment-experience",
+    "https://www.hrcg.com/projects/xfinity-live-restaurant-and-entertainment-complex/",
+    "https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/LI_BUILDING_FOOTPRINTS/FeatureServer/0 (City of Philadelphia LiDAR building footprints with APPROX_HGT/MAX_HGT in feet)",
+    "https://overpass-api.de/api/interpreter (OpenStreetMap ways 32891768, 255489463, 25312366, 1433493261, 338370048, 755034375, 755034376, 575987843, 424803351, 886672857, 886672856, 123617848, 1027616621, 123617847, 1311279168; pitches 708050530, 92483441, 1471736142)"
+  ]
+}

@@ -1,0 +1,106 @@
+<meta charset="utf-8">
+<title>Society Hill Towers</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<style>
+{{CSS}}
+</style>
+
+<canvas id="gl"></canvas>
+
+<div id="titleblock" class="panel">
+  <h1>Society Hill Towers</h1>
+  <div class="rule"></div>
+  <div class="arch">I.&thinsp;M. Pei &amp; Associates &mdash; 1964</div>
+  <div class="geo">PHILADELPHIA &middot; 39.9455&deg;N 75.1447&deg;W</div>
+</div>
+
+<div id="compass" class="panel">
+  <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
+    <g id="needle">
+      <polygon points="17,4 20.4,17 17,14.6 13.6,17" fill="#c89b5e"/>
+      <polygon points="17,30 20.4,17 17,19.4 13.6,17" fill="rgba(239,233,220,0.35)"/>
+    </g>
+    <text x="17" y="8.6" text-anchor="middle" font-size="6.5" fill="rgba(239,233,220,0.0)">N</text>
+  </svg>
+</div>
+
+<div id="labels" aria-hidden="true"></div>
+<div id="crosshair"></div>
+<div id="stick"><div class="nub"></div></div>
+
+<div id="bar">
+  <div class="seg panel" role="group" aria-label="Navigation mode">
+    <button id="btnOrbit" class="active" title="Orbit the model (1)">Orbit</button>
+    <button id="btnWalk" title="Walk the streets (2)">Walk</button>
+    <button id="btnFly" title="Fly over the city (3)">Fly</button>
+  </div>
+  <select id="viewpoints" class="panel" title="Jump to a viewpoint">
+    <option value="" selected>Viewpoints&hellip;</option>
+  </select>
+  <button id="btnLabels" class="iconbtn panel" title="Toggle landmark labels (L)">Aa</button>
+  <button id="btnTime" class="iconbtn panel" title="Date &amp; time of day (T)">&#9680;</button>
+  <button id="btnAbout" class="iconbtn panel" title="About this model (I)">i</button>
+</div>
+
+<div id="timepanel" class="panel" role="group" aria-label="Date and time">
+  <div class="kicker">Philadelphia &middot; sun &amp; sky</div>
+  <div class="row">
+    <input type="date" id="timeDate" aria-label="Date">
+    <button id="timeNow" class="mini" title="Follow the real time">Now</button>
+  </div>
+  <input type="range" id="timeSlider" min="0" max="1439" step="5" aria-label="Time of day">
+  <div class="readout"><span id="timeClock">&mdash;</span><span id="timeSun">&mdash;</span></div>
+  <div class="presets">
+    <button class="mini" data-preset="dawn">Dawn</button>
+    <button class="mini" data-preset="noon">Noon</button>
+    <button class="mini" data-preset="dusk">Dusk</button>
+    <button class="mini" data-preset="night">Night</button>
+  </div>
+</div>
+
+<div id="hint">drag to orbit &middot; scroll to zoom &middot; double-click to focus</div>
+
+<div id="about" class="panel" role="dialog" aria-label="About Society Hill Towers">
+  <button class="close" id="btnCloseAbout" title="Close">&times;</button>
+  <div class="kicker">200&ndash;220 Locust Street</div>
+  <h2>Society Hill<br>Towers</h2>
+  {{ABOUT_BODY}}
+  <h3>Controls</h3>
+  <table class="keys">
+    <tr><td><kbd>1</kbd> / <kbd>2</kbd></td><td>Orbit / Walk mode</td></tr>
+    <tr><td><kbd>W A S D</kbd></td><td>Move (walk mode)</td></tr>
+    <tr><td><kbd>Shift</kbd></td><td>Run</td></tr>
+    <tr><td><kbd>L</kbd></td><td>Landmark labels</td></tr>
+    <tr><td><kbd>T</kbd></td><td>Date &amp; time of day (real Philadelphia sun)</td></tr>
+    <tr><td>Double-click</td><td>Focus orbit on a point</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Release the mouse</td></tr>
+  </table>
+  <div class="credits">
+    Building footprints and streets &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL).
+    Towers modeled procedurally from photographs and published dimensions.
+    Rendered with three.js. This is an interpretive model, not a survey.
+  </div>
+</div>
+
+<div id="veil">
+  <div class="card">
+    <div class="kicker">Philadelphia &middot; 1964</div>
+    <h2>Society Hill<br>Towers</h2>
+    <div class="sub">Three concrete towers by I.&thinsp;M. Pei above the rowhouses of Society Hill &mdash;
+      walk the plaza, orbit the skyline, and wander the blocks between the Delaware and Washington Square.</div>
+    <button class="enter" id="btnEnter" disabled>Preparing&hellip;</button>
+    <div class="loading" id="loadmsg">Assembling 2,800 buildings</div>
+  </div>
+</div>
+
+<div id="nogl"><div>This model needs WebGL, which your browser has disabled.<br>Try Chrome, Edge, Firefox, or Safari with hardware acceleration on.</div></div>
+
+<script>
+{{THREE}}
+</script>
+<script>
+{{DATA}}
+</script>
+<script>
+{{APP}}
+</script>

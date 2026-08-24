@@ -1,0 +1,735 @@
+[
+ {
+  "buildings": [
+   {
+    "name": "Head House",
+    "confidence": "high",
+    "facade_color_hex": "#8a4634",
+    "trim_color_hex": "#f2ede0",
+    "facade_notes": "1804-05 two-story brick fire-engine house (Georgian mass, Federal trim) at the NORTH end of the market, at Pine St. Red brick in Flemish bond; north gable end faces Pine St and reads as the 'front' with round-arched openings, a lunette/roundel in the gable, and white-painted wood trim. Its footprint spans the full width of the market shed so the shambles run out of its south side.",
+    "massing_notes": "Footprint approx 6 m (E-W, same width as the shed) x 12 m (N-S). Two stories, eaves approx 7-8 m, ridge approx 10 m; cupola top approx 14-15 m. Sits in the center of S 2nd St right at Pine St, main axis N-S.",
+    "roof": {
+     "form": "gable",
+     "ridge_axis": "N-S",
+     "color_hex": "#4a4c50",
+     "notes": "Moderately pitched gable, ridge on the N-S axis of 2nd St (continuous with the shed's roofline direction). Dark gray slate/shingle. White wooden cupola centered on the ridge."
+    },
+    "elements": [
+     {
+      "kind": "cupola",
+      "where": "centered on ridge",
+      "color_hex": "#f2ede0",
+      "dims": "approx 2.5 m square base, open octagonal belfry, total approx 5-6 m tall",
+      "notes": "White painted wood; square base stage, arched louvered belfry openings (once held a fire bell), shallow dome/bell cap with weathervane. The signature landmark of the square."
+     },
+     {
+      "kind": "pediment",
+      "where": "north gable end facing Pine St",
+      "color_hex": "#f2ede0",
+      "notes": "Gable end treated as a pediment with cornice returns and a lunette window."
+     }
+    ]
+   },
+   {
+    "name": "Shambles",
+    "confidence": "high",
+    "facade_color_hex": "#8a4634",
+    "trim_color_hex": "#e8e2d4",
+    "facade_notes": "The open-air market shed ('shambles', 1745 origin; rebuilt 1962-63 by G. Edwin Brumbaugh to replicate the 18th-c. shed). No walls at all: two parallel rows of square red-brick piers carrying a timber roof structure, open at both ends and both sides. Interior ceiling has plastered elliptical-arch/coved bays between piers (whitewashed). In OSM this may be mapped as part of the 'Head House' way or as a separate long thin way named New Market or Shambles - it is the long skinny footprint running down the center of S 2nd St from Pine to Lombard.",
+    "massing_notes": "Runs down the MIDDLE of S 2nd St from the Head House at Pine St south to Lombard St. Length approx 100-110 m; width approx 5-6 m; brick piers approx 0.45 m square on approx 3.5-4 m centers (roughly 25-30 bays per side); open eave height approx 3.5 m; ridge approx 6-6.5 m. Axis N-S.",
+    "roof": {
+     "form": "gable",
+     "ridge_axis": "N-S",
+     "color_hex": "#565a5e",
+     "notes": "Continuous low-pitched gable (approx 30-35 deg), ridge N-S the whole length. Brumbaugh's restoration replaced wood shakes with GRAY SLATE shingles - model it slate gray, not cedar. Simple white-painted wood eave trim; brick paving beneath."
+    },
+    "elements": [
+     {
+      "kind": "colonnade",
+      "where": "both long sides, full length",
+      "color_hex": "#8a4634",
+      "dims": "brick piers approx 0.45 m sq, 3.5-4 m spacing, approx 3 m clear height",
+      "notes": "Two rows of freestanding square brick piers - render as repeated piers with open air between; this open transparency is the defining look."
+     }
+    ]
+   },
+   {
+    "name": "Merchants' Exchange Building",
+    "confidence": "high",
+    "facade_color_hex": "#d9d4c6",
+    "trim_color_hex": "#cfc9ba",
+    "facade_notes": "William Strickland, 1832-34, Greek Revival; National Historic Landmark. Brick structure fully faced in pale blue-gray Pennsylvania marble that reads as weathered off-white/light warm gray. Rusticated ground story with arched openings; smooth ashlar above; tall rectangular windows. Plan is a rectangle with a SEMICIRCULAR EAST END following the curve of Dock St.",
+    "massing_notes": "Occupies the triangular block bounded by Walnut St (south), S 3rd St (west), and curving Dock St (northeast/east). Main rectangular block approx 29 m x 35 m, three stories, cornice approx 17-18 m. The famous CURVED portico is the EAST end, facing Dock St (toward the river): a semicircular two-story colonnade of 8 Corinthian columns standing on the rusticated ground-floor base, flanked by two grand curving exterior stone stairways rising to the second floor. The Walnut/3rd St (west) front is flat with severe antae-pier portico. Lantern tower sits over the curved east end, top approx 28-30 m.",
+    "roof": {
+     "form": "hip",
+     "ridge_axis": "E-W",
+     "color_hex": "#6e7276",
+     "notes": "Very low hipped/near-flat roof behind a marble entablature-parapet, gray metal (tin/copper painted gray); half-conical low roof over the semicircular east end. Dominated by the lantern."
+    },
+    "elements": [
+     {
+      "kind": "colonnade",
+      "where": "curved east end facing Dock St",
+      "color_hex": "#d9d4c6",
+      "dims": "8 Corinthian columns approx 9-10 m tall spanning 2nd+3rd floors, on a semicircular arc approx 25 m across",
+      "notes": "Recessed semicircular colonnade with Italian-carved Corinthian capitals; curving twin stone staircases on either side. This east face is the money shot of the building."
+     },
+     {
+      "kind": "tower",
+      "where": "above the curved east end",
+      "color_hex": "#d9d4c6",
+      "dims": "cylindrical, approx 6 m dia, rises approx 10-12 m above the roof",
+      "notes": "Circular lantern modeled on the Choragic Monument of Lysicrates: a colonnaded marble tholos drum with engaged Corinthian columns, topped by a low conical/finial cap. Render as a round columned drum with a shallow pointed cap."
+     },
+     {
+      "kind": "arcade",
+      "where": "ground floor, all faces",
+      "color_hex": "#cfc9ba",
+      "notes": "Rusticated base story with round-arched windows/doors."
+     }
+    ]
+   },
+   {
+    "name": "City Tavern",
+    "confidence": "medium",
+    "facade_color_hex": "#7f3d2c",
+    "trim_color_hex": "#efe9d8",
+    "facade_notes": "1976 National Park Service reconstruction of the 1773 tavern, at 138 S 2nd St (west side of 2nd, just south of Walnut). Red brick in Flemish bond, 5-bay front facing east onto 2nd St, white-painted wood cornice, keystone flat-arch window heads, multi-pane sash, white pedimented doorway with steps.",
+    "massing_notes": "Approx 14 m frontage on 2nd St x approx 14 m deep; 3 full stories plus dormered attic; eaves approx 11 m, ridge approx 14 m. Long axis/ridge parallel to 2nd St (N-S).",
+    "roof": {
+     "form": "gable",
+     "ridge_axis": "N-S",
+     "color_hex": "#5b564e",
+     "notes": "Side-gable pitched roof (approx 40 deg), gray-brown wood-shingle appearance; ridge parallel to 2nd St; brick parapet-ish gable ends."
+    },
+    "elements": [
+     {
+      "kind": "dormers",
+      "where": "east roof slope facing 2nd St",
+      "color_hex": "#efe9d8",
+      "dims": "3 dormers, approx 1.5 m wide each",
+      "notes": "White pedimented gabled dormers, evenly spaced."
+     },
+     {
+      "kind": "chimneys",
+      "where": "both gable ends (N and S)",
+      "color_hex": "#7f3d2c",
+      "dims": "approx 1 x 1.5 m, rising 1.5-2 m above ridge",
+      "notes": "Paired/massive brick chimneys at each end wall - prominent."
+     }
+    ]
+   },
+   {
+    "name": "Hill-Physick House",
+    "confidence": "high",
+    "facade_color_hex": "#83402e",
+    "trim_color_hex": "#f1ebdc",
+    "facade_notes": "1786 Federal mansion at 321 S 4th St; the only FREE-STANDING Federal townhouse left in Society Hill - detached on all sides with a large walled garden to the south. Red brick Flemish bond, notably square and blocky, severe flat facade, 3 bays wide on 4th St with a huge arched fanlight over the front door (largest in PA when built), marble belt course and lintels, white trim.",
+    "massing_notes": "Footprint approx 14 m x 14 m (square). Commonly described as 3 tall stories (some sources say four-story) over a basement; cornice approx 12-13 m. Front faces WEST onto S 4th St. Garden occupies the lot to the south and rear.",
+    "roof": {
+     "form": "hip",
+     "ridge_axis": "N-S",
+     "color_hex": "#3f4044",
+     "notes": "Low hipped roof, barely visible from the street behind the cornice - the house reads almost flat-topped and cubic. Dark gray. No prominent dormers; slender brick chimney stacks emerge near the roof edges."
+    },
+    "elements": [
+     {
+      "kind": "chimneys",
+      "where": "near N and S roof edges",
+      "color_hex": "#83402e",
+      "dims": "2-3 slim brick stacks approx 1 m above roof",
+      "notes": "Understated."
+     }
+    ]
+   },
+   {
+    "name": "Powel House",
+    "confidence": "high",
+    "facade_color_hex": "#7d3b2a",
+    "trim_color_hex": "#f1ebdc",
+    "facade_notes": "1765, 244 S 3rd St; 'the finest Georgian row house in the city' - NOT freestanding, it is a grand 3-bay rowhouse with party walls, front facing EAST onto S 3rd St. Red brick Flemish bond, marble belt course between floors, keystoned flat arches, white cornice, pedimented white front door frame, paneled shutters on lower windows.",
+    "massing_notes": "Approx 9 m frontage x approx 15 m deep with rear ell; 3 stories plus attic; eaves approx 11 m, ridge approx 13.5 m. Ridge parallel to 3rd St (N-S).",
+    "roof": {
+     "form": "gable",
+     "ridge_axis": "N-S",
+     "color_hex": "#4d4a45",
+     "notes": "Side-gable pitched roof approx 40 deg, dark gray shingle; ridge parallel to street; chimneys in the party walls at both ends."
+    },
+    "elements": [
+     {
+      "kind": "dormers",
+      "where": "east (street) slope",
+      "color_hex": "#f1ebdc",
+      "dims": "2 dormers",
+      "notes": "White gabled/pedimented dormers."
+     },
+     {
+      "kind": "chimneys",
+      "where": "party walls, N and S ends at ridge",
+      "color_hex": "#7d3b2a",
+      "dims": "rise approx 1.5 m above ridge",
+      "notes": "Brick stacks flush with party walls."
+     },
+     {
+      "kind": "balconies",
+      "where": "none",
+      "notes": "No balconies; flat facade with white marble stoop."
+     }
+    ]
+   },
+   {
+    "name": "Athenaeum of Philadelphia",
+    "confidence": "high",
+    "facade_color_hex": "#7b5844",
+    "trim_color_hex": "#6b4b3a",
+    "facade_notes": "John Notman, 1845-47; first major American Italianate Renaissance palazzo and one of Philadelphia's first brownstone-faced buildings (National Historic Landmark). Warm reddish-brown sandstone. Front faces WEST onto S 6th St / Washington Square: raised rusticated basement story, then two very tall upper floors; tall round-arched and pedimented/entablature-headed windows in even bays; center entrance porch with columns and balustrade; string courses; severely symmetrical palazzo composition.",
+    "massing_notes": "Approx 15 m frontage on 6th St x approx 30 m deep along St. James Pl; 2 tall stories over raised basement, cornice approx 14-15 m - reads like a 4-story building's height. Cubic palazzo mass, no tower.",
+    "roof": {
+     "form": "flat",
+     "ridge_axis": "N-S",
+     "color_hex": "#55524d",
+     "notes": "Flat/very low roof completely hidden behind the crowning cornice - model as a flat brownstone box. The deep bracketed Italianate cornice IS the roofline."
+    },
+    "elements": [
+     {
+      "kind": "pediment",
+      "where": "window heads, second floor",
+      "color_hex": "#6b4b3a",
+      "notes": "Pedimented window architraves; small iron balconettes at some tall first-floor windows."
+     },
+     {
+      "kind": "cupola",
+      "where": "none",
+      "notes": "No cupola or tower. The dominant feature is the massive projecting bracketed cornice at the top - extend it approx 0.6 m beyond the wall plane, slightly darker brownstone."
+     }
+    ]
+   },
+   {
+    "name": "A Man Full of Troubles Tavern",
+    "confidence": "high",
+    "facade_color_hex": "#8a4a36",
+    "trim_color_hex": "#ece5d3",
+    "facade_notes": "1759, 127 Spruce St near 2nd St - tiny pre-Revolutionary tavern, deliberately vernacular and slightly crooked-looking: irregular window/door placement, slightly battered (leaning) end wall, a PENT EAVE (small shingled skirt roof) across the facade between first and second floors, and continuous coved (plaster cove) cornices at the roof and under the pent. Red brick, small multi-pane windows. Adjoins the small Benjamin Paschall House; restored 1963-65.",
+    "massing_notes": "Very small: approx 6-7 m frontage on Spruce St x approx 8 m deep; 2 stories plus gambrel attic; eaves approx 6 m, ridge approx 9 m. Front faces SOUTH onto Spruce St; ridge parallel to Spruce (E-W).",
+    "roof": {
+     "form": "gambrel",
+     "ridge_axis": "E-W",
+     "color_hex": "#8c7a60",
+     "notes": "Low gambrel (described as a 'half gambrel' - the break is subtle), wood-shingle (weathered cedar gray-brown), coved cornice tucking the eave into the wall. This is the ONE gambrel roof in the set - make it read clearly."
+    },
+    "elements": [
+     {
+      "kind": "dormers",
+      "where": "south slope facing Spruce St",
+      "color_hex": "#ece5d3",
+      "dims": "2 small dormers",
+      "notes": "Small gabled shed dormers in the lower gambrel slope."
+     },
+     {
+      "kind": "chimneys",
+      "where": "gable ends",
+      "color_hex": "#8a4a36",
+      "notes": "Brick end-wall chimney(s)."
+     },
+     {
+      "kind": "pediment",
+      "where": "pent eave across facade between floors",
+      "color_hex": "#8c7a60",
+      "notes": "Model the pent eave as a narrow (approx 0.5 m deep) shingled mini-roof strip across the front at second-floor level - a signature colonial-Philadelphia detail."
+     }
+    ]
+   }
+  ],
+  "extra": "TYPICAL SOCIETY HILL ROWHOUSE (for procedural fabric generator):\n\nMASSING. The 18th/early-19th-c. fabric is brick rowhouses of 2.5-4 stories on narrow lots: typical frontage 4.5-6.5 m (15-21 ft), depth of main block 9-12 m, often with lower 2-story rear ells running back from one party wall. Street walls are continuous (zero setback, party walls shared). Heights: 3-story houses dominate (cornice ~9-11 m, ridge ~12-13 m); smaller 2.5-story 'trinity-adjacent' houses (~7-8 m cornice) appear on the alleys (Delancey, Cypress, Philip, American Sts); grander 3.5-4 story houses on the numbered streets and Spruce/Pine.\n\nROOF MIX. For the historic fabric, roughly 65-75% pitched GABLE roofs with the RIDGE PARALLEL TO THE STREET (side-gabled), pitch typically 35-45 degrees (9:12-12:12); steeper on early houses, shallower (30-35 deg) on later Federal ones. Roughly 25-35% read as flat: genuinely flat or very shallow rear-sloping shed roofs hidden behind a front parapet/cornice - this share rises for mid/late-19th-c. houses and is near 100% for the substantial 1960s-70s urban-renewal modernist infill (flat-roofed, plainer gray-brown or iron-spot brick, no cornice - Society Hill has a lot of this mixed in, maybe 20-25% of all parcels; render those as simple flat-topped brick boxes). A small seasoning (~3-5%) of gambrels on the oldest colonial survivors is authentic.\n\nROOF COLORS. Mix: weathered cedar shingle (gray-brown #8c7a60 to #6f6353) ~30%, dark gray slate (#4a4c52) ~35%, standing-seam or flat-seam painted tin in charcoal (#3e4044) or oxide red (#6e3a2c) ~25%, modern dark asphalt (#3a3a3c) ~10%. Flat roofs: dull gray/black membrane (#4c4c4c).\n\nDORMERS. Very common on the gabled houses - assume 70-80% of pitched-roof houses have 1-2 gabled or pedimented dormers on the street slope, white-painted (#f1ebdc), ~1.2-1.5 m wide, set just above the eave.\n\nCHIMNEYS. On the PARTY WALLS: brick stacks rising 1-1.5 m above the ridge, flush with the shared side walls, usually one at each party wall (so at rowhouse scale chimneys appear as a rhythm of paired stacks along the ridge lines at lot boundaries). Rear ells add smaller stacks.\n\nWALLS AND TRIM. Brick range: oranged colonial red through deep burgundy - sample from #6f3524, #7d3b2a, #83402e, #8a4634, #96543c; Flemish bond with occasional glazed-header sparkle (slightly darker speckle). Cornices: painted wood, overwhelmingly WHITE/CREAM (#f1ebdc to #e9e0c9), modillioned; a minority dark green or black. Window trim/sash white or cream; shutters on lower floors very common: DARK GREEN (#2e4a34) most typical, also black (#1f1f22) and oxide red (#5e3026); paneled below, louvered above. Doors: six-panel in black, dark green, or red, with white classical surrounds, transoms or fanlights.\n\nSTONE ACCENTS. White marble is the signature accent: 2-4 marble front steps (stoops) at nearly every door (#e8e4da), marble door sills, flat-arch marble or brick-jack lintels with marble keystones, and a marble belt course between first and second floors on the better houses. Foundations/water tables: gray stone or brick. Sidewalk fabric: brick paving, so the accent whites pop against red everywhere.\n\nSTREET RHYTHM. Facades are 2-3 bays wide, windows taller at parlor floor, shrinking on upper floors; strong repeating vertical window rhythm aligned across neighbors. Iron: boot-scrapers, simple railings on stoops (black). Occasional glass-and-white-wood display bowfronts on old commercial corners (Head House Sq, 2nd St).\n\nKey sources: SAH Archipedia (Head House Sq PA-02-PH16, Merchants' Exchange PA-02-PH12.12, Man Full of Trouble PA-02-PH21), Wikipedia (Merchants' Exchange Building, New Market and Head House, Powel House, Hill-Physick-Keith House, Athenaeum of Philadelphia, City Tavern), ushistory.org tour pages, philalandmarks.org, philaathenaeum.org, hiddencityphila.org, headhousesquare.org. Notable verified facts: shambles roof restored in SLATE (not cedar) by Brumbaugh 1962-63; Merchants' Exchange curved 8-column Corinthian portico faces EAST toward Dock St with lantern modeled on the Choragic Monument of Lysicrates; Athenaeum was brownstone (cheaper) though marble was planned; Physick House is the only freestanding Federal house in the neighborhood; Powel House is a rowhouse despite its fame."
+ },
+ {
+  "buildings": [
+   {
+    "name": "Hopkinson House",
+    "confidence": "high",
+    "facade_color_hex": "#cfc0a4",
+    "trim_color_hex": "#5a5245",
+    "facade_notes": "Stonorov 1962-63 modernist slab. Originally exposed grey concrete frame with flush red-brick infill panels; TODAY the entire facade is painted a uniform soft buff/beige, so current real appearance is monochrome warm buff. Expressed vertical concrete columns divide the long faces into regular bays; windows are recessed ('tucked back into the facade') giving deep shadow lines; dark bronze/gray window frames. Signature 'stepladder' (cheese-grater) pattern: protruding balconies alternate with flush brick panels, shifting position floor to floor to create diagonal/checker rhythm \u2014 strongest on the north (park-facing) facade. Ground floor: porte-cochere over entry drive with bronze-paneled columns, on the north side.",
+    "massing_notes": "Single tall slab, long axis E-W: ~76 m E-W x ~21-25 m N-S (OSM poly is notched by balcony stacks). h=107 m in OSM (351 ft), 33 residential floors (~2.9 m floor-to-floor). North face fronts Washington Square directly (park is immediately north). 2-story base zone with porte-cochere on north; low rear garage/service podium to the south. East/west end walls are mostly solid.",
+    "elements": [
+     {
+      "kind": "balconies",
+      "where": "north (park) facade, alternating stepladder/checkerboard pattern; a few on south",
+      "color_hex": "#cfc0a4",
+      "dims": "~2.5 x 1.5 m projecting concrete slabs",
+      "notes": "painted same buff as facade, thin metal railings; alternate with flush panels so no two adjacent floors align"
+     },
+     {
+      "kind": "portico",
+      "where": "ground floor, north entry facing the square",
+      "color_hex": "#6e5a3f",
+      "dims": "~15 x 6 m, 1 story",
+      "notes": "porte-cochere with bronze-paneled columns"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#b9ab8f",
+     "notes": "thin parapet, small central mechanical penthouse, rooftop pool on main roof; no cornice \u2014 clean modernist top"
+    }
+   },
+   {
+    "name": "One Independence Place",
+    "confidence": "medium",
+    "facade_color_hex": "#5d4536",
+    "trim_color_hex": "#3a2f27",
+    "facade_notes": "Tower I (241 S 6th St, 1981, 264 units). Dark bronze-brown brick ('bronze tone of the brick' per renovation refs) laid flat; floor-to-ceiling windows in dark frames reading as dark glass bands/punches against the brick; most units have balconies \u2014 projecting concrete-slab balconies with dark metal railings stacked in continuous vertical rows on the long faces and at corners.",
+    "massing_notes": "Rectangular slab, long axis E-W: ~61 m E-W x ~29 m N-S. OSM h=96.9 m but sources say 25 stories (~76 m more physically plausible \u2014 OSM height likely overstated). Southern tower of the twin pair; west end fronts S 6th St across from Washington Square's SE corner; shared landscaped entry plaza between/around the two towers, towers set back from the street.",
+    "elements": [
+     {
+      "kind": "balconies",
+      "where": "vertical stacks on long north and south faces and wrapping some corners",
+      "color_hex": "#4a3a2e",
+      "dims": "~3 x 1.5 m",
+      "notes": "projecting slabs, dark brown metal railings, regular grid \u2014 every floor aligns (unlike Hopkinson's alternation)"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#3f3630",
+     "notes": "flat with brick parapet and low dark mechanical penthouse; plain modern top, no cornice"
+    }
+   },
+   {
+    "name": "2 Independence Place",
+    "confidence": "medium",
+    "facade_color_hex": "#5d4536",
+    "trim_color_hex": "#3a2f27",
+    "facade_notes": "Tower II (233 S 6th St, 1986, 223 units). Visual twin of One Independence Place ('two peas in the same pod'): same dark bronze-brown brick, floor-to-ceiling dark-framed windows, stacked projecting balconies with dark metal rails.",
+    "massing_notes": "Rectangular slab, long axis E-W: ~58 m E-W x ~34 m N-S; sits directly NORTH of One Independence Place (closer to Walnut/St James Pl). Same height treatment: OSM h=96.9 m, 25 stories per sources. West end fronts S 6th St facing Washington Square.",
+    "elements": [
+     {
+      "kind": "balconies",
+      "where": "vertical stacks on long north and south faces and corners",
+      "color_hex": "#4a3a2e",
+      "dims": "~3 x 1.5 m",
+      "notes": "regular aligned grid of projecting slabs"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#3f3630",
+     "notes": "flat, brick parapet, low mechanical penthouse \u2014 identical top to Tower I"
+    }
+   },
+   {
+    "name": "Penn Mutual Tower",
+    "confidence": "high",
+    "facade_color_hex": "#b6b0a4",
+    "trim_color_hex": "#2e3336",
+    "facade_notes": "Mitchell/Giurgola 1971-75, 22 stories, AIA Honor Award 1977. Two-character building: NORTH facade (facing Independence Hall across Walnut St) is FULLY GLAZED dark gray/bronze reflective curtain wall described as 'a contemporary fantasy of balconies, sharp diagonal fins' \u2014 an assemblage of glassy planes, inset balcony voids and diagonal cuts. East/south/west faces are beton-brut exposed concrete framework (warm gray, #b6b0a4) with vertically oriented window modules (narrow vertical glass slots in concrete grid). Exterior elevator/service core expressed with Giurgola diagonals. BASE: the freestanding 1838 John Haviland Egyptian Revival granite facade (light warm gray granite, ~#a9a49a, battered walls, two columns, cavetto cornice) is preserved as a 'ruin'/screen on the Walnut St frontage, standing in front of the glass lobby and forming an open-air entry room at street scale (~11 m tall, ~20 m wide).",
+    "massing_notes": "Tower footprint ~41 m E-W x up to ~69 m N-S including lower rear/side extensions toward Sansom; OSM h=114.3 m (sources give 22 floors \u2014 OSM height may include rooftop structures/overstate). North face is the show face toward Independence Hall; adjoins the older limestone Penn Mutual buildings (1913/1931) to the west at 6th & Walnut.",
+    "elements": [
+     {
+      "kind": "portico",
+      "where": "north base on Walnut St, freestanding screen in front of tower",
+      "color_hex": "#a9a49a",
+      "dims": "~20 m wide x ~11 m tall, ~1 m thick screen",
+      "notes": "1838 Haviland Egyptian Revival granite facade: battered (sloping) sides, columns in antis, cavetto cornice; daylight visible through its window openings"
+     },
+     {
+      "kind": "balconies",
+      "where": "upper north facade, irregular composition",
+      "color_hex": "#2e3336",
+      "notes": "inset balcony voids and sharp diagonal fins breaking the glass grid"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#8f8a80",
+     "notes": "top articulated as attic-level observation deck (relocated here 1975 for Bicentennial): projecting top band with company graphic/signage face on the north; reads as a distinct capping band above the curtain wall"
+    }
+   },
+   {
+    "name": "The Moravian",
+    "confidence": "medium",
+    "facade_color_hex": "#8f4a3a",
+    "trim_color_hex": "#e6ddca",
+    "facade_notes": "2004 mid-rise at 2nd & Walnut (121 Walnut) incorporating the historic Old Original Bookbinder's building (1865, red brick with storefront base and painted signage) as its street-front half; new portion is classic red brick with cream/limestone-toned lintels and trim, punched windows, blends into historic streetscape; ~25 units.",
+    "massing_notes": "Mid-rise block ~47 m E-W x ~20 m N-S along Walnut St; OSM h=27.1 m (~7 floors, sources say 6-7). Lower historic Bookbinder's portion at the 2nd St corner, taller new brick mass behind/beside.",
+    "elements": [
+     {
+      "kind": "balconies",
+      "where": "upper floors, scattered",
+      "color_hex": "#3a3a3a",
+      "notes": "small metal-railed balconies on new portion"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#6b625a",
+     "notes": "flat with brick parapet; modest cornice line matching neighbors"
+    }
+   },
+   {
+    "name": "101 Walnut",
+    "confidence": "low",
+    "facade_color_hex": "#96513f",
+    "trim_color_hex": "#ddd3bd",
+    "facade_notes": "12-story boutique condo (10 units, one 2-story penthouse) near Front & Walnut; cast-in-place reinforced concrete frame clad in red-orange brick with light limestone-toned banding/trim and a traditional cornice line; large windows, some balconies/terraces toward the river; reads as a slender traditional brick tower.",
+    "massing_notes": "Small, nearly square footprint ~26 m x ~15 m; OSM h=42.6 m, 12 floors; penthouse level set back at top.",
+    "elements": [
+     {
+      "kind": "balconies",
+      "where": "east/river-facing upper floors",
+      "color_hex": "#3a3a3a",
+      "notes": "metal railings; penthouse terrace at setback"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#6b625a",
+     "notes": "flat; setback penthouse; trim cornice at parapet"
+    }
+   },
+   {
+    "name": "Public Ledger Building",
+    "confidence": "high",
+    "facade_color_hex": "#8e4438",
+    "trim_color_hex": "#e9e5da",
+    "facade_notes": "Horace Trumbauer, 1924, Georgian Revival; deliberately 'echoed Seeler's [Curtis] building in shape, height and materials'. Tripartite: 2-story base with white marble Ionic columns and arches (carved figures over entrances); utilitarian red-brick shaft with regular rectangular office windows (white marble window surrounds sparingly); crown 'capped with arched marble windows' \u2014 a top row of white marble arches \u2014 beneath a massive projecting cornice. Marble at base and crown, red brick between.",
+    "massing_notes": "Full-block beaux-arts scale block at 6th & Chestnut (Chestnut on N, Sansom on S, 6th on W): ~117 m E-W x ~88 m N-S bounding, footprint is E/L-shaped with light courts opening south (OSM poly notched). OSM h=57.9 m, ~13 stories. Sits immediately NORTH of The Curtis Center across Sansom St.",
+    "elements": [
+     {
+      "kind": "colonnade",
+      "where": "ground/2nd floor base, Chestnut and 6th St fronts",
+      "color_hex": "#e9e5da",
+      "dims": "2 stories tall",
+      "notes": "white marble Ionic columns and arches, carved female figures at entrances"
+     },
+     {
+      "kind": "arcade",
+      "where": "top floor, all street fronts",
+      "color_hex": "#e9e5da",
+      "notes": "continuous row of arched white-marble-framed windows forming the crown, below the massive cornice"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#6b6258",
+     "notes": "flat behind parapet with heavy projecting classical cornice (dark/bronze-toned shadow line); rooftop penthouse/mechanical structures"
+    }
+   },
+   {
+    "name": "The Curtis Center",
+    "confidence": "high",
+    "facade_color_hex": "#8a4034",
+    "trim_color_hex": "#eae6dc",
+    "facade_notes": "Curtis Publishing Co. Building, Edgar Seeler 1910 (completed 1916), Beaux-Arts. Red brick facade with details and ornamentation of white Vermont marble \u2014 chosen to echo Independence Hall's red brick + white trim. Gray granite and white marble 2-story base; main entrance behind 14 monolithic Vermont marble columns with bronze gates (6th St side facing Independence Square); shaft of red brick with marble pilaster strips/quoins and projecting bays; large arched windows on the upper floors; strong marble cornice detailing.",
+    "massing_notes": "Full-block block: ~128 m E-W (Walnut St frontage, 6th to 7th) x ~90 m N-S (Walnut to Sansom); OSM h=51.8 m, 12 stories. South face fronts Washington Square (north side of the square); east face fronts 6th St / Independence Square. Ring/donut massing around a large interior atrium-light court (not visible externally).",
+    "elements": [
+     {
+      "kind": "colonnade",
+      "where": "base, 6th St (east) entrance; marble columns also punctuate Walnut front",
+      "color_hex": "#eae6dc",
+      "dims": "14 monolithic marble columns, 2 stories",
+      "notes": "bronze entrance gates set behind the columns"
+     },
+     {
+      "kind": "arcade",
+      "where": "upper floors",
+      "color_hex": "#eae6dc",
+      "notes": "large arched window openings near the top, marble-trimmed"
+     }
+    ],
+    "roof": {
+     "form": "flat",
+     "color_hex": "#6b6258",
+     "notes": "flat behind parapet with prominent marble/classical cornice; small rooftop penthouses"
+    }
+   }
+  ],
+  "extra": "Coordinate/orientation notes use the SHT scene convention (x=east, z=south; footprints verified in 3d-model/scene.json \u2014 all 8 OSM names matched exactly: 'Hopkinson House', 'One Independence Place', '2 Independence Place', 'Penn Mutual Tower', 'The Moravian', '101 Walnut', 'Public Ledger Building', 'The Curtis Center'). Key modeling decisions: (1) Hopkinson House must be BUFF, not brick+concrete \u2014 the original red-brick/gray-concrete duotone is painted over in a single soft buff today; keep the alternating protruding-balcony relief for the cheese-grater texture. (2) Independence Place twins: OSM h=96.9 m conflicts with sourced 25 stories (~76 m); if visual floor count matters, use ~25 floors of dark bronze-brown brick. (3) Penn Mutual Tower is dual-natured: dark glass only on the north face toward Independence Hall; concrete beton-brut grid on other faces; the light-gray Haviland Egyptian Revival screen stands free at the Walnut St base. (4) Public Ledger and Curtis read as a matched pair of red-brick-with-white-marble full-block masses flanking Sansom St, both with white 2-story bases, marble arched crowns and huge cornices, flat roofs. Sources: whyy.org/articles/building-stories-hopkinson-house/, thehopkinsonhouse.com, skyscrapercenter.com/building/hopkinson-house/12476 (351 ft), docomomo-us.org 'Buildings as Ad: Penn Mutual', phila.gov HC 508-32 Walnut PDF, centercitycondos.com (Independence Place, Moravian, 101 Walnut), styergroup.com (bronze brick tone), whyy.org 'Look Up! Public Ledger', workshopoftheworld.com/center_city/curtis.html, en.wikipedia.org/wiki/Curtis_Building."
+ },
+ {
+  "buildings": [
+   {
+    "name": "The Ryland",
+    "confidence": "high (built photos Jan 2023+, PhillyYIMBY/Perkins Eastman descriptions, 2024+ satellite)",
+    "facade_color_hex": "#AEC0CB",
+    "trim_color_hex": "#E8EAEB",
+    "facade_notes": "Glass window-wall top to bottom (no masonry podium; original darker base was dropped and glass continues to street level). Virtually tint-free/colorless glass reading pale blue-gray in daylight, organized by a grid of crisp white/silver metal mullions: thin vertical bands accentuate height, heavier horizontal bands every 3 floors group units into three-story bays. Tripartite reading: taller glass at lowest floors (lobby/amenity), uniform shaft, balconied top. Dark bronze/near-black (#4A4A4C) frame accents at the amenity-level cut-out and rooftop pergolas. Slightly cantilevered glass entrance at street.",
+    "massing_notes": "31 floors, 364 ft (110.9 m). Occupies ONLY the narrow SOUTH tip of the full-parcel OSM polygon \u2014 Dock St wraps the south and west, S Front St along the east, and the 4-story hotel (Marriott Old City, ex-Sheraton) sits directly NORTH on the same parcel with a paved courtyard with round planters between them. Tower = two slender rectangular bars side by side, long axis ~E-W, footprint ~55-60 m x ~25 m total, slightly trapezoidal because it follows Dock Street's gentle NW bend. The SOUTHERN bar stops several floors short of the northern bar; its roof is the pool/amenity deck (glass-railed, planted, pergola with string lights). Vertical shift between bars gives a staggered profile; amenity-level cut-out partway up.",
+    "roof": {
+     "form": "flat",
+     "color_hex": "#C8CBCD",
+     "ridge_axis": "E-W (long axis of both bars)",
+     "notes": "Two flat roofs at different heights: lower south-bar roof = amenity/pool deck; north bar full height topped by a glass parapet screen extending ~1 story above the roofline plus a setback glass-wrapped mechanical/amenity bulkhead. Reads light gray/white from above."
+    },
+    "elements": [
+     {
+      "kind": "balconies",
+      "where": "top ~5 levels (penthouses), plus a scattering on shaft, mainly S and E faces",
+      "dims": "~2 m deep projecting",
+      "color_hex": "#DDE2E5",
+      "notes": "Glass balustrades with silver rails; planted terraces at upper setbacks"
+     },
+     {
+      "kind": "tower",
+      "where": "south tip of parcel, north bar tallest",
+      "dims": "~110.9 m tall; bars each ~10-12 m wide x ~55 m long",
+      "color_hex": "#AEC0CB",
+      "notes": "Two offset bars; south bar lower with roof deck"
+     }
+    ]
+   },
+   {
+    "name": "Sheraton Philadelphia Society Hill",
+    "confidence": "high (current hero photo of entrance + 2024+ satellite; now operates as Philadelphia Marriott Old City)",
+    "facade_color_hex": "#95513F",
+    "trim_color_hex": "#EFEAE0",
+    "facade_notes": "Red/orange-red brick, Colonial-inspired (opened July 4 1986, 365 rooms). Regular rhythm of tall vertical punched windows with white/cream frames and flat white lintels; 4th (top) floor has juliet balconies with dark metal railings; ground floor glass entry doors under a projecting flat-roofed white/cream porte-cochere canopy with recessed downlights and brick-paved circular drive with green center island (west side, at Dock St/2nd St). Interior atrium lobby (not visible externally).",
+    "massing_notes": "4 stories (~16-18 m to eaves) covering the NORTH/CENTER of the crescent-shaped block bounded by Walnut St (N), S Front St (E), Dock St (curving W/S). Not one box: several connected 4-story wings wrapping interior courtyards (roughly U/H-plan), wings running along Front St and along the Dock St curve; entry court with circular drive on the west. The Ryland tower abuts the parcel's south tip.",
+    "roof": {
+     "form": "hip",
+     "color_hex": "#3C3F44",
+     "ridge_axis": "follows each wing (N-S along Front St wing, curving/E-W on Dock St wings)",
+     "notes": "Dark charcoal standing-seam metal hipped roofs over each wing; ribbed seam texture clearly visible from above; scattered small rooftop mechanical units in courtyard-facing flat sections."
+    },
+    "elements": [
+     {
+      "kind": "portico",
+      "where": "west entrance at circular drive",
+      "dims": "~15 m wide x 8 m deep, flat-roofed",
+      "color_hex": "#EFEAE0",
+      "notes": "White/cream porte-cochere canopy, square brick-clad end piers"
+     },
+     {
+      "kind": "balconies",
+      "where": "4th floor, street facades",
+      "color_hex": "#2E2E30",
+      "notes": "Shallow juliet rails, dark metal"
+     }
+    ]
+   },
+   {
+    "name": "Independence Seaport Museum",
+    "confidence": "medium-high (real marina-side photo + satellite roof view; building is the ex-Port of History Museum, post-1976 Bicentennial, $15M renovation 1994-95)",
+    "facade_color_hex": "#D8D5CC",
+    "trim_color_hex": "#1F3A5F",
+    "facade_notes": "Large low 2-story block; walls off-white/light-gray concrete-stucco panel. A continuous white fascia/sign band near the roofline carries dark navy 'Independence Seaport Museum' lettering. East (marina/river) side is the show face: glazed pavilions with angled bay windows, blue-gray trim, and pale seafoam-green metal awnings/shed roofs over the waterside walk; colorful banner panels on the SE corner. West side faces Columbus Blvd with a lighter/white entrance block.",
+    "massing_notes": "Roughly rectangular footprint ~110-130 m (N-S) x ~60 m (E-W) on Penn's Landing between Walnut St walkways and the marina basin (swan-boat marina directly east). Mostly 2 stories (~12 m), with a taller central hall whose curved (barrel-vault) roof mass rises above the rest; sits just south of the new park-cap construction area.",
+    "roof": {
+     "form": "complex",
+     "color_hex": "#5A5E62",
+     "ridge_axis": "N-S (central vault strip)",
+     "notes": "Mostly flat dark-gray membrane, with a long pale-green (#9DBFAD, weathered-copper look) barrel-vault/curved metal roof strip running N-S through the center, plus low seafoam-green metal shed roofs and awnings on the east waterside pavilions."
+    },
+    "elements": [
+     {
+      "kind": "arcade",
+      "where": "east/marina frontage",
+      "dims": "full length of east face, 1 story",
+      "color_hex": "#8FBFAE",
+      "notes": "Glazed pavilion band with angled bays and seafoam-green awnings over public riverwalk"
+     },
+     {
+      "kind": "dome",
+      "where": "center of roof",
+      "dims": "~60 m long x ~15 m wide vault, rises ~5 m above main roof",
+      "color_hex": "#9DBFAD",
+      "notes": "Not a true dome: a shallow barrel vault in pale green metal (verdigris look)"
+     }
+    ]
+   },
+   {
+    "name": "The Residences at Dockside",
+    "confidence": "medium (entrance photo + oblique satellite; 16-17 stories, 242 units, sources give built 1995-2001, developer DePaul Group)",
+    "facade_color_hex": "#D9CDB4",
+    "trim_color_hex": "#A8C5B8",
+    "facade_notes": "Long residential slab on its own pier. Upper body: buff/cream precast concrete frame with dark-tinted rectangular windows in a regular grid; distinctive pale seafoam-green glass/panel sections as accents (stair/atrium bands and a green-glass block near the west end). Base/west end at Columbus Blvd: red-orange brick (#96503F) podium and service wings, dark bronze metal canopies, red-brick entry plaza with steps and a row of silver flagpole sculptures carrying fish/sail-shaped metal banners.",
+    "massing_notes": "16-17 stories (~50-55 m). Slab runs WNW-ESE, extending from Columbus Blvd (between Bainbridge and Fitzwater) ~150 m out into the Delaware on a rectangular pier; building occupies most of the pier width (~25-30 m). West end is blockier with terraced setbacks stepping down (visible stepped concrete grid at the top of the west end); long N and S faces have repetitive balcony/terrace rows; pier deck extends beyond the building at the far east (river) tip.",
+    "roof": {
+     "form": "flat",
+     "color_hex": "#CFCFCF",
+     "ridge_axis": "WNW-ESE (long axis)",
+     "notes": "Flat white/light-gray roof with rows of small rooftop units/skylight ribs along the slab; stepped roof levels at the west-end setbacks."
+    },
+    "elements": [
+     {
+      "kind": "balconies",
+      "where": "along both long faces (N and S), most floors",
+      "dims": "~1.5-2 m deep",
+      "color_hex": "#C9BFA8",
+      "notes": "Continuous horizontal rows; concrete rails matching buff facade"
+     },
+     {
+      "kind": "portico",
+      "where": "west entrance plaza at Columbus Blvd",
+      "color_hex": "#4A3B32",
+      "notes": "Dark bronze metal canopy over brick-paved entry; plaza has silver kinetic sail/fish sculptures on poles"
+     }
+    ]
+   }
+  ],
+  "extra": "Context notes for the scene: Dock St curves NW past the Ryland/hotel parcel; the plaza SOUTH of Dock St across from The Ryland (Foglietta Plaza) is red-brick paved. Society Hill Towers themselves read as tan/beige exposed-concrete grids with dark bronze window glass (visible in multiple photos for color cross-checking, ~#C4B49A frame / #4A423A glass). The Ryland was developed by LCOR (not Durst) and designed by BLT Architects/Perkins Eastman; topping out 2022, occupancy 2023-24. The Sheraton is currently branded Philadelphia Marriott Old City but is the same 1986 4-story brick building. Penn's Landing area north of the Seaport Museum shows active park-cap construction (bare earth) in current imagery. Sources: perkinseastman.com/projects/the-ryland, phillyyimby.com 2023-06 and 2023-02 One Dock Street articles, ocfrealty.com Ryland delivery article, Google Maps place photos and 2024+ satellite imagery for all four buildings, delawareriverwaterfront.com and justluxe.com for Sheraton 1986/Colonial details, compass.com and centercitycondos.com for Dockside stats, philadelphiaencyclopedia.org for Seaport Museum history."
+ },
+ {
+  "buildings": [
+   {
+    "name": "Saint Peter's Church",
+    "confidence": "high (photos + HABS + OSM footprint; nave dims approximate)",
+    "facade_color_hex": "#8E4A38",
+    "trim_color_hex": "#F0EDE4",
+    "facade_notes": "Georgian red brick (Flemish bond) rectangle, 1758-61 by Robert Smith. Two tiers of windows: round-arched clear-glass sash above with white keystones and flat white lintels below; three-dimensional brick quoining at corners, white dentil cornice. Large three-part Palladian window centered in the EAST gable end facing S 3rd St. North flank faces Pine St across a green churchyard full of gravestones, enclosed by a brick wall with iron gates.",
+    "massing_notes": "Freestanding mid-block in churchyard at SW corner of 3rd & Pine. OSM footprint 37.4 m E-W x 24.6 m N-S including west tower. Nave ~27.5 m (E-W) x 18.5 m (N-S), eaves ~9.5 m, ridge ~13.5 m. Long axis runs E-W: tower+spire at WEST end, Palladian chancel window at EAST end (3rd St side).",
+    "roof": {
+     "form": "gable",
+     "color_hex": "#5E5D59",
+     "ridge_axis": "E-W",
+     "notes": "Moderate-pitch dark gray roof over nave, mostly hidden behind cornice from street level."
+    },
+    "elements": [
+     {
+      "kind": "tower",
+      "where": "west end of nave",
+      "dims": "~7.5 m square, brick to ~24 m",
+      "color_hex": "#8E4A38",
+      "notes": "1842 William Strickland. Red brick, white stone stringcourses between stages, arched louvered/glazed openings with white surrounds, white clock faces on top stage."
+     },
+     {
+      "kind": "spire",
+      "where": "atop west tower",
+      "dims": "octagonal, apex ~64 m (steeple 210 ft total)",
+      "color_hex": "#E9E9E5",
+      "notes": "Tall slender white shingled octagonal spire with small balustraded base stage; gilt cross + weathervane finial (#C9A227). 14 ft taller than Christ Church's steeple."
+     }
+    ]
+   },
+   {
+    "name": "Old Pine Street Church",
+    "confidence": "high (photo-verified colors; dims medium)",
+    "facade_color_hex": "#EBDCA4",
+    "trim_color_hex": "#EAE8DF",
+    "facade_notes": "Greek Revival stuccoed temple (1837/1857 remodels of 1768 brick church, John Fraser). Walls smooth stucco painted canary/butter yellow. Giant-order Corinthian colonnade across the NORTH front (Pine St): 8 white fluted columns with ornate white capitals, corner columns coupled/paired, standing in an open loggia in antis behind which the wall is also yellow stucco; big paneled doors painted slate blue (#3E5F7C). Giant Corinthian pilasters continue on east and west flanks; tall stained-glass windows with white surrounds. Raised brownstone ashlar basement story (#A9835B) with marble corner blocks and incised name; opposing granite stair runs at each end up to the portico; black cast-iron fence and railings (#2B2B2B) between plinths.",
+    "massing_notes": "Sits on SOUTH side of Pine St at 412 Pine (between 4th & 5th), facade at the sidewalk. OSM footprint 24.1 m E-W x 31.7 m N-S. Long axis N-S; temple front + colonnade face NORTH to Pine St. Full white entablature and pediment above colonnade; top of pediment ~14 m; column height ~9 m; portico depth ~3.5 m.",
+    "roof": {
+     "form": "gable",
+     "color_hex": "#7A7A76",
+     "ridge_axis": "N-S",
+     "notes": "Low-pitch metal-clad gable behind the white entablature/pediment; reads flat-gray from street."
+    },
+    "elements": [
+     {
+      "kind": "colonnade",
+      "where": "north front on Pine St",
+      "dims": "8 columns (octastyle), ~9 m tall, full facade width ~24 m",
+      "color_hex": "#EAE8DF",
+      "notes": "White fluted giant Corinthian columns, paired at corners; open-air loggia behind."
+     },
+     {
+      "kind": "pediment",
+      "where": "north gable over colonnade",
+      "dims": "~24 m wide",
+      "color_hex": "#EAE8DF",
+      "notes": "Plain white tympanum and heavy cornice."
+     }
+    ]
+   },
+   {
+    "name": "Mother Bethel African Methodist Episcopal Church",
+    "confidence": "high (photos + 1916 Sanborn map: tower positions/heights documented)",
+    "facade_color_hex": "#CFC9BD",
+    "trim_color_hex": "#8A7A66",
+    "facade_notes": "1890 Romanesque Revival (Hazlehurst & Huckel). WEST facade on S 6th St is rock-faced rusticated granite, light warm gray-white; granite wraps one full bay onto north and south flanks; all remaining walls bright red-orange brick (#9E4C32) with brownstone trim bands. Facade composition: big gable bay (center/south) with a giant recessed round stone arch framing a stained-glass tracery rose window group; below it a deeply recessed round-arch entrance with dark wood doors (#4A3527) up a few steps behind an iron fence; small round window in gable peak; gargoyles and colonnette turrets with conical caps.",
+    "massing_notes": "East side of S 6th St between Addison St (north) and Lombard (south), front lawn with Richard Allen memorial toward Lombard. OSM footprint 23.4 m along 6th St x 36.7 m deep E-W. Eaves 11.6 m (Sanborn '38 ft to eaves'); main front gable peak ~16.5 m. Main bell tower at NORTHWEST corner (6th & Addison); smaller stair turret at SOUTH end of the west facade. South flank toward Lombard has a red brick cross-gable transept with rose window over three arched stained-glass windows; two tall brick chimneys on south flank; lower 2-3 story brick rear sections to the east.",
+    "roof": {
+     "form": "complex",
+     "color_hex": "#4B4642",
+     "ridge_axis": "E-W",
+     "notes": "Dark gray slate; main gable ridge E-W with N and S cross-gable transepts; secondary pyramidal caps; green copper finials/accents (#6F8B77)."
+    },
+    "elements": [
+     {
+      "kind": "tower",
+      "where": "NW corner, at 6th & Addison",
+      "dims": "~6.5 m square; masonry 22.5 m (74 ft per Sanborn); spire apex ~30 m",
+      "color_hex": "#CFC9BD",
+      "notes": "Rusticated granite; triple arched louvered belfry openings per face; four corner colonnette pinnacles with conical caps; steep pyramidal slate spire (#4B4642) with cross finial."
+     },
+     {
+      "kind": "tower",
+      "where": "south end of west facade",
+      "dims": "~12.5 m tall (41 ft per Sanborn)",
+      "color_hex": "#CFC9BD",
+      "notes": "Low granite stair turret with small pyramidal cap; reads as a buttress-turret flanking the main gable."
+     }
+    ]
+   },
+   {
+    "name": "Old Saint Mary's Church",
+    "confidence": "high colors/composition (photo); dims medium",
+    "facade_color_hex": "#814238",
+    "trim_color_hex": "#E8E4DA",
+    "facade_notes": "Flat plain red brick front facing EAST onto S 4th St (church on west side of street). Victorian-Gothic remodel look on a 1763/1810 body: stepped parapet facade (raised center attic section) with white stone stringcourses and white coping; white-painted crosses on the parapet; central tall pointed-arch window with white tracery; above it an arched niche holding a Marian statue against blue mosaic (#4A6FA5); three entrances (central double door flanked by two singles), pointed-arch transoms, doors painted cream (#E3DCC4); smaller pointed-arch window on south bay; brick sidewalk in front; walled graveyard behind/south.",
+    "massing_notes": "OSM footprint 36.8 m E-W (nave axis, running back/west from 4th St) x 27.0 m N-S; facade ~22 m wide. Eaves ~10 m; parapet top ~14-15 m; body of church plain brick with Gothic-arched windows on flanks.",
+    "roof": {
+     "form": "gable",
+     "color_hex": "#615F5B",
+     "ridge_axis": "E-W",
+     "notes": "Gable hidden behind the flat stepped street parapet; dark gray."
+    },
+    "elements": []
+   },
+   {
+    "name": "Society Hill Synagogue",
+    "confidence": "high (2022 photo); note architect is Thomas U. Walter, not Strickland",
+    "facade_color_hex": "#D2D4D0",
+    "trim_color_hex": "#F1F1EC",
+    "facade_notes": "1829 Thomas U. Walter (built as Spruce Street Baptist Church; 'Great Roumanian Shul' from 1910). Faces NORTH on Spruce St (south side of street), facade at sidewalk. Smooth pale-gray painted stucco with white trim: heavy modillioned/dentil white cornice, flat attic parapet (1851 attic story by Walter; his two towers/cupolas were removed after 1910 \u2014 none exist today). Two entrance bays: broad stone stairs with balustrades up to tall paneled double doors painted dark maroon-brown (#6B2F24), Hebrew inscription panel above the door; tall diamond-lattice (leaded) windows in two stacked tiers with white architrave surrounds and aedicule frames. Raised basement of smooth gray ashlar stone (#9DA19D) with small basement door(s). Round globe lamp at entry.",
+    "massing_notes": "Historic front ~17-20 m wide; OSM footprint (with rear + annex) 24.0 m E-W x 39.6 m N-S. Height to parapet ~12 m; basement story ~2 m exposed. A 3-story modern glass-and-gray connector/learning-center annex (2020-21) adjoins the west side; red brick rowhouses beyond.",
+    "roof": {
+     "form": "gable",
+     "color_hex": "#77756F",
+     "ridge_axis": "N-S",
+     "notes": "Low-pitch roof fully hidden behind the flat attic parapet; from street the building reads as a flat-topped block."
+    },
+    "elements": []
+   },
+   {
+    "name": "Old Saint Joseph's Church",
+    "confidence": "high that it is not street-visible; interior-block massing medium",
+    "facade_color_hex": "#95503A",
+    "trim_color_hex": "#EDEAE0",
+    "facade_notes": "Essentially invisible from public streets. On Willings Alley the only presence is a round-arch gateway framed in reddish brownstone (#7A4A3C) with spiked wrought-iron gates (#243029), set into a 3.5-story red brick rowhouse-type block with white trim and white/gray shutters and a hanging sign. The arch leads to an enclosed courtyard concealing the church.",
+    "massing_notes": "1838 church by John Darragh hidden mid-block south of Willings Alley between 3rd & 4th: plain red brick hall ~18 m x 27 m, ~3 stories tall, with round-arch windows onto the courtyard. Whole complex footprint per OSM ~27 m E-W x 29 m N-S. For a street-view 3D model: model the brick perimeter block along the alley with the arched gate, and a simple tall brick mass with a low gable behind; no tower, no spire, no street facade.",
+    "roof": {
+     "form": "gable",
+     "color_hex": "#5F5D58",
+     "ridge_axis": "N-S",
+     "notes": "Low-pitch dark gray roof on the hidden church hall; alley buildings have flat/shed roofs with brick chimneys."
+    },
+    "elements": []
+   },
+   {
+    "name": "Old Saint Paul's Church",
+    "confidence": "high (photo-verified); dims medium",
+    "facade_color_hex": "#D8DAD3",
+    "trim_color_hex": "#C2C4BC",
+    "facade_notes": "1761, remodeled 1830 by William Strickland; now Episcopal Community Services offices. NOT exposed brick: the whole exterior is smooth stucco painted a very pale warm gray/off-white. West front: full-width plain triangular pediment (gable front) with a round oculus window in a stone quatrefoil-like surround at its center; 'EPISCOPAL COMMUNITY SERVICES' lettered on the wall; central door with classical stone surround (pilasters + entablature) and tall double doors painted weathered teal/blue-green (#4C7E85); flanking and side round-arch windows with white Y-tracery; dark granite watertable/base (#6E7170); raised forecourt with steps behind a black iron fence with stone gate piers topped by stone balls; two tall conifers flank the entrance.",
+    "massing_notes": "225 S 3rd St, EAST side of the street: front faces WEST onto 3rd St, set back behind small raised forecourt; old graveyard beside/behind. OSM footprint 32.1 m E-W (nave axis) x 25.6 m N-S; facade ~20 m wide. Eaves ~9 m; pediment apex ~13.5 m. Simple rectangular hall body, two tiers of arched windows on flanks.",
+    "roof": {
+     "form": "gable",
+     "color_hex": "#63615C",
+     "ridge_axis": "E-W",
+     "notes": "Moderate-pitch dark gray gable behind the pediment."
+    },
+    "elements": [
+     {
+      "kind": "pediment",
+      "where": "west front on 3rd St",
+      "dims": "~20 m wide",
+      "color_hex": "#D8DAD3",
+      "notes": "Stucco tympanum with central oculus; plain raking cornice."
+     }
+    ]
+   }
+  ],
+  "extra": "Cross-cutting notes for the 3D model: (1) Mother Bethel tower facts come from the 1916 Sanborn plate (Vol 1 Plate 49): '74 ft TOWER' at NW corner (6th & Addison), '41 ft TOWER' at SW end of facade, '38 ft to eaves', slate roof \u2014 the big pyramidal-spired bell tower is at the NORTH end of the 6th St facade, NOT at the Lombard corner; lawn with Richard Allen statue lies between church and Lombard today. (2) St. Peter's steeple total 210 ft (~64 m) \u2014 the tallest thing in the neighborhood after Society Hill Towers; white spire is highly visible in aerials. (3) Old Pine is the only yellow building (canary stucco) \u2014 strong landmark color; its colonnade faces NORTH (Pine St) and the building sits on the SOUTH side of Pine. (4) Society Hill Synagogue and Old St. Paul's are the two pale-gray stucco classical boxes (no towers); do not model them as brick. (5) Attribution corrections vs. task prompt: Society Hill Synagogue is by Thomas U. Walter (1829), not Strickland; Strickland did St. Peter's 1842 tower and Old St. Paul's 1830 remodel. (6) All footprint dimensions above are OSM bounding boxes (buildings are orthogonal to the street grid, so bbox = plan size). Photos sampled for colors are in scratchpad: stpeters_s.jpg, oldpine_s.jpg, motherbethel_s.jpg, mb2_s.jpg, mb3_s.jpg, habs_sw.jpg, sanborn_mb2.jpg, oldstmarys_s.jpg, synagogue_s.jpg, stjoseph_s.jpg, stpauls_s.jpg."
+ }
+]

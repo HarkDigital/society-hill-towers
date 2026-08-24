@@ -1,0 +1,60 @@
+#!/usr/bin/env python3
+"""Assemble the single-file Society Hill Towers artifact page."""
+import json, pathlib, re, sys
+
+ROOT = pathlib.Path(__file__).parent
+OUT = ROOT / "society-hill-towers.html"
+
+template = (ROOT / "template.html").read_text(encoding="utf-8")
+css = (ROOT / "style.css").read_text(encoding="utf-8")
+three = (ROOT / "three.min.js").read_text(encoding="utf-8")
+app = (ROOT / "app.js").read_text(encoding="utf-8")
+
+scene = json.loads((ROOT / "scene.json").read_text(encoding="utf-8"))
+meta_path = ROOT / "meta.json"   # tower facts + landmark research, written by hand after workflow
+meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+
+about_path = ROOT / "about_body.html"
+about_body = about_path.read_text(encoding="utf-8") if about_path.exists() else "<p>Model of the towers and surrounding blocks.</p>"
+
+dem_path = ROOT / "dem.json"   # USGS NED 10 m grid, meters ASL, local 25 m cells
+dem = json.loads(dem_path.read_text(encoding="utf-8")) if dem_path.exists() else None
+if dem:
+    dem["rows"] = [[None if v is None else round(v, 2) for v in row] for row in dem["rows"]]
+data_js = (
+    "const SCENE_DATA = " + json.dumps(scene, separators=(",", ":")) + ";\n"
+    + "const META = " + json.dumps(meta, separators=(",", ":")) + ";\n"
+    + "const DEM = " + json.dumps(dem, separators=(",", ":")) + ";\n"
+)
+demw_path = ROOT / "dem_wide.json"
+demw = json.loads(demw_path.read_text(encoding="utf-8")) if demw_path.exists() else None
+if demw:
+    demw["rows"] = [[None if v is None else round(v, 1) for v in row] for row in demw["rows"]]
+wide_path = ROOT / "wide.b64"
+wide_b64 = wide_path.read_text(encoding="utf-8").strip() if wide_path.exists() else ""
+data_js += ("const DEM_WIDE = " + json.dumps(demw, separators=(",", ":")) + ";\n"
+            + "const WIDE_B64 = \"" + wide_b64 + "\";\n")
+dems_path = ROOT / "dem_south.json"
+dems = json.loads(dems_path.read_text(encoding="utf-8")) if dems_path.exists() else None
+if dems:
+    dems["rows"] = [[None if v is None else round(v, 1) for v in row] for row in dems["rows"]]
+wwb_path = ROOT / "wwb.json"
+data_js += ("const DEM_SOUTH = " + json.dumps(dems, separators=(",", ":")) + ";\n"
+            + "const WWB_PTS = " + (wwb_path.read_text(encoding="utf-8").strip() if wwb_path.exists() else "null") + ";\n")
+names_path = ROOT / "wide_names.json"
+data_js += "const WIDE_NAMES = " + (names_path.read_text(encoding="utf-8") if names_path.exists() else "null") + ";\n"
+
+# </script> inside embedded JS strings would terminate the tag early
+for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):
+    if re.search(r"</script", blob, re.I):
+        sys.exit(f"FATAL: '</script' found inside {name} blob")
+
+page = (template
+        .replace("{{CSS}}", css)
+        .replace("{{ABOUT_BODY}}", about_body)
+        .replace("{{THREE}}", three)
+        .replace("{{DATA}}", data_js)
+        .replace("{{APP}}", app))
+
+OUT.write_text(page, encoding="utf-8")
+print(f"wrote {OUT} ({OUT.stat().st_size/1e6:.2f} MB)")

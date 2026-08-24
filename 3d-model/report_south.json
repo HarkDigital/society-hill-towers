@@ -1,0 +1,183 @@
+{
+ "counts": {
+  "buildings": 6374,
+  "roads": 2708,
+  "areas": 179,
+  "trees": 0
+ },
+ "area_kinds": {
+  "park": 122,
+  "pier": 43,
+  "water": 14
+ },
+ "bounds": {
+  "minX": -5502.12,
+  "maxX": 4572.48,
+  "minZ": -59.48,
+  "maxZ": 6616.26
+ },
+ "towers": [
+  {
+   "name": "Society Hill Towers North Building",
+   "centroid": [
+    8.58,
+    -41.34
+   ],
+   "corners": [
+    [
+     1.01,
+     -59.48
+    ],
+    [
+     22.14,
+     -55.56
+    ],
+    [
+     16.14,
+     -23.21
+    ],
+    [
+     -4.99,
+     -27.12
+    ]
+   ],
+   "angleRad": 1.7541,
+   "width_m": 32.91,
+   "depth_m": 21.49,
+   "h": 89.0
+  },
+  {
+   "name": "Society Hill Towers West Building",
+   "centroid": [
+    -29.73,
+    -5.08
+   ],
+   "corners": [
+    [
+     -38.12,
+     -23.84
+    ],
+    [
+     -15.56,
+     -19.96
+    ],
+    [
+     -21.34,
+     13.67
+    ],
+    [
+     -43.9,
+     9.79
+    ]
+   ],
+   "angleRad": 1.741,
+   "width_m": 34.12,
+   "depth_m": 22.89,
+   "h": 89.0
+  },
+  {
+   "name": "Society Hill Towers South Building",
+   "centroid": [
+    21.15,
+    46.43
+   ],
+   "corners": [
+    [
+     38.87,
+     37.8
+    ],
+    [
+     35.22,
+     60.23
+    ],
+    [
+     3.43,
+     55.05
+    ],
+    [
+     7.08,
+     32.62
+    ]
+   ],
+   "angleRad": 0.1614,
+   "width_m": 32.21,
+   "depth_m": 22.72,
+   "h": 89.0
+  }
+ ],
+ "columbusXRange": [
+  62.51,
+  640.67
+ ],
+ "tallNamed": [
+  {
+   "name": "Society Hill Towers North Building",
+   "h": 89.0,
+   "centroid": [
+    9,
+    -41
+   ]
+  },
+  {
+   "name": "Society Hill Towers West Building",
+   "h": 89.0,
+   "centroid": [
+    -30,
+    -5
+   ]
+  },
+  {
+   "name": "Society Hill Towers South Building",
+   "h": 89.0,
+   "centroid": [
+    21,
+    46
+   ]
+  },
+  {
+   "name": "Holiday Inn",
+   "h": 56.3,
+   "centroid": [
+    -3346,
+    3644
+   ]
+  },
+  {
+   "name": "D. Newlin Fell School",
+   "h": 27.7,
+   "centroid": [
+    -1591,
+    3320
+   ]
+  },
+  {
+   "name": "Mastery Charter School - Thomas Campus",
+   "h": 27.4,
+   "centroid": [
+    -1598,
+    3393
+   ]
+  },
+  {
+   "name": "NovaCare Complex",
+   "h": 25.9,
+   "centroid": [
+    -2669,
+    4246
+   ]
+  }
+ ],
+ "origin": {
+  "lat": 39.945473644755005,
+  "lon": -75.14474803850973
+ },
+ "sceneBytes": 1579247,
+ "skipped": {
+  "degenerate_building": 0,
+  "bad_relation": 0,
+  "open_pier": 8,
+  "missing_nodes": 0,
+  "degenerate_area": 0
+ },
+ "notes": []
+}

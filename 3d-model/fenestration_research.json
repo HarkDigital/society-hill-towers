@@ -1,0 +1,215 @@
+{
+ "styles": [
+  {
+   "name": "georgian_federal_rowhouse",
+   "applies_to": "1750-1830 brick rowhouses on Spruce, Pine, Delancey, Philip, American, 2nd-4th Sts; also 1960s Society Hill infill townhouses built to match",
+   "window_w_m": 0.95,
+   "window_h_m": 1.75,
+   "pitch_m": 1.85,
+   "floor_pitch_m": 3.1,
+   "sill_height_m": 0.8,
+   "arched": false,
+   "lintel": "flat gauged-brick jack arch, 0.25 m tall, splayed ~15 deg, rubbed orange brick lighter than wall (#B3604A); grander houses add 0.15 m marble keystone; Federal houses (1790-1830) use flat marble lintel 0.15 m tall",
+   "muntins": "Georgian 12/12 (6x2 per sash); Federal 6/6; third floor squat 12/8 or 6/3. Muntin 0.022 m wide, pane ~0.25x0.30 m",
+   "shutters": "ground floor: paneled (two raised panels); upper floors: louvered. Colors: dark green #2F4A36 (most common), black #1A1A1A, occasionally Spanish brown #4A2A1E. Each leaf = half window width, hung flush to brick on strap hinges, 0.035 m thick; third floor often omitted",
+   "door": "6-panel wood door 0.95x2.10 m, painted black/green/red #6B1F1A; Georgian: rectangular 4-6 light transom 0.35 m tall over door; Federal: elliptical or semicircular fanlight (rise 0.5-0.6 m, span 1.1-1.3 m) with tracery; frontispiece on better houses: Doric pilasters 0.25 m wide + pediment 0.5 m tall projecting 0.2 m; 3-5 white marble steps (0.17 rise / 0.30 tread, 1.3-1.6 m wide) with wrought-iron rails; door in end bay (not centered) on 2- and 3-bay houses; bulkhead cellar door + 2-light cellar window 0.6x0.4 m with iron grate at sidewalk",
+   "cornice": "painted wood box cornice 0.40 m tall, 0.35 m projection, modillion blocks 0.12 m wide at 0.30 m spacing (or dentils 0.05 m at 0.10 m) under crown mould; Federal versions finer with fretwork; sits directly under side-gabled roof eave; 1-2 gabled (pedimented) dormers 0.9 m wide per house with 6/6 or round-headed sash",
+   "frame_color_hex": "#F2EFE6",
+   "sill_height_m_note": "marble slab sill 0.08 m thick projecting 0.05 m",
+   "notes": "Typical front 4.5-6.5 m; 2 bays on <5 m fronts (pitch 2.2 m, door + 1 window ground floor), 3 bays on 5.5-7 m (pitch 1.8-2.0 m). Stories: 3 + attic; floor-to-floor ground 3.2-3.5, second 2.9-3.1, third 2.6-2.8 (HABS 700-714 Spruce, Greek Revival 1835-39, is grander: +4.55, +8.92, +12.38, roof +15.5 m, 8.9 m front). Window heights by floor: ground 1.75-1.9, second 1.6-1.75, third 1.2-1.35 (same width). Sill-to-sill vertical rhythm ~ floor pitch. Watertable: brick or marble chamfered belt 0.08 m at 0.5-0.75 m above sidewalk (ground floor raised 0.5-0.9 m over cellar); marble belt courses 0.10 m tall at second/third floor lines on best houses (Powel, Physick). Brick Flemish bond with glazed (blue-black) headers, field color #9A4A32 to #7E3B2B, mortar #D8CFC0, brick 0.21x0.06 m. Roof: side-gabled, pitch 35-45 deg, slate or wood shingle, party-wall chimneys; some 1760s houses have gambrel + pent eave (see Man Full of Trouble). Greek Revival 1830s variant: 4 stories, 6/6 sash 1.0x2.0 m (ground), flat marble lintels + sills, pedimented Doric/Ionic door porch, plain brick, small attic windows, low-pitch bituminous roof behind cornice."
+  },
+  {
+   "name": "georgian_church",
+   "applies_to": "St. Peter's (1761), and as a base for Old St. Joseph's/Old St. Mary's type brick churches",
+   "window_w_m": 1.4,
+   "window_h_m": 3.6,
+   "pitch_m": 4.4,
+   "floor_pitch_m": 5,
+   "sill_height_m": 1,
+   "arched": true,
+   "lintel": "upper tier: round brick arch (semicircle on 1.4 m span) with projecting marble keystone 0.25 m; lower tier: flat/segmental brick jack arch with keystone",
+   "muntins": "upper arched sash 12/12 + 9-light fan head (pane 0.30x0.33); lower rectangular 12/12; all white, clear glass",
+   "shutters": "none",
+   "door": "pedimented doorways 1.3x2.6 m on flanks, paneled double doors, triangular pediment 0.6 m tall on pilasters",
+   "cornice": "full wood entablature painted white 0.7 m tall with dentils/modillions, continued as raking cornice on gable ends forming pediments; eave height ~11 m",
+   "frame_color_hex": "#F4F1EA",
+   "notes": "Two tiers: lower rectangular windows 1.2x1.9 m (sill +1.0 m) beneath gallery; upper round-arched 1.4x3.6 m (sill +5.0 m). Brick Flemish bond with rubbed brick quoins at corners (0.45 m wide alternating), marble watertable 0.6 m. Roof gable 30 deg, slate. Gable ends: oculus 1.0 m diameter with keyed surround centered in tympanum. Paint all trim white."
+  },
+  {
+   "name": "greek_revival_church",
+   "applies_to": "Old Pine Street Presbyterian (1857 recasing)",
+   "window_w_m": 1.8,
+   "window_h_m": 5,
+   "pitch_m": 4.9,
+   "floor_pitch_m": 0,
+   "sill_height_m": 3.2,
+   "arched": false,
+   "lintel": "molded architrave 0.2 m with flat cornice cap 0.3 m tall on brackets",
+   "muntins": "two-tier: lower sash 1.8x3.0 m (2x4 large panes, now stained glass) + transom/upper sash 1.8x2.0 m; muntins white 0.04 m",
+   "shutters": "none",
+   "door": "central double door 2.4x5.0 m painted blue #1F4E8C with applied iron straps, plain architrave; side doors 1.2x2.6 m in basement level",
+   "cornice": "stone/wood entablature 1.6 m tall (architrave+frieze+cornice with dentils), full pediment over portico, raking cornice 0.5 m",
+   "frame_color_hex": "#FFFFFF",
+   "notes": "Raised rusticated brownstone basement 2.3 m tall (#8A6A4A, ashlar 0.45 m courses, rectangular windows 1.2x1.2 m in each bay), stuccoed upper walls painted ochre/tan #D9BD8A scored as ashlar, pilaster strips 0.6 m wide dividing bays, wall height ~12 m to entablature. Columns Corinthian, white, 0.9 m diameter, 9 m tall, paired."
+  },
+  {
+   "name": "romanesque_revival_church",
+   "applies_to": "Mother Bethel AME (1889-90)",
+   "window_w_m": 1.2,
+   "window_h_m": 3,
+   "pitch_m": 2,
+   "floor_pitch_m": 0,
+   "sill_height_m": 2,
+   "arched": true,
+   "lintel": "rock-faced stone voussoir arches 0.35 m deep, contrasting smooth brownstone/limestone trim; openings grouped in pairs and triplets under one larger relieving arch",
+   "muntins": "leaded stained glass in geometric panels 0.30 m; dark bronze-green frames",
+   "shutters": "none",
+   "door": "round-arched entrance 3.5 m wide x 5.0 m tall with 3 orders of voussoirs and compressed colonnettes 0.3 m dia, double wood doors dark brown",
+   "cornice": "corbelled stone eaves 0.4 m, gable coping with cross finial; tower: corbel table + pyramidal slate roof",
+   "frame_color_hex": "#3A3A2E",
+   "notes": "Front (6th St, west) clad in rock-faced white/grey granite #C9C4B6 laid random ashlar (0.3-0.5 m courses); side and rear walls red brick #8E4A34. Main gable contains rose window ~3.5 m diameter centered at ~+10 m, over a triplet of arched windows; corner bell tower ~6.5 m square, ~30 m tall, paired round-arched louvered belfry openings 1.0x3.0 m per face at +18 m, round-arched stained window below, corner turrets with conical copper caps (#5E8E7A verdigris), pyramidal slate roof. Three-story massing (Sunday school below sanctuary)."
+  },
+  {
+   "name": "greek_revival_civic_marble",
+   "applies_to": "Merchants' Exchange (1832-34); also Second Bank-type marble buildings",
+   "window_w_m": 1.3,
+   "window_h_m": 3.2,
+   "pitch_m": 3.6,
+   "floor_pitch_m": 4.6,
+   "sill_height_m": 0.6,
+   "arched": false,
+   "lintel": "plain raised marble architrave 0.2 m with projecting flat cornice cap 0.25 m (2nd floor), plain architrave only (3rd floor); ground floor openings have plain square heads in the rusticated base",
+   "muntins": "tall 9/9 (2nd floor) and 6/6 (3rd floor) sash, panes 0.35x0.40; ground floor 12-light casements/doors",
+   "shutters": "none",
+   "door": "ground-floor doors 1.4x2.8 m, paneled, within rusticated openings; Dock St entrances reached by twin curved marble stairs flanked by recumbent lions",
+   "cornice": "marble entablature 1.2 m tall, plain frieze, dentils; pediment on Third St; anthemion cresting on the Dock St curved cornice",
+   "frame_color_hex": "#E9E6DE",
+   "notes": "Pennsylvania marble ashlar #DCD8CE, channel-jointed (rusticated) ground floor 4.6 m tall with rectangular openings 1.4x2.6 m between piers 1.2 m wide; 2nd floor windows 1.3x3.2 m, 3rd floor 1.3x2.4 m; cornice at ~17 m; copper lantern on top."
+  },
+  {
+   "name": "modern_concrete_grid_1960s",
+   "applies_to": "Society Hill Towers (Pei, 1964); Society Hill Townhouses (Pei) use the same module in 3 stories",
+   "window_w_m": 2.1,
+   "window_h_m": 2.4,
+   "pitch_m": 2.9,
+   "floor_pitch_m": 2.95,
+   "sill_height_m": 0,
+   "arched": false,
+   "lintel": "none: window fills the cell of an exposed cast-in-place concrete grid; mullion-columns 0.45 m wide, spandrel beams 0.5 m tall, reveal depth 0.6 m",
+   "muntins": "single floor-to-ceiling aluminum-framed light per cell, often split 2/3 fixed + 1/3 operable; dark bronze frame #4A4236, glass #6A7C8A",
+   "shutters": "none",
+   "door": "ground floor: recessed glass lobby under a taller base bay, 3.6 m high",
+   "cornice": "none; flat parapet one spandrel tall",
+   "frame_color_hex": "#4A4236",
+   "notes": "Concrete warm grey #B9B1A3 with board/form texture. Each tower 31 stories, ~95 m, roughly 11 bays x 9 bays (~32 x 27 m plan), all four faces identical, NO balconies. Pattern is perfectly regular: cell = 2.9 m wide x 2.95 m tall. Apply cells flush to volume faces."
+  },
+  {
+   "name": "modern_balcony_slab_1960s",
+   "applies_to": "Hopkinson House (Stonorov, 1962-63) on Washington Square; similar late-60s/70s brick apartment slabs (Independence Place 1980s is concrete/brick w/ ribbon windows)",
+   "window_w_m": 2.4,
+   "window_h_m": 2.2,
+   "pitch_m": 3.4,
+   "floor_pitch_m": 2.75,
+   "sill_height_m": 0.2,
+   "arched": false,
+   "lintel": "none; windows recessed 0.4 m behind brick panels within exposed concrete columns 0.4 m wide",
+   "muntins": "aluminum sliding units, 2 lights, dark bronze",
+   "shutters": "none",
+   "door": "sliding glass door 1.8x2.1 m onto each balcony",
+   "cornice": "none; mechanical penthouse",
+   "frame_color_hex": "#3F3A33",
+   "notes": "33 stories ~92 m. Facade = vertical concrete columns (#BDB6A8) at 3.4 m with red-brick infill panels (#8E4A34) flush with columns, alternating with projecting balconies 1.5 m deep x 3.0 m wide, solid concrete parapet 1.0 m, arranged in a 'stepladder' checker (balcony bays shift one module each floor). Paint both materials; brick was originally exposed red."
+  },
+  {
+   "name": "storefront_commercial",
+   "applies_to": "ground floors on S 2nd St (Head House Square), South St, Walnut St, Chestnut; 18th c. shop-window variant for City Tavern-type reconstructions",
+   "window_w_m": 2.2,
+   "window_h_m": 2.4,
+   "pitch_m": 3,
+   "floor_pitch_m": 4,
+   "sill_height_m": 0.6,
+   "arched": false,
+   "lintel": "signboard/cornice band 0.5-0.6 m tall at 3.6-4.0 m (wood, painted), on cast-iron or wood pilasters 0.3 m wide at party lines",
+   "muntins": "19th-20th c.: plate glass display window on paneled wood bulkhead 0.6 m, transom band 0.5 m of 3-4 lights above; 18th c. variant (City Tavern): 20- to 30-light multi-pane window 1.8x2.0 m (panes 0.28x0.33) on 0.6 m paneled bulkhead, frame cream #E8DFC8",
+   "shutters": "none",
+   "door": "recessed glazed door 1.0x2.4 m, 0.6-1.0 m recess, often at one side; paired with a separate 6-panel residential door to upper floors",
+   "cornice": "storefront cornice 0.5 m with brackets; upper floors revert to rowhouse vocabulary",
+   "frame_color_hex": "#1F2D24",
+   "notes": "One storefront per 5-6 m frontage; dark green #1F2D24 / black / oxblood paint; awning rail at 2.6 m. Above the storefront use georgian_federal_rowhouse (6/6) or 1850s-80s Italianate (2/2 sash 1.0x2.1 m, bracketed cornice 0.6 m)."
+  }
+ ],
+ "buildings": [
+  {
+   "name": "Head House (Hope Hose / Fellowship Engine Co., 1804) + New Market shambles (1745/1811, rebuilt 1963)",
+   "style": "georgian_federal_rowhouse (Federal trim)",
+   "rows": 2,
+   "special": "Plan 9.1 m (E-W, 30 ft, Pine St gable front) x 7.9 m (N-S, 26 ft); 2 stories, eave +7.3 m, gable ridge ~ +10 m (pitch ~32 deg), pediments on N and S gable ends with white modillion box cornice (0.45 m) and full returns; clock face 1.2 m dia centered in N tympanum at ~+8.5 m. N (Pine St) facade ground floor: central round-arched carriage passage 3.0 m wide, crown +3.6 m, open through to the market; flanked each side by paneled double doors 1.5 x 2.3 m with semicircular lunette fanlight 1.5 m span above (sill of lunette +2.4 m). Marble belt course 0.1 m at +4.0 m. N upper floor: 3 windows 6/6, 0.95 x 1.65 m, sills +4.9 m, pitch 2.6 m, flat marble lintels with wide raised center block, paneled/louvered shutters dark green-black. E and W sides: 2 windows per floor (ground floor ones shuttered/blind), same size, pitch 3.3 m, plus one brick chimney on W slope. Cupola centered on ridge: white octagonal wood, 2.4 m across, base drum 1.5 m tall, belfry stage 2.6 m tall with round-arched louvered openings 0.7 x 1.6 m on all 8 faces, ogee cap copper-green #5E8E7A, ball + weathervane to ~+19 m. Brick Flemish bond #9A4A32. Market shambles extend S from Head House to Lombard: two rows of square brick piers 0.55 x 0.55 m, rows 6.1 m apart (center), pier pitch ~3.9 m (32 piers per row, 64 total, 21 original), plain gable roof eave +4.3 m, ridge +7.0 m, eaves extended 3.0 m (9 ft 9 in) beyond piers each side as in 1811, open on all sides, brick-paved; total length ~ 125 m."
+  },
+  {
+   "name": "St. Peter's Church (1758-61, Robert Smith; tower 1842, Strickland)",
+   "style": "georgian_church",
+   "rows": 2,
+   "special": "Nave 18.3 x 27.4 m (60 x 90 ft), long axis E-W, eave +11 m, slate gable ~30 deg; brick Flemish bond, rubbed-brick quoins 0.45 m at corners, marble watertable 0.6 m. N and S flanks: 6 bays at 4.4 m pitch; upper tier round-arched windows 1.4 x 3.6 m (sill +5.0 m, marble keystones); lower tier rectangular 1.2 x 1.9 m (sill +1.0 m) under flat arches; pedimented doorways 1.3 x 2.6 m in two bays of each flank (second bay from W end and near E end). EAST (Third St) chancel gable: Palladian window centered, overall 5.0 m wide x 6.5 m tall, sill +2.8 m: center round-arched light 2.0 m wide, arch crown +9.3 m, side lights 1.1 m wide with entablature caps at +7.8 m, pilasters between; flanked by one round-arched 1.4 x 3.6 window each side at normal pitch; oculus 1.0 m dia with keyed surround centered in pediment; white dentil cornice 0.6 m along eave and raking up the gable. WEST gable: two round-arched windows flanking the tower. Tower: square brick ~6.5 x 6.5 m engaged at center of W end, 3 stages each with one round-arched window per face 1.2 x 2.8 m (lower two stages 12/12 glazed, top stage louvered), marble impost bands, clock oculus 1.2 m below top cornice, brick parapet at ~+27 m; above: white wood octagonal base + tapered white spire (#F4F1EA) to total 64 m (210 ft)."
+  },
+  {
+   "name": "Old Pine Street Presbyterian Church (1768; Greek Revival recasing 1857, John Fraser)",
+   "style": "greek_revival_church",
+   "rows": 1,
+   "special": "Plan 24.4 x 18.3 m (80 x 60 ft), long axis N-S, entrance front on Pine St (N). Raised rusticated brownstone basement 2.3 m (#8A6A4A) with rectangular windows 1.2 x 1.2 m and side doors; upper walls stucco ochre #D9BD8A to entablature at ~+12 m; entablature 1.6 m; low gable/hip metal roof. N portico: 8 white Corinthian columns in 4 pairs (0.9 m dia, 9 m tall) standing on the basement podium, full-width pediment, reached by opposing granite stairs; N wall behind colonnade: central double door 2.4 x 5.0 m painted blue #1F4E8C, flanked by one tall two-tier window 1.8 x 5.0 m each side. E and W flanks: 5 bays divided by pilaster strips 0.6 m; one tall rectangular two-tier window 1.8 x 5.0 m per bay (sill +3.2 m), stained glass, molded architrave + cornice cap. Small belfry/ventilator on ridge. No windows on S (rear) except small."
+  },
+  {
+   "name": "City Tavern (1773; NPS reconstruction 1975)",
+   "style": "georgian_federal_rowhouse (Georgian, Second St front) + storefront_commercial (18th c. variant)",
+   "rows": 3,
+   "special": "SW corner 2nd & Walnut; main front faces W (Second St), ~14 m wide, 5 bays at 2.6 m pitch, depth ~ 20 m on Walnut; 3.5 stories: floor-to-floor 3.6 / 3.3 / 3.0 m, eave +10.4 m; center 3 bays slightly projecting under a pediment with oculus (bullseye) window 0.9 m dia, modillion box cornice 0.45 m white (#F2EFE6) around whole front; side-gabled slate roof with 3 gabled dormers 6/6 and two large brick chimneys at N and S gables. Windows 12/12, 1.0 x 1.9 m on floors 1-2, 9/6 1.0 x 1.5 m on floor 3, flat brick jack arches, no shutters. Ground floor: multi-pane shop windows (two 20-light 1.8 x 2.0 m windows on 0.6 m bulkheads) in the N bays; main entrance in S bays raised ~1.2 m with a flight of steps. Walnut (S) and N gable walls plain brick with 1-2 windows per floor. NO pent eave. Brick Flemish bond #9A4A32."
+  },
+  {
+   "name": "Merchants' Exchange (1832-34, William Strickland)",
+   "style": "greek_revival_civic_marble",
+   "rows": 3,
+   "special": "Triangular site 3rd/Walnut/Dock; marble #DCD8CE; 3 stories, cornice +17 m. WEST (Third St) front ~28 m: Corinthian tetrastyle portico (4 columns 0.9 m dia, 9 m tall, at 2nd-3rd floor level, pediment 2.5 m tall) on a rusticated base with 4 stout Doric columns in antis; windows behind: 5 bays. SOUTH (Walnut) and NORTH (Dock St straight portion) flanks: 7 bays at 3.6 m pitch; ground floor rusticated (channel joints every 0.45 m) 4.6 m tall with rectangular openings 1.4 x 2.6 m between piers; 2nd floor tall windows 1.3 x 3.2 m with architrave + cornice caps; 3rd floor 1.3 x 2.4 m; plain band at each floor. EAST end: semicircular 2-story portico, radius ~9 m: ground stage of square marble piers with rectangular openings; upper stage 8 Corinthian columns 9 m tall carrying a curved entablature with anthemion cresting; two curved marble stairs with recumbent lions up to the 2nd-floor doors. Lantern tower (Choragic Monument of Lysicrates) on roof: circular, 5 m dia, 8 Corinthian columns, copper dome, top ~+32 m."
+  },
+  {
+   "name": "Mother Bethel AME Church (1889-90, Hazelhurst & Huckel)",
+   "style": "romanesque_revival_church",
+   "rows": 2,
+   "special": "419 S 6th St, front faces W on 6th St ~21 m wide, ~40 m deep; front and tower rock-faced white/grey granite #C9C4B6, flanks red brick #8E4A34 with round-arched stained windows 1.2 x 3.0 m in pairs, pitch ~4.5 m, 2 rows (Sunday-school below, sanctuary above, second-row sills +6 m). Front: central gable, ridge ~+20 m; large round-arched entrance 3.5 x 5.0 m with compressed colonnettes at grade; triplet of arched windows above at +7 m; rose window ~3.5 m dia centered at +12 m under a great relieving arch; gable coping with finial; scroll buttress-pilasters at gable shoulders. Asymmetric square bell tower at the N end of the front (at Waverly St), ~6.5 m square, ~30 m tall: arched doorway at base, single arched window stages, belfry with paired round-arched louvered openings 1.0 x 3.0 m per face at +18 m, small corner turrets with conical copper caps, pyramidal slate roof to ~+34 m with cross."
+  },
+  {
+   "name": "Powel House (1765-66), 244 S 3rd St",
+   "style": "georgian_federal_rowhouse (Georgian, grand)",
+   "rows": 3,
+   "special": "Front 9.1 m (30 ft) on 3rd St (faces E), depth 15.2 m + 2-3 story rear ell; 3.5 stories, floor-to-floor 3.7 / 3.4 / 2.9 m, eave +10.5 m; 3 bays at 2.9 m pitch, door in S (right) bay. Windows 12/12, 1.0 x 2.0 m floors 1-2, 12/8 1.0 x 1.5 m floor 3; flat gauged-brick jack arches with marble keystones on every window; marble stringcourses 0.12 m at 2nd and 3rd floor lines; paneled shutters (white/cream) floors 1-2, louvered floor 3. Doric frontispiece: engaged columns 0.3 m dia, full entablature + triangular pediment 2.4 m wide x 0.7 m tall, semicircular fanlight 1.1 m span over 6-panel door 1.0 x 2.2 m; 4 marble steps 1.6 m wide with iron rails; dentil box cornice 0.4 m on front only; side-gabled roof with 2 gabled dormers (arched 'Gothic' sash) and 2 chimneys. Brick Flemish bond; marble watertable at +0.6 m; cellar windows with grates."
+  },
+  {
+   "name": "Hill-Physick House (1786), 321 S 4th St",
+   "style": "georgian_federal_rowhouse (Federal, freestanding)",
+   "rows": 3,
+   "special": "Freestanding; front ~12.8 m (3 bays, unusually wide pitch 4.3 m) facing W on 4th St, depth 15.5 m (51 ft), 4 bays on the S flank; 3.5 stories on raised basement: basement windows 0.8 x 0.6 m at sidewalk, first floor +1.0 m, floor-to-floor 3.9 / 3.4 / 3.0 m, eave +11.2 m; hip roof, 1 gabled dormer on front, 2 chimneys. Windows 6/6: 1.05 x 2.1 m (floor 1), 1.05 x 1.9 m (floor 2), 1.05 x 1.5 m (floor 3); plain flat brick arches (no keystones); marble stringcourses 0.12 m at 2nd and 3rd floor sill lines; paneled shutters floors 1-2 (painted light/white), louvered floor 3. Central Federal frontispiece: double doors 1.6 x 2.4 m with sidelights 0.4 m each and large semicircular leaded fanlight 2.4 m span (rise 1.2 m), flat head with fret-band cornice; 5 marble steps 2.2 m wide with iron rails. Modillion box cornice 0.45 m all round. Brick Flemish bond; brick garden wall 2.2 m along S side."
+  },
+  {
+   "name": "A Man Full of Trouble Tavern (1759) + Paschall House (1760), 127-129 Spruce St",
+   "style": "georgian_federal_rowhouse (colonial gambrel variant)",
+   "rows": 2,
+   "special": "Pair of joined houses on the NW corner of Spruce & Mattis (2nd) St, front faces S; total frontage ~12 m (Man Full E ~6.4 m, Paschall W ~5.5 m), depth ~7 m; 2.5 stories: floor 2 at +3.3 m, eave +6.3 m; gambrel roof (lower slope ~60 deg to +8.5 m kink, upper ~25 deg to ridge ~+9.5 m), wood shingle. PENT EAVE: continuous shingled pent roof 0.75 m deep at +3.3 m across both houses (above the ground-floor openings), plus a plaster COVE cornice 0.35 m at the main eave. Ground floor (4 bays): Man Full: shuttered 9/6 window + 6-panel door with 3-light transom; Paschall: window + door; doors 0.9 x 2.0 m with marble sill only (no steps). Second floor: 4 windows 9/6, 0.9 x 1.5 m, pitch ~2.9 m, paneled shutters painted light grey-green #9AA08E, flat brick arches. Two gabled dormers (1 per house) 0.9 m wide, 6/6 sash. E gable end (2nd St): 2 windows per floor + 1 attic window; large brick chimneys on E gable and at party wall. Brick Flemish bond #8E4A34; cellar bulkhead doors on sidewalk."
+  },
+  {
+   "name": "Society Hill Towers (1964, I. M. Pei)",
+   "style": "modern_concrete_grid_1960s",
+   "rows": 31,
+   "special": "Three identical 31-story towers ~95 m, concrete grid cells 2.9 m wide x 2.95 m tall, ~11 x 9 bays; floor-to-ceiling glazing recessed 0.6 m; no balconies; ground floor taller lobby bay (4 m) with recessed glass; flat parapet. Paint identical on all faces; concrete #B9B1A3, glass #6A7C8A, frames #4A4236."
+  },
+  {
+   "name": "Society Hill Townhouses (1964, Pei), Locust/Spruce between 2nd & 3rd",
+   "style": "modern_concrete_grid_1960s (3-story brick version)",
+   "rows": 3,
+   "special": "Rows of 3-story brick (#8E4A34) townhouses 5.5 m wide: one large concrete-framed window cell per floor (2.4 x 2.2 m), plain brick parapet, recessed entry with carport; floor pitch 2.9 m."
+  },
+  {
+   "name": "Hopkinson House (1962-63, Stonorov & Haws), 604 S Washington Sq",
+   "style": "modern_balcony_slab_1960s",
+   "rows": 33,
+   "special": "33-story slab ~92 m, long faces N (Washington Sq) and S; column module 3.4 m, floor pitch 2.75 m; stepladder checker of projecting balconies 1.5 m deep with solid parapets alternating with flush red-brick panels between exposed concrete columns; windows recessed 0.4 m; 2-story base."
+  }
+ ]
+}

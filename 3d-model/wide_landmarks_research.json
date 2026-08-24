@@ -1,0 +1,1561 @@
+[
+ {
+  "buildings": [
+   {
+    "name": "Comcast Technology Center",
+    "lat": 39.9551,
+    "lon": -75.1708,
+    "height_m": 342,
+    "massing": "Block 18th-19th, Arch-Cuthbert (north side of Arch). Slender rectangular prism ~73 m E-W x ~45 m N-S rising straight from a ~12 m tall glazed lobby; south face has stacked 3-storey 'loft' cutouts (indoor gardens) along the east side. Top occupied floor ~274 m, main roof ~279 m (915 ft); above it a ~60 m frosted-glass 'lantern' box (cross-braced steel behind translucent glass, slightly set back, nearly full plan width) reaching 341.7 m (1,121 ft) architectural top. Glass grades from clear at bottom to frosted white at the lantern.",
+    "facade_color_hex": "#C8D2D9",
+    "glass": true,
+    "notes": "Silvery glass curtain wall with stainless-steel diagonal chevron panels; Four Seasons hotel occupies the top 12 floors. Tallest in city."
+   },
+   {
+    "name": "Comcast Center",
+    "lat": 39.9542,
+    "lon": -75.1692,
+    "height_m": 297,
+    "massing": "Block 17th-18th, JFK-Arch. Obelisk-like rectangular glass prism ~62 m x ~47 m, flat top at 296.7 m (973 ft) with the uppermost ~2 floors notched on one side so the crown reads as a two-pronged slot. 57 floors. Low 3-4 storey glass winter garden (~35 m) on the plaza at the west (18th St) side; plaza facing JFK.",
+    "facade_color_hex": "#9FB4C9",
+    "glass": true,
+    "notes": "Silver-blue reflective glass. No spire."
+   },
+   {
+    "name": "One Liberty Place",
+    "lat": 39.9521,
+    "lon": -75.1683,
+    "height_m": 288,
+    "massing": "NW corner of the block 16th-17th, Market-Chestnut (on Market). Square tower ~50 m with chamfered/notched corners, rising over a 5-storey base; four stepped gables near the top (Chrysler-style) converging to a pyramidal crown; gable apex ~275 m, short spire to 288 m (945 ft) architectural; broadcast mast to ~332 m (1,090 ft). 61 floors; observation deck at 269 m.",
+    "facade_color_hex": "#7199C2",
+    "glass": true,
+    "notes": "Blue reflective glass with alternating silver (aluminium) horizontal bands; crown outlined in light at night."
+   },
+   {
+    "name": "Two Liberty Place",
+    "lat": 39.9511,
+    "lon": -75.1675,
+    "height_m": 258,
+    "massing": "SE part of the same block, fronting Chestnut at 16th. Near-twin of One Liberty: square tower with notched corners, stepped gable crown and short spire; 258.5 m (848 ft), 58 floors. Joined to One Liberty by the 2-storey Shops at Liberty Place rotunda (~25 m).",
+    "facade_color_hex": "#7BA1C6",
+    "glass": true,
+    "notes": "Blue glass + silver bands; upper floors are Ritz-Carlton-era condos (Two Liberty Residences)."
+   },
+   {
+    "name": "BNY Mellon Center (Nine Penn Center, 1735 Market)",
+    "lat": 39.9529,
+    "lon": -75.1693,
+    "height_m": 241,
+    "massing": "North side of Market, 17th-18th. Square tower ~52 m with 4-storey base to ~20 m; top floor ~210 m; crowned by an open pyramidal steel-lattice truss (illuminated) rising to 241.4 m (792 ft). 54 floors.",
+    "facade_color_hex": "#D6D4CE",
+    "glass": false,
+    "notes": "Light gray/white granite piers with blue-green glass strips; open latticework pyramid crown."
+   },
+   {
+    "name": "Three Logan Square (Bell Atlantic / Verizon Tower)",
+    "lat": 39.9551,
+    "lon": -75.1692,
+    "height_m": 225,
+    "massing": "North side of Arch, 17th-18th. Art-Deco-inspired: rectangular shaft ~55 x 40 m with progressive setbacks in the upper third; stepped ziggurat crown to 225.3 m (739 ft); top floor ~200 m. 55 floors.",
+    "facade_color_hex": "#B36349",
+    "glass": false,
+    "notes": "Red-orange polished granite with punched windows; the tallest non-glass tower."
+   },
+   {
+    "name": "FMC Tower at Cira Centre South",
+    "lat": 39.9512,
+    "lon": -75.1826,
+    "height_m": 222.5,
+    "massing": "West bank of the Schuylkill at 2929 Walnut (30th/Walnut). Rectangular slab ~60 m x ~38 m on a 3-storey podium; top ~6 floors step back on the west; roof edge slopes up from west to east with a fin-like parapet; 222.5 m (730 ft), 49 floors.",
+    "facade_color_hex": "#93B2CA",
+    "glass": true,
+    "notes": "Blue-gray glass; sky lobby near top (AC Hotel). Just across the river - include."
+   },
+   {
+    "name": "Evo at Cira Centre South",
+    "lat": 39.9507,
+    "lon": -75.1834,
+    "height_m": 130,
+    "massing": "SW of FMC at 2930 Chestnut: slab ~80 m x ~22 m, 33 floors, flat roof at 130 m (427 ft). Adjoined on the west by the 11-storey Cira Centre South garage with Cira Green rooftop park (~45 m).",
+    "facade_color_hex": "#4B5762",
+    "glass": true,
+    "notes": "Dark gray glass with angular vertical metal slots."
+   },
+   {
+    "name": "Cira Centre",
+    "lat": 39.9572,
+    "lon": -75.1823,
+    "height_m": 133,
+    "massing": "North of 30th Street Station at 30th & Arch. Crystalline faceted form: ~50 x 40 m plan, narrower at the base and top, angled glass facets, sloped crown; 133.1 m (437 ft), 28 floors, flat roof at ~120 m with a sloping ~13 m parapet fin.",
+    "facade_color_hex": "#A9C4DA",
+    "glass": true,
+    "notes": "Silver-blue reflective glass; LED-lit facets at night."
+   },
+   {
+    "name": "3025 JFK Boulevard",
+    "lat": 39.9566,
+    "lon": -75.1842,
+    "height_m": 113,
+    "massing": "Just west of Cira Centre. Rectangular mixed-use tower on a 4-storey podium, flat roof 113 m (371 ft), 28 floors.",
+    "facade_color_hex": "#8FA5B3",
+    "glass": true,
+    "notes": "Glass + dark metal; 2023."
+   },
+   {
+    "name": "Philadelphia City Hall",
+    "lat": 39.9524,
+    "lon": -75.1636,
+    "height_m": 167,
+    "massing": "Centered on Broad & Market. Base: ~148 m (E-W) x ~143 m (N-S) hollow square around a ~61 m square courtyard, 7 storeys; main cornice ~37 m, mansard roofs to ~46 m; four corner pavilions and four mid-side pavilions rise ~52-55 m with dormered mansards. Tower rises from the center of the north wing (above the north portal, ~39.9530,-75.1636): square ~27 m (90 ft) on a side; masonry stage to ~103 m (337 ft), then metal-clad clock stage (four 8 m clock faces centered ~110 m), tapering cast-iron/steel cupola-dome to ~156 m, then 11.3 m (37 ft) bronze William Penn statue to 167 m (548 ft).",
+    "facade_color_hex": "#D9D3C8",
+    "glass": false,
+    "notes": "Gray granite base (lower 2 storeys), white marble above, slate-gray mansards, tower above the masonry is painted iron matched to marble. Statue is bronze (dark). OSM likely has building height but not the tower/statue breakdown; model the base and tower separately."
+   },
+   {
+    "name": "PSFS Building / Loews Philadelphia Hotel",
+    "lat": 39.9517,
+    "lon": -75.16,
+    "height_m": 150,
+    "massing": "SW corner 12th & Market. 5-storey polished-granite base (~25 m) with curved NE corner on Market; above it a T-plan slab: a slender N-S tower leg ~25 m wide x ~80 m long stepping from the Market frontage back toward Ludlow, 36 floors, flat roof at 150 m (492 ft); rooftop carries the 8 m tall red neon 'PSFS' letters on a dark-gray penthouse.",
+    "facade_color_hex": "#C6BFB1",
+    "glass": false,
+    "notes": "Tower is gray limestone on Market face and glazed tan/gray brick on the flanks; base charcoal granite (#3A3A3A). First International-Style skyscraper in US."
+   },
+   {
+    "name": "Centre Square II (west tower, 1500 Market)",
+    "lat": 39.9518,
+    "lon": -75.1667,
+    "height_m": 149,
+    "massing": "South side of Market, 15th-16th. Two flat-roofed rectangular towers on a shared 3-storey podium with a glass atrium between; west tower 40 floors, 149.4 m (490 ft).",
+    "facade_color_hex": "#C9C4BB",
+    "glass": false,
+    "notes": "Light precast concrete frame with dark bronze glass bands. Clothespin sculpture at 15th & Market."
+   },
+   {
+    "name": "Centre Square I (east tower, 1500 Market)",
+    "lat": 39.9518,
+    "lon": -75.1659,
+    "height_m": 127,
+    "massing": "East tower of the pair at 15th & Market; 32 floors, flat roof 127 m (417 ft).",
+    "facade_color_hex": "#C9C4BB",
+    "glass": false,
+    "notes": "Same precast concrete / bronze glass as the west tower."
+   },
+   {
+    "name": "The W and Element Philadelphia (1441 Chestnut)",
+    "lat": 39.9511,
+    "lon": -75.1655,
+    "height_m": 188,
+    "massing": "NE corner 15th & Chestnut. Rectangular slab ~70 x 30 m, 51 floors, flat roof 188 m (617 ft); gridded exposed concrete frame with glass infill; podium ~6 floors.",
+    "facade_color_hex": "#7E8D98",
+    "glass": true,
+    "notes": "Dark gray-blue glass in a light concrete grid; opened 2020."
+   },
+   {
+    "name": "Arthaus (301-311 S Broad)",
+    "lat": 39.9463,
+    "lon": -75.1642,
+    "height_m": 160,
+    "massing": "East side of Broad just south of Spruce. 5-storey podium then a slender rectangular tower ~45 x 28 m with tall white vertical precast fins, flat roof at 160 m (525 ft), 47 floors. Likely the building the prompt calls 'Arthur Kaufmann'.",
+    "facade_color_hex": "#97AEC1",
+    "glass": true,
+    "notes": "Blue-gray glass between white precast fins; 2022 condo tower."
+   },
+   {
+    "name": "The Residences at The Ritz-Carlton",
+    "lat": 39.9517,
+    "lon": -75.1648,
+    "height_m": 158,
+    "massing": "1414 South Penn Square, immediately SW of City Hall between the Girard Trust rotunda (Ritz-Carlton hotel) and 15th St. Slender tower with rounded/curved narrow ends (lozenge-like plan ~45 x 25 m), 48 floors, flat roof 157.9 m (518 ft).",
+    "facade_color_hex": "#7CA6BC",
+    "glass": true,
+    "notes": "Blue-green glass; the adjacent Girard Trust domed rotunda (white marble, dome ~30 m) and the 1930 Ritz-Carlton tower (123 m, limestone) are separate."
+   },
+   {
+    "name": "Ritz-Carlton Philadelphia / Girard Trust Tower (10 S Broad)",
+    "lat": 39.9515,
+    "lon": -75.1641,
+    "height_m": 123,
+    "massing": "SW corner Broad & S Penn Square: white-marble Pantheon-style rotunda (dome apex ~30 m) on the corner with a 30-storey setback limestone tower behind it to the west, 123 m (404 ft), 1930.",
+    "facade_color_hex": "#DCD6C8",
+    "glass": false,
+    "notes": "White marble rotunda + limestone tower. OSM may lack the dome."
+   },
+   {
+    "name": "The Laurel Rittenhouse Square (1911 Walnut)",
+    "lat": 39.95,
+    "lon": -75.1721,
+    "height_m": 184,
+    "massing": "North side of Walnut at the NW corner of Rittenhouse Square (19th-20th). 4-5 storey limestone podium (~22 m) then a tower ~55 x 30 m with shallow projecting glass bays; flat roof ~183 m (599-604 ft), 48 floors.",
+    "facade_color_hex": "#A0B6C7",
+    "glass": true,
+    "notes": "Light blue-gray glass with bronze/white metal mullions; limestone base. 2022."
+   },
+   {
+    "name": "1706 Rittenhouse",
+    "lat": 39.9489,
+    "lon": -75.1697,
+    "height_m": 122,
+    "massing": "SE corner of Rittenhouse Square (Rittenhouse Sq St east of 18th). Very slender tower ~25 x 22 m, 31 floors, flat roof 122 m (401 ft).",
+    "facade_color_hex": "#8197AC",
+    "glass": true,
+    "notes": "Blue-gray glass with a limestone-clad frame; 2010."
+   },
+   {
+    "name": "10 Rittenhouse Square (1801 Walnut)",
+    "lat": 39.9502,
+    "lon": -75.1701,
+    "height_m": 121,
+    "massing": "NE corner of the square at 18th & Walnut; rectangular tower 33 floors, flat roof 120.7 m (396 ft); retains the historic 1-storey Rittenhouse Club facade at the base.",
+    "facade_color_hex": "#9CAEBB",
+    "glass": true,
+    "notes": "Glass with light stone/metal grid; 2009."
+   },
+   {
+    "name": "The Dorchester / 210 W Rittenhouse Square",
+    "lat": 39.9493,
+    "lon": -75.1723,
+    "height_m": 104,
+    "massing": "West side of Rittenhouse Square: two adjacent residential slabs - The Dorchester (103 m, 32 fl, 1963, beige brick) and 210 W Rittenhouse (104 m, 33 fl, 1989, precast/glass).",
+    "facade_color_hex": "#C9B89C",
+    "glass": false,
+    "notes": "Beige brick / precast; part of the square's west wall of mid-century towers."
+   },
+   {
+    "name": "Eleven Penn Center (1835 Market)",
+    "lat": 39.9529,
+    "lon": -75.1707,
+    "height_m": 129.5,
+    "massing": "North side of Market, 18th-19th. Rectangular slab ~70 x 35 m with chamfered corners and a 2-storey granite base; 29 floors; flat roof 129.5 m (425 ft) with a shallow mechanical crown.",
+    "facade_color_hex": "#6E8BA3",
+    "glass": true,
+    "notes": "Blue-gray reflective glass with vertical metal fins, rose-granite base; 1986."
+   },
+   {
+    "name": "Murano (2101 Market)",
+    "lat": 39.9529,
+    "lon": -75.1746,
+    "height_m": 145,
+    "massing": "NW corner 21st & Market. Slender tower ~40 x 30 m with a rounded/curved south-east corner; 42 floors, flat roof 144.8 m (475 ft); 2-storey glass base.",
+    "facade_color_hex": "#6E9EB4",
+    "glass": true,
+    "notes": "Blue-green glass with white metal panels; 2008."
+   },
+   {
+    "name": "One Commerce Square (2005 Market)",
+    "lat": 39.953,
+    "lon": -75.1738,
+    "height_m": 174,
+    "massing": "North side of Market, 20th-21st, west tower of a twin pair flanking a landscaped courtyard. Rectangular tower ~55 x 40 m with notched corners; flat roof with slightly projecting frame crown at 174.4 m (572 ft); 41 floors.",
+    "facade_color_hex": "#B9A9A3",
+    "glass": false,
+    "notes": "Pinkish-gray granite grid with gray glass; 1987."
+   },
+   {
+    "name": "Two Commerce Square (2001 Market)",
+    "lat": 39.953,
+    "lon": -75.1731,
+    "height_m": 174,
+    "massing": "East tower of the pair at 20th & Market; identical massing, 174.4 m, 41 floors (1992).",
+    "facade_color_hex": "#B9A9A3",
+    "glass": false,
+    "notes": "Same granite/glass as One Commerce Square."
+   },
+   {
+    "name": "G. Fred DiBona Jr. Building (1901 Market, Independence Blue Cross)",
+    "lat": 39.9529,
+    "lon": -75.1721,
+    "height_m": 190.5,
+    "massing": "North side of Market at 19th (19th-20th). Rectangular tower with 45 floors, flat roof 190.5 m (625 ft); shallow setbacks at top.",
+    "facade_color_hex": "#8DA0AF",
+    "glass": true,
+    "notes": "Gray-blue glass with granite accents; 1990."
+   },
+   {
+    "name": "1818 Market Street",
+    "lat": 39.9517,
+    "lon": -75.1708,
+    "height_m": 152,
+    "massing": "South side of Market, 18th-19th. Plain rectangular slab ~75 x 35 m, 40 floors, flat roof 152.4 m (500 ft), 1974.",
+    "facade_color_hex": "#5A6B78",
+    "glass": true,
+    "notes": "Dark bronze/gray glass curtain wall."
+   },
+   {
+    "name": "2000 Market Street",
+    "lat": 39.9517,
+    "lon": -75.1736,
+    "height_m": 121.6,
+    "massing": "South side of Market, 20th-21st. Rectangular slab, 29 floors, flat roof 121.6 m (399 ft), 1973.",
+    "facade_color_hex": "#5F6E7A",
+    "glass": true,
+    "notes": "Dark glass curtain wall."
+   },
+   {
+    "name": "PNC Bank Building (1600 Market)",
+    "lat": 39.9517,
+    "lon": -75.1678,
+    "height_m": 149.7,
+    "massing": "South side of Market, 16th-17th (east of Liberty Place). Rectangular tower, 40 floors, flat roof 149.7 m (491 ft), 1983.",
+    "facade_color_hex": "#9A9EA3",
+    "glass": true,
+    "notes": "Gray glass with silver aluminium spandrels."
+   },
+   {
+    "name": "Five Penn Center (1601 Market)",
+    "lat": 39.953,
+    "lon": -75.1676,
+    "height_m": 149.4,
+    "massing": "NW corner 16th & Market. Rectangular tower ~60 x 35 m, 36 floors, flat roof 149.4 m (490 ft), 1970.",
+    "facade_color_hex": "#6B6E70",
+    "glass": false,
+    "notes": "Dark gray precast concrete grid with tinted windows."
+   },
+   {
+    "name": "Six Penn Center (1700 Market)",
+    "lat": 39.9517,
+    "lon": -75.1693,
+    "height_m": 131,
+    "massing": "South side of Market, 17th-18th. Rectangular slab, 32 floors, flat roof 131 m (430 ft), 1968.",
+    "facade_color_hex": "#B8B4AD",
+    "glass": false,
+    "notes": "Light precast concrete grid."
+   },
+   {
+    "name": "One Penn Center at Suburban Station (1617 JFK)",
+    "lat": 39.954,
+    "lon": -75.1681,
+    "height_m": 85,
+    "massing": "North side of JFK, 16th-17th. Art Deco limestone office block over the station concourse: ~130 x 60 m base 8 storeys with a central setback tower to ~85 m (20 floors); 1930.",
+    "facade_color_hex": "#CFC7B7",
+    "glass": false,
+    "notes": "Indiana limestone with setbacks; OSM height likely missing."
+   },
+   {
+    "name": "Two Penn Center (1500 JFK)",
+    "lat": 39.954,
+    "lon": -75.1664,
+    "height_m": 80,
+    "massing": "North side of JFK, 15th-16th (opposite City Hall NW). Rectangular slab, 20 floors, flat roof ~80 m, 1958.",
+    "facade_color_hex": "#9FA6AB",
+    "glass": false,
+    "notes": "Gray curtain wall with aluminium spandrels; OSM height likely missing."
+   },
+   {
+    "name": "Three Penn Center (1515 Market)",
+    "lat": 39.9529,
+    "lon": -75.1664,
+    "height_m": 78,
+    "massing": "North side of Market, 15th-16th. Rectangular slab, 20 floors, flat roof ~78 m, 1970.",
+    "facade_color_hex": "#8D8F92",
+    "glass": false,
+    "notes": "Gray precast and glass; OSM height likely missing."
+   },
+   {
+    "name": "Ten Penn Center (1801 Market)",
+    "lat": 39.953,
+    "lon": -75.1706,
+    "height_m": 85,
+    "massing": "North side of Market at 18th; 22 floors, flat roof ~85 m, 1981.",
+    "facade_color_hex": "#7F8C95",
+    "glass": true,
+    "notes": "Gray reflective glass; OSM height likely missing."
+   },
+   {
+    "name": "Two Logan Square (100 N 18th)",
+    "lat": 39.9558,
+    "lon": -75.1706,
+    "height_m": 132.6,
+    "massing": "West side of 18th at Arch (NW corner). Granite-clad tower with stepped setbacks and a pitched/pyramidal crown; 35 floors, 132.6 m (435 ft), 1987.",
+    "facade_color_hex": "#B8A59A",
+    "glass": false,
+    "notes": "Rose/pink granite with green-tinted windows; pyramidal copper-green crown."
+   },
+   {
+    "name": "One Logan Square (130 N 18th)",
+    "lat": 39.9564,
+    "lon": -75.1706,
+    "height_m": 122,
+    "massing": "West side of 18th, Cherry-Race, just south of Logan Circle. Rectangular tower, 31 floors, flat roof 121.9 m (400 ft), 1983; attached 8-storey Logan (ex-Four Seasons) hotel block to the north (~30 m).",
+    "facade_color_hex": "#A09890",
+    "glass": false,
+    "notes": "Gray granite with dark glass bands."
+   },
+   {
+    "name": "1650 Arch Street",
+    "lat": 39.9541,
+    "lon": -75.1679,
+    "height_m": 117,
+    "massing": "South side of Arch, 16th-17th (JFK-Arch). Rectangular slab 27 floors, flat roof 117 m (384 ft), 1975.",
+    "facade_color_hex": "#6E7378",
+    "glass": true,
+    "notes": "Dark glass curtain wall."
+   },
+   {
+    "name": "The Alexander (1601 Vine)",
+    "lat": 39.9584,
+    "lon": -75.1676,
+    "height_m": 112.8,
+    "massing": "NW corner 16th & Vine (south side of the Vine St Expressway). Rectangular apartment tower on a 6-storey podium, 32 floors, flat roof 112.8 m (370 ft), 2018; sits beside the Cathedral and the 1 Franklin Town area.",
+    "facade_color_hex": "#9EACB6",
+    "glass": true,
+    "notes": "Glass and light metal panels."
+   },
+   {
+    "name": "Jefferson Tower (1101 Market, former Aramark Tower)",
+    "lat": 39.9528,
+    "lon": -75.1579,
+    "height_m": 127,
+    "massing": "North side of Market at 11th (11th-12th, east of the Reading Terminal headhouse). Rectangular tower 31 floors, flat roof 127.1 m (417 ft), 1984.",
+    "facade_color_hex": "#9C8F7E",
+    "glass": false,
+    "notes": "Tan/brown precast concrete and tinted glass."
+   },
+   {
+    "name": "Philadelphia Marriott Downtown (1201 Market)",
+    "lat": 39.9528,
+    "lon": -75.1607,
+    "height_m": 90,
+    "massing": "North side of Market, 12th-13th (Market to Filbert), attached to the Convention Center by a skybridge. Broad 23-storey slab ~150 x 50 m, flat roof ~90 m, 1995.",
+    "facade_color_hex": "#B79A7E",
+    "glass": false,
+    "notes": "Tan brick/precast with punched windows; OSM height likely missing."
+   },
+   {
+    "name": "One South Broad (Lincoln-Liberty Building)",
+    "lat": 39.9514,
+    "lon": -75.1631,
+    "height_m": 144.4,
+    "massing": "East side of Broad between South Penn Square and Chestnut. Limestone Art Deco tower with setbacks, 28 floors, 144.4 m (474 ft), 1932; open lantern/belfry on top.",
+    "facade_color_hex": "#D3CBB9",
+    "glass": false,
+    "notes": "Limestone; one of the pre-1987 gentlemen's-agreement era towers."
+   },
+   {
+    "name": "Wells Fargo Building (123 S Broad)",
+    "lat": 39.9501,
+    "lon": -75.1631,
+    "height_m": 123.5,
+    "massing": "East side of Broad, Chestnut-Sansom. Limestone tower with setbacks, 29 floors, 123.5 m (405 ft), 1927.",
+    "facade_color_hex": "#D0C6B2",
+    "glass": false,
+    "notes": "Limestone/terra cotta."
+   },
+   {
+    "name": "Land Title Building (100 S Broad)",
+    "lat": 39.9506,
+    "lon": -75.1641,
+    "height_m": 105,
+    "massing": "SW corner Broad & Chestnut. Two joined early skyscrapers (1898 16-storey and 1902 22-storey), flat roof 104.9 m (344 ft).",
+    "facade_color_hex": "#BFA994",
+    "glass": false,
+    "notes": "Gray brick and terra cotta (D.H. Burnham)."
+   },
+   {
+    "name": "The Bellevue (Hyatt at the Bellevue, 200 S Broad)",
+    "lat": 39.9494,
+    "lon": -75.1642,
+    "height_m": 80,
+    "massing": "SW corner Broad & Walnut. French Renaissance hotel block ~90 x 60 m, 19 floors, flat roof with tall cornice ~80 m, 1904.",
+    "facade_color_hex": "#D8CDB6",
+    "glass": false,
+    "notes": "Cream limestone/brick; OSM height likely missing."
+   },
+   {
+    "name": "Wanamaker Building (Macy's)",
+    "lat": 39.9517,
+    "lon": -75.1621,
+    "height_m": 75,
+    "massing": "Full block 13th-Juniper, Market-Chestnut: ~146 x 76 m rectangular granite block, 12 floors, flat roof 75 m (247 ft) with rooftop penthouses.",
+    "facade_color_hex": "#A8A39B",
+    "glass": false,
+    "notes": "Gray granite Renaissance Revival (Burnham); OSM may lack height."
+   },
+   {
+    "name": "Lit Brothers Building (Lits)",
+    "lat": 39.9528,
+    "lon": -75.1525,
+    "height_m": 30,
+    "massing": "Full block north side of Market, 7th-8th (Market to Filbert), ~130 x 60 m of joined 5-6 storey Victorian buildings, roof ~28-30 m; octagonal corner towers at 7th and 8th rise to ~38 m.",
+    "facade_color_hex": "#EDE6D8",
+    "glass": false,
+    "notes": "Painted cream/white cast iron, marble and terra cotta; OSM height likely missing."
+   },
+   {
+    "name": "Reading Terminal headhouse (1115 Market)",
+    "lat": 39.9528,
+    "lon": -75.159,
+    "height_m": 40,
+    "massing": "North side of Market, 11th-12th: 8-storey Italian Renaissance headhouse ~80 x 25 m, roof ~40 m (eaves ~36 m).",
+    "facade_color_hex": "#B87A69",
+    "glass": false,
+    "notes": "Pink brick and cream terra cotta; Reading Terminal Market occupies the ground floor under the shed behind. OSM height likely missing."
+   },
+   {
+    "name": "Reading Terminal train shed (Convention Center Grand Hall)",
+    "lat": 39.9537,
+    "lon": -75.159,
+    "height_m": 37,
+    "massing": "Behind the headhouse, 11th-12th, running north to Arch St: single-span wrought-iron arched roof 78 m (256 ft) wide x ~120 m long (originally 170 m); shed is 29 m (95 ft) tall above its elevated platform level (~8 m above street), so apex ~37 m above grade.",
+    "facade_color_hex": "#6E7C86",
+    "glass": false,
+    "notes": "Slate-gray/green metal arched roof with clerestory; OSM height certainly missing."
+   },
+   {
+    "name": "Pennsylvania Convention Center (original halls)",
+    "lat": 39.9556,
+    "lon": -75.16,
+    "height_m": 32,
+    "massing": "11th-13th, Arch-Race (plus the shed block): big-box exhibit halls ~300 x 150 m, roof ~30-32 m with a taller glass entrance pavilion at 12th & Arch (~38 m), 1993.",
+    "facade_color_hex": "#C5BDB1",
+    "glass": false,
+    "notes": "Beige precast/brick with green-glass entrances; OSM height likely missing."
+   },
+   {
+    "name": "Pennsylvania Convention Center expansion (Broad St wing)",
+    "lat": 39.9556,
+    "lon": -75.1627,
+    "height_m": 45,
+    "massing": "13th-Broad, Arch-Race (2011 wing): large glass-and-metal box ~240 x 150 m with the 5th-level ballroom; roof ~45 m; tall glazed atrium along Broad St.",
+    "facade_color_hex": "#B9C3CB",
+    "glass": true,
+    "notes": "Gray-green glass curtain wall with metal panels and a limestone base; OSM height likely missing."
+   },
+   {
+    "name": "Masonic Temple",
+    "lat": 39.9533,
+    "lon": -75.163,
+    "height_m": 71,
+    "massing": "NE corner Broad & JFK/Filbert (1 N Broad), opposite City Hall's NE corner. Norman-Romanesque granite block ~75 x 45 m, 3 tall storeys plus attic (~30 m), two asymmetrical towers on the Broad St front: the taller SW-corner tower (round turret with conical cap) 71 m (232 ft; some sources ~76 m), the NW tower ~45 m.",
+    "facade_color_hex": "#8C8882",
+    "glass": false,
+    "notes": "Gray Cape Ann syenite granite; OSM height likely missing for towers."
+   },
+   {
+    "name": "Arch Street United Methodist Church",
+    "lat": 39.9539,
+    "lon": -75.1631,
+    "height_m": 65.5,
+    "massing": "NE corner Broad & Arch (55 N Broad). Gothic Revival white-marble church ~45 x 25 m, nave roof ~25 m; single corner tower at Broad & Arch carrying a slender octagonal spire to 65.5 m (215 ft).",
+    "facade_color_hex": "#E8E4DC",
+    "glass": false,
+    "notes": "White marble; spire restored 2023-26. OSM will lack height."
+   },
+   {
+    "name": "Cathedral Basilica of Saints Peter and Paul",
+    "lat": 39.9575,
+    "lon": -75.1685,
+    "height_m": 64,
+    "massing": "18th St between Race and Vine at Logan Circle; Palladian/Roman-Corinthian basilica ~80 m long x ~40 m wide, nave roof ~25 m, pedimented temple-front facade on 18th St ~35 m. Copper dome over the crossing toward the east end (~39.9576,-75.1679): drum + dome ~22 m diameter, interior height 47.8 m (156 ft 8 in), exterior lantern and 3.4 m gold cross to roughly 64 m above pavement (est.; one source states 95.7 m which appears unreliable).",
+    "facade_color_hex": "#7C5243",
+    "glass": false,
+    "notes": "Brownstone walls, verdigris copper dome (#5E9E8A). OSM will lack dome height."
+   },
+   {
+    "name": "Parkway Central Library (Free Library of Philadelphia)",
+    "lat": 39.9592,
+    "lon": -75.1716,
+    "height_m": 27,
+    "massing": "North side of Vine, 19th-20th (Vine to Wood). Beaux-Arts limestone block ~110 x 70 m, 3 tall storeys to a balustraded cornice ~27 m; 2019 rooftop addition behind the balustrade.",
+    "facade_color_hex": "#D8D1C0",
+    "glass": false,
+    "notes": "Indiana limestone; OSM height likely missing. Twin of Family Court."
+   },
+   {
+    "name": "Family Court Building (1801 Vine)",
+    "lat": 39.9592,
+    "lon": -75.1699,
+    "height_m": 27,
+    "massing": "North side of Vine, 18th-19th: near-identical limestone twin of the library, 3 storeys, ~27 m.",
+    "facade_color_hex": "#D8D1C0",
+    "glass": false,
+    "notes": "Limestone; OSM height likely missing."
+   },
+   {
+    "name": "The Franklin Institute",
+    "lat": 39.9582,
+    "lon": -75.1732,
+    "height_m": 33,
+    "massing": "20th-21st, Race to Winter/Parkway. Stripped-classical limestone block ~150 x 90 m, main roof ~25 m; at the NE (Parkway & 20th) corner the Benjamin Franklin National Memorial rotunda with a low copper dome rising to ~33 m (interior dome 25 m).",
+    "facade_color_hex": "#CFC8B8",
+    "glass": false,
+    "notes": "Limestone with green copper dome; OSM will lack dome height."
+   },
+   {
+    "name": "Rodin Museum",
+    "lat": 39.9619,
+    "lon": -75.1742,
+    "height_m": 12,
+    "massing": "2151 Benjamin Franklin Parkway (north side, 21st-22nd): small single-storey Beaux-Arts pavilion ~30 x 25 m, flat roof with skylights ~12 m; Meudon-gate forecourt on the Parkway.",
+    "facade_color_hex": "#D9D1C0",
+    "glass": false,
+    "notes": "Limestone; at the very north edge of the bbox. OSM height likely missing."
+   },
+   {
+    "name": "Kimmel Center for the Performing Arts",
+    "lat": 39.947,
+    "lon": -75.1651,
+    "height_m": 46,
+    "massing": "SW corner Broad & Spruce (300 S Broad): full block ~150 x 90 m, brick-faced 3-4 storey perimeter (~18 m), enclosed by a barrel-vaulted glass roof spanning N-S, apex 46 m (150 ft); Verizon Hall (wood-clad box) inside under the vault.",
+    "facade_color_hex": "#A3604B",
+    "glass": true,
+    "notes": "Red brick base with a clear-glass barrel vault (#A8C0CC); OSM height likely missing."
+   },
+   {
+    "name": "Academy of Music",
+    "lat": 39.948,
+    "lon": -75.1646,
+    "height_m": 24,
+    "massing": "SW corner Broad & Locust (240 S Broad): rectangular Italianate brick opera house ~70 x 45 m, 4 storeys, cornice ~20 m, stagehouse/roof ~24 m.",
+    "facade_color_hex": "#8E4B3D",
+    "glass": false,
+    "notes": "Red brick with brownstone trim; OSM height likely missing."
+   },
+   {
+    "name": "Symphony House (440 S Broad)",
+    "lat": 39.945,
+    "lon": -75.1648,
+    "height_m": 114,
+    "massing": "West side of Broad at Pine/Lombard. Rectangular condo tower on a 5-storey podium, 31 floors, 114.3 m (375 ft), 2007.",
+    "facade_color_hex": "#B08E6E",
+    "glass": false,
+    "notes": "Tan/terracotta-colored precast with glass."
+   },
+   {
+    "name": "The St. James (200 W Washington Square)",
+    "lat": 39.9474,
+    "lon": -75.1533,
+    "height_m": 152,
+    "massing": "SW corner of Washington Square at 8th & Walnut. Slender rectangular tower, 45 floors, 151.8 m (498 ft), 2004.",
+    "facade_color_hex": "#B3A68F",
+    "glass": false,
+    "notes": "Beige precast with glass; at the east edge of bbox."
+   },
+   {
+    "name": "Jefferson Health Honickman Center (1101 Chestnut)",
+    "lat": 39.9504,
+    "lon": -75.1578,
+    "height_m": 111,
+    "massing": "NW corner 11th & Chestnut. Bulky medical block ~100 x 60 m, 19 tall floors, flat roof 111 m (364 ft), 2024.",
+    "facade_color_hex": "#AAB8C2",
+    "glass": true,
+    "notes": "Glass with white metal fins."
+   },
+   {
+    "name": "Lewis Tower / Aria (1419 Locust) and Academy House (1420 Locust)",
+    "lat": 39.9481,
+    "lon": -75.1647,
+    "height_m": 118.6,
+    "massing": "Facing each other on Locust just west of Broad: Lewis Tower (north side, 1929 Art Deco brick, 33 fl, 118.6 m) and Academy House (south side, 1975 concrete, 37 fl, 114.9 m).",
+    "facade_color_hex": "#A8815F",
+    "glass": false,
+    "notes": "Brown brick (Lewis) and gray concrete (Academy House)."
+   },
+   {
+    "name": "1500 Locust Street",
+    "lat": 39.948,
+    "lon": -75.166,
+    "height_m": 119,
+    "massing": "SW corner 15th & Locust. Rectangular apartment slab, 44 floors, 118.9 m (390 ft), 1973.",
+    "facade_color_hex": "#8A8C8E",
+    "glass": false,
+    "notes": "Gray precast concrete grid."
+   },
+   {
+    "name": "The Drake (1512 Spruce)",
+    "lat": 39.9468,
+    "lon": -75.166,
+    "height_m": 114,
+    "massing": "South side of Spruce near 15th. Slender 1929 Spanish-Baroque tower with setbacks and a tiled conical cap; 32 floors, 114.3 m (375 ft).",
+    "facade_color_hex": "#B4896A",
+    "glass": false,
+    "notes": "Tan brick with terra cotta; distinctive crown."
+   },
+   {
+    "name": "Medical Tower (255 S 17th)",
+    "lat": 39.9482,
+    "lon": -75.1687,
+    "height_m": 111,
+    "massing": "17th & Latimer/Spruce area. 1930 Art Deco slab with setbacks, 30 floors, 111 m (364 ft).",
+    "facade_color_hex": "#B69A7E",
+    "glass": false,
+    "notes": "Tan brick."
+   },
+   {
+    "name": "PECO Building (2301 Market)",
+    "lat": 39.9529,
+    "lon": -75.1777,
+    "height_m": 117,
+    "massing": "North side of Market, 23rd-24th. Broad rectangular slab ~120 x 40 m, 25 floors, flat roof 117 m (384 ft), 1970; crown wraps an LED display band.",
+    "facade_color_hex": "#8C8F93",
+    "glass": false,
+    "notes": "Gray precast grid with dark windows."
+   },
+   {
+    "name": "Riverwalk I and II (30 N 23rd / 2200 Arch)",
+    "lat": 39.9542,
+    "lon": -75.1772,
+    "height_m": 110.6,
+    "massing": "22nd-23rd, JFK to Arch, two rectangular apartment towers: I (south, 32 fl, 110.6 m, 2022) and II (north, 28 fl, ~100 m, 2023) on a shared podium.",
+    "facade_color_hex": "#9FA9B3",
+    "glass": true,
+    "notes": "Gray glass with white metal panels."
+   },
+   {
+    "name": "Aramark Global Headquarters (2400 Market)",
+    "lat": 39.952,
+    "lon": -75.179,
+    "height_m": 46,
+    "massing": "South side of Market between 24th St and Schuylkill Ave (river edge), Market to Chestnut. Original 1920s 4-storey Hudson Motor plant (~180 x 90 m, concrete frame, ~22 m) topped by a 5-storey glass addition set slightly back; total 9 floors, roof ~46 m.",
+    "facade_color_hex": "#C9C2B8",
+    "glass": false,
+    "notes": "Lower floors light gray/beige concrete with big industrial windows, upper addition dark-gray glass (#4F5B66) with 'Aramark' signage. OSM height likely missing."
+   },
+   {
+    "name": "2400 Chestnut Street Apartments",
+    "lat": 39.9507,
+    "lon": -75.1785,
+    "height_m": 102.7,
+    "massing": "SW corner 24th & Chestnut near the river. Rectangular slab, 34 floors, 102.7 m (337 ft), 1979.",
+    "facade_color_hex": "#B4A58E",
+    "glass": false,
+    "notes": "Tan brick/precast."
+   },
+   {
+    "name": "2116 Chestnut",
+    "lat": 39.9509,
+    "lon": -75.1752,
+    "height_m": 108.5,
+    "massing": "South side of Chestnut, 21st-22nd. Slender apartment tower, 34 floors, 108.5 m (356 ft), 2013.",
+    "facade_color_hex": "#7D8A94",
+    "glass": true,
+    "notes": "Gray glass."
+   },
+   {
+    "name": "CHOP Roberts Center for Pediatric Research",
+    "lat": 39.9441,
+    "lon": -75.1803,
+    "height_m": 114,
+    "massing": "West bank of the Schuylkill at South St (734 Schuylkill Ave). Rectangular lab tower, 23 floors, 114.3 m (375 ft), 2017.",
+    "facade_color_hex": "#9DB5C8",
+    "glass": true,
+    "notes": "Blue-gray glass; at the south-west corner of bbox."
+   },
+   {
+    "name": "Philadelphia Inquirer Building (400 N Broad)",
+    "lat": 39.9592,
+    "lon": -75.1614,
+    "height_m": 103.6,
+    "massing": "NW corner Broad & Callowhill: 18-storey Beaux-Arts/Neo-Classical white-stone block ~90 x 60 m (main roof ~60 m) with a central clock tower topped by a gilded dome/lantern to 103.6 m (340 ft), 1924.",
+    "facade_color_hex": "#E4DFD3",
+    "glass": false,
+    "notes": "White glazed terra cotta; gold dome. Now police HQ. OSM may have height but likely not the tower."
+   },
+   {
+    "name": "30th Street Station",
+    "lat": 39.9558,
+    "lon": -75.1821,
+    "height_m": 35,
+    "massing": "West bank across from Market St bridge: Neoclassical limestone block ~200 x 100 m with giant-order porticos (columns ~22 m) on the east and west fronts; main roof ~35 m.",
+    "facade_color_hex": "#D4CDBD",
+    "glass": false,
+    "notes": "Alabama limestone; just inside the west edge of the bbox. OSM height likely missing."
+   }
+  ],
+  "area_notes": "Coordinates are tower centroids derived from a calibrated Center City grid (Broad -75.1636; 15th -75.1657; 16th -75.1671; 17th -75.1685; 18th -75.1700; 19th -75.1714; 20th -75.1728; 21st -75.1742; 22nd -75.1756; 23rd -75.1770; 24th -75.1784; 13th -75.1615; 12th -75.1598; 11th -75.1582; 8th -75.1533; 7th -75.1517; Market 39.9523, JFK 39.9536, Arch 39.9547, Cherry 39.9556, Race 39.9566, Vine 39.9584, Chestnut 39.9508, Walnut 39.9493, Locust 39.9481, Spruce 39.9467, Pine 39.9454) cross-checked against Wikipedia coordinates for City Hall (39.9523,-75.1638), Comcast Center, CTC, BNY Mellon, Cathedral (39.9575,-75.1686), Parkway Central (39.9592,-75.1716), Franklin Institute, Rodin (39.9619,-75.1742). Expect +/-30 m; snap to OSM footprints where available. Heights: Wikipedia 'List of tallest buildings in Philadelphia' (architectural heights, 2026 version); CTC 341.7 m is to the top of the lantern with roof ~279 m; One Liberty 288 m is the architectural crown, antenna mast to ~332 m; BNY Mellon 241 m and Three Logan 225 m include crowns (occupied roofs ~210 m and ~200 m). 'Arthur Kaufmann' could not be identified - Arthaus (311 S Broad, 160 m, 2022) is the likely intended tower and is included. Other notable presences not listed individually: Union League (Broad & Sansom, brownstone, ~30 m), Sheraton Downtown (17th & Race, ~85 m), 1500 Walnut / 1600 Walnut mid-rises (~60-70 m), Packard Grande (111 S 15th, 102 m), Three Parkway (1601 Cherry, ~80 m), many 60-90 m Rittenhouse-area apartment slabs. Buildings OSM almost certainly lacks height (or tower/dome detail) for: City Hall tower+statue breakdown, Masonic Temple towers, Arch Street UMC spire, Cathedral Basilica dome, Inquirer Building dome, Girard Trust/Ritz-Carlton rotunda dome, Reading Terminal train shed and headhouse, both Convention Center wings, Kimmel Center glass vault, Academy of Music, Wanamaker, Lits, Bellevue, Free Library, Family Court, Franklin Institute dome, Rodin Museum, 30th Street Station, Suburban Station/One Penn Center, Two/Three/Ten Penn Center, Marriott Downtown, Aramark 2400 Market. Suggested defaults for unlisted Center City fabric: rowhouse blocks south of Walnut 12-15 m, commercial mid-rises along Market/Chestnut/Walnut 30-60 m."
+ },
+ {
+  "buildings": [
+   {
+    "name": "Courtyard Apartments at Riverview Tower (ex-Southwark Plaza)",
+    "lat": 39.9349,
+    "lon": -75.15011,
+    "height_m": 100.8,
+    "massing": "Single slender rectangular slab, 26 floors (marketed as 25-story senior high-rise), 331 ft / 100.8 m to roof, flat roof with small mechanical penthouse. 1963 Stonorov & Haws public-housing tower; the two sister towers 100 m to the south/west were imploded 23 Jan 2000 and replaced by 305 low-rise (3-story) rowhouse-style units. Long axis roughly N-S parallel to 4th St.",
+    "facade_color_hex": "#C9B28C",
+    "glass": false,
+    "notes": "Address 1021 S 4th St, block 4th/Washington/5th/Christian. By far the tallest object in the bbox. Original brick was a pale 'sickly yellow'; 2018 renovation added light panels/blue accents. Height and levels confirmed by OSM (height=100.8, levels=26) and PhillyHistory (331 ft)."
+   },
+   {
+    "name": "The Residences at Dockside",
+    "lat": 39.93905,
+    "lon": -75.14088,
+    "height_m": 55,
+    "massing": "16-17 story slab built on a pier projecting east into the Delaware from Columbus Blvd at Catharine/Fitzwater; long axis E-W (~120 m), stepped at the river end; 3-4 story parking/podium at the street end. 1995, 242 units. Roof ~55 m (estimate from 16 stories x 3.3 m + podium).",
+    "facade_color_hex": "#9C6B57",
+    "glass": false,
+    "notes": "717 S Columbus Blvd. Red-brown brick with continuous balconies; ground 'Pier 38-40' sheds adjacent to the south (Shank's Pier 40, 1-story ~10 m)."
+   },
+   {
+    "name": "1001 South Broad (Broad & Washington, Post Brothers phase 1)",
+    "lat": 39.9388,
+    "lon": -75.1655,
+    "height_m": 50,
+    "massing": "15-story block filling the east side of Broad between Carpenter and Washington and running east toward 13th St; 2-story retail podium, long mid-rise slab above, flat roof with amenity deck. 600-630 units; phase 1 substantially complete 2025, phases 2-3 (to 1,487 units) planned east along Washington Ave.",
+    "facade_color_hex": "#D8D5CE",
+    "glass": true,
+    "notes": "Height 50 m is an estimate (15 residential floors ~3.2 m + podium); no published figure found. Facade: light gray/white panel with large glazing. OSM still tags part of block as construction."
+   },
+   {
+    "name": "Sparks Shot Tower",
+    "lat": 39.93481,
+    "lon": -75.14634,
+    "height_m": 43.3,
+    "massing": "Tapering round brick shaft, 142 ft (43.3 m) tall, ~30 ft (9 m) diameter at base tapering to ~15 ft (4.6 m) at top, low conical cap. Stands alone in a playground at Front & Carpenter (Shot Tower Recreation Center, 1-story ~6 m).",
+    "facade_color_hex": "#8F4A3B",
+    "glass": false,
+    "notes": "1808; one of the most visible verticals in Queen Village/Pennsport; OSM height 43. Immediately west of the elevated I-95."
+   },
+   {
+    "name": "Epiphany of Our Lord Church",
+    "lat": 39.92278,
+    "lon": -75.16518,
+    "height_m": 38.7,
+    "massing": "Large Gothic brownstone church (~35 x 60 m) at SE corner 11th & Jackson, gabled nave ~22 m ridge, single corner tower to 127 ft (38.7 m) with pyramidal/crenellated top; school and rectory attached along Jackson St.",
+    "facade_color_hex": "#7A6A5C",
+    "glass": false,
+    "notes": "1121 Jackson St; tower height 127 ft from parish/Catholic directory sources. OSM has no height tag."
+   },
+   {
+    "name": "St. Mary Magdalen de Pazzi Church",
+    "lat": 39.93745,
+    "lon": -75.15574,
+    "height_m": 36.9,
+    "massing": "Brick basilica (E.F. Durang, 1891) on Montrose St between 7th and 8th; gabled nave ~20 m, facade tower/campanile rising to 36.9 m (OSM LiDAR height 36.88). Rectory attached at 712 Montrose.",
+    "facade_color_hex": "#9A5040",
+    "glass": false,
+    "notes": "First Italian national parish in the US (1852); closed 2000 but building stands. Tall element is a single square tower on the street front."
+   },
+   {
+    "name": "Trinity Lutheran (Evangelical Lutheran Church of the Trinity)",
+    "lat": 39.92251,
+    "lon": -75.17698,
+    "height_m": 36.5,
+    "massing": "Stone Gothic church at 18th & Ritner with a tall, slender corner spire to 36.5 m (OSM height); nave ridge ~16 m.",
+    "facade_color_hex": "#8C8478",
+    "glass": false,
+    "notes": "2300 S 18th St; congregation closed Oct 2023, building extant. One of the two tallest spires in the lower (south of Snyder) half of the bbox."
+   },
+   {
+    "name": "Annunciation BVM Church",
+    "lat": 39.93055,
+    "lon": -75.1609,
+    "height_m": 34.1,
+    "massing": "Red-brick Gothic church 55 ft (16.8 m) wide x 126 ft (38 m) deep (plus 1904 rear addition), nave ridge ~20 m. Central front tower on 10th St was built 120 ft with a 50 ft spire (1863); the spire and corner pinnacles were removed c.1933 and the tower capped flat, now ~34 m (OSM 34.13).",
+    "facade_color_hex": "#9E4A3A",
+    "glass": false,
+    "notes": "SE corner 10th & Dickinson (1501-1511 S 10th). Three Gothic portals under a 16x32 ft traceried window; buttressed side walls with nine tall arched windows. Dimensions from the 2019 Historical Commission nomination."
+   },
+   {
+    "name": "Bok Building (Edward W. Bok Technical High School)",
+    "lat": 39.92522,
+    "lon": -75.16005,
+    "height_m": 34,
+    "massing": "Art Deco PWA school (Irwin Catharine, 1936-38) filling the block 8th/9th/Mifflin/Dudley: 8-story main slab (~340,000 sf) with strong vertical piers, two internal light courts (E-plan), a lower 2-3 story limestone wing, and a rooftop bar/terrace (Bok Bar) on the roof.",
+    "facade_color_hex": "#D6C08A",
+    "glass": false,
+    "notes": "1901 S 9th St. Limestone-trimmed yellow/buff brick. 8 floors per OSM; 34 m is an estimate (no published height). Dominant mass in the Lower Moyamensing rowhouse sea, visible from far south."
+   },
+   {
+    "name": "Holy Ghost Byzantine Catholic Church",
+    "lat": 39.92392,
+    "lon": -75.18734,
+    "height_m": 30.2,
+    "massing": "Brick Byzantine-rite church at 24th & Ritner with onion-domed twin towers to ~30 m (OSM 30.17).",
+    "facade_color_hex": "#A0523F",
+    "glass": false,
+    "notes": "2310 S 24th St, just inside the western edge of the bbox (lon -75.1873)."
+   },
+   {
+    "name": "Fleisher Art Memorial (former Church of the Evangelists)",
+    "lat": 39.93916,
+    "lon": -75.15514,
+    "height_m": 29.3,
+    "massing": "Romanesque former church (1880s) on Catharine St between 7th and 8th with a square stone tower to ~29 m (OSM 29.26) and attached 4-story art-school buildings (27 m).",
+    "facade_color_hex": "#8B6E5C",
+    "glass": false,
+    "notes": "709-719 Catharine St; OSM lists as unnamed 711 Catharine at 29.26 m. Near the north edge of bbox."
+   },
+   {
+    "name": "St. Monica Catholic Church",
+    "lat": 39.921,
+    "lon": -75.17569,
+    "height_m": 28.7,
+    "massing": "Stone-fronted twin-towered church at 17th & Ritner; towers to ~28.7 m (right tower carries a clock), gabled nave ~17 m ridge; school/rec center to the west.",
+    "facade_color_hex": "#9B9185",
+    "glass": false,
+    "notes": "1700 Ritner St (2422 S 17th). OSM height 28.65."
+   },
+   {
+    "name": "Sacred Heart of Jesus Church",
+    "lat": 39.93028,
+    "lon": -75.15041,
+    "height_m": 28.3,
+    "massing": "1876-77 Gothic church (Durang) at 3rd & Reed/E. Moyamensing; stone/brick nave, single front tower to ~28 m (OSM 28.34), no tall spire today.",
+    "facade_color_hex": "#8A6A58",
+    "glass": false,
+    "notes": "1404 S 3rd St; school across Reed St (Sacred Heart School)."
+   },
+   {
+    "name": "St. Edmond Church",
+    "lat": 39.92546,
+    "lon": -75.18153,
+    "height_m": 28.3,
+    "massing": "Stone Gothic church at 21st & Mifflin with corner tower to ~28 m (OSM 28.34); nave ridge ~16 m.",
+    "facade_color_hex": "#8F877B",
+    "glass": false,
+    "notes": "2130 S 21st St; west edge of the bbox, Girard Estate area."
+   },
+   {
+    "name": "Russell Tabernacle CME (former church, 516 Wharton St)",
+    "lat": 39.93215,
+    "lon": -75.15368,
+    "height_m": 28.3,
+    "massing": "Former 19th-c. church with a square front tower ~28 m (OSM 28.34) on Wharton St at 5th/6th.",
+    "facade_color_hex": "#9A5A48",
+    "glass": false,
+    "notes": "Minor landmark; include as a vertical in Dickinson Narrows."
+   },
+   {
+    "name": "St. Rita of Cascia (National Shrine)",
+    "lat": 39.93639,
+    "lon": -75.16762,
+    "height_m": 27,
+    "massing": "Roman Baroque basilica (George Lovatt, 1907-08): frontage 90.8 ft (27.7 m) on the west side of S Broad, 178 ft (54 m) deep to Carlisle St; facade a two-stage triumphal-arch composition (paired Tuscan columns, giant volutes, segmental pediment) topped ~27 m; aisles ~12 m, clerestory/nave roof 24.3 m (OSM), semicircular apse at the rear. No dome or tower.",
+    "facade_color_hex": "#E3D6BC",
+    "glass": false,
+    "notes": "1156-62 S Broad St at Ellsworth. Facade is cream terracotta with light brick; north flank is dark Conshohocken stone at ground level with copper-clad clerestory and apse (verdigris). Rectory adjoins to the south. Facade raised 15 steps above Broad St."
+   },
+   {
+    "name": "St. Casimir Lithuanian Catholic Church",
+    "lat": 39.93169,
+    "lon": -75.15078,
+    "height_m": 26.2,
+    "massing": "Brick church at 324 Wharton St (near 3rd) with front tower ~26 m (OSM 26.21).",
+    "facade_color_hex": "#A35A45",
+    "glass": false,
+    "notes": "Pennsport; minor vertical."
+   },
+   {
+    "name": "St. Nicholas of Tolentine Church",
+    "lat": 39.92773,
+    "lon": -75.1606,
+    "height_m": 32,
+    "massing": "Neoclassical/Italian Renaissance church (Nicholas Serracino, 1916-17) at 9th & Watkins: pedimented facade ~18 m, central copper-clad dome over the crossing plus a copper steeple/cupola; overall ~30-34 m.",
+    "facade_color_hex": "#8A6A55",
+    "glass": false,
+    "notes": "910 Watkins St. Height is an ESTIMATE (no published figure, no OSM height). Dark stone/brick body; oxidized green copper dome and steeple are the landmark feature. Twin of Sacred Hearts of Jesus & Mary, Manhattan."
+   },
+   {
+    "name": "St. Thomas Aquinas Church",
+    "lat": 39.93023,
+    "lon": -75.17387,
+    "height_m": 33,
+    "massing": "Large stone Gothic church (E.F. Durang, 1901-03) at NW corner 17th & Morris, described at construction as 'one of the largest in the city'; gabled nave ~20 m ridge; single corner tower ~30-35 m (no spire).",
+    "facade_color_hex": "#8C8477",
+    "glass": false,
+    "notes": "1719 Morris St. Tower height is an ESTIMATE; OSM has no height. School at 1631 S 18th (3 stories)."
+   },
+   {
+    "name": "Our Lady of Mount Carmel Church",
+    "lat": 39.9192,
+    "lon": -75.15179,
+    "height_m": 25,
+    "massing": "Brick Romanesque church at SE corner 3rd & Wolf with a front tower/campanile ~25 m (estimate); 3-story school (2331 S 3rd) attached to the south.",
+    "facade_color_hex": "#9E5546",
+    "glass": false,
+    "notes": "Parish founded 1896; locally designated 2021. Height is an ESTIMATE (nomination PDF is image-only)."
+   },
+   {
+    "name": "St. Paul Catholic Church (Christian St)",
+    "lat": 39.93944,
+    "lon": -75.15878,
+    "height_m": 22,
+    "massing": "1843-47 church on the north side of Christian St between 9th and 10th: plain gabled brick/stuccoed classical front ~15 m, low square belfry/cupola to ~22 m (estimate); rectory and former school around a small yard; entry set back from the street.",
+    "facade_color_hex": "#D9CDB5",
+    "glass": false,
+    "notes": "923 Christian St, the Italian Market's parish church; height is an ESTIMATE. Sits 60 m north of the bbox top edge? No - lat 39.9394 is inside."
+   },
+   {
+    "name": "Gloria Dei (Old Swedes') Church",
+    "lat": 39.9345,
+    "lon": -75.14351,
+    "height_m": 22,
+    "massing": "Small 1698-1700 brick church (Flemish bond with glazed black headers), steep gabled roof ~12 m, square brick tower (c.1733) at the west end carrying a white wooden belfry and short spire to ~20-24 m (estimate; Rudman planned '80 or 100 feet'). Surrounded by a walled graveyard and 2-3 story brick outbuildings on a 3.7-acre site between Christian St, Columbus Blvd and Washington Ave.",
+    "facade_color_hex": "#8E4B3C",
+    "glass": false,
+    "notes": "929 S Water St; National Historic Site. Lies in the pocket between I-95 and Columbus Blvd. Height is an ESTIMATE."
+   },
+   {
+    "name": "Washington Avenue Pier (Pier 53) / Land Buoy",
+    "lat": 39.93229,
+    "lon": -75.14063,
+    "height_m": 16.8,
+    "massing": "Former immigration-station pier rebuilt 2014 as a park: ~150 m finger pier projecting SE into the river from the foot of Washington Ave, low boardwalk over wetland, with Jody Pinto's 'Land Buoy' at the tip: a 55 ft (16.8 m) galvanized-steel spire/mast with a 16 ft spiral stair and blue light.",
+    "facade_color_hex": "#A9AEB3",
+    "glass": false,
+    "notes": "Washington Avenue Green park (39.93218,-75.1415) is the landside lawn; Philadelphia Fire Dept marine unit and small tug piers immediately north (39.9331,-75.1416)."
+   },
+   {
+    "name": "Mummers Museum",
+    "lat": 39.93345,
+    "lon": -75.14757,
+    "height_m": 12,
+    "massing": "Compact 2-3 story box (1976) at SE corner 2nd St & Washington Ave, roughly 35 x 40 m, flat roof; upper floor windowless gallery.",
+    "facade_color_hex": "#D6B46A",
+    "glass": false,
+    "notes": "1100 S 2nd St. Tan/yellow brick with bands of blue, green and orange tile (roadsideamerica: 'blue, green and orange-tiled building'); murals on the Washington Ave side. Height estimated."
+   },
+   {
+    "name": "South Philadelphia High School",
+    "lat": 39.92357,
+    "lon": -75.16833,
+    "height_m": 18,
+    "massing": "1956 mid-century school: 4-story rectangular classroom block of light tan brick with continuous galvanized-steel window bands, flat roof, plaza-like front entrance on Broad; occupies the east side of Broad St between Snyder Ave and Jackson St back to 13th St, with gym/auditorium wings and athletic field to the east.",
+    "facade_color_hex": "#D9C7A3",
+    "glass": false,
+    "notes": "2101 S Broad St. Replaced the 1907/1915 Norman Romanesque grey-stone boys'/girls' buildings. Height estimated from 4 stories."
+   },
+   {
+    "name": "Methodist Hospital (Jefferson Health)",
+    "lat": 39.92114,
+    "lon": -75.16927,
+    "height_m": 30,
+    "massing": "Hospital campus on the east side of Broad between Wolf and Ritner (to 13th St): 1960s-70s brown-brick blocks plus the 1979 'North Tower', roughly 7-8 stories (~30 m estimate), flat roofs with mechanical penthouses, parking structure on the 13th St side; the 135-ft Victorian tower on Broad was demolished in the 1960s.",
+    "facade_color_hex": "#8A5A45",
+    "glass": false,
+    "notes": "2301 S Broad St, 204 beds. Story count/height are ESTIMATES (no OSM height, none published)."
+   },
+   {
+    "name": "Constitution Health Plaza (former St. Agnes Medical Center)",
+    "lat": 39.92655,
+    "lon": -75.17024,
+    "height_m": 22,
+    "massing": "Five-story, four-building 295,000 sf medical complex on the west side of Broad at McKean (1970s, renovated to 2012) with an adjoining 5-level parking garage (1485 McKean) and 1-story powerhouse; 30 ft (9 m) monument sign at Broad & Passyunk.",
+    "facade_color_hex": "#C9B79A",
+    "glass": false,
+    "notes": "1930 S Broad St. Tan brick; height estimated from 5 stories (~22 m). The original 1879/1920 hospital with its rooftop cross was demolished in the early 1970s."
+   },
+   {
+    "name": "Lincoln Square",
+    "lat": 39.9384,
+    "lon": -75.16752,
+    "height_m": 30,
+    "massing": "9-story apartment block (2018, 322 units) on the SW corner of Broad & Washington, filling the block to 15th St: 2-story retail base (Target, Sprouts at 1000 S Broad) with a 360-space garage, U-shaped residential floors above, flat roof.",
+    "facade_color_hex": "#B89A7A",
+    "glass": false,
+    "notes": "1000 S Broad St. Mixed brick, dark metal and glass; ~30 m estimated (OSM levels=9)."
+   },
+   {
+    "name": "Marine Club Condos (former Marine Corps Quartermaster Depot)",
+    "lat": 39.93753,
+    "lon": -75.16719,
+    "height_m": 20,
+    "massing": "4-story (OSM levels=4) long red-brick loft block on the east side of Broad at Washington/Ellsworth, flat roof, heavy industrial window grid.",
+    "facade_color_hex": "#9B4F3F",
+    "glass": false,
+    "notes": "1100 S Broad; height estimated ~20 m."
+   },
+   {
+    "name": "Philadelphia HS for the Creative and Performing Arts (Ridgway Library)",
+    "lat": 39.93941,
+    "lon": -75.16533,
+    "height_m": 20,
+    "massing": "1878 Greek Revival granite temple-front building set back from the east side of Broad between Carpenter and Christian: central pedimented Doric portico with flanking wings, ~20 m to the ridge; lawn (Ridgway Park) in front.",
+    "facade_color_hex": "#B9B5AD",
+    "glass": false,
+    "notes": "901 S Broad St; on the north edge of the bbox. Height estimated."
+   },
+   {
+    "name": "South Philadelphia Community Health & Literacy Center (library branch)",
+    "lat": 39.92903,
+    "lon": -75.16936,
+    "height_m": 18.6,
+    "massing": "2016 4-story glass-and-metal civic box on the west side of Broad at Morris/Moore, with a 1-story library wing and plaza.",
+    "facade_color_hex": "#C7CCD0",
+    "glass": true,
+    "notes": "1700 S Broad St; OSM height 18.59."
+   },
+   {
+    "name": "Ss. Neumann-Goretti High School",
+    "lat": 39.92712,
+    "lon": -75.16283,
+    "height_m": 20.7,
+    "massing": "Large 4-5 story tan-brick Catholic high school (1930s-50s) filling the block 10th/Moore/11th/Mifflin, with gym block; flat roofs.",
+    "facade_color_hex": "#C8B08A",
+    "glass": false,
+    "notes": "1736 S 10th St; OSM height 20.72."
+   },
+   {
+    "name": "George W. Childs Elementary School",
+    "lat": 39.93493,
+    "lon": -75.17035,
+    "height_m": 29.3,
+    "massing": "Representative of the 1900s-1920s 3-4 story public schools that tower over the 2-story rows: masonry block ~60 x 40 m with parapets/towers; OSM height 29.26.",
+    "facade_color_hex": "#B07A55",
+    "glass": false,
+    "notes": "1235 S 16th St (17th & Tasker). Similar dominant schools: Delaplaine McDaniel 22nd & Moore (27.4 m), Vare-Washington 5th & Washington (27.4 m), Fell 9th & Oregon (27.7 m), Mastery Thomas 9th & Johnston (27.4 m), Southwark 9th & Mifflin (24.1 m), Universal Vare 24th & Snyder (24.1 m), Kirkbride 7th & Dickinson, Furness 3rd & Mifflin, Key 8th & Wolf, Sharswood 2nd & Wolf, Girard 18th & Snyder (16 m)."
+   },
+   {
+    "name": "Italian Market (South 9th Street Curb Market)",
+    "lat": 39.937,
+    "lon": -75.1584,
+    "height_m": 11,
+    "massing": "Linear corridor on 9th St from Fitzwater (39.9400) south to Wharton (39.9337), ~700 m, lon ~-75.1583 to -75.1586. Both sides are continuous 2-3 story brick rowhouse storefronts (OSM LiDAR 10-14 m: Di Bruno 930 S 9th, Claudio 926, Fante's 1004-08, Talluto's 944 at 3 levels, Cannuli 937 at 11.9 m, Molly's 1010 at 11.6 m) with continuous corrugated-metal sidewalk awnings ~3-3.5 m above grade projecting ~2.5-3 m over the sidewalk, curbside produce stands, hanging signs and scales; busiest core between Christian and Washington.",
+    "facade_color_hex": "#A5553F",
+    "glass": false,
+    "notes": "Awnings are mostly painted red, green, white or galvanized gray; shopfront cornices at ~11 m. Brick rows with painted stucco infill; murals at 9th & Montrose (Frank Rizzo mural removed 2020). Burn barrels in the street in winter."
+   },
+   {
+    "name": "East Passyunk Avenue / Singing Fountain plaza",
+    "lat": 39.92995,
+    "lon": -75.16323,
+    "height_m": 3,
+    "massing": "Passyunk Ave cuts the grid on a NE-SW diagonal from 6th & Washington (39.9355,-75.1548) through Broad & McKean (39.9265,-75.1700) to 26th & Penrose; the commercial spine between Broad and Dickinson (Fountain Farmers Market, 1600 E Passyunk) is lined with 2-3 story rowhouse storefronts 10-13 m high with corner bays. The Singing Fountain plaza is a triangular island at Passyunk/11th/Tasker (2004) with a ~3 m fountain.",
+    "facade_color_hex": "#A5553F",
+    "glass": false,
+    "notes": "Diagonal produces wedge-shaped corner buildings (e.g. 1843 E Passyunk 20.1 m, 1325 E Passyunk 21.3 m, Acme 1400 E Passyunk 1-story). West Passyunk continues SW past Broad toward 26th St (Stephen Girard Park, 39.9204,-75.1832)."
+   },
+   {
+    "name": "IKEA South Philadelphia",
+    "lat": 39.91711,
+    "lon": -75.1419,
+    "height_m": 14,
+    "massing": "Two-level big box (~200 x 150 m) at 2206 S Columbus Blvd between Snyder and Oregon, flat roof, entrance tower at the NW corner; surface parking to the west along Columbus; on the former CSX rail yard.",
+    "facade_color_hex": "#0058A3",
+    "glass": false,
+    "notes": "Blue walls with yellow signage; OSM levels=2. Anchor of Columbus Commons (643,810 sf) with Lowe's (2106 S Columbus, 1 level ~10 m, 39.91969,-75.14353), Best Buy (2300 S Columbus ~9 m, 39.91573,-75.13888), Raymour & Flanigan (2110 S Columbus ~9 m), Five Below/Dollar Tree strip (2250 S Columbus, 39.9171,-75.1399) and a Wawa."
+   },
+   {
+    "name": "Walmart Supercenter / Pier 70 - Columbus Crossing retail strip",
+    "lat": 39.92651,
+    "lon": -75.14148,
+    "height_m": 10,
+    "massing": "Cluster of 1-story big boxes (8-11 m) with front parking between Tasker/Pier 70 Blvd and Snyder on the river side of Columbus Blvd: Walmart (1675 S Columbus, 39.92651,-75.14148, ~170 x 110 m), Home Depot (1615 S Columbus, 39.92609,-75.14308), Target (1 Mifflin St / Columbus Crossing, 39.92438,-75.14615), strip of TJ Maxx/Old Navy/Michaels/Ulta at 1851 S Columbus (39.9236,-75.1400), Acme (29 Snyder Ave, 39.92327,-75.14504), storage/pet/mattress boxes at 1924-1946 S Columbus.",
+    "facade_color_hex": "#C9BCA4",
+    "glass": false,
+    "notes": "Typical big-box palette: tan stucco/CMU with blue (Walmart), orange (Home Depot), red (Target) accents. Heights estimated 9-11 m."
+   },
+   {
+    "name": "Riverview Plaza (Regal/Apple Cinemas 17) and Giant",
+    "lat": 39.93222,
+    "lon": -75.14484,
+    "height_m": 15,
+    "massing": "1980s-90s shopping center on two parcels split by Reed St, 1100-1400 S Columbus Blvd (west side): 1-story L-shaped strip (~7 m) with Staples/Pep Boys north of Reed, and the 17-screen two-level multiplex (1400 S Columbus, ~15 m, largely glass front, opened 1991, second floor 1998; IMAX refresh 2026) south of Reed; Giant supermarket (1403 S Columbus, ~9 m) on the east side at 39.92927,-75.14381.",
+    "facade_color_hex": "#B8AFA0",
+    "glass": true,
+    "notes": "Large surface lots front Columbus Blvd; Sheet Metal Workers Local 19 hall (1301 S Columbus, 2-3 story ~12 m, approx 39.9312,-75.1423) sits on the east side at Wharton."
+   },
+   {
+    "name": "Wharton Piers tower (proposed, 1341 S Columbus Blvd)",
+    "lat": 39.9305,
+    "lon": -75.142,
+    "height_m": 116,
+    "massing": "Proposed 36-story, ~380 ft glassy residential tower (620 units, Perkins Eastman) on the former Liberty-on-the-River pier site at Wharton St; 4-level parking podium, amenity floor 5, first of up to three towers; $150M construction loan closed Feb 2026.",
+    "facade_color_hex": "#9FB7C8",
+    "glass": true,
+    "notes": "NOT BUILT as of the latest sources found (early-2026 financing); include only as a future/optional mass."
+   },
+   {
+    "name": "Pier 78 / Pier 80 Forest Products Center warehouses",
+    "lat": 39.9205,
+    "lon": -75.1375,
+    "height_m": 12,
+    "massing": "Long 1-story steel shed warehouses on finger piers projecting ~250 m east into the river south of Snyder Ave (Pier 78 at 39.92106,-75.13734; Pier 80 at 39.91952,-75.13666) with the Pier 78 Annex warehouse on land (39.92134,-75.1403); Pier 82 (39.91783,-75.13613) and Pier 84 (39.91581,-75.13519) are similar breakbulk/cocoa sheds at the south edge of the bbox.",
+    "facade_color_hex": "#B5B8BA",
+    "glass": false,
+    "notes": "PhilaPort facilities operated by Penn Warehousing; Pier 84 has a container berth and cranes. North of them: Pier 68 public fishing pier/park (39.92524,-75.1387) and derelict Pier 60 (39.92852,-75.13993)."
+   },
+   {
+    "name": "Marconi Plaza / Columbus statue",
+    "lat": 39.91546,
+    "lon": -75.17141,
+    "height_m": 6.7,
+    "massing": "Formal park astride Broad St between Oregon Ave and Bigler St; the 1876 Columbus monument (10 ft statue on 12 ft pedestal, 6.7 m total) stands on the east half, Marconi bust on the west.",
+    "facade_color_hex": "#D9D5CC",
+    "glass": false,
+    "notes": "Straddles the south edge of the bbox (Oregon Ave ~39.9172)."
+   },
+   {
+    "name": "Naval Square - Biddle Hall (U.S. Naval Asylum)",
+    "lat": 39.9439,
+    "lon": -75.1837,
+    "height_m": 20,
+    "massing": "OUTSIDE BBOX (~400 m north of lat 39.940). Strickland 1827-33 Greek Revival: 385 ft (117 m) front x 135 ft (41 m) deep, 2.5 stories over a raised granite basement; center block 142 x 135 ft with an octastyle Ionic marble portico (8 columns, 3 ft dia) up 19 steps, domed rear chapel 56 ft square with glazed cupola; 3-story wings with cast-iron verandas on granite piers; hipped standing-seam metal roof with 8 double dormers per wing. Ridge ~16-18 m, cupola ~20-22 m (estimate).",
+    "facade_color_hex": "#C8C4BA",
+    "glass": false,
+    "notes": "2420 Grays Ferry Ave; long axis parallels Grays Ferry Ave (NE-SW). Surrounded by Toll Brothers' 2004-09 Naval Square: 5-story brick townhouse rows 14.6-19.2 m (OSM) around Academy Circle, plus Laning Hall and two Strickland residences. Site bounded by Grays Ferry Ave, Bainbridge St, Schuylkill Ave and Christian St."
+   },
+   {
+    "name": "Graduate Hospital (Penn Medicine Rittenhouse)",
+    "lat": 39.9447,
+    "lon": -75.1717,
+    "height_m": 35,
+    "massing": "OUTSIDE BBOX (north of South St). 1970s hospital block at 1800 Lombard (18th to 19th, Lombard to South) ~8-9 stories plus the Tuttleman Center at 1840 South St; height ~35 m is an ESTIMATE.",
+    "facade_color_hex": "#B89070",
+    "glass": false,
+    "notes": "Included only because it was requested; it lies ~500 m north of the bbox. Brown brick."
+   },
+   {
+    "name": "Walt Whitman Bridge",
+    "lat": 39.9053,
+    "lon": -75.1297,
+    "height_m": 115,
+    "massing": "OUTSIDE BBOX (PA anchorage/approach at Front St & Packer Ave, lat ~39.908, i.e. ~800 m south of 39.915). Suspension bridge: towers 378 ft (115 m), main span 2,000 ft (610 m), deck 150 ft (46 m) above water, 7 lanes; I-76 approach viaduct runs west along Packer Ave to Broad St and the Schuylkill Expressway.",
+    "facade_color_hex": "#7F8C8D",
+    "glass": false,
+    "notes": "Not inside the bbox; the elevated I-95 and ramps at Oregon Ave (39.917) are the only bridge-related structures near the southern edge. Repainted 2017 (gray-green; verify color)."
+   },
+   {
+    "name": "Stella Maris Church",
+    "lat": 39.91255,
+    "lon": -75.16313,
+    "height_m": 25,
+    "massing": "OUTSIDE BBOX (~270 m south of 39.915) at SE corner 10th & Bigler: 1930s brick church with rectory (2901 S 10th, 8.8 m) and convent; tower ~25 m (ESTIMATE).",
+    "facade_color_hex": "#9E5546",
+    "glass": false,
+    "notes": "Listed because requested; omit from the bbox model or include as a fringe mass."
+   },
+   {
+    "name": "Unnamed 1606 Mifflin St structure (OSM height 33.5 m)",
+    "lat": 39.92706,
+    "lon": -75.17276,
+    "height_m": 33.5,
+    "massing": "OSM tags a 2-level building (Kingdom Care Reentry Network) at 33.5 m at 16th & Mifflin, almost certainly a former church with a surviving tower/spire.",
+    "facade_color_hex": "#8C7A6B",
+    "glass": false,
+    "notes": "Unverified; treat as a secondary vertical. Other unexplained OSM verticals: 1425 Snyder Ave 29.6 m (15th & Snyder), 1221 S Broad 27.7 m and 1233 S Broad 26.2 m (7-8 story loft/commercial buildings on the 1200 block of S Broad), 1300 S 19th 27.4 m (5 levels), 1130 Federal St school 28 m, 2000 S Broad 21.3 m (NW corner Broad & Snyder)."
+   }
+  ],
+  "area_notes": "BBOX / COORDINATE NOTES: Local x=east, z=south from 39.945474N 75.144748W; 1 deg lat = 111.0 km, 1 deg lon = 85.3 km here. The bbox top (39.940) is at Fitzwater/Catharine, ~250 m SOUTH of South St, so Graduate Hospital, Naval Square/Biddle Hall and CAPA's neighbors to the north are outside; the bottom (39.915) is Bigler St, just south of Oregon Ave, so Stella Maris and the Walt Whitman approach are outside. Camden NJ waterfront is inside the east edge: Battleship New Jersey museum ship (39.9395,-75.1326; 270 m long, masts ~50 m) and Port of Camden water tower/cranes are prominent across the river.\n\nTYPICAL FABRIC (dominant ~90% of bbox): flat-roofed brick rowhouses. OSM/LiDAR heights: 2-story rows 7.0-9.4 m to parapet (e.g. 1840s Carlisle/Rosewood Sts 7.0-8.8 m; 2300 block S American St 7.9-11.3 m), 3-story rows 10-13.7 m (2100 block S 13th St 8.5-13.7 m; 9th St market rows 10-14 m). Lot widths 14-16 ft (4.3-4.9 m; older Queen Village/Pennsport 16'6''-20'), depths ~40 ft (12 m) with 2-story rear ells; porch-front/'airlite' 1920s rows in Girard Estate and Packer Park (west and south of Broad) are 16-18 ft wide, 2 stories, with front porches or projecting bays. Details: bracketed wood or pressed-metal cornices (many removed, replaced by simple parapets), white marble stoops (2-3 steps) and lintels, aluminum/canvas door and window awnings (striped green-white, burgundy, blue), iron railings, sidewalk cellar doors. Facade palette: red brick #9E4A3A / #A5553F, darker Victorian brick #6F4A3A, Formstone/faux-stone veneer gray-beige #BDB5A4 (common in Pennsport/Whitman/Lower Moyamensing), painted stucco white/cream #E6DED0, and pastel painted brick (mint #BFD8C2, sky #B7CBDD, tan #C9B48C); cornices dark brown/white; roofs silver-coated or black rubber flat. Streets are 26-ft cartways with parking both sides; Broad (113 ft), Washington, Snyder, Oregon, Passyunk, Columbus Blvd are the wide streets.\n\nBROAD STREET (lon ~-75.1690 east curb / -75.1702 west curb, bends slightly): mostly 3-story commercial rows 12-14 m with punctuations: Broad & Washington (Lincoln Square 9 st, 1001 S Broad 15 st, Marine Club 4 st); 1200 block lofts 26-28 m; St. Rita's at Ellsworth; Broad Street Diner (1135 S Broad, 1-story stainless diner); CAPA (Ridgway) at Carpenter; library/health center at Morris (18.6 m); Constitution Health Plaza + garage at McKean/Passyunk with 9 m sign; Citizens Bank 2001 S Broad (17 m) / Walgreens / Snyder Plaza at Snyder; South Philadelphia HS (4 st) Snyder-Jackson; Methodist Hospital Wolf-Ritner (~30 m); Marconi Plaza at Oregon. Broad Street Line subway is below grade (Tasker-Morris, Snyder, Oregon station headhouses only).\n\nITALIAN MARKET: 9th St Fitzwater-Wharton, with the awning-covered core Christian-Washington; 9th & Washington corner buildings 3 stories; cross-street Christian St has St. Paul's and the Palumbo Rec Center; Capitolo Park (900 Federal) is an open block.\n\nCOLUMBUS BLVD / DELAWARE WATERFRONT (lon ~-75.143 to -75.145 for the boulevard, river edge ~-75.139 to -75.136 moving south): from north to south inside bbox: Pier 36-40 sheds and Dockside tower (Catharine-Christian), Gloria Dei pocket, I-95 Park deck, Washington Ave pier/green with fire-boat piers, Sheet Metal Workers hall and vacant Piers 53-57 sites, Riverview Plaza strip + multiplex (Reed), Giant, Wharton Piers tower site (proposed), Pier 60 ruin, Walmart/Home Depot/Target boxes (Tasker-Snyder), Pier 68 park, Pier 70 Blvd, Acme, IKEA/Lowe's/Best Buy (Snyder-Oregon), PhilaPort Piers 78-84 sheds. Elevated I-95 (6-8 lanes, deck ~8-12 m above grade, concrete viaduct/embankment) runs N-S between Front St and Columbus Blvd (lon ~-75.1455 at Washington, ~-75.1440 at Oregon) with the Washington Ave and Oregon Ave interchange ramps; a rooftop water tower (~25 m) stands near Front & Oregon (39.91892,-75.14599). Washington Ave itself is a 100-ft-wide former industrial corridor now filling with 5-7 story apartment blocks (The Howell 2101 Washington 6 st, 2001 Washington, 1520 Washington 7 st proposed) between Broad and Grays Ferry Ave.\n\nSCHUYLKILL / REFINERY EDGE (west edge of bbox, lon -75.188): the river itself lies west of the bbox except near Grays Ferry Ave (bridge at 39.9405,-75.1960 - outside) - the bbox's west edge is roughly 25th-26th St. Inside the edge: Grays Ferry rowhouses and Greater Grays Ferry Estates (2-3 story, 1990s-2000s), Wharton Square, Universal Vare/Alcorn schools, Holy Ghost Byzantine domes, a cell/radio tower at 39.92384,-75.18646, Home Depot at 2200 Oregon Ave (39.91583,-75.1858, 1-story ~10 m) and Stephen Girard Park. West of the edge: Grays Ferry Crescent trail (2012) and the former PES/Point Breeze refinery, now Hilco's 'Bellwether District' - demolition substantially complete (all ~70 large storage tanks, process units and pipe racks removed by 2024-25); first 1-story logistics warehouses (~12-15 m, white metal panel) are rising along 26th St south of Passyunk Ave and near Grays Ferry; the Belmont Terminal tanks at 26th & Passyunk (not part of Hilco's purchase) and a gasometer at 39.92207,-75.19541 remain as the only tank-farm silhouettes. Model the refinery as flat graded land with a few low tanks and new warehouse boxes rather than a working refinery.\n\nCHURCH VERTICALS SUMMARY (tallest first, m): Epiphany 38.7 (11th & Jackson), St Mary Magdalen de Pazzi 36.9, Trinity Lutheran 36.5 (18th & Ritner), Annunciation 34.1 (10th & Dickinson, truncated tower), 1606 Mifflin 33.5 (unverified), St Thomas Aquinas ~33 est., St Nicholas of Tolentine ~32 est. (green copper dome), Holy Ghost 30.2, Fleisher tower 29.3, St Monica 28.7 (twin towers), Sacred Heart 28.3, St Edmond 28.3, Russell Tabernacle 28.3, St Rita's facade ~27, St Casimir 26.2, Our Lady of Mt Carmel ~25 est., St Paul's ~22 est., Gloria Dei ~22 est., St Philip Neri (228 Queen) 20.1, St John's Baptist 13th & Tasker 21.6, Friendship Baptist 17th & Wharton 24.7, Second Nazareth 18th & Tasker 25.3."
+ },
+ {
+  "buildings": [
+   {
+    "name": "Benjamin Franklin Bridge - Philadelphia tower",
+    "height_m": 117,
+    "lat": 39.953472,
+    "lon": -75.137493,
+    "massing": "Steel suspension-bridge tower, two legs joined by portal bracing (arched top portal + cross struts), ~12 m x 40 m in plan at the base (legs straddle the 39 m-wide deck), rising 117 m (385 ft) above mean river level (DRPA also quotes 380-382 ft). Deck passes through the tower at ~38-40 m above water; suspended deck is 128 ft (39 m) wide. Stands in the river just off the Philadelphia pierhead line at local (620,-888).",
+    "facade_color_hex": "#7fa6c9",
+    "glass": false,
+    "notes": "Main span 1,750 ft (533 m) tower-to-tower; side spans 717 ft (218.5 m) tower-to-anchorage; total length 9,650 ft (2,940 m); deck 135 ft (41 m) above water at mid-span (local (888,-822)); two main cables (30 in dia) with vertical suspenders. Bridge axis bearing 102.8 deg (WNW-ESE). Colour is DRPA 'Ben Franklin blue', a light greyish blue. Sources: DRPA, Wikipedia. Camden tower mirrors this one at the entry below."
+   },
+   {
+    "name": "Benjamin Franklin Bridge - Camden tower",
+    "height_m": 117,
+    "lat": 39.952364,
+    "lon": -75.131315,
+    "massing": "Identical twin of the Philadelphia tower; 117 m above water, portal-braced steel; local (1148,-765).",
+    "facade_color_hex": "#7fa6c9",
+    "glass": false,
+    "notes": "533 m east-southeast of the Philadelphia tower along bearing 102.8 deg. Camden anchorage 218.5 m further at local (1360,-722) (lat 39.951977, lon -75.128834); Camden approach viaduct continues 2,800 ft (853 m) to about local (2160,-352)."
+   },
+   {
+    "name": "Benjamin Franklin Bridge - Philadelphia anchorage",
+    "height_m": 33,
+    "lat": 39.95394,
+    "lon": -75.140068,
+    "massing": "Massive granite-faced concrete anchorage block, roughly 120 m long (along the bridge) x 60 m wide, ~30-35 m tall above grade with the deck running over its top; occupies local x 340-460, z -907 to -977 (OSM outline), i.e. between N Front St/I-95 and Columbus Blvd at Race-Vine, NOT at 5th St. The 2,000 ft (610 m) Philadelphia approach viaduct descends westward from here on steel/concrete piers (layer-3 motorway in OSM) to touch down at 5th-6th St & Vine (approx local (-200,-1080)); walkway entrance at 5th & Race.",
+    "facade_color_hex": "#8f8a80",
+    "glass": false,
+    "notes": "Former trolley stations were built inside both anchorages. PATCO tracks (2) ride the outer edges of the deck and dive into tunnels beyond each anchorage. Old OSM: man_made=bridge way 575987106 gives the outline; anchorage-to-anchorage measured 984 m vs published 970 m."
+   },
+   {
+    "name": "Schmidt's Commons (The Piazza at Schmidt's)",
+    "height_m": 24,
+    "lat": 39.966639,
+    "lon": -75.139541,
+    "massing": "Three 7-storey bar buildings (Erdy McHenry, 2009) wrapping an 80,000 sq ft (7,400 m2) open plaza centred at local (445,-2350): long bar along N 2nd St (1001 N 2nd, footprint x 391-430, z -2401 to -2283, ~120 m x 20 m), east bar at (475,-2352) (~60 x 30 m) and north wing at (469,-2307). Ground-floor retail (4.5 m) + 6 residential floors, flat roofs, ~24 m; large LED screen on the plaza-facing wall. Liberties Walk (3-4 storey pedestrian retail lane) runs west from the plaza toward American/3rd St at z ~ -2415.",
+    "facade_color_hex": "#9a8f82",
+    "glass": false,
+    "notes": "Exposed grey concrete frames with orange/ochre and charcoal metal panels; 8 buildings in the wider complex, max 7 storeys by design. Bounded by N 2nd St (west), Germantown Ave (south), Hancock St (east)."
+   },
+   {
+    "name": "Piazza Alta (Piazza Terminal)",
+    "height_m": 55,
+    "lat": 39.967711,
+    "lon": -75.1385,
+    "massing": "Post Brothers / BKV Group, opened 2023: one super-block podium (OSM 'Alta', 13,600 m2 footprint, local x 437-618, z -2581 to -2359, Hancock St to N Front St, Germantown Ave to Wildey St) carrying a 5-storey base with a 12-storey mid-rise (1075 Germantown Ave) and a 16-storey, 180 ft (55 m) tower (1104 N Hancock St); remainder of the podium 5-8 storeys (~18-26 m). Tower placement within the podium is approximate (+-60 m): put the 16-storey tower near the podium centre/west (Hancock) side and the 12-storey on the Germantown Ave side.",
+    "facade_color_hex": "#b8b4ad",
+    "glass": false,
+    "notes": "Light-gauge steel construction, light grey/white panel facades with dark window frames, rooftop pool club; 1,144 units; phase 2 (431 units, two more buildings) financed 2024-25. Tallest thing in Northern Liberties proper."
+   },
+   {
+    "name": "Waterfront Square - The Regatta",
+    "height_m": 100.2,
+    "lat": 39.961902,
+    "lon": -75.133809,
+    "massing": "29-storey residential point/slab tower, 100.23 m architectural (Skyscraper Center), footprint ~975 m2 (about 22 x 45 m) at local (935,-1824); completed 2006. Flat roof with mechanical bulkhead.",
+    "facade_color_hex": "#c9b99a",
+    "glass": true,
+    "notes": "Tallest of the three Waterfront Square towers at 901 N Penn St (gated 9.5-acre riverfront site, WRT architects). Buff precast/brick-toned panels with continuous blue-green glass balcony bands."
+   },
+   {
+    "name": "Waterfront Square - The Peninsula",
+    "height_m": 90,
+    "lat": 39.961208,
+    "lon": -75.134568,
+    "massing": "26-storey tower (OSM building:levels=26), footprint ~1,000 m2 at local (870,-1747), on the river pier south-east of the Regatta. Height estimated at 3.45 m/floor = ~90 m (no published figure).",
+    "facade_color_hex": "#c9b99a",
+    "glass": true,
+    "notes": "Completed 2006. Same buff/glass-balcony vocabulary as the Regatta."
+   },
+   {
+    "name": "Waterfront Square - The Reef",
+    "height_m": 76,
+    "lat": 39.961672,
+    "lon": -75.135121,
+    "massing": "22-storey tower (OSM levels=22), footprint ~1,450 m2 at local (823,-1799), west of the other two, completed 2009. Height estimated ~76 m.",
+    "facade_color_hex": "#c9b99a",
+    "glass": true,
+    "notes": "Lower 7-8 storey buildings of the complex sit at (734,-1670) (7,400 m2 footprint) and (893,-1790)."
+   },
+   {
+    "name": "200 Spring Garden Street",
+    "height_m": 54,
+    "lat": 39.96146,
+    "lon": -75.142408,
+    "massing": "13-storey mixed-use slab (Handel Architects, completed 2024), 149 ft (45.4 m) to main roof, 177 ft (54 m) to bulkhead; north side of Spring Garden between N 2nd and N 3rd, local ~(200,-1775).",
+    "facade_color_hex": "#8a4a3a",
+    "glass": false,
+    "notes": "Red-brown brick and dark metal; 355 units. Position +-30 m."
+   },
+   {
+    "name": "Rivers Casino Philadelphia (ex-SugarHouse)",
+    "height_m": 15,
+    "lat": 39.963847,
+    "lon": -75.132345,
+    "massing": "Sprawling 1-2 storey casino hall, ~135 m x 150 m irregular footprint (OSM x 993-1128, z -1966 to -2112) with angled 'prow' corners, parapet ~12-15 m; 2016 expansion added a taller event-center box (~18-20 m) on the north side and a 7-storey, 600,000 sq ft parking garage (~22 m) at local (1178,-2102) (x 1113-1244, z -2039 to -2166). Surface lots along Delaware Ave west of the hall. Entrance canopy and slot-machine pylon sign on the Delaware Ave side.",
+    "facade_color_hex": "#5e8f95",
+    "glass": true,
+    "notes": "Blue-green corrugated aluminium skin ('watery tones') with glass curtain wall at the entrance; garage is precast concrete with metal screen. Address 1001 N Delaware Ave; river-facing patio on the east. No hotel tower built (hotel rooms are in The Battery)."
+   },
+   {
+    "name": "The Fillmore Philadelphia (Ajax Metal Company plant)",
+    "height_m": 14,
+    "lat": 39.965781,
+    "lon": -75.135004,
+    "massing": "Low industrial complex of seven sections (1907-1951), mostly 1-2 storey brick and reinforced-concrete sheds with sawtooth/monitor roofs, ~12-15 m max, bounded by Frankford Ave (west), Allen St (north), Richmond St (east) and N Delaware Ave (south); 2-storey Italianate brick office at 46 Richmond St. Rooftop 'FILLMORE' signage.",
+    "facade_color_hex": "#8b4a35",
+    "glass": false,
+    "notes": "29 E Allen St; 142,000 sq ft venue opened 2015. Red brick with painted concrete frames."
+   },
+   {
+    "name": "Delaware Generating Station / The Battery (PECO Delaware Station)",
+    "height_m": 40,
+    "lat": 39.967251,
+    "lon": -75.127126,
+    "massing": "John T. Windrim 1917-23 neoclassical power station at 1325 Beach St: giant brick turbine/boiler hall ~145 m x 100 m (OSM footprint x 1449-1593, z -2315 to -2463), roughly 5 tall storeys / ~35-40 m to the parapet with arched windows and pilasters; eight 167 ft (51 m) brick/steel stacks in two rows on the boiler house (OSM chimney cluster centred (1527,-2364)); a lower 1950s annex with four more stacks at (1676,-2504). Sits directly south of Penn Treaty Park on the river.",
+    "facade_color_hex": "#a0562f",
+    "glass": false,
+    "notes": "Red/orange brick with limestone trim; redeveloped as 'The Battery' (offices, hotel 'Riversuites', restaurants) 2022-25, stacks preserved. Penn Treaty Park Place (6-storey, ~20 m) sits at local (1463,-2493) between the station and Delaware Ave."
+   },
+   {
+    "name": "Penn Treaty Park",
+    "height_m": 0,
+    "lat": 39.969296,
+    "lon": -75.12853,
+    "massing": "7-acre (2.8 ha) riverfront lawn at E Columbia Ave & Beach St, roughly 200 m of shoreline; open grass with mature trees, Penn monument/obelisk near the centre, gravel paths, no buildings. Local centre ~(1386,-2645).",
+    "notes": "Site of Penn's 1683 treaty elm. Bounded by Delaware Ave (west), the power station (south), the river (east)."
+   },
+   {
+    "name": "Palmer Cemetery (Kensington Burial Ground)",
+    "height_m": 0,
+    "lat": 39.974204,
+    "lon": -75.130063,
+    "massing": "5-acre (2 ha) walled/fenced cemetery, roughly 150 m x 135 m block bounded by E Palmer St, Belgrade St, E Montgomery Ave and Memphis St; dense mature trees, low headstones, WWI memorial at local (1250,-3208).",
+    "notes": "Established c.1732-1765; one of the few large tree canopies in Fishtown."
+   },
+   {
+    "name": "Liberty Lands Park",
+    "height_m": 0,
+    "lat": 39.965871,
+    "lon": -75.141873,
+    "massing": "2-acre (0.8 ha) community park, 913-961 N 3rd St, between Poplar St and Wildey St, 3rd St to Bodine St; lawn, playground, community gardens, small stage; local centre (246,-2265).",
+    "notes": "Former Burk Bros tannery site (burned mid-1990s)."
+   },
+   {
+    "name": "Oxford Mills (Quaker City Dye Works)",
+    "height_m": 19.2,
+    "lat": 39.976203,
+    "lon": -75.134018,
+    "massing": "Two brick mill buildings (1873-1913), 4 and 5 storeys, 200,000 sq ft total, flat roofs, ~19 m (OSM height 19.2), at Frankford Ave & W Oxford St (100 W Oxford); renovated 2014 as teacher housing/offices.",
+    "facade_color_hex": "#9b5a3c",
+    "glass": false,
+    "notes": "Red brick with segmental-arched window grids, stone sills. Position from address, +-40 m."
+   },
+   {
+    "name": "St. Peter the Apostle Church (National Shrine of St. John Neumann)",
+    "height_m": 70,
+    "lat": 39.969998,
+    "lon": -75.145801,
+    "massing": "Napoleon LeBrun 1843-47 Italianate/Renaissance church fronting N 5th St at the NE corner of 5th & Girard (1001-19 N 5th); stuccoed masonry nave ~25 m wide x 60 m long, ~20 m to ridge, with a central front tower carrying a very tall slender spire to 230 ft (70 m) - the tallest spire in the study area.",
+    "facade_color_hex": "#d8cdb4",
+    "glass": false,
+    "notes": "Cream-painted stucco with quoins and pediment; spire still standing (landmark seen from I-95/Vine St). Height from Philadelphia Church Project / nomination summary. Position +-25 m."
+   },
+   {
+    "name": "St. Michael the Archangel R.C. Church",
+    "height_m": 50,
+    "lat": 39.97333,
+    "lon": -75.13861,
+    "massing": "1846-47 Gothic Revival stone/stuccoed church at N 2nd & Jefferson Sts (1445 N 2nd), gable-front nave ~22 m wide x 50 m deep (~18 m ridge) with a central square front tower and tall octagonal spire; published height not found - model ~45-55 m total (estimate from photographs).",
+    "facade_color_hex": "#b9b1a3",
+    "glass": false,
+    "notes": "Grey stucco/stone with buttresses; rebuilt after the 1844 Nativist riots. Coordinates from Wikipedia (39 58 24 N, 75 08 19 W) -> local (525,-3093). Height is an estimate - flag in model."
+   },
+   {
+    "name": "Immaculate Conception R.C. Church (Northern Liberties)",
+    "height_m": 25,
+    "lat": 39.965886,
+    "lon": -75.137494,
+    "massing": "Edwin F. Durang 1870 Italian-Romanesque brick church at the SW corner of Allen St & N Front St (1032 N Front): gable-front nave 62 ft wide on Canal/Allen x 130 ft deep along Front St (19 x 40 m), nave ridge ~20 m; at the REAR (south end) a square four-storey brick tower that rises only slightly above the ridge (~25 m, OSM 24.99). The intended 130 ft spire was never completed / blown down by 1878 - model a truncated flat-topped tower, no spire. 3-storey brick rectory attached on the south.",
+    "facade_color_hex": "#8b3a2a",
+    "glass": false,
+    "notes": "Red brick with brown sandstone dressings, Lombard corbel bands, rose window. Closed 2020, locally designated 2019, being converted to apartments (not demolished). Faces Allen St (north)."
+   },
+   {
+    "name": "St. Augustine Church",
+    "height_m": 45,
+    "lat": 39.95556,
+    "lon": -75.14639,
+    "massing": "Napoleon LeBrun 1847-48 Palladian church at N 4th & New Sts (just south of Vine; local (-140,-1120)): stuccoed brick nave ~22 m x 45 m with pedimented front, ~18 m ridge; square brick tower over the entrance carrying a white wooden belfry/cupola and spire (Durang 1867 cupola; blown onto the Ben Franklin Bridge 1992, rebuilt 1995). Published height not found - model ~40-45 m (estimate).",
+    "facade_color_hex": "#e8e0cc",
+    "glass": false,
+    "notes": "Cream/white painted stucco with Pennsylvania blue-marble accents. Sits directly beside the Ben Franklin Bridge approach viaduct."
+   },
+   {
+    "name": "First Presbyterian Church in Kensington",
+    "height_m": 30,
+    "lat": 39.969485,
+    "lon": -75.133012,
+    "massing": "1859 brick church at 418 E Girard Ave (Girard & Columbia/Hanover); gable-front nave with a front tower originally carrying a 180 ft steeple, condemned 1921 and replaced by a squat copper dome on the tower - model tower + green copper dome ~30 m (estimate).",
+    "facade_color_hex": "#a0563a",
+    "glass": false,
+    "notes": "Visible landmark on Girard Ave; dome is oxidised green. Position from address, +-30 m."
+   },
+   {
+    "name": "Holy Name of Jesus Church",
+    "height_m": 38,
+    "lat": 39.975411,
+    "lon": -75.129525,
+    "massing": "Maginnis & Walsh 1923 Italian-Romanesque brick church at 701 Gaul St (Gaul & E Berks), basilican nave ~25 x 55 m (~18 m ridge) with a tall square campanile at one front corner, estimated ~35-40 m.",
+    "facade_color_hex": "#9b5233",
+    "glass": false,
+    "notes": "Bells rung again since 2024. Height estimate; position +-30 m."
+   },
+   {
+    "name": "St. Laurentius Church (demolished 2022-23)",
+    "height_m": 0,
+    "lat": 39.975798,
+    "lon": -75.128027,
+    "massing": "Former Durang 1890 Polish Gothic church with twin 150 ft (46 m) spires at E Berks & Memphis Sts. Demolished Aug 2022-2023; site vacant/townhouses (8 homes planned 2025). Do NOT model the spires for a present-day scene; for a pre-2022 scene model twin 46 m spires on a 20 m-wide brownstone front.",
+    "facade_color_hex": "#7a5c4a",
+    "glass": false,
+    "notes": "Included only so the modeller knows the skyline has changed."
+   },
+   {
+    "name": "Assumption of the Blessed Virgin Mary Church",
+    "height_m": 46.6,
+    "lat": 39.962091,
+    "lon": -75.157075,
+    "massing": "LeBrun 1848-49 twin-towered Gothic brick church at 1123 Spring Garden St (local (-1054,-1845)); two front towers with spires to ~46.6 m (OSM height), nave ridge ~18 m.",
+    "facade_color_hex": "#8f4a34",
+    "glass": false,
+    "notes": "Vacant; western edge of bbox near 12th St."
+   },
+   {
+    "name": "Ukrainian Catholic Cathedral of the Immaculate Conception",
+    "height_m": 32,
+    "lat": 39.966011,
+    "lon": -75.150439,
+    "massing": "1966 Byzantine cathedral at N Franklin St & Brown St (local (-486,-2280)): square drum with a huge gold-glass-tile dome ~30 m diameter, apex ~30-35 m (estimate), on a brick base.",
+    "facade_color_hex": "#c9a227",
+    "glass": false,
+    "notes": "Gold Venetian-glass dome is a strong colour landmark from the east; base is tan brick."
+   },
+   {
+    "name": "500 N Christopher Columbus Blvd industrial block",
+    "height_m": 46,
+    "lat": 39.95976,
+    "lon": -75.138665,
+    "massing": "Windowless multi-storey industrial/cold-storage block (OSM height 46.02 m) at Columbus Blvd & Spring Garden, local (520,-1586); neighbouring 7-8 storey apartment blocks at (573,-1547) and (587,-1597).",
+    "facade_color_hex": "#9a9184",
+    "glass": false,
+    "notes": "Dominant box on the waterfront south of Waterfront Square; footprint not captured here (query OSM way 334665962)."
+   },
+   {
+    "name": "1 Brown Apartments / Penn Treaty Village Pennthouses",
+    "height_m": 26,
+    "lat": 39.962451,
+    "lon": -75.137259,
+    "massing": "Pair of 8-storey apartment blocks at Brown St & N Delaware Ave (1 Brown at local (612,-1879), Penn Treaty Village at (675,-1893)); with 7-storey blocks at (749,-2004), (700,-1939), (661,-1960). ~22-26 m flat roofs.",
+    "facade_color_hex": "#b59a7a",
+    "glass": false,
+    "notes": "Tan brick/panel 2000s-2010s mid-rises between Delaware Ave and the river."
+   },
+   {
+    "name": "Market-Frankford Line elevated (Frankford El) - Front St / Kensington Ave",
+    "height_m": 7,
+    "lat": 39.968916,
+    "lon": -75.136234,
+    "massing": "Steel viaduct on double-column bents (Bethlehem H-section columns at the curb lines, ~9-10 m apart) carrying two tracks on a ~10 m-wide deck; 1988-2003 rebuild put a concrete deck/stringers on the original columns. Model top-of-rail ~7 m above street, underside ~4.6-5 m clear, structure depth ~1.5-2 m, spans 9.6-22 m (31.5-73.5 ft). Alignment: subway portal just north of Fairmount Ave (local ~(420,-1800)), climbs to the elevated over N Front St by Poplar (550,-2068); then straight up Front St at bearing 11 deg through Girard station (728,-2603), Berks (957,-3671), York-Dauphin (1079,-4413); at Front & Kensington Ave (1126,-4560) it swings onto Kensington Ave at bearing 55 deg toward Huntingdon (1493,-4818, just outside bbox).",
+    "facade_color_hex": "#3f5f8a",
+    "glass": false,
+    "notes": "Painted 'SEPTA blue' (dark blue-grey). Stations (Girard, Berks, York-Dauphin, rebuilt 2000s) are side-platform structures ~8 m above street with steel/glass canopies to ~12 m, straddling the intersections. Height figures are engineering-typical estimates (HAER PA-430 gives member details but no clearance)."
+   },
+   {
+    "name": "Girard Avenue corridor (Front-to-Frankford)",
+    "height_m": 11,
+    "lat": 39.96905,
+    "lon": -75.134,
+    "massing": "~100 ft (30 m) right-of-way with Route 15 trolley tracks and wires; continuous 3-storey brick Victorian commercial rows with storefronts and bracketed cornices (~10-11 m), 4-storey corner banks/lodges (e.g. 208 E Girard, 1872), the El crossing overhead at Front St, and new 6-storey mixed-use infill (23 W Girard, 2023, ~20 m; 180 W Girard ~5,000 m2 footprint).",
+    "facade_color_hex": "#8c4b38",
+    "glass": false,
+    "notes": "Three neighbourhoods meet at Front & Girard (Fishtown E, Northern Liberties SW, Olde Kensington NW)."
+   },
+   {
+    "name": "Frankford Avenue corridor (Delaware Ave to Oxford St)",
+    "height_m": 10,
+    "lat": 39.9695,
+    "lon": -75.135,
+    "massing": "Diagonal NNE avenue: 2-3 storey 19th-c. brick mixed-use (7-10 m), old 3-4 storey mills (Landenberger Hosiery/Morse Elevator complex, 1045 Frankford, c.1881), and 5-7 storey new apartment blocks: One Frankford (945 Frankford, 7 st, ~23 m), The Frankford (1120 Frankford, 5 st, ~17 m), plus the 6-storey 1310 Frankford (Kensington Quarters) area.",
+    "facade_color_hex": "#965238",
+    "glass": false,
+    "notes": "Lower Frankford between Girard and Delaware Ave is still 2-3 storey brick with the Fillmore/Ajax sheds at its foot."
+   },
+   {
+    "name": "N 2nd Street commercial strip (Spring Garden to Girard)",
+    "height_m": 12,
+    "lat": 39.9635,
+    "lon": -75.1408,
+    "massing": "Narrow (50 ft) street of 2-3 storey brick storefront rows on 14-18 ft lots (OSM heights 15-23 m for the 3-4 storey corner buildings: 600 N 2nd 23 m, 604 N 2nd 20 m; 3-storey typical ~12 m) with 4-5 storey 2010s infill (702-710 N 2nd, 15-18 m), Standard Tap (901 N 2nd, 13.7 m), Ortlieb's Bottling House (829 N American, 21.9 m, 1900s brick brewery block).",
+    "facade_color_hex": "#8a4636",
+    "glass": false,
+    "notes": "Painted brick, flat roofs with corbelled or bracketed cornices, storefront bays at grade."
+   },
+   {
+    "name": "Hancock Street / Front Street mills (Olde Kensington)",
+    "height_m": 20,
+    "lat": 39.972493,
+    "lon": -75.139014,
+    "massing": "Cluster of 3-5 storey red-brick textile mills and warehouses along N Hancock and N Front between Girard and Jefferson (Sykes Bros Yarn Mill 1881 = Hancock Lofts; 1639-43 N Hancock; 1440 N Front new 7-storey apartments beside the El), flat roofs, heavy segmental-arch window grids, ~15-22 m.",
+    "facade_color_hex": "#8d4a33",
+    "glass": false,
+    "notes": "Position is the middle of the cluster, +-150 m; pull individual footprints from OSM for accuracy."
+   },
+   {
+    "name": "Broad St / Callowhill edge (west limit of bbox)",
+    "height_m": 107,
+    "lat": 39.962009,
+    "lon": -75.162249,
+    "massing": "Tall buildings at the bbox's western edge: 1400 Spring Garden (State Office Bldg, 18 st, 107 m, just outside at lon -75.1622); Broad + Noble (20 st, ~65 m); Terminal Commerce Bldg (401 N Broad, 15 st, 58.2 m, huge footprint); Goldtex (315 N 12th, 12 st, ~40 m); The Shoe Factory (11 st); Lasher Printing (7 st, 54 m); Lofts 640 (50 m); Divine Lorraine (699 N Broad, 10 st, 44.8 m + corner tower); 1300 Fairmount (14 st); The Carson (570 N 5th, 12 st, ~38 m) is the one mid-rise inside the NoLibs/Spring Garden area.",
+    "facade_color_hex": "#8c8378",
+    "glass": false,
+    "notes": "Heights/levels from OSM; use them only as backdrop."
+   }
+  ],
+  "area_notes": "COORDS: local x = (lon + 75.144748) * 85462 m; z = -(lat - 39.945474) * 111034 m (x east, z south). All local coords above use those constants; OSM-derived positions are good to ~5 m, address-derived ones are flagged +-25-150 m.\n\nBEN FRANKLIN BRIDGE GEOMETRY (OSM outline way 575987106 + DRPA): Philadelphia anchorage centre (400,-940) [lat 39.95394, lon -75.140068], Philadelphia tower (620,-888), mid-span (888,-822), Camden tower (1148,-765), Camden anchorage (1360,-722). Axis bearing 102.8 deg. Philadelphia approach viaduct (2,000 ft) runs from the anchorage west-northwest over Columbus Blvd, I-95 and N Front St, touching down near 5th/6th & Vine at about (-200,-1080); Camden approach 2,800 ft to about (2160,-352). Deck 39 m wide, 41 m above water at mid-span, ~38 m at the towers, ~33 m over the anchorages; towers 117 m above water; side spans 218.5 m, main span 533 m. Two main cables; PATCO tracks at the deck's outer edges; walkway on the south side. St. Augustine's tower stands ~150 m from the Philadelphia approach. Note the land near the river is only ~3-6 m above river level.\n\nMARKET-FRANKFORD EL: emerges from the subway north of Fairmount Ave at ~(420,-1800) (Spring Garden station itself is underground at (374,-1671)); runs along the east side of N Front St / I-95 edge to Poplar (550,-2068), then centred over Front St (bearing 11 deg) past Girard (728,-2603), Berks (957,-3671), York-Dauphin (1079,-4413), turning at Front & Kensington Ave (1126,-4560) onto Kensington Ave (bearing 55 deg). Double-column steel bents at curb lines, ~10 m deck, rail ~7 m above street (estimate), painted dark SEPTA blue; stations sit above the intersections with side platforms ~8 m up and canopies to ~12 m. Under the El, Front St buildings are 2-3 storey brick rows; several new 6-7 storey apartment blocks have gone up against it (1440 N Front, 7 st).\n\nOTHER SPIRES/LANDMARKS NOT LISTED AS ENTRIES: St. Augustine, St. Peter the Apostle, St. Michael's, Immaculate Conception, First Presbyterian dome, Holy Name campanile are entries above. Visitation BVM (Kensington & Lehigh, green copper spires) lies just north of the bbox (39.9895). St. Laurentius' twin spires are gone (2022). Beacon Presbyterian (Cumberland & Coral, local (1839,-3771)) and Atonement Lutheran (1542 E Montgomery) are smaller brick churches with modest towers (~20-25 m). Summerfield Siloam UMC (2223 E Dauphin). Chimney nodes in OSM: one at (513,-1562) near 500 N Columbus; eight on the PECO boiler house; four on its annex; one at (1466,-4080) in East Kensington.\n\nPIAZZA / NOLIBS BLOCK STRUCTURE: Germantown Ave cuts diagonally NW-SE through the Piazza area; Hancock St (x~455-465), N 2nd St (x~390-420), N Front St (x~640-660 at Allen St). Liberties Walk runs E-W at z~-2415 from (460,-2423) to (332,-2422).\n\nROWHOUSE TYPOLOGY vs SOCIETY HILL: Society Hill = 3-3.5 storey Georgian/Federal brick townhouses (1760-1830) on 18-24 ft lots, Flemish bond, gable or shed roofs with dormers, brick cornices, marble steps, ~10-11 m to cornice, 12-13 m to ridge, plus 1960s Bacon-era modern rows. Northern Liberties = older (1820-1870) 2.5-3 storey Federal/Greek Revival brick rows on 14-18 ft lots with flat brick cornices (~9-10 m), Victorian 3-storey with bracketed wood cornices (~11 m), many wood-frame survivors, and very heavy 2005-2025 infill: 3-4 storey flat-roofed modern boxes in metal panel/stucco/fibre-cement with pilot houses and roof decks (11-14 m); lots of whole-block new construction. Fishtown = predominantly 2-storey workers' brick rows (1850-1910) on very narrow 14-16 ft lots (some 12 ft) with tiny rear yards, flat or low-pitched roofs, corbelled-brick or small wood bracketed cornices, ~7-7.5 m to cornice; frequent formstone/vinyl/stucco over brick, painted brick, a handful of 1830s wooden houses (e.g. 241-43 E Wildey); 3-storey only on the commercial corridors (Frankford, Girard, E Columbia) and as 2010s infill (3-storey + roof deck, 11-12 m). Porch-front rows (full-width front porches, 2-storey, 16 ft) are NOT typical of Fishtown/NoLibs - they appear only sporadically north of Lehigh and in Harrowgate/Juniata; in this bbox the front is a flat brick facade directly on the sidewalk with 2-3 marble/concrete steps. Kensington west of Front St (Olde/West Kensington) = same 2-storey brick rows interspersed with 3-5 storey mills, vacant lots and new 3-4 storey infill; streets narrower (30-40 ft) with tiny 'courts'. Typical block: 2-storey Fishtown rows 7 m, 3-storey NoLibs rows 10 m, corridor mixed-use 10-12 m, new infill 11-14 m.\n\nDOMINANT SKYLINE ORDER IN THIS BBOX (tallest first): Ben Franklin Bridge towers 117 m; 1400 Spring Garden 107 m (edge); Regatta 100 m; Peninsula ~90 m; Reef ~76 m; St. Peter the Apostle spire 70 m; Broad+Noble ~65 m; Terminal Commerce 58 m; Piazza Alta tower 55 m; 200 Spring Garden 54 m; PECO stacks 51 m; St. Michael's ~50 m (est); Assumption BVM 46.6 m; 500 N Columbus 46 m; St. Augustine ~45 m (est); PECO hall ~40 m; Goldtex ~40 m; Holy Name campanile ~38 m (est)."
+ }
+]

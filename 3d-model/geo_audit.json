@@ -1,0 +1,214 @@
+{
+ "issues": [
+  {
+   "what": "I-95 (Delaware Expressway) is a below-grade trench, not a surface road. It runs immediately east of Front St from Market to South St, ~40 m wide, roadway ~7-9 m below Front St grade, with vertical concrete retaining walls topped by a parapet/fence along Front St's east sidewalk. Open-to-sky segments: Market->Chestnut, Walnut->Dock (verify: may be partially decked/lawn), and ~Spruce+60 m ->South St (South St pedestrian bridge crosses it at 39.9412). Covered segments: Chestnut->Walnut (new Park at Penn's Landing cap), Dock->Spruce (Foglietta Plaza deck), and a short deck just south of Spruce (Vietnam memorial).",
+   "where": "centerline approx lon -75.1427 (local x\u2248+175 m), lat 39.9412 (South) to 39.9502 (Market); west wall at Front St lon -75.1432 (x\u2248130), east wall ~ -75.1422 (x\u2248215)",
+   "fix": "Cut a 40 m wide, 8 m deep rectangular trench along the I-95 way; drop the motorway ribbon to trench floor; add two vertical wall planes with a 1.2 m parapet on the Front St side; bridge it with street decks at Market, Chestnut, Walnut, Dock, Spruce (street-wide) and a 4 m pedestrian bridge at South St; fill the covered segments listed with flat decks at Front St grade.",
+   "priority": "high"
+  },
+  {
+   "what": "Front St sits on the old riverbank bluff ~7 m above Columbus Blvd and ~10 m above the river. A flat ground plane loses the whole east-facing drop that makes the waterfront read correctly from Society Hill Towers.",
+   "where": "Front St lon -75.1433 (x\u2248+125) at ~+10 m; Columbus Blvd lon -75.1420 (x\u2248+235) at ~+3.5 m; bulkhead lon ~-75.1400 (x\u2248+400) at ~+2.5 m; water 0",
+   "fix": "Simple terrain: flat at +12 m west of 5th St sloping to +10 m at Front St; vertical/steep drop to +3.5 m between Front St and Columbus Blvd (retaining walls, or the I-95 trench walls doing the work); +2.5 m bulkhead level east of Columbus; water plane at 0. Rebase building footprints on the local terrain height.",
+   "priority": "high"
+  },
+  {
+   "what": "Park at Penn's Landing (I-95/Columbus Blvd cap park, ~11.5 acres, deck complete 2025, landscaping finishing 2025-26) between Chestnut and Walnut: a continuous green slope from Front St grade down to the river promenade, with a large lawn, tree groves, paved overlook at the Front St edge, a pavilion/cafe near the river, and stairs/ramps; it removed the old Great Plaza. OSM will show either the old Great Plaza layout or blank.",
+   "where": "NW corner Front & Chestnut 39.9486,-75.1433; SW corner Front & Walnut 39.9473,-75.1433; east edge at the river lon ~-75.1398 between lat 39.9460 and 39.9485 (local x 130..400, z -30..-350)",
+   "fix": "One sloped quad deck (polygon Front St to the bulkhead) from +10 m at Front to +3 m at the promenade, green lawn material, ~80 trees 8-12 m tall in 3-4 groves, a 10 m wide paved promenade along the river edge, a 20x12 m single-story pavilion near 39.9465,-75.1402, and a paved overlook 30 m wide at the Front St edge. Hide Columbus Blvd under it (tunnel) between Chestnut and Walnut.",
+   "priority": "high"
+  },
+  {
+   "what": "Great Plaza amphitheater (pre-2022 state only): stepped concrete/granite terraces fanning down from the I-95 cover to a riverside stage, with a row of flagpoles and a large paved upper plaza. Demolished 2022-23 for the cap park. Only model if the target date is before 2022.",
+   "where": "center 39.9467,-75.1405; terraces from lon -75.1412 down to the stage at -75.1398, lat 39.9458..39.9478",
+   "fix": "6-8 concentric arc steps, 1 m risers, fanning east toward a 25x15 m stage platform at bulkhead level; 12 flagpoles 10 m tall along the upper edge. Skip if modeling 2026.",
+   "priority": "low"
+  },
+  {
+   "what": "Penn's Landing Marina basin: a rectangular water indent ~100 m x 220 m cut into the shoreline between the Seaport Museum and Spruce/Pine, ringed by floating docks. A flat straight river edge east of Columbus Blvd misses it entirely; the Olympia/Becuna, the Hilton, and Spruce St Harbor Park are all organized around it.",
+   "where": "basin approx lon -75.1416 (west bulkhead) to -75.1400 (mouth to river), lat 39.9436 (south) to 39.9456 (north); local x 270..400, z -5..+215",
+   "fix": "Subtract the basin polygon from the land mesh; bulkhead walls 2.5 m above water; add 6-8 floating finger docks (2 m wide, 30-40 m long) along the north and west sides; a 6 m wide boardwalk along the south side.",
+   "priority": "high"
+  },
+  {
+   "what": "Independence Seaport Museum: large 2-story brick museum block with a glass atrium, on the river edge at the head of the basin; the 'Workshop on the Water' boat shed projects onto a pier on its east side. OSM default 13 m height is roughly fine but the pier and the long dock for the Olympia are missing.",
+   "where": "museum centroid 39.9459,-75.1403; pier east of it to lon -75.1396",
+   "fix": "Keep the 13-15 m box; add a 60x15 m pier slab 2.5 m above water on its east/south side with a 8x20 m shed; place the Olympia along the basin's south bulkhead from the museum pier.",
+   "priority": "med"
+  },
+  {
+   "what": "Museum ships modeled as 13 m building boxes. USS Olympia: 105 m long, 16 m beam, white hull, buff superstructure, two masts ~30 m above water, two funnels. USS Becuna: 95 m long black submarine, low (~5 m) with a 9 m sail. Moshulu: 4-masted steel barque, 102 m hull, black hull with white band, four masts ~45-50 m above water, moored north of the Chart House with a white tented dock restaurant alongside.",
+   "where": "Olympia 39.94365,-75.1410 (along south side of the basin, axis ~E-W); Becuna 39.94355,-75.14117 alongside/just south of Olympia; Moshulu 39.94228,-75.14103 (axis N-S along the bulkhead south of Pine)",
+   "fix": "Replace each footprint with a tapered hull (extruded ellipse/ship profile, 8-10 m hull height above water for Olympia, 3 m for Becuna, 9 m for Moshulu), plus thin cylinders for masts (Olympia 2x30 m, Moshulu 4x48 m with 3 yards each 20-25 m wide), 2 funnels on Olympia. Sit them on the water plane, not the land.",
+   "priority": "high"
+  },
+  {
+   "what": "Hilton Philadelphia at Penn's Landing is a ~22-story slab hotel (~70 m, tan precast, curved cap), the tallest object on the waterfront; OSM height tag defaults to 13 m.",
+   "where": "39.94545,-75.14128 (local x\u2248+295, z\u22480), west side of the basin, east of Columbus Blvd",
+   "fix": "Set height 70 m (22 floors), keep footprint; light tan facade, flat roof with a 4 m mechanical penthouse.",
+   "priority": "high"
+  },
+  {
+   "what": "US Custom House (1934 Art Deco, 2nd & Chestnut) is a 17-story setback tower with an octagonal lantern, ~85 m total; OSM gives 13 m. It is the dominant tower seen over Old City from the river and from the Towers.",
+   "where": "39.94794,-75.14481 (local x\u22480, z\u2248-275)",
+   "fix": "Model as a 4-story base (18 m) on the full footprint, then a setback tower ~30x30 m to 70 m, then an octagonal lantern 12 m dia to 85 m; limestone/buff color.",
+   "priority": "high"
+  },
+  {
+   "what": "Independence Hall: OSM 13 m box; the real building has a 51 m brick-and-wood steeple on its south (Independence Square) face. Congress Hall and Old City Hall flank it with cupolas (~16 m), and OSM gives 8.1 m / 3.2 m / 7.7 m for Congress Hall, Old City Hall, Philosophical Hall (actual 2 stories ~13-14 m).",
+   "where": "Independence Hall 39.94887,-75.15001; tower base at the centre of its south facade ~39.9488,-75.1500; Congress Hall 39.94888,-75.15066; Old City Hall 39.9488,-75.14942; Philosophical Hall 39.94862,-75.14945",
+   "fix": "Independence Hall: 2-story 13 m body + 12x12 m brick tower to 25 m + white wooden stages and spire to 51 m. Set Congress Hall and Old City Hall to 13 m bodies with 5 m white cupolas; Philosophical Hall 14 m. Independence Square to the south: lawn, diagonal brick paths, ~60 trees 15-20 m, perimeter iron fence.",
+   "priority": "high"
+  },
+  {
+   "what": "St. Peter's Church (3rd & Pine): OSM 13 m box; the 1842 Strickland brick tower with white wooden spire rises ~64 m and is the tallest thing in residential Society Hill. The churchyard (north to Pine, west along 3rd, extending south toward Lombard behind St. Peter's School) is a walled block: ~2 m red-brick wall with iron gates along 3rd St and Pine St, ~20 mature sycamores/oaks 18-25 m, hundreds of gravestones.",
+   "where": "church 39.94316,-75.14774; tower at its west end ~39.9432,-75.1480; churchyard approx 39.9425..39.9437 N, -75.1484..-75.1474 W",
+   "fix": "Church: 13 m gabled nave + 8x8 m brick tower to 30 m + octagonal white spire to 64 m. Churchyard: 2 m wall along street edges, 20 trees, grass ground, 100 instanced 0.8 m gravestone slabs.",
+   "priority": "high"
+  },
+  {
+   "what": "Old Pine Street Church (4th & Pine): Greek Revival stuccoed temple front (6 Corinthian columns, pediment), ~15 m to ridge; OSM 8.1 m. Its churchyard wraps the 4th & Pine corner, enclosed by a brick wall/iron fence with large trees and gravestones.",
+   "where": "church 39.94343,-75.14938; churchyard 39.9428..39.9436 N, -75.1497..-75.1488 W (scene park at 39.94284,-75.14857 is likely it)",
+   "fix": "Raise to 15 m with a gable roof and a 2 m deep portico of 6 cylinders; add 1.8 m wall on the street edges, 12 trees, gravestone instances.",
+   "priority": "med"
+  },
+  {
+   "what": "Washington Square (6th-7th, Walnut-Locust): straddles the bbox's west edge. Real layout: central circular fountain basin (~15 m dia) with 8 radial/diagonal paths from the corners and mid-sides, a ring path, the Tomb of the Unknown Revolutionary War Soldier with a Washington statue and flat memorial wall on the west side, very dense canopy of ~150 mature trees (sycamore, oak, elm) 15-25 m tall, lawn panels, Hopkinson House looming on its south-east corner.",
+   "where": "center 39.9468,-75.1522; bounds 39.9462..39.9475 N, -75.1530..-75.1515 W (the eastern half is inside the bbox)",
+   "fix": "Lawn polygon; 4 diagonal + 4 axial 4 m paths meeting at a 15 m circular paved plaza with a 1 m high fountain basin; ring path at r=45 m; ~150 trees on a jittered 10 m grid; a 3 m tall statue+wall group at the west edge if in view.",
+   "priority": "med"
+  },
+  {
+   "what": "Foglietta Plaza: a paved triangular deck over I-95 between Front St, Dock St (north, diagonal) and Spruce St (south), east to Columbus Blvd, holding the Philadelphia Korean War Memorial (2002: curved granite walls, black granite columns/panels, flag poles, low plantings) near its east end, plus stairs/ramp down to Columbus Blvd and the Hilton/Seaport entrance. Directly across Front St from the south tower.",
+   "where": "apex Front & Spruce 39.9449,-75.1432; NE corner Dock & Columbus 39.9457,-75.1421; SE corner Spruce & Columbus 39.9448,-75.1421; memorial at ~39.9451,-75.1424",
+   "fix": "Triangular deck at Front St grade (+10 m) with concrete/brick paving; 1.5-2.5 m granite wall segments in a 20 m arc at the memorial, 3 flagpoles 12 m, 10 trees; stairs + ramp on the Columbus side dropping ~6 m.",
+   "priority": "med"
+  },
+  {
+   "what": "Philadelphia Vietnam Veterans Memorial (1987): a sunken semicircular plaza with a curved black granite wall (~3 m high), flagpoles, and stepped terraces, on a deck just south of Spruce St between Front St and Columbus Blvd.",
+   "where": "~39.9445,-75.1426 (SE of Front & Spruce), about 50x60 m",
+   "fix": "Flat deck +9 m, a 40 m radius semicircle recessed 1.5 m, a 3 m high curved black wall on its west/ south side, 3 flagpoles 12 m, ring of 10 trees.",
+   "priority": "med"
+  },
+  {
+   "what": "Spruce Street Harbor Park (seasonal, May-Sept): boardwalk along the basin's south/west side with ~50 colored hammocks under string lights between trees, floating barge gardens with a netted lounge, and food kiosks. Active in August.",
+   "where": "39.9437..39.9447 N, -75.1416..-75.1405 W (foot of Spruce St, river side of Columbus Blvd)",
+   "fix": "6 m wooden boardwalk along the basin edge, 3 floating 15x8 m barges with low planters, 2 small kiosks 6x4 m, 30 trees 6-8 m, bright color accents (hammock slings as small colored planes).",
+   "priority": "low"
+  },
+  {
+   "what": "Blue Cross RiverRink (Winterfest/Summerfest) at Market St & Columbus: seasonal rink slab, a wooden lodge building, and a big paved plaza at the foot of Market St east of Columbus; plus the Penn's Landing north bulkhead promenade.",
+   "where": "39.9488,-75.1405 (rink), lodge 39.9490,-75.1409; plaza 39.9484..39.9496 N east of Columbus",
+   "fix": "60x30 m flat slab at +3 m, 25x12 m single-story lodge 6 m tall, paved plaza; promenade 10 m wide along the river.",
+   "priority": "low"
+  },
+  {
+   "what": "Columbus Blvd is a 6-8 lane boulevard (~40 m right-of-way) with a 4-6 m planted central median of trees, plus the Delaware River Trail (separated two-way bike/walk path with planter strips and lamp posts) on its east side. OSM shows two one-way carriageways and a cycleway; the median and tree line are absent so the road reads as a wide gray plane.",
+   "where": "lon -75.1420 (x\u2248+235), lat 39.9380..39.9502 (South St to Market), median interrupted at Market, Chestnut, Walnut, Dock, Spruce, Lombard, South crossings",
+   "fix": "Add a 5 m wide raised (0.15 m) grass/planted median strip between the carriageways, trees 7-9 m every 12 m on it; 4 m asphalt trail with a 2 m planter strip on the east side; 10 m lamp posts every 30 m.",
+   "priority": "med"
+  },
+  {
+   "what": "River edge: the real shoreline is a vertical concrete/timber bulkhead 2.5-3 m above water with a paved promenade (railings, lamp posts, benches) along the top, not a flat plane meeting water at grade. The shore also steps: Great Plaza/cap park edge projects to ~-75.1397, the basin indents to -75.1416, the Moshulu/Chart House piers project to ~-75.1395.",
+   "where": "from 39.9502,-75.1400 (Market) south to 39.9380,-75.1405 (Dockside)",
+   "fix": "Raise land east of Columbus to +2.5 m with a vertical wall face to the water; use the OSM natural=water / coastline multipolygon (not a straight line) for the actual edge; add a 1 m railing strip and lamp posts every 25 m on the promenade.",
+   "priority": "high"
+  },
+  {
+   "what": "Chart House restaurant: single-story restaurant with a big hipped/pyramidal roof and glass walls sitting on a pier at the foot of South/Lombard St, with a large surface parking lot landward; Moshulu's tented dock restaurant just north. Piers and lots are missing or flat.",
+   "where": "Chart House 39.9410,-75.1403 (555 S Columbus); pier extends to -75.1395; parking lot 39.9405..39.9418 N, -75.1415..-75.1405 W",
+   "fix": "40x30 m pier slab at +2.5 m, 8 m tall building with a 4 m hipped roof, asphalt lot polygon with parking stripes, 10 trees along the lot edge.",
+   "priority": "low"
+  },
+  {
+   "what": "Large surface parking lots along the waterfront are missing (OSM amenity=parking areas were not extracted): the Penn's Landing lot west of the basin/south of the Hilton, the lot between Spruce and Pine east of Columbus, lots at Lombard/South, and the Marriott/Ryland lots. Without them the ground between Columbus Blvd and the river is undifferentiated.",
+   "where": "e.g. 39.9440,-75.1412; 39.9427,-75.1410; 39.9415,-75.1412",
+   "fix": "Extract amenity=parking polygons from OSM and render as dark asphalt at grade with light stripe texture; add a few light poles.",
+   "priority": "med"
+  },
+  {
+   "what": "Society Hill street trees and brick sidewalks: nearly every street from Front to 6th between Walnut and Lombard has 3-4 m herringbone red-brick sidewalks with granite curbs and a continuous canopy of honey locust/London plane/ginkgo trees (8-15 m tall, 10-12 m spacing, both sides), with black 'Franklin' lamp posts (~3.5 m, 25 m spacing). The scene has only 23 trees; the neighborhood's most recognizable texture is missing.",
+   "where": "polygon Front St/Walnut/6th St/Lombard (39.9425..39.9474 N, -75.1520..-75.1433 W); also Independence Park blocks",
+   "fix": "Procedurally place trees along every residential/tertiary road in that polygon at 11 m spacing, offset 2.5 m from the curb, height 9-13 m, crown 6-8 m; brick-red sidewalk strips 3.5 m wide with a subtle herringbone texture; lamp posts every 25 m.",
+   "priority": "high"
+  },
+  {
+   "what": "Delancey St, Cypress St, S American St, Philip St, Stamper's St, St. Peter's Way, Addison St and other alleys are narrow (6-8 m wall-to-wall) lanes lined by 2-2.5 story houses (6-8 m). OSM road widths/default building heights likely render them as full streets with 3-story boxes, losing the intimate scale. Several alleys (parts of S American St, Philip St, Cypress St) retain Belgian-block/cobble paving.",
+   "where": "Delancey St 39.9445, -75.1433..-75.1520; Cypress St 39.9443, -75.1433..-75.1500; S American St lon -75.1440, 39.9435..39.9455; Philip St lon -75.1490, 39.9425..39.9437",
+   "fix": "Width 6 m for highway=residential ways named Delancey/Cypress/American/Philip/Stamper/Addison/Panama/St. Peter's Way; cap unknown-height buildings fronting those ways at 7.5 m; dark-gray sett texture on them.",
+   "priority": "med"
+  },
+  {
+   "what": "Three Bears Park: pocket park on Delancey St between 3rd and 4th with the three granite bear sculptures, brick paving, a small playground, low brick wall + iron fence, and tall trees; OSM has an unnamed park polygon with nothing in it.",
+   "where": "39.9442,-75.1479 (scene park at 39.94419,-75.14793), ~40x30 m",
+   "fix": "Brick-red ground, 1 m brick wall on the street edge, 3 small 1 m stone blocks (bears) near the center, 6 trees 12-15 m, a few 2 m play structures.",
+   "priority": "low"
+  },
+  {
+   "what": "Society Hill Towers site: the towers stand on a raised plaza (~1 m above street with steps) over an underground garage; the surrounding superblock is rolling lawn with grass berms 1-2 m high along 2nd, 3rd and Spruce, mature London planes/honey locusts (12-18 m), the Leonard Baskin bronze group 'Old Man, Young Man, The Future' (1966, ~3 m) at the plaza center, and the garage ramp descending off S 2nd St mid-block between Locust and Spruce (verify; secondary service drive off Locust at 3rd). Pei's 3-story townhouses line 3rd St and Locust walk on the west.",
+   "where": "site bounds 39.9449..39.9468 N, -75.1457..-75.1438 W; plaza center 39.9455,-75.1447 (local origin); ramp ~39.9454,-75.1439",
+   "fix": "Raise a plaza slab 1 m with 3-step edges around the towers; add 6-8 low elongated ellipsoid berms (30x12 m, 1.5 m high) in the lawns; 40 trees 12-18 m; a 12 m long, 5 m wide ramp cut sloping down 3 m from 2nd St; a 3 m bronze figure group at the plaza center.",
+   "priority": "high"
+  },
+  {
+   "what": "Dock St: the curving street (follows the filled Dock Creek) from 2nd & Walnut south-east to Front & Spruce is paved in dark Belgian-block setts with granite curbs, and on the block between 2nd St and Front St it has a wide tree-planted island/median; the same sett paving covers S 2nd St around the Head House/Shambles and the Headhouse plaza.",
+   "where": "Dock St 39.9473,-75.1445 to 39.9452,-75.1433; median block ~39.9458,-75.1440; Headhouse 2nd St 39.9425..39.9432,-75.1453",
+   "fix": "Dark gray sett texture on the Dock St and 2nd St (Pine-Lombard) ways; a 5 m wide grass/tree island along Dock between 2nd and Front with 10 trees; granite curb lines.",
+   "priority": "med"
+  },
+  {
+   "what": "Welcome Park (site of William Penn's Slate Roof House, 2nd & Sansom): a paved 30x30 m plaza with Penn's 1682 city plan engraved in the paving, a bronze Penn statue on a tall pedestal (~5 m total) near its center, a low wall with timeline panels, and a scale model of the Slate Roof House. OSM has it as a blank area or nothing.",
+   "where": "39.9486,-75.1439",
+   "fix": "Light-gray paved square with a darker grid pattern, 5 m pedestal+statue cylinder, 1.2 m perimeter wall on two sides, 2 trees.",
+   "priority": "low"
+  },
+  {
+   "what": "Independence National Historical Park grounds (3rd-6th, Walnut-Chestnut) are mostly lawn and brick walks with dense trees (Independence Square, the Rose Garden and Magnolia Garden at 4th/5th between Walnut and Locust, the 18th-Century Garden at 3rd & Walnut, the lawn around the First Bank and Carpenters' Hall court). Flat green polygons without trees/paths/iron fences read as empty lots. Carpenters' Hall also has a cupola (~17 m) and the Merchants' Exchange a lantern tower (~25 m).",
+   "where": "Independence Square 39.9478..39.9486 N, -75.1510..-75.1494 W; Rose Garden ~39.9466,-75.1492; Magnolia Garden ~39.9467,-75.1483; 18th-C Garden 39.9468,-75.1462; Carpenters' Hall 39.94812,-75.14721",
+   "fix": "Brick path network from OSM footways (brick color), 2 m iron fence on Independence Square's Walnut/5th/6th edges, 150 trees 12-20 m across the park blocks, 1 m brick garden walls; add a 4 m cupola on Carpenters' Hall.",
+   "priority": "med"
+  },
+  {
+   "what": "Philadelphia Marriott Old City (ex-Sheraton Society Hill, 1 Dock St) has an OSM height of 4.0 m, almost certainly the level count mis-tagged as metres; it is a 4-story spreading brick hotel (~15 m) with an internal courtyard.",
+   "where": "39.94633,-75.14346 (local x\u2248+110, z\u2248-95)",
+   "fix": "Set height to 15 m; dark-red brick.",
+   "priority": "med"
+  },
+  {
+   "what": "Hopkinson House (604 S Washington Sq) is 32 stories, ~90 m plus mechanical; OSM 107 m is ~15% tall. One/Two Independence Place (241 S 6th) are 36-story towers, ~110 m; OSM 96.9 m is slightly short. Penn Mutual Tower 114 m tag is plausible. Low impact, but these frame the west skyline.",
+   "where": "Hopkinson House 39.94595,-75.15228; Independence Place 39.94581,-75.15117 and 39.94613,-75.15055",
+   "fix": "Hopkinson House 92 m; Independence Place towers 110 m (verify against floor counts 32/36 at ~2.9 m per floor).",
+   "priority": "low"
+  },
+  {
+   "what": "Christ Church (2nd St just north of Market) has a 60 m white steeple that dominates Old City views north from the Towers; it lies ~50 m beyond the bbox's north edge and will be absent or a 13 m box.",
+   "where": "39.9504,-75.1434",
+   "fix": "If the extract is expanded slightly, add a 13 m brick nave + 8x8 m brick tower to 30 m + white spire to 60 m.",
+   "priority": "low"
+  },
+  {
+   "what": "Horizon landmarks visible from the Towers but outside the bbox: Benjamin Franklin Bridge (blue suspension bridge, towers 117 m) to the north-east, Battleship New Jersey and Adventure Aquarium on the Camden shore directly east, the Walt Whitman Bridge far south. Without them the river ends in nothing.",
+   "where": "Ben Franklin Bridge deck from 39.9530,-75.1400 to 39.9505,-75.1210 (Camden anchorage); Battleship New Jersey ~39.9400,-75.1318 (Camden, 270 m long, axis N-S); Camden waterfront buildings 39.940..39.949 N at lon -75.130",
+   "fix": "Low-poly bridge: 2 steel towers 117 m with catenary cables and a 30 m wide deck at +40 m; a 270x33 m gray hull block 20 m tall with a superstructure for BB-62; a few 20-40 m boxes for Camden (aquarium, Campbell's Field site, Camden Tower).",
+   "priority": "low"
+  },
+  {
+   "what": "Penn's Landing Square (Front & Lombard/Pine, 1970s): walled brick townhouse complex with an inner courtyard behind a continuous 2.5 m brick wall along Front St; and the Front St frontage between Walnut and Lombard on the west side is continuous townhouse/rowhouse fabric while the east side is nothing but the I-95 parapet. Model defaults will likely put default-height boxes and no wall.",
+   "where": "39.9418..39.9428 N, -75.1440..-75.1433 W",
+   "fix": "Cap those footprints at 10 m; add a 2.5 m brick wall along the Front St and Lombard edges; trees in the court.",
+   "priority": "low"
+  },
+  {
+   "what": "Headhouse Square surroundings: the plaza south of the Shambles at Lombard and the Sunday market; South St commercial strip (2-3 story rowhouses with shopfronts/signage, no trees, continuous party walls). Defaults will give it the same look as residential Society Hill; it should be visibly busier/treeless with shopfront bands.",
+   "where": "South St 39.9412, -75.1520..-75.1433; Headhouse plaza 39.9420,-75.1454",
+   "fix": "No street trees on South St; 3.5 m ground-floor shopfront band in a contrasting color on buildings fronting South St; brick plaza polygon at the Shambles' south end.",
+   "priority": "low"
+  },
+  {
+   "what": "Starr Garden (6th & Lombard): playground/recreation center with a ball court, at the bbox's west edge; and the William M. Meredith School yard (5th & Lombard) with a paved play yard and fence. Parks here are paved, not lawn.",
+   "where": "Starr Garden 39.9428,-75.1522; Meredith yard 39.9397,-75.1508",
+   "fix": "Asphalt ground polygons with a 3 m chain-link fence line, a 12 m tall rec-center box, a few trees.",
+   "priority": "low"
+  }
+ ]
+}
