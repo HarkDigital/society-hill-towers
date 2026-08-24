@@ -114,15 +114,47 @@ if os.path.exists('parts_wide.json'):
         body += [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3]
         for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
         nb += 1
+def simplify_open(pts, tol):
+    # open-polyline Douglas-Peucker. The old code fed roads through the CLOSED-ring
+    # simplify() (appending pts[0], slicing [:-1]) which amputated the real final
+    # segment of every road — the model-wide "roads stop mid-block" bug.
+    if len(pts) <= 2: return pts
+    def dp(seg):
+        if len(seg) < 3: return seg
+        a, b = seg[0], seg[-1]
+        dx, dz = b[0] - a[0], b[1] - a[1]
+        L = math.hypot(dx, dz) or 1e-9
+        best, bi = -1, -1
+        for i in range(1, len(seg) - 1):
+            p = seg[i]
+            dist = abs((p[0] - a[0]) * dz - (p[1] - a[1]) * dx) / L
+            if dist > best: best, bi = dist, i
+        if best > tol: return dp(seg[:bi + 1])[:-1] + dp(seg[bi:])
+        return [a, b]
+    return dp(pts)
+
+def runs_of(pts, box, m):
+    # split at bbox exits instead of filtering points (a filtered way that leaves and
+    # re-enters otherwise grows a phantom straight chord across the excursion)
+    inb = lambda q: box[0] - m <= q[0] <= box[1] + m and box[2] - m <= q[1] <= box[3] + m
+    runs, cur = [], []
+    for i, q in enumerate(pts):
+        keep = inb(q) or (i > 0 and inb(pts[i - 1])) or (i + 1 < len(pts) and inb(pts[i + 1]))
+        if keep: cur.append(q)
+        else:
+            if len(cur) > 1: runs.append(cur)
+            cur = []
+    if len(cur) > 1: runs.append(cur)
+    return runs
+
 for r in d['roads']:
     if r['t'] not in RT or len(r['pts']) < 2: continue
-    pts = [q for q in r['pts'] if WIDE[0] - 200 <= q[0] <= WIDE[1] + 200 and WIDE[2] - 200 <= q[1] <= WIDE[3] + 200]
-    if len(pts) < 2: continue
-    pts = simplify(pts + [pts[0]], 0.6)[:-1] if len(pts) > 3 else pts  # cheap thinning
-    if len(pts) < 2: continue
-    body += [len(pts), clip(r['w'] * 10), RT[r['t']]]
-    for q in pts: body += [clip(q[0] * 5), clip(q[1] * 5)]
-    nr += 1
+    for pts in runs_of(r['pts'], WIDE, 200):
+        pts = simplify_open(pts, 0.6) if len(pts) > 3 else pts
+        if len(pts) < 2: continue
+        body += [len(pts), clip(r['w'] * 10), RT[r['t']]]
+        for q in pts: body += [clip(q[0] * 5), clip(q[1] * 5)]
+        nr += 1
 for a in d['areas']:
     if a['kind'] not in AK or len(a['poly']) < 3: continue
     cx, cz = cent(a['poly'])

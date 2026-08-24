@@ -735,6 +735,33 @@
   }
   // signed distance east of the waterline; > 0 means in the river
   function inWater(x, z) { return x - xShore(z); }
+  // rough Delaware west-bank polyline for the whole city (meets SHORE at the core ends):
+  // east of it low terrain is river (dives to the bed); west of it low terrain is
+  // made-land and clamps just above the water plane instead of flooding
+  const DEL_BANK = [[13500, -21700], [10500, -18500], [7300, -14500], [4300, -10500], [2500, -7200], [1500, -4480], [900, -2600], [450, -1500], [404, -520], [345, 850], [700, 2200], [1300, 3600], [2000, 4800], [2600, 6400], [3400, 7600], [5200, 9700]];
+  function delawareX(z) {
+    for (let i = 0; i < DEL_BANK.length - 1; i++) {
+      const a = DEL_BANK[i], b = DEL_BANK[i + 1];
+      if (z >= a[1] && z <= b[1]) { const t = (z - a[1]) / Math.max(1e-6, b[1] - a[1]); return a[0] + (b[0] - a[0]) * t; }
+    }
+    return z < DEL_BANK[0][1] ? DEL_BANK[0][0] : DEL_BANK[DEL_BANK.length - 1][0];
+  }
+  function eastOfDelaware(x, z) { return x > delawareX(z) - 120; }
+  // rough Schuylkill centerline; within 260 m counts as its corridor (bridge territory)
+  const SCHUYLKILL = [[-8500, -11500], [-7700, -9400], [-6900, -7700], [-5600, -5300], [-4700, -3300], [-4100, -1600], [-4300, -400], [-4500, 1100], [-4200, 2600], [-3900, 4200], [-3700, 5600], [-3860, 7240]];
+  function nearSchuylkill(x, z) {
+    for (let i = 0; i < SCHUYLKILL.length - 1; i++) {
+      const a = SCHUYLKILL[i], b = SCHUYLKILL[i + 1];
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      const L2 = dx * dx + dz * dz;
+      let t = L2 > 0 ? ((x - a[0]) * dx + (z - a[1]) * dz) / L2 : 0;
+      t = clamp(t, 0, 1);
+      const px = x - (a[0] + dx * t), pz = z - (a[1] + dz * t);
+      if (px * px + pz * pz < 260 * 260) return true;
+    }
+    return false;
+  }
+  function riverCorridor(x, z) { return eastOfDelaware(x, z) || nearSchuylkill(x, z); }
   function waterPoint(along, out) {
     // along: meters along the shoreline from the towers' projection; out: meters east of the bulkhead
     const t = (towersCenter.x - wl.px) * wl.dx + (towersCenter.z - wl.pz) * wl.dz;
@@ -758,6 +785,7 @@
   const DEM0 = (typeof DEM !== 'undefined' && DEM && DEM.rows) ? DEM : null;
   const DEMW = (typeof DEM_WIDE !== 'undefined' && DEM_WIDE && DEM_WIDE.rows) ? DEM_WIDE : null;
   const DEMS = (typeof DEM_SOUTH !== 'undefined' && DEM_SOUTH && DEM_SOUTH.rows) ? DEM_SOUTH : null;
+  const DEMC = (typeof DEM_CITY !== 'undefined' && DEM_CITY && DEM_CITY.rows) ? DEM_CITY : null;
   const CORE_EXT = { x0: -640, x1: 770, z0: -520, z1: 850 }; // the detailed extract
   function inCore(x, z) { return x >= CORE_EXT.x0 && x <= CORE_EXT.x1 && z >= CORE_EXT.z0 && z <= CORE_EXT.z1; }
   function sampleDem(G, x, z, fallback) {
@@ -772,9 +800,12 @@
     return a * (1 - tz) + b * tz;
   }
   function demAbs(x, z) {
+    // null DEM cells (NED voids over made land) must NOT fall back to 0 ASL — that is
+    // below the model's water plane and floods whole blocks (the stadium site)
     let v = DEM0 ? sampleDem(DEM0, x, z, 8.34) : null;
-    if (v == null && DEMW) v = sampleDem(DEMW, x, z, 0);
-    if (v == null && DEMS) v = sampleDem(DEMS, x, z, 0);
+    if (v == null && DEMW) v = sampleDem(DEMW, x, z, 3.2);
+    if (v == null && DEMS) v = sampleDem(DEMS, x, z, 3.2);
+    if (v == null && DEMC) v = sampleDem(DEMC, x, z, 4.0);
     if (v == null && DEMW) { // beyond the grids: clamp to the nearest edge sample
       const G = (DEMS && z > DEMW.z0 + DEMW.cell * (DEMW.nz - 1)) ? DEMS : DEMW;
       v = sampleDem(G, clamp(x, G.x0, G.x0 + G.cell * (G.nx - 1)), clamp(z, G.z0, G.z0 + G.cell * (G.nz - 1)), 0);
@@ -860,9 +891,12 @@
   // where things sit. mode 'ground' = objects, trees, lawns; 'road' = streets
   // (bridged over the trench, tunnelled under the park cap)
   function siteY(x, z, mode) {
-    if (!inCore(x, z)) { // outer districts ride the wide DEM; low ground is river
+    if (!inCore(x, z)) { // outer districts ride the wide DEM. Low terrain east of the
+      // Delaware bank is river; low LAND west of it (stadiums, FDR, the airport — NED
+      // reads made-land near 0 ASL) clamps just above the water plane instead of flooding
       const y = demY(x, z);
-      return y < TERRAIN.water + 0.6 ? TERRAIN.bulkhead : y;
+      if (y >= TERRAIN.water + 0.6) return y;
+      return eastOfDelaware(x, z) ? TERRAIN.bulkhead : TERRAIN.water + 0.45;
     }
     if (inRiver(x, z)) return TERRAIN.bulkhead;
     const o = frontOff(x, z);
@@ -920,6 +954,26 @@
       let t = L2 > 0 ? ((x - ax) * dx + (z - az) * dz) / L2 : 0;
       t = clamp(t, 0, 1);
       const px = ax + dx * t - x, pz = az + dz * t - z;
+      const r = hw + pad;
+      if (px * px + pz * pz < r * r) return true;
+    }
+    return false;
+  }
+
+  // like nearRoad, but only matches core segments running PARALLEL to (ux, uz) —
+  // used to drop wide-set duplicates without notching perpendicular crossings
+  function nearRoadAligned(x, z, pad, ux, uz) {
+    const a = roadGrid.get(Math.floor(x / ROAD_CELL) + ':' + Math.floor(z / ROAD_CELL));
+    if (!a) return false;
+    for (const s of a) {
+      const ax = roadSegs[s], az = roadSegs[s + 1], bx = roadSegs[s + 2], bz = roadSegs[s + 3], hw = roadSegs[s + 4];
+      let dx = bx - ax, dz = bz - az;
+      const L = Math.hypot(dx, dz) || 1;
+      dx /= L; dz /= L;
+      if (Math.abs(dx * ux + dz * uz) < 0.82) continue;
+      let t = ((x - ax) * (bx - ax) + (z - az) * (bz - az)) / (L * L);
+      t = clamp(t, 0, 1);
+      const px = ax + (bx - ax) * t - x, pz = az + (bz - az) * t - z;
       const r = hw + pad;
       if (px * px + pz * pz < r * r) return true;
     }
@@ -1023,7 +1077,7 @@
         for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
           const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
           const y = demY(x, z);
-          pos.push(x, (y < TERRAIN.water + 0.6 ? TERRAIN.bed : y) - 0.05, z);
+          pos.push(x, (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.05, z);
         }
         const idx = [];
         for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -1642,7 +1696,11 @@
           '    }',
           '    // far away the pattern averages into a slightly darker wall',
           '    col = mix(col, diffuseColor.rgb * 0.9, (1.0 - det) * 0.35);',
-          '    shtLit = glass * step(0.42, lit);',
+          // only about a third of windows are lit at night, at varied warmth; where the
+          // pattern fades with distance the facade keeps a soft aggregate glow instead
+          // of dying into a solid mass
+          '    float litOn = step(0.82, lit) * (0.4 + 0.6 * fract(lit * 9.7));',
+          '    shtLit = mix(0.115, glass * litOn, det);',
           '    diffuseColor.rgb = col;',
           '  }',
           '}',
@@ -2494,7 +2552,7 @@
     // bridges build their own steel, so drop any footprint sitting on them
     const BRIDGE_SKIP = [[620.8, -889.9, 60], [1148.8, -770, 60], [1037.2, 4391.6, 60], [1620.1, 4510.7, 60], [400, -940, 45], [1360, -722, 45],
       // landmark towers rebuilt with real massing below: City Hall tower, One & Two Liberty Place
-      [-1603, -802, 14], [-1995, -785, 25], [-1937, -689, 20], [-1932.3, -718.2, 9]];
+      [-1603, -802, 24], [-1995, -785, 25], [-1937, -689, 20], [-1932.3, -718.2, 9]];
     // signature curtain walls, matched by location (local metres east/south of the towers)
     const GLASS_TINTS = [
       [-1995, -785, 60, 0x6899c4],   // One Liberty Place complex — blue glass
@@ -2584,42 +2642,101 @@
       const chk = getChunk(cx, cz);
       if (t === 8) { // stadium: seating bowl around a sunken field
         const isBaseball = cz < 4650;
-        const rim = isBaseball ? 40 : 42;   // upper-deck rims (Philadelphia LiDAR)
         const inner = poly.map(q => [cx + (q[0] - cx) * 0.55, cz + (q[1] - cz) * 0.55]);
-        c.set(isBaseball ? 0x9c4a3a : 0xb7bbbe);
-        appendBuilding(chk, poly, base - 1.0, base + rim, c, 3, base, [inner]);
-        // field
-        const f0 = chk.n; c.set(0x4f7a3a);
-        for (const q of inner) pushV(chk, q[0], base + 0.6, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
-        v2.length = 0; for (const q of inner) v2.push(new THREE.Vector2(q[0], -q[1]));
-        try { for (const tr of THREE.ShapeUtils.triangulateShape(v2, [])) chk.idx.push(f0 + tr[0], f0 + tr[2], f0 + tr[1]); } catch (e) {}
         const ob = orientedBox(poly); const ax = obbAxis(ob);
-        if (!isBaseball) { // Lincoln Financial Field: eagle-wing canopies over both sideline upper decks, tops ~55 m
-          for (const sgn of [-1, 1]) {
-            c.set(0xd9dcde);
-            const cp = [[-ax.hl * 0.6, sgn * ax.hs * 0.38], [ax.hl * 0.6, sgn * ax.hs * 0.38], [ax.hl * 0.6, sgn * ax.hs * 1.0], [-ax.hl * 0.6, sgn * ax.hs * 1.0]]
-              .map(([u, v]) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v]);
-            appendBuilding(chk, cp, base + 51, base + 55, c, 3, base);
-            c.set(0xb7bbbe); // canopy masts behind the upper deck
-            for (const f of [-0.45, -0.15, 0.15, 0.45]) {
-              const mx = ob.cx + ax.ax * ax.hl * f + ax.px * sgn * ax.hs * 0.97, mz = ob.cz + ax.az * ax.hl * f + ax.pz * sgn * ax.hs * 0.97;
-              appendBuilding(chk, [[mx - 1.2, mz - 1.2], [mx + 1.2, mz - 1.2], [mx + 1.2, mz + 1.2], [mx - 1.2, mz + 1.2]], base + rim, base + 68, c, 3, base);
-            }
-          }
-        } else { // Citizens Bank Park: 50 m light towers, the 65 m left-field scoreboard
-          c.set(0x34423f);
-          for (const [su, sv] of [[-0.8, -0.8], [0.8, -0.8], [0.8, 0.8], [-0.8, 0.8]]) {
-            const lx = ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, lz = ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv;
-            appendBuilding(chk, [[lx - 1.5, lz - 1.5], [lx + 1.5, lz - 1.5], [lx + 1.5, lz + 1.5], [lx - 1.5, lz + 1.5]], base, base + 50, c, 3, base);
-          }
-          const sx = -1926, sz = 4330; // left-field scoreboard (home plate at (-1861, 4429), center field north)
-          appendBuilding(chk, [[sx - 20, sz - 2], [sx + 20, sz - 2], [sx + 20, sz + 2], [sx - 20, sz + 2]], base + 12, base + 65, c, 3, base);
+        // contiguous arc of a ring passing keepFn (rotated so the arc never wraps the array seam)
+        const arcOf = (pts, keepFn) => {
+          const n2 = pts.length;
+          let s0 = -1;
+          for (let ii = 0; ii < n2; ii++) if (!keepFn(pts[ii])) { s0 = ii; break; }
+          if (s0 < 0) return pts.slice();
+          const out = [];
+          for (let ii = 1; ii <= n2; ii++) { const q = pts[(s0 + ii) % n2]; if (keepFn(q)) out.push(q); }
+          return out;
+        };
+        const upperRing = (keepFn, y0, y1, hex) => {
+          const A = arcOf(poly, keepFn), B = arcOf(inner, keepFn);
+          if (A.length < 3 || B.length < 3) return;
+          c.set(hex);
+          appendBuilding(chk, A.concat(B.slice().reverse()), base + y0, base + y1, c, 3, base);
+        };
+        // field — fan-triangulated about the centroid (earcut chokes on some OSM rings)
+        // and high enough that nothing inside the bowl pokes through
+        const f0 = chk.n; c.set(0x4f7a3a);
+        for (const q of inner) pushV(chk, q[0], base + 1.9, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
+        const fc = pushV(chk, cx, base + 1.9, cz, 0, 1, 0, c.r, c.g, c.b, 3, base);
+        for (let j = 0; j < inner.length; j++) {
+          const j2 = (j + 1) % inner.length;
+          chk.idx.push(f0 + j, fc, f0 + j2, f0 + j, f0 + j2, fc);
         }
-      } else if (t === 9) { // arena: 37.5 m flat roof over the bowl, 20 m concourse ring around it
-        c.set(0x9a9da1);
-        appendBuilding(chk, poly, base - 1.0, base + 20, c, 3, base);
-        c.set(0x3c4045);
-        appendBuilding(chk, poly.map(q => [cx + (q[0] - cx) * 0.84, cz + (q[1] - cz) * 0.84]), base + 20, base + 37.5, c, 3, base);
+        if (isBaseball) {
+          // Citizens Bank Park: brick drum, upper horseshoe open beyond the outfield,
+          // pale-green canopy band, dark-red light standards, the left-field scoreboard
+          const hx = -1861, hz = 4429;
+          const dh = Math.hypot(hx - cx, hz - cz), dhx = (hx - cx) / dh, dhz = (hz - cz) / dh;
+          const keepHome = (q) => ((q[0] - cx) * dhx + (q[1] - cz) * dhz) > -0.28 * Math.hypot(q[0] - cx, q[1] - cz);
+          c.set(0x8f4f3e);
+          appendBuilding(chk, poly, base - 1.0, base + 15, c, 3, base, [inner]);
+          upperRing(keepHome, 15, 38, 0x9a9184);
+          upperRing(keepHome, 38, 40.5, 0x7fa38c);
+          { // infield dirt diamond just in from home plate
+            const fx2 = hx - dhx * 20, fz2 = hz - dhz * 20;
+            const dPoly = [[fx2 + dhx * 20, fz2 + dhz * 20], [fx2 - dhz * 20, fz2 + dhx * 20], [fx2 - dhx * 20, fz2 - dhz * 20], [fx2 + dhz * 20, fz2 - dhx * 20]];
+            const d0 = chk.n; c.set(0xb08355);
+            for (const q of dPoly) pushV(chk, q[0], base + 2.05, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
+            chk.idx.push(d0, d0 + 2, d0 + 1, d0, d0 + 3, d0 + 2);
+          }
+          c.set(0x6e3a30);
+          for (const [su, sv] of [[-0.78, -0.78], [0.78, -0.78], [0.78, 0.78], [-0.78, 0.78]]) {
+            const lx = ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, lz = ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv;
+            appendBuilding(chk, [[lx - 1.3, lz - 1.3], [lx + 1.3, lz - 1.3], [lx + 1.3, lz + 1.3], [lx - 1.3, lz + 1.3]], base + 12, base + 50, c, 3, base);
+            appendBuilding(chk, [[lx - 3.6, lz - 1.1], [lx + 3.6, lz - 1.1], [lx + 3.6, lz + 1.1], [lx - 3.6, lz + 1.1]], base + 50, base + 55, c, 3, base);
+          }
+          const sx = -1926, sz = 4330; // left-field scoreboard
+          c.set(0x2c3833);
+          appendBuilding(chk, [[sx - 20, sz - 2], [sx + 20, sz - 2], [sx + 20, sz + 2], [sx - 20, sz + 2]], base + 12, base + 65, c, 3, base);
+        } else {
+          // Lincoln Financial Field: dark bowl, silver sideline stands, steel wing
+          // canopies with a white fascia, four corner masts, open corners
+          c.set(0x4a4f4c);
+          appendBuilding(chk, poly, base - 1.0, base + 14, c, 3, base, [inner]);
+          for (const sgn of [-1, 1]) {
+            upperRing((q) => ((q[0] - ob.cx) * ax.px + (q[1] - ob.cz) * ax.pz) * sgn > ax.hs * 0.30, 14, 46, 0x9aa0a3);
+            const cp = [[-ax.hl * 0.6, sgn * ax.hs * 0.40], [ax.hl * 0.6, sgn * ax.hs * 0.40], [ax.hl * 0.6, sgn * ax.hs * 1.0], [-ax.hl * 0.6, sgn * ax.hs * 1.0]]
+              .map(([u, v]) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v]);
+            c.set(0x454b4e);
+            appendBuilding(chk, cp, base + 50.5, base + 54, c, 3, base);
+            const fe = [[-ax.hl * 0.6, sgn * ax.hs * 0.34], [ax.hl * 0.6, sgn * ax.hs * 0.34], [ax.hl * 0.6, sgn * ax.hs * 0.42], [-ax.hl * 0.6, sgn * ax.hs * 0.42]]
+              .map(([u, v]) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v]);
+            c.set(0xe4e7e9);
+            appendBuilding(chk, fe, base + 53, base + 55, c, 3, base);
+          }
+          c.set(0x8f979b);
+          for (const [su, sv] of [[-0.8, -0.9], [0.8, -0.9], [0.8, 0.9], [-0.8, 0.9]]) {
+            const mx = ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, mz = ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv;
+            appendBuilding(chk, [[mx - 1.3, mz - 1.3], [mx + 1.3, mz - 1.3], [mx + 1.3, mz + 1.3], [mx - 1.3, mz + 1.3]], base + 14, base + 64, c, 3, base);
+          }
+        }
+      } else if (t === 9) { // Xfinity Mobile Arena: dark walls, glass entry, pale roof slab
+        c.set(0x3a3e44);
+        appendBuilding(chk, poly, base - 1.0, base + 21, c, 3, base);
+        c.set(0x565b60);
+        appendBuilding(chk, poly.map(q => [cx + (q[0] - cx) * 0.86, cz + (q[1] - cz) * 0.86]), base + 21, base + 36, c, 3, base);
+        c.set(0xcfd2d4);
+        appendBuilding(chk, poly.map(q => [cx + (q[0] - cx) * 0.88, cz + (q[1] - cz) * 0.88]), base + 36, base + 38.5, c, 3, base);
+        { // glass rotunda + entry bar on the corner, purple screen accents on two faces
+          const ob9 = orientedBox(poly); const ax9 = obbAxis(ob9);
+          const ex2 = ob9.cx + ax9.ax * ax9.hl * 0.62 + ax9.px * ax9.hs * 0.5, ez2 = ob9.cz + ax9.az * ax9.hl * 0.62 + ax9.pz * ax9.hs * 0.5;
+          const oct = [];
+          for (let k2 = 0; k2 < 8; k2++) oct.push([ex2 + Math.cos(k2 * Math.PI / 4) * 9, ez2 + Math.sin(k2 * Math.PI / 4) * 9]);
+          c.set(0x9fc0d8);
+          appendBuilding(chk, oct, base - 1.0, base + 16, c, 3, base);
+          c.set(0x5b3f9e);
+          for (const sv of [-1, 1]) {
+            const px2 = ob9.cx + ax9.px * sv * ax9.hs * 0.97, pz2 = ob9.cz + ax9.pz * sv * ax9.hs * 0.97;
+            appendBuilding(chk, [[px2 - 9, pz2 - 1], [px2 + 9, pz2 - 1], [px2 + 9, pz2 + 1], [px2 - 9, pz2 + 1]], base + 22, base + 32, c, 3, base);
+          }
+        }
       } else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base);
       if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples
@@ -2634,9 +2751,32 @@
       }
       if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts · ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
     }
-    // outer streets: plain ribbons, no joints
+    // outer streets. Continuity work: endpoint-snapped heights (no steps at OSM way
+    // splits), joint fans at bends, real bridge decks over the rivers, aligned-only
+    // duplicate dropping, and a lift blend at the core seam.
     const rc = { pos: [], col: [], idx: [], n: 0 };
     const roadCol = [0x3b3833, 0x3b3833, 0x3f3c37, 0x3f3c37, 0x43403b, 0x45423d, 0x7c584a];
+    const yMapW = new Map();
+    const ySnap = (map, x, z, y) => {
+      const key = Math.round(x * 2) + ':' + Math.round(z * 2);
+      const v = map.get(key);
+      if (v !== undefined) return v;
+      map.set(key, y);
+      return y;
+    };
+    const rcFan = (x, y, z, hw, cr, cg, cb) => {
+      const c0 = rc.n;
+      rc.pos.push(x, y, z);
+      rc.col.push(cr, cg, cb);
+      rc.n++;
+      for (let s6 = 0; s6 < 7; s6++) {
+        const ang = s6 / 6 * Math.PI * 2;
+        rc.pos.push(x + Math.cos(ang) * hw, y, z + Math.sin(ang) * hw);
+        rc.col.push(cr, cg, cb);
+        rc.n++;
+      }
+      for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
+    };
     for (let i = 0; i < hdr[2]; i++) {
       const n = body[k++], w = body[k++] / 10, t = body[k++];
       let pts = new Array(n);
@@ -2644,28 +2784,48 @@
       pts = densify(pts, 15);
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
+      const thr = TERRAIN.water + 0.6;
       for (let j = 0; j < pts.length - 1; j++) {
         const a = pts[j], q = pts[j + 1];
         let dx = q[0] - a[0], dz = q[1] - a[1];
         const L = Math.hypot(dx, dz); if (L < 0.01) continue;
-        if (demY(a[0], a[1]) < TERRAIN.water + 0.6 && demY(q[0], q[1]) < TERRAIN.water + 0.6) continue; // over water
-        // a wide segment that lies ON a core street is a duplicate and would z-fight it
-        // (the old road flicker) — but wide-only streets the core extract lacks must stay
+        dx /= L; dz /= L;
+        const mx = (a[0] + q[0]) / 2, mz = (a[1] + q[1]) / 2;
+        const aLow = demY(a[0], a[1]) < thr, qLow = demY(q[0], q[1]) < thr;
+        let deck = 0;
+        if ((aLow || qLow) && riverCorridor(mx, mz)) {
+          if (t > 2) { if (aLow && qLow) continue; }         // minor roads don't bridge rivers
+          else deck = t === 0 ? 20 : 13;                     // major roads become bridge decks
+        }
+        // a wide segment lying ALONG a core street is a duplicate and would z-fight it
         if (a[0] > CORE_EXT.x0 - 38 && a[0] < CORE_EXT.x1 + 38 && a[1] > CORE_EXT.z0 - 38 && a[1] < CORE_EXT.z1 + 38 &&
             q[0] > CORE_EXT.x0 - 38 && q[0] < CORE_EXT.x1 + 38 && q[1] > CORE_EXT.z0 - 38 && q[1] < CORE_EXT.z1 + 38 &&
-            nearRoad(a[0], a[1], 3.5) && nearRoad(q[0], q[1], 3.5)) continue;
-        dx /= L; dz /= L;
+            nearRoadAligned(a[0], a[1], 3.5, dx, dz) && nearRoadAligned(q[0], q[1], 3.5, dx, dz) &&
+            nearRoadAligned(mx, mz, 2.5, dx, dz)) continue;
         const px = -dz * hw, pz = dx * hw;
-        // class-separated lifts (motorway highest) so crossing carriageways never z-fight
-        const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 3.7 + 1.1) * 0.1;
-        const ya = siteY(a[0], a[1], 'road') + jr, yb = siteY(q[0], q[1], 'road') + jr;
+        // class-separated lifts, blended down to the core formula near the seam
+        const dOut = Math.max(CORE_EXT.x0 - mx, mx - CORE_EXT.x1, CORE_EXT.z0 - mz, mz - CORE_EXT.z1, 0);
+        const bl = clamp(dOut / 60, 0, 1);
+        const jr = lerp(LAYER.road + hash01(i * 3.7 + 1.1) * 0.06,
+          LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 3.7 + 1.1) * 0.1, bl);
+        let ya0 = siteY(a[0], a[1], 'road'), yb0 = siteY(q[0], q[1], 'road');
+        if (deck) {
+          ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
+          yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
+        }
+        const ya = ySnap(yMapW, a[0], a[1], ya0 + jr), yb = ySnap(yMapW, q[0], q[1], yb0 + jr);
         const b0 = rc.n;
         rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
         for (let m = 0; m < 4; m++) rc.col.push(c.r * 255, c.g * 255, c.b * 255);
         rc.n += 4;
-        // one winding only — the doubled reverse faces made computeVertexNormals sum
-        // opposing normals to ~zero, shading random quads black
         rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+        if (j > 0) { // joint fan where the heading bends (quad strips leave notches)
+          const p0 = pts[j - 1];
+          let ux0 = a[0] - p0[0], uz0 = a[1] - p0[1];
+          const L0 = Math.hypot(ux0, uz0) || 1;
+          ux0 /= L0; uz0 /= L0;
+          if (ux0 * dx + uz0 * dz < 0.99) rcFan(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255);
+        }
       }
     }
     // -------- landmark rebuilds: City Hall tower + One & Two Liberty Place --------
@@ -2743,37 +2903,79 @@
         crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite);
         lmTrim.push({ geom: pyr4(cx, cz, 5, base + 253, base + 258, 0.4), color: cWhite, style: 3 });
       }
-      // --- City Hall tower: masonry shaft, light-gray clock stage, curved top, William Penn
+      // --- City Hall: the full Second Empire block (its outline was dropped at pack
+      // time for containing part centroids, and the wings were never mapped as parts,
+      // so the tower used to rise from bare ground), plus the ornate tower and Penn
       {
         const cx = -1603, cz = -802, base = siteY(cx, cz, 'ground');
-        c.set(0xaea595);
-        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 24, 24), base - 1, base + 102.7, c, 3, base);
-        c.set(0xcdd1d4);
-        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 17, 17), base + 102.7, base + 122, c, 3, base);
-        const cGray = new THREE.Color(0xb9bfc4);
-        for (const ns of [0, 1]) for (const s of [-1, 1]) {   // the four clock faces on dark surrounds
+        const bx = cx + fl.dx * 55, bz = cz + fl.dz * 55;    // block center: tower on the north face
+        const cStone = new THREE.Color(0xb3aa99);
+        const cSlate = new THREE.Color(0x51565b);
+        const cTower = new THREE.Color(0xc4bdb0);
+        const cWhiteM = new THREE.Color(0xdde0e2);           // painted metal above the masonry limit
+        const cDome = new THREE.Color(0xbfc9d3);
+        const cPenn = new THREE.Color(0x41443f);             // dark bronze silhouette
+        // hollow square around the courtyard, arched-window facade style, mansard wings
+        c.copy(cStone);
+        appendBuilding(getChunk(bx, bz), sqPoly(bx, bz, 148, 143), base - 1, base + 27, c, 1, base, [sqPoly(bx, bz, 64, 59)]);
+        for (const [du, dv, ns] of [[0, -50.5, false], [0, 50.5, false], [-53, 0, true], [53, 0, true]]) {
+          const wx = bx + fl.nx * du + fl.dx * dv, wz = bz + fl.nz * du + fl.dz * dv;
+          lmTrim.push({ geom: gPrism(wx, wz, 40, ns ? 139 : 144, base + 26.9, base + 33.5, ns), color: cSlate, style: 3 });
+        }
+        for (const su of [-1, 1]) for (const sv of [-1, 1]) { // corner pavilions with steep caps
+          const px2 = bx + fl.nx * su * 62 + fl.dx * sv * 59.5, pz2 = bz + fl.nz * su * 62 + fl.dz * sv * 59.5;
+          c.copy(cStone);
+          appendBuilding(getChunk(px2, pz2), sqPoly(px2, pz2, 25, 25), base - 1, base + 32, c, 1, base);
+          lmTrim.push({ geom: pyr4(px2, pz2, 21, base + 32, base + 43, 3.0), color: cSlate, style: 3 });
+        }
+        for (const [du, dv] of [[74, 0], [-74, 0], [0, 71.5]]) { // center pavilions (E/W/S; N is the tower)
+          const px2 = bx + fl.nx * du + fl.dx * dv, pz2 = bz + fl.nz * du + fl.dz * dv;
+          c.copy(cStone);
+          appendBuilding(getChunk(px2, pz2), sqPoly(px2, pz2, du === 0 ? 30 : 22, du === 0 ? 22 : 30), base - 1, base + 31, c, 1, base);
+          lmTrim.push({ geom: pyr4(px2, pz2, 19, base + 31, base + 41, 2.6), color: cSlate, style: 3 });
+        }
+        // tower: arched-window masonry shaft to the 337 ft masonry limit, in stages
+        c.copy(cTower);
+        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 26, 26), base - 1, base + 40, c, 1, base);
+        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 22, 22), base + 38, base + 96, c, 1, base);
+        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 19, 19), base + 94, base + 102.7, c, 1, base);
+        // white cast-iron clock stage with corner turrets
+        c.copy(cWhiteM);
+        appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 16.5, 16.5), base + 102.7, base + 124, c, 1, base);
+        for (const su of [-1, 1]) for (const sv of [-1, 1]) {
+          const tx = cx + fl.nx * su * 8 + fl.dx * sv * 8, tz = cz + fl.nz * su * 8 + fl.dz * sv * 8;
+          const tur = new THREE.CylinderGeometry(1.5, 1.5, 23, 8); tur.translate(tx, base + 103 + 11.5, tz);
+          lmTrim.push({ geom: tur, color: cWhiteM, style: 3 });
+          const tc = new THREE.CylinderGeometry(0.1, 1.5, 3.2, 8); tc.translate(tx, base + 126.5 + 1.6, tz);
+          lmTrim.push({ geom: tc, color: cDome, style: 3 });
+        }
+        for (const ns of [0, 1]) for (const s of [-1, 1]) {   // amber clock faces on dark surrounds
           const ux = ns ? fl.dx : fl.nx, uz = ns ? fl.dz : fl.nz;
           const rim = new THREE.CylinderGeometry(4.6, 4.6, 0.4, 20);
           rim.rotateZ(Math.PI / 2);
           rim.rotateY(ryG + ns * Math.PI / 2);
-          rim.translate(cx + ux * s * 8.55, base + 110, cz + uz * s * 8.55);
+          rim.translate(cx + ux * s * 8.3, base + 116, cz + uz * s * 8.3);
           lmTrim.push({ geom: rim, color: new THREE.Color(0x474c50), style: 3 });
           const disc = new THREE.CylinderGeometry(3.95, 3.95, 0.6, 20);
           disc.rotateZ(Math.PI / 2);
           disc.rotateY(ryG + ns * Math.PI / 2);
-          disc.translate(cx + ux * s * 8.7, base + 110, cz + uz * s * 8.7);
+          disc.translate(cx + ux * s * 8.45, base + 116, cz + uz * s * 8.45);
           lmTrim.push({ geom: disc, color: new THREE.Color(0xe9dca6), style: 3 });
         }
-        const frust = new THREE.CylinderGeometry(6.2, 11.7, 30.4, 4, 1);
-        frust.rotateY(Math.PI / 4 + ryG);
-        frust.translate(cx, base + 122 + 15.2, cz);
-        lmTrim.push({ geom: frust, color: cGray, style: 3 });
-        const cup = new THREE.CylinderGeometry(3.4, 4.6, 3.4, 8); cup.translate(cx, base + 152.4 + 1.7, cz);
-        lmTrim.push({ geom: cup, color: cGray, style: 3 });
-        const penn = new THREE.CylinderGeometry(0.9, 1.9, 10.4, 8); penn.translate(cx, base + 155.8 + 5.2, cz);
-        lmTrim.push({ geom: penn, color: new THREE.Color(0x77908a), style: 3 });
-        const hat = new THREE.CylinderGeometry(0.4, 0.85, 0.8, 6); hat.translate(cx, base + 166.4, cz);
-        lmTrim.push({ geom: hat, color: new THREE.Color(0x77908a), style: 3 });
+        // ogee dome as stacked frustums, then the lantern
+        for (const [w0, w1, y0, y1] of [[16.5, 12.5, 124, 133], [12.5, 7.5, 133, 143], [7.5, 3.6, 143, 151.5]]) {
+          const f = new THREE.CylinderGeometry(w1 * 0.707, w0 * 0.707, y1 - y0, 4, 1);
+          f.rotateY(Math.PI / 4 + ryG);
+          f.translate(cx, base + (y0 + y1) / 2, cz);
+          lmTrim.push({ geom: f, color: cDome, style: 3 });
+        }
+        const lant = new THREE.CylinderGeometry(2.0, 2.6, 4.3, 8); lant.translate(cx, base + 151.5 + 2.15, cz);
+        lmTrim.push({ geom: lant, color: cWhiteM, style: 3 });
+        // William Penn — reads near-black against the sky
+        const penn = new THREE.CylinderGeometry(0.9, 1.9, 10.6, 8); penn.translate(cx, base + 155.8 + 5.3, cz);
+        lmTrim.push({ geom: penn, color: cPenn, style: 3 });
+        const hat = new THREE.CylinderGeometry(0.42, 0.9, 0.9, 6); hat.translate(cx, base + 166.6, cz);
+        lmTrim.push({ geom: hat, color: cPenn, style: 3 });
       }
     }
     // parks, water, piers
@@ -2782,9 +2984,13 @@
       const n = body[k++], kind = body[k++];
       const poly = new Array(n);
       for (let j = 0; j < n; j++) poly[j] = [body[k++] * S, body[k++] * S];
+      const [acx, acz] = polyCentroid(poly);
+      // the stadium/arena builders own their interiors — OSM's pitch/park drapes
+      // in there just z-fight the bowls
+      if (kind === 0 && (Math.hypot(acx + 1869, acz - 4375) < 140 || Math.hypot(acx + 1920, acz - 4932) < 150 || Math.hypot(acx + 2327, acz - 4880) < 120)) continue;
       try {
         if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 1500 ? drapedPoly(poly, LAYER.park, 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.9 + hash01(i) * 0.2), style: 3 });
-        else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.06, true), color: new THREE.Color(COLORS.water), style: 3 });
+        else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
         else areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 });
       } catch (e) { /* degenerate polygon */ }
     }
@@ -2808,7 +3014,7 @@
             .replace('#include <common>', '#include <common>\nvarying vec3 vGWp; varying vec3 vGNm;')
             .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGNm = normalize(mat3(modelMatrix) * objectNormal);');
           sh.fragmentShader = sh.fragmentShader
-            .replace('#include <common>', '#include <common>\nvarying vec3 vGWp; varying vec3 vGNm;')
+            .replace('#include <common>', '#include <common>\nvarying vec3 vGWp; varying vec3 vGNm;\nfloat gWall = 0.0; float gLit = 0.0; float gSpand = 0.0;')
             .replace('#include <color_fragment>', '#include <color_fragment>\n{\n' +
               '  vec3 nn = normalize(vGNm);\n' +
               '  float wall = step(abs(nn.y), 0.35);\n' +
@@ -2821,7 +3027,15 @@
               '  float du = abs(fract(u / 1.5 + 0.5) - 0.5) * 1.5;\n' +
               '  float mull = 1.0 - smoothstep(0.05, 0.05 + aaU, du);\n' +
               '  diffuseColor.rgb *= 1.0 - det * (spand * 0.22 + mull * 0.16);\n' +
-              '}');
+              '  vec2 pid = vec2(floor(u / 1.5), floor(vGWp.y / 4.0));\n' +
+              '  float ph = fract(sin(dot(pid, vec2(127.1, 311.7))) * 43758.5453);\n' +
+              // ~28% of curtain-wall panels glow at night, varied; fades to a soft
+              // average with distance so far towers keep a believable shimmer
+              '  gWall = wall;\n' +
+              '  gSpand = spand;\n' +
+              '  gLit = mix(0.22, step(0.72, ph) * (0.4 + 0.6 * fract(ph * 7.3)), det);\n' +
+              '}')
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= gWall * gLit * (1.0 - gSpand * 0.85) * 3.2;');
         };
       }
       const m = new THREE.Mesh(g, outerGlassMat);
@@ -3053,6 +3267,235 @@
         labelsRoot.appendChild(el);
         labels.push({ el, pos: new V3(q.x, siteY(q.x, q.z, 'ground') + q.h + 10, q.z), visible: false, far: true });
       }
+    }
+  });
+
+  // ------------------------------------------------ the far ring: the rest of Philadelphia
+  step('Raising the rest of Philadelphia', async () => {
+    if (typeof CITY_B64 === 'undefined' || !CITY_B64 || isTouch) return;
+    const bin = Uint8Array.from(atob(CITY_B64), ch => ch.charCodeAt(0));
+    const hdr = new Int32Array(bin.buffer, 0, 4);
+    if (hdr[0] !== 0x53485459) return;
+    const body = new Int16Array(bin.buffer, 16);
+    let k = 0;
+    const S = 0.7, CH = 2400;
+    const W = { x0: -12000, x1: 16500, z0: -21700, z1: 9700 };
+    const WIDEB = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };
+    const chunks = new Map();
+    const getChunk = (x, z) => {
+      const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
+      let ch = chunks.get(key);
+      if (!ch) { ch = { pos: [], nor: [], col: [], sty: [], bas: [], idx: [], n: 0 }; chunks.set(key, ch); }
+      return ch;
+    };
+    const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
+    const palCom = [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c, 0x9aa0a4, 0xb3aca0];
+    const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
+    const c = new THREE.Color();
+    const v2 = [];
+    const yieldNow = () => new Promise(r => setTimeout(r, 0));
+    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base) => {
+      ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base);
+      return ch.n++;
+    };
+    const appendB = (ch, poly, y0, y1, color, st, base) => {
+      const n = poly.length, r = color.r, g = color.g, b = color.b;
+      const sign = signedArea(poly) > 0 ? 1 : -1;
+      for (let i = 0; i < n; i++) {
+        const a = poly[i], q = poly[(i + 1) % n];
+        const dx = q[0] - a[0], dz = q[1] - a[1];
+        const L = Math.hypot(dx, dz);
+        if (L < 0.05) continue;
+        const nx = (dz / L) * sign, nz = (-dx / L) * sign;
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base);
+        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base);
+        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base);
+        if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
+      }
+      v2.length = 0;
+      for (let i = 0; i < n; i++) v2.push(new THREE.Vector2(poly[i][0], -poly[i][1]));
+      let tris;
+      try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return; }
+      const capStart = ch.n;
+      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, r * 0.93, g * 0.93, b * 0.93, 3, base);
+      const capSign = THREE.ShapeUtils.area(v2) > 0 ? 1 : -1;
+      for (const t of tris) {
+        if (capSign > 0) ch.idx.push(capStart + t[0], capStart + t[2], capStart + t[1]);
+        else ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
+      }
+    };
+    // buildings (merged block strips + solo talls/churches)
+    const nb = hdr[1];
+    for (let i = 0; i < nb; i++) {
+      const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
+      const poly = new Array(n);
+      for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
+      const [cx, cz] = polyCentroid(poly);
+      const base = siteY(cx, cz, 'ground');
+      const hsh = hash01(i * 5.31 + 0.7);
+      const pool = (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
+      c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(0.9 + hash01(i * 13.7) * 0.2);
+      const style = h > 30 ? 2 : (t === 3 ? 5 : 0);
+      appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base);
+      if (t === 5 && Math.abs(signedArea(poly)) > 350 && h < 60) {
+        const chk = getChunk(cx, cz);
+        const tw = 5.5, towerTop = base + h + 9, apex = base + h + 24;
+        const sq = [[cx - tw / 2, cz - tw / 2], [cx + tw / 2, cz - tw / 2], [cx + tw / 2, cz + tw / 2], [cx - tw / 2, cz + tw / 2]];
+        appendB(chk, sq, base, towerTop, c, 3, base);
+        const i0 = chk.n;
+        for (const q of sq) pushV(chk, q[0], towerTop, q[1], 0, 0.7, 0, c.r * 0.9, c.g * 0.9, c.b * 0.9, 3, base);
+        pushV(chk, cx, apex, cz, 0, 1, 0, c.r * 0.9, c.g * 0.9, c.b * 0.9, 3, base);
+        chk.idx.push(i0, i0 + 1, i0 + 4, i0 + 1, i0 + 2, i0 + 4, i0 + 2, i0 + 3, i0 + 4, i0 + 3, i0, i0 + 4);
+      }
+      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia · ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
+    }
+    // far roads — same continuity treatment as the wide set: endpoint-snapped heights,
+    // bend fans, bridge decks over the river corridors
+    const rc = { pos: [], col: [], idx: [], n: 0 };
+    const roadCol = [0x3b3833, 0x3b3833, 0x3f3c37, 0x3f3c37, 0x43403b, 0x45423d, 0x7c584a];
+    const inWide = (p) => p[0] > WIDEB.x0 - 30 && p[0] < WIDEB.x1 + 30 && p[1] > WIDEB.z0 - 30 && p[1] < WIDEB.z1 + 30;
+    const yMapF = new Map();
+    const ySnapF = (x, z, y) => {
+      const key = Math.round(x * 2) + ':' + Math.round(z * 2);
+      const v = yMapF.get(key);
+      if (v !== undefined) return v;
+      yMapF.set(key, y);
+      return y;
+    };
+    const rcFanF = (x, y, z, hw, cr, cg, cb) => {
+      const c0 = rc.n;
+      rc.pos.push(x, y, z); rc.col.push(cr, cg, cb); rc.n++;
+      for (let s6 = 0; s6 < 7; s6++) {
+        const ang = s6 / 6 * Math.PI * 2;
+        rc.pos.push(x + Math.cos(ang) * hw, y, z + Math.sin(ang) * hw);
+        rc.col.push(cr, cg, cb); rc.n++;
+      }
+      for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
+    };
+    for (let i = 0; i < hdr[2]; i++) {
+      const n = body[k++], w = body[k++] / 10, t = body[k++];
+      let pts = new Array(n);
+      for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
+      pts = densify(pts, 30);
+      c.set(roadCol[t] || 0x3b3833);
+      const hw = w / 2;
+      const thr = TERRAIN.water + 0.6;
+      for (let j = 0; j < pts.length - 1; j++) {
+        const a = pts[j], q = pts[j + 1];
+        let dx = q[0] - a[0], dz = q[1] - a[1];
+        const L = Math.hypot(dx, dz); if (L < 0.01) continue;
+        dx /= L; dz /= L;
+        const mx = (a[0] + q[0]) / 2, mz = (a[1] + q[1]) / 2;
+        const aLow = demY(a[0], a[1]) < thr, qLow = demY(q[0], q[1]) < thr;
+        let deck = 0;
+        if ((aLow || qLow) && riverCorridor(mx, mz)) {
+          if (t > 2) { if (aLow && qLow) continue; }
+          else deck = t === 0 ? 20 : 13;
+        }
+        if (inWide(a) && inWide(q)) continue;          // the wide set paves there
+        const px = -dz * hw, pz = dx * hw;
+        const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 2.9 + 0.4) * 0.1;
+        let ya0 = siteY(a[0], a[1], 'road'), yb0 = siteY(q[0], q[1], 'road');
+        if (deck) {
+          ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
+          yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
+        }
+        const ya = ySnapF(a[0], a[1], ya0 + jr), yb = ySnapF(q[0], q[1], yb0 + jr);
+        const b0 = rc.n;
+        rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
+        for (let m = 0; m < 4; m++) rc.col.push(c.r * 255, c.g * 255, c.b * 255);
+        rc.n += 4;
+        rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+        if (j > 0) {
+          const p0 = pts[j - 1];
+          let ux0 = a[0] - p0[0], uz0 = a[1] - p0[1];
+          const L0 = Math.hypot(ux0, uz0) || 1;
+          ux0 /= L0; uz0 /= L0;
+          if (ux0 * dx + uz0 * dz < 0.99) rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255);
+        }
+      }
+      if ((i & 2047) === 2047) await yieldNow();
+    }
+    // far areas
+    const areaParts = [];
+    for (let i = 0; i < hdr[3]; i++) {
+      const n = body[k++], kind = body[k++];
+      const poly = new Array(n);
+      for (let j = 0; j < n; j++) poly[j] = [body[k++] * S, body[k++] * S];
+      try {
+        if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 40000 ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.88 + hash01(i) * 0.24), style: 3 });
+        else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
+        else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
+      } catch (e) { /* degenerate */ }
+    }
+    // far ground: 100 m strips around the wide box, down to the riverbed over water
+    const farGroundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0 });
+    for (const [x0, x1, z0, z1] of [
+      [W.x0, W.x1, W.z0, WIDEB.z0], [W.x0, W.x1, WIDEB.z1, W.z1],
+      [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
+    ]) {
+      const cell = 100, nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
+      const pos = [];
+      for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+        const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
+        const y = demY(x, z);
+        pos.push(x, (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07, z);
+      }
+      const idx = [];
+      for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+        const a = j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1;
+        idx.push(a, d, b, b, d, e);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+      g.setIndex(idx);
+      g.computeVertexNormals();
+      const m = new THREE.Mesh(g, farGroundMat);
+      m.matrixAutoUpdate = false;
+      groupCity.add(m);
+    }
+    loadmsg.textContent = 'Raising the rest of Philadelphia · uploading';
+    await yieldNow();
+    for (const ch of chunks.values()) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ch.pos), 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(ch.nor), 3, true));
+      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(ch.col), 3, true));
+      g.setAttribute('aStyle', new THREE.BufferAttribute(new Int8Array(ch.sty), 1));
+      g.setAttribute('aBase', new THREE.BufferAttribute(new Float32Array(ch.bas), 1));
+      g.setIndex(ch.idx);
+      g.computeBoundingSphere();
+      const m = new THREE.Mesh(g, cityMat);
+      m.matrixAutoUpdate = false;
+      groupCity.add(m);
+      outerMeshes.push(m);
+    }
+    if (rc.n) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
+      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
+      g.setIndex(rc.idx);
+      g.computeVertexNormals();
+      groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+    }
+    if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
+    // the world is now the whole city
+    bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
+    scene.fog.near = 2400; scene.fog.far = 13000;
+    for (const [nm, lx, lz, lh] of [
+      ['Philadelphia International Airport', -8334, 7857, 40],
+      ['University City', -4300, -600, 90],
+      ['Manayunk', -6803, -8950, 60],
+      ['Germantown', -4900, -8500, 60],
+      ['Frankford', 5561, -7845, 60],
+      ['Northeast Philadelphia', 11499, -15760, 60],
+    ]) {
+      const el = document.createElement('div');
+      el.className = 'lbl';
+      el.textContent = nm;
+      labelsRoot.appendChild(el);
+      labels.push({ el, pos: new V3(lx, siteY(lx, lz, 'ground') + lh, lz), visible: false, far: true });
     }
   });
 
@@ -3844,7 +4287,7 @@
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.9;
     if (rylandGlassMat) rylandGlassMat.emissiveIntensity = night * 0.22;
-    if (outerGlassMat) outerGlassMat.emissiveIntensity = night * 0.3;
+    if (outerGlassMat) outerGlassMat.emissiveIntensity = night * 0.55;
     return el;
   }
   // --- time panel

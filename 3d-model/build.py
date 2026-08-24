@@ -43,6 +43,15 @@ data_js += ("const DEM_SOUTH = " + json.dumps(dems, separators=(",", ":")) + ";\
             + "const WWB_PTS = " + (wwb_path.read_text(encoding="utf-8").strip() if wwb_path.exists() else "null") + ";\n")
 names_path = ROOT / "wide_names.json"
 data_js += "const WIDE_NAMES = " + (names_path.read_text(encoding="utf-8") if names_path.exists() else "null") + ";\n"
+# far ring: the rest of Philadelphia (city.b64 at 0.7 m units + 150 m DEM)
+demc_path = ROOT / "dem_city.json"
+demc = json.loads(demc_path.read_text(encoding="utf-8")) if demc_path.exists() else None
+if demc:
+    demc["rows"] = [[None if v is None else round(v, 1) for v in row] for row in demc["rows"]]
+city_path = ROOT / "city.b64"
+city_b64 = city_path.read_text(encoding="utf-8").strip() if city_path.exists() else ""
+data_js += ("const DEM_CITY = " + json.dumps(demc, separators=(",", ":")) + ";\n"
+            + "const CITY_B64 = \"" + city_b64 + "\";\n")
 
 # </script> inside embedded JS strings would terminate the tag early
 for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):

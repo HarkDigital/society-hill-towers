@@ -257,6 +257,41 @@ grazing-angle shutter/door hash terms re-gated with `detU`; heightfield river ma
 cap-deck trunks lifted clear of the I-95 tunnel. NOTE: `WX` must stay declared before the
 sky material — `refreshEnv` reads it during init (TDZ crash otherwise).
 
+Round 3 (Aug 24, evening — night lighting, City Hall, stadiums, whole-city groundwork):
+- **Night windows fixed:** `shtLit` used `step(0.42, lit)` but `lit` is always ≥ 0.45 by
+  construction, so EVERY window glowed. Now ~1/3 of windows light at varied warmth
+  (`step(0.82, lit)`), and as the pattern fades with distance facades keep a soft
+  aggregate glow (`mix(0.115, …, det)`) instead of dying to gray. The outer glass towers
+  get per-panel lit windows via the curtain-wall shader (`gLit`/`gWall`/`gSpand` globals
+  feeding `totalEmissiveRadiance`), night intensity 0.55.
+- **City Hall completed:** the main Second Empire block was entirely missing (outline
+  dropped at pack for containing part centroids; wings never mapped as parts) — now
+  custom-built: hollow square with courtyard (appendBuilding + holes, style 1 arched
+  windows), mansard wing prisms, corner + center pavilions with slate caps, staged
+  tower, white clock stage with corner turrets, amber clocks on dark surrounds, ogee
+  dome (stacked 4-side frustums), lantern, dark-bronze Penn. Skip radius 24 at
+  (−1603,−802).
+- **Stadiums reworked from photos:** CBP = brick drum + upper horseshoe OPEN beyond the
+  outfield (`arcOf` ring-arc helper), pale-green canopy band, dark-red light standards,
+  infield dirt diamond; the Linc = dark lower bowl, silver sideline stands, steel wing
+  canopies with white fascia, 4 corner masts; Xfinity Arena = dark walls, pale roof
+  slab, glass rotunda, purple screens. Stadium fields are fan-triangulated (earcut
+  threw on the OSM rings — the fields never rendered before) and OSM pitch/park drapes
+  inside the venues are skipped (they z-fought the bowls).
+- **Low-terrain flooding fixed:** NED reads made-land near/below 0 ASL at the sports
+  complex etc.; outside the core, low terrain now clamps just above the water plane
+  UNLESS east of the `DEL_BANK` Delaware west-bank polyline (there it still dives to the
+  bed = river). Wide/far OSM water polygons draw at water+0.55 (above the clamp).
+- **Whole-city pipeline (in progress):** `fetch_city.py` (resumable, per-tile
+  checkpoints in `city_tiles/`) fetches University City/West/SW+airport, North Philly,
+  the Northeast, and Roxborough/Germantown + a 150 m `dem_city.json`;
+  `pack_city.py` (needs shapely: scratchpad venv) MERGES rowhouse rows into block strips
+  (union of ≤12 m buildings per 250 m cell, height-bucketed) and packs at 0.7 m into
+  `city.b64` (magic 0x53485459); app step 'Raising the rest of Philadelphia' decodes it
+  (2400 m chunks, far ground strips at 100 m, far roads with class lifts, far labels),
+  `DEM_CITY` slots into demAbs, bounds/fog widen to the whole city. Artifact page must
+  stay ≤ 16 MB.
+
 South extension (Aug 23): Lincoln Financial Field and Citizens Bank Park are `stadium` relations →
 rendered as seating bowls (type 8) around sunken fields, with the Linc's sideline canopies and
 CBP's light towers; Xfinity Mobile Arena (ex-Wells Fargo Center, type 9) as a flat-topped oval;
