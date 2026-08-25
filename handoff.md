@@ -464,4 +464,32 @@ Round 8 (Aug 25):
   panel + border. (The seg buttons stay transparent — their wrapper carries the
   panel.)
 
+Round 9 (Aug 25 — four landmark rebuilds from Mike's reference photos):
+- **Battleship New Jersey (BB-62)**: the wide set's `USS New Jersey` t='ship' footprint
+  (996, 663, Camden shore) used to render as a 13 m hull-shaped box. The wide loop now
+  intercepts it (`njPoly`) and a custom builder extrudes the real OSM hull outline
+  (water−1.5 → +8.7), detects the bow as the pointier OBB end (it points north, toward
+  the BFB), and adds superstructure decks, the forward tower, two funnels with black
+  caps, masts, and three triple 16-inch turrets (turret 2 superfiring on a barbette,
+  turret 3 trained aft) — all in the hull's frame via `at2`/`shipBox`/`shipCyl`.
+- **US Custom House** rebuilt: limestone base, deep-brick shaft to 40 m (style-2 grid),
+  square stone stage, two flat-faceted octagonal drums (`toNonIndexed` +
+  `computeVertexNormals` — indexed cylinders shade like smooth cones), colonnade
+  lantern, dome, finial to ~90 m. Matches the brick-below/white-crown photo.
+- **Man Full of Trouble Tavern** (OSM name 'Man Full of Troubles Tavern', by the pool):
+  custom gambrel roof (two slopes a side + pentagon gable ends, built in the OBB frame;
+  `detail` material is DoubleSide so winding is safe), cream pent between floors +
+  cornice, two dormers with pyramid caps, end chimney.
+- **Glory Beer Bar & Kitchen, 126 Chestnut**: OSM maps the lot as THREE unnamed boxes
+  front-to-back; matched via REALISM_NEAR **area-weighted** centroids (the app's
+  polyCentroid, not a vertex mean) — front (64.6,−309) = dark cast-iron section with
+  5 granite piers + transom + cornice on the STREET face (chosen as whichever OBB face
+  points north — this parcel's LONG axis runs to the street, don't assume the
+  perpendicular), mid connector, rear 5-story brick in style 5 (storefront style =
+  same sash windows as style 0 but NO shutters; the photo has none).
+- **Gable spike guard**: the generic rowhouse gable pass now requires the simplified
+  quad to be CONVEX before pitching (crossed/concave quads produced roof spikes).
+  NOTE: one leaning ridge sliver remains visible from Chestnut St street level near
+  Glory (a legally-convex but heavily skewed neighbor quad) — cosmetic, backlog.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

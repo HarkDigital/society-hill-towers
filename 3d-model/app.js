@@ -1444,6 +1444,7 @@
     'One Independence Place': { mode: 'recolor', color: 0x5d4536 },
     '2 Independence Place': { mode: 'recolor', color: 0x5d4536 },
     'United States Custom House': { mode: 'custom' },
+    'Man Full of Troubles Tavern': { mode: 'custom' },
     "Hilton Philadelphia at Penn's Landing": { mode: 'custom' },
     'Independence Hall': { mode: 'custom' },
     'Congress Hall': { mode: 'custom' },
@@ -1467,6 +1468,12 @@
       { x: -140, z: 433, r: 60, minArea: 3000, spec: { mode: 'custom', key: 'abbotts' } },   // Abbotts Square
       { x: 44, z: 334, r: 30, minArea: 1500, spec: { mode: 'custom', key: 'ten410' } },      // 410 at Society Hill
       { x: -18, z: 345, r: 25, minArea: 900, spec: { mode: 'custom', key: 'newmarket' } },   // New Market Complex
+      // Glory Beer Bar & Kitchen, 126 Chestnut: OSM maps the lot as three boxes
+      // front-to-back — the 2-story cast-iron street front, a low connector, and
+      // the 5-story brick mass at the rear (area-weighted centroids)
+      { x: 64.6, z: -309.0, r: 4, minArea: 30, spec: { mode: 'custom', key: 'gloryFront' } },
+      { x: 63.2, z: -302.4, r: 4, minArea: 15, spec: { mode: 'custom', key: 'gloryMid' } },
+      { x: 64.1, z: -297.0, r: 4, minArea: 30, spec: { mode: 'custom', key: 'glory' } },
     ];
     for (const b of D.buildings) {
       if (b.name && REALISM[b.name]) { upgraded.set(b, REALISM[b.name]); continue; }
@@ -1513,10 +1520,20 @@
       if (resType && !b.minH && (!b.holes || !b.holes.length) && area < 280 && b.h < 17 && b.poly.length <= 8 && hash01(i * 13.7) < 0.8) {
         const sp = simplifyRing(b.poly, 0.45);
         if (sp.length === 4) {
+          // a concave or crossed simplified quad gables into a spike sliver —
+          // require convexity (all cross products one sign) before pitching
+          let convex = true, sgn = 0;
+          for (let k2 = 0; k2 < 4; k2++) {
+            const A2 = sp[k2], B2 = sp[(k2 + 1) % 4], C2 = sp[(k2 + 2) % 4];
+            const cr = (B2[0] - A2[0]) * (C2[1] - B2[1]) - (B2[1] - A2[1]) * (C2[0] - B2[0]);
+            if (Math.abs(cr) < 1e-6) continue;
+            if (sgn === 0) sgn = Math.sign(cr);
+            else if (Math.sign(cr) !== sgn) { convex = false; break; }
+          }
           const e = [0, 1, 2, 3].map(k => Math.hypot(sp[(k + 1) % 4][0] - sp[k][0], sp[(k + 1) % 4][1] - sp[k][1]));
           const span = Math.min((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
           const long = Math.max((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
-          if (span > 3.4 && span < 13 && long / span < 5) quad = sp;
+          if (convex && span > 3.4 && span < 13 && long / span < 5) quad = sp;
         }
       }
       try {
@@ -2116,20 +2133,116 @@
 
     // --- skyline corrections: buildings OSM tags at the 13 m default
     {
+      // US Custom House (1934): limestone base, red-brick shaft, then the white
+      // stepped crown — square stage, two octagonal drums, colonnaded lantern, dome
       const b = get('United States Custom House');
       if (b) {
         const m0 = mark();
         const ob = orientedBox(b.poly);
         const ry = ryAlign(obbAxis(ob).ax, obbAxis(ob).az);
-        aw(buildingGeom(b.poly, b.holes, 18, -1.5), '#cfc6b0', 2);
-        aw(box(30, 52, 30, ob.cx, 18 + 26, ob.cz, ry), '#d2c9b3', 2);
-        const lan = new THREE.CylinderGeometry(5.5, 6.2, 14, 8);
-        lan.translate(ob.cx, 70 + 7, ob.cz);
-        ad(lan, '#d8d0bb');
-        const cap = new THREE.ConeGeometry(6.2, 3.5, 8);
-        cap.translate(ob.cx, 84 + 1.75, ob.cz);
-        ad(cap, '#6b6a66');
+        aw(buildingGeom(b.poly, b.holes, 9, -1.5), '#b8ae97', 2);
+        aw(buildingGeom(b.poly, b.holes, 40, 9), '#54302a', 2);
+        aw(box(33, 9, 33, ob.cx, 40 + 4.5, ob.cz, ry), '#b5ac96', 2);
+        const facet = (g) => { const f = g.toNonIndexed(); f.computeVertexNormals(); return f; };
+        const oct1 = new THREE.CylinderGeometry(13.2, 14.4, 13, 8);
+        oct1.rotateY(ry + Math.PI / 8); oct1.translate(ob.cx, 49 + 6.5, ob.cz);
+        ad(facet(oct1), '#b2a993');
+        const oct2 = new THREE.CylinderGeometry(9.2, 10.0, 11, 8);
+        oct2.rotateY(ry + Math.PI / 8); oct2.translate(ob.cx, 62 + 5.5, ob.cz);
+        ad(facet(oct2), '#bab19b');
+        const lan = new THREE.CylinderGeometry(5.6, 6.4, 8.5, 8);
+        lan.translate(ob.cx, 73 + 4.25, ob.cz);
+        ad(facet(lan), '#c0b7a1');
+        const dome = new THREE.CylinderGeometry(1.6, 5.8, 5.5, 8);
+        dome.translate(ob.cx, 81.5 + 2.75, ob.cz);
+        ad(facet(dome), '#a89f8a');
+        const fin = new THREE.CylinderGeometry(0.3, 1.4, 2.8, 6);
+        fin.translate(ob.cx, 87 + 1.4, ob.cz);
+        ad(facet(fin), '#b2a993');
         liftB(m0, b);
+      }
+    }
+    // Man Full of Trouble Tavern (1759): two brick floors under a gambrel roof
+    // with dormers, cream pent + cornice, big end chimney — a block from the pool
+    {
+      const b = get('Man Full of Troubles Tavern');
+      if (b) {
+        const m0 = mark();
+        const ob = orientedBox(b.poly);
+        const a = obbAxis(ob);
+        const ry = ryAlign(a.ax, a.az);
+        const EAVE = 6.6, BRK = 8.8, RIDGE = 9.8, INSET = 1.9;
+        aw(buildingGeom(b.poly, null, EAVE, -1.5), '#77402f', 0);
+        { // gambrel: two slopes a side + pentagon gable ends (detail mat is DoubleSide)
+          const hl = a.hl + 0.35, hs = a.hs + 0.3;
+          const P = (u, v, y) => [ob.cx + a.ax * u + a.px * v, y, ob.cz + a.az * u + a.pz * v];
+          const pos = [];
+          const tri = (A, B, C) => pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+          for (const s of [-1, 1]) {
+            const v0 = s * hs, v1 = s * (hs - INSET);
+            tri(P(-hl, v0, EAVE), P(hl, v0, EAVE), P(hl, v1, BRK)); tri(P(-hl, v0, EAVE), P(hl, v1, BRK), P(-hl, v1, BRK));
+            tri(P(-hl, v1, BRK), P(hl, v1, BRK), P(hl, 0, RIDGE)); tri(P(-hl, v1, BRK), P(hl, 0, RIDGE), P(-hl, 0, RIDGE));
+          }
+          for (const e of [-1, 1]) {
+            const u = e * hl;
+            const ring = [P(u, -hs, EAVE), P(u, -(hs - INSET), BRK), P(u, 0, RIDGE), P(u, hs - INSET, BRK), P(u, hs, EAVE)];
+            for (let i2 = 1; i2 < ring.length - 1; i2++) tri(ring[0], ring[i2], ring[i2 + 1]);
+          }
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+          g.computeVertexNormals();
+          ad(g, '#4a3627');
+        }
+        const northV = (a.pz < 0) ? 1 : -1;                // v-sign toward Spruce Street
+        const fx2 = a.px * northV, fz2 = a.pz * northV;
+        // cream pent between the floors and cornice at the eave, street face
+        ad(box(a.hl * 2 + 0.5, 0.2, 0.8, ob.cx + fx2 * (a.hs + 0.3), 3.7, ob.cz + fz2 * (a.hs + 0.3), ry), '#e9e3d0');
+        ad(box(a.hl * 2 + 0.5, 0.28, 0.55, ob.cx + fx2 * (a.hs + 0.2), EAVE - 0.1, ob.cz + fz2 * (a.hs + 0.2), ry), '#e9e3d0');
+        for (const du of [-0.42, 0.42]) {                  // dormers on the street slope
+          const dx2 = ob.cx + a.ax * du * a.hl + fx2 * (a.hs - 1.0), dz2 = ob.cz + a.az * du * a.hl + fz2 * (a.hs - 1.0);
+          ad(box(1.35, 1.6, 1.5, dx2, BRK - 0.75, dz2, ry), '#efe9dc');
+          const dr = new THREE.CylinderGeometry(0.02, 1.05, 1.0, 4);
+          dr.rotateY(ry + Math.PI / 4); dr.translate(dx2, BRK + 0.55, dz2);
+          ad(dr, '#5b4433');
+        }
+        ad(box(1.5, 2.6, 1.1, ob.cx - a.ax * (a.hl * 0.42), RIDGE + 0.6, ob.cz - a.az * (a.hl * 0.42), ry), '#67382b');
+        liftB(m0, b);
+      }
+    }
+    // Glory Beer Bar & Kitchen, 126 Chestnut: 2-story cast-iron storefront with
+    // granite piers out front, 5-story brick loft behind
+    {
+      const bF = getKey('gloryFront'), bM = getKey('glory'), bC = getKey('gloryMid');
+      if (bF && bM) {
+        const m0 = mark();
+        aw(buildingGeom(bM.poly, null, 17.8, -1.5), '#74453a', 5);
+        if (bC) aw(buildingGeom(bC.poly, null, 8.3, -1.5), '#2b2e33', 3);
+        aw(buildingGeom(bF.poly, null, 8.3, -1.5), '#23262b', 3);
+        const ob = orientedBox(bF.poly);
+        const a = obbAxis(ob);
+        // the street face is whichever OBB face points at Chestnut (north, -z) —
+        // this parcel's LONG axis runs toward the street, so pick by z-component
+        let fdx, fdz, fext, sdx, sdz, sext;
+        if (Math.abs(a.az) > Math.abs(a.pz)) {
+          const s2 = a.az < 0 ? 1 : -1;
+          fdx = a.ax * s2; fdz = a.az * s2; fext = a.hl;
+          sdx = a.px; sdz = a.pz; sext = a.hs;
+        } else {
+          const s2 = a.pz < 0 ? 1 : -1;
+          fdx = a.px * s2; fdz = a.pz * s2; fext = a.hs;
+          sdx = a.ax; sdz = a.az; sext = a.hl;
+        }
+        const ryF = Math.atan2(-sdz, sdx);
+        const wx = ob.cx + fdx * (fext + 0.12), wz = ob.cz + fdz * (fext + 0.12);
+        const across = (u) => [wx + sdx * u, wz + sdz * u];
+        const nPost = 5, half = sext - 0.25;
+        for (let i2 = 0; i2 < nPost; i2++) {               // giant order across both floors
+          const [px2, pz2] = across(-half + (i2 / (nPost - 1)) * half * 2);
+          ad(box(0.5, 8.3, 0.55, px2, 4.15, pz2, ryF), '#c9c2b2');
+        }
+        ad(box(sext * 2 + 0.3, 0.5, 0.7, wx, 4.35, wz, ryF), '#c9c2b2');   // transom band
+        ad(box(sext * 2 + 0.45, 0.6, 0.8, wx, 8.15, wz, ryF), '#c4bdae'); // iron cornice
+        liftB(m0, bM);
       }
     }
     {
@@ -2692,12 +2805,14 @@
       for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
     };
     const nb = hdr[1];
+    let njPoly = null;   // USS New Jersey hull outline — custom battleship below
     for (let i = 0; i < nb; i++) {
       const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
       if (BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) continue;
+      if (t === 7 && Math.hypot(cx - 996, cz - 663) < 80) { njPoly = poly; continue; }
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
       const pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
@@ -3173,6 +3288,69 @@
             appendBuilding(chk, quad(55 + 6.3 * i2, 55 + 6.3 * (i2 + 1) + 0.4, -34, 34), yT - 6, yT, c, 3, yT - 6);
           }
         }
+      }
+      // --- Battleship New Jersey (BB-62), moored on the Camden shore: the OSM
+      // hull outline is extruded as the real haze-gray hull, then superstructure,
+      // three triple 16-inch turrets, funnels, and masts go on in the hull frame
+      if (njPoly) {
+        const ob = orientedBox(njPoly);
+        const a = obbAxis(ob);
+        const W0 = TERRAIN.water;
+        let wP = 0, nP = 0, wM = 0, nM = 0;
+        for (const q of njPoly) {
+          const du = (q[0] - ob.cx) * a.ax + (q[1] - ob.cz) * a.az;
+          const dv = (q[0] - ob.cx) * a.px + (q[1] - ob.cz) * a.pz;
+          if (du > a.hl * 0.7) { wP += Math.abs(dv); nP++; }
+          if (du < -a.hl * 0.7) { wM += Math.abs(dv); nM++; }
+        }
+        const bow = (wP / Math.max(1, nP)) < (wM / Math.max(1, nM)) ? 1 : -1; // pointier end
+        const hx = a.ax * bow, hz = a.az * bow;            // unit vector toward the bow
+        const ryS = Math.atan2(-hz, hx);
+        const SC = a.hl / 135;                             // hull frame vs the real 270 m
+        const at2 = (u, v) => [ob.cx + hx * u * SC + a.px * v, ob.cz + hz * u * SC + a.pz * v];
+        const chkN = getChunk(ob.cx, ob.cz);
+        const cHull = new THREE.Color(0x383d42);
+        c.copy(cHull);
+        appendBuilding(chkN, njPoly, W0 - 1.5, W0 + 8.7, c, 3, W0);
+        const gray = new THREE.Color(0x484d53), turret = new THREE.Color(0x43474c), barrelC = new THREE.Color(0x393d42);
+        const shipBox = (u, v, y, len, h2, wid, col) => {
+          const [x2, z2] = at2(u, v);
+          lmTrim.push({ geom: box(len, h2, wid, x2, y, z2, ryS), color: col, style: 3 });
+        };
+        const shipCyl = (u, v, y0c, y1c, r0, r1, col, seg) => {
+          const [x2, z2] = at2(u, v);
+          const g = new THREE.CylinderGeometry(r0, r1, y1c - y0c, seg || 8);
+          g.translate(x2, (y0c + y1c) / 2, z2);
+          lmTrim.push({ geom: g, color: col, style: 3 });
+        };
+        const D0 = W0 + 8.7;                               // main deck
+        shipBox(-4, 0, D0 + 2.2, 84, 4.4, 17, gray);       // 01 level
+        shipBox(-3, 0, D0 + 6.0, 56, 3.4, 13.5, gray);     // 02 level
+        shipBox(22, 0, D0 + 10.5, 10, 5.6, 9, gray);       // forward tower
+        shipBox(22, 0, D0 + 15.0, 6, 3.4, 6, gray);        // fire control
+        shipCyl(22, 0, D0 + 16.7, D0 + 22.5, 1.5, 1.8, gray);
+        shipCyl(16, 0, D0 + 18, D0 + 34, 0.55, 0.8, new THREE.Color(0x33373c), 6);  // main mast
+        for (const [fu] of [[2], [-16]]) {                 // funnels with black caps
+          shipCyl(fu, 0, D0 + 7.5, D0 + 14.5, 2.5, 3.2, gray);
+          shipCyl(fu, 0, D0 + 14.5, D0 + 16.0, 2.6, 2.6, new THREE.Color(0x16181a));
+        }
+        shipBox(-30, 0, D0 + 8.6, 8, 5.2, 7.5, gray);      // aft tower
+        shipCyl(-30, 0, D0 + 11.2, D0 + 24, 0.5, 0.7, new THREE.Color(0x33373c), 6); // aft mast
+        const turretAt = (u, y, dir) => {
+          shipBox(u, 0, y + 1.7, 14, 3.4, 11, turret);
+          for (const v of [-2.7, 0, 2.7]) {
+            const g = new THREE.CylinderGeometry(0.42, 0.6, 16.5, 6);
+            g.rotateZ(Math.PI / 2 - 0.09);                 // horizontal, tipped up slightly
+            g.rotateY(ryS + (dir < 0 ? Math.PI : 0));
+            const [x2, z2] = at2(u + dir * 14, v);
+            g.translate(x2, y + 2.6, z2);
+            lmTrim.push({ geom: g, color: barrelC, style: 3 });
+          }
+        };
+        turretAt(62, D0, 1);                                // turret 1, main deck
+        shipBox(43, 0, D0 + 1.6, 13, 3.2, 11.5, gray);      // turret 2 barbette
+        turretAt(43, D0 + 3.2, 1);                          // turret 2, superfiring
+        turretAt(-58, D0, -1);                              // turret 3, facing aft
       }
     }
     // parks, water, piers
