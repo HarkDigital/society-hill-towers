@@ -768,6 +768,52 @@ Round 16 (Aug 25 — live SEPTA transit + the Frankford El):
   pointerIds make the orbit handler's setPointerCapture throw — use real pointers
   or ignore that error.
 
+Round 17 (Aug 25 — rebrand to Philadelphia, transit pins, museum grounds, WWB):
+- **Rebrand:** the fixed "Society Hill Towers" title block is REMOVED (template +
+  CSS); the intro veil is now city-general ("A living model of / PHILADELPHIA",
+  Enter the city); page <title> = "Philadelphia". The About panel keeps the tower
+  history. File name stays society-hill-towers.html (URL stability).
+- **Transit pins + findability:** every live vehicle flies a bobbing map pin
+  (cone+ball InstancedMesh, cap 1024, MeshBasic vertex colors ×2, one per vehicle
+  over the lead car; underground ghosts pin at street level). Pins scale with
+  camera distance (clamp(dist/240, 1..8)) so they stay findable citywide. Picking:
+  pins are raycast targets too, and a screen-space fallback picks the nearest
+  vehicle within 30 px of a tap — plus the solid vehicle geometry gained skirt,
+  windshield, roof HVAC and wheel blocks (all in the one instanced geometry).
+  NOTE: the Sketchfab "SEPTA bus model" Mike linked is isDownloadable:false with
+  no license — cannot be used; the procedural body got upgraded instead.
+- **Art Museum grounds (Mike's screenshot):** three separate defects fixed —
+  (1) OSM paved/park drapes near the hilltop rendered as sheared slabs (flatPoly
+  per-vertex on the steep hill): all non-water areas within r190 of (−3080,−2210)
+  are skipped, plus any paved-kind poly with a vertex in the museum zone;
+  (2) the Rocky steps let the DEM bulge poke white stripes between flights: each
+  flight now tops out just above the terrain under it (5-point sample) with a
+  bottom-up monotonic sweep (never rises downhill), boxes deepened to −7;
+  (3) "fill the white with green": the WIDE 25 m ground heightfield now carries
+  vertex colors (groundMat clone + vertexColors, pushed into groundMats so the
+  day/night retint still works) and cells inside the Fairmount zone
+  (x −3690..−2480, z −2950..−1720) are tinted by the park/ground channel RATIO,
+  feathered 80 m. A draped lawn was tried first and REJECTED: on the bumpy hill
+  it rode above the road ribbons (the ground mesh interpolates coarser than
+  siteY — never drape a big lawn over roads; recolor the ground instead).
+- **Walt Whitman un-disjointed** (Mike's screenshot) — three defects:
+  (1) OSM's motorway line hops carriageways mid-river (15 m right-angle jog at
+  mid-span, wiggle at the NJ anchorage) — the span ±660 m around mid is now
+  projected onto its straight chord before building (real bridge is dead
+  straight), cum re-measured; (2) packed motorway river-deck segments under the
+  custom deck: skipped via wwbNear(x, z[, r]) (distance to the raw WWB_PTS
+  polyline, default r 85) in BOTH the wide and far road builders (deck-lifted
+  segments only, so land approaches keep their ramps); (3) the flat gray band
+  "second bridge" on the water was the wide ground heightfield: NED reads a
+  made-land shelf ~3 m above water across the crossing — cells x 880..1950
+  with demY in [water+0.6, water+4.5) within 260 m of the alignment now drop to
+  the bed. Also: bridge-outline paved areas near the alignment are skipped in
+  both area loops. Residual NED shelf patches remain in the south Delaware AWAY
+  from the bridge (no NJ bank polyline yet — future fix would trace one).
+- Verified: museum green + straight steps, WWB continuous with water under the
+  deck, pins render/pick (Route 9 card via pin click), toggle, 692 tracked live,
+  zero new console errors. Page 15.90 MB.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

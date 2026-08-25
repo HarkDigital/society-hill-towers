@@ -864,6 +864,24 @@
     return false;
   }
   function riverCorridor(x, z) { return eastOfDelaware(x, z) || nearSchuylkill(x, z); }
+  // Walt Whitman crossing corridor: the custom suspension deck owns this stretch of
+  // water — packed motorway segments here rendered as a second, disjointed bridge.
+  // Distance to the raw OSM alignment (only ever consulted for deck-lifted river
+  // segments, so the on-land approaches keep their real ramps).
+  function wwbNear(x, z, r) {
+    if (typeof WWB_PTS === 'undefined' || !WWB_PTS || WWB_PTS.length < 4) return false;
+    r = r || 85;
+    let best = Infinity;
+    for (let i = 1; i < WWB_PTS.length; i++) {
+      const A = WWB_PTS[i - 1], B = WWB_PTS[i];
+      const dx = B[0] - A[0], dz = B[1] - A[1], L2 = dx * dx + dz * dz || 1e-9;
+      const tt = clamp(((x - A[0]) * dx + (z - A[1]) * dz) / L2, 0, 1);
+      const ex = A[0] + dx * tt - x, ez = A[1] + dz * tt - z;
+      const d2 = ex * ex + ez * ez;
+      if (d2 < best) best = d2;
+    }
+    return best < r * r;
+  }
   function waterPoint(along, out) {
     // along: meters along the shoreline from the towers' projection; out: meters east of the bulkhead
     const t = (towersCenter.x - wl.px) * wl.dx + (towersCenter.z - wl.pz) * wl.dz;
@@ -1191,13 +1209,31 @@
         [W.x0, W.x1, W.z0, CORE_EXT.z0], [W.x0, W.x1, CORE_EXT.z1, W.z1],
         [W.x0, CORE_EXT.x0, CORE_EXT.z0, CORE_EXT.z1], [CORE_EXT.x1, W.x1, CORE_EXT.z0, CORE_EXT.z1],
       ];
+      // Fairmount greening: around the Art Museum the bare heightfield is parkland,
+      // not pavement — vertex-tint those cells toward park green (ratio of park to
+      // ground, so the day/night ground retint still applies), feathered 80 m
+      const wideGroundMat = groundMat.clone();
+      wideGroundMat.vertexColors = true;
+      groundMats.push(wideGroundMat);
+      const FMZ = { x0: -3690, x1: -2480, z0: -2950, z1: -1720 };
+      const pkC = new THREE.Color(COLORS.park), gdC = new THREE.Color(COLORS.ground);
+      const fmR = [pkC.r / gdC.r, pkC.g / gdC.g, pkC.b / gdC.b];
       for (const [x0, x1, z0, z1] of strips) {
         const cell = 25, nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
         const pos = [];
+        const col = [];
         for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
           const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
           const y = demY(x, z);
-          pos.push(x, (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.05, z);
+          let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.05;
+          // NED reads a made-land shelf across the Delaware at the Walt Whitman
+          // crossing (~3 m above water mid-river) — those cells rendered as a flat
+          // gray band under the deck; between the banks, send them to the bed
+          if (x > 880 && x < 1950 && y >= TERRAIN.water + 0.6 && y < TERRAIN.water + 4.5 && wwbNear(x, z, 260)) yy = TERRAIN.bed - 0.05;
+          pos.push(x, yy, z);
+          const inD = Math.min(x - FMZ.x0, FMZ.x1 - x, z - FMZ.z0, FMZ.z1 - z);
+          const t = clamp(inD / 80, 0, 1);
+          col.push(1 + (fmR[0] - 1) * t, 1 + (fmR[1] - 1) * t, 1 + (fmR[2] - 1) * t);
         }
         const idx = [];
         for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
@@ -1206,9 +1242,10 @@
         }
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+        g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
         g.setIndex(idx);
         g.computeVertexNormals();
-        const m = new THREE.Mesh(g, groundMat);
+        const m = new THREE.Mesh(g, wideGroundMat);
         groupCity.add(m); rayTargets.push(m);
       }
     }
@@ -3461,6 +3498,7 @@
           if (t > 2) { if (aLow && qLow) continue; }         // minor roads don't bridge rivers
           else deck = t === 0 ? 20 : 13;                     // major roads become bridge decks
         }
+        if (deck && wwbNear(mx, mz)) continue;               // the custom WWB deck owns its crossing
         // a wide segment lying ALONG a core street is a duplicate and would z-fight it
         if (a[0] > CORE_EXT.x0 - 38 && a[0] < CORE_EXT.x1 + 38 && a[1] > CORE_EXT.z0 - 38 && a[1] < CORE_EXT.z1 + 38 &&
             q[0] > CORE_EXT.x0 - 38 && q[0] < CORE_EXT.x1 + 38 && q[1] > CORE_EXT.z0 - 38 && q[1] < CORE_EXT.z1 + 38 &&
@@ -3756,16 +3794,32 @@
           water.translate(w2[0], T + 0.55, w2[1]);
           lmTrim.push({ geom: water, color: new THREE.Color(0x2e6f8a), style: 3 });
         }
-        // the Rocky steps: eight broad flights descending the hill toward the Oval
+        // the Rocky steps: eight broad flights descending the hill toward the
+        // Oval. Terrain-safe: the DEM hill bulges above the straight descent
+        // line, so each flight tops out just above the ground beneath it and the
+        // run never rises downhill — the hillside used to poke through between
+        // flights and read as bare white stripes.
         {
           const bot = pt(105, 0);
           const yBot = siteY(bot[0], bot[1], 'ground') + 0.6;
           c.copy(cStone);
+          const yT = [];
           for (let i2 = 0; i2 < 8; i2++) {
-            const yT = T + 0.5 + (yBot - (T + 0.5)) * (i2 + 1) / 8;
-            appendBuilding(chk, quad(55 + 6.3 * i2, 55 + 6.3 * (i2 + 1) + 0.4, -34, 34), yT - 6, yT, c, 3, yT - 6);
+            let y = T + 0.5 + (yBot - (T + 0.5)) * (i2 + 1) / 8;
+            for (const uv of [[6.3 * i2, -34], [6.3 * i2, 34], [6.3 * (i2 + 1), -34], [6.3 * (i2 + 1), 34], [6.3 * (i2 + 0.5), 0]]) {
+              const q = pt(55 + uv[0], uv[1]);
+              y = Math.max(y, siteY(q[0], q[1], 'ground') + 0.22);
+            }
+            yT.push(y);
+          }
+          for (let i2 = 6; i2 >= 0; i2--) yT[i2] = Math.max(yT[i2], yT[i2 + 1] + 0.2);
+          for (let i2 = 0; i2 < 8; i2++) {
+            appendBuilding(chk, quad(55 + 6.3 * i2, 55 + 6.3 * (i2 + 1) + 0.4, -34, 34), yT[i2] - 7, yT[i2], c, 3, yT[i2] - 7);
           }
         }
+        // (the Fairmount greening itself lives in the wide-heightfield builder —
+        // the ground cells there are vertex-tinted to park green; a draped lawn
+        // here rode above the road ribbons on the bumpy hill and was removed)
       }
       // --- Battleship New Jersey (BB-62), moored on the Camden shore: the OSM
       // hull outline is extruded as the real haze-gray hull, then superstructure,
@@ -3841,6 +3895,16 @@
       // the stadium/arena builders own their interiors — OSM's pitch/park drapes
       // in there just z-fight the bowls
       if (kind === 0 && (Math.hypot(acx + 1869, acz - 4375) < 140 || Math.hypot(acx + 1920, acz - 4932) < 150 || Math.hypot(acx + 2327, acz - 4880) < 120)) continue;
+      // the Art Museum build owns its hilltop: OSM's paved/park drapes there lie
+      // per-vertex on the steep hill and rendered as sheared slabs over the steps
+      if (kind !== 1 && Math.hypot(acx + 3080, acz + 2210) < 190) continue;
+      // and its Fairmount lawn owns the wider grounds: the white paved-area flats
+      // (parking aprons, plazas) blanketed the hill at +1.2 over the grass —
+      // any-vertex test, since a big apron's centroid can sit outside the zone
+      if (kind > 1 && poly.some((q) => q[0] > -3850 && q[0] < -2480 && q[1] > -2950 && q[1] < -1720)) continue;
+      // the Walt Whitman's OSM outline maps as a paved area — it rendered as a
+      // flat gray slab floating on the river under the real suspension deck
+      if (kind !== 1 && wwbNear(acx, acz)) continue;
       try {
         if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 1500 ? drapedPoly(poly, LAYER.park, 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.84 + hash01(i) * 0.16), style: 3 });
         else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
@@ -4037,6 +4101,29 @@
       // mid-span at (1318.6, 4454.4); towers 609.6 m apart, side spans 234.7 m (DRPA)
       let mi = 0, best = Infinity;
       for (let i = 0; i < line.length; i++) { const dd = Math.hypot(line[i][0] - 1318.6, line[i][1] - 4454.4); if (dd < best) { best = dd; mi = i; } }
+      // The crossing is dead straight on the real bridge, but OSM's motorway line
+      // hops between carriageways mid-river (a 15 m right-angle jog at mid-span)
+      // and wiggles at the NJ anchorage — the deck built along it came out
+      // disjointed. Project the whole span onto its straight chord, then
+      // re-measure arc lengths.
+      {
+        const ptAt = (sv) => {
+          let i = 1; while (i < cum.length - 1 && cum[i] < sv) i++;
+          const tt = clamp((sv - cum[i - 1]) / Math.max(1e-6, cum[i] - cum[i - 1]), 0, 1);
+          return [line[i - 1][0] + (line[i][0] - line[i - 1][0]) * tt, line[i - 1][1] + (line[i][1] - line[i - 1][1]) * tt];
+        };
+        const sA = cum[mi] - 660, sB = cum[mi] + 660;
+        const A = ptAt(sA), B = ptAt(sB);
+        for (let i = 0; i < line.length; i++) {
+          if (cum[i] > sA && cum[i] < sB) {
+            const tt = (cum[i] - sA) / (sB - sA);
+            line[i] = [A[0] + (B[0] - A[0]) * tt, A[1] + (B[1] - A[1]) * tt];
+          }
+        }
+        for (let i = 1; i < line.length; i++) cum[i] = cum[i - 1] + Math.hypot(line[i][0] - line[i - 1][0], line[i][1] - line[i - 1][1]);
+        best = Infinity;
+        for (let i = 0; i < line.length; i++) { const dd = Math.hypot(line[i][0] - 1318.6, line[i][1] - 4454.4); if (dd < best) { best = dd; mi = i; } }
+      }
       {
         const mid = cum[mi], half = 304.8, side = 234.7;
         const W0 = TERRAIN.water;
@@ -4261,6 +4348,7 @@
           if (t > 2) { if (aLow && qLow) continue; }
           else deck = t === 0 ? 20 : 13;
         }
+        if (deck && wwbNear(mx, mz)) continue;         // the custom WWB deck owns its crossing
         if (inWide(a) && inWide(q)) continue;          // the wide set paves there
         const px = -dz * hw, pz = dx * hw;
         const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 2.9 + 0.4) * 0.1;
@@ -4291,6 +4379,10 @@
       const n = body[k++], kind = body[k++];
       const poly = new Array(n);
       for (let j = 0; j < n; j++) poly[j] = [body[k++] * S, body[k++] * S];
+      if (kind !== 1) {
+        const [acx, acz] = polyCentroid(poly);
+        if (wwbNear(acx, acz)) continue;               // the WWB deck owns its crossing
+      }
       try {
         if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 40000 ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
         else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
@@ -5004,9 +5096,9 @@
     rr: { l: 25.9, w: 3.05, h: 4.2, c: 0x878d94 },
   };
   const SEPTA_TINT = { G1: 0x8a7f2f, D1: 0x7c4767, D2: 0x7c4767 };  // Girard gold, Delco violet
-  let septaCbN = 0, septaHost = 0, septaSolid = null, septaGhost = null, septaReady = false, septaHintT = 0;
+  let septaCbN = 0, septaHost = 0, septaSolid = null, septaGhost = null, septaPin = null, septaReady = false, septaHintT = 0;
   const septaMats = {};
-  const septaPickS = [], septaPickG = [];
+  const septaPickS = [], septaPickG = [], septaPickP = [];
   const btnTransit = document.getElementById('btnTransit');
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
@@ -5067,6 +5159,7 @@
       const c = new THREE.Color(v.tint);
       c.r = Math.min(1, c.r * 1.9 + 0.18); c.g = Math.min(1, c.g * 1.9 + 0.18); c.b = Math.min(1, c.b * 1.9 + 0.18);
       v.tintHex = '#' + c.getHexString();
+      v.bobP = ((id.charCodeAt(id.length - 1) || 0) * 37 + id.length * 91) % 63 / 10;
       if (apiHdg) v.yaw = v.yawT = septaYawFromCompass(apiHdg);
       septaVeh.set(id, v);
       return;
@@ -5133,7 +5226,7 @@
     btnTransit.title = 'Live SEPTA vehicles (V) — ' + n + ' tracked now';
     if (!SEPTA.hinted && n > 0 && veil.classList.contains('hidden')) {
       SEPTA.hinted = true;
-      hintEl.textContent = n + ' SEPTA vehicles live on the map · tap one · V toggles';
+      hintEl.textContent = n + ' SEPTA vehicles live on the map · tap a pin for its route · V toggles';
       clearTimeout(septaHintT);
       septaHintT = setTimeout(setHint, 8000);
     }
@@ -5176,29 +5269,29 @@
   canvas.addEventListener('pointerup', (e) => {
     if (!septaReady || !SEPTA.on || !septaSolid.count && !septaGhost.count) return;
     if (mode !== MODE.ORBIT && !isTouch) return;
-    if (Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) > 7 || performance.now() - vpDownT > 450) return;
+    if (Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) > 8 || performance.now() - vpDownT > 500) return;
     septaNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     septaRay.setFromCamera(septaNdc, camera);
-    const hits = septaRay.intersectObjects([septaSolid, septaGhost], false);
+    const hits = septaRay.intersectObjects([septaSolid, septaGhost, septaPin], false);
     if (hits.length && hits[0].instanceId != null) {
-      const v = (hits[0].object === septaSolid ? septaPickS : septaPickG)[hits[0].instanceId];
+      const h = hits[0];
+      const v = (h.object === septaSolid ? septaPickS : h.object === septaGhost ? septaPickG : septaPickP)[h.instanceId];
       if (v) { pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
     }
+    // forgiving fallback: the nearest vehicle within 30 px of the tap
+    let bestV = null, bestD = 30 * 30;
+    septaVeh.forEach((v) => {
+      _ssv.set(v.x, (v.gy || 0) + 3, v.z).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) return;
+      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - e.clientX;
+      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - e.clientY;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD) { bestD = d2; bestV = v; }
+    });
+    if (bestV) { pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
     if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; }
   });
-  function septaVehGeom(withBand) {
-    // unit vehicle: length along x in [-.5,.5], base y=0..1, width z; scaled per class
-    const parts = [];
-    const boxPart = (sx, sy, sz, cx, cy, cz, cr, cg, cb) => {
-      const g = new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz).toNonIndexed();
-      const n = g.attributes.position.count;
-      const col = new Float32Array(n * 3);
-      for (let i = 0; i < n; i++) { col[i * 3] = cr; col[i * 3 + 1] = cg; col[i * 3 + 2] = cb; }
-      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-      parts.push(g);
-    };
-    boxPart(0.98, 0.94, 0.94, 0, 0.53, 0, 1, 1, 1);                       // body (takes instance color)
-    if (withBand) boxPart(0.9, 0.36, 1.02, 0, 0.72, 0, 0.14, 0.15, 0.17); // glass band, proud of the body
+  function septaMerge(parts) {
     let total = 0;
     parts.forEach((g) => { total += g.attributes.position.count; });
     const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
@@ -5215,14 +5308,50 @@
     out.setAttribute('color', new THREE.BufferAttribute(col, 3));
     return out;
   }
+  function septaColored(g, cr, cg, cb) {
+    const gg = g.index ? g.toNonIndexed() : g;
+    const n = gg.attributes.position.count;
+    const col = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) { col[i * 3] = cr; col[i * 3 + 1] = cg; col[i * 3 + 2] = cb; }
+    gg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return gg;
+  }
+  function septaVehGeom(withBand) {
+    // unit vehicle: length along x in [-.5,.5], base y=0..1, width z; scaled per
+    // class. Vertex colors multiply the per-instance line color, so trim parts
+    // are near-black (glass, wheels) or near-white (body) multipliers.
+    const parts = [];
+    const boxPart = (sx, sy, sz, cx, cy, cz, cr, cg, cb) =>
+      parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), cr, cg, cb));
+    boxPart(0.98, 0.94, 0.94, 0, 0.53, 0, 1, 1, 1);                       // body (takes instance color)
+    if (withBand) {
+      boxPart(0.9, 0.36, 1.02, 0, 0.72, 0, 0.14, 0.15, 0.17);            // glass band, proud of the body
+      boxPart(0.99, 0.1, 0.9, 0, 0.07, 0, 0.2, 0.21, 0.22);              // dark undercarriage skirt
+      boxPart(0.05, 0.3, 0.8, 0.475, 0.71, 0, 0.13, 0.14, 0.16);         // windshield, engaging the nose
+      boxPart(0.5, 0.09, 0.66, -0.05, 1.03, 0, 0.7, 0.72, 0.74);         // roof HVAC unit
+      for (const wx of [-0.3, 0.3]) for (const wz of [-0.44, 0.44]) {
+        boxPart(0.13, 0.17, 0.1, wx, 0.085, wz, 0.09, 0.09, 0.1);        // wheel blocks, proud of the sides
+      }
+    }
+    return septaMerge(parts);
+  }
+  function septaPinGeom() {
+    // floating map pin: inverted cone + ball, tinted by instance color
+    const cone = new THREE.ConeGeometry(1.05, 2.7, 9);
+    cone.rotateX(Math.PI);
+    cone.translate(0, 1.75, 0);
+    const ball = new THREE.SphereGeometry(1.35, 10, 8);
+    ball.translate(0, 3.6, 0);
+    return septaMerge([septaColored(cone, 0.78, 0.78, 0.78), septaColored(ball, 1, 1, 1)]);
+  }
   const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new V3(), _ss = new V3(), _sc = new THREE.Color(), _sup = new V3(0, 1, 0), _ssv = new V3();
   function updateTransit(now, dt) {
     if (!septaReady) return;
     if (!SEPTA.on) {
-      if (septaSolid.count || septaGhost.count) { septaSolid.count = 0; septaGhost.count = 0; }
+      if (septaSolid.count || septaGhost.count || septaPin.count) { septaSolid.count = 0; septaGhost.count = 0; septaPin.count = 0; }
       return;
     }
-    let si = 0, gi = 0;
+    let si = 0, gi = 0, pi = 0;
     const cap = 2.6 * dt;
     septaVeh.forEach((v) => {
       const k = v.t0 ? Math.min(1, (now - v.t0) / (SEPTA_POLL + 1500)) : 1;
@@ -5266,13 +5395,30 @@
           septaPickS[si++] = v;
         }
       }
+      // floating pin over the lead car, scaled with distance so it stays findable
+      if (pi < 1024) {
+        const py0 = v.ug ? v.gy + 2.4 : v.gy + spec.h + 0.9;
+        _sp.set(v.x, py0, v.z);
+        const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
+        const bob = Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
+        _sp.y += bob;
+        _ss.set(s, s, s);
+        _sq.identity();
+        _sm.compose(_sp, _sq, _ss);
+        septaPin.setMatrixAt(pi, _sm);
+        septaPin.setColorAt(pi, _sc.setHex(v.tint).multiplyScalar(2.0));
+        septaPickP[pi++] = v;
+      }
     });
     septaSolid.count = si;
     septaGhost.count = gi;
+    septaPin.count = pi;
     septaSolid.instanceMatrix.needsUpdate = true;
     septaGhost.instanceMatrix.needsUpdate = true;
+    septaPin.instanceMatrix.needsUpdate = true;
     if (septaSolid.instanceColor) septaSolid.instanceColor.needsUpdate = true;
     if (septaGhost.instanceColor) septaGhost.instanceColor.needsUpdate = true;
+    if (septaPin.instanceColor) septaPin.instanceColor.needsUpdate = true;
     if (pickedVeh) {
       const spec = SEPTA_KIND[pickedVeh.kind];
       _ssv.set(pickedVeh.x, (pickedVeh.ug ? pickedVeh.gy : pickedVeh.gy + spec.h) + 7, pickedVeh.z).project(camera);
@@ -5364,9 +5510,11 @@
     const ghostMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.34, depthTest: false, depthWrite: false });
     septaMats.body = bodyMat;
     septaMats.ghost = ghostMat;
+    const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     septaSolid = new THREE.InstancedMesh(septaVehGeom(true), bodyMat, 1600);
     septaGhost = new THREE.InstancedMesh(septaVehGeom(false), ghostMat, 256);
-    for (const m of [septaSolid, septaGhost]) {
+    septaPin = new THREE.InstancedMesh(septaPinGeom(), pinMat, 1024);
+    for (const m of [septaSolid, septaGhost, septaPin]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       m.frustumCulled = false;                         // instance bounds don't follow the fleet
@@ -5378,6 +5526,7 @@
     septaGhost.renderOrder = 44;                       // x-ray: drawn over the streets
     groupCity.add(septaSolid);
     groupCity.add(septaGhost);
+    groupCity.add(septaPin);
     septaReady = true;
     syncTransitBtn();
     setInterval(() => septaPoll(false), SEPTA_POLL);
@@ -5666,7 +5815,7 @@
     }
     loadmsg.textContent = failures ? 'Ready (some detail could not be built)' : 'Ready';
     btnEnter.disabled = false;
-    btnEnter.textContent = 'Enter the model';
+    btnEnter.textContent = 'Enter the city';
   }
 
   btnEnter.addEventListener('click', () => {
