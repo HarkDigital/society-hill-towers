@@ -627,6 +627,31 @@ Round 13 (Aug 25 — the LiDAR true-massing pass, per `lidar-massing-plan.md`):
   NJ LiDAR would be a separate source); `building:part` skyscraper pieces keep their
   OSM stack heights by design; the south set's 77% is the stadium/navy-yard fringe.
 
+Round 14 (Aug 25 — Rotten Ralph's, from Mike's Street View reference):
+- **201 Chestnut (NW corner of 2nd & Chestnut) custom-built to the photo.** The lot is
+  two OSM strips front-to-back — both matched in `REALISM_NEAR` (keys `ralphs` +
+  `ralphsMid`, the latter builderless so the generic pass skips it) and spanned by one
+  massing in the front strip's OBB frame: white corner block (LiDAR parapet ~8.9 m)
+  wearing a continuous arcade of tall blue-framed round-arched windows — 9 bays on
+  Chestnut, 5 on 2nd — each bay = dark glass rect + half-disc (walls material, style 3
+  — the `detail` material renders glass pale, walls render it dark), a blue
+  RingGeometry arch, engaged jambs and a white sill; storefront base with engaged
+  piers, recessed dark glass, blue double door, blue/white striped awning (26
+  alternating tilted boxes — geometric stripes, no texture, night-correct); white
+  spandrel band and ledge, brick parapet band + coping wrapping both street faces
+  (east-face copies get slightly DIFFERENT heights — the wrap-around bands meet at the
+  corner and identical heights would put coplanar top faces there); roof deck,
+  bulkhead, flue; hanging corner blade sign as TWO back-to-back CanvasTexture planes
+  (one DoubleSide plane mirrors the text on its far side — the Glory-sign pattern
+  extended for blade signs). The taller rear mass (the graffiti party wall in the
+  photo) stays generic, recolored dark brick via a non-custom `REALISM_NEAR` spec
+  ({color, style} without mode — that path recolors in place).
+- Frame conventions for corner buildings (copy for future ones): u along the front
+  made WEST, s across made SOUTH toward the street, P(u,d) walks the front line from
+  the EAST corner; wall face planes land inset (FS/FE) and every applied piece ENGAGES
+  its plane (crosses it) — proud decals on a solid box, since recessed glass inside a
+  solid extrusion is invisible.
+
 **The LiDAR true-massing pass is done** — `lidar-massing-plan.md` is executed. Option 2
 of the accuracy plan (OPA parcel join for era-correct facades) remains unstarted.
 

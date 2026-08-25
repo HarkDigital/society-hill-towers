@@ -2305,6 +2305,13 @@ const CITY_B64 = "WVRIU2g2AgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       // (numbers ascend westward from Front): the deep narrow lot whose front
       // hits the address line, area-weighted centroid (115.1, -283.8)
       { x: 115.1, z: -283.8, r: 5, minArea: 100, spec: { mode: 'custom', key: 'glory' } },
+      // Rotten Ralph's, 201 Chestnut — NW corner of 2nd & Chestnut. OSM maps the
+      // lot as two shallow strips front-to-back; both go custom and the builder
+      // spans them with one massing. The taller rear mass (the graffiti party
+      // wall in photos) stays generic but recolored to its real dark brick.
+      { x: 43.5, z: -334.3, r: 4, minArea: 40, spec: { mode: 'custom', key: 'ralphs' } },
+      { x: 44.4, z: -339.1, r: 4, minArea: 40, spec: { mode: 'custom', key: 'ralphsMid' } },
+      { x: 45.6, z: -346.8, r: 4, minArea: 100, spec: { color: '#452a20', style: 3 } },
     ];
     for (const b of D.buildings) {
       if (b.name && REALISM[b.name]) { upgraded.set(b, REALISM[b.name]); continue; }
@@ -3158,6 +3165,149 @@ const CITY_B64 = "WVRIU2g2AgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         // wrought-iron fence at the sidewalk in front of the porch
         ad(box(W2, 0.9, 0.07, wx + fdx * 1.7, 0.45, wz + fdz * 1.7, ryF), '#1c1e20');
         liftB(m0, bG);
+      }
+    }
+    // Rotten Ralph's, 201 Chestnut (NW corner of 2nd & Chestnut): white-painted
+    // corner building whose whole upper floor is a continuous arcade of tall
+    // blue-framed round-arched windows wrapping both street faces, corbelled
+    // brick parapet band on top, storefront base with striped awnings, blue
+    // double door and the hanging corner board sign. Built to the photo; the
+    // LiDAR parapet for the lot is ~8.5 m.
+    {
+      const bR = getKey('ralphs');
+      if (bR) {
+        const m0 = mark();
+        const ob = orientedBox(bR.poly);
+        const a = obbAxis(ob);
+        let ux = a.ax, uz = a.az;                    // along Chestnut, made WEST
+        if (ux > 0) { ux = -ux; uz = -uz; }
+        let sx = a.px, sz = a.pz;                    // across, made SOUTH (street)
+        if (sz < 0) { sx = -sx; sz = -sz; }
+        const W = a.hl * 2;                          // ~14.9 front width
+        const D = 9.7;                               // both OSM strips deep
+        const Ex = ob.cx - ux * a.hl + sx * a.hs;    // east corner on the front line
+        const Ez = ob.cz - uz * a.hl + sz * a.hs;
+        const P = (u, d2) => [Ex + ux * u - sx * d2, Ez + uz * u - sz * d2];
+        const ryF = Math.atan2(-uz, ux);             // boxes running along the front
+        const ryS = Math.atan2(-sz, sx);             // boxes running along 2nd St
+        const aS = Math.atan2(sx, sz);               // plane normal toward Chestnut
+        const aE = Math.atan2(-ux, -uz);             // plane normal toward 2nd St
+        const bx = (u, d2, y, w2, h2, dp2, ry2) => {
+          const [px2, pz2] = P(u, d2);
+          return box(w2, h2, dp2, px2, y, pz2, ry2 == null ? ryF : ry2);
+        };
+        const WALL = '#e2dccd', TRIMW = '#eae4d6', BLUE = '#2c4257',
+          GLASS = '#20242a', BRICK = '#361e16', DOOR = '#1d2c3d';
+        // core block, blank style — every window on it is applied geometry.
+        // Its south face lands at d=0.14, east face at u=0.15; applied pieces
+        // engage those planes (cross them), never sit coplanar or float.
+        aw(bx(W / 2, D / 2 + 0.02, 3.56, W - 0.3, 10.12, D - 0.24), WALL, 3);
+        const FS = 0.14, FE = 0.15;                  // wall face planes
+        // ---- ground floor, Chestnut face: piers, glass, door ----
+        aw(bx(W / 2, 0.06, 1.62, W - 1.1, 3.24, 0.14), GLASS, 3);   // glass, proud of face
+        for (const u of [0.5, 4.05, 7.6, 11.15, W - 0.5])           // engaged piers
+          ad(bx(u, 0.1, 1.98, 0.46, 3.95, 0.5), TRIMW);
+        ad(bx(1.85, 0.03, 1.55, 1.7, 3.1, 0.14), DOOR);             // blue double door
+        ad(bx(1.85, 0.08, 3.32, 2.1, 0.42, 0.14), TRIMW);           // door head
+        // ground floor, 2nd St face: glass wraps the corner bay, then solid
+        aw(bx(0.08, 2.35, 1.62, 3.9, 3.24, 0.14, ryS), GLASS, 3);
+        ad(bx(0.02, 0.5, 1.98, 0.5, 3.95, 0.46, ryS), TRIMW);
+        ad(bx(0.02, 4.35, 1.98, 0.5, 3.95, 0.46, ryS), TRIMW);
+        // striped awning along the Chestnut storefront (blue/white, tilted out)
+        {
+          const a0 = 2.7, a1 = W - 0.6, n = 26, sw = (a1 - a0) / n;
+          for (let i2 = 0; i2 < n; i2++) {
+            const g = new THREE.BoxGeometry(sw + 0.01, 0.09, 1.35);
+            g.rotateX(-0.5);
+            g.rotateY(ryF);
+            const [px2, pz2] = P(a0 + (i2 + 0.5) * sw, -0.38);
+            g.translate(px2, 3.12, pz2);
+            ad(g, i2 % 2 ? '#e6e1d4' : '#25384a');
+          }
+        }
+        // white spandrel band between storefront and the arcade, both faces
+        ad(bx(W / 2, 0.02, 4.25, W + 0.04, 0.6, 0.36), TRIMW);
+        ad(bx(0.03, D / 2 - 0.1, 4.25, D - 0.2, 0.56, 0.36, ryS), TRIMW);
+        // ---- the arcade: 9 bays on Chestnut, 5 on 2nd. (pu,pd) = unit step
+        // TOWARD the street off the wall face; planes stack proud of the glass ----
+        const bay = (u0, d0, faceA, pu, pd, along) => {
+          const y0 = 4.85, y1 = 6.95, r = 0.46;
+          const at2 = (k) => P(u0 + pu * k, d0 + pd * k);
+          {
+            const g = new THREE.PlaneGeometry(0.92, y1 - y0);   // dark glass, rect
+            g.rotateY(faceA);
+            const [gx2, gz2] = at2(0.05);
+            g.translate(gx2, (y0 + y1) / 2, gz2);
+            aw(g, GLASS, 3);                        // walls material = truly dark glass
+            const c = new THREE.CircleGeometry(r, 12, 0, Math.PI); // arch head glass
+            c.rotateY(faceA);
+            c.translate(gx2, y1, gz2);
+            aw(c, GLASS, 3);
+          }
+          {
+            const rg = new THREE.RingGeometry(r - 0.03, r + 0.1, 16, 1, 0, Math.PI);
+            rg.rotateY(faceA);                                   // blue arch ring
+            const [rx2, rz2] = at2(0.09);
+            rg.translate(rx2, y1, rz2);
+            ad(rg, BLUE);
+          }
+          for (const s2 of [-1, 1]) {                            // blue jambs, engaged
+            const ju = faceA === aS ? u0 + s2 * 0.49 : u0 + pu * 0.02;
+            const jd = faceA === aS ? d0 + pd * 0.02 : d0 + s2 * 0.49;
+            ad(bx(ju, jd, (y0 + y1) / 2, 0.1, y1 - y0, 0.16, along), BLUE);
+          }
+          const [su2, sd2] = [u0 + pu * 0.05, d0 + pd * 0.05];   // white sill
+          ad(bx(su2, sd2, y0 - 0.07, 1.14, 0.13, 0.22, along), TRIMW);
+        };
+        for (let i2 = 0; i2 < 9; i2++)
+          bay(0.72 + (i2 + 0.5) * ((W - 1.44) / 9), FS, aS, 0, -1, ryF);
+        for (let i2 = 0; i2 < 5; i2++)
+          bay(FE, 1.1 + (i2 + 0.5) * ((D - 1.8) / 5), aE, -1, 0, ryS);
+        // ledge above the arches, then the brick parapet band + coping
+        ad(bx(W / 2, 0.04, 7.68, W + 0.1, 0.26, 0.4), TRIMW);
+        ad(bx(0.05, D / 2 - 0.08, 7.68, D - 0.12, 0.22, 0.4, ryS), TRIMW);
+        aw(bx(W / 2, 0.08, 8.26, W + 0.02, 0.95, 0.34), BRICK, 3);
+        aw(bx(0.09, D / 2 - 0.06, 8.26, D - 0.08, 0.91, 0.34, ryS), BRICK, 3);
+        ad(bx(W / 2, 0.02, 8.8, W + 0.16, 0.18, 0.52), TRIMW);
+        ad(bx(0.04, D / 2 - 0.06, 8.8, D + 0.04, 0.15, 0.52, ryS), TRIMW);
+        // roof furniture: dark deck, bulkhead, flue
+        ad(bx(W / 2, D / 2, 8.68, W - 1.0, 0.14, D - 1.0), '#2e2c28');
+        ad(bx(2.6, 7.4, 9.5, 2.4, 1.55, 2.0), '#3a3835');
+        {
+          const fl = new THREE.CylinderGeometry(0.12, 0.12, 2.3, 8);
+          const [px2, pz2] = P(5.4, 6.6);
+          fl.translate(px2, 9.8, pz2);
+          ad(fl, '#181818');
+        }
+        // the hanging corner sign: white board, blue border, stacked script
+        {
+          const cnv = document.createElement('canvas');
+          cnv.width = 256; cnv.height = 384;
+          const ctx = cnv.getContext('2d');
+          ctx.fillStyle = '#f0ece0'; ctx.fillRect(0, 0, 256, 384);
+          ctx.strokeStyle = '#274d73'; ctx.lineWidth = 14;
+          ctx.strokeRect(10, 10, 236, 364);
+          ctx.fillStyle = '#2b527a';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.font = 'italic 700 64px Georgia, "Times New Roman", serif';
+          ctx.fillText('Rotten', 128, 130);
+          ctx.fillText("Ralph's", 128, 230);
+          ctx.font = '600 30px Georgia, serif';
+          ctx.fillText('BAR', 128, 318);
+          const tex = new THREE.CanvasTexture(cnv);
+          tex.encoding = THREE.sRGBEncoding;
+          tex.anisotropy = 4;
+          const mat = new THREE.MeshBasicMaterial({ map: tex });
+          const yS2 = siteY(Ex, Ez, 'ground') + 5.5;
+          const [sx3, sz3] = P(0.28, -0.62);
+          for (const s2 of [0, Math.PI]) {           // printed on BOTH faces — never mirrored
+            const sg = new THREE.Mesh(new THREE.PlaneGeometry(0.92, 1.42), mat);
+            sg.rotation.y = Math.atan2(ux, uz) + s2;
+            sg.position.set(sx3 + Math.sin(sg.rotation.y) * 0.012, yS2, sz3 + Math.cos(sg.rotation.y) * 0.012);
+            groupCity.add(sg);
+          }
+        }
+        liftB(m0, bR);
       }
     }
     {
