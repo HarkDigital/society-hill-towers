@@ -61,6 +61,14 @@ data_js += "const FACADE_PAL = " + json.dumps(fpal, separators=(",", ":")) + ";\
 # the packed road formats carry no names)
 stl_path = ROOT / "street_labels.json"
 data_js += "const ST_LABELS = " + (stl_path.read_text(encoding="utf-8").strip() if stl_path.exists() else "null") + ";\n"
+# real street trees (PPR Tree Inventory via fetch_trees.py / pack_trees.py)
+trees_path = ROOT / "trees.b64"
+data_js += 'const TREES_B64 = "' + (trees_path.read_text(encoding="utf-8").strip() if trees_path.exists() else "") + '";\n'
+tn_path = ROOT / "tree_names.json"
+data_js += "const TREE_NAMES = " + (tn_path.read_text(encoding="utf-8").strip() if tn_path.exists() else "null") + ";\n"
+# historic districts + neighborhood labels (fetch_places.py / bake_places.py)
+places_path = ROOT / "places.json"
+data_js += "const PLACES = " + (places_path.read_text(encoding="utf-8").strip() if places_path.exists() else "null") + ";\n"
 
 # </script> inside embedded JS strings would terminate the tag early
 for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):

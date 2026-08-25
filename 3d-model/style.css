@@ -763,6 +763,7 @@ html, body {
 #layerspanel .lrow.on { color: var(--paper); }
 #layerspanel .lrow.on .lmark { background: var(--bronze); border-color: var(--bronze); }
 #layerspanel .lseptalogo { width: 20px; height: 15px; flex: 0 0 auto; }
+#layerspanel .lbike { width: 20px; height: 12px; flex: 0 0 auto; color: #4fb6cf; }
 #layerspanel .lcount {
   font-family: var(--mono);
   font-size: 10.5px;

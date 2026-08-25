@@ -4477,13 +4477,18 @@
     // the world is now the whole city
     bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
     scene.fog.near = 2400; scene.fog.far = 13000;
+    // the baked neighborhood layer owns these names when present; the airport
+    // keeps its HTML label (a place, not a neighborhood)
+    const hasNb = typeof PLACES !== 'undefined' && PLACES && PLACES.nb;
     for (const [nm, lx, lz, lh] of [
       ['Philadelphia International Airport', -8334, 7857, 40],
-      ['University City', -4300, -600, 90],
-      ['Manayunk', -6803, -8950, 60],
-      ['Germantown', -4900, -8500, 60],
-      ['Frankford', 5561, -7845, 60],
-      ['Northeast Philadelphia', 11499, -15760, 60],
+      ...(hasNb ? [] : [
+        ['University City', -4300, -600, 90],
+        ['Manayunk', -6803, -8950, 60],
+        ['Germantown', -4900, -8500, 60],
+        ['Frankford', 5561, -7845, 60],
+        ['Northeast Philadelphia', 11499, -15760, 60],
+      ]),
     ]) {
       const el = document.createElement('div');
       el.className = 'lbl';
@@ -4494,7 +4499,298 @@
   });
 
   // ------------------------------------------------ trees
+  // -------------------------------------------------------------- street trees
+  // The real city forest: PPR Tree Inventory 2025 (OpenDataPhilly), baked by
+  // fetch_trees.py / pack_trees.py into TREES_B64 (int16, 0.2 m units) and
+  // TREE_NAMES (species + latin + canopy group). Every tree is a surveyed
+  // street or park tree at its true position, sized by its measured trunk
+  // diameter. The old procedural scatter survives below as the fallback when
+  // the baked data is absent, so the page always builds.
+  let treeInv = null, pickedTree = null;
+  const treePickGrid = new Map();
+  const TREE_CELL = 24;
+  // per-group canopy styling: hue, sat, lit, breadth, height, size mult, cone?
+  const TREE_STYLE = [
+    [0.26, 0.46, 0.18, 1.0, 1.0, 1.0, 0],     // 0 shade tree / unknown
+    [0.24, 0.38, 0.21, 1.18, 0.95, 1.22, 0],  // 1 planetree, sycamore
+    [0.28, 0.50, 0.18, 1.0, 1.05, 1.0, 0],    // 2 maple
+    [0.25, 0.42, 0.16, 1.15, 1.0, 1.15, 0],   // 3 oak
+    [0.27, 0.52, 0.21, 0.95, 0.86, 0.72, 0],  // 4 ornamental (cherry, pear...)
+    [0.23, 0.45, 0.21, 1.1, 0.9, 0.95, 0],    // 5 locust
+    [0.26, 0.44, 0.19, 1.2, 0.92, 1.05, 0],   // 6 elm form (zelkova, hackberry)
+    [0.22, 0.50, 0.22, 0.78, 1.15, 0.9, 0],   // 7 ginkgo
+    [0.27, 0.48, 0.18, 0.95, 1.1, 1.0, 0],    // 8 linden
+    [0.34, 0.35, 0.14, 1.0, 1.0, 0.92, 1],    // 9 conifer (cone)
+    [0.26, 0.46, 0.20, 0.85, 1.15, 1.0, 0],   // 10 tall broadleaf (willow, poplar)
+    [0.26, 0.40, 0.20, 1.05, 0.95, 1.0, 0],   // 11 urban misc
+  ];
+  function treeChipColor(g) {
+    const s = TREE_STYLE[g] || TREE_STYLE[0];
+    return 'hsl(' + Math.round(s[0] * 360) + ',' + Math.round(s[1] * 100) + '%,' + Math.round((s[2] + 0.13) * 100) + '%)';
+  }
+  function treeCard(i) {
+    const ni = treeInv.ni[i];
+    const g = ni >= 0 ? (TREE_NAMES.g[ni] || 0) : 0;
+    const name = ni >= 0 ? TREE_NAMES.names[ni] : 'Shade Tree';
+    const latin = ni >= 0 ? (TREE_NAMES.latin[ni] || '') : '';
+    const dbh = treeInv.dbh[i];
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:' + treeChipColor(g) + '">' + dbh + '&Prime;</span>' +
+      '<span class="vdest">' + septaEsc(name) + '</span>' +
+      (latin ? '<div class="vmeta">' + septaEsc(latin) + '</div>' : '') +
+      '<div class="vmeta">' + dbh + '-Inch Trunk</div>' +
+      '<div class="vmeta">' + (ni >= 0 ? 'PPR Tree Inventory 2025' : 'OpenStreetMap Mapped Tree') + '</div>';
+  }
+  function updateTreePick() {
+    if (pickedTree == null || !treeInv) return;
+    _ssv.set(treeInv.x[pickedTree], treeInv.gy[pickedTree] + 3.5, treeInv.z[pickedTree]).project(camera);
+    if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+    else {
+      vehinfoEl.style.opacity = '1';
+      vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+        ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+        ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    }
+  }
+  function groundPointAt(cx, cy) {
+    // march the pick ray to the walkable ground: cheap log-stepped scan, then
+    // a short bisection — no raycast against 49k tree instances
+    septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
+    septaRay.setFromCamera(septaNdc, camera);
+    const o = septaRay.ray.origin, dr = septaRay.ray.direction;
+    let t0 = 0;
+    for (let t = 10; t < 9000; t *= 1.22) {
+      if (o.y + dr.y * t <= walkY(o.x + dr.x * t, o.z + dr.z * t) + 0.5) {
+        let lo = t0, hi = t;
+        for (let k = 0; k < 12; k++) {
+          const m = (lo + hi) / 2;
+          if (o.y + dr.y * m <= walkY(o.x + dr.x * m, o.z + dr.z * m) + 0.5) hi = m; else lo = m;
+        }
+        return [o.x + dr.x * hi, o.z + dr.z * hi];
+      }
+      t0 = t;
+    }
+    return null;
+  }
   step('Planting the street trees', () => {
+    if (typeof TREES_B64 === 'undefined' || !TREES_B64 || typeof TREE_NAMES === 'undefined' || !TREE_NAMES) { plantProceduralTrees(); return; }
+    let head, v;
+    try {
+      const s = atob(TREES_B64);
+      const buf = new Uint8Array(s.length);
+      for (let i = 0; i < s.length; i++) buf[i] = s.charCodeAt(i);
+      head = new Int32Array(buf.buffer, 0, 4);
+      if (head[0] !== 0x53485454) throw new Error('bad tree magic');
+      v = new Int16Array(buf.buffer, 16);
+    } catch (err) { console.error('tree inventory decode failed', err); plantProceduralTrees(); return; }
+    const nAll = head[1];
+    const WB = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };  // wide tier (pack_wide.py)
+    const inCore = (x, z) => x > CORE_EXT.x0 && x < CORE_EXT.x1 && z > CORE_EXT.z0 && z < CORE_EXT.z1;
+    const X = new Float32Array(nAll + 512), Z = new Float32Array(nAll + 512), GY = new Float32Array(nAll + 512);
+    const CR = new Float32Array(nAll + 512), CY = new Float32Array(nAll + 512);
+    const DBH = new Uint8Array(nAll + 512), NI = new Int16Array(nAll + 512);
+    const CORE = new Uint8Array(nAll + 512);
+    let n = 0;
+    const keepTree = (x, z, dbh, ni, core) => {
+      const g = ni >= 0 ? (TREE_NAMES.g[ni] || 0) : 0;
+      const st = TREE_STYLE[g] || TREE_STYLE[0];
+      X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0;
+      GY[n] = siteY(x, z, 'ground');
+      CR[n] = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5);
+      CY[n] = GY[n] + clamp(2.4 + dbh * 0.1, 2.6, 5.2) * 0.8 + CR[n] * 0.9;
+      const k = Math.floor(x / TREE_CELL) + ':' + Math.floor(z / TREE_CELL);
+      let cell = treePickGrid.get(k);
+      if (!cell) { cell = []; treePickGrid.set(k, cell); }
+      cell.push(n);
+      n++;
+    };
+    const nearKept = (x, z, r) => {
+      const gx = Math.floor(x / TREE_CELL), gz = Math.floor(z / TREE_CELL);
+      for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iz = gz - 1; iz <= gz + 1; iz++) {
+        const cell = treePickGrid.get(ix + ':' + iz);
+        if (!cell) continue;
+        for (const ti of cell) {
+          const dx = X[ti] - x, dz = Z[ti] - z;
+          if (dx * dx + dz * dz < r * r) return true;
+        }
+      }
+      return false;
+    };
+    const bermHit = (x, z) => {
+      for (const [bx, bz, rx, rz, th] of bermSpots) {
+        const dx = x - bx, dz = z - bz, cth = Math.cos(th), sth = Math.sin(th);
+        const u = dx * cth - dz * sth, w = dx * sth + dz * cth;
+        if ((u / rx) * (u / rx) + (w / rz) * (w / rz) < 1.25) return true;
+      }
+      return false;
+    };
+    for (let i = 0; i < nAll; i++) {
+      const x = v[i * 4] / 5, z = v[i * 4 + 1] / 5;
+      const core = inCore(x, z);
+      if (!core && isTouch && (i & 1)) continue;          // touch keeps half the wide forest
+      if (inWater(x, z) > -2) continue;
+      if (core) {
+        // the core's landmarks were rebuilt by hand and differ from the city
+        // footprints the bake rejected against, so re-check here
+        if (insideBuilding(x, z) || nearBuildingEdge(x, z, 0.8)) continue;
+        if (nearRoad(x, z, -1.2)) continue;               // >1.2 m INSIDE a road ribbon only
+        if (bermHit(x, z)) continue;
+      } else if (septaSnapRoad(x, z, 2.4)) continue;      // wide tier: centerline strip only
+      keepTree(x, z, clamp(v[i * 4 + 2], 1, 60), v[i * 4 + 3], core);
+    }
+    const nInv = n;
+    // curated grounds the survey doesn't cover: the towers' lawns, pool
+    // terraces, and OSM-mapped courtyard trees — only where no surveyed tree
+    // already stands within 6 m
+    const extras = [];
+    for (const t of D.trees || []) extras.push([t[0], t[1], 10]);
+    for (const sp of poolTreeSpots) extras.push([sp[0], sp[1], 14]);
+    for (const sp of extraTreeSpots) extras.push([sp[0], sp[1], 14]);
+    for (let i = 0; i < 90; i++) {
+      const ang = hash01(i * 1.9 + 2) * Math.PI * 2, rr = PLAZA_R + 6 + hash01(i * 3.7) * 50;
+      extras.push([towersCenter.x + Math.cos(ang) * rr, towersCenter.z + Math.sin(ang) * rr, 12 + Math.round(hash01(i * 7.1) * 10)]);
+    }
+    for (const [x, z, dbh] of extras) {
+      if (n >= X.length) break;
+      if (nearKept(x, z, 6)) continue;
+      if (inWater(x, z) > -2) continue;
+      if (insideBuilding(x, z) || nearBuildingEdge(x, z, 1.6)) continue;
+      if (nearRoad(x, z, 1.2)) continue;
+      if (bermHit(x, z)) continue;
+      keepTree(x, z, dbh, -1, inCore(x, z));
+    }
+    treeInv = { x: X, z: Z, gy: GY, cr: CR, cy: CY, dbh: DBH, ni: NI, n };
+    // ---- instancing: full trees in the core, light trees in 3x3 wide chunks
+    const canMat = new THREE.MeshStandardMaterial({ roughness: 0.95 });
+    const trunkMat = new THREE.MeshStandardMaterial({ color: COLORS.trunk, roughness: 1 });
+    const trunkCoreG = new THREE.CylinderGeometry(0.17, 0.28, 3.6, 6);
+    trunkCoreG.translate(0, 1.0, 0);   // extends below grade so raised layers never slice the base
+    const trunkWideG = new THREE.CylinderGeometry(0.18, 0.27, 3.6, 5);
+    trunkWideG.translate(0, 1.0, 0);
+    const canCoreG = new THREE.IcosahedronGeometry(1, 1);
+    const canWideG = new THREE.IcosahedronGeometry(1, 0);
+    const coneG = new THREE.ConeGeometry(1, 1, 7);
+    coneG.translate(0, 0.5, 0);
+    const CHN = 3;
+    const chunkOf = (x, z) => {
+      const cx2 = clamp(Math.floor((x - WB.x0) / ((WB.x1 - WB.x0) / CHN)), 0, CHN - 1);
+      const cz2 = clamp(Math.floor((z - WB.z0) / ((WB.z1 - WB.z0) / CHN)), 0, CHN - 1);
+      return cx2 * CHN + cz2;
+    };
+    // instance transforms don't grow a shared geometry's unit-sized bounding
+    // sphere, so every mesh gets its own cloned geometry with a hand-set
+    // sphere over its real extent — wide chunks still frustum-cull as wholes
+    const instMesh = (base, mat2, count, sx2, sz2, rad) => {
+      const g2 = base.clone();
+      g2.boundingSphere = new THREE.Sphere(new V3(sx2, 10, sz2), rad);
+      return new THREE.InstancedMesh(g2, mat2, count);
+    };
+    const coreCX = (CORE_EXT.x0 + CORE_EXT.x1) / 2, coreCZ = (CORE_EXT.z0 + CORE_EXT.z1) / 2;
+    const coreR = Math.hypot(CORE_EXT.x1 - CORE_EXT.x0, CORE_EXT.z1 - CORE_EXT.z0) / 2 + 40;
+    const chW = (WB.x1 - WB.x0) / CHN, chD = (WB.z1 - WB.z0) / CHN;
+    const chR = Math.hypot(chW, chD) / 2 + 40;
+    const chCX = (c) => WB.x0 + (Math.floor(c / CHN) + 0.5) * chW;
+    const chCZ = (c) => WB.z0 + ((c % CHN) + 0.5) * chD;
+    const wideR = Math.hypot(WB.x1 - WB.x0, WB.z1 - WB.z0) / 2 + 40;
+    const buckets = { core: [], cones: [], wide: [] };
+    for (let c = 0; c < CHN * CHN; c++) buckets.wide.push([]);
+    for (let i = 0; i < n; i++) {
+      const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
+      if ((TREE_STYLE[g] || TREE_STYLE[0])[6]) buckets.cones.push(i);
+      else if (CORE[i]) buckets.core.push(i);
+      else buckets.wide[chunkOf(X[i], Z[i])].push(i);
+    }
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), cCan = new THREE.Color();
+    const trunkScale = (dbh) => {
+      const r = clamp(dbh * 0.0127, 0.06, 0.55) / 0.28;
+      const h = clamp(2.4 + dbh * 0.1, 2.6, 5.2) / 3.6;
+      return [r, h];
+    };
+    const canopyAt = (i, st) => {
+      // crown base clears head height: mature street trees are pruned up
+      const th = clamp(2.4 + DBH[i] * 0.1, 2.6, 5.2);
+      return GY[i] + th * 0.8 + CR[i] * 0.9;
+    };
+    const paint = (mesh, idx, canopy, full) => {
+      for (let k = 0; k < idx.length; k++) {
+        const i = idx[k];
+        const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
+        const st = TREE_STYLE[g] || TREE_STYLE[0];
+        q.setFromAxisAngle(_sup, hash01(i * 9.1) * Math.PI * 2);
+        if (canopy) {
+          const cy = canopyAt(i, st);
+          m.compose(new V3(X[i], cy, Z[i]), q, new V3(CR[i] * st[3], CR[i] * st[4] * (0.9 + hash01(i * 7.7) * 0.25), CR[i] * st[3]));
+          mesh.setMatrixAt(k, m);
+          cCan.setHSL(st[0] + (hash01(i * 4.9) - 0.5) * 0.045, st[1] + (hash01(i * 6.1) - 0.5) * 0.12, st[2] + (hash01(i * 8.3) - 0.5) * 0.05);
+          mesh.setColorAt(k, cCan);
+        } else {
+          const [rs, hs] = trunkScale(DBH[i]);
+          const oT = frontOff(X[i], Z[i]);
+          const capLift = (CORE[i] && oT > TERRAIN.trenchW - 1 && oT < TERRAIN.trenchE + 1) ? 0.82 : 0;
+          m.compose(new V3(X[i], GY[i] + capLift, Z[i]), q, new V3(rs, hs, rs));
+          mesh.setMatrixAt(k, m);
+        }
+      }
+      mesh.instanceMatrix.needsUpdate = true;
+      if (canopy && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.castShadow = !!full;
+      mesh.receiveShadow = false;
+      groupCity.add(mesh);
+    };
+    // core: trunks + faceted canopies + two extra lobes each, with shadows
+    const ci = buckets.core;
+    if (ci.length) {
+      paint(instMesh(trunkCoreG, trunkMat, ci.length, coreCX, coreCZ, coreR), ci, false, true);
+      paint(instMesh(canCoreG, canMat, ci.length, coreCX, coreCZ, coreR), ci, true, true);
+      const lumps = instMesh(canCoreG, canMat, ci.length * 2, coreCX, coreCZ, coreR);
+      for (let k = 0; k < ci.length; k++) {
+        const i = ci[k];
+        const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
+        const st = TREE_STYLE[g] || TREE_STYLE[0];
+        const cy = canopyAt(i, st);
+        for (let l = 0; l < 2; l++) {
+          const a = hash01(i * 3.3 + l * 17.1) * Math.PI * 2;
+          const r = CR[i] * (0.45 + 0.25 * hash01(i * 4.1 + l));
+          const ls = CR[i] * (0.5 + 0.25 * hash01(i * 6.3 + l * 5));
+          m.compose(new V3(X[i] + Math.cos(a) * r, cy - CR[i] * 0.15 + hash01(i + l * 3) * CR[i] * 0.35, Z[i] + Math.sin(a) * r), q, new V3(ls, ls * 0.9, ls));
+          lumps.setMatrixAt(k * 2 + l, m);
+          cCan.setHSL(st[0] + (hash01(i * 4.9) - 0.5) * 0.04, st[1] - 0.06, st[2] + 0.05 + 0.02 * l);
+          lumps.setColorAt(k * 2 + l, cCan);
+        }
+      }
+      lumps.instanceMatrix.needsUpdate = true;
+      if (lumps.instanceColor) lumps.instanceColor.needsUpdate = true;
+      lumps.castShadow = true;
+      groupCity.add(lumps);
+    }
+    // wide tier: one light trunk + canopy pair per chunk so whole chunks cull
+    for (let c = 0; c < CHN * CHN; c++) {
+      const wi = buckets.wide[c];
+      if (!wi.length) continue;
+      paint(instMesh(trunkWideG, trunkMat, wi.length, chCX(c), chCZ(c), chR), wi, false, false);
+      paint(instMesh(canWideG, canMat, wi.length, chCX(c), chCZ(c), chR), wi, true, false);
+    }
+    // conifers: cones straight from the ground, both tiers in one mesh
+    const ki = buckets.cones;
+    if (ki.length) {
+      const cones = instMesh(coneG, canMat, ki.length, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR);
+      for (let k = 0; k < ki.length; k++) {
+        const i = ki[k];
+        const h = clamp(3 + DBH[i] * 0.25, 3.5, 14), r = clamp(0.8 + DBH[i] * 0.06, 1, 3.5);
+        q.setFromAxisAngle(_sup, hash01(i * 9.1) * Math.PI * 2);
+        m.compose(new V3(X[i], GY[i], Z[i]), q, new V3(r, h, r));
+        cones.setMatrixAt(k, m);
+        cCan.setHSL(0.34 + (hash01(i * 4.9) - 0.5) * 0.03, 0.35, 0.14 + (hash01(i * 8.3) - 0.5) * 0.04);
+        cones.setColorAt(k, cCan);
+      }
+      cones.instanceMatrix.needsUpdate = true;
+      if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
+      cones.castShadow = true;
+      groupCity.add(cones);
+    }
+    console.log('planted', nInv, 'surveyed trees +', n - nInv, 'curated,', buckets.cones.length, 'conifers');
+  });
+  function plantProceduralTrees() {
     const spots = [];
     const minD2 = 6 * 6;
     function clear(x, z) {
@@ -4600,7 +4896,7 @@
     cans.castShadow = true;
     lumps.castShadow = true;
     groupCity.add(trunks, cans, lumps);
-  });
+  }
 
   // ---------------------------------------------------------------- labels
   const labels = [];
@@ -4992,6 +5288,8 @@
     else if (k === 'v') toggleTransit();
     else if (k === 'n') toggleStreets();
     else if (k === 'f') toggleLayers();
+    else if (k === 'b') toggleIndego();
+    else if (k === 'p') togglePlaces();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
     else walk.keys[k] = true;
@@ -5236,9 +5534,9 @@
   }
   function septaStatus() {
     const n = septaVeh.size;
-    btnTransit.title = 'Live SEPTA vehicles (V): ' + n + ' tracked now';
+    btnTransit.title = 'Live SEPTA Vehicles (V): ' + n + ' Tracked Now';
     const tc = document.getElementById('transitCount');
-    if (tc) tc.textContent = n ? n + ' live' : '';
+    if (tc) tc.textContent = n ? n + ' Live' : '';
     if (!SEPTA.hinted && n > 0 && veil.classList.contains('hidden')) {
       SEPTA.hinted = true;
       hintEl.textContent = n + ' SEPTA vehicles are live on the map. Tap a pin for its route. V toggles.';
@@ -5254,14 +5552,14 @@
   function septaCard(v) {
     const late = v.info.late;
     const status = (late == null || isNaN(late) || late >= 900) ? '' :
-      late > 0 ? late + ' min late' : late < 0 ? (-late) + ' min early' : 'on time';
-    const bits = [v.kind];
+      late > 0 ? late + ' Min Late' : late < 0 ? (-late) + ' Min Early' : 'On Time';
+    const bits = [v.kind === 'bus' ? 'Bus' : 'Trolley'];
     if (status) bits.push(status);
     vehinfoBody.innerHTML =
       '<span class="vroute" style="background:' + v.tintHex + '">' + septaEsc(v.routeLabel) + '</span>' +
-      '<span class="vdest">to ' + septaEsc(v.info.dest || '—') + '</span>' +
+      '<span class="vdest">To ' + septaEsc(v.info.dest || '—') + '</span>' +
       '<div class="vmeta">' + septaEsc(bits.join(', ')) + '</div>' +
-      (v.info.next ? '<div class="vmeta">next stop: ' + septaEsc(v.info.next) + '</div>' : '');
+      (v.info.next ? '<div class="vmeta">Next Stop: ' + septaEsc(v.info.next) + '</div>' : '');
   }
   function syncTransitBtn() { btnTransit.classList.toggle('on', SEPTA.on); }
   function toggleTransit() {
@@ -5269,16 +5567,18 @@
     SEPTA.on = !SEPTA.on;
     syncTransitBtn();
     if (SEPTA.on) septaPoll(true);
-    else { pickedVeh = null; vehinfoEl.hidden = true; }
+    else { pickedVeh = null; if (!pickedStation && pickedTree == null) vehinfoEl.hidden = true; }
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedTree = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
   canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
   canvas.addEventListener('pointerup', (e) => {
-    if (!septaReady || !SEPTA.on || !septaSolid.count) return;
+    const sAct = septaReady && SEPTA.on && septaSolid.count > 0;
+    const iAct = indegoReady && INDEGO.on && indegoBadge.count > 0;
+    if (!sAct && !iAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -5294,16 +5594,26 @@
     }
     septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
     septaRay.setFromCamera(septaNdc, camera);
-    const hits = septaRay.intersectObjects([septaSolid, septaPin, septaBadge], false);
+    const targets = [];
+    if (sAct) targets.push(septaSolid, septaPin, septaBadge);
+    if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
+    const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null) {
       const h = hits[0];
-      const v = (h.object === septaSolid ? septaPickS : h.object === septaPin ? septaPickP : septaPickB)[h.instanceId];
-      if (v) { pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      let v = null, hitSt = null;
+      if (h.object === septaSolid) v = septaPickS[h.instanceId];
+      else if (h.object === septaPin) v = septaPickP[h.instanceId];
+      else if (h.object === septaBadge) v = septaPickB[h.instanceId];
+      else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
+      else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
+      else if (h.object === indegoBadge) hitSt = indegoPickB[h.instanceId];
+      if (v) { pickedStation = null; pickedTree = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      if (hitSt) { pickedVeh = null; pickedTree = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
     }
-    // forgiving fallback: the nearest vehicle within reach of the tap point
-    // (a little wider under the crosshair, where aiming is coarser)
-    let bestV = null, bestD = (vpWasLocked ? 46 : 30) ** 2;
-    septaVeh.forEach((v) => {
+    // forgiving fallback: the nearest vehicle or bike dock within reach of the
+    // tap point (a little wider under the crosshair, where aiming is coarser)
+    let bestV = null, bestS = null, bestD = (vpWasLocked ? 46 : 30) ** 2;
+    if (sAct) septaVeh.forEach((v) => {
       if (v.ug) return;
       _ssv.set(v.dx != null ? v.dx : v.x, (v.gy || 0) + 3, v.dz != null ? v.dz : v.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) return;
@@ -5312,8 +5622,56 @@
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestV = v; }
     });
-    if (bestV) { pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
-    if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; }
+    if (iAct) for (const st of indegoLive) {
+      _ssv.set(st.x, st.y + 2.6, st.z).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) continue;
+      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
+      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD) { bestD = d2; bestS = st; bestV = null; }
+    }
+    if (bestV) { pickedStation = null; pickedTree = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
+    if (bestS) { pickedVeh = null; pickedTree = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
+    // no vehicle or dock: try the forest. First march the pick ray against the
+    // canopy spheres (tapping a crown is the natural gesture), then fall back
+    // to the nearest tree around the tapped ground point (trunk-level taps)
+    if (treeInv) {
+      let bestT = -1;
+      const o = septaRay.ray.origin, dr = septaRay.ray.direction;
+      for (let t = 5; t < 700 && bestT < 0; t += 6) {
+        const px = o.x + dr.x * t, py = o.y + dr.y * t, pz = o.z + dr.z * t;
+        const gx = Math.floor(px / TREE_CELL), gz = Math.floor(pz / TREE_CELL);
+        for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iz = gz - 1; iz <= gz + 1; iz++) {
+          const cell = treePickGrid.get(ix + ':' + iz);
+          if (!cell) continue;
+          for (const ti of cell) {
+            const dx = treeInv.x[ti] - px, dy2 = treeInv.cy[ti] - py, dz = treeInv.z[ti] - pz;
+            const rr = Math.max(2.5, treeInv.cr[ti] + 0.6);
+            if (dx * dx + dy2 * dy2 + dz * dz < rr * rr) { bestT = ti; break; }
+          }
+          if (bestT >= 0) break;
+        }
+      }
+      if (bestT < 0) {
+        const gp = groundPointAt(cx, cy);
+        if (gp) {
+          let bestD2 = 0;
+          const gx = Math.floor(gp[0] / TREE_CELL), gz = Math.floor(gp[1] / TREE_CELL);
+          for (let ix = gx - 1; ix <= gx + 1; ix++) for (let iz = gz - 1; iz <= gz + 1; iz++) {
+            const cell = treePickGrid.get(ix + ':' + iz);
+            if (!cell) continue;
+            for (const ti of cell) {
+              const dx = treeInv.x[ti] - gp[0], dz = treeInv.z[ti] - gp[1];
+              const d2 = dx * dx + dz * dz;
+              const r = Math.max(3.5, treeInv.cr[ti] + 0.8);
+              if (d2 < r * r && (bestT < 0 || d2 < bestD2)) { bestT = ti; bestD2 = d2; }
+            }
+          }
+        }
+      }
+      if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
+    }
+    if (pickedVeh || pickedStation || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedTree = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -5642,11 +6000,145 @@
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
     geo.setIndex(idx);
     stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x2c2822 });
+    // Alpha-tested magnification (the Valve trick): up close the 27 px atlas
+    // glyphs magnify ~9x and bilinear filtering reads as soft blocks. The
+    // bilinear-interpolated coverage approximates a distance field near each
+    // edge, so re-thresholding it with fwidth-scaled AA redraws the contour
+    // crisp at any zoom; at far view the wide clamp degrades to passthrough.
+    stMat.onBeforeCompile = (shader) => {
+      shader.fragmentShader = shader.fragmentShader.replace(
+        '#include <map_fragment>',
+        '#include <map_fragment>\n{\n' +
+        '  float w = clamp(fwidth(diffuseColor.a) * 1.4, 0.02, 0.49);\n' +
+        '  diffuseColor.a = smoothstep(0.42 - w, 0.42 + w, diffuseColor.a);\n' +
+        '}');
+    };
     stMesh = new THREE.Mesh(geo, stMat);
     stMesh.renderOrder = 5;
     stMesh.visible = stOn;
     groupCity.add(stMesh);
     syncStreetsBtn();
+  });
+
+  // ---------------------------------------------------------------- places
+  // Historic districts and neighborhood names (OpenDataPhilly, baked by
+  // fetch_places.py / bake_places.py into PLACES). The sixteen Philadelphia
+  // Register districts draw as bronze boundary inlays on the ground, Society
+  // Hill first among them; the neighborhood names fade in from altitude as
+  // the district-level complement to the painted street names. One toggle
+  // covers all of it: the P key.
+  let placesOn = true, hdMesh = null, hdMat = null, hdLblMesh = null, hdLblMat = null, nbMesh = null, nbMat = null;
+  const btnPlaces = document.getElementById('btnPlaces');
+  function syncPlacesBtn() { btnPlaces.classList.toggle('on', placesOn); }
+  function togglePlaces() {
+    placesOn = !placesOn;
+    if (hdMesh) hdMesh.visible = placesOn;
+    if (hdLblMesh) hdLblMesh.visible = placesOn;
+    if (nbMesh) nbMesh.visible = false;      // applyLighting re-shows it by altitude
+    syncPlacesBtn();
+  }
+  btnPlaces.addEventListener('click', togglePlaces);
+  step('Tracing the historic districts', () => {
+    if (typeof PLACES === 'undefined' || !PLACES || !PLACES.hd || !PLACES.hd.length) { btnPlaces.style.display = 'none'; return; }
+    const parts = [];
+    for (const d of PLACES.hd) {
+      for (const flat of d.rings) {
+        const pts = [];
+        for (let i = 0; i + 1 < flat.length; i += 2) pts.push([flat[i], flat[i + 1]]);
+        if (pts.length < 3) continue;
+        pts.push(pts[0]);                     // close the boundary loop
+        // walkY so the inlay rides the trench cap decks instead of diving in;
+        // 0.34 sits between the footway and basin lifts. 3.2 m wide: a 1.7 m
+        // trial line vanished below one pixel at district-viewing altitude
+        parts.push(ribbon(pts, 3.2, 0.34, (x, z) => walkY(x, z)));
+      }
+    }
+    if (!parts.length) return;
+    let total = 0;
+    for (const g of parts) total += g.attributes.position.count;
+    const pos = new Float32Array(total * 3);
+    let o = 0;
+    for (const g of parts) { pos.set(g.attributes.position.array, o * 3); o += g.attributes.position.count; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    hdMat = new THREE.MeshBasicMaterial({ color: 0x6b4f26, transparent: true, opacity: 0.85, depthWrite: false });
+    hdMesh = new THREE.Mesh(geo, hdMat);
+    hdMesh.renderOrder = 4;                   // under the street lettering at 5
+    hdMesh.visible = placesOn;
+    groupCity.add(hdMesh);
+    syncPlacesBtn();
+  });
+  step('Naming the neighborhoods', async () => {
+    if (typeof PLACES === 'undefined' || !PLACES || !PLACES.nb || !PLACES.nb.names) return;
+    const AW = 2048, AH = 1024, FS = 30, RH = 38, PAD = 8;
+    try { await document.fonts.load('600 30px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
+    const cv = document.createElement('canvas');
+    cv.width = AW; cv.height = AH;
+    const g = cv.getContext('2d');
+    g.font = '600 ' + FS + 'px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+    g.fillStyle = '#fff';
+    g.textBaseline = 'middle';
+    let ax = PAD, ay = 0;
+    const put = (nm) => {
+      const w = Math.min(Math.ceil(g.measureText(nm).width), 520);
+      if (ax + w + PAD > AW) { ax = PAD; ay += RH; }
+      if (ay + RH > AH) return null;
+      g.fillText(nm, ax, ay + RH / 2, 520);
+      const r = [ax, ay, w, RH];
+      ax += w + PAD * 2;
+      return r;
+    };
+    const nbRects = PLACES.nb.names.map(put);
+    const hdLbl = PLACES.hd.filter((d) => d.lbl);
+    const hdRects = hdLbl.map((d) => put(d.n));
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = 8;
+    const makeMesh = (entries, mat) => {
+      // flat north-up quads draped in 4 columns so long names ride the terrain
+      const pos = [], uv = [], idx = [];
+      for (const [r, x, z, textH, lift] of entries) {
+        if (!r) continue;
+        const hw = textH * (r[2] / FS) / 2, hh = textH * (RH / FS) / 2;
+        const u0 = r[0] / AW, u1 = (r[0] + r[2]) / AW;
+        const v1 = 1 - r[1] / AH, v0 = 1 - (r[1] + r[3]) / AH;
+        const cols = 4;
+        const i0 = pos.length / 3;
+        for (let c = 0; c <= cols; c++) {
+          const cx = x + (c / cols * 2 - 1) * hw;
+          const yc = walkY(cx, z) + lift;
+          pos.push(cx, yc, z + hh, cx, yc, z - hh);
+          const uc = u0 + (u1 - u0) * (c / cols);
+          uv.push(uc, v0, uc, v1);
+        }
+        for (let c = 0; c < cols; c++) {
+          const a = i0 + c * 2;
+          idx.push(a, a + 2, a + 3, a, a + 3, a + 1);
+        }
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+      geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+      geo.setIndex(idx);
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.renderOrder = 5;
+      groupCity.add(mesh);
+      return mesh;
+    };
+    // 24 m up: painted at grade the names drown under rowhouse roofs and tree
+    // canopies (street names live on open roadway; neighborhoods don't) — a
+    // gentle lift clears the fabric while the towers still punch through
+    const NB_TH = [110, 80, 55];              // text height by area class
+    const L = PLACES.nb.l;
+    const nbEntries = [];
+    for (let i = 0; i + 3 < L.length; i += 4) nbEntries.push([nbRects[L[i]], L[i + 1], L[i + 2], NB_TH[L[i + 3]] || 55, 24]);
+    nbMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x4a443a, opacity: 0 });
+    nbMesh = makeMesh(nbEntries, nbMat);
+    nbMesh.visible = false;                   // fades in from altitude
+    const hdEntries = hdLbl.map((d, i) => [hdRects[i], d.lbl[0], d.lbl[1], 26, 12]);
+    hdLblMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x8f6f3f, opacity: 0.9 });
+    hdLblMesh = makeMesh(hdEntries, hdLblMat);
+    hdLblMesh.visible = placesOn;
   });
 
   // ---------------------------------------------------------------- address search
@@ -5736,11 +6228,11 @@
         v._sd = (x - camera.position.x) * (x - camera.position.x) + (z - camera.position.z) * (z - camera.position.z);
       });
       live.sort((a2, b2) => a2._sd - b2._sd);
-      searchOut.innerHTML = '<div class="smsg">Route ' + septaEsc(rid) + ': ' + live.length + ' live, nearest first</div>';
+      searchOut.innerHTML = '<div class="smsg">Route ' + septaEsc(rid) + ': ' + live.length + ' Live, Nearest First</div>';
       for (const v of live.slice(0, 8)) {
         const el = document.createElement('div');
         el.className = 'srow';
-        el.textContent = v.routeLabel + ' to ' + (v.info.dest || 'unknown') + (v.info.next ? ', next: ' + v.info.next : '');
+        el.textContent = v.routeLabel + ' To ' + (v.info.dest || 'Unknown') + (v.info.next ? ', Next: ' + v.info.next : '');
         el.addEventListener('click', () => searchGoToBus(v));
         searchOut.appendChild(el);
       }
@@ -5895,6 +6387,329 @@
     setInterval(() => septaPoll(false), SEPTA_POLL);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) septaPoll(false); });
     septaPoll(true);
+  });
+
+  // ---------------------------------------------------------------- live Indego bike share
+  // Station status from Indego's public feed (Bicycle Transit Systems' worker;
+  // CORS-open, server-cached 60 s), the bike-share counterpart to the SEPTA
+  // fleet: fixed docks on their real sidewalks, each rack filled with its
+  // actual bikes — classic and electric — and a count badge overhead. Same
+  // hostname gate as SEPTA: silently absent under the claude.ai artifact CSP.
+  const INDEGO_URL = 'https://bts-status.bicycletransit.workers.dev/phl';
+  const INDEGO_POLL = 60000;                        // the feed itself is cached 60 s
+  const INDEGO_CAP = { st: 400, bk: 2600 };
+  const INDEGO = { on: true, ok: false, fails: 0, nextT: 0 };
+  const indegoSt = new Map();
+  const indegoList = [];                            // badge-tile order, stable per session
+  let indegoLive = [];                              // filtered draw order, rebuilt per poll
+  let indegoReady = false, indegoDirty = false, indegoSolid = null, indegoBike = null, indegoBadge = null;
+  let indegoTex = null, indegoCtx = null, pickedStation = null;
+  const indegoPickS = [], indegoPickK = [], indegoPickB = [];
+  const btnIndego = document.getElementById('btnIndego');
+  const _iq = new THREE.Quaternion(), _iqB = new THREE.Quaternion();
+  function indegoStationGeom() {
+    // unit dock along x (1.0 scales to the rack's length); y/z in meters.
+    // Platform slab + low rack spine + kiosk pylon whose screen glows at night
+    // through the fleet material's aGlow term.
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, cr, cg, cb, glow) =>
+      parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), cr, cg, cb, glow));
+    box(1.0, 0.08, 2.1, 0, 0.04, 0, 0.58, 0.56, 0.51);          // platform slab
+    box(0.94, 0.07, 0.12, 0, 0.34, 0, 1, 1, 1);                 // rack spine (instance color)
+    box(0.02, 0.26, 0.1, -0.24, 0.17, 0, 0.45, 0.46, 0.47);     // spine legs
+    box(0.02, 0.26, 0.1, 0.24, 0.17, 0, 0.45, 0.46, 0.47);
+    box(0.035, 1.85, 0.42, -0.485, 0.93, 0.62, 0.5, 0.49, 0.45); // kiosk pylon
+    box(0.03, 0.34, 0.3, -0.47, 1.38, 0.62, 0.95, 0.93, 0.82, 1); // kiosk screen
+    return septaMerge(parts);
+  }
+  function indegoBikeGeom() {
+    // ~90-tri parked bike facing +x: two wheels, frame tubes, seat, bars
+    const parts = [];
+    const wheel = (cx) => {
+      const c = new THREE.CylinderGeometry(0.3, 0.3, 0.045, 7);
+      c.rotateX(Math.PI / 2);
+      c.translate(cx, 0.3, 0);
+      parts.push(septaColored(c, 0.12, 0.12, 0.13));
+    };
+    wheel(-0.42);
+    wheel(0.42);
+    const box = (sx, sy, sz, cx, cy, cz, cr, cg, cb) =>
+      parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), cr, cg, cb));
+    const g1 = new THREE.BoxGeometry(0.72, 0.055, 0.045);        // down tube, hub to hub
+    g1.rotateZ(0.16);
+    g1.translate(0, 0.52, 0);
+    parts.push(septaColored(g1, 1, 1, 1));
+    box(0.05, 0.34, 0.045, -0.34, 0.72, 0, 1, 1, 1);             // seat post
+    box(0.05, 0.42, 0.045, 0.38, 0.78, 0, 1, 1, 1);              // head tube
+    box(0.2, 0.045, 0.06, -0.36, 0.9, 0, 0.14, 0.14, 0.15);      // saddle
+    box(0.05, 0.045, 0.42, 0.4, 1.0, 0, 0.14, 0.14, 0.15);       // handlebar
+    return septaMerge(parts);
+  }
+  function indegoBolt(g, x, y, s) {
+    g.beginPath();
+    g.moveTo(x + 0.45 * s, y - 0.95 * s);
+    g.lineTo(x - 0.35 * s, y + 0.12 * s);
+    g.lineTo(x + 0.02 * s, y + 0.12 * s);
+    g.lineTo(x - 0.3 * s, y + 0.95 * s);
+    g.lineTo(x + 0.5 * s, y - 0.12 * s);
+    g.lineTo(x + 0.1 * s, y - 0.12 * s);
+    g.closePath();
+    g.fill();
+  }
+  function indegoDrawTiles() {
+    // one shared 128 px-tile atlas (32x16 slots), repainted whole each poll:
+    // paper coin + live count, ring in Indego blue, amber bolt for e-bikes
+    if (!indegoCtx) return;
+    const g = indegoCtx;
+    g.clearRect(0, 0, 4096, 2048);
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    for (const st of indegoList) {
+      if (!indegoSt.has(st.id)) continue;
+      const tx = (st.tile % 32) * 128 + 64, ty = ((st.tile / 32) | 0) * 128;
+      g.strokeStyle = 'rgba(28,26,22,0.6)';
+      g.fillStyle = '#fdfbf6';
+      g.lineWidth = 6;
+      g.beginPath();                                  // pointer tip, coin overlaps it
+      g.moveTo(tx - 13, ty + 88);
+      g.lineTo(tx, ty + 120);
+      g.lineTo(tx + 13, ty + 88);
+      g.closePath();
+      g.fill();
+      g.stroke();
+      g.beginPath();
+      g.arc(tx, ty + 48, 40, 0, Math.PI * 2);
+      g.fill();
+      g.strokeStyle = st.act ? (st.bikes ? '#0ea3c4' : '#98a0a4') : '#565b5e';
+      g.stroke();
+      g.fillStyle = '#22201c';
+      const hasE = st.act && st.ebikes > 0;
+      g.font = '700 44px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+      g.fillText(st.act ? String(st.bikes) : '–', tx, ty + (hasE ? 40 : 49));
+      if (hasE) {
+        g.fillStyle = '#b97a17';
+        indegoBolt(g, tx - 12, ty + 71, 10);
+        g.font = '600 24px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+        g.fillText(String(st.ebikes), tx + 10, ty + 72);
+      }
+    }
+    indegoTex.needsUpdate = true;
+  }
+  function indegoGot(d) {
+    const feats = d && d.features;
+    if (!Array.isArray(feats) || !feats.length) { indegoFail(); return; }
+    const alive = new Set();
+    for (const f of feats) {
+      const p = f && f.properties, c = f && f.geometry && f.geometry.coordinates;
+      if (!p || !c) continue;
+      const lon = +c[0], lat = +c[1];
+      if (!(lat > SEPTA_BOX.la0 && lat < SEPTA_BOX.la1 && lon > SEPTA_BOX.lo0 && lon < SEPTA_BOX.lo1)) continue;
+      const id = String(p.kioskId || p.id || p.name || '');
+      if (!id) continue;
+      alive.add(id);
+      let st = indegoSt.get(id);
+      if (!st) {
+        if (indegoSt.size >= INDEGO_CAP.st || indegoList.length >= 512) continue;
+        const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+        if (!isFinite(x) || !isFinite(z)) continue;
+        // orientation only from the road grid — the surveyed position is right,
+        // the dock just wants to sit parallel to its street
+        const sn = septaSnapRoad(x, z, 30);
+        st = { id, x, z, y: siteY(x, z, 'ground'), dx: sn ? sn[2] : 1, dz: sn ? sn[3] : 0, tile: indegoList.length };
+        indegoList.push(st);
+        indegoSt.set(id, st);
+      }
+      st.name = p.name || 'Indego Station';
+      st.addr = p.addressStreet || '';
+      st.bikes = +p.bikesAvailable || 0;
+      st.classic = +p.classicBikesAvailable || 0;
+      st.ebikes = +p.electricBikesAvailable || 0;
+      st.docksOpen = +p.docksAvailable || 0;
+      st.docks = +p.totalDocks || 0;
+      st.act = p.kioskPublicStatus === 'Active';
+      st.slots = Array.isArray(p.bikes) ? p.bikes : null;
+      let bSum = 0, bN = 0;
+      if (st.slots) for (const b of st.slots) if (b && b.isElectric && b.isAvailable && b.battery != null) { bSum += +b.battery || 0; bN++; }
+      st.eAvg = bN ? Math.round(bSum / bN) : null;
+    }
+    indegoSt.forEach((st, id) => {
+      if (!alive.has(id)) {
+        indegoSt.delete(id);
+        if (pickedStation === st) { pickedStation = null; vehinfoEl.hidden = true; }
+      }
+    });
+    INDEGO.ok = true; INDEGO.fails = 0; INDEGO.nextT = 0;
+    indegoDirty = true;
+    indegoDrawTiles();
+    indegoStatus();
+    if (pickedStation) indegoCard(pickedStation);
+  }
+  function indegoFail() {
+    INDEGO.fails++;
+    INDEGO.nextT = performance.now() + INDEGO_POLL * Math.min(8, Math.pow(2, INDEGO.fails));
+  }
+  function indegoPoll(force) {
+    if (!INDEGO.on || !septaCanFetch || !indegoReady) return;
+    if (document.hidden && !force) return;
+    if (!force && performance.now() < INDEGO.nextT) return;
+    const ctl = new AbortController();
+    const tm = setTimeout(() => ctl.abort(), 15000);
+    fetch(INDEGO_URL, { signal: ctl.signal })
+      .then((r) => (r && r.ok ? r.json() : null))
+      .then((d) => { clearTimeout(tm); if (d) indegoGot(d); else indegoFail(); })
+      .catch(() => { clearTimeout(tm); indegoFail(); });
+  }
+  function indegoCard(st) {
+    const lines = [st.classic + ' Classic, ' + st.ebikes + ' Electric, ' + st.docksOpen + (st.docksOpen === 1 ? ' Dock Open' : ' Docks Open')];
+    if (st.eAvg != null) lines.push('E-Bikes Average ' + st.eAvg + '% Charge');
+    if (!st.act) lines.push('Station Unavailable');
+    else if (!st.docksOpen) lines.push('Station Full, No Docks Open');
+    if (st.addr) lines.push(st.addr);
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:#1289a8">' + (st.act ? st.bikes : '–') + '</span>' +
+      '<span class="vdest">' + septaEsc(st.name) + '</span>' +
+      lines.map((l) => '<div class="vmeta">' + septaEsc(l) + '</div>').join('');
+  }
+  function indegoStatus() {
+    let bikes = 0;
+    indegoSt.forEach((st) => { bikes += st.bikes; });
+    btnIndego.title = 'Indego Bike Share (B): ' + bikes + ' Bikes At ' + indegoSt.size + ' Stations';
+    const ic = document.getElementById('indegoCount');
+    if (ic) ic.textContent = indegoSt.size ? String(bikes) : '';
+  }
+  function syncIndegoBtn() { btnIndego.classList.toggle('on', INDEGO.on); }
+  function toggleIndego() {
+    if (!septaCanFetch) return;
+    INDEGO.on = !INDEGO.on;
+    syncIndegoBtn();
+    if (INDEGO.on) { indegoDirty = true; indegoPoll(true); }
+    else if (pickedStation) { pickedStation = null; vehinfoEl.hidden = true; }
+  }
+  btnIndego.addEventListener('click', toggleIndego);
+  function indegoRebuild() {
+    // matrices move only when the data does — this runs per poll, not per frame
+    indegoLive = [];
+    let si = 0, ki = 0;
+    for (const st of indegoList) {
+      if (!indegoSt.has(st.id) || si >= INDEGO_CAP.st) continue;
+      const rackL = clamp((st.docks || 12) * 0.42, 4, 20);
+      st.rackL = rackL;
+      const yaw = Math.atan2(-st.dz, st.dx);
+      _iq.setFromAxisAngle(_sup, yaw);
+      _sp.set(st.x, st.y, st.z);
+      _ss.set(rackL, 1, 1);
+      _sm.compose(_sp, _iq, _ss);
+      indegoSolid.setMatrixAt(si, _sm);
+      indegoSolid.setColorAt(si, _sc.setHex(st.act ? (st.bikes ? 0x11758c : 0x565e63) : 0x3a3f42));
+      indegoPickS[si] = st;
+      indegoBadge.geometry.attributes.aTile.setXY(si, (st.tile % 32) / 32, 1 - (((st.tile / 32) | 0) + 1) / 16);
+      indegoPickB[si] = st;
+      indegoLive.push(st);
+      si++;
+      if (st.slots) {
+        for (const b of st.slots) {
+          if (!b || ki >= INDEGO_CAP.bk) continue;
+          const dn = clamp(+b.dockNumber || 1, 1, Math.max(1, st.docks || 1));
+          const t = (dn - 0.5) / Math.max(1, st.docks || 1) - 0.5;
+          const side = dn % 2 ? 1 : -1;
+          const nx = -st.dz * side, nz = st.dx * side;
+          _iq.setFromAxisAngle(_sup, Math.atan2(-nz, nx));
+          _sp.set(st.x + st.dx * t * rackL + nx * 0.58, st.y + 0.06, st.z + st.dz * t * rackL + nz * 0.58);
+          _ss.set(1, 1, 1);
+          _sm.compose(_sp, _iq, _ss);
+          indegoBike.setMatrixAt(ki, _sm);
+          indegoBike.setColorAt(ki, _sc.setHex(b.isAvailable === false ? 0x4b4f52 : b.isElectric ? 0x2c8ca3 : 0x11758c));
+          indegoPickK[ki] = st;
+          ki++;
+        }
+      }
+    }
+    indegoSolid.count = si;
+    indegoBike.count = ki;
+    indegoBadge.count = si;
+    indegoSolid.instanceMatrix.needsUpdate = true;
+    indegoBike.instanceMatrix.needsUpdate = true;
+    indegoBadge.geometry.attributes.aTile.needsUpdate = true;
+    if (indegoSolid.instanceColor) indegoSolid.instanceColor.needsUpdate = true;
+    if (indegoBike.instanceColor) indegoBike.instanceColor.needsUpdate = true;
+  }
+  function updateIndego(now, dt) {
+    if (!indegoReady) return;
+    if (!INDEGO.on) {
+      if (indegoSolid.count || indegoBike.count || indegoBadge.count) {
+        indegoSolid.count = 0; indegoBike.count = 0; indegoBadge.count = 0;
+      }
+      return;
+    }
+    if (indegoDirty) { indegoDirty = false; indegoRebuild(); }
+    // badges billboard the camera every frame; no bob — docks are furniture,
+    // bobbing is the vehicles' signature. Own quaternion copy: _sqB is only
+    // fresh while the SEPTA layer is on.
+    _iqB.copy(camera.quaternion);
+    for (let i = 0; i < indegoLive.length; i++) {
+      const st = indegoLive[i];
+      _sp.set(st.x, st.y + 3.1, st.z);
+      const s = clamp(camera.position.distanceTo(_sp) / 260, 1, 8);
+      _ss.set(s, s, s);
+      _sm.compose(_sp, _iqB, _ss);
+      indegoBadge.setMatrixAt(i, _sm);
+    }
+    indegoBadge.instanceMatrix.needsUpdate = true;
+    if (pickedStation) {
+      _ssv.set(pickedStation.x, pickedStation.y + 6, pickedStation.z).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else {
+        vehinfoEl.style.opacity = '1';
+        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      }
+    }
+  }
+  step('Docking the Indego bikes', () => {
+    if (!septaCanFetch) { btnIndego.style.display = 'none'; return; }
+    const cv = document.createElement('canvas');
+    cv.width = 4096; cv.height = 2048;
+    indegoCtx = cv.getContext('2d');
+    indegoTex = new THREE.CanvasTexture(cv);
+    indegoTex.encoding = THREE.sRGBEncoding;
+    indegoTex.anisotropy = 4;
+    try { document.fonts.load('700 44px "Montserrat"').catch(() => {}); } catch (e) { /* stack fallback */ }
+    const badgeMat = new THREE.MeshBasicMaterial({ map: indegoTex, transparent: true, depthWrite: false });
+    badgeMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec2 aTile;')
+        .replace('#include <uv_vertex>', 'vUv = uv * vec2(0.03125, 0.0625) + aTile;');
+    };
+    const bodyMat = septaMats.body || new THREE.MeshLambertMaterial({ vertexColors: true });
+    indegoSolid = new THREE.InstancedMesh(indegoStationGeom(), bodyMat, INDEGO_CAP.st);
+    indegoBike = new THREE.InstancedMesh(indegoBikeGeom(), bodyMat, INDEGO_CAP.bk);
+    const bg = new THREE.PlaneGeometry(4.4, 4.4).translate(0, 2.6, 0);
+    const aTile = new THREE.InstancedBufferAttribute(new Float32Array(INDEGO_CAP.st * 2), 2);
+    aTile.setUsage(THREE.DynamicDrawUsage);
+    bg.setAttribute('aTile', aTile);
+    indegoBadge = new THREE.InstancedMesh(bg, badgeMat, INDEGO_CAP.st);
+    for (const m of [indegoSolid, indegoBike, indegoBadge]) {
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0;
+      m.frustumCulled = false;                        // instance bounds don't follow the docks
+      if (m !== indegoBadge) {
+        m.setColorAt(0, _sc.setRGB(1, 1, 1));         // allocates instanceColor
+        m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      }
+    }
+    indegoSolid.castShadow = true;
+    indegoSolid.receiveShadow = true;
+    indegoBike.castShadow = true;
+    indegoBadge.renderOrder = 12;
+    groupCity.add(indegoSolid);
+    groupCity.add(indegoBike);
+    groupCity.add(indegoBadge);
+    indegoReady = true;
+    syncIndegoBtn();
+    setInterval(() => indegoPoll(false), INDEGO_POLL);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) indegoPoll(false); });
+    indegoPoll(true);
   });
 
   step('Charting the viewpoints', () => {
@@ -6116,6 +6931,14 @@
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(0x2c2822)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
+    if (hdMat) hdMat.color.copy(_c1.set(0x6b4f26)).lerp(_c2.set(0xc89b5e), night);  // district inlays: dark bronze by day, glowing at night
+    if (hdLblMat) hdLblMat.color.copy(_c1.set(0x6b4f26)).lerp(_c2.set(0xc89b5e), night);
+    if (nbMat) {
+      nbMat.color.copy(_c1.set(0x4a443a)).lerp(_c2.set(0xb0a894), night);
+      const nbFade = placesOn ? smooth(420, 1000, camera.position.y) : 0;   // names live at altitude
+      nbMat.opacity = nbFade * 0.92;
+      nbMesh.visible = nbFade > 0.02;
+    }
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.9;
@@ -6137,7 +6960,7 @@
     if (document.activeElement !== timeDate) timeDate.value = key;
     timeSlider.value = String(clock.minutes);
     const dst = tzOffsetMin(clock.y, clock.m, clock.d) === -240;
-    timeClockEl.textContent = fmtTime(clock.minutes) + ' ' + (dst ? 'EDT' : 'EST') + (clock.live ? ' (live)' : '');
+    timeClockEl.textContent = fmtTime(clock.minutes) + ' ' + (dst ? 'EDT' : 'EST') + (clock.live ? ' (Live)' : '');
     timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' : '');
   }
   function toggleTimePanel() { timePanel.classList.toggle('open'); }
@@ -6176,7 +6999,7 @@
     }
     loadmsg.textContent = failures ? 'Ready (some detail could not be built)' : 'Ready';
     btnEnter.disabled = false;
-    btnEnter.textContent = 'Enter the city';
+    btnEnter.textContent = 'Enter the City';
   }
 
   btnEnter.addEventListener('click', () => {
@@ -6241,6 +7064,8 @@
     sky.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
     updateTransit(now, dt);
+    updateIndego(now, dt);
+    updateTreePick();
     updateSearchMark(now);
     updateLabels();
     renderer.render(scene, camera);
@@ -6251,7 +7076,7 @@
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });
