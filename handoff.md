@@ -977,6 +977,18 @@ Round 21 (Aug 25 — de-AI pass 2 + sun + bus alignment + layers panel):
   Indego markers + the search pin NEVER hide behind buildings — depthTest
   false + renderOrder 11/12 on nbMat, pinMat, badgeMat, Indego badgeMat, the
   bronze search pin). Page 18.94 MB.
+- **Round 24 (sht-32's session, logged here on its behalf):** e80bd98 — the
+  Ryland's night panels now light in FACADE space (the world-axis cell lattice
+  cut half-lit fragments on the ~10°-rotated bars). Implementation note: it
+  derives the facade axis from per-fragment derivatives rather than an OBB-axis
+  uniform — a single shared axis would stripe the bars' END walls; the
+  aBase-relative floor rows and the amenity band from round 22 are unchanged.
+  Same commit: tree species read at a glance (chroma-separated palette,
+  vase/pyramid/column silhouettes) on the PPR inventory. Two shader lessons to
+  keep: (1) sin-dot lattice hashes streak into "worms" on integer cell ids —
+  use a fract-cascade hash for cell lotteries; (2) make species/albedo
+  variation live in HUE + SATURATION, not lightness — the daylight pipeline
+  (legacy lift + ACES) flattens lightness differences.
 - **The sun is round now** (Mike's screenshot: vertical streak): the sky dome
   is coarse (32×18) and the fragment shader used INTERPOLATED vDir unnormalized,
   so pow(dot, 420) followed the mesh's vertex meridians. The shader now
