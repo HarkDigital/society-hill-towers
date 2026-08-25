@@ -909,6 +909,40 @@ Round 20 (Aug 25 — night buses, rail removed, route search):
   system. The GLORY / Rotten Ralph's canvas SIGNS keep their Futura stacks on
   purpose (real-world signage, not UI). Page 16.14 MB.
 
+Round 21 (Aug 25 — de-AI pass 2 + sun + bus alignment + layers panel):
+- **Mono replaced** (Mike: "the biggest indicator of AI"): --mono is now embedded
+  Courier Prime 400/700 (typewriter, archival) with Courier fallbacks. Kickers,
+  hints, key chips, coordinates all read typewritten now.
+- **No em dashes or middot separators in any user-facing text** (Mike's rule —
+  KEEP IT THAT WAY in future UI strings): veil, About, fly tips, hints, cards,
+  search rows, loading messages, timeSun readout all rewritten with commas,
+  colons, and sentences. Hints are now capitalized sentences ("Drag to orbit.
+  Scroll to zoom."). fmtTime's null placeholder is '' (was an em dash). Code
+  comments and handoff/memory are exempt (not user-facing).
+- **Street names**: now Libre Caslon Text ITALIC 400 (embedded; the classic
+  engraved-map street hand), atlas 27 px in 34 px rows, text height per class
+  [7.0, 5.6, 4.4] m, day color darkened to 0x2c2822 and night pale 0xa8a296 —
+  bigger, darker, unmistakably cartographic. 'Lettering the streets' awaits
+  document.fonts.load('italic 27px ...') before drawing.
+- **Buses align to their street** (Mike's screenshot: diagonal bus): septa-
+  SnapRoad now also returns the matched segment's unit axis; when snapped, the
+  yaw target becomes that axis SIGNED to within 90° of the API/displacement
+  heading (v.sdx/v.sdz), so GPS heading noise can't park a bus diagonally.
+  Unsnapped vehicles keep the raw heading; the 2.6 rad/s cap animates corners.
+- **Layers panel** (Mike: "filters all live in 1 button"): Aa/St/SEPTA bar
+  buttons are gone; one Layers button (stacked-squares SVG, key F) opens
+  #layerspanel with three .lrow toggle buttons that keep the OLD IDS
+  (btnTransit with the SEPTA logo + a live count span #transitCount, btnStreets,
+  btnLabels) so all existing wiring held; sync fns now toggle .on (bronze
+  square .lmark). V/N/L shortcuts unchanged.
+- **The sun is round now** (Mike's screenshot: vertical streak): the sky dome
+  is coarse (32×18) and the fragment shader used INTERPOLATED vDir unnormalized,
+  so pow(dot, 420) followed the mesh's vertex meridians. The shader now
+  normalizes per fragment and draws a true angular disc
+  (smoothstep on acos, ~0.6° radius) + gaussian halo + wide pow glow. NEVER
+  compute tight specular-style highlights on unnormalized interpolated
+  directions over a coarse dome. Page 16.20 MB.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

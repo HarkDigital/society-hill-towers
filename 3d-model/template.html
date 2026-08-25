@@ -22,7 +22,7 @@
 <div id="searchpanel" class="panel" role="search" aria-label="Find an address">
   <div class="kicker">Find a place in Philadelphia</div>
   <div class="row">
-    <input type="text" id="searchInput" placeholder="Address, place, or bus route &mdash; e.g. 1420 Locust or 33" autocomplete="off" spellcheck="false">
+    <input type="text" id="searchInput" placeholder="Address, place, or bus route (try 1420 Locust or 33)" autocomplete="off" spellcheck="false">
     <button id="searchGo" class="mini">Go</button>
   </div>
   <div id="searchOut"></div>
@@ -41,10 +41,10 @@
 
 <div id="flytips" role="dialog" aria-label="Fly mode controls">
   <div class="card panel">
-    <div class="kicker">Fly mode &middot; touch controls</div>
-    <div class="tiprow"><span class="tipkey">Left thumb</span><span>Joystick to fly &mdash; push past the ring to speed up</span></div>
-    <div class="tiprow"><span class="tipkey">Right thumb</span><span>Drag to look &mdash; the stick flies where you look</span></div>
-    <div class="tiprow"><span class="tipkey">&#9650; &#9660;</span><span>Climb &middot; descend</span></div>
+    <div class="kicker">Touch fly controls</div>
+    <div class="tiprow"><span class="tipkey">Left thumb</span><span>Joystick to fly. Push past the ring to speed up.</span></div>
+    <div class="tiprow"><span class="tipkey">Right thumb</span><span>Drag to look. The stick flies where you look.</span></div>
+    <div class="tiprow"><span class="tipkey">&#9650; &#9660;</span><span>Climb and descend</span></div>
     <button id="flyTipsOk">Okay</button>
   </div>
 </div>
@@ -55,22 +55,27 @@
     <button id="btnWalk" title="Walk the streets (2)">Walk</button>
     <button id="btnFly" title="Fly over the city (3)">Fly</button>
   </div>
-  <button id="btnLabels" class="iconbtn panel" title="Toggle landmark labels (L)">Aa</button>
-  <button id="btnStreets" class="iconbtn panel" title="Street names (N)">St</button>
-  <button id="btnTransit" class="iconbtn panel" title="Live SEPTA vehicles (V)"><svg viewBox="0 0 500 370" aria-hidden="true"><rect x="54" y="15" width="392" height="340" fill="#ece8dd"/><path fill="#f14728" d="M441.775,14.666H340.441L180.888,127.332h148.665l115.779,115.333L333.556,355.107h108.22c25.555,0,44.221-25.332,44.221-43.331V58.221C485.996,39.998,467.33,14.666,441.775,14.666z"/><path fill="#f14728" d="M206.443,137.998H192.22l87.111,87.107c4.001,3.338,7.11,7.336,13.999,6.893h14.89l-87.555-86.889C216.665,140.664,213.776,137.998,206.443,137.998z"/><path fill="#1f4fa3" d="M58.666,355.107h101.111l159.554-112.219H170.887L54.666,127.332L167.11,14.666H58.666c-25.778,0-44,25.332-44,43.776v253.555C14.666,329.775,32.888,355.107,58.666,355.107z"/></svg></button>
+  <button id="btnLayers" class="iconbtn panel" title="Layers (F)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg></button>
   <button id="btnSearch" class="iconbtn panel" title="Find an address (/)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
   <button id="btnTime" class="iconbtn panel" title="Date &amp; time of day (T)">&#9680;</button>
   <button id="btnAbout" class="iconbtn panel" title="About this model (I)">i</button>
 </div>
 
+<div id="layerspanel" class="panel" role="group" aria-label="Layers">
+  <div class="kicker">Layers</div>
+  <button class="lrow" id="btnTransit" title="Live SEPTA vehicles (V)"><span class="lmark"></span><svg class="lseptalogo" viewBox="0 0 500 370" aria-hidden="true"><rect x="54" y="15" width="392" height="340" fill="#ece8dd"/><path fill="#f14728" d="M441.775,14.666H340.441L180.888,127.332h148.665l115.779,115.333L333.556,355.107h108.22c25.555,0,44.221-25.332,44.221-43.331V58.221C485.996,39.998,467.33,14.666,441.775,14.666z"/><path fill="#f14728" d="M206.443,137.998H192.22l87.111,87.107c4.001,3.338,7.11,7.336,13.999,6.893h14.89l-87.555-86.889C216.665,140.664,213.776,137.998,206.443,137.998z"/><path fill="#1f4fa3" d="M58.666,355.107h101.111l159.554-112.219H170.887L54.666,127.332L167.11,14.666H58.666c-25.778,0-44,25.332-44,43.776v253.555C14.666,329.775,32.888,355.107,58.666,355.107z"/></svg><span class="ltext">Live SEPTA vehicles</span><span class="lcount" id="transitCount"></span><kbd>V</kbd></button>
+  <button class="lrow" id="btnStreets" title="Street names (N)"><span class="lmark"></span><span class="ltext">Street names</span><kbd>N</kbd></button>
+  <button class="lrow" id="btnLabels" title="Landmark labels (L)"><span class="lmark"></span><span class="ltext">Landmark labels</span><kbd>L</kbd></button>
+</div>
+
 <div id="timepanel" class="panel" role="group" aria-label="Date and time">
-  <div class="kicker">Philadelphia &middot; sun &amp; sky</div>
+  <div class="kicker">Philadelphia sun and sky</div>
   <div class="row">
     <input type="date" id="timeDate" aria-label="Date">
     <button id="timeNow" class="mini" title="Follow the real time">Now</button>
   </div>
   <input type="range" id="timeSlider" min="0" max="1439" step="5" aria-label="Time of day">
-  <div class="readout"><span id="timeClock">&mdash;</span><span id="timeSun">&mdash;</span></div>
+  <div class="readout"><span id="timeClock"></span><span id="timeSun"></span></div>
   <div class="presets">
     <button class="mini" data-preset="dawn">Dawn</button>
     <button class="mini" data-preset="noon">Noon</button>
@@ -79,7 +84,7 @@
   </div>
 </div>
 
-<div id="hint">drag to orbit &middot; scroll to zoom &middot; double-click to focus</div>
+<div id="hint">Drag to orbit. Scroll to zoom. Double-click to focus.</div>
 
 <div id="about" class="panel" role="dialog" aria-label="About Society Hill Towers">
   <button class="close" id="btnCloseAbout" title="Close">&times;</button>
@@ -91,14 +96,14 @@
     <tr><td><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></td><td>Orbit / Walk / Fly mode</td></tr>
     <tr><td><kbd>W A S D</kbd></td><td>Move (walk &amp; fly)</td></tr>
     <tr><td><kbd>E</kbd> / <kbd>Q</kbd></td><td>Climb / descend (fly)</td></tr>
-    <tr><td><kbd>Shift</kbd></td><td>Run &middot; boost</td></tr>
-    <tr><td>Scroll</td><td>Zoom (orbit) &middot; cruise speed (fly)</td></tr>
+    <tr><td><kbd>Shift</kbd></td><td>Run, or boost in fly</td></tr>
+    <tr><td>Scroll</td><td>Zoom in orbit, cruise speed in fly</td></tr>
     <tr><td><kbd>L</kbd></td><td>Landmark labels</td></tr>
     <tr><td><kbd>T</kbd></td><td>Date &amp; time of day (real Philadelphia sun)</td></tr>
     <tr><td>Double-click</td><td>Focus orbit on a point</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Release the mouse</td></tr>
   </table>
-  <p>Outside claude.ai&rsquo;s sandbox the sky also follows the real Philadelphia weather &mdash;
+  <p>Outside claude.ai&rsquo;s sandbox the sky also follows the real Philadelphia weather:
     live cloud cover and wind via Open-Meteo, refreshed every 15 minutes
     (the &#9729; figure in the time panel).</p>
   <div class="credits">
@@ -112,8 +117,8 @@
   <div class="card">
     <div class="kicker">A living model of</div>
     <h2>Philadelphia</h2>
-    <div class="sub">Every block of the city at its true measured height &mdash; a quarter-million
-      buildings from the Delaware to the Schuylkill &mdash; with SEPTA's buses and trolleys
+    <div class="sub">Every block of the city at its true measured height, a quarter-million
+      buildings from the Delaware to the Schuylkill, with SEPTA's buses and trolleys
       moving through the streets live. Walk the sidewalks, orbit the skyline, fly the rivers.</div>
     <button class="enter" id="btnEnter" disabled>Preparing&hellip;</button>
     <div class="loading" id="loadmsg">Assembling Philadelphia</div>

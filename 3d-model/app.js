@@ -738,12 +738,19 @@
       'float cnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);\n' +
       '  return mix(mix(chash(i), chash(i+vec2(1.,0.)), f.x), mix(chash(i+vec2(0.,1.)), chash(i+vec2(1.,1.)), f.x), f.y); }\n' +
       'void main(){\n' +
-      '  float h = vDir.y;\n' +
+      // normalize per fragment: the dome is coarse (32x18) and interpolated vDir
+      // shrinks inside triangles, which smeared the old pow-based glow into a
+      // vertical streak along the sun meridian. A round disc + radial halo on the
+      // true angle reads like the actual sun.
+      '  vec3 nd = normalize(vDir);\n' +
+      '  float h = nd.y;\n' +
       '  vec3 col = h >= 0.0 ? mix(cHorizon, cZenith, pow(h, 0.52)) : mix(cHorizon, cGround, clamp(-h*1.5,0.,1.));\n' +
-      '  float s = max(dot(vDir, uSun), 0.0);\n' +
-      '  col += cSun * (pow(s, 420.0) * 0.9 + pow(s, 14.0) * 0.14);\n' +
+      '  float s = clamp(dot(nd, uSun), 0.0, 1.0);\n' +
+      '  float sunAng = acos(s);\n' +
+      '  float disc = 1.0 - smoothstep(0.0085, 0.0118, sunAng);\n' +
+      '  col += cSun * (disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24 + pow(s, 12.0) * 0.10);\n' +
       '  if (h > 0.01 && uCloud > 0.003) {\n' +
-      '    vec2 cp = vDir.xz / (h + 0.18) * 1.7 + uCloudOff;\n' +
+      '    vec2 cp = nd.xz / (h + 0.18) * 1.7 + uCloudOff;\n' +
       '    float d = cnoise(cp) * 0.55 + cnoise(cp * 2.7 + 13.1) * 0.30 + cnoise(cp * 7.3 + 41.7) * 0.15;\n' +
       '    float cov = clamp(uCloud, 0.0, 1.0);\n' +
       '    float m = smoothstep(1.0 - cov * 0.88 - 0.06, min(1.0, 1.06 - cov * 0.5), d);\n' +
@@ -3340,7 +3347,7 @@
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
         appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, 3, base);
-        if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts · ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
+        if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
         continue;
       }
       const chk = getChunk(cx, cz);
@@ -3453,7 +3460,7 @@
         pushV(chk, cx, apex, cz, 0, 1, 0, c.r * sc, c.g * sc, c.b * sc, 3, base);
         chk.idx.push(i0, i0 + 1, i0 + 4, i0 + 1, i0 + 2, i0 + 4, i0 + 2, i0 + 3, i0 + 4, i0 + 3, i0, i0 + 4);
       }
-      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts · ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
+      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
     }
     // outer streets. Continuity work: endpoint-snapped heights (no steps at OSM way
     // splits), joint fans at bends, real bridge decks over the rivers, aligned-only
@@ -3915,7 +3922,7 @@
         else areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 });
       } catch (e) { /* degenerate polygon */ }
     }
-    loadmsg.textContent = 'Raising the outer districts · uploading';
+    loadmsg.textContent = 'Raising the outer districts, uploading';
     await yieldNow();
     for (const ch of glassChunks.values()) {
       const g = new THREE.BufferGeometry();
@@ -4307,7 +4314,7 @@
         pushV(chk, cx, apex, cz, 0, 1, 0, c.r * 0.9, c.g * 0.9, c.b * 0.9, 3, base);
         chk.idx.push(i0, i0 + 1, i0 + 4, i0 + 1, i0 + 2, i0 + 4, i0 + 2, i0 + 3, i0 + 4, i0 + 3, i0, i0 + 4);
       }
-      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia · ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
+      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
     }
     // far roads — same continuity treatment as the wide set: endpoint-snapped heights,
     // bend fans, bridge decks over the river corridors
@@ -4421,7 +4428,7 @@
       m.matrixAutoUpdate = false;
       groupCity.add(m);
     }
-    loadmsg.textContent = 'Raising the rest of Philadelphia · uploading';
+    loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await yieldNow();
     for (const ch of chunks.values()) {
       const g = new THREE.BufferGeometry();
@@ -4599,7 +4606,7 @@
       ['Athenaeum', 'Athenaeum'],
       ['Residences at Dockside', 'Dockside'],
       ['One Independence Place', 'Independence Place'],
-      ['The Ryland', 'The Ryland · 1 Dock Street'],
+      ['The Ryland', 'The Ryland, 1 Dock Street'],
       ['Philadelphia Marriott Old City', 'Marriott Old City'],
       ['Independence Seaport Museum', 'Seaport Museum'],
     ];
@@ -4613,9 +4620,9 @@
       addLabel(text, cx, h, cz);
     }
     for (const t of towers) {
-      const short = /North/.test(t.name) ? 'North Tower · 200 Locust'
-        : /South/.test(t.name) ? 'South Tower · 220 Locust'
-        : 'West Tower · 210 Locust';
+      const short = /North/.test(t.name) ? 'North Tower, 200 Locust'
+        : /South/.test(t.name) ? 'South Tower, 220 Locust'
+        : 'West Tower, 210 Locust';
       addLabel(short, t.centroid[0], (t.h || 89) + 9, t.centroid[1], 'tower');
     }
     const riv = waterPoint(0, 210);
@@ -4970,6 +4977,7 @@
     else if (k === 'i') toggleAbout();
     else if (k === 'v') toggleTransit();
     else if (k === 'n') toggleStreets();
+    else if (k === 'f') toggleLayers();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
     else walk.keys[k] = true;
@@ -4987,17 +4995,17 @@
   function setHint() {
     if (mode === MODE.ORBIT) {
       hintEl.textContent = isTouch
-        ? 'drag to orbit · pinch to zoom'
-        : 'drag to orbit · scroll to zoom · double-click to focus';
+        ? 'Drag to orbit. Pinch to zoom.'
+        : 'Drag to orbit. Scroll to zoom. Double-click to focus.';
     } else if (mode === MODE.FLY) {
-      if (isTouch) hintEl.textContent = 'left thumb flies (push farther = faster) · right thumb looks · ▲▼ climb';
-      else if (walk.locked || walk.dragLook) hintEl.textContent = 'WASD to fly · E/Q up & down · shift to boost · scroll sets speed';
-      else hintEl.textContent = 'click the scene to take the controls';
+      if (isTouch) hintEl.textContent = 'Left thumb flies, push farther for faster. Right thumb looks. ▲▼ climb.';
+      else if (walk.locked || walk.dragLook) hintEl.textContent = 'WASD to fly. E and Q for up and down. Shift to boost. Scroll sets speed.';
+      else hintEl.textContent = 'Click the scene to take the controls';
     } else {
-      if (isTouch) hintEl.textContent = 'left thumb to move · right thumb to look';
-      else if (walk.locked) hintEl.textContent = 'WASD to move · shift to run · esc to release mouse';
-      else if (walk.dragLook) hintEl.textContent = 'WASD to move · drag to look · shift to run';
-      else hintEl.textContent = 'click the scene to take the controls';
+      if (isTouch) hintEl.textContent = 'Left thumb to move. Right thumb to look.';
+      else if (walk.locked) hintEl.textContent = 'WASD to move. Shift to run. Esc releases the mouse.';
+      else if (walk.dragLook) hintEl.textContent = 'WASD to move. Drag to look. Shift to run.';
+      else hintEl.textContent = 'Click the scene to take the controls';
     }
   }
   function setMode(m) {
@@ -5214,10 +5222,12 @@
   }
   function septaStatus() {
     const n = septaVeh.size;
-    btnTransit.title = 'Live SEPTA vehicles (V) — ' + n + ' tracked now';
+    btnTransit.title = 'Live SEPTA vehicles (V): ' + n + ' tracked now';
+    const tc = document.getElementById('transitCount');
+    if (tc) tc.textContent = n ? n + ' live' : '';
     if (!SEPTA.hinted && n > 0 && veil.classList.contains('hidden')) {
       SEPTA.hinted = true;
-      hintEl.textContent = n + ' SEPTA vehicles live on the map · tap a pin for its route · V toggles';
+      hintEl.textContent = n + ' SEPTA vehicles are live on the map. Tap a pin for its route. V toggles.';
       clearTimeout(septaHintT);
       septaHintT = setTimeout(setHint, 8000);
     }
@@ -5236,10 +5246,10 @@
     vehinfoBody.innerHTML =
       '<span class="vroute" style="background:' + v.tintHex + '">' + septaEsc(v.routeLabel) + '</span>' +
       '<span class="vdest">to ' + septaEsc(v.info.dest || '—') + '</span>' +
-      '<div class="vmeta">' + septaEsc(bits.join(' · ')) + '</div>' +
+      '<div class="vmeta">' + septaEsc(bits.join(', ')) + '</div>' +
       (v.info.next ? '<div class="vmeta">next stop: ' + septaEsc(v.info.next) + '</div>' : '');
   }
-  function syncTransitBtn() { btnTransit.style.opacity = SEPTA.on ? '' : '0.35'; }
+  function syncTransitBtn() { btnTransit.classList.toggle('on', SEPTA.on); }
   function toggleTransit() {
     if (!septaCanFetch) return;
     SEPTA.on = !SEPTA.on;
@@ -5310,7 +5320,7 @@
   }
   function septaSnapRoad(x, z, maxD) {
     const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
-    let bd = maxD * maxD, bx2 = 0, bz2 = 0, found = false;
+    let bd = maxD * maxD, bx2 = 0, bz2 = 0, bdx = 1, bdz = 0, found = false;
     for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
       const a = septaRoadGrid.get(cx2 + ':' + cz2);
       if (!a) continue;
@@ -5321,10 +5331,12 @@
         tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
         const ex = ax + dx * tt - x, ez = az + dz * tt - z;
         const d2 = ex * ex + ez * ez;
-        if (d2 < bd) { bd = d2; bx2 = ax + dx * tt; bz2 = az + dz * tt; found = true; }
+        if (d2 < bd) { bd = d2; bx2 = ax + dx * tt; bz2 = az + dz * tt; bdx = dx; bdz = dz; found = true; }
       }
     }
-    return found ? [bx2, bz2] : null;
+    if (!found) return null;
+    const L3 = Math.hypot(bdx, bdz) || 1;
+    return [bx2, bz2, bdx / L3, bdz / L3];   // point + street axis, for position AND heading alignment
   }
   function septaMerge(parts) {
     let total = 0;
@@ -5446,7 +5458,7 @@
         if (v.snT === undefined || now - v.snT > 120) {
           v.snT = now;
           const sn = septaSnapRoad(v.x, v.z, 20);
-          if (sn) { v.snx = sn[0]; v.snz = sn[1]; } else { v.snx = null; }
+          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; } else { v.snx = null; }
         }
         if (v.snx != null) { wx = v.snx; wz = v.snz; }
       }
@@ -5454,7 +5466,17 @@
       const kS = 1 - Math.exp(-dt * 7);
       v.dx += (wx - v.dx) * kS;
       v.dz += (wz - v.dz) * kS;
-      let dyaw = v.yawT - v.yaw;
+      // heading: align to the snapped street's axis (signed to match the API/
+      // displacement heading) so GPS heading noise never parks a bus diagonally
+      // across its street; unsnapped vehicles keep the raw heading
+      let yawGoal = v.yawT;
+      if (v.snx != null) {
+        const ry = Math.atan2(-v.sdz, v.sdx);
+        let dAx = ry - v.yawT;
+        dAx = ((dAx + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        yawGoal = Math.abs(dAx) <= Math.PI / 2 ? ry : ry + Math.PI;
+      }
+      let dyaw = yawGoal - v.yaw;
       dyaw = ((dyaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
       v.yaw += Math.abs(dyaw) <= cap ? dyaw : Math.sign(dyaw) * cap;
       if (v.ug) return;                 // tunnel trolleys aren't drawn — nothing under buildings
@@ -5520,6 +5542,17 @@
     }
   }
 
+  // ---------------------------------------------------------------- layers panel
+  // The three layer toggles (SEPTA vehicles, street names, landmark labels) live
+  // as rows in one panel behind the Layers bar button; V/N/L stay as shortcuts.
+  const btnLayers = document.getElementById('btnLayers');
+  const layersPanel = document.getElementById('layerspanel');
+  function toggleLayers(open) {
+    const want = open !== undefined ? open : !layersPanel.classList.contains('open');
+    layersPanel.classList.toggle('open', want);
+  }
+  btnLayers.addEventListener('click', () => toggleLayers());
+
   // ---------------------------------------------------------------- street names
   // Ground-painted street labels: placements baked offline by
   // bake_street_labels.py (the packed wide/far road formats carry no names) and
@@ -5528,7 +5561,7 @@
   // roadways. Toggle: the St button / N key.
   let stMesh = null, stMat = null, stOn = true;
   const btnStreets = document.getElementById('btnStreets');
-  function syncStreetsBtn() { btnStreets.style.color = stOn ? '' : 'rgba(239,233,220,0.25)'; }
+  function syncStreetsBtn() { btnStreets.classList.toggle('on', stOn); }
   function toggleStreets() {
     stOn = !stOn;
     if (stMesh) stMesh.visible = stOn;
@@ -5537,12 +5570,13 @@
   btnStreets.addEventListener('click', toggleStreets);
   step('Lettering the streets', async () => {
     if (typeof ST_LABELS === 'undefined' || !ST_LABELS || !ST_LABELS.names) { btnStreets.style.display = 'none'; return; }
-    const AW = 4096, AH = 2048, FS = 24, RH = 30, PAD = 9;
-    try { await document.fonts.load('500 24px "Alegreya Sans"'); } catch (e) { /* fall back to the stack */ }
+    const AW = 4096, AH = 2048, FS = 27, RH = 34, PAD = 9;
+    try { await document.fonts.load('italic 27px "Libre Caslon Text"'); } catch (e) { /* fall back to the stack */ }
     const cv = document.createElement('canvas');
     cv.width = AW; cv.height = AH;
     const g = cv.getContext('2d');
-    g.font = '500 ' + FS + 'px "Alegreya Sans", "Gill Sans", "Segoe UI", Verdana, sans-serif';
+    // cartographic street lettering: Caslon italic, the classic engraved-map hand
+    g.font = 'italic ' + FS + 'px "Libre Caslon Text", "Iowan Old Style", Georgia, serif';
     g.fillStyle = '#fff';
     g.textBaseline = 'middle';
     const rects = [];
@@ -5561,7 +5595,7 @@
     const L2 = ST_LABELS.l;
     const pos = [], uv = [], idx = [];
     const LIFT = [0.66, 0.5, 0.38];        // over siteY(road): major / minor / core (clears ribbon lifts)
-    const TH = [5.4, 4.3, 3.4];            // text height in meters per class
+    const TH = [7.0, 5.6, 4.4];            // text height in meters per class
     for (let i = 0; i + 4 < L2.length; i += 5) {
       const r = rects[L2[i]];
       if (!r) continue;
@@ -5585,7 +5619,7 @@
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
     geo.setIndex(idx);
-    stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x413d34 });
+    stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x2c2822 });
     stMesh = new THREE.Mesh(geo, stMat);
     stMesh.renderOrder = 5;
     stMesh.visible = stOn;
@@ -5680,11 +5714,11 @@
         v._sd = (x - camera.position.x) * (x - camera.position.x) + (z - camera.position.z) * (z - camera.position.z);
       });
       live.sort((a2, b2) => a2._sd - b2._sd);
-      searchOut.innerHTML = '<div class="smsg">Route ' + septaEsc(rid) + ' &middot; ' + live.length + ' live &middot; nearest first</div>';
+      searchOut.innerHTML = '<div class="smsg">Route ' + septaEsc(rid) + ': ' + live.length + ' live, nearest first</div>';
       for (const v of live.slice(0, 8)) {
         const el = document.createElement('div');
         el.className = 'srow';
-        el.textContent = v.routeLabel + ' to ' + (v.info.dest || '—') + (v.info.next ? ' · next: ' + v.info.next : '');
+        el.textContent = v.routeLabel + ' to ' + (v.info.dest || 'unknown') + (v.info.next ? ', next: ' + v.info.next : '');
         el.addEventListener('click', () => searchGoToBus(v));
         searchOut.appendChild(el);
       }
@@ -5697,7 +5731,7 @@
       .then((r) => (r && r.ok ? r.json() : null))
       .then((rows) => {
         searchBusy = false;
-        if (!rows) { searchOut.innerHTML = '<div class="smsg">Search failed &mdash; try again in a moment.</div>'; return; }
+        if (!rows) { searchOut.innerHTML = '<div class="smsg">Search failed. Try again in a moment.</div>'; return; }
         // the bounding box spans the rivers — keep the city proper, drop NJ
         rows = rows.filter((r) => /philadelphia/i.test(r.display_name || ''));
         if (!rows.length) { searchOut.innerHTML = '<div class="smsg">No match inside Philadelphia.</div>'; return; }
@@ -5711,7 +5745,7 @@
         }
         searchGoTo(+rows[0].lat, +rows[0].lon, searchShortName(rows[0].display_name));
       })
-      .catch(() => { searchBusy = false; searchOut.innerHTML = '<div class="smsg">Search failed &mdash; try again in a moment.</div>'; });
+      .catch(() => { searchBusy = false; searchOut.innerHTML = '<div class="smsg">Search failed. Try again in a moment.</div>'; });
   }
   if (septaCanFetch) {
     btnSearch.addEventListener('click', () => toggleSearch());
@@ -5903,7 +5937,7 @@
 
   // labels + about wiring
   const btnLabels = document.getElementById('btnLabels');
-  function syncLabelsBtn() { btnLabels.style.color = labelsOn ? '' : 'rgba(239,233,220,0.25)'; }
+  function syncLabelsBtn() { btnLabels.classList.toggle('on', labelsOn); }
   function toggleLabels() {
     labelsOn = !labelsOn;
     syncLabelsBtn();
@@ -5979,7 +6013,7 @@
     return { rise, set };
   }
   function fmtTime(mnt) {
-    if (mnt == null) return '—';
+    if (mnt == null) return '';
     let h = Math.floor(mnt / 60) % 24; const mm = Math.round(mnt % 60);
     const ap = h >= 12 ? 'PM' : 'AM'; h = h % 12; if (h === 0) h = 12;
     return h + ':' + (mm < 10 ? '0' : '') + mm + ' ' + ap;
@@ -6059,7 +6093,7 @@
     renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
-    if (stMat) stMat.color.copy(_c1.set(0x413d34)).lerp(_c2.set(0x99938a), night);  // street text: dark on day roads, pale at night
+    if (stMat) stMat.color.copy(_c1.set(0x2c2822)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.9;
@@ -6082,7 +6116,7 @@
     timeSlider.value = String(clock.minutes);
     const dst = tzOffsetMin(clock.y, clock.m, clock.d) === -240;
     timeClockEl.textContent = fmtTime(clock.minutes) + ' ' + (dst ? 'EDT' : 'EST') + (clock.live ? ' · live' : '');
-    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? ' · ☁ ' + Math.round(WX.cover * 100) + '%' : '');
+    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' : '');
   }
   function toggleTimePanel() { timePanel.classList.toggle('open'); }
   document.getElementById('btnTime').addEventListener('click', toggleTimePanel);
