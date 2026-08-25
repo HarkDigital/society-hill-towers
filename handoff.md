@@ -492,4 +492,22 @@ Round 9 (Aug 25 — four landmark rebuilds from Mike's reference photos):
   NOTE: one leaning ridge sliver remains visible from Chestnut St street level near
   Glory (a legally-convex but heavily skewed neighbor quad) — cosmetic, backlog.
 
+Round 10 (Aug 25 — "broken roofs" root-caused, three separate defects):
+- **Dishonest gable quads**: the gable pass accepts only a simplified quad that is
+  convex, near-rectangular (adjacent-edge |cos| ≤ 0.35), clearly elongated
+  (long/span ≥ 1.35), and area-matched to the true footprint (±14%) — skewed
+  diamonds tented into leaning pyramids, squarish quads spiked.
+- **Paper-thin slivers**: OSM party walls/alley strips mapped as buildings (effective
+  width 2·area/perimeter < 1.7 m) extruded into 15 m floating blade walls — now
+  clamped to 3.2 m garden-wall height.
+- **Gables on commercial lofts**: eligibility capped at h < 12.5 m (was 17) — the
+  14-15 m flat-roofed Old City lofts were getting long ridge gables whose edge-on
+  slopes towered over the streetwall as "blades" (THE Chestnut St spike by Glory:
+  a perfectly honest 17×4.9 m gable on a 4-storey loft). Society Hill's 8-12 m
+  rowhouse gables verified intact after the cap.
+- **Glory finished to the photo**: upper three brick floors now span the whole lot
+  flush with the iron front at the street (OSM steps the tall mass back — a lot-
+  spanning box bridges it), GLORY board (red band on white) over the transom, the
+  tall verdigris blade sign on the pier, and the wrought-iron lightwell railing.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

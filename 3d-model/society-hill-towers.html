@@ -2263,6 +2263,17 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       const color = spec0 && spec0.color ? new THREE.Color(spec0.color) : buildingColor(b, i);
       const t = b.t || 'generic';
       const area = Math.abs(signedArea(b.poly));
+      // paper-thin OSM slivers (party walls and alley strips mapped as buildings)
+      // extrude into tall floating blades that read as broken roofs — clamp
+      // anything with an effective width under ~1.7 m down to garden-wall height
+      if (!b.minH && b.h > 4) {
+        let perim = 0;
+        for (let k2 = 0; k2 < b.poly.length; k2++) {
+          const p2 = b.poly[k2], q2 = b.poly[(k2 + 1) % b.poly.length];
+          perim += Math.hypot(q2[0] - p2[0], q2[1] - p2[1]);
+        }
+        if ((2 * area) / Math.max(1, perim) < 1.7) b.h = 3.2;
+      }
       // facade vocabulary: 0 Georgian rowhouse, 1 church, 2 modern slab, 3 blank, 4 civic arched base, 5 storefront
       const style = spec0 && spec0.style != null ? spec0.style
         : (b.h > 35 || t === 'garage' || t === 'parking') ? 2
@@ -2273,23 +2284,36 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       // clean small quadrilateral; everything else stays a flat extrusion
       let quad = null;
       const resType = ['house', 'residential', 'terrace', 'apartments', 'detached', 'semidetached_house', 'generic'].includes(t);
-      if (resType && !b.minH && (!b.holes || !b.holes.length) && area < 280 && b.h < 17 && b.poly.length <= 8 && hash01(i * 13.7) < 0.8) {
+      // gables only at true rowhouse height — 14-15 m four-story commercial lofts
+      // (Old City, Chestnut St) are flat-roofed, and their long strips gabled into
+      // edge-on "blade" slopes towering over the streetwall
+      if (resType && !b.minH && (!b.holes || !b.holes.length) && area < 280 && b.h < 12.5 && b.poly.length <= 8 && hash01(i * 13.7) < 0.8) {
         const sp = simplifyRing(b.poly, 0.45);
         if (sp.length === 4) {
-          // a concave or crossed simplified quad gables into a spike sliver —
-          // require convexity (all cross products one sign) before pitching
-          let convex = true, sgn = 0;
+          // gables demand an honest rowhouse quad: convex, near-rectangular
+          // corners, clearly elongated, and covering the same area as the real
+          // footprint. Skewed diamonds tent into leaning pyramids, squarish
+          // quads read as spikes, and chopped outlines hang their roof past
+          // the walls — all of Mike's "broken roofs". Anything dodgy stays a
+          // flat extrusion of the TRUE footprint.
+          let convex = true, sgn = 0, rect = true;
           for (let k2 = 0; k2 < 4; k2++) {
             const A2 = sp[k2], B2 = sp[(k2 + 1) % 4], C2 = sp[(k2 + 2) % 4];
-            const cr = (B2[0] - A2[0]) * (C2[1] - B2[1]) - (B2[1] - A2[1]) * (C2[0] - B2[0]);
-            if (Math.abs(cr) < 1e-6) continue;
-            if (sgn === 0) sgn = Math.sign(cr);
-            else if (Math.sign(cr) !== sgn) { convex = false; break; }
+            const ux2 = B2[0] - A2[0], uz2 = B2[1] - A2[1], vx2 = C2[0] - B2[0], vz2 = C2[1] - B2[1];
+            const cr = ux2 * vz2 - uz2 * vx2;
+            if (Math.abs(cr) > 1e-6) {
+              if (sgn === 0) sgn = Math.sign(cr);
+              else if (Math.sign(cr) !== sgn) { convex = false; break; }
+            }
+            const l1 = Math.hypot(ux2, uz2) || 1, l2 = Math.hypot(vx2, vz2) || 1;
+            if (Math.abs((ux2 * vx2 + uz2 * vz2) / (l1 * l2)) > 0.35) rect = false;
           }
           const e = [0, 1, 2, 3].map(k => Math.hypot(sp[(k + 1) % 4][0] - sp[k][0], sp[(k + 1) % 4][1] - sp[k][1]));
           const span = Math.min((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
           const long = Math.max((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
-          if (convex && span > 3.4 && span < 13 && long / span < 5) quad = sp;
+          const aQ = Math.abs(signedArea(sp));
+          if (convex && rect && Math.abs(aQ - area) <= area * 0.14 &&
+            span > 3.4 && span < 13 && long / span >= 1.35 && long / span < 5) quad = sp;
         }
       }
       try {
@@ -2971,7 +2995,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       const bF = getKey('gloryFront'), bM = getKey('glory'), bC = getKey('gloryMid');
       if (bF && bM) {
         const m0 = mark();
-        aw(buildingGeom(bM.poly, null, 17.8, -1.5), '#74453a', 5);
+        aw(buildingGeom(bM.poly, null, 8.3, -1.5), '#74453a', 5);
         if (bC) aw(buildingGeom(bC.poly, null, 8.3, -1.5), '#2b2e33', 3);
         aw(buildingGeom(bF.poly, null, 8.3, -1.5), '#23262b', 3);
         const ob = orientedBox(bF.poly);
@@ -2998,6 +3022,26 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         }
         ad(box(sext * 2 + 0.3, 0.5, 0.7, wx, 4.35, wz, ryF), '#c9c2b2');   // transom band
         ad(box(sext * 2 + 0.45, 0.6, 0.8, wx, 8.15, wz, ryF), '#c4bdae'); // iron cornice
+        // the photo's brick floors rise flush over the iron front at the street,
+        // so the upper storeys span the WHOLE lot (OSM steps the tall mass back)
+        {
+          let minP = 0;
+          for (const pl of [bF.poly, bC ? bC.poly : [], bM.poly]) for (const q of pl) {
+            const pr = (q[0] - wx) * fdx + (q[1] - wz) * fdz;
+            if (pr < minP) minP = pr;
+          }
+          aw(box(-minP, 9.55, sext * 2, wx + fdx * (minP / 2), 8.25 + 9.55 / 2, wz + fdz * (minP / 2), Math.atan2(-fdz, fdx)), '#74453a', 5);
+        }
+        // GLORY board over the transom (red band on white) and the tall
+        // weathered-green blade sign hung high on the left pier
+        ad(box(1.5, 0.75, 0.16, wx + fdx * 0.45, 5.05, wz + fdz * 0.45, ryF), '#efe9dc');
+        ad(box(1.06, 0.3, 0.2, wx + fdx * 0.5, 5.05, wz + fdz * 0.5, ryF), '#b8332f');
+        {
+          const [bx2, bz2] = across(sext * 0.62);
+          ad(box(0.42, 4.6, 0.95, bx2 + fdx * 0.75, 11.4, bz2 + fdz * 0.75, ryF), '#5f7a6e');
+        }
+        // wrought-iron lightwell railing along the sidewalk
+        ad(box(sext * 2 + 0.7, 0.95, 0.08, wx + fdx * 2.1, 0.5, wz + fdz * 2.1, ryF), '#1c1e20');
         liftB(m0, bM);
       }
     }
