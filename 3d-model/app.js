@@ -5942,28 +5942,57 @@
   btnStreets.addEventListener('click', toggleStreets);
   step('Lettering the streets', async () => {
     if (typeof ST_LABELS === 'undefined' || !ST_LABELS || !ST_LABELS.names) { btnStreets.style.display = 'none'; return; }
-    const AW = 4096, AH = 2048, FS = 27, RH = 34, PAD = 9;
-    try { await document.fonts.load('italic 600 27px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
-    const cv = document.createElement('canvas');
-    cv.width = AW; cv.height = AH;
-    const g = cv.getContext('2d');
-    // street lettering: Montserrat semibold italic, map-style
-    g.font = 'italic 600 ' + FS + 'px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
-    g.fillStyle = '#fff';
-    g.textBaseline = 'middle';
-    const rects = [];
-    let ax = PAD, ay = 0;
-    for (const nm of ST_LABELS.names) {
-      const w = Math.min(Math.ceil(g.measureText(nm).width), 560);
-      if (ax + w + PAD > AW) { ax = PAD; ay += RH; }
-      if (ay + RH > AH) { rects.push(null); continue; }
-      g.fillText(nm, ax, ay + RH / 2, 560);
-      rects.push([ax, ay, w, RH]);
-      ax += w + PAD * 2;
+    // Preferred path: the offline signed-distance-field atlas (bake_street_sdf.py).
+    // A raster atlas magnified 5-9x at street level reads pixelated however its
+    // edges are filtered; in an SDF the 0.5 level-set IS the glyph outline, so a
+    // per-pixel threshold stays crisp at any zoom. Falls back to the old canvas
+    // atlas if the baked data is missing.
+    let AW = 4096, AH = 2048, FS = 27, RH = 34;
+    const PAD = 9;
+    let tex = null, rects = null, sdfMode = false;
+    if (typeof ST_SDF !== 'undefined' && ST_SDF && ST_SDF.png) {
+      sdfMode = true;
+      AW = ST_SDF.w; AH = ST_SDF.h; RH = ST_SDF.rowH; FS = ST_SDF.fs;
+      rects = ST_SDF.rects;
+      const img = new Image();
+      await new Promise((res) => { img.onload = res; img.onerror = res; img.src = 'data:image/png;base64,' + ST_SDF.png; });
+      const cv = document.createElement('canvas');
+      cv.width = AW; cv.height = AH;
+      const g = cv.getContext('2d');
+      g.drawImage(img, 0, 0);
+      const px = g.getImageData(0, 0, AW, AH).data;
+      const lum = new Uint8Array(AW * AH);
+      for (let i = 0; i < lum.length; i++) lum[i] = px[i * 4];
+      tex = new THREE.DataTexture(lum, AW, AH, THREE.RedFormat, THREE.UnsignedByteType);  // R8: WebGL2 mipmappable (LUMINANCE is not)
+      tex.magFilter = THREE.LinearFilter;
+      tex.minFilter = THREE.LinearMipmapLinearFilter;
+      tex.generateMipmaps = true;
+      tex.flipY = true;                    // the UV math below assumes canvas orientation
+      tex.anisotropy = 8;
+      tex.needsUpdate = true;
+    } else {
+      try { await document.fonts.load('italic 600 27px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
+      const cv = document.createElement('canvas');
+      cv.width = AW; cv.height = AH;
+      const g = cv.getContext('2d');
+      // street lettering: Montserrat semibold italic, map-style
+      g.font = 'italic 600 ' + FS + 'px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+      g.fillStyle = '#fff';
+      g.textBaseline = 'middle';
+      rects = [];
+      let ax = PAD, ay = 0;
+      for (const nm of ST_LABELS.names) {
+        const w = Math.min(Math.ceil(g.measureText(nm).width), 560);
+        if (ax + w + PAD > AW) { ax = PAD; ay += RH; }
+        if (ay + RH > AH) { rects.push(null); continue; }
+        g.fillText(nm, ax, ay + RH / 2, 560);
+        rects.push([ax, ay, w, RH]);
+        ax += w + PAD * 2;
+      }
+      tex = new THREE.CanvasTexture(cv);
+      tex.encoding = THREE.sRGBEncoding;
+      tex.anisotropy = 8;
     }
-    const tex = new THREE.CanvasTexture(cv);
-    tex.encoding = THREE.sRGBEncoding;
-    tex.anisotropy = 8;
     const L2 = ST_LABELS.l;
     const pos = [], uv = [], idx = [];
     const LIFT = [0.66, 0.5, 0.38];        // over siteY(road): major / minor / core (clears ribbon lifts)
@@ -5999,20 +6028,32 @@
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
     geo.setIndex(idx);
-    stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x2c2822 });
-    // Alpha-tested magnification (the Valve trick): up close the 27 px atlas
-    // glyphs magnify ~9x and bilinear filtering reads as soft blocks. The
-    // bilinear-interpolated coverage approximates a distance field near each
-    // edge, so re-thresholding it with fwidth-scaled AA redraws the contour
-    // crisp at any zoom; at far view the wide clamp degrades to passthrough.
-    stMat.onBeforeCompile = (shader) => {
-      shader.fragmentShader = shader.fragmentShader.replace(
-        '#include <map_fragment>',
-        '#include <map_fragment>\n{\n' +
-        '  float w = clamp(fwidth(diffuseColor.a) * 1.4, 0.02, 0.49);\n' +
-        '  diffuseColor.a = smoothstep(0.42 - w, 0.42 + w, diffuseColor.a);\n' +
-        '}');
-    };
+    if (sdfMode) {
+      // luminance SDF rides in the alphaMap (.g); the 0.5 level-set is the true
+      // outline, thresholded with fwidth-scaled AA — crisp at every zoom
+      stMat = new THREE.MeshBasicMaterial({ alphaMap: tex, transparent: true, depthWrite: false, color: 0x2c2822 });
+      stMat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <alphamap_fragment>',
+          '{\n' +
+          '  float sd = texture2D(alphaMap, vUv).r;\n' +   // R8: the SDF rides in .r
+          '  float w = clamp(fwidth(sd) * 1.1, 0.002, 0.35);\n' +
+          '  diffuseColor.a *= smoothstep(0.5 - w, 0.5 + w, sd);\n' +
+          '}');
+      };
+    } else {
+      stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x2c2822 });
+      // Alpha-tested magnification fallback: bilinear coverage approximates a
+      // distance field near edges; re-threshold with fwidth AA to cut the blocks.
+      stMat.onBeforeCompile = (shader) => {
+        shader.fragmentShader = shader.fragmentShader.replace(
+          '#include <map_fragment>',
+          '#include <map_fragment>\n{\n' +
+          '  float w = clamp(fwidth(diffuseColor.a) * 1.4, 0.02, 0.49);\n' +
+          '  diffuseColor.a = smoothstep(0.42 - w, 0.42 + w, diffuseColor.a);\n' +
+          '}');
+      };
+    }
     stMesh = new THREE.Mesh(geo, stMat);
     stMesh.renderOrder = 5;
     stMesh.visible = stOn;
@@ -6132,8 +6173,11 @@
     const L = PLACES.nb.l;
     const nbEntries = [];
     for (let i = 0; i + 3 < L.length; i += 4) nbEntries.push([nbRects[L[i]], L[i + 1], L[i + 2], NB_TH[L[i + 3]] || 55, 24]);
-    nbMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x4a443a, opacity: 0 });
+    // no depth test: a neighborhood's name is never blocked by its buildings
+    // (Mike's rule) — badges at renderOrder 12 still paint over the names
+    nbMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, color: 0x4a443a, opacity: 0 });
     nbMesh = makeMesh(nbEntries, nbMat);
+    nbMesh.renderOrder = 11;
     nbMesh.visible = false;                   // fades in from altitude
     const hdEntries = hdLbl.map((d, i) => [hdRects[i], d.lbl[0], d.lbl[1], 26, 12]);
     hdLblMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x8f6f3f, opacity: 0.9 });
@@ -6172,7 +6216,8 @@
   }
   function placeSearchMark(x, gy, z, name) {
     clearSearchMark();
-    const mesh = new THREE.Mesh(septaPinGeom(), new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xc89b5e }));
+    const mesh = new THREE.Mesh(septaPinGeom(), new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xc89b5e, transparent: true, depthWrite: false, depthTest: false }));
+    mesh.renderOrder = 12;                    // the search pin is a marker too
     mesh.frustumCulled = false;
     groupCity.add(mesh);
     const el = document.createElement('div');
@@ -6362,8 +6407,11 @@
           '#include <emissivemap_fragment>\ntotalEmissiveRadiance += (vec3(1.0, 0.85, 0.62) * vGlow * 0.8 + vec3(0.30, 0.29, 0.27) * 0.10) * uNight;');
     };
     septaMats.body = bodyMat;
-    const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true });
-    const badgeMat = new THREE.MeshBasicMaterial({ map: septaBadgeTexture(), transparent: true, depthWrite: false });
+    // markers are wayfinding, not scenery: no depth test, so a pin or badge is
+    // never swallowed by the skyline (Mike's rule; the vehicles themselves stay
+    // solid and occludable)
+    const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, depthTest: false });
+    const badgeMat = new THREE.MeshBasicMaterial({ map: septaBadgeTexture(), transparent: true, depthWrite: false, depthTest: false });
     septaSolid = new THREE.InstancedMesh(septaVehGeom(true), bodyMat, 1600);
     septaPin = new THREE.InstancedMesh(septaPinGeom(), pinMat, 1024);
     septaBadge = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0), badgeMat, 1024);
@@ -6378,6 +6426,7 @@
     }
     septaSolid.castShadow = true;
     septaSolid.receiveShadow = true;
+    septaPin.renderOrder = 12;                         // markers paint after everything
     septaBadge.renderOrder = 12;                       // transparent cutout, after the opaques
     groupCity.add(septaSolid);
     groupCity.add(septaPin);
@@ -6675,7 +6724,7 @@
     indegoTex.encoding = THREE.sRGBEncoding;
     indegoTex.anisotropy = 4;
     try { document.fonts.load('700 44px "Montserrat"').catch(() => {}); } catch (e) { /* stack fallback */ }
-    const badgeMat = new THREE.MeshBasicMaterial({ map: indegoTex, transparent: true, depthWrite: false });
+    const badgeMat = new THREE.MeshBasicMaterial({ map: indegoTex, transparent: true, depthWrite: false, depthTest: false });
     badgeMat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec2 aTile;')

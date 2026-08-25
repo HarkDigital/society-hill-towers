@@ -960,6 +960,23 @@ Round 21 (Aug 25 — de-AI pass 2 + sun + bus alignment + layers panel):
   shimmer on phones; ?logdepth=0 stays as the escape hatch. sht-32's
   #btnLayers svg sizing line is preserved. If Mike still sees phone flicker
   after this, get an exact-view repro before touching depth again.
+- **Round 23: street lettering is a baked SDF** (Mike: still pixelated after
+  the fwidth sharpening — a raster atlas can't survive 5-9x magnification).
+  `bake_street_sdf.py` (Pillow + numpy; vectorized chamfer EDT, no scipy;
+  MontserratItalic.ttf variable font committed, wght 600) renders every unique
+  name at 3x, signs the distance, downsamples to the SAME 27 px-row layout, and
+  packs a 4096x2244 grayscale PNG into street_sdf.json (embedded as ST_SDF).
+  'Lettering the streets' prefers it: PNG → canvas → R channel →
+  DataTexture(RedFormat) — NOT LuminanceFormat, which WebGL2 texStorage
+  rejects (GL_INVALID_ENUM 0x1909, no mipmaps → invisible labels) — and the
+  material is alphaMap-based with the alphamap chunk REPLACED by an SDF
+  threshold on .r (0.5 level-set, fwidth AA). Geometry/UV/drape unchanged; the
+  old canvas path remains as fallback when ST_SDF is null. Rerun order:
+  bake_street_labels.py → bake_street_sdf.py → build. Landed together with
+  sht-32's always-visible markers (Mike's rule: neighborhood names + SEPTA/
+  Indego markers + the search pin NEVER hide behind buildings — depthTest
+  false + renderOrder 11/12 on nbMat, pinMat, badgeMat, Indego badgeMat, the
+  bronze search pin). Page 18.94 MB.
 - **The sun is round now** (Mike's screenshot: vertical streak): the sky dome
   is coarse (32×18) and the fragment shader used INTERPOLATED vDir unnormalized,
   so pow(dot, 420) followed the mesh's vertex meridians. The shader now

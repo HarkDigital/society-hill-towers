@@ -69,6 +69,9 @@ data_js += "const TREE_NAMES = " + (tn_path.read_text(encoding="utf-8").strip() 
 # historic districts + neighborhood labels (fetch_places.py / bake_places.py)
 places_path = ROOT / "places.json"
 data_js += "const PLACES = " + (places_path.read_text(encoding="utf-8").strip() if places_path.exists() else "null") + ";\n"
+# street-name SDF atlas (bake_street_sdf.py — crisp lettering at any zoom)
+sdf_path = ROOT / "street_sdf.json"
+data_js += "const ST_SDF = " + (sdf_path.read_text(encoding="utf-8").strip() if sdf_path.exists() else "null") + ";\n"
 
 # </script> inside embedded JS strings would terminate the tag early
 for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):
