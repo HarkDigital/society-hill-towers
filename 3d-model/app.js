@@ -2977,12 +2977,24 @@
           .replace('#include <common>', '#include <common>\nattribute float aBase;\nvarying float vRyB;\nvarying vec3 vRyW;')
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRyB = aBase;\nvRyW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vRyB;\nvarying vec3 vRyW;\nfloat ryh(vec3 p){ return fract(sin(dot(p, vec3(17.13, 91.7, 41.3))) * 43758.55); }')
+          .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vRyB;\nvarying vec3 vRyW;\n' +
+            // sin-lattice hashes streak along the grid (lit "worms"); this
+            // fract-cascade hash is uniform on integer cells
+            'float ryh(vec3 p){ p = fract(p * vec3(0.1031, 0.11369, 0.13787)); p += dot(p, p.yzx + 19.19); return fract((p.x + p.y) * p.z); }')
           .replace('#include <emissivemap_fragment>',
             '#include <emissivemap_fragment>\n{\n' +
+            // the lit lattice must live in FACADE space, not world axes: the
+            // building sits on the rotated grid, so world-x/z cells sliced
+            // diagonally across the real panels (half-lit fragments). Derive
+            // the along-facade axis per fragment from the surface derivatives;
+            // 3.0 m matches the mullion bays, 3.13 m the floor bands, and the
+            // face normal keys each face so opposite walls light independently.
             '  float relY = vRyW.y - vRyB;\n' +
-            '  vec3 cell = floor(vec3(vRyW.x / 2.9, relY / 3.13, vRyW.z / 2.9));\n' +
-            '  float lit = step(0.66, ryh(cell));\n' +
+            '  vec3 fn = normalize(cross(dFdx(vRyW), dFdy(vRyW)));\n' +
+            '  vec2 tanH = normalize(vec2(-fn.z, fn.x) + vec2(1e-4, 0.0));\n' +
+            '  float u = dot(vRyW.xz, tanH);\n' +
+            '  vec3 cell = floor(vec3(u / 3.0, relY / 3.13, dot(floor(fn.xz * 4.0), vec2(1.0, 9.0))));\n' +
+            '  float lit = step(0.74, ryh(cell));\n' +
             '  vec3 warm = vec3(1.0, 0.84, 0.60) * (0.7 + 0.55 * ryh(cell + 7.0));\n' +
             '  float amen = 1.0 - smoothstep(9.2, 10.6, relY);\n' +
             '  totalEmissiveRadiance += warm * max(lit * 0.8, amen * 1.15) * uNight;\n' +
@@ -4509,20 +4521,29 @@
   let treeInv = null, pickedTree = null;
   const treePickGrid = new Map();
   const TREE_CELL = 24;
-  // per-group canopy styling: hue, sat, lit, breadth, height, size mult, cone?
+  // per-group canopy styling: hue, sat, lit, breadth, height, size mult, shape.
+  // Shapes: 0 round crown, 1 conifer spire, 2 vase (zelkova/elm), 3 pyramid
+  // (linden). Palettes are pushed well apart so species read at a glance:
+  // khaki planetrees, chartreuse ginkgo columns, pale low ornamental puffs,
+  // deep oak domes, blue-green conifers.
+  // (lightness stored DARK: the legacy color pipeline + ACES lifts flats ~2.5x,
+  // so judge these by rendered swatch, never by hex — handoff gotcha)
+  // Species separation must live in HUE and SATURATION: the daylight pipeline
+  // (strong sun + hemi + ACES) flattens albedo-lightness differences to almost
+  // nothing, so chroma carries the identity.
   const TREE_STYLE = [
-    [0.26, 0.46, 0.18, 1.0, 1.0, 1.0, 0],     // 0 shade tree / unknown
-    [0.24, 0.38, 0.21, 1.18, 0.95, 1.22, 0],  // 1 planetree, sycamore
-    [0.28, 0.50, 0.18, 1.0, 1.05, 1.0, 0],    // 2 maple
-    [0.25, 0.42, 0.16, 1.15, 1.0, 1.15, 0],   // 3 oak
-    [0.27, 0.52, 0.21, 0.95, 0.86, 0.72, 0],  // 4 ornamental (cherry, pear...)
-    [0.23, 0.45, 0.21, 1.1, 0.9, 0.95, 0],    // 5 locust
-    [0.26, 0.44, 0.19, 1.2, 0.92, 1.05, 0],   // 6 elm form (zelkova, hackberry)
-    [0.22, 0.50, 0.22, 0.78, 1.15, 0.9, 0],   // 7 ginkgo
-    [0.27, 0.48, 0.18, 0.95, 1.1, 1.0, 0],    // 8 linden
-    [0.34, 0.35, 0.14, 1.0, 1.0, 0.92, 1],    // 9 conifer (cone)
-    [0.26, 0.46, 0.20, 0.85, 1.15, 1.0, 0],   // 10 tall broadleaf (willow, poplar)
-    [0.26, 0.40, 0.20, 1.05, 0.95, 1.0, 0],   // 11 urban misc
+    [0.26, 0.44, 0.15, 1.0, 1.0, 1.0, 0],      // 0 shade tree / unknown: neutral green
+    [0.20, 0.28, 0.16, 1.35, 0.88, 1.25, 0],   // 1 planetree, sycamore: grayed khaki-tan
+    [0.33, 0.70, 0.13, 1.0, 1.1, 1.0, 0],      // 2 maple: vivid pure green
+    [0.30, 0.60, 0.085, 1.22, 1.02, 1.15, 0],  // 3 oak: deep bottle-green dome
+    [0.22, 0.68, 0.165, 1.12, 0.60, 0.72, 0],  // 4 ornamental: bright spring yellow-green puff
+    [0.19, 0.55, 0.16, 1.2, 0.72, 0.95, 0],    // 5 locust: warm golden-olive, flat-topped
+    [0.36, 0.50, 0.13, 1.0, 1.0, 1.05, 2],     // 6 elm form: cool teal-green vase
+    [0.14, 0.68, 0.17, 0.55, 1.55, 0.95, 0],   // 7 ginkgo: unmistakable yellow column
+    [0.27, 0.58, 0.145, 1.0, 1.15, 1.0, 3],    // 8 linden: fresh mid-green pyramid
+    [0.42, 0.45, 0.075, 1.0, 1.0, 0.92, 1],    // 9 conifer: dark blue-green spire
+    [0.30, 0.16, 0.19, 0.72, 1.40, 1.0, 0],    // 10 tall broadleaf: silvery gray-green column
+    [0.24, 0.40, 0.15, 1.05, 0.92, 1.0, 0],    // 11 urban misc: dusty olive
   ];
   function treeChipColor(g) {
     const s = TREE_STYLE[g] || TREE_STYLE[0];
@@ -4597,7 +4618,7 @@
       X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0;
       GY[n] = siteY(x, z, 'ground');
       CR[n] = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5);
-      CY[n] = GY[n] + clamp(2.4 + dbh * 0.1, 2.6, 5.2) * 0.8 + CR[n] * 0.9;
+      CY[n] = GY[n] + clamp(2.4 + dbh * 0.1, 2.6, 5.2) * 0.75 + CR[n] * st[4] * 0.72;
       const k = Math.floor(x / TREE_CELL) + ':' + Math.floor(z / TREE_CELL);
       let cell = treePickGrid.get(k);
       if (!cell) { cell = []; treePickGrid.set(k, cell); }
@@ -4671,6 +4692,29 @@
     const canWideG = new THREE.IcosahedronGeometry(1, 0);
     const coneG = new THREE.ConeGeometry(1, 1, 7);
     coneG.translate(0, 0.5, 0);
+    // species silhouettes beyond the sphere: a zelkova/elm vase (flaring cup
+    // with a low crown cap) and a linden pyramid, both unit-sized like the ico
+    const concatGeo = (list) => {
+      const parts2 = list.map((g2) => (g2.index ? g2.toNonIndexed() : g2));
+      let total = 0;
+      for (const g2 of parts2) total += g2.attributes.position.count;
+      const pos2 = new Float32Array(total * 3), nor2 = new Float32Array(total * 3);
+      let o2 = 0;
+      for (const g2 of parts2) {
+        pos2.set(g2.attributes.position.array, o2 * 3);
+        nor2.set(g2.attributes.normal.array, o2 * 3);
+        o2 += g2.attributes.position.count;
+      }
+      const out = new THREE.BufferGeometry();
+      out.setAttribute('position', new THREE.BufferAttribute(pos2, 3));
+      out.setAttribute('normal', new THREE.BufferAttribute(nor2, 3));
+      return out;
+    };
+    const vaseG = concatGeo([
+      new THREE.CylinderGeometry(1.0, 0.3, 1.3, 7).translate(0, -0.25, 0),
+      new THREE.IcosahedronGeometry(1, 0).scale(1.02, 0.5, 1.02).translate(0, 0.42, 0),
+    ]);
+    const pyrG = new THREE.ConeGeometry(1, 1.7, 7);
     const CHN = 3;
     const chunkOf = (x, z) => {
       const cx2 = clamp(Math.floor((x - WB.x0) / ((WB.x1 - WB.x0) / CHN)), 0, CHN - 1);
@@ -4692,11 +4736,18 @@
     const chCX = (c) => WB.x0 + (Math.floor(c / CHN) + 0.5) * chW;
     const chCZ = (c) => WB.z0 + ((c % CHN) + 0.5) * chD;
     const wideR = Math.hypot(WB.x1 - WB.x0, WB.z1 - WB.z0) / 2 + 40;
-    const buckets = { core: [], cones: [], wide: [] };
-    for (let c = 0; c < CHN * CHN; c++) buckets.wide.push([]);
+    // canopies split by shape (round crowns keep the core/wide chunk split;
+    // vases, pyramids and conifer spires draw citywide in one mesh each), and
+    // every non-conifer tree gets its trunk from the tier trunk meshes
+    const buckets = { core: [], cones: [], vases: [], pyrs: [], wide: [], tCore: [], tWide: [] };
+    for (let c = 0; c < CHN * CHN; c++) { buckets.wide.push([]); buckets.tWide.push([]); }
     for (let i = 0; i < n; i++) {
       const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
-      if ((TREE_STYLE[g] || TREE_STYLE[0])[6]) buckets.cones.push(i);
+      const shape = (TREE_STYLE[g] || TREE_STYLE[0])[6];
+      if (shape === 1) { buckets.cones.push(i); continue; }
+      if (CORE[i]) buckets.tCore.push(i); else buckets.tWide[chunkOf(X[i], Z[i])].push(i);
+      if (shape === 2) buckets.vases.push(i);
+      else if (shape === 3) buckets.pyrs.push(i);
       else if (CORE[i]) buckets.core.push(i);
       else buckets.wide[chunkOf(X[i], Z[i])].push(i);
     }
@@ -4707,9 +4758,10 @@
       return [r, h];
     };
     const canopyAt = (i, st) => {
-      // crown base clears head height: mature street trees are pruned up
+      // crown base clears head height; center rises with the crown's own
+      // vertical extent so puffs sit low and columns ride high
       const th = clamp(2.4 + DBH[i] * 0.1, 2.6, 5.2);
-      return GY[i] + th * 0.8 + CR[i] * 0.9;
+      return GY[i] + th * 0.75 + CR[i] * st[4] * 0.72;
     };
     const paint = (mesh, idx, canopy, full) => {
       for (let k = 0; k < idx.length; k++) {
@@ -4738,9 +4790,9 @@
       groupCity.add(mesh);
     };
     // core: trunks + faceted canopies + two extra lobes each, with shadows
+    if (buckets.tCore.length) paint(instMesh(trunkCoreG, trunkMat, buckets.tCore.length, coreCX, coreCZ, coreR), buckets.tCore, false, true);
     const ci = buckets.core;
     if (ci.length) {
-      paint(instMesh(trunkCoreG, trunkMat, ci.length, coreCX, coreCZ, coreR), ci, false, true);
       paint(instMesh(canCoreG, canMat, ci.length, coreCX, coreCZ, coreR), ci, true, true);
       const lumps = instMesh(canCoreG, canMat, ci.length * 2, coreCX, coreCZ, coreR);
       for (let k = 0; k < ci.length; k++) {
@@ -4765,11 +4817,14 @@
     }
     // wide tier: one light trunk + canopy pair per chunk so whole chunks cull
     for (let c = 0; c < CHN * CHN; c++) {
+      const ti = buckets.tWide[c];
+      if (ti.length) paint(instMesh(trunkWideG, trunkMat, ti.length, chCX(c), chCZ(c), chR), ti, false, false);
       const wi = buckets.wide[c];
-      if (!wi.length) continue;
-      paint(instMesh(trunkWideG, trunkMat, wi.length, chCX(c), chCZ(c), chR), wi, false, false);
-      paint(instMesh(canWideG, canMat, wi.length, chCX(c), chCZ(c), chR), wi, true, false);
+      if (wi.length) paint(instMesh(canWideG, canMat, wi.length, chCX(c), chCZ(c), chR), wi, true, false);
     }
+    // species silhouettes, citywide: zelkova/elm vases and linden pyramids
+    if (buckets.vases.length) paint(instMesh(vaseG, canMat, buckets.vases.length, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR), buckets.vases, true, false);
+    if (buckets.pyrs.length) paint(instMesh(pyrG, canMat, buckets.pyrs.length, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR), buckets.pyrs, true, false);
     // conifers: cones straight from the ground, both tiers in one mesh
     const ki = buckets.cones;
     if (ki.length) {
@@ -4788,7 +4843,8 @@
       cones.castShadow = true;
       groupCity.add(cones);
     }
-    console.log('planted', nInv, 'surveyed trees +', n - nInv, 'curated,', buckets.cones.length, 'conifers');
+    console.log('planted', nInv, 'surveyed trees +', n - nInv, 'curated,',
+      buckets.cones.length, 'conifers,', buckets.vases.length, 'vases,', buckets.pyrs.length, 'pyramids');
   });
   function plantProceduralTrees() {
     const spots = [];
