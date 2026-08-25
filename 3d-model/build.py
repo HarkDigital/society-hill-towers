@@ -52,6 +52,11 @@ city_path = ROOT / "city.b64"
 city_b64 = city_path.read_text(encoding="utf-8").strip() if city_path.exists() else ""
 data_js += ("const DEM_CITY = " + json.dumps(demc, separators=(",", ":")) + ";\n"
             + "const CITY_B64 = \"" + city_b64 + "\";\n")
+# Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the
+# legacy color pipeline)
+fpal_path = ROOT / "facade_palette.json"
+fpal = json.loads(fpal_path.read_text(encoding="utf-8")) if fpal_path.exists() else None
+data_js += "const FACADE_PAL = " + json.dumps(fpal, separators=(",", ":")) + ";\n"
 
 # </script> inside embedded JS strings would terminate the tag early
 for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):

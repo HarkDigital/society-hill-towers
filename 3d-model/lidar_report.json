@@ -896,5 +896,193 @@
   "core_join": "98.7%",
   "city_lut": "90.8%"
  },
- "method": "Heights: City of Philadelphia LI_BUILDING_FOOTPRINTS (546k polygons, max_hgt from the 2022 QL1 LiDAR flight, ft AGL) joined to model footprints by polygon overlap in the local frame (coverage>=25%, area-weighted mean, dominant-tall-mass and contamination guards; talls>30m raise-only). Core roof forms: NOAA Digital Coast 2022 COPC tiles (EPSG:6347), 0.5m first-return min grids (leaf-off canopy filter), per-building AGL percentiles; gable/hip via axial aspect statistics."
+ "method": "Heights: City of Philadelphia LI_BUILDING_FOOTPRINTS (546k polygons, max_hgt from the 2022 QL1 LiDAR flight, ft AGL) joined to model footprints by polygon overlap in the local frame (coverage>=25%, area-weighted mean, dominant-tall-mass and contamination guards; talls>30m raise-only). Core roof forms: NOAA Digital Coast 2022 COPC tiles (EPSG:6347), 0.5m first-return min grids (leaf-off canopy filter), per-building AGL percentiles; gable/hip via axial aspect statistics.",
+ "opa": {
+  "rows": 583680,
+  "sites": 508051,
+  "inside": 395001,
+  "near": 49757,
+  "unmatched_sites": 63293,
+  "matched_buildings": {
+   "core": 2374,
+   "wide": 100835,
+   "south": 4394,
+   "city": 326232
+  }
+ },
+ "tier1": {
+  "coverage": {
+   "core": {
+    "buildings": 2834,
+    "opa": 2374,
+    "roof": 2827
+   },
+   "wide": {
+    "buildings": 111078,
+    "opa": 100835,
+    "roof": 110958
+   },
+   "south": {
+    "buildings": 6374,
+    "opa": 4394,
+    "roof": 6172
+   },
+   "city_ways": {
+    "opa": 326232,
+    "roof": 390262
+   }
+  },
+  "roof_palette": [
+   [
+    213,
+    211,
+    196
+   ],
+   [
+    247,
+    247,
+    242
+   ],
+   [
+    231,
+    230,
+    219
+   ],
+   [
+    163,
+    157,
+    136
+   ],
+   [
+    238,
+    237,
+    228
+   ],
+   [
+    69,
+    67,
+    61
+   ],
+   [
+    222,
+    221,
+    212
+   ],
+   [
+    111,
+    105,
+    91
+   ],
+   [
+    121,
+    116,
+    101
+   ],
+   [
+    227,
+    225,
+    211
+   ],
+   [
+    135,
+    124,
+    99
+   ],
+   [
+    95,
+    92,
+    83
+   ],
+   [
+    43,
+    43,
+    42
+   ],
+   [
+    218,
+    215,
+    198
+   ],
+   [
+    132,
+    128,
+    113
+   ],
+   [
+    221,
+    220,
+    205
+   ],
+   [
+    205,
+    202,
+    187
+   ],
+   [
+    145,
+    138,
+    116
+   ],
+   [
+    121,
+    110,
+    87
+   ],
+   [
+    152,
+    147,
+    128
+   ],
+   [
+    210,
+    207,
+    191
+   ],
+   [
+    200,
+    197,
+    181
+   ],
+   [
+    194,
+    191,
+    174
+   ],
+   [
+    188,
+    184,
+    166
+   ],
+   [
+    216,
+    214,
+    205
+   ],
+   [
+    84,
+    79,
+    66
+   ],
+   [
+    94,
+    88,
+    73
+   ],
+   [
+    172,
+    167,
+    147
+   ],
+   [
+    180,
+    176,
+    157
+   ],
+   [
+    104,
+    98,
+    81
+   ]
+  ]
+ }
 }

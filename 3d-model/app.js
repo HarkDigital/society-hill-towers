@@ -206,12 +206,14 @@
     const nor = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
     const sty = new Float32Array(count);
+    const flh = new Float32Array(count);
     const wu = new Float32Array(count), wl = new Float32Array(count), wh = new Float32Array(count), bs = new Float32Array(count);
     let o = 0;
     const c = new THREE.Color();
     for (let pi = 0; pi < prepped.length; pi++) {
       const { g, c: color } = prepped[pi];
       const styleV = parts[pi].style || 0;
+      const flhV = parts[pi].flh ? Math.round(parts[pi].flh * 10) : 0;
       const baseY = parts[pi].baseY || 0;
       const p = g.attributes.position.array;
       const n = g.attributes.normal.array;
@@ -220,6 +222,7 @@
       if (g.attributes.aWallU) { wu.set(g.attributes.aWallU.array, o); wl.set(g.attributes.aWallL.array, o); wh.set(g.attributes.aWallH.array, o); }
       for (let i = 0; i < vc; i++) {
         sty[o + i] = styleV;
+        flh[o + i] = flhV;
         bs[o + i] = baseY;
         c.copy(color);
         if (ao) {
@@ -236,6 +239,7 @@
     out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     out.setAttribute('color', new THREE.BufferAttribute(col, 3));
     out.setAttribute('aStyle', new THREE.BufferAttribute(sty, 1));
+    out.setAttribute('aFloorH', new THREE.BufferAttribute(flh, 1));
     out.setAttribute('aWallU', new THREE.BufferAttribute(wu, 1));
     out.setAttribute('aWallL', new THREE.BufferAttribute(wl, 1));
     out.setAttribute('aWallH', new THREE.BufferAttribute(wh, 1));
@@ -260,6 +264,24 @@
       if (Math.abs((b[0] - a[0]) * dz - (b[1] - a[1]) * dx) / L > tol) out.push(b);
     }
     return out.length >= 3 ? out : poly;
+  }
+
+  // horizontal filled polygon at height y (sampled-roof-color overlay caps).
+  // earcut's triangles are canonically CCW in the shape plane - always emit forward.
+  function capGeom(poly, holes, y) {
+    const v2c = poly.map(p => new THREE.Vector2(p[0], -p[1]));
+    const hvc = (holes || []).map(hl => hl.map(q => new THREE.Vector2(q[0], -q[1])));
+    const tris = THREE.ShapeUtils.triangulateShape(v2c, hvc);
+    const all = (holes && holes.length) ? poly.concat(...holes) : poly;
+    const pos = new Float32Array(all.length * 3);
+    for (let i = 0; i < all.length; i++) { pos[i * 3] = all[i][0]; pos[i * 3 + 1] = y; pos[i * 3 + 2] = all[i][1]; }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    const idx = [];
+    for (const t of tris) idx.push(t[0], t[1], t[2]);
+    g.setIndex(idx);
+    g.computeVertexNormals();
+    return g;
   }
 
   // gable built on the footprint quad itself: eaves are the longer opposite-edge
@@ -1474,19 +1496,59 @@
     painted: [0xb8a894, 0xc4b49b, 0xa79a86],
   };
   const highrisePool = [0x8f8d84, 0x9aa0a4, 0xb3aca0, 0x83817c, 0xa39d92];
+  // ---- Tier-1 facade attributes: OPA parcel classes + sampled roof palette ----
+  // stored -> rendered on sunlit tops measured as R = 31.5 * S^0.423 (legacy-linear
+  // lift + ACES compress darks far more than lights); invert per channel so the
+  // rendered roof matches the ortho-sampled sRGB. Calibrated by canvas-pixel probe.
+  const roofInv = (t) => Math.min(1, Math.pow(Math.max(t, 4) / 31.5, 2.364) / 255);
+  const ROOF_PAL = (typeof FACADE_PAL !== 'undefined' && FACADE_PAL && FACADE_PAL.roof)
+    ? FACADE_PAL.roof.map(cc => new THREE.Color(roofInv(cc[0]), roofInv(cc[1]), roofInv(cc[2]))) : null;
+  const OPA_POOLS = {
+    masOld: [0x8f5140, 0x9b5a43, 0x7d4a3a, 0x94523d, 0x86503f, 0xa05f47],
+    mas1900: [0x9b5a43, 0xa56a4e, 0x9a6b55, 0x8d5a45, 0x965c46],
+    masPost: [0xa56a4e, 0xb07a58, 0x9a7a62, 0xa88a70, 0x8d8478],
+    masMod: [0x8a5f4a, 0x9c8874, 0xa89272, 0x8d8a86],
+    frame: [0xb8a894, 0xc4b49b, 0xa8a494, 0x9aa08f, 0xb0b4ac, 0xc0bcae],
+    stone: [0x8a8274, 0x7b7365, 0x948c7c, 0x6e685c],
+    mixed: [0x9d968a, 0x9a6b55, 0x8f887b, 0xa89a86],
+    com: [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c],
+    ind: [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48],
+  };
+  // fa = [use, mat, era, stories] -> wall color pool (null = keep the type logic)
+  function opaWallPool(fa) {
+    const u = fa[0], m = fa[1], e = fa[2];
+    if (u === 5) return OPA_POOLS.ind;
+    if (u === 4 && m !== 0) return OPA_POOLS.com;
+    if (m === 1) return OPA_POOLS.frame;
+    if (m === 2) return OPA_POOLS.stone;
+    if (m === 3) return OPA_POOLS.mixed;
+    if (m === 0) return e <= 2 ? OPA_POOLS.masOld : e === 3 ? OPA_POOLS.mas1900
+      : e === 4 ? OPA_POOLS.masPost : e >= 8 ? OPA_POOLS.mas1900 : OPA_POOLS.masMod;
+    return null;
+  }
+  // facade style from the OPA use/era codes (8 = shutterless post-war rowhouse)
+  function opaStyle(fa, h) {
+    const u = fa[0], e = fa[2];
+    if (u === 3 || u === 4) return h > 16 ? 2 : 5;
+    if (u === 5) return 3;
+    return (e >= 4 && e <= 7) ? 8 : 0;
+  }
   function buildingColor(b, i) {
     const h = hash01(i * 7.13);
     let pool;
     const t = b.t || 'generic';
     // modern high-rises read as curtain wall / precast, never rowhouse brick
     if (b.h > 35 && t !== 'church' && t !== 'worship') pool = highrisePool;
-    else if (buildingPalette[t]) pool = buildingPalette[t];
+    else if (b.fa && t !== 'church' && t !== 'worship' && t !== 'school' && t !== 'civic') pool = opaWallPool(b.fa);
+    if (!pool) {
+    if (buildingPalette[t]) pool = buildingPalette[t];
     else if (t === 'house' || t === 'residential' || t === 'terrace' || t === 'apartments' || t === 'detached' || t === 'semidetached_house')
       pool = h < 0.14 ? buildingPalette.painted : buildingPalette.brick;
     else if (t === 'generic') {
       const area = Math.abs(signedArea(b.poly));
       pool = area < 350 ? (h < 0.16 ? buildingPalette.painted : buildingPalette.brick) : buildingPalette.commercial;
     } else pool = buildingPalette.commercial;
+    }
     const base = new THREE.Color(pool[Math.floor(hash01(i * 3.7) * pool.length) % pool.length]);
     const l = 0.92 + hash01(i * 11.3) * 0.16;
     return base.multiplyScalar(l);
@@ -1600,6 +1662,7 @@
       const style = spec0 && spec0.style != null ? spec0.style
         : (b.h > 35 || t === 'garage' || t === 'parking') ? 2
         : (t === 'church' || t === 'worship') ? 1
+        : b.fa ? opaStyle(b.fa, b.h)
         : (t === 'retail' || t === 'commercial' || t === 'hotel' || t === 'office') ? 5 : 0;
       const trimCol = hash01(i * 2.9) < 0.62 ? new THREE.Color(0xe9e3d3) : new THREE.Color(0x3d3935);
       // roof source: LiDAR-measured form when the 2022 flight resolved one
@@ -1645,6 +1708,13 @@
             span > 3.2 && span < (mr ? 17 : 13) && long / span >= elMin && long / span < 5) quad = sp;
         }
       }
+      // measured floor pitch: OPA stories against the LiDAR height (eave for pitched)
+      let flhV = 0;
+      if (b.fa && b.fa[3]) {
+        const hEff = mr && mForm > 0 ? mr[1] : b.h;
+        const r2 = hEff / b.fa[3];
+        if (r2 >= 2.2 && r2 <= 5.2) flhV = Math.min(4.6, r2);
+      }
       try {
         if (quad) {
           let eaveH, ridgeTop, rrad = null;
@@ -1658,12 +1728,14 @@
             if (b.h - rise < 3.4) rise = Math.max(1.2, b.h - 3.4);
             eaveH = b.h - rise; ridgeTop = b.h + 0.05;
           }
-          parts.push({ geom: buildingGeom(quad, null, eaveH, -1.5), color, style });
-          const roofCol = new THREE.Color(roofPalette[Math.floor(hash01(i * 3.1) * roofPalette.length) % roofPalette.length])
-            .multiplyScalar(0.9 + hash01(i * 8.9) * 0.25);
+          parts.push({ geom: buildingGeom(quad, null, eaveH, -1.5), color, style, flh: flhV });
+          const roofCol = (b.rp != null && ROOF_PAL)
+            ? ROOF_PAL[b.rp].clone().multiplyScalar(0.92 + hash01(i * 8.9) * 0.18)
+            : new THREE.Color(roofPalette[Math.floor(hash01(i * 3.1) * roofPalette.length) % roofPalette.length])
+              .multiplyScalar(0.9 + hash01(i * 8.9) * 0.25);
           const g = mForm === 2 ? quadHip(quad, eaveH, ridgeTop, rrad) : quadGable(quad, eaveH, ridgeTop, rrad);
           parts.push({ geom: g.slopes, color: roofCol, style: 3 });
-          if (g.ends) parts.push({ geom: g.ends, color, style });
+          if (g.ends) parts.push({ geom: g.ends, color, style, flh: flhV });
           // eave boards laid exactly along the wall's eave edges
           for (const ev of g.eaves) {
             const exd = ev.b[0] - ev.a[0], ezd = ev.b[1] - ev.a[1];
@@ -1693,7 +1765,17 @@
           // drops to a flat extrusion at the roof's mean surface height — never a
           // floating slope (the session's roof rule)
           const hFlat = (mr && mForm > 0) ? Math.max(3, mr[1] + 0.35 * (mr[2] - mr[1])) : b.h;
-          parts.push({ geom: buildingGeom(b.poly, b.holes, hFlat, b.minH ? b.minH : -1.5), color, style });
+          parts.push({ geom: buildingGeom(b.poly, b.holes, hFlat, b.minH ? b.minH : -1.5), color, style, flh: flhV });
+          // sampled roof color as a thin overlay cap. It must clear the cornice
+          // SLAB (a solid extrusion to hFlat+0.06 whose cream top used to play
+          // "roof" on every rowhouse) - 9 cm up, deterministic, never coplanar;
+          // the slab edge below reads as the cornice lip.
+          if (b.rp != null && ROOF_PAL && !b.minH) {
+            try {
+              parts.push({ geom: capGeom(b.poly, b.holes, hFlat + 0.09),
+                color: ROOF_PAL[b.rp].clone().multiplyScalar(0.94 + hash01(i * 8.9) * 0.14), style: 3 });
+            } catch (e2) {}
+          }
           // flat-roofed rowhouses get a projecting cornice ring at the parapet
           if (resType && !b.minH && (!b.holes || !b.holes.length) && area < 320 && hFlat < 18 && b.poly.length <= 10) {
             const [ccx, ccz] = polyCentroid(b.poly);
@@ -1733,13 +1815,13 @@
       shader.uniforms.uNight = nightUniform;
       cityMat.userData.shader = shader;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aStyle; attribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase;\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNorm = normalize(mat3(modelMatrix) * objectNormal);\nvStyle = aStyle; vWallU = aWallU; vWallL = aWallL; vWallH = aWallH; vBase = aBase;');
+        .replace('#include <common>', '#include <common>\nattribute float aStyle; attribute float aFloorH; attribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase;\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNorm = normalize(mat3(modelMatrix) * objectNormal);\nvStyle = aStyle; vFloorH = aFloorH; vWallU = aWallU; vWallL = aWallL; vWallH = aWallH; vBase = aBase;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', [
           '#include <common>',
           'uniform float uNight;',
-          'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;',
+          'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;',
           'float shtLit = 0.0;',
           'float shtHash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
           'float rectM(vec2 m, vec2 c, vec2 s, float aa){ vec2 d = abs(m - c) - s * 0.5; return 1.0 - smoothstep(-aa, aa, max(d.x, d.y)); }',
@@ -1791,7 +1873,7 @@
           '      col = mix(col, frameCol, tr * 0.8);',
           '    } else if (st == 2 || st == 6) {',
           '      float pitch = (st == 6) ? 3.6 : 3.0;',
-          '      float fp = (st == 6) ? 3.15 : 2.95;',
+          '      float fp = (st == 6) ? 3.15 : (vFloorH > 5.0 ? vFloorH * 0.1 : 2.95);',
           '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
           '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
           '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
@@ -1831,8 +1913,8 @@
           '      vec2 sb7 = floor(vec2(floor(u7 / 3.4), row) / vec2(3.0, 2.0));',
           '      sbLit = step(0.8, shtHash(sb7 + 4.7)) * (0.5 + 0.3 * shtHash(sb7 * 1.83 + 9.1));',
           '    } else {',
-          '      float pitch = (st == 4) ? 3.0 : 1.9;',
-          '      float fp = 3.05;',
+          '      float pitch = (st == 4) ? 3.0 : (st == 8 ? 2.35 : 1.9);',
+          '      float fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.05;',
           '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
           '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
           '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
@@ -1844,7 +1926,7 @@
           '      lit = 0.5 + 0.5 * shtHash(cell * 1.7 + 11.0);',
           '      vec3 gc = vec3(0.06, 0.07, 0.09) + vec3(0.10, 0.09, 0.06) * lit;',
           '      float doorCol = step(2.5, mod(cell.x, 3.0));',
-          '      float isDoor = ground * doorCol * float(st == 0) * brickish * inWall * det * detU;',
+          '      float isDoor = ground * doorCol * float(st == 0 || st == 8) * brickish * inWall * det * detU;',
           '      float isArch = ground * float(st == 4) * inWall * det;',
           '      float isShop = ground * float(st == 5) * inWall * det;',
           '      float sashOn = (1.0 - max(isDoor, max(isArch, isShop))) * okRow;',
@@ -3103,7 +3185,8 @@
     const bin = Uint8Array.from(atob(WIDE_B64), ch => ch.charCodeAt(0));
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const body = new Int16Array(bin.buffer, 16);
-    if (hdr[0] !== 0x53485458) return;
+    const hasAttr = hdr[0] === 0x5348545A;
+    if (hdr[0] !== 0x53485458 && !hasAttr) return;
     let k = 0;
     const S = 0.2;
     const CH = 700;
@@ -3111,7 +3194,7 @@
     const chunkIn = (map) => (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let c = map.get(key);
-      if (!c) { c = { pos: [], nor: [], col: [], sty: [], bas: [], idx: [], n: 0 }; map.set(key, c); }
+      if (!c) { c = { pos: [], nor: [], col: [], sty: [], bas: [], flh: [], idx: [], n: 0 }; map.set(key, c); }
       return c;
     };
     const getChunk = chunkIn(chunks), getGlassChunk = chunkIn(glassChunks);
@@ -3143,13 +3226,14 @@
     // dark curtain wall, bronze — towers draw from this instead of the pale palCom
     const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
     const c = new THREE.Color();
+    const cCap = new THREE.Color();
     const v2 = [];
     const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); }); // not timer-clamped in hidden tabs
-    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base) => {
-      ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base);
+    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => {
+      ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base); ch.flh.push(fh || 0);
       return ch.n++;
     };
-    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes) => {
+    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor) => {
       const sign = signedArea(poly) > 0 ? 1 : -1;
       const n = poly.length;
       const r = color.r, g = color.g, b = color.b;
@@ -3159,10 +3243,10 @@
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sg, nz = (-dx / L) * sg;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base);
-        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base);
-        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base);
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
       } };
       if (holes) for (const hl of holes) wallRing(hl, signedArea(hl) > 0 ? -1 : 1);
@@ -3172,10 +3256,10 @@
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sign, nz = (-dx / L) * sign;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base);
-        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base);
-        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base);
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
       }
       // roof cap (ring when holes are given)
@@ -3185,8 +3269,9 @@
       let tris;
       try { tris = THREE.ShapeUtils.triangulateShape(v2, hv); } catch (e) { return; }
       const capStart = ch.n;
-      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, r * 0.93, g * 0.93, b * 0.93, 3, base);
-      for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, r * 0.93, g * 0.93, b * 0.93, 3, base);
+      const cr = capColor ? capColor.r : r * 0.93, cg = capColor ? capColor.g : g * 0.93, cb = capColor ? capColor.b : b * 0.93;
+      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, 3, base);
+      for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, cr, cg, cb, 3, base);
       // earcut emits CCW triangles in the shape plane regardless of ring winding,
       // and CCW in (x,-z) maps to up-facing — never flip by ring orientation
       for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
@@ -3195,6 +3280,7 @@
     let njPoly = null;   // USS New Jersey hull outline — custom battleship below
     for (let i = 0; i < nb; i++) {
       const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
+      const attrW = hasAttr ? body[k++] : -1, roofW = hasAttr ? body[k++] : -1;
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
@@ -3202,9 +3288,14 @@
       if (t === 7 && Math.hypot(cx - 996, cz - 663) < 80) { njPoly = poly; continue; }
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
-      const pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
+      const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
+      const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
+      let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
+      if (fa && h <= 45 && t <= 4) { const p2 = opaWallPool(fa); if (p2) pool = p2; }
       c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 11.3) * 0.12 : 0.9 + hash01(i * 11.3) * 0.2);
-      const style = h > 30 ? 2 : (t === 3 ? 5 : 0);
+      let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
+      if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
+      const capC = roofW >= 0 && ROOF_PAL ? cCap.copy(ROOF_PAL[roofW]).multiplyScalar(0.9 + hsh * 0.18) : null;
       if (t === 10) { // glass tower parts: reflective material, no painted windows
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
@@ -3310,7 +3401,7 @@
             appendBuilding(chk, [[px2 - 9, pz2 - 1], [px2 + 9, pz2 - 1], [px2 + 9, pz2 + 1], [px2 - 9, pz2 + 1]], base + 22, base + 32, c, 3, base);
           }
         }
-      } else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base);
+      } else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, null, fh, capC);
       if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples
         const tw = 5.5, towerTop = base + h + 9, apex = base + h + 24;
@@ -3828,6 +3919,7 @@
       g.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(ch.nor), 3, true));
       g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(ch.col), 3, true));
       g.setAttribute('aStyle', new THREE.BufferAttribute(new Int8Array(ch.sty), 1));
+      g.setAttribute('aFloorH', new THREE.BufferAttribute(new Int8Array(ch.flh.map(fv => Math.round(fv * 10))), 1));
       g.setAttribute('aBase', new THREE.BufferAttribute(new Float32Array(ch.bas), 1));
       g.setIndex(ch.idx);
       g.computeBoundingSphere();
@@ -4042,7 +4134,8 @@
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
     const bin = Uint8Array.from(atob(CITY_B64), ch => ch.charCodeAt(0));
     const hdr = new Int32Array(bin.buffer, 0, 4);
-    if (hdr[0] !== 0x53485459) return;
+    const hasAttr = hdr[0] === 0x5348545B;
+    if (hdr[0] !== 0x53485459 && !hasAttr) return;
     const body = new Int16Array(bin.buffer, 16);
     let k = 0;
     const S = 0.7, CH = 2400;
@@ -4052,7 +4145,7 @@
     const getChunk = (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let ch = chunks.get(key);
-      if (!ch) { ch = { pos: [], nor: [], col: [], sty: [], bas: [], idx: [], n: 0 }; chunks.set(key, ch); }
+      if (!ch) { ch = { pos: [], nor: [], col: [], sty: [], bas: [], flh: [], idx: [], n: 0 }; chunks.set(key, ch); }
       return ch;
     };
     const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
@@ -4060,13 +4153,14 @@
     const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
     const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
     const c = new THREE.Color();
+    const cCap = new THREE.Color();
     const v2 = [];
     const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); }); // not timer-clamped in hidden tabs
-    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base) => {
-      ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base);
+    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => {
+      ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base); ch.flh.push(fh || 0);
       return ch.n++;
     };
-    const appendB = (ch, poly, y0, y1, color, st, base) => {
+    const appendB = (ch, poly, y0, y1, color, st, base, fh, capColor) => {
       const n = poly.length, r = color.r, g = color.g, b = color.b;
       const sign = signedArea(poly) > 0 ? 1 : -1;
       for (let i = 0; i < n; i++) {
@@ -4075,10 +4169,10 @@
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sign, nz = (-dx / L) * sign;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base);
-        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base);
-        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base);
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
       }
       v2.length = 0;
@@ -4086,7 +4180,8 @@
       let tris;
       try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return; }
       const capStart = ch.n;
-      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, r * 0.93, g * 0.93, b * 0.93, 3, base);
+      const cr = capColor ? capColor.r : r * 0.93, cg = capColor ? capColor.g : g * 0.93, cb = capColor ? capColor.b : b * 0.93;
+      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, 3, base);
       // earcut emits CCW triangles in the shape plane regardless of ring winding
       // (pack_city rings arrive in shapely's CW convention — flipping by ring
       // orientation culled every merged roof); always emit forward = up-facing
@@ -4096,15 +4191,21 @@
     const nb = hdr[1];
     for (let i = 0; i < nb; i++) {
       const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
+      const attrW = hasAttr ? body[k++] : -1, roofW = hasAttr ? body[k++] : -1;
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 5.31 + 0.7);
-      const pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
+      const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
+      const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
+      let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
+      if (fa && h <= 45 && t <= 4) { const p2 = opaWallPool(fa); if (p2) pool = p2; }
       c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 13.7) * 0.12 : 0.9 + hash01(i * 13.7) * 0.2);
-      const style = h > 30 ? 2 : (t === 3 ? 5 : 0);
-      appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base);
+      let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
+      if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
+      const capC = roofW >= 0 && ROOF_PAL ? cCap.copy(ROOF_PAL[roofW]).multiplyScalar(0.9 + hsh * 0.18) : null;
+      appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC);
       if (t === 5 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         const chk = getChunk(cx, cz);
         const tw = 5.5, towerTop = base + h + 9, apex = base + h + 24;
@@ -4231,6 +4332,7 @@
       g.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(ch.nor), 3, true));
       g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(ch.col), 3, true));
       g.setAttribute('aStyle', new THREE.BufferAttribute(new Int8Array(ch.sty), 1));
+      g.setAttribute('aFloorH', new THREE.BufferAttribute(new Int8Array(ch.flh.map(fv => Math.round(fv * 10))), 1));
       g.setAttribute('aBase', new THREE.BufferAttribute(new Float32Array(ch.bas), 1));
       g.setIndex(ch.idx);
       g.computeBoundingSphere();

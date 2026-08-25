@@ -652,7 +652,65 @@ Round 14 (Aug 25 — Rotten Ralph's, from Mike's Street View reference):
   its plane (crosses it) — proud decals on a solid box, since recessed glass inside a
   solid extrusion is invisible.
 
-**The LiDAR true-massing pass is done** — `lidar-massing-plan.md` is executed. Option 2
-of the accuracy plan (OPA parcel join for era-correct facades) remains unstarted.
+Round 15 (Aug 25 — Tier 1 of "every building like the photo": data-driven facades):
+- **Every generic building now carries measured facade attributes.** Two new data
+  sources joined onto all ~250k buildings:
+  1. **OPA property records** (`fetch_opa.py` → 583,680 rows from phl.carto SQL API;
+     `opa_join.py` collapses condo units to 508k sites by rounded point, then
+     point-in-footprint joins with a 12 m nearest fallback — a site informs EVERY
+     footprint containing it, because the core scene, wide scene and raw dump each
+     carry their own copy of a building). Per building: use (row/detached/apts/
+     store+dwell/commercial/industrial/civic), material (masonry/frame/stone/mixed),
+     era (8 buckets from year_built; 'OLD STYLE'/'POST WAR'/'MODERN' code hints when
+     year is missing), stories. Coverage: core 2,374/2,834, wide 100,835/111k,
+     south 4,394, far ring 326,232 ways.
+  2. **Sampled roof colors** (`roof_colors.py`): the city's public CityImagery_2024_3in
+     tile cache (tiles.arcgis.com, z17 ≈ 0.92 m/px) sampled per footprint — median RGB
+     inside the 0.8 m-eroded polygon (median rides over branches; 6,683 tiles cached in
+     `lidar_cache/tiles/`), k-means'd to a 30-color palette. 510,219/519,599 sampled
+     (98.2%). Palette in `facade_palette.json` (committed; build.py embeds as
+     FACADE_PAL).
+- **Where it lands** (`patch_scenes_facade.py` writes `b.fa=[use,mat,era,stories]` +
+  `b.rp=paletteIdx` into all three scene files; packers carry TWO extra int16 per
+  building — attr word u(3)|mat(3)|era(4)|floorH(5) and roof index; magics bumped
+  0x5348545A wide / 0x5348545B city, old formats still decode):
+  - Wall palettes by material×era (deep colonial brick → orange 1900s → postwar tan +
+    perma-stone → modern blends; siding pastels for frame; Wissahickon-schist grays
+    for stone — Germantown/Mt Airy read right now; industrial/commercial pools).
+  - Styles from parcels: mixed-use/commercial ground floors get storefront style 5,
+    industrial gets blank 3, and post-1935 residential gets NEW STYLE 8 — the style-0
+    rowhouse dress with wider bays and NO shutters (shutters everywhere was wrong for
+    North Philly). Pre-war keeps style 0 with shutters.
+  - **True floor counts**: new per-vertex `aFloorH` attribute (quantized ×10 into an
+    Int8; 0 = style default) feeds the shader's floor pitch for styles 0/5/8 and 2 —
+    a 2-story postwar row now draws 2 window rows, not 3. Core parts get it through
+    mergeColored (the single attribute-injection point), wide/far through the chunk
+    builders. Guarded: only when h/stories ∈ [2.2, 5.2].
+  - **Roof colors everywhere**: wide/far caps take the sampled color as cap vertex
+    color (appendBuilding/appendB grew fh + capColor params); core flat roofs get a
+    thin overlay cap (`capGeom`, emit-forward earcut) — at hFlat+0.09 because the
+    rowhouse "cornice ring" is really a SOLID SLAB to +0.06 whose cream top used to
+    play roof on every rowhouse; measured gable/hip slopes use the sampled color too.
+- **Roof color calibration is a POWER CURVE, not a divisor**: on sunlit tops the
+  legacy-linear lift + ACES render stored S as R ≈ 31.5·S^0.423 (darks amplified
+  ~6×, lights ~2.3×). `roofInv` inverts per channel; canvas-pixel probes confirm
+  rendered ≈ ortho-sampled within ~10 units across the range ([43,43,42] asphalt →
+  [33,32,29]). Lesson recorded: calibrate stored colors against a MEASURED transfer
+  curve, not a guessed constant.
+- Page: 15.86 MB (+1.43 for the two words/building). Still under the 16 MB artifact
+  cap but with only ~0.14 MB headroom — the NEXT data addition goes Pages-only or
+  requires trimming. Zero console errors; 3.6M tris in city views (+30k for overlay
+  caps). Old-format b64s still decode (dry-run verified before the data landed).
+- Files: `fetch_opa.py`, `opa_join.py`, `roof_colors.py`, `patch_scenes_facade.py`,
+  `facade_palette.json` committed; `lidar_cache/` additionally holds `opa_rows.csv`
+  (77 MB), `opa_pages/`, `opa_{core,wide,south,city}.json`, `roof_{...}.json`,
+  `roof_palette.json`, and `tiles/` (6.7k ortho jpegs). Rerun order:
+  fetch_opa → opa_join (venv) → roof_colors (venv) → patch_scenes_facade →
+  pack_wide → pack_city (venv) → build.
+
+**The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
+Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
+fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
+option 2 (OPA join) is now executed as part of Tier 1.
 
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

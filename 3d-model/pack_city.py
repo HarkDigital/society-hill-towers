@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """osm_city_raw.json -> city.b64 : the far ring (rest of Philadelphia) at 0.7 m units.
-Same body layout as wide.b64 (n, h*5, minH*5, type, pts...) but scale 0.7 and with
+Same body layout as wide.b64 (n, h*5, minH*5, type, attr, roof, pts...; magic 0x5348545B) but scale 0.7 and with
 rowhouse rows MERGED into block strips (shapely union) so the whole city fits the
 artifact's 16 MB page budget. Buildings inside the wide box are skipped (covered).
 Run with the scratchpad venv python (needs shapely)."""
@@ -38,6 +38,24 @@ try:
 except FileNotFoundError:
     LIDAR_H = {}
     print('WARNING: lidar_city_heights.json missing - falling back to tags/defaults')
+# OPA facade attrs + sampled roof palette indices per way (Tier-1 facade pass)
+def _load(p):
+    try: return json.load(open(p))
+    except FileNotFoundError:
+        print('WARNING:', p, 'missing'); return {}
+OPA_A = {int(k): v for k, v in _load('lidar_cache/opa_city.json').items()}
+ROOF_I = {int(k): v for k, v in _load('lidar_cache/roof_city.json').items()}
+
+def attr_word(wid, h):
+    fa = OPA_A.get(wid)
+    if not fa: return -1
+    u, m, e, st = fa
+    fq = 0
+    if st and h:
+        r = h / st
+        if 2.2 <= r <= 5.2:
+            fq = min(25, max(1, int(round((min(r, 4.6) - 2.2) / 0.1)) + 1))
+    return (u & 7) | ((m & 7) << 3) | ((e & 15) << 6) | (fq << 10)
 
 def parseH(t, wid=None):
     h = t.get('height')
@@ -75,34 +93,42 @@ for el in ways:
     h = parseH(t, el['id'])
     if h < 5 and pg.area < 60: continue   # sheds/garages: invisible at far-ring distances
     bt = BT.get(t.get('building'), 0)
+    aw_ = attr_word(el['id'], h)
+    rw_ = ROOF_I.get(el['id'], -1)
     n_in += 1
     if h > 20 or bt == 5:
-        solo.append((pg, h, bt))
+        solo.append((pg, h, bt, aw_, rw_))
     else:
         key = (int(cx // 400), int(cz // 400), int(round(h / 4)))
-        merge_groups.setdefault(key, []).append(pg)
+        merge_groups.setdefault(key, []).append((pg, aw_, rw_))
 
 body = []
 nb = 0
-def emit(pg, h, mh, bt):
+def emit(pg, h, mh, bt, aw_=-1, rw_=-1):
     global nb
     ext = list(pg.exterior.coords)[:-1]
     if len(ext) < 3 or len(ext) > 32:
         if len(ext) > 32: ext = ext[::max(1, len(ext) // 32)]
         if len(ext) < 3: return
-    body.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt])
+    body.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt, aw_, rw_])
     for x, z in ext: body.extend([clip(x / S), clip(z / S)])
     nb += 1
 
-for (gx, gz, hb), pgs in merge_groups.items():
+from collections import Counter
+for (gx, gz, hb), members in merge_groups.items():
     h = max(4, hb * 4)
+    pgs = [m[0] for m in members]
+    aws = Counter(m[1] for m in members if m[1] != -1)
+    rws = Counter(m[2] for m in members if m[2] != -1)
+    aw_ = aws.most_common(1)[0][0] if aws else -1
+    rw_ = rws.most_common(1)[0][0] if rws else -1
     merged = unary_union([p.buffer(1.8, join_style=2) for p in pgs]).buffer(-1.8, join_style=2)
     geoms = list(merged.geoms) if merged.geom_type == 'MultiPolygon' else [merged]
     for g in geoms:
         if g.is_empty or g.area < 70: continue
-        emit(Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2)
-for pg, h, bt in solo:
-    emit(pg.simplify(0.8), h, 0, bt)
+        emit(Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2, aw_, rw_)
+for pg, h, bt, aw_, rw_ in solo:
+    emit(pg.simplify(0.8), h, 0, bt, aw_, rw_)
 print(f'buildings: {n_in} in -> {nb} packed', flush=True)
 
 # roads (+ runways/taxiways as gray ribbons). Ways are SPLIT into runs at bbox exits
@@ -206,7 +232,7 @@ for el in els:
     except Exception: pass
 print(f'areas: {na}', flush=True)
 
-hdr = struct.pack('<4i', 0x53485459, nb, nr, na)
+hdr = struct.pack('<4i', 0x5348545B, nb, nr, na)
 blob = hdr + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(blob).decode()
 open('city.b64', 'w').write(b64)

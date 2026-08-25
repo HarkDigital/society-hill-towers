@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """scene_wide.json -> wide.b64 : compact int16 binary (0.2 m units) for the outer districts.
-Layout: Int32[4] header (magic, nBuildings, nRoads, nAreas), then Int16 body:
-  building: n, h*5, minH*5, type, x1,z1,...   road: n, w*10, type, pts...   area: n, kind, pts...
-Buildings inside the detailed core bbox are dropped (the core scene covers them)."""
+Layout: Int32[4] header (magic 0x5348545A, nBuildings, nRoads, nAreas), then Int16 body:
+  building: n, h*5, minH*5, type, attr, roof, x1,z1,...
+  road: n, w*10, type, pts...   area: n, kind, pts...
+attr packs the OPA facade word u(3)|mat(3)|era(4)|floorH(5) (-1 = none); roof is
+the sampled roof-palette index (-1 = none). The 0x53485458 format (no attr/roof
+words) is still decoded by the app. Buildings inside the core bbox are dropped."""
 import json, math, struct, base64
 CORE = (-640, 770, -520, 850)        # x0, x1, z0, z1 of the detailed core extract
 WIDE = (-3700, 2300, -4480, 6400)    # wide bbox in local meters (south to the stadiums + Walt Whitman Bridge)
@@ -73,6 +76,22 @@ def containsPart(poly):
             for (cx, cz) in partCells.get((gx, gz), []):
                 if pip(cx, cz, poly): return True
     return False
+def attr_word(b, h):
+    """u(3)|mat(3)|era(4)|floorH(5): floorH quantized (2.2 + (q-1)*0.1 m), 0 = none."""
+    fa = b.get('fa')
+    if not fa: return -1
+    u, m, e, st = fa
+    fq = 0
+    if st and h:
+        r = h / st
+        if 2.2 <= r <= 5.2:
+            fq = min(25, max(1, int(round((min(r, 4.6) - 2.2) / 0.1)) + 1))
+    return (u & 7) | ((m & 7) << 3) | ((e & 15) << 6) | (fq << 10)
+
+def roof_word(b):
+    rp = b.get('rp')
+    return -1 if rp is None else rp
+
 body = []
 nb = nr = na = 0
 dropped_dup = dropped_outline = 0
@@ -87,7 +106,7 @@ for b in d['buildings']:
     sp = simplify(poly, 0.35)
     if len(sp) > 48: sp = sp[::max(1, len(sp) // 48)]
     h = max(2.5, min(6500, b['h']))
-    body += [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0)]
+    body += [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0), attr_word(b, h), roof_word(b)]
     for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
     nb += 1
 # 3D-mapped building parts (skyscraper shafts, crowns, podiums) from building:part ways;
@@ -111,7 +130,7 @@ if os.path.exists('parts_wide.json'):
         if CORE[0] <= cx <= CORE[1] and CORE[2] <= cz <= CORE[3]: continue
         sp = simplify(poly, 0.3)
         if len(sp) > 48: sp = sp[::max(1, len(sp) // 48)]
-        body += [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3]
+        body += [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3, -1, -1]
         for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
         nb += 1
 def simplify_open(pts, tol):
@@ -165,7 +184,7 @@ for a in d['areas']:
     body += [len(sp), AK[a['kind']]]
     for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
     na += 1
-buf = struct.pack('<4i', 0x53485458, nb, nr, na) + struct.pack('<%dh' % len(body), *body)
+buf = struct.pack('<4i', 0x5348545A, nb, nr, na) + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(buf).decode('ascii')
 open('wide.b64', 'w').write(b64)
 print(f'buildings {nb} roads {nr} areas {na} -> {len(buf)/1e6:.2f} MB binary, {len(b64)/1e6:.2f} MB base64; dropped {dropped_dup} core-duplicates, {dropped_outline} outlines with 3D parts')
