@@ -941,6 +941,25 @@ Round 21 (Aug 25 — de-AI pass 2 + sun + bus alignment + layers panel):
   text length, each column at siteY(road)+LIFT, so the text follows Front St
   grades and the Delaware Expressway label now visibly rides down INTO the
   trench. ~6 extra siteY samples per label at build, negligible.
+- **Round 22 additions (same day):** ALL type is now Montserrat (embedded
+  0,400/0,500/0,600/0,700/1,600 — Caslon/Alegreya/Courier embeds REMOVED;
+  hierarchy by weight: kickers 600, hints 500, street labels italic-600 27 px;
+  readouts tabular-nums, time-panel readout wraps as clean rows, clock says
+  "(live)" not "· live"). The About panel is HIDDEN for now (btnAbout
+  display:none, the i key unbound — code intact) with a tiny fixed #osmcredit
+  bottom-right keeping ODbL attribution. The towers' address labels are gone.
+  The intro camera now settles on CITY HALL (orbit target −1603, 78, −802,
+  goalR 700; default aimSun moved to −1450, −700). The Ryland (and every core
+  glass landmark sharing rylandGlassMat) gets photo-matched night glass:
+  onBeforeCompile per-panel warm lit windows (world-space 2.9×3.13 m cells,
+  ~34% lit, ryh hash) + fully glowing lowest ~10 m above each part's aBase
+  (lobby/amenity), driven by uNight — the old flat emissiveIntensity wash is
+  gone. MOBILE FLICKER: logarithmicDepthBuffer is ON for every browser again —
+  the Safari standard-depth fallback (obsoleted when round 4 proved the hollow
+  buildings were a winding bug) was quantizing the few-cm flat gaps into heavy
+  shimmer on phones; ?logdepth=0 stays as the escape hatch. sht-32's
+  #btnLayers svg sizing line is preserved. If Mike still sees phone flicker
+  after this, get an exact-view repro before touching depth again.
 - **The sun is round now** (Mike's screenshot: vertical streak): the sky dome
   is coarse (32×18) and the fragment shader used INTERPOLATED vDir unnormalized,
   so pow(dot, 420) followed the mesh's vertex meridians. The shader now

@@ -63,13 +63,14 @@
 
   let renderer;
   try {
-    // Safari's Metal-backed WebGL2 mishandles the per-fragment depth writes that
-    // logarithmicDepthBuffer requires — near walls randomly lose the depth test and
-    // far faces punch through ("hollow buildings") — so use standard depth there.
-    // Force either path with ?logdepth=1 / ?logdepth=0 for testing.
+    // Log depth EVERYWHERE. The Aug-24 Safari standard-depth fallback was built
+    // for the "hollow buildings" report, which round 4 proved was an earcut
+    // cap-winding bug, not Safari — and standard depth over a 26 km far plane
+    // quantizes the few-cm flat separations into heavy z-fight shimmer on
+    // phones (every iPhone browser is Safari-engined). Keep ?logdepth=0 as an
+    // escape hatch if a real per-fragment-depth defect ever surfaces.
     const qsDepth = /[?&]logdepth=(\d)/.exec(location.search);
-    const isSafari = /^((?!chrome|android|crios|fxios|edg).)*safari/i.test(navigator.userAgent);
-    window.__useLogDepth = qsDepth ? qsDepth[1] === '1' : !isSafari;
+    window.__useLogDepth = qsDepth ? qsDepth[1] === '1' : true;
     renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance', logarithmicDepthBuffer: window.__useLogDepth });
     if (!renderer.getContext()) throw new Error('no context');
   } catch (e) {
@@ -710,7 +711,7 @@
     c.left = -extent; c.right = extent; c.top = extent; c.bottom = -extent;
     c.updateProjectionMatrix();
   }
-  aimSun(-120, 0, 640);
+  aimSun(-1450, -700, 800);
 
   const WX = { cover: 0.22, ok: false };            // live-weather state (see applyWx below)
   const wxWind = new THREE.Vector2(0.0012, 0.0005);
@@ -2966,8 +2967,27 @@
       m.castShadow = true;
       groupCity.add(m);
       rylandGlassMat = m.material;
-      rylandGlassMat.emissive = new THREE.Color(0xffe2b0);
-      rylandGlassMat.emissiveIntensity = 0;
+      // Night, photo-matched: scattered warm per-panel apartment lights and
+      // fully glowing lobby/amenity glass over the lowest floors of each piece
+      // (aBase carries every merged part's ground lift). A flat material-wide
+      // emissive used to wash the bars to one dead tone.
+      rylandGlassMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uNight = nightUniform;
+        shader.vertexShader = shader.vertexShader
+          .replace('#include <common>', '#include <common>\nattribute float aBase;\nvarying float vRyB;\nvarying vec3 vRyW;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRyB = aBase;\nvRyW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        shader.fragmentShader = shader.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vRyB;\nvarying vec3 vRyW;\nfloat ryh(vec3 p){ return fract(sin(dot(p, vec3(17.13, 91.7, 41.3))) * 43758.55); }')
+          .replace('#include <emissivemap_fragment>',
+            '#include <emissivemap_fragment>\n{\n' +
+            '  float relY = vRyW.y - vRyB;\n' +
+            '  vec3 cell = floor(vec3(vRyW.x / 2.9, relY / 3.13, vRyW.z / 2.9));\n' +
+            '  float lit = step(0.66, ryh(cell));\n' +
+            '  vec3 warm = vec3(1.0, 0.84, 0.60) * (0.7 + 0.55 * ryh(cell + 7.0));\n' +
+            '  float amen = 1.0 - smoothstep(9.2, 10.6, relY);\n' +
+            '  totalEmissiveRadiance += warm * max(lit * 0.8, amen * 1.15) * uNight;\n' +
+            '}');
+      };
     }
   });
 
@@ -4619,12 +4639,7 @@
       if (lm && lm.spire_height_m) h = Math.max(h, lm.spire_height_m + 6);
       addLabel(text, cx, h, cz);
     }
-    for (const t of towers) {
-      const short = /North/.test(t.name) ? 'North Tower, 200 Locust'
-        : /South/.test(t.name) ? 'South Tower, 220 Locust'
-        : 'West Tower, 210 Locust';
-      addLabel(short, t.centroid[0], (t.h || 89) + 9, t.centroid[1], 'tower');
-    }
+    // (the towers carried address labels here; removed at Mike's request)
     const riv = waterPoint(0, 210);
     addLabel('Delaware River', riv[0], 12, riv[1], '');
     const pl = waterPoint(-230, -45);
@@ -4661,12 +4676,12 @@
   let introSpin = false; // begins when the veil lifts, ends at first interaction
 
   const orbit = {
-    // intro: glide in from high over the Delaware, settling with the towers
-    // front-lit against the sky from the river side
-    target: new V3(0, 55, 0), goalTarget: new V3(0, 55, 0),
-    r: 1500, goalR: 430,
+    // intro: glide in from high in the east, settling on City Hall with the
+    // tower and Penn front-lit against the Center City skyline
+    target: new V3(-1603, 78, -802), goalTarget: new V3(-1603, 78, -802),
+    r: 3200, goalR: 700,
     theta: -0.38, goalTheta: 0.52, // azimuth on xz: 0 = +x (east)
-    phi: 1.32, goalPhi: 1.24,      // polar from +y
+    phi: 1.32, goalPhi: 1.22,      // polar from +y
   };
   const walk = {
     pos: new V3(0, 1.7, 0),
@@ -4974,7 +4989,6 @@
     else if (k === '3') setMode(MODE.FLY);
     else if (k === 'l') toggleLabels();
     else if (k === 't') toggleTimePanel();
-    else if (k === 'i') toggleAbout();
     else if (k === 'v') toggleTransit();
     else if (k === 'n') toggleStreets();
     else if (k === 'f') toggleLayers();
@@ -5571,12 +5585,12 @@
   step('Lettering the streets', async () => {
     if (typeof ST_LABELS === 'undefined' || !ST_LABELS || !ST_LABELS.names) { btnStreets.style.display = 'none'; return; }
     const AW = 4096, AH = 2048, FS = 27, RH = 34, PAD = 9;
-    try { await document.fonts.load('italic 27px "Libre Caslon Text"'); } catch (e) { /* fall back to the stack */ }
+    try { await document.fonts.load('italic 600 27px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
     const cv = document.createElement('canvas');
     cv.width = AW; cv.height = AH;
     const g = cv.getContext('2d');
-    // cartographic street lettering: Caslon italic, the classic engraved-map hand
-    g.font = 'italic ' + FS + 'px "Libre Caslon Text", "Iowan Old Style", Georgia, serif';
+    // street lettering: Montserrat semibold italic, map-style
+    g.font = 'italic 600 ' + FS + 'px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
     g.fillStyle = '#fff';
     g.textBaseline = 'middle';
     const rects = [];
@@ -6105,7 +6119,7 @@
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.9;
-    if (rylandGlassMat) rylandGlassMat.emissiveIntensity = night * 0.22;
+    // (core glass night lighting lives in rylandGlassMat's panel shader, via uNight)
     if (outerGlassMat) outerGlassMat.emissiveIntensity = night * 0.55;
     return el;
   }
@@ -6123,7 +6137,7 @@
     if (document.activeElement !== timeDate) timeDate.value = key;
     timeSlider.value = String(clock.minutes);
     const dst = tzOffsetMin(clock.y, clock.m, clock.d) === -240;
-    timeClockEl.textContent = fmtTime(clock.minutes) + ' ' + (dst ? 'EDT' : 'EST') + (clock.live ? ' · live' : '');
+    timeClockEl.textContent = fmtTime(clock.minutes) + ' ' + (dst ? 'EDT' : 'EST') + (clock.live ? ' (live)' : '');
     timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' : '');
   }
   function toggleTimePanel() { timePanel.classList.toggle('open'); }
@@ -6210,7 +6224,7 @@
     if (wantShadow !== shadowMode) {
       shadowMode = wantShadow;
       if (wantShadow) aimSun(walk.pos.x, walk.pos.z, 300);
-      else aimSun(-120, 0, 640);
+      else aimSun(-1450, -700, 800);
     } else if (mode === MODE.WALK) {
       const c = sun.target.position;
       if (Math.hypot(walk.pos.x - c.x, walk.pos.z - c.z) > 120) aimSun(walk.pos.x, walk.pos.z, 300);
