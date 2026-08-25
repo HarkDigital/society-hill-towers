@@ -5535,13 +5535,14 @@
     syncStreetsBtn();
   }
   btnStreets.addEventListener('click', toggleStreets);
-  step('Lettering the streets', () => {
+  step('Lettering the streets', async () => {
     if (typeof ST_LABELS === 'undefined' || !ST_LABELS || !ST_LABELS.names) { btnStreets.style.display = 'none'; return; }
     const AW = 4096, AH = 2048, FS = 24, RH = 30, PAD = 9;
+    try { await document.fonts.load('500 24px "Alegreya Sans"'); } catch (e) { /* fall back to the stack */ }
     const cv = document.createElement('canvas');
     cv.width = AW; cv.height = AH;
     const g = cv.getContext('2d');
-    g.font = '600 ' + FS + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
+    g.font = '500 ' + FS + 'px "Alegreya Sans", "Gill Sans", "Segoe UI", Verdana, sans-serif';
     g.fillStyle = '#fff';
     g.textBaseline = 'middle';
     const rects = [];

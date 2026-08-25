@@ -899,6 +899,15 @@ Round 20 (Aug 25 — night buses, rail removed, route search):
   the orbit camera to the bus (goalR 220) and opens its card
   (searchGoToBus). Non-route queries geocode as before. ~605 street
   vehicles tracked at verify time (565 badges + 38 trolley pins).
+- **Typography** (Mike: "looks very AI… less distinguishable aesthetic"): the
+  Futura/Helvetica system stacks are replaced by EMBEDDED faces (base64 woff2
+  in style.css, ~115 KB, OFL): `--display` = Libre Caslon Text (Caslon — the
+  letter of colonial Philadelphia printing; veil title, bar buttons, kickers,
+  About prose at 400) and `--body` = Alegreya Sans (400/500/700; UI, cards,
+  street-label atlas at 500 — the 'Lettering the streets' step is now async
+  and awaits document.fonts.load before drawing the canvas atlas). Mono stays
+  system. The GLORY / Rotten Ralph's canvas SIGNS keep their Futura stacks on
+  purpose (real-world signage, not UI). Page 16.14 MB.
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
