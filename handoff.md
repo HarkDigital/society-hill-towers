@@ -935,6 +935,12 @@ Round 21 (Aug 25 — de-AI pass 2 + sun + bus alignment + layers panel):
   (btnTransit with the SEPTA logo + a live count span #transitCount, btnStreets,
   btnLabels) so all existing wiring held; sync fns now toggle .on (bronze
   square .lmark). V/N/L shortcuts unchanged.
+- **Street labels drape the road profile** (Mike's screenshot: label ends
+  swallowed by sloping streets near the trench): each label is no longer one
+  flat quad at the center height — it tessellates into columns every ~7 m of
+  text length, each column at siteY(road)+LIFT, so the text follows Front St
+  grades and the Delaware Expressway label now visibly rides down INTO the
+  trench. ~6 extra siteY samples per label at build, negligible.
 - **The sun is round now** (Mike's screenshot: vertical streak): the sky dome
   is coarse (32×18) and the fragment shader used INTERPOLATED vDir unnormalized,
   so pow(dot, 420) followed the mesh's vertex meridians. The shader now

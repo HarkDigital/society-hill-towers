@@ -5603,17 +5603,25 @@
       const dx = Math.cos(br), dz = Math.sin(br);
       const ux = dz, uz = -dx;             // glyph-up in world = left of travel (north-up read)
       const th = TH[cls], hw = th * (r[2] / FS) / 2, hh = th * (RH / FS) / 2;
-      const y = siteY(x, z, 'road') + LIFT[cls];
-      const i0 = pos.length / 3;
-      pos.push(
-        x - dx * hw - ux * hh, y, z - dz * hw - uz * hh,
-        x + dx * hw - ux * hh, y, z + dz * hw - uz * hh,
-        x + dx * hw + ux * hh, y, z + dz * hw + uz * hh,
-        x - dx * hw + ux * hh, y, z - dz * hw + uz * hh);
       const u0 = r[0] / AW, u1 = (r[0] + r[2]) / AW;
       const v1 = 1 - r[1] / AH, v0 = 1 - (r[1] + r[3]) / AH;
-      uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
-      idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+      // drape the label along the street profile: a flat quad at one height sank
+      // an end into the pavement wherever the road slopes (Front St, the trench
+      // shoulders), so sample the road height every ~7 m along the text instead
+      const cols = Math.max(2, Math.min(10, Math.round(hw / 3.5)));
+      const i0 = pos.length / 3;
+      for (let c2 = 0; c2 <= cols; c2++) {
+        const t2 = c2 / cols * 2 - 1;
+        const cxw = x + dx * t2 * hw, czw = z + dz * t2 * hw;
+        const yc = siteY(cxw, czw, 'road') + LIFT[cls];
+        pos.push(cxw - ux * hh, yc, czw - uz * hh, cxw + ux * hh, yc, czw + uz * hh);
+        const uc = u0 + (u1 - u0) * (c2 / cols);
+        uv.push(uc, v0, uc, v1);
+      }
+      for (let c2 = 0; c2 < cols; c2++) {
+        const a2 = i0 + c2 * 2;
+        idx.push(a2, a2 + 2, a2 + 3, a2, a2 + 3, a2 + 1);
+      }
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
