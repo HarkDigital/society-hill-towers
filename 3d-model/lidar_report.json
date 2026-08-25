@@ -1,0 +1,900 @@
+{
+ "footprints": 544378,
+ "contamination_guard": 967,
+ "sets": {
+  "wide": {
+   "total": 111073,
+   "measured": 107357,
+   "protected": 123,
+   "unmeasured": 3593,
+   "skipped": 5
+  },
+  "south": {
+   "total": 6369,
+   "measured": 4904,
+   "protected": 0,
+   "unmeasured": 1465,
+   "skipped": 5
+  },
+  "core_join": {
+   "total": 2831,
+   "measured": 2793,
+   "unmeasured": 38,
+   "skipped": 3
+  },
+  "city_lut": {
+   "total": 399326,
+   "measured": 362729,
+   "unmeasured": 36597
+  }
+ },
+ "top_deltas": [
+  [
+   293.3,
+   "wide",
+   "Comcast Center",
+   -2041,
+   -1025,
+   6,
+   299.3
+  ],
+  [
+   245.5,
+   "wide",
+   "One Liberty Place",
+   -1995,
+   -784,
+   6,
+   251.5
+  ],
+  [
+   238.3,
+   "wide",
+   "Two Liberty Place",
+   -1937,
+   -687,
+   6,
+   244.3
+  ],
+  [
+   236.4,
+   "wide",
+   "BNY Mellon Center",
+   -2114,
+   -904,
+   6,
+   242.4
+  ],
+  [
+   220.0,
+   "wide",
+   "Three Logan Square",
+   -2070,
+   -1099,
+   6,
+   226.0
+  ],
+  [
+   188.7,
+   "wide",
+   "The Shops at Liberty Place",
+   -1977,
+   -709,
+   8.1,
+   196.8
+  ],
+  [
+   186.2,
+   "wide",
+   "G. Fred DiBona Jr. Building",
+   -2319,
+   -921,
+   6,
+   192.2
+  ],
+  [
+   169.5,
+   "wide",
+   "Centre Square",
+   -1828,
+   -744,
+   18.0,
+   187.5
+  ],
+  [
+   168.4,
+   "wide",
+   "One Commerce Square",
+   -2550,
+   -967,
+   6,
+   174.4
+  ],
+  [
+   168.4,
+   "wide",
+   "Two Commerce Square",
+   -2470,
+   -943,
+   6,
+   174.4
+  ],
+  [
+   166.4,
+   "wide",
+   null,
+   -2427,
+   -582,
+   14.7,
+   181.1
+  ],
+  [
+   159.4,
+   "wide",
+   null,
+   -2499,
+   -994,
+   15.0,
+   174.4
+  ],
+  [
+   151.4,
+   "wide",
+   "Residences at the Ritz-Carlton",
+   -1727,
+   -672,
+   15,
+   166.4
+  ],
+  [
+   150.4,
+   "wide",
+   null,
+   -1927,
+   -781,
+   6,
+   156.4
+  ],
+  [
+   148.4,
+   "wide",
+   null,
+   -1645,
+   -125,
+   13,
+   161.4
+  ],
+  [
+   143.5,
+   "wide",
+   "1234 Market",
+   -1371,
+   -684,
+   6,
+   149.5
+  ],
+  [
+   138.1,
+   "wide",
+   "One South Broad",
+   -1595,
+   -630,
+   6,
+   144.1
+  ],
+  [
+   137.7,
+   "wide",
+   "The St. James",
+   -791,
+   -248,
+   15,
+   152.7
+  ],
+  [
+   136.9,
+   "wide",
+   "Two Logan Square",
+   -2142,
+   -1143,
+   6,
+   142.9
+  ],
+  [
+   134.8,
+   "wide",
+   "The Murano",
+   -2616,
+   -981,
+   15,
+   149.8
+  ],
+  [
+   134.7,
+   "wide",
+   "The Ritz-Carlton, Philadelphia",
+   -1673,
+   -632,
+   13,
+   147.7
+  ],
+  [
+   132.8,
+   "wide",
+   "Jefferson Tower",
+   -1185,
+   -729,
+   11.4,
+   144.2
+  ],
+  [
+   129.7,
+   "wide",
+   null,
+   -1167,
+   -780,
+   13,
+   142.7
+  ],
+  [
+   127.3,
+   "wide",
+   "1835 Market Street",
+   -2248,
+   -908,
+   6,
+   133.3
+  ],
+  [
+   125.0,
+   "wide",
+   "ARIA",
+   -1803,
+   -348,
+   11.4,
+   136.4
+  ],
+  [
+   121.1,
+   "wide",
+   "Land Title and Trust Building",
+   -1675,
+   -575,
+   6,
+   127.1
+  ],
+  [
+   119.0,
+   "wide",
+   null,
+   -1691,
+   -583,
+   8.1,
+   127.1
+  ],
+  [
+   118.8,
+   "wide",
+   null,
+   -2090,
+   -809,
+   13,
+   131.8
+  ],
+  [
+   117.0,
+   "wide",
+   null,
+   -1248,
+   -762,
+   8.1,
+   125.1
+  ],
+  [
+   115.4,
+   "wide",
+   null,
+   -1780,
+   -244,
+   11,
+   126.4
+  ],
+  [
+   111.6,
+   "wide",
+   "The Logan Philadelphia, Curio Collection by Hilton",
+   -2149,
+   -1233,
+   13,
+   124.6
+  ],
+  [
+   106.9,
+   "wide",
+   null,
+   -2280,
+   -571,
+   15,
+   121.9
+  ],
+  [
+   106.4,
+   "wide",
+   null,
+   -2156,
+   -296,
+   11,
+   117.4
+  ],
+  [
+   106.4,
+   "wide",
+   "Wells Fargo Building",
+   -1604,
+   -461,
+   17.0,
+   123.4
+  ],
+  [
+   106.0,
+   "wide",
+   null,
+   -2237,
+   -572,
+   13,
+   119.0
+  ],
+  [
+   106.0,
+   "wide",
+   "The Phoenix",
+   -1901,
+   -1007,
+   11.68,
+   117.7
+  ],
+  [
+   104.7,
+   "wide",
+   "Medical Tower",
+   -2097,
+   -300,
+   8.1,
+   112.8
+  ],
+  [
+   103.9,
+   "wide",
+   null,
+   -505,
+   -206,
+   13,
+   116.9
+  ],
+  [
+   101.8,
+   "wide",
+   null,
+   -2081,
+   -305,
+   11,
+   112.8
+  ],
+  [
+   101.8,
+   "wide",
+   null,
+   -2069,
+   -303,
+   11,
+   112.8
+  ],
+  [
+   101.8,
+   "wide",
+   null,
+   -2087,
+   -299,
+   11,
+   112.8
+  ],
+  [
+   101.6,
+   "wide",
+   null,
+   -2259,
+   -539,
+   14.7,
+   116.3
+  ],
+  [
+   100.8,
+   "wide",
+   null,
+   -1410,
+   -334,
+   11,
+   111.8
+  ],
+  [
+   100.3,
+   "wide",
+   "The Rittenhouse Hotel",
+   -2443,
+   -491,
+   13,
+   113.3
+  ],
+  [
+   100.2,
+   "wide",
+   "The Metropolitan",
+   -1682,
+   -1068,
+   15,
+   115.2
+  ],
+  [
+   99.9,
+   "wide",
+   "PECO Building",
+   -2889,
+   -1033,
+   27.9,
+   127.8
+  ],
+  [
+   96.2,
+   "wide",
+   null,
+   -2835,
+   -1161,
+   14.7,
+   110.9
+  ],
+  [
+   96.0,
+   "wide",
+   "The Grande",
+   -1766,
+   -572,
+   12.0,
+   108.0
+  ],
+  [
+   93.9,
+   "wide",
+   "DoubleTree by Hilton Hotel Philadelphia Center City",
+   -1657,
+   -266,
+   13,
+   106.9
+  ],
+  [
+   93.9,
+   "wide",
+   "Reading Terminal Headhouse",
+   -1233,
+   -730,
+   31.2,
+   125.1
+  ]
+ ],
+ "known_truths_wide": {
+  "Hopkinson House": [
+   107.0
+  ],
+  "The Ryland": [
+   110.9
+  ],
+  "Comcast Technology Center": [
+   343.6
+  ],
+  "One Liberty Place": [
+   251.5
+  ],
+  "Two Liberty Place": [
+   244.3
+  ],
+  "Comcast Center": [
+   299.3
+  ]
+ },
+ "core": {
+  "stats": {
+   "total": 2831,
+   "flat": 1863,
+   "gable": 714,
+   "hip": 220,
+   "join_fallback": 12,
+   "unmeasured": 12,
+   "skipped": 3,
+   "protected": 10
+  },
+  "shift": [
+   0.0,
+   0.0
+  ],
+  "examples": {
+   "Athenaeum of Philadelphia": {
+    "form": "flat",
+    "h": 17.8,
+    "eave": null,
+    "ridge": null
+   },
+   "Head House": {
+    "form": "gable",
+    "h": 17.2,
+    "eave": 9.2,
+    "ridge": 17.2
+   },
+   "Old Pine Street Church": {
+    "form": "gable",
+    "h": 17.0,
+    "eave": 13.9,
+    "ridge": 17.0
+   },
+   "Man Full of Troubles Tavern": {
+    "form": "gable",
+    "h": 9.2,
+    "eave": 7.6,
+    "ridge": 9.2
+   },
+   "Society Hill Synagogue": {
+    "form": "flat",
+    "h": 15.0,
+    "eave": 7.1,
+    "ridge": 17.0
+   },
+   "Powel House": {
+    "form": "flat",
+    "h": 15.4,
+    "eave": 7.1,
+    "ridge": 15.9
+   }
+  },
+  "top_deltas": [
+   [
+    85.0,
+    null,
+    13,
+    98.0,
+    "flat"
+   ],
+   [
+    60.0,
+    "One Independence Mall",
+    6,
+    66.0,
+    "flat"
+   ],
+   [
+    59.2,
+    "Hilton Philadelphia at Penn's Landing",
+    13,
+    72.2,
+    "flat"
+   ],
+   [
+    41.8,
+    null,
+    6,
+    47.8,
+    "flat"
+   ],
+   [
+    37.2,
+    "United States Custom House",
+    13,
+    50.2,
+    "flat"
+   ],
+   [
+    37.1,
+    "Beaumont Condominiums",
+    14.7,
+    51.8,
+    "flat"
+   ],
+   [
+    18.2,
+    "The Bank Building",
+    14.7,
+    32.9,
+    "flat"
+   ],
+   [
+    18.0,
+    null,
+    13,
+    31.0,
+    "join"
+   ],
+   [
+    15.2,
+    null,
+    13,
+    28.2,
+    "flat"
+   ],
+   [
+    15.2,
+    null,
+    11,
+    26.2,
+    "flat"
+   ],
+   [
+    14.6,
+    "Rohm and Haas Building",
+    34.5,
+    49.1,
+    "flat"
+   ],
+   [
+    14.5,
+    null,
+    90.6,
+    105.1,
+    "flat"
+   ],
+   [
+    14.0,
+    "Science History Institute",
+    13,
+    27.0,
+    "flat"
+   ],
+   [
+    13.7,
+    null,
+    6,
+    19.7,
+    "flat"
+   ],
+   [
+    13.4,
+    "Old City Hall",
+    3.2,
+    16.6,
+    "hip"
+   ],
+   [
+    12.8,
+    null,
+    8.1,
+    20.9,
+    "flat"
+   ],
+   [
+    12.6,
+    "Benjamin Franklin Hall",
+    11.4,
+    24.0,
+    "flat"
+   ],
+   [
+    12.4,
+    null,
+    11,
+    23.4,
+    "flat"
+   ],
+   [
+    12.1,
+    null,
+    18.89,
+    6.8,
+    "flat"
+   ],
+   [
+    12.1,
+    null,
+    14.93,
+    2.8,
+    "flat"
+   ],
+   [
+    12.1,
+    null,
+    11.4,
+    23.5,
+    "flat"
+   ],
+   [
+    11.6,
+    null,
+    14.7,
+    26.3,
+    "gable"
+   ],
+   [
+    11.0,
+    "Continental Building",
+    41.1,
+    52.1,
+    "flat"
+   ],
+   [
+    10.9,
+    null,
+    21.94,
+    11.0,
+    "flat"
+   ],
+   [
+    10.8,
+    null,
+    13.32,
+    2.5,
+    "join"
+   ],
+   [
+    10.7,
+    null,
+    21.3,
+    10.6,
+    "hip"
+   ],
+   [
+    10.5,
+    "The Curtis Center",
+    51.8,
+    62.3,
+    "flat"
+   ],
+   [
+    10.4,
+    null,
+    14.32,
+    3.9,
+    "flat"
+   ],
+   [
+    10.1,
+    null,
+    18.0,
+    28.1,
+    "hip"
+   ],
+   [
+    10.0,
+    "Philadelphia Marriott Old City",
+    4.0,
+    14.0,
+    "flat"
+   ],
+   [
+    9.9,
+    "The Philadelphia Bourse",
+    34.9,
+    44.8,
+    "flat"
+   ],
+   [
+    9.8,
+    null,
+    18.0,
+    27.8,
+    "flat"
+   ],
+   [
+    9.6,
+    null,
+    14.32,
+    4.7,
+    "flat"
+   ],
+   [
+    9.4,
+    null,
+    17.37,
+    8.0,
+    "flat"
+   ],
+   [
+    9.3,
+    null,
+    13,
+    22.3,
+    "hip"
+   ],
+   [
+    9.3,
+    null,
+    11,
+    20.3,
+    "flat"
+   ],
+   [
+    9.3,
+    null,
+    6,
+    15.3,
+    "flat"
+   ],
+   [
+    9.2,
+    "American Revolution Center",
+    13,
+    22.2,
+    "flat"
+   ],
+   [
+    9.1,
+    "Head House",
+    8.1,
+    17.2,
+    "gable"
+   ],
+   [
+    9.1,
+    "The Green Tree",
+    37.8,
+    46.9,
+    "flat"
+   ]
+  ]
+ },
+ "histograms": {
+  "wide_before": {
+   "0-4": 617,
+   "4-6": 727,
+   "6-8": 20002,
+   "8-10": 30690,
+   "10-12": 37258,
+   "12-15": 17646,
+   "15-20": 3240,
+   "20-30": 489,
+   "30-50": 218,
+   "50-100": 157,
+   "100-600": 34
+  },
+  "wide_after": {
+   "0-4": 731,
+   "4-6": 917,
+   "6-8": 34834,
+   "8-10": 21715,
+   "10-12": 27625,
+   "12-15": 18274,
+   "15-20": 4920,
+   "20-30": 1150,
+   "30-50": 487,
+   "50-100": 312,
+   "100-600": 113
+  },
+  "core_before": {
+   "0-4": 11,
+   "4-6": 13,
+   "6-8": 39,
+   "8-10": 167,
+   "10-12": 1102,
+   "12-15": 1141,
+   "15-20": 327,
+   "20-30": 11,
+   "30-50": 13,
+   "50-100": 7,
+   "100-600": 3
+  },
+  "core_after": {
+   "0-4": 27,
+   "4-6": 34,
+   "6-8": 130,
+   "8-10": 515,
+   "10-12": 1103,
+   "12-15": 716,
+   "15-20": 238,
+   "20-30": 40,
+   "30-50": 14,
+   "50-100": 13,
+   "100-600": 4
+  }
+ },
+ "coverage": {
+  "wide": "96.7%",
+  "south": "77.0%",
+  "core_join": "98.7%",
+  "city_lut": "90.8%"
+ },
+ "method": "Heights: City of Philadelphia LI_BUILDING_FOOTPRINTS (546k polygons, max_hgt from the 2022 QL1 LiDAR flight, ft AGL) joined to model footprints by polygon overlap in the local frame (coverage>=25%, area-weighted mean, dominant-tall-mass and contamination guards; talls>30m raise-only). Core roof forms: NOAA Digital Coast 2022 COPC tiles (EPSG:6347), 0.5m first-return min grids (leaf-off canopy filter), per-building AGL percentiles; gable/hip via axial aspect statistics."
+}

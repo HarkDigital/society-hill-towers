@@ -265,12 +265,22 @@
   // gable built on the footprint quad itself: eaves are the longer opposite-edge
   // pair, the ridge joins the other pair's midpoints — the roof meets the wall
   // at every vertex, no floating overhangs on skewed footprints
-  function quadGable(quad, eaveH, ridgeH) {
+  function quadGable(quad, eaveH, ridgeH, ridgeRad) {
     const E = [0, 1, 2, 3].map(i => {
       const p = quad[i], q = quad[(i + 1) % 4];
       return { a: p, b: q, len: Math.hypot(q[0] - p[0], q[1] - p[1]) };
     });
-    const usePair02 = E[0].len + E[2].len >= E[1].len + E[3].len;
+    let usePair02 = E[0].len + E[2].len >= E[1].len + E[3].len;
+    if (ridgeRad != null) {
+      // LiDAR-measured ridge direction: eaves run parallel to the ridge, so pick
+      // the edge pair axially closest to it (falls back to the longer pair above)
+      const axd = (e) => {
+        const a = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+        const d = Math.abs((((a - ridgeRad) % Math.PI) + Math.PI) % Math.PI);
+        return Math.min(d, Math.PI - d);
+      };
+      usePair02 = axd(E[0]) + axd(E[2]) <= axd(E[1]) + axd(E[3]);
+    }
     const ev = usePair02 ? [E[0], E[2]] : [E[1], E[3]];
     const ge = usePair02 ? [E[1], E[3]] : [E[0], E[2]];
     const r0 = [(ge[0].a[0] + ge[0].b[0]) / 2, (ge[0].a[1] + ge[0].b[1]) / 2];
@@ -287,9 +297,14 @@
       if (ny > 0) { const tmp = A; A = B; B = tmp; const t2 = R0; R0 = R1; R1 = t2; }
       pushTri(slopes, A, B, R0); pushTri(slopes, A, R0, R1);
     };
-    // ev[0] = quad edge whose b-end touches ge[0] (consecutive edges), so its near ridge end is r0
-    slopeQuad(ev[0], r0, r1);
-    slopeQuad(ev[1], r1, r0);
+    // each eave edge's near ridge end is the midpoint of the ge edge SHARING its
+    // b vertex — which pair that is depends on where the ring started (usePair02
+    // false meant ev[0].b touches ge[1], and the old fixed r0/r1 order emitted a
+    // bowtie: a see-through wedge + a coplanar double wedge on half the gables)
+    const near0 = (ge[0].a === ev[0].b || ge[0].b === ev[0].b) ? r0 : r1;
+    slopeQuad(ev[0], near0, near0 === r0 ? r1 : r0);
+    const near1 = (ge[0].a === ev[1].b || ge[0].b === ev[1].b) ? r0 : r1;
+    slopeQuad(ev[1], near1, near1 === r0 ? r1 : r0);
     const endTri = (g, r) => {
       let A = V(g.a, eaveH), B = V(g.b, eaveH);
       const R = V(r, ridgeH);
@@ -313,6 +328,60 @@
       return g;
     };
     return { slopes: mk(slopes), ends: mk(ends, true, (ge[0].len + ge[1].len) / 2), eaves: ev, ridge: [r0, r1] };
+  }
+
+  // hip roof on the footprint quad: like quadGable but the ridge is inset from both
+  // ends and the end faces are sloped planes (roof material), not vertical walls.
+  // Only used for LiDAR-measured hips — the guess lottery never emits one.
+  function quadHip(quad, eaveH, ridgeH, ridgeRad) {
+    const E = [0, 1, 2, 3].map(i => {
+      const p = quad[i], q = quad[(i + 1) % 4];
+      return { a: p, b: q, len: Math.hypot(q[0] - p[0], q[1] - p[1]) };
+    });
+    let usePair02 = E[0].len + E[2].len >= E[1].len + E[3].len;
+    if (ridgeRad != null) {
+      const axd = (e) => {
+        const a = Math.atan2(e.b[1] - e.a[1], e.b[0] - e.a[0]);
+        const d = Math.abs((((a - ridgeRad) % Math.PI) + Math.PI) % Math.PI);
+        return Math.min(d, Math.PI - d);
+      };
+      usePair02 = axd(E[0]) + axd(E[2]) <= axd(E[1]) + axd(E[3]);
+    }
+    const ev = usePair02 ? [E[0], E[2]] : [E[1], E[3]];
+    const ge = usePair02 ? [E[1], E[3]] : [E[0], E[2]];
+    const r0 = [(ge[0].a[0] + ge[0].b[0]) / 2, (ge[0].a[1] + ge[0].b[1]) / 2];
+    const r1 = [(ge[1].a[0] + ge[1].b[0]) / 2, (ge[1].a[1] + ge[1].b[1]) / 2];
+    const rl = Math.hypot(r1[0] - r0[0], r1[1] - r0[1]) || 1;
+    const rdx = (r1[0] - r0[0]) / rl, rdz = (r1[1] - r0[1]) / rl;
+    const span = (ge[0].len + ge[1].len) / 2;
+    const ins = Math.min(span / 2, rl * 0.38);
+    const R0 = [r0[0] + rdx * ins, r0[1] + rdz * ins];
+    const R1 = [r1[0] - rdx * ins, r1[1] - rdz * ins];
+    const slopes = [];
+    const pushTri = (A, B, C) => slopes.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
+    const V = (p, y) => [p[0], y, p[1]];
+    const slopeQuad = (ea, ridgeNear, ridgeFar) => {
+      let A = V(ea.a, eaveH), B = V(ea.b, eaveH), Q0 = V(ridgeNear, ridgeH), Q1 = V(ridgeFar, ridgeH);
+      const ny = (B[0] - A[0]) * (Q0[2] - A[2]) - (B[2] - A[2]) * (Q0[0] - A[0]);
+      if (ny > 0) { const t = A; A = B; B = t; const t2 = Q0; Q0 = Q1; Q1 = t2; }
+      pushTri(A, B, Q0); pushTri(A, Q0, Q1);
+    };
+    const hn0 = (ge[0].a === ev[0].b || ge[0].b === ev[0].b) ? R0 : R1;
+    slopeQuad(ev[0], hn0, hn0 === R0 ? R1 : R0);
+    const hn1 = (ge[0].a === ev[1].b || ge[0].b === ev[1].b) ? R0 : R1;
+    slopeQuad(ev[1], hn1, hn1 === R0 ? R1 : R0);
+    const endTri = (g, r) => {
+      let A = V(g.a, eaveH), B = V(g.b, eaveH);
+      const R = V(r, ridgeH);
+      const ny = (B[0] - A[0]) * (R[2] - A[2]) - (B[2] - A[2]) * (R[0] - A[0]);
+      if (ny > 0) { const t = A; A = B; B = t; }
+      pushTri(A, B, R);
+    };
+    endTri(ge[0], R0); endTri(ge[1], R1);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(slopes), 3));
+    g.computeVertexNormals();
+    return { slopes: g, ends: null, eaves: [ev[0], ev[1], ge[0], ge[1]], ridge: [R0, R1] };
   }
 
   // minimum-area oriented bounding box (aligned with some polygon edge)
@@ -1526,14 +1595,20 @@
         : (t === 'church' || t === 'worship') ? 1
         : (t === 'retail' || t === 'commercial' || t === 'hotel' || t === 'office') ? 5 : 0;
       const trimCol = hash01(i * 2.9) < 0.62 ? new THREE.Color(0xe9e3d3) : new THREE.Color(0x3d3935);
-      // historic rowhouses get pitched gable roofs where the footprint is a
-      // clean small quadrilateral; everything else stays a flat extrusion
+      // roof source: LiDAR-measured form when the 2022 flight resolved one
+      // (b.roof = [form, eave, ridge, ridgeRad] from lidar_core.py, form
+      // 1 gable / 2 hip, [0] = measured flat — which stays flat, no lottery),
+      // else the original hash-lottery guess for plausible rowhouse quads
       let quad = null;
+      const mr = Array.isArray(b.roof) && !(spec0 && spec0.h) ? b.roof : null;
+      const mForm = mr ? mr[0] : -1;
       const resType = ['house', 'residential', 'terrace', 'apartments', 'detached', 'semidetached_house', 'generic'].includes(t);
-      // gables only at true rowhouse height — 14-15 m four-story commercial lofts
-      // (Old City, Chestnut St) are flat-roofed, and their long strips gabled into
-      // edge-on "blade" slopes towering over the streetwall
-      if (resType && !b.minH && (!b.holes || !b.holes.length) && area < 280 && b.h < 12.5 && b.poly.length <= 8 && hash01(i * 13.7) < 0.8) {
+      // guessed gables only at true rowhouse height — 14-15 m four-story commercial
+      // lofts (Old City, Chestnut St) are flat-roofed, and their long strips gabled
+      // into edge-on "blade" slopes towering over the streetwall
+      const wantPitch = mr ? (mForm === 1 || mForm === 2) && mr[2] - mr[1] >= 0.8
+        : (resType && area < 280 && b.h < 12.5 && hash01(i * 13.7) < 0.8);
+      if (wantPitch && !b.minH && (!b.holes || !b.holes.length) && area < (mr ? 650 : 280) && b.poly.length <= (mr ? 10 : 8)) {
         const sp = simplifyRing(b.poly, 0.45);
         if (sp.length === 4) {
           // gables demand an honest rowhouse quad: convex, near-rectangular
@@ -1558,23 +1633,30 @@
           const span = Math.min((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
           const long = Math.max((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
           const aQ = Math.abs(signedArea(sp));
+          const elMin = mForm === 2 ? 1.02 : (mr ? 1.2 : 1.35);
           if (convex && rect && Math.abs(aQ - area) <= area * 0.14 &&
-            span > 3.4 && span < 13 && long / span >= 1.35 && long / span < 5) quad = sp;
+            span > 3.2 && span < (mr ? 17 : 13) && long / span >= elMin && long / span < 5) quad = sp;
         }
       }
       try {
         if (quad) {
-          const e = [0, 1, 2, 3].map(k => Math.hypot(quad[(k + 1) % 4][0] - quad[k][0], quad[(k + 1) % 4][1] - quad[k][1]));
-          const span = Math.min((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
-          let rise = clamp(span * 0.42, 1.4, 3.6);
-          if (b.h - rise < 3.4) rise = Math.max(1.2, b.h - 3.4);
-          const eaveH = b.h - rise;
+          let eaveH, ridgeTop, rrad = null;
+          if (mr) {
+            eaveH = Math.max(2.6, mr[1]); ridgeTop = mr[2]; rrad = mr[3];
+            if (ridgeTop - eaveH < 0.8) eaveH = Math.max(2.2, ridgeTop - 0.8);
+          } else {
+            const e = [0, 1, 2, 3].map(k => Math.hypot(quad[(k + 1) % 4][0] - quad[k][0], quad[(k + 1) % 4][1] - quad[k][1]));
+            const span = Math.min((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
+            let rise = clamp(span * 0.42, 1.4, 3.6);
+            if (b.h - rise < 3.4) rise = Math.max(1.2, b.h - 3.4);
+            eaveH = b.h - rise; ridgeTop = b.h + 0.05;
+          }
           parts.push({ geom: buildingGeom(quad, null, eaveH, -1.5), color, style });
           const roofCol = new THREE.Color(roofPalette[Math.floor(hash01(i * 3.1) * roofPalette.length) % roofPalette.length])
             .multiplyScalar(0.9 + hash01(i * 8.9) * 0.25);
-          const g = quadGable(quad, eaveH, b.h + 0.05);
+          const g = mForm === 2 ? quadHip(quad, eaveH, ridgeTop, rrad) : quadGable(quad, eaveH, ridgeTop, rrad);
           parts.push({ geom: g.slopes, color: roofCol, style: 3 });
-          parts.push({ geom: g.ends, color, style });
+          if (g.ends) parts.push({ geom: g.ends, color, style });
           // eave boards laid exactly along the wall's eave edges
           for (const ev of g.eaves) {
             const exd = ev.b[0] - ev.a[0], ezd = ev.b[1] - ev.a[1];
@@ -1586,28 +1668,33 @@
             });
           }
           const nCh = hash01(i * 5.3) < 0.72 ? (hash01(i * 7.9) < 0.4 ? 2 : 1) : 0;
+          const chH = Math.min(ridgeTop - eaveH, 3.8) + 1.7;
           const rl = Math.hypot(g.ridge[1][0] - g.ridge[0][0], g.ridge[1][1] - g.ridge[0][1]) || 1;
           const rdx = (g.ridge[1][0] - g.ridge[0][0]) / rl, rdz = (g.ridge[1][1] - g.ridge[0][1]) / rl;
           for (let c = 0; c < nCh; c++) {
             const rp = c === 0 ? g.ridge[0] : g.ridge[1];
             const s = c === 0 ? 1 : -1;
             parts.push({
-              geom: box(0.95, rise + 1.7, 0.55,
-                rp[0] + rdx * s * 1.0, eaveH + (rise + 1.7) / 2, rp[1] + rdz * s * 1.0,
+              geom: box(0.95, chH, 0.55,
+                rp[0] + rdx * s * 1.0, eaveH + chH / 2, rp[1] + rdz * s * 1.0,
                 Math.atan2(-rdz, rdx)),
               color: new THREE.Color(0x6a4132).multiplyScalar(0.88 + hash01(i * 11.7) * 0.22),
             });
           }
         } else {
-          parts.push({ geom: buildingGeom(b.poly, b.holes, b.h, b.minH ? b.minH : -1.5), color, style });
+          // a measured pitched roof whose footprint failed the honest-quad guards
+          // drops to a flat extrusion at the roof's mean surface height — never a
+          // floating slope (the session's roof rule)
+          const hFlat = (mr && mForm > 0) ? Math.max(3, mr[1] + 0.35 * (mr[2] - mr[1])) : b.h;
+          parts.push({ geom: buildingGeom(b.poly, b.holes, hFlat, b.minH ? b.minH : -1.5), color, style });
           // flat-roofed rowhouses get a projecting cornice ring at the parapet
-          if (resType && !b.minH && (!b.holes || !b.holes.length) && area < 320 && b.h < 18 && b.poly.length <= 10) {
+          if (resType && !b.minH && (!b.holes || !b.holes.length) && area < 320 && hFlat < 18 && b.poly.length <= 10) {
             const [ccx, ccz] = polyCentroid(b.poly);
             const ring = b.poly.map(pt => {
               const dx = pt[0] - ccx, dz = pt[1] - ccz, L = Math.hypot(dx, dz) || 1;
               return [pt[0] + (dx / L) * 0.3, pt[1] + (dz / L) * 0.3];
             });
-            parts.push({ geom: extrudePoly(ring, null, b.h + 0.06, b.h - 0.42), color: trimCol, style: 3 });
+            parts.push({ geom: extrudePoly(ring, null, hFlat + 0.06, hFlat - 0.42), color: trimCol, style: 3 });
           }
         }
       } catch (e) { continue; }
@@ -1825,8 +1912,10 @@
       const b = findBuilding(lm.name);
       if (!b || upgraded.has(b)) continue; // realism step builds these itself
       const [cx, cz] = polyCentroid(b.poly);
-      const roof = b.h;
-      const total = Math.max(lm.spire_height_m, roof + 6);
+      // measured pitched roofs carry b.h = ridge; seat the steeple at the eave so
+      // its base interpenetrates the slopes instead of floating at the ridge line
+      const roof = (Array.isArray(b.roof) && b.roof.length > 3) ? b.roof[1] : b.h;
+      const total = Math.max(lm.spire_height_m, (Array.isArray(b.roof) && b.roof.length > 3 ? b.roof[2] : roof) + 6);
       const rise = total - roof;
       const col = new THREE.Color(lm.color_hex || '#d9d2c2');
       if (lm.spire_kind === 'steeple') {

@@ -30,11 +30,26 @@ for el in els:
 def clip(v): return max(-32767, min(32767, int(round(v))))
 def inBox(x, z, B): return B[0] <= x <= B[1] and B[2] <= z <= B[3]
 
-def parseH(t):
+# 2022-LiDAR measured heights per OSM way (lidar_join.py). Measured wins over
+# levels-derived guesses and type defaults; an explicit height tag survives only
+# when TALLER (spires LiDAR under-reads, towers finished after the 2022 flight).
+try:
+    LIDAR_H = {int(k): v for k, v in json.load(open('lidar_city_heights.json')).items()}
+except FileNotFoundError:
+    LIDAR_H = {}
+    print('WARNING: lidar_city_heights.json missing - falling back to tags/defaults')
+
+def parseH(t, wid=None):
     h = t.get('height')
+    tag = None
     if h:
-        try: return max(3, float(str(h).replace('m', '').strip()))
+        try: tag = max(3, float(str(h).replace('m', '').strip()))
         except ValueError: pass
+    m = LIDAR_H.get(wid)
+    if m is not None:
+        return max(tag, m) if tag else m
+    if tag is not None:
+        return tag
     lv = t.get('building:levels')
     if lv:
         try: return max(3, float(lv) * 3.2 + 1.2)
@@ -57,7 +72,7 @@ for el in ways:
     except Exception: continue
     if not pg.is_valid: pg = pg.buffer(0)
     if pg.is_empty or pg.area < 30: continue
-    h = parseH(t)
+    h = parseH(t, el['id'])
     if h < 5 and pg.area < 60: continue   # sheds/garages: invisible at far-ring distances
     bt = BT.get(t.get('building'), 0)
     n_in += 1

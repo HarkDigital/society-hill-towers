@@ -43,6 +43,10 @@ GH Pages has no CSP, so a Pages-only feature could fetch external data (e.g. liv
 | `wide_names.json`, `wide_landmarks_research.json` | Outer landmark names for labels; Center City / North / South research |
 | `fetch_south.py` → `osm_south_raw.json`, `scene_south.json`, `dem_south.json`, `wwb.json` | South extension: stadium complex + Walt Whitman Bridge (merged by `pack_wide.py`) |
 | `three.min.js` | Three.js r149 UMD (inlined at build — CSP forbids CDNs in artifacts) |
+| `fetch_footprints.py`, `lidar_join.py`, `lidar_core.py` | The 2022-LiDAR true-massing pipeline (round 13): city-footprint heights join + core roof forms |
+| `lidar_city_heights.json` | {OSM way id: measured h_m} for the far ring — `pack_city.py` requires it |
+| `lidar_report.json` | LiDAR pass validation: coverage, histograms, known truths, top deltas |
+| `lidar_cache/` (gitignored) | Footprint cache, 9 COPC LAZ tiles, grids, pre-LiDAR scene.json backup |
 
 ## Build & preview
 
@@ -553,8 +557,77 @@ Round 12 (Aug 25 — grounding pass, "situate everything"):
   walk-in porch, widths pulled 15 cm off the lot lines (party-wall shimmer), sign
   board mounted proud of the pier plane so nothing clips the lettering.
 
-**Next planned phase:** `lidar-massing-plan.md` at the repo root is the self-contained
-brief for the LiDAR true-massing pass (measured heights for all ~250k buildings + core
-roof forms). A fresh session should be able to execute it from that file alone.
+Round 13 (Aug 25 — the LiDAR true-massing pass, per `lidar-massing-plan.md`):
+- **Every guessed height replaced by a 2022-LiDAR measurement.** Shortcut found per the
+  brief's "check for prebuilt products first": the City of Philadelphia's
+  `LI_BUILDING_FOOTPRINTS` ArcGIS layer carries `max_hgt` (ft AGL) derived from the
+  2022 QL1 flight for 546k footprints (99.9% populated, validated against Comcast
+  towers/BNY/FMC/the towers themselves to ~1%; The Laurel confirms the 2022 epoch;
+  buildings finished after the flight have NULL and correctly keep their OSM values).
+  No county-wide point-cloud processing needed for heights.
+- **Pipeline** (all committed): `fetch_footprints.py` (paginated GeoJSON → local-frame
+  cache), `lidar_join.py` (shapely STRtree polygon-overlap join → patches
+  `scene_wide.json`/`scene_south.json` h in place, emits `lidar_city_heights.json`
+  {way id: h} for pack_city + `lidar_cache/core_join.json`), `lidar_core.py` (core
+  roof forms from the raw point cloud + scene.json patch). Join rules: coverage ≥25%,
+  area-weighted mean, dominant-tall-mass rule (tallest pieces covering ≥50% set the
+  height — a tower sharing its OSM way with a podium must not read short),
+  contamination guard (max_hgt > 3× approx_hgt = crane/tree → skip), and talls >30 m
+  are RAISE-ONLY (OSM max-height tag semantics; Independence Place twins stay 96.9,
+  known wrong-high tags are REALISM-overridden anyway). `pack_city.py` `parseH` now
+  takes the way id: measured beats levels/defaults, explicit height tag survives if
+  taller. Coverage: wide 96.7%, core 98.7%, far ring 90.8%, south 77% (the misses are
+  Camden/out-of-county — no city data — plus post-2022 construction and demolitions).
+- **Core roof forms measured** (`lidar_core.py`): the 9 NOAA Digital Coast COPC tiles
+  covering the core (EPSG:6347, NAVD88, leaf-off Apr 2022, ~285M pts — the flight is
+  ground/non-ground classified only, NO building class) → 0.5 m first-return min/max
+  grids; cells with max−min > 4 m are bare-branch canopy and dropped; roof surface =
+  per-cell MIN (tree-robust in leaf-off). Per building (eroded 0.5 m): AGL percentiles
+  off a class-2 ground grid, flat if P95−P08 < 1.15, else axial aspect statistics on
+  the roof-grid gradient — |Σw·e^{2iθ}| ≥ 0.5 → gable (ridge ⊥ mean aspect),
+  else |Σw·e^{4iθ}| ≥ 0.5 → hip (axis disambiguated toward the OBB long axis).
+  Result: 714 gables + 220 hips + 1,863 measured flats; eave = P08, ridge = P97.
+  scene.json entries now carry `roof: [form, eave, ridge, ridgeRad]` (1 gable / 2 hip /
+  [0] measured-flat) and `h` = ridge for pitched, P90 parapet for flat. Alignment was
+  verified against the towers' 94 m cliffs (zero shift needed; NAD83(2011)↔WGS84 ≪
+  the 0.5 m erosion).
+- **app.js consumes measurements**: measured forms bypass the hash lottery and the
+  h<12.5 cap (guessed gables keep both); the honest-quad guards stay for everyone —
+  a measured-pitched footprint that fails them extrudes FLAT at eave+0.35·rise, never
+  a floating slope. `quadGable` takes a measured ridge-direction hint (eave pair =
+  axially closest to the ridge), new `quadHip` builds inset-ridge hips (measured only).
+  Steeples now seat at the measured eave so they interpenetrate pitched roofs instead
+  of floating at ridge height. Measured-flat (`roof:[0]`) suppresses the gable lottery
+  — a measured flat stays flat.
+- **quadGable bowtie bug found and fixed** (pre-existing, shipped): the ridge-near
+  end passed to `slopeQuad` assumed ev[0].b always touches ge[0] — true only when the
+  ring starts on a long edge. The other half of all gabled rowhouses rendered each
+  slope as two wrong-diagonal triangles: a see-through wedge + a coplanar double wedge
+  (~25% of the roof plane each). Verified by point-coverage test in node (area sums
+  hid it — overlap cancels gap); now the near ridge end is chosen by shared vertex.
+- **Validation** (`lidar_report.json`: stats, coverage, before/after histograms, known
+  truths, top-50 deltas, method): One Liberty 251.5 (roof; spire is custom-built),
+  Comcast Center 299.3 (real 297), CTC 343.6 (1,121 ft), BNY Mellon 242.4 (792 ft),
+  Three Logan 226 (739 ft), Commerce Squares 174.4, Society Hill rowhouses 9–16 m
+  ridges. Marriott Old City measured 14.0 vs the OSM height=4 lie (16.5 override still
+  wins). Hilton measured 72.2 vs the research-built 70. Raycast-verified in the built
+  page: flats within ±0.5 m of data, gable/hip ridges on the money, towers untouched
+  at 97.1, zero console errors, 4.2M tris / 140 calls. Page 14.42 MB (was 14.29;
+  city.b64 7.17 MB after real heights spread the merge buckets — still under 16).
+- **Files**: `lidar_cache/` (gitignored) holds the 546k-footprint cache, the 9 COPC
+  tiles (1.7 GB), `core_grids.npz`, `core_join.json`, and `scene_pre_lidar_backup.json`
+  (scene.json as it was before the patch). Committed: the three scripts,
+  `lidar_city_heights.json` (6.2 MB way-id LUT the far-ring pack needs), and
+  `lidar_report.json`. Re-running from scratch: `fetch_footprints.py` (plain py3) →
+  `lidar_join.py` (venv: shapely) → `lidar_core.py` (venv: laspy[lazrs], pyproj,
+  numpy; re-downloads tiles via `lidar_cache/core_tiles.json` naming if absent) →
+  repack wide/city → build. `--skip-city` on lidar_join reuses the committed LUT;
+  `--grids-only` on lidar_core stops after the grid build.
+- Known limits: Camden + county-line slivers keep OSM/default heights (no city data;
+  NJ LiDAR would be a separate source); `building:part` skyscraper pieces keep their
+  OSM stack heights by design; the south set's 77% is the stadium/navy-yard fringe.
+
+**The LiDAR true-massing pass is done** — `lidar-massing-plan.md` is executed. Option 2
+of the accuracy plan (OPA parcel join for era-correct facades) remains unstarted.
 
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.
