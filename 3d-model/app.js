@@ -4871,6 +4871,7 @@
     else if (k === 'l') toggleLabels();
     else if (k === 't') toggleTimePanel();
     else if (k === 'i') toggleAbout();
+    else if (k === 'v') toggleTransit();
     else if (k === 'escape') { /* browser releases pointer lock */ }
     else walk.keys[k] = true;
     if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
@@ -4980,6 +4981,410 @@
 
   const viewpoints = [];
   function addViewpoint(name, fn) { viewpoints.push({ name, fn }); }
+  // ---------------------------------------------------------------- live SEPTA transit
+  // Real-time vehicles from SEPTA's public API. Neither api.septa.org nor www3 sends
+  // CORS headers, but both honor JSONP (?callback=), so each poll is a short-lived
+  // <script> tag — live on GitHub Pages / localhost; under the artifact CSP the tags
+  // never load and the layer stays silently empty. TransitViewAll carries buses,
+  // trolleys and the NHSL with GPS + heading; its subway rows (L1/B1–B3) are schedule
+  // placeholders pinned at 15th St with no real fix, so they are filtered out.
+  // TrainView carries every Regional Rail train with its consist (car count).
+  const SEPTA_GEO = { lat0: 39.945473644755005, lon0: -75.14474803850973 };  // scene.json origin
+  SEPTA_GEO.mx = 111320 * Math.cos(SEPTA_GEO.lat0 * Math.PI / 180); SEPTA_GEO.mz = 110574;
+  const SEPTA = { on: true, ok: false, fails: 0, hinted: false };
+  const SEPTA_HOSTS = ['https://api.septa.org/api', 'https://www3.septa.org/api'];
+  const SEPTA_POLL = isTouch ? 25000 : 15000;          // TransitViewAll is ~370 KB a pull
+  const SEPTA_BOX = { la0: 39.855, la1: 40.145, lo0: -75.30, lo1: -74.94 };  // modeled city
+  const septaCanFetch = !/claude|usercontent/i.test(location.hostname);
+  const septaVeh = new Map();
+  const SEPTA_KIND = {                                  // stored dark for the legacy-color lift
+    bus: { l: 12.2, w: 2.6, h: 3.1, c: 0x7e858a },
+    trolley: { l: 15.3, w: 2.6, h: 3.4, c: 0x2e7448 },
+    nhsl: { l: 16.8, w: 2.8, h: 3.5, c: 0x64518f },
+    rr: { l: 25.9, w: 3.05, h: 4.2, c: 0x878d94 },
+  };
+  const SEPTA_TINT = { G1: 0x8a7f2f, D1: 0x7c4767, D2: 0x7c4767 };  // Girard gold, Delco violet
+  let septaCbN = 0, septaHost = 0, septaSolid = null, septaGhost = null, septaReady = false, septaHintT = 0;
+  const septaMats = {};
+  const septaPickS = [], septaPickG = [];
+  const btnTransit = document.getElementById('btnTransit');
+  const vehinfoEl = document.getElementById('vehinfo');
+  const vehinfoBody = document.getElementById('vehinfoBody');
+  let pickedVeh = null;
+  const septaEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  function septaKindOf(r) {
+    if (r === 'L1' || r === 'B1' || r === 'B2' || r === 'B3') return null;  // no real GPS in the feed
+    if (r === 'M1') return 'nhsl';
+    if (/^[TGD]\d$/.test(r)) return 'trolley';
+    return 'bus';
+  }
+  function septaRouteLabel(r) {
+    if (r === 'M1_BUS') return 'M1';
+    if (r === 'BLVDDIR') return 'BLVD';
+    if (r.indexOf('LUCY') === 0) return 'LUCY';
+    return r;
+  }
+  // Approximate underground zones: trains and trolleys inside them render as x-ray
+  // ghosts sliding beneath the streets instead of driving on them.
+  function septaUnder(kind, route, lat, lon) {
+    if (kind === 'rr') return lon > -75.178 && lon < -75.147 && lat > 39.9505 && lat < 39.964;  // CC commuter tunnel
+    if (kind === 'trolley' && route.charCodeAt(0) === 84)  // T: subway–surface tunnel, 40th St portals → 13th
+      return lon > -75.2045 && lon < -75.158 && lat > 39.9465 && lat < 39.9575;
+    return false;
+  }
+  function septaYawFromCompass(deg) {
+    const r = deg * Math.PI / 180;
+    return Math.atan2(Math.cos(r), Math.sin(r));   // x = east, z = south, rotY 0 = +x
+  }
+  function septaJsonp(path, cb) {
+    let done = false, timer = 0;
+    const name = '__septaCb' + (septaCbN++);
+    const script = document.createElement('script');
+    const fin = (data) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      try { delete window[name]; } catch (e) { window[name] = undefined; }
+      if (script.parentNode) script.parentNode.removeChild(script);
+      cb(data);
+    };
+    window[name] = fin;
+    script.async = true;
+    script.onerror = () => fin(null);
+    timer = setTimeout(() => fin(null), 18000);
+    script.src = SEPTA_HOSTS[septaHost] + path + '?callback=' + name;
+    document.head.appendChild(script);
+  }
+  function septaUpsert(id, kind, route, lat, lon, apiHdg, cars, info) {
+    const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+    const under = septaUnder(kind, route, lat, lon);
+    const now = performance.now();
+    let v = septaVeh.get(id);
+    if (!v) {
+      v = { id, kind, route, routeLabel: septaRouteLabel(route), tint: SEPTA_TINT[route] || SEPTA_KIND[kind].c,
+            cars, info, fx: x, fz: z, tx: x, tz: z, x, z, t0: 0, yaw: 0, yawT: 0, ug: under, lastSeen: now };
+      const c = new THREE.Color(v.tint);
+      c.r = Math.min(1, c.r * 1.9 + 0.18); c.g = Math.min(1, c.g * 1.9 + 0.18); c.b = Math.min(1, c.b * 1.9 + 0.18);
+      v.tintHex = '#' + c.getHexString();
+      if (apiHdg) v.yaw = v.yawT = septaYawFromCompass(apiHdg);
+      septaVeh.set(id, v);
+      return;
+    }
+    v.fx = v.x; v.fz = v.z;
+    v.tx = x; v.tz = z; v.t0 = now;
+    const mdx = x - v.fx, mdz = z - v.fz, moved = Math.hypot(mdx, mdz);
+    if (moved > 420) { v.fx = x; v.fz = z; v.x = x; v.z = z; }   // data jump — snap, don't sprint
+    if (apiHdg) v.yawT = septaYawFromCompass(apiHdg);
+    else if (moved > 6) v.yawT = Math.atan2(-mdz, mdx);          // derive heading from motion
+    v.ug = under; v.cars = cars; v.info = info; v.lastSeen = now;
+  }
+  function septaFeedFail() {
+    SEPTA.fails++;
+    if (SEPTA.fails >= 3) { septaHost = 1 - septaHost; SEPTA.fails = 0; }
+  }
+  function septaGotTV(d) {
+    let routes = d && d.routes;
+    if (Array.isArray(routes)) routes = routes[0];
+    if (!routes || typeof routes !== 'object') { septaFeedFail(); return; }
+    const nowS = Date.now() / 1000;
+    for (const rid in routes) {
+      const list = routes[rid];
+      if (!Array.isArray(list)) continue;
+      const kind = septaKindOf(rid);
+      if (!kind) continue;
+      for (const b of list) {
+        const vid = String(b.VehicleID || '');
+        if (!vid || vid === '0' || vid === 'None' || vid.indexOf('schedBased') >= 0) continue;
+        const ts = +b.timestamp || 0;
+        if (ts < 1e9 || nowS - ts > 300) continue;               // placeholder or stale fix
+        const lat = +b.lat, lon = +b.lng;
+        if (!(lat > SEPTA_BOX.la0 && lat < SEPTA_BOX.la1 && lon > SEPTA_BOX.lo0 && lon < SEPTA_BOX.lo1)) continue;
+        septaUpsert('v' + vid, kind, rid, lat, lon, +b.heading || 0, 1,
+          { dest: b.destination || '', late: +b.late, next: b.next_stop_name || '' });
+      }
+    }
+    SEPTA.ok = true; SEPTA.fails = 0;
+    septaPrune(); septaStatus();
+  }
+  function septaGotRR(d) {
+    if (!Array.isArray(d)) { septaFeedFail(); return; }
+    for (const t of d) {
+      const lat = +t.lat, lon = +t.lon;
+      if (!(lat > SEPTA_BOX.la0 && lat < SEPTA_BOX.la1 && lon > SEPTA_BOX.lo0 && lon < SEPTA_BOX.lo1)) continue;
+      const no = String(t.trainno || '');
+      if (!no) continue;
+      let cars = 0;
+      if (t.consist) cars = String(t.consist).split(',').filter((s) => s.trim()).length;
+      cars = clamp(cars || 4, 1, 8);
+      septaUpsert('t' + no, 'rr', t.line || 'Regional Rail', lat, lon, parseFloat(t.heading) || 0, cars,
+        { dest: t.dest || '', late: +t.late, next: t.nextstop || '', line: t.line || '' });
+    }
+    septaPrune(); septaStatus();
+  }
+  function septaPrune() {
+    const now = performance.now();
+    septaVeh.forEach((v, id) => { if (now - v.lastSeen > 50000) septaVeh.delete(id); });
+    if (pickedVeh && !septaVeh.has(pickedVeh.id)) { pickedVeh = null; vehinfoEl.hidden = true; }
+    else if (pickedVeh) septaCard(pickedVeh);        // keep late/next-stop fresh
+  }
+  function septaStatus() {
+    const n = septaVeh.size;
+    btnTransit.title = 'Live SEPTA vehicles (V) — ' + n + ' tracked now';
+    if (!SEPTA.hinted && n > 0 && veil.classList.contains('hidden')) {
+      SEPTA.hinted = true;
+      hintEl.textContent = n + ' SEPTA vehicles live on the map · tap one · V toggles';
+      clearTimeout(septaHintT);
+      septaHintT = setTimeout(setHint, 8000);
+    }
+  }
+  function septaPoll(force) {
+    if (!SEPTA.on || !septaCanFetch || !septaReady) return;
+    if (document.hidden && !force) return;
+    septaJsonp('/TransitViewAll/index.php', septaGotTV);
+    septaJsonp('/TrainView/index.php', septaGotRR);
+  }
+  function septaCard(v) {
+    const late = v.info.late;
+    const status = (late == null || isNaN(late) || late >= 900) ? '' :
+      late > 0 ? late + ' min late' : late < 0 ? (-late) + ' min early' : 'on time';
+    const kindName = v.kind === 'rr' ? 'Regional Rail' : v.kind === 'nhsl' ? 'high-speed line' : v.kind;
+    const bits = [kindName];
+    if (v.kind === 'rr' && v.cars > 1) bits.push(v.cars + ' cars');
+    if (status) bits.push(status);
+    if (v.ug) bits.push('in the tunnel');
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:' + v.tintHex + '">' + septaEsc(v.routeLabel) + '</span>' +
+      '<span class="vdest">to ' + septaEsc(v.info.dest || '—') + '</span>' +
+      '<div class="vmeta">' + septaEsc(bits.join(' · ')) + '</div>' +
+      (v.info.next ? '<div class="vmeta">next stop: ' + septaEsc(v.info.next) + '</div>' : '');
+  }
+  function syncTransitBtn() { btnTransit.style.opacity = SEPTA.on ? '' : '0.35'; }
+  function toggleTransit() {
+    if (!septaCanFetch) return;
+    SEPTA.on = !SEPTA.on;
+    syncTransitBtn();
+    if (SEPTA.on) septaPoll(true);
+    else { pickedVeh = null; vehinfoEl.hidden = true; }
+  }
+  btnTransit.addEventListener('click', toggleTransit);
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; vehinfoEl.hidden = true; });
+  // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
+  const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
+  let vpDownX = 0, vpDownY = 0, vpDownT = 0;
+  canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); });
+  canvas.addEventListener('pointerup', (e) => {
+    if (!septaReady || !SEPTA.on || !septaSolid.count && !septaGhost.count) return;
+    if (mode !== MODE.ORBIT && !isTouch) return;
+    if (Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) > 7 || performance.now() - vpDownT > 450) return;
+    septaNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    septaRay.setFromCamera(septaNdc, camera);
+    const hits = septaRay.intersectObjects([septaSolid, septaGhost], false);
+    if (hits.length && hits[0].instanceId != null) {
+      const v = (hits[0].object === septaSolid ? septaPickS : septaPickG)[hits[0].instanceId];
+      if (v) { pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+    }
+    if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; }
+  });
+  function septaVehGeom(withBand) {
+    // unit vehicle: length along x in [-.5,.5], base y=0..1, width z; scaled per class
+    const parts = [];
+    const boxPart = (sx, sy, sz, cx, cy, cz, cr, cg, cb) => {
+      const g = new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz).toNonIndexed();
+      const n = g.attributes.position.count;
+      const col = new Float32Array(n * 3);
+      for (let i = 0; i < n; i++) { col[i * 3] = cr; col[i * 3 + 1] = cg; col[i * 3 + 2] = cb; }
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      parts.push(g);
+    };
+    boxPart(0.98, 0.94, 0.94, 0, 0.53, 0, 1, 1, 1);                       // body (takes instance color)
+    if (withBand) boxPart(0.9, 0.36, 1.02, 0, 0.72, 0, 0.14, 0.15, 0.17); // glass band, proud of the body
+    let total = 0;
+    parts.forEach((g) => { total += g.attributes.position.count; });
+    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+    let o = 0;
+    for (const g of parts) {
+      pos.set(g.attributes.position.array, o * 3);
+      nor.set(g.attributes.normal.array, o * 3);
+      col.set(g.attributes.color.array, o * 3);
+      o += g.attributes.position.count;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    return out;
+  }
+  const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new V3(), _ss = new V3(), _sc = new THREE.Color(), _sup = new V3(0, 1, 0), _ssv = new V3();
+  function updateTransit(now, dt) {
+    if (!septaReady) return;
+    if (!SEPTA.on) {
+      if (septaSolid.count || septaGhost.count) { septaSolid.count = 0; septaGhost.count = 0; }
+      return;
+    }
+    let si = 0, gi = 0;
+    const cap = 2.6 * dt;
+    septaVeh.forEach((v) => {
+      const k = v.t0 ? Math.min(1, (now - v.t0) / (SEPTA_POLL + 1500)) : 1;
+      v.x = v.fx + (v.tx - v.fx) * k;
+      v.z = v.fz + (v.tz - v.fz) * k;
+      let dyaw = v.yawT - v.yaw;
+      dyaw = ((dyaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      v.yaw += Math.abs(dyaw) <= cap ? dyaw : Math.sign(dyaw) * cap;
+      if (v.gy === undefined || Math.abs(v.x - v.gx) + Math.abs(v.z - v.gz) > 2.5) {
+        v.gx = v.x; v.gz = v.z;
+        let y = siteY(v.x, v.z, 'road');
+        if (v.kind === 'rr' && y < TERRAIN.water + 1.5) y = TERRAIN.water + 11;  // river rail bridges
+        v.gy = y;
+      }
+      const spec = SEPTA_KIND[v.kind];
+      const cars = v.cars || 1;
+      const fx = Math.cos(v.yaw), fz = -Math.sin(v.yaw);
+      const spacing = spec.l + 1.1;
+      for (let ci = 0; ci < cars; ci++) {
+        const px = v.x - fx * spacing * ci, pz = v.z - fz * spacing * ci;
+        let py = v.gy;
+        if (ci) {
+          py = siteY(px, pz, 'road');
+          if (v.kind === 'rr' && py < TERRAIN.water + 1.5) py = TERRAIN.water + 11;
+        }
+        _ss.set(spec.l, spec.h, spec.w);
+        _sq.setFromAxisAngle(_sup, v.yaw);
+        if (v.ug) {
+          if (gi >= 256) continue;
+          _sp.set(px, py - 5.5, pz);
+          _sm.compose(_sp, _sq, _ss);
+          septaGhost.setMatrixAt(gi, _sm);
+          septaGhost.setColorAt(gi, _sc.setHex(v.tint).multiplyScalar(2.2));
+          septaPickG[gi++] = v;
+        } else {
+          if (si >= 1600) continue;
+          _sp.set(px, py + 0.22, pz);
+          _sm.compose(_sp, _sq, _ss);
+          septaSolid.setMatrixAt(si, _sm);
+          septaSolid.setColorAt(si, _sc.setHex(v.tint));
+          septaPickS[si++] = v;
+        }
+      }
+    });
+    septaSolid.count = si;
+    septaGhost.count = gi;
+    septaSolid.instanceMatrix.needsUpdate = true;
+    septaGhost.instanceMatrix.needsUpdate = true;
+    if (septaSolid.instanceColor) septaSolid.instanceColor.needsUpdate = true;
+    if (septaGhost.instanceColor) septaGhost.instanceColor.needsUpdate = true;
+    if (pickedVeh) {
+      const spec = SEPTA_KIND[pickedVeh.kind];
+      _ssv.set(pickedVeh.x, (pickedVeh.ug ? pickedVeh.gy : pickedVeh.gy + spec.h) + 7, pickedVeh.z).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else {
+        vehinfoEl.style.opacity = '1';
+        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      }
+    }
+  }
+
+  // The Market–Frankford El's real alignment (OSM railway=subway elevated + approach
+  // ways reduced to one centerline per corridor, local meters): Callowhill portal →
+  // Frankford TC, and the West Market leg, 46th St portal → 69th St. Each chain
+  // STARTS at its tunnel portal, so the deck ramps up out of the ground there.
+  const EL_TRACK = [[286,-830,280,-933,277,-1033,283,-1167,295,-1296,315,-1434,336,-1550,370,-1683,409,-1794,432,-1847,501,-1984,602,-2143,620,-2178,641,-2237,895,-3302,1092,-4498,1099,-4515,1110,-4529,1125,-4541,1481,-4793,1632,-4905,1729,-4974,1790,-5013,2786,-5724,3276,-6069,3311,-6097,4649,-7050,4686,-7079,4711,-7107,4728,-7137,4852,-7383,5530,-8335,5584,-8412,5633,-8492,5746,-8647,5753,-8665,5751,-8687,5742,-8705,5720,-8726],[-5528,-1449,-5572,-1451,-5802,-1445,-5835,-1447,-8807,-1924,-8864,-1939,-8914,-1962,-8947,-1985,-9010,-2044,-9045,-2064,-9073,-2073,-9229,-2108,-9274,-2115,-9313,-2117,-9354,-2112,-9399,-2099,-9435,-2081,-9460,-2065,-9535,-2007,-9659,-1896,-9667,-1889,-9682,-1882,-9701,-1882,-9839,-1898,-9857,-1907,-9898,-1944,-9917,-1950,-9926,-1949,-9944,-1942,-9958,-1922,-9962,-1906]];
+  step('Raising the Frankford El', () => {
+    const parts = [];
+    const steel = new THREE.Color(0x2a2f2b), steelDark = new THREE.Color(0x232724), railC = new THREE.Color(0x353b35);
+    const boxAt = (sx, sy, sz, x, y, z, yaw, pitch, col) => {
+      const g = new THREE.BoxGeometry(sx, sy, sz);
+      if (pitch) g.rotateZ(pitch);
+      g.rotateY(yaw);
+      g.translate(x, y, z);
+      parts.push({ geom: g, color: col });
+    };
+    for (const flat of EL_TRACK) {
+      const pts = [];
+      for (let i = 0; i + 3 < flat.length; i += 2) {
+        const ax = flat[i], az = flat[i + 1], bx = flat[i + 2], bz = flat[i + 3];
+        const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 13));
+        for (let s = 0; s < n; s++) pts.push([ax + (bx - ax) * s / n, az + (bz - az) * s / n]);
+      }
+      pts.push([flat[flat.length - 2], flat[flat.length - 1]]);
+      const ys = pts.map((p) => siteY(p[0], p[1], 'ground') + 9.2);
+      for (let pass = 0; pass < 2; pass++) {           // smooth the deck profile
+        const s0 = ys.slice();
+        for (let i = 0; i < ys.length; i++) {
+          let a = 0, n = 0;
+          for (let j = Math.max(0, i - 3); j <= Math.min(ys.length - 1, i + 3); j++) { a += s0[j]; n++; }
+          ys[i] = a / n;
+        }
+      }
+      let acc = 0;                                     // portal ramp on the chain's first 170 m
+      for (let i = 0; i < pts.length; i++) {
+        if (i) acc += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+        if (acc >= 170) break;
+        const t = smooth(10, 170, acc);
+        const gy = siteY(pts[i][0], pts[i][1], 'ground');
+        ys[i] = (gy - 3.4) * (1 - t) + ys[i] * t;
+      }
+      let bentAcc = 18;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L < 0.6) continue;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2, my = (ys[i] + ys[i + 1]) / 2;
+        const yaw = Math.atan2(-(bz - az), bx - ax);
+        const pitch = Math.atan2(ys[i + 1] - ys[i], L);
+        boxAt(L + 0.55, 1.25, 8.4, mx, my - 0.62, mz, yaw, pitch, steel);       // deck
+        const lx = Math.sin(yaw), lz = Math.cos(yaw);                           // lateral unit
+        boxAt(L + 0.55, 0.95, 0.32, mx - lx * 3.95, my + 0.45, mz - lz * 3.95, yaw, pitch, railC);
+        boxAt(L + 0.55, 0.95, 0.32, mx + lx * 3.95, my + 0.45, mz + lz * 3.95, yaw, pitch, railC);
+        bentAcc += L;
+        if (bentAcc >= 24) {                           // steel bents down to the street
+          bentAcc = 0;
+          const gy = siteY(mx, mz, 'ground');
+          const top = my - 1.15;
+          if (top - gy > 3.4) {
+            const hcol = top - gy + 1.2;
+            boxAt(0.62, hcol, 0.62, mx - lx * 3.5, gy - 0.8 + hcol / 2, mz - lz * 3.5, yaw, 0, steelDark);
+            boxAt(0.62, hcol, 0.62, mx + lx * 3.5, gy - 0.8 + hcol / 2, mz + lz * 3.5, yaw, 0, steelDark);
+            boxAt(0.7, 0.85, 7.9, mx, my - 1.55, mz, yaw, pitch, steelDark);    // cross girder
+          }
+        }
+      }
+    }
+    const el = new THREE.Mesh(mergeColored(parts), new THREE.MeshLambertMaterial({ vertexColors: true }));
+    el.castShadow = true;
+    el.receiveShadow = true;
+    groupCity.add(el);
+  });
+
+  step('Rolling out the SEPTA fleet', () => {
+    if (!septaCanFetch) { btnTransit.style.display = 'none'; return; }
+    const bodyMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xffeccc, emissiveIntensity: 0 });
+    const ghostMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.34, depthTest: false, depthWrite: false });
+    septaMats.body = bodyMat;
+    septaMats.ghost = ghostMat;
+    septaSolid = new THREE.InstancedMesh(septaVehGeom(true), bodyMat, 1600);
+    septaGhost = new THREE.InstancedMesh(septaVehGeom(false), ghostMat, 256);
+    for (const m of [septaSolid, septaGhost]) {
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0;
+      m.frustumCulled = false;                         // instance bounds don't follow the fleet
+      m.setColorAt(0, _sc.setRGB(1, 1, 1));            // allocates instanceColor
+      m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    }
+    septaSolid.castShadow = true;
+    septaSolid.receiveShadow = true;
+    septaGhost.renderOrder = 44;                       // x-ray: drawn over the streets
+    groupCity.add(septaSolid);
+    groupCity.add(septaGhost);
+    septaReady = true;
+    syncTransitBtn();
+    setInterval(() => septaPoll(false), SEPTA_POLL);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) septaPoll(false); });
+    septaPoll(true);
+  });
+
   step('Charting the viewpoints', () => {
     const tc = towersCenter;
     addViewpoint('The Towers from the river', () => {
@@ -5197,6 +5602,10 @@
     for (const gm of groundMats) gm.color.copy(_c1);
     renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
     nightUniform.value = night;
+    if (septaMats.body) {                     // vehicle interiors glow after dark
+      septaMats.body.emissiveIntensity = night * 0.55;
+      septaMats.ghost.opacity = 0.34 + night * 0.18;
+    }
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.9;
@@ -5321,6 +5730,7 @@
 
     sky.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
+    updateTransit(now, dt);
     updateLabels();
     renderer.render(scene, camera);
   }

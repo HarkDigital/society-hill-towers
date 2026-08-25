@@ -708,6 +708,66 @@ Round 15 (Aug 25 — Tier 1 of "every building like the photo": data-driven faca
   fetch_opa → opa_join (venv) → roof_colors (venv) → patch_scenes_facade →
   pack_wide → pack_city (venv) → build.
 
+Round 16 (Aug 25 — live SEPTA transit + the Frankford El):
+- **Real-time vehicles.** SEPTA's public API sends NO CORS headers on either host
+  (api.septa.org/api or www3.septa.org/api) but both honor JSONP (`?callback=`), so
+  the app polls via short-lived `<script>` tags — works on GH Pages/localhost, and
+  under the artifact CSP the tags simply never load (layer silently empty; the S bar
+  button hides). `TransitViewAll` (~370 KB) every 15 s (25 s touch; skipped while
+  `document.hidden`, refreshed on visibilitychange) + `TrainView` for Regional Rail.
+  Hosts auto-flip after 3 consecutive failures.
+- **What the feed really contains (measured, do not relearn):** subway L1/B1–B3 rows
+  are schedule placeholders — `VehicleID: None/0/block_*_schedBasedVehicle`,
+  `late: 998`, bogus `timestamp: 63240`, every one pinned at 15th St
+  (39.952187, −75.15995). **SEPTA publishes no real subway GPS anywhere JSONP-able**
+  (GTFS-RT is protobuf, no CORS), so the L and B are honestly absent. Filter: real
+  vehicles need a fleet VehicleID, epoch timestamp (> 1e9), fix age < 5 min. ~700
+  buses + ~40 trolleys (T/G/D) + NHSL M1 tracked in the city bbox
+  (39.855–40.145, −75.30–−74.94); TrainView trains carry `consist` → car count.
+- **Rendering:** ONE InstancedMesh (cap 1600) for all solid vehicles — unit box
+  merged with a proud dark glass band, vertex colors × per-instance line color
+  (bus silver, trolley green, G1 gold, NHSL purple, RR stainless), matrix scale =
+  class dims; Regional Rail expands to its real consist, cars spaced along the
+  heading. Second InstancedMesh (256, MeshBasic, depthTest:false, opacity 0.34,
+  renderOrder 44) = x-ray ghosts for vehicles inside approximate underground boxes
+  (CC commuter tunnel, subway–surface trolley tunnel) drawn 5.5 m below grade.
+  `frustumCulled = false` on both (instance bounds don't follow the fleet — the
+  classic InstancedMesh culling gotcha). Positions tween from poll to poll
+  (t/(POLL+1.5 s), snap on > 420 m jumps); heading from the API compass, or derived
+  from displacement when the API says 0 (rotY = atan2(cosθ, sinθ)); yaw rate-capped
+  2.6 rad/s. Vehicles ride `siteY(x,z,'road')` + 0.22 (cached until they move 2.5 m);
+  RR clamps to water+11 over rivers. `applyLighting` drives body emissive (warm
+  interior glow) by `nightUniform`. 2 draw calls for the whole fleet.
+- **Picking:** tap/click (orbit mode, or any touch) raycasts the two instanced
+  meshes; `#vehinfo` card (route chip tinted per line, destination, kind · cars ·
+  late/early/on-time · in-the-tunnel, next stop) follows the vehicle per frame and
+  its text refreshes each poll. V key / the S bar button toggle the layer (button
+  title shows the live tracked count); first successful poll after the veil lifts
+  flashes a hint. Projection uses the scene origin from scene.json
+  (39.945473644755, −75.14474803850973; x=(lon−lon0)·111320·cos(lat0),
+  z=−(lat−lat0)·110574 — City Hall lands at (−1609, −766), matching the model).
+- **The Frankford El is BUILT** (was backlog): OSM `railway=subway` non-tunnel ways
+  seeded from named Market-Frankford ways, grown through short unnamed connectors,
+  chained, loop-split at the far end (the two tracks join at the terminals — one
+  centerline per corridor, ~2 m lateral error), Douglas-Peucker 1.6 m → `EL_TRACK`
+  int arrays baked in app.js (~800 B): Callowhill portal → Frankford TC (10.2 km)
+  and 46th St portal → 69th St (4.6 km). Deck = per-segment pitched boxes at
+  ground+9.2 (7-pt moving average ×2), side rail strips, steel bents every ~24 m
+  where clearance > 3.4 m, portal ramps descending into the ground over the first
+  170 m (each chain STARTS at its portal). mergeColored + plain Lambert
+  vertexColors; casts shadows. ~60 k tris, 1 draw call. If SEPTA ever publishes
+  real subway GPS, elevated L trains should ride this deck (+9.2, snap to the
+  EL_TRACK polyline within ~60 m).
+- Files touched: app.js (SEPTA block before 'Charting the viewpoints' + hooks in
+  frame/applyLighting/keydown), template.html (S button, #vehinfo card),
+  style.css (#vehinfo), about_body.html (live-transit paragraph + SEPTA/Open-Meteo
+  credits). Page 15.89 MB. Verified live: ~690 vehicles tracked, 739 solid + 21
+  ghost instances, pick card shows real Route 17 "to 2nd-Market · on time · next:
+  Market St & 4th St", toggle both ways, zero app console errors, 44 calls/1.9 M
+  tris in the test view. NOTE for tests: synthetic PointerEvents with fake
+  pointerIds make the orbit handler's setPointerCapture throw — use real pointers
+  or ignore that error.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

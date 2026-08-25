@@ -596,3 +596,55 @@ html, body {
 @media (max-width: 640px) {
   #timepanel { right: 8px; left: 8px; width: auto; bottom: 66px; }
 }
+
+/* ---------- live SEPTA vehicle card ---------- */
+#vehinfo {
+  position: fixed;
+  left: 0; top: 0;
+  z-index: 12;
+  padding: 8px 26px 9px 11px;
+  max-width: 250px;
+  pointer-events: auto;
+  transform: translate(-50%, -100%);
+  will-change: transform;
+}
+#vehinfo[hidden] { display: none; }
+#vehinfo .vroute {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 7px;
+  margin-right: 7px;
+  border-radius: 9px;
+  font-family: var(--display);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #14130f;
+  text-align: center;
+  vertical-align: 1px;
+}
+#vehinfo .vdest {
+  font-family: var(--body);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--paper);
+}
+#vehinfo .vmeta {
+  font-family: var(--body);
+  font-size: 11px;
+  color: var(--paper-dim);
+  letter-spacing: 0.03em;
+  margin-top: 3px;
+}
+#vehinfoX {
+  position: absolute;
+  right: 1px; top: 1px;
+  background: none;
+  border: 0;
+  color: var(--paper-dim);
+  font-size: 15px;
+  line-height: 1;
+  padding: 3px 7px;
+  cursor: pointer;
+}
+#vehinfoX:hover { color: var(--paper); }
