@@ -2254,13 +2254,17 @@
         }
         const ryF = Math.atan2(-sdz, sdx);
         const ryD = Math.atan2(-fdz, fdx);
-        const seg = (back, front, y0s, y1s) => box(front - back, y1s - y0s, sext * 2,
+        // all-box massing: the earlier footprint-plus-boxes mix left coplanar
+        // walls that shimmered. Every pair of boxes here either clears or
+        // interpenetrates at a DIFFERENT width — never coplanar. The ground
+        // floor sits 2.3 m back so the pier line carries a real walk-in porch.
+        const segW = (back, front, y0s, y1s, w2) => box(front - back, y1s - y0s, w2,
           ob.cx + fdx * ((back + front) / 2), (y0s + y1s) / 2,
           ob.cz + fdz * ((back + front) / 2), ryD);
-        // low rear range over the true footprint, then the photo massing in front
-        aw(buildingGeom(bG.poly, null, 8.0, -1.5), '#6b4c3f', 3);
-        aw(seg(fext - 9.5, fext + 0.2, -1.5, 8.35), '#23262b', 3);      // iron front, two floors
-        aw(seg(fext - 26, fext + 0.1, 8.25, 17.8), '#74453a', 5);       // brick floors 3-5
+        aw(segW(-fext, fext - 9.6, -1.5, 8.0, sext * 2 - 0.12), '#6b4c3f', 3);      // rear range
+        aw(segW(fext - 10, fext - 2.3, -1.5, 4.6, sext * 2 - 0.04), '#191c1f', 3);  // recessed storefront wall
+        aw(segW(fext - 10, fext + 0.2, 4.3, 8.35, sext * 2), '#23262b', 3);         // iron band over the porch
+        aw(segW(fext - 26, fext + 0.1, 7.9, 17.8, sext * 2 - 0.06), '#74453a', 5);  // brick floors 3-5
         const wx = ob.cx + fdx * (fext + 0.35), wz = ob.cz + fdz * (fext + 0.35);
         const across = (u) => [wx + sdx * u, wz + sdz * u];
         const nPost = 5, half = sext - 0.25;
@@ -2270,16 +2274,32 @@
         }
         ad(box(sext * 2 + 0.3, 0.5, 0.7, wx, 4.35, wz, ryF), '#c9c2b2');   // transom band
         ad(box(sext * 2 + 0.45, 0.6, 0.8, wx, 8.15, wz, ryF), '#c4bdae'); // iron cornice
-        // GLORY board over the transom (red band on white) and the tall
-        // weathered-green blade sign hung high on the left pier
-        ad(box(1.5, 0.75, 0.16, wx + fdx * 0.2, 5.05, wz + fdz * 0.2, ryF), '#efe9dc');
-        ad(box(1.06, 0.3, 0.2, wx + fdx * 0.25, 5.05, wz + fdz * 0.25, ryF), '#b8332f');
+        // "GLORY" — real lettering on a small canvas texture, heavy geometric
+        // sans in red on the white board, hung over the transom
         {
+          const cnv = document.createElement('canvas');
+          cnv.width = 512; cnv.height = 256;
+          const ctx = cnv.getContext('2d');
+          ctx.fillStyle = '#f2ede2'; ctx.fillRect(0, 0, 512, 256);
+          ctx.fillStyle = '#c0272d';
+          ctx.font = '900 142px Futura, "Avenir Next", "Century Gothic", "Arial Black", sans-serif';
+          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillText('GLORY', 256, 134);
+          const tex = new THREE.CanvasTexture(cnv);
+          tex.encoding = THREE.sRGBEncoding;
+          tex.anisotropy = 4;
+          const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8),
+            new THREE.MeshBasicMaterial({ map: tex }));
+          sg.rotation.y = Math.atan2(fdx, fdz);
+          sg.position.set(wx + fdx * 0.45, siteY(wx, wz, 'ground') + 5.05, wz + fdz * 0.45);
+          groupCity.add(sg);
+        }
+        {  // tall weathered-green blade sign hung high on the pier
           const [bx2, bz2] = across(sext * 0.62);
           ad(box(0.42, 4.6, 0.95, bx2 + fdx * 0.5, 11.4, bz2 + fdz * 0.5, ryF), '#5f7a6e');
         }
-        // wrought-iron lightwell railing along the sidewalk
-        ad(box(sext * 2 + 0.7, 0.95, 0.08, wx + fdx * 2.0, 0.5, wz + fdz * 2.0, ryF), '#1c1e20');
+        // wrought-iron railing at the porch edge
+        ad(box(sext * 2 + 0.7, 0.95, 0.08, wx + fdx * 0.9, 0.5, wz + fdz * 0.9, ryF), '#1c1e20');
         liftB(m0, bG);
       }
     }
@@ -2294,18 +2314,72 @@
       }
     }
     {
-      const r = classic('Independence Hall', { wall: '#8e4a38', trim: '#f0ede4', eave: 13, ridge: 16.5, roof: 'hip', roofCol: '#4d4a45', chimneys: 2, style: 0 });
-      if (r) { // brick tower on the south (Independence Square) face, white stages and spire to 51 m
+      // Independence Hall, rebuilt to the photo: gable block with the white ridge
+      // balustrade and paired end chimney stacks, marble string course, engaged
+      // south tower — brick shaft, balustraded clock stage, arched bell chamber,
+      // dark bell roof, drum, and spire to ~51 m — plus the brick arcades linking
+      // to Congress Hall and Old City Hall
+      const r = classic('Independence Hall', { wall: '#7e4534', trim: '#efeadb', eave: 12, ridge: 15.2, roof: 'gable', roofCol: '#4a463f', style: 0 });
+      if (r) {
         const m0 = mark();
-        let mxz = -1e9;
-        for (const q of r.b.poly) mxz = Math.max(mxz, q[1]);
-        const tx = r.ob.cx, tz = mxz + 1.5;
-        aw(box(12, 25, 12, tx, 12.5, tz, 0), '#8e4a38', 0);
-        ad(box(8.6, 8, 8.6, tx, 29, tz, 0), '#f0ede4');
-        ad(box(6, 7, 6, tx, 36.5, tz, 0), '#f0ede4');
-        const sp = new THREE.ConeGeometry(3.6, 11, 8);
-        sp.translate(tx, 40 + 5.5, tz);
-        ad(sp, '#f0ede4');
+        const a = r.a, ob = r.ob;
+        const ry = ryAlign(a.ax, a.az);
+        ad(box(a.hl * 1.35, 0.85, 3.2, ob.cx, 15.55, ob.cz, ry), '#eee9da');       // ridge-deck balustrade
+        for (const s of [-1, 1]) {                                                  // paired end chimney masses
+          ad(box(1.4, 3.6, 5.2, ob.cx + a.ax * s * (a.hl - 0.9), 16.3, ob.cz + a.az * s * (a.hl - 0.9), ry), '#6e3c2d');
+        }
+        for (const s of [-1, 1]) {                                                  // marble string course
+          ad(box(a.hl * 2 + 0.2, 0.42, 0.24, ob.cx + a.px * s * (a.hs + 0.02), 5.2, ob.cz + a.pz * s * (a.hs + 0.02), ry), '#e6e0d0');
+        }
+        // engaged tower on the south (Independence Square) face
+        const sV = (a.pz > 0) ? 1 : -1;
+        const tx = ob.cx + a.px * sV * (a.hs + 3.0), tz = ob.cz + a.pz * sV * (a.hs + 3.0);
+        aw(box(9, 21, 9, tx, 10.5, tz, ry), '#7e4534', 1);                          // brick shaft, arched windows
+        ad(box(9.9, 0.55, 9.9, tx, 21.15, tz, ry), '#efeadb');                      // cornice
+        ad(box(9.1, 0.8, 9.1, tx, 21.8, tz, ry), '#efeadb');                        // balustrade
+        ad(box(7.2, 6.2, 7.2, tx, 22.2 + 3.1, tz, ry), '#efeadb');                  // clock stage
+        for (const [ux2, uz2] of [[a.ax, a.az], [-a.ax, -a.az], [a.px, a.pz], [-a.px, -a.pz]]) {
+          const rim = new THREE.CylinderGeometry(1.7, 1.7, 0.22, 16);
+          rim.rotateZ(Math.PI / 2); rim.rotateY(Math.atan2(-uz2, ux2));
+          rim.translate(tx + ux2 * 3.65, 25.4, tz + uz2 * 3.65);
+          ad(rim, '#3a3d3b');
+          const dial = new THREE.CylinderGeometry(1.42, 1.42, 0.3, 16);
+          dial.rotateZ(Math.PI / 2); dial.rotateY(Math.atan2(-uz2, ux2));
+          dial.translate(tx + ux2 * 3.72, 25.4, tz + uz2 * 3.72);
+          ad(dial, '#f3efe2');
+        }
+        ad(box(5.6, 5.4, 5.6, tx, 28.4 + 2.7, tz, ry), '#efeadb');                  // bell chamber
+        for (const [ux2, uz2] of [[a.ax, a.az], [-a.ax, -a.az], [a.px, a.pz], [-a.px, -a.pz]]) {
+          ad(box(2.3, 3.7, 0.24, tx + ux2 * 2.85, 30.9, tz + uz2 * 2.85, Math.atan2(-uz2, ux2)), '#2e2c28'); // open arches
+        }
+        ad(box(6.2, 0.7, 6.2, tx, 33.85, tz, ry), '#efeadb');                       // upper balustrade
+        const bell = new THREE.CylinderGeometry(1.3, 3.95, 3.0, 8);
+        bell.rotateY(ry + Math.PI / 8); bell.translate(tx, 34.2 + 1.5, tz);
+        ad(bell, '#3c3933');                                                        // dark bell roof
+        const drum = new THREE.CylinderGeometry(1.5, 1.7, 2.4, 8);
+        drum.translate(tx, 37.2 + 1.2, tz);
+        ad(drum, '#efeadb');
+        const spire = new THREE.ConeGeometry(1.15, 9.5, 8);
+        spire.translate(tx, 39.6 + 4.75, tz);
+        ad(spire, '#efeadb');
+        const orb = new THREE.SphereGeometry(0.4, 8, 6);
+        orb.translate(tx, 49.4, tz);
+        ad(orb, '#c8a44e');                                                         // gilt ball + vane mast
+        const vane = new THREE.CylinderGeometry(0.06, 0.06, 2.4, 5);
+        vane.translate(tx, 49.4 + 1.2, tz);
+        ad(vane, '#d8d2c2');
+        // brick arcades to the flanking halls (style-4 walls draw the arches)
+        for (const nm of ['Congress Hall', 'Old City Hall']) {
+          const nb2 = get(nm);
+          if (!nb2) continue;
+          const on = orientedBox(nb2.poly);
+          const du = (on.cx - ob.cx) * a.ax + (on.cz - ob.cz) * a.az;
+          const len = Math.abs(du) - a.hl - 8;
+          if (len < 2 || len > 30) continue;
+          const cu = Math.sign(du) * (a.hl + len / 2 + 0.5);
+          aw(box(len + 1, 5.6, 4.2, ob.cx + a.ax * cu, 2.8, ob.cz + a.az * cu, ry), '#7e4534', 4);
+          ad(box(len + 1.2, 0.42, 4.5, ob.cx + a.ax * cu, 5.85, ob.cz + a.az * cu, ry), '#efeadb');
+        }
         liftB(m0, r.b);
       }
     }

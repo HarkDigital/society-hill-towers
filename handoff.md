@@ -516,4 +516,22 @@ Round 10 (Aug 25 — "broken roofs" root-caused, three separate defects):
   generic; the builder now dresses that single lot (iron front + piers + signs +
   brick floors 3-5 over the front 26 m, low rear range down the 40 m lot).
 
+Round 11 (Aug 25):
+- **Independence Hall rebuilt to the photo**: gable block (was hip) with white
+  ridge-deck balustrade, paired brick end-chimney masses, marble string course;
+  engaged south tower — brick shaft (style-1 arches), white cornice + balustrade,
+  clock stage with 4 rimmed dials, bell chamber with dark open arches, upper
+  balustrade, faceted dark bell roof, drum, spire, gilt ball + vane to ~51 m;
+  style-4 brick arcades auto-spanned to Congress Hall and Old City Hall (length
+  computed from the OBB gap along the block axis).
+- **Glory round 2 (Mike)**: full walk-in porch — ground floor recessed 2.3 m
+  behind the pier line, iron band above forms the ceiling; z-fight fix — the
+  footprint-extrusion + box mix had coplanar walls, replaced by ALL-box massing
+  where every pair either clears or interpenetrates at a different width (the
+  session's z-fight rule: never coplanar, always offset or interpenetrating);
+  the sign is now REAL "GLORY" lettering — a small CanvasTexture (Futura-stack
+  900 red on white, sRGB encoding) on a MeshBasicMaterial plane added straight
+  to groupCity (unlit = reads as a lit sign at night; lifted via siteY, not
+  liftB). First in-model text — the pattern to copy for future signage.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.
