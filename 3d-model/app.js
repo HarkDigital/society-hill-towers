@@ -4969,6 +4969,7 @@
     else if (k === 't') toggleTimePanel();
     else if (k === 'i') toggleAbout();
     else if (k === 'v') toggleTransit();
+    else if (k === 'n') toggleStreets();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
     else walk.keys[k] = true;
@@ -5557,6 +5558,78 @@
     }
   }
 
+  // ---------------------------------------------------------------- street names
+  // Ground-painted street labels: placements baked offline by
+  // bake_street_labels.py (the packed wide/far road formats carry no names) and
+  // shipped as ST_LABELS; every unique name is drawn once into a canvas atlas
+  // and all ~4,700 labels merge into ONE textured quad mesh lying flat on the
+  // roadways. Toggle: the St button / N key.
+  let stMesh = null, stMat = null, stOn = true;
+  const btnStreets = document.getElementById('btnStreets');
+  function syncStreetsBtn() { btnStreets.style.color = stOn ? '' : 'rgba(239,233,220,0.25)'; }
+  function toggleStreets() {
+    stOn = !stOn;
+    if (stMesh) stMesh.visible = stOn;
+    syncStreetsBtn();
+  }
+  btnStreets.addEventListener('click', toggleStreets);
+  step('Lettering the streets', () => {
+    if (typeof ST_LABELS === 'undefined' || !ST_LABELS || !ST_LABELS.names) { btnStreets.style.display = 'none'; return; }
+    const AW = 4096, AH = 2048, FS = 24, RH = 30, PAD = 9;
+    const cv = document.createElement('canvas');
+    cv.width = AW; cv.height = AH;
+    const g = cv.getContext('2d');
+    g.font = '600 ' + FS + 'px "Helvetica Neue", Helvetica, Arial, sans-serif';
+    g.fillStyle = '#fff';
+    g.textBaseline = 'middle';
+    const rects = [];
+    let ax = PAD, ay = 0;
+    for (const nm of ST_LABELS.names) {
+      const w = Math.min(Math.ceil(g.measureText(nm).width), 560);
+      if (ax + w + PAD > AW) { ax = PAD; ay += RH; }
+      if (ay + RH > AH) { rects.push(null); continue; }
+      g.fillText(nm, ax, ay + RH / 2, 560);
+      rects.push([ax, ay, w, RH]);
+      ax += w + PAD * 2;
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = 8;
+    const L2 = ST_LABELS.l;
+    const pos = [], uv = [], idx = [];
+    const LIFT = [0.66, 0.5, 0.38];        // over siteY(road): major / minor / core (clears ribbon lifts)
+    const TH = [5.4, 4.3, 3.4];            // text height in meters per class
+    for (let i = 0; i + 4 < L2.length; i += 5) {
+      const r = rects[L2[i]];
+      if (!r) continue;
+      const x = L2[i + 1], z = L2[i + 2], br = L2[i + 3] * Math.PI / 180, cls = L2[i + 4];
+      const dx = Math.cos(br), dz = Math.sin(br);
+      const ux = dz, uz = -dx;             // glyph-up in world = left of travel (north-up read)
+      const th = TH[cls], hw = th * (r[2] / FS) / 2, hh = th * (RH / FS) / 2;
+      const y = siteY(x, z, 'road') + LIFT[cls];
+      const i0 = pos.length / 3;
+      pos.push(
+        x - dx * hw - ux * hh, y, z - dz * hw - uz * hh,
+        x + dx * hw - ux * hh, y, z + dz * hw - uz * hh,
+        x + dx * hw + ux * hh, y, z + dz * hw + uz * hh,
+        x - dx * hw + ux * hh, y, z - dz * hw + uz * hh);
+      const u0 = r[0] / AW, u1 = (r[0] + r[2]) / AW;
+      const v1 = 1 - r[1] / AH, v0 = 1 - (r[1] + r[3]) / AH;
+      uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+      idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
+    geo.setIndex(idx);
+    stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x413d34 });
+    stMesh = new THREE.Mesh(geo, stMat);
+    stMesh.renderOrder = 5;
+    stMesh.visible = stOn;
+    groupCity.add(stMesh);
+    syncStreetsBtn();
+  });
+
   // ---------------------------------------------------------------- address search
   // Nominatim (OpenStreetMap) geocoding, bounded to the modeled city box — free,
   // key-less, CORS-open. Blocked (with the button hidden) under the artifact CSP,
@@ -5628,6 +5701,8 @@
       .then((rows) => {
         searchBusy = false;
         if (!rows) { searchOut.innerHTML = '<div class="smsg">Search failed &mdash; try again in a moment.</div>'; return; }
+        // the bounding box spans the rivers — keep the city proper, drop NJ
+        rows = rows.filter((r) => /philadelphia/i.test(r.display_name || ''));
         if (!rows.length) { searchOut.innerHTML = '<div class="smsg">No match inside Philadelphia.</div>'; return; }
         searchOut.innerHTML = '';
         for (const r of rows) {
@@ -5982,6 +6057,7 @@
       septaMats.body.emissiveIntensity = night * 0.55;
       septaMats.ghost.opacity = 0.34 + night * 0.18;
     }
+    if (stMat) stMat.color.copy(_c1.set(0x413d34)).lerp(_c2.set(0x99938a), night);  // street text: dark on day roads, pale at night
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.9;

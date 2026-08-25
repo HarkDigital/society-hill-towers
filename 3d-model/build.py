@@ -57,6 +57,10 @@ data_js += ("const DEM_CITY = " + json.dumps(demc, separators=(",", ":")) + ";\n
 fpal_path = ROOT / "facade_palette.json"
 fpal = json.loads(fpal_path.read_text(encoding="utf-8")) if fpal_path.exists() else None
 data_js += "const FACADE_PAL = " + json.dumps(fpal, separators=(",", ":")) + ";\n"
+# street-name labels (baked by bake_street_labels.py from the scene jsons —
+# the packed road formats carry no names)
+stl_path = ROOT / "street_labels.json"
+data_js += "const ST_LABELS = " + (stl_path.read_text(encoding="utf-8").strip() if stl_path.exists() else "null") + ";\n"
 
 # </script> inside embedded JS strings would terminate the tag early
 for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):

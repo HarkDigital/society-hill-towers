@@ -855,6 +855,29 @@ Round 18 (Aug 25 — address search, logo button, street-snapped buses):
   for yaw derivation and the next snap. Snap radius 20 m — a vehicle farther
   off the grid (depot, private lot) rides raw.
 
+Round 19 (Aug 25 — street names on the roadways, search fenced to the city):
+- **Street-name labels** (Mike's request): `bake_street_labels.py` computes
+  placements offline from scene.json + scene_wide.json + scene_south.json (the
+  packed wide/far road formats carry NO names — that's why baking, not decode)
+  → `street_labels.json` (4,719 labels, 915 unique names, ~108 KB), embedded by
+  build.py as ST_LABELS. Format: names[] + flat [nameIdx, x, z, bearingDeg,
+  cls]. cls 0 major / 1 minor / 2 core-detail. Spacing 220–600 m by class,
+  min length 40–200 m, same-name dedupe within 90 m, wide placements inside
+  CORE_EXT±40 dropped (core places its own, denser, incl. named alleys).
+  Bearing pre-flipped for north-up readability (west→east / south→north).
+  Runtime ('Lettering the streets'): every unique name drawn once into a
+  4096×2048 canvas atlas (24 px rows, sRGB, aniso 8) and all labels merged into
+  ONE indexed quad mesh lying flat on the roads — quad frame dir=(cos b, sin b),
+  glyph-up=(dz, −dx); y = siteY(road) + [0.66, 0.5, 0.38] by cls (clears the
+  class-separated ribbon lifts). MeshBasicMaterial transparent depthWrite:false
+  renderOrder 5; applyLighting lerps text color 0x413d34 (day, dark on light
+  asphalt) → 0x99938a (night). Toggle: St bar button / N key (default ON).
+  Rerun the bake whenever a scene json is refetched.
+- **Search fenced to Philadelphia proper**: the Nominatim viewbox spans the
+  rivers, so Camden/Gloucester results leaked in — rows are now filtered to
+  display_name containing "Philadelphia" ("Broadway" → no match; Pat's still
+  found). Page 16.03 MB (artifact cap irrelevant — Pages-only delivery).
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
