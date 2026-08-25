@@ -553,4 +553,8 @@ Round 12 (Aug 25 — grounding pass, "situate everything"):
   walk-in porch, widths pulled 15 cm off the lot lines (party-wall shimmer), sign
   board mounted proud of the pier plane so nothing clips the lettering.
 
+**Next planned phase:** `lidar-massing-plan.md` at the repo root is the self-contained
+brief for the LiDAR true-massing pass (measured heights for all ~250k buildings + core
+roof forms). A fresh session should be able to execute it from that file alone.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.
