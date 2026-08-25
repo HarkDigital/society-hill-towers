@@ -608,3 +608,87 @@ html, body {
   cursor: pointer;
 }
 #vehinfoX:hover { color: var(--paper); }
+
+/* ---------- bar icon SVGs (SEPTA mark, search) ---------- */
+#btnTransit svg { width: 22px; height: 16px; display: block; }
+#btnSearch svg { width: 16px; height: 16px; display: block; }
+
+/* ---------- address search panel ---------- */
+#searchpanel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 74px;
+  z-index: 12;
+  width: min(360px, calc(100vw - 24px));
+  padding: 13px 15px 12px;
+  display: none;
+  user-select: none;
+}
+#searchpanel.open { display: block; }
+#searchpanel .kicker {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--bronze);
+  margin-bottom: 10px;
+}
+#searchpanel .row { display: flex; gap: 8px; align-items: center; }
+#searchpanel input {
+  flex: 1;
+  min-width: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(239,233,220,0.06);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--paper);
+  font-family: var(--body);
+  font-size: 13px;
+  padding: 7px 9px;
+  outline: none;
+}
+#searchpanel input::placeholder { color: var(--paper-faint); }
+#searchpanel input:focus { border-color: var(--bronze-dim); }
+#searchpanel .mini {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  background: rgba(239,233,220,0.06);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--paper-dim);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 8px 13px;
+  cursor: pointer;
+}
+#searchpanel .mini:hover { color: var(--paper); border-color: var(--line-strong); }
+#searchpanel .mini:focus-visible, #searchpanel input:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
+#searchOut { max-height: 180px; overflow-y: auto; }
+#searchOut .srow {
+  font-family: var(--body);
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--paper-dim);
+  padding: 7px 4px;
+  margin-top: 6px;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+#searchOut .srow:first-child { margin-top: 10px; }
+#searchOut .srow:hover { color: var(--paper); background: rgba(200,155,94,0.08); }
+#searchOut .smsg {
+  font-family: var(--body);
+  font-size: 12px;
+  color: var(--paper-faint);
+  padding: 9px 2px 2px;
+}
+.lbl.smark { color: var(--bronze); border-color: var(--bronze-dim); }
+@media (max-width: 640px) {
+  #searchpanel { bottom: 66px; }
+}

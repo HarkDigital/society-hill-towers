@@ -19,6 +19,15 @@
 
 <div id="labels" aria-hidden="true"></div>
 
+<div id="searchpanel" class="panel" role="search" aria-label="Find an address">
+  <div class="kicker">Find a place in Philadelphia</div>
+  <div class="row">
+    <input type="text" id="searchInput" placeholder="Address or place &mdash; e.g. 1420 Locust St" autocomplete="off" spellcheck="false">
+    <button id="searchGo" class="mini">Go</button>
+  </div>
+  <div id="searchOut"></div>
+</div>
+
 <div id="vehinfo" class="panel" hidden>
   <button id="vehinfoX" title="Dismiss">&times;</button>
   <div id="vehinfoBody"></div>
@@ -47,7 +56,8 @@
     <button id="btnFly" title="Fly over the city (3)">Fly</button>
   </div>
   <button id="btnLabels" class="iconbtn panel" title="Toggle landmark labels (L)">Aa</button>
-  <button id="btnTransit" class="iconbtn panel" title="Live SEPTA vehicles (V)">S</button>
+  <button id="btnTransit" class="iconbtn panel" title="Live SEPTA vehicles (V)"><svg viewBox="0 0 500 370" aria-hidden="true"><rect x="54" y="15" width="392" height="340" fill="#ece8dd"/><path fill="#f14728" d="M441.775,14.666H340.441L180.888,127.332h148.665l115.779,115.333L333.556,355.107h108.22c25.555,0,44.221-25.332,44.221-43.331V58.221C485.996,39.998,467.33,14.666,441.775,14.666z"/><path fill="#f14728" d="M206.443,137.998H192.22l87.111,87.107c4.001,3.338,7.11,7.336,13.999,6.893h14.89l-87.555-86.889C216.665,140.664,213.776,137.998,206.443,137.998z"/><path fill="#1f4fa3" d="M58.666,355.107h101.111l159.554-112.219H170.887L54.666,127.332L167.11,14.666H58.666c-25.778,0-44,25.332-44,43.776v253.555C14.666,329.775,32.888,355.107,58.666,355.107z"/></svg></button>
+  <button id="btnSearch" class="iconbtn panel" title="Find an address (/)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
   <button id="btnTime" class="iconbtn panel" title="Date &amp; time of day (T)">&#9680;</button>
   <button id="btnAbout" class="iconbtn panel" title="About this model (I)">i</button>
 </div>

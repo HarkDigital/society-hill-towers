@@ -829,6 +829,32 @@ Round 17 (Aug 25 — rebrand to Philadelphia, transit pins, museum grounds, WWB)
   deck, pins render/pick (Route 9 card via pin click), toggle, 692 tracked live,
   zero new console errors. Page 15.90 MB.
 
+Round 18 (Aug 25 — address search, logo button, street-snapped buses):
+- **Address search** (Mike's request): a magnifier bar button (+ `/` key) opens
+  `#searchpanel` (timepanel-styled, bottom center) → OpenStreetMap Nominatim,
+  key-less/CORS-open, `bounded=1` to the model box (viewbox −75.30,40.145,
+  −74.94,39.855) → up to 5 result rows; the first (or a clicked row) flies the
+  ORBIT camera there (goalTarget/goalR 300/goalPhi glide — setMode(ORBIT) first)
+  and drops a bronze pin (septaPinGeom + gold basic material, distance-scaled,
+  bobbing) with a `.lbl.smark` label for 20 s (updateSearchMark in frame()).
+  Hidden under the artifact CSP like every live fetch. Nominatim credit in
+  About. Verified: "Citizens Bank Park" lands at (−1855,4373) — the modeled
+  stadium is at (−1869,4375); "Independence Hall" pins (−450,−377).
+- **The S button now wears the SEPTA mark**: inline SVG (official paths + warm
+  white backing rect) in `#btnTransit`; `#btnSearch` gets a stroked magnifier
+  SVG (currentColor). `#bar .iconbtn svg` sizing in style.css.
+- **Buses no longer clip buildings** (Mike's screenshots — GPS scatter ±10 m +
+  straight tweens cutting corners at intersections): a road-network spatial
+  hash (`septaRoadGrid`, 36 m cells; fed UNdensified drivable segments — core
+  loop alongside addRoadSeg (non-pedestrian), wide + far loops pre-densify for
+  t ≤ 5) gives `septaSnapRoad(x,z,maxD)` = nearest-centerline projection.
+  updateTransit snaps buses+trolleys (never RR/NHSL/ghosts) every ~120 ms
+  staggered, then exponentially glides DISPLAY coords (v.dx/v.dz, τ≈140 ms —
+  smooths the segment-flip pop at intersections). Everything visual (cars,
+  pins, badges, card follow, pick fallback) uses v.dx/v.dz; raw v.x/v.z stays
+  for yaw derivation and the next snap. Snap radius 20 m — a vehicle farther
+  off the grid (depot, private lot) rides raw.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

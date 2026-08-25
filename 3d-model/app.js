@@ -1458,7 +1458,10 @@
       for (const run of runsOf(r.pts)) {
         const g = ribbon(run, r.w, y, mot ? motY : null);
         if (!/footway|path|steps|cycleway/.test(r.t)) {
-          for (let i = 0; i < run.length - 1; i++) addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
+          for (let i = 0; i < run.length - 1; i++) {
+            addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
+            if (!/pedestrian/.test(r.t)) septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]);
+          }
         }
         (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)) });
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
@@ -3482,6 +3485,7 @@
       const n = body[k++], w = body[k++] / 10, t = body[k++];
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
+      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
       pts = densify(pts, 15);
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
@@ -4332,6 +4336,7 @@
       const n = body[k++], w = body[k++] / 10, t = body[k++];
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
+      if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
       pts = densify(pts, 30);
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
@@ -4964,6 +4969,7 @@
     else if (k === 't') toggleTimePanel();
     else if (k === 'i') toggleAbout();
     else if (k === 'v') toggleTransit();
+    else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
     else walk.keys[k] = true;
     if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
@@ -5293,7 +5299,7 @@
     // (a little wider under the crosshair, where aiming is coarser)
     let bestV = null, bestD = (vpWasLocked ? 46 : 30) ** 2;
     septaVeh.forEach((v) => {
-      _ssv.set(v.x, (v.gy || 0) + 3, v.z).project(camera);
+      _ssv.set(v.dx != null ? v.dx : v.x, (v.gy || 0) + 3, v.dz != null ? v.dz : v.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) return;
       const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
       const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
@@ -5303,6 +5309,41 @@
     if (bestV) { pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
     if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; }
   });
+  // Road-network spatial hash for snapping live street vehicles onto their
+  // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
+  // corners, both of which parked buses inside buildings. Fed by all three road
+  // passes (core / wide / far) with drivable classes, queried per vehicle a few
+  // times a second and smoothed.
+  const septaRoadGrid = new Map();
+  const SEPTA_RG_CELL = 36;
+  function septaRoadAdd(ax, az, bx, bz) {
+    const x0 = Math.floor(Math.min(ax, bx) / SEPTA_RG_CELL), x1 = Math.floor(Math.max(ax, bx) / SEPTA_RG_CELL);
+    const z0 = Math.floor(Math.min(az, bz) / SEPTA_RG_CELL), z1 = Math.floor(Math.max(az, bz) / SEPTA_RG_CELL);
+    for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
+      const key = gx + ':' + gz;
+      let a = septaRoadGrid.get(key);
+      if (!a) { a = []; septaRoadGrid.set(key, a); }
+      a.push(ax, az, bx, bz);
+    }
+  }
+  function septaSnapRoad(x, z, maxD) {
+    const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
+    let bd = maxD * maxD, bx2 = 0, bz2 = 0, found = false;
+    for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
+      const a = septaRoadGrid.get(cx2 + ':' + cz2);
+      if (!a) continue;
+      for (let i = 0; i < a.length; i += 4) {
+        const ax = a[i], az = a[i + 1], dx = a[i + 2] - ax, dz = a[i + 3] - az;
+        const L2 = dx * dx + dz * dz || 1e-9;
+        let tt = ((x - ax) * dx + (z - az) * dz) / L2;
+        tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+        const ex = ax + dx * tt - x, ez = az + dz * tt - z;
+        const d2 = ex * ex + ez * ez;
+        if (d2 < bd) { bd = d2; bx2 = ax + dx * tt; bz2 = az + dz * tt; found = true; }
+      }
+    }
+    return found ? [bx2, bz2] : null;
+  }
   function septaMerge(parts) {
     let total = 0;
     parts.forEach((g) => { total += g.attributes.position.count; });
@@ -5410,12 +5451,28 @@
       const k = v.t0 ? Math.min(1, (now - v.t0) / (SEPTA_POLL + 1500)) : 1;
       v.x = v.fx + (v.tx - v.fx) * k;
       v.z = v.fz + (v.tz - v.fz) * k;
+      // street vehicles snap to the nearest drivable centerline (refreshed a few
+      // times a second, staggered) and glide to it — GPS scatter and corner-cut
+      // tweens no longer drive buses through building walls
+      let wx = v.x, wz = v.z;
+      if (!v.ug && (v.kind === 'bus' || v.kind === 'trolley')) {
+        if (v.snT === undefined || now - v.snT > 120) {
+          v.snT = now;
+          const sn = septaSnapRoad(v.x, v.z, 20);
+          if (sn) { v.snx = sn[0]; v.snz = sn[1]; } else { v.snx = null; }
+        }
+        if (v.snx != null) { wx = v.snx; wz = v.snz; }
+      }
+      if (v.dx === undefined) { v.dx = wx; v.dz = wz; }
+      const kS = 1 - Math.exp(-dt * 7);
+      v.dx += (wx - v.dx) * kS;
+      v.dz += (wz - v.dz) * kS;
       let dyaw = v.yawT - v.yaw;
       dyaw = ((dyaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
       v.yaw += Math.abs(dyaw) <= cap ? dyaw : Math.sign(dyaw) * cap;
-      if (v.gy === undefined || Math.abs(v.x - v.gx) + Math.abs(v.z - v.gz) > 2.5) {
-        v.gx = v.x; v.gz = v.z;
-        let y = siteY(v.x, v.z, 'road');
+      if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
+        v.gx = v.dx; v.gz = v.dz;
+        let y = siteY(v.dx, v.dz, 'road');
         if (v.kind === 'rr' && y < TERRAIN.water + 1.5) y = TERRAIN.water + 11;  // river rail bridges
         v.gy = y;
       }
@@ -5424,7 +5481,7 @@
       const fx = Math.cos(v.yaw), fz = -Math.sin(v.yaw);
       const spacing = spec.l + 1.1;
       for (let ci = 0; ci < cars; ci++) {
-        const px = v.x - fx * spacing * ci, pz = v.z - fz * spacing * ci;
+        const px = v.dx - fx * spacing * ci, pz = v.dz - fz * spacing * ci;
         let py = v.gy;
         if (ci) {
           py = siteY(px, pz, 'road');
@@ -5454,7 +5511,7 @@
       if (v.kind === 'bus') {
         if (bi < 1024) {
           const py0 = v.gy + spec.h + 0.6;
-          _sp.set(v.x, py0, v.z);
+          _sp.set(v.dx, py0, v.dz);
           const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
           _sp.y += Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
           _ss.set(s, s, s);
@@ -5464,7 +5521,7 @@
         }
       } else if (pi < 1024) {
         const py0 = v.ug ? v.gy + 2.4 : v.gy + spec.h + 0.9;
-        _sp.set(v.x, py0, v.z);
+        _sp.set(v.dx, py0, v.dz);
         const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
         const bob = Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
         _sp.y += bob;
@@ -5489,7 +5546,7 @@
     if (septaPin.instanceColor) septaPin.instanceColor.needsUpdate = true;
     if (pickedVeh) {
       const spec = SEPTA_KIND[pickedVeh.kind];
-      _ssv.set(pickedVeh.x, (pickedVeh.ug ? pickedVeh.gy : pickedVeh.gy + spec.h) + 7, pickedVeh.z).project(camera);
+      _ssv.set(pickedVeh.dx, (pickedVeh.ug ? pickedVeh.gy : pickedVeh.gy + spec.h) + 7, pickedVeh.dz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
@@ -5498,6 +5555,102 @@
           ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
       }
     }
+  }
+
+  // ---------------------------------------------------------------- address search
+  // Nominatim (OpenStreetMap) geocoding, bounded to the modeled city box — free,
+  // key-less, CORS-open. Blocked (with the button hidden) under the artifact CSP,
+  // same as every other live fetch. Results fly the orbit camera to the spot and
+  // drop a bronze pin + label for 20 s.
+  const btnSearch = document.getElementById('btnSearch');
+  const searchPanel = document.getElementById('searchpanel');
+  const searchInput = document.getElementById('searchInput');
+  const searchOut = document.getElementById('searchOut');
+  let searchMark = null, searchBusy = false;
+  function toggleSearch(open) {
+    const want = open !== undefined ? open : !searchPanel.classList.contains('open');
+    searchPanel.classList.toggle('open', want);
+    if (want) searchInput.focus();
+    else searchInput.blur();
+  }
+  function searchShortName(s) {
+    return String(s || '').split(',').slice(0, 3).join(',');
+  }
+  function searchGoTo(lat, lon, name) {
+    const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+    setMode(MODE.ORBIT);
+    const gy = siteY(x, z, 'ground');
+    orbit.goalTarget.set(x, gy + 12, z);
+    orbit.goalR = 300;
+    orbit.goalPhi = 1.02;
+    placeSearchMark(x, gy, z, name);
+    if (isTouch) toggleSearch(false);       // free the screen; desktop keeps the result list up
+  }
+  function placeSearchMark(x, gy, z, name) {
+    clearSearchMark();
+    const mesh = new THREE.Mesh(septaPinGeom(), new THREE.MeshBasicMaterial({ vertexColors: true, color: 0xc89b5e }));
+    mesh.frustumCulled = false;
+    groupCity.add(mesh);
+    const el = document.createElement('div');
+    el.className = 'lbl smark';
+    el.textContent = name;
+    labelsRoot.appendChild(el);
+    searchMark = { mesh, el, x, y: gy + 1.4, z, until: performance.now() + 20000 };
+  }
+  function clearSearchMark() {
+    if (!searchMark) return;
+    groupCity.remove(searchMark.mesh);
+    searchMark.mesh.geometry.dispose();
+    searchMark.mesh.material.dispose();
+    searchMark.el.remove();
+    searchMark = null;
+  }
+  function updateSearchMark(now) {
+    if (!searchMark) return;
+    if (now > searchMark.until) { clearSearchMark(); return; }
+    const s = clamp(camera.position.distanceTo(_ssv.set(searchMark.x, searchMark.y, searchMark.z)) / 240, 1, 8);
+    searchMark.mesh.position.set(searchMark.x, searchMark.y + Math.sin(now * 0.004) * 0.5, searchMark.z);
+    searchMark.mesh.scale.setScalar(s);
+    _ssv.set(searchMark.x, searchMark.y + 5.2 * s + 2, searchMark.z).project(camera);
+    if (_ssv.z > 1 || _ssv.z < -1) { searchMark.el.style.opacity = '0'; return; }
+    searchMark.el.style.opacity = '1';
+    searchMark.el.style.transform = 'translate(-50%,-100%) translate(' +
+      ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+      ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+  }
+  function searchSubmit() {
+    const qy = searchInput.value.trim();
+    if (!qy || searchBusy) return;
+    searchBusy = true;
+    searchOut.innerHTML = '<div class="smsg">Searching&hellip;</div>';
+    fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&bounded=1&viewbox=-75.30,40.145,-74.94,39.855&q=' + encodeURIComponent(qy))
+      .then((r) => (r && r.ok ? r.json() : null))
+      .then((rows) => {
+        searchBusy = false;
+        if (!rows) { searchOut.innerHTML = '<div class="smsg">Search failed &mdash; try again in a moment.</div>'; return; }
+        if (!rows.length) { searchOut.innerHTML = '<div class="smsg">No match inside Philadelphia.</div>'; return; }
+        searchOut.innerHTML = '';
+        for (const r of rows) {
+          const el = document.createElement('div');
+          el.className = 'srow';
+          el.textContent = searchShortName(r.display_name);
+          el.addEventListener('click', () => searchGoTo(+r.lat, +r.lon, el.textContent));
+          searchOut.appendChild(el);
+        }
+        searchGoTo(+rows[0].lat, +rows[0].lon, searchShortName(rows[0].display_name));
+      })
+      .catch(() => { searchBusy = false; searchOut.innerHTML = '<div class="smsg">Search failed &mdash; try again in a moment.</div>'; });
+  }
+  if (septaCanFetch) {
+    btnSearch.addEventListener('click', () => toggleSearch());
+    document.getElementById('searchGo').addEventListener('click', searchSubmit);
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') searchSubmit();
+      else if (e.key === 'Escape') toggleSearch(false);
+      e.stopPropagation();
+    });
+  } else {
+    btnSearch.style.display = 'none';
   }
 
   // The Market–Frankford El's real alignment (OSM railway=subway elevated + approach
@@ -5954,6 +6107,7 @@
     sky.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
     updateTransit(now, dt);
+    updateSearchMark(now);
     updateLabels();
     renderer.render(scene, camera);
   }
