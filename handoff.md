@@ -534,4 +534,23 @@ Round 11 (Aug 25):
   to groupCity (unlit = reads as a lit sign at night; lifted via siteY, not
   liftB). First in-model text — the pattern to copy for future signage.
 
+Round 12 (Aug 25 — grounding pass, "situate everything"):
+- **classic() OBB-gable fallback REMOVED**: non-quad footprints retry simplifyRing
+  at 1.4 m; still no quad → flat cap, dormers skipped. OBB roofs floated beside
+  L-plan walls (City Tavern's chimney-side floaters).
+- **Independence Hall explicit massing**: its OSM footprint is the whole 84 m
+  complex, so the round-11 OBB-derived balustrade/string-courses stretched 100 m
+  bands across the facade (Mike's "white line"). Now a pt2(u, s) frame from the
+  north face: 33x13.4 block + footprint-true quadGable, 19 m ridge balustrade,
+  end chimneys, string courses on the block only, hyphen arcades (style 4),
+  two-story wing pavilions with 4-side caps, the full steeple. No classic() call.
+- **columnRow sinks 2.2 m below grade** (like walls/trunks): colonnades lift at the
+  building centroid and sloping lawns left the Second Bank's SOUTH portico columns
+  airborne (proved by raycast: ankle-height rays passed through to the wall).
+  Both banks also gained sunk marble stylobate slabs under their porticos.
+- **Glory round 3**: engaged pier order flush with the brick plane (nothing proud
+  of the building), floor-2 glazing recessed 0.5 m, ground floor a real 2.4 m
+  walk-in porch, widths pulled 15 cm off the lot lines (party-wall shimmer), sign
+  board mounted proud of the pier plane so nothing clips the lettering.
+
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

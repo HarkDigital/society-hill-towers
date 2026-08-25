@@ -1123,13 +1123,17 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     return g;
   }
 
-  // classical column row: n cylinders from (x0,z0) to (x1,z1)
+  // classical column row: n cylinders from (x0,z0) to (x1,z1). Shafts run 2.2 m
+  // below grade like walls and tree trunks — colonnades are lifted by the height
+  // at the building CENTROID, and sloping ground was leaving columns airborne
+  // (the Second Bank's south portico floated above the falling lawn).
   function columnRow(x0, z0, x1, z1, n, h, r, yBase) {
     const geoms = [];
+    const sink = 2.2;
     for (let i = 0; i < n; i++) {
       const t = n === 1 ? 0.5 : i / (n - 1);
-      const g = new THREE.CylinderGeometry(r * 0.88, r, h, 10);
-      g.translate(x0 + (x1 - x0) * t, (yBase || 0) + h / 2, z0 + (z1 - z0) * t);
+      const g = new THREE.CylinderGeometry(r * 0.88, r, h + sink, 10);
+      g.translate(x0 + (x1 - x0) * t, (yBase || 0) - sink + (h + sink) / 2, z0 + (z1 - z0) * t);
       geoms.push(g);
     }
     return geoms;
@@ -2652,7 +2656,12 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       if (o.roof === 'hip') {
         ad(hipGeom(ob, o.eave, o.ridge, 0.4), o.roofCol);
       } else if (o.roof === 'gable') {
-        const sp = simplifyRing(b.poly, 0.6);
+        // roofs must sit on the walls: try the footprint quad, then a looser
+        // simplification for L-plans (roof covers the main mass, the ell keeps
+        // its flat cap). NEVER an OBB gable — it floats beside non-rectangular
+        // walls (the City Tavern chimney-side floaters).
+        let sp = simplifyRing(b.poly, 0.6);
+        if (sp.length !== 4) sp = simplifyRing(b.poly, 1.4);
         if (sp.length === 4) {
           const g = quadGable(sp, o.eave, o.ridge);
           ad(g.slopes, o.roofCol);
@@ -2663,14 +2672,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
               Math.atan2(-(ev.b[1] - ev.a[1]), ev.b[0] - ev.a[0])), o.trim);
           }
         } else {
-          const g = gableGeom(ob, o.eave, o.ridge, 0.38, 0);
-          ad(g.slopes, o.roofCol);
-          if (o.gableEndsTrim) ad(g.ends, o.trim); else aw(g.ends, o.wall, st);
-          for (const s of [-1, 1]) {
-            ad(box(g.hl * 2 + 0.05, 0.4, 0.5,
-              ob.cx + g.px * s * (g.hs - 0.22), o.eave - 0.1, ob.cz + g.pz * s * (g.hs - 0.22),
-              ryAlign(g.ax, g.az)), o.trim);
-          }
+          o.dormers = null;   // no pitched roof for the dormers to sit on
         }
       }
       if (o.chimneys) {
@@ -3010,26 +3012,30 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         }
         const ryF = Math.atan2(-sdz, sdx);
         const ryD = Math.atan2(-fdz, fdx);
-        // all-box massing: the earlier footprint-plus-boxes mix left coplanar
-        // walls that shimmered. Every pair of boxes here either clears or
-        // interpenetrates at a DIFFERENT width — never coplanar. The ground
-        // floor sits 2.3 m back so the pier line carries a real walk-in porch.
+        // all-box massing, no pair coplanar (clears or interpenetrates at a
+        // DIFFERENT width). The pier order is ENGAGED — flush with the brick
+        // plane, never proud of the building — with the floor-2 glazing set
+        // 0.5 m behind it and the ground floor a full 2.4 m walk-in porch.
+        // Widths pull 15 cm off each lot line so nothing shimmers against
+        // the neighbors' party walls.
         const segW = (back, front, y0s, y1s, w2) => box(front - back, y1s - y0s, w2,
           ob.cx + fdx * ((back + front) / 2), (y0s + y1s) / 2,
           ob.cz + fdz * ((back + front) / 2), ryD);
-        aw(segW(-fext, fext - 9.6, -1.5, 8.0, sext * 2 - 0.12), '#6b4c3f', 3);      // rear range
-        aw(segW(fext - 10, fext - 2.3, -1.5, 4.6, sext * 2 - 0.04), '#191c1f', 3);  // recessed storefront wall
-        aw(segW(fext - 10, fext + 0.2, 4.3, 8.35, sext * 2), '#23262b', 3);         // iron band over the porch
-        aw(segW(fext - 26, fext + 0.1, 7.9, 17.8, sext * 2 - 0.06), '#74453a', 5);  // brick floors 3-5
-        const wx = ob.cx + fdx * (fext + 0.35), wz = ob.cz + fdz * (fext + 0.35);
+        const F = fext - 0.55;                              // facade plane, at the block line
+        const W2 = sext * 2 - 0.3;
+        aw(segW(-fext, F - 9.4, -1.5, 8.0, W2 - 0.16), '#6b4c3f', 3);      // rear range
+        aw(segW(F - 10, F - 2.4, -1.5, 4.5, W2 - 0.1), '#191c1f', 3);      // porch back wall
+        aw(segW(F - 10, F - 0.5, 4.25, 8.3, W2 - 0.08), '#23262b', 3);     // floor-2 glazing, recessed
+        aw(segW(F - 26, F - 0.02, 7.9, 17.8, W2 - 0.06), '#74453a', 5);    // brick floors 3-5
+        const wx = ob.cx + fdx * F, wz = ob.cz + fdz * F;   // pier plane = facade plane
         const across = (u) => [wx + sdx * u, wz + sdz * u];
-        const nPost = 5, half = sext - 0.25;
-        for (let i2 = 0; i2 < nPost; i2++) {               // giant order across both floors
-          const [px2, pz2] = across(-half + (i2 / (nPost - 1)) * half * 2);
-          ad(box(0.5, 8.3, 0.55, px2, 4.15, pz2, ryF), '#c9c2b2');
+        const half = W2 / 2 - 0.3;
+        for (let i2 = 0; i2 < 5; i2++) {                    // engaged granite piers, both floors
+          const [px2, pz2] = across(-half + (i2 / 4) * half * 2);
+          ad(box(0.5, 8.3, 0.44, px2 - fdx * 0.23, 4.15, pz2 - fdz * 0.23, ryF), '#cfc8b8');
         }
-        ad(box(sext * 2 + 0.3, 0.5, 0.7, wx, 4.35, wz, ryF), '#c9c2b2');   // transom band
-        ad(box(sext * 2 + 0.45, 0.6, 0.8, wx, 8.15, wz, ryF), '#c4bdae'); // iron cornice
+        ad(box(W2 - 0.5, 0.45, 0.42, wx - fdx * 0.25, 4.3, wz - fdz * 0.25, ryF), '#cfc8b8');  // transom beam
+        ad(box(W2 + 0.05, 0.55, 0.5, wx - fdx * 0.2, 8.1, wz - fdz * 0.2, ryF), '#c4bdae');    // cornice cap
         // "GLORY" — real lettering on a small canvas texture, heavy geometric
         // sans in red on the white board, hung over the transom
         {
@@ -3044,18 +3050,20 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
           const tex = new THREE.CanvasTexture(cnv);
           tex.encoding = THREE.sRGBEncoding;
           tex.anisotropy = 4;
-          const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.6, 0.8),
+          const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.52),
             new THREE.MeshBasicMaterial({ map: tex }));
           sg.rotation.y = Math.atan2(fdx, fdz);
-          sg.position.set(wx + fdx * 0.45, siteY(wx, wz, 'ground') + 5.05, wz + fdz * 0.45);
+          // mounted proud of the pier plane like the real board — never clipped
+          const [sx3, sz3] = across(-half * 0.25);
+          sg.position.set(sx3 + fdx * 0.14, siteY(wx, wz, 'ground') + 5.15, sz3 + fdz * 0.14);
           groupCity.add(sg);
         }
-        {  // tall weathered-green blade sign hung high on the pier
-          const [bx2, bz2] = across(sext * 0.62);
-          ad(box(0.42, 4.6, 0.95, bx2 + fdx * 0.5, 11.4, bz2 + fdz * 0.5, ryF), '#5f7a6e');
+        {  // small weathered-green blade sign on the brick, floors 3-4
+          const [bx2, bz2] = across(half * 0.9);
+          ad(box(0.3, 3.2, 0.7, bx2 + fdx * 0.28, 11.0, bz2 + fdz * 0.28, ryF), '#3d5347');
         }
-        // wrought-iron railing at the porch edge
-        ad(box(sext * 2 + 0.7, 0.95, 0.08, wx + fdx * 0.9, 0.5, wz + fdz * 0.9, ryF), '#1c1e20');
+        // wrought-iron fence at the sidewalk in front of the porch
+        ad(box(W2, 0.9, 0.07, wx + fdx * 1.7, 0.45, wz + fdz * 1.7, ryF), '#1c1e20');
         liftB(m0, bG);
       }
     }
@@ -3070,26 +3078,64 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
       }
     }
     {
-      // Independence Hall, rebuilt to the photo: gable block with the white ridge
-      // balustrade and paired end chimney stacks, marble string course, engaged
-      // south tower — brick shaft, balustraded clock stage, arched bell chamber,
-      // dark bell roof, drum, and spire to ~51 m — plus the brick arcades linking
-      // to Congress Hall and Old City Hall
-      const r = classic('Independence Hall', { wall: '#7e4534', trim: '#efeadb', eave: 12, ridge: 15.2, roof: 'gable', roofCol: '#4a463f', style: 0 });
-      if (r) {
+      // Independence Hall: the OSM footprint is the ENTIRE 84 m complex (main
+      // block + hyphens + wings), so nothing here may scale off the raw OBB —
+      // that put 100 m white bands across the facade. Explicit massing instead:
+      // the 33x13.4 gable block with ridge balustrade, end chimneys and string
+      // courses, hyphen arcades, two-story end wings, and the staged steeple.
+      const b = get('Independence Hall');
+      const obIH = b ? orientedBox(b.poly) : null;
+      if (obIH) {
         const m0 = mark();
-        const a = r.a, ob = r.ob;
+        const a = obbAxis(obIH);
         const ry = ryAlign(a.ax, a.az);
-        ad(box(a.hl * 1.35, 0.85, 3.2, ob.cx, 15.55, ob.cz, ry), '#eee9da');       // ridge-deck balustrade
-        for (const s of [-1, 1]) {                                                  // paired end chimney masses
-          ad(box(1.4, 3.6, 5.2, ob.cx + a.ax * s * (a.hl - 0.9), 16.3, ob.cz + a.az * s * (a.hl - 0.9), ry), '#6e3c2d');
+        const sV = (a.pz > 0) ? 1 : -1;
+        const Sx = a.px * sV, Sz = a.pz * sV;            // unit vector pointing SOUTH
+        // pt(u, s): u along the block axis from the center, s meters SOUTH of the
+        // complex's north face
+        const pt2 = (u, s) => [obIH.cx + a.ax * u + Sx * (s - a.hs), obIH.cz + a.az * u + Sz * (s - a.hs)];
+        const BW = 16.45, BD = 13.4;                     // main block half-width / depth
+        const bc = pt2(0, BD / 2);
+        aw(box(BW * 2, 13.5, BD, bc[0], 5.25, bc[1], ry), '#7e4534', 0);
+        {                                                // footprint-true gable roof
+          const q = [pt2(-BW, 0.05), pt2(BW, 0.05), pt2(BW, BD - 0.05), pt2(-BW, BD - 0.05)];
+          const g = quadGable(q, 12, 15.2);
+          ad(g.slopes, '#4a463f');
+          aw(g.ends, '#7e4534', 0);
+          for (const ev of g.eaves) {
+            ad(box(ev.len + 0.1, 0.4, 0.55,
+              (ev.a[0] + ev.b[0]) / 2, 11.9, (ev.a[1] + ev.b[1]) / 2,
+              Math.atan2(-(ev.b[1] - ev.a[1]), ev.b[0] - ev.a[0])), '#efeadb');
+          }
         }
-        for (const s of [-1, 1]) {                                                  // marble string course
-          ad(box(a.hl * 2 + 0.2, 0.42, 0.24, ob.cx + a.px * s * (a.hs + 0.02), 5.2, ob.cz + a.pz * s * (a.hs + 0.02), ry), '#e6e0d0');
+        ad(box(19, 0.85, 3.0, bc[0], 15.5, bc[1], ry), '#eee9da');                 // ridge-deck balustrade
+        for (const s of [-1, 1]) {                                                  // paired end chimney masses
+          const e2 = pt2(s * (BW - 1.0), BD / 2);
+          ad(box(1.4, 3.6, 5.0, e2[0], 16.2, e2[1], ry), '#6e3c2d');
+        }
+        for (const s2 of [0.03, BD - 0.03]) {                                       // marble string courses
+          const c2 = pt2(0, s2);
+          ad(box(BW * 2 + 0.2, 0.42, 0.22, c2[0], 5.2, c2[1], ry), '#e6e0d0');
+        }
+        // hyphen arcades and two-story wing pavilions
+        for (const s of [-1, 1]) {
+          const wingU = s * (a.hl - 5.6);
+          const hy0 = BW, hy1 = a.hl - 11.2;
+          if (hy1 > hy0 + 1.5) {
+            const hc = pt2(s * (hy0 + hy1) / 2, 4.8);
+            aw(box(hy1 - hy0, 5.6, 9.4, hc[0], 2.8, hc[1], ry), '#7e4534', 4);
+            ad(box(hy1 - hy0 + 0.2, 0.4, 9.7, hc[0], 5.8, hc[1], ry), '#efeadb');
+          }
+          const wc = pt2(wingU, 6.0);
+          aw(box(11, 8.4, 12, wc[0], 3.4, wc[1], ry), '#7e4534', 0);
+          ad(box(11.3, 0.45, 12.3, wc[0], 8.55, wc[1], ry), '#efeadb');
+          const cap = new THREE.CylinderGeometry(0.6, 8.1, 2.6, 4);
+          cap.rotateY(ry + Math.PI / 4);
+          cap.translate(wc[0], 8.8 + 1.3, wc[1]);
+          ad(cap, '#4a463f');
         }
         // engaged tower on the south (Independence Square) face
-        const sV = (a.pz > 0) ? 1 : -1;
-        const tx = ob.cx + a.px * sV * (a.hs + 3.0), tz = ob.cz + a.pz * sV * (a.hs + 3.0);
+        const [tx, tz] = pt2(0, BD + 2.6);
         aw(box(9, 21, 9, tx, 10.5, tz, ry), '#7e4534', 1);                          // brick shaft, arched windows
         ad(box(9.9, 0.55, 9.9, tx, 21.15, tz, ry), '#efeadb');                      // cornice
         ad(box(9.1, 0.8, 9.1, tx, 21.8, tz, ry), '#efeadb');                        // balustrade
@@ -3124,19 +3170,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         const vane = new THREE.CylinderGeometry(0.06, 0.06, 2.4, 5);
         vane.translate(tx, 49.4 + 1.2, tz);
         ad(vane, '#d8d2c2');
-        // brick arcades to the flanking halls (style-4 walls draw the arches)
-        for (const nm of ['Congress Hall', 'Old City Hall']) {
-          const nb2 = get(nm);
-          if (!nb2) continue;
-          const on = orientedBox(nb2.poly);
-          const du = (on.cx - ob.cx) * a.ax + (on.cz - ob.cz) * a.az;
-          const len = Math.abs(du) - a.hl - 8;
-          if (len < 2 || len > 30) continue;
-          const cu = Math.sign(du) * (a.hl + len / 2 + 0.5);
-          aw(box(len + 1, 5.6, 4.2, ob.cx + a.ax * cu, 2.8, ob.cz + a.az * cu, ry), '#7e4534', 4);
-          ad(box(len + 1.2, 0.42, 4.5, ob.cx + a.ax * cu, 5.85, ob.cz + a.az * cu, ry), '#efeadb');
-        }
-        liftB(m0, r.b);
+        liftB(m0, b);
       }
     }
     for (const nm of ['Congress Hall', 'Old City Hall']) {
@@ -3149,11 +3183,12 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
     }
     {
       const r = classic('Second Bank of the United States', { wall: '#d9d4c6', trim: '#e6e2d8', eave: 14, ridge: 17.5, roof: 'gable', roofCol: '#6e7276', gableEndsTrim: true, style: 1 });
-      if (r) { // Doric octastyle porticos on both short fronts
+      if (r) { // Doric octastyle porticos on both short fronts, on marble stylobates
         const m0 = mark();
         for (const dir of [[0, -1], [0, 1]]) {
           const e = obbEnd(r.ob, dir[0], dir[1]);
           const hw = r.a.hs - 1.5;
+          ad(box(hw * 2 + 3.4, 2.6, 5.2, e.x + e.ax * 2, -0.6, e.z + e.az * 2, ryAlign(r.a.px, r.a.pz)), '#ddd8ca');
           columnRow(e.x + e.ax * 2 - r.a.px * hw, e.z + e.az * 2 - r.a.pz * hw, e.x + e.ax * 2 + r.a.px * hw, e.z + e.az * 2 + r.a.pz * hw, 8, 9, 0.55, 0.6)
             .forEach(g => ad(g, '#e6e2d8'));
           ad(box(hw * 2 + 2.2, 1.6, 2.4, e.x + e.ax * 2, 10.4, e.z + e.az * 2, ryAlign(r.a.px, r.a.pz)), '#e6e2d8');
@@ -3167,6 +3202,7 @@ const CITY_B64 = "WVRIU04sAgAHRwAAxAMAAAQAKAAAAAEADr+PLy2/fy8Fvyov5L45LwoAKAAAAA
         const m0 = mark();
         const e = obbEnd(r.ob, -1, 0);
         const hw = r.a.hs - 1.6;
+        ad(box(hw * 2 + 3, 2.6, 4.8, e.x + e.ax * 1.8, -0.6, e.z + e.az * 1.8, ryAlign(r.a.px, r.a.pz)), '#ddd8ca');
         columnRow(e.x + e.ax * 1.8 - r.a.px * hw, e.z + e.az * 1.8 - r.a.pz * hw, e.x + e.ax * 1.8 + r.a.px * hw, e.z + e.az * 1.8 + r.a.pz * hw, 6, 10, 0.5, 0.5)
           .forEach(g => ad(g, '#e6e2d8'));
         ad(box(hw * 2 + 2, 1.5, 2.2, e.x + e.ax * 1.8, 11.3, e.z + e.az * 1.8, ryAlign(r.a.px, r.a.pz)), '#e6e2d8');
