@@ -780,6 +780,11 @@ Round 17 (Aug 25 — rebrand to Philadelphia, transit pins, museum grounds, WWB)
   pins are raycast targets too, and a screen-space fallback picks the nearest
   vehicle within 30 px of a tap — plus the solid vehicle geometry gained skirt,
   windshield, roof HVAC and wheel blocks (all in the one instanced geometry).
+  Picking works in EVERY mode (Mike's request): under pointer lock (desktop
+  walk/fly) a click picks under the CROSSHAIR — screen center, 46 px fallback —
+  since the cursor doesn't exist; lock state is sampled at pointerDOWN
+  (vpWasLocked) so the lock-acquiring click still picks at the cursor. Unlocked
+  (orbit/drag-look/touch) keeps the 8 px tap-vs-drag filter at pointer coords.
   NOTE: the Sketchfab "SEPTA bus model" Mike linked is isDownloadable:false with
   no license — cannot be used; the procedural body got upgraded instead.
 - **Art Museum grounds (Mike's screenshot):** three separate defects fixed —

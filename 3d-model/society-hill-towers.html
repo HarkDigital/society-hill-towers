@@ -6049,13 +6049,24 @@ const FACADE_PAL = {"roof":[[213,211,196],[247,247,242],[231,230,219],[163,157,1
   document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
-  let vpDownX = 0, vpDownY = 0, vpDownT = 0;
-  canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); });
+  let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
+  canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
   canvas.addEventListener('pointerup', (e) => {
     if (!septaReady || !SEPTA.on || !septaSolid.count && !septaGhost.count) return;
-    if (mode !== MODE.ORBIT && !isTouch) return;
-    if (Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) > 8 || performance.now() - vpDownT > 500) return;
-    septaNdc.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
+    // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
+    // cursor doesn't exist, so a click picks whatever's under the crosshair —
+    // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
+    // the pointer; drags are filtered out.
+    let cx, cy;
+    if (vpWasLocked && (mode === MODE.WALK || mode === MODE.FLY)) {
+      cx = window.innerWidth / 2;
+      cy = window.innerHeight / 2;
+    } else {
+      if (Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) > 8 || performance.now() - vpDownT > 500) return;
+      cx = e.clientX;
+      cy = e.clientY;
+    }
+    septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
     septaRay.setFromCamera(septaNdc, camera);
     const hits = septaRay.intersectObjects([septaSolid, septaGhost, septaPin], false);
     if (hits.length && hits[0].instanceId != null) {
@@ -6063,13 +6074,14 @@ const FACADE_PAL = {"roof":[[213,211,196],[247,247,242],[231,230,219],[163,157,1
       const v = (h.object === septaSolid ? septaPickS : h.object === septaGhost ? septaPickG : septaPickP)[h.instanceId];
       if (v) { pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
     }
-    // forgiving fallback: the nearest vehicle within 30 px of the tap
-    let bestV = null, bestD = 30 * 30;
+    // forgiving fallback: the nearest vehicle within reach of the tap point
+    // (a little wider under the crosshair, where aiming is coarser)
+    let bestV = null, bestD = (vpWasLocked ? 46 : 30) ** 2;
     septaVeh.forEach((v) => {
       _ssv.set(v.x, (v.gy || 0) + 3, v.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) return;
-      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - e.clientX;
-      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - e.clientY;
+      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
+      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestV = v; }
     });
