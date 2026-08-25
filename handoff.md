@@ -878,6 +878,28 @@ Round 19 (Aug 25 — street names on the roadways, search fenced to the city):
   display_name containing "Philadelphia" ("Broadway" → no match; Pat's still
   found). Page 16.03 MB (artifact cap irrelevant — Pages-only delivery).
 
+Round 20 (Aug 25 — night buses, rail removed, route search):
+- **Night buses fixed** (Mike's screenshot: solid glowing white bricks): the
+  material-wide emissive washed everything. Now the vehicle geometry carries an
+  `aGlow` vertex attribute (1 on the glass band + windshield, 0 elsewhere;
+  septaColored/septaMerge carry it) and bodyMat (Lambert, onBeforeCompile,
+  uniforms.uNight = nightUniform) adds emissive ONLY there (warm ×0.8) plus a
+  faint ×0.10 body presence. Verified at 11 PM: dark body, lit windows.
+- **Rail layer REMOVED at Mike's request** ("mostly underground and not easy
+  to track"): TrainView no longer polled, Regional Rail consists + NHSL gone,
+  the ghost/x-ray mesh deleted (septaGhost, septaPickG, ghostMat all removed);
+  T-trolleys inside the subway–surface tunnel simply aren't drawn (`v.ug` →
+  skip). STREET TROLLEYS KEPT deliberately — they're surface, well-tracked,
+  bus-like; drop them too if Mike asks for literal buses-only. septaKindOf
+  now nulls L1/B1–B3/M1. About panel rewritten to match.
+- **Route search** (Mike's request): a query that matches a live route
+  ("33", "G1", "route 47", case-insensitive; routeLabel or raw id) short-
+  circuits Nominatim and lists that route's live vehicles nearest-first
+  (up to 8 rows: dest + next stop); clicking a row — or submitting — flies
+  the orbit camera to the bus (goalR 220) and opens its card
+  (searchGoToBus). Non-route queries geocode as before. ~605 street
+  vehicles tracked at verify time (565 badges + 38 trolley pins).
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

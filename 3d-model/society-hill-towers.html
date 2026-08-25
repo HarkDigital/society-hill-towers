@@ -716,7 +716,7 @@ html, body {
 <div id="searchpanel" class="panel" role="search" aria-label="Find an address">
   <div class="kicker">Find a place in Philadelphia</div>
   <div class="row">
-    <input type="text" id="searchInput" placeholder="Address or place &mdash; e.g. 1420 Locust St" autocomplete="off" spellcheck="false">
+    <input type="text" id="searchInput" placeholder="Address, place, or bus route &mdash; e.g. 1420 Locust or 33" autocomplete="off" spellcheck="false">
     <button id="searchGo" class="mini">Go</button>
   </div>
   <div id="searchOut"></div>
@@ -810,15 +810,14 @@ html, body {
     and every roof wears the color sampled from the city's 2024 aerial orthophotos.
     The blocks you walk (and fly over) are the blocks that are there.</p>
   <p>Served outside the artifact sandbox, the city also moves: SEPTA's real-time feed
-    drives every tracked bus, trolley, high-speed-line car and Regional Rail consist
-    through the streets at its live position, refreshed every few seconds &mdash; each
-    one flies a colored pin; tap the pin (or the vehicle) for its route, destination
-    and how late it's running. Trains in the
-    Center City tunnels glide beneath the streets in x-ray, and the Market&ndash;Frankford
-    El rides its steel viaduct from the Callowhill portal to Frankford. (SEPTA publishes
-    no live GPS for the subway lines themselves, so the L and B stay honest and unshown
-    underground.) Vehicle positions: SEPTA real-time API. Weather: Open-Meteo.
-    Address search: OpenStreetMap Nominatim.
+    drives every tracked bus and street trolley through the streets at its live
+    position, snapped to its street and refreshed every few seconds &mdash; buses fly
+    the SEPTA badge, trolleys a green pin; tap one (or search a route number) for its
+    route, destination and how late it's running. The Market&ndash;Frankford El rides
+    its steel viaduct from the Callowhill portal to Frankford, though trains are not
+    shown: SEPTA publishes no usable live positions for its rail lines, so rather than
+    guess, the model keeps to what's real. Vehicle positions: SEPTA real-time API.
+    Weather: Open-Meteo. Address search: OpenStreetMap Nominatim.
     SEPTA and the SEPTA logo are trademarks of the Southeastern Pennsylvania
     Transportation Authority; this unofficial model is not affiliated with or
     endorsed by SEPTA.</p>
@@ -5969,10 +5968,11 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
   // Real-time vehicles from SEPTA's public API. Neither api.septa.org nor www3 sends
   // CORS headers, but both honor JSONP (?callback=), so each poll is a short-lived
   // <script> tag — live on GitHub Pages / localhost; under the artifact CSP the tags
-  // never load and the layer stays silently empty. TransitViewAll carries buses,
-  // trolleys and the NHSL with GPS + heading; its subway rows (L1/B1–B3) are schedule
-  // placeholders pinned at 15th St with no real fix, so they are filtered out.
-  // TrainView carries every Regional Rail train with its consist (car count).
+  // never load and the layer stays silently empty. STREET VEHICLES ONLY by Mike's
+  // request (buses + the bus-like street trolleys): rail is skipped — the subway
+  // rows (L1/B1–B3) are schedule placeholders with no real fix anyway, and the
+  // Regional Rail / NHSL layer was removed 2026-08-25 ("mostly underground and
+  // not easy to track"). TrainView is no longer polled.
   const SEPTA_GEO = { lat0: 39.945473644755005, lon0: -75.14474803850973 };  // scene.json origin
   SEPTA_GEO.mx = 111320 * Math.cos(SEPTA_GEO.lat0 * Math.PI / 180); SEPTA_GEO.mz = 110574;
   const SEPTA = { on: true, ok: false, fails: 0, hinted: false };
@@ -5984,13 +5984,11 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
   const SEPTA_KIND = {                                  // stored dark for the legacy-color lift
     bus: { l: 12.2, w: 2.6, h: 3.1, c: 0x7e858a },
     trolley: { l: 15.3, w: 2.6, h: 3.4, c: 0x2e7448 },
-    nhsl: { l: 16.8, w: 2.8, h: 3.5, c: 0x64518f },
-    rr: { l: 25.9, w: 3.05, h: 4.2, c: 0x878d94 },
   };
   const SEPTA_TINT = { G1: 0x8a7f2f, D1: 0x7c4767, D2: 0x7c4767 };  // Girard gold, Delco violet
-  let septaCbN = 0, septaHost = 0, septaSolid = null, septaGhost = null, septaPin = null, septaBadge = null, septaReady = false, septaHintT = 0;
+  let septaCbN = 0, septaHost = 0, septaSolid = null, septaPin = null, septaBadge = null, septaReady = false, septaHintT = 0;
   const septaMats = {};
-  const septaPickS = [], septaPickG = [], septaPickP = [], septaPickB = [];
+  const septaPickS = [], septaPickP = [], septaPickB = [];
   const btnTransit = document.getElementById('btnTransit');
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
@@ -5998,8 +5996,9 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
   const septaEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   function septaKindOf(r) {
-    if (r === 'L1' || r === 'B1' || r === 'B2' || r === 'B3') return null;  // no real GPS in the feed
-    if (r === 'M1') return 'nhsl';
+    // rail is out by request (and the subway rows carry no real GPS anyway):
+    // only street vehicles — buses and the bus-like street trolleys — render
+    if (r === 'L1' || r === 'B1' || r === 'B2' || r === 'B3' || r === 'M1') return null;
     if (/^[TGD]\d$/.test(r)) return 'trolley';
     return 'bus';
   }
@@ -6009,11 +6008,10 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     if (r.indexOf('LUCY') === 0) return 'LUCY';
     return r;
   }
-  // Approximate underground zones: trains and trolleys inside them render as x-ray
-  // ghosts sliding beneath the streets instead of driving on them.
+  // Approximate underground zone: T-trolleys inside the subway–surface tunnel
+  // (40th St portals → 13th) simply aren't drawn — no vehicles under buildings.
   function septaUnder(kind, route, lat, lon) {
-    if (kind === 'rr') return lon > -75.178 && lon < -75.147 && lat > 39.9505 && lat < 39.964;  // CC commuter tunnel
-    if (kind === 'trolley' && route.charCodeAt(0) === 84)  // T: subway–surface tunnel, 40th St portals → 13th
+    if (kind === 'trolley' && route.charCodeAt(0) === 84)
       return lon > -75.2045 && lon < -75.158 && lat > 39.9465 && lat < 39.9575;
     return false;
   }
@@ -6040,14 +6038,14 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     script.src = SEPTA_HOSTS[septaHost] + path + '?callback=' + name;
     document.head.appendChild(script);
   }
-  function septaUpsert(id, kind, route, lat, lon, apiHdg, cars, info) {
+  function septaUpsert(id, kind, route, lat, lon, apiHdg, info) {
     const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
     const under = septaUnder(kind, route, lat, lon);
     const now = performance.now();
     let v = septaVeh.get(id);
     if (!v) {
       v = { id, kind, route, routeLabel: septaRouteLabel(route), tint: SEPTA_TINT[route] || SEPTA_KIND[kind].c,
-            cars, info, fx: x, fz: z, tx: x, tz: z, x, z, t0: 0, yaw: 0, yawT: 0, ug: under, lastSeen: now };
+            info, fx: x, fz: z, tx: x, tz: z, x, z, t0: 0, yaw: 0, yawT: 0, ug: under, lastSeen: now };
       const c = new THREE.Color(v.tint);
       c.r = Math.min(1, c.r * 1.9 + 0.18); c.g = Math.min(1, c.g * 1.9 + 0.18); c.b = Math.min(1, c.b * 1.9 + 0.18);
       v.tintHex = '#' + c.getHexString();
@@ -6062,7 +6060,7 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     if (moved > 420) { v.fx = x; v.fz = z; v.x = x; v.z = z; }   // data jump — snap, don't sprint
     if (apiHdg) v.yawT = septaYawFromCompass(apiHdg);
     else if (moved > 6) v.yawT = Math.atan2(-mdz, mdx);          // derive heading from motion
-    v.ug = under; v.cars = cars; v.info = info; v.lastSeen = now;
+    v.ug = under; v.info = info; v.lastSeen = now;
   }
   function septaFeedFail() {
     SEPTA.fails++;
@@ -6085,26 +6083,11 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
         if (ts < 1e9 || nowS - ts > 300) continue;               // placeholder or stale fix
         const lat = +b.lat, lon = +b.lng;
         if (!(lat > SEPTA_BOX.la0 && lat < SEPTA_BOX.la1 && lon > SEPTA_BOX.lo0 && lon < SEPTA_BOX.lo1)) continue;
-        septaUpsert('v' + vid, kind, rid, lat, lon, +b.heading || 0, 1,
+        septaUpsert('v' + vid, kind, rid, lat, lon, +b.heading || 0,
           { dest: b.destination || '', late: +b.late, next: b.next_stop_name || '' });
       }
     }
     SEPTA.ok = true; SEPTA.fails = 0;
-    septaPrune(); septaStatus();
-  }
-  function septaGotRR(d) {
-    if (!Array.isArray(d)) { septaFeedFail(); return; }
-    for (const t of d) {
-      const lat = +t.lat, lon = +t.lon;
-      if (!(lat > SEPTA_BOX.la0 && lat < SEPTA_BOX.la1 && lon > SEPTA_BOX.lo0 && lon < SEPTA_BOX.lo1)) continue;
-      const no = String(t.trainno || '');
-      if (!no) continue;
-      let cars = 0;
-      if (t.consist) cars = String(t.consist).split(',').filter((s) => s.trim()).length;
-      cars = clamp(cars || 4, 1, 8);
-      septaUpsert('t' + no, 'rr', t.line || 'Regional Rail', lat, lon, parseFloat(t.heading) || 0, cars,
-        { dest: t.dest || '', late: +t.late, next: t.nextstop || '', line: t.line || '' });
-    }
     septaPrune(); septaStatus();
   }
   function septaPrune() {
@@ -6127,17 +6110,13 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     if (!SEPTA.on || !septaCanFetch || !septaReady) return;
     if (document.hidden && !force) return;
     septaJsonp('/TransitViewAll/index.php', septaGotTV);
-    septaJsonp('/TrainView/index.php', septaGotRR);
   }
   function septaCard(v) {
     const late = v.info.late;
     const status = (late == null || isNaN(late) || late >= 900) ? '' :
       late > 0 ? late + ' min late' : late < 0 ? (-late) + ' min early' : 'on time';
-    const kindName = v.kind === 'rr' ? 'Regional Rail' : v.kind === 'nhsl' ? 'high-speed line' : v.kind;
-    const bits = [kindName];
-    if (v.kind === 'rr' && v.cars > 1) bits.push(v.cars + ' cars');
+    const bits = [v.kind];
     if (status) bits.push(status);
-    if (v.ug) bits.push('in the tunnel');
     vehinfoBody.innerHTML =
       '<span class="vroute" style="background:' + v.tintHex + '">' + septaEsc(v.routeLabel) + '</span>' +
       '<span class="vdest">to ' + septaEsc(v.info.dest || '—') + '</span>' +
@@ -6159,7 +6138,7 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
   let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
   canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
   canvas.addEventListener('pointerup', (e) => {
-    if (!septaReady || !SEPTA.on || !septaSolid.count && !septaGhost.count) return;
+    if (!septaReady || !SEPTA.on || !septaSolid.count) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -6175,16 +6154,17 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     }
     septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
     septaRay.setFromCamera(septaNdc, camera);
-    const hits = septaRay.intersectObjects([septaSolid, septaGhost, septaPin, septaBadge], false);
+    const hits = septaRay.intersectObjects([septaSolid, septaPin, septaBadge], false);
     if (hits.length && hits[0].instanceId != null) {
       const h = hits[0];
-      const v = (h.object === septaSolid ? septaPickS : h.object === septaGhost ? septaPickG : h.object === septaPin ? septaPickP : septaPickB)[h.instanceId];
+      const v = (h.object === septaSolid ? septaPickS : h.object === septaPin ? septaPickP : septaPickB)[h.instanceId];
       if (v) { pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle within reach of the tap point
     // (a little wider under the crosshair, where aiming is coarser)
     let bestV = null, bestD = (vpWasLocked ? 46 : 30) ** 2;
     septaVeh.forEach((v) => {
+      if (v.ug) return;
       _ssv.set(v.dx != null ? v.dx : v.x, (v.gy || 0) + 3, v.dz != null ? v.dz : v.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) return;
       const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
@@ -6233,26 +6213,31 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
   function septaMerge(parts) {
     let total = 0;
     parts.forEach((g) => { total += g.attributes.position.count; });
-    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3);
+    const pos = new Float32Array(total * 3), nor = new Float32Array(total * 3), col = new Float32Array(total * 3), glo = new Float32Array(total);
     let o = 0;
     for (const g of parts) {
       pos.set(g.attributes.position.array, o * 3);
       nor.set(g.attributes.normal.array, o * 3);
       col.set(g.attributes.color.array, o * 3);
+      if (g.attributes.aGlow) glo.set(g.attributes.aGlow.array, o);
       o += g.attributes.position.count;
     }
     const out = new THREE.BufferGeometry();
     out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     out.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    out.setAttribute('aGlow', new THREE.BufferAttribute(glo, 1));
     return out;
   }
-  function septaColored(g, cr, cg, cb) {
+  function septaColored(g, cr, cg, cb, glow) {
     const gg = g.index ? g.toNonIndexed() : g;
     const n = gg.attributes.position.count;
     const col = new Float32Array(n * 3);
     for (let i = 0; i < n; i++) { col[i * 3] = cr; col[i * 3 + 1] = cg; col[i * 3 + 2] = cb; }
     gg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const glo = new Float32Array(n);
+    if (glow) glo.fill(1);
+    gg.setAttribute('aGlow', new THREE.BufferAttribute(glo, 1));
     return gg;
   }
   function septaVehGeom(withBand) {
@@ -6260,13 +6245,13 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     // class. Vertex colors multiply the per-instance line color, so trim parts
     // are near-black (glass, wheels) or near-white (body) multipliers.
     const parts = [];
-    const boxPart = (sx, sy, sz, cx, cy, cz, cr, cg, cb) =>
-      parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), cr, cg, cb));
+    const boxPart = (sx, sy, sz, cx, cy, cz, cr, cg, cb, glow) =>
+      parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), cr, cg, cb, glow));
     boxPart(0.98, 0.94, 0.94, 0, 0.53, 0, 1, 1, 1);                       // body (takes instance color)
     if (withBand) {
-      boxPart(0.9, 0.36, 1.02, 0, 0.72, 0, 0.14, 0.15, 0.17);            // glass band, proud of the body
+      boxPart(0.9, 0.36, 1.02, 0, 0.72, 0, 0.14, 0.15, 0.17, 1);         // glass band, proud — lit at night
       boxPart(0.99, 0.1, 0.9, 0, 0.07, 0, 0.2, 0.21, 0.22);              // dark undercarriage skirt
-      boxPart(0.05, 0.3, 0.8, 0.475, 0.71, 0, 0.13, 0.14, 0.16);         // windshield, engaging the nose
+      boxPart(0.05, 0.3, 0.8, 0.475, 0.71, 0, 0.13, 0.14, 0.16, 1);      // windshield, engaging the nose
       boxPart(0.5, 0.09, 0.66, -0.05, 1.03, 0, 0.7, 0.72, 0.74);         // roof HVAC unit
       for (const wx of [-0.3, 0.3]) for (const wz of [-0.44, 0.44]) {
         boxPart(0.13, 0.17, 0.1, wx, 0.085, wz, 0.09, 0.09, 0.1);        // wheel blocks, proud of the sides
@@ -6327,10 +6312,10 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
   function updateTransit(now, dt) {
     if (!septaReady) return;
     if (!SEPTA.on) {
-      if (septaSolid.count || septaGhost.count || septaPin.count || septaBadge.count) { septaSolid.count = 0; septaGhost.count = 0; septaPin.count = 0; septaBadge.count = 0; }
+      if (septaSolid.count || septaPin.count || septaBadge.count) { septaSolid.count = 0; septaPin.count = 0; septaBadge.count = 0; }
       return;
     }
-    let si = 0, gi = 0, pi = 0, bi = 0;
+    let si = 0, pi = 0, bi = 0;
     const cap = 2.6 * dt;
     _sqB.copy(camera.quaternion);                      // badges billboard the camera
     septaVeh.forEach((v) => {
@@ -6356,44 +6341,23 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
       let dyaw = v.yawT - v.yaw;
       dyaw = ((dyaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
       v.yaw += Math.abs(dyaw) <= cap ? dyaw : Math.sign(dyaw) * cap;
+      if (v.ug) return;                 // tunnel trolleys aren't drawn — nothing under buildings
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
         v.gx = v.dx; v.gz = v.dz;
-        let y = siteY(v.dx, v.dz, 'road');
-        if (v.kind === 'rr' && y < TERRAIN.water + 1.5) y = TERRAIN.water + 11;  // river rail bridges
-        v.gy = y;
+        v.gy = siteY(v.dx, v.dz, 'road');
       }
       const spec = SEPTA_KIND[v.kind];
-      const cars = v.cars || 1;
-      const fx = Math.cos(v.yaw), fz = -Math.sin(v.yaw);
-      const spacing = spec.l + 1.1;
-      for (let ci = 0; ci < cars; ci++) {
-        const px = v.dx - fx * spacing * ci, pz = v.dz - fz * spacing * ci;
-        let py = v.gy;
-        if (ci) {
-          py = siteY(px, pz, 'road');
-          if (v.kind === 'rr' && py < TERRAIN.water + 1.5) py = TERRAIN.water + 11;
-        }
+      if (si < 1600) {
         _ss.set(spec.l, spec.h, spec.w);
         _sq.setFromAxisAngle(_sup, v.yaw);
-        if (v.ug) {
-          if (gi >= 256) continue;
-          _sp.set(px, py - 5.5, pz);
-          _sm.compose(_sp, _sq, _ss);
-          septaGhost.setMatrixAt(gi, _sm);
-          septaGhost.setColorAt(gi, _sc.setHex(v.tint).multiplyScalar(2.2));
-          septaPickG[gi++] = v;
-        } else {
-          if (si >= 1600) continue;
-          _sp.set(px, py + 0.22, pz);
-          _sm.compose(_sp, _sq, _ss);
-          septaSolid.setMatrixAt(si, _sm);
-          septaSolid.setColorAt(si, _sc.setHex(v.tint));
-          septaPickS[si++] = v;
-        }
+        _sp.set(v.dx, v.gy + 0.22, v.dz);
+        _sm.compose(_sp, _sq, _ss);
+        septaSolid.setMatrixAt(si, _sm);
+        septaSolid.setColorAt(si, _sc.setHex(v.tint));
+        septaPickS[si++] = v;
       }
-      // floating marker over the lead car, scaled with distance so it stays
-      // findable: buses fly the SEPTA-badge billboard, rail and trolleys keep
-      // their line-colored lollipop pins
+      // floating marker, scaled with distance so it stays findable: buses fly
+      // the SEPTA-badge billboard, trolleys keep the line-colored lollipop pin
       if (v.kind === 'bus') {
         if (bi < 1024) {
           const py0 = v.gy + spec.h + 0.6;
@@ -6406,7 +6370,7 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
           septaPickB[bi++] = v;
         }
       } else if (pi < 1024) {
-        const py0 = v.ug ? v.gy + 2.4 : v.gy + spec.h + 0.9;
+        const py0 = v.gy + spec.h + 0.9;
         _sp.set(v.dx, py0, v.dz);
         const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
         const bob = Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
@@ -6420,19 +6384,16 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
       }
     });
     septaSolid.count = si;
-    septaGhost.count = gi;
     septaPin.count = pi;
     septaBadge.count = bi;
     septaSolid.instanceMatrix.needsUpdate = true;
-    septaGhost.instanceMatrix.needsUpdate = true;
     septaPin.instanceMatrix.needsUpdate = true;
     septaBadge.instanceMatrix.needsUpdate = true;
     if (septaSolid.instanceColor) septaSolid.instanceColor.needsUpdate = true;
-    if (septaGhost.instanceColor) septaGhost.instanceColor.needsUpdate = true;
     if (septaPin.instanceColor) septaPin.instanceColor.needsUpdate = true;
     if (pickedVeh) {
       const spec = SEPTA_KIND[pickedVeh.kind];
-      _ssv.set(pickedVeh.dx, (pickedVeh.ug ? pickedVeh.gy : pickedVeh.gy + spec.h) + 7, pickedVeh.dz).project(camera);
+      _ssv.set(pickedVeh.dx, pickedVeh.gy + spec.h + 7, pickedVeh.dz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
@@ -6576,9 +6537,43 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
       ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
       ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
   }
+  function searchGoToBus(v) {
+    setMode(MODE.ORBIT);
+    const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
+    orbit.goalTarget.set(x, (v.gy || siteY(x, z, 'road')) + 6, z);
+    orbit.goalR = 220;
+    orbit.goalPhi = 1.02;
+    pickedVeh = v;
+    septaCard(v);
+    vehinfoEl.hidden = false;
+    if (isTouch) toggleSearch(false);
+  }
   function searchSubmit() {
     const qy = searchInput.value.trim();
     if (!qy || searchBusy) return;
+    // a bus/trolley route first ("33", "G1", "route 47"): list its live vehicles
+    const rid = qy.toUpperCase().replace(/^(ROUTE|RT|BUS)\s+/, '');
+    const live = [];
+    septaVeh.forEach((v) => {
+      if (!v.ug && (v.routeLabel.toUpperCase() === rid || v.route.toUpperCase() === rid)) live.push(v);
+    });
+    if (live.length) {
+      live.forEach((v) => {
+        const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
+        v._sd = (x - camera.position.x) * (x - camera.position.x) + (z - camera.position.z) * (z - camera.position.z);
+      });
+      live.sort((a2, b2) => a2._sd - b2._sd);
+      searchOut.innerHTML = '<div class="smsg">Route ' + septaEsc(rid) + ' &middot; ' + live.length + ' live &middot; nearest first</div>';
+      for (const v of live.slice(0, 8)) {
+        const el = document.createElement('div');
+        el.className = 'srow';
+        el.textContent = v.routeLabel + ' to ' + (v.info.dest || '—') + (v.info.next ? ' · next: ' + v.info.next : '');
+        el.addEventListener('click', () => searchGoToBus(v));
+        searchOut.appendChild(el);
+      }
+      searchGoToBus(live[0]);
+      return;
+    }
     searchBusy = true;
     searchOut.innerHTML = '<div class="smsg">Searching&hellip;</div>';
     fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&bounded=1&viewbox=-75.30,40.145,-74.94,39.855&q=' + encodeURIComponent(qy))
@@ -6687,17 +6682,27 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
 
   step('Rolling out the SEPTA fleet', () => {
     if (!septaCanFetch) { btnTransit.style.display = 'none'; return; }
-    const bodyMat = new THREE.MeshLambertMaterial({ vertexColors: true, emissive: 0xffeccc, emissiveIntensity: 0 });
-    const ghostMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0.34, depthTest: false, depthWrite: false });
+    // Night look: only the glass band + windshield glow (aGlow mask), the body
+    // keeps a faint presence — a flat material-wide emissive washed every bus
+    // to a solid white brick after dark.
+    const bodyMat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    bodyMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uNight = nightUniform;
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute float aGlow;\nvarying float vGlow;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlow = aGlow;');
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vGlow;')
+        .replace('#include <emissivemap_fragment>',
+          '#include <emissivemap_fragment>\ntotalEmissiveRadiance += (vec3(1.0, 0.85, 0.62) * vGlow * 0.8 + vec3(0.30, 0.29, 0.27) * 0.10) * uNight;');
+    };
     septaMats.body = bodyMat;
-    septaMats.ghost = ghostMat;
     const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true });
     const badgeMat = new THREE.MeshBasicMaterial({ map: septaBadgeTexture(), transparent: true, depthWrite: false });
     septaSolid = new THREE.InstancedMesh(septaVehGeom(true), bodyMat, 1600);
-    septaGhost = new THREE.InstancedMesh(septaVehGeom(false), ghostMat, 256);
     septaPin = new THREE.InstancedMesh(septaPinGeom(), pinMat, 1024);
     septaBadge = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0), badgeMat, 1024);
-    for (const m of [septaSolid, septaGhost, septaPin, septaBadge]) {
+    for (const m of [septaSolid, septaPin, septaBadge]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       m.frustumCulled = false;                         // instance bounds don't follow the fleet
@@ -6708,10 +6713,8 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     }
     septaSolid.castShadow = true;
     septaSolid.receiveShadow = true;
-    septaGhost.renderOrder = 44;                       // x-ray: drawn over the streets
     septaBadge.renderOrder = 12;                       // transparent cutout, after the opaques
     groupCity.add(septaSolid);
-    groupCity.add(septaGhost);
     groupCity.add(septaPin);
     groupCity.add(septaBadge);
     septaReady = true;
@@ -6938,10 +6941,7 @@ const ST_LABELS = {"names":["South Fairhill Street","Monroe Street","Bainbridge 
     for (const gm of groundMats) gm.color.copy(_c1);
     renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
     nightUniform.value = night;
-    if (septaMats.body) {                     // vehicle interiors glow after dark
-      septaMats.body.emissiveIntensity = night * 0.55;
-      septaMats.ghost.opacity = 0.34 + night * 0.18;
-    }
+    // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(0x413d34)).lerp(_c2.set(0x99938a), night);  // street text: dark on day roads, pale at night
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
