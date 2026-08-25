@@ -5096,9 +5096,9 @@
     rr: { l: 25.9, w: 3.05, h: 4.2, c: 0x878d94 },
   };
   const SEPTA_TINT = { G1: 0x8a7f2f, D1: 0x7c4767, D2: 0x7c4767 };  // Girard gold, Delco violet
-  let septaCbN = 0, septaHost = 0, septaSolid = null, septaGhost = null, septaPin = null, septaReady = false, septaHintT = 0;
+  let septaCbN = 0, septaHost = 0, septaSolid = null, septaGhost = null, septaPin = null, septaBadge = null, septaReady = false, septaHintT = 0;
   const septaMats = {};
-  const septaPickS = [], septaPickG = [], septaPickP = [];
+  const septaPickS = [], septaPickG = [], septaPickP = [], septaPickB = [];
   const btnTransit = document.getElementById('btnTransit');
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
@@ -5283,10 +5283,10 @@
     }
     septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
     septaRay.setFromCamera(septaNdc, camera);
-    const hits = septaRay.intersectObjects([septaSolid, septaGhost, septaPin], false);
+    const hits = septaRay.intersectObjects([septaSolid, septaGhost, septaPin, septaBadge], false);
     if (hits.length && hits[0].instanceId != null) {
       const h = hits[0];
-      const v = (h.object === septaSolid ? septaPickS : h.object === septaGhost ? septaPickG : septaPickP)[h.instanceId];
+      const v = (h.object === septaSolid ? septaPickS : h.object === septaGhost ? septaPickG : h.object === septaPin ? septaPickP : septaPickB)[h.instanceId];
       if (v) { pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle within reach of the tap point
@@ -5356,15 +5356,56 @@
     ball.translate(0, 3.6, 0);
     return septaMerge([septaColored(cone, 0.78, 0.78, 0.78), septaColored(ball, 1, 1, 1)]);
   }
-  const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sp = new V3(), _ss = new V3(), _sc = new THREE.Color(), _sup = new V3(0, 1, 0), _ssv = new V3();
+  function septaBadgeTexture() {
+    // bus pins wear the SEPTA mark: a marker badge drawn once into a canvas —
+    // official geometry from the agency's logo SVG (Wikimedia SEPTA.svg, 500x369
+    // box), Path2D-filled under the badge's rounded frame + pointer tip
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 320;
+    const g = cv.getContext('2d');
+    const bw = 240, bh = 200, bx = 8, by = 8, rad = 34;
+    const rr = () => {
+      g.beginPath();
+      g.moveTo(bx + rad, by);
+      g.arcTo(bx + bw, by, bx + bw, by + bh, rad);
+      g.arcTo(bx + bw, by + bh, bx, by + bh, rad);
+      g.arcTo(bx, by + bh, bx, by, rad);
+      g.arcTo(bx, by, bx + bw, by, rad);
+      g.closePath();
+    };
+    g.fillStyle = '#fdfbf6';
+    g.strokeStyle = 'rgba(28,26,22,0.6)';
+    g.lineWidth = 7;
+    g.beginPath();                                   // pointer tip first, badge overlaps it
+    g.moveTo(128 - 30, by + bh - 6);
+    g.lineTo(128, 312);
+    g.lineTo(128 + 30, by + bh - 6);
+    g.closePath();
+    g.fill(); g.stroke();
+    rr(); g.fill(); g.stroke();
+    const s2 = (bw - 40) / 500;
+    g.translate(bx + 20, by + (bh - 369.109 * s2) / 2);
+    g.scale(s2, s2);
+    g.fillStyle = '#f14728';
+    g.fill(new Path2D('M441.775,14.666H340.441L180.888,127.332h148.665l115.779,115.333L333.556,355.107h108.22c25.555,0,44.221-25.332,44.221-43.331V58.221C485.996,39.998,467.33,14.666,441.775,14.666z'));
+    g.fill(new Path2D('M206.443,137.998H192.22l87.111,87.107c4.001,3.338,7.11,7.336,13.999,6.893h14.89l-87.555-86.889C216.665,140.664,213.776,137.998,206.443,137.998z'));
+    g.fillStyle = '#1f4fa3';
+    g.fill(new Path2D('M58.666,355.107h101.111l159.554-112.219H170.887L54.666,127.332L167.11,14.666H58.666c-25.778,0-44,25.332-44,43.776v253.555C14.666,329.775,32.888,355.107,58.666,355.107z'));
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = 4;
+    return tex;
+  }
+  const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sqB = new THREE.Quaternion(), _sp = new V3(), _ss = new V3(), _sc = new THREE.Color(), _sup = new V3(0, 1, 0), _ssv = new V3();
   function updateTransit(now, dt) {
     if (!septaReady) return;
     if (!SEPTA.on) {
-      if (septaSolid.count || septaGhost.count || septaPin.count) { septaSolid.count = 0; septaGhost.count = 0; septaPin.count = 0; }
+      if (septaSolid.count || septaGhost.count || septaPin.count || septaBadge.count) { septaSolid.count = 0; septaGhost.count = 0; septaPin.count = 0; septaBadge.count = 0; }
       return;
     }
-    let si = 0, gi = 0, pi = 0;
+    let si = 0, gi = 0, pi = 0, bi = 0;
     const cap = 2.6 * dt;
+    _sqB.copy(camera.quaternion);                      // badges billboard the camera
     septaVeh.forEach((v) => {
       const k = v.t0 ? Math.min(1, (now - v.t0) / (SEPTA_POLL + 1500)) : 1;
       v.x = v.fx + (v.tx - v.fx) * k;
@@ -5407,8 +5448,21 @@
           septaPickS[si++] = v;
         }
       }
-      // floating pin over the lead car, scaled with distance so it stays findable
-      if (pi < 1024) {
+      // floating marker over the lead car, scaled with distance so it stays
+      // findable: buses fly the SEPTA-badge billboard, rail and trolleys keep
+      // their line-colored lollipop pins
+      if (v.kind === 'bus') {
+        if (bi < 1024) {
+          const py0 = v.gy + spec.h + 0.6;
+          _sp.set(v.x, py0, v.z);
+          const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
+          _sp.y += Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
+          _ss.set(s, s, s);
+          _sm.compose(_sp, _sqB, _ss);
+          septaBadge.setMatrixAt(bi, _sm);
+          septaPickB[bi++] = v;
+        }
+      } else if (pi < 1024) {
         const py0 = v.ug ? v.gy + 2.4 : v.gy + spec.h + 0.9;
         _sp.set(v.x, py0, v.z);
         const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
@@ -5425,9 +5479,11 @@
     septaSolid.count = si;
     septaGhost.count = gi;
     septaPin.count = pi;
+    septaBadge.count = bi;
     septaSolid.instanceMatrix.needsUpdate = true;
     septaGhost.instanceMatrix.needsUpdate = true;
     septaPin.instanceMatrix.needsUpdate = true;
+    septaBadge.instanceMatrix.needsUpdate = true;
     if (septaSolid.instanceColor) septaSolid.instanceColor.needsUpdate = true;
     if (septaGhost.instanceColor) septaGhost.instanceColor.needsUpdate = true;
     if (septaPin.instanceColor) septaPin.instanceColor.needsUpdate = true;
@@ -5523,22 +5579,28 @@
     septaMats.body = bodyMat;
     septaMats.ghost = ghostMat;
     const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true });
+    const badgeMat = new THREE.MeshBasicMaterial({ map: septaBadgeTexture(), transparent: true, depthWrite: false });
     septaSolid = new THREE.InstancedMesh(septaVehGeom(true), bodyMat, 1600);
     septaGhost = new THREE.InstancedMesh(septaVehGeom(false), ghostMat, 256);
     septaPin = new THREE.InstancedMesh(septaPinGeom(), pinMat, 1024);
-    for (const m of [septaSolid, septaGhost, septaPin]) {
+    septaBadge = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0), badgeMat, 1024);
+    for (const m of [septaSolid, septaGhost, septaPin, septaBadge]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       m.frustumCulled = false;                         // instance bounds don't follow the fleet
-      m.setColorAt(0, _sc.setRGB(1, 1, 1));            // allocates instanceColor
-      m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      if (m !== septaBadge) {                          // the badge keeps its texture colors
+        m.setColorAt(0, _sc.setRGB(1, 1, 1));          // allocates instanceColor
+        m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      }
     }
     septaSolid.castShadow = true;
     septaSolid.receiveShadow = true;
     septaGhost.renderOrder = 44;                       // x-ray: drawn over the streets
+    septaBadge.renderOrder = 12;                       // transparent cutout, after the opaques
     groupCity.add(septaSolid);
     groupCity.add(septaGhost);
     groupCity.add(septaPin);
+    groupCity.add(septaBadge);
     septaReady = true;
     syncTransitBtn();
     setInterval(() => septaPoll(false), SEPTA_POLL);

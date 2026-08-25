@@ -785,6 +785,16 @@ Round 17 (Aug 25 — rebrand to Philadelphia, transit pins, museum grounds, WWB)
   since the cursor doesn't exist; lock state is sampled at pointerDOWN
   (vpWasLocked) so the lock-acquiring click still picks at the cursor. Unlocked
   (orbit/drag-look/touch) keeps the 8 px tap-vs-drag filter at pointer coords.
+  BUS pins are SEPTA-logo badges (Mike's request): the official mark's SVG paths
+  (Wikimedia SEPTA.svg, 500×369 box) are Path2D-filled into a 256×320
+  CanvasTexture (white rounded badge + pointer tip, sRGB, anisotropy 4) on an
+  instanced PlaneGeometry that BILLBOARDS the camera each frame
+  (_sqB = camera.quaternion; transparent, depthWrite:false, renderOrder 12, no
+  instanceColor so the texture keeps its colors). Trolleys/RR/NHSL keep the
+  line-colored lollipop pins so line type stays readable. The About panel
+  carries the SEPTA trademark/non-affiliation notice. NOTE: the Pages
+  "is-it-live" poll must grep the FULL page or its tail — app.js markers sit
+  after the ~14 MB data blob, so a first-120 KB range check reports stale.
   NOTE: the Sketchfab "SEPTA bus model" Mike linked is isDownloadable:false with
   no license — cannot be used; the procedural body got upgraded instead.
 - **Art Museum grounds (Mike's screenshot):** three separate defects fixed —
