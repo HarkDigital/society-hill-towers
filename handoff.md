@@ -509,5 +509,11 @@ Round 10 (Aug 25 — "broken roofs" root-caused, three separate defects):
   flush with the iron front at the street (OSM steps the tall mass back — a lot-
   spanning box bridges it), GLORY board (red band on white) over the transom, the
   tall verdigris blade sign on the pier, and the wrought-iron lightwell railing.
+- **Round 10b LOCATION CORRECTION (Mike)**: the three parcels first customized were
+  at the 2nd St corner — WRONG. Philly numbers ascend WESTWARD from Front on the
+  100-block, so 126 Chestnut is a quarter block in from FRONT St: the deep narrow
+  lot with area-weighted centroid (115.1, −283.8). The corner parcels reverted to
+  generic; the builder now dresses that single lot (iron front + piers + signs +
+  brick floors 3-5 over the front 26 m, low rear range down the 40 m lot).
 
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.

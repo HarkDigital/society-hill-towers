@@ -1468,12 +1468,10 @@
       { x: -140, z: 433, r: 60, minArea: 3000, spec: { mode: 'custom', key: 'abbotts' } },   // Abbotts Square
       { x: 44, z: 334, r: 30, minArea: 1500, spec: { mode: 'custom', key: 'ten410' } },      // 410 at Society Hill
       { x: -18, z: 345, r: 25, minArea: 900, spec: { mode: 'custom', key: 'newmarket' } },   // New Market Complex
-      // Glory Beer Bar & Kitchen, 126 Chestnut: OSM maps the lot as three boxes
-      // front-to-back — the 2-story cast-iron street front, a low connector, and
-      // the 5-story brick mass at the rear (area-weighted centroids)
-      { x: 64.6, z: -309.0, r: 4, minArea: 30, spec: { mode: 'custom', key: 'gloryFront' } },
-      { x: 63.2, z: -302.4, r: 4, minArea: 15, spec: { mode: 'custom', key: 'gloryMid' } },
-      { x: 64.1, z: -297.0, r: 4, minArea: 30, spec: { mode: 'custom', key: 'glory' } },
+      // Glory Beer Bar & Kitchen, 126 Chestnut — MID-BLOCK between Front and 2nd
+      // (numbers ascend westward from Front): the deep narrow lot whose front
+      // hits the address line, area-weighted centroid (115.1, -283.8)
+      { x: 115.1, z: -283.8, r: 5, minArea: 100, spec: { mode: 'custom', key: 'glory' } },
     ];
     for (const b of D.buildings) {
       if (b.name && REALISM[b.name]) { upgraded.set(b, REALISM[b.name]); continue; }
@@ -2233,19 +2231,17 @@
         liftB(m0, b);
       }
     }
-    // Glory Beer Bar & Kitchen, 126 Chestnut: 2-story cast-iron storefront with
-    // granite piers out front, 5-story brick loft behind
+    // Glory Beer Bar & Kitchen, 126 Chestnut (mid-block, Front-2nd): one deep
+    // narrow lot — dark cast-iron storefront with granite piers at the street,
+    // five brick floors over it, low rear range down the lot
     {
-      const bF = getKey('gloryFront'), bM = getKey('glory'), bC = getKey('gloryMid');
-      if (bF && bM) {
+      const bG = getKey('glory');
+      if (bG) {
         const m0 = mark();
-        aw(buildingGeom(bM.poly, null, 8.3, -1.5), '#74453a', 5);
-        if (bC) aw(buildingGeom(bC.poly, null, 8.3, -1.5), '#2b2e33', 3);
-        aw(buildingGeom(bF.poly, null, 8.3, -1.5), '#23262b', 3);
-        const ob = orientedBox(bF.poly);
+        const ob = orientedBox(bG.poly);
         const a = obbAxis(ob);
-        // the street face is whichever OBB face points at Chestnut (north, -z) —
-        // this parcel's LONG axis runs toward the street, so pick by z-component
+        // street face = whichever OBB face points at Chestnut (north, -z);
+        // this lot's LONG axis runs back from the street
         let fdx, fdz, fext, sdx, sdz, sext;
         if (Math.abs(a.az) > Math.abs(a.pz)) {
           const s2 = a.az < 0 ? 1 : -1;
@@ -2257,7 +2253,15 @@
           sdx = a.ax; sdz = a.az; sext = a.hl;
         }
         const ryF = Math.atan2(-sdz, sdx);
-        const wx = ob.cx + fdx * (fext + 0.12), wz = ob.cz + fdz * (fext + 0.12);
+        const ryD = Math.atan2(-fdz, fdx);
+        const seg = (back, front, y0s, y1s) => box(front - back, y1s - y0s, sext * 2,
+          ob.cx + fdx * ((back + front) / 2), (y0s + y1s) / 2,
+          ob.cz + fdz * ((back + front) / 2), ryD);
+        // low rear range over the true footprint, then the photo massing in front
+        aw(buildingGeom(bG.poly, null, 8.0, -1.5), '#6b4c3f', 3);
+        aw(seg(fext - 9.5, fext + 0.2, -1.5, 8.35), '#23262b', 3);      // iron front, two floors
+        aw(seg(fext - 26, fext + 0.1, 8.25, 17.8), '#74453a', 5);       // brick floors 3-5
+        const wx = ob.cx + fdx * (fext + 0.35), wz = ob.cz + fdz * (fext + 0.35);
         const across = (u) => [wx + sdx * u, wz + sdz * u];
         const nPost = 5, half = sext - 0.25;
         for (let i2 = 0; i2 < nPost; i2++) {               // giant order across both floors
@@ -2266,27 +2270,17 @@
         }
         ad(box(sext * 2 + 0.3, 0.5, 0.7, wx, 4.35, wz, ryF), '#c9c2b2');   // transom band
         ad(box(sext * 2 + 0.45, 0.6, 0.8, wx, 8.15, wz, ryF), '#c4bdae'); // iron cornice
-        // the photo's brick floors rise flush over the iron front at the street,
-        // so the upper storeys span the WHOLE lot (OSM steps the tall mass back)
-        {
-          let minP = 0;
-          for (const pl of [bF.poly, bC ? bC.poly : [], bM.poly]) for (const q of pl) {
-            const pr = (q[0] - wx) * fdx + (q[1] - wz) * fdz;
-            if (pr < minP) minP = pr;
-          }
-          aw(box(-minP, 9.55, sext * 2, wx + fdx * (minP / 2), 8.25 + 9.55 / 2, wz + fdz * (minP / 2), Math.atan2(-fdz, fdx)), '#74453a', 5);
-        }
         // GLORY board over the transom (red band on white) and the tall
         // weathered-green blade sign hung high on the left pier
-        ad(box(1.5, 0.75, 0.16, wx + fdx * 0.45, 5.05, wz + fdz * 0.45, ryF), '#efe9dc');
-        ad(box(1.06, 0.3, 0.2, wx + fdx * 0.5, 5.05, wz + fdz * 0.5, ryF), '#b8332f');
+        ad(box(1.5, 0.75, 0.16, wx + fdx * 0.2, 5.05, wz + fdz * 0.2, ryF), '#efe9dc');
+        ad(box(1.06, 0.3, 0.2, wx + fdx * 0.25, 5.05, wz + fdz * 0.25, ryF), '#b8332f');
         {
           const [bx2, bz2] = across(sext * 0.62);
-          ad(box(0.42, 4.6, 0.95, bx2 + fdx * 0.75, 11.4, bz2 + fdz * 0.75, ryF), '#5f7a6e');
+          ad(box(0.42, 4.6, 0.95, bx2 + fdx * 0.5, 11.4, bz2 + fdz * 0.5, ryF), '#5f7a6e');
         }
         // wrought-iron lightwell railing along the sidewalk
-        ad(box(sext * 2 + 0.7, 0.95, 0.08, wx + fdx * 2.1, 0.5, wz + fdz * 2.1, ryF), '#1c1e20');
-        liftB(m0, bM);
+        ad(box(sext * 2 + 0.7, 0.95, 0.08, wx + fdx * 2.0, 0.5, wz + fdz * 2.0, ryF), '#1c1e20');
+        liftB(m0, bG);
       }
     }
     {
