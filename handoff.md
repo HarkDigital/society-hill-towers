@@ -1123,6 +1123,43 @@ under the caps, and the real Moon; all from Mike's three follow-ups):
   errors. Rerun order unchanged: bake_overpasses -> bake_street_labels ->
   bake_street_sdf -> build.
 
+Round 27 (Aug 26 — the cleanup sweep; Mike: sloppy ramp barriers, cut-off names,
+disconnected streets, a building through I-95; verified by a 10-agent audit
+workflow (5 audits + 5 adversarial verifiers, all confirmed) over the packed data):
+- **Disconnected streets ROOT CAUSE**: ovpOwned suppressed packed segments within
+  chainWidth/2 + 3 m (11 m on motorways) — it ate the surface streets running
+  beside embankments. Now a FIXED 2.6 m aligned test on the two ENDPOINTS only
+  (the audit proved the distance distribution is bimodal: 1,879 true duplicates
+  under 2 m, neighbors beyond 5 m; requiring the midpoint too let curved
+  duplicates escape where the simplified chain corner-cuts the arc). Known
+  limit: ~2 orphan fragments citywide whose START bulges > 2.6 m still escape,
+  hidden under decks.
+- **Building through the viaduct**: 7 wide-set OSM footprints (h 11-13 m)
+  straddle I-95/I-676 decks (Mike's is at (-50.9, 1364.5) by South Front).
+  CRITICAL: centroid tests catch only 2 of 7 — they straddle EDGE-ON, so
+  ovpStraddle walks every footprint EDGE (3 m steps) against the c<=1 swaths at
+  halfW - 1, plus open cuts and the corridor. Far ring audited CLEAN (145k
+  buildings, nearest miss 3.1 m outside the band).
+- **Sliced labels**: bake_street_labels now keeps every station's text span
+  clear of crossing decks and the cut's coping walls (|cos| < 0.72 crossings
+  within w/2 + 1.2): shift along bearing +-22/42/62 m (must stay on the street
+  via near_way), else drop. 35 of 36 sliced labels shifted, 1 dropped (Spring
+  Garden inside the I-95 ramp fan). Audit re-run after: sliced = 0.
+- **Parapet tangles**: 190 overlap regions citywide (47 junction mouths, 128
+  braids, 15 twin runs). One rule clears them: a parapet segment lying INSIDE
+  another chain's deck footprint (lateral < other hw - 0.4, |dy| < 2.5) is
+  skipped — handles gores, braids, AND twin carriageways' facing rails without
+  special cases (mouthAt keeps the side-aware ramp-exit gaps). Piers now skip
+  where another deck passes between ground and soffit (92 stations, stacked
+  interchanges). KNOWN LIMIT: the Penrose/PA-291 twin carriageways run ~3 m
+  apart vertically for a few hundred meters (one carries a layer-2 way, its
+  slope-limited profile stays high) — reads as independent grades from any
+  ground view, left alone; a twin-leveling bake pass is the fix if it ever
+  bothers anyone.
+- Page 18.44 MB, zero console errors. Audit scripts live in .audit/ (untracked).
+  The audits decode wide.b64/city.b64 independently — formats confirmed
+  byte-exact against pack_wide.py (0.2 m units) and pack_city.py (0.7 m units).
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

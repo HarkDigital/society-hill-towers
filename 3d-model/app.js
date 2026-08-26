@@ -924,11 +924,12 @@
   const OVP = (typeof OVERPASSES !== 'undefined' && OVERPASSES) ? OVERPASSES : { el: [], sk: [], cor: [] };
   const ovpGrid = new Map();
   const OVP_CELL = 28;
-  const ovpSegs = [];   // ax, az, bx, bz, ya, yb, hw, cls (stride 8; cls -1 = sunken)
+  const ovpSegs = [];   // ax, az, bx, bz, ya, yb, hw, cls, chainId (stride 9; cls -1 open cut, -2 covered)
+  const OVP_STRIDE = 9;
   {
-    const add = (a, b, hw, cls) => {
+    const add = (a, b, hw, cls, id) => {
       const idx = ovpSegs.length;
-      ovpSegs.push(a[0], a[1], b[0], b[1], a[2], b[2], hw, cls);
+      ovpSegs.push(a[0], a[1], b[0], b[1], a[2], b[2], hw, cls, id);
       const minx = Math.floor((Math.min(a[0], b[0]) - hw) / OVP_CELL), maxx = Math.floor((Math.max(a[0], b[0]) + hw) / OVP_CELL);
       const minz = Math.floor((Math.min(a[1], b[1]) - hw) / OVP_CELL), maxz = Math.floor((Math.max(a[1], b[1]) + hw) / OVP_CELL);
       for (let gx = minx; gx <= maxx; gx++) for (let gz = minz; gz <= maxz; gz++) {
@@ -938,13 +939,17 @@
         arr.push(idx);
       }
     };
-    for (const c of OVP.el) for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2, c.c);
+    OVP.el.forEach((c, ci) => { for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2, c.c, ci); });
     // sunken runs: -1 = open cut (digs holes, grows walls), -2 = covered tunnel
     // (suppresses the packed road but leaves the ground alone)
-    for (const c of OVP.sk) for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, c.cov ? -2 : -1);
+    OVP.sk.forEach((c, ci) => { for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, c.cov ? -2 : -1, 1000 + ci); });
   }
   // a packed road segment lying along a baked chain is the same OSM way: the
-  // deck (or sunken roadway) build owns it, so the flat ribbon must not draw
+  // deck (or sunken roadway) build owns it, so the flat ribbon must not draw.
+  // The radius is a FIXED 2.6 m: same-way centerlines coincide within the two
+  // simplification tolerances, while parallel surface streets sit 8 m or more
+  // away. (The old chainWidth/2 + 3 swept 11 m on motorways and ate the streets
+  // running beside the embankments.)
   function ovpOwned(ax, az, bx, bz) {
     if (!ovpSegs.length) return false;
     let ux = bx - ax, uz = bz - az;
@@ -954,19 +959,56 @@
       const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
       if (!arr) return false;
       for (const s of arr) {
-        const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], hw = ovpSegs[s + 6];
+        const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3];
         let dx = sbx - sax, dz = sbz - saz;
         const sl = Math.hypot(dx, dz) || 1;
         if (Math.abs((dx * ux + dz * uz) / sl) < 0.8) continue;
         let t = ((x - sax) * dx + (z - saz) * dz) / (sl * sl);
         t = clamp(t, 0, 1);
         const px = sax + dx * t - x, pz = saz + dz * t - z;
-        const r = hw + 3.0;
-        if (px * px + pz * pz < r * r) return true;
+        if (px * px + pz * pz < 2.6 * 2.6) return true;
       }
       return false;
     };
-    return hit(ax, az) && hit(bx, bz) && hit((ax + bx) / 2, (az + bz) / 2);
+    // both ENDPOINTS suffice: requiring the midpoint too let curved duplicates
+    // escape where the simplified chain corner-cuts the arc (mid bulges ~5 m)
+    return hit(ax, az) && hit(bx, bz);
+  }
+  // does a building footprint straddle a motorway deck or an open cut? (an OSM
+  // artifact: nothing real stands across I-95 — Mike's building through the
+  // viaduct). The audit proved centroid tests miss edge-on straddlers 5 times
+  // out of 7, so every footprint EDGE is walked against the swath.
+  function ovpCutHit(x, z) {
+    const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+    if (!arr) return false;
+    for (const s of arr) {
+      const cls = ovpSegs[s + 7];
+      if (cls > 1 && cls !== -1) continue;           // motorway/trunk decks and open cuts only
+      const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], hw = ovpSegs[s + 6];
+      const dx = sbx - sax, dz = sbz - saz;
+      const L2 = dx * dx + dz * dz || 1e-9;
+      let t = ((x - sax) * dx + (z - saz) * dz) / L2;
+      t = clamp(t, 0, 1);
+      const px = sax + dx * t - x, pz = saz + dz * t - z;
+      const r = Math.max(2, hw - 1);
+      if (px * px + pz * pz < r * r) return true;
+    }
+    return false;
+  }
+  function ovpStraddle(poly, cx, cz) {
+    if (ovpCutHit(cx, cz)) return true;
+    if (poly) {
+      for (let i = 0; i < poly.length; i++) {
+        const a = poly[i], b = poly[(i + 1) % poly.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const k = Math.max(1, Math.ceil(L / 3));
+        for (let j = 0; j <= k; j++) {
+          const t = j / k;
+          if (ovpCutHit(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t)) return true;
+        }
+      }
+    }
+    return vineCut(cx, cz, -1) !== null;
   }
   // deck-top height at a point, aligned to a travel direction when one is given
   // (buses and street labels ride the deck; things merely passing beneath do not)
@@ -3615,6 +3657,7 @@
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
       if (BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) continue;
+      if (ovpStraddle(poly, cx, cz)) continue;   // nothing real stands across a motorway deck
       if (t === 7 && Math.hypot(cx - 996, cz - 663) < 80) { njPoly = poly; continue; }
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
@@ -4578,6 +4621,7 @@
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
+      if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); } continue; }
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 5.31 + 0.7);
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
@@ -4889,6 +4933,46 @@
       }
       return false;
     };
+    // another chain's deck at a similar height covering this point (braided ramps,
+    // junction noses): parapets must not stab up through the overlapping deck
+    const deckOverlapAt = (x, z, y, selfId) => {
+      const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+      if (!arr) return false;
+      for (const s2 of arr) {
+        if (ovpSegs[s2 + 7] < 0 || ovpSegs[s2 + 8] === selfId) continue;
+        const sax = ovpSegs[s2], saz = ovpSegs[s2 + 1], sbx = ovpSegs[s2 + 2], sbz = ovpSegs[s2 + 3], hw2 = ovpSegs[s2 + 6];
+        const dx = sbx - sax, dz = sbz - saz;
+        const L2 = dx * dx + dz * dz || 1e-9;
+        let t = ((x - sax) * dx + (z - saz) * dz) / L2;
+        t = clamp(t, 0, 1);
+        const px = sax + dx * t - x, pz = saz + dz * t - z;
+        const r = hw2 - 0.4;
+        if (r <= 0 || px * px + pz * pz > r * r) continue;
+        const y2 = ovpSegs[s2 + 4] + (ovpSegs[s2 + 5] - ovpSegs[s2 + 4]) * t;
+        if (Math.abs(y2 - y) < 2.5) return true;
+      }
+      return false;
+    };
+    // another chain's deck passing between the ground and this soffit: a pier
+    // must not punch down through a lower roadway (stacked interchanges)
+    const deckBetween = (x, z, yLo, yHi, selfId) => {
+      const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+      if (!arr) return false;
+      for (const s2 of arr) {
+        if (ovpSegs[s2 + 7] < 0 || ovpSegs[s2 + 8] === selfId) continue;
+        const sax = ovpSegs[s2], saz = ovpSegs[s2 + 1], sbx = ovpSegs[s2 + 2], sbz = ovpSegs[s2 + 3], hw2 = ovpSegs[s2 + 6];
+        const dx = sbx - sax, dz = sbz - saz;
+        const L2 = dx * dx + dz * dz || 1e-9;
+        let t = ((x - sax) * dx + (z - saz) * dz) / L2;
+        t = clamp(t, 0, 1);
+        const px = sax + dx * t - x, pz = saz + dz * t - z;
+        const r = hw2 + 1;
+        if (px * px + pz * pz > r * r) continue;
+        const y2 = ovpSegs[s2 + 4] + (ovpSegs[s2 + 5] - ovpSegs[s2 + 4]) * t;
+        if (y2 > yLo && y2 < yHi) return true;
+      }
+      return false;
+    };
     const shapePts = (c) => {
       const pts = dens3(c.p, 13);
       const e = c.e || [0, 0];
@@ -4929,8 +5013,9 @@
         boxRibbon(edge, pW, pT, -0.25, tint(cParapet, jit), tint(cParapet, jit * 0.94), null, (i) => {
           const sm = (ss[i] + ss[i + 1]) / 2;
           if (sm < lead0 || sm > total - lead1) return false;
-          const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
+          const mx = (edge[i][0] + edge[i + 1][0]) / 2, mz = (edge[i][1] + edge[i + 1][1]) / 2;
           const my = (pts[i][2] + pts[i + 1][2]) / 2;
+          if (deckOverlapAt(mx, mz, my, ci)) return false;
           return !mouthAt(mx, mz, my, nrm[i][0] * s, nrm[i][1] * s);
         });
       }
@@ -4952,6 +5037,7 @@
         const capBot = y - dep - (c.c === 6 ? 0 : 1.25);
         if (capBot - gy < 2.0) continue;
         if (crossingRoadNear(x, z, 7.5, ux, uz)) continue;
+        if (deckBetween(x, z, gy + 0.5, capBot - 0.2, ci)) continue;
         const ps = wet ? 1.6 : 1;
         if (c.c <= 1) {
           boxAt(x, z, ux, uz, 2.3, c.w * 0.92, y - dep - 1.35, y - dep + 0.15, tint(cCap, jit));

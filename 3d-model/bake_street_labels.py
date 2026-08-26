@@ -66,6 +66,73 @@ def place(pts, interval, min_len):
             acc += L
         s += interval
 
+# ---- elevated decks and cut walls slice any label text they cross: keep
+# ---- stations clear of them (overpasses.json is baked by bake_overpasses.py)
+TH = [7.0, 5.6, 4.4]                     # text height by class (matches app.js)
+ovp_segs = []                            # (ax, az, bx, bz, halfW)
+ovp_path = ROOT / "overpasses.json"
+if ovp_path.exists():
+    _ov = json.loads(ovp_path.read_text())
+    for c in _ov.get("el", []):
+        hw = c["w"] / 2
+        for a, b in zip(c["p"], c["p"][1:]):
+            ovp_segs.append((a[0], a[1], b[0], b[1], hw))
+    for run in _ov.get("cor", []):       # the cut's coping walls slice text too
+        for a, b in zip(run, run[1:]):
+            ovp_segs.append((a[0], a[1], b[0], b[1], (a[3] + b[3]) / 2))
+ovp_grid = {}
+for si, (ax, az, bx, bz, hw) in enumerate(ovp_segs):
+    for gx in range(int(min(ax, bx) - 40) // 80, int(max(ax, bx) + 40) // 80 + 1):
+        for gz in range(int(min(az, bz) - 40) // 80, int(max(az, bz) + 40) // 80 + 1):
+            ovp_grid.setdefault((gx, gz), []).append(si)
+
+def span_sliced(x, z, bdeg, half_len):
+    """Does a label span centered at (x,z) cross under a deck or over a wall?"""
+    b = math.radians(bdeg)
+    ux, uz = math.cos(b), math.sin(b)
+    steps = max(2, int(half_len // 4))
+    for k in range(-steps, steps + 1):
+        px, pz = x + ux * half_len * k / steps, z + uz * half_len * k / steps
+        for si in ovp_grid.get((int(px) // 80, int(pz) // 80), ()):
+            ax, az, bx, bz, hw = ovp_segs[si]
+            dx, dz = bx - ax, bz - az
+            L = math.hypot(dx, dz)
+            if L < 0.05:
+                continue
+            if abs((dx * ux + dz * uz) / L) > 0.72:
+                continue                 # aligned: the label rides this deck
+            t = max(0.0, min(1.0, ((px - ax) * dx + (pz - az) * dz) / (L * L)))
+            ex, ez = ax + dx * t - px, az + dz * t - pz
+            if ex * ex + ez * ez < (hw + 1.2) ** 2:
+                return True
+    return False
+
+def near_way(way_pts, x, z, tol=5.0):
+    for a, b in zip(way_pts, way_pts[1:]):
+        dx, dz = b[0] - a[0], b[1] - a[1]
+        L2 = dx * dx + dz * dz or 1e-9
+        t = max(0.0, min(1.0, ((x - a[0]) * dx + (z - a[1]) * dz) / L2))
+        ex, ez = a[0] + dx * t - x, a[1] + dz * t - z
+        if ex * ex + ez * ez < tol * tol:
+            return True
+    return False
+
+def clear_station(x, z, bdeg, name, cls, way_pts):
+    """Shift a station along its bearing until the text clears every crossing;
+    the shifted point must still lie on the street (bearing drifts on curves)."""
+    half_len = len(name) * 0.34 * TH[cls]
+    if not span_sliced(x, z, bdeg, half_len):
+        return x, z
+    b = math.radians(bdeg)
+    ux, uz = math.cos(b), math.sin(b)
+    for off in (22, -22, 42, -42, 62, -62):
+        nx, nz = x + ux * off, z + uz * off
+        if not near_way(way_pts, nx, nz):
+            continue
+        if not span_sliced(nx, nz, bdeg, half_len):
+            return nx, nz
+    return None
+
 names, name_idx = [], {}
 placed = {}   # name -> list of (x, z) for the 90 m same-name dedupe
 out = []
@@ -94,7 +161,10 @@ for r in core.get("roads", []):
     for x, z, b in place(r["pts"], 220, 40):
         if east_of_delaware(x, z):
             continue
-        add(nm, x, z, b, 2)
+        cs = clear_station(x, z, b, nm, 2, r["pts"])
+        if cs is None:
+            continue
+        add(nm, cs[0], cs[1], b, 2)
 
 # --- wide + south: drivable named streets, outside the core box ---
 for fn in ("scene_wide.json", "scene_south.json"):
@@ -115,7 +185,10 @@ for fn in ("scene_wide.json", "scene_south.json"):
         for x, z, b in place(r["pts"], interval, min_len):
             if in_core(x, z) or east_of_delaware(x, z):
                 continue
-            add(nm, x, z, b, cls)
+            cs = clear_station(x, z, b, nm, cls, r["pts"])
+            if cs is None:
+                continue
+            add(nm, cs[0], cs[1], b, cls)
 
 data = {"names": names, "l": [v for lbl in out for v in lbl]}
 (ROOT / "street_labels.json").write_text(json.dumps(data, separators=(",", ":")))
