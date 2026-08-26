@@ -1186,6 +1186,36 @@ Round 28 (Aug 26 — the mobile memory diet; Mike: "will not load on mobile"):
   it still dies, the next lever is a touch LOD for the far ring (conflicts with
   his round-7 "full map on mobile" ask, so it needs his sign-off). Page 18.44 MB.
 
+Round 29 (Aug 26 — night lights de-blobbed + live flights; Mike's asks):
+- **The big square night lights are GONE**: the round-6 cluster LOD (3x2-window
+  superblocks past the per-window fade) in BOTH cityMat and outerGlassMat read as
+  yellow slabs that popped away on approach. Removed; windows fade straight into
+  the aggregate glow, which also dimmed (cityMat 0.115 -> 0.05, curtain 0.22 ->
+  0.10). Distant facades now read dark with soft presence; the remaining pale
+  far-city look under a bright moon is MOONLIGHT on tan roofs (physically fair,
+  scales with phase). shtLit is wall-gated — roofs never emit.
+- **Live flights layer** ('X' key / Layers row): adsb.fi community ADS-B around
+  PHL (30 nm), procedural ~120-tri airliners on bodyMat (cabin glow band at
+  night via aGlow), true track/pitch, white double-blink strobes phase-hashed
+  per airframe, dead reckoning between fixes (glide capped 50 s), tap-for-card
+  (callsign, type, operator, altitude, speed) via the shared picker (ALL
+  pick branches now clear pickedPlane and vice versa), #vehinfo follow.
+  THE CORS WALL (measured, do not relearn): NO flight API speaks CORS to
+  browsers — adsb.fi/adsb.lol send no ACAO, adsb.one 403s, airplanes.live wants
+  email approval, OpenSky reflects an allowlist. The fetch rides rotating
+  public passthroughs [allorigins.win, corsproxy.io] at a 90 s cadence with
+  dead reckoning bridging the gaps; each failure rotates hosts and retries.
+  allorigins throttles per client IP (this machine burned its budget testing —
+  fresh viewers get their own), corsproxy 403'd this automated browser but is
+  built for real https origins. FLIGHT_PROXY at the top of the flight section
+  accepts a personal Cloudflare Worker URL and unlocks a 10 s cadence — the
+  real fix, needs Mike's CF account (worker recipe in the session log).
+  Dev: `__dbg.flightTest()` seeds 3 synthetic aircraft (approach, climbout,
+  taxiing at PHL) to verify the render path without the feed — this caught a
+  real bug (bodyMat is septaInit-local; module access is septaMats.body).
+  `__dbg.flights()` reports tracked/ok/fails/host. Layer hidden under the
+  artifact CSP like all live layers. adsb.fi credit in the About body.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

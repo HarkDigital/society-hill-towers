@@ -7666,8 +7666,8 @@
   // page origins, allorigins throttles bursts; a FLIGHT_PROXY worker beats both)
   const FLIGHT_HOSTS = [
     FLIGHT_PROXY,
-    'https://corsproxy.io/?url=' + encodeURIComponent(FLIGHT_TGT),
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(FLIGHT_TGT),
+    'https://corsproxy.io/?url=' + encodeURIComponent(FLIGHT_TGT),
   ].filter(Boolean);
   const FLIGHTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, host: 0 };
   const flightMap = new Map();
@@ -7699,7 +7699,7 @@
     return septaMerge(parts);
   }
   function flightsInit() {
-    flightMesh = new THREE.InstancedMesh(flightGeom(), bodyMat, FLIGHT_CAP);
+    flightMesh = new THREE.InstancedMesh(flightGeom(), septaMats.body, FLIGHT_CAP);
     flightMesh.frustumCulled = false;
     flightMesh.count = 0;
     groupCity.add(flightMesh);
@@ -7757,6 +7757,22 @@
       })
       .catch(() => { FLIGHTS.busy = false; FLIGHTS.fails++; FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length; FLIGHTS.nextT = 0; });
   }
+  function flightTest() {
+    const now = performance.now();
+    const mk = (hex, x, z, altFt, trk, gs, vr, call, type, op, len, ground) => {
+      const p = { hex, ground: !!ground, fx: x, fz: z, ft: now,
+        fy: ground ? siteY(x, z, 'ground') + 1.2 : altFt * 0.3048 - 8.34,
+        trk, gs, vx: Math.sin(trk * DEG) * gs * 0.5144, vz: -Math.cos(trk * DEG) * gs * 0.5144,
+        vy: ground ? 0 : vr * 0.00508, call, type, op, len, dx: x, dz: z };
+      p.dy = p.fy;
+      flightMap.set(hex, p);
+    };
+    mk('test1', 1200, 900, 1800, 262, 145, -700, 'AAL1776', 'Airbus A321', 'American Airlines', 44);
+    mk('test2', -300, -600, 4200, 45, 250, 1400, 'UAL88', 'Boeing 737-800', 'United Airlines', 39);
+    mk('test3', -8200, 7700, 0, 90, 12, 0, 'DAL401', 'Boeing 757-200', 'Delta Air Lines', 47, true);
+    flightStatus();
+    return flightMap.size;
+  }
   function flightStatus() {
     if (!btnFlights) return;
     btnFlights.title = 'Live Flights (X): ' + flightMap.size + ' Aircraft Tracked';
@@ -7784,7 +7800,7 @@
   syncFlightsBtn();
   function updateFlights(now, dt) {
     if (!septaCanFetch) { if (btnFlights) btnFlights.style.display = 'none'; return; }
-    if (!flightReady) { if (bodyMat) flightsInit(); return; }
+    if (!flightReady) { if (septaMats.body) flightsInit(); return; }
     if (now >= FLIGHTS.nextT) {
       FLIGHTS.nextT = now + (FLIGHTS.fails > FLIGHT_HOSTS.length * 2 ? 300000 : (FLIGHT_PROXY && FLIGHTS.host === 0 ? 10000 : 90000));
       flightPoll();
@@ -8228,7 +8244,7 @@
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });
