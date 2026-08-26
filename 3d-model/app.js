@@ -5759,6 +5759,9 @@
     theta: -0.38, goalTheta: 0.52, // azimuth on xz: 0 = +x (east)
     phi: 1.32, goalPhi: 1.22,      // polar from +y
   };
+  applyOrbit(0);   // place the camera NOW: the mid-build veil renders must show
+                   // the wide Center City shot, not the default pose at the
+                   // towers' origin (the old "loads on SHT, then cuts" glitch)
   const walk = {
     pos: new V3(0, 1.7, 0),
     yaw: 0, pitch: 0,

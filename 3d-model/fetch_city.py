@@ -13,6 +13,10 @@ BOXES = [
     ('north',           39.986, 40.050, -75.190, -75.060, 3, 5),
     ('northeast',       40.050, 40.140, -75.130, -74.955, 4, 6),
     ('northwest',       39.990, 40.100, -75.285, -75.190, 4, 3),
+    # the river wards east of the wide box: Fishtown's east end, Port Richmond,
+    # Bridesburg, Tacony. The original four boxes left this rectangle uncovered
+    # (wide stops at -75.118, 'north' starts at 39.986) — the Round 36 bare patch.
+    ('river-wards',     39.915, 40.050, -75.118, -74.990, 4, 3),
 ]
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
            'https://overpass.private.coffee/api/interpreter']
@@ -86,6 +90,10 @@ json.dump({'elements': elements}, open('osm_city_raw.json', 'w'))
 print(f'osm_city_raw.json written ({len(elements)} elements)', flush=True)
 
 # coarse 150 m DEM over the whole city bbox (single grid; wide/core grids win where present)
+# — checkpointed like the tiles: skip when already fetched
+if os.path.exists('dem_city.json'):
+    print('dem_city.json exists — skipping the DEM refetch', flush=True)
+    raise SystemExit
 lat0, lon0 = 39.945473644755005, -75.14474803850973
 kx = 111320 * math.cos(math.radians(lat0)); kz = 110574
 xs = list(range(-12000, 16501, 150)); zs = list(range(-21700, 9701, 150))

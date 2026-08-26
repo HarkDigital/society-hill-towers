@@ -1453,6 +1453,25 @@ __dbg.goWalk (?dev). Verified: veil over the wide skyline, Enter glide,
 synthetic pointerdown → fly with crosshair + "Click the scene" hint (pointer
 lock correctly defers to a real gesture).
 
+Round 36 (Aug 26 — Mike: a bare quarter of the city with buses floating on
+roadless ground; and the load still opened on SHT before cutting to City
+Hall): two root causes. (1) The city fetch had a literal hole: the four BOXES
+in fetch_city.py stop at the wide box's east edge (-75.118) below 39.986 and
+at -75.060 below 40.050 — Fishtown's east end, Port Richmond, Bridesburg,
+Harrowgate, Juniata and west Frankford were never fetched. A fifth box
+('river-wards', 39.915–40.050, -75.118..-74.990, 4×3 tiles) fills it: 813k
+new elements, osm_city_raw 3.79M elements, city.b64 7.9 → 9.06 MB (165,350
+buildings, 22,635 roads), page 18.62 → 19.74 MB. fetch_city.py also learned
+to skip the DEM refetch when dem_city.json exists (checkpoint parity with the
+tiles). The new wards ride tag/HDEF heights — lidar_city_heights.json predates
+them, so a future lidar_join pass would true them up; ambient traffic still
+ends at the wide box by design. (2) The SHT-then-cut on load: the camera's
+first placement only happened in frame one of the rAF loop, so the two
+mid-build veil renders ("upload now, behind the veil") drew from the camera's
+DEFAULT pose at the origin — which is the towers' centroid. One line after
+the orbit const — applyOrbit(0) — parks the camera on the wide Center City
+shot before anything renders.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
