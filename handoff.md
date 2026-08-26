@@ -1472,6 +1472,22 @@ DEFAULT pose at the origin — which is the towers' centroid. One line after
 the orbit const — applyOrbit(0) — parks the camera on the wide Center City
 shot before anything renders.
 
+Round 37 (Aug 26 — Mike: no tooltips through buildings): the pick pipeline
+gained an occlusion gate. pickOccluded(tx,ty,tz) casts from the eye toward the
+candidate with raycaster.far = distance − 1.6 against rayTargets (ground,
+core fabric, landmark walls, tower concrete, overpass decks — the old
+double-click focus list) plus outerMeshes (wide + far-ring chunks; bounding
+spheres prune, so the click-time cost matches what double-click focus always
+paid). Three gates: the instanced hit (tested at hits[0].point — a pin
+peeking over a roofline still picks, its vehicle hidden below doesn't), the
+nearest-to-tap fallback winners (bus at gy+2.5, dock at y+2), and the tree
+pick (canopy march + trunk fallback — the march itself happily crossed
+walls). Verified with shipTest: MSC ALTAIR picks from altitude with a clear
+line, refuses from street level behind a kilometre of Society Hill fabric.
+Harness note: synthetic PointerEvents must dispatch BOTH down and up on the
+canvas — window-dispatched ups never reach the canvas listener and the pick
+silently no-ops (cost one confused test round).
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

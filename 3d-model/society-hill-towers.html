@@ -7388,6 +7388,7 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
   document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
+  const septaOccRay = new THREE.Raycaster();
   let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
   canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
   canvas.addEventListener('pointerup', (e) => {
@@ -7411,13 +7412,25 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     }
     septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1);
     septaRay.setFromCamera(septaNdc, camera);
+    // occlusion gate: nothing picks through the city. The segment from the eye
+    // to a candidate must clear the same buildings and terrain the double-click
+    // focus used to raycast (rayTargets) plus the outer-district chunks.
+    const pickOccluded = (tx, ty, tz) => {
+      _ssv.set(tx, ty, tz).sub(camera.position);
+      const L = _ssv.length();
+      if (L < 3) return false;
+      septaOccRay.set(camera.position, _ssv.multiplyScalar(1 / L));
+      septaOccRay.far = L - 1.6;
+      return septaOccRay.intersectObjects(rayTargets, false).length > 0 ||
+             septaOccRay.intersectObjects(outerMeshes, false).length > 0;
+    };
     const targets = [];
     if (sAct) targets.push(septaSolid, septaPin, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
     if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
     if (shAct) targets.push(shipMesh);
     const hits = septaRay.intersectObjects(targets, false);
-    if (hits.length && hits[0].instanceId != null) {
+    if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
       const h = hits[0];
       let v = null, hitSt = null;
       if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
@@ -7457,6 +7470,8 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestS = st; bestV = null; }
     }
+    if (bestV && pickOccluded(bestV.dx != null ? bestV.dx : bestV.x, (bestV.gy || 0) + 2.5, bestV.dz != null ? bestV.dz : bestV.z)) bestV = null;
+    if (bestS && pickOccluded(bestS.x, bestS.y + 2, bestS.z)) bestS = null;
     if (bestV) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
     if (bestS) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
@@ -7496,6 +7511,7 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
           }
         }
       }
+      if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
     if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; }
