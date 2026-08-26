@@ -6466,8 +6466,9 @@
     // markers are wayfinding, not scenery: no depth test, so a pin or badge is
     // never swallowed by the skyline (Mike's rule; the vehicles themselves stay
     // solid and occludable)
-    const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, depthTest: false });
-    const badgeMat = new THREE.MeshBasicMaterial({ map: septaBadgeTexture(), transparent: true, depthWrite: false, depthTest: false });
+    // buildings occlude the fleet markers (Mike reversed the x-ray call, Aug 25 evening)
+    const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
+    const badgeMat = new THREE.MeshBasicMaterial({ map: septaBadgeTexture(), transparent: true, depthWrite: false });
     septaSolid = new THREE.InstancedMesh(septaVehGeom(true), bodyMat, 1600);
     septaPin = new THREE.InstancedMesh(septaPinGeom(), pinMat, 1024);
     septaBadge = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0), badgeMat, 1024);
@@ -6780,7 +6781,7 @@
     indegoTex.encoding = THREE.sRGBEncoding;
     indegoTex.anisotropy = 4;
     try { document.fonts.load('700 44px "Montserrat"').catch(() => {}); } catch (e) { /* stack fallback */ }
-    const badgeMat = new THREE.MeshBasicMaterial({ map: indegoTex, transparent: true, depthWrite: false, depthTest: false });
+    const badgeMat = new THREE.MeshBasicMaterial({ map: indegoTex, transparent: true, depthWrite: false });  // occluded by buildings like the SEPTA markers
     badgeMat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute vec2 aTile;')

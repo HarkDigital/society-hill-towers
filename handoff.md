@@ -989,6 +989,14 @@ Round 21 (Aug 25 — de-AI pass 2 + sun + bus alignment + layers panel):
   use a fract-cascade hash for cell lotteries; (2) make species/albedo
   variation live in HUE + SATURATION, not lightness — the daylight pipeline
   (legacy lift + ACES) flattens lightness differences.
+- **Round 25: Mike REVERSED the x-ray call for vehicle markers** — buildings
+  now occlude the SEPTA pins/badges and the Indego badges again (depthTest
+  back to default on pinMat, the SEPTA badgeMat, and the Indego badgeMat;
+  renderOrder kept for transparent sorting). Neighborhood names and the bronze
+  search pin KEEP depthTest:false (he named only the SEPTA and Indego
+  markers). Decision history: always-visible was his explicit ask earlier the
+  same evening, reversed hours later — if it comes up again, ask which of the
+  four marker families he means before flipping anything.
 - **The sun is round now** (Mike's screenshot: vertical streak): the sky dome
   is coarse (32×18) and the fragment shader used INTERPOLATED vDir unnormalized,
   so pow(dot, 420) followed the mesh's vertex meridians. The shader now
