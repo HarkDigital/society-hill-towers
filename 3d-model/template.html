@@ -67,6 +67,7 @@
   <button class="lrow" id="btnIndego" title="Indego Bike Share (B)"><span class="lmark"></span><svg class="lbike" viewBox="0 0 24 13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.8" cy="8.7" r="3.4"/><circle cx="19.2" cy="8.7" r="3.4"/><path d="M4.8 8.7 8.9 2.9h4.2l6.1 5.8M8.9 2.9l3.5 5.8H4.8M13.1 2.9l1.4-1.2h1.7M8.9 2.9H6.8"/></svg><span class="ltext">Indego Bike Share</span><span class="lcount" id="indegoCount"></span><kbd>B</kbd></button>
   <button class="lrow" id="btnFlights" title="Live Flights (X)"><span class="lmark"></span><svg class="lbike" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/></svg><span class="ltext">Live Flights</span><span class="lcount" id="flightCount"></span><kbd>X</kbd></button>
   <button class="lrow" id="btnShips" title="Live Ships (H)"><span class="lmark"></span><svg class="lbike" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M12 2a3 3 0 0 1 1 5.83V9h3v2h-3v8.35c2.6-.44 4.8-2.1 5.9-4.53l-1.63-.7 3.4-2.09.53 3.95-1.46-.63C18.4 18.9 15.4 21 12 21s-6.4-2.1-7.74-5.65l-1.46.63.53-3.95 3.4 2.09-1.63.7C6.2 17.25 8.4 18.91 11 19.35V11H8V9h3V7.83A3 3 0 0 1 12 2zm0 2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z"/></svg><span class="ltext">Live Ships</span><span class="lcount" id="shipCount"></span><kbd>H</kbd></button>
+  <button class="lrow" id="btnTraffic" title="Typical Traffic (R)"><span class="lmark"></span><svg class="lbike" viewBox="0 0 24 24" aria-hidden="true" fill="currentColor"><path d="M5 11l1.3-3.8A1.8 1.8 0 0 1 8 6h8a1.8 1.8 0 0 1 1.7 1.2L19 11h.6a1.4 1.4 0 0 1 1.4 1.4V16a1 1 0 0 1-1 1h-1a2 2 0 1 1-4 0H9a2 2 0 1 1-4 0H4a1 1 0 0 1-1-1v-3.6A1.4 1.4 0 0 1 4.4 11H5zm2.1 0h9.8l-1-2.9a.6.6 0 0 0-.57-.4H8.67a.6.6 0 0 0-.57.4L7.1 11z"/></svg><span class="ltext">Typical Traffic</span><span class="lcount" id="trafficCount"></span><kbd>R</kbd></button>
   <button class="lrow" id="btnStreets" title="Street Names (N)"><span class="lmark"></span><span class="ltext">Street Names</span><kbd>N</kbd></button>
   <button class="lrow" id="btnLabels" title="Landmark Labels (L)"><span class="lmark"></span><span class="ltext">Landmark Labels</span><kbd>L</kbd></button>
   <button class="lrow" id="btnPlaces" title="Neighborhood Names (P)"><span class="lmark"></span><span class="ltext">Neighborhood Names</span><kbd>P</kbd></button>
@@ -110,6 +111,7 @@
     <tr><td><kbd>N</kbd></td><td>Street Names</td></tr>
     <tr><td><kbd>L</kbd></td><td>Landmark Labels</td></tr>
     <tr><td><kbd>P</kbd></td><td>Historic Districts &amp; Neighborhood Names</td></tr>
+    <tr><td><kbd>R</kbd></td><td>Typical Vehicle Traffic</td></tr>
     <tr><td><kbd>T</kbd></td><td>Date &amp; Time of Day (Real Philadelphia Sun)</td></tr>
     <tr><td>Double-click</td><td>Focus Orbit on a Point</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Release the Mouse</td></tr>
@@ -122,6 +124,9 @@
     Street trees: Philadelphia Parks &amp; Recreation Tree Inventory 2025; historic
     districts and neighborhoods: City of Philadelphia via OpenDataPhilly (CC-BY);
     bike share status: Indego / Bicycle Transit Systems.
+    Traffic volumes: PennDOT Roadway Management System annual average daily
+    traffic (RMSTRAFFIC, open data) &mdash; the cars are synthesized typical
+    flows at those volumes, not live vehicle positions.
     Towers modeled procedurally from photographs and published dimensions.
     Rendered with three.js. This is an interpretive model, not a survey.
   </div>

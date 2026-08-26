@@ -6069,6 +6069,7 @@
     else if (k === 'x') toggleFlights();
     else if (k === 'h') toggleShips();
     else if (k === 'p') togglePlaces();
+    else if (k === 'r') toggleTraffic();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
     else walk.keys[k] = true;
@@ -7668,12 +7669,19 @@
   ].filter(Boolean);
   const FLIGHTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, host: 0 };
   const flightMap = new Map();
-  let flightMesh = null, flightStrobe = null, flightPin = null, flightReady = false, pickedPlane = null;
+  let flightMesh = null, flightStrobe = null, flightPin = null, flightPinH = null, flightReady = false, pickedPlane = null;
   const flightPick = [];
   const FLIGHT_CAP = 80;
   const btnFlights = document.getElementById('btnFlights');
   const _fq = new THREE.Quaternion(), _fe = new THREE.Euler();
   const FLIGHT_LEN = { A1: 12, A2: 24, A3: 38, A4: 48, A5: 64, A7: 12 };
+  // rotorcraft: ADS-B category A7 when broadcast, else the common type codes
+  // (police, medevac, news, tours — the Delaware corridor sees plenty)
+  const HELI_TYPES = new Set(['R22', 'R44', 'R66', 'B06', 'B06T', 'B105', 'B212', 'B407', 'B412', 'B429', 'B430', 'B505',
+    'EC20', 'EC30', 'EC35', 'EC45', 'EC55', 'EC75', 'EC120', 'EC130', 'EC135', 'EC145', 'EC155', 'EC175',
+    'H125', 'H130', 'H135', 'H145', 'H155', 'H160', 'H269', 'H500', 'H60', 'UH1', 'UH1Y', 'UH60',
+    'S61', 'S64', 'S70', 'S76', 'S92', 'A109', 'A119', 'A129', 'A139', 'A149', 'A169', 'A189',
+    'AS32', 'AS50', 'AS55', 'AS65', 'MD52', 'MD60', 'EN28', 'EN48']);
   function flightGeom() {
     // ~120-tri airliner, nose toward +x, unit length 1 (instance scale = meters)
     const parts = [];
@@ -7695,12 +7703,13 @@
     box(0.14, 0.15, 0.012, -0.45, 0.1, 0, 0.68, 0.70, 0.74, 0, 0); // fin
     return septaMerge(parts);
   }
-  function flightPinTexture() {
-    // plane pins wear the PHL wordmark: the SEPTA marker's badge shape, but
-    // navy-bodied in a warm-white casing (the Round 29c label trick — pale
-    // halo + dark core reads against noon sky and midnight alike) around a
-    // hand-set lowercase 'phl' — sky-blue sail on the p, the rest white
-    // (drawn type, not the airport's trademark art)
+  function flightPinTexture(kind) {
+    // aircraft pins share one badge casing (the SEPTA marker's shape, navy body
+    // in a warm-white frame — the Round 29c pale-halo trick that reads against
+    // noon sky and midnight alike). Fixed wing wears the hand-set 'phl'
+    // wordmark (drawn type, not the airport's trademark art); rotorcraft wear
+    // a chunky side-view helicopter, because a news chopper over the rowhouses
+    // is not "traffic into PHL" and the pin shouldn't claim it is.
     const cv = document.createElement('canvas');
     cv.width = 256; cv.height = 320;
     const g = cv.getContext('2d');
@@ -7722,23 +7731,50 @@
     g.arcTo(bx, by, bx + bw, by, rad);
     g.closePath();
     g.fill(); g.stroke();
-    g.font = '700 118px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-    g.textBaseline = 'alphabetic';
-    const w = g.measureText('phl').width;
-    const tx = 128 - w / 2, ty = by + bh / 2 + 40;   // descender rides low like the wordmark
-    g.fillStyle = '#fdfbf6';
-    g.fillText('phl', tx, ty);
-    const pw = g.measureText('p').width;             // sky-blue sail over the p's upper left
-    g.save();
-    g.beginPath();
-    g.moveTo(tx - 8, ty - 120);
-    g.lineTo(tx + pw * 0.95, ty - 120);
-    g.lineTo(tx - 8, ty - 14);
-    g.closePath();
-    g.clip();
-    g.fillStyle = '#4fb0e8';
-    g.fillText('phl', tx, ty);
-    g.restore();
+    if (kind === 'heli') {
+      // bold shapes only — the badge holds ~34 px on screen, so no filigree
+      g.fillStyle = '#fdfbf6';
+      g.fillRect(30, 52, 172, 10);                   // main rotor
+      g.fillRect(110, 40, 12, 8);                    // rotor hub
+      g.fillRect(110, 62, 12, 18);                   // mast
+      g.beginPath();                                 // cabin, nose to the left
+      g.ellipse(112, 112, 50, 34, 0, 0, Math.PI * 2);
+      g.fill();
+      g.beginPath();                                 // tail boom, tapering right
+      g.moveTo(150, 100); g.lineTo(216, 96); g.lineTo(216, 106); g.lineTo(150, 118);
+      g.closePath(); g.fill();
+      g.fillRect(208, 66, 9, 36);                    // tail rotor
+      g.fillRect(198, 96, 12, 14);                   // tail fin root
+      g.fillRect(84, 150, 76, 8);                    // skid
+      g.fillRect(96, 140, 7, 12); g.fillRect(136, 140, 7, 12);
+      g.save();                                      // sky-blue canopy over the nose
+      g.beginPath();
+      g.ellipse(112, 112, 50, 34, 0, 0, Math.PI * 2);
+      g.clip();
+      g.fillStyle = '#4fb0e8';
+      g.beginPath();
+      g.moveTo(62, 78); g.lineTo(112, 78); g.lineTo(94, 124); g.lineTo(58, 124);
+      g.closePath(); g.fill();
+      g.restore();
+    } else {
+      g.font = '700 118px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+      g.textBaseline = 'alphabetic';
+      const w = g.measureText('phl').width;
+      const tx = 128 - w / 2, ty = by + bh / 2 + 40; // descender rides low like the wordmark
+      g.fillStyle = '#fdfbf6';
+      g.fillText('phl', tx, ty);
+      const pw = g.measureText('p').width;           // sky-blue sail over the p's upper left
+      g.save();
+      g.beginPath();
+      g.moveTo(tx - 8, ty - 120);
+      g.lineTo(tx + pw * 0.95, ty - 120);
+      g.lineTo(tx - 8, ty - 14);
+      g.closePath();
+      g.clip();
+      g.fillStyle = '#4fb0e8';
+      g.fillText('phl', tx, ty);
+      g.restore();
+    }
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding;
     tex.anisotropy = 4;
@@ -7755,15 +7791,20 @@
     flightStrobe.count = 0;
     flightStrobe.renderOrder = 12;
     groupCity.add(flightStrobe);
-    flightPin = new THREE.InstancedMesh(
-      new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
-      // fog + tonemap exempt (the Round 29c label rule): a pin 11 km out over
-      // PHL must punch through the haze, or distance visibility is the joke
-      new THREE.MeshBasicMaterial({ map: flightPinTexture(), transparent: true, depthWrite: false, fog: false, toneMapped: false }), FLIGHT_CAP);
-    flightPin.frustumCulled = false;
-    flightPin.count = 0;
-    flightPin.renderOrder = 12;
-    groupCity.add(flightPin);
+    const mkPin = (kind) => {
+      const pin = new THREE.InstancedMesh(
+        new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
+        // fog + tonemap exempt (the Round 29c label rule): a pin 11 km out over
+        // PHL must punch through the haze, or distance visibility is the joke
+        new THREE.MeshBasicMaterial({ map: flightPinTexture(kind), transparent: true, depthWrite: false, fog: false, toneMapped: false }), FLIGHT_CAP);
+      pin.frustumCulled = false;
+      pin.count = 0;
+      pin.renderOrder = 12;
+      groupCity.add(pin);
+      return pin;
+    };
+    flightPin = mkPin();          // fixed wing: the phl wordmark
+    flightPinH = mkPin('heli');   // rotorcraft: a helicopter silhouette
     flightReady = true;
   }
   function flightPoll() {
@@ -7808,6 +7849,8 @@
           // ownOp is deliberately NOT shown: for leased metal it names the
           // trustee bank (BANK OF UTAH TRUSTEE), not an airline — noise
           p.len = FLIGHT_LEN[a.category] || (a.category === 'A0' ? 20 : 32);
+          p.heli = p.heli || a.category === 'A7' || HELI_TYPES.has(String(a.t || '').toUpperCase());
+          if (p.heli) p.len = FLIGHT_LEN.A7;
           p.landed = false;
           if (p.dx === undefined || Math.hypot(x - p.dx, z - p.dz) > 3200) { p.dx = x; p.dz = z; p.dy = p.fy; }
         }
@@ -7835,6 +7878,8 @@
     mk('test1', 1200, 900, 1800, 262, 145, -700, 'AAL1776', 'Airbus A321', 44);
     mk('test2', -300, -600, 4200, 45, 250, 1400, 'UAL88', 'Boeing 737-800', 39);
     mk('test3', -8200, 7700, 0, 90, 12, 0, 'DAL401', 'Boeing 757-200', 47, true);
+    mk('test4', 350, 420, 900, 200, 60, 0, 'PD1', 'Eurocopter EC135', 12);
+    flightMap.get('test4').heli = true;
     flightStatus();
     return flightMap.size;
   }
@@ -7874,10 +7919,10 @@
       flightPoll();
     }
     if (!FLIGHTS.on) {
-      if (flightMesh.count) { flightMesh.count = 0; flightStrobe.count = 0; flightPin.count = 0; flightMesh.instanceMatrix.needsUpdate = true; flightStrobe.instanceMatrix.needsUpdate = true; flightPin.instanceMatrix.needsUpdate = true; }
+      if (flightMesh.count) { flightMesh.count = 0; flightStrobe.count = 0; flightPin.count = 0; flightPinH.count = 0; flightMesh.instanceMatrix.needsUpdate = true; flightStrobe.instanceMatrix.needsUpdate = true; flightPin.instanceMatrix.needsUpdate = true; flightPinH.instanceMatrix.needsUpdate = true; }
       return;
     }
-    let i = 0;
+    let i = 0, iP = 0, iH = 0;
     const night = nightUniform.value;
     _sqB.copy(camera.quaternion);                    // pins billboard the camera
     const gone = [];
@@ -7919,13 +7964,15 @@
       _ss.set(ssc || 0.0001, ssc || 0.0001, ssc || 0.0001);
       _sm.compose(_sp, _fq, _ss);
       flightStrobe.setMatrixAt(i, _sm);
-      // PHL pin, billboarded and distance-scaled to hold ~34 px on screen so
-      // traffic reads from across the model (the SEPTA bus-badge recipe)
+      // pin, billboarded and distance-scaled to hold ~34 px on screen so
+      // traffic reads from across the model (the SEPTA bus-badge recipe);
+      // helicopters fly their own silhouette, everything else flies the phl mark
       _sp.set(p.dx, p.dy + p.len * 0.14 + 1.5, p.dz);
       const ps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
       _ss.set(ps, ps, ps);
       _sm.compose(_sp, _sqB, _ss);
-      flightPin.setMatrixAt(i, _sm);
+      if (p.heli) flightPinH.setMatrixAt(iH++, _sm);
+      else flightPin.setMatrixAt(iP++, _sm);
       i++;
     }
     if (gone.length) {
@@ -7934,10 +7981,12 @@
     }
     flightMesh.count = i;
     flightStrobe.count = i;
-    flightPin.count = i;
+    flightPin.count = iP;
+    flightPinH.count = iH;
     flightMesh.instanceMatrix.needsUpdate = true;
     flightStrobe.instanceMatrix.needsUpdate = true;
     flightPin.instanceMatrix.needsUpdate = true;
+    flightPinH.instanceMatrix.needsUpdate = true;
     if (pickedPlane) {
       flightCard(pickedPlane);
       _ssv.set(pickedPlane.dx, pickedPlane.dy + pickedPlane.len * 0.12 + 6, pickedPlane.dz).project(camera);
@@ -8163,6 +8212,248 @@
           ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
       }
     }
+  }
+
+  // ---------------------------------------------------------------- traffic
+  // Typical vehicle traffic: synthesized cars at PennDOT's measured street
+  // volumes (RMSTRAFFIC AADT conflated onto the OSM grid by bake_traffic.py),
+  // shaped by an urban diurnal curve on the model clock. Rush hour thickens to
+  // a stated 1:N sample of the true count; the small hours run at genuine 1:1
+  // density. These are VOLUMES, not live positions — no public feed of live
+  // cars exists, and the About panel says so. Fully baked: no fetch, no key,
+  // the one moving layer that also works inside the artifact sandbox.
+  const TRAFFIC = { on: true, cap: isTouch ? 300 : 900, n: 0, scale: 1 };
+  const btnTraffic = document.getElementById('btnTraffic');
+  const TRAFFIC_SPEED = [88, 64, 40, 34, 30, 22];       // km/h by class 0-5
+  const TRAFFIC_UP = new THREE.Vector3(0, 1, 0);
+  // hour-of-day shares of daily volume (normalized below): urban weekday with
+  // AM/PM commute shoulders, flatter weekend with a midday plateau
+  const TRAFFIC_WD = [.008, .005, .004, .004, .006, .015, .035, .062, .071, .055, .048, .050, .053, .052, .055, .065, .073, .078, .062, .045, .035, .028, .020, .012];
+  const TRAFFIC_WE = [.014, .010, .008, .005, .005, .008, .015, .025, .038, .050, .060, .066, .070, .070, .068, .066, .064, .062, .058, .050, .042, .035, .028, .020];
+  for (const tbl of [TRAFFIC_WD, TRAFFIC_WE]) {
+    const s = tbl.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < 24; i++) tbl[i] /= s;
+  }
+  // paint-shop reality, stored dark for the legacy-color lift; silver/white weighted
+  const CAR_PAL = [0x7e8287, 0x9a9a96, 0x1d1f24, 0x54565b, 0x7e8287, 0x9a9a96, 0x1d1f24, 0x6e2b28, 0x2c4363, 0x6e6353, 0x2e4a38];
+  const CAR_OFFW = [4.6, 3.6, 2.7, 2.3, 2.0, 1.6];      // lane offset from centerline by class
+  const trafficRuns = [];
+  let carMesh = null, carLights = null, trafficReady = false, trafficCars = 0;
+  let trafficNextRecon = 0, trafficLastMin = -1, trafficLastDate = '';
+  function carGeom() {
+    // ~4.5 m sedan from three boxes, nose toward +x, built at real meters so
+    // the instance scale stays uniform (the ship shear gotcha never applies)
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b) =>
+      parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), r, g, b, 0));
+    box(4.4, 0.6, 1.74, 0, 0.62, 0, 1, 1, 1);                 // body (takes instance tint)
+    box(2.25, 0.5, 1.56, -0.25, 1.12, 0, 0.13, 0.14, 0.16);   // cabin glass
+    box(4.24, 0.2, 1.62, 0, 0.16, 0, 0.1, 0.1, 0.11);         // skirt in wheel shadow
+    return septaMerge(parts);
+  }
+  function carLightGeom() {
+    // headlight pair (warm white, +x nose) and taillight pair (red). A separate
+    // MeshBasic mesh, NOT aGlow: septaMats.body's night emissive is fixed
+    // warm-white, so red taillights can't ride it (the flight-strobe pattern)
+    const parts = [];
+    const lamp = (cx, cz, r, g, b) =>
+      parts.push(septaColored(new THREE.BoxGeometry(0.16, 0.16, 0.34).translate(cx, 0.62, cz), r, g, b, 0));
+    lamp(2.18, 0.55, 1.0, 0.93, 0.72);
+    lamp(2.18, -0.55, 1.0, 0.93, 0.72);
+    lamp(-2.18, 0.55, 1.0, 0.1, 0.06);
+    lamp(-2.18, -0.55, 1.0, 0.1, 0.06);
+    return septaMerge(parts);
+  }
+  step('Setting the traffic flowing', () => {
+    if (typeof TRAFFIC_B64 === 'undefined' || !TRAFFIC_B64) { if (btnTraffic) btnTraffic.style.display = 'none'; return; }
+    const bin = Uint8Array.from(atob(TRAFFIC_B64), ch => ch.charCodeAt(0));
+    TRAFFIC_B64 = null;
+    const hdr = new Int32Array(bin.buffer, 0, 4);
+    if (hdr[0] !== 0x53485454) return;
+    const body = new Int16Array(bin.buffer, 16);
+    let k = 0;
+    for (let wI = 0; wI < hdr[1]; wI++) {
+      const n = body[k++], flags = body[k++], aadt = body[k++] * 10;
+      const cls = flags & 7, oneway = !!(flags & 8);
+      let pts = new Array(n);
+      for (let j = 0; j < n; j++) pts[j] = [body[k++] * 0.2, body[k++] * 0.2];
+      pts = densify(pts, 20);
+      // per-vertex height with the full terrain story — trench, bridge decks,
+      // viaducts, sunken carriageways — split into sub-runs at dead water
+      let cur = null;
+      const runs = [];
+      for (let j = 0; j < pts.length; j++) {
+        const x = pts[j][0], z = pts[j][1];
+        const jn = pts[Math.min(j + 1, pts.length - 1)], jp = pts[Math.max(j - 1, 0)];
+        let ux = jn[0] - jp[0], uz = jn[1] - jp[1];
+        const uL = Math.hypot(ux, uz) || 1; ux /= uL; uz /= uL;
+        let dead = false;
+        const core = inCore(x, z);
+        let y = siteY(x, z, 'road');
+        if (cls === 0 && core) {
+          // I-95 rides DOWN in the trench (the road step's motY blend, replicated)
+          const o = frontOff(x, z);
+          if (o > TERRAIN.trenchW && o < TERRAIN.trenchE) {
+            const eo = Math.min(o - TERRAIN.trenchW, TERRAIN.trenchE - o) / 14;
+            const ez = Math.min(z - (CORE_EXT.z0 + 4), (CORE_EXT.z1 - 4) - z) / 60;
+            const t = clamp(Math.min(eo, ez), 0, 1);
+            y = lerp(y, TERRAIN.trenchFloor + 0.55, t * t * (3 - 2 * t));
+          }
+        }
+        let lift = core ? LAYER.road + 0.04 : LAYER.road + (6 - Math.min(cls, 6)) * 0.055 + 0.05;
+        if (!core) {
+          const low = demY(x, z) < TERRAIN.water + 0.6;
+          if (low && riverCorridor(x, z)) {
+            if (cls > 1 || wwbNear(x, z)) dead = true;   // minor roads don't bridge; the WWB deck is custom
+            else y = Math.max(y, TERRAIN.water + (cls === 0 ? 20 : 13));
+          }
+        }
+        const oy = ovpDeckY(x, z, ux, uz);
+        if (oy !== null && oy > y) { y = oy; lift = 0.1; }
+        else if (cls <= 1) {
+          const sy = sunkCutNear(x, z, 1);
+          if (sy !== null && sy < y - 0.5) { y = sy; lift = 0.35; }
+        }
+        if (dead) { if (cur && cur.xs.length > 1) runs.push(cur); cur = null; continue; }
+        if (!cur) cur = { xs: [], zs: [], ys: [] };
+        cur.xs.push(x); cur.zs.push(z); cur.ys.push(y + lift);
+      }
+      if (cur && cur.xs.length > 1) runs.push(cur);
+      for (const r of runs) {
+        const m = r.xs.length;
+        const cum = new Float32Array(m);
+        let L = 0;
+        for (let j = 1; j < m; j++) { L += Math.hypot(r.xs[j] - r.xs[j - 1], r.zs[j] - r.zs[j - 1]); cum[j] = L; }
+        if (L < 25) continue;
+        trafficRuns.push({ xs: Float32Array.from(r.xs), zs: Float32Array.from(r.zs), ys: Float32Array.from(r.ys),
+          cum, len: L, cls, oneway, aadt, want: 0, cars: [] });
+      }
+    }
+    const carMat = septaMats.body || new THREE.MeshLambertMaterial({ vertexColors: true });
+    carMesh = new THREE.InstancedMesh(carGeom(), carMat, TRAFFIC.cap);
+    carMesh.frustumCulled = false;
+    carMesh.count = 0;
+    carMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    carMesh.setColorAt(0, new THREE.Color(1, 1, 1));    // allocate instanceColor before first draw
+    carMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    carMesh.castShadow = !isTouch;
+    carMesh.receiveShadow = true;
+    groupCity.add(carMesh);
+    carLights = new THREE.InstancedMesh(carLightGeom(),
+      new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }), TRAFFIC.cap);
+    carLights.frustumCulled = false;
+    carLights.count = 0;
+    carLights.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    carLights.renderOrder = 11;
+    groupCity.add(carLights);
+    trafficReady = true;
+  });
+  function trafficFrac() {
+    const dow = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay();
+    const we = dow === 0 || dow === 6;
+    const tbl = we ? TRAFFIC_WE : TRAFFIC_WD;
+    const h = clock.minutes / 60;
+    const h0 = Math.floor(h) % 24, f = h - Math.floor(h);
+    return { frac: (tbl[h0] + (tbl[(h0 + 1) % 24] - tbl[h0]) * f) * (we ? 0.85 : 1), dow };
+  }
+  function carSpawn(r, now) {
+    const dir = r.oneway ? 1 : (Math.random() < 0.5 ? 1 : -1);
+    // right-hand traffic: two-way runs offset right of travel; one-way
+    // carriageways spread across their own width
+    const off = r.oneway ? (Math.random() * 2 - 1) * CAR_OFFW[r.cls] * 0.7
+                         : CAR_OFFW[r.cls] * (0.75 + Math.random() * 0.5);
+    return { s: Math.random() * r.len, dir, off, seg: 0,
+      v: TRAFFIC_SPEED[r.cls] / 3.6 * (0.85 + Math.random() * 0.3),
+      col: CAR_PAL[(Math.random() * CAR_PAL.length) | 0],
+      born: now, die: 0 };
+  }
+  function trafficReconcile(now) {
+    const { frac } = trafficFrac();
+    let implied = 0;
+    for (const r of trafficRuns) { r.want = r.aadt * frac / TRAFFIC_SPEED[r.cls] * (r.len / 1000); implied += r.want; }
+    TRAFFIC.scale = Math.min(1, TRAFFIC.cap / Math.max(1, implied));
+    let n = 0;
+    for (let i = 0; i < trafficRuns.length; i++) {
+      const r = trafficRuns[i];
+      const tgt = Math.min(60, Math.floor(r.want * TRAFFIC.scale + hash01(i * 7.3)));
+      while (r.cars.length < tgt) r.cars.push(carSpawn(r, now));
+      let extra = r.cars.length - tgt;
+      for (let c = 0; c < r.cars.length && extra > 0; c++) {
+        if (!r.cars[c].die) { r.cars[c].die = now; extra--; }
+      }
+      n += Math.min(r.cars.length, tgt);
+    }
+    trafficCars = Math.min(n, TRAFFIC.cap);
+    trafficStatus();
+  }
+  const TRAFFIC_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function trafficStatus() {
+    if (!btnTraffic) return;
+    const { dow } = trafficFrac();
+    const h = Math.floor(clock.minutes / 60), m12 = ((h + 11) % 12) + 1, ap = h < 12 ? 'AM' : 'PM';
+    const sc = TRAFFIC.scale < 0.995 ? ' · 1:' + Math.max(2, Math.round(1 / TRAFFIC.scale)) + ' Sample' : '';
+    btnTraffic.title = 'Typical Traffic (R): ' + trafficCars + ' Cars · ' + TRAFFIC_DAYS[dow] + ' ' + m12 + ' ' + ap + sc;
+    const el = document.getElementById('trafficCount');
+    if (el) el.textContent = trafficCars ? String(trafficCars) : '';
+  }
+  function syncTrafficBtn() { if (btnTraffic) btnTraffic.classList.toggle('on', TRAFFIC.on); }
+  function toggleTraffic() { TRAFFIC.on = !TRAFFIC.on; syncTrafficBtn(); if (TRAFFIC.on) trafficNextRecon = 0; }
+  if (btnTraffic) btnTraffic.addEventListener('click', toggleTraffic);
+  syncTrafficBtn();
+  function updateTraffic(now, dt) {
+    if (!trafficReady) return;
+    if (!TRAFFIC.on) {
+      if (carMesh.count) { carMesh.count = 0; carLights.count = 0; carMesh.instanceMatrix.needsUpdate = true; carLights.instanceMatrix.needsUpdate = true; }
+      return;
+    }
+    // reconcile on a cadence, and instantly when the clock jumps (slider drags)
+    const dkey = clock.y + '-' + clock.m + '-' + clock.d;
+    const dmin = Math.abs(clock.minutes - trafficLastMin);
+    if (now >= trafficNextRecon || trafficLastDate !== dkey || (dmin > 2 && dmin < 1437)) {
+      trafficNextRecon = now + 600;
+      trafficLastMin = clock.minutes; trafficLastDate = dkey;
+      trafficReconcile(now);
+    }
+    const night = clamp((nightUniform.value - 0.06) / 0.25, 0, 1);
+    carLights.material.opacity = night * 0.92;
+    let i = 0;
+    for (const r of trafficRuns) {
+      const cars = r.cars;
+      for (let c = cars.length - 1; c >= 0; c--) {
+        const car = cars[c];
+        car.s += car.v * dt * car.dir;
+        let fade = Math.min(1, (now - car.born) / 700);
+        if (car.die) fade = Math.min(fade, Math.max(0, 1 - (now - car.die) / 700));
+        if ((car.die && fade <= 0) || car.s < 0 || car.s > r.len) { cars.splice(c, 1); continue; }
+        if (i >= TRAFFIC.cap) continue;
+        let seg = car.seg;
+        const last = r.cum.length - 2;
+        if (seg > last) seg = last;
+        while (seg < last && car.s > r.cum[seg + 1]) seg++;
+        while (seg > 0 && car.s < r.cum[seg]) seg--;
+        car.seg = seg;
+        const segL = (r.cum[seg + 1] - r.cum[seg]) || 1e-6;
+        const tt = (car.s - r.cum[seg]) / segL;
+        const ux = (r.xs[seg + 1] - r.xs[seg]) / segL, uz = (r.zs[seg + 1] - r.zs[seg]) / segL;
+        const hx = ux * car.dir, hz = uz * car.dir;
+        _sp.set(r.xs[seg] + (r.xs[seg + 1] - r.xs[seg]) * tt - hz * car.off,
+                r.ys[seg] + (r.ys[seg + 1] - r.ys[seg]) * tt,
+                r.zs[seg] + (r.zs[seg + 1] - r.zs[seg]) * tt + hx * car.off);
+        _sq.setFromAxisAngle(TRAFFIC_UP, Math.atan2(-hz, hx));
+        _ss.set(fade, fade, fade);
+        _sm.compose(_sp, _sq, _ss);
+        carMesh.setMatrixAt(i, _sm);
+        carMesh.setColorAt(i, _sc.setHex(car.col));
+        if (night > 0) carLights.setMatrixAt(i, _sm);
+        i++;
+      }
+    }
+    carMesh.count = i;
+    carLights.count = night > 0 ? i : 0;
+    carMesh.instanceMatrix.needsUpdate = true;
+    if (carMesh.instanceColor) carMesh.instanceColor.needsUpdate = true;
+    carLights.instanceMatrix.needsUpdate = true;
+    TRAFFIC.n = i;
   }
 
   // ---------------------------------------------------------------- solar clock
@@ -8541,6 +8832,7 @@
     updateIndego(now, dt);
     updateFlights(now, dt);
     updateShips(now, dt);
+    updateTraffic(now, dt);
     updateTreePick();
     updateSearchMark(now);
     updateLabels();
@@ -8552,7 +8844,7 @@
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, shipTest, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, shipTest, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });

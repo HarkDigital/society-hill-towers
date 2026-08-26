@@ -45,7 +45,12 @@
     refreshed each minute; tap a dock for its station. The Market&ndash;Frankford El rides
     its steel viaduct from the Callowhill portal to Frankford, though trains are not
     shown: SEPTA publishes no usable live positions for its rail lines, so rather than
-    guess, the model keeps to what's real. Vehicle positions: SEPTA real-time API.
+    guess, the model keeps to what's real. Car traffic follows the same honesty rule
+    from the other side: no public feed of live car positions exists, so the Typical
+    Traffic layer synthesizes cars at each street's real measured volume (PennDOT
+    annual average daily traffic), swelling through rush hour and thinning to a true
+    one-to-one count in the small hours &mdash; typical flows for the clock's day and
+    time, never claimed as live. Vehicle positions: SEPTA real-time API.
     Bike share: Indego (City of Philadelphia / Bicycle Transit Systems).
     Weather: Open-Meteo. Address search: OpenStreetMap Nominatim. Live flights: adsb.fi community ADS-B data. Live ships: AIS via aisstream.io.
     SEPTA and the SEPTA logo are trademarks of the Southeastern Pennsylvania

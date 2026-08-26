@@ -75,6 +75,9 @@ data_js += "let ST_SDF = " + (sdf_path.read_text(encoding="utf-8").strip() if sd
 # elevated roads + the Vine Street cut (bake_overpasses.py from the raw OSM dumps)
 ovp_path = ROOT / "overpasses.json"
 data_js += "const OVERPASSES = " + (ovp_path.read_text(encoding="utf-8").strip() if ovp_path.exists() else "null") + ";\n"
+# typical traffic volumes (fetch_traffic.py / bake_traffic.py — PennDOT AADT on OSM ways)
+tr_path = ROOT / "traffic.b64"
+data_js += 'let TRAFFIC_B64 = "' + (tr_path.read_text(encoding="utf-8").strip() if tr_path.exists() else "") + '";\n'
 
 # </script> inside embedded JS strings would terminate the tag early
 for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):

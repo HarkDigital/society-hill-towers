@@ -1354,6 +1354,37 @@ no longer rewrites anything (identical build ships to both; its grep guard
 refuses a proxyless build). flight-proxy-worker.js stays as the fallback
 recipe if the VPS ever goes away.
 
+Round 32 (Aug 26 — Mike: show traffic from the OpenDataPhilly catalog; helicopters
+shouldn't wear the phl pin): the Typical Traffic layer (R, default on, Layers row
+between Ships and Street Names). No public feed of live car positions exists, so
+this is the honest inversion: PennDOT RMSTRAFFIC AADT (fetch_traffic.py, 593
+segments cached in lidar_cache/traffic_raw/) conflated onto the raw OSM drivable
+ways (bake_traffic.py — way-ID dedup across wide+south dumps, oneway/tunnel tags
+kept, per-class match distance 25→10 m with parallelism ≥0.87 and plausibility
+caps so Water St never inherits I-95's count; 5,605 ways, 2,250 matched, 1,706
+oneways halved where PennDOT counts both carriageways together) into traffic.b64
+(123 KB, magic 0x53485454). The app section (// ------- traffic, before the solar
+clock) precomputes per-vertex y through the whole terrain story — motY trench
+blend for core cls-0, river decks +20/13 for cls≤1, dead-split over water for
+minor classes, wwbNear culled, ovpDeckY riding viaducts, sunkCutNear for cls≤1
+only (crossing streets must NOT dive into the Vine cut) — then simulates cars
+per run at AADT · hourlyFrac(clock) / speed(class) · km, weekday/weekend curves,
+reconciled every 600 ms and instantly on slider jumps. Cap 900 desktop / 300
+touch with a global scale: rush hour shows a stated "1:9 Sample" in the tooltip,
+3 AM runs at a true 1:1 (382 cars). Bodies are one InstancedMesh on
+septaMats.body (setColorAt every frame — slots shift as cars retire; palette
+stored dark); lights are a second MeshBasic InstancedMesh (fixed warm-white
+emissive can't do red taillights), opacity ramped off nightUniform — white
+pairs forward, red aft, free by day. Verified in-browser: cars down IN the
+I-95 trench (y≈-5), taillights at night, counts 893/5 PM vs 382/3 AM, mobile
+cap honored. Also: rotorcraft pins. flightPinTexture(kind) now draws a chunky
+side-view helicopter (rotor/cabin/boom/skids, sky-blue canopy) in the same
+badge casing; a second flightPinH InstancedMesh takes p.heli traffic (ADS-B
+category A7 or a ~55-code type set, sticky across polls, len forced to A7's
+12 m) while fixed wing keeps the phl wordmark. flightTest() gained a test
+EC135. PennDOT credit added to template credits + about_body; R in the About
+key table.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
