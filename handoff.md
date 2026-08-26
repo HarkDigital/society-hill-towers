@@ -1228,6 +1228,15 @@ NOTE for headless testing: the Browser pane runs NO rAF even when fronted —
 animation must be verified with frameOnce bursts (400 calls closed 775 m of
 easing gap and 37 m of descent), never by wall-clock waits.
 
+Round 29c (Aug 26 — Mike: neighborhood names invisible by day): the nb labels
+were white atlas glyphs TINTED dark then ACES-lifted to ghost gray over the
+pale noon city. Now the atlas bakes a cartographic halo for neighborhood names
+(pale 7 px casing rgba(248,244,233,.95) + dark core #2e2a22, final colors),
+nbMat is untinted white with toneMapped false, and the day/night color lerp is
+gone (the two-tone glyph reads on pale noon ground AND dark night ground by
+construction). District labels in the same atlas stay single-tone white so
+their bronze tint keeps working. Verified at noon and night over South Philly.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

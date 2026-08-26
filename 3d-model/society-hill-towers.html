@@ -7956,18 +7956,31 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
     g.fillStyle = '#fff';
     g.textBaseline = 'middle';
     let ax = PAD, ay = 0;
-    const put = (nm) => {
+    const put = (nm, haloed) => {
       const w = Math.min(Math.ceil(g.measureText(nm).width), 520);
       if (ax + w + PAD > AW) { ax = PAD; ay += RH; }
       if (ay + RH > AH) return null;
-      g.fillText(nm, ax, ay + RH / 2, 520);
+      if (haloed) {
+        // cartographic halo baked in final colors: a pale casing around a dark
+        // core stays readable over the pale noon city AND the night ground
+        // (a flat tint washed out at noon — Mike's ghost-text screenshot)
+        g.lineJoin = 'round';
+        g.strokeStyle = 'rgba(248,244,233,0.95)';
+        g.lineWidth = 7;
+        g.strokeText(nm, ax, ay + RH / 2, 520);
+        g.fillStyle = '#2e2a22';
+        g.fillText(nm, ax, ay + RH / 2, 520);
+        g.fillStyle = '#fff';
+      } else {
+        g.fillText(nm, ax, ay + RH / 2, 520);
+      }
       const r = [ax, ay, w, RH];
       ax += w + PAD * 2;
       return r;
     };
-    const nbRects = PLACES.nb.names.map(put);
+    const nbRects = PLACES.nb.names.map((nm) => put(nm, true));
     const hdLbl = PLACES.hd.filter((d) => d.lbl);
-    const hdRects = hdLbl.map((d) => put(d.n));
+    const hdRects = hdLbl.map((d) => put(d.n, false));
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding;
     tex.anisotropy = 8;
@@ -8011,7 +8024,8 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
     for (let i = 0; i + 3 < L.length; i += 4) nbEntries.push([nbRects[L[i]], L[i + 1], L[i + 2], NB_TH[L[i + 3]] || 55, 24]);
     // no depth test: a neighborhood's name is never blocked by its buildings
     // (Mike's rule) — badges at renderOrder 12 still paint over the names
-    nbMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, color: 0x4a443a, opacity: 0 });
+    nbMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, color: 0xffffff, opacity: 0 });
+    nbMat.toneMapped = false;   // the atlas carries its own halo colors
     nbMesh = makeMesh(nbEntries, nbMat);
     nbMesh.renderOrder = 11;
     nbMesh.visible = false;                   // fades in from altitude
@@ -9132,9 +9146,8 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
     if (hdMat) hdMat.color.copy(_c1.set(0x6b4f26)).lerp(_c2.set(0xc89b5e), night);  // district inlays: dark bronze by day, glowing at night
     if (hdLblMat) hdLblMat.color.copy(_c1.set(0x6b4f26)).lerp(_c2.set(0xc89b5e), night);
     if (nbMat) {
-      nbMat.color.copy(_c1.set(0x4a443a)).lerp(_c2.set(0xb0a894), night);
       const nbFade = placesOn ? smooth(420, 1000, camera.position.y) : 0;   // names live at altitude
-      nbMat.opacity = nbFade * 0.92;
+      nbMat.opacity = nbFade * 0.96;
       nbMesh.visible = nbFade > 0.02;
     }
     if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
