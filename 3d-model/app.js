@@ -6454,6 +6454,7 @@
       const r = rects[L2[i]];
       if (!r) continue;
       const x = L2[i + 1], z = L2[i + 2], br = L2[i + 3] * Math.PI / 180, cls = L2[i + 4];
+      const inCutName = /expressway/i.test(ST_LABELS.names[L2[i]] || '');   // only the mainline name sinks into the cut
       const dx = Math.cos(br), dz = Math.sin(br);
       const ux = dz, uz = -dx;             // glyph-up in world = left of travel (north-up read)
       const th = TH[cls], hw = th * (r[2] / FS) / 2, hh = th * (RH / FS) / 2;
@@ -6471,7 +6472,7 @@
         let ycs = siteY(cxw, czw, 'road');
         const oyc = ovpDeckY(cxw, czw, dx, dz);
         if (oyc !== null && oyc > ycs) ycs = oyc;
-        else {
+        else if (inCutName) {
           const vyc = vineCut(cxw, czw, -2);
           if (vyc !== null) ycs = vyc + 0.45;
         }
