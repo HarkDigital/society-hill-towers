@@ -3221,7 +3221,6 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
           '    vec3 stoneCol = vec3(0.80, 0.76, 0.68);',
           '    vec3 col = diffuseColor.rgb;',
           '    float lit = 0.0, glass = 0.0;',
-          '    float sbLit = -1.0;   // window-cluster LOD for towers; -1 = style has none',
           '    if (st == 1) {',
           '      float pitch = 4.4;',
           '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
@@ -3267,8 +3266,6 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
           '      col = mix(col, gc * 0.6, wm * (1.0 - smoothstep(0.03, 0.03 + aa, abs(m.x))) * 0.8);',
           '      col *= 1.0 - 0.10 * det * rectM(m, vec2(0.0, 0.38), vec2(pitch, 0.44), aa);',
           '      glass = max(glass, wm);',
-          '      vec2 sb = floor(cell / vec2(3.0, 2.0));',
-          '      sbLit = step(0.8, shtHash(sb + 4.7)) * (0.5 + 0.3 * shtHash(sb * 1.83 + 9.1));',
           '    } else if (st == 7) {',
           '      float fp = 2.75;',
           '      float nb = local ? max(1.0, floor(vWallL / 3.4)) : 1.0e6;',
@@ -3282,8 +3279,6 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
           '      vec3 gc7 = vec3(0.10, 0.12, 0.14) + vec3(0.10, 0.09, 0.07) * lit;',
           '      col = mix(col, gc7, gBand * 0.9);',
           '      glass = gBand;',
-          '      vec2 sb7 = floor(vec2(floor(u7 / 3.4), row) / vec2(3.0, 2.0));',
-          '      sbLit = step(0.8, shtHash(sb7 + 4.7)) * (0.5 + 0.3 * shtHash(sb7 * 1.83 + 9.1));',
           '    } else {',
           '      float pitch = (st == 4) ? 3.0 : (st == 8 ? 2.35 : 1.9);',
           '      float fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.05;',
@@ -3346,12 +3341,10 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
           // pattern fades with distance the facade keeps a soft aggregate glow instead
           // of dying into a solid mass
           '    float litOn = step(0.82, lit) * (0.4 + 0.6 * fract(lit * 9.7));',
-          '    // tall styles keep resolvable window clusters ~3.5x past the pattern',
-          '    // fade before melting into the aggregate glow — far towers at night',
-          '    // used to collapse into solid dark shapes',
-          '    float det2 = clamp(1.0 - (0.6 * fwidth(v) + 0.004 - 0.55) / 1.5, 0.0, 1.0);',
-          '    float farGlow = sbLit < 0.0 ? 0.115 : mix(0.115, max(sbLit, 0.06), det2);',
-          '    shtLit = mix(farGlow, glass * litOn, det);',
+          '    // past the per-window fade the facade keeps only the soft aggregate',
+          '    // glow (the 3x2-window cluster LOD read as big yellow squares that',
+          '    // popped away on approach, removed at the owner\'s request)',
+          '    shtLit = mix(0.05, glass * litOn, det);',
           '    diffuseColor.rgb = col;',
           '  }',
           '}',
@@ -5317,15 +5310,11 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
               '  vec2 pid = vec2(floor(u / 1.5), floor(vGWp.y / 4.0));\n' +
               '  float ph = fract(sin(dot(pid, vec2(127.1, 311.7))) * 43758.5453);\n' +
               // ~28% of curtain-wall panels glow at night, varied; past the per-panel
-              // fade, 3x2-panel clusters stay resolvable ~3x farther before melting
-              // into the soft average, so distant glass towers keep patchy lights
-              '  vec2 sb = floor(pid / vec2(3.0, 2.0));\n' +
-              '  float sbh = fract(sin(dot(sb, vec2(93.13, 217.7))) * 24634.42);\n' +
-              '  float det2 = clamp(1.0 - (max(aaU, aaV) - 1.0) / 2.8, 0.0, 1.0) * wall;\n' +
-              '  float sbLit = step(0.78, sbh) * (0.45 + 0.35 * fract(sbh * 5.7));\n' +
+              // fade the tower keeps only its soft average (the panel-cluster LOD
+              // read as big square lights from distance, removed at the owner's request)
               '  gWall = wall;\n' +
               '  gSpand = spand;\n' +
-              '  gLit = mix(mix(0.22, sbLit, det2), step(0.72, ph) * (0.4 + 0.6 * fract(ph * 7.3)), det);\n' +
+              '  gLit = mix(0.10, step(0.72, ph) * (0.4 + 0.6 * fract(ph * 7.3)), det);\n' +
               '}')
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= gWall * gLit * (1.0 - gSpand * 0.85) * 3.2;');
         };
