@@ -1005,6 +1005,66 @@ Round 21 (Aug 25 — de-AI pass 2 + sun + bus alignment + layers panel):
   compute tight specular-style highlights on unnormalized interpolated
   directions over a coarse dome. Page 16.20 MB.
 
+Round 25 (Aug 25 — overpasses, the Vine Street cut, and living water; Mike's ask):
+- **Elevated roads are REAL now.** `bake_overpasses.py` reads the raw dumps
+  (osm_wide_raw + osm_south_raw + city_tiles/*, dedup by way id — the packed road
+  formats carry no bridge/tunnel/layer tags) and bakes `overpasses.json` (~77 KB,
+  embedded as OVERPASSES): 446 elevated chains / 118 km (I-95 viaduct incl. Front
+  & Reed, I-676 ramps, Schuylkill bridges, Betsy Ross/Platt approaches, Roosevelt,
+  pedestrian bridges), 11 sunken runs, 1 open-cut corridor. Pipeline: classify
+  (bridge|layer>0 elev; tunnel|layer<0 sunk), chain through junctions (same
+  highway TYPE first, then straightest-turn > cos 50°; motorway/motorway_link
+  share a class code so class alone fragments at every gore — the hw string
+  matters), absorb plain gaps ≤ ~350 m for motorway-family (embankments between
+  viaduct sections; I-95 South Philly is 83% bridge-tagged with 30-290 m plain
+  gaps), slope-limited profiles (4.2%/5.5%/9%) against the app-replicated DEM
+  clamps, junction pinning via node_y (sunk chains solve first, ramps pin to
+  solved mainlines), ends ramp to grade at plain roads but HOLD at custom-bridge
+  names (Ben Franklin/Walt Whitman skipped entirely). Streets whose every
+  under-crossing is sunken (or in the core I-95 trench corridor) get lift 0.45
+  (bridges over cuts stay at street grade — naive layer lifts would hump Market
+  St over the trench). SUNKEN GRADE GOTCHA: NED dips into the expressway cuts
+  themselves, so sunken targets sample the RIM (max of ±30/±44 m lateral) or the
+  Vine floor undulated 5 m.
+- **App side** (module block after wwbNear): ovpGrid/ovpSegs hash; `ovpOwned`
+  (both ends + mid aligned in a chain footprint) suppresses the packed flat
+  ribbons in BOTH the wide and far road loops (septaRoadAdd still runs pre-drop,
+  so bus snapping keeps those centerlines); `ovpDeckY(x,z,ux,uz)` lifts buses
+  (updateTransit, aligned to v.sdx/sdz so passing UNDER a viaduct never lifts)
+  and street-label columns; `vineCut(x,z,pad)` = corridor test + floor.
+  Step 'Raising the overpasses' (after the far ring, so septaRoadGrid is full):
+  deck box ribbons (mitered, DoubleSide; embankment skirts to ground where
+  clearance < 2.2), edge parapets, piers every 21-26 m (hammerhead + twin
+  columns for motorway; skipped where `crossingRoadNear` finds a non-parallel
+  street below — septaSnapRoad alone returns only the NEAREST segment, which is
+  the deck's own centerline, so it can NOT be used for this), pier bases to the
+  riverbed when over water. The Vine cut: wide heightfield cells touching the
+  corridor are INDEX-skipped (pos/col stay parallel — the Fairmount tint), walls
+  floor portals from the corridor runs, 34 m grade collar aprons hide the ragged
+  hole rim, median barrier where halfW < 19, sunken carriageway ribbons down at
+  floor level. keepTree skips the corridor. Colors stored DARK (walls 0x5a5751,
+  floor 0x2f2d29) per the render-lift lesson. Walk mode still walks the grade
+  over the cut (visual hole only — siteY untouched).
+- **The water breathes** (`liquify(mat, scale, amp, speed)` injection shared by
+  waterMat, riverMat = wide+far water polys split out of areaParts, the basin
+  mat, and pool water split from its decks): four directional gradient waves
+  (46/21/9.5/4.1 m at river scale) tilt the shading normal (0.92 mix), a ±7.5%
+  three-wave albedo shimmer keeps matte altitude views alive, and an explicit
+  sun-glitter term (pow 140 on the perturbed normal, world-space cameraPosition)
+  rides totalEmissiveRadiance — the material stays deliberately rough (0.42) so
+  the river never mirrors, hence glitter must be explicit. uWAmp follows the
+  live wind (0.5 calm → 1.8 at ~9 m/s), uWDir the wind direction, uSun copies
+  sunDir every frame (at night that's the MOON: glitter × (1 − uNite·0.85) or it
+  reads as sequins), distance fade flattens beyond ~2.6 km against aliasing.
+  uTime advances by dt in frame() (frozen under prefers-reduced-motion; NOTE
+  dt-based, so headless frameOnce pairs barely advance it — verify by jumping
+  waterU.uTime, exposed in __dbg).
+- Verified in-browser at noon and night: viaduct + underpasses at Front & Reed,
+  Vine cut walls/floor/decks (vehicle crossing ON the Broad St deck), Schuylkill
+  piers in the water, BFB/WWB/core untouched, zero console errors. Page 19.05 MB
+  (Pages-only delivery). Rerun order: bake_overpasses.py (plain py3, ~1 min) →
+  build; re-bake whenever the raw dumps are refetched.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

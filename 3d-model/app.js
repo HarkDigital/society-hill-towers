@@ -890,6 +890,161 @@
     }
     return best < r * r;
   }
+
+  // ---------------------------------------------------------------- overpasses
+  // Baked by bake_overpasses.py from the raw OSM bridge/viaduct/layer/tunnel tags
+  // (the packed road formats carry none of them). el = elevated chains with a
+  // solved height profile, sk = sunken expressway carriageways, cor = the open-cut
+  // corridor runs of the Vine Street Expressway [[x, z, floorY, halfW], ...].
+  const OVP = (typeof OVERPASSES !== 'undefined' && OVERPASSES) ? OVERPASSES : { el: [], sk: [], cor: [] };
+  const ovpGrid = new Map();
+  const OVP_CELL = 28;
+  const ovpSegs = [];   // ax, az, bx, bz, ya, yb, hw, cls (stride 8; cls -1 = sunken)
+  {
+    const add = (a, b, hw, cls) => {
+      const idx = ovpSegs.length;
+      ovpSegs.push(a[0], a[1], b[0], b[1], a[2], b[2], hw, cls);
+      const minx = Math.floor((Math.min(a[0], b[0]) - hw) / OVP_CELL), maxx = Math.floor((Math.max(a[0], b[0]) + hw) / OVP_CELL);
+      const minz = Math.floor((Math.min(a[1], b[1]) - hw) / OVP_CELL), maxz = Math.floor((Math.max(a[1], b[1]) + hw) / OVP_CELL);
+      for (let gx = minx; gx <= maxx; gx++) for (let gz = minz; gz <= maxz; gz++) {
+        const k = gx + ':' + gz;
+        let arr = ovpGrid.get(k);
+        if (!arr) { arr = []; ovpGrid.set(k, arr); }
+        arr.push(idx);
+      }
+    };
+    for (const c of OVP.el) for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2, c.c);
+    for (const c of OVP.sk) for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, -1);
+  }
+  // a packed road segment lying along a baked chain is the same OSM way: the
+  // deck (or sunken roadway) build owns it, so the flat ribbon must not draw
+  function ovpOwned(ax, az, bx, bz) {
+    if (!ovpSegs.length) return false;
+    let ux = bx - ax, uz = bz - az;
+    const L = Math.hypot(ux, uz) || 1;
+    ux /= L; uz /= L;
+    const hit = (x, z) => {
+      const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+      if (!arr) return false;
+      for (const s of arr) {
+        const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], hw = ovpSegs[s + 6];
+        let dx = sbx - sax, dz = sbz - saz;
+        const sl = Math.hypot(dx, dz) || 1;
+        if (Math.abs((dx * ux + dz * uz) / sl) < 0.8) continue;
+        let t = ((x - sax) * dx + (z - saz) * dz) / (sl * sl);
+        t = clamp(t, 0, 1);
+        const px = sax + dx * t - x, pz = saz + dz * t - z;
+        const r = hw + 3.0;
+        if (px * px + pz * pz < r * r) return true;
+      }
+      return false;
+    };
+    return hit(ax, az) && hit(bx, bz) && hit((ax + bx) / 2, (az + bz) / 2);
+  }
+  // deck-top height at a point, aligned to a travel direction when one is given
+  // (buses and street labels ride the deck; things merely passing beneath do not)
+  function ovpDeckY(x, z, ux, uz) {
+    const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+    if (!arr) return null;
+    let best = null;
+    for (const s of arr) {
+      if (ovpSegs[s + 7] < 0) continue;            // sunken carriageways never lift
+      const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], hw = ovpSegs[s + 6];
+      const dx = sbx - sax, dz = sbz - saz;
+      const sl = Math.hypot(dx, dz) || 1;
+      if (ux !== undefined && Math.abs((dx * ux + dz * uz) / sl) < 0.72) continue;
+      let t = ((x - sax) * dx + (z - saz) * dz) / (sl * sl);
+      t = clamp(t, 0, 1);
+      const px = sax + dx * t - x, pz = saz + dz * t - z;
+      if (px * px + pz * pz > (hw + 1.5) * (hw + 1.5)) continue;
+      const y = ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t;
+      if (best === null || y > best) best = y;
+    }
+    return best;
+  }
+  // the Vine Street open cut: corridor membership + floor height (pad widens or,
+  // negative, shrinks the tested corridor width)
+  const vineBox = { x0: 1e9, x1: -1e9, z0: 1e9, z1: -1e9 };
+  for (const run of OVP.cor) for (const p of run) {
+    vineBox.x0 = Math.min(vineBox.x0, p[0] - p[3] - 4); vineBox.x1 = Math.max(vineBox.x1, p[0] + p[3] + 4);
+    vineBox.z0 = Math.min(vineBox.z0, p[1] - p[3] - 4); vineBox.z1 = Math.max(vineBox.z1, p[1] + p[3] + 4);
+  }
+  function vineCut(x, z, pad) {
+    if (x < vineBox.x0 || x > vineBox.x1 || z < vineBox.z0 || z > vineBox.z1) return null;
+    pad = pad || 0;
+    for (const run of OVP.cor) {
+      for (let i = 0; i + 1 < run.length; i++) {
+        const a = run[i], b = run[i + 1];
+        const dx = b[0] - a[0], dz = b[1] - a[1];
+        const L2 = dx * dx + dz * dz || 1e-9;
+        let t = ((x - a[0]) * dx + (z - a[1]) * dz) / L2;
+        t = clamp(t, 0, 1);
+        const px = a[0] + dx * t - x, pz = a[1] + dz * t - z;
+        const hw = a[3] + (b[3] - a[3]) * t + pad;
+        if (px * px + pz * pz < hw * hw) return a[2] + (b[2] - a[2]) * t;
+      }
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- living water
+  // Every water material shares these uniforms; liquify() injects a moving sum of
+  // directional gradient waves that tilts the shading normal (sun glitter, moving
+  // sky reflections) plus a faint albedo shimmer so matte views from altitude read
+  // too. No vertex displacement: shorelines and copings stay watertight. Amplitude
+  // follows the live wind (applyWx); a distance fade keeps far water calm so the
+  // ripple field never aliases into noise at the horizon.
+  const waterU = { uTime: { value: 7.3 }, uWAmp: { value: 1.0 }, uWDir: { value: new THREE.Vector2(0.86, 0.5) }, uSun: { value: new THREE.Vector3(0.3, 0.8, 0.2) } };
+  function liquify(mat, scale, amp, speed) {
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uTime = waterU.uTime;
+      sh.uniforms.uWAmp = waterU.uWAmp;
+      sh.uniforms.uWDir = waterU.uWDir;
+      sh.uniforms.uSun = waterU.uSun;
+      sh.uniforms.uNite = nightUniform;   // resolved at first render, after its declaration
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWq;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWq = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWq;\nuniform float uTime, uWAmp, uNite;\nuniform vec2 uWDir;\nuniform vec3 uSun;\nfloat wGlint = 0.0;\n' +
+          'vec2 wgrad(vec2 p, vec2 d, float lam, float sp, float t) {\n' +
+          '  float k = 6.2831853 / lam;\n' +
+          '  return d * (cos(dot(p, d) * k + t * sp) * k);\n' +
+          '}\n')
+        .replace('#include <normal_fragment_begin>', '#include <normal_fragment_begin>\n{\n' +
+          '  float wsc = ' + scale.toFixed(3) + ';\n' +
+          '  float wsp = ' + speed.toFixed(3) + ';\n' +
+          '  float wamp = ' + amp.toFixed(3) + ' * uWAmp;\n' +
+          '  vec2 wd = normalize(uWDir);\n' +
+          '  vec2 wp = vec2(-wd.y, wd.x);\n' +
+          '  float wdist = length(vViewPosition);\n' +
+          '  float wfade = clamp(1.35 - wdist / (2600.0 * wsc + 420.0), 0.14, 1.0);\n' +
+          '  vec2 g = wgrad(vWq.xz, wd, 46.0 * wsc, 1.15 * wsp, uTime) * 0.5;\n' +
+          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.62), 21.0 * wsc, 1.6 * wsp, uTime) * 0.34;\n' +
+          '  g += wgrad(vWq.xz, normalize(wd - wp * 0.8), 9.5 * wsc, 2.3 * wsp, uTime) * 0.22;\n' +
+          '  g += wgrad(vWq.xz, normalize(wp - wd * 0.35), 4.1 * wsc, 3.1 * wsp, uTime) * 0.11;\n' +
+          '  g *= wamp * wfade;\n' +
+          '  vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));\n' +
+          '  normal = normalize(mix(normal, wn, 0.92));\n' +
+          '  float wh = sin(dot(vWq.xz, wd) * (6.2831853 / (46.0 * wsc)) + uTime * 1.15 * wsp)\n' +
+          '           + 0.7 * sin(dot(vWq.xz, normalize(wd - wp * 0.8)) * (6.2831853 / (9.5 * wsc)) + uTime * 2.3 * wsp)\n' +
+          '           + 0.45 * sin(dot(vWq.xz, normalize(wp + wd * 0.5)) * (6.2831853 / (3.1 * wsc)) + uTime * 3.6 * wsp);\n' +
+          '  diffuseColor.rgb *= 1.0 + wh * 0.075 * wamp * wfade;\n' +
+          // sun glitter on the perturbed surface: the material is deliberately rough
+          // (the river must not mirror the sky), so the sparkle is added explicitly
+          '  vec3 wview = normalize(cameraPosition - vWq);\n' +
+          '  float wspec = pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 140.0);\n' +
+          // at night uSun is the MOON: keep a faint moonglade, not a sequin field
+          '  wGlint = wspec * smoothstep(0.02, 0.1, uSun.y) * (0.55 + 0.45 * uWAmp) * wfade * (1.0 - uNite * 0.85);\n' +
+          '}\n')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' +
+          'totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * wGlint * 1.15;\n');
+    };
+  }
+  // the outer rivers and far water polygons share one animated material
+  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55 });
+  liquify(riverMat, 1.0, 1.35, 1.0);
+
   function waterPoint(along, out) {
     // along: meters along the shoreline from the towers' projection; out: meters east of the bulkhead
     const t = (towersCenter.x - wl.px) * wl.dx + (towersCenter.z - wl.pz) * wl.dz;
@@ -1230,6 +1385,7 @@
         const cell = 25, nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
         const pos = [];
         const col = [];
+        const hole = [];   // vertices inside the Vine Street cut: their cells are skipped
         for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
           const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
           const y = demY(x, z);
@@ -1239,6 +1395,7 @@
           // gray band under the deck; between the banks, send them to the bed
           if (x > 880 && x < 1950 && y >= TERRAIN.water + 0.6 && y < TERRAIN.water + 4.5 && wwbNear(x, z, 260)) yy = TERRAIN.bed - 0.05;
           pos.push(x, yy, z);
+          hole.push(vineCut(x, z, -1) !== null ? 1 : 0);
           const inD = Math.min(x - FMZ.x0, FMZ.x1 - x, z - FMZ.z0, FMZ.z1 - z);
           const t = clamp(inD / 80, 0, 1);
           col.push(1 + (fmR[0] - 1) * t, 1 + (fmR[1] - 1) * t, 1 + (fmR[2] - 1) * t);
@@ -1246,6 +1403,10 @@
         const idx = [];
         for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
           const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
+          // the Vine Street Expressway cut is open ground: drop cells touching it
+          // (index skip only — pos and col stay parallel; the collar apron built in
+          // 'Raising the overpasses' hides the ragged hole rim at grade)
+          if (hole[a] || hole[b] || hole[c] || hole[d]) continue;
           idx.push(a, c, b, b, c, d);
         }
         const g = new THREE.BufferGeometry();
@@ -1314,6 +1475,7 @@
     walls.receiveShadow = true; groupCity.add(walls);
 
     const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55 });
+    liquify(waterMat, 1.0, 1.35, 1.0);      // the Delaware breathes
     const water = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
     groupCity.add(water);
@@ -1327,7 +1489,9 @@
       if (a.kind === 'water' && a.poly.length >= 3) wparts.push({ geom: flatPoly(a.poly, null, LAYER.basin), color: new THREE.Color(COLORS.water) });
     }
     if (wparts.length) {
-      const wm = new THREE.Mesh(mergeColored(wparts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.2 }));
+      const basinMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.2 });
+      liquify(basinMat, 0.12, 0.9, 2.2);   // pond-scale ripples on basins and fountains
+      const wm = new THREE.Mesh(mergeColored(wparts), basinMat);
       groupCity.add(wm);
     }
     // swimming pools (OSM leisure=swimming_pool; missed by the original query)
@@ -1383,7 +1547,13 @@
         deckParts.push({ geom: flatPoly(cop, null, LAYER.pool - 0.015), color: new THREE.Color(0xe9e5da) });
       }
     }
-    const poolMesh = new THREE.Mesh(mergeColored(poolParts.concat(deckParts)),
+    // pool water animates, so it splits from the decks and copings
+    const poolWaterMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.15, envMapIntensity: 0.7 });
+    liquify(poolWaterMat, 0.055, 0.8, 2.6);
+    const poolWater = new THREE.Mesh(mergeColored(poolParts), poolWaterMat);
+    poolWater.receiveShadow = true;
+    groupCity.add(poolWater);
+    const poolMesh = new THREE.Mesh(mergeColored(deckParts),
       new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.15, envMapIntensity: 0.7 }));
     poolMesh.receiveShadow = true;
     groupCity.add(poolMesh);
@@ -3542,6 +3712,7 @@
           else deck = t === 0 ? 20 : 13;                     // major roads become bridge decks
         }
         if (deck && wwbNear(mx, mz)) continue;               // the custom WWB deck owns its crossing
+        if (ovpOwned(a[0], a[1], q[0], q[1])) continue;      // a baked overpass deck or sunken roadway owns it
         // a wide segment lying ALONG a core street is a duplicate and would z-fight it
         if (a[0] > CORE_EXT.x0 - 38 && a[0] < CORE_EXT.x1 + 38 && a[1] > CORE_EXT.z0 - 38 && a[1] < CORE_EXT.z1 + 38 &&
             q[0] > CORE_EXT.x0 - 38 && q[0] < CORE_EXT.x1 + 38 && q[1] > CORE_EXT.z0 - 38 && q[1] < CORE_EXT.z1 + 38 &&
@@ -3928,8 +4099,8 @@
         turretAt(-58, D0, -1);                              // turret 3, facing aft
       }
     }
-    // parks, water, piers
-    const areaParts = [];
+    // parks, water, piers (water splits out onto the animated river material)
+    const areaParts = [], waterAreaParts = [];
     for (let i = 0; i < hdr[3]; i++) {
       const n = body[k++], kind = body[k++];
       const poly = new Array(n);
@@ -3950,7 +4121,7 @@
       if (kind !== 1 && wwbNear(acx, acz)) continue;
       try {
         if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 1500 ? drapedPoly(poly, LAYER.park, 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.84 + hash01(i) * 0.16), style: 3 });
-        else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
+        else if (kind === 1) waterAreaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
         else areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 });
       } catch (e) { /* degenerate polygon */ }
     }
@@ -4044,6 +4215,7 @@
       groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
+    if (waterAreaParts.length) groupCity.add(new THREE.Mesh(mergeColored(waterAreaParts), riverMat));
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
     scene.fog.near = 1900; scene.fog.far = 7600;
@@ -4394,6 +4566,7 @@
         }
         if (deck && wwbNear(mx, mz)) continue;         // the custom WWB deck owns its crossing
         if (inWide(a) && inWide(q)) continue;          // the wide set paves there
+        if (ovpOwned(a[0], a[1], q[0], q[1])) continue; // a baked overpass deck owns it
         const px = -dz * hw, pz = dx * hw;
         const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 2.9 + 0.4) * 0.1;
         let ya0 = siteY(a[0], a[1], 'road'), yb0 = siteY(q[0], q[1], 'road');
@@ -4417,8 +4590,8 @@
       }
       if ((i & 2047) === 2047) await yieldNow();
     }
-    // far areas
-    const areaParts = [];
+    // far areas (water splits out onto the animated river material)
+    const areaParts = [], waterAreaParts = [];
     for (let i = 0; i < hdr[3]; i++) {
       const n = body[k++], kind = body[k++];
       const poly = new Array(n);
@@ -4429,7 +4602,7 @@
       }
       try {
         if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 40000 ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
-        else if (kind === 1) areaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
+        else if (kind === 1) waterAreaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
         else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
       } catch (e) { /* degenerate */ }
     }
@@ -4486,6 +4659,7 @@
       groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
+    if (waterAreaParts.length) groupCity.add(new THREE.Mesh(mergeColored(waterAreaParts), riverMat));
     // the world is now the whole city
     bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
     scene.fog.near = 2400; scene.fog.far = 13000;
@@ -4507,6 +4681,222 @@
       el.textContent = nm;
       labelsRoot.appendChild(el);
       labels.push({ el, pos: new V3(lx, siteY(lx, lz, 'ground') + lh, lz), visible: false, far: true });
+    }
+  });
+
+  step('Raising the overpasses', () => {
+    if (!OVP.el.length && !OVP.cor.length && !OVP.sk.length) return;
+    const parts = [];
+    // stored DARK for the legacy color pipeline (flats render ~2.5x lighter)
+    const cTop = [0x3b3833, 0x3b3833, 0x3f3c37, 0x3f3c37, 0x43403b, 0x45423d, 0x8f8c85];
+    const cConc = 0x6e6b64, cParapet = 0x7d7a73, cPier = 0x6b6760, cCap = 0x5c5852;
+    const cWall = 0x5a5751, cFloor = 0x2f2d29;
+    const tint = (hex, m) => new THREE.Color(hex).multiplyScalar(m);
+    // densify a solved [x, z, y] profile, interpolating height
+    const dens3 = (pts, step3) => {
+      const out = [pts[0].slice()];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const k = Math.max(1, Math.ceil(L / step3));
+        for (let j = 1; j <= k; j++) {
+          const t = j / k;
+          out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]);
+        }
+      }
+      return out;
+    };
+    // mitered per-vertex left normals for a polyline
+    const norms = (pts) => {
+      const nrm = [];
+      for (let i = 0; i < pts.length; i++) {
+        const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)];
+        let dx = b[0] - a[0], dz = b[1] - a[1];
+        const L = Math.hypot(dx, dz) || 1;
+        nrm.push([-dz / L, dx / L]);
+      }
+      return nrm;
+    };
+    // closed box ribbon along a 3D profile: top face at y+dyT, bottom at bots[i]
+    // (or y+dyB), both side walls. The material is DoubleSide, so winding is safe.
+    const boxRibbon = (pts, hw, dyT, dyB, colTop, colSide, bots) => {
+      const nrm = norms(pts);
+      const top = [], side = [];
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1], na = nrm[i], nb = nrm[i + 1];
+        const aL = [a[0] + na[0] * hw, a[1] + na[1] * hw], aR = [a[0] - na[0] * hw, a[1] - na[1] * hw];
+        const bL = [b[0] + nb[0] * hw, b[1] + nb[1] * hw], bR = [b[0] - nb[0] * hw, b[1] - nb[1] * hw];
+        const aT = a[2] + dyT, bT = b[2] + dyT;
+        const aB = bots ? bots[i] : a[2] + dyB, bB = bots ? bots[i + 1] : b[2] + dyB;
+        top.push(aL[0], aT, aL[1], bL[0], bT, bL[1], bR[0], bT, bR[1],
+                 aL[0], aT, aL[1], bR[0], bT, bR[1], aR[0], aT, aR[1]);
+        side.push(aL[0], aB, aL[1], bL[0], bB, bL[1], bR[0], bB, bR[1],
+                  aL[0], aB, aL[1], bR[0], bB, bR[1], aR[0], aB, aR[1]);
+        for (const [p0, p1] of [[aL, bL], [aR, bR]]) {
+          side.push(p0[0], aT, p0[1], p0[0], aB, p0[1], p1[0], bB, p1[1],
+                    p0[0], aT, p0[1], p1[0], bB, p1[1], p1[0], bT, p1[1]);
+        }
+      }
+      const mk = (arr, col) => {
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+        g.computeVertexNormals();
+        parts.push({ geom: g, color: col, style: 3 });
+      };
+      if (top.length) mk(top, colTop);
+      if (side.length) mk(side, colSide);
+    };
+    const boxAt = (cx, cz, ux, uz, along, across, y0, y1, col) => {
+      const g = new THREE.BoxGeometry(along, y1 - y0, across);
+      g.rotateY(Math.atan2(-uz, ux));
+      g.translate(cx, (y0 + y1) / 2, cz);
+      parts.push({ geom: g, color: col, style: 3 });
+    };
+    // any drivable street passing under here that is not parallel to (ux, uz)?
+    const crossingRoadNear = (x, z, r, ux, uz) => {
+      const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
+      for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
+        const a = septaRoadGrid.get(cx2 + ':' + cz2);
+        if (!a) continue;
+        for (let i = 0; i < a.length; i += 4) {
+          const ax = a[i], az = a[i + 1], dx = a[i + 2] - ax, dz = a[i + 3] - az;
+          const L2 = dx * dx + dz * dz || 1e-9;
+          let tt = ((x - ax) * dx + (z - az) * dz) / L2;
+          tt = tt < 0 ? 0 : tt > 1 ? 1 : tt;
+          const ex = ax + dx * tt - x, ez = az + dz * tt - z;
+          if (ex * ex + ez * ez > r * r) continue;
+          const L = Math.sqrt(L2);
+          if (Math.abs((dx * ux + dz * uz) / L) < 0.82) return true;
+        }
+      }
+      return false;
+    };
+    // ---------------- elevated chains: deck box, parapets, piers ----------------
+    for (let ci = 0; ci < OVP.el.length; ci++) {
+      const c = OVP.el[ci];
+      const hw = Math.max(1.6, c.w / 2);
+      const dep = c.c <= 1 ? 1.7 : (c.c === 6 ? 0.5 : 1.15);
+      const pts = dens3(c.p, 13);
+      const jit = 0.92 + hash01(ci * 2.13) * 0.16;
+      // embankment skirts: where the deck sits low, the sides run to the ground
+      const bots = pts.map((p) => {
+        const gy = siteY(p[0], p[1], 'ground');
+        return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gy - 0.4) : p[2] - dep;
+      });
+      boxRibbon(pts, hw, 0, -dep, tint(cTop[c.c] || 0x3b3833, 1), tint(cConc, jit), bots);
+      // parapets ride the deck edges (thin rails on footbridges)
+      const nrm = norms(pts);
+      const pOff = hw - (c.c === 6 ? 0.16 : 0.36);
+      const pT = c.c === 6 ? 1.15 : 1.02, pW = c.c === 6 ? 0.09 : 0.17;
+      for (const s of [1, -1]) {
+        const edge = pts.map((p, i) => [p[0] + nrm[i][0] * pOff * s, p[1] + nrm[i][1] * pOff * s, p[2]]);
+        boxRibbon(edge, pW, pT, -0.25, tint(cParapet, jit), tint(cParapet, jit * 0.94));
+      }
+      // piers wherever there is clearance and no street crossing beneath
+      const gap = c.c <= 1 ? 26 : (c.c === 6 ? 15 : 21);
+      let acc = gap * 0.6;
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const a = pts[i], b = pts[i + 1];
+        const segL = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        acc += segL;
+        if (acc < gap) continue;
+        acc = 0;
+        const x = (a[0] + b[0]) / 2, z = (a[1] + b[1]) / 2, y = (a[2] + b[2]) / 2;
+        let ux = b[0] - a[0], uz = b[1] - a[1];
+        const uL = Math.hypot(ux, uz) || 1;
+        ux /= uL; uz /= uL;
+        const vf = vineCut(x, z, -1);
+        const wet = demY(x, z) < TERRAIN.water + 0.6 && riverCorridor(x, z);
+        const gy = vf !== null ? vf : (wet ? TERRAIN.bed - 1.2 : siteY(x, z, 'ground'));
+        const capBot = y - dep - (c.c === 6 ? 0 : 1.25);
+        if (capBot - gy < 2.0) continue;
+        if (crossingRoadNear(x, z, 7.5, ux, uz)) continue;
+        const ps = wet ? 1.6 : 1;
+        if (c.c <= 1) {
+          boxAt(x, z, ux, uz, 2.3, c.w * 0.92, y - dep - 1.35, y - dep + 0.15, tint(cCap, jit));
+          const px = -uz * c.w * 0.24, pz = ux * c.w * 0.24;
+          boxAt(x + px, z + pz, ux, uz, 1.5 * ps, 2.0 * ps, gy - 2, capBot + 0.3, tint(cPier, jit));
+          boxAt(x - px, z - pz, ux, uz, 1.5 * ps, 2.0 * ps, gy - 2, capBot + 0.3, tint(cPier, jit));
+        } else if (c.c === 6) {
+          boxAt(x, z, ux, uz, 0.7, 0.7, gy - 2, y - dep + 0.2, tint(cPier, jit));
+        } else {
+          boxAt(x, z, ux, uz, 1.9, c.w * 0.62, y - dep - 1.15, y - dep + 0.15, tint(cCap, jit));
+          boxAt(x, z, ux, uz, 1.35 * ps, 1.8 * ps, gy - 2, capBot + 0.3, tint(cPier, jit));
+        }
+      }
+    }
+    // ---------------- the Vine Street cut: walls, floor, portals ----------------
+    const collarParts = [];
+    for (const run of OVP.cor) {
+      const nrm = norms(run);
+      const wl = run.map((p, i) => [p[0] + nrm[i][0] * p[3], p[1] + nrm[i][1] * p[3], p[2]]);
+      const wr = run.map((p, i) => [p[0] - nrm[i][0] * p[3], p[1] - nrm[i][1] * p[3], p[2]]);
+      const gl = wl.map((p) => siteY(p[0], p[1], 'ground'));
+      const gr = wr.map((p) => siteY(p[0], p[1], 'ground'));
+      const quads = [];
+      for (let i = 0; i + 1 < run.length; i++) {
+        // retaining walls rise from below the floor to a low parapet above grade
+        quads.push(wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], wl[i + 1][2] - 0.6, wl[i + 1][1],
+                   wl[i + 1][0], gl[i + 1] + 0.82, wl[i + 1][1],
+                   wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], gl[i + 1] + 0.82, wl[i + 1][1],
+                   wl[i][0], gl[i] + 0.82, wl[i][1]);
+        quads.push(wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], wr[i + 1][2] - 0.6, wr[i + 1][1],
+                   wr[i + 1][0], gr[i + 1] + 0.82, wr[i + 1][1],
+                   wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], gr[i + 1] + 0.82, wr[i + 1][1],
+                   wr[i][0], gr[i] + 0.82, wr[i][1]);
+      }
+      const wg = new THREE.BufferGeometry();
+      wg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(quads), 3));
+      wg.computeVertexNormals();
+      parts.push({ geom: wg, color: new THREE.Color(cWall), style: 3 });
+      // floor slab wall to wall
+      const fq = [];
+      for (let i = 0; i + 1 < run.length; i++) {
+        fq.push(wl[i][0], run[i][2], wl[i][1], wl[i + 1][0], run[i + 1][2], wl[i + 1][1], wr[i + 1][0], run[i + 1][2], wr[i + 1][1],
+                wl[i][0], run[i][2], wl[i][1], wr[i + 1][0], run[i + 1][2], wr[i + 1][1], wr[i][0], run[i][2], wr[i][1]);
+      }
+      const fg = new THREE.BufferGeometry();
+      fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fq), 3));
+      fg.computeVertexNormals();
+      parts.push({ geom: fg, color: new THREE.Color(cFloor), style: 3 });
+      // portal faces where the cut meets a covered section
+      for (const e of [0, run.length - 1]) {
+        const pg = [wl[e][0], run[e][2] - 0.6, wl[e][1], wr[e][0], run[e][2] - 0.6, wr[e][1],
+                    wr[e][0], (gl[e] + gr[e]) / 2 + 0.6, wr[e][1],
+                    wl[e][0], run[e][2] - 0.6, wl[e][1], wr[e][0], (gl[e] + gr[e]) / 2 + 0.6, wr[e][1],
+                    wl[e][0], (gl[e] + gr[e]) / 2 + 0.6, wl[e][1]];
+        const g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pg), 3));
+        g2.computeVertexNormals();
+        parts.push({ geom: g2, color: new THREE.Color(cWall), style: 3 });
+      }
+      // grade collar apron: hides the ragged heightfield hole around the cut
+      for (const s of [1, -1]) {
+        const off = run.map((p, i) => [p[0] + nrm[i][0] * (p[3] + 16.5) * s, p[1] + nrm[i][1] * (p[3] + 16.5) * s]);
+        collarParts.push({ geom: ribbon(off, 34, 0.07, (x, z) => siteY(x, z, 'ground')), color: new THREE.Color(COLORS.ground), style: 3 });
+      }
+      // median barrier down the cut where the carriageways run close
+      const med = run.filter((p) => p[3] < 19).map((p) => [p[0], p[1], p[2]]);
+      if (med.length > 2) boxRibbon(med, 0.26, 0.85, -0.1, tint(cParapet, 1), tint(cParapet, 0.94));
+    }
+    // ---------------- sunken carriageways: the expressway down in the cut ------
+    for (const c of OVP.sk) {
+      const pts = dens3(c.p, 14);
+      boxRibbon(pts, Math.max(1.6, c.w / 2), 0, -0.5, tint(0x3b3833, 1), tint(0x35332f, 1));
+    }
+    if (parts.length) {
+      const ovpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
+      const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
+      mesh.castShadow = mesh.receiveShadow = true;
+      groupCity.add(mesh);
+      rayTargets.push(mesh);
+    }
+    if (collarParts.length) {
+      const collarMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0, side: THREE.DoubleSide });
+      groundMats.push(collarMat);
+      const collar = new THREE.Mesh(mergeColored(collarParts), collarMat);
+      collar.receiveShadow = true;
+      groupCity.add(collar);
     }
   });
 
@@ -4613,6 +5003,7 @@
     const CORE = new Uint8Array(nAll + 512);
     let n = 0;
     const keepTree = (x, z, dbh, ni, core) => {
+      if (vineCut(x, z, 2) !== null) return;   // no trees floating over the expressway cut
       const g = ni >= 0 ? (TREE_NAMES.g[ni] || 0) : 0;
       const st = TREE_STYLE[g] || TREE_STYLE[0];
       X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0;
@@ -5911,6 +6302,12 @@
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
         v.gx = v.dx; v.gz = v.dz;
         v.gy = siteY(v.dx, v.dz, 'road');
+        // a vehicle on a bridge street rides the deck, not the ground beneath it
+        // (aligned to its snapped street axis so passing under a viaduct never lifts)
+        if (v.sdx || v.sdz) {
+          const oy = ovpDeckY(v.dx, v.dz, v.sdx, v.sdz);
+          if (oy !== null && oy > v.gy) v.gy = oy;
+        }
       }
       const spec = SEPTA_KIND[v.kind];
       if (si < 1600) {
@@ -6070,7 +6467,15 @@
       for (let c2 = 0; c2 <= cols; c2++) {
         const t2 = c2 / cols * 2 - 1;
         const cxw = x + dx * t2 * hw, czw = z + dz * t2 * hw;
-        const yc = siteY(cxw, czw, 'road') + LIFT[cls];
+        // names ride the overpass decks, and the expressway name rides the cut floor
+        let ycs = siteY(cxw, czw, 'road');
+        const oyc = ovpDeckY(cxw, czw, dx, dz);
+        if (oyc !== null && oyc > ycs) ycs = oyc;
+        else {
+          const vyc = vineCut(cxw, czw, -2);
+          if (vyc !== null) ycs = vyc + 0.45;
+        }
+        const yc = ycs + LIFT[cls];
         pos.push(cxw - ux * hh, yc, czw - uz * hh, cxw + ux * hh, yc, czw + uz * hh);
         const uc = u0 + (u1 - u0) * (c2 / cols);
         uv.push(uc, v0, uc, v1);
@@ -6974,6 +7379,9 @@
     const dir = ((cur.wind_direction_10m == null ? 250 : cur.wind_direction_10m) + 180) * Math.PI / 180;
     const drift = 0.0008 + spd * 0.00035;
     wxWind.set(Math.sin(dir) * drift, -Math.cos(dir) * drift);
+    // the water chop follows the real wind: calm glass at 0, whitecap energy by ~9 m/s
+    waterU.uWAmp.value = clamp(0.5 + spd * 0.14, 0.5, 1.8);
+    waterU.uWDir.value.set(Math.sin(dir) || 0.86, -Math.cos(dir) || 0.5);
     WX.ok = true;
     lastEnvEl = 999;   // rebake glass reflections with the new cloud deck
     refreshTimeUI();
@@ -7169,6 +7577,8 @@
 
     sky.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
+    if (!reducedMotion) waterU.uTime.value += dt;
+    waterU.uSun.value.copy(sunDir);
     updateTransit(now, dt);
     updateIndego(now, dt);
     updateTreePick();
@@ -7182,7 +7592,7 @@
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });
