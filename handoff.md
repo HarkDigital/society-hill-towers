@@ -1590,6 +1590,24 @@ end-to-end from the laptop to prove it. Verified live: philly3d.com 200 with
 the new 11.97 MB gzip and btnLights in the served page, og/favicons 200, and
 the GH Pages home serving the new 21.69 MB build byte-identical.
 
+Round 40 (Aug 26 — Mike: East Mount Airy, West Oak Lane, and Cedarbrook all
+look empty): the Round 36 lesson had a sibling. Above 40.050 the 'northeast'
+box only starts at -75.130 and 'northwest' only reaches -75.190 — the wedge
+between them (exactly those three neighborhoods, plus Chestnut Hill's east
+flank along Stenton) was never fetched, and the new NW terrain made the bare
+ground impossible to miss. A sixth box ('nw-gap', 40.050–40.100,
+-75.190..-75.130, 3x3 tiles) fills it: ~316k new elements, osm_city_raw
+3.79M → 4.09M, city.b64 9.06 → 10.30 MB (165,350 → 180,167 buildings,
+22,635 → 23,642 roads), page 21.69 → 22.94 MB; overpasses rebaked (527
+chains, 146.7 km). Fetched to 40.100 so the fabric tapers past the county
+line instead of cliffing at it. The new wards ride tag/HDEF heights exactly
+as the river wards first did — the next lidar_join pass trues them up.
+Laptop note: pack_city needs shapely, absent from the CommandLineTools
+python here — pip3 install --user shapely (2.0.7) and this box is a full
+build machine too. Verified in-pane: all three neighborhood labels over
+dense rowhouse fabric, zero console errors; shipped to both homes the same
+evening.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

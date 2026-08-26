@@ -17,6 +17,10 @@ BOXES = [
     # Bridesburg, Tacony. The original four boxes left this rectangle uncovered
     # (wide stops at -75.118, 'north' starts at 39.986) — the Round 36 bare patch.
     ('river-wards',     39.915, 40.050, -75.118, -74.990, 4, 3),
+    # East Mount Airy, West Oak Lane, Cedarbrook: above 40.050 the 'northeast'
+    # box only starts at -75.130 and 'northwest' only reaches -75.190 — this
+    # wedge between them was never fetched (the Round 40 bare patch).
+    ('nw-gap',          40.050, 40.100, -75.190, -75.130, 3, 3),
 ]
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
            'https://overpass.private.coffee/api/interpreter']
