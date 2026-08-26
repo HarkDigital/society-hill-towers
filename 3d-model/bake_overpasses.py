@@ -92,7 +92,8 @@ def load_dem(name):
     p = os.path.join(HERE, name)
     return json.load(open(p)) if os.path.exists(p) else None
 DEM_ALL = [(load_dem("dem.json"), 8.34), (load_dem("dem_wide.json"), 3.2),
-           (load_dem("dem_south.json"), 3.2), (load_dem("dem_city.json"), 4.0)]
+           (load_dem("dem_south.json"), 3.2), (load_dem("dem_nw.json"), 4.0),
+           (load_dem("dem_city.json"), 4.0)]
 def sample_dem(G, x, z, fb):
     fx = (x - G["x0"]) / G["cell"]; fz = (z - G["z0"]) / G["cell"]
     if fx < 0 or fz < 0 or fx > G["nx"] - 1 or fz > G["nz"] - 1:

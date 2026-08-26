@@ -1165,6 +1165,11 @@
   const DEMW = (typeof DEM_WIDE !== 'undefined' && DEM_WIDE && DEM_WIDE.rows) ? DEM_WIDE : null;
   const DEMS = (typeof DEM_SOUTH !== 'undefined' && DEM_SOUTH && DEM_SOUTH.rows) ? DEM_SOUTH : null;
   const DEMC = (typeof DEM_CITY !== 'undefined' && DEM_CITY && DEM_CITY.rows) ? DEM_CITY : null;
+  // NW hills patch (East Falls / Manayunk / the Wissahickon / Chestnut Hill) at
+  // 50 m — dem_city's 150 m grid mushes the gorge. The patch's border samples
+  // are pre-feathered toward dem_city at fetch time (fetch_dem_nw.py), so
+  // sampling it first needs no seam logic here.
+  const DEMN = (typeof DEM_NW !== 'undefined' && DEM_NW && DEM_NW.rows) ? DEM_NW : null;
   const CORE_EXT = { x0: -640, x1: 770, z0: -520, z1: 850 }; // the detailed extract
   function inCore(x, z) { return x >= CORE_EXT.x0 && x <= CORE_EXT.x1 && z >= CORE_EXT.z0 && z <= CORE_EXT.z1; }
   function sampleDem(G, x, z, fallback) {
@@ -1184,6 +1189,7 @@
     let v = DEM0 ? sampleDem(DEM0, x, z, 8.34) : null;
     if (v == null && DEMW) v = sampleDem(DEMW, x, z, 3.2);
     if (v == null && DEMS) v = sampleDem(DEMS, x, z, 3.2);
+    if (v == null && DEMN) v = sampleDem(DEMN, x, z, 4.0);
     if (v == null && DEMC) v = sampleDem(DEMC, x, z, 4.0);
     if (v == null && DEMW) { // beyond the grids: clamp to the nearest edge sample
       const G = (DEMS && z > DEMW.z0 + DEMW.cell * (DEMW.nz - 1)) ? DEMS : DEMW;
@@ -4575,6 +4581,17 @@
     const S = 0.7, CH = 2400;
     const W = { x0: -12000, x1: 16500, z0: -21700, z1: 9700 };
     const WIDEB = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };
+    // the NW hills patch (must match fetch_dem_nw.py) — everything inside gets
+    // the 50 m terrain treatment; absent dem_nw.json, all of this stays off
+    const P = DEMN ? { x0: -10600, x1: -2600, z0: -15600, z1: -6600 } : null;
+    const inP = (x, z) => P && x > P.x0 && x < P.x1 && z > P.z0 && z < P.z1;
+    const bboxOf = (poly) => {
+      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+      for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
+      return [x0, x1, z0, z1];
+    };
+    const hitsP = (bb) => P && bb[0] < P.x1 && bb[1] > P.x0 && bb[2] < P.z1 && bb[3] > P.z0;
+    const withinP = (bb) => P && bb[0] > P.x0 && bb[1] < P.x1 && bb[2] > P.z0 && bb[3] < P.z1;
     const chunks = new Map();
     const getChunk = (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
@@ -4630,7 +4647,13 @@
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
       if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); } continue; }
-      const base = siteY(cx, cz, 'ground');
+      let base = siteY(cx, cz, 'ground');
+      if (inP(cx, cz)) {
+        // hillside blocks (Manayunk, Roxborough): a merged rowhouse strip on the
+        // sharpened 50 m terrain settles to its LOWEST corner — a centroid base
+        // leaves the downhill wall floating in air
+        for (let j = 0; j < n; j++) { const b2 = siteY(poly[j][0], poly[j][1], 'ground'); if (b2 < base) base = b2; }
+      }
       const hsh = hash01(i * 5.31 + 0.7);
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
       const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
@@ -4725,6 +4748,7 @@
     }
     // far areas (water splits out onto the animated river material)
     const areaParts = [], waterAreaParts = [];
+    const nwParks = [], nwWaters = [];   // patch-intersecting polys steer the 50 m ground
     for (let i = 0; i < hdr[3]; i++) {
       const n = body[k++], kind = body[k++];
       const poly = new Array(n);
@@ -4734,38 +4758,141 @@
         if (wwbNear(acx, acz)) continue;               // the WWB deck owns its crossing
       }
       try {
-        if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 40000 ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
-        else if (kind === 1) waterAreaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
+        if (kind === 0) {
+          const big = Math.abs(signedArea(poly)) > 40000;
+          if (P) {
+            const bb = bboxOf(poly);
+            if (hitsP(bb)) {
+              nwParks.push(poly);
+              // a big drape samples at ~130 m and would tent across the
+              // sharpened gorge — inside the patch the tinted ground IS the park
+              if (big && withinP(bb)) continue;
+            }
+          }
+          areaParts.push({ geom: big ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
+        } else if (kind === 1) waterAreaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
         else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
       } catch (e) { /* degenerate */ }
     }
-    // far ground: 100 m strips around the wide box, down to the riverbed over water
+    // far ground: 100 m strips around the wide box, down to the riverbed over
+    // water. With dem_nw present the NW hills get their own 50 m heightfield —
+    // its footprint is cut from the north strip along that strip's own grid
+    // lines, so the two meshes butt exactly (T-junction verts only, no overlap)
     const farGroundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0 });
     groundMats.push(farGroundMat);
-    for (const [x0, x1, z0, z1] of [
-      [W.x0, W.x1, W.z0, WIDEB.z0], [W.x0, W.x1, WIDEB.z1, W.z1],
-      [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
-    ]) {
-      const cell = 100, nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
+    let nwGroundMat = null, nwParkAt = null, nwWaterAt = null;
+    if (P) {
+      nwGroundMat = farGroundMat.clone();
+      nwGroundMat.vertexColors = true;   // woodland tint rides vertex color so the day/night retint still applies
+      groundMats.push(nwGroundMat);
+      // official PPR parkland boundaries (nw_parks.json): the central Wissahickon
+      // has no park polygon in the OSM extract (a nature_reserve relation the
+      // city fetch never pulled), so the woodland tint reads the City's own lines
+      if (typeof NW_PARKS !== 'undefined' && NW_PARKS && NW_PARKS.polys) {
+        for (const fl2 of NW_PARKS.polys) {
+          const pp = new Array(fl2.length >> 1);
+          for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]];
+          nwParks.push(pp);
+        }
+      }
+      // full-fidelity water rings (nw_water.json), draped on the NED water
+      // surface — the creek descends its real stepped profile. The packed
+      // 90-vert rings zigzag when draped, so those stay flat (and end up
+      // buried under the sharpened terrain inside the patch); these replace
+      // them here. siteY clamps any below-plane dip back to the tidal level.
+      if (typeof NW_WATER !== 'undefined' && NW_WATER && NW_WATER.polys) {
+        for (const fl2 of NW_WATER.polys) {
+          const pp = new Array(fl2.length >> 1);
+          for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]];
+          nwWaters.push(pp);
+          try { waterAreaParts.push({ geom: drapedPoly(pp, 0.75, 30), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* degenerate */ }
+        }
+      }
+      const GCELL = 250;
+      const mkPolyGrid = (polys) => {
+        const grid = new Map();
+        for (let pi = 0; pi < polys.length; pi++) {
+          const bb = bboxOf(polys[pi]);
+          for (let gx = Math.floor(bb[0] / GCELL); gx <= Math.floor(bb[1] / GCELL); gx++)
+            for (let gz = Math.floor(bb[2] / GCELL); gz <= Math.floor(bb[3] / GCELL); gz++) {
+              const k2 = gx + ':' + gz;
+              let a = grid.get(k2);
+              if (!a) { a = []; grid.set(k2, a); }
+              a.push(pi);
+            }
+        }
+        return (x, z) => {
+          const a = grid.get(Math.floor(x / GCELL) + ':' + Math.floor(z / GCELL));
+          if (a) for (const pi of a) if (pointInPoly(x, z, polys[pi])) return true;
+          return false;
+        };
+      };
+      nwParkAt = mkPolyGrid(nwParks);
+      nwWaterAt = mkPolyGrid(nwWaters);
+    }
+    const pkC2 = new THREE.Color(COLORS.park), gdC2 = new THREE.Color(COLORS.ground);
+    const nwR = [pkC2.r / gdC2.r, pkC2.g / gdC2.g, pkC2.b / gdC2.b];
+    const mkFarGround = (x0, x1, z0, z1, cell, hole, tint) => {
+      const nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
       const pos = [];
       for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
         const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
         const y = demY(x, z);
-        pos.push(x, (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07, z);
+        let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07;
+        if (tint && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
+        pos.push(x, yy, z);
       }
+      let col = null;
+      if (tint) {
+        // park membership blurred once so the woodland green feathers over a
+        // cell instead of stair-stepping at the 50 m grid
+        const t0 = new Float32Array((nx + 1) * (nz + 1));
+        for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++)
+          t0[j * (nx + 1) + i] = nwParkAt(x0 + (x1 - x0) * i / nx, z0 + (z1 - z0) * j / nz) ? 1 : 0;
+        col = new Float32Array(3 * (nx + 1) * (nz + 1));
+        for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
+          let s = 0, m = 0;
+          for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) {
+            const ii = i + di, jj = j + dj;
+            if (ii < 0 || jj < 0 || ii > nx || jj > nz) continue;
+            s += t0[jj * (nx + 1) + ii]; m++;
+          }
+          const t = s / m;
+          const o = (j * (nx + 1) + i) * 3;
+          col[o] = 1 + (nwR[0] - 1) * t; col[o + 1] = 1 + (nwR[1] - 1) * t; col[o + 2] = 1 + (nwR[2] - 1) * t;
+        }
+      }
+      const xi = (i) => x0 + (x1 - x0) * i / nx, zj = (j) => z0 + (z1 - z0) * j / nz;
       const idx = [];
       for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+        if (hole && xi(i) >= hole.x0 - 0.01 && xi(i + 1) <= hole.x1 + 0.01 && zj(j) >= hole.z0 - 0.01 && zj(j + 1) <= hole.z1 + 0.01) continue;
         const a = j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1;
         idx.push(a, d, b, b, d, e);
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+      if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       g.setIndex(idx);
       g.computeVertexNormals();
-      const m = new THREE.Mesh(g, farGroundMat);
+      const m = new THREE.Mesh(g, tint ? nwGroundMat : farGroundMat);
       m.matrixAutoUpdate = false;
       groupCity.add(m);
+    };
+    // patch hole snapped to the north strip's grid (the strip containing it)
+    let nwHole = null;
+    if (P) {
+      const sx0 = W.x0, sx1 = W.x1, sz0 = W.z0, sz1 = WIDEB.z0;
+      const nxN = Math.max(1, Math.round((sx1 - sx0) / 100)), nzN = Math.max(1, Math.round((sz1 - sz0) / 100));
+      const cw = (sx1 - sx0) / nxN, chz = (sz1 - sz0) / nzN;
+      const i0 = Math.ceil((P.x0 - sx0) / cw), i1 = Math.floor((P.x1 - sx0) / cw);
+      const j0 = Math.ceil((P.z0 - sz0) / chz), j1 = Math.floor((P.z1 - sz0) / chz);
+      if (i1 - i0 > 1 && j1 - j0 > 1) nwHole = { x0: sx0 + i0 * cw, x1: sx0 + i1 * cw, z0: sz0 + j0 * chz, z1: sz0 + j1 * chz };
     }
+    for (const [x0, x1, z0, z1] of [
+      [W.x0, W.x1, W.z0, WIDEB.z0], [W.x0, W.x1, WIDEB.z1, W.z1],
+      [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
+    ]) mkFarGround(x0, x1, z0, z1, 100, nwHole, false);
+    if (nwHole) mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true);
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await yieldNow();
     for (const ch of chunks.values()) {
@@ -6076,6 +6203,7 @@
     else if (k === 'h') toggleShips();
     else if (k === 'p') togglePlaces();
     else if (k === 'r') toggleTraffic();
+    else if (k === 'g') toggleLightsLayer();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
     else {
@@ -8667,6 +8795,157 @@
     TRAFFIC.n = i;
   }
 
+  // ---------------------------------------------------------------- streetlights
+  // Every city-maintained lamp: the Streets Department's Street_Poles inventory
+  // (OpenDataPhilly, 200k poles citywide), baked by fetch_poles.py /
+  // pack_poles.py into POLES_B64 (int16, 0.7 m units). At night each pole
+  // carries one additive glow point — PSIP's LED conversions burn warm white,
+  // the sodium remainder amber — sized with a screen-pixel floor so the whole
+  // city glitters from altitude the way it does from a real approach path.
+  // Near the camera the lamps also get instanced pole meshes (desktop only).
+  const LIGHTS = { on: true, ready: false };
+  const btnLights = document.getElementById('btnLights');
+  const POLE_MESH_CAP = isTouch ? 0 : 1600;
+  const POLE_MESH_R = 1000;
+  let poleGlow = null, poleMesh = null, poleInv = null, poleMat = null;
+  let poleReconAt = 0;
+  const poleLastCam = new THREE.Vector3(1e9, 0, 0);
+  const _plm = new THREE.Matrix4(), _plq = new THREE.Quaternion(), _pls = new THREE.Vector3(), _plp = new THREE.Vector3();
+  step('Lighting the streetlamps', () => {
+    if (typeof POLES_B64 === 'undefined' || !POLES_B64) { if (btnLights) btnLights.style.display = 'none'; return; }
+    let head, v;
+    try {
+      const s = atob(POLES_B64);
+      POLES_B64 = null;   // free the base64 source
+      const buf = new Uint8Array(s.length);
+      for (let i = 0; i < s.length; i++) buf[i] = s.charCodeAt(i);
+      head = new Int32Array(buf.buffer, 0, 4);
+      if (head[0] !== 0x53485450) throw new Error('bad pole magic');
+      v = new Int16Array(buf.buffer, 16);
+    } catch (err) { console.error('street pole decode failed', err); if (btnLights) btnLights.style.display = 'none'; return; }
+    const nAll = head[1];
+    const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll);
+    const pos = new Float32Array(nAll * 3), pcol = new Float32Array(nAll * 3);
+    const cells = new Map();   // 400 m buckets for the near-mesh reconcile
+    for (let i = 0; i < nAll; i++) {
+      const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7, pk = v[i * 3 + 2];
+      const kind = pk & 3, hft = (pk >> 2) & 127, lum2 = (pk >> 9) & 1;
+      const gy = siteY(x, z, 'ground');
+      const hm = clamp(hft * 0.3048, 3.5, 15);
+      X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = hm;
+      pos[i * 3] = x; pos[i * 3 + 1] = gy + hm; pos[i * 3 + 2] = z;
+      // lamp color IS the light (additive, tone mapping off): LED warm white,
+      // sodium amber; unknowns (mostly wood alley poles) lean dim, some amber
+      let r, g2, b;
+      if (kind === 1) { r = 1.0; g2 = 0.52; b = 0.16; }
+      else if (kind === 2) { const amber = hash01(i * 7.3) < 0.3; r = 1.0; g2 = amber ? 0.58 : 0.78; b = amber ? 0.2 : 0.48; }
+      else { r = 1.0; g2 = 0.8; b = 0.55; }
+      const amp = (0.9 + hash01(i * 3.7 + 1.1) * 0.25) * (lum2 ? 1.25 : 1) * (hft >= 38 ? 1.35 : hft <= 16 ? 0.65 : 1);
+      pcol[i * 3] = r * amp; pcol[i * 3 + 1] = g2 * amp; pcol[i * 3 + 2] = b * amp;
+      const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400);
+      let arr = cells.get(ck);
+      if (!arr) { arr = []; cells.set(ck, arr); }
+      arr.push(i);
+    }
+    const pg = new THREE.BufferGeometry();
+    pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    pg.setAttribute('color', new THREE.BufferAttribute(pcol, 3));
+    poleMat = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
+    poleMat.onBeforeCompile = (shader) => {
+      // perspective size with a floor: a lamp never falls under ~2 physical px,
+      // so the far city reads as a carpet of lights (same trick as headlights)
+      shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
+        'gl_PointSize = size * clamp(1600.0 / max(1.0, -mvPosition.z), 2.0, 9.0);');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
+        '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.18, length(gl_PointCoord - vec2(0.5)));');
+    };
+    poleGlow = new THREE.Points(pg, poleMat);
+    poleGlow.frustumCulled = false;
+    poleGlow.renderOrder = 11;
+    poleGlow.visible = false;
+    groupCity.add(poleGlow);
+    if (POLE_MESH_CAP > 0) {
+      // one instanced pole: tapered shaft + arm + head, 9 m reference height,
+      // y-scaled per pole (uniform-in-plane, so the rotation gotcha never bites)
+      const mergePlain = (list) => {
+        const parts2 = list.map((g3) => (g3.index ? g3.toNonIndexed() : g3));
+        let total = 0;
+        for (const g3 of parts2) total += g3.attributes.position.count;
+        const p2 = new Float32Array(total * 3), n2 = new Float32Array(total * 3);
+        let o2 = 0;
+        for (const g3 of parts2) {
+          p2.set(g3.attributes.position.array, o2 * 3);
+          n2.set(g3.attributes.normal.array, o2 * 3);
+          o2 += g3.attributes.position.count;
+        }
+        const out = new THREE.BufferGeometry();
+        out.setAttribute('position', new THREE.BufferAttribute(p2, 3));
+        out.setAttribute('normal', new THREE.BufferAttribute(n2, 3));
+        return out;
+      };
+      const poleGeo = mergePlain([
+        new THREE.CylinderGeometry(0.07, 0.13, 9, 5).translate(0, 4.5, 0),
+        new THREE.CylinderGeometry(0.05, 0.05, 1.7, 4).rotateZ(Math.PI / 2).translate(0.8, 8.84, 0),
+        new THREE.BoxGeometry(0.62, 0.14, 0.26).translate(1.5, 8.88, 0),
+      ]);
+      poleMesh = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.9, metalness: 0.15 }), POLE_MESH_CAP);
+      poleMesh.count = 0;
+      poleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      poleMesh.frustumCulled = false;
+      groupCity.add(poleMesh);
+    }
+    poleInv = { X, Z, GY, HM, cells, n: nAll };
+    const el = document.getElementById('lightsCount');
+    if (el) el.textContent = Math.round(nAll / 1000) + 'k';
+    LIGHTS.ready = true;
+  });
+  function poleReconcile() {
+    const cx = camera.position.x, cz = camera.position.z;
+    const cellR = Math.ceil(POLE_MESH_R / 400);
+    const gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400);
+    const cand = [];
+    for (let gx = gx0 - cellR; gx <= gx0 + cellR; gx++) for (let gz = gz0 - cellR; gz <= gz0 + cellR; gz++) {
+      const arr = poleInv.cells.get(gx + ':' + gz);
+      if (arr) for (const i of arr) {
+        const dx = poleInv.X[i] - cx, dz = poleInv.Z[i] - cz;
+        const d2 = dx * dx + dz * dz;
+        if (d2 < POLE_MESH_R * POLE_MESH_R) cand.push([d2, i]);
+      }
+    }
+    if (cand.length > POLE_MESH_CAP) cand.sort((a2, b2) => a2[0] - b2[0]);
+    const nUse = Math.min(POLE_MESH_CAP, cand.length);
+    for (let q = 0; q < nUse; q++) {
+      const i = cand[q][1];
+      _plp.set(poleInv.X[i], poleInv.GY[i], poleInv.Z[i]);
+      _plq.setFromAxisAngle(TRAFFIC_UP, hash01(i * 1.7 + 0.3) * Math.PI * 2);
+      _pls.set(1, poleInv.HM[i] / 9, 1);
+      _plm.compose(_plp, _plq, _pls);
+      poleMesh.setMatrixAt(q, _plm);
+    }
+    poleMesh.count = nUse;
+    poleMesh.instanceMatrix.needsUpdate = true;
+  }
+  function syncLightsBtn() { if (btnLights) btnLights.classList.toggle('on', LIGHTS.on); }
+  function toggleLightsLayer() { LIGHTS.on = !LIGHTS.on; syncLightsBtn(); }
+  if (btnLights) btnLights.addEventListener('click', toggleLightsLayer);
+  syncLightsBtn();
+  function updateLights(now) {
+    if (!LIGHTS.ready) return;
+    // lamps come on at civil dusk, a beat before the headlights
+    const night = clamp((nightUniform.value - 0.02) / 0.2, 0, 1);
+    const show = LIGHTS.on && night > 0.01;
+    poleGlow.visible = show;
+    if (show) poleMat.opacity = night;
+    if (poleMesh) {
+      poleMesh.visible = LIGHTS.on;
+      if (LIGHTS.on && (now >= poleReconAt || camera.position.distanceToSquared(poleLastCam) > 220 * 220)) {
+        poleReconAt = now + 900;
+        poleLastCam.copy(camera.position);
+        poleReconcile();
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- solar clock
   // NOAA solar position for the towers' latitude/longitude; Philadelphia local
   // time with US daylight-saving rules. Drives sun, sky, fog, and the lit windows.
@@ -9045,6 +9324,7 @@
     updateFlights(now, dt);
     updateShips(now, dt);
     updateTraffic(now, dt);
+    updateLights(now);
     updateTreePick();
     updateSearchMark(now);
     updateLabels();

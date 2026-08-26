@@ -78,6 +78,18 @@ data_js += "const OVERPASSES = " + (ovp_path.read_text(encoding="utf-8").strip()
 # typical traffic volumes (fetch_traffic.py / bake_traffic.py — PennDOT AADT on OSM ways)
 tr_path = ROOT / "traffic.b64"
 data_js += 'let TRAFFIC_B64 = "' + (tr_path.read_text(encoding="utf-8").strip() if tr_path.exists() else "") + '";\n'
+# NW hills patch: 50 m DEM (fetch_dem_nw.py, border pre-feathered to dem_city),
+# PPR parkland boundaries and full-fidelity creek/canal rings for the woodland
+# tint + draped water (fetch_nw_parks.py / fetch_nw_water.py)
+demn_path = ROOT / "dem_nw.json"
+data_js += "const DEM_NW = " + (demn_path.read_text(encoding="utf-8").strip() if demn_path.exists() else "null") + ";\n"
+nwp_path = ROOT / "nw_parks.json"
+data_js += "const NW_PARKS = " + (nwp_path.read_text(encoding="utf-8").strip() if nwp_path.exists() else "null") + ";\n"
+nww_path = ROOT / "nw_water.json"
+data_js += "const NW_WATER = " + (nww_path.read_text(encoding="utf-8").strip() if nww_path.exists() else "null") + ";\n"
+# streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
+poles_path = ROOT / "poles.b64"
+data_js += 'let POLES_B64 = "' + (poles_path.read_text(encoding="utf-8").strip() if poles_path.exists() else "") + '";\n'
 
 # brand icons inlined as data: URIs in the head (brand/make_brand.py fills dist/)
 BRAND = ROOT / "brand" / "dist"

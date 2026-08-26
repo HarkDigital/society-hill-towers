@@ -1515,6 +1515,63 @@ index.html(.gz); the GH Pages shim and README wear the brand too. Do not
 regenerate dist/ blindly: og_raw.png is a curated capture (dusk minute
 1219, orbit theta 0.16 phi 1.30 r 900, labels off, traffic on).
 
+Round 39 (Aug 26 — begun on the desk machine and cut off mid-round; Mike, from
+the laptop: pick it back up and deploy): two features arrived nearly whole and
+needed only their last wire. (1) Streetlights (G, Layers row between Traffic
+and Street Names, default on): the Streets Department's Street_Poles inventory
+(fetch_poles.py, 203,058 rows via the City ArcGIS) packs to poles.b64
+(pack_poles.py — int16 x/z at 0.7 m units, far-ring clip, 1.2 m dedupe, magic
+'SHTP', 200,805 kept, 1.6 MB; packed bits carry lamp kind, surveyed height in
+feet with per-family defaults, and a two-luminaire flag). Every pole is one
+additive glow point at night — PointsMaterial with an onBeforeCompile
+perspective size clamped to a 2-px floor (the headlight trick), LED warm
+white, HPS amber, unknowns dim and mixed, amplitude scaled by height and
+luminaire count — opacity ramped off nightUniform so lamps lead the
+headlights at civil dusk. Desktop adds 1,600 instanced pole meshes (tapered
+shaft + arm + head at a 9 m reference, y-scaled to surveyed height) within
+1 km, reconciled every 900 ms or 220 m of camera travel; touch skips the
+meshes entirely. (2) The northwest finally has its hills: dem_nw.json
+(fetch_dem_nw.py — 50 m NED over East Falls / Manayunk / Roxborough / the
+Wissahickon / Chestnut Hill, checkpointed like the city DEM, border
+pre-feathered toward dem_city over 250 m so no consumer needs seam logic)
+samples ahead of dem_city in demAbs and in bake_overpasses (overpasses.json
+rebaked). The far ground cuts the patch's footprint out of the north strip
+along the strip's own 100 m grid lines (T-junction verts only) and lays a
+50 m vertex-colored mesh in the hole: woodland tint from the City's own PPR
+parkland boundaries (fetch_nw_parks.py, 32 polys — the central Wissahickon
+has no park polygon in the OSM extract; fetch_city.py now also asks for
+nature_reserve relations so the next full refetch carries it), park
+membership blurred one cell so the green feathers instead of stair-stepping,
+big OSM park drapes dropped inside the patch (the tinted ground IS the park),
+and water rebuilt from full-fidelity rings (fetch_nw_water.py, 93 polys)
+draped at 30 m on the terrain so the creek descends its real stepped profile
+with the bed dug 3 m under it. Buildings straddling the sharpened slopes
+settle to their LOWEST corner inside the patch — a centroid base left
+downhill walls floating. Also from the desk session: lidar_join trued the
+river wards' heights (lidar_city_heights/report), city.b64 repacked.
+The interruption point was build.py: app.js and template were done (button,
+key table, credits, G binding) but the four blobs were never inlined —
+DEM_NW / NW_PARKS / NW_WATER / POLES_B64 (a `let`, the app frees it after
+decode) now ride data_js like their siblings; page 19.74 → 21.69 MB.
+Verified in-pane on the laptop: 201k badge, zero console errors across the
+whole drive, the night carpet from altitude tracing every street, G on/off
+both ways, gorge relief + woodland tint + descending creek, Manayunk blocks
+grounded on the slope, the 50 m/100 m border seam invisible, pole meshes
+standing by day, 1.41 ms/frame at night with all layers on. Residual: at
+long grazing range the draped creek can dash where terrain rises between its
+30 m samples — invisible near and from altitude; nudge the drape offset or
+subdivision if it ever bothers. Laptop notes: the pane's dev-server python
+cannot getcwd() inside CloudStorage (TCC), so the built page is served from
+the session scratchpad (launch.json's scratch entry exists for exactly this;
+the preview entries went machine-relative `-d 3d-model`). Deploy could NOT
+run from the laptop: ~/.ssh has no lionspool key (phade.app is a different
+box — 74.208.219.49, not the .76.220 VPS) and no GitHub credential (the
+resident github key is the Phade deploy key, repo-scoped, push denied) — so
+this round is committed but unshipped. From the desk machine: `git push`
+publishes the GH Pages home, `./deploy_philly3d.sh` ships philly3d.com; the
+commit itself rides Dropbox there. Or authorize the laptop once (VPS
+authorized_keys + a GitHub credential) and it can ship both from here on.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

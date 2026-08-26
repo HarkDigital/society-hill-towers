@@ -52,6 +52,7 @@ def tileQuery(bbox):
   way["highway"~"^(motorway|motorway_link|trunk|trunk_link|primary|secondary|tertiary|residential)$"]({bbox});
   way["leisure"~"^(park|golf_course|nature_reserve)$"]({bbox});
   relation["leisure"="park"]({bbox});
+  relation["leisure"="nature_reserve"]({bbox});
   way["natural"="water"]({bbox});
   relation["natural"="water"]({bbox});
   way["landuse"~"^(grass|cemetery|forest|recreation_ground)$"]({bbox});
