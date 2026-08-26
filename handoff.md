@@ -1608,6 +1608,46 @@ build machine too. Verified in-pane: all three neighborhood labels over
 dense rowhouse fabric, zero console errors; shipped to both homes the same
 evening.
 
+Round 41 (Aug 26 — Mike, three at once: no tooltips pop when clicked ("the
+line of sight thing messed something up"), no streetlights in the three new
+neighborhoods, and the night skyline reads as dark blobs ringed by
+streetlights): (1) The tooltip kill was real and the instinct half right —
+Round 37's occlusion gate was the scene of the crash, but the trigger was
+freed geometry: freeOnUpload nulls chunk vertex arrays after GPU upload, and
+pickOccluded's second raycast (outerMeshes) threw a TypeError the moment a
+sight line clipped a freed chunk's bounding sphere — one uncaught throw in
+the pointerup handler killed every card in the city. R37's own verification
+never saw it: its street-level refusal short-circuited on rayTargets, and
+its altitude shot never crossed a freed sphere. The gate now raycasts
+rayTargets (unchanged) and then MARCHES the sight line against demY (40 m
+steps, 30 m head / 12 m tail skips) — cheaper than the raycast ever was,
+and the NW gorge walls finally occlude honestly; far-district walls no
+longer gate (they never did — every invocation that pruned in threw).
+Diagnosed by patching Raycaster.prototype.intersectObjects to log during a
+synthetic click: the second occlusion call vanished mid-flight, and the
+console held the TypeError. (2) The "missing" neighborhood streetlights are
+not missing: poles.b64 carries 925 lamps in West Oak Lane, 578 in
+Cedarbrook, 553 in East Mount Airy (denser than the Olney baseline) and
+they render — the dark fabric is across Cheltenham Ave: the nw-gap fetch
+tapers into Montgomery County by design, but the Streets Department
+inventory is city-only (27 poles out there), so La Mott stands dark behind
+lit Cedarbrook. Left as is: the county line reading dark is the truth.
+(3) The skyline grew windows that survive distance: buildings ≥45 m from
+every tier (core scene loop, wide decode, far-ring decode — collected into
+tallGlow) wear a new 'Lighting the skyline' step: additive points scattered
+on the shaft perimeter (seeded hashes so the same offices burn every night,
+42% dark, warm white/amber with a 16% cool minority, 0.8 m proud of the
+wall so depth keeps them), with the streetlamp px-floor trick (1.5–4.5 px)
+TIMES smoothstep(420, 1150) on camera distance so near towers keep their
+painted facade windows and far towers become columns of light. Independent
+of the G layer (windows aren't street lighting) and alive even without
+POLES_B64. Verified in-pane: the bus card (38 to Wissahickon TC) and an
+Indego card pop at the exact vantage that used to die silently, Center City
+reads as lit towers from 2–7 km, Cedarbrook's lamps burn against dark
+La Mott, zero real console errors (synthetic PointerEvents do throw
+setPointerCapture InvalidStateErrors — inactive pointerId, cosmetic,
+test-harness-only). Shipped to both homes.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

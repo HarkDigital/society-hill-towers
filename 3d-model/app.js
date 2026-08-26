@@ -2001,6 +2001,10 @@
         continue;
       }
       if (spec0 && spec0.h) b.h = spec0.h;
+      if (b.h >= 45 && b.poly && b.poly.length >= 3 && !b.minH) {
+        const [tgx, tgz] = polyCentroid(b.poly);
+        tallGlow.push({ x: tgx, z: tgz, b: siteY(tgx, tgz, 'ground'), h: b.h, poly: b.poly });
+      }
       const color = spec0 && spec0.color ? new THREE.Color(spec0.color) : buildingColor(b, i);
       const t = b.t || 'generic';
       const area = Math.abs(signedArea(b.poly));
@@ -3561,6 +3565,7 @@
   // ~108k OSM footprints packed as int16 (0.2 m) and rendered as lean indexed
   // chunks — 8-bit normals/colors, no roofs or cornices, world-space windows.
   const outerMeshes = [];
+  const tallGlow = [];   // buildings ≥45 m from every tier, for the night skyline points
   step('Raising the outer districts', async () => {
     if (typeof WIDE_B64 === 'undefined' || !WIDE_B64) return;
     const bin = Uint8Array.from(atob(WIDE_B64), ch => ch.charCodeAt(0));
@@ -3671,6 +3676,7 @@
       if (t === 7 && Math.hypot(cx - 996, cz - 663) < 80) { njPoly = poly; continue; }
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
+      if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
       const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
@@ -4655,6 +4661,7 @@
         for (let j = 0; j < n; j++) { const b2 = siteY(poly[j][0], poly[j][1], 'ground'); if (b2 < base) base = b2; }
       }
       const hsh = hash01(i * 5.31 + 0.7);
+      if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
       const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
@@ -6522,8 +6529,20 @@
       if (L < 3) return false;
       septaOccRay.set(camera.position, _ssv.multiplyScalar(1 / L));
       septaOccRay.far = L - 1.6;
-      return septaOccRay.intersectObjects(rayTargets, false).length > 0 ||
-             septaOccRay.intersectObjects(outerMeshes, false).length > 0;
+      if (septaOccRay.intersectObjects(rayTargets, false).length > 0) return true;
+      // The outer-district chunks CANNOT be raycast: freeOnUpload hands their
+      // vertex arrays to the GPU and nulls the CPU side, so intersectObjects
+      // threw the moment a sight line clipped a freed chunk's bounding sphere
+      // — and that one uncaught throw killed every tooltip in the city (the
+      // Round 37 verification never crossed a freed sphere; its street-level
+      // refusal short-circuited on rayTargets). Out in the far districts the
+      // occluder that actually matters is terrain — the NW gorge walls above
+      // all — so march the sight line against demY instead.
+      const o = camera.position, d = _ssv;
+      for (let t = 30, tEnd = L - 12; t < tEnd; t += 40) {
+        if (o.y + d.y * t < demY(o.x + d.x * t, o.z + d.z * t) - 0.5) return true;
+      }
+      return false;
     };
     const targets = [];
     if (sAct) targets.push(septaSolid, septaPin, septaBadge);
@@ -8808,6 +8827,7 @@
   const POLE_MESH_CAP = isTouch ? 0 : 1600;
   const POLE_MESH_R = 1000;
   let poleGlow = null, poleMesh = null, poleInv = null, poleMat = null;
+  let towerGlow = null, towerMat = null;
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
   const _plm = new THREE.Matrix4(), _plq = new THREE.Quaternion(), _pls = new THREE.Vector3(), _plp = new THREE.Vector3();
@@ -8899,6 +8919,50 @@
     if (el) el.textContent = Math.round(nAll / 1000) + 'k';
     LIGHTS.ready = true;
   });
+  step('Lighting the skyline', () => {
+    // tall buildings wear lit windows that survive distance: additive points
+    // scattered on the shaft perimeter with the same screen-px floor as the
+    // streetlamps, so the night skyline reads as towers of light instead of
+    // black slabs ringed by lamps. The size term fades the points OUT under
+    // ~450 m — up close the painted facade windows take over — and every
+    // hash is seeded, so the same offices burn every night.
+    if (!tallGlow.length) return;
+    const tp = [], tc = [];
+    for (let bi = 0; bi < tallGlow.length; bi++) {
+      const tg = tallGlow[bi];
+      const np2 = tg.poly.length;
+      const nP = Math.min(56, Math.max(5, Math.round(tg.h / 5)));
+      for (let q2 = 0; q2 < nP; q2++) {
+        const sd = bi * 131.7 + q2 * 17.3;
+        if (hash01(sd + 0.4) < 0.42) continue;   // dark offices stay dark
+        const e2 = Math.floor(hash01(sd + 1.1) * np2);
+        const p0 = tg.poly[e2], p1 = tg.poly[(e2 + 1) % np2];
+        const tt = hash01(sd + 2.2);
+        let px2 = p0[0] + (p1[0] - p0[0]) * tt, pz2 = p0[1] + (p1[1] - p0[1]) * tt;
+        const ox = px2 - tg.x, oz2 = pz2 - tg.z, ol = Math.hypot(ox, oz2) || 1;
+        px2 += (ox / ol) * 0.8; pz2 += (oz2 / ol) * 0.8;   // proud of the wall so depth keeps them
+        tp.push(px2, tg.b + tg.h * (0.18 + 0.76 * hash01(sd + 3.3)), pz2);
+        const cool = hash01(sd + 4.4) < 0.16;
+        const amp2 = 0.55 + hash01(sd + 5.5) * 0.5;
+        tc.push((cool ? 0.72 : 1.0) * amp2, (cool ? 0.84 : 0.86) * amp2, (cool ? 1.0 : 0.6) * amp2);
+      }
+    }
+    const tg2 = new THREE.BufferGeometry();
+    tg2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tp), 3));
+    tg2.setAttribute('color', new THREE.BufferAttribute(new Float32Array(tc), 3));
+    towerMat = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
+    towerMat.onBeforeCompile = (shader) => {
+      shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
+        'gl_PointSize = size * clamp(1300.0 / max(1.0, -mvPosition.z), 1.5, 4.5) * smoothstep(420.0, 1150.0, -mvPosition.z);');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
+        '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.2, length(gl_PointCoord - vec2(0.5)));');
+    };
+    towerGlow = new THREE.Points(tg2, towerMat);
+    towerGlow.frustumCulled = false;
+    towerGlow.renderOrder = 11;
+    towerGlow.visible = false;
+    groupCity.add(towerGlow);
+  });
   function poleReconcile() {
     const cx = camera.position.x, cz = camera.position.z;
     const cellR = Math.ceil(POLE_MESH_R / 400);
@@ -8930,9 +8994,15 @@
   if (btnLights) btnLights.addEventListener('click', toggleLightsLayer);
   syncLightsBtn();
   function updateLights(now) {
-    if (!LIGHTS.ready) return;
     // lamps come on at civil dusk, a beat before the headlights
     const night = clamp((nightUniform.value - 0.02) / 0.2, 0, 1);
+    // tower windows are building light, not street light — they ignore the G
+    // layer and outlive a missing pole blob
+    if (towerGlow) {
+      towerGlow.visible = night > 0.01;
+      if (towerGlow.visible) towerMat.opacity = night;
+    }
+    if (!LIGHTS.ready) return;
     const show = LIGHTS.on && night > 0.01;
     poleGlow.visible = show;
     if (show) poleMat.opacity = night;
