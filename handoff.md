@@ -1572,6 +1572,24 @@ publishes the GH Pages home, `./deploy_philly3d.sh` ships philly3d.com; the
 commit itself rides Dropbox there. Or authorize the laptop once (VPS
 authorized_keys + a GitHub credential) and it can ship both from here on.
 
+Round 39 coda (same evening — Mike authorized the laptop): the repo now has a
+write deploy key `philly3d-laptop` (GitHub repo settings; key file
+~/.ssh/harkdigital_laptop, push via GIT_SSH_COMMAND with -F /dev/null so the
+resident Phade deploy key is never offered first), and the same pubkey sits
+in the VPS authorized_keys (planted by root password from the laptop;
+`lionspool-vps` aliased in the laptop's ~/.ssh/config). Both homes then
+shipped from the laptop — and the VPS deploy promptly served a site-wide
+403: this checkout lives in CloudStorage where every file is mode 600, and
+`rsync -az` faithfully delivered index.html and all four brand files
+unreadable (uid 501, 0600) — nginx refused everything. chown root / chmod
+644 on the box restored service inside ten minutes. Permanent fix in
+deploy_philly3d.sh: ALL six shipped files now stage into $TMP and get
+`chmod 644` there before rsync (macOS openrsync rejects --chmod, so the
+modes are fixed at the staging copy, portable to both machines); re-deployed
+end-to-end from the laptop to prove it. Verified live: philly3d.com 200 with
+the new 11.97 MB gzip and btnLights in the served page, og/favicons 200, and
+the GH Pages home serving the new 21.69 MB build byte-identical.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

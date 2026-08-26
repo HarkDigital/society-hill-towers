@@ -12,12 +12,18 @@ for f in brand/dist/favicon.ico brand/dist/favicon.svg \
 done
 TMP=$(mktemp -d)
 cp society-hill-towers.html "$TMP/index.html"
+cp brand/dist/favicon.ico brand/dist/favicon.svg \
+   brand/dist/apple-touch-icon.png brand/dist/og.png "$TMP/"
 grep -q "FLIGHT_PROXY = 'https://philly3d.com/adsb'" "$TMP/index.html"   # refuse to ship a proxyless build
 grep -q 'property="og:image"' "$TMP/index.html"      # refuse to ship an unbranded build
 gzip -k9f "$TMP/index.html"                          # nginx gzip_static serves this, 18.4 -> 10.3 MB
+# stage + chmod before rsync: the laptop's CloudStorage checkout is all mode
+# 600 and -az faithfully ships that, which nginx answers with a site-wide 403
+# (learned the hard way; macOS openrsync has no --chmod to fix it in flight)
+chmod 644 "$TMP"/*
 rsync -az "$TMP/index.html" "$TMP/index.html.gz" \
-  brand/dist/favicon.ico brand/dist/favicon.svg \
-  brand/dist/apple-touch-icon.png brand/dist/og.png \
+  "$TMP/favicon.ico" "$TMP/favicon.svg" \
+  "$TMP/apple-touch-icon.png" "$TMP/og.png" \
   lionspool-vps:/var/www/philly3d/
 rm -rf "$TMP"
 echo "deployed to https://philly3d.com/"
