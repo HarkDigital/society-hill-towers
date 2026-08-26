@@ -1330,6 +1330,26 @@ plane body (flightPick maps both). Note per the passthrough die-off: Mike's
 page had planes again this morning because allorigins RESURRECTED, exactly
 as the rotation bet it would; FLIGHT_PROXY remains the reliable path.
 
+Round 31 (Aug 26 — Mike: spin the project up on philly3d.com): the model now
+lives on Mike's IONOS VPS (74.208.76.220, ssh Host lionspool-vps, root +
+id_ed25519 — the box also serves harkpicks.com and thelionspool.com; don't
+break them, nginx -t before every reload). Staged and verified same-day:
+/var/www/philly3d (index.html + a -k9 gzip twin served via gzip_static,
+18.4 -> 10.3 MB), vhost sites-enabled/philly3d (port 80 until certs), and —
+the point of self-hosting — a same-origin /adsb nginx passthrough to the
+fixed adsb.fi Philly query (8 s shared proxy_cache in conf.d/adsb_cache.conf,
+stale-on-error, ACAO *): the VPS copy has FLIGHT_PROXY rewritten to '/adsb'
+at deploy (10 s cadence, NO CORS wall, no public passthroughs, no worker).
+Verified via --resolve before DNS: / 200, /adsb 200 with 60 live aircraft.
+deploy_philly3d.sh is the one-command redeploy (build -> sed -> gzip ->
+rsync); the repo source keeps FLIGHT_PROXY='' for the GH Pages copy.
+PENDING (blocked on Mike's IONOS panel): philly3d.com A record still points
+at IONOS parking (74.208.236.6) — Mike sets @ and www to 74.208.76.220; a
+watcher in the session polls for the flip, then: certbot certonly --webroot
+-w /var/www/philly3d (accounts exist on the box), add the 443 block + 80
+redirect, and flip GH Pages FLIGHT_PROXY to https://philly3d.com/adsb so
+one passthrough feeds both deployments.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
