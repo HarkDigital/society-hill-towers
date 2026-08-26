@@ -6067,6 +6067,7 @@
     else if (k === 'f') toggleLayers();
     else if (k === 'b') toggleIndego();
     else if (k === 'x') toggleFlights();
+    else if (k === 'h') toggleShips();
     else if (k === 'p') togglePlaces();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
@@ -6348,7 +6349,7 @@
     else { pickedVeh = null; if (!pickedStation && pickedTree == null) vehinfoEl.hidden = true; }
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedTree = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
@@ -6357,7 +6358,8 @@
     const sAct = septaReady && SEPTA.on && septaSolid.count > 0;
     const iAct = indegoReady && INDEGO.on && indegoBadge.count > 0;
     const fAct = flightReady && FLIGHTS.on && flightMesh.count > 0;
-    if (!sAct && !iAct && !fAct) return;
+    const shAct = shipReady && SHIPS.on && shipMesh.count > 0;
+    if (!sAct && !iAct && !fAct && !shAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -6377,13 +6379,18 @@
     if (sAct) targets.push(septaSolid, septaPin, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
     if (fAct) targets.push(flightMesh);
+    if (shAct) targets.push(shipMesh);
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null) {
       const h = hits[0];
       let v = null, hitSt = null;
       if (h.object === flightMesh) {
         const p = flightPick[h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
+      }
+      if (h.object === shipMesh) {
+        const p = shipPick[h.instanceId];
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
       else if (h.object === septaPin) v = septaPickP[h.instanceId];
@@ -6391,8 +6398,8 @@
       else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
       else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
       else if (h.object === indegoBadge) hitSt = indegoPickB[h.instanceId];
-      if (v) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
-      if (hitSt) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
+      if (v) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      if (hitSt) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle or bike dock within reach of the
     // tap point (a little wider under the crosshair, where aiming is coarser)
@@ -6414,8 +6421,8 @@
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestS = st; bestV = null; }
     }
-    if (bestV) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
-    if (bestS) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
+    if (bestV) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
+    if (bestS) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
     // canopy spheres (tapping a crown is the natural gesture), then fall back
     // to the nearest tree around the tapped ground point (trunk-level taps)
@@ -6453,9 +6460,9 @@
           }
         }
       }
-      if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
+      if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (pickedVeh || pickedStation || pickedPlane || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedTree = null; vehinfoEl.hidden = true; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -7889,6 +7896,203 @@
     }
   }
 
+
+  // ---------------------------------------------------------------- live ships
+  // Real AIS traffic on the rivers via the aisstream.io WebSocket (free key,
+  // and WebSockets have no CORS wall, so the page connects DIRECTLY — no
+  // passthrough needed, unlike the flight feed). The layer stays hidden until
+  // a key is pasted into AIS_KEY. Ships dead-reckon between reports (they are
+  // slow, so a few-second cadence renders glassy smooth), moored and anchored
+  // vessels hold station, and the card knows a tug from a tanker.
+  const AIS_KEY = '';
+  const SHIPS = { on: true, ok: false, sock: null, retryT: 0 };
+  const shipMap = new Map();
+  let shipMesh = null, shipReady = false, pickedShip = null;
+  const shipPick = [];
+  const SHIP_CAP = 48;
+  const btnShips = document.getElementById('btnShips');
+  const SHIP_TYPE = (t) => t >= 80 && t < 90 ? ['Tanker', 0x2e2e33] : t >= 70 && t < 80 ? ['Cargo Ship', 0x5a3a34]
+    : t >= 60 && t < 70 ? ['Passenger Vessel', 0x8a8d92] : (t === 31 || t === 32 || t === 52) ? ['Tug', 0x3d5a3f]
+    : t === 30 ? ['Fishing Vessel', 0x4a5560] : (t === 36 || t === 37) ? ['Pleasure Craft', 0x8f8f88]
+    : t === 35 ? ['Military Vessel', 0x4c4f45] : ['Vessel', 0x555a60];
+  function shipGeom() {
+    // unit hull: length 1 along +x, unit beam along z, scaled per instance
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow, ry) => {
+      const bg = new THREE.BoxGeometry(sx, sy, sz);
+      if (ry) bg.rotateY(ry);
+      bg.translate(cx, cy, cz);
+      parts.push(septaColored(bg, r, g, b, glow || 0));
+    };
+    // no rotated parts: a rotation baked before the per-instance non-uniform
+    // scale (length x beam) shears into a detached blade — the bow tapers in
+    // axis-aligned steps instead
+    box(0.85, 0.5, 1.0, -0.075, 0.13, 0, 0.15, 0.16, 0.18);       // hull
+    box(0.10, 0.5, 0.72, 0.40, 0.13, 0, 0.15, 0.16, 0.18);        // bow step 1
+    box(0.06, 0.46, 0.4, 0.475, 0.15, 0, 0.15, 0.16, 0.18);       // bow step 2
+    box(0.86, 0.06, 1.01, -0.07, 0.02, 0, 0.45, 0.16, 0.13);      // waterline stripe
+    box(0.5, 0.3, 0.8, 0.03, 0.5, 0, 0.38, 0.36, 0.33);           // deck cargo block
+    box(0.16, 0.5, 0.7, -0.36, 0.55, 0, 0.78, 0.78, 0.76);        // superstructure
+    box(0.17, 0.09, 0.72, -0.36, 0.77, 0, 1, 0.93, 0.72, 1);      // bridge glow band
+    box(0.06, 0.2, 0.28, -0.41, 0.9, 0, 0.2, 0.2, 0.22);          // funnel
+    box(0.03, 0.05, 0.05, 0.44, 0.45, 0, 1, 0.95, 0.8, 1);        // masthead light
+    return septaMerge(parts);
+  }
+  function shipsInit() {
+    shipMesh = new THREE.InstancedMesh(shipGeom(), septaMats.body, SHIP_CAP);
+    shipMesh.frustumCulled = false;
+    shipMesh.count = 0;
+    groupCity.add(shipMesh);
+    shipReady = true;
+  }
+  function shipMsg(ev) {
+    let d;
+    try { d = JSON.parse(ev.data); } catch (e) { return; }
+    const meta = d.MetaData || {};
+    const mmsi = meta.MMSI;
+    if (!mmsi) return;
+    let v = shipMap.get(mmsi);
+    if (!v) { v = { mmsi, len: 30, beam: 8, tn: 'Vessel', hull: 0x555a60, sog: 0, cog: 0, moored: false }; shipMap.set(mmsi, v); }
+    if (meta.ShipName && meta.ShipName.trim()) v.name = meta.ShipName.trim();
+    if (d.MessageType === 'PositionReport' && d.Message && d.Message.PositionReport) {
+      const m = d.Message.PositionReport;
+      const x = (m.Longitude - SITE.lon) * 111320 * Math.cos(SITE.lat * DEG);
+      const z = -(m.Latitude - SITE.lat) * 110574;
+      if (x < -12500 || x > 17000 || z < -22000 || z > 10000) return;
+      v.fx = x; v.fz = z; v.ft = performance.now();
+      v.sog = m.Sog || 0;
+      const hd = (m.TrueHeading != null && m.TrueHeading < 360) ? m.TrueHeading : (m.Cog != null ? m.Cog : v.cog);
+      v.cog = m.Cog != null ? m.Cog : hd;
+      v.hdg = hd;
+      v.moored = m.NavigationalStatus === 1 || m.NavigationalStatus === 5 || v.sog < 0.25;
+      const gms = v.sog * 0.5144;
+      v.vx = Math.sin((v.cog || 0) * DEG) * gms;
+      v.vz = -Math.cos((v.cog || 0) * DEG) * gms;
+      if (v.dx === undefined || Math.hypot(x - v.dx, z - v.dz) > 1500) { v.dx = x; v.dz = z; }
+      SHIPS.ok = true;
+    } else if (d.MessageType === 'ShipStaticData' && d.Message && d.Message.ShipStaticData) {
+      const s = d.Message.ShipStaticData;
+      if (s.Name && s.Name.trim()) v.name = s.Name.trim();
+      if (s.Dimension) {
+        const L = (s.Dimension.A || 0) + (s.Dimension.B || 0), B = (s.Dimension.C || 0) + (s.Dimension.D || 0);
+        if (L > 4) v.len = clamp(L, 8, 340);
+        if (B > 1) v.beam = clamp(B, 3, 52);
+      }
+      if (s.Type) { const [tn, hull] = SHIP_TYPE(s.Type); v.tn = tn; v.hull = hull; }
+      if (s.Destination && s.Destination.trim()) v.dest = s.Destination.trim();
+    }
+  }
+  function shipConnect() {
+    if (!AIS_KEY || !septaCanFetch || SHIPS.sock) return;
+    try {
+      const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
+      SHIPS.sock = ws;
+      ws.onopen = () => {
+        try {
+          ws.send(JSON.stringify({ APIKey: AIS_KEY, BoundingBoxes: [[[39.80, -75.45], [40.08, -74.82]]], FilterMessageTypes: ['PositionReport', 'ShipStaticData'] }));
+        } catch (e) { /* closed */ }
+      };
+      ws.onmessage = shipMsg;
+      ws.onclose = () => { SHIPS.sock = null; SHIPS.retryT = performance.now() + 30000; };
+      ws.onerror = () => { try { ws.close(); } catch (e) {} };
+    } catch (e) {
+      SHIPS.sock = null;
+      SHIPS.retryT = performance.now() + 60000;
+    }
+  }
+  function shipTest() {
+    const now = performance.now();
+    const mk = (mmsi, x, z, hdg, sog, len, beam, name, tn, hull, dest, moored) => {
+      const gms = sog * 0.5144;
+      shipMap.set(mmsi, { mmsi, fx: x, fz: z, ft: now, dx: x, dz: z, sog, cog: hdg, hdg,
+        vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms,
+        len, beam, name, tn, hull, dest, moored: !!moored });
+    };
+    mk(1001, 620, -250, 12, 9, 182, 28, 'MSC ALTAIR', 'Cargo Ship', 0x5a3a34, 'PHILADELPHIA');
+    mk(1002, 680, 2500, 195, 5, 28, 9, 'DELAWARE RESPONDER', 'Tug', 0x3d5a3f, 'ASSIST');
+    mk(1003, 760, 1400, 90, 0, 224, 32, 'OVERSEAS LUNA', 'Tanker', 0x2e2e33, 'PAULSBORO', true);
+    shipStatus();
+    return shipMap.size;
+  }
+  function shipStatus() {
+    if (!btnShips) return;
+    btnShips.title = 'Live Ships (H): ' + shipMap.size + ' Vessels Tracked';
+    const sc = document.getElementById('shipCount');
+    if (sc) sc.textContent = shipMap.size ? String(shipMap.size) : '';
+  }
+  function shipCard(v) {
+    const move = v.moored ? 'Moored' : Math.round(v.sog * 10) / 10 + ' kt';
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:#1f4f7a">' + septaEsc(v.tn) + '</span>' +
+      '<span class="vdest">' + septaEsc(v.name || 'MMSI ' + v.mmsi) + '</span>' +
+      '<div class="vmeta">' + septaEsc(move + ', ' + Math.round(v.len) + ' m') + '</div>' +
+      (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : '');
+  }
+  function syncShipsBtn() { if (btnShips) btnShips.classList.toggle('on', SHIPS.on); }
+  function toggleShips() {
+    if (!AIS_KEY || !septaCanFetch) return;
+    SHIPS.on = !SHIPS.on;
+    syncShipsBtn();
+    if (!SHIPS.on && pickedShip) { pickedShip = null; vehinfoEl.hidden = true; }
+  }
+  if (btnShips) btnShips.addEventListener('click', toggleShips);
+  syncShipsBtn();
+  function updateShips(now, dt) {
+    if (!btnShips) return;
+    if (!shipReady) { if (septaMats.body) shipsInit(); return; }
+    // without a key the layer stays out of the panel, but injected test
+    // vessels (__dbg.shipTest) still render so the pipeline stays provable
+    if (!AIS_KEY || !septaCanFetch) { btnShips.style.display = 'none'; if (!shipMap.size) return; }
+    if (!SHIPS.sock && now >= SHIPS.retryT) shipConnect();
+    if (!SHIPS.on) {
+      if (shipMesh.count) { shipMesh.count = 0; shipMesh.instanceMatrix.needsUpdate = true; }
+      return;
+    }
+    let i = 0;
+    const gone = [];
+    for (const v of shipMap.values()) {
+      if (i >= SHIP_CAP) break;
+      if (v.dx === undefined) continue;
+      const age = (now - v.ft) / 1000;
+      if (age > 1800) { gone.push(v.mmsi); continue; }
+      const px = v.moored ? v.fx : v.fx + v.vx * Math.min(age, 600);
+      const pz = v.moored ? v.fz : v.fz + v.vz * Math.min(age, 600);
+      if (px < -12500 || px > 17000 || pz < -22000 || pz > 10000) { gone.push(v.mmsi); continue; }
+      const k = 1 - Math.exp(-dt / 1.6);
+      v.dx += (px - v.dx) * k;
+      v.dz += (pz - v.dz) * k;
+      const hd = (v.hdg != null && v.hdg < 360) ? v.hdg : v.cog;
+      const hx = Math.sin(hd * DEG), hz = -Math.cos(hd * DEG);
+      _fe.set(0, Math.atan2(-hz, hx), 0, 'YZX');
+      _fq.setFromEuler(_fe);
+      _sp.set(v.dx, TERRAIN.water + 0.1, v.dz);
+      _ss.set(v.len, clamp(v.len * 0.09, 2.5, 16), v.beam);
+      _sm.compose(_sp, _fq, _ss);
+      shipMesh.setMatrixAt(i, _sm);
+      shipMesh.setColorAt(i, _sc.setRGB(1, 1, 1));   // neutral: the geometry carries its own scheme
+      shipPick[i] = v;
+      i++;
+    }
+    if (gone.length) {
+      for (const g of gone) { const v = shipMap.get(g); shipMap.delete(g); if (pickedShip === v) { pickedShip = null; vehinfoEl.hidden = true; } }
+      shipStatus();
+    }
+    shipMesh.count = i;
+    shipMesh.instanceMatrix.needsUpdate = true;
+    if (shipMesh.instanceColor) shipMesh.instanceColor.needsUpdate = true;
+    if (pickedShip) {
+      shipCard(pickedShip);
+      _ssv.set(pickedShip.dx, TERRAIN.water + clamp(pickedShip.len * 0.09, 2.5, 16) + 6, pickedShip.dz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else {
+        vehinfoEl.style.opacity = '1';
+        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- solar clock
   // NOAA solar position for the towers' latitude/longitude; Philadelphia local
   // time with US daylight-saving rules. Drives sun, sky, fog, and the lit windows.
@@ -8264,6 +8468,7 @@
     updateTransit(now, dt);
     updateIndego(now, dt);
     updateFlights(now, dt);
+    updateShips(now, dt);
     updateTreePick();
     updateSearchMark(now);
     updateLabels();
@@ -8275,7 +8480,7 @@
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, shipTest, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });

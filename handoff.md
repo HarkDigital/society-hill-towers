@@ -1237,6 +1237,26 @@ gone (the two-tone glyph reads on pale noon ground AND dark night ground by
 construction). District labels in the same atlas stay single-tone white so
 their bronze tint keeps working. Verified at noon and night over South Philly.
 
+Round 30 (Aug 26 — live ships; Mike: boat traffic on the rivers): AIS layer via
+the aisstream.io WebSocket (wss://stream.aisstream.io/v0/stream) — WebSockets
+have NO CORS wall, so unlike the flight feed the page connects DIRECTLY; the
+only requirement is a free aisstream.io API key pasted into AIS_KEY (top of the
+ships section). Until the key exists the Layers row hides but __dbg.shipTest()
+still injects three synthetic vessels (container ship, tug, moored tanker) so
+the pipeline stays provable. Subscription bbox [[39.80,-75.45],[40.08,-74.82]],
+PositionReport + ShipStaticData; vessels keyed by MMSI carry real AIS
+dimensions (A+B length, C+D beam), type names, destination; moored/anchored
+(nav status 1/5 or SOG < 0.25) hold station, movers dead-reckon along COG
+(extrapolation capped 10 min, despawn 30 min stale). Unit hull scaled
+(len, clamp(len*0.09), beam) per instance; card: type chip, name, speed or
+Moored, length, Bound For. Key 'H', row hidden without a key.
+TWO INSTANCING GOTCHAS (cost a build each): (1) never bake a rotation into a
+part that gets NON-UNIFORM instance scale — the 45-degree bow prow sheared
+into a detached blade; taper with axis-aligned steps instead. (2) a mesh
+sharing septaMats.body MUST setColorAt (white if no tint wanted): the shared
+program expects instance colors and an uninitialized attribute reads zeros —
+the whole ship rendered ink black.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
