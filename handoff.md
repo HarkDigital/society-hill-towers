@@ -1160,6 +1160,32 @@ workflow (5 audits + 5 adversarial verifiers, all confirmed) over the packed dat
   The audits decode wide.b64/city.b64 independently — formats confirmed
   byte-exact against pack_wide.py (0.2 m units) and pack_city.py (0.7 m units).
 
+Round 28 (Aug 26 — the mobile memory diet; Mike: "will not load on mobile"):
+- Diagnosis: the live build loads fine on an iPhone 17 Pro Max SIMULATOR (WebKit,
+  reaches Ready, enters, renders) and in Chromium mobile emulation with zero
+  console errors — so no mobile code break; real devices are dying on PEAK
+  MEMORY (the simulator borrows Mac RAM; real iOS kills a tab around ~1.4 GB).
+- Fixes, measured 536 -> 431 MB JS heap (Chromium A/B, same machine):
+  1. `freeOnUpload(g)`: every attribute + index of the wide/far building chunks
+     and the wide/far road meshes nulls its CPU array after GPU upload (the
+     onUpload callback). 83 megageometry meshes freed; they are never raycast
+     (rayTargets holds only core meshes, ground, and the overpass mesh).
+  2. A `renderer.render(scene, camera)` fires INSIDE each decode step right
+     after the chunk loop, behind the veil, so the upload+free happens during
+     build instead of retaining everything until the first visible frame; the
+     per-chunk source arrays (plain JS number arrays, the real peak) are nulled
+     as each geometry is built.
+  3. The four big base64 blobs (WIDE_B64, CITY_B64, TREES_B64, ST_SDF) are
+     emitted as `let` by build.py and nulled by the app right after decoding.
+  4. The overpass mesh stops casting shadows on touch devices.
+  5. window 'error' handler writes 'Error: ...' into #loadmsg — a phone that
+     fails to load now SAYS why instead of sitting on a silent veil. If Mike
+     reports a failure again, ask what the veil text says (an error message, a
+     stuck step name, or Safari's repeated-reload page = still memory).
+- KNOWN LIMIT: this cannot be confirmed on Mike's physical phone from here. If
+  it still dies, the next lever is a touch LOD for the far ring (conflicts with
+  his round-7 "full map on mobile" ask, so it needs his sign-off). Page 18.44 MB.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

@@ -33,7 +33,7 @@ if demw:
 wide_path = ROOT / "wide.b64"
 wide_b64 = wide_path.read_text(encoding="utf-8").strip() if wide_path.exists() else ""
 data_js += ("const DEM_WIDE = " + json.dumps(demw, separators=(",", ":")) + ";\n"
-            + "const WIDE_B64 = \"" + wide_b64 + "\";\n")
+            + "let WIDE_B64 = \"" + wide_b64 + "\";\n")
 dems_path = ROOT / "dem_south.json"
 dems = json.loads(dems_path.read_text(encoding="utf-8")) if dems_path.exists() else None
 if dems:
@@ -51,7 +51,7 @@ if demc:
 city_path = ROOT / "city.b64"
 city_b64 = city_path.read_text(encoding="utf-8").strip() if city_path.exists() else ""
 data_js += ("const DEM_CITY = " + json.dumps(demc, separators=(",", ":")) + ";\n"
-            + "const CITY_B64 = \"" + city_b64 + "\";\n")
+            + "let CITY_B64 = \"" + city_b64 + "\";\n")
 # Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the
 # legacy color pipeline)
 fpal_path = ROOT / "facade_palette.json"
@@ -63,7 +63,7 @@ stl_path = ROOT / "street_labels.json"
 data_js += "const ST_LABELS = " + (stl_path.read_text(encoding="utf-8").strip() if stl_path.exists() else "null") + ";\n"
 # real street trees (PPR Tree Inventory via fetch_trees.py / pack_trees.py)
 trees_path = ROOT / "trees.b64"
-data_js += 'const TREES_B64 = "' + (trees_path.read_text(encoding="utf-8").strip() if trees_path.exists() else "") + '";\n'
+data_js += 'let TREES_B64 = "' + (trees_path.read_text(encoding="utf-8").strip() if trees_path.exists() else "") + '";\n'
 tn_path = ROOT / "tree_names.json"
 data_js += "const TREE_NAMES = " + (tn_path.read_text(encoding="utf-8").strip() if tn_path.exists() else "null") + ";\n"
 # historic districts + neighborhood labels (fetch_places.py / bake_places.py)
@@ -71,7 +71,7 @@ places_path = ROOT / "places.json"
 data_js += "const PLACES = " + (places_path.read_text(encoding="utf-8").strip() if places_path.exists() else "null") + ";\n"
 # street-name SDF atlas (bake_street_sdf.py — crisp lettering at any zoom)
 sdf_path = ROOT / "street_sdf.json"
-data_js += "const ST_SDF = " + (sdf_path.read_text(encoding="utf-8").strip() if sdf_path.exists() else "null") + ";\n"
+data_js += "let ST_SDF = " + (sdf_path.read_text(encoding="utf-8").strip() if sdf_path.exists() else "null") + ";\n"
 # elevated roads + the Vine Street cut (bake_overpasses.py from the raw OSM dumps)
 ovp_path = ROOT / "overpasses.json"
 data_js += "const OVERPASSES = " + (ovp_path.read_text(encoding="utf-8").strip() if ovp_path.exists() else "null") + ";\n"

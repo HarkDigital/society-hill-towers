@@ -58,6 +58,10 @@
   const needle = document.getElementById('needle');
   const stick = document.getElementById('stick');
   const stickNub = stick.querySelector('.nub');
+  window.addEventListener('error', (e) => {
+    const lm = document.getElementById('loadmsg');
+    if (lm && !window.__fatalShown) { window.__fatalShown = true; lm.textContent = 'Error: ' + ((e && e.message) || 'unknown'); }
+  });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
 
@@ -1416,6 +1420,12 @@
     return false;
   }
   const rayTargets = [];   // double-click focus raycasts only against these
+  // phones die on PEAK memory, not triangle count: once the GPU holds a big
+  // merged geometry we never raycast, the CPU-side typed arrays are pure waste
+  function freeOnUpload(g) {
+    for (const k in g.attributes) g.attributes[k].onUpload(function () { this.array = null; });
+    if (g.index) g.index.onUpload(function () { this.array = null; });
+  }
 
   const groupCity = new THREE.Group();
   scene.add(groupCity);
@@ -3555,6 +3565,7 @@
   step('Raising the outer districts', async () => {
     if (typeof WIDE_B64 === 'undefined' || !WIDE_B64) return;
     const bin = Uint8Array.from(atob(WIDE_B64), ch => ch.charCodeAt(0));
+    WIDE_B64 = null;   // the 5 MB base64 string has served its purpose
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const body = new Int16Array(bin.buffer, 16);
     const hasAttr = hdr[0] === 0x5348545A;
@@ -4325,17 +4336,24 @@
       g.setAttribute('aBase', new THREE.BufferAttribute(new Float32Array(ch.bas), 1));
       g.setIndex(ch.idx);
       g.computeBoundingSphere();
+      freeOnUpload(g);
+      ch.pos = ch.nor = ch.col = ch.sty = ch.flh = ch.bas = ch.idx = null;
       const m = new THREE.Mesh(g, cityMat);
       m.matrixAutoUpdate = false;
       groupCity.add(m);
       outerMeshes.push(m);
     }
+    renderer.render(scene, camera);   // upload now, behind the veil, and free the arrays
+    await yieldNow();
     if (rc.n) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
       g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
       g.setIndex(rc.idx);
       g.computeVertexNormals();
+      g.computeBoundingSphere();
+      freeOnUpload(g);
+      rc.pos = rc.col = rc.idx = null;
       groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
@@ -4559,6 +4577,7 @@
   step('Raising the rest of Philadelphia', async () => {
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
     const bin = Uint8Array.from(atob(CITY_B64), ch => ch.charCodeAt(0));
+    CITY_B64 = null;   // 7 MB of base64 freed
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const hasAttr = hdr[0] === 0x5348545B;
     if (hdr[0] !== 0x53485459 && !hasAttr) return;
@@ -4770,17 +4789,24 @@
       g.setAttribute('aBase', new THREE.BufferAttribute(new Float32Array(ch.bas), 1));
       g.setIndex(ch.idx);
       g.computeBoundingSphere();
+      freeOnUpload(g);
+      ch.pos = ch.nor = ch.col = ch.sty = ch.flh = ch.bas = ch.idx = null;
       const m = new THREE.Mesh(g, cityMat);
       m.matrixAutoUpdate = false;
       groupCity.add(m);
       outerMeshes.push(m);
     }
+    renderer.render(scene, camera);   // upload now, behind the veil, and free the arrays
+    await yieldNow();
     if (rc.n) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
       g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
       g.setIndex(rc.idx);
       g.computeVertexNormals();
+      g.computeBoundingSphere();
+      freeOnUpload(g);
+      rc.pos = rc.col = rc.idx = null;
       groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
@@ -5200,7 +5226,8 @@
     if (parts.length) {
       const ovpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
-      mesh.castShadow = mesh.receiveShadow = true;
+      mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
+      mesh.receiveShadow = true;
       groupCity.add(mesh);
       rayTargets.push(mesh);
     }
@@ -5301,6 +5328,7 @@
     let head, v;
     try {
       const s = atob(TREES_B64);
+      TREES_B64 = null;
       const buf = new Uint8Array(s.length);
       for (let i = 0; i < s.length; i++) buf[i] = s.charCodeAt(i);
       head = new Int32Array(buf.buffer, 0, 4);
@@ -6722,6 +6750,7 @@
       rects = ST_SDF.rects;
       const img = new Image();
       await new Promise((res) => { img.onload = res; img.onerror = res; img.src = 'data:image/png;base64,' + ST_SDF.png; });
+      ST_SDF = null;   // the atlas PNG lives in the texture now
       const cv = document.createElement('canvas');
       cv.width = AW; cv.height = AH;
       const g = cv.getContext('2d');
