@@ -6066,6 +6066,7 @@
     else if (k === 'n') toggleStreets();
     else if (k === 'f') toggleLayers();
     else if (k === 'b') toggleIndego();
+    else if (k === 'x') toggleFlights();
     else if (k === 'p') togglePlaces();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
@@ -6347,7 +6348,7 @@
     else { pickedVeh = null; if (!pickedStation && pickedTree == null) vehinfoEl.hidden = true; }
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedTree = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedTree = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
@@ -6355,7 +6356,8 @@
   canvas.addEventListener('pointerup', (e) => {
     const sAct = septaReady && SEPTA.on && septaSolid.count > 0;
     const iAct = indegoReady && INDEGO.on && indegoBadge.count > 0;
-    if (!sAct && !iAct) return;
+    const fAct = flightReady && FLIGHTS.on && flightMesh.count > 0;
+    if (!sAct && !iAct && !fAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -6374,18 +6376,23 @@
     const targets = [];
     if (sAct) targets.push(septaSolid, septaPin, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
+    if (fAct) targets.push(flightMesh);
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null) {
       const h = hits[0];
       let v = null, hitSt = null;
+      if (h.object === flightMesh) {
+        const p = flightPick[h.instanceId];
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
+      }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
       else if (h.object === septaPin) v = septaPickP[h.instanceId];
       else if (h.object === septaBadge) v = septaPickB[h.instanceId];
       else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
       else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
       else if (h.object === indegoBadge) hitSt = indegoPickB[h.instanceId];
-      if (v) { pickedStation = null; pickedTree = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
-      if (hitSt) { pickedVeh = null; pickedTree = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
+      if (v) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      if (hitSt) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle or bike dock within reach of the
     // tap point (a little wider under the crosshair, where aiming is coarser)
@@ -6407,8 +6414,8 @@
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestS = st; bestV = null; }
     }
-    if (bestV) { pickedStation = null; pickedTree = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
-    if (bestS) { pickedVeh = null; pickedTree = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
+    if (bestV) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
+    if (bestS) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
     // canopy spheres (tapping a crown is the natural gesture), then fall back
     // to the nearest tree around the tapped ground point (trunk-level taps)
@@ -6446,9 +6453,9 @@
           }
         }
       }
-      if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
+      if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (pickedVeh || pickedStation || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedTree = null; vehinfoEl.hidden = true; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedTree = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -7646,6 +7653,194 @@
   document.getElementById('btnAbout').addEventListener('click', toggleAbout);
   document.getElementById('btnCloseAbout').addEventListener('click', closeAbout);
 
+
+  // ---------------------------------------------------------------- live flights
+  // Real ADS-B traffic over the city and into PHL, from the adsb.fi community
+  // feed (open data, but no CORS headers), fetched through a public passthrough.
+  // A personal proxy dropped into FLIGHT_PROXY takes precedence and is kinder to
+  // everyone. Silent under the artifact CSP like every live layer.
+  const FLIGHT_PROXY = '';
+  const FLIGHT_TGT = 'https://opendata.adsb.fi/api/v2/lat/39.872/lon/-75.241/dist/30';
+  // public passthroughs are individually flaky: rotate to the next on any
+  // failure and stay with whichever answers (corsproxy serves only real https
+  // page origins, allorigins throttles bursts; a FLIGHT_PROXY worker beats both)
+  const FLIGHT_HOSTS = [
+    FLIGHT_PROXY,
+    'https://corsproxy.io/?url=' + encodeURIComponent(FLIGHT_TGT),
+    'https://api.allorigins.win/raw?url=' + encodeURIComponent(FLIGHT_TGT),
+  ].filter(Boolean);
+  const FLIGHTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, host: 0 };
+  const flightMap = new Map();
+  let flightMesh = null, flightStrobe = null, flightReady = false, pickedPlane = null;
+  const flightPick = [];
+  const FLIGHT_CAP = 80;
+  const btnFlights = document.getElementById('btnFlights');
+  const _fq = new THREE.Quaternion(), _fe = new THREE.Euler();
+  const FLIGHT_LEN = { A1: 12, A2: 24, A3: 38, A4: 48, A5: 64, A7: 12 };
+  function flightGeom() {
+    // ~120-tri airliner, nose toward +x, unit length 1 (instance scale = meters)
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow, ry) => {
+      const bg = new THREE.BoxGeometry(sx, sy, sz);
+      if (ry) bg.rotateY(ry);
+      bg.translate(cx, cy, cz);
+      parts.push(septaColored(bg, r, g, b, glow || 0));
+    };
+    box(1.0, 0.085, 0.085, 0, 0, 0, 0.80, 0.81, 0.84);            // fuselage
+    box(0.14, 0.07, 0.075, 0.47, 0.008, 0, 0.35, 0.38, 0.44);     // cockpit
+    box(0.56, 0.02, 0.09, 0.03, 0.012, 0, 1, 0.93, 0.72, 1);      // cabin glow band
+    box(0.15, 0.012, 0.5, 0.03, -0.02, 0.24, 0.72, 0.73, 0.76, 0, -0.5);   // wings, swept
+    box(0.15, 0.012, 0.5, 0.03, -0.02, -0.24, 0.72, 0.73, 0.76, 0, 0.5);
+    box(0.1, 0.045, 0.05, 0.1, -0.055, 0.17, 0.5, 0.51, 0.54);    // engines
+    box(0.1, 0.045, 0.05, 0.1, -0.055, -0.17, 0.5, 0.51, 0.54);
+    box(0.08, 0.01, 0.16, -0.44, 0.02, 0.09, 0.72, 0.73, 0.76, 0, -0.4);   // tailplane
+    box(0.08, 0.01, 0.16, -0.44, 0.02, -0.09, 0.72, 0.73, 0.76, 0, 0.4);
+    box(0.14, 0.15, 0.012, -0.45, 0.1, 0, 0.68, 0.70, 0.74, 0, 0); // fin
+    return septaMerge(parts);
+  }
+  function flightsInit() {
+    flightMesh = new THREE.InstancedMesh(flightGeom(), bodyMat, FLIGHT_CAP);
+    flightMesh.frustumCulled = false;
+    flightMesh.count = 0;
+    groupCity.add(flightMesh);
+    const sg = new THREE.OctahedronGeometry(0.8, 0);
+    flightStrobe = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }), FLIGHT_CAP);
+    flightStrobe.frustumCulled = false;
+    flightStrobe.count = 0;
+    flightStrobe.renderOrder = 12;
+    groupCity.add(flightStrobe);
+    flightReady = true;
+  }
+  function flightPoll() {
+    if (!septaCanFetch || !FLIGHTS.on || FLIGHTS.busy || document.hidden) return;
+    FLIGHTS.busy = true;
+    fetch(FLIGHT_HOSTS[FLIGHTS.host])
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
+      .then((js) => {
+        FLIGHTS.busy = false;
+        if (!js || (!js.aircraft && !js.ac)) throw new Error('bad payload');
+        FLIGHTS.ok = true;
+        FLIGHTS.fails = 0;
+        const seen = new Set();
+        const now = performance.now();
+        for (const a of (js && js.aircraft) || (js && js.ac) || []) {
+          if (a.lat == null || a.lon == null) continue;
+          const ground = a.alt_baro === 'ground';
+          const altFt = ground ? 0 : (a.alt_geom != null ? a.alt_geom : a.alt_baro);
+          if (altFt == null || altFt > 20000) continue;
+          const x = (a.lon - SITE.lon) * 111320 * Math.cos(SITE.lat * DEG);
+          const z = -(a.lat - SITE.lat) * 110574;
+          if (x < -12500 || x > 17000 || z < -22000 || z > 10000) continue;
+          const hex = a.hex || (a.flight || '').trim();
+          if (!hex) continue;
+          seen.add(hex);
+          let p = flightMap.get(hex);
+          if (!p) { p = { hex }; flightMap.set(hex, p); }
+          p.ground = ground;
+          p.fy = ground ? siteY(x, z, 'ground') + 1.2 : altFt * 0.3048 - 8.34;
+          p.fx = x; p.fz = z; p.ft = now;
+          const tr = (a.track != null ? a.track : (a.true_heading != null ? a.true_heading : (p.trk || 0)));
+          p.trk = tr;
+          const gms = (a.gs || 0) * 0.5144;
+          p.vx = Math.sin(tr * DEG) * gms;
+          p.vz = -Math.cos(tr * DEG) * gms;
+          p.vy = ground ? 0 : ((a.geom_rate != null ? a.geom_rate : (a.baro_rate || 0)) * 0.00508);
+          p.gs = a.gs || 0;
+          p.call = (a.flight || '').trim() || (a.r || '').trim() || hex.toUpperCase();
+          p.type = (a.desc || a.t || 'Aircraft');
+          p.op = a.ownOp || '';
+          p.len = FLIGHT_LEN[a.category] || (a.category === 'A0' ? 20 : 32);
+          if (p.dx === undefined) { p.dx = x; p.dz = z; p.dy = p.fy; }
+        }
+        for (const [hex, p] of flightMap) if (!seen.has(hex)) { flightMap.delete(hex); if (pickedPlane === p) { pickedPlane = null; vehinfoEl.hidden = true; } }
+        flightStatus();
+      })
+      .catch(() => { FLIGHTS.busy = false; FLIGHTS.fails++; FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length; FLIGHTS.nextT = 0; });
+  }
+  function flightStatus() {
+    if (!btnFlights) return;
+    btnFlights.title = 'Live Flights (X): ' + flightMap.size + ' Aircraft Tracked';
+    const fc = document.getElementById('flightCount');
+    if (fc) fc.textContent = flightMap.size ? String(flightMap.size) : '';
+  }
+  function flightCard(p) {
+    const alt = p.ground ? 'On The Ground' : Math.round((p.dy + 8.34) / 0.3048 / 25) * 25 + ' ft, ' +
+      (p.vy > 2 ? 'Climbing' : p.vy < -2 ? 'Descending' : 'Level');
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:#3a6ea5">' + septaEsc(p.call) + '</span>' +
+      '<span class="vdest">' + septaEsc(p.type) + '</span>' +
+      (p.op ? '<div class="vmeta">' + septaEsc(p.op) + '</div>' : '') +
+      '<div class="vmeta">' + septaEsc(alt + ', ' + Math.round(p.gs) + ' kt') + '</div>';
+  }
+  function syncFlightsBtn() { if (btnFlights) btnFlights.classList.toggle('on', FLIGHTS.on); }
+  function toggleFlights() {
+    if (!septaCanFetch) return;
+    FLIGHTS.on = !FLIGHTS.on;
+    syncFlightsBtn();
+    if (FLIGHTS.on) { FLIGHTS.nextT = 0; }
+    else if (pickedPlane) { pickedPlane = null; vehinfoEl.hidden = true; }
+  }
+  if (btnFlights) btnFlights.addEventListener('click', toggleFlights);
+  syncFlightsBtn();
+  function updateFlights(now, dt) {
+    if (!septaCanFetch) { if (btnFlights) btnFlights.style.display = 'none'; return; }
+    if (!flightReady) { if (bodyMat) flightsInit(); return; }
+    if (now >= FLIGHTS.nextT) {
+      FLIGHTS.nextT = now + (FLIGHTS.fails > FLIGHT_HOSTS.length * 2 ? 300000 : (FLIGHT_PROXY && FLIGHTS.host === 0 ? 10000 : 90000));
+      flightPoll();
+    }
+    if (!FLIGHTS.on) {
+      if (flightMesh.count) { flightMesh.count = 0; flightStrobe.count = 0; flightMesh.instanceMatrix.needsUpdate = true; flightStrobe.instanceMatrix.needsUpdate = true; }
+      return;
+    }
+    let i = 0;
+    const night = nightUniform.value;
+    for (const p of flightMap.values()) {
+      if (i >= FLIGHT_CAP) break;
+      // dead reckoning: jets cross a block between polls, so fly the last known
+      // velocity and ease toward each fresh fix instead of teleporting
+      const age = Math.min((now - p.ft) / 1000, 50);   // glide at most 50 s past a fix
+      const px = p.fx + p.vx * age, pz = p.fz + p.vz * age, py = p.fy + p.vy * age;
+      const k = 1 - Math.exp(-dt / 0.8);
+      p.dx += (px - p.dx) * k;
+      p.dz += (pz - p.dz) * k;
+      p.dy += (py - p.dy) * k;
+      const yaw = Math.atan2(-p.vz, p.vx) || 0;
+      const pitch = p.ground ? 0 : clamp(Math.atan2(p.vy, Math.max(30, Math.hypot(p.vx, p.vz))), -0.21, 0.21);
+      _fe.set(0, yaw, pitch, 'YZX');
+      _fq.setFromEuler(_fe);
+      _sp.set(p.dx, p.dy, p.dz);
+      _ss.set(p.len, p.len, p.len);
+      _sm.compose(_sp, _fq, _ss);
+      flightMesh.setMatrixAt(i, _sm);
+      flightPick[i] = p;
+      // white anti-collision strobe: a sharp double-blink, phase by airframe
+      const ph = ((now * 0.001 + ((parseInt(String(p.hex).replace(/[^0-9a-z]/gi, ''), 36) || 0) % 97) * 0.13) % 1.2) / 1.2;
+      const blink = (ph < 0.05 || (ph > 0.12 && ph < 0.17)) ? 1 : 0;
+      const ssc = blink * (1.2 + 2.2 * night) * Math.max(0.6, p.len / 32);
+      _sp.set(p.dx, p.dy + 0.5, p.dz);
+      _ss.set(ssc || 0.0001, ssc || 0.0001, ssc || 0.0001);
+      _sm.compose(_sp, _fq, _ss);
+      flightStrobe.setMatrixAt(i, _sm);
+      i++;
+    }
+    flightMesh.count = i;
+    flightStrobe.count = i;
+    flightMesh.instanceMatrix.needsUpdate = true;
+    flightStrobe.instanceMatrix.needsUpdate = true;
+    if (pickedPlane) {
+      flightCard(pickedPlane);
+      _ssv.set(pickedPlane.dx, pickedPlane.dy + pickedPlane.len * 0.12 + 6, pickedPlane.dz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else {
+        vehinfoEl.style.opacity = '1';
+        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      }
+    }
+  }
+
   // ---------------------------------------------------------------- solar clock
   // NOAA solar position for the towers' latitude/longitude; Philadelphia local
   // time with US daylight-saving rules. Drives sun, sky, fog, and the lit windows.
@@ -8021,6 +8216,7 @@
     waterU.uSun.value.copy(glintDir);
     updateTransit(now, dt);
     updateIndego(now, dt);
+    updateFlights(now, dt);
     updateTreePick();
     updateSearchMark(now);
     updateLabels();
