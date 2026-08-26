@@ -1385,6 +1385,32 @@ category A7 or a ~55-code type set, sticky across polls, len forced to A7's
 EC135. PennDOT credit added to template credits + about_body; R in the About
 key table.
 
+Round 33 (Aug 26 — Mike: helis should BE helis and be clickable, traffic only
+shows in a few spots, and drop the phl mark for a generic plane): three fixes.
+(1) Rotorcraft now fly a real model: heliGeom (cabin pod, canopy, cowl, boom,
+red fin, tail rotor, skids — 13 boxes) plus a separate heliRotor InstancedMesh
+(two crossed blades) spun about local Y per frame (16.5 rad/s, per-airframe
+phase from the hex), both on septaMats.body next to flightMesh. The aircraft
+loop now routes bodies by p.heli with split counters (iF fixed wing / iH heli)
+and split pick arrays — the old shared flightPick[i] silently misindexed pins
+once the counters diverged. (2) Picking: heliMesh and flightPinH joined the
+raycast targets (the heli pin was never clickable — that was the whole bug),
+fAct counts either mesh, and the resolver maps heli hits through heliPick.
+Verified by dispatched pointer events: heli card (PD1 · Eurocopter EC135) and
+plane card both open. (3) The phl wordmark pin is retired: fixed wing now
+wears the material-icons flight glyph (the layers panel's own path, Path2D at
+6.6x) in the same navy badge, sky-blue nose accent — no lettering. (4) Traffic
+rework: the car budget now follows the camera (full weight ≤1.5 km of the eye,
+gone past 4 km, 3D distance) instead of spreading over all 1,080 km — runs are
+chunked to ~400 m at decode (6,052 runs) so long ways resolve finely, cap
+raised 900→2,200 desktop / 300→550 touch, and the tooltip says "1:N Sample
+Nearby" (suffix only below scale 0.85 — it used to claim 1:2 at 0.98). Around
+the default orbit that lands near TRUE density: 2,148 cars at Wed 5 PM at
+1:1.4, the Vine Expressway visibly flowing; the whole-extent implied is still
+~8k so distant wards go quiet until you fly there. Same-frame gotcha learned:
+pane screenshots lag one PRESENTED frame behind frameOnce — render twice
+before capturing.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

@@ -7392,7 +7392,7 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
   canvas.addEventListener('pointerup', (e) => {
     const sAct = septaReady && SEPTA.on && septaSolid.count > 0;
     const iAct = indegoReady && INDEGO.on && indegoBadge.count > 0;
-    const fAct = flightReady && FLIGHTS.on && flightMesh.count > 0;
+    const fAct = flightReady && FLIGHTS.on && (flightMesh.count > 0 || heliMesh.count > 0);
     const shAct = shipReady && SHIPS.on && shipMesh.count > 0;
     if (!sAct && !iAct && !fAct && !shAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
@@ -7413,14 +7413,14 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     const targets = [];
     if (sAct) targets.push(septaSolid, septaPin, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
-    if (fAct) targets.push(flightMesh, flightPin);
+    if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
     if (shAct) targets.push(shipMesh);
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null) {
       const h = hits[0];
       let v = null, hitSt = null;
-      if (h.object === flightMesh || h.object === flightPin) {
-        const p = flightPick[h.instanceId];
+      if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
+        const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
       }
       if (h.object === shipMesh) {
@@ -8703,8 +8703,10 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
   ].filter(Boolean);
   const FLIGHTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, host: 0 };
   const flightMap = new Map();
-  let flightMesh = null, flightStrobe = null, flightPin = null, flightPinH = null, flightReady = false, pickedPlane = null;
-  const flightPick = [];
+  let flightMesh = null, flightStrobe = null, flightPin = null, flightPinH = null, heliMesh = null, heliRotor = null, flightReady = false, pickedPlane = null;
+  const flightPick = [], heliPick = [];
+  const _fqSpin = new THREE.Quaternion(), _fqR = new THREE.Quaternion();
+  const FLIGHT_UP = new THREE.Vector3(0, 1, 0);
   const FLIGHT_CAP = 80;
   const btnFlights = document.getElementById('btnFlights');
   const _fq = new THREE.Quaternion(), _fe = new THREE.Euler();
@@ -8737,13 +8739,44 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     box(0.14, 0.15, 0.012, -0.45, 0.1, 0, 0.68, 0.70, 0.74, 0, 0); // fin
     return septaMerge(parts);
   }
+  function heliGeom() {
+    // light helicopter, nose toward +x, unit length 1 (instance scale = meters):
+    // cabin pod, canopy, boom, fin, skids — the main rotor is its own spinning
+    // InstancedMesh, so it is NOT part of this geometry
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow) => {
+      const bg = new THREE.BoxGeometry(sx, sy, sz);
+      bg.translate(cx, cy, cz);
+      parts.push(septaColored(bg, r, g, b, glow || 0));
+    };
+    box(0.4, 0.17, 0.17, 0.09, 0, 0, 0.88, 0.88, 0.9);             // cabin pod
+    box(0.13, 0.13, 0.15, 0.3, 0.005, 0, 0.16, 0.18, 0.22, 1);     // canopy glass, lit at night
+    box(0.15, 0.055, 0.11, -0.02, 0.1, 0, 0.55, 0.57, 0.6);        // engine cowl
+    box(0.02, 0.06, 0.02, 0.06, 0.135, 0, 0.2, 0.2, 0.22);         // rotor mast
+    box(0.42, 0.04, 0.04, -0.3, 0.035, 0, 0.8, 0.8, 0.83);         // tail boom
+    box(0.055, 0.15, 0.012, -0.485, 0.08, 0, 0.72, 0.2, 0.18);     // tail fin, warning red
+    box(0.012, 0.12, 0.018, -0.5, 0.1, 0.028, 0.25, 0.25, 0.28);   // tail rotor
+    for (const sz of [-0.085, 0.085]) {
+      box(0.34, 0.013, 0.016, 0.06, -0.12, sz, 0.35, 0.36, 0.4);   // skids
+      box(0.012, 0.06, 0.014, -0.04, -0.09, sz, 0.35, 0.36, 0.4);  // struts
+      box(0.012, 0.06, 0.014, 0.17, -0.09, sz, 0.35, 0.36, 0.4);
+    }
+    return septaMerge(parts);
+  }
+  function heliRotorGeom() {
+    // two crossed blades; spun about local Y each frame by updateFlights
+    const a = new THREE.BoxGeometry(0.92, 0.008, 0.04);
+    const b = new THREE.BoxGeometry(0.04, 0.008, 0.92);
+    a.translate(0.06, 0.165, 0); b.translate(0.06, 0.165, 0);
+    return septaMerge([septaColored(a, 0.16, 0.16, 0.18, 0), septaColored(b, 0.16, 0.16, 0.18, 0)]);
+  }
   function flightPinTexture(kind) {
     // aircraft pins share one badge casing (the SEPTA marker's shape, navy body
     // in a warm-white frame — the Round 29c pale-halo trick that reads against
-    // noon sky and midnight alike). Fixed wing wears the hand-set 'phl'
-    // wordmark (drawn type, not the airport's trademark art); rotorcraft wear
-    // a chunky side-view helicopter, because a news chopper over the rowhouses
-    // is not "traffic into PHL" and the pin shouldn't claim it is.
+    // noon sky and midnight alike). Fixed wing wears a generic top-view
+    // airplane (the layers-panel glyph, so panel and sky agree); rotorcraft
+    // wear a chunky side-view helicopter. Both bold white with one sky-blue
+    // accent — no lettering, nothing to squint at from across the model.
     const cv = document.createElement('canvas');
     cv.width = 256; cv.height = 320;
     const g = cv.getContext('2d');
@@ -8791,22 +8824,18 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
       g.closePath(); g.fill();
       g.restore();
     } else {
-      g.font = '700 118px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
-      g.textBaseline = 'alphabetic';
-      const w = g.measureText('phl').width;
-      const tx = 128 - w / 2, ty = by + bh / 2 + 40; // descender rides low like the wordmark
-      g.fillStyle = '#fdfbf6';
-      g.fillText('phl', tx, ty);
-      const pw = g.measureText('p').width;           // sky-blue sail over the p's upper left
+      // the material "flight" path the layers panel already uses, scaled up
+      const plane = new Path2D('M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z');
       g.save();
-      g.beginPath();
-      g.moveTo(tx - 8, ty - 120);
-      g.lineTo(tx + pw * 0.95, ty - 120);
-      g.lineTo(tx - 8, ty - 14);
-      g.closePath();
-      g.clip();
+      g.translate(128 - 79, 108 - 82);
+      g.scale(6.6, 6.6);
+      g.fillStyle = '#fdfbf6';
+      g.fill(plane);
+      g.save();                                      // sky-blue nose, the heli-canopy accent
+      g.beginPath(); g.rect(0, 0, 24, 6.2); g.clip();
       g.fillStyle = '#4fb0e8';
-      g.fillText('phl', tx, ty);
+      g.fill(plane);
+      g.restore();
       g.restore();
     }
     const tex = new THREE.CanvasTexture(cv);
@@ -8819,6 +8848,14 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     flightMesh.frustumCulled = false;
     flightMesh.count = 0;
     groupCity.add(flightMesh);
+    heliMesh = new THREE.InstancedMesh(heliGeom(), septaMats.body, FLIGHT_CAP);
+    heliMesh.frustumCulled = false;
+    heliMesh.count = 0;
+    groupCity.add(heliMesh);
+    heliRotor = new THREE.InstancedMesh(heliRotorGeom(), septaMats.body, FLIGHT_CAP);
+    heliRotor.frustumCulled = false;
+    heliRotor.count = 0;
+    groupCity.add(heliRotor);
     const sg = new THREE.OctahedronGeometry(0.8, 0);
     flightStrobe = new THREE.InstancedMesh(sg, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, depthWrite: false }), FLIGHT_CAP);
     flightStrobe.frustumCulled = false;
@@ -8953,10 +8990,10 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
       flightPoll();
     }
     if (!FLIGHTS.on) {
-      if (flightMesh.count) { flightMesh.count = 0; flightStrobe.count = 0; flightPin.count = 0; flightPinH.count = 0; flightMesh.instanceMatrix.needsUpdate = true; flightStrobe.instanceMatrix.needsUpdate = true; flightPin.instanceMatrix.needsUpdate = true; flightPinH.instanceMatrix.needsUpdate = true; }
+      if (flightMesh.count || heliMesh.count) { flightMesh.count = 0; heliMesh.count = 0; heliRotor.count = 0; flightStrobe.count = 0; flightPin.count = 0; flightPinH.count = 0; flightMesh.instanceMatrix.needsUpdate = true; heliMesh.instanceMatrix.needsUpdate = true; heliRotor.instanceMatrix.needsUpdate = true; flightStrobe.instanceMatrix.needsUpdate = true; flightPin.instanceMatrix.needsUpdate = true; flightPinH.instanceMatrix.needsUpdate = true; }
       return;
     }
-    let i = 0, iP = 0, iH = 0;
+    let i = 0, iF = 0, iH = 0;
     const night = nightUniform.value;
     _sqB.copy(camera.quaternion);                    // pins billboard the camera
     const gone = [];
@@ -8988,8 +9025,18 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
       _sp.set(p.dx, p.dy, p.dz);
       _ss.set(p.len, p.len, p.len);
       _sm.compose(_sp, _fq, _ss);
-      flightMesh.setMatrixAt(i, _sm);
-      flightPick[i] = p;
+      if (p.heli) {
+        heliMesh.setMatrixAt(iH, _sm);
+        heliPick[iH] = p;
+        // main rotor: same pose with a per-airframe phase spun about local Y
+        _fqSpin.setFromAxisAngle(FLIGHT_UP, now * 0.0165 + (p.hex.charCodeAt(0) || 0));
+        _fqR.multiplyQuaternions(_fq, _fqSpin);
+        _sm.compose(_sp, _fqR, _ss);
+        heliRotor.setMatrixAt(iH, _sm);
+      } else {
+        flightMesh.setMatrixAt(iF, _sm);
+        flightPick[iF] = p;
+      }
       // white anti-collision strobe: a sharp double-blink, phase by airframe
       const ph = ((now * 0.001 + ((parseInt(String(p.hex).replace(/[^0-9a-z]/gi, ''), 36) || 0) % 97) * 0.13) % 1.2) / 1.2;
       const blink = (ph < 0.05 || (ph > 0.12 && ph < 0.17)) ? 1 : 0;
@@ -9000,24 +9047,28 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
       flightStrobe.setMatrixAt(i, _sm);
       // pin, billboarded and distance-scaled to hold ~34 px on screen so
       // traffic reads from across the model (the SEPTA bus-badge recipe);
-      // helicopters fly their own silhouette, everything else flies the phl mark
+      // helicopters fly the rotor silhouette, fixed wing the airplane glyph
       _sp.set(p.dx, p.dy + p.len * 0.14 + 1.5, p.dz);
       const ps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
       _ss.set(ps, ps, ps);
       _sm.compose(_sp, _sqB, _ss);
       if (p.heli) flightPinH.setMatrixAt(iH++, _sm);
-      else flightPin.setMatrixAt(iP++, _sm);
+      else flightPin.setMatrixAt(iF++, _sm);
       i++;
     }
     if (gone.length) {
       for (const hx of gone) { const p = flightMap.get(hx); flightMap.delete(hx); if (pickedPlane === p) { pickedPlane = null; vehinfoEl.hidden = true; } }
       flightStatus();
     }
-    flightMesh.count = i;
+    flightMesh.count = iF;
+    heliMesh.count = iH;
+    heliRotor.count = iH;
     flightStrobe.count = i;
-    flightPin.count = iP;
+    flightPin.count = iF;
     flightPinH.count = iH;
     flightMesh.instanceMatrix.needsUpdate = true;
+    heliMesh.instanceMatrix.needsUpdate = true;
+    heliRotor.instanceMatrix.needsUpdate = true;
     flightStrobe.instanceMatrix.needsUpdate = true;
     flightPin.instanceMatrix.needsUpdate = true;
     flightPinH.instanceMatrix.needsUpdate = true;
@@ -9256,7 +9307,7 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
   // density. These are VOLUMES, not live positions — no public feed of live
   // cars exists, and the About panel says so. Fully baked: no fetch, no key,
   // the one moving layer that also works inside the artifact sandbox.
-  const TRAFFIC = { on: true, cap: isTouch ? 300 : 900, n: 0, scale: 1 };
+  const TRAFFIC = { on: true, cap: isTouch ? 550 : 2200, n: 0, scale: 1 };
   const btnTraffic = document.getElementById('btnTraffic');
   const TRAFFIC_SPEED = [88, 64, 40, 34, 30, 22];       // km/h by class 0-5
   const TRAFFIC_UP = new THREE.Vector3(0, 1, 0);
@@ -9359,8 +9410,27 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
         let L = 0;
         for (let j = 1; j < m; j++) { L += Math.hypot(r.xs[j] - r.xs[j - 1], r.zs[j] - r.zs[j - 1]); cum[j] = L; }
         if (L < 25) continue;
-        trafficRuns.push({ xs: Float32Array.from(r.xs), zs: Float32Array.from(r.zs), ys: Float32Array.from(r.ys),
-          cum, len: L, cls, oneway, aadt, want: 0, cars: [] });
+        // chunk long ways to ~400 m so the camera-local budget resolves finely
+        // (one 3 km I-95 way must not be all-in or all-out of the radius)
+        const pieces = Math.max(1, Math.round(L / 400));
+        let j0 = 0;
+        for (let pc = 1; pc <= pieces; pc++) {
+          let j1 = m - 1;
+          if (pc < pieces) { const target = L * pc / pieces; j1 = j0 + 1; while (j1 < m - 1 && cum[j1] < target) j1++; }
+          if (j1 <= j0) continue;
+          const n2 = j1 - j0 + 1;
+          const c2 = new Float32Array(n2);
+          for (let q = 1; q < n2; q++) c2[q] = cum[j0 + q] - cum[j0];
+          const len = c2[n2 - 1];
+          if (len >= 25) {
+            let mid = 0;
+            while (mid < n2 - 1 && c2[mid] < len / 2) mid++;
+            trafficRuns.push({ xs: Float32Array.from(r.xs.slice(j0, j1 + 1)), zs: Float32Array.from(r.zs.slice(j0, j1 + 1)),
+              ys: Float32Array.from(r.ys.slice(j0, j1 + 1)), cum: c2, len, cls, oneway, aadt,
+              mx: r.xs[j0 + mid], mz: r.zs[j0 + mid], want: 0, cars: [] });
+          }
+          j0 = j1;
+        }
       }
     }
     const carMat = septaMats.body || new THREE.MeshLambertMaterial({ vertexColors: true });
@@ -9403,8 +9473,18 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
   }
   function trafficReconcile(now) {
     const { frac } = trafficFrac();
+    // the car budget follows the camera: full weight within 1.5 km of the eye,
+    // gone past 4 km — a car four kilometres out is under a pixel, so the cap
+    // is spent where it can be seen and the streets you look at actually flow
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
     let implied = 0;
-    for (const r of trafficRuns) { r.want = r.aadt * frac / TRAFFIC_SPEED[r.cls] * (r.len / 1000); implied += r.want; }
+    for (const r of trafficRuns) {
+      const dx = r.mx - cx, dz = r.mz - cz;
+      const d = Math.sqrt(dx * dx + dz * dz + cy * cy);
+      const w = d < 1500 ? 1 : d > 4000 ? 0 : (4000 - d) / 2500;
+      r.want = w ? r.aadt * frac / TRAFFIC_SPEED[r.cls] * (r.len / 1000) * w : 0;
+      implied += r.want;
+    }
     TRAFFIC.scale = Math.min(1, TRAFFIC.cap / Math.max(1, implied));
     let n = 0;
     for (let i = 0; i < trafficRuns.length; i++) {
@@ -9425,7 +9505,7 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     if (!btnTraffic) return;
     const { dow } = trafficFrac();
     const h = Math.floor(clock.minutes / 60), m12 = ((h + 11) % 12) + 1, ap = h < 12 ? 'AM' : 'PM';
-    const sc = TRAFFIC.scale < 0.995 ? ' · 1:' + Math.max(2, Math.round(1 / TRAFFIC.scale)) + ' Sample' : '';
+    const sc = TRAFFIC.scale < 0.85 ? ' · 1:' + Math.max(2, Math.round(1 / TRAFFIC.scale)) + ' Sample Nearby' : '';
     btnTraffic.title = 'Typical Traffic (R): ' + trafficCars + ' Cars · ' + TRAFFIC_DAYS[dow] + ' ' + m12 + ' ' + ap + sc;
     const el = document.getElementById('trafficCount');
     if (el) el.textContent = trafficCars ? String(trafficCars) : '';
