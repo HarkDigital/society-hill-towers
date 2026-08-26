@@ -6900,38 +6900,12 @@
     syncPlacesBtn();
   }
   btnPlaces.addEventListener('click', togglePlaces);
-  step('Tracing the historic districts', () => {
-    if (typeof PLACES === 'undefined' || !PLACES || !PLACES.hd || !PLACES.hd.length) { btnPlaces.style.display = 'none'; return; }
-    const parts = [];
-    for (const d of PLACES.hd) {
-      for (const flat of d.rings) {
-        const pts = [];
-        for (let i = 0; i + 1 < flat.length; i += 2) pts.push([flat[i], flat[i + 1]]);
-        if (pts.length < 3) continue;
-        pts.push(pts[0]);                     // close the boundary loop
-        // walkY so the inlay rides the trench cap decks instead of diving in;
-        // 0.34 sits between the footway and basin lifts. 3.2 m wide: a 1.7 m
-        // trial line vanished below one pixel at district-viewing altitude
-        parts.push(ribbon(pts, 3.2, 0.34, (x, z) => walkY(x, z)));
-      }
-    }
-    if (!parts.length) return;
-    let total = 0;
-    for (const g of parts) total += g.attributes.position.count;
-    const pos = new Float32Array(total * 3);
-    let o = 0;
-    for (const g of parts) { pos.set(g.attributes.position.array, o * 3); o += g.attributes.position.count; }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    hdMat = new THREE.MeshBasicMaterial({ color: 0x6b4f26, transparent: true, opacity: 0.85, depthWrite: false });
-    hdMesh = new THREE.Mesh(geo, hdMat);
-    hdMesh.renderOrder = 4;                   // under the street lettering at 5
-    hdMesh.visible = placesOn;
-    groupCity.add(hdMesh);
-    syncPlacesBtn();
-  });
+  // (the historic-district bronze street inlays and their labels were removed
+  // at the owner's request — "janky gold lines"; the district data stays in
+  // places.json if they are ever wanted back. The P toggle now governs the
+  // neighborhood names alone.)
   step('Naming the neighborhoods', async () => {
-    if (typeof PLACES === 'undefined' || !PLACES || !PLACES.nb || !PLACES.nb.names) return;
+    if (typeof PLACES === 'undefined' || !PLACES || !PLACES.nb || !PLACES.nb.names) { btnPlaces.style.display = 'none'; return; }
     const AW = 2048, AH = 1024, FS = 30, RH = 38, PAD = 8;
     try { await document.fonts.load('600 30px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
     const cv = document.createElement('canvas');
@@ -7014,10 +6988,6 @@
     nbMesh = makeMesh(nbEntries, nbMat);
     nbMesh.renderOrder = 11;
     nbMesh.visible = false;                   // fades in from altitude
-    const hdEntries = hdLbl.map((d, i) => [hdRects[i], d.lbl[0], d.lbl[1], 26, 12]);
-    hdLblMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x8f6f3f, opacity: 0.9 });
-    hdLblMesh = makeMesh(hdEntries, hdLblMat);
-    hdLblMesh.visible = placesOn;
   });
 
   // ---------------------------------------------------------------- address search
@@ -7996,8 +7966,12 @@
           ws.send(JSON.stringify({ APIKey: AIS_KEY, BoundingBoxes: [[[39.80, -75.45], [40.08, -74.82]]], FilterMessageTypes: ['PositionReport', 'ShipStaticData'] }));
         } catch (e) { /* closed */ }
       };
-      ws.onmessage = shipMsg;
-      ws.onclose = () => { SHIPS.sock = null; SHIPS.retryT = performance.now() + 30000; };
+      ws.onmessage = (ev) => { SHIPS.backoff = 15000; shipMsg(ev); };
+      ws.onclose = () => {
+        SHIPS.sock = null;
+        SHIPS.backoff = Math.min((SHIPS.backoff || 15000) * 2, 240000);
+        SHIPS.retryT = performance.now() + SHIPS.backoff * (0.7 + Math.random() * 0.6);
+      };
       ws.onerror = () => { try { ws.close(); } catch (e) {} };
     } catch (e) {
       SHIPS.sock = null;
@@ -8033,12 +8007,21 @@
       (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : '');
   }
   function syncShipsBtn() { if (btnShips) btnShips.classList.toggle('on', SHIPS.on); }
+  function shipRelease() {
+    // the key allows one stream: give it up whenever this tab cannot use it
+    if (SHIPS.sock) { const s = SHIPS.sock; SHIPS.sock = null; try { s.onclose = null; s.close(); } catch (e) {} }
+  }
   function toggleShips() {
     if (!AIS_KEY || !septaCanFetch) return;
     SHIPS.on = !SHIPS.on;
     syncShipsBtn();
-    if (!SHIPS.on && pickedShip) { pickedShip = null; vehinfoEl.hidden = true; }
+    if (!SHIPS.on) { shipRelease(); if (pickedShip) { pickedShip = null; vehinfoEl.hidden = true; } }
+    else { SHIPS.backoff = 15000; SHIPS.retryT = 0; }
   }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) shipRelease();
+    else if (SHIPS.on) { SHIPS.backoff = 15000; SHIPS.retryT = performance.now() + 1200; }
+  });
   if (btnShips) btnShips.addEventListener('click', toggleShips);
   syncShipsBtn();
   function updateShips(now, dt) {
@@ -8047,7 +8030,7 @@
     // without a key the layer stays out of the panel, but injected test
     // vessels (__dbg.shipTest) still render so the pipeline stays provable
     if (!AIS_KEY || !septaCanFetch) { btnShips.style.display = 'none'; if (!shipMap.size) return; }
-    if (!SHIPS.sock && now >= SHIPS.retryT) shipConnect();
+    if (!SHIPS.sock && !document.hidden && now >= SHIPS.retryT) shipConnect();
     if (!SHIPS.on) {
       if (shipMesh.count) { shipMesh.count = 0; shipMesh.instanceMatrix.needsUpdate = true; }
       return;

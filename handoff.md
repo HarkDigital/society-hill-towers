@@ -1269,6 +1269,21 @@ whose ShipStaticData arrives before any PositionReport hold off rendering
 until their first fix (dx undefined guard). __dbg.ships().list dumps the
 live fleet with positions.
 
+Round 30c (Aug 26 — Mike: no boats visible + "janky gold lines"): (1) The
+aisstream free key streams to ONE client at a time — the dev preview tab had
+been holding the connection, so Mike's page got refused (close 1006 before
+open) and showed an empty river while 36 real vessels were tracked. The page
+now RELEASES the socket whenever its tab is hidden or the layer is toggled
+off (visibilitychange + shipRelease), reconnects ~1.2 s after becoming
+visible, and backs off exponentially with jitter (15 s -> 4 min) when
+refused, so the visible tab usually wins the key. DEV RULE: close preview
+tabs when done or they starve Mike's session; the multi-viewer fix is a
+Cloudflare Durable Object fanning one upstream stream out to N viewers.
+(2) The historic-district bronze street inlays AND their bronze labels are
+REMOVED at Mike's request (round 17 built them; he called them janky gold
+lines). District data stays in places.json. The P row is now 'Neighborhood
+Names' and governs only those; btnPlaces hides when PLACES.nb is absent.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
