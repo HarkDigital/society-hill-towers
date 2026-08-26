@@ -1343,12 +1343,16 @@ at deploy (10 s cadence, NO CORS wall, no public passthroughs, no worker).
 Verified via --resolve before DNS: / 200, /adsb 200 with 60 live aircraft.
 deploy_philly3d.sh is the one-command redeploy (build -> sed -> gzip ->
 rsync); the repo source keeps FLIGHT_PROXY='' for the GH Pages copy.
-PENDING (blocked on Mike's IONOS panel): philly3d.com A record still points
-at IONOS parking (74.208.236.6) — Mike sets @ and www to 74.208.76.220; a
-watcher in the session polls for the flip, then: certbot certonly --webroot
--w /var/www/philly3d (accounts exist on the box), add the 443 block + 80
-redirect, and flip GH Pages FLIGHT_PROXY to https://philly3d.com/adsb so
-one passthrough feeds both deployments.
+COMPLETED same day once Mike flipped DNS (@ A + www CNAME at IONOS):
+certbot certonly --webroot issued philly3d.com + www (auto-renew scheduled),
+the vhost now redirects 80 -> 443 (ACME path stays open on 80 for renewals),
+and https://philly3d.com/ verified: TLS clean, gzip 10.3 MB, /adsb 200 with
+57 live aircraft and ACAO *. FLIGHT_PROXY in app.js is now
+'https://philly3d.com/adsb' for BOTH homes — same-origin on the VPS,
+CORS-ridden on GH Pages — 10 s cadence everywhere, and deploy_philly3d.sh
+no longer rewrites anything (identical build ships to both; its grep guard
+refuses a proxyless build). flight-proxy-worker.js stays as the fallback
+recipe if the VPS ever goes away.
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built

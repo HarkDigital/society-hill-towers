@@ -7650,11 +7650,13 @@
   // feed (open data, but no CORS headers), fetched through a passthrough.
   // Aug 2026: the free public passthroughs have all but died out (allorigins
   // and codetabs 522 from dead backends, corsproxy.io paywalled), so the
-  // reliable path is a personal proxy: deploy flight-proxy-worker.js (free,
-  // ~5 min, recipe in the file) and paste its URL into FLIGHT_PROXY. It takes
-  // precedence, unlocks a 10 s cadence, and is kinder to everyone. Silent
-  // under the artifact CSP like every live layer.
-  const FLIGHT_PROXY = '';
+  // reliable path is a personal proxy. Since Round 31 that's Mike's own VPS:
+  // nginx on philly3d.com fronts the same adsb.fi query with an 8 s shared
+  // cache and ACAO *, feeding this page on BOTH homes (philly3d.com is
+  // same-origin; GitHub Pages rides the CORS header). 10 s cadence. If that
+  // box ever goes away, flight-proxy-worker.js is the paste-ready fallback.
+  // Silent under the artifact CSP like every live layer.
+  const FLIGHT_PROXY = 'https://philly3d.com/adsb';
   const FLIGHT_TGT = 'https://opendata.adsb.fi/api/v2/lat/39.872/lon/-75.241/dist/30';
   // the public passthroughs stay in rotation behind the proxy slot: dead as of
   // Aug 2026 but they have a habit of resurrecting — rotate to the next on any
