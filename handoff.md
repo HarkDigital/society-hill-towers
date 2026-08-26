@@ -1284,6 +1284,36 @@ REMOVED at Mike's request (round 17 built them; he called them janky gold
 lines). District data stays in places.json. The P row is now 'Neighborhood
 Names' and governs only those; btnPlaces hides when PLACES.nb is absent.
 
+Round 30d (Aug 26 — Mike: watching real approach traffic from the condo, zero
+planes in the app): the flight layer starved because the free public CORS
+passthroughs died out from under Round 29 — measured from a real page origin
+(GH Pages) this afternoon: allorigins.win 522 (origin dead, ~20 s hang — NOT
+the per-IP throttle Round 29 assumed), corsproxy.io 403 "Server-side requests
+are not allowed on your plan" (proxying is paywalled now, real https origins
+included), codetabs.com 522, cors.lol / cors.eu.org / thingproxy / the CF demo
+worker all dead, and OpenSky now reflects ONLY its own origin in ACAO (its
+anonymous REST API still answers — 397 credits remained — but no browser can
+read it cross-origin). adsb.fi/adsb.lol still ship no ACAO; hexdb.io DOES
+serve ACAO * but is registry-only, no positions. The feed itself is healthy:
+62 aircraft in the Philly box direct from adsb.fi at test time.
+Fix shipped: (1) flight-proxy-worker.js — a ~30-line personal passthrough
+(Cloudflare Workers or Deno Deploy free tier, recipe in the file) locked to
+the fixed adsb.fi query, ACAO *, 8 s upstream cache, stale-beats-empty; Mike
+deploys it and pastes the URL into FLIGHT_PROXY (takes precedence, 10 s
+cadence, any number of viewers cost adsb.fi ≤ 1 req / 8 s). (2) Rotation is
+now [FLIGHT_PROXY, allorigins, codetabs] — corsproxy dropped for good,
+codetabs kept despite today's 522 because these things resurrect.
+(3) flightPoll's fetch gets AbortSignal.timeout(15 s) — a hanging 522 proxy
+used to stall the whole rotation for minutes. (4) Never-fed + out-of-hosts
+now says so (Layers title 'Feed Unreachable — Set FLIGHT_PROXY In app.js' +
+one console.warn) instead of a lying quiet zero.
+Verified end to end against the LIVE feed through a local same-origin
+stand-in with the worker's exact semantics: 10 real aircraft tracked
+(ok:true, badge 10) — GA singles low over PNE, airliners descending the PHL
+approach, one framed on camera SW of the site. The pipeline is fine; only
+transport died. Until FLIGHT_PROXY is filled, the deployed page shows planes
+only if a public passthrough resurrects.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

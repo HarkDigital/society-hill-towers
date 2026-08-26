@@ -8670,18 +8670,22 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
 
   // ---------------------------------------------------------------- live flights
   // Real ADS-B traffic over the city and into PHL, from the adsb.fi community
-  // feed (open data, but no CORS headers), fetched through a public passthrough.
-  // A personal proxy dropped into FLIGHT_PROXY takes precedence and is kinder to
-  // everyone. Silent under the artifact CSP like every live layer.
+  // feed (open data, but no CORS headers), fetched through a passthrough.
+  // Aug 2026: the free public passthroughs have all but died out (allorigins
+  // and codetabs 522 from dead backends, corsproxy.io paywalled), so the
+  // reliable path is a personal proxy: deploy flight-proxy-worker.js (free,
+  // ~5 min, recipe in the file) and paste its URL into FLIGHT_PROXY. It takes
+  // precedence, unlocks a 10 s cadence, and is kinder to everyone. Silent
+  // under the artifact CSP like every live layer.
   const FLIGHT_PROXY = '';
   const FLIGHT_TGT = 'https://opendata.adsb.fi/api/v2/lat/39.872/lon/-75.241/dist/30';
-  // public passthroughs are individually flaky: rotate to the next on any
-  // failure and stay with whichever answers (corsproxy serves only real https
-  // page origins, allorigins throttles bursts; a FLIGHT_PROXY worker beats both)
+  // the public passthroughs stay in rotation behind the proxy slot: dead as of
+  // Aug 2026 but they have a habit of resurrecting — rotate to the next on any
+  // failure and stay with whichever answers
   const FLIGHT_HOSTS = [
     FLIGHT_PROXY,
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(FLIGHT_TGT),
-    'https://corsproxy.io/?url=' + encodeURIComponent(FLIGHT_TGT),
+    'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(FLIGHT_TGT),
   ].filter(Boolean);
   const FLIGHTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, host: 0 };
   const flightMap = new Map();
@@ -8728,7 +8732,9 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
   function flightPoll() {
     if (!septaCanFetch || !FLIGHTS.on || FLIGHTS.busy || document.hidden) return;
     FLIGHTS.busy = true;
-    fetch(FLIGHT_HOSTS[FLIGHTS.host])
+    // 15 s cap: a dead passthrough behind Cloudflare hangs ~20 s before its
+    // 522, and an untimed fetch can stall the whole rotation for minutes
+    fetch(FLIGHT_HOSTS[FLIGHTS.host], { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
       .then((js) => {
         FLIGHTS.busy = false;
@@ -8770,7 +8776,13 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
         for (const [hex, p] of flightMap) if (!seen.has(hex)) { flightMap.delete(hex); if (pickedPlane === p) { pickedPlane = null; vehinfoEl.hidden = true; } }
         flightStatus();
       })
-      .catch(() => { FLIGHTS.busy = false; FLIGHTS.fails++; FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length; FLIGHTS.nextT = performance.now() + (FLIGHTS.fails > FLIGHT_HOSTS.length * 3 ? 180000 : 8000); });
+      .catch(() => {
+        FLIGHTS.busy = false; FLIGHTS.fails++;
+        FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length;
+        FLIGHTS.nextT = performance.now() + (FLIGHTS.fails > FLIGHT_HOSTS.length * 3 ? 180000 : 8000);
+        if (!FLIGHTS.ok && FLIGHTS.fails === FLIGHT_HOSTS.length * 3) console.warn('Live flights: every CORS passthrough failed — deploy 3d-model/flight-proxy-worker.js (free, ~5 min) and set FLIGHT_PROXY in app.js');
+        flightStatus();
+      });
   }
   function flightTest() {
     const now = performance.now();
@@ -8790,7 +8802,10 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
   }
   function flightStatus() {
     if (!btnFlights) return;
-    btnFlights.title = 'Live Flights (X): ' + flightMap.size + ' Aircraft Tracked';
+    // never-fed and out of hosts: say why instead of a lying zero
+    btnFlights.title = (!FLIGHTS.ok && FLIGHTS.fails >= FLIGHT_HOSTS.length * 3)
+      ? 'Live Flights (X): Feed Unreachable — Set FLIGHT_PROXY In app.js (See flight-proxy-worker.js)'
+      : 'Live Flights (X): ' + flightMap.size + ' Aircraft Tracked';
     const fc = document.getElementById('flightCount');
     if (fc) fc.textContent = flightMap.size ? String(flightMap.size) : '';
   }
