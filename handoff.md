@@ -1257,6 +1257,18 @@ sharing septaMats.body MUST setColorAt (white if no tint wanted): the shared
 program expects instance colors and an uninitialized attribute reads zeros —
 the whole ship rendered ink black.
 
+Round 30b (Aug 26 — ships LIVE): Mike's aisstream.io key is installed in
+AIS_KEY (visible in the public page by his informed choice; rotate at
+aisstream.io if ever abused). CRITICAL DECODE GOTCHA: aisstream sends BINARY
+frames — set ws.binaryType = 'arraybuffer' and TextDecoder-decode before
+JSON.parse, or every message fails silently (the socket looks healthy, zero
+vessels arrive). shipStatus() now fires on first sight of each MMSI so the
+Layers count is live. Verified with real traffic: SPIRIT OF PHILADELPHIA
+moored at Penn's Landing, tug EMERALD COAST, cargo ship TISCAPA — vessels
+whose ShipStaticData arrives before any PositionReport hold off rendering
+until their first fix (dx undefined guard). __dbg.ships().list dumps the
+live fleet with positions.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

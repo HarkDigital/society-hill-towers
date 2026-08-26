@@ -8927,7 +8927,7 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
   // a key is pasted into AIS_KEY. Ships dead-reckon between reports (they are
   // slow, so a few-second cadence renders glassy smooth), moored and anchored
   // vessels hold station, and the card knows a tug from a tanker.
-  const AIS_KEY = '';
+  const AIS_KEY = 'f9148033287fd7b2fd6c82142e0b78ac0f1906cf';   // aisstream.io, Mike's free key
   const SHIPS = { on: true, ok: false, sock: null, retryT: 0 };
   const shipMap = new Map();
   let shipMesh = null, shipReady = false, pickedShip = null;
@@ -8968,14 +8968,17 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
     groupCity.add(shipMesh);
     shipReady = true;
   }
+  const shipDecoder = new TextDecoder();
   function shipMsg(ev) {
+    // aisstream delivers binary frames: with binaryType 'arraybuffer' they
+    // decode synchronously (JSON.parse on a Blob fails silently)
     let d;
-    try { d = JSON.parse(ev.data); } catch (e) { return; }
+    try { d = JSON.parse(typeof ev.data === 'string' ? ev.data : shipDecoder.decode(ev.data)); } catch (e) { return; }
     const meta = d.MetaData || {};
     const mmsi = meta.MMSI;
     if (!mmsi) return;
     let v = shipMap.get(mmsi);
-    if (!v) { v = { mmsi, len: 30, beam: 8, tn: 'Vessel', hull: 0x555a60, sog: 0, cog: 0, moored: false }; shipMap.set(mmsi, v); }
+    if (!v) { v = { mmsi, len: 30, beam: 8, tn: 'Vessel', hull: 0x555a60, sog: 0, cog: 0, moored: false }; shipMap.set(mmsi, v); shipStatus(); }
     if (meta.ShipName && meta.ShipName.trim()) v.name = meta.ShipName.trim();
     if (d.MessageType === 'PositionReport' && d.Message && d.Message.PositionReport) {
       const m = d.Message.PositionReport;
@@ -9009,6 +9012,7 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
     if (!AIS_KEY || !septaCanFetch || SHIPS.sock) return;
     try {
       const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
+      ws.binaryType = 'arraybuffer';
       SHIPS.sock = ws;
       ws.onopen = () => {
         try {
@@ -9503,7 +9507,7 @@ const OVERPASSES = {"el":[{"c":0,"w":16,"p":[[-6990.7,5827.4,-3.31],[-6896.3,585
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, shipTest, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, shipTest, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });
