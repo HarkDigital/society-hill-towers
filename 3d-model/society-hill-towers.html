@@ -9324,7 +9324,7 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
   const CAR_OFFW = [4.6, 3.6, 2.7, 2.3, 2.0, 1.6];      // lane offset from centerline by class
   const trafficRuns = [];
   let carMesh = null, carLights = null, trafficReady = false, trafficCars = 0;
-  let trafficNextRecon = 0, trafficLastMin = -1, trafficLastDate = '';
+  let trafficNextRecon = 0, trafficLastMin = -1, trafficLastDate = '', trafficFrame = 0;
   function carGeom() {
     // ~4.5 m sedan from three boxes, nose toward +x, built at real meters so
     // the instance scale stays uniform (the ship shear gotcha never applies)
@@ -9337,16 +9337,18 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     return septaMerge(parts);
   }
   function carLightGeom() {
-    // headlight pair (warm white, +x nose) and taillight pair (red). A separate
-    // MeshBasic mesh, NOT aGlow: septaMats.body's night emissive is fixed
-    // warm-white, so red taillights can't ride it (the flight-strobe pattern)
+    // headlight pair (warm white, +x nose) and taillight pair (red), fully
+    // PROUD of the body — flush lamps sat inside the body box and the depth
+    // test swallowed them from every angle but dead ahead (the "no headlights"
+    // bug). A separate MeshBasic mesh, NOT aGlow: septaMats.body's night
+    // emissive is fixed warm-white, so red taillights can't ride it.
     const parts = [];
     const lamp = (cx, cz, r, g, b) =>
-      parts.push(septaColored(new THREE.BoxGeometry(0.16, 0.16, 0.34).translate(cx, 0.62, cz), r, g, b, 0));
-    lamp(2.18, 0.55, 1.0, 0.93, 0.72);
-    lamp(2.18, -0.55, 1.0, 0.93, 0.72);
-    lamp(-2.18, 0.55, 1.0, 0.1, 0.06);
-    lamp(-2.18, -0.55, 1.0, 0.1, 0.06);
+      parts.push(septaColored(new THREE.BoxGeometry(0.22, 0.2, 0.4).translate(cx, 0.62, cz), r, g, b, 0));
+    lamp(2.32, 0.55, 1.0, 0.94, 0.75);
+    lamp(2.32, -0.55, 1.0, 0.94, 0.75);
+    lamp(-2.32, 0.55, 1.0, 0.12, 0.07);
+    lamp(-2.32, -0.55, 1.0, 0.12, 0.07);
     return septaMerge(parts);
   }
   step('Setting the traffic flowing', () => {
@@ -9433,6 +9435,30 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
         }
       }
     }
+    // stitch the run graph: runs sharing an endpoint (same OSM node) connect,
+    // so a car reaching the end of its street flows on through the
+    // intersection instead of blinking out — the single biggest de-jarring fix
+    const joints = new Map();
+    const jkey = (x, z) => Math.round(x * 2) + ':' + Math.round(z * 2);
+    for (let ri = 0; ri < trafficRuns.length; ri++) {
+      const r = trafficRuns[ri], n = r.xs.length;
+      for (let end = 0; end < 2; end++) {
+        const k = jkey(end ? r.xs[n - 1] : r.xs[0], end ? r.zs[n - 1] : r.zs[0]);
+        let arr = joints.get(k);
+        if (!arr) { arr = []; joints.set(k, arr); }
+        arr.push(ri, end);
+      }
+    }
+    for (let ri = 0; ri < trafficRuns.length; ri++) {
+      const r = trafficRuns[ri], n = r.xs.length;
+      r.conn = [null, null];
+      for (let end = 0; end < 2; end++) {
+        const arr = joints.get(jkey(end ? r.xs[n - 1] : r.xs[0], end ? r.zs[n - 1] : r.zs[0]));
+        const out = [];
+        for (let q = 0; q < arr.length; q += 2) if (arr[q] !== ri) out.push(arr[q], arr[q + 1]);
+        if (out.length) r.conn[end] = out;
+      }
+    }
     const carMat = septaMats.body || new THREE.MeshLambertMaterial({ vertexColors: true });
     carMesh = new THREE.InstancedMesh(carGeom(), carMat, TRAFFIC.cap);
     carMesh.frustumCulled = false;
@@ -9444,7 +9470,9 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     carMesh.receiveShadow = true;
     groupCity.add(carMesh);
     carLights = new THREE.InstancedMesh(carLightGeom(),
-      new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, toneMapped: false }), TRAFFIC.cap);
+      // additive: light pairs bloom against dark asphalt instead of drawing
+      // as gray boxes, and daytime opacity 0 costs nothing
+      new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, toneMapped: false, blending: THREE.AdditiveBlending }), TRAFFIC.cap);
     carLights.frustumCulled = false;
     carLights.count = 0;
     carLights.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -9460,16 +9488,64 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
     const h0 = Math.floor(h) % 24, f = h - Math.floor(h);
     return { frac: (tbl[h0] + (tbl[(h0 + 1) % 24] - tbl[h0]) * f) * (we ? 0.85 : 1), dow };
   }
-  function carSpawn(r, now) {
-    const dir = r.oneway ? 1 : (Math.random() < 0.5 ? 1 : -1);
+  function carOffset(r, j) {
     // right-hand traffic: two-way runs offset right of travel; one-way
     // carriageways spread across their own width
-    const off = r.oneway ? (Math.random() * 2 - 1) * CAR_OFFW[r.cls] * 0.7
-                         : CAR_OFFW[r.cls] * (0.75 + Math.random() * 0.5);
-    return { s: Math.random() * r.len, dir, off, seg: 0,
-      v: TRAFFIC_SPEED[r.cls] / 3.6 * (0.85 + Math.random() * 0.3),
+    return r.oneway ? (j * 2 - 1) * CAR_OFFW[r.cls] * 0.7 : CAR_OFFW[r.cls] * (0.75 + j * 0.5);
+  }
+  function carSpawn(r, now) {
+    const jit = 0.85 + Math.random() * 0.3, offJit = Math.random();
+    // spawn out of sight when possible: of three candidate spots keep the one
+    // farthest from the camera, so cars enter the world where nobody watches
+    let s = Math.random() * r.len, bd = -1;
+    for (let t = 0; t < 3; t++) {
+      const cs = Math.random() * r.len;
+      let g = 0;
+      while (g < r.cum.length - 2 && r.cum[g + 1] < cs) g++;
+      const dx2 = r.xs[g] - camera.position.x, dz2 = r.zs[g] - camera.position.z;
+      const d2 = dx2 * dx2 + dz2 * dz2;
+      if (d2 > bd) { bd = d2; s = cs; }
+    }
+    return { s, dir: r.oneway ? 1 : (Math.random() < 0.5 ? 1 : -1), off: carOffset(r, offJit), offJit, jit, seg: 0,
+      v: TRAFFIC_SPEED[r.cls] / 3.6 * jit,
       col: CAR_PAL[(Math.random() * CAR_PAL.length) | 0],
-      born: now, die: 0 };
+      born: now, die: 0, fr: 0 };
+  }
+  function carTransfer(r, cIdx, car) {
+    // the car reached the end of its run: continue through the joint onto a
+    // connecting run. Weighted by the next street's volume and by how straight
+    // the movement is; hard U-turns are refused (fade out at a true dead end).
+    const end = car.dir > 0 ? 1 : 0;
+    const conn = r.conn && r.conn[end];
+    if (!conn) return null;
+    const n = r.xs.length;
+    let hx = end ? r.xs[n - 1] - r.xs[n - 2] : r.xs[0] - r.xs[1];
+    let hz = end ? r.zs[n - 1] - r.zs[n - 2] : r.zs[0] - r.zs[1];
+    const hL = Math.hypot(hx, hz) || 1; hx /= hL; hz /= hL;
+    let total = 0, pickR = null, pickEnd = 0;
+    for (let q = 0; q < conn.length; q += 2) {
+      const r2 = trafficRuns[conn[q]], e2 = conn[q + 1];
+      if (e2 === 1 && r2.oneway) continue;             // can't enter a one-way at its far end
+      const m = r2.xs.length;
+      let ux = e2 ? r2.xs[m - 1] - r2.xs[m - 2] : r2.xs[1] - r2.xs[0];
+      let uz = e2 ? r2.zs[m - 1] - r2.zs[m - 2] : r2.zs[1] - r2.zs[0];
+      const L2 = Math.hypot(ux, uz) || 1;
+      let dot = (hx * ux + hz * uz) / L2;
+      if (e2) dot = -dot;                              // entering at the far end runs backwards
+      if (dot < -0.55) continue;
+      const w = r2.aadt * (0.25 + Math.max(0, dot));   // busy and straight pulls hardest
+      total += w;
+      if (Math.random() * total < w) { pickR = r2; pickEnd = e2; }
+    }
+    if (!pickR) return null;
+    r.cars.splice(cIdx, 1);
+    car.dir = pickEnd ? -1 : 1;
+    car.s = pickEnd ? pickR.len : 0;
+    car.seg = pickEnd ? pickR.cum.length - 2 : 0;
+    car.v = TRAFFIC_SPEED[pickR.cls] / 3.6 * car.jit;
+    car.off = carOffset(pickR, car.offJit);
+    pickR.cars.push(car);
+    return pickR;
   }
   function trafficReconcile(now) {
     const { frac } = trafficFrac();
@@ -9492,8 +9568,15 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
       const tgt = Math.min(60, Math.floor(r.want * TRAFFIC.scale + hash01(i * 7.3)));
       while (r.cars.length < tgt) r.cars.push(carSpawn(r, now));
       let extra = r.cars.length - tgt;
-      for (let c = 0; c < r.cars.length && extra > 0; c++) {
-        if (!r.cars[c].die) { r.cars[c].die = now; extra--; }
+      if (extra > 0) {
+        // retire the farthest-from-camera first, so churn stays out of sight
+        const alive = r.cars.filter((c2) => !c2.die);
+        alive.sort((a2, b2) => {
+          const da = (r.xs[a2.seg] - cx) ** 2 + (r.zs[a2.seg] - cz) ** 2;
+          const db = (r.xs[b2.seg] - cx) ** 2 + (r.zs[b2.seg] - cz) ** 2;
+          return db - da;
+        });
+        for (let q = 0; q < alive.length && extra > 0; q++) { alive[q].die = now; extra--; }
       }
       n += Math.min(r.cars.length, tgt);
     }
@@ -9529,36 +9612,53 @@ let TRAFFIC_B64 = "VFRIU+UVAABQOwAAAAAAAAsADQBQAAS82xiexE8ajcfYGtnKVxsa0DEcjNd3H
       trafficReconcile(now);
     }
     const night = clamp((nightUniform.value - 0.06) / 0.25, 0, 1);
-    carLights.material.opacity = night * 0.92;
+    carLights.material.opacity = night;
+    trafficFrame++;
     let i = 0;
     for (const r of trafficRuns) {
       const cars = r.cars;
       for (let c = cars.length - 1; c >= 0; c--) {
         const car = cars[c];
+        if (car.fr === trafficFrame) continue;   // already handled after a transfer
+        car.fr = trafficFrame;
         car.s += car.v * dt * car.dir;
-        let fade = Math.min(1, (now - car.born) / 700);
-        if (car.die) fade = Math.min(fade, Math.max(0, 1 - (now - car.die) / 700));
-        if ((car.die && fade <= 0) || car.s < 0 || car.s > r.len) { cars.splice(c, 1); continue; }
+        let fade = Math.min(1, (now - car.born) / 900);
+        if (car.die) fade = Math.min(fade, Math.max(0, 1 - (now - car.die) / 900));
+        if (car.die && fade <= 0) { cars.splice(c, 1); continue; }
+        let rr = r;
+        if (car.s < 0 || car.s > r.len) {
+          if (car.die) { cars.splice(c, 1); continue; }
+          const t = carTransfer(r, c, car);
+          if (t) rr = t;
+          else { car.s = clamp(car.s, 0, r.len); car.die = now; }   // true dead end: ease out in place
+        }
         if (i >= TRAFFIC.cap) continue;
         let seg = car.seg;
-        const last = r.cum.length - 2;
+        const last = rr.cum.length - 2;
         if (seg > last) seg = last;
-        while (seg < last && car.s > r.cum[seg + 1]) seg++;
-        while (seg > 0 && car.s < r.cum[seg]) seg--;
+        while (seg < last && car.s > rr.cum[seg + 1]) seg++;
+        while (seg > 0 && car.s < rr.cum[seg]) seg--;
         car.seg = seg;
-        const segL = (r.cum[seg + 1] - r.cum[seg]) || 1e-6;
-        const tt = (car.s - r.cum[seg]) / segL;
-        const ux = (r.xs[seg + 1] - r.xs[seg]) / segL, uz = (r.zs[seg + 1] - r.zs[seg]) / segL;
+        const segL = (rr.cum[seg + 1] - rr.cum[seg]) || 1e-6;
+        const tt = (car.s - rr.cum[seg]) / segL;
+        const ux = (rr.xs[seg + 1] - rr.xs[seg]) / segL, uz = (rr.zs[seg + 1] - rr.zs[seg]) / segL;
         const hx = ux * car.dir, hz = uz * car.dir;
-        _sp.set(r.xs[seg] + (r.xs[seg + 1] - r.xs[seg]) * tt - hz * car.off,
-                r.ys[seg] + (r.ys[seg + 1] - r.ys[seg]) * tt,
-                r.zs[seg] + (r.zs[seg + 1] - r.zs[seg]) * tt + hx * car.off);
+        _sp.set(rr.xs[seg] + (rr.xs[seg + 1] - rr.xs[seg]) * tt - hz * car.off,
+                rr.ys[seg] + (rr.ys[seg + 1] - rr.ys[seg]) * tt,
+                rr.zs[seg] + (rr.zs[seg + 1] - rr.zs[seg]) * tt + hx * car.off);
         _sq.setFromAxisAngle(TRAFFIC_UP, Math.atan2(-hz, hx));
         _ss.set(fade, fade, fade);
         _sm.compose(_sp, _sq, _ss);
         carMesh.setMatrixAt(i, _sm);
         carMesh.setColorAt(i, _sc.setHex(car.col));
-        if (night > 0) carLights.setMatrixAt(i, _sm);
+        if (night > 0) {
+          // the lamp pair grows with distance so it never falls under a couple
+          // of pixels — headlights read from blocks away, sheet metal doesn't
+          const ls = fade * clamp(camera.position.distanceTo(_sp) / 150, 1, 5);
+          _ss.set(ls, ls, ls);
+          _sm.compose(_sp, _sq, _ss);
+          carLights.setMatrixAt(i, _sm);
+        }
         i++;
       }
     }

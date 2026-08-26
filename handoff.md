@@ -1411,6 +1411,28 @@ the default orbit that lands near TRUE density: 2,148 cars at Wed 5 PM at
 pane screenshots lag one PRESENTED frame behind frameOnce — render twice
 before capturing.
 
+Round 34 (Aug 26 — Mike: cars popping in/out is jarring, and no headlights at
+night): the traffic sim grew a road graph and real optics. (1) Runs sharing an
+endpoint (same OSM node — chunked pieces of one way included, their endpoints
+are bit-identical floats) now connect through a joint map built at decode;
+carTransfer flows a car reaching its run end onto a connecting run (weighted
+reservoir pick: next street's AADT × straightness, no entering a one-way at
+its far end, dot < −0.55 U-turns refused, true dead ends ease out in place).
+Cars are frame-stamped (car.fr) so a transferred car renders the same frame in
+its new run and isn't double-advanced. This kills the biggest jar: 400 m chunk
+ends used to hard-splice a car every ~50 s per car. (2) Churn hides: spawns
+sample three spots and keep the farthest from the camera; reconcile retires
+farthest-first; fades lengthened 700→900 ms. (3) The "no headlights" bug was
+depth testing: the lamp boxes sat flush INSIDE the body box, so the body
+occluded them from every angle but dead ahead. Lamps now sit proud of the nose
+and tail (0.22 m at x ±2.32 on a ±2.2 body), the material went
+AdditiveBlending, and per frame at night the lamp instance scales by
+clamp(dist/150, 1, 5) so a light pair never drops below a couple of pixels —
+headlights read from blocks away, sheet metal doesn't. Verified at the
+Schuylkill Expressway at night: white pairs approaching, red pairs receding,
+queues reading as strings of lights; 300-frame soak at 2,200 cars ≈ 0.8 ms/
+frame, no errors, population stable.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
