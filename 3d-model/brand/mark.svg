@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Philly3D mark: Philadelphia City Hall tower with the Penn statue.
+       Original geometric artwork, single bronze silhouette, apertures punched
+       with evenodd so the background shows through (works on ink and paper). -->
+  <g fill="#c89b5e">
+    <!-- Penn statue: hat, head, coat, extended arm -->
+    <ellipse cx="256" cy="50" rx="28" ry="5.5"/>
+    <path d="M 243 50 Q 244 34 256 34 Q 268 34 269 50 Z"/>
+    <rect x="249" y="50" width="14" height="10"/>
+    <path d="M 240 60 Q 256 53 272 60 Q 281 90 283 130 L 229 130 Q 231 90 240 60 Z"/>
+    <path d="M 264 64 L 300 72 Q 309 74 307 83 Q 305 91 296 89 L 261 80 Z"/>
+    <!-- plinth, pedestal waist, apex block -->
+    <rect x="240" y="130" width="32" height="8"/>
+    <rect x="246" y="138" width="20" height="20"/>
+    <rect x="230" y="158" width="52" height="12"/>
+    <!-- dome -->
+    <path d="M 230 170 C 226 200 210 226 190 246 L 322 246 C 302 226 286 200 282 170 Z"/>
+    <!-- cornice, clock stage with punched clock face -->
+    <rect x="178" y="246" width="156" height="14"/>
+    <path fill-rule="evenodd" d="M 190 260 L 322 260 L 322 370 L 190 370 Z
+             M 256 275 A 40 40 0 1 0 256 355 A 40 40 0 1 0 256 275 Z"/>
+    <!-- clock hands and hub -->
+    <rect x="253" y="283" width="6" height="34"/>
+    <path d="M 256 312 L 282 326 L 279 332 L 254 318 Z"/>
+    <circle cx="256" cy="315" r="6"/>
+    <!-- lower cornice, shaft with arched windows, base -->
+    <rect x="178" y="370" width="156" height="14"/>
+    <path fill-rule="evenodd" d="M 186 384 L 326 384 L 326 478 L 186 478 Z
+             M 212 415 Q 212 402 225 402 Q 238 402 238 415 L 238 462 L 212 462 Z
+             M 274 415 Q 274 402 287 402 Q 300 402 300 415 L 300 462 L 274 462 Z"/>
+    <rect x="172" y="478" width="168" height="18"/>
+  </g>
+</svg>

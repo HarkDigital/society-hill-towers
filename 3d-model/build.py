@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Assemble the single-file Society Hill Towers artifact page."""
-import json, pathlib, re, sys
+import base64, json, pathlib, re, sys
 
 ROOT = pathlib.Path(__file__).parent
 OUT = ROOT / "society-hill-towers.html"
@@ -79,8 +79,20 @@ data_js += "const OVERPASSES = " + (ovp_path.read_text(encoding="utf-8").strip()
 tr_path = ROOT / "traffic.b64"
 data_js += 'let TRAFFIC_B64 = "' + (tr_path.read_text(encoding="utf-8").strip() if tr_path.exists() else "") + '";\n'
 
+# brand icons inlined as data: URIs in the head (brand/make_brand.py fills dist/)
+BRAND = ROOT / "brand" / "dist"
+def brand_b64(name):
+    p = BRAND / name
+    if not p.exists():
+        sys.exit(f"FATAL: missing {p} (run brand/make_brand.py)")
+    return base64.b64encode(p.read_bytes()).decode("ascii")
+fav_svg_b64 = brand_b64("favicon.svg")
+fav_32_b64 = brand_b64("favicon-32.png")
+touch_b64 = brand_b64("apple-touch-icon.png")
+
 # </script> inside embedded JS strings would terminate the tag early
-for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body)):
+for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body),
+                   ("favicon_svg_b64", fav_svg_b64), ("favicon_32_b64", fav_32_b64), ("apple_icon_b64", touch_b64)):
     if re.search(r"</script", blob, re.I):
         sys.exit(f"FATAL: '</script' found inside {name} blob")
 
@@ -89,7 +101,10 @@ page = (template
         .replace("{{ABOUT_BODY}}", about_body)
         .replace("{{THREE}}", three)
         .replace("{{DATA}}", data_js)
-        .replace("{{APP}}", app))
+        .replace("{{APP}}", app)
+        .replace("{{FAVICON_SVG_B64}}", fav_svg_b64)
+        .replace("{{FAVICON_32_B64}}", fav_32_b64)
+        .replace("{{APPLE_ICON_B64}}", touch_b64))
 
 OUT.write_text(page, encoding="utf-8")
 print(f"wrote {OUT} ({OUT.stat().st_size/1e6:.2f} MB)")

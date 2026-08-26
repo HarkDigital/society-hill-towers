@@ -1488,6 +1488,33 @@ Harness note: synthetic PointerEvents must dispatch BOTH down and up on the
 canvas — window-dispatched ups never reach the canvas listener and the pick
 silently no-ops (cost one confused test round).
 
+Round 38 (Aug 26 — branding: Philly3D): the site has an identity now. New
+`3d-model/brand/`: hand-drawn `mark.svg` (City Hall tower + Penn, bronze
+silhouette, evenodd apertures) and `favicon.svg` (64-box, ink plate, paper
+clock disc); `make_brand.py` renders dist/ — sips does SVG→PNG (sips-316
+rasterizes SVG with alpha fine; qlmanage flattens alpha, unusable), PIL
+assembles the 16/32/48 ico, flattens the 180 apple-touch on ink, sets the
+PHILLY3D wordmark (Montserrat-SemiBold.ttf, per-char 0.22em tracking, 3D in
+bronze) and composites the 1200x630 `og.png` share card from `og_raw.png`.
+The card shot: `og_sink.py` (127.0.0.1:8123) + `?dev=1` — the attract
+orbit's target IS City Hall (-1603, 78, -802), so setting orbit
+theta/phi/r frames it exactly; layer fades run on WALL time, so a capture
+one frame after a toggle still shows the old state (wait real seconds
+between set and capture). template.html is now a real document (doctype,
+html lang, head, body — page left quirks mode, compatMode CSS1Compat;
+verified safe: app.js never touches document.body, all chrome is
+position:fixed) with full meta: title "Philly3D: A Living Model of
+Philadelphia", description, canonical https://philly3d.com/, theme-color
+ink, OG/Twitter card pointing at https://philly3d.com/og.png, and three
+new build.py placeholders inlining favicon svg/png32/apple-touch as data:
+URIs (guard tuple extended; base64 can't contain '<'). The veil card
+carries the mark (inline SVG above the kicker, `#veil .veilmark`, 60px
+bronze). deploy_philly3d.sh now refuses builds without og:image and
+rsyncs favicon.ico/favicon.svg/apple-touch-icon.png/og.png next to
+index.html(.gz); the GH Pages shim and README wear the brand too. Do not
+regenerate dist/ blindly: og_raw.png is a curated capture (dusk minute
+1219, orbit theta 0.16 phi 1.30 r 900, labels off, traffic on).
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

@@ -283,6 +283,13 @@ html, body {
 }
 #veil.hidden { opacity: 0; pointer-events: none; }
 #veil .card { text-align: center; padding: 24px; max-width: 560px; }
+#veil .veilmark {
+  display: block;
+  width: 60px;
+  height: 60px;
+  margin: 0 auto 14px;
+  fill: var(--bronze);
+}
 #veil .kicker {
   font-family: var(--mono);
   font-size: 10px;

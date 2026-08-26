@@ -1,9 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
-<title>Philadelphia</title>
+<title>Philly3D: A Living Model of Philadelphia</title>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="description" content="Fly a living 3D model of Philadelphia. A quarter million buildings at true measured height, live SEPTA vehicles, flights, ships, and the real sun over the city.">
+<meta name="theme-color" content="#171512">
+<link rel="canonical" href="https://philly3d.com/">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml;base64,{{FAVICON_SVG_B64}}">
+<link rel="icon" type="image/png" sizes="32x32" href="data:image/png;base64,{{FAVICON_32_B64}}">
+<link rel="apple-touch-icon" sizes="180x180" href="data:image/png;base64,{{APPLE_ICON_B64}}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Philly3D">
+<meta property="og:title" content="Philly3D: A Living Model of Philadelphia">
+<meta property="og:description" content="Fly a living 3D model of Philadelphia. A quarter million buildings at true measured height, live SEPTA vehicles, flights, ships, and the real sun over the city.">
+<meta property="og:url" content="https://philly3d.com/">
+<meta property="og:image" content="https://philly3d.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="The Center City Philadelphia skyline at dusk, rendered as a 3D model with thousands of lit windows, behind the Philly3D wordmark">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Philly3D: A Living Model of Philadelphia">
+<meta name="twitter:description" content="Fly a living 3D model of Philadelphia. A quarter million buildings at true measured height, live SEPTA vehicles, flights, ships, and the real sun over the city.">
+<meta name="twitter:image" content="https://philly3d.com/og.png">
 <style>
 {{CSS}}
 </style>
+</head>
+<body>
 
 <canvas id="gl"></canvas>
 
@@ -127,6 +151,27 @@
 
 <div id="veil">
   <div class="card">
+    <svg class="veilmark" viewBox="0 0 512 512" aria-hidden="true">
+      <g>
+        <ellipse cx="256" cy="50" rx="28" ry="5.5"/>
+        <path d="M 243 50 Q 244 34 256 34 Q 268 34 269 50 Z"/>
+        <rect x="249" y="50" width="14" height="10"/>
+        <path d="M 240 60 Q 256 53 272 60 Q 281 90 283 130 L 229 130 Q 231 90 240 60 Z"/>
+        <path d="M 264 64 L 300 72 Q 309 74 307 83 Q 305 91 296 89 L 261 80 Z"/>
+        <rect x="240" y="130" width="32" height="8"/>
+        <rect x="246" y="138" width="20" height="20"/>
+        <rect x="230" y="158" width="52" height="12"/>
+        <path d="M 230 170 C 226 200 210 226 190 246 L 322 246 C 302 226 286 200 282 170 Z"/>
+        <rect x="178" y="246" width="156" height="14"/>
+        <path fill-rule="evenodd" d="M 190 260 L 322 260 L 322 370 L 190 370 Z M 256 275 A 40 40 0 1 0 256 355 A 40 40 0 1 0 256 275 Z"/>
+        <rect x="253" y="283" width="6" height="34"/>
+        <path d="M 256 312 L 282 326 L 279 332 L 254 318 Z"/>
+        <circle cx="256" cy="315" r="6"/>
+        <rect x="178" y="370" width="156" height="14"/>
+        <path fill-rule="evenodd" d="M 186 384 L 326 384 L 326 478 L 186 478 Z M 212 415 Q 212 402 225 402 Q 238 402 238 415 L 238 462 L 212 462 Z M 274 415 Q 274 402 287 402 Q 300 402 300 415 L 300 462 L 274 462 Z"/>
+        <rect x="172" y="478" width="168" height="18"/>
+      </g>
+    </svg>
     <div class="kicker">A living model of</div>
     <h2>Philadelphia</h2>
     <div class="sub">Every block of the city at its true measured height, a quarter-million
@@ -148,3 +193,5 @@
 <script>
 {{APP}}
 </script>
+</body>
+</html>

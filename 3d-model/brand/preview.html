@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Philly3D brand sheet</title>
+<style>
+  @font-face { font-family: "Montserrat SB"; src: url("Montserrat-SemiBold.ttf"); }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:#3a3630; font-family:-apple-system, sans-serif; padding:24px; color:#efe9dc; }
+  h3 { font-size:12px; letter-spacing:.1em; text-transform:uppercase; margin:26px 0 10px; color:#c89b5e; }
+  .row { display:flex; gap:22px; align-items:flex-end; flex-wrap:wrap; }
+  .cell { display:flex; flex-direction:column; gap:6px; align-items:center; font-size:10px; color:#bdb6a8; }
+  .ink { background:#171512; } .paper { background:#efe9dc; }
+  .pad { padding:18px; border-radius:4px; display:flex; align-items:center; justify-content:center; }
+  img { image-rendering:auto; display:block; }
+  .tabbar { display:flex; align-items:center; gap:8px; background:#dee1e6; color:#202124;
+            border-radius:10px 10px 0 0; padding:8px 14px; width:300px; font-size:12px;
+            font-family:-apple-system, sans-serif; white-space:nowrap; overflow:hidden; }
+  .tabbar img { width:16px; height:16px; }
+  .tabbar.dark { background:#202124; color:#e8eaed; }
+  .veilmock { background: radial-gradient(ellipse at 50% 42%, rgba(23,21,18,.55), rgba(23,21,18,.88)), #4a5a6a;
+              padding:44px 60px; border-radius:6px; text-align:center; }
+  .veilmock .mark { width:56px; height:56px; margin:0 auto 16px; display:block; }
+  .veilmock .kicker { font-family:"Montserrat SB"; font-size:10px; letter-spacing:.3em; text-transform:uppercase; color:#c89b5e; margin-bottom:18px; }
+  .veilmock h2 { font-family:"Montserrat SB"; font-weight:600; font-size:40px; letter-spacing:.22em; text-transform:uppercase; color:#efe9dc; }
+  .lockup { display:flex; align-items:center; gap:18px; }
+  .lockup .word { font-family:"Montserrat SB"; font-size:44px; letter-spacing:.22em; color:#efe9dc; padding-left:.05em; }
+  .lockup .word span { color:#c89b5e; }
+</style>
+</head>
+<body>
+  <h3>Favicon on its plate: 64 / 32 / 16</h3>
+  <div class="row">
+    <div class="cell"><img src="favicon.svg" width="64" height="64"><span>64</span></div>
+    <div class="cell"><img src="favicon.svg" width="32" height="32"><span>32</span></div>
+    <div class="cell"><img src="favicon.svg" width="16" height="16"><span>16</span></div>
+    <div class="cell"><div class="tabbar"><img src="favicon.svg">Philly3D: A Living Model of Philadelphia</div><span>light tab</span></div>
+    <div class="cell"><div class="tabbar dark"><img src="favicon.svg">Philly3D: A Living Model of Philadelphia</div><span>dark tab</span></div>
+  </div>
+
+  <h3>Mark: 220 / 96 / 56 on ink and paper</h3>
+  <div class="row">
+    <div class="cell"><div class="pad ink"><img src="mark.svg" width="220" height="220"></div><span>220 ink</span></div>
+    <div class="cell"><div class="pad ink"><img src="mark.svg" width="96" height="96"></div><span>96 ink</span></div>
+    <div class="cell"><div class="pad ink"><img src="mark.svg" width="56" height="56"></div><span>56 ink</span></div>
+    <div class="cell"><div class="pad paper"><img src="mark.svg" width="220" height="220"></div><span>220 paper</span></div>
+    <div class="cell"><div class="pad paper"><img src="mark.svg" width="96" height="96"></div><span>96 paper</span></div>
+  </div>
+
+  <h3>Veil mock</h3>
+  <div class="veilmock">
+    <img class="mark" src="mark.svg">
+    <div class="kicker">A living model of</div>
+    <h2>Philadelphia</h2>
+  </div>
+
+  <h3>Lockup draft (PHILLY3D, bronze 3D)</h3>
+  <div class="pad ink lockup">
+    <img src="mark.svg" width="84" height="84">
+    <div class="word">PHILLY<span>3D</span></div>
+  </div>
+</body>
+</html>
