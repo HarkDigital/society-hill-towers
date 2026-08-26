@@ -1216,6 +1216,18 @@ Round 29 (Aug 26 — night lights de-blobbed + live flights; Mike's asks):
   `__dbg.flights()` reports tracked/ok/fails/host. Layer hidden under the
   artifact CSP like all live layers. adsb.fi credit in the About body.
 
+Round 29b (Aug 26 — Mike: planes frozen): dead reckoning had a 50 s glide cap
+and stale planes were only pruned by a SUCCESSFUL poll, so when the public
+passthroughs went quiet everything froze mid-air. Now planes fly their last
+track indefinitely: descending arrivals settle onto the field (y floors at
+ground + 5, 'landed'), anything leaving the model bounds or stale > 300 s
+(landed > 90 s) despawns, a fresh fix > 3.2 km away snaps instead of swooping,
+the card notes 'Estimated Track, Awaiting Signal' past 25 s, and failed polls
+retry the next host after 8 s (3 min lockout only after 3 full cycles).
+NOTE for headless testing: the Browser pane runs NO rAF even when fronted —
+animation must be verified with frameOnce bursts (400 calls closed 775 m of
+easing gap and 37 m of descent), never by wall-clock waits.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

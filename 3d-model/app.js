@@ -7750,12 +7750,13 @@
           p.type = (a.desc || a.t || 'Aircraft');
           p.op = a.ownOp || '';
           p.len = FLIGHT_LEN[a.category] || (a.category === 'A0' ? 20 : 32);
-          if (p.dx === undefined) { p.dx = x; p.dz = z; p.dy = p.fy; }
+          p.landed = false;
+          if (p.dx === undefined || Math.hypot(x - p.dx, z - p.dz) > 3200) { p.dx = x; p.dz = z; p.dy = p.fy; }
         }
         for (const [hex, p] of flightMap) if (!seen.has(hex)) { flightMap.delete(hex); if (pickedPlane === p) { pickedPlane = null; vehinfoEl.hidden = true; } }
         flightStatus();
       })
-      .catch(() => { FLIGHTS.busy = false; FLIGHTS.fails++; FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length; FLIGHTS.nextT = 0; });
+      .catch(() => { FLIGHTS.busy = false; FLIGHTS.fails++; FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length; FLIGHTS.nextT = performance.now() + (FLIGHTS.fails > FLIGHT_HOSTS.length * 3 ? 180000 : 8000); });
   }
   function flightTest() {
     const now = performance.now();
@@ -7786,7 +7787,8 @@
       '<span class="vroute" style="background:#3a6ea5">' + septaEsc(p.call) + '</span>' +
       '<span class="vdest">' + septaEsc(p.type) + '</span>' +
       (p.op ? '<div class="vmeta">' + septaEsc(p.op) + '</div>' : '') +
-      '<div class="vmeta">' + septaEsc(alt + ', ' + Math.round(p.gs) + ' kt') + '</div>';
+      '<div class="vmeta">' + septaEsc(alt + ', ' + Math.round(p.gs) + ' kt') + '</div>' +
+      (p.est ? '<div class="vmeta">Estimated Track, Awaiting Signal</div>' : '');
   }
   function syncFlightsBtn() { if (btnFlights) btnFlights.classList.toggle('on', FLIGHTS.on); }
   function toggleFlights() {
@@ -7802,7 +7804,7 @@
     if (!septaCanFetch) { if (btnFlights) btnFlights.style.display = 'none'; return; }
     if (!flightReady) { if (septaMats.body) flightsInit(); return; }
     if (now >= FLIGHTS.nextT) {
-      FLIGHTS.nextT = now + (FLIGHTS.fails > FLIGHT_HOSTS.length * 2 ? 300000 : (FLIGHT_PROXY && FLIGHTS.host === 0 ? 10000 : 90000));
+      FLIGHTS.nextT = now + (FLIGHT_PROXY && FLIGHTS.host === 0 ? 10000 : 90000);
       flightPoll();
     }
     if (!FLIGHTS.on) {
@@ -7811,18 +7813,30 @@
     }
     let i = 0;
     const night = nightUniform.value;
+    const gone = [];
     for (const p of flightMap.values()) {
       if (i >= FLIGHT_CAP) break;
       // dead reckoning: jets cross a block between polls, so fly the last known
-      // velocity and ease toward each fresh fix instead of teleporting
-      const age = Math.min((now - p.ft) / 1000, 50);   // glide at most 50 s past a fix
-      const px = p.fx + p.vx * age, pz = p.fz + p.vz * age, py = p.fy + p.vy * age;
+      // velocity and ease toward each fresh fix. The feed can go quiet for
+      // minutes behind the public passthroughs, so planes KEEP FLYING their
+      // track instead of freezing: arrivals settle onto the field, everything
+      // else exits the model, and long-stale traffic despawns.
+      const age = (now - p.ft) / 1000;
+      if (age > 300) { gone.push(p.hex); continue; }
+      let px = p.fx + p.vx * age, pz = p.fz + p.vz * age, py = p.fy + p.vy * age;
+      if (px < -12500 || px > 17000 || pz < -22000 || pz > 10000) { gone.push(p.hex); continue; }
+      if (!p.ground) {
+        const gY = siteY(px, pz, 'ground');
+        if (py <= gY + 7) { py = gY + 5; p.landed = true; }
+        if (p.landed && age > 90) { gone.push(p.hex); continue; }
+      }
       const k = 1 - Math.exp(-dt / 0.8);
       p.dx += (px - p.dx) * k;
       p.dz += (pz - p.dz) * k;
       p.dy += (py - p.dy) * k;
+      p.est = age > 25;
       const yaw = Math.atan2(-p.vz, p.vx) || 0;
-      const pitch = p.ground ? 0 : clamp(Math.atan2(p.vy, Math.max(30, Math.hypot(p.vx, p.vz))), -0.21, 0.21);
+      const pitch = (p.ground || p.landed) ? 0 : clamp(Math.atan2(p.vy, Math.max(30, Math.hypot(p.vx, p.vz))), -0.21, 0.21);
       _fe.set(0, yaw, pitch, 'YZX');
       _fq.setFromEuler(_fe);
       _sp.set(p.dx, p.dy, p.dz);
@@ -7839,6 +7853,10 @@
       _sm.compose(_sp, _fq, _ss);
       flightStrobe.setMatrixAt(i, _sm);
       i++;
+    }
+    if (gone.length) {
+      for (const hx of gone) { const p = flightMap.get(hx); flightMap.delete(hx); if (pickedPlane === p) { pickedPlane = null; vehinfoEl.hidden = true; } }
+      flightStatus();
     }
     flightMesh.count = i;
     flightStrobe.count = i;
