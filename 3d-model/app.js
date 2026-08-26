@@ -728,6 +728,11 @@
       uCloud: { value: 0.22 },
       uCloudLight: { value: 1.0 },
       uCloudOff: { value: new THREE.Vector2(0, 0) },
+      uMoon: { value: new THREE.Vector3(0, -1, 0) },
+      uMoonU: { value: new THREE.Vector3(1, 0, 0) },
+      uMoonV: { value: new THREE.Vector3(0, 0, 1) },
+      uMoonK: { value: 0.5 },
+      uMoonI: { value: 0 },
     },
     vertexShader:
       'varying vec3 vDir;\n' +
@@ -735,6 +740,7 @@
     fragmentShader:
       'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun;\n' +
       'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
+      'uniform vec3 uMoon, uMoonU, uMoonV; uniform float uMoonK, uMoonI;\n' +
       'float chash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
       'float cnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);\n' +
       '  return mix(mix(chash(i), chash(i+vec2(1.,0.)), f.x), mix(chash(i+vec2(0.,1.)), chash(i+vec2(1.,1.)), f.x), f.y); }\n' +
@@ -750,6 +756,25 @@
       '  float sunAng = acos(s);\n' +
       '  float disc = 1.0 - smoothstep(0.0085, 0.0118, sunAng);\n' +
       '  col += cSun * (disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24 + pow(s, 12.0) * 0.10);\n' +
+      // the Moon: a phased disc on the per-fragment normalized direction (nd,
+      // never vDir — the coarse dome smears interpolated math, the sun lesson).
+      // The terminator ellipse comes straight from the illuminated fraction; its
+      // orientation from the world-space sun and moon vectors via uMoonU.
+      '  if (uMoonI > 0.002) {\n' +
+      '    float mAng = acos(clamp(dot(nd, uMoon), -1.0, 1.0));\n' +
+      '    if (mAng < 0.06) {\n' +
+      '      float mu = dot(nd, uMoonU) / 0.0091;\n' +
+      '      float mv = dot(nd, uMoonV) / 0.0091;\n' +
+      '      float mr = sqrt(mu * mu + mv * mv);\n' +
+      '      float inD = 1.0 - smoothstep(0.93, 1.06, mr);\n' +
+      '      float lim = sqrt(max(0.0, 1.0 - mv * mv));\n' +
+      '      float ut = -(2.0 * uMoonK - 1.0) * lim;\n' +
+      '      float lit = smoothstep(ut - 0.12, ut + 0.12, mu);\n' +
+      '      vec3 mc = vec3(0.93, 0.94, 0.90);\n' +
+      '      col = mix(col, mc * (0.11 + 0.89 * lit), inD * uMoonI);\n' +
+      '    }\n' +
+      '    col += vec3(0.93, 0.94, 0.90) * exp(-mAng * mAng * 2600.0) * 0.10 * uMoonI * uMoonK;\n' +
+      '  }\n' +
       '  if (h > 0.01 && uCloud > 0.003) {\n' +
       '    vec2 cp = nd.xz / (h + 0.18) * 1.7 + uCloudOff;\n' +
       '    float d = cnoise(cp) * 0.55 + cnoise(cp * 2.7 + 13.1) * 0.30 + cnoise(cp * 7.3 + 41.7) * 0.15;\n' +
@@ -914,7 +939,9 @@
       }
     };
     for (const c of OVP.el) for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2, c.c);
-    for (const c of OVP.sk) for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, -1);
+    // sunken runs: -1 = open cut (digs holes, grows walls), -2 = covered tunnel
+    // (suppresses the packed road but leaves the ground alone)
+    for (const c of OVP.sk) for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, c.cov ? -2 : -1);
   }
   // a packed road segment lying along a baked chain is the same OSM way: the
   // deck (or sunken roadway) build owns it, so the flat ribbon must not draw
@@ -985,6 +1012,29 @@
       }
     }
     return null;
+  }
+  // sunken RAMP approaches dive below grade outside the main corridor: the ground
+  // must open over them too (they get their own narrow walled cuts)
+  function sunkCutNear(x, z, pad) {
+    const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+    if (!arr) return null;
+    for (const s of arr) {
+      if (ovpSegs[s + 7] !== -1) continue;
+      const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], hw = ovpSegs[s + 6];
+      const dx = sbx - sax, dz = sbz - saz;
+      const L2 = dx * dx + dz * dz || 1e-9;
+      let t = ((x - sax) * dx + (z - saz) * dz) / L2;
+      t = clamp(t, 0, 1);
+      const px = sax + dx * t - x, pz = saz + dz * t - z;
+      const r = hw + (pad || 0);
+      if (px * px + pz * pz > r * r) continue;
+      const y = ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t;
+      if (y < demY(x, z) - 1.2) return y;
+    }
+    return null;
+  }
+  function cutHole(x, z) {
+    return vineCut(x, z, -1) !== null || sunkCutNear(x, z, 1) !== null;
   }
 
   // ---------------------------------------------------------------- living water
@@ -1395,7 +1445,7 @@
           // gray band under the deck; between the banks, send them to the bed
           if (x > 880 && x < 1950 && y >= TERRAIN.water + 0.6 && y < TERRAIN.water + 4.5 && wwbNear(x, z, 260)) yy = TERRAIN.bed - 0.05;
           pos.push(x, yy, z);
-          hole.push(vineCut(x, z, -1) !== null ? 1 : 0);
+          hole.push(cutHole(x, z) ? 1 : 0);
           const inD = Math.min(x - FMZ.x0, FMZ.x1 - x, z - FMZ.z0, FMZ.z1 - z);
           const t = clamp(inD / 80, 0, 1);
           col.push(1 + (fmR[0] - 1) * t, 1 + (fmR[1] - 1) * t, 1 + (fmR[2] - 1) * t);
@@ -1562,13 +1612,43 @@
   step('Shaping the waterfront', () => {
     const parts = [];
     const band = (o0, o1, z0, z1) => [frontPt(o0, z0), frontPt(o1, z0), frontPt(o1, z1), frontPt(o0, z1)];
-    // cap decks over the trench
+    // cap decks over the trench: slab + edge fascia + a header beam over each
+    // portal face, so I-95 visibly dives UNDER the plazas instead of sliding
+    // beneath a floating carpet
+    const portalFace = (z, topY, dyDrop) => {
+      const a = frontPt(TERRAIN.trenchW, z), b = frontPt(TERRAIN.trenchE, z);
+      const arr = new Float32Array([a[0], TERRAIN.trenchFloor - 0.4, a[1], b[0], TERRAIN.trenchFloor - 0.4, b[1], b[0], topY, b[1],
+                                    a[0], TERRAIN.trenchFloor - 0.4, a[1], b[0], topY, b[1], a[0], topY, a[1]]);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(arr, 3));
+      g.computeVertexNormals();
+      parts.push({ geom: g, color: new THREE.Color(0x55524d), style: 3 });
+      // header beam across the opening
+      let hx = b[0] - a[0], hz = b[1] - a[1];
+      const hl = Math.hypot(hx, hz) || 1;
+      const hg = new THREE.BoxGeometry(hl + 0.8, 1.25, 0.9);
+      hg.rotateY(Math.atan2(-hz, hx));
+      hg.translate((a[0] + b[0]) / 2, topY - dyDrop, (a[1] + b[1]) / 2);
+      parts.push({ geom: hg, color: new THREE.Color(0x6e6b64), style: 3 });
+    };
     for (const c of CAPS) {
       if (c.kind !== 'deck') continue;
       const dg = flatPoly(band(TERRAIN.trenchW - 3, TERRAIN.trenchE + 3, c.z0, c.z1), null, c.dy + 0.12, true);
       const dp = dg.attributes.position;
       for (let i = 0; i < dp.count; i++) dp.setY(i, dp.getY(i) + frontDem(dp.getZ(i)));
       parts.push({ geom: dg, color: new THREE.Color(c.dy < 0 ? 0x8f8a80 : 0x9a6a52), style: 3 });
+      for (const ze of [c.z0, c.z1]) {
+        const deckY = frontDem(ze) + c.dy + 0.12;
+        portalFace(ze, deckY + 0.02, 0.55);
+      }
+    }
+    // the park cap swallows I-95 too: portal faces at both lawn edges
+    {
+      const pk = CAPS.find(c => c.kind === 'park');
+      for (const ze of [pk.z0, pk.z1]) {
+        const [mx] = frontPt(40, ze);
+        portalFace(ze, parkCapY(mx, ze) + 0.1, 0.6);
+      }
     }
     // Park at Penn's Landing: lawn from Front St down to the promenade
     const park = CAPS.find(c => c.kind === 'park');
@@ -1587,7 +1667,8 @@
       for (let z = -1100; z <= 1700; z += 10) { inner.push([xShore(z) - 11, z]); outer.push([xShore(z) - 0.6, z]); }
       parts.push({ geom: flatPoly(inner.concat(outer.reverse()), null, 0.3), color: new THREE.Color(0xa9a49a), style: 3 });
     }
-    const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }));
+    // DoubleSide: the cap decks must read from BELOW too (driving the trench)
+    const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
     m.receiveShadow = true;
     groupCity.add(m);
   });
@@ -4690,9 +4771,8 @@
     // stored DARK for the legacy color pipeline (flats render ~2.5x lighter)
     const cTop = [0x3b3833, 0x3b3833, 0x3f3c37, 0x3f3c37, 0x43403b, 0x45423d, 0x8f8c85];
     const cConc = 0x6e6b64, cParapet = 0x7d7a73, cPier = 0x6b6760, cCap = 0x5c5852;
-    const cWall = 0x5a5751, cFloor = 0x2f2d29;
+    const cWall = 0x5a5751, cCope = 0x7d7a73, cFloor = 0x262421, cGutter = 0x504d47, cLine = 0x8a887f;
     const tint = (hex, m) => new THREE.Color(hex).multiplyScalar(m);
-    // densify a solved [x, z, y] profile, interpolating height
     const dens3 = (pts, step3) => {
       const out = [pts[0].slice()];
       for (let i = 0; i + 1 < pts.length; i++) {
@@ -4706,7 +4786,6 @@
       }
       return out;
     };
-    // mitered per-vertex left normals for a polyline
     const norms = (pts) => {
       const nrm = [];
       for (let i = 0; i < pts.length; i++) {
@@ -4717,12 +4796,13 @@
       }
       return nrm;
     };
-    // closed box ribbon along a 3D profile: top face at y+dyT, bottom at bots[i]
-    // (or y+dyB), both side walls. The material is DoubleSide, so winding is safe.
-    const boxRibbon = (pts, hw, dyT, dyB, colTop, colSide, bots) => {
+    // closed box ribbon: top at y+dyT, bottom at bots[i] (or y+dyB), both sides.
+    // seg gate (i) can suppress individual segments (parapet gaps at ramp mouths).
+    const boxRibbon = (pts, hw, dyT, dyB, colTop, colSide, bots, gate) => {
       const nrm = norms(pts);
       const top = [], side = [];
       for (let i = 0; i + 1 < pts.length; i++) {
+        if (gate && !gate(i)) continue;
         const a = pts[i], b = pts[i + 1], na = nrm[i], nb = nrm[i + 1];
         const aL = [a[0] + na[0] * hw, a[1] + na[1] * hw], aR = [a[0] - na[0] * hw, a[1] - na[1] * hw];
         const bL = [b[0] + nb[0] * hw, b[1] + nb[1] * hw], bR = [b[0] - nb[0] * hw, b[1] - nb[1] * hw];
@@ -4738,13 +4818,14 @@
         }
       }
       const mk = (arr, col) => {
+        if (!arr.length) return;
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
         g.computeVertexNormals();
         parts.push({ geom: g, color: col, style: 3 });
       };
-      if (top.length) mk(top, colTop);
-      if (side.length) mk(side, colSide);
+      mk(top, colTop);
+      mk(side, colSide);
     };
     const boxAt = (cx, cz, ux, uz, along, across, y0, y1, col) => {
       const g = new THREE.BoxGeometry(along, y1 - y0, across);
@@ -4752,7 +4833,6 @@
       g.translate(cx, (y0 + y1) / 2, cz);
       parts.push({ geom: g, color: col, style: 3 });
     };
-    // any drivable street passing under here that is not parallel to (ux, uz)?
     const crossingRoadNear = (x, z, r, ux, uz) => {
       const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
       for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
@@ -4771,34 +4851,95 @@
       }
       return false;
     };
+    // ------- junction mouths: where one chain's end lands on another's deck -------
+    // Parapets and barriers must BREAK there (never a rail across a ramp exit),
+    // and the joining deck noses 6 m into the through deck so nothing butts.
+    const juncGrid = new Map();
+    const JC = 30;
+    const juncAdd = (p, q, hw) => {
+      // p = chain end, q = the point before it (gives the approach direction)
+      let dx = p[0] - q[0], dz = p[1] - q[1];
+      const L = Math.hypot(dx, dz) || 1;
+      const e = { x: p[0], z: p[1], y: p[2], hw, dx: dx / L, dz: dz / L };
+      const k = Math.floor(p[0] / JC) + ':' + Math.floor(p[1] / JC);
+      let a = juncGrid.get(k);
+      if (!a) { a = []; juncGrid.set(k, a); }
+      a.push(e);
+    };
+    for (const c of OVP.el.concat(OVP.sk)) {
+      const e = c.e || [0, 0];
+      if (e[0] === 1 && c.p.length > 1) juncAdd(c.p[0], c.p[1], c.w / 2);
+      if (e[1] === 1 && c.p.length > 1) juncAdd(c.p[c.p.length - 1], c.p[c.p.length - 2], c.w / 2);
+    }
+    // is there a ramp mouth at (x,z,y) on the side whose outward normal is (nx,nz)?
+    // omit the normal to test both sides (median barriers)
+    const mouthAt = (x, z, y, nx, nz, self) => {
+      const gx = Math.floor(x / JC), gz = Math.floor(z / JC);
+      for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
+        const a = juncGrid.get(cx2 + ':' + cz2);
+        if (!a) continue;
+        for (const jp of a) {
+          if (jp === self) continue;
+          const dd = Math.hypot(jp.x - x, jp.z - z);
+          if (dd > jp.hw + 6.5 || Math.abs(jp.y - y) > 3.2) continue;
+          if (nx === undefined) return true;
+          // the mouth opens toward where the ramp came FROM
+          if (-(jp.dx * nx + jp.dz * nz) > 0.1 || dd < jp.hw + 1.5) return true;
+        }
+      }
+      return false;
+    };
+    const shapePts = (c) => {
+      const pts = dens3(c.p, 13);
+      const e = c.e || [0, 0];
+      for (const side of [0, 1]) {
+        if ((side ? e[1] : e[0]) !== 1) continue;
+        const a = side ? pts[pts.length - 1] : pts[0];
+        const b = side ? pts[pts.length - 2] : pts[1];
+        let dx = a[0] - b[0], dz = a[1] - b[1];
+        const L = Math.hypot(dx, dz) || 1;
+        const ext = [a[0] + dx / L * 6, a[1] + dz / L * 6, a[2]];
+        if (side) pts.push(ext); else pts.unshift(ext);
+      }
+      return pts;
+    };
     // ---------------- elevated chains: deck box, parapets, piers ----------------
     for (let ci = 0; ci < OVP.el.length; ci++) {
       const c = OVP.el[ci];
+      const e = c.e || [0, 0];
       const hw = Math.max(1.6, c.w / 2);
       const dep = c.c <= 1 ? 1.7 : (c.c === 6 ? 0.5 : 1.15);
-      const pts = dens3(c.p, 13);
+      const pts = shapePts(c);
       const jit = 0.92 + hash01(ci * 2.13) * 0.16;
-      // embankment skirts: where the deck sits low, the sides run to the ground
       const bots = pts.map((p) => {
         const gy = siteY(p[0], p[1], 'ground');
         return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gy - 0.4) : p[2] - dep;
       });
       boxRibbon(pts, hw, 0, -dep, tint(cTop[c.c] || 0x3b3833, 1), tint(cConc, jit), bots);
-      // parapets ride the deck edges (thin rails on footbridges)
+      // parapets: fade in past the ends, break at every ramp mouth on their side
       const nrm = norms(pts);
+      const ss = [0];
+      for (let i = 1; i < pts.length; i++) ss.push(ss[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]));
+      const total = ss[ss.length - 1];
       const pOff = hw - (c.c === 6 ? 0.16 : 0.36);
       const pT = c.c === 6 ? 1.15 : 1.02, pW = c.c === 6 ? 0.09 : 0.17;
+      const lead0 = e[0] === 1 ? 6.5 : 14, lead1 = e[1] === 1 ? 6.5 : 14;
       for (const s of [1, -1]) {
         const edge = pts.map((p, i) => [p[0] + nrm[i][0] * pOff * s, p[1] + nrm[i][1] * pOff * s, p[2]]);
-        boxRibbon(edge, pW, pT, -0.25, tint(cParapet, jit), tint(cParapet, jit * 0.94));
+        boxRibbon(edge, pW, pT, -0.25, tint(cParapet, jit), tint(cParapet, jit * 0.94), null, (i) => {
+          const sm = (ss[i] + ss[i + 1]) / 2;
+          if (sm < lead0 || sm > total - lead1) return false;
+          const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
+          const my = (pts[i][2] + pts[i + 1][2]) / 2;
+          return !mouthAt(mx, mz, my, nrm[i][0] * s, nrm[i][1] * s);
+        });
       }
       // piers wherever there is clearance and no street crossing beneath
       const gap = c.c <= 1 ? 26 : (c.c === 6 ? 15 : 21);
       let acc = gap * 0.6;
       for (let i = 0; i + 1 < pts.length; i++) {
         const a = pts[i], b = pts[i + 1];
-        const segL = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        acc += segL;
+        acc += Math.hypot(b[0] - a[0], b[1] - a[1]);
         if (acc < gap) continue;
         acc = 0;
         const x = (a[0] + b[0]) / 2, z = (a[1] + b[1]) / 2, y = (a[2] + b[2]) / 2;
@@ -4827,62 +4968,148 @@
     }
     // ---------------- the Vine Street cut: walls, floor, portals ----------------
     const collarParts = [];
+    const wallQuad = (q, arr) => arr.push(...q);
     for (const run of OVP.cor) {
       const nrm = norms(run);
       const wl = run.map((p, i) => [p[0] + nrm[i][0] * p[3], p[1] + nrm[i][1] * p[3], p[2]]);
       const wr = run.map((p, i) => [p[0] - nrm[i][0] * p[3], p[1] - nrm[i][1] * p[3], p[2]]);
       const gl = wl.map((p) => siteY(p[0], p[1], 'ground'));
       const gr = wr.map((p) => siteY(p[0], p[1], 'ground'));
-      const quads = [];
+      const quads = [], copes = [];
+      const segGap = (w0, w1, i) => {
+        // break the wall where a sunken ramp passes through it (its portal)
+        const mx = (w0[i][0] + w0[i + 1][0]) / 2, mz = (w0[i][1] + w0[i + 1][1]) / 2;
+        let wx = w0[i + 1][0] - w0[i][0], wz = w0[i + 1][1] - w0[i][1];
+        const L = Math.hypot(wx, wz) || 1;
+        wx /= L; wz /= L;
+        const arr = ovpGrid.get(Math.floor(mx / OVP_CELL) + ':' + Math.floor(mz / OVP_CELL));
+        if (!arr) return false;
+        for (const s of arr) {
+          if (ovpSegs[s + 7] !== -1) continue;
+          const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], shw = ovpSegs[s + 6];
+          let dx = sbx - sax, dz = sbz - saz;
+          const sl = Math.hypot(dx, dz) || 1;
+          if (Math.abs((dx * wx + dz * wz) / sl) > 0.85) continue;    // parallel: the mainline itself
+          const L2 = sl * sl;
+          let t = ((mx - sax) * dx + (mz - saz) * dz) / L2;
+          t = clamp(t, 0, 1);
+          const px = sax + dx * t - mx, pz = saz + dz * t - mz;
+          if (px * px + pz * pz < (shw + 2.5) * (shw + 2.5)) return true;
+        }
+        return false;
+      };
       for (let i = 0; i + 1 < run.length; i++) {
-        // retaining walls rise from below the floor to a low parapet above grade
-        quads.push(wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], wl[i + 1][2] - 0.6, wl[i + 1][1],
-                   wl[i + 1][0], gl[i + 1] + 0.82, wl[i + 1][1],
-                   wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], gl[i + 1] + 0.82, wl[i + 1][1],
-                   wl[i][0], gl[i] + 0.82, wl[i][1]);
-        quads.push(wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], wr[i + 1][2] - 0.6, wr[i + 1][1],
-                   wr[i + 1][0], gr[i + 1] + 0.82, wr[i + 1][1],
-                   wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], gr[i + 1] + 0.82, wr[i + 1][1],
-                   wr[i][0], gr[i] + 0.82, wr[i][1]);
+        if (!segGap(wl, wl, i)) {
+          wallQuad([wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], wl[i + 1][2] - 0.6, wl[i + 1][1],
+                    wl[i + 1][0], gl[i + 1] + 0.55, wl[i + 1][1],
+                    wl[i][0], wl[i][2] - 0.6, wl[i][1], wl[i + 1][0], gl[i + 1] + 0.55, wl[i + 1][1],
+                    wl[i][0], gl[i] + 0.55, wl[i][1]], quads);
+          copes.push([wl[i], wl[i + 1], gl[i], gl[i + 1]]);
+        }
+        if (!segGap(wr, wr, i)) {
+          wallQuad([wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], wr[i + 1][2] - 0.6, wr[i + 1][1],
+                    wr[i + 1][0], gr[i + 1] + 0.55, wr[i + 1][1],
+                    wr[i][0], wr[i][2] - 0.6, wr[i][1], wr[i + 1][0], gr[i + 1] + 0.55, wr[i + 1][1],
+                    wr[i][0], gr[i] + 0.55, wr[i][1]], quads);
+          copes.push([wr[i], wr[i + 1], gr[i], gr[i + 1]]);
+        }
       }
       const wg = new THREE.BufferGeometry();
       wg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(quads), 3));
       wg.computeVertexNormals();
       parts.push({ geom: wg, color: new THREE.Color(cWall), style: 3 });
-      // floor slab wall to wall
-      const fq = [];
+      // coping caps ride the wall tops (a light parapet band, slightly proud)
+      for (const [a, b, ga, gb] of copes) {
+        let dx = b[0] - a[0], dz = b[1] - a[1];
+        const L = Math.hypot(dx, dz) || 1;
+        const ex = (a[0] + b[0]) / 2, ez = (a[1] + b[1]) / 2;
+        boxAt(ex, ez, dx / L, dz / L, L + 0.05, 0.55, (ga + gb) / 2 + 0.4, (ga + gb) / 2 + 1.0, tint(cCope, 1));
+      }
+      // floor slab wall to wall, with lighter gutter strips along each wall base
+      const fq = [], gq = [];
       for (let i = 0; i + 1 < run.length; i++) {
         fq.push(wl[i][0], run[i][2], wl[i][1], wl[i + 1][0], run[i + 1][2], wl[i + 1][1], wr[i + 1][0], run[i + 1][2], wr[i + 1][1],
                 wl[i][0], run[i][2], wl[i][1], wr[i + 1][0], run[i + 1][2], wr[i + 1][1], wr[i][0], run[i][2], wr[i][1]);
+        for (const [w0, s] of [[wl, 1], [wr, -1]]) {
+          const g0 = [w0[i][0] - nrm[i][0] * s * 1.1, w0[i][1] - nrm[i][1] * s * 1.1];
+          const g1 = [w0[i + 1][0] - nrm[i + 1][0] * s * 1.1, w0[i + 1][1] - nrm[i + 1][1] * s * 1.1];
+          gq.push(w0[i][0], run[i][2] + 0.03, w0[i][1], w0[i + 1][0], run[i + 1][2] + 0.03, w0[i + 1][1], g1[0], run[i + 1][2] + 0.03, g1[1],
+                  w0[i][0], run[i][2] + 0.03, w0[i][1], g1[0], run[i + 1][2] + 0.03, g1[1], g0[0], run[i][2] + 0.03, g0[1]);
+        }
       }
-      const fg = new THREE.BufferGeometry();
-      fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(fq), 3));
-      fg.computeVertexNormals();
-      parts.push({ geom: fg, color: new THREE.Color(cFloor), style: 3 });
-      // portal faces where the cut meets a covered section
-      for (const e of [0, run.length - 1]) {
-        const pg = [wl[e][0], run[e][2] - 0.6, wl[e][1], wr[e][0], run[e][2] - 0.6, wr[e][1],
-                    wr[e][0], (gl[e] + gr[e]) / 2 + 0.6, wr[e][1],
-                    wl[e][0], run[e][2] - 0.6, wl[e][1], wr[e][0], (gl[e] + gr[e]) / 2 + 0.6, wr[e][1],
-                    wl[e][0], (gl[e] + gr[e]) / 2 + 0.6, wl[e][1]];
+      for (const [arr, col] of [[fq, cFloor], [gq, cGutter]]) {
+        const g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
+        g2.computeVertexNormals();
+        parts.push({ geom: g2, color: new THREE.Color(col), style: 3 });
+      }
+      // portal faces + header beams where the cut meets a covered section
+      for (const e2 of [0, run.length - 1]) {
+        const gm = (gl[e2] + gr[e2]) / 2;
+        const pg = [wl[e2][0], run[e2][2] - 0.6, wl[e2][1], wr[e2][0], run[e2][2] - 0.6, wr[e2][1],
+                    wr[e2][0], gm + 0.55, wr[e2][1],
+                    wl[e2][0], run[e2][2] - 0.6, wl[e2][1], wr[e2][0], gm + 0.55, wr[e2][1],
+                    wl[e2][0], gm + 0.55, wl[e2][1]];
         const g2 = new THREE.BufferGeometry();
         g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pg), 3));
         g2.computeVertexNormals();
         parts.push({ geom: g2, color: new THREE.Color(cWall), style: 3 });
+        let hx = wr[e2][0] - wl[e2][0], hz = wr[e2][1] - wl[e2][1];
+        const hl = Math.hypot(hx, hz) || 1;
+        boxAt((wl[e2][0] + wr[e2][0]) / 2, (wl[e2][1] + wr[e2][1]) / 2, hx / hl, hz / hl,
+              hl + 1.2, 1.1, gm - 0.25, gm + 0.85, tint(cCope, 1));
       }
-      // grade collar apron: hides the ragged heightfield hole around the cut
+      // grade collar apron hides the ragged heightfield hole around the cut
       for (const s of [1, -1]) {
         const off = run.map((p, i) => [p[0] + nrm[i][0] * (p[3] + 16.5) * s, p[1] + nrm[i][1] * (p[3] + 16.5) * s]);
         collarParts.push({ geom: ribbon(off, 34, 0.07, (x, z) => siteY(x, z, 'ground')), color: new THREE.Color(COLORS.ground), style: 3 });
       }
-      // median barrier down the cut where the carriageways run close
-      const med = run.filter((p) => p[3] < 19).map((p) => [p[0], p[1], p[2]]);
-      if (med.length > 2) boxRibbon(med, 0.26, 0.85, -0.1, tint(cParapet, 1), tint(cParapet, 0.94));
+      // median barrier down the cut, broken at every ramp mouth
+      const med = [];
+      for (const p of run) {
+        if (p[3] < 20 && !mouthAt(p[0], p[1], p[2] + 0.45)) med.push([p[0], p[1], p[2]]);
+        else if (med.length > 2) { boxRibbon(med.slice(), 0.26, 0.85, -0.1, tint(cCope, 1), tint(cCope, 0.94)); med.length = 0; }
+        else med.length = 0;
+      }
+      if (med.length > 2) boxRibbon(med, 0.26, 0.85, -0.1, tint(cCope, 1), tint(cCope, 0.94));
     }
-    // ---------------- sunken carriageways: the expressway down in the cut ------
+    // ------- sunken carriageways and ramps: roadway, edge lines, ramp-cut walls ----
     for (const c of OVP.sk) {
-      const pts = dens3(c.p, 14);
-      boxRibbon(pts, Math.max(1.6, c.w / 2), 0, -0.5, tint(0x3b3833, 1), tint(0x35332f, 1));
+      const pts = shapePts(c);
+      const hw = Math.max(1.6, c.w / 2);
+      boxRibbon(pts, hw, 0, -0.5, tint(0x33312d, 1), tint(0x2b2926, 1));
+      // pale edge lines read as lane striping from altitude
+      const nrm = norms(pts);
+      for (const s of [1, -1]) {
+        const edge = pts.map((p, i) => [p[0] + nrm[i][0] * (hw - 0.45) * s, p[1] + nrm[i][1] * (hw - 0.45) * s, p[2]]);
+        boxRibbon(edge, 0.09, 0.03, -0.01, tint(cLine, 1), tint(cLine, 1));
+      }
+      // outside the main corridor an OPEN sunken ramp runs in its own narrow
+      // walled cut; covered tunnels stay under the untouched ground
+      const rq = [];
+      for (let i = 0; c.cov !== 1 && i + 1 < pts.length; i++) {
+        const mx = (pts[i][0] + pts[i + 1][0]) / 2, mz = (pts[i][1] + pts[i + 1][1]) / 2;
+        const my = (pts[i][2] + pts[i + 1][2]) / 2;
+        if (vineCut(mx, mz, 2) !== null) continue;
+        if (demY(mx, mz) - my < 1.0) continue;
+        for (const s of [1, -1]) {
+          const a = [pts[i][0] + nrm[i][0] * (hw + 0.7) * s, pts[i][1] + nrm[i][1] * (hw + 0.7) * s];
+          const b = [pts[i + 1][0] + nrm[i + 1][0] * (hw + 0.7) * s, pts[i + 1][1] + nrm[i + 1][1] * (hw + 0.7) * s];
+          const ga = siteY(a[0], a[1], 'ground'), gb = siteY(b[0], b[1], 'ground');
+          rq.push(a[0], pts[i][2] - 0.6, a[1], b[0], pts[i + 1][2] - 0.6, b[1], b[0], gb + 0.5, b[1],
+                  a[0], pts[i][2] - 0.6, a[1], b[0], gb + 0.5, b[1], a[0], ga + 0.5, a[1]);
+        }
+      }
+      if (rq.length) {
+        const g2 = new THREE.BufferGeometry();
+        g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rq), 3));
+        g2.computeVertexNormals();
+        parts.push({ geom: g2, color: new THREE.Color(cWall), style: 3 });
+        const off1 = pts.map((p, i) => [p[0] + nrm[i][0] * (hw + 12), p[1] + nrm[i][1] * (hw + 12)]);
+        const off2 = pts.map((p, i) => [p[0] - nrm[i][0] * (hw + 12), p[1] - nrm[i][1] * (hw + 12)]);
+        collarParts.push({ geom: ribbon(off1, 24, 0.07, (x, z) => siteY(x, z, 'ground')), color: new THREE.Color(COLORS.ground), style: 3 });
+        collarParts.push({ geom: ribbon(off2, 24, 0.07, (x, z) => siteY(x, z, 'ground')), color: new THREE.Color(COLORS.ground), style: 3 });
+      }
     }
     if (parts.length) {
       const ovpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
@@ -6464,11 +6691,11 @@
       // an end into the pavement wherever the road slopes (Front St, the trench
       // shoulders), so sample the road height every ~7 m along the text instead
       const cols = Math.max(2, Math.min(10, Math.round(hw / 3.5)));
-      const i0 = pos.length / 3;
+      // pass 1: column heights (decks lift them, the Vine cut sinks its own name)
+      const colY = [];
       for (let c2 = 0; c2 <= cols; c2++) {
         const t2 = c2 / cols * 2 - 1;
         const cxw = x + dx * t2 * hw, czw = z + dz * t2 * hw;
-        // names ride the overpass decks, and the expressway name rides the cut floor
         let ycs = siteY(cxw, czw, 'road');
         const oyc = ovpDeckY(cxw, czw, dx, dz);
         if (oyc !== null && oyc > ycs) ycs = oyc;
@@ -6476,7 +6703,21 @@
           const vyc = vineCut(cxw, czw, -2);
           if (vyc !== null) ycs = vyc + 0.45;
         }
-        const yc = ycs + LIFT[cls];
+        colY.push(ycs);
+      }
+      // buried roads get no label: under the trench caps the roadway runs below
+      // ground (the half-swallowed Delaware Expressway name at Foglietta)
+      const midY = colY[Math.floor(cols / 2)];
+      if (siteY(x, z, 'ground') - midY > 2.5 && vineCut(x, z, -2) === null) continue;
+      // label ends must never climb a trench wall or bank: cap the rise between
+      // neighboring columns (steep streets stay legible, walls stop swallowing text)
+      for (let c2 = 1; c2 <= cols; c2++) colY[c2] = Math.min(colY[c2], colY[c2 - 1] + 1.0);
+      for (let c2 = cols - 1; c2 >= 0; c2--) colY[c2] = Math.min(colY[c2], colY[c2 + 1] + 1.0);
+      const i0 = pos.length / 3;
+      for (let c2 = 0; c2 <= cols; c2++) {
+        const t2 = c2 / cols * 2 - 1;
+        const cxw = x + dx * t2 * hw, czw = z + dz * t2 * hw;
+        const yc = colY[c2] + LIFT[cls];
         pos.push(cxw - ux * hh, yc, czw - uz * hh, cxw + ux * hh, yc, czw + uz * hh);
         const uc = u0 + (u1 - u0) * (c2 / cols);
         uv.push(uc, v0, uc, v1);
@@ -7340,6 +7581,69 @@
     const U = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(H) * Math.cos(lat);
     return { elev: Math.asin(clamp(U, -1, 1)) / DEG, dir: new V3(E, U, -N).normalize() };
   }
+  // the real Moon over Philadelphia: Schlyter's lunar theory (position to ~1-2
+  // arcmin here, plenty for a sky disc), topocentric, plus phase from the
+  // Sun-Moon elongation. Same az/el -> world mapping as solar().
+  function lunar(utcMs) {
+    const R = DEG;
+    // Schlyter's epoch is "2000 Jan 0.0" = 1999-12-31 00:00 UT, NOT J2000.0 —
+    // the 1.5 day difference is a 20 degree lunar longitude error
+    const d = utcMs / 86400000 - 10956.0;
+    const rev = (a) => ((a % 360) + 360) % 360;
+    const Nm = rev(125.1228 - 0.0529538083 * d);
+    const im = 5.1454 * R;
+    const wm = rev(318.0634 + 0.1643573223 * d);
+    const em = 0.0549;
+    const Mm = rev(115.3654 + 13.0649929509 * d);
+    const ws = rev(282.9404 + 4.70935e-5 * d);
+    const Ms = rev(356.047 + 0.9856002585 * d);
+    let E = Mm + (em / R) * Math.sin(Mm * R) * (1 + em * Math.cos(Mm * R));
+    for (let i = 0; i < 4; i++) E = E - (E - (em / R) * Math.sin(E * R) - Mm) / (1 - em * Math.cos(E * R));
+    const xv = 60.2666 * (Math.cos(E * R) - em);
+    const yv = 60.2666 * Math.sqrt(1 - em * em) * Math.sin(E * R);
+    const v = Math.atan2(yv, xv) / R;
+    let r = Math.sqrt(xv * xv + yv * yv);
+    const u = (v + wm) * R;
+    const xh = r * (Math.cos(Nm * R) * Math.cos(u) - Math.sin(Nm * R) * Math.sin(u) * Math.cos(im));
+    const yh = r * (Math.sin(Nm * R) * Math.cos(u) + Math.cos(Nm * R) * Math.sin(u) * Math.cos(im));
+    const zh = r * Math.sin(u) * Math.sin(im);
+    let lon = Math.atan2(yh, xh) / R;
+    let lat = Math.atan2(zh, Math.sqrt(xh * xh + yh * yh)) / R;
+    // the Sun's true longitude (for perturbations and phase)
+    let Es = Ms + (0.016709 / R) * Math.sin(Ms * R) * (1 + 0.016709 * Math.cos(Ms * R));
+    const xs = Math.cos(Es * R) - 0.016709, ys = Math.sqrt(1 - 0.016709 * 0.016709) * Math.sin(Es * R);
+    const slon = rev(Math.atan2(ys, xs) / R + ws);
+    // major lunar perturbations (Schlyter's series; D and the sidereal base use
+    // the Sun's MEAN longitude, the phase uses the true one)
+    const Lsun = rev(Ms + ws);
+    const Lm = rev(Mm + wm + Nm), D2 = rev(Lm - Lsun), F = rev(Lm - Nm);
+    lon += -1.274 * Math.sin((Mm - 2 * D2) * R) + 0.658 * Math.sin(2 * D2 * R) - 0.186 * Math.sin(Ms * R)
+         - 0.059 * Math.sin((2 * Mm - 2 * D2) * R) - 0.057 * Math.sin((Mm - 2 * D2 + Ms) * R)
+         + 0.053 * Math.sin((Mm + 2 * D2) * R) + 0.046 * Math.sin((2 * D2 - Ms) * R)
+         + 0.041 * Math.sin((Mm - Ms) * R) - 0.035 * Math.sin(D2 * R) - 0.031 * Math.sin((Mm + Ms) * R)
+         - 0.015 * Math.sin((2 * F - 2 * D2) * R) + 0.011 * Math.sin((Mm - 4 * D2) * R);
+    lat += -0.173 * Math.sin((F - 2 * D2) * R) - 0.055 * Math.sin((Mm - F - 2 * D2) * R)
+         - 0.046 * Math.sin((Mm + F - 2 * D2) * R) + 0.033 * Math.sin((F + 2 * D2) * R) + 0.017 * Math.sin((2 * Mm + F) * R);
+    r += -0.58 * Math.cos((Mm - 2 * D2) * R) - 0.46 * Math.cos(2 * D2 * R);
+    const ecl = (23.4393 - 3.563e-7 * d) * R;
+    const xg = Math.cos(lon * R) * Math.cos(lat * R), yg = Math.sin(lon * R) * Math.cos(lat * R), zg = Math.sin(lat * R);
+    const xe = xg, ye = yg * Math.cos(ecl) - zg * Math.sin(ecl), ze = yg * Math.sin(ecl) + zg * Math.cos(ecl);
+    const ra = rev(Math.atan2(ye, xe) / R), dec = Math.atan2(ze, Math.sqrt(xe * xe + ye * ye)) / R;
+    const utH = ((utcMs % 86400000) + 86400000) % 86400000 / 3600000;
+    const LSTdeg = rev(rev(Lsun + 180) + utH * 15 + SITE.lon);
+    let ha = LSTdeg - ra;
+    ha = ((ha % 360) + 540) % 360 - 180;
+    const lat0 = SITE.lat * R;
+    const sinEl = Math.sin(lat0) * Math.sin(dec * R) + Math.cos(lat0) * Math.cos(dec * R) * Math.cos(ha * R);
+    let el = Math.asin(clamp(sinEl, -1, 1));
+    el -= Math.asin(1 / r) * Math.cos(el);                    // topocentric parallax
+    const Ea = -Math.cos(dec * R) * Math.sin(ha * R);
+    const Na = Math.sin(dec * R) * Math.cos(lat0) - Math.cos(dec * R) * Math.cos(ha * R) * Math.sin(lat0);
+    const az = rev(Math.atan2(Ea, Na) / R);
+    const dir = new V3(Math.sin(az * R) * Math.cos(el), Math.sin(el), -Math.cos(az * R) * Math.cos(el)).normalize();
+    const elong = Math.acos(clamp(Math.cos(lat * R) * Math.cos((lon - slon) * R), -1, 1));
+    return { dir, el: el / R, az, k: (1 - Math.cos(elong)) / 2, wax: Math.sin((lon - slon) * R) > 0 };
+  }
   const clock = { y: 2026, m: 8, d: 23, minutes: 720, live: true };
   function clockUtcMs(c, minutes) { return Date.UTC(c.y, c.m - 1, c.d) + (minutes - tzOffsetMin(c.y, c.m, c.d)) * 60000; }
   function setClockToNow() {
@@ -7402,12 +7706,19 @@
     twi: { z: new THREE.Color(0x34456e), h: new THREE.Color(0xf3a468), g: new THREE.Color(0x3a322c) },
     day: { z: new THREE.Color(COLORS.skyZenith), h: new THREE.Color(COLORS.skyHorizon), g: new THREE.Color(COLORS.skyGround) },
   };
-  const moonDir = new V3(0.35, 0.62, 0.45).normalize();
+  const moonDir = new V3(0.35, 0.62, 0.45).normalize();   // live lunar position (applyLighting)
+  const moonHigh = new V3(0.35, 0.62, 0.45).normalize();  // moonless-night fill direction
+  const glintDir = new V3(0.3, 0.8, 0.2);                 // what the water sparkles toward
+  const _vA = new THREE.Vector3();
+  let moonNow = { el: -90, az: 0, k: 0.5, wax: true };
   let lastEnvEl = 999;
   const _c1 = new THREE.Color(), _c2 = new THREE.Color();
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   function applyLighting() {
     const sp = solar(clockUtcMs(clock, clock.minutes));
+    const mp = lunar(clockUtcMs(clock, clock.minutes));
+    moonNow = mp;
+    moonDir.copy(mp.dir);
     const el = sp.elev;
     const dayF = smooth(-4, 10, el);
     const twi = Math.exp(-Math.pow((el + 1) / 7, 2)) * (1 - dayF * 0.6);
@@ -7416,13 +7727,30 @@
       sunDir.copy(sp.dir);
       sun.intensity = 1.7 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
-    } else {
+      glintDir.copy(sp.dir);
+    } else if (mp.el > 2) {
+      // moonlight follows the real moon: direction, and strength by phase
       sunDir.copy(moonDir);
-      sun.intensity = 0.16;
+      sun.intensity = (0.05 + 0.13 * mp.k) * (1 - 0.6 * WX.cover);
       sun.color.set(0x8ea0c0);
+      glintDir.copy(moonDir);
+    } else {
+      sunDir.copy(moonHigh);
+      sun.intensity = 0.05;
+      sun.color.set(0x8ea0c0);
+      glintDir.set(0, -1, 0);              // no moon, no moonglade
     }
     aimSun(lastAim.cx, lastAim.cz, lastAim.extent);
     skyMat.uniforms.uSun.value.copy(sp.dir);
+    // the phased moon disc: bright-limb tangent from the world sun/moon vectors
+    skyMat.uniforms.uMoon.value.copy(mp.dir);
+    _vA.copy(sp.dir).addScaledVector(mp.dir, -sp.dir.dot(mp.dir));
+    if (_vA.lengthSq() < 1e-6) _vA.set(0, 1, 0).addScaledVector(mp.dir, -mp.dir.y);
+    _vA.normalize();
+    skyMat.uniforms.uMoonU.value.copy(_vA);
+    skyMat.uniforms.uMoonV.value.crossVectors(mp.dir, _vA);
+    skyMat.uniforms.uMoonK.value = mp.k;
+    skyMat.uniforms.uMoonI.value = smooth(-1, 5, mp.el) * (1 - smooth(-7, 1, el)) * (1 - 0.85 * WX.cover);
     const mixPal = (k) => _c1.copy(PAL.night[k]).lerp(PAL.twi[k], twi).lerp(PAL.day[k], dayF).clone();
     const cz = mixPal('z'), ch = mixPal('h'), cg = mixPal('g');
     // overcast grays the sky toward a flat deck
@@ -7476,7 +7804,14 @@
     timeSlider.value = String(clock.minutes);
     const dst = tzOffsetMin(clock.y, clock.m, clock.d) === -240;
     timeClockEl.textContent = fmtTime(clock.minutes) + ' ' + (dst ? 'EDT' : 'EST') + (clock.live ? ' (Live)' : '');
-    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' : '');
+    const mp = lunar(clockUtcMs(clock, clock.minutes));
+    const phase = mp.k < 0.02 ? 'New Moon' : mp.k > 0.98 ? 'Full Moon'
+      : Math.abs(mp.k - 0.5) < 0.035 ? (mp.wax ? 'First Quarter' : 'Last Quarter')
+      : mp.k < 0.5 ? (mp.wax ? 'Waxing Crescent' : 'Waning Crescent')
+      : (mp.wax ? 'Waxing Gibbous' : 'Waning Gibbous');
+    const oct = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(mp.az / 45) % 8];
+    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' : '')
+      + '   ☾ ' + phase + ' ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', Up ' + oct : ', Set');
   }
   function toggleTimePanel() { timePanel.classList.toggle('open'); }
   document.getElementById('btnTime').addEventListener('click', toggleTimePanel);
@@ -7579,7 +7914,7 @@
     sky.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
     if (!reducedMotion) waterU.uTime.value += dt;
-    waterU.uSun.value.copy(sunDir);
+    waterU.uSun.value.copy(glintDir);
     updateTransit(now, dt);
     updateIndego(now, dt);
     updateTreePick();

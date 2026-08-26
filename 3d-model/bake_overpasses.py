@@ -446,6 +446,18 @@ def solve_chain(cids, sunk):
         if any(oid in W and oid not in chain_set for oid in touch):
             return grade(P[idx][0], P[idx][1]) + 0.3     # meets plain roads: touch down
         return tgt[idx]                                  # dead end at the data edge: hold
+    def end_kind(idx):
+        """0 = ramps to grade, 1 = pinned to a junction or held high."""
+        nid = P[idx][3]
+        if nid in node_y:
+            return 1
+        touch = ends.get(nid, ()) if nid is not None else ()
+        if any(oid in W and W[oid]["skipname"] for oid in touch):
+            return 1
+        if any(oid in W and oid not in set(cids) for oid in touch):
+            return 0
+        return 1
+    ek = (end_kind(0), end_kind(n - 1))
     y = list(tgt)
     y[0] = end_constraint(0)
     y[-1] = end_constraint(n - 1)
@@ -457,10 +469,14 @@ def solve_chain(cids, sunk):
     for i in range(n - 2, 0, -1):
         d = (s[i + 1] - s[i]) * slope
         y[i] = min(max(y[i], y[i + 1] - d), y[i + 1] + d)
+    # soften profile kinks (ends stay pinned); junction heights register AFTER
+    # smoothing so ramps meet the smoothed mainline exactly
+    for _ in range(2):
+        y = [y[0]] + [(y[i - 1] + y[i] + y[i + 1]) / 3 for i in range(1, n - 1)] + [y[-1]]
     for i, p in enumerate(P):
         if p[3] is not None and p[3] not in node_y:
             node_y[p[3]] = y[i]
-    return P, s, g, y
+    return P, s, g, y, ek
 
 def simplify_profile(P, y, tol2d=0.9, toly=0.22):
     keep = {0, len(P) - 1}
@@ -504,21 +520,51 @@ def clip_core(prof):
 def run_len(run):
     return sum(math.hypot(run[i + 1][0] - run[i][0], run[i + 1][1] - run[i][1]) for i in range(len(run) - 1))
 
+def emit_runs(P, y, ek, prof):
+    """Split at the core box, carrying end kinds: an interior cut keeps kind 1
+    (the roadway continues; the deck must not taper there)."""
+    runs = clip_core(prof)
+    out = []
+    for run in runs:
+        f0 = ek[0] if run[0] == prof[0] else 1
+        f1 = ek[1] if run[-1] == prof[-1] else 1
+        out.append((run, f0, f1))
+    return out
+
 out_el, out_sk = [], []
 sunk_solved = []
 for cids in sunk_chains:
     r = solve_chain(cids, True)
     if not r:
         continue
-    P = r[0]
+    P, s, g, y, ek = r
     M = 35
     if all(CORE[0] - M <= p[0] <= CORE[1] + M and CORE[2] - M <= p[1] <= CORE[3] + M for p in P):
         continue                       # the core I-95 trench is already built
     sunk_solved.append(r)
-    prof = simplify_profile(P, r[3])
-    for run in clip_core(prof):
-        if run_len(run) > 40:
-            out_sk.append({"c": 0, "w": 12, "p": run})
+    # split at cover transitions FIRST: covered (tunnel) stretches must not dig
+    # holes or grow walls in the app (the I-76 tunnel under 30th St stays buried)
+    segs, cur, cov0 = [], [0], W[P[0][2]]["tunnel"]
+    for i in range(1, len(P)):
+        cv = W[P[i][2]]["tunnel"]
+        if cv != cov0:
+            cur.append(i)
+            segs.append((cur, cov0))
+            cur = [i]
+            cov0 = cv
+        else:
+            cur.append(i)
+    segs.append((cur, cov0))
+    for idxs, cov in segs:
+        if len(idxs) < 2:
+            continue
+        Pseg = [P[i] for i in idxs]
+        yseg = [y[i] for i in idxs]
+        prof = simplify_profile(Pseg, yseg)
+        eks = (ek[0] if idxs[0] == 0 else 1, ek[1] if idxs[-1] == len(P) - 1 else 1)
+        for run, f0, f1 in emit_runs(Pseg, yseg, eks, prof):
+            if run_len(run) > 40:
+                out_sk.append({"c": 0, "w": 12, "p": run, "e": [f0, f1], "cov": 1 if cov else 0})
 
 # longest/motorway chains first so ramps pin to solved mainlines
 elev_chains.sort(key=lambda cids: (0 if any(W[c]["mo"] for c in cids) else 1,
@@ -527,60 +573,85 @@ for cids in elev_chains:
     r = solve_chain(cids, False)
     if not r:
         continue
-    P, s, g, y = r
+    P, s, g, y, ek = r
     if max(y[i] - g[i] for i in range(len(P))) < 0.35:
         continue
     prof = simplify_profile(P, y)
     cmin = min(W[c]["cls"] for c in cids)
     wmax = max(W[c]["w"] for c in cids)
-    for run in clip_core(prof):
+    for run, f0, f1 in emit_runs(P, y, ek, prof):
         if run_len(run) < 24:
             continue
-        out_el.append({"c": cmin, "w": wmax, "p": run})
+        out_el.append({"c": cmin, "w": wmax, "p": run, "e": [f0, f1]})
 
 # ---------------------------------------------------------------- Vine corridor
 def corridor_runs():
+    """One clean corridor from the TWO mainline carriageways (ramps excluded):
+    even 12 m stations, clamped and smoothed width, smoothed floor."""
     if not sunk_solved:
         return []
     chains = sorted(sunk_solved, key=lambda r: -r[1][-1])
-    lead, others = chains[0], chains[1:]
-    P, s, g, y = lead
+    if len(chains) < 2:
+        return []
+    lead, partner = chains[0], chains[1]
+    P, s, g, y, ek = lead
+    P2, s2, g2, y2, ek2 = partner
     runs, cur = [], []
     for i in range(len(P)):
         w = W[P[i][2]]
         depth = g[i] - y[i]
         if (not w["tunnel"]) and depth > 0.5:
             x, z = P[i][0], P[i][1]
-            fy = y[i] - 0.45
-            best, bx, bz, by2 = 1e18, None, None, None
-            for (P2, s2, g2, y2) in others:
-                for j in range(0, len(P2), 2):
-                    d2 = (P2[j][0] - x) ** 2 + (P2[j][1] - z) ** 2
-                    if d2 < best:
-                        best, bx, bz, by2 = d2, P2[j][0], P2[j][1], y2[j] - 0.45
-            if best < 55 * 55:
-                cx, cz = (x + bx) / 2, (z + bz) / 2
-                hw = math.sqrt(best) / 2 + 13.5
-                fy = min(fy, by2)
+            best, bj = 1e18, -1
+            for j in range(len(P2)):
+                d2 = (P2[j][0] - x) ** 2 + (P2[j][1] - z) ** 2
+                if d2 < best:
+                    best, bj = d2, j
+            if best < 60 * 60:
+                cx, cz = (x + P2[bj][0]) / 2, (z + P2[bj][1]) / 2
+                hw = math.sqrt(best) / 2 + 12.5
+                fy = min(y[i], y2[bj]) - 0.45
             else:
-                cx, cz, hw = x, z, 13.0
-            cur.append([round(cx, 1), round(cz, 1), round(fy, 2), round(hw, 1)])
+                cx, cz, hw = x, z, 14.0
+                fy = y[i] - 0.45
+            cur.append([cx, cz, fy, max(14.0, min(24.0, hw))])
         else:
             if len(cur) > 2:
                 runs.append(cur)
             cur = []
     if len(cur) > 2:
         runs.append(cur)
-    slim = []
+    out = []
     for run in runs:
-        keep = [run[0]]
-        for p in run[1:-1]:
-            if math.hypot(p[0] - keep[-1][0], p[1] - keep[-1][1]) > 14:
-                keep.append(p)
-        keep.append(run[-1])
-        if run_len(keep) > 60:
-            slim.append(keep)
-    return slim
+        # resample to even 12 m stations along the centerline
+        seg = [0.0]
+        for i in range(1, len(run)):
+            seg.append(seg[-1] + math.hypot(run[i][0] - run[i - 1][0], run[i][1] - run[i - 1][1]))
+        if seg[-1] < 60:
+            continue
+        nst = max(2, int(seg[-1] // 12))
+        ev = []
+        for k in range(nst + 1):
+            t = seg[-1] * k / nst
+            j = 0
+            while j + 1 < len(seg) and seg[j + 1] < t:
+                j += 1
+            f = (t - seg[j]) / max(1e-6, seg[j + 1] - seg[j])
+            ev.append([run[j][m] + (run[j + 1][m] - run[j][m]) * f for m in range(4)])
+        # smooth centerline + floor (3-tap x2) and width (5-tap): the raw pairing
+        # wobbles where the carriageways weave, which serrated the walls
+        for _ in range(2):
+            ev = [ev[0]] + [[(ev[i - 1][m] + ev[i][m] + ev[i + 1][m]) / 3 for m in range(3)] + [ev[i][3]]
+                            for i in range(1, len(ev) - 1)] + [ev[-1]]
+        hws = [p[3] for p in ev]
+        sm = []
+        for i in range(len(hws)):
+            lo, hi = max(0, i - 2), min(len(hws), i + 3)
+            sm.append(sum(hws[lo:hi]) / (hi - lo))
+        for i, p in enumerate(ev):
+            p[3] = sm[i]
+        out.append([[round(p[0], 1), round(p[1], 1), round(p[2], 2), round(p[3], 1)] for p in ev])
+    return out
 out_cor = corridor_runs()
 
 # ---------------------------------------------------------------- report + write

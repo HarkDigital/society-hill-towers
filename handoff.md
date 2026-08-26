@@ -1065,6 +1065,64 @@ Round 25 (Aug 25 — overpasses, the Vine Street cut, and living water; Mike's a
   (Pages-only delivery). Rerun order: bake_overpasses.py (plain py3, ~1 min) →
   build; re-bake whenever the raw dumps are refetched.
 
+Round 26 (Aug 25/26 — label audit, junction smoothing, the Vine cut reworked, portals
+under the caps, and the real Moon; all from Mike's three follow-ups):
+- **Street label placement audit**: OSM names motorway_link ramps by DESTINATION
+  (five links down the I-95 trench are literally named Market Street), and the
+  core bake lettered links — link classes now skipped. 824 Camden/NJ labels also
+  read as misplaced Philly streets from across the river: the bake now drops
+  east-of-Delaware placements (its own DEL_BANK copy is TIGHTER than the app's
+  terrain polyline south of the stadiums, or Gloucester City NJ leaks through).
+  3,784 labels / 648 names survive. street_sdf.json re-baked (rects align by
+  index with the names list — ALWAYS re-bake both together). Runtime: labels on
+  roads running > 2.5 m under the ground skip (the half-swallowed name at the
+  caps), and per-column rise is clamped to 1 m per 7 m so ends stop climbing
+  trench walls (steep streets at 14% still read). Analytic audit result: zero
+  non-expressway labels inside cuts, 13 benign under-deck footprint overlaps.
+- **Junction smoothing** (Mike's gore screenshot): the bake emits end kinds per
+  run (0 = ramps to grade, 1 = pinned junction / held), profiles get 3-tap
+  smoothing x2 AFTER the slope-limit and BEFORE node_y registration (ramps pin
+  to the smoothed mainline). Runtime: junction ends nose 6 m INTO the joining
+  deck (interpenetrate, never butt), grade ends keep parapet-free 14 m leads,
+  and parapets/median barriers BREAK at every ramp mouth on the correct side
+  (juncGrid of flagged chain ends carrying the ramp's approach direction; a
+  radial-only test would gap both parapets). No barrier crosses a ramp exit.
+- **Vine cut reworked**: the corridor bakes from the TWO longest carriageway
+  chains only (a ramp had been pairing in, spiking halfW to 34), 12 m stations,
+  width clamped 14-24 and smoothed, floor rim-sampled (NED dips into the cut
+  itself — sunken grades sample max of +-30/44 m lateral) and clamped above
+  WATER+1.4 (the river-clamped covered west end had dragged the open cut to
+  -13). Walls wear proud coping caps, floor 0x262421 with pale gutter strips,
+  carriageways 0x33312d with near-white edge lines, portal header beams at the
+  covered ends, median barrier where halfW < 20 with mouth gaps. Sunken RAMPS
+  outside the corridor get their own narrow walled cuts + ground holes + collar
+  aprons; COVERED runs (cov flag, split in the bake) suppress the packed road
+  but leave the ground alone — without the flag the I-76 tunnel under 30th St
+  Station dug a 600 m ground hole (caught by the audit).
+- **I-95 under Foglietta**: the caps existed but were paper-thin one-sided
+  flats. The waterfront mesh is DoubleSide now; each deck cap gets portal faces
+  (trenchFloor up to the deck edge) + header beams at both z faces, and the
+  park cap gets portal faces at Chestnut and Walnut ends — raycast-verified:
+  horizontal rays in the trench hit portal walls exactly at cap boundaries,
+  I-95 runs beneath at -6.
+- **The Moon is real**: lunar() (Schlyter's theory + topocentric parallax; the
+  epoch is 2000 Jan 0.0 = Dec 31 1999, NOT J2000.0 — being 1.5 days off shifts
+  the moon 20 degrees, found when the 2026-08-12 eclipse anchor failed).
+  Validated: eclipse instant sun-moon separation 0.47 deg k=0.0%, full moon
+  2026-08-28 k=100.0%, tonight waxing gibbous 95%. Sky shader draws a phased
+  disc on the per-fragment normalized dome dir (nd, the sun-streak lesson):
+  terminator ellipse from k, bright-limb tangent computed in WORLD SPACE as the
+  sun dir minus its moon-dir component (no spherical trig, tilt automatically
+  right), 11% earthshine, halo by phase, hidden by day/clouds (uMoonI).
+  applyLighting: night light follows the real moon (intensity 0.05+0.13k when
+  up, dim high fill when down), water glitter aims at glintDir (sun by day,
+  moon when up, straight down = off on moonless nights). T panel readout gained
+  a moon segment ("Waxing Gibbous 95%, Up SE"). Verified live at 9:16 PM: disc
+  SE over Camden with the moonglade on the Delaware beneath it.
+- Page 18.43 MB (smaller: 830 fewer labels + tighter SDF atlas). Zero console
+  errors. Rerun order unchanged: bake_overpasses -> bake_street_labels ->
+  bake_street_sdf -> build.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

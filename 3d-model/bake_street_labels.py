@@ -23,6 +23,22 @@ SKIP = {"footway", "path", "steps", "cycleway", "service",
 def in_core(x, z, m=MARGIN):
     return CORE["x0"] - m < x < CORE["x1"] + m and CORE["z0"] - m < z < CORE["z1"] + m
 
+# Camden/NJ placements read as misplaced Philadelphia streets from across the
+# river (both cities have a Market Street), so labels stop at the Delaware bank
+DEL_BANK = [[13500, -21700], [10500, -18500], [7300, -14500], [4300, -10500], [2500, -7200],
+            [1500, -4480], [900, -2600], [450, -1500], [404, -520], [345, 850], [700, 2200],
+            [1300, 3600], [1500, 4400], [1000, 4900], [900, 5600], [1200, 6400], [3400, 7600], [5200, 9700]]
+# (south of the stadiums this hugs the Philadelphia shore tighter than the app's
+# terrain polyline: Gloucester City NJ sits west of the terrain line and its
+# Market Street was leaking into the label set)
+def east_of_delaware(x, z):
+    for i in range(len(DEL_BANK) - 1):
+        a, b = DEL_BANK[i], DEL_BANK[i + 1]
+        if a[1] <= z <= b[1]:
+            t = (z - a[1]) / max(1e-6, b[1] - a[1])
+            return x > a[0] + (b[0] - a[0]) * t
+    return x > (DEL_BANK[0][0] if z < DEL_BANK[0][1] else DEL_BANK[-1][0])
+
 def place(pts, interval, min_len):
     """Yield (x, z, bearing_deg) along a polyline at ~interval spacing."""
     segs, total = [], 0.0
@@ -71,7 +87,13 @@ for r in core.get("roads", []):
     nm, t = r.get("name"), r.get("t", "")
     if not nm or t in ("footway", "steps", "cycleway", "path"):
         continue
+    # ramps carry DESTINATION names in OSM (the I-95 links down the trench are
+    # all named Market Street) — never letter a link with its target's name
+    if "link" in t:
+        continue
     for x, z, b in place(r["pts"], 220, 40):
+        if east_of_delaware(x, z):
+            continue
         add(nm, x, z, b, 2)
 
 # --- wide + south: drivable named streets, outside the core box ---
@@ -91,7 +113,7 @@ for fn in ("scene_wide.json", "scene_south.json"):
         else:
             continue
         for x, z, b in place(r["pts"], interval, min_len):
-            if in_core(x, z):
+            if in_core(x, z) or east_of_delaware(x, z):
                 continue
             add(nm, x, z, b, cls)
 
