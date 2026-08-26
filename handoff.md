@@ -1314,6 +1314,22 @@ approach, one framed on camera SW of the site. The pipeline is fine; only
 transport died. Until FLIGHT_PROXY is filled, the deployed page shows planes
 only if a public passthrough resurrects.
 
+Round 30e (Aug 26 — Mike: drop BANK OF UTAH TRUSTEE from the card, add a PHL
+pin so planes read from distance): (1) ownOp is gone from the flight card —
+adsb.fi's field names the registered owner, which for leased metal is a
+trustee bank, not an airline; callsign + type carry the identity. (2) Every
+aircraft now flies a billboarded PHL pin: the SEPTA bus-badge recipe (same
+256x320 canvas frame + pointer tip, camera-quaternion billboard, distance
+scale) but navy-bodied in a warm-white casing — the Round 29c two-tone trick,
+because a white badge vanishes against pale sky. Wordmark is hand-set type
+('phl', sky-blue sail clipped over the p), NOT the airport's trademark art.
+Scale clamp(dist/135, 2.2, 190) holds ~34 px at any range; material is
+fog: false + toneMapped: false or the 11 km haze eats it (measured: with fog
+on, a pin over PHL from the towers was a ghost). Pins raycast-pick like the
+plane body (flightPick maps both). Note per the passthrough die-off: Mike's
+page had planes again this morning because allorigins RESURRECTED, exactly
+as the rotation bet it would; FLIGHT_PROXY remains the reliable path.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

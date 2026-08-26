@@ -6378,13 +6378,13 @@
     const targets = [];
     if (sAct) targets.push(septaSolid, septaPin, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
-    if (fAct) targets.push(flightMesh);
+    if (fAct) targets.push(flightMesh, flightPin);
     if (shAct) targets.push(shipMesh);
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null) {
       const h = hits[0];
       let v = null, hitSt = null;
-      if (h.object === flightMesh) {
+      if (h.object === flightMesh || h.object === flightPin) {
         const p = flightPick[h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
       }
@@ -7666,7 +7666,7 @@
   ].filter(Boolean);
   const FLIGHTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, host: 0 };
   const flightMap = new Map();
-  let flightMesh = null, flightStrobe = null, flightReady = false, pickedPlane = null;
+  let flightMesh = null, flightStrobe = null, flightPin = null, flightReady = false, pickedPlane = null;
   const flightPick = [];
   const FLIGHT_CAP = 80;
   const btnFlights = document.getElementById('btnFlights');
@@ -7693,6 +7693,55 @@
     box(0.14, 0.15, 0.012, -0.45, 0.1, 0, 0.68, 0.70, 0.74, 0, 0); // fin
     return septaMerge(parts);
   }
+  function flightPinTexture() {
+    // plane pins wear the PHL wordmark: the SEPTA marker's badge shape, but
+    // navy-bodied in a warm-white casing (the Round 29c label trick — pale
+    // halo + dark core reads against noon sky and midnight alike) around a
+    // hand-set lowercase 'phl' — sky-blue sail on the p, the rest white
+    // (drawn type, not the airport's trademark art)
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 320;
+    const g = cv.getContext('2d');
+    const bw = 240, bh = 200, bx = 8, by = 8, rad = 34;
+    g.fillStyle = '#12294a';
+    g.strokeStyle = '#fdfbf6';
+    g.lineWidth = 10;
+    g.beginPath();                                   // pointer tip first, badge overlaps it
+    g.moveTo(128 - 30, by + bh - 6);
+    g.lineTo(128, 312);
+    g.lineTo(128 + 30, by + bh - 6);
+    g.closePath();
+    g.fill(); g.stroke();
+    g.beginPath();
+    g.moveTo(bx + rad, by);
+    g.arcTo(bx + bw, by, bx + bw, by + bh, rad);
+    g.arcTo(bx + bw, by + bh, bx, by + bh, rad);
+    g.arcTo(bx, by + bh, bx, by, rad);
+    g.arcTo(bx, by, bx + bw, by, rad);
+    g.closePath();
+    g.fill(); g.stroke();
+    g.font = '700 118px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
+    g.textBaseline = 'alphabetic';
+    const w = g.measureText('phl').width;
+    const tx = 128 - w / 2, ty = by + bh / 2 + 40;   // descender rides low like the wordmark
+    g.fillStyle = '#fdfbf6';
+    g.fillText('phl', tx, ty);
+    const pw = g.measureText('p').width;             // sky-blue sail over the p's upper left
+    g.save();
+    g.beginPath();
+    g.moveTo(tx - 8, ty - 120);
+    g.lineTo(tx + pw * 0.95, ty - 120);
+    g.lineTo(tx - 8, ty - 14);
+    g.closePath();
+    g.clip();
+    g.fillStyle = '#4fb0e8';
+    g.fillText('phl', tx, ty);
+    g.restore();
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = 4;
+    return tex;
+  }
   function flightsInit() {
     flightMesh = new THREE.InstancedMesh(flightGeom(), septaMats.body, FLIGHT_CAP);
     flightMesh.frustumCulled = false;
@@ -7704,6 +7753,15 @@
     flightStrobe.count = 0;
     flightStrobe.renderOrder = 12;
     groupCity.add(flightStrobe);
+    flightPin = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
+      // fog + tonemap exempt (the Round 29c label rule): a pin 11 km out over
+      // PHL must punch through the haze, or distance visibility is the joke
+      new THREE.MeshBasicMaterial({ map: flightPinTexture(), transparent: true, depthWrite: false, fog: false, toneMapped: false }), FLIGHT_CAP);
+    flightPin.frustumCulled = false;
+    flightPin.count = 0;
+    flightPin.renderOrder = 12;
+    groupCity.add(flightPin);
     flightReady = true;
   }
   function flightPoll() {
@@ -7745,7 +7803,8 @@
           p.gs = a.gs || 0;
           p.call = (a.flight || '').trim() || (a.r || '').trim() || hex.toUpperCase();
           p.type = (a.desc || a.t || 'Aircraft');
-          p.op = a.ownOp || '';
+          // ownOp is deliberately NOT shown: for leased metal it names the
+          // trustee bank (BANK OF UTAH TRUSTEE), not an airline — noise
           p.len = FLIGHT_LEN[a.category] || (a.category === 'A0' ? 20 : 32);
           p.landed = false;
           if (p.dx === undefined || Math.hypot(x - p.dx, z - p.dz) > 3200) { p.dx = x; p.dz = z; p.dy = p.fy; }
@@ -7763,17 +7822,17 @@
   }
   function flightTest() {
     const now = performance.now();
-    const mk = (hex, x, z, altFt, trk, gs, vr, call, type, op, len, ground) => {
+    const mk = (hex, x, z, altFt, trk, gs, vr, call, type, len, ground) => {
       const p = { hex, ground: !!ground, fx: x, fz: z, ft: now,
         fy: ground ? siteY(x, z, 'ground') + 1.2 : altFt * 0.3048 - 8.34,
         trk, gs, vx: Math.sin(trk * DEG) * gs * 0.5144, vz: -Math.cos(trk * DEG) * gs * 0.5144,
-        vy: ground ? 0 : vr * 0.00508, call, type, op, len, dx: x, dz: z };
+        vy: ground ? 0 : vr * 0.00508, call, type, len, dx: x, dz: z };
       p.dy = p.fy;
       flightMap.set(hex, p);
     };
-    mk('test1', 1200, 900, 1800, 262, 145, -700, 'AAL1776', 'Airbus A321', 'American Airlines', 44);
-    mk('test2', -300, -600, 4200, 45, 250, 1400, 'UAL88', 'Boeing 737-800', 'United Airlines', 39);
-    mk('test3', -8200, 7700, 0, 90, 12, 0, 'DAL401', 'Boeing 757-200', 'Delta Air Lines', 47, true);
+    mk('test1', 1200, 900, 1800, 262, 145, -700, 'AAL1776', 'Airbus A321', 44);
+    mk('test2', -300, -600, 4200, 45, 250, 1400, 'UAL88', 'Boeing 737-800', 39);
+    mk('test3', -8200, 7700, 0, 90, 12, 0, 'DAL401', 'Boeing 757-200', 47, true);
     flightStatus();
     return flightMap.size;
   }
@@ -7792,7 +7851,6 @@
     vehinfoBody.innerHTML =
       '<span class="vroute" style="background:#3a6ea5">' + septaEsc(p.call) + '</span>' +
       '<span class="vdest">' + septaEsc(p.type) + '</span>' +
-      (p.op ? '<div class="vmeta">' + septaEsc(p.op) + '</div>' : '') +
       '<div class="vmeta">' + septaEsc(alt + ', ' + Math.round(p.gs) + ' kt') + '</div>' +
       (p.est ? '<div class="vmeta">Estimated Track, Awaiting Signal</div>' : '');
   }
@@ -7814,11 +7872,12 @@
       flightPoll();
     }
     if (!FLIGHTS.on) {
-      if (flightMesh.count) { flightMesh.count = 0; flightStrobe.count = 0; flightMesh.instanceMatrix.needsUpdate = true; flightStrobe.instanceMatrix.needsUpdate = true; }
+      if (flightMesh.count) { flightMesh.count = 0; flightStrobe.count = 0; flightPin.count = 0; flightMesh.instanceMatrix.needsUpdate = true; flightStrobe.instanceMatrix.needsUpdate = true; flightPin.instanceMatrix.needsUpdate = true; }
       return;
     }
     let i = 0;
     const night = nightUniform.value;
+    _sqB.copy(camera.quaternion);                    // pins billboard the camera
     const gone = [];
     for (const p of flightMap.values()) {
       if (i >= FLIGHT_CAP) break;
@@ -7858,6 +7917,13 @@
       _ss.set(ssc || 0.0001, ssc || 0.0001, ssc || 0.0001);
       _sm.compose(_sp, _fq, _ss);
       flightStrobe.setMatrixAt(i, _sm);
+      // PHL pin, billboarded and distance-scaled to hold ~34 px on screen so
+      // traffic reads from across the model (the SEPTA bus-badge recipe)
+      _sp.set(p.dx, p.dy + p.len * 0.14 + 1.5, p.dz);
+      const ps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
+      _ss.set(ps, ps, ps);
+      _sm.compose(_sp, _sqB, _ss);
+      flightPin.setMatrixAt(i, _sm);
       i++;
     }
     if (gone.length) {
@@ -7866,8 +7932,10 @@
     }
     flightMesh.count = i;
     flightStrobe.count = i;
+    flightPin.count = i;
     flightMesh.instanceMatrix.needsUpdate = true;
     flightStrobe.instanceMatrix.needsUpdate = true;
+    flightPin.instanceMatrix.needsUpdate = true;
     if (pickedPlane) {
       flightCard(pickedPlane);
       _ssv.set(pickedPlane.dx, pickedPlane.dy + pickedPlane.len * 0.12 + 6, pickedPlane.dz).project(camera);
