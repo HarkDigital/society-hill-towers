@@ -50,11 +50,6 @@
 </div>
 
 <div id="bar">
-  <div class="seg panel" role="group" aria-label="Navigation mode">
-    <button id="btnOrbit" class="active" title="Orbit the Model (1)">Orbit</button>
-    <button id="btnWalk" title="Walk the Streets (2)">Walk</button>
-    <button id="btnFly" title="Fly Over the City (3)">Fly</button>
-  </div>
   <button id="btnLayers" class="iconbtn panel" title="Layers (F)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg></button>
   <button id="btnSearch" class="iconbtn panel" title="Find an Address (/)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
   <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)">&#9680;</button>
@@ -89,7 +84,7 @@
   </div>
 </div>
 
-<div id="hint">Drag to orbit. Scroll to zoom. Double-click to focus.</div>
+<div id="hint">Drag, scroll, or press W A S D to take flight.</div>
 
 <div id="osmcredit">Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
 
@@ -100,11 +95,10 @@
   {{ABOUT_BODY}}
   <h3>Controls</h3>
   <table class="keys">
-    <tr><td><kbd>1</kbd> / <kbd>2</kbd> / <kbd>3</kbd></td><td>Orbit / Walk / Fly Mode</td></tr>
-    <tr><td><kbd>W A S D</kbd></td><td>Move (Walk &amp; Fly)</td></tr>
-    <tr><td><kbd>E</kbd> / <kbd>Q</kbd></td><td>Climb / Descend (Fly)</td></tr>
-    <tr><td><kbd>Shift</kbd></td><td>Run, or Boost in Fly</td></tr>
-    <tr><td>Scroll</td><td>Zoom in Orbit, Cruise Speed in Fly</td></tr>
+    <tr><td>Drag / <kbd>W A S D</kbd></td><td>Look / Fly (Any First Touch Takes Off)</td></tr>
+    <tr><td><kbd>E</kbd> / <kbd>Q</kbd></td><td>Climb / Descend</td></tr>
+    <tr><td><kbd>Shift</kbd></td><td>Boost</td></tr>
+    <tr><td>Scroll</td><td>Cruise Speed</td></tr>
     <tr><td><kbd>F</kbd></td><td>Layers Panel</td></tr>
     <tr><td><kbd>V</kbd></td><td>Live SEPTA Vehicles</td></tr>
     <tr><td><kbd>B</kbd></td><td>Indego Bike Share</td></tr>
@@ -113,7 +107,6 @@
     <tr><td><kbd>P</kbd></td><td>Historic Districts &amp; Neighborhood Names</td></tr>
     <tr><td><kbd>R</kbd></td><td>Typical Vehicle Traffic</td></tr>
     <tr><td><kbd>T</kbd></td><td>Date &amp; Time of Day (Real Philadelphia Sun)</td></tr>
-    <tr><td>Double-click</td><td>Focus Orbit on a Point</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Release the Mouse</td></tr>
   </table>
   <p>Outside claude.ai&rsquo;s sandbox the sky also follows the real Philadelphia weather:
@@ -138,7 +131,7 @@
     <h2>Philadelphia</h2>
     <div class="sub">Every block of the city at its true measured height, a quarter-million
       buildings from the Delaware to the Schuylkill, with SEPTA's buses and trolleys
-      moving through the streets live. Walk the sidewalks, orbit the skyline, fly the rivers.</div>
+      moving through the streets live. Take the controls and fly it &mdash; the skyline, the rivers, the rowhouse blocks.</div>
     <button class="enter" id="btnEnter" disabled>Preparing&hellip;</button>
     <div class="loading" id="loadmsg">Assembling Philadelphia</div>
   </div>

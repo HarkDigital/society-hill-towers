@@ -1433,6 +1433,26 @@ Schuylkill Expressway at night: white pairs approaching, red pairs receding,
 queues reading as strings of lights; 300-frame soak at 2,200 cars ≈ 0.8 ms/
 frame, no errors, population stable.
 
+Round 35 (Aug 26 — Mike: kill orbit and walk as modes; load orbiting City
+Hall; first interaction flies; veil backs onto a wide Center City): the mode
+bar is gone (the three seg buttons removed from template #bar; 1/2/3 key
+dispatch removed; btnOrbit/btnWalk/btnFly consts and listeners deleted).
+Orbit survives ONLY as the attract loop: introSpin now starts true, orbit
+opens at r 3400 → goalR 2600 (the veil's zoomed-out Center City), Enter sets
+goalR 700 for the cinematic glide down to the existing City Hall target, and
+the circle keeps turning until the first real interaction. autoFly() — wired
+into pointerdown, wheel, touchstart, and the movement keys (w a s d e q,
+space, arrows) — hands control to fly mode from wherever the circle happens
+to be; on touch it also raises the flyTips overlay once. setMode grew a
+noLock arg: searchGoTo/searchGoToBus no longer setMode(ORBIT) (which would
+have yanked users back into a dead mode) — searchFlyTo() parks the fly camera
+at a vantage above the hit, cursor unlocked so the desktop result list stays
+usable. Hints and the About key table rewrote to fly-only; the veil sub line
+now says "Take the controls and fly it." Walk remains reachable only through
+__dbg.goWalk (?dev). Verified: veil over the wide skyline, Enter glide,
+synthetic pointerdown → fly with crosshair + "Click the scene" hint (pointer
+lock correctly defers to a real gesture).
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

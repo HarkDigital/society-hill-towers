@@ -5746,13 +5746,16 @@
   // ---------------------------------------------------------------- controls
   const MODE = { ORBIT: 0, WALK: 1, FLY: 2 };
   let mode = MODE.ORBIT;
-  let introSpin = false; // begins when the veil lifts, ends at first interaction
+  let introSpin = true; // the attract loop: spins behind the veil and keeps
+                        // spinning after Enter, until the first interaction
+                        // hands the controls over to fly mode
 
   const orbit = {
-    // intro: glide in from high in the east, settling on City Hall with the
-    // tower and Penn front-lit against the Center City skyline
+    // the veil shows Center City whole from high in the east; Enter glides in
+    // to a slow circle of City Hall, and the first touch takes flight from
+    // wherever the circle happens to be. Orbit is no longer a selectable mode.
     target: new V3(-1603, 78, -802), goalTarget: new V3(-1603, 78, -802),
-    r: 3200, goalR: 700,
+    r: 3400, goalR: 2600,
     theta: -0.38, goalTheta: 0.52, // azimuth on xz: 0 = +x (east)
     phi: 1.32, goalPhi: 1.22,      // polar from +y
   };
@@ -5886,6 +5889,7 @@
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') return; // touch handled separately
     interacted = true; introSpin = false;
+    autoFly();
     if (mode === MODE.WALK || mode === MODE.FLY) {
       // always start a drag so looking works even where pointer lock is
       // unavailable (sandboxed iframes) or on cooldown; lock upgrades it
@@ -5924,6 +5928,7 @@
   canvas.addEventListener('wheel', (e) => {
     e.preventDefault();
     interacted = true; introSpin = false;
+    autoFly();
     if (mode === MODE.FLY) { fly.speed = clamp(fly.speed * Math.exp(-e.deltaY * 0.0012), 10, 500); return; }
     if (mode !== MODE.ORBIT) return;
     orbit.goalR = clamp(orbit.goalR * Math.exp(e.deltaY * 0.0011), 14, 2800);
@@ -5958,6 +5963,7 @@
   // touch
   canvas.addEventListener('touchstart', (e) => {
     interacted = true; introSpin = false;
+    autoFly();
     if (mode === MODE.WALK || mode === MODE.FLY) {
       for (const t of e.changedTouches) {
         if (t.clientX < window.innerWidth / 2 && !joy.active) {
@@ -6057,10 +6063,7 @@
       if (k === 'escape' || k === 'i') closeAbout();
       return;
     }
-    if (k === '1') setMode(MODE.ORBIT);
-    else if (k === '2') setMode(MODE.WALK);
-    else if (k === '3') setMode(MODE.FLY);
-    else if (k === 'l') toggleLabels();
+    if (k === 'l') toggleLabels();
     else if (k === 't') toggleTimePanel();
     else if (k === 'v') toggleTransit();
     else if (k === 'n') toggleStreets();
@@ -6072,23 +6075,25 @@
     else if (k === 'r') toggleTraffic();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
     else if (k === 'escape') { /* browser releases pointer lock */ }
-    else walk.keys[k] = true;
+    else {
+      // a movement key is as clear an intent to fly as a drag is
+      if (['w', 'a', 's', 'd', 'e', 'q', ' '].includes(k) || k.indexOf('arrow') === 0) { interacted = true; introSpin = false; autoFly(); }
+      walk.keys[k] = true;
+    }
     if (['w', 'a', 's', 'd', ' ', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k)) e.preventDefault();
   });
   window.addEventListener('keyup', (e) => { walk.keys[e.key.toLowerCase()] = false; });
   window.addEventListener('blur', () => { walk.keys = {}; dragging = false; });
 
   // ---------------------------------------------------------------- modes & viewpoints
-  const btnOrbit = document.getElementById('btnOrbit');
-  const btnWalk = document.getElementById('btnWalk');
-  const btnFly = document.getElementById('btnFly');
   const flyCtl = document.getElementById('flyctl');
   const flyTouch = { up: false, down: false };
   function setHint() {
     if (mode === MODE.ORBIT) {
+      // the attract loop's only job is to invite the first touch
       hintEl.textContent = isTouch
-        ? 'Drag to orbit. Pinch to zoom.'
-        : 'Drag to orbit. Scroll to zoom. Double-click to focus.';
+        ? 'Touch the city to take flight.'
+        : 'Drag, scroll, or press W A S D to take flight.';
     } else if (mode === MODE.FLY) {
       if (isTouch) hintEl.textContent = 'Left thumb flies, push farther for faster. Right thumb looks. ▲▼ climb.';
       else if (walk.locked || walk.dragLook) hintEl.textContent = 'WASD to fly. E and Q for up and down. Shift to boost. Scroll sets speed.';
@@ -6100,7 +6105,7 @@
       else hintEl.textContent = 'Click the scene to take the controls';
     }
   }
-  function setMode(m) {
+  function setMode(m, noLock) {
     if (m === mode) return;
     const prev = mode;
     mode = m;
@@ -6110,9 +6115,6 @@
     dragging = false; touchArmed = false; pinch.d = 0;
     joy.active = false; joy.id = -1; joy.x = joy.y = 0; lookTouch.id = -1;
     stick.style.display = 'none'; stickNub.style.transform = '';
-    btnOrbit.classList.toggle('active', m === MODE.ORBIT);
-    btnWalk.classList.toggle('active', m === MODE.WALK);
-    btnFly.classList.toggle('active', m === MODE.FLY);
     crosshair.style.display = (m === MODE.WALK || m === MODE.FLY) && !isTouch ? 'block' : 'none';
     flyCtl.classList.toggle('show', m === MODE.FLY && isTouch);
     flyTouch.up = flyTouch.down = false;
@@ -6130,7 +6132,7 @@
       } else if (Math.hypot(px - walk.pos.x, pz - walk.pos.z) > 220) {
         walk.pos.set(px, 1.7, pz);
       }
-      if (!isTouch) requestLock();
+      if (!isTouch && !noLock) requestLock();
     } else if (m === MODE.FLY) {
       // take off from the current camera pose
       camera.getWorldDirection(tmpV);
@@ -6141,7 +6143,7 @@
       fly.pos.z = clamp(fly.pos.z, bounds.minZ - 400, bounds.maxZ + 400);
       fly.pos.y = clamp(Math.max(fly.pos.y, siteY(fly.pos.x, fly.pos.z, 'ground') + (prev === MODE.WALK ? 35 : 6)), TERRAIN.water + 2, 1600);
       fly.vel.set(0, 0, 0);
-      if (!isTouch) requestLock();
+      if (!isTouch && !noLock) requestLock();
     } else {
       if (walk.locked && document.exitPointerLock) document.exitPointerLock();
       const p = prev === MODE.FLY ? fly.pos : walk.pos;
@@ -6151,15 +6153,18 @@
     setHint();
   }
   let walkSpawned = false;
-  btnOrbit.addEventListener('click', () => setMode(MODE.ORBIT));
-  btnWalk.addEventListener('click', () => setMode(MODE.WALK));
-  // on touch the first Fly tap shows the control tips; Okay proceeds into fly mode
+  // orbit and walk retired as user-facing modes (Round 35): no mode bar, no
+  // 1/2/3 keys. Orbit remains the attract loop; walk stays reachable only via
+  // the ?dev goWalk hook.
   const flyTips = document.getElementById('flytips');
   let flyTipsSeen = false;
-  btnFly.addEventListener('click', () => {
-    if (isTouch && !flyTipsSeen && flyTips) { flyTips.classList.add('show'); return; }
+  function autoFly() {
+    // the first real interaction — drag, wheel, movement key, touch — takes
+    // flight from wherever the City Hall circle happens to be
+    if (mode !== MODE.ORBIT) return;
+    if (isTouch && !flyTipsSeen && flyTips) { flyTips.classList.add('show'); flyTipsSeen = true; }
     setMode(MODE.FLY);
-  });
+  }
   if (flyTips) document.getElementById('flyTipsOk').addEventListener('click', () => {
     flyTipsSeen = true;
     flyTips.classList.remove('show');
@@ -7010,13 +7015,23 @@
   function searchShortName(s) {
     return String(s || '').split(',').slice(0, 3).join(',');
   }
+  function searchFlyTo(x, y, z, dist) {
+    // park the fly camera at a vantage looking down on the target, approaching
+    // from whichever side the camera already is. No pointer lock: the cursor
+    // stays free for the result list; clicking the scene takes the controls.
+    setMode(MODE.FLY, true);
+    const dx = camera.position.x - x, dz = camera.position.z - z;
+    const L = Math.hypot(dx, dz) || 1;
+    fly.pos.set(x + dx / L * dist, y + dist * 0.55, z + dz / L * dist);
+    fly.vel.set(0, 0, 0);
+    walk.yaw = Math.atan2(x - fly.pos.x, -(z - fly.pos.z));
+    walk.pitch = -Math.atan2(fly.pos.y - y, dist);
+    setHint();
+  }
   function searchGoTo(lat, lon, name) {
     const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
-    setMode(MODE.ORBIT);
     const gy = siteY(x, z, 'ground');
-    orbit.goalTarget.set(x, gy + 12, z);
-    orbit.goalR = 300;
-    orbit.goalPhi = 1.02;
+    searchFlyTo(x, gy + 12, z, 300);
     placeSearchMark(x, gy, z, name);
     if (isTouch) toggleSearch(false);       // free the screen; desktop keeps the result list up
   }
@@ -7054,11 +7069,8 @@
       ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
   }
   function searchGoToBus(v) {
-    setMode(MODE.ORBIT);
     const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
-    orbit.goalTarget.set(x, (v.gy || siteY(x, z, 'road')) + 6, z);
-    orbit.goalR = 220;
-    orbit.goalPhi = 1.02;
+    searchFlyTo(x, (v.gy || siteY(x, z, 'road')) + 6, z, 220);
     pickedVeh = v;
     septaCard(v);
     vehinfoEl.hidden = false;
@@ -8947,6 +8959,7 @@
 
   btnEnter.addEventListener('click', () => {
     veil.classList.add('hidden');
+    if (mode === MODE.ORBIT) orbit.goalR = 700;   // glide in from the veil's wide shot
     if (reducedMotion) {
       orbit.r = orbit.goalR; orbit.theta = orbit.goalTheta; orbit.phi = orbit.goalPhi;
     } else if (!interacted) {
