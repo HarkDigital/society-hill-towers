@@ -1648,6 +1648,28 @@ La Mott, zero real console errors (synthetic PointerEvents do throw
 setPointerCapture InvalidStateErrors — inactive pointerId, cosmetic,
 test-harness-only). Shipped to both homes.
 
+VPS incident (Aug 27, 06:31–15:35 UTC — Mike: philly3d.com refuses to
+connect): all three sites on the lionspool box were down nine hours, and the
+deploy was innocent. unattended-upgrades restarted nginx at 06:31; the
+startup config test hit "host not found in upstream opendata.adsb.fi"
+(sites-enabled/philly3d line 30 — the /adsb proxy_pass, whose hostname nginx
+resolves at CONFIG LOAD; the same upgrade run was bouncing systemd-resolved,
+so the one DNS lookup that gates the whole config failed) and nginx refused
+to start — harkpicks.com and thelionspool.com dark too. Recovery:
+systemctl start nginx (nginx -t passed once DNS was back). Root-cause fix in
+the vhost (backup at /root/philly3d.vhost.bak-aug27; the enabled file is a
+symlink — edit sites-AVAILABLE): the /adsb location now carries
+`resolver 127.0.0.53 valid=300s ipv6=off` + `set $adsb_host
+opendata.adsb.fi` + proxy_pass via the variable, which defers DNS to request
+time — nginx can now ALWAYS start, and a resolver failure at worst 502s
+/adsb (proxy_cache_use_stale error still serves the 8 s stale copy).
+ipv6=off is load-bearing: the box has no v6 egress (curl -6 dies), and a
+runtime AAAA answer would strand the proxy. Verified: nginx -t + reload
+clean, all three sites answer, /adsb 200 with 28 live aircraft, cached
+repeat 200. If a second belt is ever wanted: a systemd drop-in with
+Restart=on-failure / RestartSec=30 would self-heal transient start failures
+of ANY cause — not added (minimal touch on a shared box).
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
