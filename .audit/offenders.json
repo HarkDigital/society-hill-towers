@@ -1,0 +1,202 @@
+[
+{
+"x": -4282.4,
+"z": 5658.0,
+"detail": "pier-through-deck: 30 station(s) of ch1(motorway w16) over ch0(motorway w16) deck below its soffit, min clearance 1.6m - skip piers here"
+},
+{
+"x": -4869.2,
+"z": 6207.1,
+"detail": "pier-through-deck: 19 station(s) of ch1(motorway w16) over ch0(motorway w16) deck below its soffit, min clearance 1.6m - skip piers here"
+},
+{
+"x": -3184.4,
+"z": -821.3,
+"detail": "pier-through-deck: 12 station(s) of ch54(motorway w13)/ch193(primary w13) over ch13(motorway w16)/ch193(primary w13) deck below its soffit, min clearance 3.5m - skip piers here"
+},
+{
+"x": -6781.5,
+"z": 5895.5,
+"detail": "pier-through-deck: 3 station(s) of ch0(motorway w16)/ch1(motorway w16) over ch7(trunk w16)/ch8(trunk w16) deck below its soffit, min clearance 5.7m - skip piers here"
+},
+{
+"x": -3902.5,
+"z": 5390.5,
+"detail": "pier-through-deck: 3 station(s) of ch1(motorway w16) over ch0(motorway w16) deck below its soffit, min clearance 3.3m - skip piers here"
+},
+{
+"x": -11.9,
+"z": -1269.9,
+"detail": "pier-through-deck: 3 station(s) of ch10(motorway w16) over ch2(motorway w16) deck below its soffit, min clearance 2.0m - skip piers here"
+},
+{
+"x": 5660.1,
+"z": -6319.0,
+"detail": "pier-through-deck: 3 station(s) of ch40(motorway w8) over ch25(motorway w16) deck below its soffit, min clearance 1.0m - skip piers here"
+},
+{
+"x": 5312.9,
+"z": -5750.1,
+"detail": "pier-through-deck: 2 station(s) of ch4(motorway w16)/ch49(motorway w8) over ch16(motorway w16) deck below its soffit, min clearance 2.1m - skip piers here"
+},
+{
+"x": -4113.6,
+"z": 259.1,
+"detail": "pier-through-deck: 2 station(s) of ch9(motorway w16)/ch15(motorway w16) over ch32(motorway w8) deck below its soffit, min clearance 1.9m - skip piers here"
+},
+{
+"x": -137.3,
+"z": -1321.9,
+"detail": "pier-through-deck: 2 station(s) of ch23(motorway w16) over ch17(motorway w8) deck below its soffit, min clearance 3.9m - skip piers here"
+},
+{
+"x": -335.5,
+"z": -1340.9,
+"detail": "junction mouth: ch64(motorway w16) end1 merges into deck(s) of ch10(motorway w16)/ch23(motorway w16)/ch64(motorway w16) at y11.4, min dy 0.00m - open parapet gap"
+},
+{
+"x": -2966.2,
+"z": -1607.9,
+"detail": "junction mouth: ch129(motorway w8) end0; ch74(motorway w16) end1; ch144(motorway w8) end0 merges into deck(s) of ch13(motorway w16)/ch51(motorway w16)/ch74(motorway w16)/ch129(motorway w8) at y0.6, min dy 0.00m - open parapet gap"
+},
+{
+"x": 5899.8,
+"z": -4922.3,
+"detail": "junction mouth: ch88(motorway w8) end0; ch101(motorway w8) end1 merges into deck(s) of ch12(motorway w16)/ch14(motorway w16)/ch88(motorway w8)/ch101(motorway w8) at y3.6, min dy 0.00m - open parapet gap"
+},
+{
+"x": -3066.0,
+"z": -1116.0,
+"detail": "junction mouth: ch213(primary w13) end1; ch207(primary w13) end0 merges into deck(s) of ch13(motorway w16)/ch207(primary w13)/ch213(primary w13) at y8.9, min dy 0.00m - open parapet gap"
+},
+{
+"x": -2248.6,
+"z": 5160.3,
+"detail": "junction mouth: ch81(motorway w8) end1; ch79(motorway w8) end0 merges into deck(s) of ch0(motorway w16)/ch1(motorway w16)/ch79(motorway w8)/ch81(motorway w8) at y3.6, min dy 0.06m - open parapet gap"
+},
+{
+"x": -4533.3,
+"z": 805.1,
+"detail": "junction mouth: ch98(motorway w8) end1 merges into deck(s) of ch9(motorway w16)/ch15(motorway w16)/ch98(motorway w8) at y15.0, min dy 0.00m - open parapet gap"
+},
+{
+"x": -5641.3,
+"z": 6625.1,
+"detail": "junction mouth: ch45(motorway w8) end1 merges into deck(s) of ch0(motorway w16)/ch45(motorway w8) at y7.9, min dy 0.03m - open parapet gap"
+},
+{
+"x": -4166.7,
+"z": -6722.7,
+"detail": "junction mouth: ch121(motorway w8) end1; ch42(motorway w8) end0 merges into deck(s) of ch28(motorway w16)/ch37(motorway w16)/ch42(motorway w8)/ch121(motorway w8) at y18.0, min dy 0.00m - open parapet gap"
+},
+{
+"x": 14380.3,
+"z": -20732.0,
+"detail": "junction mouth: ch110(motorway w8) end0 merges into deck(s) of ch46(motorway w16)/ch47(motorway w16)/ch110(motorway w8) at y43.3, min dy 0.01m - open parapet gap"
+},
+{
+"x": 545.5,
+"z": -2092.7,
+"detail": "junction mouth: ch83(motorway w8) end0 merges into deck(s) of ch3(motorway w16)/ch83(motorway w8) at y11.1, min dy 0.00m - open parapet gap"
+},
+{
+"x": -521.2,
+"z": 4746.3,
+"detail": "junction mouth: ch27(motorway w8) end0 merges into deck(s) of ch0(motorway w16)/ch27(motorway w8) at y1.1, min dy 0.00m - open parapet gap"
+},
+{
+"x": -3052.2,
+"z": -1195.1,
+"detail": "junction mouth: ch184(primary w13) end0 merges into deck(s) of ch13(motorway w16)/ch184(primary w13) at y12.3, min dy 0.00m - open parapet gap"
+},
+{
+"x": 5838.8,
+"z": -6554.8,
+"detail": "braid overlap: decks of ch4(motorway w16)/ch25(motorway w16)/ch40(motorway w8) interpenetrate over ~39m at y8.1, min dy 0.00m - suppress inner parapets"
+},
+{
+"x": 5740.0,
+"z": -6421.8,
+"detail": "braid overlap: decks of ch4(motorway w16)/ch25(motorway w16)/ch40(motorway w8) interpenetrate over ~48m at y2.2, min dy 0.01m - suppress inner parapets"
+},
+{
+"x": -4668.9,
+"z": 1000.2,
+"detail": "braid overlap: decks of ch9(motorway w16)/ch15(motorway w16) interpenetrate over ~52m at y5.8, min dy 0.02m - suppress inner parapets"
+},
+{
+"x": -4623.7,
+"z": 922.2,
+"detail": "braid overlap: decks of ch9(motorway w16)/ch15(motorway w16)/ch98(motorway w8) interpenetrate over ~44m at y9.5, min dy 0.06m - suppress inner parapets"
+},
+{
+"x": -8006.5,
+"z": 5168.8,
+"detail": "braid overlap: decks of ch236(primary w13)/ch237(primary w13) interpenetrate over ~25m at y-4.7, min dy 0.02m - suppress inner parapets"
+},
+{
+"x": -6388.3,
+"z": 5666.5,
+"detail": "braid overlap: decks of ch7(trunk w16)/ch8(trunk w16) interpenetrate over ~44m at y0.9, min dy 0.23m - suppress inner parapets"
+},
+{
+"x": -5992.6,
+"z": 5434.9,
+"detail": "braid overlap: decks of ch7(trunk w16)/ch8(trunk w16) interpenetrate over ~41m at y2.1, min dy 0.22m - suppress inner parapets"
+},
+{
+"x": -4673.7,
+"z": 4673.8,
+"detail": "braid overlap: decks of ch7(trunk w16)/ch8(trunk w16) interpenetrate over ~40m at y0.7, min dy 0.06m - suppress inner parapets"
+},
+{
+"x": 5824.9,
+"z": -5016.1,
+"detail": "braid overlap: decks of ch12(motorway w16)/ch14(motorway w16)/ch88(motorway w8)/ch101(motorway w8) interpenetrate over ~16m at y-0.2, min dy 0.08m - suppress inner parapets"
+},
+{
+"x": 6362.9,
+"z": -6965.6,
+"detail": "braid overlap: decks of ch31(motorway w16)/ch50(motorway w16) interpenetrate over ~55m at y3.6, min dy 0.14m - suppress inner parapets"
+},
+{
+"x": -4944.4,
+"z": 2851.9,
+"detail": "near-parallel twins: carriageways ch181(primary w13)/ch182(primary w13) run coincident ~167m, min dy 0.05m - drop facing parapets or offset decks"
+},
+{
+"x": 292.5,
+"z": -1095.4,
+"detail": "near-parallel twins: carriageways ch10(motorway w16)/ch23(motorway w16)/ch56(motorway w8)/ch66(motorway w16) run coincident ~134m, min dy 0.51m - drop facing parapets or offset decks"
+},
+{
+"x": -10346.5,
+"z": 7736.5,
+"detail": "near-parallel twins: carriageways ch215(primary w13)/ch216(primary w13) run coincident ~129m, min dy 0.20m - drop facing parapets or offset decks"
+},
+{
+"x": -3155.3,
+"z": -1689.2,
+"detail": "near-parallel twins: carriageways ch51(motorway w16)/ch74(motorway w16)/ch93(motorway w16) run coincident ~120m, min dy 0.14m - drop facing parapets or offset decks"
+},
+{
+"x": -10791.8,
+"z": -12491.1,
+"detail": "near-parallel twins: carriageways ch103(motorway w16)/ch104(motorway w16) run coincident ~112m, min dy 0.24m - drop facing parapets or offset decks"
+},
+{
+"x": -4702.1,
+"z": 2794.0,
+"detail": "near-parallel twins: carriageways ch181(primary w13)/ch182(primary w13) run coincident ~96m, min dy 0.03m - drop facing parapets or offset decks"
+},
+{
+"x": -4200.7,
+"z": 373.7,
+"detail": "near-parallel twins: carriageways ch9(motorway w16)/ch15(motorway w16) run coincident ~85m, min dy 0.31m - drop facing parapets or offset decks"
+},
+{
+"x": -6109.1,
+"z": 5503.1,
+"detail": "near-parallel twins: carriageways ch7(trunk w16)/ch8(trunk w16) run coincident ~82m, min dy 0.24m - drop facing parapets or offset decks"
+}
+]

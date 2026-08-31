@@ -1670,6 +1670,47 @@ repeat 200. If a second belt is ever wanted: a systemd drop-in with
 Restart=on-failure / RestartSec=30 would self-heal transient start failures
 of ANY cause — not added (minimal touch on a shared box).
 
+Round 42 (Aug 31 — Mike: "the other day it was raining and the site was
+showing a sunny blue sky", then: rain when it rains, lightning when there is
+lightning, snow when it snows, everything that accurately depicts weather):
+the sunny-rain sighting was almost certainly the claude.ai artifact copy,
+where the CSP wall keeps the fair-weather default by design (philly3d.com's
+feed verified live mid-session: ☁ 71% badge) — or a silently swallowed fetch
+failure, which also falls back sunny. Either way the model could only gray a
+sky; now it weathers. The Open-Meteo current call now carries
+rain/showers/snowfall/temperature_2m (°F) alongside weather_code, and
+wxSetTargets classifies the WMO code into eased strengths (WXFX): rain,
+snow, hail, fog, storm gloom. Two camera-following particle boxes render
+precipitation on the GPU — 9 k rain streaks as line pairs, 11 k snowflakes
+as soft points with per-flake fall speed and sway — advected in world space
+and mod-wrapped around the camera, so flying through a storm streams it past
+correctly instead of carrying it along. Custom-shader lesson learned the
+hard way: the logdepthbuf chunks need `#include <common>` for
+isPerspectiveMatrix, or the program dies silently and the mesh simply never
+draws (the stale console error from the pre-fix load masqueraded as current
+for a while on top of that). Box, streak length and alpha scale with camera
+altitude — the first street-level cut vanished into 1-px subtlety, so the
+ground box is 8× denser with 4.5 m streaks — and precipitation fades out
+above ~2.6 km. Thunderstorm codes (95/96/99) schedule bolts every
+2.6–11.6 s: a jagged polyline rebuilt per strike 1.3–4.1 km out, 240 ms
+triple-flicker, its flash spread through applyLighting (sky and cloud-deck
+flare, hemisphere boost) scaled by strike distance. Storm gloom sinks the
+whole deck toward charcoal (sun −55%, cloud light −55%); plain rain carries
+0.5× gloom so wet days read wet. Weather fog (codes 45/48) collapses
+scene.fog to 55/850 — the three build-stage fog widenings now write a
+fogBase that applyLighting scales live, and rain/snow/gloom thicken the murk
+too. Snow whitens the bare-ground mats and terrain (τ≈40 s settle/melt);
+roofs and roads keep their baked vertex colors — accumulation there is a
+future pass, as is any wet-street look and thunder audio (no audio system
+exists). The clock readout now reads e.g. "☁ 98% 74°F Thunderstorm".
+?wx=clear|overcast|fog|drizzle|rain|downpour|storm|hail|snow|blizzard|sleet
+pins conditions for demos anywhere including the artifact; ?dev's __dbg
+gains WXFX, wx('storm') and bolt(). prefers-reduced-motion keeps the sky and
+fog response but drops particles and the lightning strobe. Verified locally
+at street and altitude for rain/downpour/storm (bolt caught on camera)/
+blizzard/fog and the live no-param path (real 98% overcast rendered as
+such); shipped to both homes.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

@@ -93,6 +93,7 @@
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.haze, 1250, 4200);
+  const fogBase = { near: 1250, far: 4200 };   // clear-air distances; weather shrinks them live (applyLighting)
 
   const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, window.__useLogDepth ? 0.75 : 1.0, 26000);
 
@@ -717,7 +718,8 @@
   }
   aimSun(-1450, -700, 800);
 
-  const WX = { cover: 0.22, ok: false };            // live-weather state (see applyWx below)
+  // live-weather state (see applyWx below): cloud fraction, WMO code, rates, world wind m/s
+  const WX = { cover: 0.22, ok: false, code: -1, temp: null, precip: 0, snowfall: 0, windX: 2.1, windZ: 0.9 };
   const wxWind = new THREE.Vector2(0.0012, 0.0005);
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
@@ -4361,7 +4363,7 @@
     if (waterAreaParts.length) groupCity.add(new THREE.Mesh(mergeColored(waterAreaParts), riverMat));
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
-    scene.fog.near = 1900; scene.fog.far = 7600;
+    fogBase.near = 1900; fogBase.far = 7600;
 
     // Benjamin Franklin Bridge (1926): suspension span from the 5th St anchorage to Camden
     {
@@ -4936,7 +4938,7 @@
     if (waterAreaParts.length) groupCity.add(new THREE.Mesh(mergeColored(waterAreaParts), riverMat));
     // the world is now the whole city
     bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
-    scene.fog.near = 2400; scene.fog.far = 13000;
+    fogBase.near = 2400; fogBase.far = 13000;
     // the baked neighborhood layer owns these names when present; the airport
     // keeps its HTML label (a place, not a neighborhood)
     const hasNb = typeof PLACES !== 'undefined' && PLACES && PLACES.nb;
@@ -9146,34 +9148,322 @@
     return h + ':' + (mm < 10 ? '0' : '') + mm + ' ' + ap;
   }
   // ---- live weather (Open-Meteo). The claude.ai artifact sandbox blocks external
-  // fetches, so there we keep the fair-weather default; on GitHub Pages / local it
-  // pulls real Philadelphia cloud cover + wind every 15 minutes.
+  // fetches, so there we keep the fair-weather default; on GitHub Pages / local /
+  // philly3d.com it pulls real Philadelphia conditions every 15 minutes. The WMO
+  // weather code classifies into rain / snow / sleet / fog / thunderstorm, which
+  // drives the particle boxes, storm gloom, lightning and weather fog below.
   // (WX itself is declared before the sky material — refreshEnv reads it at init.)
   function applyWx(js) {
     const cur = js && js.current;
     if (!cur) return;
+    WX.code = cur.weather_code == null ? -1 : cur.weather_code;
+    WX.temp = cur.temperature_2m == null ? null : cur.temperature_2m;
+    WX.precip = Math.max(cur.precipitation || 0, (cur.rain || 0) + (cur.showers || 0));
+    WX.snowfall = cur.snowfall || 0;
     WX.cover = clamp((cur.cloud_cover == null ? 22 : cur.cloud_cover) / 100, 0, 1);
-    if ((cur.precipitation || 0) > 0.1) WX.cover = Math.max(WX.cover, 0.85);
+    if (WX.precip > 0.1) WX.cover = Math.max(WX.cover, 0.85);
+    if (WX.snowfall > 0.02) WX.cover = Math.max(WX.cover, 0.8);
+    if (WX.code === 45 || WX.code === 48) WX.cover = Math.max(WX.cover, 0.55);
+    if (WX.code >= 95) WX.cover = Math.max(WX.cover, 0.97);
     const spd = (cur.wind_speed_10m == null ? 8 : cur.wind_speed_10m) / 3.6;
     const dir = ((cur.wind_direction_10m == null ? 250 : cur.wind_direction_10m) + 180) * Math.PI / 180;
+    WX.windX = Math.sin(dir) * spd; WX.windZ = -Math.cos(dir) * spd;   // world m/s, the clouds' heading
     const drift = 0.0008 + spd * 0.00035;
     wxWind.set(Math.sin(dir) * drift, -Math.cos(dir) * drift);
     // the water chop follows the real wind: calm glass at 0, whitecap energy by ~9 m/s
     waterU.uWAmp.value = clamp(0.5 + spd * 0.14, 0.5, 1.8);
     waterU.uWDir.value.set(Math.sin(dir) || 0.86, -Math.cos(dir) || 0.5);
     WX.ok = true;
+    wxSetTargets();
     lastEnvEl = 999;   // rebake glass reflections with the new cloud deck
     refreshTimeUI();
   }
   const wxCanFetch = !/claude|usercontent/i.test(location.hostname);
+  // ?wx=<preset> pins conditions for demos and testing (it works even in the
+  // artifact, where live fetches are walled off); __dbg.wx('storm') from the
+  // ?dev console does the same at runtime.
+  const WX_PRESETS = {
+    clear: { cloud_cover: 8, weather_code: 0, wind_speed_10m: 10, temperature_2m: 74 },
+    overcast: { cloud_cover: 92, weather_code: 3, wind_speed_10m: 14, temperature_2m: 66 },
+    fog: { cloud_cover: 70, weather_code: 45, wind_speed_10m: 4, temperature_2m: 57 },
+    drizzle: { cloud_cover: 88, precipitation: 0.4, weather_code: 53, wind_speed_10m: 12, temperature_2m: 61 },
+    rain: { cloud_cover: 95, precipitation: 3.2, weather_code: 63, wind_speed_10m: 22, temperature_2m: 63 },
+    downpour: { cloud_cover: 100, precipitation: 11, weather_code: 65, wind_speed_10m: 30, temperature_2m: 65 },
+    storm: { cloud_cover: 100, precipitation: 9, weather_code: 95, wind_speed_10m: 42, temperature_2m: 72 },
+    hail: { cloud_cover: 100, precipitation: 13, weather_code: 96, wind_speed_10m: 46, temperature_2m: 68 },
+    snow: { cloud_cover: 94, snowfall: 1.1, weather_code: 73, wind_speed_10m: 14, temperature_2m: 28 },
+    blizzard: { cloud_cover: 100, snowfall: 3.4, weather_code: 75, wind_speed_10m: 38, temperature_2m: 21 },
+    sleet: { cloud_cover: 96, precipitation: 1.4, weather_code: 66, wind_speed_10m: 18, temperature_2m: 31 },
+  };
+  const wxForced = (/[?&]wx=([a-z]+)/i.exec(location.search) || [])[1];
   function fetchWeather() {
-    if (!wxCanFetch) return;
+    if (!wxCanFetch || WX_PRESETS[wxForced]) return;
     try {
-      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,precipitation,weather_code,wind_speed_10m,wind_direction_10m')
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit')
         .then(r => (r && r.ok ? r.json() : null))
         .then(applyWx)
         .catch(() => {});
     } catch (e) { /* sandboxed */ }
+  }
+  function wxLabel() {
+    const c = WX.code;
+    return c === 45 || c === 48 ? 'Fog' : c >= 51 && c <= 55 ? 'Drizzle'
+      : c === 56 || c === 57 ? 'Freezing drizzle' : c === 61 || c === 80 ? 'Light rain'
+      : c === 63 || c === 81 ? 'Rain' : c === 65 || c === 82 ? 'Heavy rain'
+      : c === 66 || c === 67 ? 'Freezing rain' : c === 71 || c === 77 || c === 85 ? 'Light snow'
+      : c === 73 ? 'Snow' : c === 75 || c === 86 ? 'Heavy snow'
+      : c === 95 ? 'Thunderstorm' : c === 96 || c === 99 ? 'Thunderstorm, hail' : '';
+  }
+
+  // ---- weather FX. Two camera-following particle boxes (rain streaks as line
+  // pairs, snowflakes as soft points) advect in world space and wrap through a
+  // box around the camera via mod(), so flying through a storm streams it past
+  // correctly instead of carrying it along. Strengths ease toward the targets
+  // wxSetTargets derives from the WMO code; applyLighting reads gloom/flash/fog
+  // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
+  // the sky and fog response but drops the particles and the lightning strobe.
+  const WXFX = {
+    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0,
+    tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0,
+    storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, dayF: 1,
+  };
+  function wxSetTargets() {
+    const F = WXFX, c = WX.code;
+    F.storm = c >= 95 && c <= 99;
+    F.tFog = (c === 45 || c === 48) ? 1 : 0;
+    const snowCode = (c >= 71 && c <= 77) || c === 85 || c === 86;
+    const iceCode = c === 56 || c === 57 || c === 66 || c === 67;
+    const rainCode = (c >= 51 && c <= 65 && !iceCode) || (c >= 80 && c <= 82);
+    // WMO intensity steps, lifted further by the measured rate when it is larger
+    let rainI = c === 55 || c === 65 || c === 82 ? 1 : c === 53 || c === 63 || c === 81 ? 0.6 : c === 51 || c === 61 || c === 80 ? 0.3 : 0;
+    if (F.storm) rainI = Math.max(rainI, c >= 96 ? 1 : 0.75);
+    F.tRain = (rainCode || F.storm || (!snowCode && !iceCode && WX.precip > 0.1))
+      ? clamp(Math.max(rainI, WX.precip / 6), 0.18, 1) : 0;
+    const snowI = c === 75 || c === 86 ? 1 : c === 73 ? 0.65 : c === 71 || c === 77 || c === 85 ? 0.35 : 0;
+    F.tSnow = (snowCode || WX.snowfall > 0.02) ? clamp(Math.max(snowI, WX.snowfall / 2.5), 0.2, 1) : 0;
+    if (iceCode) { F.tRain = Math.max(F.tRain, 0.45); F.tSnow = Math.max(F.tSnow, 0.25); }   // sleet: both at once
+    F.tHail = c === 96 || c === 99 ? 1 : 0;
+    F.tGloom = F.storm ? clamp(0.55 + 0.45 * F.tRain, 0, 1) : 0.5 * F.tRain;
+    F.tSnowGround = F.tSnow > 0.02 ? clamp(0.35 + 0.5 * F.tSnow, 0, 0.85) : 0;
+    if (!F.seeded) {   // first report of the session: land in the ongoing weather, don't fade into it
+      F.seeded = true;
+      F.rain = F.tRain; F.snow = F.tSnow; F.gloom = F.tGloom; F.fog = F.tFog; F.hail = F.tHail; F.snowGround = F.tSnowGround;
+    }
+  }
+  // decorrelated per-particle gate so density scales without bunching to one side of the box
+  const wxGateGLSL = 'float wxGate(vec3 s){ return fract(sin(dot(s, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }\n';
+  const RAIN_N = 9000;
+  const rainU = {
+    uBox: { value: new THREE.Vector3(90, 80, 90) },
+    uOff: { value: new THREE.Vector3() },
+    uCam: { value: new THREE.Vector3() },
+    uVelN: { value: new THREE.Vector3(0, -1, 0) },
+    uFrac: { value: 0 }, uLen: { value: 1.7 }, uAlpha: { value: 0.3 },
+    uCol: { value: new THREE.Color(0.62, 0.66, 0.74) },
+  };
+  let rainMesh, snowMesh;
+  {
+    const seed = new Float32Array(RAIN_N * 6), tip = new Float32Array(RAIN_N * 2);
+    for (let i = 0; i < RAIN_N; i++) {
+      const a = Math.random(), b = Math.random(), c = Math.random(), o = i * 6;
+      seed[o] = seed[o + 3] = a; seed[o + 1] = seed[o + 4] = b; seed[o + 2] = seed[o + 5] = c;
+      tip[i * 2 + 1] = 1;   // second vertex of each pair extends along the fall direction
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(seed, 3));   // position carries the box seed
+    g.setAttribute('aTip', new THREE.BufferAttribute(tip, 1));
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false, uniforms: rainU,
+      vertexShader:
+        'uniform vec3 uBox, uOff, uCam, uVelN; uniform float uFrac, uLen, uAlpha;\n' +
+        'attribute float aTip; varying float vA;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_vertex>\n' +
+        wxGateGLSL +
+        'void main(){\n' +
+        '  if (wxGate(position) > uFrac) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); vA = 0.0; return; }\n' +
+        '  vec3 p = position * 2.0 * uBox + uOff - uCam;\n' +
+        '  p = mod(p, 2.0 * uBox) - uBox;\n' +
+        '  float r = clamp(length(p.xz) / uBox.x, 0.0, 1.0);\n' +
+        '  p += uCam + uVelN * (aTip * uLen);\n' +
+        '  vec4 mv = modelViewMatrix * vec4(p, 1.0);\n' +
+        '  gl_Position = projectionMatrix * mv;\n' +
+        '  vA = uAlpha * (1.0 - 0.7 * r * r) * (1.0 - 0.55 * aTip);\n' +
+        '  #include <logdepthbuf_vertex>\n' +
+        '}',
+      fragmentShader:
+        'uniform vec3 uCol; varying float vA;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_fragment>\n' +
+        'void main(){\n' +
+        '  #include <logdepthbuf_fragment>\n' +
+        '  if (vA < 0.004) discard;\n' +
+        '  gl_FragColor = vec4(uCol, vA);\n' +
+        '}',
+    });
+    rainMesh = new THREE.LineSegments(g, m);
+    rainMesh.frustumCulled = false; rainMesh.renderOrder = 50; rainMesh.visible = false;
+    scene.add(rainMesh);
+  }
+  const SNOW_N = 11000;
+  const snowU = {
+    uBox: { value: new THREE.Vector3(80, 70, 80) },
+    uOff: { value: new THREE.Vector3() },
+    uCam: { value: new THREE.Vector3() },
+    uFrac: { value: 0 }, uSize: { value: 0.6 }, uAlpha: { value: 0.8 }, uTime: { value: 0 },
+    uCol: { value: new THREE.Color(0.93, 0.95, 0.99) },
+  };
+  {
+    const seed = new Float32Array(SNOW_N * 3), ph = new Float32Array(SNOW_N);
+    for (let i = 0; i < SNOW_N; i++) { seed[i * 3] = Math.random(); seed[i * 3 + 1] = Math.random(); seed[i * 3 + 2] = Math.random(); ph[i] = Math.random(); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(seed, 3));
+    g.setAttribute('aPh', new THREE.BufferAttribute(ph, 1));
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false, uniforms: snowU,
+      vertexShader:
+        'uniform vec3 uBox, uOff, uCam; uniform float uFrac, uSize, uAlpha, uTime;\n' +
+        'attribute float aPh; varying float vA;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_vertex>\n' +
+        wxGateGLSL +
+        'void main(){\n' +
+        '  if (wxGate(position) > uFrac) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; vA = 0.0; return; }\n' +
+        '  vec3 adv = uOff; adv.y *= 0.65 + 0.7 * aPh;\n' +
+        '  vec3 p = position * 2.0 * uBox + adv - uCam;\n' +
+        '  p = mod(p, 2.0 * uBox) - uBox;\n' +
+        '  float r = clamp(length(p.xz) / uBox.x, 0.0, 1.0);\n' +
+        '  p += uCam;\n' +
+        '  float sw = 1.2 + aPh * 2.2;\n' +
+        '  p.x += sin(uTime * (0.6 + position.z * 0.7) + aPh * 6.2832) * sw;\n' +
+        '  p.z += cos(uTime * (0.45 + position.x * 0.6) + aPh * 4.7) * sw;\n' +
+        '  vec4 mv = modelViewMatrix * vec4(p, 1.0);\n' +
+        '  gl_Position = projectionMatrix * mv;\n' +
+        '  gl_PointSize = clamp(uSize * (0.55 + 0.45 * aPh) * 340.0 / max(1.0, -mv.z), 1.0, 13.0);\n' +
+        '  vA = uAlpha * (1.0 - 0.65 * r * r);\n' +
+        '  #include <logdepthbuf_vertex>\n' +
+        '}',
+      fragmentShader:
+        'uniform vec3 uCol; varying float vA;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_fragment>\n' +
+        'void main(){\n' +
+        '  #include <logdepthbuf_fragment>\n' +
+        '  float d = length(gl_PointCoord - vec2(0.5));\n' +
+        '  float a = vA * smoothstep(0.5, 0.16, d);\n' +
+        '  if (a < 0.004) discard;\n' +
+        '  gl_FragColor = vec4(uCol, a);\n' +
+        '}',
+    });
+    snowMesh = new THREE.Points(g, m);
+    snowMesh.frustumCulled = false; snowMesh.renderOrder = 50; snowMesh.visible = false;
+    scene.add(snowMesh);
+  }
+  // lightning: a jagged polyline rebuilt per strike out beyond the skyline,
+  // shown ~240 ms with a triple-flicker flash that applyLighting spreads over
+  // the sky, cloud deck and hemisphere light
+  const BOLT_MAX = 44;
+  const boltPos = new Float32Array(BOLT_MAX * 6);
+  const boltGeo = new THREE.BufferGeometry();
+  boltGeo.setAttribute('position', new THREE.BufferAttribute(boltPos, 3));
+  boltGeo.setDrawRange(0, 0);
+  const boltMat = new THREE.LineBasicMaterial({ color: 0xeaeeff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+  const boltMesh = new THREE.LineSegments(boltGeo, boltMat);
+  boltMesh.frustumCulled = false; boltMesh.renderOrder = 60; boltMesh.visible = false;
+  scene.add(boltMesh);
+  function spawnBolt(now) {
+    const az = Math.random() * Math.PI * 2, dist = 1300 + Math.random() * 2800;
+    let px = camera.position.x + Math.sin(az) * dist;
+    let pz = camera.position.z + Math.cos(az) * dist;
+    let py = 950 + Math.random() * 520;
+    const drop = py / 11;
+    let n = 0;
+    const put = (x1, y1, z1, x2, y2, z2) => { if (n >= BOLT_MAX) return; const o = n * 6; boltPos[o] = x1; boltPos[o + 1] = y1; boltPos[o + 2] = z1; boltPos[o + 3] = x2; boltPos[o + 4] = y2; boltPos[o + 5] = z2; n++; };
+    const branchAt = 3 + (Math.random() * 5 | 0), branch = Math.random() < 0.5;
+    for (let i = 0; i < 12 && py > -20; i++) {
+      const nx = px + (Math.random() - 0.5) * 130, nz = pz + (Math.random() - 0.5) * 130;
+      const ny = py - drop * (0.7 + Math.random() * 0.6);
+      put(px, py, pz, nx, ny, nz);
+      if (branch && i === branchAt) {
+        let qx = px, qy = py, qz = pz;
+        const bdx = (Math.random() - 0.5) * 160, bdz = (Math.random() - 0.5) * 160;
+        for (let j = 0; j < 4; j++) {
+          const rx = qx + bdx * 0.5 + (Math.random() - 0.5) * 90, rz = qz + bdz * 0.5 + (Math.random() - 0.5) * 90;
+          const ry = qy - drop * (0.5 + Math.random() * 0.5);
+          put(qx, qy, qz, rx, ry, rz);
+          qx = rx; qy = ry; qz = rz;
+        }
+      }
+      px = nx; py = ny; pz = nz;
+    }
+    put(px, py, pz, px + (Math.random() - 0.5) * 60, -25, pz + (Math.random() - 0.5) * 60);
+    boltGeo.attributes.position.needsUpdate = true;
+    boltGeo.setDrawRange(0, n * 2);
+    WXFX.boltEnd = now + 240;
+    WXFX.boltFlash = clamp(1600 / dist, 0.4, 1);   // near strikes light the world harder
+    WXFX.nextBolt = now + 2600 + Math.random() * 9000;
+  }
+  const _wxc = new THREE.Color();
+  const rainVel = new THREE.Vector3(), rainOff = new THREE.Vector3();
+  const snowVel = new THREE.Vector3(), snowOff = new THREE.Vector3();
+  function updateWeatherFX(now, dt) {
+    const F = WXFX;
+    const e = 1 - Math.exp(-dt / 1.8);
+    F.rain += (F.tRain - F.rain) * e;
+    F.snow += (F.tSnow - F.snow) * e;
+    F.gloom += (F.tGloom - F.gloom) * e;
+    F.fog += (F.tFog - F.fog) * e;
+    F.hail += (F.tHail - F.hail) * e;
+    F.snowGround += (F.tSnowGround - F.snowGround) * (1 - Math.exp(-dt / 40));   // settles and melts slowly
+    if (reducedMotion) return;   // sky, fog and ground still answer the weather; no particles, no strobe
+    const cy = camera.position.y;
+    const hi = smooth(120, 1100, cy);         // altitude grows the box and streaks so it still reads
+    const vis = 1 - smooth(1700, 2600, cy);   // far above the deck the precipitation fades out
+    rainMesh.visible = F.rain > 0.02 && vis > 0.02;
+    if (rainMesh.visible) {
+      rainVel.set(WX.windX * 0.75, -(8.5 + 4 * F.rain + 9 * F.hail), WX.windZ * 0.75);
+      rainOff.addScaledVector(rainVel, dt);
+      rainU.uOff.value.copy(rainOff);
+      // small box at street level so the near field is dense enough to read
+      rainU.uBox.value.set(45 + 740 * hi, 40 + 415 * hi, 45 + 740 * hi);
+      rainU.uCam.value.copy(camera.position);
+      rainU.uCam.value.y += rainU.uBox.value.y * 0.25;   // bias the box upward: rain arrives from above
+      rainU.uLen.value = (4.5 + 16.5 * hi) * (1 - 0.5 * F.hail);
+      rainU.uVelN.value.copy(rainVel).normalize();
+      rainU.uFrac.value = 0.12 + 0.88 * F.rain;
+      rainU.uAlpha.value = (0.75 - 0.35 * hi) * vis * (0.30 + 0.70 * F.dayF) * Math.min(1, 0.5 + F.rain);
+      rainU.uCol.value.setRGB(0.62, 0.66, 0.74).lerp(_wxc.setRGB(0.93, 0.95, 0.99), F.hail);
+    }
+    snowMesh.visible = F.snow > 0.02 && vis > 0.02;
+    if (snowMesh.visible) {
+      snowVel.set(WX.windX * 0.4, -(1.5 + 1.3 * F.snow), WX.windZ * 0.4);
+      snowOff.addScaledVector(snowVel, dt);
+      snowU.uTime.value += dt;
+      snowU.uOff.value.copy(snowOff);
+      snowU.uBox.value.set(40 + 675 * hi, 35 + 360 * hi, 40 + 675 * hi);
+      snowU.uCam.value.copy(camera.position);
+      snowU.uCam.value.y += snowU.uBox.value.y * 0.25;
+      snowU.uSize.value = 0.8 + 5.2 * hi;
+      snowU.uFrac.value = 0.15 + 0.85 * F.snow;
+      snowU.uAlpha.value = 0.95 * vis * (0.45 + 0.55 * F.dayF);
+    }
+    if (F.storm) {
+      if (!F.nextBolt) F.nextBolt = now + 1200 + Math.random() * 5000;
+      if (now >= F.nextBolt) spawnBolt(now);
+    } else F.nextBolt = 0;
+    if (now < F.boltEnd) {
+      const t = (now - (F.boltEnd - 240)) / 240;
+      const fl = Math.max(
+        Math.exp(-(t - 0.07) * (t - 0.07) * 80),
+        0.75 * Math.exp(-(t - 0.45) * (t - 0.45) * 55),
+        0.45 * Math.exp(-(t - 0.82) * (t - 0.82) * 45));
+      F.flash = fl * F.boltFlash;
+      boltMat.opacity = clamp(fl * 1.7 - 0.25, 0, 1);
+      boltMesh.visible = boltMat.opacity > 0.02;
+    } else {
+      boltMesh.visible = false;
+      if (F.flash > 0) { F.flash *= Math.exp(-12 * dt); if (F.flash < 0.002) F.flash = 0; }
+    }
   }
   const PAL = {
     night: { z: new THREE.Color(0x070c1a), h: new THREE.Color(0x121a2e), g: new THREE.Color(0x0a0a0e) },
@@ -9197,9 +9487,10 @@
     const dayF = smooth(-4, 10, el);
     const twi = Math.exp(-Math.pow((el + 1) / 7, 2)) * (1 - dayF * 0.6);
     const night = 1 - smooth(-9, 1, el);
+    WXFX.dayF = dayF;   // the particle boxes dim toward night with the sky
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 1.7 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover);
+      sun.intensity = 1.7 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover) * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
       glintDir.copy(sp.dir);
     } else if (mp.el > 2) {
@@ -9230,19 +9521,34 @@
     // overcast grays the sky toward a flat deck
     cz.lerp(_c2.set(0x93a5b4).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.55);
     ch.lerp(_c2.set(0xc4ccd2).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.5);
+    if (WXFX.gloom > 0.003) {   // storm gloom: the whole deck sinks toward charcoal slate
+      cz.lerp(_c2.set(0x353d49).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.72);
+      ch.lerp(_c2.set(0x525b66).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.62);
+    }
+    if (WXFX.flash > 0.003) {   // lightning: sky and cloud deck flare blue-white
+      cz.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.55);
+      ch.lerp(_c2.set(0xeef2ff), WXFX.flash * 0.6);
+    }
     skyMat.uniforms.cZenith.value.copy(cz);
     skyMat.uniforms.cHorizon.value.copy(ch);
     skyMat.uniforms.cGround.value.copy(cg);
     skyMat.uniforms.uCloud.value = WX.cover;
-    skyMat.uniforms.uCloudLight.value = 0.10 + 0.95 * dayF + twi * 0.25;
+    skyMat.uniforms.uCloudLight.value = (0.10 + 0.95 * dayF + twi * 0.25) * (1 - 0.55 * WXFX.gloom) + WXFX.flash * 2.2;
     skyMat.uniforms.cSun.value.copy(_c1.set(0xff8a40)).lerp(_c2.set(COLORS.sun), smooth(0, 20, el));
     scene.fog.color.copy(ch);
+    // weather visibility: rain, snow and storm thicken the haze; true fog collapses it
+    const murk = Math.max(WXFX.rain * 0.4, WXFX.snow * 0.6, WXFX.gloom * 0.5);
+    scene.fog.color.lerp(_c2.set(0xbfc6cc).multiplyScalar(0.12 + 0.88 * dayF), Math.max(WXFX.fog * 0.9, WXFX.snow * 0.4));
+    scene.fog.near = fogBase.near * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
+    scene.fog.far = fogBase.far * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xd3deea), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
+    if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x8f8166), dayF);
-    hemi.intensity = 0.10 + 0.45 * dayF;
+    hemi.intensity = (0.10 + 0.45 * dayF) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
     // bare ground follows the light: near-black at night, warm dark earth through
     // twilight, the pale sage only in daylight — the fixed pale tone read as water
     _c1.set(0x232321).lerp(_c2.set(0x55503f), twi).lerp(_c2.set(COLORS.ground), dayF);
+    if (WXFX.snowGround > 0.003) _c1.lerp(_c2.set(0xe6eaec).multiplyScalar(0.18 + 0.82 * dayF), WXFX.snowGround);
     for (const gm of groundMats) gm.color.copy(_c1);
     renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
     nightUniform.value = night;
@@ -9283,7 +9589,8 @@
       : mp.k < 0.5 ? (mp.wax ? 'Waxing Crescent' : 'Waning Crescent')
       : (mp.wax ? 'Waxing Gibbous' : 'Waning Gibbous');
     const oct = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(mp.az / 45) % 8];
-    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set) + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' : '')
+    timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set)
+      + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' + (WX.temp == null ? '' : ' ' + Math.round(WX.temp) + '°F') + (wxLabel() ? ' ' + wxLabel() : '') : '')
       + '   ☾ ' + phase + ' ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', Up ' + oct : ', Set');
   }
   function toggleTimePanel() { timePanel.classList.toggle('open'); }
@@ -9361,6 +9668,7 @@
       const nowMin = Math.floor(Date.now() / 60000);
       if (nowMin !== lastMinuteTick) { lastMinuteTick = nowMin; setClockToNow(); refreshTimeUI(); }
     }
+    updateWeatherFX(now, dt);
     applyLighting();
     if (mode === MODE.ORBIT) applyOrbit(dt);
     else if (mode === MODE.WALK) applyWalk(dt);
@@ -9402,11 +9710,14 @@
   }
 
   setHint();
+  if (WX_PRESETS[wxForced]) applyWx({ current: WX_PRESETS[wxForced] });
   fetchWeather();
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, waterU, flightTest, shipTest, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, waterU, flightTest, shipTest,
+      wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
+      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     requestAnimationFrame(frame);
   });

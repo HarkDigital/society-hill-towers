@@ -1,0 +1,4095 @@
+{
+ "n_chains": 428,
+ "n_segments": 2454,
+ "n_overlap_events": 804,
+ "regions": [
+  {
+   "cls": "junction_mouth",
+   "x": -6920.027054217198,
+   "z": 5849.635026374462,
+   "y": -0.16468255478836058,
+   "chains": [
+    0,
+    138
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     138,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.07680597096087638,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6743.600247342144,
+   "z": 5873.905514860589,
+   "y": -0.049299190734011455,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 50.44233421801701,
+   "min_dy": 0.030000000000000027,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6855.866558620052,
+   "z": 5939.3932704420495,
+   "y": -4.985661488583641,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.25132297716728313,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6646.732459195734,
+   "z": 5817.425447417829,
+   "y": 0.6728887004151607,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.4057774008303213,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6362.955889976891,
+   "z": 6162.150498315184,
+   "y": 5.539610468566438,
+   "chains": [
+    1,
+    78
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 38.786595622714955,
+   "min_dy": 0.2624053341902126,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -6309.227285347044,
+   "z": 6211.634185089974,
+   "y": 3.1557350899742884,
+   "chains": [
+    1,
+    78
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     78,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.19147017994857718,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6210.150610874645,
+   "z": 6332.282863825173,
+   "y": 7.455927020681168,
+   "chains": [
+    0,
+    43
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.02814595863766467,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -6164.4,
+   "z": 6364.199999999999,
+   "y": 7.529999999999999,
+   "chains": [
+    0,
+    43
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     43,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 1.2505552149377763e-12,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5757.522647785371,
+   "z": 6610.140434423796,
+   "y": 5.284925606811985,
+   "chains": [
+    0,
+    45
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.599392231638717,
+   "min_dy": 0.009574147720742943,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -5641.264059277077,
+   "z": 6625.13317342262,
+   "y": 7.866757952375213,
+   "chains": [
+    0,
+    45
+   ],
+   "npairs": 1,
+   "nevents": 11,
+   "junctions": [
+    [
+     45,
+     1
+    ]
+   ],
+   "twins": [
+    [
+     [
+      0,
+      45
+     ],
+     0.9968930020734471,
+     155.2208690837976
+    ]
+   ],
+   "overlap_len": 155.2208690837976,
+   "min_dy": 0.03000000000000025,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -5608.3,
+   "z": 6580.5,
+   "y": 12.25,
+   "chains": [
+    1,
+    77
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     77,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4577.871618791207,
+   "z": 5935.318367575146,
+   "y": 10.23167622885602,
+   "chains": [
+    0,
+    1
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 1.9166475422879596,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3230.124350345683,
+   "z": 5207.4957409677045,
+   "y": 0.5620578694474718,
+   "chains": [
+    1,
+    58
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     58,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 17.1583207205108,
+   "min_dy": 0.00656881386327357,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3157.171294785808,
+   "z": 5208.943991299618,
+   "y": 0.916251132862075,
+   "chains": [
+    0,
+    71
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     71,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.019831128028502065,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3112.9498639286253,
+   "z": 5177.031742916118,
+   "y": 0.5867281595350289,
+   "chains": [
+    1,
+    58
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.08654368092994236,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3012.884146794251,
+   "z": 5160.776200019841,
+   "y": 0.704396075678769,
+   "chains": [
+    0,
+    1,
+    58,
+    71
+   ],
+   "npairs": 2,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 33.46551208659184,
+   "min_dy": 0.15451175766727848,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -2248.6060025956785,
+   "z": 5160.288149042511,
+   "y": 3.5617962988048095,
+   "chains": [
+    0,
+    1,
+    79,
+    81
+   ],
+   "npairs": 2,
+   "nevents": 16,
+   "junctions": [
+    [
+     81,
+     1
+    ],
+    [
+     79,
+     0
+    ]
+   ],
+   "twins": [
+    [
+     [
+      0,
+      81
+     ],
+     0.9971098998399437,
+     167.88767729631405
+    ],
+    [
+     [
+      1,
+      79
+     ],
+     0.9972955860068546,
+     189.13820530026237
+    ]
+   ],
+   "overlap_len": 189.13820530026237,
+   "min_dy": 0.060760111210195866,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -521.166120018013,
+   "z": 4746.331976720567,
+   "y": 1.1344194182761513,
+   "chains": [
+    0,
+    27
+   ],
+   "npairs": 1,
+   "nevents": 7,
+   "junctions": [
+    [
+     27,
+     0
+    ]
+   ],
+   "twins": [
+    [
+     [
+      0,
+      27
+     ],
+     0.9965468350255176,
+     81.35390893077201
+    ]
+   ],
+   "overlap_len": 81.35390893077201,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -6522.997392201159,
+   "z": 5744.097801411243,
+   "y": 1.4289719791772615,
+   "chains": [
+    7,
+    8,
+    55
+   ],
+   "npairs": 3,
+   "nevents": 6,
+   "junctions": [
+    [
+     55,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 16.6449565308194,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 22.45155552156014,
+   "z": -1284.8449867706518,
+   "y": 10.999380649463902,
+   "chains": [
+    2,
+    10,
+    17,
+    23
+   ],
+   "npairs": 2,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 36.114063956785515,
+   "min_dy": 1.488028393683205,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 112.1405314929277,
+   "z": -1238.09969175724,
+   "y": 13.201348048777547,
+   "chains": [
+    2,
+    10
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 38.025780728342625,
+   "min_dy": 0.19802158597371466,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": 292.4696842938867,
+   "z": -1095.4145392632076,
+   "y": 7.1045114950903185,
+   "chains": [
+    10,
+    23,
+    56,
+    66
+   ],
+   "npairs": 4,
+   "nevents": 23,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      10,
+      56
+     ],
+     0.9947628500771422,
+     134.189473648927
+    ]
+   ],
+   "overlap_len": 134.189473648927,
+   "min_dy": 0.5099999999999998,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 545.4692821615112,
+   "z": -2092.7070634747606,
+   "y": 11.12553608687011,
+   "chains": [
+    3,
+    83
+   ],
+   "npairs": 1,
+   "nevents": 8,
+   "junctions": [
+    [
+     83,
+     0
+    ]
+   ],
+   "twins": [
+    [
+     [
+      3,
+      83
+     ],
+     0.9891630697101685,
+     60.37230992368863
+    ]
+   ],
+   "overlap_len": 60.37230992368863,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 1500.0,
+   "z": -2627.2,
+   "y": 3.3,
+   "chains": [
+    3,
+    52
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     52,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 1550.9293658549655,
+   "z": -2647.027308818527,
+   "y": 3.1639111371534794,
+   "chains": [
+    2,
+    3,
+    52,
+    69
+   ],
+   "npairs": 2,
+   "nevents": 4,
+   "junctions": [
+    [
+     69,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 12.47692673611482,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 1596.3890463159219,
+   "z": -2659.402447482532,
+   "y": 2.834856344658558,
+   "chains": [
+    2,
+    69
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.009712689317116219,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 1708.465516035936,
+   "z": -2753.587813109463,
+   "y": 2.3036684995452843,
+   "chains": [
+    2,
+    69
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.13266300090943117,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 1745.722170909151,
+   "z": -2784.8593020172866,
+   "y": 2.30981538900386,
+   "chains": [
+    2,
+    69
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.5396307780077203,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 2026.2479038108208,
+   "z": -3100.8121649384334,
+   "y": 1.7421766359661917,
+   "chains": [
+    65,
+    114
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [
+    [
+     114,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 37.019589408852084,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 1968.5648616710237,
+   "z": -3077.5713963009057,
+   "y": -1.2195955410788817,
+   "chains": [
+    65,
+    114
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 2.1808089178422367,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 2269.270437109967,
+   "z": -3209.7527404877583,
+   "y": 2.6556426746148682,
+   "chains": [
+    3,
+    65
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     65,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 21.29800778831055,
+   "min_dy": 0.014938315963623161,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5739.976511432637,
+   "z": -6421.8164248348085,
+   "y": 2.1813980742040355,
+   "chains": [
+    4,
+    25,
+    40
+   ],
+   "npairs": 2,
+   "nevents": 8,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 48.19266119850943,
+   "min_dy": 0.007809049951029268,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5680.672132516198,
+   "z": -6353.271817460001,
+   "y": 0.5166894752333849,
+   "chains": [
+    25,
+    40
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 8.355859010998756,
+   "min_dy": 2.27,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5788.684735946852,
+   "z": -6467.220969114569,
+   "y": 3.954557284241583,
+   "chains": [
+    4,
+    25
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.16911456848316586,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5782.2231083446795,
+   "z": -6508.640673020813,
+   "y": 6.180649123294515,
+   "chains": [
+    25,
+    40
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.35870175341097177,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5838.761164403356,
+   "z": -6554.8448314565285,
+   "y": 8.079334876121035,
+   "chains": [
+    4,
+    25,
+    40
+   ],
+   "npairs": 2,
+   "nevents": 9,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 39.409987852825,
+   "min_dy": 0.0008811564152697571,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 5537.1,
+   "z": -5924.3,
+   "y": 9.58,
+   "chains": [
+    4,
+    49
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     49,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5506.405085363829,
+   "z": -5842.546285513239,
+   "y": 13.13730116736216,
+   "chains": [
+    4,
+    49
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 15.706368135250273,
+   "min_dy": 0.18088817621356945,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5397.136044751034,
+   "z": -5587.8049965714035,
+   "y": 3.5920846864458396,
+   "chains": [
+    26,
+    41
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 3.1798733526171645,
+   "min_dy": 1.095669716696262,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 5161.293260897477,
+   "z": -5859.19002856776,
+   "y": 4.555577614431533,
+   "chains": [
+    4,
+    49
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [
+    [
+     49,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 43.05609414238006,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5022.418400364744,
+   "z": -5167.9594673863885,
+   "y": -0.11609336668272785,
+   "chains": [
+    19,
+    179
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 1.1478132666345442,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 5213.367009788548,
+   "z": -5873.821412819201,
+   "y": 3.036207829187369,
+   "chains": [
+    16,
+    108
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [
+    [
+     108,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 19.391235133430683,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -278.9609881607404,
+   "z": 3489.194735612349,
+   "y": 1.9920228515654337,
+   "chains": [
+    5,
+    35
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 30.26788345358719,
+   "min_dy": 0.005908442164606509,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -318.28970218307563,
+   "z": 3558.780709439728,
+   "y": 1.5917220466120405,
+   "chains": [
+    6,
+    34
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     34,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 17.31740696108227,
+   "min_dy": 0.12792697956248866,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -263.20000000000005,
+   "z": 3400.5,
+   "y": 1.8400000000000007,
+   "chains": [
+    5,
+    35
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     35,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 5.684341886080801e-13,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -251.78772450390204,
+   "z": 2451.523930660902,
+   "y": 1.8144855749467905,
+   "chains": [
+    6,
+    62
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.09102885010641915,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -261.89999999999986,
+   "z": 2538.899999999999,
+   "y": 1.560000000000003,
+   "chains": [
+    6,
+    62
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     62,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 2.0463630789890885e-12,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -143.75742817252177,
+   "z": 1982.972715067356,
+   "y": 2.433411607109166,
+   "chains": [
+    5,
+    63
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     63,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.033176785781668716,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -121.92624550016978,
+   "z": 1890.107545979397,
+   "y": 2.1567917437077844,
+   "chains": [
+    5,
+    63
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.0064165125844311,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6388.275964909997,
+   "z": 5666.476514944755,
+   "y": 0.9191925574205889,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 43.52945932909188,
+   "min_dy": 0.22999999999999998,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -6274.743644640657,
+   "z": 5600.02236379527,
+   "y": 2.883448652631411,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 7,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      7,
+      8
+     ],
+     0.9999984093171967,
+     79.64787690427647
+    ]
+   ],
+   "overlap_len": 79.64787690427647,
+   "min_dy": 0.018270548716693646,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -6109.0845328886735,
+   "z": 5503.06069333191,
+   "y": -0.18506898402933553,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 9,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      7,
+      8
+     ],
+     0.9999993750595375,
+     81.64974195817854
+    ]
+   ],
+   "overlap_len": 81.64974195817854,
+   "min_dy": 0.243609703535245,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5992.576682446529,
+   "z": 5434.876219275896,
+   "y": 2.0778018070134854,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 40.6571764152568,
+   "min_dy": 0.22486864540416418,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5889.350361021915,
+   "z": 5374.579810160849,
+   "y": 1.4591342038706183,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.3217315922587638,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5764.498583414835,
+   "z": 5303.114378795236,
+   "y": -0.4454197930402023,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 59.52428076004003,
+   "min_dy": 0.0020095169821120473,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5613.801989076089,
+   "z": 5217.001073776898,
+   "y": -0.5448223722519542,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.199144533334902,
+   "min_dy": 0.010000000000000009,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5510.653235581918,
+   "z": 5157.901893119553,
+   "y": 0.13609695443157654,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.08780609113684679,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4989.647527315383,
+   "z": 4856.602007108848,
+   "y": 1.2354805268827334,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 19.969616886750032,
+   "min_dy": 0.003572007521102538,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4810.33298085714,
+   "z": 4752.869095922433,
+   "y": 0.5903798116910765,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.3046604014757577,
+   "min_dy": 0.03902995926873587,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4673.654837136368,
+   "z": 4673.773917582342,
+   "y": 0.7235393323157417,
+   "chains": [
+    7,
+    8
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 39.77240396947194,
+   "min_dy": 0.06,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4668.936012940075,
+   "z": 1000.20265229201,
+   "y": 5.800329827670672,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 8,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 51.87439372251856,
+   "min_dy": 0.017387702441173936,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4690.3213177674725,
+   "z": 1065.269918439149,
+   "y": 2.9084335518950972,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.06313289620980589,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4623.744759203627,
+   "z": 922.1886284026889,
+   "y": 9.531011038770632,
+   "chains": [
+    9,
+    15,
+    98
+   ],
+   "npairs": 2,
+   "nevents": 8,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 44.25765742459964,
+   "min_dy": 0.06360089271970537,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -4533.302790262462,
+   "z": 805.1241029977949,
+   "y": 14.984573251553268,
+   "chains": [
+    9,
+    15,
+    98
+   ],
+   "npairs": 3,
+   "nevents": 14,
+   "junctions": [
+    [
+     98,
+     1
+    ]
+   ],
+   "twins": [
+    [
+     [
+      9,
+      15
+     ],
+     0.9999863551975833,
+     78.69599893437237
+    ]
+   ],
+   "overlap_len": 78.69599893437237,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4453.740626906343,
+   "z": 702.3995558726743,
+   "y": 14.970980663467358,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 10.180763820577226,
+   "min_dy": 0.04130978307963673,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4397.111655749623,
+   "z": 631.0607017364367,
+   "y": 13.31751220156545,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 39.487035086237995,
+   "min_dy": 0.02544440689421279,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4316.931224622591,
+   "z": 526.5386829262952,
+   "y": 8.62859429474041,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 26.65042161196186,
+   "min_dy": 0.0123119698682288,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4257.700968283555,
+   "z": 448.69500475866363,
+   "y": 6.586116221042893,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 9.435083926108177,
+   "min_dy": 0.10999999999999943,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -4200.7373975390165,
+   "z": 373.6768626078618,
+   "y": 7.518502589074166,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 9,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      9,
+      15
+     ],
+     0.999996740800344,
+     84.79242318104446
+    ]
+   ],
+   "overlap_len": 84.79242318104446,
+   "min_dy": 0.30742834539031527,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4133.20673267754,
+   "z": 284.83942642453127,
+   "y": 6.469466522002363,
+   "chains": [
+    9,
+    15
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 22.47341862718781,
+   "min_dy": 1.0684050199657733,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3966.167548951955,
+   "z": 88.42651655653833,
+   "y": 1.9718091517314444,
+   "chains": [
+    9,
+    32
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 54.443142514873216,
+   "min_dy": 0.7526933504625721,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3908.779962118823,
+   "z": 22.7855584317217,
+   "y": 2.452976387398167,
+   "chains": [
+    9,
+    32
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     32,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.05406818612290021,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3820.909805419155,
+   "z": -56.46817016645578,
+   "y": 2.013798751745524,
+   "chains": [
+    9,
+    53
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     53,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.10759750349104813,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3788.159214390409,
+   "z": -87.24509296082462,
+   "y": 2.0593073512337865,
+   "chains": [
+    9,
+    53
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.41861470246757326,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3744.6424502414393,
+   "z": -127.87106274652245,
+   "y": 2.1574369257678483,
+   "chains": [
+    9,
+    53
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 34.932220084042754,
+   "min_dy": 1.123436465789877,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3660.942760917829,
+   "z": -219.27488476133354,
+   "y": 6.90624837422079,
+   "chains": [
+    53,
+    189
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 7.263509789087152,
+   "min_dy": 0.8825464050640877,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3493.0583992911684,
+   "z": -343.20494914815043,
+   "y": 1.635712507788412,
+   "chains": [
+    9,
+    53
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 9.204120517341607,
+   "min_dy": 0.6099999999999999,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3450.2736279856213,
+   "z": -376.0694114223122,
+   "y": 1.048967414186722,
+   "chains": [
+    9,
+    53
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     53,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.042065171626555875,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3355.667772056202,
+   "z": -702.4923075330561,
+   "y": -2.280004284449043,
+   "chains": [
+    183,
+    192
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     192,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.07794073271399737,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3228.8985477324345,
+   "z": -684.3535289032163,
+   "y": -4.480018624075024,
+   "chains": [
+    9,
+    13,
+    183
+   ],
+   "npairs": 2,
+   "nevents": 5,
+   "junctions": [
+    [
+     9,
+     1
+    ],
+    [
+     13,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 13.410443691392125,
+   "min_dy": 1.4300000000000006,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -523.7974063704185,
+   "z": -1327.686739008546,
+   "y": 9.486602488098766,
+   "chains": [
+    10,
+    23
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 1.6267950238024689,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -335.4777896462779,
+   "z": -1340.9340651184611,
+   "y": 11.36513825896449,
+   "chains": [
+    10,
+    23,
+    64
+   ],
+   "npairs": 2,
+   "nevents": 53,
+   "junctions": [
+    [
+     64,
+     1
+    ]
+   ],
+   "twins": [
+    [
+     [
+      10,
+      23
+     ],
+     0.9976516382884196,
+     270.2540760349874
+    ],
+    [
+     [
+      10,
+      64
+     ],
+     0.9888640991693435,
+     241.6007613813926
+    ]
+   ],
+   "overlap_len": 270.2540760349874,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 300.9913808377256,
+   "z": -861.5884718879022,
+   "y": -0.3095443184345808,
+   "chains": [
+    10,
+    56
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 27.446675572826734,
+   "min_dy": 0.10876972466511137,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 5824.8622883312155,
+   "z": -5016.098219352728,
+   "y": -0.20464618963846845,
+   "chains": [
+    12,
+    14,
+    88,
+    101
+   ],
+   "npairs": 3,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 16.289059963541604,
+   "min_dy": 0.08477198745875919,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 5899.811912712631,
+   "z": -4922.301830916953,
+   "y": 3.573067431301701,
+   "chains": [
+    12,
+    14,
+    88,
+    101
+   ],
+   "npairs": 4,
+   "nevents": 20,
+   "junctions": [
+    [
+     88,
+     0
+    ],
+    [
+     101,
+     1
+    ]
+   ],
+   "twins": [
+    [
+     [
+      12,
+      14
+     ],
+     0.9996416282243036,
+     109.87257640664643
+    ],
+    [
+     [
+      14,
+      88
+     ],
+     0.9841768426768488,
+     98.88095974340384
+    ]
+   ],
+   "overlap_len": 109.87257640664643,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6021.582220246792,
+   "z": -4796.420253833019,
+   "y": 2.949257776056612,
+   "chains": [
+    12,
+    14
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 5.684341886080802e-14,
+   "min_dy": 0.058515552113224345,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6076.813108350266,
+   "z": -4747.208953836234,
+   "y": 2.332462042542343,
+   "chains": [
+    12,
+    14
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.06492408508468639,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6134.635113787825,
+   "z": -4700.201947954105,
+   "y": 2.0058144951044534,
+   "chains": [
+    12,
+    14
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.09162899020890736,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6172.821316331567,
+   "z": -4670.703043536079,
+   "y": 1.8866259311245899,
+   "chains": [
+    12,
+    14
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 2.939723071841172,
+   "min_dy": 0.10999999999999988,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6220.559308498255,
+   "z": -4636.379136344827,
+   "y": 1.8942473866884924,
+   "chains": [
+    12,
+    14
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 24.72516670739219,
+   "min_dy": 0.030000000000000027,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6628.609832193876,
+   "z": -4401.237612289258,
+   "y": 11.79,
+   "chains": [
+    12,
+    14
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.7400000000000002,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 6749.804046470334,
+   "z": -4334.975070380084,
+   "y": 12.159968198249366,
+   "chains": [
+    12,
+    14
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     12,
+     1
+    ],
+    [
+     14,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 6.360350126755066e-05,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3174.7433511312342,
+   "z": -803.5830173660678,
+   "y": -3.5037943920992145,
+   "chains": [
+    13,
+    91
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 1.4210854715202004e-14,
+   "min_dy": 0.7924112158015699,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3139.147733212577,
+   "z": -911.3327467953703,
+   "y": 1.0016474243287323,
+   "chains": [
+    13,
+    91
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [
+    [
+     91,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 41.022067232161845,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3150.975986749688,
+   "z": -839.206007722815,
+   "y": -0.41903180597570755,
+   "chains": [
+    91,
+    193
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 1.9380636119514152,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3118.093613981095,
+   "z": -994.5536161793801,
+   "y": 4.100749322195353,
+   "chains": [
+    13,
+    54
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.398501355609294,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3066.0129342862724,
+   "z": -1115.9950348326522,
+   "y": 8.942267895384143,
+   "chains": [
+    13,
+    207,
+    213
+   ],
+   "npairs": 3,
+   "nevents": 18,
+   "junctions": [
+    [
+     213,
+     1
+    ],
+    [
+     207,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 21.58293349078704,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3052.235675846316,
+   "z": -1195.1013622477742,
+   "y": 12.311742271524627,
+   "chains": [
+    13,
+    184
+   ],
+   "npairs": 1,
+   "nevents": 7,
+   "junctions": [
+    [
+     184,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 27.335873865673467,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -2966.2255647167967,
+   "z": -1607.8892954852688,
+   "y": 0.6075210088859321,
+   "chains": [
+    13,
+    51,
+    74,
+    129,
+    144
+   ],
+   "npairs": 6,
+   "nevents": 35,
+   "junctions": [
+    [
+     129,
+     0
+    ],
+    [
+     74,
+     1
+    ],
+    [
+     144,
+     0
+    ]
+   ],
+   "twins": [
+    [
+     [
+      13,
+      74
+     ],
+     0.9259988700937914,
+     88.20364544363485
+    ],
+    [
+     [
+      13,
+      51
+     ],
+     0.9947861583981402,
+     115.84524954453721
+    ],
+    [
+     [
+      51,
+      74
+     ],
+     0.9907141410356165,
+     119.73720298672373
+    ]
+   ],
+   "overlap_len": 119.73720298672373,
+   "min_dy": 1.1102230246251565e-16,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -3155.340547217704,
+   "z": -1689.242758474738,
+   "y": 4.490263257119142,
+   "chains": [
+    51,
+    74,
+    93
+   ],
+   "npairs": 3,
+   "nevents": 23,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      51,
+      74
+     ],
+     0.9944618333474379,
+     120.15615694296393
+    ]
+   ],
+   "overlap_len": 120.15615694296393,
+   "min_dy": 0.14000000000000057,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 4405.093863560494,
+   "z": -4440.5331739711,
+   "y": 1.5530243057211468,
+   "chains": [
+    18,
+    21
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [
+    [
+     18,
+     0
+    ],
+    [
+     21,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.013951388557706279,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -9968.626456437969,
+   "z": 7649.424459936458,
+   "y": 0.5375947523168941,
+   "chains": [
+    20,
+    133
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [
+    [
+     133,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 27.109039082933563,
+   "min_dy": 0.08000000000000007,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -4166.681224989981,
+   "z": -6722.719504314192,
+   "y": 18.010560248170187,
+   "chains": [
+    28,
+    37,
+    42,
+    121
+   ],
+   "npairs": 2,
+   "nevents": 9,
+   "junctions": [
+    [
+     121,
+     1
+    ],
+    [
+     42,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 48.34811003119508,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -893.3725520431766,
+   "z": -8300.111873554357,
+   "y": 25.035230017990234,
+   "chains": [
+    29,
+    30
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.06953996401953333,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -979.5327035623231,
+   "z": -8311.087725088268,
+   "y": 28.68522036997231,
+   "chains": [
+    29,
+    30,
+    130
+   ],
+   "npairs": 2,
+   "nevents": 3,
+   "junctions": [
+    [
+     130,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 1.4352963262354024e-12,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1028.7551142747395,
+   "z": -8310.748362751854,
+   "y": 30.66539643744855,
+   "chains": [
+    29,
+    30
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.4175273976413223,
+   "min_dy": 0.037387100716909316,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1077.2259002720755,
+   "z": -8311.746503936032,
+   "y": 32.78096706834138,
+   "chains": [
+    29,
+    30
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.526612887175304,
+   "min_dy": 0.006885259544361588,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -1166.1856751277928,
+   "z": -8306.243601889862,
+   "y": 35.80147808097719,
+   "chains": [
+    29,
+    30
+   ],
+   "npairs": 1,
+   "nevents": 9,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      29,
+      30
+     ],
+     0.9992465149658776,
+     73.93253508900787
+    ]
+   ],
+   "overlap_len": 73.93253508900787,
+   "min_dy": 0.0018414646832454196,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1257.920269216389,
+   "z": -8291.927075125252,
+   "y": 36.85968414235228,
+   "chains": [
+    29,
+    30
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 25.458553748238273,
+   "min_dy": 0.1080996948846149,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1317.878334189103,
+   "z": -8277.366463999415,
+   "y": 38.16992145444436,
+   "chains": [
+    29,
+    30
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.553411257528353,
+   "min_dy": 2.3990277466158147,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -1619.2310461573038,
+   "z": -8164.969306594202,
+   "y": 49.34485589257875,
+   "chains": [
+    29,
+    30
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      29,
+      30
+     ],
+     0.9999972935562663,
+     77.43931467553955
+    ]
+   ],
+   "overlap_len": 77.43931467553955,
+   "min_dy": 0.5793133885516184,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6055.5579834533655,
+   "z": -6768.826490089876,
+   "y": 2.323633890839834,
+   "chains": [
+    31,
+    50
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 2.152732218320332,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6164.329421551915,
+   "z": -6853.189752216075,
+   "y": 7.510136355494876,
+   "chains": [
+    31,
+    50
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 42.31415018429601,
+   "min_dy": 0.7449388790030884,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6222.5070540420775,
+   "z": -6890.591647506044,
+   "y": 6.202989416683751,
+   "chains": [
+    31,
+    50
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.10597883336750158,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6279.98822146476,
+   "z": -6923.696229798081,
+   "y": 4.429198436742761,
+   "chains": [
+    31,
+    50
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 33.93193407094307,
+   "min_dy": 0.09999999999999964,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6362.938227567181,
+   "z": -6965.583256757881,
+   "y": 3.619125882763141,
+   "chains": [
+    31,
+    50
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 55.32441617251668,
+   "min_dy": 0.14000000000000012,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4423.574002823981,
+   "z": 233.98152285532848,
+   "y": -1.7879316366928304,
+   "chains": [
+    32,
+    208
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 2.4958632733856607,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -576.6255987479216,
+   "z": 3797.528255814892,
+   "y": 1.8513197562269876,
+   "chains": [
+    34,
+    105
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [
+    [
+     105,
+     0
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 55.85582286816001,
+   "min_dy": 0.038960761779667674,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 12727.684417760242,
+   "z": -21379.198991892576,
+   "y": 39.81923005374546,
+   "chains": [
+    38,
+    39
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.3984601074909122,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4417.130306289099,
+   "z": -6688.572482728609,
+   "y": 27.115619015414296,
+   "chains": [
+    42,
+    70
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 50.038508580062256,
+   "min_dy": 0.3364428641792827,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4565.712261681504,
+   "z": -6768.767098777806,
+   "y": 20.882886754251825,
+   "chains": [
+    42,
+    70
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 41.764913389533945,
+   "min_dy": 1.6467540510543763,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 13978.950989543991,
+   "z": -20831.021819732756,
+   "y": 37.900953005511056,
+   "chains": [
+    46,
+    47
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.04190601102210678,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 14157.903815551357,
+   "z": -20788.833430730112,
+   "y": 44.88665038371739,
+   "chains": [
+    46,
+    47
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 59.505306033137856,
+   "min_dy": 0.01853286684707456,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 14249.596924202146,
+   "z": -20767.31623529456,
+   "y": 43.81225213629082,
+   "chains": [
+    46,
+    47
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 38.83361945531357,
+   "min_dy": 0.020000000000003126,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 14380.27279901772,
+   "z": -20732.006766499584,
+   "y": 43.2768156092563,
+   "chains": [
+    46,
+    47,
+    110
+   ],
+   "npairs": 2,
+   "nevents": 9,
+   "junctions": [
+    [
+     110,
+     0
+    ]
+   ],
+   "twins": [
+    [
+     [
+      46,
+      110
+     ],
+     0.9946432441526121,
+     75.37296739874927
+    ]
+   ],
+   "overlap_len": 75.37296739874927,
+   "min_dy": 0.0076530824050138335,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -3233.431319271973,
+   "z": -1795.4710123438485,
+   "y": 1.108740037809984,
+   "chains": [
+    51,
+    74
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.6574800756199679,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6479.324173582106,
+   "z": -8366.593739158263,
+   "y": 21.14932035108201,
+   "chains": [
+    60,
+    61
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 35.99378000168631,
+   "min_dy": 1.018907100459625,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6666.182471563649,
+   "z": -8506.53313882421,
+   "y": 12.581807825619517,
+   "chains": [
+    60,
+    61
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 21.02011570945251,
+   "min_dy": 1.2496263003737162,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6737.8603310721655,
+   "z": -8560.046279690328,
+   "y": 11.647415842186241,
+   "chains": [
+    60,
+    61
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 37.38331466210644,
+   "min_dy": 1.4392923374179958,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -7774.185665159394,
+   "z": 5845.406988380857,
+   "y": -2.0754182302942326,
+   "chains": [
+    126,
+    143
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [
+    [
+     143,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 24.16153968603846,
+   "min_dy": 0.02401075747713266,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -8334.935432482407,
+   "z": 6780.29482299164,
+   "y": 1.2116230287100829,
+   "chains": [
+    72,
+    113
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [
+    [
+     113,
+     1
+    ]
+   ],
+   "twins": [
+    [
+     [
+      72,
+      113
+     ],
+     0.9844033285622041,
+     65.15893193474155
+    ]
+   ],
+   "overlap_len": 65.15893193474155,
+   "min_dy": 0.007360032222841317,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6873.308220677624,
+   "z": -7116.077586396206,
+   "y": 1.6740506090642049,
+   "chains": [
+    73,
+    75
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 16.777624491101818,
+   "min_dy": 0.18098526824400274,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6964.879981248619,
+   "z": -7160.705505664036,
+   "y": 5.504689189930963,
+   "chains": [
+    73,
+    75
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 35.41934499676688,
+   "min_dy": 0.17668191461963634,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 7041.368535314931,
+   "z": -7202.899881117075,
+   "y": 4.415214300589158,
+   "chains": [
+    73,
+    75
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 37.616253301467026,
+   "min_dy": 0.23562034625342143,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 7098.80637636334,
+   "z": -7242.720496896175,
+   "y": 3.8806699065759758,
+   "chains": [
+    73,
+    75
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 7.929255951965899,
+   "min_dy": 0.0548494533221211,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 7144.963056189961,
+   "z": -7277.657023011819,
+   "y": 1.7155295992450768,
+   "chains": [
+    73,
+    75
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 24.10331927349417,
+   "min_dy": 0.02371376773404954,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": 864.01214671196,
+   "z": -8634.047302499655,
+   "y": 33.044138118649734,
+   "chains": [
+    85,
+    86
+   ],
+   "npairs": 1,
+   "nevents": 7,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      85,
+      86
+     ],
+     0.9972080656915184,
+     71.60892834774519
+    ]
+   ],
+   "overlap_len": 71.60892834774519,
+   "min_dy": 0.0005927936249605636,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 1001.7273122368408,
+   "z": -8672.328883642638,
+   "y": 27.99134367996099,
+   "chains": [
+    85,
+    86
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.26268735992198344,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1366.9145327494234,
+   "z": 3826.6482141911897,
+   "y": -0.013235236497085653,
+   "chains": [
+    90,
+    118
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 58.69045919057047,
+   "min_dy": 0.021588851143948706,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1209.089150490413,
+   "z": 3858.5083575212834,
+   "y": -1.4898350049095253,
+   "chains": [
+    90,
+    164
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 30.14780257332204,
+   "min_dy": 0.5588532753541833,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5337.737047569804,
+   "z": -7185.368919159862,
+   "y": 27.517910931426727,
+   "chains": [
+    94,
+    119
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 2.4272214991263787,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -8299.227466512008,
+   "z": 6608.506341551163,
+   "y": -2.906410263965096,
+   "chains": [
+    100,
+    150
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     150,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 33.95114136520236,
+   "min_dy": 0.038392374755369385,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -10791.811938262794,
+   "z": -12491.114127253497,
+   "y": 15.10569547224487,
+   "chains": [
+    103,
+    104
+   ],
+   "npairs": 1,
+   "nevents": 9,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      103,
+      104
+     ],
+     0.9999916443013692,
+     111.78854810037078
+    ]
+   ],
+   "overlap_len": 111.78854810037078,
+   "min_dy": 0.2442352398336034,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -10870.726280666564,
+   "z": -12590.79139407499,
+   "y": 11.8452914563449,
+   "chains": [
+    103,
+    104
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.20941708731019837,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -9578.967239338741,
+   "z": -10978.77015248203,
+   "y": 27.0686242714777,
+   "chains": [
+    122,
+    123
+   ],
+   "npairs": 1,
+   "nevents": 5,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 18.071436082185848,
+   "min_dy": 1.0199999999999996,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -9624.572655884102,
+   "z": -11020.069202227696,
+   "y": 24.807061164565546,
+   "chains": [
+    122,
+    123
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 1.2341223291310932,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 15681.200803151916,
+   "z": -13797.839370188798,
+   "y": 6.769232686483527,
+   "chains": [
+    131,
+    132
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 3.593684155752655,
+   "min_dy": 0.012967606595809755,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 15706.79935775483,
+   "z": -13755.101071275347,
+   "y": 4.935046803291842,
+   "chains": [
+    131,
+    132
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.00990639341631816,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 8833.19074047905,
+   "z": -13281.6623224758,
+   "y": 8.339632940012724,
+   "chains": [
+    134,
+    136
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.560734119974553,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 8847.488296728343,
+   "z": -13365.624836828392,
+   "y": 12.787759708476708,
+   "chains": [
+    134,
+    135,
+    136,
+    137
+   ],
+   "npairs": 3,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.24553039494724338,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 12624.532553030354,
+   "z": -17974.769258914726,
+   "y": 36.16397857948311,
+   "chains": [
+    139,
+    140
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.20500416242158082,
+   "min_dy": 0.5439538801940742,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -9077.615448765619,
+   "z": -10537.618973015273,
+   "y": 23.7010621026362,
+   "chains": [
+    141,
+    142
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.8421242052723947,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -9109.632830439006,
+   "z": -10576.904384846835,
+   "y": 26.098890402520794,
+   "chains": [
+    141,
+    142
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 7.105427357601002e-15,
+   "min_dy": 0.44221919495841533,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -6020.188965700717,
+   "z": -7749.43760979106,
+   "y": 16.960610581040243,
+   "chains": [
+    146,
+    147
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      146,
+      147
+     ],
+     0.9999991255388337,
+     70.8542134652663
+    ]
+   ],
+   "overlap_len": 70.8542134652663,
+   "min_dy": 1.6627963179704572,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5391.694138359685,
+   "z": -4564.813204260267,
+   "y": 18.76076510073215,
+   "chains": [
+    151,
+    157
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 37.98591844354922,
+   "min_dy": 0.6961233046648161,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 3546.111870130649,
+   "z": 5869.768334157644,
+   "y": -6.12306273446696,
+   "chains": [
+    152,
+    155
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 39.08476306002725,
+   "min_dy": 0.005106198747007795,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1799.0689548049004,
+   "z": 3754.572030128119,
+   "y": 0.3681184238968517,
+   "chains": [
+    153,
+    154
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.6362368477937033,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5341.116426653649,
+   "z": -4016.2248352453016,
+   "y": 9.755942288395303,
+   "chains": [
+    156,
+    159
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 1.1118845767906063,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 1652.2148653105587,
+   "z": -17546.46292888178,
+   "y": 60.97294575553744,
+   "chains": [
+    161,
+    165
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 29.296170504369922,
+   "min_dy": 0.12155757138439327,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -7194.1486612312765,
+   "z": -8833.452285439336,
+   "y": 3.278738485970617,
+   "chains": [
+    162,
+    163
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 15.75603322275521,
+   "min_dy": 1.0599828998931144,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -8017.495586631792,
+   "z": -9510.077475934682,
+   "y": 3.74069801122491,
+   "chains": [
+    169,
+    170
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.7613960224498206,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -2629.634598033123,
+   "z": -7821.957124264249,
+   "y": 43.519664278141335,
+   "chains": [
+    172,
+    173
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.059328556282672196,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 13503.36821313301,
+   "z": -17002.732113399143,
+   "y": 20.7945569166305,
+   "chains": [
+    175,
+    176
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.21088616673899452,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -4702.144556713011,
+   "z": 2793.994920310081,
+   "y": 7.028406512597699,
+   "chains": [
+    181,
+    182
+   ],
+   "npairs": 1,
+   "nevents": 11,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      181,
+      182
+     ],
+     0.9999586719932728,
+     95.55030265599473
+    ]
+   ],
+   "overlap_len": 95.55030265599473,
+   "min_dy": 0.03000000000000025,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -4597.136228596268,
+   "z": 2769.208741484354,
+   "y": 2.7569716903599124,
+   "chains": [
+    181,
+    182
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.026056619280174775,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -4944.36600771705,
+   "z": 2851.862844817421,
+   "y": 0.7298102736001048,
+   "chains": [
+    181,
+    182
+   ],
+   "npairs": 1,
+   "nevents": 9,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      181,
+      182
+     ],
+     0.9999918161157024,
+     167.09351757762738
+    ]
+   ],
+   "overlap_len": 167.09351757762738,
+   "min_dy": 0.04999999999999999,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -5240.043338321416,
+   "z": 2923.6250100995007,
+   "y": 2.8821176678208835,
+   "chains": [
+    181,
+    182
+   ],
+   "npairs": 1,
+   "nevents": 6,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      181,
+      182
+     ],
+     0.9998614288437518,
+     78.84316233033894
+    ]
+   ],
+   "overlap_len": 78.84316233033894,
+   "min_dy": 0.19181164970911357,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5320.830915670117,
+   "z": 2946.5327569815377,
+   "y": -0.7728951359361286,
+   "chains": [
+    181,
+    182
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 9.207578103008814,
+   "min_dy": 1.3460009689727013,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3271.854247104247,
+   "z": -1135.7173745173745,
+   "y": 9.034779323658634,
+   "chains": [
+    184,
+    222
+   ],
+   "npairs": 1,
+   "nevents": 7,
+   "junctions": [
+    [
+     222,
+     0
+    ],
+    [
+     222,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 118.3400745728532,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": -3294.5463821294306,
+   "z": -1036.87154380719,
+   "y": 3.868607588966124,
+   "chains": [
+    184,
+    191,
+    192
+   ],
+   "npairs": 2,
+   "nevents": 2,
+   "junctions": [
+    [
+     192,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.14834860310165343,
+   "all_shared_node": false
+  },
+  {
+   "cls": "junction_mouth",
+   "x": 25.199999999999996,
+   "z": 1724.2,
+   "y": 1.35,
+   "chains": [
+    185,
+    205
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [
+    [
+     205,
+     1
+    ]
+   ],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.0,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -2943.64124770174,
+   "z": -1095.7955961721884,
+   "y": 1.6980209002275248,
+   "chains": [
+    207,
+    213
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 38.56141514293088,
+   "min_dy": 0.23462221569359087,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -2819.332520139462,
+   "z": -1076.0138691605496,
+   "y": 0.02860488909638121,
+   "chains": [
+    382,
+    390
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.16279022180723757,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6226.507065466009,
+   "z": -10888.851903810095,
+   "y": 56.57155788634973,
+   "chains": [
+    199,
+    200
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 10.062305898750509,
+   "min_dy": 0.9782652022501566,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -6161.298444297957,
+   "z": -10713.603836519447,
+   "y": 49.66052999340804,
+   "chains": [
+    199,
+    200
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 1.074726743949384,
+   "min_dy": 0.761589980224116,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1788.40874665108,
+   "z": -1395.548973547781,
+   "y": 1.505333506578527,
+   "chains": [
+    211,
+    295
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 10.288396456161404,
+   "min_dy": 0.4861770174786195,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": -10346.521311632174,
+   "z": 7736.49736910465,
+   "y": -3.68853709478102,
+   "chains": [
+    215,
+    216
+   ],
+   "npairs": 1,
+   "nevents": 11,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      215,
+      216
+     ],
+     0.9999996314099999,
+     128.8631813316303
+    ]
+   ],
+   "overlap_len": 128.8631813316303,
+   "min_dy": 0.2020758867198187,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 10321.817153915881,
+   "z": -12275.966680716056,
+   "y": 12.674398164582618,
+   "chains": [
+    224,
+    225
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 36.358495202567845,
+   "min_dy": 0.3039941710022287,
+   "all_shared_node": false
+  },
+  {
+   "cls": "twins",
+   "x": 9241.25650188783,
+   "z": -12436.609587673687,
+   "y": 10.657801627457081,
+   "chains": [
+    232,
+    235
+   ],
+   "npairs": 1,
+   "nevents": 8,
+   "junctions": [],
+   "twins": [
+    [
+     [
+      232,
+      235
+     ],
+     0.9999836457925042,
+     62.23747582078461
+    ]
+   ],
+   "overlap_len": 62.23747582078461,
+   "min_dy": 0.08494360858366612,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -8006.478280857249,
+   "z": 5168.841392550801,
+   "y": -4.662777739567903,
+   "chains": [
+    236,
+    237
+   ],
+   "npairs": 1,
+   "nevents": 7,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 24.772659510949136,
+   "min_dy": 0.020000000000000462,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -8934.541359573303,
+   "z": -1304.9078878019986,
+   "y": 16.80005375890712,
+   "chains": [
+    242,
+    243
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.1998924821857635,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -9422.958401059472,
+   "z": 5166.449835032054,
+   "y": -4.893948981471676,
+   "chains": [
+    250,
+    251
+   ],
+   "npairs": 1,
+   "nevents": 4,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 38.85730304588837,
+   "min_dy": 0.020000000000000462,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6063.311232775842,
+   "z": -18523.884710708167,
+   "y": 27.524394429413416,
+   "chains": [
+    258,
+    259
+   ],
+   "npairs": 1,
+   "nevents": 3,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 31.270593214712935,
+   "min_dy": 0.2630337389097406,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -1652.7567728316565,
+   "z": -1418.1853143955243,
+   "y": -0.451018603902052,
+   "chains": [
+    289,
+    333
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 9.948725610994755,
+   "min_dy": 0.3429327530534887,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 6415.161166546131,
+   "z": -18895.29802757477,
+   "y": 27.52464386191162,
+   "chains": [
+    315,
+    323
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 3.146238478702582,
+   "min_dy": 0.4435859869167018,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -2368.7390830945556,
+   "z": -7995.564699140401,
+   "y": 52.069908946195476,
+   "chains": [
+    332,
+    335
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.13981789239095122,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -5238.880394664718,
+   "z": -7657.972400877033,
+   "y": 5.124734149460991,
+   "chains": [
+    371,
+    373
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.9505317010780159,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -2702.07892494929,
+   "z": -1056.9853346855984,
+   "y": -0.5050131845841788,
+   "chains": [
+    354,
+    355
+   ],
+   "npairs": 1,
+   "nevents": 2,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 27.4235300426476,
+   "min_dy": 0.18599999999999917,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": -2554.133832143836,
+   "z": -1033.155347661445,
+   "y": 1.2559494827463653,
+   "chains": [
+    383,
+    388
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.028101034507269418,
+   "all_shared_node": false
+  },
+  {
+   "cls": "braid",
+   "x": 15499.210328216359,
+   "z": -14087.270194799976,
+   "y": 11.165750266229974,
+   "chains": [
+    375,
+    384
+   ],
+   "npairs": 1,
+   "nevents": 1,
+   "junctions": [],
+   "twins": [],
+   "overlap_len": 0.0,
+   "min_dy": 0.0715005324599467,
+   "all_shared_node": false
+  }
+ ],
+ "pier_stations": 92,
+ "pier_regions": [
+  {
+   "x": -6781.5397904943775,
+   "z": 5895.548634437301,
+   "n": 3,
+   "uppers": [
+    0,
+    1
+   ],
+   "lowers": [
+    7,
+    8
+   ],
+   "min_clear": 5.73181729047664
+  },
+  {
+   "x": -3902.544989533864,
+   "z": 5390.461828596729,
+   "n": 3,
+   "uppers": [
+    1
+   ],
+   "lowers": [
+    0
+   ],
+   "min_clear": 3.2848768446976937
+  },
+  {
+   "x": -4282.3501975874,
+   "z": 5658.022636838087,
+   "n": 30,
+   "uppers": [
+    1
+   ],
+   "lowers": [
+    0
+   ],
+   "min_clear": 1.594556836429513
+  },
+  {
+   "x": -4869.188389124201,
+   "z": 6207.052714692678,
+   "n": 19,
+   "uppers": [
+    1
+   ],
+   "lowers": [
+    0
+   ],
+   "min_clear": 1.5912922523998088
+  },
+  {
+   "x": 172.5417732225834,
+   "z": -1233.810676243499,
+   "n": 1,
+   "uppers": [
+    2
+   ],
+   "lowers": [
+    23
+   ],
+   "min_clear": 3.7787797094881217
+  },
+  {
+   "x": 287.80010308932526,
+   "z": -1259.8154520199435,
+   "n": 1,
+   "uppers": [
+    2
+   ],
+   "lowers": [
+    66
+   ],
+   "min_clear": 11.739778523949221
+  },
+  {
+   "x": 400.0060220553617,
+   "z": -1681.9006074233616,
+   "n": 1,
+   "uppers": [
+    2
+   ],
+   "lowers": [
+    168
+   ],
+   "min_clear": 2.831348054068082
+  },
+  {
+   "x": 5312.855480324832,
+   "z": -5750.059667043183,
+   "n": 2,
+   "uppers": [
+    4,
+    49
+   ],
+   "lowers": [
+    16
+   ],
+   "min_clear": 2.106635722894037
+  },
+  {
+   "x": -4113.62267864104,
+   "z": 259.05505577213177,
+   "n": 2,
+   "uppers": [
+    9,
+    15
+   ],
+   "lowers": [
+    32
+   ],
+   "min_clear": 1.9405397660590515
+  },
+  {
+   "x": -11.898878263248356,
+   "z": -1269.9032656932789,
+   "n": 3,
+   "uppers": [
+    10
+   ],
+   "lowers": [
+    2
+   ],
+   "min_clear": 1.99569108471173
+  },
+  {
+   "x": 266.7877298135478,
+   "z": -1141.0079509402362,
+   "n": 1,
+   "uppers": [
+    10
+   ],
+   "lowers": [
+    66
+   ],
+   "min_clear": 2.491558822441058
+  },
+  {
+   "x": -137.2635842338892,
+   "z": -1321.9146166991059,
+   "n": 2,
+   "uppers": [
+    23
+   ],
+   "lowers": [
+    17
+   ],
+   "min_clear": 3.855129651232023
+  },
+  {
+   "x": 5126.77585154074,
+   "z": -5983.707645782279,
+   "n": 1,
+   "uppers": [
+    26
+   ],
+   "lowers": [
+    16
+   ],
+   "min_clear": 1.3081858473068564
+  },
+  {
+   "x": -490.89757368799087,
+   "z": 4701.129457225012,
+   "n": 1,
+   "uppers": [
+    27
+   ],
+   "lowers": [
+    0
+   ],
+   "min_clear": 1.3390952238190703
+  },
+  {
+   "x": -337.79262660153336,
+   "z": 3619.0540190493853,
+   "n": 1,
+   "uppers": [
+    34
+   ],
+   "lowers": [
+    6
+   ],
+   "min_clear": 2.5093925069526204
+  },
+  {
+   "x": 5660.105687998449,
+   "z": -6318.989130718776,
+   "n": 3,
+   "uppers": [
+    40
+   ],
+   "lowers": [
+    25
+   ],
+   "min_clear": 1.009958388678516
+  },
+  {
+   "x": -3184.388993079971,
+   "z": -821.2652516410717,
+   "n": 12,
+   "uppers": [
+    54,
+    193
+   ],
+   "lowers": [
+    13,
+    193
+   ],
+   "min_clear": 3.5223539592430555
+  },
+  {
+   "x": -3119.736063182293,
+   "z": -1645.3777503898818,
+   "n": 1,
+   "uppers": [
+    74
+   ],
+   "lowers": [
+    93
+   ],
+   "min_clear": 1.6750818043859401
+  },
+  {
+   "x": -5330.549180535391,
+   "z": -7230.052377080308,
+   "n": 1,
+   "uppers": [
+    119
+   ],
+   "lowers": [
+    197
+   ],
+   "min_clear": 3.287547814208491
+  },
+  {
+   "x": -3104.1716162081216,
+   "z": -1261.6859913848114,
+   "n": 1,
+   "uppers": [
+    184
+   ],
+   "lowers": [
+    116
+   ],
+   "min_clear": 3.1903099494407328
+  },
+  {
+   "x": -3295.7120009221844,
+   "z": -2090.146702225929,
+   "n": 1,
+   "uppers": [
+    190
+   ],
+   "lowers": [
+    203
+   ],
+   "min_clear": 4.284092099367718
+  },
+  {
+   "x": -3121.3553391692644,
+   "z": -1008.903354341784,
+   "n": 1,
+   "uppers": [
+    191
+   ],
+   "lowers": [
+    54
+   ],
+   "min_clear": 7.205422837333275
+  },
+  {
+   "x": -3327.990116412808,
+   "z": -867.9989949651879,
+   "n": 1,
+   "uppers": [
+    192
+   ],
+   "lowers": [
+    193
+   ],
+   "min_clear": 3.6095729224297877
+  }
+ ]
+}
