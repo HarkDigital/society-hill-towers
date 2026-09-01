@@ -110,6 +110,11 @@
     if (towerMat) towerMat.size = r;
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // Three.js is PINNED at r149 (build.py asserts it): outputEncoding/sRGBEncoding
+  // were removed in r152+, and the ~250 colour constants in this file are tuned
+  // to r149's legacy colour pipeline (stored dark, lifted by ACES). An upgrade
+  // must set THREE.ColorManagement.enabled = false and use outputColorSpace =
+  // SRGBColorSpace, or repaint the whole city.
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.06;
@@ -3925,18 +3930,7 @@
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
       } };
       if (holes) for (const hl of holes) wallRing(hl, signedArea(hl) > 0 ? -1 : 1);
-      for (let i = 0; i < n; i++) {
-        const a = poly[i], q = poly[(i + 1) % n];
-        const dx = q[0] - a[0], dz = q[1] - a[1];
-        const L = Math.hypot(dx, dz);
-        if (L < 0.05) continue;
-        const nx = (dz / L) * sign, nz = (-dx / L) * sign;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base, fh);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base, fh);
-        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
-        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
-        if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
-      }
+      wallRing(poly, sign);
       // roof cap (ring when holes are given)
       v2.length = 0;
       for (let i = 0; i < n; i++) { let p2 = v2pool[i]; if (!p2) p2 = v2pool[i] = new THREE.Vector2(); v2.push(p2.set(poly[i][0], -poly[i][1])); }
@@ -4220,12 +4214,11 @@
           lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 3 });
           // white trim: eave band + crossed ridge caps read as the nested chevrons
           lmTrim.push({ geom: box(w + 0.9, 1.3, w + 0.9, cx, base + wallTop + 0.2, cz, ryG), color: wc, style: 3 });
-          const rl = Math.hypot(w / 2, apex - wallTop) * 2;
           for (const ns of [0, 1]) {
             const rg = box(w, 0.75, 0.75, 0, 0, 0, 0);
             rg.rotateY(ryG + ns * Math.PI / 2);
             rg.translate(cx, base + apex - 0.2, cz);
-            lmTrim.push({ geom: rg, color: wc, style: 3, _rl: rl });
+            lmTrim.push({ geom: rg, color: wc, style: 3 });
           }
         }
       };
@@ -4983,7 +4976,9 @@
     // bend fans, bridge decks over the river corridors
     const rc = { pos: [], col: [], idx: [], n: 0 };
     const roadCol = [0x3b3833, 0x3b3833, 0x3f3c37, 0x3f3c37, 0x43403b, 0x45423d, 0x7c584a];
-    const inWide = (p) => p[0] > WIDEB.x0 - 30 && p[0] < WIDEB.x1 + 30 && p[1] > WIDEB.z0 - 30 && p[1] < WIDEB.z1 + 30;
+    // pack_wide carries roads 200 m past its box (runs_of(..., 200)); a 30 m
+    // margin here left a 170 m band where both tiers paved the same streets
+    const inWide = (p) => p[0] > WIDEB.x0 - 200 && p[0] < WIDEB.x1 + 200 && p[1] > WIDEB.z0 - 200 && p[1] < WIDEB.z1 + 200;
     const yMapF = new Map();
     const ySnapF = (x, z, y) => {
       const key = Math.round(x * 2) + ':' + Math.round(z * 2);
@@ -7415,13 +7410,11 @@
   // Hill first among them; the neighborhood names fade in from altitude as
   // the district-level complement to the painted street names. One toggle
   // covers all of it: the P key.
-  let placesOn = true, hdMesh = null, hdMat = null, hdLblMesh = null, hdLblMat = null, nbMesh = null, nbMat = null;
+  let placesOn = true, nbMesh = null, nbMat = null;
   const btnPlaces = document.getElementById('btnPlaces');
   function syncPlacesBtn() { btnPlaces.classList.toggle('on', placesOn); }
   function togglePlaces() {
     placesOn = !placesOn;
-    if (hdMesh) hdMesh.visible = placesOn;
-    if (hdLblMesh) hdLblMesh.visible = placesOn;
     if (nbMesh) nbMesh.visible = false;      // applyLighting re-shows it by altitude
     syncPlacesBtn();
   }
@@ -7464,8 +7457,6 @@
       return r;
     };
     const nbRects = PLACES.nb.names.map((nm) => put(nm, true));
-    const hdLbl = PLACES.hd.filter((d) => d.lbl);
-    const hdRects = hdLbl.map((d) => put(d.n, false));
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding;
     tex.anisotropy = 8;
@@ -10138,8 +10129,6 @@
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(0x2c2822)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
-    if (hdMat) hdMat.color.copy(_c1.set(0x6b4f26)).lerp(_c2.set(0xc89b5e), night);  // district inlays: dark bronze by day, glowing at night
-    if (hdLblMat) hdLblMat.color.copy(_c1.set(0x6b4f26)).lerp(_c2.set(0xc89b5e), night);
     if (nbMat) {
       const nbFade = placesOn ? smooth(420, 1000, camera.position.y) : 0;   // names live at altitude
       nbMat.opacity = nbFade * 0.96;

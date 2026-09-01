@@ -81,6 +81,14 @@ def let_blob(label, name):
 template = (ROOT / "template.html").read_text(encoding="utf-8")
 css = (ROOT / "style.css").read_text(encoding="utf-8")
 three = (ROOT / "three.min.js").read_text(encoding="utf-8")
+# Three.js is pinned: r152+ removed outputEncoding/sRGBEncoding and turned on
+# colour management, and app.js's ~250 colour constants are tuned to r149's
+# legacy pipeline. A drop-in upgrade throws or repaints the city; see the note
+# beside renderer.outputEncoding in app.js before changing this.
+THREE_REV = "149"
+m = re.search(r'"use strict";const e="(\d+)"', three)
+if not m or m.group(1) != THREE_REV:
+    sys.exit(f"FATAL: three.min.js is r{m.group(1) if m else '?'}, expected r{THREE_REV} (see the pin note in build.py)")
 app = (ROOT / "app.js").read_text(encoding="utf-8")
 
 scene = json.loads((ROOT / "scene.json").read_text(encoding="utf-8"))
