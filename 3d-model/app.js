@@ -1077,7 +1077,7 @@
     if (!arr) return false;
     for (const s of arr) {
       const cls = ovpSegs[s + 7];
-      if (cls > 1 && cls !== -1) continue;           // motorway/trunk decks and open cuts only
+      if (!ovpCutClass(cls)) continue;              // motorway/trunk decks and open cuts only
       const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], hw = ovpSegs[s + 6];
       const dx = sbx - sax, dz = sbz - saz;
       const L2 = dx * dx + dz * dz || 1e-9;
@@ -1089,7 +1089,50 @@
     }
     return false;
   }
+  // motorway/trunk decks (0, 1) and open cuts (-1) erase what stands across
+  // them; covered tunnels (-2) and lesser decks leave the fabric alone. (The
+  // old `cls > 1 && cls !== -1` test let -2 through and deleted rowhouses
+  // over the covered stretches.)
+  const ovpCutClass = (cls) => cls === -1 || (cls >= 0 && cls <= 1);
+  // coarse occupancy bitmap over the cutting swaths: a footprint whose bbox
+  // misses every marked cell needs no 3 m edge walk. 99.4% of the 293k packed
+  // footprints are nowhere near a deck, and the walk cost them 9.3 M
+  // string-keyed Map probes at load.
+  const OVP_BIT = 32;
+  let ovpBits = null, ovpBx0 = 0, ovpBz0 = 0, ovpBw = 0, ovpBh = 0;
+  {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let s = 0; s < ovpSegs.length; s += OVP_STRIDE) {
+      if (!ovpCutClass(ovpSegs[s + 7])) continue;
+      const hw = ovpSegs[s + 6] + 2;
+      x0 = Math.min(x0, ovpSegs[s] - hw, ovpSegs[s + 2] - hw); x1 = Math.max(x1, ovpSegs[s] + hw, ovpSegs[s + 2] + hw);
+      z0 = Math.min(z0, ovpSegs[s + 1] - hw, ovpSegs[s + 3] - hw); z1 = Math.max(z1, ovpSegs[s + 1] + hw, ovpSegs[s + 3] + hw);
+    }
+    if (x1 > x0) {
+      ovpBx0 = x0; ovpBz0 = z0; ovpBw = Math.ceil((x1 - x0) / OVP_BIT) + 1; ovpBh = Math.ceil((z1 - z0) / OVP_BIT) + 1;
+      ovpBits = new Uint8Array(ovpBw * ovpBh);
+      for (let s = 0; s < ovpSegs.length; s += OVP_STRIDE) {
+        if (!ovpCutClass(ovpSegs[s + 7])) continue;
+        const hw = ovpSegs[s + 6] + 2;
+        const c0 = Math.floor((Math.min(ovpSegs[s], ovpSegs[s + 2]) - hw - x0) / OVP_BIT), c1 = Math.floor((Math.max(ovpSegs[s], ovpSegs[s + 2]) + hw - x0) / OVP_BIT);
+        const r0 = Math.floor((Math.min(ovpSegs[s + 1], ovpSegs[s + 3]) - hw - z0) / OVP_BIT), r1 = Math.floor((Math.max(ovpSegs[s + 1], ovpSegs[s + 3]) + hw - z0) / OVP_BIT);
+        for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) ovpBits[r * ovpBw + c] = 1;
+      }
+    }
+  }
+  function ovpNear(x0, x1, z0, z1) {
+    if (!ovpBits) return false;
+    const c0 = Math.max(0, Math.floor((x0 - ovpBx0) / OVP_BIT)), c1 = Math.min(ovpBw - 1, Math.floor((x1 - ovpBx0) / OVP_BIT));
+    const r0 = Math.max(0, Math.floor((z0 - ovpBz0) / OVP_BIT)), r1 = Math.min(ovpBh - 1, Math.floor((z1 - ovpBz0) / OVP_BIT));
+    for (let r = r0; r <= r1; r++) for (let c = c0; c <= c1; c++) if (ovpBits[r * ovpBw + c]) return true;
+    return false;
+  }
   function ovpStraddle(poly, cx, cz) {
+    if (poly && ovpBits) {
+      let x0 = cx, x1 = cx, z0 = cz, z1 = cz;
+      for (let i = 0; i < poly.length; i++) { const q = poly[i]; if (q[0] < x0) x0 = q[0]; else if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; else if (q[1] > z1) z1 = q[1]; }
+      if (!ovpNear(x0, x1, z0, z1)) return vineCut(cx, cz, -1) !== null;
+    }
     if (ovpCutHit(cx, cz)) return true;
     if (poly) {
       for (let i = 0; i < poly.length; i++) {
