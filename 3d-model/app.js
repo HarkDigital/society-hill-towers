@@ -84,6 +84,22 @@
   }
   const DPR_CAP = window.matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP));
+  // adaptive resolution: the cap alone treated a 2019 integrated GPU and a
+  // 4090 alike. frame() keeps a rolling median of frame time and steps the
+  // ratio down 15% when frames run long, back up when they stay short;
+  // fragment cost scales with the square, so 1.75 -> 1.25 halves the shading
+  // work. ?dpr=1.5 pins it.
+  const DPR = { cap: DPR_CAP, min: 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, slow: 0, fast: 0, pinned: false };
+  {
+    const q = /[?&]dpr=([\d.]+)/.exec(location.search);
+    if (q) { DPR.pinned = true; DPR.cur = Math.max(0.5, Math.min(3, +q[1])); renderer.setPixelRatio(DPR.cur); }
+  }
+  function applyDPR(r) {
+    DPR.cur = r;
+    renderer.setPixelRatio(r);   // re-applies the drawing-buffer size
+    if (poleMat) poleMat.size = r;     // the point sprites are sized in physical px
+    if (towerMat) towerMat.size = r;
+  }
   renderer.setSize(window.innerWidth, window.innerHeight);
   renderer.outputEncoding = THREE.sRGBEncoding;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -9998,7 +10014,7 @@
   window.addEventListener('resize', () => {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP));
+    renderer.setPixelRatio(DPR.cur);
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
   canvas.addEventListener('webglcontextlost', (e) => {
@@ -10031,9 +10047,23 @@
   let frameNo = 0, lastCasterSig = -1;
   function frame(now, once) {
     if (!once) requestAnimationFrame(frame);
-    const dt = Math.min((now - last) / 1000, 0.05);
+    const rawMs = now - last;
+    const dt = Math.min(rawMs / 1000, 0.05);
     last = now;
     frameNo++;
+    // adaptive resolution: 30-frame windows; a >250 ms gap is a stall or a
+    // throttled tab, not a slow frame, and is not counted
+    if (!once && !DPR.pinned && rawMs < 250 && !document.hidden) {
+      DPR.ring[DPR.i++] = rawMs;
+      if (DPR.i === 30) {
+        DPR.i = 0;
+        DPR.tmp.set(DPR.ring); DPR.tmp.sort();
+        const med = DPR.tmp[15];
+        if (med > 22) { DPR.fast = 0; if (DPR.cur > DPR.min) applyDPR(Math.max(DPR.min, DPR.cur * 0.85)); }
+        else if (med < 13) { if (++DPR.fast >= 4 && DPR.cur < DPR.cap) { DPR.fast = 0; applyDPR(Math.min(DPR.cap, DPR.cur / 0.85)); } }
+        else DPR.fast = 0;
+      }
+    }
     if (introSpin && !interacted) orbit.goalTheta += dt * 0.045;
     if (clock.live) {
       const nowMin = Math.floor(Date.now() / 60000);
@@ -10116,7 +10146,7 @@
       });
     }
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest,
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR,
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
