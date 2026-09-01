@@ -1,9 +1,82 @@
 #!/usr/bin/env python3
-"""Assemble the single-file Society Hill Towers artifact page."""
-import base64, json, pathlib, re, sys
+"""Assemble the single-file Philly3D page (society-hill-towers.html).
+
+Everything the page needs — Three.js, the app, the styles, every packed data
+blob — is inlined so one file serves philly3d.com and the GitHub Pages copy.
+"""
+import argparse, base64, json, pathlib, re, subprocess, sys
 
 ROOT = pathlib.Path(__file__).parent
 OUT = ROOT / "society-hill-towers.html"
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--allow-missing", action="store_true", help="ship without an input instead of aborting")
+args = ap.parse_args()
+
+# Every data input with a byte floor (~80% of its Sep 2026 size). An interrupted
+# pack or a moved file used to ship a city missing 180k buildings behind a
+# cheerful "wrote N MB" and a clean "Ready"; now the build refuses.
+REQUIRED = {
+    "scene.json": 550_000, "meta.json": 10_000, "about_body.html": 3_000,
+    "dem.json": 120_000, "dem_wide.json": 350_000, "dem_south.json": 120_000, "dem_city.json": 620_000,
+    "dem_nw.json": 140_000, "wwb.json": 400, "wide_names.json": 3_000, "facade_palette.json": 300,
+    "wide.b64": 4_800_000, "city.b64": 8_200_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "traffic.b64": 100_000,
+    "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
+    "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000,
+}
+MAX_HTML = 25_000_000   # runaway-growth tripwire (the page is ~23 MB; the old 16 MB artifact cap is long moot)
+# Packed int16 blobs are stored byte-planar (header, all low bytes, all high
+# bytes): DEFLATE then sees two smooth streams instead of one interleaved mess,
+# 22% off the gzipped page with no packer change. app.js's unb64() re-interleaves.
+# traffic.b64 grows 5% shuffled (short deltas), so it stays interleaved.
+PLANAR = {"wide.b64": "WIDE", "city.b64": "CITY", "trees.b64": "TREES", "poles.b64": "POLES"}
+SIZES = []   # (label, bytes) for the report
+
+def path_of(name):
+    p = ROOT / name
+    if not p.exists():
+        if args.allow_missing:
+            print(f"WARNING: {name} missing, shipping without it")
+            return None
+        sys.exit(f"FATAL: missing input {p} (pass --allow-missing to ship without it)")
+    n = p.stat().st_size
+    floor = REQUIRED.get(name, 0)
+    if n < floor and not args.allow_missing:
+        sys.exit(f"FATAL: {name} is {n:,} bytes, below its {floor:,}-byte floor: half-written pack? (--allow-missing overrides)")
+    return p
+
+def text_of(name, default):
+    p = path_of(name)
+    return p.read_text(encoding="utf-8").strip() if p else default
+
+def dem_of(name, ndigits):
+    """DEM grids: rounded (10 cm is invisible on a 25-150 m grid) and compact."""
+    p = path_of(name)
+    if not p:
+        return "null"
+    d = json.loads(p.read_text(encoding="utf-8"))
+    d["rows"] = [[None if v is None else round(v, ndigits) for v in row] for row in d["rows"]]
+    return json.dumps(d, separators=(",", ":"))
+
+def blob_of(name):
+    """A packed base64 blob, byte-plane shuffled when PLANAR says so."""
+    text = text_of(name, "")
+    if text and name in PLANAR:
+        raw = base64.b64decode(text)
+        if len(raw) < 16 or (len(raw) - 16) % 2:
+            sys.exit(f"FATAL: {name} body is not a 16-byte header + int16 body")
+        body = raw[16:]
+        text = base64.b64encode(raw[:16] + body[0::2] + body[1::2]).decode("ascii")
+    return text
+
+def const(label, js):
+    SIZES.append((label, len(js)))
+    return f"const {label} = {js};\n"
+
+def let_blob(label, name):
+    b64 = blob_of(name)
+    SIZES.append((label, len(b64)))
+    return f'let {label} = "{b64}";\n'
 
 template = (ROOT / "template.html").read_text(encoding="utf-8")
 css = (ROOT / "style.css").read_text(encoding="utf-8")
@@ -11,85 +84,46 @@ three = (ROOT / "three.min.js").read_text(encoding="utf-8")
 app = (ROOT / "app.js").read_text(encoding="utf-8")
 
 scene = json.loads((ROOT / "scene.json").read_text(encoding="utf-8"))
-meta_path = ROOT / "meta.json"   # tower facts + landmark research, written by hand after workflow
-meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+meta_path = path_of("meta.json")   # tower facts + landmark research, written by hand after workflow
+meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path else {}
+about_path = path_of("about_body.html")
+about_body = about_path.read_text(encoding="utf-8") if about_path else "<p>Model of the towers and surrounding blocks.</p>"
 
-about_path = ROOT / "about_body.html"
-about_body = about_path.read_text(encoding="utf-8") if about_path.exists() else "<p>Model of the towers and surrounding blocks.</p>"
-
-dem_path = ROOT / "dem.json"   # USGS NED 10 m grid, meters ASL, local 25 m cells
-dem = json.loads(dem_path.read_text(encoding="utf-8")) if dem_path.exists() else None
-if dem:
-    dem["rows"] = [[None if v is None else round(v, 2) for v in row] for row in dem["rows"]]
-data_js = (
-    "const SCENE_DATA = " + json.dumps(scene, separators=(",", ":")) + ";\n"
-    + "const META = " + json.dumps(meta, separators=(",", ":")) + ";\n"
-    + "const DEM = " + json.dumps(dem, separators=(",", ":")) + ";\n"
-)
-demw_path = ROOT / "dem_wide.json"
-demw = json.loads(demw_path.read_text(encoding="utf-8")) if demw_path.exists() else None
-if demw:
-    demw["rows"] = [[None if v is None else round(v, 1) for v in row] for row in demw["rows"]]
-wide_path = ROOT / "wide.b64"
-wide_b64 = wide_path.read_text(encoding="utf-8").strip() if wide_path.exists() else ""
-data_js += ("const DEM_WIDE = " + json.dumps(demw, separators=(",", ":")) + ";\n"
-            + "let WIDE_B64 = \"" + wide_b64 + "\";\n")
-dems_path = ROOT / "dem_south.json"
-dems = json.loads(dems_path.read_text(encoding="utf-8")) if dems_path.exists() else None
-if dems:
-    dems["rows"] = [[None if v is None else round(v, 1) for v in row] for row in dems["rows"]]
-wwb_path = ROOT / "wwb.json"
-data_js += ("const DEM_SOUTH = " + json.dumps(dems, separators=(",", ":")) + ";\n"
-            + "const WWB_PTS = " + (wwb_path.read_text(encoding="utf-8").strip() if wwb_path.exists() else "null") + ";\n")
-names_path = ROOT / "wide_names.json"
-data_js += "const WIDE_NAMES = " + (names_path.read_text(encoding="utf-8") if names_path.exists() else "null") + ";\n"
-# far ring: the rest of Philadelphia (city.b64 at 0.7 m units + 150 m DEM)
-demc_path = ROOT / "dem_city.json"
-demc = json.loads(demc_path.read_text(encoding="utf-8")) if demc_path.exists() else None
-if demc:
-    demc["rows"] = [[None if v is None else round(v, 1) for v in row] for row in demc["rows"]]
-city_path = ROOT / "city.b64"
-city_b64 = city_path.read_text(encoding="utf-8").strip() if city_path.exists() else ""
-data_js += ("const DEM_CITY = " + json.dumps(demc, separators=(",", ":")) + ";\n"
-            + "let CITY_B64 = \"" + city_b64 + "\";\n")
-# Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the
-# legacy color pipeline)
-fpal_path = ROOT / "facade_palette.json"
-fpal = json.loads(fpal_path.read_text(encoding="utf-8")) if fpal_path.exists() else None
-data_js += "const FACADE_PAL = " + json.dumps(fpal, separators=(",", ":")) + ";\n"
-# street-name labels (baked by bake_street_labels.py from the scene jsons —
-# the packed road formats carry no names)
-stl_path = ROOT / "street_labels.json"
-data_js += "const ST_LABELS = " + (stl_path.read_text(encoding="utf-8").strip() if stl_path.exists() else "null") + ";\n"
-# real street trees (PPR Tree Inventory via fetch_trees.py / pack_trees.py)
-trees_path = ROOT / "trees.b64"
-data_js += 'let TREES_B64 = "' + (trees_path.read_text(encoding="utf-8").strip() if trees_path.exists() else "") + '";\n'
-tn_path = ROOT / "tree_names.json"
-data_js += "const TREE_NAMES = " + (tn_path.read_text(encoding="utf-8").strip() if tn_path.exists() else "null") + ";\n"
-# historic districts + neighborhood labels (fetch_places.py / bake_places.py)
-places_path = ROOT / "places.json"
-data_js += "const PLACES = " + (places_path.read_text(encoding="utf-8").strip() if places_path.exists() else "null") + ";\n"
-# street-name SDF atlas (bake_street_sdf.py — crisp lettering at any zoom)
-sdf_path = ROOT / "street_sdf.json"
-data_js += "let ST_SDF = " + (sdf_path.read_text(encoding="utf-8").strip() if sdf_path.exists() else "null") + ";\n"
-# elevated roads + the Vine Street cut (bake_overpasses.py from the raw OSM dumps)
-ovp_path = ROOT / "overpasses.json"
-data_js += "const OVERPASSES = " + (ovp_path.read_text(encoding="utf-8").strip() if ovp_path.exists() else "null") + ";\n"
-# typical traffic volumes (fetch_traffic.py / bake_traffic.py — PennDOT AADT on OSM ways)
-tr_path = ROOT / "traffic.b64"
-data_js += 'let TRAFFIC_B64 = "' + (tr_path.read_text(encoding="utf-8").strip() if tr_path.exists() else "") + '";\n'
-# NW hills patch: 50 m DEM (fetch_dem_nw.py, border pre-feathered to dem_city),
-# PPR parkland boundaries and full-fidelity creek/canal rings for the woodland
-# tint + draped water (fetch_nw_parks.py / fetch_nw_water.py)
-demn_path = ROOT / "dem_nw.json"
-data_js += "const DEM_NW = " + (demn_path.read_text(encoding="utf-8").strip() if demn_path.exists() else "null") + ";\n"
-nwp_path = ROOT / "nw_parks.json"
-data_js += "const NW_PARKS = " + (nwp_path.read_text(encoding="utf-8").strip() if nwp_path.exists() else "null") + ";\n"
-nww_path = ROOT / "nw_water.json"
-data_js += "const NW_WATER = " + (nww_path.read_text(encoding="utf-8").strip() if nww_path.exists() else "null") + ";\n"
-# streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
-poles_path = ROOT / "poles.b64"
-data_js += 'let POLES_B64 = "' + (poles_path.read_text(encoding="utf-8").strip() if poles_path.exists() else "") + '";\n'
+data_js = ("const B64_PLANAR = " + json.dumps({v: 1 for v in PLANAR.values()} | {"TRAFFIC": 0}, separators=(",", ":")) + ";\n"
+    + const("SCENE_DATA", json.dumps(scene, separators=(",", ":")))
+    + const("META", json.dumps(meta, separators=(",", ":")))
+    + const("DEM", dem_of("dem.json", 2))            # USGS NED 10 m grid, meters ASL, local 25 m cells
+    + const("DEM_WIDE", dem_of("dem_wide.json", 1))
+    + let_blob("WIDE_B64", "wide.b64")
+    + const("DEM_SOUTH", dem_of("dem_south.json", 1))
+    + const("WWB_PTS", text_of("wwb.json", "null"))
+    + const("WIDE_NAMES", text_of("wide_names.json", "null"))
+    # far ring: the rest of Philadelphia (city.b64 at 0.7 m units + 150 m DEM)
+    + const("DEM_CITY", dem_of("dem_city.json", 1))
+    + let_blob("CITY_B64", "city.b64")
+    # Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the legacy color pipeline)
+    + const("FACADE_PAL", text_of("facade_palette.json", "null"))
+    # street-name labels (bake_street_labels.py — the packed road formats carry no names)
+    + const("ST_LABELS", text_of("street_labels.json", "null"))
+    # real street trees (PPR Tree Inventory via fetch_trees.py / pack_trees.py)
+    + let_blob("TREES_B64", "trees.b64")
+    + const("TREE_NAMES", text_of("tree_names.json", "null"))
+    # historic districts + neighborhood labels (fetch_places.py / bake_places.py)
+    + const("PLACES", text_of("places.json", "null"))
+    # street-name SDF atlas (bake_street_sdf.py — crisp lettering at any zoom)
+    + "let ST_SDF = " + text_of("street_sdf.json", "null") + ";\n"
+    # elevated roads + the Vine Street cut (bake_overpasses.py from the raw OSM dumps)
+    + const("OVERPASSES", text_of("overpasses.json", "null"))
+    # typical traffic volumes (fetch_traffic.py / bake_traffic.py — PennDOT AADT on OSM ways)
+    + let_blob("TRAFFIC_B64", "traffic.b64")
+    # NW hills patch: 50 m DEM (fetch_dem_nw.py, border pre-feathered to dem_city),
+    # PPR parkland boundaries and full-fidelity creek/canal rings (fetch_nw_parks.py / fetch_nw_water.py)
+    + const("DEM_NW", dem_of("dem_nw.json", 1))
+    + const("NW_PARKS", text_of("nw_parks.json", "null"))
+    + const("NW_WATER", text_of("nw_water.json", "null"))
+    # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
+    + let_blob("POLES_B64", "poles.b64"))
+SIZES.append(("ST_SDF", len(text_of("street_sdf.json", "null"))))
 
 # brand icons inlined as data: URIs in the head (brand/make_brand.py fills dist/)
 BRAND = ROOT / "brand" / "dist"
@@ -118,5 +152,24 @@ page = (template
         .replace("{{FAVICON_32_B64}}", fav_32_b64)
         .replace("{{APPLE_ICON_B64}}", touch_b64))
 
+left = re.search(r"\{\{[A-Z_0-9]+\}\}", page)
+if left:
+    sys.exit(f"FATAL: unsubstituted placeholder {left.group(0)} in the page")
+if len(page.encode("utf-8")) > MAX_HTML:
+    sys.exit(f"FATAL: page is {len(page.encode('utf-8')):,} bytes, over the {MAX_HTML:,} tripwire (raise MAX_HTML if this growth is intended)")
+
 OUT.write_text(page, encoding="utf-8")
-print(f"wrote {OUT} ({OUT.stat().st_size/1e6:.2f} MB)")
+size = OUT.stat().st_size
+
+# the report: what went in, and how the page moved against the committed build
+SIZES += [("three.min.js", len(three)), ("app.js", len(app)), ("style.css", len(css))]
+for label, n in sorted(SIZES, key=lambda t: -t[1]):
+    if n >= 50_000:
+        print(f"  {label:14s} {n:>12,d}")
+try:
+    prev = int(subprocess.run(["git", "cat-file", "-s", "HEAD:3d-model/society-hill-towers.html"], cwd=ROOT,
+                              capture_output=True, text=True, check=True).stdout.strip())
+    delta = f" ({size - prev:+,d} bytes vs HEAD)"
+except Exception:
+    delta = ""
+print(f"wrote {OUT} ({size/1e6:.2f} MB){delta}")

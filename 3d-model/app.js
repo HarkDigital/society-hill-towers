@@ -1510,6 +1510,27 @@
     for (const k in g.attributes) g.attributes[k].onUpload(function () { this.array = null; });
     if (g.index) g.index.onUpload(function () { this.array = null; });
   }
+  // base64 -> bytes for the packed blobs. The charCodeAt loop is 6x faster
+  // than Uint8Array.from(str, fn) (which walks the iterator path and calls the
+  // mapper 7.7 M times). build.py stores the int16 blobs byte-PLANAR (16-byte
+  // header, then every low byte, then every high byte: DEFLATE sees two smooth
+  // streams, 22% off the gzipped page), so the body is re-interleaved here.
+  function unb64(b64, name) {
+    const s = atob(b64);
+    const n = s.length;
+    const raw = new Uint8Array(n);
+    for (let i = 0; i < n; i++) raw[i] = s.charCodeAt(i);
+    const planar = typeof B64_PLANAR !== 'undefined' && B64_PLANAR && B64_PLANAR[name];
+    if (!planar || n <= 16) return raw;
+    const out = new Uint8Array(n);
+    out.set(raw.subarray(0, 16));
+    const half = (n - 16) >> 1;
+    for (let i = 0, j = 16; i < half; i++, j += 2) { out[j] = raw[16 + i]; out[j + 1] = raw[16 + half + i]; }
+    return out;
+  }
+  // a real macrotask boundary that is NOT timer-clamped in hidden tabs
+  // (setTimeout is held to 1 s+ there; 23 build steps of that was 23 s of sleep)
+  const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
 
   const groupCity = new THREE.Group();
   scene.add(groupCity);
@@ -3646,7 +3667,7 @@
   const tallGlow = [];   // buildings ≥45 m from every tier, for the night skyline points
   step('Raising the outer districts', async () => {
     if (typeof WIDE_B64 === 'undefined' || !WIDE_B64) return;
-    const bin = Uint8Array.from(atob(WIDE_B64), ch => ch.charCodeAt(0));
+    const bin = unb64(WIDE_B64, 'WIDE');
     WIDE_B64 = null;   // the 5 MB base64 string has served its purpose
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const body = new Int16Array(bin.buffer, 16);
@@ -3693,7 +3714,6 @@
     const c = new THREE.Color();
     const cCap = new THREE.Color();
     const v2 = [];
-    const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); }); // not timer-clamped in hidden tabs
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => {
       ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base); ch.flh.push(fh || 0);
       return ch.n++;
@@ -4690,7 +4710,7 @@
   // ------------------------------------------------ the far ring: the rest of Philadelphia
   step('Raising the rest of Philadelphia', async () => {
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
-    const bin = Uint8Array.from(atob(CITY_B64), ch => ch.charCodeAt(0));
+    const bin = unb64(CITY_B64, 'CITY');
     CITY_B64 = null;   // 7 MB of base64 freed
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const hasAttr = hdr[0] === 0x5348545B;
@@ -4725,7 +4745,6 @@
     const c = new THREE.Color();
     const cCap = new THREE.Color();
     const v2 = [];
-    const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); }); // not timer-clamped in hidden tabs
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => {
       ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base); ch.flh.push(fh || 0);
       return ch.n++;
@@ -5621,10 +5640,8 @@
     if (typeof TREES_B64 === 'undefined' || !TREES_B64 || typeof TREE_NAMES === 'undefined' || !TREE_NAMES) { plantProceduralTrees(); return; }
     let head, v;
     try {
-      const s = atob(TREES_B64);
+      const buf = unb64(TREES_B64, 'TREES');
       TREES_B64 = null;
-      const buf = new Uint8Array(s.length);
-      for (let i = 0; i < s.length; i++) buf[i] = s.charCodeAt(i);
       head = new Int32Array(buf.buffer, 0, 4);
       if (head[0] !== 0x53485454) throw new Error('bad tree magic');
       v = new Int16Array(buf.buffer, 16);
@@ -6365,7 +6382,13 @@
 
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'BUTTON')) return;
+    if (e.metaKey || e.ctrlKey || e.altKey) return;   // browser chords (Cmd+F, Ctrl+P, Cmd+A) are not layer hotkeys
+    const tag = e.target && e.target.tagName;
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+    // a focused HUD button keeps Space/Enter (its own activation); every other
+    // key is a shortcut. Bailing on ANY key from a BUTTON left W A S D dead after
+    // every mouse click on the HUD until the user happened to click the canvas.
+    if (tag === 'BUTTON' && (k === ' ' || k === 'enter')) return;
     if (!veil.classList.contains('hidden')) return;      // no shortcuts under the intro veil
     if (about.classList.contains('open')) {              // panel gets the keyboard while open
       if (k === 'escape' || k === 'i') closeAbout();
@@ -6393,6 +6416,12 @@
   });
   window.addEventListener('keyup', (e) => { walk.keys[e.key.toLowerCase()] = false; });
   window.addEventListener('blur', () => { walk.keys = {}; dragging = false; });
+  // a mouse click parks focus on the button it hit (Chrome, Edge, non-Mac
+  // Firefox), so the keyboard stays with the HUD; drop it after a real click.
+  // detail === 0 is keyboard activation, which keeps its focus ring.
+  document.addEventListener('click', (e) => {
+    if (e.detail > 0 && e.target && e.target.closest) { const b = e.target.closest('button'); if (b) b.blur(); }
+  });
 
   // ---------------------------------------------------------------- modes & viewpoints
   const flyCtl = document.getElementById('flyctl');
@@ -8715,7 +8744,7 @@
   }
   step('Setting the traffic flowing', () => {
     if (typeof TRAFFIC_B64 === 'undefined' || !TRAFFIC_B64) { if (btnTraffic) btnTraffic.style.display = 'none'; return; }
-    const bin = Uint8Array.from(atob(TRAFFIC_B64), ch => ch.charCodeAt(0));
+    const bin = unb64(TRAFFIC_B64, 'TRAFFIC');
     TRAFFIC_B64 = null;
     const hdr = new Int32Array(bin.buffer, 0, 4);
     if (hdr[0] !== 0x53485454) return;
@@ -9055,10 +9084,8 @@
     if (typeof POLES_B64 === 'undefined' || !POLES_B64) { if (btnLights) btnLights.style.display = 'none'; return; }
     let head, v;
     try {
-      const s = atob(POLES_B64);
+      const buf = unb64(POLES_B64, 'POLES');
       POLES_B64 = null;   // free the base64 source
-      const buf = new Uint8Array(s.length);
-      for (let i = 0; i < s.length; i++) buf[i] = s.charCodeAt(i);
       head = new Int32Array(buf.buffer, 0, 4);
       if (head[0] !== 0x53485450) throw new Error('bad pole magic');
       v = new Int16Array(buf.buffer, 16);
@@ -9923,7 +9950,7 @@
     let failures = 0;
     for (const s of buildSteps) {
       loadmsg.textContent = s.msg;
-      await new Promise(r => setTimeout(r, 10));
+      await yieldNow();
       try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; console.error('build step failed:', s.msg, err); }
     }
     loadmsg.textContent = failures ? 'Ready (some detail could not be built)' : 'Ready';
@@ -9932,6 +9959,7 @@
   }
 
   btnEnter.addEventListener('click', () => {
+    btnEnter.blur();   // #veil.hidden is opacity only; a focused Enter button would swallow every key
     veil.classList.add('hidden');
     if (mode === MODE.ORBIT) orbit.goalR = 700;   // glide in from the veil's wide shot
     if (reducedMotion) {
