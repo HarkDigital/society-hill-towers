@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """osm_city_raw.json -> city.b64 : the far ring (rest of Philadelphia) at 0.7 m units.
+city.b64 is a derivative database of OpenStreetMap data (ODbL): see ../DATA-LICENSE.md.
 Same body layout as wide.b64 (n, h*5, minH*5, type, attr, roof, pts...; magic 0x5348545B) but scale 0.7 and with
 rowhouse rows MERGED into block strips (shapely union) so the whole city fits the
 artifact's 16 MB page budget. Buildings inside the wide box are skipped (covered).

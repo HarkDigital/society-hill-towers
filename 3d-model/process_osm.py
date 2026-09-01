@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Convert Overpass OSM JSON to compact scene.json for Three.js city model."""
+"""Convert Overpass OSM JSON to compact scene.json for Three.js city model.
+Its output is a derivative database of OpenStreetMap data (ODbL): see ../DATA-LICENSE.md."""
 import json, math, re, sys, os
 
 SCRATCH = os.environ.get("SHT_DIR", os.path.dirname(os.path.abspath(__file__)))
