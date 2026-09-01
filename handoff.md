@@ -272,6 +272,38 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   the road profile, alpha from an SDF threshold (RedFormat DataTexture; LuminanceFormat is
   rejected by WebGL2).
 
+### Added in Round 46 (Sep 1, the optimisation audit)
+
+- **Load path:** the packed int16 blobs are stored byte-planar by build.py (`B64_PLANAR` const) and
+  re-interleaved by one `unb64()`; the two ring decoders stage into `VBuf`/`IdxBuf` typed
+  accumulators, seal chunks at 60k vertices and hand them to `addChunkMesh` / `flushUploads`
+  (every new ring mesh draws unculled once so it uploads and frees). `ovpNear` is a 32 m bitmap
+  that pre-tests footprints against the deck swaths. `yieldNow` (MessageChannel) is the only
+  yield between build steps.
+- **Runtime:** `renderer.shadowMap.autoUpdate` is off; `aimSun` requests a redraw when the box
+  or the sun moves and `frame()` refreshes every 4th frame while vehicles move. `cullFogged`
+  hides outer meshes beyond `fog.far` (view depth). `DPR` adapts the pixel ratio to frame time
+  between 0.9 and the display's own ratio (`?dpr=N` pins). `flushInst(m, colorFrom)` is the
+  one InstancedMesh upload helper. `PERF`/`__dbg.perf()` and the `?dev` readout carry per-step
+  timings and frame p50/p95; `beacon()` posts checkpoints to `/b` on philly3d.com only.
+- **Feeds:** `septaFetchBaked` reads `/septa.json` (ops/septa_bake.py) before the JSONP rotation;
+  `shipRelayPoll`/`shipUpsertRelay` read `/ais.json` (ops/ais_relay.py) and only fall back to the
+  direct aisstream socket while the relay is missing or stale (90 s / 60 s gates).
+- **UI:** prefs persist under localStorage `philly3d.prefs` (seeded before `build()`; hash wins);
+  the share hash is `#p=x,y,z,yaw,pitch&t=YYYYMMDD,minutes&l=<bitmask>` (bits: 1 SEPTA, 2 Indego,
+  4 flights, 8 ships, 16 traffic, 32 lights, 64 streets, 128 labels, 256 places), written by
+  `updateHash` from `frame()`; `openPanel`/`closePanels` keep one bottom panel open (Escape and a
+  short canvas tap close them); the layers panel ends with 'Take me to' stops (`STOPS`, the glide
+  tween `glideFly`/`stepGlide` polled from `frame()`) and 'Tour the City'; `btnShot` captures the
+  GL canvas; the time panel's Play runs the sun time-lapse (`setLapse`, PMREM rebake gated by
+  `envGap`); the compass is a button (`faceNorth`); a bus-route search sets `SEPTA.filter`
+  (chip in `#searchOut`, status 'N of M on route R'); `searchLocal` matches the in-page name
+  index (landmarks, neighborhoods, districts, named buildings, streets) before Nominatim.
+- **Visual constants to tune by eye:** `LANDMARK_H` (wide-ring landmark heights and spires from
+  `wide_landmarks_research.json`), `RING_AO = 0.78` (bottom-vertex darkening of ring walls; 1.0
+  disables), `SKY_DITHER = 1/255` and `MAT_DITHER` (banding), `anisoOf(n)` (texture anisotropy
+  clamped to the hardware cap).
+
 ## Hard-won gotchas (do not relearn these)
 
 1. **OBB frame handedness:** for any frame built from a 2D axis `(ax,az)` in this y-up
