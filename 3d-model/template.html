@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <title>Philly3D: A Living Model of Philadelphia</title>
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="description" content="Fly a living 3D model of Philadelphia. A quarter million buildings at true measured height, live SEPTA vehicles, flights, ships, and the real sun over the city.">
 <meta name="theme-color" content="#171512">
 <link rel="canonical" href="https://philly3d.com/">
@@ -54,7 +54,7 @@
 
 <div id="vehinfo" class="panel" hidden>
   <button id="vehinfoX" title="Dismiss">&times;</button>
-  <div id="vehinfoBody"></div>
+  <div id="vehinfoBody" aria-live="polite"></div>
 </div>
 <div id="crosshair"></div>
 <div id="stick"><div class="nub"></div></div>
@@ -74,9 +74,9 @@
 </div>
 
 <div id="bar">
-  <button id="btnLayers" class="iconbtn panel" title="Layers (F)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg></button>
-  <button id="btnSearch" class="iconbtn panel" title="Find an Address (/)"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
-  <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)">&#9680;</button>
+  <button id="btnLayers" class="iconbtn panel" title="Layers (F)" aria-expanded="false" aria-controls="layerspanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg></button>
+  <button id="btnSearch" class="iconbtn panel" title="Find an Address (/)" aria-expanded="false" aria-controls="searchpanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
+  <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)" aria-expanded="false" aria-controls="timepanel">&#9680;</button>
   <button id="btnAbout" class="iconbtn panel" title="About this model (I)" style="display:none">i</button>
 </div>
 
@@ -91,6 +91,10 @@
   <button class="lrow" id="btnStreets" title="Street Names (N)"><span class="lmark"></span><span class="ltext">Street Names</span><kbd>N</kbd></button>
   <button class="lrow" id="btnLabels" title="Landmark Labels (L)"><span class="lmark"></span><span class="ltext">Landmark Labels</span><kbd>L</kbd></button>
   <button class="lrow" id="btnPlaces" title="Neighborhood Names (P)"><span class="lmark"></span><span class="ltext">Neighborhood Names</span><kbd>P</kbd></button>
+  <div class="lfoot">
+    <button id="btnResetLayers" class="mini" title="Back to the default layers">Reset Layers</button>
+    <button id="btnCopyLink" class="mini" title="Copy a link that opens this exact view">Copy Link to This View</button>
+  </div>
 </div>
 
 <div id="timepanel" class="panel" role="group" aria-label="Date and time">
@@ -193,12 +197,11 @@
 
 <div id="nogl"><div>This model needs WebGL, which your browser has disabled.<br>Try Chrome, Edge, Firefox, or Safari with hardware acceleration on.</div></div>
 
+{{PG}}
 <script>
 {{THREE}}
 </script>
-<script>
 {{DATA}}
-</script>
 <script>
 {{APP}}
 </script>

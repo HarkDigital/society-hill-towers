@@ -69,14 +69,23 @@ def blob_of(name):
         text = base64.b64encode(raw[:16] + body[0::2] + body[1::2]).decode("ascii")
     return text
 
+# Every data const ships as its own <script>, so the veil can count the bytes as
+# they land (the PG block below); the split is only ever at a const boundary,
+# never inside a base64 string. Top-level const/let in classic scripts share one
+# global lexical scope, so app.js sees them exactly as it did from the single tag.
+DATA_PARTS = []   # (label, js) in page order
+
+def part(label, js):
+    DATA_PARTS.append((label, js))
+
 def const(label, js):
     SIZES.append((label, len(js)))
-    return f"const {label} = {js};\n"
+    part(label, f"const {label} = {js};\n")
 
 def let_blob(label, name):
     b64 = blob_of(name)
     SIZES.append((label, len(b64)))
-    return f'let {label} = "{b64}";\n'
+    part(label, f'let {label} = "{b64}";\n')
 
 template = (ROOT / "template.html").read_text(encoding="utf-8")
 css = (ROOT / "style.css").read_text(encoding="utf-8")
@@ -97,41 +106,56 @@ meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path else {}
 about_path = path_of("about_body.html")
 about_body = about_path.read_text(encoding="utf-8") if about_path else "<p>Model of the towers and surrounding blocks.</p>"
 
-data_js = ("const B64_PLANAR = " + json.dumps({v: 1 for v in PLANAR.values()} | {"TRAFFIC": 0}, separators=(",", ":")) + ";\n"
-    + const("SCENE_DATA", json.dumps(scene, separators=(",", ":")))
-    + const("META", json.dumps(meta, separators=(",", ":")))
-    + const("DEM", dem_of("dem.json", 2))            # USGS NED 10 m grid, meters ASL, local 25 m cells
-    + const("DEM_WIDE", dem_of("dem_wide.json", 1))
-    + let_blob("WIDE_B64", "wide.b64")
-    + const("DEM_SOUTH", dem_of("dem_south.json", 1))
-    + const("WWB_PTS", text_of("wwb.json", "null"))
-    + const("WIDE_NAMES", text_of("wide_names.json", "null"))
-    # far ring: the rest of Philadelphia (city.b64 at 0.7 m units + 150 m DEM)
-    + const("DEM_CITY", dem_of("dem_city.json", 1))
-    + let_blob("CITY_B64", "city.b64")
-    # Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the legacy color pipeline)
-    + const("FACADE_PAL", text_of("facade_palette.json", "null"))
-    # street-name labels (bake_street_labels.py — the packed road formats carry no names)
-    + const("ST_LABELS", text_of("street_labels.json", "null"))
-    # real street trees (PPR Tree Inventory via fetch_trees.py / pack_trees.py)
-    + let_blob("TREES_B64", "trees.b64")
-    + const("TREE_NAMES", text_of("tree_names.json", "null"))
-    # historic districts + neighborhood labels (fetch_places.py / bake_places.py)
-    + const("PLACES", text_of("places.json", "null"))
-    # street-name SDF atlas (bake_street_sdf.py — crisp lettering at any zoom)
-    + "let ST_SDF = " + text_of("street_sdf.json", "null") + ";\n"
-    # elevated roads + the Vine Street cut (bake_overpasses.py from the raw OSM dumps)
-    + const("OVERPASSES", text_of("overpasses.json", "null"))
-    # typical traffic volumes (fetch_traffic.py / bake_traffic.py — PennDOT AADT on OSM ways)
-    + let_blob("TRAFFIC_B64", "traffic.b64")
-    # NW hills patch: 50 m DEM (fetch_dem_nw.py, border pre-feathered to dem_city),
-    # PPR parkland boundaries and full-fidelity creek/canal rings (fetch_nw_parks.py / fetch_nw_water.py)
-    + const("DEM_NW", dem_of("dem_nw.json", 1))
-    + const("NW_PARKS", text_of("nw_parks.json", "null"))
-    + const("NW_WATER", text_of("nw_water.json", "null"))
-    # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
-    + let_blob("POLES_B64", "poles.b64"))
-SIZES.append(("ST_SDF", len(text_of("street_sdf.json", "null"))))
+part("B64_PLANAR", "const B64_PLANAR = " + json.dumps({v: 1 for v in PLANAR.values()} | {"TRAFFIC": 0}, separators=(",", ":")) + ";\n")
+const("SCENE_DATA", json.dumps(scene, separators=(",", ":")))
+const("META", json.dumps(meta, separators=(",", ":")))
+const("DEM", dem_of("dem.json", 2))            # USGS NED 10 m grid, meters ASL, local 25 m cells
+const("DEM_WIDE", dem_of("dem_wide.json", 1))
+let_blob("WIDE_B64", "wide.b64")
+const("DEM_SOUTH", dem_of("dem_south.json", 1))
+const("WWB_PTS", text_of("wwb.json", "null"))
+const("WIDE_NAMES", text_of("wide_names.json", "null"))
+# far ring: the rest of Philadelphia (city.b64 at 0.7 m units + 150 m DEM)
+const("DEM_CITY", dem_of("dem_city.json", 1))
+let_blob("CITY_B64", "city.b64")
+# Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the legacy color pipeline)
+const("FACADE_PAL", text_of("facade_palette.json", "null"))
+# street-name labels (bake_street_labels.py — the packed road formats carry no names)
+const("ST_LABELS", text_of("street_labels.json", "null"))
+# real street trees (PPR Tree Inventory via fetch_trees.py / pack_trees.py)
+let_blob("TREES_B64", "trees.b64")
+const("TREE_NAMES", text_of("tree_names.json", "null"))
+# historic districts + neighborhood labels (fetch_places.py / bake_places.py)
+const("PLACES", text_of("places.json", "null"))
+# street-name SDF atlas (bake_street_sdf.py — crisp lettering at any zoom)
+sdf = text_of("street_sdf.json", "null")
+SIZES.append(("ST_SDF", len(sdf)))
+part("ST_SDF", "let ST_SDF = " + sdf + ";\n")
+# elevated roads + the Vine Street cut (bake_overpasses.py from the raw OSM dumps)
+const("OVERPASSES", text_of("overpasses.json", "null"))
+# typical traffic volumes (fetch_traffic.py / bake_traffic.py — PennDOT AADT on OSM ways)
+let_blob("TRAFFIC_B64", "traffic.b64")
+# NW hills patch: 50 m DEM (fetch_dem_nw.py, border pre-feathered to dem_city),
+# PPR parkland boundaries and full-fidelity creek/canal rings (fetch_nw_parks.py / fetch_nw_water.py)
+const("DEM_NW", dem_of("dem_nw.json", 1))
+const("NW_PARKS", text_of("nw_parks.json", "null"))
+const("NW_WATER", text_of("nw_water.json", "null"))
+# streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
+let_blob("POLES_B64", "poles.b64")
+
+# Download progress. Nothing used to move on the veil until the whole page had
+# arrived and parsed. PG() rewrites the veil's load line, and a PG(i, n) tick
+# follows every data chunk, running as the parser reaches it, so the line
+# advances with the bytes. The transfer maps to 0-70%; app.js's build steps take
+# the line from there.
+PG_JS = ("window.PG = function (i, n) { var l = document.getElementById('loadmsg'); "
+         "if (l) l.textContent = 'Downloading Philadelphia, ' + Math.round(i / n * 70) + '%'; };")
+data_total = sum(len(js.encode("utf-8")) for _, js in DATA_PARTS)
+data_html, done = [], 0
+for label, js in DATA_PARTS:
+    done += len(js.encode("utf-8"))
+    data_html.append(f"<script>\n{js}</script>\n<script>PG({done}, {data_total})</script>")
+data_js = "\n".join(data_html)
 
 # brand icons inlined as data: URIs in the head (brand/make_brand.py fills dist/)
 BRAND = ROOT / "brand" / "dist"
@@ -145,8 +169,9 @@ fav_32_b64 = brand_b64("favicon-32.png")
 touch_b64 = brand_b64("apple-touch-icon.png")
 
 # </script> inside embedded JS strings would terminate the tag early
-for name, blob in (("three", three), ("data", data_js), ("app", app), ("css", css), ("about", about_body),
-                   ("favicon_svg_b64", fav_svg_b64), ("favicon_32_b64", fav_32_b64), ("apple_icon_b64", touch_b64)):
+for name, blob in (("three", three), ("pg", PG_JS), ("app", app), ("css", css), ("about", about_body),
+                   ("favicon_svg_b64", fav_svg_b64), ("favicon_32_b64", fav_32_b64), ("apple_icon_b64", touch_b64),
+                   *(("data:" + label, js) for label, js in DATA_PARTS)):
     if re.search(r"</script", blob, re.I):
         sys.exit(f"FATAL: '</script' found inside {name} blob")
 
@@ -154,6 +179,7 @@ page = (template
         .replace("{{CSS}}", css)
         .replace("{{ABOUT_BODY}}", about_body)
         .replace("{{THREE}}", three)
+        .replace("{{PG}}", "<script>" + PG_JS + "</script>")
         .replace("{{DATA}}", data_js)
         .replace("{{APP}}", app)
         .replace("{{FAVICON_SVG_B64}}", fav_svg_b64)

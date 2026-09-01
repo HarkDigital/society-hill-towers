@@ -6348,20 +6348,23 @@
 
   // pointer / touch input
   let dragging = false, dragBtn = 0, lastX = 0, lastY = 0, interacted = false, touchArmed = false;
+  let panelTap = false;   // the current press began with a bottom panel open
   const joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
   const lookTouch = { id: -1, x: 0, y: 0 };
   const pinch = { d: 0, x: 0, y: 0 };
 
   canvas.addEventListener('pointerdown', (e) => {
     if (e.pointerType === 'touch') return; // touch handled separately
-    interacted = true; introSpin = false;
-    autoFly();
+    // a press with a panel open waits: a tap only dismisses the panel (pointerup),
+    // a drag flies as any press would (pointermove)
+    panelTap = !!openPanelName();
+    if (!panelTap) { interacted = true; introSpin = false; autoFly(); }
     if (mode === MODE.WALK || mode === MODE.FLY) {
       // always start a drag so looking works even where pointer lock is
       // unavailable (sandboxed iframes) or on cooldown; lock upgrades it
       dragging = true; lastX = e.clientX; lastY = e.clientY;
       canvas.setPointerCapture(e.pointerId);
-      if (!walk.locked) requestLock();
+      if (!walk.locked && !panelTap) requestLock();
       return;
     }
     dragging = true; dragBtn = e.button;
@@ -6370,6 +6373,11 @@
   });
   window.addEventListener('pointermove', (e) => {
     if (e.pointerType === 'touch') return;
+    if (panelTap && dragging && Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) > 8) {
+      // the press over an open panel became a drag: fly as a plain press would have
+      panelTap = false; interacted = true; introSpin = false; autoFly();
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+    }
     if (mode === MODE.WALK || mode === MODE.FLY) {
       if (walk.locked) return; // movementX path
       if (dragging) {
@@ -6428,8 +6436,8 @@
 
   // touch
   canvas.addEventListener('touchstart', (e) => {
-    interacted = true; introSpin = false;
-    autoFly();
+    panelTap = e.touches.length === 1 && !!openPanelName();   // tap dismisses, drag flies (see pointerdown)
+    if (!panelTap) { interacted = true; introSpin = false; autoFly(); }
     if (mode === MODE.WALK || mode === MODE.FLY) {
       for (const t of e.changedTouches) {
         if (t.clientX < window.innerWidth / 2 && !joy.active) {
@@ -6455,6 +6463,10 @@
     e.preventDefault();
   }, { passive: false });
   canvas.addEventListener('touchmove', (e) => {
+    if (panelTap) {
+      const t = e.touches[0];
+      if (t && Math.hypot(t.clientX - vpDownX, t.clientY - vpDownY) > 8) { panelTap = false; interacted = true; introSpin = false; autoFly(); }
+    }
     if (mode === MODE.WALK || mode === MODE.FLY) {
       for (const t of e.changedTouches) {
         if (t.identifier === joy.id) {
@@ -6524,6 +6536,11 @@
   window.addEventListener('keydown', (e) => {
     const k = e.key.toLowerCase();
     if (e.metaKey || e.ctrlKey || e.altKey) return;   // browser chords (Cmd+F, Ctrl+P, Cmd+A) are not layer hotkeys
+    if (k === 'escape') {
+      // ahead of the field guard: Escape must work from a panel's own buttons and inputs
+      if (flyTips && flyTips.classList.contains('show')) { hideFlyTips(); return; }
+      if (closePanels()) return;
+    }
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
     // a focused HUD button keeps Space/Enter (its own activation); every other
@@ -6547,7 +6564,7 @@
     else if (k === 'r') toggleTraffic();
     else if (k === 'g') toggleLightsLayer();
     else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
-    else if (k === 'escape') { /* browser releases pointer lock */ }
+    else if (k === 'escape') { /* nothing open: the browser releases pointer lock */ }
     else {
       // a movement key is as clear an intent to fly as a drag is
       if (['w', 'a', 's', 'd', 'e', 'q', ' '].includes(k) || k.indexOf('arrow') === 0) { interacted = true; introSpin = false; autoFly(); }
@@ -6638,19 +6655,26 @@
   // 1/2/3 keys. Orbit remains the attract loop; walk stays reachable only via
   // the ?dev goWalk hook.
   const flyTips = document.getElementById('flytips');
+  const flyTipsOk = document.getElementById('flyTipsOk');
   let flyTipsSeen = false;
-  function autoFly() {
-    // the first real interaction — drag, wheel, movement key, touch — takes
-    // flight from wherever the City Hall circle happens to be
-    if (mode !== MODE.ORBIT) return;
-    if (isTouch && !flyTipsSeen && flyTips) { flyTips.classList.add('show'); flyTipsSeen = true; }
-    setMode(MODE.FLY);
+  function showFlyTips() {
+    flyTips.classList.add('show'); flyTipsSeen = true;
+    flyTipsOk.focus();   // after setMode's blur: Enter takes Okay, Escape dismisses (keydown)
   }
-  if (flyTips) document.getElementById('flyTipsOk').addEventListener('click', () => {
+  function hideFlyTips() {
     flyTipsSeen = true;
     flyTips.classList.remove('show');
     setMode(MODE.FLY);
-  });
+  }
+  function autoFly() {
+    // the first real interaction — drag, wheel, movement key, touch — takes
+    // flight from wherever the City Hall circle happens to be
+    if (mode === MODE.ORBIT) setMode(MODE.FLY);
+    else if (mode !== MODE.FLY) return;
+    // the touch primer follows the first touch, even when a share link skipped the orbit
+    if (isTouch && !flyTipsSeen && flyTips) showFlyTips();
+  }
+  if (flyTips) flyTipsOk.addEventListener('click', hideFlyTips);
   // touch fly: hold ▲/▼ to climb and descend (E/Q have no finger equivalent)
   for (const [bid, key] of [['flyUp', 'up'], ['flyDown', 'down']]) {
     const b = document.getElementById(bid);
@@ -6666,6 +6690,130 @@
 
   const viewpoints = [];
   function addViewpoint(name, fn) { viewpoints.push({ name, fn }); }
+  // ---------------------------------------------------------------- preferences, share links, panels
+  // One localStorage blob (philly3d.prefs) remembers the nine layer flags and a
+  // pinned clock; the URL hash carries a whole view (camera, clock, layers) and
+  // wins over the blob. Every storage and history call is wrapped: sandboxed
+  // frames throw. Both are read once, before build(), and the flags are seeded
+  // flag-only: every step still builds its layer, so a saved-off one can come back.
+  const PREFS_KEY = 'philly3d.prefs';
+  // layer bitmask, low bit first (the hash's l= uses it): 1 SEPTA, 2 Indego,
+  // 4 flights, 8 ships, 16 traffic, 32 streetlights, 64 street names,
+  // 128 landmark labels, 256 neighborhood names
+  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places'];
+  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true };
+  let prefsReady = false, prefsTimer = 0;
+  function layerFlags() {
+    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn };
+  }
+  function setLayerFlags(f) {
+    if ('septa' in f) SEPTA.on = !!f.septa;
+    if ('indego' in f) INDEGO.on = !!f.indego;
+    if ('flights' in f) FLIGHTS.on = !!f.flights;
+    if ('ships' in f) SHIPS.on = !!f.ships;
+    if ('traffic' in f) TRAFFIC.on = !!f.traffic;
+    if ('lights' in f) LIGHTS.on = !!f.lights;
+    if ('streets' in f) { stOn = !!f.streets; if (stMesh) stMesh.visible = stOn; }
+    if ('labels' in f) labelsOn = !!f.labels;
+    if ('places' in f) { placesOn = !!f.places; if (nbMesh) nbMesh.visible = false; }   // applyLighting re-shows it by altitude
+  }
+  function layerMask() { const f = layerFlags(); let m = 0; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }
+  function layersFromMask(m) { const f = {}; LAYER_KEYS.forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }
+  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); }
+  function syncLayerBtn(btn, on) {
+    // every layer row: the check mark, the pressed state for readers, and the blob
+    if (btn) { btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
+    savePrefs();
+  }
+  function savePrefs() {
+    if (!prefsReady) return;   // the init syncs run before the seed and must not clobber the blob
+    clearTimeout(prefsTimer);
+    prefsTimer = setTimeout(writePrefs, 500);
+  }
+  function writePrefs() {
+    const o = layerFlags();
+    o.live = clock.live; o.date = clockDateStr(); o.minutes = clock.minutes;
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(o)); } catch (e) { }
+  }
+  function loadPrefs() {
+    try { const s = localStorage.getItem(PREFS_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; }
+  }
+  function clearPrefs() {
+    clearTimeout(prefsTimer);
+    try { localStorage.removeItem(PREFS_KEY); } catch (e) { }
+  }
+  function applyClock(y, m, d, minutes) {
+    if (!(y >= 1900 && y <= 2200 && m >= 1 && m <= 12 && d >= 1 && d <= 31 && minutes >= 0 && minutes <= 1439)) return false;
+    clock.live = false; clock.y = y; clock.m = m; clock.d = d; clock.minutes = Math.round(minutes);
+    return true;
+  }
+  // the share hash: #p=x,y,z,yaw,pitch&t=YYYYMMDD,minutes&l=mask (metres to 0.1,
+  // radians to 0.001; t only while the clock is pinned). Anything malformed is ignored.
+  function parseHash() {
+    const out = {};
+    try {
+      for (const kv of location.hash.replace(/^#/, '').split('&')) {
+        const i = kv.indexOf('=');
+        if (i < 1 || i === kv.length - 1) continue;
+        const k = kv.slice(0, i), v = kv.slice(i + 1).split(',').map(Number);
+        if (!v.every((n) => isFinite(n))) continue;
+        if (k === 'p' && v.length === 5) out.p = v;
+        else if (k === 't' && v.length === 2) out.t = v;
+        else if (k === 'l' && v.length === 1) out.l = v[0] & 511;
+      }
+    } catch (e) { }
+    return out;
+  }
+  function viewState() {
+    camera.getWorldDirection(tmpV);
+    const yaw = Math.atan2(tmpV.x, -tmpV.z), pitch = Math.asin(clamp(tmpV.y, -1, 1)), p = camera.position;
+    let s = 'p=' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ',' + p.z.toFixed(1) + ',' + yaw.toFixed(3) + ',' + pitch.toFixed(3);
+    if (!clock.live) s += '&t=' + (clock.y * 10000 + clock.m * 100 + clock.d) + ',' + clock.minutes;
+    return s + '&l=' + layerMask();
+  }
+  let hashT = 0, hashLast = '';
+  function updateHash(now, force) {
+    // replaceState only: the address bar follows the flight without growing history;
+    // nothing while the veil is up or the attract loop is still circling
+    if (!force && (introSpin || !veil.classList.contains('hidden') || now < hashT)) return;
+    hashT = now + 500;
+    const s = viewState();
+    if (s === hashLast) return;
+    hashLast = s;
+    try { history.replaceState(null, '', '#' + s); } catch (e) { }
+  }
+  function applyHashView(v) {
+    // a shared link lands in fly mode at its exact pose: no orbit intro, no lock request
+    setMode(MODE.FLY, true);
+    fly.pos.set(clamp(v[0], bounds.minX - 400, bounds.maxX + 600), clamp(v[1], TERRAIN.water + 2, 1600), clamp(v[2], bounds.minZ - 400, bounds.maxZ + 400));
+    fly.vel.set(0, 0, 0);
+    walk.yaw = v[3]; walk.pitch = clamp(v[4], -1.45, 1.45);
+    interacted = true; introSpin = false;   // Enter must not restart the circle
+    applyFly(0);   // place the camera before the first render
+  }
+  // one bottom panel at a time: layers, search and time share the strip above the bar
+  const btnTime = document.getElementById('btnTime');
+  const PANEL_NAMES = ['layers', 'search', 'time'];
+  function panelOf(n) { return n === 'layers' ? layersPanel : n === 'search' ? searchPanel : timePanel; }
+  function panelBtn(n) { return n === 'layers' ? btnLayers : n === 'search' ? btnSearch : btnTime; }
+  function openPanel(name, open) {
+    const want = open !== undefined ? !!open : !panelOf(name).classList.contains('open');
+    for (const n of PANEL_NAMES) {
+      const el = panelOf(n), on = n === name && want;
+      if (!on && el.classList.contains('open') && el.contains(document.activeElement)) document.activeElement.blur();
+      el.classList.toggle('open', on);
+      panelBtn(n).setAttribute('aria-expanded', on ? 'true' : 'false');
+    }
+    return want;
+  }
+  function openPanelName() { for (const n of PANEL_NAMES) if (panelOf(n).classList.contains('open')) return n; return null; }
+  function closePanels() {
+    const n = openPanelName();
+    if (!n) return false;
+    if (n === 'search') toggleSearch(false); else openPanel(n, false);   // search also cancels its query
+    return true;
+  }
+
   // ---------------------------------------------------------------- live SEPTA transit
   // Real-time vehicles from SEPTA's public API. Neither api.septa.org nor www3 sends
   // CORS headers, but both honor JSONP (?callback=), so each poll is a short-lived
@@ -6864,7 +7012,7 @@
       '<div class="vmeta">' + septaEsc(bits.join(', ')) + '</div>' +
       (v.info.next ? '<div class="vmeta">Next Stop: ' + septaEsc(v.info.next) + '</div>' : '');
   }
-  function syncTransitBtn() { btnTransit.classList.toggle('on', SEPTA.on); }
+  function syncTransitBtn() { syncLayerBtn(btnTransit, SEPTA.on); }
   function toggleTransit() {
     if (!septaCanFetch) return;
     SEPTA.on = !SEPTA.on;
@@ -6878,8 +7026,14 @@
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
   let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
+  function isShortTap(e) { return Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) <= 8 && performance.now() - vpDownT <= 500; }
   canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
   canvas.addEventListener('pointerup', (e) => {
+    if (panelTap) {
+      // the press began with a panel open: a tap only dismisses it (a drag kept it)
+      panelTap = false;
+      if (isShortTap(e)) { closePanels(); return; }
+    }
     const sAct = septaReady && SEPTA.on && septaSolid.count > 0;
     const iAct = indegoReady && INDEGO.on && indegoBadge.count > 0;
     const fAct = flightReady && FLIGHTS.on && (flightMesh.count > 0 || heliMesh.count > 0);
@@ -6895,7 +7049,7 @@
       cx = window.innerWidth / 2;
       cy = window.innerHeight / 2;
     } else {
-      if (Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) > 8 || performance.now() - vpDownT > 500) return;
+      if (!isShortTap(e)) return;
       cx = e.clientX;
       cy = e.clientY;
     }
@@ -7252,11 +7406,34 @@
   // as rows in one panel behind the Layers bar button; V/N/L stay as shortcuts.
   const btnLayers = document.getElementById('btnLayers');
   const layersPanel = document.getElementById('layerspanel');
-  function toggleLayers(open) {
-    const want = open !== undefined ? open : !layersPanel.classList.contains('open');
-    layersPanel.classList.toggle('open', want);
-  }
+  function toggleLayers(open) { openPanel('layers', open); }
   btnLayers.addEventListener('click', () => toggleLayers());
+  // panel footer: back to the shipped layers, and a link to this exact view
+  document.getElementById('btnResetLayers').addEventListener('click', () => {
+    // through the real toggles, so the live polls start and stop with the flags
+    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces };
+    const f = layerFlags();
+    for (const k of LAYER_KEYS) if (f[k] !== LAYER_DEFAULTS[k]) toggles[k]();
+    if (!clock.live) { clock.live = true; setClockToNow(); refreshTimeUI(); }
+    clearPrefs();   // defaults are not remembered; the next change is
+  });
+  const btnCopyLink = document.getElementById('btnCopyLink');
+  const copyLabel = btnCopyLink.textContent;
+  btnCopyLink.addEventListener('click', () => {
+    updateHash(performance.now(), true);   // the link carries this pose, not the last 500 ms tick
+    const url = location.href;
+    const done = () => { btnCopyLink.textContent = 'Copied'; setTimeout(() => { btnCopyLink.textContent = copyLabel; }, 1500); };
+    const legacy = () => {
+      // no async clipboard (plain http, older WebKit): select a throwaway field and copy
+      const inp = document.createElement('input');
+      inp.value = url; inp.setAttribute('readonly', ''); inp.style.cssText = 'position:fixed;top:0;left:0;opacity:0';
+      document.body.appendChild(inp); inp.select();
+      try { if (document.execCommand('copy')) done(); } catch (e) { }
+      inp.remove();
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, legacy);
+    else legacy();
+  });
 
   // ---------------------------------------------------------------- street names
   // Ground-painted street labels: placements baked offline by
@@ -7266,7 +7443,7 @@
   // roadways. Toggle: the St button / N key.
   let stMesh = null, stMat = null, stOn = true;
   const btnStreets = document.getElementById('btnStreets');
-  function syncStreetsBtn() { btnStreets.classList.toggle('on', stOn); }
+  function syncStreetsBtn() { syncLayerBtn(btnStreets, stOn); }
   function toggleStreets() {
     stOn = !stOn;
     if (stMesh) stMesh.visible = stOn;
@@ -7434,7 +7611,7 @@
   // covers all of it: the P key.
   let placesOn = true, nbMesh = null, nbMat = null;
   const btnPlaces = document.getElementById('btnPlaces');
-  function syncPlacesBtn() { btnPlaces.classList.toggle('on', placesOn); }
+  function syncPlacesBtn() { syncLayerBtn(btnPlaces, placesOn); }
   function togglePlaces() {
     placesOn = !placesOn;
     if (nbMesh) nbMesh.visible = false;      // applyLighting re-shows it by altitude
@@ -7541,7 +7718,7 @@
   let searchMark = null, searchBusy = false, searchSeq = 0;
   function toggleSearch(open) {
     const want = open !== undefined ? open : !searchPanel.classList.contains('open');
-    searchPanel.classList.toggle('open', want);
+    openPanel('search', want);   // one bottom panel at a time
     if (want) searchInput.focus();
     else { searchInput.blur(); searchSeq++; searchBusy = false; }   // closing cancels an in-flight query
   }
@@ -7996,7 +8173,7 @@
     const ic = document.getElementById('indegoCount');
     if (ic) ic.textContent = indegoSt.size ? String(bikes) : '';
   }
-  function syncIndegoBtn() { btnIndego.classList.toggle('on', INDEGO.on); }
+  function syncIndegoBtn() { syncLayerBtn(btnIndego, INDEGO.on); }
   function toggleIndego() {
     if (!septaCanFetch) return;
     INDEGO.on = !INDEGO.on;
@@ -8191,7 +8368,7 @@
 
   // labels + about wiring
   const btnLabels = document.getElementById('btnLabels');
-  function syncLabelsBtn() { btnLabels.classList.toggle('on', labelsOn); }
+  function syncLabelsBtn() { syncLayerBtn(btnLabels, labelsOn); }
   function toggleLabels() {
     labelsOn = !labelsOn;
     syncLabelsBtn();
@@ -8538,7 +8715,7 @@
       '<div class="vmeta">' + septaEsc(alt + ', ' + Math.round(p.gs) + ' kt') + '</div>' +
       (p.est ? '<div class="vmeta">Estimated Track, Awaiting Signal</div>' : ''));
   }
-  function syncFlightsBtn() { if (btnFlights) btnFlights.classList.toggle('on', FLIGHTS.on); }
+  function syncFlightsBtn() { syncLayerBtn(btnFlights, FLIGHTS.on); }
   function toggleFlights() {
     if (!septaCanFetch) return;
     FLIGHTS.on = !FLIGHTS.on;
@@ -8905,7 +9082,7 @@
       '<div class="vmeta">' + septaEsc(move + ', ' + Math.round(v.len) + ' m') + '</div>' +
       (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : ''));
   }
-  function syncShipsBtn() { if (btnShips) btnShips.classList.toggle('on', SHIPS.on); }
+  function syncShipsBtn() { syncLayerBtn(btnShips, SHIPS.on); }
   function shipRelease() {
     // the key allows one stream: give it up whenever this tab cannot use it
     if (SHIPS.sock) { const s = SHIPS.sock; SHIPS.sock = null; try { s.onclose = null; s.close(); } catch (e) {} }
@@ -9289,7 +9466,7 @@
     const el = document.getElementById('trafficCount');
     if (el) el.textContent = trafficCars ? String(trafficCars) : '';
   }
-  function syncTrafficBtn() { if (btnTraffic) btnTraffic.classList.toggle('on', TRAFFIC.on); }
+  function syncTrafficBtn() { syncLayerBtn(btnTraffic, TRAFFIC.on); }
   function toggleTraffic() { TRAFFIC.on = !TRAFFIC.on; syncTrafficBtn(); if (TRAFFIC.on) trafficNextRecon = 0; }
   if (btnTraffic) btnTraffic.addEventListener('click', toggleTraffic);
   syncTrafficBtn();
@@ -9545,7 +9722,7 @@
     poleMesh.count = nUse;
     poleMesh.instanceMatrix.needsUpdate = true;
   }
-  function syncLightsBtn() { if (btnLights) btnLights.classList.toggle('on', LIGHTS.on); }
+  function syncLightsBtn() { syncLayerBtn(btnLights, LIGHTS.on); }
   function toggleLightsLayer() { LIGHTS.on = !LIGHTS.on; syncLightsBtn(); }
   if (btnLights) btnLights.addEventListener('click', toggleLightsLayer);
   syncLightsBtn();
@@ -10245,16 +10422,16 @@
       + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' + (WX.temp == null ? '' : ' ' + Math.round(WX.temp) + '°F') + (wxLabel() ? ' ' + wxLabel() : '') : '')
       + '   ☾ ' + phase + ' ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', Up ' + oct : ', Set');
   }
-  function toggleTimePanel() { timePanel.classList.toggle('open'); }
-  document.getElementById('btnTime').addEventListener('click', toggleTimePanel);
-  timeSlider.addEventListener('input', () => { clock.live = false; clock.minutes = parseInt(timeSlider.value, 10); refreshTimeUI(); });
+  function toggleTimePanel(open) { openPanel('time', open); }
+  btnTime.addEventListener('click', () => toggleTimePanel());
+  timeSlider.addEventListener('input', () => { clock.live = false; clock.minutes = parseInt(timeSlider.value, 10); refreshTimeUI(); savePrefs(); });
   timeDate.addEventListener('change', () => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(timeDate.value);
     if (!m) return;
     clock.live = false; clock.y = +m[1]; clock.m = +m[2]; clock.d = +m[3];
-    refreshTimeUI();
+    refreshTimeUI(); savePrefs();
   });
-  document.getElementById('timeNow').addEventListener('click', () => { clock.live = true; setClockToNow(); refreshTimeUI(); });
+  document.getElementById('timeNow').addEventListener('click', () => { clock.live = true; setClockToNow(); refreshTimeUI(); savePrefs(); });
   for (const btn of timePanel.querySelectorAll('[data-preset]')) {
     btn.addEventListener('click', () => {
       clock.live = false;
@@ -10264,7 +10441,7 @@
         : p === 'noon' ? 750
         : p === 'dusk' ? Math.min(1439, (t.set == null ? 1140 : t.set) + 8)
         : 1320;
-      refreshTimeUI();
+      refreshTimeUI(); savePrefs();
     });
   }
   setClockToNow();
@@ -10283,6 +10460,7 @@
     }
     PERF.ready = Math.round(performance.now() - PERF.t0);
     loadmsg.textContent = failures ? 'Ready (some detail could not be built)' : 'Ready';
+    loadmsg.classList.add('done');   // the pulse stops with the wait
     btnEnter.disabled = false;
     btnEnter.textContent = 'Enter the City';
   }
@@ -10419,6 +10597,7 @@
     updateTreePick();
     updateSearchMark(now);
     updateLabels();
+    updateHash(now);
     renderer.render(scene, camera);
   }
 
@@ -10426,6 +10605,24 @@
   if (WX_PRESETS[wxForced]) applyWx({ current: WX_PRESETS[wxForced] });
   fetchWeather();
   setInterval(fetchWeather, 15 * 60 * 1000);
+  // remembered layers and clock, then the share hash on top of them; the rows
+  // are synced now so the panel matches before the first frame (flag-only:
+  // every step still builds; the camera pose waits for build, it needs terrain)
+  const hashView = parseHash();
+  {
+    const p = loadPrefs(), f = {};
+    if (p && typeof p === 'object') {
+      for (const k of LAYER_KEYS) if (typeof p[k] === 'boolean') f[k] = p[k];
+      const m = p.live === false && typeof p.date === 'string' ? /^(\d{4})-(\d{2})-(\d{2})$/.exec(p.date) : null;
+      if (m) applyClock(+m[1], +m[2], +m[3], +p.minutes);
+    }
+    if (hashView.l !== undefined) Object.assign(f, layersFromMask(hashView.l));
+    if (hashView.t) applyClock(Math.floor(hashView.t[0] / 10000), Math.floor(hashView.t[0] / 100) % 100, hashView.t[0] % 100, hashView.t[1]);
+    setLayerFlags(f);
+    syncLayerBtns();
+    refreshTimeUI();
+    prefsReady = true;
+  }
   build().then(() => {
     // weather-surface pass, applied before the first render so nothing recompiles:
     // chain cityMat (facade shader runs first, then the weather), then every
@@ -10458,6 +10655,7 @@
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
+    if (hashView.p) applyHashView(hashView.p);
     requestAnimationFrame(frame);
   });
 })();
