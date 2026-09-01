@@ -9482,6 +9482,34 @@
   // vehicles, glass, street text and poles keep their own programs, which
   // also keeps moving things from wearing the weather.
   const wxSurfU = { uSnowAcc: { value: 0 }, uWet: { value: 0 } };
+  // ground cover for the bare-earth planes: the single pale tone blanketing
+  // every block interior and riverside flat read as permanent snow from the
+  // air. A two-octave world-space mottle now breaks them into grass and dry
+  // earth. The tones are MULTIPLIERS (darker than 1), so applyLighting's
+  // day/night retint still owns the base color and the snow/wet pass layers
+  // cleanly on top; the fine grain fades by pixel footprint so far ground
+  // stays calm instead of sparkling (the water lesson).
+  function wxGroundPatch(shader) {
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', [
+        'float gdh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
+        'float gdn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+        '  return mix(mix(gdh(i), gdh(i + vec2(1.0, 0.0)), f.x), mix(gdh(i + vec2(0.0, 1.0)), gdh(i + vec2(1.0, 1.0)), f.x), f.y); }',
+        'void main() {',
+      ].join('\n'))
+      .replace('#include <map_fragment>', '#include <map_fragment>\n' + [
+        // before color_fragment, so the chained weather pass lays snow OVER the mottle
+        'vec3 gWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
+        'float gfw = max(fwidth(gWP.x), fwidth(gWP.z));',
+        'float gn1 = gdn(gWP.xz * 0.012);',
+        'float gn2 = gdn(gWP.xz * 0.045) * (1.0 - smoothstep(8.0, 30.0, gfw));',
+        'float gn3 = gdn(gWP.xz * 0.35) * (1.0 - smoothstep(1.0, 4.0, gfw));',
+        'float gt = smoothstep(0.32, 0.68, gn1 * 0.72 + gn2 * 0.28);',
+        'vec3 gMul = mix(vec3(0.58, 0.72, 0.42), vec3(0.98, 0.93, 0.74), gt);',
+        'gMul *= 0.88 + 0.24 * gn3;',
+        'diffuseColor.rgb *= gMul;',
+      ].join('\n'));
+  }
   function wxSurfacePatch(shader) {
     shader.uniforms.uSnowAcc = wxSurfU.uSnowAcc;
     shader.uniforms.uWet = wxSurfU.uWet;
@@ -9993,6 +10021,8 @@
     {
       const prevCity = cityMat.onBeforeCompile;
       cityMat.onBeforeCompile = (sh, r) => { prevCity(sh, r); wxSurfacePatch(sh); };
+      // bare-earth planes: ground-cover mottle first, then the weather pass
+      for (const gm of groundMats) gm.onBeforeCompile = (sh, r) => { wxGroundPatch(sh); wxSurfacePatch(sh); };
       const seen = new Set([cityMat]);
       scene.traverse((o) => {
         const ms = o.material;

@@ -1806,6 +1806,20 @@ line-colored lollipop pins are retired (septaPin still serves the search
 marker). Verified: refuge water empty, West Philly all-badges, warmer
 overcast tone, no console errors. Shipped to both homes.
 
+Round 45 coda (same afternoon — Mike: still reads as snow, figure out
+something else for ground cover): the overcast dimming was treating the
+symptom; the disease was one uniform pale tone blanketing every bare-earth
+plane. wxGroundPatch now runs under the weather pass on all groundMats: a
+two-octave world-space value-noise mottle mixing a grass multiplier
+(0.58, 0.72, 0.42) against dry-earth (0.98, 0.93, 0.74) at ~80 m patches with
+~22 m and ~3 m detail, both finer octaves fading by pixel footprint so far
+ground stays calm (the water-moire lesson applied to land). Multipliers, not
+replacement colors — applyLighting's day/night retint still owns the base,
+and the chained snow/wet pass lays OVER the mottle (hooked at map_fragment,
+before color_fragment, precisely so the chain order lands snow on top).
+The flats now read as scrub and lawn from the air on any gray day, and
+forced accumulation still whites them out completely. Shipped to both homes.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
