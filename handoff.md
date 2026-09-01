@@ -1785,6 +1785,27 @@ at berth (turrets, masts, no slab), WWB cars on the deck, label sweep from
 2.6 km reads Penn to the Aquarium, anchor badges over shipTest vessels, no
 console errors. Shipped to both homes.
 
+Round 45 (Sep 1, same day — Mike: still buildings in the water, the ground
+reads as perpetual snow when it isn't snowing, trolley pins should match the
+bus pins): the surviving floater was in the Heinz refuge impoundment —
+Round 44's dem/corridor test only knew the Delaware east bank and the
+Schuylkill, and Philly-side standing water never qualified. Now each packed
+ring pre-scans its own area records (wxWaterGrid: skim buildings and roads by
+record layout, scanline-rasterize every kind-1 water polygon into a 24/30 m
+grid) and the building pass refuses anything whose centroid stands in
+rendered water — ground truth by construction. A python decode of both b64s
+confirmed the kill list: 70 footprints, all genuinely in water (refuge
+boardwalk structures, Schuylkill-mouth piers, three boat sheds). The
+"perpetual snow" was NOT stuck weather state (uSnowAcc provably 0) — it was
+the overcast wash: a full cloud deck kept fair-weather brightness, and the
+white PMREM dome over-lit every up-facing flat into chalk. Overcast now
+darkens honestly: cloud light −15 %·cover (which also calms the env bake),
+hemisphere −22 %·cover, bare-ground flats −15 %·cover toward earth. And every
+SEPTA vehicle — trolley and el included — wears the badge billboard now; the
+line-colored lollipop pins are retired (septaPin still serves the search
+marker). Verified: refuge water empty, West Philly all-badges, warmer
+overcast tone, no console errors. Shipped to both homes.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s

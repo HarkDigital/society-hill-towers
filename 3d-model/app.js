@@ -116,6 +116,45 @@
     }
     return best;
   }
+  // pre-scan a packed ring for its water polygons (record layouts: building
+  // n,h,mh,t[,attr,roof],2n · road n,w,t,2n · area n,kind,2n — kind 1 = water)
+  // and scanline-rasterize them into a coarse grid. Returns an (x,z) => bool
+  // "stands in rendered water" test the building pass uses to refuse floaters.
+  function wxWaterGrid(body, k0, nb, nRoads, nAreas, hasAttr, S, gx0, gz0, wMeters, hMeters, cell) {
+    const gw = Math.ceil(wMeters / cell), gh = Math.ceil(hMeters / cell);
+    const grid = new Uint8Array(gw * gh);
+    let kk = k0;
+    for (let i = 0; i < nb; i++) { const n = body[kk]; kk += (hasAttr ? 6 : 4) + n * 2; }
+    for (let i = 0; i < nRoads; i++) { const n = body[kk]; kk += 3 + n * 2; }
+    for (let i = 0; i < nAreas; i++) {
+      const n = body[kk++], kind = body[kk++];
+      if (kind !== 1) { kk += n * 2; continue; }
+      const poly = new Array(n);
+      let mnZ = Infinity, mxZ = -Infinity;
+      for (let j = 0; j < n; j++) {
+        poly[j] = [body[kk++] * S, body[kk++] * S];
+        mnZ = Math.min(mnZ, poly[j][1]); mxZ = Math.max(mxZ, poly[j][1]);
+      }
+      const r0 = Math.max(0, Math.floor((mnZ - gz0) / cell)), r1 = Math.min(gh - 1, Math.ceil((mxZ - gz0) / cell));
+      for (let r = r0; r <= r1; r++) {
+        const zc = gz0 + (r + 0.5) * cell;
+        const xs = [];
+        for (let j = 0; j < n; j++) {
+          const a = poly[j], b = poly[(j + 1) % n];
+          if ((a[1] <= zc) !== (b[1] <= zc)) xs.push(a[0] + (zc - a[1]) / (b[1] - a[1]) * (b[0] - a[0]));
+        }
+        xs.sort((p, q) => p - q);
+        for (let q = 0; q + 1 < xs.length; q += 2) {
+          const c0 = Math.max(0, Math.round((xs[q] - gx0) / cell)), c1 = Math.min(gw - 1, Math.round((xs[q + 1] - gx0) / cell) - 1);
+          for (let cc = c0; cc <= c1; cc++) grid[r * gw + cc] = 1;
+        }
+      }
+    }
+    return (x, z) => {
+      const cc = Math.floor((x - gx0) / cell), rr = Math.floor((z - gz0) / cell);
+      return cc >= 0 && rr >= 0 && cc < gw && rr < gh && grid[rr * gw + cc] === 1;
+    };
+  }
 
   const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, window.__useLogDepth ? 0.75 : 1.0, 26000);
 
@@ -3703,6 +3742,7 @@
       for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
     };
     const nb = hdr[1];
+    const wxWater = wxWaterGrid(body, k, nb, hdr[2], hdr[3], hasAttr, S, -3700, -4480, 6000, 10880, 24);
     let njPoly = null;   // USS New Jersey hull outline — custom battleship below
     for (let i = 0; i < nb; i++) {
       const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
@@ -3720,9 +3760,10 @@
         for (const q of poly) { mnX = Math.min(mnX, q[0]); mxX = Math.max(mxX, q[0]); mnZ = Math.min(mnZ, q[1]); mxZ = Math.max(mxZ, q[1]); }
         if (Math.hypot(mxX - mnX, mxZ - mnZ) > 180) { njPoly = poly; continue; }
       }
-      // nothing floats: a footprint whose ground is river channel is bad data
-      // (mapped barges, mid-water slabs) — the packed rings must stay ashore
-      if (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz)) continue;
+      // nothing floats: a footprint standing in this ring's own rendered water
+      // is bad data (mapped barges, drowned islets, mid-water slabs) — the
+      // dem/corridor test alone missed Philly-side river water
+      if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
@@ -4718,6 +4759,7 @@
     };
     // buildings (merged block strips + solo talls/churches)
     const nb = hdr[1];
+    const wxWater = wxWaterGrid(body, k, nb, hdr[2], hdr[3], hasAttr, S, -12200, -21900, 28900, 31800, 30);
     for (let i = 0; i < nb; i++) {
       const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
       const attrW = hasAttr ? body[k++] : -1, roofW = hasAttr ? body[k++] : -1;
@@ -4725,7 +4767,7 @@
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
       if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); } continue; }
-      if (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz)) continue;   // nothing floats mid-river
+      if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;   // nothing floats mid-river
       let base = siteY(cx, cz, 'ground');
       if (inP(cx, cz)) {
         // hillside blocks (Manayunk, Roxborough): a merged rowhouse strip on the
@@ -6966,29 +7008,17 @@
       }
       // floating marker, scaled with distance so it stays findable: buses fly
       // the SEPTA-badge billboard, trolleys keep the line-colored lollipop pin
-      if (v.kind === 'bus') {
-        if (bi < 1024) {
-          const py0 = v.gy + spec.h + 0.6;
-          _sp.set(v.dx, py0, v.dz);
-          const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
-          _sp.y += Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
-          _ss.set(s, s, s);
-          _sm.compose(_sp, _sqB, _ss);
-          septaBadge.setMatrixAt(bi, _sm);
-          septaPickB[bi++] = v;
-        }
-      } else if (pi < 1024) {
-        const py0 = v.gy + spec.h + 0.9;
+      // every vehicle — bus, trolley, el — wears the SEPTA badge now: the
+      // line-colored lollipops read as a different system from the air
+      if (bi < 1024) {
+        const py0 = v.gy + spec.h + 0.6;
         _sp.set(v.dx, py0, v.dz);
         const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
-        const bob = Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
-        _sp.y += bob;
+        _sp.y += Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
         _ss.set(s, s, s);
-        _sq.identity();
-        _sm.compose(_sp, _sq, _ss);
-        septaPin.setMatrixAt(pi, _sm);
-        septaPin.setColorAt(pi, _sc.setHex(v.tint).multiplyScalar(2.0));
-        septaPickP[pi++] = v;
+        _sm.compose(_sp, _sqB, _ss);
+        septaBadge.setMatrixAt(bi, _sm);
+        septaPickB[bi++] = v;
       }
     });
     septaSolid.count = si;
@@ -9771,7 +9801,10 @@
     skyMat.uniforms.cHorizon.value.copy(ch);
     skyMat.uniforms.cGround.value.copy(cg);
     skyMat.uniforms.uCloud.value = WX.cover;
-    skyMat.uniforms.uCloudLight.value = (0.10 + 0.95 * dayF + twi * 0.25) * (1 - 0.55 * WXFX.gloom) + WXFX.flash * 2.2;
+    // a full deck is darker than fair-weather cumulus: dimming it with cover
+    // also calms the env-map wash that read as "snow on the ground" on
+    // overcast days (the bright white dome was over-lighting every flat)
+    skyMat.uniforms.uCloudLight.value = (0.10 + 0.95 * dayF + twi * 0.25) * (1 - 0.15 * WX.cover) * (1 - 0.55 * WXFX.gloom) + WXFX.flash * 2.2;
     skyMat.uniforms.cSun.value.copy(_c1.set(0xff8a40)).lerp(_c2.set(COLORS.sun), smooth(0, 20, el));
     scene.fog.color.copy(ch);
     // weather visibility: rain, snow and storm thicken the haze; true fog collapses it
@@ -9782,10 +9815,11 @@
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xd3deea), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
     if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x8f8166), dayF);
-    hemi.intensity = (0.10 + 0.45 * dayF) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
+    hemi.intensity = (0.10 + 0.45 * dayF) * (1 - 0.22 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
     // bare ground follows the light: near-black at night, warm dark earth through
     // twilight, the pale sage only in daylight — the fixed pale tone read as water
     _c1.set(0x232321).lerp(_c2.set(0x55503f), twi).lerp(_c2.set(COLORS.ground), dayF);
+    _c1.multiplyScalar(1 - 0.15 * WX.cover);   // flat light: the bare flats go earthier, not chalk
     for (const gm of groundMats) gm.color.copy(_c1);   // (snow cover now lands via the wxSurfacePatch shader pass)
     renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
     nightUniform.value = night;
