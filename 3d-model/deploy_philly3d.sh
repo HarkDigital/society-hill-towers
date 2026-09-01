@@ -30,7 +30,7 @@ WEB=/var/www/philly3d
 PREV=/var/www/philly3d-prev
 URL=https://philly3d.com/
 GZ_MIN=${GZ_MIN:-8000000}     # bytes; below this the build is truncated or empty
-GZ_MAX=${GZ_MAX:-16000000}    # bytes; above this something bloated the page
+GZ_MAX=${GZ_MAX:-12000000}    # bytes; above this something bloated the page
                               # (measured Sep 2026: 22.98 MB page -> 12.76 MB gzip)
 
 fatal() { echo "FATAL: $*" >&2; exit 1; }

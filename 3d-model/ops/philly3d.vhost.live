@@ -1,0 +1,58 @@
+# Captured read-only from the VPS on 2026-09-01 (/etc/nginx/sites-available/philly3d).
+# The .example beside this file is this block plus the planned additions.
+server {
+    listen 80;
+    listen [::]:80;
+    server_name philly3d.com www.philly3d.com;
+
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/philly3d;
+    }
+    location / {
+        return 301 https://philly3d.com$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name philly3d.com www.philly3d.com;
+    root /var/www/philly3d;
+    index index.html;
+
+    ssl_certificate /etc/letsencrypt/live/philly3d.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/philly3d.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # same-origin ADS-B passthrough: the page fetches /adsb, nginx fronts the
+    # fixed adsb.fi Philadelphia query — no CORS wall, stale beats empty.
+    # ACAO * stays on so the GitHub Pages copy can ride the same passthrough.
+    location = /adsb {
+        resolver 127.0.0.53 valid=300s ipv6=off;   # runtime DNS: a load-time
+        # lookup of this hostname once kept nginx from STARTING (Aug 27 outage:
+        # unattended-upgrades restarted nginx while the resolver was mid-restart,
+        # nginx -t failed on this line, three sites dark for 9 h). The variable
+        # defers resolution to request time; ipv6=off because the box has no v6
+        # egress and an AAAA answer would strand the proxy.
+        set $adsb_host opendata.adsb.fi;
+        proxy_pass https://$adsb_host/api/v2/lat/39.872/lon/-75.241/dist/30;
+        proxy_set_header Host opendata.adsb.fi;
+        proxy_ssl_server_name on;
+        proxy_ssl_name opendata.adsb.fi;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_cache adsb_cache;
+        proxy_cache_valid 200 8s;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_lock on;
+        proxy_hide_header Set-Cookie;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Cache-Control no-store always;
+    }
+
+    location / {
+        gzip_static on;
+        try_files $uri $uri/ =404;
+    }
+}

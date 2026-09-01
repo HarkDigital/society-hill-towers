@@ -15,12 +15,16 @@ import sys
 
 HERE = pathlib.Path(__file__).resolve().parent
 SECTION_HEAD = re.compile(r"^##\s+What's in\s+`?3d-model/?`?", re.I)
-ROOT_INPUT = re.compile(r"""ROOT\s*/\s*(["'])([^"']+)\1""")
+# build.py names its inputs as quoted file names: `ROOT / "x.json"`, `path_of("x.b64")`,
+# `dem_of("dem_nw.json", 1)`, `let_blob("CITY_B64", "city.b64")` and the brand icons
+ROOT_INPUT = re.compile(r"""(["'])([A-Za-z0-9_./-]+\.(?:json|b64|html|css|js|ttf|png|svg|ico))\1""")
 
 
 def build_inputs(build_py: pathlib.Path):
     text = build_py.read_text(encoding="utf-8")
-    return sorted({m.group(2) for m in ROOT_INPUT.finditer(text)})
+    names = {m.group(2) for m in ROOT_INPUT.finditer(text)}
+    names.discard("society-hill-towers.html")            # the output, not an input
+    return sorted(n for n in names if not n.startswith("3d-model/"))
 
 
 def scripts(folder: pathlib.Path):

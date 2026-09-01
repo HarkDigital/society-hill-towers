@@ -1,0 +1,4 @@
+# Captured read-only from the VPS on 2026-09-01 (/etc/nginx/conf.d/adsb_cache.conf).
+# 8 s shared cache for the live-flights passthrough (philly3d) — any number of
+# viewers cost adsb.fi at most one upstream request per cycle
+proxy_cache_path /var/cache/nginx/adsb levels=1 keys_zone=adsb_cache:1m max_size=10m inactive=60s use_temp_path=off;
