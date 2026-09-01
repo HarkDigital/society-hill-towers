@@ -1,29 +1,17 @@
 #!/usr/bin/env python3
 """Tiled Overpass fetch for the wide area (Center City, South Philly, NoLibs, Fishtown/Kensington)
-plus a 50 m elevation grid. Writes osm_wide_raw.json and dem_wide.json."""
+plus a 50 m elevation grid. Writes osm_wide_raw.json and dem_wide.json.
+Tiles checkpoint in wide_tiles/ (overpass.py): a rerun refetches only the tiles that
+failed, and a tile still missing after the retry rounds aborts the run instead of
+writing a partial extract."""
 import json, math, time, urllib.request, urllib.parse, sys
+from overpass import fetch_tiles, grid_tiles
+from philly_frame import LAT0 as lat0, LON0 as lon0, KX as kx, KZ as kz
 S, N, W, E = 39.915, 39.986, -75.188, -75.118
 ROWS, COLS = 4, 4
-MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
-elements, seen = [], set()
-def fetch(q):
-    data = urllib.parse.urlencode({'data': q}).encode()
-    last = None
-    for attempt in range(6):
-        url = MIRRORS[attempt % len(MIRRORS)]
-        try:
-            req = urllib.request.Request(url, data=data, headers={'User-Agent': 'sht-3d-model/1.0'})
-            with urllib.request.urlopen(req, timeout=180) as r:
-                return json.load(r)
-        except Exception as e:
-            last = e; time.sleep(8 + 8 * attempt)
-    raise last
-for i in range(ROWS):
-    for j in range(COLS):
-        s = S + (N - S) * i / ROWS; n = S + (N - S) * (i + 1) / ROWS
-        w = W + (E - W) * j / COLS; e = W + (E - W) * (j + 1) / COLS
-        bbox = f'{s:.5f},{w:.5f},{n:.5f},{e:.5f}'
-        q = f'''[out:json][timeout:170];
+
+def tileQuery(bbox):
+    return f'''[out:json][timeout:170];
 (
   way["building"]({bbox});
   relation["building"]({bbox});
@@ -37,21 +25,12 @@ for i in range(ROWS):
 );
 (._;>;);
 out body qt;'''
-        t0 = time.time()
-        d = fetch(q)
-        new = 0
-        for el in d.get('elements', []):
-            k = (el['type'], el['id'])
-            if k in seen: continue
-            seen.add(k); elements.append(el); new += 1
-        print(f'tile {i},{j} {bbox}: +{new} elements ({time.time()-t0:.0f}s), total {len(elements)}', flush=True)
-        time.sleep(6)
+
+elements = fetch_tiles(grid_tiles('wide', S, N, W, E, ROWS, COLS), tileQuery, 'wide_tiles', pause=6)
 json.dump({'elements': elements}, open('osm_wide_raw.json', 'w'))
-print('osm_wide_raw.json written', flush=True)
+print(f'osm_wide_raw.json written ({len(elements)} elements)', flush=True)
 
 # elevation grid, 50 m, via OpenTopoData ned10m
-lat0, lon0 = 39.945473644755005, -75.14474803850973
-kx = 111320 * math.cos(math.radians(lat0)); kz = 110574
 xs = list(range(-4000, 2801, 50)); zs = list(range(-4600, 3500, 50))
 pts = [(x, z) for z in zs for x in xs]
 elev = {}

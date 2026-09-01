@@ -6,11 +6,14 @@
 Why: the central Wissahickon gorge has NO park polygon in the OSM extract
 (it's a nature_reserve relation the city fetch never downloaded), so the far
 ring renders it bare. The 50 m patch ground tints woodland green from these
-official boundaries instead. Run with plain python3."""
+official boundaries instead. Run with plain python3.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put its output up to ~1.1 m east of the scene at the far ring;
+the committed nw_parks.json keeps that offset until the next rerun."""
 import json, math, os, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 # dem_nw box in lon/lat with a small margin
 ENV = '-75.2700,39.8035,-75.1730,40.0900'
 P = (-10600, -2600, -15600, -6600)

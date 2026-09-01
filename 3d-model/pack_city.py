@@ -2,11 +2,29 @@
 """osm_city_raw.json -> city.b64 : the far ring (rest of Philadelphia) at 0.7 m units.
 Same body layout as wide.b64 (n, h*5, minH*5, type, attr, roof, pts...; magic 0x5348545B) but scale 0.7 and with
 rowhouse rows MERGED into block strips (shapely union) so the whole city fits the
-artifact's 16 MB page budget. Buildings inside the wide box are skipped (covered).
+artifact's 16 MB page budget. Buildings inside the wide box are skipped (covered),
+and so are area rings (parks/water/aprons) whose centroid sits inside it - pack_wide
+owns those; they used to be packed by both tiers and z-fought.
+Guards: an int16 saturation in clip() is fatal (city.b64 is not written); a missing
+join LUT (lidar_city_heights.json, lidar_cache/opa_city.json, lidar_cache/roof_city.json)
+is fatal unless --allow-missing, because a repack without one silently dropped every
+measured height / OPA facade attribute / roof colour from the far ring.
+Rings over budget (32 vertices per building, 90 per area) are Douglas-Peucker'd down
+(shapely simplify with a doubling tolerance), not strided every k-th vertex.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put the far ring up to ~1.1 m east of the scene at its 16.5 km edge;
+the committed city.b64 keeps that offset until the next rerun.
 Run with the scratchpad venv python (needs shapely)."""
-import json, math, struct, base64, sys
+import argparse, json, math, struct, base64, sys
 from shapely.geometry import Polygon, LineString, box as sbox
 from shapely.ops import unary_union, polygonize
+from philly_frame import LON0, LAT0, KX, KZ
+
+ap = argparse.ArgumentParser(description='osm_city_raw.json -> city.b64 (far ring)')
+ap.add_argument('--allow-missing', action='store_true',
+                help='pack even when a join LUT (LiDAR heights / OPA attrs / roof colours) is missing; '
+                     'the affected attributes are dropped from the far ring')
+ARGS = ap.parse_args()
 
 S = 0.7
 WIDE = (-3700, 2300, -4480, 6400)
@@ -25,26 +43,51 @@ els = raw['elements']
 nodes = {}
 for el in els:
     if el.get('type') == 'node':
-        nodes[el['id']] = ((el['lon'] + 75.144748) * 85350, (39.945474 - el['lat']) * 110574)
+        nodes[el['id']] = ((el['lon'] - LON0) * KX, (LAT0 - el['lat']) * KZ)
 
-def clip(v): return max(-32767, min(32767, int(round(v))))
+SAT = []      # (record, value) for every clip() that fell outside int16 - fatal after packing
+_rec = None   # the record being packed right now, for the saturation report
+def clip(v):
+    r = int(round(v))
+    if r > 32767 or r < -32767:
+        SAT.append((_rec, v))
+        return max(-32767, min(32767, r))
+    return r
 def inBox(x, z, B): return B[0] <= x <= B[1] and B[2] <= z <= B[3]
 
+def ring_budget(pg, budget, tol):
+    """Exterior ring of pg as [(x, z), ...] with at most `budget` vertices: Douglas-Peucker
+    (shapely simplify, topology-preserving) with a doubling tolerance. Replaces the old
+    every-k-th-vertex stride, which kept vertices by position rather than shape (a corner
+    could vanish) and did not even hold the budget (len // budget is 1 up to 2*budget-1)."""
+    ext = list(pg.exterior.coords)[:-1]
+    t = tol
+    while len(ext) > budget and t < 4096:
+        sp = list(pg.simplify(t).exterior.coords)[:-1]
+        if len(sp) < len(ext): ext = sp
+        t *= 2
+    if len(ext) > budget:   # DP could not get there (degenerate ring): uniform stride as a last resort
+        ext = ext[::-(-len(ext) // budget)]
+    return ext
+
+# join LUTs. A missing one used to WARN and continue, so a repack silently dropped every
+# attribute it carried from the far ring; now fatal unless --allow-missing.
+def _load(p, what):
+    try:
+        return json.load(open(p))
+    except FileNotFoundError:
+        if ARGS.allow_missing:
+            print(f'WARNING: {p} missing - every {what} dropped from city.b64 (--allow-missing)', flush=True)
+            return {}
+        sys.exit(f'ERROR: {p} missing - every {what} would be silently dropped from city.b64; '
+                 f'regenerate it or pass --allow-missing')
 # 2022-LiDAR measured heights per OSM way (lidar_join.py). Measured wins over
 # levels-derived guesses and type defaults; an explicit height tag survives only
 # when TALLER (spires LiDAR under-reads, towers finished after the 2022 flight).
-try:
-    LIDAR_H = {int(k): v for k, v in json.load(open('lidar_city_heights.json')).items()}
-except FileNotFoundError:
-    LIDAR_H = {}
-    print('WARNING: lidar_city_heights.json missing - falling back to tags/defaults')
+LIDAR_H = {int(k): v for k, v in _load('lidar_city_heights.json', 'LiDAR-measured height').items()}
 # OPA facade attrs + sampled roof palette indices per way (Tier-1 facade pass)
-def _load(p):
-    try: return json.load(open(p))
-    except FileNotFoundError:
-        print('WARNING:', p, 'missing'); return {}
-OPA_A = {int(k): v for k, v in _load('lidar_cache/opa_city.json').items()}
-ROOF_I = {int(k): v for k, v in _load('lidar_cache/roof_city.json').items()}
+OPA_A = {int(k): v for k, v in _load('lidar_cache/opa_city.json', 'OPA facade attribute').items()}
+ROOF_I = {int(k): v for k, v in _load('lidar_cache/roof_city.json', 'sampled roof colour').items()}
 
 def attr_word(wid, h):
     fa = OPA_A.get(wid)
@@ -105,11 +148,10 @@ for el in ways:
 body = []
 nb = 0
 def emit(pg, h, mh, bt, aw_=-1, rw_=-1):
-    global nb
-    ext = list(pg.exterior.coords)[:-1]
-    if len(ext) < 3 or len(ext) > 32:
-        if len(ext) > 32: ext = ext[::max(1, len(ext) // 32)]
-        if len(ext) < 3: return
+    global nb, _rec
+    ext = ring_budget(pg, 32, 1.0)
+    if len(ext) < 3: return
+    _rec = ('building', bt, round(h, 1), tuple(round(c) for c in (pg.centroid.x, pg.centroid.y)))
     body.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt, aw_, rw_])
     for x, z in ext: body.extend([clip(x / S), clip(z / S)])
     nb += 1
@@ -169,6 +211,7 @@ for el in ways:
         for sub in subruns:
             pts = list(LineString(sub).simplify(1.6).coords) if len(sub) > 2 else sub
             if len(pts) < 2: continue
+            _rec = ('road', el['id'], t.get('highway') or t.get('aeroway'), t.get('name'))
             for c0 in range(0, len(pts) - 1, 119):
                 chunk = pts[c0:c0 + 120]
                 if len(chunk) < 2: continue
@@ -178,19 +221,24 @@ for el in ways:
                 nr += 1
 print(f'roads: {nr}', flush=True)
 
-# areas: parks/green (0), water (1), aprons as concrete (2)
+# areas: parks/green (0), water (1), aprons as concrete (2). Rings are clipped to the
+# city box geometrically (intersection), which is what keeps them inside int16; a ring
+# whose (unclipped, vertex-mean) centroid lies inside the wide box belongs to pack_wide.
 na = 0
+n_wide = 0
 cityBox = sbox(CITY[0], CITY[2], CITY[1], CITY[3])
-def emitArea(pg, kind):
-    global na
+def emitArea(pg, kind, cxz):
+    global na, _rec
     if pg.is_empty or pg.area < 4000: return
-    ext = list(pg.exterior.coords)[:-1]
+    ext = ring_budget(pg, 90, 2.0)
     if len(ext) < 3: return
-    if len(ext) > 90: ext = ext[::max(1, len(ext) // 90)]
-    if len(ext) < 3: return
+    _rec = ('area', kind, tuple(round(c) for c in cxz))
     body.extend([len(ext), kind])
     for x, z in ext: body.extend([clip(x / S), clip(z / S)])
     na += 1
+
+def ring_cent(pts):
+    return sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
 
 GREEN = ('park', 'golf_course', 'nature_reserve')
 LU = ('grass', 'cemetery', 'forest', 'recreation_ground')
@@ -205,10 +253,12 @@ for el in ways:
     pts = [nodes[n] for n in el.get('nodes', []) if n in nodes]
     if len(pts) >= 2 and pts[0] == pts[-1]: pts = pts[:-1]
     if len(pts) < 3: continue
+    cxz = ring_cent(pts)
+    if inBox(cxz[0], cxz[1], WIDE): n_wide += 1; continue   # pack_wide's (same centroid rule as buildings)
     try: pg = Polygon(pts).buffer(0)
     except Exception: continue
     geoms = list(pg.geoms) if pg.geom_type == 'MultiPolygon' else [pg]
-    for g in geoms: emitArea(g.intersection(cityBox).simplify(1.2) if not g.is_empty else g, kind)
+    for g in geoms: emitArea(g.intersection(cityBox).simplify(1.2) if not g.is_empty else g, kind, cxz)
 # water + park relations: polygonize outer member ways
 for el in els:
     if el.get('type') != 'relation': continue
@@ -225,12 +275,25 @@ for el in els:
     if not lines: continue
     try:
         for g in polygonize(unary_union(lines)):
+            cxz = ring_cent(list(g.exterior.coords)[:-1])
+            if inBox(cxz[0], cxz[1], WIDE): n_wide += 1; continue   # pack_wide's
             gg = g.intersection(cityBox)
             geoms = list(gg.geoms) if gg.geom_type == 'MultiPolygon' else [gg]
             for g2 in geoms:
-                if g2.geom_type == 'Polygon': emitArea(g2.simplify(1.5), kind)
+                if g2.geom_type == 'Polygon': emitArea(g2.simplify(1.5), kind, cxz)
     except Exception: pass
-print(f'areas: {na}', flush=True)
+print(f'areas: {na} ({n_wide} left to pack_wide: centroid inside the wide box)', flush=True)
+
+if SAT:
+    print(f'ERROR: {len(SAT)} coordinate(s) saturated int16 (|v| > 32767 at {S} m units, i.e. beyond '
+          f'+/-{32767 * S:.0f} m); city.b64 NOT written. Offending records:', file=sys.stderr, flush=True)
+    shown = set()
+    for rec, v in SAT:
+        if rec in shown: continue
+        shown.add(rec)
+        print(f'   {rec}  value {v:.0f} ({v * S:.0f} m)', file=sys.stderr, flush=True)
+        if len(shown) >= 12: break
+    sys.exit(1)
 
 hdr = struct.pack('<4i', 0x5348545B, nb, nr, na)
 blob = hdr + struct.pack('<%dh' % len(body), *body)

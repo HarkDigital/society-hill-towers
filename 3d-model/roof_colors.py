@@ -10,7 +10,10 @@ are k-means clustered to a 30-color palette; buildings store a palette index.
 Outputs: lidar_cache/roof_palette.json  [[r,g,b] x30]
          lidar_cache/roof_core.json / roof_wide.json / roof_south.json {idx: pal}
          lidar_cache/roof_city.json {way id: pal}
-Tiles cached in lidar_cache/tiles/. Run with the venv python (shapely, PIL, numpy)."""
+Tiles cached in lidar_cache/tiles/. Run with the venv python (shapely, PIL, numpy).
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which sampled the ortho up to ~1.1 m (about one pixel) east of each far-
+ring footprint; the cached roof_*.json keep that until the next rerun."""
 import io, json, math, os, sys, time, urllib.request
 from collections import OrderedDict
 import numpy as np
@@ -21,7 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
 TILE_DIR = 'lidar_cache/tiles'
 os.makedirs(TILE_DIR, exist_ok=True)
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 Z = 17
 WORLD = 256 * (1 << Z)
 URL = ('https://tiles.arcgis.com/tiles/fLeGjb7u4uXqeF9q/arcgis/rest/services/'
@@ -148,7 +151,7 @@ raw = json.load(open('osm_city_raw.json'))
 nodes = {}
 for el in raw['elements']:
     if el.get('type') == 'node':
-        nodes[el['id']] = ((el['lon'] + 75.144748) * KX, (39.945474 - el['lat']) * KZ)
+        nodes[el['id']] = ((el['lon'] - LON0) * KX, (LAT0 - el['lat']) * KZ)
 for el in raw['elements']:
     if el.get('type') != 'way' or 'building' not in (el.get('tags') or {}):
         continue

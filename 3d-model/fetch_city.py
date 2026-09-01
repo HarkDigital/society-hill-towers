@@ -4,8 +4,15 @@ University City / West / Southwest + airport (A), North Philly (B),
 the Northeast (C), Roxborough / Germantown / Chestnut Hill (D).
 Writes osm_city_raw.json and a coarse 150 m dem_city.json.
 The wide box (39.915..39.986, -75.188..-75.118) is fetched already; tiles
-inside it are skipped at pack time (dedup by element id here)."""
+inside it are skipped at pack time (dedup by element id here).
+Per-tile checkpoints in city_tiles/ via overpass.py (the logic lived here and
+was lifted out so fetch_wide/fetch_south checkpoint the same way): reruns only
+touch missing tiles, and a tile still missing after the retry rounds now aborts
+the run (it used to print a WARNING and write the partial extract anyway)."""
 import json, math, time, urllib.request, urllib.parse
+import os
+from overpass import fetch_tiles, grid_tiles
+from philly_frame import LAT0 as lat0, LON0 as lon0, KX as kx, KZ as kz
 
 # lat S, lat N, lon W, lon E, rows, cols
 BOXES = [
@@ -22,32 +29,10 @@ BOXES = [
     # wedge between them was never fetched (the Round 40 bare patch).
     ('nw-gap',          40.050, 40.100, -75.190, -75.130, 3, 3),
 ]
-MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
-           'https://overpass.private.coffee/api/interpreter']
-import os
-os.makedirs('city_tiles', exist_ok=True)
-
-def fetch(q):
-    data = urllib.parse.urlencode({'data': q}).encode()
-    last = None
-    for attempt in range(10):
-        url = MIRRORS[attempt % len(MIRRORS)]
-        try:
-            req = urllib.request.Request(url, data=data, headers={'User-Agent': 'sht-3d-model/1.0'})
-            with urllib.request.urlopen(req, timeout=190) as r:
-                return json.load(r)
-        except Exception as e:
-            last = e
-            time.sleep(min(120, 12 + 14 * attempt))
-    raise last
 
 tiles = []
 for name, S, N, W, E, ROWS, COLS in BOXES:
-    for i in range(ROWS):
-        for j in range(COLS):
-            s = S + (N - S) * i / ROWS; n = S + (N - S) * (i + 1) / ROWS
-            w = W + (E - W) * j / COLS; e = W + (E - W) * (j + 1) / COLS
-            tiles.append((f'{name}-{i}-{j}', f'{s:.5f},{w:.5f},{n:.5f},{e:.5f}'))
+    tiles += grid_tiles(name, S, N, W, E, ROWS, COLS)
 
 def tileQuery(bbox):
     return f'''[out:json][timeout:180];
@@ -65,32 +50,7 @@ def tileQuery(bbox):
 (._;>;);
 out body qt;'''
 
-for rnd in range(3):   # per-tile checkpoints: rerun rounds only touch missing tiles
-    missing = [(tid, bbox) for tid, bbox in tiles if not os.path.exists(f'city_tiles/{tid}.json')]
-    if not missing: break
-    print(f'round {rnd}: {len(missing)} tiles to fetch', flush=True)
-    for tid, bbox in missing:
-        t0 = time.time()
-        try:
-            d = fetch(tileQuery(bbox))
-        except Exception as e:
-            print(f'{tid} FAILED this round: {e}', flush=True)
-            continue
-        json.dump(d, open(f'city_tiles/{tid}.json', 'w'))
-        print(f'{tid} {bbox}: {len(d.get("elements", []))} elements ({time.time()-t0:.0f}s)', flush=True)
-        time.sleep(5)
-
-elements, seen = [], set()
-missing = [tid for tid, _ in tiles if not os.path.exists(f'city_tiles/{tid}.json')]
-if missing:
-    print(f'WARNING: {len(missing)} tiles still missing: {missing[:8]}', flush=True)
-for tid, _ in tiles:
-    p = f'city_tiles/{tid}.json'
-    if not os.path.exists(p): continue
-    for el in json.load(open(p)).get('elements', []):
-        k = (el['type'], el['id'])
-        if k in seen: continue
-        seen.add(k); elements.append(el)
+elements = fetch_tiles(tiles, tileQuery, 'city_tiles', rounds=3, pause=5)
 json.dump({'elements': elements}, open('osm_city_raw.json', 'w'))
 print(f'osm_city_raw.json written ({len(elements)} elements)', flush=True)
 
@@ -99,8 +59,6 @@ print(f'osm_city_raw.json written ({len(elements)} elements)', flush=True)
 if os.path.exists('dem_city.json'):
     print('dem_city.json exists — skipping the DEM refetch', flush=True)
     raise SystemExit
-lat0, lon0 = 39.945473644755005, -75.14474803850973
-kx = 111320 * math.cos(math.radians(lat0)); kz = 110574
 xs = list(range(-12000, 16501, 150)); zs = list(range(-21700, 9701, 150))
 pts = [(x, z) for z in zs for x in xs]
 elev = {}

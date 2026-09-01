@@ -5,4 +5,6 @@
 .claude/
 3d-model/osm_city_raw.json
 3d-model/city_tiles/
+3d-model/wide_tiles/
+3d-model/south_tiles/
 3d-model/lidar_cache/
