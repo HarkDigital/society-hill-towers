@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """scene_wide.json -> wide.b64 : compact int16 binary (0.2 m units) for the outer districts.
+wide.b64 is a derivative database of OpenStreetMap data (ODbL): see ../DATA-LICENSE.md.
 Layout: Int32[4] header (magic 0x5348545A, nBuildings, nRoads, nAreas), then Int16 body:
   building: n, h*5, minH*5, type, attr, roof, x1,z1,...
   road: n, w*10, type, pts...   area: n, kind, pts...
