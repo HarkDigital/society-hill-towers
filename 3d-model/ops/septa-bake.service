@@ -1,0 +1,30 @@
+# philly3d: one SEPTA bake. Fired every 10 s by septa-bake.timer.
+# Install:  cp septa_bake.py /opt/philly3d/  (chmod 755)
+#           cp septa-bake.service septa-bake.timer /etc/systemd/system/
+#           systemctl daemon-reload && systemctl enable --now septa-bake.timer
+# Check:    systemctl list-timers septa-bake.timer ; journalctl -u septa-bake -n 20
+#           curl -sI https://philly3d.com/septa.json
+#
+# Alternative to the timer (one long-lived process, fewer forks): change
+# Type=oneshot to Type=simple, append --loop to ExecStart, add Restart=always and
+# RestartSec=10 under [Service] and an [Install] WantedBy=multi-user.target, then
+# `systemctl enable --now septa-bake.service` and leave the timer disabled.
+[Unit]
+Description=philly3d: bake SEPTA TransitViewAll to /var/www/philly3d/septa.json
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/philly3d/septa_bake.py --out /var/www/philly3d/septa.json
+# 18 s upstream timeout x 2 hosts, plus slack
+TimeoutStartSec=45
+Nice=10
+# runs as root like the rest of the box; the script writes the files 0644 so
+# nginx (www-data) can read them. To run unprivileged instead add User=www-data
+# and make /var/www/philly3d writable by that user.
+ProtectSystem=strict
+ReadWritePaths=/var/www/philly3d
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true

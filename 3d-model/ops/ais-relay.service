@@ -1,0 +1,38 @@
+# philly3d: one aisstream.io WebSocket -> /var/www/philly3d/ais.json every 4 s.
+# Install:  cp ais_relay.py /opt/philly3d/  (chmod 755)
+#           mkdir -p /etc/philly3d && printf 'AISSTREAM_KEY=%s\n' '<key>' > /etc/philly3d/ais.env
+#           chmod 600 /etc/philly3d/ais.env
+#           cp ais-relay.service /etc/systemd/system/
+#           systemctl daemon-reload && systemctl enable --now ais-relay.service
+# Check:    journalctl -u ais-relay -f        (expect "stream live" within seconds)
+#           curl -s https://philly3d.com/ais.json | python3 -m json.tool | head
+#
+# The key streams to ONE client at a time: while the page still carries the old
+# key as a fallback, an open browser tab can steal the stream from this relay
+# and vice versa. Rotate the key at aisstream.io once this is live and the page
+# has been switched to /ais.json — the retired key in old copies of the page
+# then simply fails to connect.
+[Unit]
+Description=philly3d: aisstream.io -> /var/www/philly3d/ais.json relay
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/philly3d/ais.env
+ExecStart=/usr/bin/python3 /opt/philly3d/ais_relay.py --out /var/www/philly3d/ais.json
+Restart=always
+RestartSec=15
+Nice=10
+# runs as root like the rest of the box; the script writes the files 0644 so
+# nginx (www-data) can read them. To run unprivileged add User=www-data and
+# make /var/www/philly3d writable by that user.
+ProtectSystem=strict
+ReadWritePaths=/var/www/philly3d
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

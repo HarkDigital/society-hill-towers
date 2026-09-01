@@ -1,0 +1,206 @@
+# philly3d.com — nginx server blocks.
+#
+# Install as /etc/nginx/sites-available/philly3d. The enabled file
+# (/etc/nginx/sites-enabled/philly3d) is a SYMLINK to it — edit sites-available,
+# never the link. Back the live file up first (cp -a ... /root/philly3d.vhost.bak-$(date +%F)),
+# `nginx -t` before EVERY reload, and remember the box also serves harkpicks.com
+# and thelionspool.com from the same nginx: a broken test here darkens all three.
+#
+# Depends on http-context pieces that cannot live in a server block:
+#   /etc/nginx/conf.d/philly3d-http.conf   <- ops/philly3d.http.conf.example
+#       (log_format beacon, map $http_origin -> $philly3d_acao)
+#   /etc/nginx/conf.d/adsb_cache.conf      <- already on the box:
+#       proxy_cache_path /var/cache/nginx/adsb levels=1 keys_zone=adsb_cache:1m
+#                        max_size=10m inactive=60s use_temp_path=off;
+# Install philly3d-http.conf BEFORE this file or nginx -t fails on the unknown
+# variable / log format (which is the safe direction to fail).
+#
+# What is here vs the live block recorded Sep 2026 (unchanged lines kept as-is):
+#   ADDED   a www.philly3d.com :443 block that 301s to the apex (www used to be a
+#           second server_name on the apex block — one canonical origin now).
+#   ADDED   server-scope hardening headers: HSTS one year incl. subdomains,
+#           nosniff, strict-origin-when-cross-origin. Note nginx add_header is
+#           NOT inherited into any location that declares its own add_header,
+#           so every such location below repeats the three lines. Forgetting
+#           that silently drops the headers on that path — keep the pattern.
+#   ADDED   gzip_vary on (Vary: Accept-Encoding on compressed answers) and
+#           gzip_types for the small JSON/SVG files: nginx.conf has `gzip on`
+#           but its gzip_types line is commented out, so only text/html was
+#           ever compressed on the fly. The 23 MB page is never compressed on
+#           the fly at all — deploy ships index.html.gz and gzip_static serves it.
+#   ADDED   location = /  with Cache-Control public, max-age=600, must-revalidate:
+#           a returning viewer inside ten minutes reuses the 12.8 MB download,
+#           after that the browser revalidates (ETag / Last-Modified -> 304) so
+#           a deploy is picked up within ten minutes, never "until cache clear".
+#   ADDED   location = /b  — opt-in, IP-free visit beacon (204 + one log line).
+#   ADDED   location = /septa.json and = /ais.json — static files baked by
+#           ops/septa_bake.py (10 s) and ops/ais_relay.py (4 s), gzip_static
+#           twins, max-age=10, ACAO * so the GitHub Pages copy can read them.
+#   CHANGED /adsb: proxy_hide_header for the upstream (Cloudflare-fronted)
+#           Strict-Transport-Security / NEL / Report-To / Cache-Control so their
+#           domain's policy and telemetry never leave our origin, ACAO now comes
+#           from the $philly3d_acao map (philly3d.com + harkdigital.github.io;
+#           empty = header omitted = browser refuses) instead of *, plus
+#           Vary: Origin and the re-declared hardening headers. Everything else
+#           in that block is the live text.
+#   ADDED   location ~ /\.  -> 404: the bakers and --rollback stage dotfiles in
+#           the web root for a moment; nothing dotted should ever be served.
+#
+# Not touched on purpose: `listen [::]:...` — the box has no IPv6 (see the
+# /adsb resolver note); adding v6 listeners is a separate decision.
+
+# ---------------------------------------------------------------- :80
+# ACME stays reachable over plain http for certbot renewals (certonly --webroot);
+# everything else is bounced to https on the apex.
+server {
+    listen 80;
+    server_name philly3d.com www.philly3d.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/philly3d;
+    }
+    location / {
+        return 301 https://philly3d.com$request_uri;
+    }
+}
+
+# ---------------------------------------------------------------- :443 www -> apex
+# The certificate already covers www (certbot issued philly3d.com + www together),
+# so www can terminate TLS and redirect instead of serving a duplicate site.
+server {
+    listen 443 ssl http2;
+    server_name www.philly3d.com;
+
+    ssl_certificate /etc/letsencrypt/live/philly3d.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/philly3d.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    return 301 https://philly3d.com$request_uri;
+}
+
+# ---------------------------------------------------------------- :443 apex
+server {
+    listen 443 ssl http2;
+    server_name philly3d.com;
+    root /var/www/philly3d;
+
+    ssl_certificate /etc/letsencrypt/live/philly3d.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/philly3d.com/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+
+    # hardening — repeated verbatim in every location below that has its own
+    # add_header (nginx drops inherited add_header the moment a location adds one)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header Referrer-Policy strict-origin-when-cross-origin always;
+
+    # nginx.conf already has `gzip on`; these widen it to the small JSON/SVG
+    # answers and mark compressed responses Vary: Accept-Encoding
+    gzip_vary on;
+    gzip_types application/json image/svg+xml text/plain;
+
+    # the page itself: try_files serves index.html INSIDE this location (no
+    # internal redirect, so the Cache-Control below actually applies); gzip_static
+    # picks index.html.gz for gzip-capable clients, the raw file for the rest
+    location = / {
+        gzip_static on;
+        try_files /index.html =404;
+        add_header Cache-Control "public, max-age=600, must-revalidate" always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+    }
+
+    # opt-in visit beacon. The page is NOT wired to it yet; when it is, it fires
+    # navigator.sendBeacon('/b?e=view') or similar. nginx answers 204 and writes
+    # one line per hit in the IP-free `beacon` format (time, path+query, UA —
+    # no address, no referrer) to its own log. Visit counts are `wc -l` away
+    # without holding personal data; logrotate's stock /var/log/nginx/*.log rule
+    # rotates it with the rest.
+    location = /b {
+        access_log /var/log/nginx/philly3d_beacon.log beacon;
+        return 204;
+    }
+
+    # live feeds baked to disk: one upstream connection each, any number of
+    # viewers, plain static files with .gz twins written by the bakers.
+    # max-age=10 matches the bake cadence; ACAO * because the GitHub Pages copy
+    # of the page reads these too and they carry nothing private.
+    location = /septa.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=10" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+    }
+    location = /ais.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=10" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+    }
+
+    # same-origin passthrough to the fixed adsb.fi Philly query (30 nm around PHL).
+    # DNS AT REQUEST TIME, NOT CONFIG LOAD: on Aug 27 unattended-upgrades restarted
+    # nginx while systemd-resolved was mid-upgrade; a literal hostname in
+    # proxy_pass is resolved once at startup, that lookup failed, and nginx
+    # refused to start — all three sites on the box dark for nine hours. The
+    # resolver + variable host defers the lookup to the first request, so nginx
+    # always starts and a resolver failure at worst 502s /adsb (and
+    # proxy_cache_use_stale keeps handing out the last 8 s copy meanwhile).
+    # ipv6=off IS LOAD-BEARING: the box has no IPv6 egress (curl -6 dies); with
+    # AAAA answers allowed nginx would pick an address it cannot reach and the
+    # proxy would strand. valid=300s caps how long a stale answer is reused.
+    location = /adsb {
+        resolver 127.0.0.53 valid=300s ipv6=off;
+        set $adsb_host opendata.adsb.fi;
+        proxy_pass https://$adsb_host/api/v2/lat/39.872/lon/-75.241/dist/30;
+        proxy_set_header Host opendata.adsb.fi;
+        proxy_ssl_server_name on;
+        proxy_ssl_name opendata.adsb.fi;
+        proxy_ssl_verify on;
+        proxy_ssl_trusted_certificate /etc/ssl/certs/ca-certificates.crt;
+        proxy_cache adsb_cache;
+        proxy_cache_valid 200 8s;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_cache_lock on;
+        proxy_hide_header Set-Cookie;
+        # upstream headers that must not leak through our origin: an HSTS policy
+        # for THEIR domain, NEL / Report-To telemetry that would have browsers
+        # report from philly3d.com to Cloudflare, and their Cache-Control, which
+        # would ride alongside (and fight) the no-store we set below
+        proxy_hide_header Strict-Transport-Security;
+        proxy_hide_header NEL;
+        proxy_hide_header Report-To;
+        proxy_hide_header Cache-Control;
+        # CORS: $philly3d_acao (map in philly3d-http.conf) echoes the Origin for
+        # https://philly3d.com and https://harkdigital.github.io and is empty for
+        # anything else — nginx omits add_header entirely for an empty value, so
+        # unknown origins get no ACAO and the browser refuses the body. Vary: Origin
+        # keeps any intermediate cache from serving one origin's answer to another.
+        add_header Access-Control-Allow-Origin $philly3d_acao always;
+        add_header Vary Origin always;
+        add_header Cache-Control no-store always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+    }
+
+    # nothing dotted is ever served (baker temp files, rollback staging, .git)
+    location ~ /\. {
+        return 404;
+    }
+
+    # everything else: favicons, apple-touch-icon, og.png — inherits the
+    # server-scope hardening headers (no add_header of its own)
+    location / {
+        gzip_static on;
+        try_files $uri $uri/ =404;
+    }
+}
