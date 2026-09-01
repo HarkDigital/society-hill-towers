@@ -9223,8 +9223,8 @@
   // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
   // the sky and fog response but drops the particles and the lightning strobe.
   const WXFX = {
-    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0,
-    tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0,
+    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0,
+    tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0,
     storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, dayF: 1,
   };
   function wxSetTargets() {
@@ -9245,10 +9245,50 @@
     F.tHail = c === 96 || c === 99 ? 1 : 0;
     F.tGloom = F.storm ? clamp(0.55 + 0.45 * F.tRain, 0, 1) : 0.5 * F.tRain;
     F.tSnowGround = F.tSnow > 0.02 ? clamp(0.35 + 0.5 * F.tSnow, 0, 0.85) : 0;
+    if (WX.temp != null && WX.temp > 38) F.tSnowGround *= 0.25;   // too warm to stick: slush at best
+    F.tWet = (F.tRain > 0.02 || iceCode) ? clamp(0.35 + 0.65 * F.tRain, 0, 1) : 0;
     if (!F.seeded) {   // first report of the session: land in the ongoing weather, don't fade into it
       F.seeded = true;
-      F.rain = F.tRain; F.snow = F.tSnow; F.gloom = F.tGloom; F.fog = F.tFog; F.hail = F.tHail; F.snowGround = F.tSnowGround;
+      F.rain = F.tRain; F.snow = F.tSnow; F.gloom = F.tGloom; F.fog = F.tFog; F.hail = F.tHail;
+      F.snowGround = F.tSnowGround; F.wet = F.tWet;
     }
+  }
+  // ---- weather on surfaces: snow lies on whatever faces up (roofs, roads,
+  // parks, bridge decks, tree crowns), rain varnishes the same faces — one
+  // shared fragment patch across the static standard materials, weighted by
+  // the view-space normal's world-up component so walls stay dry brick. The
+  // world-position hash breaks the blanket into patches; wet gloss favors
+  // dark surfaces so asphalt shines harder than pale roofs. Applied after
+  // build: chained onto cityMat's facade shader (its replace keeps the
+  // literal includes), plain-assigned everywhere hookless; water (liquify),
+  // vehicles, glass, street text and poles keep their own programs, which
+  // also keeps moving things from wearing the weather.
+  const wxSurfU = { uSnowAcc: { value: 0 }, uWet: { value: 0 } };
+  function wxSurfacePatch(shader) {
+    shader.uniforms.uSnowAcc = wxSurfU.uSnowAcc;
+    shader.uniforms.uWet = wxSurfU.uWet;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform float uSnowAcc; uniform float uWet;\nvoid main() {')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+        'float wxUpW = smoothstep(0.55, 0.85, clamp(dot(normalize(vNormal), (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), 0.0, 1.0));',
+        'vec3 wxWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
+        'float wxN = fract(sin(dot(floor(wxWP.xz * 0.9), vec2(127.1, 311.7))) * 43758.5453);',
+        'float wxSnowW = uSnowAcc * max(wxUpW, 0.14) * (0.78 + 0.22 * wxN);',
+        'float wxDark = 1.0 - clamp(dot(diffuseColor.rgb, vec3(0.55)), 0.0, 1.0);',
+        'float wxWetW = uWet * wxUpW * (1.0 - wxSnowW);',
+        'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.90, 0.93), wxSnowW);',
+        'diffuseColor.rgb *= 1.0 - 0.45 * wxWetW;',
+      ].join('\n'))
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + [
+        'roughnessFactor = mix(roughnessFactor, 0.18, wxWetW * (0.45 + 0.55 * wxDark));',
+        'roughnessFactor = mix(roughnessFactor, 0.92, wxSnowW);',
+      ].join('\n'))
+      .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + [
+        // the wet-street cheat: a touch of metalness makes the whole sky sheet
+        // across the asphalt at any view angle, where dielectric fresnel only
+        // gleams at grazing ones (ACES shoulder swallows plain darkening)
+        'metalnessFactor = mix(metalnessFactor, 0.32, wxWetW * (0.4 + 0.6 * wxDark));',
+      ].join('\n'));
   }
   // decorrelated per-particle gate so density scales without bunching to one side of the box
   const wxGateGLSL = 'float wxGate(vec3 s){ return fract(sin(dot(s, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }\n';
@@ -9414,8 +9454,13 @@
     F.gloom += (F.tGloom - F.gloom) * e;
     F.fog += (F.tFog - F.fog) * e;
     F.hail += (F.tHail - F.hail) * e;
-    F.snowGround += (F.tSnowGround - F.snowGround) * (1 - Math.exp(-dt / 40));   // settles and melts slowly
-    if (reducedMotion) return;   // sky, fog and ground still answer the weather; no particles, no strobe
+    F.wet += (F.tWet - F.wet) * (1 - Math.exp(-dt / (F.tWet > F.wet ? 25 : 300)));   // streets darken fast, dry slowly
+    // accumulation settles in about a minute of snowfall; melts off slowly, faster above freezing
+    const sgTau = F.tSnowGround > F.snowGround ? 40 : (WX.temp != null && WX.temp > 38 ? 180 : 600);
+    F.snowGround += (F.tSnowGround - F.snowGround) * (1 - Math.exp(-dt / sgTau));
+    wxSurfU.uSnowAcc.value = F.snowGround;
+    wxSurfU.uWet.value = F.wet * (0.45 + 0.55 * F.dayF);
+    if (reducedMotion) return;   // sky, fog and surfaces still answer the weather; no particles, no strobe
     const cy = camera.position.y;
     const hi = smooth(120, 1100, cy);         // altitude grows the box and streaks so it still reads
     const vis = 1 - smooth(1700, 2600, cy);   // far above the deck the precipitation fades out
@@ -9525,6 +9570,11 @@
       cz.lerp(_c2.set(0x353d49).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.72);
       ch.lerp(_c2.set(0x525b66).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.62);
     }
+    const snowSky = Math.max(WXFX.snow * 0.55, WXFX.snowGround * 0.3);
+    if (snowSky > 0.003) {      // snow days read milk, not blue — during the fall and while cover lies
+      cz.lerp(_c2.set(0xb6bec8).multiplyScalar(0.15 + 0.85 * dayF), snowSky);
+      ch.lerp(_c2.set(0xd6dade).multiplyScalar(0.15 + 0.85 * dayF), snowSky * 0.9);
+    }
     if (WXFX.flash > 0.003) {   // lightning: sky and cloud deck flare blue-white
       cz.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.55);
       ch.lerp(_c2.set(0xeef2ff), WXFX.flash * 0.6);
@@ -9538,7 +9588,7 @@
     scene.fog.color.copy(ch);
     // weather visibility: rain, snow and storm thicken the haze; true fog collapses it
     const murk = Math.max(WXFX.rain * 0.4, WXFX.snow * 0.6, WXFX.gloom * 0.5);
-    scene.fog.color.lerp(_c2.set(0xbfc6cc).multiplyScalar(0.12 + 0.88 * dayF), Math.max(WXFX.fog * 0.9, WXFX.snow * 0.4));
+    scene.fog.color.lerp(_c2.set(0xbfc6cc).multiplyScalar(0.12 + 0.88 * dayF), Math.max(WXFX.fog * 0.9, WXFX.snow * 0.4, WXFX.snowGround * 0.3));
     scene.fog.near = fogBase.near * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
     scene.fog.far = fogBase.far * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xd3deea), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
@@ -9548,8 +9598,7 @@
     // bare ground follows the light: near-black at night, warm dark earth through
     // twilight, the pale sage only in daylight — the fixed pale tone read as water
     _c1.set(0x232321).lerp(_c2.set(0x55503f), twi).lerp(_c2.set(COLORS.ground), dayF);
-    if (WXFX.snowGround > 0.003) _c1.lerp(_c2.set(0xe6eaec).multiplyScalar(0.18 + 0.82 * dayF), WXFX.snowGround);
-    for (const gm of groundMats) gm.color.copy(_c1);
+    for (const gm of groundMats) gm.color.copy(_c1);   // (snow cover now lands via the wxSurfacePatch shader pass)
     renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
@@ -9714,8 +9763,28 @@
   fetchWeather();
   setInterval(fetchWeather, 15 * 60 * 1000);
   build().then(() => {
+    // weather-surface pass, applied before the first render so nothing recompiles:
+    // chain cityMat (facade shader runs first, then the weather), then every
+    // hookless standard material in the built scene. Materials with their own
+    // onBeforeCompile — water, vehicles, glass, street text, poles — are left
+    // alone, as is anything created later (planes, ships, live vehicles).
+    {
+      const prevCity = cityMat.onBeforeCompile;
+      cityMat.onBeforeCompile = (sh, r) => { prevCity(sh, r); wxSurfacePatch(sh); };
+      const seen = new Set([cityMat]);
+      scene.traverse((o) => {
+        const ms = o.material;
+        for (const m of Array.isArray(ms) ? ms : ms ? [ms] : []) {
+          if (!m.isMeshStandardMaterial || seen.has(m)) continue;
+          seen.add(m);
+          if (Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) continue;
+          if (m.flatShading) continue;
+          m.onBeforeCompile = wxSurfacePatch;
+        }
+      });
+    }
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, waterU, flightTest, shipTest,
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest,
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

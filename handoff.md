@@ -1711,6 +1711,42 @@ at street and altitude for rain/downpour/storm (bolt caught on camera)/
 blizzard/fog and the live no-param path (real 98% overcast rendered as
 such); shipped to both homes.
 
+Round 43 (Sep 1 — Mike: snow on rooftops and roads, wet-street sheen in rain,
+and green spaces white when accumulation is happening): one shared fragment
+patch (wxSurfacePatch) now lays weather on every static surface instead of
+just the bare-ground planes. It injects after color_fragment /
+roughnessmap_fragment / metalnessmap_fragment: an up-facing weight from the
+view-space normal against world up (rotation-invariant, so it needs no new
+varyings), a world-position hash for patchiness (world pos rebuilt from
+cameraPosition − vViewPosition · mat3(viewMatrix) — no transpose(), WebGL1-
+safe), snow as a mix toward pale white on up-faces with a 0.14 frost floor
+on walls so the grazing-angle rowhouse sea pales too, wet as darkening plus
+a roughness drop AND a metalness lift. The metalness lift is the load-
+bearing half of the sheen: plain darkening dies in the ACES shoulder (a
+0.62× diffuse on a sun-lit pale surface tone-maps to nearly the same pixel
+— verified with a GPU-side getUniform + getShaderSource probe when the
+first cut looked like a no-op), and dielectric fresnel only gleams at
+grazing angles, so mix(metalness → 0.32, weighted toward dark surfaces)
+is what makes the whole sky sheet across wet asphalt in aerial views.
+Applied in build().then before the first render (nothing recompiles):
+chained onto cityMat after its facade hook (whose replaces keep the literal
+includes), plain-assigned to every hookless MeshStandardMaterial; water
+(liquify), vehicles, glass, street text and poles keep their own programs,
+which also keeps moving things from wearing the weather. Parks and lawns
+are up-facing polygons, so green spaces whiten with accumulation (tree
+crowns keep summer green with only the frost floor — flocking leafless
+winter trees is its own future project). WXFX gains wet (in τ25 s, dry-out
+τ300 s) and snow accumulation semantics: settle τ40 s, melt τ600 s (τ180 s
+above 38 °F, and above 38 °F the stick target drops to a quarter — slush);
+uniforms update before the reduced-motion early-return so those users keep
+surface weather. Sky reads milk during/after snow (snow·0.55 / acc·0.3
+lerp), fog whitens with lying snow, and the old applyLighting groundMats
+snow lerp is gone — the shader owns it now. Verified: blizzard aerial
+(whole city blanketed, streets/roofs/parks white, walls brick), street-
+level white ground underfoot, downpour A/B at fixed camera (wet: cooler,
+darker, sky-sheened; dry: warm and bright), clear-weather regression
+pixel-identical, zero console errors. Shipped to both homes.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
