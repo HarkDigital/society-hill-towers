@@ -2320,6 +2320,16 @@
           '    vec3 stoneCol = vec3(0.80, 0.76, 0.68);',
           '    vec3 col = diffuseColor.rgb;',
           '    float lit = 0.0, glass = 0.0;',
+          // every window/door/shutter mask below is multiplied by det, so once
+          // the detail fade has reached zero (about 900 m at 58 deg / 1080 px,
+          // i.e. most far-ring and outer-tier pixels of a wide view) the whole
+          // chain provably contributes nothing: take the far average directly
+          '    if (det < 0.002) {',
+          '      vec3 farAvg0 = diffuseColor.rgb * 0.9; float farW0 = 0.35;',
+          '      if (st == 2 || st == 6 || st == 7) { farAvg0 = mix(diffuseColor.rgb, vec3(0.115, 0.13, 0.155), 0.48); farW0 = 0.92; }',
+          '      diffuseColor.rgb = mix(col, farAvg0, farW0);',
+          '      shtLit = 0.05;',
+          '    } else {',
           '    if (st == 1) {',
           '      float pitch = 4.4;',
           '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
@@ -2445,6 +2455,7 @@
           '    // popped away on approach, removed at the owner\'s request)',
           '    shtLit = mix(0.05, glass * litOn, det);',
           '    diffuseColor.rgb = col;',
+          '    }',
           '  }',
           '}',
         ].join('\n'))
