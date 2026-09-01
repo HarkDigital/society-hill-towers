@@ -90,6 +90,11 @@
   renderer.toneMappingExposure = 1.06;
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  // the sun moves once a minute at most: the 4096^2 depth pass reruns only when
+  // aimSun changes the box or the sun, when the static caster set changes, or
+  // every 4th frame while vehicles move through the box (see frame())
+  renderer.shadowMap.autoUpdate = false;
+  renderer.shadowMap.needsUpdate = true;
 
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.haze, 1250, 4200);
@@ -766,16 +771,22 @@
   scene.add(sun);
   scene.add(sun.target);
 
+  const shadowAim = { cx: NaN, cz: NaN, extent: NaN, sun: new V3() };   // what the shadow map was last drawn for
   function aimSun(cx, cz, extent) {
-    lastAim = { cx, cz, extent };
+    lastAim.cx = cx; lastAim.cz = cz; lastAim.extent = extent;
     const c = sun.shadow.camera;
     const texel = (extent * 2) / SHADOW_RES;
     cx = Math.round(cx / (texel * 8)) * texel * 8;
     cz = Math.round(cz / (texel * 8)) * texel * 8;
+    // called every frame from applyLighting: only a moved box or a moved sun
+    // costs a projection update and a shadow-map redraw
+    if (cx === shadowAim.cx && cz === shadowAim.cz && extent === shadowAim.extent && shadowAim.sun.distanceToSquared(sunDir) < 1e-10) return;
+    shadowAim.cx = cx; shadowAim.cz = cz; shadowAim.extent = extent; shadowAim.sun.copy(sunDir);
     sun.position.set(cx + sunDir.x * 1200, sunDir.y * 1200, cz + sunDir.z * 1200);
     sun.target.position.set(cx, 0, cz);
     c.left = -extent; c.right = extent; c.top = extent; c.bottom = -extent;
     c.updateProjectionMatrix();
+    renderer.shadowMap.needsUpdate = true;
   }
   aimSun(-1450, -700, 800);
 
@@ -9795,10 +9806,13 @@
   let moonNow = { el: -90, az: 0, k: 0.5, wax: true };
   let lastEnvEl = 999;
   const _c1 = new THREE.Color(), _c2 = new THREE.Color();
+  const _pz = new THREE.Color(), _ph = new THREE.Color(), _pg = new THREE.Color();   // the frame's sky palette
+  let _ephMs = NaN, _ephSun = null, _ephMoon = null;   // solar()/lunar() memo: the clock moves once a minute
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   function applyLighting() {
-    const sp = solar(clockUtcMs(clock, clock.minutes));
-    const mp = lunar(clockUtcMs(clock, clock.minutes));
+    const ms = clockUtcMs(clock, clock.minutes);
+    if (ms !== _ephMs) { _ephMs = ms; _ephSun = solar(ms); _ephMoon = lunar(ms); }
+    const sp = _ephSun, mp = _ephMoon;
     moonNow = mp;
     moonDir.copy(mp.dir);
     const el = sp.elev;
@@ -9834,8 +9848,8 @@
     skyMat.uniforms.uMoonV.value.crossVectors(mp.dir, _vA);
     skyMat.uniforms.uMoonK.value = mp.k;
     skyMat.uniforms.uMoonI.value = smooth(-1, 5, mp.el) * (1 - smooth(-7, 1, el)) * (1 - 0.85 * WX.cover);
-    const mixPal = (k) => _c1.copy(PAL.night[k]).lerp(PAL.twi[k], twi).lerp(PAL.day[k], dayF).clone();
-    const cz = mixPal('z'), ch = mixPal('h'), cg = mixPal('g');
+    const mixPal = (k, out) => out.copy(PAL.night[k]).lerp(PAL.twi[k], twi).lerp(PAL.day[k], dayF);
+    const cz = mixPal('z', _pz), ch = mixPal('h', _ph), cg = mixPal('g', _pg);
     // overcast grays the sky toward a flat deck
     cz.lerp(_c2.set(0x93a5b4).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.55);
     ch.lerp(_c2.set(0xc4ccd2).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.5);
@@ -9986,10 +10000,12 @@
   let last = performance.now();
   let shadowMode = -1;
   let lastBearing = null;
+  let frameNo = 0, lastCasterSig = -1;
   function frame(now, once) {
     if (!once) requestAnimationFrame(frame);
     const dt = Math.min((now - last) / 1000, 0.05);
     last = now;
+    frameNo++;
     if (introSpin && !interacted) orbit.goalTheta += dt * 0.045;
     if (clock.live) {
       const nowMin = Math.floor(Date.now() / 60000);
@@ -10020,6 +10036,12 @@
       needle.setAttribute('transform', 'rotate(' + (-bearing) + ' 17 17)');
     }
 
+    // shadow map (autoUpdate is off): vehicles moving through the box get a
+    // fresh depth pass every 4th frame; a changed static caster set (docks
+    // arriving with the first Indego poll) gets one immediately
+    const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0);
+    const casterSig = indegoReady && indegoSolid ? indegoSolid.count : 0;
+    if ((movers && (frameNo & 3) === 0) || casterSig !== lastCasterSig) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }
     sky.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
     if (!reducedMotion) waterU.uTime.value += dt;
