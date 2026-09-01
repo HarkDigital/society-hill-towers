@@ -61,16 +61,44 @@
   window.addEventListener('error', (e) => {
     const lm = document.getElementById('loadmsg');
     if (lm && !window.__fatalShown) { window.__fatalShown = true; lm.textContent = 'Error: ' + ((e && e.message) || 'unknown'); }
+    beacon('err', { m: String((e && e.message) || 'unknown').slice(0, 80) });
   });
   window.addEventListener('unhandledrejection', (e) => {
     const r = e && e.reason;
     console.error('unhandled rejection', r);
     const lm = document.getElementById('loadmsg');
     if (lm && !window.__fatalShown) { window.__fatalShown = true; lm.textContent = 'Error: ' + ((r && r.message) || String(r)); }
+    beacon('err', { m: 'rejection: ' + String((r && r.message) || r).slice(0, 70) });
   });
   // load and frame instrumentation, read through ?dev's __dbg.perf(): which
   // build step dominates on a real device, and what a frame costs there
   const PERF = { t0: performance.now(), steps: [], failed: [], ring: new Float32Array(600), ri: 0, rn: 0 };
+  // Opt-in, same-origin telemetry: ops/philly3d.vhost.example gives /b a
+  // `return 204` and logs the query string without the client IP. Only on
+  // philly3d.com, one request per checkpoint, nothing personal: checkpoint,
+  // ms since load, coarse pointer, DPR, cores, deviceMemory, WebGL2, build
+  // date. Progressive because an iOS memory kill sends no pagehide: the
+  // server's last-seen checkpoint IS the death point. Errors cap at three.
+  const BEACON = location.hostname === 'philly3d.com' ? '/b' : null;
+  const beaconSeen = new Set();
+  let beaconErrs = 0;
+  function beacon(st, extra) {
+    if (!BEACON) return;
+    if (st === 'err') { if (++beaconErrs > 3) return; }
+    else if (beaconSeen.has(st)) return;
+    else beaconSeen.add(st);
+    const q = { st, t: Math.round(performance.now()), tch: isTouch ? 1 : 0, dpr: (window.devicePixelRatio || 1).toFixed(2),
+      cores: navigator.hardwareConcurrency || 0, mem: navigator.deviceMemory || 0,
+      gl2: (typeof renderer !== 'undefined' && renderer && renderer.capabilities && renderer.capabilities.isWebGL2) ? 1 : 0, b: document.lastModified };
+    if (extra) for (const k in extra) if (extra[k] != null) q[k] = extra[k];
+    const url = BEACON + '?' + new URLSearchParams(q).toString();
+    try { fetch(url, { method: 'POST', keepalive: true, referrerPolicy: 'no-referrer', cache: 'no-store' }).catch(() => {}); }
+    catch (e) { try { if (navigator.sendBeacon) navigator.sendBeacon(url); } catch (e2) { /* nothing to do */ } }
+  }
+  document.addEventListener('visibilitychange', () => {
+    const lm = document.getElementById('loadmsg');
+    if (document.hidden && !PERF.ready && lm) beacon('bail', { step: lm.textContent.slice(0, 40) });
+  });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
 
@@ -10449,6 +10477,7 @@
   let lastMinuteTick = -1;
 
   // ---------------------------------------------------------------- build & loop
+  const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Planting the street trees']);
   async function build() {
     let failures = 0;
     for (const s of buildSteps) {
@@ -10457,8 +10486,10 @@
       const t0 = performance.now();
       try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; PERF.failed.push([s.msg, String(err && err.message || err)]); console.error('build step failed:', s.msg, err); }
       PERF.steps.push([s.msg, Math.round(performance.now() - t0)]);
+      if (BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
     }
     PERF.ready = Math.round(performance.now() - PERF.t0);
+    beacon('ready', { ms: PERF.ready, fail: failures });
     loadmsg.textContent = failures ? 'Ready (some detail could not be built)' : 'Ready';
     loadmsg.classList.add('done');   // the pulse stops with the wait
     btnEnter.disabled = false;
@@ -10467,6 +10498,8 @@
 
   btnEnter.addEventListener('click', () => {
     btnEnter.blur();   // #veil.hidden is opacity only; a focused Enter button would swallow every key
+    beacon('enter', { ms: Math.round(performance.now()) });
+    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode }); }, 60000);
     veil.classList.add('hidden');
     if (mode === MODE.ORBIT) orbit.goalR = 700;   // glide in from the veil's wide shot
     if (reducedMotion) {
