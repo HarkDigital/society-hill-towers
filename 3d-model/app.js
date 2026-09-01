@@ -6529,7 +6529,9 @@
     const prev = mode;
     mode = m;
     introSpin = false;
-    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    // a search result flies the camera mid-typing: leave the box focused, or
+    // the next keystrokes land on the layer shortcuts
+    if (document.activeElement && document.activeElement.blur && document.activeElement !== searchInput) document.activeElement.blur();
     // drop any in-flight gesture so the new mode doesn't read stale coordinates
     dragging = false; touchArmed = false; pinch.d = 0;
     joy.active = false; joy.id = -1; joy.x = joy.y = 0; lookTouch.id = -1;
@@ -6615,7 +6617,7 @@
   // not easy to track"). TrainView is no longer polled.
   const SEPTA_GEO = { lat0: 39.945473644755005, lon0: -75.14474803850973 };  // scene.json origin
   SEPTA_GEO.mx = 111320 * Math.cos(SEPTA_GEO.lat0 * Math.PI / 180); SEPTA_GEO.mz = 110574;
-  const SEPTA = { on: true, ok: false, fails: 0, hinted: false };
+  const SEPTA = { on: true, ok: false, fails: 0, hinted: false, busy: false, lastT: -1e9 };
   const SEPTA_HOSTS = ['https://api.septa.org/api', 'https://www3.septa.org/api'];
   const SEPTA_POLL = isTouch ? 25000 : 15000;          // TransitViewAll is ~370 KB a pull
   const SEPTA_BOX = { la0: 39.855, la1: 40.145, lo0: -75.30, lo1: -74.94 };  // modeled city
@@ -6626,14 +6628,23 @@
     trolley: { l: 15.3, w: 2.6, h: 3.4, c: 0x2e7448 },
   };
   const SEPTA_TINT = { G1: 0x8a7f2f, D1: 0x7c4767, D2: 0x7c4767 };  // Girard gold, Delco violet
-  let septaCbN = 0, septaHost = 0, septaSolid = null, septaPin = null, septaBadge = null, septaReady = false, septaHintT = 0;
+  let septaCbN = 0, septaHost = 0, septaSolid = null, septaBadge = null, septaReady = false, septaHintT = 0;
   const septaMats = {};
-  const septaPickS = [], septaPickP = [], septaPickB = [];
+  const septaPickS = [], septaPickB = [];
   const btnTransit = document.getElementById('btnTransit');
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
   let pickedVeh = null;
   const septaEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // upload only the live instances of a fleet mesh, not its whole buffer. three
+  // resets updateRange after every upload, so a wrong count costs one full
+  // upload, never a stale one. Nothing to send at count 0.
+  function flushInst(m) {
+    if (!m.count) return;
+    const im = m.instanceMatrix, ic = m.instanceColor;
+    im.updateRange.offset = 0; im.updateRange.count = m.count * 16; im.needsUpdate = true;
+    if (ic) { ic.updateRange.offset = 0; ic.updateRange.count = m.count * 3; ic.needsUpdate = true; }
+  }
 
   function septaKindOf(r) {
     // rail is out by request (and the subway rows carry no real GPS anyway):
@@ -6690,6 +6701,7 @@
       c.r = Math.min(1, c.r * 1.9 + 0.18); c.g = Math.min(1, c.g * 1.9 + 0.18); c.b = Math.min(1, c.b * 1.9 + 0.18);
       v.tintHex = '#' + c.getHexString();
       v.bobP = ((id.charCodeAt(id.length - 1) || 0) * 37 + id.length * 91) % 63 / 10;
+      v.snT = now - hash01(v.bobP) * 120;   // per-vehicle phase: road snaps spread across frames, not one
       if (apiHdg) v.yaw = v.yawT = septaYawFromCompass(apiHdg);
       septaVeh.set(id, v);
       return;
@@ -6703,8 +6715,10 @@
     v.ug = under; v.info = info; v.lastSeen = now;
   }
   function septaFeedFail() {
-    SEPTA.fails++;
-    if (SEPTA.fails >= 3) { septaHost = 1 - septaHost; SEPTA.fails = 0; }
+    SEPTA.fails++;                                    // keeps counting across host flips: 3+ is an outage
+    if (SEPTA.fails % 3 === 0) septaHost = 1 - septaHost;
+    if (SEPTA.fails >= 3) SEPTA.ok = false;
+    septaPrune(); septaStatus();                      // unseen 50 s = gone, even while the feed is down
   }
   function septaGotTV(d) {
     let routes = d && d.routes;
@@ -6737,10 +6751,10 @@
     else if (pickedVeh) septaCard(pickedVeh);        // keep late/next-stop fresh
   }
   function septaStatus() {
-    const n = septaVeh.size;
-    btnTransit.title = 'Live SEPTA Vehicles (V): ' + n + ' Tracked Now';
+    const n = septaVeh.size, off = SEPTA.fails >= 3;
+    btnTransit.title = 'Live SEPTA Vehicles (V): ' + (off ? 'Feed Offline' : n + ' Tracked Now');
     const tc = document.getElementById('transitCount');
-    if (tc) tc.textContent = n ? n + ' Live' : '';
+    if (tc) tc.textContent = off ? 'Offline' : n ? n + ' Live' : '';
     if (!SEPTA.hinted && n > 0 && veil.classList.contains('hidden')) {
       SEPTA.hinted = true;
       hintEl.textContent = n + ' SEPTA vehicles are live on the map. Tap a pin for its route. V toggles.';
@@ -6751,7 +6765,10 @@
   function septaPoll(force) {
     if (!SEPTA.on || !septaCanFetch || !septaReady) return;
     if (document.hidden && !force) return;
-    septaJsonp('/TransitViewAll/index.php', septaGotTV);
+    const now = performance.now();
+    if (SEPTA.busy || now - SEPTA.lastT < 5000) return;   // one pull in flight, never faster than 5 s
+    SEPTA.busy = true; SEPTA.lastT = now;
+    septaJsonp('/TransitViewAll/index.php', (d) => { SEPTA.busy = false; septaGotTV(d); });
   }
   function septaCard(v) {
     const late = v.info.late;
@@ -6771,7 +6788,7 @@
     SEPTA.on = !SEPTA.on;
     syncTransitBtn();
     if (SEPTA.on) septaPoll(true);
-    else { pickedVeh = null; if (!pickedStation && pickedTree == null) vehinfoEl.hidden = true; }
+    else if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; }   // only a SEPTA card closes; a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
   document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; });
@@ -6785,7 +6802,8 @@
     const iAct = indegoReady && INDEGO.on && indegoBadge.count > 0;
     const fAct = flightReady && FLIGHTS.on && (flightMesh.count > 0 || heliMesh.count > 0);
     const shAct = shipReady && SHIPS.on && shipMesh.count > 0;
-    if (!sAct && !iAct && !fAct && !shAct) return;
+    const tAct = !!treeInv;                            // the forest picks with every live layer off
+    if (!sAct && !iAct && !fAct && !shAct && !tAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -6826,7 +6844,7 @@
       return false;
     };
     const targets = [];
-    if (sAct) targets.push(septaSolid, septaPin, septaBadge);
+    if (sAct) targets.push(septaSolid, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
     if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
     if (shAct) targets.push(shipMesh, shipAnchor);
@@ -6843,7 +6861,6 @@
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
-      else if (h.object === septaPin) v = septaPickP[h.instanceId];
       else if (h.object === septaBadge) v = septaPickB[h.instanceId];
       else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
       else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
@@ -7056,10 +7073,10 @@
   function updateTransit(now, dt) {
     if (!septaReady) return;
     if (!SEPTA.on) {
-      if (septaSolid.count || septaPin.count || septaBadge.count) { septaSolid.count = 0; septaPin.count = 0; septaBadge.count = 0; }
+      if (septaSolid.count || septaBadge.count) { septaSolid.count = 0; septaBadge.count = 0; }
       return;
     }
-    let si = 0, pi = 0, bi = 0;
+    let si = 0, bi = 0;
     const cap = 2.6 * dt;
     _sqB.copy(camera.quaternion);                      // badges billboard the camera
     septaVeh.forEach((v) => {
@@ -7132,13 +7149,9 @@
       }
     });
     septaSolid.count = si;
-    septaPin.count = pi;
     septaBadge.count = bi;
-    septaSolid.instanceMatrix.needsUpdate = true;
-    septaPin.instanceMatrix.needsUpdate = true;
-    septaBadge.instanceMatrix.needsUpdate = true;
-    if (septaSolid.instanceColor) septaSolid.instanceColor.needsUpdate = true;
-    if (septaPin.instanceColor) septaPin.instanceColor.needsUpdate = true;
+    flushInst(septaSolid);
+    flushInst(septaBadge);
     if (pickedVeh) {
       const spec = SEPTA_KIND[pickedVeh.kind];
       _ssv.set(pickedVeh.dx, pickedVeh.gy + spec.h + 7, pickedVeh.dz).project(camera);
@@ -7440,12 +7453,12 @@
   const searchPanel = document.getElementById('searchpanel');
   const searchInput = document.getElementById('searchInput');
   const searchOut = document.getElementById('searchOut');
-  let searchMark = null, searchBusy = false;
+  let searchMark = null, searchBusy = false, searchSeq = 0;
   function toggleSearch(open) {
     const want = open !== undefined ? open : !searchPanel.classList.contains('open');
     searchPanel.classList.toggle('open', want);
     if (want) searchInput.focus();
-    else searchInput.blur();
+    else { searchInput.blur(); searchSeq++; searchBusy = false; }   // closing cancels an in-flight query
   }
   function searchShortName(s) {
     return String(s || '').split(',').slice(0, 3).join(',');
@@ -7538,11 +7551,13 @@
       return;
     }
     searchBusy = true;
+    const seq = ++searchSeq;                // a later submit or a closed panel orphans this reply
     searchOut.innerHTML = '<div class="smsg">Searching&hellip;</div>';
     fetch('https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&bounded=1&viewbox=-75.30,40.145,-74.94,39.855&q=' + encodeURIComponent(qy))
       .then((r) => (r && r.ok ? r.json() : null))
       .then((rows) => {
-        searchBusy = false;
+        if (seq === searchSeq) searchBusy = false;
+        if (seq !== searchSeq || !searchPanel.classList.contains('open')) return;
         if (!rows) { searchOut.innerHTML = '<div class="smsg">Search failed. Try again in a moment.</div>'; return; }
         // the bounding box spans the rivers — keep the city proper, drop NJ
         rows = rows.filter((r) => /philadelphia/i.test(r.display_name || ''));
@@ -7557,7 +7572,11 @@
         }
         searchGoTo(+rows[0].lat, +rows[0].lon, searchShortName(rows[0].display_name));
       })
-      .catch(() => { searchBusy = false; searchOut.innerHTML = '<div class="smsg">Search failed. Try again in a moment.</div>'; });
+      .catch(() => {
+        if (seq !== searchSeq) return;
+        searchBusy = false;
+        if (searchPanel.classList.contains('open')) searchOut.innerHTML = '<div class="smsg">Search failed. Try again in a moment.</div>';
+      });
   }
   if (septaCanFetch) {
     btnSearch.addEventListener('click', () => toggleSearch());
@@ -7664,12 +7683,10 @@
     // never swallowed by the skyline (Mike's rule; the vehicles themselves stay
     // solid and occludable)
     // buildings occlude the fleet markers (Mike reversed the x-ray call, Aug 25 evening)
-    const pinMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false });
     const badgeMat = new THREE.MeshBasicMaterial({ map: septaBadgeTexture(), transparent: true, depthWrite: false });
     septaSolid = new THREE.InstancedMesh(septaVehGeom(true), bodyMat, 1600);
-    septaPin = new THREE.InstancedMesh(septaPinGeom(), pinMat, 1024);
     septaBadge = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0), badgeMat, 1024);
-    for (const m of [septaSolid, septaPin, septaBadge]) {
+    for (const m of [septaSolid, septaBadge]) {
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0;
       m.frustumCulled = false;                         // instance bounds don't follow the fleet
@@ -7680,10 +7697,8 @@
     }
     septaSolid.castShadow = true;
     septaSolid.receiveShadow = true;
-    septaPin.renderOrder = 12;                         // markers paint after everything
     septaBadge.renderOrder = 12;                       // transparent cutout, after the opaques
     groupCity.add(septaSolid);
-    groupCity.add(septaPin);
     groupCity.add(septaBadge);
     septaReady = true;
     syncTransitBtn();
@@ -7701,9 +7716,10 @@
   const INDEGO_URL = 'https://bts-status.bicycletransit.workers.dev/phl';
   const INDEGO_POLL = 60000;                        // the feed itself is cached 60 s
   const INDEGO_CAP = { st: 400, bk: 2600 };
-  const INDEGO = { on: true, ok: false, fails: 0, nextT: 0 };
+  const INDEGO = { on: true, ok: false, fails: 0, nextT: 0, busy: false, nFeat: 0, sig: '' };
   const indegoSt = new Map();
   const indegoList = [];                            // badge-tile order, stable per session
+  const indegoTile = new Map();                     // id -> list entry: a station back from a dropout keeps its tile
   let indegoLive = [];                              // filtered draw order, rebuilt per poll
   let indegoReady = false, indegoDirty = false, indegoSolid = null, indegoBike = null, indegoBadge = null;
   let indegoTex = null, indegoCtx = null, pickedStation = null;
@@ -7763,6 +7779,13 @@
     // one shared 128 px-tile atlas (32x16 slots), repainted whole each poll:
     // paper coin + live count, ring in Indego blue, amber bolt for e-bikes
     if (!indegoCtx) return;
+    // the 4096x2048 atlas is a 33 MB re-upload: skip it when no count moved
+    // (the badge font joins the key so its late arrival still repaints)
+    let sig = '';
+    try { sig = document.fonts.check('700 44px "Montserrat"') ? 'F' : 'f'; } catch (e) { /* stack fallback */ }
+    for (const st of indegoList) if (indegoSt.has(st.id)) sig += st.tile + (st.act ? 'a' : 'x') + st.bikes + '|' + st.ebikes + ';';
+    if (sig === INDEGO.sig) return;
+    INDEGO.sig = sig;
     const g = indegoCtx;
     g.clearRect(0, 0, 4096, 2048);
     g.textAlign = 'center';
@@ -7801,6 +7824,10 @@
   function indegoGot(d) {
     const feats = d && d.features;
     if (!Array.isArray(feats) || !feats.length) { indegoFail(); return; }
+    // a payload under half the last one is a truncated feed, not a mass closure:
+    // count it as a miss and keep the docks (three misses running and we believe it)
+    if (feats.length < INDEGO.nFeat / 2 && INDEGO.fails < 3) { indegoFail(); return; }
+    INDEGO.nFeat = feats.length;
     const alive = new Set();
     for (const f of feats) {
       const p = f && f.properties, c = f && f.geometry && f.geometry.coordinates;
@@ -7811,6 +7838,7 @@
       if (!id) continue;
       alive.add(id);
       let st = indegoSt.get(id);
+      if (!st && indegoTile.has(id) && indegoSt.size < INDEGO_CAP.st) { st = indegoTile.get(id); indegoSt.set(id, st); }
       if (!st) {
         if (indegoSt.size >= INDEGO_CAP.st || indegoList.length >= 512) continue;
         const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
@@ -7820,6 +7848,7 @@
         const sn = septaSnapRoad(x, z, 30);
         st = { id, x, z, y: siteY(x, z, 'ground'), dx: sn ? sn[2] : 1, dz: sn ? sn[3] : 0, tile: indegoList.length };
         indegoList.push(st);
+        indegoTile.set(id, st);
         indegoSt.set(id, st);
       }
       st.name = p.name || 'Indego Station';
@@ -7841,7 +7870,7 @@
         if (pickedStation === st) { pickedStation = null; vehinfoEl.hidden = true; }
       }
     });
-    INDEGO.ok = true; INDEGO.fails = 0; INDEGO.nextT = 0;
+    INDEGO.ok = true; INDEGO.fails = 0; INDEGO.nextT = performance.now() + 20000;   // floor under the tab-return re-poll
     indegoDirty = true;
     indegoDrawTiles();
     indegoStatus();
@@ -7855,12 +7884,14 @@
     if (!INDEGO.on || !septaCanFetch || !indegoReady) return;
     if (document.hidden && !force) return;
     if (!force && performance.now() < INDEGO.nextT) return;
+    if (INDEGO.busy) return;                          // one fetch in flight
+    INDEGO.busy = true;
     const ctl = new AbortController();
     const tm = setTimeout(() => ctl.abort(), 15000);
     fetch(INDEGO_URL, { signal: ctl.signal })
       .then((r) => (r && r.ok ? r.json() : null))
-      .then((d) => { clearTimeout(tm); if (d) indegoGot(d); else indegoFail(); })
-      .catch(() => { clearTimeout(tm); indegoFail(); });
+      .then((d) => { clearTimeout(tm); INDEGO.busy = false; if (d) indegoGot(d); else indegoFail(); })
+      .catch(() => { clearTimeout(tm); INDEGO.busy = false; indegoFail(); });
   }
   function indegoCard(st) {
     const lines = [st.classic + ' Classic, ' + st.ebikes + ' Electric, ' + st.docksOpen + (st.docksOpen === 1 ? ' Dock Open' : ' Docks Open')];
@@ -7930,11 +7961,9 @@
     indegoSolid.count = si;
     indegoBike.count = ki;
     indegoBadge.count = si;
-    indegoSolid.instanceMatrix.needsUpdate = true;
-    indegoBike.instanceMatrix.needsUpdate = true;
+    flushInst(indegoSolid);
+    flushInst(indegoBike);
     indegoBadge.geometry.attributes.aTile.needsUpdate = true;
-    if (indegoSolid.instanceColor) indegoSolid.instanceColor.needsUpdate = true;
-    if (indegoBike.instanceColor) indegoBike.instanceColor.needsUpdate = true;
   }
   function updateIndego(now, dt) {
     if (!indegoReady) return;
@@ -7957,7 +7986,7 @@
       _sm.compose(_sp, _iqB, _ss);
       indegoBadge.setMatrixAt(i, _sm);
     }
-    indegoBadge.instanceMatrix.needsUpdate = true;
+    flushInst(indegoBadge);
     if (pickedStation) {
       _ssv.set(pickedStation.x, pickedStation.y + 6, pickedStation.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
@@ -9450,8 +9479,12 @@
   function clockUtcMs(c, minutes) { return Date.UTC(c.y, c.m - 1, c.d) + (minutes - tzOffsetMin(c.y, c.m, c.d)) * 60000; }
   function setClockToNow() {
     const now = new Date();
-    const guessOff = tzOffsetMin(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate());
-    const loc = new Date(now.getTime() + guessOff * 60000);
+    // two passes: the offset belongs to the LOCAL date, and from ~19:00 on the
+    // two transition evenings the UTC date is already tomorrow's
+    let off = tzOffsetMin(now.getUTCFullYear(), now.getUTCMonth() + 1, now.getUTCDate());
+    let loc = new Date(now.getTime() + off * 60000);
+    off = tzOffsetMin(loc.getUTCFullYear(), loc.getUTCMonth() + 1, loc.getUTCDate());
+    loc = new Date(now.getTime() + off * 60000);
     clock.y = loc.getUTCFullYear(); clock.m = loc.getUTCMonth() + 1; clock.d = loc.getUTCDate();
     clock.minutes = loc.getUTCHours() * 60 + loc.getUTCMinutes();
   }
