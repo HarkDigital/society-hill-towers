@@ -9997,6 +9997,23 @@
     el.firstElementChild.innerHTML = 'The 3D view was interrupted (graphics memory pressure).<br>Reload the page to continue exploring.';
   });
 
+  // THREE.Fog saturates at fog.far, so a chunk whose every point lies deeper
+  // than that renders as a flat fog-coloured silhouette over fog-coloured
+  // ground: skip it. The test is in VIEW depth (fog is view-z, not radial), so
+  // nothing at the frame edge blinks; the outer meshes carry the identity
+  // matrix, so their bounding spheres are already world space. In rain and
+  // snow fog.far shrinks 62%, and true fog pulls it to 850 m: then nearly all
+  // 279 chunks drop out.
+  const _cullD = new V3(), _cullF = new V3();
+  function cullFogged() {
+    const far = scene.fog.far, cp = camera.position;
+    camera.getWorldDirection(_cullF);
+    for (const m of outerMeshes) {
+      const bs = m.geometry.boundingSphere;
+      if (!bs) continue;
+      m.visible = _cullD.copy(bs.center).sub(cp).dot(_cullF) - bs.radius < far;
+    }
+  }
   let last = performance.now();
   let shadowMode = -1;
   let lastBearing = null;
@@ -10036,6 +10053,8 @@
       needle.setAttribute('transform', 'rotate(' + (-bearing) + ' 17 17)');
     }
 
+    // fabric chunks wholly beyond the fog wall would shade to flat fog colour
+    if ((frameNo & 3) === 2) cullFogged();
     // shadow map (autoUpdate is off): vehicles moving through the box get a
     // fresh depth pass every 4th frame; a changed static caster set (docks
     // arriving with the first Indego poll) gets one immediately
