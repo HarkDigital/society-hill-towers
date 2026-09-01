@@ -858,6 +858,9 @@
   // live-weather state (see applyWx below): cloud fraction, WMO code, rates, world wind m/s
   const WX = { cover: 0.22, ok: false, code: -1, temp: null, precip: 0, snowfall: 0, windX: 2.1, windZ: 0.9 };
   const wxWind = new THREE.Vector2(0.0012, 0.0005);
+  // per-fragment hash noise added to the sky before it is written: +/-0.5/255
+  // breaks the 8-bit banding of the shallow dusk/night gradient (0 disables)
+  const SKY_DITHER = 1 / 255;
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -927,6 +930,7 @@
       '    vec3 cc = mix(vec3(0.985, 0.99, 1.0), vec3(0.60, 0.64, 0.70), cov * 0.8) * uCloudLight;\n' +
       '    col = mix(col, cc, m * horiz * 0.92);\n' +
       '  }\n' +
+      '  col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * ' + SKY_DITHER.toFixed(7) + ';\n' +
       '  gl_FragColor = vec4(col, 1.0);\n' +
       '}',
   });
@@ -1334,8 +1338,12 @@
           'totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * wGlint * 1.15;\n');
     };
   }
+  // ordered dither on the big smooth surfaces (city walls, bare ground, water):
+  // ACES into an 8-bit framebuffer bands their shallow dusk gradients every
+  // 15-25 px. Set at construction only, a later flip recompiles (false disables)
+  const MAT_DITHER = true;
   // the outer rivers and far water polygons share one animated material
-  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55 });
+  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55, dithering: MAT_DITHER });
   liquify(riverMat, 1.0, 1.35, 1.0);
 
   function waterPoint(along, out) {
@@ -1721,7 +1729,7 @@
 
   // ------------------------------------------------ ground, water, roads, parks
   step('Laying out the ground', () => {
-    const groundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0 });
+    const groundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0, dithering: MAT_DITHER });
     groundMats.push(groundMat);
     const Z0 = CORE_EXT.z0, Z1 = CORE_EXT.z1;
     const flat = (poly, y) => { const g = new THREE.ShapeGeometry(shapeFromPoly(poly, null)); g.rotateX(-Math.PI / 2); g.translate(0, y, 0); return g; };
@@ -1863,7 +1871,7 @@
     walls.receiveShadow = true; groupCity.add(walls);
     freeOnUpload(walls.geometry);   // never raycast (focus and pick use rayTargets only)
 
-    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55 });
+    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55, dithering: MAT_DITHER });
     liquify(waterMat, 1.0, 1.35, 1.0);      // the Delaware breathes
     const water = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
@@ -2458,7 +2466,7 @@
   const nightUniform = { value: 0 };
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
   const groundMats = [];   // bare-earth planes retinted by time of day (pale day tone reads as water at dusk/night)
-  const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.25 });
+  const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.25, dithering: MAT_DITHER });
   {
     cityMat.onBeforeCompile = (shader) => {
       shader.uniforms.uNight = nightUniform;
@@ -2698,6 +2706,10 @@
   });
 
   // ------------------------------------------------ researched landmark models
+  // texture anisotropy clamped to the hardware cap (nine atlases used to hardcode
+  // 4/8 without asking); lazy, the renderer exists before any atlas is built
+  let hwAniso = 0;
+  const anisoOf = (n) => Math.min(n, hwAniso || (hwAniso = renderer.capabilities.getMaxAnisotropy() || 1));
   step('Restoring the landmarks', () => {
     const walls = [];   // gets the window shader
     const detail = [];  // roofs, spires, columns, trim — plain material
@@ -3125,7 +3137,7 @@
           ctx.fillText('GLORY', 256, 134);
           const tex = new THREE.CanvasTexture(cnv);
           tex.encoding = THREE.sRGBEncoding;
-          tex.anisotropy = 4;
+          tex.anisotropy = anisoOf(4);
           const sg = new THREE.Mesh(new THREE.PlaneGeometry(1.05, 0.52),
             new THREE.MeshBasicMaterial({ map: tex }));
           sg.rotation.y = Math.atan2(fdx, fdz);
@@ -3272,7 +3284,7 @@
           ctx.fillText('BAR', 128, 318);
           const tex = new THREE.CanvasTexture(cnv);
           tex.encoding = THREE.sRGBEncoding;
-          tex.anisotropy = 4;
+          tex.anisotropy = anisoOf(4);
           const mat = new THREE.MeshBasicMaterial({ map: tex });
           const yS2 = siteY(Ex, Ez, 'ground') + 5.5;
           const [sx3, sz3] = P(0.28, -0.62);
@@ -3930,6 +3942,47 @@
       [-2548, -821, 70, 0xa5c4d4],   // Murano
       [-2334, -821, 80, 0x6f9cc0],   // 1901 Market (IBC blue)
     ];
+    // named wide-ring landmarks at their researched heights (wide_landmarks_research.json).
+    // Rows are [x, z, radius, h, spire, frontX, frontZ, twin] in local metres: h replaces
+    // the packed body height (0 keeps it); spire is the steeple apex for churches, whose
+    // LiDAR height is the spire tip and extruded whole naves as 40-74 m slabs; front is the
+    // centroid-to-facade direction that moves the tower to that end (a diagonal picks the
+    // corner), twin puts one at each corner. x/z are the packed footprint centroids, each
+    // checked offline against wide.b64 (the research lat/lon sits up to 100 m off).
+    const LANDMARK_H = [
+      // Northern Liberties / Fishtown waterfront
+      [445, -2340, 60, 24],                      // Schmidt's Commons: the three 7-storey bars round the Piazza (packed 22-27)
+      [933.5, -1815.5, 12, 100.2],               // Waterfront Square, The Regatta (packed 106.8)
+      [868.1, -1740.5, 12, 90],                  // Waterfront Square, The Peninsula (packed 100.8)
+      [819.9, -1785.4, 12, 76],                  // Waterfront Square, The Reef (packed 94.8)
+      [885.4, -1788.6, 8, 24],                   // Waterfront Square podium, the 7-8 storey wing: 7100 m2 packed at 106.4
+      [1057.1, -2029, 15, 15],                   // Rivers Casino hall, 1-2 storeys (packed 40.8)
+      [839.3, -2224.4, 10, 14],                  // The Fillmore, the Ajax Metal sheds (packed 22.8)
+      [610.8, -1869.6, 8, 26],                   // 1 Brown Apartments, 8 storeys (packed 38.4)
+      // churches: h = nave ridge, spire = apex; front = facade side
+      [5.3, -2693.3, 10, 20, 70, -1, 0],         // St Peter the Apostle (St John Neumann shrine): 230 ft spire on the 5th St front
+      [540.8, -3077.6, 10, 18, 50, -1, 0],       // St Michael the Archangel: central front tower on N 2nd (research est. 45-55)
+      [-1051.8, -1837.8, 10, 18, 46.6, 0, 1, 1], // Assumption BVM: twin spires on the Spring Garden front
+      [626.7, -2267.2, 10, 20, 25, 0, 1],        // Immaculate Conception NoLibs: stub rear tower, the spire never came
+      [-150.4, -1113.2, 10, 18, 45],             // St Augustine (4th & New): belfry and spire (research est. 40-45, LiDAR tip 52.4)
+      [-1528.5, -900.8, 10, 30, 71, -1, 1],      // Masonic Temple: 3 storeys + attic, 232 ft tower at the SW corner on Broad
+      [-1548.1, -953.4, 10, 25, 65.5, -1, 1],    // Arch Street United Methodist: corner spire at Broad & Arch
+      // South Philadelphia
+      [-1743.5, 2509.6, 10, 22, 38.7, -1, -1],   // Epiphany of Our Lord: corner tower at 11th & Jackson
+      [-938.1, 886.8, 10, 20, 36.9],             // St Mary Magdalen de Pazzi: facade campanile
+      [-2751.6, 2539.3, 10, 16, 36.5],           // Trinity Lutheran (18th & Ritner): corner spire
+      [-1379.6, 1648.2, 10, 20, 34.1, -1, 0],    // Annunciation BVM: flat-capped front tower on 10th
+      [-2487.2, 1684.3, 10, 20, 33],             // St Thomas Aquinas (17th & Morris): corner tower (research est., LiDAR 32.8)
+      [-3635.5, 2384, 10, 14, 30.2, 1, 0, 1],    // Holy Ghost Byzantine: twin onion-domed towers on 24th
+      [-2641.5, 2705.5, 10, 17, 28.7, 1, 0, 1],  // St Monica (17th & Ritner): twin towers
+      [-481.3, 1683.6, 10, 16, 28.3, 1, 0],      // Sacred Heart of Jesus (3rd & Reed): front tower
+      [-3138.9, 2213.8, 10, 16, 28.3],           // St Edmond (21st & Mifflin): corner tower
+      [-514.7, 1524.4, 10, 15, 26.2],            // St Casimir (324 Wharton): front tower
+    ];
+    // ground-contact shading for the ring fabric: every wall quad carries RING_AO of
+    // its colour at the two ground verts, full colour at the eave, so the GPU draws a
+    // base-to-eave gradient like the core's mergeColored ao ramp (1.0 disables)
+    const RING_AO = 0.78;
     const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
     const palCom = [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c, 0x9aa0a4, 0xb3aca0];
     const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
@@ -3940,18 +3993,21 @@
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh);
-    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor) => {
+    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao) => {
       const sign = signedArea(poly) > 0 ? 1 : -1;
       const n = poly.length;
       const r = color.r, g = color.g, b = color.b;
+      // ao: the generic fabric only; the ground verts of each wall quad take RING_AO
+      // (eave verts and the cap keep the full colour, no mid rings)
+      const ra = ao ? RING_AO : 1, r0 = r * ra, g0 = g * ra, b0 = b * ra;
       const wallRing = (ring, sg) => { for (let i = 0; i < ring.length; i++) {
         const a = ring[i], q = ring[(i + 1) % ring.length];
         const dx = q[0] - a[0], dz = q[1] - a[1];
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sg, nz = (-dx / L) * sg;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base, fh);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh);
         const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
         const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
@@ -3976,7 +4032,7 @@
     const wxWater = wxWaterGrid(body, k, nb, hdr[2], hdr[3], hasAttr, S, -3700, -4480, 6000, 10880, 24);
     let njPoly = null;   // USS New Jersey hull outline — custom battleship below
     for (let i = 0; i < nb; i++) {
-      const n = body[k++], h = body[k++] / 5, mh = body[k++] / 5, t = body[k++];
+      const n = body[k++]; let h = body[k++] / 5; const mh = body[k++] / 5, t = body[k++];
       const attrW = hasAttr ? body[k++] : -1, roofW = hasAttr ? body[k++] : -1;
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
@@ -3995,6 +4051,9 @@
       // is bad data (mapped barges, drowned islets, mid-water slabs) — the
       // dem/corridor test alone missed Philly-side river water
       if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;
+      let lm = null;   // LANDMARK_H row for this footprint, if any
+      for (const q of LANDMARK_H) if (Math.hypot(cx - q[0], cz - q[1]) < q[2]) { lm = q; break; }
+      if (lm && lm[3] > 0) h = lm[3];
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
@@ -4111,18 +4170,39 @@
             appendBuilding(chk, [[px2 - 9, pz2 - 1], [px2 + 9, pz2 - 1], [px2 + 9, pz2 + 1], [px2 - 9, pz2 + 1]], base + 22, base + 32, c, 3, base);
           }
         }
-      } else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, null, fh, capC);
+      } else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, null, fh, capC, mh === 0);
       if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60) {
-        // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples
-        const tw = 5.5, towerTop = base + h + 9, apex = base + h + 24;
-        const sq = [[cx - tw / 2, cz - tw / 2], [cx + tw / 2, cz - tw / 2], [cx + tw / 2, cz + tw / 2], [cx - tw / 2, cz + tw / 2]];
-        appendBuilding(chk, sq, base, towerTop, c, 3, base);
-        const i0 = chk.n;
+        // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples.
+        // A LANDMARK_H spire drives the apex instead: tower to 60% of the rise, pyramid the rest,
+        // width scaled to the spire, standing at the facade end when the row gives a front
+        const sp = lm && lm[4] > h + 3 ? lm[4] : 0;
+        const tw = sp ? Math.max(5.5, sp * 0.11) : 5.5;
+        const towerTop = base + (sp ? h + (sp - h) * 0.6 : h + 9), apex = base + (sp ? sp : h + 24);
+        const spots = [[cx, cz]];
+        const ob = sp && (lm[5] || lm[6]) ? orientedBox(poly) : null;
+        if (ob) {
+          const a = obbAxis(ob), fl = Math.hypot(lm[5], lm[6]);
+          const du = (a.ax * lm[5] + a.az * lm[6]) / fl, dv = (a.px * lm[5] + a.pz * lm[6]) / fl;
+          // the facade is a short end (|du| wins) or a long side; towers stand tw*0.8 inside it,
+          // twins at both corners, a diagonal front picks one corner, else the middle
+          const [ex, ez, eh, ox, oz, oh, dd, dp] = Math.abs(du) >= Math.abs(dv)
+            ? [a.ax, a.az, a.hl, a.px, a.pz, a.hs, du, dv] : [a.px, a.pz, a.hs, a.ax, a.az, a.hl, dv, du];
+          const ein = Math.max(0, eh - tw * 0.8), oin = Math.max(0, oh - tw * 0.8);
+          const fx0 = ob.cx + ex * Math.sign(dd) * ein, fz0 = ob.cz + ez * Math.sign(dd) * ein;
+          const sides = lm[7] ? [-1, 1] : [Math.abs(dp) > 0.35 ? Math.sign(dp) : 0];
+          spots.length = 0;
+          for (const s of sides) spots.push([fx0 + ox * s * oin, fz0 + oz * s * oin]);
+        }
         const sc = 0.9;
-        for (const q of sq) pushV(chk, q[0], towerTop, q[1], 0, 0.7, 0, c.r * sc, c.g * sc, c.b * sc, 3, base);
-        pushV(chk, cx, apex, cz, 0, 1, 0, c.r * sc, c.g * sc, c.b * sc, 3, base);
-        // outward: (base, apex, next) with the ring CCW in (x, z), the sense the wall loop uses
-        chk.idx.push(i0, i0 + 4, i0 + 1, i0 + 1, i0 + 4, i0 + 2, i0 + 2, i0 + 4, i0 + 3, i0 + 3, i0 + 4, i0);
+        for (const [tx, tz] of spots) {
+          const sq = [[tx - tw / 2, tz - tw / 2], [tx + tw / 2, tz - tw / 2], [tx + tw / 2, tz + tw / 2], [tx - tw / 2, tz + tw / 2]];
+          appendBuilding(chk, sq, base, towerTop, c, 3, base);
+          const i0 = chk.n;
+          for (const q of sq) pushV(chk, q[0], towerTop, q[1], 0, 0.7, 0, c.r * sc, c.g * sc, c.b * sc, 3, base);
+          pushV(chk, tx, apex, tz, 0, 1, 0, c.r * sc, c.g * sc, c.b * sc, 3, base);
+          // outward: (base, apex, next) with the ring CCW in (x, z), the sense the wall loop uses
+          chk.idx.push(i0, i0 + 4, i0 + 1, i0 + 1, i0 + 4, i0 + 2, i0 + 2, i0 + 4, i0 + 3, i0 + 3, i0 + 4, i0);
+        }
       }
       if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
     }
@@ -4914,6 +4994,9 @@
     };
     const hitsP = (bb) => P && bb[0] < P.x1 && bb[1] > P.x0 && bb[2] < P.z1 && bb[3] > P.z0;
     const withinP = (bb) => P && bb[0] > P.x0 && bb[1] < P.x1 && bb[2] > P.z0 && bb[3] < P.z1;
+    // ground-contact shading, the wide ring's RING_AO mirrored for this closure: wall
+    // quads carry this share of their colour at the two ground verts (1.0 disables)
+    const RING_AO = 0.78;
     const chunks = new Map();
     const getChunk = (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
@@ -4930,17 +5013,19 @@
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh);
-    const appendB = (ch, poly, y0, y1, color, st, base, fh, capColor) => {
+    const appendB = (ch, poly, y0, y1, color, st, base, fh, capColor, ao) => {
       const n = poly.length, r = color.r, g = color.g, b = color.b;
       const sign = signedArea(poly) > 0 ? 1 : -1;
+      // ao: the generic fabric only; ground verts take RING_AO, eave verts and cap keep full colour
+      const ra = ao ? RING_AO : 1, r0 = r * ra, g0 = g * ra, b0 = b * ra;
       for (let i = 0; i < n; i++) {
         const a = poly[i], q = poly[(i + 1) % n];
         const dx = q[0] - a[0], dz = q[1] - a[1];
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sign, nz = (-dx / L) * sign;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r, g, b, st, base, fh);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh);
         const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
         const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
@@ -4985,7 +5070,7 @@
       let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
       if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
       const capC = roofW >= 0 && ROOF_PAL ? cCap.copy(ROOF_PAL[roofW]).multiplyScalar(0.9 + hsh * 0.18) : null;
-      appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC);
+      appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
       if (t === 5 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         const chk = getChunk(cx, cz);
         const tw = 5.5, towerTop = base + h + 9, apex = base + h + 24;
@@ -5103,7 +5188,7 @@
     // water. With dem_nw present the NW hills get their own 50 m heightfield —
     // its footprint is cut from the north strip along that strip's own grid
     // lines, so the two meshes butt exactly (T-junction verts only, no overlap)
-    const farGroundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0 });
+    const farGroundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0, dithering: MAT_DITHER });
     groundMats.push(farGroundMat);
     let nwGroundMat = null, nwParkAt = null, nwWaterAt = null;
     if (P) {
@@ -7322,7 +7407,7 @@
     g.fill(new Path2D('M58.666,355.107h101.111l159.554-112.219H170.887L54.666,127.332L167.11,14.666H58.666c-25.778,0-44,25.332-44,43.776v253.555C14.666,329.775,32.888,355.107,58.666,355.107z'));
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding;
-    tex.anisotropy = 4;
+    tex.anisotropy = anisoOf(4);
     return tex;
   }
   const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sqB = new THREE.Quaternion(), _sp = new V3(), _ss = new V3(), _sc = new THREE.Color(), _sup = new V3(0, 1, 0), _ssv = new V3();
@@ -7506,7 +7591,7 @@
       tex.minFilter = THREE.LinearMipmapLinearFilter;
       tex.generateMipmaps = true;
       tex.flipY = true;                    // the UV math below assumes canvas orientation
-      tex.anisotropy = 8;
+      tex.anisotropy = anisoOf(16);   // ground-draped street atlas: grazing angles want the full cap
       tex.needsUpdate = true;
     } else {
       try { await document.fonts.load('italic 600 27px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
@@ -7529,7 +7614,7 @@
       }
       tex = new THREE.CanvasTexture(cv);
       tex.encoding = THREE.sRGBEncoding;
-      tex.anisotropy = 8;
+      tex.anisotropy = anisoOf(16);
     }
     const L2 = ST_LABELS.l;
     const pos = [], uv = [], idx = [];
@@ -7678,7 +7763,7 @@
     const nbRects = PLACES.nb.names.map((nm) => put(nm, true));
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding;
-    tex.anisotropy = 8;
+    tex.anisotropy = anisoOf(16);   // ground-draped neighborhood labels
     const makeMesh = (entries, mat) => {
       // flat north-up quads draped in 4 columns so long names ride the terrain
       const pos = [], uv = [], idx = [];
@@ -8287,7 +8372,7 @@
     indegoCtx = cv.getContext('2d');
     indegoTex = new THREE.CanvasTexture(cv);
     indegoTex.encoding = THREE.sRGBEncoding;
-    indegoTex.anisotropy = 4;
+    indegoTex.anisotropy = anisoOf(4);
     try { document.fonts.load('700 44px "Montserrat"').catch(() => {}); } catch (e) { /* stack fallback */ }
     const badgeMat = new THREE.MeshBasicMaterial({ map: indegoTex, transparent: true, depthWrite: false });  // occluded by buildings like the SEPTA markers
     badgeMat.onBeforeCompile = (shader) => {
@@ -8600,7 +8685,7 @@
     }
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding;
-    tex.anisotropy = 4;
+    tex.anisotropy = anisoOf(4);
     return tex;
   }
   function flightsInit() {
@@ -8908,7 +8993,7 @@
       g.closePath(); g.fill();
     }
     const tex = new THREE.CanvasTexture(cv);
-    tex.anisotropy = 4;
+    tex.anisotropy = anisoOf(4);
     return tex;
   }
   const SHIP_CAP = 48;
