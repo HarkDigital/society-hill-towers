@@ -8,6 +8,10 @@ Why: the central Wissahickon gorge has NO park polygon in the OSM extract
 ring renders it bare. The 50 m patch ground tints woodland green from these
 official boundaries instead. Run with plain python3."""
 import json, math, os, urllib.parse, urllib.request
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
@@ -47,6 +51,7 @@ def main():
         'outFields': 'official_name,acreage', 'outSR': '4326', 'f': 'geojson'})
     with urllib.request.urlopen(BASE + '?' + q, timeout=120) as r:
         d = json.load(r)
+    if provenance: provenance.record('fetch_nw_parks.arcgis', BASE, q, len(d.get('features', [])))
     polys = []
     names = []
     for f in d.get('features', []):

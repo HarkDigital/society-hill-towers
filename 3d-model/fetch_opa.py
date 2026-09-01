@@ -3,6 +3,10 @@
 lidar_cache/opa_rows.csv — the attribute source for the Tier-1 facade pass.
 Paginated by cartodb_id, resumable. Plain python3."""
 import os, time, urllib.parse, urllib.request
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
@@ -49,6 +53,7 @@ for lo in range(0, MAXID, STEP):
     total += max(0, n)
     parts.append(p)
     print(f'{lo}-{lo+STEP}: {n} rows (total {total})', flush=True)
+if provenance: provenance.record('fetch_opa.carto', 'https://phl.carto.com/api/v2/sql', f'SELECT {COLS} FROM opa_properties_public', total, pages=len(parts))
 with open(OUT, 'w') as out:
     first = True
     for p in parts:

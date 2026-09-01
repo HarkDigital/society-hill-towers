@@ -6,3 +6,6 @@
 3d-model/osm_city_raw.json
 3d-model/city_tiles/
 3d-model/lidar_cache/
+.audit/
+*.log
+__pycache__/

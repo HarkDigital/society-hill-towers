@@ -7,6 +7,10 @@ Wissahickon into a self-intersecting zigzag — harmless rendered flat, confetti
 when draped on the 50 m terrain. The app drapes THESE rings inside the patch
 instead and leaves the packed water exactly as it was. Run with plain python3."""
 import json, math, os, time, urllib.parse, urllib.request
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
@@ -85,6 +89,7 @@ def main():
 (._;>;);
 out body qt;'''
     d = fetch(q)
+    if provenance: provenance.record('fetch_nw_water.overpass', MIRRORS[0], q, len(d.get('elements', [])))
     els = d.get('elements', [])
     nodes = {el['id']: ((el['lon'] - LON0) * KX, (LAT0 - el['lat']) * KZ)
              for el in els if el.get('type') == 'node'}

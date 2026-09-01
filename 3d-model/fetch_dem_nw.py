@@ -12,6 +12,10 @@ first with no seam logic of its own.
 Checkpointed like fetch_city.py's DEM: elevations accumulate in
 lidar_cache/dem_nw_elev.json so reruns resume. Run with plain python3."""
 import json, math, os, time, urllib.request
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
@@ -57,6 +61,7 @@ for i in range(0, len(todo), 100):
         save_ckpt()
         print(f'dem_nw {len(elev)}/{len(pts)}', flush=True)
 save_ckpt()
+if provenance: provenance.record('fetch_dem_nw.opentopodata', 'https://api.opentopodata.org/v1/ned10m', f'ned10m {CELL} m grid x {X0}..{X1} z {Z0}..{Z1}', len(elev))
 missing = sum(1 for p in pts if p not in elev)
 if missing:
     raise SystemExit(f'{missing} samples still missing after fetch — rerun to resume')

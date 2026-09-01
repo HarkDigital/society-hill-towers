@@ -2,6 +2,10 @@
 """Tiled Overpass fetch for the wide area (Center City, South Philly, NoLibs, Fishtown/Kensington)
 plus a 50 m elevation grid. Writes osm_wide_raw.json and dem_wide.json."""
 import json, math, time, urllib.request, urllib.parse, sys
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 S, N, W, E = 39.915, 39.986, -75.188, -75.118
 ROWS, COLS = 4, 4
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
@@ -39,6 +43,7 @@ for i in range(ROWS):
 out body qt;'''
         t0 = time.time()
         d = fetch(q)
+        if provenance: provenance.record('fetch_wide.overpass', MIRRORS[0], q, len(d.get('elements', [])), tile=f'{i},{j}')
         new = 0
         for el in d.get('elements', []):
             k = (el['type'], el['id'])
@@ -69,6 +74,7 @@ for i in range(0, len(pts), 100):
             time.sleep(3 + attempt * 3)
     time.sleep(1.05)
     if i % 2000 == 0: print(f'dem {i}/{len(pts)}', flush=True)
+if provenance: provenance.record('fetch_wide.dem', 'https://api.opentopodata.org/v1/ned10m', f'ned10m 50 m grid x {xs[0]}..{xs[-1]} z {zs[0]}..{zs[-1]}', len(elev))
 json.dump({'x0': xs[0], 'z0': zs[0], 'cell': 50, 'nx': len(xs), 'nz': len(zs),
            'rows': [[elev.get((x, z)) for x in xs] for z in zs]}, open('dem_wide.json', 'w'))
 print('dem_wide.json written', flush=True)

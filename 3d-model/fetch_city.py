@@ -6,6 +6,10 @@ Writes osm_city_raw.json and a coarse 150 m dem_city.json.
 The wide box (39.915..39.986, -75.188..-75.118) is fetched already; tiles
 inside it are skipped at pack time (dedup by element id here)."""
 import json, math, time, urllib.request, urllib.parse
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 # lat S, lat N, lon W, lon E, rows, cols
 BOXES = [
@@ -77,6 +81,7 @@ for rnd in range(3):   # per-tile checkpoints: rerun rounds only touch missing t
             print(f'{tid} FAILED this round: {e}', flush=True)
             continue
         json.dump(d, open(f'city_tiles/{tid}.json', 'w'))
+        if provenance: provenance.record('fetch_city.overpass', MIRRORS[0], tileQuery(bbox), len(d.get('elements', [])), tile=tid)
         print(f'{tid} {bbox}: {len(d.get("elements", []))} elements ({time.time()-t0:.0f}s)', flush=True)
         time.sleep(5)
 
@@ -118,6 +123,7 @@ for i in range(0, len(pts), 100):
             time.sleep(3 + attempt * 3)
     time.sleep(1.05)
     if i % 3000 == 0: print(f'dem {i}/{len(pts)}', flush=True)
+if provenance: provenance.record('fetch_city.dem', 'https://api.opentopodata.org/v1/ned10m', f'ned10m 150 m grid x {xs[0]}..{xs[-1]} z {zs[0]}..{zs[-1]}', len(elev))
 json.dump({'x0': xs[0], 'z0': zs[0], 'cell': 150, 'nx': len(xs), 'nz': len(zs),
            'rows': [[elev.get((x, z)) for x in xs] for z in zs]}, open('dem_city.json', 'w'))
 print('dem_city.json written', flush=True)

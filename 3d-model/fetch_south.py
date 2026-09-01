@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """South extension: the sports complex and the Walt Whitman Bridge (lat 39.890-39.915), plus DEM rows."""
 import json, math, time, urllib.request, urllib.parse
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 S, N, W, E = 39.890, 39.9155, -75.190, -75.100
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter']
 def fetch(q):
@@ -26,6 +30,7 @@ for j in range(3):
 (._;>;);
 out body qt;'''
     d = fetch(q); new = 0
+    if provenance: provenance.record('fetch_south.overpass', MIRRORS[0], q, len(d.get('elements', [])), tile=str(j))
     for el in d.get('elements', []):
         k = (el['type'], el['id'])
         if k in seen: continue
@@ -47,5 +52,6 @@ for i in range(0, len(pts), 100):
             break
         except Exception: time.sleep(3 + attempt * 3)
     time.sleep(1.05)
+if provenance: provenance.record('fetch_south.dem', 'https://api.opentopodata.org/v1/ned10m', f'ned10m 50 m grid x {xs[0]}..{xs[-1]} z {zs[0]}..{zs[-1]}', len(elev))
 json.dump({'x0': xs[0], 'z0': zs[0], 'cell': 50, 'nx': len(xs), 'nz': len(zs), 'rows': [[elev.get((x, z)) for x in xs] for z in zs]}, open('dem_south.json', 'w'))
 print('dem_south.json written', flush=True)
