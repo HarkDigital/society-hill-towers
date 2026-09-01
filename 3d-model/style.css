@@ -65,9 +65,16 @@ html, body {
   justify-content: center;
   border-radius: 50%;
   user-select: none;
-  pointer-events: none;
+  /* a button now: a tap eases the view back to north */
+  appearance: none;
+  -webkit-appearance: none;
+  padding: 0;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
 }
 #compass svg { display: block; }
+#compass:hover { border-color: var(--line-strong); }
+#compass:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
 
 /* ---------- bottom control bar ---------- */
 #bar {
@@ -636,6 +643,7 @@ html, body {
 #btnTransit svg { width: 22px; height: 16px; display: block; }
 #btnSearch svg { width: 16px; height: 16px; display: block; }
 #btnLayers svg { width: 17px; height: 17px; display: block; }
+#btnShot svg { width: 17px; height: 17px; display: block; }
 
 /* ---------- address search panel ---------- */
 #searchpanel {
@@ -712,6 +720,22 @@ html, body {
   color: var(--paper-faint);
   padding: 9px 2px 2px;
 }
+/* the route filter chip: one route on the map, a tap shows the fleet again */
+#searchOut .schip {
+  display: inline-block;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border: 1px solid var(--bronze-dim);
+  border-radius: 12px;
+  color: var(--bronze);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+}
+#searchOut .schip:hover { background: rgba(200,155,94,0.12); }
+#searchOut .schip:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
+#searchOut .schip + .srow { margin-top: 6px; }
 .lbl.smark { color: var(--bronze); border-color: var(--bronze-dim); }
 @media (max-width: 640px) {
   #searchpanel { bottom: 66px; }
@@ -814,6 +838,15 @@ html, body {
 }
 #layerspanel .mini:hover { color: var(--paper); border-color: var(--line-strong); }
 #layerspanel .mini:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
+/* 'Take me to': the city stops in two columns under the footer, the tour button below them */
+#layerspanel .tkick { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
+#layerspanel .tgrid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
+#layerspanel .tgrid .lrow { border-top: 1px solid var(--line); font-size: 12.5px; padding: 8px 4px; }
+#layerspanel .tgrid .lrow:nth-child(-n+2) { border-top: 0; }
+#layerspanel .tgrid .lrow .ltext { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#layerspanel #btnTour[aria-pressed="true"] { color: var(--ink); background: var(--bronze); border-color: var(--bronze); }
+/* seventeen rows plus two footers outgrow a short laptop window: the panel scrolls */
+#layerspanel { max-height: calc(100vh - 100px); overflow-y: auto; }
 @media (max-width: 640px) {
   /* nine 44 px rows plus the footer outgrow a small phone: the panel scrolls (dvh where it exists) */
   #layerspanel { bottom: 66px; max-height: calc(100vh - 150px); max-height: calc(100dvh - 80px); overflow-y: auto; }
