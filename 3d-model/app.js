@@ -1601,6 +1601,69 @@
   // a real macrotask boundary that is NOT timer-clamped in hidden tabs
   // (setTimeout is held to 1 s+ there; 23 build steps of that was 23 s of sleep)
   const yieldNow = () => new Promise(r => { const ch = new MessageChannel(); ch.port1.onmessage = () => r(); ch.port2.postMessage(0); });
+  // Growable typed accumulators for the packed-ring chunks. Boxed JS number
+  // arrays cost ~92 B per vertex and staged a whole ring before its first
+  // upload (1.35 GB measured on the far ring: the figure that kills the tab on
+  // phones); these cost 24 B, and a chunk seals and uploads as soon as it
+  // passes 60k vertices, so the staging peak is a few live chunks, not a ring.
+  class IdxBuf {
+    constructor(cap) { this.a = new Uint16Array(cap); this.n = 0; }
+    push() {
+      const k = arguments.length;
+      if (this.n + k > this.a.length) this.grow(this.n + k);
+      for (let i = 0; i < k; i++) {
+        const v = arguments[i];
+        if (v > 65535 && this.a.BYTES_PER_ELEMENT === 2) { const b = new Uint32Array(this.a.length); b.set(this.a); this.a = b; }
+        this.a[this.n++] = v;
+      }
+    }
+    grow(min) {
+      let cap = this.a.length * 2;
+      while (cap < min) cap *= 2;
+      const b = this.a.BYTES_PER_ELEMENT === 2 ? new Uint16Array(cap) : new Uint32Array(cap);
+      b.set(this.a); this.a = b;
+    }
+    view() { return this.a.subarray(0, this.n); }
+  }
+  class VBuf {
+    constructor(cap) { this.n = 0; this.cap = 0; this.grow(cap); this.idx = new IdxBuf(cap * 3); }
+    grow(cap) {
+      const pos = new Float32Array(cap * 3), nor = new Int8Array(cap * 3), col = new Uint8Array(cap * 3);
+      const sty = new Int8Array(cap), bas = new Float32Array(cap), flh = new Int8Array(cap);
+      if (this.n) {
+        const n = this.n;
+        pos.set(this.pos.subarray(0, n * 3)); nor.set(this.nor.subarray(0, n * 3)); col.set(this.col.subarray(0, n * 3));
+        sty.set(this.sty.subarray(0, n)); bas.set(this.bas.subarray(0, n)); flh.set(this.flh.subarray(0, n));
+      }
+      this.pos = pos; this.nor = nor; this.col = col; this.sty = sty; this.bas = bas; this.flh = flh; this.cap = cap;
+    }
+    push(x, y, z, nx, ny, nz, r, g, b, st, base, fh) {
+      if (this.n === this.cap) this.grow(this.cap * 2);
+      const i = this.n, j = i * 3;
+      this.pos[j] = x; this.pos[j + 1] = y; this.pos[j + 2] = z;
+      this.nor[j] = nx * 127; this.nor[j + 1] = ny * 127; this.nor[j + 2] = nz * 127;
+      this.col[j] = r * 255; this.col[j + 1] = g * 255; this.col[j + 2] = b * 255;
+      this.sty[i] = st; this.bas[i] = base; this.flh[i] = fh ? Math.round(fh * 10) : 0;
+      return this.n++;
+    }
+    // exact-length views; freeOnUpload drops them once the GPU has the copy
+    geometry(facade) {
+      const g = new THREE.BufferGeometry(), n = this.n;
+      g.setAttribute('position', new THREE.BufferAttribute(this.pos.subarray(0, n * 3), 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(this.nor.subarray(0, n * 3), 3, true));
+      g.setAttribute('color', new THREE.BufferAttribute(this.col.subarray(0, n * 3), 3, true));
+      if (facade) {
+        g.setAttribute('aStyle', new THREE.BufferAttribute(this.sty.subarray(0, n), 1));
+        g.setAttribute('aFloorH', new THREE.BufferAttribute(this.flh.subarray(0, n), 1));
+        g.setAttribute('aBase', new THREE.BufferAttribute(this.bas.subarray(0, n), 1));
+      }
+      g.setIndex(new THREE.BufferAttribute(this.idx.view(), 1));
+      g.computeBoundingSphere();
+      freeOnUpload(g);
+      this.pos = this.nor = this.col = this.sty = this.bas = this.flh = this.idx = null;
+      return g;
+    }
+  }
 
   const groupCity = new THREE.Group();
   scene.add(groupCity);
@@ -3746,6 +3809,26 @@
   // chunks — 8-bit normals/colors, no roofs or cornices, world-space windows.
   const outerMeshes = [];
   const tallGlow = [];   // buildings ≥45 m from every tier, for the night skyline points
+  // ring meshes upload in batches behind the veil. A frustum-culled mesh is
+  // never drawn, so it never uploads and never frees its CPU arrays; every
+  // new mesh draws unculled exactly once, in flushUploads' render.
+  const pendingUpload = [];
+  const addChunkMesh = (g, mat) => {
+    if (!g.boundingSphere) g.computeBoundingSphere();   // the frustum test would otherwise compute it from the freed arrays
+    const m = new THREE.Mesh(g, mat);
+    m.matrixAutoUpdate = false;
+    m.frustumCulled = false;
+    groupCity.add(m);
+    outerMeshes.push(m);
+    pendingUpload.push(m);
+    return m;
+  };
+  const flushUploads = () => {
+    if (!pendingUpload.length) return;
+    renderer.render(scene, camera);   // upload now, behind the veil, and free the arrays
+    for (const m of pendingUpload) m.frustumCulled = true;
+    pendingUpload.length = 0;
+  };
   step('Raising the outer districts', async () => {
     if (typeof WIDE_B64 === 'undefined' || !WIDE_B64) return;
     const bin = unb64(WIDE_B64, 'WIDE');
@@ -3758,13 +3841,16 @@
     const S = 0.2;
     const CH = 700;
     const chunks = new Map(), glassChunks = new Map();
-    const chunkIn = (map) => (x, z) => {
+    // building chunks seal and upload as they pass 60k vertices (Uint16
+    // indices, bounded staging); the few glass chunks wait for their material
+    const chunkIn = (map, seal) => (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let c = map.get(key);
-      if (!c) { c = { pos: [], nor: [], col: [], sty: [], bas: [], flh: [], idx: [], n: 0 }; map.set(key, c); }
+      if (c && seal && c.n > 60000) { addChunkMesh(c.geometry(true), cityMat); c = null; }
+      if (!c) { c = new VBuf(8192); map.set(key, c); }
       return c;
     };
-    const getChunk = chunkIn(chunks), getGlassChunk = chunkIn(glassChunks);
+    const getChunk = chunkIn(chunks, true), getGlassChunk = chunkIn(glassChunks, false);
     const glassPal = [0x8fb2cc, 0x9cb9c9, 0xa9bfc9, 0x7ea6c6];
     // OSM maps the suspension-bridge towers/anchorages as building footprints; the
     // bridges build their own steel, so drop any footprint sitting on them
@@ -3794,11 +3880,8 @@
     const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
     const c = new THREE.Color();
     const cCap = new THREE.Color();
-    const v2 = [];
-    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => {
-      ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base); ch.flh.push(fh || 0);
-      return ch.n++;
-    };
+    const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
+    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh);
     const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor) => {
       const sign = signedArea(poly) > 0 ? 1 : -1;
       const n = poly.length;
@@ -3830,7 +3913,7 @@
       }
       // roof cap (ring when holes are given)
       v2.length = 0;
-      for (let i = 0; i < n; i++) v2.push(new THREE.Vector2(poly[i][0], -poly[i][1]));
+      for (let i = 0; i < n; i++) { let p2 = v2pool[i]; if (!p2) p2 = v2pool[i] = new THREE.Vector2(); v2.push(p2.set(poly[i][0], -poly[i][1])); }
       const hv = (holes || []).map(hl => hl.map(q => new THREE.Vector2(q[0], -q[1])));
       let tris;
       try { tris = THREE.ShapeUtils.triangulateShape(v2, hv); } catch (e) { return; }
@@ -3880,7 +3963,7 @@
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
         appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, 3, base);
-        if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
+        if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
         continue;
       }
       const chk = getChunk(cx, cz);
@@ -3991,9 +4074,10 @@
         const sc = 0.9;
         for (const q of sq) pushV(chk, q[0], towerTop, q[1], 0, 0.7, 0, c.r * sc, c.g * sc, c.b * sc, 3, base);
         pushV(chk, cx, apex, cz, 0, 1, 0, c.r * sc, c.g * sc, c.b * sc, 3, base);
-        chk.idx.push(i0, i0 + 1, i0 + 4, i0 + 1, i0 + 2, i0 + 4, i0 + 2, i0 + 3, i0 + 4, i0 + 3, i0, i0 + 4);
+        // outward: (base, apex, next) with the ring CCW in (x, z), the sense the wall loop uses
+        chk.idx.push(i0, i0 + 4, i0 + 1, i0 + 1, i0 + 4, i0 + 2, i0 + 2, i0 + 4, i0 + 3, i0 + 3, i0 + 4, i0);
       }
-      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
+      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
     }
     // outer streets. Continuity work: endpoint-snapped heights (no steps at OSM way
     // splits), joint fans at bends, real bridge decks over the rivers, aligned-only
@@ -4459,12 +4543,7 @@
     loadmsg.textContent = 'Raising the outer districts, uploading';
     await yieldNow();
     for (const ch of glassChunks.values()) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ch.pos), 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(ch.nor), 3, true));
-      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(ch.col), 3, true));
-      g.setIndex(ch.idx);
-      g.computeBoundingSphere();
+      const g = ch.geometry(false);
       if (!outerGlassMat) {
         outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.88, envMapIntensity: 1.8 });
         outerGlassMat.emissive = new THREE.Color(0xffdca6);
@@ -4501,41 +4580,18 @@
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= gWall * gLit * (1.0 - gSpand * 0.85) * 3.2;');
         };
       }
-      const m = new THREE.Mesh(g, outerGlassMat);
-      m.matrixAutoUpdate = false;
-      groupCity.add(m);
-      outerMeshes.push(m);
+      addChunkMesh(g, outerGlassMat);
     }
     if (lmGlass.length && outerGlassMat) {   // Liberty Place crowns share the curtain-wall glass
-      const m = new THREE.Mesh(mergeColored(lmGlass), outerGlassMat);
-      m.castShadow = true;
-      groupCity.add(m);
-      outerMeshes.push(m);
+      const g = mergeColored(lmGlass); freeOnUpload(g);
+      addChunkMesh(g, outerGlassMat).castShadow = true;
     }
     if (lmTrim.length) {                     // white chevron trim, masts, City Hall metalwork + Penn
-      const m = new THREE.Mesh(mergeColored(lmTrim), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 }));
-      m.castShadow = true;
-      groupCity.add(m);
-      outerMeshes.push(m);
+      const g = mergeColored(lmTrim); freeOnUpload(g);
+      addChunkMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 })).castShadow = true;
     }
-    for (const ch of chunks.values()) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ch.pos), 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(ch.nor), 3, true));
-      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(ch.col), 3, true));
-      g.setAttribute('aStyle', new THREE.BufferAttribute(new Int8Array(ch.sty), 1));
-      g.setAttribute('aFloorH', new THREE.BufferAttribute(new Int8Array(ch.flh.map(fv => Math.round(fv * 10))), 1));
-      g.setAttribute('aBase', new THREE.BufferAttribute(new Float32Array(ch.bas), 1));
-      g.setIndex(ch.idx);
-      g.computeBoundingSphere();
-      freeOnUpload(g);
-      ch.pos = ch.nor = ch.col = ch.sty = ch.flh = ch.bas = ch.idx = null;
-      const m = new THREE.Mesh(g, cityMat);
-      m.matrixAutoUpdate = false;
-      groupCity.add(m);
-      outerMeshes.push(m);
-    }
-    renderer.render(scene, camera);   // upload now, behind the veil, and free the arrays
+    for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
+    flushUploads();
     await yieldNow();
     if (rc.n) {
       const g = new THREE.BufferGeometry();
@@ -4816,7 +4872,8 @@
     const getChunk = (x, z) => {
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let ch = chunks.get(key);
-      if (!ch) { ch = { pos: [], nor: [], col: [], sty: [], bas: [], flh: [], idx: [], n: 0 }; chunks.set(key, ch); }
+      if (ch && ch.n > 60000) { addChunkMesh(ch.geometry(true), cityMat); ch = null; }   // seal: Uint16 indices, bounded staging
+      if (!ch) { ch = new VBuf(8192); chunks.set(key, ch); }
       return ch;
     };
     const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
@@ -4825,11 +4882,8 @@
     const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
     const c = new THREE.Color();
     const cCap = new THREE.Color();
-    const v2 = [];
-    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => {
-      ch.pos.push(x, y, z); ch.nor.push(nx * 127, ny * 127, nz * 127); ch.col.push(r * 255, g * 255, b * 255); ch.sty.push(st); ch.bas.push(base); ch.flh.push(fh || 0);
-      return ch.n++;
-    };
+    const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
+    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh);
     const appendB = (ch, poly, y0, y1, color, st, base, fh, capColor) => {
       const n = poly.length, r = color.r, g = color.g, b = color.b;
       const sign = signedArea(poly) > 0 ? 1 : -1;
@@ -4846,7 +4900,7 @@
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
       }
       v2.length = 0;
-      for (let i = 0; i < n; i++) v2.push(new THREE.Vector2(poly[i][0], -poly[i][1]));
+      for (let i = 0; i < n; i++) { let p2 = v2pool[i]; if (!p2) p2 = v2pool[i] = new THREE.Vector2(); v2.push(p2.set(poly[i][0], -poly[i][1])); }
       let tris;
       try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return; }
       const capStart = ch.n;
@@ -4866,7 +4920,7 @@
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
-      if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); } continue; }
+      if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); } continue; }
       if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;   // nothing floats mid-river
       let base = siteY(cx, cz, 'ground');
       if (inP(cx, cz)) {
@@ -4894,9 +4948,10 @@
         const i0 = chk.n;
         for (const q of sq) pushV(chk, q[0], towerTop, q[1], 0, 0.7, 0, c.r * 0.9, c.g * 0.9, c.b * 0.9, 3, base);
         pushV(chk, cx, apex, cz, 0, 1, 0, c.r * 0.9, c.g * 0.9, c.b * 0.9, 3, base);
-        chk.idx.push(i0, i0 + 1, i0 + 4, i0 + 1, i0 + 2, i0 + 4, i0 + 2, i0 + 3, i0 + 4, i0 + 3, i0, i0 + 4);
+        // outward: (base, apex, next) with the ring CCW in (x, z), the sense the wall loop uses
+        chk.idx.push(i0, i0 + 4, i0 + 1, i0 + 1, i0 + 4, i0 + 2, i0 + 2, i0 + 4, i0 + 3, i0 + 3, i0 + 4, i0);
       }
-      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); }
+      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
     }
     // far roads — same continuity treatment as the wide set: endpoint-snapped heights,
     // bend fans, bridge decks over the river corridors
@@ -5117,24 +5172,8 @@
     if (nwHole) mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true);
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await yieldNow();
-    for (const ch of chunks.values()) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ch.pos), 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(new Int8Array(ch.nor), 3, true));
-      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(ch.col), 3, true));
-      g.setAttribute('aStyle', new THREE.BufferAttribute(new Int8Array(ch.sty), 1));
-      g.setAttribute('aFloorH', new THREE.BufferAttribute(new Int8Array(ch.flh.map(fv => Math.round(fv * 10))), 1));
-      g.setAttribute('aBase', new THREE.BufferAttribute(new Float32Array(ch.bas), 1));
-      g.setIndex(ch.idx);
-      g.computeBoundingSphere();
-      freeOnUpload(g);
-      ch.pos = ch.nor = ch.col = ch.sty = ch.flh = ch.bas = ch.idx = null;
-      const m = new THREE.Mesh(g, cityMat);
-      m.matrixAutoUpdate = false;
-      groupCity.add(m);
-      outerMeshes.push(m);
-    }
-    renderer.render(scene, camera);   // upload now, behind the veil, and free the arrays
+    for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
+    flushUploads();
     await yieldNow();
     if (rc.n) {
       const g = new THREE.BufferGeometry();
