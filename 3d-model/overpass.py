@@ -13,6 +13,10 @@ tiles for `rounds` passes, and EXITS NON-ZERO if any tile is still missing - a
 partial extract silently packed as a full one is how the bare patches happened.
 Delete a tile file to force its refetch. Plain python3."""
 import json, os, sys, time, urllib.request, urllib.parse
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
            'https://overpass.private.coffee/api/interpreter']
@@ -75,6 +79,8 @@ def fetch_tiles(tiles, query_fn, cache_dir, rounds=3, pause=5):
             with open(path + '.tmp', 'w') as f:
                 json.dump(d, f)
             os.replace(path + '.tmp', path)
+            if provenance:
+                provenance.record(f'{cache_dir}.overpass', MIRRORS[0], query_fn(bbox), len(d.get('elements', [])), tile=str(tid))
             print(f'{tid} {bbox}: {len(d.get("elements", []))} elements ({time.time()-t0:.0f}s)', flush=True)
             time.sleep(pause)
     missing = [tid for tid, _ in tiles if not os.path.exists(_tile_path(cache_dir, tid))]

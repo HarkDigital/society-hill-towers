@@ -5,6 +5,10 @@ lidar_cache/phl_poles_raw.json: {"poles": [[lon, lat, height_ft, nlumin, bulb, t
 Resumable: per-page files in lidar_cache/pole_pages/. Run with plain python3;
 pack_poles.py projects, filters, and packs the result."""
 import json, os, time, urllib.request, urllib.parse
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
@@ -49,6 +53,7 @@ def main():
         fetch_page(off)
         if (i + 1) % 10 == 0 or i + 1 == len(offsets):
             print(f'{i + 1}/{len(offsets)} pages', flush=True)
+    if provenance: provenance.record('fetch_poles.arcgis', BASE, 'where=1=1&outFields=height,nlumin,bulb_type,type&outSR=4326&f=geojson', n, pages=len(offsets))
     poles = []
     for off in offsets:
         d = json.load(open(os.path.join(PAGES, f'p{off}.json')))

@@ -35,5 +35,6 @@ for i in range(0, len(pts), 100):
             break
         except Exception: time.sleep(3 + attempt * 3)
     time.sleep(1.05)
+if provenance: provenance.record('fetch_south.dem', 'https://api.opentopodata.org/v1/ned10m', f'ned10m 50 m grid x {xs[0]}..{xs[-1]} z {zs[0]}..{zs[-1]}', len(elev))
 json.dump({'x0': xs[0], 'z0': zs[0], 'cell': 50, 'nx': len(xs), 'nz': len(zs), 'rows': [[elev.get((x, z)) for x in xs] for z in zs]}, open('dem_south.json', 'w'))
 print('dem_south.json written', flush=True)

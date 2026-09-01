@@ -11,6 +11,10 @@ Frame: philly_frame.py (the scene's own projection). This script used to hardcod
 KX=85350, which put its output up to ~1.1 m east of the scene at the far ring;
 the committed nw_parks.json keeps that offset until the next rerun."""
 import json, math, os, urllib.parse, urllib.request
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
@@ -50,6 +54,7 @@ def main():
         'outFields': 'official_name,acreage', 'outSR': '4326', 'f': 'geojson'})
     with urllib.request.urlopen(BASE + '?' + q, timeout=120) as r:
         d = json.load(r)
+    if provenance: provenance.record('fetch_nw_parks.arcgis', BASE, q, len(d.get('features', [])))
     polys = []
     names = []
     for f in d.get('features', []):

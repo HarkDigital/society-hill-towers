@@ -11,6 +11,10 @@ the cached phl_footprints_local.json keeps that offset until the next rerun
 (delete it, the per-page cache is lat/lon and stays valid)."""
 import json, os, sys, time, urllib.request, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
@@ -59,6 +63,7 @@ def main():
             done += 1
             if done % 20 == 0:
                 print(f'{done}/{len(offsets)} pages', flush=True)
+    if provenance: provenance.record('fetch_footprints.arcgis', BASE, 'where=1=1&outFields=max_hgt,approx_hgt&outSR=4326&f=geojson', n, pages=len(offsets))
     # merge into the local frame
     fps = []
     n_h = 0

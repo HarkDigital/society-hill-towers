@@ -7,6 +7,10 @@
 Both are cached; delete the files to re-fetch. bake_places.py turns them into
 places.json for the app."""
 import os, time, urllib.parse, urllib.request
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'places_raw')
@@ -33,6 +37,7 @@ def get(url, path, tries=6):
                 f.write(data)
             os.replace(path + '.tmp', path)
             print(f'fetched {os.path.basename(path)} ({len(data) / 1e3:.0f} KB)', flush=True)
+            if provenance: provenance.record('fetch_places', url, url, None, bytes=len(data), file=os.path.basename(path))
             return
         except Exception as e:
             print(f'  retry {attempt + 1}/{tries}: {e}', flush=True)

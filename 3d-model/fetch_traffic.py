@@ -4,6 +4,10 @@ One envelope query against the open-data ArcGIS layer, paginated until
 exceededTransferLimit clears. Writes lidar_cache/traffic_raw/rmstraffic.geojson;
 skips the fetch entirely when the merged file already exists."""
 import json, math, pathlib, time, urllib.request, urllib.parse
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = pathlib.Path(__file__).parent
 CACHE = HERE / 'lidar_cache' / 'traffic_raw'
@@ -61,6 +65,7 @@ def main():
         offset += len(got)
         page += 1
         time.sleep(1)
+    if provenance: provenance.record('fetch_traffic.penndot', SVC, {'envelope': [W, S, E, N], 'outFields': 'CUR_AADT,ST_RT_NO,SEG_LNGTH_FEET,K_FACTOR,D_FACTOR,DIR_IND'}, len(feats), pages=page + 1)
     OUT.write_text(json.dumps({'type': 'FeatureCollection', 'features': feats}))
     print(f'wrote {OUT} ({len(feats)} segments)')
 

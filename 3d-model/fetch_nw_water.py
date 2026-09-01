@@ -10,6 +10,10 @@ Frame: philly_frame.py (the scene's own projection). This script used to hardcod
 KX=85350, which put its output up to ~1.1 m east of the scene at the far ring;
 the committed nw_water.json keeps that offset until the next rerun."""
 import json, math, os, time, urllib.parse, urllib.request
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
@@ -88,6 +92,7 @@ def main():
 (._;>;);
 out body qt;'''
     d = fetch(q)
+    if provenance: provenance.record('fetch_nw_water.overpass', MIRRORS[0], q, len(d.get('elements', [])))
     els = d.get('elements', [])
     nodes = {el['id']: ((el['lon'] - LON0) * KX, (LAT0 - el['lat']) * KZ)
              for el in els if el.get('type') == 'node'}

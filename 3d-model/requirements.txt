@@ -1,0 +1,13 @@
+# Third-party packages imported by the 3d-model scripts. Plain python3 (Xcode
+# CommandLineTools, 3.9) runs build.py, the tests, and every fetch_* / pack_wide /
+# pack_poles / pack_trees / bake_traffic / bake_places / bake_street_labels /
+# bake_overpasses script with the stdlib alone; the packages below are only needed
+# by the scripts named next to them.
+#
+#   pip3 install --user -r requirements.txt
+#
+shapely>=2.0,<3          # lidar_join, lidar_core, opa_join, roof_colors, pack_city
+numpy>=1.24,<3           # lidar_core, roof_colors, bake_street_sdf
+pyproj>=3.4,<4           # lidar_core (EPSG:6347 -> WGS84)
+laspy[lazrs]>=2.4,<3     # lidar_core (COPC .laz tiles)
+Pillow>=10,<12           # roof_colors, bake_street_sdf, brand/make_brand

@@ -8,3 +8,6 @@
 3d-model/wide_tiles/
 3d-model/south_tiles/
 3d-model/lidar_cache/
+.audit/
+*.log
+__pycache__/

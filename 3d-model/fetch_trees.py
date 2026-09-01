@@ -6,6 +6,10 @@ Only the wide tier is fetched (~50k trees) — the far ring has no trees in the
 model and stays that way. Resumable: per-page files in lidar_cache/tree_pages/.
 Run with plain python3; pack_trees.py projects, filters, and packs the result."""
 import json, os, time, urllib.request, urllib.parse
+try:
+    import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
+except Exception:
+    provenance = None
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
@@ -54,6 +58,7 @@ def main():
         fetch_page(off)
         if (i + 1) % 5 == 0 or i + 1 == len(offsets):
             print(f'{i + 1}/{len(offsets)} pages', flush=True)
+    if provenance: provenance.record('fetch_trees.arcgis', BASE, f'where=1=1&geometry={ENV}&outFields=tree_name,tree_dbh&f=geojson', n, pages=len(offsets))
     trees = []
     for off in offsets:
         d = json.load(open(os.path.join(PAGES, f'p{off}.json')))
