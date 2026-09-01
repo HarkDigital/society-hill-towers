@@ -56,6 +56,10 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 | `MontserratItalic.ttf` | Variable font `bake_street_sdf.py` renders the street-name atlas from (OFL). |
 | `requirements.txt` | Pipeline venv: shapely, numpy, pyproj, laspy[lazrs], Pillow. The build itself needs nothing. |
 | `pipeline.py` | Pipeline runner; `python3 pipeline.py --graph` prints the fetch → process → pack → bake → build graph. |
+| `overpass.py` | Shared tiled Overpass fetch: mirrors, backoff, per-tile checkpoints (`city_tiles/`, `wide_tiles/`, `south_tiles/`), a missing tile is fatal. |
+| `philly_frame.py` | The one lat/lon to local-metres frame (LAT0/LON0/KX/KZ, `to_xz`, `to_latlon`) every pipeline script imports. |
+| `provenance.py` | `record()` appends one line per fetch to `provenance.jsonl` (source, URL, query hash, element count, UTC time). |
+| `ops/` | Server recipes: the captured live nginx vhost and the `.example` with the planned additions, systemd units, `septa_bake.py`, `ais_relay.py`, `uptime.md`, `README.md`. |
 | `tests/` | `python3 -m unittest discover -s tests`. |
 | `docs_check.py` | Stdlib check that every `build.py` input and every script here is mentioned in this section; exits non-zero naming the gaps. |
 

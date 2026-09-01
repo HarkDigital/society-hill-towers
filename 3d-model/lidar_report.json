@@ -23,9 +23,9 @@
    "skipped": 3
   },
   "city_lut": {
-   "total": 446774,
-   "measured": 395386,
-   "unmeasured": 51388
+   "total": 481963,
+   "measured": 424652,
+   "unmeasured": 57311
   }
  },
  "top_deltas": [

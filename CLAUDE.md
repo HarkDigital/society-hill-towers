@@ -45,7 +45,7 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
 - No em dashes or middot separators in any user-facing string (veil, hints, cards, panels,
   tooltips, loading messages). Commas, colons, sentences. Docs and code comments are exempt.
 - Owner decisions that stand until Mike says otherwise: landmark labels OFF by default (the
-  citywide tier is behind the L key); the About panel stays hidden; fly is the only mode
+  citywide tier is behind the L key); the About panel stays out of the bar (the "Credits" link in the bottom credit line opens it); fly is the only mode
   (orbit is the attract loop, walk is `__dbg.goWalk` only); SEPTA/Indego markers are occluded
   by buildings, neighborhood names and the search pin are not.
 - Commit the built page with the source. Do not push or deploy unless asked.

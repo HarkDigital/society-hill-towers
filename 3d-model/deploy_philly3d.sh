@@ -31,7 +31,7 @@ PREV=/var/www/philly3d-prev
 URL=https://philly3d.com/
 GZ_MIN=${GZ_MIN:-8000000}     # bytes; below this the build is truncated or empty
 GZ_MAX=${GZ_MAX:-12000000}    # bytes; above this something bloated the page
-                              # (measured Sep 2026: 22.98 MB page -> 12.76 MB gzip)
+                              # (measured Sep 2026, byte-planar blobs: 22.8 MB page -> 9.8 MB gzip)
 
 fatal() { echo "FATAL: $*" >&2; exit 1; }
 sha() {                        # sha256 hex of a file, GNU or BSD userland
@@ -123,7 +123,7 @@ echo "   gzip $GZ bytes, sha256 $WANT"
 
 # 3. keep the live pair, then ship
 echo "== keeping the live pair in $HOST:$PREV"
-ssh "$HOST" 'mkdir -p /var/www/philly3d-prev && cp -a /var/www/philly3d/index.html /var/www/philly3d/index.html.gz /var/www/philly3d-prev/ 2>/dev/null || true'
+ssh "$HOST" "mkdir -p $PREV && cp -a $WEB/index.html $WEB/index.html.gz $PREV/ 2>/dev/null || true"
 echo "== rsync"
 rsync -az --delay-updates "$TMP/index.html" "$TMP/index.html.gz" \
   "$TMP/favicon.ico" "$TMP/favicon.svg" \

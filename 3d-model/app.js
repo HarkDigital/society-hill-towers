@@ -126,10 +126,10 @@
   // ratio down 15% when frames run long, back up when they stay short;
   // fragment cost scales with the square, so 1.75 -> 1.25 halves the shading
   // work. ?dpr=1.5 pins it.
-  const DPR = { cap: DPR_CAP, min: 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, slow: 0, fast: 0, pinned: false };
+  const DPR = { cap: renderer.getPixelRatio(), min: 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, fast: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
   {
     const q = /[?&]dpr=([\d.]+)/.exec(location.search);
-    if (q) { DPR.pinned = true; DPR.cur = Math.max(0.5, Math.min(3, +q[1])); renderer.setPixelRatio(DPR.cur); }
+    if (q) { DPR.pinned = true; DPR.cur = clamp(+q[1], 0.5, 3); renderer.setPixelRatio(DPR.cur); }
   }
   function applyDPR(r) {
     DPR.cur = r;
@@ -1638,14 +1638,12 @@
   function unb64(b64, name) {
     const s = atob(b64);
     const n = s.length;
-    const raw = new Uint8Array(n);
-    for (let i = 0; i < n; i++) raw[i] = s.charCodeAt(i);
-    const planar = typeof B64_PLANAR !== 'undefined' && B64_PLANAR && B64_PLANAR[name];
-    if (!planar || n <= 16) return raw;
     const out = new Uint8Array(n);
-    out.set(raw.subarray(0, 16));
+    const planar = typeof B64_PLANAR !== 'undefined' && B64_PLANAR && B64_PLANAR[name];
+    if (!planar || n <= 16) { for (let i = 0; i < n; i++) out[i] = s.charCodeAt(i); return out; }
+    for (let i = 0; i < 16; i++) out[i] = s.charCodeAt(i);
     const half = (n - 16) >> 1;
-    for (let i = 0, j = 16; i < half; i++, j += 2) { out[j] = raw[16 + i]; out[j + 1] = raw[16 + half + i]; }
+    for (let i = 0, j = 16; i < half; i++, j += 2) { out[j] = s.charCodeAt(16 + i); out[j + 1] = s.charCodeAt(16 + half + i); }
     return out;
   }
   // a real macrotask boundary that is NOT timer-clamped in hidden tabs
@@ -1657,20 +1655,20 @@
   // phones); these cost 24 B, and a chunk seals and uploads as soon as it
   // passes 60k vertices, so the staging peak is a few live chunks, not a ring.
   class IdxBuf {
-    constructor(cap) { this.a = new Uint16Array(cap); this.n = 0; }
+    constructor(cap) { this.a = new Uint16Array(cap); this.n = 0; this.u16 = true; }
     push() {
       const k = arguments.length;
       if (this.n + k > this.a.length) this.grow(this.n + k);
       for (let i = 0; i < k; i++) {
         const v = arguments[i];
-        if (v > 65535 && this.a.BYTES_PER_ELEMENT === 2) { const b = new Uint32Array(this.a.length); b.set(this.a); this.a = b; }
+        if (v > 65535 && this.u16) { const b = new Uint32Array(this.a.length); b.set(this.a); this.a = b; this.u16 = false; }
         this.a[this.n++] = v;
       }
     }
     grow(min) {
       let cap = this.a.length * 2;
       while (cap < min) cap *= 2;
-      const b = this.a.BYTES_PER_ELEMENT === 2 ? new Uint16Array(cap) : new Uint32Array(cap);
+      const b = this.u16 ? new Uint16Array(cap) : new Uint32Array(cap);
       b.set(this.a); this.a = b;
     }
     view() { return this.a.subarray(0, this.n); }
@@ -3882,8 +3880,9 @@
     pendingUpload.push(m);
     return m;
   };
-  const flushUploads = () => {
-    if (!pendingUpload.length) return;
+  const flushUploads = (all) => {
+    // each flush is a full-scene draw: batch a dozen sealed chunks per render
+    if (!pendingUpload.length || (!all && pendingUpload.length < 12)) return;
     renderer.render(scene, camera);   // upload now, behind the veil, and free the arrays
     for (const m of pendingUpload) m.frustumCulled = true;
     pendingUpload.length = 0;
@@ -3906,7 +3905,7 @@
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let c = map.get(key);
       if (c && seal && c.n > 60000) { addChunkMesh(c.geometry(true), cityMat); c = null; }
-      if (!c) { c = new VBuf(8192); map.set(key, c); }
+      if (!c) { c = new VBuf(2048); map.set(key, c); }
       return c;
     };
     const getChunk = chunkIn(chunks, true), getGlassChunk = chunkIn(glassChunks, false);
@@ -4638,7 +4637,7 @@
       addChunkMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 })).castShadow = true;
     }
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
-    flushUploads();
+    flushUploads(true);
     await yieldNow();
     if (rc.n) {
       const g = new THREE.BufferGeometry();
@@ -4920,7 +4919,7 @@
       const key = Math.floor(x / CH) + ':' + Math.floor(z / CH);
       let ch = chunks.get(key);
       if (ch && ch.n > 60000) { addChunkMesh(ch.geometry(true), cityMat); ch = null; }   // seal: Uint16 indices, bounded staging
-      if (!ch) { ch = new VBuf(8192); chunks.set(key, ch); }
+      if (!ch) { ch = new VBuf(2048); chunks.set(key, ch); }
       return ch;
     };
     const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
@@ -5222,7 +5221,7 @@
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await yieldNow();
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
-    flushUploads();
+    flushUploads(true);
     await yieldNow();
     if (rc.n) {
       const g = new THREE.BufferGeometry();
@@ -6894,13 +6893,6 @@
   // upload only the live instances of a fleet mesh, not its whole buffer. three
   // resets updateRange after every upload, so a wrong count costs one full
   // upload, never a stale one. Nothing to send at count 0.
-  function flushInst(m) {
-    if (!m.count) return;
-    const im = m.instanceMatrix, ic = m.instanceColor;
-    im.updateRange.offset = 0; im.updateRange.count = m.count * 16; im.needsUpdate = true;
-    if (ic) { ic.updateRange.offset = 0; ic.updateRange.count = m.count * 3; ic.needsUpdate = true; }
-  }
-
   function septaKindOf(r) {
     // rail is out by request (and the subway rows carry no real GPS anyway):
     // only street vehicles — buses and the bus-like street trolleys — render
@@ -8448,20 +8440,22 @@
   const FLIGHT_CAP = 80;
   const btnFlights = document.getElementById('btnFlights');
   const _fq = new THREE.Quaternion(), _fe = new THREE.Euler();
+  // one upload helper for every InstancedMesh (SEPTA, Indego, flights, ships,
+  // cars): upload only the live instances. three's default range is the whole
+  // capacity buffer and it snaps back to "all" after every ranged upload, so
+  // the range is restated before each flag. colorFrom omitted ships every live
+  // instanceColor; colorFrom >= 0 ships from that slot up; -1 skips colours.
+  // A zero count skips entirely (a 0-length range means "everything" on WebGL2).
   function flushInst(m, colorFrom) {
-    // upload only the live instances: three's default range is the whole
-    // capacity buffer, and it snaps back to "all" after every ranged upload,
-    // so the range is restated before each flag. colorFrom >= 0 also ships
-    // instanceColor from that slot up. A zero count skips entirely (nothing
-    // draws, and a 0-length range means "everything" on WebGL2).
     const n = m.count;
     if (!n) return;
     m.instanceMatrix.updateRange.offset = 0;
     m.instanceMatrix.updateRange.count = n * 16;
     m.instanceMatrix.needsUpdate = true;
-    if (colorFrom >= 0 && colorFrom < n && m.instanceColor) {
-      m.instanceColor.updateRange.offset = colorFrom * 3;
-      m.instanceColor.updateRange.count = (n - colorFrom) * 3;
+    const from = colorFrom === undefined ? 0 : colorFrom;
+    if (from >= 0 && from < n && m.instanceColor) {
+      m.instanceColor.updateRange.offset = from * 3;
+      m.instanceColor.updateRange.count = (n - from) * 3;
       m.instanceColor.needsUpdate = true;
     }
   }
@@ -9021,7 +9015,7 @@
     const x = (s.lon - SITE.lon) * 111320 * Math.cos(SITE.lat * DEG);
     const z = -(s.lat - SITE.lat) * 110574;
     if (x < -12500 || x > 17000 || z < -22000 || z > 10000) return;
-    const age = s.t > 0 ? Math.max(0, Math.min(1800, nowS - s.t)) : 0;
+    const age = s.t > 0 ? clamp(nowS - s.t, 0, 1800) : 0;
     v.fx = x; v.fz = z; v.ft = nowP - age * 1000;
     v.sog = s.sog || 0;
     const hd = (s.hdg != null && s.hdg < 360) ? s.hdg : (s.cog != null ? s.cog : v.cog);
@@ -9116,7 +9110,7 @@
     if (SHIPS.sock) { const s = SHIPS.sock; SHIPS.sock = null; try { s.onclose = null; s.close(); } catch (e) {} }
   }
   function toggleShips() {
-    if (!AIS_KEY || !septaCanFetch) return;
+    if (!septaCanFetch || (!AIS_KEY && !AIS_RELAY)) return;   // the relay works without a key
     SHIPS.on = !SHIPS.on;
     syncShipsBtn();
     // off parks the retry clock too: shipRelease nulls onclose, so nothing
@@ -9145,13 +9139,15 @@
       if (!SHIPS.relay && !SHIPS.sock && now >= SHIPS.retryT) shipConnect();
     }
     _aqB.copy(camera.quaternion);   // fresh billboard pose for the anchor badges
-    let i = 0;
+    // the age prune is its own pass: the draw loop stops at SHIP_CAP, and a
+    // vessel heard but never fixed inside the box must age out too
     const gone = [];
+    for (const v of shipMap.values()) if ((now - v.ft) / 1000 > 1800) gone.push(v.mmsi);
+    let i = 0;
     for (const v of shipMap.values()) {
       if (i >= SHIP_CAP) break;
-      // the age prune comes first so vessels heard but never fixed in the box age out too
       const age = (now - v.ft) / 1000;
-      if (age > 1800) { gone.push(v.mmsi); continue; }
+      if (age > 1800) continue;
       if (v.dx === undefined) continue;
       const px = v.moored ? v.fx : v.fx + v.vx * Math.min(age, 600);
       const pz = v.moored ? v.fz : v.fz + v.vz * Math.min(age, 600);
