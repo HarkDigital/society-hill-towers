@@ -7028,7 +7028,7 @@
     if (status) bits.push(status);
     vehinfoBody.innerHTML =
       '<span class="vroute" style="background:' + v.tintHex + '">' + septaEsc(v.routeLabel) + '</span>' +
-      '<span class="vdest">To ' + septaEsc(v.info.dest || '—') + '</span>' +
+      '<span class="vdest">' + (v.info.dest ? 'To ' + septaEsc(v.info.dest) : 'Destination unknown') + '</span>' +
       '<div class="vmeta">' + septaEsc(bits.join(', ')) + '</div>' +
       (v.info.next ? '<div class="vmeta">Next Stop: ' + septaEsc(v.info.next) + '</div>' : '');
   }
@@ -8723,7 +8723,7 @@
     if (!btnFlights) return;
     // never-fed and out of hosts: say why instead of a lying zero
     btnFlights.title = (!FLIGHTS.ok && FLIGHTS.fails >= FLIGHT_HOSTS.length * 3)
-      ? 'Live Flights (X): Feed Unreachable — Set FLIGHT_PROXY In app.js (See flight-proxy-worker.js)'
+      ? 'Live Flights (X): Feed Unreachable. Set FLIGHT_PROXY In app.js (See flight-proxy-worker.js)'
       : 'Live Flights (X): ' + flightMap.size + ' Aircraft Tracked';
     const fc = document.getElementById('flightCount');
     if (fc) fc.textContent = flightMap.size ? String(flightMap.size) : '';
