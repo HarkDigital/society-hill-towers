@@ -111,12 +111,12 @@
 
 <div id="hint">Drag, scroll, or press W A S D to take flight.</div>
 
-<div id="osmcredit">Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors</div>
+<div id="osmcredit">Map data &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors<span class="more"> &middot; City of Philadelphia (CC-BY) &middot; SEPTA &middot; Indego (unaffiliated) &middot; adsb.fi &middot; Open-Meteo</span> &middot; <a href="#" id="creditsLink">credits</a></div>
 
-<div id="about" class="panel" role="dialog" aria-label="About Society Hill Towers">
+<div id="about" class="panel" role="dialog" aria-label="About Philly3D">
   <button class="close" id="btnCloseAbout" title="Close">&times;</button>
-  <div class="kicker">200&ndash;220 Locust Street</div>
-  <h2>Society Hill<br>Towers</h2>
+  <div class="kicker">A living model of</div>
+  <h2>Philadelphia</h2>
   {{ABOUT_BODY}}
   <h3>Controls</h3>
   <table class="keys">
@@ -146,8 +146,13 @@
     districts and neighborhoods: City of Philadelphia via OpenDataPhilly (CC-BY);
     bike share status: Indego / Bicycle Transit Systems.
     Traffic volumes: PennDOT Roadway Management System annual average daily
-    traffic (RMSTRAFFIC, open data) &mdash; the cars are synthesized typical
+    traffic (RMSTRAFFIC, open data); the cars are synthesized typical
     flows at those volumes, not live vehicle positions.
+    Vehicle positions: SEPTA real-time API. Live flights: adsb.fi community
+    ADS-B data. Live ships: AIS via aisstream.io. Weather: Open-Meteo.
+    Address search: Nominatim / OpenStreetMap.
+    This is an independent project, not affiliated with or endorsed by SEPTA
+    or Indego.
     Towers modeled procedurally from photographs and published dimensions.
     Rendered with three.js. This is an interpretive model, not a survey.
   </div>
