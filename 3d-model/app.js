@@ -6680,6 +6680,25 @@
   const SEPTA = { on: true, ok: false, fails: 0, hinted: false, busy: false, lastT: -1e9 };
   const SEPTA_HOSTS = ['https://api.septa.org/api', 'https://www3.septa.org/api'];
   const SEPTA_POLL = isTouch ? 25000 : 15000;          // TransitViewAll is ~370 KB a pull
+  // the VPS bakes TransitViewAll into a filtered, gzipped septa.json every 10 s
+  // (ops/septa_bake.py): ~16 KB a pull instead of 343 KB, and one upstream
+  // request a cycle however many viewers. The JSONP rotation stays as the
+  // fallback whenever the file is missing or stale (baker down).
+  const SEPTA_BAKED = 'https://philly3d.com/septa.json';
+  let septaBakedOk = true, septaBakedRetryT = 0;
+  function septaFetchBaked(cb) {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 12000) : 0;
+    const miss = () => { clearTimeout(timer); septaBakedOk = false; septaBakedRetryT = performance.now() + 300000; cb(null); };
+    fetch(SEPTA_BAKED, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+      .then((d) => {
+        if (!d || !(d.t > 0) || Date.now() / 1000 - d.t > 90) { miss(); return; }   // stale file: the baker is down
+        clearTimeout(timer);
+        cb(d);
+      })
+      .catch(miss);
+  }
   const SEPTA_BOX = { la0: 39.855, la1: 40.145, lo0: -75.30, lo1: -74.94 };  // modeled city
   const septaCanFetch = !/claude|usercontent/i.test(location.hostname);
   const septaVeh = new Map();
@@ -6828,7 +6847,10 @@
     const now = performance.now();
     if (SEPTA.busy || now - SEPTA.lastT < 5000) return;   // one pull in flight, never faster than 5 s
     SEPTA.busy = true; SEPTA.lastT = now;
-    septaJsonp('/TransitViewAll/index.php', (d) => { SEPTA.busy = false; septaGotTV(d); });
+    if (!septaBakedOk && now >= septaBakedRetryT) septaBakedOk = true;   // give the baker another try every 5 min
+    const viaJsonp = () => septaJsonp('/TransitViewAll/index.php', (d) => { SEPTA.busy = false; septaGotTV(d); });
+    if (septaBakedOk) septaFetchBaked((d) => { if (d) { SEPTA.busy = false; septaGotTV(d); } else viaJsonp(); });
+    else viaJsonp();
   }
   function septaCard(v) {
     const late = v.info.late;
@@ -8638,7 +8660,13 @@
   // slow, so a few-second cadence renders glassy smooth), moored and anchored
   // vessels hold station, and the card knows a tug from a tanker.
   const AIS_KEY = 'f9148033287fd7b2fd6c82142e0b78ac0f1906cf';   // aisstream.io, Mike's free key
-  const SHIPS = { on: true, ok: false, sock: null, retryT: 0 };
+  // The free key streams to ONE client at a time, so a direct socket makes the
+  // layer single-viewer. ops/ais_relay.py holds that one socket on the VPS and
+  // writes ais.json every 4 s for everyone; the page polls it and falls back
+  // to the direct socket only while the relay is unavailable. Once the relay
+  // is live the key above is to be rotated and removed.
+  const AIS_RELAY = 'https://philly3d.com/ais.json';
+  const SHIPS = { on: true, ok: false, sock: null, retryT: 0, relay: false, relayT: 0, relayBusy: false, relayFails: 0 };
   const shipMap = new Map();
   let shipMesh = null, shipAnchor = null, shipReady = false, pickedShip = null;
   const shipPick = [];
@@ -8774,8 +8802,56 @@
       if (s.Destination && s.Destination.trim()) v.dest = s.Destination.trim();
     }
   }
+  // one relay record -> the same vessel state shipMsg builds from the stream.
+  // The fix time rides along, so dead reckoning runs from the fix, not the poll.
+  function shipUpsertRelay(s, nowP, nowS) {
+    if (!s || !s.mmsi || s.lat == null || s.lon == null) return;
+    let v = shipMap.get(s.mmsi);
+    if (!v) { v = { mmsi: s.mmsi, ft: nowP, len: 30, beam: 8, tn: 'Vessel', sog: 0, cog: 0, moored: false }; shipMap.set(s.mmsi, v); }
+    if (s.name) v.name = String(s.name).trim() || v.name;
+    if (s.type > 0) v.tn = SHIP_TYPE(s.type);
+    if (s.len > 4) v.len = clamp(s.len, 8, 340);
+    if (s.beam > 1) v.beam = clamp(s.beam, 3, 52);
+    if (s.dest) v.dest = String(s.dest).trim();
+    const x = (s.lon - SITE.lon) * 111320 * Math.cos(SITE.lat * DEG);
+    const z = -(s.lat - SITE.lat) * 110574;
+    if (x < -12500 || x > 17000 || z < -22000 || z > 10000) return;
+    const age = s.t > 0 ? Math.max(0, Math.min(1800, nowS - s.t)) : 0;
+    v.fx = x; v.fz = z; v.ft = nowP - age * 1000;
+    v.sog = s.sog || 0;
+    const hd = (s.hdg != null && s.hdg < 360) ? s.hdg : (s.cog != null ? s.cog : v.cog);
+    v.cog = s.cog != null ? s.cog : hd;
+    v.hdg = hd;
+    v.moored = s.nav === 1 || s.nav === 5 || v.sog < 0.25;
+    const gms = v.sog * 0.5144;
+    v.vx = Math.sin((v.cog || 0) * DEG) * gms;
+    v.vz = -Math.cos((v.cog || 0) * DEG) * gms;
+    if (v.dx === undefined) { v.dx = x; v.dz = z; shipStatus(); }
+    else if (Math.hypot(x - v.dx, z - v.dz) > 1500) { v.dx = x; v.dz = z; }
+  }
+  function shipRelayPoll(now) {
+    if (!septaCanFetch || SHIPS.relayBusy || now < SHIPS.relayT) return;
+    SHIPS.relayBusy = true;
+    // 4 s while it answers; after a miss, back off up to 5 min before asking again
+    SHIPS.relayT = now + (SHIPS.relay ? 4000 : Math.min(300000, 15000 * Math.pow(2, Math.min(SHIPS.relayFails, 4))));
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : 0;
+    const miss = () => { clearTimeout(timer); SHIPS.relayBusy = false; SHIPS.relayFails++; SHIPS.relay = false; };
+    fetch(AIS_RELAY, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
+      .then((d) => {
+        clearTimeout(timer);
+        if (!d || !Array.isArray(d.ships) || !(d.t > 0) || Date.now() / 1000 - d.t > 60) { miss(); return; }   // stale: relay down
+        SHIPS.relayBusy = false; SHIPS.relayFails = 0;
+        if (!SHIPS.relay) { SHIPS.relay = true; shipRelease(); }   // the relay owns the feed: drop the direct socket
+        const nowP = performance.now(), nowS = Date.now() / 1000;
+        for (const rec of d.ships) shipUpsertRelay(rec, nowP, nowS);
+        SHIPS.ok = true;
+      })
+      .catch(miss);
+  }
   function shipConnect() {
-    if (!SHIPS.on || !AIS_KEY || !septaCanFetch || SHIPS.sock) return;
+    if (!SHIPS.on || !AIS_KEY || !septaCanFetch || SHIPS.sock || SHIPS.relay) return;
     try {
       const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
       ws.binaryType = 'arraybuffer';
@@ -8854,12 +8930,15 @@
     if (!shipReady) { if (septaMats.body) shipsInit(); return; }
     // without a key the layer stays out of the panel, but injected test
     // vessels (__dbg.shipTest) still render so the pipeline stays provable
-    if (!AIS_KEY || !septaCanFetch) { btnShips.style.display = 'none'; if (!shipMap.size) return; }
+    if (!septaCanFetch || (!AIS_KEY && !AIS_RELAY)) { btnShips.style.display = 'none'; if (!shipMap.size) return; }
     if (!SHIPS.on) {
       if (shipMesh.count) { shipMesh.count = 0; shipMesh.instanceMatrix.needsUpdate = true; shipAnchor.count = 0; shipAnchor.instanceMatrix.needsUpdate = true; }
       return;
     }
-    if (!SHIPS.sock && !document.hidden && now >= SHIPS.retryT) shipConnect();   // only while the layer is on
+    if (!document.hidden) {   // only while the layer is on
+      shipRelayPoll(now);
+      if (!SHIPS.relay && !SHIPS.sock && now >= SHIPS.retryT) shipConnect();
+    }
     _aqB.copy(camera.quaternion);   // fresh billboard pose for the anchor badges
     let i = 0;
     const gone = [];
