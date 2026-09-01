@@ -31,7 +31,7 @@
 
 <canvas id="gl"></canvas>
 
-<div id="compass" class="panel">
+<button id="compass" class="panel" type="button" aria-label="Face north" title="Face north">
   <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
     <g id="needle">
       <polygon points="17,4 20.4,17 17,14.6 13.6,17" fill="#c89b5e"/>
@@ -39,7 +39,7 @@
     </g>
     <text x="17" y="8.6" text-anchor="middle" font-size="6.5" fill="rgba(239,233,220,0.0)">N</text>
   </svg>
-</div>
+</button>
 
 <div id="labels" aria-hidden="true"></div>
 
@@ -77,6 +77,7 @@
   <button id="btnLayers" class="iconbtn panel" title="Layers (F)" aria-expanded="false" aria-controls="layerspanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg></button>
   <button id="btnSearch" class="iconbtn panel" title="Find an Address (/)" aria-expanded="false" aria-controls="searchpanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
   <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)" aria-expanded="false" aria-controls="timepanel">&#9680;</button>
+  <button id="btnShot" class="iconbtn panel" title="Save a Picture of This View"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M4 8.4h3.4l1.5-2.4h6.2l1.5 2.4H20v9.8H4z"/><circle cx="12" cy="13" r="3.1"/></svg></button>
   <button id="btnAbout" class="iconbtn panel" title="About this model (I)" style="display:none">i</button>
 </div>
 
@@ -95,12 +96,27 @@
     <button id="btnResetLayers" class="mini" title="Back to the default layers">Reset Layers</button>
     <button id="btnCopyLink" class="mini" title="Copy a link that opens this exact view">Copy Link to This View</button>
   </div>
+  <div class="kicker tkick">Take Me To</div>
+  <div class="tgrid">
+    <button class="lrow trow" data-stop="cityhall"><span class="ltext">City Hall</span></button>
+    <button class="lrow trow" data-stop="schuylkill"><span class="ltext">Schuylkill Skyline</span></button>
+    <button class="lrow trow" data-stop="artmuseum"><span class="ltext">Art Museum Steps</span></button>
+    <button class="lrow trow" data-stop="towers"><span class="ltext">Society Hill Towers</span></button>
+    <button class="lrow trow" data-stop="indhall"><span class="ltext">Independence Hall</span></button>
+    <button class="lrow trow" data-stop="battleship"><span class="ltext">Battleship New Jersey</span></button>
+    <button class="lrow trow" data-stop="airport"><span class="ltext">Airport Approach</span></button>
+    <button class="lrow trow" data-stop="wissahickon"><span class="ltext">The Wissahickon</span></button>
+  </div>
+  <div class="lfoot">
+    <button id="btnTour" class="mini" title="Fly every stop in turn, about nine seconds at each" aria-pressed="false">Tour the City</button>
+  </div>
 </div>
 
 <div id="timepanel" class="panel" role="group" aria-label="Date and time">
   <div class="kicker">Philadelphia Sun and Sky</div>
   <div class="row">
     <input type="date" id="timeDate" aria-label="Date">
+    <button id="timePlay" class="mini" title="Sun time-lapse, about two hours a second" aria-pressed="false">Play</button>
     <button id="timeNow" class="mini" title="Follow the real time">Now</button>
   </div>
   <input type="range" id="timeSlider" min="0" max="1439" step="5" aria-label="Time of day">
@@ -137,7 +153,8 @@
     <tr><td><kbd>R</kbd></td><td>Typical Vehicle Traffic</td></tr>
     <tr><td><kbd>G</kbd></td><td>Streetlights (Every City Lamp, Lit at Dusk)</td></tr>
     <tr><td><kbd>T</kbd></td><td>Date &amp; Time of Day (Real Philadelphia Sun)</td></tr>
-    <tr><td><kbd>Esc</kbd></td><td>Release the Mouse</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Release the Mouse, Stop a Tour</td></tr>
+    <tr><td>Compass</td><td>Face North</td></tr>
   </table>
   <p>Outside claude.ai&rsquo;s sandbox the sky also follows the real Philadelphia weather:
     live cloud cover and wind via Open-Meteo, refreshed every 15 minutes

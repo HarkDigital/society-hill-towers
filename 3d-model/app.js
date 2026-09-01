@@ -6641,6 +6641,7 @@
   document.addEventListener('pointerlockerror', () => { walk.dragLook = true; setHint(); });
   document.addEventListener('mousemove', (e) => {
     if (!walk.locked || (mode !== MODE.WALK && mode !== MODE.FLY)) return;
+    if (glide) glideCancel();   // a locked-mouse look is input too
     walk.yaw += e.movementX * 0.0021;
     walk.pitch = clamp(walk.pitch - e.movementY * 0.0021, -1.45, 1.45);
   });
@@ -6651,6 +6652,7 @@
     if (k === 'escape') {
       // ahead of the field guard: Escape must work from a panel's own buttons and inputs
       if (flyTips && flyTips.classList.contains('show')) { hideFlyTips(); return; }
+      if (openPanelName() === 'search') septaSetFilter(null);   // Escape on the search panel drops the route filter too
       if (closePanels()) return;
     }
     const tag = e.target && e.target.tagName;
@@ -6675,8 +6677,8 @@
     else if (k === 'p') togglePlaces();
     else if (k === 'r') toggleTraffic();
     else if (k === 'g') toggleLightsLayer();
-    else if (k === '/') { if (septaCanFetch) { toggleSearch(true); e.preventDefault(); } }
-    else if (k === 'escape') { /* nothing open: the browser releases pointer lock */ }
+    else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
+    else if (k === 'escape') { glideCancel(); /* nothing open: the browser releases pointer lock */ }
     else {
       // a movement key is as clear an intent to fly as a drag is
       if (['w', 'a', 's', 'd', 'e', 'q', ' '].includes(k) || k.indexOf('arrow') === 0) { interacted = true; introSpin = false; autoFly(); }
@@ -6781,6 +6783,7 @@
   function autoFly() {
     // the first real interaction — drag, wheel, movement key, touch — takes
     // flight from wherever the City Hall circle happens to be
+    glideCancel();   // any input ends a glide and the tour
     if (mode === MODE.ORBIT) setMode(MODE.FLY);
     else if (mode !== MODE.FLY) return;
     // the touch primer follows the first touch, even when a share link skipped the orbit
@@ -6802,6 +6805,82 @@
 
   const viewpoints = [];
   function addViewpoint(name, fn) { viewpoints.push({ name, fn }); }
+  // ---------------------------------------------------------------- camera glides & the tour
+  // One eased camera move at a time, polled from frame() (no second rAF loop):
+  // the 'Take me to' rows, the tour and the compass all ride it. Any real input
+  // (autoFly, a locked-mouse look, Escape) cancels the glide and ends the tour.
+  let glide = null;
+  const TOUR_DWELL = 9000;
+  const tour = { on: false, i: -1, nextT: 0 };
+  const btnTour = document.getElementById('btnTour');
+  const easeInOut = (t) => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  const wrapPi = (a) => ((a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  function glideFly(px, py, pz, yaw, pitch, ms, done) {
+    // fly-space glide to a pose: the yaw takes the short way round, and long
+    // hops arc upward so the path clears the towers instead of threading them
+    interacted = true; introSpin = false;
+    setMode(MODE.FLY, true);
+    const d = Math.hypot(px - fly.pos.x, pz - fly.pos.z);
+    glide = { kind: 'fly', t0: performance.now(), ms, done, arc: Math.min(400, d * 0.12),
+      fx: fly.pos.x, fy: fly.pos.y, fz: fly.pos.z, fyaw: walk.yaw, fpitch: walk.pitch,
+      tx: px, ty: py, tz: pz, tyaw: walk.yaw + wrapPi(yaw - walk.yaw), tpitch: clamp(pitch, -1.45, 1.45) };
+  }
+  function faceNorth() {
+    // the compass: orbit eases its azimuth to PI/2 (camera due south of the
+    // target, see applyOrbit), fly and walk ease their shared yaw to 0 (applyFly)
+    if (!veil.classList.contains('hidden')) return;
+    glideCancel();   // a compass tap is input: it ends a tour rather than stranding it mid-glide
+    interacted = true; introSpin = false;
+    const t0 = performance.now(), ms = 600;
+    if (mode === MODE.ORBIT) glide = { kind: 'orbit', t0, ms, from: orbit.goalTheta, to: orbit.goalTheta + wrapPi(Math.PI / 2 - orbit.goalTheta) };
+    else glide = { kind: 'yaw', t0, ms, from: walk.yaw, to: walk.yaw - wrapPi(walk.yaw) };
+  }
+  document.getElementById('compass').addEventListener('click', faceNorth);
+  function glideCancel() { glide = null; if (tour.on) tourStop(); }
+  function stepGlide(now) {
+    if (!glide) return;
+    const g = glide, k = easeInOut(clamp((now - g.t0) / g.ms, 0, 1));
+    if (g.kind === 'orbit') orbit.goalTheta = lerp(g.from, g.to, k);
+    else if (g.kind === 'yaw') walk.yaw = lerp(g.from, g.to, k);
+    else {
+      if (mode !== MODE.FLY) { glideCancel(); return; }   // something switched modes underneath
+      fly.pos.set(lerp(g.fx, g.tx, k), lerp(g.fy, g.ty, k) + Math.sin(k * Math.PI) * g.arc, lerp(g.fz, g.tz, k));
+      fly.vel.set(0, 0, 0);
+      walk.yaw = lerp(g.fyaw, g.tyaw, k);
+      walk.pitch = lerp(g.fpitch, g.tpitch, k);
+    }
+    if (k < 1) return;
+    glide = null;
+    if (g.kind === 'fly') updateHash(now, true);   // the link follows each landing
+    if (g.done) g.done(now);
+  }
+  function syncTourBtn() {
+    if (!btnTour) return;
+    btnTour.textContent = tour.on ? 'Stop Tour' : 'Tour the City';
+    btnTour.setAttribute('aria-pressed', tour.on ? 'true' : 'false');
+  }
+  function tourStop() {
+    if (!tour.on) return;
+    tour.on = false; tour.i = -1;
+    syncTourBtn();
+    setHint();
+  }
+  function tourNext(now) {
+    tour.i++;
+    if (tour.i >= viewpoints.length) { tourStop(); return; }
+    const v = viewpoints[tour.i];
+    tour.nextT = Infinity;                    // waits for the landing, then dwells
+    v.fn((t) => { tour.nextT = t + TOUR_DWELL; });
+    hintEl.textContent = 'City tour, stop ' + (tour.i + 1) + ' of ' + viewpoints.length + ': ' + v.name + '. Touch anything to stop.';
+  }
+  function tourStart() {
+    if (!viewpoints.length || tour.on) return;
+    closePanels();                            // the city, not the panel, is the show
+    tour.on = true; tour.i = -1;
+    syncTourBtn();
+    tourNext(performance.now());
+  }
+  function stepTour(now) { if (tour.on && !glide && now >= tour.nextT) tourNext(now); }
   // ---------------------------------------------------------------- preferences, share links, panels
   // One localStorage blob (philly3d.prefs) remembers the nine layer flags and a
   // pinned clock; the URL hash carries a whole view (camera, clock, layers) and
@@ -6937,7 +7016,7 @@
   // not easy to track"). TrainView is no longer polled.
   const SEPTA_GEO = { lat0: 39.945473644755005, lon0: -75.14474803850973 };  // scene.json origin
   SEPTA_GEO.mx = 111320 * Math.cos(SEPTA_GEO.lat0 * Math.PI / 180); SEPTA_GEO.mz = 110574;
-  const SEPTA = { on: true, ok: false, fails: 0, hinted: false, busy: false, lastT: -1e9 };
+  const SEPTA = { on: true, ok: false, fails: 0, hinted: false, busy: false, lastT: -1e9, filter: null, filterLabel: '' };   // filter: one route id on the map (a route search)
   const SEPTA_HOSTS = ['https://api.septa.org/api', 'https://www3.septa.org/api'];
   const SEPTA_POLL = isTouch ? 25000 : 15000;          // TransitViewAll is ~370 KB a pull
   // the VPS bakes TransitViewAll into a filtered, gzipped septa.json every 10 s
@@ -7084,9 +7163,12 @@
   }
   function septaStatus() {
     const n = septaVeh.size, off = SEPTA.fails >= 3;
-    btnTransit.title = 'Live SEPTA Vehicles (V): ' + (off ? 'Feed Offline' : n + ' Tracked Now');
+    let onRoute = 0;
+    if (SEPTA.filter) septaVeh.forEach((v) => { if (!v.ug && v.route === SEPTA.filter) onRoute++; });
+    const shown = SEPTA.filter ? onRoute + ' of ' + n + ' on route ' + SEPTA.filterLabel : n + ' Live';
+    btnTransit.title = 'Live SEPTA Vehicles (V): ' + (off ? 'Feed Offline' : SEPTA.filter ? shown : n + ' Tracked Now');
     const tc = document.getElementById('transitCount');
-    if (tc) tc.textContent = off ? 'Offline' : n ? n + ' Live' : '';
+    if (tc) tc.textContent = off ? 'Offline' : n ? shown : '';
     if (!SEPTA.hinted && n > 0 && veil.classList.contains('hidden')) {
       SEPTA.hinted = true;
       hintEl.textContent = n + ' SEPTA vehicles are live on the map. Tap a pin for its route. V toggles.';
@@ -7454,6 +7536,7 @@
       dyaw = ((dyaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
       v.yaw += Math.abs(dyaw) <= cap ? dyaw : Math.sign(dyaw) * cap;
       if (v.ug) return;                 // tunnel trolleys aren't drawn — nothing under buildings
+      if (SEPTA.filter && v.route !== SEPTA.filter) return;   // a route search shows that route alone (the pick arrays fill below, so they stay in step)
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
         v.gx = v.dx; v.gz = v.dz;
         v.gy = siteY(v.dx, v.dz, 'road');
@@ -7519,6 +7602,7 @@
     const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces };
     const f = layerFlags();
     for (const k of LAYER_KEYS) if (f[k] !== LAYER_DEFAULTS[k]) toggles[k]();
+    setLapse(false);
     if (!clock.live) { clock.live = true; setClockToNow(); refreshTimeUI(); }
     clearPrefs();   // defaults are not remembered; the next change is
   });
@@ -7812,9 +7896,11 @@
   });
 
   // ---------------------------------------------------------------- address search
-  // Nominatim (OpenStreetMap) geocoding, bounded to the modeled city box — free,
-  // key-less, CORS-open. Blocked (with the button hidden) under the artifact CSP,
-  // same as every other live fetch. Results fly the orbit camera to the spot and
+  // The model's own names first (landmarks, neighborhoods, districts, buildings,
+  // streets: a local index, no network), then a live bus route, then Nominatim
+  // (OpenStreetMap) geocoding bounded to the modeled city box: free, key-less,
+  // CORS-open, but blocked under the artifact CSP like every other live fetch,
+  // where the local index still works. Results fly the camera to the spot and
   // drop a bronze pin + label for 20 s.
   const btnSearch = document.getElementById('btnSearch');
   const searchPanel = document.getElementById('searchpanel');
@@ -7886,37 +7972,139 @@
   function searchGoToBus(v) {
     const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
     searchFlyTo(x, (v.gy || siteY(x, z, 'road')) + 6, z, 220);
+    septaSetFilter(v.route, v.routeLabel);   // the map shows this route alone until the search is cleared
     pickedVeh = v;
     septaCard(v);
     vehinfoEl.hidden = false;
     if (isTouch) toggleSearch(false);
   }
-  function searchSubmit() {
-    const qy = searchInput.value.trim();
-    if (!qy || searchBusy) return;
-    // a bus/trolley route first ("33", "G1", "route 47"): list its live vehicles
-    const rid = qy.toUpperCase().replace(/^(ROUTE|RT|BUS)\s+/, '');
+  // the route filter chip: one route on the map until the search is cleared,
+  // Escape closes the panel, or the chip itself is tapped
+  function septaSetFilter(route, label) {
+    const f = route || null;
+    if (f === SEPTA.filter) return;
+    SEPTA.filter = f; SEPTA.filterLabel = f ? (label || route) : '';
+    const old = document.getElementById('routeChip');
+    if (old) old.remove();
+    if (f) {
+      const el = document.createElement('div');
+      el.id = 'routeChip'; el.className = 'schip'; el.setAttribute('role', 'button'); el.tabIndex = 0;
+      el.textContent = 'Showing route ' + SEPTA.filterLabel + ' only, tap to clear';
+      el.addEventListener('click', () => septaSetFilter(null));
+      el.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); septaSetFilter(null); } });
+      searchOut.prepend(el);
+      if (veil.classList.contains('hidden')) {
+        hintEl.textContent = 'Showing route ' + SEPTA.filterLabel + ' only. Clear it from the search panel.';
+        clearTimeout(septaHintT);
+        septaHintT = setTimeout(setHint, 8000);
+      }
+    }
+    if (septaReady) septaStatus();
+  }
+  // the local name index: every lettered landmark, the neighborhoods and historic
+  // districts, the named buildings and towers, and the painted street names, all
+  // already in scene metres. Built once, on the first search.
+  let nameIx = null;
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, building: 3, street: 4 };
+  const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', building: 'Building', street: 'Street' };
+  function buildNameIx() {
+    const ix = [], seen = new Set();
+    const add = (name, x, z, kind) => {
+      if (!name || !isFinite(x) || !isFinite(z)) return;
+      const s = String(name), key = kind + '|' + s.toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      ix.push({ name: s, lc: s.toLowerCase(), x, z, kind });
+    };
+    for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
+    for (const lm of META_L) {
+      const b = lm && lm.name ? findBuilding(lm.name) : null;
+      if (b) { const c = polyCentroid(b.poly); add(lm.name, c[0], c[1], 'landmark'); }
+    }
+    if (typeof PLACES !== 'undefined' && PLACES) {
+      for (const h of PLACES.hd || []) if (h && h.lbl) add(h.n, h.lbl[0], h.lbl[1], 'district');
+      if (PLACES.nb && PLACES.nb.names) {
+        const L = PLACES.nb.l || [];
+        for (let i = 0; i + 3 < L.length; i += 4) add(PLACES.nb.names[L[i]], L[i + 1], L[i + 2], 'neighborhood');
+      }
+    }
+    if (typeof WIDE_NAMES !== 'undefined' && WIDE_NAMES) for (const w of WIDE_NAMES) add(w.n, w.x, w.z, 'building');
+    for (const b of D.buildings) if (b.name) { const c = polyCentroid(b.poly); add(b.name, c[0], c[1], 'building'); }
+    if (typeof ST_LABELS !== 'undefined' && ST_LABELS && ST_LABELS.names) {
+      // one point per street, the middle of its placements, so a long avenue lands mid-run
+      const L = ST_LABELS.l || [], at = new Map();
+      for (let i = 0; i + 4 < L.length; i += 5) { let a = at.get(L[i]); if (!a) at.set(L[i], a = []); a.push(L[i + 1], L[i + 2]); }
+      at.forEach((a, ni) => { const m = (a.length >> 2) * 2; add(ST_LABELS.names[ni], a[m], a[m + 1], 'street'); });
+    }
+    return ix;
+  }
+  function searchLocal(q) {
+    // prefix matches first, then substrings; within each, landmark > neighborhood
+    // > district > building > street, shorter names first
+    if (!nameIx) nameIx = buildNameIx();
+    const lc = q.toLowerCase(), hits = [];
+    for (const e of nameIx) {
+      const p = e.lc.startsWith(lc) ? 0 : e.lc.includes(lc) ? 1 : -1;
+      if (p >= 0) hits.push([p, KIND_RANK[e.kind], e.lc.length, e]);
+    }
+    hits.sort((a, b) => a[0] - b[0] || a[1] - b[1] || a[2] - b[2]);
+    return hits.slice(0, 5).map((h) => h[3]);
+  }
+  function searchGoToLocal(e) {
+    const gy = siteY(e.x, e.z, 'ground');
+    const wide = e.kind === 'neighborhood' || e.kind === 'district';   // an area reads from higher up and needs no pin
+    searchFlyTo(e.x, gy + (e.kind === 'landmark' ? 30 : 8), e.z, wide ? 600 : e.kind === 'landmark' ? 250 : 220);
+    if (wide) clearSearchMark(); else placeSearchMark(e.x, gy, e.z, e.name);
+    if (isTouch) toggleSearch(false);
+  }
+  function searchLocalSubmit(qy) {
+    if (/^\d+$/.test(qy)) return false;      // a bare number is a route or a house number, never a name
+    const hits = searchLocal(qy);
+    if (!hits.length) return false;
+    searchOut.innerHTML = '';
+    for (const e of hits) {
+      const el = document.createElement('div');
+      el.className = 'srow';
+      el.textContent = e.name + ', ' + KIND_LABEL[e.kind];
+      el.addEventListener('click', () => searchGoToLocal(e));
+      searchOut.appendChild(el);
+    }
+    searchGoToLocal(hits[0]);
+    return true;
+  }
+  function searchRoute(rid) {
+    // a bus/trolley route ("33", "G1", "route 47"): list its live vehicles, nearest first
     const live = [];
     septaVeh.forEach((v) => {
       if (!v.ug && (v.routeLabel.toUpperCase() === rid || v.route.toUpperCase() === rid)) live.push(v);
     });
-    if (live.length) {
-      live.forEach((v) => {
-        const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
-        v._sd = (x - camera.position.x) * (x - camera.position.x) + (z - camera.position.z) * (z - camera.position.z);
-      });
-      live.sort((a2, b2) => a2._sd - b2._sd);
-      searchOut.innerHTML = '<div class="smsg">Route ' + septaEsc(rid) + ': ' + live.length + ' Live, Nearest First</div>';
-      for (const v of live.slice(0, 8)) {
-        const el = document.createElement('div');
-        el.className = 'srow';
-        el.textContent = v.routeLabel + ' To ' + (v.info.dest || 'Unknown') + (v.info.next ? ', Next: ' + v.info.next : '');
-        el.addEventListener('click', () => searchGoToBus(v));
-        searchOut.appendChild(el);
-      }
-      searchGoToBus(live[0]);
-      return;
+    if (!live.length) return false;
+    live.forEach((v) => {
+      const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
+      v._sd = (x - camera.position.x) * (x - camera.position.x) + (z - camera.position.z) * (z - camera.position.z);
+    });
+    live.sort((a2, b2) => a2._sd - b2._sd);
+    searchOut.innerHTML = '<div class="smsg">Route ' + septaEsc(rid) + ': ' + live.length + ' Live, Nearest First</div>';
+    for (const v of live.slice(0, 8)) {
+      const el = document.createElement('div');
+      el.className = 'srow';
+      el.textContent = v.routeLabel + ' To ' + (v.info.dest || 'Unknown') + (v.info.next ? ', Next: ' + v.info.next : '');
+      el.addEventListener('click', () => searchGoToBus(v));
+      searchOut.appendChild(el);
     }
+    searchGoToBus(live[0]);
+    return true;
+  }
+  function searchSubmit() {
+    const qy = searchInput.value.trim();
+    if (!qy || searchBusy) return;
+    septaSetFilter(null);                    // a new query drops the route filter; a route hit sets it again
+    const rid = qy.toUpperCase().replace(/^(ROUTE|RT|BUS)\s+/, '');
+    const routeish = /^[A-Z]?\d{1,3}[A-Z]?$/.test(rid);   // "33", "G1", "47M": a live route outranks a street named 33rd
+    if (routeish && searchRoute(rid)) return;
+    if (searchLocalSubmit(qy)) return;
+    if (!routeish && searchRoute(rid)) return;
+    if (!septaCanFetch) { searchOut.innerHTML = '<div class="smsg">No match in the model. Address lookup needs the live site.</div>'; return; }
     searchBusy = true;
     const seq = ++searchSeq;                // a later submit or a closed panel orphans this reply
     searchOut.innerHTML = '<div class="smsg">Searching&hellip;</div>';
@@ -7945,17 +8133,18 @@
         if (searchPanel.classList.contains('open')) searchOut.innerHTML = '<div class="smsg">Search failed. Try again in a moment.</div>';
       });
   }
-  if (septaCanFetch) {
-    btnSearch.addEventListener('click', () => toggleSearch());
-    document.getElementById('searchGo').addEventListener('click', searchSubmit);
-    searchInput.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') searchSubmit();
-      else if (e.key === 'Escape') toggleSearch(false);
-      e.stopPropagation();
-    });
-  } else {
-    btnSearch.style.display = 'none';
-  }
+  // wired everywhere: the local index needs no network (only Nominatim is gated above)
+  btnSearch.addEventListener('click', () => toggleSearch());
+  document.getElementById('searchGo').addEventListener('click', searchSubmit);
+  searchInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') searchSubmit();
+    else if (e.key === 'Escape') { septaSetFilter(null); toggleSearch(false); }
+    e.stopPropagation();
+  });
+  searchInput.addEventListener('input', () => {
+    // an emptied box clears the results, and the route filter with them
+    if (!searchInput.value.trim()) { septaSetFilter(null); searchOut.innerHTML = ''; }
+  });
 
   // The Market–Frankford El's real alignment (OSM railway=subway elevated + approach
   // ways reduced to one centerline per corridor, local meters): Callowhill portal →
@@ -8412,63 +8601,46 @@
   });
 
   step('Charting the viewpoints', () => {
+    // city-scale stops for the 'Take me to' rows and the tour (the old Society
+    // Hill orbit set is retired; addViewpoint still feeds the tour in order).
+    // Scene-local metres: a camera a few hundred metres back [x, z, height
+    // above its ground] aimed at a target [x, z, height above its ground]; yaw
+    // and pitch fall out of the delta the way applyFly reads them (yaw 0 north,
+    // pitch up positive).
     const tc = towersCenter;
-    addViewpoint('The Towers from the river', () => {
-      setMode(MODE.ORBIT);
-      orbit.goalTarget.set(tc.x, 46, tc.z);
-      orbit.goalR = 520; orbit.goalTheta = Math.PI * 0.06; orbit.goalPhi = 1.28;
-    });
-    addViewpoint('The plaza, on foot', () => {
-      setMode(MODE.WALK);
-      walk.pos.set(tc.x - 8, 1.7, tc.z + 16);
-      walk.yaw = Math.atan2(tc.x + 9 - walk.pos.x, -(tc.z - 41 - walk.pos.z));
-      walk.pitch = 0.3; walkSpawned = true;
-    });
-    addViewpoint('Aerial — the whole quarter', () => {
-      setMode(MODE.ORBIT);
-      orbit.goalTarget.set(tc.x - 260, 0, tc.z + 60);
-      orbit.goalR = 1450; orbit.goalTheta = 0.9; orbit.goalPhi = 0.72;
-    });
-    const hh = findBuilding('Head House');
-    if (hh) {
-      const [cx, cz] = polyCentroid(hh.poly);
-      addViewpoint('Head House Square', () => {
-        setMode(MODE.ORBIT);
-        orbit.goalTarget.set(cx, 12, cz);
-        orbit.goalR = 170; orbit.goalTheta = 1.35; orbit.goalPhi = 1.1;
+    const geo = (la, lo) => [(lo - SEPTA_GEO.lon0) * SEPTA_GEO.mx, -(la - SEPTA_GEO.lat0) * SEPTA_GEO.mz];
+    const ih = geo(39.94883, -75.15003);      // Independence Hall, the label's fix
+    const bb = geo(39.93951, -75.13309);      // USS New Jersey at her Camden moorings
+    const STOPS = [
+      ['cityhall', 'City Hall', [-1560, -280, 140], [-1603, -802, 95]],                          // up Broad Street from the south
+      ['schuylkill', 'Schuylkill Skyline', [-3150, -900, 80], [-2250, -950, 150]],                // from the river, looking east
+      ['artmuseum', 'Art Museum Steps', [-2823, -1966, 70], [-3112, -2242, 30]],                  // up the Parkway
+      ['towers', 'Society Hill Towers', [470, 120, 160], [tc.x, tc.z, 60]],                        // from over the Delaware
+      ['indhall', 'Independence Hall', [ih[0], ih[1] - 420, 100], [ih[0], ih[1], 25]],           // across the Mall, looking south
+      ['battleship', 'Battleship New Jersey', [bb[0] - 330, bb[1] + 200, 80], [bb[0], bb[1], 12]],   // from mid-river
+      ['airport', 'Airport Approach', [-6934, 8107, 210], [-8334, 7857, 15]],                     // on final from the east
+      ['wissahickon', 'The Wissahickon', [-6800, -8950, 260], [-5866, -9346, 40]],                // over Manayunk into the gorge
+    ];
+    const poseOf = ([, , [px, pz, ph], [tx, tz, th]]) => {
+      const py = siteY(px, pz, 'ground') + ph, ty = siteY(tx, tz, 'ground') + th;
+      const dx = tx - px, dz = tz - pz;
+      return { px, py, pz, yaw: Math.atan2(dx, -dz), pitch: Math.atan2(ty - py, Math.hypot(dx, dz)) };
+    };
+    for (const s of STOPS) {
+      addViewpoint(s[1], (onLand) => {
+        const p = poseOf(s);
+        const d = Math.hypot(p.px - camera.position.x, p.pz - camera.position.z);
+        glideFly(p.px, p.py, p.pz, p.yaw, p.pitch, 2500 + Math.min(2500, d * 0.2), onLand);   // ~2.5 s, up to 5 s across the city
+      });
+      const vp = viewpoints[viewpoints.length - 1];
+      const row = layersPanel.querySelector('[data-stop="' + s[0] + '"]');
+      if (row) row.addEventListener('click', () => {
+        tourStop();
+        vp.fn();
+        if (isTouch) closePanels();   // free the screen; desktop keeps the list up
       });
     }
-    const sp = findBuilding("Saint Peter's Church");
-    if (sp) {
-      const [cx, cz] = polyCentroid(sp.poly);
-      addViewpoint("St. Peter's steeple", () => {
-        setMode(MODE.ORBIT);
-        orbit.goalTarget.set(cx, 30, cz);
-        orbit.goalR = 200; orbit.goalTheta = 0.5; orbit.goalPhi = 1.05;
-      });
-    }
-    addViewpoint("Penn's Landing", () => {
-      setMode(MODE.ORBIT);
-      const p = waterPoint(-140, -60);
-      orbit.goalTarget.set(p[0], 10, p[1]);
-      orbit.goalR = 420; orbit.goalTheta = 2.6; orbit.goalPhi = 1.15;
-    });
-    // the viewpoints dropdown is retired from the bar for now; the list stays
-    // wired so a future UI (or __dbg) can jump to them
-    const sel = document.getElementById('viewpoints');
-    if (sel) {
-      viewpoints.forEach((v, i) => {
-        const o = document.createElement('option');
-        o.value = String(i); o.textContent = v.name;
-        sel.appendChild(o);
-      });
-      sel.addEventListener('change', () => {
-        const i = parseInt(sel.value, 10);
-        if (!isNaN(i) && viewpoints[i]) { interacted = true; introSpin = false; viewpoints[i].fn(); }
-        sel.value = '';
-        sel.blur();
-      });
-    }
+    if (btnTour) btnTour.addEventListener('click', () => { if (tour.on) tourStop(); else tourStart(); });
   });
 
   // labels + about wiring
@@ -10404,7 +10576,7 @@
   const glintDir = new V3(0.3, 0.8, 0.2);                 // what the water sparkles toward
   const _vA = new THREE.Vector3();
   let moonNow = { el: -90, az: 0, k: 0.5, wax: true };
-  let lastEnvEl = 999;
+  let lastEnvEl = 999, envGap = 0, envNextT = 0;   // envGap: a floor between PMREM rebakes (the time-lapse sets it)
   const _c1 = new THREE.Color(), _c2 = new THREE.Color();
   const _pz = new THREE.Color(), _ph = new THREE.Color(), _pg = new THREE.Color();   // the frame's sky palette
   let _ephMs = NaN, _ephSun = null, _ephMoon = null;   // solar()/lunar() memo: the clock moves once a minute
@@ -10499,7 +10671,7 @@
       nbMat.opacity = nbFade * 0.96;
       nbMesh.visible = nbFade > 0.02;
     }
-    if (Math.abs(el - lastEnvEl) > 3) { lastEnvEl = el; refreshEnv(); }
+    if (Math.abs(el - lastEnvEl) > 3 && (!envGap || performance.now() >= envNextT)) { lastEnvEl = el; envNextT = performance.now() + envGap; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.16;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.9;
     // (core glass night lighting lives in rylandGlassMat's panel shader, via uNight)
@@ -10533,16 +10705,18 @@
   }
   function toggleTimePanel(open) { openPanel('time', open); }
   btnTime.addEventListener('click', () => toggleTimePanel());
-  timeSlider.addEventListener('input', () => { clock.live = false; clock.minutes = parseInt(timeSlider.value, 10); refreshTimeUI(); savePrefs(); });
+  timeSlider.addEventListener('input', () => { setLapse(false); clock.live = false; clock.minutes = parseInt(timeSlider.value, 10); refreshTimeUI(); savePrefs(); });
   timeDate.addEventListener('change', () => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(timeDate.value);
     if (!m) return;
+    setLapse(false);
     clock.live = false; clock.y = +m[1]; clock.m = +m[2]; clock.d = +m[3];
     refreshTimeUI(); savePrefs();
   });
-  document.getElementById('timeNow').addEventListener('click', () => { clock.live = true; setClockToNow(); refreshTimeUI(); savePrefs(); });
+  document.getElementById('timeNow').addEventListener('click', () => { setLapse(false); clock.live = true; setClockToNow(); refreshTimeUI(); savePrefs(); });
   for (const btn of timePanel.querySelectorAll('[data-preset]')) {
     btn.addEventListener('click', () => {
+      setLapse(false);
       clock.live = false;
       const t = sunTimes(clock);
       const p = btn.getAttribute('data-preset');
@@ -10553,9 +10727,81 @@
       refreshTimeUI(); savePrefs();
     });
   }
+  // --- sun time-lapse: ~2 clock minutes a frame (dt-scaled), the readout at
+  // 4 Hz, the glass rebaked at most every 1.5 s (envGap), the clock pinned so
+  // prefs and the hash carry the moment it stops on
+  const timePlay = document.getElementById('timePlay');
+  const lapse = { on: false, acc: 0, uiT: 0 };
+  function setLapse(on) {
+    on = !!on && !reducedMotion;
+    if (on === lapse.on) return;
+    lapse.on = on; lapse.acc = 0;
+    envGap = on ? 1500 : 0;
+    if (on) clock.live = false;
+    timePlay.textContent = on ? 'Pause' : 'Play';
+    timePlay.setAttribute('aria-pressed', on ? 'true' : 'false');
+    refreshTimeUI(); savePrefs();
+  }
+  function stepLapse(now, dt) {
+    if (!lapse.on) return;
+    lapse.acc += dt * 120;                   // 2 min a frame at 60 fps, whatever the frame rate
+    const n = Math.floor(lapse.acc);
+    if (!n) return;
+    lapse.acc -= n;
+    clock.minutes += n;
+    if (clock.minutes > 1439) {              // past midnight: the next day, date input included
+      clock.minutes -= 1440;
+      const d = new Date(Date.UTC(clock.y, clock.m - 1, clock.d + 1));
+      clock.y = d.getUTCFullYear(); clock.m = d.getUTCMonth() + 1; clock.d = d.getUTCDate();
+    }
+    if (now - lapse.uiT > 250) { lapse.uiT = now; refreshTimeUI(); }
+  }
+  if (reducedMotion) timePlay.hidden = true;   // no racing sun for reduced-motion readers
+  else timePlay.addEventListener('click', () => setLapse(!lapse.on));
   setClockToNow();
   refreshTimeUI();
   let lastMinuteTick = -1;
+  // --- screenshot: the GL frame alone (no HUD) with a small stamp, offered to
+  // the share sheet on touch where files are shareable, saved as a download elsewhere
+  const btnShot = document.getElementById('btnShot');
+  btnShot.addEventListener('click', () => {
+    if (!veil.classList.contains('hidden')) return;
+    frame(performance.now(), true);          // a fresh render, read back in this same tick (no preserveDrawingBuffer)
+    const w = canvas.width, h = canvas.height;
+    if (!w || !h) return;
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const g = cv.getContext('2d');
+    g.drawImage(canvas, 0, 0);
+    const s = Math.max(1, h / 900), pad = 16 * s;
+    const site = 'philly3d.com', when = clockDateStr() + ', ' + timeClockEl.textContent.replace(' (Live)', '');
+    const fSite = '600 ' + Math.round(21 * s) + 'px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+    const fWhen = '500 ' + Math.round(12 * s) + 'px "Montserrat", "Avenir Next", "Segoe UI", sans-serif';
+    g.font = fSite; const w1 = g.measureText(site).width;
+    g.font = fWhen; const w2 = g.measureText(when).width;
+    const bw = Math.max(w1, w2) + pad * 2, bh = 56 * s, bx = pad, by = h - pad - bh;
+    g.fillStyle = 'rgba(23,21,18,0.62)';
+    g.fillRect(bx, by, bw, bh);
+    g.textBaseline = 'alphabetic';
+    g.fillStyle = '#c89b5e'; g.font = fSite; g.fillText(site, bx + pad, by + 26 * s);
+    g.fillStyle = 'rgba(239,233,220,0.9)'; g.font = fWhen; g.fillText(when, bx + pad, by + 45 * s);
+    const hh = Math.floor(clock.minutes / 60), mm = Math.round(clock.minutes % 60);
+    const name = 'philly3d-' + clockDateStr() + '-' + (hh < 10 ? '0' : '') + hh + (mm < 10 ? '0' : '') + mm + '.png';
+    cv.toBlob((blob) => {
+      if (!blob) return;
+      let file = null;
+      try { file = new File([blob], name, { type: 'image/png' }); } catch (e) { }
+      if (isTouch && file && navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: 'Philly3D' }).catch(() => { });
+        return;
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = name;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    }, 'image/png');
+  });
 
   // ---------------------------------------------------------------- build & loop
   const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Planting the street trees']);
@@ -10665,8 +10911,11 @@
       const nowMin = Math.floor(Date.now() / 60000);
       if (nowMin !== lastMinuteTick) { lastMinuteTick = nowMin; setClockToNow(); refreshTimeUI(); }
     }
+    stepLapse(now, dt);
     updateWeatherFX(now, dt);
     applyLighting();
+    stepTour(now);
+    stepGlide(now);
     if (mode === MODE.ORBIT) applyOrbit(dt);
     else if (mode === MODE.WALK) applyWalk(dt);
     else applyFly(dt);
