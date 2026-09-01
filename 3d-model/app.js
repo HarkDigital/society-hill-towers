@@ -7997,14 +7997,15 @@
   const FLIGHT_PROXY = 'https://philly3d.com/adsb';
   const FLIGHT_TGT = 'https://opendata.adsb.fi/api/v2/lat/39.872/lon/-75.241/dist/30';
   // the public passthroughs stay in rotation behind the proxy slot: dead as of
-  // Aug 2026 but they have a habit of resurrecting — rotate to the next on any
-  // failure and stay with whichever answers
+  // Aug 2026 but they have a habit of resurrecting — rotate to the next after
+  // two straight failures (one blip on the proxy must not walk the whole dead
+  // list, ~50 s of dead reckoning) and stay with whichever answers
   const FLIGHT_HOSTS = [
     FLIGHT_PROXY,
     'https://api.allorigins.win/raw?url=' + encodeURIComponent(FLIGHT_TGT),
     'https://api.codetabs.com/v1/proxy?quest=' + encodeURIComponent(FLIGHT_TGT),
   ].filter(Boolean);
-  const FLIGHTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, host: 0 };
+  const FLIGHTS = { on: true, ok: false, fails: 0, hostFails: 0, nextT: 0, busy: false, host: 0 };
   const flightMap = new Map();
   let flightMesh = null, flightStrobe = null, flightPin = null, flightPinH = null, heliMesh = null, heliRotor = null, flightReady = false, pickedPlane = null;
   const flightPick = [], heliPick = [];
@@ -8013,6 +8014,34 @@
   const FLIGHT_CAP = 80;
   const btnFlights = document.getElementById('btnFlights');
   const _fq = new THREE.Quaternion(), _fe = new THREE.Euler();
+  function flushInst(m, colorFrom) {
+    // upload only the live instances: three's default range is the whole
+    // capacity buffer, and it snaps back to "all" after every ranged upload,
+    // so the range is restated before each flag. colorFrom >= 0 also ships
+    // instanceColor from that slot up. A zero count skips entirely (nothing
+    // draws, and a 0-length range means "everything" on WebGL2).
+    const n = m.count;
+    if (!n) return;
+    m.instanceMatrix.updateRange.offset = 0;
+    m.instanceMatrix.updateRange.count = n * 16;
+    m.instanceMatrix.needsUpdate = true;
+    if (colorFrom >= 0 && colorFrom < n && m.instanceColor) {
+      m.instanceColor.updateRange.offset = colorFrom * 3;
+      m.instanceColor.updateRange.count = (n - colorFrom) * 3;
+      m.instanceColor.needsUpdate = true;
+    }
+  }
+  // the flight and ship cards rebuild every frame; innerHTML only re-parses
+  // when the text actually changes. Keyed on the picked object and the string,
+  // plus the node we wrote: any other card (bus, station, tree) landing in the
+  // same element between two picks of the same object invalidates it.
+  let cardObj = null, cardHtml = '', cardNode = null;
+  function cardSet(obj, html) {
+    if (obj === cardObj && html === cardHtml && vehinfoBody.firstChild === cardNode) return;
+    cardObj = obj; cardHtml = html;
+    vehinfoBody.innerHTML = html;
+    cardNode = vehinfoBody.firstChild;
+  }
   const FLIGHT_LEN = { A1: 12, A2: 24, A3: 38, A4: 48, A5: 64, A7: 12 };
   // rotorcraft: ADS-B category A7 when broadcast, else the common type codes
   // (police, medevac, news, tours — the Delaware corridor sees plenty)
@@ -8184,15 +8213,18 @@
   function flightPoll() {
     if (!septaCanFetch || !FLIGHTS.on || FLIGHTS.busy || document.hidden) return;
     FLIGHTS.busy = true;
-    // 15 s cap: a dead passthrough behind Cloudflare hangs ~20 s before its
-    // 522, and an untimed fetch can stall the whole rotation for minutes
-    fetch(FLIGHT_HOSTS[FLIGHTS.host], { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })
+    // 15 s cap on the proxy: a dead passthrough behind Cloudflare hangs ~20 s
+    // before its 522, and an untimed fetch can stall the whole rotation for
+    // minutes. The public fallbacks get 6 s: they are probes, not the feed.
+    const hostMs = FLIGHT_HOSTS[FLIGHTS.host] === FLIGHT_PROXY ? 15000 : 6000;
+    fetch(FLIGHT_HOSTS[FLIGHTS.host], { signal: AbortSignal.timeout ? AbortSignal.timeout(hostMs) : undefined })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error('http ' + r.status))))
       .then((js) => {
         FLIGHTS.busy = false;
         if (!js || (!js.aircraft && !js.ac)) throw new Error('bad payload');
         FLIGHTS.ok = true;
         FLIGHTS.fails = 0;
+        FLIGHTS.hostFails = 0;
         const seen = new Set();
         const now = performance.now();
         for (const a of (js && js.aircraft) || (js && js.ac) || []) {
@@ -8233,7 +8265,9 @@
       })
       .catch(() => {
         FLIGHTS.busy = false; FLIGHTS.fails++;
-        FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length;
+        // two consecutive misses on the same host before rotating; a lone
+        // blip on the proxy just retries it in 8 s
+        if (++FLIGHTS.hostFails >= 2) { FLIGHTS.hostFails = 0; FLIGHTS.host = (FLIGHTS.host + 1) % FLIGHT_HOSTS.length; }
         FLIGHTS.nextT = performance.now() + (FLIGHTS.fails > FLIGHT_HOSTS.length * 3 ? 180000 : 8000);
         if (!FLIGHTS.ok && FLIGHTS.fails === FLIGHT_HOSTS.length * 3) console.warn('Live flights: every CORS passthrough failed — deploy 3d-model/flight-proxy-worker.js (free, ~5 min) and set FLIGHT_PROXY in app.js');
         flightStatus();
@@ -8269,11 +8303,11 @@
   function flightCard(p) {
     const alt = p.ground ? 'On The Ground' : Math.round((p.dy + 8.34) / 0.3048 / 25) * 25 + ' ft, ' +
       (p.vy > 2 ? 'Climbing' : p.vy < -2 ? 'Descending' : 'Level');
-    vehinfoBody.innerHTML =
+    cardSet(p,
       '<span class="vroute" style="background:#3a6ea5">' + septaEsc(p.call) + '</span>' +
       '<span class="vdest">' + septaEsc(p.type) + '</span>' +
       '<div class="vmeta">' + septaEsc(alt + ', ' + Math.round(p.gs) + ' kt') + '</div>' +
-      (p.est ? '<div class="vmeta">Estimated Track, Awaiting Signal</div>' : '');
+      (p.est ? '<div class="vmeta">Estimated Track, Awaiting Signal</div>' : ''));
   }
   function syncFlightsBtn() { if (btnFlights) btnFlights.classList.toggle('on', FLIGHTS.on); }
   function toggleFlights() {
@@ -8369,12 +8403,12 @@
     flightStrobe.count = i;
     flightPin.count = iF;
     flightPinH.count = iH;
-    flightMesh.instanceMatrix.needsUpdate = true;
-    heliMesh.instanceMatrix.needsUpdate = true;
-    heliRotor.instanceMatrix.needsUpdate = true;
-    flightStrobe.instanceMatrix.needsUpdate = true;
-    flightPin.instanceMatrix.needsUpdate = true;
-    flightPinH.instanceMatrix.needsUpdate = true;
+    flushInst(flightMesh);
+    flushInst(heliMesh);
+    flushInst(heliRotor);
+    flushInst(flightStrobe);
+    flushInst(flightPin);
+    flushInst(flightPinH);
     if (pickedPlane) {
       flightCard(pickedPlane);
       _ssv.set(pickedPlane.dx, pickedPlane.dy + pickedPlane.len * 0.12 + 6, pickedPlane.dz).project(camera);
@@ -8445,10 +8479,11 @@
   }
   const SHIP_CAP = 48;
   const btnShips = document.getElementById('btnShips');
-  const SHIP_TYPE = (t) => t >= 80 && t < 90 ? ['Tanker', 0x2e2e33] : t >= 70 && t < 80 ? ['Cargo Ship', 0x5a3a34]
-    : t >= 60 && t < 70 ? ['Passenger Vessel', 0x8a8d92] : (t === 31 || t === 32 || t === 52) ? ['Tug', 0x3d5a3f]
-    : t === 30 ? ['Fishing Vessel', 0x4a5560] : (t === 36 || t === 37) ? ['Pleasure Craft', 0x8f8f88]
-    : t === 35 ? ['Military Vessel', 0x4c4f45] : ['Vessel', 0x555a60];
+  // AIS type code to a card name; the hull keeps the geometry's own scheme
+  const SHIP_TYPE = (t) => t >= 80 && t < 90 ? 'Tanker' : t >= 70 && t < 80 ? 'Cargo Ship'
+    : t >= 60 && t < 70 ? 'Passenger Vessel' : (t === 31 || t === 32 || t === 52) ? 'Tug'
+    : t === 30 ? 'Fishing Vessel' : (t === 36 || t === 37) ? 'Pleasure Craft'
+    : t === 35 ? 'Military Vessel' : 'Vessel';
   function shipGeom() {
     // unit hull: length 1 along +x, unit beam along z, scaled per instance
     const parts = [];
@@ -8476,6 +8511,9 @@
     shipMesh = new THREE.InstancedMesh(shipGeom(), septaMats.body, SHIP_CAP);
     shipMesh.frustumCulled = false;
     shipMesh.count = 0;
+    // neutral instance tint written once: the geometry carries its own scheme
+    for (let k = 0; k < SHIP_CAP; k++) shipMesh.setColorAt(k, _sc.setRGB(1, 1, 1));
+    shipMesh.instanceColor.needsUpdate = true;
     groupCity.add(shipMesh);
     // anchor badge, billboarded and distance-scaled like the aircraft pins
     shipAnchor = new THREE.InstancedMesh(
@@ -8497,7 +8535,8 @@
     const mmsi = meta.MMSI;
     if (!mmsi) return;
     let v = shipMap.get(mmsi);
-    if (!v) { v = { mmsi, len: 30, beam: 8, tn: 'Vessel', hull: 0x555a60, sog: 0, cog: 0, moored: false }; shipMap.set(mmsi, v); shipStatus(); }
+    // stamped at birth so a vessel that never fixes inside the box still ages out
+    if (!v) { v = { mmsi, ft: performance.now(), len: 30, beam: 8, tn: 'Vessel', sog: 0, cog: 0, moored: false }; shipMap.set(mmsi, v); }
     if (meta.ShipName && meta.ShipName.trim()) v.name = meta.ShipName.trim();
     if (d.MessageType === 'PositionReport' && d.Message && d.Message.PositionReport) {
       const m = d.Message.PositionReport;
@@ -8513,7 +8552,8 @@
       const gms = v.sog * 0.5144;
       v.vx = Math.sin((v.cog || 0) * DEG) * gms;
       v.vz = -Math.cos((v.cog || 0) * DEG) * gms;
-      if (v.dx === undefined || Math.hypot(x - v.dx, z - v.dz) > 1500) { v.dx = x; v.dz = z; }
+      if (v.dx === undefined) { v.dx = x; v.dz = z; shipStatus(); }   // first fix inside the box: now it counts
+      else if (Math.hypot(x - v.dx, z - v.dz) > 1500) { v.dx = x; v.dz = z; }
       SHIPS.ok = true;
     } else if (d.MessageType === 'ShipStaticData' && d.Message && d.Message.ShipStaticData) {
       const s = d.Message.ShipStaticData;
@@ -8523,12 +8563,12 @@
         if (L > 4) v.len = clamp(L, 8, 340);
         if (B > 1) v.beam = clamp(B, 3, 52);
       }
-      if (s.Type) { const [tn, hull] = SHIP_TYPE(s.Type); v.tn = tn; v.hull = hull; }
+      if (s.Type) v.tn = SHIP_TYPE(s.Type);
       if (s.Destination && s.Destination.trim()) v.dest = s.Destination.trim();
     }
   }
   function shipConnect() {
-    if (!AIS_KEY || !septaCanFetch || SHIPS.sock) return;
+    if (!SHIPS.on || !AIS_KEY || !septaCanFetch || SHIPS.sock) return;
     try {
       const ws = new WebSocket('wss://stream.aisstream.io/v0/stream');
       ws.binaryType = 'arraybuffer';
@@ -8552,31 +8592,35 @@
   }
   function shipTest() {
     const now = performance.now();
-    const mk = (mmsi, x, z, hdg, sog, len, beam, name, tn, hull, dest, moored) => {
+    const mk = (mmsi, x, z, hdg, sog, len, beam, name, tn, dest, moored) => {
       const gms = sog * 0.5144;
       shipMap.set(mmsi, { mmsi, fx: x, fz: z, ft: now, dx: x, dz: z, sog, cog: hdg, hdg,
         vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms,
-        len, beam, name, tn, hull, dest, moored: !!moored });
+        len, beam, name, tn, dest, moored: !!moored });
     };
-    mk(1001, 620, -250, 12, 9, 182, 28, 'MSC ALTAIR', 'Cargo Ship', 0x5a3a34, 'PHILADELPHIA');
-    mk(1002, 680, 2500, 195, 5, 28, 9, 'DELAWARE RESPONDER', 'Tug', 0x3d5a3f, 'ASSIST');
-    mk(1003, 760, 1400, 90, 0, 224, 32, 'OVERSEAS LUNA', 'Tanker', 0x2e2e33, 'PAULSBORO', true);
+    mk(1001, 620, -250, 12, 9, 182, 28, 'MSC ALTAIR', 'Cargo Ship', 'PHILADELPHIA');
+    mk(1002, 680, 2500, 195, 5, 28, 9, 'DELAWARE RESPONDER', 'Tug', 'ASSIST');
+    mk(1003, 760, 1400, 90, 0, 224, 32, 'OVERSEAS LUNA', 'Tanker', 'PAULSBORO', true);
     shipStatus();
     return shipMap.size;
   }
   function shipStatus() {
     if (!btnShips) return;
-    btnShips.title = 'Live Ships (H): ' + shipMap.size + ' Vessels Tracked';
+    // only vessels with a fix inside the model box count; the stream's bounding
+    // box also hears river traffic 10 km out that never renders
+    let n = 0;
+    for (const v of shipMap.values()) if (v.fx !== undefined) n++;
+    btnShips.title = 'Live Ships (H): ' + n + ' Vessels Tracked';
     const sc = document.getElementById('shipCount');
-    if (sc) sc.textContent = shipMap.size ? String(shipMap.size) : '';
+    if (sc) sc.textContent = n ? String(n) : '';
   }
   function shipCard(v) {
     const move = v.moored ? 'Moored' : Math.round(v.sog * 10) / 10 + ' kt';
-    vehinfoBody.innerHTML =
+    cardSet(v,
       '<span class="vroute" style="background:#1f4f7a">' + septaEsc(v.tn) + '</span>' +
       '<span class="vdest">' + septaEsc(v.name || 'MMSI ' + v.mmsi) + '</span>' +
       '<div class="vmeta">' + septaEsc(move + ', ' + Math.round(v.len) + ' m') + '</div>' +
-      (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : '');
+      (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : ''));
   }
   function syncShipsBtn() { if (btnShips) btnShips.classList.toggle('on', SHIPS.on); }
   function shipRelease() {
@@ -8587,7 +8631,9 @@
     if (!AIS_KEY || !septaCanFetch) return;
     SHIPS.on = !SHIPS.on;
     syncShipsBtn();
-    if (!SHIPS.on) { shipRelease(); if (pickedShip) { pickedShip = null; vehinfoEl.hidden = true; } }
+    // off parks the retry clock too: shipRelease nulls onclose, so nothing
+    // else would ever push retryT past the next frame
+    if (!SHIPS.on) { shipRelease(); SHIPS.retryT = Infinity; if (pickedShip) { pickedShip = null; vehinfoEl.hidden = true; } }
     else { SHIPS.backoff = 15000; SHIPS.retryT = 0; }
   }
   document.addEventListener('visibilitychange', () => {
@@ -8602,19 +8648,20 @@
     // without a key the layer stays out of the panel, but injected test
     // vessels (__dbg.shipTest) still render so the pipeline stays provable
     if (!AIS_KEY || !septaCanFetch) { btnShips.style.display = 'none'; if (!shipMap.size) return; }
-    if (!SHIPS.sock && !document.hidden && now >= SHIPS.retryT) shipConnect();
     if (!SHIPS.on) {
       if (shipMesh.count) { shipMesh.count = 0; shipMesh.instanceMatrix.needsUpdate = true; shipAnchor.count = 0; shipAnchor.instanceMatrix.needsUpdate = true; }
       return;
     }
+    if (!SHIPS.sock && !document.hidden && now >= SHIPS.retryT) shipConnect();   // only while the layer is on
     _aqB.copy(camera.quaternion);   // fresh billboard pose for the anchor badges
     let i = 0;
     const gone = [];
     for (const v of shipMap.values()) {
       if (i >= SHIP_CAP) break;
-      if (v.dx === undefined) continue;
+      // the age prune comes first so vessels heard but never fixed in the box age out too
       const age = (now - v.ft) / 1000;
       if (age > 1800) { gone.push(v.mmsi); continue; }
+      if (v.dx === undefined) continue;
       const px = v.moored ? v.fx : v.fx + v.vx * Math.min(age, 600);
       const pz = v.moored ? v.fz : v.fz + v.vz * Math.min(age, 600);
       if (px < -12500 || px > 17000 || pz < -22000 || pz > 10000) { gone.push(v.mmsi); continue; }
@@ -8629,7 +8676,6 @@
       _ss.set(v.len, clamp(v.len * 0.09, 2.5, 16), v.beam);
       _sm.compose(_sp, _fq, _ss);
       shipMesh.setMatrixAt(i, _sm);
-      shipMesh.setColorAt(i, _sc.setRGB(1, 1, 1));   // neutral: the geometry carries its own scheme
       // the anchor pin floats above the masthead, holding size like the aircraft badges
       _sp.set(v.dx, TERRAIN.water + clamp(v.len * 0.09, 2.5, 16) + 2, v.dz);
       const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
@@ -8644,10 +8690,9 @@
       shipStatus();
     }
     shipMesh.count = i;
-    shipMesh.instanceMatrix.needsUpdate = true;
-    if (shipMesh.instanceColor) shipMesh.instanceColor.needsUpdate = true;
+    flushInst(shipMesh);
     shipAnchor.count = i;
-    shipAnchor.instanceMatrix.needsUpdate = true;
+    flushInst(shipAnchor);
     if (pickedShip) {
       shipCard(pickedShip);
       _ssv.set(pickedShip.dx, TERRAIN.water + clamp(pickedShip.len * 0.09, 2.5, 16) + 6, pickedShip.dz).project(camera);
@@ -8685,6 +8730,7 @@
   const CAR_PAL = [0x7e8287, 0x9a9a96, 0x1d1f24, 0x54565b, 0x7e8287, 0x9a9a96, 0x1d1f24, 0x6e2b28, 0x2c4363, 0x6e6353, 0x2e4a38];
   const CAR_OFFW = [4.6, 3.6, 2.7, 2.3, 2.0, 1.6];      // lane offset from centerline by class
   const trafficRuns = [];
+  const carSlot = [];   // which car sits in each instance slot, so tints are rewritten only when a slot changes hands
   let carMesh = null, carLights = null, trafficReady = false, trafficCars = 0;
   let trafficNextRecon = 0, trafficLastMin = -1, trafficLastDate = '', trafficFrame = 0;
   function carGeom() {
@@ -8978,7 +9024,7 @@
     const night = clamp((nightUniform.value - 0.06) / 0.25, 0, 1);
     carLights.material.opacity = night;
     trafficFrame++;
-    let i = 0;
+    let i = 0, cDirty = -1;   // lowest slot that changed hands this frame; tints upload from there
     for (const r of trafficRuns) {
       const cars = r.cars;
       for (let c = cars.length - 1; c >= 0; c--) {
@@ -9014,7 +9060,14 @@
         _ss.set(fade, fade, fade);
         _sm.compose(_sp, _sq, _ss);
         carMesh.setMatrixAt(i, _sm);
-        carMesh.setColorAt(i, _sc.setHex(car.col));
+        // slots are dealt in iteration order, which shifts on every spawn, death
+        // and transfer (any frame, not just reconcile): retint only a slot whose
+        // occupant changed, and nothing on a frame where none did
+        if (carSlot[i] !== car) {
+          carSlot[i] = car;
+          carMesh.setColorAt(i, _sc.setHex(car.col));
+          if (cDirty < 0) cDirty = i;
+        }
         if (night > 0) {
           // the lamp pair grows with distance so it never falls under a couple
           // of pixels — headlights read from blocks away, sheet metal doesn't
@@ -9028,9 +9081,8 @@
     }
     carMesh.count = i;
     carLights.count = night > 0 ? i : 0;
-    carMesh.instanceMatrix.needsUpdate = true;
-    if (carMesh.instanceColor) carMesh.instanceColor.needsUpdate = true;
-    carLights.instanceMatrix.needsUpdate = true;
+    flushInst(carMesh, cDirty);
+    if (night > 0) flushInst(carLights);   // daylight lamps are invisible at opacity 0: no upload
     TRAFFIC.n = i;
   }
 
@@ -9414,15 +9466,27 @@
     sleet: { cloud_cover: 96, precipitation: 1.4, weather_code: 66, wind_speed_10m: 18, temperature_2m: 31 },
   };
   const wxForced = (/[?&]wx=([a-z]+)/i.exec(location.search) || [])[1];
+  // a miss retries on its own clock, 60 s doubling to the 15 min cadence, one
+  // pending timer at a time; a success drops it. Hidden tabs skip the fetch
+  // and catch up on return once the last good report is 15 min stale.
+  let wxOkT = -Infinity, wxRetry = 0, wxBackoff = 60000;
   function fetchWeather() {
-    if (!wxCanFetch || WX_PRESETS[wxForced]) return;
+    if (!wxCanFetch || WX_PRESETS[wxForced] || document.hidden) return;
+    if (wxRetry) { clearTimeout(wxRetry); wxRetry = 0; }
     try {
-      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit')
-        .then(r => (r && r.ok ? r.json() : null))
-        .then(applyWx)
-        .catch(() => {});
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit',
+        { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })
+        .then(r => (r && r.ok ? r.json() : Promise.reject(new Error('http ' + (r && r.status)))))
+        .then((js) => { wxOkT = performance.now(); wxBackoff = 60000; applyWx(js); })
+        .catch(() => {
+          wxRetry = setTimeout(fetchWeather, wxBackoff);
+          wxBackoff = Math.min(wxBackoff * 2, 15 * 60 * 1000);
+        });
     } catch (e) { /* sandboxed */ }
   }
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && performance.now() - wxOkT > 15 * 60 * 1000) fetchWeather();
+  });
   function wxLabel() {
     const c = WX.code;
     return c === 45 || c === 48 ? 'Fog' : c >= 51 && c <= 55 ? 'Drizzle'
