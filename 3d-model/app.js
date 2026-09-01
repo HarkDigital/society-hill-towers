@@ -94,6 +94,28 @@
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.haze, 1250, 4200);
   const fogBase = { near: 1250, far: 4200 };   // clear-air distances; weather shrinks them live (applyLighting)
+  // custom river spans register their true deck profiles here so the traffic
+  // layer can ride the actual roadway instead of a flat guess under the bridge
+  const BRIDGE_DECKS = [];
+  function bridgeDeckLift(x, z) {
+    let best = null;
+    for (const b of BRIDGE_DECKS) {
+      if (x < b.minX - 30 || x > b.maxX + 30 || z < b.minZ - 30 || z > b.maxZ + 30) continue;
+      let bd = Infinity, bs = 0;
+      for (let i = 0; i + 1 < b.pts.length; i++) {
+        const ax = b.pts[i][0], az = b.pts[i][1];
+        const dx = b.pts[i + 1][0] - ax, dz = b.pts[i + 1][1] - az;
+        const L2 = dx * dx + dz * dz || 1e-6;
+        const t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
+        const d = Math.hypot(x - (ax + dx * t), z - (az + dz * t));
+        if (d < bd) { bd = d; bs = b.cum[i] + Math.sqrt(L2) * t; }
+      }
+      if (bd > b.halfW) continue;
+      const y = b.yAt(bs);
+      if (best === null || y > best) best = y;
+    }
+    return best;
+  }
 
   const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, window.__useLogDepth ? 0.75 : 1.0, 26000);
 
@@ -1117,21 +1139,36 @@
           '  vec2 wp = vec2(-wd.y, wd.x);\n' +
           '  float wdist = length(vViewPosition);\n' +
           '  float wfade = clamp(1.35 - wdist / (2600.0 * wsc + 420.0), 0.14, 1.0);\n' +
-          '  vec2 g = wgrad(vWq.xz, wd, 46.0 * wsc, 1.15 * wsp, uTime) * 0.5;\n' +
-          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.62), 21.0 * wsc, 1.6 * wsp, uTime) * 0.34;\n' +
-          '  g += wgrad(vWq.xz, normalize(wd - wp * 0.8), 9.5 * wsc, 2.3 * wsp, uTime) * 0.22;\n' +
-          '  g += wgrad(vWq.xz, normalize(wp - wd * 0.35), 4.1 * wsc, 3.1 * wsp, uTime) * 0.11;\n' +
-          '  g *= wamp * wfade;\n' +
+          // per-octave pixel-footprint weights: each wave set bows out before its
+          // wavelength falls under a few pixels, so the regular sum can never
+          // alias into the corduroy moire the old distance fade let through
+          '  float fpx = max(fwidth(vWq.x), fwidth(vWq.z)) / wsc;\n' +
+          '  float w1 = 1.0 - smoothstep(5.8, 23.0, fpx);\n' +
+          '  float w2 = 1.0 - smoothstep(2.6, 10.5, fpx);\n' +
+          '  float w3 = 1.0 - smoothstep(1.2, 4.8, fpx);\n' +
+          '  float w4 = 1.0 - smoothstep(0.5, 2.1, fpx);\n' +
+          // wind-gust patches: two slow crossed envelopes drift ruffled lanes and
+          // glassy calms across the reach, the way real water carries cat\'s paws
+          '  float wpat = 0.5 + 0.5 * sin(dot(vWq.xz, wd) * 0.011 + uTime * 0.055 * wsp) * sin(dot(vWq.xz, wp) * 0.0075 - uTime * 0.04 * wsp);\n' +
+          '  vec2 g = wgrad(vWq.xz, wd, 46.0 * wsc, 1.15 * wsp, uTime) * (0.5 * w1);\n' +
+          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.62), 21.0 * wsc, 1.6 * wsp, uTime) * (0.34 * w2);\n' +
+          '  g += wgrad(vWq.xz, normalize(wd - wp * 0.8), 9.5 * wsc, 2.3 * wsp, uTime) * (0.22 * w3);\n' +
+          '  g += wgrad(vWq.xz, normalize(wp - wd * 0.35), 4.1 * wsc, 3.1 * wsp, uTime) * (0.11 * w4);\n' +
+          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.23), 33.0 * wsc, 1.35 * wsp, uTime + 37.0) * (0.26 * w1);\n' +
+          '  g *= wamp * wfade * (0.35 + 0.9 * wpat);\n' +
           '  vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));\n' +
           '  normal = normalize(mix(normal, wn, 0.92));\n' +
           '  float wh = sin(dot(vWq.xz, wd) * (6.2831853 / (46.0 * wsc)) + uTime * 1.15 * wsp)\n' +
           '           + 0.7 * sin(dot(vWq.xz, normalize(wd - wp * 0.8)) * (6.2831853 / (9.5 * wsc)) + uTime * 2.3 * wsp)\n' +
           '           + 0.45 * sin(dot(vWq.xz, normalize(wp + wd * 0.5)) * (6.2831853 / (3.1 * wsc)) + uTime * 3.6 * wsp);\n' +
-          '  diffuseColor.rgb *= 1.0 + wh * 0.075 * wamp * wfade;\n' +
+          '  diffuseColor.rgb *= 1.0 + wh * 0.075 * wamp * wfade * (0.35 + 0.65 * wpat) * w2;\n' +
           // sun glitter on the perturbed surface: the material is deliberately rough
           // (the river must not mirror the sky), so the sparkle is added explicitly
           '  vec3 wview = normalize(cameraPosition - vWq);\n' +
           '  float wspec = pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 140.0);\n' +
+          // a broad low-power lobe under the sparkle: the soft sheet of light real
+          // rivers throw toward the sun, not just point glitter
+          '  wspec += pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 14.0) * 0.055;\n' +
           // at night uSun is the MOON: keep a faint moonglade, not a sequin field
           '  wGlint = wspec * smoothstep(0.02, 0.1, uSun.y) * (0.55 + 0.45 * uWAmp) * wfade * (1.0 - uNite * 0.85);\n' +
           '}\n')
@@ -3675,7 +3712,17 @@
       const [cx, cz] = polyCentroid(poly);
       if (BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) continue;
       if (ovpStraddle(poly, cx, cz)) continue;   // nothing real stands across a motorway deck
-      if (t === 7 && Math.hypot(cx - 996, cz - 663) < 80) { njPoly = poly; continue; }
+      if (Math.hypot(cx - 996, cz - 663) < 80) {
+        // the USS New Jersey berth: capture the 270 m hull outline for the custom
+        // battleship (any type code — the old t===7 gate rotted when the wide
+        // ring was repacked, and the hull extruded as a windowed slab afloat)
+        let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
+        for (const q of poly) { mnX = Math.min(mnX, q[0]); mxX = Math.max(mxX, q[0]); mnZ = Math.min(mnZ, q[1]); mxZ = Math.max(mxZ, q[1]); }
+        if (Math.hypot(mxX - mnX, mxZ - mnZ) > 180) { njPoly = poly; continue; }
+      }
+      // nothing floats: a footprint whose ground is river channel is bad data
+      // (mapped barges, mid-water slabs) — the packed rings must stay ashore
+      if (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz)) continue;
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
@@ -4452,6 +4499,13 @@
       const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.3 }));
       m.castShadow = true;
       groupCity.add(m);
+      // traffic rides the real roadway (deckY gives deck center; the box is 1.5 thick)
+      BRIDGE_DECKS.push({
+        pts: [[A[0], A[1]], [B[0], B[1]]], cum: [0, L], halfW: 20,
+        minX: Math.min(A[0], B[0]), maxX: Math.max(A[0], B[0]),
+        minZ: Math.min(A[1], B[1]), maxZ: Math.max(A[1], B[1]),
+        yAt: (s) => deckY(clamp(s / L, 0, 1)) + 0.9,
+      });
     }
     // Walt Whitman Bridge (1957): suspension span on OSM's alignment, Packer Ave approach to Gloucester City
     if (typeof WWB_PTS !== 'undefined' && WWB_PTS && WWB_PTS.length > 3) {
@@ -4558,6 +4612,22 @@
         groupCity.add(m);
         const qm = at(mid);
         labels.push({ el: (() => { const el = document.createElement('div'); el.className = 'lbl'; el.textContent = 'Walt Whitman Bridge'; labelsRoot.appendChild(el); return el; })(), pos: new V3(qm.x, W0 + 125, qm.z), visible: false, far: true });
+        {  // traffic rides the deck (deckAt's profile, arc-length form; box top = deckAt)
+          let mnX = Infinity, mxX = -Infinity, mnZ = Infinity, mxZ = -Infinity;
+          for (const q of line) { mnX = Math.min(mnX, q[0]); mxX = Math.max(mxX, q[0]); mnZ = Math.min(mnZ, q[1]); mxZ = Math.max(mxZ, q[1]); }
+          BRIDGE_DECKS.push({
+            pts: line, cum, halfW: 16, minX: mnX, maxX: mxX, minZ: mnZ, maxZ: mxZ,
+            yAt: (sv) => {
+              const dd = Math.abs(sv - mid);
+              let y;
+              if (dd <= half) y = W0 + 49 - 6 * (dd / half) * (dd / half);
+              else if (dd <= half + side) y = W0 + 43 - 6 * (dd - half) / side;
+              else y = W0 + 37 - 0.02 * (dd - half - side);
+              const q = at(clamp(sv, 0, cum[cum.length - 1]));
+              return Math.max(y, siteY(q.x, q.z, 'ground') + 6) + 0.55;
+            },
+          });
+        }
       }
     }
     for (const [nm, x, z, hh] of [['Lincoln Financial Field', -1920, 4932, 50], ['Citizens Bank Park', -1869, 4375, 58], ['Xfinity Mobile Arena (Wells Fargo Center)', -2327, 4880, 50]]) {
@@ -4655,6 +4725,7 @@
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
       if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; await yieldNow(); } continue; }
+      if (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz)) continue;   // nothing floats mid-river
       let base = siteY(cx, cz, 'ground');
       if (inP(cx, cz)) {
         // hillside blocks (Manayunk, Roxborough): a merged rowhouse strip on the
@@ -4952,6 +5023,62 @@
         ['Northeast Philadelphia', 11499, -15760, 60],
       ]),
     ]) {
+      const el = document.createElement('div');
+      el.className = 'lbl';
+      el.textContent = nm;
+      labelsRoot.appendChild(el);
+      labels.push({ el, pos: new V3(lx, siteY(lx, lz, 'ground') + lh, lz), visible: false, far: true });
+    }
+    // citywide landmark labels (Round 44): every quarter of the city carries its
+    // anchors — lat/lon through the SEPTA frame, height hand-set per landmark.
+    // (Core towers keep their WIDE_NAMES tags; the stadium trio, PHL and the
+    // bridges are labeled where they are built.)
+    for (const [nm, la, lo, lh] of [
+      ['Independence Hall', 39.94883, -75.15003, 46],
+      ['Philadelphia City Hall', 39.95258, -75.16352, 172],
+      ['Reading Terminal Market', 39.95331, -75.15908, 28],
+      ["Elfreth's Alley", 39.95296, -75.14243, 22],
+      ['Christ Church', 39.95012, -75.14335, 62],
+      ['National Constitution Center', 39.95307, -75.14893, 26],
+      ['Philadelphia Museum of Art', 39.96562, -75.18101, 42],
+      ['Eastern State Penitentiary', 39.96833, -75.17265, 32],
+      ['The Franklin Institute', 39.95815, -75.17284, 32],
+      ['Boathouse Row', 39.96895, -75.18754, 18],
+      ['The Met Philadelphia', 39.96851, -75.15852, 32],
+      ['Divine Lorraine Hotel', 39.96993, -75.15977, 42],
+      ['Girard College', 39.97316, -75.16659, 32],
+      ['Penn Treaty Park', 39.9657, -75.1293, 18],
+      ['Frankford Arsenal', 40.01464, -75.0684, 28],
+      ['30th Street Station', 39.95562, -75.1819, 42],
+      ['University of Pennsylvania', 39.95219, -75.1979, 50],
+      ['Drexel University', 39.95664, -75.18987, 46],
+      ['Penn Museum', 39.94915, -75.19107, 24],
+      ['Philadelphia Zoo', 39.97151, -75.19555, 26],
+      ['Please Touch Museum', 39.9796, -75.20991, 30],
+      ['The Mann Center', 39.97847, -75.2215, 26],
+      ["Saint Joseph's University", 39.99506, -75.2394, 36],
+      ["Bartram's Garden", 39.93269, -75.21285, 20],
+      ['Navy Yard', 39.88938, -75.17771, 36],
+      ['FDR Park', 39.90424, -75.18293, 20],
+      ['Italian Market', 39.93933, -75.15843, 22],
+      ['Fort Mifflin', 39.87487, -75.21287, 18],
+      ['Temple University', 39.98072, -75.15551, 50],
+      ['Laurel Hill Cemetery', 39.99801, -75.18709, 22],
+      ['La Salle University', 40.03771, -75.15521, 36],
+      ['Einstein Medical Center', 40.0368, -75.1415, 40],
+      ['Cliveden', 40.05147, -75.17851, 22],
+      ['Valley Green Inn', 40.05285, -75.21669, 18],
+      ['Morris Arboretum', 40.08858, -75.22252, 22],
+      ['Chestnut Hill College', 40.06345, -75.21868, 30],
+      ['Fox Chase Cancer Center', 40.07162, -75.09, 34],
+      ['Northeast Philadelphia Airport', 40.0819, -75.01062, 30],
+      ['Pennypack Park', 40.06427, -75.0561, 20],
+      ['Adventure Aquarium', 39.9448, -75.1312, 22],
+      ['Freedom Mortgage Pavilion', 39.93446, -75.1292, 26],
+      ['USS New Jersey (BB-62)', 39.93951, -75.13309, 38],
+      ['Benjamin Franklin Bridge', 39.95299, -75.13444, 58],
+    ]) {
+      const lx = (lo - SEPTA_GEO.lon0) * SEPTA_GEO.mx, lz = -(la - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
       const el = document.createElement('div');
       el.className = 'lbl';
       el.textContent = nm;
@@ -5865,7 +5992,7 @@
       const dist = camera.position.distanceTo(l.pos);
       const behind = tmpV.z > 1 || tmpV.z < -1;
       const off = tmpV.x < -1.05 || tmpV.x > 1.05 || tmpV.y < -1.1 || tmpV.y > 1.1;
-      const f0 = l.far ? 2200 : LABEL_FADE[0], f1 = l.far ? 3400 : LABEL_FADE[1];
+      const f0 = l.far ? 4200 : LABEL_FADE[0], f1 = l.far ? 6800 : LABEL_FADE[1];
       let op = 1 - clamp((dist - f0) / (f1 - f0), 0, 1);
       if (dist < 26) op = Math.min(op, (dist - 12) / 14);
       if (behind || off || op <= 0.02) {
@@ -6550,7 +6677,7 @@
     if (sAct) targets.push(septaSolid, septaPin, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
     if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
-    if (shAct) targets.push(shipMesh);
+    if (shAct) targets.push(shipMesh, shipAnchor);
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
       const h = hits[0];
@@ -6559,7 +6686,7 @@
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
       }
-      if (h.object === shipMesh) {
+      if (h.object === shipMesh || h.object === shipAnchor) {
         const p = shipPick[h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; return; }
       }
@@ -6843,7 +6970,7 @@
         if (bi < 1024) {
           const py0 = v.gy + spec.h + 0.6;
           _sp.set(v.dx, py0, v.dz);
-          const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
+          const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
           _sp.y += Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
           _ss.set(s, s, s);
           _sm.compose(_sp, _sqB, _ss);
@@ -6853,7 +6980,7 @@
       } else if (pi < 1024) {
         const py0 = v.gy + spec.h + 0.9;
         _sp.set(v.dx, py0, v.dz);
-        const s = clamp(camera.position.distanceTo(_sp) / 240, 1, 8);
+        const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
         const bob = Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
         _sp.y += bob;
         _ss.set(s, s, s);
@@ -7685,7 +7812,7 @@
     for (let i = 0; i < indegoLive.length; i++) {
       const st = indegoLive[i];
       _sp.set(st.x, st.y + 3.1, st.z);
-      const s = clamp(camera.position.distanceTo(_sp) / 260, 1, 8);
+      const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
       _ss.set(s, s, s);
       _sm.compose(_sp, _iqB, _ss);
       indegoBadge.setMatrixAt(i, _sm);
@@ -8242,8 +8369,50 @@
   const AIS_KEY = 'f9148033287fd7b2fd6c82142e0b78ac0f1906cf';   // aisstream.io, Mike's free key
   const SHIPS = { on: true, ok: false, sock: null, retryT: 0 };
   const shipMap = new Map();
-  let shipMesh = null, shipReady = false, pickedShip = null;
+  let shipMesh = null, shipAnchor = null, shipReady = false, pickedShip = null;
   const shipPick = [];
+  const _aqB = new THREE.Quaternion();
+  function shipPinTexture() {
+    // vessels wear the shared badge casing with a bold white fouled anchor
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 320;
+    const g = cv.getContext('2d');
+    const bw = 240, bh = 200, bx = 8, by = 8, rad = 34;
+    g.fillStyle = '#12294a';
+    g.strokeStyle = '#fdfbf6';
+    g.lineWidth = 10;
+    g.beginPath();                                   // pointer tip first, badge overlaps it
+    g.moveTo(128 - 30, by + bh - 6);
+    g.lineTo(128, 312);
+    g.lineTo(128 + 30, by + bh - 6);
+    g.closePath();
+    g.fill(); g.stroke();
+    g.beginPath();
+    g.moveTo(bx + rad, by);
+    g.arcTo(bx + bw, by, bx + bw, by + bh, rad);
+    g.arcTo(bx + bw, by + bh, bx, by + bh, rad);
+    g.arcTo(bx, by + bh, bx, by, rad);
+    g.arcTo(bx, by, bx + bw, by, rad);
+    g.closePath();
+    g.fill(); g.stroke();
+    g.strokeStyle = '#fdfbf6';
+    g.lineCap = 'round';
+    g.lineWidth = 15;
+    g.beginPath(); g.arc(128, 52, 16, 0, Math.PI * 2); g.stroke();   // ring
+    g.beginPath(); g.moveTo(128, 68); g.lineTo(128, 176); g.stroke();  // shank
+    g.beginPath(); g.moveTo(92, 92); g.lineTo(164, 92); g.stroke();    // stock
+    g.beginPath(); g.arc(128, 122, 58, Math.PI * 0.16, Math.PI * 0.84); g.stroke();  // arms
+    g.fillStyle = '#fdfbf6';
+    for (const s of [-1, 1]) {                        // flukes
+      const fx = 128 + s * 54, fy = 154;
+      g.beginPath();
+      g.moveTo(fx, fy + 14); g.lineTo(fx - s * 16, fy - 10); g.lineTo(fx + s * 12, fy - 6);
+      g.closePath(); g.fill();
+    }
+    const tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = 4;
+    return tex;
+  }
   const SHIP_CAP = 48;
   const btnShips = document.getElementById('btnShips');
   const SHIP_TYPE = (t) => t >= 80 && t < 90 ? ['Tanker', 0x2e2e33] : t >= 70 && t < 80 ? ['Cargo Ship', 0x5a3a34]
@@ -8278,6 +8447,14 @@
     shipMesh.frustumCulled = false;
     shipMesh.count = 0;
     groupCity.add(shipMesh);
+    // anchor badge, billboarded and distance-scaled like the aircraft pins
+    shipAnchor = new THREE.InstancedMesh(
+      new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
+      new THREE.MeshBasicMaterial({ map: shipPinTexture(), transparent: true, depthWrite: false, fog: false, toneMapped: false }), SHIP_CAP);
+    shipAnchor.frustumCulled = false;
+    shipAnchor.count = 0;
+    shipAnchor.renderOrder = 12;
+    groupCity.add(shipAnchor);
     shipReady = true;
   }
   const shipDecoder = new TextDecoder();
@@ -8397,9 +8574,10 @@
     if (!AIS_KEY || !septaCanFetch) { btnShips.style.display = 'none'; if (!shipMap.size) return; }
     if (!SHIPS.sock && !document.hidden && now >= SHIPS.retryT) shipConnect();
     if (!SHIPS.on) {
-      if (shipMesh.count) { shipMesh.count = 0; shipMesh.instanceMatrix.needsUpdate = true; }
+      if (shipMesh.count) { shipMesh.count = 0; shipMesh.instanceMatrix.needsUpdate = true; shipAnchor.count = 0; shipAnchor.instanceMatrix.needsUpdate = true; }
       return;
     }
+    _aqB.copy(camera.quaternion);   // fresh billboard pose for the anchor badges
     let i = 0;
     const gone = [];
     for (const v of shipMap.values()) {
@@ -8422,6 +8600,12 @@
       _sm.compose(_sp, _fq, _ss);
       shipMesh.setMatrixAt(i, _sm);
       shipMesh.setColorAt(i, _sc.setRGB(1, 1, 1));   // neutral: the geometry carries its own scheme
+      // the anchor pin floats above the masthead, holding size like the aircraft badges
+      _sp.set(v.dx, TERRAIN.water + clamp(v.len * 0.09, 2.5, 16) + 2, v.dz);
+      const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
+      _ss.set(aps, aps, aps);
+      _sm.compose(_sp, _aqB, _ss);
+      shipAnchor.setMatrixAt(i, _sm);
       shipPick[i] = v;
       i++;
     }
@@ -8432,6 +8616,8 @@
     shipMesh.count = i;
     shipMesh.instanceMatrix.needsUpdate = true;
     if (shipMesh.instanceColor) shipMesh.instanceColor.needsUpdate = true;
+    shipAnchor.count = i;
+    shipAnchor.instanceMatrix.needsUpdate = true;
     if (pickedShip) {
       shipCard(pickedShip);
       _ssv.set(pickedShip.dx, TERRAIN.water + clamp(pickedShip.len * 0.09, 2.5, 16) + 6, pickedShip.dz).project(camera);
@@ -8534,10 +8720,12 @@
           }
         }
         let lift = core ? LAYER.road + 0.04 : LAYER.road + (6 - Math.min(cls, 6)) * 0.055 + 0.05;
-        if (!core) {
+        const bY = bridgeDeckLift(x, z);   // the custom spans (BFB, WWB) carry traffic on their real decks
+        if (bY !== null && bY > y) { y = bY; lift = 0.12; }
+        else if (!core) {
           const low = demY(x, z) < TERRAIN.water + 0.6;
           if (low && riverCorridor(x, z)) {
-            if (cls > 1 || wwbNear(x, z)) dead = true;   // minor roads don't bridge; the WWB deck is custom
+            if (cls > 1) dead = true;   // minor roads don't bridge
             else y = Math.max(y, TERRAIN.water + (cls === 0 ? 20 : 13));
           }
         }

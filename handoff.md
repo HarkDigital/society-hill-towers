@@ -1747,6 +1747,44 @@ level white ground underfoot, downpour A/B at fixed camera (wet: cooler,
 darker, sky-sheened; dry: warm and bright), clear-weather regression
 pixel-identical, zero console errors. Shipped to both homes.
 
+Round 44 (Sep 1 — Mike, six at once: landmark labels all over the city, include
+the Battleship NJ, clean up buildings in the water, SEPTA/Indego icons sized
+like the plane icons, anchor icons for boats, bridge traffic up on the actual
+decks, more realistic water): the battleship was the best one — the custom
+BB-62 build (hull + turrets + funnels off the OSM outline) has existed since
+its round but its capture gate read `t === 7`, and the wide repack changed the
+type code, so njPoly stayed null and the 270 m hull extruded as a generic
+windowed apartment slab afloat mid-river — Mike's screenshot exactly. The gate
+now captures by berth radius + >180 m bbox diagonal, any type code, and the
+ship stands at her moorings again. Right behind it, the general rule both
+rings now enforce: any footprint whose centroid ground reads river channel
+(demY < water + 0.5 inside riverCorridor) is bad data and never extrudes —
+nothing floats. Citywide labels: ~43 hand-placed landmarks (lat/lon through
+the SEPTA frame) cover every quarter — Independence Hall to Fort Mifflin,
+Boathouse Row to the Northeast Airport, Cliveden, Valley Green, the
+universities, the Camden shore incl. 'USS New Jersey (BB-62)' and the Ben
+Franklin Bridge — and the far-label fade widened 2200/3400 → 4200/6800 so
+they actually read from a citywide vantage. Pins: SEPTA badge/pin and Indego
+badge now share the aircraft formula (dist/135, so identical on-screen size
+up close) but cap at 14 — the first cut used the flights' 190 cap and five
+hundred buses turned altitude views into a badge blizzard; 14 restores the
+old ~1.9 km fade radius. Ships wear a new anchor badge (same navy casing as
+the aircraft pins, fouled-anchor glyph, billboarded, distance-scaled, in the
+pick targets so tapping it opens the vessel card). Bridge traffic: the two
+custom spans register their real deck profiles in BRIDGE_DECKS (BFB chord +
+deckY, WWB polyline + arc-length profile) and the traffic bake consults
+bridgeDeckLift() — the WWB dead-kill (`wwbNear`) is gone, so the Whitman
+carries cars ON its deck, and the BFB's flat water+20 guess is replaced by
+the true rising roadway. Water: the corduroy moiré was the regular 4-octave
+gradient-wave sum aliasing at mid-range — each octave now carries a
+pixel-footprint weight (fwidth-based, bows out before its wavelength falls
+under a few pixels), plus a fifth off-axis mid octave, two slow crossed
+gust envelopes that drift ruffled lanes and glassy calms across the reach,
+and a broad low-power sun lobe under the point sparkle. Verified: battleship
+at berth (turrets, masts, no slab), WWB cars on the deck, label sweep from
+2.6 km reads Penn to the Aquarium, anchor badges over shipTest vessels, no
+console errors. Shipped to both homes.
+
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
 Tier 2 (parametric storefront/signage kit from OSM shop names) and Tier 3 (photo-built
 fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.md`'s
