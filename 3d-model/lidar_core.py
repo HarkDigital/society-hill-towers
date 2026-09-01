@@ -17,7 +17,10 @@ max-min > 4 m is canopy-contaminated (leaf-off branches) and dropped; roof surfa
 per-cell MIN (tree-robust). Ground = 1 m mean of class 2/8. AGL percentiles per
 eroded footprint; form via axial aspect statistics (R2 gable / R4 hip) on the
 gradient of the roof grid. Alignment verified against the three towers by grid
-cross-correlation before sampling. Run with the shapely venv python."""
+cross-correlation before sampling. Run with the shapely venv python.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, a 6.9e-5 scale error (negligible over the 1.5 km core, up to ~1.1 m at
+the far ring); the committed scene.json roof data keeps it until the next rerun."""
 import json, math, os, sys, glob
 import numpy as np
 import laspy
@@ -32,7 +35,7 @@ C = 0.5                      # roof grid cell
 GC = 1.0                     # ground grid cell
 NX, NZ = int((X1 - X0) / C), int((Z1 - Z0) / C)
 GNX, GNZ = int((X1 - X0) / GC), int((Z1 - Z0) / GC)
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 UTM_BOX = (486880, 488470, 4420730, 4422370)   # padded core in EPSG:6347
 
 GRIDS = 'lidar_cache/core_grids.npz'

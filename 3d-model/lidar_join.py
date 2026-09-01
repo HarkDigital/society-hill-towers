@@ -4,7 +4,20 @@ heights (lidar_cache/phl_footprints_local.json, from fetch_footprints.py) onto e
 model building by polygon overlap in the local frame.
 
 Outputs:
-  - scene_wide.json, scene_south.json : b['h'] patched in place (geometry untouched)
+  - scene_wide.json, scene_south.json : b['h'] patched (geometry untouched). The
+    heights are read from an IMMUTABLE snapshot, lidar_cache/scene_wide.pre_lidar.json
+    and lidar_cache/scene_south.pre_lidar.json, created from the current scene file
+    on the first run if absent and never rewritten - so the ratchet below compares
+    against the ORIGINAL OSM value, not against this script's own previous output
+    (the in-place rewrite used to make every rerun read its own patched heights,
+    which turned "never lower a tall" into "never lower anything a run ever raised").
+    The current scene file is what gets patched, building by building index, so
+    attributes other passes wrote in place (patch_scenes_facade's fa/rp) survive.
+    Buildings left unmeasured/protected are reset to the snapshot's h, so the
+    output is a pure function of (snapshot, footprints). A snapshot is only as
+    pristine as the file it was taken from: after regenerating a scene with
+    process_osm.py (or if the count/order no longer lines up, which is fatal),
+    delete the snapshot and rerun.
   - lidar_city_heights.json           : {osm way id: h_m} for pack_city.py
   - lidar_cache/core_join.json        : per-core-building measured h (consumed +
                                         refined by lidar_core.py, which also does
@@ -22,6 +35,10 @@ Rules:
     max(tag, measured) since it still sees real OSM tags
   - skip: t in (ship, stadium, arena), entries with minH (3D parts), custom towers
   - clamp 2.5..550 m
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put the city footprints up to ~1.1 m east of the far-ring ways
+they were overlapped with (a few % of coverage on narrow rowhouses); the committed
+lidar_city_heights.json and the patched scenes keep that until the next rerun.
 Run with the shapely venv python."""
 import json, math, os, sys
 from shapely.geometry import Polygon
@@ -29,7 +46,7 @@ from shapely.strtree import STRtree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 COVER_MIN = 0.25
 CLAMP_LO, CLAMP_HI = 2.5, 550.0
 SKIP_T = {'ship', 'stadium', 'arena'}
@@ -109,26 +126,47 @@ def measure(poly_pts, holes_pts=None):
 report = {'footprints': len(fp_geoms), 'contamination_guard': n_guard, 'sets': {}}
 deltas = []  # (|dh|, set, name, cx, cz, old, new)
 
+def snapshot_path(path):
+    """lidar_cache/<scene>.pre_lidar.json: the scene's heights as they were before any LiDAR pass."""
+    return os.path.join('lidar_cache', os.path.basename(path)[:-5] + '.pre_lidar.json')
+
 def patch_scene(path, tag):
     d = json.load(open(path))
+    snap_path = snapshot_path(path)
+    if os.path.exists(snap_path):
+        snap = json.load(open(snap_path))
+    else:
+        # first run: freeze the current file as the pre-LiDAR baseline (only pristine if
+        # this really is process_osm output - see the docstring); never rewritten after
+        os.makedirs('lidar_cache', exist_ok=True)
+        with open(snap_path, 'w') as f:
+            json.dump(d, f, separators=(',', ':'))
+        print(f'{snap_path}: pre-LiDAR snapshot created from {path}', flush=True)
+        snap = d
+    sb, cb = snap['buildings'], d['buildings']
+    if len(sb) != len(cb) or any(a.get('poly', [])[:2] != b.get('poly', [])[:2] for a, b in zip(sb, cb)):
+        sys.exit(f'ERROR: {snap_path} no longer lines up with {path} (building count or order differs): '
+                 f'the scene was regenerated since the snapshot - delete the snapshot and rerun')
     st = {'total': 0, 'measured': 0, 'protected': 0, 'unmeasured': 0, 'skipped': 0}
-    for b in d['buildings']:
+    for b, b0 in zip(cb, sb):
         poly = b.get('poly')
         if not poly or len(poly) < 3 or b.get('t') in SKIP_T or b.get('minH'):
             st['skipped'] += 1
             continue
         st['total'] += 1
+        old = b0['h']          # the ORIGINAL OSM value from the snapshot, never our own previous output
         h, cov = measure(poly, b.get('holes'))
         if h is None:
             st['unmeasured'] += 1
+            b['h'] = old
             continue
-        old = b['h']
         # talls (>30 = explicitly tagged in practice) follow OSM's max-height tag
         # semantics: LiDAR may raise them (stale/low tags) but never lower them —
         # mixed tower+podium ways would otherwise read 30% short, and the two
         # known wrong-HIGH tags are hand-overridden in the app anyway
         if old > 30 and h < old:
             st['protected'] += 1
+            b['h'] = old
             continue
         st['measured'] += 1
         b['h'] = round(h, 1)
@@ -189,7 +227,7 @@ els = raw['elements']
 nodes = {}
 for el in els:
     if el.get('type') == 'node':
-        nodes[el['id']] = ((el['lon'] + 75.144748) * KX, (39.945474 - el['lat']) * KZ)
+        nodes[el['id']] = ((el['lon'] - LON0) * KX, (LAT0 - el['lat']) * KZ)
 lut = {}
 st = {'total': 0, 'measured': 0, 'unmeasured': 0}
 for el in els:

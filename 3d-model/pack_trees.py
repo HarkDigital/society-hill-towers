@@ -6,12 +6,16 @@ Int16 x4 per tree: x*5, z*5, dbh_inches, nameIdx.
 tree_names.json: {"names": [common...], "latin": [botanical...], "g": [groupIdx...]}
 Filtering: clip to the wide box, drop dead/stump rows, dedupe within 0.6 m, and
 reject trees inside a building footprint (lidar_cache/phl_footprints_local.json,
-holes = courtyards stay plantable). Groups drive canopy hue/shape at runtime."""
+holes = courtyards stay plantable). Groups drive canopy hue/shape at runtime.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put its output up to ~1.1 m east of the scene at the far ring
+(~0.25 m at the wide box edge); the committed trees.b64 keeps that offset until
+the next rerun."""
 import base64, json, os, re, struct, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 WIDE = (-3700, 2300, -4480, 6400)    # pack_wide.py wide bbox, local meters
 MAGIC = 0x53485454                   # 'SHTT'
 DEAD = re.compile(r'stump|dead|vacan|removal|removed|no tree|planting site', re.I)

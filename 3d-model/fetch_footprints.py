@@ -4,7 +4,11 @@
 convert to the model's local frame, and write lidar_cache/phl_footprints_local.json:
   {"fps": [[h_m, approx_m, [x1,z1,x2,z2,...ring...], [hole...]...], ...]}
 Heights: h_m = max_hgt * 0.3048 (LiDAR max height above grade, 2022 QL1 flight).
-Resumable: per-page files in lidar_cache/fp_pages/. Run with plain python3."""
+Resumable: per-page files in lidar_cache/fp_pages/. Run with plain python3.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put its output up to ~1.1 m east of the scene at the far ring;
+the cached phl_footprints_local.json keeps that offset until the next rerun
+(delete it, the per-page cache is lat/lon and stays valid)."""
 import json, os, sys, time, urllib.request, urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
@@ -16,7 +20,7 @@ BASE = ('https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/'
         'LI_BUILDING_FOOTPRINTS/FeatureServer/0/query')
 PAGE = 2000
 FT = 0.3048
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 
 def total_count():
     q = urllib.parse.urlencode({'where': '1=1', 'returnCountOnly': 'true', 'f': 'json'})

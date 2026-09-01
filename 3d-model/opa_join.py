@@ -16,7 +16,11 @@ Codes (packed later as use(3)|mat(3)|era(4)|stories(6)):
 Outputs: lidar_cache/opa_core.json {scene idx: [u,m,e,s]},
          lidar_cache/opa_wide.json, lidar_cache/opa_south.json (scene idx),
          lidar_cache/opa_city.json {way id: [u,m,e,s]}, stats into lidar_report.json.
-Run with the shapely venv python."""
+Run with the shapely venv python.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which placed OPA sites up to ~1.1 m east of the scene at the far ring
+(a 12 m nearest-footprint search absorbs it, but sites on a footprint edge could
+join the wrong neighbour); the cached opa_*.json keep that until the next rerun."""
 import csv, json, math, os, sys
 from collections import Counter, defaultdict
 from shapely.geometry import Polygon, Point
@@ -24,7 +28,7 @@ from shapely.strtree import STRtree
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 os.chdir(HERE)
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 
 # ---------------- OPA rows -> sites ----------------
 def era_of(year, desc_new):
@@ -143,7 +147,7 @@ raw = json.load(open('osm_city_raw.json'))
 nodes = {}
 for el in raw['elements']:
     if el.get('type') == 'node':
-        nodes[el['id']] = ((el['lon'] + 75.144748) * KX, (39.945474 - el['lat']) * KZ)
+        nodes[el['id']] = ((el['lon'] - LON0) * KX, (LAT0 - el['lat']) * KZ)
 for el in raw['elements']:
     if el.get('type') != 'way' or 'building' not in (el.get('tags') or {}):
         continue

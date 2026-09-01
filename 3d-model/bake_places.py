@@ -9,12 +9,15 @@ not an outline) is excluded by name. A district's LABEL is dropped when a kept
 neighborhood label lands inside it (Society Hill the district ≡ Society Hill
 the neighborhood); its ribbon always stays.
 Neighborhoods: MAPNAME at the largest ring's centroid; size class by Shape_Area
-(sq ft); labels within 250 m of a bigger neighborhood's label are thinned."""
+(sq ft); labels within 250 m of a bigger neighborhood's label are thinned.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put its output up to ~1.1 m east of the scene at the far ring;
+the committed places.json keeps that offset until the next rerun."""
 import json, math, os
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'places_raw')
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 EXCLUDE = 'Historic Street Paving Thematic District'
 SQFT_3KM2, SQFT_1KM2 = 3.2292e7, 1.0764e7
 

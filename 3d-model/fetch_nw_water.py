@@ -5,11 +5,14 @@
 Why: pack_city caps area rings at 90 vertices, which turns the 8 km sinuous
 Wissahickon into a self-intersecting zigzag — harmless rendered flat, confetti
 when draped on the 50 m terrain. The app drapes THESE rings inside the patch
-instead and leaves the packed water exactly as it was. Run with plain python3."""
+instead and leaves the packed water exactly as it was. Run with plain python3.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put its output up to ~1.1 m east of the scene at the far ring;
+the committed nw_water.json keeps that offset until the next rerun."""
 import json, math, os, time, urllib.parse, urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 P = (-10600, -2600, -15600, -6600)
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
            'https://overpass.private.coffee/api/interpreter']

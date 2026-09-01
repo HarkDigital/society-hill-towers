@@ -6,12 +6,15 @@ Int16 x3 per pole: x/0.7, z/0.7, packed.
 packed bits: 0-1 lamp kind (0 LED, 1 HPS, 2 unknown), 2-8 height in feet
 (defaults baked here when the survey says 0), 9 two-luminaire flag.
 Filtering: clip to the far-ring box, dedupe within 1.2 m. Sorted row-major so
-the delta-friendly layout gzips well. Run with plain python3."""
+the delta-friendly layout gzips well. Run with plain python3.
+Frame: philly_frame.py (the scene's own projection). This script used to hardcode
+KX=85350, which put its output up to ~1.1 m east of the scene at the far ring;
+the committed poles.b64 keeps that offset until the next rerun."""
 import base64, json, os, struct
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
-LON0, LAT0, KX, KZ = -75.144748, 39.945474, 85350.0, 110574.0
+from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 CITY = (-12000, 16500, -21700, 9700)
 S = 0.7
 MAGIC = 0x53485450   # 'SHTP'

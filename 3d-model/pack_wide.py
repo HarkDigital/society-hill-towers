@@ -6,19 +6,49 @@ Layout: Int32[4] header (magic 0x5348545A, nBuildings, nRoads, nAreas), then Int
   road: n, w*10, type, pts...   area: n, kind, pts...
 attr packs the OPA facade word u(3)|mat(3)|era(4)|floorH(5) (-1 = none); roof is
 the sampled roof-palette index (-1 = none). The 0x53485458 format (no attr/roof
-words) is still decoded by the app. Buildings inside the core bbox are dropped."""
-import json, math, struct, base64
+words) is still decoded by the app. Buildings inside the core bbox are dropped.
+Guards: an int16 saturation in clip() is fatal (wide.b64 is not written) - the body
+holds +/-6553 m, and the 2.5 km2 Fairmount Park ring reaches z = -7685 m, so area
+rings are clipped to that box geometrically (shapely; without it the old silent
+clamp is gone and the pack aborts instead). Rings over budget (48 vertices per
+building/part, 120 per area) are Douglas-Peucker'd down with a doubling tolerance,
+not strided every k-th vertex. Optional inputs (scene_south.json, parts_wide.json,
+wide_landmarks_research.json) are fatal when missing unless --allow-missing, since
+a silent skip dropped the whole south extension / every 3D part / the glass flags.
+Frame: philly_frame.py for the research glass spots (they used KX=85350)."""
+import argparse, json, math, os, struct, base64, sys
+from philly_frame import LON0, LAT0, KX, KZ
+
+ap = argparse.ArgumentParser(description='scene_wide.json -> wide.b64 (outer districts)')
+ap.add_argument('--allow-missing', action='store_true',
+                help='pack even when an optional input (scene_south.json, parts_wide.json, '
+                     'wide_landmarks_research.json) is missing; what it carried is dropped')
+ARGS = ap.parse_args()
+
 CORE = (-640, 770, -520, 850)        # x0, x1, z0, z1 of the detailed core extract
 WIDE = (-3700, 2300, -4480, 6400)    # wide bbox in local meters (south to the stadiums + Walt Whitman Bridge)
+REPR = 32767 / 5                     # 6553.4 m: the largest |coordinate| the int16 0.2 m body can hold
 BT = {'generic': 0, 'house': 1, 'residential': 1, 'terrace': 1, 'apartments': 2, 'detached': 1, 'semidetached_house': 1,
       'commercial': 3, 'retail': 3, 'office': 3, 'hotel': 3, 'industrial': 4, 'warehouse': 4, 'garage': 4, 'parking': 4,
       'church': 5, 'worship': 5, 'school': 6, 'civic': 6, 'hospital': 6, 'university': 6, 'roof': 7, 'ship': 7, 'stadium': 8, 'arena': 9}
 RT = {'motorway': 0, 'motorway_link': 0, 'trunk': 1, 'trunk_link': 1, 'primary': 2, 'secondary': 3, 'tertiary': 4,
       'residential': 5, 'living_street': 5, 'unclassified': 5, 'pedestrian': 6}
 AK = {'park': 0, 'water': 1, 'pier': 2}
+
+def _optional(path, what):
+    """An input whose absence used to be skipped silently, dropping `what` from wide.b64."""
+    try:
+        return json.load(open(path))
+    except FileNotFoundError:
+        if ARGS.allow_missing:
+            print(f'WARNING: {path} missing - {what} dropped from wide.b64 (--allow-missing)', flush=True)
+            return None
+        sys.exit(f'ERROR: {path} missing - {what} would be silently dropped from wide.b64; '
+                 f'regenerate it or pass --allow-missing')
+
 d = json.load(open('scene_wide.json'))
-try:
-    _south = json.load(open('scene_south.json'))
+_south = _optional('scene_south.json', 'the south extension (stadium complex, Walt Whitman Bridge)')
+if _south is not None:
     seenB = set(tuple(map(tuple, b['poly'][:3])) for b in d['buildings'])
     for b in _south['buildings']:
         if tuple(map(tuple, b['poly'][:3])) in seenB: continue
@@ -26,7 +56,9 @@ try:
         d['buildings'].append(b)
     d['roads'] += _south['roads']; d['areas'] += _south['areas']
     print('merged south scene')
-except FileNotFoundError: pass
+_parts = _optional('parts_wide.json', 'the 3D building parts (skyscraper shafts, crowns, podiums)') or []
+_research = _optional('wide_landmarks_research.json', 'the research glass-tower flags') or []
+
 def cent(p): return sum(q[0] for q in p) / len(p), sum(q[1] for q in p) / len(p)
 def area(p):
     a = 0
@@ -53,7 +85,28 @@ def simplify(pts, tol):
     far = max(range(1, len(pts)), key=lambda i: (pts[i][0] - pts[0][0]) ** 2 + (pts[i][1] - pts[0][1]) ** 2)
     out = dp(pts[:far + 1])[:-1] + dp(pts[far:] + [pts[0]])[:-1]
     return out if len(out) >= 3 else pts
-def clip(v): return max(-32767, min(32767, int(round(v))))
+def simplify_budget(pts, budget, tol):
+    """Douglas-Peucker a closed ring down to at most `budget` vertices by doubling the
+    tolerance from `tol`. Replaces the every-k-th-vertex stride, which kept vertices by
+    position rather than shape (a corner could vanish) and did not even hold the budget
+    (len // budget is 1 up to 2*budget-1 vertices)."""
+    t = tol
+    while len(pts) > budget and t < 4096:
+        sp = simplify(pts, t)
+        if len(sp) < len(pts): pts = sp
+        t *= 2
+    if len(pts) > budget:   # DP could not get there (degenerate ring): uniform stride as a last resort
+        pts = pts[::-(-len(pts) // budget)]
+    return pts
+
+SAT = []      # (record, value) for every clip() that fell outside int16 - fatal after packing
+_rec = None   # the record being packed right now, for the saturation report
+def clip(v):
+    r = int(round(v))
+    if r > 32767 or r < -32767:
+        SAT.append((_rec, v))
+        return max(-32767, min(32767, r))
+    return r
 def touchesCore(poly, m=2):
     return any(CORE[0] - m <= q[0] <= CORE[1] + m and CORE[2] - m <= q[1] <= CORE[3] + m for q in poly)
 def pip(x, z, poly):
@@ -63,13 +116,36 @@ def pip(x, z, poly):
         if (zi > z) != (zj > z) and x < (xj - xi) * (z - zi) / (zj - zi + 1e-12) + xi: inside = not inside
         j = i
     return inside
+
+# geometric clip of area rings to the representable box (shapely optional)
+try:
+    from shapely.geometry import Polygon as _SPoly, box as _sbox
+    _clipBox = _sbox(-(REPR - 1), -(REPR - 1), REPR - 1, REPR - 1)   # 1 m inside so rounding never lands on 32767
+    HAVE_SHAPELY = True
+except ImportError:
+    HAVE_SHAPELY = False
+    print('WARNING: shapely not importable - area rings are NOT clipped to the int16 box; '
+          'a ring past +/-6552 m (Fairmount Park) aborts the pack', flush=True)
+
+def clip_area(poly):
+    """[(x, z), ...] -> the rings of poly inside the representable box. A ring entirely
+    inside comes back untouched (byte-identical pack); one crossing the box is cut by
+    intersection, so the far edge is a straight cut instead of a clamped, self-crossing zigzag."""
+    if max(abs(c) for q in poly for c in q) <= REPR - 1 or not HAVE_SHAPELY:
+        return [poly]
+    try:
+        g = _SPoly(poly).buffer(0).intersection(_clipBox)
+    except Exception:
+        return [poly]
+    parts = list(g.geoms) if hasattr(g, 'geoms') else [g]
+    return [[list(q) for q in p.exterior.coords[:-1]]
+            for p in parts if p.geom_type == 'Polygon' and not p.is_empty and p.area >= 4]
+
 # building:part centroids indexed on a 50 m grid: outlines that contain a part are dropped
 partCells = {}
-try:
-    for pt in json.load(open('parts_wide.json')):
-        if len(pt['poly']) >= 3:
-            cx, cz = cent(pt['poly']); partCells.setdefault((int(cx // 50), int(cz // 50)), []).append((cx, cz))
-except FileNotFoundError: pass
+for pt in _parts:
+    if len(pt['poly']) >= 3:
+        cx, cz = cent(pt['poly']); partCells.setdefault((int(cx // 50), int(cz // 50)), []).append((cx, cz))
 def containsPart(poly):
     xs = [q[0] for q in poly]; zs = [q[1] for q in poly]
     for gx in range(int(min(xs) // 50), int(max(xs) // 50) + 1):
@@ -104,36 +180,31 @@ for b in d['buildings']:
     if partCells and containsPart(poly): dropped_outline += 1; continue
     if not (WIDE[0] <= cx <= WIDE[1] and WIDE[2] <= cz <= WIDE[3]): continue
     if area(poly) < 12: continue
-    sp = simplify(poly, 0.35)
-    if len(sp) > 48: sp = sp[::max(1, len(sp) // 48)]
+    sp = simplify_budget(simplify(poly, 0.35), 48, 0.7)
     h = max(2.5, min(6500, b['h']))
+    _rec = ('building', b.get('name'), b.get('t'), round(cx), round(cz))
     body += [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0), attr_word(b, h), roof_word(b)]
     for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
     nb += 1
 # 3D-mapped building parts (skyscraper shafts, crowns, podiums) from building:part ways;
 # parts of research-flagged glass towers get type 10 (reflective glass material)
-import os, math as _m
 glassSpots = []
-try:
-    for res in json.load(open('wide_landmarks_research.json')):
-        for bb in res.get('buildings', []):
-            if bb.get('glass') and bb.get('lat') and bb.get('lon'):
-                glassSpots.append(((bb['lon'] + 75.144748) * 85350, (39.945474 - bb['lat']) * -110574 * -1))
-except FileNotFoundError: pass
-glassSpots = [(gx, (39.945474 - lat) * 110574) if False else (gx, gz) for (gx, gz) in glassSpots]
+for res in _research:
+    for bb in res.get('buildings', []):
+        if bb.get('glass') and bb.get('lat') and bb.get('lon'):
+            glassSpots.append(((bb['lon'] - LON0) * KX, (LAT0 - bb['lat']) * KZ))
 def isGlass(cx, cz):
-    return any(_m.hypot(cx - gx, cz - gz) < 75 for gx, gz in glassSpots)
-if os.path.exists('parts_wide.json'):
-    for pt in json.load(open('parts_wide.json')):
-        poly = pt['poly']
-        if len(poly) < 3 or area(poly) < 8: continue
-        cx, cz = cent(poly)
-        if CORE[0] <= cx <= CORE[1] and CORE[2] <= cz <= CORE[3]: continue
-        sp = simplify(poly, 0.3)
-        if len(sp) > 48: sp = sp[::max(1, len(sp) // 48)]
-        body += [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3, -1, -1]
-        for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
-        nb += 1
+    return any(math.hypot(cx - gx, cz - gz) < 75 for gx, gz in glassSpots)
+for pt in _parts:
+    poly = pt['poly']
+    if len(poly) < 3 or area(poly) < 8: continue
+    cx, cz = cent(poly)
+    if CORE[0] <= cx <= CORE[1] and CORE[2] <= cz <= CORE[3]: continue
+    sp = simplify_budget(simplify(poly, 0.3), 48, 0.6)
+    _rec = ('part', pt.get('name'), round(cx), round(cz))
+    body += [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3, -1, -1]
+    for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
+    nb += 1
 def simplify_open(pts, tol):
     # open-polyline Douglas-Peucker. The old code fed roads through the CLOSED-ring
     # simplify() (appending pts[0], slicing [:-1]) which amputated the real final
@@ -172,20 +243,37 @@ for r in d['roads']:
     for pts in runs_of(r['pts'], WIDE, 200):
         pts = simplify_open(pts, 0.6) if len(pts) > 3 else pts
         if len(pts) < 2: continue
+        _rec = ('road', r.get('name'), r['t'], tuple(round(c) for c in pts[0]))
         body += [len(pts), clip(r['w'] * 10), RT[r['t']]]
         for q in pts: body += [clip(q[0] * 5), clip(q[1] * 5)]
         nr += 1
+n_clipped = 0
 for a in d['areas']:
     if a['kind'] not in AK or len(a['poly']) < 3: continue
     cx, cz = cent(a['poly'])
     if touchesCore(a['poly']): continue
     if not (WIDE[0] - 500 <= cx <= WIDE[1] + 500 and WIDE[2] - 500 <= cz <= WIDE[3] + 500): continue
-    sp = simplify(a['poly'], 0.8)
-    if len(sp) > 120: sp = sp[::max(1, len(sp) // 120)]
-    body += [len(sp), AK[a['kind']]]
-    for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
-    na += 1
+    rings = clip_area(a['poly'])
+    if rings != [a['poly']]: n_clipped += 1
+    for ring in rings:
+        sp = simplify_budget(simplify(ring, 0.8), 120, 1.6)
+        if len(sp) < 3: continue
+        _rec = ('area', a['kind'], round(cx), round(cz))
+        body += [len(sp), AK[a['kind']]]
+        for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
+        na += 1
+if SAT:
+    print(f'ERROR: {len(SAT)} coordinate(s) saturated int16 (|v| > 32767 at 0.2 m units, i.e. beyond '
+          f'+/-{REPR:.0f} m); wide.b64 NOT written. Offending records:', file=sys.stderr, flush=True)
+    shown = set()
+    for rec, v in SAT:
+        if rec in shown: continue
+        shown.add(rec)
+        print(f'   {rec}  value {v:.0f} ({v / 5:.0f} m)', file=sys.stderr, flush=True)
+        if len(shown) >= 12: break
+    sys.exit(1)
 buf = struct.pack('<4i', 0x5348545A, nb, nr, na) + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(buf).decode('ascii')
 open('wide.b64', 'w').write(b64)
-print(f'buildings {nb} roads {nr} areas {na} -> {len(buf)/1e6:.2f} MB binary, {len(b64)/1e6:.2f} MB base64; dropped {dropped_dup} core-duplicates, {dropped_outline} outlines with 3D parts')
+print(f'buildings {nb} roads {nr} areas {na} -> {len(buf)/1e6:.2f} MB binary, {len(b64)/1e6:.2f} MB base64; '
+      f'dropped {dropped_dup} core-duplicates, {dropped_outline} outlines with 3D parts; {n_clipped} area ring(s) clipped to the int16 box')
