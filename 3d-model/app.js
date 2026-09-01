@@ -261,8 +261,12 @@
   }
 
   // merge many geometries into one, painting a flat color per part (with optional
-  // ground-darkening to fake ambient occlusion at street level)
-  function mergeColored(parts, ao) {
+  // ground-darkening to fake ambient occlusion at street level). facade picks
+  // the per-vertex extras: true attaches the six the cityMat facade shader
+  // reads (aStyle, aFloorH, aWallU/L/H, aBase), 'base' only aBase (the Ryland
+  // glass night shader), anything else none: streets, parks, water and trim
+  // used to carry 24 dead bytes per vertex their plain materials never read
+  function mergeColored(parts, ao, facade) {
     let count = 0;
     const prepped = parts.map(p => {
       const g = p.geom.index ? p.geom.toNonIndexed() : p.geom;
@@ -272,9 +276,11 @@
     const pos = new Float32Array(count * 3);
     const nor = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
-    const sty = new Float32Array(count);
-    const flh = new Float32Array(count);
-    const wu = new Float32Array(count), wl = new Float32Array(count), wh = new Float32Array(count), bs = new Float32Array(count);
+    const full = facade === true;
+    const sty = full ? new Float32Array(count) : null;
+    const flh = full ? new Float32Array(count) : null;
+    const wu = full ? new Float32Array(count) : null, wl = full ? new Float32Array(count) : null, wh = full ? new Float32Array(count) : null;
+    const bs = facade ? new Float32Array(count) : null;
     let o = 0;
     const c = new THREE.Color();
     for (let pi = 0; pi < prepped.length; pi++) {
@@ -286,11 +292,10 @@
       const n = g.attributes.normal.array;
       const vc = g.attributes.position.count;
       pos.set(p, o * 3); nor.set(n, o * 3);
-      if (g.attributes.aWallU) { wu.set(g.attributes.aWallU.array, o); wl.set(g.attributes.aWallL.array, o); wh.set(g.attributes.aWallH.array, o); }
+      if (full && g.attributes.aWallU) { wu.set(g.attributes.aWallU.array, o); wl.set(g.attributes.aWallL.array, o); wh.set(g.attributes.aWallH.array, o); }
+      if (full) { sty.fill(styleV, o, o + vc); flh.fill(flhV, o, o + vc); }
+      if (bs) bs.fill(baseY, o, o + vc);
       for (let i = 0; i < vc; i++) {
-        sty[o + i] = styleV;
-        flh[o + i] = flhV;
-        bs[o + i] = baseY;
         c.copy(color);
         if (ao) {
           const y = p[i * 3 + 1];
@@ -305,12 +310,14 @@
     out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     out.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    out.setAttribute('aStyle', new THREE.BufferAttribute(sty, 1));
-    out.setAttribute('aFloorH', new THREE.BufferAttribute(flh, 1));
-    out.setAttribute('aWallU', new THREE.BufferAttribute(wu, 1));
-    out.setAttribute('aWallL', new THREE.BufferAttribute(wl, 1));
-    out.setAttribute('aWallH', new THREE.BufferAttribute(wh, 1));
-    out.setAttribute('aBase', new THREE.BufferAttribute(bs, 1));
+    if (full) {
+      out.setAttribute('aStyle', new THREE.BufferAttribute(sty, 1));
+      out.setAttribute('aFloorH', new THREE.BufferAttribute(flh, 1));
+      out.setAttribute('aWallU', new THREE.BufferAttribute(wu, 1));
+      out.setAttribute('aWallL', new THREE.BufferAttribute(wl, 1));
+      out.setAttribute('aWallH', new THREE.BufferAttribute(wh, 1));
+    }
+    if (bs) out.setAttribute('aBase', new THREE.BufferAttribute(bs, 1));
     return out;
   }
 
@@ -1507,6 +1514,7 @@
   // phones die on PEAK memory, not triangle count: once the GPU holds a big
   // merged geometry we never raycast, the CPU-side typed arrays are pure waste
   function freeOnUpload(g) {
+    if (!g.boundingSphere) g.computeBoundingSphere();   // frustum culling must never touch a nulled array
     for (const k in g.attributes) g.attributes[k].onUpload(function () { this.array = null; });
     if (g.index) g.index.onUpload(function () { this.array = null; });
   }
@@ -1659,6 +1667,7 @@
     }
     const walls = new THREE.Mesh(mergeColored(wallParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, side: THREE.DoubleSide }));
     walls.receiveShadow = true; groupCity.add(walls);
+    freeOnUpload(walls.geometry);   // never raycast (focus and pick use rayTargets only)
 
     const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55 });
     liquify(waterMat, 1.0, 1.35, 1.0);      // the Delaware breathes
@@ -1739,10 +1748,12 @@
     const poolWater = new THREE.Mesh(mergeColored(poolParts), poolWaterMat);
     poolWater.receiveShadow = true;
     groupCity.add(poolWater);
+    freeOnUpload(poolWater.geometry);
     const poolMesh = new THREE.Mesh(mergeColored(deckParts),
       new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.15, envMapIntensity: 0.7 }));
     poolMesh.receiveShadow = true;
     groupCity.add(poolMesh);
+    freeOnUpload(poolMesh.geometry);
   });
 
   step('Shaping the waterfront', () => {
@@ -1807,6 +1818,7 @@
     const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
     m.receiveShadow = true;
     groupCity.add(m);
+    freeOnUpload(m.geometry);
   });
 
   step('Paving the streets', () => {
@@ -1873,12 +1885,14 @@
     );
     asphalt.receiveShadow = true;
     groupCity.add(asphalt);
+    freeOnUpload(asphalt.geometry);
     const brick = new THREE.Mesh(
       mergeColored(brickParts),
       new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9 })
     );
     brick.receiveShadow = true;
     groupCity.add(brick);
+    freeOnUpload(brick.geometry);
   });
 
   step('Planting parks and piers', () => {
@@ -1904,6 +1918,7 @@
       );
       parks.receiveShadow = true;
       groupCity.add(parks);
+      freeOnUpload(parks.geometry);
     }
     if (pierParts.length) {
       const piers = new THREE.Mesh(
@@ -1912,6 +1927,7 @@
       );
       piers.castShadow = piers.receiveShadow = true;
       groupCity.add(piers);
+      freeOnUpload(piers.geometry);
     }
   });
 
@@ -2237,7 +2253,7 @@
         addColSeg(p[0], p[1], q[0], q[1]);
       }
     }
-    const mesh = new THREE.Mesh(mergeColored(parts, true), cityMat);
+    const mesh = new THREE.Mesh(mergeColored(parts, true, true), cityMat);
     mesh.castShadow = mesh.receiveShadow = true;
     groupCity.add(mesh);
     rayTargets.push(mesh);
@@ -2472,6 +2488,7 @@
       );
       mesh.castShadow = true;
       groupCity.add(mesh);
+      freeOnUpload(mesh.geometry);
     }
   });
 
@@ -3334,7 +3351,7 @@
     }
 
     if (walls.length) {
-      const m = new THREE.Mesh(mergeColored(walls, true), cityMat);
+      const m = new THREE.Mesh(mergeColored(walls, true, true), cityMat);
       m.castShadow = m.receiveShadow = true;
       groupCity.add(m);
       rayTargets.push(m);
@@ -3346,7 +3363,7 @@
       groupCity.add(m);
     }
     if (glassParts2.length) {
-      const m = new THREE.Mesh(mergeColored(glassParts2),
+      const m = new THREE.Mesh(mergeColored(glassParts2, false, 'base'),
         new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.85, envMapIntensity: 1.7 }));
       m.castShadow = true;
       groupCity.add(m);
@@ -7082,16 +7099,23 @@
       sdfMode = true;
       AW = ST_SDF.w; AH = ST_SDF.h; RH = ST_SDF.rowH; FS = ST_SDF.fs;
       rects = ST_SDF.rects;
-      const img = new Image();
+      let img = new Image();
       await new Promise((res) => { img.onload = res; img.onerror = res; img.src = 'data:image/png;base64,' + ST_SDF.png; });
       ST_SDF = null;   // the atlas PNG lives in the texture now
       const cv = document.createElement('canvas');
       cv.width = AW; cv.height = AH;
       const g = cv.getContext('2d');
       g.drawImage(img, 0, 0);
-      const px = g.getImageData(0, 0, AW, AH).data;
+      img = null;
+      // R channel in 256-row bands: one getImageData of the whole atlas was a
+      // 36.8 MB RGBA spike on top of the decoded image, the kind phones die on
       const lum = new Uint8Array(AW * AH);
-      for (let i = 0; i < lum.length; i++) lum[i] = px[i * 4];
+      for (let y = 0; y < AH; y += 256) {
+        const rows = Math.min(256, AH - y);
+        const px = g.getImageData(0, y, AW, rows).data;
+        for (let i = 0, o = y * AW; i < rows * AW; i++) lum[o + i] = px[i * 4];
+      }
+      cv.width = cv.height = 0;   // release the canvas backing store
       tex = new THREE.DataTexture(lum, AW, AH, THREE.RedFormat, THREE.UnsignedByteType);  // R8: WebGL2 mipmappable (LUMINANCE is not)
       tex.magFilter = THREE.LinearFilter;
       tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -7977,10 +8001,15 @@
   const about = document.getElementById('about');
   function syncAboutInert() { try { about.inert = !about.classList.contains('open'); } catch (e) { } }
   function toggleAbout() { about.classList.toggle('open'); syncAboutInert(); }
+  function openAbout() { about.classList.add('open'); syncAboutInert(); }
   function closeAbout() { about.classList.remove('open'); syncAboutInert(); }
   syncAboutInert();
   document.getElementById('btnAbout').addEventListener('click', toggleAbout);
   document.getElementById('btnCloseAbout').addEventListener('click', closeAbout);
+  // the i button stays hidden; the credit line's "credits" link is the way in
+  // (Escape and the close button still close it, see the keydown handler)
+  const creditsLink = document.getElementById('creditsLink');
+  if (creditsLink) creditsLink.addEventListener('click', (e) => { e.preventDefault(); openAbout(); });
 
 
   // ---------------------------------------------------------------- live flights
