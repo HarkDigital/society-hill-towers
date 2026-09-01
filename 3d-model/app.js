@@ -62,6 +62,15 @@
     const lm = document.getElementById('loadmsg');
     if (lm && !window.__fatalShown) { window.__fatalShown = true; lm.textContent = 'Error: ' + ((e && e.message) || 'unknown'); }
   });
+  window.addEventListener('unhandledrejection', (e) => {
+    const r = e && e.reason;
+    console.error('unhandled rejection', r);
+    const lm = document.getElementById('loadmsg');
+    if (lm && !window.__fatalShown) { window.__fatalShown = true; lm.textContent = 'Error: ' + ((r && r.message) || String(r)); }
+  });
+  // load and frame instrumentation, read through ?dev's __dbg.perf(): which
+  // build step dominates on a real device, and what a frame costs there
+  const PERF = { t0: performance.now(), steps: [], failed: [], ring: new Float32Array(600), ri: 0, rn: 0 };
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
 
@@ -4621,8 +4630,8 @@
       rc.pos = rc.col = rc.idx = null;
       groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
-    if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
-    if (waterAreaParts.length) groupCity.add(new THREE.Mesh(mergeColored(waterAreaParts), riverMat));
+    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
+    if (waterAreaParts.length) { const g = mergeColored(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
     fogBase.near = 1900; fogBase.far = 7600;
@@ -5203,8 +5212,8 @@
       rc.pos = rc.col = rc.idx = null;
       groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
-    if (areaParts.length) groupCity.add(new THREE.Mesh(mergeColored(areaParts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })));
-    if (waterAreaParts.length) groupCity.add(new THREE.Mesh(mergeColored(waterAreaParts), riverMat));
+    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
+    if (waterAreaParts.length) { const g = mergeColored(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
     // the world is now the whole city
     bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
     fogBase.near = 2400; fogBase.far = 13000;
@@ -10200,8 +10209,11 @@
     for (const s of buildSteps) {
       loadmsg.textContent = s.msg;
       await yieldNow();
-      try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; console.error('build step failed:', s.msg, err); }
+      const t0 = performance.now();
+      try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; PERF.failed.push([s.msg, String(err && err.message || err)]); console.error('build step failed:', s.msg, err); }
+      PERF.steps.push([s.msg, Math.round(performance.now() - t0)]);
     }
+    PERF.ready = Math.round(performance.now() - PERF.t0);
     loadmsg.textContent = failures ? 'Ready (some detail could not be built)' : 'Ready';
     btnEnter.disabled = false;
     btnEnter.textContent = 'Enter the City';
@@ -10253,12 +10265,28 @@
   let shadowMode = -1;
   let lastBearing = null;
   let frameNo = 0, lastCasterSig = -1;
+  let devHud = null, devHudT = 0;   // the ?dev readout (built with the rest of __dbg)
+  function perfStats() {
+    const n = Math.min(PERF.rn, 600);
+    const a = Array.from(PERF.ring.subarray(0, n)).sort((x, y) => x - y);
+    const info = renderer.info;
+    return { readyMs: PERF.ready || null, steps: PERF.steps, failed: PERF.failed, frames: n,
+      p50: n ? +a[Math.floor(n * 0.5)].toFixed(1) : null, p95: n ? +a[Math.floor(n * 0.95)].toFixed(1) : null,
+      calls: info.render.calls, tris: info.render.triangles, programs: info.programs.length, geometries: info.memory.geometries, textures: info.memory.textures,
+      dpr: DPR.cur, heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null };
+  }
+  function perfLine() {
+    const p = perfStats();
+    return 'p50 ' + p.p50 + ' ms  p95 ' + p.p95 + ' ms  |  ' + p.calls + ' calls  ' + (p.tris / 1e6).toFixed(2) + ' M tris  ' + p.programs + ' prog  |  dpr ' + p.dpr.toFixed(2) + (p.heapMB ? '  heap ' + p.heapMB + ' MB' : '') + '  |  ready ' + (p.readyMs / 1000).toFixed(1) + ' s';
+  }
   function frame(now, once) {
     if (!once) requestAnimationFrame(frame);
     const rawMs = now - last;
     const dt = Math.min(rawMs / 1000, 0.05);
     last = now;
     frameNo++;
+    if (!once && rawMs < 500) { PERF.ring[PERF.ri] = rawMs; PERF.ri = (PERF.ri + 1) % 600; PERF.rn++; }
+    if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
     // adaptive resolution: 30-frame windows; a >250 ms gap is a stall or a
     // throttled tab, not a slow frame, and is not counted
     if (!once && !DPR.pinned && rawMs < 250 && !document.hidden) {
@@ -10354,7 +10382,11 @@
       });
     }
     if (/[?&]dev\b/.test(location.search)) {
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR,
+      devHud = document.createElement('div');
+      devHud.id = 'devhud';
+      devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
+      document.body.appendChild(devHud);
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats,
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
