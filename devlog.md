@@ -1787,6 +1787,81 @@ before color_fragment, precisely so the chain order lands snow on top).
 The flats now read as scrub and lawn from the air on any gray day, and
 forced accumulation still whites them out completely. Shipped to both homes.
 
+### Round 46 (Sep 1, evening: the optimisation audit)
+
+Mike asked what could be optimised or improved, open to anything. A read-only audit
+(17 finder angles, every finding adversarially re-verified, 150 findings, 145 kept)
+became the plan in the session notes; he approved all of it except three owner
+calls: labels stay off by default, the About panel stays out of the bar (the credit
+line's Credits link opens it), and the full build stays behind the veil. Everything
+below lives on the `audit-batch-1` branch.
+
+- **Payload.** build.py stores the four int16 blobs byte-planar (header, then every
+  low byte, then every high byte): DEFLATE sees two smooth streams and the gzipped
+  page drops 12.76 MB to 9.77 MB with no packer change; app.js's one `unb64()`
+  re-interleaves (the charCodeAt loop, 6x faster than `Uint8Array.from(str, fn)`).
+  traffic.b64 stays interleaved (short deltas grow 5% shuffled). The four identical
+  Montserrat faces became one variable `font-weight: 400 700` rule.
+- **Load path.** The two ring decoders stage vertices in growable typed arrays
+  (`VBuf`/`IdxBuf`, 24 B per vertex instead of ~92 boxed), seal chunks at 60k
+  vertices (all Uint16 indices) and upload a dozen at a time as they seal; every
+  new ring mesh draws unculled exactly once so a chunk behind the veil camera no
+  longer keeps its CPU copy until first seen (a frustum-culled mesh never uploads
+  and never frees). Measured in the same visible pane: peak heap 2,763 MB to 691 MB,
+  far ring 1.9 s to 1.0 s, outer districts 1.0 s to 0.6 s, Ready 4.9 s to 2.7 s,
+  same 9.99 M vertices. An occupancy bitmap pre-tests footprints against the
+  overpass swaths (9.3 M string-keyed Map probes gone); the covered-tunnel class
+  no longer erases the rowhouses above it. build() yields through the shared
+  MessageChannel helper instead of setTimeout(10), which background tabs clamp
+  to 1 s (23 steps of that was 23 s of sleep).
+- **Runtime.** The shadow map redraws only when aimSun moves the box or the sun,
+  when the dock set changes, or every 4th frame while vehicles move; solar/lunar
+  are memoised per clock minute; fabric chunks wholly beyond fog.far are skipped
+  (view-depth test; in true fog 236 of 467 meshes drop); the facade shader takes
+  the far average straight away once `det` is zero; the pixel ratio adapts to
+  frame time between 0.9 and the display's own ratio (`?dpr=N` pins it); instance
+  buffers upload only their live range through one `flushInst`; the dead
+  `septaPin` mesh, the per-frame ship recolour, the per-frame card innerHTML
+  and the Indego atlas repaint (now signature-gated) are gone.
+- **Regressions fixed.** The Enter button kept focus in Chromium so W A S D and
+  every hotkey were dead until a canvas click (the keydown guard bailed on any
+  BUTTON; now only Space/Enter, clicks blur, Cmd/Ctrl/Alt chords are ignored);
+  359 district steeples were wound inward and culled; tree taps needed a live
+  vehicle on screen; the first search blurred its own input; Ships off
+  reconnected on the next frame; a dead SEPTA feed left ghost buses; the weather
+  fetch had no timeout, retry or hidden-tab gate; DST evenings read an hour off;
+  the flight rotation walked two dead proxies on one blip; far-ring roads paved
+  a 170 m band twice at the wide seam.
+- **Feeds.** SEPTA is read from the VPS's baked `septa.json` (ops/septa_bake.py,
+  every 10 s, ~16 KB instead of 343 KB per pull) with the JSONP rotation as
+  fallback; ships poll `ais.json` from ops/ais_relay.py (one aisstream socket
+  held server-side, stdlib WebSocket client) with the direct socket as fallback
+  until the relay is live and the key is rotated. Both server pieces, the nginx
+  additions (Cache-Control, gzip_vary, hardening headers, www redirect, /b beacon
+  endpoint, static feed files), the systemd restart drop-in and the uptime recipe
+  are in `3d-model/ops/` for Mike to apply; nothing was changed on the box.
+- **Instrumentation.** `?dev=1` shows a 1 Hz readout and `__dbg.perf()` returns
+  per-step build timings, frame p50/p95, renderer.info and the heap; on
+  philly3d.com the page sends one 204 beacon per checkpoint to `/b` (no IP kept).
+- **Data and pipeline.** lidar_join.py reran over the whole city (424,652 measured
+  ways, the NW wedge now trued) and pack_city.py repacked with the fixed packer
+  (area centroid guard, saturation is fatal, Douglas-Peucker ring budgets,
+  missing LUTs fatal unless `--allow-missing`); pack_wide clips rings to the
+  int16 box (the truncated Fairmount ring); one `philly_frame.py` projection for
+  every script; `overpass.py` per-tile checkpoints for all three fetches;
+  `pipeline.py --graph`, `tests/` (27 tests, stdlib), `requirements.txt`,
+  `provenance.py`, `docs_check.py`; handoff.md rewritten and this log split out.
+- **UX.** Preferences persist (localStorage), views are shareable
+  (`#p=x,y,z,yaw,pitch&t=...&l=mask`, Copy Link), the three panels are mutually
+  exclusive with Escape and tap-away, `aria-pressed`/`aria-expanded`/`aria-live`,
+  a landscape-phone breakpoint, 44 px targets, download progress on the veil,
+  and the always-visible credit line naming every data source.
+
+Still open after this round: applying the ops recipes on the VPS (Mike's go per
+change), rotating the aisstream key once the relay is live, `git gc` with Dropbox
+paused (615 loose objects, 709 MB), the ~12 areas still packed by both tiers in
+pack_wide's 500 m margin, and Tier 2 of the facade plan.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
