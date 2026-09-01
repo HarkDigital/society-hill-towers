@@ -1,0 +1,14 @@
+# philly3d: fire septa-bake.service every 10 s (see septa-bake.service for install).
+# AccuracySec=1s matters: systemd's default timer accuracy is one MINUTE, which
+# would quietly coalesce a 10 s timer into a once-a-minute one.
+[Unit]
+Description=philly3d: bake SEPTA vehicles every 10 s
+
+[Timer]
+OnBootSec=20s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Unit=septa-bake.service
+
+[Install]
+WantedBy=timers.target

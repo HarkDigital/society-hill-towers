@@ -1,0 +1,30 @@
+# philly3d.com — http-context pieces. Install as
+#   /etc/nginx/conf.d/philly3d-http.conf
+# BEFORE the vhost that references them: the stock /etc/nginx/nginx.conf includes
+# conf.d/*.conf inside http {} ahead of sites-enabled/*, and `log_format` / `map`
+# are only legal at http scope, which is why they cannot sit in
+# sites-available/philly3d. Then `nginx -t`, then reload.
+
+# IP-free beacon line: ISO time, request path + query, browser family. Deliberately
+# NO $remote_addr and NO $http_referer — a visit count and the paths hit, nothing
+# that identifies a person. Used only by `location = /b` in the vhost.
+log_format beacon '$time_iso8601 $request_uri "$http_user_agent"';
+
+# Origins allowed to read /adsb cross-origin. Anything not listed maps to "" and
+# nginx omits an add_header whose value is empty, so unknown origins get no
+# Access-Control-Allow-Origin and the browser refuses the response body.
+# (Same-origin fetches from philly3d.com never consult ACAO; it is listed so a
+# tool that sends Origin anyway still sees a truthful header.)
+map $http_origin $philly3d_acao {
+    default                          "";
+    "https://philly3d.com"           $http_origin;
+    "https://harkdigital.github.io"  $http_origin;
+    # laptop preview reading the live proxy — uncomment while developing:
+    # "http://localhost:8000"        $http_origin;
+}
+
+# The /adsb proxy cache zone ALREADY EXISTS on the box in
+# /etc/nginx/conf.d/adsb_cache.conf as
+#   proxy_cache_path /var/cache/nginx/adsb levels=1 keys_zone=adsb_cache:1m max_size=10m inactive=60s use_temp_path=off;
+# Declaring a zone twice is a config error, so it is NOT repeated here; it is
+# quoted only so a rebuild from scratch knows what to recreate.
