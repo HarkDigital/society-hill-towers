@@ -23,6 +23,7 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
+button { touch-action: manipulation; }   /* the viewport allows zoom again; no double-tap wait on the HUD */
 
 html, body {
   height: 100%;
@@ -340,7 +341,10 @@ html, body {
   letter-spacing: 0.2em;
   text-transform: uppercase;
   color: var(--paper-faint);
+  animation: loadpulse 1.6s ease-in-out infinite;   /* something moves while the page downloads */
 }
+#veil .loading.done { animation: none; }
+@keyframes loadpulse { 0%, 100% { opacity: 0.55; } 50% { opacity: 1; } }
 
 /* ---------- about panel ---------- */
 #about {
@@ -486,6 +490,10 @@ html, body {
 @media (max-width: 640px) {
   #hint { display: none; }
   .seg button, #bar .iconbtn { padding: 10px 12px; font-size: 10px; }
+  /* 44 px finger targets: the bar, and the vehicle card's dismiss */
+  #bar .iconbtn { min-width: 44px; min-height: 44px; }
+  #vehinfo { padding-right: 44px; }
+  #vehinfoX { min-width: 44px; min-height: 44px; right: 0; top: 0; }
   #compass { width: 44px; height: 44px; }
   #flyctl { right: 10px; bottom: 118px; }
   #flyctl button { width: 62px; height: 62px; }
@@ -493,6 +501,7 @@ html, body {
 
 @media (prefers-reduced-motion: reduce) {
   #veil, #about { transition: none; }
+  #veil .loading { animation: none; }
 }
 
 /* ---------- date / time panel ---------- */
@@ -568,6 +577,7 @@ html, body {
 #timepanel .mini:focus-visible, #timepanel input:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
 @media (max-width: 640px) {
   #timepanel { right: 8px; left: 8px; width: auto; bottom: 66px; }
+  #timepanel .mini { min-height: 44px; }
 }
 
 /* ---------- live SEPTA vehicle card ---------- */
@@ -777,8 +787,37 @@ html, body {
   color: var(--paper-faint);
   margin-right: 2px;
 }
+/* footer: back to the shipped layers, a link to this view (the time panel's .mini language) */
+#layerspanel .lfoot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 6px 4px 2px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+#layerspanel .mini {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 1 1 auto;
+  background: rgba(239,233,220,0.06);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--paper-dim);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+#layerspanel .mini:hover { color: var(--paper); border-color: var(--line-strong); }
+#layerspanel .mini:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
 @media (max-width: 640px) {
-  #layerspanel { bottom: 66px; }
+  /* nine 44 px rows plus the footer outgrow a small phone: the panel scrolls (dvh where it exists) */
+  #layerspanel { bottom: 66px; max-height: calc(100vh - 150px); max-height: calc(100dvh - 80px); overflow-y: auto; }
+  #layerspanel .lrow, #layerspanel .mini { min-height: 44px; }
 }
 
 /* ---------- Montserrat role weights (one family, hierarchy by weight) ---------- */
@@ -814,4 +853,18 @@ html, body {
 #osmcredit a:hover, #osmcredit a:focus-visible { color: var(--paper); }
 @media (max-width: 900px) {
   #osmcredit .more { display: none; }
+}
+
+/* ---------- short viewports (a landscape phone): Enter and the load line must stay reachable ---------- */
+@media (max-height: 460px) {
+  #veil { overflow-y: auto; align-items: flex-start; }
+  #veil .card { padding: 12px 24px 16px; }
+  #veil .veilmark { width: 34px; height: 34px; margin-bottom: 6px; }
+  #veil .kicker { margin-bottom: 8px; }
+  #veil h2 { font-size: clamp(20px, 5vh, 28px); }
+  #veil .sub { display: none; }
+  #veil .enter { margin-top: 14px; padding: 11px 26px 10px; }
+  #veil .loading { margin-top: 12px; }
+  #timepanel, #searchpanel, #layerspanel { bottom: 62px; max-height: calc(100vh - 70px); max-height: calc(100dvh - 70px); overflow-y: auto; }
+  #searchOut { max-height: 110px; }
 }
