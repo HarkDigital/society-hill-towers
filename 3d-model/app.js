@@ -4916,15 +4916,18 @@
       const toRing = (fl2) => { const pp = new Array(fl2.length >> 1); for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]]; return pp; };
       // the district sheet first (the convex hull of the complex's lots: there is no lawn in
       // it), then each lot on top; both DRAPED on the terrain like the big parks, since a flat
-      // polygon spanning the undulating ground let the mottled lawn rise through it
+      // polygon spanning the undulating ground let the mottled lawn rise through it. Draped
+      // DENSELY (8 and 10 m against the ground's 25 m facets) and 12 cm up, still under the
+      // streets at 24 cm: at 20 m the two linear reads of the same ground disagreed by more
+      // than the 10 cm the sheet had, and the facets showed as jagged green blobs
       for (const fl2 of (PARKING_SOUTH.fill || [])) {
-        try { areaParts.push({ geom: drapedPoly(toRing(fl2), LAYER.plaza + 0.005, 20), color: new THREE.Color(0x2b2a27), style: 3 }); } catch (e) { /* degenerate */ }
+        try { areaParts.push({ geom: drapedPoly(toRing(fl2), LAYER.plaza + 0.02, 8), color: new THREE.Color(0x2b2a27), style: 3 }); } catch (e) { /* degenerate */ }
       }
       const seg = [];
-      const yAt = (x, z) => siteY(x, z, 'ground') + LAYER.plaza + 0.035;
+      const yAt = (x, z) => siteY(x, z, 'ground') + LAYER.plaza + 0.065;
       for (const fl2 of PARKING_SOUTH.polys) {
         const pp = toRing(fl2);
-        try { areaParts.push({ geom: Math.abs(signedArea(pp)) > 1500 ? drapedPoly(pp, LAYER.plaza + 0.01, 20) : flatPoly(pp, null, LAYER.plaza + 0.01), color: new THREE.Color(0x2e2d2a), style: 3 }); } catch (e) { continue; }
+        try { areaParts.push({ geom: Math.abs(signedArea(pp)) > 600 ? drapedPoly(pp, LAYER.plaza + 0.035, 10) : flatPoly(pp, null, LAYER.plaza + 0.035), color: new THREE.Color(0x2e2d2a), style: 3 }); } catch (e) { continue; }
         // the stalls, as they read from above: double rows 18.5 m apart, each with its two
         // stall-front lines running the row's length and ticks every 2.7 m between them.
         // Rows follow the street grid (whichever grid axis the lot's long side is nearer),

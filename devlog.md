@@ -2130,6 +2130,12 @@ plus the ticks, rows follow the street grid (whichever grid axis the lot's long 
 nearer), every line clipped to its lot. From 600 m the lots read as rows; from 100 m as
 stalls.
 
+Still patches (Mike): the ground is a 25 m heightfield off a 50 m elevation grid and the
+sheet was draped at 20 m, two linear reads of one surface that disagree by more than the
+10 cm the sheet had, so its facets showed as jagged green blobs. The sheet is now draped at
+8 m and the lots at 10 m, the stack lifted to 12, 13.5 and 16.5 cm (streets sit at 24), and
+nothing rises through it from 700 m or 250 m.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
