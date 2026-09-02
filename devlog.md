@@ -2075,6 +2075,27 @@ and /lightning.json carry it, a conditional request answers 304. (A bare HEAD on
 not carry it, an nginx index-redirect quirk; browsers send GET.) `ops/philly3d.vhost.live`
 recaptured.
 
+### Round 47 coda 4 (Sep 2, night: the Linc's roof, more light, the lots)
+
+Mike, with a live screenshot and a Google aerial: a partial roof over the Linc's field that
+is not there, more stadium lights for both with a glow at night, and the neighbourhood is
+mostly parking lots, not lawn.
+
+- **The roof.** `upperRing` built each deck band from two arcs voted separately: the outer
+  ring's points passing keepFn and the inner ring's points passing the same test. The inner
+  ring is a 0.55 copy, so fewer of its points passed, the arcs were unequal, the band
+  polygon crossed itself and earcut roofed the field. The band now takes the outer arc's
+  INDICES on the inner ring (same vertex order), a proper ring every time, and the end-zone
+  stands, which the old vote had silently skipped, stand at 30 m.
+- **More light.** Three floodlights across every mast head (the ballpark's surveyed
+  standards, the Linc's four corners), sixteen a side along the Linc's canopy edges, sprites
+  up to 18 px; and a night halo: additive warm sheets (`haloMat`, opacity 0.16 x night) over
+  every deck and both fields, on with the streetlamps.
+- **The lots.** `fetch_parking.py` pulls OSM amenity=parking for the sports complex (87
+  surface lots, garages skipped) into `parking_south.json`, and the outer-districts builder
+  lays them as asphalt flats a hair above the lawn: NRG's lots, the ballpark's, the Linc's,
+  Lot P, Lot M East.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

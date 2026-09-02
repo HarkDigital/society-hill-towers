@@ -22,7 +22,7 @@ REQUIRED = {
     "dem_nw.json": 140_000, "wwb.json": 250, "city_limit.json": 2_500, "wide_names.json": 3_000, "facade_palette.json": 300,
     "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "traffic.b64": 100_000,
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
-    "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000,
+    "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000, "parking_south.json": 9_000,
 }
 MAX_HTML = 25_000_000   # runaway-growth tripwire (the page is ~23 MB; the old 16 MB artifact cap is long moot)
 # Packed int16 blobs are stored byte-planar (header, all low bytes, all high
@@ -143,6 +143,8 @@ let_blob("TRAFFIC_B64", "traffic.b64")
 # PPR parkland boundaries and full-fidelity creek/canal rings (fetch_nw_parks.py / fetch_nw_water.py)
 const("DEM_NW", dem_of("dem_nw.json", 1))
 const("NW_PARKS", text_of("nw_parks.json", "null"))
+# the sports complex's surface lots (fetch_parking.py), asphalt flats under the outer districts
+const("PARKING_SOUTH", text_of("parking_south.json", "null"))
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
 let_blob("POLES_B64", "poles.b64")

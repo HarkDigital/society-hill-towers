@@ -101,6 +101,8 @@ the hard way are in `devlog.md` (Rounds 13, 15, 23, 25, 26, 39). Scripts marked 
 | `fetch_south.py` → `osm_south_raw.json`, `dem_south.json` | South extension: the stadium complex + the Walt Whitman Bridge (`fetch_south.log`). |
 | `fetch_outskirts.py` → `osm_outskirts_raw.json`, `outskirts_tiles/` | Resumable tiled fetch of the three strips of the far-ring box across the city line: south of the Navy Yard's latitude east of −75.185, the east bank above 39.915 east of −74.990, and Montgomery County above 40.100 (`fetch_outskirts.log`). Ways only, no water or park relations. |
 | `fetch_landuse.py` → `osm_landuse_raw.json`, `landuse_tiles/` | Residential, commercial, industrial and retail land use over the whole far-ring box (16 tiles, ways only) for `pack_outskirts.py`'s filler: synthetic strips of houses along the streets inside land use beyond the city line wherever OSM maps the land use but few of the buildings. |
+| `fetch_parking.py` → `parking_south.json` | The sports complex's surface lots (OSM amenity=parking, 87 rings) drawn as asphalt flats by the outer-districts builder; the raw answer is cached in `lidar_cache/`. |
+| `parking_south.json` | Those 87 lot rings in the model frame, flattened x,z pairs. |
 | `fetch_boundary.py` → `city_limit.json` | *venv.* The city line from OSM relation 188022, buffered 2 km into the flight limit; the raw relation is cached in `lidar_cache/phila_boundary_raw.json`. |
 | `fetch_city.py` → `osm_city_raw.json`, `dem_city.json`, `city_tiles/` | Resumable tiled fetch of the rest of the city: boxes A–D plus `river-wards` (Round 36) and `nw-gap` (Round 40) (`fetch_city.log`). |
 | `fetch_dem_nw.py` → `dem_nw.json` | 50 m NED over the NW hills, border pre-feathered to dem_city. |
