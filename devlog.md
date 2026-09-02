@@ -2065,6 +2065,16 @@ setting, and the long thin rain looks dumb.
 - **The rain.** 0.9 m dashes at street level (a drop over one frame) stretching to 2.3 m
   from altitude, 16,000 of them instead of 9,000 at 4.5 to 10 m, slightly brighter.
 
+### Round 47 coda 3 (Sep 2, evening: the stale tab, closed)
+
+Mike's go on the VPS: `location /` on philly3d.com now sends `Cache-Control: no-cache`
+(nginx -t, reload, backup kept as philly3d.bak-20260902). A page load revalidates every
+time and gets a 304 when nothing changed; the feed files revalidate too; `/adsb` keeps
+its own no-store. Verified: GET / returns the header with the gzip body, /index.html
+and /lightning.json carry it, a conditional request answers 304. (A bare HEAD on / does
+not carry it, an nginx index-redirect quirk; browsers send GET.) `ops/philly3d.vhost.live`
+recaptured.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

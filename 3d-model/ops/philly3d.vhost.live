@@ -1,5 +1,6 @@
-# Captured read-only from the VPS on 2026-09-01 (/etc/nginx/sites-available/philly3d).
-# The .example beside this file is this block plus the planned additions.
+# Captured read-only from the VPS on 2026-09-02 (/etc/nginx/sites-available/philly3d), after the
+# Cache-Control no-cache line was added to location / with Mike's go (backup: philly3d.bak-20260902).
+# The .example beside this file is this block plus the still-planned additions.
 server {
     listen 80;
     listen [::]:80;
@@ -54,5 +55,9 @@ server {
     location / {
         gzip_static on;
         try_files $uri $uri/ =404;
+        # the page and the feed files revalidate on every load: with no Cache-Control the
+        # browser's heuristic (10% of the file's age) kept serving a stale build for hours
+        # after a deploy; the ETag turns repeat loads into cheap 304s
+        add_header Cache-Control "no-cache" always;
     }
 }
