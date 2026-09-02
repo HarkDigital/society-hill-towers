@@ -8352,11 +8352,12 @@
   // the Philadelphia side first, the team colour on its border, the clock or inning, and
   // "away" when they are on the road. A final's hour runs from the moment the feed turned
   // it final, or, for a page that arrived later, from the start time plus a typical length.
-  const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [], ended: {}, seenLive: {} };
+  const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [], pins: [], ended: {}, seenLive: {} };
   const SCORE_LEN = { mlb: 3.0 * 3600000, nfl: 3.3 * 3600000, nhl: 2.6 * 3600000, nba: 2.4 * 3600000 };
+  // h: where the bubble hangs; top: the roof the pin drops to
   const SCORE_VENUES = {
-    mlb: { x: -1857, z: 4383, h: 74 }, nfl: { x: -1946, z: 4954, h: 86 },
-    nhl: { x: -2327, z: 4892, h: 64 }, nba: { x: -2327, z: 4892, h: 64 },
+    mlb: { x: -1857, z: 4383, h: 135, top: 44 }, nfl: { x: -1946, z: 4954, h: 150, top: 57 },
+    nhl: { x: -2327, z: 4892, h: 115, top: 40 }, nba: { x: -2327, z: 4892, h: 115, top: 40 },
   };
   const SCORE_KEYS = ['mlb', 'nfl', 'nhl', 'nba'];
   const SCORE_URL = (k) => 'https://site.api.espn.com/apis/site/v2/sports/' + ({ mlb: 'baseball/mlb', nfl: 'football/nfl', nhl: 'hockey/nhl', nba: 'basketball/nba' })[k] + '/scoreboard';
@@ -8392,7 +8393,7 @@
               detail = st.shortDetail || 'Final';
             }
             if (!show) continue;
-            games.push({ k, live, us: us.team.abbreviation, uscore: us.score, them: them && them.team ? them.team.abbreviation : '', tscore: them ? them.score : '', color: us.team.color, detail: detail + (us.homeAway === 'home' ? '' : ', away') });
+            games.push({ k, live, us: us.team.abbreviation, uscore: us.score, them: them && them.team ? them.team.abbreviation : '', tscore: them ? them.score : '', color: us.team.color, logo: us.team.logo || '', detail: detail + (us.homeAway === 'home' ? '' : ', away') });
           }
         });
         SCORES.fails = ok ? 0 : SCORES.fails + 1;
@@ -8402,17 +8403,31 @@
   }
   function scoresSet(games) {
     for (const el of SCORES.els) el.remove();
-    SCORES.els = [];
+    for (const o of SCORES.pins) { groupCity.remove(o); o.geometry.dispose(); o.material.dispose(); }
+    SCORES.els = []; SCORES.pins = [];
     SCORES.games = games;
     games.forEach((g, i) => {
       const el = document.createElement('div');
       el.className = 'lbl score' + (g.live ? '' : ' final');
-      el.innerHTML = '<span class="live"></span>' + septaEsc(g.us + ' ' + g.uscore + ', ' + g.them + ' ' + g.tscore) + '<br>' + septaEsc(g.detail);
-      if (/^[0-9a-f]{6}$/i.test(g.color || '')) el.style.borderColor = '#' + g.color;
+      const ok = /^[0-9a-f]{6}$/i.test(g.color || '');
+      const logo = /^https:\/\/[a-z0-9.-]*espncdn\.com\//i.test(g.logo || '') ? '<img class="logo" alt="" src="' + septaEsc(g.logo) + '" onerror="this.remove()">' : '';
+      el.innerHTML = logo + '<span class="txt"><span class="live"></span>' + septaEsc(g.us + ' ' + g.uscore + ', ' + g.them + ' ' + g.tscore) + '<br>' + septaEsc(g.detail) + '</span>';
+      if (ok) el.style.borderColor = '#' + g.color;
       labelsRoot.appendChild(el);
       SCORES.els.push(el);
       const v = SCORE_VENUES[g.k];
-      g.y = siteY(v.x, v.z, 'ground') + v.h + (games.slice(0, i).some((o) => SCORE_VENUES[o.k] === v) ? 16 : 0);   // two at the arena stack
+      const gy = siteY(v.x, v.z, 'ground');
+      g.y = gy + v.h + (games.slice(0, i).some((o) => SCORE_VENUES[o.k] === v) ? 22 : 0);   // two at the arena stack
+      // the pin: a line from the bubble down to the roof, a small ball where it lands
+      const col = ok ? '#' + g.color : 0xc89b5e;
+      const lg = new THREE.BufferGeometry();
+      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([v.x, g.y, v.z, v.x, gy + v.top, v.z]), 3));
+      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }));
+      line.renderOrder = 12; line.frustumCulled = false;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: col, depthTest: false, depthWrite: false }));
+      ball.position.set(v.x, gy + v.top, v.z); ball.renderOrder = 12;
+      groupCity.add(line); groupCity.add(ball);
+      SCORES.pins.push(line, ball);
     });
   }
   function scoresRender() {
@@ -11616,7 +11631,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

@@ -797,7 +797,9 @@ body.touchfly .pad { display: flex; }
 #searchOut .schip + .srow { margin-top: 6px; }
 .lbl.smark { color: var(--bronze); border-color: var(--bronze-dim); }
 /* live score bubbles over the venues (home games only) */
-.lbl.score { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-align: center; line-height: 1.35; padding: 5px 11px; border-width: 1.5px; background: rgba(23, 21, 18, 0.84); }
+.lbl.score { display: flex; align-items: center; gap: 9px; font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-align: left; line-height: 1.35; padding: 5px 12px 5px 8px; border-width: 1.5px; background: rgba(23, 21, 18, 0.84); }
+.lbl.score .logo { width: 28px; height: 28px; object-fit: contain; flex: none; }
+.lbl.score .txt { white-space: nowrap; }
 .lbl.score .live { display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: #e0483e; animation: scorelive 1.6s ease-in-out infinite; }
 @keyframes scorelive { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 .lbl.score.final .live { background: #8a8580; animation: none; }   /* a final: the dot goes still and gray */

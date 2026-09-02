@@ -2170,6 +2170,11 @@ score and a still gray dot. The hour runs from the moment the feed turned the ga
 or, for a page that arrived after that, from the start time plus a typical length (3 h
 MLB, 3.3 h NFL, 2.6 h NHL, 2.4 h NBA). Polls every 45 s while something is on, 90 s otherwise.
 
+Mike: the Phillies logo, a pin down to the stadium, and the bubble higher. The bubble now
+carries the team's logo from the feed (ESPN's own CDN, only that host, removed if it fails
+to load), hangs at 135 m over the ballpark, 150 over the Linc and 115 over the arena, and a
+line in the team colour drops from it to a small ball on the roof.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
