@@ -856,7 +856,8 @@
   aimSun(-1450, -700, 800);
 
   // live-weather state (see applyWx below): cloud fraction, WMO code, rates, world wind m/s
-  const WX = { cover: 0.22, ok: false, code: -1, temp: null, precip: 0, snowfall: 0, windX: 2.1, windZ: 0.9 };
+  const WX = { cover: 0.22, ok: false, code: -1, temp: null, precip: 0, snowfall: 0, windX: 2.1, windZ: 0.9,
+    tsObs: false, tsWarn: false, tsWatch: false, nwsT: 0, nwsText: '' };   // NWS: thunder observed at an airport, a severe-storm warning, a watch
   const wxWind = new THREE.Vector2(0.0012, 0.0005);
   // per-fragment hash noise added to the sky before it is written: +/-0.5/255
   // breaks the 8-bit banding of the shallow dusk/night gradient (0 disables)
@@ -871,6 +872,7 @@
       cGround: { value: new THREE.Color(COLORS.skyGround) },
       uSun: { value: sunDir.clone() },
       cSun: { value: new THREE.Color(COLORS.sun) },
+      uSunVis: { value: 1 },   // the disc and halo set with the horizon (the world is flat and ends; the real one curves)
       uCloud: { value: 0.22 },
       uCloudLight: { value: 1.0 },
       uCloudOff: { value: new THREE.Vector2(0, 0) },
@@ -884,7 +886,7 @@
       'varying vec3 vDir;\n' +
       'void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }',
     fragmentShader:
-      'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun;\n' +
+      'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun; uniform float uSunVis;\n' +
       'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
       'uniform vec3 uMoon, uMoonU, uMoonV; uniform float uMoonK, uMoonI;\n' +
       'float chash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
@@ -901,7 +903,7 @@
       '  float s = clamp(dot(nd, uSun), 0.0, 1.0);\n' +
       '  float sunAng = acos(s);\n' +
       '  float disc = 1.0 - smoothstep(0.0085, 0.0118, sunAng);\n' +
-      '  col += cSun * (disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24 + pow(s, 12.0) * 0.10);\n' +
+      '  col += cSun * ((disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24) * uSunVis + pow(s, 12.0) * 0.10 * (0.35 + 0.65 * uSunVis));\n' +
       // the Moon: a phased disc on the per-fragment normalized direction (nd,
       // never vDir — the coarse dome smears interpolated math, the sun lesson).
       // The terminator ellipse comes straight from the illuminated fraction; its
@@ -961,6 +963,7 @@
   let envRT = null;
   function refreshEnv() {
     for (const k of ['cZenith', 'cHorizon', 'cGround', 'cSun']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
+    envSky.material.uniforms.uSunVis.value = skyMat.uniforms.uSunVis.value;
     envSky.material.uniforms.uSun.value.copy(skyMat.uniforms.uSun.value);
     envSky.material.uniforms.uCloud.value = skyMat.uniforms.uCloud.value;
     envSky.material.uniforms.uCloudLight.value = skyMat.uniforms.uCloudLight.value;
@@ -5305,6 +5308,21 @@
       [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
     ]) mkFarGround(x0, x1, z0, z1, 100, nwHole, false);
     if (nwHole) mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true);
+    // the apron: dark ground from the world's edge out to 60 km, well under the
+    // river beds so nothing fights it. From altitude the city used to end in a
+    // hard diagonal against the sky dome's below-horizon band; now it ends in
+    // fog, the way ground does. Same material as the far strips, so the day and
+    // night retint, the mottle and the weather pass all apply.
+    {
+      const APRON = 60000, ax = (W.x0 + W.x1) / 2, az = (W.z0 + W.z1) / 2;
+      const ag = new THREE.PlaneGeometry(APRON * 2, APRON * 2);
+      ag.rotateX(-Math.PI / 2);
+      const apron = new THREE.Mesh(ag, farGroundMat);
+      apron.position.set(ax, TERRAIN.bed - 8, az);
+      apron.frustumCulled = false;
+      apron.renderOrder = -1;   // drawn first: it is behind everything and never coplanar with anything
+      groupCity.add(apron);
+    }
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await yieldNow();
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
@@ -7171,9 +7189,9 @@
     else if (pickedVeh) septaCard(pickedVeh);        // keep late/next-stop fresh
   }
   function septaStatus() {
-    const n = septaVeh.size, off = SEPTA.fails >= 3;
-    let onRoute = 0;
-    if (SEPTA.filter) septaVeh.forEach((v) => { if (!v.ug && v.route === SEPTA.filter) onRoute++; });
+    const off = SEPTA.fails >= 3;
+    let n = 0, onRoute = 0;   // vehicles out past the map are not counted (v.off, set by the road snap)
+    septaVeh.forEach((v) => { if (v.off) return; n++; if (SEPTA.filter && !v.ug && v.route === SEPTA.filter) onRoute++; });
     const shown = SEPTA.filter ? onRoute + ' of ' + n : n + ' Live';   // the badge is small; the route name rides the title and the chip
     btnTransit.title = 'Live SEPTA Vehicles (V): ' + (off ? 'Feed Offline' : SEPTA.filter ? shown : n + ' Tracked Now');
     const tc = document.getElementById('transitCount');
@@ -7304,6 +7322,7 @@
     // tap point (a little wider under the crosshair, where aiming is coarser)
     let bestV = null, bestS = null, bestD = (vpWasLocked ? 46 : 30) ** 2;
     if (sAct) septaVeh.forEach((v) => {
+      if (v.off) return;   // not drawn, not pickable
       if (SEPTA.filter && v.route !== SEPTA.filter) return;   // not drawn, not pickable
       if (v.ug) return;
       _ssv.set(v.dx != null ? v.dx : v.x, (v.gy || 0) + 3, v.dz != null ? v.dz : v.z).project(camera);
@@ -7524,7 +7543,8 @@
         if (v.snT === undefined || now - v.snT > 120) {
           v.snT = now;
           const sn = septaSnapRoad(v.x, v.z, 20);
-          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; } else { v.snx = null; }
+          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.off = false; }
+          else { v.snx = null; v.off = !septaSnapRoad(v.x, v.z, 140); }   // no drawn street within 140 m: past the modeled city, not drawn
         }
         if (v.snx != null) { wx = v.snx; wz = v.snz; }
       }
@@ -7546,6 +7566,7 @@
       dyaw = wrapPi(dyaw);
       v.yaw += Math.abs(dyaw) <= cap ? dyaw : Math.sign(dyaw) * cap;
       if (v.ug) return;                 // tunnel trolleys aren't drawn — nothing under buildings
+      if (v.off) return;   // a suburban tail of a route has nothing to stand on here
       if (SEPTA.filter && v.route !== SEPTA.filter) return;   // a route search shows that route alone (the pick arrays fill below, so they stay in step)
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
         v.gx = v.dx; v.gz = v.dz;
@@ -10253,7 +10274,49 @@
   }
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && performance.now() - wxOkT > 15 * 60 * 1000) fetchWeather();
+    if (!document.hidden && performance.now() - WX.nwsT > 5 * 60 * 1000) fetchNws();
   });
+  // the National Weather Service: the latest METAR-style observation at PHL and
+  // Northeast Airport (presentWeather carries TS when thunder is heard there)
+  // and the active alerts for the site. The API is CORS-open; nothing is keyed.
+  const NWS_STATIONS = ['KPHL', 'KPNE'];
+  let nwsBusy = false;
+  function fetchNws() {
+    if (!wxCanFetch || WX_PRESETS[wxForced] || document.hidden || nwsBusy) return;
+    nwsBusy = true;
+    const opts = { headers: { Accept: 'application/geo+json' }, signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined };
+    const get = (u) => fetch(u, opts).then((r) => (r && r.ok ? r.json() : null)).catch(() => null);
+    Promise.all([...NWS_STATIONS.map((st) => get('https://api.weather.gov/stations/' + st + '/observations/latest')),
+      get('https://api.weather.gov/alerts/active?point=39.9455,-75.1447')]).then((rs) => {
+      nwsBusy = false;
+      const obs = rs.slice(0, NWS_STATIONS.length), al = rs[NWS_STATIONS.length];
+      let any = false, tsObs = false, text = '';
+      for (const o of obs) {
+        const pr = o && o.properties;
+        if (!pr) continue;
+        any = true;
+        const age = pr.timestamp ? (Date.now() - Date.parse(pr.timestamp)) / 60000 : 999;
+        if (age > 75) continue;   // an hourly report older than that says nothing about now
+        const pw = Array.isArray(pr.presentWeather) ? pr.presentWeather : [];
+        const ts = pw.some((w) => /thunder/i.test(w.weather || '') || /TS/.test(w.rawString || '')) || /thunder/i.test(pr.textDescription || '');
+        if (ts) tsObs = true;
+        if (!text && pr.textDescription) text = pr.textDescription;
+      }
+      let warn = false, watch = false;
+      if (al && Array.isArray(al.features)) {
+        any = true;
+        for (const f of al.features) {
+          const ev = String((f.properties || {}).event || '');
+          if (/Severe Thunderstorm Warning|Tornado Warning/i.test(ev)) warn = true;
+          else if (/Severe Thunderstorm Watch|Tornado Watch/i.test(ev)) watch = true;
+          else if (/Special Weather Statement/i.test(ev) && /thunder|lightning/i.test(String((f.properties || {}).description || ''))) watch = true;
+        }
+      }
+      if (!any) return;   // both calls failed: keep the last facts until they expire
+      WX.tsObs = tsObs; WX.tsWarn = warn; WX.tsWatch = watch; WX.nwsText = text; WX.nwsT = performance.now();
+      if (WX.ok) { wxSetTargets(); refreshTimeUI(); }
+    }).catch(() => { nwsBusy = false; });
+  }
   function wxLabel() {
     const c = WX.code;
     return c === 45 || c === 48 ? 'Fog' : c >= 51 && c <= 55 ? 'Drizzle'
@@ -10262,6 +10325,12 @@
       : c === 66 || c === 67 ? 'Freezing rain' : c === 71 || c === 77 || c === 85 ? 'Light snow'
       : c === 73 ? 'Snow' : c === 75 || c === 86 ? 'Heavy snow'
       : c === 95 ? 'Thunderstorm' : c === 96 || c === 99 ? 'Thunderstorm, hail' : '';
+  }
+  function wxLabelFull() {   // the readout: the NWS storm state wins over the model code
+    const base = wxLabel();
+    if (!WXFX.storm || WX.code >= 95) return base;
+    const why = WX.tsWarn ? 'Severe Thunderstorm Warning' : WX.tsObs ? 'Thunderstorm' : 'Thunderstorm Watch';
+    return base ? base + ', ' + why : why;
   }
 
   // ---- weather FX. Two camera-following particle boxes (rain streaks as line
@@ -10274,18 +10343,27 @@
   const WXFX = {
     rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0,
     tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0,
-    storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, dayF: 1,
+    storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, dayF: 1, boltGap: [2600, 9000],
   };
   function wxSetTargets() {
     const F = WXFX, c = WX.code;
-    F.storm = c >= 95 && c <= 99;
     F.tFog = (c === 45 || c === 48) ? 1 : 0;
     const snowCode = (c >= 71 && c <= 77) || c === 85 || c === 86;
     const iceCode = c === 56 || c === 57 || c === 66 || c === 67;
     const rainCode = (c >= 51 && c <= 65 && !iceCode) || (c >= 80 && c <= 82);
     // WMO intensity steps, lifted further by the measured rate when it is larger
     let rainI = c === 55 || c === 65 || c === 82 ? 1 : c === 53 || c === 63 || c === 81 ? 0.6 : c === 51 || c === 61 || c === 80 ? 0.3 : 0;
-    if (F.storm) rainI = Math.max(rainI, c >= 96 ? 1 : 0.75);
+    // Open-Meteo's current code is a model estimate and rarely says 95 while it
+    // is actually thundering, so the NWS decides too: thunder observed at PHL or
+    // PNE within the hour, a Severe Thunderstorm (or Tornado) Warning, or a
+    // Severe Thunderstorm Watch while it is raining. NWS facts expire after 20 min.
+    const nwsFresh = WX.nwsT > 0 && performance.now() - WX.nwsT < 20 * 60 * 1000;
+    const raining = rainCode || WX.precip > 0.3 || rainI >= 0.6;
+    const nwsStorm = nwsFresh && (WX.tsObs || WX.tsWarn || (WX.tsWatch && raining));
+    F.storm = (c >= 95 && c <= 99) || nwsStorm;
+    // bolts come thick under a warning or observed thunder, sparser under a watch
+    F.boltGap = (c >= 95 && c <= 99) || (nwsFresh && (WX.tsObs || WX.tsWarn)) ? [2600, 9000] : [7000, 18000];
+    if (F.storm) rainI = Math.max(rainI, c >= 96 ? 1 : 0.6);
     F.tRain = (rainCode || F.storm || (!snowCode && !iceCode && WX.precip > 0.1))
       ? clamp(Math.max(rainI, WX.precip / 6), 0.18, 1) : 0;
     const snowI = c === 75 || c === 86 ? 1 : c === 73 ? 0.65 : c === 71 || c === 77 || c === 85 ? 0.35 : 0;
@@ -10518,7 +10596,7 @@
     boltGeo.setDrawRange(0, n * 2);
     WXFX.boltEnd = now + 240;
     WXFX.boltFlash = clamp(1600 / dist, 0.4, 1);   // near strikes light the world harder
-    WXFX.nextBolt = now + 2600 + Math.random() * 9000;
+    WXFX.nextBolt = now + WXFX.boltGap[0] + Math.random() * WXFX.boltGap[1];
   }
   const _wxc = new THREE.Color();
   const rainVel = new THREE.Vector3(), rainOff = new THREE.Vector3();
@@ -10540,17 +10618,19 @@
     if (reducedMotion) return;   // sky, fog and surfaces still answer the weather; no particles, no strobe
     const cy = camera.position.y;
     const hi = smooth(120, 1100, cy);         // altitude grows the box and streaks so it still reads
-    const vis = 1 - smooth(1700, 2600, cy);   // far above the deck the precipitation fades out
+    const vis = 1 - smooth(350, 1000, cy);    // rain is not a thing you see from a kilometre up: it fades out, the fog and gloom carry it
     rainMesh.visible = F.rain > 0.02 && vis > 0.02;
     if (rainMesh.visible) {
-      rainVel.set(WX.windX * 0.75, -(8.5 + 4 * F.rain + 9 * F.hail), WX.windZ * 0.75);
+      // real fall speed at street level; faster with altitude so a streak seen from above
+      // still reads as falling rain instead of a slow drift
+      rainVel.set(WX.windX * 0.75, -(8.5 + 4 * F.rain + 9 * F.hail) * (1 + 2.2 * hi), WX.windZ * 0.75);
       rainOff.addScaledVector(rainVel, dt);
       rainU.uOff.value.copy(rainOff);
       // small box at street level so the near field is dense enough to read
       rainU.uBox.value.set(45 + 740 * hi, 40 + 415 * hi, 45 + 740 * hi);
       rainU.uCam.value.copy(camera.position);
       rainU.uCam.value.y += rainU.uBox.value.y * 0.25;   // bias the box upward: rain arrives from above
-      rainU.uLen.value = (4.5 + 16.5 * hi) * (1 - 0.5 * F.hail);
+      rainU.uLen.value = (4.5 + 5.5 * hi) * (1 - 0.5 * F.hail);   // never the 21 m spaghetti the old altitude scale drew
       rainU.uVelN.value.copy(rainVel).normalize();
       rainU.uFrac.value = 0.12 + 0.88 * F.rain;
       rainU.uAlpha.value = (0.75 - 0.35 * hi) * vis * (0.30 + 0.70 * F.dayF) * Math.min(1, 0.5 + F.rain);
@@ -10570,7 +10650,7 @@
       snowU.uAlpha.value = 0.95 * vis * (0.45 + 0.55 * F.dayF);
     }
     if (F.storm) {
-      if (!F.nextBolt) F.nextBolt = now + 1200 + Math.random() * 5000;
+      if (!F.nextBolt) F.nextBolt = now + 1200 + Math.random() * F.boltGap[1] * 0.5;
       if (now >= F.nextBolt) spawnBolt(now);
     } else F.nextBolt = 0;
     if (now < F.boltEnd) {
@@ -10632,6 +10712,8 @@
     }
     aimSun(lastAim.cx, lastAim.cz, lastAim.extent);
     skyMat.uniforms.uSun.value.copy(sp.dir);
+    skyMat.uniforms.uSunVis.value = smooth(-1.1, 0.4, el);   // below the horizon the disc is gone, only the glow lingers
+    envSun.visible = el > -0.6;
     // the phased moon disc: bright-limb tangent from the world sun/moon vectors
     skyMat.uniforms.uMoon.value.copy(mp.dir);
     _vA.copy(sp.dir).addScaledVector(mp.dir, -sp.dir.dot(mp.dir));
@@ -10640,7 +10722,7 @@
     skyMat.uniforms.uMoonU.value.copy(_vA);
     skyMat.uniforms.uMoonV.value.crossVectors(mp.dir, _vA);
     skyMat.uniforms.uMoonK.value = mp.k;
-    skyMat.uniforms.uMoonI.value = smooth(-1, 5, mp.el) * (1 - smooth(-7, 1, el)) * (1 - 0.85 * WX.cover);
+    skyMat.uniforms.uMoonI.value = smooth(-0.5, 5, mp.el) * (1 - smooth(-7, 1, el)) * (1 - 0.85 * WX.cover);
     const mixPal = (k, out) => out.copy(PAL.night[k]).lerp(PAL.twi[k], twi).lerp(PAL.day[k], dayF);
     const cz = mixPal('z', _pz), ch = mixPal('h', _ph), cg = mixPal('g', _pg);
     // overcast grays the sky toward a flat deck
@@ -10721,7 +10803,7 @@
       : (mp.wax ? 'Waxing Gibbous' : 'Waning Gibbous');
     const oct = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(mp.az / 45) % 8];
     timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set)
-      + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' + (WX.temp == null ? '' : ' ' + Math.round(WX.temp) + '°F') + (wxLabel() ? ' ' + wxLabel() : '') : '')
+      + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' + (WX.temp == null ? '' : ' ' + Math.round(WX.temp) + '°F') + (wxLabelFull() ? ' ' + wxLabelFull() : '') : '')
       + '   ☾ ' + phase + ' ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', Up ' + oct : ', Set');
   }
   function toggleTimePanel(open) { openPanel('time', open); }
@@ -10989,6 +11071,8 @@
   if (WX_PRESETS[wxForced]) applyWx({ current: WX_PRESETS[wxForced] });
   fetchWeather();
   setInterval(fetchWeather, 15 * 60 * 1000);
+  fetchNws();
+  setInterval(fetchNws, 5 * 60 * 1000);   // the NWS caches its answers ~5 min anyway
   // remembered layers and clock, then the share hash on top of them; the rows
   // are synced now so the panel matches before the first frame (flag-only:
   // every step still builds; the camera pose waits for build, it needs terrain)
@@ -11034,7 +11118,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats,
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws,
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

@@ -1862,6 +1862,23 @@ change), rotating the aisstream key once the relay is live, `git gc` with Dropbo
 paused (615 loose objects, 709 MB), the ~12 areas still packed by both tiers in
 pack_wide's 500 m margin, and Tier 2 of the facade plan.
 
+### Round 46 coda (Sep 1, night: lightning, rain, the horizon, stray buses)
+
+Mike, from a screenshot at altitude at dusk: an hour of lightning over the city and none in the
+model; rain that reads as long, thin, slow lines; the sun still visible after sunset from high up
+over a hard world edge; SEPTA pins floating outside the city. Checked live: Open-Meteo's current
+code said 80 (showers, 0.6 mm) while the NWS had a Severe Thunderstorm Watch up and KPHL was
+reporting heavy rain, so the model could never have known. The NWS API is CORS-open and now feeds
+`WXFX.storm` beside Open-Meteo (see the handoff's weather-sources note); tonight's conditions put
+the page in storm mode with watch-cadence bolts and the readout "Light rain, Thunderstorm Watch".
+Rain streaks lost the altitude scaling that drew 21 m spaghetti (now 4.5 to 10 m), fall faster the
+higher the camera, and fade out by a kilometre up. The sun disc and halo now set with the horizon
+(`uSunVis`), the env-bake sun hides below it, and a 60 km apron of far-ground material under the
+whole world turns the old diagonal edge against the sky dome into ground fading into fog. Buses
+and trolleys with no drawn street within 140 m are marked `v.off` by the road snap and are neither
+drawn, counted nor pickable. Verified in-pane: storm state from the live NWS watch, bolt flash,
+short streaks at 380 m and none at 1300 m, the disc gone at 7:50 PM, the horizon clean from 1.5 km.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

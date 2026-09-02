@@ -299,6 +299,19 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   `envGap`); the compass is a button (`faceNorth`); a bus-route search sets `SEPTA.filter`
   (chip in `#searchOut`, status 'N of M on route R'); `searchLocal` matches the in-page name
   index (landmarks, neighborhoods, districts, named buildings, streets) before Nominatim.
+- **Weather sources (Round 46 coda):** Open-Meteo `current` (cloud, precipitation, WMO code, wind,
+  temperature; every 15 min) drives everything, but its code is a model estimate and rarely says
+  95 while it is actually thundering, so `fetchNws()` (every 5 min) also reads the NWS: the latest
+  observation at KPHL and KPNE (`presentWeather` TS / "Thunder" within 75 min) and the active
+  alerts for the site. `WXFX.storm` is true for a WMO 95 to 99 code, observed thunder, a Severe
+  Thunderstorm or Tornado Warning, or a Severe Thunderstorm Watch while it is raining; the bolt
+  cadence is `WXFX.boltGap` (thick under a warning or observed thunder, sparse under a watch). NWS
+  facts expire after 20 min. Rain streaks are 4.5 to 10 m, fall faster with altitude, and fade out
+  between 350 and 1000 m up (the fog and gloom carry rain from higher). The sun disc and halo set
+  with the horizon (`uSunVis`, gone below -1.1 deg) and a 60 km ground apron under the world
+  (`TERRAIN.bed - 8`, `farGroundMat`) ends the city in fog instead of a diagonal against the sky
+  dome. A SEPTA vehicle with no drawn street within 140 m (`v.off`, set by the road snap) is
+  neither drawn nor counted: it is out past the modeled city.
 - **Visual constants to tune by eye:** `LANDMARK_H` (wide-ring landmark heights and spires from
   `wide_landmarks_research.json`), `RING_AO = 0.78` (bottom-vertex darkening of ring walls; 1.0
   disables), `SKY_DITHER = 1/255` and `MAT_DITHER` (banding), `anisoOf(n)` (texture anisotropy
