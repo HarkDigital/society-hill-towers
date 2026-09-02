@@ -9,6 +9,7 @@ Everything in this directory is applied **by hand, by the owner**, on the lionsp
 | `nginx-restart.conf` | `/etc/systemd/system/nginx.service.d/restart.conf` | nginx retries a failed start every 30 s forever |
 | `uptime.md` | — | two-line external HEAD check with email alerting |
 | `septa_bake.py` + `septa-bake.service` (loop; `septa-bake.timer` is the oneshot alternative) | `/opt/philly3d/`, `/etc/systemd/system/` | SEPTA TransitViewAll → `/var/www/philly3d/septa.json` every 10 s |
+| `lightning_relay.py` + `lightning-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | Blitzortung community MQTT relay → `/var/www/philly3d/lightning.json` every 2 s (strikes within 110 km, last 15 min) |
 | `ais_relay.py` + `ais-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | one aisstream.io socket → `/var/www/philly3d/ais.json` every 4 s |
 | `../deploy_philly3d.sh` | run from the laptop | tests → build → gzip gate → keep prev pair → `rsync --delay-updates` → live sha256 verify; `--rollback` |
 
@@ -104,3 +105,16 @@ curl -sI -H 'Accept-Encoding: gzip' https://philly3d.com/ | grep -iE 'content-en
 curl -sI https://philly3d.com/septa.json ; curl -sI https://philly3d.com/ais.json
 curl -sI https://philly3d.com/b ; wc -l /var/log/nginx/philly3d_beacon.log
 ```
+
+## Lightning relay
+
+`lightning_relay.py` keeps one MQTT subscription to the public Blitzortung relay
+(`blitzortung.ha.sed.pl:1883`, the feed the Home Assistant integration uses; data
+(c) Blitzortung.org contributors, personal and non-commercial use) and publishes
+`lightning.json` (+ `.gz`) every 2 s: every strike inside 110 km of the towers for the
+last 15 minutes, oldest first, plus `n10` (strikes in the last 10 min within 80 km) and
+`nearest_km`. The page polls it every 4 s and draws a bolt at each new strike's real
+position (clamped to the 55 km apron edge when farther), so the model shows the
+region's lightning even when the storm is over New Jersey. Install as the unit's header
+says; `location /` already serves the static file with `gzip_static`, and the `.example`
+vhost adds an ACAO header for the GitHub Pages copy (the same block as `ais.json`).

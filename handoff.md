@@ -312,6 +312,14 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   (`TERRAIN.bed - 8`, `farGroundMat`) ends the city in fog instead of a diagonal against the sky
   dome. A SEPTA vehicle with no drawn street within 140 m (`v.off`, set by the road snap) is
   neither drawn nor counted: it is out past the modeled city.
+- **Real lightning:** `ops/lightning_relay.py` (one MQTT subscription to the Blitzortung community
+  relay, geohash topics `d/r` and `d/q`) writes `lightning.json` every 2 s with every strike inside
+  110 km for 15 min; the page's `ltnPoll` reads it every 4 s (`LTN` state, `__dbg.lightning()`),
+  queues new strikes within 80 km (50 miles) and `spawnStrike` draws each at its real position,
+  pulled in to the 55 km apron edge along its bearing when farther; the flash scales with distance
+  (floor 0.14). Three or more strikes within 40 km in ten minutes put the page in storm mode without
+  forcing rain. While the feed is live the synthetic bolts stand down; without it they return.
+  The readout appends "N strikes in 10 min, nearest X mi". `__dbg.strike(lat, lon)` injects one.
 - **Visual constants to tune by eye:** `LANDMARK_H` (wide-ring landmark heights and spires from
   `wide_landmarks_research.json`), `RING_AO = 0.78` (bottom-vertex darkening of ring walls; 1.0
   disables), `SKY_DITHER = 1/255` and `MAT_DITHER` (banding), `anisoOf(n)` (texture anisotropy

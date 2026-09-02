@@ -1879,6 +1879,20 @@ and trolleys with no drawn street within 140 m are marked `v.off` by the road sn
 drawn, counted nor pickable. Verified in-pane: storm state from the live NWS watch, bolt flash,
 short streaks at 380 m and none at 1300 m, the disc gone at 7:50 PM, the horizon clean from 1.5 km.
 
+### Round 46 coda 2 (Sep 1, late: real lightning)
+
+Mike, still no lightning: the storms were over Delaware and the Jersey shore, not the city, and
+he wanted the strikes within 50 miles. No free API carries lightning, but the Blitzortung
+community network publishes strikes over a public MQTT relay (the Home Assistant feed) on
+geohash topics; probed live, it delivered 129 strikes within 160 km in 30 s. `ops/lightning_relay.py`
+(stdlib MQTT client) keeps one subscription and writes `lightning.json` for the page, which polls
+it every 4 s and draws each new strike at its real position (`spawnStrike`; the bolt generator now
+takes a ground point, `spawnBoltAt`), pulled in to the apron edge when farther than 55 km, with a
+distance-scaled flash. Verified locally against the live relay: 62 strikes in ten minutes, nearest
+26 miles, bolts on the horizon toward New Jersey, readout "62 strikes in 10 min, nearest 28 mi".
+The relay runs on the VPS as `lightning-relay.service`; the static file rides `location /` with
+`gzip_static` like the other feeds.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

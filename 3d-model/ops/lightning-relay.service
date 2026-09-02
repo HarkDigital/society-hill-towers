@@ -1,0 +1,23 @@
+# philly3d: the lightning relay (Blitzortung community MQTT -> /var/www/philly3d/lightning.json).
+# Install:  cp lightning_relay.py /opt/philly3d/  (chmod 755; septa_bake.py must sit beside it)
+#           cp lightning-relay.service /etc/systemd/system/
+#           systemctl daemon-reload && systemctl enable --now lightning-relay.service
+# Check:    systemctl status lightning-relay ; journalctl -u lightning-relay -n 20
+#           curl -s https://philly3d.com/lightning.json | head -c 300
+# Remove:   systemctl disable --now lightning-relay ; rm /etc/systemd/system/lightning-relay.service
+#           rm /opt/philly3d/lightning_relay.py /var/www/philly3d/lightning.json /var/www/philly3d/lightning.json.gz
+[Unit]
+Description=philly3d: lightning strikes within 110 km, from the Blitzortung community relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/philly3d
+ExecStart=/usr/bin/python3 /opt/philly3d/lightning_relay.py --out /var/www/philly3d/lightning.json
+Restart=always
+RestartSec=10
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

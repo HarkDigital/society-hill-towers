@@ -10280,6 +10280,40 @@
   // Northeast Airport (presentWeather carries TS when thunder is heard there)
   // and the active alerts for the site. The API is CORS-open; nothing is keyed.
   const NWS_STATIONS = ['KPHL', 'KPNE'];
+  // Real lightning: ops/lightning_relay.py keeps one subscription to the
+  // Blitzortung community relay and writes lightning.json every 2 s (strikes
+  // within 110 km for 15 min). The page polls it every 4 s and draws a bolt at
+  // each new strike's real position, so the storm over New Jersey shows from
+  // here. While the feed is live the synthetic random bolts stand down.
+  const LIGHTNING_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/lightning.json' : 'https://philly3d.com/lightning.json';
+  const LTN = { live: false, ok: false, busy: false, fails: 0, nextT: 0, lastSeen: 0, queue: [], n10: 0, nearestKm: null, n: 0, drawn: 0 };
+  const LTN_DRAW_KM = 80;   // 50 miles
+  function ltnPoll(now) {
+    if (!wxCanFetch || WX_PRESETS[wxForced] || LTN.busy || now < LTN.nextT || document.hidden) return;
+    LTN.busy = true;
+    LTN.nextT = now + (LTN.live ? 4000 : Math.min(300000, 20000 * Math.pow(2, Math.min(LTN.fails, 4))));
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : 0;
+    const miss = () => { clearTimeout(timer); LTN.busy = false; LTN.fails++; if (LTN.fails >= 2 && LTN.live) { LTN.live = false; wxSetTargets(); } };
+    fetch(LIGHTNING_URL, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json().then((d) => ({ d, now: serverNow(r) })); })
+      .then(({ d, now: sNow }) => {
+        clearTimeout(timer);
+        if (!d || !Array.isArray(d.strikes) || !(d.t > 0) || sNow - d.t > 30) { miss(); return; }   // stale: the relay is down
+        LTN.busy = false; LTN.fails = 0; LTN.ok = true;
+        const wasLive = LTN.live, wasN = LTN.n10;
+        LTN.live = true;
+        LTN.n = d.strikes.length; LTN.n10 = d.n10 || 0; LTN.nearestKm = d.nearest_km == null ? null : d.nearest_km;
+        // queue only what is new; a first poll (or a long gap) shows the last few, not the backlog
+        let fresh = d.strikes.filter((st) => st[0] > LTN.lastSeen && st[3] <= LTN_DRAW_KM);
+        if (fresh.length > 8) fresh = fresh.slice(-8);
+        for (const st of fresh) LTN.queue.push(st);
+        if (LTN.queue.length > 12) LTN.queue.splice(0, LTN.queue.length - 12);
+        for (const st of d.strikes) if (st[0] > LTN.lastSeen) LTN.lastSeen = st[0];
+        if (!wasLive || (wasN >= 3) !== (LTN.n10 >= 3)) { wxSetTargets(); refreshTimeUI(); }
+      })
+      .catch(miss);
+  }
   let nwsBusy = false;
   function fetchNws() {
     if (!wxCanFetch || WX_PRESETS[wxForced] || document.hidden || nwsBusy) return;
@@ -10360,10 +10394,12 @@
     const nwsFresh = WX.nwsT > 0 && performance.now() - WX.nwsT < 20 * 60 * 1000;
     const raining = rainCode || WX.precip > 0.3 || rainI >= 0.6;
     const nwsStorm = nwsFresh && (WX.tsObs || WX.tsWarn || (WX.tsWatch && raining));
-    F.storm = (c >= 95 && c <= 99) || nwsStorm;
+    // real strikes: three or more within 40 km in the last ten minutes is a storm here
+    const ltnStorm = LTN.live && LTN.n10 >= 3 && LTN.nearestKm != null && LTN.nearestKm <= 40;
+    F.storm = (c >= 95 && c <= 99) || nwsStorm || ltnStorm;
     // bolts come thick under a warning or observed thunder, sparser under a watch
     F.boltGap = (c >= 95 && c <= 99) || (nwsFresh && (WX.tsObs || WX.tsWarn)) ? [2600, 9000] : [7000, 18000];
-    if (F.storm) rainI = Math.max(rainI, c >= 96 ? 1 : 0.6);
+    if ((c >= 95 && c <= 99) || nwsStorm) rainI = Math.max(rainI, c >= 96 ? 1 : 0.6);   // lightning alone does not make it rain here
     F.tRain = (rainCode || F.storm || (!snowCode && !iceCode && WX.precip > 0.1))
       ? clamp(Math.max(rainI, WX.precip / 6), 0.18, 1) : 0;
     const snowI = c === 75 || c === 86 ? 1 : c === 73 ? 0.65 : c === 71 || c === 77 || c === 85 ? 0.35 : 0;
@@ -10566,10 +10602,24 @@
   const boltMesh = new THREE.LineSegments(boltGeo, boltMat);
   boltMesh.frustumCulled = false; boltMesh.renderOrder = 60; boltMesh.visible = false;
   scene.add(boltMesh);
-  function spawnBolt(now) {
+  function spawnBolt(now) {   // a synthetic strike, for storm mode without a lightning feed (and __dbg.bolt)
     const az = Math.random() * Math.PI * 2, dist = 1300 + Math.random() * 2800;
-    let px = camera.position.x + Math.sin(az) * dist;
-    let pz = camera.position.z + Math.cos(az) * dist;
+    spawnBoltAt(now, camera.position.x + Math.sin(az) * dist, camera.position.z + Math.cos(az) * dist);
+    WXFX.nextBolt = now + WXFX.boltGap[0] + Math.random() * WXFX.boltGap[1];
+  }
+  // a real strike: lat/lon through the SEPTA frame; anything past the apron's
+  // edge is pulled in along its bearing from the world's centre so the bolt
+  // still stands on ground at the horizon instead of in the void
+  const LTN_CENTER = { x: 2250, z: -6000 }, LTN_CLAMP = 55000;
+  function spawnStrike(now, st) {
+    let x = (st[2] - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(st[1] - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+    const dx = x - LTN_CENTER.x, dz = z - LTN_CENTER.z, d = Math.hypot(dx, dz);
+    if (d > LTN_CLAMP) { x = LTN_CENTER.x + dx / d * LTN_CLAMP; z = LTN_CENTER.z + dz / d * LTN_CLAMP; }
+    spawnBoltAt(now, x, z);
+    LTN.drawn++;
+  }
+  function spawnBoltAt(now, px, pz) {
+    const dist = Math.hypot(px - camera.position.x, pz - camera.position.z);
     let py = 950 + Math.random() * 520;
     const drop = py / 11;
     let n = 0;
@@ -10595,8 +10645,7 @@
     boltGeo.attributes.position.needsUpdate = true;
     boltGeo.setDrawRange(0, n * 2);
     WXFX.boltEnd = now + 240;
-    WXFX.boltFlash = clamp(1600 / dist, 0.4, 1);   // near strikes light the world harder
-    WXFX.nextBolt = now + WXFX.boltGap[0] + Math.random() * WXFX.boltGap[1];
+    WXFX.boltFlash = clamp(1600 / dist, 0.14, 1);   // near strikes light the world; a strike 50 km out still flickers the deck
   }
   const _wxc = new THREE.Color();
   const rainVel = new THREE.Vector3(), rainOff = new THREE.Vector3();
@@ -10649,7 +10698,9 @@
       snowU.uFrac.value = 0.15 + 0.85 * F.snow;
       snowU.uAlpha.value = 0.95 * vis * (0.45 + 0.55 * F.dayF);
     }
-    if (F.storm) {
+    ltnPoll(now);
+    if (LTN.queue.length && now >= F.boltEnd - 60) spawnStrike(now, LTN.queue.shift());   // real strikes, at most ~5 a second
+    else if (F.storm && !LTN.live) {   // no lightning feed: the synthetic bolts stand in
       if (!F.nextBolt) F.nextBolt = now + 1200 + Math.random() * F.boltGap[1] * 0.5;
       if (now >= F.nextBolt) spawnBolt(now);
     } else F.nextBolt = 0;
@@ -10804,6 +10855,7 @@
     const oct = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(mp.az / 45) % 8];
     timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set)
       + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' + (WX.temp == null ? '' : ' ' + Math.round(WX.temp) + '°F') + (wxLabelFull() ? ' ' + wxLabelFull() : '') : '')
+      + (LTN.live && LTN.n10 > 0 ? '   ⚡ ' + LTN.n10 + (LTN.n10 === 1 ? ' strike' : ' strikes') + ' in 10 min, nearest ' + Math.max(1, Math.round(LTN.nearestKm * 0.6214)) + ' mi' : '')
       + '   ☾ ' + phase + ' ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', Up ' + oct : ', Set');
   }
   function toggleTimePanel(open) { openPanel('time', open); }
@@ -11118,7 +11170,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws,
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

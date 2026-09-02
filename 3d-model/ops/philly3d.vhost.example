@@ -148,6 +148,14 @@ server {
         add_header X-Content-Type-Options nosniff always;
         add_header Referrer-Policy strict-origin-when-cross-origin always;
     }
+    location = /lightning.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=10" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+    }
 
     # same-origin passthrough to the fixed adsb.fi Philly query (30 nm around PHL).
     # DNS AT REQUEST TIME, NOT CONFIG LOAD: on Aug 27 unattended-upgrades restarted
