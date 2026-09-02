@@ -755,6 +755,13 @@
   }
 
   // a flat polygon draped over the terrain: densified boundary + interior points, triangulated
+  // the drape's terrain read: siteY, but carved with the Schuylkill's channel like the ground
+  // meshes are, so a park drawn across the pool dips under the water instead of roofing it
+  function drapeY(x, z, mode) {
+    const y = siteY(x, z, mode);
+    const kc = schuylkillCut(x, z);
+    return kc > 0 ? Math.min(y, y + (TERRAIN.bed - 0.6 - y) * kc) : y;
+  }
   function drapedPoly(poly, yOff, spacing) {
     const area = Math.abs(signedArea(poly));
     spacing = Math.max(spacing, Math.sqrt(area / 420));
@@ -785,7 +792,7 @@
     }
     const tris = delaunay(pts);
     const pos = [];
-    const ys = pts.map(q => siteY(q[0], q[1], 'ground') + yOff);
+    const ys = pts.map(q => drapeY(q[0], q[1], 'ground') + yOff);
     for (const [ia, ib, ic] of tris) {
       const A = pts[ia], B = pts[ib], C = pts[ic];
       if (!pointInPoly((A[0] + B[0] + C[0]) / 3, (A[1] + B[1] + C[1]) / 3, poly)) continue;
@@ -859,7 +866,7 @@
 
   // live-weather state (see applyWx below): cloud fraction, WMO code, rates, world wind m/s
   const WX = { cover: 0.22, ok: false, code: -1, temp: null, precip: 0, snowfall: 0, windX: 2.1, windZ: 0.9,
-    tsObs: false, tsWarn: false, tsWatch: false, nwsT: 0, nwsText: '' };   // NWS: thunder observed at an airport, a severe-storm warning, a watch
+    tsObs: false, tsWarn: false, tsWatch: false, nwsT: 0, nwsText: '', nwsCover: 0 };   // NWS: thunder observed at an airport, a severe-storm warning, a watch
   const wxWind = new THREE.Vector2(0.0012, 0.0005);
   // per-fragment hash noise added to the sky before it is written: +/-0.5/255
   // breaks the 8-bit banding of the shallow dusk/night gradient (0 disables)
@@ -1085,7 +1092,11 @@
   function njLand(x, z) { const sx = stateLineX(z); return sx !== null && x > sx + 400; }
   function eastOfDelaware(x, z) { return x > delawareX(z) - 120 && !njLand(x, z); }
   // rough Schuylkill centerline; within 260 m counts as its corridor (bridge territory)
-  const SCHUYLKILL = [[-8500, -11500], [-7700, -9400], [-6900, -7700], [-5600, -5300], [-4700, -3300], [-4100, -1600], [-4300, -400], [-4500, 1100], [-4200, 2600], [-3900, 4200], [-3700, 5600], [-3860, 7240]];
+  // bridge to bridge from the model's edge above Flat Rock Dam to the mouth at League Island:
+  // Manayunk, East Falls, the Falls Bridge, Strawberry Mansion, Columbia, Girard, Boathouse
+  // Row, the Fairmount Dam, Spring Garden, Market, University Avenue, Grays Ferry, Passyunk,
+  // the refinery bend (the old trace ran a kilometre west of the river north of Center City)
+  const SCHUYLKILL = [[-9150, -11780], [-8001, -10507], [-6593, -8904], [-5739, -8572], [-4502, -8074], [-3904, -7422], [-4160, -6217], [-4160, -5310], [-3947, -4425], [-3520, -3441], [-3734, -2844], [-3478, -2324], [-3220, -1775], [-3264, -1000], [-3650, 0], [-4545, 935], [-5055, 2264], [-4800, 3480], [-5015, 4585], [-4716, 5580], [-4118, 6686], [-3690, 7355]];
   function nearSchuylkill(x, z) {
     for (let i = 0; i < SCHUYLKILL.length - 1; i++) {
       const a = SCHUYLKILL[i], b = SCHUYLKILL[i + 1];
@@ -1099,6 +1110,26 @@
     return false;
   }
   function riverCorridor(x, z) { return eastOfDelaware(x, z) || nearSchuylkill(x, z); }
+  // the Schuylkill channel above the Fairmount Dam, 1 within 60 m of the centerline fading to
+  // 0 at 95 m: the ground builders carve it to the riverbed. Above the dam the pool sits a
+  // couple of metres over the tidal water plane and the 50 and 100 m elevation grids smear
+  // the banks across the river, so the flat water drawn at tidal level was buried from the
+  // dam to the NW hills patch (which drapes its own full-fidelity rings and is left alone)
+  function schuylkillCut(x, z) {
+    if (z > -2250 || z < -6600) return 0;
+    let best = Infinity;
+    for (let i = 0; i < SCHUYLKILL.length - 1; i++) {
+      const a = SCHUYLKILL[i], b = SCHUYLKILL[i + 1];
+      if (b[1] > -2000 || a[1] < -7000) continue;
+      const dx = b[0] - a[0], dz = b[1] - a[1];
+      const L2 = dx * dx + dz * dz;
+      const t = clamp(L2 > 0 ? ((x - a[0]) * dx + (z - a[1]) * dz) / L2 : 0, 0, 1);
+      const px = x - (a[0] + dx * t), pz = z - (a[1] + dz * t);
+      const d2 = px * px + pz * pz;
+      if (d2 < best) best = d2;
+    }
+    return 1 - smooth(60, 95, Math.sqrt(best));
+  }
   // Walt Whitman crossing corridor: the custom suspension deck owns this stretch of
   // water — packed motorway segments here rendered as a second, disjointed bridge.
   // Distance to the raw OSM alignment (only ever consulted for deck-lifted river
@@ -1858,6 +1889,7 @@
           const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
           const y = demY(x, z);
           let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.05;
+          { const kc = schuylkillCut(x, z); if (kc > 0) yy = Math.min(yy, yy + (TERRAIN.bed - 0.6 - yy) * kc); }   // the pool's channel
           // NED reads a made-land shelf across the Delaware at the Walt Whitman
           // crossing (~3 m above water mid-river) — those cells rendered as a flat
           // gray band under the deck; between the banks, send them to the bed
@@ -5236,6 +5268,8 @@
     return [x0, x1, z0, z1];
   };
   const hitsP = (bb) => P && bb[0] < P.x1 && bb[1] > P.x0 && bb[2] < P.z1 && bb[3] > P.z0;
+  // a park touching the Schuylkill's pool reach is draped finely so it dips into the channel
+  const poolTouch = (poly) => { const bb = bboxOf(poly); return bb[1] > -4500 && bb[0] < -3500 && bb[3] > -6750 && bb[2] < -2250; };
   const withinP = (bb) => P && bb[0] > P.x0 && bb[1] < P.x1 && bb[2] > P.z0 && bb[3] < P.z1;
   async function raiseRing(bin, S, label, wideSeam) {
     const hdr = new Int32Array(bin.buffer, 0, 4);
@@ -5430,7 +5464,7 @@
               if (big && withinP(bb)) continue;
             }
           }
-          areaParts.push({ geom: big ? drapedPoly(poly, LAYER.park, 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
+          areaParts.push({ geom: big ? drapedPoly(poly, LAYER.park, poolTouch(poly) ? 30 : 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
         } else if (kind === 1) waterAreaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
         else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
       } catch (e) { /* degenerate */ }
@@ -5530,6 +5564,7 @@
         const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
         const y = demY(x, z);
         let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07;
+        { const kc = schuylkillCut(x, z); if (kc > 0) yy = Math.min(yy, yy + (TERRAIN.bed - 0.6 - yy) * kc); }   // the pool's channel
         if (tint && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
         pos.push(x, yy, z);
       }
@@ -5599,6 +5634,12 @@
       apron.renderOrder = -1;   // drawn first: it is behind everything and never coplanar with anything
       groupCity.add(apron);
     }
+    // the Schuylkill's pool between the outer districts' box and the NW hills patch: the
+    // river is an OSM multipolygon whose member ways carry no tags, so no packed tier holds
+    // a ring for it, and the outer districts show it only because their water plane lies
+    // under the carved channel. A flat sheet at the same level under this reach does the
+    // same here; the banks hide all of it but the channel
+    R.waterAreaParts.push({ geom: flatPoly([[-4450, -4480], [-3600, -4480], [-3600, -6600], [-4450, -6600]], null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });   // to the patch edge: its draped river takes over there
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await uploadRing(R);
     // the world is now the whole city
@@ -10598,6 +10639,7 @@
     if (WX.snowfall > 0.02) WX.cover = Math.max(WX.cover, 0.8);
     if (WX.code === 45 || WX.code === 48) WX.cover = Math.max(WX.cover, 0.55);
     if (WX.code >= 95) WX.cover = Math.max(WX.cover, 0.97);
+    if (WX.nwsCover && performance.now() - WX.nwsT < 20 * 60000) WX.cover = Math.max(WX.cover, WX.nwsCover);
     const spd = (cur.wind_speed_10m == null ? 8 : cur.wind_speed_10m) / 3.6;
     const dir = ((cur.wind_direction_10m == null ? 250 : cur.wind_direction_10m) + 180) * Math.PI / 180;
     WX.windX = Math.sin(dir) * spd; WX.windZ = -Math.cos(dir) * spd;   // world m/s, the clouds' heading
@@ -10700,7 +10742,7 @@
       get('https://api.weather.gov/alerts/active?point=39.9455,-75.1447')]).then((rs) => {
       nwsBusy = false;
       const obs = rs.slice(0, NWS_STATIONS.length), al = rs[NWS_STATIONS.length];
-      let any = false, tsObs = false, text = '';
+      let any = false, tsObs = false, text = '', nwsCover = 0;
       for (const o of obs) {
         const pr = o && o.properties;
         if (!pr) continue;
@@ -10710,6 +10752,7 @@
         const pw = Array.isArray(pr.presentWeather) ? pr.presentWeather : [];
         const ts = pw.some((w) => /thunder/i.test(w.weather || '') || /TS/.test(w.rawString || '')) || /thunder/i.test(pr.textDescription || '');
         if (ts) tsObs = true;
+        for (const cl of (pr.cloudLayers || [])) { const a = String(cl.amount || ''); if (a === 'OVC') nwsCover = Math.max(nwsCover, 0.97); else if (a === 'BKN') nwsCover = Math.max(nwsCover, 0.8); }
         if (!text && pr.textDescription) text = pr.textDescription;
       }
       let warn = false, watch = false;
@@ -10723,7 +10766,8 @@
         }
       }
       if (!any) return;   // both calls failed: keep the last facts until they expire
-      WX.tsObs = tsObs; WX.tsWarn = warn; WX.tsWatch = watch; WX.nwsText = text; WX.nwsT = performance.now();
+      WX.tsObs = tsObs; WX.tsWarn = warn; WX.tsWatch = watch; WX.nwsText = text; WX.nwsT = performance.now(); WX.nwsCover = nwsCover;
+      if (nwsCover > WX.cover) WX.cover = nwsCover;   // an observed overcast deck beats the model's cloud estimate
       if (WX.ok) { wxSetTargets(); refreshTimeUI(); }
     }).catch(() => { nwsBusy = false; });
   }
@@ -11108,7 +11152,7 @@
   const _vA = new THREE.Vector3();
   let moonNow = { el: -90, az: 0, k: 0.5, wax: true };
   let lastEnvEl = 999, envGap = 0, envNextT = 0;   // envGap: a floor between PMREM rebakes (the time-lapse sets it)
-  const _c1 = new THREE.Color(), _c2 = new THREE.Color();
+  const _c1 = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color();
   const _pz = new THREE.Color(), _ph = new THREE.Color(), _pg = new THREE.Color();   // the frame's sky palette
   let _ephMs = NaN, _ephSun = null, _ephMoon = null;   // solar()/lunar() memo: the clock moves once a minute
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
@@ -11125,7 +11169,7 @@
     WXFX.dayF = dayF;   // the particle boxes dim toward night with the sky
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 1.7 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover) * (1 - 0.55 * WXFX.gloom);
+      sun.intensity = 1.7 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
       glintDir.copy(sp.dir);
     } else if (mp.el > 2) {
@@ -11156,8 +11200,11 @@
     const mixPal = (k, out) => out.copy(PAL.night[k]).lerp(PAL.twi[k], twi).lerp(PAL.day[k], dayF);
     const cz = mixPal('z', _pz), ch = mixPal('h', _ph), cg = mixPal('g', _pg);
     // overcast grays the sky toward a flat deck
-    cz.lerp(_c2.set(0x93a5b4).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.55);
-    ch.lerp(_c2.set(0xc4ccd2).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * 0.5);
+    // a broken sky stays blue-gray; past 75% cover the dome goes to a neutral overcast gray
+    // (Mike: a 92% day still read as blue)
+    const heavy = smooth(0.75, 1.0, WX.cover);
+    cz.lerp(_c2.set(0x93a5b4).lerp(_c3.set(0x8c9399), heavy).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * (0.55 + 0.42 * heavy));
+    ch.lerp(_c2.set(0xc4ccd2).lerp(_c3.set(0xb3b8bc), heavy).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * (0.5 + 0.45 * heavy));
     if (WXFX.gloom > 0.003) {   // storm gloom: the whole deck sinks toward charcoal slate
       cz.lerp(_c2.set(0x353d49).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.72);
       ch.lerp(_c2.set(0x525b66).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.62);

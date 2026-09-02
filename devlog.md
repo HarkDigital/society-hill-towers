@@ -2136,6 +2136,29 @@ sheet was draped at 20 m, two linear reads of one surface that disagree by more 
 8 m and the lots at 10 m, the stack lifted to 12, 13.5 and 16.5 cm (streets sit at 24), and
 nothing rises through it from 700 m or 250 m.
 
+### Round 47 coda 7 (Sep 2, night: the buried Schuylkill, the blue overcast)
+
+Mike: the Schuylkill is covered by grass in one section (the reach between the Columbia and
+Falls bridges), and a 92% overcast day still shows a blue sky.
+
+- **Why the river vanished.** Above the Fairmount Dam the pool sits a couple of metres over
+  the tidal water plane, and the 50 m and 100 m elevation grids smear the banks across a
+  150 m river, so the ground stood well above the flat water. The outer districts only
+  showed the Boathouse Row reach because their water plane lies under everything; the far
+  ring's strip had no water at all there: the Schuylkill is an OSM multipolygon whose member
+  ways carry no tags, so neither packer ever held a ring for it. And the rough centerline
+  the corridor tests used ran a kilometre WEST of the river north of Center City.
+- **The fix.** `SCHUYLKILL` retraced bridge to bridge from Flat Rock Dam to League Island.
+  `schuylkillCut()` (1 within 60 m of the centerline, 0 at 95 m, dam to the NW patch) carves
+  both ground builders to the riverbed, `drapeY()` carves every draped polygon the same way
+  so Fairmount Park dips under the water instead of roofing it (park drapes touching the
+  reach sample at 30 m), and a flat sheet of the river material under the reach between the
+  outer districts' box and the patch gives the channel its water; the patch keeps its own
+  draped river. Verified top-down at Peters Island and at the Falls seam.
+- **The overcast.** Cover already tinted the sky, but only halfway to a blue-gray. Past 75%
+  cover the dome now goes to a neutral overcast gray and the sun dims harder, and KPHL's
+  observed cloud layers (an OVC or BKN deck) raise cover over the model's estimate.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
