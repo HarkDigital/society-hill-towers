@@ -40,17 +40,25 @@ for el in raw['elements']:
     flat = []
     for x, z in pts: flat.extend([round(x, 1), round(z, 1)])
     polys.append(flat)
-# the fill: the complex is asphalt end to end, so the lots west of 7th Street are closed
-# over the streets and plazas between them (buffer 90 m, erode 60 m) into a district sheet
-# the builder lays under everything; the stadiums' own footprints cover their holes
+# the fill: the complex is asphalt end to end, so one sheet covers it: the convex hull of the
+# lots inside the block (Broad Street to 7th, Packer Avenue to the Delaware Expressway),
+# clipped to that block; the venues' own footprints cover their holes and the streets ride
+# above it. Lots outside the block west of 7th get a closed union of their own
 fill = []
 if Polygon is not None:
     from shapely.ops import unary_union
-    lots = [Polygon([(fl[i], fl[i + 1]) for i in range(0, len(fl), 2)]) for fl in polys]
-    lots = [l for l in lots if l.centroid.x < -700]
-    u = unary_union([l.buffer(90, join_style=2) for l in lots]).buffer(-60, join_style=2)
-    for g in (u.geoms if u.geom_type == 'MultiPolygon' else [u]):
-        if g.area < 10000: continue
+    from shapely.geometry import box as sbox
+    lots = [Polygon([(fl[i], fl[i + 1]) for i in range(0, len(fl), 2)]).buffer(0) for fl in polys]   # buffer(0): a simplified ring can self-touch
+    lots = [l for l in lots if not l.is_empty]
+    block = sbox(-2480, 4000, -900, 5350)
+    inside = [l for l in lots if block.contains(l.centroid)]
+    others = [l for l in lots if not block.contains(l.centroid) and l.centroid.x < -700]
+    sheets = [unary_union(inside).convex_hull.intersection(block)]
+    if others:
+        u = unary_union([l.buffer(60, join_style=2) for l in others]).buffer(-40, join_style=2)
+        sheets += list(u.geoms) if u.geom_type == 'MultiPolygon' else [u]
+    for g in sheets:
+        if g.is_empty or g.area < 10000: continue
         ring = list(g.simplify(3).exterior.coords)[:-1]
         flat = []
         for x, z in ring: flat.extend([round(x, 1), round(z, 1)])

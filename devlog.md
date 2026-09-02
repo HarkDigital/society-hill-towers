@@ -2116,6 +2116,20 @@ and show live score bubbles over the arena and stadiums while a game is on.
   colour on the border; hidden beyond 14 km. `__dbg.scoreTest()` stages one at each venue.
   ESPN joined the credit line and the About text.
 
+### Round 47 coda 6 (Sep 2, late: the sheet holds, the rows read)
+
+Mike: still a mess, grass through the asphalt, and the lot lines need loads of work. Two
+faults. The sheet was a flat polygon (`flatPoly`) spanning ground that undulates by half
+a metre, so the mottled lawn rose through it wherever the terrain sat above the plane,
+and the closed union of lots left holes and ragged edges; the sheet is now the convex hull
+of the complex's lots clipped to its block (Broad to 7th, Packer Avenue to the Delaware
+Expressway) and DRAPED on the terrain with `drapedPoly` at 20 m, as the big parks are,
+with each lot draped on top. And the stalls were ticks alone, which read as noise from
+altitude; each double row now carries its two stall-front lines the length of the row
+plus the ticks, rows follow the street grid (whichever grid axis the lot's long side is
+nearer), every line clipped to its lot. From 600 m the lots read as rows; from 100 m as
+stalls.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

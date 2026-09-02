@@ -4914,31 +4914,51 @@
     // laid a hair above the lawn colour the ground would otherwise show
     if (typeof PARKING_SOUTH !== 'undefined' && PARKING_SOUTH && PARKING_SOUTH.polys) {
       const toRing = (fl2) => { const pp = new Array(fl2.length >> 1); for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]]; return pp; };
-      // the district sheet first (the lots' union closed over the streets between them: there
-      // is no lawn in the complex), then each lot on top
+      // the district sheet first (the convex hull of the complex's lots: there is no lawn in
+      // it), then each lot on top; both DRAPED on the terrain like the big parks, since a flat
+      // polygon spanning the undulating ground let the mottled lawn rise through it
       for (const fl2 of (PARKING_SOUTH.fill || [])) {
-        try { areaParts.push({ geom: flatPoly(toRing(fl2), null, LAYER.plaza + 0.005), color: new THREE.Color(0x2b2a27), style: 3 }); } catch (e) { /* degenerate */ }
+        try { areaParts.push({ geom: drapedPoly(toRing(fl2), LAYER.plaza + 0.005, 20), color: new THREE.Color(0x2b2a27), style: 3 }); } catch (e) { /* degenerate */ }
       }
       const seg = [];
+      const yAt = (x, z) => siteY(x, z, 'ground') + LAYER.plaza + 0.035;
       for (const fl2 of PARKING_SOUTH.polys) {
         const pp = toRing(fl2);
-        try { areaParts.push({ geom: flatPoly(pp, null, LAYER.plaza + 0.01), color: new THREE.Color(0x2e2d2a), style: 3 }); } catch (e) { continue; }
-        // the stalls: ticks 2.7 m apart on both sides of a back-to-back line, double rows
-        // 18.5 m apart along the lot's long axis, so from above the lots read as parking
+        try { areaParts.push({ geom: Math.abs(signedArea(pp)) > 1500 ? drapedPoly(pp, LAYER.plaza + 0.01, 20) : flatPoly(pp, null, LAYER.plaza + 0.01), color: new THREE.Color(0x2e2d2a), style: 3 }); } catch (e) { continue; }
+        // the stalls, as they read from above: double rows 18.5 m apart, each with its two
+        // stall-front lines running the row's length and ticks every 2.7 m between them.
+        // Rows follow the street grid (whichever grid axis the lot's long side is nearer),
+        // and every line is clipped to the lot
+        const pc = polyCentroid(pp);
         const ob = orientedBox(pp), ax = obbAxis(ob);
-        for (let v = -ax.hs + 9.5; v < ax.hs - 3; v += 18.5) {
-          for (let u = -ax.hl + 1.5; u < ax.hl; u += 2.7) {
-            const qx = ob.cx + ax.ax * u + ax.px * v, qz = ob.cz + ax.az * u + ax.pz * v;
-            const x0 = qx - ax.px * 5.5, z0 = qz - ax.pz * 5.5, x1 = qx + ax.px * 5.5, z1 = qz + ax.pz * 5.5;
+        const alongNS = Math.abs(ax.ax * fl.dx + ax.az * fl.dz) > 0.707;
+        const ux = alongNS ? fl.dx : fl.nx, uz = alongNS ? fl.dz : fl.nz, vx = -uz, vz = ux;
+        let hl = 0, hs = 0;
+        for (const q of pp) { hl = Math.max(hl, Math.abs((q[0] - pc[0]) * ux + (q[1] - pc[1]) * uz)); hs = Math.max(hs, Math.abs((q[0] - pc[0]) * vx + (q[1] - pc[1]) * vz)); }
+        if (hl < 12 || hs < 12) continue;
+        for (let v = -hs + 9.5; v < hs - 3; v += 18.5) {
+          for (const side of [-5.5, 5.5]) {   // the stall fronts
+            let run = null, px = 0, pz = 0;
+            for (let u = -hl; u <= hl + 3; u += 3) {
+              const x = pc[0] + ux * u + vx * (v + side), z = pc[1] + uz * u + vz * (v + side);
+              const inside = u <= hl && pointInPoly(x, z, pp);
+              if (inside && !run) run = [x, z];
+              else if (!inside && run) { if (Math.hypot(px - run[0], pz - run[1]) > 4) seg.push(run[0], yAt(run[0], run[1]), run[1], px, yAt(px, pz), pz); run = null; }
+              px = x; pz = z;
+            }
+          }
+          for (let u = -hl + 1.5; u < hl; u += 2.7) {   // the ticks
+            const qx = pc[0] + ux * u + vx * v, qz = pc[1] + uz * u + vz * v;
+            const x0 = qx - vx * 5.5, z0 = qz - vz * 5.5, x1 = qx + vx * 5.5, z1 = qz + vz * 5.5;
             if (!pointInPoly(x0, z0, pp) || !pointInPoly(x1, z1, pp)) continue;
-            seg.push(x0, siteY(x0, z0, 'ground') + LAYER.plaza + 0.03, z0, x1, siteY(x1, z1, 'ground') + LAYER.plaza + 0.03, z1);
+            seg.push(x0, yAt(x0, z0), z0, x1, yAt(x1, z1), z1);
           }
         }
       }
       if (seg.length) {
         const lg = new THREE.BufferGeometry();
         lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
-        lotStripes = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x9c9890, transparent: true, opacity: 0.5 }));
+        lotStripes = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xb8b3a8, transparent: true, opacity: 0.6 }));
         lotStripes.frustumCulled = false; lotStripes.renderOrder = 3;
         groupCity.add(lotStripes);
       }
