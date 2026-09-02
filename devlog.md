@@ -2159,6 +2159,17 @@ Falls bridges), and a 92% overcast day still shows a blue sky.
   cover the dome now goes to a neutral overcast gray and the sun dims harder, and KPHL's
   observed cloud layers (an OVC or BKN deck) raise cover over the model's estimate.
 
+### Round 47 coda 8 (Sep 2, evening: every game, home or away, and the hour after)
+
+Mike, with the Phillies playing in Arizona and no bubble: every Eagles, Phillies, 76ers and
+Flyers game should show while it is on and for an hour after it ends, away games included.
+The poll had gated on the home side being PHI. Now any event with a Philadelphia
+competitor counts: live, its bubble hangs over that sport's venue with the Philadelphia
+side first, the clock or inning, and "away" on the road; final, it stays an hour with the
+score and a still gray dot. The hour runs from the moment the feed turned the game final,
+or, for a page that arrived after that, from the start time plus a typical length (3 h
+MLB, 3.3 h NFL, 2.6 h NHL, 2.4 h NBA). Polls every 45 s while something is on, 90 s otherwise.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

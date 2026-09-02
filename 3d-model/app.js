@@ -8345,12 +8345,15 @@
       ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
   }
   // ---------------------------------------------------------------- live scores
-  // A bubble over each venue while a Philadelphia home game is on: ESPN's public
-  // scoreboards (CORS-open, cached a few seconds at their end) for the Phillies at the
-  // ballpark, the Eagles at the Linc, the Flyers and 76ers at the arena. Polled once a
-  // minute while the tab is visible; the bubble carries both scores, the home colour on its
-  // border and the clock or inning. Nothing shows between games.
-  const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [] };
+  // A bubble over each team's venue while its game is on, home or away, and for an hour
+  // after the final (Mike): ESPN's public scoreboards (CORS-open, cached a few seconds at
+  // their end) for the Phillies over the ballpark, the Eagles over the Linc, the Flyers and
+  // 76ers over the arena. Polled once a minute while the tab is visible; the bubble carries
+  // the Philadelphia side first, the team colour on its border, the clock or inning, and
+  // "away" when they are on the road. A final's hour runs from the moment the feed turned
+  // it final, or, for a page that arrived later, from the start time plus a typical length.
+  const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [], ended: {}, seenLive: {} };
+  const SCORE_LEN = { mlb: 3.0 * 3600000, nfl: 3.3 * 3600000, nhl: 2.6 * 3600000, nba: 2.4 * 3600000 };
   const SCORE_VENUES = {
     mlb: { x: -1857, z: 4383, h: 74 }, nfl: { x: -1946, z: 4954, h: 86 },
     nhl: { x: -2327, z: 4892, h: 64 }, nba: { x: -2327, z: 4892, h: 64 },
@@ -8361,21 +8364,35 @@
   function scoresPoll(now) {
     if (document.hidden || SCORES.busy || now < SCORES.nextT) return;
     SCORES.busy = true;
-    SCORES.nextT = now + Math.min(300000, 60000 * (1 + SCORES.fails));
+    SCORES.nextT = now + Math.min(300000, (SCORES.games.some((g) => g.live) ? 45000 : 90000) * (1 + SCORES.fails));
     Promise.all(SCORE_KEYS.map((k) => fetch(SCORE_URL(k), { signal: AbortSignal.timeout(12000) }).then((r) => (r && r.ok ? r.json() : null)).catch(() => null)))
       .then((res) => {
         const games = [];
+        const nowMs = Date.now();
         let ok = 0;
         res.forEach((d, i) => {
           if (!d || !Array.isArray(d.events)) return;
           ok++;
+          const k = SCORE_KEYS[i];
           for (const e of d.events) {
             const c = e.competitions && e.competitions[0];
             const st = e.status && e.status.type;
-            if (!c || !st || st.state !== 'in') continue;
-            const home = (c.competitors || []).find((t) => t.homeAway === 'home'), away = (c.competitors || []).find((t) => t.homeAway === 'away');
-            if (!home || !away || !home.team || home.team.abbreviation !== 'PHI') continue;   // home games only: the bubble sits on the venue
-            games.push({ k: SCORE_KEYS[i], home: home.team.abbreviation, hs: home.score, away: away.team.abbreviation, as: away.score, color: home.team.color, detail: st.shortDetail || '' });
+            if (!c || !st) continue;
+            const us = (c.competitors || []).find((t) => t.team && t.team.abbreviation === 'PHI');
+            if (!us) continue;
+            const them = (c.competitors || []).find((t) => t !== us);
+            const id = k + ':' + (e.id || e.date);
+            const live = st.state === 'in';
+            let show = live, detail = st.shortDetail || '';
+            if (live) SCORES.seenLive[id] = nowMs;
+            else if (st.state === 'post' || st.completed) {
+              let end = SCORES.ended[id];
+              if (!end) { end = SCORES.seenLive[id] ? nowMs : (Date.parse(e.date) || 0) + SCORE_LEN[k]; SCORES.ended[id] = end; }
+              show = nowMs < end + 3600000;
+              detail = st.shortDetail || 'Final';
+            }
+            if (!show) continue;
+            games.push({ k, live, us: us.team.abbreviation, uscore: us.score, them: them && them.team ? them.team.abbreviation : '', tscore: them ? them.score : '', color: us.team.color, detail: detail + (us.homeAway === 'home' ? '' : ', away') });
           }
         });
         SCORES.fails = ok ? 0 : SCORES.fails + 1;
@@ -8389,8 +8406,8 @@
     SCORES.games = games;
     games.forEach((g, i) => {
       const el = document.createElement('div');
-      el.className = 'lbl score';
-      el.innerHTML = '<span class="live"></span>' + septaEsc(g.home + ' ' + g.hs + ', ' + g.away + ' ' + g.as) + '<br>' + septaEsc(g.detail);
+      el.className = 'lbl score' + (g.live ? '' : ' final');
+      el.innerHTML = '<span class="live"></span>' + septaEsc(g.us + ' ' + g.uscore + ', ' + g.them + ' ' + g.tscore) + '<br>' + septaEsc(g.detail);
       if (/^[0-9a-f]{6}$/i.test(g.color || '')) el.style.borderColor = '#' + g.color;
       labelsRoot.appendChild(el);
       SCORES.els.push(el);
@@ -11599,7 +11616,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', home: 'PHI', hs: '4', away: 'NYM', as: '2', color: 'e81828', detail: 'Bot 7th' }, { k: 'nfl', home: 'PHI', hs: '17', away: 'DAL', as: '10', color: '06424d', detail: '3rd 8:41' }, { k: 'nhl', home: 'PHI', hs: '2', away: 'PIT', as: '2', color: 'f74902', detail: '2nd 12:05' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
