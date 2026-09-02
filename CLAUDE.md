@@ -53,7 +53,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   circles its spot until the first input takes flight (live buses are followed, not circled).
   The clock is never remembered: every load is Philadelphia's own time, and only a copied
   link carries a pinned clock. The two stadiums are built after the wide loop from
-  `south_geometry_research.json` and light up at night.
+  `south_geometry_research.json` and light up at night; the sports complex is asphalt with
+  striped stalls (`parking_south.json`), and ESPN scoreboards put a score bubble over a venue
+  during a Philadelphia home game.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances.
 - Commit the built page with the source. Do not push or deploy unless asked.

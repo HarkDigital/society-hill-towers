@@ -2096,6 +2096,26 @@ mostly parking lots, not lawn.
   lays them as asphalt flats a hair above the lawn: NRG's lots, the ballpark's, the Linc's,
   Lot P, Lot M East.
 
+### Round 47 coda 5 (Sep 2, late: asphalt with stalls, live scores)
+
+Mike: there is no grass in that district, fill it with parking lot and draw the spaces;
+and show live score bubbles over the arena and stadiums while a game is on.
+
+- **The sheet and the stalls.** No OSM land-use polygon covers the complex, so
+  `fetch_parking.py` closes the 79 lots west of 7th Street over the streets and plazas
+  between them (buffer 90 m, erode 60 m: 11 sheets) and the builder lays the sheets under
+  the lots, both in stored-dark asphalt. Each lot then gets its stalls in the app: ticks
+  2.7 m apart on both sides of a back-to-back line, double rows 18.5 m apart along the
+  lot's long axis, clipped to the ring, one LineSegments mesh shown within 3.5 km of the
+  complex (1 px lines alias into noise beyond).
+- **Scores.** ESPN's public scoreboards (CORS-open, cached seconds at their end) for MLB,
+  NFL, NHL and NBA, polled once a minute while the tab is visible, backing off on failure.
+  A game counts when its state is `in` and the home side is PHI, and its bubble sits over
+  that sport's venue: the ballpark, the Linc, the arena (Flyers and 76ers stack if ever
+  both). The bubble is a label: a live dot, "PHI 4, NYM 2", the clock or inning, the home
+  colour on the border; hidden beyond 14 km. `__dbg.scoreTest()` stages one at each venue.
+  ESPN joined the credit line and the About text.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

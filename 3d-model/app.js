@@ -4913,10 +4913,34 @@
     // the sports complex is mostly asphalt: the surface lots from OSM (fetch_parking.py),
     // laid a hair above the lawn colour the ground would otherwise show
     if (typeof PARKING_SOUTH !== 'undefined' && PARKING_SOUTH && PARKING_SOUTH.polys) {
+      const toRing = (fl2) => { const pp = new Array(fl2.length >> 1); for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]]; return pp; };
+      // the district sheet first (the lots' union closed over the streets between them: there
+      // is no lawn in the complex), then each lot on top
+      for (const fl2 of (PARKING_SOUTH.fill || [])) {
+        try { areaParts.push({ geom: flatPoly(toRing(fl2), null, LAYER.plaza + 0.005), color: new THREE.Color(0x2b2a27), style: 3 }); } catch (e) { /* degenerate */ }
+      }
+      const seg = [];
       for (const fl2 of PARKING_SOUTH.polys) {
-        const pp = new Array(fl2.length >> 1);
-        for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]];
-        try { areaParts.push({ geom: flatPoly(pp, null, LAYER.plaza + 0.01), color: new THREE.Color(0x3f3e3a), style: 3 }); } catch (e) { /* degenerate */ }
+        const pp = toRing(fl2);
+        try { areaParts.push({ geom: flatPoly(pp, null, LAYER.plaza + 0.01), color: new THREE.Color(0x2e2d2a), style: 3 }); } catch (e) { continue; }
+        // the stalls: ticks 2.7 m apart on both sides of a back-to-back line, double rows
+        // 18.5 m apart along the lot's long axis, so from above the lots read as parking
+        const ob = orientedBox(pp), ax = obbAxis(ob);
+        for (let v = -ax.hs + 9.5; v < ax.hs - 3; v += 18.5) {
+          for (let u = -ax.hl + 1.5; u < ax.hl; u += 2.7) {
+            const qx = ob.cx + ax.ax * u + ax.px * v, qz = ob.cz + ax.az * u + ax.pz * v;
+            const x0 = qx - ax.px * 5.5, z0 = qz - ax.pz * 5.5, x1 = qx + ax.px * 5.5, z1 = qz + ax.pz * 5.5;
+            if (!pointInPoly(x0, z0, pp) || !pointInPoly(x1, z1, pp)) continue;
+            seg.push(x0, siteY(x0, z0, 'ground') + LAYER.plaza + 0.03, z0, x1, siteY(x1, z1, 'ground') + LAYER.plaza + 0.03, z1);
+          }
+        }
+      }
+      if (seg.length) {
+        const lg = new THREE.BufferGeometry();
+        lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
+        lotStripes = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0x9c9890, transparent: true, opacity: 0.5 }));
+        lotStripes.frustumCulled = false; lotStripes.renderOrder = 3;
+        groupCity.add(lotStripes);
       }
     }
     if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
@@ -8256,6 +8280,71 @@
       ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
       ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
   }
+  // ---------------------------------------------------------------- live scores
+  // A bubble over each venue while a Philadelphia home game is on: ESPN's public
+  // scoreboards (CORS-open, cached a few seconds at their end) for the Phillies at the
+  // ballpark, the Eagles at the Linc, the Flyers and 76ers at the arena. Polled once a
+  // minute while the tab is visible; the bubble carries both scores, the home colour on its
+  // border and the clock or inning. Nothing shows between games.
+  const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [] };
+  const SCORE_VENUES = {
+    mlb: { x: -1857, z: 4383, h: 74 }, nfl: { x: -1946, z: 4954, h: 86 },
+    nhl: { x: -2327, z: 4892, h: 64 }, nba: { x: -2327, z: 4892, h: 64 },
+  };
+  const SCORE_KEYS = ['mlb', 'nfl', 'nhl', 'nba'];
+  const SCORE_URL = (k) => 'https://site.api.espn.com/apis/site/v2/sports/' + ({ mlb: 'baseball/mlb', nfl: 'football/nfl', nhl: 'hockey/nhl', nba: 'basketball/nba' })[k] + '/scoreboard';
+  const _scv = new V3();
+  function scoresPoll(now) {
+    if (document.hidden || SCORES.busy || now < SCORES.nextT) return;
+    SCORES.busy = true;
+    SCORES.nextT = now + Math.min(300000, 60000 * (1 + SCORES.fails));
+    Promise.all(SCORE_KEYS.map((k) => fetch(SCORE_URL(k), { signal: AbortSignal.timeout(12000) }).then((r) => (r && r.ok ? r.json() : null)).catch(() => null)))
+      .then((res) => {
+        const games = [];
+        let ok = 0;
+        res.forEach((d, i) => {
+          if (!d || !Array.isArray(d.events)) return;
+          ok++;
+          for (const e of d.events) {
+            const c = e.competitions && e.competitions[0];
+            const st = e.status && e.status.type;
+            if (!c || !st || st.state !== 'in') continue;
+            const home = (c.competitors || []).find((t) => t.homeAway === 'home'), away = (c.competitors || []).find((t) => t.homeAway === 'away');
+            if (!home || !away || !home.team || home.team.abbreviation !== 'PHI') continue;   // home games only: the bubble sits on the venue
+            games.push({ k: SCORE_KEYS[i], home: home.team.abbreviation, hs: home.score, away: away.team.abbreviation, as: away.score, color: home.team.color, detail: st.shortDetail || '' });
+          }
+        });
+        SCORES.fails = ok ? 0 : SCORES.fails + 1;
+        if (ok) scoresSet(games);
+        SCORES.busy = false;
+      });
+  }
+  function scoresSet(games) {
+    for (const el of SCORES.els) el.remove();
+    SCORES.els = [];
+    SCORES.games = games;
+    games.forEach((g, i) => {
+      const el = document.createElement('div');
+      el.className = 'lbl score';
+      el.innerHTML = '<span class="live"></span>' + septaEsc(g.home + ' ' + g.hs + ', ' + g.away + ' ' + g.as) + '<br>' + septaEsc(g.detail);
+      if (/^[0-9a-f]{6}$/i.test(g.color || '')) el.style.borderColor = '#' + g.color;
+      labelsRoot.appendChild(el);
+      SCORES.els.push(el);
+      const v = SCORE_VENUES[g.k];
+      g.y = siteY(v.x, v.z, 'ground') + v.h + (games.slice(0, i).some((o) => SCORE_VENUES[o.k] === v) ? 16 : 0);   // two at the arena stack
+    });
+  }
+  function scoresRender() {
+    for (let i = 0; i < SCORES.games.length; i++) {
+      const g = SCORES.games[i], el = SCORES.els[i], v = SCORE_VENUES[g.k];
+      _scv.set(v.x, g.y, v.z);
+      const far = camera.position.distanceTo(_scv) > 14000;
+      _scv.project(camera);
+      if (far || _scv.z > 1 || _scv.z < -1 || _scv.x < -1.1 || _scv.x > 1.1 || _scv.y < -1.2 || _scv.y > 1.2) { el.style.opacity = '0'; continue; }
+      el.style.opacity = '1';
+      el.style.transform = 'translate(-50%,-100%) translate(' + ((_scv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_scv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    }
+  }
   function searchGoToBus(v) {
     const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
     searchFlyTo(x, (v.gy || siteY(x, z, 'road')) + 6, z, 220, true);
@@ -10145,6 +10234,8 @@
   let towerGlow = null, towerMat = null;
   let floodPts = null, floodMat = null;   // the stadiums' floodlights (built with the outer districts)
   let haloMesh = null, haloMat = null;     // and their night halo
+  let lotStripes = null;                   // the sports complex's stall lines (shown within 3.5 km, they alias into noise beyond)
+  const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
   const _plm = new THREE.Matrix4(), _plq = new THREE.Quaternion(), _pls = new THREE.Vector3(), _plp = new THREE.Vector3();
@@ -11380,6 +11471,8 @@
     updateLights(now);
     updateTreePick();
     updateSearchMark(now);
+    scoresPoll(now); scoresRender();
+    if (lotStripes) lotStripes.visible = camera.position.distanceTo(LOT_CENTER) < 3500;
     updateLabels();
     updateHash(now);
     renderer.render(scene, camera);
@@ -11436,7 +11529,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', home: 'PHI', hs: '4', away: 'NYM', as: '2', color: 'e81828', detail: 'Bot 7th' }, { k: 'nfl', home: 'PHI', hs: '17', away: 'DAL', as: '10', color: '06424d', detail: '3rd 8:41' }, { k: 'nhl', home: 'PHI', hs: '2', away: 'PIT', as: '2', color: 'f74902', detail: '2nd 12:05' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

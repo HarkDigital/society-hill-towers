@@ -40,5 +40,21 @@ for el in raw['elements']:
     flat = []
     for x, z in pts: flat.extend([round(x, 1), round(z, 1)])
     polys.append(flat)
-json.dump({'src': 'OpenStreetMap amenity=parking (ODbL), model frame', 'polys': polys}, open('parking_south.json', 'w'), separators=(',', ':'))
+# the fill: the complex is asphalt end to end, so the lots west of 7th Street are closed
+# over the streets and plazas between them (buffer 90 m, erode 60 m) into a district sheet
+# the builder lays under everything; the stadiums' own footprints cover their holes
+fill = []
+if Polygon is not None:
+    from shapely.ops import unary_union
+    lots = [Polygon([(fl[i], fl[i + 1]) for i in range(0, len(fl), 2)]) for fl in polys]
+    lots = [l for l in lots if l.centroid.x < -700]
+    u = unary_union([l.buffer(90, join_style=2) for l in lots]).buffer(-60, join_style=2)
+    for g in (u.geoms if u.geom_type == 'MultiPolygon' else [u]):
+        if g.area < 10000: continue
+        ring = list(g.simplify(3).exterior.coords)[:-1]
+        flat = []
+        for x, z in ring: flat.extend([round(x, 1), round(z, 1)])
+        fill.append(flat)
+json.dump({'src': 'OpenStreetMap amenity=parking (ODbL), model frame', 'polys': polys, 'fill': fill}, open('parking_south.json', 'w'), separators=(',', ':'))
+print(f'fill: {len(fill)} sheets, {sum(len(f) // 2 for f in fill)} points', flush=True)
 print(f'parking_south.json: {len(polys)} lots, {os.path.getsize("parking_south.json"):,} bytes', flush=True)
