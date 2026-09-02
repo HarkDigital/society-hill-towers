@@ -10286,7 +10286,7 @@
   // each new strike's real position, so the storm over New Jersey shows from
   // here. While the feed is live the synthetic random bolts stand down.
   const LIGHTNING_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/lightning.json' : 'https://philly3d.com/lightning.json';
-  const LTN = { live: false, ok: false, busy: false, fails: 0, nextT: 0, lastSeen: 0, queue: [], n10: 0, nearestKm: null, n: 0, drawn: 0 };
+  const LTN = { live: false, ok: false, busy: false, fails: 0, nextT: 0, lastSeen: 0, queue: [], n10: 0, nearestKm: null, n: 0, drawn: 0, nextDraw: 0 };
   const LTN_DRAW_KM = 80;   // 50 miles
   function ltnPoll(now) {
     if (!wxCanFetch || WX_PRESETS[wxForced] || LTN.busy || now < LTN.nextT || document.hidden) return;
@@ -10305,10 +10305,11 @@
         LTN.live = true;
         LTN.n = d.strikes.length; LTN.n10 = d.n10 || 0; LTN.nearestKm = d.nearest_km == null ? null : d.nearest_km;
         // queue only what is new; a first poll (or a long gap) shows the last few, not the backlog
-        let fresh = d.strikes.filter((st) => st[0] > LTN.lastSeen && st[3] <= LTN_DRAW_KM);
-        if (fresh.length > 8) fresh = fresh.slice(-8);
-        for (const st of fresh) LTN.queue.push(st);
-        if (LTN.queue.length > 12) LTN.queue.splice(0, LTN.queue.length - 12);
+        // a storm cell flickers many times a minute; the page shows one strike at a
+        // time, the nearest of what arrived, so a busy night reads as lightning
+        // in the distance rather than a strobe
+        const fresh = d.strikes.filter((st) => st[0] > LTN.lastSeen && st[3] <= LTN_DRAW_KM);
+        if (fresh.length) { fresh.sort((a, b) => a[3] - b[3]); LTN.queue = fresh.slice(0, 2); }
         for (const st of d.strikes) if (st[0] > LTN.lastSeen) LTN.lastSeen = st[0];
         if (!wasLive || (wasN >= 3) !== (LTN.n10 >= 3)) { wxSetTargets(); refreshTimeUI(); }
       })
@@ -10377,7 +10378,7 @@
   const WXFX = {
     rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0,
     tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0,
-    storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, dayF: 1, boltGap: [2600, 9000],
+    storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, boltSoft: false, dayF: 1, boltGap: [2600, 9000],
   };
   function wxSetTargets() {
     const F = WXFX, c = WX.code;
@@ -10645,7 +10646,8 @@
     boltGeo.attributes.position.needsUpdate = true;
     boltGeo.setDrawRange(0, n * 2);
     WXFX.boltEnd = now + 240;
-    WXFX.boltFlash = clamp(1600 / dist, 0.14, 1);   // near strikes light the world; a strike 50 km out still flickers the deck
+    WXFX.boltFlash = clamp(1100 / dist, 0.05, 1);   // a strike overhead lights the world; one 40 km out barely flickers the deck
+    WXFX.boltSoft = dist > 9000;                     // far off: one soft pulse instead of the triple strobe
   }
   const _wxc = new THREE.Color();
   const rainVel = new THREE.Vector3(), rainOff = new THREE.Vector3();
@@ -10699,19 +10701,19 @@
       snowU.uAlpha.value = 0.95 * vis * (0.45 + 0.55 * F.dayF);
     }
     ltnPoll(now);
-    if (LTN.queue.length && now >= F.boltEnd - 60) spawnStrike(now, LTN.queue.shift());   // real strikes, at most ~5 a second
+    if (LTN.queue.length && now >= LTN.nextDraw) { spawnStrike(now, LTN.queue.shift()); LTN.nextDraw = now + 2500 + Math.random() * 2500; }   // real strikes, one every 2.5 to 5 s at most
     else if (F.storm && !LTN.live) {   // no lightning feed: the synthetic bolts stand in
       if (!F.nextBolt) F.nextBolt = now + 1200 + Math.random() * F.boltGap[1] * 0.5;
       if (now >= F.nextBolt) spawnBolt(now);
     } else F.nextBolt = 0;
     if (now < F.boltEnd) {
       const t = (now - (F.boltEnd - 240)) / 240;
-      const fl = Math.max(
+      const fl = F.boltSoft ? 0.8 * Math.exp(-(t - 0.35) * (t - 0.35) * 26) : Math.max(
         Math.exp(-(t - 0.07) * (t - 0.07) * 80),
         0.75 * Math.exp(-(t - 0.45) * (t - 0.45) * 55),
         0.45 * Math.exp(-(t - 0.82) * (t - 0.82) * 45));
       F.flash = fl * F.boltFlash;
-      boltMat.opacity = clamp(fl * 1.7 - 0.25, 0, 1);
+      boltMat.opacity = clamp(fl * (F.boltSoft ? 1.2 : 1.7) - 0.25, 0, F.boltSoft ? 0.6 : 1);
       boltMesh.visible = boltMat.opacity > 0.02;
     } else {
       boltMesh.visible = false;
