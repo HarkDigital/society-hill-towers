@@ -3979,6 +3979,8 @@
       [-3138.9, 2213.8, 10, 16, 28.3],           // St Edmond (21st & Mifflin): corner tower
       [-514.7, 1524.4, 10, 15, 26.2],            // St Casimir (324 Wharton): front tower
     ];
+    // bbox of every row plus its radius: the per-footprint scan only runs inside it
+    const LM_BOX = LANDMARK_H.reduce((b, q) => [Math.min(b[0], q[0] - q[2]), Math.max(b[1], q[0] + q[2]), Math.min(b[2], q[1] - q[2]), Math.max(b[3], q[1] + q[2])], [Infinity, -Infinity, Infinity, -Infinity]);
     // ground-contact shading for the ring fabric: every wall quad carries RING_AO of
     // its colour at the two ground verts, full colour at the eave, so the GPU draws a
     // base-to-eave gradient like the core's mergeColored ao ramp (1.0 disables)
@@ -4052,7 +4054,7 @@
       // dem/corridor test alone missed Philly-side river water
       if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;
       let lm = null;   // LANDMARK_H row for this footprint, if any
-      for (const q of LANDMARK_H) if (Math.hypot(cx - q[0], cz - q[1]) < q[2]) { lm = q; break; }
+      if (cx > LM_BOX[0] && cx < LM_BOX[1] && cz > LM_BOX[2] && cz < LM_BOX[3]) for (const q of LANDMARK_H) if (Math.hypot(cx - q[0], cz - q[1]) < q[2]) { lm = q; break; }
       if (lm && lm[3] > 0) h = lm[3];
       const base = siteY(cx, cz, 'ground');
       const hsh = hash01(i * 7.13);
@@ -6461,6 +6463,8 @@
   // pointer / touch input
   let dragging = false, dragBtn = 0, lastX = 0, lastY = 0, interacted = false, touchArmed = false;
   let panelTap = false;   // the current press began with a bottom panel open
+  window.addEventListener('pointerup', () => { panelTap = false; });   // (after the canvas handler consumed it)
+  window.addEventListener('pointercancel', () => { panelTap = false; });
   const joy = { active: false, id: -1, ox: 0, oy: 0, x: 0, y: 0 };
   const lookTouch = { id: -1, x: 0, y: 0 };
   const pinch = { d: 0, x: 0, y: 0 };
@@ -6660,7 +6664,7 @@
     // a focused HUD button keeps Space/Enter (its own activation); every other
     // key is a shortcut. Bailing on ANY key from a BUTTON left W A S D dead after
     // every mouse click on the HUD until the user happened to click the canvas.
-    if (tag === 'BUTTON' && (k === ' ' || k === 'enter')) return;
+    if ((k === ' ' || k === 'enter') && tag !== 'BODY' && tag !== 'CANVAS' && tag !== 'HTML') return;   // a focused control keeps its own activation keys
     if (!veil.classList.contains('hidden')) return;      // no shortcuts under the intro veil
     if (about.classList.contains('open')) {              // panel gets the keyboard while open
       if (k === 'escape' || k === 'i') closeAbout();
@@ -6894,6 +6898,7 @@
   const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places'];
   const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true };
   let prefsReady = false, prefsTimer = 0;
+  let hashClock = false, clockTouched = false;   // a shared link's pinned clock is not saved until the user changes the time
   function layerFlags() {
     return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn };
   }
@@ -6924,6 +6929,7 @@
   function writePrefs() {
     const o = layerFlags();
     o.live = clock.live; o.date = clockDateStr(); o.minutes = clock.minutes;
+    if (hashClock && !clockTouched) { const prev = loadPrefs(); if (prev) { o.live = prev.live; o.date = prev.date; o.minutes = prev.minutes; } }
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(o)); } catch (e) { }
   }
   function loadPrefs() {
@@ -6946,7 +6952,7 @@
       for (const kv of location.hash.replace(/^#/, '').split('&')) {
         const i = kv.indexOf('=');
         if (i < 1 || i === kv.length - 1) continue;
-        const k = kv.slice(0, i), v = kv.slice(i + 1).split(',').map(Number);
+        const k = kv.slice(0, i), v = kv.slice(i + 1).split(',').map((f) => /^-?\d+(\.\d+)?$/.test(f) ? +f : NaN);   // an empty field is malformed, not 0
         if (!v.every((n) => isFinite(n))) continue;
         if (k === 'p' && v.length === 5) out.p = v;
         else if (k === 't' && v.length === 2) out.t = v;
@@ -7002,6 +7008,7 @@
     const n = openPanelName();
     if (!n) return false;
     if (n === 'search') toggleSearch(false); else openPanel(n, false);   // search also cancels its query
+    if (n === 'search' && SEPTA.filter) hintEl.textContent = 'Showing route ' + SEPTA.filterLabel + ' only. Turn the SEPTA layer off to clear.';
     return true;
   }
 
@@ -7024,15 +7031,17 @@
   // request a cycle however many viewers. The JSONP rotation stays as the
   // fallback whenever the file is missing or stale (baker down).
   const SEPTA_BAKED = 'https://philly3d.com/septa.json';
+  // the feed's timestamps are the server's clock: judge staleness against its Date header, not the viewer's clock
+  const serverNow = (r) => { const t = Date.parse(r.headers.get('date') || ''); return t > 0 ? t / 1000 : Date.now() / 1000; };
   let septaBakedOk = true, septaBakedRetryT = 0;
   function septaFetchBaked(cb) {
     const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const timer = ctl ? setTimeout(() => ctl.abort(), 12000) : 0;
     const miss = () => { clearTimeout(timer); septaBakedOk = false; septaBakedRetryT = performance.now() + 300000; cb(null); };
     fetch(SEPTA_BAKED, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
-      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
-      .then((d) => {
-        if (!d || !(d.t > 0) || Date.now() / 1000 - d.t > 90) { miss(); return; }   // stale file: the baker is down
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json().then((d) => ({ d, now: serverNow(r) })); })
+      .then(({ d, now: sNow }) => {
+        if (!d || !(d.t > 0) || sNow - d.t > 90) { miss(); return; }   // stale file: the baker is down
         clearTimeout(timer);
         cb(d);
       })
@@ -7165,11 +7174,11 @@
     const n = septaVeh.size, off = SEPTA.fails >= 3;
     let onRoute = 0;
     if (SEPTA.filter) septaVeh.forEach((v) => { if (!v.ug && v.route === SEPTA.filter) onRoute++; });
-    const shown = SEPTA.filter ? onRoute + ' of ' + n + ' on route ' + SEPTA.filterLabel : n + ' Live';
+    const shown = SEPTA.filter ? onRoute + ' of ' + n : n + ' Live';   // the badge is small; the route name rides the title and the chip
     btnTransit.title = 'Live SEPTA Vehicles (V): ' + (off ? 'Feed Offline' : SEPTA.filter ? shown : n + ' Tracked Now');
     const tc = document.getElementById('transitCount');
     if (tc) tc.textContent = off ? 'Offline' : n ? shown : '';
-    if (!SEPTA.hinted && n > 0 && veil.classList.contains('hidden')) {
+    if (!SEPTA.hinted && n > 0 && !tour.on && veil.classList.contains('hidden')) {
       SEPTA.hinted = true;
       hintEl.textContent = n + ' SEPTA vehicles are live on the map. Tap a pin for its route. V toggles.';
       clearTimeout(septaHintT);
@@ -7180,7 +7189,7 @@
     if (!SEPTA.on || !septaCanFetch || !septaReady) return;
     if (document.hidden && !force) return;
     const now = performance.now();
-    if (SEPTA.busy || now - SEPTA.lastT < 5000) return;   // one pull in flight, never faster than 5 s
+    if (SEPTA.busy || (!force && now - SEPTA.lastT < 5000)) return;   // one pull in flight; unforced pulls never faster than 5 s
     SEPTA.busy = true; SEPTA.lastT = now;
     if (!septaBakedOk && now >= septaBakedRetryT) septaBakedOk = true;   // give the baker another try every 5 min
     const viaJsonp = () => septaJsonp('/TransitViewAll/index.php', (d) => { SEPTA.busy = false; septaGotTV(d); });
@@ -7205,7 +7214,7 @@
     SEPTA.on = !SEPTA.on;
     syncTransitBtn();
     if (SEPTA.on) septaPoll(true);
-    else if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; }   // only a SEPTA card closes; a plane or ship keeps its own
+    else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
   document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; });
@@ -7295,6 +7304,7 @@
     // tap point (a little wider under the crosshair, where aiming is coarser)
     let bestV = null, bestS = null, bestD = (vpWasLocked ? 46 : 30) ** 2;
     if (sAct) septaVeh.forEach((v) => {
+      if (SEPTA.filter && v.route !== SEPTA.filter) return;   // not drawn, not pickable
       if (v.ug) return;
       _ssv.set(v.dx != null ? v.dx : v.x, (v.gy || 0) + 3, v.dz != null ? v.dz : v.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) return;
@@ -7529,11 +7539,11 @@
       if (v.snx != null) {
         const ry = Math.atan2(-v.sdz, v.sdx);
         let dAx = ry - v.yawT;
-        dAx = ((dAx + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+        dAx = wrapPi(dAx);
         yawGoal = Math.abs(dAx) <= Math.PI / 2 ? ry : ry + Math.PI;
       }
       let dyaw = yawGoal - v.yaw;
-      dyaw = ((dyaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      dyaw = wrapPi(dyaw);
       v.yaw += Math.abs(dyaw) <= cap ? dyaw : Math.sign(dyaw) * cap;
       if (v.ug) return;                 // tunnel trolleys aren't drawn — nothing under buildings
       if (SEPTA.filter && v.route !== SEPTA.filter) return;   // a route search shows that route alone (the pick arrays fill below, so they stay in step)
@@ -7917,6 +7927,7 @@
     return String(s || '').split(',').slice(0, 3).join(',');
   }
   function searchFlyTo(x, y, z, dist) {
+    glideCancel();   // a tour or a stop in flight would overwrite the pose next frame
     // park the fly camera at a vantage looking down on the target, approaching
     // from whichever side the camera already is. No pointer lock: the cursor
     // stays free for the result list; clicking the scene takes the controls.
@@ -8640,7 +8651,7 @@
         if (isTouch) closePanels();   // free the screen; desktop keeps the list up
       });
     }
-    if (btnTour) btnTour.addEventListener('click', () => { if (tour.on) tourStop(); else tourStart(); });
+    if (btnTour) btnTour.addEventListener('click', () => { if (tour.on) glideCancel(); else tourStart(); });   // cancel the hop in flight too
   });
 
   // labels + about wiring
@@ -9272,7 +9283,8 @@
     const x = (s.lon - SITE.lon) * 111320 * Math.cos(SITE.lat * DEG);
     const z = -(s.lat - SITE.lat) * 110574;
     if (x < -12500 || x > 17000 || z < -22000 || z > 10000) return;
-    const age = s.t > 0 ? clamp(nowS - s.t, 0, 1800) : 0;
+    if (s.t > 0 && nowS - s.t > 1500) return;   // older than the despawn threshold: do not create it only to prune it
+    const age = s.t > 0 ? clamp(nowS - s.t, 0, 1500) : 0;
     v.fx = x; v.fz = z; v.ft = nowP - age * 1000;
     v.sog = s.sog || 0;
     const hd = (s.hdg != null && s.hdg < 360) ? s.hdg : (s.cog != null ? s.cog : v.cog);
@@ -9294,10 +9306,12 @@
     const timer = ctl ? setTimeout(() => ctl.abort(), 8000) : 0;
     const miss = () => { clearTimeout(timer); SHIPS.relayBusy = false; SHIPS.relayFails++; SHIPS.relay = false; };
     fetch(AIS_RELAY, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
-      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json(); })
-      .then((d) => {
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json().then((d) => ({ d, now: serverNow(r) })); })
+      .then(({ d, now: sNow }) => {
         clearTimeout(timer);
-        if (!d || !Array.isArray(d.ships) || !(d.t > 0) || Date.now() / 1000 - d.t > 60) { miss(); return; }   // stale: relay down
+        // stale write time = relay down; a fresh write with an old upstream time = the
+        // relay alive but its aisstream socket dead (bad key, outage): fall back too
+        if (!d || !Array.isArray(d.ships) || !(d.t > 0) || sNow - d.t > 60 || (d.src > 0 && sNow - d.src > 900)) { miss(); return; }
         SHIPS.relayBusy = false; SHIPS.relayFails = 0;
         if (!SHIPS.relay) { SHIPS.relay = true; shipRelease(); }   // the relay owns the feed: drop the direct socket
         const nowP = performance.now(), nowS = Date.now() / 1000;
@@ -9399,16 +9413,23 @@
     // the age prune is its own pass: the draw loop stops at SHIP_CAP, and a
     // vessel heard but never fixed inside the box must age out too
     const gone = [];
-    for (const v of shipMap.values()) if ((now - v.ft) / 1000 > 1800) gone.push(v.mmsi);
+    for (const v of shipMap.values()) {
+      const age = (now - v.ft) / 1000;
+      if (age > 1800) { gone.push(v.mmsi); continue; }
+      if (v.dx === undefined) continue;
+      const px = v.moored ? v.fx : v.fx + v.vx * Math.min(age, 600);
+      const pz = v.moored ? v.fz : v.fz + v.vz * Math.min(age, 600);
+      if (px < -12500 || px > 17000 || pz < -22000 || pz > 10000) gone.push(v.mmsi);   // sailed out of the model
+    }
+    for (const m of gone) shipMap.delete(m);
+    gone.length = 0;
     let i = 0;
     for (const v of shipMap.values()) {
       if (i >= SHIP_CAP) break;
       const age = (now - v.ft) / 1000;
-      if (age > 1800) continue;
       if (v.dx === undefined) continue;
       const px = v.moored ? v.fx : v.fx + v.vx * Math.min(age, 600);
       const pz = v.moored ? v.fz : v.fz + v.vz * Math.min(age, 600);
-      if (px < -12500 || px > 17000 || pz < -22000 || pz > 10000) { gone.push(v.mmsi); continue; }
       const k = 1 - Math.exp(-dt / 1.6);
       v.dx += (px - v.dx) * k;
       v.dz += (pz - v.dz) * k;
@@ -9434,9 +9455,9 @@
       shipStatus();
     }
     shipMesh.count = i;
-    flushInst(shipMesh);
+    flushInst(shipMesh, -1);     // tints are written once in shipsInit
     shipAnchor.count = i;
-    flushInst(shipAnchor);
+    flushInst(shipAnchor, -1);
     if (pickedShip) {
       shipCard(pickedShip);
       _ssv.set(pickedShip.dx, TERRAIN.water + clamp(pickedShip.len * 0.09, 2.5, 16) + 6, pickedShip.dz).project(camera);
@@ -10705,15 +10726,15 @@
   }
   function toggleTimePanel(open) { openPanel('time', open); }
   btnTime.addEventListener('click', () => toggleTimePanel());
-  timeSlider.addEventListener('input', () => { setLapse(false); clock.live = false; clock.minutes = parseInt(timeSlider.value, 10); refreshTimeUI(); savePrefs(); });
+  timeSlider.addEventListener('input', () => { setLapse(false); clockTouched = true; clock.live = false; clock.minutes = parseInt(timeSlider.value, 10); refreshTimeUI(); savePrefs(); });
   timeDate.addEventListener('change', () => {
     const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(timeDate.value);
     if (!m) return;
     setLapse(false);
     clock.live = false; clock.y = +m[1]; clock.m = +m[2]; clock.d = +m[3];
-    refreshTimeUI(); savePrefs();
+    refreshTimeUI(); clockTouched = true; savePrefs();
   });
-  document.getElementById('timeNow').addEventListener('click', () => { setLapse(false); clock.live = true; setClockToNow(); refreshTimeUI(); savePrefs(); });
+  document.getElementById('timeNow').addEventListener('click', () => { setLapse(false); clockTouched = true; clock.live = true; setClockToNow(); refreshTimeUI(); savePrefs(); });
   for (const btn of timePanel.querySelectorAll('[data-preset]')) {
     btn.addEventListener('click', () => {
       setLapse(false);
@@ -10724,7 +10745,7 @@
         : p === 'noon' ? 750
         : p === 'dusk' ? Math.min(1439, (t.set == null ? 1140 : t.set) + 8)
         : 1320;
-      refreshTimeUI(); savePrefs();
+      refreshTimeUI(); clockTouched = true; savePrefs();
     });
   }
   // --- sun time-lapse: ~2 clock minutes a frame (dt-scaled), the readout at
@@ -10740,7 +10761,7 @@
     if (on) clock.live = false;
     timePlay.textContent = on ? 'Pause' : 'Play';
     timePlay.setAttribute('aria-pressed', on ? 'true' : 'false');
-    refreshTimeUI(); savePrefs();
+    refreshTimeUI(); clockTouched = true; savePrefs();
   }
   function stepLapse(now, dt) {
     if (!lapse.on) return;
@@ -10811,7 +10832,7 @@
       loadmsg.textContent = s.msg;
       await yieldNow();
       const t0 = performance.now();
-      try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; PERF.failed.push([s.msg, String(err && err.message || err)]); console.error('build step failed:', s.msg, err); }
+      try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; PERF.failed.push([s.msg, String(err && err.message || err)]); console.error('build step failed:', s.msg, err); try { flushUploads(true); } catch (e2) { /* nothing staged */ } }
       PERF.steps.push([s.msg, Math.round(performance.now() - t0)]);
       if (BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
     }
@@ -10945,7 +10966,7 @@
     // fresh depth pass every 4th frame; a changed static caster set (docks
     // arriving with the first Indego poll) gets one immediately
     const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0);
-    const casterSig = indegoReady && indegoSolid ? indegoSolid.count : 0;
+    const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + (movers ? 1 << 30 : 0);   // bikes cast too; movers switching off needs one last redraw
     if ((movers && (frameNo & 3) === 0) || casterSig !== lastCasterSig) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }
     sky.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
@@ -10980,11 +11001,10 @@
       if (m) applyClock(+m[1], +m[2], +m[3], +p.minutes);
     }
     if (hashView.l !== undefined) Object.assign(f, layersFromMask(hashView.l));
-    if (hashView.t) applyClock(Math.floor(hashView.t[0] / 10000), Math.floor(hashView.t[0] / 100) % 100, hashView.t[0] % 100, hashView.t[1]);
+    if (hashView.t && applyClock(Math.floor(hashView.t[0] / 10000), Math.floor(hashView.t[0] / 100) % 100, hashView.t[0] % 100, hashView.t[1])) hashClock = true;
     setLayerFlags(f);
     syncLayerBtns();
     refreshTimeUI();
-    prefsReady = true;
   }
   build().then(() => {
     // weather-surface pass, applied before the first render so nothing recompiles:
@@ -11019,6 +11039,7 @@
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     if (hashView.p) applyHashView(hashView.p);
+    prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);
   });
 })();

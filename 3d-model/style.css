@@ -885,7 +885,11 @@ html, body {
 #osmcredit a { color: inherit; }
 #osmcredit a:hover, #osmcredit a:focus-visible { color: var(--paper); }
 @media (max-width: 900px) {
-  #osmcredit .more { display: none; }
+  #osmcredit .more { display: none; }   /* the Credits link keeps every attribution reachable */
+}
+/* iOS Safari zooms the page when a focused input is under 16px; the viewport no longer pins the scale */
+@media (pointer: coarse) {
+  #searchInput, #timepanel input[type="date"] { font-size: 16px; }
 }
 
 /* ---------- short viewports (a landscape phone): Enter and the load line must stay reachable ---------- */

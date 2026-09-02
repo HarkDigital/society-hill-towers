@@ -177,7 +177,7 @@ class WSClient:
                 self.send_frame(0xA, payload)
                 continue
             if op == 0xA:
-                continue
+                return 0xA, b''          # a pong is life: the reader resets its silence count on it
             if op in (0x1, 0x2):
                 if fin:
                     return op, payload
@@ -363,6 +363,8 @@ def reader(key, fleet, stop, link):
                     ws.ping()
                     continue
                 silent = 0
+                if _op == 0xA:
+                    continue
                 try:
                     d = json.loads(payload.decode('utf-8'))
                 except (UnicodeDecodeError, ValueError):

@@ -100,7 +100,7 @@ if not m or m.group(1) != THREE_REV:
     sys.exit(f"FATAL: three.min.js is r{m.group(1) if m else '?'}, expected r{THREE_REV} (see the pin note in build.py)")
 app = (ROOT / "app.js").read_text(encoding="utf-8")
 
-scene = json.loads((ROOT / "scene.json").read_text(encoding="utf-8"))
+scene = json.loads(path_of("scene.json").read_text(encoding="utf-8"))   # through the floor check like every other input
 meta_path = path_of("meta.json")   # tower facts + landmark research, written by hand after workflow
 meta = json.loads(meta_path.read_text(encoding="utf-8")) if meta_path else {}
 about_path = path_of("about_body.html")

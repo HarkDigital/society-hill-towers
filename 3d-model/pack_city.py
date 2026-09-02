@@ -242,6 +242,8 @@ def ring_cent(pts):
     return sum(p[0] for p in pts) / len(pts), sum(p[1] for p in pts) / len(pts)
 
 GREEN = ('park', 'golf_course', 'nature_reserve')
+WIDE_KINDS = ('park', 'garden', 'playground', 'pitch')   # what process_osm.py / pack_wide.py pack as areas
+def wideOwns(t): return t.get('leisure') in WIDE_KINDS or t.get('natural') == 'water'
 LU = ('grass', 'cemetery', 'forest', 'recreation_ground')
 wayById = {el['id']: el for el in ways}
 for el in ways:
@@ -255,7 +257,10 @@ for el in ways:
     if len(pts) >= 2 and pts[0] == pts[-1]: pts = pts[:-1]
     if len(pts) < 3: continue
     cxz = ring_cent(pts)
-    if inBox(cxz[0], cxz[1], WIDE): n_wide += 1; continue   # pack_wide's (same centroid rule as buildings)
+    # pack_wide's, but only for the kinds process_osm.py gives scene_wide.json (park, garden,
+    # playground, pitch, water): a cemetery, golf course, forest or apron in the wide box would
+    # otherwise belong to nobody
+    if inBox(cxz[0], cxz[1], WIDE) and wideOwns(t): n_wide += 1; continue
     try: pg = Polygon(pts).buffer(0)
     except Exception: continue
     geoms = list(pg.geoms) if pg.geom_type == 'MultiPolygon' else [pg]
@@ -277,7 +282,7 @@ for el in els:
     try:
         for g in polygonize(unary_union(lines)):
             cxz = ring_cent(list(g.exterior.coords)[:-1])
-            if inBox(cxz[0], cxz[1], WIDE): n_wide += 1; continue   # pack_wide's
+            if inBox(cxz[0], cxz[1], WIDE) and wideOwns(t): n_wide += 1; continue   # pack_wide's, for the kinds it packs
             gg = g.intersection(cityBox)
             geoms = list(gg.geoms) if gg.geom_type == 'MultiPolygon' else [gg]
             for g2 in geoms:

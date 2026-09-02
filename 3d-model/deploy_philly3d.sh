@@ -78,7 +78,8 @@ if [ "${1:-}" = "--rollback" ]; then
     && mv -f $WEB/.rb.index.html.gz $WEB/index.html.gz \
     && mv -f $WEB/.rb.index.html $WEB/index.html" \
     || fatal "rollback copy failed on $HOST"
-  want=$(ssh "$HOST" "sha256sum $WEB/index.html" | cut -d' ' -f1)
+  want=$(ssh "$HOST" "sha256sum $WEB/index.html" | cut -d' ' -f1) || want=""
+  [ -n "$want" ] || fatal "could not read the remote hash of $WEB/index.html (no pipefail in sh: an empty hash would have passed)"
   echo "== verifying $URL serves sha256 $want"
   verify_live "$want"
   echo "rolled back: $URL serves the previous build ($want)."
@@ -109,7 +110,7 @@ grep -q "FLIGHT_PROXY = 'https://philly3d.com/adsb'" "$TMP/index.html" \
   || fatal "refusing to ship a proxyless build (FLIGHT_PROXY is not the philly3d.com /adsb passthrough)"
 grep -q 'property="og:image"' "$TMP/index.html" \
   || fatal "refusing to ship an unbranded build (no og:image)"
-# nginx gzip_static serves this twin; ~23 MB page -> ~12.8 MB gzip (Sep 2026)
+# nginx gzip_static serves this twin; 22.8 MB page -> 9.8 MB gzip (Sep 2026, byte-planar blobs)
 gzip -k9f "$TMP/index.html"
 GZ=$(wc -c < "$TMP/index.html.gz" | tr -d ' ')
 [ "$GZ" -ge "$GZ_MIN" ] || fatal "index.html.gz is only $GZ bytes (< GZ_MIN=$GZ_MIN) — truncated build?"

@@ -46,14 +46,15 @@
 #   ADDED   location ~ /\.  -> 404: the bakers and --rollback stage dotfiles in
 #           the web root for a moment; nothing dotted should ever be served.
 #
-# Not touched on purpose: `listen [::]:...` — the box has no IPv6 (see the
-# /adsb resolver note); adding v6 listeners is a separate decision.
+# The `listen [::]:...` lines are kept exactly as the live file has them (the
+# box has no v6 egress, see the /adsb resolver note, but it does listen on v6).
 
 # ---------------------------------------------------------------- :80
 # ACME stays reachable over plain http for certbot renewals (certonly --webroot);
 # everything else is bounced to https on the apex.
 server {
     listen 80;
+    listen [::]:80;
     server_name philly3d.com www.philly3d.com;
 
     location /.well-known/acme-challenge/ {
@@ -69,6 +70,7 @@ server {
 # so www can terminate TLS and redirect instead of serving a duplicate site.
 server {
     listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name www.philly3d.com;
 
     ssl_certificate /etc/letsencrypt/live/philly3d.com/fullchain.pem;
@@ -83,6 +85,7 @@ server {
 # ---------------------------------------------------------------- :443 apex
 server {
     listen 443 ssl http2;
+    listen [::]:443 ssl http2;
     server_name philly3d.com;
     root /var/www/philly3d;
 

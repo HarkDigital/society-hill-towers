@@ -18,6 +18,7 @@ try:
 except Exception:
     provenance = None
 
+LAST = {'mirror': ''}   # the mirror that answered the last successful fetch (for provenance)
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
            'https://overpass.private.coffee/api/interpreter']
 USER_AGENT = 'sht-3d-model/1.0'
@@ -33,7 +34,12 @@ def fetch(query, mirrors=MIRRORS, attempts=10, timeout=190):
         try:
             req = urllib.request.Request(url, data=data, headers={'User-Agent': USER_AGENT})
             with urllib.request.urlopen(req, timeout=timeout) as r:
-                return json.load(r)
+                d = json.load(r)
+                rem = str(d.get('remark', '')) if isinstance(d, dict) else ''
+                if 'timed out' in rem or 'runtime error' in rem or (rem and not d.get('elements')):
+                    raise RuntimeError('overpass remark: ' + rem[:160])   # HTTP 200 with an empty answer is not a tile
+                LAST['mirror'] = url
+                return d
         except Exception as e:
             last = e
             time.sleep(min(120, 12 + 14 * attempt))
@@ -80,7 +86,7 @@ def fetch_tiles(tiles, query_fn, cache_dir, rounds=3, pause=5):
                 json.dump(d, f)
             os.replace(path + '.tmp', path)
             if provenance:
-                provenance.record(f'{cache_dir}.overpass', MIRRORS[0], query_fn(bbox), len(d.get('elements', [])), tile=str(tid))
+                provenance.record(f'{cache_dir}.overpass', LAST['mirror'] or MIRRORS[0], query_fn(bbox), len(d.get('elements', [])), tile=str(tid))
             print(f'{tid} {bbox}: {len(d.get("elements", []))} elements ({time.time()-t0:.0f}s)', flush=True)
             time.sleep(pause)
     missing = [tid for tid, _ in tiles if not os.path.exists(_tile_path(cache_dir, tid))]

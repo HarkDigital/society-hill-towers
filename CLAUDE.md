@@ -5,7 +5,7 @@ Philadelphia: a detailed Society Hill core, the wide Center City / South Philly 
 ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flights / ships,
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (VPS) and
 https://harkdigital.github.io/society-hill-towers/ (Pages). Everything is in `3d-model/`;
-`app.js` (~10,300 lines, one IIFE) is the whole application, `build.py` inlines it with the
+`app.js` (~11,000 lines, one IIFE) is the whole application, `build.py` inlines it with the
 data into `society-hill-towers.html` (22.83 MB raw / 9.77 MB gzip). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 

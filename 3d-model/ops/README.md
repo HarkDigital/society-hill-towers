@@ -8,7 +8,7 @@ Everything in this directory is applied **by hand, by the owner**, on the lionsp
 | `philly3d.vhost.example` | `/etc/nginx/sites-available/philly3d` | the three server blocks (80 → https, www → apex, apex) with every addition commented |
 | `nginx-restart.conf` | `/etc/systemd/system/nginx.service.d/restart.conf` | nginx retries a failed start every 30 s forever |
 | `uptime.md` | — | two-line external HEAD check with email alerting |
-| `septa_bake.py` + `septa-bake.service` + `septa-bake.timer` | `/opt/philly3d/`, `/etc/systemd/system/` | SEPTA TransitViewAll → `/var/www/philly3d/septa.json` every 10 s |
+| `septa_bake.py` + `septa-bake.service` (loop; `septa-bake.timer` is the oneshot alternative) | `/opt/philly3d/`, `/etc/systemd/system/` | SEPTA TransitViewAll → `/var/www/philly3d/septa.json` every 10 s |
 | `ais_relay.py` + `ais-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | one aisstream.io socket → `/var/www/philly3d/ais.json` every 4 s |
 | `../deploy_philly3d.sh` | run from the laptop | tests → build → gzip gate → keep prev pair → `rsync --delay-updates` → live sha256 verify; `--rollback` |
 
@@ -60,9 +60,9 @@ Stdlib only. Every 10 s it fetches `https://www3.septa.org/api/TransitViewAll/in
 ```sh
 mkdir -p /opt/philly3d && cp septa_bake.py /opt/philly3d/ && chmod 755 /opt/philly3d/septa_bake.py
 python3 /opt/philly3d/septa_bake.py --out /var/www/philly3d/septa.json && ls -l /var/www/philly3d/septa.json*   # one bake, by hand
-cp septa-bake.service septa-bake.timer /etc/systemd/system/ && systemctl daemon-reload
-systemctl enable --now septa-bake.timer
-systemctl list-timers septa-bake.timer ; journalctl -u septa-bake -n 5
+cp septa-bake.service /etc/systemd/system/ && systemctl daemon-reload
+systemctl enable --now septa-bake.service      # one --loop process; septa-bake.timer is the oneshot alternative
+systemctl status septa-bake ; journalctl -u septa-bake -n 5
 curl -s https://philly3d.com/septa.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["t"], sum(len(v) for v in d["routes"][0].values()), "vehicles")'
 ```
 

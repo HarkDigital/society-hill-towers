@@ -48,7 +48,7 @@ the files above must keep this notice if they are redistributed.
 
 City datasets on OpenDataPhilly are generally released under CC-BY 4.0
 (https://creativecommons.org/licenses/by/4.0/); attribution ("City of Philadelphia" and the
-department named above) is required, and the page's credit line carries it. Check the
+department named above) is required; the page's credit line carries it on screens wider than 900 px, and the Credits link (the About panel) carries it on every screen. Check the
 individual dataset page on OpenDataPhilly for any exception before reusing a file.
 
 ## USGS (public domain)

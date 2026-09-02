@@ -26,7 +26,7 @@ URL stability.
   Do not republish there; if someone reports a stale or sunny-in-the-rain page, ask which URL.
 
 **Sizes (verified 2026-09-01):** built page 22.83 MB raw / 9.77 MB gzip (22.98 / 12.76 before
-today's byte-planar blob shuffle in build.py). `app.js` is ~10,300 lines.
+today's byte-planar blob shuffle in build.py). `app.js` is ~11,000 lines.
 
 **Gitignored** (everything else, including the built page, is committed): `.DS_Store`,
 `.claude/`, the three raw Overpass dumps `3d-model/osm_wide_raw.json` (95 MB),
@@ -45,7 +45,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 |---|---|
 | `society-hill-towers.html` | The built, self-contained page (22.83 MB raw / 9.77 MB gzip). Output of `build.py`, committed, served by both homes. |
 | `template.html` | Page shell: a real document head (title, description, canonical, OG/Twitter card, inlined favicons), the veil, bar, panels, the bottom credit line, and the `{{CSS}} {{DATA}} {{THREE}} {{APP}} {{ABOUT_BODY}} {{FAVICON_SVG_B64}} {{FAVICON_32_B64}} {{APPLE_ICON_B64}}` placeholders. |
-| `app.js` | All application code (~10,300 lines, one IIFE). Everything interesting is here; see Architecture. |
+| `app.js` | All application code (~11,000 lines, one IIFE). Everything interesting is here; see Architecture. |
 | `style.css` | HUD chrome plus the embedded Montserrat faces (base64 woff2, OFL). |
 | `about_body.html` | About panel prose, key table and credits. The panel is hidden by owner decision (since Round 22; `btnAbout` display:none, `i` unbound, code intact). |
 | `three.min.js` | Three.js **r149** UMD, inlined at build. Pinned: see gotcha 11 before upgrading. |
