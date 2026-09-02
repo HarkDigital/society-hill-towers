@@ -1893,6 +1893,18 @@ distance-scaled flash. Verified locally against the live relay: 62 strikes in te
 The relay runs on the VPS as `lightning-relay.service`; the static file rides `location /` with
 `gzip_static` like the other feeds.
 
+### Round 46 coda 3 (Sep 1, late: lightning toned down)
+
+Mike: the lightning was jarring and repetitive, too many flashes. With several hundred strikes in
+ten minutes across the 110 km relay window, every 4 s poll had a handful of fresh strikes and each
+drew at once with the full triple strobe. Now each poll keeps only the two nearest fresh strikes,
+the page draws one at a time and never faster than every 2.5 to 5 s, a strike beyond 9 km gets a
+single soft pulse with the bolt capped at 0.6 opacity instead of the triple strobe, and the sky
+flash falls off as 1100 / distance in metres with a floor of 0.05, so a strike 36 km out over
+New Jersey barely stirs the deck while one over Center City still lights the world. Verified on the
+live site: storm on from the relay, one bolt drawn with the next held in the queue behind the gap,
+far-strike flash at the floor. Deployed and pushed as e7b12c7.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
