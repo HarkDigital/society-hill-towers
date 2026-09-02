@@ -6,7 +6,7 @@ ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flight
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (VPS) and
 https://harkdigital.github.io/society-hill-towers/ (Pages). Everything is in `3d-model/`;
 `app.js` (~11,000 lines, one IIFE) is the whole application, `build.py` inlines it with the
-data into `society-hill-towers.html` (24.08 MB raw / 10.29 MB gzip). The old claude.ai
+data into `society-hill-towers.html` (24.85 MB raw / 10.58 MB gzip). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -51,6 +51,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   (orbit is the attract loop, walk is `__dbg.goWalk` only); SEPTA/Indego markers are occluded
   by buildings, neighborhood names and the search pin are not; a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
+  Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
+  visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances.
 - Commit the built page with the source. Do not push or deploy unless asked.
 
 ## URL flags

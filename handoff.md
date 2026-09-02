@@ -22,10 +22,10 @@ URL stability.
   `3d-model/society-hill-towers.html`). Rebuild, commit, `git push`; the built page is
   committed. Pages has no CSP, so live fetches work there.
 - The original claude.ai artifact copy (`claude.ai/code/artifact/04f16de9-…`) is **retired**:
-  the page is 24.08 MB, far over the artifact's 16 MB cap, so it can no longer be current.
+  the page is 24.85 MB, far over the artifact's 16 MB cap, so it can no longer be current.
   Do not republish there; if someone reports a stale or sunny-in-the-rain page, ask which URL.
 
-**Sizes (verified 2026-09-02):** built page 24.08 MB raw / 10.29 MB gzip, of which the towns across the line (`outskirts.b64`) are 1.28 MB raw; 22.83 / 9.77 before them (22.98 / 12.76 before
+**Sizes (verified 2026-09-02):** built page 24.85 MB raw / 10.58 MB gzip, of which the towns across the line (`outskirts.b64`, real footprints plus the land-use filler) are 2.05 MB raw; 22.83 / 9.77 before them (22.98 / 12.76 before
 today's byte-planar blob shuffle in build.py). `app.js` is ~11,000 lines.
 
 **Gitignored** (everything else, including the built page, is committed): `.DS_Store`,
@@ -43,7 +43,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 
 | File | Role |
 |---|---|
-| `society-hill-towers.html` | The built, self-contained page (24.08 MB raw / 10.29 MB gzip). Output of `build.py`, committed, served by both homes. |
+| `society-hill-towers.html` | The built, self-contained page (24.85 MB raw / 10.58 MB gzip). Output of `build.py`, committed, served by both homes. |
 | `template.html` | Page shell: a real document head (title, description, canonical, OG/Twitter card, inlined favicons), the veil, bar, panels, the bottom credit line, and the `{{CSS}} {{DATA}} {{THREE}} {{APP}} {{ABOUT_BODY}} {{FAVICON_SVG_B64}} {{FAVICON_32_B64}} {{APPLE_ICON_B64}}` placeholders. |
 | `app.js` | All application code (~11,000 lines, one IIFE). Everything interesting is here; see Architecture. |
 | `style.css` | HUD chrome plus the embedded Montserrat faces (base64 woff2, OFL). |
@@ -77,7 +77,7 @@ by `unb64()`.
 | `city.b64` | The far ring, the rest of Philadelphia, packed at 0.7 m by `pack_city.py` (magic 0x5348545B) with rowhouse rows merged into block strips: ~180k buildings, 23.6k road runs. |
 | `wide_names.json` | Outer landmark names + heights for the tall-building labels. |
 | `wwb.json` | Walt Whitman Bridge alignment for the custom span: one eastbound I-76 carriageway (OSM ways 424803351, 886672856, 1027616621, 123617847, 1311279172) from the Schuylkill Expressway to where the bridge tag ends in Gloucester City, so the Jersey viaduct lands at grade there. |
-| `outskirts.b64` | The towns across the city line (Gloucester City, Camden's south wards, Pennsauken, Cheltenham, Springfield, plus the Navy Yard's south half): the strips of the far-ring box the older fetches never covered, packed at 1.0 m by `pack_outskirts.py` from `osm_outskirts_raw.json` (legacy magic 0x53485459, no facade attributes) and decoded by the far ring's `raiseRing()`. Scenery beyond the flight limit. |
+| `outskirts.b64` | The towns across the city line (Gloucester City, Camden's south wards, Pennsauken, Cheltenham, Springfield, plus the Navy Yard's south half): the strips of the far-ring box the older fetches never covered, packed at 1.0 m by `pack_outskirts.py` from `osm_outskirts_raw.json` (legacy magic 0x53485459, no facade attributes) and decoded by the far ring's `raiseRing()`, plus the filler: synthetic strips of houses along the streets inside residential land use (or a dense street grid) beyond the city line wherever real footprints are thin. Scenery beyond the flight limit. |
 | `city_limit.json` | Philadelphia's city line (OSM relation 188022) in the model frame plus the flight limit `bound`: the line buffered 2 km, clipped to the far-ring box (`fetch_boundary.py`). The camera clamps to it in every mode and SEPTA vehicles beyond it are off the map. |
 | `facade_palette.json` | 30-colour roof palette (k-means of ortho-sampled roofs), embedded as `FACADE_PAL`. |
 | `street_labels.json` | Street-name placements from `bake_street_labels.py`: `names[]` + flat `[nameIdx, x, z, bearing, cls]`. |
@@ -100,6 +100,7 @@ the hard way are in `devlog.md` (Rounds 13, 15, 23, 25, 26, 39). Scripts marked 
 | `fetch_wide.py` → `osm_wide_raw.json`, `dem_wide.json` | Tiled Overpass fetch for the wide area + its DEM (`fetch_wide.log`). |
 | `fetch_south.py` → `osm_south_raw.json`, `dem_south.json` | South extension: the stadium complex + the Walt Whitman Bridge (`fetch_south.log`). |
 | `fetch_outskirts.py` → `osm_outskirts_raw.json`, `outskirts_tiles/` | Resumable tiled fetch of the three strips of the far-ring box across the city line: south of the Navy Yard's latitude east of −75.185, the east bank above 39.915 east of −74.990, and Montgomery County above 40.100 (`fetch_outskirts.log`). Ways only, no water or park relations. |
+| `fetch_landuse.py` → `osm_landuse_raw.json`, `landuse_tiles/` | Residential, commercial, industrial and retail land use over the whole far-ring box (16 tiles, ways only) for `pack_outskirts.py`'s filler: synthetic strips of houses along the streets inside land use beyond the city line wherever OSM maps the land use but few of the buildings. |
 | `fetch_boundary.py` → `city_limit.json` | *venv.* The city line from OSM relation 188022, buffered 2 km into the flight limit; the raw relation is cached in `lidar_cache/phila_boundary_raw.json`. |
 | `fetch_city.py` → `osm_city_raw.json`, `dem_city.json`, `city_tiles/` | Resumable tiled fetch of the rest of the city: boxes A–D plus `river-wards` (Round 36) and `nw-gap` (Round 40) (`fetch_city.log`). |
 | `fetch_dem_nw.py` → `dem_nw.json` | 50 m NED over the NW hills, border pre-feathered to dem_city. |

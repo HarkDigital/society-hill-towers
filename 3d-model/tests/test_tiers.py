@@ -100,12 +100,27 @@ class OutskirtsHandoff(unittest.TestCase):
         (39.890, 39.9155, -75.190, -75.118),   # fetch_south's box only as far east as pack_wide packs it
     ]
 
+    @staticmethod
+    def _in_ring(x, z, ring):
+        inside = False
+        j = len(ring) - 1
+        for i in range(len(ring)):
+            xi, zi = ring[i]; xj, zj = ring[j]
+            if (zi > z) != (zj > z) and x < (xj - xi) * (z - zi) / (zj - zi) + xi:
+                inside = not inside
+            j = i
+        return inside
+
     def test_outskirts_buildings_outside_owned_boxes(self):
+        """Real footprints never inside another tier's box; the land-use filler may stand
+        inside one (the far ring's Cheltenham and Lower Merion slivers) but never inside
+        the city line itself, which is what city_limit.json's ring decides."""
         C.require(self, 'outskirts.b64')
         import sys
         sys.path.insert(0, str(C.MODEL))
         from philly_frame import LON0, LAT0, KX, KZ
         owned = [((w - LON0) * KX, (e - LON0) * KX, (LAT0 - n) * KZ, (LAT0 - s) * KZ) for s, n, w, e in self.OWNED_LL]
+        ring = C.load_json('city_limit.json')['city'] if C.path('city_limit.json').exists() else None
         x0, x1, z0, z1 = C.CITY_BOX
         s = C.walk_scene('outskirts.b64')
         bad_in, bad_owned = 0, 0
@@ -114,9 +129,10 @@ class OutskirtsHandoff(unittest.TestCase):
             if not (x0 - 5 <= cx <= x1 + 5 and z0 - 5 <= cz <= z1 + 5):
                 bad_in += 1
             elif any(b[0] + 5 <= cx <= b[1] - 5 and b[2] + 5 <= cz <= b[3] - 5 for b in owned):
-                bad_owned += 1
+                if ring is None or self._in_ring(cx, cz, ring):
+                    bad_owned += 1
         self.assertEqual(0, bad_in, '%d outskirts buildings outside the far-ring box' % bad_in)
-        self.assertEqual(0, bad_owned, '%d outskirts buildings inside a box another tier packs' % bad_owned)
+        self.assertEqual(0, bad_owned, '%d outskirts buildings inside the city line and a box another tier packs' % bad_owned)
 
 if __name__ == '__main__':
     unittest.main()

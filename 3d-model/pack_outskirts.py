@@ -11,9 +11,9 @@ gaps between them. Everything whose centroid an older fetch box owns (fetch_city
 the wide box, the south box as far east as pack_wide packs it) is skipped: those tiers draw it.
 Guards: an int16 saturation in clip() is fatal (outskirts.b64 is not written).
 Frame: philly_frame.py. Needs shapely."""
-import json, math, struct, base64, sys
+import json, math, os, struct, base64, sys
 from collections import Counter
-from shapely.geometry import Polygon, LineString, box as sbox
+from shapely.geometry import Polygon, LineString, Point, box as sbox
 from shapely.ops import unary_union
 from philly_frame import LON0, LAT0, KX, KZ
 
@@ -114,15 +114,17 @@ for el in ways:
     else:
         merge_groups.setdefault((int(cx // 400), int(cz // 400), int(round(h / 4))), []).append(pg)
 
-body = []
+body_b, body_r, body_a = [], [], []   # buildings, roads, areas: the blob is laid out in that order
 nb = 0
+packed_polys = []   # every emitted footprint, for the filler's collision tests
 def emit(pg, h, mh, bt):
     global nb, _rec
     ext = ring_budget(pg, 16, 1.5)
     if len(ext) < 3: return
     _rec = ('building', bt, round(h, 1), tuple(round(c) for c in (pg.centroid.x, pg.centroid.y)))
-    body.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt])
-    for x, z in ext: body.extend([clip(x / S), clip(z / S)])
+    body_b.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt])
+    for x, z in ext: body_b.extend([clip(x / S), clip(z / S)])
+    packed_polys.append(Polygon(ext))
     nb += 1
 
 for (gx, gz, hb), pgs in merge_groups.items():
@@ -150,6 +152,7 @@ def _runs(pts, keepFn):
     return runs
 
 nr = 0
+packed_roads = []   # (pts, width, class) for the filler's street marching
 for el in ways:
     t = el.get('tags') or {}
     if t.get('highway') not in RT: continue
@@ -160,16 +163,18 @@ for el in ways:
         pts = list(LineString(run).simplify(2.5).coords) if len(run) > 2 else run
         if len(pts) < 2: continue
         _rec = ('road', el['id'], t.get('highway'), t.get('name'))
+        packed_roads.append((pts, w, rt))
         for c0 in range(0, len(pts) - 1, 119):
             chunk = pts[c0:c0 + 120]
             if len(chunk) < 2: continue
-            body.extend([len(chunk), clip(w * 10), rt])
-            for x, z in chunk: body.extend([clip(x / S), clip(z / S)])
+            body_r.extend([len(chunk), clip(w * 10), rt])
+            for x, z in chunk: body_r.extend([clip(x / S), clip(z / S)])
             nr += 1
 print(f'roads: {nr}', flush=True)
 
 # ---- areas: parks / green (0), water (1); clipped to the far-ring box
 na = 0
+packed_areas = []   # (polygon, kind) for the filler's exclusions
 cityBox = sbox(CITY[0], CITY[2], CITY[1], CITY[3])
 GREEN = ('park', 'golf_course', 'nature_reserve')
 LU = ('grass', 'cemetery', 'forest', 'recreation_ground')
@@ -194,10 +199,160 @@ for el in ways:
         ext = ring_budget(g, 60, 2.5)
         if len(ext) < 3: continue
         _rec = ('area', kind, (round(cx), round(cz)))
-        body.extend([len(ext), kind])
-        for x, z in ext: body.extend([clip(x / S), clip(z / S)])
+        body_a.extend([len(ext), kind])
+        for x, z in ext: body_a.extend([clip(x / S), clip(z / S)])
+        packed_areas.append((g, kind))
         na += 1
 print(f'areas: {na}', flush=True)
+
+# ---- the filler: streets of houses where OpenStreetMap maps the land use but few of the
+# buildings (osm_landuse_raw.json, fetch_landuse.py). Along every street inside residential
+# land use beyond the city line, 11 m deep strips of houses at a 14 m pitch, fused six at a
+# time; along the main roads through commercial and industrial land use, boxes at 40 and 60 m.
+# Only where real footprints are thin (under 10% of the ground within 150 m), never on a real
+# footprint, a road, a park or water, and never inside the city line. From the flight limit,
+# 2 km out, a strip of eight-metre houses reads as the street it stands in; nobody will
+# look for their own house across the river
+INFILL_H = {'res': (8.0, 1), 'com': (7.0, 3), 'ind': (8.0, 4)}
+n_inf = 0
+if os.path.exists('osm_landuse_raw.json') and os.path.exists('city_limit.json'):
+    from shapely import contains_xy
+    from shapely.strtree import STRtree
+    sys.path.insert(0, 'tests')
+    import _common as C
+    limit = json.load(open('city_limit.json'))
+    cityPoly = Polygon(limit['city'])
+    outside = cityBox.difference(cityPoly.buffer(60))
+    LU_KIND = {'residential': 'res', 'commercial': 'com', 'retail': 'com', 'industrial': 'ind'}
+    lraw = json.load(open('osm_landuse_raw.json'))
+    lnodes = {el['id']: ((el['lon'] - LON0) * KX, (LAT0 - el['lat']) * KZ) for el in lraw['elements'] if el.get('type') == 'node'}
+    lus, luKinds = [], []
+    for el in lraw['elements']:
+        t = el.get('tags') or {}
+        if el.get('type') != 'way' or t.get('landuse') not in LU_KIND: continue
+        pts = [lnodes[n] for n in el.get('nodes', []) if n in lnodes]
+        if len(pts) >= 2 and pts[0] == pts[-1]: pts = pts[:-1]
+        if len(pts) < 3: continue
+        try: pg = Polygon(pts)
+        except Exception: continue
+        if not pg.is_valid: pg = pg.buffer(0)
+        pg = pg.intersection(outside)
+        for g in (pg.geoms if pg.geom_type == 'MultiPolygon' else [pg] if pg.geom_type == 'Polygon' else []):
+            if g.area >= 4000: lus.append(g); luKinds.append(LU_KIND[t['landuse']])
+    luTree = STRtree(lus)
+    # what already stands beyond the line: this tier plus the far ring's and the wide tier's slivers
+    existing = list(packed_polys)
+    for name in ('city.b64', 'wide.b64'):
+        if not os.path.exists(name): continue
+        for rec in C.walk_scene(name)['buildings']:
+            pts = rec[-1]
+            if len(pts) < 3: continue
+            cx = sum(p[0] for p in pts) / len(pts); cz = sum(p[1] for p in pts) / len(pts)
+            if not contains_xy(cityPoly, cx, cz):
+                try: existing.append(Polygon(pts))
+                except Exception: pass
+    exTree = STRtree(existing)
+    cov = {}
+    for pg in existing:
+        c = pg.centroid; key = (int(c.x // 100), int(c.y // 100)); cov[key] = cov.get(key, 0.0) + pg.area
+    def covered(x, z):
+        gx, gz = int(x // 100), int(z // 100)
+        return sum(cov.get((gx + i, gz + j), 0.0) for i in (-1, 0, 1) for j in (-1, 0, 1)) / 90000.0
+    # streets to march along: this tier's plus the far ring's beyond the line
+    segs = []
+    for pts, w, rt in packed_roads:
+        for i in range(len(pts) - 1): segs.append((pts[i], pts[i + 1], w, rt))
+    if os.path.exists('city.b64'):
+        for rec in C.walk_scene('city.b64')['roads']:
+            pts = rec[-1]
+            if len(pts) < 2 or contains_xy(cityPoly, *pts[len(pts) // 2]): continue
+            for i in range(len(pts) - 1): segs.append((pts[i], pts[i + 1], rec[1], rec[2]))
+    ribbons = [LineString([a, b]).buffer(w / 2 + 2) for a, b, w, rt in segs]
+    rbTree = STRtree(ribbons)
+    excl = [g for g, k in packed_areas]
+    if os.path.exists('city.b64'):
+        for rec in C.walk_scene('city.b64')['areas']:
+            if len(rec[-1]) >= 3:
+                try: excl.append(Polygon(rec[-1]))
+                except Exception: pass
+    exclTree = STRtree(excl)
+    placed = {}
+    WHY = {'city': 0, 'covered': 0, 'landuse': 0, 'footprint': 0, 'road': 0, 'park_water': 0, 'placed': 0, 'ok': 0, 'no_landuse_segments': 0, 'grid_segments': 0}
+    # a dense grid of residential streets is a neighbourhood whether or not anyone drew the
+    # land use around it: a class-5 segment with at least GRID_N other street segments within
+    # 120 m of its midpoint counts as residential land (a lone lane through fields does not)
+    GRID_N = 8
+    segTree = STRtree([LineString([a, b]) for a, b, w, rt in segs])
+    NKIND = {'res': 0, 'com': 0, 'ind': 0}
+    def placed_hit(rect):
+        c = rect.centroid; gx, gz = int(c.x // 100), int(c.y // 100)
+        for i in (-1, 0, 1):
+            for j in (-1, 0, 1):
+                for q in placed.get((gx + i, gz + j), ()):
+                    if q.intersects(rect): return True
+        return False
+    def place(rect, kind):
+        c = rect.centroid; placed.setdefault((int(c.x // 100), int(c.y // 100)), []).append(rect)
+        h0, bt = INFILL_H[kind]
+        emit(rect, h0 - 0.5 + ((c.x * 0.37 + c.y * 0.11) % 1.0) * 1.5, 0, bt)
+    for a, b, w, rt in segs:
+        L = math.hypot(b[0] - a[0], b[1] - a[1])
+        if L < 20: continue
+        dx, dz = (b[0] - a[0]) / L, (b[1] - a[1]) / L
+        nx, nz = -dz, dx
+        seg = LineString([a, b])
+        kinds = {luKinds[i] for i in luTree.query(seg) if lus[i].intersects(seg)}
+        grid = False
+        if not kinds:
+            WHY['no_landuse_segments'] += 1
+            if rt == 5 and not contains_xy(cityPoly, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2):
+                m2 = Point((a[0] + b[0]) / 2, (a[1] + b[1]) / 2).buffer(120)
+                if len(segTree.query(m2)) - 1 >= GRID_N: grid = True; WHY['grid_segments'] += 1
+            if not grid: continue
+        kind = 'res' if (grid or 'res' in kinds) else ('com' if 'com' in kinds else 'ind')
+        if kind != 'res' and rt > 4: continue   # commerce and industry only along the main roads
+        step, along, deep, setback = {'res': (14.0, 9.0, 11.0, 9.0), 'com': (40.0, 24.0, 18.0, 12.0), 'ind': (60.0, 36.0, 26.0, 14.0)}[kind]
+        off = w / 2 + setback + deep / 2
+        for side in (1, -1):
+            run = []
+            def flush():
+                global n_inf
+                if not run: return
+                t0, t1 = run[0] - along / 2, run[-1] + along / 2
+                cx0, cz0 = a[0] + dx * t0 + nx * side * off, a[1] + dz * t0 + nz * side * off
+                cx1, cz1 = a[0] + dx * t1 + nx * side * off, a[1] + dz * t1 + nz * side * off
+                hx, hz = nx * side * deep / 2, nz * side * deep / 2
+                strip = Polygon([(cx0 - hx, cz0 - hz), (cx1 - hx, cz1 - hz), (cx1 + hx, cz1 + hz), (cx0 + hx, cz0 + hz)])
+                place(strip, kind); n_inf += 1; NKIND[kind] += 1
+                run.clear()
+            t = along / 2 + 3
+            while t + along / 2 < L - 3:
+                cx, cz = a[0] + dx * t + nx * side * off, a[1] + dz * t + nz * side * off
+                ok = False
+                if contains_xy(cityPoly, cx, cz) or not inBox(cx, cz, CITY): WHY['city'] += 1   # never inside the line, never past the box edge (the grid fallback follows streets to it)
+                elif covered(cx, cz) >= 0.10: WHY['covered'] += 1
+                elif not grid and not any(luKinds[i] == kind and contains_xy(lus[i], cx, cz) for i in luTree.query(Point(cx, cz))): WHY['landuse'] += 1
+                else:
+                    ax, az = dx * along / 2, dz * along / 2
+                    hx, hz = nx * side * deep / 2, nz * side * deep / 2
+                    rect = Polygon([(cx - ax - hx, cz - az - hz), (cx + ax - hx, cz + az - hz), (cx + ax + hx, cz + az + hz), (cx - ax + hx, cz - az + hz)])
+                    pad = rect.buffer(3)
+                    if any(existing[i].intersects(pad) for i in exTree.query(pad)): WHY['footprint'] += 1
+                    elif any(ribbons[i].intersects(rect) for i in rbTree.query(rect)): WHY['road'] += 1
+                    elif any(excl[i].intersects(rect) for i in exclTree.query(rect)): WHY['park_water'] += 1
+                    elif placed_hit(rect): WHY['placed'] += 1
+                    else: ok = True; WHY['ok'] += 1
+                if ok:
+                    run.append(t)
+                    if len(run) >= 6: flush()
+                else:
+                    flush()
+                t += step
+            flush()
+    print(f'filler: {n_inf} strips along {len(segs)} street segments inside {len(lus)} land-use polygons; by kind {NKIND}; slots {WHY}', flush=True)
+else:
+    print('filler: skipped (osm_landuse_raw.json or city_limit.json missing)', flush=True)
+body = body_b + body_r + body_a
 
 if SAT:
     for rec, v in SAT[:12]: print('  SATURATED', rec, round(v, 1))

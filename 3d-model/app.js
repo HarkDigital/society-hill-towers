@@ -58,6 +58,7 @@
   const needle = document.getElementById('needle');
   const stick = document.getElementById('stick');
   const stickNub = stick.querySelector('.nub');
+  const padL = document.getElementById('padL'), padR = document.getElementById('padR');
   window.addEventListener('error', (e) => {
     const lm = document.getElementById('loadmsg');
     if (lm && !window.__fatalShown) { window.__fatalShown = true; lm.textContent = 'Error: ' + ((e && e.message) || 'unknown'); }
@@ -2534,12 +2535,19 @@
   // procedural windows: world-space grid darkening on wall faces only
   // (shared by the generic fabric and landmark walls)
   const nightUniform = { value: 0 };
+  // how far the facade detail (windows, and with them the lit windows at night) survives:
+  // < 1 stretches the fade, so a phone at 1266 x 585 keeps its lit windows to about the
+  // distance a 1080p desktop does instead of losing them at half of it. The masks stay
+  // anti-aliased by the true pixel footprint, so past the natural range the windows soften
+  // into dots rather than shimmer
+  const detFarUniform = { value: isTouch ? 0.55 : 1.0 };
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
   const groundMats = [];   // bare-earth planes retinted by time of day (pale day tone reads as water at dusk/night)
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.25, dithering: MAT_DITHER });
   {
     cityMat.onBeforeCompile = (shader) => {
       shader.uniforms.uNight = nightUniform;
+      shader.uniforms.uDetFar = detFarUniform;
       cityMat.userData.shader = shader;
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', '#include <common>\nattribute float aStyle; attribute float aFloorH; attribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase;\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;')
@@ -2548,6 +2556,7 @@
         .replace('#include <common>', [
           '#include <common>',
           'uniform float uNight;',
+          'uniform float uDetFar;',
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;',
           'float shtLit = 0.0;',
           'float shtHash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
@@ -2568,8 +2577,8 @@
           // detail fade keys off the vertical derivative only: fwidth(uW) explodes on
           // edge-on walls and used to blank whole facades at grazing angles. detU still
           // gates the BINARY per-column terms (shutters/doors) that would shimmer there.
-          '    float det = clamp(1.0 - (0.6 * fwidth(v) + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
-          '    float detU = clamp(1.0 - (0.6 * fwidth(uW) + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
+          '    float det = clamp(1.0 - (0.6 * fwidth(v) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
+          '    float detU = clamp(1.0 - (0.6 * fwidth(uW) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    float wallTop = local ? vWallH - 0.25 : 1.0e4;',
           '    float brickish = step(diffuseColor.g * 1.12, diffuseColor.r);',
           '    vec3 frameCol = vec3(0.90, 0.88, 0.82);',
@@ -4749,18 +4758,19 @@
         // curtain-wall rhythm: darker spandrel band at each floor line, thin vertical
         // mullions between panels — world-space, anti-aliased, fading with distance
         outerGlassMat.onBeforeCompile = (sh) => {
+          sh.uniforms.uDetFar = detFarUniform;
           sh.vertexShader = sh.vertexShader
             .replace('#include <common>', '#include <common>\nvarying vec3 vGWp; varying vec3 vGNm;')
             .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGNm = normalize(mat3(modelMatrix) * objectNormal);');
           sh.fragmentShader = sh.fragmentShader
-            .replace('#include <common>', '#include <common>\nvarying vec3 vGWp; varying vec3 vGNm;\nfloat gWall = 0.0; float gLit = 0.0; float gSpand = 0.0;')
+            .replace('#include <common>', '#include <common>\nuniform float uDetFar;\nvarying vec3 vGWp; varying vec3 vGNm;\nfloat gWall = 0.0; float gLit = 0.0; float gSpand = 0.0;')
             .replace('#include <color_fragment>', '#include <color_fragment>\n{\n' +
               '  vec3 nn = normalize(vGNm);\n' +
               '  float wall = step(abs(nn.y), 0.35);\n' +
               '  vec2 dirH = (abs(nn.x) + abs(nn.z)) > 1e-4 ? normalize(nn.xz) : vec2(1.0, 0.0);\n' +
               '  float u = dot(vGWp.xz, vec2(-dirH.y, dirH.x));\n' +
               '  float aaU = fwidth(u) + 1e-4, aaV = fwidth(vGWp.y) + 1e-4;\n' +
-              '  float det = clamp(1.0 - (max(aaU, aaV) - 0.30) / 0.85, 0.0, 1.0) * wall;\n' +
+              '  float det = clamp(1.0 - (max(aaU, aaV) * uDetFar - 0.30) / 0.85, 0.0, 1.0) * wall;\n' +
               '  float dv = abs(fract(vGWp.y / 4.0 + 0.5) - 0.5) * 4.0;\n' +
               '  float spand = 1.0 - smoothstep(0.5, 0.5 + aaV, dv);\n' +
               '  float du = abs(fract(u / 1.5 + 0.5) - 0.5) * 1.5;\n' +
@@ -4943,8 +4953,15 @@
         // end) descends to the street there and the packed I-76 carries on at grade; the
         // Packer Avenue side stays elevated to the interchange, as it is
         const sEnd = cum[cum.length - 1], sCab = mid + half + side;
-        const endQ = line[line.length - 1];
-        const yEnd = siteY(endQ[0], endQ[1], 'ground') + 0.8;
+        // the landing: the last LAND metres run as one straight grade from the viaduct down
+        // to a metre above the HIGHEST ground under them. Sampling the 150 m DEM point by
+        // point there (a per-point floor) pitched every 20 m box up or down a few metres
+        // against its neighbours, and the end of the deck read as a pile of tilted slabs
+        const LAND = 400, sLand = sEnd - LAND;
+        let gTop = -Infinity, jLand = -1;
+        for (let i = 0; i < line.length; i++) if (cum[i] >= sLand) { if (jLand < 0) jLand = i; gTop = Math.max(gTop, siteY(line[i][0], line[i][1], 'ground')); }
+        if (jLand < 0) jLand = line.length - 1;
+        const yEnd = gTop + 1.0;
         const profY = (sv) => {
           const dd = Math.abs(sv - mid);
           if (dd <= half) return W0 + 49 - 6 * (dd / half) * (dd / half);
@@ -4952,8 +4969,9 @@
           if (sv > mid) return W0 + 37 + (yEnd - W0 - 37) * clamp((sv - sCab) / Math.max(1, sEnd - sCab), 0, 1);
           return W0 + 37 - 0.02 * (dd - half - side);
         };
-        // never below the ground it crosses, except the last 250 m where the floor fades so the deck can land
-        const deckYAt = (sv, x, z) => Math.max(profY(sv), siteY(x, z, 'ground') + 6 * clamp((sEnd - sv - 30) / 220, 0, 1));
+        const yLand = Math.max(profY(cum[jLand]), siteY(line[jLand][0], line[jLand][1], 'ground') + 6, yEnd);
+        // never below the ground it crosses; the landing grade is straight and monotone
+        const deckYAt = (sv, x, z) => sv >= sLand ? yLand + (yEnd - yLand) * clamp((sv - sLand) / LAND, 0, 1) : Math.max(profY(sv), siteY(x, z, 'ground') + 6);
         const deckAt = (i) => deckYAt(cum[i], line[i][0], line[i][1]);
         const parts = [];
         const addP = (geom, hex) => parts.push({ geom, color: new THREE.Color(hex), style: 3 });
@@ -6683,10 +6701,12 @@
         if (t.clientX < window.innerWidth / 2 && !joy.active) {
           joy.active = true; joy.id = t.identifier; joy.ox = t.clientX; joy.oy = t.clientY; joy.x = joy.y = 0;
           stick.style.display = 'block';
-          stick.style.left = (t.clientX - 54) + 'px';
-          stick.style.top = (t.clientY - 54) + 'px';
+          const pr = padL.getBoundingClientRect();   // the stick docks on the Move pad; the drag is relative to the finger either way
+          if (pr.width > 0) { stick.style.left = (pr.left + pr.width / 2 - 54) + 'px'; stick.style.top = (pr.top + pr.height / 2 - 54) + 'px'; padL.classList.add('active'); }
+          else { stick.style.left = (t.clientX - 54) + 'px'; stick.style.top = (t.clientY - 54) + 'px'; }
         } else if (lookTouch.id === -1) {
           lookTouch.id = t.identifier; lookTouch.x = t.clientX; lookTouch.y = t.clientY;
+          padR.classList.add('active');
         }
       }
       e.preventDefault();
@@ -6745,8 +6765,8 @@
   }, { passive: false });
   function onTouchEnd(e) {
     for (const t of e.changedTouches) {
-      if (t.identifier === joy.id) { joy.active = false; joy.id = -1; joy.x = joy.y = 0; stick.style.display = 'none'; stickNub.style.transform = ''; }
-      if (t.identifier === lookTouch.id) lookTouch.id = -1;
+      if (t.identifier === joy.id) { joy.active = false; joy.id = -1; joy.x = joy.y = 0; stick.style.display = 'none'; stickNub.style.transform = ''; padL.classList.remove('active'); }
+      if (t.identifier === lookTouch.id) { lookTouch.id = -1; padR.classList.remove('active'); }
     }
     if (e.touches.length < 2) pinch.d = 0;
     if (e.touches.length === 1) { lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; }
@@ -6856,8 +6876,10 @@
     dragging = false; touchArmed = false; pinch.d = 0;
     joy.active = false; joy.id = -1; joy.x = joy.y = 0; lookTouch.id = -1;
     stick.style.display = 'none'; stickNub.style.transform = '';
+    padL.classList.remove('active'); padR.classList.remove('active');
     crosshair.style.display = (m === MODE.WALK || m === MODE.FLY) && !isTouch ? 'block' : 'none';
     flyCtl.classList.toggle('show', m === MODE.FLY && isTouch);
+    document.body.classList.toggle('touchfly', m === MODE.FLY && isTouch);   // the Move and Look pads
     flyTouch.up = flyTouch.down = false;
     if (m === MODE.WALK) {
       // drop to the ground near where the camera was looking, default to the plaza
@@ -10135,7 +10157,7 @@
     towerMat = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
     towerMat.onBeforeCompile = (shader) => {
       shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
-        'gl_PointSize = size * clamp(1300.0 / max(1.0, -mvPosition.z), 1.5, 4.5) * smoothstep(420.0, 1150.0, -mvPosition.z);');
+        'gl_PointSize = size * clamp(1300.0 / max(1.0, -mvPosition.z), ' + (isTouch ? '2.2' : '1.5') + ', 4.5) * smoothstep(' + (isTouch ? '200.0, 620.0' : '420.0, 1150.0') + ', -mvPosition.z);');   // phones: in from 200 m, never under 2.2 px
       shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
         '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.2, length(gl_PointCoord - vec2(0.5)));');
     };
@@ -11299,7 +11321,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

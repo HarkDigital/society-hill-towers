@@ -7,6 +7,8 @@
 3d-model/city_tiles/
 3d-model/outskirts_tiles/
 3d-model/osm_outskirts_raw.json
+3d-model/landuse_tiles/
+3d-model/osm_landuse_raw.json
 3d-model/wide_tiles/
 3d-model/south_tiles/
 3d-model/lidar_cache/

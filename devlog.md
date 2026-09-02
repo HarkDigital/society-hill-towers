@@ -1995,6 +1995,45 @@ location should start orbiting on arrival; the Jersey end of the Walt Whitman ne
   the bridge's foot is flat ribbons); the 150 m DEM still floods marsh cells along Newton
   and Big Timber creeks; the bound's northeast tip is cut by the box.
 
+### Round 47 coda (Sep 2, afternoon: a stale tab, the filler, the landing, phones)
+
+Mike, from a tab that still held the old page (philly3d.com sends no Cache-Control, so an
+open tab or a heuristically cached copy keeps the previous build): the Whitman's Jersey end
+still a pile of tilted slabs, the surroundings still bare, search not orbiting, and was the
+lightning real? Checked live: the served page is the new build (the outskirts step runs in
+256 ms, no failures), a search circles Rittenhouse Square on desktop and under touch
+emulation, and the lightning was real, 24 Blitzortung strikes within 80 km in ten minutes,
+nearest 73 km, with a heat advisory and an overcast sky over the city itself.
+
+- **The landing, again.** The old zigzag tail was the stale tab, but the new profile had its
+  own flaw: a per-point ground floor sampled the 150 m DEM every 20 m, so the last boxes
+  pitched up and down a few metres against their neighbours. The last 400 m are now one
+  straight grade from the viaduct down to a metre above the highest ground under them.
+- **The filler.** Mike: the surroundings need something other than open space where people
+  live, accurate or not. OpenStreetMap maps the land use across the suburbs even where it
+  maps few of the buildings, so `fetch_landuse.py` pulls residential, commercial, industrial
+  and retail land use over the whole far-ring box (16 tiles) and `pack_outskirts.py` marches
+  every street inside residential land use beyond the city line, placing 11 m deep strips
+  of houses at a 14 m pitch fused six at a time, and boxes along the main roads through
+  commercial (40 m) and industrial (60 m) land use, only where real footprints cover under
+  10% of the ground within 150 m, never on a footprint, a road, a park or water, and never
+  inside the city line (the far ring's own Cheltenham and Lower Merion slivers get filled
+  too). Where nobody drew the land use either, a class-5 street with at least
+  eight other street segments within 120 m counts as a neighbourhood. Result: 24,005 strips
+  (23,854 residential, 90 commercial, 61 industrial) from 77,563 accepted slots; 71% of the
+  street corridors beyond the line now stand within 40 m of a building, 46% of the whole
+  band (which is mostly river, marsh, farmland and parks). outskirts.b64 grows to 49,509
+  buildings, 2.05 MB base64.
+- **Phones.** Mike's three asks: the lit windows died at half the desktop distance because
+  a phone has half the pixels per window, so `uDetFar` (0.55 on touch devices) stretches
+  the facade detail fade and the outer glass fade, and the tower window points come in
+  from 200 m at 2.2 px instead of 420 m at 1.5 px; a portrait gate (`#rotate`, phones only:
+  coarse pointer, portrait, under 820 px) asks for the phone sideways; and the two thumb
+  pads, Move on the left and Look on the right, are faintly there whenever a touch device
+  flies (`body.touchfly`), the joystick docking on Move and Look brightening while a
+  finger looks. Page 24.85 MB raw, 10.58 MB gzip, 150 KB under the 25 MB tripwire; 28 tests green.
+  Deployed and pushed on Mike's standing go.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
