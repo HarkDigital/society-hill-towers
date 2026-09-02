@@ -2034,6 +2034,37 @@ nearest 73 km, with a heat advisory and an overcast sky over the city itself.
   finger looks. Page 24.85 MB raw, 10.58 MB gzip, 150 KB under the 25 MB tripwire; 28 tests green.
   Deployed and pushed on Mike's standing go.
 
+### Round 47 coda 2 (Sep 2, evening: the stadiums, the clock, the rain)
+
+Mike, with aerials of both venues: the stadiums need work and should light up at night,
+Citizens Bank Park carries a building that is not there, a new tab kept his old time
+setting, and the long thin rain looks dumb.
+
+- **The phantom.** LiDAR's building-footprint join gave every small footprint around the
+  ballpark, the light-tower bases, 74 m (the tallest steel measured from the sunken field),
+  and a 2,700 m2 lot beside them the same 74 m: five thin towers and one tall slab next to
+  the bowl. The wide loop now captures those records: a footprint under 220 m2 taller than
+  30 m within 300 m of a stadium becomes a mast position, anything larger is clamped to
+  12 m, and the two `t == 8` bowls are built after the loop, once their masts are known.
+- **The bowls, from `south_geometry_research.json`.** Citizens Bank Park: brick drum to
+  15 m, the Terrace horseshoe to 40 m in precast with green seats on top, the patina canopy
+  over the top rows, light standards where LiDAR found them (the four corners only as a
+  fallback), the left-field scoreboard with a video board. Lincoln Financial Field: brick
+  base, end-zone stands to 30 m, sideline decks to 46 m in precast with midnight-green
+  seats, the two wing canopies with white fascia, four corner masts to 66 m. Colours are
+  stored dark for the r149 pipeline (the research hexes came out cyan and mint at first).
+- **Lit at night.** The fields, the mast heads and the scoreboard live in their own mesh
+  whose material adds `diffuse x 2.4 x uNight`, and floodlight sprites (additive points,
+  3 to 16 px by distance, one per mast head at the ballpark, eleven along each canopy edge
+  at the Linc) come on with the streetlamps in `updateLights` and scale with the pixel
+  ratio like the tower windows. Verified: 31 sprites, on at 21:30, off by day.
+- **The clock.** `writePrefs` no longer stores the clock and the boot no longer restores
+  it: every load is Philadelphia's own time. The address bar never carries `t=` either
+  (a reopened tab must wake to the real time); only the copied link does, when the clock
+  is pinned, so a shared moment still opens at its moment.
+- **The rain.** 0.9 m dashes at street level (a drop over one frame) stretching to 2.3 m
+  from altitude, 16,000 of them instead of 9,000 at 4.5 to 10 m, slightly brighter.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

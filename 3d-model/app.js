@@ -137,6 +137,7 @@
     renderer.setPixelRatio(r);   // re-applies the drawing-buffer size
     if (poleMat) poleMat.size = r;     // the point sprites are sized in physical px
     if (towerMat) towerMat.size = r;
+    if (floodMat) floodMat.size = r;
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
   // Three.js is PINNED at r149 (build.py asserts it): outputEncoding/sRGBEncoding
@@ -4109,6 +4110,113 @@
       // and CCW in (x,-z) maps to up-facing — never flip by ring orientation
       for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
     };
+    // ---- the stadiums (south_geometry_research.json), built after the loop: LiDAR handed
+    // their light-tower footprints, and one lot beside the ballpark, the 74 m of the steel
+    // above them, so those records become mast positions instead of towers, and each bowl
+    // is raised from the research: heights, colours, canopies, the surveyed masts, and the
+    // parts that light up at night (the field, the light heads, the scoreboard, the floodlights)
+    const STADIA = [
+      { x: -1857, z: 4383, r: 300, baseball: true, home: [-1861, 4429], scoreboard: [-1926, 4330] },
+      { x: -1946, z: 4954, r: 300, baseball: false },
+    ];
+    const stadia = [], stadiumMasts = [];
+    const glowParts = [], flood = [];
+    const fanGeom = (ring, y) => {   // a flat fan about the centroid (earcut chokes on some OSM rings)
+      const n2 = ring.length, pos = new Float32Array(n2 * 9), nor = new Float32Array(n2 * 9);
+      let mx = 0, mz = 0; for (const q of ring) { mx += q[0]; mz += q[1]; } mx /= n2; mz /= n2;
+      for (let j = 0; j < n2; j++) {
+        const a2 = ring[j], b2 = ring[(j + 1) % n2], o = j * 9;
+        pos.set([a2[0], y, a2[1], mx, y, mz, b2[0], y, b2[1]], o);
+        for (let q2 = 0; q2 < 3; q2++) nor.set([0, 1, 0], o + q2 * 3);
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+      return g;
+    };
+    const buildStadium = (sd, masts) => {
+      const { poly, cx, cz, base, def } = sd;
+      const chk = getChunk(cx, cz);
+      const inner = poly.map(q => [cx + (q[0] - cx) * 0.55, cz + (q[1] - cz) * 0.55]);
+      const ob = orientedBox(poly); const ax = obbAxis(ob);
+      const cap = new THREE.Color();
+      // contiguous arc of a ring passing keepFn (rotated so the arc never wraps the array seam)
+      const arcOf = (pts, keepFn) => {
+        const n2 = pts.length;
+        let s0 = -1;
+        for (let ii = 0; ii < n2; ii++) if (!keepFn(pts[ii])) { s0 = ii; break; }
+        if (s0 < 0) return pts.slice();
+        const out = [];
+        for (let ii = 1; ii <= n2; ii++) { const q = pts[(s0 + ii) % n2]; if (keepFn(q)) out.push(q); }
+        return out;
+      };
+      const upperRing = (keepFn, y0, y1, hex, capHex, innerScale) => {
+        const A = arcOf(poly, keepFn), B = arcOf(innerScale ? poly.map(q => [cx + (q[0] - cx) * innerScale, cz + (q[1] - cz) * innerScale]) : inner, keepFn);
+        if (A.length < 3 || B.length < 3) return;
+        c.set(hex);
+        appendBuilding(chk, A.concat(B.slice().reverse()), base + y0, base + y1, c, 3, base, null, 0, capHex ? cap.set(capHex) : null);
+      };
+      // a light standard: dark lattice column, a bank of heads turned to the field (lit at
+      // night), and a floodlight sprite that carries across the city after dark
+      const mast = (mx, mz, y0, y1, hex) => {
+        c.set(hex);
+        appendBuilding(chk, [[mx - 1.2, mz - 1.2], [mx + 1.2, mz - 1.2], [mx + 1.2, mz + 1.2], [mx - 1.2, mz + 1.2]], base + y0, base + y1, c, 3, base);
+        const dx = cx - mx, dz = cz - mz, L = Math.hypot(dx, dz) || 1, ux = dx / L, uz = dz / L;
+        glowParts.push({ geom: box(10, 5, 1.6, mx + ux * 1.4, base + y1 - 1.5, mz + uz * 1.4, Math.atan2(uz, ux) + Math.PI / 2), color: new THREE.Color(0xd9cba8), style: 3 });
+        flood.push(mx + ux * 2.4, base + y1 - 1.5, mz + uz * 2.4);
+      };
+      if (def.baseball) {
+        // Citizens Bank Park: brick drum in precast (15 m), the Terrace horseshoe to 40 m with
+        // its seats on top, the patina canopy over the top rows, the sunken lit field, the
+        // infield, the light standards where LiDAR found them, the left-field scoreboard
+        const [hx, hz] = def.home;
+        const dh = Math.hypot(hx - cx, hz - cz), dhx = (hx - cx) / dh, dhz = (hz - cz) / dh;
+        const keepHome = (q) => ((q[0] - cx) * dhx + (q[1] - cz) * dhz) > -0.28 * Math.hypot(q[0] - cx, q[1] - cz);
+        c.set(0x6e3a2e);   // brick, stored dark for the r149 pipeline (research #9C4A3A as seen)
+        appendBuilding(chk, poly, base - 1.0, base + 15, c, 3, base, [inner]);
+        upperRing(keepHome, 15, 40, 0x6a655a, 0x07160c);   // precast horseshoe, dark-green seats on top
+        upperRing(keepHome, 40, 42, 0x3e6a52, null, 0.86);   // the patina canopy over the top rows only
+        glowParts.push({ geom: fanGeom(inner, base + 1.9), color: new THREE.Color(0x1c3f14), style: 3 });
+        { // infield dirt diamond just in from home plate
+          const fx2 = hx - dhx * 20, fz2 = hz - dhz * 20;
+          const dPoly = [[fx2 + dhx * 20, fz2 + dhz * 20], [fx2 - dhz * 20, fz2 + dhx * 20], [fx2 - dhx * 20, fz2 - dhz * 20], [fx2 + dhz * 20, fz2 - dhx * 20]];
+          const d0 = chk.n; c.set(0xb08355);
+          for (const q of dPoly) pushV(chk, q[0], base + 2.05, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
+          chk.idx.push(d0, d0 + 2, d0 + 1, d0, d0 + 3, d0 + 2);
+        }
+        const spots = masts.length >= 3 ? masts : [[-0.78, -0.78], [0.78, -0.78], [0.78, 0.78], [-0.78, 0.78]].map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
+        for (const [mx, mz] of spots) mast(mx, mz, 15, 50, 0x2c3733);
+        const [sx, sz] = def.scoreboard;
+        c.set(0x2c3833);
+        appendBuilding(chk, [[sx - 20, sz - 2], [sx + 20, sz - 2], [sx + 20, sz + 2], [sx - 20, sz + 2]], base + 12, base + 65, c, 3, base);
+        glowParts.push({ geom: box(36, 20, 0.6, sx, base + 50, sz + 2.5, 0), color: new THREE.Color(0x3a5d80), style: 3 });   // the video board, a cool glow after dark
+      } else {
+        // Lincoln Financial Field: brick base, end-zone stands to 30 m, the sideline decks
+        // to 46 m in precast with midnight-green seats, the two wing canopies with their white
+        // fascia and floodlights along the leading edge, four corner masts, the lit field
+        c.set(0x66392e);   // brick base
+        appendBuilding(chk, poly, base - 1.0, base + 14, c, 3, base, [inner]);
+        upperRing((q) => Math.abs((q[0] - ob.cx) * ax.ax + (q[1] - ob.cz) * ax.az) > ax.hl * 0.55, 14, 30, 0x6e7275, 0x061412);   // end zones, midnight-green seats
+        for (const sgn of [-1, 1]) {
+          upperRing((q) => ((q[0] - ob.cx) * ax.px + (q[1] - ob.cz) * ax.pz) * sgn > ax.hs * 0.30, 14, 46, 0x6e7275, 0x061412);
+          const cp = [[-ax.hl * 0.6, sgn * ax.hs * 0.72], [ax.hl * 0.6, sgn * ax.hs * 0.72], [ax.hl * 0.6, sgn * ax.hs * 1.0], [-ax.hl * 0.6, sgn * ax.hs * 1.0]]   // the wing covers the top third of the deck
+            .map(([u, v]) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v]);
+          c.set(0x8a9094);   // the wing canopy
+          appendBuilding(chk, cp, base + 50.5, base + 54, c, 3, base);
+          const fe = [[-ax.hl * 0.6, sgn * ax.hs * 0.66], [ax.hl * 0.6, sgn * ax.hs * 0.66], [ax.hl * 0.6, sgn * ax.hs * 0.74], [-ax.hl * 0.6, sgn * ax.hs * 0.74]]
+            .map(([u, v]) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v]);
+          c.set(0xe4e7e9);
+          appendBuilding(chk, fe, base + 53, base + 55, c, 3, base);
+          for (let u = -ax.hl * 0.55; u <= ax.hl * 0.55 + 0.01; u += ax.hl * 0.11) {
+            flood.push(ob.cx + ax.ax * u + ax.px * sgn * ax.hs * 0.70, base + 52.6, ob.cz + ax.az * u + ax.pz * sgn * ax.hs * 0.70);
+          }
+        }
+        for (const [su, sv] of [[-0.8, -0.9], [0.8, -0.9], [0.8, 0.9], [-0.8, 0.9]]) {
+          mast(ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv, 14, 66, 0x6b7175);
+        }
+        glowParts.push({ geom: fanGeom(inner, base + 1.9), color: new THREE.Color(0x1a3d12), style: 3 });
+      }
+    };
     const nb = hdr[1];
     const wxWater = wxWaterGrid(body, k, nb, hdr[2], hdr[3], hasAttr, S, -3700, -4480, 6000, 10880, 24);
     let njPoly = null;   // USS New Jersey hull outline — custom battleship below
@@ -4136,6 +4244,13 @@
       if (cx > LM_BOX[0] && cx < LM_BOX[1] && cz > LM_BOX[2] && cz < LM_BOX[3]) for (const q of LANDMARK_H) if (Math.hypot(cx - q[0], cz - q[1]) < q[2]) { lm = q; break; }
       if (lm && lm[3] > 0) h = lm[3];
       const base = siteY(cx, cz, 'ground');
+      const sdNear = STADIA.find(sd => Math.hypot(cx - sd.x, cz - sd.z) < sd.r);
+      if (sdNear) {
+        if (t === 8) { stadia.push({ poly, cx, cz, base, def: sdNear }); continue; }   // built after the loop, once the masts are known
+        const area8 = Math.abs(signedArea(poly));
+        if (h > 30 && area8 < 220) { stadiumMasts.push([cx, cz]); continue; }   // a light tower's footprint carrying the 74 m of its steel: the stadium raises the mast
+        if (h > 30) h = 12;   // the lot beside the ballpark that LiDAR measured at 74 m
+      }
       const hsh = hash01(i * 7.13);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
@@ -4154,84 +4269,7 @@
         continue;
       }
       const chk = getChunk(cx, cz);
-      if (t === 8) { // stadium: seating bowl around a sunken field
-        const isBaseball = cz < 4650;
-        const inner = poly.map(q => [cx + (q[0] - cx) * 0.55, cz + (q[1] - cz) * 0.55]);
-        const ob = orientedBox(poly); const ax = obbAxis(ob);
-        // contiguous arc of a ring passing keepFn (rotated so the arc never wraps the array seam)
-        const arcOf = (pts, keepFn) => {
-          const n2 = pts.length;
-          let s0 = -1;
-          for (let ii = 0; ii < n2; ii++) if (!keepFn(pts[ii])) { s0 = ii; break; }
-          if (s0 < 0) return pts.slice();
-          const out = [];
-          for (let ii = 1; ii <= n2; ii++) { const q = pts[(s0 + ii) % n2]; if (keepFn(q)) out.push(q); }
-          return out;
-        };
-        const upperRing = (keepFn, y0, y1, hex) => {
-          const A = arcOf(poly, keepFn), B = arcOf(inner, keepFn);
-          if (A.length < 3 || B.length < 3) return;
-          c.set(hex);
-          appendBuilding(chk, A.concat(B.slice().reverse()), base + y0, base + y1, c, 3, base);
-        };
-        // field — fan-triangulated about the centroid (earcut chokes on some OSM rings)
-        // and high enough that nothing inside the bowl pokes through
-        const f0 = chk.n; c.set(0x4f7a3a);
-        for (const q of inner) pushV(chk, q[0], base + 1.9, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
-        const fc = pushV(chk, cx, base + 1.9, cz, 0, 1, 0, c.r, c.g, c.b, 3, base);
-        for (let j = 0; j < inner.length; j++) {
-          const j2 = (j + 1) % inner.length;
-          chk.idx.push(f0 + j, fc, f0 + j2, f0 + j, f0 + j2, fc);
-        }
-        if (isBaseball) {
-          // Citizens Bank Park: brick drum, upper horseshoe open beyond the outfield,
-          // pale-green canopy band, dark-red light standards, the left-field scoreboard
-          const hx = -1861, hz = 4429;
-          const dh = Math.hypot(hx - cx, hz - cz), dhx = (hx - cx) / dh, dhz = (hz - cz) / dh;
-          const keepHome = (q) => ((q[0] - cx) * dhx + (q[1] - cz) * dhz) > -0.28 * Math.hypot(q[0] - cx, q[1] - cz);
-          c.set(0x8f4f3e);
-          appendBuilding(chk, poly, base - 1.0, base + 15, c, 3, base, [inner]);
-          upperRing(keepHome, 15, 38, 0x9a9184);
-          upperRing(keepHome, 38, 40.5, 0x7fa38c);
-          { // infield dirt diamond just in from home plate
-            const fx2 = hx - dhx * 20, fz2 = hz - dhz * 20;
-            const dPoly = [[fx2 + dhx * 20, fz2 + dhz * 20], [fx2 - dhz * 20, fz2 + dhx * 20], [fx2 - dhx * 20, fz2 - dhz * 20], [fx2 + dhz * 20, fz2 - dhx * 20]];
-            const d0 = chk.n; c.set(0xb08355);
-            for (const q of dPoly) pushV(chk, q[0], base + 2.05, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
-            chk.idx.push(d0, d0 + 2, d0 + 1, d0, d0 + 3, d0 + 2);
-          }
-          c.set(0x6e3a30);
-          for (const [su, sv] of [[-0.78, -0.78], [0.78, -0.78], [0.78, 0.78], [-0.78, 0.78]]) {
-            const lx = ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, lz = ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv;
-            appendBuilding(chk, [[lx - 1.3, lz - 1.3], [lx + 1.3, lz - 1.3], [lx + 1.3, lz + 1.3], [lx - 1.3, lz + 1.3]], base + 12, base + 50, c, 3, base);
-            appendBuilding(chk, [[lx - 3.6, lz - 1.1], [lx + 3.6, lz - 1.1], [lx + 3.6, lz + 1.1], [lx - 3.6, lz + 1.1]], base + 50, base + 55, c, 3, base);
-          }
-          const sx = -1926, sz = 4330; // left-field scoreboard
-          c.set(0x2c3833);
-          appendBuilding(chk, [[sx - 20, sz - 2], [sx + 20, sz - 2], [sx + 20, sz + 2], [sx - 20, sz + 2]], base + 12, base + 65, c, 3, base);
-        } else {
-          // Lincoln Financial Field: dark bowl, silver sideline stands, steel wing
-          // canopies with a white fascia, four corner masts, open corners
-          c.set(0x4a4f4c);
-          appendBuilding(chk, poly, base - 1.0, base + 14, c, 3, base, [inner]);
-          for (const sgn of [-1, 1]) {
-            upperRing((q) => ((q[0] - ob.cx) * ax.px + (q[1] - ob.cz) * ax.pz) * sgn > ax.hs * 0.30, 14, 46, 0x9aa0a3);
-            const cp = [[-ax.hl * 0.6, sgn * ax.hs * 0.40], [ax.hl * 0.6, sgn * ax.hs * 0.40], [ax.hl * 0.6, sgn * ax.hs * 1.0], [-ax.hl * 0.6, sgn * ax.hs * 1.0]]
-              .map(([u, v]) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v]);
-            c.set(0x454b4e);
-            appendBuilding(chk, cp, base + 50.5, base + 54, c, 3, base);
-            const fe = [[-ax.hl * 0.6, sgn * ax.hs * 0.34], [ax.hl * 0.6, sgn * ax.hs * 0.34], [ax.hl * 0.6, sgn * ax.hs * 0.42], [-ax.hl * 0.6, sgn * ax.hs * 0.42]]
-              .map(([u, v]) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v]);
-            c.set(0xe4e7e9);
-            appendBuilding(chk, fe, base + 53, base + 55, c, 3, base);
-          }
-          c.set(0x8f979b);
-          for (const [su, sv] of [[-0.8, -0.9], [0.8, -0.9], [0.8, 0.9], [-0.8, 0.9]]) {
-            const mx = ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, mz = ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv;
-            appendBuilding(chk, [[mx - 1.3, mz - 1.3], [mx + 1.3, mz - 1.3], [mx + 1.3, mz + 1.3], [mx - 1.3, mz + 1.3]], base + 14, base + 64, c, 3, base);
-          }
-        }
-      } else if (t === 9) { // Xfinity Mobile Arena: dark walls, glass entry, pale roof slab
+      if (t === 9) { // Xfinity Mobile Arena: dark walls, glass entry, pale roof slab
         c.set(0x3a3e44);
         appendBuilding(chk, poly, base - 1.0, base + 21, c, 3, base);
         c.set(0x565b60);
@@ -4286,6 +4324,31 @@
         }
       }
       if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
+    }
+    // the stadiums, now that every light-tower record in their blocks has been read
+    for (const sd of stadia) buildStadium(sd, stadiumMasts.filter(m => Math.hypot(m[0] - sd.cx, m[1] - sd.cz) < 240));
+    if (glowParts.length) {   // fields, light heads and the video board: their own colour by day, glowing after dark
+      const g = mergeColored(glowParts); freeOnUpload(g);
+      const gm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
+      gm.onBeforeCompile = (sh) => {
+        sh.uniforms.uNight = nightUniform;
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uNight;')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * uNight * 2.4;');
+      };
+      groupCity.add(new THREE.Mesh(g, gm));
+    }
+    if (flood.length) {   // floodlight sprites: additive, screen-sized, on with the streetlamps (updateLights)
+      const fg = new THREE.BufferGeometry();
+      fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(flood), 3));
+      floodMat = new THREE.PointsMaterial({ color: 0xfff6dc, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
+      floodMat.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * clamp(4200.0 / max(1.0, -mvPosition.z), 3.0, 16.0);');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.15, length(gl_PointCoord - vec2(0.5)));');
+      };
+      floodPts = new THREE.Points(fg, floodMat);
+      floodPts.frustumCulled = false; floodPts.renderOrder = 11; floodPts.visible = false;
+      groupCity.add(floodPts);
     }
     // outer streets. Continuity work: endpoint-snapped heights (no steps at OSM way
     // splits), joint fans at bends, real bridge decks over the rivers, aligned-only
@@ -7075,9 +7138,9 @@
     prefsTimer = setTimeout(writePrefs, 500);
   }
   function writePrefs() {
+    // layer flags only: the clock is never remembered (Mike: every load is the exact time
+    // in Philadelphia), and only a copied link carries a pinned clock
     const o = layerFlags();
-    o.live = clock.live; o.date = clockDateStr(); o.minutes = clock.minutes;
-    if (hashClock && !clockTouched) { const prev = loadPrefs(); if (prev) { o.live = prev.live; o.date = prev.date; o.minutes = prev.minutes; } }
     try { localStorage.setItem(PREFS_KEY, JSON.stringify(o)); } catch (e) { }
   }
   function loadPrefs() {
@@ -7109,11 +7172,13 @@
     } catch (e) { }
     return out;
   }
-  function viewState() {
+  function viewState(withClock) {
     camera.getWorldDirection(tmpV);
     const yaw = Math.atan2(tmpV.x, -tmpV.z), pitch = Math.asin(clamp(tmpV.y, -1, 1)), p = camera.position;
     let s = 'p=' + p.x.toFixed(1) + ',' + p.y.toFixed(1) + ',' + p.z.toFixed(1) + ',' + yaw.toFixed(3) + ',' + pitch.toFixed(3);
-    if (!clock.live) s += '&t=' + (clock.y * 10000 + clock.m * 100 + clock.d) + ',' + clock.minutes;
+    // the address bar never carries the clock (a reopened tab must wake to the real time);
+    // a copied link does, when it is pinned
+    if (withClock && !clock.live) s += '&t=' + (clock.y * 10000 + clock.m * 100 + clock.d) + ',' + clock.minutes;
     return s + '&l=' + layerMask();
   }
   let hashT = 0, hashLast = '';
@@ -7772,7 +7837,7 @@
   const copyLabel = btnCopyLink.textContent;
   btnCopyLink.addEventListener('click', () => {
     updateHash(performance.now(), true);   // the link carries this pose, not the last 500 ms tick
-    const url = location.href;
+    const url = location.origin + location.pathname + location.search + '#' + viewState(true);   // with the pinned clock, if any
     const done = () => { btnCopyLink.textContent = 'Copied'; setTimeout(() => { btnCopyLink.textContent = copyLabel; }, 1500); };
     const legacy = () => {
       // no async clipboard (plain http, older WebKit): select a throwaway field and copy
@@ -10034,6 +10099,7 @@
   const POLE_MESH_R = 1000;
   let poleGlow = null, poleMesh = null, poleInv = null, poleMat = null;
   let towerGlow = null, towerMat = null;
+  let floodPts = null, floodMat = null;   // the stadiums' floodlights (built with the outer districts)
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
   const _plm = new THREE.Matrix4(), _plq = new THREE.Quaternion(), _pls = new THREE.Vector3(), _plp = new THREE.Vector3();
@@ -10205,6 +10271,7 @@
     if (towerGlow) {
       towerGlow.visible = night > 0.01;
       if (towerGlow.visible) towerMat.opacity = night;
+      if (floodPts) { floodPts.visible = night > 0.01; floodMat.opacity = night * 0.95; }
     }
     if (!LIGHTS.ready) return;
     const show = LIGHTS.on && night > 0.01;
@@ -10632,7 +10699,7 @@
   }
   // decorrelated per-particle gate so density scales without bunching to one side of the box
   const wxGateGLSL = 'float wxGate(vec3 s){ return fract(sin(dot(s, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }\n';
-  const RAIN_N = 9000;
+  const RAIN_N = 16000;   // short drops need numbers: the eye reads density, not length
   const rainU = {
     uBox: { value: new THREE.Vector3(90, 80, 90) },
     uOff: { value: new THREE.Vector3() },
@@ -10829,10 +10896,12 @@
       rainU.uBox.value.set(45 + 740 * hi, 40 + 415 * hi, 45 + 740 * hi);
       rainU.uCam.value.copy(camera.position);
       rainU.uCam.value.y += rainU.uBox.value.y * 0.25;   // bias the box upward: rain arrives from above
-      rainU.uLen.value = (4.5 + 5.5 * hi) * (1 - 0.5 * F.hail);   // never the 21 m spaghetti the old altitude scale drew
+      // drops, not spaghetti: a 0.9 m dash at street level (a falling drop over one frame),
+      // stretching to 2.3 m from altitude so it still reads as rain rather than dust
+      rainU.uLen.value = (0.9 + 1.4 * hi) * (1 - 0.4 * F.hail);
       rainU.uVelN.value.copy(rainVel).normalize();
       rainU.uFrac.value = 0.12 + 0.88 * F.rain;
-      rainU.uAlpha.value = (0.75 - 0.35 * hi) * vis * (0.30 + 0.70 * F.dayF) * Math.min(1, 0.5 + F.rain);
+      rainU.uAlpha.value = (0.9 - 0.35 * hi) * vis * (0.30 + 0.70 * F.dayF) * Math.min(1, 0.5 + F.rain);
       rainU.uCol.value.setRGB(0.62, 0.66, 0.74).lerp(_wxc.setRGB(0.93, 0.95, 0.99), F.hail);
     }
     snowMesh.visible = F.snow > 0.02 && vis > 0.02;

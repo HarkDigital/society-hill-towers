@@ -51,6 +51,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   (orbit is the attract loop, walk is `__dbg.goWalk` only); SEPTA/Indego markers are occluded
   by buildings, neighborhood names and the search pin are not; a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
+  The clock is never remembered: every load is Philadelphia's own time, and only a copied
+  link carries a pinned clock. The two stadiums are built after the wide loop from
+  `south_geometry_research.json` and light up at night.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances.
 - Commit the built page with the source. Do not push or deploy unless asked.
