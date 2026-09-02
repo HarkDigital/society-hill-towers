@@ -13,6 +13,7 @@ except ImportError:
 RING_CAPS = {
     'wide.b64': {'buildings': 48, 'areas': 120},          # pack_wide: 48 / 120
     'city.b64': {'buildings': 32, 'areas': 90, 'roads': 120},   # pack_city: 32 / 90 / 120-point road chunks
+    'outskirts.b64': {'buildings': 16, 'areas': 60, 'roads': 120},   # pack_outskirts: 16 / 60 / 120
 }
 
 
@@ -25,7 +26,7 @@ class BlobStructure(unittest.TestCase):
                 C.require(self, name)
                 hdr, body = C.decode_b64(name)
                 self.assertIn(hdr[0], magics, '%s magic 0x%08X not in %s' % (name, hdr[0] & 0xFFFFFFFF, [hex(m) for m in magics]))
-                if name in ('wide.b64', 'city.b64'):
+                if name in ('wide.b64', 'city.b64', 'outskirts.b64'):
                     s = C.walk_scene(name)
                     self.assertEqual(0, s['leftover'], '%s: %d int16 left after %d buildings / %d roads / %d areas'
                                      % (name, s['leftover'], s['nb'], s['nr'], s['na']))
@@ -44,9 +45,9 @@ class BlobStructure(unittest.TestCase):
     def test_no_int16_saturation(self):
         """No coordinate sits at +/-32767 (a clipped value = geometry pushed past the int16 wall).
         wide.b64 areas are covered by their own (expected-failure) test below."""
-        C.require(self, 'wide.b64', 'city.b64', 'trees.b64', 'poles.b64', 'traffic.b64')
+        C.require(self, 'wide.b64', 'city.b64', 'outskirts.b64', 'trees.b64', 'poles.b64', 'traffic.b64')
         report = {}
-        for name in ('wide.b64', 'city.b64'):
+        for name in ('wide.b64', 'city.b64', 'outskirts.b64'):
             s = C.walk_scene(name)
             for part, n in s['saturated'].items():
                 if name == 'wide.b64' and part == 'areas':
@@ -100,7 +101,7 @@ class BlobRecords(unittest.TestCase):
 
     def test_scene_record_fields(self):
         """Heights, widths and type codes stay in the ranges the app palettes index."""
-        for name in ('wide.b64', 'city.b64'):
+        for name in ('wide.b64', 'city.b64', 'outskirts.b64'):
             with self.subTest(blob=name):
                 C.require(self, name)
                 s = C.walk_scene(name)

@@ -1905,6 +1905,96 @@ New Jersey barely stirs the deck while one over Center City still lights the wor
 live site: storm on from the relay, one bolt drawn with the next held in the queue behind the gap,
 far-strike flash at the floor. Deployed and pushed as e7b12c7.
 
+### Round 47 (Sep 2): the towns across the line, a flight limit, orbit on search, the Whitman lands in Jersey
+
+Mike, four asks: people can fly much too far outside the city; Gloucester City NJ should look
+like an actual town with buildings, and so should the rest of the surroundings; a searched
+location should start orbiting on arrival; the Jersey end of the Walt Whitman needs fixing.
+
+- **Why the surroundings were empty.** The far ring packs everything inside its box
+  (-12000..16500, -21700..9700) that the fetches brought home, and the six `fetch_city.py`
+  boxes plus the wide and south boxes are lat/lon rectangles that stop at the city's own
+  extents: three strips of the box were never fetched at all: south of 39.915 east of
+  -75.185 (the Navy Yard's south half and, across the river, Gloucester City, Camden's
+  Fairview and Morgan Village, Brooklawn, Westville, Bellmawr, Mount Ephraim, Audubon,
+  Oaklyn, Haddon Township), east of -74.990 between 39.915 and 40.050 (Pennsauken's east,
+  Merchantville, Cherry Hill's edge) and north of 40.100 west of -75.130 (Whitemarsh,
+  Springfield, Wyndmoor, Cheltenham's north, Abington). OSM counts before fetching:
+  Gloucester City 1,471 mapped buildings, the south strip 31,892, east 2,921, north 2,099.
+- **The outskirts tier.** `fetch_outskirts.py` (30 tiles, ways only: the Delaware's water
+  relation would have dragged in the whole river) -> `osm_outskirts_raw.json` ->
+  `pack_outskirts.py` -> `outskirts.b64`: 1.0 m units, the far ring's no-attribute layout
+  (legacy magic 0x53485459, no LiDAR / OPA / roof join exists across the line), rows fused
+  with a 3 m bridge instead of 1.8 so detached houses merge into strips, 16-vertex rings,
+  60-vertex areas, and anything whose centroid an older fetch box owns is skipped.
+  Fetched 358,015 elements in 30 tiles (36 MB raw); packed 31,576 buildings in
+  (4,408 owned by older tiers) to 25,526 strips, 7,501 road runs and 251 areas: 963 KB
+  binary, 1.28 MB base64, 4.5 s. The far-ring step is split into `raiseRing(bin, S, label)` (buildings, roads,
+  areas into staged chunks) and `uploadRing(R)`, with the terrain built between the two in
+  the city step; a new step "Raising the towns across the line" runs the same decoder on
+  the outskirts blob. build.py: PLANAR + REQUIRED + `let_blob("OUTSKIRTS_B64")`; tests:
+  BLOBS / RING_CAPS / EMBEDDED entries and an `OutskirtsHandoff` test (every outskirts
+  centroid inside the box and outside every owned box); pipeline stages; handoff rows.
+  Page 24.08 MB raw (+1.30 MB), 10.29 MB gzip, under the 25 MB tripwire and inside the
+  deploy gate; 28 tests green.
+- **Overpass stall.** The first fetch sat 13 minutes on one tile: `overpass.private.coffee`
+  hangs (60 s+ on a one-line count query, main mirror 1 s, kumi 52 s) and the rotation
+  retries through it with a 190 s timeout each pass. `overpass.py` now honours
+  `OVERPASS_MIRRORS=url[,url]` for a run; probe the mirrors with a tiny `out count` first.
+- **The flight limit.** `fetch_boundary.py` pulls OSM relation 188022 (the city line,
+  367.5 km2, the state line mid-river), writes `city_limit.json`: `city` (177 points at
+  40 m) and `bound`, the line buffered 2 km, simplified 120 m, clipped to the far-ring box
+  less 300 m (47 points). `insideLimit` / `clampLimit` (nearest ring point, 3 m in) run in
+  applyFly, setMode(FLY), applyHashView, panOrbit and walk; SEPTA vehicles beyond the
+  limit are `v.off`. Verified: a jump to (6000, 5000) lands at (3320, 4551), 2 km past
+  the state line at the Whitman; (-14000, -8000) -> (-10844, -9747); (2000, -20000) ->
+  (4818, -17739); City Hall untouched. The towns beyond are scenery seen from the edge.
+- **Jersey ground.** Every low cell east of the rough `DEL_BANK` dived to the riverbed,
+  and south of the stadiums that polyline drifts into Gloucester City, so its filled
+  riverfront read as open water and its low blocks were dropped as "floating".
+  `stateLineX(z)` (the city ring's easternmost crossing, cached per 10 m of z) gives
+  `njLand`: more than 400 m past the state line is land, and `eastOfDelaware` excludes it,
+  which fixes the far and wide terrain, `siteY`, the building drop and the road deck
+  lift in one place.
+- **The Whitman lands.** `wwb.json` used to interleave both carriageways (the zigzag
+  east of the chord fix) and stopped at x 2649 with the deck 20 m up in mid-air. It is
+  now one eastbound carriageway (OSM ways 424803351, 886672856, 1027616621, 123617847,
+  1311279172) to where the bridge tag ends at (2777, 4866). The profile is one function,
+  `profY(sv)`, shared by the deck and `BRIDGE_DECKS.yAt`: the Jersey approach descends
+  from W0 + 37 at the cable end to ground + 0.8 at the polyline's end and the ground floor
+  (+6 m) fades over the last 250 m so it can land; `wwbUnder()` drops packed motorway
+  ribbons within 30 m of the alignment east of x 1750 short of the landing, or the packed
+  I-76 would pave a flat twin under the viaduct.
+- **Orbit on search.** `searchFlyTo` now glides (`glideFly`, 0.9 to 2.6 s by hop) to the
+  vantage and its `done` callback, `orbitAround`, switches to orbit with r / theta / phi
+  taken from the camera pose (no jump), `orbitSpin` turning 0.12 rad/s (~50 s a lap) until
+  any input takes flight through `autoFly`, as after Enter. Buses keep the fly follow
+  (`noOrbit`); reduced motion parks without spinning; the hash is frozen while circling.
+  Verified: "Independence Hall" -> the orbit hint, target (-451, 32, -371), r 286 m, theta
+  +0.171 rad in 1.5 s, camera moving.
+- **Review pass** (four finder angles, twelve verified, one refuted) before the commit:
+  the south fetch box was listed as "owned" whole, but pack_wide packs buildings only
+  inside WIDE (x <= 2300, lon -75.118), so the strip east of that between lat 39.890
+  and 39.9155, northern Gloucester City and the Whitman's landing, ~1,050 buildings,
+  was packed by no tier (the owned box now stops where pack_wide stops; roads and areas
+  keep pack_wide's 200 m and 500 m margins); the far ring's wide-seam road skip
+  (`inWide` both ends) also ran for the outskirts and ate 2.4 km of Gloucester City
+  streets south of z 6134, where the wide data ends (`raiseRing` takes a `wideSeam` flag,
+  the far ring only); a Nominatim hit named "Philadelphia ..." outside the city (the
+  Philadelphia Country Club in Gladwyne, Philadelphia Avenue in Bensalem) passed the
+  name filter and the search circled a spot beyond the limit, so the rows are now also
+  tested with `insideLimit`, `orbitAround` clamps its target and `applyOrbit` clamps the
+  circling camera; route search listed and flew to `v.off` buses (now excluded); a search
+  typed from a locked look had its glide cancelled by the first mouse movement (the lock
+  is released first); the compass eased to north while the search spin undid it
+  (`faceNorth` clears `orbitSpin`); `stateLineX` picked the Bucks County line above the
+  Poquessing mouth (null there now, latent since no low cells sit there); and the new
+  tier test had landed below the file's `__main__` guard.
+- Deployed to philly3d.com and pushed to main on Mike's go. Follow-ups: run
+  `bake_overpasses.py` over `outskirts_tiles/` too (the I-76 / I-676 / 42 interchange at
+  the bridge's foot is flat ribbons); the 150 m DEM still floods marsh cells along Newton
+  and Big Timber creeks; the bound's northeast tip is cut by the box.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

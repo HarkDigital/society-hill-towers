@@ -31,6 +31,7 @@ REPO = MODEL.parent
 BLOBS = {
     'wide.b64':    ((0x5348545A, 0x53485458), 0.2, 'Raising the outer districts'),
     'city.b64':    ((0x5348545B, 0x53485459), 0.7, 'Raising the rest of Philadelphia'),
+    'outskirts.b64': ((0x53485459,), 1.0, 'Raising the towns across the line'),   # pack_outskirts.py: no attr words
     'trees.b64':   ((0x53485454,), 0.2, 'Planting the street trees'),
     'poles.b64':   ((0x53485450,), 0.7, 'Lighting the streetlamps'),
     # bake_traffic.py reuses the tree magic 'SHTT' (0x53485454) — both its docstring

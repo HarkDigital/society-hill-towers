@@ -991,6 +991,28 @@
   }
 
   const bounds = { minX: 1e9, maxX: -1e9, minZ: 1e9, maxZ: -1e9 };
+  // the flight limit: Philadelphia's city line buffered 2 km (fetch_boundary.py ->
+  // city_limit.json), clipped to the far-ring box. The camera stays inside it in every
+  // mode, shared links land inside it, and SEPTA vehicles beyond it are off the map:
+  // the towns across the line are scenery seen from the edge, never flown over
+  const LIMIT = (typeof CITY_LIMIT !== 'undefined' && CITY_LIMIT && CITY_LIMIT.bound && CITY_LIMIT.bound.length > 3) ? CITY_LIMIT.bound : null;
+  const limitIn = LIMIT && signedArea(LIMIT) > 0 ? 1 : -1;   // which side of an edge is inside
+  function insideLimit(x, z) { return !LIMIT || pointInPoly(x, z, LIMIT); }
+  // null when (x, z) is inside; otherwise the nearest point on the ring, 3 m in
+  function clampLimit(x, z) {
+    if (insideLimit(x, z)) return null;
+    let best = Infinity, bx = x, bz = z, nx = 0, nz = 0;
+    for (let i = 0, n = LIMIT.length; i < n; i++) {
+      const a = LIMIT[i], b = LIMIT[(i + 1) % n];
+      const dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1e-9;
+      const t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / L2, 0, 1);
+      const px = a[0] + dx * t, pz = a[1] + dz * t;
+      const d2 = (px - x) * (px - x) + (pz - z) * (pz - z);
+      if (d2 < best) { best = d2; bx = px; bz = pz; const L = Math.sqrt(L2); nx = -dz / L * limitIn; nz = dx / L * limitIn; }
+    }
+    return [bx + nx * 3, bz + nz * 3];
+  }
+  const limitV = (v) => { const c = clampLimit(v.x, v.z); if (c) { v.x = c[0]; v.z = c[1]; } return v; };
   for (const b of D.buildings) for (const p of b.poly) {
     if (p[0] < bounds.minX) bounds.minX = p[0];
     if (p[0] > bounds.maxX) bounds.maxX = p[0];
@@ -1031,7 +1053,35 @@
     }
     return z < DEL_BANK[0][1] ? DEL_BANK[0][0] : DEL_BANK[DEL_BANK.length - 1][0];
   }
-  function eastOfDelaware(x, z) { return x > delawareX(z) - 120; }
+  // the state line runs mid-Delaware: the city ring's easternmost crossing at this z
+  // (city_limit.json), from the Poquessing mouth (the ring's easternmost point; above
+  // it the east edge is the Bucks County line, not the river) down to Fort Mifflin;
+  // null outside that band
+  const CITY_RING = (typeof CITY_LIMIT !== 'undefined' && CITY_LIMIT && CITY_LIMIT.city && CITY_LIMIT.city.length > 3) ? CITY_LIMIT.city : null;
+  const RING_MOUTH_Z = CITY_RING ? CITY_RING.reduce((m, q) => (q[0] > m[0] ? q : m))[1] : 0;
+  const stateLineCache = new Map();
+  function stateLineX(z) {
+    if (!CITY_RING || z < RING_MOUTH_Z) return null;
+    const key = Math.round(z / 10);
+    let v = stateLineCache.get(key);
+    if (v !== undefined) return v;
+    v = null;
+    for (let i = 0, n = CITY_RING.length; i < n; i++) {
+      const a = CITY_RING[i], b = CITY_RING[(i + 1) % n];
+      if ((a[1] > z) === (b[1] > z)) continue;
+      const x = a[0] + (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]);
+      if (v === null || x > v) v = x;
+    }
+    stateLineCache.set(key, v);
+    return v;
+  }
+  // Jersey ground: more than 400 m past the state line. The rough west-bank polyline
+  // drifts into Gloucester City south of the stadiums, and every low cell east of it
+  // used to dive to the riverbed, so Camden's and Gloucester City's filled riverfront
+  // read as open water and their low blocks were dropped as floating. Land past the
+  // line now clamps to made-land the way the Philadelphia side does
+  function njLand(x, z) { const sx = stateLineX(z); return sx !== null && x > sx + 400; }
+  function eastOfDelaware(x, z) { return x > delawareX(z) - 120 && !njLand(x, z); }
   // rough Schuylkill centerline; within 260 m counts as its corridor (bridge territory)
   const SCHUYLKILL = [[-8500, -11500], [-7700, -9400], [-6900, -7700], [-5600, -5300], [-4700, -3300], [-4100, -1600], [-4300, -400], [-4500, 1100], [-4200, 2600], [-3900, 4200], [-3700, 5600], [-3860, 7240]];
   function nearSchuylkill(x, z) {
@@ -1064,6 +1114,23 @@
       if (d2 < best) best = d2;
     }
     return best < r * r;
+  }
+
+  // under the Jersey viaduct: within 30 m of the alignment east of the river bank and
+  // short of its landing. The packed I-76 (both carriageways and the ramp ends that
+  // merge into it) would otherwise pave a flat twin of the deck through Gloucester City
+  function wwbUnder(x, z) {
+    if (x < 1750 || typeof WWB_PTS === 'undefined' || !WWB_PTS || WWB_PTS.length < 4) return false;
+    let best = Infinity, atEnd = false;
+    for (let i = 1; i < WWB_PTS.length; i++) {
+      const A = WWB_PTS[i - 1], B = WWB_PTS[i];
+      const dx = B[0] - A[0], dz = B[1] - A[1], L2 = dx * dx + dz * dz || 1e-9;
+      const tt = clamp(((x - A[0]) * dx + (z - A[1]) * dz) / L2, 0, 1);
+      const ex = A[0] + dx * tt - x, ez = A[1] + dz * tt - z;
+      const d2 = ex * ex + ez * ez;
+      if (d2 < best) { best = d2; atEnd = i === WWB_PTS.length - 1 && tt > 0.97; }
+    }
+    return best < 30 * 30 && !atEnd;
   }
 
   // ---------------------------------------------------------------- overpasses
@@ -4870,14 +4937,24 @@
       {
         const mid = cum[mi], half = 304.8, side = 234.7;
         const W0 = TERRAIN.water;
-        const deckAt = (i) => {
-          const dd = Math.abs(cum[i] - mid);
-          let y;
-          if (dd <= half) y = W0 + 49 - 6 * (dd / half) * (dd / half);
-          else if (dd <= half + side) y = W0 + 43 - 6 * (dd - half) / side;
-          else y = W0 + 37 - 0.02 * (dd - half - side);
-          return Math.max(y, siteY(line[i][0], line[i][1], 'ground') + 6);
+        // the profile in arc length: the suspended span, the side spans, then the approaches.
+        // wwb.json is one carriageway from the Schuylkill Expressway to the point where OSM's
+        // bridge tag ends in Gloucester City, so the Jersey viaduct (~1 km past the cable
+        // end) descends to the street there and the packed I-76 carries on at grade; the
+        // Packer Avenue side stays elevated to the interchange, as it is
+        const sEnd = cum[cum.length - 1], sCab = mid + half + side;
+        const endQ = line[line.length - 1];
+        const yEnd = siteY(endQ[0], endQ[1], 'ground') + 0.8;
+        const profY = (sv) => {
+          const dd = Math.abs(sv - mid);
+          if (dd <= half) return W0 + 49 - 6 * (dd / half) * (dd / half);
+          if (dd <= half + side) return W0 + 43 - 6 * (dd - half) / side;
+          if (sv > mid) return W0 + 37 + (yEnd - W0 - 37) * clamp((sv - sCab) / Math.max(1, sEnd - sCab), 0, 1);
+          return W0 + 37 - 0.02 * (dd - half - side);
         };
+        // never below the ground it crosses, except the last 250 m where the floor fades so the deck can land
+        const deckYAt = (sv, x, z) => Math.max(profY(sv), siteY(x, z, 'ground') + 6 * clamp((sEnd - sv - 30) / 220, 0, 1));
+        const deckAt = (i) => deckYAt(cum[i], line[i][0], line[i][1]);
         const parts = [];
         const addP = (geom, hex) => parts.push({ geom, color: new THREE.Color(hex), style: 3 });
         for (let i = 0; i < line.length - 1; i++) {
@@ -4947,13 +5024,8 @@
           BRIDGE_DECKS.push({
             pts: line, cum, halfW: 16, minX: mnX, maxX: mxX, minZ: mnZ, maxZ: mxZ,
             yAt: (sv) => {
-              const dd = Math.abs(sv - mid);
-              let y;
-              if (dd <= half) y = W0 + 49 - 6 * (dd / half) * (dd / half);
-              else if (dd <= half + side) y = W0 + 43 - 6 * (dd - half) / side;
-              else y = W0 + 37 - 0.02 * (dd - half - side);
-              const q = at(clamp(sv, 0, cum[cum.length - 1]));
-              return Math.max(y, siteY(q.x, q.z, 'ground') + 6) + 0.55;
+              const s2 = clamp(sv, 0, sEnd), q = at(s2);
+              return deckYAt(s2, q.x, q.z) + 0.55;   // the same profile the deck was built on
             },
           });
         }
@@ -4976,29 +5048,30 @@
   });
 
   // ------------------------------------------------ the far ring: the rest of Philadelphia
-  step('Raising the rest of Philadelphia', async () => {
-    if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
-    const bin = unb64(CITY_B64, 'CITY');
-    CITY_B64 = null;   // 7 MB of base64 freed
+  // ---- the two packed rings share one decoder: the far ring (city.b64, 0.7 m units,
+  // facade attributes) and the towns across the city line (outskirts.b64, 1.0 m units,
+  // no attributes). raiseRing() decodes buildings, roads and areas into staged chunks;
+  // the far-ring step builds the terrain between the two; uploadRing() hands the rest to the GPU
+  const RING_W = { x0: -12000, x1: 16500, z0: -21700, z1: 9700 };   // pack_city.py CITY: the far-ring box, the terrain's extent
+  const WIDEB = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };
+  // the NW hills patch (must match fetch_dem_nw.py) — everything inside gets
+  // the 50 m terrain treatment; absent dem_nw.json, all of this stays off
+  const P = DEMN ? { x0: -10600, x1: -2600, z0: -15600, z1: -6600 } : null;
+  const inP = (x, z) => P && x > P.x0 && x < P.x1 && z > P.z0 && z < P.z1;
+  const bboxOf = (poly) => {
+    let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+    for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
+    return [x0, x1, z0, z1];
+  };
+  const hitsP = (bb) => P && bb[0] < P.x1 && bb[1] > P.x0 && bb[2] < P.z1 && bb[3] > P.z0;
+  const withinP = (bb) => P && bb[0] > P.x0 && bb[1] < P.x1 && bb[2] > P.z0 && bb[3] < P.z1;
+  async function raiseRing(bin, S, label, wideSeam) {
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const hasAttr = hdr[0] === 0x5348545B;
-    if (hdr[0] !== 0x53485459 && !hasAttr) return;
+    if (hdr[0] !== 0x53485459 && !hasAttr) return null;
     const body = new Int16Array(bin.buffer, 16);
     let k = 0;
-    const S = 0.7, CH = 2400;
-    const W = { x0: -12000, x1: 16500, z0: -21700, z1: 9700 };
-    const WIDEB = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };
-    // the NW hills patch (must match fetch_dem_nw.py) — everything inside gets
-    // the 50 m terrain treatment; absent dem_nw.json, all of this stays off
-    const P = DEMN ? { x0: -10600, x1: -2600, z0: -15600, z1: -6600 } : null;
-    const inP = (x, z) => P && x > P.x0 && x < P.x1 && z > P.z0 && z < P.z1;
-    const bboxOf = (poly) => {
-      let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
-      for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; }
-      return [x0, x1, z0, z1];
-    };
-    const hitsP = (bb) => P && bb[0] < P.x1 && bb[1] > P.x0 && bb[2] < P.z1 && bb[3] > P.z0;
-    const withinP = (bb) => P && bb[0] > P.x0 && bb[1] < P.x1 && bb[2] > P.z0 && bb[3] < P.z1;
+    const CH = 2400;
     // ground-contact shading, the wide ring's RING_AO mirrored for this closure: wall
     // quads carry this share of their colour at the two ground verts (1.0 disables)
     const RING_AO = 0.78;
@@ -5056,7 +5129,7 @@
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
-      if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); } continue; }
+      if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { loadmsg.textContent = label + ', ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); } continue; }
       if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;   // nothing floats mid-river
       let base = siteY(cx, cz, 'ground');
       if (inP(cx, cz)) {
@@ -5087,7 +5160,7 @@
         // outward: (base, apex, next) with the ring CCW in (x, z), the sense the wall loop uses
         chk.idx.push(i0, i0 + 4, i0 + 1, i0 + 1, i0 + 4, i0 + 2, i0 + 2, i0 + 4, i0 + 3, i0 + 3, i0 + 4, i0);
       }
-      if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the rest of Philadelphia, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
+      if ((i & 4095) === 4095) { loadmsg.textContent = label + ', ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
     }
     // far roads — same continuity treatment as the wide set: endpoint-snapped heights,
     // bend fans, bridge decks over the river corridors
@@ -5136,7 +5209,8 @@
           else deck = t === 0 ? 20 : 13;
         }
         if (deck && wwbNear(mx, mz)) continue;         // the custom WWB deck owns its crossing
-        if (inWide(a) && inWide(q)) continue;          // the wide set paves there
+        if (t <= 1 && wwbUnder(mx, mz)) continue;      // and its Jersey viaduct: no flat twin beneath
+        if (wideSeam && inWide(a) && inWide(q)) continue;   // the wide set paves there (the far ring only: the outskirts packer already cedes the wide box, and the wide data ends at lat 39.890 while this margin runs to z 6600)
         if (ovpOwned(a[0], a[1], q[0], q[1])) continue; // a baked overpass deck owns it
         const px = -dz * hw, pz = dx * hw;
         const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 2.9 + 0.4) * 0.1;
@@ -5189,6 +5263,36 @@
         else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
       } catch (e) { /* degenerate */ }
     }
+    return { chunks, rc, areaParts, waterAreaParts, nwParks, nwWaters };
+  }
+  async function uploadRing(R) {
+    const { chunks, rc, areaParts, waterAreaParts } = R;
+    await yieldNow();
+    for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
+    flushUploads(true);
+    await yieldNow();
+    if (rc.n) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
+      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
+      g.setIndex(rc.idx);
+      g.computeVertexNormals();
+      g.computeBoundingSphere();
+      freeOnUpload(g);
+      rc.pos = rc.col = rc.idx = null;
+      groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+    }
+    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
+    if (waterAreaParts.length) { const g = mergeColored(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
+  }
+  step('Raising the rest of Philadelphia', async () => {
+    if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
+    const bin = unb64(CITY_B64, 'CITY');
+    CITY_B64 = null;   // 7 MB of base64 freed
+    const R = await raiseRing(bin, 0.7, 'Raising the rest of Philadelphia', true);
+    if (!R) return;
+    const { nwParks, nwWaters, waterAreaParts } = R;
+    const W = RING_W;
     // far ground: 100 m strips around the wide box, down to the riverbed over
     // water. With dem_nw present the NW hills get their own 50 m heightfield —
     // its footprint is cut from the north strip along that strip's own grid
@@ -5324,23 +5428,7 @@
       groupCity.add(apron);
     }
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
-    await yieldNow();
-    for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
-    flushUploads(true);
-    await yieldNow();
-    if (rc.n) {
-      const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
-      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
-      g.setIndex(rc.idx);
-      g.computeVertexNormals();
-      g.computeBoundingSphere();
-      freeOnUpload(g);
-      rc.pos = rc.col = rc.idx = null;
-      groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
-    }
-    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
-    if (waterAreaParts.length) { const g = mergeColored(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
+    await uploadRing(R);
     // the world is now the whole city
     bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
     fogBase.near = 2400; fogBase.far = 13000;
@@ -5421,6 +5509,19 @@
     }
   });
 
+  step('Raising the towns across the line', async () => {
+    // Gloucester City, Camden's south wards, Pennsauken, Cheltenham, Springfield and the
+    // Navy Yard's south half: the strips of the far-ring box the older fetches never
+    // covered (pack_outskirts.py). Scenery beyond the flight limit, so the world no
+    // longer ends at the river or the county line
+    if (typeof OUTSKIRTS_B64 === 'undefined' || !OUTSKIRTS_B64) return;
+    const bin = unb64(OUTSKIRTS_B64, 'OUTSKIRTS');
+    OUTSKIRTS_B64 = null;
+    const R = await raiseRing(bin, 1.0, 'Raising the towns across the line', false);
+    if (!R) return;
+    loadmsg.textContent = 'Raising the towns across the line, uploading';
+    await uploadRing(R);
+  });
   step('Raising the overpasses', () => {
     if (!OVP.el.length && !OVP.cor.length && !OVP.sk.length) return;
     const parts = [];
@@ -6344,6 +6445,7 @@
   let introSpin = true; // the attract loop: spins behind the veil and keeps
                         // spinning after Enter, until the first interaction
                         // hands the controls over to fly mode
+  let orbitSpin = false;   // a search result circles its spot (orbitAround) until the first input takes flight
 
   const orbit = {
     // the veil shows Center City whole from high in the east; Enter glides in
@@ -6380,6 +6482,7 @@
       orbit.target.y + orbit.r * cp,
       orbit.target.z + orbit.r * sp * Math.sin(orbit.theta)
     );
+    if (orbitSpin) limitV(camera.position);   // a search circle near the edge slides along the limit instead of crossing it
     camera.lookAt(orbit.target);
   }
 
@@ -6431,6 +6534,7 @@
     if (wd > -2) nx -= (wd + 2);
     nx = clamp(nx, bounds.minX - 60, bounds.maxX + 200);
     nz = clamp(nz, bounds.minZ - 60, bounds.maxZ + 60);
+    { const c = clampLimit(nx, nz); if (c) { nx = c[0]; nz = c[1]; } }
     walk.pos.x = nx; walk.pos.z = nz;
     walk.pos.y = walkY(nx, nz) + 1.7;
     camera.position.copy(walk.pos);
@@ -6467,6 +6571,7 @@
     fly.pos.addScaledVector(fly.vel, dt);
     fly.pos.x = clamp(fly.pos.x, bounds.minX - 400, bounds.maxX + 600);
     fly.pos.z = clamp(fly.pos.z, bounds.minZ - 400, bounds.maxZ + 400);
+    limitV(fly.pos);
     const floorY = Math.max(siteY(fly.pos.x, fly.pos.z, 'ground') + 2.5, TERRAIN.water + 2);
     fly.pos.y = clamp(fly.pos.y, floorY, 1600);
     camera.position.copy(fly.pos);
@@ -6551,6 +6656,7 @@
     orbit.goalTarget.z += (fx * dx - fz * dy) * s;
     orbit.goalTarget.x = clamp(orbit.goalTarget.x, bounds.minX - 200, bounds.maxX + 400);
     orbit.goalTarget.z = clamp(orbit.goalTarget.z, bounds.minZ - 200, bounds.maxZ + 200);
+    limitV(orbit.goalTarget);
   }
 
   canvas.addEventListener('dblclick', (e) => {
@@ -6742,6 +6848,7 @@
     const prev = mode;
     mode = m;
     introSpin = false;
+    orbitSpin = false;
     // a search result flies the camera mid-typing: leave the box focused, or
     // the next keystrokes land on the layer shortcuts
     if (document.activeElement && document.activeElement.blur && document.activeElement !== searchInput) document.activeElement.blur();
@@ -6775,6 +6882,7 @@
       fly.pos.copy(camera.position);
       fly.pos.x = clamp(fly.pos.x, bounds.minX - 400, bounds.maxX + 600);
       fly.pos.z = clamp(fly.pos.z, bounds.minZ - 400, bounds.maxZ + 400);
+      limitV(fly.pos);
       fly.pos.y = clamp(Math.max(fly.pos.y, siteY(fly.pos.x, fly.pos.z, 'ground') + (prev === MODE.WALK ? 35 : 6)), TERRAIN.water + 2, 1600);
       fly.vel.set(0, 0, 0);
       if (!isTouch && !noLock) requestLock();
@@ -6852,7 +6960,7 @@
     // target, see applyOrbit), fly and walk ease their shared yaw to 0 (applyFly)
     if (!veil.classList.contains('hidden')) return;
     glideCancel();   // a compass tap is input: it ends a tour rather than stranding it mid-glide
-    interacted = true; introSpin = false;
+    interacted = true; introSpin = false; orbitSpin = false;   // and a search result's circle, or the spin would undo the turn
     const t0 = performance.now(), ms = 600;
     if (mode === MODE.ORBIT) glide = { kind: 'orbit', t0, ms, from: orbit.goalTheta, to: orbit.goalTheta + wrapPi(Math.PI / 2 - orbit.goalTheta) };
     else glide = { kind: 'yaw', t0, ms, from: walk.yaw, to: walk.yaw - wrapPi(walk.yaw) };
@@ -6990,7 +7098,7 @@
   function updateHash(now, force) {
     // replaceState only: the address bar follows the flight without growing history;
     // nothing while the veil is up or the attract loop is still circling
-    if (!force && (introSpin || !veil.classList.contains('hidden') || now < hashT)) return;
+    if (!force && (introSpin || orbitSpin || !veil.classList.contains('hidden') || now < hashT)) return;
     hashT = now + 500;
     const s = viewState();
     if (s === hashLast) return;
@@ -7001,6 +7109,7 @@
     // a shared link lands in fly mode at its exact pose: no orbit intro, no lock request
     setMode(MODE.FLY, true);
     fly.pos.set(clamp(v[0], bounds.minX - 400, bounds.maxX + 600), clamp(v[1], TERRAIN.water + 2, 1600), clamp(v[2], bounds.minZ - 400, bounds.maxZ + 400));
+    limitV(fly.pos);
     fly.vel.set(0, 0, 0);
     walk.yaw = v[3]; walk.pitch = clamp(v[4], -1.45, 1.45);
     interacted = true; introSpin = false;   // Enter must not restart the circle
@@ -7543,8 +7652,8 @@
         if (v.snT === undefined || now - v.snT > 120) {
           v.snT = now;
           const sn = septaSnapRoad(v.x, v.z, 20);
-          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.off = false; }
-          else { v.snx = null; v.off = !septaSnapRoad(v.x, v.z, 140); }   // no drawn street within 140 m: past the modeled city, not drawn
+          if (sn) { v.snx = sn[0]; v.snz = sn[1]; v.sdx = sn[2]; v.sdz = sn[3]; v.off = !insideLimit(v.x, v.z); }
+          else { v.snx = null; v.off = !insideLimit(v.x, v.z) || !septaSnapRoad(v.x, v.z, 140); }   // beyond the flight limit, or no drawn street within 140 m: off the map
         }
         if (v.snx != null) { wx = v.snx; wz = v.snz; }
       }
@@ -7947,18 +8056,33 @@
   function searchShortName(s) {
     return String(s || '').split(',').slice(0, 3).join(',');
   }
-  function searchFlyTo(x, y, z, dist) {
+  function searchFlyTo(x, y, z, dist, noOrbit) {
     glideCancel();   // a tour or a stop in flight would overwrite the pose next frame
-    // park the fly camera at a vantage looking down on the target, approaching
-    // from whichever side the camera already is. No pointer lock: the cursor
-    // stays free for the result list; clicking the scene takes the controls.
-    setMode(MODE.FLY, true);
+    if (walk.locked && document.exitPointerLock) document.exitPointerLock();   // a locked look cancels a glide on its first movement
+    // glide to a vantage looking down on the target, approaching from whichever side
+    // the camera already is, then circle it (orbitAround) until the first input takes
+    // flight. A live bus is followed in fly mode instead: its spot moves. No pointer
+    // lock: the cursor stays free for the result list; clicking the scene takes the controls.
     const dx = camera.position.x - x, dz = camera.position.z - z;
     const L = Math.hypot(dx, dz) || 1;
-    fly.pos.set(x + dx / L * dist, y + dist * 0.55, z + dz / L * dist);
-    fly.vel.set(0, 0, 0);
-    walk.yaw = Math.atan2(x - fly.pos.x, -(z - fly.pos.z));
-    walk.pitch = -Math.atan2(fly.pos.y - y, dist);
+    const vx = x + dx / L * dist, vy = y + dist * 0.55, vz = z + dz / L * dist;
+    const yaw = Math.atan2(x - vx, -(z - vz)), pitch = -Math.atan2(vy - y, dist);
+    const hop = Math.hypot(vx - camera.position.x, vz - camera.position.z);
+    glideFly(vx, vy, vz, yaw, pitch, clamp(500 + hop * 0.3, 900, 2600), noOrbit ? null : () => orbitAround(x, y, z));
+    setHint();
+  }
+  function orbitAround(x, y, z) {
+    // circle the spot from where the glide parked the camera; any drag, wheel or key
+    // takes flight from wherever the circle happens to be (autoFly), as after Enter
+    { const c = clampLimit(x, z); if (c) { x = c[0]; z = c[1]; } }   // never a spot beyond the flight limit
+    setMode(MODE.ORBIT, true);
+    const p = camera.position, r = Math.max(30, Math.hypot(p.x - x, p.y - y, p.z - z));
+    orbit.target.set(x, y, z); orbit.goalTarget.set(x, y, z);
+    orbit.r = orbit.goalR = r;
+    orbit.theta = orbit.goalTheta = Math.atan2(p.z - z, p.x - x);
+    orbit.phi = orbit.goalPhi = Math.acos(clamp((p.y - y) / r, -1, 1));
+    orbitSpin = !reducedMotion;
+    applyOrbit(0);
     setHint();
   }
   function searchGoTo(lat, lon, name) {
@@ -8003,7 +8127,7 @@
   }
   function searchGoToBus(v) {
     const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
-    searchFlyTo(x, (v.gy || siteY(x, z, 'road')) + 6, z, 220);
+    searchFlyTo(x, (v.gy || siteY(x, z, 'road')) + 6, z, 220, true);
     septaSetFilter(v.route, v.routeLabel);   // the map shows this route alone until the search is cleared
     pickedVeh = v;
     septaCard(v);
@@ -8108,7 +8232,7 @@
     // a bus/trolley route ("33", "G1", "route 47"): list its live vehicles, nearest first
     const live = [];
     septaVeh.forEach((v) => {
-      if (!v.ug && (v.routeLabel.toUpperCase() === rid || v.route.toUpperCase() === rid)) live.push(v);
+      if (!v.ug && !v.off && (v.routeLabel.toUpperCase() === rid || v.route.toUpperCase() === rid)) live.push(v);   // off: beyond the limit or off the drawn streets, neither drawn nor listed
     });
     if (!live.length) return false;
     live.forEach((v) => {
@@ -8146,8 +8270,10 @@
         if (seq === searchSeq) searchBusy = false;
         if (seq !== searchSeq || !searchPanel.classList.contains('open')) return;
         if (!rows) { searchOut.innerHTML = '<div class="smsg">Search failed. Try again in a moment.</div>'; return; }
-        // the bounding box spans the rivers — keep the city proper, drop NJ
-        rows = rows.filter((r) => /philadelphia/i.test(r.display_name || ''));
+        // the bounding box spans the rivers, and a name test alone lets "Philadelphia Avenue,
+        // Bensalem" or the Philadelphia Country Club in Gladwyne through: keep the city
+        // proper, inside the flight limit
+        rows = rows.filter((r) => /philadelphia/i.test(r.display_name || '') && insideLimit((+r.lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, -(+r.lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz));
         if (!rows.length) { searchOut.innerHTML = '<div class="smsg">No match inside Philadelphia.</div>'; return; }
         searchOut.innerHTML = '';
         for (const r of rows) {
@@ -10961,7 +11087,7 @@
   });
 
   // ---------------------------------------------------------------- build & loop
-  const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Planting the street trees']);
+  const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Raising the towns across the line', 'Planting the street trees']);
   async function build() {
     let failures = 0;
     for (const s of buildSteps) {
@@ -11064,6 +11190,7 @@
       }
     }
     if (introSpin && !interacted) orbit.goalTheta += dt * 0.045;
+    else if (orbitSpin && mode === MODE.ORBIT) orbit.goalTheta += dt * 0.12;   // a search result's slow circle, ~50 s a lap
     if (clock.live) {
       const nowMin = Math.floor(Date.now() / 60000);
       if (nowMin !== lastMinuteTick) { lastMinuteTick = nowMin; setClockToNow(); refreshTimeUI(); }

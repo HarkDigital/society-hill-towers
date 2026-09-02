@@ -19,8 +19,8 @@ args = ap.parse_args()
 REQUIRED = {
     "scene.json": 550_000, "meta.json": 10_000, "about_body.html": 3_000,
     "dem.json": 120_000, "dem_wide.json": 350_000, "dem_south.json": 120_000, "dem_city.json": 620_000,
-    "dem_nw.json": 140_000, "wwb.json": 400, "wide_names.json": 3_000, "facade_palette.json": 300,
-    "wide.b64": 4_800_000, "city.b64": 8_200_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "traffic.b64": 100_000,
+    "dem_nw.json": 140_000, "wwb.json": 250, "city_limit.json": 2_500, "wide_names.json": 3_000, "facade_palette.json": 300,
+    "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_000_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "traffic.b64": 100_000,
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
     "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000,
 }
@@ -29,7 +29,7 @@ MAX_HTML = 25_000_000   # runaway-growth tripwire (the page is ~23 MB; the old 1
 # bytes): DEFLATE then sees two smooth streams instead of one interleaved mess,
 # 22% off the gzipped page with no packer change. app.js's unb64() re-interleaves.
 # traffic.b64 grows 5% shuffled (short deltas), so it stays interleaved.
-PLANAR = {"wide.b64": "WIDE", "city.b64": "CITY", "trees.b64": "TREES", "poles.b64": "POLES"}
+PLANAR = {"wide.b64": "WIDE", "city.b64": "CITY", "outskirts.b64": "OUTSKIRTS", "trees.b64": "TREES", "poles.b64": "POLES"}
 SIZES = []   # (label, bytes) for the report
 
 def path_of(name):
@@ -118,6 +118,10 @@ const("WIDE_NAMES", text_of("wide_names.json", "null"))
 # far ring: the rest of Philadelphia (city.b64 at 0.7 m units + 150 m DEM)
 const("DEM_CITY", dem_of("dem_city.json", 1))
 let_blob("CITY_B64", "city.b64")
+# the towns across the city line (outskirts.b64 at 1.0 m units, pack_outskirts.py) and the
+# flight limit (city_limit.json: the city line buffered 2 km, fetch_boundary.py)
+let_blob("OUTSKIRTS_B64", "outskirts.b64")
+const("CITY_LIMIT", text_of("city_limit.json", "null"))
 # Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the legacy color pipeline)
 const("FACADE_PAL", text_of("facade_palette.json", "null"))
 # street-name labels (bake_street_labels.py — the packed road formats carry no names)

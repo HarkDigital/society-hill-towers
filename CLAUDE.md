@@ -6,7 +6,7 @@ ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flight
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (VPS) and
 https://harkdigital.github.io/society-hill-towers/ (Pages). Everything is in `3d-model/`;
 `app.js` (~11,000 lines, one IIFE) is the whole application, `build.py` inlines it with the
-data into `society-hill-towers.html` (22.83 MB raw / 9.77 MB gzip). The old claude.ai
+data into `society-hill-towers.html` (24.08 MB raw / 10.29 MB gzip). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -15,7 +15,9 @@ x = east, z = south, y = up, metres. Origin = the towers' centroid, 39.94547 N, 
 (`x = (lon − lon0)·111320·cos(lat0)`, `z = −(lat − lat0)·110574`). City Hall is at
 (−1603, −802). Every scene json, packed blob and hard-coded position uses this frame. The
 street grid is ~10° off the axes: use the fitted Front St line (`fl`/`ryG`), never raw x.
-`siteY(x, z, 'ground'|'road')` is the one function that puts anything on the terrain.
+`siteY(x, z, 'ground'|'road')` is the one function that puts anything on the terrain. The
+flight limit is the city line buffered 2 km (`city_limit.json`, `insideLimit`/`clampLimit`):
+the camera never leaves it, the towns beyond it are scenery.
 
 ## Commands
 
@@ -47,7 +49,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
 - Owner decisions that stand until Mike says otherwise: landmark labels OFF by default (the
   citywide tier is behind the L key); the About panel stays out of the bar (the "Credits" link in the bottom credit line opens it); fly is the only mode
   (orbit is the attract loop, walk is `__dbg.goWalk` only); SEPTA/Indego markers are occluded
-  by buildings, neighborhood names and the search pin are not.
+  by buildings, neighborhood names and the search pin are not; a search result glides in and
+  circles its spot until the first input takes flight (live buses are followed, not circled).
 - Commit the built page with the source. Do not push or deploy unless asked.
 
 ## URL flags
@@ -64,8 +67,8 @@ readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
 `app.js` reads top to bottom with `// ---- banner` comments (grep them): config, dom,
 helpers, lighting & sky, data-driven build, overpasses, living water, terrain, ground/water/
 roads/parks, the city fabric (facade shader), landmark spires, researched landmark models,
-museum ships, the three towers, the outer districts (`wide.b64`), the far ring (`city.b64`),
-trees, labels, controls, modes & viewpoints, live SEPTA transit, layers panel, street names,
+museum ships, the three towers, the outer districts (`wide.b64`), the far ring and the towns
+across the city line (`city.b64` and `outskirts.b64`, one `raiseRing()` decoder), trees, labels, controls, modes & viewpoints, live SEPTA transit, layers panel, street names,
 places, address search, live Indego, live flights, live ships, traffic, streetlights, solar
 clock + weather, build & loop. Build steps are `step('Name', fn)` calls run in order by
 `build()`. `template.html` is the chrome, `style.css` the HUD + embedded Montserrat,

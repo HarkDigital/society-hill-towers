@@ -87,5 +87,36 @@ class TierOverlap(unittest.TestCase):
         self.assertEqual([], deep, '%d far-ring buildings sit well inside the wide box: %s' % (len(deep), deep[:10]))
 
 
+
+class OutskirtsHandoff(unittest.TestCase):
+    """outskirts.b64 (pack_outskirts.py) carries only what no older fetch box owns: every
+    building centroid lies inside the far-ring box and outside fetch_city's six boxes,
+    the wide box and the south box (in lat/lon, converted through philly_frame)."""
+
+    OWNED_LL = [
+        (39.860, 39.990, -75.285, -75.185), (39.986, 40.050, -75.190, -75.060), (40.050, 40.140, -75.130, -74.955),
+        (39.990, 40.100, -75.285, -75.190), (39.915, 40.050, -75.118, -74.990), (40.050, 40.100, -75.190, -75.130),
+        (39.915, 39.986, -75.188, -75.118),
+        (39.890, 39.9155, -75.190, -75.118),   # fetch_south's box only as far east as pack_wide packs it
+    ]
+
+    def test_outskirts_buildings_outside_owned_boxes(self):
+        C.require(self, 'outskirts.b64')
+        import sys
+        sys.path.insert(0, str(C.MODEL))
+        from philly_frame import LON0, LAT0, KX, KZ
+        owned = [((w - LON0) * KX, (e - LON0) * KX, (LAT0 - n) * KZ, (LAT0 - s) * KZ) for s, n, w, e in self.OWNED_LL]
+        x0, x1, z0, z1 = C.CITY_BOX
+        s = C.walk_scene('outskirts.b64')
+        bad_in, bad_owned = 0, 0
+        for rec in s['buildings']:
+            cx, cz = C.mean_centroid(rec[-1])
+            if not (x0 - 5 <= cx <= x1 + 5 and z0 - 5 <= cz <= z1 + 5):
+                bad_in += 1
+            elif any(b[0] + 5 <= cx <= b[1] - 5 and b[2] + 5 <= cz <= b[3] - 5 for b in owned):
+                bad_owned += 1
+        self.assertEqual(0, bad_in, '%d outskirts buildings outside the far-ring box' % bad_in)
+        self.assertEqual(0, bad_owned, '%d outskirts buildings inside a box another tier packs' % bad_owned)
+
 if __name__ == '__main__':
     unittest.main()

@@ -21,6 +21,10 @@ except Exception:
 LAST = {'mirror': ''}   # the mirror that answered the last successful fetch (for provenance)
 MIRRORS = ['https://overpass-api.de/api/interpreter', 'https://overpass.kumi.systems/api/interpreter',
            'https://overpass.private.coffee/api/interpreter']
+# OVERPASS_MIRRORS=url[,url] pins the rotation for one run (a mirror that answers 504s or hangs
+# for minutes stalls a fetch, since retries rotate through it again and again)
+if os.environ.get('OVERPASS_MIRRORS'):
+    MIRRORS = [u.strip() for u in os.environ['OVERPASS_MIRRORS'].split(',') if u.strip()]
 USER_AGENT = 'sht-3d-model/1.0'
 
 

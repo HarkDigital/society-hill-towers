@@ -13,7 +13,7 @@ except ImportError:
 
 PAGE = 'society-hill-towers.html'
 PAGE_LIMIT_MB = 25
-EMBEDDED = {'WIDE_B64': 'wide.b64', 'CITY_B64': 'city.b64', 'TREES_B64': 'trees.b64',
+EMBEDDED = {'WIDE_B64': 'wide.b64', 'CITY_B64': 'city.b64', 'OUTSKIRTS_B64': 'outskirts.b64', 'TREES_B64': 'trees.b64',
             'TRAFFIC_B64': 'traffic.b64', 'POLES_B64': 'poles.b64'}
 
 
