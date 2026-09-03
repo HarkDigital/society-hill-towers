@@ -57,7 +57,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
   Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
   and `pack_wide.py` insets any record whose wall shares a plane with a larger one; the look leans toward
-  Cities: Skylines (brighter fill, saturated palettes, rooftop clutter on desktop, awnings), never its assets; a search result glides in and
+  Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, a deep-blue sky with lit cumulus,
+  a strong key and blue haze, saturated palettes, rooftop clutter on desktop, awnings), never its assets; a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
   The clock is never remembered: every load is Philadelphia's own time, and only a copied
   link carries a pinned clock. The two stadiums are built after the wide loop from

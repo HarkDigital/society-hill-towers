@@ -2484,6 +2484,29 @@ footprints), so the round borrows what gives the game its look, in the order tha
   the top 0.3 m), frames heavier (0.22 / 0.2 instead of 0.16 / 0.14), and every storefront
   bay wears an awning at 3.45 m in red, green, blue or cream by the bay's hash.
 
+- Mike, with a photo of a sunlit glass-and-stone skyline: "I dont think you are getting
+  me... I want a full rework of building styles. I also want the sky and lighting to take
+  it's cues from the Cities Skylines 2 style." Three things, none of them a nudge:
+  - Every window in the city reflects. `cityMat` now sets roughness 0.16 and metalness
+    0.8 per fragment where the facade chain found glass (`shtGlass`, hooked into
+    `roughnessmap_fragment` and `metalnessmap_fragment`), with envMapIntensity 0.9 (was
+    0.25), so the sky, the sun and the PMREM skyline come back in the window grids while
+    the walls stay matte. The glass takes a tint per building (blue, teal, bronze, grey,
+    green on the tower styles, a dark blue-grey on the rows) from a 28 m hash of the
+    wall's position, and the lit variation rides on top.
+  - Windows sit in the wall: `revealShade` reads the sun (uSunW, the live sunDir) against
+    the wall's tangent and normal and throws the jamb's shadow onto the glass on the sun's
+    side and the head's shadow under the top, deeper the higher the sun and the more the
+    wall faces it, with a faint ambient rim; applied in the rowhouse family, the curtain
+    grid and the precast grid. Walls also darken over their bottom 5 m (ground contact).
+  - The sky: zenith 0x2d68c8 and horizon 0xc2d8ee (deeper, more saturated), a 0.6 gradient
+    exponent, a wider warm glow round the sun, cumulus from a four-octave fbm on the sky
+    plane with a second sample toward the sun lighting the tops and shading the bases and
+    the thick cores a shade darker, cover still from the live weather. The haze goes blue
+    (0xcdd8e6, was sand) and the fog to 1700..6200 m for the game's clear air. Lighting:
+    sun 1.82, hemi 0.10 + 0.40 dayF, exposure 0.94 + 0.11 dayF, sun colour 0xffe5b8: a
+    stronger key and less fill, the contrast in his photo.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

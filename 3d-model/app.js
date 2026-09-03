@@ -38,11 +38,11 @@
     pier: 0x8f8a7d,
     trunk: 0x5b4a38,
     bronze: 0x4d3b26,
-    skyZenith: 0x4279c4,
-    skyHorizon: 0xc8dcea,
+    skyZenith: 0x2d68c8,
+    skyHorizon: 0xc2d8ee,
     skyGround: 0xa9b3ba,   // below-horizon haze — from altitude the dome shows past the world's edge
-    haze: 0xdfd4b8,
-    sun: 0xffe9c4,
+    haze: 0xcdd8e6,       // aerial perspective goes blue, not sand
+    sun: 0xffe5b8,
   };
 
   const LABEL_FADE = [540, 880];
@@ -157,8 +157,8 @@
   renderer.shadowMap.needsUpdate = true;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(COLORS.haze, 1250, 4200);
-  const fogBase = { near: 1250, far: 4200 };   // clear-air distances; weather shrinks them live (applyLighting)
+  scene.fog = new THREE.Fog(COLORS.haze, 1700, 6200);
+  const fogBase = { near: 1700, far: 6200 };   // clear-air distances; weather shrinks them live (applyLighting)
   // custom river spans register their true deck profiles here so the traffic
   // layer can ride the actual roadway instead of a flat guess under the bridge
   const BRIDGE_DECKS = [];
@@ -1030,6 +1030,7 @@
   const hemi = new THREE.HemisphereLight(0xd3deea, 0x8f8166, 0.55);
   scene.add(hemi);
   const sunDir = new V3(-0.62, 0.5, 0.27).normalize(); // replaced each frame by the solar clock
+  const sunWUniform = { value: sunDir };   // the facade shader reads the same vector for its reveals
   let lastAim = { cx: -120, cz: 0, extent: 640 };
   const sun = new THREE.DirectionalLight(COLORS.sun, 1.58);
   sun.castShadow = true;
@@ -1105,11 +1106,11 @@
       // true angle reads like the actual sun.
       '  vec3 nd = normalize(vDir);\n' +
       '  float h = nd.y;\n' +
-      '  vec3 col = h >= 0.0 ? mix(cHorizon, cZenith, pow(h, 0.52)) : mix(cHorizon, cGround, clamp(-h*1.5,0.,1.));\n' +
+      '  vec3 col = h >= 0.0 ? mix(cHorizon, cZenith, pow(h, 0.6)) : mix(cHorizon, cGround, clamp(-h*1.5,0.,1.));\n' +
       '  float s = clamp(dot(nd, uSun), 0.0, 1.0);\n' +
       '  float sunAng = acos(s);\n' +
       '  float disc = 1.0 - smoothstep(0.0085, 0.0118, sunAng);\n' +
-      '  col += cSun * ((disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24) * uSunVis + pow(s, 12.0) * 0.10 * (0.35 + 0.65 * uSunVis));\n' +
+      '  col += cSun * ((disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24 + exp(-sunAng * sunAng * 9.0) * 0.07) * uSunVis + pow(s, 12.0) * 0.10 * (0.35 + 0.65 * uSunVis));\n' +
       // the Moon: a phased disc on the per-fragment normalized direction (nd,
       // never vDir — the coarse dome smears interpolated math, the sun lesson).
       // The terminator ellipse comes straight from the illuminated fraction; its
@@ -1129,14 +1130,23 @@
       '    }\n' +
       '    col += vec3(0.93, 0.94, 0.90) * exp(-mAng * mAng * 2600.0) * 0.10 * uMoonI * uMoonK;\n' +
       '  }\n' +
+      // cumulus: a four-octave fbm on the sky plane, its cover from the weather; a second
+      // sample toward the sun lights the tops and leaves the bases in shade, the thick
+      // cores a shade darker, the whole field fading into the horizon haze
       '  if (h > 0.01 && uCloud > 0.003) {\n' +
-      '    vec2 cp = nd.xz / (h + 0.18) * 1.7 + uCloudOff;\n' +
-      '    float d = cnoise(cp) * 0.55 + cnoise(cp * 2.7 + 13.1) * 0.30 + cnoise(cp * 7.3 + 41.7) * 0.15;\n' +
+      '    vec2 cp = nd.xz / (h + 0.12) * 1.35 + uCloudOff;\n' +
+      '    float f = 0.5 * cnoise(cp) + 0.25 * cnoise(cp * 2.1 + 13.1) + 0.125 * cnoise(cp * 4.3 + 41.7) + 0.0625 * cnoise(cp * 8.9 + 7.7);\n' +
       '    float cov = clamp(uCloud, 0.0, 1.0);\n' +
-      '    float m = smoothstep(1.0 - cov * 0.88 - 0.06, min(1.0, 1.06 - cov * 0.5), d);\n' +
-      '    float horiz = smoothstep(0.02, 0.15, h);\n' +
-      '    vec3 cc = mix(vec3(0.985, 0.99, 1.0), vec3(0.60, 0.64, 0.70), cov * 0.8) * uCloudLight;\n' +
-      '    col = mix(col, cc, m * horiz * 0.92);\n' +
+      '    float thr = 0.60 - cov * 0.40;\n' +
+      '    float m = smoothstep(thr, thr + 0.14, f);\n' +
+      '    vec2 sd = normalize(uSun.xz + vec2(1e-4, 0.0)) * 0.045;\n' +
+      '    float f2 = 0.5 * cnoise(cp + sd) + 0.25 * cnoise((cp + sd) * 2.1 + 13.1) + 0.125 * cnoise((cp + sd) * 4.3 + 41.7);\n' +
+      '    float lit = clamp((f2 - f) * 7.0 + 0.55, 0.0, 1.0) * clamp(uSun.y * 3.0, 0.0, 1.0);\n' +
+      '    float dens = smoothstep(thr, thr + 0.34, f);\n' +
+      '    vec3 cc = mix(vec3(0.60, 0.65, 0.72), vec3(0.985, 0.99, 1.0), lit) * uCloudLight;\n' +
+      '    cc = mix(cc, vec3(0.74, 0.77, 0.82) * uCloudLight, dens * (0.35 + 0.4 * cov));\n' +
+      '    float horiz = smoothstep(0.02, 0.16, h);\n' +
+      '    col = mix(col, cc, m * horiz * (0.86 + 0.1 * cov));\n' +
       '  }\n' +
       '  col += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * ' + SKY_DITHER.toFixed(7) + ';\n' +
       '  gl_FragColor = vec4(col, 1.0);\n' +
@@ -2928,9 +2938,10 @@
   const detFarUniform = { value: isTouch ? 0.55 : 1.0 };
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
   const groundMats = [];   // bare-earth planes retinted by time of day (pale day tone reads as water at dusk/night)
-  const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.25, dithering: MAT_DITHER });
+  const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9, dithering: MAT_DITHER });
   {
     cityMat.onBeforeCompile = (shader) => {
+      shader.uniforms.uSunW = sunWUniform;
       shader.uniforms.uNight = nightUniform;
       shader.uniforms.uDetFar = detFarUniform;
       cityMat.userData.shader = shader;
@@ -2944,6 +2955,20 @@
           'uniform float uDetFar;',
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;',
           'float shtLit = 0.0;',
+          'float shtGlass = 0.0;',
+          'uniform vec3 uSunW;',
+          // a window's reveal: the jamb on the sun's side and the head throw a shadow onto the
+          // glass beside them, deeper the higher the sun and the more the wall faces it, plus a
+          // faint ambient rim; returns the darkening for a window rect centred c of size sz
+          'float revealShade(vec2 m, vec2 c, vec2 sz, float mask, float sunT, float sunE, float sunN) {',
+          '  float sgn = sunT >= 0.0 ? 1.0 : -1.0;',
+          '  float dEdge = sz.x * 0.5 - sgn * (m.x - c.x);',
+          '  float dHead = (c.y + sz.y * 0.5) - m.y;',
+          '  float jam = 1.0 - smoothstep(0.0, 0.06 + 0.3 * abs(sunT), dEdge);',
+          '  float head = 1.0 - smoothstep(0.0, 0.08 + 0.34 * sunE, dHead);',
+          '  float rim = 1.0 - smoothstep(0.0, 0.1, min(dHead, dEdge));',
+          '  return mask * (sunN * max(jam, head) * 0.55 + rim * 0.22);',
+          '}',
           'float shtHash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
           'float rectM(vec2 m, vec2 c, vec2 s, float aa){ vec2 d = abs(m - c) - s * 0.5; return 1.0 - smoothstep(-aa, aa, max(d.x, d.y)); }',
           'float archM(vec2 m, vec2 c, float w, float h, float aa){ float r = w * 0.5; float dR = max(abs(m.x - c.x) - r, max(c.y - m.y, m.y - (c.y + h - r))); float dC = max(length(vec2(m.x - c.x, m.y - (c.y + h - r))) - r, (c.y + h - r) - m.y); return 1.0 - smoothstep(-aa, aa, min(dR, dC)); }',
@@ -2967,6 +2992,8 @@
           // detail fade keys off the vertical derivative only: fwidth(uW) explodes on
           // edge-on walls and used to blank whole facades at grazing angles. detU still
           // gates the BINARY per-column terms (shutters/doors) that would shimmer there.
+          '    vec2 perpW = vec2(-normalize(n.xz).y, normalize(n.xz).x);',
+          '    float sunT = dot(uSunW.xz, perpW), sunE = max(uSunW.y, 0.0), sunN = clamp(dot(n, uSunW), 0.0, 1.0);',
           '    float det = clamp(1.0 - (0.6 * fwidth(v) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    bool tower = (st == 2 || st == 6 || st == 7 || (st >= 14 && st <= 18));',
           '    if (tower) det = max(det, clamp(1.0 - (0.6 * fwidth(v) * uDetFar - 0.5) / 1.6, 0.0, 1.0));',
@@ -3030,6 +3057,7 @@
           '        wm = 0.0; glass = sg;',
           '      }',
           '      col = mix(col, gc, wm * 0.9);',
+          '      col *= 1.0 - revealShade(m, vec2(0.0, 1.55), vec2(pitch * 0.74, 1.95), wm, sunT, sunE, sunN);',
           '      col = mix(col, gc * 0.6, wm * (1.0 - smoothstep(0.03, 0.03 + aa, abs(m.x))) * 0.8);',
           '      col *= 1.0 - 0.10 * det * rectM(m, vec2(0.0, 0.38), vec2(pitch, 0.44), aa);',
           '      glass = max(glass, wm);',
@@ -3095,6 +3123,7 @@
           '      lit = 0.45 + 0.55 * shtHash(cell * 2.3 + 9.0);',
           '      vec3 gc = vec3(0.07, 0.08, 0.10) + vec3(0.10, 0.09, 0.07) * lit;',
           '      col = mix(col, gc, win * 0.9);',
+          '      col *= 1.0 - revealShade(m, vec2(0.0, fp * 0.5 + 0.1), vec2(pitch - 1.0, fp - 1.15), win, sunT, sunE, sunN);',
           '      col *= 1.0 - 0.28 * shade;',
           '      glass = win;',
           '    } else if (st == 17) {',
@@ -3210,7 +3239,7 @@
           '      col = mix(col, stoneCol, max(lintel, sillM) * 0.8);',
           '      col = mix(col, frameCol, frame * 0.9);',
           '      col = mix(col, gc, win * 0.92);',
-          '      col *= 1.0 - 0.38 * win * (1.0 - smoothstep(0.0, 0.3, sill + wh - m.y));',
+          '      col *= 1.0 - revealShade(m, vec2(0.0, sill + wh * 0.5), vec2(ww, wh), win, sunT, sunE, sunN);',
           '      col = mix(col, frameCol, mun * 0.85);',
           '      col = mix(col, shCol, shut * shOn * 0.9);',
           '      float door = rectM(m, vec2(0.0, 1.45), vec2(1.0, 2.2), aa) * isDoor;',
@@ -3256,6 +3285,14 @@
           '        glass = max(glass, pw);',
           '      }',
           '    }',
+          // glass: a tint per building (blue, teal, bronze, grey, green for the towers, a dark
+          // blue-grey for the rows), and the window pixels turn reflective below: the sky and
+          // the sun come back in every window, which is most of what makes a real tower read
+          '    float bid = shtHash(vec2(floor(vWPos.x / 28.0) * 0.37, floor(vWPos.z / 28.0) * 0.91));',
+          '    vec3 gTint = tower ? (bid < 0.25 ? vec3(0.10, 0.17, 0.26) : (bid < 0.45 ? vec3(0.08, 0.19, 0.20) : (bid < 0.62 ? vec3(0.17, 0.12, 0.08) : (bid < 0.82 ? vec3(0.12, 0.13, 0.15) : vec3(0.09, 0.15, 0.13))))) : vec3(0.07, 0.09, 0.12);',
+          '    col = mix(col, gTint * (0.75 + 0.5 * lit), glass * 0.9);',
+          '    shtGlass = glass * det * (tower ? 1.0 : 0.75);',
+          '    col *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 5.0, v));',
           '    // far away the pattern averages to the true facade mix — curtain-wall',
           '    // styles are ~half glass, so they must converge to a visibly darker',
           '    // average instead of washing back to the pale wall color',
@@ -3275,6 +3312,8 @@
           '  }',
           '}',
         ].join('\n'))
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.16, shtGlass);')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.8, shtGlass);')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.76, 0.46) * shtLit * uNight * 1.3;');
     };
   }
@@ -12017,7 +12056,7 @@
     WXFX.dayF = dayF;   // the particle boxes dim toward night with the sky
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 1.56 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
+      sun.intensity = 1.82 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
       glintDir.copy(sp.dir);
     } else if (mp.el > 2) {
@@ -12084,13 +12123,13 @@
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xdde7f2), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
     if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x9c8e74), dayF);
-    hemi.intensity = (0.12 + 0.50 * dayF) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
+    hemi.intensity = (0.10 + 0.40 * dayF) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
     // bare ground follows the light: near-black at night, warm dark earth through
     // twilight, the pale sage only in daylight — the fixed pale tone read as water
     _c1.set(0x232321).lerp(_c2.set(0x55503f), twi).lerp(_c2.set(COLORS.ground), dayF);
     _c1.multiplyScalar(1 - 0.15 * WX.cover);   // flat light: the bare flats go earthier, not chalk
     for (const gm of groundMats) gm.color.copy(_c1);   // (snow cover now lands via the wxSurfacePatch shader pass)
-    renderer.toneMappingExposure = 0.93 + 0.10 * dayF;
+    renderer.toneMappingExposure = 0.94 + 0.11 * dayF;
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(0x2c2822)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
