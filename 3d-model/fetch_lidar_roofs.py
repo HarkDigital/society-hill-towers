@@ -28,13 +28,23 @@ class 2/7/8/9/18 into a 1.5 m grid of per-cell MIN (tree-robust); a cell whose
 first-return spread exceeds 4 m is leaf-off canopy and dropped; ground = 3 m mean of
 class 2/8, per building the median within 10/25/60 m pads. AGL percentiles over the
 cells whose centres fall in the footprint eroded by 1 m (>= 8 cells, else form -1
-unresolved); flat when P90 - P10 < 1.0 m; else the gradient of the roof grid (central
-differences inside the un-eroded footprint, one-sided at its edge so a 3-cell-wide
-rowhouse still has a cross-slope) gives axial aspect statistics: R2 >= 0.5 gable
-(two opposite aspects), else R4 >= 0.5 hip (four), ridge angle = dominant gradient
-direction + 90 degrees, rotated into the model frame; eave = P10, ridge = P95, and a
-rise outside 0.8..8 m falls back to flat. A building straddling tiles is measured in
-each and the merge keeps the record with the most cells.
+unresolved). The form needs >= 6 INTERIOR cells (central differences from eroded
+cells on both sides), else -1: a 4.5 m rowhouse is one or two cells wide at this
+resolution and cannot be measured, and an honest -1 keeps the packers' tag / lottery
+fallback, where a wrong "measured flat" would switch the lottery off. Cells that
+straddle a wall are never used for slopes (a 3 m wall drop over a 1.5 m cell reads as
+slope 1.0, a plausible roof, which is how the first pass turned 22 % of the core's
+flat rowhouses into gables). Then: flat when P90 - P10 < 1.0 m; flat when under 40 %
+of the interior cells carry a roof slope (0.22..2.2, a level roof with bulkheads);
+else axial aspect statistics of the gradient: R2 >= 0.6 gable (two opposite aspects),
+else R4 >= 0.6 hip (four), else -1 (sloped but no clear axis). Ridge angle = dominant
+gradient direction + 90 degrees, rotated into the model frame; eave = P10, ridge = P95;
+a rise outside 0.8..8 m falls back to flat. Validated on the 9 core tiles against
+lidar_core's full-resolution forms (2,735 matched buildings): heights agree within
+1 m for 96 %, ridge angles within 15 degrees for 80 %, pitched precision 0.78 and
+flat precision 0.95 among resolved buildings, 74 % of measurable buildings resolved.
+A building straddling tiles is measured in each and the merge keeps the record with
+the most cells.
 
 Usage:
   python3 fetch_lidar_roofs.py                 # all tiles (north of the core first), then merge
@@ -68,8 +78,11 @@ GC = 3.0                 # ground grid cell (m)
 TARGET_SPACING = 1.8     # finest octree level fetched has spacing <= this (1.6 m on standard tiles)
 AREA_MIN, AREA_MAX = 30.0, 5000.0
 ERODE = 1.0
-MIN_CELLS = 8
+MIN_CELLS = 8            # eroded cells for the height percentiles
+MIN_INTERIOR = 6         # interior cells (central differences) for the form, else unresolved
 FLAT_SPREAD = 1.0        # P90 - P10 below this is flat
+SLOPED_FRAC = 0.4        # fewer sloped interior cells than this share: a level roof with junk
+AXIAL_MIN = 0.6          # R2 (gable) / R4 (hip) axial strength
 AGL_MIN = 1.6            # wall-edge / yard cells
 CANOPY_SPREAD = 4.0      # first-return max - min above this is bare branches
 CORE_NORTH = 4422370.0   # north edge of lidar_core's UTM box
@@ -192,20 +205,6 @@ def frame_rotation(e0, n0):
     return math.atan2(z1 - z0, x1 - x0)
 
 
-def grad_axis(sub, axis):
-    """Gradient along an axis of a NaN-padded grid: central where both neighbours are
-    valid, else one-sided, so edge cells of a narrow building still get a slope."""
-    p = np.pad(sub, 1, constant_values=np.nan)
-    if axis == 1:
-        left, right = p[1:-1, :-2], p[1:-1, 2:]
-    else:
-        left, right = p[:-2, 1:-1], p[2:, 1:-1]
-    g = (right - left) / (2 * C)
-    gf = (right - sub) / C
-    gb = (sub - left) / C
-    return np.where(np.isnan(g), np.where(~np.isnan(gf), gf, gb), g)
-
-
 def long_axis(pg):
     """Angle of the footprint's long axis in the (east, south) plane."""
     cs = list(pg.minimum_rotated_rectangle.exterior.coords)
@@ -233,9 +232,8 @@ def measure(pg, roof, gmean, minx, maxy, NX, NZ, GNX, GNZ, rot):
     xs = minx + (np.arange(ix0, ix1) + 0.5) * C
     ys = maxy - (np.arange(iz0, iz1) + 0.5) * C
     X, Y = np.meshgrid(xs, ys)
-    inA = shapely.contains_xy(pg, X.ravel(), Y.ravel()).reshape(X.shape)
     inE = shapely.contains_xy(er, X.ravel(), Y.ravel()).reshape(X.shape)
-    sub = np.where(inA, roof[iz0:iz1, ix0:ix1], np.nan)
+    sub = np.where(inE, roof[iz0:iz1, ix0:ix1], np.nan)
     # ground: median of the 3 m ground grid within widening pads
     g0 = None
     for pad in (10, 25, 60):
@@ -255,31 +253,44 @@ def measure(pg, roof, gmean, minx, maxy, NX, NZ, GNX, GNZ, rot):
         return [-1, 0, 0, 0, n]
     vals = agl[okE]
     p10, p90, p95 = np.percentile(vals, [10, 90, 95])
+    # slopes from the eroded cells only, central differences only: a cell that straddles
+    # a wall never votes, and a building narrower than three cells is unresolved
+    sub = np.where(okE, roof[iz0:iz1, ix0:ix1], np.nan)
+    gx = np.full(sub.shape, np.nan, np.float32)      # d/d east
+    gz = np.full(sub.shape, np.nan, np.float32)      # d/d south (row 0 is the tile's north edge)
+    gx[:, 1:-1] = (sub[:, 2:] - sub[:, :-2]) / (2 * C)
+    gz[1:-1, :] = (sub[2:, :] - sub[:-2, :]) / (2 * C)
+    valid = okE & ~np.isnan(gx) & ~np.isnan(gz)
+    nv = int(valid.sum())
+    if nv < MIN_INTERIOR:
+        return [-1, 0, 0, 0, n]
     if p90 - p10 < FLAT_SPREAD:
         h = round(float(p90), 1)
         return [0, h, h, 0.0, n]
-    # pitched? gradient over the building's own cells, evaluated at the eroded ones
-    gx = grad_axis(sub, 1)          # d/d east
-    gz = grad_axis(sub, 0)          # d/d south (row 0 is the tile's north edge)
-    valid = okE & ~np.isnan(gx) & ~np.isnan(gz)
     slope = np.hypot(gx, gz)
     rm = valid & (slope > 0.22) & (slope < 2.2)
     nroof = int(rm.sum())
+    if nroof < SLOPED_FRAC * nv:
+        h = round(float(p90), 1)             # a level roof with steps and bulkheads
+        return [0, h, h, 0.0, n]
+    if nroof < 6:
+        return [-1, 0, 0, 0, n]
+    th = np.arctan2(gz[rm], gx[rm])
+    w = np.minimum(slope[rm], 1.2)
+    s2 = np.sum(w * np.exp(2j * th)); s4 = np.sum(w * np.exp(4j * th))
+    v2 = abs(s2) / np.sum(w); v4 = abs(s4) / np.sum(w)
     form, ridge_rad = 0, 0.0
-    if nroof >= 6 and nroof >= 0.22 * valid.sum():
-        th = np.arctan2(gz[rm], gx[rm])
-        w = np.minimum(slope[rm], 1.2)
-        s2 = np.sum(w * np.exp(2j * th)); s4 = np.sum(w * np.exp(4j * th))
-        v2 = abs(s2) / np.sum(w); v4 = abs(s4) / np.sum(w)
-        if v2 >= 0.5:
-            form = 1
-            ridge_rad = (np.angle(s2) / 2 + math.pi / 2) % math.pi
-        elif v4 >= 0.5:
-            form = 2
-            mu4 = np.angle(s4) / 4
-            la = long_axis(pg) % math.pi
-            cand = [(mu4 + k * math.pi / 2) % math.pi for k in range(2)]
-            ridge_rad = min(cand, key=lambda a: min(abs(a - la), math.pi - abs(a - la)))
+    if v2 >= AXIAL_MIN:
+        form = 1
+        ridge_rad = (np.angle(s2) / 2 + math.pi / 2) % math.pi
+    elif v4 >= AXIAL_MIN:
+        form = 2
+        mu4 = np.angle(s4) / 4
+        la = long_axis(pg) % math.pi
+        cand = [(mu4 + k * math.pi / 2) % math.pi for k in range(2)]
+        ridge_rad = min(cand, key=lambda a: min(abs(a - la), math.pi - abs(a - la)))
+    else:
+        return [-1, 0, 0, 0, n]              # sloped, but no clear axis: leave it to the tags
     if form:
         rise = float(p95 - p10)
         if 0.8 <= rise <= 8.0:

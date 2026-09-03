@@ -2223,6 +2223,12 @@ stayed with the lead.
 - **Overture.** Checked through DuckDB in a minute (807k buildings in the box, 2026-08-19
   release): its roof shapes and colours are OSM's tags verbatim, its extra is heights we
   already have from the City's LiDAR. Nothing ships from it.
+- **First LiDAR merge, same night.** 133 of 752 tiles streamed (about 15 MB a tile at the
+  chosen resolution, 1.7 s of processing each): 17,148 buildings resolved, 6,960 gables,
+  1,218 hips, 8,970 measured flats; 18,455 measured forms available to the far ring after
+  the join, 1,706 attached in the outer districts. Fox Chase and Rhawnhurst's twins and
+  singles carry their real gables and hips. Repacked and deployed; the rest of the city
+  follows when the run completes.
 
 ### Facade-accuracy plan status
 
