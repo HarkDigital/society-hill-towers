@@ -597,6 +597,49 @@
     return g;
   }
 
+  // ---- rooftop clutter. The game's roofs are never bare: a parapet lip round the edge, HVAC
+  // boxes in a loose row, a stair bulkhead on the taller buildings, a water tank on the older
+  // commercial roofs, a chimney on the flat rowhouse. `add(ring, y0, y1, hex, style, holes)`
+  // is the tier's own wall builder. Desktop only: the extra vertices are a fifth of a phone's.
+  function insetRing(ring, d) {
+    const n = ring.length; let a2 = 0;
+    for (let i = 0; i < n; i++) a2 += ring[i][0] * ring[(i + 1) % n][1] - ring[(i + 1) % n][0] * ring[i][1];
+    const sgn = a2 > 0 ? 1 : -1, out = [];
+    for (let i = 0; i < n; i++) {
+      const p0 = ring[(i + n - 1) % n], p1 = ring[i], p2 = ring[(i + 1) % n];
+      const L1 = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]) || 1e-9, L2 = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) || 1e-9;
+      const n1x = -(p1[1] - p0[1]) / L1 * sgn, n1z = (p1[0] - p0[0]) / L1 * sgn, n2x = -(p2[1] - p1[1]) / L2 * sgn, n2z = (p2[0] - p1[0]) / L2 * sgn;
+      const dot = n1x * n2x + n1z * n2z, k = 1 + dot > 0.3 ? d / (1 + dot) : d;
+      out.push([p1[0] + (n1x + n2x) * k, p1[1] + (n1z + n2z) * k]);
+    }
+    return out;
+  }
+  function roofClutter(add, poly, base, h, area, t, fa, seed, wallC, far) {
+    if (isTouch || h < 5) return;
+    const ob = orientedBox(poly), ax = obbAxis(ob);
+    if (ax.hs < 2.2) return;
+    const top = base + h;
+    const at = (u, v) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v];
+    const rect = (u, v, w, d) => [at(u - w / 2, v - d / 2), at(u + w / 2, v - d / 2), at(u + w / 2, v + d / 2), at(u - w / 2, v + d / 2)];
+    const r1 = hash01(seed * 3.1 + 0.2), r2 = hash01(seed * 5.7 + 0.4), r3 = hash01(seed * 7.3 + 0.6);
+    if (area < 160) {   // a rowhouse: a chimney on the party wall, a third of them
+      if (!far && r1 < 0.32 && ax.hl > 5) add(rect((r2 - 0.5) * ax.hl * 1.1, (r3 < 0.5 ? -1 : 1) * (ax.hs - 0.5), 0.7, 0.6), top - 0.2, top + 1.0 + r2 * 0.5, 0x6a4a3c, 3, null);
+      return;
+    }
+    if (far && (area < 600 || h < 8)) return;
+    const darkHex = wallC.clone().multiplyScalar(0.7).getHex();
+    if (!far && area > 400 && poly.length <= 24) add(poly, top - 0.05, top + 0.45, darkHex, 3, [insetRing(poly, 0.35)]);   // the parapet lip
+    const nH = Math.min(far ? 3 : 4, Math.floor(area / 450) + (r1 < 0.5 ? 1 : 0));
+    for (let k = 0; k < nH; k++) {
+      const u = ((k + 0.5) / nH - 0.5) * ax.hl * 1.3 + (hash01(seed * 1.7 + k) - 0.5) * 3, v = (hash01(seed * 2.9 + k) - 0.5) * ax.hs * 0.9;
+      add(rect(u, v, 2.2 + hash01(seed + k) * 1.4, 1.5), top, top + 0.9 + hash01(seed * 4.3 + k) * 0.6, 0x8d8f8c, 3, null);
+    }
+    if (h > 10 && area > 350) add(rect(ax.hl * 0.55 * (r2 < 0.5 ? -1 : 1), ax.hs * 0.3 * (r3 < 0.5 ? -1 : 1), 4.5, 3.2), top, top + 2.6, darkHex, 3, null);   // the stair bulkhead
+    if ((t === 3 || t === 4) && fa && fa[2] <= 3 && r1 < 0.25 && ax.hs > 4) {   // a water tank
+      const oct = []; for (let k = 0; k < 8; k++) { const an = k / 8 * Math.PI * 2; oct.push(at(-ax.hl * 0.3 + Math.cos(an) * 1.7, ax.hs * 0.2 + Math.sin(an) * 1.7)); }
+      add(oct, top + 1.6, top + 4.6, 0x4a3a30, 3, null);
+    }
+  }
   // ---- pitched roofs for the packed tiers (outer districts, far ring, outskirts). The roof
   // word carries a form (0 unresolved, 1 gable, 2 hip, 3 skillion, 4 measured or tagged
   // flat) and a rise in half metres from the LiDAR streaming pass or the OSM roof:shape tag;
@@ -2491,18 +2534,18 @@
 
   // ------------------------------------------------ the city fabric
   const buildingPalette = {
-    worship: [0xb3a68e, 0x9d8e77],
-    church: [0xb3a68e, 0x9d8e77],
-    school: [0xa89a82, 0xb0a28a],
-    civic: [0xa89a82, 0xb0a28a],
-    garage: [0x8a8578, 0x94907f],
-    parking: [0x8a8578, 0x94907f],
-    retail: [0x9d968a, 0xa8a191],
-    commercial: [0x9d968a, 0x8f887b],
-    office: [0x9d968a, 0x8f887b],
-    hotel: [0xa39a8a, 0xb0a695],
-    brick: [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xa05f47],
-    painted: [0xb8a894, 0xc4b49b, 0xa79a86],
+    worship: [0xccb595, 0xb39b7d],
+    church: [0xccb595, 0xb39b7d],
+    school: [0xc0a888, 0xc9b191],
+    civic: [0xc0a888, 0xc9b191],
+    garage: [0x9d917e, 0xa99d85],
+    parking: [0x9d917e, 0xa99d85],
+    retail: [0xb3a491, 0xc0af98],
+    commercial: [0xb3a491, 0xa39481],
+    office: [0xb3a491, 0xa39481],
+    hotel: [0xbaa891, 0xc9b59c],
+    brick: [0xb16246, 0xa35843, 0xbc7452, 0x8e513d, 0xa95940, 0xb6684b],
+    painted: [0xd2b79b, 0xdfc4a3, 0xbea88d],
   };
   const highrisePool = [0x8f8d84, 0x9aa0a4, 0xb3aca0, 0x83817c, 0xa39d92];
   // ---- Tier-1 facade attributes: OPA parcel classes + sampled roof palette ----
@@ -2513,15 +2556,15 @@
   const ROOF_PAL = (typeof FACADE_PAL !== 'undefined' && FACADE_PAL && FACADE_PAL.roof)
     ? FACADE_PAL.roof.map(cc => new THREE.Color(roofInv(cc[0]), roofInv(cc[1]), roofInv(cc[2]))) : null;
   const OPA_POOLS = {
-    masOld: [0x8f5140, 0x9b5a43, 0x7d4a3a, 0x94523d, 0x86503f, 0xa05f47],
-    mas1900: [0x9b5a43, 0xa56a4e, 0x9a6b55, 0x8d5a45, 0x965c46],
-    masPost: [0xa56a4e, 0xb07a58, 0x9a7a62, 0xa88a70, 0x8d8478],
-    masMod: [0x8a5f4a, 0x9c8874, 0xa89272, 0x8d8a86],
-    frame: [0xb8a894, 0xc4b49b, 0xa8a494, 0x9aa08f, 0xb0b4ac, 0xc0bcae],
-    stone: [0x8a8274, 0x7b7365, 0x948c7c, 0x6e685c],
-    mixed: [0x9d968a, 0x9a6b55, 0x8f887b, 0xa89a86],
-    com: [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c],
-    ind: [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48],
+    masOld: [0xa35843, 0xb16246, 0x8e513d, 0xa95940, 0x995742, 0xb6684b],
+    mas1900: [0xb16246, 0xbc7452, 0xb07559, 0xa16248, 0xab644a],
+    masPost: [0xbc7452, 0xc9855c, 0xb08567, 0xc09676, 0xa1907e],
+    masMod: [0x9d684e, 0xb2947a, 0xc09f78, 0xa1968d],
+    frame: [0xd2b79b, 0xdfc4a3, 0xc0b39b, 0xb0ae96, 0xc9c4b5, 0xdbcdb7],
+    stone: [0x9d8e7a, 0x8c7d6a, 0xa99982, 0x7d7161],
+    mixed: [0xb3a491, 0xb07559, 0xa39481, 0xc0a88d],
+    com: [0xb3a491, 0xa39481, 0xc0af98, 0x958d82],
+    ind: [0x9d8978, 0x8c7d70, 0xb29f8d, 0xa2624c],
   };
   // fa = [use, mat, era, stories] -> wall color pool (null = keep the type logic)
   function opaWallPool(fa) {
@@ -2908,6 +2951,7 @@
         .replace('#include <color_fragment>', [
           '#include <color_fragment>',
           '{',
+          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, 1.2);',
           '  vec3 n = normalize(vWNorm);',
           '  float stF = vStyle + 0.5;',
           '  float variantF = floor(stF / 32.0);',
@@ -3155,7 +3199,7 @@
           '      float sashOn = (1.0 - max(isDoor, max(isArch, max(isShop, porch)))) * okRow;',
           '      float segCut = 1.0 - smoothstep(sill + wh + 0.2, sill + wh + 0.2 + aa, m.y);',
           '      float win = max(rectM(m, vec2(0.0, sill + wh * 0.5), vec2(ww, wh), aa), float(st == 9) * archM(m, vec2(0.0, sill), ww, wh + ww * 0.5, aa) * segCut) * sashOn;',
-          '      float frame = (max(rectM(m, vec2(0.0, sill + wh * 0.5), vec2(ww + 0.16, wh + 0.14), aa), float(st == 9) * archM(m, vec2(0.0, sill - 0.07), ww + 0.16, wh + ww * 0.5 + 0.14, aa) * (1.0 - smoothstep(sill + wh + 0.34, sill + wh + 0.34 + aa, m.y))) - win) * sashOn;',
+          '      float frame = (max(rectM(m, vec2(0.0, sill + wh * 0.5), vec2(ww + 0.22, wh + 0.2), aa), float(st == 9) * archM(m, vec2(0.0, sill - 0.1), ww + 0.22, wh + ww * 0.5 + 0.2, aa) * (1.0 - smoothstep(sill + wh + 0.34, sill + wh + 0.34 + aa, m.y))) - win) * sashOn;',
           '      vec2 wl = vec2((m.x + ww * 0.5) / ww, (m.y - sill) / wh);',
           '      float mun = win * max(1.0 - smoothstep(0.028, 0.028 + aa, abs(wl.x - 0.5)), max(1.0 - smoothstep(0.02, 0.02 + aa, abs(wl.y - 0.5)), max(1.0 - smoothstep(0.016, 0.016 + aa, abs(wl.y - 0.25)), 1.0 - smoothstep(0.016, 0.016 + aa, abs(wl.y - 0.75)))));',
           '      float lintel = rectM(m, vec2(0.0, sill + wh + 0.2), vec2(ww + 0.4, 0.24), aa) * sashOn * brickish * float(st != 11 && st != 9);',
@@ -3166,6 +3210,7 @@
           '      col = mix(col, stoneCol, max(lintel, sillM) * 0.8);',
           '      col = mix(col, frameCol, frame * 0.9);',
           '      col = mix(col, gc, win * 0.92);',
+          '      col *= 1.0 - 0.38 * win * (1.0 - smoothstep(0.0, 0.3, sill + wh - m.y));',
           '      col = mix(col, frameCol, mun * 0.85);',
           '      col = mix(col, shCol, shut * shOn * 0.9);',
           '      float door = rectM(m, vec2(0.0, 1.45), vec2(1.0, 2.2), aa) * isDoor;',
@@ -3186,6 +3231,11 @@
           '      float shop = rectM(m, vec2(0.0, 1.7), vec2(1.5, 2.5), aa) * isShop;',
           '      col = mix(col, vec3(0.18, 0.17, 0.16), shopF * 0.9);',
           '      col = mix(col, gc * 1.3, shop * 0.9);',
+          '      float awnOn = float(st == 5) * inWall * det * step(v, 4.0);',
+          '      float awn = rectM(m, vec2(0.0, 3.45), vec2(pitch * 0.94, 0.5), aa) * awnOn;',
+          '      float ah = shtHash(vec2(cell.x * 0.53, 4.7));',
+          '      vec3 awnCol = ah < 0.3 ? vec3(0.55, 0.12, 0.10) : (ah < 0.55 ? vec3(0.10, 0.30, 0.18) : (ah < 0.75 ? vec3(0.10, 0.18, 0.40) : vec3(0.72, 0.66, 0.50)));',
+          '      col = mix(col, awnCol, awn * 0.95);',
           '      glass = max(win, max(fanIn, max(arch, shop)));',
           '      if (st == 9 || st == 11) {',
           '        float corn = (1.0 - smoothstep(0.0, aa, abs(v - (wallTop - 0.42)) - 0.42)) * float(local) * inWall * det;',
@@ -4494,9 +4544,9 @@
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       const cast = Math.max(b - r, g - Math.max(r, b));
       if (cast > 0) { const f = Math.min(1, cast / Math.max(1e-4, 0.12 * lum)); r += (lum - r) * f; g += (lum - g) * f; b += (lum - b) * f; }
-      const lift = Math.pow(Math.max(lum, 0.01), 0.6);
+      const lift = Math.pow(Math.max(lum, 0.01), 0.56);
       const gain = lift / Math.max(lum, 1e-4);
-      const warm = r > g && g >= b ? 1.25 : 1.0;
+      const warm = r > g && g >= b ? 1.6 : 1.0;
       r = lift + (r * gain - lift) * warm; g = lift + (g * gain - lift) * warm; b = lift + (b * gain - lift) * warm;
       return new THREE.Color(Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)));
     };
@@ -4590,9 +4640,9 @@
     // its colour at the two ground verts, full colour at the eave, so the GPU draws a
     // base-to-eave gradient like the core's mergeColored ao ramp (1.0 disables)
     const RING_AO = 0.78;
-    const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
-    const palCom = [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c, 0x9aa0a4, 0xb3aca0];
-    const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
+    const palLow = [0xa85e44, 0x9c5540, 0xb47454, 0x8a5040, 0xa25a40, 0xbfad92, 0xb0a38b, 0x969188, 0xc8b79a, 0xa87560, 0xc2b99d, 0x9cb0b3, 0xa3ae90, 0xc6ba86, 0xb98a72, 0xa4553e];
+    const palCom = [0xaba397, 0x9c9587, 0xb7b0a0, 0x908d86, 0xa7aeb3, 0xc2bbb0];
+    const palInd = [0x968a7c, 0x877e75, 0xa89e92, 0x9c6350];
     // real skylines are not white: precast tan, limestone, aluminum, blue-gray steel,
     // dark curtain wall, bronze — towers draw from this instead of the pale palCom
     // the unresearched towers: limestone and precast lights, charcoal and bronze darks, blue-grey glass, brick
@@ -4629,7 +4679,7 @@
       let tris;
       try { tris = THREE.ShapeUtils.triangulateShape(v2, hv); } catch (e) { return; }
       const capStart = ch.n;
-      const cr = capColor ? capColor.r : r * 0.93, cg = capColor ? capColor.g : g * 0.93, cb = capColor ? capColor.b : b * 0.93;
+      const cr = capColor ? capColor.r : r * 0.72, cg = capColor ? capColor.g : g * 0.72, cb = capColor ? capColor.b : b * 0.72;
       for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, 3, base);
       for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, cr, cg, cb, 3, base);
       // earcut emits CCW triangles in the shape plane regardless of ring winding,
@@ -4930,7 +4980,10 @@
       } else {
         const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
-        else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
+        else {
+          appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
+          if (!mh && hTop === h && !(spec && spec.crown && spec.crown.type !== 'flat') && h < 60) roofClutter((pg, y0, y1, hex, st2, holes) => { cCap.set(hex); appendBuilding(chk, pg, y0, y1, cCap, st2, base, holes); }, poly, base, h, Math.abs(signedArea(poly)), t, fa, i, c, false);
+        }
       }
       if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples.
@@ -5983,9 +6036,9 @@
       if (!ch) { ch = new VBuf(2048); chunks.set(key, ch); }
       return ch;
     };
-    const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
-    const palCom = [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c, 0x9aa0a4, 0xb3aca0];
-    const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
+    const palLow = [0xa85e44, 0x9c5540, 0xb47454, 0x8a5040, 0xa25a40, 0xbfad92, 0xb0a38b, 0x969188, 0xc8b79a, 0xa87560, 0xc2b99d, 0x9cb0b3, 0xa3ae90, 0xc6ba86, 0xb98a72, 0xa4553e];
+    const palCom = [0xaba397, 0x9c9587, 0xb7b0a0, 0x908d86, 0xa7aeb3, 0xc2bbb0];
+    const palInd = [0x968a7c, 0x877e75, 0xa89e92, 0x9c6350];
     // the unresearched towers: limestone and precast lights, charcoal and bronze darks, blue-grey glass, brick
     const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c, 0x2f3338, 0xb8ad98, 0x5f7d99, 0xc2c2be, 0x6d4a3a, 0x3b4a5a];
     const c = new THREE.Color();
@@ -6014,7 +6067,7 @@
       let tris;
       try { tris = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return; }
       const capStart = ch.n;
-      const cr = capColor ? capColor.r : r * 0.93, cg = capColor ? capColor.g : g * 0.93, cb = capColor ? capColor.b : b * 0.93;
+      const cr = capColor ? capColor.r : r * 0.72, cg = capColor ? capColor.g : g * 0.72, cb = capColor ? capColor.b : b * 0.72;
       for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, 3, base);
       // earcut emits CCW triangles in the shape plane regardless of ring winding
       // (pack_city rings arrive in shapely's CW convention — flipping by ring
@@ -6056,7 +6109,10 @@
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
       if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
-      else appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
+      else {
+        appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
+        if (!mh && h < 60) roofClutter((pg, y0, y1, hex, st2, holes) => { if (holes) return; cCap.set(hex); appendB(getChunk(cx, cz), pg, y0, y1, cCap, st2, base); }, poly, base, h, Math.abs(signedArea(poly)), t, fa, i, c, true);
+      }
       if (t === 5 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         const chk = getChunk(cx, cz);
         const tw = 5.5, towerTop = base + h + 9, apex = base + h + 24;
@@ -11961,7 +12017,7 @@
     WXFX.dayF = dayF;   // the particle boxes dim toward night with the sky
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 1.7 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
+      sun.intensity = 1.56 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
       glintDir.copy(sp.dir);
     } else if (mp.el > 2) {
@@ -12025,16 +12081,16 @@
     scene.fog.color.lerp(_c2.set(0xbfc6cc).multiplyScalar(0.12 + 0.88 * dayF), Math.max(WXFX.fog * 0.9, WXFX.snow * 0.4, WXFX.snowGround * 0.3));
     scene.fog.near = fogBase.near * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
     scene.fog.far = fogBase.far * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
-    hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xd3deea), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
+    hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xdde7f2), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
     if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
-    hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x8f8166), dayF);
-    hemi.intensity = (0.10 + 0.45 * dayF) * (1 - 0.22 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
+    hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x9c8e74), dayF);
+    hemi.intensity = (0.12 + 0.50 * dayF) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
     // bare ground follows the light: near-black at night, warm dark earth through
     // twilight, the pale sage only in daylight — the fixed pale tone read as water
     _c1.set(0x232321).lerp(_c2.set(0x55503f), twi).lerp(_c2.set(COLORS.ground), dayF);
     _c1.multiplyScalar(1 - 0.15 * WX.cover);   // flat light: the bare flats go earthier, not chalk
     for (const gm of groundMats) gm.color.copy(_c1);   // (snow cover now lands via the wxSurfacePatch shader pass)
-    renderer.toneMappingExposure = 0.95 + 0.11 * dayF;
+    renderer.toneMappingExposure = 0.93 + 0.10 * dayF;
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(0x2c2822)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night

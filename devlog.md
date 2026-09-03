@@ -2455,6 +2455,35 @@ identical? Can you use the mapillary data to inform some other styles?"
   holes), so seams and quays carry no shore distance, and the shallows themselves are a
   quiet teal lightening of about a fifth over the first twenty-five metres, no bottom colour.
 
+## Round 50: the game's look for the buildings (Sep 3)
+
+Mike: "Can we make the building styles identical to cities skylines?" then "Do it". Identical is
+out (their models and textures are copyrighted, and the model is built from the real
+footprints), so the round borrows what gives the game its look, in the order that shows most.
+
+- The grade: more ambient fill and a little less sun, a touch more exposure. The first cut
+  (hemi 0.14 + 0.68 dayF, sun 1.42, exposure 0.96 + 0.16 dayF) bleached the light walls to
+  white and flattened the shading, and a second at 0.12 + 0.56 / 1.52 / 0.94 + 0.12 was still
+  pale; settled at hemi 0.12 + 0.50 dayF (was 0.10 + 0.45), sun 1.56 (was 1.7), exposure
+  0.93 + 0.10 dayF (was 0.95 + 0.11), the day sky fill 0xdde7f2 and ground fill 0x9c8e74, and
+  the saturation instead of the brightness: every facade and roof through `cityMat` gains a
+  fifth of chroma at the top of the colour block, and the Mapillary warm chroma goes to 1.6.
+  Before-and-after captures of seven matched views went to Mike.
+- Palettes brighter and more saturated across the tiers: `palLow` gains painted pastels
+  (cream, pale blue, sage, pale yellow) beside brighter bricks, `palCom` and `palInd` lift,
+  the OPA pools and the core's `buildingPalette` are scaled 1.14 / 1.09 / 1.05 per channel,
+  and the Mapillary transfer lifts on a 0.56 power with warm chroma 1.4. Flat roofs without a
+  measured colour take the wall at 0.72 instead of 0.93: a membrane, not a pale slab.
+- Rooftop clutter (`roofClutter`, desktop only): a parapet lip round roofs over 400 m2 (the
+  footprint as a wall with its 0.35 m inset as the hole), HVAC boxes in a loose row along the
+  long axis (one per 450 m2, up to four), a stair bulkhead on buildings over 10 m and 350 m2,
+  a water tank on a quarter of the pre-1935 commercial and industrial roofs, a chimney on a
+  third of the flat rowhouses. The outer districts get all of it, the far ring boxes on
+  roofs over 600 m2 only (its wall builder takes no holes), the core none yet.
+- The facade shader: windows sit back in the wall (a shadow under the head, 0.38 deep over
+  the top 0.3 m), frames heavier (0.22 / 0.2 instead of 0.16 / 0.14), and every storefront
+  bay wears an awning at 3.45 m in red, green, blue or cream by the bay's hash.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
