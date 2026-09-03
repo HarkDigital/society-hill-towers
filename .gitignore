@@ -15,3 +15,6 @@
 .audit/
 *.log
 __pycache__/
+3d-model/storefronts.json
+3d-model/wall_colors.json
+3d-model/wall_palette.json

@@ -29,9 +29,10 @@ REPO = MODEL.parent
 
 # file -> (accepted magics, coordinate unit in meters, app.js load step that decodes it)
 BLOBS = {
-    'wide.b64':    ((0x5348545A, 0x53485458), 0.2, 'Raising the outer districts'),
-    'city.b64':    ((0x5348545B, 0x53485459), 0.7, 'Raising the rest of Philadelphia'),
+    'wide.b64':    ((0x5348545D, 0x5348545A, 0x53485458), 0.2, 'Raising the outer districts'),   # 0x5348545D: packed roof word
+    'city.b64':    ((0x5348545C, 0x5348545B, 0x53485459), 0.7, 'Raising the rest of Philadelphia'),   # 0x5348545C: packed roof word
     'outskirts.b64': ((0x53485459,), 1.0, 'Raising the towns across the line'),   # pack_outskirts.py: no attr words
+    'storefronts.b64': ((0x53485446,), 0.2, 'Dressing the storefronts'),   # bake_storefronts.py: 8 int16 per storefront
     'trees.b64':   ((0x53485454,), 0.2, 'Planting the street trees'),
     'poles.b64':   ((0x53485450,), 0.7, 'Lighting the streetlamps'),
     # bake_traffic.py reuses the tree magic 'SHTT' (0x53485454) — both its docstring
@@ -115,7 +116,7 @@ def walk_scene(name):
     hdr, body = decode_b64(name)
     magics, unit, _step = BLOBS[name]
     magic, nb, nr, na = hdr
-    has_attr = magic in (0x5348545A, 0x5348545B)
+    has_attr = magic in (0x5348545A, 0x5348545B, 0x5348545C, 0x5348545D)
     hs = 6 if has_attr else 4
     i = 0
     L = len(body)

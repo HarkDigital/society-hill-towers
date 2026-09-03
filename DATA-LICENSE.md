@@ -81,6 +81,16 @@ faces in `3d-model/style.css`, `3d-model/brand/Montserrat-SemiBold.ttf` (the wor
 `3d-model/brand/OFL.txt`. The OFL permits embedding and redistribution; the font may not be
 sold on its own and any modified version must carry a different name.
 
+## Live scores and street imagery
+
+Scores over the venues come from ESPN's public scoreboards at request time and are not
+stored; the page credits ESPN and is unaffiliated. The wall-colour pass (`fetch_mapillary.py`,
+`bake_wall_colors.py`) uses Mapillary street-level imagery, licensed CC BY-SA 4.0
+(https://www.mapillary.com/terms): only derived block-face colours ship, never the images,
+and a Mapillary credit joins the credit line whenever a real pass is built. Overture Maps
+buildings (`fetch_overture.py`, ODbL for its OSM-derived rows) were checked as a cross-check
+only; nothing from them ships.
+
 ## Research and hand-written files
 
 `meta.json`, `realism_research.json`, `headhouse_blocks_research.json`,

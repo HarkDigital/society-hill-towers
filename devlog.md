@@ -2175,6 +2175,55 @@ carries the team's logo from the feed (ESPN's own CDN, only that host, removed i
 to load), hangs at 135 m over the ballpark, 150 over the Linc and 115 over the arena, and a
 line in the team colour drops from it to a small ball on the roof.
 
+### Round 48 (Sep 2, night): roofs, storefronts, wall colours, the 75 MB tripwire
+
+Mike: bump the tripwire to 75 MB and the gzip gate in proportion, then all four of the
+realism sources at once: LiDAR roof shapes, Mapillary wall colours, OSM storefronts,
+Overture attributes. Three agents ran the fetches in parallel; the app and packer work
+stayed with the lead.
+
+- **Tripwire.** build.py's MAX_HTML 25 -> 75 MB, the deploy gzip gate 12 -> 36 MB, the
+  test's limit likewise. The page was 24.9 MB; this round leaves it at 24.95 MB.
+- **What "the LiDAR we already use" actually was.** The core's roof forms come from nine
+  full-resolution COPC tiles (1.7 GB) of the 752-tile, 100 GB NOAA 2022 dataset; the rest of
+  the city only ever had the City's footprint layer, two heights per building, and its
+  max-minus-typical height does not separate pitched from flat (median 0.6 m on the core's
+  measured gables). So: `fetch_lidar_roofs.py` streams every tile at coarse resolution
+  through COPC's octree over HTTP (a few MB a tile instead of 130), classifies each OSM
+  footprint with lidar_core's method on the coarse grid, and writes per-tile JSON merged
+  into `lidar_city_roofs.json`; it runs for hours in the background and is picked up by the
+  packers whenever it is merged. Meanwhile `roof_tags.py` pulls OSM's own roof:shape tags
+  (33,020 ways: 26.5k flat, 6.2k gable, 270 hip) and every wide/south way centroid.
+- **The roof word.** pack_city (magic 0x5348545C) and pack_wide (0x5348545D) pack the
+  sampled roof-colour index with a form and a rise in one int16: (idx + 1) & 0x1FF |
+  form << 9 | rise << 12, form 0 unresolved, 1 gable, 2 hip, 3 skillion, 4 known flat.
+  pack_wide attaches way ids to the id-less scene buildings by centroid (4 m). A merged strip
+  keeps its form only when the piece is one building. Far ring: 1,788 gables, 165 hips,
+  1,775 known flats; outer districts: 662 forms.
+- **Raising them.** `roofBits` decodes the word, `roofPlan` decides (a measured or tagged
+  form, else the core's lottery for small unresolved houses at rowhouse height), `roofQuad`
+  demands an honest quad or, new here, the oriented box when the footprint fills 80% of it
+  (a bay or a twin's jog no longer forfeits the roof), and `raisePitched` stops the walls at
+  the eave and pushes quadGable / hipGeom straight into the chunk (`pushGeom`). Rise from
+  the LiDAR pass when measured, else a third of the span. Verified: the tagged houses of
+  Eastwick carry gables; Center City unchanged; the Northeast rows stay flat, correctly,
+  and its twins wait on the LiDAR pass.
+- **Storefronts (Tier 2).** `fetch_shops.py` (2,478 OSM businesses over the wide and south
+  boxes) and `bake_storefronts.py` (2,341 placed on the street-facing wall of their building,
+  with line-of-sight and sidewalk-depth rules that the literal nearest-road rule needed;
+  50 KB blob, magic 0x53485446). The app's "Dressing the storefronts" step gives each a dark
+  frame band and glass proud of the wall (full height, or the lower half for banks, clinics
+  and theatres), an awning in the trade's colour where a shop would hang one, a signboard
+  above, and the glass and sign glow after dark through an `aLit` colour attribute.
+- **Wall colours.** `fetch_mapillary.py` and `bake_wall_colors.py` are written and pass an
+  end-to-end dry run on synthetic streets (the bake recovers every face within 1/255), but
+  Mapillary's API needs a client token we do not have: a free developer registration on
+  mapillary.com. Not in the build until a real pass exists; the dry-run outputs are
+  gitignored.
+- **Overture.** Checked through DuckDB in a minute (807k buildings in the box, 2026-08-19
+  release): its roof shapes and colours are OSM's tags verbatim, its extra is heights we
+  already have from the City's LiDAR. Nothing ships from it.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

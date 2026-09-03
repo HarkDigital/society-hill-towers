@@ -597,6 +597,83 @@
     return g;
   }
 
+  // ---- pitched roofs for the packed tiers (outer districts, far ring, outskirts). The roof
+  // word carries a form (0 unresolved, 1 gable, 2 hip, 3 skillion, 4 measured or tagged
+  // flat) and a rise in half metres from the LiDAR streaming pass or the OSM roof:shape tag;
+  // unresolved small houses take the core's gable lottery. Only an honest footprint quad
+  // takes a roof (the core's rules: convex, near-rectangular, elongated, covering the
+  // footprint): the walls stop at the eave and quadGable / hipGeom sit on top, pushed
+  // straight into the chunk. Anything else stays a flat extrusion
+  function roofBits(roofW, packed) {
+    if (roofW == null || roofW === -1) return [-1, 0, 0];
+    if (!packed) return [roofW, 0, 0];
+    const rw = roofW & 0xFFFF;
+    return [(rw & 0x1FF) - 1, (rw >> 9) & 7, ((rw >> 12) & 15) * 0.5];
+  }
+  function roofQuad(poly, area, form) {
+    if (area > 650 || poly.length > 12) return null;
+    let sp = simplifyRing(poly, 0.6);
+    if (sp.length !== 4) {
+      // not a clean quad (a bay, a jog where twins meet): the oriented box stands in when
+      // the footprint fills it, so the roof overhangs by less than a metre. The core keeps
+      // its stricter rule; out here a house is 200 m away and the overhang is invisible
+      const ob = orientedBox(poly);
+      if (!ob || area < 0.8 * ob.w * ob.d) return null;
+      let ax = ob.ux, az = ob.uz, long = ob.w, span = ob.d;
+      if (ob.d > ob.w) { ax = -ob.uz; az = ob.ux; long = ob.d; span = ob.w; }
+      const px = az, pz = -ax, hl = long / 2 - 0.2, hs = span / 2 - 0.2;
+      sp = [[ob.cx - ax * hl - px * hs, ob.cz - az * hl - pz * hs], [ob.cx + ax * hl - px * hs, ob.cz + az * hl - pz * hs], [ob.cx + ax * hl + px * hs, ob.cz + az * hl + pz * hs], [ob.cx - ax * hl + px * hs, ob.cz - az * hl + pz * hs]];
+    }
+    let convex = true, sgn = 0, rect = true;
+    for (let k2 = 0; k2 < 4; k2++) {
+      const A2 = sp[k2], B2 = sp[(k2 + 1) % 4], C2 = sp[(k2 + 2) % 4];
+      const ux2 = B2[0] - A2[0], uz2 = B2[1] - A2[1], vx2 = C2[0] - B2[0], vz2 = C2[1] - B2[1];
+      const cr = ux2 * vz2 - uz2 * vx2;
+      if (Math.abs(cr) > 1e-6) { if (sgn === 0) sgn = Math.sign(cr); else if (Math.sign(cr) !== sgn) { convex = false; break; } }
+      const l1 = Math.hypot(ux2, uz2) || 1, l2 = Math.hypot(vx2, vz2) || 1;
+      if (Math.abs((ux2 * vx2 + uz2 * vz2) / (l1 * l2)) > 0.35) rect = false;
+    }
+    if (!convex || !rect) return null;
+    const e = [0, 1, 2, 3].map(k => Math.hypot(sp[(k + 1) % 4][0] - sp[k][0], sp[(k + 1) % 4][1] - sp[k][1]));
+    const span = Math.min((e[0] + e[2]) / 2, (e[1] + e[3]) / 2), long = Math.max((e[0] + e[2]) / 2, (e[1] + e[3]) / 2);
+    const aQ = Math.abs(signedArea(sp));
+    const elMin = form === 2 ? 1.02 : 1.2;
+    if (Math.abs(aQ - area) <= area * 0.25 && span > 3.2 && span < 17 && long / span >= elMin && long / span < 5) return { sp, span, long };
+    return null;
+  }
+  function roofPlan(poly, area, h, t, form, rise, seed) {
+    if (form === 4 || form === 3 || h < 3.5) return null;
+    let f = form;
+    if (f === 0) {   // the lottery: small houses the passes never resolved, at rowhouse height
+      if (!(t === 1 || t === 0) || area >= 280 || h >= 12.5 || hash01(seed) >= 0.8) return null;
+      f = 1;
+    }
+    const q = roofQuad(poly, area, f);
+    if (!q) return null;
+    const r = rise > 0.8 ? Math.min(rise, h * 0.7) : clamp(q.span * 0.33, 1.5, 4.0);
+    if (r > h * 0.7) return null;
+    return { quad: q.sp, form: f, rise: r };
+  }
+  function pushGeom(ch, g, r, gc, b, st, base) {
+    const p = g.attributes.position.array, n = g.attributes.normal.array;
+    for (let i = 0; i + 8 < p.length; i += 9) {
+      const i0 = ch.n;
+      for (let q = 0; q < 3; q++) { const o = i + q * 3; ch.push(p[o], p[o + 1], p[o + 2], n[o], n[o + 1], n[o + 2], r, gc, b, st, base, 0); }
+      ch.idx.push(i0, i0 + 1, i0 + 2);
+    }
+  }
+  // walls to the eave, then the roof; the roof takes the sampled roof colour or a darker wall
+  function raisePitched(ch, poly, base, h, plan, wallC, wallStyle, fh, capC, appendFn) {
+    const eaveY = base + h - plan.rise, ridgeY = base + h;
+    appendFn(ch, poly, base - 1.0, eaveY, wallC, wallStyle, base, null, fh, null, true);
+    const rc = capC || _roofTmp.copy(wallC).multiplyScalar(0.72);
+    if (plan.form === 2) { const ob = orientedBox(plan.quad); if (ob) { pushGeom(ch, hipGeom(ob, eaveY, ridgeY, 0.3), rc.r, rc.g, rc.b, 3, base); return; } }
+    const g = quadGable(plan.quad, eaveY, ridgeY, null);
+    pushGeom(ch, g.slopes, rc.r, rc.g, rc.b, 3, base);
+    pushGeom(ch, g.ends, wallC.r, wallC.g, wallC.b, 3, base);
+  }
+  const _roofTmp = new THREE.Color();
+
   // classical column row: n cylinders from (x0,z0) to (x1,z1). Shafts run 2.2 m
   // below grade like walls and tree trunks — colonnades are lifted by the height
   // at the building CENTROID, and sloping ground was leaving columns airborne
@@ -4017,7 +4094,8 @@
     WIDE_B64 = null;   // the 5 MB base64 string has served its purpose
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const body = new Int16Array(bin.buffer, 16);
-    const hasAttr = hdr[0] === 0x5348545A;
+    const hasAttr = hdr[0] === 0x5348545A || hdr[0] === 0x5348545D;
+    const roofPacked = hdr[0] === 0x5348545D;   // the roof word carries form and rise
     if (hdr[0] !== 0x53485458 && !hasAttr) return;
     let k = 0;
     const S = 0.2;
@@ -4319,7 +4397,8 @@
       c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 11.3) * 0.12 : 0.9 + hash01(i * 11.3) * 0.2);
       let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
       if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
-      const capC = roofW >= 0 && ROOF_PAL ? cCap.copy(ROOF_PAL[roofW]).multiplyScalar(0.9 + hsh * 0.18) : null;
+      const rb = roofBits(roofW, roofPacked);
+      const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       if (t === 10) { // glass tower parts: reflective material, no painted windows
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
@@ -4348,7 +4427,11 @@
             appendBuilding(chk, [[px2 - 9, pz2 - 1], [px2 + 9, pz2 - 1], [px2 + 9, pz2 + 1], [px2 - 9, pz2 + 1]], base + 22, base + 32, c, 3, base);
           }
         }
-      } else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, null, fh, capC, mh === 0);
+      } else {
+        const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+        if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
+        else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, null, fh, capC, mh === 0);
+      }
       if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples.
         // A LANDMARK_H spire drives the apex instead: tower to 60% of the rise, pyramid the rest,
@@ -5273,7 +5356,8 @@
   const withinP = (bb) => P && bb[0] > P.x0 && bb[1] < P.x1 && bb[2] > P.z0 && bb[3] < P.z1;
   async function raiseRing(bin, S, label, wideSeam) {
     const hdr = new Int32Array(bin.buffer, 0, 4);
-    const hasAttr = hdr[0] === 0x5348545B;
+    const hasAttr = hdr[0] === 0x5348545B || hdr[0] === 0x5348545C;
+    const roofPacked = hdr[0] === 0x5348545C;   // the roof word carries form and rise
     if (hdr[0] !== 0x53485459 && !hasAttr) return null;
     const body = new Int16Array(bin.buffer, 16);
     let k = 0;
@@ -5353,8 +5437,11 @@
       c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 13.7) * 0.12 : 0.9 + hash01(i * 13.7) * 0.2);
       let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
       if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
-      const capC = roofW >= 0 && ROOF_PAL ? cCap.copy(ROOF_PAL[roofW]).multiplyScalar(0.9 + hsh * 0.18) : null;
-      appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
+      const rb = roofBits(roofW, roofPacked);
+      const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
+      const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+      if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
+      else appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
       if (t === 5 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         const chk = getChunk(cx, cz);
         const tw = 5.5, towerTop = base + h + 9, apex = base + h + 24;
@@ -5734,6 +5821,54 @@
     if (!R) return;
     loadmsg.textContent = 'Raising the towns across the line, uploading';
     await uploadRing(R);
+  });
+  step('Dressing the storefronts', () => {
+    // Tier 2 of the facade plan: OSM's shops, cafes, bars, banks and the rest, each on the
+    // facade edge of its building that faces the street (bake_storefronts.py). A glazed
+    // front proud of the wall (full height, or the lower half for banks, clinics and
+    // theatres), an awning in the trade's colour where a shop would hang one, a signboard
+    // above it; the glass and the sign glow after dark. 8 int16 per storefront: x/0.2, z/0.2,
+    // outward-normal angle*1000, width*10, kind, colour, floor height*10, flags
+    if (typeof STOREFRONTS_B64 === 'undefined' || !STOREFRONTS_B64) return;
+    const bin = unb64(STOREFRONTS_B64, 'STOREFRONTS');
+    STOREFRONTS_B64 = null;
+    const hdr = new Int32Array(bin.buffer, 0, 4);
+    if (hdr[0] !== 0x53485446) return;
+    const body = new Int16Array(bin.buffer, 16), n = hdr[1];
+    const AWNING = [0x5a1a14, 0x14331e, 0x142a4a, 0x3a3a3a, 0x6b5a2e, 0x4a1f3a, 0x1e4a4a, 0x5a3a14, 0x2b2b2b, 0x60232b, 0x1f3b2a, 0x22334f, 0x4d3b1a, 0x333b44, 0x5c2a1e, 0x1a2f22].map((h2) => new THREE.Color(h2));
+    const SIGN = [0x7a2a20, 0x1e4a2c, 0x1e3a66, 0x555555, 0x8a7a44, 0x66305a, 0x2a6666, 0x7a5220, 0x444444, 0x80333c, 0x2c5a3c, 0x33486e, 0x6a5228, 0x4a5560, 0x7a3c2c, 0x2a4a34].map((h2) => new THREE.Color(h2));
+    const cGlass = new THREE.Color(0x0e1216), cLit = new THREE.Color(0x6a5a3c), cFrame = new THREE.Color(0x2a2724);
+    const parts = [], glow = [];
+    let made = 0;
+    for (let i = 0; i < n; i++) {
+      const o = i * 8;
+      const x = body[o] * 0.2, z = body[o + 1] * 0.2, ang = body[o + 2] / 1000, w = body[o + 3] / 10, kind = body[o + 4], col = body[o + 5] & 15, fh = body[o + 6] / 10, flags = body[o + 7];
+      if (w < 2.5 || fh < 2.5) continue;
+      const nx = Math.cos(ang), nz = Math.sin(ang), ry = Math.atan2(-nx, -nz);   // box length along the facade tangent (-nz, nx)
+      const gy = siteY(x, z, 'ground');
+      const glassH = (flags & 4) ? fh - 0.6 : fh * 0.55;
+      const mk = (bw, bh, bd, off, y, tilt) => { const g = new THREE.BoxGeometry(bw, bh, bd); if (tilt) g.rotateX(tilt); g.rotateY(ry); g.translate(x + nx * off, y, z + nz * off); return g; };
+      // the frame band (dark) then the glass, both just proud of the wall, so the pattern shader's windows stop at the shop
+      parts.push({ geom: mk(w - 0.2, glassH + 0.5, 0.10, 0.12, gy + 0.25 + (glassH + 0.5) / 2, 0), color: cFrame, style: 3 });
+      glow.push({ geom: mk(w - 0.7, glassH, 0.14, 0.14, gy + 0.45 + glassH / 2, 0), color: cGlass, style: 3, lit: cLit });
+      if (flags & 1) parts.push({ geom: mk(w - 0.5, 0.12, 1.1, 0.62, gy + fh + 0.05, -0.32), color: AWNING[col], style: 3 });
+      if (flags & 2) glow.push({ geom: mk(w - 0.8, 0.7, 0.10, 0.14, gy + fh + 0.85 + ((flags & 1) ? 0.25 : 0), 0), color: SIGN[col], style: 3, lit: SIGN[col] });
+      made++;
+    }
+    if (parts.length) { const g = mergeColored(parts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05 }))); }
+    if (glow.length) {   // glass and signs: their own dark colour by day, lit by their `lit` colour after dark
+      const gm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, metalness: 0.15 });
+      const lit = glow.map((p2) => ({ geom: p2.geom, color: p2.lit, style: 3 }));
+      const g = mergeColored(glow); const gl = mergeColored(lit);
+      g.setAttribute('aLit', gl.getAttribute('color')); freeOnUpload(g); gl.dispose();
+      gm.onBeforeCompile = (sh) => {
+        sh.uniforms.uNight = nightUniform;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aLit; varying vec3 vLit;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLit = aLit;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight; varying vec3 vLit;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLit * uNight * 2.2;');
+      };
+      groupCity.add(new THREE.Mesh(g, gm));
+    }
+    STOREFRONT_N = made;
   });
   step('Raising the overpasses', () => {
     if (!OVP.el.length && !OVP.cor.length && !OVP.sk.length) return;
@@ -10330,6 +10465,7 @@
   let towerGlow = null, towerMat = null;
   let floodPts = null, floodMat = null;   // the stadiums' floodlights (built with the outer districts)
   let haloMesh = null, haloMat = null;     // and their night halo
+  let STOREFRONT_N = 0;                    // storefronts dressed (perf readout)
   let lotStripes = null;                   // the sports complex's stall lines (shown within 3.5 km, they alias into noise beyond)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
@@ -11631,7 +11767,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """scene_wide.json -> wide.b64 : compact int16 binary (0.2 m units) for the outer districts.
 wide.b64 is a derivative database of OpenStreetMap data (ODbL): see ../DATA-LICENSE.md.
-Layout: Int32[4] header (magic 0x5348545A, nBuildings, nRoads, nAreas), then Int16 body:
+Layout: Int32[4] header (magic 0x5348545D, nBuildings, nRoads, nAreas), then Int16 body:
   building: n, h*5, minH*5, type, attr, roof, x1,z1,...
   road: n, w*10, type, pts...   area: n, kind, pts...
 attr packs the OPA facade word u(3)|mat(3)|era(4)|floorH(5) (-1 = none); roof is
@@ -165,9 +165,42 @@ def attr_word(b, h):
             fq = min(25, max(1, int(round((min(r, 4.6) - 2.2) / 0.1)) + 1))
     return (u & 7) | ((m & 7) << 3) | ((e & 15) << 6) | (fq << 10)
 
-def roof_word(b):
+# roof forms: scene buildings carry no OSM id, so each is matched to the nearest building
+# way centroid (roof_tags.py's list, 4 m) and looks up the LiDAR pass, then the OSM tag.
+# The roof word packs the sampled colour index with the form and rise: (idx + 1) & 0x1FF |
+# form << 9 | rise << 12 (form 0 unresolved, 1 gable, 2 hip, 3 skillion, 4 known flat)
+def _opt(p):
+    try: return json.load(open(p))
+    except FileNotFoundError: return None
+_rs = _opt('lidar_cache/roof_shapes.json') or {'byId': {}, 'ways': []}
+ROOF_TAG = {int(k): v for k, v in _rs['byId'].items()}
+ROOF_LIDAR = {int(k): v for k, v in (_opt('lidar_city_roofs.json') or {}).items()}
+_wgrid = {}
+for wx, wz, wid in _rs['ways']:
+    _wgrid.setdefault((int(wx // 20), int(wz // 20)), []).append((wx, wz, wid))
+def way_at(cx, cz):
+    best, bid = 16.0, None
+    for gx in (-1, 0, 1):
+        for gz in (-1, 0, 1):
+            for wx, wz, wid in _wgrid.get((int(cx // 20) + gx, int(cz // 20) + gz), ()):
+                d2 = (wx - cx) ** 2 + (wz - cz) ** 2
+                if d2 < best: best, bid = d2, wid
+    return bid
+TAGFORM = {0: 4, 1: 1, 2: 2, 3: 3}
+n_form = 0
+def roof_word(b, cx, cz):
+    global n_form
     rp = b.get('rp')
-    return -1 if rp is None else rp
+    idx = -1 if rp is None else rp
+    form, rise = 0, 0.0
+    wid = way_at(cx, cz)
+    if wid is not None:
+        m = ROOF_LIDAR.get(wid)
+        if m and m[0] in (0, 1, 2): form, rise = (4 if m[0] == 0 else m[0]), max(0.0, float(m[2]) - float(m[1]))
+        elif wid in ROOF_TAG: form = TAGFORM.get(ROOF_TAG[wid], 0)
+    if form: n_form += 1
+    v = ((idx + 1) & 0x1FF) | ((form & 7) << 9) | (min(15, max(0, int(round(rise * 2)))) << 12)
+    return v - 65536 if v > 32767 else v
 
 body = []
 nb = nr = na = 0
@@ -183,7 +216,7 @@ for b in d['buildings']:
     sp = simplify_budget(simplify(poly, 0.35), 48, 0.7)
     h = max(2.5, min(6500, b['h']))
     _rec = ('building', b.get('name'), b.get('t'), round(cx), round(cz))
-    body += [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0), attr_word(b, h), roof_word(b)]
+    body += [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0), attr_word(b, h), roof_word(b, cx, cz)]
     for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
     nb += 1
 # 3D-mapped building parts (skyscraper shafts, crowns, podiums) from building:part ways;
@@ -272,7 +305,8 @@ if SAT:
         print(f'   {rec}  value {v:.0f} ({v / 5:.0f} m)', file=sys.stderr, flush=True)
         if len(shown) >= 12: break
     sys.exit(1)
-buf = struct.pack('<4i', 0x5348545A, nb, nr, na) + struct.pack('<%dh' % len(body), *body)
+print(f'roof forms attached: {n_form} of {nb} buildings', flush=True)
+buf = struct.pack('<4i', 0x5348545D, nb, nr, na) + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(buf).decode('ascii')
 open('wide.b64', 'w').write(b64)
 print(f'buildings {nb} roads {nr} areas {na} -> {len(buf)/1e6:.2f} MB binary, {len(b64)/1e6:.2f} MB base64; '

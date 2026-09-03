@@ -49,7 +49,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
 - Owner decisions that stand until Mike says otherwise: landmark labels OFF by default (the
   citywide tier is behind the L key); the About panel stays out of the bar (the "Credits" link in the bottom credit line opens it); fly is the only mode
   (orbit is the attract loop, walk is `__dbg.goWalk` only); SEPTA/Indego markers are occluded
-  by buildings, neighborhood names and the search pin are not; a search result glides in and
+  by buildings, neighborhood names and the search pin are not; roof forms come from the LiDAR
+  streaming pass, then OSM roof:shape, then the lottery, packed in the roof word (see
+  pack_city.py); storefronts come from `storefronts.b64`; a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
   The clock is never remembered: every load is Philadelphia's own time, and only a copied
   link carries a pinned clock. The two stadiums are built after the wide loop from

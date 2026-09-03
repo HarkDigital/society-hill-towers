@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """osm_city_raw.json -> city.b64 : the far ring (rest of Philadelphia) at 0.7 m units.
 city.b64 is a derivative database of OpenStreetMap data (ODbL): see ../DATA-LICENSE.md.
-Same body layout as wide.b64 (n, h*5, minH*5, type, attr, roof, pts...; magic 0x5348545B) but scale 0.7 and with
+Same body layout as wide.b64 (n, h*5, minH*5, type, attr, roof, pts...; magic 0x5348545C, the roof word packing the colour index with a form and rise, see roof_word) but scale 0.7 and with
 rowhouse rows MERGED into block strips (shapely union) so the whole city fits the
 artifact's 16 MB page budget. Buildings inside the wide box are skipped (covered),
 and so are area rings (parks/water/aprons) whose centroid sits inside it - pack_wide
@@ -89,6 +89,26 @@ LIDAR_H = {int(k): v for k, v in _load('lidar_city_heights.json', 'LiDAR-measure
 # OPA facade attrs + sampled roof palette indices per way (Tier-1 facade pass)
 OPA_A = {int(k): v for k, v in _load('lidar_cache/opa_city.json', 'OPA facade attribute').items()}
 ROOF_I = {int(k): v for k, v in _load('lidar_cache/roof_city.json', 'sampled roof colour').items()}
+# roof FORMS: the LiDAR streaming pass (fetch_lidar_roofs.py) where it resolved a building,
+# else the OSM roof:shape tag (roof_tags.py); both optional, the app's lottery covers the rest.
+# Packed into the roof word with the colour index: (idx + 1) & 0x1FF | form << 9 | rise << 12,
+# form 0 unresolved, 1 gable, 2 hip, 3 skillion, 4 measured or tagged flat; rise in half metres
+def _opt(p):
+    try: return json.load(open(p))
+    except FileNotFoundError: return None
+ROOF_LIDAR = {int(k): v for k, v in (_opt('lidar_city_roofs.json') or {}).items()}
+ROOF_TAG = {int(k): v for k, v in ((_opt('lidar_cache/roof_shapes.json') or {}).get('byId', {})).items()}
+print(f'roof forms: {len(ROOF_LIDAR)} LiDAR-measured, {len(ROOF_TAG)} OSM-tagged', flush=True)
+TAGFORM = {0: 4, 1: 1, 2: 2, 3: 3}
+def roof_form(wid):
+    m = ROOF_LIDAR.get(wid)
+    if m and m[0] in (0, 1, 2):
+        return (4 if m[0] == 0 else m[0], max(0.0, float(m[2]) - float(m[1])))
+    t = ROOF_TAG.get(wid)
+    return (TAGFORM.get(t, 0), 0.0) if t is not None else (0, 0.0)
+def roof_word(idx, form, rise):
+    v = ((idx + 1) & 0x1FF) | ((form & 7) << 9) | (min(15, max(0, int(round(rise * 2)))) << 12)
+    return v - 65536 if v > 32767 else v
 
 def attr_word(wid, h):
     fa = OPA_A.get(wid)
@@ -139,21 +159,22 @@ for el in ways:
     bt = BT.get(t.get('building'), 0)
     aw_ = attr_word(el['id'], h)
     rw_ = ROOF_I.get(el['id'], -1)
+    rf_ = roof_form(el['id'])
     n_in += 1
     if h > 20 or bt == 5:
-        solo.append((pg, h, bt, aw_, rw_))
+        solo.append((pg, h, bt, aw_, rw_, rf_))
     else:
         key = (int(cx // 400), int(cz // 400), int(round(h / 4)))
-        merge_groups.setdefault(key, []).append((pg, aw_, rw_))
+        merge_groups.setdefault(key, []).append((pg, aw_, rw_, rf_))
 
 body = []
 nb = 0
-def emit(pg, h, mh, bt, aw_=-1, rw_=-1):
+def emit(pg, h, mh, bt, aw_=-1, rw_=-1, rf_=(0, 0.0)):
     global nb, _rec
     ext = ring_budget(pg, 32, 1.0)
     if len(ext) < 3: return
     _rec = ('building', bt, round(h, 1), tuple(round(c) for c in (pg.centroid.x, pg.centroid.y)))
-    body.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt, aw_, rw_])
+    body.extend([len(ext), clip(min(6500, h) * 5), clip(mh * 5), bt, aw_, roof_word(rw_, rf_[0], rf_[1])])
     for x, z in ext: body.extend([clip(x / S), clip(z / S)])
     nb += 1
 
@@ -169,9 +190,12 @@ for (gx, gz, hb), members in merge_groups.items():
     geoms = list(merged.geoms) if merged.geom_type == 'MultiPolygon' else [merged]
     for g in geoms:
         if g.is_empty or g.area < 70: continue
-        emit(Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2, aw_, rw_)
-for pg, h, bt, aw_, rw_ in solo:
-    emit(pg.simplify(0.8), h, 0, bt, aw_, rw_)
+        # a roof form only when this piece is one building (a strip of merged rows stays flat)
+        mine = [m for m in members if g.contains(m[0].representative_point())] if len(members) > 1 else members
+        rf_ = mine[0][3] if len(mine) == 1 else (0, 0.0)
+        emit(Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2, aw_, rw_, rf_)
+for pg, h, bt, aw_, rw_, rf_ in solo:
+    emit(pg.simplify(0.8), h, 0, bt, aw_, rw_, rf_)
 print(f'buildings: {n_in} in -> {nb} packed', flush=True)
 
 # roads (+ runways/taxiways as gray ribbons). Ways are SPLIT into runs at bbox exits
@@ -301,7 +325,7 @@ if SAT:
         if len(shown) >= 12: break
     sys.exit(1)
 
-hdr = struct.pack('<4i', 0x5348545B, nb, nr, na)
+hdr = struct.pack('<4i', 0x5348545C, nb, nr, na)
 blob = hdr + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(blob).decode()
 open('city.b64', 'w').write(b64)
