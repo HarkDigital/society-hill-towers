@@ -7,7 +7,9 @@
                      r149 legacy pipeline (see roofInv / ROOF_PAL in app.js) and must
                      convert these the same way; nothing here is pre-darkened.
   wall_colors.json   {"wide": [palette index or -1 per building of scene_wide.json],
-                      "south": [the same for scene_south.json]}
+                      "south": [the same for scene_south.json],
+                      "wide_hint", "south_hint": [the facade hint byte per building, 0
+                      where the building has no colour]}
 
 How a colour gets from a photo to a building:
   1. Every road of scene_wide.json / scene_south.json is walked segment by segment
@@ -37,6 +39,15 @@ How a colour gets from a photo to a building:
      footprint lies on, and that face's colour, or -1 with no coloured face.
   6. k-means (seed 7) over all face colours gives the 32-entry palette, sorted light to
      dark; each building stores the index of its face's cluster.
+  7. Beside its colour, a sample carries two fractions of the pixels the filter kept:
+     light (min channel > 165: white trim, cornices, formstone, light siding, painted
+     walls) and dark (max channel < 70: window glass, doors, dark trim, deep shadow
+     under bays). A face takes the median of each across its samples (a face borrowing
+     its road side's colour borrows its fractions too), and the building's hint byte
+     classes them: trim in bits 0-1 (1 light fraction < 0.08, 2 in [0.08, 0.22), 3 at
+     0.22 and above), windows in bits 2-3 (1 dark fraction < 0.12, 2 in [0.12, 0.30),
+     3 at 0.30 and above), both 0 for a building without a colour. The colour path is
+     untouched by the fractions: the palette and indices are what they were before them.
 
 --dry-run reads fetch_mapillary.py's synthetic set under lidar_cache/mly_dry/ and checks
 the recovered face colours against its truth.json. Plain python3; Pillow reads the
@@ -70,6 +81,10 @@ BLD_REACH = 30.0        # footprint to street centreline
 CELL = 50.0             # spatial hash
 K = 32
 BAND = (0.35, 0.60)      # of the image height: the near walls either side of a dashcam's horizon
+LIGHT_MIN = 165          # a kept pixel whose min channel clears this is light: trim, formstone, paint
+DARK_MAX = 70            # a kept pixel whose max channel stays under this is dark: glass, doors, shadow
+TRIM_CLASS = (0.08, 0.22)    # light fraction: class 1 below the first cut, 2 between, 3 from the second
+WINDOW_CLASS = (0.12, 0.30)  # dark fraction: the same three classes
 ALONG_COS = math.cos(math.radians(30))   # |heading . bearing| above this: looking along the street
 PERP_SIN = math.sin(math.radians(30))     # ... below this: looking at one face; in between the view is oblique and skipped
 NO_FACE = {'motorway', 'motorway_link', 'trunk', 'trunk_link'}
@@ -93,13 +108,29 @@ def cells(x0, z0, x1, z1):
             yield (cx, cz)
 
 
+def median_ch(samples, ch):
+    v = sorted(s[ch] for s in samples)
+    n = len(v)
+    return v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2
+
+
 def median_rgb(samples):
-    out = []
-    for ch in range(3):
-        v = sorted(s[ch] for s in samples)
-        n = len(v)
-        out.append(int(round(v[n // 2] if n % 2 else (v[n // 2 - 1] + v[n // 2]) / 2)))
-    return tuple(out)
+    """The per-channel median colour of samples that may carry more than three channels."""
+    return tuple(int(round(median_ch(samples, ch))) for ch in range(3))
+
+
+def median_fracs(samples):
+    """(light fraction, dark fraction) medians of (r, g, b, light, dark) samples."""
+    return (median_ch(samples, 3), median_ch(samples, 4))
+
+
+def frac_class(v, cuts):
+    return 1 if v < cuts[0] else 2 if v < cuts[1] else 3
+
+
+def hint_byte(fracs):
+    """trim class in bits 0-1, window class in bits 2-3 (see step 7 of the module docstring)."""
+    return frac_class(fracs[0], TRIM_CLASS) | (frac_class(fracs[1], WINDOW_CLASS) << 2)
 
 
 # ---------------- the wall sample of one thumbnail ----------------
@@ -116,11 +147,14 @@ def keep_px(r, g, b):
 
 
 def band_sample_py(im, x0, x1, y0, y1):
+    """(r, g, b, lightFrac, darkFrac) of the band, or None when the filter keeps too little."""
     px = list(im.crop((x0, y0, x1, y1)).getdata())
     kept = [p for p in px if keep_px(*p)]
     if len(kept) < max(20, 0.2 * len(px)):
         return None
-    return median_rgb(kept)
+    light = sum(1 for p in kept if min(p) > LIGHT_MIN)
+    dark = sum(1 for p in kept if max(p) < DARK_MAX)
+    return median_rgb(kept) + (light / len(kept), dark / len(kept))
 
 
 def band_sample_np(arr, x0, x1, y0, y1):
@@ -131,15 +165,18 @@ def band_sample_np(arr, x0, x1, y0, y1):
         | ((mn > 185) & (mx - mn < 28)) | ((b > r + 6) & (mx > 150)) | ((b > r + 10) & (mx > 110)) \
         | ((mx < 100) & (mx - mn < 30)) | ((g > r + 18) & (g > b + 18))
     m = ~drop
-    if int(m.sum()) < max(20, 0.2 * len(sub)):
+    nk = int(m.sum())
+    if nk < max(20, 0.2 * len(sub)):
         return None
-    return tuple(int(round(float(v))) for v in np.median(sub[m], axis=0))
+    rgb = tuple(int(round(float(v))) for v in np.median(sub[m], axis=0))
+    return rgb + (int((mn[m] > LIGHT_MIN).sum()) / nk, int((mx[m] < DARK_MAX).sum()) / nk)
 
 
 def wall_samples(rec, thumbs):
-    """(left third sample, right third sample), each an (r, g, b) or None."""
-    if 'rgb_l' in rec or 'rgb_r' in rec:          # a dry run without Pillow
-        return (tuple(rec['rgb_l']) if rec.get('rgb_l') else None, tuple(rec['rgb_r']) if rec.get('rgb_r') else None)
+    """(left third sample, right third sample), each an (r, g, b, lightFrac, darkFrac) or None."""
+    if 'rgb_l' in rec or 'rgb_r' in rec:          # a dry run without Pillow: colours only, no fractions
+        return (tuple(rec['rgb_l']) + (0.0, 0.0) if rec.get('rgb_l') else None,
+                tuple(rec['rgb_r']) + (0.0, 0.0) if rec.get('rgb_r') else None)
     path = os.path.join(thumbs, f"{rec['id']}.jpg")
     if Image is None or not os.path.exists(path):
         return (None, None)
@@ -296,7 +333,9 @@ def main():
                             both = [s for s in samples_of(i) if s is not None]
                             if not both:
                                 continue
-                            s = both[0] if len(both) == 1 else tuple((p + q) // 2 for p, q in zip(*both))
+                            s = both[0] if len(both) == 1 else \
+                                tuple((p + q) // 2 for p, q in zip(both[0][:3], both[1][:3])) + \
+                                tuple((p + q) / 2 for p, q in zip(both[0][3:], both[1][3:]))
                             pairs = ((s, 'L' if cx * lx + cz * lz > 0 else 'R'),)
                             kind = 'side'
                         else:                                       # oblique: neither flank is this street's
@@ -308,10 +347,11 @@ def main():
                             road_side[(tag, ri, side)].append(s)
                             used.add(i)
                             kinds[kind] += 1
-    face_rgb, borrowed = {}, 0
+    face_rgb, face_frac, borrowed = {}, {}, 0    # (tag, ri, si, side) -> rgb, -> (light, dark) fractions
     for key, lst in faces.items():
         if len(lst) >= a.min_samples:
             face_rgb[key] = median_rgb(lst)
+            face_frac[key] = median_fracs(lst)
     for s in segs:
         tag, ri, si = s[:3]
         for side in 'LR':
@@ -319,6 +359,7 @@ def main():
             pool = road_side.get((tag, ri, side), ())
             if key not in face_rgb and len(pool) >= a.min_samples:
                 face_rgb[key] = median_rgb(pool)
+                face_frac[key] = median_fracs(pool)
                 borrowed += 1
     opened = sum(1 for v in sample_cache.values() if v != (None, None))
     print(f'images: {len(sample_cache)} opened, {opened} with a wall sample, {len(used)} used '
@@ -339,6 +380,7 @@ def main():
     for tag, _ in SCENES:
         blds = scenes[tag].get('buildings', [])
         idx = [-1] * len(blds)
+        hint = [0] * len(blds)
         n = 0
         for bi, b in enumerate(blds):
             poly = b.get('poly') or []
@@ -372,7 +414,7 @@ def main():
                 face_of[(tag, bi)] = best[1]
                 coloured[(tag, bi)] = face_rgb[best[1]]
                 n += 1
-        result[tag] = (idx, n, len(blds))
+        result[tag] = (idx, hint, n, len(blds))
 
     # ---- palette ----
     face_keys = sorted(face_rgb)
@@ -392,26 +434,46 @@ def main():
     while len(palette) < K:                      # fewer distinct face colours than entries: pad with greys
         v = 48 + (len(palette) - len(cent)) * 6
         palette.append((v, v, v)); counts.append(0)
-    for tag, (idx, n, total) in result.items():
+    for tag, (idx, hint, n, total) in result.items():
         for (t2, bi), key in face_of.items():
             if t2 == tag:
                 idx[bi] = face_idx[key]
+                hint[bi] = hint_byte(face_frac[key])
+    hist = {'trim': [0] * 4, 'window': [0] * 4}      # class 0 is a building without a colour
+    for tag, (idx, hint, n, total) in result.items():
+        for h in hint:
+            hist['trim'][h & 3] += 1
+            hist['window'][(h >> 2) & 3] += 1
 
     # ---- write ----
-    stats = {tag: {'buildings': total, 'coloured': n} for tag, (idx, n, total) in result.items()}
+    stats = {tag: {'buildings': total, 'coloured': n} for tag, (idx, hint, n, total) in result.items()}
+    hints = {'note': 'buildings per class, both scenes; class 0 is a building without a colour. trim (bits 0-1): '
+                     f'1 light fraction < {TRIM_CLASS[0]}, 2 to {TRIM_CLASS[1]}, 3 above; window (bits 2-3): '
+                     f'1 dark fraction < {WINDOW_CLASS[0]}, 2 to {WINDOW_CLASS[1]}, 3 above',
+             'trim': hist['trim'], 'window': hist['window']}
     with open(PALETTE_OUT, 'w') as f:
         json.dump({'src': 'Mapillary street-level imagery (CC BY-SA 4.0) via fetch_mapillary.py, aggregated by bake_wall_colors.py',
                    'note': 'sRGB as seen in the photos, light to dark. The app stores colours dark for the r149 legacy pipeline (see roofInv in app.js) and converts these itself.',
                    'dry_run': bool(meta.get('dry_run')), 'images_used': len(used), 'faces': len(face_rgb),
-                   'wall': ['#%02x%02x%02x' % c for c in palette], 'counts': counts, 'buildings': stats}, f, indent=1)
+                   'wall': ['#%02x%02x%02x' % c for c in palette], 'counts': counts, 'buildings': stats, 'hints': hints}, f, indent=1)
+    out = {}
+    for tag, _ in SCENES:
+        out[tag] = result[tag][0]
+    for tag, _ in SCENES:
+        out[tag + '_hint'] = result[tag][1]
     with open(COLORS_OUT + '.tmp', 'w') as f:
-        json.dump({tag: result[tag][0] for tag, _ in SCENES}, f, separators=(',', ':'))
+        json.dump(out, f, separators=(',', ':'))
     os.replace(COLORS_OUT + '.tmp', COLORS_OUT)
     print(f'coverage: {len(used)} images used, {len(face_rgb)} block faces coloured', flush=True)
-    for tag, (idx, n, total) in result.items():
+    for tag, (idx, hint, n, total) in result.items():
         nf = sum(1 for k in face_rgb if k[0] == tag)
         ns = sum(1 for s in segs if s[0] == tag)
         print(f'  {tag}: {nf}/{2 * ns} faces, {n}/{total} buildings coloured ({100 * n / max(1, total):.1f}%)', flush=True)
+    nc = sum(hist['trim'][1:])
+    print(f'hints over {nc} coloured buildings: trim light < {TRIM_CLASS[0]:.0%} {hist["trim"][1]}, '
+          f'to {TRIM_CLASS[1]:.0%} {hist["trim"][2]}, above {hist["trim"][3]}; '
+          f'windows dark < {WINDOW_CLASS[0]:.0%} {hist["window"][1]}, to {WINDOW_CLASS[1]:.0%} {hist["window"][2]}, '
+          f'above {hist["window"][3]}', flush=True)
     top = sorted(range(len(palette)), key=lambda j: -counts[j])[:8]
     print('palette: ' + ', '.join(f'#{palette[j][0]:02x}{palette[j][1]:02x}{palette[j][2]:02x} x{counts[j]}' for j in top), flush=True)
     print(f'{PALETTE_OUT}: {len(palette)} entries; {COLORS_OUT}: {os.path.getsize(COLORS_OUT):,} bytes ({time.time() - t0:.0f}s)', flush=True)

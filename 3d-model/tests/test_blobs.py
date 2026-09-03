@@ -45,22 +45,36 @@ class BlobStructure(unittest.TestCase):
                     self.assertEqual(hdr[2], sum(w[0] for w in t['ways']), 'traffic.b64 header nPts disagrees with the way records')
 
     def test_wide_walls_parallel_to_wide(self):
-        """wide_walls.b64 (pack_wide.py, Mapillary wall colours): magic 0x53485457, one byte per
-        wide.b64 building record, every byte a palette index or 255."""
+        """wide_walls.b64 (pack_wide.py, Mapillary wall colours): magic 0x53485457, the fourth
+        header word the bytes per record (0 meaning the old one-byte layout), the body planar:
+        one palette index byte (or 255) per wide.b64 building record, then, at two bytes per
+        record, one facade hint byte each (trim class bits 0-1, window class bits 2-3, so
+        under 16), a hint of 0 exactly where the index is 255."""
         C.require(self, 'wide_walls.b64', 'wide.b64')
         raw = base64.b64decode(C.path('wide_walls.b64').read_text(encoding='ascii').strip())
-        magic, n, npal, zero = struct.unpack('<4i', raw[:16])
+        magic, n, npal, word = struct.unpack('<4i', raw[:16])
         self.assertEqual(0x53485457, magic, 'wide_walls.b64 magic 0x%08X' % (magic & 0xFFFFFFFF))
-        self.assertEqual(0, zero)
+        self.assertIn(word, (0, 1, 2), 'bytes-per-record header word %d' % word)
+        bpr = max(1, word)
         self.assertTrue(0 < npal <= 255, 'palette of %d entries' % npal)
-        self.assertEqual(16 + npal * 3 + n, len(raw), 'body is not palette + one byte per building')
+        self.assertEqual(16 + npal * 3 + n * bpr, len(raw), 'body is not palette + %d byte(s) per building' % bpr)
         hdr, _ = C.decode_b64('wide.b64')
         self.assertEqual(hdr[1], n, 'wide_walls.b64 carries %d buildings, wide.b64 %d' % (n, hdr[1]))
-        idx = raw[16 + npal * 3:]
+        idx = raw[16 + npal * 3:16 + npal * 3 + n]
         bad = sum(1 for v in idx if v != 255 and v >= npal)
         self.assertEqual(0, bad, '%d wall bytes point past the %d-entry palette' % (bad, npal))
         coloured = sum(1 for v in idx if v != 255)
         self.assertGreater(coloured, 0, 'no building carries a wall colour')
+        if bpr == 2:
+            hints = raw[16 + npal * 3 + n:16 + npal * 3 + 2 * n]
+            self.assertEqual(n, len(hints))
+            wide = sum(1 for h in hints if h >= 16)
+            self.assertEqual(0, wide, '%d hint bytes use bits above 3' % wide)
+            unclassed = sum(1 for v, h in zip(idx, hints) if (h & 3 == 0) != (v == 255))
+            self.assertEqual(0, unclassed, '%d buildings have a trim class without a colour, or a colour without a trim class' % unclassed)
+            stray = sum(1 for v, h in zip(idx, hints) if v == 255 and h)
+            self.assertEqual(0, stray, '%d uncoloured buildings carry a hint byte' % stray)
+            self.assertGreater(sum(1 for h in hints if h), 0, 'no building carries a facade hint')
 
     def test_no_int16_saturation(self):
         """No coordinate sits at +/-32767 (a clipped value = geometry pushed past the int16 wall).

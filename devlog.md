@@ -2297,6 +2297,67 @@ stayed with the lead.
   parts the measured colour to one part its own palette draw, plus a second jitter: the
   face keeps its tone, the houses get their variety back. Page 25.10 MB raw, 10.71 MB gzip.
 
+## Round 49: the ballpark diamond, a facade vocabulary, the Center City towers (Sep 2-3)
+
+Mike: "I would love to see an actual baseball diamond on the field and the scoreboard looks
+to be very off kilter", "really overhaul the center city skyscrapers ... varied building
+styles", "for the rest of the city, can we add more building styles that dont all look
+identical? Can you use the mapillary data to inform some other styles?"
+
+- Citizens Bank Park: the field decal is now a diamond at MLB geometry from the home plate
+  the research placed: 90 ft bases, the rubber 60 ft 6 in out, the infield skin cut by the
+  95 ft arc about the rubber, the grass square inside the base paths, mound and plate
+  circles, chalk foul lines to the fence and a 4.5 m warning track along the outfield
+  wall (the `inner` ring's sector in front of home). The board was an axis-aligned slab
+  standing on the outfield grass; it now sits on the left-field stands where the ray from
+  home plate through the research point leaves the bowl, square to the sightline, a dark
+  frame with the housing proud of it and the lit face toward the plate.
+- The facade vocabulary grew from 9 styles to 19 (the `aStyle` word, see `fabricStyle` in
+  app.js): 9 Victorian row (segmental-arched heads, dentil cornice), 10 porch front (a
+  recessed dark porch band with posts and a trim roof line, paired sashes above), 11
+  siding or formstone (lap lines, no lintels), 12 industrial loft (nine-pane sashes on a
+  4.2 m bay, loading doors), 13 new construction (wide dark-framed windows, a floor line in
+  shadow), and five tower archetypes: 14 stone piers, 15 horizontal bands, 16 precast grid,
+  17 pre-war stone (paired narrow sashes, a shadow band every eight floors), 18 residential
+  slab (window band and balcony line). The word also carries a variant in its top bits:
+  dark trim and tall sashes. The reflective curtain wall (`outerGlassMat`) reads a variant
+  the same way: 21 silver spandrel bands, 22 dark glass, 23 a light concrete grid.
+- `fabricStyle` replaces `opaStyle` at all three tiers: OPA era and use pick the family
+  (pre-1900 Georgian or Victorian, 1900-1935 Victorian or porch front for the larger
+  twins, mid-century plain or siding, post-1990 new construction, industrial lofts,
+  storefronts and lofts for commercial), a per-building draw spreads it, and churches take
+  the arched style and civic buildings the arcaded one. Towers without a researched spec
+  take `towerStyle` by era, and `palTall` gained darks, limestone, blue-grey glass and
+  brick.
+- The imagery informs the fabric: `bake_wall_colors.py` now measures, per block face, the
+  fraction of kept pixels that are light (white trim, cornices, formstone, paint) and
+  dark (glass, doors), classes them (trim 1/2/3, window 1/2/3) and `pack_wide.py` writes
+  a second byte per building into `wide_walls.b64` (header word 4 = 2 bytes per record,
+  planar). Over the 25,026 coloured buildings the trim classes split 78 / 19 / 3 %, and
+  the light fraction does separate painted and cornice-heavy faces from plain brick
+  (the lightest palette entries are 93-100 % class 2-3, the brick reds 0-5 %). In the
+  app a trim-3 face wears siding where it would have been a plain row, a trim-2 brick
+  face becomes a Victorian with white cornices, a trim-1 face keeps its dark trim, and a
+  window-3 face after 1990 reads as new construction.
+- The Center City towers: `bake_towers.py` reads `wide_landmarks_research.json` (155 researched
+  buildings with massing text, a photographed facade hex and a glass flag) and `wide_names.json`
+  and writes `towers.json`, 113 specs joined to the wide footprints name-first (IDF-weighted
+  tokens, 55 of the 77 research towers), then by a scored position match (the research's
+  "calibrated grid" drifts against the real 9.5 degree grid), 112 joined, one unmatched (1001
+  South Broad, still construction in OSM). Each spec carries a facade archetype
+  (concrete_grid 29, glass 26, deco 25, brick 11, glass_bands 8, stone_piers 6, glass_dark 4, precast_bands 4), a crown
+  (flat 86, notch 8, spire 7, dome 3, lantern 2, custom 2, lattice 1, ziggurat 1, sloped 1, pyramid 1, mansard 1) and a night accent. In the wide loop a
+  building over 45 m takes the nearest spec within 35 m: its hex through `wallInv` for the
+  masonry archetypes, straight for the glass ones (the research hexes already sit where the
+  hand tints did), the archetype's style, and for the glass archetypes the reflective curtain
+  wall with the band variant. A crowned tower's body stops short of the researched height and
+  the crown kit raises the last metres after the loop (it must run before the chunks upload:
+  the first placement, after the glass upload, wrote into freed buffers and failed the whole
+  step): rectangle pyramids and frusta over the footprint's oriented box, an open lattice of
+  bars for BNY Mellon, stepped tiers that keep the facade for Three Logan, lit lanterns for
+  the Comcast Technology Center and One South Broad, part-plan notches, masts and the PSFS
+  sign. 52 crowns raised. Page 25.31 MB raw, 10.73 MB gzip.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

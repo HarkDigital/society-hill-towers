@@ -18,8 +18,11 @@ a silent skip dropped the whole south extension / every 3D part / the glass flag
 Frame: philly_frame.py for the research glass spots (they used KX=85350).
 Wall colours: when bake_wall_colors.py has run for real (wall_palette.json not a dry run),
 wide_walls.b64 is written beside wide.b64: Int32[4] header (magic 0x53485457, nBuildings,
-nPalette, 0), the palette as nPalette sRGB byte triples, then one byte per packed building
-record in wide.b64's order (parts included), a palette index or 255 for none."""
+nPalette, bytesPerRecord), the palette as nPalette sRGB byte triples, then the records
+planar in wide.b64's building order (parts included): nBuildings palette index bytes (255
+for none), then, when bytesPerRecord is 2, nBuildings facade hint bytes (the bake's trim
+class in bits 0-1 and window class in bits 2-3, 0 for a building without a colour). A
+fourth header word of 0 is the old one-byte layout, indices only."""
 import argparse, json, math, os, struct, base64, sys
 from philly_frame import LON0, LAT0, KX, KZ
 
@@ -53,8 +56,9 @@ def _optional(path, what):
 d = json.load(open('scene_wide.json'))
 # Mapillary block-face wall colours (bake_wall_colors.py): a palette index per scene
 # building, carried on the building as _wall through the south merge below and written
-# as wide_walls.b64 in wide.b64's record order. A dry-run bake or a missing pair leaves
-# the existing wide_walls.b64 untouched.
+# as wide_walls.b64 in wide.b64's record order; the facade hint byte rides along as
+# _hint the same way when the bake wrote the *_hint arrays. A dry-run bake or a missing
+# pair leaves the existing wide_walls.b64 untouched.
 def _wall_colors():
     try:
         pal, col = json.load(open('wall_palette.json')), json.load(open('wall_colors.json'))
@@ -66,15 +70,20 @@ def _wall_colors():
         return None
     return pal['wall'], col
 _walls = _wall_colors()
+_hinted = bool(_walls) and 'wide_hint' in _walls[1]
+def _wall_of(col, tag, i):
+    """(_wall, _hint) of building i of scene `tag` from wall_colors.json (-1, 0 past its end)."""
+    idx, hint = col[tag], col.get(tag + '_hint') or ()
+    return (idx[i] if i < len(idx) else -1), (hint[i] if i < len(hint) else 0)
 if _walls:
     for _i, _b in enumerate(d['buildings']):
-        _b['_wall'] = _walls[1]['wide'][_i] if _i < len(_walls[1]['wide']) else -1
+        _b['_wall'], _b['_hint'] = _wall_of(_walls[1], 'wide', _i)
 _south = _optional('scene_south.json', 'the south extension (stadium complex, Walt Whitman Bridge)')
 if _south is not None:
     seenB = set(tuple(map(tuple, b['poly'][:3])) for b in d['buildings'])
     for _j, b in enumerate(_south['buildings']):
         if tuple(map(tuple, b['poly'][:3])) in seenB: continue
-        if _walls: b['_wall'] = _walls[1]['south'][_j] if _j < len(_walls[1]['south']) else -1
+        if _walls: b['_wall'], b['_hint'] = _wall_of(_walls[1], 'south', _j)
         if (b.get('name') or '') == 'Xfinity Mobile Arena': b['t'] = 'arena'
         d['buildings'].append(b)
     d['roads'] += _south['roads']; d['areas'] += _south['areas']
@@ -227,6 +236,7 @@ def roof_word(b, cx, cz):
 
 body = []
 walls = []                            # one byte per building record, in body order
+hints = []                            # and its facade hint byte, 0 without a colour
 nb = nr = na = 0
 dropped_dup = dropped_outline = 0
 for b in d['buildings']:
@@ -245,6 +255,8 @@ for b in d['buildings']:
     nb += 1
     w = b.get('_wall', -1)
     walls.append(w if 0 <= w < 255 else 255)
+    hb = b.get('_hint', 0)
+    hints.append(hb if 0 < hb < 16 else 0)
 # 3D-mapped building parts (skyscraper shafts, crowns, podiums) from building:part ways;
 # parts of research-flagged glass towers get type 10 (reflective glass material)
 glassSpots = []
@@ -265,6 +277,7 @@ for pt in _parts:
     for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
     nb += 1
     walls.append(255)
+    hints.append(0)
 def simplify_open(pts, tol):
     # open-polyline Douglas-Peucker. The old code fed roads through the CLOSED-ring
     # simplify() (appending pts[0], slicing [:-1]) which amputated the real final
@@ -339,9 +352,14 @@ open('wide.b64', 'w').write(b64)
 if _walls:
     pal = [tuple(int(hx[i:i + 2], 16) for i in (1, 3, 5)) for hx in _walls[0]]
     walls = [w if w < len(pal) else 255 for w in walls]
-    assert len(walls) == nb, (len(walls), nb)
-    wb = struct.pack('<4i', 0x53485457, nb, len(pal), 0) + bytes(v for c in pal for v in c) + bytes(walls)
+    hints = [h if w < 255 else 0 for w, h in zip(walls, hints)]   # no colour, no hint
+    assert len(walls) == nb == len(hints), (len(walls), len(hints), nb)
+    bpr = 2 if _hinted else 0
+    wb = struct.pack('<4i', 0x53485457, nb, len(pal), bpr) + bytes(v for c in pal for v in c) + bytes(walls) \
+        + (bytes(hints) if _hinted else b'')
     open('wide_walls.b64', 'w').write(base64.b64encode(wb).decode('ascii'))
-    print(f'wall colours: {sum(1 for w in walls if w < 255)} of {nb} buildings from Mapillary block faces -> wide_walls.b64 ({len(wb):,} bytes)', flush=True)
+    print(f'wall colours: {sum(1 for w in walls if w < 255)} of {nb} buildings from Mapillary block faces'
+          + (f', {sum(1 for h in hints if h)} with a facade hint byte' if _hinted else '')
+          + f' -> wide_walls.b64 ({len(wb):,} bytes)', flush=True)
 print(f'buildings {nb} roads {nr} areas {na} -> {len(buf)/1e6:.2f} MB binary, {len(b64)/1e6:.2f} MB base64; '
       f'dropped {dropped_dup} core-duplicates, {dropped_outline} outlines with 3D parts; {n_clipped} area ring(s) clipped to the int16 box')

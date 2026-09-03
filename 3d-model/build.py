@@ -23,6 +23,7 @@ REQUIRED = {
     "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "storefronts.b64": 40_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "traffic.b64": 100_000,
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
     "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000, "parking_south.json": 9_000,
+    "towers.json": 4_000,
 }
 MAX_HTML = 75_000_000   # runaway-growth tripwire, raised from 25 MB on 2026-09-02 for the roof, colour and storefront passes (the page was ~25 MB; the old 16 MB artifact cap is long moot)
 # Packed int16 blobs are stored byte-planar (header, all low bytes, all high
@@ -148,6 +149,8 @@ const("DEM_NW", dem_of("dem_nw.json", 1))
 const("NW_PARKS", text_of("nw_parks.json", "null"))
 # the sports complex's surface lots (fetch_parking.py), asphalt flats under the outer districts
 const("PARKING_SOUTH", text_of("parking_south.json", "null"))
+# the Center City towers' facade archetypes, crowns and night accents (bake_towers.py), joined by position
+const("TOWERS", text_of("towers.json", "null"))
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
 let_blob("POLES_B64", "poles.b64")

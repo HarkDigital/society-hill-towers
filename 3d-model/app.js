@@ -2360,12 +2360,57 @@
       : e === 4 ? OPA_POOLS.masPost : e >= 8 ? OPA_POOLS.mas1900 : OPA_POOLS.masMod;
     return null;
   }
-  // facade style from the OPA use/era codes (8 = shutterless post-war rowhouse)
-  function opaStyle(fa, h) {
-    const u = fa[0], e = fa[2];
-    if (u === 3 || u === 4) return h > 16 ? 2 : 5;
-    if (u === 5) return 3;
-    return (e >= 4 && e <= 7) ? 8 : 0;
+  // the facade vocabulary (aStyle): 0 Georgian row, 1 church, 2 curtain grid, 3 blank,
+  // 4 civic arches, 5 storefront, 6 loft with storefront, 7 ribbon, 8 post-war row,
+  // 9 Victorian row (arched heads, cornice), 10 porch front, 11 siding or formstone,
+  // 12 industrial loft, 13 new construction, 14 stone piers, 15 horizontal bands,
+  // 16 precast grid, 17 pre-war stone, 18 residential slab; plus 32 x variant (bit 0
+  // dark trim, bit 1 tall sashes). fa = OPA [use, mat, era, stories] or null, t the
+  // packed type code (1 house, 2 apartments, 3 commercial, 4 industrial), hint the
+  // Mapillary byte (trim class in bits 0-1, window class in bits 2-3, 0 unknown)
+  function fabricStyle(fa, h, t, area, seed, hint) {
+    const hs = hash01(seed * 4.71 + 0.3), hv = hash01(seed * 9.13 + 0.8);
+    const u = fa ? fa[0] : -1, e = fa ? fa[2] : 8;
+    const trim = hint ? hint & 3 : 0, wins = hint ? (hint >> 2) & 3 : 0;
+    let st;
+    if (u === 5 || t === 4) st = h >= 7 ? 12 : 8;
+    else if (u === 3 || u === 4 || t === 3) st = h > 16 ? (e >= 6 ? 13 : 2) : (area > 400 && h > 10 ? 6 : 5);
+    else if (e <= 2) st = hs < 0.55 ? 0 : 9;
+    else if (e === 3) st = (t === 1 && area >= 120 && area <= 420 && h <= 13 && hs < 0.75) ? 10 : (hs < 0.55 ? 9 : 0);
+    else if (e === 4 || e === 5) st = hs < 0.28 ? 11 : 8;
+    else if (e === 6 || e === 7) st = hs < 0.7 ? 13 : 8;
+    else st = hs < 0.42 ? 0 : hs < 0.66 ? 9 : hs < 0.84 ? 8 : 11;
+    // the imagery: a face that reads light (white trim, formstone, siding, paint) wears the
+    // siding style where it would have been a plain row, a face with little light trim
+    // keeps its brick, and a dark-glazed face of the last thirty years is new work
+    if (trim === 3 && (st === 0 || st === 8) && hv < 0.75) st = 11;
+    if (trim === 2 && st === 0 && hv < 0.5) st = 9;   // brick with white cornices and trim
+    if (trim === 1 && st === 11) st = 8;
+    if (wins === 3 && e >= 6 && (st === 8 || st === 0)) st = 13;
+    const variant = ((trim >= 2) ? 0 : (hv < 0.35 || trim === 1) ? 1 : 0) + ((e <= 3 && hash01(seed * 2.2 + 0.1) < 0.5) ? 2 : 0);
+    return st + 32 * variant;
+  }
+  // a tower's facade when no researched spec names it: the OPA era, else the type and a draw
+  function towerStyle(fa, t, seed) {
+    const e = fa ? fa[2] : 8, hs = hash01(seed * 6.37 + 0.2);
+    if (t === 2 && e >= 4) return 18;
+    if (e <= 3) return 17;
+    if (e === 4 || e === 5) return hs < 0.7 ? 16 : 2;
+    if (e === 6 || e === 7) return hs < 0.5 ? 15 : 2;
+    return hs < 0.4 ? 2 : hs < 0.7 ? 16 : 18;
+  }
+  const CROWN_CUTS = { pyramid: 1, lattice: 1, ziggurat: 1, lantern: 1, mansard: 1, dome: 1, sloped: 1, notch: 1 };
+  const TOWER_STYLE = { glass: 20, glass_bands: 21, glass_dark: 22, concrete_grid: 16, stone_piers: 14, deco: 17, precast_bands: 18, brick: 2 };
+  // the researched Center City towers (towers.json): nearest spec within its radius
+  const TOWER_SPECS = (typeof TOWERS !== 'undefined' && TOWERS && TOWERS.towers) ? TOWERS.towers : [];
+  const towerGrid = new Map();
+  for (const sp of TOWER_SPECS) { const kx = Math.floor(sp.x / 100), kz = Math.floor(sp.z / 100); for (let a = -1; a <= 1; a++) for (let b2 = -1; b2 <= 1; b2++) { const key = (kx + a) + ',' + (kz + b2); if (!towerGrid.has(key)) towerGrid.set(key, []); towerGrid.get(key).push(sp); } }
+  function towerAt(x, z) {
+    const lst = towerGrid.get(Math.floor(x / 100) + ',' + Math.floor(z / 100));
+    if (!lst) return null;
+    let best = null, bd = 1e9;
+    for (const sp of lst) { const d = Math.hypot(sp.x - x, sp.z - z); if (d < (sp.r || 35) && d < bd) { bd = d; best = sp; } }
+    return best;
   }
   function buildingColor(b, i) {
     const h = hash01(i * 7.13);
@@ -2497,11 +2542,13 @@
         if ((2 * area) / Math.max(1, perim) < 1.7) b.h = 3.2;
       }
       // facade vocabulary: 0 Georgian rowhouse, 1 church, 2 modern slab, 3 blank, 4 civic arched base, 5 storefront
+      const tCode = (t === 'retail' || t === 'commercial' || t === 'hotel' || t === 'office') ? 3 : (t === 'industrial' || t === 'warehouse') ? 4 : t === 'apartments' ? 2 : 1;
       const style = spec0 && spec0.style != null ? spec0.style
-        : (b.h > 35 || t === 'garage' || t === 'parking') ? 2
+        : (t === 'garage' || t === 'parking') ? 2
         : (t === 'church' || t === 'worship') ? 1
-        : b.fa ? opaStyle(b.fa, b.h)
-        : (t === 'retail' || t === 'commercial' || t === 'hotel' || t === 'office') ? 5 : 0;
+        : (t === 'school' || t === 'civic' || t === 'hospital' || t === 'university') ? (b.h > 16 ? 2 : 4)
+        : b.h > 35 ? towerStyle(b.fa, tCode, i)
+        : fabricStyle(b.fa, b.h, tCode, Math.abs(signedArea(b.poly)), i, 0);
       const trimCol = hash01(i * 2.9) < 0.62 ? new THREE.Color(0xe9e3d3) : new THREE.Color(0x3d3935);
       // roof source: LiDAR-measured form when the 2022 flight resolved one
       // (b.roof = [form, eave, ridge, ridgeRad] from lidar_core.py, form
@@ -2677,7 +2724,11 @@
           '#include <color_fragment>',
           '{',
           '  vec3 n = normalize(vWNorm);',
-          '  int st = int(vStyle + 0.5);',
+          '  float stF = vStyle + 0.5;',
+          '  float variantF = floor(stF / 32.0);',
+          '  int st = int(stF - variantF * 32.0);',
+          '  float vDark = mod(variantF, 2.0);',
+          '  float vTall = step(1.5, variantF);',
           '  float v = vWPos.y - vBase;',
           '  if (abs(n.y) < 0.35 && st != 3 && v > 0.0) {',
           '    bool local = vWallL > 0.5;',
@@ -2691,7 +2742,8 @@
           '    float detU = clamp(1.0 - (0.6 * fwidth(uW) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    float wallTop = local ? vWallH - 0.25 : 1.0e4;',
           '    float brickish = step(diffuseColor.g * 1.12, diffuseColor.r);',
-          '    vec3 frameCol = vec3(0.90, 0.88, 0.82);',
+          '    vec3 frameCol = mix(vec3(0.90, 0.88, 0.82), vec3(0.17, 0.16, 0.15), vDark);',
+          '    vec3 trimCol = mix(vec3(0.93, 0.91, 0.86), vec3(0.20, 0.19, 0.18), vDark);',
           '    vec3 stoneCol = vec3(0.80, 0.76, 0.68);',
           '    vec3 col = diffuseColor.rgb;',
           '    float lit = 0.0, glass = 0.0;',
@@ -2701,7 +2753,7 @@
           // chain provably contributes nothing: take the far average directly
           '    if (det < 0.002) {',
           '      vec3 farAvg0 = diffuseColor.rgb * 0.9; float farW0 = 0.35;',
-          '      if (st == 2 || st == 6 || st == 7) { farAvg0 = mix(diffuseColor.rgb, vec3(0.115, 0.13, 0.155), 0.48); farW0 = 0.92; }',
+          '      if (st == 2 || st == 6 || st == 7 || (st >= 14 && st <= 18)) { farAvg0 = mix(diffuseColor.rgb, vec3(0.115, 0.13, 0.155), (st == 16 || st == 17) ? 0.3 : 0.48); farW0 = 0.92; }',
           '      diffuseColor.rgb = mix(col, farAvg0, farW0);',
           '      shtLit = 0.05;',
           '    } else {',
@@ -2763,16 +2815,149 @@
           '      vec3 gc7 = vec3(0.10, 0.12, 0.14) + vec3(0.10, 0.09, 0.07) * lit;',
           '      col = mix(col, gc7, gBand * 0.9);',
           '      glass = gBand;',
-          '    } else {',
-          '      float pitch = (st == 4) ? 3.0 : (st == 8 ? 2.35 : 1.9);',
-          '      float fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.05;',
+          '    } else if (st == 14) {',
+          // stone piers: granite or limestone verticals every 3.6 m with dark glass strips between
+          // them, a stone spandrel at every floor line (BNY Mellon, the Commerce Squares, PSFS)
+          '      float pitch = 3.6, fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.9;',
+          '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
+          '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
+          '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
+          '      vec2 cell = vec2(floor(u / pitch), floor(v / fp));',
+          '      vec2 m = vec2(u - (cell.x + 0.5) * pitch, v - cell.y * fp);',
+          '      float okRow = step(cell.y * fp + 1.0, wallTop) * inWall * det;',
+          '      float strip = rectM(m, vec2(0.0, fp * 0.5), vec2(pitch - 1.35, fp), aa) * okRow;',
+          '      float spand = rectM(m, vec2(0.0, 0.42), vec2(pitch, 0.84), aa) * okRow;',
+          '      lit = 0.45 + 0.55 * shtHash(cell * 1.9 + 4.0);',
+          '      vec3 gc = vec3(0.09, 0.11, 0.13) + vec3(0.11, 0.10, 0.07) * lit;',
+          '      float win = strip * (1.0 - spand);',
+          '      col = mix(col, gc, win * 0.92);',
+          '      col = mix(col, diffuseColor.rgb * 0.82, spand * strip * 0.9);',
+          '      col *= 1.0 - 0.12 * det * (1.0 - strip) * (1.0 - smoothstep(0.08, 0.08 + aa, abs(abs(m.x) - (pitch - 1.35) * 0.5 - 0.1)));',
+          '      glass = win;',
+          '    } else if (st == 15) {',
+          // horizontal bands: a ribbon of glass and an opaque spandrel band at every floor,
+          // near-continuous, the mullions barely there (PNC, Eleven Penn Center, the Liberty
+          // Place podium faces, the metal-banded 1980s towers)
+          '      float fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.7;',
+          '      float row = floor(v / fp), bandV = v - row * fp;',
+          '      float ok = det * step(0.4, v) * step((row + 1.0) * fp, wallTop + 1.2);',
+          '      float gBand = rectM(vec2(0.0, bandV), vec2(0.0, fp * 0.62), vec2(9999.0, fp * 0.56), aa) * ok;',
+          '      float mull = 1.0 - smoothstep(0.045, 0.045 + aa, abs(fract(uW / 1.55 + 0.5) - 0.5) * 1.55);',
+          '      lit = 0.45 + 0.55 * shtHash(vec2(floor(uW / 3.1), row) + 5.3);',
+          '      vec3 gc = vec3(0.10, 0.12, 0.15) + vec3(0.11, 0.10, 0.08) * lit;',
+          '      col = mix(col, gc, gBand * 0.92);',
+          '      col = mix(col, gc * 0.55, gBand * mull * 0.8);',
+          '      col = mix(col, diffuseColor.rgb * 1.08, (1.0 - gBand) * ok * 0.5);',
+          '      glass = gBand;',
+          '    } else if (st == 16) {',
+          // precast concrete grid: a waffle of deep square windows, the frame the wall colour,
+          // a shadow line under every head (Five and Six Penn Center, Centre Square, PECO)
+          '      float pitch = 3.2, fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.4;',
+          '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
+          '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
+          '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
+          '      vec2 cell = vec2(floor(u / pitch), floor(v / fp));',
+          '      vec2 m = vec2(u - (cell.x + 0.5) * pitch, v - cell.y * fp);',
+          '      float okRow = step(cell.y * fp + 2.4, wallTop) * inWall * det * step(0.6, v);',
+          '      float win = rectM(m, vec2(0.0, fp * 0.5 + 0.1), vec2(pitch - 1.0, fp - 1.15), aa) * okRow;',
+          '      float shade = rectM(m, vec2(0.0, fp * 0.5 + 0.1 + (fp - 1.15) * 0.5 + 0.2), vec2(pitch - 1.0, 0.4), aa) * okRow;',
+          '      lit = 0.45 + 0.55 * shtHash(cell * 2.3 + 9.0);',
+          '      vec3 gc = vec3(0.07, 0.08, 0.10) + vec3(0.10, 0.09, 0.07) * lit;',
+          '      col = mix(col, gc, win * 0.9);',
+          '      col *= 1.0 - 0.28 * shade;',
+          '      glass = win;',
+          '    } else if (st == 17) {',
+          // pre-war stone: paired narrow sashes between light piers, a darker spandrel at every
+          // floor, a shadow band every eight floors where the setbacks read (One South Broad,
+          // Wells Fargo, Lewis Tower, the Drake)
+          '      float pitch = 4.4, fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.5;',
+          '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
+          '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
+          '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
+          '      vec2 cell = vec2(floor(u / pitch), floor(v / fp));',
+          '      vec2 m = vec2(u - (cell.x + 0.5) * pitch, v - cell.y * fp);',
+          '      float okRow = step(cell.y * fp + 3.0, wallTop) * inWall * det * step(0.8, v);',
+          '      float w1 = rectM(m, vec2(-1.0, 1.9), vec2(1.25, 2.3), aa) * okRow;',
+          '      float w2 = rectM(m, vec2(1.0, 1.9), vec2(1.25, 2.3), aa) * okRow;',
+          '      float win = max(w1, w2);',
+          '      float spand = rectM(m, vec2(0.0, 0.32), vec2(pitch, 0.64), aa) * okRow;',
+          '      lit = 0.45 + 0.55 * shtHash(cell * 1.1 + 2.0);',
+          '      vec3 gc = vec3(0.08, 0.09, 0.11) + vec3(0.11, 0.10, 0.07) * lit;',
+          '      col = mix(col, gc, win * 0.92);',
+          '      col = mix(col, frameCol, win * (1.0 - smoothstep(0.03, 0.03 + aa, abs(m.y - 1.9))) * 0.7);',
+          '      col *= 1.0 - 0.14 * spand - 0.10 * det * step(7.5, mod(cell.y, 8.0)) * (1.0 - win);',
+          '      glass = win;',
+          '    } else if (st == 18) {',
+          // residential slab: a window band and a balcony slab line at every floor
+          '      float fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.1;',
+          '      float row = floor(v / fp), bandV = v - row * fp;',
+          '      float ok = det * step(0.4, v) * step((row + 1.0) * fp, wallTop + 1.0);',
+          '      float gBand = rectM(vec2(0.0, bandV), vec2(0.0, fp * 0.6), vec2(9999.0, fp * 0.5), aa) * ok;',
+          '      float slab = rectM(vec2(0.0, bandV), vec2(0.0, 0.16), vec2(9999.0, 0.32), aa) * ok;',
+          '      float post = 1.0 - smoothstep(0.09, 0.09 + aa, abs(fract(uW / 3.3 + 0.5) - 0.5) * 3.3);',
+          '      lit = 0.45 + 0.55 * shtHash(vec2(floor(uW / 3.3), row) + 6.1);',
+          '      vec3 gc = vec3(0.09, 0.10, 0.12) + vec3(0.12, 0.10, 0.07) * lit;',
+          '      col = mix(col, gc, gBand * 0.9);',
+          '      col = mix(col, diffuseColor.rgb * 0.75, gBand * post * 0.8);',
+          '      col = mix(col, vec3(0.86, 0.85, 0.82), slab * 0.85);',
+          '      glass = gBand;',
+          '    } else if (st == 12) {',
+          // industrial loft: big multi-pane sashes on a 4.2 m bay, loading doors on the ground
+          '      float pitch = 4.2, fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.9;',
           '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
           '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
           '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
           '      vec2 cell = vec2(floor(u / pitch), floor(v / fp));',
           '      vec2 m = vec2(u - (cell.x + 0.5) * pitch, v - cell.y * fp);',
           '      float ground = step(v, fp);',
-          '      float ww = 0.95, wh = 1.75, sill = 0.85;',
+          '      float bay = ground * step(2.5, mod(cell.x, 4.0)) * inWall * det * detU;',
+          '      float okRow = step(cell.y * fp + 3.4, wallTop) * inWall * det * (1.0 - bay);',
+          '      float win = rectM(m, vec2(0.0, 2.15), vec2(2.9, 2.5), aa) * okRow;',
+          '      float frame = (rectM(m, vec2(0.0, 2.15), vec2(3.1, 2.7), aa) - win) * okRow;',
+          '      vec2 wl = vec2((m.x + 1.45) / 2.9, (m.y - 0.9) / 2.5);',
+          '      float mun = win * max(max(1.0 - smoothstep(0.02, 0.02 + aa, abs(wl.x - 0.333)), 1.0 - smoothstep(0.02, 0.02 + aa, abs(wl.x - 0.667))), max(1.0 - smoothstep(0.02, 0.02 + aa, abs(wl.y - 0.333)), 1.0 - smoothstep(0.02, 0.02 + aa, abs(wl.y - 0.667))));',
+          '      lit = 0.5 + 0.5 * shtHash(cell * 1.3 + 12.0);',
+          '      vec3 gc = vec3(0.07, 0.08, 0.09) + vec3(0.11, 0.10, 0.07) * lit;',
+          '      col = mix(col, vec3(0.30, 0.29, 0.27), frame * 0.8);',
+          '      col = mix(col, gc, win * 0.9);',
+          '      col = mix(col, vec3(0.32, 0.31, 0.29), mun * 0.85);',
+          '      float door = rectM(m, vec2(0.0, 1.7), vec2(2.8, 3.3), aa) * bay;',
+          '      col = mix(col, vec3(0.16, 0.15, 0.14), door * 0.9);',
+          '      col *= 1.0 - 0.10 * det * rectM(m, vec2(0.0, fp - 0.25), vec2(pitch, 0.3), aa) * inWall;',
+          '      glass = win;',
+          '    } else if (st == 13) {',
+          // new construction: wide dark-framed windows, no lintels, a floor line in shadow
+          '      float pitch = 2.6, fp = vFloorH > 5.0 ? vFloorH * 0.1 : 3.05;',
+          '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
+          '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
+          '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
+          '      vec2 cell = vec2(floor(u / pitch), floor(v / fp));',
+          '      vec2 m = vec2(u - (cell.x + 0.5) * pitch, v - cell.y * fp);',
+          '      float ground = step(v, fp);',
+          '      float doorCol = step(2.5, mod(cell.x, 3.0)) * ground * inWall * det * detU;',
+          '      float okRow = step(cell.y * fp + 2.6, wallTop) * inWall * det * (1.0 - doorCol);',
+          '      float win = rectM(m, vec2(0.0, 1.75), vec2(1.7, 2.0), aa) * okRow;',
+          '      float frame = (rectM(m, vec2(0.0, 1.75), vec2(1.86, 2.16), aa) - win) * okRow;',
+          '      lit = 0.5 + 0.5 * shtHash(cell * 2.1 + 13.0);',
+          '      vec3 gc = vec3(0.08, 0.09, 0.11) + vec3(0.11, 0.10, 0.08) * lit;',
+          '      col = mix(col, vec3(0.14, 0.14, 0.15), frame * 0.9);',
+          '      col = mix(col, gc, win * 0.92);',
+          '      col = mix(col, gc * 0.7, win * (1.0 - smoothstep(0.02, 0.02 + aa, abs(m.x))) * 0.6);',
+          '      float door = rectM(m, vec2(0.0, 1.35), vec2(1.1, 2.4), aa) * doorCol;',
+          '      col = mix(col, vec3(0.12, 0.12, 0.13), door * 0.9);',
+          '      col *= 1.0 - 0.12 * det * rectM(m, vec2(0.0, fp - 0.2), vec2(pitch, 0.28), aa) * inWall;',
+          '      glass = win;',
+          '    } else {',
+          '      float pitch = (st == 4) ? 3.0 : (st == 8 ? 2.35 : (st == 9 ? 2.25 : (st == 10 ? 3.3 : (st == 11 ? 2.05 : 1.9))));',
+          '      float fp = vFloorH > 5.0 ? vFloorH * 0.1 : (st == 9 ? 3.35 : 3.05);',
+          '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
+          '      float u = local ? uW - (vWallL - nb * pitch) * 0.5 : uW;',
+          '      float inWall = local ? step(0.0, u) * step(u, nb * pitch) : 1.0;',
+          '      vec2 cell = vec2(floor(u / pitch), floor(v / fp));',
+          '      vec2 m = vec2(u - (cell.x + 0.5) * pitch, v - cell.y * fp);',
+          '      float ground = step(v, fp);',
+          '      float ww = (st == 10 ? 1.0 : (st == 9 ? 1.05 : 0.95)), wh = 1.75 + 0.3 * vTall + 0.25 * float(st == 9), sill = 0.85;',
+          '      float porch = float(st == 10) * step(v, 3.3) * inWall * det;',
           '      float okRow = step(cell.y * fp + sill + wh, wallTop) * inWall * det;',
           '      lit = 0.5 + 0.5 * shtHash(cell * 1.7 + 11.0);',
           '      vec3 gc = vec3(0.06, 0.07, 0.09) + vec3(0.10, 0.09, 0.06) * lit;',
@@ -2780,13 +2965,14 @@
           '      float isDoor = ground * doorCol * float(st == 0 || st == 8) * brickish * inWall * det * detU;',
           '      float isArch = ground * float(st == 4) * inWall * det;',
           '      float isShop = ground * float(st == 5) * inWall * det;',
-          '      float sashOn = (1.0 - max(isDoor, max(isArch, isShop))) * okRow;',
-          '      float win = rectM(m, vec2(0.0, sill + wh * 0.5), vec2(ww, wh), aa) * sashOn;',
-          '      float frame = (rectM(m, vec2(0.0, sill + wh * 0.5), vec2(ww + 0.16, wh + 0.14), aa) - win) * sashOn;',
+          '      float sashOn = (1.0 - max(isDoor, max(isArch, max(isShop, porch)))) * okRow;',
+          '      float segCut = 1.0 - smoothstep(sill + wh + 0.2, sill + wh + 0.2 + aa, m.y);',
+          '      float win = max(rectM(m, vec2(0.0, sill + wh * 0.5), vec2(ww, wh), aa), float(st == 9) * archM(m, vec2(0.0, sill), ww, wh + ww * 0.5, aa) * segCut) * sashOn;',
+          '      float frame = (max(rectM(m, vec2(0.0, sill + wh * 0.5), vec2(ww + 0.16, wh + 0.14), aa), float(st == 9) * archM(m, vec2(0.0, sill - 0.07), ww + 0.16, wh + ww * 0.5 + 0.14, aa) * (1.0 - smoothstep(sill + wh + 0.34, sill + wh + 0.34 + aa, m.y))) - win) * sashOn;',
           '      vec2 wl = vec2((m.x + ww * 0.5) / ww, (m.y - sill) / wh);',
           '      float mun = win * max(1.0 - smoothstep(0.028, 0.028 + aa, abs(wl.x - 0.5)), max(1.0 - smoothstep(0.02, 0.02 + aa, abs(wl.y - 0.5)), max(1.0 - smoothstep(0.016, 0.016 + aa, abs(wl.y - 0.25)), 1.0 - smoothstep(0.016, 0.016 + aa, abs(wl.y - 0.75)))));',
-          '      float lintel = rectM(m, vec2(0.0, sill + wh + 0.2), vec2(ww + 0.4, 0.24), aa) * sashOn * brickish;',
-          '      float sillM = rectM(m, vec2(0.0, sill - 0.08), vec2(ww + 0.26, 0.12), aa) * sashOn * brickish;',
+          '      float lintel = rectM(m, vec2(0.0, sill + wh + 0.2), vec2(ww + 0.4, 0.24), aa) * sashOn * brickish * float(st != 11 && st != 9);',
+          '      float sillM = rectM(m, vec2(0.0, sill - 0.08), vec2(ww + 0.26, 0.12), aa) * sashOn * (brickish + float(st == 9)) * float(st != 11);',
           '      float shut = (rectM(m, vec2(-(ww * 0.5 + 0.31), sill + wh * 0.5), vec2(0.44, wh), aa) + rectM(m, vec2(ww * 0.5 + 0.31, sill + wh * 0.5), vec2(0.44, wh), aa)) * sashOn;',
           '      float shOn = step(shtHash(vec2(cell.x * 0.37, 7.31)), 0.5) * brickish * float(st == 0) * detU;',
           '      vec3 shCol = mix(vec3(0.09, 0.13, 0.10), vec3(0.06, 0.06, 0.07), step(0.5, shtHash(vec2(cell.x, 2.17))));',
@@ -2814,12 +3000,30 @@
           '      col = mix(col, vec3(0.18, 0.17, 0.16), shopF * 0.9);',
           '      col = mix(col, gc * 1.3, shop * 0.9);',
           '      glass = max(win, max(fanIn, max(arch, shop)));',
+          '      if (st == 9 || st == 11) {',
+          '        float corn = (1.0 - smoothstep(0.0, aa, abs(v - (wallTop - 0.42)) - 0.42)) * float(local) * inWall * det;',
+          '        float dent = float(st == 9) * corn * step(0.5, fract(u / 0.6)) * (1.0 - smoothstep(0.0, aa, abs(v - (wallTop - 0.9)) - 0.16));',
+          '        col = mix(col, trimCol, max(corn, dent) * 0.9);',
+          '      }',
+          '      if (st == 11) {',
+          '        float lap = 1.0 - smoothstep(0.03, 0.03 + aa, abs(fract(v / 0.26 + 0.5) - 0.5) * 0.26);',
+          '        col *= 1.0 - 0.13 * det * lap * (1.0 - max(win, frame));',
+          '      }',
+          '      if (st == 10) {',
+          '        float post = 1.0 - smoothstep(0.14, 0.14 + aa, abs(fract(uW / 3.3 + 0.5) - 0.5) * 3.3);',
+          '        float roofL = (1.0 - smoothstep(0.0, aa, abs(v - 3.15) - 0.22)) * inWall * det;',
+          '        col = mix(col, col * 0.55, porch * (1.0 - post) * 0.9);',
+          '        col = mix(col, trimCol, max(porch * post, roofL) * 0.9);',
+          '        float pw = rectM(m, vec2(0.0, 1.6), vec2(1.1, 1.6), aa) * porch * (1.0 - post) * step(0.5, mod(cell.x, 2.0));',
+          '        col = mix(col, gc, pw * 0.85);',
+          '        glass = max(glass, pw);',
+          '      }',
           '    }',
           '    // far away the pattern averages to the true facade mix — curtain-wall',
           '    // styles are ~half glass, so they must converge to a visibly darker',
           '    // average instead of washing back to the pale wall color',
           '    vec3 farAvg = diffuseColor.rgb * 0.9; float farW = 0.35;',
-          '    if (st == 2 || st == 6 || st == 7) { farAvg = mix(diffuseColor.rgb, vec3(0.115, 0.13, 0.155), 0.48); farW = 0.92; }',
+          '    if (st == 2 || st == 6 || st == 7 || (st >= 14 && st <= 18)) { farAvg = mix(diffuseColor.rgb, vec3(0.115, 0.13, 0.155), (st == 16 || st == 17) ? 0.3 : 0.48); farW = 0.92; }',
           '    col = mix(col, farAvg, (1.0 - det) * farW);',
           // only about a third of windows are lit at night, at varied warmth; where the
           // pattern fades with distance the facade keeps a soft aggregate glow instead
@@ -4119,15 +4323,17 @@
       r = lift + (r * gain - lift) * warm; g = lift + (g * gain - lift) * warm; b = lift + (b * gain - lift) * warm;
       return new THREE.Color(Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)));
     };
+    const towerHits = [], crownTrim = [];   // researched towers raised in this loop: their crowns follow the loop
     let WALLS = null;
     if (typeof WIDE_WALLS_B64 !== 'undefined' && WIDE_WALLS_B64) {
       const wb = unb64(WIDE_WALLS_B64, 'WIDE_WALLS');
       WIDE_WALLS_B64 = null;
       const wh = new Int32Array(wb.buffer, 0, 4);
-      if (wh[0] === 0x53485457 && wh[1] === hdr[1] && wh[2] > 0 && wb.length >= 16 + wh[2] * 3 + wh[1]) {
-        const np = wh[2], pal = new Array(np);
+      const bpr = Math.max(1, wh[3]);   // bytes per building: the palette index, then (bpr 2) the Mapillary trim/window hint
+      if (wh[0] === 0x53485457 && wh[1] === hdr[1] && wh[2] > 0 && wb.length >= 16 + wh[2] * 3 + wh[1] * bpr) {
+        const np = wh[2], pal = new Array(np), o = 16 + np * 3;
         for (let p = 0; p < np; p++) pal[p] = wallInv(wb[16 + p * 3], wb[17 + p * 3], wb[18 + p * 3]);
-        WALLS = { pal, idx: wb.subarray(16 + np * 3, 16 + np * 3 + wh[1]) };
+        WALLS = { pal, idx: wb.subarray(o, o + wh[1]), hint: bpr >= 2 ? wb.subarray(o + wh[1], o + 2 * wh[1]) : null };
       }
     }
     const S = 0.2;
@@ -4212,7 +4418,8 @@
     const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
     // real skylines are not white: precast tan, limestone, aluminum, blue-gray steel,
     // dark curtain wall, bronze — towers draw from this instead of the pale palCom
-    const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
+    // the unresearched towers: limestone and precast lights, charcoal and bronze darks, blue-grey glass, brick
+    const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c, 0x2f3338, 0xb8ad98, 0x5f7d99, 0xc2c2be, 0x6d4a3a, 0x3b4a5a];
     const c = new THREE.Color();
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
@@ -4342,19 +4549,69 @@
         upperRing(keepHome, 40, 42, 0x3e6a52, null, 0.86);   // the patina canopy over the top rows only
         haloBand(keepHome, 0.55, 42.3); haloBand((q) => !keepHome(q), 0.55, 15.4); haloFan(inner, 2.6);
         glowParts.push({ geom: fanGeom(inner, base + 1.9), color: new THREE.Color(0x1c3f14), style: 3 });
-        { // infield dirt diamond just in from home plate
-          const fx2 = hx - dhx * 20, fz2 = hz - dhz * 20;
-          const dPoly = [[fx2 + dhx * 20, fz2 + dhz * 20], [fx2 - dhz * 20, fz2 + dhx * 20], [fx2 - dhx * 20, fz2 - dhz * 20], [fx2 + dhz * 20, fz2 - dhx * 20]];
-          const d0 = chk.n; c.set(0xb08355);
-          for (const q of dPoly) pushV(chk, q[0], base + 2.05, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
-          chk.idx.push(d0, d0 + 2, d0 + 1, d0, d0 + 3, d0 + 2);
+        { // the diamond at MLB geometry: 90 ft bases, the rubber 60 ft 6 in out, the infield skin
+          // cut by the 95 ft arc about the rubber, chalk foul lines to the fence, a warning
+          // track along the outfield wall. u runs from home plate out to centre field, v across
+          const ax2 = -dhx, az2 = -dhz, px2 = -az2, pz2 = ax2;
+          const at = (u, v) => [hx + ax2 * u + px2 * v, hz + az2 * u + pz2 * v];
+          const flat = (ring, y, hex) => {   // a fan about the centroid, both windings (a decal, never seen edge-on)
+            c.set(hex);
+            let mx2 = 0, mz2 = 0; for (const q of ring) { mx2 += q[0]; mz2 += q[1]; } mx2 /= ring.length; mz2 /= ring.length;
+            const i0 = chk.n;
+            for (const q of ring) pushV(chk, q[0], y, q[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
+            const ic = chk.n; pushV(chk, mx2, y, mz2, 0, 1, 0, c.r, c.g, c.b, 3, base);
+            for (let j = 0; j < ring.length; j++) { const j1 = (j + 1) % ring.length; chk.idx.push(ic, i0 + j, i0 + j1, ic, i0 + j1, i0 + j); }
+          };
+          const circle = (u, v, rad, n2) => { const out = []; for (let k2 = 0; k2 < n2; k2++) out.push(at(u + Math.cos(k2 / n2 * Math.PI * 2) * rad, v + Math.sin(k2 / n2 * Math.PI * 2) * rad)); return out; };
+          const DIRT = 0xa07a52, CHALK = 0xd6d2c4, GRASS = 0x1c3f14;
+          const rub = 18.44, arcR = 28.96, s2 = Math.SQRT1_2;
+          const tLine = (26.08 + Math.sqrt(26.08 * 26.08 + 4 * (arcR * arcR - rub * rub))) / 2;   // where a foul line meets the arc
+          const skin = [at(0, 0), at(tLine * s2, tLine * s2)];
+          const a0 = Math.atan2(tLine * s2, tLine * s2 - rub);
+          for (let k2 = 0; k2 <= 16; k2++) { const an = a0 - (2 * a0) * k2 / 16; skin.push(at(rub + Math.cos(an) * arcR, Math.sin(an) * arcR)); }
+          skin.push(at(tLine * s2, -tLine * s2));
+          flat(skin, base + 2.04, DIRT);
+          const cu = 19.4, sq = [[0, 0], [cu, cu], [2 * cu, 0], [cu, -cu]].map(([u, v]) => at(cu + (u - cu) * 0.88, v * 0.88));
+          flat(sq, base + 2.08, GRASS);                        // the infield grass inside the base paths
+          flat(circle(rub, 0, 2.75, 14), base + 2.12, DIRT);   // the mound
+          flat(circle(1.2, 0, 4.0, 16), base + 2.12, DIRT);    // the plate area
+          for (const sv of [-1, 1]) {                          // chalk from the plate to the corners
+            const w = 0.5;
+            flat([at(1.5, sv * 1.5 - w * 0), at(1.5 + w * s2, sv * (1.5 - w * s2)), at(96 * s2 + w * s2, sv * (96 * s2 - w * s2)), at(96 * s2, sv * 96 * s2)], base + 2.16, CHALK);
+          }
+          { // the warning track: the outfield sector of the wall, 4.5 m in toward home plate
+            c.set(DIRT);
+            const n2 = inner.length;
+            for (let j = 0; j < n2; j++) {
+              const q1 = inner[j], q2 = inner[(j + 1) % n2];
+              const mid = [(q1[0] + q2[0]) / 2, (q1[1] + q2[1]) / 2];
+              const du = (mid[0] - hx) * ax2 + (mid[1] - hz) * az2, dl = Math.hypot(mid[0] - hx, mid[1] - hz);
+              if (dl < 60 || du < 0.42 * dl) continue;
+              const inw = (q) => { const dx3 = hx - q[0], dz3 = hz - q[1], L3 = Math.hypot(dx3, dz3) || 1; return [q[0] + dx3 / L3 * 4.5, q[1] + dz3 / L3 * 4.5]; };
+              const r1 = inw(q1), r2 = inw(q2), y = base + 2.0;
+              const i0 = chk.n;
+              pushV(chk, q1[0], y, q1[1], 0, 1, 0, c.r, c.g, c.b, 3, base); pushV(chk, q2[0], y, q2[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
+              pushV(chk, r2[0], y, r2[1], 0, 1, 0, c.r, c.g, c.b, 3, base); pushV(chk, r1[0], y, r1[1], 0, 1, 0, c.r, c.g, c.b, 3, base);
+              chk.idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3, i0, i0 + 2, i0 + 1, i0, i0 + 3, i0 + 2);
+            }
+          }
         }
         const spots = masts.length >= 3 ? masts : [[-0.78, -0.78], [0.78, -0.78], [0.78, 0.78], [-0.78, 0.78]].map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
         for (const [mx, mz] of spots) mast(mx, mz, 15, 50, 0x2c3733);
-        const [sx, sz] = def.scoreboard;
-        c.set(0x2c3833);
-        appendBuilding(chk, [[sx - 20, sz - 2], [sx + 20, sz - 2], [sx + 20, sz + 2], [sx - 20, sz + 2]], base + 12, base + 65, c, 3, base);
-        glowParts.push({ geom: box(36, 20, 0.6, sx, base + 50, sz + 2.5, 0), color: new THREE.Color(0x3a5d80), style: 3 });   // the video board, a cool glow after dark
+        { // Phanavision: on the left-field stands, square to the sightline from home plate
+          const [sx0, sz0] = def.scoreboard;
+          let bdx = sx0 - hx, bdz = sz0 - hz; const bL = Math.hypot(bdx, bdz) || 1; bdx /= bL; bdz /= bL;
+          let bx2 = sx0, bz2 = sz0;
+          for (let s3 = 0; s3 < 260; s3 += 2) { const qx = hx + bdx * s3, qz = hz + bdz * s3; if (!pointInPoly(qx, qz, inner)) { bx2 = qx + bdx * 9; bz2 = qz + bdz * 9; break; } }
+          const ry = Math.atan2(-bdx, -bdz), qx2 = -bdz, qz2 = bdx;   // the board's long side runs across the sightline
+          const rect = (w, d, ox) => [[bx2 + bdx * ox - qx2 * w / 2 - bdx * d / 2, bz2 + bdz * ox - qz2 * w / 2 - bdz * d / 2], [bx2 + bdx * ox + qx2 * w / 2 - bdx * d / 2, bz2 + bdz * ox + qz2 * w / 2 - bdz * d / 2],
+            [bx2 + bdx * ox + qx2 * w / 2 + bdx * d / 2, bz2 + bdz * ox + qz2 * w / 2 + bdz * d / 2], [bx2 + bdx * ox - qx2 * w / 2 + bdx * d / 2, bz2 + bdz * ox - qz2 * w / 2 + bdz * d / 2]];
+          c.set(0x2c3833);
+          appendBuilding(chk, rect(30, 2.6, 0), base + 15, base + 44, c, 3, base);        // the dark support frame
+          c.set(0x3b3f3c);
+          appendBuilding(chk, rect(36, 1.2, -1.6), base + 26, base + 44.5, c, 3, base);   // the board's housing, proud of the frame
+          glowParts.push({ geom: box(34, 16, 0.7, bx2 - bdx * 2.6, base + 35.2, bz2 - bdz * 2.6, ry), color: new THREE.Color(0x3a5d80), style: 3 });   // the video board, a cool glow after dark
+        }
       } else {
         // Lincoln Financial Field: brick base, end-zone stands to 30 m, the sideline decks
         // to 46 m in precast with midnight-green seats, the two wing canopies with their white
@@ -4432,10 +4689,28 @@
       // one colour for the whole block; the draw gives the houses back the variety a
       // real face has), with a second jitter on top; towers and stadiums keep theirs
       if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; } }
-      let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
-      if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
+      const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
+      const spec = h > 45 && t !== 10 ? towerAt(cx, cz) : null;
+      let style;
+      if (spec) { style = TOWER_STYLE[spec.facade] || 2; if (spec.hex) { const hx2 = parseInt(spec.hex.slice(1), 16); if (style >= 20) c.set(hx2); else c.copy(wallInv(hx2 >> 16, (hx2 >> 8) & 255, hx2 & 255)); } }
+      else if (h > 30) style = h > 45 ? towerStyle(fa, t, i) : 2;
+      else if (t === 5) style = 1;
+      else if (t === 6) style = h > 16 ? 2 : 4;
+      else if (t >= 7) style = 3;
+      else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, hint);
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
+      let hTop = h;
+      if (spec && !mh) {
+        const cr = spec.crown;
+        if (cr && CROWN_CUTS[cr.type]) hTop = Math.max(h * 0.8, h - (cr.h || 10));
+        towerHits.push({ spec, poly, base, h, hTop, cx, cz, style, color: new THREE.Color().copy(c) });
+      }
+      if (style >= 20) {   // a researched glass tower: the reflective curtain wall in its own tint
+        appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base);
+        if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
+        continue;
+      }
       if (t === 10) { // glass tower parts: reflective material, no painted windows
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
@@ -4465,9 +4740,9 @@
           }
         }
       } else {
-        const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+        const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
-        else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, null, fh, capC, mh === 0);
+        else appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
       }
       if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60) {
         // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples.
@@ -4503,6 +4778,104 @@
         }
       }
       if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
+    }
+    // -------- crowns for the researched towers (towers.json): the body stopped short of
+    // the spec's crown height above, and the crown takes the last metres in its own form.
+    // Rectangle pyramids and frusta over the footprint's oriented box, stepped tiers that
+    // keep the facade style, open lattices of bars, lit lanterns, masts and roof signs
+    if (towerHits.length) {
+      const rectOf = (ob, ax, sc) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sv]) => [ob.cx + ax.ax * ax.hl * sc * su + ax.px * ax.hs * sc * sv, ob.cz + ax.az * ax.hl * sc * su + ax.pz * ax.hs * sc * sv]);
+      const pyrRect = (ob, ax, y0, y1, topSc) => {   // a pyramid (topSc 0) or frustum over the oriented box
+        const lo = rectOf(ob, ax, 1.0), hi = topSc > 0 ? rectOf(ob, ax, topSc) : null;
+        const t = [];
+        for (let k2 = 0; k2 < 4; k2++) {
+          const a2 = lo[k2], b2 = lo[(k2 + 1) % 4];
+          if (hi) { const a3 = hi[k2], b3 = hi[(k2 + 1) % 4]; t.push(a2[0], y0, a2[1], b2[0], y0, b2[1], b3[0], y1, b3[1], a2[0], y0, a2[1], b3[0], y1, b3[1], a3[0], y1, a3[1]); }
+          else t.push(a2[0], y0, a2[1], b2[0], y0, b2[1], ob.cx, y1, ob.cz);
+        }
+        if (hi) t.push(hi[0][0], y1, hi[0][1], hi[1][0], y1, hi[1][1], hi[2][0], y1, hi[2][1], hi[0][0], y1, hi[0][1], hi[2][0], y1, hi[2][1], hi[3][0], y1, hi[3][1]);
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(t), 3));
+        g.computeVertexNormals();
+        return g;
+      };
+      const bar = (a2, b2, rad) => {   // a round bar from a2 to b2 ([x, y, z])
+        const d = new THREE.Vector3(b2[0] - a2[0], b2[1] - a2[1], b2[2] - a2[2]); const L = d.length(); d.normalize();
+        const g = new THREE.CylinderGeometry(rad, rad, L, 6);
+        g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d));
+        g.translate((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, (a2[2] + b2[2]) / 2);
+        return g;
+      };
+      let nCrowns = 0;
+      for (const th of towerHits) {
+        const cr = th.spec.crown;
+        if (!cr || !cr.type || cr.type === 'flat' || cr.type === 'custom' || cr.type === 'stepped') continue;
+        const ob = orientedBox(th.poly), ax = obbAxis(ob);
+        const y0 = th.base + th.hTop, y1 = th.base + th.h, hc = Math.max(2, y1 - y0);
+        const lit = th.spec.lit ? new THREE.Color(parseInt(th.spec.lit.slice(1), 16)) : null;
+        const dark = th.color.clone().multiplyScalar(0.72);
+        const chk2 = getChunk(th.cx, th.cz);
+        nCrowns++;
+        switch (cr.type) {
+          case 'pyramid':
+            if (lit) glowParts.push({ geom: pyrRect(ob, ax, y0, y1, 0), color: lit.clone().multiplyScalar(0.42), style: 3 });
+            else crownTrim.push({ geom: pyrRect(ob, ax, y0, y1, 0), color: dark, style: 3 });
+            break;
+          case 'mansard':
+            crownTrim.push({ geom: pyrRect(ob, ax, y0, y1, 0.55), color: new THREE.Color(0x51565b), style: 3 });
+            break;
+          case 'dome': {
+            const g = new THREE.SphereGeometry(Math.min(ax.hl, ax.hs) * 0.9, 14, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+            g.translate(ob.cx, y0, ob.cz);
+            crownTrim.push({ geom: g, color: new THREE.Color(0xc9ccc4), style: 3 });
+            break;
+          }
+          case 'lattice': {   // an open steel pyramid: the four hips and two rings of purlins, floodlit
+            const lo = rectOf(ob, ax, 1.0), apex = [ob.cx, y1, ob.cz], col = lit ? lit.clone().multiplyScalar(0.5) : new THREE.Color(0xbfc6cc);
+            const push = (g) => (lit ? glowParts : crownTrim).push({ geom: g, color: col, style: 3 });
+            for (let k2 = 0; k2 < 4; k2++) push(bar([lo[k2][0], y0, lo[k2][1]], apex, 0.7));
+            for (const f of [0.33, 0.66]) {
+              const r2 = rectOf(ob, ax, 1.0 - f), y = y0 + hc * f;
+              for (let k2 = 0; k2 < 4; k2++) push(bar([r2[k2][0], y, r2[k2][1]], [r2[(k2 + 1) % 4][0], y, r2[(k2 + 1) % 4][1]], 0.45));
+            }
+            push(bar([ob.cx, y1 - 0.5, ob.cz], [ob.cx, y1 + hc * 0.35, ob.cz], 0.5));
+            break;
+          }
+          case 'ziggurat': {   // stepped tiers that keep the facade
+            const steps = cr.steps || 3, dh = hc / steps;
+            for (let k2 = 0; k2 < steps; k2++) {
+              c.copy(th.color);
+              appendBuilding(chk2, rectOf(ob, ax, 1.0 - 0.13 * (k2 + 1)), y0 + k2 * dh, y0 + (k2 + 1) * dh + 0.01, c, th.style >= 20 ? 17 : th.style, th.base);
+            }
+            if (lit) glowParts.push({ geom: box(ax.hl * 2 * 0.5, 1.2, ax.hs * 2 * 0.5, ob.cx, y1 + 0.6, ob.cz, Math.atan2(-ax.az, ax.ax)), color: lit.clone().multiplyScalar(0.45), style: 3 });
+            break;
+          }
+          case 'lantern': {   // a lit box on the roof, a smaller dark frame around it
+            const gl = lit ? lit.clone().multiplyScalar(0.5) : new THREE.Color(0x6f7c86);
+            glowParts.push({ geom: box(ax.hl * 2 * 0.62, hc, ax.hs * 2 * 0.62, ob.cx, y0 + hc / 2, ob.cz, Math.atan2(-ax.az, ax.ax)), color: gl, style: 3 });
+            c.copy(th.color);
+            appendBuilding(chk2, rectOf(ob, ax, 0.72), y0, y0 + hc * 0.35, c, 3, th.base);
+            break;
+          }
+          case 'notch':
+          case 'sloped': {   // the top floors keep only part of the plan
+            const keep = 0.62, half = [[-1, -1], [2 * keep - 1, -1], [2 * keep - 1, 1], [-1, 1]].map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
+            c.copy(th.color);
+            if (th.style >= 20) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
+            else appendBuilding(chk2, half, y0 - 0.5, y1, c, th.style, th.base);
+            if (lit) glowParts.push({ geom: box(ax.hl * 2 * keep * 0.9, 1.4, ax.hs * 2 * 0.9, ob.cx + ax.ax * ax.hl * (keep - 1), y1 + 0.7, ob.cz + ax.az * ax.hl * (keep - 1), Math.atan2(-ax.az, ax.ax)), color: lit.clone().multiplyScalar(0.45), style: 3 });
+            break;
+          }
+          case 'spire': {   // a mast, and a lit sign on the roof where the spec lights one
+            const g = new THREE.CylinderGeometry(0.5, 1.2, hc, 8); g.translate(ob.cx, y1 + hc / 2, ob.cz);
+            crownTrim.push({ geom: g, color: new THREE.Color(0x8c9196), style: 3 });
+            if (lit) glowParts.push({ geom: box(Math.min(16, ax.hl * 1.2), 5, 1.2, ob.cx + ax.px * (ax.hs - 1.5), y1 + 3.2, ob.cz + ax.pz * (ax.hs - 1.5), Math.atan2(-ax.az, ax.ax)), color: lit.clone().multiplyScalar(0.55), style: 3 });
+            break;
+          }
+          default: nCrowns--;
+        }
+      }
+      TOWER_CROWN_N = nCrowns;
     }
     // the stadiums, now that every light-tower record in their blocks has been read
     for (const sd of stadia) buildStadium(sd, stadiumMasts.filter(m => Math.hypot(m[0] - sd.cx, m[1] - sd.cz) < 240));
@@ -5010,10 +5383,10 @@
         outerGlassMat.onBeforeCompile = (sh) => {
           sh.uniforms.uDetFar = detFarUniform;
           sh.vertexShader = sh.vertexShader
-            .replace('#include <common>', '#include <common>\nvarying vec3 vGWp; varying vec3 vGNm;')
-            .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGNm = normalize(mat3(modelMatrix) * objectNormal);');
+            .replace('#include <common>', '#include <common>\nattribute float aStyle; varying vec3 vGWp; varying vec3 vGNm; varying float vGSt;')
+            .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGNm = normalize(mat3(modelMatrix) * objectNormal);\nvGSt = aStyle;');
           sh.fragmentShader = sh.fragmentShader
-            .replace('#include <common>', '#include <common>\nuniform float uDetFar;\nvarying vec3 vGWp; varying vec3 vGNm;\nfloat gWall = 0.0; float gLit = 0.0; float gSpand = 0.0;')
+            .replace('#include <common>', '#include <common>\nuniform float uDetFar;\nvarying vec3 vGWp; varying vec3 vGNm; varying float vGSt;\nfloat gWall = 0.0; float gLit = 0.0; float gSpand = 0.0;')
             .replace('#include <color_fragment>', '#include <color_fragment>\n{\n' +
               '  vec3 nn = normalize(vGNm);\n' +
               '  float wall = step(abs(nn.y), 0.35);\n' +
@@ -5021,12 +5394,22 @@
               '  float u = dot(vGWp.xz, vec2(-dirH.y, dirH.x));\n' +
               '  float aaU = fwidth(u) + 1e-4, aaV = fwidth(vGWp.y) + 1e-4;\n' +
               '  float det = clamp(1.0 - (max(aaU, aaV) * uDetFar - 0.30) / 0.85, 0.0, 1.0) * wall;\n' +
-              '  float dv = abs(fract(vGWp.y / 4.0 + 0.5) - 0.5) * 4.0;\n' +
-              '  float spand = 1.0 - smoothstep(0.5, 0.5 + aaV, dv);\n' +
-              '  float du = abs(fract(u / 1.5 + 0.5) - 0.5) * 1.5;\n' +
-              '  float mull = 1.0 - smoothstep(0.05, 0.05 + aaU, du);\n' +
-              '  diffuseColor.rgb *= 1.0 - det * (spand * 0.22 + mull * 0.16);\n' +
-              '  vec2 pid = vec2(floor(u / 1.5), floor(vGWp.y / 4.0));\n' +
+              // the curtain-wall variants: 21 silver spandrel bands (the Liberty Place family),
+              // 22 dark glass with a bare floor line, 23 a light concrete grid holding the glass
+              '  float gv = floor(vGSt + 0.5);\n' +
+              '  float fpG = (gv == 22.0) ? 3.6 : ((gv == 23.0) ? 3.5 : 4.0);\n' +
+              '  float spW = (gv == 21.0) ? 0.9 : ((gv == 22.0) ? 0.3 : ((gv == 23.0) ? 0.55 : 0.5));\n' +
+              '  float muP = (gv == 22.0) ? 1.2 : ((gv == 23.0) ? 3.2 : 1.5);\n' +
+              '  float muW = (gv == 23.0) ? 0.45 : 0.05;\n' +
+              '  float dv = abs(fract(vGWp.y / fpG + 0.5) - 0.5) * fpG;\n' +
+              '  float spand = 1.0 - smoothstep(spW, spW + aaV, dv);\n' +
+              '  float du = abs(fract(u / muP + 0.5) - 0.5) * muP;\n' +
+              '  float mull = 1.0 - smoothstep(muW, muW + aaU, du);\n' +
+              '  if (gv == 21.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.66, 0.70), det * spand * 0.75); diffuseColor.rgb *= 1.0 - det * mull * 0.16; }\n' +
+              '  else if (gv == 22.0) { diffuseColor.rgb *= (1.0 - det * (spand * 0.35 + mull * 0.2)) * 0.8; }\n' +
+              '  else if (gv == 23.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.70, 0.69, 0.66), det * max(spand, mull) * 0.85); }\n' +
+              '  else { diffuseColor.rgb *= 1.0 - det * (spand * 0.22 + mull * 0.16); }\n' +
+              '  vec2 pid = vec2(floor(u / muP), floor(vGWp.y / fpG));\n' +
               '  float ph = fract(sin(dot(pid, vec2(127.1, 311.7))) * 43758.5453);\n' +
               // ~28% of curtain-wall panels glow at night, varied; past the per-panel
               // fade the tower keeps only its soft average (the panel-cluster LOD
@@ -5044,6 +5427,7 @@
       const g = mergeColored(lmGlass); freeOnUpload(g);
       addChunkMesh(g, outerGlassMat).castShadow = true;
     }
+    for (const cp of crownTrim) lmTrim.push(cp);
     if (lmTrim.length) {                     // white chevron trim, masts, City Hall metalwork + Penn
       const g = mergeColored(lmTrim); freeOnUpload(g);
       addChunkMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 })).castShadow = true;
@@ -5413,7 +5797,8 @@
     const palLow = [0x9b5a43, 0x8f5140, 0xa56a4e, 0x7d4a3a, 0x94523d, 0xb8a894, 0xa79a86, 0x8d8a86, 0xc4b49b, 0x9a6b55];
     const palCom = [0x9d968a, 0x8f887b, 0xa8a191, 0x83817c, 0x9aa0a4, 0xb3aca0];
     const palInd = [0x8a7e72, 0x7b736b, 0x9c9286, 0x8e5a48];
-    const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c];
+    // the unresearched towers: limestone and precast lights, charcoal and bronze darks, blue-grey glass, brick
+    const palTall = [0xa39b8b, 0x8e979e, 0x6e7681, 0x50555e, 0x5c5348, 0x8a8478, 0x9c9284, 0x42474f, 0x76664f, 0x66707c, 0x2f3338, 0xb8ad98, 0x5f7d99, 0xc2c2be, 0x6d4a3a, 0x3b4a5a];
     const c = new THREE.Color();
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
@@ -5472,8 +5857,12 @@
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
       if (fa && h <= 45 && t <= 4) { const p2 = opaWallPool(fa); if (p2) pool = p2; }
       c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 13.7) * 0.12 : 0.9 + hash01(i * 13.7) * 0.2);
-      let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
-      if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
+      let style;
+      if (h > 30) style = h > 45 ? towerStyle(fa, t, i) : 2;
+      else if (t === 5) style = 1;
+      else if (t === 6) style = h > 16 ? 2 : 4;
+      else if (t >= 7) style = 3;
+      else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, 0);
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
@@ -10504,6 +10893,7 @@
   let haloMesh = null, haloMat = null;     // and their night halo
   let STOREFRONT_N = 0;                    // storefronts dressed (perf readout)
   let WALL_N = 0;   // outer-district buildings that took a Mapillary wall colour (__dbg.walls)
+  let TOWER_CROWN_N = 0;   // researched tower crowns raised (__dbg.towers)
   let lotStripes = null;                   // the sports complex's stall lines (shown within 3.5 km, they alias into noise beyond)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
@@ -11805,7 +12195,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
