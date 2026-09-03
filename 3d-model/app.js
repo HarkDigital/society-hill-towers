@@ -2399,6 +2399,16 @@
     if (e === 6 || e === 7) return hs < 0.5 ? 15 : 2;
     return hs < 0.4 ? 2 : hs < 0.7 ? 16 : 18;
   }
+  // a researched tower's photographed hex into the stored register: linear, lifted less than a
+  // rowhouse wall and with its chroma pulled in (the granite photos are sunlit and contrasty;
+  // the same transfer that suits a shaded rowhouse turned Three Logan Square orange)
+  const towerInv = (sr, sg, sb) => {
+    let r = Math.pow(sr / 255, 2.2), g = Math.pow(sg / 255, 2.2), b = Math.pow(sb / 255, 2.2);
+    const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    const lift = Math.pow(Math.max(lum, 0.01), 0.8), gain = lift / Math.max(lum, 1e-4);
+    r = lift + (r * gain - lift) * 0.62; g = lift + (g * gain - lift) * 0.62; b = lift + (b * gain - lift) * 0.62;
+    return new THREE.Color(Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)));
+  };
   const CROWN_CUTS = { pyramid: 1, lattice: 1, ziggurat: 1, lantern: 1, mansard: 1, dome: 1, sloped: 1, notch: 1 };
   const TOWER_STYLE = { glass: 20, glass_bands: 21, glass_dark: 22, concrete_grid: 16, stone_piers: 14, deco: 17, precast_bands: 18, brick: 2 };
   // the researched Center City towers (towers.json): nearest spec within its radius
@@ -2739,6 +2749,8 @@
           // edge-on walls and used to blank whole facades at grazing angles. detU still
           // gates the BINARY per-column terms (shutters/doors) that would shimmer there.
           '    float det = clamp(1.0 - (0.6 * fwidth(v) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
+          '    bool tower = (st == 2 || st == 6 || st == 7 || (st >= 14 && st <= 18));',
+          '    if (tower) det = max(det, clamp(1.0 - (0.6 * fwidth(v) * uDetFar - 0.5) / 1.6, 0.0, 1.0));',
           '    float detU = clamp(1.0 - (0.6 * fwidth(uW) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    float wallTop = local ? vWallH - 0.25 : 1.0e4;',
           '    float brickish = step(diffuseColor.g * 1.12, diffuseColor.r);',
@@ -3193,17 +3205,7 @@
     classic('City Tavern', { wall: '#7f3d2c', trim: '#efe9d8', eave: 11, ridge: 14, roof: 'gable', roofCol: '#5b564e', chimneys: 2, dormers: [1, 0, 3] });
     classic('Hill-Physick House', { wall: '#83402e', trim: '#f1ebdc', eave: 12, ridge: 14.5, roof: 'hip', roofCol: '#3f4044', chimneys: 2 });
     classic('Powel House', { wall: '#7d3b2a', trim: '#f1ebdc', eave: 11, ridge: 13.5, roof: 'gable', roofCol: '#4d4a45', chimneys: 2, dormers: [1, 0, 2] });
-    {
-      const r = classic('Man Full of Troubles Tavern', { wall: '#8a4a36', trim: '#ece5d3', eave: 5.8, ridge: 8.8, roof: 'gable', roofCol: '#8c7a60', chimneys: 1 });
-      if (r) { // pent eave across the south face
-        const side = (r.a.pz >= 0) ? 1 : -1;
-        const m0 = mark();
-        ad(box(Math.max(r.ob.w, r.ob.d), 0.22, 0.7,
-          r.ob.cx + r.a.px * side * (r.a.hs + 0.2), 3.1, r.ob.cz + r.a.pz * side * (r.a.hs + 0.2),
-          ryAlign(r.a.ax, r.a.az)), '#ece5d3');
-        liftB(m0, r.b);
-      }
-    }
+    // (the tavern's generic classic() model was here; it fought the gambrel model below on the same footprint)
 
     // churches
     {
@@ -4692,7 +4694,7 @@
       const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
       const spec = h > 45 && t !== 10 ? towerAt(cx, cz) : null;
       let style;
-      if (spec) { style = TOWER_STYLE[spec.facade] || 2; if (spec.hex) { const hx2 = parseInt(spec.hex.slice(1), 16); if (style >= 20) c.set(hx2); else c.copy(wallInv(hx2 >> 16, (hx2 >> 8) & 255, hx2 & 255)); } }
+      if (spec) { style = TOWER_STYLE[spec.facade] || 2; if (spec.hex) { const hx2 = parseInt(spec.hex.slice(1), 16); if (style >= 20) c.set(hx2).multiplyScalar(0.66); else c.copy(towerInv(hx2 >> 16, (hx2 >> 8) & 255, hx2 & 255)); } }
       else if (h > 30) style = h > 45 ? towerStyle(fa, t, i) : 2;
       else if (t === 5) style = 1;
       else if (t === 6) style = h > 16 ? 2 : 4;
@@ -4705,6 +4707,17 @@
         const cr = spec.crown;
         if (cr && CROWN_CUTS[cr.type]) hTop = Math.max(h * 0.8, h - (cr.h || 10));
         towerHits.push({ spec, poly, base, h, hTop, cx, cz, style, color: new THREE.Color().copy(c) });
+      }
+      if (h >= 60 && !mh && t !== 10 && (!spec || !spec.crown || spec.crown.type === 'flat' || spec.crown.type === 'custom')) {
+        // the flat roof of a real tower carries a mechanical penthouse and often a mast; without
+        // them every tower is a sheer box. The penthouse takes a third of the plan, set toward
+        // one end, in a darker tone; a third of the towers raise a mast
+        const obR = orientedBox(poly), axR = obbAxis(obR), hp = 4.5 + hash01(i * 3.3) * 3;
+        const su0 = (hash01(i * 8.1) - 0.5) * 0.9, sv0 = (hash01(i * 4.4) - 0.5) * 0.6;
+        const pent = [[-0.34, -0.3], [0.34, -0.3], [0.34, 0.3], [-0.34, 0.3]].map(([su, sv]) => [obR.cx + axR.ax * axR.hl * (su + su0) + axR.px * axR.hs * (sv + sv0), obR.cz + axR.az * axR.hl * (su + su0) + axR.pz * axR.hs * (sv + sv0)]);
+        const cP = cCap.copy(c).multiplyScalar(0.55);
+        appendBuilding(getChunk(cx, cz), pent, base + h - 0.3, base + h + hp, cP, 3, base);
+        if (hash01(i * 12.7) < 0.33) { const mg = new THREE.CylinderGeometry(0.35, 0.8, 10 + hash01(i * 5.5) * 14, 6); mg.translate(obR.cx + axR.ax * axR.hl * su0, base + h + hp + 5 + hash01(i * 5.5) * 7, obR.cz + axR.az * axR.hl * su0); crownTrim.push({ geom: mg, color: new THREE.Color(0x6b7075), style: 3 }); }
       }
       if (style >= 20) {   // a researched glass tower: the reflective curtain wall in its own tint
         appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base);
@@ -5375,7 +5388,7 @@
     for (const ch of glassChunks.values()) {
       const g = ch.geometry(false);
       if (!outerGlassMat) {
-        outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.88, envMapIntensity: 1.8 });
+        outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.7, envMapIntensity: 1.15 });
         outerGlassMat.emissive = new THREE.Color(0xffdca6);
         outerGlassMat.emissiveIntensity = 0;
         // curtain-wall rhythm: darker spandrel band at each floor line, thin vertical
@@ -5393,7 +5406,8 @@
               '  vec2 dirH = (abs(nn.x) + abs(nn.z)) > 1e-4 ? normalize(nn.xz) : vec2(1.0, 0.0);\n' +
               '  float u = dot(vGWp.xz, vec2(-dirH.y, dirH.x));\n' +
               '  float aaU = fwidth(u) + 1e-4, aaV = fwidth(vGWp.y) + 1e-4;\n' +
-              '  float det = clamp(1.0 - (max(aaU, aaV) * uDetFar - 0.30) / 0.85, 0.0, 1.0) * wall;\n' +
+              '  float det = clamp(1.0 - (max(aaU, aaV) * uDetFar - 0.8) / 2.2, 0.0, 1.0) * wall;\n' +
+              '  diffuseColor.rgb *= mix(0.72, 1.12, clamp(vGWp.y / 220.0, 0.0, 1.0));\n' +
               // the curtain-wall variants: 21 silver spandrel bands (the Liberty Place family),
               // 22 dark glass with a bare floor line, 23 a light concrete grid holding the glass
               '  float gv = floor(vGSt + 0.5);\n' +
@@ -5405,10 +5419,10 @@
               '  float spand = 1.0 - smoothstep(spW, spW + aaV, dv);\n' +
               '  float du = abs(fract(u / muP + 0.5) - 0.5) * muP;\n' +
               '  float mull = 1.0 - smoothstep(muW, muW + aaU, du);\n' +
-              '  if (gv == 21.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.66, 0.70), det * spand * 0.75); diffuseColor.rgb *= 1.0 - det * mull * 0.16; }\n' +
-              '  else if (gv == 22.0) { diffuseColor.rgb *= (1.0 - det * (spand * 0.35 + mull * 0.2)) * 0.8; }\n' +
-              '  else if (gv == 23.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.70, 0.69, 0.66), det * max(spand, mull) * 0.85); }\n' +
-              '  else { diffuseColor.rgb *= 1.0 - det * (spand * 0.22 + mull * 0.16); }\n' +
+              '  if (gv == 21.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.66, 0.70), det * spand * 0.8); diffuseColor.rgb *= 1.0 - det * mull * 0.2; }\n' +
+              '  else if (gv == 22.0) { diffuseColor.rgb *= (1.0 - det * (spand * 0.4 + mull * 0.25)) * 0.72; }\n' +
+              '  else if (gv == 23.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.70, 0.69, 0.66), det * max(spand, mull) * 0.9); }\n' +
+              '  else { diffuseColor.rgb *= 1.0 - det * (spand * 0.38 + mull * 0.22); }\n' +
               '  vec2 pid = vec2(floor(u / muP), floor(vGWp.y / fpG));\n' +
               '  float ph = fract(sin(dot(pid, vec2(127.1, 311.7))) * 43758.5453);\n' +
               // ~28% of curtain-wall panels glow at night, varied; past the per-panel

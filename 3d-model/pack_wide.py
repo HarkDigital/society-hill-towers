@@ -234,7 +234,32 @@ def roof_word(b, cx, cz):
     v = ((idx + 1) & 0x1FF) | ((form & 7) << 9) | (min(15, max(0, int(round(rise * 2)))) << 12)
     return v - 65536 if v > 32767 else v
 
+# Stacked building:part ways on one footprint (OSM models several towers as a pile of
+# coincident prisms of different heights: the Comcast Technology Center has nine) draw
+# coplanar walls that z-fight from every angle. Among records whose centroids sit within
+# 2.5 m, whose areas agree within 20 % and whose height ranges overlap, only the tallest
+# is packed; the shorter ones were hidden inside it anyway.
+def dedupe_stacked(items):
+    """items: [(cx, cz, area, h, minH, rec)]; returns the kept recs in input order."""
+    grid = {}
+    for idx, it in enumerate(items):
+        grid.setdefault((int(it[0] // 20), int(it[1] // 20)), []).append(idx)
+    drop = set()
+    for idx, it in enumerate(items):
+        if idx in drop: continue
+        kx, kz = int(it[0] // 20), int(it[1] // 20)
+        for dx in (-1, 0, 1):
+            for dz in (-1, 0, 1):
+                for j in grid.get((kx + dx, kz + dz), ()):
+                    if j == idx or j in drop: continue
+                    q = items[j]
+                    if math.hypot(q[0] - it[0], q[1] - it[1]) < 2.5 and min(it[2], q[2]) > 0.8 * max(it[2], q[2]) \
+                            and min(it[3], q[3]) - max(it[4], q[4]) > 1.0:
+                        drop.add(j if q[3] <= it[3] else idx)
+    return [it[5] for idx, it in enumerate(items) if idx not in drop], len(drop)
+
 body = []
+recs = []                             # (cx, cz, area, h, minH, (record, wall byte, hint byte)) before the stacked-part dedupe
 walls = []                            # one byte per building record, in body order
 hints = []                            # and its facade hint byte, 0 without a colour
 nb = nr = na = 0
@@ -250,13 +275,11 @@ for b in d['buildings']:
     sp = simplify_budget(simplify(poly, 0.35), 48, 0.7)
     h = max(2.5, min(6500, b['h']))
     _rec = ('building', b.get('name'), b.get('t'), round(cx), round(cz))
-    body += [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0), attr_word(b, h), roof_word(b, cx, cz)]
-    for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
-    nb += 1
+    rec = [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0), attr_word(b, h), roof_word(b, cx, cz)]
+    for q in sp: rec += [clip(q[0] * 5), clip(q[1] * 5)]
     w = b.get('_wall', -1)
-    walls.append(w if 0 <= w < 255 else 255)
     hb = b.get('_hint', 0)
-    hints.append(hb if 0 < hb < 16 else 0)
+    recs.append((cx, cz, area(sp), h, 0.0, (rec, w if 0 <= w < 255 else 255, hb if 0 < hb < 16 else 0)))
 # 3D-mapped building parts (skyscraper shafts, crowns, podiums) from building:part ways;
 # parts of research-flagged glass towers get type 10 (reflective glass material)
 glassSpots = []
@@ -273,11 +296,15 @@ for pt in _parts:
     if CORE[0] <= cx <= CORE[1] and CORE[2] <= cz <= CORE[3]: continue
     sp = simplify_budget(simplify(poly, 0.3), 48, 0.6)
     _rec = ('part', pt.get('name'), round(cx), round(cz))
-    body += [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3, -1, -1]
-    for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
+    rec = [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3, -1, -1]
+    for q in sp: rec += [clip(q[0] * 5), clip(q[1] * 5)]
+    recs.append((cx, cz, area(sp), float(pt['h']), float(pt['minH']), (rec, 255, 0)))
+kept, dropped_stacked = dedupe_stacked(recs)
+for rec, wb, hb in kept:
+    body += rec
+    walls.append(wb)
+    hints.append(hb)
     nb += 1
-    walls.append(255)
-    hints.append(0)
 def simplify_open(pts, tol):
     # open-polyline Douglas-Peucker. The old code fed roads through the CLOSED-ring
     # simplify() (appending pts[0], slicing [:-1]) which amputated the real final
@@ -362,4 +389,4 @@ if _walls:
           + (f', {sum(1 for h in hints if h)} with a facade hint byte' if _hinted else '')
           + f' -> wide_walls.b64 ({len(wb):,} bytes)', flush=True)
 print(f'buildings {nb} roads {nr} areas {na} -> {len(buf)/1e6:.2f} MB binary, {len(b64)/1e6:.2f} MB base64; '
-      f'dropped {dropped_dup} core-duplicates, {dropped_outline} outlines with 3D parts; {n_clipped} area ring(s) clipped to the int16 box')
+      f'dropped {dropped_dup} core-duplicates, {dropped_outline} outlines with 3D parts, {dropped_stacked} stacked parts on one footprint; {n_clipped} area ring(s) clipped to the int16 box')

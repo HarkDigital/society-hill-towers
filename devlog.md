@@ -2358,6 +2358,27 @@ identical? Can you use the mapillary data to inform some other styles?"
   the Comcast Technology Center and One South Broad, part-plan notches, masts and the PSFS
   sign. 52 crowns raised. Page 25.31 MB raw, 10.73 MB gzip.
 
+- Mike's morning look: "there is no red skyscraper in philly", the reflective glass "no
+  good", "I hardly see a change", and flickering (the Man Full of Trouble tavern, a building
+  low-left of his Market West shot). Fixes: a `towerInv` transfer for the masonry tower hexes
+  (linear, a 0.8-power lift, chroma pulled to 0.62; Three Logan Square's granite goes from
+  orange to the muted red-brown it is), the glass tints at 0.66 with the reflective material
+  at metalness 0.7, roughness 0.12, envMap 1.15 (it mirrored the overcast sky into white
+  slabs), a vertical sky gradient on the curtain wall, stronger spandrel and mullion contrast,
+  and above all a slower detail fade for the tower styles and the curtain wall: the rowhouse
+  fade ended at about 900 m, which is nearer than most skyline vantages, so every tower
+  read as its flat far average. Floor bands and window strips now hold to about 3 km.
+  Flat-topped towers over 60 m get a mechanical penthouse (a third of the plan, set toward
+  one end, darker) and a third of them a mast, so the boxes stop being sheer boxes.
+- Flicker: the tavern was built twice (a generic `classic()` gable model and the detailed
+  gambrel model on one footprint); the generic one is gone. `pack_wide.py` now drops
+  stacked building:part ways on one footprint (centroids within 2.5 m, areas within 20 %,
+  overlapping height ranges keep only the tallest): 56 parts, the Comcast Technology
+  Center's nine coincident prisms among them, 46 groups in all. The far ring and the
+  outskirts had none. Before-and-after captures of nine matched views were rendered
+  offscreen at 1280 x 720 from the previous deployed page and this one (a small POST
+  server in the scratchpad saves what the page posts) and sent to Mike.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
