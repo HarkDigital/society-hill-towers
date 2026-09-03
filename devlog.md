@@ -2433,6 +2433,20 @@ identical? Can you use the mapillary data to inform some other styles?"
   bulkhead). Still not the game: no translucency (the bed is a flat plane) and no reflected
   buildings (no planar pass).
 
+- Mike, with a Reddit clip of a three.js Cities: Skylines clone: "I want the water to look
+  like that. Remove the foam though, that looks really broken on our site." The clip's water
+  is a deep saturated teal with dense fine wavelets and glints across the whole surface, and
+  shallows where the bottom shows through, no foam band. Changes in `liquify` and the two
+  water materials: the foam is gone; the shallows mix toward a sand-and-silt bottom colour
+  over the first twenty metres of shore distance instead (a lighter teal wash between); a
+  value-noise wavelet field (two scrolling layers at 2.4 m and 1.15 m, slopes by finite
+  differences, each faded out before its pixel footprint could alias) joins the normal, and
+  the long sine swells step back to about half so the texture comes from noise rather than
+  parallel crests (they read as stripes on the Delaware); the large-scale colour banding
+  drops to a third; the glitter lobes widen; the body colour deepens twice and the mirror
+  drops (envMap 0.4, fresnel 0.2, the sky reflection at half) because under our sky and
+  ACES a wide sheet went pale at every earlier setting.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

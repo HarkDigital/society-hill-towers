@@ -34,7 +34,7 @@
     footway: 0x7c584a,     // society hill brick sidewalks
     park: 0x243818,        // grass — stored very deep: the legacy-color pipeline + ACES
     parkDark: 0x1d2c13,    // lift flat lawns ~2.5x at noon (cf. roads: 0x3b3833 -> light gray)
-    water: 0x2a4f68,     // blue-green, the reflection does the rest
+    water: 0x0e3a52,     // deep teal: the shallows lighten it, the reflection and the glints do the rest
     pier: 0x8f8a7d,
     trunk: 0x5b4a38,
     bronze: 0x4d3b26,
@@ -1608,6 +1608,8 @@
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWq = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vWq;\nuniform float uTime, uWAmp, uNite;\nuniform vec2 uWDir;\nuniform vec3 uSun;\nfloat wGlint = 0.0;\n' +
+          'float whash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\n' +
+          'float wvn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(whash(i), whash(i + vec2(1.0, 0.0)), u.x), mix(whash(i + vec2(0.0, 1.0)), whash(i + vec2(1.0, 1.0)), u.x), u.y); }\n' +
           'vec2 wgrad(vec2 p, vec2 d, float lam, float sp, float t) {\n' +
           '  float k = 6.2831853 / lam;\n' +
           '  return d * (cos(dot(p, d) * k + t * sp) * k);\n' +
@@ -1633,45 +1635,56 @@
           // wind-gust patches: two slow crossed envelopes drift ruffled lanes and
           // glassy calms across the reach, the way real water carries cat\'s paws
           '  float wpat = 0.5 + 0.5 * sin(dot(vWq.xz, wd) * 0.011 + uTime * 0.055 * wsp) * sin(dot(vWq.xz, wp) * 0.0075 - uTime * 0.04 * wsp);\n' +
-          '  vec2 g = wgrad(vWq.xz, wd, 46.0 * wsc, 1.15 * wsp, uTime) * (0.5 * w1);\n' +
-          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.62), 21.0 * wsc, 1.6 * wsp, uTime) * (0.34 * w2);\n' +
-          '  g += wgrad(vWq.xz, normalize(wd - wp * 0.8), 9.5 * wsc, 2.3 * wsp, uTime) * (0.22 * w3);\n' +
+          '  vec2 g = wgrad(vWq.xz, wd, 46.0 * wsc, 1.15 * wsp, uTime) * (0.24 * w1);\n' +
+          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.62), 21.0 * wsc, 1.6 * wsp, uTime) * (0.18 * w2);\n' +
+          '  g += wgrad(vWq.xz, normalize(wd - wp * 0.8), 9.5 * wsc, 2.3 * wsp, uTime) * (0.15 * w3);\n' +
           '  g += wgrad(vWq.xz, normalize(wp - wd * 0.35), 4.1 * wsc, 3.1 * wsp, uTime) * (0.11 * w4);\n' +
-          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.23), 33.0 * wsc, 1.35 * wsp, uTime + 37.0) * (0.26 * w1);\n' +
+          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.23), 33.0 * wsc, 1.35 * wsp, uTime + 37.0) * (0.12 * w1);\n' +
           '  g *= wamp * wfade * (0.35 + 0.9 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
+          '  {\n' +
+          '    float wa = 1.0 - smoothstep(0.25, 1.1, fpx), wb = 1.0 - smoothstep(0.12, 0.55, fpx);\n' +
+          '    vec2 q1 = vWq.xz / (2.4 * wsc) + wd * uTime * 0.33 * wsp;\n' +
+          '    vec2 q2 = (vWq.xz * mat2(0.8, -0.6, 0.6, 0.8)) / (1.15 * wsc) - wp * uTime * 0.5 * wsp;\n' +
+          '    float e = 0.3;\n' +
+          '    vec2 g1 = vec2(wvn(q1 + vec2(e, 0.0)) - wvn(q1 - vec2(e, 0.0)), wvn(q1 + vec2(0.0, e)) - wvn(q1 - vec2(0.0, e))) / (2.0 * e);\n' +
+          '    vec2 g2 = vec2(wvn(q2 + vec2(e, 0.0)) - wvn(q2 - vec2(e, 0.0)), wvn(q2 + vec2(0.0, e)) - wvn(q2 - vec2(0.0, e))) / (2.0 * e);\n' +
+          '    g += (g1 * 0.13 * wa + g2 * 0.075 * wb) * wamp * (0.6 + 0.4 * wpat) * (0.55 + 0.45 * smoothstep(0.0, 0.25, wsh));\n' +
+          '  }\n' +
           '  vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));\n' +
           '  normal = normalize(mix(normal, wn, 0.92));\n' +
           '  float wh = sin(dot(vWq.xz, wd) * (6.2831853 / (46.0 * wsc)) + uTime * 1.15 * wsp)\n' +
           '           + 0.7 * sin(dot(vWq.xz, normalize(wd - wp * 0.8)) * (6.2831853 / (9.5 * wsc)) + uTime * 2.3 * wsp)\n' +
           '           + 0.45 * sin(dot(vWq.xz, normalize(wp + wd * 0.5)) * (6.2831853 / (3.1 * wsc)) + uTime * 3.6 * wsp);\n' +
-          '  diffuseColor.rgb *= 1.0 + wh * 0.075 * wamp * wfade * (0.35 + 0.65 * wpat) * w2;\n' +
+          '  diffuseColor.rgb *= 1.0 + wh * 0.025 * wamp * wfade * (0.35 + 0.65 * wpat) * w2;\n' +
           // sun glitter on the perturbed surface: the material is deliberately rough
           // (the river must not mirror the sky), so the sparkle is added explicitly
           // depth: the sheet lightens and greens toward the bank, and a band of animated foam
           // rides the shoreline itself; both read the baked shore distance
+          // the shallows: the bottom shows through the first twenty metres, sand and silt under a
+          // teal wash, then the channel goes deep (no foam: it read as a broken edge)
           '  vec3 wbase = diffuseColor.rgb;\n' +
-          '  diffuseColor.rgb = mix(wbase * vec3(1.38, 1.30, 1.08), wbase * 0.74, smoothstep(0.0, 1.0, min(1.0, wsh * 2.4)));\n' +
-          '  float wfn = 0.5 + 0.5 * sin(dot(vWq.xz, vec2(0.61, 0.79)) * 1.7 + uTime * 1.1 * wsp) * sin(dot(vWq.xz, vec2(-0.83, 0.55)) * 1.1 - uTime * 0.7 * wsp);\n' +
-          '  float wfoam = (1.0 - smoothstep(0.0, 0.10, wsh)) * (0.45 + 0.55 * wfn) * (1.0 - uNite * 0.6);\n' +
-          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.86, 0.88), wfoam * 0.85);\n' +
+          '  vec3 wbottom = vec3(0.46, 0.44, 0.30);\n' +
+          '  float wshal = 1.0 - smoothstep(0.0, 0.33, wsh);\n' +
+          '  diffuseColor.rgb = mix(wbase, wbottom, wshal * wshal * 0.72);\n' +
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, wbase * vec3(1.25, 1.22, 1.05), wshal * (1.0 - wshal) * 1.2);\n' +
           '  diffuseColor.a = opacity;\n' +
           '  vec3 wview = normalize(cameraPosition - vWq);\n' +
           // fresnel: the sheet reads as sky at grazing angles and as deep water below the eye
           '  float wfres = pow(1.0 - clamp(dot(wview, wn), 0.0, 1.0), 3.0);\n' +
-          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.40, 0.55, 0.70), wfres * 0.30 * (1.0 - uNite * 0.75));\n' +
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.52, 0.68), wfres * 0.2 * (1.0 - uNite * 0.75));\n' +
           '  float wspec = pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 140.0);\n' +
           // a broad low-power lobe under the sparkle: the soft sheet of light real
           // rivers throw toward the sun, not just point glitter
-          '  wspec += pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 14.0) * 0.055;\n' +
+          '  wspec += pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 14.0) * 0.08;\n' +
           // at night uSun is the MOON: keep a faint moonglade, not a sequin field
           '  wGlint = wspec * smoothstep(0.02, 0.1, uSun.y) * (0.55 + 0.45 * uWAmp) * wfade * (1.0 - uNite * 0.85);\n' +
           '}\n')
         // the sky's reflection comes back blue and dimmer than the sky itself: a wide sheet
         // seen at a grazing angle otherwise turns the colour of the horizon (pale), where the
         // game's water keeps its blue under the reflection
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= vec3(0.50, 0.72, 0.96) * 0.62;\nreflectedLight.directSpecular *= 0.85;\n')
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= vec3(0.50, 0.72, 0.96) * 0.5;\nreflectedLight.directSpecular *= 0.85;\n')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' +
-          'totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * wGlint * 1.15;\n');
+          'totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * wGlint * 1.4;\n');
     };
   }
   // ordered dither on the big smooth surfaces (city walls, bare ground, water):
@@ -1679,7 +1692,7 @@
   // 15-25 px. Set at construction only, a later flip recompiles (false disables)
   const MAT_DITHER = true;
   // the outer rivers and far water polygons share one animated material
-  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.15, envMapIntensity: 0.55, dithering: MAT_DITHER });
+  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, metalness: 0.15, envMapIntensity: 0.4, dithering: MAT_DITHER });
   liquify(riverMat, 1.0, 1.0, 0.8);
 
   function waterPoint(along, out) {
@@ -2208,7 +2221,7 @@
     walls.receiveShadow = true; groupCity.add(walls);
     freeOnUpload(walls.geometry);   // never raycast (focus and pick use rayTargets only)
 
-    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.3, metalness: 0.15, envMapIntensity: 0.55, dithering: MAT_DITHER });
+    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.22, metalness: 0.15, envMapIntensity: 0.4, dithering: MAT_DITHER });
     liquify(waterMat, 1.0, 1.0, 0.8);      // the Delaware breathes
     const water = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
