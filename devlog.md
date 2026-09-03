@@ -2229,6 +2229,15 @@ stayed with the lead.
   the join, 1,706 attached in the outer districts. Fox Chase and Rhawnhurst's twins and
   singles carry their real gables and hips. Repacked and deployed; the rest of the city
   follows when the run completes.
+- **The run completed** in 15.9 minutes for 743 tiles (levels 0 to 2 of each COPC octree,
+  1.6 m spacing, 13 to 26 MB a tile, 9 GB streamed of the 100 GB dataset), zero failures:
+  73,267 buildings resolved (24,751 gables, 3,555 hips, 44,961 measured flats), 12.8% of
+  the city's footprints, essentially everything six metres or wider; the narrow rowhouses
+  are left unresolved on purpose so a wrong "measured flat" never switches the lottery off.
+  Validated against the core's full-resolution pass: heights median 0.00 m off, ridge
+  angles median 2.3 degrees, pitched precision 0.78 and recall 0.83; against OSM's tags,
+  88% agreement. The far ring now carries 16,639 gables, 2,477 hips and 15,747 known flats;
+  the outer districts 7,958 forms. Repacked and deployed.
 
 ### Facade-accuracy plan status
 
