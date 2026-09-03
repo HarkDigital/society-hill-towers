@@ -221,6 +221,16 @@
     return mat;
   };
   let postRT = null, postA = null, postB = null, postQuad = null, postCam = null, postScene = null, postBright = null, postBlur = null, postComp = null;
+  // pUndo in JS for the fog colour: the fog mixes inside the target, so under the post pipeline it
+  // takes the pre-image of its display colour like the dome, or the far haze comes out of the
+  // composite darker than the horizon it is meant to meet (same matrices as INV_GLSL, by column)
+  const pUndoColor = (c, e) => {
+    const f = (v) => { v = Math.min(Math.max(v, 0), 1); v = v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); return Math.min(v, 0.985); };
+    const r = f(c.r), g = f(c.g), b = f(c.b);
+    const inv = (y) => { const A = 1 - 0.983729 * y, B = 0.0245786 - 0.432951 * y, C = -(0.000090537 + 0.238081 * y); return (-B + Math.sqrt(Math.max(B * B - 4 * A * C, 0))) / (2 * A); };
+    const x = inv(0.643038 * r + 0.311187 * g + 0.045775 * b), y = inv(0.059269 * r + 0.931436 * g + 0.009295 * b), z = inv(0.005962 * r + 0.063929 * g + 0.930118 * b);
+    return c.setRGB((1.764741 * x - 0.675778 * y - 0.088963 * z) * 0.6 / e, (-0.147028 * x + 1.160252 * y - 0.013224 * z) * 0.6 / e, (-0.036337 * x - 0.162436 * y + 1.198773 * z) * 0.6 / e);
+  };
   const _v2post = new THREE.Vector2();
   function postInit() {
     postCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -1325,8 +1335,10 @@
       '  vec3 col = mix(top, under, below) * uCloudLight * mix(vec3(1.0), cSun, 0.35);',
       '  float a = m * 0.94 * (1.0 - smoothstep(14000.0, 26000.0, length(vW.xz - cameraPosition.xz)));',
       '  gl_FragColor = vec4(col, a);',
+      // the pre-image first, then the fog (whose colour is the pre-image too under the post pipeline);
+      // the coverage stays the bloom mask as it is, a halved alpha halved the colour blend as well
+      '  if (uPost > 0.5) gl_FragColor.rgb = pUndo(gl_FragColor.rgb, uExposure) + vec3(0.15) * (1.0 - dens) * lit * sunUp * uCloudLight;',
       '  #include <fog_fragment>',
-      '  if (uPost > 0.5) { gl_FragColor.rgb = pUndo(gl_FragColor.rgb, uExposure) + vec3(0.15) * (1.0 - dens) * lit * sunUp * uCloudLight; gl_FragColor.a *= 0.5; }',
       '}',
     ].join('\n'),
   });
@@ -1901,7 +1913,7 @@
           '  g = wd * g.x + wp * g.y * 1.55;\n' +
           '  g *= wamp * wfade * (0.45 + 0.8 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
           '  vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));\n' +
-          '  normal = normalize(mix(normal, wn, 0.92));\n' +
+          '  normal = normalize(mix(normal, normalize(mat3(viewMatrix) * wn), 0.92));\n' +   // the PBR normal is view-space; wn stays world-space for the glint and fresnel below
           // sun glitter on the perturbed surface: the material is deliberately rough
           // (the river must not mirror the sky), so the sparkle is added explicitly
           // depth: the sheet lightens and greens toward the bank, and a band of animated foam
@@ -4780,7 +4792,9 @@
   const flushUploads = (all) => {
     // each flush is a full-scene draw: batch a dozen sealed chunks per render
     if (!pendingUpload.length || (!all && pendingUpload.length < 12)) return;
-    renderer.render(scene, camera);   // upload now, behind the veil, and free the arrays
+    // upload now, behind the veil, and free the arrays; under the post pipeline the draw goes
+    // into the float target so every program compiles once, in the variant the frames use
+    if (POST.on) { if (!postCam) postInit(); postSize(); renderer.setRenderTarget(postRT); renderer.render(scene, camera); renderer.setRenderTarget(null); } else renderer.render(scene, camera);
     for (const m of pendingUpload) m.frustumCulled = true;
     pendingUpload.length = 0;
   };
@@ -7844,7 +7858,8 @@
     if (!grassMesh || !grassBusy) return;
     let placed = 0, budget = 5000, k = grassCursor;
     const [cx, cz] = grassAt;
-    while (grassQueue.length && budget > 0 && k < GRASS_N) {
+    const tEnd = performance.now() + 2.5;   // a sow spreads over frames, never over one
+    while (grassQueue.length && budget > 0 && k < GRASS_N && performance.now() < tEnd) {
       const qn = grassQueue[0];
       const pg = GRASS_POLYS[qn[0]];
       let tries = 0;
@@ -7884,6 +7899,8 @@
   function grassUpdate() {
     if (!grassMesh) return;
     const p = camera.position;
+    // from 90 m up every tuft is rejected anyway: no sow, no field, sow again on the way down
+    if (p.y - drapeY(p.x, p.z, 'ground') > 90) { if (grassMesh.count) grassMesh.count = 0; grassBusy = false; grassAt = null; return; }
     if (!grassAt || Math.hypot(p.x - grassAt[0], p.z - grassAt[1]) > 70) { if (!grassBusy || Math.hypot(p.x - grassAt[0], p.z - grassAt[1]) > 140) grassSow(p.x, p.z); }
     grassStep();
   }
@@ -12478,6 +12495,7 @@
     uVelN: { value: new THREE.Vector3(0, -1, 0) },
     uFrac: { value: 0 }, uLen: { value: 1.7 }, uAlpha: { value: 0.3 },
     uCol: { value: new THREE.Color(0.62, 0.66, 0.74) },
+    uPost: postU.uPost, uExposure: postU.uExposure,   // the streaks write display colour: under the post pipeline, its pre-image
   };
   let rainMesh, snowMesh;
   {
@@ -12510,13 +12528,14 @@
         '  #include <logdepthbuf_vertex>\n' +
         '}',
       fragmentShader:
-        'uniform vec3 uCol; varying float vA;\n' +
+        'uniform vec3 uCol; varying float vA; uniform float uPost, uExposure;\n' +
         '#include <common>\n' +
         '#include <logdepthbuf_pars_fragment>\n' +
+        INV_GLSL + '\n' +
         'void main(){\n' +
         '  #include <logdepthbuf_fragment>\n' +
         '  if (vA < 0.004) discard;\n' +
-        '  gl_FragColor = vec4(uCol, vA);\n' +
+        '  gl_FragColor = vec4(uPost > 0.5 ? pUndo(uCol, uExposure) : uCol, vA);\n' +
         '}',
     });
     rainMesh = new THREE.LineSegments(g, m);
@@ -12530,6 +12549,7 @@
     uCam: { value: new THREE.Vector3() },
     uFrac: { value: 0 }, uSize: { value: 0.6 }, uAlpha: { value: 0.8 }, uTime: { value: 0 },
     uCol: { value: new THREE.Color(0.93, 0.95, 0.99) },
+    uPost: postU.uPost, uExposure: postU.uExposure,
   };
   {
     const seed = new Float32Array(SNOW_N * 3), ph = new Float32Array(SNOW_N);
@@ -12562,15 +12582,16 @@
         '  #include <logdepthbuf_vertex>\n' +
         '}',
       fragmentShader:
-        'uniform vec3 uCol; varying float vA;\n' +
+        'uniform vec3 uCol; varying float vA; uniform float uPost, uExposure;\n' +
         '#include <common>\n' +
         '#include <logdepthbuf_pars_fragment>\n' +
+        INV_GLSL + '\n' +
         'void main(){\n' +
         '  #include <logdepthbuf_fragment>\n' +
         '  float d = length(gl_PointCoord - vec2(0.5));\n' +
         '  float a = vA * smoothstep(0.5, 0.16, d);\n' +
         '  if (a < 0.004) discard;\n' +
-        '  gl_FragColor = vec4(uCol, a);\n' +
+        '  gl_FragColor = vec4(uPost > 0.5 ? pUndo(uCol, uExposure) : uCol, a);\n' +
         '}',
     });
     snowMesh = new THREE.Points(g, m);
@@ -12817,6 +12838,10 @@
     for (const gm of groundMats) gm.color.copy(_c1);   // (snow cover now lands via the wxSurfacePatch shader pass)
     renderer.toneMappingExposure = 0.94 + 0.11 * dayF;
     postU.uExposure.value = renderer.toneMappingExposure;
+    if (POST.on) pUndoColor(scene.fog.color, postU.uExposure.value);   // the fog mixes in the linear target: its colour goes in as the pre-image
+    // the bright pass sees linear light: by day only the sun, the glints and the cloud rims clear
+    // it (a sunlit white wall or snow cover sits near 2), by night the lamps and the lit windows do
+    if (postBright) postBright.uniforms.uThr.value = 1.25 + 1.2 * dayF;
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(0x2c2822)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night

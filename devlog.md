@@ -2631,10 +2631,25 @@ against the reference frames, measured with PIL, and one synthesis).
   Triangles 10..11.6M and 230..310 calls at the standard views (the pane's frame timing is not
   trustworthy: no rAF, and gl.finish returns before the GPU process). Before-and-after sheets of
   the seven views went to Mike.
+- The review's last confirmed findings, closed after the first deploy in a final pass: the cloud
+  deck's `gl_FragColor.a *= 0.5` (meant for the bloom mask) halved its colour blend too, so the
+  deck was half transparent under post (the streaky stratus of the first cut; the coverage is the
+  mask now); the rain and snow shaders write display colour and take the pre-image like the dome;
+  the fog colour goes into the linear target as its pre-image (`pUndoColor`, the inverse ACES in
+  JS) and the deck fogs after its own pre-image, so the far haze meets the horizon again instead
+  of coming out of the composite darker; the bright pass sees linear light, so its threshold is
+  1.25 + 1.2 dayF (2.45 by day, when a sunlit wall or snow sits near 2, 1.25 by night for the
+  lamps and windows); the veil's upload renders draw into the float target so every program
+  compiles once, in the post variant; the tuft sow skips from 90 m up (every tuft was rejected
+  there anyway) and is time-boxed at 2.5 ms a frame. And one structural water bug the synthesis
+  found: `liquify` mixed the world-space wave normal into r149's view-space PBR normal, so the
+  sheet's shading turned with the camera; it goes in through `mat3(viewMatrix)` now (the glint
+  and fresnel keep their own world-space math), the probe pixel (61,117,177).
 - Left open: procedural textures, never the game's assets; no SSAO (the crowns' gradient and
   the wall-base darkening are the contact cues); reflections are the env-map probe, not planar;
   the critique's remaining proposals (a chroma macro on the meadow, edge-on card fading, HDR
-  lamp cores with a night bloom threshold, a lifted night palette) wait on Mike.
+  lamp cores with a night bloom threshold, a lifted night palette, ico(0) crowns with distance
+  gating on the wide tier, samples 2 on the float target above DPR 1.25) wait on Mike.
 
 ### Facade-accuracy plan status
 
