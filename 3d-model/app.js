@@ -831,6 +831,76 @@
     return tris.filter(tr => tr.a < n && tr.b < n && tr.c < n).map(tr => [tr.a, tr.b, tr.c]);
   }
 
+  // A flat water sheet whose vertices carry their distance to the shore in the colour's alpha
+  // (0 at the bank, 1 at 60 m out): earcut over the outline and its holes, every triangle split
+  // `levels` times so the interior has vertices of its own, the distance from a grid of the
+  // edges. liquify() reads the alpha for the shallows tint, the shoreline foam and calmer
+  // water under the bank, the way the game's water shows its depth
+  function flatShorePoly(poly, holes, y, levels) {
+    const g0 = flatPoly(poly, holes, y, true).toNonIndexed();
+    const p0 = g0.attributes.position.array;
+    let tris = [];
+    for (let i = 0; i < p0.length; i += 9) tris.push([[p0[i], p0[i + 2]], [p0[i + 3], p0[i + 5]], [p0[i + 6], p0[i + 8]]]);
+    for (let l = 0; l < (levels || 0); l++) {
+      const out = [];
+      for (const [A, B, C] of tris) {
+        const AB = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], BC = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2], CA = [(C[0] + A[0]) / 2, (C[1] + A[1]) / 2];
+        out.push([A, AB, CA], [AB, B, BC], [CA, BC, C], [AB, BC, CA]);
+      }
+      tris = out;
+    }
+    const rings = [poly].concat(holes || []);
+    const EC = 30, egrid = new Map(), segs = [];
+    for (const r of rings) for (let k = 0, n = r.length; k < n; k++) {
+      const a = r[k], b = r[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+      if (L < 0.01) continue;
+      const sid = segs.length; segs.push([a[0], a[1], dx / L, dz / L, L]);
+      for (let gx = Math.floor(Math.min(a[0], b[0]) / EC); gx <= Math.floor(Math.max(a[0], b[0]) / EC); gx++)
+        for (let gz = Math.floor(Math.min(a[1], b[1]) / EC); gz <= Math.floor(Math.max(a[1], b[1]) / EC); gz++) { const key = gx + ':' + gz; let lst = egrid.get(key); if (!lst) { lst = []; egrid.set(key, lst); } lst.push(sid); }
+    }
+    const dist = (x, z) => {
+      let best = 3600; const gx = Math.floor(x / EC), gz = Math.floor(z / EC);
+      for (let a = -2; a <= 2; a++) for (let b2 = -2; b2 <= 2; b2++) {
+        const lst = egrid.get((gx + a) + ':' + (gz + b2)); if (!lst) continue;
+        for (const sid of lst) { const sg = segs[sid]; const t = clamp((x - sg[0]) * sg[2] + (z - sg[1]) * sg[3], 0, sg[4]); const px = x - (sg[0] + sg[2] * t), pz = z - (sg[1] + sg[3] * t), d2 = px * px + pz * pz; if (d2 < best) best = d2; }
+      }
+      return Math.sqrt(best);
+    };
+    const n = tris.length * 3, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 4);
+    const wc = new THREE.Color(COLORS.water);
+    let o = 0;
+    for (const tri of tris) for (const q of tri) {
+      pos[o * 3] = q[0]; pos[o * 3 + 1] = y; pos[o * 3 + 2] = q[1];
+      nor[o * 3 + 1] = 1;
+      col[o * 4] = wc.r; col[o * 4 + 1] = wc.g; col[o * 4 + 2] = wc.b; col[o * 4 + 3] = Math.min(1, dist(q[0], q[1]) / 60);
+      o++;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    return g;
+  }
+  // the water parts merged with a four-channel colour (a part without its own shore alpha is deep water)
+  function mergeWater(parts) {
+    let count = 0;
+    const prepped = parts.map(p => { const g = p.geom.index ? p.geom.toNonIndexed() : p.geom; count += g.attributes.position.count; return { g, c: p.color }; });
+    const pos = new Float32Array(count * 3), nor = new Float32Array(count * 3), col = new Float32Array(count * 4);
+    let o = 0;
+    for (const { g, c } of prepped) {
+      const vc = g.attributes.position.count;
+      pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
+      const ca = g.attributes.color;
+      if (ca && ca.itemSize === 4) col.set(ca.array, o * 4);
+      else for (let i = 0; i < vc; i++) { col[(o + i) * 4] = c.r; col[(o + i) * 4 + 1] = c.g; col[(o + i) * 4 + 2] = c.b; col[(o + i) * 4 + 3] = 1; }
+      o += vc;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.BufferAttribute(col, 4));
+    return g;
+  }
   // a flat polygon draped over the terrain: densified boundary + interior points, triangulated
   // the drape's terrain read: siteY, but carved with the Schuylkill's channel like the ground
   // meshes are, so a park drawn across the pool dips under the water instead of roofing it
@@ -1550,6 +1620,8 @@
           '  vec2 wp = vec2(-wd.y, wd.x);\n' +
           '  float wdist = length(vViewPosition);\n' +
           '  float wfade = clamp(1.35 - wdist / (2600.0 * wsc + 420.0), 0.14, 1.0);\n' +
+          // the shore distance rides in the colour alpha where the sheet carries one (flatShorePoly)
+          '#ifdef USE_COLOR_ALPHA\n  float wsh = vColor.a;\n#else\n  float wsh = 1.0;\n#endif\n' +
           // per-octave pixel-footprint weights: each wave set bows out before its
           // wavelength falls under a few pixels, so the regular sum can never
           // alias into the corduroy moire the old distance fade let through
@@ -1566,7 +1638,7 @@
           '  g += wgrad(vWq.xz, normalize(wd - wp * 0.8), 9.5 * wsc, 2.3 * wsp, uTime) * (0.22 * w3);\n' +
           '  g += wgrad(vWq.xz, normalize(wp - wd * 0.35), 4.1 * wsc, 3.1 * wsp, uTime) * (0.11 * w4);\n' +
           '  g += wgrad(vWq.xz, normalize(wd + wp * 0.23), 33.0 * wsc, 1.35 * wsp, uTime + 37.0) * (0.26 * w1);\n' +
-          '  g *= wamp * wfade * (0.35 + 0.9 * wpat);\n' +
+          '  g *= wamp * wfade * (0.35 + 0.9 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
           '  vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));\n' +
           '  normal = normalize(mix(normal, wn, 0.92));\n' +
           '  float wh = sin(dot(vWq.xz, wd) * (6.2831853 / (46.0 * wsc)) + uTime * 1.15 * wsp)\n' +
@@ -1575,10 +1647,18 @@
           '  diffuseColor.rgb *= 1.0 + wh * 0.075 * wamp * wfade * (0.35 + 0.65 * wpat) * w2;\n' +
           // sun glitter on the perturbed surface: the material is deliberately rough
           // (the river must not mirror the sky), so the sparkle is added explicitly
+          // depth: the sheet lightens and greens toward the bank, and a band of animated foam
+          // rides the shoreline itself; both read the baked shore distance
+          '  vec3 wbase = diffuseColor.rgb;\n' +
+          '  diffuseColor.rgb = mix(wbase * vec3(1.38, 1.30, 1.08), wbase * 0.74, smoothstep(0.0, 1.0, min(1.0, wsh * 2.4)));\n' +
+          '  float wfn = 0.5 + 0.5 * sin(dot(vWq.xz, vec2(0.61, 0.79)) * 1.7 + uTime * 1.1 * wsp) * sin(dot(vWq.xz, vec2(-0.83, 0.55)) * 1.1 - uTime * 0.7 * wsp);\n' +
+          '  float wfoam = (1.0 - smoothstep(0.0, 0.10, wsh)) * (0.45 + 0.55 * wfn) * (1.0 - uNite * 0.6);\n' +
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.86, 0.88), wfoam * 0.85);\n' +
+          '  diffuseColor.a = opacity;\n' +
           '  vec3 wview = normalize(cameraPosition - vWq);\n' +
           // fresnel: the sheet reads as sky at grazing angles and as deep water below the eye
           '  float wfres = pow(1.0 - clamp(dot(wview, wn), 0.0, 1.0), 3.0);\n' +
-          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.40, 0.55, 0.70), wfres * 0.38 * (1.0 - uNite * 0.75));\n' +
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.40, 0.55, 0.70), wfres * 0.30 * (1.0 - uNite * 0.75));\n' +
           '  float wspec = pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 140.0);\n' +
           // a broad low-power lobe under the sparkle: the soft sheet of light real
           // rivers throw toward the sun, not just point glitter
@@ -5455,7 +5535,7 @@
       if (kind !== 1 && wwbNear(acx, acz)) continue;
       try {
         if (kind === 0) areaParts.push({ geom: Math.abs(signedArea(poly)) > 1500 ? drapedPoly(poly, LAYER.park, 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.84 + hash01(i) * 0.16), style: 3 });
-        else if (kind === 1) waterAreaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
+        else if (kind === 1) { const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
         else areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 });
       } catch (e) { /* degenerate polygon */ }
     }
@@ -5593,7 +5673,7 @@
       }
     }
     if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
-    if (waterAreaParts.length) { const g = mergeColored(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
+    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
     fogBase.near = 1900; fogBase.far = 7600;
@@ -6068,7 +6148,7 @@
             }
           }
           areaParts.push({ geom: big ? drapedPoly(poly, LAYER.park, poolTouch(poly) ? 30 : 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
-        } else if (kind === 1) waterAreaParts.push({ geom: flatPoly(poly, null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });
+        } else if (kind === 1) { const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
         else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
       } catch (e) { /* degenerate */ }
     }
@@ -6092,7 +6172,7 @@
       groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
-    if (waterAreaParts.length) { const g = mergeColored(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
+    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
   }
   step('Raising the rest of Philadelphia', async () => {
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
@@ -6248,7 +6328,7 @@
       // stops at the wide box, so the river through the park was a carved, dry channel. The baked
       // sheet is the real course buffered to the bank, islands as holes, a hand below the area
       // sheets so a tier's own polygon draws over it without a fight
-      for (const w of SCH_POLYS) { try { R.waterAreaParts.push({ geom: flatPoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.5, true), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* a degenerate ring */ } }
+      for (const w of SCH_POLYS) { try { R.waterAreaParts.push({ geom: flatShorePoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.5, 2), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* a degenerate ring */ } }
     }
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await uploadRing(R);

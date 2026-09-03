@@ -2416,6 +2416,23 @@ identical? Can you use the mapillary data to inform some other styles?"
   back untinted) and leaves deep water under the eye, the look of the
   game's water without its translucency (the bed under our sheets is a flat plane).
 
+- Mike: "Do whatever you need to do to make it look more like cities skylines." The game's
+  water shows its depth: shallows lighten and green toward the bank, a band of foam rides
+  the shoreline, the surface is calmer under the bank. Ours had one flat colour because the
+  sheets were earcut polygons with vertices only on the outline. `flatShorePoly` now builds
+  every water sheet (the baked Schuylkill outline, both packed tiers' water polygons) as
+  earcut plus two or one levels of triangle splitting, and writes each vertex's distance to
+  the nearest edge (a 30 m grid of the outline's edges) into a fourth colour channel, 0 at
+  the bank to 1 at 60 m; `mergeWater` merges the sheets with a four-channel colour, which
+  makes r149 define USE_COLOR_ALPHA so `liquify` reads `vColor.a`: the colour mixes from a
+  lighter, greener shallow to a deeper channel over the first 25 m, animated foam takes the
+  first 6 m, the wave normals fall to half under the bank, and `diffuseColor.a` is reset so
+  the alpha never reaches the blend. The tiers' own Schuylkill pieces yield to the baked
+  sheet (centroid inside the outline) so the foam is not hidden under a deep-water copy 5
+  cm above. The Delaware's core sheet carries no alpha and stays deep (its edge is the
+  bulkhead). Still not the game: no translucency (the bed is a flat plane) and no reflected
+  buildings (no planar pass).
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
