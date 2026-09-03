@@ -2507,6 +2507,27 @@ footprints), so the round borrows what gives the game its look, in the order tha
     sun 1.82, hemi 0.10 + 0.40 dayF, exposure 0.94 + 0.11 dayF, sun colour 0xffe5b8: a
     stronger key and less fill, the contrast in his photo.
 
+- Mike: "THIS NEEDS A DEEP REWORK" with a list: the foam still showing, the fog, the water
+  "nothing like" the game's, the buildings' textures, the ground. Done in one pass:
+  - Water: the sum of sines is gone (from height it read as diagonal stripes across the
+    Delaware); the surface is five octaves of value-noise slope in wind-aligned coordinates
+    (34, 15, 6.5, 2.6 and 1.2 m), crests shortened across the wind, each octave scrolling
+    at its own pace and fading before its footprint aliases; no colour banding from the
+    crests; no shore tint of any kind (the last lightening read as foam on the Camden
+    bank), only the wave damping under the bank; roughness 0.15, metalness 0.12, envMap 0.7
+    with the sky reflection still tinted blue.
+  - Fog: clear air runs 5 to 16 km now (was 1.7 to 6.2), weather still shrinks it.
+  - Facades: the wall between the windows has a material within about sixty metres: brick
+    courses (75 mm, joints staggered 110 mm, mortar lighter, a colour per brick) where the
+    wall is brickish, stone coursing (0.55 m, joints staggered 0.6 m) on the masonry towers
+    and civic fronts, panel seams every 3.3 m by 3.0 m on the precast and curtain grids, a
+    mottle on stucco and paint; a 4 m weathering blotch at every range; gravel mottle on
+    every up-facing city surface. Shader only, no new geometry.
+  - Ground: parks, lawns, roads, decks, plazas and the overpasses take `surfTexPatch`:
+    three scales of world-space noise, blotches, tufts and blades on anything green, a
+    quiet mottle and speckle on the greys, the finer scales fading with their footprint.
+    The bare ground already had its own mottle (`wxGroundPatch`).
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

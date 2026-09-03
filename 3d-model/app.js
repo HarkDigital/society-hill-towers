@@ -157,8 +157,8 @@
   renderer.shadowMap.needsUpdate = true;
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(COLORS.haze, 1700, 6200);
-  const fogBase = { near: 1700, far: 6200 };   // clear-air distances; weather shrinks them live (applyLighting)
+  scene.fog = new THREE.Fog(COLORS.haze, 5000, 16000);
+  const fogBase = { near: 5000, far: 16000 };   // clear-air distances: the game's, weather still shrinks them   // clear-air distances; weather shrinks them live (applyLighting)
   // custom river spans register their true deck profiles here so the traffic
   // layer can ride the actual roadway instead of a flat guess under the bridge
   const BRIDGE_DECKS = [];
@@ -1697,27 +1697,29 @@
           // wind-gust patches: two slow crossed envelopes drift ruffled lanes and
           // glassy calms across the reach, the way real water carries cat\'s paws
           '  float wpat = 0.5 + 0.5 * sin(dot(vWq.xz, wd) * 0.011 + uTime * 0.055 * wsp) * sin(dot(vWq.xz, wp) * 0.0075 - uTime * 0.04 * wsp);\n' +
-          '  vec2 g = wgrad(vWq.xz, wd, 46.0 * wsc, 1.15 * wsp, uTime) * (0.24 * w1);\n' +
-          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.62), 21.0 * wsc, 1.6 * wsp, uTime) * (0.18 * w2);\n' +
-          '  g += wgrad(vWq.xz, normalize(wd - wp * 0.8), 9.5 * wsc, 2.3 * wsp, uTime) * (0.15 * w3);\n' +
-          '  g += wgrad(vWq.xz, normalize(wp - wd * 0.35), 4.1 * wsc, 3.1 * wsp, uTime) * (0.11 * w4);\n' +
-          '  g += wgrad(vWq.xz, normalize(wd + wp * 0.23), 33.0 * wsc, 1.35 * wsp, uTime + 37.0) * (0.12 * w1);\n' +
-          '  g *= wamp * wfade * (0.35 + 0.9 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
+          // the surface: five octaves of value-noise slope in wind-aligned coordinates, crests
+          // shorter across the wind, each octave scrolling at its own pace and fading before its
+          // footprint could alias; no sine anywhere (a sum of sines read as stripes from height)
+          '  vec2 wq = vec2(dot(vWq.xz, wd), dot(vWq.xz, wp) * 1.55);\n' +
+          '  vec2 g = vec2(0.0);\n' +
           '  {\n' +
-          '    float wa = 1.0 - smoothstep(0.25, 1.1, fpx), wb = 1.0 - smoothstep(0.12, 0.55, fpx);\n' +
-          '    vec2 q1 = vWq.xz / (2.4 * wsc) + wd * uTime * 0.33 * wsp;\n' +
-          '    vec2 q2 = (vWq.xz * mat2(0.8, -0.6, 0.6, 0.8)) / (1.15 * wsc) - wp * uTime * 0.5 * wsp;\n' +
-          '    float e = 0.3;\n' +
-          '    vec2 g1 = vec2(wvn(q1 + vec2(e, 0.0)) - wvn(q1 - vec2(e, 0.0)), wvn(q1 + vec2(0.0, e)) - wvn(q1 - vec2(0.0, e))) / (2.0 * e);\n' +
-          '    vec2 g2 = vec2(wvn(q2 + vec2(e, 0.0)) - wvn(q2 - vec2(e, 0.0)), wvn(q2 + vec2(0.0, e)) - wvn(q2 - vec2(0.0, e))) / (2.0 * e);\n' +
-          '    g += (g1 * 0.13 * wa + g2 * 0.075 * wb) * wamp * (0.6 + 0.4 * wpat) * (0.55 + 0.45 * smoothstep(0.0, 0.25, wsh));\n' +
+          '    float e = 0.35;\n' +
+          '    vec2 q; float k; vec2 gg;\n' +
+          '    q = wq / (34.0 * wsc) + vec2(uTime * 0.045 * wsp, 0.0); k = 0.30 * w1;\n' +
+          '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
+          '    q = wq / (15.0 * wsc) + vec2(uTime * 0.07 * wsp, 3.7); k = 0.26 * w2;\n' +
+          '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
+          '    q = wq / (6.5 * wsc) + vec2(uTime * 0.11 * wsp, 11.3); k = 0.2 * w3;\n' +
+          '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
+          '    q = wq / (2.6 * wsc) + vec2(uTime * 0.16 * wsp, 27.1); k = 0.14 * w4;\n' +
+          '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
+          '    q = wq / (1.2 * wsc) - vec2(uTime * 0.2 * wsp, 41.9); k = 0.09 * (1.0 - smoothstep(0.12, 0.55, fpx));\n' +
+          '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
           '  }\n' +
+          '  g = wd * g.x + wp * g.y * 1.55;\n' +
+          '  g *= wamp * wfade * (0.45 + 0.8 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
           '  vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));\n' +
           '  normal = normalize(mix(normal, wn, 0.92));\n' +
-          '  float wh = sin(dot(vWq.xz, wd) * (6.2831853 / (46.0 * wsc)) + uTime * 1.15 * wsp)\n' +
-          '           + 0.7 * sin(dot(vWq.xz, normalize(wd - wp * 0.8)) * (6.2831853 / (9.5 * wsc)) + uTime * 2.3 * wsp)\n' +
-          '           + 0.45 * sin(dot(vWq.xz, normalize(wp + wd * 0.5)) * (6.2831853 / (3.1 * wsc)) + uTime * 3.6 * wsp);\n' +
-          '  diffuseColor.rgb *= 1.0 + wh * 0.025 * wamp * wfade * (0.35 + 0.65 * wpat) * w2;\n' +
           // sun glitter on the perturbed surface: the material is deliberately rough
           // (the river must not mirror the sky), so the sparkle is added explicitly
           // depth: the sheet lightens and greens toward the bank, and a band of animated foam
@@ -1725,7 +1727,6 @@
           // the shallows: the bottom shows through the first twenty metres, sand and silt under a
           // teal wash, then the channel goes deep (no foam: it read as a broken edge)
           '  vec3 wbase = diffuseColor.rgb;\n' +
-          '  diffuseColor.rgb = mix(wbase * vec3(1.22, 1.20, 1.08), wbase * 0.92, smoothstep(0.0, 1.0, min(1.0, wsh * 2.4)));\n' +
           '  diffuseColor.a = opacity;\n' +
           '  vec3 wview = normalize(cameraPosition - vWq);\n' +
           // fresnel: the sheet reads as sky at grazing angles and as deep water below the eye
@@ -1751,7 +1752,7 @@
   // 15-25 px. Set at construction only, a later flip recompiles (false disables)
   const MAT_DITHER = true;
   // the outer rivers and far water polygons share one animated material
-  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.22, metalness: 0.15, envMapIntensity: 0.4, dithering: MAT_DITHER });
+  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.12, envMapIntensity: 0.7, dithering: MAT_DITHER });
   liquify(riverMat, 1.0, 1.0, 0.8);
 
   function waterPoint(along, out) {
@@ -2280,7 +2281,7 @@
     walls.receiveShadow = true; groupCity.add(walls);
     freeOnUpload(walls.geometry);   // never raycast (focus and pick use rayTargets only)
 
-    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.22, metalness: 0.15, envMapIntensity: 0.4, dithering: MAT_DITHER });
+    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.15, metalness: 0.12, envMapIntensity: 0.7, dithering: MAT_DITHER });
     liquify(waterMat, 1.0, 1.0, 0.8);      // the Delaware breathes
     const water = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
@@ -2426,7 +2427,7 @@
       parts.push({ geom: flatPoly(inner.concat(outer.reverse()), null, 0.3), color: new THREE.Color(0xa9a49a), style: 3 });
     }
     // DoubleSide: the cap decks must read from BELOW too (driving the trench)
-    const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
+    const m = new THREE.Mesh(mergeColored(parts), surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
     m.receiveShadow = true;
     groupCity.add(m);
     freeOnUpload(m.geometry);
@@ -2492,7 +2493,7 @@
     }
     const asphalt = new THREE.Mesh(
       mergeColored(asphaltParts),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 })
+      surfMat({ vertexColors: true, roughness: 0.95 })
     );
     asphalt.receiveShadow = true;
     groupCity.add(asphalt);
@@ -2525,7 +2526,7 @@
     if (parkParts.length) {
       const parks = new THREE.Mesh(
         mergeColored(parkParts),
-        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 1 })
+        surfMat({ vertexColors: true, roughness: 1 })
       );
       parks.receiveShadow = true;
       groupCity.add(parks);
@@ -2970,6 +2971,7 @@
           '  return mask * (sunN * max(jam, head) * 0.55 + rim * 0.22);',
           '}',
           'float shtHash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
+          'float shtVN(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(shtHash(i), shtHash(i + vec2(1.0, 0.0)), u.x), mix(shtHash(i + vec2(0.0, 1.0)), shtHash(i + vec2(1.0, 1.0)), u.x), u.y); }',
           'float rectM(vec2 m, vec2 c, vec2 s, float aa){ vec2 d = abs(m - c) - s * 0.5; return 1.0 - smoothstep(-aa, aa, max(d.x, d.y)); }',
           'float archM(vec2 m, vec2 c, float w, float h, float aa){ float r = w * 0.5; float dR = max(abs(m.x - c.x) - r, max(c.y - m.y, m.y - (c.y + h - r))); float dC = max(length(vec2(m.x - c.x, m.y - (c.y + h - r))) - r, (c.y + h - r) - m.y); return 1.0 - smoothstep(-aa, aa, min(dR, dC)); }',
         ].join('\n'))
@@ -2984,6 +2986,11 @@
           '  float vDark = mod(variantF, 2.0);',
           '  float vTall = step(1.5, variantF);',
           '  float v = vWPos.y - vBase;',
+          '  if (n.y > 0.7) {',
+          '    float rdet = clamp(1.0 - (fwidth(vWPos.x) * uDetFar - 0.1) / 0.6, 0.0, 1.0);',
+          '    float rn = shtVN(vWPos.xz * 0.9) * 0.6 + shtVN(vWPos.xz * 5.0) * 0.4;',
+          '    diffuseColor.rgb *= 1.0 + rdet * 0.22 * (rn - 0.5);',
+          '  }',
           '  if (abs(n.y) < 0.35 && st != 3 && v > 0.0) {',
           '    bool local = vWallL > 0.5;',
           '    float uW;',
@@ -3293,6 +3300,36 @@
           '    col = mix(col, gTint * (0.75 + 0.5 * lit), glass * 0.9);',
           '    shtGlass = glass * det * (tower ? 1.0 : 0.75);',
           '    col *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 5.0, v));',
+          '    {',
+          '      float wallM = 1.0 - glass;',
+          '      float detT = clamp(1.0 - (fwidth(v) * uDetFar - 0.016) / 0.05, 0.0, 1.0);',
+          '      col *= 0.95 + 0.10 * shtVN(vec2(uW, v) * 0.25) * det;',
+          '      bool stone = (st == 14 || st == 17 || st == 4);',
+          '      bool panel = (st == 2 || st == 6 || st == 16 || st == 18 || st == 15 || st == 13 || st == 7);',
+          '      if (detT > 0.001 && wallM > 0.01) {',
+          '        if (stone) {',
+          '          float sc = floor(v / 0.55); float su = uW + mod(sc, 2.0) * 0.6;',
+          '          float smh = 1.0 - smoothstep(0.01, 0.01 + aa, abs(fract(v / 0.55 + 0.5) - 0.5) * 0.55);',
+          '          float smv = 1.0 - smoothstep(0.01, 0.01 + aa, abs(fract(su / 1.2 + 0.5) - 0.5) * 1.2);',
+          '          float svar = shtHash(vec2(sc, floor(su / 1.2)));',
+          '          col *= 1.0 + detT * wallM * 0.1 * (svar - 0.5);',
+          '          col = mix(col, col * 0.72, max(smh, smv) * detT * wallM * 0.6);',
+          '        } else if (panel) {',
+          '          float seam = max(1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(v / 3.3 + 0.5) - 0.5) * 3.3), 1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(uW / 3.0 + 0.5) - 0.5) * 3.0));',
+          '          col *= 1.0 - 0.2 * seam * detT * wallM;',
+          '          col *= 1.0 + detT * wallM * 0.06 * (shtVN(vec2(uW, v) * 2.0) - 0.5);',
+          '        } else if (brickish > 0.5) {',
+          '          float course = floor(v / 0.075); float bu = uW + mod(course, 2.0) * 0.11;',
+          '          float mh = 1.0 - smoothstep(0.007, 0.007 + aa, abs(fract(v / 0.075 + 0.5) - 0.5) * 0.075);',
+          '          float mv = 1.0 - smoothstep(0.007, 0.007 + aa, abs(fract(bu / 0.22 + 0.5) - 0.5) * 0.22);',
+          '          float bvar = shtHash(vec2(course, floor(bu / 0.22)));',
+          '          col *= 1.0 + detT * wallM * 0.18 * (bvar - 0.5);',
+          '          col = mix(col, vec3(0.58, 0.55, 0.50) * (0.85 + 0.15 * bvar), max(mh, mv) * detT * wallM * 0.7);',
+          '        } else if (st != 11) {',
+          '          col *= 0.94 + 0.12 * shtVN(vec2(uW, v) * 3.0) * detT * wallM + 0.06 * (1.0 - detT * wallM);',
+          '        }',
+          '      }',
+          '    }',
           '    // far away the pattern averages to the true facade mix — curtain-wall',
           '    // styles are ~half glass, so they must converge to a visibly darker',
           '    // average instead of washing back to the pale wall color',
@@ -5725,7 +5762,7 @@
       g.computeBoundingSphere();
       freeOnUpload(g);
       rc.pos = rc.col = rc.idx = null;
-      groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+      groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     // the sports complex is mostly asphalt: the surface lots from OSM (fetch_parking.py),
     // laid a hair above the lawn colour the ground would otherwise show
@@ -5783,7 +5820,7 @@
         groupCity.add(lotStripes);
       }
     }
-    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
+    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
@@ -6283,9 +6320,9 @@
       g.computeBoundingSphere();
       freeOnUpload(g);
       rc.pos = rc.col = rc.idx = null;
-      groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+      groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
-    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.95 }))); }
+    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
   }
   step('Raising the rest of Philadelphia', async () => {
@@ -6976,7 +7013,7 @@
       }
     }
     if (parts.length) {
-      const ovpMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
+      const ovpMat = surfMat({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
       mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
       mesh.receiveShadow = true;
@@ -11741,6 +11778,31 @@
   // day/night retint still owns the base color and the snow/wet pass layers
   // cleanly on top; the fine grain fades by pixel footprint so far ground
   // stays calm instead of sparkling (the water lesson).
+  // the flat surfaces' texture: three scales of value noise in world space, blotches, tufts
+  // and blades on anything green (parks, lawns), a quieter mottle and a fine speckle on the
+  // greys (roads, decks, plazas); the finer scales fade with their pixel footprint
+  function surfTexPatch(shader) {
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', [
+        'float sth(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
+        'float stn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+        '  return mix(mix(sth(i), sth(i + vec2(1.0, 0.0)), f.x), mix(sth(i + vec2(0.0, 1.0)), sth(i + vec2(1.0, 1.0)), f.x), f.y); }',
+        'void main() {',
+      ].join('\n'))
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+        'vec3 sWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
+        'float sfw = max(fwidth(sWP.x), fwidth(sWP.z));',
+        'float sn1 = stn(sWP.xz * 0.05);',
+        'float sn2 = stn(sWP.xz * 0.5) * (1.0 - smoothstep(1.0, 4.0, sfw));',
+        'float sn3 = stn(sWP.xz * 4.0) * (1.0 - smoothstep(0.08, 0.4, sfw));',
+        'float isGreen = step(diffuseColor.r * 1.15, diffuseColor.g);',
+        'vec3 gm = vec3((0.9 + 0.2 * sn1) * (0.92 + 0.16 * sn2) * (1.0 + 0.16 * (sn3 - 0.5)));',
+        'vec3 am = vec3((0.96 + 0.08 * sn1) * (0.97 + 0.06 * sn2) * (1.0 + 0.08 * (sn3 - 0.5)));',
+        'diffuseColor.rgb *= mix(am, gm, isGreen);',
+        'diffuseColor.g *= 1.0 + isGreen * 0.08 * (sn1 - 0.5);',
+      ].join('\n'));
+  }
+  const surfMat = (o) => { const m = new THREE.MeshStandardMaterial(o); m.onBeforeCompile = surfTexPatch; return m; };
   function wxGroundPatch(shader) {
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
