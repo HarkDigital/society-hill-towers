@@ -2379,6 +2379,22 @@ identical? Can you use the mapillary data to inform some other styles?"
   offscreen at 1280 x 720 from the previous deployed page and this one (a small POST
   server in the scratchpad saves what the page posts) and sent to Mike.
 
+- Mike, later: still flicker on some buildings (a speckled two-thirds of a banded tower), and
+  "the Schuylkill river is still all out of whack". The speckle was two walls on one plane
+  facing the same way: a building:part sharing its street face with the outline it sits
+  in, a wing flush with the tower, neighbouring outlines drawn over each other; 98 such
+  pairs in the wide tier, 63 on towers. `pack_wide.py` now finds them (parallel, same
+  outward normal, within 0.12 m, overlapping along the wall by over a metre and in height)
+  and insets the smaller record 0.4 m, a chain 0.4 m more per link, in passes until none
+  is left: 110 records inset, 3 pairs left. The first try at 0.18 m lost half its work to
+  the packer's 0.2 m grid. The river: the hand polyline the carve followed wandered up to
+  500 m off the water through the park, and no tier carried the riverbank north of the
+  dam. `bake_schuylkill.py` pulls the OSM waterway=river ways named Schuylkill from
+  Overpass (145 fragments, side channels included), `schuylkillCut` and `riverCorridor`
+  follow every fragment, and their 65 m buffer united and clipped to the dam-to-East-Falls
+  reach is the water sheet (`schuylkill.json`, 83 ha, two island holes), drawn a hand
+  below the tiers' own sheets. The river now runs from East Falls to the dam where it is.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

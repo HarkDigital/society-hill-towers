@@ -1174,9 +1174,12 @@
   // Row, the Fairmount Dam, Spring Garden, Market, University Avenue, Grays Ferry, Passyunk,
   // the refinery bend (the old trace ran a kilometre west of the river north of Center City)
   const SCHUYLKILL = [[-9150, -11780], [-8001, -10507], [-6593, -8904], [-5739, -8572], [-4502, -8074], [-3904, -7422], [-4160, -6217], [-4160, -5310], [-3947, -4425], [-3520, -3441], [-3734, -2844], [-3478, -2324], [-3220, -1775], [-3264, -1000], [-3650, 0], [-4545, 935], [-5055, 2264], [-4800, 3480], [-5015, 4585], [-4716, 5580], [-4118, 6686], [-3690, 7355]];
+  // the river's real course (bake_schuylkill.py, OSM waterway=river ways): every fragment,
+  // side channels included; the hand polyline above is the fallback when the bake is absent
+  const SCHUYLKILL_LINES = (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.lines && SCHUYLKILL_DATA.lines.length) ? SCHUYLKILL_DATA.lines : [SCHUYLKILL];
   function nearSchuylkill(x, z) {
-    for (let i = 0; i < SCHUYLKILL.length - 1; i++) {
-      const a = SCHUYLKILL[i], b = SCHUYLKILL[i + 1];
+    for (const LN of SCHUYLKILL_LINES) for (let i = 0; i < LN.length - 1; i++) {
+      const a = LN[i], b = LN[i + 1];
       const dx = b[0] - a[0], dz = b[1] - a[1];
       const L2 = dx * dx + dz * dz;
       let t = L2 > 0 ? ((x - a[0]) * dx + (z - a[1]) * dz) / L2 : 0;
@@ -1195,8 +1198,8 @@
   function schuylkillCut(x, z) {
     if (z > -2250 || z < -6600) return 0;
     let best = Infinity;
-    for (let i = 0; i < SCHUYLKILL.length - 1; i++) {
-      const a = SCHUYLKILL[i], b = SCHUYLKILL[i + 1];
+    for (const LN of SCHUYLKILL_LINES) for (let i = 0; i < LN.length - 1; i++) {
+      const a = LN[i], b = LN[i + 1];
       if (b[1] > -2000 || a[1] < -7000) continue;
       const dx = b[0] - a[0], dz = b[1] - a[1];
       const L2 = dx * dx + dz * dz;
@@ -6166,7 +6169,15 @@
     // a ring for it, and the outer districts show it only because their water plane lies
     // under the carved channel. A flat sheet at the same level under this reach does the
     // same here; the banks hide all of it but the channel
-    R.waterAreaParts.push({ geom: flatPoly([[-4450, -4480], [-3600, -4480], [-3600, -6600], [-4450, -6600]], null, TERRAIN.water + 0.55, true), color: new THREE.Color(COLORS.water), style: 3 });   // to the patch edge: its draped river takes over there
+    if (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.water) {
+      // the Schuylkill from the Fairmount dam to East Falls (bake_schuylkill.py): OSM maps this
+      // reach as a riverbank multipolygon neither packed tier carries, and the far ring's polygon
+      // stops at the wide box, so the river through the park was a carved, dry channel. The baked
+      // sheet is the real course buffered to the bank, islands as holes, a hand below the area
+      // sheets so a tier's own polygon draws over it without a fight
+      const w = SCHUYLKILL_DATA.water;
+      R.waterAreaParts.push({ geom: flatPoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.5, true), color: new THREE.Color(COLORS.water), style: 3 });
+    }
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await uploadRing(R);
     // the world is now the whole city

@@ -54,7 +54,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   pack_city.py); storefronts come from `storefronts.b64`, and the outer districts' wall colours
   from Mapillary block faces (`wide_walls.b64`, colour byte plus a trim/window hint byte; a dry-run bake
   never ships); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
-  Center City towers from `towers.json` (research-derived facade archetype, crown, tint); a search result glides in and
+  Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
+  Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
+  and `pack_wide.py` insets any record whose wall shares a plane with a larger one; a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
   The clock is never remembered: every load is Philadelphia's own time, and only a copied
   link carries a pinned clock. The two stadiums are built after the wide loop from
