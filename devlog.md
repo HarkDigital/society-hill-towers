@@ -2395,6 +2395,27 @@ identical? Can you use the mapillary data to inform some other styles?"
   reach is the water sheet (`schuylkill.json`, 83 ha, two island holes), drawn a hand
   below the tiers' own sheets. The river now runs from East Falls to the dam where it is.
 
+- Mike: "the river still has very pixelated spots", and "make the water look like the water
+  in Cities Skylines". The staircase was the 25 m ground grid surfacing through the sheet:
+  the carve followed the centreline at 60 to 95 m while the sheet followed the outline, and
+  wherever a bank was steep (Lemon Hill, the Schuylkill Banks south of the dam, where there
+  was no carve at all) the grid's interpolated surface crossed the water plane in steps.
+  `bake_schuylkill.py` now also fetches the natural=water river multipolygons around the
+  waterway (six faces, 1,304 ha with the 60 m ribbon filling gaps, two island holes) and
+  the app carves to that outline: a 10 m scanline raster says inside or outside, a 20 m
+  edge grid gives the distance and the side near the edge; inside goes to the bed, and
+  within 40 m outside a bank ramps down to a hand above the water, so the crossing sits at
+  the outline. Both ground builders and the park drapes call the one `riverCarve`, the
+  corridor test reads the raster, and the whole modelled river is drawn from the outline
+  (the tiers' own sheets sit 5 cm above and win where they exist). Water: COLORS.water to a
+  blue-green, riverMat and the Delaware's waterMat to roughness 0.3, metalness 0.15,
+  envMap 0.55 (cuts at 0.2 / 0.32 / 1.15 and 0.27 / 0.22 / 0.78 both turned the Delaware into
+  a pale sheet at a grazing angle: the sky's horizon is bright and the river is wide), waves at amplitude 1.0 and speed 0.8, a fresnel term in `liquify` that
+  mixes 0.38 toward a sky blue at grazing angles, and the sky's reflection itself tinted
+  blue and dimmed to 0.62 in `lights_fragment_end` (the pale sheet was the horizon coming
+  back untinted) and leaves deep water under the eye, the look of the
+  game's water without its translucency (the bed under our sheets is a flat plane).
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

@@ -34,7 +34,7 @@
     footway: 0x7c584a,     // society hill brick sidewalks
     park: 0x243818,        // grass — stored very deep: the legacy-color pipeline + ACES
     parkDark: 0x1d2c13,    // lift flat lawns ~2.5x at noon (cf. roads: 0x3b3833 -> light gray)
-    water: 0x3d5560,
+    water: 0x2a4f68,     // blue-green, the reflection does the rest
     pier: 0x8f8a7d,
     trunk: 0x5b4a38,
     bronze: 0x4d3b26,
@@ -835,9 +835,7 @@
   // the drape's terrain read: siteY, but carved with the Schuylkill's channel like the ground
   // meshes are, so a park drawn across the pool dips under the water instead of roofing it
   function drapeY(x, z, mode) {
-    const y = siteY(x, z, mode);
-    const kc = schuylkillCut(x, z);
-    return kc > 0 ? Math.min(y, y + (TERRAIN.bed - 0.6 - y) * kc) : y;
+    return riverCarve(x, z, siteY(x, z, mode));
   }
   function drapedPoly(poly, yOff, spacing) {
     const area = Math.abs(signedArea(poly));
@@ -1189,12 +1187,80 @@
     }
     return false;
   }
-  function riverCorridor(x, z) { return eastOfDelaware(x, z) || nearSchuylkill(x, z); }
+  function riverCorridor(x, z) { return eastOfDelaware(x, z) || (schRaster ? schRaster(x, z) : nearSchuylkill(x, z)); }
   // the Schuylkill channel above the Fairmount Dam, 1 within 60 m of the centerline fading to
   // 0 at 95 m: the ground builders carve it to the riverbed. Above the dam the pool sits a
   // couple of metres over the tidal water plane and the 50 and 100 m elevation grids smear
   // the banks across the river, so the flat water drawn at tidal level was buried from the
   // dam to the NW hills patch (which drapes its own full-fidelity rings and is left alone)
+  // The river's outline (bake_schuylkill.py, OSM natural=water): inside it the ground goes to
+  // the bed, and within 40 m outside a high bank ramps down to just above the water, so the
+  // shoreline is the outline itself. Before this the carve followed the centreline at a fixed
+  // radius while the sheet followed the outline, and wherever the two disagreed the 25 m
+  // ground grid surfaced through the water as a staircase. Inside/outside comes from a 10 m
+  // scanline raster of the polygon (rows against edges once, at start), the distance and the
+  // side near the edge from a 20 m grid of the edges themselves.
+  const SCH_POLYS = (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.polys && SCHUYLKILL_DATA.polys.length) ? SCHUYLKILL_DATA.polys : null;
+  let schRaster = null, schEdges = null;
+  if (SCH_POLYS) {
+    const RC = 10, EC = 20;
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    const rings = [];
+    for (const pg of SCH_POLYS) { rings.push(pg.ring); for (const h of (pg.holes || [])) rings.push(h); for (const q of pg.ring) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; } }
+    const gx0 = Math.floor(x0 / RC) - 1, gz0 = Math.floor(z0 / RC) - 1, nx = Math.ceil(x1 / RC) - gx0 + 2, nz = Math.ceil(z1 / RC) - gz0 + 2;
+    const mask = new Uint8Array(nx * nz);
+    const xs = [];
+    for (let j = 0; j < nz; j++) {   // even-odd fill of every raster row against every edge (holes included)
+      const zc = (gz0 + j + 0.5) * RC;
+      xs.length = 0;
+      for (const r of rings) for (let k = 0, n = r.length; k < n; k++) {
+        const a = r[k], b = r[(k + 1) % n];
+        if ((a[1] <= zc) !== (b[1] <= zc)) xs.push(a[0] + (zc - a[1]) / (b[1] - a[1]) * (b[0] - a[0]));
+      }
+      xs.sort((u, v) => u - v);
+      for (let m = 0; m + 1 < xs.length; m += 2) {
+        const i0 = Math.max(0, Math.ceil(xs[m] / RC - 0.5) - gx0), i1 = Math.min(nx - 1, Math.floor(xs[m + 1] / RC - 0.5) - gx0);
+        for (let ii = i0; ii <= i1; ii++) mask[j * nx + ii] = 1;
+      }
+    }
+    schRaster = (x, z) => { const ii = Math.floor(x / RC) - gx0, jj = Math.floor(z / RC) - gz0; return ii >= 0 && jj >= 0 && ii < nx && jj < nz && mask[jj * nx + ii] === 1; };
+    const egrid = new Map(), segs = [];
+    for (const r of rings) {
+      const n = r.length; let ar = 0; for (let k = 0; k < n; k++) ar += r[k][0] * r[(k + 1) % n][1] - r[(k + 1) % n][0] * r[k][1];
+      const sgn = ar > 0 ? 1 : -1;   // so the edge normal below points to the ring's outside
+      for (let k = 0; k < n; k++) {
+        const a = r[k], b = r[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+        if (L < 0.05) continue;
+        const sid = segs.length; segs.push([a[0], a[1], dx / L, dz / L, L, (dz / L) * sgn, (-dx / L) * sgn]);
+        for (let gx = Math.floor(Math.min(a[0], b[0]) / EC); gx <= Math.floor(Math.max(a[0], b[0]) / EC); gx++)
+          for (let gz = Math.floor(Math.min(a[1], b[1]) / EC); gz <= Math.floor(Math.max(a[1], b[1]) / EC); gz++) { const key = gx + ':' + gz; let l = egrid.get(key); if (!l) { l = []; egrid.set(key, l); } l.push(sid); }
+      }
+    }
+    // [distance to the nearest edge within 40 m (else 40), +1 outside / -1 inside by that edge]
+    schEdges = (x, z) => {
+      let best = 1600, side = 0;
+      const gx = Math.floor(x / EC), gz = Math.floor(z / EC);
+      for (let a = -2; a <= 2; a++) for (let b2 = -2; b2 <= 2; b2++) {
+        const l = egrid.get((gx + a) + ':' + (gz + b2)); if (!l) continue;
+        for (const sid of l) {
+          const sg = segs[sid];
+          const t = clamp(((x - sg[0]) * sg[2] + (z - sg[1]) * sg[3]), 0, sg[4]);
+          const px = x - (sg[0] + sg[2] * t), pz = z - (sg[1] + sg[3] * t), d2 = px * px + pz * pz;
+          if (d2 < best) { best = d2; side = (px * sg[5] + pz * sg[6]) >= 0 ? 1 : -1; }
+        }
+      }
+      return [Math.sqrt(best), side];
+    };
+  }
+  // the ground height under and beside the river: yy is the builder's height so far
+  function riverCarve(x, z, yy) {
+    if (!schRaster) { const kc = schuylkillCut(x, z); return kc > 0 ? Math.min(yy, yy + (TERRAIN.bed - 0.6 - yy) * kc) : yy; }
+    const e = schEdges(x, z);
+    const inside = e[0] < 8 ? e[1] < 0 : schRaster(x, z);
+    if (inside) return Math.min(yy, TERRAIN.bed - 0.6);
+    if (e[0] < 40) return Math.min(yy, TERRAIN.water + 0.9 + (yy - TERRAIN.water - 0.9) * smooth(0, 40, e[0]));
+    return yy;
+  }
   function schuylkillCut(x, z) {
     if (z > -2250 || z < -6600) return 0;
     let best = Infinity;
@@ -1510,6 +1576,9 @@
           // sun glitter on the perturbed surface: the material is deliberately rough
           // (the river must not mirror the sky), so the sparkle is added explicitly
           '  vec3 wview = normalize(cameraPosition - vWq);\n' +
+          // fresnel: the sheet reads as sky at grazing angles and as deep water below the eye
+          '  float wfres = pow(1.0 - clamp(dot(wview, wn), 0.0, 1.0), 3.0);\n' +
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.40, 0.55, 0.70), wfres * 0.38 * (1.0 - uNite * 0.75));\n' +
           '  float wspec = pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 140.0);\n' +
           // a broad low-power lobe under the sparkle: the soft sheet of light real
           // rivers throw toward the sun, not just point glitter
@@ -1517,6 +1586,10 @@
           // at night uSun is the MOON: keep a faint moonglade, not a sequin field
           '  wGlint = wspec * smoothstep(0.02, 0.1, uSun.y) * (0.55 + 0.45 * uWAmp) * wfade * (1.0 - uNite * 0.85);\n' +
           '}\n')
+        // the sky's reflection comes back blue and dimmer than the sky itself: a wide sheet
+        // seen at a grazing angle otherwise turns the colour of the horizon (pale), where the
+        // game's water keeps its blue under the reflection
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= vec3(0.50, 0.72, 0.96) * 0.62;\nreflectedLight.directSpecular *= 0.85;\n')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' +
           'totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * wGlint * 1.15;\n');
     };
@@ -1526,8 +1599,8 @@
   // 15-25 px. Set at construction only, a later flip recompiles (false disables)
   const MAT_DITHER = true;
   // the outer rivers and far water polygons share one animated material
-  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55, dithering: MAT_DITHER });
-  liquify(riverMat, 1.0, 1.35, 1.0);
+  const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.15, envMapIntensity: 0.55, dithering: MAT_DITHER });
+  liquify(riverMat, 1.0, 1.0, 0.8);
 
   function waterPoint(along, out) {
     // along: meters along the shoreline from the towers' projection; out: meters east of the bulkhead
@@ -1969,7 +2042,7 @@
           const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
           const y = demY(x, z);
           let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.05;
-          { const kc = schuylkillCut(x, z); if (kc > 0) yy = Math.min(yy, yy + (TERRAIN.bed - 0.6 - yy) * kc); }   // the pool's channel
+          yy = riverCarve(x, z, yy);   // the Schuylkill's channel
           // NED reads a made-land shelf across the Delaware at the Walt Whitman
           // crossing (~3 m above water mid-river) — those cells rendered as a flat
           // gray band under the deck; between the banks, send them to the bed
@@ -2055,8 +2128,8 @@
     walls.receiveShadow = true; groupCity.add(walls);
     freeOnUpload(walls.geometry);   // never raycast (focus and pick use rayTargets only)
 
-    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.42, metalness: 0.18, envMapIntensity: 0.55, dithering: MAT_DITHER });
-    liquify(waterMat, 1.0, 1.35, 1.0);      // the Delaware breathes
+    const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.3, metalness: 0.15, envMapIntensity: 0.55, dithering: MAT_DITHER });
+    liquify(waterMat, 1.0, 1.0, 0.8);      // the Delaware breathes
     const water = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
     groupCity.add(water);
@@ -6094,7 +6167,7 @@
         const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
         const y = demY(x, z);
         let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07;
-        { const kc = schuylkillCut(x, z); if (kc > 0) yy = Math.min(yy, yy + (TERRAIN.bed - 0.6 - yy) * kc); }   // the pool's channel
+        yy = riverCarve(x, z, yy);   // the Schuylkill's channel
         if (tint && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
         pos.push(x, yy, z);
       }
@@ -6169,14 +6242,13 @@
     // a ring for it, and the outer districts show it only because their water plane lies
     // under the carved channel. A flat sheet at the same level under this reach does the
     // same here; the banks hide all of it but the channel
-    if (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.water) {
+    if (SCH_POLYS) {
       // the Schuylkill from the Fairmount dam to East Falls (bake_schuylkill.py): OSM maps this
       // reach as a riverbank multipolygon neither packed tier carries, and the far ring's polygon
       // stops at the wide box, so the river through the park was a carved, dry channel. The baked
       // sheet is the real course buffered to the bank, islands as holes, a hand below the area
       // sheets so a tier's own polygon draws over it without a fight
-      const w = SCHUYLKILL_DATA.water;
-      R.waterAreaParts.push({ geom: flatPoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.5, true), color: new THREE.Color(COLORS.water), style: 3 });
+      for (const w of SCH_POLYS) { try { R.waterAreaParts.push({ geom: flatPoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.5, true), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* a degenerate ring */ } }
     }
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await uploadRing(R);
