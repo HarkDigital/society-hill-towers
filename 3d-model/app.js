@@ -470,6 +470,8 @@
     const flh = full ? new Float32Array(count) : null;
     const wu = full ? new Float32Array(count) : null, wl = full ? new Float32Array(count) : null, wh = full ? new Float32Array(count) : null;
     const bs = facade ? new Float32Array(count) : null;
+    // the lane paint's aLane rides along when any part carries it (zeros elsewhere: the shader skips them)
+    const ln = prepped.some(p => !!p.g.attributes.aLane) ? new Float32Array(count * 4) : null;
     let o = 0;
     const c = new THREE.Color();
     for (let pi = 0; pi < prepped.length; pi++) {
@@ -482,6 +484,7 @@
       const vc = g.attributes.position.count;
       pos.set(p, o * 3); nor.set(n, o * 3);
       if (full && g.attributes.aWallU) { wu.set(g.attributes.aWallU.array, o); wl.set(g.attributes.aWallL.array, o); wh.set(g.attributes.aWallH.array, o); }
+      if (ln && g.attributes.aLane) ln.set(g.attributes.aLane.array, o * 4);
       if (full) { sty.fill(styleV, o, o + vc); flh.fill(flhV, o, o + vc); }
       if (bs) bs.fill(baseY, o, o + vc);
       for (let i = 0; i < vc; i++) {
@@ -507,6 +510,7 @@
       out.setAttribute('aWallH', new THREE.BufferAttribute(wh, 1));
     }
     if (bs) out.setAttribute('aBase', new THREE.BufferAttribute(bs, 1));
+    if (ln) out.setAttribute('aLane', new THREE.BufferAttribute(ln, 4));
     return out;
   }
 
@@ -915,14 +919,32 @@
     return { slopes: mk(slopes), ends: mk(ends, true), ax, az, px, pz, hl, hs };
   }
 
-  // flat road ribbon with round joints
-  function ribbon(pts, w, y, yFn) {
+  // flat road ribbon with round joints. `lane` ({cls}) asks for the aLane attribute the
+  // lane shader reads: vec4(u, s, hw, cls) per vertex, u the signed across-distance from
+  // the centreline, s the distance along the densified polyline, hw the half width, cls
+  // 0 two-way street, 1 divided highway, 2 no markings. The joint fans carry the averaged
+  // direction at their point and sit 2 cm BELOW their strip: the strips win the overlap,
+  // so a fan's slightly different parameterisation at a bend never z-fights the strip's
+  // paint, and a fan can never rise above a crossing street more than its strip already does
+  function ribbon(pts, w, y, yFn, lane) {
     pts = densify(pts, 10);
     // deterministic few-cm lift so no two ribbons are ever exactly coplanar
     y += hash01(pts[0][0] * 0.13 + pts[0][1] * 0.71) * 0.06;
     const hw = w / 2;
     const tris = [];
+    const lanes = lane ? [] : null, cls = lane ? lane.cls : 0;
     const ys = pts.map(p => y + (yFn ? yFn(p[0], p[1]) : siteY(p[0], p[1], 'road')));
+    // s along the polyline and the averaged heading at every point (for the fans)
+    const ss = new Float64Array(pts.length), hd = lane ? new Float64Array(pts.length * 2) : null;
+    for (let i = 1; i < pts.length; i++) ss[i] = ss[i - 1] + Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    if (lane) {
+      for (let i = 0; i < pts.length; i++) {
+        const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(pts.length - 1, i + 1)];
+        let ex = p1[0] - p0[0], ez = p1[1] - p0[1];
+        const el = Math.hypot(ex, ez) || 1;
+        hd[i * 2] = ex / el; hd[i * 2 + 1] = ez / el;
+      }
+    }
     for (let i = 0; i < pts.length - 1; i++) {
       const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
       let dx = bx - ax, dz = bz - az;
@@ -933,15 +955,26 @@
       const ya = ys[i], yb = ys[i + 1];
       tris.push(ax + px, ya, az + pz, bx + px, yb, bz + pz, bx - px, yb, bz - pz);
       tris.push(ax + px, ya, az + pz, bx - px, yb, bz - pz, ax - px, ya, az - pz);
+      if (lanes) {
+        const sa = ss[i], sb = ss[i + 1];
+        lanes.push(hw, sa, hw, cls, hw, sb, hw, cls, -hw, sb, hw, cls);
+        lanes.push(hw, sa, hw, cls, -hw, sb, hw, cls, -hw, sa, hw, cls);
+      }
     }
     for (let i = 0; i < pts.length; i++) {
-      const cx = pts[i][0], cz = pts[i][1], yc = ys[i];
+      const cx = pts[i][0], cz = pts[i][1], yc = ys[i] - (lane ? 0.02 : 0);
       const S = 8;
+      const ddx = lane ? hd[i * 2] : 0, ddz = lane ? hd[i * 2 + 1] : 0, si = ss[i];
       for (let k = 0; k < S; k++) {
         const a0 = (k / S) * Math.PI * 2, a1 = ((k + 1) / S) * Math.PI * 2;
-        tris.push(cx, yc, cz,
-          cx + Math.cos(a1) * hw, yc, cz + Math.sin(a1) * hw,
-          cx + Math.cos(a0) * hw, yc, cz + Math.sin(a0) * hw);
+        const ox0 = Math.cos(a0) * hw, oz0 = Math.sin(a0) * hw, ox1 = Math.cos(a1) * hw, oz1 = Math.sin(a1) * hw;
+        tris.push(cx, yc, cz, cx + ox1, yc, cz + oz1, cx + ox0, yc, cz + oz0);
+        if (lanes) {
+          // rim u = offset . n_i (n_i the left normal (-dz, dx), the strip's own sense), s = s_i + offset . d_i
+          lanes.push(0, si, hw, cls,
+            -ox1 * ddz + oz1 * ddx, si + ox1 * ddx + oz1 * ddz, hw, cls,
+            -ox0 * ddz + oz0 * ddx, si + ox0 * ddx + oz0 * ddz, hw, cls);
+        }
       }
     }
     const g = new THREE.BufferGeometry();
@@ -950,7 +983,77 @@
     const n = new Float32Array(arr.length);
     for (let i = 0; i < n.length; i += 3) { n[i] = 0; n[i + 1] = 1; n[i + 2] = 0; }
     g.setAttribute('normal', new THREE.BufferAttribute(n, 3));
+    if (lanes) g.setAttribute('aLane', new THREE.BufferAttribute(new Float32Array(lanes), 4));
     return g;
+  }
+  // Lane paint: white lane lines and a double yellow centre computed in the fragment
+  // shader from aLane, so the roads carry no extra geometry. Everything sits inside a
+  // real branch: a mesh without the attribute reads GL's default (0, 0, 0, 1), and a
+  // zero lane period would be NaN on every desktop GPU (NaN * 0 stays NaN). Widths are
+  // clamped to about a pixel with a coverage-preserving gain, dashes go to their mean
+  // past aliasing, and the paint fades out past ~2.4 m per pixel.
+  // Tunables (one place): LANE_W_TWOWAY 3.3 m per lane on a two-way street, LANE_W_DIVIDED
+  // 3.7 m on a divided highway, LANE_YELLOW_HW 3.25 (a double yellow from 6.5 m wide),
+  // LANE_LINE_W 0.12 m, LANE_DASH_P 9.0 m (3 m on, 6 m off); the paint colours and the
+  // 0.85 strength are stored-colour under the legacy pipeline (pale paint, muted yellow, not neon).
+  const LANE_GLSL = {
+    laneTwoWay: '3.3', laneDivided: '3.7', yellowHw: '3.25', lineW: '0.12', dashP: '9.0',
+    white: 'vec3(0.62, 0.62, 0.58)', yellow: 'vec3(0.62, 0.50, 0.14)', strength: '0.85',
+  };
+  function lanePatch(shader) {
+    const T = LANE_GLSL;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aLane; varying vec4 vLane;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLane = aLane;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec4 vLane;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+        // the derivatives stay outside the branch (defined only in uniform control flow); they are NaN-safe there
+        'float lnW = fwidth(vLane.x) + 1e-4;',                    // metres per pixel across the road
+        'float lnLs = fwidth(vLane.y) + 1e-4;',                   // metres per pixel along it
+        'if (vLane.z > 0.5 && vLane.w < 1.5) {',
+        '  float lnHw = vLane.z, lnU = vLane.x, lnS = vLane.y;',
+        '  float lnLineW = max(' + T.lineW + ', lnW * 0.9);',            // never thinner than about a pixel
+        '  float lnGain = clamp(' + T.lineW + ' / lnLineW, 0.35, 1.0);', // coverage-preserving intensity
+        '  float lnFar = 1.0 - smoothstep(1.2, 2.4, lnW);',              // gone past ~2.4 m per pixel
+        '  float lnDash = mix(step(fract(lnS / ' + T.dashP + '), 0.333), 0.333, smoothstep(1.5, 4.5, lnLs));',
+        '  float lnWhite = 0.0, lnYel = 0.0;',
+        '  if (vLane.w < 0.5) {',                                        // a two-way street
+        '    if (lnHw >= ' + T.yellowHw + ') {',                         // a double yellow centre, two 0.10 m lines at +-0.16
+        '      float lnDy = abs(abs(lnU) - 0.16);',
+        '      lnYel = 1.0 - smoothstep(max(0.05, lnLineW * 0.5) - lnW, max(0.05, lnLineW * 0.5), lnDy);',
+        '    }',
+        '    float lnNl = max(1.0, floor(lnHw / ' + T.laneTwoWay + ' + 0.5));', // lanes per side (round)
+        '    float lnP = max(lnHw / lnNl, 0.5);',
+        '    float lnDu = abs(fract(abs(lnU) / lnP + 0.5) - 0.5) * lnP;',
+        '    float lnIn = step(0.5 * lnP, abs(lnU)) * step(abs(lnU), lnHw - 0.5 * lnP);', // not the centre, not the edge
+        '    lnWhite = (1.0 - smoothstep(lnLineW * 0.5 - lnW, lnLineW * 0.5, lnDu)) * lnIn * lnDash;',
+        '  } else {',                                                    // divided: lanes across the width, solid edges, no yellow
+        '    float lnN = max(2.0, floor(2.0 * lnHw / ' + T.laneDivided + ' + 0.5));',
+        '    float lnP = max(2.0 * lnHw / lnN, 0.5);',
+        '    float lnV = lnU + lnHw;',
+        '    float lnDu = abs(fract(lnV / lnP + 0.5) - 0.5) * lnP;',
+        '    float lnIn = step(0.5 * lnP, lnV) * step(lnV, 2.0 * lnHw - 0.5 * lnP);',
+        '    lnWhite = (1.0 - smoothstep(lnLineW * 0.5 - lnW, lnLineW * 0.5, lnDu)) * lnIn * lnDash;',
+        '    float lnDe = abs(abs(lnU) - (lnHw - 0.35));',
+        '    lnWhite = max(lnWhite, 1.0 - smoothstep(lnLineW * 0.5 - lnW, lnLineW * 0.5, lnDe));',
+        '  }',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, ' + T.white + ', lnWhite * lnGain * lnFar * ' + T.strength + ');',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, ' + T.yellow + ', lnYel * lnGain * lnFar * ' + T.strength + ');',
+        '}',
+      ].join('\n'));
+  }
+  // the road material: surfMat's meadow/mottle hook with the lane paint chained after it.
+  // Each hook inserts after the first '#include <color_fragment>', so the later call lands
+  // earlier in the shader: lanePatch first here means the asphalt mottle runs first and the
+  // paint goes over it (the weather hookup wraps snow over both and re-keys). r149 keys the
+  // program on onBeforeCompile.toString(), so a wrapped hook needs its own cache key (gotcha 15).
+  function roadMat(o) {
+    const m = surfMat(o);
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => { lanePatch(sh); prev(sh, r); };
+    m.customProgramCacheKey = () => 'lane|' + prev.toString();
+    return m;
   }
   // streets follow the terrain: add a vertex every `step` meters
   function densify(pts, step) {
@@ -2671,8 +2774,11 @@
       const mot = /motorway/.test(r.t);
       const y = foot ? LAYER.footway : LAYER.road;
       const setts = /Dock Street/i.test(r.name || '') || (/2nd Street/i.test(r.name || '') && r.pts[0][1] > 250 && r.pts[0][1] < 420);
+      // lane class for the paint: divided (no centre yellow) on the highways and their links,
+      // no markings on service and pedestrian ways; the brick parts never carry the attribute
+      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) ? 2 : 0) };
       for (const run of runsOf(r.pts)) {
-        const g = ribbon(run, r.w, y, mot ? motY : null);
+        const g = ribbon(run, r.w, y, mot ? motY : null, lane);
         if (!/footway|path|steps|cycleway/.test(r.t)) {
           for (let i = 0; i < run.length - 1; i++) {
             addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
@@ -2690,7 +2796,7 @@
     }
     const asphalt = new THREE.Mesh(
       mergeColored(asphaltParts),
-      surfMat({ vertexColors: true, roughness: 0.95 })
+      roadMat({ vertexColors: true, roughness: 0.95 })
     );
     asphalt.receiveShadow = true;
     groupCity.add(asphalt);
@@ -5435,8 +5541,14 @@
     // outer streets. Continuity work: endpoint-snapped heights (no steps at OSM way
     // splits), joint fans at bends, real bridge decks over the rivers, aligned-only
     // duplicate dropping, and a lift blend at the core seam.
-    const rc = { pos: [], col: [], idx: [], n: 0 };
+    const rc = { pos: [], col: [], idx: [], n: 0, lane: new Float32Array(1 << 20), label: 'wide' };
     const roadCol = [0x3b3833, 0x3b3833, 0x3f3c37, 0x3f3c37, 0x43403b, 0x45423d, 0x7c584a];
+    // aLane (u, s, hw, cls) for vertex v, in a growable Float32Array (a boxed array here
+    // would stage the whole tier at ~92 B a vertex, the phone killer, see IdxBuf)
+    const rcLane = (v, u, s, hw, cls) => {
+      if (v * 4 + 4 > rc.lane.length) { const b = new Float32Array(rc.lane.length * 2); b.set(rc.lane); rc.lane = b; }
+      rc.lane[v * 4] = u; rc.lane[v * 4 + 1] = s; rc.lane[v * 4 + 2] = hw; rc.lane[v * 4 + 3] = cls;
+    };
     const yMapW = new Map();
     const ySnap = (map, x, z, y) => {
       const key = Math.round(x * 2) + ':' + Math.round(z * 2);
@@ -5445,15 +5557,21 @@
       map.set(key, y);
       return y;
     };
-    const rcFan = (x, y, z, hw, cr, cg, cb) => {
+    // the joint fan sits 2 cm below its strip so the strip's paint wins the overlap; its
+    // aLane rides the averaged heading (ddx, ddz) at the bend: rim u = offset . n, s = sA + offset . d
+    const rcFan = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls) => {
       const c0 = rc.n;
+      y -= 0.02;
       rc.pos.push(x, y, z);
       rc.col.push(cr, cg, cb);
+      rcLane(rc.n, 0, sA, hw, cls);
       rc.n++;
       for (let s6 = 0; s6 < 7; s6++) {
         const ang = s6 / 6 * Math.PI * 2;
-        rc.pos.push(x + Math.cos(ang) * hw, y, z + Math.sin(ang) * hw);
+        const ox = Math.cos(ang) * hw, oz = Math.sin(ang) * hw;
+        rc.pos.push(x + ox, y, z + oz);
         rc.col.push(cr, cg, cb);
+        rcLane(rc.n, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls);
         rc.n++;
       }
       for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
@@ -5466,11 +5584,14 @@
       pts = densify(pts, 15);
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
+      const cls = t <= 1 ? 1 : (t === 6 || w < 5.5) ? 2 : 0;   // lane class: divided, two-way, or unmarked
       const thr = TERRAIN.water + 0.6;
+      let sAcc = 0;   // distance along the densified polyline (the lane paint's s)
       for (let j = 0; j < pts.length - 1; j++) {
         const a = pts[j], q = pts[j + 1];
         let dx = q[0] - a[0], dz = q[1] - a[1];
         const L = Math.hypot(dx, dz); if (L < 0.01) continue;
+        const sA = sAcc; sAcc += L;
         dx /= L; dz /= L;
         const mx = (a[0] + q[0]) / 2, mz = (a[1] + q[1]) / 2;
         const aLow = demY(a[0], a[1]) < thr, qLow = demY(q[0], q[1]) < thr;
@@ -5501,6 +5622,7 @@
         const b0 = rc.n;
         rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
         for (let m = 0; m < 4; m++) rc.col.push(c.r * 255, c.g * 255, c.b * 255);
+        rcLane(b0, hw, sA, hw, cls); rcLane(b0 + 1, hw, sAcc, hw, cls); rcLane(b0 + 2, -hw, sAcc, hw, cls); rcLane(b0 + 3, -hw, sA, hw, cls);
         rc.n += 4;
         rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
         if (j > 0) { // joint fan where the heading bends (quad strips leave notches)
@@ -5508,7 +5630,11 @@
           let ux0 = a[0] - p0[0], uz0 = a[1] - p0[1];
           const L0 = Math.hypot(ux0, uz0) || 1;
           ux0 /= L0; uz0 /= L0;
-          if (ux0 * dx + uz0 * dz < 0.99) rcFan(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255);
+          if (ux0 * dx + uz0 * dz < 0.99) {
+            let ddx = ux0 + dx, ddz = uz0 + dz;
+            const dl = Math.hypot(ddx, ddz) || 1;
+            rcFan(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, ddx / dl, ddz / dl, cls);
+          }
         }
       }
     }
@@ -5962,12 +6088,14 @@
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
       g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
+      if (rc.lane) g.setAttribute('aLane', new THREE.BufferAttribute(rc.lane.subarray(0, rc.n * 4), 4));
       g.setIndex(rc.idx);
       g.computeVertexNormals();
       g.computeBoundingSphere();
       freeOnUpload(g);
-      rc.pos = rc.col = rc.idx = null;
-      groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+      if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
+      rc.pos = rc.col = rc.idx = rc.lane = null;
+      groupCity.add(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     // the sports complex is mostly asphalt: the surface lots from OSM (fetch_parking.py),
     // laid a hair above the lawn colour the ground would otherwise show
@@ -6409,8 +6537,15 @@
     }
     // far roads — same continuity treatment as the wide set: endpoint-snapped heights,
     // bend fans, bridge decks over the river corridors
-    const rc = { pos: [], col: [], idx: [], n: 0 };
+    // the far ring skips aLane on phones (its lines are under a pixel at phone distances,
+    // and the attribute is 16 B a vertex); the shader's guard makes the missing attribute safe
+    const rc = { pos: [], col: [], idx: [], n: 0, lane: isTouch ? null : new Float32Array(1 << 21), label };
     const roadCol = [0x3b3833, 0x3b3833, 0x3f3c37, 0x3f3c37, 0x43403b, 0x45423d, 0x7c584a];
+    const rcLane = (v, u, s, hw, cls) => {   // see the wide tier's rcLane
+      if (!rc.lane) return;
+      if (v * 4 + 4 > rc.lane.length) { const b = new Float32Array(rc.lane.length * 2); b.set(rc.lane); rc.lane = b; }
+      rc.lane[v * 4] = u; rc.lane[v * 4 + 1] = s; rc.lane[v * 4 + 2] = hw; rc.lane[v * 4 + 3] = cls;
+    };
     // pack_wide carries roads 200 m past its box (runs_of(..., 200)); a 30 m
     // margin here left a 170 m band where both tiers paved the same streets
     const inWide = (p) => p[0] > WIDEB.x0 - 200 && p[0] < WIDEB.x1 + 200 && p[1] > WIDEB.z0 - 200 && p[1] < WIDEB.z1 + 200;
@@ -6422,13 +6557,15 @@
       yMapF.set(key, y);
       return y;
     };
-    const rcFanF = (x, y, z, hw, cr, cg, cb) => {
+    const rcFanF = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls) => {   // 2 cm below its strip, like the wide rcFan
       const c0 = rc.n;
-      rc.pos.push(x, y, z); rc.col.push(cr, cg, cb); rc.n++;
+      y -= 0.02;
+      rc.pos.push(x, y, z); rc.col.push(cr, cg, cb); rcLane(rc.n, 0, sA, hw, cls); rc.n++;
       for (let s6 = 0; s6 < 7; s6++) {
         const ang = s6 / 6 * Math.PI * 2;
-        rc.pos.push(x + Math.cos(ang) * hw, y, z + Math.sin(ang) * hw);
-        rc.col.push(cr, cg, cb); rc.n++;
+        const ox = Math.cos(ang) * hw, oz = Math.sin(ang) * hw;
+        rc.pos.push(x + ox, y, z + oz);
+        rc.col.push(cr, cg, cb); rcLane(rc.n, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls); rc.n++;
       }
       for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
     };
@@ -6440,11 +6577,14 @@
       pts = densify(pts, 30);
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
+      const cls = t <= 1 ? 1 : (t === 6 || w < 5.5) ? 2 : 0;   // lane class: divided, two-way, or unmarked
       const thr = TERRAIN.water + 0.6;
+      let sAcc = 0;   // distance along the densified polyline (the lane paint's s)
       for (let j = 0; j < pts.length - 1; j++) {
         const a = pts[j], q = pts[j + 1];
         let dx = q[0] - a[0], dz = q[1] - a[1];
         const L = Math.hypot(dx, dz); if (L < 0.01) continue;
+        const sA = sAcc; sAcc += L;
         dx /= L; dz /= L;
         const mx = (a[0] + q[0]) / 2, mz = (a[1] + q[1]) / 2;
         const aLow = demY(a[0], a[1]) < thr, qLow = demY(q[0], q[1]) < thr;
@@ -6468,6 +6608,7 @@
         const b0 = rc.n;
         rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
         for (let m = 0; m < 4; m++) rc.col.push(c.r * 255, c.g * 255, c.b * 255);
+        rcLane(b0, hw, sA, hw, cls); rcLane(b0 + 1, hw, sAcc, hw, cls); rcLane(b0 + 2, -hw, sAcc, hw, cls); rcLane(b0 + 3, -hw, sA, hw, cls);
         rc.n += 4;
         rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
         if (j > 0) {
@@ -6475,7 +6616,11 @@
           let ux0 = a[0] - p0[0], uz0 = a[1] - p0[1];
           const L0 = Math.hypot(ux0, uz0) || 1;
           ux0 /= L0; uz0 /= L0;
-          if (ux0 * dx + uz0 * dz < 0.99) rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255);
+          if (ux0 * dx + uz0 * dz < 0.99) {
+            let ddx = ux0 + dx, ddz = uz0 + dz;
+            const dl = Math.hypot(ddx, ddz) || 1;
+            rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, ddx / dl, ddz / dl, cls);
+          }
         }
       }
       if ((i & 2047) === 2047) await yieldNow();
@@ -6521,12 +6666,14 @@
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
       g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
+      if (rc.lane) g.setAttribute('aLane', new THREE.BufferAttribute(rc.lane.subarray(0, rc.n * 4), 4));
       g.setIndex(rc.idx);
       g.computeVertexNormals();
       g.computeBoundingSphere();
       freeOnUpload(g);
-      rc.pos = rc.col = rc.idx = null;
-      groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+      if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
+      rc.pos = rc.col = rc.idx = rc.lane = null;
+      groupCity.add(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
