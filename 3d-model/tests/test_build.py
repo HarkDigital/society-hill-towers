@@ -4,6 +4,7 @@ and the page stays under the size budget. Skips when the page has not been built
 import base64
 import json
 import re
+import struct
 import unittest
 
 try:
@@ -13,8 +14,10 @@ except ImportError:
 
 PAGE = 'society-hill-towers.html'
 PAGE_LIMIT_MB = 75
-EMBEDDED = {'WIDE_B64': 'wide.b64', 'CITY_B64': 'city.b64', 'OUTSKIRTS_B64': 'outskirts.b64', 'STOREFRONTS_B64': 'storefronts.b64', 'TREES_B64': 'trees.b64',
+EMBEDDED = {'WIDE_B64': 'wide.b64', 'WIDE_WALLS_B64': 'wide_walls.b64', 'CITY_B64': 'city.b64', 'OUTSKIRTS_B64': 'outskirts.b64', 'STOREFRONTS_B64': 'storefronts.b64', 'TREES_B64': 'trees.b64',
             'TRAFFIC_B64': 'traffic.b64', 'POLES_B64': 'poles.b64'}
+# blobs whose body is bytes, not int16 (never byte-plane shuffled): file -> accepted magics
+BYTE_BLOBS = {'wide_walls.b64': (0x53485457,)}
 
 
 def unplanar(raw):
@@ -85,8 +88,8 @@ class BuiltPage(unittest.TestCase):
                 if got != want and not planar and unplanar(raw) == want:
                     self.fail('%s: the embedded blob is byte-plane shuffled but B64_PLANAR does not flag %s' % (fname, var))
                 self.assertEqual(want, got, '%s: embedded blob differs from the committed file (planar=%s)' % (fname, planar))
-                hdr, _ = C.split_blob(got)
-                self.assertIn(hdr[0], C.BLOBS[fname][0], '%s: decoded header magic is wrong' % fname)
+                magic = struct.unpack('<i', got[:4])[0]
+                self.assertIn(magic, BYTE_BLOBS.get(fname) or C.BLOBS[fname][0], '%s: decoded header magic is wrong' % fname)
 
     def test_no_leftover_placeholders(self):
         self.need_page()

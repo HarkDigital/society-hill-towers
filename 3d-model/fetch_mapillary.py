@@ -1,23 +1,27 @@
 #!/usr/bin/env python3
-"""Street-level imagery for the wall-colour pass: page the Mapillary Graph API v4 image
-search over the outer-districts and south boxes tile by tile, then pull every kept
-image's 256 px thumbnail, so bake_wall_colors.py can read the colour of the walls that
-flank each street. Mapillary imagery is CC BY-SA 4.0 (the credit goes into
-DATA-LICENSE.md when the colours ship).
+"""Street-level imagery for the wall-colour pass: list every Mapillary image over the
+outer-districts and south boxes from the z14 vector tiles, then pull every kept image's
+256 px thumbnail, so bake_wall_colors.py can read the colour of the walls that flank
+each street. Mapillary imagery is CC BY-SA 4.0 (DATA-LICENSE.md, the credit line).
 
-Boxes (lat S..N, lon W..E), cut into ~0.006 deg tiles (about 510 x 660 m):
+Boxes (lat S..N, lon W..E):
   wide   39.915..39.986, -75.188..-75.118   the outer districts (scene_wide.json)
   south  39.890..39.9155, -75.190..-75.100  the stadium district and the port (scene_south.json)
-Per tile: GET https://graph.mapillary.com/images?fields=id,geometry,compass_angle,
-captured_at,thumb_256_url,is_pano&bbox=w,s,e,n&limit=2000, following paging.next.
+Listing: GET https://tiles.mapillary.com/maps/vtp/mly1_public/2/14/{x}/{y}, the Mapbox
+vector tile whose "image" layer is a point per image with captured_at, compass_angle, id
+and is_pano (decoded here with a stdlib protobuf reader; one tile is ~10 MB and lists
+~170k images in Center City). The Graph API's bbox search was the first draft and is
+gone: it answers "reduce the amount of data" (HTTP 500) for whole neighbourhoods
+however small the box or the limit. Thumbnail URLs come afterwards in batches of 50
+from GET https://graph.mapillary.com/?ids=...&fields=thumb_256_url.
 The token comes from the MAPILLARY_TOKEN environment variable (a client token from the
-developer dashboard, 'MLY|<app id>|<hex>'); it travels in the Authorization header and is
-never written to disk or to provenance.jsonl.
+developer dashboard, 'MLY|<app id>|<hex>'); it travels in the Authorization header (the
+tile server takes it as access_token) and is never written to disk or provenance.jsonl.
 
-Resumable: lidar_cache/mly_tiles/<tile>.json per tile (written atomically, skipped when
-present, delete one to refetch it), lidar_cache/mly_thumbs/<id>.jpg per image (skipped
-when present; a thumb URL that has expired since its tile was listed is refreshed from
-the entity endpoint). 429 and 5xx answers back off and retry; a bad token stops the run.
+Resumable: lidar_cache/mly_tiles/<tile>.json per z14 tile (written atomically, skipped
+when present, delete one to refetch it), lidar_cache/mly_thumbs/<id>.jpg per image
+(skipped when present; a thumb URL that has expired is refreshed from the entity
+endpoint). 429 and 5xx answers back off and retry; a bad token stops the run.
 Panoramas are dropped. --max-images (default 40000) caps the thumbnails: when the boxes
 list more, the pick round-robins across tiles taking the newest image of each 10 m cell
 first, so the cap thins dashcam sequences rather than dropping whole streets.
@@ -31,7 +35,7 @@ scene_wide.json / scene_south.json with a known wall colour per block face and w
 them under lidar_cache/mly_dry/ (thumbs as JPEGs when Pillow imports, the colours inline
 in the records when it does not) plus truth.json, so bake_wall_colors.py --dry-run can be
 checked end to end without a token. Plain python3; Pillow optional."""
-import argparse, json, math, os, random, sys, time, urllib.error, urllib.parse, urllib.request
+import argparse, gzip, json, math, os, random, struct, sys, time, urllib.error, urllib.parse, urllib.request
 from concurrent.futures import ThreadPoolExecutor
 try:
     import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
@@ -48,10 +52,9 @@ OUT = os.path.join(CACHE, 'mly_images.json')
 DRY_DIR = os.path.join(CACHE, 'mly_dry')
 
 API = 'https://graph.mapillary.com'
-FIELDS = 'id,geometry,compass_angle,captured_at,thumb_256_url,is_pano'
-LIMIT = 2000
-TILE_DEG = 0.006
-MAX_PAGES = 250          # 500k images in one tile means the paging is looping, not that the tile is dense
+TILES = 'https://tiles.mapillary.com/maps/vtp/mly1_public/2'
+TILE_Z = 14              # the zoom whose "image" layer carries every image as a point
+BATCH = 50               # ids per thumbnail-URL lookup
 BOXES = [                # name, lat S, lat N, lon W, lon E
     ('wide', 39.915, 39.986, -75.188, -75.118),
     ('south', 39.890, 39.9155, -75.190, -75.100),
@@ -61,26 +64,131 @@ TOKEN = os.environ.get('MAPILLARY_TOKEN', '').strip()
 
 
 # ---------------- tiles ----------------
-def grid_tiles(name, S, N, W, E, step=TILE_DEG):
-    """[(tile id, (w, s, e, n)), ...]: the box cut into ceil(span / step) rows and columns,
-    so no tile is wider than `step` (the search caps at 2000 per page; small tiles keep
-    the paging short and the resume granular)."""
-    rows = max(1, math.ceil((N - S) / step - 1e-9))
-    cols = max(1, math.ceil((E - W) / step - 1e-9))
-    tiles = []
-    for i in range(rows):
-        for j in range(cols):
-            s = S + (N - S) * i / rows; n = S + (N - S) * (i + 1) / rows
-            w = W + (E - W) * j / cols; e = W + (E - W) * (j + 1) / cols
-            tiles.append((f'{name}-{i}-{j}', (round(w, 5), round(s, 5), round(e, 5), round(n, 5))))
-    return tiles
+def lon2x(lon, z=TILE_Z):
+    return (lon + 180.0) / 360.0 * (1 << z)
 
 
-def all_tiles():
-    tiles = []
+def lat2y(lat, z=TILE_Z):
+    r = math.radians(lat)
+    return (1.0 - math.log(math.tan(r) + 1.0 / math.cos(r)) / math.pi) / 2.0 * (1 << z)
+
+
+def tile_lonlat(x, y, px, py, extent, z=TILE_Z):
+    """Tile-local integer coordinates -> (lon, lat)."""
+    n = 1 << z
+    lon = (x + px / extent) / n * 360.0 - 180.0
+    lat = math.degrees(math.atan(math.sinh(math.pi * (1.0 - 2.0 * (y + py / extent) / n))))
+    return lon, lat
+
+
+def z14_tiles():
+    """[(tile id, x, y), ...]: every z14 tile any box touches, each once."""
+    seen, tiles = set(), []
     for name, S, N, W, E in BOXES:
-        tiles += grid_tiles(name, S, N, W, E)
+        for x in range(int(lon2x(W)), int(lon2x(E)) + 1):
+            for y in range(int(lat2y(N)), int(lat2y(S)) + 1):
+                if (x, y) in seen:
+                    continue
+                seen.add((x, y))
+                tiles.append((f'z{TILE_Z}-{x}-{y}', x, y))
     return tiles
+
+
+def in_boxes(lon, lat):
+    return any(S <= lat <= N and W <= lon <= E for _, S, N, W, E in BOXES)
+
+
+# ---------------- Mapbox vector tiles (protobuf, stdlib) ----------------
+def _varint(b, i):
+    r = sh = 0
+    while True:
+        c = b[i]; i += 1
+        r |= (c & 0x7f) << sh; sh += 7
+        if c < 0x80:
+            return r, i
+
+
+def _fields(b):
+    """(field number, wire type, value) over one protobuf message."""
+    i, n = 0, len(b)
+    while i < n:
+        key, i = _varint(b, i)
+        f, wt = key >> 3, key & 7
+        if wt == 0:
+            v, i = _varint(b, i)
+        elif wt == 1:
+            v = b[i:i + 8]; i += 8
+        elif wt == 2:
+            ln, i = _varint(b, i); v = b[i:i + ln]; i += ln
+        elif wt == 5:
+            v = b[i:i + 4]; i += 4
+        else:
+            raise ValueError(f'protobuf wire type {wt}')
+        yield f, wt, v
+
+
+def _packed(b):
+    out, i = [], 0
+    while i < len(b):
+        v, i = _varint(b, i); out.append(v)
+    return out
+
+
+def _zz(v):
+    return (v >> 1) ^ -(v & 1)
+
+
+def mvt_points(buf, layer_name):
+    """The point features of one layer of a Mapbox vector tile:
+    [(px, py, {property: value}), ...] in tile units, plus the layer's extent."""
+    if buf[:2] == b'\x1f\x8b':
+        buf = gzip.decompress(buf)
+    for f, wt, lay in _fields(buf):
+        if f != 3:
+            continue
+        name, keys, vals, feats, extent = '', [], [], [], 4096
+        for f2, wt2, v in _fields(lay):
+            if f2 == 1:
+                name = v.decode('utf-8', 'replace')
+            elif f2 == 3:
+                keys.append(v.decode('utf-8', 'replace'))
+            elif f2 == 4:
+                val = None
+                for f3, wt3, vv in _fields(v):
+                    if f3 == 1: val = vv.decode('utf-8', 'replace')
+                    elif f3 == 2: val = struct.unpack('<f', vv)[0]
+                    elif f3 == 3: val = struct.unpack('<d', vv)[0]
+                    elif f3 in (4, 5): val = vv
+                    elif f3 == 6: val = _zz(vv)
+                    elif f3 == 7: val = bool(vv)
+                vals.append(val)
+            elif f2 == 5:
+                extent = v
+            elif f2 == 2:
+                feats.append(v)
+        if name != layer_name:
+            continue
+        pts = []
+        for fe in feats:
+            tags, typ, geom = [], 0, []
+            for f3, wt3, v in _fields(fe):
+                if f3 == 2: tags = _packed(v)
+                elif f3 == 3: typ = v
+                elif f3 == 4: geom = _packed(v)
+            if typ != 1:
+                continue
+            props = {keys[tags[k]]: vals[tags[k + 1]] for k in range(0, len(tags) - 1, 2)}
+            x = y = 0
+            i = 0
+            while i < len(geom):
+                cmd, cnt = geom[i] & 7, geom[i] >> 3; i += 1
+                if cmd != 1:
+                    break
+                for _ in range(cnt):
+                    x += _zz(geom[i]); y += _zz(geom[i + 1]); i += 2
+                    pts.append((x, y, props))
+        return pts, extent
+    return [], 4096
 
 
 # ---------------- Graph API ----------------
@@ -134,42 +242,79 @@ def api_get(url, params=None, attempts=8, timeout=90):
     raise RuntimeError(f'gave up on {url.split("?")[0]}: {last}')
 
 
-def trim(rec):
-    """One search record -> the fields we keep in the tile file (still lat/lon)."""
-    g = rec.get('geometry') or {}
-    c = g.get('coordinates') or [None, None]
-    return {'id': str(rec.get('id')), 'lon': c[0], 'lat': c[1],
-            'compass_angle': rec.get('compass_angle'), 'captured_at': rec.get('captured_at'),
-            'thumb_256_url': rec.get('thumb_256_url'), 'is_pano': bool(rec.get('is_pano'))}
+def get_bytes(url, attempts=6, timeout=120):
+    """One binary GET with the same back-off as api_get (the tile server)."""
+    last = None
+    for attempt in range(attempts):
+        req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT})
+        wait = min(120, 5 * (2 ** attempt))
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return r.read()
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise TokenError(f'HTTP {e.code} from the tile server')
+            if e.code == 404:
+                return b''
+            if e.code < 500 and e.code not in (408, 429):
+                raise RuntimeError(f'HTTP {e.code}')
+            last = e
+        except Exception as e:
+            last = e
+        print(f'  retry {attempt + 1}/{attempts} in {wait:.0f}s ({last})', flush=True)
+        time.sleep(wait)
+    raise RuntimeError(f'gave up on {url.split("?")[0]}: {last}')
 
 
-def fetch_tile(tid, bbox, delay):
-    """Page the image search over one tile into TILE_DIR/<tid>.json; returns its records."""
+def fetch_tile(tid, x, y, delay):
+    """The image layer of one z14 tile into TILE_DIR/<tid>.json (images inside the
+    boxes only, still lon/lat); returns its records."""
     path = os.path.join(TILE_DIR, f'{tid}.json')
     if os.path.exists(path) and os.path.getsize(path) > 2:
         return json.load(open(path))['images']
     t0 = time.time()
-    bbox_s = '%.5f,%.5f,%.5f,%.5f' % bbox
-    url, params = f'{API}/images', {'fields': FIELDS, 'bbox': bbox_s, 'limit': LIMIT}
-    recs, pages = [], 0
-    while url:
-        d = api_get(url, params)
-        params = None                          # paging.next carries the query
-        pages += 1
-        recs.extend(trim(r) for r in d.get('data') or [])
-        url = (d.get('paging') or {}).get('next')
-        if url and pages >= MAX_PAGES:
-            print(f'  {tid}: {pages} pages, stopping the paging here', flush=True)
-            url = None
-        time.sleep(delay)
+    url = f'{TILES}/{TILE_Z}/{x}/{y}'
+    buf = get_bytes(url + '?access_token=' + urllib.parse.quote(TOKEN, safe=''))
+    pts, extent = mvt_points(buf, 'image') if buf else ([], 4096)
+    recs, listed = [], len(pts)
+    for px, py, pr in pts:
+        lon, lat = tile_lonlat(x, y, px, py, extent)
+        if not in_boxes(lon, lat):
+            continue
+        recs.append({'id': str(pr.get('id')), 'lon': round(lon, 7), 'lat': round(lat, 7),
+                     'compass_angle': pr.get('compass_angle'), 'captured_at': pr.get('captured_at'),
+                     'is_pano': bool(pr.get('is_pano'))})
+    time.sleep(delay)
     with open(path + '.tmp', 'w') as f:
-        json.dump({'tile': tid, 'bbox': list(bbox), 'pages': pages, 'fetched': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'images': recs}, f, separators=(',', ':'))
+        json.dump({'tile': tid, 'z': TILE_Z, 'x': x, 'y': y, 'in_tile': listed, 'fetched': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'images': recs}, f, separators=(',', ':'))
     os.replace(path + '.tmp', path)
     if provenance:
-        provenance.record('fetch_mapillary.graph', f'{API}/images', {'fields': FIELDS, 'bbox': bbox_s, 'limit': LIMIT}, len(recs), tile=tid, pages=pages)
+        provenance.record('fetch_mapillary.tiles', url, {'layer': 'image'}, len(recs), tile=tid, in_tile=listed, bytes=len(buf))
     panos = sum(1 for r in recs if r['is_pano'])
-    print(f'{tid} {bbox_s}: {len(recs)} images ({panos} panos) in {pages} page(s), {time.time() - t0:.0f}s', flush=True)
+    print(f'{tid}: {listed} images in the tile, {len(recs)} in the boxes ({panos} panos), {len(buf) / 1e6:.1f} MB, {time.time() - t0:.0f}s', flush=True)
     return recs
+
+
+def resolve_thumb_urls(recs, delay):
+    """Fill rec['thumb_256_url'] for every record, BATCH ids per Graph API call."""
+    t0, got = time.time(), 0
+    for i in range(0, len(recs), BATCH):
+        chunk = recs[i:i + BATCH]
+        try:
+            d = api_get(f'{API}/', {'ids': ','.join(r['id'] for r in chunk), 'fields': 'thumb_256_url'})
+        except TokenError:
+            raise
+        except Exception as e:
+            print(f'  thumbnail URLs {i}..{i + len(chunk)}: {e}; those will be retried on a rerun', flush=True)
+            continue
+        for r in chunk:
+            u = (d.get(r['id']) or {}).get('thumb_256_url') if isinstance(d, dict) else None
+            if u:
+                r['thumb_256_url'] = u; got += 1
+        if (i // BATCH) % 100 == 99:
+            print(f'  {i + len(chunk)}/{len(recs)} thumbnail URLs ({time.time() - t0:.0f}s)', flush=True)
+        time.sleep(delay)
+    print(f'thumbnail URLs: {got} of {len(recs)} resolved in {time.time() - t0:.0f}s', flush=True)
 
 
 # ---------------- the pick ----------------
@@ -389,13 +534,13 @@ def main():
                  'use --dry-run to test without one')
     os.makedirs(TILE_DIR, exist_ok=True)
     os.makedirs(THUMB_DIR, exist_ok=True)
-    tiles = all_tiles()
+    tiles = z14_tiles()
     todo = [t for t in tiles if not os.path.exists(os.path.join(TILE_DIR, f'{t[0]}.json'))]
-    print(f'{len(tiles)} tiles ({len(todo)} to fetch), cap {a.max_images} images', flush=True)
+    print(f'{len(tiles)} z{TILE_Z} tiles ({len(todo)} to fetch), cap {a.max_images} images', flush=True)
     per_tile, listed, panos, seen = {}, 0, 0, set()
-    for tid, bbox in tiles:
+    for tid, x, y in tiles:
         try:
-            recs = fetch_tile(tid, bbox, a.delay)
+            recs = fetch_tile(tid, x, y, a.delay)
         except TokenError as e:
             sys.exit(f'Mapillary rejected the token: {e}')
         keep = []
@@ -410,13 +555,17 @@ def main():
             x, z = to_xz(r['lat'], r['lon'])
             keep.append({'id': r['id'], 'x': round(x, 1), 'z': round(z, 1),
                          'compass_angle': round(float(r['compass_angle'] or 0.0), 1),
-                         'captured_at': int(r['captured_at'] or 0), 'thumb_256_url': r['thumb_256_url']})
+                         'captured_at': int(r['captured_at'] or 0)})
         per_tile[tid] = keep
     usable = sum(len(v) for v in per_tile.values())
     sel = select(per_tile, a.max_images)
     print(f'{listed} listed, {panos} panoramas dropped, {usable} usable, {len(sel)} picked', flush=True)
     have = sum(1 for r in sel if os.path.exists(os.path.join(THUMB_DIR, f"{r['id']}.jpg")))
     print(f'thumbnails: {have} on disk, {len(sel) - have} to download', flush=True)
+    try:
+        resolve_thumb_urls([r for r in sel if not os.path.exists(os.path.join(THUMB_DIR, f"{r['id']}.jpg"))], a.delay)
+    except TokenError as e:
+        sys.exit(f'Mapillary rejected the token while resolving thumbnail URLs: {e}')
     t0, done, ok = time.time(), 0, 0
     try:
         with ThreadPoolExecutor(max_workers=max(1, a.workers)) as ex:
@@ -433,7 +582,7 @@ def main():
         json.dump({'src': 'Mapillary Graph API v4 image search + thumb_256 (CC BY-SA 4.0), model frame (philly_frame.py)',
                    'fetched': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()),
                    'boxes': [{'name': b[0], 'lat': [b[1], b[2]], 'lon': [b[3], b[4]]} for b in BOXES],
-                   'tile_deg': TILE_DEG, 'listed': listed, 'panoramas': panos, 'usable': usable,
+                   'zoom': TILE_Z, 'listed': listed, 'panoramas': panos, 'usable': usable,
                    'picked': len(sel), 'images': images}, f, separators=(',', ':'))
     os.replace(OUT + '.tmp', OUT)
     if provenance:

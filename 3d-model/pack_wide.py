@@ -15,7 +15,11 @@ building/part, 120 per area) are Douglas-Peucker'd down with a doubling toleranc
 not strided every k-th vertex. Optional inputs (scene_south.json, parts_wide.json,
 wide_landmarks_research.json) are fatal when missing unless --allow-missing, since
 a silent skip dropped the whole south extension / every 3D part / the glass flags.
-Frame: philly_frame.py for the research glass spots (they used KX=85350)."""
+Frame: philly_frame.py for the research glass spots (they used KX=85350).
+Wall colours: when bake_wall_colors.py has run for real (wall_palette.json not a dry run),
+wide_walls.b64 is written beside wide.b64: Int32[4] header (magic 0x53485457, nBuildings,
+nPalette, 0), the palette as nPalette sRGB byte triples, then one byte per packed building
+record in wide.b64's order (parts included), a palette index or 255 for none."""
 import argparse, json, math, os, struct, base64, sys
 from philly_frame import LON0, LAT0, KX, KZ
 
@@ -47,11 +51,30 @@ def _optional(path, what):
                  f'regenerate it or pass --allow-missing')
 
 d = json.load(open('scene_wide.json'))
+# Mapillary block-face wall colours (bake_wall_colors.py): a palette index per scene
+# building, carried on the building as _wall through the south merge below and written
+# as wide_walls.b64 in wide.b64's record order. A dry-run bake or a missing pair leaves
+# the existing wide_walls.b64 untouched.
+def _wall_colors():
+    try:
+        pal, col = json.load(open('wall_palette.json')), json.load(open('wall_colors.json'))
+    except FileNotFoundError:
+        print('WARNING: wall_palette.json / wall_colors.json missing - wide_walls.b64 left as it is', flush=True)
+        return None
+    if pal.get('dry_run'):
+        print('WARNING: wall_palette.json is a dry run - wide_walls.b64 left as it is', flush=True)
+        return None
+    return pal['wall'], col
+_walls = _wall_colors()
+if _walls:
+    for _i, _b in enumerate(d['buildings']):
+        _b['_wall'] = _walls[1]['wide'][_i] if _i < len(_walls[1]['wide']) else -1
 _south = _optional('scene_south.json', 'the south extension (stadium complex, Walt Whitman Bridge)')
 if _south is not None:
     seenB = set(tuple(map(tuple, b['poly'][:3])) for b in d['buildings'])
-    for b in _south['buildings']:
+    for _j, b in enumerate(_south['buildings']):
         if tuple(map(tuple, b['poly'][:3])) in seenB: continue
+        if _walls: b['_wall'] = _walls[1]['south'][_j] if _j < len(_walls[1]['south']) else -1
         if (b.get('name') or '') == 'Xfinity Mobile Arena': b['t'] = 'arena'
         d['buildings'].append(b)
     d['roads'] += _south['roads']; d['areas'] += _south['areas']
@@ -203,6 +226,7 @@ def roof_word(b, cx, cz):
     return v - 65536 if v > 32767 else v
 
 body = []
+walls = []                            # one byte per building record, in body order
 nb = nr = na = 0
 dropped_dup = dropped_outline = 0
 for b in d['buildings']:
@@ -219,6 +243,8 @@ for b in d['buildings']:
     body += [len(sp), clip(h * 5), 0, BT.get(b.get('t') or 'generic', 0), attr_word(b, h), roof_word(b, cx, cz)]
     for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
     nb += 1
+    w = b.get('_wall', -1)
+    walls.append(w if 0 <= w < 255 else 255)
 # 3D-mapped building parts (skyscraper shafts, crowns, podiums) from building:part ways;
 # parts of research-flagged glass towers get type 10 (reflective glass material)
 glassSpots = []
@@ -238,6 +264,7 @@ for pt in _parts:
     body += [len(sp), clip(min(6500, pt['h']) * 5), clip(pt['minH'] * 5), 10 if isGlass(cx, cz) else 3, -1, -1]
     for q in sp: body += [clip(q[0] * 5), clip(q[1] * 5)]
     nb += 1
+    walls.append(255)
 def simplify_open(pts, tol):
     # open-polyline Douglas-Peucker. The old code fed roads through the CLOSED-ring
     # simplify() (appending pts[0], slicing [:-1]) which amputated the real final
@@ -309,5 +336,12 @@ print(f'roof forms attached: {n_form} of {nb} buildings', flush=True)
 buf = struct.pack('<4i', 0x5348545D, nb, nr, na) + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(buf).decode('ascii')
 open('wide.b64', 'w').write(b64)
+if _walls:
+    pal = [tuple(int(hx[i:i + 2], 16) for i in (1, 3, 5)) for hx in _walls[0]]
+    walls = [w if w < len(pal) else 255 for w in walls]
+    assert len(walls) == nb, (len(walls), nb)
+    wb = struct.pack('<4i', 0x53485457, nb, len(pal), 0) + bytes(v for c in pal for v in c) + bytes(walls)
+    open('wide_walls.b64', 'w').write(base64.b64encode(wb).decode('ascii'))
+    print(f'wall colours: {sum(1 for w in walls if w < 255)} of {nb} buildings from Mapillary block faces -> wide_walls.b64 ({len(wb):,} bytes)', flush=True)
 print(f'buildings {nb} roads {nr} areas {na} -> {len(buf)/1e6:.2f} MB binary, {len(b64)/1e6:.2f} MB base64; '
       f'dropped {dropped_dup} core-duplicates, {dropped_outline} outlines with 3D parts; {n_clipped} area ring(s) clipped to the int16 box')

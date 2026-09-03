@@ -4098,6 +4098,38 @@
     const roofPacked = hdr[0] === 0x5348545D;   // the roof word carries form and rise
     if (hdr[0] !== 0x53485458 && !hasAttr) return;
     let k = 0;
+    // Mapillary block-face wall colours (pack_wide.py, magic 0x53485457): a palette of
+    // sRGB triples as the photos show them and one byte per building record, 255 for
+    // none. wallInv puts a photographed colour into the register the hand palettes
+    // use (linear values, r149 legacy pipeline): a street photo's wall median is a
+    // shaded, half-exposed surface, so its luminance is lifted on a 0.6 power (0.2
+    // lands at 0.38, the palLow register); a cool or green cast (blue over red is
+    // skylight on a shaded wall, green over both is foliage and camera balance,
+    // neither is a wall) is folded to a neutral grey of the same luminance; and a
+    // warm colour gets back the chroma the median lost to trim and windows (1.25),
+    // while a grey stays the grey it was measured as
+    const wallInv = (sr, sg, sb) => {
+      let r = Math.pow(sr / 255, 2.2), g = Math.pow(sg / 255, 2.2), b = Math.pow(sb / 255, 2.2);
+      const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      const cast = Math.max(b - r, g - Math.max(r, b));
+      if (cast > 0) { const f = Math.min(1, cast / Math.max(1e-4, 0.12 * lum)); r += (lum - r) * f; g += (lum - g) * f; b += (lum - b) * f; }
+      const lift = Math.pow(Math.max(lum, 0.01), 0.6);
+      const gain = lift / Math.max(lum, 1e-4);
+      const warm = r > g && g >= b ? 1.25 : 1.0;
+      r = lift + (r * gain - lift) * warm; g = lift + (g * gain - lift) * warm; b = lift + (b * gain - lift) * warm;
+      return new THREE.Color(Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)));
+    };
+    let WALLS = null;
+    if (typeof WIDE_WALLS_B64 !== 'undefined' && WIDE_WALLS_B64) {
+      const wb = unb64(WIDE_WALLS_B64, 'WIDE_WALLS');
+      WIDE_WALLS_B64 = null;
+      const wh = new Int32Array(wb.buffer, 0, 4);
+      if (wh[0] === 0x53485457 && wh[1] === hdr[1] && wh[2] > 0 && wb.length >= 16 + wh[2] * 3 + wh[1]) {
+        const np = wh[2], pal = new Array(np);
+        for (let p = 0; p < np; p++) pal[p] = wallInv(wb[16 + p * 3], wb[17 + p * 3], wb[18 + p * 3]);
+        WALLS = { pal, idx: wb.subarray(16 + np * 3, 16 + np * 3 + wh[1]) };
+      }
+    }
     const S = 0.2;
     const CH = 700;
     const chunks = new Map(), glassChunks = new Map();
@@ -4395,6 +4427,11 @@
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
       if (fa && h <= 45 && t <= 4) { const p2 = opaWallPool(fa); if (p2) pool = p2; }
       c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 11.3) * 0.12 : 0.9 + hash01(i * 11.3) * 0.2);
+      // a wall Mapillary has seen takes its block face's photographed colour, three
+      // parts measured to one part the building's own palette draw (a face's median is
+      // one colour for the whole block; the draw gives the houses back the variety a
+      // real face has), with a second jitter on top; towers and stadiums keep theirs
+      if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; } }
       let style = h > 30 ? 2 : (t === 3 ? 5 : 0);
       if (fa && h <= 30 && t <= 4) style = opaStyle(fa, h);
       const rb = roofBits(roofW, roofPacked);
@@ -10466,6 +10503,7 @@
   let floodPts = null, floodMat = null;   // the stadiums' floodlights (built with the outer districts)
   let haloMesh = null, haloMat = null;     // and their night halo
   let STOREFRONT_N = 0;                    // storefronts dressed (perf readout)
+  let WALL_N = 0;   // outer-district buildings that took a Mapillary wall colour (__dbg.walls)
   let lotStripes = null;                   // the sports complex's stall lines (shown within 3.5 km, they alias into noise beyond)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
@@ -11767,7 +11805,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

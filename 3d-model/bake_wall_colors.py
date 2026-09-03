@@ -13,10 +13,12 @@ How a colour gets from a photo to a building:
   1. Every road of scene_wide.json / scene_south.json is walked segment by segment
      (consecutive pts pairs, which in OSM data are block faces). The images within 25 m
      of a segment are its candidates.
-  2. An image's wall sample is the per-channel median of the 35..65 % band of its left
+  2. An image's wall sample is the per-channel median of the 35..60 % band of its left
      third and of its right third (buildings flank the street; the middle third is road
-     and sky), after discarding sky-like pixels (blue-dominant and bright, or blown
-     white), road-like pixels (dark and grey) and foliage (green-dominant). A third
+     and sky), after discarding sky-like pixels (blue-dominant and bright, blown white, the light
+     neutral grey of overcast and haze, and any cool cast on a light or mid pixel, which
+     is skylight on a shaded wall or car glass, never brick), road-like pixels (dark and
+     grey) and foliage (green-dominant). A third
      keeping fewer than a fifth of its pixels gives no sample.
   3. Which block face each third looks at follows from the image's compass angle against
      the segment's bearing (model frame: x east, z south, so north is -z). Looking along
@@ -67,7 +69,7 @@ ALONG_SLACK = 5.0       # an along view may stand this far past the segment's en
 BLD_REACH = 30.0        # footprint to street centreline
 CELL = 50.0             # spatial hash
 K = 32
-BAND = (0.35, 0.65)
+BAND = (0.35, 0.60)      # of the image height: the near walls either side of a dashcam's horizon
 ALONG_COS = math.cos(math.radians(30))   # |heading . bearing| above this: looking along the street
 PERP_SIN = math.sin(math.radians(30))     # ... below this: looking at one face; in between the view is oblique and skipped
 NO_FACE = {'motorway', 'motorway_link', 'trunk', 'trunk_link'}
@@ -105,6 +107,9 @@ def keep_px(r, g, b):
     mx, mn = max(r, g, b), min(r, g, b)
     if b >= 140 and b > r + 15 and b >= g - 4 and mx > 130: return False   # blue sky
     if mn > 235: return False                                              # blown sky
+    if mn > 185 and mx - mn < 28: return False                             # overcast sky, cloud, haze
+    if b > r + 6 and mx > 150: return False                                # hazy sky, distant air
+    if b > r + 10 and mx > 110: return False                               # skylight on a shaded wall, car glass
     if mx < 100 and mx - mn < 30: return False                             # asphalt, shadowed road
     if g > r + 18 and g > b + 18: return False                             # foliage
     return True
@@ -123,6 +128,7 @@ def band_sample_np(arr, x0, x1, y0, y1):
     r, g, b = sub[:, 0], sub[:, 1], sub[:, 2]
     mx, mn = sub.max(1), sub.min(1)
     drop = ((b >= 140) & (b > r + 15) & (b >= g - 4) & (mx > 130)) | (mn > 235) \
+        | ((mn > 185) & (mx - mn < 28)) | ((b > r + 6) & (mx > 150)) | ((b > r + 10) & (mx > 110)) \
         | ((mx < 100) & (mx - mn < 30)) | ((g > r + 18) & (g > b + 18))
     m = ~drop
     if int(m.sum()) < max(20, 0.2 * len(sub)):

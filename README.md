@@ -29,9 +29,9 @@ cd 3d-model && python3 build.py
 
 Open `3d-model/society-hill-towers.html` in any WebGL browser (or serve the folder with
 `python3 -m http.server 8917`). Everything (Three.js, data, styles, fonts, icons) is
-inlined into that one file: 24.85 MB raw, 10.58 MB gzipped as served. `build.py` prints a
+inlined into that one file: 25.10 MB raw, 10.71 MB gzipped as served. `build.py` prints a
 size table per embedded blob and refuses to ship a missing input, a leftover placeholder,
-or a page over 25 MB.
+or a page over 75 MB.
 
 The data pipeline (fetch, process, pack, bake) is Python too. Its scripts need a venv:
 

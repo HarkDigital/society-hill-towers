@@ -1,6 +1,8 @@
 """Packed-blob structure: header magic, exact int16 consumption, int16 saturation,
 ring-size caps, and the per-record bit fields the app decoders rely on."""
 import unittest
+import struct
+import base64
 
 try:
     from . import _common as C          # python3 -m unittest tests.test_blobs
@@ -41,6 +43,24 @@ class BlobStructure(unittest.TestCase):
                     t = C.walk_traffic()
                     self.assertEqual(0, t['leftover'], 'traffic.b64: %d int16 left after %d ways' % (t['leftover'], hdr[1]))
                     self.assertEqual(hdr[2], sum(w[0] for w in t['ways']), 'traffic.b64 header nPts disagrees with the way records')
+
+    def test_wide_walls_parallel_to_wide(self):
+        """wide_walls.b64 (pack_wide.py, Mapillary wall colours): magic 0x53485457, one byte per
+        wide.b64 building record, every byte a palette index or 255."""
+        C.require(self, 'wide_walls.b64', 'wide.b64')
+        raw = base64.b64decode(C.path('wide_walls.b64').read_text(encoding='ascii').strip())
+        magic, n, npal, zero = struct.unpack('<4i', raw[:16])
+        self.assertEqual(0x53485457, magic, 'wide_walls.b64 magic 0x%08X' % (magic & 0xFFFFFFFF))
+        self.assertEqual(0, zero)
+        self.assertTrue(0 < npal <= 255, 'palette of %d entries' % npal)
+        self.assertEqual(16 + npal * 3 + n, len(raw), 'body is not palette + one byte per building')
+        hdr, _ = C.decode_b64('wide.b64')
+        self.assertEqual(hdr[1], n, 'wide_walls.b64 carries %d buildings, wide.b64 %d' % (n, hdr[1]))
+        idx = raw[16 + npal * 3:]
+        bad = sum(1 for v in idx if v != 255 and v >= npal)
+        self.assertEqual(0, bad, '%d wall bytes point past the %d-entry palette' % (bad, npal))
+        coloured = sum(1 for v in idx if v != 255)
+        self.assertGreater(coloured, 0, 'no building carries a wall colour')
 
     def test_no_int16_saturation(self):
         """No coordinate sits at +/-32767 (a clipped value = geometry pushed past the int16 wall).

@@ -2239,6 +2239,64 @@ stayed with the lead.
   88% agreement. The far ring now carries 16,639 gables, 2,477 hips and 15,747 known flats;
   the outer districts 7,958 forms. Repacked and deployed.
 
+### Mapillary wall colours (Sep 2)
+
+- Mike registered the Philly3D application on Mapillary and passed the client token; it
+  lives only in `MAPILLARY_TOKEN` for the run (never in a file, the log or
+  `provenance.jsonl`, and the log is grepped for `MLY|` after every run).
+- The Graph API bbox search that `fetch_mapillary.py` was written against is unusable
+  here: the third tile of the wide box answered HTTP 500 "Please reduce the amount of
+  data you're asking for" on every retry, and so did its quarters down to 150 m, and so
+  did `fields=id&limit=10` over the whole tile, while a 33 m box inside it answered an
+  empty list. Two tiles worked, the rest of the neighbourhood did not. The listing was
+  rewritten on the z14 vector tiles (`tiles.mapillary.com/maps/vtp/mly1_public/2/14/x/y`,
+  Mapbox vector tile protobuf decoded with a 90-line stdlib reader): the "image" layer
+  is a point per image with `captured_at`, `compass_angle`, `id` and `is_pano`, one Center
+  City tile is 9.9 MB and lists 174k images. Thumbnail URLs then come from the batched
+  entity endpoint (`/?ids=...&fields=thumb_256_url`, 50 per call).
+- The listing: 31 z14 tiles, 1,098,710 images inside the two boxes, 25,489 panoramas
+  dropped, 1,073,221 usable, 40,000 picked (newest per 10 m cell, round-robin across
+  tiles), 39,969 thumbnail URLs resolved in 826 s, thumbnails at about ten a second.
+- The build side was wired and proven on the dry-run pair before the real bake landed:
+  `pack_wide.py` writes `wide_walls.b64` (magic 0x53485457: the sRGB palette, then one
+  byte per `wide.b64` building record) from `wall_palette.json` + `wall_colors.json`,
+  refusing a dry-run pair; `build.py` inlines it as `WIDE_WALLS_B64` (floor 100 KB);
+  "Raising the outer districts" decodes it beside the wide blob, converts the palette
+  through `roofInv` like `ROOF_PAL`, and a building the imagery has seen (h <= 45 m,
+  type <= 6) takes its block face's colour with the usual per-building jitter;
+  `__dbg.walls()` counts them. First attempt put the colour line in `raiseRing` (the
+  anchor matched the far ring's palette pick, whose jitter seed differs by one constant),
+  which failed the far ring with "WALLS is not defined"; moved to the wide loop, 145 of
+  the dry-run buildings coloured, no failed step. `wide.b64` itself is byte-identical
+  across the repack.
+- The real bake, first cut (the original 35..65 % band, the original sky filter):
+  31,643 thumbnails opened, 27,229 with a wall sample, 24,729 block faces coloured, 26,919
+  of 111,078 wide buildings (24.2%) and 241 of 6,374 south. The palette was wrong for
+  Philadelphia: by face count 51% neutral grey, 19% blue-grey, 30% warm. A contact sheet
+  of the thumbnails showed why: they are dashcam frames, the camera at about 1.3 m, so
+  the horizon sits mid-frame and the 35..65 % band straddles it, half wall and half the
+  parked cars, road haze and car glass below the horizon. A band above the horizon
+  (20..50 %) was worse (38% cool): overcast sky and haze are light neutral greys the
+  blue-sky rule never catches. The fix is the pixel filter, not the band: drop light
+  low-chroma pixels (min channel over 185, spread under 28: overcast, cloud, haze), any
+  cool cast on a light or mid pixel (blue over red by 6 at max over 150, by 10 at max
+  over 110: skylight on a shaded wall, car glass, distant air), band 35..60 %. On a 2,500
+  image sample that turns the sample mix from 49 / 26 / 25 (warm / grey / cool) to
+  67 / 24 / 9, and the baked palette to 59 / 32 / 9 by face count: desaturated bricks,
+  browns and taupes with a third greys, which is what South and West Philadelphia are.
+- Final bake: 21,349 images used, 20,769 block faces, 24,868 wide buildings (22.4%) and
+  158 south; `pack_wide.py` carries 24,611 of the 112,808 packed records (the rest are
+  parts or dropped by the packer's own filters), and the app applies 24,564 (towers over
+  45 m and stadium types keep their palettes). Rendering transfer `wallInv` in the wide
+  step, tuned on the South Jessup Street blocks below Passyunk at 1 PM: sRGB to linear, luminance lifted on
+  a 0.6 power so a 0.2 photo grey lands at 0.38 (the palLow register), any blue-over-red
+  or green-over-both cast folded to a neutral grey of the same luminance (a first draft
+  boosted chroma on every colour and turned the greys sage green), and a 1.25 chroma
+  return on warm colours only. A face's median is one colour for a whole block, and the
+  Point Breeze blocks came out as uniform charcoal rows, so each building takes three
+  parts the measured colour to one part its own palette draw, plus a second jitter: the
+  face keeps its tone, the houses get their variety back. Page 25.10 MB raw, 10.71 MB gzip.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
