@@ -1128,6 +1128,286 @@
     return g;
   }
 
+  // ---- the ground registry (Round 52). Outside the core the drawn ground is a set of
+  // heightfields (the four wide strips at ~25 m, the four far strips at 100 m, the NW hills
+  // patch at 50 m), each registered here as it is built: its OWN vertex heights and normals,
+  // so a flat laid on it can read the exact surface the mesh draws instead of a second linear
+  // read of the DEM that disagrees with the first by up to half a metre (Round 47's lots
+  // clipping through their sheets; codas 5 and 6 could not converge by draping denser).
+  // Searched last-registered-first: the NW patch registers after the north far strip and wins
+  // inside that strip's hole. A grid whose hole holds the point is passed over; a cell the
+  // builder skipped (the Vine Street cut, the NW hole) answers null, and the caller falls
+  // back to drapeY. Vertex (i, j) sits at x0 + (x1 - x0) * i / nx, z0 + (z1 - z0) * j / nz,
+  // the builders' own expression, and cell (i, j) is the two triangles (a, c, b) over
+  // u + v <= 1 and (b, c, d) over u + v >= 1 with a = (i, j), b = (i + 1, j), c = (i, j + 1)
+  // and d = (i + 1, j + 1), the builders' own index order. The core is never registered:
+  // its ground is under hand-built lawns, plazas and decks that keep siteY.
+  const groundGrids = [];
+  function registerGround(g, x0, x1, z0, z1, nx, nz, hole, skip, cell) {
+    const p = g.attributes.position.array, ys = new Float32Array((nx + 1) * (nz + 1));
+    for (let v = 0; v < ys.length; v++) ys[v] = p[v * 3 + 1];
+    groundGrids.push({ x0, x1, z0, z1, nx, nz, ys, nrm: g.attributes.normal.array, hole, skip, cell });
+  }
+  function groundGridAt(x, z) {
+    for (let gi = groundGrids.length - 1; gi >= 0; gi--) {
+      const G = groundGrids[gi];
+      if (x < G.x0 || x > G.x1 || z < G.z0 || z > G.z1) continue;
+      if (G.hole && x > G.hole.x0 && x < G.hole.x1 && z > G.hole.z0 && z < G.hole.z1) continue;
+      return G;
+    }
+    return null;
+  }
+  // the cell of a point on a grid and its local (u, v); the index is clamped so the grid's
+  // own far edge belongs to its last cell
+  function groundCell(G, x, z, out) {
+    const fu = (x - G.x0) * G.nx / (G.x1 - G.x0), fv = (z - G.z0) * G.nz / (G.z1 - G.z0);
+    let i = Math.floor(fu), j = Math.floor(fv);
+    if (i < 0) i = 0; else if (i > G.nx - 1) i = G.nx - 1;
+    if (j < 0) j = 0; else if (j > G.nz - 1) j = G.nz - 1;
+    out[0] = i; out[1] = j; out[2] = fu - i; out[3] = fv - j;
+    return out;
+  }
+  // the plane of one ground triangle at local (u, v): side 0 is (a, c, b), side 1 is (b, c, d)
+  function groundPlaneY(G, i, j, side, u, v) {
+    const a = j * (G.nx + 1) + i, ys = G.ys;
+    if (side === 0) return ys[a] + (ys[a + 1] - ys[a]) * u + (ys[a + G.nx + 1] - ys[a]) * v;
+    const d = a + G.nx + 2;
+    return ys[d] + (ys[a + G.nx + 1] - ys[d]) * (1 - u) + (ys[a + 1] - ys[d]) * (1 - v);
+  }
+  // the barycentric blend of the three corner normals, so a sheet shades like the ground under it
+  function groundPlaneN(G, i, j, side, u, v, out) {
+    const a = j * (G.nx + 1) + i, b = a + 1, c = a + G.nx + 1, d = c + 1, N = G.nrm;
+    let wa = 0, wb, wc, wd = 0;
+    if (side === 0) { wa = 1 - u - v; wb = u; wc = v; } else { wd = u + v - 1; wb = 1 - v; wc = 1 - u; }
+    let nx = N[a * 3] * wa + N[b * 3] * wb + N[c * 3] * wc + N[d * 3] * wd;
+    let ny = N[a * 3 + 1] * wa + N[b * 3 + 1] * wb + N[c * 3 + 1] * wc + N[d * 3 + 1] * wd;
+    let nz = N[a * 3 + 2] * wa + N[b * 3 + 2] * wb + N[c * 3 + 2] * wc + N[d * 3 + 2] * wd;
+    const L = Math.hypot(nx, ny, nz) || 1;
+    out[0] = nx / L; out[1] = ny / L; out[2] = nz / L;
+    return out;
+  }
+  const _gc4 = [0, 0, 0, 0], _gn3 = [0, 1, 0];
+  // the height of the drawn ground mesh at (x, z): null off every grid and on a skipped cell
+  function groundMeshY(x, z) {
+    const G = groundGridAt(x, z);
+    if (!G) return null;
+    groundCell(G, x, z, _gc4);
+    const i = _gc4[0], j = _gc4[1], u = _gc4[2], v = _gc4[3];
+    if (G.skip && G.skip[j * G.nx + i]) return null;
+    return groundPlaneY(G, i, j, u + v <= 1 ? 0 : 1, u, v);
+  }
+  function groundMeshN(x, z, out) {
+    const G = groundGridAt(x, z);
+    if (!G) return null;
+    groundCell(G, x, z, _gc4);
+    const i = _gc4[0], j = _gc4[1], u = _gc4[2], v = _gc4[3];
+    if (G.skip && G.skip[j * G.nx + i]) return null;
+    return groundPlaneN(G, i, j, u + v <= 1 ? 0 : 1, u, v, out || _gn3);
+  }
+  // the road loops' read: the drawn ground where it is land, null where the mesh is water (the
+  // carved Schuylkill channel, the Delaware bed, the WWB dip), so the bridge and deck logic
+  // that keys off siteY and the DEM keeps the inputs it was tuned on there
+  function groundMeshLandY(x, z) {
+    const y = groundMeshY(x, z);
+    return y !== null && y > TERRAIN.water + 0.3 ? y : null;
+  }
+
+  // ---- conformDrape (Round 52): a flat polygon laid on the registered ground so that every
+  // triangle of the sheet lies inside ONE ground triangle, which puts the sheet exactly yOff
+  // above the drawn mesh everywhere. Per registered grid the polygon is clipped to the grid's
+  // rectangle (Sutherland-Hodgman, a convex clip; a concave subject is fine) and rasterised
+  // per ROW: the piece's edges are bucketed by the rows they span, each row's centre line is
+  // cut by them for the inside runs (parity), a cell no edge touches inside a run emits its
+  // two ground triangles whole, a cell an edge touches is clipped to the cell rectangle, split
+  // by the cell's diagonal into the two triangles' sides and each side earcut (fed as
+  // Vector2(x, -z) and emitted forward, gotcha 10). Slivers and any triangle whose centroid
+  // lies outside the piece (a clip can bridge two arms of a U with a zero-width slit) are
+  // dropped, and everything is oriented so (B - A) x (C - A) in (x, z) is negative (+y),
+  // drapedPoly's own rule. Whatever lies outside every registered grid (Fairmount's overhang
+  // past the wide box, anything over the unregistered core) goes to drapedPoly as before.
+  const DRAPE_STATS = { ms: 0, polys: 0, tris: 0, fallbacks: 0, logMs: 0, logPolys: 0, logTris: 0, logFallbacks: 0 };
+  PERF.drape = DRAPE_STATS;   // read through ?dev's __dbg.PERF.drape
+  function drapeLog(label) {
+    if (!/[?&]dev\b/.test(location.search)) return;
+    const S = DRAPE_STATS;
+    console.log('conformDrape, ' + label + ': ' + Math.round(S.ms - S.logMs) + ' ms, ' + (S.polys - S.logPolys) + ' polygons, ' + (S.tris - S.logTris) + ' triangles, ' + (S.fallbacks - S.logFallbacks) + ' drapedPoly fallbacks (total ' + Math.round(S.ms) + ' ms)');
+    S.logMs = S.ms; S.logPolys = S.polys; S.logTris = S.tris; S.logFallbacks = S.fallbacks;
+  }
+  // keep the side of an axis-aligned line: ax 0 = x, 1 = z; above keeps p[ax] >= val, else <= val.
+  // A crossing lands exactly on the line, so cell edges shared by two cells agree to the bit
+  function clipAxis(ring, ax, val, above) {
+    const out = [], n = ring.length;
+    for (let i = 0; i < n; i++) {
+      const p = ring[i], q = ring[(i + 1) % n];
+      const fp = above ? p[ax] - val : val - p[ax], fq = above ? q[ax] - val : val - q[ax];
+      if (fp >= 0) out.push(p);
+      if ((fp >= 0) !== (fq >= 0)) {
+        const t = fp / (fp - fq), c = [p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t];
+        c[ax] = val;
+        out.push(c);
+      }
+    }
+    return out;
+  }
+  function clipRect(ring, x0, x1, z0, z1) {
+    let r = clipAxis(ring, 0, x0, true);
+    if (r.length > 2) r = clipAxis(r, 0, x1, false);
+    if (r.length > 2) r = clipAxis(r, 1, z0, true);
+    if (r.length > 2) r = clipAxis(r, 1, z1, false);
+    return r.length > 2 ? r : null;
+  }
+  // keep one side of a cell's diagonal u + v = 1: sgn +1 keeps u + v <= 1 (triangle a, c, b),
+  // -1 keeps u + v >= 1 (triangle b, c, d); points on the diagonal belong to both
+  function clipDiag(ring, xa, za, cw, ch, sgn) {
+    const out = [], n = ring.length;
+    const f = (p) => sgn * (1 - (p[0] - xa) / cw - (p[1] - za) / ch);
+    for (let i = 0; i < n; i++) {
+      const p = ring[i], q = ring[(i + 1) % n];
+      const fp = f(p), fq = f(q);
+      if (fp >= 0) out.push(p);
+      if ((fp >= 0) !== (fq >= 0)) { const t = fp / (fp - fq); out.push([p[0] + (q[0] - p[0]) * t, p[1] + (q[1] - p[1]) * t]); }
+    }
+    return out.length > 2 ? out : null;
+  }
+  // the four convex pieces of a ring outside a rectangle (x below, x above, then the band's
+  // z below and z above), for the remainders drapedPoly still owns
+  function outsideRect(ring, x0, x1, z0, z1, out) {
+    const push = (r) => { if (r && r.length > 2 && Math.abs(signedArea(r)) > 1e-3) out.push(r); };
+    push(clipAxis(ring, 0, x0, false));
+    push(clipAxis(ring, 0, x1, true));
+    let band = clipAxis(ring, 0, x0, true);
+    if (band.length > 2) band = clipAxis(band, 0, x1, false);
+    if (band.length > 2) { push(clipAxis(band, 1, z0, false)); push(clipAxis(band, 1, z1, true)); }
+  }
+  // drop the repeated points a clip leaves behind
+  function tidyRing(r) {
+    const out = [];
+    for (const p of r) { const l = out[out.length - 1]; if (!l || Math.abs(l[0] - p[0]) > 1e-7 || Math.abs(l[1] - p[1]) > 1e-7) out.push(p); }
+    if (out.length > 1 && Math.abs(out[0][0] - out[out.length - 1][0]) <= 1e-7 && Math.abs(out[0][1] - out[out.length - 1][1]) <= 1e-7) out.pop();
+    return out.length > 2 ? out : null;
+  }
+  function conformDrape(poly, yOff, spacing) {
+    spacing = spacing || 20;   // the drapedPoly fallbacks' spacing (drapedPoly's cap still applies)
+    const t0 = performance.now();
+    let bx0 = Infinity, bz0 = Infinity, bx1 = -Infinity, bz1 = -Infinity;
+    for (const q of poly) { if (q[0] < bx0) bx0 = q[0]; if (q[0] > bx1) bx1 = q[0]; if (q[1] < bz0) bz0 = q[1]; if (q[1] > bz1) bz1 = q[1]; }
+    const pos = [], nor = [], covered = [];
+    let tris = 0;
+    const emitTri = (A, B, C, piece, G, i, j, side) => {
+      const cr = (B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0]);
+      if (Math.abs(cr) < 1e-6) return;
+      if (!pointInPoly((A[0] + B[0] + C[0]) / 3, (A[1] + B[1] + C[1]) / 3, piece)) return;
+      if (cr > 0) { const T = B; B = C; C = T; }
+      const sx = G.nx / (G.x1 - G.x0), sz = G.nz / (G.z1 - G.z0);
+      for (const P of [A, B, C]) {
+        const u = (P[0] - G.x0) * sx - i, v = (P[1] - G.z0) * sz - j;
+        pos.push(P[0], groundPlaneY(G, i, j, side, u, v) + yOff, P[1]);
+        groundPlaneN(G, i, j, side, u, v, _gn3);
+        nor.push(_gn3[0], _gn3[1], _gn3[2]);
+      }
+      tris++;
+    };
+    const emitRing = (r, piece, G, i, j, side) => {
+      r = tidyRing(r);
+      if (!r) return;
+      const v2 = r.map(p => new THREE.Vector2(p[0], -p[1]));
+      let tt;
+      try { tt = THREE.ShapeUtils.triangulateShape(v2, []); } catch (e) { return; }
+      for (const t of tt) emitTri(r[t[0]], r[t[1]], r[t[2]], piece, G, i, j, side);
+    };
+    const drapeOnGrid = (G, piece) => {
+      const nx = G.nx, nz = G.nz, cw = (G.x1 - G.x0) / nx, ch = (G.z1 - G.z0) / nz;
+      const xi = (i) => G.x0 + (G.x1 - G.x0) * i / nx, zj = (j) => G.z0 + (G.z1 - G.z0) * j / nz;
+      let px0 = Infinity, pz0 = Infinity, px1 = -Infinity, pz1 = -Infinity;
+      for (const q of piece) { if (q[0] < px0) px0 = q[0]; if (q[0] > px1) px1 = q[0]; if (q[1] < pz0) pz0 = q[1]; if (q[1] > pz1) pz1 = q[1]; }
+      const i0 = clamp(Math.floor((px0 - G.x0) / cw), 0, nx - 1), i1 = clamp(Math.floor((px1 - G.x0) / cw), 0, nx - 1);
+      const j0 = clamp(Math.floor((pz0 - G.z0) / ch), 0, nz - 1), j1 = clamp(Math.floor((pz1 - G.z0) / ch), 0, nz - 1);
+      const n = piece.length;
+      const rows = new Array(j1 - j0 + 1);
+      for (let r = 0; r < rows.length; r++) rows[r] = [];
+      for (let e = 0; e < n; e++) {
+        const p = piece[e], q = piece[(e + 1) % n];
+        const ja = clamp(Math.floor((Math.min(p[1], q[1]) - G.z0) / ch), j0, j1), jb = clamp(Math.floor((Math.max(p[1], q[1]) - G.z0) / ch), j0, j1);
+        for (let j = ja; j <= jb; j++) rows[j - j0].push(e);
+      }
+      const touched = new Uint8Array(i1 - i0 + 1), xs = [];
+      const ys = G.ys, N = G.nrm;
+      for (let j = j0; j <= j1; j++) {
+        const bucket = rows[j - j0];
+        if (!bucket.length) continue;   // a row no edge spans holds no inside run either
+        const za = zj(j), zb = zj(j + 1), zc = (za + zb) / 2;
+        touched.fill(0); xs.length = 0;
+        for (const e of bucket) {
+          const p = piece[e], q = piece[(e + 1) % n];
+          // the edge's x-span within THIS row's band marks the cells it touches
+          let ta = 0, tb = 1;
+          if (p[1] !== q[1]) {
+            const u0 = (za - p[1]) / (q[1] - p[1]), u1 = (zb - p[1]) / (q[1] - p[1]);
+            ta = Math.max(0, Math.min(u0, u1)); tb = Math.min(1, Math.max(u0, u1));
+          }
+          const xA = p[0] + (q[0] - p[0]) * ta, xB = p[0] + (q[0] - p[0]) * tb;
+          const ia = clamp(Math.floor((Math.min(xA, xB) - G.x0) / cw), i0, i1), ib = clamp(Math.floor((Math.max(xA, xB) - G.x0) / cw), i0, i1);
+          for (let i = ia; i <= ib; i++) touched[i - i0] = 1;
+          if ((p[1] > zc) !== (q[1] > zc)) xs.push(p[0] + (q[0] - p[0]) * (zc - p[1]) / (q[1] - p[1]));
+        }
+        xs.sort((a, b) => a - b);
+        for (let i = i0; i <= i1; i++) {
+          if (G.skip && G.skip[j * nx + i]) continue;
+          const xa = xi(i), xb = xi(i + 1);
+          if (!touched[i - i0]) {
+            const cx = (xa + xb) / 2;
+            let c = 0;
+            for (let s = 0; s < xs.length && xs[s] < cx; s++) c++;
+            if (!(c & 1)) continue;
+            // the whole cell, the ground's own two triangles a hair up
+            const a = j * (nx + 1) + i, b = a + 1, cc = a + nx + 1, d = cc + 1;
+            pos.push(xa, ys[a] + yOff, za, xa, ys[cc] + yOff, zb, xb, ys[b] + yOff, za);
+            pos.push(xb, ys[b] + yOff, za, xa, ys[cc] + yOff, zb, xb, ys[d] + yOff, zb);
+            for (const vi of [a, cc, b, b, cc, d]) nor.push(N[vi * 3], N[vi * 3 + 1], N[vi * 3 + 2]);
+            tris += 2;
+            continue;
+          }
+          const cl = clipRect(piece, xa, xb, za, zb);
+          if (!cl) continue;
+          const sA = clipDiag(cl, xa, za, cw, ch, 1), sB = clipDiag(cl, xa, za, cw, ch, -1);
+          if (sA) emitRing(sA, piece, G, i, j, 0);
+          if (sB) emitRing(sB, piece, G, i, j, 1);
+        }
+      }
+    };
+    for (let gi = groundGrids.length - 1; gi >= 0; gi--) {
+      const G = groundGrids[gi];
+      if (bx1 <= G.x0 || bx0 >= G.x1 || bz1 <= G.z0 || bz0 >= G.z1) continue;
+      covered.push(G);
+      const piece = clipRect(poly, G.x0, G.x1, G.z0, G.z1);
+      if (!piece || Math.abs(signedArea(piece)) < 1e-3) continue;
+      drapeOnGrid(G, piece);
+    }
+    let g;
+    if (!covered.length) {
+      DRAPE_STATS.fallbacks++;
+      g = drapedPoly(poly, yOff, spacing);
+    } else {
+      // the remainders: whatever the registered grids do not cover, on drapedPoly as before
+      let rem = [poly];
+      for (const G of covered) { const next = []; for (const r of rem) outsideRect(r, G.x0, G.x1, G.z0, G.z1, next); rem = next; }
+      for (const r of rem) {
+        if (Math.abs(signedArea(r)) < 4) continue;
+        let rg = null;
+        try { rg = drapedPoly(r, yOff, spacing); } catch (e) { continue; }
+        DRAPE_STATS.fallbacks++;
+        const rp = rg.attributes.position.array, rn = rg.attributes.normal.array;
+        for (let v = 0; v < rp.length; v++) { pos.push(rp[v]); nor.push(rn[v]); }
+        tris += rp.length / 9;
+      }
+      g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
+    }
+    DRAPE_STATS.ms += performance.now() - t0; DRAPE_STATS.polys++; DRAPE_STATS.tris += tris;
+    return g;
+  }
+
   function offsetPolyline(pts, d) {
     const out = [];
     for (let i = 0; i < pts.length; i++) {
@@ -2404,12 +2684,14 @@
           col.push(1 + (fmR[0] - 1) * t, 1 + (fmR[1] - 1) * t, 1 + (fmR[2] - 1) * t);
         }
         const idx = [];
+        const skip = new Uint8Array(nx * nz);   // the cells dropped below, for the ground registry
+        let skipped = 0;
         for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
           const a = j * (nx + 1) + i, b = a + 1, c = a + nx + 1, d = c + 1;
           // the Vine Street Expressway cut is open ground: drop cells touching it
           // (index skip only — pos and col stay parallel; the collar apron built in
           // 'Raising the overpasses' hides the ragged hole rim at grade)
-          if (hole[a] || hole[b] || hole[c] || hole[d]) continue;
+          if (hole[a] || hole[b] || hole[c] || hole[d]) { skip[j * nx + i] = 1; skipped++; continue; }
           idx.push(a, c, b, b, c, d);
         }
         const g = new THREE.BufferGeometry();
@@ -2417,6 +2699,7 @@
         g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
         g.setIndex(idx);
         g.computeVertexNormals();
+        registerGround(g, x0, x1, z0, z1, nx, nz, null, skipped ? skip : null, cell);   // the drawn surface, for conformDrape and the roads
         const m = new THREE.Mesh(g, wideGroundMat);
         groupCity.add(m); rayTargets.push(m);
       }
@@ -4775,6 +5058,30 @@
   const outerMeshes = [];
   const tallGlow = [];   // buildings ≥45 m from every tier, for the night skyline points
   const GRASS_POLYS = [];   // park and lawn rings from every tier, the grass field sows on them near the camera
+  const LOT_RINGS = [], LOT_RING_BB = [];   // the sports complex's fill sheets and lots (parking_south.json): the bare-ground tuft sow keeps off them
+  // the fill sheets' boxes: a wide road segment lying inside one is densified at 6 m instead of
+  // 15, so the strip bends with the 25 m ground cells the lot sheets conform to instead of
+  // cutting a chord across them
+  const LOT_FILL_BB = (typeof PARKING_SOUTH !== 'undefined' && PARKING_SOUTH && PARKING_SOUTH.fill) ? PARKING_SOUTH.fill.map((fl2) => {
+    let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+    for (let q = 0; q < fl2.length; q += 2) { if (fl2[q] < x0) x0 = fl2[q]; if (fl2[q] > x1) x1 = fl2[q]; if (fl2[q + 1] < z0) z0 = fl2[q + 1]; if (fl2[q + 1] > z1) z1 = fl2[q + 1]; }
+    return [x0, x1, z0, z1];
+  }) : [];
+  const LOT_ROAD_STEP = 6, ROAD_STEP_WIDE = 15;   // road densify steps: inside a fill sheet's box, elsewhere in the wide tier
+  function lotDensify(pts) {
+    if (!LOT_FILL_BB.length) return densify(pts, ROAD_STEP_WIDE);
+    const out = [pts[0]];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      const sx0 = Math.min(a[0], b[0]), sx1 = Math.max(a[0], b[0]), sz0 = Math.min(a[1], b[1]), sz1 = Math.max(a[1], b[1]);
+      let step = ROAD_STEP_WIDE;
+      for (const bb of LOT_FILL_BB) if (sx0 >= bb[0] && sx1 <= bb[1] && sz0 >= bb[2] && sz1 <= bb[3]) { step = LOT_ROAD_STEP; break; }
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const k = Math.max(1, Math.ceil(L / step));
+      for (let j = 1; j <= k; j++) out.push([a[0] + (b[0] - a[0]) * j / k, a[1] + (b[1] - a[1]) * j / k]);
+    }
+    return out;
+  }
   // ring meshes upload in batches behind the veil. A frustum-culled mesh is
   // never drawn, so it never uploads and never frees its CPU arrays; every
   // new mesh draws unculled exactly once, in flushUploads' render.
@@ -5463,7 +5770,7 @@
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
-      pts = densify(pts, 15);
+      pts = lotDensify(pts);   // 6 m inside the sports complex's fill sheets, 15 m elsewhere
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
       const thr = TERRAIN.water + 0.6;
@@ -5492,7 +5799,7 @@
         const bl = clamp(dOut / 60, 0, 1);
         const jr = lerp(LAYER.road + hash01(i * 3.7 + 1.1) * 0.06,
           LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 3.7 + 1.1) * 0.1, bl);
-        let ya0 = siteY(a[0], a[1], 'road'), yb0 = siteY(q[0], q[1], 'road');
+        let ya0 = groundMeshLandY(a[0], a[1]) ?? siteY(a[0], a[1], 'road'), yb0 = groundMeshLandY(q[0], q[1]) ?? siteY(q[0], q[1], 'road');
         if (deck) {
           ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
           yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
@@ -5887,7 +6194,13 @@
       // flat gray slab floating on the river under the real suspension deck
       if (kind !== 1 && wwbNear(acx, acz)) continue;
       try {
-        if (kind === 0) { GRASS_POLYS.push(poly); areaParts.push({ geom: Math.abs(signedArea(poly)) > 1500 ? drapedPoly(poly, LAYER.park, 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.84 + hash01(i) * 0.16), style: 3 }); }
+        if (kind === 0) {
+          GRASS_POLYS.push(poly);
+          // conformed to the drawn ground (conformDrape); a playground inside a park rises a
+          // little above it by area so the 403 nested rings never sit coplanar (gotcha 6)
+          const pa = Math.abs(signedArea(poly));
+          areaParts.push({ geom: pa > 200 ? conformDrape(poly, LAYER.park + 0.03 * (1 - Math.min(1, pa / 20000)), 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(lerp(1 - PARK_SHADE_SPREAD, 1 + PARK_SHADE_SPREAD, hash01(i))), style: 3 });
+        }
         else if (kind === 1) { const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
         else areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 });
       } catch (e) { /* degenerate polygon */ }
@@ -5970,27 +6283,40 @@
       groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
     // the sports complex is mostly asphalt: the surface lots from OSM (fetch_parking.py),
-    // laid a hair above the lawn colour the ground would otherwise show
+    // laid a hair above the lawn colour the ground would otherwise show.
+    // The lot tunables, in one place: stored-dark colours (the legacy pipeline lifts a stored
+    // value, so these read as dark asphalt beside the roads' 0x3b3833; the lead picks the final
+    // pair by rendered swatch against the CS2 frame) and the lifts over the plaza layer. The
+    // fill sheet and the lots are an exact pair now (both conform to the same ground), so the
+    // gap between them is wider than the old 1.5 cm, and the stripes sit above both
+    const LOT_FILL_COL = 0x1f1e1c, LOT_COL = 0x232220;
+    const LOT_FILL_UP = 0.02, LOT_UP = 0.06, LOT_STRIPE_UP = 0.09;   // over LAYER.plaza
+    const LOT_STRIPE_OPACITY = 0.5;
     if (typeof PARKING_SOUTH !== 'undefined' && PARKING_SOUTH && PARKING_SOUTH.polys) {
       const toRing = (fl2) => { const pp = new Array(fl2.length >> 1); for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]]; return pp; };
       // the district sheet first (the convex hull of the complex's lots: there is no lawn in
-      // it), then each lot on top; both DRAPED on the terrain like the big parks, since a flat
-      // polygon spanning the undulating ground let the mottled lawn rise through it. Draped
-      // DENSELY (8 and 10 m against the ground's 25 m facets) and 12 cm up, still under the
-      // streets at 24 cm: at 20 m the two linear reads of the same ground disagreed by more
-      // than the 10 cm the sheet had, and the facets showed as jagged green blobs
+      // it), then each lot on top; both CONFORMED to the drawn ground (conformDrape: every
+      // sheet triangle lies inside one ground triangle, so the sheet is exactly its lift above
+      // the mesh everywhere). Draping them densely never converged: the ground mesh and a
+      // drape are two different linear reads of one surface, off by up to half a metre, and
+      // the facets showed as jagged green blobs through the asphalt
       for (const fl2 of (PARKING_SOUTH.fill || [])) {
-        try { areaParts.push({ geom: drapedPoly(toRing(fl2), LAYER.plaza + 0.02, 8), color: new THREE.Color(0x2b2a27), style: 3 }); } catch (e) { /* degenerate */ }
+        const pp = toRing(fl2);
+        LOT_RINGS.push(pp); LOT_RING_BB.push(bboxOf(pp));
+        try { areaParts.push({ geom: conformDrape(pp, LAYER.plaza + LOT_FILL_UP, 8), color: new THREE.Color(LOT_FILL_COL), style: 3 }); } catch (e) { /* degenerate */ }
       }
       const seg = [];
-      const yAt = (x, z) => siteY(x, z, 'ground') + LAYER.plaza + 0.065;
+      const yAt = (x, z) => (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + LAYER.plaza + LOT_STRIPE_UP;
       for (const fl2 of PARKING_SOUTH.polys) {
         const pp = toRing(fl2);
-        try { areaParts.push({ geom: Math.abs(signedArea(pp)) > 600 ? drapedPoly(pp, LAYER.plaza + 0.035, 10) : flatPoly(pp, null, LAYER.plaza + 0.035), color: new THREE.Color(0x2e2d2a), style: 3 }); } catch (e) { continue; }
+        LOT_RINGS.push(pp); LOT_RING_BB.push(bboxOf(pp));
+        try { areaParts.push({ geom: conformDrape(pp, LAYER.plaza + LOT_UP, 10), color: new THREE.Color(LOT_COL), style: 3 }); } catch (e) { continue; }
         // the stalls, as they read from above: double rows 18.5 m apart, each with its two
         // stall-front lines running the row's length and ticks every 2.7 m between them.
         // Rows follow the street grid (whichever grid axis the lot's long side is nearer),
-        // and every line is clipped to the lot
+        // and every line is clipped to the lot. The lines are polylines of 3 m samples, each
+        // sample on the drawn ground, so a line bends with the lot instead of cutting a
+        // chord under it; the ticks split at their midpoint for the same reason
         const pc = polyCentroid(pp);
         const ob = orientedBox(pp), ax = obbAxis(ob);
         const alongNS = Math.abs(ax.ax * fl.dx + ax.az * fl.dz) > 0.707;
@@ -6000,31 +6326,39 @@
         if (hl < 12 || hs < 12) continue;
         for (let v = -hs + 9.5; v < hs - 3; v += 18.5) {
           for (const side of [-5.5, 5.5]) {   // the stall fronts
-            let run = null, px = 0, pz = 0;
+            let run = null, px = 0, pz = 0, py = 0, runSeg = [];
             for (let u = -hl; u <= hl + 3; u += 3) {
               const x = pc[0] + ux * u + vx * (v + side), z = pc[1] + uz * u + vz * (v + side);
               const inside = u <= hl && pointInPoly(x, z, pp);
-              if (inside && !run) run = [x, z];
-              else if (!inside && run) { if (Math.hypot(px - run[0], pz - run[1]) > 4) seg.push(run[0], yAt(run[0], run[1]), run[1], px, yAt(px, pz), pz); run = null; }
-              px = x; pz = z;
+              if (inside) {
+                const y = yAt(x, z);
+                if (!run) { run = [x, z]; runSeg = []; }
+                else runSeg.push(px, py, pz, x, y, z);   // one segment per 3 m sample
+                px = x; pz = z; py = y;
+              } else if (run) {
+                if (Math.hypot(px - run[0], pz - run[1]) > 4) for (const sv of runSeg) seg.push(sv);
+                run = null;
+              }
             }
           }
           for (let u = -hl + 1.5; u < hl; u += 2.7) {   // the ticks
             const qx = pc[0] + ux * u + vx * v, qz = pc[1] + uz * u + vz * v;
             const x0 = qx - vx * 5.5, z0 = qz - vz * 5.5, x1 = qx + vx * 5.5, z1 = qz + vz * 5.5;
             if (!pointInPoly(x0, z0, pp) || !pointInPoly(x1, z1, pp)) continue;
-            seg.push(x0, yAt(x0, z0), z0, x1, yAt(x1, z1), z1);
+            const ym = yAt(qx, qz);
+            seg.push(x0, yAt(x0, z0), z0, qx, ym, qz, qx, ym, qz, x1, yAt(x1, z1), z1);
           }
         }
       }
       if (seg.length) {
         const lg = new THREE.BufferGeometry();
         lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
-        lotStripes = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xb8b3a8, transparent: true, opacity: 0.6 }));
+        lotStripes = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xb8b3a8, transparent: true, opacity: LOT_STRIPE_OPACITY }));
         lotStripes.frustumCulled = false; lotStripes.renderOrder = 3;
         groupCity.add(lotStripes);
       }
     }
+    drapeLog('the outer districts');
     if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
     // widen the world: camera clamps and fog
@@ -6459,7 +6793,7 @@
         if (ovpOwned(a[0], a[1], q[0], q[1])) continue; // a baked overpass deck owns it
         const px = -dz * hw, pz = dx * hw;
         const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 2.9 + 0.4) * 0.1;
-        let ya0 = siteY(a[0], a[1], 'road'), yb0 = siteY(q[0], q[1], 'road');
+        let ya0 = groundMeshLandY(a[0], a[1]) ?? siteY(a[0], a[1], 'road'), yb0 = groundMeshLandY(q[0], q[1]) ?? siteY(q[0], q[1], 'road');
         if (deck) {
           ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
           yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
@@ -6480,8 +6814,10 @@
       }
       if ((i & 2047) === 2047) await yieldNow();
     }
-    // far areas (water splits out onto the animated river material)
-    const areaParts = [], waterAreaParts = [];
+    // far areas (water splits out onto the animated river material). The parks and the
+    // aprons are only COLLECTED here: they conform to the far ground (conformDrape), and the
+    // far strips are built after this pass, so uploadRing builds them (ringAreaParts)
+    const areaPolys = [], waterAreaParts = [];
     const nwParks = [], nwWaters = [];   // patch-intersecting polys steer the 50 m ground
     for (let i = 0; i < hdr[3]; i++) {
       const n = body[k++], kind = body[k++];
@@ -6499,20 +6835,39 @@
             const bb = bboxOf(poly);
             if (hitsP(bb)) {
               nwParks.push(poly);
-              // a big drape samples at ~130 m and would tent across the
-              // sharpened gorge — inside the patch the tinted ground IS the park
+              // inside the patch the tinted ground IS the park: a big one adds nothing
+              // over the woodland tint but a second sheet across the sharpened gorge
               if (big && withinP(bb)) continue;
             }
           }
-          areaParts.push({ geom: big ? drapedPoly(poly, LAYER.park, poolTouch(poly) ? 30 : 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(0.82 + hash01(i) * 0.18), style: 3 });
+          areaPolys.push({ poly, kind, i });
         } else if (kind === 1) { const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
-        else areaParts.push({ geom: flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
+        else areaPolys.push({ poly, kind, i });
       } catch (e) { /* degenerate */ }
     }
-    return { chunks, rc, areaParts, waterAreaParts, nwParks, nwWaters };
+    return { chunks, rc, areaPolys, waterAreaParts, nwParks, nwWaters, label };
+  }
+  // the far ring's parks (kind 0) and aprons (kind 2) as sheets on the drawn far ground: built
+  // at upload, when the far strips and the NW patch exist in the ground registry (the far step
+  // builds them between raiseRing and uploadRing; the outskirts inherit them). A park over
+  // 1,000 m2 conforms (conformDrape), smaller ones stay flat on their perimeter; the nested
+  // rings rise by area like the wide tier's so nothing sits coplanar (gotcha 6). The Schuylkill
+  // pool reach keeps its finer spacing, now only in conformDrape's drapedPoly fallback
+  const RING_PARK_CONFORM_AREA = 1000, RING_APRON_CONFORM_AREA = 1000;
+  function ringAreaParts(R) {
+    const areaParts = [];
+    for (const { poly, kind, i } of R.areaPolys) {
+      const pa = Math.abs(signedArea(poly));
+      try {
+        if (kind === 0) areaParts.push({ geom: pa > RING_PARK_CONFORM_AREA ? conformDrape(poly, LAYER.park + 0.03 * (1 - Math.min(1, pa / 20000)), poolTouch(poly) ? 30 : 60) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(lerp(1 - PARK_SHADE_SPREAD, 1 + PARK_SHADE_SPREAD, hash01(i))), style: 3 });
+        else areaParts.push({ geom: pa > RING_APRON_CONFORM_AREA ? conformDrape(poly, LAYER.plaza, 60) : flatPoly(poly, null, LAYER.plaza), color: new THREE.Color(0x9a978e), style: 3 });
+      } catch (e) { /* degenerate */ }
+    }
+    drapeLog(R.label || 'the far ring');
+    return areaParts;
   }
   async function uploadRing(R) {
-    const { chunks, rc, areaParts, waterAreaParts } = R;
+    const { chunks, rc, waterAreaParts } = R;
     await yieldNow();
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
     flushUploads(true);
@@ -6528,6 +6883,7 @@
       rc.pos = rc.col = rc.idx = null;
       groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
     }
+    const areaParts = ringAreaParts(R);
     if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
   }
@@ -6630,8 +6986,9 @@
       }
       const xi = (i) => x0 + (x1 - x0) * i / nx, zj = (j) => z0 + (z1 - z0) * j / nz;
       const idx = [];
+      const skip = hole ? new Uint8Array(nx * nz) : null;   // the hole's cells, for the ground registry
       for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-        if (hole && xi(i) >= hole.x0 - 0.01 && xi(i + 1) <= hole.x1 + 0.01 && zj(j) >= hole.z0 - 0.01 && zj(j + 1) <= hole.z1 + 0.01) continue;
+        if (hole && xi(i) >= hole.x0 - 0.01 && xi(i + 1) <= hole.x1 + 0.01 && zj(j) >= hole.z0 - 0.01 && zj(j + 1) <= hole.z1 + 0.01) { skip[j * nx + i] = 1; continue; }
         const a = j * (nx + 1) + i, b = a + 1, d = a + nx + 1, e = d + 1;
         idx.push(a, d, b, b, d, e);
       }
@@ -6640,6 +6997,9 @@
       if (col) g.setAttribute('color', new THREE.BufferAttribute(col, 3));
       g.setIndex(idx);
       g.computeVertexNormals();
+      // the drawn surface, for conformDrape and the tufts; the NW patch registers after the
+      // strip whose hole it fills, so it is searched first there
+      registerGround(g, x0, x1, z0, z1, nx, nz, hole, skip, cell);
       const m = new THREE.Mesh(g, tint ? nwGroundMat : farGroundMat);
       m.matrixAutoUpdate = false;
       groupCity.add(m);
@@ -7801,8 +8161,21 @@
   // as the camera moves, a few thousand a frame so nothing hitches; they sway in the vertex
   // shader on the water's clock and darken under the cloud field. Desktop 28k, touch 9k.
   const GRASS_N = isTouch ? 9000 : 28000, GRASS_R = isTouch ? 140 : 160;
-  let grassMesh = null, grassAt = null, grassQueue = [], grassCursor = 0, grassBusy = false;
+  // the bare ground sows too (Round 52): outside the core the meadow beside a park is the same
+  // ground cover, so a park in a tuft field beside a bare meadow would still show its boundary.
+  // A second source, the disc outside CORE_EXT, at this share of the park density; samples on a
+  // park (it sows itself), a road, the water or a sports-complex lot are rejected. There is no
+  // building test outside the core (colGrid is core-only): a tuft inside a closed building is
+  // invisible, one at a wall base pokes a blade through, accepted
+  const BARE_TUFT_W = 0.4;
+  let grassMesh = null, grassAt = null, grassQueue = [], grassCursor = 0, grassBusy = false, grassNear = [];
   const grassPolyBB = [];
+  function bareGroundAt(x, z) {
+    if (inCore(x, z)) return false;
+    for (const pi of grassNear) { const bb = grassPolyBB[pi]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, GRASS_POLYS[pi])) return false; }
+    for (let li = 0; li < LOT_RINGS.length; li++) { const bb = LOT_RING_BB[li]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, LOT_RINGS[li])) return false; }
+    return true;
+  }
   function grassInit() {
     if (!GRASS_POLYS.length) return;
     for (const pg of GRASS_POLYS) grassPolyBB.push(bboxOf(pg));
@@ -7840,15 +8213,22 @@
   const _gm = new THREE.Matrix4(), _gq = new THREE.Quaternion(), _gv = new V3(), _gs = new V3(), _gc = new THREE.Color(), _gWhite = new THREE.Color(1, 1, 1);
   function grassSow(cx, cz) {
     // the polygons in reach, each weighted by the area of its box inside the circle
-    grassQueue = [];
+    grassQueue = []; grassNear = [];
     let wsum = 0;
     for (let i = 0; i < GRASS_POLYS.length; i++) {
       const bb = grassPolyBB[i];
       if (bb[0] > cx + GRASS_R || bb[1] < cx - GRASS_R || bb[2] > cz + GRASS_R || bb[3] < cz - GRASS_R) continue;
+      grassNear.push(i);
       const x0 = Math.max(bb[0], cx - GRASS_R), x1 = Math.min(bb[1], cx + GRASS_R), z0 = Math.max(bb[2], cz - GRASS_R), z1 = Math.min(bb[3], cz + GRASS_R);
       const w = Math.max(0, x1 - x0) * Math.max(0, z1 - z0);
       if (w < 4) continue;
       grassQueue.push([i, x0, x1, z0, z1, w]); wsum += w;
+    }
+    {   // the bare ground: the disc's box less its overlap with the core, weighted down
+      const x0 = cx - GRASS_R, x1 = cx + GRASS_R, z0 = cz - GRASS_R, z1 = cz + GRASS_R;
+      const ix = Math.max(0, Math.min(x1, CORE_EXT.x1) - Math.max(x0, CORE_EXT.x0)), iz = Math.max(0, Math.min(z1, CORE_EXT.z1) - Math.max(z0, CORE_EXT.z0));
+      const w = ((x1 - x0) * (z1 - z0) - ix * iz) * BARE_TUFT_W;
+      if (w >= 4) { grassQueue.push([-1, x0, x1, z0, z1, w]); wsum += w; }
     }
     for (const qn of grassQueue) qn[5] = Math.max(8, Math.round(GRASS_N * qn[5] / Math.max(1, wsum) * 1.3));
     grassCursor = 0; grassBusy = true;
@@ -7861,16 +8241,18 @@
     const tEnd = performance.now() + 2.5;   // a sow spreads over frames, never over one
     while (grassQueue.length && budget > 0 && k < GRASS_N && performance.now() < tEnd) {
       const qn = grassQueue[0];
-      const pg = GRASS_POLYS[qn[0]];
+      const pg = qn[0] >= 0 ? GRASS_POLYS[qn[0]] : null;   // null: the bare-ground source
       let tries = 0;
       while (qn[5] > 0 && budget > 0 && k < GRASS_N && tries < 4) {
         qn[5]--; budget--; tries++;
         const x = qn[1] + Math.random() * (qn[2] - qn[1]), z = qn[3] + Math.random() * (qn[4] - qn[3]);
         const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
-        if (d2 > GRASS_R * GRASS_R || !pointInPoly(x, z, pg)) continue;
+        if (d2 > GRASS_R * GRASS_R) continue;
+        if (pg ? !pointInPoly(x, z, pg) : !bareGroundAt(x, z)) continue;
         if (septaSnapRoad(x, z, 4)) continue;
         if (inWater(x, z) > -2) continue;
-        const y = drapeY(x, z, 'ground') + LAYER.park + 0.02;
+        // on the drawn ground where a grid is registered (the sheets conform to it), drapeY in the core
+        const y = (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + (pg ? LAYER.park : 0) + 0.02;
         const dd = Math.sqrt(d2), fade = 1 - smooth(GRASS_R * 0.55, GRASS_R, dd);
         if (Math.random() < smooth(10, 45, camera.position.y - y)) continue;   // seen from height the tufts thin out, the meadow carries the read
         if (Math.random() > 0.3 + 0.7 * fade) continue;   // toward the rim the field thins rather than shrinks
