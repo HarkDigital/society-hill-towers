@@ -2528,6 +2528,114 @@ footprints), so the round borrows what gives the game its look, in the order tha
     quiet mottle and speckle on the greys, the finer scales fading with their footprint.
     The bare ground already had its own mottle (`wxGroundPatch`).
 
+## Round 51: the nature pass, the game's ground, trees, clouds, lighting and moving water (Sep 3)
+
+Mike, with a Reddit link (r/ClaudeCode, "build me Cities: Skylines in three.js"): the water
+"needs movement", and the grassy ground, the tree models, the clouds and the lighting should
+look like that post's. The post was reached this time (its `.rss` feed answers where the HTML
+and `r.jina.ai` are Cloudflare-403'd; the video came down as the CMAF stream and was framed
+with a Swift AVAssetImageGenerator script, ffmpeg not being installed): the earlier report
+that it was unreachable was wrong. Its look is the game's own, stylised: olive meadows, soft
+rounded low-poly canopies in groves, a lit cumulus deck with cast shadows, deep blue water,
+warm lamps that bloom after dark. The round ran across two sessions (the first was cut off
+with a handoff in its scratch directory and the milky river open) and was reviewed by a
+workflow (four lenses over the diff, two skeptics per finding; four art-direction lenses
+against the reference frames, measured with PIL, and one synthesis).
+
+- The post pipeline (`POST`, `postInit`, `renderPost`, desktop WebGL2 with
+  `EXT_color_buffer_float`; `?bloom=0` turns it off). The frame is drawn into a half-float
+  4x multisampled target and finished by a composite pass that does exposure + ACES + sRGB by
+  hand (`ACES_GLSL`, r149's exact RRT/ODT constants) with a bright-pass bloom (threshold 1.25,
+  strength 0.45, two quarter-res separable blurs): the sun disc, the water's glitter and the
+  white cloud rims glow. Hard-won:
+  - The renderer runs with `NoToneMapping` while the pipeline owns the frame. r149 forces
+    LinearEncoding on a render-target pass but still applies `renderer.toneMapping` to every
+    toneMapped material, so the first cut mapped the scene twice (once into the target, once
+    in the composite) and the river read milky, (182,205,210) at the probe pixel against the
+    direct path's (157,197,209); the fix put it back to (161,201,212). The dome and the cloud
+    deck hand the composite the pre-image of their raw colour (`pUndo`, the algebraic inverse),
+    which stays right under a linear target; the `toneMapped: false` materials (the street
+    and tower light points, the car lights, the stadium floods and halos, the flight and ship
+    pins, the neighbourhood atlas) hand it the pre-image without the sRGB decode (`pUndoLin`,
+    `postRaw`), since the renderer used to encode them.
+  - Additive lights saturate instead of summing (`postRaw` swaps AdditiveBlending for MAX
+    blending, premultiplied so the opacity fade still works). The 8-bit canvas clamped a
+    thousand fogged far lamps at white; the float target summed them past it into a solid
+    white band on the night horizon that the bloom then spread. Neither a 2.4 threshold nor the
+    shorter night fog touched it; the blend equation did.
+  - The canvas skips the browser's multisampled backbuffer when the pipeline will own the
+    frame (probed on a throwaway WebGL2 context before the real one exists), the target has
+    `stencilBuffer: true` (r149 gives a depth-only target a 16-bit depth renderbuffer; depth
+    with stencil is DEPTH24_STENCIL8, the 24 bits the layered flats need), and `perf()` reports
+    the scene pass (`renderer.info` resets per pass, the old readout counted the composite quad:
+    1 call, 2 triangles).
+  - A wrapped `onBeforeCompile` needs a `customProgramCacheKey`: r149 keys programs on the
+    hook's `toString()`, so two closures with the same source share one program (the first
+    live water experiment's tint stuck through four "variants").
+- Water. The body colour is 0x07297b and `liquify` damps the Lambert terms (direct diffuse
+  0.25, indirect 0.5): the stored teal was a lit floor, at noon lifted to a pale cyan from every
+  height and by every lever (env 0.7 to 0.35 moved the probe 15 counts), where the game's water
+  is a body colour at any sun height with the reflection and the glints on top. Reflection tint
+  vec3(0.30, 0.52, 0.95) x 0.45, env 0.7. The mid-river probe reads (81,129,182) at noon from
+  40 m (the reference sea about (40,110,180)); the core sheet and the outer sheet agree. The
+  movement: the top octaves scroll faster and two mid octaves domain-warp in time, so the
+  pattern changes rather than slides.
+- Ground. `paintGrassTex` paints a tileable 1024 meadow (a noise base drying to olive and
+  thinning to dirt, a clumpy mottle, stroke grain, tufts, flower specks), sampled at 6.5 m
+  with a 20 degree rotated 11.3 m copy (the period) and a rotated 47 m macro copy normalised
+  by the tile's mean luminance, tinted by the flat's own colour (`surfTexPatch`,
+  `texU.uGrass`). The first cut was lime: the critique measured the reference meadows at hue
+  66 to 77 degrees and a luminance spread of 12 to 28 against our 100 degrees and 51 to 73, so
+  the base went olive, rgb(54,72,26) drying to (88,92,38), the strokes to W^2/32 at 0.74..0.9
+  and 1.08..1.3 lum and alpha 0.55, the tuft strokes onto the base hue, the flowers to W^2/16000
+  and muted. The tuft field (`grassInit`, `grassSow`, `grassStep`, `grassUpdate`): an
+  InstancedMesh of crossed alpha-cut cards wearing `paintTuftTex` (14 blades in a 1.6 rad
+  fan, 0.007..0.017 W wide, lighter than the ground from foot (72,88,38) to tip (156,162,88); a
+  first cut's 24 wide blades read as agaves), uploaded as a DataTexture with the clear texels
+  filled with blade green (a canvas premultiplies them to black and the mips bled it, so every
+  tuft was a dark speck from height), 28k on desktop and 9k on touch within 160 m of the
+  camera, 0.16..0.36 m tall, thinning out from 10 to 45 m above and toward the rim, re-sown
+  when the camera moves 70 m at 5,000 tries a frame, swaying on the water clock, cloud shaded.
+- Trees. The crowns are lumpy flat-shaded blobs: every vertex of the unit icosahedron steps
+  0.79..1.21 by a hash of its position seeded per tree, and a three-octave mottle breaks each
+  facet into clusters, so a crown is a low-poly puff that catches the sun instead of a smooth
+  ball; matte (roughness 1, env 0.25: the sky's sheen read as a second object). Leaf cards on
+  desktop: 32 on the core's crowns, 14 on the wide tier's and on the vases, pyramids and conifer
+  spires, each a random-facing alpha-cut quad of 0.42..0.56 crown units on a shell at 0.42..0.6,
+  wearing `paintLeafTex` (a 0.55 R backing disc, the outer half leaves over holes, a bright heart
+  and a dark rim so the light has no side); lit on the crown's own normal without the
+  DoubleSide flip (half the cards had shown their dark backs, a salt-and-pepper the critique
+  traced to r149's `faceDirection`); a lit-top, dark-underside gradient on cards and core.
+  One colour path: `cardTint` (the species HSL normalised on green, eased 0.30 to white) on the
+  cards, and the core and its two lumps at the same tint times the sprite's mean
+  (`texU.leafNorm`) x 0.06, so a ginkgo is one yellow object. The core is 0.7 of the crown. The
+  wide tier's second lobe is dropped (3.2M triangles a frame; the displacement gives every
+  crown its asymmetry): the high view fell from 14.1M to about 10M triangles. Trunks store
+  0x2b2119 (0x5b4a38 read as cream under the legacy lift).
+- Clouds and light. `cloudMat`, a 64 km plane at 1,900 m that follows the camera, carries the
+  same fbm the ground shadows use, lit by a second sample toward the sun (rims where a puff thins
+  toward the light, grey bellies, warmed by the sun's colour, dimmed by the sky's cloud light),
+  edges 0.20 / 0.40 and rim gain 6.0 after the critique (the first cut was streaky stratus),
+  an HDR rim of +0.15 for the bloom, hazed out past 14..26 km; the dome's own cumulus is kept
+  to the horizon band. Cloud shadows slant by the sun (`uCloudSlant`, sunDir.xz x 1900 /
+  sunDir.y) at 0.45 x 0.85 dayF (was 0.62). Sun 2.0, hemi 0.10 + 0.36 dayF (from 1.82 and
+  0.40); the critique's 3:1 key-to-fill and paler sky band were declined, Mike's Round 50 key
+  and deep-blue sky stand. Night air is shorter (fog near and far x (1 - 0.5 night) and
+  (1 - 0.42 night)) and lit windows dim 45 % between 1.5 and 7 km, so the far city sinks into
+  the sky instead of massing white on the horizon.
+- Wind: the canopy material sways per tree with a small flutter; the wide tier's crowns are an
+  80-face icosahedron; every crown's saturation rises 15 %.
+- Verified in the pane: the seven canonical views at noon, overcast and night, the water at 40
+  and 420 m, Rittenhouse and Washington Squares at eye level and from above, dusk; no build step
+  failed, no console errors beyond the known CORS line for the SEPTA relay off-origin.
+  Triangles 10..11.6M and 230..310 calls at the standard views (the pane's frame timing is not
+  trustworthy: no rAF, and gl.finish returns before the GPU process). Before-and-after sheets of
+  the seven views went to Mike.
+- Left open: procedural textures, never the game's assets; no SSAO (the crowns' gradient and
+  the wall-base darkening are the contact cues); reflections are the env-map probe, not planar;
+  the critique's remaining proposals (a chroma macro on the meadow, edge-on card fading, HDR
+  lamp cores with a night bloom threshold, a lifted night palette) wait on Mike.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

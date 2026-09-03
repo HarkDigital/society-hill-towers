@@ -58,8 +58,13 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
   and `pack_wide.py` insets any record whose wall shares a plane with a larger one; the look leans toward
   Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, brick, stone, panel and stucco
-  textures in the facade shader, a deep-blue sky with lit cumulus, clear air to 16 km, noise-field water with no
-  shore tint, textured parks and roads, saturated palettes, rooftop clutter on desktop, awnings), never its assets; a search result glides in and
+  textures in the facade shader, a deep-blue sky with a lit cumulus deck at 1,900 m whose shadows slant by the
+  sun, clear air to 16 km by day and shorter by night, deep-blue body-colour water as a moving noise field with no
+  shore tint, a painted olive meadow on every green with an instanced tuft field near the camera, lumpy
+  flat-shaded low-poly crowns under leaf cards, wind in the crowns and blades, saturated palettes, rooftop
+  clutter on desktop, awnings, and on desktop WebGL2 an HDR post pipeline: half-float target, ACES + sRGB
+  composite, bloom on the sun, the glints and the cloud rims, `?bloom=0` off), never its assets; the Round 50
+  key-to-fill ratio (sun 2.0, hemi 0.10 + 0.36 dayF) and the deep-blue zenith stand; a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
   The clock is never remembered: every load is Philadelphia's own time, and only a copied
   link carries a pinned clock. The two stadiums are built after the wide loop from
@@ -73,7 +78,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
 ## URL flags
 
 `?dev=1` exposes `window.__dbg` (camera/fly/scene/renderer handles, `wx('storm')`, `bolt()`,
-`flightTest()`, `shipTest()`, `frameOnce()`, `goFly(...)`, `goWalk(...)`, `perf()` with
+`flightTest()`, `shipTest()`, `frameOnce()`, `goFly(...)`, `goWalk(...)`, `post`, `postMats()`, `skyMat`,
+`cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `perf()` with
 per-step build timings, frame-time p50/p95, `renderer.info` and heap) plus an on-screen perf
 readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
 (clear, overcast, fog, drizzle, rain, downpour, storm, hail, snow, blizzard, sleet).
@@ -87,7 +93,7 @@ roads/parks, the city fabric (facade shader), landmark spires, researched landma
 museum ships, the three towers, the outer districts (`wide.b64`), the far ring and the towns
 across the city line (`city.b64` and `outskirts.b64`, one `raiseRing()` decoder), trees, labels, controls, modes & viewpoints, live SEPTA transit, layers panel, street names,
 places, address search, live Indego, live flights, live ships, traffic, streetlights, solar
-clock + weather, build & loop. Build steps are `step('Name', fn)` calls run in order by
+clock + weather, build & loop; the post pipeline sits with the renderer near the top. Build steps are `step('Name', fn)` calls run in order by
 `build()`. `template.html` is the chrome, `style.css` the HUD + embedded Montserrat,
 `about_body.html` the hidden About panel. Pipeline scripts and data files are tabulated in
 `handoff.md` ("What's in 3d-model/").

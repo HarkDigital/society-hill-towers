@@ -414,6 +414,25 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
     anything that must stay raycastable must never go through `freeOnUpload` at all (Round
     41's tooltip kill was a raycast into a freed chunk).
 
+13. **Render targets and r149's colour pipeline (Round 51).** A render-target pass is forced to
+    LinearEncoding but is still tone-mapped for every toneMapped material, so a post pipeline
+    that tone-maps in its composite must run the renderer at `NoToneMapping` (`POST.on`), or
+    the scene is mapped twice (the milky river). Custom ShaderMaterials without the
+    tonemapping/encodings chunks (the dome, the cloud deck) write raw and must hand the
+    composite the pre-image (`pUndo`); `toneMapped: false` built-ins were sRGB-encoded by the
+    renderer and take `pUndoLin` (`postRaw`). A depth-only target gets a 16-bit depth
+    renderbuffer, depth+stencil gets 24 bits. `renderer.info` resets per `render()` call.
+14. **Additive light in a float target is unbounded.** The canvas clamped a thousand fogged
+    far lamps at white; a half-float target sums them past it into a band that blooms. Under
+    the post pipeline additive light materials use MAX blending, premultiplied (`postRaw`).
+15. **`onBeforeCompile` is the program cache key.** r149 keys a material's program on
+    `onBeforeCompile.toString()`; a wrapper closure with the same source as another shares its
+    program. Set `customProgramCacheKey` whenever a hook is wrapped or parameterised.
+16. **Canvas sprites premultiply.** A CanvasTexture's clear texels come back black, and the
+    mips bleed that into every alpha-cut edge (the tufts read as dark specks from height).
+    Paint, then upload the pixel array as a DataTexture with the clear texels filled with
+    the sprite's own colour (`paintTuftTex`).
+
 More rules the log paid for (details in `devlog.md`):
 
 - **No em dashes or middot separators in any user-facing string** (Mike's rule): veil, hints,
@@ -448,7 +467,9 @@ More rules the log paid for (details in `devlog.md`):
 
 ## State
 
-As of 2026-09-01 both homes serve the Round 45 coda build: weather lands on every surface
+As of 2026-09-03 the working tree is the Round 51 build (the nature pass: the post pipeline,
+the painted meadow and tuft field, the lumpy crowns under leaf cards, the cloud deck, the deep-blue
+body water; see the devlog entry). Before it, as of 2026-09-01, both homes served the Round 45 coda build: weather lands on every surface
 (snow settles on roofs, roads and lawns; rain darkens and sheens the streets), the bare
 ground reads as mottled lawn and scrub instead of perpetual snow, overcast dims honestly,
 no footprint floats in rendered water, every SEPTA vehicle wears the badge billboard, the
