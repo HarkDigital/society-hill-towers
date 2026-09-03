@@ -28,7 +28,7 @@
     concreteDark: 0xaaa595,
     glass: 0x37343f,       // dark blue-gray: clear glass, dark interiors, anodized frames
     glassLobby: 0x2e2b35,
-    ground: 0x8b8c78,     // block interiors read as yards/gardens from above
+    ground: 0x223418,     // bare earth is the same meadow as the parks (the game's one dark olive); the surfTexPatch mottle carries the variation
     plaza: 0x96604a,       // brick-paved plaza and circular drive
     asphalt: 0x3b3833,
     footway: 0x7c584a,     // society hill brick sidewalks
@@ -44,6 +44,11 @@
     haze: 0xcdd8e6,       // aerial perspective goes blue, not sand
     sun: 0xffe5b8,
   };
+  // the ground look, one place to tune: parks and bare ground share one meadow shader and one
+  // mottle, so the per-polygon park shade goes flat (lerp(1 - spread, 1 + spread, hash)); the
+  // woodland is the NW hills' vertex tint, a ratio against COLORS.ground
+  const PARK_SHADE_SPREAD = 0;
+  const WOODLAND = 0x1b2c12;
 
   const LABEL_FADE = [540, 880];
 
@@ -2335,8 +2340,7 @@
 
   // ------------------------------------------------ ground, water, roads, parks
   step('Laying out the ground', () => {
-    const groundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0, dithering: MAT_DITHER });
-    groundMats.push(groundMat);
+    const groundMat = groundSurfMat();
     const Z0 = CORE_EXT.z0, Z1 = CORE_EXT.z1;
     const flat = (poly, y) => { const g = new THREE.ShapeGeometry(shapeFromPoly(poly, null)); g.rotateX(-Math.PI / 2); g.translate(0, y, 0); return g; };
     // city heightfield (12.5 m) riding the DEM, diving into the trench east of Front St
@@ -2375,11 +2379,9 @@
         [W.x0, CORE_EXT.x0, CORE_EXT.z0, CORE_EXT.z1], [CORE_EXT.x1, W.x1, CORE_EXT.z0, CORE_EXT.z1],
       ];
       // Fairmount greening: around the Art Museum the bare heightfield is parkland,
-      // not pavement — vertex-tint those cells toward park green (ratio of park to
-      // ground, so the day/night ground retint still applies), feathered 80 m
-      const wideGroundMat = groundMat.clone();
-      wideGroundMat.vertexColors = true;
-      groundMats.push(wideGroundMat);
+      // not pavement — vertex-tint those cells toward park green (a ratio of park to
+      // ground, a tint on the shared meadow shader), feathered 80 m
+      const wideGroundMat = groundSurfMat({ vertexColors: true });
       const FMZ = { x0: -3690, x1: -2480, z0: -2950, z1: -1720 };
       const pkC = new THREE.Color(COLORS.park), gdC = new THREE.Color(COLORS.ground);
       const fmR = [pkC.r / gdC.r, pkC.g / gdC.g, pkC.b / gdC.b];
@@ -2709,7 +2711,7 @@
     for (const a of D.areas || []) {
       if (a.poly.length < 3) continue;
       if (a.kind === 'park') {
-        const shade = lerp(0.9, 1.1, hash01(a.poly[0][0]));
+        const shade = lerp(1 - PARK_SHADE_SPREAD, 1 + PARK_SHADE_SPREAD, hash01(a.poly[0][0]));
         const c = new THREE.Color(COLORS.park).multiplyScalar(shade);
         const pa = Math.abs(signedArea(a.poly));
         GRASS_POLYS.push(a.poly);
@@ -3136,7 +3138,7 @@
   // into dots rather than shimmer
   const detFarUniform = { value: isTouch ? 0.55 : 1.0 };
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
-  const groundMats = [];   // bare-earth planes retinted by time of day (pale day tone reads as water at dusk/night)
+  const groundMats = [];   // the bare-earth materials (groundSurfMat): the meadow shader forced green, never retinted
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9, dithering: MAT_DITHER });
   {
     cityMat.onBeforeCompile = (shader) => {
@@ -6543,13 +6545,10 @@
     // water. With dem_nw present the NW hills get their own 50 m heightfield —
     // its footprint is cut from the north strip along that strip's own grid
     // lines, so the two meshes butt exactly (T-junction verts only, no overlap)
-    const farGroundMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0, dithering: MAT_DITHER });
-    groundMats.push(farGroundMat);
+    const farGroundMat = groundSurfMat();
     let nwGroundMat = null, nwParkAt = null, nwWaterAt = null;
     if (P) {
-      nwGroundMat = farGroundMat.clone();
-      nwGroundMat.vertexColors = true;   // woodland tint rides vertex color so the day/night retint still applies
-      groundMats.push(nwGroundMat);
+      nwGroundMat = groundSurfMat({ vertexColors: true });   // woodland tint rides vertex color as a ratio against the shared meadow
       // official PPR parkland boundaries (nw_parks.json): the central Wissahickon
       // has no park polygon in the OSM extract (a nature_reserve relation the
       // city fetch never pulled), so the woodland tint reads the City's own lines
@@ -6595,7 +6594,7 @@
       nwParkAt = mkPolyGrid(nwParks);
       nwWaterAt = mkPolyGrid(nwWaters);
     }
-    const pkC2 = new THREE.Color(COLORS.park), gdC2 = new THREE.Color(COLORS.ground);
+    const pkC2 = new THREE.Color(WOODLAND), gdC2 = new THREE.Color(COLORS.ground);
     const nwR = [pkC2.r / gdC2.r, pkC2.g / gdC2.g, pkC2.b / gdC2.b];
     const mkFarGround = (x0, x1, z0, z1, cell, hole, tint) => {
       const nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
@@ -7227,8 +7226,7 @@
       rayTargets.push(mesh);
     }
     if (collarParts.length) {
-      const collarMat = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0, side: THREE.DoubleSide });
-      groundMats.push(collarMat);
+      const collarMat = groundSurfMat({ side: THREE.DoubleSide });
       const collar = new THREE.Mesh(mergeColored(collarParts), collarMat);
       collar.receiveShadow = true;
       groupCity.add(collar);
@@ -12391,7 +12389,12 @@
     return t;
   }
 
-  function surfTexPatch(shader) {
+  // the flats' shader: every green (parks, lawns, bare ground) becomes the painted meadow with
+  // one mottle, everything else gets a neutral mottle. `opt === true` forces the meadow branch
+  // (the bare ground, whose vertex tints must never fall out of the green test); r149 passes the
+  // WebGLRenderer as the second argument, so opt is tested for identity, never truthiness
+  function surfTexPatch(shader, opt) {
+    const forced = opt === true;
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
@@ -12407,25 +12410,45 @@
         'float sn1 = stn(sWP.xz * 0.05);',
         'float sn2 = stn(sWP.xz * 0.5) * (1.0 - smoothstep(1.0, 4.0, sfw));',
         'float sn3 = stn(sWP.xz * 4.0) * (1.0 - smoothstep(0.08, 0.4, sfw));',
-        'float isGreen = step(diffuseColor.r * 1.15, diffuseColor.g);',
+        'float isGreen = ' + (forced ? '1.0;' : 'step(diffuseColor.r * 1.15, diffuseColor.g);'),
         'vec3 am = vec3((0.96 + 0.08 * sn1) * (0.97 + 0.06 * sn2) * (1.0 + 0.08 * (sn3 - 0.5)));',
         // the meadow: the painted tile at 6.5 m, a rotated 47 m copy as the macro tone, the
         // world-space mottle as the block-to-block drift; the flat's own colour is a tint
         'vec3 gTex = mix(texture2D(uGrass, sWP.xz * 0.1538).rgb, texture2D(uGrass, vec2(sWP.x * 0.9397 + sWP.z * 0.342, -sWP.x * 0.342 + sWP.z * 0.9397) * 0.0885 + 0.37).rgb, 0.5);',
         'vec3 gMac = texture2D(uGrass, vec2(sWP.x * 0.866 - sWP.z * 0.5, sWP.x * 0.5 + sWP.z * 0.866) * 0.02128).rgb;',
         'float gMacL = dot(gMac, vec3(0.30, 0.59, 0.11)) * uGrassK;',
-        'vec3 grass = gTex * mix(1.0, gMacL, 0.55) * (0.88 + 0.24 * sn1);',
+        // the game's blotches: darker patches at 83 m and 22 m over the meadow, a fine grain at
+        // 3 m near the eye, never lighter than the base (tune the two vec3s and the 0.16 here)
+        'float gtn1 = stn(sWP.xz * 0.012);',
+        'float gtn2 = stn(sWP.xz * 0.045) * (1.0 - smoothstep(8.0, 30.0, sfw));',
+        'float gtn3 = stn(sWP.xz * 0.35) * (1.0 - smoothstep(1.0, 4.0, sfw));',
+        'float gt = smoothstep(0.30, 0.70, gtn1 * 0.7 + gtn2 * 0.3);',
+        'vec3 gMul = mix(vec3(0.60, 0.66, 0.50), vec3(1.0), gt) * (0.92 + 0.16 * gtn3);',
+        'vec3 grass = gTex * mix(1.0, gMacL, 0.55) * (0.88 + 0.24 * sn1) * gMul;',
         'vec3 gTint = clamp(diffuseColor.rgb / vec3(0.141, 0.22, 0.094), 0.3, 1.6);',
         'diffuseColor.rgb = mix(diffuseColor.rgb * am, grass * gTint, isGreen);',
       ].join('\n'));
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
   }
-  const surfMat = (o) => { const m = new THREE.MeshStandardMaterial(o); m.onBeforeCompile = surfTexPatch; return m; };
+  // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the post-build
+  // weather wrap (the hookup at the end of build() keys the wrapped program, gotcha 15)
+  const surfMat = (o) => { const m = new THREE.MeshStandardMaterial(o); m.userData.wxSurf = true; m.onBeforeCompile = surfTexPatch; return m; };
+  // the bare ground: the same meadow as the parks, forced green (its vertex tints ride as ratios),
+  // one material per tier with no clone (r149's copy() drops onBeforeCompile and the cache key)
+  const groundSurfMat = (o) => {
+    const m = new THREE.MeshStandardMaterial({ color: COLORS.ground, roughness: 0.96, metalness: 0, dithering: MAT_DITHER, ...o });
+    m.userData.wxSurf = true;
+    m.onBeforeCompile = (sh, r) => surfTexPatch(sh, true);
+    m.customProgramCacheKey = () => 'ground';
+    groundMats.push(m);
+    return m;
+  };
 
   // cloud shadows: a world-space fbm with the sky's cover threshold, drifting with the same
   // wind offset as the sky's clouds; the surfaces and the trees darken under it by day
   const cloudShU = { uCloudOff: skyMat.uniforms.uCloudOff, uCloudCov: skyMat.uniforms.uCloud, uCloudSh: { value: 0 }, uCloudSlant: { value: new THREE.Vector2() } };
   function cloudShadowPatch(shader, worldExpr) {
+    if (shader.fragmentShader.indexOf('float cloudShade(') !== -1) return;   // chained patches each ask for it; once is enough
     shader.uniforms.uCloudOff = cloudShU.uCloudOff; shader.uniforms.uCloudCov = cloudShU.uCloudCov; shader.uniforms.uCloudSh = cloudShU.uCloudSh; shader.uniforms.uCloudSlant = cloudShU.uCloudSlant;
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
@@ -12436,27 +12459,6 @@
         'void main() {',
       ].join('\n'))
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ndiffuseColor.rgb *= 1.0 - 0.45 * cloudShade((' + worldExpr + ').xz);');
-  }
-  function wxGroundPatch(shader) {
-    shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', [
-        'float gdh(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
-        'float gdn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
-        '  return mix(mix(gdh(i), gdh(i + vec2(1.0, 0.0)), f.x), mix(gdh(i + vec2(0.0, 1.0)), gdh(i + vec2(1.0, 1.0)), f.x), f.y); }',
-        'void main() {',
-      ].join('\n'))
-      .replace('#include <map_fragment>', '#include <map_fragment>\n' + [
-        // before color_fragment, so the chained weather pass lays snow OVER the mottle
-        'vec3 gWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
-        'float gfw = max(fwidth(gWP.x), fwidth(gWP.z));',
-        'float gn1 = gdn(gWP.xz * 0.012);',
-        'float gn2 = gdn(gWP.xz * 0.045) * (1.0 - smoothstep(8.0, 30.0, gfw));',
-        'float gn3 = gdn(gWP.xz * 0.35) * (1.0 - smoothstep(1.0, 4.0, gfw));',
-        'float gt = smoothstep(0.32, 0.68, gn1 * 0.72 + gn2 * 0.28);',
-        'vec3 gMul = mix(vec3(0.58, 0.72, 0.42), vec3(0.98, 0.93, 0.74), gt);',
-        'gMul *= 0.88 + 0.24 * gn3;',
-        'diffuseColor.rgb *= gMul;',
-      ].join('\n'));
   }
   function wxSurfacePatch(shader) {
     shader.uniforms.uSnowAcc = wxSurfU.uSnowAcc;
@@ -12831,11 +12833,6 @@
     cloudShU.uCloudSh.value = 0.85 * dayF * (1 - 0.5 * WXFX.gloom);
     cloudShU.uCloudSlant.value.set(sunDir.x, sunDir.z).multiplyScalar(CLOUD_ALT / Math.max(sunDir.y, 0.25));   // a cloud's shadow lies where its sun ray lands
     hemi.intensity = (0.10 + 0.36 * dayF) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
-    // bare ground follows the light: near-black at night, warm dark earth through
-    // twilight, the pale sage only in daylight — the fixed pale tone read as water
-    _c1.set(0x232321).lerp(_c2.set(0x55503f), twi).lerp(_c2.set(COLORS.ground), dayF);
-    _c1.multiplyScalar(1 - 0.15 * WX.cover);   // flat light: the bare flats go earthier, not chalk
-    for (const gm of groundMats) gm.color.copy(_c1);   // (snow cover now lands via the wxSurfacePatch shader pass)
     renderer.toneMappingExposure = 0.94 + 0.11 * dayF;
     postU.uExposure.value = renderer.toneMappingExposure;
     if (POST.on) pUndoColor(scene.fog.color, postU.uExposure.value);   // the fog mixes in the linear target: its colour goes in as the pre-image
@@ -13172,22 +13169,31 @@
     refreshTimeUI();
   }
   build().then(() => {
-    // weather-surface pass, applied before the first render so nothing recompiles:
-    // chain cityMat (facade shader runs first, then the weather), then every
-    // hookless standard material in the built scene. Materials with their own
-    // onBeforeCompile — water, vehicles, glass, street text, poles — are left
-    // alone, as is anything created later (planes, ships, live vehicles).
+    // weather-surface pass. The materials already compiled during build (flushUploads renders
+    // the scene behind the veil); the hooks assigned here land through the first frame's
+    // refreshEnv (lastEnvEl starts at 999), which swaps scene.environment and makes r149
+    // refetch every program. Chain cityMat (facade shader first, then the weather); WRAP the
+    // flats that carry `userData.wxSurf` (surfMat, groundSurfMat and any hook built on them),
+    // so the shader runs their own patch first and the snow lands over it (the later replace
+    // lands earlier in the shader), keyed on the wrapped hook (gotcha 15); then every hookless
+    // standard material in the built scene. Other materials with their own onBeforeCompile
+    // (water, vehicles, glass, street text, poles) are left alone, as is anything created
+    // later (planes, ships, live vehicles).
     {
       const prevCity = cityMat.onBeforeCompile;
       cityMat.onBeforeCompile = (sh, r) => { prevCity(sh, r); wxSurfacePatch(sh); };
-      // bare-earth planes: ground-cover mottle first, then the weather pass
-      for (const gm of groundMats) gm.onBeforeCompile = (sh, r) => { wxGroundPatch(sh); wxSurfacePatch(sh); };
       const seen = new Set([cityMat]);
       scene.traverse((o) => {
         const ms = o.material;
         for (const m of Array.isArray(ms) ? ms : ms ? [ms] : []) {
           if (!m.isMeshStandardMaterial || seen.has(m)) continue;
           seen.add(m);
+          if (m.userData.wxSurf) {
+            const prev = m.onBeforeCompile;
+            m.onBeforeCompile = (sh, r) => { wxSurfacePatch(sh); prev(sh, r); };
+            m.customProgramCacheKey = () => 'wx|' + prev.toString();
+            continue;
+          }
           if (Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) continue;
           if (m.flatShading) continue;
           m.onBeforeCompile = wxSurfacePatch;
