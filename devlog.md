@@ -2447,6 +2447,14 @@ identical? Can you use the mapillary data to inform some other styles?"
   drops (envMap 0.4, fresnel 0.2, the sky reflection at half) because under our sky and
   ACES a wide sheet went pale at every earlier setting.
 
+- Mike: "I am still seeing foam remnants in places" (a pale band along the Penn's Landing
+  bulkhead). It was the shallows gradient landing on edges that are not shores: the seam
+  between two adjacent water polygons, a tier's clip edge, a bulkhead. `flatShorePoly` now
+  counts an edge as shore only where the ground 4 m outside it stands above the water
+  (`siteY` against TERRAIN.water + 0.4, the outward side from the ring's winding, flipped for
+  holes), so seams and quays carry no shore distance, and the shallows themselves are a
+  quiet teal lightening of about a fifth over the first twenty-five metres, no bottom colour.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

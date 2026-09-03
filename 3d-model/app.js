@@ -851,12 +851,21 @@
     }
     const rings = [poly].concat(holes || []);
     const EC = 30, egrid = new Map(), segs = [];
-    for (const r of rings) for (let k = 0, n = r.length; k < n; k++) {
-      const a = r[k], b = r[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
-      if (L < 0.01) continue;
-      const sid = segs.length; segs.push([a[0], a[1], dx / L, dz / L, L]);
-      for (let gx = Math.floor(Math.min(a[0], b[0]) / EC); gx <= Math.floor(Math.max(a[0], b[0]) / EC); gx++)
-        for (let gz = Math.floor(Math.min(a[1], b[1]) / EC); gz <= Math.floor(Math.max(a[1], b[1]) / EC); gz++) { const key = gx + ':' + gz; let lst = egrid.get(key); if (!lst) { lst = []; egrid.set(key, lst); } lst.push(sid); }
+    for (let ri = 0; ri < rings.length; ri++) {
+      const r = rings[ri], n = r.length;
+      let ar = 0; for (let k = 0; k < n; k++) ar += r[k][0] * r[(k + 1) % n][1] - r[(k + 1) % n][0] * r[k][1];
+      const sgn = (ar > 0 ? 1 : -1) * (ri === 0 ? 1 : -1);   // the normal away from the water (into the island for a hole)
+      for (let k = 0; k < n; k++) {
+        const a = r[k], b = r[(k + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+        if (L < 0.01) continue;
+        // a shore only where the ground 4 m outside the edge stands above the water; a seam with
+        // another sheet, a tier's clip edge or a bank the DEM floods is open water to the shader
+        const ox = (dz / L) * sgn, oz = (-dx / L) * sgn, mx = (a[0] + b[0]) / 2 + ox * 4, mz = (a[1] + b[1]) / 2 + oz * 4;
+        if (siteY(mx, mz, 'ground') < TERRAIN.water + 0.4) continue;
+        const sid = segs.length; segs.push([a[0], a[1], dx / L, dz / L, L]);
+        for (let gx = Math.floor(Math.min(a[0], b[0]) / EC); gx <= Math.floor(Math.max(a[0], b[0]) / EC); gx++)
+          for (let gz = Math.floor(Math.min(a[1], b[1]) / EC); gz <= Math.floor(Math.max(a[1], b[1]) / EC); gz++) { const key = gx + ':' + gz; let lst = egrid.get(key); if (!lst) { lst = []; egrid.set(key, lst); } lst.push(sid); }
+      }
     }
     const dist = (x, z) => {
       let best = 3600; const gx = Math.floor(x / EC), gz = Math.floor(z / EC);
@@ -1663,10 +1672,7 @@
           // the shallows: the bottom shows through the first twenty metres, sand and silt under a
           // teal wash, then the channel goes deep (no foam: it read as a broken edge)
           '  vec3 wbase = diffuseColor.rgb;\n' +
-          '  vec3 wbottom = vec3(0.46, 0.44, 0.30);\n' +
-          '  float wshal = 1.0 - smoothstep(0.0, 0.33, wsh);\n' +
-          '  diffuseColor.rgb = mix(wbase, wbottom, wshal * wshal * 0.72);\n' +
-          '  diffuseColor.rgb = mix(diffuseColor.rgb, wbase * vec3(1.25, 1.22, 1.05), wshal * (1.0 - wshal) * 1.2);\n' +
+          '  diffuseColor.rgb = mix(wbase * vec3(1.22, 1.20, 1.08), wbase * 0.92, smoothstep(0.0, 1.0, min(1.0, wsh * 2.4)));\n' +
           '  diffuseColor.a = opacity;\n' +
           '  vec3 wview = normalize(cameraPosition - vWq);\n' +
           // fresnel: the sheet reads as sky at grazing angles and as deep water below the eye
