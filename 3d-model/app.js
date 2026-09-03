@@ -198,7 +198,7 @@
   // to the canvas, sRGB-encoded by the renderer; under the post pipeline they hand the
   // composite the ACES pre-image of that colour instead (pUndoLin: no sRGB decode, unlike
   // the dome, whose raw values never met the encoder), so they look the same either way
-  const postRaw = (mat) => {
+  const postRaw = (mat, opts) => {
     if (!POST.on) return mat;
     // additive lights saturate instead of summing: the 8-bit canvas clamped a thousand far
     // lamps at white, the float target sums them past it (a white band on the night horizon
@@ -208,6 +208,15 @@
       mat.blendEquation = THREE.MaxEquation; mat.blendSrc = THREE.OneFactor; mat.blendDst = THREE.OneFactor;
       mat.blendEquationAlpha = THREE.MaxEquation; mat.blendSrcAlpha = THREE.OneFactor; mat.blendDstAlpha = THREE.OneFactor;
       mat.premultipliedAlpha = true;
+    } else if (opts && opts.mask) {
+      // a marker or a label is not a light and must not bloom: its white frame's pre-image
+      // sits far above the bright pass's threshold, so every pin wore a halo that shimmered
+      // as the quarter-res blur resampled it. The bright pass reads the target's alpha as its
+      // mask (the cloud deck's coverage rides there), so these blend their colour as before
+      // and write a zero alpha under themselves
+      mat.blending = THREE.CustomBlending;
+      mat.blendEquation = THREE.AddEquation; mat.blendSrc = THREE.SrcAlphaFactor; mat.blendDst = THREE.OneMinusSrcAlphaFactor;
+      mat.blendEquationAlpha = THREE.AddEquation; mat.blendSrcAlpha = THREE.ZeroFactor; mat.blendDstAlpha = THREE.OneMinusSrcAlphaFactor;
     }
     const prev = mat.onBeforeCompile;
     mat.onBeforeCompile = (sh, r) => {
@@ -9568,7 +9577,7 @@
     // (Mike's rule) — badges at renderOrder 12 still paint over the names
     nbMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, color: 0xffffff, opacity: 0 });
     nbMat.toneMapped = false;   // the atlas carries its own halo colors
-    postRaw(nbMat);
+    postRaw(nbMat, { mask: true });   // a label, not a light: no bloom
     nbMesh = makeMesh(nbEntries, nbMat);
     nbMesh.renderOrder = 11;
     nbMesh.visible = false;                   // fades in from altitude
@@ -10678,7 +10687,7 @@
         new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
         // fog + tonemap exempt (the Round 29c label rule): a pin 11 km out over
         // PHL must punch through the haze, or distance visibility is the joke
-        postRaw(new THREE.MeshBasicMaterial({ map: flightPinTexture(kind), transparent: true, depthWrite: false, fog: false, toneMapped: false })), FLIGHT_CAP);
+        postRaw(new THREE.MeshBasicMaterial({ map: flightPinTexture(kind), transparent: true, depthWrite: false, fog: false, toneMapped: false }), { mask: true }), FLIGHT_CAP);
       pin.frustumCulled = false;
       pin.count = 0;
       pin.renderOrder = 12;
@@ -11003,7 +11012,7 @@
     // anchor badge, billboarded and distance-scaled like the aircraft pins
     shipAnchor = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
-      postRaw(new THREE.MeshBasicMaterial({ map: shipPinTexture(), transparent: true, depthWrite: false, fog: false, toneMapped: false })), SHIP_CAP);
+      postRaw(new THREE.MeshBasicMaterial({ map: shipPinTexture(), transparent: true, depthWrite: false, fog: false, toneMapped: false }), { mask: true }), SHIP_CAP);
     shipAnchor.frustumCulled = false;
     shipAnchor.count = 0;
     shipAnchor.renderOrder = 12;
