@@ -2726,6 +2726,23 @@ the diff with two skeptics per finding.
   shimmered as the quarter-res blur resampled it. `postRaw(mat, { mask: true })` (the pins and
   the neighbourhood atlas) blends the colour as before and writes a zero alpha under the sprite,
   which is the bloom mask the bright pass already reads for the cloud deck.
+- **The review's confirmed findings, closed** (three lenses over the diff, two skeptics per
+  finding, six of eight confirmed): the footprint-gated noise terms in the meadow and the
+  neutral mottle faded to zero instead of their mean, so every green went 20 to 26 percent
+  darker past 1 to 4 m and 8 to 30 m per pixel, a dark front that moved with the camera (they
+  fade to 0.5 now, the far mean equals the near one); PHL's and PNE's runways and taxiways ride
+  class 5 in `pack_city` at 45 and 16 m and were painted as seven-lane streets with a double
+  yellow (class 5 wider than 10 m is unmarked now); the far ring's roads were paved inside
+  `raiseRing` before the far strips existed, so they read the DEM while the parks conformed to
+  the mesh and a hillside park could cut through its street (the roads are decoded there and
+  paved by `paveRoads` at upload, after the far ground registers); the bare-ground tuft sow knew
+  only the Delaware's bank and the lots, so tufts stood in every pond and on the airport aprons
+  (one `noSow` keep-off list: the lots, every water ring in both tiers, the far aprons, the NW
+  creeks, prefiltered per sow), and bare tufts top out under 0.295, the lowest street lift, so a
+  wide street's shoulders outside the 4 m road reject cannot show a blade; and the ground colour
+  is the park's exactly (0x243818: the hair of difference was a 6 percent tint step along every
+  park outline). Refuted: that the hookup needs an explicit recompile (the first frame's env
+  refetch is the mechanism, as documented).
 - Verified in the pane at noon, dusk, night and under snow: the sports complex and the Navy Yard
   lot with no ground through them, South Philly and Center City from 600 m, the rowhouse blocks
   from 60 m, a street at eye level (yellow, dashes, tufts), the core lawns and Washington

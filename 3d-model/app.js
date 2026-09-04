@@ -28,7 +28,7 @@
     concreteDark: 0xaaa595,
     glass: 0x37343f,       // dark blue-gray: clear glass, dark interiors, anodized frames
     glassLobby: 0x2e2b35,
-    ground: 0x223418,     // bare earth is the same meadow as the parks (the game's one dark olive); the surfTexPatch mottle carries the variation
+    ground: 0x243818,     // bare earth is the same meadow as the parks (the game's one dark olive); the surfTexPatch mottle carries the variation
     plaza: 0x96604a,       // brick-paved plaza and circular drive
     asphalt: 0x3b3833,
     footway: 0x7c584a,     // society hill brick sidewalks
@@ -5179,7 +5179,8 @@
   const outerMeshes = [];
   const tallGlow = [];   // buildings ≥45 m from every tier, for the night skyline points
   const GRASS_POLYS = [];   // park and lawn rings from every tier, the grass field sows on them near the camera
-  const LOT_RINGS = [], LOT_RING_BB = [];   // the sports complex's fill sheets and lots (parking_south.json): the bare-ground tuft sow keeps off them
+  const NO_SOW_RINGS = [], NO_SOW_RING_BB = [];   // rings the bare-ground tuft sow keeps off: the sports complex's sheets and lots, every water sheet (inWater knows only the Delaware's bank), the far ring's aprons, the NW creeks
+  const noSow = (poly) => { NO_SOW_RINGS.push(poly); NO_SOW_RING_BB.push(bboxOf(poly)); };
   // the fill sheets' boxes: a wide road segment lying inside one is densified at 6 m instead of
   // 15, so the strip bends with the 25 m ground cells the lot sheets conform to instead of
   // cutting a chord across them
@@ -5906,7 +5907,7 @@
       pts = lotDensify(pts);   // 6 m inside the sports complex's fill sheets, 15 m elsewhere
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
-      const cls = t <= 1 ? 1 : (t === 6 || w < 5.5) ? 2 : 0;   // lane class: divided, two-way, or unmarked
+      const cls = t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && w > 10)) ? 2 : 0;   // lane class: divided, two-way, or unmarked
       const thr = TERRAIN.water + 0.6;
       let sAcc = 0;   // distance along the densified polyline (the lane paint's s)
       for (let j = 0; j < pts.length - 1; j++) {
@@ -6342,8 +6343,8 @@
           const pa = Math.abs(signedArea(poly));
           areaParts.push({ geom: pa > 200 ? conformDrape(poly, LAYER.park + 0.03 * (1 - Math.min(1, pa / 20000)), 20) : flatPoly(poly, null, LAYER.park), color: new THREE.Color(COLORS.park).multiplyScalar(lerp(1 - PARK_SHADE_SPREAD, 1 + PARK_SHADE_SPREAD, hash01(i))), style: 3 });
         }
-        else if (kind === 1) { const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
-        else areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 });
+        else if (kind === 1) { noSow(poly); const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
+        else { noSow(poly); areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 }); }
       } catch (e) { /* degenerate polygon */ }
     }
     loadmsg.textContent = 'Raising the outer districts, uploading';
@@ -6445,14 +6446,14 @@
       // the facets showed as jagged green blobs through the asphalt
       for (const fl2 of (PARKING_SOUTH.fill || [])) {
         const pp = toRing(fl2);
-        LOT_RINGS.push(pp); LOT_RING_BB.push(bboxOf(pp));
+        NO_SOW_RINGS.push(pp); NO_SOW_RING_BB.push(bboxOf(pp));
         try { areaParts.push({ geom: conformDrape(pp, LAYER.plaza + LOT_FILL_UP, 8), color: new THREE.Color(LOT_FILL_COL), style: 3 }); } catch (e) { /* degenerate */ }
       }
       const seg = [];
       const yAt = (x, z) => (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + LAYER.plaza + LOT_STRIPE_UP;
       for (const fl2 of PARKING_SOUTH.polys) {
         const pp = toRing(fl2);
-        LOT_RINGS.push(pp); LOT_RING_BB.push(bboxOf(pp));
+        NO_SOW_RINGS.push(pp); NO_SOW_RING_BB.push(bboxOf(pp));
         try { areaParts.push({ geom: conformDrape(pp, LAYER.plaza + LOT_UP, 10), color: new THREE.Color(LOT_COL), style: 3 }); } catch (e) { continue; }
         // the stalls, as they read from above: double rows 18.5 m apart, each with its two
         // stall-front lines running the row's length and ticks every 2.7 m between them.
@@ -6919,15 +6920,25 @@
       }
       for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
     };
+    // the roads are DECODED here and PAVED at upload (uploadRing calls paveRoads once the far
+    // strips and the NW patch are in the ground registry), so their heights read the drawn
+    // ground like the sheets do (groundMeshLandY); paved here they read the DEM, and a park
+    // conformed to the 100 m mesh cut through the street over it wherever the hill's mesh sat
+    // above the DEM's bilinear read (Roxborough, Manayunk, the Wissahickon slopes)
+    const roadRecs = [];
     for (let i = 0; i < hdr[2]; i++) {
       const n = body[k++], w = body[k++] / 10, t = body[k++];
-      let pts = new Array(n);
+      const pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
-      pts = densify(pts, 30);
+      roadRecs.push({ pts: densify(pts, 30), w, t, i });
+    }
+    const paveRoads = async () => {
+      for (let ri = 0; ri < roadRecs.length; ri++) {
+      const { pts, w, t, i } = roadRecs[ri];
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
-      const cls = t <= 1 ? 1 : (t === 6 || w < 5.5) ? 2 : 0;   // lane class: divided, two-way, or unmarked
+      const cls = t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && w > 10)) ? 2 : 0;   // lane class: divided, two-way, or unmarked; runways (45 m) and taxiways (16 m) ride class 5
       const thr = TERRAIN.water + 0.6;
       let sAcc = 0;   // distance along the densified polyline (the lane paint's s)
       for (let j = 0; j < pts.length - 1; j++) {
@@ -6973,8 +6984,10 @@
           }
         }
       }
-      if ((i & 2047) === 2047) await yieldNow();
-    }
+      if ((ri & 2047) === 2047) await yieldNow();
+      }
+      roadRecs.length = 0;
+    };
     // far areas (water splits out onto the animated river material). The parks and the
     // aprons are only COLLECTED here: they conform to the far ground (conformDrape), and the
     // far strips are built after this pass, so uploadRing builds them (ringAreaParts)
@@ -7002,11 +7015,11 @@
             }
           }
           areaPolys.push({ poly, kind, i });
-        } else if (kind === 1) { const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
-        else areaPolys.push({ poly, kind, i });
+        } else if (kind === 1) { noSow(poly); const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
+        else { noSow(poly); areaPolys.push({ poly, kind, i }); }
       } catch (e) { /* degenerate */ }
     }
-    return { chunks, rc, areaPolys, waterAreaParts, nwParks, nwWaters, label };
+    return { chunks, rc, paveRoads, areaPolys, waterAreaParts, nwParks, nwWaters, label };
   }
   // the far ring's parks (kind 0) and aprons (kind 2) as sheets on the drawn far ground: built
   // at upload, when the far strips and the NW patch exist in the ground registry (the far step
@@ -7033,6 +7046,7 @@
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
     flushUploads(true);
     await yieldNow();
+    if (R.paveRoads) await R.paveRoads();   // the streets read the drawn far ground, registered by now
     if (rc.n) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
@@ -7085,7 +7099,7 @@
         for (const fl2 of NW_WATER.polys) {
           const pp = new Array(fl2.length >> 1);
           for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]];
-          nwWaters.push(pp);
+          nwWaters.push(pp); noSow(pp);
           try { waterAreaParts.push({ geom: drapedPoly(pp, 0.75, 30), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* degenerate */ }
         }
       }
@@ -8327,12 +8341,12 @@
   // building test outside the core (colGrid is core-only): a tuft inside a closed building is
   // invisible, one at a wall base pokes a blade through, accepted
   const BARE_TUFT_W = 0.4;
-  let grassMesh = null, grassAt = null, grassQueue = [], grassCursor = 0, grassBusy = false, grassNear = [];
+  let grassMesh = null, grassAt = null, grassQueue = [], grassCursor = 0, grassBusy = false, grassNear = [], noSowNear = [];
   const grassPolyBB = [];
   function bareGroundAt(x, z) {
     if (inCore(x, z)) return false;
     for (const pi of grassNear) { const bb = grassPolyBB[pi]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, GRASS_POLYS[pi])) return false; }
-    for (let li = 0; li < LOT_RINGS.length; li++) { const bb = LOT_RING_BB[li]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, LOT_RINGS[li])) return false; }
+    for (const li of noSowNear) { const bb = NO_SOW_RING_BB[li]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, NO_SOW_RINGS[li])) return false; }
     return true;
   }
   function grassInit() {
@@ -8385,6 +8399,8 @@
     }
     {   // the bare ground: the disc's box less its overlap with the core, weighted down
       const x0 = cx - GRASS_R, x1 = cx + GRASS_R, z0 = cz - GRASS_R, z1 = cz + GRASS_R;
+      noSowNear = [];
+      for (let li = 0; li < NO_SOW_RINGS.length; li++) { const bb = NO_SOW_RING_BB[li]; if (bb[0] <= x1 && bb[1] >= x0 && bb[2] <= z1 && bb[3] >= z0) noSowNear.push(li); }
       const ix = Math.max(0, Math.min(x1, CORE_EXT.x1) - Math.max(x0, CORE_EXT.x0)), iz = Math.max(0, Math.min(z1, CORE_EXT.z1) - Math.max(z0, CORE_EXT.z0));
       const w = ((x1 - x0) * (z1 - z0) - ix * iz) * BARE_TUFT_W;
       if (w >= 4) { grassQueue.push([-1, x0, x1, z0, z1, w]); wsum += w; }
@@ -8415,7 +8431,9 @@
         const dd = Math.sqrt(d2), fade = 1 - smooth(GRASS_R * 0.55, GRASS_R, dd);
         if (Math.random() < smooth(10, 45, camera.position.y - y)) continue;   // seen from height the tufts thin out, the meadow carries the read
         if (Math.random() > 0.3 + 0.7 * fade) continue;   // toward the rim the field thins rather than shrinks
-        const h = (0.16 + Math.random() * 0.2) * (0.8 + 0.2 * fade);
+        // a bare tuft tops out under 0.295, the lowest street lift: the road reject is 4 m from the
+        // centreline, so the shoulders of a wide street (and a runway) take bare tufts under the asphalt
+        const h = (pg ? 0.16 + Math.random() * 0.2 : 0.12 + Math.random() * 0.14) * (0.8 + 0.2 * fade);
         _gq.setFromAxisAngle(_sup, Math.random() * Math.PI * 2);
         _gs.set(0.65 + Math.random() * 0.5, h, 0.65 + Math.random() * 0.5);
         _gm.compose(_gv.set(x, y, z), _gq, _gs);
@@ -12951,8 +12969,10 @@
         'vec3 sWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
         'float sfw = max(fwidth(sWP.x), fwidth(sWP.z));',
         'float sn1 = stn(sWP.xz * 0.05);',
-        'float sn2 = stn(sWP.xz * 0.5) * (1.0 - smoothstep(1.0, 4.0, sfw));',
-        'float sn3 = stn(sWP.xz * 4.0) * (1.0 - smoothstep(0.08, 0.4, sfw));',
+        // every footprint-gated noise fades to its MEAN (0.5), not to zero: fading to zero made the
+        // mean brightness fall with the pixel footprint, a dark front that moved with the camera
+        'float sn2 = mix(0.5, stn(sWP.xz * 0.5), 1.0 - smoothstep(1.0, 4.0, sfw));',
+        'float sn3 = mix(0.5, stn(sWP.xz * 4.0), 1.0 - smoothstep(0.08, 0.4, sfw));',
         'float isGreen = ' + (forced ? '1.0;' : 'step(diffuseColor.r * 1.15, diffuseColor.g);'),
         'vec3 am = vec3((0.96 + 0.08 * sn1) * (0.97 + 0.06 * sn2) * (1.0 + 0.08 * (sn3 - 0.5)));',
         // the meadow: the painted tile at 6.5 m, a rotated 47 m copy as the macro tone, the
@@ -12963,8 +12983,8 @@
         // the game's blotches: darker patches at 83 m and 22 m over the meadow, a fine grain at
         // 3 m near the eye, never lighter than the base (tune the two vec3s and the 0.16 here)
         'float gtn1 = stn(sWP.xz * 0.012);',
-        'float gtn2 = stn(sWP.xz * 0.045) * (1.0 - smoothstep(8.0, 30.0, sfw));',
-        'float gtn3 = stn(sWP.xz * 0.35) * (1.0 - smoothstep(1.0, 4.0, sfw));',
+        'float gtn2 = mix(0.5, stn(sWP.xz * 0.045), 1.0 - smoothstep(8.0, 30.0, sfw));',
+        'float gtn3 = mix(0.5, stn(sWP.xz * 0.35), 1.0 - smoothstep(1.0, 4.0, sfw));',
         'float gt = smoothstep(0.30, 0.70, gtn1 * 0.7 + gtn2 * 0.3);',
         'vec3 gMul = mix(vec3(0.60, 0.66, 0.50), vec3(1.0), gt) * (0.92 + 0.16 * gtn3);',
         'vec3 grass = gTex * mix(1.0, gMacL, 0.55) * (0.88 + 0.24 * sn1) * gMul;',
