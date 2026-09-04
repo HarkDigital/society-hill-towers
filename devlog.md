@@ -2768,6 +2768,24 @@ the diff with two skeptics per finding.
   finding), weather still shrinks it. The sky is deeper and more saturated: zenith 0x2260c8,
   horizon 0xa6c6ea (the fog takes the horizon colour by day, so the far haze is blue, not
   white), haze 0xb6c9e4.
+- **Round 52 coda 2, the paved ground (Mike, with a Google aerial: grass where there is asphalt
+  in life).** Every unbuilt surface had become the meadow, the port terminals, the rail yards, the
+  industrial lots, the big-box lots and the refineries with it. `fetch_paved.py` pulls the whole
+  far-ring box's surface parking (amenity=parking, not the multi-storey, underground or rooftop
+  kinds, not the ones that are buildings), rail yards, brownfield and construction land, works and
+  aprons from Overpass (16 tiles in `paved_tiles/`, 287 s against overpass-api.de, the only
+  mirror answering), and `pack_paved.py` joins them with the land-use extract's industrial,
+  commercial and retail polygons into `paved.b64`: int16 whole metres in the model frame, four
+  kinds (lots, yards, rail, aprons), each kind's rings unioned so nothing of one kind sits
+  coplanar, holes dropped (parks and buildings inside draw above), the core box kept out, 5,779
+  rings and 53,584 vertices in 317 KB of base64. The app's new step 'Paving the lots and yards'
+  lays every ring on the drawn ground with `conformDrape` (about a second for 5,779 rings, 288k
+  triangles in all with the parks) under the parks (0.04 to 0.055 against 0.06), under the
+  sports complex sheets and the streets, keeps the tuft sow off them, and colours lots the sports
+  lots' asphalt, yards a shade under concrete, rail yards a warm ballast grey. A lot 5 mm over a
+  yard shimmered from 500 m: the gap is 1.5 cm. Verified at the port, Columbus Boulevard, the
+  Navy Yard, the refinery, the airport and Tacony. What stays green is real: parks, the
+  interchange infields, residential blocks (the game's look), and anything OSM has not mapped.
 - Verified in the pane at noon, dusk, night and under snow: the sports complex and the Navy Yard
   lot with no ground through them, South Philly and Center City from 600 m, the rowhouse blocks
   from 60 m, a street at eye level (yellow, dashes, tufts), the core lawns and Washington

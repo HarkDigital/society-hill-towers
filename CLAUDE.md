@@ -66,7 +66,7 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   flat-shaded low-poly crowns under leaf cards, wind in the crowns and blades, saturated palettes, rooftop
   clutter on desktop, awnings, lane paint on every road (`aLane` + `lanePatch`: a double yellow centre from
   6.5 m wide, white dashes by width, edge lines on the divided highways, nothing on service and footways),
-  stored-dark asphalt lots (`LOT_COL`) with stall stripes that fade past 500 m, and on desktop WebGL2 an HDR
+  stored-dark asphalt lots (`LOT_COL`) with stall stripes that fade past 500 m, and every surface lot, industrial and retail yard, rail yard and apron in the city paved from `paved.b64` (`fetch_paved.py` / `pack_paved.py`, the 'Paving the lots and yards' step, `conformDrape` under the parks), and on desktop WebGL2 an HDR
   post pipeline: half-float target, ACES + sRGB composite, bloom on the sun, the glints and the cloud rims
   with the markers and labels masked out of it (`postRaw(mat, { mask: true })`), `?bloom=0` off), never its
   assets; every flat outside the core (parks, lots, aprons) is laid with `conformDrape` on the drawn ground

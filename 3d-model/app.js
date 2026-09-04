@@ -7360,8 +7360,8 @@
   // 5 mm over the yards so a lot inside a yard draws above it (pack_paved.py unions each kind,
   // so nothing of one kind is ever coplanar with itself, and both kinds conform to the same
   // ground triangles, so the gap is exact everywhere, gotcha 17)
-  const PAVED_COL = { 1: 0x0e0d0c, 2: 0x151412, 3: 0x1b1916, 4: 0x1c1c1a };
-  const PAVED_UP = { 1: 0.05, 2: 0.045, 3: 0.045, 4: 0.045 };
+  const PAVED_COL = { 1: 0x0e0d0c, 2: 0x121110, 3: 0x1b1916, 4: 0x1c1c1a };   // yards a shade under concrete: at 0x15 they read 150 against the lots' 114
+  const PAVED_UP = { 1: 0.055, 2: 0.04, 3: 0.04, 4: 0.04 };   // a lot over a yard keeps 1.5 cm (5 mm shimmered from 500 m); all under the parks at 0.06
   const PAVED_KIND = { 1: 'lots', 2: 'yards', 3: 'rail yards', 4: 'aprons' };
   step('Paving the lots and yards', () => {
     if (typeof PAVED_B64 === 'undefined' || !PAVED_B64) return;
