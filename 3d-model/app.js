@@ -1011,7 +1011,7 @@
   // LANE_LINE_W 0.12 m, LANE_DASH_P 9.0 m (3 m on, 6 m off); the paint colours and the
   // 0.85 strength are stored-colour under the legacy pipeline (pale paint, muted yellow, not neon).
   const LANE_GLSL = {
-    laneTwoWay: '3.3', laneDivided: '3.7', yellowHw: '3.25', lineW: '0.12', dashP: '9.0',
+    laneTwoWay: '3.3', laneDivided: '3.7', yellowHw: '3.25', lineW: '0.16', dashP: '9.0',   // 0.16 m paint: the game's lines are wider than life so they read from a few hundred metres
     white: 'vec3(0.62, 0.62, 0.58)', yellow: 'vec3(0.62, 0.50, 0.14)', strength: '0.85',
   };
   function lanePatch(shader) {
@@ -1021,6 +1021,10 @@
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLane = aLane;');
     shader.fragmentShader = shader.fragmentShader
       .replace('#include <common>', '#include <common>\nvarying vec4 vLane;')
+      // a line mask with its pixel-wide ramp CENTRED on the edge: a ramp lying inside the
+      // line ate a full pixel of it, and from 150 m up (a pixel is the line's width) the
+      // paint's coverage fell under half a pixel and the streets read bare
+      .replace('void main() {', 'float lnLine(float d, float h, float aa){ return 1.0 - smoothstep(h - 0.5 * aa, h + 0.5 * aa, d); }\nvoid main() {')
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
         // the derivatives stay outside the branch (defined only in uniform control flow); they are NaN-safe there
         'float lnW = fwidth(vLane.x) + 1e-4;',                    // metres per pixel across the road
@@ -1028,29 +1032,29 @@
         'if (vLane.z > 0.5 && vLane.w < 1.5) {',
         '  float lnHw = vLane.z, lnU = vLane.x, lnS = vLane.y;',
         '  float lnLineW = max(' + T.lineW + ', lnW * 0.9);',            // never thinner than about a pixel
-        '  float lnGain = clamp(' + T.lineW + ' / lnLineW, 0.35, 1.0);', // coverage-preserving intensity
+        '  float lnGain = clamp(' + T.lineW + ' / lnLineW, 0.55, 1.0);', // coverage-preserving intensity (floored: a far street keeps a faint stripe)
         '  float lnFar = 1.0 - smoothstep(1.2, 2.4, lnW);',              // gone past ~2.4 m per pixel
         '  float lnDash = mix(step(fract(lnS / ' + T.dashP + '), 0.333), 0.333, smoothstep(1.5, 4.5, lnLs));',
         '  float lnWhite = 0.0, lnYel = 0.0;',
         '  if (vLane.w < 0.5) {',                                        // a two-way street
         '    if (lnHw >= ' + T.yellowHw + ') {',                         // a double yellow centre, two 0.10 m lines at +-0.16
         '      float lnDy = abs(abs(lnU) - 0.16);',
-        '      lnYel = 1.0 - smoothstep(max(0.05, lnLineW * 0.5) - lnW, max(0.05, lnLineW * 0.5), lnDy);',
+        '      lnYel = lnLine(lnDy, max(0.05, lnLineW * 0.5), lnW);',
         '    }',
         '    float lnNl = max(1.0, floor(lnHw / ' + T.laneTwoWay + ' + 0.5));', // lanes per side (round)
         '    float lnP = max(lnHw / lnNl, 0.5);',
         '    float lnDu = abs(fract(abs(lnU) / lnP + 0.5) - 0.5) * lnP;',
         '    float lnIn = step(0.5 * lnP, abs(lnU)) * step(abs(lnU), lnHw - 0.5 * lnP);', // not the centre, not the edge
-        '    lnWhite = (1.0 - smoothstep(lnLineW * 0.5 - lnW, lnLineW * 0.5, lnDu)) * lnIn * lnDash;',
+        '    lnWhite = lnLine(lnDu, lnLineW * 0.5, lnW) * lnIn * lnDash;',
         '  } else {',                                                    // divided: lanes across the width, solid edges, no yellow
         '    float lnN = max(2.0, floor(2.0 * lnHw / ' + T.laneDivided + ' + 0.5));',
         '    float lnP = max(2.0 * lnHw / lnN, 0.5);',
         '    float lnV = lnU + lnHw;',
         '    float lnDu = abs(fract(lnV / lnP + 0.5) - 0.5) * lnP;',
         '    float lnIn = step(0.5 * lnP, lnV) * step(lnV, 2.0 * lnHw - 0.5 * lnP);',
-        '    lnWhite = (1.0 - smoothstep(lnLineW * 0.5 - lnW, lnLineW * 0.5, lnDu)) * lnIn * lnDash;',
+        '    lnWhite = lnLine(lnDu, lnLineW * 0.5, lnW) * lnIn * lnDash;',
         '    float lnDe = abs(abs(lnU) - (lnHw - 0.35));',
-        '    lnWhite = max(lnWhite, 1.0 - smoothstep(lnLineW * 0.5 - lnW, lnLineW * 0.5, lnDe));',
+        '    lnWhite = max(lnWhite, lnLine(lnDe, lnLineW * 0.5, lnW));',
         '  }',
         '  diffuseColor.rgb = mix(diffuseColor.rgb, ' + T.white + ', lnWhite * lnGain * lnFar * ' + T.strength + ');',
         '  diffuseColor.rgb = mix(diffuseColor.rgb, ' + T.yellow + ', lnYel * lnGain * lnFar * ' + T.strength + ');',
@@ -6428,7 +6432,7 @@
     // pair by rendered swatch against the CS2 frame) and the lifts over the plaza layer. The
     // fill sheet and the lots are an exact pair now (both conform to the same ground), so the
     // gap between them is wider than the old 1.5 cm, and the stripes sit above both
-    const LOT_FILL_COL = 0x1f1e1c, LOT_COL = 0x232220;
+    const LOT_FILL_COL = 0x0b0b0a, LOT_COL = 0x0e0d0c;
     const LOT_FILL_UP = 0.02, LOT_UP = 0.06, LOT_STRIPE_UP = 0.09;   // over LAYER.plaza
     const LOT_STRIPE_OPACITY = 0.5;
     if (typeof PARKING_SOUTH !== 'undefined' && PARKING_SOUTH && PARKING_SOUTH.polys) {
@@ -6494,6 +6498,7 @@
         lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(seg), 3));
         lotStripes = new THREE.LineSegments(lg, new THREE.LineBasicMaterial({ color: 0xb8b3a8, transparent: true, opacity: LOT_STRIPE_OPACITY }));
         lotStripes.frustumCulled = false; lotStripes.renderOrder = 3;
+        lotStripes.userData.op = LOT_STRIPE_OPACITY;   // the frame loop fades it with distance
         groupCity.add(lotStripes);
       }
     }
@@ -13677,7 +13682,13 @@
     updateTreePick();
     updateSearchMark(now);
     scoresPoll(now); scoresRender();
-    if (lotStripes) lotStripes.visible = camera.position.distanceTo(LOT_CENTER) < 3500;
+    if (lotStripes) {
+      // the stall lines are 1 px lines: past a few hundred metres they alias into moire over
+      // the whole lot, so they fade out between 500 and 1500 m instead of cutting at 3.5 km
+      const dLot = camera.position.distanceTo(LOT_CENTER);
+      lotStripes.visible = dLot < 1500;
+      lotStripes.material.opacity = lotStripes.userData.op * (1 - smooth(500, 1500, dLot));
+    }
     updateLabels();
     updateHash(now);
     if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);
