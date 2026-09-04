@@ -3541,6 +3541,15 @@
   const detFarUniform = { value: isTouch ? 0.55 : 1.0 };
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
   const groundMats = [];   // the bare-earth materials (groundSurfMat): the meadow shader forced green, never retinted
+  // the fabric's overall brightness, one number: with the meadow and the water at the game's
+  // depth the pale walls read washed out beside them (Mike), so every wall and roof on the
+  // fabric material (all three tiers) takes this gain at the top of the facade shader; the lit
+  // windows are an emissive term and keep their night glow
+  // The numbers are small because of the tone curve: a sunlit wall sits near 1.5 in linear light
+  // and a noon roof near 1.9, deep in the ACES shoulder, where a 0.55 gain moved the display
+  // under a tenth; these bring the walls to about 150 to 180 displayed and the roofs a step
+  // under them (a noon roof at 0.14 reads about 140), the game's mid tones beside its meadow
+  const FACADE_GAIN = 0.22, ROOF_GAIN = 0.14;
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9, dithering: MAT_DITHER });
   {
     cityMat.onBeforeCompile = (shader) => {
@@ -3582,6 +3591,7 @@
           '{',
           '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, 1.2);',
           '  vec3 n = normalize(vWNorm);',
+          '  diffuseColor.rgb *= mix(' + FACADE_GAIN.toFixed(2) + ', ' + ROOF_GAIN.toFixed(2) + ', step(0.7, n.y));',
           '  float stF = vStyle + 0.5;',
           '  float variantF = floor(stF / 32.0);',
           '  int st = int(stF - variantF * 32.0);',

@@ -2748,6 +2748,13 @@ the diff with two skeptics per finding.
   brightness lever is `MEADOW_GAIN` (0.72) on the painted meadow itself in `surfTexPatch`: a
   street-level lawn goes from about (104, 126, 66) to (91, 112, 59) displayed, Washington Square
   from (88, 109, 52) to (70, 89, 45), the game's olive. One number to move again.
+- **Buildings darker (Mike: too light beside the darker ground and water).** The fabric was
+  overexposed: a sunlit wall sits near 1.5 in linear light and a noon roof near 1.9, deep in the
+  ACES shoulder, so a 0.55 gain moved the display under a tenth (brick 220 to 198). `FACADE_GAIN`
+  0.22 on the walls and `ROOF_GAIN` 0.14 on anything facing up, applied at the top of the facade
+  shader on the fabric material of all three tiers (the lit windows are an emissive term and
+  keep their glow): brick walls 220 to 138, cream walls 160 to 143, roofs 189 to 162 at noon,
+  the game's mid tones, and the saturation the shoulder had flattened comes back with it.
 - Verified in the pane at noon, dusk, night and under snow: the sports complex and the Navy Yard
   lot with no ground through them, South Philly and Center City from 600 m, the rowhouse blocks
   from 60 m, a street at eye level (yellow, dashes, tufts), the core lawns and Washington
