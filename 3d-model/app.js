@@ -7340,6 +7340,69 @@
     loadmsg.textContent = 'Raising the towns across the line, uploading';
     await uploadRing(R);
   });
+  // ---- the paved ground (Round 52 coda 2). Since Round 52 every unbuilt surface is the
+  // meadow, and the port terminals, the rail yards, the big-box and industrial lots and every
+  // surface parking lot in the city were green where life has asphalt, concrete or ballast.
+  // These are OSM's surface lots, the industrial, port, commercial and retail yards, the rail
+  // yards and the airport aprons (fetch_paved.py, pack_paved.py into PAVED_B64), each laid on
+  // the drawn ground the way the sports complex's lots are. The blob is little-endian int16:
+  // [magic 0x5056 'PV', version 1, nPolys low word, nPolys high word], then per ring n, kind,
+  // x0, z0 .. xn-1, zn-1 in whole metres of the model frame, closed implicitly, CCW in (x, z);
+  // kinds 1 lot, 2 yard, 3 rail yard, 4 apron. Absent the blob the step is a no-op (a build
+  // with --allow-missing) and the meadow stays.
+  // The tunables, in one place. Stored-dark colours (the legacy pipeline lifts a stored value,
+  // gotcha 11, so pick these by rendered swatch): the lots are the sports lots' asphalt
+  // (LOT_COL, about 114 displayed against the streets' 200), the yards a touch lighter and
+  // greyer (asphalt and concrete mixed), the rail yards a warm ballast grey, the aprons
+  // concrete. The lifts are metres above the drawn ground mesh, under every park (LAYER.park
+  // 0.06 and up, so a park inside a yard still shows), under the sports complex's sheets
+  // (LAYER.plaza + 0.02) and the streets (LAYER.road plus the class lifts); the lots ride
+  // 5 mm over the yards so a lot inside a yard draws above it (pack_paved.py unions each kind,
+  // so nothing of one kind is ever coplanar with itself, and both kinds conform to the same
+  // ground triangles, so the gap is exact everywhere, gotcha 17)
+  const PAVED_COL = { 1: 0x0e0d0c, 2: 0x151412, 3: 0x1b1916, 4: 0x1c1c1a };
+  const PAVED_UP = { 1: 0.05, 2: 0.045, 3: 0.045, 4: 0.045 };
+  const PAVED_KIND = { 1: 'lots', 2: 'yards', 3: 'rail yards', 4: 'aprons' };
+  step('Paving the lots and yards', () => {
+    if (typeof PAVED_B64 === 'undefined' || !PAVED_B64) return;
+    let v;
+    try {
+      const u8 = unb64(PAVED_B64, 'PAVED');
+      PAVED_B64 = null;   // free the base64 source
+      v = new Int16Array(u8.buffer, u8.byteOffset, u8.byteLength >> 1);
+    } catch (err) { console.error('paved ground decode failed', err); return; }
+    if (v.length < 4 || v[0] !== 0x5056 || v[1] !== 1) { console.error('paved ground: bad magic or version', v[0], v[1]); return; }
+    const nPolys = (v[2] & 0xffff) | ((v[3] & 0xffff) << 16);   // the words are unsigned; int16 reads a count past 32767 negative
+    const cols = {};
+    for (const k in PAVED_COL) cols[k] = new THREE.Color(PAVED_COL[k]);   // mergeColored copies the colour per vertex, one object per kind is enough
+    const parts = [], counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    let p = 4, skipped = 0, unknown = 0;
+    for (let i = 0; i < nPolys; i++) {
+      if (p + 2 > v.length) { console.error('paved ground: ring ' + i + ' of ' + nPolys + ' runs past the end of the blob'); break; }
+      const n = v[p], kind = v[p + 1];
+      p += 2;
+      if (n < 3 || p + n * 2 > v.length) { console.error('paved ground: ring ' + i + ' has ' + n + ' vertices, past the end of the blob'); break; }
+      const poly = new Array(n);
+      for (let q = 0; q < n; q++) poly[q] = [v[p + q * 2], v[p + q * 2 + 1]];
+      p += n * 2;
+      if (PAVED_UP[kind] === undefined) { unknown++; continue; }   // a kind this build does not draw
+      let geom;
+      try { geom = conformDrape(poly, PAVED_UP[kind], 20); } catch (e) { skipped++; continue; }   // a degenerate ring
+      parts.push({ geom, color: cols[kind], style: 3 });
+      noSow(poly);   // the tuft field keeps off asphalt
+      counts[kind]++;
+    }
+    if (parts.length) {
+      const g = mergeColored(parts);
+      freeOnUpload(g);
+      const m = new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }));
+      m.receiveShadow = true;
+      groupCity.add(m);
+    }
+    PERF.paved = counts;   // read through ?dev's __dbg.PERF.paved
+    drapeLog('the lots and yards');
+    if (/[?&]dev\b/.test(location.search)) console.info('paved ground: ' + Object.keys(counts).map(k => counts[k] + ' ' + PAVED_KIND[k]).join(', ') + ' of ' + nPolys + ' rings' + (skipped ? ', ' + skipped + ' degenerate' : '') + (unknown ? ', ' + unknown + ' of an unknown kind' : ''));
+  });
   step('Dressing the storefronts', () => {
     // Tier 2 of the facade plan: OSM's shops, cafes, bars, banks and the rest, each on the
     // facade edge of its building that faces the street (bake_storefronts.py). A glazed
