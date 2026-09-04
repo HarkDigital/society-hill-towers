@@ -12778,6 +12778,11 @@
   // for every green flat, a tuft sprite for the grass, a leaf cluster for the tree cards. They
   // are sampled as sRGB, so they are painted in real dark albedo tones, not the stored-dark
   // hex convention the flat colours use; the flat's own colour survives as a tint.
+  // the meadow's overall brightness, one number: the game's grass is a deep olive and the painted
+  // tile plus the lift read a fifth too light beside it; the stored colours cannot do this (the
+  // tint ratio is clamped and ACES compresses it, a 20 percent darker stored green moved the
+  // display 7 percent), so the gain sits on the painted meadow itself
+  const MEADOW_GAIN = 0.72;
   const texU = { uGrass: { value: null }, uGrassK: { value: 1 } };
   let tuftTex = null, leafTex = null;
   function prng(seed) { let s = (seed >>> 0) || 1; return () => { s += 0x6D2B79F5; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
@@ -12987,7 +12992,7 @@
         'float gtn3 = mix(0.5, stn(sWP.xz * 0.35), 1.0 - smoothstep(1.0, 4.0, sfw));',
         'float gt = smoothstep(0.30, 0.70, gtn1 * 0.7 + gtn2 * 0.3);',
         'vec3 gMul = mix(vec3(0.60, 0.66, 0.50), vec3(1.0), gt) * (0.92 + 0.16 * gtn3);',
-        'vec3 grass = gTex * mix(1.0, gMacL, 0.55) * (0.88 + 0.24 * sn1) * gMul;',
+        'vec3 grass = gTex * mix(1.0, gMacL, 0.55) * (0.88 + 0.24 * sn1) * gMul * ' + MEADOW_GAIN.toFixed(2) + ';',
         'vec3 gTint = clamp(diffuseColor.rgb / vec3(0.141, 0.22, 0.094), 0.3, 1.6);',
         'diffuseColor.rgb = mix(diffuseColor.rgb * am, grass * gTint, isGreen);',
       ].join('\n'));

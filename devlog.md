@@ -2743,6 +2743,11 @@ the diff with two skeptics per finding.
   is the park's exactly (0x243818: the hair of difference was a 6 percent tint step along every
   park outline). Refuted: that the hookup needs an explicit recompile (the first frame's env
   refetch is the mechanism, as documented).
+- **Darker still (Mike: "the ground cover is still too light").** A 20 percent darker stored
+  green moved the display 7 percent (the tint ratio is clamped and ACES compresses it), so the
+  brightness lever is `MEADOW_GAIN` (0.72) on the painted meadow itself in `surfTexPatch`: a
+  street-level lawn goes from about (104, 126, 66) to (91, 112, 59) displayed, Washington Square
+  from (88, 109, 52) to (70, 89, 45), the game's olive. One number to move again.
 - Verified in the pane at noon, dusk, night and under snow: the sports complex and the Navy Yard
   lot with no ground through them, South Philly and Center City from 600 m, the rowhouse blocks
   from 60 m, a street at eye level (yellow, dashes, tufts), the core lawns and Washington
