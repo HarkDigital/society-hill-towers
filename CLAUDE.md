@@ -60,10 +60,18 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, brick, stone, panel and stucco
   textures in the facade shader, a deep-blue sky with a lit cumulus deck at 1,900 m whose shadows slant by the
   sun, clear air to 16 km by day and shorter by night, deep-blue body-colour water as a moving noise field with no
-  shore tint, a painted olive meadow on every green with an instanced tuft field near the camera, lumpy
+  shore tint, a painted olive meadow on every green AND on all bare ground (Round 52: `groundSurfMat`, the
+  same meadow and the same darker-blotch mottle as the parks, parks and ground are one surface; no park
+  shade spread, no ground retint), an instanced tuft field near the camera on parks and bare ground, lumpy
   flat-shaded low-poly crowns under leaf cards, wind in the crowns and blades, saturated palettes, rooftop
-  clutter on desktop, awnings, and on desktop WebGL2 an HDR post pipeline: half-float target, ACES + sRGB
-  composite, bloom on the sun, the glints and the cloud rims, `?bloom=0` off), never its assets; the Round 50
+  clutter on desktop, awnings, lane paint on every road (`aLane` + `lanePatch`: a double yellow centre from
+  6.5 m wide, white dashes by width, edge lines on the divided highways, nothing on service and footways),
+  stored-dark asphalt lots (`LOT_COL`) with stall stripes that fade past 500 m, and on desktop WebGL2 an HDR
+  post pipeline: half-float target, ACES + sRGB composite, bloom on the sun, the glints and the cloud rims
+  with the markers and labels masked out of it (`postRaw(mat, { mask: true })`), `?bloom=0` off), never its
+  assets; every flat outside the core (parks, lots, aprons) is laid with `conformDrape` on the drawn ground
+  mesh (`groundGrids`/`groundMeshY`), never with `drapedPoly` (its point cap put big sheets at 36 to 61 m
+  against a 25 m mesh and the ground rose through them); the Round 50
   key-to-fill ratio (sun 2.0, hemi 0.10 + 0.36 dayF) and the deep-blue zenith stand; a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
   The clock is never remembered: every load is Philadelphia's own time, and only a copied

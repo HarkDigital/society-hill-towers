@@ -2651,6 +2651,87 @@ against the reference frames, measured with PIL, and one synthesis).
   lamp cores with a night bloom threshold, a lifted night palette, ico(0) crowns with distance
   gating on the wide tier, samples 2 on the float target above DPR 1.25) wait on Mike.
 
+## Round 52: the game's ground, lane paint, dark lots, the conformant drape, the pins (Sep 3)
+
+Mike, with a CS2 frame and three of ours: make all the ground look like the game's (the light
+ground cover darker, the light green areas exactly like the park grass), lines on the roads,
+the parking lots a bit darker, and the terrain still clipped through the lots and other flats.
+Later, with a dusk screenshot: the pins had a glow that flickered. The round ran as a spec
+reviewed by three lenses before any code (34 findings, two blockers: a `force` parameter that
+would have received r149's renderer, and a mottle that lived only on the bare ground), three
+worktree agents on disjoint packages, a merge, captures, tuning, then a review workflow over
+the diff with two skeptics per finding.
+
+- **The ground is the meadow.** `COLORS.ground` is 0x223418, a hair under the park's 0x243818,
+  and every bare-earth material (the core heightfield and shelf, the wide strips, the far strips
+  and the 60 km apron, the NW hills, the overpass collars) is a `groundSurfMat`: `surfTexPatch`
+  with the meadow forced (`opt === true`, never truthiness, since r149 hands the renderer as the
+  second argument), one material per tier with no `clone()` (r149's copy drops the hooks). The
+  game's darker blotches are one mottle in the meadow branch shared by ground, parks and lawns
+  (`gtn1..3`, dark floor vec3(0.60, 0.66, 0.50) at 83 m and 22 m, a fine grain at 2.9 m, never
+  lighter than the base); the old pale `wxGroundPatch` and the per-frame ground retint are gone
+  (the ground was retinted because the pale sage read as water at dusk; the olive does not). The
+  per-polygon park shade is flat (`PARK_SHADE_SPREAD` 0) so no park polygon shows as a patch;
+  the NW woodland tint keys on `WOODLAND` 0x1b2c12.
+- **The weather pass came back.** Round 51's `surfMat` hook was an own property, so the hookup
+  at the end of build() skipped every park, road, lot and deck: snow and wet never reached them
+  (confirmed: snow forced to 1.0 whitened roofs and bare ground only). `cloudShadowPatch` is
+  idempotent, `surfMat` and `groundSurfMat` flag `userData.wxSurf`, and the hookup wraps those
+  (`wxSurfacePatch` first, then the material's own chain, re-keyed on the wrapped hook per
+  gotcha 15) so the snow lands over the meadow and the paint. The comment that said the hookup
+  ran before the first render was wrong: `flushUploads` compiles everything behind the veil and
+  the hooks land through the first frame's `refreshEnv` refetch.
+- **Lane paint.** Every road ribbon carries `aLane` = (signed across-distance, distance along,
+  half width, class); `lanePatch` paints in the fragment shader: a double yellow centre on
+  two-way streets from 6.5 m wide (Philadelphia's one-way streets get one too, the game's look
+  over accuracy, oneway is not in the data), white dashes (3 m on, 6 m off) at `round(hw / 3.3)`
+  lanes a side, on the divided highways (motorway/trunk, tier classes 0 and 1) lanes across the
+  width at 3.7 m with solid edge lines and no yellow, nothing on service, footway and pedestrian
+  ways (core regexes; tiers t == 6 or w < 5.5). The paint is 0.16 m wide (wider than life, the
+  game's are), never thinner than a pixel with a coverage-preserving gain floored at 0.55, dashes
+  to their mean past aliasing (keyed on the along-road derivative), gone past 2.4 m a pixel. The
+  first cut read bare from 150 m up: its anti-aliasing ramp lay inside the line and ate a pixel
+  of it; `lnLine` centres the ramp on the edge. The joint fans drop 2 cm below their strips so the
+  strips win the paint at every bend (a raised fan would poke through crossing streets). The
+  tiers stage the attribute in a growable Float32Array; the far ring skips it on phones. Three
+  road materials only (`roadMat`): core asphalt, wide rc, far rc. Fans on a grade still kink the
+  paint a little at bends below 80 m: accepted.
+- **The clipping, for good.** `drapedPoly` caps its interior points at about 420
+  (`sqrt(area / 420)`), so the 559,000 m2 Navy Yard lot was draped at 36 m and the 1.55 km2 fill
+  sheet at 61 m against a 25 m ground mesh, and every sheet sampled the DEM's bilinear read
+  while the mesh is linear on its own triangles: two reads of one surface half a metre apart.
+  Now the ground meshes register their own vertex heights and normals as they are built
+  (`groundGrids`, the NW patch searched before the north far strip, skipped and hole cells
+  return null), `groundMeshY` reads the drawn ground exactly, and `conformDrape` lays a polygon
+  on it per grid row: whole cells are the ground's own two triangles, boundary cells are clipped
+  to the cell and split by the diagonal and earcut forward on (x, -z), slivers and off-piece
+  centroids dropped, the overhang past every grid (Fairmount past the wide box) on `drapedPoly`.
+  The wide parks, the far ring's parks and aprons (collected in `raiseRing`, built in
+  `uploadRing` once the far ground exists; the far ring used to perimeter-drape 777 parks under
+  40,000 m2), the sports complex's fill sheets and lots all ride it; nested rings lift by area so
+  nothing is coplanar; the wide streets read the drawn ground where it is land
+  (`groundMeshLandY`, the bridge logic keeps `siteY` over water) and densify at 6 m through the
+  lot sheets; the stall stripes follow the ground per 3 m sample. 2,050 polygons, 118k
+  triangles, about 1.1 s in the hidden pane. The far ring's streets keep `siteY` (the far grids
+  do not exist when `raiseRing` paves): open.
+- **Lots.** Stored-dark 0x0e0d0c over a 0x0b0b0a sheet (about 114 displayed against the
+  streets' 200; the first cut at 0x23 read 173: the legacy pipeline feeds stored values to the
+  shader as linear, not as albedo, and the env map was never the reason they read light). The
+  stall stripes fade out between 500 and 1500 m instead of aliasing into moire from altitude.
+- **Tufts on the bare ground.** The field sows the meadow outside the core as a second source at
+  0.4x the park density (rejecting roads, water, the lots and the parks, which sow themselves);
+  there is no footprint test outside the core, a blade at a wall base is accepted.
+- **The pins.** Under the post pipeline a flight or ship pin's white frame handed the composite
+  a pre-image far above the bright pass's threshold, so every marker wore a bloom halo that
+  shimmered as the quarter-res blur resampled it. `postRaw(mat, { mask: true })` (the pins and
+  the neighbourhood atlas) blends the colour as before and writes a zero alpha under the sprite,
+  which is the bloom mask the bright pass already reads for the cloud deck.
+- Verified in the pane at noon, dusk, night and under snow: the sports complex and the Navy Yard
+  lot with no ground through them, South Philly and Center City from 600 m, the rowhouse blocks
+  from 60 m, a street at eye level (yellow, dashes, tufts), the core lawns and Washington
+  Square, the waterfront shelf, the NW hills; 33 tests pass. Before-and-after captures are in the
+  session's scratchpad.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

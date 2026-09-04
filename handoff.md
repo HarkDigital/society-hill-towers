@@ -432,6 +432,28 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
     mips bleed that into every alpha-cut edge (the tufts read as dark specks from height).
     Paint, then upload the pixel array as a DataTexture with the clear texels filled with
     the sprite's own colour (`paintTuftTex`).
+17. **A sheet over a heightfield must be built ON the mesh, not sampled from the DEM (Round
+    52).** `drapedPoly` samples `siteY` (bilinear on the 50 m DEM) at jittered points and caps
+    them at ~420 (`sqrt(area / 420)`), so a big lot was draped at 36 to 61 m against the 25 m
+    ground mesh, which is linear on its own triangles: two different linear reads of one
+    surface, half a metre apart, and the ground rose through the sheet as green blobs however
+    the lifts were tuned (Round 47 codas 5 and 6). Outside the core use `conformDrape`, which
+    clips the polygon to the registered ground triangles (`groundGrids`, `groundMeshY`) so every
+    sheet triangle lies in one ground triangle and the offset is exact everywhere; `drapedPoly`
+    is only the fallback past the registered grids and in the core.
+18. **r149 hands `onBeforeCompile` the renderer as its second argument**, so a patch function
+    assigned bare (`m.onBeforeCompile = patch`) must never test a second parameter for
+    truthiness (`opt === true`). And `Material.copy()`/`clone()` drop `onBeforeCompile` and
+    `customProgramCacheKey`: give clones their hooks after cloning, or use a factory.
+19. **Anti-aliased lines: centre the ramp on the edge.** A `smoothstep(halfW - px, halfW, d)`
+    ramp lies inside the line and eats a full pixel of it, so a 0.12 m line vanished from 150 m
+    up (one pixel is the line's width there). `lnLine` in `lanePatch` ramps from
+    `halfW - px/2` to `halfW + px/2`, which preserves the coverage, plus a width floor and a
+    gain floor so far streets keep a faint stripe.
+20. **Markers and labels must not bloom.** Under the post pipeline a `postRaw` sprite's white
+    hands the composite a pre-image far above the bright pass threshold. The bright pass reads
+    the target's alpha as its mask (the cloud deck's coverage rides there), so
+    `postRaw(mat, { mask: true })` blends colour normally and writes zero alpha under the sprite.
 
 More rules the log paid for (details in `devlog.md`):
 
@@ -467,9 +489,12 @@ More rules the log paid for (details in `devlog.md`):
 
 ## State
 
-As of 2026-09-03 the working tree is the Round 51 build (the nature pass: the post pipeline,
-the painted meadow and tuft field, the lumpy crowns under leaf cards, the cloud deck, the deep-blue
-body water; see the devlog entry). Before it, as of 2026-09-01, both homes served the Round 45 coda build: weather lands on every surface
+As of 2026-09-03 (evening) the working tree is the Round 52 build (the game's ground: the meadow
+on all bare ground with one shared mottle, lane paint on every road, stored-dark lots, the
+conformant drape that ended the terrain clipping through lots and parks, the weather pass restored
+on every textured flat, the markers masked out of the bloom; see the devlog entry) over the Round 51
+build (the nature pass: the post pipeline, the painted meadow and tuft field, the lumpy crowns
+under leaf cards, the cloud deck, the deep-blue body water). Before it, as of 2026-09-01, both homes served the Round 45 coda build: weather lands on every surface
 (snow settles on roofs, roads and lawns; rain darkens and sheens the streets), the bare
 ground reads as mottled lawn and scrub instead of perpetual snow, overcast dims honestly,
 no footprint floats in rendered water, every SEPTA vehicle wears the badge billboard, the
