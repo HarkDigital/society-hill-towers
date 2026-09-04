@@ -59,7 +59,7 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   and `pack_wide.py` insets any record whose wall shares a plane with a larger one; the look leans toward
   Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, brick, stone, panel and stucco
   textures in the facade shader, a deep-blue sky with a lit cumulus deck at 1,900 m whose shadows slant by the
-  sun, clear air to 16 km by day and shorter by night, deep-blue body-colour water as a moving noise field with no
+  sun, clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, deep-blue body-colour water as a moving noise field with no
   shore tint, a painted olive meadow on every green AND on all bare ground (Round 52: `groundSurfMat`, the
   same meadow and the same darker-blotch mottle as the parks, parks and ground are one surface; no park
   shade spread, no ground retint), an instanced tuft field near the camera on parks and bare ground, lumpy

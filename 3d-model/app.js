@@ -38,10 +38,10 @@
     pier: 0x8f8a7d,
     trunk: 0x2b2119,       // stored near-black: the legacy lift turns it bark brown (0x5b4a38 read as cream)
     bronze: 0x4d3b26,
-    skyZenith: 0x2d68c8,
-    skyHorizon: 0xc2d8ee,
+    skyZenith: 0x2260c8,   // deeper and more saturated (Mike, with the darker meadow and walls)
+    skyHorizon: 0xa6c6ea,  // a blue horizon band, not a white one; the fog takes this colour by day
     skyGround: 0xa9b3ba,   // below-horizon haze — from altitude the dome shows past the world's edge
-    haze: 0xcdd8e6,       // aerial perspective goes blue, not sand
+    haze: 0xb6c9e4,       // aerial perspective goes blue, not sand
     sun: 0xffe5b8,
   };
   // the ground look, one place to tune: parks and bare ground share one meadow shader and one
@@ -295,8 +295,8 @@
   }
 
   const scene = new THREE.Scene();
-  scene.fog = new THREE.Fog(COLORS.haze, 5000, 16000);
-  const fogBase = { near: 5000, far: 16000 };   // clear-air distances: the game's, weather still shrinks them   // clear-air distances; weather shrinks them live (applyLighting)
+  scene.fog = new THREE.Fog(COLORS.haze, 8000, 40000);
+  const fogBase = { near: 8000, far: 40000 };   // clear-air distances: the game's, weather still shrinks them   // clear-air distances; weather shrinks them live (applyLighting)
   // custom river spans register their true deck profiles here so the traffic
   // layer can ride the actual roadway instead of a flat guess under the bridge
   const BRIDGE_DECKS = [];
@@ -3524,7 +3524,7 @@
         addColSeg(p[0], p[1], q[0], q[1]);
       }
     }
-    const mesh = new THREE.Mesh(mergeColored(parts, true, true), cityMat);
+    const mesh = new THREE.Mesh(mergeColored(parts, true, true), coreMat);
     mesh.castShadow = mesh.receiveShadow = true;
     groupCity.add(mesh);
     rayTargets.push(mesh);
@@ -3550,9 +3550,15 @@
   // under a tenth; these bring the walls to about 150 to 180 displayed and the roofs a step
   // under them (a noon roof at 0.14 reads about 140), the game's mid tones beside its meadow
   const FACADE_GAIN = 0.22, ROOF_GAIN = 0.14;
+  // the core's own pair: Society Hill's brick palette and sampled roofs sit a fifth darker and
+  // redder than the outer districts' photo-sampled walls, and at one gain the core stood out as a
+  // dark block from any height (Mike: jarring), so it takes a higher gain and a milder saturation
+  // boost (1.0 against the tiers' 1.2) on a material of its own
+  const CORE_FACADE_GAIN = 0.42, CORE_ROOF_GAIN = 0.28;
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9, dithering: MAT_DITHER });
+  let coreMat = null;   // the core's fabric: the same shader at the core's gains (set with the hook below)
   {
-    cityMat.onBeforeCompile = (shader) => {
+    const facadeHook = (gW, gR, sat) => (shader) => {
       shader.uniforms.uSunW = sunWUniform;
       shader.uniforms.uNight = nightUniform;
       shader.uniforms.uDetFar = detFarUniform;
@@ -3589,9 +3595,9 @@
         .replace('#include <color_fragment>', [
           '#include <color_fragment>',
           '{',
-          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, 1.2);',
+          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, ' + sat.toFixed(2) + ');',
           '  vec3 n = normalize(vWNorm);',
-          '  diffuseColor.rgb *= mix(' + FACADE_GAIN.toFixed(2) + ', ' + ROOF_GAIN.toFixed(2) + ', step(0.7, n.y));',
+          '  diffuseColor.rgb *= mix(' + gW.toFixed(2) + ', ' + gR.toFixed(2) + ', step(0.7, n.y));',
           '  float stF = vStyle + 0.5;',
           '  float variantF = floor(stF / 32.0);',
           '  int st = int(stF - variantF * 32.0);',
@@ -3967,6 +3973,11 @@
         // of them otherwise resolves to a white band along the horizon
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.76, 0.46) * shtLit * uNight * 1.3 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));');
     };
+    cityMat.onBeforeCompile = facadeHook(FACADE_GAIN, ROOF_GAIN, 1.2);
+    cityMat.customProgramCacheKey = () => 'fabric';   // the two hooks share one source: keyed by hand (gotcha 15)
+    coreMat = cityMat.clone();   // r149's clone drops the hook; assigned fresh
+    coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0);
+    coreMat.customProgramCacheKey = () => 'fabric-core';
   }
 
   // ------------------------------------------------ landmark spires
@@ -6518,7 +6529,7 @@
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
-    fogBase.near = 1900; fogBase.far = 7600;
+    fogBase.near = 5000; fogBase.far = 20000;
 
     // Benjamin Franklin Bridge (1926): suspension span from the 5th St anchorage to Camden
     {
@@ -7235,7 +7246,10 @@
     await uploadRing(R);
     // the world is now the whole city
     bounds.minX = -12200; bounds.maxX = 16700; bounds.minZ = -21900; bounds.maxZ = 9900;
-    fogBase.near = 2400; fogBase.far = 13000;
+    // clear air is clear (Mike): the haze starts 8 km out and closes at 40 km, past the world's
+    // edge, so the whole city stands in a clear sky from any height unless the weather says fog,
+    // rain or snow (those still shrink it) or it is night (the far windows still need the short air)
+    fogBase.near = 8000; fogBase.far = 40000;
     // the baked neighborhood layer owns these names when present; the airport
     // keeps its HTML label (a place, not a neighborhood)
     const hasNb = typeof PLACES !== 'undefined' && PLACES && PLACES.nb;
@@ -13403,8 +13417,10 @@
     // white band on the horizon (the post target resolves its edges in linear light, where a
     // half-covered 1.3 window averages to white, not grey); by night the haze closes to 2.5..9 km
     // and the far city sinks into the sky the way the game's does
-    scene.fog.near = fogBase.near * (1 - 0.5 * night) * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
-    scene.fog.far = fogBase.far * (1 - 0.42 * night) * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
+    // (the clear day air runs 8 to 40 km since Round 52; the night factors keep the night at
+    // about 2.8 to 16 km, the reach Round 51 settled on, or the far windows band the horizon again)
+    scene.fog.near = fogBase.near * (1 - 0.65 * night) * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
+    scene.fog.far = fogBase.far * (1 - 0.6 * night) * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xdde7f2), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
     if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x9c8e74), dayF);
@@ -13766,7 +13782,11 @@
     {
       const prevCity = cityMat.onBeforeCompile;
       cityMat.onBeforeCompile = (sh, r) => { prevCity(sh, r); wxSurfacePatch(sh); };
-      const seen = new Set([cityMat]);
+      cityMat.customProgramCacheKey = () => 'fabric|wx';
+      const prevCore = coreMat.onBeforeCompile;
+      coreMat.onBeforeCompile = (sh, r) => { prevCore(sh, r); wxSurfacePatch(sh); };
+      coreMat.customProgramCacheKey = () => 'fabric-core|wx';
+      const seen = new Set([cityMat, coreMat]);
       scene.traverse((o) => {
         const ms = o.material;
         for (const m of Array.isArray(ms) ? ms : ms ? [ms] : []) {

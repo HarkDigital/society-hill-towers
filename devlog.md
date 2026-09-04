@@ -2755,6 +2755,19 @@ the diff with two skeptics per finding.
   shader on the fabric material of all three tiers (the lit windows are an emissive term and
   keep their glow): brick walls 220 to 138, cream walls 160 to 143, roofs 189 to 162 at noon,
   the game's mid tones, and the saturation the shoulder had flattened comes back with it.
+- **Round 52 coda, from the live site (Mike): Society Hill darker than its neighbours, the
+  distant haze, a paler sky than the new ground.** The fabric gain exposed a palette gap the
+  shoulder had hidden: the core's brick palette and sampled roofs sit a fifth darker and redder
+  than the outer districts' photo-sampled walls (117 against 139 displayed in matched oblique
+  views), so the core stood out as a dark block. The core mesh now rides `coreMat`, the same
+  facade shader from a `facadeHook(gainWalls, gainRoofs, saturation)` factory at 0.42 / 0.28
+  and no saturation boost (the tiers keep 0.22 / 0.14 and 1.2), keyed apart by hand (gotcha
+  15) and chained into the weather pass like `cityMat`: 133 against 139 now. The clear air runs
+  8 to 40 km by day (was 2.4 to 13 km, a white horizon from any height), the night factors
+  keep the night at about 2.8 to 16 km so the far windows do not band the horizon (Round 51's
+  finding), weather still shrinks it. The sky is deeper and more saturated: zenith 0x2260c8,
+  horizon 0xa6c6ea (the fog takes the horizon colour by day, so the far haze is blue, not
+  white), haze 0xb6c9e4.
 - Verified in the pane at noon, dusk, night and under snow: the sports complex and the Navy Yard
   lot with no ground through them, South Philly and Center City from 600 m, the rowhouse blocks
   from 60 m, a street at eye level (yellow, dashes, tufts), the core lawns and Washington
