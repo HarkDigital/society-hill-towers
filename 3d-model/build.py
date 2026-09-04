@@ -20,7 +20,7 @@ REQUIRED = {
     "scene.json": 550_000, "meta.json": 10_000, "about_body.html": 3_000,
     "dem.json": 120_000, "dem_wide.json": 350_000, "dem_south.json": 120_000, "dem_city.json": 620_000,
     "dem_nw.json": 140_000, "wwb.json": 250, "wide_walls.b64": 100_000, "city_limit.json": 2_500, "wide_names.json": 3_000, "facade_palette.json": 300,
-    "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "storefronts.b64": 40_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "traffic.b64": 100_000,
+    "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "storefronts.b64": 40_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "paved.b64": 250_000, "traffic.b64": 100_000,
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
     "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000, "parking_south.json": 9_000,
     "towers.json": 4_000, "schuylkill.json": 8_000,
@@ -30,7 +30,8 @@ MAX_HTML = 75_000_000   # runaway-growth tripwire, raised from 25 MB on 2026-09-
 # bytes): DEFLATE then sees two smooth streams instead of one interleaved mess,
 # 22% off the gzipped page with no packer change. app.js's unb64() re-interleaves.
 # traffic.b64 grows 5% shuffled (short deltas), so it stays interleaved.
-PLANAR = {"wide.b64": "WIDE", "city.b64": "CITY", "outskirts.b64": "OUTSKIRTS", "trees.b64": "TREES", "poles.b64": "POLES", "storefronts.b64": "STOREFRONTS"}
+PLANAR = {"wide.b64": "WIDE", "city.b64": "CITY", "outskirts.b64": "OUTSKIRTS", "trees.b64": "TREES", "poles.b64": "POLES", "storefronts.b64": "STOREFRONTS",
+          "paved.b64": "PAVED"}   # paved.b64's header is 8 bytes, not 16: the shuffle keeps the first 16 verbatim either way and unb64 undoes it byte for byte
 SIZES = []   # (label, bytes) for the report
 
 def path_of(name):
@@ -155,6 +156,10 @@ const("SCHUYLKILL_DATA", text_of("schuylkill.json", "null"))
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
 let_blob("POLES_B64", "poles.b64")
+# the paved ground (fetch_paved.py / pack_paved.py): surface lots, industrial and port yards,
+# rail yards and aprons, laid by the app under the parks and streets so the meadow stops
+# showing where the city is asphalt in life
+let_blob("PAVED_B64", "paved.b64")
 
 # Download progress. Nothing used to move on the veil until the whole page had
 # arrived and parsed. PG() rewrites the veil's load line, and a PG(i, n) tick

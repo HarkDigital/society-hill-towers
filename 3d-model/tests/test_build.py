@@ -15,9 +15,12 @@ except ImportError:
 PAGE = 'society-hill-towers.html'
 PAGE_LIMIT_MB = 75
 EMBEDDED = {'WIDE_B64': 'wide.b64', 'WIDE_WALLS_B64': 'wide_walls.b64', 'CITY_B64': 'city.b64', 'OUTSKIRTS_B64': 'outskirts.b64', 'STOREFRONTS_B64': 'storefronts.b64', 'TREES_B64': 'trees.b64',
-            'TRAFFIC_B64': 'traffic.b64', 'POLES_B64': 'poles.b64'}
+            'TRAFFIC_B64': 'traffic.b64', 'POLES_B64': 'poles.b64', 'PAVED_B64': 'paved.b64'}
 # blobs whose body is bytes, not int16 (never byte-plane shuffled): file -> accepted magics
 BYTE_BLOBS = {'wide_walls.b64': (0x53485457,)}
+# blobs with an int16 header (pack_paved.py: magic 0x5056 'PV' then version 1), whose first
+# 32-bit word therefore reads magic | version << 16 rather than a 'SHT?' int32
+WORD_MAGICS = {'paved.b64': (0x00015056,)}
 
 
 def unplanar(raw):
@@ -89,7 +92,7 @@ class BuiltPage(unittest.TestCase):
                     self.fail('%s: the embedded blob is byte-plane shuffled but B64_PLANAR does not flag %s' % (fname, var))
                 self.assertEqual(want, got, '%s: embedded blob differs from the committed file (planar=%s)' % (fname, planar))
                 magic = struct.unpack('<i', got[:4])[0]
-                self.assertIn(magic, BYTE_BLOBS.get(fname) or C.BLOBS[fname][0], '%s: decoded header magic is wrong' % fname)
+                self.assertIn(magic, BYTE_BLOBS.get(fname) or WORD_MAGICS.get(fname) or C.BLOBS[fname][0], '%s: decoded header magic is wrong' % fname)
 
     def test_no_leftover_placeholders(self):
         self.need_page()

@@ -191,5 +191,44 @@ class BlobRecords(unittest.TestCase):
         self.assertGreater(matched, 0, 'no way carries a PennDOT-matched count')
 
 
+class PavedContract(unittest.TestCase):
+    """paved.b64 (pack_paved.py): the contract the app's 'Paving the lots and yards' step
+    decodes. Int16 header magic 0x5056 'PV', version 1, nPolys split low/high; per polygon
+    n, kind, then n (x, z) whole metres, closed implicitly, CCW in (x, z), inside the far-ring
+    box, kinds 1-4, sorted by kind. Consumed exactly."""
+
+    def walk(self):
+        raw = base64.b64decode(C.path('paved.b64').read_text(encoding='ascii').strip())
+        self.assertEqual(0, len(raw) % 2, 'paved.b64 is not a whole number of int16')
+        w = struct.unpack('<%dh' % (len(raw) // 2), raw)
+        self.assertEqual(0x5056, w[0], 'paved.b64 magic 0x%04X' % (w[0] & 0xFFFF))
+        self.assertEqual(1, w[1], 'paved.b64 version %d' % w[1])
+        n = (w[2] & 0xFFFF) | (w[3] << 16)
+        polys, i = [], 4
+        for _ in range(n):
+            self.assertLessEqual(i + 2, len(w), 'paved.b64 ran out inside a polygon header')
+            nv, kind = w[i], w[i + 1]
+            pts = [(w[i + 2 + 2 * k], w[i + 3 + 2 * k]) for k in range(nv)]
+            polys.append((kind, pts))
+            i += 2 + 2 * nv
+        return polys, len(w) - i
+
+    def test_paved_rings(self):
+        C.require(self, 'paved.b64')
+        polys, leftover = self.walk()
+        self.assertEqual(0, leftover, 'paved.b64: %d int16 left after %d polygons' % (leftover, len(polys)))
+        self.assertGreater(len(polys), 500, 'paved.b64 holds only %d rings: a broken pack?' % len(polys))
+        x0, x1, z0, z1 = C.CITY_BOX
+        kinds = [k for k, _ in polys]
+        self.assertEqual(kinds, sorted(kinds), 'paved.b64 rings are not sorted by kind')
+        for j, (kind, pts) in enumerate(polys):
+            self.assertIn(kind, (1, 2, 3, 4), 'ring %d has kind %d' % (j, kind))
+            self.assertGreaterEqual(len(pts), 3, 'ring %d has %d vertices' % (j, len(pts)))
+            for x, z in pts:
+                self.assertTrue(x0 <= x <= x1 and z0 <= z <= z1, 'ring %d leaves the city box at (%d, %d)' % (j, x, z))
+            a2 = sum(pts[k][0] * pts[(k + 1) % len(pts)][1] - pts[(k + 1) % len(pts)][0] * pts[k][1] for k in range(len(pts)))
+            self.assertGreater(a2, 0, 'ring %d is not CCW in (x, z) (2A = %d)' % (j, a2))
+
+
 if __name__ == '__main__':
     unittest.main()
