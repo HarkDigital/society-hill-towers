@@ -1691,13 +1691,19 @@
   sky.frustumCulled = false;
   scene.add(sky);
 
-  // the cloud deck: cumulus with real perspective. A plane above the flight ceiling carries the
-  // same fbm field the ground shadows use (so every cloud's shadow lies under it, slanted by
-  // the sun), lit by a second sample toward the sun: bright rims where the puff thins toward
-  // the light, grey bellies where it is thick, the whole deck warmed by the sun's colour and
-  // dimmed by the sky's cloud light (night, overcast, storm gloom). The dome's own cumulus is
-  // kept to the horizon band, where the deck has hazed out
-  const CLOUD_ALT = 1900;
+  // the cloud deck: cumulus with real perspective and real depth. A plane above the flight
+  // ceiling carries the same fbm field the ground shadows use (so every cloud's shadow lies
+  // under it, slanted by the sun); since Round 53 the plane is only where the eye's ray enters
+  // a slab CLOUD_THICK deep, and the fragment marches up through it: the base field is eroded
+  // with height, so the thick cores rise highest and the tops round off (a puff of ordinary
+  // density stands about 300 m, the densest the whole slab), the columns lean a little with
+  // height so the sides billow, and each sample is lit by a second, coarser sample toward the
+  // sun and a step up the slab (thinner toward the light: sunlit; the bellies self-shade, the
+  // tops take the sky). Seen from below at a slant the puffs show their sides, which the flat
+  // plane never did (Mike: flat and two-dimensional). The whole deck is warmed by the sun's
+  // colour and dimmed by the sky's cloud light (night, overcast, storm gloom). The dome's own
+  // cumulus is kept to the horizon band, where the deck has hazed out
+  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 5 : 10;
   const cloudMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
     uniforms: Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), {
@@ -1716,29 +1722,59 @@
       INV_GLSL,
       'float cdh(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
       'float cdn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(cdh(i), cdh(i + vec2(1.0, 0.0)), f.x), mix(cdh(i + vec2(0.0, 1.0)), cdh(i + vec2(1.0, 1.0)), f.x), f.y); }',
-      'float cfbm(vec2 p){ return 0.5 * cdn(p) + 0.25 * cdn(p * 2.1 + 13.1) + 0.125 * cdn(p * 4.3 + 41.7) + 0.0625 * cdn(p * 8.9 + 7.7)' + (isTouch ? '' : ' + 0.03 * cdn(p * 17.3 + 3.1)') + '; }',
+      // the field in two parts: the three coarse octaves shape the puffs and light them (the
+      // sun-ward sample reads only these, so the difference carries no fine-octave bias), the
+      // fine octaves crumble the edges
+      'float cfbmL(vec2 p){ return 0.5 * cdn(p) + 0.25 * cdn(p * 2.1 + 13.1) + 0.125 * cdn(p * 4.3 + 41.7); }',
+      'float cfbmH(vec2 p){ return 0.0625 * cdn(p * 8.9 + 7.7)' + (isTouch ? '' : ' + 0.03 * cdn(p * 17.3 + 3.1)') + '; }',
+      // the column at height fraction hf: the base field leaned a little with height, less the
+      // erosion that rounds the tops (0.46 at the top of the slab: only the densest cores reach it)
+      'float cerode(float hf){ return hf * (0.06 + 0.40 * hf); }',
       'void main(){',
       '  #include <logdepthbuf_fragment>',
-      '  vec2 cp = vW.xz * 0.0008 + uCloudOff * 0.8;',
-      '  float f = cfbm(cp);',
       '  float cov = clamp(uCloud, 0.0, 1.0); float thr = 0.60 - cov * 0.40;',
-      '  float m = smoothstep(thr, thr + 0.20, f);',
-      '  if (m < 0.004) discard;',
-      '  float dens = smoothstep(thr, thr + 0.40, f);',
+      // the camera is always under the deck (the flight ceiling is 1600 m): the fragment is where
+      // the eye's ray enters the slab, and the march climbs it to the exit, or to a capped path
+      // toward the horizon where the slab is seen end-on and reads solid anyway
+      '  vec3 rd = normalize(vW - cameraPosition);',
+      '  float path = min(' + CLOUD_THICK.toFixed(1) + ' / max(rd.y, 0.03), 5000.0);',
+      '  float ds = path / ' + CLOUD_STEPS.toFixed(1) + ';',
+      '  float jit = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x + 0.00583715 * gl_FragCoord.y));',
+      '  float sunE = clamp(uSun.y, 0.0, 1.0);',
       '  float sunUp = clamp(uSun.y * 3.0, 0.0, 1.0);',
-      '  vec2 sd = normalize(uSun.xz + vec2(1e-4, 0.0)) * (0.02 + 0.03 * (1.0 - clamp(uSun.y, 0.0, 1.0)));',
-      '  float f2 = cfbm(cp + sd);',
-      '  float lit = clamp((f2 - f) * 6.0 + 0.5, 0.0, 1.0);',
-      '  float below = smoothstep(-80.0, 80.0, ' + CLOUD_ALT.toFixed(1) + ' - cameraPosition.y);',
-      '  vec3 base = mix(vec3(0.66, 0.70, 0.78), vec3(0.40, 0.43, 0.50), dens * 0.95);',
-      '  vec3 under = mix(base, vec3(1.0, 0.99, 0.96), (1.0 - dens) * (0.35 + 0.45 * lit) * sunUp);',
-      '  vec3 top = mix(vec3(0.78, 0.81, 0.87), vec3(1.0, 1.0, 0.99), lit * sunUp);',
-      '  vec3 col = mix(top, under, below) * uCloudLight * mix(vec3(1.0), cSun, 0.35);',
-      '  float a = m * 0.94 * (1.0 - smoothstep(14000.0, 26000.0, length(vW.xz - cameraPosition.xz)));',
-      '  gl_FragColor = vec4(col, a);',
+      '  vec2 sd = normalize(uSun.xz + vec2(1e-4, 0.0)) * 0.035;',
+      '  float sh = 0.04 + 0.22 * sunE;',
+      '  vec3 shade = mix(vec3(0.62, 0.66, 0.74), vec3(0.44, 0.47, 0.54), cov * 0.6);',
+      '  vec3 sunlit = vec3(1.0, 0.99, 0.96);',
+      '  vec3 acc = vec3(0.0); float T = 1.0; float glow = 0.0;',
+      '  for (int i = 0; i < ' + CLOUD_STEPS + '; i++) {',
+      '    vec3 p = vW + rd * ((float(i) + 0.7 * jit) * ds);',
+      '    float hf = (p.y - ' + CLOUD_ALT.toFixed(1) + ') / ' + CLOUD_THICK.toFixed(1) + ';',
+      '    vec2 cp = p.xz * 0.0008 + uCloudOff * 0.8 + vec2(0.09, -0.06) * hf;',
+      '    float fL = cfbmL(cp);',
+      '    float f = fL + cfbmH(cp) - cerode(hf);',
+      '    float dens = smoothstep(thr, thr + 0.22, f);',
+      '    if (dens > 0.003) {',
+      '      float hf2 = hf + sh;',
+      '      float f2 = cfbmL(cp + sd + vec2(0.09, -0.06) * sh) - cerode(hf2);',
+      '      float lit = clamp((fL - cerode(hf) - f2) * 5.0 + 0.35, 0.0, 1.0) * sunUp;',
+      '      float amb = 0.45 + 0.55 * clamp(hf, 0.0, 1.0);',
+      '      float a = 1.0 - exp(-dens * ds * 0.009);',
+      '      acc += T * a * mix(shade * amb, sunlit, lit);',
+      '      glow += T * a * lit * (1.0 - dens);',
+      '      T *= 1.0 - a;',
+      '      if (T < 0.02) break;',
+      '    }',
+      '  }',
+      '  float cover = 1.0 - T;',
+      '  if (cover < 0.004) discard;',
+      '  vec3 col = acc / cover * uCloudLight * mix(vec3(1.0), cSun, 0.35);',
+      '  float alpha = cover * 0.96 * (1.0 - smoothstep(14000.0, 26000.0, length(vW.xz - cameraPosition.xz)));',
+      '  gl_FragColor = vec4(col, alpha);',
       // the pre-image first, then the fog (whose colour is the pre-image too under the post pipeline);
-      // the coverage stays the bloom mask as it is, a halved alpha halved the colour blend as well
-      '  if (uPost > 0.5) gl_FragColor.rgb = pUndo(gl_FragColor.rgb, uExposure) + vec3(0.15) * (1.0 - dens) * lit * sunUp * uCloudLight;',
+      // the coverage stays the bloom mask as it is, a halved alpha halved the colour blend as well;
+      // the bloom rides the thin sunlit rims only
+      '  if (uPost > 0.5) gl_FragColor.rgb = pUndo(gl_FragColor.rgb, uExposure) + vec3(0.15) * glow / cover * uCloudLight;',
       '  #include <fog_fragment>',
       '}',
     ].join('\n'),
@@ -3547,14 +3583,15 @@
   // windows are an emissive term and keep their night glow
   // The numbers are small because of the tone curve: a sunlit wall sits near 1.5 in linear light
   // and a noon roof near 1.9, deep in the ACES shoulder, where a 0.55 gain moved the display
-  // under a tenth; these bring the walls to about 150 to 180 displayed and the roofs a step
-  // under them (a noon roof at 0.14 reads about 140), the game's mid tones beside its meadow
-  const FACADE_GAIN = 0.22, ROOF_GAIN = 0.14;
+  // under a tenth; 0.22 / 0.14 brought the walls to about 150 to 180 displayed and the roofs a
+  // step under them, the game's mid tones beside its meadow; Round 53 lifted every gain about a
+  // quarter (Mike: too dark now), about ten display points on a building band
+  const FACADE_GAIN = 0.27, ROOF_GAIN = 0.17;
   // the core's own pair: Society Hill's brick palette and sampled roofs sit a fifth darker and
   // redder than the outer districts' photo-sampled walls, and at one gain the core stood out as a
   // dark block from any height (Mike: jarring), so it takes a higher gain and a milder saturation
   // boost (1.0 against the tiers' 1.2) on a material of its own
-  const CORE_FACADE_GAIN = 0.42, CORE_ROOF_GAIN = 0.28;
+  const CORE_FACADE_GAIN = 0.52, CORE_ROOF_GAIN = 0.34;
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9, dithering: MAT_DITHER });
   let coreMat = null;   // the core's fabric: the same shader at the core's gains (set with the hook below)
   {
@@ -9544,7 +9581,7 @@
     const sAct = septaReady && SEPTA.on && septaSolid.count > 0;
     const iAct = indegoReady && INDEGO.on && indegoBadge.count > 0;
     const fAct = flightReady && FLIGHTS.on && (flightMesh.count > 0 || heliMesh.count > 0);
-    const shAct = shipReady && SHIPS.on && shipMesh.count > 0;
+    const shAct = shipReady && SHIPS.on && shipAnchor.count > 0;
     const tAct = !!treeInv;                            // the forest picks with every live layer off
     if (!sAct && !iAct && !fAct && !shAct && !tAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
@@ -9590,7 +9627,7 @@
     if (sAct) targets.push(septaSolid, septaBadge);
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
     if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
-    if (shAct) targets.push(shipMesh, shipAnchor);
+    if (shAct) { for (const m of shipMeshes) if (m.count) targets.push(m); targets.push(shipAnchor); }
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
       const h = hits[0];
@@ -9599,8 +9636,8 @@
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
       }
-      if (h.object === shipMesh || h.object === shipAnchor) {
-        const p = shipPick[h.instanceId];
+      if (h.object.userData.shipKind !== undefined || h.object === shipAnchor) {
+        const p = h.object === shipAnchor ? shipPick[SHIP_KIND_N][h.instanceId] : shipPick[h.object.userData.shipKind][h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
@@ -11564,8 +11601,9 @@
   const AIS_RELAY = 'https://philly3d.com/ais.json';
   const SHIPS = { on: true, ok: false, sock: null, retryT: 0, relay: false, relayT: 0, relayBusy: false, relayFails: 0 };
   const shipMap = new Map();
-  let shipMesh = null, shipAnchor = null, shipReady = false, pickedShip = null;
-  const shipPick = [];
+  let shipAnchor = null, shipReady = false, pickedShip = null;
+  // one hull per AIS class (SHIP_KIND), each its own instanced mesh; shipPick[kind][instance]
+  const shipMeshes = [], shipPick = [], shipN = [];   // shipPick[SHIP_KIND_N] is the anchor badges' list
   const _aqB = new THREE.Quaternion();
   function shipPinTexture() {
     // vessels wear the shared badge casing with a bold white fouled anchor
@@ -11610,42 +11648,134 @@
   }
   const SHIP_CAP = 48;
   const btnShips = document.getElementById('btnShips');
-  // AIS type code to a card name; the hull keeps the geometry's own scheme
+  // AIS type code to a card name
   const SHIP_TYPE = (t) => t >= 80 && t < 90 ? 'Tanker' : t >= 70 && t < 80 ? 'Cargo Ship'
     : t >= 60 && t < 70 ? 'Passenger Vessel' : (t === 31 || t === 32 || t === 52) ? 'Tug'
     : t === 30 ? 'Fishing Vessel' : (t === 36 || t === 37) ? 'Pleasure Craft'
-    : t === 35 ? 'Military Vessel' : 'Vessel';
-  function shipGeom() {
-    // unit hull: length 1 along +x, unit beam along z, scaled per instance
+    : (t === 35 || t === 55 || t === 51) ? 'Military Vessel' : t === 50 ? 'Pilot Vessel'
+    : t === 33 ? 'Dredger' : t >= 40 && t < 50 ? 'High Speed Craft' : 'Vessel';
+  // ...and to a hull (Round 53, Mike: different boats for different types). The stream's
+  // ShipStaticData (and the relay's `type`) carry the AIS type code, so the river wears its
+  // real mix: the tankers bound for Paulsboro, the container ships for Packer Avenue, the tugs
+  // that are most of the traffic, the RiverLink ferry, the pilot boats, the Coast Guard, the
+  // pleasure craft. A vessel with no static data yet (or an unknown code) rides the workboat,
+  // or the small craft when it is short
+  const SHIP_KIND_N = 7;   // 0 workboat, 1 container ship, 2 tanker, 3 tug, 4 passenger, 5 small craft, 6 patrol
+  const SHIP_KIND = (t, len) => t >= 70 && t < 80 ? (len < 45 ? 0 : 1) : t >= 80 && t < 90 ? (len < 45 ? 0 : 2)
+    : (t === 31 || t === 32 || t === 52) ? 3 : (t >= 60 && t < 70) || (t >= 40 && t < 50) ? 4
+    : (t === 35 || t === 55 || t === 51) ? 6
+    : (t === 30 || t === 36 || t === 37 || t === 50 || t === 53 || t === 54 || t === 58 || len <= 20) ? 5 : 0;
+  // the hull's height in metres by kind: the long ships low, the tug and the small craft tall for their length
+  const SHIP_H = [
+    (L) => clamp(L * 0.09, 2.5, 16), (L) => clamp(L * 0.12, 4, 24), (L) => clamp(L * 0.11, 3, 22),
+    (L) => clamp(L * 0.22, 3, 9), (L) => clamp(L * 0.14, 3, 22), (L) => clamp(L * 0.2, 2, 6), (L) => clamp(L * 0.10, 3, 12),
+  ];
+  function shipGeom(kind) {
+    // unit hull: length 1 along +x (bow at +x), unit beam along z, unit height, scaled per instance
     const parts = [];
-    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow, ry) => {
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow) => {
       const bg = new THREE.BoxGeometry(sx, sy, sz);
-      if (ry) bg.rotateY(ry);
       bg.translate(cx, cy, cz);
       parts.push(septaColored(bg, r, g, b, glow || 0));
     };
     // no rotated parts: a rotation baked before the per-instance non-uniform
     // scale (length x beam) shears into a detached blade — the bow tapers in
     // axis-aligned steps instead
-    box(0.85, 0.5, 1.0, -0.075, 0.13, 0, 0.15, 0.16, 0.18);       // hull
-    box(0.10, 0.5, 0.72, 0.40, 0.13, 0, 0.15, 0.16, 0.18);        // bow step 1
-    box(0.06, 0.46, 0.4, 0.475, 0.15, 0, 0.15, 0.16, 0.18);       // bow step 2
-    box(0.86, 0.06, 1.01, -0.07, 0.02, 0, 0.45, 0.16, 0.13);      // waterline stripe
-    box(0.5, 0.3, 0.8, 0.03, 0.5, 0, 0.38, 0.36, 0.33);           // deck cargo block
-    box(0.16, 0.5, 0.7, -0.36, 0.55, 0, 0.78, 0.78, 0.76);        // superstructure
-    box(0.17, 0.09, 0.72, -0.36, 0.77, 0, 1, 0.93, 0.72, 1);      // bridge glow band
-    box(0.06, 0.2, 0.28, -0.41, 0.9, 0, 0.2, 0.2, 0.22);          // funnel
-    box(0.03, 0.05, 0.05, 0.44, 0.45, 0, 1, 0.95, 0.8, 1);        // masthead light
+    const hull = (r, g, b, h, sr, sg, sb) => {
+      const hh = h || 0.5;
+      box(0.85, hh, 1.0, -0.075, hh * 0.26, 0, r, g, b);          // hull
+      box(0.10, hh, 0.72, 0.40, hh * 0.26, 0, r, g, b);           // bow step 1
+      box(0.06, hh * 0.92, 0.4, 0.475, hh * 0.3, 0, r, g, b);     // bow step 2
+      box(0.86, 0.06, 1.01, -0.07, 0.02, 0, sr, sg, sb);          // waterline stripe
+    };
+    const bridge = (cx, w, h, y, d) => {                          // a white house with a glowing window band
+      box(w, h, d, cx, y + h * 0.5, 0, 0.82, 0.83, 0.81);
+      box(w + 0.01, 0.08, d + 0.02, cx, y + h - 0.08, 0, 1, 0.93, 0.72, 1);
+    };
+    const funnel = (cx, y, r, g, b) => box(0.06, 0.2, 0.26, cx, y, 0, r, g, b);
+    if (kind === 1) {
+      // a container ship: the house a third from the stern, the bays stacked fore and aft of it
+      hull(0.13, 0.15, 0.20, 0.5, 0.55, 0.12, 0.10);
+      box(0.86, 0.04, 0.98, -0.07, 0.40, 0, 0.35, 0.36, 0.38);   // deck
+      const cols = [[0.62, 0.22, 0.16], [0.16, 0.32, 0.58], [0.20, 0.45, 0.30], [0.75, 0.76, 0.74], [0.80, 0.42, 0.14], [0.55, 0.50, 0.44]];
+      let ci = 0;
+      const bay = (cx, w, tiers) => {
+        for (let t = 0; t < tiers; t++) { const c = cols[ci++ % cols.length]; box(w, 0.15, 0.88, cx, 0.42 + 0.15 * t + 0.075, 0, c[0], c[1], c[2]); }
+      };
+      bay(-0.45, 0.06, 2); bay(-0.17, 0.10, 3); bay(-0.06, 0.10, 3); bay(0.05, 0.10, 3); bay(0.16, 0.10, 3); bay(0.27, 0.10, 2); bay(0.37, 0.08, 1);
+      bridge(-0.31, 0.11, 0.75, 0.42, 0.66);
+      funnel(-0.33, 1.25, 0.20, 0.20, 0.22);
+      box(0.03, 0.05, 0.05, 0.44, 0.45, 0, 1, 0.95, 0.8, 1);      // masthead light
+    } else if (kind === 2) {
+      // a tanker: long and low, a raised forecastle, the catwalk and the manifold along the deck
+      hull(0.20, 0.12, 0.11, 0.5, 0.55, 0.12, 0.10);
+      box(0.86, 0.04, 0.98, -0.07, 0.40, 0, 0.42, 0.28, 0.20);   // deck, red ochre
+      box(0.12, 0.08, 0.70, 0.40, 0.46, 0, 0.42, 0.28, 0.20);    // forecastle
+      box(0.62, 0.05, 0.08, 0.02, 0.545, 0, 0.80, 0.80, 0.78);   // catwalk
+      box(0.60, 0.03, 0.03, 0.02, 0.445, 0.12, 0.70, 0.70, 0.66);  // pipes
+      box(0.60, 0.03, 0.03, 0.02, 0.445, -0.12, 0.70, 0.70, 0.66);
+      box(0.08, 0.14, 0.56, 0.05, 0.49, 0, 0.62, 0.62, 0.60);    // manifold
+      bridge(-0.36, 0.10, 0.85, 0.42, 0.62);
+      funnel(-0.38, 1.35, 0.20, 0.20, 0.22);
+      box(0.03, 0.05, 0.05, 0.44, 0.48, 0, 1, 0.95, 0.8, 1);
+    } else if (kind === 3) {
+      // a tug: short and fat, the fender band, the wheelhouse well forward, a red stack
+      hull(0.10, 0.10, 0.11, 0.5, 0.45, 0.16, 0.13);
+      box(0.88, 0.10, 1.06, -0.05, 0.36, 0, 0.08, 0.08, 0.08);   // fenders
+      box(0.42, 0.28, 0.72, 0.02, 0.55, 0, 0.84, 0.84, 0.82);    // deck house
+      bridge(0.10, 0.20, 0.30, 0.69, 0.50);
+      box(0.08, 0.30, 0.16, -0.16, 0.85, 0, 0.55, 0.14, 0.12);   // stack
+      box(0.03, 0.05, 0.05, 0.10, 1.02, 0, 1, 0.95, 0.8, 1);
+    } else if (kind === 4) {
+      // a ferry or cruise ship: a white hull with a blue band, the decks over most of the length
+      hull(0.80, 0.82, 0.84, 0.5, 0.12, 0.25, 0.50);
+      box(0.72, 0.26, 0.90, -0.04, 0.51, 0, 0.88, 0.89, 0.90);   // deck 1
+      box(0.73, 0.08, 0.92, -0.04, 0.50, 0, 0.14, 0.15, 0.17, 1);  // its windows
+      box(0.60, 0.24, 0.80, -0.06, 0.76, 0, 0.88, 0.89, 0.90);   // deck 2
+      box(0.61, 0.08, 0.82, -0.06, 0.74, 0, 0.14, 0.15, 0.17, 1);
+      bridge(0.06, 0.24, 0.16, 0.88, 0.60);
+      funnel(-0.24, 0.98, 0.18, 0.30, 0.55);
+      box(0.03, 0.05, 0.05, 0.42, 0.45, 0, 1, 0.95, 0.8, 1);
+    } else if (kind === 5) {
+      // a small craft: a white hull, a cabin, a mast
+      hull(0.90, 0.90, 0.88, 0.40, 0.15, 0.30, 0.55);
+      bridge(0.0, 0.34, 0.30, 0.30, 0.70);
+      box(0.03, 0.55, 0.03, -0.08, 0.90, 0, 0.30, 0.30, 0.30);   // mast
+      box(0.03, 0.04, 0.04, -0.08, 1.19, 0, 1, 0.95, 0.8, 1);
+    } else if (kind === 6) {
+      // a patrol boat, haze grey
+      hull(0.52, 0.55, 0.56, 0.5, 0.10, 0.10, 0.10);
+      box(0.40, 0.30, 0.70, 0.0, 0.53, 0, 0.55, 0.58, 0.59);     // superstructure
+      box(0.18, 0.22, 0.50, 0.06, 0.79, 0, 0.55, 0.58, 0.59);    // bridge
+      box(0.19, 0.08, 0.52, 0.06, 0.84, 0, 0.14, 0.15, 0.17, 1);  // its windows
+      box(0.04, 0.40, 0.04, -0.02, 1.08, 0, 0.30, 0.31, 0.32);   // mast
+      box(0.08, 0.16, 0.20, -0.20, 0.72, 0, 0.42, 0.44, 0.45);   // funnel
+      box(0.03, 0.05, 0.05, 0.44, 0.45, 0, 1, 0.95, 0.8, 1);
+    } else {
+      // the workboat: the original hull, a deck cargo block and an aft house
+      hull(0.15, 0.16, 0.18, 0.5, 0.45, 0.16, 0.13);
+      box(0.5, 0.3, 0.8, 0.03, 0.5, 0, 0.38, 0.36, 0.33);         // deck cargo block
+      bridge(-0.36, 0.16, 0.50, 0.30, 0.70);
+      funnel(-0.41, 0.9, 0.2, 0.2, 0.22);
+      box(0.03, 0.05, 0.05, 0.44, 0.45, 0, 1, 0.95, 0.8, 1);      // masthead light
+    }
     return septaMerge(parts);
   }
   function shipsInit() {
-    shipMesh = new THREE.InstancedMesh(shipGeom(), septaMats.body, SHIP_CAP);
-    shipMesh.frustumCulled = false;
-    shipMesh.count = 0;
-    // neutral instance tint written once: the geometry carries its own scheme
-    for (let k = 0; k < SHIP_CAP; k++) shipMesh.setColorAt(k, _sc.setRGB(1, 1, 1));
-    shipMesh.instanceColor.needsUpdate = true;
-    groupCity.add(shipMesh);
+    for (let kind = 0; kind < SHIP_KIND_N; kind++) {
+      const m = new THREE.InstancedMesh(shipGeom(kind), septaMats.body, SHIP_CAP);
+      m.frustumCulled = false;
+      m.count = 0;
+      m.userData.shipKind = kind;
+      // neutral instance tint written once: the geometry carries its own scheme
+      for (let k = 0; k < SHIP_CAP; k++) m.setColorAt(k, _sc.setRGB(1, 1, 1));
+      m.instanceColor.needsUpdate = true;
+      groupCity.add(m);
+      shipMeshes.push(m);
+      shipPick.push([]);
+      shipN.push(0);
+    }
+    shipPick.push([]);
     // anchor badge, billboarded and distance-scaled like the aircraft pins
     shipAnchor = new THREE.InstancedMesh(
       new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
@@ -11694,7 +11824,7 @@
         if (L > 4) v.len = clamp(L, 8, 340);
         if (B > 1) v.beam = clamp(B, 3, 52);
       }
-      if (s.Type) v.tn = SHIP_TYPE(s.Type);
+      if (s.Type) { v.tc = s.Type; v.tn = SHIP_TYPE(s.Type); }
       if (s.Destination && s.Destination.trim()) v.dest = s.Destination.trim();
     }
   }
@@ -11705,7 +11835,7 @@
     let v = shipMap.get(s.mmsi);
     if (!v) { v = { mmsi: s.mmsi, ft: nowP, len: 30, beam: 8, tn: 'Vessel', sog: 0, cog: 0, moored: false }; shipMap.set(s.mmsi, v); }
     if (s.name) v.name = String(s.name).trim() || v.name;
-    if (s.type > 0) v.tn = SHIP_TYPE(s.type);
+    if (s.type > 0) { v.tc = s.type; v.tn = SHIP_TYPE(s.type); }
     if (s.len > 4) v.len = clamp(s.len, 8, 340);
     if (s.beam > 1) v.beam = clamp(s.beam, 3, 52);
     if (s.dest) v.dest = String(s.dest).trim();
@@ -11774,15 +11904,20 @@
   }
   function shipTest() {
     const now = performance.now();
-    const mk = (mmsi, x, z, hdg, sog, len, beam, name, tn, dest, moored) => {
+    const mk = (mmsi, x, z, hdg, sog, len, beam, name, tc, dest, moored) => {
       const gms = sog * 0.5144;
       shipMap.set(mmsi, { mmsi, fx: x, fz: z, ft: now, dx: x, dz: z, sog, cog: hdg, hdg,
         vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms,
-        len, beam, name, tn, dest, moored: !!moored });
+        len, beam, name, tc, tn: SHIP_TYPE(tc), dest, moored: !!moored });
     };
-    mk(1001, 620, -250, 12, 9, 182, 28, 'MSC ALTAIR', 'Cargo Ship', 'PHILADELPHIA');
-    mk(1002, 680, 2500, 195, 5, 28, 9, 'DELAWARE RESPONDER', 'Tug', 'ASSIST');
-    mk(1003, 760, 1400, 90, 0, 224, 32, 'OVERSEAS LUNA', 'Tanker', 'PAULSBORO', true);
+    mk(1001, 620, -250, 12, 9, 182, 28, 'MSC ALTAIR', 70, 'PHILADELPHIA');
+    mk(1002, 680, 2500, 195, 5, 28, 9, 'DELAWARE RESPONDER', 31, 'ASSIST');
+    mk(1003, 760, 1400, 90, 0, 224, 32, 'OVERSEAS LUNA', 80, 'PAULSBORO', true);
+    mk(1004, 560, 300, 80, 7, 36, 10, 'RIVERLINK FERRY', 60, 'CAMDEN');
+    mk(1005, 700, 700, 350, 6, 14, 5, 'SEA RAY', 37, '');
+    mk(1006, 820, -600, 180, 8, 47, 8, 'CGC HAWSER', 35, 'PATROL');
+    mk(1007, 640, 1000, 0, 3, 24, 8, 'PILOT 1', 50, 'PHILADELPHIA');
+    mk(1008, 900, 2000, 200, 2, 60, 14, 'WORKBOAT', 0, '');
     shipStatus();
     return shipMap.size;
   }
@@ -11831,7 +11966,7 @@
     // vessels (__dbg.shipTest) still render so the pipeline stays provable
     if (!septaCanFetch || (!AIS_KEY && !AIS_RELAY)) { btnShips.style.display = 'none'; if (!shipMap.size) return; }
     if (!SHIPS.on) {
-      if (shipMesh.count) { shipMesh.count = 0; shipMesh.instanceMatrix.needsUpdate = true; shipAnchor.count = 0; shipAnchor.instanceMatrix.needsUpdate = true; }
+      if (shipAnchor.count) { for (const m of shipMeshes) { m.count = 0; m.instanceMatrix.needsUpdate = true; } shipAnchor.count = 0; shipAnchor.instanceMatrix.needsUpdate = true; }
       return;
     }
     if (!document.hidden) {   // only while the layer is on
@@ -11853,6 +11988,7 @@
     for (const m of gone) shipMap.delete(m);
     gone.length = 0;
     let i = 0;
+    for (let kk = 0; kk < SHIP_KIND_N; kk++) shipN[kk] = 0;
     for (const v of shipMap.values()) {
       if (i >= SHIP_CAP) break;
       const age = (now - v.ft) / 1000;
@@ -11866,30 +12002,32 @@
       const hx = Math.sin(hd * DEG), hz = -Math.cos(hd * DEG);
       _fe.set(0, Math.atan2(-hz, hx), 0, 'YZX');
       _fq.setFromEuler(_fe);
+      const kind = SHIP_KIND(v.tc || 0, v.len), hgt = SHIP_H[kind](v.len);
       _sp.set(v.dx, TERRAIN.water + 0.1, v.dz);
-      _ss.set(v.len, clamp(v.len * 0.09, 2.5, 16), v.beam);
+      _ss.set(v.len, hgt, v.beam);
       _sm.compose(_sp, _fq, _ss);
-      shipMesh.setMatrixAt(i, _sm);
+      const kn = shipN[kind]++;
+      shipMeshes[kind].setMatrixAt(kn, _sm);
+      shipPick[kind][kn] = v;
       // the anchor pin floats above the masthead, holding size like the aircraft badges
-      _sp.set(v.dx, TERRAIN.water + clamp(v.len * 0.09, 2.5, 16) + 2, v.dz);
+      _sp.set(v.dx, TERRAIN.water + hgt + 2, v.dz);
       const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
       _ss.set(aps, aps, aps);
       _sm.compose(_sp, _aqB, _ss);
       shipAnchor.setMatrixAt(i, _sm);
-      shipPick[i] = v;
+      shipPick[SHIP_KIND_N][i] = v;
       i++;
     }
     if (gone.length) {
       for (const g of gone) { const v = shipMap.get(g); shipMap.delete(g); if (pickedShip === v) { pickedShip = null; vehinfoEl.hidden = true; } }
       shipStatus();
     }
-    shipMesh.count = i;
-    flushInst(shipMesh, -1);     // tints are written once in shipsInit
+    for (let kk = 0; kk < SHIP_KIND_N; kk++) { shipMeshes[kk].count = shipN[kk]; flushInst(shipMeshes[kk], -1); }   // tints are written once in shipsInit
     shipAnchor.count = i;
     flushInst(shipAnchor, -1);
     if (pickedShip) {
       shipCard(pickedShip);
-      _ssv.set(pickedShip.dx, TERRAIN.water + clamp(pickedShip.len * 0.09, 2.5, 16) + 6, pickedShip.dz).project(camera);
+      _ssv.set(pickedShip.dx, TERRAIN.water + SHIP_H[SHIP_KIND(pickedShip.tc || 0, pickedShip.len)](pickedShip.len) + 6, pickedShip.dz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
@@ -13874,7 +14012,7 @@
       document.body.appendChild(devHud);
       window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
-      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob

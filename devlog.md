@@ -2792,6 +2792,44 @@ the diff with two skeptics per finding.
   Square, the waterfront shelf, the NW hills; 33 tests pass. Before-and-after captures are in the
   session's scratchpad.
 
+## Round 53: the cumulus in depth, a lighter fabric, a hull for every class of ship (Sep 5)
+
+- **The cloud deck marched (Mike: flat and two-dimensional).** Round 51's deck was one plane at
+  1,900 m carrying a 2D fbm, lit by a second sample toward the sun: a textured sheet, however it
+  was lit. The plane is now only where the eye's ray enters a slab 720 m deep, and `cloudMat`
+  marches up through it (`CLOUD_STEPS`: 10 on desktop, 5 on phones, an interleaved-gradient
+  start offset at 0.7 of a step, extinction 0.009 per metre of density): the base field is the
+  same one the ground shadows read, eroded with height by `hf * (0.06 + 0.40 * hf)` so a puff of
+  ordinary density stands about 300 m and only the densest cores reach the top, the columns lean
+  0.09 field units per unit height so the sides billow, and each sample is lit by a coarser
+  (three-octave) sample toward the sun and a step up the slab (thinner toward the light means
+  sunlit; the bellies self-shade at 0.45 of the sky, the tops take all of it). The coarse and fine
+  octaves are split (`cfbmL`, `cfbmH`) so the sun-ward difference carries no fine-octave bias.
+  Seen from the ground at a slant the puffs show their sides and rounded tops; the horizon band
+  reads a solid field, as a cumulus sky does. The camera never rises above the deck (the flight
+  ceiling is 1,600 m), so the march has one case. Two things found on the way: the first pass
+  divided the rim glow by the alpha AFTER the 14 to 26 km fade, and a divide by the fade's zero put
+  NaN, drawn black, in a bowed line along the deck's far edge (gotcha 21: divide by the coverage,
+  never by the faded alpha); and a white-noise start offset at eight steps speckled the whole
+  deck, so it took the interleaved-gradient pattern, ten steps and a lower extinction. Cost in the
+  pane: 2.3 to 2.5 ms per frame at the sky view, within noise.
+- **The fabric a quarter lighter (Mike: too dark now).** `FACADE_GAIN` 0.22 to 0.27, `ROOF_GAIN`
+  0.14 to 0.17, the core's pair 0.42 / 0.28 to 0.52 / 0.34 (the core-to-tier ratio kept). Measured
+  on matched captures, a rowhouse band went 101 to 111 displayed, an oblique Center City band 122
+  to 131, the wide view 110 to 120.
+- **A hull for every class (Mike: can we tell the type, and use different boats?).** Yes: the
+  stream's ShipStaticData and the relay's `type` carry the AIS type code, which the card already
+  named. The code is kept on the vessel (`v.tc`) and `SHIP_KIND(type, len)` picks one of seven
+  hulls, each its own instanced mesh with `SHIP_CAP` slots and its own height rule (`SHIP_H`):
+  the workboat (the old hull, for unknown codes), the container ship (bays of coloured boxes fore
+  and aft of the house, three tiers midships), the tanker (long and low, a forecastle, the catwalk
+  and manifold, a six-deck house aft), the tug (short and fat, the fender band, the wheelhouse
+  forward, a red stack; codes 31, 32, 52), the passenger vessel (white hull, blue band, two window
+  decks; 60s and the high-speed 40s), the small craft (pleasure, fishing, pilot, tenders, and
+  anything 20 m or under), and the patrol boat in haze grey (35, 51, 55). The picker reads the hit
+  mesh's kind, the anchor badges keep one list. `shipTest()` now seeds eight vessels, one of every
+  kind. Verified with the test fleet from the water and from 60 m; 34 tests pass.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

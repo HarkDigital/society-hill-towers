@@ -457,6 +457,11 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
     hands the composite a pre-image far above the bright pass threshold. The bright pass reads
     the target's alpha as its mask (the cloud deck's coverage rides there), so
     `postRaw(mat, { mask: true })` blends colour normally and writes zero alpha under the sprite.
+21. **A transparent shader divides by its coverage, never by its faded alpha (Round 53).** The
+    marched cloud deck accumulates premultiplied colour and un-premultiplies at the end; the
+    first pass divided by the alpha after the 14 to 26 km distance fade, and where the fade
+    reached zero the divide put NaN, which the blend drew as a bowed black line along the deck's
+    far edge. Keep the coverage (`1 - T`) for every divide and apply the fade to the alpha alone.
 
 More rules the log paid for (details in `devlog.md`):
 
