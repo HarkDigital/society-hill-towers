@@ -133,6 +133,7 @@ echo "== rsync"
 rsync -az --delay-updates "$TMP/index.html" "$TMP/index.html.gz" \
   "$TMP/favicon.ico" "$TMP/favicon.svg" \
   "$TMP/apple-touch-icon.png" "$TMP/og.png" \
+  "$TMP/manifest.webmanifest" "$TMP/sw.js" \
   "$HOST:$WEB/"
 
 # 4. prove the live site serves exactly this build
