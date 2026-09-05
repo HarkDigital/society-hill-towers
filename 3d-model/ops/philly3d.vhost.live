@@ -1,5 +1,6 @@
 # Captured read-only from the VPS on 2026-09-02 (/etc/nginx/sites-available/philly3d), after the
-# Cache-Control no-cache line was added to location / with Mike's go (backup: philly3d.bak-20260902).
+# Cache-Control no-cache line was added to location / with Mike's go (backup: philly3d.bak-20260902),
+# and the manifest's MIME location on 2026-09-05 (backup: philly3d.bak-20260905).
 # The .example beside this file is this block plus the still-planned additions.
 server {
     listen 80;
@@ -50,6 +51,12 @@ server {
         proxy_hide_header Set-Cookie;
         add_header Access-Control-Allow-Origin * always;
         add_header Cache-Control no-store always;
+    }
+
+    # the installable app: nginx has no type for .webmanifest, so name it here
+    location = /manifest.webmanifest {
+        default_type application/manifest+json;
+        add_header Cache-Control "no-cache" always;
     }
 
     location / {
