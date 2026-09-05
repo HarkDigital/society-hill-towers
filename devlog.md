@@ -2830,6 +2830,39 @@ the diff with two skeptics per finding.
   mesh's kind, the anchor badges keep one list. `shipTest()` now seeds eight vessels, one of every
   kind. Verified with the test fleet from the water and from 60 m; 34 tests pass.
 
+- **Round 53 coda (Mike, with a photo of the real sky and two screenshots: the deck still looked
+  bad, and the installed app opened half blank).** The photo: a half-covered cumulus sky under a thin
+  high veil, white tops, cool grey bases, the far clouds flattening into a bright haze. The app under
+  the live weather: a tan sheet closing the sky, cut off by a straight line at 26 km with a pale band
+  under it. Four causes, four fixes. (1) The deck's far quad was clipped by the camera's 26 km far
+  plane, so the 14 to 26 km alpha fade was really an edge: the deck's vertex shader now holds clip z
+  inside the frustum (the fragment depth still comes from the log path and saturates at 1, so nearer
+  geometry keeps covering it), the plane is 200 km, and the deck thins by elevation over the last
+  three degrees above the horizon, where the fog has already made it the haze colour; the dome's own
+  cumulus band narrowed to those degrees. (2) Colour: the shade greys were warmed by a 0.35 mix of
+  the sun's colour on everything; now the bellies are a cool grey (0.50, 0.55, 0.64, the photo's),
+  only the sunlit faces take 0.18 of the sun, and under a full overcast the sheet pales (light comes
+  down through it) instead of going leaden. (3) Lighting: the sun-ward sample sat 44 m away, inside
+  the coarse field's smallest feature, so every point read mid grey; it now sits 125 m toward the sun
+  and a step up the slab, and `lit = 0.55 - 3.5 * (that sample's density excess)`: outside the cloud
+  toward the sun means lit, deep means dark, with thin edges glowing through. Flat dark bases and
+  bright tops, as in the photo. (4) Cover: Open-Meteo's `cloud_cover` is the total, and a cirrus veil
+  over a half-covered sky reports 80 or more; the fetch now asks for the low, mid and high covers and
+  the deck takes `max(low, 0.8 mid, 0.45 total)`. Twelve steps on desktop (the ten-step grain still
+  showed), the start offset at 0.6 of a step, the bellies' ambient floor 0.62.
+- **The installable app.** `build.py` writes `manifest.webmanifest` beside the page (start_url and
+  scope `./`, standalone, the ink theme, three icons as data URLs from the new
+  `brand/make_pwa_icons.py`), the template links it and carries the Apple web-app metas and
+  `viewport-fit=cover`, `sw.js` is a network-only worker registered over https (Chrome and Edge want
+  a real fetch handler before they offer Install; nothing is cached because the page is rebuilt
+  every deploy), `3d-model/index.html` redirects so `./` resolves on Pages, the HUD's fixed corners
+  add the safe-area insets, and the deploy stages the manifest and worker at the site root. The
+  half-blank window: the app's window opens at one size and lays out at another, and the resize
+  landed during the build, before the listener existed (it was registered after the build steps),
+  so the canvas kept its first size while the CSS layout took the new one. `fitView()` now runs on
+  `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
+  from the one the canvas was last fitted to.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**

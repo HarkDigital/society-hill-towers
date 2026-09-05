@@ -55,8 +55,8 @@ html, body {
 /* ---------- compass ---------- */
 #compass {
   position: fixed;
-  top: 16px;
-  right: 16px;
+  top: calc(16px + env(safe-area-inset-top, 0px));
+  right: calc(16px + env(safe-area-inset-right, 0px));
   width: 52px;
   height: 52px;
   z-index: 10;
@@ -79,7 +79,7 @@ html, body {
 /* ---------- bottom control bar ---------- */
 #bar {
   position: fixed;
-  bottom: 16px;
+  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -128,8 +128,8 @@ html, body {
 /* touch fly controls: climb/descend, right thumb reach */
 #flyctl {
   position: fixed;
-  right: 14px;
-  bottom: 146px;
+  right: calc(14px + env(safe-area-inset-right, 0px));
+  bottom: calc(146px + env(safe-area-inset-bottom, 0px));
   display: none;
   flex-direction: column;
   gap: 12px;
@@ -218,8 +218,8 @@ html, body {
 /* ---------- hint line ---------- */
 #hint {
   position: fixed;
-  bottom: 17px;
-  left: 16px;
+  bottom: calc(17px + env(safe-area-inset-bottom, 0px));
+  left: calc(16px + env(safe-area-inset-left, 0px));
   z-index: 9;
   font-family: var(--mono);
   font-size: 10px;

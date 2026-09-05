@@ -107,6 +107,12 @@
   });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  // the installable app: a network-only service worker beside the page (sw.js) is what lets
+  // Chrome and Edge offer Install; the manifest is linked from the template. Only over https,
+  // so a dev server never gets a worker
+  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+    try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) { /* no worker */ }
+  }
 
   let renderer;
   try {
@@ -151,6 +157,10 @@
     if (floodMat) floodMat.size = r;
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // the installed app (PWA) opens its window at one size and lays the page out at another, and
+  // the resize can land while the build is still running: every frame checks the window
+  // against the size the canvas was last fitted to (fitView, below the camera)
+  let fitW = window.innerWidth, fitH = window.innerHeight;
   // Three.js is PINNED at r149 (build.py asserts it): outputEncoding/sRGBEncoding
   // were removed in r152+, and the ~250 colour constants in this file are tuned
   // to r149's legacy colour pipeline (stored dark, lifted by ACES). An upgrade
@@ -1674,7 +1684,7 @@
       '    vec3 cc = mix(vec3(0.60, 0.65, 0.72), vec3(0.985, 0.99, 1.0), lit) * uCloudLight;\n' +
       '    cc = mix(cc, vec3(0.74, 0.77, 0.82) * uCloudLight, dens * (0.35 + 0.4 * cov));\n' +
       // the deck overhead is the cloud plane's (see cloudDeck); the dome keeps the far band
-      '    float horiz = smoothstep(0.02, 0.16, h) * (1.0 - smoothstep(0.08, 0.26, h));\n' +
+      '    float horiz = smoothstep(0.0, 0.03, h) * (1.0 - smoothstep(0.04, 0.12, h));\n' +
       '    col = mix(col, cc, m * horiz * (0.86 + 0.1 * cov));\n' +
       '  }\n' +
       // under the post pipeline the dome hands the composite the exact pre-image of its raw
@@ -1703,7 +1713,7 @@
   // plane never did (Mike: flat and two-dimensional). The whole deck is warmed by the sun's
   // colour and dimmed by the sky's cloud light (night, overcast, storm gloom). The dome's own
   // cumulus is kept to the horizon band, where the deck has hazed out
-  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 5 : 10;
+  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 5 : 12;
   const cloudMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
     uniforms: Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), {
@@ -1714,7 +1724,11 @@
       'varying vec3 vW;',
       '#include <common>', '#include <fog_pars_vertex>', '#include <logdepthbuf_pars_vertex>',
       'void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; vec4 mvPosition = viewMatrix * w; gl_Position = projectionMatrix * mvPosition;',
-      '#include <logdepthbuf_vertex>', '#include <fog_vertex>', '}',
+      '#include <logdepthbuf_vertex>', '#include <fog_vertex>',
+      // the deck runs to the horizon, past the camera's far plane: hold the clip z inside the
+      // frustum so the far quad is not cut off at 26 km (the fragment depth still comes from the
+      // log path, saturating at 1, so anything drawn nearer keeps covering the deck)
+      'gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99999); }',
     ].join('\n'),
     fragmentShader: [
       'uniform float uCloud, uCloudLight, uPost, uExposure; uniform vec2 uCloudOff; uniform vec3 uSun, cSun; varying vec3 vW;',
@@ -1737,28 +1751,39 @@
       // the eye's ray enters the slab, and the march climbs it to the exit, or to a capped path
       // toward the horizon where the slab is seen end-on and reads solid anyway
       '  vec3 rd = normalize(vW - cameraPosition);',
+      // the deck thins into the haze over the last three degrees above the horizon, where the
+      // fog has already taken its colour (no far edge: the plane runs 100 km out)
+      '  float elev = smoothstep(0.006, 0.05, rd.y);',
+      '  if (elev < 0.002) discard;',
       '  float path = min(' + CLOUD_THICK.toFixed(1) + ' / max(rd.y, 0.03), 5000.0);',
       '  float ds = path / ' + CLOUD_STEPS.toFixed(1) + ';',
       '  float jit = fract(52.9829189 * fract(0.06711056 * gl_FragCoord.x + 0.00583715 * gl_FragCoord.y));',
       '  float sunE = clamp(uSun.y, 0.0, 1.0);',
       '  float sunUp = clamp(uSun.y * 3.0, 0.0, 1.0);',
-      '  vec2 sd = normalize(uSun.xz + vec2(1e-4, 0.0)) * 0.035;',
-      '  float sh = 0.04 + 0.22 * sunE;',
-      '  vec3 shade = mix(vec3(0.62, 0.66, 0.74), vec3(0.44, 0.47, 0.54), cov * 0.6);',
-      '  vec3 sunlit = vec3(1.0, 0.99, 0.96);',
+      // the sun-ward sample sits 125 m toward the sun and a step up the slab: what it finds is
+      // the cloud between here and the light
+      '  vec2 sd = normalize(uSun.xz + vec2(1e-4, 0.0)) * 0.10;',
+      '  float sh = 0.08 + 0.30 * sunE;',
+      // the bellies a cool grey (the photo's, never warm), paler under a full overcast where the
+      // light comes down through the sheet; the sunlit faces white with a touch of the sun
+      '  float ovc = smoothstep(0.55, 0.95, cov);',
+      '  vec3 shade = mix(vec3(0.50, 0.55, 0.64), vec3(0.70, 0.72, 0.76), ovc * 0.7);',
+      '  vec3 sunlit = mix(vec3(1.0), cSun, 0.18);',
       '  vec3 acc = vec3(0.0); float T = 1.0; float glow = 0.0;',
       '  for (int i = 0; i < ' + CLOUD_STEPS + '; i++) {',
-      '    vec3 p = vW + rd * ((float(i) + 0.7 * jit) * ds);',
+      '    vec3 p = vW + rd * ((float(i) + 0.6 * jit) * ds);',
       '    float hf = (p.y - ' + CLOUD_ALT.toFixed(1) + ') / ' + CLOUD_THICK.toFixed(1) + ';',
       '    vec2 cp = p.xz * 0.0008 + uCloudOff * 0.8 + vec2(0.09, -0.06) * hf;',
-      '    float fL = cfbmL(cp);',
-      '    float f = fL + cfbmH(cp) - cerode(hf);',
-      '    float dens = smoothstep(thr, thr + 0.22, f);',
+      '    float fe = cfbmL(cp) + cfbmH(cp) - cerode(hf) - thr;',
+      '    float dens = smoothstep(0.0, 0.22, fe);',
       '    if (dens > 0.003) {',
-      '      float hf2 = hf + sh;',
-      '      float f2 = cfbmL(cp + sd + vec2(0.09, -0.06) * sh) - cerode(hf2);',
-      '      float lit = clamp((fL - cerode(hf) - f2) * 5.0 + 0.35, 0.0, 1.0) * sunUp;',
-      '      float amb = 0.45 + 0.55 * clamp(hf, 0.0, 1.0);',
+      // outside the cloud toward the sun: in the light; the deeper the sun-ward sample sits in
+      // cloud, the darker. Thin edges glow through (forward scatter), and an overcast sheet is
+      // lit from above through its thin parts rather than from the side
+      '      float fe2 = cfbmL(cp + sd + vec2(0.09, -0.06) * sh) - cerode(hf + sh) - thr;',
+      '      float lit = max(clamp(0.55 - fe2 * 3.5, 0.0, 1.0), 0.6 * (1.0 - dens)) * sunUp + ovc * 0.25 * (1.0 - dens);',
+      '      lit = clamp(lit, 0.0, 1.0);',
+      '      float amb = 0.62 + 0.38 * clamp(hf, 0.0, 1.0) + 0.2 * ovc;',
       '      float a = 1.0 - exp(-dens * ds * 0.009);',
       '      acc += T * a * mix(shade * amb, sunlit, lit);',
       '      glow += T * a * lit * (1.0 - dens);',
@@ -1768,8 +1793,8 @@
       '  }',
       '  float cover = 1.0 - T;',
       '  if (cover < 0.004) discard;',
-      '  vec3 col = acc / cover * uCloudLight * mix(vec3(1.0), cSun, 0.35);',
-      '  float alpha = cover * 0.96 * (1.0 - smoothstep(14000.0, 26000.0, length(vW.xz - cameraPosition.xz)));',
+      '  vec3 col = acc / cover * uCloudLight;',
+      '  float alpha = cover * 0.96 * elev;',
       '  gl_FragColor = vec4(col, alpha);',
       // the pre-image first, then the fog (whose colour is the pre-image too under the post pipeline);
       // the coverage stays the bloom mask as it is, a halved alpha halved the colour blend as well;
@@ -1779,7 +1804,7 @@
       '}',
     ].join('\n'),
   });
-  const cloudDeck = new THREE.Mesh(new THREE.PlaneGeometry(64000, 64000, 1, 1), cloudMat);
+  const cloudDeck = new THREE.Mesh(new THREE.PlaneGeometry(200000, 200000, 1, 1), cloudMat);
   cloudDeck.rotation.x = -Math.PI / 2; cloudDeck.position.y = CLOUD_ALT;
   cloudDeck.frustumCulled = false; cloudDeck.renderOrder = -5;
   scene.add(cloudDeck);
@@ -12776,6 +12801,11 @@
     WX.precip = Math.max(cur.precipitation || 0, (cur.rain || 0) + (cur.showers || 0));
     WX.snowfall = cur.snowfall || 0;
     WX.cover = clamp((cur.cloud_cover == null ? 22 : cur.cloud_cover) / 100, 0, 1);
+    // the deck is the low and mid cloud: a high veil alone (Mike's photo, a thin cirrostratus
+    // over a half-covered cumulus sky reported as 80+ total) must not close the sky
+    if (cur.cloud_cover_low != null && cur.cloud_cover_mid != null) {
+      WX.cover = clamp(Math.max(cur.cloud_cover_low, cur.cloud_cover_mid * 0.8, (cur.cloud_cover || 0) * 0.45) / 100, 0, 1);
+    }
     if (WX.precip > 0.1) WX.cover = Math.max(WX.cover, 0.85);
     if (WX.snowfall > 0.02) WX.cover = Math.max(WX.cover, 0.8);
     if (WX.code === 45 || WX.code === 48) WX.cover = Math.max(WX.cover, 0.55);
@@ -12820,7 +12850,7 @@
     if (!wxCanFetch || WX_PRESETS[wxForced] || document.hidden) return;
     if (wxRetry) { clearTimeout(wxRetry); wxRetry = 0; }
     try {
-      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit',
+      fetch('https://api.open-meteo.com/v1/forecast?latitude=39.9455&longitude=-75.1447&current=cloud_cover,cloud_cover_low,cloud_cover_mid,cloud_cover_high,precipitation,rain,showers,snowfall,weather_code,temperature_2m,wind_speed_10m,wind_direction_10m&temperature_unit=fahrenheit',
         { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })
         .then(r => (r && r.ok ? r.json() : Promise.reject(new Error('http ' + (r && r.status)))))
         .then((js) => { wxOkT = performance.now(); wxBackoff = 60000; applyWx(js); })
@@ -13809,12 +13839,18 @@
     setHint();
   });
 
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+  function fitView() {
+    const w = window.innerWidth, h = window.innerHeight;
+    if (w < 2 || h < 2) return;
+    fitW = w; fitH = h;
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
     renderer.setPixelRatio(DPR.cur);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-  });
+    renderer.setSize(w, h);
+  }
+  window.addEventListener('resize', fitView);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', fitView);
+  fitView();
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
     const el = document.getElementById('nogl');
@@ -13858,6 +13894,7 @@
     return 'p50 ' + p.p50 + ' ms  p95 ' + p.p95 + ' ms  |  ' + p.calls + ' calls  ' + (p.tris / 1e6).toFixed(2) + ' M tris  ' + p.programs + ' prog  |  dpr ' + p.dpr.toFixed(2) + (p.heapMB ? '  heap ' + p.heapMB + ' MB' : '') + '  |  ready ' + (p.readyMs / 1000).toFixed(1) + ' s';
   }
   function frame(now, once) {
+    if (window.innerWidth !== fitW || window.innerHeight !== fitH) fitView();
     if (!once) requestAnimationFrame(frame);
     const rawMs = now - last;
     const dt = Math.min(rawMs / 1000, 0.05);

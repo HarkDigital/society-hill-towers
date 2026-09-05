@@ -186,6 +186,29 @@ fav_svg_b64 = brand_b64("favicon.svg")
 fav_32_b64 = brand_b64("favicon-32.png")
 touch_b64 = brand_b64("apple-touch-icon.png")
 
+# the installable app's manifest, written beside the page (manifest.webmanifest, linked from
+# the template with a relative href so it works at philly3d.com/ and under Pages' 3d-model/).
+# start_url and scope are "./": the page is index.html on the VPS, and 3d-model/index.html
+# on Pages is a redirect to the page. Icons ride as data URLs (brand/make_pwa_icons.py), so
+# the one manifest needs no icon path that differs between the two homes
+MANIFEST = ROOT / "manifest.webmanifest"
+def icon(name, size, purpose):
+    return {"src": "data:image/png;base64," + brand_b64(name), "sizes": f"{size}x{size}", "type": "image/png", "purpose": purpose}
+manifest = {
+    "name": "Philly3D: A Living Model of Philadelphia",
+    "short_name": "Philly3D",
+    "description": "Fly a living 3D model of Philadelphia: a quarter million buildings at true measured height, live SEPTA vehicles, flights, ships, and the real sun over the city.",
+    "id": "./",
+    "start_url": "./",
+    "scope": "./",
+    "display": "standalone",
+    "orientation": "any",
+    "background_color": "#171512",
+    "theme_color": "#171512",
+    "icons": [icon("icon-192.png", 192, "any"), icon("icon-512.png", 512, "any"), icon("icon-512-maskable.png", 512, "maskable")],
+}
+MANIFEST.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
+
 # </script> inside embedded JS strings would terminate the tag early
 for name, blob in (("three", three), ("pg", PG_JS), ("app", app), ("css", css), ("about", about_body),
                    ("favicon_svg_b64", fav_svg_b64), ("favicon_32_b64", fav_32_b64), ("apple_icon_b64", touch_b64),

@@ -106,6 +106,10 @@ done
 cp society-hill-towers.html "$TMP/index.html"
 cp brand/dist/favicon.ico brand/dist/favicon.svg \
    brand/dist/apple-touch-icon.png brand/dist/og.png "$TMP/"
+# the installable app: the manifest build.py writes beside the page, and the network-only
+# service worker (both linked from the page by relative URL, so they sit at the site root)
+[ -s manifest.webmanifest ] || fatal "missing manifest.webmanifest (build.py writes it)"
+cp manifest.webmanifest sw.js "$TMP/"
 grep -q "FLIGHT_PROXY = 'https://philly3d.com/adsb'" "$TMP/index.html" \
   || fatal "refusing to ship a proxyless build (FLIGHT_PROXY is not the philly3d.com /adsb passthrough)"
 grep -q 'property="og:image"' "$TMP/index.html" \
