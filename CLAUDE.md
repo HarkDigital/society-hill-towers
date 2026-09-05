@@ -82,7 +82,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   during a Philadelphia home game.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances.
-- Commit the built page with the source. Do not push or deploy unless asked.
+- Commit the built page with the source, then push and run `deploy_philly3d.sh` after every
+  verified update without asking (Mike, Sep 5, 2026: no permission needed to deploy from here on).
 
 ## URL flags
 
