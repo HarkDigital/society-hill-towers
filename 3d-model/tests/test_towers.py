@@ -14,7 +14,7 @@ FILE = 'towers.json'
 KEYS = ('name', 'x', 'z', 'h', 'r', 'hex', 'glass', 'facade', 'crown', 'lit', 'podium', 'matched')
 FACADES = {'glass', 'glass_bands', 'glass_dark', 'concrete_grid', 'stone_piers', 'deco', 'precast_bands', 'brick'}
 CROWNS = {'flat', 'notch', 'pyramid', 'stepped', 'custom', 'spire', 'lattice', 'ziggurat', 'lantern',
-          'sloped', 'mansard', 'dome'}
+          'sloped', 'mansard', 'dome', 'blade'}
 MIN_RECORDS = 40
 H_RANGE = (45.0, 400.0)
 

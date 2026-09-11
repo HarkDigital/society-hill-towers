@@ -52,9 +52,9 @@ NAME_R, FAR_R, POS_R = 300, 800, 200
 FACADES = ('glass', 'glass_bands', 'glass_dark', 'concrete_grid', 'stone_piers', 'deco',
            'precast_bands', 'brick')
 CROWNS = ('flat', 'notch', 'pyramid', 'stepped', 'custom', 'spire', 'lattice', 'ziggurat',
-          'lantern', 'sloped', 'mansard', 'dome')
+          'lantern', 'sloped', 'mansard', 'dome', 'blade')
 CROWN_H = {'notch': 8, 'pyramid': 20, 'spire': 15, 'lattice': 30, 'ziggurat': 25, 'lantern': 10,
-           'sloped': 13, 'mansard': 10, 'dome': 15, 'stepped': 20}
+           'sloped': 13, 'mansard': 10, 'dome': 15, 'stepped': 20, 'blade': 38}
 
 # name tokens that carry no identity (building words shared by many)
 STOP = {'building', 'tower', 'towers', 'center', 'centre', 'square', 'house', 'street', 'place',
@@ -81,8 +81,8 @@ def C(t, h=None, **kw):
 
 
 OVERRIDES = [
-    (r'comcast technology', dict(facade='glass', crown=C('lantern', 18), lit='#ffe9c4')),
-    (r'comcast center', dict(facade='glass', crown=C('notch', 8), lit='#cfe0ff')),
+    (r'comcast technology', dict(facade='glass', crown=C('blade', 38), lit='#ffe9c4')),   # the narrow framed lantern blade, 38 m (Round 54)
+    (r'comcast center', dict(facade='glass', crown=C('notch', 8, sides=3), lit='#cfe0ff')),   # recessed on three sides
     (r'(one|two) liberty place', dict(facade='glass_bands', crown=C('custom'), lit='#dbe6ff')),
     (r'bny mellon', dict(facade='stone_piers', crown=C('lattice', 30), lit='#dfe8ff')),
     (r'three logan', dict(facade='deco', hex='#B36349', crown=C('ziggurat', 25, steps=3), lit='#ffd9a8')),

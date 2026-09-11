@@ -30,11 +30,11 @@
     glassLobby: 0x2e2b35,
     ground: 0x243818,     // bare earth is the same meadow as the parks (the game's one dark olive); the surfTexPatch mottle carries the variation
     plaza: 0x96604a,       // brick-paved plaza and circular drive
-    asphalt: 0x3b3833,
+    asphalt: 0x37342f,   // a shade darker since Round 54 (the paving pass)
     footway: 0x7c584a,     // society hill brick sidewalks
     park: 0x243818,        // grass — stored very deep: the legacy-color pipeline + ACES
     parkDark: 0x1d2c13,    // lift flat lawns ~2.5x at noon (cf. roads: 0x3b3833 -> light gray)
-    water: 0x07297b,     // deep blue, the game's: a body colour, not a lit floor (liquify damps its diffuse)
+    water: 0x163038,     // slate teal (Round 54; was the game's deep blue 0x07297b, and 0x0a3644 rendered a bright turquoise): a body colour, not a lit floor (liquify damps its diffuse)
     pier: 0x8f8a7d,
     trunk: 0x2b2119,       // stored near-black: the legacy lift turns it bark brown (0x5b4a38 read as cream)
     bronze: 0x4d3b26,
@@ -479,6 +479,13 @@
   // reads (aStyle, aFloorH, aWallU/L/H, aBase), 'base' only aBase (the Ryland
   // glass night shader), anything else none: streets, parks, water and trim
   // used to carry 24 dead bytes per vertex their plain materials never read
+  // the glass tint of a building, one byte per vertex (aTint): a hash of its unshaded wall
+  // colour and its facade style, so every window of one building draws the same palette entry.
+  // The shader used to key the tint on 28 m world cells, which cut a tower into bronze, grey and
+  // teal bands wherever a wall crossed a cell edge (Round 54)
+  function glassTintKey(color, style) {
+    return hash01(Math.round(color.r * 255) * 0.731 + Math.round(color.g * 255) * 1.377 + Math.round(color.b * 255) * 2.113 + (style | 0) * 0.517 + 0.29);
+  }
   function mergeColored(parts, ao, facade) {
     let count = 0;
     const prepped = parts.map(p => {
@@ -492,6 +499,7 @@
     const full = facade === true;
     const sty = full ? new Float32Array(count) : null;
     const flh = full ? new Float32Array(count) : null;
+    const tin = full ? new Float32Array(count) : null;   // the glass tint key, from the unshaded colour (before the ao ramp)
     const wu = full ? new Float32Array(count) : null, wl = full ? new Float32Array(count) : null, wh = full ? new Float32Array(count) : null;
     const bs = facade ? new Float32Array(count) : null;
     // the lane paint's aLane rides along when any part carries it (zeros elsewhere: the shader skips them)
@@ -509,7 +517,7 @@
       pos.set(p, o * 3); nor.set(n, o * 3);
       if (full && g.attributes.aWallU) { wu.set(g.attributes.aWallU.array, o); wl.set(g.attributes.aWallL.array, o); wh.set(g.attributes.aWallH.array, o); }
       if (ln && g.attributes.aLane) ln.set(g.attributes.aLane.array, o * 4);
-      if (full) { sty.fill(styleV, o, o + vc); flh.fill(flhV, o, o + vc); }
+      if (full) { sty.fill(styleV, o, o + vc); flh.fill(flhV, o, o + vc); tin.fill(parts[pi].tint !== undefined ? parts[pi].tint : glassTintKey(color, styleV), o, o + vc); }
       if (bs) bs.fill(baseY, o, o + vc);
       for (let i = 0; i < vc; i++) {
         c.copy(color);
@@ -532,6 +540,7 @@
       out.setAttribute('aWallU', new THREE.BufferAttribute(wu, 1));
       out.setAttribute('aWallL', new THREE.BufferAttribute(wl, 1));
       out.setAttribute('aWallH', new THREE.BufferAttribute(wh, 1));
+      out.setAttribute('aTint', new THREE.BufferAttribute(tin, 1));
     }
     if (bs) out.setAttribute('aBase', new THREE.BufferAttribute(bs, 1));
     if (ln) out.setAttribute('aLane', new THREE.BufferAttribute(ln, 4));
@@ -1713,7 +1722,7 @@
   // plane never did (Mike: flat and two-dimensional). The whole deck is warmed by the sun's
   // colour and dimmed by the sky's cloud light (night, overcast, storm gloom). The dome's own
   // cumulus is kept to the horizon band, where the deck has hazed out
-  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 5 : 12;
+  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 6 : 18;
   const cloudMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
     uniforms: Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), {
@@ -2373,7 +2382,7 @@
           '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
           '  }\n' +
           '  g = wd * g.x + wp * g.y * 1.55;\n' +
-          '  g *= wamp * wfade * (0.45 + 0.8 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
+          '  g *= wamp * wfade * (0.5 + 0.6 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
           '  vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));\n' +
           '  normal = normalize(mix(normal, normalize(mat3(viewMatrix) * wn), 0.92));\n' +   // the PBR normal is view-space; wn stays world-space for the glint and fresnel below
           // sun glitter on the perturbed surface: the material is deliberately rough
@@ -2387,7 +2396,10 @@
           '  vec3 wview = normalize(cameraPosition - vWq);\n' +
           // fresnel: the sheet reads as sky at grazing angles and as deep water below the eye
           '  float wfres = pow(1.0 - clamp(dot(wview, wn), 0.0, 1.0), 3.0);\n' +
-          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.36, 0.52, 0.68), wfres * 0.2 * (1.0 - uNite * 0.75));\n' +
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.42, 0.53, 0.62), wfres * 0.17 * (1.0 - uNite * 0.75));\n' +
+          // a restrained shoreline tint (Round 54): the last metres at the bank lighten a touch
+          // toward the shallows' teal, by day only, where the sheet carries a shore distance
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * vec3(1.16, 1.28, 1.18), (1.0 - smoothstep(0.0, 0.4, wsh)) * 0.3 * (1.0 - uNite * 0.8));\n' +
           '  float wspec = pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 140.0);\n' +
           // a broad low-power lobe under the sparkle: the soft sheet of light real
           // rivers throw toward the sun, not just point glitter
@@ -2401,7 +2413,7 @@
         // under the noon sun a teal albedo lifted to a pale cyan (the river read milky from
         // every height), so the diffuse terms are damped and the stored colour is the water's
         // own deep blue at any sun height, the reflection and the glints on top
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= vec3(0.30, 0.52, 0.95) * 0.45;\nreflectedLight.directSpecular *= 0.85;\nreflectedLight.directDiffuse *= 0.25;\nreflectedLight.indirectDiffuse *= 0.5;\n')
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectSpecular *= vec3(0.36, 0.58, 0.82) * 0.42;\nreflectedLight.directSpecular *= 0.85;\nreflectedLight.directDiffuse *= 0.25;\nreflectedLight.indirectDiffuse *= 0.5;\n')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' +
           'totalEmissiveRadiance += vec3(1.0, 0.93, 0.78) * wGlint * 1.4;\n');
     };
@@ -2412,7 +2424,7 @@
   const MAT_DITHER = true;
   // the outer rivers and far water polygons share one animated material
   const riverMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.15, metalness: 0.12, envMapIntensity: 0.7, dithering: MAT_DITHER });
-  liquify(riverMat, 1.0, 1.0, 0.8);
+  liquify(riverMat, 1.0, 0.75, 0.8);   // calmer ripples (Round 54)
 
   function waterPoint(along, out) {
     // along: meters along the shoreline from the towers' projection; out: meters east of the bulkhead
@@ -2753,21 +2765,21 @@
     constructor(cap) { this.n = 0; this.cap = 0; this.grow(cap); this.idx = new IdxBuf(cap * 3); }
     grow(cap) {
       const pos = new Float32Array(cap * 3), nor = new Int8Array(cap * 3), col = new Uint8Array(cap * 3);
-      const sty = new Int8Array(cap), bas = new Float32Array(cap), flh = new Int8Array(cap);
+      const sty = new Int8Array(cap), bas = new Float32Array(cap), flh = new Int8Array(cap), tin = new Uint8Array(cap);
       if (this.n) {
         const n = this.n;
         pos.set(this.pos.subarray(0, n * 3)); nor.set(this.nor.subarray(0, n * 3)); col.set(this.col.subarray(0, n * 3));
-        sty.set(this.sty.subarray(0, n)); bas.set(this.bas.subarray(0, n)); flh.set(this.flh.subarray(0, n));
+        sty.set(this.sty.subarray(0, n)); bas.set(this.bas.subarray(0, n)); flh.set(this.flh.subarray(0, n)); tin.set(this.tin.subarray(0, n));
       }
-      this.pos = pos; this.nor = nor; this.col = col; this.sty = sty; this.bas = bas; this.flh = flh; this.cap = cap;
+      this.pos = pos; this.nor = nor; this.col = col; this.sty = sty; this.bas = bas; this.flh = flh; this.tin = tin; this.cap = cap;
     }
-    push(x, y, z, nx, ny, nz, r, g, b, st, base, fh) {
+    push(x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint) {
       if (this.n === this.cap) this.grow(this.cap * 2);
       const i = this.n, j = i * 3;
       this.pos[j] = x; this.pos[j + 1] = y; this.pos[j + 2] = z;
       this.nor[j] = nx * 127; this.nor[j + 1] = ny * 127; this.nor[j + 2] = nz * 127;
       this.col[j] = r * 255; this.col[j + 1] = g * 255; this.col[j + 2] = b * 255;
-      this.sty[i] = st; this.bas[i] = base; this.flh[i] = fh ? Math.round(fh * 10) : 0;
+      this.sty[i] = st; this.bas[i] = base; this.flh[i] = fh ? Math.round(fh * 10) : 0; this.tin[i] = tint ? tint * 255 : 0;
       return this.n++;
     }
     // exact-length views; freeOnUpload drops them once the GPU has the copy
@@ -2780,11 +2792,12 @@
         g.setAttribute('aStyle', new THREE.BufferAttribute(this.sty.subarray(0, n), 1));
         g.setAttribute('aFloorH', new THREE.BufferAttribute(this.flh.subarray(0, n), 1));
         g.setAttribute('aBase', new THREE.BufferAttribute(this.bas.subarray(0, n), 1));
+        g.setAttribute('aTint', new THREE.BufferAttribute(this.tin.subarray(0, n), 1, true));
       }
       g.setIndex(new THREE.BufferAttribute(this.idx.view(), 1));
       g.computeBoundingSphere();
       freeOnUpload(g);
-      this.pos = this.nor = this.col = this.sty = this.bas = this.flh = this.idx = null;
+      this.pos = this.nor = this.col = this.sty = this.bas = this.flh = this.tin = this.idx = null;
       return g;
     }
   }
@@ -2941,7 +2954,7 @@
     freeOnUpload(walls.geometry);   // never raycast (focus and pick use rayTargets only)
 
     const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.15, metalness: 0.12, envMapIntensity: 0.7, dithering: MAT_DITHER });
-    liquify(waterMat, 1.0, 1.0, 0.8);      // the Delaware breathes
+    liquify(waterMat, 1.0, 0.75, 0.8);     // the Delaware breathes, calmer since Round 54
     const water = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
     groupCity.add(water);
@@ -3301,17 +3314,19 @@
     r = lift + (r * gain - lift) * 0.62; g = lift + (g * gain - lift) * 0.62; b = lift + (b * gain - lift) * 0.62;
     return new THREE.Color(Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)));
   };
-  const CROWN_CUTS = { pyramid: 1, lattice: 1, ziggurat: 1, lantern: 1, mansard: 1, dome: 1, sloped: 1, notch: 1 };
+  const CROWN_CUTS = { pyramid: 1, lattice: 1, ziggurat: 1, lantern: 1, mansard: 1, dome: 1, sloped: 1, notch: 1, blade: 1 };
   const TOWER_STYLE = { glass: 20, glass_bands: 21, glass_dark: 22, concrete_grid: 16, stone_piers: 14, deco: 17, precast_bands: 18, brick: 2 };
   // the researched Center City towers (towers.json): nearest spec within its radius
   const TOWER_SPECS = (typeof TOWERS !== 'undefined' && TOWERS && TOWERS.towers) ? TOWERS.towers : [];
   const towerGrid = new Map();
   for (const sp of TOWER_SPECS) { const kx = Math.floor(sp.x / 100), kz = Math.floor(sp.z / 100); for (let a = -1; a <= 1; a++) for (let b2 = -1; b2 <= 1; b2++) { const key = (kx + a) + ',' + (kz + b2); if (!towerGrid.has(key)) towerGrid.set(key, []); towerGrid.get(key).push(sp); } }
-  function towerAt(x, z) {
+  // h: the part's height; a section above 300 m (the Comcast Technology Center's spine, whose
+  // centroid sits off the tower's) matches a spec of that height within 55 m instead of 35
+  function towerAt(x, z, h) {
     const lst = towerGrid.get(Math.floor(x / 100) + ',' + Math.floor(z / 100));
     if (!lst) return null;
     let best = null, bd = 1e9;
-    for (const sp of lst) { const d = Math.hypot(sp.x - x, sp.z - z); if (d < (sp.r || 35) && d < bd) { bd = d; best = sp; } }
+    for (const sp of lst) { const d = Math.hypot(sp.x - x, sp.z - z), rad = (sp.r || 35) + ((h || 0) > 300 && sp.h > 300 ? 20 : 0); if (d < rad && d < bd) { bd = d; best = sp; } }
     return best;
   }
   function buildingColor(b, i) {
@@ -3626,14 +3641,14 @@
       shader.uniforms.uDetFar = detFarUniform;
       cityMat.userData.shader = shader;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aStyle; attribute float aFloorH; attribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase;\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;')
-        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNorm = normalize(mat3(modelMatrix) * objectNormal);\nvStyle = aStyle; vFloorH = aFloorH; vWallU = aWallU; vWallL = aWallL; vWallH = aWallH; vBase = aBase;');
+        .replace('#include <common>', '#include <common>\nattribute float aStyle; attribute float aFloorH; attribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase; attribute float aTint;\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNorm = normalize(mat3(modelMatrix) * objectNormal);\nvStyle = aStyle; vFloorH = aFloorH; vWallU = aWallU; vWallL = aWallL; vWallH = aWallH; vBase = aBase; vTint = aTint;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', [
           '#include <common>',
           'uniform float uNight;',
           'uniform float uDetFar;',
-          'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase;',
+          'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;',
           'float shtLit = 0.0;',
           'float shtGlass = 0.0;',
           'uniform vec3 uSunW;',
@@ -3652,6 +3667,9 @@
           'float shtHash(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * .1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
           'float shtVN(vec2 p){ vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(shtHash(i), shtHash(i + vec2(1.0, 0.0)), u.x), mix(shtHash(i + vec2(0.0, 1.0)), shtHash(i + vec2(1.0, 1.0)), u.x), u.y); }',
           'float rectM(vec2 m, vec2 c, vec2 s, float aa){ vec2 d = abs(m - c) - s * 0.5; return 1.0 - smoothstep(-aa, aa, max(d.x, d.y)); }',
+          // a recessed joint in relief: the lip above it shades the joint, the lip below catches the
+          // light; d is the signed distance above the joint's centre line, w its half width, anti-aliased
+          'float jointRelief(float d, float w, float aa){ return (1.0 - smoothstep(0.0, w + aa, abs(d))) * (d > 0.0 ? 1.0 : -1.0); }',
           'float archM(vec2 m, vec2 c, float w, float h, float aa){ float r = w * 0.5; float dR = max(abs(m.x - c.x) - r, max(c.y - m.y, m.y - (c.y + h - r))); float dC = max(length(vec2(m.x - c.x, m.y - (c.y + h - r))) - r, (c.y + h - r) - m.y); return 1.0 - smoothstep(-aa, aa, min(dR, dC)); }',
         ].join('\n'))
         .replace('#include <color_fragment>', [
@@ -3670,6 +3688,13 @@
           '    float rdet = clamp(1.0 - (fwidth(vWPos.x) * uDetFar - 0.1) / 0.6, 0.0, 1.0);',
           '    float rn = shtVN(vWPos.xz * 0.9) * 0.6 + shtVN(vWPos.xz * 5.0) * 0.4;',
           '    diffuseColor.rgb *= 1.0 + rdet * 0.22 * (rn - 0.5);',
+          // the membrane (Round 54): seams every 0.95 m along the grid and a fine aggregate, both
+          // gone by the pixel footprint before they could alias (the near roofs only)
+          '    float rfw = fwidth(vWPos.x) * uDetFar;',
+          '    float rnear = clamp(1.0 - (rfw - 0.02) / 0.10, 0.0, 1.0);',
+          '    float rq = vWPos.x * 0.985 + vWPos.z * 0.174;',
+          '    float rseam = 1.0 - smoothstep(0.02, 0.02 + rfw, abs(fract(rq / 0.95 + 0.5) - 0.5) * 0.95);',
+          '    diffuseColor.rgb *= (1.0 - 0.07 * rseam * rnear) * (1.0 + 0.10 * rnear * (shtVN(vWPos.xz * 24.0) - 0.5));',
           '  }',
           '  if (abs(n.y) < 0.35 && st != 3 && v > 0.0) {',
           '    bool local = vWallL > 0.5;',
@@ -3688,8 +3713,8 @@
           '    float wallTop = local ? vWallH - 0.25 : 1.0e4;',
           '    float brickish = step(diffuseColor.g * 1.12, diffuseColor.r);',
           '    vec3 frameCol = mix(vec3(0.90, 0.88, 0.82), vec3(0.17, 0.16, 0.15), vDark);',
-          '    vec3 trimCol = mix(vec3(0.93, 0.91, 0.86), vec3(0.20, 0.19, 0.18), vDark);',
-          '    vec3 stoneCol = vec3(0.80, 0.76, 0.68);',
+          '    vec3 trimCol = mix(vec3(0.90, 0.88, 0.83), vec3(0.20, 0.19, 0.18), vDark);',
+          '    vec3 stoneCol = vec3(0.78, 0.75, 0.69);',
           '    vec3 col = diffuseColor.rgb;',
           '    float lit = 0.0, glass = 0.0;',
           // every window/door/shutter mask below is multiplied by det, so once
@@ -3923,7 +3948,7 @@
           '      float shut = (rectM(m, vec2(-(ww * 0.5 + 0.31), sill + wh * 0.5), vec2(0.44, wh), aa) + rectM(m, vec2(ww * 0.5 + 0.31, sill + wh * 0.5), vec2(0.44, wh), aa)) * sashOn;',
           '      float shOn = step(shtHash(vec2(cell.x * 0.37, 7.31)), 0.5) * brickish * float(st == 0) * detU;',
           '      vec3 shCol = mix(vec3(0.09, 0.13, 0.10), vec3(0.06, 0.06, 0.07), step(0.5, shtHash(vec2(cell.x, 2.17))));',
-          '      col = mix(col, stoneCol, max(lintel, sillM) * 0.8);',
+          '      col = mix(col, stoneCol, max(lintel, sillM) * 0.7);',
           '      col = mix(col, frameCol, frame * 0.9);',
           '      col = mix(col, gc, win * 0.92);',
           '      col *= 1.0 - revealShade(m, vec2(0.0, sill + wh * 0.5), vec2(ww, wh), win, sunT, sunE, sunN);',
@@ -3973,16 +3998,25 @@
           '      }',
           '    }',
           // glass: a tint per building (blue, teal, bronze, grey, green for the towers, a dark
-          // blue-grey for the rows), and the window pixels turn reflective below: the sky and
-          // the sun come back in every window, which is most of what makes a real tower read
-          '    float bid = shtHash(vec2(floor(vWPos.x / 28.0) * 0.37, floor(vWPos.z / 28.0) * 0.91));',
+          // blue-grey for the rows), keyed by the building's own aTint byte (Round 54: a 28 m
+          // world-cell hash cut one tower into three colours), and the window pixels turn
+          // reflective below: the sky and the sun come back in every window
+          '    float bid = vTint;',
           '    vec3 gTint = tower ? (bid < 0.25 ? vec3(0.10, 0.17, 0.26) : (bid < 0.45 ? vec3(0.08, 0.19, 0.20) : (bid < 0.62 ? vec3(0.17, 0.12, 0.08) : (bid < 0.82 ? vec3(0.12, 0.13, 0.15) : vec3(0.09, 0.15, 0.13))))) : vec3(0.07, 0.09, 0.12);',
           '    col = mix(col, gTint * (0.75 + 0.5 * lit), glass * 0.9);',
           '    shtGlass = glass * det * (tower ? 1.0 : 0.75);',
           '    col *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 5.0, v));',
+          // local shading (Round 54): the ends of a wall (quoins, party walls) take a little shade
+          // and the cornice throws a band of shadow under itself; towers keep a lighter touch
+          '    if (local) {',
+          '      float edgeSh = 1.0 - smoothstep(0.0, 0.6, min(uW, vWallL - uW));',
+          '      float cornSh = 1.0 - smoothstep(0.0, 1.1, vWallH - v);',
+          '      col *= 1.0 - det * (0.09 * edgeSh + 0.12 * cornSh) * (1.0 - glass) * (tower ? 0.4 : 1.0);',
+          '    }',
           '    {',
           '      float wallM = 1.0 - glass;',
           '      float detT = clamp(1.0 - (fwidth(v) * uDetFar - 0.016) / 0.05, 0.0, 1.0);',
+          '      float relK = 0.35 + 0.65 * sunE;',
           '      col *= 0.95 + 0.10 * shtVN(vec2(uW, v) * 0.25) * det;',
           '      bool stone = (st == 14 || st == 17 || st == 4);',
           '      bool panel = (st == 2 || st == 6 || st == 16 || st == 18 || st == 15 || st == 13 || st == 7);',
@@ -3993,10 +4027,12 @@
           '          float smv = 1.0 - smoothstep(0.01, 0.01 + aa, abs(fract(su / 1.2 + 0.5) - 0.5) * 1.2);',
           '          float svar = shtHash(vec2(sc, floor(su / 1.2)));',
           '          col *= 1.0 + detT * wallM * 0.1 * (svar - 0.5);',
-          '          col = mix(col, col * 0.72, max(smh, smv) * detT * wallM * 0.6);',
+          '          col = mix(col, col * 0.80, max(smh, smv) * detT * wallM * 0.5);',
+          '          col *= 1.0 - 0.10 * relK * detT * wallM * jointRelief((fract(v / 0.55 + 0.5) - 0.5) * 0.55, 0.02, aa);',
           '        } else if (panel) {',
           '          float seam = max(1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(v / 3.3 + 0.5) - 0.5) * 3.3), 1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(uW / 3.0 + 0.5) - 0.5) * 3.0));',
-          '          col *= 1.0 - 0.2 * seam * detT * wallM;',
+          '          col *= 1.0 - 0.14 * seam * detT * wallM;',
+          '          col *= 1.0 - 0.06 * relK * detT * wallM * jointRelief((fract(v / 3.3 + 0.5) - 0.5) * 3.3, 0.03, aa);',
           '          col *= 1.0 + detT * wallM * 0.06 * (shtVN(vec2(uW, v) * 2.0) - 0.5);',
           '        } else if (brickish > 0.5) {',
           '          float course = floor(v / 0.075); float bu = uW + mod(course, 2.0) * 0.11;',
@@ -4004,7 +4040,8 @@
           '          float mv = 1.0 - smoothstep(0.007, 0.007 + aa, abs(fract(bu / 0.22 + 0.5) - 0.5) * 0.22);',
           '          float bvar = shtHash(vec2(course, floor(bu / 0.22)));',
           '          col *= 1.0 + detT * wallM * 0.18 * (bvar - 0.5);',
-          '          col = mix(col, vec3(0.58, 0.55, 0.50) * (0.85 + 0.15 * bvar), max(mh, mv) * detT * wallM * 0.7);',
+          '          col = mix(col, vec3(0.60, 0.58, 0.53) * (0.9 + 0.1 * bvar), max(mh, mv) * detT * wallM * 0.5);',
+          '          col *= 1.0 - 0.12 * relK * detT * wallM * jointRelief((fract(v / 0.075 + 0.5) - 0.5) * 0.075, 0.012, aa);',
           '        } else if (st != 11) {',
           '          col *= 0.94 + 0.12 * shtVN(vec2(uW, v) * 3.0) * detT * wallM + 0.06 * (1.0 - detT * wallM);',
           '        }',
@@ -4029,8 +4066,8 @@
           '  }',
           '}',
         ].join('\n'))
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.16, shtGlass);')
-        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.8, shtGlass);')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, shtGlass);')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.62, shtGlass);')
         // lit windows dim with distance (aerial perspective by night): the far ring's mass
         // of them otherwise resolves to a white band along the horizon
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.76, 0.46) * shtLit * uNight * 1.3 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));');
@@ -4964,7 +5001,7 @@
     }
     if (glassParts2.length) {
       const m = new THREE.Mesh(mergeColored(glassParts2, false, 'base'),
-        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.06, metalness: 0.85, envMapIntensity: 1.7 }));
+        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.7, envMapIntensity: 1.5 }));
       m.castShadow = true;
       groupCity.add(m);
       rylandGlassMat = m.material;
@@ -5191,7 +5228,7 @@
 
     const glassMesh = new THREE.Mesh(
       mergeColored(glassParts),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.1, metalness: 0.7, envMapIntensity: 1.4 })
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.18, metalness: 0.55, envMapIntensity: 1.25 })
     );
     groupCity.add(glassMesh);
     towerGlassMat = glassMesh.material;
@@ -5341,7 +5378,8 @@
       r = lift + (r * gain - lift) * warm; g = lift + (g * gain - lift) * warm; b = lift + (b * gain - lift) * warm;
       return new THREE.Color(Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)));
     };
-    const towerHits = [], crownTrim = [];   // researched towers raised in this loop: their crowns follow the loop
+    const towerHits = [], crownTrim = [], crowned = new Set();   // researched towers raised in this loop: their crowns follow the loop, one per spec
+    const DEV_TOWER_LOG = /[?&]dev\b/.test(location.search) ? (TOWER_MATCH_LOG = []) : null;   // __dbg.towers().log: every spec match in the loop
     let WALLS = null;
     if (typeof WIDE_WALLS_B64 !== 'undefined' && WIDE_WALLS_B64) {
       const wb = unb64(WIDE_WALLS_B64, 'WIDE_WALLS');
@@ -5441,11 +5479,12 @@
     const c = new THREE.Color();
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
-    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh);
+    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint);
     const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao) => {
       const sign = signedArea(poly) > 0 ? 1 : -1;
       const n = poly.length;
       const r = color.r, g = color.g, b = color.b;
+      const tint = glassTintKey(color, st);   // one glass palette entry per building (aTint)
       // ao: the generic fabric only; the ground verts of each wall quad take RING_AO
       // (eave verts and the cap keep the full colour, no mid rings)
       const ra = ao ? RING_AO : 1, r0 = r * ra, g0 = g * ra, b0 = b * ra;
@@ -5455,10 +5494,10 @@
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sg, nz = (-dx / L) * sg;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh);
-        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
-        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint);
+        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh, tint);
+        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh, tint);
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
       } };
       if (holes) for (const hl of holes) wallRing(hl, signedArea(hl) > 0 ? -1 : 1);
@@ -5663,6 +5702,27 @@
     };
     const nb = hdr[1];
     const wxWater = wxWaterGrid(body, k, nb, hdr[2], hdr[3], hasAttr, S, -3700, -4480, 6000, 10880, 24);
+    // the crown pre-pass (Round 54): the tallest footprint matching each researched spec is the
+    // section that carries its crown, so a podium piece never raises a second pyramid and an
+    // upper building:part that is the real top gets it (the loop below is one streaming pass)
+    const specTop = new Map();
+    {
+      let k2 = k;
+      for (let i = 0; i < nb; i++) {
+        const n = body[k2++], h = body[k2++] / 5;
+        k2 += 2; if (hasAttr) k2 += 2;
+        if (h > 45) {
+          const poly = new Array(n);
+          for (let j = 0; j < n; j++) poly[j] = [body[k2 + j * 2] * S, body[k2 + j * 2 + 1] * S];
+          const [cx, cz] = polyCentroid(poly);
+          if (!BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) {
+            const sp = towerAt(cx, cz, h);
+            if (sp && !(specTop.get(sp) >= h)) specTop.set(sp, h);
+          }
+        }
+        k2 += n * 2;
+      }
+    }
     let njPoly = null;   // USS New Jersey hull outline — custom battleship below
     for (let i = 0; i < nb; i++) {
       const n = body[k++]; let h = body[k++] / 5; const mh = body[k++] / 5, t = body[k++];
@@ -5708,9 +5768,9 @@
       // real face has), with a second jitter on top; towers and stadiums keep theirs
       if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; } }
       const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
-      const spec = h > 45 && t !== 10 ? towerAt(cx, cz) : null;
+      const spec = h > 45 ? towerAt(cx, cz, h) : null;   // glass-tagged parts join the matching too (Round 54)
       let style;
-      if (spec) { style = TOWER_STYLE[spec.facade] || 2; if (spec.hex) { const hx2 = parseInt(spec.hex.slice(1), 16); if (style >= 20) c.set(hx2).multiplyScalar(0.66); else c.copy(towerInv(hx2 >> 16, (hx2 >> 8) & 255, hx2 & 255)); } }
+      if (spec) { style = TOWER_STYLE[spec.facade] || 2; if (style === 20 && spec.name) { if (/comcast technology/i.test(spec.name)) style = 24; else if (/^comcast center/i.test(spec.name)) style = 25; } if (spec.hex) { const hx2 = parseInt(spec.hex.slice(1), 16); if (style >= 20) c.set(hx2).multiplyScalar(0.66); else c.copy(towerInv(hx2 >> 16, (hx2 >> 8) & 255, hx2 & 255)); } }
       else if (h > 30) style = h > 45 ? towerStyle(fa, t, i) : 2;
       else if (t === 5) style = 1;
       else if (t === 6) style = h > 16 ? 2 : 4;
@@ -5719,12 +5779,22 @@
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       let hTop = h;
-      if (spec && !mh) {
-        const cr = spec.crown;
-        if (cr && CROWN_CUTS[cr.type]) hTop = Math.max(h * 0.8, h - (cr.h || 10));
-        towerHits.push({ spec, poly, base, h, hTop, cx, cz, style, color: new THREE.Color().copy(c) });
+      if (spec) {
+        // the researched height is the architectural top: the section that reaches it (within
+        // 92%) ends there and raises the crown, once per spec; every section that runs past the
+        // crown datum stops at the datum (an upper building:part used to run through the crown)
+        // (a scene that stops short of the research, the Inquirer's clock tower over its 61 m
+        // block, keeps its crown on the section that reaches the scene's own top, at that height)
+        const cr = spec.crown, cut = cr && CROWN_CUTS[cr.type];
+        const near = h >= spec.h * 0.92, top = !specTop.has(spec) || h >= specTop.get(spec) - 0.01;
+        if (near) h = spec.h;
+        if (DEV_TOWER_LOG) DEV_TOWER_LOG.push({ name: spec.name, crown: cr ? cr.type : 'none', h: +h.toFixed(1), mh, top, near });
+        const ref = top ? h : spec.h;
+        const datum = cut ? Math.max(ref * 0.8, ref - (cr.h || 10)) : ref;
+        if (cut) hTop = Math.min(h, datum);
+        if (top && !crowned.has(spec)) { crowned.add(spec); towerHits.push({ spec, poly, base, h, hTop, cx, cz, style, color: new THREE.Color().copy(c) }); }
       }
-      if (h >= 60 && !mh && t !== 10 && (!spec || !spec.crown || spec.crown.type === 'flat' || spec.crown.type === 'custom')) {
+      if (h >= 60 && !mh && t !== 10 && !spec) {   // a researched landmark never draws a random penthouse or mast
         // the flat roof of a real tower carries a mechanical penthouse and often a mast; without
         // them every tower is a sheer box. The penthouse takes a third of the plan, set toward
         // one end, in a darker tone; a third of the towers raise a mast
@@ -5889,9 +5959,21 @@
             appendBuilding(chk2, rectOf(ob, ax, 0.72), y0, y0 + hc * 0.35, c, 3, th.base);
             break;
           }
+          case 'blade': {   // the Comcast Technology Center: a narrow lit blade standing in a dark frame
+            const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);
+            const ry = Math.atan2(-ax.az, ax.ax), bw = ax.hl * 2 * 0.86, bt = Math.max(3, ax.hs * 2 * 0.16), fr = new THREE.Color(0x3a4046);
+            glowParts.push({ geom: box(bw, hc * 0.9, bt, ob.cx, y0 + hc * 0.47, ob.cz, ry), color: gl, style: 3 });
+            for (const s of [-1, 1]) crownTrim.push({ geom: box(1.6, hc, bt + 1.2, ob.cx + ax.ax * (bw / 2 + 0.8) * s, y0 + hc / 2, ob.cz + ax.az * (bw / 2 + 0.8) * s, ry), color: fr, style: 3 });
+            crownTrim.push({ geom: box(bw + 3.2, 1.4, bt + 1.2, ob.cx, y0 + hc - 0.7, ob.cz, ry), color: fr, style: 3 });
+            crownTrim.push({ geom: box(bw + 3.2, 1.2, bt + 1.2, ob.cx, y0 + 0.6, ob.cz, ry), color: fr, style: 3 });
+            c.copy(th.color);
+            appendBuilding(chk2, rectOf(ob, ax, 0.7), y0 - 0.2, y0 + Math.min(4, hc * 0.12), c, 3, th.base);
+            break;
+          }
           case 'notch':
-          case 'sloped': {   // the top floors keep only part of the plan
-            const keep = 0.62, half = [[-1, -1], [2 * keep - 1, -1], [2 * keep - 1, 1], [-1, 1]].map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
+          case 'sloped': {   // the top floors keep only part of the plan; sides 3 recesses three faces and keeps one long face flush
+            const keep = 0.62, plan = cr.sides === 3 ? [[-0.8, -1], [0.8, -1], [0.8, 0.1], [-0.8, 0.1]] : [[-1, -1], [2 * keep - 1, -1], [2 * keep - 1, 1], [-1, 1]];
+            const half = plan.map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
             c.copy(th.color);
             if (th.style >= 20) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
             else appendBuilding(chk2, half, y0 - 0.5, y1, c, th.style, th.base);
@@ -6075,8 +6157,8 @@
       };
       const crown = (cx, cz, base, tiers, gc, wc) => {
         for (const [w, wallTop, apex] of tiers) {
-          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, false), color: gc, style: 3 });
-          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 3 });
+          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, false), color: gc, style: 21, baseY: base });
+          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 21, baseY: base });
           // white trim: eave band + crossed ridge caps read as the nested chevrons
           lmTrim.push({ geom: box(w + 0.9, 1.3, w + 0.9, cx, base + wallTop + 0.2, cz, ryG), color: wc, style: 3 });
           for (const ns of [0, 1]) {
@@ -6433,9 +6515,9 @@
     loadmsg.textContent = 'Raising the outer districts, uploading';
     await yieldNow();
     for (const ch of glassChunks.values()) {
-      const g = ch.geometry(false);
+      const g = ch.geometry(true);   // aStyle, aBase and aTint: geometry(false) silently dropped every curtain-wall variant (Round 54)
       if (!outerGlassMat) {
-        outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.7, envMapIntensity: 1.15 });
+        outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.2, metalness: 0.55, envMapIntensity: 1.0 });
         outerGlassMat.emissive = new THREE.Color(0xffdca6);
         outerGlassMat.emissiveIntensity = 0;
         // curtain-wall rhythm: darker spandrel band at each floor line, thin vertical
@@ -6443,10 +6525,10 @@
         outerGlassMat.onBeforeCompile = (sh) => {
           sh.uniforms.uDetFar = detFarUniform;
           sh.vertexShader = sh.vertexShader
-            .replace('#include <common>', '#include <common>\nattribute float aStyle; varying vec3 vGWp; varying vec3 vGNm; varying float vGSt;')
-            .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGNm = normalize(mat3(modelMatrix) * objectNormal);\nvGSt = aStyle;');
+            .replace('#include <common>', '#include <common>\nattribute float aStyle; attribute float aBase; varying vec3 vGWp; varying vec3 vGNm; varying float vGSt; varying float vGBs;')
+            .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvGWp = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvGNm = normalize(mat3(modelMatrix) * objectNormal);\nvGSt = aStyle; vGBs = aBase;');
           sh.fragmentShader = sh.fragmentShader
-            .replace('#include <common>', '#include <common>\nuniform float uDetFar;\nvarying vec3 vGWp; varying vec3 vGNm; varying float vGSt;\nfloat gWall = 0.0; float gLit = 0.0; float gSpand = 0.0;')
+            .replace('#include <common>', '#include <common>\nuniform float uDetFar;\nvarying vec3 vGWp; varying vec3 vGNm; varying float vGSt; varying float vGBs;\nfloat gWall = 0.0; float gLit = 0.0; float gSpand = 0.0;')
             .replace('#include <color_fragment>', '#include <color_fragment>\n{\n' +
               '  vec3 nn = normalize(vGNm);\n' +
               '  float wall = step(abs(nn.y), 0.35);\n' +
@@ -6456,21 +6538,27 @@
               '  float det = clamp(1.0 - (max(aaU, aaV) * uDetFar - 0.8) / 2.2, 0.0, 1.0) * wall;\n' +
               '  diffuseColor.rgb *= mix(0.72, 1.12, clamp(vGWp.y / 220.0, 0.0, 1.0));\n' +
               // the curtain-wall variants: 21 silver spandrel bands (the Liberty Place family),
-              // 22 dark glass with a bare floor line, 23 a light concrete grid holding the glass
+              // 22 dark glass with a bare floor line, 23 a light concrete grid holding the glass,
+              // 24 the Comcast Technology Center (tall floors, pale vertical fins, a thin floor
+              // line), 25 the Comcast Center (silver horizontal bands on a finer mullion). The
+              // floor datum is the building's own base (aBase), not sea level (Round 54)
               '  float gv = floor(vGSt + 0.5);\n' +
-              '  float fpG = (gv == 22.0) ? 3.6 : ((gv == 23.0) ? 3.5 : 4.0);\n' +
-              '  float spW = (gv == 21.0) ? 0.9 : ((gv == 22.0) ? 0.3 : ((gv == 23.0) ? 0.55 : 0.5));\n' +
+              '  float yG = vGWp.y - vGBs;\n' +
+              '  float fpG = (gv == 22.0) ? 3.6 : ((gv == 23.0) ? 3.5 : ((gv == 24.0) ? 4.6 : ((gv == 25.0) ? 4.15 : 4.0)));\n' +
+              '  float spW = (gv == 21.0) ? 0.55 : ((gv == 22.0) ? 0.22 : ((gv == 23.0) ? 0.4 : ((gv == 24.0) ? 0.24 : ((gv == 25.0) ? 0.42 : 0.32))));\n' +
               '  float muP = (gv == 22.0) ? 1.2 : ((gv == 23.0) ? 3.2 : 1.5);\n' +
-              '  float muW = (gv == 23.0) ? 0.45 : 0.05;\n' +
-              '  float dv = abs(fract(vGWp.y / fpG + 0.5) - 0.5) * fpG;\n' +
+              '  float muW = (gv == 23.0) ? 0.3 : ((gv == 24.0) ? 0.06 : 0.035);\n' +
+              '  float dv = abs(fract(yG / fpG + 0.5) - 0.5) * fpG;\n' +
               '  float spand = 1.0 - smoothstep(spW, spW + aaV, dv);\n' +
               '  float du = abs(fract(u / muP + 0.5) - 0.5) * muP;\n' +
               '  float mull = 1.0 - smoothstep(muW, muW + aaU, du);\n' +
               '  if (gv == 21.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.62, 0.66, 0.70), det * spand * 0.8); diffuseColor.rgb *= 1.0 - det * mull * 0.2; }\n' +
               '  else if (gv == 22.0) { diffuseColor.rgb *= (1.0 - det * (spand * 0.4 + mull * 0.25)) * 0.72; }\n' +
               '  else if (gv == 23.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.70, 0.69, 0.66), det * max(spand, mull) * 0.9); }\n' +
+              '  else if (gv == 24.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.74, 0.77, 0.80), det * mull * 0.75); diffuseColor.rgb *= 1.0 - det * spand * 0.3; }\n' +
+              '  else if (gv == 25.0) { diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.70, 0.73, 0.76), det * spand * 0.7); diffuseColor.rgb *= 1.0 - det * mull * 0.25; }\n' +
               '  else { diffuseColor.rgb *= 1.0 - det * (spand * 0.38 + mull * 0.22); }\n' +
-              '  vec2 pid = vec2(floor(u / muP), floor(vGWp.y / fpG));\n' +
+              '  vec2 pid = vec2(floor(u / muP), floor(yG / fpG));\n' +
               '  float ph = fract(sin(dot(pid, vec2(127.1, 311.7))) * 43758.5453);\n' +
               // ~28% of curtain-wall panels glow at night, varied; past the per-panel
               // fade the tower keeps only its soft average (the panel-cluster LOD
@@ -6484,8 +6572,8 @@
       }
       addChunkMesh(g, outerGlassMat);
     }
-    if (lmGlass.length && outerGlassMat) {   // Liberty Place crowns share the curtain-wall glass
-      const g = mergeColored(lmGlass); freeOnUpload(g);
+    if (lmGlass.length && outerGlassMat) {   // Liberty Place crowns share the curtain-wall glass, as style 21 with their own datum
+      const g = mergeColored(lmGlass, false, true); freeOnUpload(g);
       addChunkMesh(g, outerGlassMat).castShadow = true;
     }
     for (const cp of crownTrim) lmTrim.push(cp);
@@ -6516,7 +6604,7 @@
     // pair by rendered swatch against the CS2 frame) and the lifts over the plaza layer. The
     // fill sheet and the lots are an exact pair now (both conform to the same ground), so the
     // gap between them is wider than the old 1.5 cm, and the stripes sit above both
-    const LOT_FILL_COL = 0x0b0b0a, LOT_COL = 0x0e0d0c;
+    const LOT_FILL_COL = 0x0a0a09, LOT_COL = 0x0c0b0a;   // a shade darker since Round 54
     const LOT_FILL_UP = 0.02, LOT_UP = 0.06, LOT_STRIPE_UP = 0.09;   // over LAYER.plaza
     const LOT_STRIPE_OPACITY = 0.5;
     if (typeof PARKING_SOUTH !== 'undefined' && PARKING_SOUTH && PARKING_SOUTH.polys) {
@@ -6887,10 +6975,11 @@
     const c = new THREE.Color();
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
-    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh);
+    const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint);
     const appendB = (ch, poly, y0, y1, color, st, base, fh, capColor, ao) => {
       const n = poly.length, r = color.r, g = color.g, b = color.b;
       const sign = signedArea(poly) > 0 ? 1 : -1;
+      const tint = glassTintKey(color, st);
       // ao: the generic fabric only; ground verts take RING_AO, eave verts and cap keep full colour
       const ra = ao ? RING_AO : 1, r0 = r * ra, g0 = g * ra, b0 = b * ra;
       for (let i = 0; i < n; i++) {
@@ -6899,10 +6988,10 @@
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sign, nz = (-dx / L) * sign;
-        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh);
-        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh);
-        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh);
-        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh);
+        const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint);
+        const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint);
+        const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh, tint);
+        const i3 = pushV(ch, a[0], y1, a[1], nx, 0, nz, r, g, b, st, base, fh, tint);
         if (((-dz) * nx + dx * nz) >= 0) ch.idx.push(i0, i1, i2, i0, i2, i3); else ch.idx.push(i0, i2, i1, i0, i3, i2);
       }
       v2.length = 0;
@@ -7422,7 +7511,7 @@
   // 5 mm over the yards so a lot inside a yard draws above it (pack_paved.py unions each kind,
   // so nothing of one kind is ever coplanar with itself, and both kinds conform to the same
   // ground triangles, so the gap is exact everywhere, gotcha 17)
-  const PAVED_COL = { 1: 0x0e0d0c, 2: 0x121110, 3: 0x1b1916, 4: 0x1c1c1a };   // yards a shade under concrete: at 0x15 they read 150 against the lots' 114
+  const PAVED_COL = { 1: 0x0c0b0a, 2: 0x100f0e, 3: 0x181613, 4: 0x191918 };   // a shade darker since Round 54   // yards a shade under concrete: at 0x15 they read 150 against the lots' 114
   const PAVED_UP = { 1: 0.055, 2: 0.04, 3: 0.04, 4: 0.04 };   // a lot over a yard keeps 1.5 cm (5 mm shimmered from 500 m); all under the parks at 0.06
   const PAVED_KIND = { 1: 'lots', 2: 'yards', 3: 'rail yards', 4: 'aprons' };
   step('Paving the lots and yards', () => {
@@ -12462,6 +12551,7 @@
   let STOREFRONT_N = 0;                    // storefronts dressed (perf readout)
   let WALL_N = 0;   // outer-district buildings that took a Mapillary wall colour (__dbg.walls)
   let TOWER_CROWN_N = 0;   // researched tower crowns raised (__dbg.towers)
+  let TOWER_MATCH_LOG = null;   // ?dev=1: every spec match in the wide loop (name, crown, h, mh, top, near)
   let lotStripes = null;                   // the sports complex's stall lines (shown within 3.5 km, they alias into noise beyond)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
@@ -12509,9 +12599,9 @@
       // perspective size with a floor: a lamp never falls under ~2 physical px,
       // so the far city reads as a carpet of lights (same trick as headlights)
       shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
-        'gl_PointSize = size * clamp(1600.0 / max(1.0, -mvPosition.z), 2.0, 9.0);');
+        'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);');   // smaller cores (Round 54)
       shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
-        '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.18, length(gl_PointCoord - vec2(0.5)));');
+        '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
     };
     postRaw(poleMat);
     poleGlow = new THREE.Points(pg, poleMat);
@@ -13246,8 +13336,9 @@
         'float gtn2 = mix(0.5, stn(sWP.xz * 0.045), 1.0 - smoothstep(8.0, 30.0, sfw));',
         'float gtn3 = mix(0.5, stn(sWP.xz * 0.35), 1.0 - smoothstep(1.0, 4.0, sfw));',
         'float gt = smoothstep(0.30, 0.70, gtn1 * 0.7 + gtn2 * 0.3);',
-        'vec3 gMul = mix(vec3(0.60, 0.66, 0.50), vec3(1.0), gt) * (0.92 + 0.16 * gtn3);',
-        'vec3 grass = gTex * mix(1.0, gMacL, 0.55) * (0.88 + 0.24 * sn1) * gMul * ' + MEADOW_GAIN.toFixed(2) + ';',
+        'vec3 gMul = mix(vec3(0.68, 0.72, 0.58), vec3(1.0), gt) * (0.94 + 0.12 * gtn3);',   // softer blotches and grain (Round 54)
+        'vec3 grass = gTex * mix(1.0, gMacL, 0.55) * (0.91 + 0.18 * sn1) * gMul * ' + MEADOW_GAIN.toFixed(2) + ';',
+        'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88);',   // a little of the saturation out (Round 54)
         'vec3 gTint = clamp(diffuseColor.rgb / vec3(0.141, 0.22, 0.094), 0.3, 1.6);',
         'diffuseColor.rgb = mix(diffuseColor.rgb * am, grass * gTint, isGreen);',
       ].join('\n'));
@@ -13582,7 +13673,7 @@
     WXFX.dayF = dayF;   // the particle boxes dim toward night with the sky
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 2.0 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
+      sun.intensity = 1.85 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
       glintDir.copy(sp.dir);
     } else if (mp.el > 2) {
@@ -13657,7 +13748,7 @@
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x9c8e74), dayF);
     cloudShU.uCloudSh.value = 0.85 * dayF * (1 - 0.5 * WXFX.gloom);
     cloudShU.uCloudSlant.value.set(sunDir.x, sunDir.z).multiplyScalar(CLOUD_ALT / Math.max(sunDir.y, 0.25));   // a cloud's shadow lies where its sun ray lands
-    hemi.intensity = (0.10 + 0.36 * dayF) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
+    hemi.intensity = (0.12 + 0.42 * dayF) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
     renderer.toneMappingExposure = 0.94 + 0.11 * dayF;
     postU.uExposure.value = renderer.toneMappingExposure;
     if (POST.on) pUndoColor(scene.fog.color, postU.uExposure.value);   // the fog mixes in the linear target: its colour goes in as the pre-image
@@ -14047,7 +14138,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

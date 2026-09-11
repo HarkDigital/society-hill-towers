@@ -203,8 +203,8 @@ manifest = {
     "scope": "./",
     "display": "standalone",
     "orientation": "any",
-    "background_color": "#171512",
-    "theme_color": "#171512",
+    "background_color": "#161a1e",
+    "theme_color": "#161a1e",
     "icons": [icon("icon-192.png", 192, "any"), icon("icon-512.png", 512, "any"), icon("icon-512-maskable.png", 512, "maskable")],
 }
 MANIFEST.write_text(json.dumps(manifest, indent=1), encoding="utf-8")

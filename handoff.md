@@ -63,7 +63,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 | `philly_frame.py` | The one lat/lon to local-metres frame (LAT0/LON0/KX/KZ, `to_xz`, `to_latlon`) every pipeline script imports. |
 | `provenance.py` | `record()` appends one line per fetch to `provenance.jsonl` (source, URL, query hash, element count, UTC time). |
 | `ops/` | Server recipes: the captured live nginx vhost and the `.example` with the planned additions, systemd units, `septa_bake.py`, `ais_relay.py`, `uptime.md`, `README.md`. |
-| `tests/` | `python3 -m unittest discover -s tests`. |
+| `tests/` | `python3 -m unittest discover -s tests`. `test_vbuf.py` (Round 54) runs the packed rings' `VBuf` under JavaScriptCore with the vendored three.min.js: the facade attributes and the glass tint survive growth and reach `geometry(true)`; the glass upload asks for it. |
 | `docs_check.py` | Stdlib check that every `build.py` input and every script here is mentioned in this section; exits non-zero naming the gaps. |
 
 ### Data embedded by `build.py`
@@ -466,6 +466,14 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
     reached zero the divide put NaN, which the blend drew as a bowed black line along the deck's
     far edge. Keep the coverage (`1 - T`) for every divide and apply the fade to the alpha alone.
 
+22. **`VBuf.geometry(false)` attaches nothing (Round 54).** The curtain-wall chunks uploaded with it
+    for five rounds, so the outer glass shader's `aStyle` read 0 everywhere and no researched
+    curtain-wall variant had ever drawn. Every mesh on `cityMat`, `coreMat` or `outerGlassMat` must
+    come from `geometry(true)` or `mergeColored(parts, ao, true)`, which carry aStyle, aFloorH,
+    aBase and the Round 54 glass tint `aTint`; `tests/test_vbuf.py` runs the buffer for real under
+    JavaScriptCore and checks the upload mode. And a glass tint must be a per-vertex attribute, never
+    a world-position hash: 28 m cells cut one tower into three colours.
+
 More rules the log paid for (details in `devlog.md`):
 
 - **No em dashes or middot separators in any user-facing string** (Mike's rule): veil, hints,
@@ -500,7 +508,7 @@ More rules the log paid for (details in `devlog.md`):
 
 ## State
 
-As of 2026-09-03 (evening) the working tree is the Round 52 build (the game's ground: the meadow
+As of 2026-09-11 the working tree is the Round 54 build (the material rework: masonry joints in relief, cornice and edge shading, roof seams, less metallic glass, one glass tint per building as the `aTint` vertex byte, the curtain-wall attributes restored on the outer glass upload with terrain-relative floor datums and the two Comcast rhythms, the CTC blade crown, slate-teal water, softer meadow, rebalanced key and fill, 18 cloud steps, the slate and limestone HUD; see the devlog entry) over the Round 53 build (the marched cumulus, the lighter fabric, the seven ship hulls, the installable app) over the Round 52 build (the game's ground: the meadow
 on all bare ground with one shared mottle, lane paint on every road, stored-dark lots, the
 conformant drape that ended the terrain clipping through lots and parks, the weather pass restored
 on every textured flat, the markers masked out of the bloom; see the devlog entry) over the Round 51

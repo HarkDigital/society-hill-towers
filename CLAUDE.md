@@ -57,11 +57,13 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
   Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
   and `pack_wide.py` insets any record whose wall shares a plane with a larger one; the look leans toward
-  Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, brick, stone, panel and stucco
-  textures in the facade shader, a deep-blue sky with a ray-marched cumulus deck (a 720 m slab from 1,900 m,
+  Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, one glass tint per building carried
+  as the `aTint` vertex byte (never a world-position hash), brick, stone, panel and stucco textures in the facade
+  shader with every joint in anti-aliased relief, cornice and wall-end shading, limestone trim and mortar, seamed
+  roof membranes (Round 54), a deep-blue sky with a ray-marched cumulus deck (a 720 m slab from 1,900 m,
   `CLOUD_STEPS` samples, sunlit tops and self-shaded bellies) whose shadows slant by the
-  sun, clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, deep-blue body-colour water as a moving noise field with no
-  shore tint, a painted olive meadow on every green AND on all bare ground (Round 52: `groundSurfMat`, the
+  sun, clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, slate-teal body-colour water (`COLORS.water` 0x163038, Round 54) as a moving noise field with calm
+  ripples and only a restrained shoreline lift (no foam line, no lit floor), a painted olive meadow on every green AND on all bare ground (Round 52: `groundSurfMat`, the
   same meadow and the same darker-blotch mottle as the parks, parks and ground are one surface; no park
   shade spread, no ground retint), an instanced tuft field near the camera on parks and bare ground, lumpy
   flat-shaded low-poly crowns under leaf cards, wind in the crowns and blades, saturated palettes, rooftop
@@ -72,8 +74,12 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   with the markers and labels masked out of it (`postRaw(mat, { mask: true })`), `?bloom=0` off), never its
   assets; every flat outside the core (parks, lots, aprons) is laid with `conformDrape` on the drawn ground
   mesh (`groundGrids`/`groundMeshY`), never with `drapedPoly` (its point cap put big sheets at 36 to 61 m
-  against a 25 m mesh and the ground rose through them); the Round 50
-  key-to-fill ratio (sun 2.0, hemi 0.10 + 0.36 dayF) and the deep-blue zenith stand; a search result glides in and
+  against a 25 m mesh and the ground rose through them); the Round 54
+  key-to-fill ratio (sun 1.85, hemi 0.12 + 0.42 dayF, the Sep 8 rebalance of Round 50's 2.0 / 0.10 + 0.36) and the deep-blue zenith stand;
+  the outer curtain wall uploads with `geometry(true)` (aStyle, aBase, aTint; `tests/test_vbuf.py` guards it) and reads
+  terrain-relative floor datums, the Comcast towers have their own rhythms (styles 24 / 25) and the CTC a `blade` crown,
+  researched landmarks never take the random penthouse or mast; the HUD is slate panels with limestone lines
+  (`--panel`, `--line`, `--limestone` in style.css, the manifest and theme-color follow `--ink` 0x161a1e); a search result glides in and
   circles its spot until the first input takes flight (live buses are followed, not circled).
   The clock is never remembered: every load is Philadelphia's own time, and only a copied
   link carries a pinned clock. The two stadiums are built after the wide loop from

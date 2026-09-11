@@ -2863,6 +2863,92 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 54: the material rework, one glass tint per building, the Center City towers defined (Sep 11)
+
+The Sep 8 handoff notes (`aesthetic-updates.md`, cut from a Codex session on another checkout that
+never reached this repo or GitHub) described three passes; this round reimplements them from the
+descriptions against the Round 53 tree. Shading only: no measured geometry, terrain, data layer or
+build input changed except the two Comcast crown records in `towers.json`. Nothing here is a survey
+measurement: the panel widths, trim tones and crown proportions are visual approximations.
+
+- **Masonry, trim, roofs, glazing.** The facade shader's mortar went from a 0.7 mix of a warm grey to a
+  0.5 mix of a quieter limestone tone (0.60, 0.58, 0.53), the stone joints from 0.72 at 0.6 to 0.80 at
+  0.5, the panel seams from 0.2 to 0.14, and the lintels, sills and trim colours a step toward the
+  wall. Every joint now stands in relief: `jointRelief(d, w, aa)` returns a signed, anti-aliased
+  triangle profile about the joint's centre line (the lip above shades the joint, the lip below
+  catches the light), scaled by the sun's elevation (`relK = 0.35 + 0.65 * sunE`) at 0.12 on brick
+  courses (7.5 cm), 0.10 on the stone (55 cm) and 0.06 on the panel seams (3.3 m), so a wall reads as
+  laid, not printed. Local shading: on a `local` wall the last 0.6 m at each end takes 0.09 of shade
+  (quoins and party walls) and the 1.1 m under the eave 0.12 (the cornice's own shadow), towers at
+  0.4 of that. Roof membranes carry seams every 0.95 m along the grid (rotated 10 degrees with the
+  streets) at 0.07 and a fine aggregate at 0.10, both faded by the pixel footprint before they could
+  alias (`rnear`, gone past about 0.12 m per pixel). Glazing is less metallic everywhere: the facade
+  windows 0.8 / 0.16 to 0.62 / 0.22 metalness and roughness, the outer curtain wall 0.7 / 0.12 to
+  0.55 / 0.20, the core towers 0.7 / 0.1 to 0.55 / 0.18, the Ryland 0.85 / 0.06 to 0.7 / 0.12.
+- **One glass tint per building (the bronze, grey and teal bands).** The fragment shader picked a
+  tower's glass palette from a hash of 28 m world cells, so one wall crossing a cell edge changed
+  colour mid-facade and a tall tower wore three tints up its height. Every vertex now carries `aTint`,
+  a normalized byte from `glassTintKey(colour, style)` (a hash of the unshaded wall colour and the
+  facade style, assigned before the ambient-occlusion ramp): `VBuf` grows, uploads and releases it with
+  the style, base and floor height, `mergeColored(parts, ao, true)` fills it per part (or a part's own
+  `tint`), the two ring pushers pass it on every wall vertex, and the shader reads `bid = vTint`. The
+  tint is constant across a building's walls and height; the per-window lighting and reflections stay.
+- **The Center City towers defined.** The curtain-wall upload called `ch.geometry(false)`, which
+  attaches no attributes, so `outerGlassMat`'s `aStyle` read 0 on every researched glass tower and the
+  three curtain-wall variants (21 Liberty Place bands, 22 dark glass, 23 the concrete grid) had never
+  drawn (gotcha 22). The glass chunks upload with `geometry(true)`, the shader takes `aBase` for a
+  terrain-relative floor datum (`yG = y - base`; the bands used to count from sea level, so a tower
+  on the hill had a half-floor at its foot), and the Liberty Place crowns merge with explicit style 21
+  and their base. The rhythm: spandrels narrower (21: 0.9 to 0.55, 22: 0.3 to 0.22, 23: 0.55 to 0.4,
+  the default 0.5 to 0.32), mullions finer (0.05 to 0.035, the grid's 0.45 to 0.3), and two new
+  variants by name: 24 the Comcast Technology Center (4.6 m floors, pale vertical fins at 1.5 m, a
+  thin floor line) and 25 the Comcast Center (4.15 m floors, silver horizontal bands, a fine mullion);
+  dark glass and the concrete grid keep their treatments. Glass-tagged OSM parts (`t === 10`) join
+  the researched matching (they used to be excluded, so a tower whose shaft is a glass part never
+  found its spec), and `towerAt(x, z, h)` matches a section above 300 m within 55 m instead of 35 (the
+  CTC's spine, whose centroid sits off the tower's). A researched landmark never draws the random
+  mechanical penthouse or mast any more. Crowns: a pre-pass over the packed body finds the tallest
+  footprint matching each spec (`specTop`), and only that section raises the crown, once per spec
+  (`crowned`): the before build counted 43 crowns for 18 crowned specs because every podium piece
+  within a spec's radius raised its own pyramid or lantern; the after build raises one per spec. A
+  section within 92% of the researched height ends at exactly that height (the tops end at the
+  researched architectural height), every section that runs past the crown datum stops at the datum
+  (an upper `building:part` used to run through the crown), and a scene that stops short of the
+  research (the Inquirer's clock tower over its 61 m block) keeps its crown on its own top, at that
+  height. `?dev=1` logs every spec match (`__dbg.towers().log`: name, crown, h, mh, top, near). The
+  CTC crown is a `blade`: a narrow lit slab (0.86 of the long axis, 0.16 of the short, 38 m) standing
+  in a dark frame of two posts and two rails on a low plinth, in place of the 18 m lantern box;
+  `bake_towers.py` pins it (`C('blade', 38)`, `CROWNS` and `CROWN_H` know the type, `CROWN_CUTS` cuts
+  the body for it) and the Comcast Center's notch carries `sides: 3` (recessed on both ends and one
+  long face, the other flush). Re-baked: only those two records changed.
+- **Atmosphere.** The river is slate teal (`COLORS.water` 0x07297b to 0x163038; the first try, 0x0a3644,
+  rendered a bright turquoise through the legacy lift), the ripples calmer (`liquify` amplitude 1.0 to
+  0.75, the gust envelope 0.45 + 0.8 to 0.5 + 0.6), the sky reflection cooler and lighter (the fresnel
+  mix (0.42, 0.53, 0.62) at 0.17, the indirect specular tint (0.36, 0.58, 0.82) at 0.42), and a
+  restrained shoreline lift returns on the sheets that carry a shore distance: the last 0.4 of `wsh`
+  lightens 0.3 of the way toward a shallows teal by day (the Round 50 rule was no shore tint of any
+  kind; this one is a lift of the body colour, never a foam line). The meadow's blotches soften
+  (0.60, 0.66, 0.50 to 0.68, 0.72, 0.58), its grain 0.16 to 0.12, its macro drift 0.24 to 0.18, and it
+  loses 12 percent of its saturation. Paving a shade darker: `PAVED_COL`, `LOT_COL`, `LOT_FILL_COL`
+  and `COLORS.asphalt` (0x3b3833 to 0x37342f). The daylight key and fill rebalance: sun 2.0 to 1.85,
+  hemisphere 0.10 + 0.36 dayF to 0.12 + 0.42 dayF (the Round 50 ratio was the owner's; the Sep 8
+  notes moved it and this round follows them). `CLOUD_STEPS` 12 / 5 to 18 / 6. The streetlight cores
+  are smaller at night (the point floor 2.0 to 1.6 px, the ceiling 9 to 7.5, the sprite's solid disc
+  0.18 to 0.08 of its radius with a longer falloff).
+- **The HUD.** Slate panels and limestone lines: `--ink` 0x171512 to 0x161a1e, `--panel` a slate
+  rgba(30, 36, 42, 0.8), every hard-coded warm-ink rgba in `style.css` follows, the lines are
+  limestone (`--line`, `--line-strong`), the label pins and tower labels take the new `--limestone`
+  pair, the manifest and the theme-color meta follow the ink. Bronze stays on the buttons.
+- **Verification.** `tests/test_vbuf.py` is new: it cuts the `IdxBuf` and `VBuf` classes out of app.js
+  and runs them under JavaScriptCore with the vendored three.min.js (which loads under JXA: the UMD
+  takes `globalThis`), pushes 40 vertices through an 8-slot buffer (three doublings) and checks that
+  style, base, floor height and the tint byte reach `geometry(true)` intact, that the staging arrays
+  are released, and that `geometry(false)` stays attribute-free; plus a static check that the glass
+  upload asks for `geometry(true)` and that the outer glass shader declares `aStyle` and `aBase`. 36
+  tests pass with the one expected failure. Built (25.80 MB, 7.7 KB over Round 53), `docs_check` ok,
+  the browser console clean of shader errors, matched captures at noon and 21:30 from the skyline,
+  the waterfront, the CTC crown, Spruce Street and a rowhouse face, before and after.
+
 ### Facade-accuracy plan status
 
 **The LiDAR true-massing pass and Tier 1 of the facade-accuracy plan are done.**
