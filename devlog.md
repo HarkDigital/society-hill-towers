@@ -2863,6 +2863,27 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 58: one kind of tree (Sep 11)
+
+- **Mike, with a street-level screenshot in the core: most of the tree models seem to have a mix
+  of a low-poly and more realistic tree, and it needs fixing.** Round 51's desktop tree was two
+  objects: a faceted, lumpy icosahedron crown shrunk to 0.7 under a ring of 32 alpha-cut leaf-card
+  quads (14 in the outer districts), and at close range the two read as exactly that, a dark
+  blob with sprites poking through it, beside buildings that are clean low-poly boxes. Phones
+  always drew the crowns alone. The cards are retired on every device (`CARDS = 0`; the code
+  stays, a number above 0 brings them back): the crowns stand at full size in the species colours
+  the crown path already carried (`TREE_STYLE`, stored dark for the legacy lift), with the lumpy
+  per-vertex displacement, the three-octave mottle, the top-lit and dark-undersided sway shader,
+  and the conifers at their card-less lightness; the crowns alone came out lighter and yellower
+  than the old mix, and a lightness cut did nothing (the day pipeline flattens albedo lightness,
+  the TREE_STYLE note), so the depth comes from the sway shader's top-lit multiplier, a fifth
+  darker and greener (0.86, 0.98, 0.76 at the top, 0.40, 0.50, 0.38 below, against the card era's
+  1.12, 1.08, 0.92 and 0.52, 0.60, 0.48), with the hue 0.04 toward green. One object per tree, the
+  same look at every
+  distance and on every device, and the leaf material, its painted sprite and the card
+  instancing no longer draw (the cards were a second instanced mesh per chunk). Verified at
+  street level and from 90 m before and after; 43 tests pass.
+
 ## Round 57: the far ring in the outer districts' colours (Sep 11)
 
 - **Mike, with a screenshot from over Francisville: a distinct difference in building colour along

@@ -8274,7 +8274,7 @@
       sh.uniforms.uTime = waterU.uTime;
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vCY;')
-        .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.52, 0.60, 0.48), vec3(1.12, 1.08, 0.92), tp); }');
+        .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.40, 0.50, 0.38), vec3(0.86, 0.98, 0.76), tp); }');   // Round 58: a fifth darker and greener top than the card era's (1.12, 1.08, 0.92), the crown is the whole tree now
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime; varying float vCY;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCY = position.y;\n{\n  vec4 tw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = tw.x * 0.07 + tw.z * 0.05;\n  float sw = sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25;\n  float up = clamp(position.y * 0.5 + 0.5, 0.0, 1.0);\n  transformed.x += sw * 0.07 * up; transformed.z += sw * 0.035 * up; transformed.y += sin(uTime * 3.1 + ph * 5.0 + position.x * 2.0) * 0.02 * up;\n}');
@@ -8296,10 +8296,13 @@
     trunkWideG.translate(0, 1.0, 0);
     const canCoreG = new THREE.IcosahedronGeometry(1, 1);
     const canWideG = new THREE.IcosahedronGeometry(1, isTouch ? 0 : 1);
-    // leaf cards (desktop): a ring of alpha-cut leaf-cluster quads round a shrunken core, each
-    // card's normal the crown's own sphere direction lifted toward up so undersides keep light;
-    // the sway shader and the cloud shade are the canopy's. Touch keeps the faceted blobs.
-    const CARDS = isTouch ? 0 : 32;
+    // leaf cards: a ring of alpha-cut leaf-cluster quads round a shrunken core, each card's
+    // normal the crown's own sphere direction lifted toward up so undersides keep light; the
+    // sway shader and the cloud shade are the canopy's. Retired on every device in Round 58
+    // (Mike: the trees read as a mix of low-poly and realistic): the faceted crowns stand alone,
+    // at full size and in the species colours, one clean object beside the low-poly buildings,
+    // as phones always had them. CARDS above 0 brings the cards back.
+    const CARDS = 0;
     const canK = CARDS ? 0.7 : 1;
     // n cards scattered through the crown, every one facing its own random way (an outward
     // ring read as a wreath from above); the lighting normal is the crown sphere's, lifted
@@ -8456,7 +8459,7 @@
           m.compose(new V3(X[i], cy, Z[i]), q, new V3(CR[i] * st[3] * kk, CR[i] * st[4] * (0.9 + hash01(i * 7.7) * 0.25) * kk, CR[i] * st[3] * kk));
           mesh.setMatrixAt(k, m);
           if (kk !== 1) cardTint(i, st, cCan).multiply(texU.leafNorm).multiplyScalar(0.06);   // the core wears the cards' own colour, at the sprite's mean
-          else cCan.setHSL(st[0] + (hash01(i * 4.9) - 0.5) * 0.045, Math.min(1, (st[1] + (hash01(i * 6.1) - 0.5) * 0.12) * 1.15), st[2] + 0.015 + (hash01(i * 8.3) - 0.5) * 0.05);
+          else cCan.setHSL(st[0] + 0.04 + (hash01(i * 4.9) - 0.5) * 0.045, Math.min(1, (st[1] + (hash01(i * 6.1) - 0.5) * 0.12) * 1.05), st[2] + (hash01(i * 8.3) - 0.5) * 0.04);   // greener than the phone tuning now the crown is the whole tree (Round 58; lightness barely shows through the day pipeline, the sway shader's multiplier carries the depth)
           mesh.setColorAt(k, cCan);
         } else {
           const [rs, hs] = trunkScale(DBH[i]);

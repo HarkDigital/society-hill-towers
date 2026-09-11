@@ -67,7 +67,7 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   ripples and only a restrained shoreline lift (no foam line, no lit floor), a painted olive meadow on every green AND on all bare ground (Round 52: `groundSurfMat`, the
   same meadow and the same darker-blotch mottle as the parks, parks and ground are one surface; no park
   shade spread, no ground retint), an instanced tuft field near the camera on parks and bare ground, lumpy
-  flat-shaded low-poly crowns under leaf cards, wind in the crowns and blades, saturated palettes, rooftop
+  flat-shaded low-poly crowns with no leaf cards on any device (Round 58; `CARDS` above 0 brings them back), wind in the crowns and blades, saturated palettes, rooftop
   clutter on desktop, awnings, lane paint on every road (`aLane` + `lanePatch`: a double yellow centre from
   6.5 m wide, white dashes by width, edge lines on the divided highways, nothing on service and footways),
   stored-dark asphalt lots (`LOT_COL`) with stall stripes that fade past 500 m, and every surface lot, industrial and retail yard, rail yard and apron in the city paved from `paved.b64` (`fetch_paved.py` / `pack_paved.py`, the 'Paving the lots and yards' step, `conformDrape` under the parks), and on desktop WebGL2 an HDR
