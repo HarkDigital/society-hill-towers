@@ -1,0 +1,13 @@
+# philly3d: fire concerts-bake.service every 15 min (see concerts-bake.service for install).
+# AccuracySec is set on purpose: systemd's default timer accuracy is one minute.
+[Unit]
+Description=philly3d: bake Ticketmaster concerts every 15 min
+
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=15min
+AccuracySec=30s
+Unit=concerts-bake.service
+
+[Install]
+WantedBy=timers.target

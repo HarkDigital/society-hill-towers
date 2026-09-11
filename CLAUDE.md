@@ -85,7 +85,11 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   link carries a pinned clock. The two stadiums are built after the wide loop from
   `south_geometry_research.json` and light up at night; the sports complex is asphalt with
   striped stalls (`parking_south.json`), and ESPN scoreboards put a score bubble over a venue
-  during a Philadelphia home game.
+  during a Philadelphia home game. Ticketmaster's listings (Round 56: `ops/concerts_bake.py` bakes them
+  to concerts.json on the VPS every 15 minutes, the key only ever in `/etc/philly3d/concerts.env`) put a
+  concert placard over its venue from 9 am Philadelphia time on the day of the show until the show ends,
+  judged by real time, never the pinned clock; the M key and the tenth layer bit; the pin lands on the roof
+  from the build's `ROOF_GRID`, or on the score venues' roofs, stacking over a game there.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances.
 - The page is an installable app (Round 53): `build.py` writes `manifest.webmanifest` beside it,

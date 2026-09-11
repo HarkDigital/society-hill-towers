@@ -33,7 +33,8 @@
 #           after that the browser revalidates (ETag / Last-Modified -> 304) so
 #           a deploy is picked up within ten minutes, never "until cache clear".
 #   ADDED   location = /b  — opt-in, IP-free visit beacon (204 + one log line).
-#   ADDED   location = /septa.json and = /ais.json — static files baked by
+#   ADDED   location = /septa.json, = /ais.json (and = /concerts.json, Round 56: max-age=60 against
+#           a 15 min bake by ops/concerts_bake.py) — static files baked by
 #           ops/septa_bake.py (10 s) and ops/ais_relay.py (4 s), gzip_static
 #           twins, max-age=10, ACAO * so the GitHub Pages copy can read them.
 #   CHANGED /adsb: proxy_hide_header for the upstream (Cloudflare-fronted)
@@ -143,6 +144,14 @@ server {
     location = /ais.json {
         gzip_static on;
         add_header Cache-Control "public, max-age=10" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
+        add_header X-Content-Type-Options nosniff always;
+        add_header Referrer-Policy strict-origin-when-cross-origin always;
+    }
+    location = /concerts.json {   # 60 s against a 15 min bake (the page fetches no-store anyway)
+        gzip_static on;
+        add_header Cache-Control "public, max-age=60" always;
         add_header Access-Control-Allow-Origin * always;
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
         add_header X-Content-Type-Options nosniff always;

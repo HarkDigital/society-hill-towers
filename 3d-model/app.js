@@ -3454,6 +3454,7 @@
         continue;
       }
       if (spec0 && spec0.h) b.h = spec0.h;
+      if (b.h >= 6 && b.poly.length >= 3) { const [rx, rz] = polyCentroid(b.poly); roofNote(rx, rz, siteY(rx, rz, 'ground') + b.h, Math.abs(signedArea(b.poly))); }
       if (b.h >= 45 && b.poly && b.poly.length >= 3 && !b.minH) {
         const [tgx, tgz] = polyCentroid(b.poly);
         tallGlow.push({ x: tgx, z: tgz, b: siteY(tgx, tgz, 'ground'), h: b.h, poly: b.poly });
@@ -5311,6 +5312,27 @@
   // ~108k OSM footprints packed as int16 (0.2 m) and rendered as lean indexed
   // chunks — 8-bit normals/colors, no roofs or cornices, world-space windows.
   const outerMeshes = [];
+  // the roof grid (Round 56): the tallest roof (absolute y) of any footprint of 250 m2 or more
+  // in each 100 m cell of the far box, noted by the three building loops as they raise the city,
+  // so a live placard (a concert at a hall the packed tiers built) drops its pin onto the roof
+  // without raycasting a freed chunk (gotcha 12). Quarter metres in an Int16: 184 KB for the city.
+  const ROOF_GRID = { x0: -12200, z0: -21900, cell: 100, nx: 289, nz: 318, a: new Int16Array(289 * 318) };
+  function roofNote(cx, cz, top, area) {
+    if (area < 250 || !(top > 0)) return;
+    const i = Math.floor((cx - ROOF_GRID.x0) / ROOF_GRID.cell), j = Math.floor((cz - ROOF_GRID.z0) / ROOF_GRID.cell);
+    if (i < 0 || j < 0 || i >= ROOF_GRID.nx || j >= ROOF_GRID.nz) return;
+    const q = Math.min(32767, Math.round(top * 4)), k = j * ROOF_GRID.nx + i;
+    if (q > ROOF_GRID.a[k]) ROOF_GRID.a[k] = q;
+  }
+  function roofAt(x, z) {   // the cell's roof, else the tallest of its neighbours, else -Infinity
+    const i = Math.floor((x - ROOF_GRID.x0) / ROOF_GRID.cell), j = Math.floor((z - ROOF_GRID.z0) / ROOF_GRID.cell);
+    if (i < 0 || j < 0 || i >= ROOF_GRID.nx || j >= ROOF_GRID.nz) return -Infinity;
+    const v = ROOF_GRID.a[j * ROOF_GRID.nx + i];
+    if (v > 0) return v / 4;
+    let best = 0;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= ROOF_GRID.nx || jj >= ROOF_GRID.nz) continue; best = Math.max(best, ROOF_GRID.a[jj * ROOF_GRID.nx + ii]); }
+    return best > 0 ? best / 4 : -Infinity;
+  }
   const tallGlow = [];   // buildings ≥45 m from every tier, for the night skyline points
   const GRASS_POLYS = [];   // park and lawn rings from every tier, the grass field sows on them near the camera
   const NO_SOW_RINGS = [], NO_SOW_RING_BB = [];   // rings the bare-ground tuft sow keeps off: the sports complex's sheets and lots, every water sheet (inWater knows only the Delaware's bank), the far ring's aprons, the NW creeks
@@ -5771,6 +5793,7 @@
       }
       const hsh = hash01(i * 7.13);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
+      if (h >= 6) roofNote(cx, cz, base + h, Math.abs(signedArea(poly)));
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
       const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
@@ -7040,6 +7063,7 @@
       }
       const hsh = hash01(i * 5.31 + 0.7);
       if (h >= 45) tallGlow.push({ x: cx, z: cz, b: base, h, poly });
+      if (h >= 6) roofNote(cx, cz, base + h, Math.abs(signedArea(poly)));
       const fa = attrW >= 0 ? [attrW & 7, (attrW >> 3) & 7, (attrW >> 6) & 15, 0] : null;
       const fh = attrW >= 0 && ((attrW >> 10) & 31) > 0 ? 2.2 + (((attrW >> 10) & 31) - 1) * 0.1 : 0;
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
@@ -9150,6 +9174,7 @@
     else if (k === 'p') togglePlaces();
     else if (k === 'r') toggleTraffic();
     else if (k === 'g') toggleLightsLayer();
+    else if (k === 'm') toggleConcerts();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
     else if (k === 'escape') { glideCancel(); /* nothing open: the browser releases pointer lock */ }
     else {
@@ -9367,13 +9392,15 @@
   const PREFS_KEY = 'philly3d.prefs';
   // layer bitmask, low bit first (the hash's l= uses it): 1 SEPTA, 2 Indego,
   // 4 flights, 8 ships, 16 traffic, 32 streetlights, 64 street names,
-  // 128 landmark labels, 256 neighborhood names
-  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places'];
-  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true };
+  // 128 landmark labels, 256 neighborhood names, 512 concerts; 1024 marks a link written with
+  // ten bits (a nine-bit link from before Round 56 keeps the concerts at their default)
+  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts'];
+  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true };
+  const LAYER_MASK_V2 = 1024;
   let prefsReady = false, prefsTimer = 0;
   let hashClock = false, clockTouched = false;   // a shared link's pinned clock is not saved until the user changes the time
   function layerFlags() {
-    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn };
+    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn, concerts: CONCERTS.on };
   }
   function setLayerFlags(f) {
     if ('septa' in f) SEPTA.on = !!f.septa;
@@ -9385,10 +9412,11 @@
     if ('streets' in f) { stOn = !!f.streets; if (stMesh) stMesh.visible = stOn; }
     if ('labels' in f) labelsOn = !!f.labels;
     if ('places' in f) { placesOn = !!f.places; if (nbMesh) nbMesh.visible = false; }   // applyLighting re-shows it by altitude
+    if ('concerts' in f) CONCERTS.on = !!f.concerts;
   }
-  function layerMask() { const f = layerFlags(); let m = 0; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }
-  function layersFromMask(m) { const f = {}; LAYER_KEYS.forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }
-  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); }
+  function layerMask() { const f = layerFlags(); let m = LAYER_MASK_V2; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }
+  function layersFromMask(m) { const f = {}; const n = (m & LAYER_MASK_V2) ? LAYER_KEYS.length : 9; LAYER_KEYS.slice(0, n).forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }
+  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); syncConcertsBtn(); }
   function syncLayerBtn(btn, on) {
     // every layer row: the check mark, the pressed state for readers, and the blob
     if (btn) { btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
@@ -9429,7 +9457,7 @@
         if (!v.every((n) => isFinite(n))) continue;
         if (k === 'p' && v.length === 5) out.p = v;
         else if (k === 't' && v.length === 2) out.t = v;
-        else if (k === 'l' && v.length === 1) out.l = v[0] & 511;
+        else if (k === 'l' && v.length === 1) out.l = v[0] & 2047;
       }
     } catch (e) { }
     return out;
@@ -10088,7 +10116,7 @@
   // panel footer: back to the shipped layers, and a link to this exact view
   document.getElementById('btnResetLayers').addEventListener('click', () => {
     // through the real toggles, so the live polls start and stop with the flags
-    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces };
+    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts };
     const f = layerFlags();
     for (const k of LAYER_KEYS) if (f[k] !== LAYER_DEFAULTS[k]) toggles[k]();
     setLapse(false);
@@ -10486,9 +10514,12 @@
   const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [], pins: [], ended: {}, seenLive: {} };
   const SCORE_LEN = { mlb: 3.0 * 3600000, nfl: 3.3 * 3600000, nhl: 2.6 * 3600000, nba: 2.4 * 3600000 };
   // h: where the bubble hangs; top: the roof the pin drops to
+  // the arena is one record for both tenants: the stacks below test venue identity, and two
+  // literals put a Flyers bubble, a 76ers bubble and a concert placard on one spot (Round 56)
+  const ARENA_VENUE = { x: -2327, z: 4892, h: 115, top: 40 };
   const SCORE_VENUES = {
     mlb: { x: -1857, z: 4383, h: 135, top: 44 }, nfl: { x: -1946, z: 4954, h: 150, top: 57 },
-    nhl: { x: -2327, z: 4892, h: 115, top: 40 }, nba: { x: -2327, z: 4892, h: 115, top: 40 },
+    nhl: ARENA_VENUE, nba: ARENA_VENUE,
   };
   const SCORE_KEYS = ['mlb', 'nfl', 'nhl', 'nba'];
   const SCORE_URL = (k) => 'https://site.api.espn.com/apis/site/v2/sports/' + ({ mlb: 'baseball/mlb', nfl: 'football/nfl', nhl: 'hockey/nhl', nba: 'basketball/nba' })[k] + '/scoreboard';
@@ -10560,6 +10591,8 @@
       groupCity.add(line); groupCity.add(ball);
       SCORES.pins.push(line, ball);
     });
+    // the concert placards stack over the games: a game arriving or ending re-stacks them
+    CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh();
   }
   function scoresRender() {
     for (let i = 0; i < SCORES.games.length; i++) {
@@ -10572,6 +10605,134 @@
       el.style.transform = 'translate(-50%,-100%) translate(' + ((_scv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_scv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
     }
   }
+  // ---------------------------------------------------------------- live concerts
+  // A placard over each venue with a show today (Mike): the Ticketmaster Discovery API's
+  // Philadelphia music listings, baked on the VPS into concerts.json every 15 minutes
+  // (ops/concerts_bake.py: the key lives on the box, one upstream call a bake for every
+  // viewer). A show's placard rises at 9 am Philadelphia time on the day of the show and
+  // stands until the show ends; the baker writes both instants as unix seconds and the page
+  // compares them with real time, never the pinned model clock, as the scores do. The pin
+  // drops to the venue's roof from the build's roof grid (ROOF_GRID), or to the arena, the
+  // ballpark and the stadium heights the scores use, stacking over a game there. A missing or
+  // stale file means no placards, silently: there is no keyless fallback.
+  const CONCERTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, events: [], shown: [], els: [], pins: [], tick: -1, shownKey: null };
+  const CONCERTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/concerts.json' : 'https://philly3d.com/concerts.json';
+  const CONCERT_POLL = 600000, CONCERT_STALE = 3 * 3600;   // 10 min while visible; a file 3 h old is a stopped baker
+  const CONCERT_HANG = 60, CONCERT_ROOF = 12;   // the placard hangs 60 m over the roof; a venue the grid does not know stands 12 m
+  const btnConcerts = document.getElementById('btnConcerts');
+  const _ccv = new V3();
+  // the feed's names carry dashes and middots; the HUD's own rule is commas and colons
+  const plainText = (s) => String(s == null ? '' : s).replace(/\s*[–—·•]\s*/g, ', ').replace(/\s+/g, ' ').trim();
+  const concertClock = (hhmm) => { const h = +hhmm.slice(0, 2), m = hhmm.slice(3, 5); return ((h % 12) || 12) + ':' + m + (h < 12 ? ' AM' : ' PM'); };
+  function concertsPoll(now) {
+    if (!CONCERTS.on || !septaCanFetch || document.hidden || CONCERTS.busy || now < CONCERTS.nextT) return;
+    CONCERTS.busy = true;
+    CONCERTS.nextT = now + Math.min(1800000, CONCERT_POLL * (1 + CONCERTS.fails));
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 12000) : 0;
+    const miss = () => { clearTimeout(timer); CONCERTS.fails++; CONCERTS.busy = false; concertStatus(); };
+    fetch(CONCERTS_URL, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json().then((d) => ({ d, now: serverNow(r) })); })
+      .then(({ d, now: sNow }) => {
+        clearTimeout(timer);
+        if (!d || !(d.t > 0) || !Array.isArray(d.events)) { miss(); return; }
+        CONCERTS.busy = false; CONCERTS.fails = 0; CONCERTS.ok = true;
+        // a stale file is a stopped baker: nothing may linger on a placard from it
+        CONCERTS.events = sNow - d.t > CONCERT_STALE ? [] : d.events.filter((e) => e && e.id && e.venue && isFinite(+e.venue.lat) && isFinite(+e.venue.lon) && e.from > 0 && e.until > e.from);
+        CONCERTS.tick = -1;
+        concertsRefresh();
+      })
+      .catch(miss);
+  }
+  // the show window, re-read once a minute from real time: the placards rise at 9 am and
+  // fall at the end of the show without waiting for a poll
+  function concertsRefresh() {
+    const nowS = Date.now() / 1000, tick = Math.floor(nowS / 60);
+    if (tick === CONCERTS.tick) return;
+    CONCERTS.tick = tick;
+    const open = CONCERTS.on ? CONCERTS.events.filter((e) => nowS >= e.from && nowS < e.until) : [];
+    const key = open.map((e) => e.id).join('|');
+    if (key === CONCERTS.shownKey) return;
+    CONCERTS.shownKey = key;
+    concertsSet(open);
+  }
+  function concertsSet(events) {
+    for (const el of CONCERTS.els) el.remove();
+    for (const o of CONCERTS.pins) { groupCity.remove(o); o.geometry.dispose(); o.material.dispose(); }
+    CONCERTS.els = []; CONCERTS.pins = []; CONCERTS.shown = [];
+    // one placard per venue: a hall with two shows tonight lists both (stacked placards covered
+    // each other), the rows in start order, a time to be announced last
+    const venues = [];
+    for (const e of events) {
+      const lat = +e.venue.lat, lon = +e.venue.lon;
+      const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+      if (!insideLimit(x, z)) continue;   // the suburbs' halls are outside the model
+      let v = venues.find((o) => (e.venue.id && o.id === e.venue.id) || Math.hypot(o.x - x, o.z - z) < 60);
+      if (!v) { v = { id: e.venue.id || '', name: e.venue.name, x, z, rows: [] }; venues.push(v); }
+      v.rows.push(e);
+    }
+    for (const v of venues) {
+      v.rows.sort((a, b) => (a.start || 1e12) - (b.start || 1e12));
+      const gy = siteY(v.x, v.z, 'ground');
+      // the arena, the ballpark and the stadium hang where a game would, above any score there
+      let top = null, hang = CONCERT_HANG, stack = 0;
+      for (const k of SCORE_KEYS) { const sv = SCORE_VENUES[k]; if (Math.hypot(v.x - sv.x, v.z - sv.z) < 220) { top = gy + sv.top; hang = sv.h - sv.top; stack = SCORES.games.filter((g) => SCORE_VENUES[g.k] === sv).length; break; } }
+      if (top === null) { const r = roofAt(v.x, v.z); top = r > gy + 3 ? r : gy + CONCERT_ROOF; }
+      const y = top + hang + 22 * stack;
+      const el = document.createElement('div');
+      el.className = 'lbl score concert';
+      const first = v.rows.find((e) => /^https:\/\/[a-z0-9.-]*ticketm\.net\//i.test(e.image || ''));
+      const img = first ? '<img class="logo" alt="" src="' + septaEsc(first.image) + '" onerror="this.remove()">' : '';
+      const rows = v.rows.map((e) => {
+        const when = e.tba || !e.time ? 'time to be announced' : concertClock(e.time);
+        const link = /^https:\/\/[a-z0-9.-]*ticketmaster\.com\//i.test(e.url || '') ? '<a href="' + septaEsc(e.url) + '" target="_blank" rel="noopener">Tickets</a>' : '';
+        return '<span class="row">' + septaEsc(plainText(e.artist || e.name) + ', ' + when) + link + '</span>';
+      }).join('');
+      el.innerHTML = img + '<span class="txt"><b>' + septaEsc(plainText(v.name)) + '</b>' + rows + '<span class="src">Listed by Ticketmaster</span></span>';
+      labelsRoot.appendChild(el);
+      CONCERTS.els.push(el);
+      // the pin: a line from the placard down to the roof, a small ball where it lands
+      const lg = new THREE.BufferGeometry();
+      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([v.x, y, v.z, v.x, top, v.z]), 3));
+      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xd9d1bd, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }));
+      line.renderOrder = 12; line.frustumCulled = false;
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0xd9d1bd, depthTest: false, depthWrite: false }));
+      ball.position.set(v.x, top, v.z); ball.renderOrder = 12;
+      groupCity.add(line); groupCity.add(ball);
+      CONCERTS.pins.push(line, ball);
+      CONCERTS.shown.push({ e: v.rows[0], rows: v.rows, venue: v.name, x: v.x, y, z: v.z, el });
+    }
+    concertStatus();
+  }
+  function concertsRender() {
+    concertsRefresh();
+    for (const s of CONCERTS.shown) {
+      _ccv.set(s.x, s.y, s.z);
+      const far = camera.position.distanceTo(_ccv) > 14000;
+      _ccv.project(camera);
+      if (far || _ccv.z > 1 || _ccv.z < -1 || _ccv.x < -1.1 || _ccv.x > 1.1 || _ccv.y < -1.2 || _ccv.y > 1.2) { s.el.style.opacity = '0'; s.el.style.visibility = 'hidden'; continue; }
+      s.el.style.opacity = '1'; s.el.style.visibility = '';
+      s.el.style.transform = 'translate(-50%,-100%) translate(' + ((_ccv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ccv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    }
+  }
+  function concertStatus() {
+    if (!btnConcerts) return;
+    const n = CONCERTS.shown.reduce((t, s) => t + s.rows.length, 0), off = !CONCERTS.ok && CONCERTS.fails >= 3;
+    btnConcerts.title = 'Live Concerts (M): ' + (off ? 'Feed Offline' : n ? n + (n === 1 ? ' Show Today' : ' Shows Today') : 'No Shows On Yet');
+    const cc = document.getElementById('concertCount');
+    if (cc) cc.textContent = off ? 'Offline' : n ? String(n) : '';
+  }
+  function syncConcertsBtn() { syncLayerBtn(btnConcerts, CONCERTS.on); }
+  function toggleConcerts() {
+    if (!septaCanFetch) return;
+    CONCERTS.on = !CONCERTS.on;
+    syncConcertsBtn();
+    CONCERTS.tick = -1; CONCERTS.shownKey = null;
+    if (CONCERTS.on) CONCERTS.nextT = 0;
+    concertsRefresh();
+  }
+  if (btnConcerts) btnConcerts.addEventListener('click', toggleConcerts);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) CONCERTS.nextT = 0; });
   function searchGoToBus(v) {
     const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
     searchFlyTo(x, (v.gy || siteY(x, z, 'road')) + 6, z, 220, true);
@@ -14076,6 +14237,7 @@
     updateTreePick();
     updateSearchMark(now);
     scoresPoll(now); scoresRender();
+    concertsPoll(now); concertsRender();
     if (lotStripes) {
       // the stall lines are 1 px lines: past a few hundred metres they alias into moire over
       // the whole lot, so they fade out between 500 and 1500 m instead of cutting at 3.5 km
@@ -14152,7 +14314,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

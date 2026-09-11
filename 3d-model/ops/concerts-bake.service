@@ -1,0 +1,28 @@
+# philly3d: one bake of the Ticketmaster Philadelphia music listings (concerts-bake.timer fires it).
+# Install:  cp concerts_bake.py /opt/philly3d/  (chmod 755)
+#           mkdir -p /etc/philly3d && printf 'TICKETMASTER_KEY=%s\n' 'PASTE-KEY-HERE' > /etc/philly3d/concerts.env && chmod 600 /etc/philly3d/concerts.env
+#           cp concerts-bake.service concerts-bake.timer /etc/systemd/system/
+#           systemctl daemon-reload && systemctl enable --now concerts-bake.timer
+# Check:    systemctl list-timers concerts-bake.timer ; journalctl -u concerts-bake -n 5
+#           curl -s https://philly3d.com/concerts.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["day"], len(d["events"]), "events")'
+# Remove:   systemctl disable --now concerts-bake.timer ; rm /etc/systemd/system/concerts-bake.* ; systemctl daemon-reload
+#
+# A oneshot on a 15 min timer, not a --loop service: the baker keeps no state between
+# bakes (unlike septa_bake's host affinity), and 96 bakes a day of up to four pages
+# sit far inside the key's 5,000 calls.
+[Unit]
+Description=philly3d: bake Ticketmaster concerts to /var/www/philly3d/concerts.json
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/philly3d
+EnvironmentFile=/etc/philly3d/concerts.env
+ExecStart=/usr/bin/python3 /opt/philly3d/concerts_bake.py --out /var/www/philly3d/concerts.json
+Nice=10
+ProtectSystem=strict
+ReadWritePaths=/var/www/philly3d
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true

@@ -2863,6 +2863,50 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 56: concerts over their venues (Sep 11)
+
+- **Mike: use the Ticketmaster Discovery API and display concerts like the sports scores on a
+  placard, visible from 9 am the day of the show, pinned to its location.** Same shape as the
+  scores, with the key kept off the page. `ops/concerts_bake.py` (stdlib, modelled on the SEPTA
+  baker: atomic writer, the .gz twin first, the previous file kept on any bad answer) asks the
+  Discovery API for the Music segment within 12 km of City Hall from local midnight through three
+  days, up to four pages of 200 (the API's deep-paging cap), and writes `concerts.json`: `t`, the
+  local `day`, and one record per event with name, artist, genre, the ticket url, one 16:9 image
+  url from ticketm.net, the venue's id, name and position, the local date and time, `tba`, `start`,
+  and the two instants the page compares with real time: `from` (09:00 America/New_York on the
+  show day, by zoneinfo, so the DST changes are the server's problem and `tests/test_concerts_bake.py`
+  checks both of 2026's) and `until` (start plus four hours, or local midnight after a TBA time).
+  Cancelled and postponed shows, TBD dates, venues without a position and anything outside the Music
+  segment are dropped; dashes and middots become commas (the HUD rule). A oneshot service on a 15 min
+  timer (`concerts-bake.timer`, 96 bakes a day against the key's 5,000 calls), `EnvironmentFile`
+  `/etc/philly3d/concerts.env` (mode 600, root, Mike's to create), the sandbox lines the AIS relay
+  uses, a README section, and a `location = /concerts.json` block in the vhost example for the
+  GitHub Pages copy (a VPS edit that waits for his go, like the others).
+- **The page.** `CONCERTS` beside `SCORES`: `concertsPoll` reads the file every 10 minutes while
+  visible (the scores' gates, `serverNow` for staleness, a 3 h stale rule that drops every placard,
+  no keyless fallback, silence on a miss), `concertsRefresh` re-reads the window once a minute from
+  `Date.now()` and rebuilds only when the set of open shows changes, `concertsSet` builds the
+  placards exactly as `scoresSet` does (a `.lbl.score.concert` div: the image when its host is
+  ticketm.net, artist or event name, venue and clock time or "time to be announced", a "Tickets on
+  Ticketmaster" link that opens the event page, limestone border and pin; one placard per venue,
+  a hall with two shows tonight lists both in start order, since stacked placards covered each
+  other) and `concertsRender`
+  projects them with the scores' 14 km cut. Position: the venue's lat/lon through `SEPTA_GEO`,
+  skipped outside the flight limit. The pin lands on the roof from the new `ROOF_GRID`: the three
+  building loops note the tallest roof (absolute y, quarter metres in an Int16, 184 KB) of every
+  footprint of 250 m2 or more into 100 m cells of the far box, so a placard at a hall the packed
+  tiers built drops onto its roof without raycasting a freed chunk (gotcha 12); a venue the grid
+  does not know stands 12 m; the arena, the ballpark and the stadium reuse `SCORE_VENUES` and stack
+  22 m over a game there. The placard hangs 60 m over the roof.
+- **The layer.** 'Live Concerts' in the layers panel with a count and the M key (the free letters
+  were J K M O U Y Z), the tenth layer bit (512) with a marker bit (1024) on every written mask so a
+  nine-bit link from before this round keeps the concerts at their default (on); the prefs blob needs
+  no migration. `__dbg.concerts()`, `__dbg.roofAt(x, z)` and `__dbg.concertTest()` (six staged shows,
+  from The Met to the Freedom Mortgage Pavilion, open now). Credits: the bottom line, the About
+  panel and DATA-LICENSE.md name Ticketmaster and the non-affiliation. Verified in the pane with the
+  staged shows and with a fixture file baked from a canned answer through the real baker; the feed
+  itself goes live when Mike installs the baker and the key on the VPS.
+
 ## Round 55: the Delaware below the Navy Yard (Sep 11)
 
 - **Boats on dry land south of the airport (Mike, with a satellite view).** The AIS ships stood on

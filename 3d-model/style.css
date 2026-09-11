@@ -805,6 +805,14 @@ body.touchfly .pad { display: flex; }
 .lbl.score .live { display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: #e0483e; animation: scorelive 1.6s ease-in-out infinite; }
 @keyframes scorelive { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 .lbl.score.final .live { background: #8a8580; animation: none; }   /* a final: the dot goes still and gray */
+/* concert placards over the venues, from 9 am on a show day (Ticketmaster listings, Round 56) */
+.lbl.concert { border-color: var(--limestone-dim); }
+.lbl.concert .logo { width: 48px; height: 27px; object-fit: cover; border-radius: 1px; }
+.lbl.concert b { font-weight: 700; display: block; margin-bottom: 1px; }
+.lbl.concert .row { display: block; font-weight: 500; }
+.lbl.concert a { color: var(--limestone); text-decoration: none; border-bottom: 1px solid var(--limestone-dim); pointer-events: auto; font-size: 10.5px; letter-spacing: 0.06em; margin-left: 9px; }
+.lbl.concert a:hover { color: var(--paper); border-bottom-color: var(--paper); }
+.lbl.concert .src { display: block; color: var(--paper-faint); font-size: 9.5px; letter-spacing: 0.08em; margin-top: 2px; }
 @media (max-width: 640px) {
   #searchpanel { bottom: 66px; }
 }

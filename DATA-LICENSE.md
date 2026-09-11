@@ -70,8 +70,13 @@ credit line.
 SEPTA TransitView (SEPTA's public API; SEPTA marks belong to SEPTA and the page carries a
 non-affiliation notice), Indego station status (Bicycle Transit Systems), adsb.fi community
 ADS-B data through the philly3d.com `/adsb` proxy, aisstream.io AIS positions, Open-Meteo
-(CC-BY 4.0), and OpenStreetMap Nominatim for search (ODbL data; subject to the Nominatim
-usage policy). Each feed has its own terms of use; the page credits them.
+(CC-BY 4.0), the Ticketmaster Discovery API for concert listings (philly3d.com keeps a trimmed
+copy of the city's music events for the next three days, refreshed every fifteen minutes, kept
+across a failed refresh and dropped by the page once it is three hours old, holding nothing
+outside that window; names, times, venues, one image link and the ticket link belong to Ticketmaster
+and are shown with a link to the event page; the page is unaffiliated), and OpenStreetMap
+Nominatim for search (ODbL data; subject to the Nominatim usage policy). Each feed has its own
+terms of use; the page credits them.
 
 ## Fonts (SIL Open Font License 1.1)
 

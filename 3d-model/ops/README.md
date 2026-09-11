@@ -11,6 +11,7 @@ Everything in this directory is applied **by hand, by the owner**, on the lionsp
 | `septa_bake.py` + `septa-bake.service` (loop; `septa-bake.timer` is the oneshot alternative) | `/opt/philly3d/`, `/etc/systemd/system/` | SEPTA TransitViewAll → `/var/www/philly3d/septa.json` every 10 s |
 | `lightning_relay.py` + `lightning-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | Blitzortung community MQTT relay → `/var/www/philly3d/lightning.json` every 2 s (strikes within 110 km, last 15 min) |
 | `ais_relay.py` + `ais-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | one aisstream.io socket → `/var/www/philly3d/ais.json` every 4 s |
+| `concerts_bake.py` + `concerts-bake.service` + `concerts-bake.timer` | `/opt/philly3d/`, `/etc/systemd/system/` | Ticketmaster Discovery API (Philadelphia music, 3 days) → `/var/www/philly3d/concerts.json` every 15 min; the key in `/etc/philly3d/concerts.env` |
 | `../deploy_philly3d.sh` | run from the laptop | tests → build → gzip gate → keep prev pair → `rsync --delay-updates` → live sha256 verify; `--rollback` |
 
 ## 1. Rebuild the VPS from scratch
@@ -30,7 +31,7 @@ Recorded facts (handoff.md Rounds 31, 39, Aug 27 incident): Ubuntu, nginx 1.24.0
 8. **The `/adsb` resolver line and why `ipv6=off` is load-bearing.** A hostname written literally in `proxy_pass` is resolved once, when nginx loads the config. On Aug 27 unattended-upgrades restarted nginx while systemd-resolved was itself mid-upgrade; that one lookup failed, nginx refused to start, and all three sites were dark for nine hours. `resolver 127.0.0.53 valid=300s ipv6=off; set $adsb_host opendata.adsb.fi; proxy_pass https://$adsb_host/…;` defers DNS to request time: nginx always starts, and a resolver failure at worst 502s `/adsb` while `proxy_cache_use_stale` keeps serving the last 8 s copy. `ipv6=off` matters because the box has no IPv6 egress (`curl -6` dies) — with AAAA answers allowed nginx would pick an unreachable address and the proxy would strand. Do not "clean up" either line.
 9. **Restart drop-in:** `mkdir -p /etc/systemd/system/nginx.service.d && cp nginx-restart.conf /etc/systemd/system/nginx.service.d/restart.conf && systemctl daemon-reload`.
 10. **Deploy:** from the laptop, `3d-model/deploy_philly3d.sh` (needs the `lionspool-vps` ssh alias). It refuses to ship a proxyless or unbranded build, gates the gzip size, keeps the previous `index.html` + `.gz` in `/var/www/philly3d-prev`, and ends by proving the live site hashes to the local build. `deploy_philly3d.sh --rollback` puts the previous pair back and re-verifies.
-11. **Feeds:** sections 3 and 4 below.
+11. **Feeds:** sections 3, 4 and 7 below.
 12. **Uptime:** `uptime.md`.
 
 ## 2. Applying the nginx snippets
@@ -52,7 +53,7 @@ curl -sI -H 'Origin: https://evil.example' https://philly3d.com/adsb | grep -i a
 
 If `nginx -t` fails, `cp -a /root/philly3d.vhost.bak-… /etc/nginx/sites-available/philly3d` and test again — nginx keeps serving the old config until a reload that passes, so a failed test costs nothing as long as you never reload on red. Things to check against the live file before copying the example over it: the `ssl_dhparam` path (the example assumes certbot's `/etc/letsencrypt/ssl-dhparams.pem`), and that the `proxy_cache adsb_cache` zone name matches `conf.d/adsb_cache.conf`.
 
-What each addition does is written above it in the example; in one line each: HSTS/nosniff/Referrer-Policy on every response (re-declared in every location that has its own `add_header`, because nginx does not inherit them once a location adds any header); `gzip_vary`; `Cache-Control: public, max-age=600, must-revalidate` on the page so a deploy is seen within ten minutes; `www` → apex 301; `/adsb` hides the upstream HSTS/NEL/Report-To/Cache-Control and answers ACAO only to philly3d.com and harkdigital.github.io; `/b` is an opt-in 204 beacon logged without addresses; `/septa.json` and `/ais.json` are static with `.gz` twins, `max-age=10`, ACAO `*`; dotfiles 404.
+What each addition does is written above it in the example; in one line each: HSTS/nosniff/Referrer-Policy on every response (re-declared in every location that has its own `add_header`, because nginx does not inherit them once a location adds any header); `gzip_vary`; `Cache-Control: public, max-age=600, must-revalidate` on the page so a deploy is seen within ten minutes; `www` → apex 301; `/adsb` hides the upstream HSTS/NEL/Report-To/Cache-Control and answers ACAO only to philly3d.com and harkdigital.github.io; `/b` is an opt-in 204 beacon logged without addresses; `/septa.json` and `/ais.json` are static with `.gz` twins, `max-age=10`, ACAO `*`; dotfiles 404; `/concerts.json` the same with max-age=60 (Round 56).
 
 ## 3. SEPTA baker
 
@@ -104,7 +105,38 @@ curl -sI https://philly3d.com/ | grep -ciE 'strict-transport-security|x-content-
 curl -sI -H 'Accept-Encoding: gzip' https://philly3d.com/ | grep -iE 'content-encoding|vary|cache-control'
 curl -sI https://philly3d.com/septa.json ; curl -sI https://philly3d.com/ais.json
 curl -sI https://philly3d.com/b ; wc -l /var/log/nginx/philly3d_beacon.log
+curl -sI https://philly3d.com/concerts.json | head -3   # 200 once section 7 is installed; a healthy quiet day still answers
 ```
+
+## 7. Concerts baker (Round 56)
+
+Stdlib only (Python 3.9+, `zoneinfo`). Every 15 minutes the timer runs one bake: the
+Ticketmaster Discovery API's Music events within 12 km of City Hall from local midnight
+today through three days, trimmed to what the page reads (name, artist, genre, venue with
+its position, date, time, the 9 am show-day instant and the end instant as unix seconds,
+status, ticket link, one 16:9 image url) and written to `/var/www/philly3d/concerts.json`
+(+ `.gz` twin, atomic, 0644). The key is yours to get at developer.ticketmaster.com (a free
+Discovery key, 5,000 calls a day; 96 bakes of up to four pages use about 100) and yours to
+paste; it lives only in the env file below and is never logged (the baker logs paths and
+status codes, never the URL).
+
+```sh
+cp concerts_bake.py /opt/philly3d/ && chmod 755 /opt/philly3d/concerts_bake.py
+mkdir -p /etc/philly3d && printf 'TICKETMASTER_KEY=%s\n' 'PASTE-KEY-HERE' > /etc/philly3d/concerts.env && chmod 600 /etc/philly3d/concerts.env
+python3 /opt/philly3d/concerts_bake.py --env-file /etc/philly3d/concerts.env --out /var/www/philly3d/concerts.json -v && ls -l /var/www/philly3d/concerts.json*   # one bake, by hand
+cp concerts-bake.service concerts-bake.timer /etc/systemd/system/ && systemctl daemon-reload
+systemctl enable --now concerts-bake.timer
+systemctl list-timers concerts-bake.timer ; journalctl -u concerts-bake -n 5
+curl -s https://philly3d.com/concerts.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["day"], len(d["events"]), "events")'
+```
+
+The page polls the file every 10 minutes while visible, treats a `t` older than 3 hours as
+"baker down" (every placard drops, nothing lingers from a stopped baker) and stays silent
+when the file is missing: there is no keyless fallback. On philly3d.com the fetch is
+same-origin. The GitHub Pages copy needs the `location = /concerts.json` block in
+`philly3d.vhost.example` (ACAO *, like the other feeds; a vhost edit, `nginx -t` between
+steps, your go) before it shows any placard. A healthy baker on a quiet day writes
+`"events": []`.
 
 ## Lightning relay
 

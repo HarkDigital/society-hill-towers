@@ -63,7 +63,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 | `philly_frame.py` | The one lat/lon to local-metres frame (LAT0/LON0/KX/KZ, `to_xz`, `to_latlon`) every pipeline script imports. |
 | `provenance.py` | `record()` appends one line per fetch to `provenance.jsonl` (source, URL, query hash, element count, UTC time). |
 | `ops/` | Server recipes: the captured live nginx vhost and the `.example` with the planned additions, systemd units, `septa_bake.py`, `ais_relay.py`, `uptime.md`, `README.md`. |
-| `tests/` | `python3 -m unittest discover -s tests`. `test_vbuf.py` (Round 54) runs the packed rings' `VBuf` under JavaScriptCore with the vendored three.min.js: the facade attributes and the glass tint survive growth and reach `geometry(true)`; the glass upload asks for it. |
+| `tests/` | `python3 -m unittest discover -s tests`. `test_concerts_bake.py` (Round 56) projects a canned Ticketmaster answer through ops/concerts_bake.py and checks the 9 am instants across both DST changes. `test_vbuf.py` (Round 54) runs the packed rings' `VBuf` under JavaScriptCore with the vendored three.min.js: the facade attributes and the glass tint survive growth and reach `geometry(true)`; the glass upload asks for it. |
 | `docs_check.py` | Stdlib check that every `build.py` input and every script here is mentioned in this section; exits non-zero naming the gaps. |
 
 ### Data embedded by `build.py`
@@ -315,10 +315,14 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   timings and frame p50/p95; `beacon()` posts checkpoints to `/b` on philly3d.com only.
 - **Feeds:** `septaFetchBaked` reads `/septa.json` (ops/septa_bake.py) before the JSONP rotation;
   `shipRelayPoll`/`shipUpsertRelay` read `/ais.json` (ops/ais_relay.py) and only fall back to the
-  direct aisstream socket while the relay is missing or stale (90 s / 60 s gates).
+  direct aisstream socket while the relay is missing or stale (90 s / 60 s gates); `concertsPoll`
+  reads `/concerts.json` (ops/concerts_bake.py, Ticketmaster's Philadelphia music listings baked every
+  15 min with the key on the VPS) every 10 min, drops everything when the file is 3 h old, and
+  has no keyless fallback (Round 56).
 - **UI:** prefs persist under localStorage `philly3d.prefs` (seeded before `build()`; hash wins);
   the share hash is `#p=x,y,z,yaw,pitch&t=YYYYMMDD,minutes&l=<bitmask>` (bits: 1 SEPTA, 2 Indego,
-  4 flights, 8 ships, 16 traffic, 32 lights, 64 streets, 128 labels, 256 places), written by
+  4 flights, 8 ships, 16 traffic, 32 lights, 64 streets, 128 labels, 256 places, 512 concerts;
+  1024 marks a ten-bit link, a nine-bit link keeps the concerts at their default), written by
   `updateHash` from `frame()`; `openPanel`/`closePanels` keep one bottom panel open (Escape and a
   short canvas tap close them); the layers panel ends with 'Take me to' stops (`STOPS`, the glide
   tween `glideFly`/`stepGlide` polled from `frame()`) and 'Tour the City'; `btnShot` captures the
