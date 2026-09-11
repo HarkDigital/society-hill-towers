@@ -2863,6 +2863,17 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 59: the layers panel wide, the tour gone (Sep 11)
+
+- **Mike, with a phone-width screenshot of the layers panel: make it more horizontal than vertical,
+  and remove Tour the City, it does nothing.** The panel is 640 px wide (the viewport less 24 on a
+  phone) with the ten layer rows in two columns (`.lgrid`), Reset Layers and Copy Link side by
+  side, and the eight 'Take me to' stops in four columns; under 560 px the rows fall to one column
+  and the stops to two. The Tour the City button and its footer are gone from the panel and the
+  About table's Esc line no longer mentions a tour; the tour code (`tour`, `tourStart`, `stepTour`)
+  stays in app.js unreachable behind its null-guarded button, to be removed with the next pass
+  through the viewpoints.
+
 ## Round 58: one kind of tree (Sep 11)
 
 - **Mike, with a street-level screenshot in the core: most of the tree models seem to have a mix
@@ -2883,6 +2894,24 @@ the diff with two skeptics per finding.
   distance and on every device, and the leaf material, its painted sprite and the card
   instancing no longer draw (the cards were a second instanced mesh per chunk). Verified at
   street level and from 90 m before and after; 43 tests pass.
+
+## Round 56 coda: the rooms of one building (Sep 11)
+
+- **Mike: the Foundry is inside the Fillmore, Brooklyn Bowl is on the east side of that same
+  building, and tonight's Brooklyn Bowl show was on the Fillmore's placard.** Ticketmaster lists
+  the three as venues 40 to 115 m apart, and the page merged any venues within 60 m into one
+  placard under the first venue's name, so Brooklyn Bowl's show sat under a Fillmore heading and
+  the Foundry, 115 m off, got a placard of its own. A placard is one per building now
+  (`CONCERT_MERGE` 130 m), and inside it every venue keeps its own heading with its shows in
+  start order beneath, venues ordered by their first show; the image is the first any of them
+  carries. The feed itself was right (venue ids `KovZ917AEtU` Brooklyn Bowl, `KovZpZAEkteA` the
+  Fillmore, `KovZpZAEktdA` the Foundry); the grouping was the page's. Ticketmaster's Fillmore
+  point (39.9658, -75.1347) sits on the same block as the app's own `LANDMARK_H` row for it.
+- **And the arena's pin (Mike: it needs to move south-east, over the arena).** Ticketmaster's
+  point for the Xfinity Mobile Arena (39.90455, -75.17363) lies 390 m north-west of the
+  building, in the park, past the 220 m radius the score venues had; a placard now moves onto
+  the nearest score venue within 500 m (the arena, the ballpark or the stadium) and hangs where
+  a game's bubble would, so the pin lands on the arena's roof.
 
 ## Round 57: the far ring in the outer districts' colours (Sep 11)
 

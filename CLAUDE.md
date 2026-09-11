@@ -89,7 +89,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   during a Philadelphia home game. Ticketmaster's listings (Round 56: `ops/concerts_bake.py` bakes them
   to concerts.json on the VPS every 15 minutes, the key only ever in `/etc/philly3d/concerts.env`) put a
   concert placard over its venue from 9 am Philadelphia time on the day of the show until the show ends,
-  judged by real time, never the pinned clock; the M key and the tenth layer bit; the pin lands on the roof
+  judged by real time, never the pinned clock; one placard per building, the venues within 130 m each under their own
+  heading (the Fillmore, the Foundry and Brooklyn Bowl are one building); the M key and the tenth layer bit; the pin lands on the roof
   from the build's `ROOF_GRID`, or on the score venues' roofs, stacking over a game there.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances.

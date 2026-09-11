@@ -10665,6 +10665,7 @@
   const CONCERTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/concerts.json' : 'https://philly3d.com/concerts.json';
   const CONCERT_POLL = 600000, CONCERT_STALE = 3 * 3600;   // 10 min while visible; a file 3 h old is a stopped baker
   const CONCERT_HANG = 60, CONCERT_ROOF = 12;   // the placard hangs 60 m over the roof; a venue the grid does not know stands 12 m
+  const CONCERT_MERGE = 130;   // venues this close share one placard (the rooms of one building)
   const btnConcerts = document.getElementById('btnConcerts');
   const _ccv = new V3();
   // the feed's names carry dashes and middots; the HUD's own rule is commas and colons
@@ -10706,47 +10707,62 @@
     for (const el of CONCERTS.els) el.remove();
     for (const o of CONCERTS.pins) { groupCity.remove(o); o.geometry.dispose(); o.material.dispose(); }
     CONCERTS.els = []; CONCERTS.pins = []; CONCERTS.shown = [];
-    // one placard per venue: a hall with two shows tonight lists both (stacked placards covered
-    // each other), the rows in start order, a time to be announced last
-    const venues = [];
+    // one placard per building: the venues within CONCERT_MERGE of each other share it (the
+    // Fillmore, the Foundry upstairs and Brooklyn Bowl on its east side are three Ticketmaster
+    // venues 40 to 115 m apart), each venue under its own heading with its shows in start
+    // order, a time to be announced last; stacked placards covered each other, and one heading
+    // over another venue's show named the wrong room (Mike, Sep 11)
+    const spots = [];
     for (const e of events) {
       const lat = +e.venue.lat, lon = +e.venue.lon;
       const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
       if (!insideLimit(x, z)) continue;   // the suburbs' halls are outside the model
-      let v = venues.find((o) => (e.venue.id && o.id === e.venue.id) || Math.hypot(o.x - x, o.z - z) < 60);
-      if (!v) { v = { id: e.venue.id || '', name: e.venue.name, x, z, rows: [] }; venues.push(v); }
+      let sp = spots.find((o) => Math.hypot(o.x - x, o.z - z) < CONCERT_MERGE);
+      if (!sp) { sp = { x, z, venues: [] }; spots.push(sp); }
+      const key = e.venue.id || e.venue.name;
+      let v = sp.venues.find((o) => o.key === key);
+      if (!v) { v = { key, name: e.venue.name, rows: [] }; sp.venues.push(v); }
       v.rows.push(e);
     }
-    for (const v of venues) {
-      v.rows.sort((a, b) => (a.start || 1e12) - (b.start || 1e12));
-      const gy = siteY(v.x, v.z, 'ground');
-      // the arena, the ballpark and the stadium hang where a game would, above any score there
+    const startOf = (e) => e.start || 1e12;
+    for (const sp of spots) {
+      for (const v of sp.venues) v.rows.sort((a, b) => startOf(a) - startOf(b));
+      sp.venues.sort((a, b) => startOf(a.rows[0]) - startOf(b.rows[0]));
+      // the arena, the ballpark and the stadium: the placard moves onto the venue the scores use
+      // and hangs where a game's bubble would, above any score there (Ticketmaster's arena point
+      // sits 390 m north-west of the building, in the park; the nearest score venue within
+      // 500 m wins, Mike, Sep 11)
+      let sv = null, bd = 500;
+      for (const k of SCORE_KEYS) { const cand = SCORE_VENUES[k], d = Math.hypot(sp.x - cand.x, sp.z - cand.z); if (d < bd) { bd = d; sv = cand; } }
+      if (sv) { sp.x = sv.x; sp.z = sv.z; }
+      const gy = siteY(sp.x, sp.z, 'ground');
       let top = null, hang = CONCERT_HANG, stack = 0;
-      for (const k of SCORE_KEYS) { const sv = SCORE_VENUES[k]; if (Math.hypot(v.x - sv.x, v.z - sv.z) < 220) { top = gy + sv.top; hang = sv.h - sv.top; stack = SCORES.games.filter((g) => SCORE_VENUES[g.k] === sv).length; break; } }
-      if (top === null) { const r = roofAt(v.x, v.z); top = r > gy + 3 ? r : gy + CONCERT_ROOF; }
+      if (sv) { top = gy + sv.top; hang = sv.h - sv.top; stack = SCORES.games.filter((g) => SCORE_VENUES[g.k] === sv).length; }
+      if (top === null) { const r = roofAt(sp.x, sp.z); top = r > gy + 3 ? r : gy + CONCERT_ROOF; }
       const y = top + hang + 22 * stack;
       const el = document.createElement('div');
       el.className = 'lbl score concert';
-      const first = v.rows.find((e) => /^https:\/\/[a-z0-9.-]*ticketm\.net\//i.test(e.image || ''));
+      const all = sp.venues.flatMap((v) => v.rows);
+      const first = all.find((e) => /^https:\/\/[a-z0-9.-]*ticketm\.net\//i.test(e.image || ''));
       const img = first ? '<img class="logo" alt="" src="' + septaEsc(first.image) + '" onerror="this.remove()">' : '';
-      const rows = v.rows.map((e) => {
+      const body = sp.venues.map((v) => '<b>' + septaEsc(plainText(v.name)) + '</b>' + v.rows.map((e) => {
         const when = e.tba || !e.time ? 'time to be announced' : concertClock(e.time);
         const link = /^https:\/\/[a-z0-9.-]*ticketmaster\.com\//i.test(e.url || '') ? '<a href="' + septaEsc(e.url) + '" target="_blank" rel="noopener">Tickets</a>' : '';
         return '<span class="row">' + septaEsc(plainText(e.artist || e.name) + ', ' + when) + link + '</span>';
-      }).join('');
-      el.innerHTML = img + '<span class="txt"><b>' + septaEsc(plainText(v.name)) + '</b>' + rows + '<span class="src">Listed by Ticketmaster</span></span>';
+      }).join('')).join('');
+      el.innerHTML = img + '<span class="txt">' + body + '<span class="src">Listed by Ticketmaster</span></span>';
       labelsRoot.appendChild(el);
       CONCERTS.els.push(el);
       // the pin: a line from the placard down to the roof, a small ball where it lands
       const lg = new THREE.BufferGeometry();
-      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([v.x, y, v.z, v.x, top, v.z]), 3));
+      lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([sp.x, y, sp.z, sp.x, top, sp.z]), 3));
       const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xd9d1bd, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }));
       line.renderOrder = 12; line.frustumCulled = false;
       const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0xd9d1bd, depthTest: false, depthWrite: false }));
-      ball.position.set(v.x, top, v.z); ball.renderOrder = 12;
+      ball.position.set(sp.x, top, sp.z); ball.renderOrder = 12;
       groupCity.add(line); groupCity.add(ball);
       CONCERTS.pins.push(line, ball);
-      CONCERTS.shown.push({ e: v.rows[0], rows: v.rows, venue: v.name, x: v.x, y, z: v.z, el });
+      CONCERTS.shown.push({ e: all[0], rows: all, venue: sp.venues.map((v) => v.name).join(', '), x: sp.x, y, z: sp.z, el });
     }
     concertStatus();
   }
@@ -14360,7 +14376,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

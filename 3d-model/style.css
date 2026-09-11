@@ -809,6 +809,7 @@ body.touchfly .pad { display: flex; }
 .lbl.concert { border-color: var(--limestone-dim); }
 .lbl.concert .logo { width: 48px; height: 27px; object-fit: cover; border-radius: 1px; }
 .lbl.concert b { font-weight: 700; display: block; margin-bottom: 1px; }
+.lbl.concert .row + b { margin-top: 4px; }   /* the next venue's heading in a shared placard */
 .lbl.concert .row { display: block; font-weight: 500; }
 .lbl.concert a { color: var(--limestone); text-decoration: none; border-bottom: 1px solid var(--limestone-dim); pointer-events: auto; font-size: 10.5px; letter-spacing: 0.06em; margin-left: 9px; }
 .lbl.concert a:hover { color: var(--paper); border-bottom-color: var(--paper); }
@@ -827,12 +828,14 @@ body.touchfly .pad { display: flex; }
   transform: translateX(-50%);
   bottom: 74px;
   z-index: 12;
-  width: min(300px, calc(100vw - 24px));
-  padding: 13px 12px 10px;
+  width: min(640px, calc(100vw - 24px));   /* wide and short (Round 59): the rows in two columns, the stops in four */
+  padding: 13px 14px 10px;
   display: none;
   user-select: none;
 }
 #layerspanel.open { display: block; }
+#layerspanel .lgrid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 18px; }
+#layerspanel .lgrid .lrow:nth-child(-n+2) { border-top: 0; }
 #layerspanel .kicker {
   font-family: var(--mono);
   font-size: 9.5px;
@@ -858,7 +861,6 @@ body.touchfly .pad { display: flex; }
   padding: 9px 4px;
   cursor: pointer;
 }
-#layerspanel .lrow:first-of-type { border-top: 0; }
 #layerspanel .lrow:hover { color: var(--paper); }
 #layerspanel .lrow .ltext { flex: 1; }
 #layerspanel .lrow kbd {
@@ -914,14 +916,19 @@ body.touchfly .pad { display: flex; }
 }
 #layerspanel .mini:hover { color: var(--paper); border-color: var(--line-strong); }
 #layerspanel .mini:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
-/* 'Take me to': the city stops in two columns under the footer, the tour button below them */
+/* 'Take me to': the city stops in four columns under the footer (the tour button is gone, Round 59) */
 #layerspanel .tkick { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line); }
-#layerspanel .tgrid { display: grid; grid-template-columns: 1fr 1fr; column-gap: 8px; }
+#layerspanel .tgrid { display: grid; grid-template-columns: repeat(4, 1fr); column-gap: 10px; }
 #layerspanel .tgrid .lrow { border-top: 1px solid var(--line); font-size: 12.5px; padding: 8px 4px; }
-#layerspanel .tgrid .lrow:nth-child(-n+2) { border-top: 0; }
+#layerspanel .tgrid .lrow:nth-child(-n+4) { border-top: 0; }
 #layerspanel .tgrid .lrow .ltext { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-#layerspanel #btnTour[aria-pressed="true"] { color: var(--ink); background: var(--bronze); border-color: var(--bronze); }
-/* seventeen rows plus two footers outgrow a short laptop window: the panel scrolls */
+/* a phone's width: one column of rows, two of stops, and the panel scrolls in a short window */
+@media (max-width: 560px) {
+  #layerspanel .lgrid { grid-template-columns: 1fr; }
+  #layerspanel .lgrid .lrow:nth-child(2) { border-top: 1px solid var(--line); }
+  #layerspanel .tgrid { grid-template-columns: 1fr 1fr; }
+  #layerspanel .tgrid .lrow:nth-child(n+3) { border-top: 1px solid var(--line); }
+}
 #layerspanel { max-height: calc(100vh - 100px); overflow-y: auto; }
 @media (max-width: 640px) {
   /* nine 44 px rows plus the footer outgrow a small phone: the panel scrolls (dvh where it exists) */

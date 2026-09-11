@@ -326,7 +326,7 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   4 flights, 8 ships, 16 traffic, 32 lights, 64 streets, 128 labels, 256 places, 512 concerts;
   1024 marks a ten-bit link, a nine-bit link keeps the concerts at their default), written by
   `updateHash` from `frame()`; `openPanel`/`closePanels` keep one bottom panel open (Escape and a
-  short canvas tap close them); the layers panel ends with 'Take me to' stops (`STOPS`, the glide
+  short canvas tap close them); the layers panel (640 px, rows in two columns, Round 59) ends with 'Take me to' stops (`STOPS`, the glide
   tween `glideFly`/`stepGlide` polled from `frame()`) and 'Tour the City'; `btnShot` captures the
   GL canvas; the time panel's Play runs the sun time-lapse (`setLapse`, PMREM rebake gated by
   `envGap`); the compass is a button (`faceNorth`); a bus-route search sets `SEPTA.filter`
