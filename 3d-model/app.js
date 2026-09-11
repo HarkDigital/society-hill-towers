@@ -5344,6 +5344,30 @@
     const q = Math.min(32767, Math.round(top * 4)), k = j * ROOF_GRID.nx + i;
     if (q > ROOF_GRID.a[k]) ROOF_GRID.a[k] = q;
   }
+  function roofCell(x, z) {   // the cell's own tallest roof (absolute y), 0 when it holds none
+    const i = Math.floor((x - ROOF_GRID.x0) / ROOF_GRID.cell), j = Math.floor((z - ROOF_GRID.z0) / ROOF_GRID.cell);
+    if (i < 0 || j < 0 || i >= ROOF_GRID.nx || j >= ROOF_GRID.nz) return 0;
+    return ROOF_GRID.a[j * ROOF_GRID.nx + i] / 4;
+  }
+  // a line of sight from the camera to a point (Round 62, Mike: no placards through buildings):
+  // the ray is sampled every 60 m or so, and any cell whose tallest roof, or whose drawn ground,
+  // stands above the ray hides the point; the camera's own first 120 m and the point's last
+  // stretch are left out, so the venue's own roof and the block beside the camera never count
+  function losClear(x, y, z) {
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+    const dx = x - cx, dy = y - cy, dz = z - cz, L = Math.hypot(dx, dz);
+    if (L < 150) return true;
+    const n = Math.min(80, Math.max(4, Math.ceil(L / 60)));
+    for (let i = 1; i < n; i++) {
+      const t = i / n, d = L * t;
+      if (d < 120 || d > L - 45) continue;
+      const sx = cx + dx * t, sz = cz + dz * t, sy = cy + dy * t;
+      if (roofCell(sx, sz) > sy) return false;
+      const g = groundMeshY(sx, sz);
+      if (g !== null && g !== undefined && g > sy) return false;
+    }
+    return true;
+  }
   function roofAt(x, z) {   // the cell's roof, else the tallest of its neighbours, else -Infinity
     const i = Math.floor((x - ROOF_GRID.x0) / ROOF_GRID.cell), j = Math.floor((z - ROOF_GRID.z0) / ROOF_GRID.cell);
     if (i < 0 || j < 0 || i >= ROOF_GRID.nx || j >= ROOF_GRID.nz) return -Infinity;
@@ -9386,11 +9410,9 @@
         ['Streetlights', 'Every one of the city\'s 200,000 street lamps, lit at dusk.']] }],
     ['Concerts and games', {
       d: [['Concerts', 'From 9 am on the day of a show a placard hangs over the venue with the night\'s lineup and a Tickets link. The M key or the layers panel turns them off.'],
-        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.'],
-        ['Placards', 'Placards and score bubbles show through buildings. The transit and bike pins do not.']],
+        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.']],
       t: [['Concerts', 'From 9 am on the day of a show a placard hangs over the venue with the night\'s lineup and a Tickets link. The layers panel turns them off.'],
-        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.'],
-        ['Placards', 'Placards and score bubbles show through buildings. The transit and bike pins do not.']] }],
+        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.']] }],
     ['Names and places', {
       d: [['Street names', 'Painted on the roads. The N key.'],
         ['Landmark labels', 'Off by default. The L key turns the citywide set on.'],
@@ -10772,9 +10794,9 @@
       const col = ok ? '#' + g.color : 0xc89b5e;
       const lg = new THREE.BufferGeometry();
       lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([v.x, g.y, v.z, v.x, gy + v.top, v.z]), 3));
-      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }));
+      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: col, transparent: true, opacity: 0.9, depthWrite: false }));   // depth-tested: a building in front hides the pin (Round 62)
       line.renderOrder = 12; line.frustumCulled = false;
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: col, depthTest: false, depthWrite: false }));
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: col, depthWrite: false }));
       ball.position.set(v.x, gy + v.top, v.z); ball.renderOrder = 12;
       groupCity.add(line); groupCity.add(ball);
       SCORES.pins.push(line, ball);
@@ -10786,7 +10808,7 @@
     for (let i = 0; i < SCORES.games.length; i++) {
       const g = SCORES.games[i], el = SCORES.els[i], v = SCORE_VENUES[g.k];
       _scv.set(v.x, g.y, v.z);
-      const far = camera.position.distanceTo(_scv) > 14000;
+      const far = camera.position.distanceTo(_scv) > 14000 || !losClear(v.x, g.y, v.z);   // behind a roof or a hill: hidden (Round 62)
       _scv.project(camera);
       if (far || _scv.z > 1 || _scv.z < -1 || _scv.x < -1.1 || _scv.x > 1.1 || _scv.y < -1.2 || _scv.y > 1.2) { el.style.opacity = '0'; continue; }
       el.style.opacity = '1';
@@ -10904,9 +10926,9 @@
       // the pin: a line from the placard down to the roof, a small ball where it lands
       const lg = new THREE.BufferGeometry();
       lg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([sp.x, y, sp.z, sp.x, top, sp.z]), 3));
-      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xd9d1bd, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false }));
+      const line = new THREE.Line(lg, new THREE.LineBasicMaterial({ color: 0xd9d1bd, transparent: true, opacity: 0.9, depthWrite: false }));   // depth-tested: a building in front hides the pin (Round 62)
       line.renderOrder = 12; line.frustumCulled = false;
-      const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0xd9d1bd, depthTest: false, depthWrite: false }));
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0xd9d1bd, depthWrite: false }));
       ball.position.set(sp.x, top, sp.z); ball.renderOrder = 12;
       groupCity.add(line); groupCity.add(ball);
       CONCERTS.pins.push(line, ball);
@@ -10918,7 +10940,7 @@
     concertsRefresh();
     for (const s of CONCERTS.shown) {
       _ccv.set(s.x, s.y, s.z);
-      const far = camera.position.distanceTo(_ccv) > 14000;
+      const far = camera.position.distanceTo(_ccv) > 14000 || !losClear(s.x, s.y, s.z);   // behind a roof or a hill: hidden (Round 62)
       _ccv.project(camera);
       if (far || _ccv.z > 1 || _ccv.z < -1 || _ccv.x < -1.1 || _ccv.x > 1.1 || _ccv.y < -1.2 || _ccv.y > 1.2) { s.el.style.opacity = '0'; s.el.style.visibility = 'hidden'; continue; }
       s.el.style.opacity = '1'; s.el.style.visibility = '';
@@ -14541,7 +14563,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

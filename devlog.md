@@ -2863,6 +2863,22 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 62: no placards through buildings (Sep 11)
+
+- **Mike: do not show placards through buildings, and remove that item from the how-to.** The
+  concert placards and the score bubbles are DOM labels projected onto the screen, so nothing in
+  the scene could hide them, and the packed tiers cannot be raycast (gotcha 12). `losClear(x, y,
+  z)` samples the ray from the camera to the placard's anchor every 60 m or so against the roof
+  grid the build fills (`roofCell`, the tallest roof of each 100 m cell, absolute y) and the
+  drawn ground (`groundMeshY`): a cell whose roof, or whose ground, stands above the ray hides the
+  label; the camera's first 120 m and the anchor's last 45 m are left out so the block beside the
+  camera and the venue's own roof never count, and anything under 150 m away is always clear.
+  `scoresRender` and `concertsRender` fold it into their off-screen test, and the pins (the line
+  and the ball) are depth-tested now, so a building in front hides them the way it hides the
+  transit pins. Coarse by design: a tower's whole 100 m cell blocks the ray, so a placard just
+  past a tower's edge can drop a moment early; `__dbg.los(x, y, z)` answers for a point. The
+  guide's 'Placards' row (which said they showed through buildings) is gone from both copies.
+
 ## Round 61: a page for every aircraft and ship (Sep 11)
 
 - **Mike: add FlightAware links for all the air traffic by flight number, and the same for the
