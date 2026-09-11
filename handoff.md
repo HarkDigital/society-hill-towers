@@ -321,7 +321,8 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   reads `/concerts.json` (ops/concerts_bake.py, Ticketmaster's Philadelphia music listings baked every
   15 min with the key on the VPS) every 10 min, drops everything when the file is 3 h old, and
   has no keyless fallback (Round 56).
-- **UI:** prefs persist under localStorage `philly3d.prefs` (seeded before `build()`; hash wins);
+- **UI:** prefs persist under localStorage `philly3d.prefs` (seeded before `build()`; hash wins) and the
+  first-visit guide under `philly3d.guide` (Round 60: `#guide`, `GUIDE_SLIDES`, the ? button and key);
   the share hash is `#p=x,y,z,yaw,pitch&t=YYYYMMDD,minutes&l=<bitmask>` (bits: 1 SEPTA, 2 Indego,
   4 flights, 8 ships, 16 traffic, 32 lights, 64 streets, 128 labels, 256 places, 512 concerts;
   1024 marks a ten-bit link, a nine-bit link keeps the concerts at their default), written by

@@ -93,7 +93,10 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   heading (the Fillmore, the Foundry and Brooklyn Bowl are one building); the M key and the tenth layer bit; the pin lands on the roof
   from the build's `ROOF_GRID`, or on the score venues' roofs, stacking over a game there.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
-  visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances.
+  visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances. The first visit
+  meets the guide (Round 60: `#guide`, eight cards on dots from `GUIDE_SLIDES`, computer and phone copy by
+  `isTouch`, `localStorage philly3d.guide`), and the ? button beside the camera brings it back; the touch
+  primer that followed the first touch is gone.
 - The page is an installable app (Round 53): `build.py` writes `manifest.webmanifest` beside it,
   `sw.js` is the network-only worker (registered over https only, caches nothing), both deploy to
   the site root, `3d-model/index.html` is the Pages redirect for `start_url` `./`, and `fitView()`

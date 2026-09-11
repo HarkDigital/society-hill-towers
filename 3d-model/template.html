@@ -70,13 +70,16 @@
   <button id="flyDown" aria-label="Descend">&#9660;</button>
 </div>
 
-<div id="flytips" role="dialog" aria-label="Fly mode controls">
+<div id="guide" role="dialog" aria-modal="true" aria-label="How to use Philly3D">
   <div class="card panel">
-    <div class="kicker">Touch Fly Controls</div>
-    <div class="tiprow"><span class="tipkey">Left thumb</span><span>Joystick to fly. Push past the ring to speed up.</span></div>
-    <div class="tiprow"><span class="tipkey">Right thumb</span><span>Drag to look. The stick flies where you look.</span></div>
-    <div class="tiprow"><span class="tipkey">&#9650; &#9660;</span><span>Climb and descend</span></div>
-    <button id="flyTipsOk">Okay</button>
+    <button class="close" id="btnGuideClose" title="Close">&times;</button>
+    <div class="kicker">How to use Philly3D</div>
+    <div class="slides" id="guideSlides"></div>
+    <div class="gnav">
+      <button class="gbtn" id="guidePrev" title="Previous card">Back</button>
+      <div class="dots" id="guideDots" role="tablist" aria-label="Cards"></div>
+      <button class="gbtn" id="guideNext" title="Next card">Next</button>
+    </div>
   </div>
 </div>
 
@@ -85,6 +88,7 @@
   <button id="btnSearch" class="iconbtn panel" title="Find an Address (/)" aria-expanded="false" aria-controls="searchpanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
   <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)" aria-expanded="false" aria-controls="timepanel">&#9680;</button>
   <button id="btnShot" class="iconbtn panel" title="Save a Picture of This View"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M4 8.4h3.4l1.5-2.4h6.2l1.5 2.4H20v9.8H4z"/><circle cx="12" cy="13" r="3.1"/></svg></button>
+  <button id="btnHelp" class="iconbtn panel" title="How to Use Philly3D (?)" aria-expanded="false" aria-controls="guide">?</button>
   <button id="btnAbout" class="iconbtn panel" title="About this model (I)" style="display:none">i</button>
 </div>
 
@@ -157,10 +161,11 @@
     <tr><td><kbd>M</kbd></td><td>Live Concerts (Placards From 9 AM on Show Days)</td></tr>
     <tr><td><kbd>N</kbd></td><td>Street Names</td></tr>
     <tr><td><kbd>L</kbd></td><td>Landmark Labels</td></tr>
-    <tr><td><kbd>P</kbd></td><td>Historic Districts &amp; Neighborhood Names</td></tr>
+    <tr><td><kbd>P</kbd></td><td>Neighborhood Names</td></tr>
     <tr><td><kbd>R</kbd></td><td>Typical Vehicle Traffic</td></tr>
     <tr><td><kbd>G</kbd></td><td>Streetlights (Every City Lamp, Lit at Dusk)</td></tr>
     <tr><td><kbd>T</kbd></td><td>Date &amp; Time of Day (Real Philadelphia Sun)</td></tr>
+    <tr><td><kbd>?</kbd></td><td>How to Use Philly3D</td></tr>
     <tr><td><kbd>Esc</kbd></td><td>Release the Mouse</td></tr>
     <tr><td>Compass</td><td>Face North</td></tr>
   </table>

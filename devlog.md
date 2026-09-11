@@ -2863,6 +2863,53 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 61: a page for every aircraft and ship (Sep 11)
+
+- **Mike: add FlightAware links for all the air traffic by flight number, and the same for the
+  boats with whatever site that information comes from.** A picked aircraft's card ends with
+  "Track AAL1776 on FlightAware" (flightaware.com/live/flight/ plus the ADS-B ident, an airline
+  code and number or a tail number; a blank or odd callsign, or a test seed, gets no link). The
+  ship positions come from aisstream.io, which has no page per vessel, so a picked ship's card
+  ends with "Track MMSI 366999123 on MarineTraffic", the public lookup for an AIS identity
+  (marinetraffic.com/en/ais/details/ships/mmsi:). Both open in a new tab, both are `.vlink` in
+  the card's limestone. `__dbg.cardFor('flight', hex)` and `cardFor('ship', mmsi)` open a card
+  without a canvas pick, for checking.
+
+## Round 60: the guide (Sep 11)
+
+- **Mike: remove the mobile how-to for movement, add a pop-up how-to for first visits that also
+  comes back from a question-mark button beside the camera, dot navigation and not scrollable,
+  covering everything in the app, the filters, the navigation and every other function, with the
+  instructions specific to computers and phones.** `#guide` replaces the touch primer (`#flytips`,
+  the card that followed the first touch on a phone; its markup, CSS and code are gone). Eight cards
+  built at first open from one table (`GUIDE_SLIDES`: a title and rows of control plus sentence,
+  each row in a computer and a phone version, chosen by `isTouch`): welcome and the city line;
+  flying (drag, W A S D, E and Q, Shift, scroll and the compass, or the Move pad, the look drag,
+  the climb buttons and the sideways gate); the layers panel and its keys; the live city (SEPTA,
+  Indego, flights and ships, traffic, streetlights); concerts and games; names and places; time
+  and sky; search, Copy Link, the camera, the credits and installing the app. The card is a fixed
+  600 by 400 (the screen less a margin on a phone, the type a step down under 460 px tall), the
+  cards fade in place, never scroll; dots, Back and Next (Done on the last), the arrow keys, a
+  swipe and Escape turn and close it; the dimmed city behind it closes it too. A first visit meets
+  it 0.9 s after Enter, `localStorage philly3d.guide` remembers, and the ? button in the bar beside
+  the camera (or the ? key) brings it back; the About table lists the key. The hint line under
+  the bar still says the two-line version of the controls.
+- **The review of the cards (57 agents: the copy against the code, the dialog, the markup and
+  CSS; 26 confirmed, one refuted).** Copy: the I key did not open About (it does now, beside ?);
+  the bronze historic-district inlays were removed rounds ago (the row and the About table's P
+  line say neighborhood names); the tree inventory is the outer districts' (Center City and South
+  Philadelphia), not the city's; traffic is PennDOT's counts where the state counts and class
+  averages elsewhere; 200,000 lamps, not 203,000; Back and Next, not arrows; the flight limit is
+  a little past the city line; a route search follows a bus; a phone's camera opens the share
+  sheet; the install paths per platform. Dialog: the first-visit timer yields to a guide already
+  opened or dismissed; opening releases the pointer lock (the camera kept flying under the cards
+  with no cursor); Tab cycles inside the dialog; the swallowed keys are default-prevented (/ opened
+  a find bar); Done carries its own title; the dots are tabs with panels. CSS: my #flytips removal
+  had eaten the shared kicker-weight rule (every panel's kicker fell to 500; restored); the card
+  heights carry dvh twins and max-height 100 percent; the small-type rule also applies under
+  520 px wide; the ? button matches its neighbours' width; the dots are 24 px targets round a 9 px
+  disc; the stale comment is gone.
+
 ## Round 59: the layers panel wide, the tour gone (Sep 11)
 
 - **Mike, with a phone-width screenshot of the layers panel: make it more horizontal than vertical,
@@ -2912,6 +2959,11 @@ the diff with two skeptics per finding.
   building, in the park, past the 220 m radius the score venues had; a placard now moves onto
   the nearest score venue within 500 m (the arena, the ballpark or the stadium) and hangs where
   a game's bubble would, so the pin lands on the arena's roof.
+- **And the Fillmore's (Mike: move the pin right above that building, it is just off).** The
+  group took its first venue's point, Ticketmaster's Foundry point 90 m south-east of the
+  building, in the lot. A placard stands at the mean of its venues' points now, and `VENUE_AT`
+  puts the three rooms of that building at the building's own packed centroid (839.3, -2224.4),
+  the app's `LANDMARK_H` row for it, so the pin drops onto its roof.
 
 ## Round 57: the far ring in the outer districts' colours (Sep 11)
 

@@ -9194,9 +9194,22 @@
     if (e.metaKey || e.ctrlKey || e.altKey) return;   // browser chords (Cmd+F, Ctrl+P, Cmd+A) are not layer hotkeys
     if (k === 'escape') {
       // ahead of the field guard: Escape must work from a panel's own buttons and inputs
-      if (flyTips && flyTips.classList.contains('show')) { hideFlyTips(); return; }
+      if (GUIDE.open) { closeGuide(); return; }
       if (openPanelName() === 'search') septaSetFilter(null);   // Escape on the search panel drops the route filter too
       if (closePanels()) return;
+    }
+    if (GUIDE.open) {   // the guide has the keyboard while it is up: the arrows turn its cards, nothing flies
+      if (k === 'arrowright') { e.preventDefault(); guideGo(GUIDE.i + 1); }
+      else if (k === 'arrowleft') { e.preventDefault(); guideGo(GUIDE.i - 1); }
+      else if (k === '?') closeGuide();
+      else if (k === 'tab') {   // focus stays inside the dialog
+        const f = [...guideEl.querySelectorAll('button')].filter((b) => b.offsetParent !== null);
+        const at = f.indexOf(document.activeElement), to = f[(at + (e.shiftKey ? -1 : 1) + f.length) % f.length];
+        if (to) { e.preventDefault(); to.focus(); }
+      }
+      else if (k === ' ' || k === 'enter') return;   // the focused button keeps its own keys
+      else e.preventDefault();   // / must not open a browser find bar under the cards
+      return;
     }
     const tag = e.target && e.target.tagName;
     if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
@@ -9221,6 +9234,8 @@
     else if (k === 'r') toggleTraffic();
     else if (k === 'g') toggleLightsLayer();
     else if (k === 'm') toggleConcerts();
+    else if (k === '?') toggleGuide();
+    else if (k === 'i') openAbout();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
     else if (k === 'escape') { glideCancel(); /* nothing open: the browser releases pointer lock */ }
     else {
@@ -9316,28 +9331,155 @@
   // orbit and walk retired as user-facing modes (Round 35): no mode bar, no
   // 1/2/3 keys. Orbit remains the attract loop; walk stays reachable only via
   // the ?dev goWalk hook.
-  const flyTips = document.getElementById('flytips');
-  const flyTipsOk = document.getElementById('flyTipsOk');
-  let flyTipsSeen = false;
-  function showFlyTips() {
-    flyTips.classList.add('show'); flyTipsSeen = true;
-    flyTipsOk.focus();   // after setMode's blur: Enter takes Okay, Escape dismisses (keydown)
+  // ---------------------------------------------------------------- the guide
+  // The first-visit how-to (Round 60, Mike): eight cards on dot navigation, never scrolling,
+  // the copy chosen for the device (a mouse and keyboard, or thumbs on a phone), opened once
+  // after the first Enter (localStorage philly3d.guide remembers) and any time from the ?
+  // button beside the camera or the ? key. It replaces the touch primer that used to follow
+  // the first touch. Every row is a key or a control and one sentence of what it does.
+  const guideEl = document.getElementById('guide');
+  const guideSlidesEl = document.getElementById('guideSlides'), guideDotsEl = document.getElementById('guideDots');
+  const btnHelp = document.getElementById('btnHelp');
+  const GUIDE_KEY = 'philly3d.guide';
+  const GUIDE = { i: 0, open: false, built: false };
+  // [title, rows]; a row is [control, sentence]; d for a computer, t for a phone
+  const GUIDE_SLIDES = [
+    ['Welcome to Philly3D', {
+      d: [['The city', 'Every building in Philadelphia at its measured height, with live transit, flights, ships, concerts, the real sun and the real weather.'],
+        ['These cards', 'Everything in the app, one card at a time. Use Back and Next, the dots or the arrow keys.'],
+        ['Later', 'The ? button at the bottom brings this guide back any time.'],
+        ['The edge', 'You can fly anywhere over the city and a little past its line. Everything beyond that is scenery.']],
+      t: [['The city', 'Every building in Philadelphia at its measured height, with live transit, flights, ships, concerts, the real sun and the real weather.'],
+        ['These cards', 'Everything in the app, one card at a time. Swipe, or tap the dots.'],
+        ['Later', 'The ? button at the bottom brings this guide back any time.'],
+        ['The edge', 'You can fly anywhere over the city and a little past its line. Everything beyond that is scenery.']] }],
+    ['Flying', {
+      d: [['Drag', 'Look around. Click the scene to take the mouse, Esc gives it back.'],
+        ['W A S D', 'Fly forward, back and sideways, always in the direction you look.'],
+        ['E and Q', 'Climb and descend.'],
+        ['Shift', 'Boost.'],
+        ['Scroll', 'Sets your cruising speed.'],
+        ['Compass', 'Top right. Click it to face north.']],
+      t: [['Left thumb', 'The Move pad flies you where you look. Push past the ring to go faster.'],
+        ['Right thumb', 'Drag anywhere else to look around.'],
+        ['Arrows', 'The up and down buttons climb and descend.'],
+        ['Compass', 'Top right. Tap it to face north.'],
+        ['Sideways', 'Turn the phone sideways to explore. The pads stay faintly visible while you fly.']] }],
+    ['Layers', {
+      d: [['Layers button', 'Bottom bar, or the F key. Every row is a layer: click it to turn it on or off. The square lights when it is on, the number shows what is live.'],
+        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, M concerts, R traffic, G streetlights, N street names, L landmark labels, P neighborhoods.'],
+        ['Reset Layers', 'Back to the default set.'],
+        ['Take Me To', 'Eight stops that glide you to the city\'s places.']],
+      t: [['Layers button', 'Bottom bar. Every row is a layer: tap it to turn it on or off. The square lights when it is on, the number shows what is live.'],
+        ['Reset Layers', 'Back to the default set.'],
+        ['Take Me To', 'Eight stops that glide you to the city\'s places.']] }],
+    ['The live city', {
+      d: [['SEPTA', 'Every tracked bus and street trolley at its live position. Click one for its route and how late it is running.'],
+        ['Indego', 'Every bike-share dock with its live count of bikes. Click one for the station.'],
+        ['Flights and ships', 'Aircraft over the city and vessels on the Delaware, each at its live position. Click one for what it is.'],
+        ['Traffic', 'Typical cars at PennDOT\'s measured volumes where the state counts and class averages elsewhere, swelling at rush hour and thinning at night.'],
+        ['Streetlights', 'Every one of the city\'s 200,000 street lamps, lit at dusk.']],
+      t: [['SEPTA', 'Every tracked bus and street trolley at its live position. Tap one for its route and how late it is running.'],
+        ['Indego', 'Every bike-share dock with its live count of bikes. Tap one for the station.'],
+        ['Flights and ships', 'Aircraft over the city and vessels on the Delaware, each at its live position. Tap one for what it is.'],
+        ['Traffic', 'Typical cars at PennDOT\'s measured volumes where the state counts and class averages elsewhere, swelling at rush hour and thinning at night.'],
+        ['Streetlights', 'Every one of the city\'s 200,000 street lamps, lit at dusk.']] }],
+    ['Concerts and games', {
+      d: [['Concerts', 'From 9 am on the day of a show a placard hangs over the venue with the night\'s lineup and a Tickets link. The M key or the layers panel turns them off.'],
+        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.'],
+        ['Placards', 'Placards and score bubbles show through buildings. The transit and bike pins do not.']],
+      t: [['Concerts', 'From 9 am on the day of a show a placard hangs over the venue with the night\'s lineup and a Tickets link. The layers panel turns them off.'],
+        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.'],
+        ['Placards', 'Placards and score bubbles show through buildings. The transit and bike pins do not.']] }],
+    ['Names and places', {
+      d: [['Street names', 'Painted on the roads. The N key.'],
+        ['Landmark labels', 'Off by default. The L key turns the citywide set on.'],
+        ['Neighborhoods', 'Neighborhood names appear as you climb. The P key.'],
+        ['Trees', 'The surveyed street and park trees of Center City and South Philadelphia stand where they grow. Click a canopy for its species.']],
+      t: [['Street names', 'Painted on the roads.'],
+        ['Landmark labels', 'Off by default. Turn them on in the layers panel.'],
+        ['Neighborhoods', 'Neighborhood names appear as you climb.'],
+        ['Trees', 'The surveyed street and park trees of Center City and South Philadelphia stand where they grow. Tap a canopy for its species.']] }],
+    ['Time and sky', {
+      d: [['Clock button', 'Bottom bar, or the T key. Pick a date, drag the slider through the day, Play runs a time-lapse, Now follows the real time.'],
+        ['Sun', 'The real Philadelphia sun and moon. The city lights up at dusk.'],
+        ['Weather', 'Live clouds, wind, rain and snow, refreshed every 15 minutes.'],
+        ['Every visit', 'Opens at Philadelphia\'s own time. Only a copied link carries a pinned clock.']],
+      t: [['Clock button', 'Bottom bar. Pick a date, drag the slider through the day, Play runs a time-lapse, Now follows the real time.'],
+        ['Sun', 'The real Philadelphia sun and moon. The city lights up at dusk.'],
+        ['Weather', 'Live clouds, wind, rain and snow, refreshed every 15 minutes.'],
+        ['Every visit', 'Opens at Philadelphia\'s own time. Only a copied link carries a pinned clock.']] }],
+    ['Search, share and more', {
+      d: [['Search', 'Bottom bar, or the / key: an address, a landmark, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
+        ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
+        ['Camera', 'Saves a picture of the view.'],
+        ['Credits', 'The line at the bottom opens the About panel, the story of the model and its data. The I key too.'],
+        ['Install', 'Chrome and Edge install Philly3D as an app from the address bar, Safari from File, then Add to Dock.']],
+      t: [['Search', 'Bottom bar: an address, a landmark, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
+        ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
+        ['Camera', 'Opens the share sheet with a picture of the view.'],
+        ['Credits', 'The line at the bottom opens the About panel, the story of the model and its data.'],
+        ['Install', 'On an iPhone, Share, then Add to Home Screen. On Android, the browser menu, then Add to Home screen. Philly3D then opens as an app.']] }],
+  ];
+  function guideBuild() {
+    if (GUIDE.built || !guideEl) return;
+    GUIDE.built = true;
+    const kind = isTouch ? 't' : 'd';
+    guideSlidesEl.innerHTML = GUIDE_SLIDES.map(([title, rows], i) =>
+      '<div class="slide" id="guideSlide' + i + '" role="tabpanel" aria-labelledby="guideTab' + i + '" data-i="' + i + '"><div class="stitle">' + septaEsc(title) + '</div>' +
+      rows[kind].map(([k, txt]) => '<div class="grow"><span class="gk">' + septaEsc(k) + '</span><span>' + septaEsc(txt) + '</span></div>').join('') + '</div>').join('');
+    guideDotsEl.innerHTML = GUIDE_SLIDES.map(([title], i) => '<button class="dot" role="tab" id="guideTab' + i + '" aria-controls="guideSlide' + i + '" data-i="' + i + '" aria-label="' + septaEsc(title) + '" title="' + septaEsc(title) + '"></button>').join('');
+    guideDotsEl.addEventListener('click', (e) => { const b = e.target.closest('.dot'); if (b) guideGo(+b.dataset.i); });
   }
-  function hideFlyTips() {
-    flyTipsSeen = true;
-    flyTips.classList.remove('show');
-    setMode(MODE.FLY);
+  function guideGo(i) {
+    GUIDE.i = ((i % GUIDE_SLIDES.length) + GUIDE_SLIDES.length) % GUIDE_SLIDES.length;
+    for (const s of guideSlidesEl.children) s.classList.toggle('on', +s.dataset.i === GUIDE.i);
+    for (const d of guideDotsEl.children) { const on = +d.dataset.i === GUIDE.i; d.classList.toggle('on', on); d.setAttribute('aria-selected', on ? 'true' : 'false'); }
+    const last = GUIDE.i === GUIDE_SLIDES.length - 1;
+    const nb = document.getElementById('guideNext');
+    nb.textContent = last ? 'Done' : 'Next'; nb.title = last ? 'Close the guide' : 'Next card';
+  }
+  function openGuide(i) {
+    if (!guideEl) return;
+    guideBuild();
+    closePanels();
+    if (walk.locked && document.exitPointerLock) document.exitPointerLock();   // the mouse comes back for the cards
+    GUIDE.open = true;
+    guideEl.classList.add('show');
+    try { guideEl.inert = false; } catch (e) { }
+    guideGo(i || 0);
+    if (btnHelp) btnHelp.setAttribute('aria-expanded', 'true');
+    document.getElementById('guideNext').focus();
+  }
+  function closeGuide() {
+    if (!guideEl || !GUIDE.open) return;
+    GUIDE.open = false;
+    guideEl.classList.remove('show');
+    try { guideEl.inert = true; } catch (e) { }
+    try { localStorage.setItem(GUIDE_KEY, '1'); } catch (e) { }
+    if (btnHelp) btnHelp.setAttribute('aria-expanded', 'false');
+    if (document.activeElement && guideEl.contains(document.activeElement)) document.activeElement.blur();
+  }
+  function toggleGuide() { if (GUIDE.open) closeGuide(); else openGuide(0); }
+  const guideSeen = () => { try { return localStorage.getItem(GUIDE_KEY) === '1'; } catch (e) { return true; } };
+  if (guideEl) {
+    try { guideEl.inert = true; } catch (e) { }
+    document.getElementById('btnGuideClose').addEventListener('click', closeGuide);
+    document.getElementById('guidePrev').addEventListener('click', () => guideGo(GUIDE.i - 1));
+    document.getElementById('guideNext').addEventListener('click', () => { if (GUIDE.i === GUIDE_SLIDES.length - 1) closeGuide(); else guideGo(GUIDE.i + 1); });
+    guideEl.addEventListener('click', (e) => { if (e.target === guideEl) closeGuide(); });   // the dimmed city closes it
+    // a swipe turns the card on a phone
+    let gx0 = null;
+    guideEl.addEventListener('touchstart', (e) => { gx0 = e.touches.length === 1 ? e.touches[0].clientX : null; }, { passive: true });
+    guideEl.addEventListener('touchend', (e) => { if (gx0 === null) return; const dx = e.changedTouches[0].clientX - gx0; gx0 = null; if (Math.abs(dx) > 40) guideGo(GUIDE.i + (dx < 0 ? 1 : -1)); }, { passive: true });
+    if (btnHelp) btnHelp.addEventListener('click', toggleGuide);
   }
   function autoFly() {
     // the first real interaction — drag, wheel, movement key, touch — takes
     // flight from wherever the City Hall circle happens to be
     glideCancel();   // any input ends a glide and the tour
     if (mode === MODE.ORBIT) setMode(MODE.FLY);
-    else if (mode !== MODE.FLY) return;
-    // the touch primer follows the first touch, even when a share link skipped the orbit
-    if (isTouch && !flyTipsSeen && flyTips) showFlyTips();
   }
-  if (flyTips) flyTipsOk.addEventListener('click', hideFlyTips);
   // touch fly: hold ▲/▼ to climb and descend (E/Q have no finger equivalent)
   for (const [bid, key] of [['flyUp', 'up'], ['flyDown', 'down']]) {
     const b = document.getElementById(bid);
@@ -10666,6 +10808,10 @@
   const CONCERT_POLL = 600000, CONCERT_STALE = 3 * 3600;   // 10 min while visible; a file 3 h old is a stopped baker
   const CONCERT_HANG = 60, CONCERT_ROOF = 12;   // the placard hangs 60 m over the roof; a venue the grid does not know stands 12 m
   const CONCERT_MERGE = 130;   // venues this close share one placard (the rooms of one building)
+  // Ticketmaster's venue points that miss their building, by venue id, put at the building's own
+  // packed centroid (the Fillmore, the Foundry upstairs and Brooklyn Bowl on its east side are one
+  // building at Frankford and Delaware, the LANDMARK_H row for it; Mike, Sep 11: the pin was just off)
+  const VENUE_AT = { KovZpZAEkteA: [839.3, -2224.4], KovZpZAEktdA: [839.3, -2224.4], KovZ917AEtU: [839.3, -2224.4] };
   const btnConcerts = document.getElementById('btnConcerts');
   const _ccv = new V3();
   // the feed's names carry dashes and middots; the HUD's own rule is commas and colons
@@ -10714,11 +10860,12 @@
     // over another venue's show named the wrong room (Mike, Sep 11)
     const spots = [];
     for (const e of events) {
-      const lat = +e.venue.lat, lon = +e.venue.lon;
-      const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+      const lat = +e.venue.lat, lon = +e.venue.lon, fix = VENUE_AT[e.venue.id];
+      const x = fix ? fix[0] : (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = fix ? fix[1] : -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
       if (!insideLimit(x, z)) continue;   // the suburbs' halls are outside the model
       let sp = spots.find((o) => Math.hypot(o.x - x, o.z - z) < CONCERT_MERGE);
-      if (!sp) { sp = { x, z, venues: [] }; spots.push(sp); }
+      if (!sp) { sp = { x, z, sx: 0, sz: 0, n: 0, venues: [] }; spots.push(sp); }
+      sp.sx += x; sp.sz += z; sp.n++;   // the placard stands at the mean of its venues' points
       const key = e.venue.id || e.venue.name;
       let v = sp.venues.find((o) => o.key === key);
       if (!v) { v = { key, name: e.venue.name, rows: [] }; sp.venues.push(v); }
@@ -10726,6 +10873,7 @@
     }
     const startOf = (e) => e.start || 1e12;
     for (const sp of spots) {
+      sp.x = sp.sx / sp.n; sp.z = sp.sz / sp.n;
       for (const v of sp.venues) v.rows.sort((a, b) => startOf(a) - startOf(b));
       sp.venues.sort((a, b) => startOf(a.rows[0]) - startOf(b.rows[0]));
       // the arena, the ballpark and the stadium: the placard moves onto the venue the scores use
@@ -11820,7 +11968,15 @@
       '<span class="vroute" style="background:#3a6ea5">' + septaEsc(p.call) + '</span>' +
       '<span class="vdest">' + septaEsc(p.type) + '</span>' +
       '<div class="vmeta">' + septaEsc(alt + ', ' + Math.round(p.gs) + ' kt') + '</div>' +
-      (p.est ? '<div class="vmeta">Estimated Track, Awaiting Signal</div>' : ''));
+      (p.est ? '<div class="vmeta">Estimated Track, Awaiting Signal</div>' : '') +
+      flightLink(p));
+  }
+  // the flight's page on FlightAware, by its ident (the ADS-B callsign, an airline code and a
+  // number or a tail number); a blank or odd callsign gets no link (Round 61)
+  function flightLink(p) {
+    const id = String(p.call || '').trim().toUpperCase();
+    if (!/^[A-Z0-9]{3,8}$/.test(id) || /^TEST/.test(id)) return '';
+    return '<a class="vlink" href="https://www.flightaware.com/live/flight/' + id + '" target="_blank" rel="noopener">Track ' + septaEsc(id) + ' on FlightAware</a>';
   }
   function syncFlightsBtn() { syncLayerBtn(btnFlights, FLIGHTS.on); }
   function toggleFlights() {
@@ -12288,7 +12444,15 @@
       '<span class="vroute" style="background:#1f4f7a">' + septaEsc(v.tn) + '</span>' +
       '<span class="vdest">' + septaEsc(v.name || 'MMSI ' + v.mmsi) + '</span>' +
       '<div class="vmeta">' + septaEsc(move + ', ' + Math.round(v.len) + ' m') + '</div>' +
-      (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : ''));
+      (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : '') +
+      shipLink(v));
+  }
+  // the vessel's page on MarineTraffic, by its MMSI (the AIS positions come from aisstream.io,
+  // which has no page per ship; MarineTraffic is the public lookup for an MMSI, Round 61)
+  function shipLink(v) {
+    const m = String(v.mmsi || '').trim();
+    if (!/^[0-9]{9}$/.test(m)) return '';
+    return '<a class="vlink" href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:' + m + '" target="_blank" rel="noopener">Track MMSI ' + m + ' on MarineTraffic</a>';
   }
   function syncShipsBtn() { syncLayerBtn(btnShips, SHIPS.on); }
   function shipRelease() {
@@ -14158,6 +14322,7 @@
     beacon('enter', { ms: Math.round(performance.now()) });
     setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode }); }, 60000);
     veil.classList.add('hidden');
+    if (!guideSeen()) setTimeout(() => { if (!GUIDE.open && !guideSeen()) openGuide(0); }, 900);   // the first visit meets the guide once the veil has faded (unless the ? button beat the timer)
     if (mode === MODE.ORBIT) orbit.goalR = 700;   // glide in from the veil's wide shot
     if (reducedMotion) {
       orbit.r = orbit.goalR; orbit.theta = orbit.goalTheta; orbit.phi = orbit.goalPhi;
@@ -14376,7 +14541,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
