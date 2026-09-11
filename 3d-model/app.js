@@ -5353,6 +5353,19 @@
     for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const ii = i + a, jj = j + b; if (ii < 0 || jj < 0 || ii >= ROOF_GRID.nx || jj >= ROOF_GRID.nz) continue; best = Math.max(best, ROOF_GRID.a[jj * ROOF_GRID.nx + ii]); }
     return best > 0 ? best / 4 : -Infinity;
   }
+  // the outer districts' wall colours, sampled (Round 57): a reservoir of the final colour of
+  // every low building the outer districts loop raised, photographed (three parts its Mapillary
+  // block face) or not (its palette or OPA class pool), so the far ring and the towns across the
+  // line can draw from the same distribution and stop reading as a darker, redder city past the
+  // outer districts' edge; the draw is per building, not tied to any block
+  const WIDE_COLS = [], WIDE_COLS_N = 1024;
+  let wideColK = 0;
+  function wideColSample(c, i) {   // a deterministic reservoir: every eligible wall has the same chance to stand for the tier
+    wideColK++;
+    if (WIDE_COLS.length < WIDE_COLS_N) { WIDE_COLS.push(c.clone()); return; }
+    const j = Math.floor(hash01(i * 2.71 + 0.4) * wideColK);
+    if (j < WIDE_COLS_N) WIDE_COLS[j].copy(c);
+  }
   const tallGlow = [];   // buildings ≥45 m from every tier, for the night skyline points
   const GRASS_POLYS = [];   // park and lawn rings from every tier, the grass field sows on them near the camera
   const NO_SOW_RINGS = [], NO_SOW_RING_BB = [];   // rings the bare-ground tuft sow keeps off: the sports complex's sheets and lots, every water sheet (inWater knows only the Delaware's bank), the far ring's aprons, the NW creeks
@@ -5824,6 +5837,7 @@
       // one colour for the whole block; the draw gives the houses back the variety a
       // real face has), with a second jitter on top; towers and stadiums keep theirs
       if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; } }
+      if (h <= 45 && t <= 6) wideColSample(c, i);   // the tier's colours, for the far ring's draw (Round 57)
       const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
       const spec = h > 45 ? towerAt(cx, cz, h) : null;   // glass-tagged parts join the matching too (Round 54)
       let style;
@@ -7089,6 +7103,10 @@
       let pool = h > 45 ? palTall : (t === 3 || t === 6 || h > 25) ? palCom : (t === 4 ? palInd : palLow);
       if (fa && h <= 45 && t <= 4) { const p2 = opaWallPool(fa); if (p2) pool = p2; }
       c.set(pool[Math.floor(hsh * pool.length) % pool.length]).multiplyScalar(h > 45 ? 0.94 + hash01(i * 13.7) * 0.12 : 0.9 + hash01(i * 13.7) * 0.2);
+      // the outer districts' colours (Round 57): a low building draws its wall from the reservoir of
+      // the outer districts' final colours (photographed faces and class pools alike), so the far
+      // ring carries that tier's own mix instead of reading as a darker, redder city past its edge
+      if (WIDE_COLS.length && h <= 45 && t <= 6) c.copy(WIDE_COLS[Math.floor(hash01(i * 5.9 + 0.2) * WIDE_COLS.length) % WIDE_COLS.length]);
       let style;
       if (h > 30) style = h > 45 ? towerStyle(fa, t, i) : 2;
       else if (t === 5) style = 1;

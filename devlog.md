@@ -2863,6 +2863,25 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 57: the far ring in the outer districts' colours (Sep 11)
+
+- **Mike, with a screenshot from over Francisville: a distinct difference in building colour along
+  a divide.** The divide was the outer districts' north edge (York Street, `WIDEB.z0`): inside it
+  every low wall takes three parts its Mapillary block-face colour to one part the palette draw
+  (Round 48), outside it the far ring and the towns across the line drew their palettes alone, a
+  darker, redder city past a straight line. Asked for the buildings outside the sampled area to
+  read lighter and closer to those inside. Now the outer districts loop samples the FINAL colour of
+  every low building it raises (photographed or not) into a deterministic reservoir of 1,024
+  (`WIDE_COLS`, `wideColSample`), and `raiseRing` gives each rowhouse, apartment, church and shop
+  under 45 m a colour drawn from it by the building's hash, so the far ring carries exactly the
+  outer districts' distribution of wall colours, only not tied to the specific block. Two cuts on
+  the way: every far building blended toward a Mapillary palette colour drawn by frequency, which
+  turned the whole north tan (the outer districts' look is the MIX of photographed and plain walls,
+  and the far ring's plain walls come from the same OPA class pools, yet still read redder); then
+  the same share of far buildings as the photographed share, still redder than the tier beside it.
+  The reservoir matches by construction. The proper cure (a Mapillary pass over the whole city)
+  stays open. Verified from the same viewpoint before and after; 43 tests pass.
+
 ## Round 56: concerts over their venues (Sep 11)
 
 - **Mike: use the Ticketmaster Discovery API and display concerts like the sports scores on a
