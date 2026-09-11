@@ -2924,6 +2924,44 @@ the diff with two skeptics per finding.
   values as a false bank, and a second sheet carries the river past the world's south edge to
   the Jersey bank off Billingsport (z 10,900), over the apron. Verified at the airport, Essington
   and the Navy Yard; the wide box and the NE reach unchanged; 36 tests pass.
+- **Round 55 coda (Mike, with a screenshot: the river still cuts off south-east of the airport,
+  and a thin strip of river runs along the south edge of the map).** Both were the rectangle: the
+  world's ground box ends about 500 m south of the airport's shore, and a band of water along
+  that edge is neither the river's course nor absent. The river now comes from OpenStreetMap:
+  `bake_delaware.py` (a new pipeline step, `delaware.json`, `DELAWARE_DATA`). OSM maps the
+  tidal Delaware two ways, as `natural=coastline` below Tinicum (one strand up both banks from
+  the bay; `is_in` never returns it, since a coastline is not an area) and as unnamed
+  `natural=water` + `water=river` multipolygons above (relation 52618 is the Philadelphia reach),
+  so no packed tier ever carried its surface. The bake fetches both over Marcus Hook to Bristol
+  plus the `waterway=river` ways named Delaware River, polygonises the whole network against
+  the query box and keeps the faces the centreline threads (the river is a chain of faces where
+  the reaches meet; a hand-placed seed on a bank once dragged a 2,500 km2 land face in, so faces
+  over 400 km2 are never water): one polygon of 117 km2 within 48 km of the origin, 38 islands
+  as holes. The app draws the part outside the ground box flat at the river level over the apron
+  (`beyond`, three pieces, 79 km2, so the river runs on to the fog past the world the camera can
+  reach, Wilmington's reach one way and Bristol's the other) and uses `delawareAt(x, z)` as the
+  shoreline for the far ground's cells beyond the DEM grids and for the reach below the Navy
+  Yard (river wins where the outline says so, the DEM still carves the creeks and the marsh).
+  The Round 55 rectangle (`offGridRiver`, the second sheet) is gone. Page +100 KB raw (the
+  outline at 4 m and whole metres). And the strip's real root, found when a band of river showed
+  along the box's east edge north of Torresdale once the sheet spanned "the box": Round 55 sized
+  the sheet to the flight `bounds` (x -12,200 to 16,700, z -21,900 to 9,900), but the far ground is
+  `RING_W` (x -12,000 to 16,500, z -21,700 to 9,700, the DEM's extent), so 200 m of sheet lay over
+  the apron along every edge, a band of river wherever the eye reached it. The sheet and the bake's
+  box are `RING_W` now. Found on the way and fixed too: past every DEM grid `demAbs` clamped to the
+  WIDE grid's edge sample (the Delaware at Camden on the east), where the widest grid, dem_city, is
+  the right one; nothing inside the ground box reaches that branch any more, but a stray query
+  beyond it reads the far DEM's own edge.
+- **Round 55 coda 2 (Mike: the Schuylkill River Trail is under water, trees and lampposts in the
+  river).** Not the carve (`riverCarve` keeps the bank at water + 0.9 outside the outline) but
+  the outline: `bake_schuylkill.py` united the OSM riverbank faces with the centreline buffered
+  60 m each side so a gap in the outline still carries water, and that ribbon widened every reach
+  the outline already bounds: 120 m against the 100 m between the walls at Center City, so the
+  Schuylkill Banks stood in the water from JFK to Locust. The ribbon now buffers only the parts
+  of the centreline that run outside the faces (the gaps), and the reach narrows by 45 to 55 m at
+  JFK and Market (154 to 109 m, 161 to 106 m), 18 m at Chestnut, 17 at Walnut, 21 at Locust, with
+  the east bank 10 to 36 m back off the trail; the park reach, where the ribbon is the outline,
+  is unchanged. The trees and lamps were never in the river, the river was on the bank.
 
 ## Round 54: the material rework, one glass tint per building, the Center City towers defined (Sep 11)
 

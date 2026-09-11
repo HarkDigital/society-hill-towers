@@ -13,8 +13,8 @@ into the model frame (philly_frame.py) and writes:
          the terrain within 60..95 m of the nearest one
   polys  the river's outline: the natural=water river multipolygons OSM keeps around those
          ways (a second cached Overpass query), polygonised, the faces the waterway threads
-         kept, united with the fragments buffered HALF_W (so a gap in the outline still
-         carries water), clipped to the modelled reach (Z_MIN..Z_MAX), as [{"ring", "holes"}]
+         kept, united with the fragments buffered HALF_W where they run outside the faces (so a
+         gap in the outline still carries water without widening a bounded reach), clipped to the modelled reach (Z_MIN..Z_MAX), as [{"ring", "holes"}]
          in the model frame. The app carves the terrain to the outline (inside to the bed, a
          40 m ramp outside) and draws it flat at the river level, so the shoreline is the
          outline itself and not the 25 m ground grid surfacing through the sheet
@@ -77,7 +77,13 @@ def main():
                     edges.append(LineString([to_xz(g['lat'], g['lon']) for g in m['geometry']]))
     thread = unary_union([LineString(l) for l in lines if len(l) >= 2]).buffer(25.0)
     faces = [f for f in polygonize(unary_union(edges)) if f.area > 2000 and f.intersects(thread)]
-    ribbon = unary_union([LineString(l).buffer(HALF_W, cap_style=2, join_style=2) for l in lines if len(l) >= 2])
+    # the ribbon fills GAPS in the outline only: buffered everywhere it widened every reach the
+    # outline already bounds (the river is 100 m between the walls at Center City, the ribbon
+    # 120 m, and the Schuylkill Banks trail stood in the water with its trees and lamps), so the
+    # centreline is cut to the parts outside the faces before it is buffered
+    outline = unary_union(faces)
+    thread_lines = unary_union([LineString(l) for l in lines if len(l) >= 2]).difference(outline)
+    ribbon = thread_lines.buffer(HALF_W, cap_style=2, join_style=2)
     water = unary_union(faces + [ribbon]).intersection(box(-16000, Z_MIN, 4000, Z_MAX)).simplify(1.5)
     geoms = list(water.geoms) if isinstance(water, MultiPolygon) else [water]
     polys = []

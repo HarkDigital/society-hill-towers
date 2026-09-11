@@ -1965,10 +1965,27 @@
   // DEM decides, since the 150 m grid separates the channel (about -1.3 m) from Hog Island, the
   // airport and the Tinicum banks (1 to 4 m) cleanly; the tidal marsh under 0.6 m reads as water
   function southReach(x, z) { return z > 7600 && x < 3400; }
-  // past the far DEM's last row (z 9,650) the ground repeats that row to the world's edge, and
-  // between Hog Island and the model's west edge that row is mid-channel: the reach is river
-  // out to the Jersey bank (about z 10,900 off Billingsport), so it reads as river outright
-  function offGridRiver(x, z) { return z > 9650 && x < -5800; }
+  // the tidal Delaware's real outline (bake_delaware.py: OSM maps it as coastline, so no packed
+  // tier holds its surface): the shoreline test wherever the DEM grids do not reach (the far
+  // ground's margin cells repeat the DEM's edge row otherwise, which put a false bank across
+  // the channel off Essington and a strip of water along the world's south edge, Round 55
+  // coda), and the sheets that carry the river past the ground box to the fog
+  const DEL_POLYS = (typeof DELAWARE_DATA !== 'undefined' && DELAWARE_DATA && DELAWARE_DATA.polys && DELAWARE_DATA.polys.length) ? DELAWARE_DATA.polys : null;
+  const DEL_BEYOND = (typeof DELAWARE_DATA !== 'undefined' && DELAWARE_DATA && DELAWARE_DATA.beyond) ? DELAWARE_DATA.beyond : [];
+  const delBox = DEL_POLYS ? DEL_POLYS.map((pg) => { let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (const q of pg.ring) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; } return [x0, x1, z0, z1]; }) : null;
+  function delawareAt(x, z) {   // inside the river's outline (its islands excluded)
+    if (!DEL_POLYS) return false;
+    for (let i = 0; i < DEL_POLYS.length; i++) {
+      const b = delBox[i];
+      if (x < b[0] || x > b[1] || z < b[2] || z > b[3]) continue;
+      const pg = DEL_POLYS[i];
+      if (!pointInPoly(x, z, pg.ring)) continue;
+      let hole = false;
+      for (const h of pg.holes) if (pointInPoly(x, z, h)) { hole = true; break; }
+      if (!hole) return true;
+    }
+    return false;
+  }
   function eastOfDelaware(x, z) { return (x > delawareX(z) - 120 && !njLand(x, z)) || southReach(x, z); }
   // rough Schuylkill centerline; within 260 m counts as its corridor (bridge territory)
   // bridge to bridge from the model's edge above Flat Rock Dam to the mouth at League Island:
@@ -2485,13 +2502,16 @@
     if (v == null && DEMS) v = sampleDem(DEMS, x, z, 3.2);
     if (v == null && DEMN) v = sampleDem(DEMN, x, z, 4.0);
     if (v == null && DEMC) v = sampleDem(DEMC, x, z, 4.0);
-    if (v == null && DEMW) { // beyond the grids: clamp to the nearest edge sample
-      const G = (DEMS && z > DEMW.z0 + DEMW.cell * (DEMW.nz - 1)) ? DEMS : DEMW;
+    if (v == null && (DEMC || DEMW)) { // beyond the grids: clamp to the nearest edge sample of the WIDEST grid
+      // (the far ground's margin past dem_city used to take the wide grid's edge, which at the
+      // box's east edge is the Delaware at Camden: a band of river along the world's edge)
+      const G = DEMC || ((DEMS && z > DEMW.z0 + DEMW.cell * (DEMW.nz - 1)) ? DEMS : DEMW);
       v = sampleDem(G, clamp(x, G.x0, G.x0 + G.cell * (G.nx - 1)), clamp(z, G.z0, G.z0 + G.cell * (G.nz - 1)), 0);
     }
     return v == null ? 8.34 : v;
   }
   const DATUM = demAbs(towersCenter.x, towersCenter.z);
+  const beyondDem = DEMC ? ((x, z) => x < DEMC.x0 || x > DEMC.x0 + DEMC.cell * (DEMC.nx - 1) || z < DEMC.z0 || z > DEMC.z0 + DEMC.cell * (DEMC.nz - 1)) : (() => false);
   function demY(x, z) { return demAbs(x, z) - DATUM; }
   // constructed waterfront, relative to the datum (river ~0.5 m ASL, shelf ~3 m, I-95 ~1.5 m)
   const TERRAIN = { trenchW: 10, trenchE: 72, trenchFloor: 1.5 - DATUM, shelfLo: 2.4 - DATUM, shelfHi: 4.0 - DATUM, bulkhead: 2.8 - DATUM, water: 0.5 - DATUM, bed: -2.0 - DATUM };
@@ -2964,14 +2984,14 @@
 
     const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.15, metalness: 0.12, envMapIntensity: 0.7, dithering: MAT_DITHER });
     liquify(waterMat, 1.0, 0.75, 0.8);     // the Delaware breathes, calmer since Round 54
-    // the sheet spans the far ring's ground (Round 55; the 18 km square about the towers stopped
-    // at the airport's south shore, and the Delaware past it stood as green ground under the ships)
-    const water = new THREE.Mesh(flat([[-12200, -21900], [16700, -21900], [16700, 9900], [-12200, 9900]], TERRAIN.water), waterMat);
-    // and the river past the world's south edge, to the Jersey bank off Billingsport (the apron
-    // beneath it lies at the bed, so the sheet is all that shows there)
-    const waterS = new THREE.Mesh(flat([[-12200, 9900], [-5800, 9900], [-5800, 10900], [-12200, 10900]], TERRAIN.water), waterMat);
+    // the sheet spans the far ring's ground exactly (RING_W, the terrain's extent; Round 55: the
+    // 18 km square about the towers stopped at the airport's south shore, and the Delaware past it
+    // stood as green ground under the ships). Not the flight bounds: those run 200 m past the
+    // ground on every side, and a sheet that size lay over the apron as a band along the world's
+    // edge (the strip along the south edge, then the east, Round 55 codas)
+    const water = new THREE.Mesh(flat([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
-    groupCity.add(water); groupCity.add(waterS);
+    groupCity.add(water);
     const slipParts = [];
     const rectPoly = (r) => [[r[0], r[2]], [r[1], r[2]], [r[1], r[3]], [r[0], r[3]]];
     for (const sl of slips) slipParts.push({ geom: flatPoly(rectPoly(sl), null, TERRAIN.water + 0.05, true), color: new THREE.Color(COLORS.water) });
@@ -7343,7 +7363,9 @@
       for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
         const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
         const y = demY(x, z);
-        let yy = ((y < TERRAIN.water + 0.6 || offGridRiver(x, z)) ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07;
+        // the DEM decides, except where it does not reach or the outline says river below the Navy Yard
+        const del = (beyondDem(x, z) || southReach(x, z)) && delawareAt(x, z);
+        let yy = (del ? TERRAIN.bed : (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y)) - 0.07;
         yy = riverCarve(x, z, yy);   // the Schuylkill's channel
         if (tint && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
         pos.push(x, yy, z);
@@ -7431,6 +7453,9 @@
       // sheets so a tier's own polygon draws over it without a fight
       for (const w of SCH_POLYS) { try { R.waterAreaParts.push({ geom: flatShorePoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.5, 2), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* a degenerate ring */ } }
     }
+    // the Delaware past the ground box (bake_delaware.py): the real outline, flat at the river
+    // level over the apron, so the river runs on to the fog past the world the camera can reach
+    for (const w of DEL_BEYOND) { try { R.waterAreaParts.push({ geom: flatShorePoly(w.ring, w.holes && w.holes.length ? w.holes : null, TERRAIN.water + 0.02, 1), color: new THREE.Color(COLORS.water), style: 3 }); } catch (e) { /* a degenerate ring */ } }
     loadmsg.textContent = 'Raising the rest of Philadelphia, uploading';
     await uploadRing(R);
     // the world is now the whole city
