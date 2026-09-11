@@ -2863,6 +2863,24 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 55: the Delaware below the Navy Yard (Sep 11)
+
+- **Boats on dry land south of the airport (Mike, with a satellite view).** The AIS ships stood on
+  green ground west and south of the airport because the river was not there. Two causes. The
+  river-bank test (`DEL_BANK`, an x-of-z polyline) describes the north-south reach only; below the
+  Navy Yard the Delaware turns west past Fort Mifflin, Hog Island, the airport and Essington, and
+  every low cell there fell on the polyline's "made land" side, so the far ground clamped the
+  channel (about -1.3 m in `dem_city`) to just above the water plane. And the water sheet was the
+  18 km square about the towers (x and z within 9,000), which ends at the airport's south shore.
+  Now `southReach(x, z)` (z past 7,600, x under 3,400) counts as river in `eastOfDelaware`, so
+  the DEM decides there (the 150 m grid separates the channel from the 1 to 4 m banks cleanly, and
+  the tidal marsh under 0.6 m reads as water), the sheet spans the far ring's ground box (x
+  -12,200 to 16,700, z -21,900 to 9,900), `offGridRiver` (z past the DEM's last row, x under
+  -5,800) drops the ground to the bed where the strip used to repeat that row's mid-channel
+  values as a false bank, and a second sheet carries the river past the world's south edge to
+  the Jersey bank off Billingsport (z 10,900), over the apron. Verified at the airport, Essington
+  and the Navy Yard; the wide box and the NE reach unchanged; 36 tests pass.
+
 ## Round 54: the material rework, one glass tint per building, the Center City towers defined (Sep 11)
 
 The Sep 8 handoff notes (`aesthetic-updates.md`, cut from a Codex session on another checkout that

@@ -1960,7 +1960,16 @@
   // read as open water and their low blocks were dropped as floating. Land past the
   // line now clamps to made-land the way the Philadelphia side does
   function njLand(x, z) { const sx = stateLineX(z); return sx !== null && x > sx + 400; }
-  function eastOfDelaware(x, z) { return x > delawareX(z) - 120 && !njLand(x, z); }
+  // the river below the Navy Yard runs west, past Fort Mifflin, the airport and Essington to
+  // the model's edge, where an x-of-z bank line cannot follow it: in that reach (Round 55) the
+  // DEM decides, since the 150 m grid separates the channel (about -1.3 m) from Hog Island, the
+  // airport and the Tinicum banks (1 to 4 m) cleanly; the tidal marsh under 0.6 m reads as water
+  function southReach(x, z) { return z > 7600 && x < 3400; }
+  // past the far DEM's last row (z 9,650) the ground repeats that row to the world's edge, and
+  // between Hog Island and the model's west edge that row is mid-channel: the reach is river
+  // out to the Jersey bank (about z 10,900 off Billingsport), so it reads as river outright
+  function offGridRiver(x, z) { return z > 9650 && x < -5800; }
+  function eastOfDelaware(x, z) { return (x > delawareX(z) - 120 && !njLand(x, z)) || southReach(x, z); }
   // rough Schuylkill centerline; within 260 m counts as its corridor (bridge territory)
   // bridge to bridge from the model's edge above Flat Rock Dam to the mouth at League Island:
   // Manayunk, East Falls, the Falls Bridge, Strawberry Mansion, Columbia, Girard, Boathouse
@@ -2955,9 +2964,14 @@
 
     const waterMat = new THREE.MeshStandardMaterial({ color: COLORS.water, roughness: 0.15, metalness: 0.12, envMapIntensity: 0.7, dithering: MAT_DITHER });
     liquify(waterMat, 1.0, 0.75, 0.8);     // the Delaware breathes, calmer since Round 54
-    const water = new THREE.Mesh(flat([[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], TERRAIN.water), waterMat);
+    // the sheet spans the far ring's ground (Round 55; the 18 km square about the towers stopped
+    // at the airport's south shore, and the Delaware past it stood as green ground under the ships)
+    const water = new THREE.Mesh(flat([[-12200, -21900], [16700, -21900], [16700, 9900], [-12200, 9900]], TERRAIN.water), waterMat);
+    // and the river past the world's south edge, to the Jersey bank off Billingsport (the apron
+    // beneath it lies at the bed, so the sheet is all that shows there)
+    const waterS = new THREE.Mesh(flat([[-12200, 9900], [-5800, 9900], [-5800, 10900], [-12200, 10900]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
-    groupCity.add(water);
+    groupCity.add(water); groupCity.add(waterS);
     const slipParts = [];
     const rectPoly = (r) => [[r[0], r[2]], [r[1], r[2]], [r[1], r[3]], [r[0], r[3]]];
     for (const sl of slips) slipParts.push({ geom: flatPoly(rectPoly(sl), null, TERRAIN.water + 0.05, true), color: new THREE.Color(COLORS.water) });
@@ -7305,7 +7319,7 @@
       for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
         const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
         const y = demY(x, z);
-        let yy = (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07;
+        let yy = ((y < TERRAIN.water + 0.6 || offGridRiver(x, z)) ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y) - 0.07;
         yy = riverCarve(x, z, yy);   // the Schuylkill's channel
         if (tint && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
         pos.push(x, yy, z);
