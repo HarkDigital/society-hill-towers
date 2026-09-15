@@ -1613,6 +1613,10 @@
   // per-fragment hash noise added to the sky before it is written: +/-0.5/255
   // breaks the 8-bit banding of the shallow dusk/night gradient (0 disables)
   const SKY_DITHER = 1 / 255;
+  // the Moon's drawn size: MOON_SCALE times its real angular radius (0.26 deg). At the real
+  // size it was eight pixels on a laptop and nobody saw it (Mike, Sep 15: add the moon);
+  // 2.5 reads as a moon and still sits naturally in a photograph of the sky (Round 64)
+  const MOON_SCALE = 2.5, MOON_R = 0.0091 * MOON_SCALE;
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -1632,6 +1636,10 @@
       uMoonV: { value: new THREE.Vector3(0, 0, 1) },
       uMoonK: { value: 0.5 },
       uMoonI: { value: 0 },
+      uMoonD: { value: 0 },                              // daylight wash on the disc
+      uMoonR: { value: MOON_R },                         // the disc's angular radius, rad
+      uMoonN: { value: new THREE.Vector3(0, 1, 0) },     // celestial north across the disc (the face's up)
+      uMoonE: { value: new THREE.Vector3(1, 0, 0) },     // the disc's right as seen from the ground
       uPost: postU.uPost,
       uExposure: postU.uExposure,
     },
@@ -1641,7 +1649,8 @@
     fragmentShader:
       'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun; uniform float uSunVis;\n' +
       'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
-      'uniform vec3 uMoon, uMoonU, uMoonV; uniform float uMoonK, uMoonI; uniform float uPost, uExposure;\n' +
+      'uniform vec3 uMoon, uMoonU, uMoonV, uMoonN, uMoonE; uniform float uMoonK, uMoonI, uMoonD, uMoonR; uniform float uPost, uExposure;\n' +
+      'float mare(vec2 p, vec2 c, vec2 r){ vec2 q = (p - c) / r; return 1.0 - smoothstep(0.5, 1.25, dot(q, q)); }\n' +
       INV_GLSL + '\n' +
       'float chash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }\n' +
       'float cnoise(vec2 p){ vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);\n' +
@@ -1658,24 +1667,46 @@
       '  float sunAng = acos(s);\n' +
       '  float disc = 1.0 - smoothstep(0.0085, 0.0118, sunAng);\n' +
       '  col += cSun * ((disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24 + exp(-sunAng * sunAng * 9.0) * 0.07) * uSunVis + pow(s, 12.0) * 0.10 * (0.35 + 0.65 * uSunVis));\n' +
-      // the Moon: a phased disc on the per-fragment normalized direction (nd,
-      // never vDir — the coarse dome smears interpolated math, the sun lesson).
-      // The terminator ellipse comes straight from the illuminated fraction; its
-      // orientation from the world-space sun and moon vectors via uMoonU.
+      // the Moon (Round 64): a phased disc on the per-fragment normalized direction (nd,
+      // never vDir, the coarse dome smears interpolated math, the sun lesson), drawn
+      // MOON_SCALE times its real half degree so it reads on a laptop. The terminator
+      // ellipse comes straight from the illuminated fraction, its orientation from the
+      // world-space sun and moon vectors via uMoonU. The face is the near side's maria as
+      // soft ellipses in a frame whose up is celestial north (uMoonN) and whose right is
+      // the sky's right (uMoonE), so Crisium rides the upper right and Procellarum the
+      // left as they do over Philadelphia, and the face turns through the night with the
+      // parallactic angle. By day (uMoonD) the dark part vanishes into the sky and the lit
+      // part stands pale over it; the halo belongs to the night.
       '  if (uMoonI > 0.002) {\n' +
       '    float mAng = acos(clamp(dot(nd, uMoon), -1.0, 1.0));\n' +
-      '    if (mAng < 0.06) {\n' +
-      '      float mu = dot(nd, uMoonU) / 0.0091;\n' +
-      '      float mv = dot(nd, uMoonV) / 0.0091;\n' +
+      '    if (mAng < uMoonR * 1.4) {\n' +
+      '      float mu = dot(nd, uMoonU) / uMoonR;\n' +
+      '      float mv = dot(nd, uMoonV) / uMoonR;\n' +
       '      float mr = sqrt(mu * mu + mv * mv);\n' +
-      '      float inD = 1.0 - smoothstep(0.93, 1.06, mr);\n' +
+      '      float inD = 1.0 - smoothstep(0.96, 1.04, mr);\n' +
       '      float lim = sqrt(max(0.0, 1.0 - mv * mv));\n' +
       '      float ut = -(2.0 * uMoonK - 1.0) * lim;\n' +
-      '      float lit = smoothstep(ut - 0.12, ut + 0.12, mu);\n' +
-      '      vec3 mc = vec3(0.93, 0.94, 0.90);\n' +
-      '      col = mix(col, mc * (0.11 + 0.89 * lit), inD * uMoonI);\n' +
+      '      float lit = smoothstep(ut - 0.07, ut + 0.07, mu);\n' +
+      '      vec2 fp = vec2(dot(nd, uMoonE), dot(nd, uMoonN)) / uMoonR;\n' +
+      '      float fn = cnoise(fp * 9.0 + 3.1) * 0.5 + cnoise(fp * 23.0 + 7.7) * 0.5;\n' +
+      '      vec2 wp = fp + (vec2(cnoise(fp * 5.0 + 1.7), cnoise(fp * 5.0 + 9.3)) - 0.5) * 0.16;\n' +   // the shorelines wander
+      '      float m = mare(wp, vec2(0.62, 0.30), vec2(0.14, 0.13)), mi;\n' +                 // Crisium
+      '      mi = mare(wp, vec2(0.48, -0.12), vec2(0.15, 0.20)); m += mi - m * mi;\n' +      // Fecunditatis
+      '      mi = mare(wp, vec2(0.27, 0.12), vec2(0.22, 0.20)); m += mi - m * mi;\n' +       // Tranquillitatis
+      '      mi = mare(wp, vec2(0.16, 0.42), vec2(0.19, 0.18)); m += mi - m * mi;\n' +       // Serenitatis
+      '      mi = mare(wp, vec2(-0.25, 0.52), vec2(0.27, 0.24)); m += mi - m * mi;\n' +      // Imbrium
+      '      mi = mare(wp, vec2(-0.58, 0.12), vec2(0.24, 0.40)); m += mi - m * mi;\n' +      // Procellarum
+      '      mi = mare(wp, vec2(-0.25, -0.30), vec2(0.17, 0.15)); m += mi - m * mi;\n' +     // Nubium
+      '      mi = mare(wp, vec2(-0.52, -0.40), vec2(0.12, 0.11)); m += mi - m * mi;\n' +     // Humorum
+      '      mi = mare(wp, vec2(0.42, -0.30), vec2(0.10, 0.10)); m += mi - m * mi;\n' +      // Nectaris
+      '      m *= 0.75 + 0.5 * fn;\n' +
+      '      float alb = (1.0 - 0.30 * m) * (0.90 + 0.16 * fn) + 0.14 * (1.0 - smoothstep(0.0, 0.08, length(fp - vec2(-0.13, -0.70))));\n' +   // Tycho's bright spot
+      '      vec3 mc = vec3(0.93, 0.94, 0.90) * alb;\n' +
+      '      vec3 nightM = mc * (0.11 + 0.89 * lit);\n' +
+      '      vec3 dayM = mix(col, max(col, mc * 0.92), 0.6 * lit);\n' +
+      '      col = mix(col, mix(nightM, dayM, uMoonD), inD * uMoonI);\n' +
       '    }\n' +
-      '    col += vec3(0.93, 0.94, 0.90) * exp(-mAng * mAng * 2600.0) * 0.10 * uMoonI * uMoonK;\n' +
+      '    col += vec3(0.93, 0.94, 0.90) * exp(-pow(mAng / uMoonR, 2.0) * 0.22) * 0.10 * uMoonI * uMoonK * (1.0 - uMoonD);\n' +
       '  }\n' +
       // cumulus: a four-octave fbm on the sky plane, its cover from the weather; a second
       // sample toward the sun lights the tops and leaves the bases in shade, the thick
@@ -14138,7 +14169,16 @@
     skyMat.uniforms.uMoonU.value.copy(_vA);
     skyMat.uniforms.uMoonV.value.crossVectors(mp.dir, _vA);
     skyMat.uniforms.uMoonK.value = mp.k;
-    skyMat.uniforms.uMoonI.value = smooth(-0.5, 5, mp.el) * (1 - smooth(-7, 1, el)) * (1 - 0.85 * WX.cover);
+    // the face's frame: celestial north projected onto the disc, and the sky's right
+    _vA.set(0, Math.sin(SITE.lat * DEG), -Math.cos(SITE.lat * DEG));
+    _vA.addScaledVector(mp.dir, -_vA.dot(mp.dir)).normalize();
+    skyMat.uniforms.uMoonN.value.copy(_vA);
+    skyMat.uniforms.uMoonE.value.crossVectors(mp.dir, _vA);
+    // the disc stands by day as well as by night (washed by uMoonD), fades with the
+    // clouds, and is lost in the sun's glare within about ten degrees of it
+    const sunGap = Math.acos(clamp(sp.dir.dot(mp.dir), -1, 1));
+    skyMat.uniforms.uMoonI.value = smooth(-0.5, 5, mp.el) * (1 - 0.85 * WX.cover) * smooth(0.12, 0.3, sunGap);
+    skyMat.uniforms.uMoonD.value = smooth(-7, 1, el);
     const mixPal = (k, out) => out.copy(PAL.night[k]).lerp(PAL.twi[k], twi).lerp(PAL.day[k], dayF);
     const cz = mixPal('z', _pz), ch = mixPal('h', _ph), cg = mixPal('g', _pg);
     // overcast grays the sky toward a flat deck
@@ -14578,7 +14618,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

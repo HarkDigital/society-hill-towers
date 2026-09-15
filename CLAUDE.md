@@ -64,7 +64,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   shader with every joint in anti-aliased relief, cornice and wall-end shading, limestone trim and mortar, seamed
   roof membranes (Round 54), a deep-blue sky with a ray-marched cumulus deck (a 720 m slab from 1,900 m,
   `CLOUD_STEPS` samples, sunlit tops and self-shaded bellies) whose shadows slant by the
-  sun, clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, slate-teal body-colour water (`COLORS.water` 0x163038, Round 54) as a moving noise field with calm
+  sun, the real Moon (Round 64: `lunar()` checks against JPL DE421 within 0.06 degrees; drawn `MOON_SCALE` 2.5 times its
+  true size with the near side's maria in a celestial-north frame, by day washed by the sky, never through the
+  sun's glare), clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, slate-teal body-colour water (`COLORS.water` 0x163038, Round 54) as a moving noise field with calm
   ripples and only a restrained shoreline lift (no foam line, no lit floor), a painted olive meadow on every green AND on all bare ground (Round 52: `groundSurfMat`, the
   same meadow and the same darker-blotch mottle as the parks, parks and ground are one surface; no park
   shade spread, no ground retint), an instanced tuft field near the camera on parks and bare ground, lumpy

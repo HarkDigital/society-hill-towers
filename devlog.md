@@ -2863,6 +2863,34 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 64: the Moon you can see (Sep 15)
+
+- **Mike: can we add the moon and have it be accurate to location and moon cycle?** The page
+  has carried a real Moon since Round 26 (`lunar()`, Schlyter's theory with topocentric
+  parallax, the phase from the Sun-Moon elongation, the night light and the moonglade following
+  it), and it checks against JPL DE421 through skyfield at six instants across a year (this
+  evening's crescent, the Sep 26 full moon, a last quarter, two below-horizon instants and the
+  Aug 12 eclipse): within 0.06 degrees in azimuth and elevation and 0.15 percent in illuminated
+  fraction. What nobody saw was the disc: drawn at its true half degree it was eight pixels on
+  a laptop, and it was switched off whenever the sun stood above about seven degrees below the
+  horizon, so a first-quarter afternoon or this week's crescent, which sets soon after dusk,
+  never showed. Now: `MOON_SCALE` 2.5 draws the disc at 2.5 times its real angular radius
+  (`MOON_R`, the `uMoonR` uniform; one number), which reads as a moon on a phone or a laptop and
+  still sits naturally in the sky. The face is the near side's maria as soft, noise-warped
+  ellipses (Crisium, Fecunditatis, Tranquillitatis, Serenitatis, Imbrium, Procellarum, Nubium,
+  Humorum, Nectaris, Tycho's bright spot) in a frame whose up is celestial north projected onto
+  the disc (`uMoonN`) and whose right is the sky's right (`uMoonE`), so Procellarum rides the
+  left and Crisium the upper right the way they do over Philadelphia, and the face turns through
+  the night with the parallactic angle. The terminator frame (`uMoonU`/`uMoonV`, from the world
+  sun and moon vectors) is unchanged. The disc stands by day as well: `uMoonD` (the sun's
+  elevation from -7 to 1 degrees) washes it, the dark part vanishing into the sky and the lit
+  part standing pale over it; the halo belongs to the night; and it is lost in the sun's glare
+  within about ten degrees of the sun (new moon). `__dbg.lunar`, `solar` and `moon()` expose the
+  ephemeris. Verified in the pane by capture: tonight's 24 percent crescent low in the south-west
+  at dusk, lit on the right; the Sep 26 full moon in the south-east with the maria in their
+  places (an enlarged capture due south, north up, matched the naked-eye layout); a first-quarter
+  moon pale in the afternoon blue on Sep 19.
+
 ## Round 63: the card's link under the lock (Sep 15)
 
 - **Mike: on desktop the FlightAware links cannot be clicked, the tooltip just disappears.** Two
