@@ -2891,6 +2891,16 @@ the diff with two skeptics per finding.
   places (an enlarged capture due south, north up, matched the naked-eye layout); a first-quarter
   moon pale in the afternoon blue on Sep 19.
 
+## Round 64 coda: smaller, and no dark side (Sep 15)
+
+- **Mike: make the moon a bit smaller, and the dark part of the moon should not be visible.**
+  `MOON_SCALE` 2.5 to 2.0 (the disc is now twice its real angular size). The 11 percent
+  earthshine that drew the unlit part as a dim grey disc is gone: the disc's blend into the sky
+  is weighted by the lit fraction at each fragment (`inD * uMoonI * lit`), so the dark limb is
+  sky, by night and by day, and a thin crescent is a clean arc. Verified by capture at four
+  moments: tonight's crescent at dusk, the Sep 26 full moon, the Sep 19 afternoon first quarter,
+  and a six percent waning crescent before dawn on Oct 8.
+
 ## Round 63: the card's link under the lock (Sep 15)
 
 - **Mike: on desktop the FlightAware links cannot be clicked, the tooltip just disappears.** Two

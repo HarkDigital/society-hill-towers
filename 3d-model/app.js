@@ -1615,8 +1615,8 @@
   const SKY_DITHER = 1 / 255;
   // the Moon's drawn size: MOON_SCALE times its real angular radius (0.26 deg). At the real
   // size it was eight pixels on a laptop and nobody saw it (Mike, Sep 15: add the moon);
-  // 2.5 reads as a moon and still sits naturally in a photograph of the sky (Round 64)
-  const MOON_SCALE = 2.5, MOON_R = 0.0091 * MOON_SCALE;
+  // 2.5 read as a moon, 2.0 is Mike's "a bit smaller" (Round 64 coda)
+  const MOON_SCALE = 2.0, MOON_R = 0.0091 * MOON_SCALE;
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -1675,8 +1675,10 @@
       // soft ellipses in a frame whose up is celestial north (uMoonN) and whose right is
       // the sky's right (uMoonE), so Crisium rides the upper right and Procellarum the
       // left as they do over Philadelphia, and the face turns through the night with the
-      // parallactic angle. By day (uMoonD) the dark part vanishes into the sky and the lit
-      // part stands pale over it; the halo belongs to the night.
+      // parallactic angle. Only the lit part is drawn, by night and by day: the unlit part
+      // is the sky (Mike, Round 64 coda: the dark part should not be visible; the 11 percent
+      // earthshine disc is gone). By day (uMoonD) the lit part stands pale over the sky; the
+      // halo belongs to the night.
       '  if (uMoonI > 0.002) {\n' +
       '    float mAng = acos(clamp(dot(nd, uMoon), -1.0, 1.0));\n' +
       '    if (mAng < uMoonR * 1.4) {\n' +
@@ -1702,9 +1704,8 @@
       '      m *= 0.75 + 0.5 * fn;\n' +
       '      float alb = (1.0 - 0.30 * m) * (0.90 + 0.16 * fn) + 0.14 * (1.0 - smoothstep(0.0, 0.08, length(fp - vec2(-0.13, -0.70))));\n' +   // Tycho's bright spot
       '      vec3 mc = vec3(0.93, 0.94, 0.90) * alb;\n' +
-      '      vec3 nightM = mc * (0.11 + 0.89 * lit);\n' +
-      '      vec3 dayM = mix(col, max(col, mc * 0.92), 0.6 * lit);\n' +
-      '      col = mix(col, mix(nightM, dayM, uMoonD), inD * uMoonI);\n' +
+      '      vec3 dayM = mix(col, max(col, mc * 0.92), 0.6);\n' +
+      '      col = mix(col, mix(mc, dayM, uMoonD), inD * uMoonI * lit);\n' +
       '    }\n' +
       '    col += vec3(0.93, 0.94, 0.90) * exp(-pow(mAng / uMoonR, 2.0) * 0.22) * 0.10 * uMoonI * uMoonK * (1.0 - uMoonD);\n' +
       '  }\n' +
