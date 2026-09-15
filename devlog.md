@@ -2891,6 +2891,63 @@ the diff with two skeptics per finding.
   places (an enlarged capture due south, north up, matched the naked-eye layout); a first-quarter
   moon pale in the afternoon blue on Sep 19.
 
+## Round 65: the far ring's roofs in their own colours (Sep 15)
+
+- **Mike: can we get back to working on the disparity in building colors from the Mapillary
+  data?** The divide Round 57 answered (a darker, redder city past York Street, the outer
+  districts' north edge) was still there from any height, so this round measured before it
+  touched anything. A per-tier tally on the dev handle (`__dbg.colStats()`: the mean wall
+  colour handed to the chunk builder, the roof caps, the styles, the OPA words, the roof forms,
+  for the whole tier and for a 700 m band either side of York) showed the walls already equal:
+  Round 57's reservoir gives the far ring exactly the outer districts' mean wall colour (0.652,
+  0.443, 0.334 against 0.653, 0.445, 0.335). The roofs were not. In the band the far ring's caps
+  averaged 0.157 in the app's register against 0.239 next door, though the data files put the
+  two sides' per-building roof colours only 10 percent apart (0.206 against 0.228). The cause was
+  in `pack_city.py`: it merges each 400 m cell's low rows into strips and handed every strip in
+  the cell ONE roof palette index and ONE OPA attribute word, the most common in the whole cell.
+  The mode of a palette histogram is dark: the four most frequent bins in North Philadelphia
+  are the tar-roof greys (sRGB 85 to 113) while the light roofs scatter across a dozen bins, so
+  the cell mode shipped the band's roofs at 0.104, half their measured luminance, and every
+  strip in a cell wore one era's facade. Now each merged piece takes the OPA word most common
+  among ITS OWN members and, for the roof, the sampled colour of the member whose luminance in
+  the app's register (roofInv, the 2.364 power that compresses the darks) is nearest the
+  members' mean, so a strip reads like its own houses and the colour is always one a roof in it
+  was measured as: the band's caps now tally 0.209 against the 0.206 per-building truth (the
+  outer districts' 0.228 beside them is the data's own gap). A first cut snapped the palette
+  entry nearest the members' mean sRGB colour and landed at 0.195 in the page, below even a
+  per-strip mode in simulation: averaging light and dark roofs in sRGB and snapping to the
+  palette leans dark once the power curve is applied. The pack keeps every count
+  and byte (180,107 buildings, 10.20 MB), only the attribute and roof words change; the repack
+  also adopts `philly_frame.py`, so the far ring stands where the scene does instead of up to
+  1.1 m east of it.
+- **What the experiments ruled out**, so nobody repeats them: a plain lit material (no facade
+  shader) renders the two tiers equal (1.02 and 1.03 north to south), so the geometry, the
+  normals, the shadows and the fog are not the divide; live shader bisections on `cityMat`
+  (wrapping `onBeforeCompile` under a new `customProgramCacheKey`, a deliberate darkening as the
+  control) with the roof branch off, the wall-detail branch off, one style forced for every
+  building, floor heights zeroed, and equal wall and roof gains moved the tier ratio by two
+  points at most. Uniform overrides (`detFar`, the sun's intensity, `castShadow`) are rewritten
+  every frame by `applyLighting` and prove nothing. Region means of a capture mislead too: most
+  pixels between the buildings are streets, lots and meadow, so the decisive measure masks the
+  facade material with a control render (`diffuseColor.rgb *= 0.3`, a pixel that darkens is a
+  building) and compares building pixels alone. On the shipped build they match across York
+  within two percent, oblique (0.99) and straight down (0.98), and the ground between them within
+  three. What still reads as a darker city past the line is coverage, not colour: the far ring's
+  merged strips fill their blocks with roof, so buildings are 62 percent of its pixels against 35
+  percent in the outer districts, where the gaps between houses show meadow, lots and lit
+  streets; the far ring also has no street trees. That is the page-budget merge (city.b64 is
+  39 percent of the page), a geometry decision for another round. The residual 8 percent gap in
+  the sampled roof colours themselves (0.209 against 0.228 per building) is part geography and
+  part the old KX=85350 frame that sampled the far ring's ortho pixels 1.1 m east of each
+  footprint; a `roof_colors.py` rerun from the 7,422 cached tiles would re-cluster the palette
+  and re-pack every tier, a round of its own. The proper cure for the WALLS, a Mapillary pass over the far ring, stays open: the
+  five-reader map put it at about 352,000 thumbnails (7.5 hours, 3.5 GB) for the fetched boxes,
+  a by-way-id LUT and a `city_walls.b64` side blob in the `wide_walls.b64` layout, and it needs
+  the MAPILLARY_TOKEN, which this machine does not hold.
+- Also: CLAUDE.md said the far ring drew "from the same palette by frequency", the cut Round 57
+  reversed; it now says the reservoir. The `wallInv` comment quoted 0.6 and 1.25 where the code
+  has said 0.56 and 1.6 since Round 50. `__dbg.colStats()` stays as a dev tally.
+
 ## Round 64 coda: smaller, and no dark side (Sep 15)
 
 - **Mike: make the moon a bit smaller, and the dark part of the moon should not be visible.**

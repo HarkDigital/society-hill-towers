@@ -179,19 +179,45 @@ def emit(pg, h, mh, bt, aw_=-1, rw_=-1, rf_=(0, 0.0)):
     nb += 1
 
 from collections import Counter
+# Every piece of a merged cell takes the attributes of ITS OWN members (Round 65). The cell
+# used to hand all its strips one OPA attribute word and one roof colour, the most common
+# in the whole 400 m cell, and the mode of a palette histogram is dark: the tar-roof greys
+# collapse into three or four bins while the light roofs scatter across many, so the far
+# ring's roofs shipped at half the luminance of the same blocks' per-building colours
+# (north of York Street 0.104 against 0.206 in the app's register, the outer districts next
+# door at 0.228) and every strip in a cell wore one era's facade. Now the attribute word is
+# the mode among the piece's members and the roof colour is the sampled colour of the member
+# whose luminance, in the register the app draws (roofInv, a 2.364 power that compresses the
+# darks), is nearest the members' mean: a strip reads like its own houses, and the colour is
+# always one a roof in it was measured as. (The palette entry nearest the mean sRGB colour
+# was tried first and landed at 0.183: averaging light and dark roofs in sRGB and snapping
+# to the palette leans dark once the power curve is applied.)
+ROOF_PAL = _opt('lidar_cache/roof_palette.json')
+def _roof_lum(rgb):
+    inv = lambda t: min(1.0, (max(t, 4) / 31.5) ** 2.364 / 255)   # app.js roofInv
+    return 0.2126 * inv(rgb[0]) + 0.7152 * inv(rgb[1]) + 0.0722 * inv(rgb[2])
+ROOF_LUM = [_roof_lum(c) for c in ROOF_PAL] if ROOF_PAL else None
+def roof_pick(idxs):
+    idxs = [i for i in idxs if i is not None and i >= 0]
+    if not idxs: return -1
+    if not ROOF_LUM: return Counter(idxs).most_common(1)[0][0]
+    mean = sum(ROOF_LUM[i] for i in idxs) / len(idxs)
+    return min(idxs, key=lambda i: (abs(ROOF_LUM[i] - mean), i))
+def attr_pick(members):
+    aws = Counter(m[1] for m in members if m[1] != -1)
+    return aws.most_common(1)[0][0] if aws else -1
 for (gx, gz, hb), members in merge_groups.items():
     h = max(4, hb * 4)
     pgs = [m[0] for m in members]
-    aws = Counter(m[1] for m in members if m[1] != -1)
-    rws = Counter(m[2] for m in members if m[2] != -1)
-    aw_ = aws.most_common(1)[0][0] if aws else -1
-    rw_ = rws.most_common(1)[0][0] if rws else -1
     merged = unary_union([p.buffer(1.8, join_style=2) for p in pgs]).buffer(-1.8, join_style=2)
     geoms = list(merged.geoms) if merged.geom_type == 'MultiPolygon' else [merged]
     for g in geoms:
         if g.is_empty or g.area < 70: continue
         # a roof form only when this piece is one building (a strip of merged rows stays flat)
         mine = [m for m in members if g.contains(m[0].representative_point())] if len(members) > 1 else members
+        if not mine: mine = members
+        aw_ = attr_pick(mine)
+        rw_ = roof_pick([m[2] for m in mine])
         rf_ = mine[0][3] if len(mine) == 1 else (0, 0.0)
         emit(Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2, aw_, rw_, rf_)
 for pg, h, bt, aw_, rw_, rf_ in solo:

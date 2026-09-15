@@ -5415,6 +5415,10 @@
   // line can draw from the same distribution and stop reading as a darker, redder city past the
   // outer districts' edge; the draw is per building, not tied to any block
   const WIDE_COLS = [], WIDE_COLS_N = 1024;
+  // per-tier colour tallies for __dbg.colStats() (Round 65): the mean wall colour handed to the
+  // chunk builder for every low building, and how many roofs carried a measured cap colour
+  const COL_STAT = {};
+  function colStat(key, c) { const a = COL_STAT[key] || (COL_STAT[key] = [0, 0, 0, 0]); if (c) { a[0] += c.r; a[1] += c.g; a[2] += c.b; } a[3]++; }
   let wideColK = 0;
   function wideColSample(c, i) {   // a deterministic reservoir: every eligible wall has the same chance to stand for the tier
     wideColK++;
@@ -5486,12 +5490,13 @@
     // sRGB triples as the photos show them and one byte per building record, 255 for
     // none. wallInv puts a photographed colour into the register the hand palettes
     // use (linear values, r149 legacy pipeline): a street photo's wall median is a
-    // shaded, half-exposed surface, so its luminance is lifted on a 0.6 power (0.2
-    // lands at 0.38, the palLow register); a cool or green cast (blue over red is
-    // skylight on a shaded wall, green over both is foliage and camera balance,
-    // neither is a wall) is folded to a neutral grey of the same luminance; and a
-    // warm colour gets back the chroma the median lost to trim and windows (1.25),
-    // while a grey stays the grey it was measured as
+    // shaded, half-exposed surface, so its luminance is lifted on a 0.56 power (0.2
+    // lands at 0.41, the palLow register; Round 48 set 0.6, Round 50 lifted it); a cool or
+    // green cast (blue over red is skylight on a shaded wall, green over both is foliage
+    // and camera balance, neither is a wall) is folded to a neutral grey of the same
+    // luminance; and a warm colour gets back the chroma the median lost to trim and
+    // windows (1.6 since Round 50; 1.25 in Round 48), while a grey stays the grey it was
+    // measured as
     const wallInv = (sr, sg, sb) => {
       let r = Math.pow(sr / 255, 2.2), g = Math.pow(sg / 255, 2.2), b = Math.pow(sb / 255, 2.2);
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -5893,7 +5898,7 @@
       // one colour for the whole block; the draw gives the houses back the variety a
       // real face has), with a second jitter on top; towers and stadiums keep theirs
       if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; } }
-      if (h <= 45 && t <= 6) wideColSample(c, i);   // the tier's colours, for the far ring's draw (Round 57)
+      if (h <= 45 && t <= 6) { wideColSample(c, i); colStat('wide', c); }   // the tier's colours, for the far ring's draw (Round 57)
       const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
       const spec = h > 45 ? towerAt(cx, cz, h) : null;   // glass-tagged parts join the matching too (Round 54)
       let style;
@@ -5905,6 +5910,7 @@
       else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, hint);
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
+      if (h <= 45 && t <= 6) { colStat(capC ? 'wideCap' : 'wideNoCap', capC); colStat('wideSt' + style); colStat(fa ? 'wideFa' : 'wideNoFa'); colStat('wideFh' + (fh > 0 ? 1 : 0)); COL_STAT.wideArea = (COL_STAT.wideArea || 0) + Math.abs(signedArea(poly)); }
       let hTop = h;
       if (spec) {
         // the researched height is the architectural top: the section that reaches it (within
@@ -5967,6 +5973,7 @@
         }
       } else {
         const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+        if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
         else {
           appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
@@ -7163,6 +7170,7 @@
       // the outer districts' final colours (photographed faces and class pools alike), so the far
       // ring carries that tier's own mix instead of reading as a darker, redder city past its edge
       if (WIDE_COLS.length && h <= 45 && t <= 6) c.copy(WIDE_COLS[Math.floor(hash01(i * 5.9 + 0.2) * WIDE_COLS.length) % WIDE_COLS.length]);
+      if (h <= 45 && t <= 6) colStat(wideSeam ? 'far' : 'town', c);
       let style;
       if (h > 30) style = h > 45 ? towerStyle(fa, t, i) : 2;
       else if (t === 5) style = 1;
@@ -7171,7 +7179,9 @@
       else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, 0);
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
+      if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + (capC ? 'Cap' : 'NoCap'), capC); colStat(tk + 'St' + style); colStat(fa ? tk + 'Fa' : tk + 'NoFa'); colStat(tk + 'Fh' + (fh > 0 ? 1 : 0)); COL_STAT[tk + 'Area'] = (COL_STAT[tk + 'Area'] || 0) + Math.abs(signedArea(poly)); }
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+      if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + 'Form' + rb[1]); colStat(rplan ? tk + 'Pitched' : tk + 'Flat'); if (wideSeam && cz > -5180 && cz < -4480 && cx > -3700 && cx < 2300) { colStat('farBandForm' + rb[1]); colStat(rplan ? 'farBandPitched' : 'farBandFlat'); colStat(capC ? 'farBandCap' : 'farBandNoCap', capC); colStat('farBand', c); } }
       if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
       else {
         appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
@@ -14619,7 +14629,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

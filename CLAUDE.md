@@ -54,8 +54,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   streaming pass, then OSM roof:shape, then the lottery, packed in the roof word (see
   pack_city.py); storefronts come from `storefronts.b64`, and the outer districts' wall colours
   from Mapillary block faces (`wide_walls.b64`, colour byte plus a trim/window hint byte; a dry-run bake
-  never ships; the far ring and the towns draw from the same palette by frequency, Round 57, so no tier
-  reads darker past the outer districts' edge); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
+  never ships; the far ring and the towns draw their low walls from a 1,024-colour reservoir of the outer
+  districts' final wall colours, Round 57, and since Round 65 every merged far-ring strip carries its own members'
+  roof colour and OPA word instead of its 400 m cell's mode, so no tier reads darker past the outer districts' edge); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
   Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
   and `pack_wide.py` insets any record whose wall shares a plane with a larger one; the look leans toward
@@ -111,7 +112,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
 
 `?dev=1` exposes `window.__dbg` (camera/fly/scene/renderer handles, `wx('storm')`, `bolt()`,
 `flightTest()`, `shipTest()`, `frameOnce()`, `goFly(...)`, `goWalk(...)`, `post`, `postMats()`, `skyMat`,
-`cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `perf()` with
+`cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `colStats()` (per-tier means of the wall and roof colours handed to the
+chunk builders, styles, OPA words and roof forms, whole tier and a band either side of York Street), `perf()` with
 per-step build timings, frame-time p50/p95, `renderer.info` and heap) plus an on-screen perf
 readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
 (clear, overcast, fog, drizzle, rain, downpour, storm, hail, snow, blizzard, sleet).
