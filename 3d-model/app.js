@@ -9936,6 +9936,12 @@
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
   let vpDownX = 0, vpDownY = 0, vpDownT = 0, vpWasLocked = false;
+  // A plane or ship card carries a link, and under pointer lock there is no cursor to click
+  // it with: every click was a crosshair pick that found nothing and closed the card
+  // (Mike, Sep 15: on desktop the FlightAware link only made the card disappear). The lock
+  // lets go when one of those cards opens, the way the guide does; the next click on the
+  // scene takes it back (Round 63).
+  function cardUnlock() { if (walk.locked && document.exitPointerLock) document.exitPointerLock(); }
   function isShortTap(e) { return Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) <= 8 && performance.now() - vpDownT <= 500; }
   canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
   canvas.addEventListener('pointerup', (e) => {
@@ -10000,11 +10006,11 @@
       let v = null, hitSt = null;
       if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.shipKind !== undefined || h.object === shipAnchor) {
         const p = h.object === shipAnchor ? shipPick[SHIP_KIND_N][h.instanceId] : shipPick[h.object.userData.shipKind][h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
       else if (h.object === septaBadge) v = septaPickB[h.instanceId];
@@ -11719,8 +11725,17 @@
   // plus the node we wrote: any other card (bus, station, tree) landing in the
   // same element between two picks of the same object invalidates it.
   let cardObj = null, cardHtml = '', cardNode = null;
+  // A press or a hover on the card holds its markup still: the plane and ship cards are
+  // rebuilt whenever a rounded altitude or speed changes, and a rewrite between mousedown
+  // and mouseup replaced the FlightAware link under the pointer, so the click never fired
+  // (Round 63). The values catch up the moment the pointer leaves.
+  let cardHold = false;
+  vehinfoEl.addEventListener('pointerdown', () => { cardHold = true; });
+  window.addEventListener('pointerup', () => { cardHold = false; });
+  window.addEventListener('pointercancel', () => { cardHold = false; });
   function cardSet(obj, html) {
     if (obj === cardObj && html === cardHtml && vehinfoBody.firstChild === cardNode) return;
+    if (cardHold || (!isTouch && !vehinfoEl.hidden && vehinfoEl.matches(':hover'))) return;
     cardObj = obj; cardHtml = html;
     vehinfoBody.innerHTML = html;
     cardNode = vehinfoBody.firstChild;

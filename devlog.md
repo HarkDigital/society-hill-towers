@@ -2863,6 +2863,22 @@ the diff with two skeptics per finding.
   `resize`, on `visualViewport` resize, and from every frame that finds the window a different size
   from the one the canvas was last fitted to.
 
+## Round 63: the card's link under the lock (Sep 15)
+
+- **Mike: on desktop the FlightAware links cannot be clicked, the tooltip just disappears.** Two
+  causes, both in the card. Under pointer lock (the desktop flight controls) there is no cursor:
+  the click that meant to land on the link was a canvas pointerup, the crosshair pick found no
+  plane at screen centre and closed the card. `cardUnlock()` now releases the lock the moment a
+  plane or ship card opens (the way `openGuide` does), the hint reads 'Click the scene to take the
+  controls', the link takes a real click and the next click on the scene locks again. Second, the
+  plane and ship cards are rebuilt every render (`cardSet` rewrites `innerHTML` whenever a rounded
+  altitude or speed changes), and a rewrite between mousedown and mouseup replaced the anchor under
+  the pointer, so the browser fired the click on the card instead of the link. `cardHold` (a press
+  on the card, cleared on the window's pointerup or pointercancel) and, off touch, a `:hover` on
+  the card hold the markup still; the values catch up when the pointer leaves. Verified in the pane:
+  a locked crosshair pick of a seeded plane calls `exitPointerLock` once and opens the card with its
+  link; with a press on the card a second card's markup does not replace it, and it does on release.
+
 ## Round 62: no placards through buildings (Sep 11)
 
 - **Mike: do not show placards through buildings, and remove that item from the how-to.** The
