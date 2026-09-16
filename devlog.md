@@ -3305,3 +3305,60 @@ fronts like Rotten Ralph's/Glory) are the remaining rungs; `lidar-massing-plan.m
 option 2 (OPA join) is now executed as part of Tier 1.
 
 Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel must stay.
+
+## Round 66: the venues where they stand, the river past Fort Mifflin, the blue bridge (Sep 16)
+
+- **Mike, with a screenshot: the Underground Arts placard is a ways off; verify every venue we
+  show.** A placard stands where Ticketmaster's venue record puts it, and Ticketmaster's geocoder
+  misses half of Philadelphia's halls. Measured against each venue's street address (Nominatim,
+  the OSM outline where there is one): Underground Arts sat 1,150 m south-east of 1200 Callowhill,
+  on Independence Mall (the screenshot); Franklin Music Hall and Union Transfer shared one point
+  at 6th and Fairmount, 558 and 714 m from their buildings; the Kimmel Cultural Campus and the
+  Miller Theater shared a point at City Hall, 705 and 590 m off; Stateside Live stood 985 m east
+  of the Live! casino; the Mann's TD Pavilion 215 m off in its lawn; MilkBoy 186 m; the Met 54 m,
+  the Fillmore 35 m, NOTO 34 m, the TLA 13 m and Nikki Lopez (304 South St, a 150-cap room two
+  doors from the TLA, so the two share a placard, each under its own heading) 4 m, all fine. The
+  cure is `VENUE_NAMED`: a venue the page knows by name is pinned at its building whatever point
+  the feed carries (the OSM outline's centroid in the model frame, or the address point where OSM
+  has no outline), 26 halls from the Academy of Music and World Cafe Live to Johnny Brenda's and
+  the Tower Theater, keyed by name rather than id so a duplicate venue record lands right too;
+  `VENUE_AT` by id stays for the Fillmore's three rooms. The full venue list on the VPS was not
+  consulted (the key never leaves the box; the sandbox refused the read), so the halls not yet
+  seen in a feed are pinned from their addresses, unverified against Ticketmaster's points.
+  Two rules moved with it: `CONCERT_MERGE` 130 to 80 m (the Fillmore's three rooms now share one
+  exact point, and 130 merged Underground Arts with NOTO, 127 m up 12th Street, at a pin between
+  them; the TLA and Nikki Lopez, 73 m apart on one block, still share), and a spot the tables
+  placed snaps onto a score venue only within 120 m, not 500 (Stateside Live's placard had walked
+  from the casino onto the stadium, 430 m off). Verified in the pane with the day's real feed
+  widened to open every listed show at once: every fixed placard's pin lands on its own building.
+- **Mike, with a screenshot: that strange strip of land over the river east of the airport.** A
+  green ribbon 2.6 km long crossed the Delaware from Fort Mifflin to the Jersey bank at National
+  Park, at an angle to the channel. It was two rows of the far ground's own vertices, z 7,500 and
+  7,600, standing at made-land height (`TERRAIN.water` + 0.45) clear across the river: the far
+  ground consulted the river outline (`delawareAt`) only beyond the DEM grids or in `southReach`,
+  which starts past 7,600, and the Delaware between the Navy Yard and 7,500 was wet only by
+  accident, because `bake_schuylkill.py` clips at z 7,500 and its polygon swallowed the Delaware's
+  face at the confluence, so `riverCarve` was doing the outline's job up to its clipped edge. The
+  x-of-z bank line (`DEL_BANK`) cannot describe the reach where the river turns west, the known
+  Round 55 failure. `delawareTurn(x, z)` (z past 6,300, x under 3,400) now makes the outline the
+  shoreline for every far-ground cell from the Navy Yard south; `southReach` keeps its flooding
+  rule for low land. `__dbg.groundAt(-4000, 7550).mesh` went from -7.46 (0.38 m proud of the water
+  plane) to -10.41 (the bed); the strip is gone from the same viewpoint.
+- **Mike, with a photo: make the Ben Franklin Bridge look more like it does in real life.** Round
+  1's bridge was white in the sun: its "Ben Franklin blue" `#8fb4c6` was a photographed sRGB
+  value, and the legacy pipeline (handoff gotcha 11) lifts a stored colour, so it rendered at 214
+  223 226. The pipeline was measured instead of guessed: a first cut at `#2f5c8c` captured at
+  133 171 198 on the sunlit tower face, the ACES fit inverted from that (k 0.88 on a vertical face
+  at 9 am, 1.78 on the roadway), and the stored values set for the photo's colours: steel
+  `#2452a6` for about 120 165 205 in the sun and 40 80 125 in shade, granite `#5a3d26` for 165
+  140 112, asphalt `#262422`, the walkways `#6e6656`. And the form: the real stiffening trusses
+  rise ABOVE the roadway (8.2 m Warren trusses in the cable planes, 12 m panels, the seven lanes
+  of asphalt between them, the PATCO tracks outboard under walkways raised 3 m with a rail), the
+  suspenders land on the trusses' top chords and the cable sags to 2 m over them at mid-span, the
+  towers have battered legs (8.5 m below the deck, 6.8 above) on granite piers with copings,
+  heavy latticed X panels (2.4 m members, two above the deck and one below), portal struts at
+  the pier, the deck, mid-height and the cap, saddle housings and a cornice, and the anchorages
+  are granite with a 32 m arched portal the roadway threads through (a solid base, piers,
+  springing and crown blocks, the stepped housing above with a string course). The floor narrows
+  to 30 m inside the anchorages and the walkways stop there. Traffic rides `deckY` + 1.3 (the
+  asphalt's top). Verified by capture from the river, the Camden tower and the Philadelphia deck.

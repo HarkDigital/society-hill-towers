@@ -1997,6 +1997,12 @@
   // DEM decides, since the 150 m grid separates the channel (about -1.3 m) from Hog Island, the
   // airport and the Tinicum banks (1 to 4 m) cleanly; the tidal marsh under 0.6 m reads as water
   function southReach(x, z) { return z > 7600 && x < 3400; }
+  // the reach where the river turns west below the Navy Yard (Round 66, Mike: a strip of land
+  // over the river east of the airport): the far ground consulted the outline only past 7,600,
+  // and the Schuylkill's carve happened to keep the Delaware wet up to 7,500, so the two grid
+  // rows between stood at made-land height clear across the channel, a 2.6 km ribbon from Fort
+  // Mifflin to the Jersey bank. From here south the outline is the shoreline for every cell
+  function delawareTurn(x, z) { return z > 6300 && x < 3400; }
   // the tidal Delaware's real outline (bake_delaware.py: OSM maps it as coastline, so no packed
   // tier holds its surface): the shoreline test wherever the DEM grids do not reach (the far
   // ground's margin cells repeat the DEM's edge row otherwise, which put a false bank across
@@ -6815,7 +6821,14 @@
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
     fogBase.near = 5000; fogBase.far = 20000;
 
-    // Benjamin Franklin Bridge (1926): suspension span from the 5th St anchorage to Camden
+    // Benjamin Franklin Bridge (1926): suspension span from the 5th St anchorage to Camden.
+    // Round 66 (Mike, with a photo: make it look like the real one): the stiffening trusses
+    // stand ABOVE the roadway on the real bridge (8.5 m Warren trusses in the cable planes,
+    // the seven lanes between them, the PATCO tracks outboard under the raised walkways), the
+    // towers are heavy latticed X-bents with battered legs and saddle housings, the anchorages
+    // are warm granite with an arched portal the roadway threads through, and the steel is
+    // Ben Franklin blue. Every colour here is a stored-dark value for the legacy pipeline
+    // (handoff gotcha 11): the Round 1 '#8fb4c6' read as white under the noon sun
     {
       const A = [400, -940], B = [1360, -722];           // anchorages (Philadelphia -> Camden), per OSM way 575987106
       const dx = B[0] - A[0], dz = B[1] - A[1], L = Math.hypot(dx, dz);
@@ -6824,90 +6837,114 @@
       const pry = Math.atan2(-ux, -uz);                  // frame whose local x runs across the deck
       const parts = [];
       const addP = (geom, hex) => parts.push({ geom, color: new THREE.Color(hex), style: 3 });
-      const STEEL = '#8fb4c6', CABLE = '#7c9bac', STONE = '#b0a99e';
+      // measured through the pipeline (Sep 16 captures, ACES inverted): a stored #2452a6 renders
+      // the photo's sunlit steel, about 120 165 205, and its shade about 40 80 125
+      const STEEL = '#2452a6', CABLE = '#214a96', FLOOR = '#1c3f7c', ASPHALT = '#262422', WALK = '#6e6656';
+      const GRANITE = '#4c3320', GRANITE_LO = '#3e2818', GRANITE_HI = '#563b26', GRANITE_TOP = '#5e422b';   // a sunlit south face takes about twice the tower face's light: darker still
+      const CAB = 15.5, TRUSS_H = 8.2, TRUSS_LO = 1.6, TRUSS_HI = TRUSS_LO + TRUSS_H;   // the cable planes; the truss chords over the floor
       const deckY = (t) => yA + (yMid - yA) * Math.sin(Math.PI * t) * 0.85 + (yMid - yA) * 0.15 * (1 - Math.abs(2 * t - 1));
-      const segs = 40;
+      const segs = 80, len = L / segs, endRun = 34 / L;   // 12 m truss panels; the floor narrows inside the anchorages
       for (let i = 0; i < segs; i++) {
         const t0 = i / segs, t1 = (i + 1) / segs;
         const x0 = A[0] + dx * t0, z0 = A[1] + dz * t0, x1 = A[0] + dx * t1, z1 = A[1] + dz * t1;
         const y0 = deckY(t0), y1 = deckY(t1);
-        const len = L / segs;
         const slope = Math.atan2(y1 - y0, len);
-        const seg = (g) => { g.rotateZ(slope); g.rotateY(ry); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); addP(g, STEEL); };
-        seg(box(len + 0.5, 1.5, 39, 0, 0, 0, 0));                       // roadway (PATCO tracks + walkways outboard)
+        const inAnchor = t0 < endRun || t1 > 1 - endRun;
+        const seg = (g, hex) => { g.rotateZ(slope); g.rotateY(ry); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); addP(g, hex); };
+        seg(box(len + 0.5, 2.0, inAnchor ? 30 : 39, 0, 0, 0, 0), FLOOR);      // the floor system: the roadway between the trusses, the PATCO tracks outboard
+        seg(box(len + 0.5, 0.3, 27, 0, 1.1, 0, 0), ASPHALT);                    // seven lanes of asphalt
         for (const s of [-1, 1]) {
-          seg(box(len + 0.5, 0.9, 0.9, 0, -8, s * 18.5, 0));            // stiffening-truss bottom chords
-          const dl = Math.hypot(len, 7);
-          const dg = box(dl, 0.7, 0.7, 0, 0, 0, 0);
-          dg.rotateZ((i & 1 ? -1 : 1) * Math.atan2(7, len));            // truss diagonals, alternating
-          dg.translate(0, -4.4, s * 18.5);
-          seg(dg);
-          seg(box(0.7, 8, 0.7, len / 2, -4.4, s * 18.5, 0));            // truss verticals
+          seg(box(len + 0.5, 1.2, 1.0, 0, TRUSS_LO, s * CAB, 0), STEEL);        // stiffening-truss bottom chord
+          seg(box(len + 0.5, 1.0, 1.0, 0, TRUSS_HI, s * CAB, 0), STEEL);        // top chord, where the suspenders land
+          const dg = box(Math.hypot(len, TRUSS_H - 1.1), 0.7, 0.7, 0, 0, 0, 0);
+          dg.rotateZ((i & 1 ? -1 : 1) * Math.atan2(TRUSS_H - 1.1, len));        // Warren diagonals, alternating
+          dg.translate(0, (TRUSS_LO + TRUSS_HI) / 2, s * CAB);
+          seg(dg, STEEL);
+          seg(box(0.7, TRUSS_H, 0.7, len / 2, (TRUSS_LO + TRUSS_HI) / 2, s * CAB, 0), STEEL);   // truss verticals
+          if (inAnchor) continue;
+          seg(box(len + 0.5, 0.35, 3.0, 0, 4.3, s * 18.0, 0), WALK);            // the walkway, raised over the tracks
+          seg(box(len + 0.5, 1.1, 0.15, 0, 5.0, s * 19.4, 0), STEEL);           // its outer rail
         }
       }
-      // steel lattice towers: paired legs on masonry piers, X-braced above the roadway
+      // steel lattice towers: battered legs on granite piers, X-braced above the roadway and below it
       const topY = TERRAIN.water + 117;
       const tw = [0.23, 0.78];
       for (const t of tw) {
         const x = A[0] + dx * t, z = A[1] + dz * t;
         const dY = deckY(t);
-        addP(box(46, 14, 20, x, TERRAIN.water + 3, z, pry), '#b78771'); // warm granite pier at the waterline
+        const pierTop = TERRAIN.water + 10;
+        addP(box(46, 14, 20, x, TERRAIN.water + 3, z, pry), GRANITE);          // granite pier at the waterline
+        addP(box(48, 1.2, 22, x, pierTop - 0.4, z, pry), GRANITE_HI);          // its coping
         for (const s of [-1, 1]) {
-          addP(box(6.5, topY - TERRAIN.water - 8, 8, x - uz * s * 15.5, (TERRAIN.water + 8 + topY) / 2, z + ux * s * 15.5, pry), STEEL);
+          const lx = x - uz * s * CAB, lz = z + ux * s * CAB;
+          addP(box(8.5, dY + 7 - pierTop, 10, lx, (pierTop + dY + 7) / 2, lz, pry), STEEL);   // the wider lower leg
+          addP(box(6.8, topY - (dY + 7), 8.6, lx, (dY + 7 + topY) / 2, lz, pry), STEEL);      // the upper leg
+          addP(box(8, 3.6, 10, lx, topY + 1.4, lz, pry), STEEL);                               // saddle housing over the cable
         }
-        // portal struts: above the roadway, mid-height, and the cap
+        // portal struts: at the pier, above the roadway, mid-height, and the cap
         const sy = [dY + 7, (dY + 7 + topY - 4) / 2, topY - 4];
-        for (const yv of sy) addP(box(34, 4, 5.5, x, yv, z, pry), STEEL);
-        addP(box(37, 5, 8, x, topY - 0.5, z, pry), STEEL);              // cap beam carrying the saddles
-        // two X-brace panels between the struts, one more below deck to the pier
-        const xPanel = (y0, y1, w2) => {
+        addP(box(31, 3.2, 6, x, pierTop + 2.6, z, pry), STEEL);
+        for (const yv of sy) addP(box(34, 4.2, 6.5, x, yv, z, pry), STEEL);
+        addP(box(37, 5, 9, x, topY - 0.5, z, pry), STEEL);                     // cap beam carrying the saddles
+        addP(box(39, 1.4, 11, x, topY + 2.6, z, pry), STEEL);                  // its cornice
+        // heavy latticed X panels: two between the struts, one more below the deck to the pier
+        const xPanel = (y0, y1) => {
           const h = y1 - y0, dl = Math.hypot(31, h), an = Math.atan2(h, 31);
           for (const sg of [-1, 1]) {
-            const g = box(dl, 1.2, 1.2, 0, 0, 0, 0);
+            const g = box(dl, 2.4, 1.6, 0, 0, 0, 0);
             g.rotateZ(sg * an); g.rotateY(pry);
             g.translate(x, (y0 + y1) / 2, z);
             addP(g, STEEL);
           }
         };
-        xPanel(sy[0] + 2, sy[1] - 2);
-        xPanel(sy[1] + 2, sy[2] - 2);
-        xPanel(TERRAIN.water + 11, dY - 3);
+        xPanel(sy[0] + 2.4, sy[1] - 2.4);
+        xPanel(sy[1] + 2.4, sy[2] - 2.4);
+        xPanel(pierTop + 4.4, dY - 3);
       }
-      // granite anchorages: 50 m masonry towers the roadway threads through (DRPA: 61 x 50 m)
+      // granite anchorages: 61 x 46 m masonry, a 32 m arched portal the roadway threads through,
+      // the cable's stepped housing above (the stairs to the walkways climb the sides)
       for (const [ex, ez] of [A, B]) {
-        const g0 = siteY(ex, ez, 'ground');
-        addP(box(61, 36 - (g0 - 2), 46, ex, (g0 - 2 + 36) / 2, ez, ry), STONE);
-        addP(box(42, 16, 42, ex, 42, ez, ry), '#a89f93');
-        addP(box(30, 5, 38, ex, 52.5, ez, ry), '#998f82');
+        const g0 = siteY(ex, ez, 'ground'), yD = yA;
+        const at = (a, y, w, h, d, hex) => addP(box(w, h, d, ex - uz * a, y, ez + ux * a, ry), hex);
+        const base = g0 - 2, sill = yD - 1.6, arch = yD + 15;
+        at(0, (base + sill) / 2, 61, sill - base, 46, GRANITE_LO);              // the solid base below the roadway
+        for (const s of [-1, 1]) at(s * 19.5, (sill + arch) / 2, 61, arch - sill, 7, GRANITE);   // the portal's piers
+        for (const s of [-1, 1]) at(s * 13.5, arch - 2.5, 61, 5, 5, GRANITE);   // the arch's springing blocks
+        for (const s of [-1, 1]) at(s * 9.5, arch - 1, 61, 2, 3, GRANITE);      // and its crown blocks
+        at(0, (arch + 36) / 2, 61, 36 - arch, 46, GRANITE);                    // the mass over the portal
+        at(0, 36.6, 63, 1.2, 48, GRANITE_HI);                                  // the string course
+        at(0, 42, 42, 16, 42, GRANITE_HI);
+        at(0, 52.5, 30, 5, 38, GRANITE_TOP);
       }
-      const cableY = (t) => { // catenary-ish: tower tops at t=0.30/0.70, sag to deck+6 at mid and ends
+      const cableY = (t) => { // catenary-ish: tower tops at t=0.23/0.78, sag to just over the truss tops at mid and the anchorage housings at the ends
         if (t < 0.23) return deckY(0) + 8 + (topY - deckY(0) - 8) * Math.pow(t / 0.23, 2);
         if (t > 0.78) return deckY(1) + 8 + (topY - deckY(1) - 8) * Math.pow((1 - t) / 0.22, 2);
-        const u = (t - 0.505) / 0.275; return yMid + 6 + (topY - yMid - 6) * u * u;
+        const u = (t - 0.505) / 0.275; return yMid + TRUSS_HI + 2.2 + (topY - yMid - TRUSS_HI - 2.2) * u * u;
       };
-      for (let i = 0; i < 80; i++) {
-        const t0 = i / 80, t1 = (i + 1) / 80;
+      for (let i = 0; i < segs; i++) {
+        const t0 = i / segs, t1 = (i + 1) / segs;
         for (const s of [-1, 1]) {
-          const x0 = A[0] + dx * t0 - uz * s * 15.5, z0 = A[1] + dz * t0 + ux * s * 15.5, x1 = A[0] + dx * t1 - uz * s * 15.5, z1 = A[1] + dz * t1 + ux * s * 15.5;
+          const x0 = A[0] + dx * t0 - uz * s * CAB, z0 = A[1] + dz * t0 + ux * s * CAB, x1 = A[0] + dx * t1 - uz * s * CAB, z1 = A[1] + dz * t1 + ux * s * CAB;
           const y0 = cableY(t0), y1 = cableY(t1);
-          const seg = Math.hypot(L / 80, y1 - y0);
-          const g = box(seg + 0.3, 0.9, 0.9, 0, 0, 0, 0);
-          g.rotateZ(Math.atan2(y1 - y0, L / 80));
+          const seg = Math.hypot(len, y1 - y0);
+          const g = box(seg + 0.3, 1.0, 1.0, 0, 0, 0, 0);
+          g.rotateZ(Math.atan2(y1 - y0, len));
           g.rotateY(ry);
           g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
           addP(g, CABLE);
-          if (t0 > 0.05 && t0 < 0.95) addP(box(0.3, Math.max(0.5, y0 - deckY(t0)), 0.3, x0, (y0 + deckY(t0)) / 2, z0, 0), CABLE);
+          const top = deckY(t0) + TRUSS_HI + 0.5;   // the suspender lands on the truss's top chord
+          if (t0 > endRun && t0 < 1 - endRun && y0 - top > 1.5) addP(box(0.3, y0 - top, 0.3, x0, (y0 + top) / 2, z0, 0), CABLE);
         }
       }
       const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.3 }));
       m.castShadow = true;
       groupCity.add(m);
-      // traffic rides the real roadway (deckY gives deck center; the box is 1.5 thick)
+      // traffic rides the real roadway (deckY gives the floor's centre; the asphalt tops out 1.25 m over it)
       BRIDGE_DECKS.push({
         pts: [[A[0], A[1]], [B[0], B[1]]], cum: [0, L], halfW: 20,
         minX: Math.min(A[0], B[0]), maxX: Math.max(A[0], B[0]),
         minZ: Math.min(A[1], B[1]), maxZ: Math.max(A[1], B[1]),
-        yAt: (s) => deckY(clamp(s / L, 0, 1)) + 0.9,
+        yAt: (s) => deckY(clamp(s / L, 0, 1)) + 1.3,
       });
     }
     // Walt Whitman Bridge (1957): suspension span on OSM's alignment, Packer Ave approach to Gloucester City
@@ -7448,7 +7485,7 @@
         const x = x0 + (x1 - x0) * i / nx, z = z0 + (z1 - z0) * j / nz;
         const y = demY(x, z);
         // the DEM decides, except where it does not reach or the outline says river below the Navy Yard
-        const del = (beyondDem(x, z) || southReach(x, z)) && delawareAt(x, z);
+        const del = (beyondDem(x, z) || delawareTurn(x, z)) && delawareAt(x, z);
         let yy = (del ? TERRAIN.bed : (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y)) - 0.07;
         yy = riverCarve(x, z, yy);   // the Schuylkill's channel
         if (tint && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
@@ -10877,11 +10914,28 @@
   const CONCERTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/concerts.json' : 'https://philly3d.com/concerts.json';
   const CONCERT_POLL = 600000, CONCERT_STALE = 3 * 3600;   // 10 min while visible; a file 3 h old is a stopped baker
   const CONCERT_HANG = 60, CONCERT_ROOF = 12;   // the placard hangs 60 m over the roof; a venue the grid does not know stands 12 m
-  const CONCERT_MERGE = 130;   // venues this close share one placard (the rooms of one building)
+  const CONCERT_MERGE = 80;   // venues this close share one placard (the rooms of one building; 130 until Round 66 pinned the Fillmore's rooms at one point, and merged Underground Arts with NOTO, 127 m up 12th Street, at a pin between them)
   // Ticketmaster's venue points that miss their building, by venue id, put at the building's own
   // packed centroid (the Fillmore, the Foundry upstairs and Brooklyn Bowl on its east side are one
   // building at Frankford and Delaware, the LANDMARK_H row for it; Mike, Sep 11: the pin was just off)
   const VENUE_AT = { KovZpZAEkteA: [839.3, -2224.4], KovZpZAEktdA: [839.3, -2224.4], KovZ917AEtU: [839.3, -2224.4] };
+  // And the halls Ticketmaster's geocoder misses by 200 m to 1.2 km (Round 66, Mike: Underground
+  // Arts's pin was a ways off; it stood on Independence Mall, Franklin Music Hall and Union
+  // Transfer shared one point at 6th and Fairmount, the Kimmel campus and the Miller stood at City
+  // Hall, Stateside Live a kilometre east of its casino, the Mann's pavilion in its lawn). A venue
+  // the page knows by name is pinned at its building whatever point the feed carries: OSM's
+  // outline centroid in the model frame (Nominatim, Sep 16, 2026), or the address point where OSM
+  // has no outline. Keyed by name, not id, so a duplicate venue record lands right too
+  const VENUE_NAMED = [
+    [/underground arts/i, -1217.1, -1506.5], [/franklin music hall|electric factory/i, -421.2, -1516.7], [/union transfer/i, -904.1, -1759.3],
+    [/kimmel|verizon hall|perelman theat/i, -1792.5, -136.9], [/miller theat|merriam theat/i, -1723.6, -236.7], [/academy of music/i, -1745.3, -282.1],
+    [/milkboy/i, -1199.4, -501.3], [/^noto\b/i, -1218.3, -1379.1], [/stateside|live!? casino/i, -1714.1, 3954.0], [/td pavilion|mann center|mann music/i, -6667.7, -4179.9],
+    [/fillmore|foundry|brooklyn bowl/i, 839.3, -2224.4], [/theatre of living arts|\btla\b/i, -342.1, 455.8], [/nikki lopez/i, -269.4, 457.9],
+    [/johnny brenda/i, 898.3, -2617.4], [/kung fu necktie/i, 752.9, -2743.1], [/philamoca/i, -1084.6, -1854.7], [/ortlieb/i, 204.3, -2106.7],
+    [/forrest theat/i, -1268.2, -334.8], [/xfinity live/i, -1937.1, 4527.8], [/city winery/i, -967.9, -752.0], [/chris'? jazz/i, -1759.8, -539.6],
+    [/silk city/i, -111.4, -1756.3], [/rivers casino/i, 1057.2, -2029.4], [/cherry street pier/i, 485.9, -777.9], [/world caf/i, -3448.0, -739.9], [/tower theat/i, -9724.0, -1702.0],
+  ];
+  const venueNamed = (name) => { const s = String(name || ''); for (const v of VENUE_NAMED) if (v[0].test(s)) return [v[1], v[2]]; return null; };
   const btnConcerts = document.getElementById('btnConcerts');
   const _ccv = new V3();
   // the feed's names carry dashes and middots; the HUD's own rule is commas and colons
@@ -10930,12 +10984,13 @@
     // over another venue's show named the wrong room (Mike, Sep 11)
     const spots = [];
     for (const e of events) {
-      const lat = +e.venue.lat, lon = +e.venue.lon, fix = VENUE_AT[e.venue.id];
+      const lat = +e.venue.lat, lon = +e.venue.lon, fix = VENUE_AT[e.venue.id] || venueNamed(e.venue.name);
       const x = fix ? fix[0] : (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = fix ? fix[1] : -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
       if (!insideLimit(x, z)) continue;   // the suburbs' halls are outside the model
       let sp = spots.find((o) => Math.hypot(o.x - x, o.z - z) < CONCERT_MERGE);
-      if (!sp) { sp = { x, z, sx: 0, sz: 0, n: 0, venues: [] }; spots.push(sp); }
+      if (!sp) { sp = { x, z, sx: 0, sz: 0, n: 0, venues: [], fixed: true }; spots.push(sp); }
       sp.sx += x; sp.sz += z; sp.n++;   // the placard stands at the mean of its venues' points
+      if (!fix) sp.fixed = false;   // a spot the tables placed does not wander onto a score venue 400 m off (the casino stood on the stadium, Round 66)
       const key = e.venue.id || e.venue.name;
       let v = sp.venues.find((o) => o.key === key);
       if (!v) { v = { key, name: e.venue.name, rows: [] }; sp.venues.push(v); }
@@ -10950,7 +11005,7 @@
       // and hangs where a game's bubble would, above any score there (Ticketmaster's arena point
       // sits 390 m north-west of the building, in the park; the nearest score venue within
       // 500 m wins, Mike, Sep 11)
-      let sv = null, bd = 500;
+      let sv = null, bd = sp.fixed ? 120 : 500;
       for (const k of SCORE_KEYS) { const cand = SCORE_VENUES[k], d = Math.hypot(sp.x - cand.x, sp.z - cand.z); if (d < bd) { bd = d; sv = cand; } }
       if (sv) { sp.x = sv.x; sp.z = sv.z; }
       const gy = siteY(sp.x, sp.z, 'ground');

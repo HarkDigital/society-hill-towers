@@ -95,7 +95,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   concert placard over its venue from 9 am Philadelphia time on the day of the show until the show ends,
   judged by real time, never the pinned clock; one placard per building, the venues within 130 m each under their own
   heading (the Fillmore, the Foundry and Brooklyn Bowl are one building); the M key and the tenth layer bit; the pin lands on the roof
-  from the build's `ROOF_GRID`, or on the score venues' roofs, stacking over a game there.
+  from the build's `ROOF_GRID`, or on the score venues' roofs, stacking over a game there; a venue the page knows by name stands at its
+  building whatever point the feed carries (`VENUE_NAMED`, Round 66: Ticketmaster's geocoder misses half the halls by up to 1.2 km).
+  The Ben Franklin Bridge is Round 66's: Ben Franklin blue measured through the pipeline, the trusses over the roadway, granite portals.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances. The first visit
   meets the guide (Round 60: `#guide`, eight cards on dots from `GUIDE_SLIDES`, computer and phone copy by

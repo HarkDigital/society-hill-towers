@@ -122,7 +122,7 @@ the hard way are in `devlog.md` (Rounds 13, 15, 23, 25, 26, 39). Scripts marked 
 | `bake_schuylkill.py` → `schuylkill.json`, `lidar_cache/schuylkill_ways.json`, `lidar_cache/schuylkill_outline_raw.json` | The Schuylkill's real course and outline: the OSM `waterway=river` ways named Schuylkill over the city and the `natural=water` river multipolygons around them (two cached Overpass queries), the ways simplified to 3 m as `lines`, the outline faces the waterway threads united with a 60 m buffer of the ways and clipped to the modelled reach as `polys` (rings with island holes). The hand polyline in app.js is the fallback. |
 | `schuylkill.json` | Inlined as `SCHUYLKILL_DATA`: `riverCarve` takes the ground inside `polys` to the bed and ramps a high bank down within 40 m outside (a 10 m scanline raster for inside/outside, a 20 m edge grid for the distance), `riverCorridor` reads the same raster, and "Raising the rest of Philadelphia" draws the polygons flat at the river level through `flatShorePoly` (vertices carry their shore distance in the colour alpha for the shallows and foam in `liquify`), so the shoreline is the outline and not the ground grid. `lines` remain the centreline fallback. |
 | `bake_delaware.py` → `delaware.json`, `lidar_cache/delaware_coastline_raw.json` | The tidal Delaware's outline: OSM maps the estuary below Trenton as `natural=coastline`, not water polygons, so no packed tier holds its surface; the coastline ways from Marcus Hook to Bristol are polygonised against the query box and the faces holding seed points out on the river are kept (islands and tributary mouths fall out as holes), clipped to 48 km of the origin, `polys` the outline and `beyond` the outline minus the far ring's ground box. Round 55 coda. |
-| `delaware.json` | Inlined as `DELAWARE_DATA`: `delawareAt(x, z)` (point in the outline, holes excluded) is the shoreline test for the far ground's cells beyond the DEM grids and for the reach below the Navy Yard, and `beyond` is drawn flat at the river level over the apron so the river runs on to the fog past the world the camera can reach. |
+| `delaware.json` | Inlined as `DELAWARE_DATA`: `delawareAt(x, z)` (point in the outline, holes excluded) is the shoreline test for the far ground's cells beyond the DEM grids and for the whole reach from the Navy Yard south (`delawareTurn`, z past 6,300; Round 66 closed the two-row gap at 7,500 to 7,600 that stood as a strip across the channel), and `beyond` is drawn flat at the river level over the apron so the river runs on to the fog past the world the camera can reach. |
 | `wide_walls.b64` | The Mapillary wall colours and facade hints for the outer districts (magic 0x53485457): the 32-entry sRGB palette, then one palette-index byte per `wide.b64` building record, then one facade hint byte per building from the same block face (the fourth header word is the bytes per record, 2; 0 was the one-byte layout), trim class in bits 0-1 and window class in bits 2-3 (the fraction of the kept pixels that are light or dark in the imagery, classed by `bake_wall_colors.py`), 0 for a building without a colour. Decoded beside `wide.b64` by "Raising the outer districts": a building the imagery has seen takes its block face's colour instead of a palette draw, and the hint steers `fabricStyle` (siding, cornices, dark trim, new construction). |
 | `fetch_boundary.py` → `city_limit.json` | *venv.* The city line from OSM relation 188022, buffered 2 km into the flight limit; the raw relation is cached in `lidar_cache/phila_boundary_raw.json`. |
 | `fetch_city.py` → `osm_city_raw.json`, `dem_city.json`, `city_tiles/` | Resumable tiled fetch of the rest of the city: boxes A–D plus `river-wards` (Round 36) and `nw-gap` (Round 40) (`fetch_city.log`). |
@@ -232,7 +232,9 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   facade-local `aWallU/L/H`), merged into one vertex-coloured mesh on `cityMat`, small quads
   get footprint-fitted gables/hips (`quadGable`/`quadHip`, LiDAR-measured forms bypass the
   lottery). Wide: `WIDE_B64` decoded into lean indexed 700 m chunks (8-bit normals/colours)
-  sharing `cityMat`, plus outer roads, parks/water, the Ben Franklin Bridge, tall labels.
+  sharing `cityMat`, plus outer roads, parks/water, the Ben Franklin Bridge (Round 66: trusses
+  over the roadway, latticed towers, granite portals, stored-dark blue measured through the
+  pipeline), tall labels.
   Far ring: `CITY_B64` into 2,400 m chunks, 100 m ground strips, far roads, district labels.
   **All three load on phones** (Round 7 removed the old touch skip); touch instead keeps DPR
   ≤ 1.5, 2048 shadow maps, half the wide forest, no pole meshes and no deck shadows.
@@ -320,7 +322,8 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   direct aisstream socket while the relay is missing or stale (90 s / 60 s gates); `concertsPoll`
   reads `/concerts.json` (ops/concerts_bake.py, Ticketmaster's Philadelphia music listings baked every
   15 min with the key on the VPS) every 10 min, drops everything when the file is 3 h old, and
-  has no keyless fallback (Round 56).
+  has no keyless fallback (Round 56); a venue the page knows by name is pinned at its building
+  (`VENUE_NAMED`, Round 66: Ticketmaster's geocoder misses half the city's halls by up to 1.2 km).
 - **UI:** prefs persist under localStorage `philly3d.prefs` (seeded before `build()`; hash wins) and the
   first-visit guide under `philly3d.guide` (Round 60: `#guide`, `GUIDE_SLIDES`, the ? button and key);
   the share hash is `#p=x,y,z,yaw,pitch&t=YYYYMMDD,minutes&l=<bitmask>` (bits: 1 SEPTA, 2 Indego,
