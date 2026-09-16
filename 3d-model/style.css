@@ -980,8 +980,9 @@ body.touchfly .pad { display: flex; }
 @media (pointer: coarse) {
   #hint { display: none; }
   #osmcredit { display: none; }
-  #compass { right: calc(5px + env(safe-area-inset-right, 0px)); }
-  #flyctl { right: calc(5px + env(safe-area-inset-right, 0px)); }
+  #compass { right: 5px; }   /* Round 70: the safe-area inset (59 px on a notched phone) had held them 64 px off the edge */
+  #flyctl { right: 5px; }
+  #bar { bottom: 6px; }
   #padL.active { color: var(--paper-dim); }
   #guideCredits { display: inline; }
 }

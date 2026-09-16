@@ -1754,7 +1754,7 @@
   // plane never did (Mike: flat and two-dimensional). The whole deck is warmed by the sun's
   // colour and dimmed by the sky's cloud light (night, overcast, storm gloom). The dome's own
   // cumulus is kept to the horizon band, where the deck has hazed out
-  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 6 : 18;
+  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 12 : 18;   // 6 on touch until Round 70: 120 m steps jittered per pixel read as stipple (Mike: pixelated, not together)
   const cloudMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
     uniforms: Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), {
@@ -1812,7 +1812,7 @@
       '  vec3 sunlit = mix(vec3(1.0), cSun, 0.18);',
       '  vec3 acc = vec3(0.0); float T = 1.0; float glow = 0.0;',
       '  for (int i = 0; i < ' + CLOUD_STEPS + '; i++) {',
-      '    vec3 p = vW + rd * ((float(i) + 0.6 * jit) * ds);',
+      '    vec3 p = vW + rd * ((float(i) + ' + (isTouch ? '0.4' : '0.6') + ' * jit) * ds);',   // less jitter on touch: the steps are still coarser than the desktop's
       '    float hf = (p.y - ' + CLOUD_ALT.toFixed(1) + ') / ' + CLOUD_THICK.toFixed(1) + ';',
       '    vec2 cp = p.xz * 0.0008 + uCloudOff * 0.8 + vec2(0.09, -0.06) * hf;',
       '    float fe = cfbmL(cp) + cfbmH(cp) - cerode(hf) - thr;',

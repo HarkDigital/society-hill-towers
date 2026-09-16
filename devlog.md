@@ -3448,3 +3448,17 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   every credit), so the data terms hold with the line gone; desktop keeps the bottom line.
   Verified in the pane at 740 by 360 with touch emulation: the veil card centred, no hint, no
   credit line, Move and Look both labelled, the compass 5 px from the edge.
+
+## Round 70: the phone's clouds, and the buttons at the edge (Sep 16)
+
+- **Mike, with a phone screenshot: make the clouds a little less pixelated and more together;
+  move the bottom and right-hand buttons closer to the edge.** The deck marched 6 samples on
+  touch (18 on desktop), so each step was 120 m of slab and the per-pixel jitter that hides
+  banding (0.6 of a step) scattered every sample by up to 72 m from its neighbour's: the clouds
+  read as stipple, torn at every edge. `CLOUD_STEPS` is 12 on touch now with the jitter at 0.4
+  of a step, a quarter of the old scatter. Buttons: the compass and `#flyctl` had 5 px plus the
+  safe-area inset, and a notched phone reports 59 px on both sides in landscape, so they stood
+  64 px off the edge; on a coarse pointer they are 5 px flat now and the bar 6 px off the bottom
+  (the home indicator's inset dropped too, at his call). Verified by capture at 740 by 360 with
+  touch emulation: the mean step between neighbouring pixels inside the clouds fell from 8.4 to
+  2.8 grey levels (a third of the speckle), the offsets measured in the DOM at 5, 5 and 6 px.
