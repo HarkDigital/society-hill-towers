@@ -17,6 +17,7 @@ KX=85350, which put the far ring up to ~1.1 m east of the scene at its 16.5 km e
 the committed city.b64 keeps that offset until the next rerun.
 Run with the scratchpad venv python (needs shapely)."""
 import argparse, json, math, struct, base64, sys
+from pack_common import dedupe_stacked, nudge_coplanar   # Round 71: no two walls on one plane facing the same way
 from shapely.geometry import Polygon, LineString, box as sbox
 from shapely.ops import unary_union, polygonize
 from philly_frame import LON0, LAT0, KX, KZ
@@ -169,6 +170,7 @@ for el in ways:
 
 body = []
 nb = 0
+pending = []   # (poly, h, mh, bt, aw_, rw_, rf_): every strip and solo, guarded before it is emitted (Round 71)
 def emit(pg, h, mh, bt, aw_=-1, rw_=-1, rf_=(0, 0.0)):
     global nb, _rec
     ext = ring_budget(pg, 32, 1.0)
@@ -219,10 +221,34 @@ for (gx, gz, hb), members in merge_groups.items():
         aw_ = attr_pick(mine)
         rw_ = roof_pick([m[2] for m in mine])
         rf_ = mine[0][3] if len(mine) == 1 else (0, 0.0)
-        emit(Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2, aw_, rw_, rf_)
+        pending.append((Polygon(g.exterior).simplify(1.35), h, 0, 1 if h <= 12 else 2, aw_, rw_, rf_))
 for pg, h, bt, aw_, rw_, rf_ in solo:
-    emit(pg.simplify(0.8), h, 0, bt, aw_, rw_, rf_)
-print(f'buildings: {n_in} in -> {nb} packed', flush=True)
+    pending.append((pg.simplify(0.8), h, 0, bt, aw_, rw_, rf_))
+# Round 71 (Mike: a tower at East Falls still flickered): the guards pack_wide.py has carried
+# since the outer districts' z-fight rounds. Two outlines of one building (OSM draws some
+# twice, or a tower over its own podium) keep only the taller; a smaller record whose wall
+# lies on a larger one's plane facing the same way (a tower flush with the block strip its
+# podium merged into, two neighbouring outlines drawn over each other) is inset 1.05 m per
+# link, over this packer's 0.7 m grid, so the wall hides where they overlap and sits
+# imperceptibly recessed where it rises above
+items = []
+for i, (pg, h, mh, bt, aw_, rw_, rf_) in enumerate(pending):
+    ring = [(x, z) for x, z in list(pg.exterior.coords)[:-1]]
+    if len(ring) < 3: continue
+    items.append((pg.centroid.x, pg.centroid.y, pg.area, float(h), float(mh), ['c', ring, i]))
+kept, n_dropped = dedupe_stacked(items)
+n_nudged = 0
+for _pass in range(4):
+    _n = nudge_coplanar(kept, 1.5 * S)
+    n_nudged += _n
+    if not _n: break
+for it in kept:
+    pg, h, mh, bt, aw_, rw_, rf_ = pending[it[5][2]]
+    try: pg2 = Polygon(it[5][1])
+    except Exception: pg2 = pg
+    if pg2.is_empty or not pg2.is_valid: pg2 = pg
+    emit(pg2, h, mh, bt, aw_, rw_, rf_)
+print(f'buildings: {n_in} in -> {nb} packed ({n_dropped} stacked duplicates dropped, {n_nudged} coplanar walls inset)', flush=True)
 
 # roads (+ runways/taxiways as gray ribbons). Ways are SPLIT into runs at bbox exits
 # (point-filtering grew phantom chords across excursions) and long ways are split, not

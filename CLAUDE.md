@@ -61,7 +61,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   roof colour and OPA word instead of its 400 m cell's mode, so no tier reads darker past the outer districts' edge); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
   Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
-  and `pack_wide.py` insets any record whose wall shares a plane with a larger one; the look leans toward
+  and the packers inset any record whose wall shares a plane with a larger one facing the same way (`pack_common.py`, Round 71: the far ring
+  and the towns too, over their own coordinate grids) while the facade shader fades a floor pattern under 1.5 render pixels a floor (`rowPx`) rather than alias it; the look leans toward
   Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, one glass tint per building carried
   as the `aTint` vertex byte (never a world-position hash), brick, stone, panel and stucco textures in the facade
   shader with every joint in anti-aliased relief, cornice and wall-end shading, limestone trim and mortar, seamed

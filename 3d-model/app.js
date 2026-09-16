@@ -3885,6 +3885,15 @@
           '    float det = clamp(1.0 - (0.6 * fwidth(v) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    bool tower = (st == 2 || st == 6 || st == 7 || (st >= 14 && st <= 18));',
           '    if (tower) det = max(det, clamp(1.0 - (0.6 * fwidth(v) * uDetFar - 0.5) / 1.6, 0.0, 1.0));',
+          // Round 71 (Mike, with a phone recording: a tower at East Falls flickered): the floor
+          // bands of a tower drawn at under two render pixels per floor cannot be anti-aliased,
+          // only aliased, and on a phone the tower branch above kept them alive to six metres a
+          // pixel. Whatever the platform's stretch, the pattern goes when a floor spans under 1.5
+          // pixels (full by 3.5), and the same for the mullions along a wall seen edge-on; the
+          // far average below takes over, which is what those pixels can honestly show
+          '    float rowPx = 3.2 / max(fwidth(v), 1.0e-5);',
+          '    det *= clamp((rowPx - 1.5) / 2.0, 0.0, 1.0);',
+          '    float colK = clamp((1.55 / max(fwidth(uW), 1.0e-5) - 1.5) / 2.0, 0.0, 1.0);',
           '    float detU = clamp(1.0 - (0.6 * fwidth(uW) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    float wallTop = local ? vWallH - 0.25 : 1.0e4;',
           '    float brickish = step(diffuseColor.g * 1.12, diffuseColor.r);',
@@ -3989,7 +3998,7 @@
           '      float row = floor(v / fp), bandV = v - row * fp;',
           '      float ok = det * step(0.4, v) * step((row + 1.0) * fp, wallTop + 1.2);',
           '      float gBand = rectM(vec2(0.0, bandV), vec2(0.0, fp * 0.62), vec2(9999.0, fp * 0.56), aa) * ok;',
-          '      float mull = 1.0 - smoothstep(0.045, 0.045 + aa, abs(fract(uW / 1.55 + 0.5) - 0.5) * 1.55);',
+          '      float mull = colK * (1.0 - smoothstep(0.045, 0.045 + aa, abs(fract(uW / 1.55 + 0.5) - 0.5) * 1.55));',
           '      lit = 0.45 + 0.55 * shtHash(vec2(floor(uW / 3.1), row) + 5.3);',
           '      vec3 gc = vec3(0.10, 0.12, 0.15) + vec3(0.11, 0.10, 0.08) * lit;',
           '      col = mix(col, gc, gBand * 0.92);',
@@ -4042,7 +4051,7 @@
           '      float ok = det * step(0.4, v) * step((row + 1.0) * fp, wallTop + 1.0);',
           '      float gBand = rectM(vec2(0.0, bandV), vec2(0.0, fp * 0.6), vec2(9999.0, fp * 0.5), aa) * ok;',
           '      float slab = rectM(vec2(0.0, bandV), vec2(0.0, 0.16), vec2(9999.0, 0.32), aa) * ok;',
-          '      float post = 1.0 - smoothstep(0.09, 0.09 + aa, abs(fract(uW / 3.3 + 0.5) - 0.5) * 3.3);',
+          '      float post = colK * (1.0 - smoothstep(0.09, 0.09 + aa, abs(fract(uW / 3.3 + 0.5) - 0.5) * 3.3));',
           '      lit = 0.45 + 0.55 * shtHash(vec2(floor(uW / 3.3), row) + 6.1);',
           '      vec3 gc = vec3(0.09, 0.10, 0.12) + vec3(0.12, 0.10, 0.07) * lit;',
           '      col = mix(col, gc, gBand * 0.9);',

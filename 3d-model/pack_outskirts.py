@@ -11,6 +11,7 @@ gaps between them. Everything whose centroid an older fetch box owns (fetch_city
 the wide box, the south box as far east as pack_wide packs it) is skipped: those tiers draw it.
 Guards: an int16 saturation in clip() is fatal (outskirts.b64 is not written).
 Frame: philly_frame.py. Needs shapely."""
+from pack_common import dedupe_stacked, nudge_coplanar   # Round 71: no two walls on one plane facing the same way
 import json, math, os, struct, base64, sys
 from collections import Counter
 from shapely.geometry import Polygon, LineString, Point, box as sbox
@@ -116,6 +117,7 @@ for el in ways:
 
 body_b, body_r, body_a = [], [], []   # buildings, roads, areas: the blob is laid out in that order
 nb = 0
+pending = []   # every strip and solo, guarded before it is emitted (Round 71)
 packed_polys = []   # every emitted footprint, for the filler's collision tests
 def emit(pg, h, mh, bt):
     global nb, _rec
@@ -133,10 +135,29 @@ for (gx, gz, hb), pgs in merge_groups.items():
     geoms = list(merged.geoms) if merged.geom_type == 'MultiPolygon' else [merged]
     for g in geoms:
         if g.is_empty or g.area < 70: continue
-        emit(Polygon(g.exterior).simplify(2.0), h, 0, 1 if h <= 12 else 2)
+        pending.append((Polygon(g.exterior).simplify(2.0), h, 0, 1 if h <= 12 else 2))
 for pg, h, bt in solo:
-    emit(pg.simplify(1.0), h, 0, bt)
-print(f'buildings: {n_in} in ({n_owned} owned by other tiers) -> {nb} packed', flush=True)
+    pending.append((pg.simplify(1.0), h, 0, bt))
+# Round 71: pack_wide's stacked-record dedupe and coplanar-wall inset (pack_common.py), the
+# inset 1.5 times this packer's grid so the int16 rounding cannot cancel it
+items = []
+for i, (pg, h, mh, bt) in enumerate(pending):
+    ring = [(x, z) for x, z in list(pg.exterior.coords)[:-1]]
+    if len(ring) < 3: continue
+    items.append((pg.centroid.x, pg.centroid.y, pg.area, float(h), float(mh), ['c', ring, i]))
+kept, n_dropped = dedupe_stacked(items)
+n_nudged = 0
+for _pass in range(4):
+    _n = nudge_coplanar(kept, 1.5 * S)
+    n_nudged += _n
+    if not _n: break
+for it in kept:
+    pg, h, mh, bt = pending[it[5][2]]
+    try: pg2 = Polygon(it[5][1])
+    except Exception: pg2 = pg
+    if pg2.is_empty or not pg2.is_valid: pg2 = pg
+    emit(pg2, h, mh, bt)
+print(f'buildings: {n_in} in ({n_owned} owned by other tiers) -> {nb} packed ({n_dropped} stacked duplicates dropped, {n_nudged} coplanar walls inset)', flush=True)
 
 # ---- roads: runs split where a way leaves our ground (pack_city's _runs: a neighbour of a
 # kept point stays so the ribbon reaches the seam, but no chord ever spans an excursion)

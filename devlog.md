@@ -3462,3 +3462,35 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   (the home indicator's inset dropped too, at his call). Verified by capture at 740 by 360 with
   touch emulation: the mean step between neighbouring pixels inside the clouds fell from 8.4 to
   2.8 grey levels (a third of the speckle), the offsets measured in the DOM at 5, 5 and 6 px.
+
+## Round 71: the flicker at East Falls (Sep 16)
+
+- **Mike, with a phone recording: some buildings still have this flickering effect; the one near
+  the centre of the frame; knock it out model-wide.** The frames, pulled with AVFoundation
+  (there is no ffmpeg here; `frames.swift` in the scratchpad), showed a teal tower with a banded
+  grey face whose stripes drifted diagonally from frame to frame. The tower is the 89 m one by
+  the Schuylkill at East Falls (`city.b64` record at -4875, -6457), a far-ring solo. Two causes
+  were chased, and both are closed.
+- **Walls on one plane.** The far ring's packer had none of the guards the outer districts' has
+  carried since the z-fight rounds (`dedupe_stacked`, `nudge_coplanar`): they live in
+  `pack_common.py` now and pack_city.py and pack_outskirts.py run them too, with the inset
+  1.5 times each packer's coordinate grid (1.05 m on city.b64's 0.7 m, 1.5 m on the towns'
+  1.0 m) so the int16 rounding cannot cancel it. The re-pack found 16 shared same-facing walls
+  in the far ring (rowhouse strips flush with a taller neighbour, the Penn Medicine towers,
+  a pair at the airport) and none in the towns; the blobs' sizes and counts are unchanged
+  (180,107 and 25,526 buildings). `tests/test_pack_common.py` (6 tests) pins the guards. None
+  of the 16 was the East Falls tower.
+- **The bands.** The real cause was the facade shader: the tower branch keeps a tower's window
+  detail alive to 3.5 m a pixel on desktop and, through the phone's `uDetFar` 0.55, to 6.4 m a
+  pixel there, and a 3.2 m floor at six metres a pixel is half a pixel per floor: the horizontal
+  glass bands of the band styles (15, 18, 7) cannot be anti-aliased at that footprint, only
+  aliased, and the `aa` smoothstep of each edge leaves a moire that drifts with the camera. The
+  detail chain is now gated by render pixels per floor (`rowPx` = 3.2 / fwidth(v): nothing under
+  1.5, full above 3.5) and the mullions and balcony posts along a wall by pixels per bay
+  (`colK`), whatever the platform's stretch; past the gate the far average takes over, which is
+  what those pixels can honestly show. Measured at 740 by 360 with touch emulation on the
+  tower's face: the mean vertical step between neighbouring pixels fell from 44.5 to 12.8 grey
+  levels 700 m out and from 16.0 to 4.5 at 1.2 km, the sky control at 3.7 both times. On desktop
+  a tower's windows now fade between about 900 m and 2 km instead of holding to 3.4 km; the
+  night windows on phones fade at the same footprint, since a lit band under two pixels a floor
+  shimmered too. 49 tests pass.
