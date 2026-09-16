@@ -144,7 +144,7 @@
   // ratio down 15% when frames run long, back up when they stay short;
   // fragment cost scales with the square, so 1.75 -> 1.25 halves the shading
   // work. ?dpr=1.5 pins it.
-  const DPR = { cap: renderer.getPixelRatio(), min: 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, fast: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
+  const DPR = { cap: renderer.getPixelRatio(), min: isTouch ? 0.72 : 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, fast: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
   {
     const q = /[?&]dpr=([\d.]+)/.exec(location.search);
     if (q) { DPR.pinned = true; DPR.cur = clamp(+q[1], 0.5, 3); renderer.setPixelRatio(DPR.cur); }
@@ -170,7 +170,7 @@
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.06;
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.shadowMap.type = isTouch ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;   // Round 72: the soft filter's taps on every lit pixel are a phone's cost, not its look
   // the sun moves once a minute at most: the 4096^2 depth pass reruns only when
   // aimSun changes the box or the sun, when the static caster set changes, or
   // every 4th frame while vehicles move through the box (see frame())
@@ -14714,7 +14714,7 @@
     // arriving with the first Indego poll) gets one immediately
     const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0);
     const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + (movers ? 1 << 30 : 0);   // bikes cast too; movers switching off needs one last redraw
-    if ((movers && (frameNo & 3) === 0) || casterSig !== lastCasterSig) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }
+    if ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72)
     sky.position.copy(camera.position);
     cloudDeck.position.x = camera.position.x; cloudDeck.position.z = camera.position.z;
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);

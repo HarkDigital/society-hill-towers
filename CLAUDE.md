@@ -103,7 +103,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   building whatever point the feed carries (`VENUE_NAMED`, Round 66: Ticketmaster's geocoder misses half the halls by up to 1.2 km).
   The Ben Franklin Bridge is Round 66's: Ben Franklin blue measured through the pipeline, the trusses over the roadway, granite portals.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
-  visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances. The first visit
+  visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances; a phone also runs the plain shadow filter, redraws
+  the buses' depth pass every 12th frame and may drop its pixel ratio to 0.72 under load (Round 72). The first visit
   meets the guide (Round 60: `#guide`, eight cards on dots from `GUIDE_SLIDES`, computer and phone copy by
   `isTouch`, `localStorage philly3d.guide`), and the ? button beside the camera brings it back; the touch
   primer that followed the first touch is gone.

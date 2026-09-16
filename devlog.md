@@ -3494,3 +3494,25 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   a tower's windows now fade between about 900 m and 2 km instead of holding to 3.4 km; the
   night windows on phones fade at the same footprint, since a lit band under two pixels a floor
   shimmered too. 49 tests pass.
+
+## Round 72: the phone's frame rate (Sep 16)
+
+- **Mike: a lot of frame rate drop when moving around the city on mobile; is there anything we
+  can do?** Read from the frame loop rather than measured (no phone here, and the pane runs no
+  animation frames), three costs stood out that a phone pays and a desktop shrugs off, and none
+  changes the look. The shadow depth pass (2,048 square on touch, every caster in the box: the
+  core, the landmarks, the trees, the buses) redrew every fourth frame whenever SEPTA buses were
+  on, which they are by default, and again every time the camera crossed a third of the shadow
+  box: on a phone it redraws every twelfth frame for the buses now, a lag of a fifth of a second
+  on a bus's shadow that no one will see. The soft shadow filter (`PCFSoftShadowMap`) samples the
+  depth map several times for every lit pixel; a phone uses `PCFShadowMap`, the plain filter,
+  whose harder edge at 2,048 square over a 600 to 1,800 m box is a texel of 0.3 to 0.9 m. And
+  the adaptive pixel ratio, which steps down 15 percent whenever the median frame passes 22 ms,
+  stopped at 0.9 on every device; a phone may go to 0.72 now, a fifth of the pixels of its 1.5
+  cap, and climbs back the moment frames run short. What was already in place and stays: the
+  chunks frustum-cull after their upload, the lane paint, the light poles and the traffic are
+  off on touch, the grass is a third of the desktop's, the SEPTA badges are instanced sprites.
+  Next levers if it still stutters, each a visible trade: the cloud march back from 12 to 8 on
+  touch, fewer water octaves, fewer tree crowns near the camera. Verified in the pane with touch
+  emulation that the page builds, the shadows draw and the ratio floor reads 0.72; the frame rate
+  itself is Mike's to judge on the phone. 49 tests pass.
