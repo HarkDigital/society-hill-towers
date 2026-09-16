@@ -154,6 +154,7 @@ const("PARKING_SOUTH", text_of("parking_south.json", "null"))
 const("TOWERS", text_of("towers.json", "null"))
 const("SCHUYLKILL_DATA", text_of("schuylkill.json", "null"))
 const("DELAWARE_DATA", text_of("delaware.json", "null"))   # the tidal Delaware's outline (bake_delaware.py): the shoreline past the DEM and the sheets past the ground box
+const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud models (pack_clouds.py): the cloud field of Round 67
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
 let_blob("POLES_B64", "poles.b64")

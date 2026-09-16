@@ -1850,6 +1850,97 @@
   cloudDeck.frustumCulled = false; cloudDeck.renderOrder = -5;
   scene.add(cloudDeck);
 
+  // ---- low-poly cloud field (Round 67, Mike: use the low-poly models in 3d assets/Clouds to
+  // illustrate cloud cover, and keep the current setup in case he goes back). The nine cloud
+  // meshes (pack_clouds.py, clouds.json: each centred, width 1) are instanced over a field of
+  // 1,100 m cells about the camera, one layer at 2,100 m and, off touch, a second at 2,600 m.
+  // Each cell draws a cloud by hash with a probability that follows the cover, sized 340 to 800 m
+  // and growing with the cover, so a clear day scatters a few puffs and an overcast one packs
+  // the sky with grey slabs that overlap. The field drifts with the deck's wind. Flat facets are
+  // lit in the shader from the facet normal: white tops, blue-grey bellies, the sun's colour,
+  // the sky's cloud light (night, gloom, lightning). `?clouds=deck` brings the ray-marched
+  // deck back and leaves this field unbuilt; the ground's cloud shadows still follow the deck's
+  // noise field either way
+  const CLOUD_LOWPOLY = !/[?&]clouds=deck\b/.test(location.search) && typeof CLOUDS_DATA !== 'undefined' && !!CLOUDS_DATA && Array.isArray(CLOUDS_DATA.models) && CLOUDS_DATA.models.length > 0;
+  const CLOUD_FIELD = { cell: 1100, R: isTouch ? 8800 : 15400, layers: isTouch ? 1 : 2, group: new THREE.Group(), meshes: [], key: '', drift: new THREE.Vector2(), cap: 0, n: 0 };
+  const cloudFieldMat = !CLOUD_LOWPOLY ? null : new THREE.ShaderMaterial({
+    fog: true, extensions: { derivatives: true },
+    uniforms: Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), {
+      uCloud: skyMat.uniforms.uCloud, uCloudLight: skyMat.uniforms.uCloudLight, uSun: skyMat.uniforms.uSun, cSun: skyMat.uniforms.cSun,
+      uPost: postU.uPost, uExposure: postU.uExposure,
+    }),
+    vertexShader: [
+      'varying vec3 vW;',
+      '#include <common>', '#include <fog_pars_vertex>', '#include <logdepthbuf_pars_vertex>',
+      'void main(){ vec4 w = modelMatrix * instanceMatrix * vec4(position, 1.0); vW = w.xyz; vec4 mvPosition = viewMatrix * w; gl_Position = projectionMatrix * mvPosition;',
+      '#include <logdepthbuf_vertex>', '#include <fog_vertex>', '}',
+    ].join('\n'),
+    fragmentShader: [
+      'uniform float uCloud, uCloudLight, uPost, uExposure; uniform vec3 uSun, cSun; varying vec3 vW;',
+      '#include <common>', '#include <fog_pars_fragment>', '#include <logdepthbuf_pars_fragment>',
+      INV_GLSL,
+      'void main(){',
+      '  #include <logdepthbuf_fragment>',
+      '  vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));',   // the facet's normal: flat shading with no normal attribute
+      '  float lit = clamp(dot(n, normalize(uSun)), 0.0, 1.0);',
+      '  float heavy = smoothstep(0.6, 1.0, uCloud);',
+      '  vec3 top = mix(vec3(1.0), vec3(0.92, 0.92, 0.94), heavy);',           // an overcast sky's clouds are a bright grey
+      '  vec3 belly = mix(vec3(0.84, 0.88, 0.96), vec3(0.76, 0.78, 0.82), heavy);',   // seen from below always: the bellies stay bright, blued by the sky
+      '  vec3 col = mix(belly, top, smoothstep(-0.6, 0.7, n.y));',
+      '  col *= (0.78 + 0.22 * lit) * mix(vec3(1.0), cSun, 0.15) * uCloudLight;',   // a touch of the sun's colour: 0.35 read tan at 9 am
+      '  gl_FragColor = vec4(col, 1.0);',
+      '  if (uPost > 0.5) gl_FragColor.rgb = pUndo(gl_FragColor.rgb, uExposure);',   // the composite tone-maps: hand it the pre-image (gotcha 13)
+      '  #include <fog_fragment>',
+      '}',
+    ].join('\n'),
+  });
+  if (CLOUD_LOWPOLY) {
+    const F = CLOUD_FIELD, nC = Math.round(F.R / F.cell);
+    F.cap = Math.ceil((2 * nC + 1) * (2 * nC + 1) * F.layers / CLOUDS_DATA.models.length * 1.4);
+    for (const m of CLOUDS_DATA.models) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(m.v), 3));
+      g.setIndex(m.i);
+      const im = new THREE.InstancedMesh(g, cloudFieldMat, F.cap);
+      im.count = 0; im.frustumCulled = false; im.renderOrder = -4;
+      F.group.add(im); F.meshes.push(im);
+    }
+    scene.add(F.group);
+    cloudDeck.visible = false;
+  }
+  const _cfM = new THREE.Matrix4(), _cfQ = new THREE.Quaternion(), _cfS = new THREE.Vector3(), _cfP = new THREE.Vector3(), _cfUp = new THREE.Vector3(0, 1, 0);
+  function cloudFieldUpdate(dt) {
+    if (!CLOUD_LOWPOLY) return;
+    const F = CLOUD_FIELD;
+    if (!reducedMotion) F.drift.addScaledVector(wxWind, dt * 1000);   // the deck's drift in metres (its noise runs 0.0008 per metre, offset by 0.8 of uCloudOff)
+    F.group.position.set(F.drift.x, 0, F.drift.y);
+    const cover = clamp(WX.cover, 0, 1);
+    const cx = Math.round((camera.position.x - F.drift.x) / F.cell), cz = Math.round((camera.position.z - F.drift.y) / F.cell);
+    const key = cx + ',' + cz + ',' + Math.round(cover * 40);
+    if (key === F.key) return;
+    F.key = key;
+    const nC = Math.round(F.R / F.cell), counts = new Array(F.meshes.length).fill(0);
+    const p1 = clamp(cover * 1.25, 0, 1), p2 = F.layers > 1 ? clamp((cover - 0.35) / 0.65, 0, 1) : 0;
+    for (let L = 0; L < F.layers; L++) {
+      const pL = L ? p2 : p1;
+      if (pL <= 0) continue;
+      for (let j = cz - nC; j <= cz + nC; j++) for (let i = cx - nC; i <= cx + nC; i++) {
+        const seed = i * 0.37193 + j * 0.71271 + L * 5.317;
+        if (hash01(seed) > pL) continue;
+        const mi = Math.floor(hash01(seed + 1.1) * F.meshes.length);
+        if (counts[mi] >= F.cap) continue;
+        const w = (340 + 460 * hash01(seed + 2.2)) * (1 + 0.8 * cover);   // the cloud's width in metres: 340 to 800 on a clear day, to 1,440 overcast
+        _cfP.set((i + (hash01(seed + 3.3) - 0.5) * 0.8) * F.cell, 2100 + L * 500 + (hash01(seed + 4.4) - 0.5) * 160, (j + (hash01(seed + 5.5) - 0.5) * 0.8) * F.cell);
+        _cfQ.setFromAxisAngle(_cfUp, hash01(seed + 6.6) * Math.PI * 2);
+        _cfS.set(w, w * 0.85, w);
+        _cfM.compose(_cfP, _cfQ, _cfS);
+        F.meshes[mi].setMatrixAt(counts[mi]++, _cfM);
+      }
+    }
+    F.n = 0;
+    for (let k = 0; k < F.meshes.length; k++) { F.meshes[k].count = counts[k]; F.meshes[k].instanceMatrix.needsUpdate = true; F.n += counts[k]; }
+  }
+
   // environment map for glass: sky gradient + sun glare + dark ground and
   // building silhouettes so reflections have structure; refreshed as the sun moves
   const envScene = new THREE.Scene();
@@ -5914,8 +6005,9 @@
       // parts measured to one part the building's own palette draw (a face's median is
       // one colour for the whole block; the draw gives the houses back the variety a
       // real face has), with a second jitter on top; towers and stadiums keep theirs
-      if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; } }
-      if (h <= 45 && t <= 6) { wideColSample(c, i); colStat('wide', c); }   // the tier's colours, for the far ring's draw (Round 57)
+      let photo = false;
+      if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; photo = true; } }
+      if (h <= 45 && t <= 6) { wideColSample(c, i); colStat('wide', c); colStat(photo ? 'widePhoto' : 'widePlain', c); }   // the tier's colours, for the far ring's draw (Round 57)
       const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
       const spec = h > 45 ? towerAt(cx, cz, h) : null;   // glass-tagged parts join the matching too (Round 54)
       let style;
@@ -14606,6 +14698,7 @@
     sky.position.copy(camera.position);
     cloudDeck.position.x = camera.position.x; cloudDeck.position.z = camera.position.z;
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
+    cloudFieldUpdate(dt);
     if (!reducedMotion) waterU.uTime.value += dt;
     grassUpdate();
     waterU.uSun.value.copy(glintDir);
@@ -14697,7 +14790,7 @@
       document.body.appendChild(devHud);
       window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
-      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob

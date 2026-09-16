@@ -3373,3 +3373,29 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   road loops the same way, and the on-land approaches keep their ribbons. The bridge block
   reads its anchorages from the shared `BFB_A`/`BFB_B`. Verified by capture from over the
   Philadelphia anchorage looking down the span.
+
+## Round 67: low-poly clouds (Sep 16)
+
+- **Mike: look in 3d assets/Clouds and use the low-poly models to illustrate cloud cover; keep
+  the current setup intact in case I go back.** `Clouds.FBX` is a 3ds Max export of nine
+  faceted cloud meshes (31 to 132 vertices, 58 to 260 triangles, Y-up, all triangles);
+  `pack_clouds.py` reads it with a stdlib binary-FBX reader (version 7400: 32-bit node records,
+  zlib arrays), centres each mesh on its bounding box, scales its width to 1 and writes
+  `clouds.json` (25 KB, inlined as `CLOUDS_DATA`). The page instances them over a field of
+  1,100 m cells about the camera (`CLOUD_FIELD`, `cloudFieldUpdate`: 15.4 km out on desktop
+  with a second layer 500 m higher, 8.8 km and one layer on touch): each cell draws a cloud by
+  hash with probability 1.25 times the cover (the second layer from 0.35 cover), sized 340 to
+  800 m and growing 80 percent by full cover, so a clear day (8 percent) scatters a few puffs
+  and an overcast one (92 percent, 1,582 instances) packs the sky with overlapping slabs; the
+  field drifts with the deck's wind (its noise runs 0.0008 per metre, so `wxWind` times 1,000
+  is metres per second) and rebuilds when the camera or the drift crosses a cell or the cover
+  moves 2.5 percent. One ShaderMaterial lights the facets from the derivative normal: white
+  tops, bellies blued by the sky (seen from below always, they stay bright), a touch of the
+  sun's colour (0.35 of `cSun` read tan at 9 am; 0.15 now), the sky's cloud light for night,
+  gloom and lightning, an overcast grey by `uCloud`, the pre-image handed to the post composite
+  (gotcha 13) and the fog. The ray-marched deck stays whole behind `?clouds=deck`, and the
+  ground's cloud shadows still follow the deck's noise field in both modes (an open item: the
+  shadows do not fall under these clouds). First cut: 750 m cells and 170 to 400 m clouds read
+  as a dense band of small dark lumps at the horizon, and the bellies at 0.66 grey turned every
+  sky dour; larger, fewer and brighter fixed both. `__dbg.clouds()`. Verified by capture at
+  8, 45 and 92 percent cover from the ground and from the flight ceiling. 43 tests pass.
