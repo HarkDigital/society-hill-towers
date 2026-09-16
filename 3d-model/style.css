@@ -973,11 +973,23 @@ body.touchfly .pad { display: flex; }
 @media (pointer: coarse) {
   #searchInput, #timepanel input[type="date"] { font-size: 16px; }
 }
+/* phones (Round 69, Mike): no hint box and no credit line (the guide's Credits link keeps every attribution one
+   tap away), Move labelled through the flight like Look, the compass and the climb buttons 5 px off the right edge */
+@media (pointer: coarse) {
+  #hint { display: none; }
+  #osmcredit { display: none; }
+  #compass { right: calc(5px + env(safe-area-inset-right, 0px)); }
+  #flyctl { right: calc(5px + env(safe-area-inset-right, 0px)); }
+  #padL.active { color: var(--paper-dim); }
+  #guideCredits { display: inline; }
+}
+#guideCredits { display: none; float: right; color: var(--paper-faint); text-decoration: none; border-bottom: 1px solid var(--line); }   /* phones only: the credit line is gone there */
+#guideCredits:hover, #guideCredits:focus-visible { color: var(--paper); }
 
 /* ---------- short viewports (a landscape phone): Enter and the load line must stay reachable ---------- */
 @media (max-height: 460px) {
-  #veil { overflow-y: auto; align-items: flex-start; }
-  #veil .card { padding: 12px 24px 16px; }
+  #veil { overflow-y: auto; align-items: center; }   /* centred on a landscape phone (Round 69, Mike); the card's auto margins keep it scrollable when taller than the screen */
+  #veil .card { padding: 12px 24px 16px; margin: auto; }
   #veil .veilmark { width: 34px; height: 34px; margin-bottom: 6px; }
   #veil .kicker { margin-bottom: 8px; }
   #veil h2 { font-size: clamp(20px, 5vh, 28px); }

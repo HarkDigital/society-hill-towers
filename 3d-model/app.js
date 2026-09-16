@@ -11877,6 +11877,8 @@
   // (Escape and the close button still close it, see the keydown handler)
   const creditsLink = document.getElementById('creditsLink');
   if (creditsLink) creditsLink.addEventListener('click', (e) => { e.preventDefault(); openAbout(); });
+  const guideCredits = document.getElementById('guideCredits');   // phones: the guide carries the Credits link the hidden bottom line used to (Round 69)
+  if (guideCredits) guideCredits.addEventListener('click', (e) => { e.preventDefault(); const gc = document.getElementById('btnGuideClose'); if (gc) gc.click(); openAbout(); });
 
 
   // ---------------------------------------------------------------- live flights

@@ -42,8 +42,9 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   Pages can serve as a file. Every asset is inlined (fonts, icons, data).
 - `build.py` must keep its guards: missing/undersized input, leftover `{{PLACEHOLDER}}`,
   `</script` inside a blob, page over 25 MB.
-- The OpenStreetMap credit link (`#osmcredit`, bottom credit line) must stay. Data terms are
-  in `DATA-LICENSE.md`; code is MIT (`LICENSE`).
+- The OpenStreetMap credit link (`#osmcredit`, bottom credit line) must stay on desktop; on phones (coarse pointer) the
+  line is hidden at Mike's call (Round 69) and the guide's Credits link (`#guideCredits`) opens the About panel with every
+  credit instead. Data terms are in `DATA-LICENSE.md`; code is MIT (`LICENSE`).
 - No em dashes or middot separators in any user-facing string (veil, hints, cards, panels,
   tooltips, loading messages). Commas, colons, sentences. Docs and code comments are exempt.
 - Owner decisions that stand until Mike says otherwise: landmark labels OFF by default (the

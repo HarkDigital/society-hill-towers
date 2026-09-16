@@ -3430,3 +3430,21 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   only behind `?clouds=lowpoly`, so it costs nothing until he wants another look; `?clouds=deck`
   no longer means anything. Verified in the pane: the deck draws by default and `__dbg.clouds()`
   reports the field off.
+
+## Round 69: the phone's screen (Sep 16)
+
+- **Mike, with two phone screenshots: centre the loading screen's content on mobile, remove
+  the copyright line at the bottom, remove the explainer box at bottom left, put "Move" in the
+  centre of its circle the way "Look" is, and move the compass and the climb buttons as far
+  right as they go with 5 px of padding.** The veil's short-viewport rule (max-height 460 px)
+  had pinned the card to the top so the Enter button stayed reachable on a scrolling screen; it
+  is centred now, with auto margins on the card so it still scrolls when taller than the
+  screen. Under a coarse pointer the hint box and the credit line are hidden, the compass and
+  `#flyctl` sit 5 px (plus the safe-area inset) off the right edge, and the Move pad keeps its
+  label through the flight (it went transparent under the stick before; the hint box had also
+  covered its lower half, which is what made the word look off-centre). The OpenStreetMap
+  attribution stays reachable on phones through a Credits link in the guide's kicker
+  (`#guideCredits`, phones only: it closes the guide and opens the About panel, which carries
+  every credit), so the data terms hold with the line gone; desktop keeps the bottom line.
+  Verified in the pane at 740 by 360 with touch emulation: the veil card centred, no hint, no
+  credit line, Move and Look both labelled, the compass 5 px from the edge.
