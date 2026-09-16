@@ -973,6 +973,8 @@ body.touchfly .pad { display: flex; }
 @media (pointer: coarse) {
   #searchInput, #timepanel input[type="date"] { font-size: 16px; }
 }
+#guideCredits { display: none; float: right; color: var(--paper-faint); text-decoration: none; border-bottom: 1px solid var(--line); }   /* phones only: the credit line is gone there */
+#guideCredits:hover, #guideCredits:focus-visible { color: var(--paper); }
 /* phones (Round 69, Mike): no hint box and no credit line (the guide's Credits link keeps every attribution one
    tap away), Move labelled through the flight like Look, the compass and the climb buttons 5 px off the right edge */
 @media (pointer: coarse) {
@@ -983,8 +985,6 @@ body.touchfly .pad { display: flex; }
   #padL.active { color: var(--paper-dim); }
   #guideCredits { display: inline; }
 }
-#guideCredits { display: none; float: right; color: var(--paper-faint); text-decoration: none; border-bottom: 1px solid var(--line); }   /* phones only: the credit line is gone there */
-#guideCredits:hover, #guideCredits:focus-visible { color: var(--paper); }
 
 /* ---------- short viewports (a landscape phone): Enter and the load line must stay reachable ---------- */
 @media (max-height: 460px) {
