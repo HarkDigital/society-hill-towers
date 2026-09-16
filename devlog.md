@@ -3422,3 +3422,11 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   from the same pose and from over Nicetown looking north: nothing blown out, the industrial
   boxes and the rowhouse strips a shade paler. The Round 65 note stands as history: the
   coverage difference is real, and this round compensates it rather than closing it.
+
+## Round 67 coda: the deck again (Sep 16)
+
+- **Mike: the low-poly clouds are not working, revert that.** The ray-marched deck is the
+  default sky again. The field stays in the code and its 25 KB of models in the page, built
+  only behind `?clouds=lowpoly`, so it costs nothing until he wants another look; `?clouds=deck`
+  no longer means anything. Verified in the pane: the deck draws by default and `__dbg.clouds()`
+  reports the field off.

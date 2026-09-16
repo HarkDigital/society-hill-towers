@@ -1858,10 +1858,11 @@
   // and growing with the cover, so a clear day scatters a few puffs and an overcast one packs
   // the sky with grey slabs that overlap. The field drifts with the deck's wind. Flat facets are
   // lit in the shader from the facet normal: white tops, blue-grey bellies, the sun's colour,
-  // the sky's cloud light (night, gloom, lightning). `?clouds=deck` brings the ray-marched
-  // deck back and leaves this field unbuilt; the ground's cloud shadows still follow the deck's
-  // noise field either way
-  const CLOUD_LOWPOLY = !/[?&]clouds=deck\b/.test(location.search) && typeof CLOUDS_DATA !== 'undefined' && !!CLOUDS_DATA && Array.isArray(CLOUDS_DATA.models) && CLOUDS_DATA.models.length > 0;
+  // the sky's cloud light (night, gloom, lightning). Round 67 coda (Mike: the low-poly clouds
+  // are not working, revert): the ray-marched deck is the default again and this field is built
+  // only behind `?clouds=lowpoly`; the ground's cloud shadows follow the deck's noise field
+  // either way
+  const CLOUD_LOWPOLY = /[?&]clouds=lowpoly\b/.test(location.search) && typeof CLOUDS_DATA !== 'undefined' && !!CLOUDS_DATA && Array.isArray(CLOUDS_DATA.models) && CLOUDS_DATA.models.length > 0;
   const CLOUD_FIELD = { cell: 1100, R: isTouch ? 8800 : 15400, layers: isTouch ? 1 : 2, group: new THREE.Group(), meshes: [], key: '', drift: new THREE.Vector2(), cap: 0, n: 0 };
   const cloudFieldMat = !CLOUD_LOWPOLY ? null : new THREE.ShaderMaterial({
     fog: true, extensions: { derivatives: true },

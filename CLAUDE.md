@@ -65,9 +65,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   as the `aTint` vertex byte (never a world-position hash), brick, stone, panel and stucco textures in the facade
   shader with every joint in anti-aliased relief, cornice and wall-end shading, limestone trim and mortar, seamed
   roof membranes (Round 54), a deep-blue sky with a ray-marched cumulus deck (a 720 m slab from 1,900 m,
-  `CLOUD_STEPS` samples, sunlit tops and self-shaded bellies; since Round 67 the default sky is instead a field of Mike's nine low-poly cloud
-  models from `3d assets/Clouds` (`CLOUDS_DATA`, `CLOUD_FIELD`: 750 m cells, a probability, a size and a grey that follow the cover, drifting with
-  the wind, flat facets lit in their own shader; `?clouds=deck` brings the ray-marched deck back, which stays intact) whose shadows slant by the
+  `CLOUD_STEPS` samples, sunlit tops and self-shaded bellies; Round 67's field of Mike's nine low-poly cloud models from `3d assets/Clouds`
+  (`CLOUDS_DATA`, `CLOUD_FIELD`) was reverted the same day at his call and is built only behind `?clouds=lowpoly`) whose shadows slant by the
   sun, the real Moon (Round 64: `lunar()` checks against JPL DE421 within 0.06 degrees; drawn `MOON_SCALE` 2.0 times its
   true size with the near side's maria in a celestial-north frame, only its lit part ever drawn, by day washed by
   the sky, never through the sun's glare), clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, slate-teal body-colour water (`COLORS.water` 0x163038, Round 54) as a moving noise field with calm
