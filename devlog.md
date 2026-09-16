@@ -3516,3 +3516,25 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   touch, fewer water octaves, fewer tree crowns near the camera. Verified in the pane with touch
   emulation that the page builds, the shadows draw and the ratio floor reads 0.72; the frame rate
   itself is Mike's to judge on the phone. 49 tests pass.
+
+## Round 73: the moon's glare, and the phone again (Sep 16)
+
+- **Mike: still choppy on the phone at times; lessen the moon glare and make it proportionate to
+  how much of the moon is visible.** The moon first. Its halo was 0.10 of white at the disc,
+  falling off by exp(-0.22 (angle / radius)^2) and scaled by the lit fraction; it is 0.06 now,
+  falls off by 0.32, and scales by the square of the lit fraction, so a half moon carries a
+  quarter of the full moon's halo and a crescent next to none. The disc's night brightness
+  follows the fraction too: the full moon at 0.9 of the white it was, a half moon at 0.7, a
+  crescent's sliver at 0.6; the day wash is untouched, and the disc stays out of the bloom
+  (the dome's alpha masks everything but the sun). Measured on the desktop full moon of Sep 26
+  at 9:30 pm through the post pipeline: the disc's mean fell from 141 to 126 grey levels and
+  the ring 1.2 to 2 radii out from 41 to 36 over the sky (the rest of that ring is the disc's
+  edge spread by the capture), with a crescent captured for the proportional case.
+- **The phone, round two.** The levers the last round named: the cloud march 12 to 9 on touch
+  with the jitter at 0.35 (the stipple metric sat at 8.4 at 6 steps and 2.8 at 12, so 9 lands
+  near 4); the water skips its two finest octaves on touch (2.6 and 1.2 m, under a phone's pixel
+  almost everywhere, two of five noise passes gone from every water pixel); the shadow box
+  re-aims after half its extent instead of a third, so the depth pass redraws half as often on
+  the move; and the grass field is 6,000 tufts, from 9,000. Not yet touched, the next candidates
+  if it still stutters: the SEPTA poll (370 KB parsed on the main thread every 25 s) could move
+  to a worker, and the phone's pixel cap of 1.5 could fall to 1.25. 49 tests pass.

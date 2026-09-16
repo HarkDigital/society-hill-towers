@@ -1705,9 +1705,14 @@
       '      float alb = (1.0 - 0.30 * m) * (0.90 + 0.16 * fn) + 0.14 * (1.0 - smoothstep(0.0, 0.08, length(fp - vec2(-0.13, -0.70))));\n' +   // Tycho's bright spot
       '      vec3 mc = vec3(0.93, 0.94, 0.90) * alb;\n' +
       '      vec3 dayM = mix(col, max(col, mc * 0.92), 0.6);\n' +
-      '      col = mix(col, mix(mc, dayM, uMoonD), inD * uMoonI * lit);\n' +
+      // the disc's night brightness follows the lit fraction too (Round 73): the full moon at
+      // 0.9 of the white it was, a half moon at 0.7, a crescent's sliver at 0.6; the day wash is untouched
+      '      col = mix(col, mix(mc * (0.50 + 0.40 * uMoonK), dayM, uMoonD), inD * uMoonI * lit);\n' +
       '    }\n' +
-      '    col += vec3(0.93, 0.94, 0.90) * exp(-pow(mAng / uMoonR, 2.0) * 0.22) * 0.10 * uMoonI * uMoonK * (1.0 - uMoonD);\n' +
+      // the halo (Round 73, Mike: lessen the glare and make it proportionate to how much of the
+      // moon is visible): 0.06 at the full moon, by the square of the lit fraction (a half moon
+      // a quarter of it, a crescent next to none), and tighter about the disc than the 0.22 it was
+      '    col += vec3(0.93, 0.94, 0.90) * exp(-pow(mAng / uMoonR, 2.0) * 0.32) * 0.06 * uMoonI * uMoonK * uMoonK * (1.0 - uMoonD);\n' +
       '  }\n' +
       // cumulus: a four-octave fbm on the sky plane, its cover from the weather; a second
       // sample toward the sun lights the tops and leaves the bases in shade, the thick
@@ -1754,7 +1759,7 @@
   // plane never did (Mike: flat and two-dimensional). The whole deck is warmed by the sun's
   // colour and dimmed by the sky's cloud light (night, overcast, storm gloom). The dome's own
   // cumulus is kept to the horizon band, where the deck has hazed out
-  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 12 : 18;   // 6 on touch until Round 70: 120 m steps jittered per pixel read as stipple (Mike: pixelated, not together)
+  const CLOUD_ALT = 1900, CLOUD_THICK = 720, CLOUD_STEPS = isTouch ? 9 : 18;   // 12 in Round 70, 9 since Round 73 (still choppy on the phone);   // 6 on touch until Round 70: 120 m steps jittered per pixel read as stipple (Mike: pixelated, not together)
   const cloudMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: true,
     uniforms: Object.assign(THREE.UniformsUtils.clone(THREE.UniformsLib.fog), {
@@ -1812,7 +1817,7 @@
       '  vec3 sunlit = mix(vec3(1.0), cSun, 0.18);',
       '  vec3 acc = vec3(0.0); float T = 1.0; float glow = 0.0;',
       '  for (int i = 0; i < ' + CLOUD_STEPS + '; i++) {',
-      '    vec3 p = vW + rd * ((float(i) + ' + (isTouch ? '0.4' : '0.6') + ' * jit) * ds);',   // less jitter on touch: the steps are still coarser than the desktop's
+      '    vec3 p = vW + rd * ((float(i) + ' + (isTouch ? '0.35' : '0.6') + ' * jit) * ds);',   // less jitter on touch: the steps are still coarser than the desktop's
       '    float hf = (p.y - ' + CLOUD_ALT.toFixed(1) + ') / ' + CLOUD_THICK.toFixed(1) + ';',
       '    vec2 cp = p.xz * 0.0008 + uCloudOff * 0.8 + vec2(0.09, -0.06) * hf;',
       '    float fe = cfbmL(cp) + cfbmH(cp) - cerode(hf) - thr;',
@@ -2543,10 +2548,11 @@
           '    q = wq / (6.5 * wsc) + vec2(uTime * 0.55 * wsp, 11.3); k = 0.2 * w3;\n' +
           '    q += 0.28 * vec2(wvn(q * 0.4 + vec2(uTime * 0.13 * wsp, 17.0)) - 0.5, wvn(q * 0.4 + vec2(23.0, -uTime * 0.11 * wsp)) - 0.5);\n' +
           '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
+          (isTouch ? '' :   // the two finest octaves are under a phone's pixel almost everywhere: skipped there (Round 73)
           '    q = wq / (2.6 * wsc) + vec2(uTime * 0.55 * wsp, 27.1); k = 0.14 * w4;\n' +
           '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
           '    q = wq / (1.2 * wsc) - vec2(uTime * 0.8 * wsp, 41.9); k = 0.09 * (1.0 - smoothstep(0.12, 0.55, fpx));\n' +
-          '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n' +
+          '    gg = vec2(wvn(q + vec2(e, 0.0)) - wvn(q - vec2(e, 0.0)), wvn(q + vec2(0.0, e)) - wvn(q - vec2(0.0, e))) / (2.0 * e); g += gg * k;\n') +
           '  }\n' +
           '  g = wd * g.x + wp * g.y * 1.55;\n' +
           '  g *= wamp * wfade * (0.5 + 0.6 * wpat) * (0.5 + 0.5 * smoothstep(0.0, 0.25, wsh));\n' +
@@ -8879,7 +8885,7 @@
   // of standing on it) sown on the park and lawn rings within GRASS_R of the camera, re-sown
   // as the camera moves, a few thousand a frame so nothing hitches; they sway in the vertex
   // shader on the water's clock and darken under the cloud field. Desktop 28k, touch 9k.
-  const GRASS_N = isTouch ? 9000 : 28000, GRASS_R = isTouch ? 140 : 160;
+  const GRASS_N = isTouch ? 6000 : 28000, GRASS_R = isTouch ? 140 : 160;   // 9,000 on touch until Round 73
   // the bare ground sows too (Round 52): outside the core the meadow beside a park is the same
   // ground cover, so a park in a tuft field beside a bare meadow would still show its boundary.
   // A second source, the disc outside CORE_EXT, at this share of the park density; samples on a
@@ -14697,7 +14703,7 @@
       const px = onFoot ? walk.pos.x : camera.position.x, pz = onFoot ? walk.pos.z : camera.position.z;
       const ext = onFoot ? 300 : Math.round(clamp(320 + camera.position.y * 0.9, 300, 900) / 100) * 100;
       const c = sun.target.position;
-      if (ext !== lastAim.extent || Math.hypot(px - c.x, pz - c.z) > ext * 0.35) aimSun(px + tmpV.x * ext * 0.35, pz + tmpV.z * ext * 0.35, ext);
+      if (ext !== lastAim.extent || Math.hypot(px - c.x, pz - c.z) > ext * (isTouch ? 0.5 : 0.35)) aimSun(px + tmpV.x * ext * 0.35, pz + tmpV.z * ext * 0.35, ext);   // a phone re-aims (and redraws the depth pass) half as often (Round 73)
     }
 
     // compass: rotation = -bearing of camera forward (write only on change)
