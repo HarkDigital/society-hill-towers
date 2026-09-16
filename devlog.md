@@ -3362,3 +3362,14 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   springing and crown blocks, the stepped housing above with a string course). The floor narrows
   to 30 m inside the anchorages and the walkways stop there. Traffic rides `deckY` + 1.3 (the
   asphalt's top). Verified by capture from the river, the Camden tower and the Philadelphia deck.
+
+## Round 66 coda: no road under the bridge (Sep 16)
+
+- **Mike, with a screenshot: the road under the bridge should not be visible.** The wide road
+  loop turns a major road's river crossing into a flat "deck" 20 m over the water, and the Ben
+  Franklin's OSM carriageways got one beneath the real roadway at 41 m, a grey band the length
+  of the span. The Whitman has had `wwbNear` since Round 12 for exactly this; `bfbNear(x, z)`
+  (60 m of the chord between the anchorages) now skips the deck segments in the wide and far
+  road loops the same way, and the on-land approaches keep their ribbons. The bridge block
+  reads its anchorages from the shared `BFB_A`/`BFB_B`. Verified by capture from over the
+  Philadelphia anchorage looking down the span.

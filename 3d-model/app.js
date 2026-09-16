@@ -2153,6 +2153,17 @@
     }
     return best < r * r;
   }
+  // Ben Franklin crossing: the custom suspension deck owns the water between its anchorages
+  // (Round 66 coda, Mike: the road under the bridge should not be visible). The packed
+  // motorway there became a flat "deck" 20 m over the water, a grey band beneath the real
+  // roadway at 41 m; the on-land approaches keep their ribbons, as the Whitman's do
+  const BFB_A = [400, -940], BFB_B = [1360, -722];
+  function bfbNear(x, z, r) {
+    r = r || 60;
+    const dx = BFB_B[0] - BFB_A[0], dz = BFB_B[1] - BFB_A[1], L2 = dx * dx + dz * dz;
+    const tt = clamp(((x - BFB_A[0]) * dx + (z - BFB_A[1]) * dz) / L2, 0, 1);
+    return Math.hypot(BFB_A[0] + dx * tt - x, BFB_A[1] + dz * tt - z) < r;
+  }
 
   // under the Jersey viaduct: within 30 m of the alignment east of the river bank and
   // short of its landing. The packed I-76 (both carriageways and the ramp ends that
@@ -6228,7 +6239,7 @@
           if (t > 2) { if (aLow && qLow) continue; }         // minor roads don't bridge rivers
           else deck = t === 0 ? 20 : 13;                     // major roads become bridge decks
         }
-        if (deck && wwbNear(mx, mz)) continue;               // the custom WWB deck owns its crossing
+        if (deck && (wwbNear(mx, mz) || bfbNear(mx, mz))) continue;   // the custom WWB and BFB decks own their crossings
         if (ovpOwned(a[0], a[1], q[0], q[1])) continue;      // a baked overpass deck or sunken roadway owns it
         // a wide segment lying ALONG a core street is a duplicate and would z-fight it
         if (a[0] > CORE_EXT.x0 - 38 && a[0] < CORE_EXT.x1 + 38 && a[1] > CORE_EXT.z0 - 38 && a[1] < CORE_EXT.z1 + 38 &&
@@ -6830,7 +6841,7 @@
     // Ben Franklin blue. Every colour here is a stored-dark value for the legacy pipeline
     // (handoff gotcha 11): the Round 1 '#8fb4c6' read as white under the noon sun
     {
-      const A = [400, -940], B = [1360, -722];           // anchorages (Philadelphia -> Camden), per OSM way 575987106
+      const A = BFB_A, B = BFB_B;                         // anchorages (Philadelphia -> Camden), per OSM way 575987106
       const dx = B[0] - A[0], dz = B[1] - A[1], L = Math.hypot(dx, dz);
       const ux = dx / L, uz = dz / L, ry = Math.atan2(-uz, ux);
       const yA = siteY(A[0], A[1], 'ground') + 12, yMid = TERRAIN.water + 41;
@@ -7305,7 +7316,7 @@
           if (t > 2) { if (aLow && qLow) continue; }
           else deck = t === 0 ? 20 : 13;
         }
-        if (deck && wwbNear(mx, mz)) continue;         // the custom WWB deck owns its crossing
+        if (deck && (wwbNear(mx, mz) || bfbNear(mx, mz))) continue;   // the custom WWB and BFB decks own their crossings
         if (t <= 1 && wwbUnder(mx, mz)) continue;      // and its Jersey viaduct: no flat twin beneath
         if (wideSeam && inWide(a) && inWide(q)) continue;   // the wide set paves there (the far ring only: the outskirts packer already cedes the wide box, and the wide data ends at lat 39.890 while this margin runs to z 6600)
         if (ovpOwned(a[0], a[1], q[0], q[1])) continue; // a baked overpass deck owns it
