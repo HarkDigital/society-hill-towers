@@ -3399,3 +3399,26 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   as a dense band of small dark lumps at the horizon, and the bellies at 0.66 grey turned every
   sky dour; larger, fewer and brighter fixed both. `__dbg.clouds()`. Verified by capture at
   8, 45 and 92 percent cover from the ground and from the flight ceiling. 43 tests pass.
+
+## Round 68: the far side lighter (Sep 16)
+
+- **Mike, with a screenshot from over East Park: the buildings without Mapillary data should
+  look like the ones that have it; they can be lighter without using Mapillary, so the divide
+  is less jarring.** The divide is York Street again: the outer districts (Brewerytown,
+  Fairmount) read pale pink-tan and the far ring (Strawberry Mansion, North Philadelphia) brown.
+  Round 65 had matched the tiers at the building level and blamed the rest on coverage; from this
+  viewpoint the read is what counts, and it was measured: masked building pixels (no meadow, no
+  white, no water or sky) averaged 129 114 99 on the far side, luminance 116, against 166 152
+  140, luminance 154, on the near side, a third darker, with a redder cast (blue over red 0.77
+  against 0.84). `colStats()` now tallies `widePhoto` and `widePlain` too, and in the stored
+  register the photographed walls are the darker set (0.547 0.397 0.275 against 0.681 0.456
+  0.350), so the plain walls inside the outer districts are not what darkens the far side; the
+  block strips' wall-to-wall roofs, no street trees and no yards are. `farLight()` lifts every
+  low wall the far ring and the towns draw from the reservoir, and every roof cap they carry,
+  by `FAR_LIGHT` 1.8 after folding 15 percent toward the luminance grey (`FAR_DESAT`), clamped
+  at the register's 1.0 (the lean chunks store 8-bit colours). Two cuts: 1.35 took the far side
+  from 116 to 131 (the register saturates, so the gain runs ahead of the read); 1.8 to 145,
+  within six percent of the near side, at 153 144 130 against 165 151 140. Verified by capture
+  from the same pose and from over Nicetown looking north: nothing blown out, the industrial
+  boxes and the rowhouse strips a shade paler. The Round 65 note stands as history: the
+  coverage difference is real, and this round compensates it rather than closing it.

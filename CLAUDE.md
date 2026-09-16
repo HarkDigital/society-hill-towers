@@ -55,7 +55,8 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   pack_city.py); storefronts come from `storefronts.b64`, and the outer districts' wall colours
   from Mapillary block faces (`wide_walls.b64`, colour byte plus a trim/window hint byte; a dry-run bake
   never ships; the far ring and the towns draw their low walls from a 1,024-colour reservoir of the outer
-  districts' final wall colours, Round 57, and since Round 65 every merged far-ring strip carries its own members'
+  districts' final wall colours (Round 57; lifted by `FAR_LIGHT` 1.8 with `FAR_DESAT` 0.15 since Round 68, Mike: the far side read a third
+  darker from over East Park, coverage more than colour, the gain compensates what the eye sees), and since Round 65 every merged far-ring strip carries its own members'
   roof colour and OPA word instead of its 400 m cell's mode, so no tier reads darker past the outer districts' edge); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
   Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),

@@ -5523,6 +5523,13 @@
   // line can draw from the same distribution and stop reading as a darker, redder city past the
   // outer districts' edge; the draw is per building, not tied to any block
   const WIDE_COLS = [], WIDE_COLS_N = 1024;
+  // Round 68 (Mike: the buildings without Mapillary data should be lighter, so the divide is
+  // less jarring): the far ring and the towns draw the outer districts' own colours, yet from
+  // over East Park the far side rendered a third darker (masked building pixels 116 against
+  // 154 luminance, Sep 16): block strips with wall-to-wall roofs, no street trees, no yards. A
+  // gain on their low walls and their roof caps closes what the eye sees
+  const FAR_LIGHT = 1.8, FAR_DESAT = 0.15;   // 1.35 lifted the far side from 116 to 131; the register saturates, so the gain runs ahead of the read
+  const farLight = (c) => { const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; c.r = Math.min(1, (c.r + (l - c.r) * FAR_DESAT) * FAR_LIGHT); c.g = Math.min(1, (c.g + (l - c.g) * FAR_DESAT) * FAR_LIGHT); c.b = Math.min(1, (c.b + (l - c.b) * FAR_DESAT) * FAR_LIGHT); return c; };
   // per-tier colour tallies for __dbg.colStats() (Round 65): the mean wall colour handed to the
   // chunk builder for every low building, and how many roofs carried a measured cap colour
   const COL_STAT = {};
@@ -7309,7 +7316,7 @@
       // the outer districts' colours (Round 57): a low building draws its wall from the reservoir of
       // the outer districts' final colours (photographed faces and class pools alike), so the far
       // ring carries that tier's own mix instead of reading as a darker, redder city past its edge
-      if (WIDE_COLS.length && h <= 45 && t <= 6) c.copy(WIDE_COLS[Math.floor(hash01(i * 5.9 + 0.2) * WIDE_COLS.length) % WIDE_COLS.length]);
+      if (WIDE_COLS.length && h <= 45 && t <= 6) farLight(c.copy(WIDE_COLS[Math.floor(hash01(i * 5.9 + 0.2) * WIDE_COLS.length) % WIDE_COLS.length]));   // lighter and a shade less red than the tier it draws from (Round 68)
       if (h <= 45 && t <= 6) colStat(wideSeam ? 'far' : 'town', c);
       let style;
       if (h > 30) style = h > 45 ? towerStyle(fa, t, i) : 2;
@@ -7319,6 +7326,7 @@
       else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, 0);
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
+      if (capC && h <= 45 && t <= 6) farLight(capC);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + (capC ? 'Cap' : 'NoCap'), capC); colStat(tk + 'St' + style); colStat(fa ? tk + 'Fa' : tk + 'NoFa'); colStat(tk + 'Fh' + (fh > 0 ? 1 : 0)); COL_STAT[tk + 'Area'] = (COL_STAT[tk + 'Area'] || 0) + Math.abs(signedArea(poly)); }
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + 'Form' + rb[1]); colStat(rplan ? tk + 'Pitched' : tk + 'Flat'); if (wideSeam && cz > -5180 && cz < -4480 && cx > -3700 && cx < 2300) { colStat('farBandForm' + rb[1]); colStat(rplan ? 'farBandPitched' : 'farBandFlat'); colStat(capC ? 'farBandCap' : 'farBandNoCap', capC); colStat('farBand', c); } }
