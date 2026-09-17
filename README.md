@@ -20,6 +20,8 @@ real solar clock over it all.
   the sky tan (`?aqi=unhealthy` pins it).
 - **Layers** (F): live SEPTA vehicles, Indego bike share, flights, ships, typical
   traffic, streetlights, street names, landmark labels, and neighborhood names.
+- **Markets.** The city's 34 farmers' markets pitch their tents only while the clock
+  says they are open; tap a tent for the hours and payments, or search a market by name.
 
 ## Build
 
@@ -58,9 +60,9 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
   layer and point cloud); facade era, material and use from OPA property records; roof
   colours sampled from the City's 2024 orthophotos.
 - Street trees: Philadelphia Parks & Recreation Tree Inventory 2025; streetlights: Streets
-  Department Street Poles inventory; parkland: Parks & Recreation; neighborhoods and
-  historic districts: City of Philadelphia via OpenDataPhilly (CC-BY); traffic volumes:
-  PennDOT RMSTRAFFIC.
+  Department Street Poles inventory; parkland: Parks & Recreation; neighborhoods, historic
+  districts and farmers' markets: City of Philadelphia via OpenDataPhilly (CC-BY); traffic
+  volumes: PennDOT RMSTRAFFIC.
 - Live: SEPTA TransitView, Indego / Bicycle Transit Systems, adsb.fi (ADS-B), aisstream.io
   (AIS), Open-Meteo (weather), Air Management Services (air quality), OpenStreetMap
   Nominatim (search).

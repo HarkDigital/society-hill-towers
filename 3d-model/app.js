@@ -9989,6 +9989,7 @@
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
   let pickedVeh = null;
+  let pickedMarket = null;   // a farmers' market's card follows its tents (Round 76)
   const septaEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // upload only the live instances of a fleet mesh, not its whole buffer. three
   // resets updateRange after every upload, so a wrong count costs one full
@@ -10144,7 +10145,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -10168,7 +10169,8 @@
     const fAct = flightReady && FLIGHTS.on && (flightMesh.count > 0 || heliMesh.count > 0);
     const shAct = shipReady && SHIPS.on && shipAnchor.count > 0;
     const tAct = !!treeInv;                            // the forest picks with every live layer off
-    if (!sAct && !iAct && !fAct && !shAct && !tAct) return;
+    const mAct = marketsReady && marketTentN > 0;      // the open markets' tents (Round 76)
+    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -10213,25 +10215,30 @@
     if (iAct) targets.push(indegoSolid, indegoBike, indegoBadge);
     if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
     if (shAct) { for (const m of shipMeshes) if (m.count) targets.push(m); targets.push(shipAnchor); }
+    if (mAct) for (const m of marketMeshes) if (m.count) targets.push(m);
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
       const h = hits[0];
       let v = null, hitSt = null;
       if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.shipKind !== undefined || h.object === shipAnchor) {
         const p = h.object === shipAnchor ? shipPick[SHIP_KIND_N][h.instanceId] : shipPick[h.object.userData.shipKind][h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+      }
+      if (h.object.userData.marketWay !== undefined) {
+        const m = marketPick[h.object.userData.marketWay][h.instanceId];
+        if (m) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = m; marketCard(m); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
       else if (h.object === septaBadge) v = septaPickB[h.instanceId];
       else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
       else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
       else if (h.object === indegoBadge) hitSt = indegoPickB[h.instanceId];
-      if (v) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
-      if (hitSt) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
+      if (v) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      if (hitSt) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle or bike dock within reach of the
     // tap point (a little wider under the crosshair, where aiming is coarser)
@@ -10255,10 +10262,21 @@
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestS = st; bestV = null; }
     }
+    let bestM = null;
+    if (mAct) for (const m of marketOpenList) {   // a tent is small from the air: the market point within reach picks it
+      _ssv.set(m.x, m.gy + 2.2, m.z).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) continue;
+      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
+      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD) { bestD = d2; bestM = m; bestV = null; bestS = null; }
+    }
     if (bestV && pickOccluded(bestV.dx != null ? bestV.dx : bestV.x, (bestV.gy || 0) + 2.5, bestV.dz != null ? bestV.dz : bestV.z)) bestV = null;
     if (bestS && pickOccluded(bestS.x, bestS.y + 2, bestS.z)) bestS = null;
-    if (bestV) { pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
-    if (bestS) { pickedVeh = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
+    if (bestM && pickOccluded(bestM.x, bestM.gy + 2, bestM.z)) bestM = null;
+    if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
+    if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
     // canopy spheres (tapping a crown is the natural gesture), then fall back
     // to the nearest tree around the tapped ground point (trunk-level taps)
@@ -10299,7 +10317,7 @@
       if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; vehinfoEl.hidden = true; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -11238,17 +11256,18 @@
   // districts, the named buildings and towers, and the painted street names, all
   // already in scene metres. Built once, on the first search.
   let nameIx = null;
-  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, building: 3, street: 4 };
-  const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', building: 'Building', street: 'Street' };
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, building: 4, street: 5 };
+  const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', building: 'Building', street: 'Street' };
   function buildNameIx() {
     const ix = [], seen = new Set();
-    const add = (name, x, z, kind) => {
+    const add = (name, x, z, kind, ref) => {   // ref: the record a card can open on arrival (a market)
       if (!name || !isFinite(x) || !isFinite(z)) return;
       const s = String(name), key = kind + '|' + s.toLowerCase();
       if (seen.has(key)) return;
       seen.add(key);
-      ix.push({ name: s, lc: s.toLowerCase(), x, z, kind });
+      ix.push({ name: s, lc: s.toLowerCase(), x, z, kind, ref });
     };
+    for (const m of markets) add(m.n, m.x, m.z, 'market', m);
     for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
     for (const lm of META_L) {
       const b = lm && lm.name ? findBuilding(lm.name) : null;
@@ -11288,6 +11307,10 @@
     const wide = e.kind === 'neighborhood' || e.kind === 'district';   // an area reads from higher up and needs no pin
     searchFlyTo(e.x, gy + (e.kind === 'landmark' ? 30 : 8), e.z, wide ? 600 : e.kind === 'landmark' ? 250 : 220);
     if (wide) clearSearchMark(); else placeSearchMark(e.x, gy, e.z, e.name);
+    if (e.kind === 'market' && e.ref) {   // the card says when it is open, whether or not the tents are up
+      pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = e.ref;
+      marketCard(e.ref); vehinfoEl.hidden = false;
+    }
     if (isTouch) toggleSearch(false);
   }
   function searchLocalSubmit(qy) {
@@ -13415,6 +13438,173 @@
     }
   }
 
+  // ---- farmers' markets (Round 76). The City's 34 farmers' markets (MARKETS, from
+  // fetch_markets.py / bake_markets.py: the scene frame, per-weekday hours in minutes, the
+  // season, the payments) pitch their tents only while the model's clock says they are open,
+  // so Headhouse sets up under the Shambles on a Sunday morning and is gone by two, and a
+  // pinned clock from a copied link drives it the same way. Three to five striped canopies
+  // per market in four colourways (four instanced meshes with their own materials: a stripe
+  // is two vertex colours, which no instance colour can carry, and a shared instance-colour
+  // program reads black), in a row along the nearest street on the market's own side, facing
+  // the road. Re-evaluated only when the clock's date or minute changes. Tap a tent for the
+  // hours, the payments and the website; the search box knows every market by name.
+  const MK_DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const MK_MONTHS = ['', 'January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+  const MK_WAYS = [[0.62, 0.08, 0.06], [0.08, 0.40, 0.14], [0.08, 0.22, 0.58], [0.70, 0.52, 0.06]];   // the stripe of each colourway, stored dark
+  const markets = [];   // {n, x, z, gy, h, yr, o, c, pay, op, addr, web, tents: [{x, y, z, yaw, w}], open}
+  const marketMeshes = [], marketPick = [[], [], [], []];
+  let marketsReady = false, marketTentN = 0, marketOpenList = [], mkLastKey = '';
+  function marketTentGeom(way) {
+    const parts = [];
+    const [sr, sg, sb] = MK_WAYS[way];
+    const W = 0.62;   // canvas white, stored dark (the lane paint's white)
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), r, g, b));
+    for (const [px, pz] of [[-1.42, -1.42], [1.42, -1.42], [-1.42, 1.42], [1.42, 1.42]]) box(0.07, 1.95, 0.07, px, 0.975, pz, 0.36, 0.37, 0.38);   // the posts
+    box(2.4, 0.06, 0.8, 0, 0.78, 0.55, 0.42, 0.30, 0.18);        // the table, its top
+    box(2.2, 0.72, 0.6, 0, 0.36, 0.55, 0.30, 0.22, 0.14);        // and its skirt
+    box(0.5, 0.22, 0.5, -0.75, 0.92, 0.55, 0.52, 0.12, 0.08);    // crates of produce
+    box(0.5, 0.22, 0.5, 0, 0.92, 0.55, 0.14, 0.40, 0.12);
+    box(0.5, 0.22, 0.5, 0.75, 0.92, 0.55, 0.58, 0.36, 0.06);
+    // the canopy: eight gores to a peak, alternately white and the stripe, and a valance
+    const cone = new THREE.ConeGeometry(2.05, 0.8, 8, 1, true).translate(0, 2.35, 0);
+    const skirt = new THREE.CylinderGeometry(2.05, 2.05, 0.28, 8, 1, true).translate(0, 1.81, 0);
+    for (const g of [cone, skirt]) {
+      const gg = g.index ? g.toNonIndexed() : g;
+      const n = gg.attributes.position.count, col = new Float32Array(n * 3);
+      const per = g === cone ? 3 : 6;   // vertices per gore: one triangle up the cone, two down the valance
+      for (let i = 0; i < n; i++) {
+        const stripe = Math.floor(i / per) & 1;
+        col[i * 3] = stripe ? sr : W; col[i * 3 + 1] = stripe ? sg : W; col[i * 3 + 2] = stripe ? sb : W;
+      }
+      gg.setAttribute('color', new THREE.BufferAttribute(col, 3));
+      gg.setAttribute('aGlow', new THREE.BufferAttribute(new Float32Array(n), 1));
+      parts.push(gg);
+    }
+    return septaMerge(parts);
+  }
+  step('Pitching the market tents', () => {
+    if (typeof MARKETS === 'undefined' || !MARKETS || !MARKETS.length) return;
+    for (let w = 0; w < 4; w++) {
+      const mesh = new THREE.InstancedMesh(marketTentGeom(w), new THREE.MeshLambertMaterial({ vertexColors: true }), 180);
+      mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      mesh.count = 0;
+      mesh.frustumCulled = false;   // instance bounds sit at the origin
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      mesh.userData.marketWay = w;
+      groupCity.add(mesh);
+      marketMeshes.push(mesh);
+    }
+    let i = 0;
+    for (const src of MARKETS) {
+      if (!insideLimit(src.x, src.z)) continue;
+      const m = Object.assign({ open: false }, src);
+      const sn = septaSnapRoad(m.x, m.z, 40);
+      let ax = 1, az = 0, fx = 0, fz = 1;   // the row's axis, and the way the stalls face
+      if (sn) {
+        ax = sn[2]; az = sn[3];
+        const tx = sn[0] - m.x, tz = sn[1] - m.z, L = Math.hypot(tx, tz);
+        if (L > 1.5) { fx = tx / L; fz = tz / L; }   // face the street
+        else { fx = -az; fz = ax; }                    // on the centreline (a closed street): face across it
+      } else { const a = hash01(i + 11) * Math.PI * 2; ax = Math.cos(a); az = Math.sin(a); fx = -az; fz = ax; }
+      const n = 3 + Math.floor(hash01(i * 7 + 3) * 3);
+      m.tents = [];
+      for (let k = 0; k < n; k++) {
+        const t = (k - (n - 1) / 2) * 3.4;
+        const x = m.x + ax * t, z = m.z + az * t;
+        m.tents.push({ x, z, y: siteY(x, z, 'ground'), yaw: Math.atan2(fx, fz), w: (i + k) & 3 });
+      }
+      m.gy = siteY(m.x, m.z, 'ground');
+      markets.push(m);
+      i++;
+    }
+    marketsReady = true;
+    mkLastKey = '';
+  });
+  // open right now on the model's clock: the weekday's hours (end exclusive), then the season
+  // (a wrap-around season like November to March runs across New Year)
+  function marketOpenAt(m, y, mo, d, minutes) {
+    const dow = new Date(Date.UTC(y, mo - 1, d)).getUTCDay();
+    const h = m.h && m.h[dow];
+    if (!h || minutes < h[0] || minutes >= h[1]) return false;
+    return marketInSeason(m, mo, d);
+  }
+  function marketInSeason(m, mo, d) {
+    if (m.yr || !m.o || !m.c) return true;
+    const md = mo * 100 + d, o = m.o[0] * 100 + m.o[1], c = m.c[0] * 100 + m.c[1];
+    return o <= c ? (md >= o && md <= c) : (md >= o || md <= c);
+  }
+  const marketOpen = (m) => marketOpenAt(m, clock.y, clock.m, clock.d, clock.minutes);
+  function updateMarkets() {
+    if (!marketsReady) return;
+    const key = clock.y * 10000 + clock.m * 100 + clock.d + ':' + clock.minutes;
+    if (key === mkLastKey) return;   // the live minute, a slider drag, a preset, a lapse step, a hash clock
+    mkLastKey = key;
+    const counts = [0, 0, 0, 0];
+    marketOpenList = [];
+    for (const m of markets) {
+      m.open = marketOpen(m);
+      if (!m.open) continue;
+      marketOpenList.push(m);
+      for (const t of m.tents) {
+        const c = counts[t.w]++;
+        _iq.setFromAxisAngle(_sup, t.yaw);
+        _sp.set(t.x, t.y, t.z);
+        _ss.set(1, 1, 1);
+        _sm.compose(_sp, _iq, _ss);
+        marketMeshes[t.w].setMatrixAt(c, _sm);
+        marketPick[t.w][c] = m;
+      }
+    }
+    marketTentN = 0;
+    for (let w = 0; w < 4; w++) {
+      marketMeshes[w].count = counts[w];
+      marketTentN += counts[w];
+      if (counts[w]) flushInst(marketMeshes[w], -1); else marketMeshes[w].instanceMatrix.needsUpdate = true;
+    }
+  }
+  function marketCard(m) {
+    const dow = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay();
+    const h = m.h && m.h[dow];
+    const open = marketOpen(m);
+    const lines = [];
+    if (open) lines.push('Open today ' + fmtTime(h[0]) + ' to ' + fmtTime(h[1]));
+    else if (h && clock.minutes < h[0] && marketInSeason(m, clock.m, clock.d)) lines.push('Opens today at ' + fmtTime(h[0]));
+    else {
+      let next = null;
+      for (let k = 1; k <= 7 && !next; k++) {
+        const d2 = new Date(Date.UTC(clock.y, clock.m - 1, clock.d + k));
+        const hh = m.h && m.h[d2.getUTCDay()];
+        if (hh && marketInSeason(m, d2.getUTCMonth() + 1, d2.getUTCDate())) next = [d2.getUTCDay(), hh[0]];
+      }
+      lines.push(next ? 'Closed today, opens ' + MK_DAYS[next[0]] + ' ' + fmtTime(next[1]) : 'Closed for the season');
+    }
+    const days = Object.keys(m.h || {}).map((k) => MK_DAYS[+k] + 's');
+    const dayText = days.length > 1 ? days.slice(0, -1).join(', ') + ' and ' + days[days.length - 1] : days.join('');
+    lines.push((m.yr || !m.o || !m.c ? 'Year round' : MK_MONTHS[m.o[0]] + ' ' + m.o[1] + ' to ' + MK_MONTHS[m.c[0]] + ' ' + m.c[1]) + (dayText ? ', ' + dayText : ''));
+    lines.push(m.pay && m.pay.length ? m.pay.join(', ') + ', Cash' : 'Cash');
+    if (m.op) lines.push(m.op);
+    if (m.addr) lines.push(m.addr);
+    if (h && h[2]) lines.push(h[2]);
+    lines.push('City of Philadelphia Farmers Markets');
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:' + (open ? '#4aa564' : '#7a8188') + '">' + (open ? 'Open' : 'Closed') + '</span>' +
+      '<span class="vdest">' + septaEsc(m.n) + '</span>' +
+      lines.map((l) => '<div class="vmeta">' + septaEsc(l) + '</div>').join('') +
+      (m.web ? '<a class="vlink" href="' + septaEsc(m.web) + '" target="_blank" rel="noopener">Website</a>' : '');
+  }
+  function updateMarketPick() {
+    if (!pickedMarket) return;
+    _ssv.set(pickedMarket.x, pickedMarket.gy + 3.2, pickedMarket.z).project(camera);
+    if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+    else {
+      vehinfoEl.style.opacity = '1';
+      vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+        ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+        ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    }
+  }
+
   // ---------------------------------------------------------------- solar clock
   // NOAA solar position for the towers' latitude/longitude; Philadelphia local
   // time with US daylight-saving rules. Drives sun, sky, fog, and the lit windows.
@@ -14846,7 +15036,7 @@
     // fresh depth pass every 4th frame; a changed static caster set (docks
     // arriving with the first Indego poll) gets one immediately
     const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0);
-    const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + (movers ? 1 << 30 : 0);   // bikes cast too; movers switching off needs one last redraw
+    const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + marketTentN * 16777216 + (movers ? 1 << 30 : 0);   // bikes cast too, and a market opening its tents; movers switching off needs one last redraw
     if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
     sky.position.copy(camera.position);
     cloudDeck.position.x = camera.position.x; cloudDeck.position.z = camera.position.z;
@@ -14862,6 +15052,8 @@
     updateTraffic(now, dt);
     updateLights(now);
     updateTreePick();
+    updateMarkets();
+    updateMarketPick();
     updateSearchMark(now);
     scoresPoll(now); scoresRender();
     concertsPoll(now); concertsRender();
@@ -14945,7 +15137,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi,
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

@@ -3606,3 +3606,39 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   haze, no white band); Hazardous 677 / 3,385 under a tan sky with the city gone past the
   outer districts. The pane composites a frame late, so a screenshot follows a one-second
   wait. 51 tests pass (`tests/test_aqi.py` runs the pure block under JavaScriptCore).
+
+## Round 76: the farmers' markets on the clock (Sep 16)
+
+- **Mike's pick from the survey: farmers' markets on the clock.** The City's `Farmers_Markets`
+  layer (34 points, one ArcGIS page) carries per-weekday hours as `HH:MM` strings, the season
+  as a month name plus a day, `Yes` for year round, the payments each market takes and a
+  website. `fetch_markets.py` caches the GeoJSON, `bake_markets.py` parses it into
+  `markets.json` (9 KB): hours to minutes keyed by JS weekday, an end at or before its start
+  twelve hours later (Germantown Kitchen Garden's `01:00` is one in the afternoon), a missing
+  day defaulting to the first and the last of the month, two seasonal rows with no months at
+  all (University Square, the Castor and Hellerman pop-up) left open all year by weekday,
+  websites normalised (`Thefoodtrust.org`, `www.egreenevents.com`), dashes to commas. 34
+  kept, 16 year round, none dropped.
+- **What it does.** `step('Pitching the market tents')` snaps each market to its nearest
+  street (`septaSnapRoad`, 40 m) for the row's axis and puts three to five tents 3.4 m apart on
+  the market's own side, facing the road (on the centreline itself, a closed street, they face
+  across it). A tent is about 120 triangles: four posts, a table with three crates, an
+  eight-gore canopy alternately white and its stripe with a valance, in four colourways as
+  four instanced meshes with their own Lambert materials (a stripe is two vertex colours, and
+  a shared instance-colour program reads black). `updateMarkets` re-evaluates only when the
+  clock's date or minute changes (the live tick, a slider drag, a preset, a lapse step, a hash
+  clock) through `marketOpenAt`: the weekday's hours, end exclusive, then the season, a
+  November-to-March season wrapping New Year. The tent count folds into the shadow caster
+  signature so an opening market gets its shadows. Tap a tent (or the market point from the
+  air) for the card: Open or Closed, "Open today 10:00 AM to 2:00 PM" or "Closed today, opens
+  Sunday 10:00 AM", the season and days, the payments with cash implied, operator, address,
+  the city's note, the website. The search index knows every market as a "Farmers Market" and
+  opens the card on arrival whether or not the tents are up; `__dbg.markets()`,
+  `__dbg.setClock(y, m, d, min)`, `cardFor('market', name)`.
+- **Measured in the pane** with the clock pinned: Sunday Sep 20 at 11:00 three markets open
+  (Headhouse, Dickinson Square, Schuylkill River Park, 12 tents), Saturday Sep 19 thirteen
+  (56 tents), Monday none. Captures: Clark Park's row on the Baltimore Avenue sidewalk,
+  Rittenhouse's canopies and crates on Walnut at 18th, and Headhouse's tents standing under
+  the Shambles roof, where the market really is, so from the air a Sunday and a Monday look
+  alike there and at street level the stripes show between the piers. 58 tests pass
+  (`tests/test_markets_bake.py`, `tests/test_markets_js.py` under JavaScriptCore).

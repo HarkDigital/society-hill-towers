@@ -39,6 +39,7 @@ the files above must keep this notice if they are redistributed.
 | File | Made by | Source |
 |---|---|---|
 | `places.json` | `fetch_places.py` → `bake_places.py` | Philadelphia Register historic districts and neighborhood boundaries, City of Philadelphia via OpenDataPhilly / phl.carto.com. CC-BY 4.0: attribution to the City of Philadelphia is required. |
+| `markets.json` | `fetch_markets.py` → `bake_markets.py` | Farmers' Market Locations (`Farmers_Markets`, City of Philadelphia via OpenDataPhilly / City ArcGIS): names, hours, season, payments and websites shown on the tents' cards |
 | `trees.b64`, `tree_names.json` | `fetch_trees.py` → `pack_trees.py` | Philadelphia Parks & Recreation Tree Inventory 2025 (OpenDataPhilly / City ArcGIS) |
 | `poles.b64` | `fetch_poles.py` → `pack_poles.py` | Streets Department Street Poles inventory (OpenDataPhilly / City ArcGIS, 203,058 poles) |
 | `nw_parks.json` | `fetch_nw_parks.py` | Parks & Recreation `PPR_Properties` parkland boundaries (OpenDataPhilly) |
