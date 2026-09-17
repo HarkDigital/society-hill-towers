@@ -3570,3 +3570,39 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   instead of 100 (a climb re-aimed every 100 m), and is frozen above 600 m (`shadowFrozen`: no
   re-aim, no bus refresh), where no shadow can be read. Desktop keeps the look-ahead, the 100 m
   steps and the 30-frame windows. 49 tests pass.
+
+## Round 75: the air you can see (Sep 16)
+
+- **Mike, from the open-data survey: air quality drives the haze.** The survey of the city's
+  data sites (the ArcGIS Hub behind data-phl.opendata.arcgis.com is the real store, 6,332
+  items; OpenDataPhilly its catalog of 470; developer.phila.gov a CMS gateway that 403s
+  scripts; the phlapi repo a 2012 prototype) turned up the Department of Public Health's Air
+  Management Services layer `LATEST_CORE_SITE_READINGS`: eight monitoring sites, hourly PM2.5,
+  PM10, ozone, NO2, SO2 and CO, CORS open, no key. Probed at 14:00 EDT: six sites report
+  PM2.5 (5.6 to 7.7 ug/m3, mean 6.5, AQI 36), three report ozone (52 to 56 ppb), the rest are
+  null, and one field carried a -999 sentinel. The page reads it every 15 minutes beside the
+  weather (the readings are hourly, so a value is at most 75 minutes old).
+- **What it does.** The particulate is what the eye sees, so the citywide PM2.5 mean sets the
+  clear-air distance through Koschmieder's rule (visual range about 3.9 over the extinction,
+  fine particles about 4.6 m2 a gram): the multiplier `k = 22 / PM2.5`, clamped to 0.08 to 1,
+  so 22 ug/m3 keeps the 40 km a clear day already has, the top of Moderate (35) is 0.63 of
+  it, an Unhealthy day (80) 0.28, wildfire smoke (260) 0.08. A smoke tint (0 to 30 ug/m3
+  nothing, 1 from 120) warms the horizon and the fog toward tan (0xb89a72 sky, 0xa88a62 fog,
+  the June 2023 look), dulls the zenith, and dims the sun 30 percent toward 0xff7a30. Both
+  ease over 20 s (`WXFX.haze`, `WXFX.hazeTint`), and both multiply the existing night and
+  weather factors, so fog still collapses the air (55 / 850 m with smoke on top) and night
+  still shortens it. The AQI on the time panel ("Air quality: 36, Good") is the larger of the
+  PM2.5 index (EPA's 2024 breakpoints) and the ozone index, the hourly ozone read against the
+  8-hour table (an approximation, stated in the code). A reading needs two PM2.5 sites under
+  twelve hours old (the first cut was three, and the live check at 22:40 found the layer's
+  latest sample still the 14:00 hour, so every row failed it; the layer lags by hours, and an
+  afternoon reading still describes the day's air); a feed silent for a day eases the air
+  back to clear.
+- **Pins.** `?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardous>` (PM2.5 5, 30, 45,
+  80, 160, 260), `__dbg.aqi(n)`, `__dbg.aqiState()`; a `?wx=` preset alone pins the air at
+  Good so a weather demo stays reproducible.
+- **Measured in the pane** at 700 m over Center City at noon: Good 8,000 / 40,000 m as before;
+  Unhealthy 2,200 / 11,000 by day and 770 / 4,400 at night (the far windows sink into the
+  haze, no white band); Hazardous 677 / 3,385 under a tan sky with the city gone past the
+  outer districts. The pane composites a frame late, so a screenshot follows a one-second
+  wait. 51 tests pass (`tests/test_aqi.py` runs the pure block under JavaScriptCore).

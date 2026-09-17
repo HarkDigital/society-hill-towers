@@ -63,7 +63,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 | `philly_frame.py` | The one lat/lon to local-metres frame (LAT0/LON0/KX/KZ, `to_xz`, `to_latlon`) every pipeline script imports. |
 | `provenance.py` | `record()` appends one line per fetch to `provenance.jsonl` (source, URL, query hash, element count, UTC time). |
 | `ops/` | Server recipes: the captured live nginx vhost and the `.example` with the planned additions, systemd units, `septa_bake.py`, `ais_relay.py`, `uptime.md`, `README.md`. |
-| `tests/` | `python3 -m unittest discover -s tests`. `test_concerts_bake.py` (Round 56) projects a canned Ticketmaster answer through ops/concerts_bake.py and checks the 9 am instants across both DST changes. `test_vbuf.py` (Round 54) runs the packed rings' `VBuf` under JavaScriptCore with the vendored three.min.js: the facade attributes and the glass tint survive growth and reach `geometry(true)`; the glass upload asks for it. `test_pack_common.py` (Round 71) checks the packers' shared guards: the stacked dedupe keeps the taller record, the coplanar inset moves the smaller record by the packer's own quantum and leaves party walls alone. |
+| `tests/` | `python3 -m unittest discover -s tests`. `test_concerts_bake.py` (Round 56) projects a canned Ticketmaster answer through ops/concerts_bake.py and checks the 9 am instants across both DST changes. `test_vbuf.py` (Round 54) runs the packed rings' `VBuf` under JavaScriptCore with the vendored three.min.js: the facade attributes and the glass tint survive growth and reach `geometry(true)`; the glass upload asks for it. `test_pack_common.py` (Round 71) checks the packers' shared guards: the stacked dedupe keeps the taller record, the coplanar inset moves the smaller record by the packer's own quantum and leaves party walls alone. `test_aqi.py` (Round 75) runs the air-quality block under JavaScriptCore: the EPA breakpoints, the categories, the haze curve and the reading cleaner. |
 | `docs_check.py` | Stdlib check that every `build.py` input and every script here is mentioned in this section; exits non-zero naming the gaps. |
 
 ### Data embedded by `build.py`
@@ -301,7 +301,13 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   `WXFX` strengths (rain, snow, hail, fog, gloom, wet, accumulation). Two camera-following
   particle boxes render precipitation, bolts spawn in storms, `wxSurfacePatch` lays snow/wet
   on every static MeshStandardMaterial, `wxGroundPatch` mottles the bare-ground planes.
-  `WX` must be declared before the sky material (TDZ).
+  `WX` must be declared before the sky material (TDZ). Round 75 adds the air: `fetchAqi()`
+  every 15 min reads the city's Air Management Services core-site readings (ArcGIS, CORS
+  open), `aqiFromRows` cleans them (nulls, the -999 sentinel, rows over 12 h old since the
+  layer lags by hours, two PM2.5 sites minimum), `applyAqi` sets `AQI` and the `WXFX.tHaze`/`tHazeTint` targets (eased over
+  20 s), and `applyLighting` multiplies both fog distances by `WXFX.haze` and lerps sky, fog
+  and sun toward the smoke tones by `WXFX.hazeTint`. `?aqi=` pins it; `tests/test_aqi.py`
+  runs the pure block under JavaScriptCore.
 - **Street names:** `ST_LABELS` + `ST_SDF` → one indexed quad mesh draped column by column on
   the road profile, alpha from an SDF threshold (RedFormat DataTexture; LuminanceFormat is
   rejected by WebGL2).

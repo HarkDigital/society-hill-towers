@@ -72,7 +72,7 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   (`CLOUDS_DATA`, `CLOUD_FIELD`) was reverted the same day at his call and is built only behind `?clouds=lowpoly`) whose shadows slant by the
   sun, the real Moon (Round 64: `lunar()` checks against JPL DE421 within 0.06 degrees; drawn `MOON_SCALE` 2.0 times its
   true size with the near side's maria in a celestial-north frame, only its lit part ever drawn, by day washed by
-  the sky, never through the sun's glare, its halo 0.06 by the square of the lit fraction since Round 73), clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, slate-teal body-colour water (`COLORS.water` 0x163038, Round 54) as a moving noise field with calm
+  the sky, never through the sun's glare, its halo 0.06 by the square of the lit fraction since Round 73), clear air 8 to 40 km by day (the whole city stands clear from any height) and about 3 to 16 km by night, both scaled by the city's live PM2.5 since Round 75 (Air Management Services' hourly core-site readings, `AQI`/`WXFX.haze`: 22 ug/m3 keeps the full distance, an Unhealthy day is 0.28 of it with a tan smoke tint on the sky, fog and sun, the AQI on the time panel), slate-teal body-colour water (`COLORS.water` 0x163038, Round 54) as a moving noise field with calm
   ripples and only a restrained shoreline lift (no foam line, no lit floor), a painted olive meadow on every green AND on all bare ground (Round 52: `groundSurfMat`, the
   same meadow and the same darker-blotch mottle as the parks, parks and ground are one surface; no park
   shade spread, no ground retint), an instanced tuft field near the camera on parks and bare ground, lumpy
@@ -125,7 +125,10 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
 chunk builders, styles, OPA words and roof forms, whole tier and a band either side of York Street), `perf()` with
 per-step build timings, frame-time p50/p95, `renderer.info` and heap) plus an on-screen perf
 readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
-(clear, overcast, fog, drizzle, rain, downpour, storm, hail, snow, blizzard, sleet).
+(clear, overcast, fog, drizzle, rain, downpour, storm, hail, snow, blizzard, sleet) and, alone,
+pins the air at Good. `?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardous>` pins the
+air quality (Round 75: the live PM2.5 scales the clear-air distances and tints a smoke day;
+`__dbg.aqi(n)`, `__dbg.aqiState()`).
 `?logdepth=0` is the depth-buffer escape hatch.
 
 ## Where things are

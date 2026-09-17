@@ -1609,6 +1609,9 @@
   // live-weather state (see applyWx below): cloud fraction, WMO code, rates, world wind m/s
   const WX = { cover: 0.22, ok: false, code: -1, temp: null, precip: 0, snowfall: 0, windX: 2.1, windZ: 0.9,
     tsObs: false, tsWarn: false, tsWatch: false, nwsT: 0, nwsText: '', nwsCover: 0 };   // NWS: thunder observed at an airport, a severe-storm warning, a watch
+  // the air itself (Round 75): the city's Air Management Services hourly readings set k, the
+  // clear-air multiplier on the fog distances, and tint, the smoke colour of the sky and fog
+  const AQI = { ok: false, pm25: null, o3: null, aqi: null, cat: '', sites: 0, t: 0, k: 1, tint: 0 };
   const wxWind = new THREE.Vector2(0.0012, 0.0005);
   // per-fragment hash noise added to the sky before it is written: +/-0.5/255
   // breaks the 8-bit banding of the shallow dusk/night gradient (0 disables)
@@ -13621,6 +13624,7 @@
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && performance.now() - wxOkT > 15 * 60 * 1000) fetchWeather();
     if (!document.hidden && performance.now() - WX.nwsT > 5 * 60 * 1000) fetchNws();
+    if (!document.hidden && performance.now() - aqiOkT > 15 * 60 * 1000) fetchAqi();
   });
   // the National Weather Service: the latest METAR-style observation at PHL and
   // Northeast Airport (presentWeather carries TS when thunder is heard there)
@@ -13716,6 +13720,99 @@
     return base ? base + ', ' + why : why;
   }
 
+  // ---- air quality (Round 75). The city's Air Management Services (Department of Public
+  // Health) publishes the latest hourly reading at its eight core monitoring sites on ArcGIS
+  // Online with an open CORS header: PM2.5, PM10, ozone, NO2, SO2 and CO, many of them null at
+  // any one site (six of the eight report PM2.5) and a -999 sentinel now and then. The
+  // particulate is what the eye sees, so the citywide PM2.5 mean sets the clear-air distance
+  // (Koschmieder: the visual range is about 3.9 over the extinction, and fine particles
+  // extinguish about 4.6 m2 a gram, so 22 ug/m3 is the 40 km a clear day already has and 125
+  // is under 7 km) and a smoke tint that warms the sky and the fog toward the tan of a
+  // Canadian-fire day. The AQI on the time panel is the larger of the PM2.5 and ozone indices,
+  // the hourly ozone read against the 8-hour breakpoints (an approximation: AirNow's NowCast
+  // averages hours, this is the latest one). Fetched every 15 minutes beside the weather;
+  // ?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardous> pins it, and a ?wx= preset
+  // alone pins it at Good so a preset demo stays reproducible. The pure part, from AQI_PM25 to
+  // aqiFromRows, runs under JavaScriptCore in tests/test_aqi.py.
+  const AQI_PM25 = [[0, 9.0, 0, 50], [9.1, 35.4, 51, 100], [35.5, 55.4, 101, 150], [55.5, 125.4, 151, 200], [125.5, 225.4, 201, 300], [225.5, 325.4, 301, 500]];
+  const AQI_O3 = [[0, 54, 0, 50], [55, 70, 51, 100], [71, 85, 101, 150], [86, 105, 151, 200], [106, 200, 201, 300]];
+  const AQI_CATS = ['Good', 'Moderate', 'Unhealthy for Sensitive Groups', 'Unhealthy', 'Very Unhealthy', 'Hazardous'];
+  function aqiPiece(c, table) {   // EPA's piecewise-linear index; null in, null out; past the table, 500
+    if (c == null || !(c >= 0)) return null;
+    for (const [lo, hi, ilo, ihi] of table) if (c <= hi) return Math.round(ilo + (ihi - ilo) * Math.max(0, c - lo) / (hi - lo));
+    return 500;
+  }
+  function aqiCat(a) { return a == null ? '' : AQI_CATS[a <= 50 ? 0 : a <= 100 ? 1 : a <= 150 ? 2 : a <= 200 ? 3 : a <= 300 ? 4 : 5]; }
+  function hazeFor(pm) {   // clear-air multiplier and smoke tint from PM2.5 in ug/m3
+    if (pm == null || !(pm >= 0)) return { k: 1, tint: 0 };
+    return { k: clamp(22 / Math.max(pm, 1), 0.08, 1), tint: smooth(30, 120, pm) };
+  }
+  // the readings, cleaned: a site counts when its value is a number, not negative (the -999
+  // sentinel) and under twelve hours old (the layer lags: at 22:40 on Sep 16 its latest sample
+  // was still the 14:00 hour, and an afternoon reading still describes the day's air better
+  // than nothing); the PM2.5 mean needs two sites, the ozone one
+  const AQI_FRESH_MS = 12 * 3600000;
+  function aqiFromRows(rows, nowMs) {
+    let pmSum = 0, pmN = 0, o3 = null, newest = 0;
+    for (const a of rows || []) {
+      if (!a) continue;
+      const ts = +a.sample_timestamp;
+      if (!(ts > 0) || nowMs - ts > AQI_FRESH_MS) continue;
+      newest = Math.max(newest, ts);
+      const pm = +a.pm25_ug_m3, oz = +a.ozone_ppb;
+      if (a.pm25_ug_m3 != null && pm >= 0 && pm < 2000) { pmSum += pm; pmN++; }
+      if (a.ozone_ppb != null && oz >= 0 && oz < 1000) o3 = Math.max(o3 == null ? 0 : o3, oz);
+    }
+    if (pmN < 2 && o3 == null) return null;
+    return { pm25: pmN >= 2 ? Math.round(pmSum / pmN * 10) / 10 : null, o3, sites: pmN, t: newest };
+  }
+  const AQI_PRESETS = { good: 5, moderate: 30, usg: 45, unhealthy: 80, veryunhealthy: 160, hazardous: 260 };   // PM2.5 near the top of each band, so a pin shows its haze
+  const aqiForced = (/[?&]aqi=([a-z0-9.]+)/i.exec(location.search) || [])[1];
+  function aqiPreset(name) {   // a pin: PM2.5 by category name or number, ozone left out
+    const key = String(name).toLowerCase();
+    const pm = AQI_PRESETS[key] != null ? AQI_PRESETS[key] : Math.max(0, +name || 0);
+    return { pm25: pm, o3: null, sites: 8, t: Date.now() };
+  }
+  function applyAqi(r) {
+    const F = WXFX;
+    if (!r) {   // nothing fresh for a day: the haze eases back to clear air, the readout goes quiet
+      AQI.ok = false; AQI.aqi = null; AQI.cat = ''; AQI.k = 1; AQI.tint = 0;
+    } else {
+      AQI.ok = true; AQI.pm25 = r.pm25; AQI.o3 = r.o3; AQI.sites = r.sites; AQI.t = r.t;
+      AQI.aqi = (r.pm25 == null && r.o3 == null) ? null : Math.max(aqiPiece(r.pm25, AQI_PM25) || 0, aqiPiece(r.o3, AQI_O3) || 0);
+      AQI.cat = aqiCat(AQI.aqi);
+      const h = hazeFor(r.pm25);
+      AQI.k = h.k; AQI.tint = h.tint;
+    }
+    const tintWas = F.tHazeTint;
+    F.tHaze = AQI.k; F.tHazeTint = AQI.tint;
+    if (!F.seeded) { F.haze = F.tHaze; F.hazeTint = F.tHazeTint; }   // before the first weather report: land in it, no fade
+    if (Math.abs(F.tHazeTint - tintWas) > 0.05) lastEnvEl = 999;   // a smoke sky reaches the glass reflections
+    refreshTimeUI();
+  }
+  let aqiOkT = -Infinity, aqiRetry = 0, aqiBackoff = 60000, aqiBusy = false;
+  const AQI_URL = 'https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/LATEST_CORE_SITE_READINGS/FeatureServer/0/query?where=1%3D1&outFields=site_name,pm25_ug_m3,ozone_ppb,sample_timestamp&returnGeometry=false&f=json';
+  function fetchAqi() {
+    if (!wxCanFetch || aqiForced || WX_PRESETS[wxForced] || document.hidden || aqiBusy) return;
+    if (aqiRetry) { clearTimeout(aqiRetry); aqiRetry = 0; }
+    aqiBusy = true;
+    try {
+      fetch(AQI_URL, { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined })
+        .then(r => (r && r.ok ? r.json() : Promise.reject(new Error('http ' + (r && r.status)))))
+        .then((js) => {
+          aqiBusy = false;
+          const r = aqiFromRows((js && js.features || []).map((f) => f && f.attributes), Date.now());
+          if (r) { aqiOkT = performance.now(); aqiBackoff = 60000; applyAqi(r); }
+          else if (AQI.ok && Date.now() - AQI.t > 24 * 3600000) applyAqi(null);   // a day of silence: back to clear air
+        })
+        .catch(() => {
+          aqiBusy = false;
+          aqiRetry = setTimeout(fetchAqi, aqiBackoff);
+          aqiBackoff = Math.min(aqiBackoff * 2, 15 * 60 * 1000);
+        });
+    } catch (e) { aqiBusy = false; }
+  }
+
   // ---- weather FX. Two camera-following particle boxes (rain streaks as line
   // pairs, snowflakes as soft points) advect in world space and wrap through a
   // box around the camera via mod(), so flying through a storm streams it past
@@ -13724,8 +13821,8 @@
   // to bend the sky, sun, hemisphere and scene fog. prefers-reduced-motion keeps
   // the sky and fog response but drops the particles and the lightning strobe.
   const WXFX = {
-    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0,
-    tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0,
+    rain: 0, snow: 0, gloom: 0, fog: 0, hail: 0, snowGround: 0, wet: 0, haze: 1, hazeTint: 0,
+    tRain: 0, tSnow: 0, tGloom: 0, tFog: 0, tHail: 0, tSnowGround: 0, tWet: 0, tHaze: 1, tHazeTint: 0,
     storm: false, seeded: false, flash: 0, nextBolt: 0, boltEnd: 0, boltFlash: 0, boltSoft: false, dayF: 1, boltGap: [2600, 9000],
   };
   function wxSetTargets() {
@@ -13759,10 +13856,11 @@
     F.tSnowGround = F.tSnow > 0.02 ? clamp(0.35 + 0.5 * F.tSnow, 0, 0.85) : 0;
     if (WX.temp != null && WX.temp > 38) F.tSnowGround *= 0.25;   // too warm to stick: slush at best
     F.tWet = (F.tRain > 0.02 || iceCode) ? clamp(0.35 + 0.65 * F.tRain, 0, 1) : 0;
+    F.tHaze = AQI.ok ? AQI.k : 1; F.tHazeTint = AQI.ok ? AQI.tint : 0;   // the air quality rides along (applyAqi)
     if (!F.seeded) {   // first report of the session: land in the ongoing weather, don't fade into it
       F.seeded = true;
       F.rain = F.tRain; F.snow = F.tSnow; F.gloom = F.tGloom; F.fog = F.tFog; F.hail = F.tHail;
-      F.snowGround = F.tSnowGround; F.wet = F.tWet;
+      F.snowGround = F.tSnowGround; F.wet = F.tWet; F.haze = F.tHaze; F.hazeTint = F.tHazeTint;
     }
   }
   // ---- weather on surfaces: snow lies on whatever faces up (roofs, roads,
@@ -14251,6 +14349,9 @@
     F.gloom += (F.tGloom - F.gloom) * e;
     F.fog += (F.tFog - F.fog) * e;
     F.hail += (F.tHail - F.hail) * e;
+    const eh = 1 - Math.exp(-dt / 20);   // a haze never snaps: twenty seconds either way
+    F.haze += (F.tHaze - F.haze) * eh;
+    F.hazeTint += (F.tHazeTint - F.hazeTint) * eh;
     F.wet += (F.tWet - F.wet) * (1 - Math.exp(-dt / (F.tWet > F.wet ? 25 : 300)));   // streets darken fast, dry slowly
     // accumulation settles in about a minute of snowfall; melts off slowly, faster above freezing
     const sgTau = F.tSnowGround > F.snowGround ? 40 : (WX.temp != null && WX.temp > 38 ? 180 : 600);
@@ -14343,6 +14444,10 @@
       sunDir.copy(sp.dir);
       sun.intensity = 1.85 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
+      if (WXFX.hazeTint > 0.003) {   // smoke: a dimmer, redder sun
+        sun.intensity *= 1 - 0.3 * WXFX.hazeTint;
+        sun.color.lerp(_c2.set(0xff7a30), WXFX.hazeTint * 0.5);
+      }
       glintDir.copy(sp.dir);
     } else if (mp.el > 2) {
       // moonlight follows the real moon: direction, and strength by phase
@@ -14395,6 +14500,10 @@
       cz.lerp(_c2.set(0xb6bec8).multiplyScalar(0.15 + 0.85 * dayF), snowSky);
       ch.lerp(_c2.set(0xd6dade).multiplyScalar(0.15 + 0.85 * dayF), snowSky * 0.9);
     }
+    if (WXFX.hazeTint > 0.003) {   // smoke (Round 75): a tan horizon and a milky zenith, the June 2023 sky
+      ch.lerp(_c2.set(0xb89a72).multiplyScalar(0.15 + 0.85 * dayF), WXFX.hazeTint * 0.55);
+      cz.lerp(ch, WXFX.hazeTint * 0.3);
+    }
     if (WXFX.flash > 0.003) {   // lightning: sky and cloud deck flare blue-white
       cz.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.55);
       ch.lerp(_c2.set(0xeef2ff), WXFX.flash * 0.6);
@@ -14407,19 +14516,22 @@
     // also calms the env-map wash that read as "snow on the ground" on
     // overcast days (the bright white dome was over-lighting every flat)
     skyMat.uniforms.uCloudLight.value = (0.10 + 0.95 * dayF + twi * 0.25) * (1 - 0.15 * WX.cover) * (1 - 0.55 * WXFX.gloom) + WXFX.flash * 2.2;
-    skyMat.uniforms.cSun.value.copy(_c1.set(0xff8a40)).lerp(_c2.set(COLORS.sun), smooth(0, 20, el));
+    skyMat.uniforms.cSun.value.copy(_c1.set(0xff8a40)).lerp(_c2.set(COLORS.sun), smooth(0, 20, el)).lerp(_c1.set(0xff7a30), WXFX.hazeTint * 0.5);
     scene.fog.color.copy(ch);
     // weather visibility: rain, snow and storm thicken the haze; true fog collapses it
     const murk = Math.max(WXFX.rain * 0.4, WXFX.snow * 0.6, WXFX.gloom * 0.5);
     scene.fog.color.lerp(_c2.set(0xbfc6cc).multiplyScalar(0.12 + 0.88 * dayF), Math.max(WXFX.fog * 0.9, WXFX.snow * 0.4, WXFX.snowGround * 0.3));
+    scene.fog.color.lerp(_c2.set(0xa88a62).multiplyScalar(0.12 + 0.88 * dayF), WXFX.hazeTint * 0.7);   // smoke browns the air itself
     // night air is shorter: the clear-air 16 km let the far ring's lit windows mass into a
     // white band on the horizon (the post target resolves its edges in linear light, where a
     // half-covered 1.3 window averages to white, not grey); by night the haze closes to 2.5..9 km
     // and the far city sinks into the sky the way the game's does
     // (the clear day air runs 8 to 40 km since Round 52; the night factors keep the night at
     // about 2.8 to 16 km, the reach Round 51 settled on, or the far windows band the horizon again)
-    scene.fog.near = fogBase.near * (1 - 0.65 * night) * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
-    scene.fog.far = fogBase.far * (1 - 0.6 * night) * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
+    // (and since Round 75 the live PM2.5 scales both: WXFX.haze is 1 in clean air, 0.4 on an
+    // orange day, 0.1 in wildfire smoke; everything fogged follows scene.fog.far, cullFogged too)
+    scene.fog.near = fogBase.near * WXFX.haze * (1 - 0.65 * night) * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
+    scene.fog.far = fogBase.far * WXFX.haze * (1 - 0.6 * night) * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xdde7f2), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
     if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x9c8e74), dayF);
@@ -14470,6 +14582,7 @@
     const oct = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'][Math.round(mp.az / 45) % 8];
     timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set)
       + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' + (WX.temp == null ? '' : ' ' + Math.round(WX.temp) + '°F') + (wxLabelFull() ? ' ' + wxLabelFull() : '') : '')
+      + (AQI.ok && AQI.aqi != null ? '   Air quality: ' + AQI.aqi + ', ' + AQI.cat : '')
       + (LTN.live && LTN.n10 > 0 ? '   ⚡ ' + LTN.n10 + (LTN.n10 === 1 ? ' strike' : ' strikes') + ' in 10 min, nearest ' + Math.max(1, Math.round(LTN.nearestKm * 0.6214)) + ' mi' : '')
       + '   ☾ ' + phase + ' ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', Up ' + oct : ', Set');
   }
@@ -14766,8 +14879,12 @@
 
   setHint();
   if (WX_PRESETS[wxForced]) applyWx({ current: WX_PRESETS[wxForced] });
+  if (aqiForced) applyAqi(aqiPreset(aqiForced));   // ?aqi= pins the air; a ?wx= preset alone pins it clean
+  else if (WX_PRESETS[wxForced]) applyAqi(aqiPreset('good'));
   fetchWeather();
   setInterval(fetchWeather, 15 * 60 * 1000);
+  fetchAqi();
+  setInterval(fetchAqi, 15 * 60 * 1000);   // the readings are hourly; 15 min keeps a value at most 75 min old
   fetchNws();
   setInterval(fetchNws, 5 * 60 * 1000);   // the NWS caches its answers ~5 min anyway
   // remembered layers and clock, then the share hash on top of them; the rows
@@ -14829,7 +14946,7 @@
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
       window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
-      wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }),
+      wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi,
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     if (hashView.p) applyHashView(hashView.p);

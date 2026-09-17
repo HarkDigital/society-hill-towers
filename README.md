@@ -16,6 +16,8 @@ real solar clock over it all.
 - **Weather.** Live conditions from Open-Meteo: rain, snow, fog and lightning as they
   happen, snow settling on roofs and lawns, wet streets. `?wx=storm` (or clear,
   overcast, fog, drizzle, rain, downpour, hail, snow, blizzard, sleet) pins a preset.
+  The haze follows the city's own air monitors: a smoke day shortens the view and tints
+  the sky tan (`?aqi=unhealthy` pins it).
 - **Layers** (F): live SEPTA vehicles, Indego bike share, flights, ships, typical
   traffic, streetlights, street names, landmark labels, and neighborhood names.
 
@@ -60,7 +62,8 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
   historic districts: City of Philadelphia via OpenDataPhilly (CC-BY); traffic volumes:
   PennDOT RMSTRAFFIC.
 - Live: SEPTA TransitView, Indego / Bicycle Transit Systems, adsb.fi (ADS-B), aisstream.io
-  (AIS), Open-Meteo (weather), OpenStreetMap Nominatim (search).
+  (AIS), Open-Meteo (weather), Air Management Services (air quality), OpenStreetMap
+  Nominatim (search).
 - Rendering: [Three.js](https://threejs.org/) r149 (MIT), inlined.
 - Landmark massing and colors researched from public photographs, Philadelphia OPA
   parcels, and city LiDAR.

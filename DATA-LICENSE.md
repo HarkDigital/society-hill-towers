@@ -74,7 +74,10 @@ ADS-B data through the philly3d.com `/adsb` proxy, aisstream.io AIS positions, O
 copy of the city's music events for the next three days, refreshed every fifteen minutes, kept
 across a failed refresh and dropped by the page once it is three hours old, holding nothing
 outside that window; names, times, venues, one image link and the ticket link belong to Ticketmaster
-and are shown with a link to the event page; the page is unaffiliated), and OpenStreetMap
+and are shown with a link to the event page; the page is unaffiliated), the City of
+Philadelphia's Air Management Services latest core-site readings (Department of Public Health,
+ArcGIS Online, City of Philadelphia License; read by the page every fifteen minutes, nothing
+stored: the PM2.5 sets the haze and the AQI line on the time panel), and OpenStreetMap
 Nominatim for search (ODbL data; subject to the Nominatim usage policy). Each feed has its own
 terms of use; the page credits them.
 
