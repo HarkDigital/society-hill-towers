@@ -40,6 +40,7 @@ the files above must keep this notice if they are redistributed.
 |---|---|---|
 | `places.json` | `fetch_places.py` → `bake_places.py` | Philadelphia Register historic districts and neighborhood boundaries, City of Philadelphia via OpenDataPhilly / phl.carto.com. CC-BY 4.0: attribution to the City of Philadelphia is required. |
 | `markets.json` | `fetch_markets.py` → `bake_markets.py` | Farmers' Market Locations (`Farmers_Markets`, City of Philadelphia via OpenDataPhilly / City ArcGIS): names, hours, season, payments and websites shown on the tents' cards |
+| `markers.json`, the `a` rows | `fetch_markers.py` → `bake_markers.py` | Percent for Art (`Percent_for_Art_Public`, Office of Arts, Culture and the Creative Economy via OpenDataPhilly / City ArcGIS): titles, artists, dates, media and locations on the plinths' cards, with a link to the city's own image PDF (never copied) |
 | `trees.b64`, `tree_names.json` | `fetch_trees.py` → `pack_trees.py` | Philadelphia Parks & Recreation Tree Inventory 2025 (OpenDataPhilly / City ArcGIS) |
 | `poles.b64` | `fetch_poles.py` → `pack_poles.py` | Streets Department Street Poles inventory (OpenDataPhilly / City ArcGIS, 203,058 poles) |
 | `nw_parks.json` | `fetch_nw_parks.py` | Parks & Recreation `PPR_Properties` parkland boundaries (OpenDataPhilly) |
@@ -51,6 +52,15 @@ City datasets on OpenDataPhilly are generally released under CC-BY 4.0
 (https://creativecommons.org/licenses/by/4.0/); attribution ("City of Philadelphia" and the
 department named above) is required; the page's credit line carries it on screens wider than 900 px, and the Credits link (the About panel) carries it on every screen. Check the
 individual dataset page on OpenDataPhilly for any exception before reusing a file.
+
+## Pennsylvania Historical and Museum Commission (public domain)
+
+The `m` rows of `markers.json` (`fetch_markers.py` → `bake_markers.py`) are the Commission's
+historical markers in Philadelphia County from the Pennsylvania open data portal
+(https://data.pa.gov/resource/xt8f-pzzz.json, dataset "Pennsylvania Historical Markers,
+Historical and Museum Commission", license Public Domain, attribution PHMC): each marker's
+name, dedication date, type, location and the marker text itself, shown verbatim on the
+card apart from the dash rule. The page credits the Commission.
 
 ## USGS (public domain)
 

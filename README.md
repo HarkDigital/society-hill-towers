@@ -22,6 +22,8 @@ real solar clock over it all.
   traffic, streetlights, street names, landmark labels, and neighborhood names.
 - **Markets.** The city's 34 farmers' markets pitch their tents only while the clock
   says they are open; tap a tent for the hours and payments, or search a market by name.
+- **Markers and art.** The state's 348 historical markers stand at their posts with the
+  full text a tap away, and the city's Percent for Art works on their plinths.
 
 ## Build
 
@@ -61,8 +63,9 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
   colours sampled from the City's 2024 orthophotos.
 - Street trees: Philadelphia Parks & Recreation Tree Inventory 2025; streetlights: Streets
   Department Street Poles inventory; parkland: Parks & Recreation; neighborhoods, historic
-  districts and farmers' markets: City of Philadelphia via OpenDataPhilly (CC-BY); traffic
-  volumes: PennDOT RMSTRAFFIC.
+  districts, farmers' markets and Percent for Art: City of Philadelphia via OpenDataPhilly
+  (CC-BY); historical markers: Pennsylvania Historical and Museum Commission (public
+  domain); traffic volumes: PennDOT RMSTRAFFIC.
 - Live: SEPTA TransitView, Indego / Bicycle Transit Systems, adsb.fi (ADS-B), aisstream.io
   (AIS), Open-Meteo (weather), Air Management Services (air quality), OpenStreetMap
   Nominatim (search).

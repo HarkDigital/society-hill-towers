@@ -9989,6 +9989,7 @@
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
   let pickedVeh = null;
+  let pickedMarker = null, pickedArt = null;   // a historical marker's or an artwork's card follows its post (Round 77)
   let pickedMarket = null;   // a farmers' market's card follows its tents (Round 76)
   const septaEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   // upload only the live instances of a fleet mesh, not its whole buffer. three
@@ -10145,7 +10146,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -10170,7 +10171,8 @@
     const shAct = shipReady && SHIPS.on && shipAnchor.count > 0;
     const tAct = !!treeInv;                            // the forest picks with every live layer off
     const mAct = marketsReady && marketTentN > 0;      // the open markets' tents (Round 76)
-    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct) return;
+    const kAct = markersReady;                         // the historical markers and the art (Round 77)
+    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -10216,29 +10218,35 @@
     if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
     if (shAct) { for (const m of shipMeshes) if (m.count) targets.push(m); targets.push(shipAnchor); }
     if (mAct) for (const m of marketMeshes) if (m.count) targets.push(m);
+    if (kAct) { for (const m of markerMeshes) if (m.count) targets.push(m); for (const m of artMeshes) if (m.count) targets.push(m); }
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
       const h = hits[0];
       let v = null, hitSt = null;
       if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.shipKind !== undefined || h.object === shipAnchor) {
         const p = h.object === shipAnchor ? shipPick[SHIP_KIND_N][h.instanceId] : shipPick[h.object.userData.shipKind][h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.marketWay !== undefined) {
         const m = marketPick[h.object.userData.marketWay][h.instanceId];
-        if (m) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = m; marketCard(m); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (m) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedMarket = m; marketCard(m); vehinfoEl.hidden = false; cardUnlock(); return; }
+      }
+      if (h.object.userData.markerType !== undefined || h.object.userData.artMat !== undefined) {
+        const isM = h.object.userData.markerType !== undefined;
+        const r = isM ? markerPick[h.object.userData.markerType][h.instanceId] : artPick[h.object.userData.artMat][h.instanceId];
+        if (r) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = isM ? r : null; pickedArt = isM ? null : r; if (isM) markerCard(r); else artCard(r); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
       else if (h.object === septaBadge) v = septaPickB[h.instanceId];
       else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
       else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
       else if (h.object === indegoBadge) hitSt = indegoPickB[h.instanceId];
-      if (v) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
-      if (hitSt) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
+      if (v) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      if (hitSt) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle or bike dock within reach of the
     // tap point (a little wider under the crosshair, where aiming is coarser)
@@ -10271,12 +10279,27 @@
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestM = m; bestV = null; bestS = null; }
     }
+    let bestK = null, bestKm = false;   // a marker post or a plinth within reach of the tap (Round 77)
+    if (kAct) {
+      const near = (r, h2, isM) => {
+        _ssv.set(r.x, r.gy + h2, r.z).project(camera);
+        if (_ssv.z > 1 || _ssv.z < -1) return;
+        const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
+        const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
+        const d2 = dx * dx + dy * dy;
+        if (d2 < bestD) { bestD = d2; bestK = r; bestKm = isM; bestV = null; bestS = null; bestM = null; }
+      };
+      for (const r of markerRecs) if (r.type < 2) near(r, 1.9, true);
+      for (const r of artRecs) near(r, 1.4, false);
+    }
     if (bestV && pickOccluded(bestV.dx != null ? bestV.dx : bestV.x, (bestV.gy || 0) + 2.5, bestV.dz != null ? bestV.dz : bestV.z)) bestV = null;
     if (bestS && pickOccluded(bestS.x, bestS.y + 2, bestS.z)) bestS = null;
     if (bestM && pickOccluded(bestM.x, bestM.gy + 2, bestM.z)) bestM = null;
-    if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
-    if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
-    if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
+    if (bestK && pickOccluded(bestK.x, bestK.gy + 1.6, bestK.z)) bestK = null;
+    if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestK) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = bestKm ? bestK : null; pickedArt = bestKm ? null : bestK; if (bestKm) markerCard(bestK); else artCard(bestK); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
+    if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
     // canopy spheres (tapping a crown is the natural gesture), then fall back
     // to the nearest tree around the tapped ground point (trunk-level taps)
@@ -10317,7 +10340,7 @@
       if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; vehinfoEl.hidden = true; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -11256,8 +11279,8 @@
   // districts, the named buildings and towers, and the painted street names, all
   // already in scene metres. Built once, on the first search.
   let nameIx = null;
-  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, building: 4, street: 5 };
-  const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', building: 'Building', street: 'Street' };
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, building: 4, street: 5 };
+  const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art', building: 'Building', street: 'Street' };
   function buildNameIx() {
     const ix = [], seen = new Set();
     const add = (name, x, z, kind, ref) => {   // ref: the record a card can open on arrival (a market)
@@ -11268,6 +11291,8 @@
       ix.push({ name: s, lc: s.toLowerCase(), x, z, kind, ref });
     };
     for (const m of markets) add(m.n, m.x, m.z, 'market', m);
+    for (const r of markerRecs) add(r.name, r.x, r.z, 'marker', r);
+    for (const r of artRecs) add(r.title, r.x, r.z, 'art', r);
     for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
     for (const lm of META_L) {
       const b = lm && lm.name ? findBuilding(lm.name) : null;
@@ -11307,9 +11332,12 @@
     const wide = e.kind === 'neighborhood' || e.kind === 'district';   // an area reads from higher up and needs no pin
     searchFlyTo(e.x, gy + (e.kind === 'landmark' ? 30 : 8), e.z, wide ? 600 : e.kind === 'landmark' ? 250 : 220);
     if (wide) clearSearchMark(); else placeSearchMark(e.x, gy, e.z, e.name);
-    if (e.kind === 'market' && e.ref) {   // the card says when it is open, whether or not the tents are up
-      pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = e.ref;
-      marketCard(e.ref); vehinfoEl.hidden = false;
+    if ((e.kind === 'market' || e.kind === 'marker' || e.kind === 'art') && e.ref) {   // arrive with the card open (a market's says when it opens)
+      pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null;
+      if (e.kind === 'market') { pickedMarket = e.ref; marketCard(e.ref); }
+      else if (e.kind === 'marker') { pickedMarker = e.ref; markerCard(e.ref); }
+      else { pickedArt = e.ref; artCard(e.ref); }
+      vehinfoEl.hidden = false;
     }
     if (isTouch) toggleSearch(false);
   }
@@ -13605,6 +13633,139 @@
     }
   }
 
+  // ---- historical markers and public art (Round 77). The 348 Pennsylvania Historical and
+  // Museum Commission markers in Philadelphia (public domain, data.pa.gov) and the City's 224
+  // active Percent for Art works (MARKERS, from fetch_markers.py / bake_markers.py) stand where
+  // they stand: the classic blue-and-gold PHMC post (Roadside the wide plate from 1.3 m, City
+  // the narrow one, both with the keystone finial and gold lines of text on either face; the
+  // five wall plaques get no post), placed on the ground facing the nearest street and moved
+  // to the sidewalk when the state's point lands on the roadway or inside the block, and a
+  // plinth with an upright form for each artwork in bronze, steel, stone or a verdigris by its
+  // medium. Always on, like the streetlamps (no layer bit). Tap one for the marker's full text
+  // or the work's title, artist, date and medium (a link to the city's image PDF, never
+  // inlined); the search box knows every marker and title.
+  const MARKER_BLUE = [0.10, 0.22, 0.46], MARKER_GOLD = [0.72, 0.56, 0.16], MARKER_POST = [0.18, 0.20, 0.24];
+  const ART_MATS = [[0.36, 0.22, 0.10], [0.55, 0.57, 0.60], [0.50, 0.47, 0.42], [0.22, 0.45, 0.38]];   // bronze, steel, stone, other
+  const markerRecs = [], artRecs = [];
+  const markerMeshes = [], markerPick = [[], []], artMeshes = [], artPick = [[], [], [], []];
+  let markersReady = false, cardWide = false;
+  function markerPostGeom(type) {   // 0 Roadside, 1 City
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, c) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), c[0], c[1], c[2]));
+    const w = type === 0 ? 1.14 : 0.71, h = type === 0 ? 1.07 : 1.0, y0 = type === 0 ? 1.3 : 1.4;
+    box(0.08, y0 + 0.2, 0.08, 0, (y0 + 0.2) / 2, 0, MARKER_POST);            // the post
+    box(w + 0.06, h + 0.06, 0.03, 0, y0 + h / 2, 0, MARKER_GOLD);              // the gold frame
+    box(w, h, 0.05, 0, y0 + h / 2, 0, MARKER_BLUE);                            // the blue plate, proud of it
+    for (let i = 0; i < 5; i++) box(w - 0.24, 0.035, 0.07, 0, y0 + h - 0.22 - i * 0.16, 0, MARKER_GOLD);   // lines of text, both faces
+    box(0.34, 0.26, 0.05, 0, y0 + h + 0.18, 0, MARKER_GOLD);                   // the keystone finial
+    box(0.44, 0.1, 0.05, 0, y0 + h + 0.36, 0, MARKER_GOLD);
+    return septaMerge(parts);
+  }
+  function artFormGeom(mat) {
+    const parts = [], c = ART_MATS[mat];
+    const box = (sx, sy, sz, cx, cy, cz, col) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), col[0], col[1], col[2]));
+    box(0.9, 0.6, 0.9, 0, 0.3, 0, [0.45, 0.43, 0.40]);   // the plinth
+    box(0.4, 1.6, 0.15, 0, 1.4, 0, c);                    // an upright form
+    box(0.7, 0.12, 0.4, 0, 2.26, 0, c);                   // and its head
+    return septaMerge(parts);
+  }
+  step('Raising the historical markers', () => {
+    if (typeof MARKERS === 'undefined' || !MARKERS) return;
+    const mk = (geom, cap, key, val) => {
+      const m = new THREE.InstancedMesh(geom, new THREE.MeshLambertMaterial({ vertexColors: true }), Math.max(1, cap));
+      m.count = 0; m.frustumCulled = false; m.castShadow = true; m.receiveShadow = true;
+      m.userData[key] = val;
+      groupCity.add(m);
+      return m;
+    };
+    const nType = [0, 0], nMat = [0, 0, 0, 0];
+    for (const r of MARKERS.m || []) if (r[2] < 2) nType[r[2]]++;
+    for (const r of MARKERS.a || []) nMat[r[2]]++;
+    for (let t = 0; t < 2; t++) markerMeshes.push(mk(markerPostGeom(t), nType[t], 'markerType', t));
+    for (let k = 0; k < 4; k++) artMeshes.push(mk(artFormGeom(k), nMat[k], 'artMat', k));
+    // the ground and the yaw that faces the nearest street; a point within `near` of the
+    // centreline (the roadway, or the block behind the kerb, where a geocode lands and a
+    // building mass would swallow the post) moves to `out` metres from it on its own side,
+    // the sidewalk
+    const place = (x, z, near, out) => {
+      const sn = septaSnapRoad(x, z, 30);
+      let yaw = hash01(x * 0.37 + z * 0.11) * Math.PI * 2, px = x, pz = z;
+      if (sn) {
+        let tx = sn[0] - x, tz = sn[1] - z;
+        const L = Math.hypot(tx, tz);
+        if (L < near) {
+          let nx = -sn[3], nz = sn[2];
+          if (L > 0.3 && nx * tx + nz * tz > 0) { nx = -nx; nz = -nz; }   // away from the road, not into it
+          px = sn[0] + nx * out; pz = sn[1] + nz * out;
+          tx = sn[0] - px; tz = sn[1] - pz;
+        }
+        yaw = Math.atan2(tx, tz);
+      }
+      return { x: px, z: pz, y: siteY(px, pz, 'ground'), yaw };
+    };
+    const put = (mesh, c, p) => { _iq.setFromAxisAngle(_sup, p.yaw); _sp.set(p.x, p.y, p.z); _ss.set(1, 1, 1); _sm.compose(_sp, _iq, _ss); mesh.setMatrixAt(c, _sm); };
+    const counts = [0, 0];
+    for (const r of MARKERS.m || []) {
+      if (!insideLimit(r[0], r[1])) continue;
+      const rec = { x: r[0], z: r[1], type: r[2], year: r[3], name: r[4], loc: r[5], text: r[6] };
+      const p = place(rec.x, rec.z, 14, 5.5);
+      rec.x = p.x; rec.z = p.z; rec.gy = p.y;
+      markerRecs.push(rec);
+      if (rec.type > 1) continue;   // a wall plaque: a card and a search entry, no post
+      const c = counts[rec.type]++;
+      put(markerMeshes[rec.type], c, p);
+      markerPick[rec.type][c] = rec;
+    }
+    for (let t = 0; t < 2; t++) { markerMeshes[t].count = counts[t]; markerMeshes[t].instanceMatrix.needsUpdate = true; }
+    const ac = [0, 0, 0, 0];
+    for (const r of MARKERS.a || []) {
+      if (!insideLimit(r[0], r[1])) continue;
+      const rec = { x: r[0], z: r[1], mat: r[2], title: r[3], artist: r[4], date: r[5], medium: r[6], where: r[7], img: r[8] };
+      const p = place(rec.x, rec.z, 31, 5);   // any street within 30 m: the work stands on its sidewalk (the Clothespin's point lies inside Centre Square's outline); a park or plaza piece farther from a street stays put
+      rec.x = p.x; rec.z = p.z; rec.gy = p.y;
+      artRecs.push(rec);
+      const c = ac[rec.mat]++;
+      put(artMeshes[rec.mat], c, p);
+      artPick[rec.mat][c] = rec;
+    }
+    for (let k = 0; k < 4; k++) { artMeshes[k].count = ac[k]; artMeshes[k].instanceMatrix.needsUpdate = true; }
+    markersReady = true;
+  });
+  function markerCard(r) {
+    const kind = r.type === 0 ? 'Roadside marker' : r.type === 1 ? 'City marker' : 'Plaque';
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:#1f4e9c;color:#f2d27a">PHMC</span>' +
+      '<span class="vdest">' + septaEsc(r.name) + '</span>' +
+      '<div class="vmeta vtext">' + septaEsc(r.text) + '</div>' +
+      (r.loc ? '<div class="vmeta">' + septaEsc(r.loc) + '</div>' : '') +
+      '<div class="vmeta">' + (r.year ? 'Dedicated ' + r.year + ', ' : '') + kind + '</div>' +
+      '<div class="vmeta">Pennsylvania Historical and Museum Commission</div>';
+  }
+  function artCard(r) {
+    vehinfoBody.innerHTML =
+      '<span class="vroute" style="background:#b8862b">Art</span>' +
+      '<span class="vdest">' + septaEsc(r.title) + '</span>' +
+      (r.artist ? '<div class="vmeta">' + septaEsc(r.artist) + '</div>' : '') +
+      ((r.date || r.medium) ? '<div class="vmeta">' + septaEsc([r.date, r.medium].filter(Boolean).join(', ')) + '</div>' : '') +
+      (r.where ? '<div class="vmeta">' + septaEsc(r.where) + '</div>' : '') +
+      '<div class="vmeta">Percent for Art, City of Philadelphia</div>' +
+      (r.img ? '<a class="vlink" href="' + septaEsc(r.img) + '" target="_blank" rel="noopener">View the Image (PDF)</a>' : '');
+  }
+  function updateMarkerPick() {
+    const wide = !!pickedMarker;   // a 460-character marker text needs the wide card
+    if (wide !== cardWide) { cardWide = wide; vehinfoEl.classList.toggle('wide', wide); }
+    const r = pickedMarker || pickedArt;
+    if (!r) return;
+    _ssv.set(r.x, r.gy + (pickedMarker ? 2.8 : 2.5), r.z).project(camera);
+    if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+    else {
+      vehinfoEl.style.opacity = '1';
+      vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+        ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+        ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    }
+  }
+
   // ---------------------------------------------------------------- solar clock
   // NOAA solar position for the towers' latitude/longitude; Philadelphia local
   // time with US daylight-saving rules. Drives sun, sky, fog, and the lit windows.
@@ -15054,6 +15215,7 @@
     updateTreePick();
     updateMarkets();
     updateMarketPick();
+    updateMarkerPick();
     updateSearchMark(now);
     scoresPoll(now); scoresRender();
     concertsPoll(now); concertsRender();
@@ -15137,7 +15299,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi,
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

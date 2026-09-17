@@ -684,6 +684,8 @@ body.touchfly .pad { display: flex; }
   letter-spacing: 0.03em;
   margin-top: 3px;
 }
+#vehinfo.wide { max-width: 340px; }   /* a historical marker's full text (Round 77) */
+#vehinfo .vtext { line-height: 1.45; max-height: 38vh; overflow: auto; color: var(--paper); }
 #vehinfo .vlink { display: inline-block; margin-top: 7px; font-family: var(--display); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--limestone); text-decoration: none; border-bottom: 1px solid var(--limestone-dim); }
 #vehinfo .vlink:hover { color: var(--paper); border-bottom-color: var(--paper); }
 #vehinfoX {

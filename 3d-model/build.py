@@ -23,7 +23,7 @@ REQUIRED = {
     "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "storefronts.b64": 40_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "paved.b64": 250_000, "traffic.b64": 100_000,
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
     "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000, "parking_south.json": 9_000,
-    "towers.json": 4_000, "schuylkill.json": 8_000, "delaware.json": 8_000, "markets.json": 3_000,
+    "towers.json": 4_000, "schuylkill.json": 8_000, "delaware.json": 8_000, "markets.json": 3_000, "markers.json": 120_000,
 }
 MAX_HTML = 75_000_000   # runaway-growth tripwire, raised from 25 MB on 2026-09-02 for the roof, colour and storefront passes (the page was ~25 MB; the old 16 MB artifact cap is long moot)
 # Packed int16 blobs are stored byte-planar (header, all low bytes, all high
@@ -137,6 +137,7 @@ const("TREE_NAMES", text_of("tree_names.json", "null"))
 # historic districts + neighborhood labels (fetch_places.py / bake_places.py)
 const("PLACES", text_of("places.json", "null"))
 const("MARKETS", text_of("markets.json", "null"))   # the farmers' markets on the clock (fetch_markets.py / bake_markets.py, Round 76)
+const("MARKERS", text_of("markers.json", "null"))   # the PHMC historical markers and the Percent for Art works (fetch_markers.py / bake_markers.py, Round 77)
 # street-name SDF atlas (bake_street_sdf.py — crisp lettering at any zoom)
 sdf = text_of("street_sdf.json", "null")
 SIZES.append(("ST_SDF", len(sdf)))

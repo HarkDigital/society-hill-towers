@@ -3642,3 +3642,49 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   the Shambles roof, where the market really is, so from the air a Sunday and a Monday look
   alike there and at street level the stripes show between the piers. 58 tests pass
   (`tests/test_markets_bake.py`, `tests/test_markets_js.py` under JavaScriptCore).
+
+## Round 77: the historical markers and the public art (Sep 16)
+
+- **Mike's pick from the survey: markers and public art.** Two sources. The Pennsylvania
+  Historical and Museum Commission's markers on the state portal (Socrata `xt8f-pzzz`, public
+  domain): 348 in Philadelphia County, City 244, Roadside 99, Plaque 5, with name,
+  dedication date, location and the marker text itself (104 KB of text, the longest 464
+  characters), seven coordinate pairs shared by two markers, eleven rows with an undocumented
+  `status = True` (kept; the bake prints them). The City's Percent for Art layer: 239 works
+  whose polygons are 40 m buffers (the centroid is the spot), Active 224, Inaccessible 10
+  (interior works), In Progress 5; an S3 PDF link for 130 of the kept works and the literal
+  "No image available" for the rest; the streetview links mostly "N/A". `fetch_markers.py`
+  caches both, `bake_markers.py` writes `markers.json` (177 KB): arrays not objects, whole
+  metres, types by name, the state's " - PLAQUE" suffix stripped, twins nudged 2 m apart,
+  Active works only, a material scan of the medium (bronze 54, steel 86, stone 18, other 66),
+  the image link only on the city's bucket, every string cleaned and none carrying `</script`.
+  One more rule came from the pane: the Clothespin's plinth was nowhere at Centre Square
+  because its buffer centroid lies inside the podium's footprint, thirty metres from any
+  street, and a post inside a building mass is a post nobody sees. The bake now tests every
+  point against the page's own footprints (scene.json's core polys and the two packed tiers,
+  decoded through the test suite's walker in 1.5 s, 296k rings in a 64 m grid) and steps an
+  inside point 2.5 m out past the nearest wall (`FootGrid`, three tries for a point that
+  lands in the next building): 59 markers and 135 of the 224 artworks moved, which says
+  where the city's art points really sit, at the building's address.
+- **What it does.** `step('Raising the historical markers')`: two instanced meshes for the
+  posts (Roadside: a 1.14 by 1.07 m plate from 1.3 m; City: 0.71 by 1.0 m from 1.4 m; a dark
+  post, a gold frame, the blue plate proud of it, five gold lines of text on either face and a
+  keystone finial, about 170 triangles) and four for the art (a stone plinth with an upright
+  form in bronze, steel, stone or a verdigris). Each has its own Lambert material (a shared
+  instance-colour program reads black), casts shadows, and is always on like the streetlamps.
+  Placement: `siteY` ground and `septaSnapRoad` within 30 m for the yaw that faces the
+  street; a marker within 9 m of the centreline (the roadway, or the block behind the kerb
+  where a geocode lands) moves to the sidewalk 5.5 m out on its own side, a work within 3 m
+  to 4.5 m. The five wall plaques get a card and a search entry, no post. The picker takes a
+  hit on a post or a plinth, or the nearest of the 567 within 30 px of the tap, and the card
+  follows the post: PHMC chip, name, the full text in a scrolling wide card (`#vehinfo.wide`,
+  `.vtext`), location, "Dedicated 1993, City marker", the Commission's credit; for a work the
+  title, artist, "1970, Metal, stainless steel", where, the Percent for Art credit and a link
+  to the image PDF, never inlined. The search box knows every marker and title
+  ("Historical Marker", "Public Art") and arrives with the card open; `__dbg.markers()`,
+  `cardFor('marker', name)`, `cardFor('art', title)`.
+- **Measured in the pane**: 343 posts and 224 plinths raised; captures of "Common Sense" on
+  the far sidewalk of 3rd Street facing the road, the Betsy Ross City marker on the lawn at
+  Arch Street, and the art plinths; from 90 m over Independence Mall the posts are the
+  pinpricks they are in life. Page 26.21 MB, plus 188 KB raw for the two layers.
+  62 tests pass (`tests/test_markers_bake.py`).
