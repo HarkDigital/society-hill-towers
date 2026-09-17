@@ -30,6 +30,9 @@ real solar clock over it all.
 - **Close by.** Everything that stands on the ground (vehicles, docks, trains, markers, art,
   closures, tents) draws only within half a mile of you, each closed block, marker and
   artwork under its own pin; flights and ships stay visible across the city.
+- **Rail.** Amtrak's corridor is one continuous track bed across the city, its bridges on piers,
+  and it runs into 30th Street Station's lower level through two open cuts. On a game night the
+  Comcast crowns and the FMC Tower stripe the team's pair while the skyline holds its colour.
 - **Lights.** After dark the crowns of every tall tower, the Liberty Places' chevrons, the whole
   of City Hall, the Xfinity Mobile Arena and the Ben Franklin Bridge glow in the night's colour: a Philadelphia team's on its game day (Eagles, then Phillies,
   Flyers, Sixers), otherwise the cause on BOMA Philadelphia's Building Illumination Calendar,

@@ -156,8 +156,62 @@ def grade(x, z):
     if y >= WATER + 0.6:
         return y
     return BULK if east_of_del(x, z) else WATER + 0.45
+# Round 85: the river's real outline (schuylkill.json, OSM natural=water) decides "over water" for the Schuylkill;
+# the hand polyline above runs up to a kilometre west of the river through Center City, so the crossings between
+# Spring Garden and South Street solved 7 m over the water instead of the rule's 13 and 20
+_SCH = None
+def _sch_polys():
+    global _SCH
+    if _SCH is None:
+        _SCH = []
+        fp = os.path.join(HERE, "schuylkill.json")
+        if os.path.exists(fp):
+            for pg in json.load(open(fp)).get("polys", []):
+                rings = [pg["ring"]] + list(pg.get("holes", []))
+                xs = [q[0] for q in pg["ring"]]; zs = [q[1] for q in pg["ring"]]
+                _SCH.append((min(xs), max(xs), min(zs), max(zs), rings))
+    return _SCH
+def _in_ring(x, z, ring):
+    inside = False
+    n = len(ring)
+    for i in range(n):
+        ax, az = ring[i]; bx, bz = ring[(i + 1) % n]
+        if (az > z) != (bz > z):
+            t = (z - az) / (bz - az)
+            if x < ax + (bx - ax) * t:
+                inside = not inside
+    return inside
+def sch_bank(x, z, r=40.0):
+    """Within r of the Schuylkill outline's edge (Round 85: the touch-down floor is the bank's, not the made land's)."""
+    r2 = r * r
+    for x0, x1, z0, z1, rings in _sch_polys():
+        if x < x0 - r or x > x1 + r or z < z0 - r or z > z1 + r:
+            continue
+        for ring in rings:
+            n = len(ring)
+            for i in range(n):
+                ax, az = ring[i]; bx, bz = ring[(i + 1) % n]
+                dx, dz = bx - ax, bz - az
+                L2 = dx * dx + dz * dz or 1e-9
+                t = ((x - ax) * dx + (z - az) * dz) / L2
+                t = 0.0 if t < 0 else 1.0 if t > 1 else t
+                ex, ez = ax + dx * t - x, az + dz * t - z
+                if ex * ex + ez * ez < r2:
+                    return True
+    return False
+def in_schuylkill(x, z):
+    for x0, x1, z0, z1, rings in _sch_polys():
+        if x < x0 or x > x1 or z < z0 or z > z1:
+            continue
+        hit = False
+        for r in rings:
+            if _in_ring(x, z, r):
+                hit = not hit
+        if hit:
+            return True
+    return False
 def over_water(x, z):
-    return dem_y(x, z) < WATER + 0.6 and (east_of_del(x, z) or near_schuylkill(x, z))
+    return in_schuylkill(x, z) or (dem_y(x, z) < WATER + 0.6 and (east_of_del(x, z) or near_schuylkill(x, z)))
 
 # Front St line fit (locates the existing core I-95 trench corridor)
 fl = {"px": 140, "pz": 0, "dx": -0.167, "dz": 0.986, "nx": 0.986, "nz": 0.167}
@@ -445,7 +499,9 @@ def solve_chain(cids, sunk):
         if any(oid in W and W[oid]["skipname"] for oid in touch):
             return tgt[idx]                              # meets a custom bridge: hold
         if any(oid in W and oid not in chain_set for oid in touch):
-            return grade(P[idx][0], P[idx][1]) + 0.3     # meets plain roads: touch down
+            x, z = P[idx][0], P[idx][1]
+            y0 = grade(x, z) + 0.3     # meets plain roads: touch down
+            return max(y0, WATER + 1.4) if (in_schuylkill(x, z) or sch_bank(x, z)) else y0     # never awash on the Schuylkill's bank; the made land keeps its datum (Round 85)
         return tgt[idx]                                  # dead end at the data edge: hold
     def end_kind(idx):
         """0 = ramps to grade, 1 = pinned to a junction or held high."""
@@ -470,10 +526,18 @@ def solve_chain(cids, sunk):
     for i in range(n - 2, 0, -1):
         d = (s[i + 1] - s[i]) * slope
         y[i] = min(max(y[i], y[i + 1] - d), y[i + 1] + d)
+    # Round 85: an elevated deck never sits under the DEM it is meant to clear (the slope limit could not climb the
+    # concourse's rise at 30th Street, so Schuylkill Avenue's ramp ran 1.7 to 4.2 m under the drawn ground)
+    if not sunk:
+        for i in range(1, n - 1):
+            y[i] = max(y[i], g[i] + 0.45)
     # soften profile kinks (ends stay pinned); junction heights register AFTER
     # smoothing so ramps meet the smoothed mainline exactly
     for _ in range(2):
         y = [y[0]] + [(y[i - 1] + y[i] + y[i + 1]) / 3 for i in range(1, n - 1)] + [y[-1]]
+    if not sunk:
+        for i in range(1, n - 1):
+            y[i] = max(y[i], g[i] + 0.3)
     for i, p in enumerate(P):
         if p[3] is not None and p[3] not in node_y:
             node_y[p[3]] = y[i]

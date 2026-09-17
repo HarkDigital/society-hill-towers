@@ -112,7 +112,7 @@ class LightsRuntime(unittest.TestCase):
         self.assertEqual(6, out['calRows'], 'the unknown colour, the bad date and the reversed range are dropped')
         self.assertEqual(1789000000, out['calT'])
         self.assertIn('A btag/b in the name', out['calNames'], 'angle brackets never reach the panel')
-        self.assertEqual({'colors': ['green'], 'name': 'Go Birds', 'src': 'nfl'}, out['sep17'], 'the Eagles beat the Phillies and the calendar')
+        self.assertEqual({'colors': ['green'], 'stripes': ['green', 'white'], 'name': 'Go Birds', 'src': 'nfl'}, out['sep17'], 'the Eagles beat the Phillies and the calendar; the striped parts take the pair (Round 85)')
         self.assertEqual({'colors': ['teal', 'cyan'], 'name': 'Trigeminal Neuralgia Awareness Day', 'src': 'boma'}, out['sep17noGames'],
                          'the one-day request beats the three-day one; the earlier of two one-day requests loses to the later start only when spans tie and starts differ')
         self.assertEqual({'colors': ['blue'], 'name': 'Pulmonary Fibrosis Awareness Month', 'src': 'boma'}, out['sep16'])
@@ -125,7 +125,10 @@ class LightsRuntime(unittest.TestCase):
         self.assertEqual({'colors': ['white'], 'name': '', 'src': 'house'}, out['dec1'], 'nothing that night: the house white')
         self.assertEqual('house', out['noCal']['src'], 'no data at all is the house white, not an error')
         p = out['pins']
-        self.assertEqual({'colors': ['green'], 'name': 'Go Birds', 'src': 'pin'}, p[0])
+        self.assertEqual({'colors': ['green'], 'stripes': ['green', 'white'], 'name': 'Go Birds', 'src': 'pin'}, p[0])
+        self.assertEqual(['blue', 'red', 'white'], p[2]['stripes'], 'the Sixers stripe three')
+        self.assertNotIn('stripes', p[4], 'a hex pin deals its own colour to the stripes')
+        self.assertNotIn('stripes', p[5], 'so does a colour list')
         self.assertEqual('red', p[1]['colors'][0], 'the pin is case-insensitive')
         self.assertEqual('blue', p[2]['colors'][0])
         self.assertEqual('house', p[3]['src'], '?lights=off is the house white')

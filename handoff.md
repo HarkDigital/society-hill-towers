@@ -335,6 +335,30 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   the art carry pins (`pinTexture` / `pinMesh`: the aircraft badge's casing, masked out of the bloom,
   depth-tested), composed every frame at the SEPTA badges' size rule; `casterSig` counts the posts,
   plinths and drums so the shadow map follows them. `__dbg.near(m)`, `__dbg.nearState()`.
+- **Round 85's corridor and bank (Mike: the tracks broken all over the city, strips across the Schuylkill, the
+  bank roads clipped, the tracks short of 30th Street):** the corridor step stitches the 713 OSM ways into 57
+  chains by half-metre node keys, samples each chain at 20 m on the drawn ground (`groundMeshLandY`), ramps
+  every bridge-tagged or over-water run between its abutments (floored 9 m over water only when it crosses the
+  outline) with the approaches climbing over eight samples, pins chain ends to shared node heights, smooths the
+  free points twice, and draws each chain as one skirted ribbon with rails, plus a steel deck and piers under
+  the bridge runs. `RAIL_CUTS` are the two portal cuts at 30th Street (`railCut` joins `cutHole`, so the wide
+  ground opens over them; the rail step draws their floors, walls, collars and headwalls); the covered points
+  inside the station box take flag 4, a straight lower-level grade, are drawn, and the trains ride through.
+  The bank: `groundMeshLandY` returns null under water + 0.85 or within 40 m of the Schuylkill's outline, the
+  road loops floor a non-deck roadway at water + 1.2, covered sunken chains draw only their exposed stretches
+  with a face to the bed, and `bake_overpasses.py` tests over-water against `schuylkill.json`'s polygons.
+  `__dbg.rail()` gives the counts and the step's own check (`under`, `underMax`, `floatMax`, `grade`), `__dbg.railSnap`
+  the grid (`gradeAt`, `underAt` locate the extremes); the critique pass floored every span and free point at the drawn ground + 0.45 (a fill carries the
+  ballast, no deck or pier within 1.2 m of the ground, no pier within 8 m of a street), pinned a node to a span's
+  or the shed's height else the shared ground reading, gated the road floor and a new quay skirt to 60 m of the
+  Schuylkill's outline (`bankFloor`: water + 1.2 inside the outline eased to the datum across the 40 m band, read by
+  the road loops, the traffic, the drums and the buses, mirrored by `sch_bank` in `bake_overpasses.py`, which also
+  floors an elevated deck at its DEM + 0.45), dipped the cut collar under any deck it crosses, rebuilt the cut walls
+  as 10 m pieces following the ground outside them with a ring of ground-following collar sheets sized from the
+  25 m hole cells, pinned a node to the mean of its span or shed ends, anchored the shed grade to the cut floors,
+  and dropped the Norfolk Southern ways from `bake_rail.py` (operator tag). The striped LED parts (the Comcast crowns, the FMC) carry slots of 4 and
+  up, stripe indices into `uStripe0..3` reduced by `uStripeN`: a team's `stripes` pair from `LIGHT_TEAMS`, else
+  the night's own colours.
 - **Round 84's lit set:** the arena's band and wash, the Liberty Places' gable-edge neon (`neon()` in the
   landmark block, a bar between two world points), One Liberty's white spire and red beacon (mix 0: never
   the theme), City Hall washed whole (sheets on the block and every pavilion, the mansards and caps

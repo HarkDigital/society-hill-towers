@@ -507,7 +507,7 @@
     const ln = prepped.some(p => !!p.g.attributes.aLane) ? new Float32Array(count * 4) : null;
     // the night theme's house colour, mix and slot ride along when any part carries a `lit` (Round 81)
     const tl = parts.some(p => !!p.lit) ? new Float32Array(count * 3) : null;
-    const tm = tl ? new Float32Array(count) : null, ts = tl ? new Float32Array(count) : null, white1 = tl ? new THREE.Color(1, 1, 1) : null;
+    const tm = tl ? new Float32Array(count) : null, ts = tl ? new Float32Array(count) : null, tg = tl ? new Float32Array(count) : null, white1 = tl ? new THREE.Color(1, 1, 1) : null;
     let o = 0;
     const c = new THREE.Color();
     for (let pi = 0; pi < prepped.length; pi++) {
@@ -526,7 +526,7 @@
       if (tl) {
         const lc = parts[pi].lit || white1;
         for (let i = 0; i < vc; i++) { tl[(o + i) * 3] = lc.r; tl[(o + i) * 3 + 1] = lc.g; tl[(o + i) * 3 + 2] = lc.b; }
-        tm.fill(parts[pi].mix || 0, o, o + vc); ts.fill(parts[pi].slot || 0, o, o + vc);
+        tm.fill(parts[pi].mix || 0, o, o + vc); ts.fill(parts[pi].slot || 0, o, o + vc); tg.fill(parts[pi].gain || 1, o, o + vc);
       }
       for (let i = 0; i < vc; i++) {
         c.copy(color);
@@ -553,7 +553,7 @@
     }
     if (bs) out.setAttribute('aBase', new THREE.BufferAttribute(bs, 1));
     if (ln) out.setAttribute('aLane', new THREE.BufferAttribute(ln, 4));
-    if (tl) { out.setAttribute('aLit', new THREE.BufferAttribute(tl, 3)); out.setAttribute('aMix', new THREE.BufferAttribute(tm, 1)); out.setAttribute('aSlot', new THREE.BufferAttribute(ts, 1)); }
+    if (tl) { out.setAttribute('aLit', new THREE.BufferAttribute(tl, 3)); out.setAttribute('aMix', new THREE.BufferAttribute(tm, 1)); out.setAttribute('aSlot', new THREE.BufferAttribute(ts, 1)); out.setAttribute('aGain', new THREE.BufferAttribute(tg, 1)); }
     return out;
   }
 
@@ -1359,7 +1359,18 @@
   // that keys off siteY and the DEM keeps the inputs it was tuned on there
   function groundMeshLandY(x, z) {
     const y = groundMeshY(x, z);
-    return y !== null && y > TERRAIN.water + 0.3 ? y : null;
+    if (y === null || y <= TERRAIN.water + 0.85) return null;   // the carve's bank floor, not the sheet's 0.3 (Round 85: a bank road read the carved slope and sawtoothed to the water)
+    if (schEdges && schEdges(x, z)[0] < 40) return null;         // inside the bank ramp a road stands on the DEM, like the overpass chains
+    return y;
+  }
+  // the bank floor (Round 85, the critique): a non-deck roadway, a car, a bus or a drum on the Schuylkill's DEM-smeared bank never sits
+  // under water + 1.2 inside the outline, eased to the low-land datum (water + 0.45) across the 40 m carve band and nothing beyond it,
+  // so the made-land shelf (FDR Park, Eastwick, the Navy Yard, the airport: 44 km of road as low) keeps the datum everything else is built on
+  function bankFloor(x, z) {
+    if (!schEdges) return -Infinity;
+    if (schRaster && schRaster(x, z)) return TERRAIN.water + 1.2;
+    const d = schEdges(x, z)[0];
+    return d >= 40 ? -Infinity : TERRAIN.water + 0.45 + 0.75 * (1 - d / 40);
   }
 
   // ---- conformDrape (Round 52): a flat polygon laid on the registered ground so that every
@@ -2494,8 +2505,23 @@
     }
     return null;
   }
+  // Round 85: 30th Street Station's lower level runs 7 m under the concourse plateau from Chestnut Street to
+  // the parking podium's north face; the approaches enter it through two open cuts whose floors, walls and
+  // headwalls the rail step builds. Each cut is an oriented box: centre, the direction from its open end to
+  // the headwall, its length and width, the floor height and the headwall's top (model frame)
+  const RAIL_CUTS = [
+    { cx: -3223.8, cz: -833, dx: 0.25, dz: -0.968, len: 62, w: 62, floor: -4.3, head: 3.2 },   // south: Chestnut Street to the old Post Office's face (head: the DEM at the headwall, 10.8 to 11.7 m ASL)
+    { cx: -3131, cz: -1383, dx: 0, dz: 1, len: 26, w: 86, floor: -4.2, head: 2.5 },            // north: the podium's face
+  ];
+  function railCut(x, z, pad) {   // the cut's floor when (x, z) lies inside one, else null
+    for (const c of RAIL_CUTS) {
+      const rx = x - c.cx, rz = z - c.cz, u = rx * c.dx + rz * c.dz, v = -rx * c.dz + rz * c.dx;
+      if (Math.abs(u) <= c.len / 2 + (pad || 0) && Math.abs(v) <= c.w / 2 + (pad || 0)) return c.floor;
+    }
+    return null;
+  }
   function cutHole(x, z) {
-    return vineCut(x, z, -1) !== null || sunkCutNear(x, z, 1) !== null;
+    return vineCut(x, z, -1) !== null || sunkCutNear(x, z, 1) !== null || railCut(x, z, 1) !== null;
   }
 
   // ---------------------------------------------------------------- living water
@@ -6218,6 +6244,28 @@
         const themed = !!(lit && th.spec.theme), tslot = themed ? (themeSlotN++ % 4) : 0;
         const glow = (geom, k) => (themed ? themeParts : glowParts).push({ geom, color: lit.clone().multiplyScalar(k), lit: lit.clone().multiplyScalar(k), mix: 1, slot: tslot, style: 3 });
         const ry = Math.atan2(-ax.az, ax.ax);
+        const ledRing = (ring, y, hgt, off) => {   // a ribbon of outer faces `off` proud of the ring, `hgt` tall, centred on y: the LED line on a floor edge (Round 85)
+          const sg = signedArea(ring) > 0 ? 1 : -1, n2 = ring.length, pos = [], nor = [];
+          for (let j = 0; j < n2; j++) {
+            const a2 = ring[j], b2 = ring[(j + 1) % n2], dx = b2[0] - a2[0], dz = b2[1] - a2[1], L = Math.hypot(dx, dz);
+            if (L < 0.05) continue;
+            const nx = (dz / L) * sg, nz = (-dx / L) * sg, ex = dx / L * off, ez = dz / L * off;
+            const x0 = a2[0] + nx * off - ex, z0 = a2[1] + nz * off - ez, x1 = b2[0] + nx * off + ex, z1 = b2[1] + nz * off + ez, yl = y - hgt / 2, yh = y + hgt / 2;
+            if (sg < 0) pos.push(x0, yl, z0, x1, yl, z1, x1, yh, z1, x0, yl, z0, x1, yh, z1, x0, yh, z0);
+            else pos.push(x0, yl, z0, x1, yh, z1, x1, yl, z1, x0, yl, z0, x0, yh, z0, x1, yh, z1);
+            for (let q2 = 0; q2 < 6; q2++) nor.push(nx, 0, nz);
+          }
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+          g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
+          return g;
+        };
+        const ledDay = new THREE.Color(0x77838d);   // a spandrel aluminium by day
+        if (themed && th.spec.led) {   // Round 85 (Mike, with the photo): a light line on every floor edge of the footprint, the FMC Tower's signature (the crown floors ring their own plan in the notch case), and the sign bars
+          const lw = lit.clone().multiplyScalar(0.6), fp = 4.0;
+          for (let k2 = 3; th.base + k2 * fp < y0 - 1.0; k2++) themeParts.push({ geom: ledRing(th.poly, th.base + k2 * fp, 0.35, 0.3), color: ledDay, lit: lw, mix: 1, slot: 4 + tslot + Math.floor(k2 / 5), gain: 1.6, style: 3 });
+          for (const s of [-1, 1]) themeParts.push({ geom: box(12, 3.0, 0.7, ob.cx + ax.ax * ax.hl * (0.62 - 1) + ax.px * s * (ax.hs + 0.55), y1 - 3.6, ob.cz + ax.az * ax.hl * (0.62 - 1) + ax.pz * s * (ax.hs + 0.55), ry), color: ledDay, lit: lit.clone().multiplyScalar(0.7), mix: 0, slot: tslot, gain: 1.6, style: 3 });   // the sign, white every night
+        }
         nCrowns++;
         switch (cr.type) {
           case 'pyramid':
@@ -6269,11 +6317,15 @@
           }
           case 'blade': {   // the Comcast Technology Center: a narrow lit blade standing in a dark frame
             const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);
-            const bw = ax.hl * 2 * 0.86, bt = Math.max(3, ax.hs * 2 * 0.16), fr = new THREE.Color(0x3a4046);
-            if (themed) {   // Round 84 (Mike, with the photo): the blade's length stays white, its top third lights in four bands that take the night's colours
-              const hb = hc * 0.9, yb0 = y0 + hc * 0.47 - hb / 2, hLow = hb * 0.66, hBand = (hb - hLow) / 4;
-              themeParts.push({ geom: box(bw, hLow, bt, ob.cx, yb0 + hLow / 2, ob.cz, ry), color: gl, lit: gl, mix: 0, slot: tslot, style: 3 });
-              for (let k2 = 0; k2 < 4; k2++) themeParts.push({ geom: box(bw, hBand - 0.35, bt, ob.cx, yb0 + hLow + (k2 + 0.5) * hBand, ob.cz, ry), color: gl, lit: gl, mix: 1, slot: (tslot + k2) % 4, style: 3 });
+            const bw = ax.hl * 2 * (themed ? 0.72 : 0.86), bt = themed ? Math.max(2.6, ax.hs * 2 * 0.08) : Math.max(3, ax.hs * 2 * 0.16), fr = new THREE.Color(0x3a4046);   // themed (Round 85): a slender fin, 0.72 of the long axis and 0.08 of the short
+            if (themed) {   // Round 85 (Mike, with the photo): the blade is a ladder of light bars, every one in the night's colour, the top third cycling a night's several colours (the flag)
+              const hb = hc * 0.9, yb0 = y0 + hc * 0.47 - hb / 2, step = 1.6, nBar = Math.floor(hb / step);
+              const dark = new THREE.Color(0x232a33);
+              themeParts.push({ geom: box(bw * 0.9, hb, bt * 0.6, ob.cx, yb0 + hb / 2, ob.cz, ry), color: dark, lit: dark, mix: 0, slot: tslot, style: 3 });   // the blade's dark body behind the bars
+              for (let k2 = 0; k2 < nBar; k2++) {
+                const top = k2 >= nBar * 0.66;
+                themeParts.push({ geom: box(bw, 0.5, bt + 0.3, ob.cx, yb0 + (k2 + 0.5) * step, ob.cz, ry), color: gl, lit: gl, mix: 1, slot: top ? 4 + tslot + Math.floor(k2 / 2) : tslot, gain: 1.5, style: 3 });
+              }
             } else glowParts.push({ geom: box(bw, hc * 0.9, bt, ob.cx, y0 + hc * 0.47, ob.cz, ry), color: gl, style: 3 });
             for (const s of [-1, 1]) crownTrim.push({ geom: box(1.6, hc, bt + 1.2, ob.cx + ax.ax * (bw / 2 + 0.8) * s, y0 + hc / 2, ob.cz + ax.az * (bw / 2 + 0.8) * s, ry), color: fr, style: 3 });
             crownTrim.push({ geom: box(bw + 3.2, 1.4, bt + 1.2, ob.cx, y0 + hc - 0.7, ob.cz, ry), color: fr, style: 3 });
@@ -6289,12 +6341,22 @@
             c.copy(th.color);
             if (th.style >= 20) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
             else appendBuilding(chk2, half, y0 - 0.5, y1, c, th.style, th.base);
-            if (lit) glow(box(ax.hl * 2 * keep * 0.9, 1.4, ax.hs * 2 * 0.9, ob.cx + ax.ax * ax.hl * (keep - 1), y1 + 0.7, ob.cz + ax.az * ax.hl * (keep - 1), ry), 0.45);
-            if (themed) {   // the crown floors read as one lit block: a wash sheet 0.4 m outside them; the Comcast Center's (sides 3) in four stacked bands that take the night's colours (Round 84)
-              const su0 = cr.sides === 3 ? 0 : keep - 1, sv0 = cr.sides === 3 ? -0.45 : 0, sw = cr.sides === 3 ? 1.6 : 2 * keep, sd = cr.sides === 3 ? 1.1 : 2;
-              const scx = ob.cx + ax.ax * ax.hl * su0 + ax.px * ax.hs * sv0, scz = ob.cz + ax.az * ax.hl * su0 + ax.pz * ax.hs * sv0;
-              if (cr.sides === 3) { const hB = (y1 - y0) / 4; for (let k2 = 0; k2 < 4; k2++) sheetOf(box(ax.hl * sw + 0.8, hB - 0.5, ax.hs * sd + 0.8, scx, y0 + (k2 + 0.5) * hB, scz, ry), (tslot + k2) % 4, 0.6); }
-              else sheetOf(box(ax.hl * sw + 0.8, y1 - y0 + 0.6, ax.hs * sd + 0.8, scx, (y0 + y1) / 2, scz, ry), tslot, 0.5);
+            const su0 = cr.sides === 3 ? 0 : keep - 1, sv0 = cr.sides === 3 ? -0.45 : 0, sw = cr.sides === 3 ? 1.6 : 2 * keep, sd = cr.sides === 3 ? 1.1 : 2;   // the drawn crown plan's centre and extent
+            const scx = ob.cx + ax.ax * ax.hl * su0 + ax.px * ax.hs * sv0, scz = ob.cz + ax.az * ax.hl * su0 + ax.pz * ax.hs * sv0;
+            if (lit) glow(box(ax.hl * sw * 0.9, 1.4, ax.hs * sd * 0.9, scx, y1 + 0.7, scz, ry), 0.45);   // the roof strip caps the crown block that is drawn (the sides 3 plan used to get the keep plan's strip, 25 m past its face)
+            if (themed) {   // the crown floors read as one lit block: a wash sheet 0.4 m outside them
+              const fp = th.style === 25 ? 4.15 : 4.0, lw = lit.clone().multiplyScalar(0.6);
+              if (cr.sides === 3) {   // Round 85: the Comcast Center's crown reads as the photo's stripes, an LED line proud of every floor edge on the style's own floor pitch, a dim wash between the lines, each floor its own slot so a many-colour night stacks
+                const k0 = Math.ceil((y0 + 0.3 - th.base) / fp), k1 = Math.floor((y1 - 0.3 - th.base) / fp);
+                for (let k2 = k0; k2 <= k1; k2++) {
+                  const y = th.base + k2 * fp, sl = 4 + tslot + k2 - k0, shh = Math.min(fp, y1 - y) - 0.5;
+                  themeParts.push({ geom: ledRing(half, y, 0.35, 0.3), color: ledDay, lit: lw, mix: 1, slot: sl, gain: 1.6, style: 3 });
+                  if (shh > 0.6) sheetOf(box(ax.hl * sw + 0.8, shh, ax.hs * sd + 0.8, scx, y + 0.25 + shh / 2, scz, ry), sl, 0.22);
+                }
+              } else {
+                if (th.spec.led) for (let k2 = Math.ceil((y0 + 0.3 - th.base) / fp); th.base + k2 * fp < y1 - 0.3; k2++) themeParts.push({ geom: ledRing(half, th.base + k2 * fp, 0.35, 0.3), color: ledDay, lit: lw, mix: 1, slot: 4 + tslot + Math.floor(k2 / 5), gain: 1.6, style: 3 });   // the FMC's crown floors
+                sheetOf(box(ax.hl * sw + 0.8, y1 - y0 + 0.6, ax.hs * sd + 0.8, scx, (y0 + y1) / 2, scz, ry), tslot, th.spec.led ? 0.25 : 0.5);
+              }
             }
             break;
           }
@@ -6424,11 +6486,12 @@
         const bl = clamp(dOut / 60, 0, 1);
         const jr = lerp(LAYER.road + hash01(i * 3.7 + 1.1) * 0.06,
           LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 3.7 + 1.1) * 0.1, bl);
+        const bank = !!(schEdges && schEdges((a[0] + q[0]) / 2, (a[1] + q[1]) / 2)[0] < 60);   // the Schuylkill's bank (Round 85)
         let ya0 = groundMeshLandY(a[0], a[1]) ?? siteY(a[0], a[1], 'road'), yb0 = groundMeshLandY(q[0], q[1]) ?? siteY(q[0], q[1], 'road');
         if (deck) {
           ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
           yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
-        }
+        } else { ya0 = Math.max(ya0, bankFloor(a[0], a[1])); yb0 = Math.max(yb0, bankFloor(q[0], q[1])); }   // the bank floor: no roadway awash (Round 85; the Schuylkill's band only, FDR Park and the airport lie as low)
         const ya = ySnap(yMapW, a[0], a[1], ya0 + jr), yb = ySnap(yMapW, q[0], q[1], yb0 + jr);
         const b0 = rc.n;
         rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
@@ -6436,6 +6499,21 @@
         rcLane(b0, hw, sA, hw, cls); rcLane(b0 + 1, hw, sAcc, hw, cls); rcLane(b0 + 2, -hw, sAcc, hw, cls); rcLane(b0 + 3, -hw, sA, hw, cls);
         rc.n += 4;
         rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+        if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
+          for (const sg of [1, -1]) {
+            const ex0 = a[0] + px * sg, ez0 = a[1] + pz * sg, ex1 = q[0] + px * sg, ez1 = q[1] + pz * sg;
+            const g0 = groundMeshY(ex0, ez0), g1 = groundMeshY(ex1, ez1);
+            if (g0 === null || g1 === null || (ya - g0 < 0.5 && yb - g1 < 0.5)) continue;
+            let f0 = Math.min(g0, ya), f1 = Math.min(g1, yb);   // the mesh's lowest point along the edge, so a facet kink inside the chord leaves no daylight under the skirt
+            for (const f of [0.25, 0.5, 0.75]) { const gq = groundMeshY(ex0 + (ex1 - ex0) * f, ez0 + (ez1 - ez0) * f); if (gq !== null) { if (gq < f0) f0 = gq; if (gq < f1) f1 = gq; } }
+            const s0 = rc.n;
+            rc.pos.push(ex0, ya, ez0, ex1, yb, ez1, ex1, f1 - 0.3, ez1, ex0, f0 - 0.3, ez0);
+            for (let m = 0; m < 4; m++) rc.col.push(c.r * 175, c.g * 175, c.b * 175);
+            rcLane(s0, hw, sA, hw, 2); rcLane(s0 + 1, hw, sAcc, hw, 2); rcLane(s0 + 2, hw, sAcc, hw, 2); rcLane(s0 + 3, hw, sA, hw, 2);
+            rc.n += 4;
+            rc.idx.push(s0, s0 + 1, s0 + 2, s0, s0 + 2, s0 + 3);
+          }
+        }
         if (j > 0) { // joint fan where the heading bends (quad strips leave notches)
           const p0 = pts[j - 1];
           let ux0 = a[0] - p0[0], uz0 = a[1] - p0[1];
@@ -7402,11 +7480,11 @@
         sh.uniforms.uNight = nightUniform;
         for (const k in themeU) sh.uniforms[k] = themeU[k];
         sh.vertexShader = sh.vertexShader
-          .replace('#include <common>', '#include <common>\nattribute vec3 aLit; attribute float aMix; attribute float aSlot; varying vec3 vLit; varying vec2 vTheme;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLit = aLit; vTheme = vec2(aMix, aSlot);');
+          .replace('#include <common>', '#include <common>\nattribute vec3 aLit; attribute float aMix; attribute float aSlot; attribute float aGain; varying vec3 vLit; varying vec3 vTheme;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLit = aLit; vTheme = vec3(aMix, aSlot, aGain);');
         sh.fragmentShader = sh.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uNight, uThemeOn; uniform vec3 uTheme0, uTheme1, uTheme2, uTheme3; varying vec3 vLit; varying vec2 vTheme;')
-          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, vTheme.y)), mix(uTheme2, uTheme3, step(2.5, vTheme.y)), step(1.5, vTheme.y));\n  totalEmissiveRadiance += mix(vLit, tc, uThemeOn * vTheme.x) * uNight * 2.4; }');
+          .replace('#include <common>', '#include <common>\nuniform float uNight, uThemeOn, uStripeN; uniform vec3 uTheme0, uTheme1, uTheme2, uTheme3, uStripe0, uStripe1, uStripe2, uStripe3; varying vec3 vLit; varying vec3 vTheme;')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float s = vTheme.y; float si = mod(floor(max(s - 4.0, 0.0) + 0.5), max(uStripeN, 1.0));\n  vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, s)), mix(uTheme2, uTheme3, step(2.5, s)), step(1.5, s));\n  vec3 sc = mix(mix(uStripe0, uStripe1, step(0.5, si)), mix(uStripe2, uStripe3, step(2.5, si)), step(1.5, si));\n  tc = mix(tc, sc, step(3.5, s));\n  totalEmissiveRadiance += mix(vLit, tc, uThemeOn * vTheme.x) * uNight * 2.4 * vTheme.z; }');   // aGain: a thin LED line gets the radiance a wash box has (Round 85); a slot of 4 or more is a stripe index into the night's stripe palette (a team's pair), reduced by its length so a two-colour palette alternates and a three-colour one cycles three
       };
       themeMesh = new THREE.Mesh(g, themeMat);
       themeMesh.castShadow = true;
@@ -7665,11 +7743,12 @@
         if (ovpOwned(a[0], a[1], q[0], q[1])) continue; // a baked overpass deck owns it
         const px = -dz * hw, pz = dx * hw;
         const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 2.9 + 0.4) * 0.1;
+        const bank = !!(schEdges && schEdges((a[0] + q[0]) / 2, (a[1] + q[1]) / 2)[0] < 60);   // the Schuylkill's bank (Round 85)
         let ya0 = groundMeshLandY(a[0], a[1]) ?? siteY(a[0], a[1], 'road'), yb0 = groundMeshLandY(q[0], q[1]) ?? siteY(q[0], q[1], 'road');
         if (deck) {
           ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
           yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
-        }
+        } else { ya0 = Math.max(ya0, bankFloor(a[0], a[1])); yb0 = Math.max(yb0, bankFloor(q[0], q[1])); }   // the bank floor (Round 85)
         const ya = ySnapF(a[0], a[1], ya0 + jr), yb = ySnapF(q[0], q[1], yb0 + jr);
         const b0 = rc.n;
         rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
@@ -7677,6 +7756,21 @@
         rcLane(b0, hw, sA, hw, cls); rcLane(b0 + 1, hw, sAcc, hw, cls); rcLane(b0 + 2, -hw, sAcc, hw, cls); rcLane(b0 + 3, -hw, sA, hw, cls);
         rc.n += 4;
         rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+        if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
+          for (const sg of [1, -1]) {
+            const ex0 = a[0] + px * sg, ez0 = a[1] + pz * sg, ex1 = q[0] + px * sg, ez1 = q[1] + pz * sg;
+            const g0 = groundMeshY(ex0, ez0), g1 = groundMeshY(ex1, ez1);
+            if (g0 === null || g1 === null || (ya - g0 < 0.5 && yb - g1 < 0.5)) continue;
+            let f0 = Math.min(g0, ya), f1 = Math.min(g1, yb);   // the mesh's lowest point along the edge, so a facet kink inside the chord leaves no daylight under the skirt
+            for (const f of [0.25, 0.5, 0.75]) { const gq = groundMeshY(ex0 + (ex1 - ex0) * f, ez0 + (ez1 - ez0) * f); if (gq !== null) { if (gq < f0) f0 = gq; if (gq < f1) f1 = gq; } }
+            const s0 = rc.n;
+            rc.pos.push(ex0, ya, ez0, ex1, yb, ez1, ex1, f1 - 0.3, ez1, ex0, f0 - 0.3, ez0);
+            for (let m = 0; m < 4; m++) rc.col.push(c.r * 175, c.g * 175, c.b * 175);
+            rcLane(s0, hw, sA, hw, 2); rcLane(s0 + 1, hw, sAcc, hw, 2); rcLane(s0 + 2, hw, sAcc, hw, 2); rcLane(s0 + 3, hw, sA, hw, 2);
+            rc.n += 4;
+            rc.idx.push(s0, s0 + 1, s0 + 2, s0, s0 + 2, s0 + 3);
+          }
+        }
         if (j > 0) {
           const p0 = pts[j - 1];
           let ux0 = a[0] - p0[0], uz0 = a[1] - p0[1];
@@ -8327,8 +8421,8 @@
       const pts = shapePts(c);
       const jit = 0.92 + hash01(ci * 2.13) * 0.16;
       const bots = pts.map((p) => {
-        const gy = siteY(p[0], p[1], 'ground');
-        return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gy - 0.4) : p[2] - dep;
+        const gy = siteY(p[0], p[1], 'ground'), gm = groundMeshY(p[0], p[1]) ?? gy;   // near-grade by the DEM, the skirt down to the drawn mesh (the carved bank, Round 85)
+        return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gm - 0.4) : p[2] - dep;
       });
       boxRibbon(pts, hw, 0, -dep, tint(cTop[c.c] || 0x3b3833, 1), tint(cConc, jit), bots);
       // parapets: fade in past the ends, break at every ramp mouth on their side
@@ -8364,7 +8458,8 @@
         ux /= uL; uz /= uL;
         const vf = vineCut(x, z, -1);
         const wet = demY(x, z) < TERRAIN.water + 0.6 && riverCorridor(x, z);
-        const gy = vf !== null ? vf : (wet ? TERRAIN.bed - 1.2 : siteY(x, z, 'ground'));
+        const rcf = railCut(x, z, 0);   // a deck over a rail cut (Chestnut Street) stands on piers to the cut floor
+        const gy = vf !== null ? vf : rcf !== null ? rcf : (wet ? TERRAIN.bed - 1.2 : (groundMeshY(x, z) ?? siteY(x, z, 'ground')));   // a pier's foot on the drawn mesh (Round 85)
         const capBot = y - dep - (c.c === 6 ? 0 : 1.25);
         if (capBot - gy < 2.0) continue;
         if (crossingRoadNear(x, z, 7.5, ux, uz)) continue;
@@ -8494,6 +8589,26 @@
     for (const c of OVP.sk) {
       const pts = shapePts(c);
       const hw = Math.max(1.6, c.w / 2);
+      if (c.cov === 1) {   // Round 85: a covered chain draws only where it stands clear of the drawn ground (the I-76 pair on the Schuylkill's west bank poked out of the carved bank), with a bulkhead face down to the bed under those stretches
+        const nrm0 = norms(pts), wq = [];
+        let run = [];
+        const flush = () => {
+          if (run.length >= 2) {
+            boxRibbon(run, hw, 0, -0.5, tint(0x33312d, 1), tint(0x2b2926, 1));
+            const nr = norms(run);
+            for (let i = 0; i + 1 < run.length; i++) for (const s of [1, -1]) {
+              const a = [run[i][0] + nr[i][0] * (hw + 0.2) * s, run[i][1] + nr[i][1] * (hw + 0.2) * s], b = [run[i + 1][0] + nr[i + 1][0] * (hw + 0.2) * s, run[i + 1][1] + nr[i + 1][1] * (hw + 0.2) * s];
+              const fa = Math.min(TERRAIN.bed - 0.5, siteY(a[0], a[1], 'ground') - 0.5), fb = Math.min(TERRAIN.bed - 0.5, siteY(b[0], b[1], 'ground') - 0.5);
+              wq.push(a[0], run[i][2] - 0.5, a[1], b[0], run[i + 1][2] - 0.5, b[1], b[0], fb, b[1], a[0], run[i][2] - 0.5, a[1], b[0], fb, b[1], a[0], fa, a[1]);
+            }
+          }
+          run = [];
+        };
+        for (let i = 0; i < pts.length; i++) { const gm = groundMeshY(pts[i][0], pts[i][1]) ?? siteY(pts[i][0], pts[i][1], 'ground'); if (gm > pts[i][2] + 0.3) flush(); else run.push(pts[i]); }   // a holed cell (the rail cuts) counts as the DEM's ground
+        flush();
+        if (wq.length) { const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(wq), 3)); g2.computeVertexNormals(); parts.push({ geom: g2, color: new THREE.Color(cWall), style: 3 }); }
+        continue;
+      }
       boxRibbon(pts, hw, 0, -0.5, tint(0x33312d, 1), tint(0x2b2926, 1));
       // pale edge lines read as lane striping from altitude
       const nrm = norms(pts);
@@ -10576,7 +10691,7 @@
     if (bestK && pickOccluded(bestK.x, bestK.gy + 1.6, bestK.z)) bestK = null;
     let bestA = null;   // a train's head within reach of the tap
     if (aAct) for (const p of amtrakMap.values()) {
-      if (p.off || p.hx == null || (p.hfl & 1) || !nearCam(p.hx, p.hy, p.hz)) continue;
+      if (p.off || p.hx == null || ((p.hfl & 1) && !(p.hfl & 4)) || !nearCam(p.hx, p.hy, p.hz)) continue;
       _ssv.set(p.hx, p.hy + 3, p.hz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) continue;
       const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
@@ -10868,7 +10983,7 @@
       if (!nearCam(v.dx, v.gy === undefined ? camera.position.y : v.gy, v.dz)) return;   // the half-mile rule (Round 82): it rides on unseen, the pick arrays stay in step
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
         v.gx = v.dx; v.gz = v.dz;
-        v.gy = siteY(v.dx, v.dz, 'road');
+        v.gy = Math.max(siteY(v.dx, v.dz, 'road'), bankFloor(v.dx, v.dz));   // the bank floor with the roads (Round 85)
         // a vehicle on a bridge street rides the deck, not the ground beneath it
         // (aligned to its snapped street axis so passing under a viaduct never lifts)
         if (v.sdx || v.sdz) {
@@ -11873,7 +11988,7 @@
   // (the 30th Street train shed) in the grid but not drawn. ?rails=0 skips the drawing.
   const railGrid = new Map(), RAIL_CELL = 36;
   const railSegs = [];   // ax, az, bx, bz, ay, by, flags (1 tunnel, 2 bridge), per segment
-  let railReady = false;
+  let railReady = false, RAIL_STATS = null;   // RAIL_STATS: the stitched corridor's counts (Round 85), __dbg.rail()
   function railAdd(ax, az, bx, bz, ay, by, flags) {
     const s = railSegs.length;
     railSegs.push(ax, az, bx, bz, ay, by, flags);
@@ -11921,52 +12036,249 @@
   step('Laying the Northeast Corridor', () => {
     if (typeof RAIL_AMTRAK === 'undefined' || !RAIL_AMTRAK || !RAIL_AMTRAK.lines) return;
     const draw = !/[?&]rails=0\b/.test(location.search);
-    const parts = [];
-    const ballast = new THREE.Color(0x3a3733), railC = new THREE.Color(0x4a4d4a);
-    const boxAt = (sx, sy, sz, x, y, z, yaw, pitch, col) => {
-      const g = new THREE.BoxGeometry(sx, sy, sz);
-      if (pitch) g.rotateZ(pitch);
-      g.rotateY(yaw);
-      g.translate(x, y, z);
-      parts.push({ geom: g, color: col });
-    };
-    for (const ln of RAIL_AMTRAK.lines) {
-      const src = ln.p;
-      if (!src || src.length < 2) continue;
-      const flags = (ln.t ? 1 : 0) | (ln.b ? 2 : 0);
-      const pts = [];
+    const parts = [], sparts = [];   // sparts: the structures (decks, piers, the portal walls) on a shadow-casting mesh
+    const ballast = new THREE.Color(0x3a3733), railC = new THREE.Color(0x4a4d4a), steel = new THREE.Color(0x262b31), pierC = new THREE.Color(0x4e4b45);
+    // Round 85 (Mike: the tracks are broken all over the city, they stop short of 30th Street, strips
+    // lie across the Schuylkill). The OSM ways are stitched into chains by their shared end nodes
+    // before anything is drawn; every chain takes ONE height profile: a run that is bridge-tagged or
+    // inside the river's outline is one plateau at its higher abutment and never under 9 m over the
+    // water (the tag covers only the span's own way, the untagged neighbours used to lie on the
+    // water), the rest is smoothed as before, and the ends of every chain meeting at a node share
+    // that node's height, so a way split leaves no step. Each chain is one continuous ribbon,
+    // mitred at every bend, instead of 20 m boxes. The covered runs (the shed under the station) are
+    // drawn too wherever no building roof stands over them, so the tracks run up to the walls.
+    const lines = RAIL_AMTRAK.lines.filter((ln) => ln.p && ln.p.length >= 2);
+    const nk = (p) => Math.round(p[0] * 2) + ':' + Math.round(p[1] * 2);   // a node key at half a metre
+    const ends = new Map();
+    lines.forEach((ln, i) => { for (const e of [0, 1]) { const k = nk(e ? ln.p[ln.p.length - 1] : ln.p[0]); let a2 = ends.get(k); if (!a2) { a2 = []; ends.set(k, a2); } a2.push([i, e]); } });
+    const used = new Uint8Array(lines.length);
+    const chains = [];   // [{ pts: [[x, z, t, b], ...] }]
+    const next = (i, e) => { const k = nk(e ? lines[i].p[lines[i].p.length - 1] : lines[i].p[0]); const a2 = ends.get(k); if (!a2 || a2.length !== 2) return null; const o = a2[0][0] === i && a2[0][1] === e ? a2[1] : a2[0]; return used[o[0]] ? null : o; };
+    const withFlags = (ln, rev) => { const q = ln.p.map((p) => [p[0], p[1], ln.t ? 1 : 0, ln.b ? 1 : 0]); return rev ? q.reverse() : q; };
+    for (let i0 = 0; i0 < lines.length; i0++) {
+      if (used[i0]) continue;
+      used[i0] = 1;
+      let pts = withFlags(lines[i0], false);
+      let ti = i0, te = 1;   // the chain's tail: which line and which of its ends sits there
+      for (let guard = 0; guard < 4000; guard++) {
+        const o = next(ti, te);
+        if (!o) break;
+        used[o[0]] = 1;
+        pts = pts.concat(withFlags(lines[o[0]], o[1] === 1).slice(1));   // joined at its end: reversed, so its start is the new tail
+        ti = o[0]; te = o[1] === 1 ? 0 : 1;
+        if (nk(pts[pts.length - 1]) === nk(pts[0])) break;
+      }
+      let hi = i0, he = 0;   // the chain's head
+      for (let guard = 0; guard < 4000; guard++) {
+        const o = next(hi, he);
+        if (!o) break;
+        used[o[0]] = 1;
+        pts = withFlags(lines[o[0]], o[1] === 0).slice(0, -1).concat(pts);   // joined at its start: reversed, so its end meets our head
+        hi = o[0]; he = o[1] === 0 ? 1 : 0;
+        if (nk(pts[pts.length - 1]) === nk(pts[0])) break;
+      }
+      chains.push(pts);
+    }
+    const overWater = (x, z) => !!(schRaster && schRaster(x, z));
+    const nodeY = new Map();   // the height every chain end at a node shares
+    const built = [];
+    for (const src of chains) {
+      const pts = [], fl = [];
       for (let i = 0; i + 1 < src.length; i++) {
-        const ax = src[i][0], az = src[i][1], bx = src[i + 1][0], bz = src[i + 1][1];
-        const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 20));
-        for (let s = 0; s < n; s++) pts.push([ax + (bx - ax) * s / n, az + (bz - az) * s / n]);
+        const a2 = src[i], b2 = src[i + 1], n = Math.max(1, Math.round(Math.hypot(b2[0] - a2[0], b2[1] - a2[1]) / 20));
+        for (let k = 0; k < n; k++) { pts.push([a2[0] + (b2[0] - a2[0]) * k / n, a2[1] + (b2[1] - a2[1]) * k / n]); fl.push((a2[2] | b2[2] ? 1 : 0) | (a2[3] | b2[3] ? 2 : 0)); }
       }
-      pts.push(src[src.length - 1]);
-      const ys = pts.map((p) => Math.max(siteY(p[0], p[1], 'ground') + 0.45, TERRAIN.water + (ln.b ? 9 : 0.45)));
-      if (ln.b) { const top = Math.max(ys[0], ys[ys.length - 1]); for (let i = 0; i < ys.length; i++) ys[i] = Math.max(ys[i], top); }   // a bridge holds the higher abutment
-      else for (let pass = 0; pass < 2; pass++) {
-        const s0 = ys.slice();
-        for (let i = 0; i < ys.length; i++) { let a = 0, n = 0; for (let j = Math.max(0, i - 3); j <= Math.min(ys.length - 1, i + 3); j++) { a += s0[j]; n++; } ys[i] = a / n; }
+      const last = src[src.length - 1]; pts.push([last[0], last[1]]); fl.push((last[2] ? 1 : 0) | (last[3] ? 2 : 0));
+      const n = pts.length;
+      const ys = new Float64Array(n), water = new Uint8Array(n), fixed = new Uint8Array(n);
+      const gnd = new Float64Array(n);   // the drawn ground under each sample (the mesh the eye sees, not the bilinear grid it was sampled from)
+      for (let i = 0; i < n; i++) {
+        const gm = groundMeshLandY(pts[i][0], pts[i][1]);
+        gnd[i] = gm !== null ? gm : siteY(pts[i][0], pts[i][1], 'ground');
+        water[i] = overWater(pts[i][0], pts[i][1]) ? 1 : 0;
+        ys[i] = Math.max(gnd[i] + 0.45, TERRAIN.water + 0.45);
       }
-      for (let i = 0; i + 1 < pts.length; i++) {
-        const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
-        const L = Math.hypot(bx - ax, bz - az);
-        if (L < 0.5) continue;
-        railAdd(ax, az, bx, bz, ys[i], ys[i + 1], flags);
-        if (!draw || ln.t) continue;
-        const mx = (ax + bx) / 2, mz = (az + bz) / 2, my = (ys[i] + ys[i + 1]) / 2;
-        const yaw = Math.atan2(-(bz - az), bx - ax), pitch = Math.atan2(ys[i + 1] - ys[i], L);
-        const lx = Math.sin(yaw), lz = Math.cos(yaw);
-        boxAt(L + 0.3, 0.35, 3.4, mx, my - 0.42, mz, yaw, pitch, ballast);
-        if (!isTouch) {
-          boxAt(L + 0.3, 0.16, 0.14, mx - lx * 0.72, my - 0.17, mz - lz * 0.72, yaw, pitch, railC);
-          boxAt(L + 0.3, 0.16, 0.14, mx + lx * 0.72, my - 0.17, mz + lz * 0.72, yaw, pitch, railC);
+      // the spans: every run that is bridge-tagged or over the water ramps between its two abutments (never flat at the
+      // higher one: a street overpass on a grade left a step at its low end) and, over the water, never under 9 m
+      // above it; the approaches climb to the abutments over eight samples so the deck meets them
+      for (let i = 0; i < n;) {
+        if (!(fl[i] & 2) && !water[i]) { i++; continue; }
+        let j = i; while (j + 1 < n && ((fl[j + 1] & 2) || water[j + 1])) j++;
+        let wet = false; for (let k = i; k <= j; k++) if (water[k]) wet = true;
+        let yA = i > 0 ? ys[i - 1] : ys[i], yB = j + 1 < n ? ys[j + 1] : ys[j];
+        if (wet) { yA = Math.max(yA, TERRAIN.water + 9); yB = Math.max(yB, TERRAIN.water + 9); }
+        for (let k = i; k <= j; k++) { const t = (k - i + 1) / (j - i + 2); ys[k] = Math.max(yA + (yB - yA) * t, gnd[k] + 0.45, wet ? TERRAIN.water + 9 : -1e9); fixed[k] = 1; fl[k] |= 2; }   // never under the drawn ground: where the DEM carries the fill between two spans the ballast rides it
+        for (let r = 1; r <= 8; r++) {   // the approaches
+          const kA = i - r, kB = j + r, w = 1 - r / 9;
+          if (kA >= 0 && !fixed[kA]) ys[kA] = Math.max(ys[kA], ys[kA] + (yA - ys[kA]) * w);
+          if (kB < n && !fixed[kB]) ys[kB] = Math.max(ys[kB], ys[kB] + (yB - ys[kB]) * w);
         }
+        i = j + 1;
+      }
+      // the station shed (Round 85): the covered points inside 30th Street's box take flag 4, a straight grade
+      // between the two approaches held 60 m out from each portal (the plateau's edge used to lift the last samples)
+      for (let i = 0; i < n;) {
+        const shed = (k) => ((fl[k] & 1) || railCut(pts[k][0], pts[k][1], 40) !== null) && pts[k][0] > -3300 && pts[k][0] < -3080 && pts[k][1] > -1380 && pts[k][1] < -830;   // the covered points and the open stubs within 40 m of a cut
+        if (!shed(i)) { i++; continue; }
+        let j = i; while (j + 1 < n && shed(j + 1)) j++;
+        const i0 = Math.max(0, i - 3), j0 = Math.min(n - 1, j + 3);
+        let cA = null, cB = null;   // a run through a cut anchors its grade to the cut floors (the first and last samples inside one)
+        for (let k = i; k <= j; k++) { const cf = railCut(pts[k][0], pts[k][1], 0); if (cf !== null) { if (cA === null) cA = cf; cB = cf; } }
+        const yA = cA !== null ? cA + 0.45 : (i0 > 0 ? ys[i0 - 1] : (i > 0 ? ys[i - 1] : -3.8)), yB = cB !== null ? cB + 0.45 : (j0 < n - 1 ? ys[j0 + 1] : (j < n - 1 ? ys[j + 1] : -3.6));
+        for (let k = i0; k <= j0; k++) { const t = (k - i0 + 1) / (j0 - i0 + 2); ys[k] = yA + (yB - yA) * t; fixed[k] = 1; if (k >= i && k <= j) fl[k] |= 4; }
+        i = j + 1;
+      }
+      built.push({ pts, fl, ys, fixed, gnd });
+      for (const e of [0, n - 1]) {   // a node's height: the mean of the span or shed ends there (they decide), else the ground reading every chain shares (an approach's lift never humps the through track, a plateau reading never lifts a shed head)
+        const k = nk(pts[e]); let r = nodeY.get(k); if (!r) { r = { fs: 0, fn: 0, fy: -1e9 }; nodeY.set(k, r); }
+        if (fixed[e]) { r.fs += ys[e]; r.fn++; } else r.fy = Math.max(r.fy, Math.max(gnd[e] + 0.45, TERRAIN.water + 0.45));
       }
     }
+    for (const ch of built) {   // the ends meet their node's height, then the free points smooth toward the pinned ones
+      const { pts, ys, fixed, gnd } = ch, n = pts.length;
+      for (const e of [0, n - 1]) { const r = nodeY.get(nk(pts[e])); if (r) ys[e] = r.fn ? r.fs / r.fn : r.fy; fixed[e] = 1; }
+      for (let pass = 0; pass < 2; pass++) {
+        const s0 = Float64Array.from(ys);
+        for (let i = 0; i < n; i++) { if (fixed[i]) continue; let a2 = 0, c2 = 0; for (let j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) { a2 += s0[j]; c2++; } ys[i] = a2 / c2; }
+      }
+      for (let i = 0; i < n; i++) if (!fixed[i]) ys[i] = Math.max(ys[i], gnd[i] + 0.45);   // the smoothing never buries a crest: the skirt fills the dips instead
+    }
+    // one ribbon per chain: the ballast slab 3.4 m wide, the two rails 1.44 m apart, mitred at every bend
+    const strip = (pts, ys, w, off, col, side, bots) => {   // bots: a skirt from the strip's edges down to these heights (the ballast reaches the drawn ground)
+      const n = pts.length, hw = w / 2, tris = [];
+      const hd = new Float64Array(n * 2);
+      for (let i = 0; i < n; i++) { const p0 = pts[Math.max(0, i - 1)], p1 = pts[Math.min(n - 1, i + 1)]; let ex = p1[0] - p0[0], ez = p1[1] - p0[1]; const L = Math.hypot(ex, ez) || 1; hd[i * 2] = ex / L; hd[i * 2 + 1] = ez / L; }
+      const at = (i) => [pts[i][0] - hd[i * 2 + 1] * side, pts[i][1] + hd[i * 2] * side];
+      for (let i = 0; i + 1 < n; i++) {
+        const a2 = at(i), b2 = at(i + 1);
+        let dx = b2[0] - a2[0], dz = b2[1] - a2[1]; const L = Math.hypot(dx, dz); if (L < 0.01) continue; dx /= L; dz /= L;
+        const px = -dz * hw, pz = dx * hw, ya = ys[i] + off, yb = ys[i + 1] + off;
+        tris.push(a2[0] + px, ya, a2[1] + pz, b2[0] + px, yb, b2[1] + pz, b2[0] - px, yb, b2[1] - pz);
+        tris.push(a2[0] + px, ya, a2[1] + pz, b2[0] - px, yb, b2[1] - pz, a2[0] - px, ya, a2[1] - pz);
+        if (bots) {   // the two sides down to the ground, so the slab never floats over the mesh's twist and reads as an embankment
+          const ba = bots[i], bb = bots[i + 1];
+          for (const sg of [1, -1]) {
+            const qx = px * sg, qz = pz * sg;
+            tris.push(a2[0] + qx, ya, a2[1] + qz, a2[0] + qx, ba, a2[1] + qz, b2[0] + qx, yb, b2[1] + qz);
+            tris.push(b2[0] + qx, yb, b2[1] + qz, a2[0] + qx, ba, a2[1] + qz, b2[0] + qx, bb, b2[1] + qz);
+          }
+        }
+      }
+      for (let i = 1; i + 1 < n; i++) {   // a fan at every bend fills the mitre
+        const c2 = at(i), yc = ys[i] + off, S = 6;
+        for (let k = 0; k < S; k++) { const a0 = k / S * Math.PI * 2, a1 = (k + 1) / S * Math.PI * 2; tris.push(c2[0], yc, c2[1], c2[0] + Math.cos(a1) * hw, yc, c2[1] + Math.sin(a1) * hw, c2[0] + Math.cos(a0) * hw, yc, c2[1] + Math.sin(a0) * hw); }
+      }
+      if (!tris.length) return;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris), 3));
+      g.computeVertexNormals();
+      parts.push({ geom: g, color: col });
+    };
+    let drawnSeg = 0, hiddenSeg = 0;
+    for (const ch of built) {
+      const { pts, fl, ys, gnd } = ch, n = pts.length;
+      for (let i = 0; i + 1 < n; i++) {
+        if (Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) < 0.5) continue;
+        railAdd(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], ys[i], ys[i + 1], fl[i] | (fl[i + 1] & 2));
+      }
+      if (!draw) continue;
+      // the drawn runs: everything but the covered points, the station shed excepted
+      let i = 0;
+      while (i < n) {
+        const hidden = (k) => (fl[k] & 1) && !(fl[k] & 4);   // a covered run stays undrawn, except the station shed, which runs on under the plateau and shows in the cuts
+        if (hidden(i)) { hiddenSeg++; i++; continue; }
+        let j = i; while (j + 1 < n && !hidden(j + 1)) j++;
+        if (j > i) {
+          const sp = pts.slice(i, j + 1), sy = ys.slice(i, j + 1);
+          const bots = new Float64Array(j - i + 1); for (let k = i; k <= j; k++) bots[k - i] = (fl[k] & 2) ? ys[k] - 0.6 : Math.min(ys[k] - 0.6, (groundMeshY(pts[k][0], pts[k][1]) ?? gnd[k]) - 0.4);   // down to the drawn mesh, the carved bank included
+          strip(sp, sy, 4.2, -0.25, ballast, 0, bots);
+          if (!isTouch) { strip(sp, sy, 0.14, -0.09, railC, 0.72); strip(sp, sy, 0.14, -0.09, railC, -0.72); }
+          // a bridge run is a structure, not a strip on the water: a steel deck under the ballast and a pier
+          // every other segment down to the ground, or to the riverbed over the water
+          for (let k = i; k < j; k++) {
+            if (!((fl[k] & 2) && (fl[k + 1] & 2))) continue;
+            const ax = pts[k][0], az = pts[k][1], bx = pts[k + 1][0], bz = pts[k + 1][1], L = Math.hypot(bx - ax, bz - az);
+            const mx = (ax + bx) / 2, mz = (az + bz) / 2, my = (ys[k] + ys[k + 1]) / 2, yaw = Math.atan2(-(bz - az), bx - ax);
+            if (my < Math.max(gnd[k], gnd[k + 1]) + 1.2) continue;   // on a fill the ballast rides the ground: no deck, no pier
+            const g = new THREE.BoxGeometry(L + 0.4, 1.4, 5.0); g.rotateZ(Math.atan2(ys[k + 1] - ys[k], L)); g.rotateY(yaw); g.translate(mx, my - 1.15, mz);
+            sparts.push({ geom: g, color: steel });
+            if ((k - i) & 1) continue;
+            const wet = overWater(mx, mz), foot = wet ? TERRAIN.bed - 1.2 : (groundMeshY(mx, mz) ?? siteY(mx, mz, 'ground')) - 0.5;   // the foot on the drawn mesh, the carved bank included
+            const h = my - 1.6 - foot;
+            if (h < 1.5 || septaSnapRoad(mx, mz, 8)) continue;   // never in a street's carriageway: the deck spans it
+            const pg = new THREE.BoxGeometry(2.0, h, 3.2); pg.rotateY(yaw); pg.translate(mx, foot + h / 2, mz);
+            sparts.push({ geom: pg, color: pierC });
+          }
+          drawnSeg += j - i;
+        }
+        i = j + 1;
+      }
+    }
+    if (draw) {   // the portal cuts: a floor slab, side walls to the plateau, grass collars over the opened cells, the headwall with its tunnel mouth
+      const wallC = new THREE.Color(0x4a4640), mouthC = new THREE.Color(0x0a0b0c), collarC = new THREE.Color(COLORS.ground);
+      const deckNear = (x, z) => {   // the lowest baked deck within its width of the point
+        let best = null;
+        for (const c2 of OVP.el) { const hw2 = c2.w / 2 + 1.5; for (let i = 0; i + 1 < c2.p.length; i++) { const p = c2.p[i], q = c2.p[i + 1]; if (Math.abs(p[0] - x) > hw2 + 60 && Math.abs(q[0] - x) > hw2 + 60) continue; const dx = q[0] - p[0], dz = q[1] - p[1], L2 = dx * dx + dz * dz || 1; let t = ((x - p[0]) * dx + (z - p[1]) * dz) / L2; t = t < 0 ? 0 : t > 1 ? 1 : t; const ex = p[0] + dx * t - x, ez = p[1] + dz * t - z; if (ex * ex + ez * ez > hw2 * hw2) continue; const y = p[2] + (q[2] - p[2]) * t; if (best === null || y < best) best = y; } }
+        return best;
+      };
+      const collarY = (x, z) => { const g = siteY(x, z, 'ground'); const d = deckNear(x, z); return d === null ? g : Math.max(Math.min(g, d - 0.7), g - 0.6); };   // the collar dips under a ramp that crosses it (Schuylkill Avenue's, at the south cut) instead of burying it, never more than 0.6 m under its own ground
+      for (const c of RAIL_CUTS) {
+        const ry = Math.atan2(c.dx, c.dz), hl = c.len / 2, hw = c.w / 2;
+        const at = (u, v) => [c.cx + c.dx * u - c.dz * v, c.cz + c.dz * u + c.dx * v];
+        parts.push({ geom: box(c.w + 2, 0.5, c.len + 2, c.cx, c.floor - 0.35, c.cz, ry), color: ballast });
+        // the side walls follow the ground outside them (the Vine cut's way): nothing where the yard lies at the floor by the open end, the full retaining wall at the headwall
+        for (const sg of [-1, 1]) {
+          for (let u = -hl - 1; u < hl + 1; u += 10) {
+            const u1 = Math.min(u + 10, hl + 1), um = (u + u1) / 2, wm = at(um, sg * (hw + 0.5)), gp = at(um, sg * (hw + 2.5));
+            const top = Math.min(c.head + 0.3, collarY(gp[0], gp[1]) + 0.55), bot = c.floor - 0.6;
+            if (top - bot < 0.3) continue;
+            sparts.push({ geom: box(1.0, top - bot, u1 - u + 0.05, wm[0], (top + bot) / 2, wm[1], ry), color: wallC });
+          }
+        }
+        // the apron: cutHole drops a whole 25 m cell when any corner lies within a metre of the box, so a 28 m collar ring centred 15 m outside every edge covers what the hole can reach
+        const collarY2 = (x, z) => { const g = collarY(x, z); const rs = railSnap(x, z, 3.5); return rs ? Math.min(g, rs[4] - 0.5) : g; };   // the open end's collar crosses the tracks: under the ballast there
+        const sheet = (u0, u1, v0, v1, fn) => {   // a collar that follows the ground at every vertex (a ribbon is flat across its width and a grade road beside it pokes through on a cross slope)
+          const tris = [], st = 4, nu = Math.ceil((u1 - u0) / st), nv = Math.ceil((v1 - v0) / st);
+          const P = (iu, iv) => { const p = at(u0 + (u1 - u0) * iu / nu, v0 + (v1 - v0) * iv / nv); return [p[0], fn(p[0], p[1]) + 0.07, p[1]]; };
+          for (let iu = 0; iu < nu; iu++) for (let iv = 0; iv < nv; iv++) {
+            const a = P(iu, iv), b = P(iu + 1, iv), c2 = P(iu + 1, iv + 1), d = P(iu, iv + 1);
+            tris.push(a[0], a[1], a[2], c2[0], c2[1], c2[2], b[0], b[1], b[2], a[0], a[1], a[2], d[0], d[1], d[2], c2[0], c2[1], c2[2]);
+          }
+          const g2 = new THREE.BufferGeometry(); g2.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tris), 3)); g2.computeVertexNormals();
+          const nrm = g2.attributes.normal.array; let up = 0; for (let i = 1; i < nrm.length; i += 3) up += nrm[i];
+          if (up < 0) { const pos = g2.attributes.position.array; for (let i = 0; i < pos.length; i += 9) { for (let k = 0; k < 3; k++) { const t = pos[i + 3 + k]; pos[i + 3 + k] = pos[i + 6 + k]; pos[i + 6 + k] = t; } } g2.computeVertexNormals(); }
+          parts.push({ geom: g2, color: collarC });
+        };
+        for (const sg of [-1, 1]) sheet(-hl - 29, hl + 29, sg > 0 ? hw + 1 : -hw - 29, sg > 0 ? hw + 29 : -hw - 1, collarY);   // the two sides
+        sheet(-hl - 29, -hl - 1, -hw - 1, hw + 1, collarY2);   // across the open end, under the ballast where the tracks cross
+        sheet(hl + 1, hl + 29, -hw - 1, hw + 1, collarY);   // behind the headwall, over the shed's drawn strips
+        const hm = at(hl + 0.3, 0);   // the headwall across the closed end, the mouth recessed into it at the full inner width so every track that reaches it enters
+        sparts.push({ geom: box(c.w + 3, c.head - c.floor + 1.3, 1.4, hm[0], (c.head + c.floor - 0.8) / 2, hm[1], ry), color: wallC });
+        const mm = at(hl - 0.5, 0);
+        sparts.push({ geom: box(c.w - 2, 6.2, 0.4, mm[0], c.floor + 2.9, mm[1], ry), color: mouthC });
+      }
+    }
+    let under = 0, underMax = 0, floatMax = 0, grade = 0, gradeAt = null, underAt = null;   // the corridor's own check (Round 85): open samples under the drawn ground, the tallest embankment, the steepest 20 m
+    for (const ch of built) {
+      const { fl, ys, gnd, pts } = ch, n = pts.length;
+      for (let i = 0; i < n; i++) {
+        if (fl[i] & 1) continue;
+        const d = ys[i] - gnd[i];
+        if (d < 0.2) { under++; if (0.2 - d > underMax) { underMax = 0.2 - d; underAt = [Math.round(pts[i][0]), Math.round(pts[i][1])]; } }
+        if (!(fl[i] & 2)) floatMax = Math.max(floatMax, d);
+        if (i + 1 < n) { const L = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]); if (L > 5 && Math.abs(ys[i + 1] - ys[i]) / L > grade) { grade = Math.abs(ys[i + 1] - ys[i]) / L; gradeAt = [Math.round(pts[i][0]), Math.round(pts[i][1]), +ys[i].toFixed(1), +ys[i + 1].toFixed(1), fl[i], fl[i + 1]]; } }
+      }
+    }
+    RAIL_STATS = { lines: lines.length, chains: chains.length, drawn: drawnSeg, hidden: hiddenSeg, under, underMax: +underMax.toFixed(2), underAt, floatMax: +floatMax.toFixed(1), grade: +(grade * 100).toFixed(1), gradeAt };
     if (draw && parts.length) {
       const mesh = new THREE.Mesh(mergeColored(parts), new THREE.MeshLambertMaterial({ vertexColors: true }));
       mesh.receiveShadow = true;
       groupCity.add(mesh);
+    }
+    if (draw && sparts.length) {
+      const smesh = new THREE.Mesh(mergeColored(sparts), new THREE.MeshLambertMaterial({ vertexColors: true }));
+      smesh.castShadow = true; smesh.receiveShadow = true;
+      groupCity.add(smesh);
     }
     railReady = true;
   });
@@ -13588,7 +13900,7 @@
           cx = w[0]; cz = w[1]; cdx = w[2]; cdz = w[3]; cy = w[4]; cfl = w[5];
         }
         prevL = L;
-        if (cfl & 1) continue;   // in the shed or a tunnel
+        if ((cfl & 1) && !(cfl & 4)) continue;   // in a tunnel; the station shed (flag 4) is ridden through under the plateau (Round 85)
         if (!insideLimit(cx, cz)) continue;
         if (!nearCam(cx, cy, cz)) continue;   // the half-mile rule (Round 82)
         const mesh = ck === 0 ? amtrakLoco : ck === 1 ? amtrakAcela : amtrakCoach;
@@ -13602,8 +13914,8 @@
         mesh.setMatrixAt(i, _sm);
         amtrakPick[ck][i] = p;
       }
-      if (np < AMTRAK_CAP && !(p.hfl & 1) && insideLimit(p.hx, p.hz) && nearCam(p.hx, p.hy, p.hz)) {   // the badge over the head car, holding size like the aircraft pins; within the half mile (Round 82)
-        _sp.set(p.hx, p.hy + 6, p.hz);
+      if (np < AMTRAK_CAP && !((p.hfl & 1) && !(p.hfl & 4)) && insideLimit(p.hx, p.hz) && nearCam(p.hx, p.hy, p.hz)) {   // the badge over the head car, holding size like the aircraft pins; within the half mile (Round 82)
+        _sp.set(p.hx, ((p.hfl & 4) ? Math.max(p.hy, siteY(p.hx, p.hz, 'ground')) : p.hy) + 6, p.hz);   // a train at the platforms carries its pin over the concourse, never under it (Round 85)
         const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
         _ss.set(aps, aps, aps);
         _sm.compose(_sp, _aqB, _ss);
@@ -13709,6 +14021,7 @@
         let dead = false;
         const core = inCore(x, z);
         let y = siteY(x, z, 'road');
+        y = Math.max(y, bankFloor(x, z));   // the bank roads' floor (Round 85)
         if (cls === 0 && core) {
           // I-95 rides DOWN in the trench (the road step's motY blend, replicated)
           const o = frontOff(x, z);
@@ -14251,9 +14564,10 @@
   let themeMesh = null, themeMat = null, themeSheet = null, themeSheetMat = null;
   let bfbNodes = null, bfbNodesMat = null, bfbLampMesh = null, bfbLampGlow = null;
   const bfbLampPts = [];   // the bridge's lamp heads, for the streetlamps step
-  const themeU = { uTheme0: { value: new THREE.Color(0) }, uTheme1: { value: new THREE.Color(0) }, uTheme2: { value: new THREE.Color(0) }, uTheme3: { value: new THREE.Color(0) }, uThemeOn: { value: 0 } };
+  const themeU = { uTheme0: { value: new THREE.Color(0) }, uTheme1: { value: new THREE.Color(0) }, uTheme2: { value: new THREE.Color(0) }, uTheme3: { value: new THREE.Color(0) }, uThemeOn: { value: 0 },
+    uStripe0: { value: new THREE.Color(0) }, uStripe1: { value: new THREE.Color(0) }, uStripe2: { value: new THREE.Color(0) }, uStripe3: { value: new THREE.Color(0) }, uStripeN: { value: 1 } };   // the stripe bank (Round 85): the Comcast crowns' and the FMC's bands on a team night
   const LIGHT_COLORS = { white: 0xf4f1ea, green: 0x1ec24a, red: 0xff2a2a, orange: 0xff7a1a, blue: 0x2457ff, teal: 0x14c8c8, purple: 0x8a2bff, pink: 0xff5fb0, yellow: 0xffd21a, gold: 0xffb300, cyan: 0x22d8ff, magenta: 0xff30e0, crimson: 0xc8102e, gray: 0xb8bcc2, maroon: 0x8a1c2b, burgundy: 0x7a1030, silver: 0xd8dde3, lavender: 0xb69cff, navy: 0x1a2a8a, lightblue: 0x7fc8ff };
-  const LIGHT_TEAMS = [{ k: 'nfl', name: 'Go Birds', color: 'green' }, { k: 'mlb', name: 'Go Phils', color: 'red' }, { k: 'nhl', name: 'Go Flyers', color: 'orange' }, { k: 'nba', name: 'Go Sixers', color: 'blue' }];
+  const LIGHT_TEAMS = [{ k: 'nfl', name: 'Go Birds', color: 'green', stripes: ['green', 'white'] }, { k: 'mlb', name: 'Go Phils', color: 'red', stripes: ['red', 'white'] }, { k: 'nhl', name: 'Go Flyers', color: 'orange', stripes: ['orange', 'white'] }, { k: 'nba', name: 'Go Sixers', color: 'blue', stripes: ['blue', 'red', 'white'] }];   // stripes: the striped LED parts' palette on a team night (the skyline stays the one colour, Round 81's photo); a calendar night or a pin deals its own colours to the stripes
   const LIGHT_PINS = { eagles: 'nfl', birds: 'nfl', phillies: 'mlb', phils: 'mlb', flyers: 'nhl', sixers: 'nba', '76ers': 'nba' };
   function lightsDateKey(y, m, d) { return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d; }
   function lightsDayGap(a, b) {   // whole days from one YYYY-MM-DD to another
@@ -14290,7 +14604,7 @@
   }
   function lightsThemeAt(y, m, d, games, cal) {   // -> { colors, name, src }: a team's game day first (Eagles, Phillies, Flyers, Sixers), then the calendar's most specific request, then the house white
     const key = lightsDateKey(y, m, d);
-    for (const t of LIGHT_TEAMS) { const s = games && games[t.k]; if (s && s[key]) return { colors: [t.color], name: t.name, src: t.k }; }
+    for (const t of LIGHT_TEAMS) { const s = games && games[t.k]; if (s && s[key]) return { colors: [t.color], stripes: t.stripes, name: t.name, src: t.k }; }
     let best = null, bestSpan = 0;
     for (const r of (cal && cal.rows) || []) {
       if (key < r.from || key > r.to) continue;
@@ -14305,7 +14619,7 @@
     const p = String(pin).toLowerCase();
     if (p === 'off' || p === 'house') return { colors: ['white'], name: '', src: 'house' };
     const tk = LIGHT_PINS[p];
-    if (tk) { const t = LIGHT_TEAMS.find((q) => q.k === tk); return { colors: [t.color], name: t.name, src: 'pin' }; }
+    if (tk) { const t = LIGHT_TEAMS.find((q) => q.k === tk); return { colors: [t.color], stripes: t.stripes, name: t.name, src: 'pin' }; }
     if (/^[0-9a-f]{6}$/.test(p)) return { colors: ['#' + p], name: '', src: 'pin' };
     const cs = p.split(',').filter((c) => LIGHT_COLORS[c] !== undefined).slice(0, 4);
     return cs.length ? { colors: cs, name: '', src: 'pin' } : null;
@@ -14315,12 +14629,14 @@
     key: '', gen: 0, pin: (/[?&]lights=([a-z0-9,]+)/i.exec(location.search) || [])[1] || null,
     label: '', src: '', name: '', colors: [], nParts: 0, nSheets: 0,
     tgt: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)), cur: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)),
+    stripes: null, stripeN: 1, stgt: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)), scur: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)),   // the stripe palette and its eased colours
     on: 0, tOn: 0, seeded: false, settled: false, calSrc: 'built in',
     cal: lightsCalOf(typeof LIGHTS_CAL !== 'undefined' ? LIGHTS_CAL : null) || { t: 0, rows: [] },
   };
   const LGAMES = { days: { nfl: {}, mlb: {}, nhl: {}, nba: {} }, fetched: {}, busy: '', fails: 0, retryAt: 0 };
   const LIGHTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/lights.json' : 'https://philly3d.com/lights.json';
-  const _thSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _thHouse = new THREE.Color(0.55, 0.56, 0.6), _thTmp = new THREE.Color();
+  const _thSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _stSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _thHouse = new THREE.Color(0.55, 0.56, 0.6), _thTmp = new THREE.Color();
+  const slotCol = (sl) => sl >= 4 ? _stSlot[(sl - 4) % THEME.stripeN] : _thSlot[sl];   // a sheet's display colour: the stripe bank for a stripe index
   function fetchLightsCal() {   // the served calendar (baked twice a day on philly3d.com) replaces the built-in copy when it is newer
     if (!septaCanFetch) return;
     fetch(LIGHTS_URL, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined })
@@ -14348,6 +14664,9 @@
     THEME.tOn = th.src === 'house' ? 0 : 1;
     const n = th.colors.length;
     for (let i = 0; i < 4; i++) { const c = th.colors[i % n]; THEME.tgt[i].setHex(c[0] === '#' ? parseInt(c.slice(1), 16) : LIGHT_COLORS[c]); }
+    const st = th.stripes || th.colors, m = st.length;   // the striped parts: the team's palette, else the night's own colours
+    THEME.stripes = th.stripes || null; THEME.stripeN = m; themeU.uStripeN.value = m;
+    for (let i = 0; i < 4; i++) { const c = st[i % m]; THEME.stgt[i].setHex(c[0] === '#' ? parseInt(c.slice(1), 16) : LIGHT_COLORS[c]); }
     THEME.settled = false;
     refreshTimeUI();
   }
@@ -14361,9 +14680,10 @@
     THEME.seeded = true;
     let moving = false;
     for (let i = 0; i < 4; i++) { const c = THEME.cur[i], t = THEME.tgt[i]; if (Math.abs(c.r - t.r) + Math.abs(c.g - t.g) + Math.abs(c.b - t.b) > 0.003) { c.lerp(t, e); moving = true; } }
+    for (let i = 0; i < 4; i++) { const c = THEME.scur[i], t = THEME.stgt[i]; if (Math.abs(c.r - t.r) + Math.abs(c.g - t.g) + Math.abs(c.b - t.b) > 0.003) { c.lerp(t, e); moving = true; } }
     if (Math.abs(THEME.on - THEME.tOn) > 0.003) { THEME.on += (THEME.tOn - THEME.on) * e; moving = true; }
     if (THEME.settled && !moving) return;
-    if (!moving) { for (let i = 0; i < 4; i++) THEME.cur[i].copy(THEME.tgt[i]); THEME.on = THEME.tOn; }
+    if (!moving) { for (let i = 0; i < 4; i++) { THEME.cur[i].copy(THEME.tgt[i]); THEME.scur[i].copy(THEME.stgt[i]); } THEME.on = THEME.tOn; }
     THEME.settled = !moving;
     for (let i = 0; i < 4; i++) {
       // the emissive reads the colour in linear light (the palette is sRGB; a stored value is lifted on output, gotcha 11), 0.45 of it,
@@ -14373,11 +14693,16 @@
       const lum = 0.2126 * _thTmp.r + 0.7152 * _thTmp.g + 0.0722 * _thTmp.b;
       themeU['uTheme' + i].value.copy(_thTmp).multiplyScalar(0.45 * clamp(0.75 / Math.max(0.2, lum), 1, 2.2));
       _thSlot[i].copy(_thHouse).lerp(c, THEME.on);   // the sheets and the nodes write display colour (postRaw undoes the tone map): the colour itself, the house white when the theme is off
+      const c2 = THEME.scur[i];   // the stripe bank, the same lift
+      _thTmp.copy(c2).convertSRGBToLinear();
+      const lum2 = 0.2126 * _thTmp.r + 0.7152 * _thTmp.g + 0.0722 * _thTmp.b;
+      themeU['uStripe' + i].value.copy(_thTmp).multiplyScalar(0.45 * clamp(0.75 / Math.max(0.2, lum2), 1, 2.2));
+      _stSlot[i].copy(_thHouse).lerp(c2, THEME.on);
     }
     themeU.uThemeOn.value = THEME.on;
     if (themeSheet) {
       const a = themeSheet.geometry.attributes.color, sl = themeSheet.userData.slot, w = themeSheet.userData.w;
-      for (let i = 0; i < sl.length; i++) { const c = _thSlot[sl[i]]; a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i]; }
+      for (let i = 0; i < sl.length; i++) { const c = slotCol(sl[i]); a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i]; }
       a.needsUpdate = true;
     }
     if (bfbNodes) {
@@ -14389,10 +14714,10 @@
   function lightsPin(n) { THEME.pin = n == null ? null : String(n); THEME.gen++; THEME.seeded = false; }   // a pin lands at once; only the calendar's own changes ease
   function lightsSettle() { THEME.seeded = false; THEME.gen++; }   // __dbg: land the next evaluation without the ease
   function lightsState() {
-    return { src: THEME.src, colors: THEME.colors, name: THEME.name, label: THEME.label, on: +THEME.on.toFixed(3), tOn: THEME.tOn, pin: THEME.pin,
+    return { src: THEME.src, colors: THEME.colors, stripes: THEME.stripes, stripeN: THEME.stripeN, name: THEME.name, label: THEME.label, on: +THEME.on.toFixed(3), tOn: THEME.tOn, pin: THEME.pin,
       cal: { t: THEME.cal.t, rows: THEME.cal.rows.length, src: THEME.calSrc }, games: Object.fromEntries(LIGHT_TEAMS.map((t) => [t.k, Object.keys(LGAMES.days[t.k]).length])), fetched: Object.keys(LGAMES.fetched),
       parts: THEME.nParts, sheets: THEME.nSheets, nodes: bfbNodes ? bfbNodes.geometry.attributes.position.count : 0, lamps: bfbLampMesh ? bfbLampMesh.count : 0,
-      uniforms: [0, 1, 2, 3].map((i) => themeU['uTheme' + i].value.getHexString()) };
+      uniforms: [0, 1, 2, 3].map((i) => themeU['uTheme' + i].value.getHexString()), stripeU: [0, 1, 2, 3].map((i) => themeU['uStripe' + i].value.getHexString()) };
   }
 
   // ---- street closures (Round 79). The Streets Department's live closure permits and the
@@ -14499,7 +14824,7 @@
     return clamp(best, 2.5, 14);
   }
   function closureY(x, z, ux, uz) {   // the traffic layer's road height (its trench aside): the bridge decks and the overpasses lift it
-    let y = siteY(x, z, 'road'), lift = inCore(x, z) ? LAYER.road + 0.04 : LAYER.road + 2 * 0.055 + 0.05;
+    let y = Math.max(siteY(x, z, 'road'), bankFloor(x, z)), lift = inCore(x, z) ? LAYER.road + 0.04 : LAYER.road + 2 * 0.055 + 0.05;
     const bY = bridgeDeckLift(x, z);
     if (bY !== null && bY > y) { y = bY; lift = 0.12; }
     const oy = ovpDeckY(x, z, ux, uz);
@@ -16595,7 +16920,7 @@
         { id: 't2170', num: '2170', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
         { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
-      wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal,
+      wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };

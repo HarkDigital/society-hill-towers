@@ -7,6 +7,8 @@ archetype, crown geometry, night accent and podium the app dresses it with.
                              "crown": {"type", "h"?, "steps"?}, "lit", "theme"?, "podium",
                              "matched", "sh"}, ...]}
 
+"led": true marks a tower whose every floor edge carries a light band in the night's colour (Round 85: the
+FMC Tower's signature look).
 "theme": true marks a crown that takes the skyline's lighting theme at night (Round 81: the
 Eagles' green on a game day, a BOMA calendar cause's colour); a lit crown without it keeps its
 own colour every night (the Comcast Technology Center's white blade, the PSFS sign's red).
@@ -93,7 +95,7 @@ OVERRIDES = [
     (r'(one|two) liberty place', dict(facade='glass_bands', crown=C('custom'), lit='#dbe6ff', theme=True)),
     (r'bny mellon', dict(facade='stone_piers', crown=C('lattice', 30), lit='#dfe8ff', theme=True)),
     (r'three logan', dict(facade='deco', hex='#B36349', crown=C('ziggurat', 25, steps=3), lit='#ffd9a8', theme=True)),
-    (r'fmc tower', dict(facade='glass', crown=C('notch', 20), lit='#e8f0ff', theme=True)),   # its crown floors light in the night's colour (Round 81)
+    (r'fmc tower', dict(facade='glass', crown=C('notch', 20), lit='#e8f0ff', theme=True, led=True)),   # its crown floors light in the night's colour (Round 81); led: a light band on every floor edge, its signature (Round 85)
     (r'dibona', dict(facade='glass', crown=C('notch', 6))),
     (r'\belement\b', dict(facade='concrete_grid', crown=C('flat'))),          # The W and Element
     (r'\blaurel\b', dict(facade='glass', crown=C('flat'), podium=22)),

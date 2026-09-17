@@ -97,6 +97,10 @@ def bake(elements):
         if tags.get('service') or tags.get('usage') in ('industrial', 'military', 'tourism') or tags.get('railway') != 'rail':
             dropped += 1
             continue
+        op = (tags.get('operator') or '').lower()
+        if op and 'amtrak' not in op:   # Round 85: the name clause also matched Norfolk Southern's Harrisburg Line up the Schuylkill's east bank (36 freight ways Amtrak never rides)
+            dropped += 1
+            continue
         t = 1 if (tags.get('tunnel') not in (None, 'no') or tags.get('covered') not in (None, 'no')) else 0
         layer = tags.get('layer')
         try:

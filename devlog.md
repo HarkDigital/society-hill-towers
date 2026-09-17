@@ -4033,3 +4033,140 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   arena green from the south, the Comcast pair and the skyline under `red,white,blue`, Penn and
   Rocky by day up close. 101 tests pass. Page 26.67 MB (+9.5 KB). Devlog, handoff, README,
   CLAUDE.md.
+
+## Round 85: the corridor made continuous, the station portals, the river bank, the Comcast and FMC lights (Sep 17)
+
+- **Mike, with three screenshots and a photo:** the two Comcast crowns should light on Eagles days and
+  every themed night, several colours, and look far better; the FMC Tower's signature look (a light
+  line on every floor, the whole tower stacked bands); the railroad tracks broken all over the city;
+  the roads on the river bank clipped; the tracks short of 30th Street Station; strips across the
+  Schuylkill near 30th Street; verify none of it anywhere else. Then: fix everything found, verify,
+  deploy. Ultracode: a workflow of five investigators (the rail data, the rail code, the river-bank
+  roads, the station's geometry, the lighting design) with a completeness critic, and the pane.
+- **What was actually broken.** The data was almost perfectly stitched (1,400 of 1,426 endpoints
+  shared exactly, 29 switch nodes) and no untagged way lay on the water. The breaks were the code's:
+  every OSM way took its own height pass (a one-sided smoothing window at each end, so the shared
+  node had two heights: 507 of 646 joints stepped 0.3 m or more, 254 a metre, 29 four metres), a
+  short way collapsed to a shelf at its own mean, every bridge-tagged way was held flat at its
+  higher abutment AND floored at 9 m over the water whether or not it crossed any (63 street
+  overbridges lifted, 24 by more than 3 m, every one a vertical drop at both ends), the 20 m boxes
+  showed open faces at every step, and the slab rode the bilinear DEM while the eye sees the drawn
+  mesh. The "strips across the river" were the bridge ways themselves, flat grey ribbons 14 to 16 m
+  over the water with nothing under them, one track's middle piece 5 m lower than its neighbour. The
+  tracks stopped short because OSM tags the lower level from Chestnut Street to the parking podium
+  tunnel=yes and the step drew nothing tunnel-flagged; the DEM reads the whole block as the
+  concourse plateau, 7 m above the approaches, so the last 30 m of each approach was buried too.
+- **The corridor now.** The ways are stitched into 57 chains by half-metre node keys; each chain is
+  sampled at 20 m on the drawn ground (`groundMeshLandY`, the DEM where the mesh is absent); every
+  run that is bridge-tagged or inside the Schuylkill's outline is one span ramped between its two
+  abutments (never an interior ground reading, never flat at the higher end), floored 9 m over the
+  water only when it is wet, its approaches climbing over eight samples; the chain ends are pinned
+  to the height every chain at that node shares (0.00 m steps at all 29 junctions in the replay); the
+  free points smooth twice. Each chain is one ribbon, mitred at every bend, with a skirt from its
+  edges down to the drawn ground (an embankment reading, never a floating slab), rails on desktop,
+  and under every bridge run a 1.4 m steel deck with a pier every other segment down to the ground
+  or to the riverbed. 713 lines, 57 chains, 10,539 segments drawn.
+- **30th Street.** The station's centre is (-3197, -1158), not the (-3200, -840) the code carried
+  (that is the IRS block). The covered points inside the station box take flag 4 and a straight
+  lower-level grade between the approaches, held 60 m out from each portal; they are drawn (under the
+  plateau, visible only in the cuts) and the trains ride through them. Two open cuts (`RAIL_CUTS`:
+  south, 62 by 62 m from Chestnut Street to the old Post Office's face, floor -4.3; north, 86 by 26 m
+  at the parking podium's face, floor -4.2) join `cutHole`, so the wide ground opens over them; the
+  rail step lays their floors, side walls to the plateau, grass collars over the opened cells, and a
+  headwall at each closed end with a near-black recessed mouth spanning the tracks. Verified from the
+  north cut: the tracks converge into the dark mouth under the podium's headwall.
+- **The river bank.** Three mechanisms, all from the river-roads investigator's replay: the
+  tunnel-tagged I-76 pair on the west bank was drawn as slabs through the carved bank (covered
+  sunken chains now draw only where they stand clear of the drawn ground, with a face down to the
+  bed); a road within the 40 m bank carve read the carved slope and sawtoothed between water + 0.9
+  and + 4.5 every 15 m (`groundMeshLandY` returns null under water + 0.85 or inside the carve band,
+  so a bank road stands on the DEM, and no non-deck roadway sits under water + 1.2); and
+  `bake_overpasses.py` tested over-water against the pre-Round-49 hand polyline, a kilometre west of
+  the river through Center City, so the Vine, JFK and Chestnut crossings solved 5 to 8 m over the
+  water (the bake now tests the river's own outline and floors its touch-downs at water + 1.4; el 63
+  8.5, el 91 8.2, el 178 6.4 where they were 5.0, 6.2 and 0.6). The paved yards never crossed the
+  river.
+- **The lights.** The FMC Tower carries an LED line on every floor edge of its real footprint
+  (`led` in towers.json; `ledRing` rings the polygon, the OBB slab floated 3 m off its rounded
+  corners), slots cycling in blocks of five floors so a flag night stacks, and a white sign bar on
+  each long face; the Comcast Center's crown is an LED line proud of every crown floor on the style
+  25 pitch of 4.15 m with a dim wash between (the roof strip now caps the drawn crown block; it used
+  to sit 25 m past the recessed face); the CTC's fin is 0.72 of the long axis and 0.08 of the short,
+  a dark body behind a ladder of light bars every 1.6 m, every bar in the night's colour and the top
+  third cycling a many-colour night; thin LED parts carry `aGain` 1.6 through `mergeColored` and the
+  theme shader so a line has the radiance a wash box has. 534 themed parts. Verified: the FMC as
+  stacked green bands from the South Street bridge, the Comcast pair in green and in red, white and
+  blue.
+- **The critique pass (the workflow's completeness critic and six follow-ups, then a citywide survey in the
+  pane: every open rail sample against the drawn ground, `__dbg.railSnap` and `__dbg.groundAt` on a 20 m
+  grid, 6,283 samples).** What the first build still had: 508 samples under the drawn ground and 202 more
+  than a metre under, on the North Philadelphia and Frankford viaducts, the Torresdale reach and the
+  Manayunk line, because a bridge-tagged run was ramped straight between its abutments while the bare-earth
+  DEM carries the earth fill between the actual bridges, and because the smoothing pulled the free points
+  under every crest (the wedges surfacing through the grass at Powelton Yard); the new road floor firing
+  on every road on land under 1.1 m ASL citywide (FDR Park, the sports complex at -1.6 m ASL, the airport:
+  a 0.75 m shelf with the traffic under it); the bank roads standing on the DEM with up to 6 m of air over
+  the carved slope; the ballast skirt bottoming at the DEM over the same carve; a chain end pinned by
+  `max` to a neighbour's approach lift; the rail cut's grass collar burying Schuylkill Avenue's ramp; the
+  covered I-76 slab drawn wherever the ground is holed; a train's badge hidden in the station shed; a
+  pier every 40 m wherever the deck stands, a street's carriageway included; and, from the rail-data
+  investigator, Norfolk Southern's Harrisburg Line (36 freight ways, 21 km up the Schuylkill's east bank
+  from East Falls through Manayunk to the city line) matched by the bake's name clause since Round 80:
+  no Amtrak train runs on it. Fixed: every span and every free point floors at the drawn ground + 0.45
+  (a fill carries the ballast; the deck and piers are skipped where the deck would sit within 1.2 m of the
+  ground, a pier within 8 m of a street's centreline too); a node's height is a span's or the shed's where
+  one ends there, else the ground reading every chain shares; the skirt reaches the drawn mesh, carve
+  included; the road floor and a new quay skirt (from each ribbon edge down to the drawn mesh, in the road's
+  colour at 0.7, lane class 2) apply within 60 m of the Schuylkill's outline only, the typical traffic
+  taking the same floor; the collar dips 0.7 m under any baked deck it crosses; a holed cell counts as
+  the DEM's ground for the covered slabs; the badge rides the shed with the cars; the decks, piers, cut
+  walls, headwalls and mouths sit on their own shadow-casting mesh; `bake_rail.py` drops any way whose
+  operator tag is not Amtrak's (677 lines, 191.8 km, from 713 and 213.2). After: 5,328 open samples, six
+  under the drawn ground and all six inside the two station cuts where the track is meant to be, 17
+  standing over 3 m (approach embankments, skirted), the steepest 20 m 11 percent on the Grays Ferry
+  approach where the bank itself climbs. `__dbg.rail()` now reports `under`, `underMax`, `floatMax` and
+  `grade` from the step's own profiles (16, 6.5 m in the cuts, 4.1 m, 17 percent at the cut floors).
+- **The follow-ups' refinements, taken.** The bank floor is one function, `bankFloor(x, z)`: water + 1.2
+  inside the Schuylkill's outline, eased to the low-land datum across the 40 m carve band, nothing beyond,
+  read by both road loops, the typical traffic, the closures' drums and the SEPTA vehicles, and mirrored in
+  `bake_overpasses.py` (`sch_bank`, so the eleven off-river touch-downs the first bake had lifted, FDR
+  Park's path bridges among them, return to grade + 0.3). A quay skirt samples the drawn mesh at the
+  chord's quarter points as well as its ends (516 m of daylight under a straight bottom in the replay,
+  none after). The overpasses' skirts and pier feet, and the rail bridges' pier feet, reach the drawn
+  mesh, carve included (25 deck points and 53 piers had hovered up to 9.6 m over the carved bank). A
+  node's height is the mean of the span or shed ends meeting there, else the shared ground reading (the
+  max had pinned two shed heads to the concourse plateau, a 6 m face inside the south cut). The shed grade
+  anchors to the first and last samples inside a cut at that cut's floor + 0.45, and the open stubs within
+  40 m of a cut join the shed rule, so the rails ride 0.3 m proud of the slab on every track. A train at
+  the platforms carries its badge over the concourse. The bake floors an elevated deck at its DEM + 0.45
+  (Schuylkill Avenue's ramp had solved 1.7 to 4.2 m under the drawn ground because the slope limit could not
+  climb the concourse's rise; seven short at-grade pieces now clear the ground and are kept).
+- **The cuts, reworked from the last follow-up.** The side walls had stood flat at the concourse height
+  while the yard beside them lies up to 8 m lower, a freestanding walled trench; they now follow the ground
+  outside them in 10 m pieces from nothing at the open end to the full retaining wall at the headwall
+  (the south cut's head from the DEM at the headwall, 3.2, not 4.0). cutHole drops a whole 25 m cell when
+  any corner lies within a metre of the box, so the apron is a ring of 28 m collars centred 15 m outside
+  every edge, built as sheets that follow the ground at every vertex (a ribbon is flat across its width,
+  and a grade road beside it poked through on the cross slope), the open end's under the ballast where
+  the tracks cross it, the headwall's over the shed's drawn strips; a collar dips under a deck that
+  crosses it by 0.7 m but never more than 0.6 m under its own ground. The mouth is the full inner width,
+  so the two outer tracks enter it instead of the wall. A deck over a cut (Chestnut Street) stands on
+  piers to the cut floor. Verified from over Chestnut looking into the cut, from the yard at the headwall,
+  from the plateau into the north cut and from the east across its apron.
+- **The stripe palette (the critic's fourth gap, the follow-up's design).** On a team night the resolver
+  hands one colour and all four slots took it, so every Round 85 per-floor deal collapsed to solid green on
+  precisely the Eagles nights Mike named. The skyline rule stands (Round 81's photo: the city green, the
+  CTC white), so the striped LED parts alone take a second bank: a part whose slot is 4 or more is a
+  stripe index (`4 + tslot + k`), the shader reduces it by the live palette's length (`uStripe0..3`,
+  `uStripeN`), and `LIGHT_TEAMS` carries each team's pair: green and white for the Eagles, red and white
+  for the Phillies, orange and white for the Flyers, blue, red and white for the Sixers (a three-colour
+  palette cycles three, no doubled first colour). A calendar night or a pin deals its own colours to the
+  stripes, so Round 84's flag capture reads exactly as it did; the label still names the skyline. The
+  contents of the four palettes are a guess at how Philadelphia lights and Mike's to change.
+- **Found and left, reported to Mike.** Kelly Drive on the far ring (East Park, about (-4230, -3480)) has
+  a road ribbon that dips through a hillside and steps where it re-emerges. An A/B against the deployed
+  build at the same pose is pixel for pixel the same: the far ring's 50 m ground grid against the roads'
+  30 m chords on a steep bank, a level-of-detail matter of the far ring since it was built, not a broken
+  join and not this round's. The road loops sample every vertex straight off the drawn ground, so the
+  rails' shared-node fix has no road equivalent to make.
+- 101 tests pass (tests/test_lights_js.py knows the stripes). Page 26.70 MB (+29 KB). Devlog, handoff, README, CLAUDE.md, the About panel.
