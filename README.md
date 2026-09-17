@@ -24,6 +24,9 @@ real solar clock over it all.
   says they are open; tap a tent for the hours and payments, or search a market by name.
 - **Markers and art.** The state's 348 historical markers stand at their posts with the
   full text a tap away, and the city's Percent for Art works on their plinths.
+- **Search** (/): an address, a landmark, a neighborhood, a street, a SEPTA route, and
+  near six thousand named places from the city's own basemap: schools, churches, parks,
+  rec centers, hospitals, libraries.
 
 ## Build
 
@@ -63,8 +66,8 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
   colours sampled from the City's 2024 orthophotos.
 - Street trees: Philadelphia Parks & Recreation Tree Inventory 2025; streetlights: Streets
   Department Street Poles inventory; parkland: Parks & Recreation; neighborhoods, historic
-  districts, farmers' markets and Percent for Art: City of Philadelphia via OpenDataPhilly
-  (CC-BY); historical markers: Pennsylvania Historical and Museum Commission (public
+  districts, farmers' markets, Percent for Art and the named places of the city basemap: City
+  of Philadelphia via OpenDataPhilly (CC-BY); historical markers: Pennsylvania Historical and Museum Commission (public
   domain); traffic volumes: PennDOT RMSTRAFFIC.
 - Live: SEPTA TransitView, Indego / Bicycle Transit Systems, adsb.fi (ADS-B), aisstream.io
   (AIS), Open-Meteo (weather), Air Management Services (air quality), OpenStreetMap

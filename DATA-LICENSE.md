@@ -40,6 +40,7 @@ the files above must keep this notice if they are redistributed.
 |---|---|---|
 | `places.json` | `fetch_places.py` → `bake_places.py` | Philadelphia Register historic districts and neighborhood boundaries, City of Philadelphia via OpenDataPhilly / phl.carto.com. CC-BY 4.0: attribution to the City of Philadelphia is required. |
 | `markets.json` | `fetch_markets.py` → `bake_markets.py` | Farmers' Market Locations (`Farmers_Markets`, City of Philadelphia via OpenDataPhilly / City ArcGIS): names, hours, season, payments and websites shown on the tents' cards |
+| `landmarks.json` | `fetch_landmarks.py` → `bake_landmarks.py` | City Landmarks (`Landmark_Poly`, `Landmark_Points`, Office of Innovation and Technology via OpenDataPhilly / City ArcGIS): the names and positions of the city's schools, places of worship, parks, hospitals and other named places, for the search index |
 | `markers.json`, the `a` rows | `fetch_markers.py` → `bake_markers.py` | Percent for Art (`Percent_for_Art_Public`, Office of Arts, Culture and the Creative Economy via OpenDataPhilly / City ArcGIS): titles, artists, dates, media and locations on the plinths' cards, with a link to the city's own image PDF (never copied) |
 | `trees.b64`, `tree_names.json` | `fetch_trees.py` → `pack_trees.py` | Philadelphia Parks & Recreation Tree Inventory 2025 (OpenDataPhilly / City ArcGIS) |
 | `poles.b64` | `fetch_poles.py` → `pack_poles.py` | Streets Department Street Poles inventory (OpenDataPhilly / City ArcGIS, 203,058 poles) |

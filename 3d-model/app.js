@@ -9645,12 +9645,12 @@
         ['Weather', 'Live clouds, wind, rain and snow, refreshed every 15 minutes.'],
         ['Every visit', 'Opens at Philadelphia\'s own time. Only a copied link carries a pinned clock.']] }],
     ['Search, share and more', {
-      d: [['Search', 'Bottom bar, or the / key: an address, a landmark, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
+      d: [['Search', 'Bottom bar, or the / key: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
         ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
         ['Camera', 'Saves a picture of the view.'],
         ['Credits', 'The line at the bottom opens the About panel, the story of the model and its data. The I key too.'],
         ['Install', 'Chrome and Edge install Philly3D as an app from the address bar, Safari from File, then Add to Dock.']],
-      t: [['Search', 'Bottom bar: an address, a landmark, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
+      t: [['Search', 'Bottom bar: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
         ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
         ['Camera', 'Opens the share sheet with a picture of the view.'],
         ['Credits', 'The line at the bottom opens the About panel, the story of the model and its data.'],
@@ -10923,12 +10923,17 @@
     // circle the spot from where the glide parked the camera; any drag, wheel or key
     // takes flight from wherever the circle happens to be (autoFly), as after Enter
     { const c = clampLimit(x, z); if (c) { x = c[0]; z = c[1]; } }   // never a spot beyond the flight limit
+    // the circle starts from the glide's landing: fly.pos, not the camera, since a stalled
+    // frame can jump the glide to its end before applyFly has carried the camera there
+    // (Round 78: seen in the pane, where the circle then ran from the old spot a kilometre off)
+    const from = mode === MODE.FLY ? fly.pos : camera.position;
+    const px = from.x, py = from.y, pz = from.z;
     setMode(MODE.ORBIT, true);
-    const p = camera.position, r = Math.max(30, Math.hypot(p.x - x, p.y - y, p.z - z));
+    const r = Math.max(30, Math.hypot(px - x, py - y, pz - z));
     orbit.target.set(x, y, z); orbit.goalTarget.set(x, y, z);
     orbit.r = orbit.goalR = r;
-    orbit.theta = orbit.goalTheta = Math.atan2(p.z - z, p.x - x);
-    orbit.phi = orbit.goalPhi = Math.acos(clamp((p.y - y) / r, -1, 1));
+    orbit.theta = orbit.goalTheta = Math.atan2(pz - z, px - x);
+    orbit.phi = orbit.goalPhi = Math.acos(clamp((py - y) / r, -1, 1));
     orbitSpin = !reducedMotion;
     applyOrbit(0);
     setHint();
@@ -11279,16 +11284,25 @@
   // districts, the named buildings and towers, and the painted street names, all
   // already in scene metres. Built once, on the first search.
   let nameIx = null;
-  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, building: 4, street: 5 };
-  const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art', building: 'Building', street: 'Street' };
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, bridge: 3, nature: 3, building: 4, street: 5 };
+  const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art',
+    school: 'School', college: 'College', worship: 'Place of Worship', hospital: 'Hospital', park: 'Park', rec: 'Recreation Center', cemetery: 'Cemetery', museum: 'Museum', site: 'Historic Site',
+    venue: 'Venue', civic: 'Public Building', station: 'Station', bridge: 'Bridge', nature: 'Natural Feature', building: 'Building', street: 'Street' };
+  // the city basemap's named places (LANDMARKS, Round 78): cls in landmarks.json indexes this
+  const LM_KIND = ['school', 'college', 'worship', 'hospital', 'park', 'rec', 'cemetery', 'museum', 'site', 'venue', 'civic', 'station', 'bridge', 'building', 'nature'];
   function buildNameIx() {
-    const ix = [], seen = new Set();
-    const add = (name, x, z, kind, ref) => {   // ref: the record a card can open on arrival (a market)
+    const ix = [], seen = new Set(), at = new Map();
+    const add = (name, x, z, kind, ref) => {   // ref: the record a card can open on arrival (a market, a marker, a work)
       if (!name || !isFinite(x) || !isFinite(z)) return;
-      const s = String(name), key = kind + '|' + s.toLowerCase();
+      const s = String(name), lc = s.toLowerCase(), key = kind + '|' + lc;
       if (seen.has(key)) return;
+      // the same name within 150 m under any kind is the same place: the label's entry for
+      // Independence Hall wins over the city layer's, the biggest of a recurring name over the rest
+      const near = at.get(lc);
+      if (near) for (let i = 0; i < near.length; i += 2) { const dx = near[i] - x, dz = near[i + 1] - z; if (dx * dx + dz * dz < 150 * 150) return; }
       seen.add(key);
-      ix.push({ name: s, lc: s.toLowerCase(), x, z, kind, ref });
+      if (near) near.push(x, z); else at.set(lc, [x, z]);
+      ix.push({ name: s, lc, x, z, kind, ref });
     };
     for (const m of markets) add(m.n, m.x, m.z, 'market', m);
     for (const r of markerRecs) add(r.name, r.x, r.z, 'marker', r);
@@ -11307,6 +11321,10 @@
     }
     if (typeof WIDE_NAMES !== 'undefined' && WIDE_NAMES) for (const w of WIDE_NAMES) add(w.n, w.x, w.z, 'building');
     for (const b of D.buildings) if (b.name) { const c = polyCentroid(b.poly); add(b.name, c[0], c[1], 'building'); }
+    if (typeof LANDMARKS !== 'undefined' && LANDMARKS && LANDMARKS.names) {   // every named school, church, park, hospital, rec center... (Round 78)
+      const L = LANDMARKS.l || [];
+      for (let i = 0; i + 3 < L.length; i += 4) if (insideLimit(L[i + 1], L[i + 2])) add(LANDMARKS.names[L[i]], L[i + 1], L[i + 2], LM_KIND[L[i + 3]] || 'site');
+    }
     if (typeof ST_LABELS !== 'undefined' && ST_LABELS && ST_LABELS.names) {
       // one point per street, the middle of its placements, so a long avenue lands mid-run
       const L = ST_LABELS.l || [], at = new Map();
@@ -11330,7 +11348,8 @@
   function searchGoToLocal(e) {
     const gy = siteY(e.x, e.z, 'ground');
     const wide = e.kind === 'neighborhood' || e.kind === 'district';   // an area reads from higher up and needs no pin
-    searchFlyTo(e.x, gy + (e.kind === 'landmark' ? 30 : 8), e.z, wide ? 600 : e.kind === 'landmark' ? 250 : 220);
+    const mid = e.kind === 'park' || e.kind === 'cemetery' || e.kind === 'college';   // a campus or a park: back off, keep the pin
+    searchFlyTo(e.x, gy + (e.kind === 'landmark' ? 30 : 8), e.z, wide ? 600 : mid ? 400 : e.kind === 'landmark' ? 250 : 220);
     if (wide) clearSearchMark(); else placeSearchMark(e.x, gy, e.z, e.name);
     if ((e.kind === 'market' || e.kind === 'marker' || e.kind === 'art') && e.ref) {   // arrive with the card open (a market's says when it opens)
       pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null;
@@ -15299,7 +15318,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi,
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

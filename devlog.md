@@ -3687,4 +3687,41 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   the far sidewalk of 3rd Street facing the road, the Betsy Ross City marker on the lawn at
   Arch Street, and the art plinths; from 90 m over Independence Mall the posts are the
   pinpricks they are in life. Page 26.21 MB, plus 188 KB raw for the two layers.
-  62 tests pass (`tests/test_markers_bake.py`).
+  63 tests pass (`tests/test_markers_bake.py`).
+
+## Round 78: the named places in the search box (Sep 16)
+
+- **Mike's pick from the survey: named places for search.** The City basemap's Landmarks:
+  `Landmark_Poly` (9,202 polygons) and `Landmark_Points` (1,147). The file is not what its
+  field names suggest: `TYPE` is a small integer 0 to 12, `LABEL` a Y/N flag for the city's
+  own labelling, and only `SUBTYPE` carries the class; 3,796 polygons have no `NAME` and are
+  the parcels of a `PARENT_NAME` (a park's lawns and courts, a rec center's buildings), 115
+  and 32 rows are archived, 347 are `PUBLIC_ = N` (the water department's yards), and the
+  point layer carries 142 neighborhoods that `places.json` already has. `fetch_landmarks.py`
+  pages both layers; `bake_landmarks.py` drops the archived, the non-public, the
+  neighborhoods, the utility yards, industrial sites, communication towers, plain retail,
+  housing and parking lots, classes the rest by subtype into fifteen kinds (school, college,
+  place of worship, hospital, park, rec center, cemetery, museum, historic site, venue,
+  public building, station, bridge, named building, natural feature), keys a site on NAME
+  else PARENT_NAME with the area-weighted mean of its parcels' centroids (a university lands
+  mid-campus), splits a recurring name into another site past 400 m and sorts the largest
+  first. 5,932 places from 10,349 rows (worship 1,582, park 862, school 719, site 572,
+  college 512, building 327, civic 273, museum 213, rec 207, hospital 193, venue 177, station
+  92, cemetery 77, nature 76, bridge 50), `landmarks.json` 272 KB, the page 26.48 MB.
+- **In the app**, search only: `LANDMARKS` joins `buildNameIx` after the named buildings,
+  with `LM_KIND` decoding the class into a kind and `KIND_LABEL` naming it in the result
+  row ("Julia R. Masterman School, School"); `add()` now drops the same name within 150 m
+  under any kind, so a label's entry wins over the city layer's (Independence Hall appears
+  once) and the biggest of a recurring name over the rest; a park, a cemetery or a college
+  glides to 400 m and keeps its pin. The landmark label tier stays as it was, off by default
+  (5,900 DOM labels is not a tier). The guide's Search rows gain "a school, a church, a
+  park"; `__dbg.nameIx()`, `__dbg.search(q)`.
+- **Measured in the pane**: the index grows from 1,934 entries to 7,156; "masterman" returns
+  the school, "palumbo" the park, the rec center and the Academy at Palumbo, "christ church"
+  the marker, the park and the cemetery; a panel search for "Clark Park" lists the Saturday
+  market first and the park second, and "Palumbo Recreation Center" glides to 457 m off the
+  rec center and circles it. One fix fell out of that check: with the pane's sparse frames
+  the glide jumped from start to end in one frame and `orbitAround` read the camera before
+  `applyFly` had carried it, so the circle ran from the old spot a kilometre off; it now
+  starts from `fly.pos`, the glide's landing, which a stalled frame on a phone would have hit
+  the same way. 67 tests pass (`tests/test_landmarks_bake.py`).
