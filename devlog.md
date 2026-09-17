@@ -4170,3 +4170,26 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   join and not this round's. The road loops sample every vertex straight off the drawn ground, so the
   rails' shared-node fix has no road equivalent to make.
 - 101 tests pass (tests/test_lights_js.py knows the stripes). Page 26.70 MB (+29 KB). Devlog, handoff, README, CLAUDE.md, the About panel.
+
+## Round 86: the Amtrak card links to the train, not the tracker (Sep 17)
+
+- **Mike: change the Amtrak links to go to that specific train on railrat.net.** Round 80 gave the
+  train card Amtrak's own `track-your-train.html`, which is the tracker's front door: it names no
+  train, so the reader arrives at a map and has to find the train again. RailRat (unofficial,
+  sourced from Amtrak's Track Your Train map) publishes one page per scheduled train number at
+  `railrat.net/trains/<num>/`, so the card now points there: `encodeURIComponent(p.num)` in the
+  href, `septaEsc(p.num)` in the text, "Track Train 655 on RailRat". One line in `amtrakCard`,
+  matching how the flight and ship cards hand off to FlightAware and MarineTraffic.
+- **Coverage checked before the switch, not assumed.** RailRat carries the scheduled numbers only,
+  not every number in a range: 2151 answers 200 and 2170 and 2253 are 404s, which is why the
+  `__dbg.amtrakTest()` fixture's invented Acela 2170 became 2151, a real run. Every number the live
+  feed carried at the time of the change (171 Northeast Regional, 609 and 650 Keystone, 2158 and
+  2159 Acela) resolves, as do the four fixture trains (192, 2151, 655, 90). Amtraker reports trains
+  that are actually running, so their numbers are scheduled numbers; an empty `num` degrades to
+  `railrat.net/trains//`, which serves the index rather than a 404.
+- **Credits unchanged.** Amtraker stays the data source in the card line, the About panel and
+  DATA-LICENSE; RailRat is an outbound tracking link and is credited nowhere, exactly as
+  FlightAware and MarineTraffic are not.
+- Verified in the pane: `cardFor` on all four fixture trains returns the per-train href, no
+  `amtrak.com` remains anywhere in the document, and the Acela card reads "TRACK TRAIN 2151 ON
+  RAILRAT". 101 tests pass. Page 26.70 MB (+18 bytes).
