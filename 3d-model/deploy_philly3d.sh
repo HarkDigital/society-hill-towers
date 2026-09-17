@@ -2,7 +2,7 @@
 # Build, verify and ship the model to philly3d.com (nginx on the lionspool VPS,
 # ~/.ssh/config Host lionspool-vps). FLIGHT_PROXY in the source already
 # points at https://philly3d.com/adsb — same-origin here, CORS-open for the
-# GitHub Pages copy — so both homes deploy the identical build.
+# (the GitHub Pages copy was retired Sep 17 2026; philly3d.com is the site.)
 #
 #   ./deploy_philly3d.sh             tests -> build -> gzip -> stage -> keep prev
 #                                    -> rsync --delay-updates -> verify live

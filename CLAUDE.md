@@ -3,8 +3,8 @@
 Philly3D (repo `HarkDigital/society-hill-towers`) is a living, single-file Three.js model of
 Philadelphia: a detailed Society Hill core, the wide Center City / South Philly set, and a far
 ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flights / ships,
-typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (VPS) and
-https://harkdigital.github.io/society-hill-towers/ (Pages). Everything is in `3d-model/`;
+typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (the VPS, and the
+only home since Mike retired the GitHub Pages copy on Sep 17, 2026). Everything is in `3d-model/`;
 `app.js` (~11,000 lines, one IIFE) is the whole application, `build.py` inlines it with the
 data into `society-hill-towers.html` (24.85 MB raw / 10.58 MB gzip). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
@@ -44,8 +44,8 @@ before any visual round rather than rediscovering it.
 ## Hard constraints
 
 - No npm, no bundler, no framework: plain Python 3 build, vendored `three.min.js` (r149,
-  pinned; see handoff gotcha 11 before touching it), one self-contained HTML that GitHub
-  Pages can serve as a file. Every asset is inlined (fonts, icons, data).
+  pinned; see handoff gotcha 11 before touching it), one self-contained HTML that any static
+  host can serve as a file. Every asset is inlined (fonts, icons, data).
 - `build.py` must keep its guards: missing/undersized input, leftover `{{PLACEHOLDER}}`,
   `</script` inside a blob, page over `MAX_HTML` (75 MB since Sep 2, a runaway tripwire, not a
   target; the binding constraints are load time and phone memory).
@@ -173,10 +173,21 @@ solar clock + weather (and the air quality), build & loop; the post pipeline sit
 
 ## Deploy
 
-`3d-model/deploy_philly3d.sh` builds and rsyncs to the VPS (philly3d.com; stages + chmods
-644 because this checkout's files are 0600). `git push` publishes GitHub Pages (the built
-page is committed). Both homes ship the identical build. Verify Pages by grepping the tail of
-the page, not its head.
+`3d-model/deploy_philly3d.sh` builds and rsyncs to the VPS and verifies philly3d.com against
+the local sha256 (stages + chmods 644 because this checkout's files are 0600). **philly3d.com is
+the site.** Mike retired the GitHub Pages copy on Sep 17, 2026: do not deploy to it, wait on it
+or verify it. `git push` is now only for the history, and the built page is still committed as
+the artifact of record.
+
+Pushing from this machine needs the `gh-ssh` remote, not `origin`. `origin` is HTTPS and the
+keychain does not serve its credential to a non-interactive shell; `~/.ssh/harkdigital_laptop`
+is the repo's `philly3d-laptop` deploy key (read/write since Aug 26) AND the VPS key, but
+`~/.ssh/config`'s `Host github.com` block pins the unrelated Phade deploy key with
+`IdentitiesOnly yes`, so ssh never offers it to github.com. The `github-sht` alias does, and
+`gh-ssh` points at it: `git push gh-ssh main`. Two repo-scoped deploy keys cannot share one
+`Host github.com` entry, which is why it is an alias. `origin` stays HTTPS on purpose: this
+checkout lives in Dropbox, so a machine-local alias in `.git/config` would follow it to the
+other Mac and break there.
 
 ## Read before changing anything
 

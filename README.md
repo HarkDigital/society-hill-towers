@@ -7,7 +7,6 @@ waterfront, the bridges, live SEPTA vehicles, flights and ships, live weather, a
 real solar clock over it all.
 
 **Live model:** https://philly3d.com/
-(fallback copy: https://harkdigital.github.io/society-hill-towers/)
 
 - **Fly.** Drag, scroll, or press W A S D; E/Q for altitude, shift to boost, scroll
   sets cruise speed. Any first touch takes off.

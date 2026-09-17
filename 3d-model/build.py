@@ -2,7 +2,7 @@
 """Assemble the single-file Philly3D page (society-hill-towers.html).
 
 Everything the page needs — Three.js, the app, the styles, every packed data
-blob — is inlined so one file serves philly3d.com and the GitHub Pages copy.
+blob — is inlined so one file serves philly3d.com with no assets beside it.
 """
 import argparse, base64, json, pathlib, re, subprocess, sys
 

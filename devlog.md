@@ -4442,3 +4442,31 @@ this round added 9.8 km of real park drives and about twenty new stubs with them
 the stubs, and the honest read of the screenshot is that the park was under-roaded, not unstitched.
 
 Page 27.82 MB (+17 KB). 101 tests pass. Triangles unchanged at 13.4 to 13.6 M: roads are cheap.
+
+### Round 87 coda 2: GitHub Pages retired, and how to push from this laptop (same day)
+
+**Mike: "This project no longer needs GH Pages. The site should always be most updated at
+philly3d.com."** So the Pages copy is out of the deploy ritual: CLAUDE.md, the README's header,
+`deploy_philly3d.sh`'s comment and `build.py`'s docstring no longer name it, and CLAUDE.md's
+standing instruction to "verify Pages by grepping the tail of the page" is gone, since it would
+have sent a future round waiting on a build nobody reads. The page is still committed as the
+artifact of record and `git push` still runs, for the history.
+
+Left in place deliberately, because they are cheap and harmless and removing them is a change to
+a live host: `3d-model/index.html` (the Pages `start_url` redirect), and the `ACAO *` headers on
+the VPS's per-feed location blocks, which the Pages copy needed to read `closures.json`,
+`amtrak.json` and `lights.json` cross-origin. Flagged for Mike rather than removed.
+
+And the push itself, which cost this round an hour of wrong diagnosis. `git push` fails from a
+non-interactive shell because `origin` is **HTTPS** and the osxkeychain helper returns nothing
+there. I read `~/.ssh/config` mapping `harkdigital_laptop` to `lionspool-vps` and concluded it was
+a VPS-only key, and proposed generating a new deploy key; Mike pointed out the repo has had a
+read/write deploy key called `philly3d-laptop` since Aug 26. Its fingerprint
+(`SHA256:p0kArEXJu5Vy8Agbkgjgd5FgidNCzTJS5xdV+Ztgr7U`) **is** `harkdigital_laptop` — the one key
+authorizes both the VPS and this repo. What actually blocked SSH was the `Host github.com` block
+pinning the unrelated **Phade** deploy key with `IdentitiesOnly yes`, so ssh never offered the
+right key to github.com. Two repo-scoped deploy keys cannot share one `Host github.com` entry, so
+the fix is an alias: `Host github-sht` with `IdentityFile ~/.ssh/harkdigital_laptop`, and a second
+remote `gh-ssh` pointing at it. `origin` stays HTTPS on purpose, because this checkout lives in
+Dropbox and a machine-local alias in `.git/config` would follow it to the other Mac and break
+there. The key I had generated was deleted unused.
