@@ -3898,7 +3898,11 @@
           // pixels (full by 3.5), and the same for the mullions along a wall seen edge-on; the
           // far average below takes over, which is what those pixels can honestly show
           '    float rowPx = 3.2 / max(fwidth(v), 1.0e-5);',
-          '    det *= clamp((rowPx - 1.5) / 2.0, 0.0, 1.0);',
+          // by day only (Round 73 coda, Mike: the larger buildings show no lights from close by, it
+          // ruins the immersion): the lit windows ride on the same masks, and the gate had put every
+          // tower past a few hundred metres of a phone's night dark; the bands that moire are the
+          // day's, so after dark the detail stands to the distances it always did
+          '    det *= mix(clamp((rowPx - 1.5) / 2.0, 0.0, 1.0), 1.0, uNight);',
           '    float colK = clamp((1.55 / max(fwidth(uW), 1.0e-5) - 1.5) / 2.0, 0.0, 1.0);',
           '    float detU = clamp(1.0 - (0.6 * fwidth(uW) * uDetFar + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
           '    float wallTop = local ? vWallH - 0.25 : 1.0e4;',

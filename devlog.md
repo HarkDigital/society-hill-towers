@@ -3538,3 +3538,15 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   the move; and the grass field is 6,000 tufts, from 9,000. Not yet touched, the next candidates
   if it still stutters: the SEPTA poll (370 KB parsed on the main thread every 25 s) could move
   to a worker, and the phone's pixel cap of 1.5 could fall to 1.25. 49 tests pass.
+
+## Round 73 coda: the towers' lights come back (Sep 16)
+
+- **Mike, with a night screenshot from the phone: why do the larger buildings show no lights
+  from such a close distance? It ruins the immersion.** Round 71's gate, which fades a facade's
+  floor pattern under 1.5 render pixels a floor so the day's bands cannot moire, gated the lit
+  windows too: they ride on the same masks (`shtLit` is `glass * litOn` by `det`), and a phone's
+  render pixels are large, so every tower past a few hundred metres went dark after sunset while
+  the far glow and the rowhouses close by still sparkled. The gate is the day's now
+  (`mix(gate, 1.0, uNight)`): after dark the detail chain stands to the distances it did before
+  Round 71, which on a phone is the `uDetFar` stretch Mike asked for in the first place. Verified
+  by capture at 740 by 360 with touch emulation, over Center City at night before and after.
