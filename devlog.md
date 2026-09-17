@@ -3550,3 +3550,23 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   (`mix(gate, 1.0, uNight)`): after dark the detail chain stands to the distances it did before
   Round 71, which on a phone is the `uDetFar` stretch Mike asked for in the first place. Verified
   by capture at 740 by 360 with touch emulation, over Center City at night before and after.
+
+## Round 74: the turn at altitude (Sep 16)
+
+- **Mike: smooth, until I am flying through the sky and I turn around; that is when it gets
+  choppy.** The first suspect was the shadow box, aimed a third of its extent ahead of the
+  view, so that a turn might re-aim it and cost a depth pass of every caster in a 900 m box.
+  Measured in the pane with touch emulation by counting depth-pass requests over a scripted
+  180 degree turn at 700 m with the buses off: none, in the old build too. The re-aim test
+  measures the camera's distance from the box's centre, not the aim point's, so a turn in
+  place never moves it; the suspect was innocent. What a turn does change is the load: facing
+  Center City from 700 m draws 8.1 M triangles in 384 calls against 4.6 M in 200 facing South
+  Philly (74 neighbourhood and landmark labels on screen either way), and the
+  adaptive pixel ratio took two seconds (30-frame windows, 15 percent steps) to settle after a
+  turn into the dense half, the choppy stretch. On touch it judges every 15 frames and steps
+  down by a fifth now, and its cap is 1.25 instead of 1.5 (the fill cost is the square: 0.7 of
+  the pixels at the top). Kept from the investigation, since each removes a depth pass a phone
+  paid for nothing: the box is aimed at the camera itself on touch, grows in 300 m steps
+  instead of 100 (a climb re-aimed every 100 m), and is frozen above 600 m (`shadowFrozen`: no
+  re-aim, no bus refresh), where no shadow can be read. Desktop keeps the look-ahead, the 100 m
+  steps and the 30-frame windows. 49 tests pass.

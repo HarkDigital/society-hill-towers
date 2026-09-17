@@ -137,7 +137,7 @@
     veil.style.display = 'none';
     return;
   }
-  const DPR_CAP = window.matchMedia('(pointer: coarse)').matches ? 1.5 : 1.75;
+  const DPR_CAP = window.matchMedia('(pointer: coarse)').matches ? 1.25 : 1.75;   // 1.5 on touch until Round 74: the fill cost is the square of it
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP));
   // adaptive resolution: the cap alone treated a 2019 integrated GPU and a
   // 4090 alike. frame() keeps a rolling median of frame time and steps the
@@ -14647,7 +14647,7 @@
   let last = performance.now();
   let shadowMode = -1;
   let lastBearing = null;
-  let frameNo = 0, lastCasterSig = -1;
+  let frameNo = 0, lastCasterSig = -1, shadowFrozen = false;
   let devHud = null, devHudT = 0;   // the ?dev readout (built with the rest of __dbg)
   function perfStats() {
     const n = Math.min(PERF.rn, 600);
@@ -14674,12 +14674,15 @@
     // adaptive resolution: 30-frame windows; a >250 ms gap is a stall or a
     // throttled tab, not a slow frame, and is not counted
     if (!once && !DPR.pinned && rawMs < 250 && !document.hidden) {
+      // a phone judges every 15 frames and steps down by a fifth, so a turn into the dense
+      // half of the city settles in a quarter of a second instead of two (Round 74)
+      const win = isTouch ? 15 : 30, down = isTouch ? 0.8 : 0.85;
       DPR.ring[DPR.i++] = rawMs;
-      if (DPR.i === 30) {
+      if (DPR.i === win) {
         DPR.i = 0;
         DPR.tmp.set(DPR.ring); DPR.tmp.sort();
-        const med = DPR.tmp[15];
-        if (med > 22) { DPR.fast = 0; if (DPR.cur > DPR.min) applyDPR(Math.max(DPR.min, DPR.cur * 0.85)); }
+        const med = DPR.tmp[30 - win + (win >> 1)];   // the window's median (the ring holds 30; a shorter window sorts its zeros first)
+        if (med > 22) { DPR.fast = 0; if (DPR.cur > DPR.min) applyDPR(Math.max(DPR.min, DPR.cur * down)); }
         else if (med < 13) { if (++DPR.fast >= 4 && DPR.cur < DPR.cap) { DPR.fast = 0; applyDPR(Math.min(DPR.cap, DPR.cur / 0.85)); } }
         else DPR.fast = 0;
       }
@@ -14705,9 +14708,16 @@
     {
       const onFoot = mode === MODE.WALK;
       const px = onFoot ? walk.pos.x : camera.position.x, pz = onFoot ? walk.pos.z : camera.position.z;
-      const ext = onFoot ? 300 : Math.round(clamp(320 + camera.position.y * 0.9, 300, 900) / 100) * 100;
+      // a phone's box grows in 300 m steps, not 100 (every step is a depth pass), and is aimed at
+      // the camera itself rather than a third of the way ahead: the look-ahead moved the box with
+      // every turn, and a turn at altitude was where the phone hitched (Round 74, Mike). High over
+      // the city a phone keeps the map it has: shadows are not readable from 600 m up
+      const estep = isTouch ? 300 : 100;
+      const ext = onFoot ? 300 : Math.round(clamp(320 + camera.position.y * 0.9, 300, 900) / estep) * estep;
+      const lead = isTouch ? 0 : 0.35;
       const c = sun.target.position;
-      if (ext !== lastAim.extent || Math.hypot(px - c.x, pz - c.z) > ext * (isTouch ? 0.5 : 0.35)) aimSun(px + tmpV.x * ext * 0.35, pz + tmpV.z * ext * 0.35, ext);   // a phone re-aims (and redraws the depth pass) half as often (Round 73)
+      shadowFrozen = isTouch && !onFoot && camera.position.y > 600;
+      if (!shadowFrozen && (ext !== lastAim.extent || Math.hypot(px - c.x, pz - c.z) > ext * (isTouch ? 0.5 : 0.35))) aimSun(px + tmpV.x * ext * lead, pz + tmpV.z * ext * lead, ext);
     }
 
     // compass: rotation = -bearing of camera forward (write only on change)
@@ -14724,7 +14734,7 @@
     // arriving with the first Indego poll) gets one immediately
     const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0);
     const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + (movers ? 1 << 30 : 0);   // bikes cast too; movers switching off needs one last redraw
-    if ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72)
+    if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
     sky.position.copy(camera.position);
     cloudDeck.position.x = camera.position.x; cloudDeck.position.z = camera.position.z;
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);
