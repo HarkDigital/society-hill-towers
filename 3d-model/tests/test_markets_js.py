@@ -73,7 +73,7 @@ class MarketClock(unittest.TestCase):
 
     def test_wiring(self):
         self.assertIn("step('Pitching the market tents'", self.src)
-        self.assertIn('updateMarkets();', self.src, 'the frame loop must re-evaluate the markets')
+        self.assertIn('updateMarkets(now);', self.src, 'the frame loop must re-evaluate the markets (with the frame time since Round 82: the tents re-deal as the camera moves)')
         self.assertIn("market: 'Farmers Market'", self.src, 'the search index label for a market')
 
 
