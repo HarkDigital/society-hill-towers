@@ -10328,8 +10328,8 @@
     const shAct = shipReady && SHIPS.on && shipAnchor.count > 0;
     const tAct = !!treeInv;                            // the forest picks with every live layer off
     const mAct = marketsReady && marketTentN > 0;      // the open markets' tents (Round 76)
-    const kAct = markersReady;                         // the historical markers and the art (Round 77)
-    const cAct = closuresReady && CLOSURES.on && (barrelMesh.count > 0 || coneMesh.count > 0);   // the closed blocks (Round 79)
+    const kAct = markersReady && markerDrawnN > 0;     // the historical markers and the art within the half mile (Round 77, Round 82)
+    const cAct = closuresReady && CLOSURES.on && (barrelMesh.count > 0 || coneMesh.count > 0 || closurePin.count > 0 || closurePinPart.count > 0);   // the closed blocks (Round 79)
     const aAct = amtrakReady && AMTRAK.on && (amtrakCoach.count > 0 || amtrakLoco.count > 0 || amtrakAcela.count > 0);   // the trains (Round 80)
     if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
@@ -10377,8 +10377,8 @@
     if (fAct) targets.push(flightMesh, flightPin, heliMesh, flightPinH);
     if (shAct) { for (const m of shipMeshes) if (m.count) targets.push(m); targets.push(shipAnchor); }
     if (mAct) for (const m of marketMeshes) if (m.count) targets.push(m);
-    if (kAct) { for (const m of markerMeshes) if (m.count) targets.push(m); for (const m of artMeshes) if (m.count) targets.push(m); }
-    if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); }
+    if (kAct) { for (const m of markerMeshes) if (m.count) targets.push(m); for (const m of artMeshes) if (m.count) targets.push(m); if (markerPin.count) targets.push(markerPin); if (artPin.count) targets.push(artPin); }
+    if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); if (closurePin.count) targets.push(closurePin); if (closurePinPart.count) targets.push(closurePinPart); }
     if (aAct) { for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) if (m.count) targets.push(m); }
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
@@ -10400,13 +10400,14 @@
         const p = h.object === amtrakPin ? amtrakPinPick[h.instanceId] : amtrakPick[h.object.userData.amKind][h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = p; amtrakCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
-      if (h.object === barrelMesh || h.object === coneMesh) {
-        const rec = (h.object === barrelMesh ? closurePickB : closurePickC)[h.instanceId];
+      if (h.object === barrelMesh || h.object === coneMesh || h.object.userData.closurePin || h.object.userData.closurePinPart) {
+        const rec = (h.object === barrelMesh ? closurePickB : h.object === coneMesh ? closurePickC : h.object.userData.closurePin ? closurePinPick : closurePinPickP)[h.instanceId];
         if (rec) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = rec; closureCard(rec); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
-      if (h.object.userData.markerType !== undefined || h.object.userData.artMat !== undefined) {
-        const isM = h.object.userData.markerType !== undefined;
-        const r = isM ? markerPick[h.object.userData.markerType][h.instanceId] : artPick[h.object.userData.artMat][h.instanceId];
+      if (h.object.userData.markerType !== undefined || h.object.userData.artMat !== undefined || h.object.userData.markerPin || h.object.userData.artPin) {
+        const isM = h.object.userData.markerType !== undefined || !!h.object.userData.markerPin;
+        const r = h.object.userData.markerPin ? markerPinPick[h.instanceId] : h.object.userData.artPin ? artPinPick[h.instanceId]
+          : isM ? markerPick[h.object.userData.markerType][h.instanceId] : artPick[h.object.userData.artMat][h.instanceId];
         if (r) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = isM ? r : null; pickedArt = isM ? null : r; if (isM) markerCard(r); else artCard(r); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
@@ -10424,6 +10425,7 @@
       if (v.off) return;   // not drawn, not pickable
       if (SEPTA.filter && v.route !== SEPTA.filter) return;   // not drawn, not pickable
       if (v.ug) return;
+      if (!nearCam(v.dx != null ? v.dx : v.x, v.gy || camera.position.y, v.dz != null ? v.dz : v.z)) return;   // past the half mile: not drawn, not pickable (Round 82)
       _ssv.set(v.dx != null ? v.dx : v.x, (v.gy || 0) + 3, v.dz != null ? v.dz : v.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) return;
       const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
@@ -10441,6 +10443,7 @@
     }
     let bestM = null;
     if (mAct) for (const m of marketOpenList) {   // a tent is small from the air: the market point within reach picks it
+      if (!nearCam(m.x, m.gy, m.z)) continue;   // past the half mile: no tents, no pick (Round 82)
       _ssv.set(m.x, m.gy + 2.2, m.z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) continue;
       const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
@@ -10458,8 +10461,7 @@
         const d2 = dx * dx + dy * dy;
         if (d2 < bestD) { bestD = d2; bestK = r; bestKm = isM; bestV = null; bestS = null; bestM = null; }
       };
-      for (const r of markerRecs) if (r.type < 2) near(r, 1.9, true);
-      for (const r of artRecs) near(r, 1.4, false);
+      for (const { rec, isM } of markersNear) near(rec, isM ? 1.9 : 1.4, isM);   // the drawn ones only (Round 82)
     }
     if (bestV && pickOccluded(bestV.dx != null ? bestV.dx : bestV.x, (bestV.gy || 0) + 2.5, bestV.dz != null ? bestV.dz : bestV.z)) bestV = null;
     if (bestS && pickOccluded(bestS.x, bestS.y + 2, bestS.z)) bestS = null;
@@ -10476,7 +10478,7 @@
     if (bestK && pickOccluded(bestK.x, bestK.gy + 1.6, bestK.z)) bestK = null;
     let bestA = null;   // a train's head within reach of the tap
     if (aAct) for (const p of amtrakMap.values()) {
-      if (p.off || p.hx == null || (p.hfl & 1)) continue;
+      if (p.off || p.hx == null || (p.hfl & 1) || !nearCam(p.hx, p.hy, p.hz)) continue;
       _ssv.set(p.hx, p.hy + 3, p.hz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) continue;
       const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
@@ -10669,7 +10671,56 @@
     tex.anisotropy = anisoOf(4);
     return tex;
   }
+  // ---- the half-mile rule (Round 82, Mike): everything that stands on the ground, the SEPTA vehicles
+  // and badges, the Indego docks, the Amtrak trains, the closures' drums, cones and pins, the marker
+  // posts, the plinths and the market tents, draws only within NEAR_R of the camera; flights and ships
+  // keep their range. The distance is the straight line to the eye, so the circle tightens with height.
+  let NEAR_R = 804.67;   // 0.5 mile
+  const nearCam = (x, y, z) => { const dx = x - camera.position.x, dy = y - camera.position.y, dz = z - camera.position.z; return dx * dx + dy * dy + dz * dz <= NEAR_R * NEAR_R; };
+  // the ground pins (Round 82): the aircraft badge's casing in a layer's colours with a glyph inside,
+  // one billboard per instance, masked out of the bloom, depth-tested like the SEPTA badges (buildings occlude them)
+  function pinTexture(body, frame, paint) {
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 320;
+    const g = cv.getContext('2d');
+    const bw = 240, bh = 200, bx = 8, by = 8, rad = 34;
+    g.fillStyle = body; g.strokeStyle = frame; g.lineWidth = 10;
+    g.beginPath(); g.moveTo(128 - 30, by + bh - 6); g.lineTo(128, 312); g.lineTo(128 + 30, by + bh - 6); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(bx + rad, by); g.arcTo(bx + bw, by, bx + bw, by + bh, rad); g.arcTo(bx + bw, by + bh, bx, by + bh, rad); g.arcTo(bx, by + bh, bx, by, rad); g.arcTo(bx, by, bx + bw, by, rad); g.closePath(); g.fill(); g.stroke();
+    paint(g);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = anisoOf(4);
+    return tex;
+  }
+  function pinMesh(tex, cap, key) {
+    const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
+      postRaw(new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, toneMapped: false }), { mask: true }), Math.max(1, cap));
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.frustumCulled = false; m.count = 0; m.renderOrder = 12;
+    m.userData[key] = true;
+    groupCity.add(m);
+    return m;
+  }
+  const glyphDrum = (g) => {   // a drum: the pale barrel with two dark bands on a base
+    g.fillStyle = '#fdfbf6';
+    g.beginPath(); g.moveTo(88, 62); g.lineTo(168, 62); g.lineTo(176, 166); g.lineTo(80, 166); g.closePath(); g.fill();
+    g.fillRect(64, 166, 128, 14);
+    g.fillStyle = 'rgba(18,41,74,0.85)';
+    g.fillRect(90, 84, 76, 20); g.fillRect(88, 124, 82, 20);
+  };
+  const glyphKeystone = (g) => {   // the Commission's keystone
+    g.fillStyle = '#f2d27a';
+    g.beginPath(); g.moveTo(62, 60); g.lineTo(194, 60); g.lineTo(178, 104); g.lineTo(192, 160); g.lineTo(64, 160); g.lineTo(78, 104); g.closePath(); g.fill();
+    g.fillStyle = '#1f4e9c';
+    for (let i = 0; i < 3; i++) g.fillRect(96, 92 + i * 20, 64, 8);
+  };
+  const glyphPlinth = (g) => {   // a plinth with its upright form
+    g.fillStyle = '#fdfbf6';
+    g.fillRect(84, 150, 88, 24); g.fillRect(112, 74, 32, 76); g.fillRect(96, 58, 64, 16);
+  };
   const _sm = new THREE.Matrix4(), _sq = new THREE.Quaternion(), _sqB = new THREE.Quaternion(), _sp = new V3(), _ss = new V3(), _sc = new THREE.Color(), _sup = new V3(0, 1, 0), _ssv = new V3();
+  const _kqB = new THREE.Quaternion();   // the ground pins' billboard pose
   function updateTransit(now, dt) {
     if (!septaReady) return;
     if (!SEPTA.on) {
@@ -10716,6 +10767,7 @@
       if (v.ug) return;                 // tunnel trolleys aren't drawn — nothing under buildings
       if (v.off) return;   // a suburban tail of a route has nothing to stand on here
       if (SEPTA.filter && v.route !== SEPTA.filter) return;   // a route search shows that route alone (the pick arrays fill below, so they stay in step)
+      if (!nearCam(v.dx, v.gy === undefined ? camera.position.y : v.gy, v.dz)) return;   // the half-mile rule (Round 82): it rides on unseen, the pick arrays stay in step
       if (v.gy === undefined || Math.abs(v.dx - v.gx) + Math.abs(v.dz - v.gz) > 2.5) {
         v.gx = v.dx; v.gz = v.dz;
         v.gy = siteY(v.dx, v.dz, 'road');
@@ -11881,6 +11933,7 @@
   const indegoTile = new Map();                     // id -> list entry: a station back from a dropout keeps its tile
   let indegoLive = [];                              // filtered draw order, rebuilt per poll
   let indegoReady = false, indegoDirty = false, indegoSolid = null, indegoBike = null, indegoBadge = null;
+  let indegoReconAt = 0; const indegoLastCam = new V3(1e9, 0, 1e9);   // the half-mile rule (Round 82): the docks are rebuilt on the streetlights' cadence too
   let indegoTex = null, indegoCtx = null, pickedStation = null;
   const indegoPickS = [], indegoPickK = [], indegoPickB = [];
   const btnIndego = document.getElementById('btnIndego');
@@ -12085,6 +12138,7 @@
     let si = 0, ki = 0;
     for (const st of indegoList) {
       if (!indegoSt.has(st.id) || si >= INDEGO_CAP.st) continue;
+      if (!nearCam(st.x, st.y, st.z)) continue;   // the half-mile rule (Round 82)
       const rackL = clamp((st.docks || 12) * 0.42, 4, 20);
       st.rackL = rackL;
       const yaw = Math.atan2(-st.dz, st.dx);
@@ -12132,7 +12186,10 @@
       }
       return;
     }
-    if (indegoDirty) { indegoDirty = false; indegoRebuild(); }
+    if (indegoDirty || now >= indegoReconAt || camera.position.distanceToSquared(indegoLastCam) > 220 * 220) {
+      indegoDirty = false; indegoReconAt = now + 900; indegoLastCam.copy(camera.position);
+      indegoRebuild();
+    }
     // badges billboard the camera every frame; no bob — docks are furniture,
     // bobbing is the vehicles' signature. Own quaternion copy: _sqB is only
     // fresh while the SEPTA layer is on.
@@ -13435,6 +13492,7 @@
         prevL = L;
         if (cfl & 1) continue;   // in the shed or a tunnel
         if (!insideLimit(cx, cz)) continue;
+        if (!nearCam(cx, cy, cz)) continue;   // the half-mile rule (Round 82)
         const mesh = ck === 0 ? amtrakLoco : ck === 1 ? amtrakAcela : amtrakCoach;
         const i = counts[ck]++;
         if (i >= (ck === 2 ? AMTRAK_CAR_CAP : ck === 1 ? AMTRAK_CAP * 2 : AMTRAK_CAP)) continue;
@@ -13446,7 +13504,7 @@
         mesh.setMatrixAt(i, _sm);
         amtrakPick[ck][i] = p;
       }
-      if (np < AMTRAK_CAP && !(p.hfl & 1) && insideLimit(p.hx, p.hz)) {   // the badge over the head car, holding size like the aircraft pins
+      if (np < AMTRAK_CAP && !(p.hfl & 1) && insideLimit(p.hx, p.hz) && nearCam(p.hx, p.hy, p.hz)) {   // the badge over the head car, holding size like the aircraft pins; within the half mile (Round 82)
         _sp.set(p.hx, p.hy + 6, p.hz);
         const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
         _ss.set(aps, aps, aps);
@@ -14254,16 +14312,17 @@
   // lane paint (polygon offset is banned on the flats). Heights follow the traffic layer's road
   // formula, the bridge decks and overpasses included. Typical traffic leaves a fully closed
   // block empty (CLOSE_TRAFFIC; a run is a chunk up to 400 m, so it is coarse: the run whose
-  // midpoint lies within 25 m of the block's). Drawn within 2.5 km of the camera on the
-  // streetlights' cadence, capped like the poles. The U key and the twelfth layer bit; a file
-  // three hours stale is a stopped baker and draws nothing.
+  // midpoint lies within 25 m of the block's). Drawn within the half mile (NEAR_R, Round 82; 2.5 km
+  // before) on the streetlights' cadence, capped like the poles, a pin over each block (Round 82). The U
+  // key and the twelfth layer bit; a file three hours stale is a stopped baker and draws nothing.
   const CLOSURES = { on: true, ok: false, fails: 0, nextT: 0, busy: false, t: 0, recs: [], paving: [], drawn: [], pavedN: 0, milledN: 0, runsClosed: 0 };
   const CLOSURES_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/closures.json' : 'https://philly3d.com/closures.json';
   const CLOSURE_POLL = 1800000, CLOSURE_STALE = 3 * 3600;   // 30 min while visible; a file 3 h old is a stopped baker
-  const CLOSURE_R = 2500, CLOSURE_CAP = isTouch ? 1200 : 6000, CLOSE_TRAFFIC = true;
+  const CLOSURE_CAP = isTouch ? 1200 : 6000, CLOSE_TRAFFIC = true, CLOSURE_PIN_CAP = 400;   // drawn within NEAR_R since Round 82 (2.5 km before)
   const closureInv = { X: [], Y: [], Z: [], YAW: [], K: [], R: [], cells: new Map() };   // every posted drum (K 0) and cone (K 1), by 400 m cell
-  const closurePickB = [], closurePickC = [];
+  const closurePickB = [], closurePickC = [], closurePinPick = [], closurePinPickP = [];
   let closuresReady = false, barrelMesh = null, coneMesh = null, pavedMesh = null, milledMesh = null, closureReconAt = 0, closureRunCells = null;
+  let closurePin = null, closurePinPart = null;   // Round 82: a pin over each closed block within reach, orange for a full closure, gold for a partial one
   const closureLastCam = new V3(1e9, 0, 1e9);
   const btnClosures = document.getElementById('btnClosures');
   function closureGeom(kind) {
@@ -14302,6 +14361,8 @@
       return m;
     };
     barrelMesh = mk(0); coneMesh = mk(1);
+    closurePin = pinMesh(pinTexture('#e07a1f', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePin');
+    closurePinPart = pinMesh(pinTexture('#d9a441', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePinPart');
     pavedMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.75 }));
     milledMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 1.0 }));
     for (const m of [pavedMesh, milledMesh]) { m.frustumCulled = false; m.receiveShadow = true; m.visible = false; groupCity.add(m); }
@@ -14442,17 +14503,17 @@
     CLOSURES.runsClosed = n;
   }
   function closuresReconcile() {
-    const inv = closureInv, cx = camera.position.x, cz = camera.position.z;
-    const cellR = Math.ceil(CLOSURE_R / 400), gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400);
+    const inv = closureInv, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, R = NEAR_R;
+    const cellR = Math.ceil(R / 400), gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400);
     const cand = [];
     for (let gx = gx0 - cellR; gx <= gx0 + cellR; gx++) for (let gz = gz0 - cellR; gz <= gz0 + cellR; gz++) {
       const arr = inv.cells.get(gx + ':' + gz);
-      if (arr) for (const i of arr) { const dx = inv.X[i] - cx, dz = inv.Z[i] - cz, d2 = dx * dx + dz * dz; if (d2 < CLOSURE_R * CLOSURE_R) cand.push([d2, i]); }
+      if (arr) for (const i of arr) { const dx = inv.X[i] - cx, dy = inv.Y[i] - cy, dz = inv.Z[i] - cz, d2 = dx * dx + dy * dy + dz * dz; if (d2 < R * R) cand.push([d2, i]); }
     }
-    if (cand.length > CLOSURE_CAP * 2) cand.sort((a2, b2) => a2[0] - b2[0]);
+    cand.sort((a2, b2) => a2[0] - b2[0]);   // nearest first: the caps and the pins keep the closest blocks
     let nb = 0, nc = 0;
-    const drawn = new Set();
-    for (const [, i] of cand) {
+    const drawn = new Map();   // record -> its nearest drum's distance
+    for (const [d2, i] of cand) {
       const kind = inv.K[i];
       if ((kind === 0 ? nb : nc) >= CLOSURE_CAP) continue;
       _plp.set(inv.X[i], inv.Y[i], inv.Z[i]);
@@ -14460,16 +14521,32 @@
       _pls.set(1, 1, 1);
       _plm.compose(_plp, _plq, _pls);
       if (kind === 0) { barrelMesh.setMatrixAt(nb, _plm); closurePickB[nb] = inv.R[i]; nb++; } else { coneMesh.setMatrixAt(nc, _plm); closurePickC[nc] = inv.R[i]; nc++; }
-      drawn.add(inv.R[i]);
+      if (!drawn.has(inv.R[i])) drawn.set(inv.R[i], d2);
     }
     barrelMesh.count = nb; coneMesh.count = nc;
     barrelMesh.instanceMatrix.needsUpdate = true; coneMesh.instanceMatrix.needsUpdate = true;
-    CLOSURES.drawn = [...drawn];
+    CLOSURES.drawn = [...drawn.keys()];
+  }
+  function closurePinsUpdate() {   // the pins over the drawn blocks (Round 82): billboards every frame, the SEPTA badges' size rule
+    _kqB.copy(camera.quaternion);
+    let nf = 0, npt = 0;
+    for (const rec of CLOSURES.drawn) {
+      const full = rec.o >= 3, i = full ? nf : npt;
+      if (i >= CLOSURE_PIN_CAP) continue;
+      _sp.set(rec.mx, rec.my + 2.2, rec.mz);
+      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
+      _ss.set(sc, sc, sc);
+      _sm.compose(_sp, _kqB, _ss);
+      if (full) { closurePin.setMatrixAt(nf, _sm); closurePinPick[nf++] = rec; } else { closurePinPart.setMatrixAt(npt, _sm); closurePinPickP[npt++] = rec; }
+    }
+    closurePin.count = nf; closurePinPart.count = npt;
+    flushInst(closurePin, -1); flushInst(closurePinPart, -1);
   }
   function updateClosures(now) {
     if (!closuresReady) return;
     if (!CLOSURES.on) {
       if (barrelMesh.count || coneMesh.count) { barrelMesh.count = coneMesh.count = 0; barrelMesh.instanceMatrix.needsUpdate = coneMesh.instanceMatrix.needsUpdate = true; CLOSURES.drawn = []; }
+      if (closurePin.count || closurePinPart.count) { closurePin.count = closurePinPart.count = 0; closurePin.instanceMatrix.needsUpdate = closurePinPart.instanceMatrix.needsUpdate = true; }
       pavedMesh.visible = milledMesh.visible = false;
       return;
     }
@@ -14479,6 +14556,7 @@
       closureLastCam.copy(camera.position);
       closuresReconcile();
     }
+    closurePinsUpdate();
     if (pickedClosure) {
       _ssv.set(pickedClosure.mx, pickedClosure.my + 2.5, pickedClosure.mz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
@@ -14540,6 +14618,7 @@
   const markets = [];   // {n, x, z, gy, h, yr, o, c, pay, op, addr, web, tents: [{x, y, z, yaw, w}], open}
   const marketMeshes = [], marketPick = [[], [], [], []];
   let marketsReady = false, marketTentN = 0, marketOpenList = [], mkLastKey = '';
+  let marketReconAt = 0; const marketLastCam = new V3(1e9, 0, 1e9);   // the half-mile rule (Round 82): the tents re-deal as the camera moves
   function marketTentGeom(way) {
     const parts = [];
     const [sr, sg, sb] = MK_WAYS[way];
@@ -14621,17 +14700,19 @@
     return o <= c ? (md >= o && md <= c) : (md >= o || md <= c);
   }
   const marketOpen = (m) => marketOpenAt(m, clock.y, clock.m, clock.d, clock.minutes);
-  function updateMarkets() {
+  function updateMarkets(now) {
     if (!marketsReady) return;
     const key = clock.y * 10000 + clock.m * 100 + clock.d + ':' + clock.minutes;
-    if (key === mkLastKey) return;   // the live minute, a slider drag, a preset, a lapse step, a hash clock
-    mkLastKey = key;
+    const moved = now >= marketReconAt || camera.position.distanceToSquared(marketLastCam) > 220 * 220;
+    if (key === mkLastKey && !moved) return;   // the live minute, a slider drag, a preset, a lapse step, a hash clock; or the camera moved (Round 82)
+    mkLastKey = key; marketReconAt = now + 900; marketLastCam.copy(camera.position);
     const counts = [0, 0, 0, 0];
     marketOpenList = [];
     for (const m of markets) {
       m.open = marketOpen(m);
       if (!m.open) continue;
       marketOpenList.push(m);
+      if (!nearCam(m.x, m.gy, m.z)) continue;   // open, but past the half mile: no tents (Round 82)
       for (const t of m.tents) {
         const c = counts[t.w]++;
         _iq.setFromAxisAngle(_sup, t.yaw);
@@ -14707,6 +14788,11 @@
   const markerRecs = [], artRecs = [];
   const markerMeshes = [], markerPick = [[], []], artMeshes = [], artPick = [[], [], [], []];
   let markersReady = false, cardWide = false;
+  // Round 82: the posts and plinths draw within the half mile (NEAR_R) with a pin over each, rebuilt on
+  // the streetlights' cadence from a 400 m cell map; the records keep their yaw for the rebuild
+  const markerCells = new Map(), markerPinPick = [], artPinPick = [];
+  let markerPin = null, artPin = null, markerReconAt = 0, markerDrawnN = 0;
+  const markerLastCam = new V3(1e9, 0, 1e9);
   function markerPostGeom(type) {   // 0 Roadside, 1 City
     const parts = [];
     const box = (sx, sy, sz, cx, cy, cz, c) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), c[0], c[1], c[2]));
@@ -14761,34 +14847,69 @@
       }
       return { x: px, z: pz, y: siteY(px, pz, 'ground'), yaw };
     };
-    const put = (mesh, c, p) => { _iq.setFromAxisAngle(_sup, p.yaw); _sp.set(p.x, p.y, p.z); _ss.set(1, 1, 1); _sm.compose(_sp, _iq, _ss); mesh.setMatrixAt(c, _sm); };
-    const counts = [0, 0];
+    const cellOf = (rec, isM) => { const k = Math.floor(rec.x / 400) + ':' + Math.floor(rec.z / 400); let a = markerCells.get(k); if (!a) { a = []; markerCells.set(k, a); } a.push({ rec, isM }); };
     for (const r of MARKERS.m || []) {
       if (!insideLimit(r[0], r[1])) continue;
       const rec = { x: r[0], z: r[1], type: r[2], year: r[3], name: r[4], loc: r[5], text: r[6] };
       const p = place(rec.x, rec.z, 14, 5.5);
-      rec.x = p.x; rec.z = p.z; rec.gy = p.y;
+      rec.x = p.x; rec.z = p.z; rec.gy = p.y; rec.yaw = p.yaw;
       markerRecs.push(rec);
       if (rec.type > 1) continue;   // a wall plaque: a card and a search entry, no post
-      const c = counts[rec.type]++;
-      put(markerMeshes[rec.type], c, p);
-      markerPick[rec.type][c] = rec;
+      cellOf(rec, true);
     }
-    for (let t = 0; t < 2; t++) { markerMeshes[t].count = counts[t]; markerMeshes[t].instanceMatrix.needsUpdate = true; }
-    const ac = [0, 0, 0, 0];
     for (const r of MARKERS.a || []) {
       if (!insideLimit(r[0], r[1])) continue;
       const rec = { x: r[0], z: r[1], mat: r[2], title: r[3], artist: r[4], date: r[5], medium: r[6], where: r[7], img: r[8] };
       const p = place(rec.x, rec.z, 31, 5);   // any street within 30 m: the work stands on its sidewalk (the Clothespin's point lies inside Centre Square's outline); a park or plaza piece farther from a street stays put
-      rec.x = p.x; rec.z = p.z; rec.gy = p.y;
+      rec.x = p.x; rec.z = p.z; rec.gy = p.y; rec.yaw = p.yaw;
       artRecs.push(rec);
-      const c = ac[rec.mat]++;
-      put(artMeshes[rec.mat], c, p);
-      artPick[rec.mat][c] = rec;
+      cellOf(rec, false);
     }
-    for (let k = 0; k < 4; k++) { artMeshes[k].count = ac[k]; artMeshes[k].instanceMatrix.needsUpdate = true; }
+    for (const m of markerMeshes) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    for (const m of artMeshes) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    markerPin = pinMesh(pinTexture('#1f4e9c', '#f2d27a', glyphKeystone), nType[0] + nType[1], 'markerPin');
+    artPin = pinMesh(pinTexture('#b8862b', '#fdfbf6', glyphPlinth), nMat[0] + nMat[1] + nMat[2] + nMat[3], 'artPin');
     markersReady = true;
+    markerReconAt = 0; markerLastCam.set(1e9, 0, 1e9);
   });
+  function markersReconcile() {   // the posts and plinths within the half mile, nearest first (Round 82)
+    const cx = camera.position.x, cz = camera.position.z, cellR = Math.ceil(NEAR_R / 400), gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400);
+    const near = [];
+    for (let gx = gx0 - cellR; gx <= gx0 + cellR; gx++) for (let gz = gz0 - cellR; gz <= gz0 + cellR; gz++) {
+      const arr = markerCells.get(gx + ':' + gz);
+      if (arr) for (const e of arr) if (nearCam(e.rec.x, e.rec.gy, e.rec.z)) near.push(e);
+    }
+    const counts = [0, 0], ac = [0, 0, 0, 0];
+    for (const { rec, isM } of near) {
+      _iq.setFromAxisAngle(_sup, rec.yaw); _sp.set(rec.x, rec.gy, rec.z); _ss.set(1, 1, 1); _sm.compose(_sp, _iq, _ss);
+      if (isM) { const c = counts[rec.type]++; markerMeshes[rec.type].setMatrixAt(c, _sm); markerPick[rec.type][c] = rec; }
+      else { const c = ac[rec.mat]++; artMeshes[rec.mat].setMatrixAt(c, _sm); artPick[rec.mat][c] = rec; }
+    }
+    for (let t = 0; t < 2; t++) { markerMeshes[t].count = counts[t]; markerMeshes[t].instanceMatrix.needsUpdate = true; }
+    for (let k = 0; k < 4; k++) { artMeshes[k].count = ac[k]; artMeshes[k].instanceMatrix.needsUpdate = true; }
+    markerDrawnN = near.length;
+    markersNear = near;
+  }
+  let markersNear = [];
+  function updateMarkersNear(now) {
+    if (!markersReady) return;
+    if (now >= markerReconAt || camera.position.distanceToSquared(markerLastCam) > 220 * 220) {
+      markerReconAt = now + 900; markerLastCam.copy(camera.position);
+      markersReconcile();
+    }
+    // the pins: a keystone over each post, a plinth over each work, billboards at the SEPTA badges' size
+    _kqB.copy(camera.quaternion);
+    let nm = 0, na = 0;
+    for (const { rec, isM } of markersNear) {
+      _sp.set(rec.x, rec.gy + (isM ? 3.2 : 2.9), rec.z);
+      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
+      _ss.set(sc, sc, sc);
+      _sm.compose(_sp, _kqB, _ss);
+      if (isM) { markerPin.setMatrixAt(nm, _sm); markerPinPick[nm++] = rec; } else { artPin.setMatrixAt(na, _sm); artPinPick[na++] = rec; }
+    }
+    markerPin.count = nm; artPin.count = na;
+    flushInst(markerPin, -1); flushInst(artPin, -1);
+  }
   function markerCard(r) {
     const kind = r.type === 0 ? 'Roadside marker' : r.type === 1 ? 'City marker' : 'Plaque';
     vehinfoBody.innerHTML =
@@ -16256,7 +16377,8 @@
     // fresh depth pass every 4th frame; a changed static caster set (docks
     // arriving with the first Indego poll) gets one immediately
     const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0) || (amtrakReady && AMTRAK.on && amtrakCoach.count > 0);
-    const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + marketTentN * 16777216 + (movers ? 1 << 30 : 0);   // bikes cast too, and a market opening its tents; movers switching off needs one last redraw
+    const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + marketTentN * 16777216 + (movers ? 1 << 30 : 0)
+      + markerDrawnN * 4294967296 + (closuresReady && barrelMesh ? (barrelMesh.count + coneMesh.count) * 8796093022208 : 0);   // bikes cast too, and a market opening its tents; movers switching off needs one last redraw; the posts, plinths and drums come and go with the half mile (Round 82)
     if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
     sky.position.copy(camera.position);
     cloudDeck.position.x = camera.position.x; cloudDeck.position.z = camera.position.z;
@@ -16274,9 +16396,10 @@
     updateLights(now);
     updateLightsTheme(now, dt);
     updateTreePick();
-    updateMarkets();
+    updateMarkets(now);
     updateMarketPick();
     updateMarkerPick();
+    updateMarkersNear(now);
     updateSearchMark(now);
     scoresPoll(now); scoresRender();
     concertsPoll(now); concertsRender();
@@ -16372,6 +16495,8 @@
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
         { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal,
+      near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
+      nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     if (hashView.p) applyHashView(hashView.p);

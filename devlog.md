@@ -3934,3 +3934,43 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   the `band` crown, `test_build.py` the `LIGHTS_CAL` const). Page 26.65 MB (+35 KB). Devlog,
   handoff, DATA-LICENSE (a BOMA section, ESPN's scoreboards among the live feeds), README,
   CLAUDE.md, ops/README section 10, the credit lines and the About panel, the guide's card.
+
+## Round 82: pins for the closed blocks, the markers and the art, and the half-mile rule (Sep 17)
+
+- **Mike: add pins for the road closures, the Amtrak trains and the historical markers, and show
+  only the markers within half a mile of the user for everything on the ground; boats and planes
+  stay visible; asked which layers, he said SEPTA, Indego and every other ground-based item.**
+  The trains had their badge since Round 80 (the aircraft casing with a train's face over the head
+  car), so the new pins are the closed blocks', the markers' and the art's.
+- **The pins.** One billboard recipe already served the flights, the ships, the SEPTA badges and
+  the trains (a 256 by 320 canvas, the rounded badge over a pointer tip, a plane 4.6 by 5.75 m
+  scaled with distance); `pinTexture(body, frame, paint)` and `pinMesh(tex, cap, key)` factor its
+  casing and mesh (masked out of the bloom, depth-tested like the SEPTA badges: buildings occlude
+  them) and three glyphs paint inside: a drum for a closed block (orange for a full closure,
+  gold for a partial one, the card's own chip colours), the Commission's keystone in gold on PHMC
+  blue for a marker, a plinth with its upright form on gold for an artwork. The pins ride their
+  layer (the U key for the closures; the markers and art have no bit), sit 2.2 m over a block's
+  midpoint and 3.2 m and 2.9 m over a post and a plinth, and take the SEPTA badges' size rule
+  (dist/135, 2.2 to 14). Each is in the tap targets with its own pick list and opens the existing
+  card; the screen-space fallbacks now walk the drawn records only, so a tap never opens a card
+  for a post that is not there.
+- **The half-mile rule.** `NEAR_R` 804.67 m and `nearCam(x, y, z)`, the straight-line distance to
+  the eye, so the circle tightens with height: from 700 m up only what stands within about 400 m
+  of the point below draws. SEPTA vehicles and badges gate in `updateTransit` (they keep moving
+  unseen, the pick arrays in step); the Indego docks, bikes and badges in `indegoRebuild`, now run
+  on the streetlights' cadence (900 ms or 220 m of travel) as well as per poll; the Amtrak cars and
+  badge per car; the closures' drums and cones in `closuresReconcile` (2.5 km before), nearest
+  first; the markers and art from a new 400 m cell map in `markersReconcile` (the static build of
+  Round 77 became a camera-centred rebuild; the records keep the yaw `place()` gave them, which the
+  build used to drop); the market tents in `updateMarkets(now)`, which now re-deals on camera
+  movement as well as on the clock, the open list unchanged. The flights and ships never ask.
+  `casterSig` counts the posts, plinths and drums so the shadow map follows them (the drums had
+  cast stale shadows since Round 79, masked by the movers' cadence). `__dbg.near(m)` moves the
+  radius, `__dbg.nearState()` counts what each layer draws.
+- **Measured in the pane** by day over Old City with the live closures file: from 150 m, 57 closed
+  blocks with their pins, 266 drums, 506 cones, 61 posts and 40 plinths each under a pin; from
+  700 m over the same spot 14 blocks, 14 posts, 17 plinths; at 45 m 46 blocks, 59 posts, 36
+  plinths; `near(250)` leaves 5 blocks, 2 posts, 9 plinths. Synthetic taps on a keystone pin, a
+  plinth pin, a full closure's pin and a partial one's opened the PHMC, Art, Closed and Partly
+  Closed cards. 99 tests pass (`tests/test_near.py`). Page 26.66 MB (+11 KB). Devlog, handoff,
+  README, CLAUDE.md.

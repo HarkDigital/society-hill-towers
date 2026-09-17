@@ -27,6 +27,9 @@ real solar clock over it all.
   says they are open; tap a tent for the hours and payments, or search a market by name.
 - **Markers and art.** The state's 348 historical markers stand at their posts with the
   full text a tap away, and the city's Percent for Art works on their plinths.
+- **Close by.** Everything that stands on the ground (vehicles, docks, trains, markers, art,
+  closures, tents) draws only within half a mile of you, each closed block, marker and
+  artwork under its own pin; flights and ships stay visible across the city.
 - **Lights.** After dark the researched crowns, City Hall's tower and the Ben Franklin Bridge
   glow in the night's colour: a Philadelphia team's on its game day (Eagles, then Phillies,
   Flyers, Sixers), otherwise the cause on BOMA Philadelphia's Building Illumination Calendar,

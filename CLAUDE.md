@@ -49,7 +49,7 @@ not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce(
   tooltips, loading messages). Commas, colons, sentences. Docs and code comments are exempt.
 - Owner decisions that stand until Mike says otherwise: landmark labels OFF by default (the
   citywide tier is behind the L key); the About panel stays out of the bar (the "Credits" link in the bottom credit line opens it); fly is the only mode
-  (orbit is the attract loop, walk is `__dbg.goWalk` only); SEPTA/Indego markers are occluded
+  (orbit is the attract loop, walk is `__dbg.goWalk` only); everything that stands on the ground draws only within half a mile of the eye (Round 82, Mike: `NEAR_R` 804.67 m, the straight-line distance, so the circle tightens with height; the SEPTA vehicles and badges, the Indego docks, the Amtrak trains, the closures' drums, cones and pins, the marker posts, the plinths and the market tents; flights and ships keep their range; the concert placards and score bubbles are building-anchored events and keep theirs); the closed blocks, the historical markers and the public art carry pins since Round 82 (the aircraft badge's casing in the layer's colours: orange or gold with a drum, PHMC blue with the keystone, gold with a plinth; `pinTexture` / `pinMesh`), the trains had theirs from Round 80; SEPTA/Indego markers and the ground pins are occluded
   by buildings, and so are the concert placards and score bubbles (Round 62: a roof-grid line of sight, `losClear`,
   their pins depth-tested), neighborhood names and the search pin are not; roof forms come from the LiDAR
   streaming pass, then OSM roof:shape, then the lottery, packed in the roof word (see
