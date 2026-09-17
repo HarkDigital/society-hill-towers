@@ -4392,10 +4392,8 @@ grass" in the screenshot, and it is the one part of Mike's first message this ro
 cuts all of them out of the wide box so the two tiers never pave the same street twice). It is a
 supplement rather than a wider `fetch_city.py` query on purpose: the 92 tiles in `city_tiles/` are
 keyed by tile name and not by query, so widening that query means refetching 510 MB of buildings,
-parks and water to get a few megabytes of streets. What is left is the fetch itself: Overpass is
-throttling this envelope badly (tiles alternate between 1 s and 240 s, 21 of 92 done in an hour on
-the one mirror that answers at all), and `overpass.py` exits non-zero rather than write a partial
-extract, so nothing can ship half-covered. It runs to completion and `city.b64` is repacked next.
+parks and water to get a few megabytes of streets. Overpass throttled the envelope badly (tiles
+alternating between 1 s and 240 s) but ran to completion in about two hours.
 
 Two lessons worth keeping: a tile cache keyed by name and not by query is a trap, and
 `fetch_trees.py`'s page cache now carries a hash of its envelope for exactly that reason; and
@@ -4422,3 +4420,25 @@ the Produced Work, not on the screen at all times.
   `test_blobs.test_tree_names_consistent` asserts the city box, no saturation, and more than 50,000
   trees past the wide box so the far ring cannot go bare again). Page 27.80 MB (+1.10 MB, the tree
   blob). Devlog Round 87, handoff, README, CLAUDE.md, DATA-LICENSE, the About panel.
+
+### Round 87 coda: the park's drives (same day)
+
+The fetch finished: 92 tiles, **584 ways** (417 `unclassified`, 155 `pedestrian`, 12
+`living_street`, 539 KB), and `city.b64` repacked to **24,171 road runs from 23,643**, 10.21 MB
+base64 from 10.20. In the two Fairmount Park rings the far ring now draws **60.0 km of road against
+50.2 km, 382 runs against 317**, and the names are the ones that were missing: Lansdowne Drive,
+Horticultural Drive, Belmont Mansion Drive, Chamounix Drive, States Drive, Cedar Grove Drive,
+Sweetbriar Lane, South Georges Hill Drive, Zoological Drive, Lemon Hill Drive, Sedgley Drive.
+
+One correction to the investigation that produced this, worth recording because it changes what the
+fix was for. The report framed it as dangling ends: "84 of 333 run endpoints (25%) are true dangling
+ends, a median 27.3 m from the nearest other road." Measured inside the park rings rather than over
+a box, and against the nearest vertex of any **other run** rather than against other endpoints, the
+median distance from a run end to another road was **0.0 m before the change** — the network was not
+disconnected, it was **thin**. Ends more than 15 m from another road went 11 → 31 of 685, because the
+new drives terminate where `service` roads and footpaths meet them and neither tier carries those
+(`pack_wide.py` drops `service` too, and keeping the tiers' class sets identical is the point). So
+this round added 9.8 km of real park drives and about twenty new stubs with them; it did not close
+the stubs, and the honest read of the screenshot is that the park was under-roaded, not unstitched.
+
+Page 27.82 MB (+17 KB). 101 tests pass. Triangles unchanged at 13.4 to 13.6 M: roads are cheap.

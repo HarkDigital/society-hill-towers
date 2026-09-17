@@ -73,7 +73,12 @@ before any visual round rather than rediscovering it.
   `WALL_LIFT` 0.45, `WALL_FOLD_MAX` 0.6 and `WALL_WARM` 1.3 hold the photographed and invented populations
   within 4% of each other, from 94.5% (measure with `__dbg.colStats()` across the York Street band before
   touching any of them), and since Round 65 every merged far-ring strip carries its own members'
-  roof colour and OPA word instead of its 400 m cell's mode, so no tier reads darker past the outer districts' edge); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
+  roof colour and OPA word instead of its 400 m cell's mode, so no tier reads darker past the outer districts' edge);
+  the far ring draws the same road classes as the wide tier since Round 87 (`fetch_city_streets.py` supplements
+  `fetch_city.py`'s query with `unclassified`, `living_street` and `pedestrian`, which is what Fairmount Park's
+  drives are tagged, and `pack_city.py`'s `LOCAL_CLASSES` cuts all of them out of the wide box so the two tiers
+  never pave one street twice; `service` stays out of both, so a park drive can still end where a service road
+  meets it); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
   Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
   and the packers inset any record whose wall shares a plane with a larger one facing the same way (`pack_common.py`, Round 71: the far ring
