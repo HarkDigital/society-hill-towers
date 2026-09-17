@@ -335,6 +335,12 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   the art carry pins (`pinTexture` / `pinMesh`: the aircraft badge's casing, masked out of the bloom,
   depth-tested), composed every frame at the SEPTA badges' size rule; `casterSig` counts the posts,
   plinths and drums so the shadow map follows them. `__dbg.near(m)`, `__dbg.nearState()`.
+- **Round 84's lit set:** the arena's band and wash, the Liberty Places' gable-edge neon (`neon()` in the
+  landmark block, a bar between two world points), One Liberty's white spire and red beacon (mix 0: never
+  the theme), City Hall washed whole (sheets on the block and every pavilion, the mansards and caps
+  floodlit), William Penn rebuilt (24 primitives, a warm flood at mix 0.25), Rocky at `pt(101, -47)` of
+  the museum frame, the Comcast crowns in four bands with slots `(tslot + k) % 4` so several colours
+  stack, and `TALL_LIT_H` 120 in `bake_towers.py` giving every tall tower a `band` or notch strip.
 - **Picking:** tap/click raycasts the instanced fleets, pins and badges, with a screen-space
   nearest fallback; `pickOccluded` gates hits with a raycast against `rayTargets` (core
   meshes, ground, decks) and then a DEM march along the sight line (never raycast the outer

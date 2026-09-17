@@ -3992,3 +3992,44 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   until its close button) take 61 posts and 40 plinths with their pins to 0 and back, the
   address bar's `l=` reads 32639 with both on and 20351 with both off, Reset Layers restores
   them. 101 tests pass. Page 26.66 MB (+2.6 KB). Devlog, handoff, README, CLAUDE.md.
+
+## Round 84: the arena, the chevrons, City Hall whole, William Penn, Rocky, the Comcast bands (Sep 17)
+
+- **Mike, with four photos across three messages:** the Xfinity Mobile Arena should be lit with
+  the bridge and the skyscrapers; One Liberty Place needs its real lighting pattern and a closer
+  massing (the photo: the neon tracing the sloping edges of every gable end, nested chevrons up
+  to the white spire and its red beacon); the whole of City Hall lit, not the tower alone (his
+  screenshot); William Penn closer to the postcard; the Rocky statue at the Art Museum steps; the
+  two Comcast crowns more dynamic, several colours at once, their sections more accurate (the
+  photo: the Comcast Center's crown and the top of the CTC's blade in red, white and blue bands);
+  and more lights on the tall Center City towers that have none.
+- **The chevrons.** `crown()` in the landmark block now runs a lit bar (`neon()`, a cylinder between
+  two world points, radius 0.34) along both sloping edges of each gable end on all four faces of
+  every tier (32 on One Liberty, 16 on Two), in themeParts at mix 1; the eave bands and ridge caps
+  went back to unlit white trim. One Liberty's finial, mast and needle light white every night
+  (mix 0) with a red beacon sphere at 288 m, and its shaft gained the four central bays 1.4 m
+  proud of each face; Two Liberty's finial lights white. Verified by capture from the south-east
+  at 230 m: the nested green chevrons, the white spire, the beacon.
+- **City Hall whole.** A wash sheet round the block (149.6 by 144.6 m to +28, weight 0.45, floodlit
+  from below), sheets on the four corner pavilions and the three centre ones, the wings' mansards
+  and every pavilion cap floodlit at mix 0.5 like the dome. **William Penn** is 24 primitives now:
+  the draped drum, buckled shoes, stockinged calves, breeches, the coat flaring to the knee with its
+  buttoned front and sash, the shoulders, the cravat, the long hair behind the face, the broad brim
+  and the domed crown, the left arm out over the city with its cuff and hand, the right down to the
+  charter at the hip; stored very dark (0x221a10, the first two cuts read as pale tan under the
+  lift, gotcha 11) and floodlit warm at mix 0.25 (a half read as a solid green figure).
+- **Rocky** stands at `pt(101, -47)` of the museum frame, the foot of the steps on the right when
+  you face the museum, on a two-tier granite plinth: boots, legs, trunks, torso, shoulders, head,
+  both arms raised with the gloves; the first spot, `pt(106, -40)`, put him inside a street tree.
+- **The arena** lights with the skyline: an LED band under the roof edge of the upper tier and a
+  wash on its wall, its own slot. **The Comcast crowns:** the Comcast Center's notch grew from 8 to
+  20 m and its wash became four stacked bands, the CTC's blade from 38 to 48 m with its top third
+  in four bands and the rest white; the bands take slots `(tslot + k) % 4`, so a two-colour night
+  alternates and a red, white and blue night reads red, white, blue, red from the bottom (the
+  captured flag). **More lights:** `TALL_LIT_H` 120 in `bake_towers.py` gives every tower that tall
+  without a night accent one, a `band` crown on a flat parapet or a strip on a notch, themed: 24
+  bands, 38 lit and 37 themed towers (from 12 and 10). 451 themed parts, 28 wash sheets.
+- **Measured in the pane:** the chevrons and spire, City Hall whole in green with Penn warm, the
+  arena green from the south, the Comcast pair and the skyline under `red,white,blue`, Penn and
+  Rocky by day up close. 101 tests pass. Page 26.67 MB (+9.5 KB). Devlog, handoff, README,
+  CLAUDE.md.

@@ -51,6 +51,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 from philly_frame import to_xz   # the one scene frame
 
 MIN_H = 45.0           # a "tower" for the app's purposes (tests/test_towers.py checks 45..400)
+TALL_LIT_H = 120.0     # Round 84: a tower this tall lights its crown at night whatever the research says
 R_DEFAULT = 35         # join radius the app uses around x, z
 STOREY_M = 4.4         # podium storeys -> metres when the massing gives only a count
 NAME_R, FAR_R, POS_R = 300, 800, 200
@@ -87,8 +88,8 @@ def C(t, h=None, **kw):
 
 
 OVERRIDES = [
-    (r'comcast technology', dict(facade='glass', crown=C('blade', 38), lit='#ffe9c4')),   # the narrow framed lantern blade, 38 m (Round 54)
-    (r'comcast center', dict(facade='glass', crown=C('notch', 8, sides=3), lit='#cfe0ff', theme=True)),   # recessed on three sides
+    (r'comcast technology', dict(facade='glass', crown=C('blade', 48), lit='#ffe9c4', theme=True)),   # the narrow framed lantern blade, 48 m since Round 84; its top third takes the theme in bands
+    (r'comcast center', dict(facade='glass', crown=C('notch', 20, sides=3), lit='#cfe0ff', theme=True)),   # recessed on three sides, the lit crown floors 20 m since Round 84, four light bands
     (r'(one|two) liberty place', dict(facade='glass_bands', crown=C('custom'), lit='#dbe6ff', theme=True)),
     (r'bny mellon', dict(facade='stone_piers', crown=C('lattice', 30), lit='#dfe8ff', theme=True)),
     (r'three logan', dict(facade='deco', hex='#B36349', crown=C('ziggurat', 25, steps=3), lit='#ffd9a8', theme=True)),
@@ -485,6 +486,14 @@ def main():
         added.append(rec['name'])
         via_of[rec['name']] = 'wide_names'
 
+    # Round 84 (Mike: more lights on the tall buildings): every tower of 120 m or more without a night
+    # accent gets one, a lit band around a flat parapet, a lit strip on a notch, taking the theme
+    for r in records:
+        if r['h'] >= TALL_LIT_H and not r['lit'] and r['crown']['type'] in ('flat', 'notch'):
+            if r['crown']['type'] == 'flat':
+                r['crown'] = C('band', 3)
+            r['lit'] = '#dfe8ff'
+            r['theme'] = True
     for r in records:
         assert r['facade'] in FACADES, (r['name'], r['facade'])
         assert r['crown']['type'] in CROWNS, (r['name'], r['crown'])

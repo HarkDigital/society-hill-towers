@@ -6114,6 +6114,12 @@
         appendBuilding(chk, poly.map(q => [cx + (q[0] - cx) * 0.86, cz + (q[1] - cz) * 0.86]), base + 21, base + 36, c, 3, base);
         c.set(0xcfd2d4);
         appendBuilding(chk, poly.map(q => [cx + (q[0] - cx) * 0.88, cz + (q[1] - cz) * 0.88]), base + 36, base + 38.5, c, 3, base);
+        { // Round 84 (Mike): the arena lights with the skyline, an LED band under the roof edge and a wash on the upper wall
+          const obA = orientedBox(poly), axA = obbAxis(obA), ryA = Math.atan2(-axA.az, axA.ax), aslot = themeSlotN++ % 4;
+          const aw = new THREE.Color(0xc9d3dc);
+          themeParts.push({ geom: box(axA.hl * 2 * 0.86 + 0.7, 1.6, axA.hs * 2 * 0.86 + 0.7, obA.cx, base + 35.2, obA.cz, ryA), color: aw, lit: aw.clone().multiplyScalar(0.5), mix: 1, slot: aslot, style: 3 });
+          sheetOf(box(axA.hl * 2 * 0.86 + 0.8, 13.5, axA.hs * 2 * 0.86 + 0.8, obA.cx, base + 28.2, obA.cz, ryA), aslot, 0.55, true);
+        }
         { // glass rotunda + entry bar on the corner, purple screen accents on two faces
           const ob9 = orientedBox(poly); const ax9 = obbAxis(ob9);
           const ex2 = ob9.cx + ax9.ax * ax9.hl * 0.62 + ax9.px * ax9.hs * 0.5, ez2 = ob9.cz + ax9.az * ax9.hl * 0.62 + ax9.pz * ax9.hs * 0.5;
@@ -6264,7 +6270,11 @@
           case 'blade': {   // the Comcast Technology Center: a narrow lit blade standing in a dark frame
             const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);
             const bw = ax.hl * 2 * 0.86, bt = Math.max(3, ax.hs * 2 * 0.16), fr = new THREE.Color(0x3a4046);
-            glowParts.push({ geom: box(bw, hc * 0.9, bt, ob.cx, y0 + hc * 0.47, ob.cz, ry), color: gl, style: 3 });
+            if (themed) {   // Round 84 (Mike, with the photo): the blade's length stays white, its top third lights in four bands that take the night's colours
+              const hb = hc * 0.9, yb0 = y0 + hc * 0.47 - hb / 2, hLow = hb * 0.66, hBand = (hb - hLow) / 4;
+              themeParts.push({ geom: box(bw, hLow, bt, ob.cx, yb0 + hLow / 2, ob.cz, ry), color: gl, lit: gl, mix: 0, slot: tslot, style: 3 });
+              for (let k2 = 0; k2 < 4; k2++) themeParts.push({ geom: box(bw, hBand - 0.35, bt, ob.cx, yb0 + hLow + (k2 + 0.5) * hBand, ob.cz, ry), color: gl, lit: gl, mix: 1, slot: (tslot + k2) % 4, style: 3 });
+            } else glowParts.push({ geom: box(bw, hc * 0.9, bt, ob.cx, y0 + hc * 0.47, ob.cz, ry), color: gl, style: 3 });
             for (const s of [-1, 1]) crownTrim.push({ geom: box(1.6, hc, bt + 1.2, ob.cx + ax.ax * (bw / 2 + 0.8) * s, y0 + hc / 2, ob.cz + ax.az * (bw / 2 + 0.8) * s, ry), color: fr, style: 3 });
             crownTrim.push({ geom: box(bw + 3.2, 1.4, bt + 1.2, ob.cx, y0 + hc - 0.7, ob.cz, ry), color: fr, style: 3 });
             crownTrim.push({ geom: box(bw + 3.2, 1.2, bt + 1.2, ob.cx, y0 + 0.6, ob.cz, ry), color: fr, style: 3 });
@@ -6280,9 +6290,11 @@
             if (th.style >= 20) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
             else appendBuilding(chk2, half, y0 - 0.5, y1, c, th.style, th.base);
             if (lit) glow(box(ax.hl * 2 * keep * 0.9, 1.4, ax.hs * 2 * 0.9, ob.cx + ax.ax * ax.hl * (keep - 1), y1 + 0.7, ob.cz + ax.az * ax.hl * (keep - 1), ry), 0.45);
-            if (themed) {   // the crown floors read as one lit block (the Comcast Center in the photo): a wash sheet 0.4 m outside them
+            if (themed) {   // the crown floors read as one lit block: a wash sheet 0.4 m outside them; the Comcast Center's (sides 3) in four stacked bands that take the night's colours (Round 84)
               const su0 = cr.sides === 3 ? 0 : keep - 1, sv0 = cr.sides === 3 ? -0.45 : 0, sw = cr.sides === 3 ? 1.6 : 2 * keep, sd = cr.sides === 3 ? 1.1 : 2;
-              sheetOf(box(ax.hl * sw + 0.8, y1 - y0 + 0.6, ax.hs * sd + 0.8, ob.cx + ax.ax * ax.hl * su0 + ax.px * ax.hs * sv0, (y0 + y1) / 2, ob.cz + ax.az * ax.hl * su0 + ax.pz * ax.hs * sv0, ry), tslot, 0.5);
+              const scx = ob.cx + ax.ax * ax.hl * su0 + ax.px * ax.hs * sv0, scz = ob.cz + ax.az * ax.hl * su0 + ax.pz * ax.hs * sv0;
+              if (cr.sides === 3) { const hB = (y1 - y0) / 4; for (let k2 = 0; k2 < 4; k2++) sheetOf(box(ax.hl * sw + 0.8, hB - 0.5, ax.hs * sd + 0.8, scx, y0 + (k2 + 0.5) * hB, scz, ry), (tslot + k2) % 4, 0.6); }
+              else sheetOf(box(ax.hl * sw + 0.8, y1 - y0 + 0.6, ax.hs * sd + 0.8, scx, (y0 + y1) / 2, scz, ry), tslot, 0.5);
             }
             break;
           }
@@ -6466,18 +6478,32 @@
         g.translate(cx, (y0 + y1) / 2, cz);
         return g;
       };
+      const neon = (a, b, rad, slot, col, mix) => {   // a straight lit bar between two world points (Round 84: the chevrons' neon, the spires)
+        const d = new V3(b[0] - a[0], b[1] - a[1], b[2] - a[2]); const L = d.length(); d.normalize();
+        const g = new THREE.CylinderGeometry(rad, rad, L, 6);
+        g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), d));
+        g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+        themeParts.push({ geom: g, color: col, lit: col.clone().multiplyScalar(0.5), mix: mix === undefined ? 1 : mix, slot, style: 3 });
+      };
       const crown = (cx, cz, base, tiers, gc, wc, slot) => {
-        const wl = wc.clone().multiplyScalar(0.5);   // the trim's house glow: the chevrons' white neon (Round 81: it takes the night's theme)
+        // Round 84 (Mike, with the photo): the neon runs along the sloping edges of every gable end, so
+        // each face of each tier carries an inverted V and the tiers nest into the chevrons; the eave
+        // band and the ridge caps stay as unlit white trim
+        const P = (u, v, y) => [cx + fl.nx * u + fl.dx * v, y, cz + fl.nz * u + fl.dz * v];
         for (const [w, wallTop, apex] of tiers) {
           lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, false), color: gc, style: 21, baseY: base });
           lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 21, baseY: base });
-          // white trim: eave band + crossed ridge caps read as the nested chevrons; lit after dark
-          themeParts.push({ geom: box(w + 0.9, 1.3, w + 0.9, cx, base + wallTop + 0.2, cz, ryG), color: wc, lit: wl, mix: 1, slot, style: 3 });
+          lmTrim.push({ geom: box(w + 0.9, 1.3, w + 0.9, cx, base + wallTop + 0.2, cz, ryG), color: wc, style: 3 });
           for (const ns of [0, 1]) {
             const rg = box(w, 0.75, 0.75, 0, 0, 0, 0);
             rg.rotateY(ryG + ns * Math.PI / 2);
             rg.translate(cx, base + apex - 0.2, cz);
-            themeParts.push({ geom: rg, color: wc, lit: wl, mix: 1, slot, style: 3 });
+            lmTrim.push({ geom: rg, color: wc, style: 3 });
+          }
+          const hw = w / 2, yE = base + wallTop + 0.4, yA = base + apex - 0.15;
+          for (const sg of [-1, 1]) {
+            neon(P(-hw, sg * hw, yE), P(0, sg * hw, yA), 0.34, slot, wc); neon(P(hw, sg * hw, yE), P(0, sg * hw, yA), 0.34, slot, wc);
+            neon(P(sg * hw, -hw, yE), P(sg * hw, 0, yA), 0.34, slot, wc); neon(P(sg * hw, hw, yE), P(sg * hw, 0, yA), 0.34, slot, wc);
           }
         }
       };
@@ -6490,15 +6516,23 @@
         appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 56, 56), base - 1, base + 12, c, 5, base);
         c.copy(gc);
         appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 48.5, 48.5), base - 1, base + 212, c, 3, base);
+        // Round 84: the central bays stand proud of each face, the glass spines of the photo
+        for (const [du, dv] of [[24.85, 0], [-24.85, 0], [0, 24.85], [0, -24.85]]) {
+          const px = cx + fl.nx * du + fl.dx * dv, pz = cz + fl.nz * du + fl.dz * dv;
+          appendBuilding(getGlassChunk(cx, cz), sqPoly(px, pz, du ? 1.4 : 15, du ? 15 : 1.4), base + 12, base + 211, c, 3, base);
+        }
         for (const [w, top] of [[36, 223], [26, 233], [17, 242]]) {
           appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, w, w), base + 180, base + top, c, 3, base);
         }
-        crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite, themeSlotN++ % 4);
-        lmTrim.push({ geom: pyr4(cx, cz, 8, base + 251, base + 258, 1.0), color: cSilver, style: 3 });
-        const mast = new THREE.CylinderGeometry(0.7, 1.0, 23, 8); mast.translate(cx, base + 258 + 11.5, cz);
-        lmTrim.push({ geom: mast, color: cSilver, style: 3 });
-        const ndl = new THREE.CylinderGeometry(0.05, 0.4, 7, 6); ndl.translate(cx, base + 281 + 3.5, cz);
-        lmTrim.push({ geom: ndl, color: cSilver, style: 3 });
+        const olSlot = themeSlotN++ % 4;
+        crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite, olSlot);
+        // the spire is lit white every night (the photo: white through a green theme) with the red beacon on top
+        const spireLit = (geom) => themeParts.push({ geom, color: cSilver, lit: cSilver.clone().multiplyScalar(0.55), mix: 0, slot: olSlot, style: 3 });
+        spireLit(pyr4(cx, cz, 8, base + 251, base + 258, 1.0));
+        const mast = new THREE.CylinderGeometry(0.7, 1.0, 23, 8); mast.translate(cx, base + 258 + 11.5, cz); spireLit(mast);
+        const ndl = new THREE.CylinderGeometry(0.05, 0.4, 7, 6); ndl.translate(cx, base + 281 + 3.5, cz); spireLit(ndl);
+        const beacon = new THREE.SphereGeometry(0.55, 8, 6); beacon.translate(cx, base + 288.2, cz);
+        themeParts.push({ geom: beacon, color: new THREE.Color(0xff3020), lit: new THREE.Color(0.9, 0.08, 0.05), mix: 0, slot: olSlot, style: 3 });
       }
       // --- Two Liberty Place (16th & Chestnut): squatter, two big gable tiers, white finial
       {
@@ -6509,8 +6543,9 @@
         appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 36, 36), base + 148, base + 185, c, 3, base);
         appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 34, 34), base + 183, base + 207, c, 3, base);
         appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 22, 22), base + 205, base + 224, c, 3, base);
-        crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite, themeSlotN++ % 4);
-        lmTrim.push({ geom: pyr4(cx, cz, 5, base + 253, base + 258, 0.4), color: cWhite, style: 3 });
+        const tlSlot = themeSlotN++ % 4;
+        crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite, tlSlot);
+        themeParts.push({ geom: pyr4(cx, cz, 5, base + 253, base + 258, 0.4), color: cWhite, lit: cWhite.clone().multiplyScalar(0.55), mix: 0, slot: tlSlot, style: 3 });   // the finial lit white
       }
       // --- City Hall: the full Second Empire block (its outline was dropped at pack
       // time for containing part centroids, and the wings were never mapped as parts,
@@ -6529,21 +6564,26 @@
         // hollow square around the courtyard, arched-window facade style, mansard wings
         c.copy(cStone);
         appendBuilding(getChunk(bx, bz), sqPoly(bx, bz, 148, 143), base - 1, base + 27, c, 1, base, [sqPoly(bx, bz, 64, 59)]);
+        // Round 84 (Mike): the whole building is floodlit, not the tower alone: a wash on the block's walls, the
+        // mansards and the pavilions' caps take the theme as floodlit slate, sleeves on every pavilion
+        sheetOf(box(149.6, 29, 144.6, bx, base + 13.5, bz, ryG), chSlot, 0.45, true);
         for (const [du, dv, ns] of [[0, -50.5, false], [0, 50.5, false], [-53, 0, true], [53, 0, true]]) {
           const wx = bx + fl.nx * du + fl.dx * dv, wz = bz + fl.nz * du + fl.dz * dv;
-          lmTrim.push({ geom: gPrism(wx, wz, 40, ns ? 139 : 144, base + 26.9, base + 33.5, ns), color: cSlate, style: 3 });
+          floodlit(gPrism(wx, wz, 40, ns ? 139 : 144, base + 26.9, base + 33.5, ns), cSlate, 0.4, 0.5);
         }
         for (const su of [-1, 1]) for (const sv of [-1, 1]) { // corner pavilions with steep caps
           const px2 = bx + fl.nx * su * 62 + fl.dx * sv * 59.5, pz2 = bz + fl.nz * su * 62 + fl.dz * sv * 59.5;
           c.copy(cStone);
           appendBuilding(getChunk(px2, pz2), sqPoly(px2, pz2, 25, 25), base - 1, base + 32, c, 1, base);
-          lmTrim.push({ geom: pyr4(px2, pz2, 21, base + 32, base + 43, 3.0), color: cSlate, style: 3 });
+          floodlit(pyr4(px2, pz2, 21, base + 32, base + 43, 3.0), cSlate, 0.4, 0.5);
+          sheetOf(box(25.8, 34, 25.8, px2, base + 16, pz2, ryG), chSlot, 0.45, true);
         }
         for (const [du, dv] of [[74, 0], [-74, 0], [0, 71.5]]) { // center pavilions (E/W/S; N is the tower)
           const px2 = bx + fl.nx * du + fl.dx * dv, pz2 = bz + fl.nz * du + fl.dz * dv;
           c.copy(cStone);
           appendBuilding(getChunk(px2, pz2), sqPoly(px2, pz2, du === 0 ? 30 : 22, du === 0 ? 22 : 30), base - 1, base + 31, c, 1, base);
-          lmTrim.push({ geom: pyr4(px2, pz2, 19, base + 31, base + 41, 2.6), color: cSlate, style: 3 });
+          floodlit(pyr4(px2, pz2, 19, base + 31, base + 41, 2.6), cSlate, 0.4, 0.5);
+          sheetOf(box((du === 0 ? 30 : 22) + 0.8, 33, (du === 0 ? 22 : 30) + 0.8, px2, base + 15.5, pz2, ryG), chSlot, 0.45, true);
         }
         // tower: arched-window masonry shaft to the 337 ft masonry limit, in stages
         c.copy(cTower);
@@ -6588,31 +6628,49 @@
         // William Penn — 37 ft figure sculpted from primitives: stockinged calves under
         // a knee-length coat flaring at the hem, broad shoulders, brimmed hat, left arm
         // extended northeast (toward Penn Treaty Park). Reads as the statue, not a post.
+        // Round 84 (Mike, with the postcard): the figure rebuilt, the broad-brimmed hat over long hair, the
+        // long buttoned coat flaring to the knee over breeches and stockinged calves, buckled shoes, cuffs on
+        // both sleeves, the cravat, the left arm out over the city and the right hand on the charter at the
+        // hip, on the draped bronze drum; floodlit after dark with the tower (mix 0.5)
         const y0 = base + 155.8;
-        const pennAt = (g, dx2, y, dz2) => { g.translate(cx + dx2, y, cz + dz2); lmTrim.push({ geom: g, color: cPenn, style: 3 }); };
+        const cBronze = new THREE.Color(0x221a10), cBronzeD = new THREE.Color(0x171209);   // stored very dark: the legacy pipeline lifts these to weathered bronze (0x3e3222 read as tan)
+        const pennFlood = new THREE.Color(0.5, 0.42, 0.3).multiplyScalar(0.35);   // the floods on the statue: warm, a quarter of the theme (a half read as a solid green figure)
+        const pennAt = (g, dx2, y, dz2, col) => { g.translate(cx + dx2, y, cz + dz2); themeParts.push({ geom: g, color: col || cBronze, lit: pennFlood, mix: 0.25, slot: chSlot, style: 3 }); };
         const s2 = Math.SQRT1_2;
-        const nex = (fl.nx - fl.dx) * s2, nez = (fl.nz - fl.dz) * s2;   // northeast, unit
-        const pex = -nez, pez = nex;                                     // perpendicular (NW)
-        pennAt(new THREE.CylinderGeometry(1.35, 1.55, 0.5, 10), 0, y0 + 0.25, 0);            // base plinth
-        for (const sgn of [-1, 1])                                                            // calves
-          pennAt(new THREE.CylinderGeometry(0.30, 0.36, 1.7, 6), pex * sgn * 0.44, y0 + 0.85, pez * sgn * 0.44);
-        pennAt(new THREE.CylinderGeometry(1.02, 1.58, 5.0, 10), 0, y0 + 3.9, 0);             // coat, flared hem
-        pennAt(new THREE.CylinderGeometry(1.24, 1.02, 2.9, 10), 0, y0 + 7.85, 0);            // torso to shoulders
-        pennAt(new THREE.CylinderGeometry(0.46, 0.52, 0.7, 6), 0, y0 + 9.45, 0);             // neck + cravat
-        pennAt(new THREE.SphereGeometry(0.66, 8, 6), 0, y0 + 10.15, 0);                      // head (long hair)
-        pennAt(new THREE.CylinderGeometry(1.12, 1.12, 0.16, 10), 0, y0 + 10.62, 0);          // hat brim
-        pennAt(new THREE.CylinderGeometry(0.72, 0.64, 0.62, 8), 0, y0 + 10.95, 0);           // hat crown
-        {                                                                                     // left arm, extended NE
-          const arm = new THREE.CylinderGeometry(0.24, 0.30, 2.5, 6);
-          arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(nex, -0.34, nez).normalize()));
-          pennAt(arm, nex * 1.55, y0 + 8.35, nez * 1.55);
-          pennAt(new THREE.SphereGeometry(0.30, 6, 5), nex * 2.75, y0 + 7.9, nez * 2.75);     // hand
+        const nex = (fl.nx - fl.dx) * s2, nez = (fl.nz - fl.dz) * s2;   // northeast, unit: the way he faces
+        const pex = -nez, pez = nex;                                     // perpendicular (NW), across the shoulders
+        pennAt(new THREE.CylinderGeometry(1.7, 1.85, 0.9, 12), 0, y0 - 0.45, 0, cBronzeD);        // the draped drum he stands on
+        pennAt(new THREE.CylinderGeometry(1.5, 1.7, 0.35, 12), 0, y0 + 0.17, 0, cBronze);         // its top moulding
+        for (const sgn of [-1, 1]) {
+          pennAt(new THREE.BoxGeometry(0.42, 0.22, 0.95).rotateY(Math.atan2(-nez, nex)), pex * sgn * 0.42 + nex * 0.15, y0 + 0.46, pez * sgn * 0.42 + nez * 0.15, cBronzeD);   // buckled shoes
+          pennAt(new THREE.CylinderGeometry(0.30, 0.36, 1.8, 7), pex * sgn * 0.42, y0 + 1.45, pez * sgn * 0.42, cBronze);          // stockinged calves
+          pennAt(new THREE.CylinderGeometry(0.44, 0.40, 1.5, 7), pex * sgn * 0.44, y0 + 3.05, pez * sgn * 0.44);                   // breeches
         }
-        {                                                                                     // right arm, down along the coat with the charter
-          const arm = new THREE.CylinderGeometry(0.24, 0.28, 2.4, 6);
-          arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(-nex * 0.30, 1, -nez * 0.30).normalize()));
-          pennAt(arm, -nex * 1.25, y0 + 7.5, -nez * 1.25);
-          pennAt(new THREE.BoxGeometry(0.85, 1.05, 0.5), -nex * 1.55, y0 + 6.1, -nez * 1.55); // charter scroll
+        pennAt(new THREE.CylinderGeometry(1.05, 1.75, 4.4, 12), 0, y0 + 5.6, 0);                  // the coat, flaring to the knee
+        pennAt(new THREE.CylinderGeometry(1.14, 1.16, 0.28, 12), 0, y0 + 6.2, 0, cBronzeD);       // the sash
+        pennAt(new THREE.BoxGeometry(0.16, 3.8, 0.5).rotateY(Math.atan2(-nez, nex)), nex * 1.06, y0 + 5.7, nez * 1.06, cBronzeD);   // the buttoned front
+        pennAt(new THREE.CylinderGeometry(1.3, 1.08, 2.4, 12), 0, y0 + 8.9, 0);                   // torso to the shoulders
+        pennAt(new THREE.BoxGeometry(2.9, 0.62, 1.25).rotateY(Math.atan2(-pez, pex)), 0, y0 + 10.0, 0);   // the shoulders
+        pennAt(new THREE.CylinderGeometry(0.44, 0.5, 0.6, 7), 0, y0 + 10.55, 0);                  // neck
+        pennAt(new THREE.BoxGeometry(0.55, 0.9, 0.22).rotateY(Math.atan2(-nez, nex)), nex * 0.62, y0 + 9.9, nez * 0.62, cBronze);   // the cravat
+        pennAt(new THREE.SphereGeometry(0.74, 9, 7), -nex * 0.12, y0 + 11.0, -nez * 0.12, cBronzeD);   // the long hair
+        pennAt(new THREE.SphereGeometry(0.62, 9, 7), nex * 0.1, y0 + 11.15, nez * 0.1, cBronze);      // the face
+        pennAt(new THREE.CylinderGeometry(1.3, 1.3, 0.14, 12), 0, y0 + 11.62, 0, cBronzeD);       // the broad brim
+        pennAt(new THREE.CylinderGeometry(0.72, 0.66, 0.66, 9), 0, y0 + 12.0, 0, cBronze);        // the hat's crown
+        pennAt(new THREE.SphereGeometry(0.7, 9, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0, y0 + 12.3, 0, cBronze);   // its dome
+        {                                                                                     // the left arm, out over the city
+          const arm = new THREE.CylinderGeometry(0.26, 0.32, 2.6, 7);
+          arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(nex, -0.36, nez).normalize()));
+          pennAt(arm, nex * 1.55 + pex * 0.9, y0 + 9.05, nez * 1.55 + pez * 0.9);
+          pennAt(new THREE.CylinderGeometry(0.44, 0.38, 0.5, 8), nex * 2.6 + pex * 0.9, y0 + 8.5, nez * 2.6 + pez * 0.9, cBronzeD);   // the cuff
+          pennAt(new THREE.SphereGeometry(0.32, 6, 5), nex * 2.95 + pex * 0.9, y0 + 8.25, nez * 2.95 + pez * 0.9, cBronze);           // the hand
+        }
+        {                                                                                     // the right arm, down along the coat, the charter at the hip
+          const arm = new THREE.CylinderGeometry(0.26, 0.3, 2.5, 7);
+          arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(nex * 0.18, 1, nez * 0.18).normalize()));
+          pennAt(arm, -pex * 1.15, y0 + 8.4, -pez * 1.15);
+          pennAt(new THREE.CylinderGeometry(0.42, 0.36, 0.5, 8), -pex * 1.15 + nex * 0.3, y0 + 7.0, -pez * 1.15 + nez * 0.3, cBronzeD);   // the cuff
+          pennAt(new THREE.BoxGeometry(0.9, 1.1, 0.5).rotateY(Math.atan2(-nez, nex)), -pex * 1.1 + nex * 0.75, y0 + 6.6, -pez * 1.1 + nez * 0.75, cBronze);   // the charter scroll
         }
       }
       // --- Philadelphia Museum of Art: golden Kasota-stone U on Fairmount hill,
@@ -6727,6 +6785,32 @@
           for (let i2 = 6; i2 >= 0; i2--) yT[i2] = Math.max(yT[i2], yT[i2 + 1] + 0.2);
           for (let i2 = 0; i2 < 8; i2++) {
             appendBuilding(chk, quad(55 + 6.3 * i2, 55 + 6.3 * (i2 + 1) + 0.4, -34, 34), yT[i2] - 7, yT[i2], c, 3, yT[i2] - 7);
+          }
+        }
+        // Round 84 (Mike): the Rocky statue at the foot of the steps, on the right when you face the museum,
+        // gloves up, on its two-tier granite plinth
+        {
+          const rp = pt(101, -47), ry0 = siteY(rp[0], rp[1], 'ground');   // clear of the street tree at the steps' foot
+          const ryR = Math.atan2(-pv[1], pv[0]);   // the shoulders across the Parkway's axis: he faces the Oval
+          const cGran = new THREE.Color(0x2e3034), cRocky = new THREE.Color(0x1c150c);   // stored very dark for the lift: grey granite, dark bronze
+          const at = (g, du, y, dv, col) => { const w2 = pt(101 + du, -47 + dv); g.translate(w2[0], y, w2[1]); lmTrim.push({ geom: g, color: col, style: 3 }); };
+          at(new THREE.BoxGeometry(3.4, 0.5, 3.4).rotateY(ryR), 0, ry0 + 0.25, 0, cGran);            // the lower step of the plinth
+          at(new THREE.BoxGeometry(2.3, 1.7, 2.3).rotateY(ryR), 0, ry0 + 1.35, 0, cGran);            // the plinth
+          const yb = ry0 + 2.2;
+          for (const sgn of [-1, 1]) {
+            at(new THREE.BoxGeometry(0.34, 0.16, 0.6).rotateY(ryR), 0, yb + 0.08, sgn * 0.26, cRocky);   // boots
+            at(new THREE.CylinderGeometry(0.16, 0.19, 1.1, 7), 0, yb + 0.63, sgn * 0.25, cRocky);        // legs
+          }
+          at(new THREE.BoxGeometry(0.55, 0.55, 0.85).rotateY(ryR), 0, yb + 1.4, 0, cRocky);           // the trunks
+          at(new THREE.CylinderGeometry(0.4, 0.3, 0.95, 8), 0, yb + 2.12, 0, cRocky);                 // the torso
+          at(new THREE.BoxGeometry(0.42, 0.3, 1.05).rotateY(ryR), 0, yb + 2.6, 0, cRocky);            // the shoulders
+          at(new THREE.SphereGeometry(0.22, 8, 6), 0, yb + 2.98, 0, cRocky);                          // the head
+          for (const sgn of [-1, 1]) {                                                                 // the arms raised, gloves up
+            const arm = new THREE.CylinderGeometry(0.1, 0.13, 1.25, 6);
+            const dir = new V3(pv[0] * sgn * 0.42, 1, pv[1] * sgn * 0.42).normalize();
+            arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), dir));
+            at(arm, 0, yb + 3.15, sgn * 0.72, cRocky);
+            at(new THREE.SphereGeometry(0.2, 7, 6), 0, yb + 3.82, sgn * 0.98, cRocky);                // the gloves
           }
         }
         // (the Fairmount greening itself lives in the wide-heightfield builder —

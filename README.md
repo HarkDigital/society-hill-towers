@@ -30,8 +30,8 @@ real solar clock over it all.
 - **Close by.** Everything that stands on the ground (vehicles, docks, trains, markers, art,
   closures, tents) draws only within half a mile of you, each closed block, marker and
   artwork under its own pin; flights and ships stay visible across the city.
-- **Lights.** After dark the researched crowns, City Hall's tower and the Ben Franklin Bridge
-  glow in the night's colour: a Philadelphia team's on its game day (Eagles, then Phillies,
+- **Lights.** After dark the crowns of every tall tower, the Liberty Places' chevrons, the whole
+  of City Hall, the Xfinity Mobile Arena and the Ben Franklin Bridge glow in the night's colour: a Philadelphia team's on its game day (Eagles, then Phillies,
   Flyers, Sixers), otherwise the cause on BOMA Philadelphia's Building Illumination Calendar,
   else white. The time panel names it; `?lights=eagles` or `?lights=purple` pins it.
 - **Search** (/): an address, a landmark, a neighborhood, a street, a SEPTA route, and
