@@ -195,6 +195,34 @@ way. The GitHub Pages copy needs the `location = /amtrak.json` block in
 `philly3d.vhost.example` (ACAO *) to read the baked file; without it, it rides the direct pull.
 Installed Sep 17, 2026 (the loop service and the vhost block are live).
 
+## 10. Lights baker (Round 81)
+
+Stdlib only (Python 3.9+, `zoneinfo`), no key. Twice a day the timer runs one bake: BOMA
+Philadelphia's Building Illumination Calendar (a Squarespace events collection read with
+`?format=json`, every page, seven today, about 0.3 s apart) parsed to dated colour rows for the
+skyline lights, written to `/var/www/philly3d/lights.json` (+ `.gz` twin, atomic, 0644; about
+10 KB). Each row is a Philadelphia date range, the colours the title names (aliases folded, a
+team or cause keyword when it names none) and the cleaned cause name; rows older than a year
+are dropped. A bake takes a few seconds and seven requests. `bake_lights.py` imports
+`fetch_lights.py`, so both scripts go to `/opt/philly3d/`.
+
+```sh
+cp fetch_lights.py bake_lights.py /opt/philly3d/ && chmod 755 /opt/philly3d/fetch_lights.py /opt/philly3d/bake_lights.py
+python3 /opt/philly3d/bake_lights.py --fetch --out /var/www/philly3d/lights.json -v && ls -l /var/www/philly3d/lights.json*   # one bake, by hand
+cp lights-bake.service lights-bake.timer /etc/systemd/system/ && systemctl daemon-reload
+systemctl enable --now lights-bake.timer
+systemctl list-timers lights-bake.timer ; journalctl -u lights-bake -n 5
+curl -s https://philly3d.com/lights.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["rows"]), "rows")'
+```
+
+The page carries a built-in copy of the file from the last build and prefers the served copy
+when its `t` is newer, so a missing or stale file is never a failure: the crowns fall back to
+the built-in calendar (and a Philadelphia game day's team colour comes first either way, from
+the scores, not from this file). On a dead feed the baker keeps the previous file and exits 1;
+the timer tries again twelve hours on. The GitHub Pages copy needs the `location = /lights.json`
+block in `philly3d.vhost.example` (ACAO *, max-age 600; a vhost edit, `nginx -t` between steps,
+your go) to read the served copy; without it, it uses the built-in one.
+
 ## Lightning relay
 
 `lightning_relay.py` keeps one MQTT subscription to the public Blitzortung relay

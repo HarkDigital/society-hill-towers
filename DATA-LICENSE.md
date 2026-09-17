@@ -65,6 +65,16 @@ Historical and Museum Commission", license Public Domain, attribution PHMC): eac
 name, dedication date, type, location and the marker text itself, shown verbatim on the
 card apart from the dash rule. The page credits the Commission.
 
+## BOMA Philadelphia (the Building Illumination Calendar)
+
+`lights.json` (`fetch_lights.py` → `bake_lights.py`) carries the dates, colours and cause names
+of the requests listed on BOMA Philadelphia's public Building Illumination Calendar
+(https://www.bomaphila.com/building-illumination-calendar), a public listing of the nights the
+city's building owners are asked to light their crowns for a cause. Only the date range, the
+colour words and a cleaned cause name are kept (no descriptions, no images, no links),
+refreshed at each build and twice a day on philly3d.com. BOMA Philadelphia is credited on the
+page and is not affiliated with it.
+
 ## USGS (public domain)
 
 `dem.json`, `dem_wide.json`, `dem_south.json`, `dem_city.json`, `dem_nw.json` (written by
@@ -101,8 +111,10 @@ the Open Data Commons Attribution License, ODC-By 1.0, which asks for prominent 
 the credit line and the About panel name Amtraker; philly3d.com keeps a copy of the trains
 near the city refreshed every thirty seconds, the page pulls Amtraker itself when that copy
 is stale; Amtrak is a registered service mark of the National Railroad Passenger Corporation
-and the page is unaffiliated), and OpenStreetMap Nominatim for search (ODbL data; subject to
-the Nominatim usage policy). Each feed has its own terms of use; the page credits them.
+and the page is unaffiliated), ESPN's public team schedules for the four Philadelphia teams,
+read by the page to know a game day (nothing stored; the page is unaffiliated), and
+OpenStreetMap Nominatim for search (ODbL data; subject to the Nominatim usage policy). Each
+feed has its own terms of use; the page credits them.
 
 ## Fonts (SIL Open Font License 1.1)
 

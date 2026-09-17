@@ -72,6 +72,14 @@ server {
         add_header Access-Control-Allow-Origin * always;
     }
 
+    # BOMA Philadelphia's illumination calendar, baked twice a day by
+    # /opt/philly3d/bake_lights.py (Round 81): 600 s against the bake, ACAO * for the Pages copy
+    location = /lights.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=600" always;
+        add_header Access-Control-Allow-Origin * always;
+    }
+
     location / {
         gzip_static on;
         try_files $uri $uri/ =404;

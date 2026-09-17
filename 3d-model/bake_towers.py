@@ -4,8 +4,14 @@ Center City tower, joined to the packed buildings by position, carrying the faca
 archetype, crown geometry, night accent and podium the app dresses it with.
 
   {"src": "...", "towers": [{"name", "x", "z", "h", "r", "hex", "glass", "facade",
-                             "crown": {"type", "h"?, "steps"?}, "lit", "podium",
+                             "crown": {"type", "h"?, "steps"?}, "lit", "theme"?, "podium",
                              "matched", "sh"}, ...]}
+
+"theme": true marks a crown that takes the skyline's lighting theme at night (Round 81: the
+Eagles' green on a game day, a BOMA calendar cause's colour); a lit crown without it keeps its
+own colour every night (the Comcast Technology Center's white blade, the PSFS sign's red).
+A 'band' crown (Round 81) is a lit LED band around the parapet of a flat-topped tower (the PECO
+Building); it cuts nothing off the body.
 
 Research buildings (155 across the three research areas) are kept when they are
 real, built, inside the box and at least MIN_H tall; bridge towers, the proposed
@@ -52,9 +58,9 @@ NAME_R, FAR_R, POS_R = 300, 800, 200
 FACADES = ('glass', 'glass_bands', 'glass_dark', 'concrete_grid', 'stone_piers', 'deco',
            'precast_bands', 'brick')
 CROWNS = ('flat', 'notch', 'pyramid', 'stepped', 'custom', 'spire', 'lattice', 'ziggurat',
-          'lantern', 'sloped', 'mansard', 'dome', 'blade')
+          'lantern', 'sloped', 'mansard', 'dome', 'blade', 'band')
 CROWN_H = {'notch': 8, 'pyramid': 20, 'spire': 15, 'lattice': 30, 'ziggurat': 25, 'lantern': 10,
-           'sloped': 13, 'mansard': 10, 'dome': 15, 'stepped': 20, 'blade': 38}
+           'sloped': 13, 'mansard': 10, 'dome': 15, 'stepped': 20, 'blade': 38, 'band': 3}
 
 # name tokens that carry no identity (building words shared by many)
 STOP = {'building', 'tower', 'towers', 'center', 'centre', 'square', 'house', 'street', 'place',
@@ -82,11 +88,11 @@ def C(t, h=None, **kw):
 
 OVERRIDES = [
     (r'comcast technology', dict(facade='glass', crown=C('blade', 38), lit='#ffe9c4')),   # the narrow framed lantern blade, 38 m (Round 54)
-    (r'comcast center', dict(facade='glass', crown=C('notch', 8, sides=3), lit='#cfe0ff')),   # recessed on three sides
-    (r'(one|two) liberty place', dict(facade='glass_bands', crown=C('custom'), lit='#dbe6ff')),
-    (r'bny mellon', dict(facade='stone_piers', crown=C('lattice', 30), lit='#dfe8ff')),
-    (r'three logan', dict(facade='deco', hex='#B36349', crown=C('ziggurat', 25, steps=3), lit='#ffd9a8')),
-    (r'fmc tower', dict(facade='glass', crown=C('notch', 20))),
+    (r'comcast center', dict(facade='glass', crown=C('notch', 8, sides=3), lit='#cfe0ff', theme=True)),   # recessed on three sides
+    (r'(one|two) liberty place', dict(facade='glass_bands', crown=C('custom'), lit='#dbe6ff', theme=True)),
+    (r'bny mellon', dict(facade='stone_piers', crown=C('lattice', 30), lit='#dfe8ff', theme=True)),
+    (r'three logan', dict(facade='deco', hex='#B36349', crown=C('ziggurat', 25, steps=3), lit='#ffd9a8', theme=True)),
+    (r'fmc tower', dict(facade='glass', crown=C('notch', 20), lit='#e8f0ff', theme=True)),   # its crown floors light in the night's colour (Round 81)
     (r'dibona', dict(facade='glass', crown=C('notch', 6))),
     (r'\belement\b', dict(facade='concrete_grid', crown=C('flat'))),          # The W and Element
     (r'\blaurel\b', dict(facade='glass', crown=C('flat'), podium=22)),
@@ -96,14 +102,14 @@ OVERRIDES = [
     (r'st\.? james', dict(facade='precast_bands', crown=C('flat'))),
     (r'psfs|loews', dict(facade='stone_piers', crown=C('spire', 14), lit='#ff5a5a')),
     (r'pnc bank', dict(facade='glass_bands', crown=C('flat'))),
-    (r'peco building', dict(facade='concrete_grid', crown=C('flat'), lit='#ffb060')),
+    (r'peco building', dict(facade='concrete_grid', crown=C('band', 3), lit='#ffb060', theme=True)),   # the LED crown band (Round 81)
     (r'five penn center|six penn center|centre square|1500 locust|jefferson tower|academy house|'
      r'kennedy house|hopkinson house|penn center house|william penn house|rittenhouse plaza|'
      r'\bsterling\b|2400 chestnut|municipal services', dict(facade='concrete_grid', crown=C('flat'))),
     (r'murano', dict(facade='glass_bands', crown=C('flat'))),
-    (r'one south broad', dict(facade='deco', crown=C('lantern', 8), lit='#ffe2b0')),
-    (r'^cira centre', dict(facade='glass', crown=C('sloped', 25), lit='#9fd0ff')),
-    (r'two logan', dict(facade='stone_piers', crown=C('pyramid', 22), lit='#c9f0d8')),
+    (r'one south broad', dict(facade='deco', crown=C('lantern', 8), lit='#ffe2b0', theme=True)),
+    (r'^cira centre', dict(facade='glass', crown=C('sloped', 25), lit='#9fd0ff', theme=True)),
+    (r'two logan', dict(facade='stone_piers', crown=C('pyramid', 22), lit='#c9f0d8', theme=True)),
     (r'one logan', dict(facade='stone_piers', crown=C('flat'))),
     (r'^evo\b', dict(facade='glass_dark', crown=C('flat'))),
     (r'eleven penn', dict(facade='glass_bands', crown=C('flat'))),
@@ -502,7 +508,7 @@ def main():
     print('skipped research entries: ' + ', '.join('%s %d' % kv for kv in skipped.most_common()))
     print('facade: ' + ', '.join('%s %d' % kv for kv in collections.Counter(r['facade'] for r in records).most_common()))
     print('crown:  ' + ', '.join('%s %d' % kv for kv in collections.Counter(r['crown']['type'] for r in records).most_common()))
-    print('lit %d, podium %d' % (sum(1 for r in records if r['lit']), sum(1 for r in records if r['podium'])))
+    print('lit %d, themed %d, podium %d' % (sum(1 for r in records if r['lit']), sum(1 for r in records if r.get('theme')), sum(1 for r in records if r['podium'])))
     vias = collections.Counter(v.split(' <- ')[0] for v in via_of.values())
     print('join: ' + ', '.join('%s %d' % kv for kv in vias.most_common()))
     if unmatched:

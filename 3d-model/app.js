@@ -155,6 +155,7 @@
     if (poleMat) poleMat.size = r;     // the point sprites are sized in physical px
     if (towerMat) towerMat.size = r;
     if (floodMat) floodMat.size = r;
+    if (bfbNodesMat) bfbNodesMat.size = r;
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
   // the installed app (PWA) opens its window at one size and lays the page out at another, and
@@ -504,6 +505,9 @@
     const bs = facade ? new Float32Array(count) : null;
     // the lane paint's aLane rides along when any part carries it (zeros elsewhere: the shader skips them)
     const ln = prepped.some(p => !!p.g.attributes.aLane) ? new Float32Array(count * 4) : null;
+    // the night theme's house colour, mix and slot ride along when any part carries a `lit` (Round 81)
+    const tl = parts.some(p => !!p.lit) ? new Float32Array(count * 3) : null;
+    const tm = tl ? new Float32Array(count) : null, ts = tl ? new Float32Array(count) : null, white1 = tl ? new THREE.Color(1, 1, 1) : null;
     let o = 0;
     const c = new THREE.Color();
     for (let pi = 0; pi < prepped.length; pi++) {
@@ -519,6 +523,11 @@
       if (ln && g.attributes.aLane) ln.set(g.attributes.aLane.array, o * 4);
       if (full) { sty.fill(styleV, o, o + vc); flh.fill(flhV, o, o + vc); tin.fill(parts[pi].tint !== undefined ? parts[pi].tint : glassTintKey(color, styleV), o, o + vc); }
       if (bs) bs.fill(baseY, o, o + vc);
+      if (tl) {
+        const lc = parts[pi].lit || white1;
+        for (let i = 0; i < vc; i++) { tl[(o + i) * 3] = lc.r; tl[(o + i) * 3 + 1] = lc.g; tl[(o + i) * 3 + 2] = lc.b; }
+        tm.fill(parts[pi].mix || 0, o, o + vc); ts.fill(parts[pi].slot || 0, o, o + vc);
+      }
       for (let i = 0; i < vc; i++) {
         c.copy(color);
         if (ao) {
@@ -544,6 +553,7 @@
     }
     if (bs) out.setAttribute('aBase', new THREE.BufferAttribute(bs, 1));
     if (ln) out.setAttribute('aLane', new THREE.BufferAttribute(ln, 4));
+    if (tl) { out.setAttribute('aLit', new THREE.BufferAttribute(tl, 3)); out.setAttribute('aMix', new THREE.BufferAttribute(tm, 1)); out.setAttribute('aSlot', new THREE.BufferAttribute(ts, 1)); }
     return out;
   }
 
@@ -5795,6 +5805,13 @@
     ];
     const stadia = [], stadiumMasts = [];
     const glowParts = [], flood = [], halo = [];
+    // the night's themed lights (Round 81): the crowns, the chevrons, City Hall's metalwork and the
+    // bridge's strings in themeParts (one mesh, the house colour in aLit, the theme by aSlot), the wash
+    // sheets in themeSheets (additive, their colour rewritten as the theme eases); the themed buildings
+    // deal the night's colours in build order
+    const themeParts = [], themeSheets = [];
+    let themeSlotN = 0;
+    const sheetOf = (geom, slot, w, grad) => themeSheets.push({ geom, slot, w, grad: !!grad });   // grad: floodlit from below, fading up the sheet
     const fanGeom = (ring, y) => {   // a flat fan about the centroid (earcut chokes on some OSM rings)
       const n2 = ring.length, pos = new Float32Array(n2 * 9), nor = new Float32Array(n2 * 9);
       let mx = 0, mz = 0; for (const q of ring) { mx += q[0]; mz += q[1]; } mx /= n2; mz /= n2;
@@ -6085,7 +6102,7 @@
       if (t === 10) { // glass tower parts: reflective material, no painted windows
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
-        appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, 3, base);
+        appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, 3, base);   // hTop, not h: a researched crown's datum cuts this section too (Round 81: BNY Mellon's lattice stood inside its shaft)
         if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
         continue;
       }
@@ -6190,10 +6207,15 @@
         const lit = th.spec.lit ? new THREE.Color(parseInt(th.spec.lit.slice(1), 16)) : null;
         const dark = th.color.clone().multiplyScalar(0.72);
         const chk2 = getChunk(th.cx, th.cz);
+        // a themed crown (spec.theme, Round 81) takes the night's colour: its lit parts carry the house
+        // colour as aLit and ride themeParts; the others (the CTC's blade, the PSFS sign) keep glowParts
+        const themed = !!(lit && th.spec.theme), tslot = themed ? (themeSlotN++ % 4) : 0;
+        const glow = (geom, k) => (themed ? themeParts : glowParts).push({ geom, color: lit.clone().multiplyScalar(k), lit: lit.clone().multiplyScalar(k), mix: 1, slot: tslot, style: 3 });
+        const ry = Math.atan2(-ax.az, ax.ax);
         nCrowns++;
         switch (cr.type) {
           case 'pyramid':
-            if (lit) glowParts.push({ geom: pyrRect(ob, ax, y0, y1, 0), color: lit.clone().multiplyScalar(0.42), style: 3 });
+            if (lit) glow(pyrRect(ob, ax, y0, y1, 0), 0.42);
             else crownTrim.push({ geom: pyrRect(ob, ax, y0, y1, 0), color: dark, style: 3 });
             break;
           case 'mansard':
@@ -6206,14 +6228,20 @@
             break;
           }
           case 'lattice': {   // an open steel pyramid: the four hips and two rings of purlins, floodlit
-            const lo = rectOf(ob, ax, 1.0), apex = [ob.cx, y1, ob.cz], col = lit ? lit.clone().multiplyScalar(0.5) : new THREE.Color(0xbfc6cc);
-            const push = (g) => (lit ? glowParts : crownTrim).push({ geom: g, color: col, style: 3 });
+            const lo = rectOf(ob, ax, 1.0), apex = [ob.cx, y1, ob.cz];
+            const push = (g) => (lit ? glow(g, 0.5) : crownTrim.push({ geom: g, color: new THREE.Color(0xbfc6cc), style: 3 }));
             for (let k2 = 0; k2 < 4; k2++) push(bar([lo[k2][0], y0, lo[k2][1]], apex, 0.7));
             for (const f of [0.33, 0.66]) {
               const r2 = rectOf(ob, ax, 1.0 - f), y = y0 + hc * f;
               for (let k2 = 0; k2 < 4; k2++) push(bar([r2[k2][0], y, r2[k2][1]], [r2[(k2 + 1) % 4][0], y, r2[(k2 + 1) % 4][1]], 0.45));
             }
             push(bar([ob.cx, y1 - 0.5, ob.cz], [ob.cx, y1 + hc * 0.35, ob.cz], 0.5));
+            if (themed) {   // the faces between the bars glow too (the pyramid reads solid in the photo): a wash sheet inside the bars
+              const sk = rectOf(ob, ax, 0.94), t = [];
+              for (let k2 = 0; k2 < 4; k2++) { const a2 = sk[k2], b2 = sk[(k2 + 1) % 4]; t.push(a2[0], y0 + 0.4, a2[1], b2[0], y0 + 0.4, b2[1], ob.cx, y1 - 0.8, ob.cz); }
+              const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(t), 3)); g.computeVertexNormals();
+              sheetOf(g, tslot, 0.7);
+            }
             break;
           }
           case 'ziggurat': {   // stepped tiers that keep the facade
@@ -6222,19 +6250,20 @@
               c.copy(th.color);
               appendBuilding(chk2, rectOf(ob, ax, 1.0 - 0.13 * (k2 + 1)), y0 + k2 * dh, y0 + (k2 + 1) * dh + 0.01, c, th.style >= 20 ? 17 : th.style, th.base);
             }
-            if (lit) glowParts.push({ geom: box(ax.hl * 2 * 0.5, 1.2, ax.hs * 2 * 0.5, ob.cx, y1 + 0.6, ob.cz, Math.atan2(-ax.az, ax.ax)), color: lit.clone().multiplyScalar(0.45), style: 3 });
+            if (lit) glow(box(ax.hl * 2 * 0.5, 1.2, ax.hs * 2 * 0.5, ob.cx, y1 + 0.6, ob.cz, ry), 0.45);
+            if (themed) { const sc = 1.0 - 0.13 * steps; sheetOf(box(ax.hl * 2 * sc + 0.8, dh, ax.hs * 2 * sc + 0.8, ob.cx, y0 + (steps - 0.5) * dh, ob.cz, ry), tslot, 0.5); }   // the top tier washed
             break;
           }
           case 'lantern': {   // a lit box on the roof, a smaller dark frame around it
             const gl = lit ? lit.clone().multiplyScalar(0.5) : new THREE.Color(0x6f7c86);
-            glowParts.push({ geom: box(ax.hl * 2 * 0.62, hc, ax.hs * 2 * 0.62, ob.cx, y0 + hc / 2, ob.cz, Math.atan2(-ax.az, ax.ax)), color: gl, style: 3 });
+            (themed ? themeParts : glowParts).push({ geom: box(ax.hl * 2 * 0.62, hc, ax.hs * 2 * 0.62, ob.cx, y0 + hc / 2, ob.cz, ry), color: gl, lit: gl, mix: 1, slot: tslot, style: 3 });
             c.copy(th.color);
             appendBuilding(chk2, rectOf(ob, ax, 0.72), y0, y0 + hc * 0.35, c, 3, th.base);
             break;
           }
           case 'blade': {   // the Comcast Technology Center: a narrow lit blade standing in a dark frame
             const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);
-            const ry = Math.atan2(-ax.az, ax.ax), bw = ax.hl * 2 * 0.86, bt = Math.max(3, ax.hs * 2 * 0.16), fr = new THREE.Color(0x3a4046);
+            const bw = ax.hl * 2 * 0.86, bt = Math.max(3, ax.hs * 2 * 0.16), fr = new THREE.Color(0x3a4046);
             glowParts.push({ geom: box(bw, hc * 0.9, bt, ob.cx, y0 + hc * 0.47, ob.cz, ry), color: gl, style: 3 });
             for (const s of [-1, 1]) crownTrim.push({ geom: box(1.6, hc, bt + 1.2, ob.cx + ax.ax * (bw / 2 + 0.8) * s, y0 + hc / 2, ob.cz + ax.az * (bw / 2 + 0.8) * s, ry), color: fr, style: 3 });
             crownTrim.push({ geom: box(bw + 3.2, 1.4, bt + 1.2, ob.cx, y0 + hc - 0.7, ob.cz, ry), color: fr, style: 3 });
@@ -6250,13 +6279,22 @@
             c.copy(th.color);
             if (th.style >= 20) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
             else appendBuilding(chk2, half, y0 - 0.5, y1, c, th.style, th.base);
-            if (lit) glowParts.push({ geom: box(ax.hl * 2 * keep * 0.9, 1.4, ax.hs * 2 * 0.9, ob.cx + ax.ax * ax.hl * (keep - 1), y1 + 0.7, ob.cz + ax.az * ax.hl * (keep - 1), Math.atan2(-ax.az, ax.ax)), color: lit.clone().multiplyScalar(0.45), style: 3 });
+            if (lit) glow(box(ax.hl * 2 * keep * 0.9, 1.4, ax.hs * 2 * 0.9, ob.cx + ax.ax * ax.hl * (keep - 1), y1 + 0.7, ob.cz + ax.az * ax.hl * (keep - 1), ry), 0.45);
+            if (themed) {   // the crown floors read as one lit block (the Comcast Center in the photo): a wash sheet 0.4 m outside them
+              const su0 = cr.sides === 3 ? 0 : keep - 1, sv0 = cr.sides === 3 ? -0.45 : 0, sw = cr.sides === 3 ? 1.6 : 2 * keep, sd = cr.sides === 3 ? 1.1 : 2;
+              sheetOf(box(ax.hl * sw + 0.8, y1 - y0 + 0.6, ax.hs * sd + 0.8, ob.cx + ax.ax * ax.hl * su0 + ax.px * ax.hs * sv0, (y0 + y1) / 2, ob.cz + ax.az * ax.hl * su0 + ax.pz * ax.hs * sv0, ry), tslot, 0.5);
+            }
             break;
           }
           case 'spire': {   // a mast, and a lit sign on the roof where the spec lights one
             const g = new THREE.CylinderGeometry(0.5, 1.2, hc, 8); g.translate(ob.cx, y1 + hc / 2, ob.cz);
             crownTrim.push({ geom: g, color: new THREE.Color(0x8c9196), style: 3 });
-            if (lit) glowParts.push({ geom: box(Math.min(16, ax.hl * 1.2), 5, 1.2, ob.cx + ax.px * (ax.hs - 1.5), y1 + 3.2, ob.cz + ax.pz * (ax.hs - 1.5), Math.atan2(-ax.az, ax.ax)), color: lit.clone().multiplyScalar(0.55), style: 3 });
+            if (lit) glow(box(Math.min(16, ax.hl * 1.2), 5, 1.2, ob.cx + ax.px * (ax.hs - 1.5), y1 + 3.2, ob.cz + ax.pz * (ax.hs - 1.5), ry), 0.55);
+            break;
+          }
+          case 'band': {   // an LED band around the parapet of a flat-topped tower (the PECO Building, Round 81); cuts nothing off the body
+            const gl = (lit || new THREE.Color(0x9fb0c0)).clone().multiplyScalar(0.5);
+            (themed ? themeParts : glowParts).push({ geom: box(ax.hl * 2 + 0.5, 2.6, ax.hs * 2 + 0.5, ob.cx, y1 - 1.5, ob.cz, ry), color: gl, lit: gl, mix: 1, slot: tslot, style: 3 });
             break;
           }
           default: nCrowns--;
@@ -6428,17 +6466,18 @@
         g.translate(cx, (y0 + y1) / 2, cz);
         return g;
       };
-      const crown = (cx, cz, base, tiers, gc, wc) => {
+      const crown = (cx, cz, base, tiers, gc, wc, slot) => {
+        const wl = wc.clone().multiplyScalar(0.5);   // the trim's house glow: the chevrons' white neon (Round 81: it takes the night's theme)
         for (const [w, wallTop, apex] of tiers) {
           lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, false), color: gc, style: 21, baseY: base });
           lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 21, baseY: base });
-          // white trim: eave band + crossed ridge caps read as the nested chevrons
-          lmTrim.push({ geom: box(w + 0.9, 1.3, w + 0.9, cx, base + wallTop + 0.2, cz, ryG), color: wc, style: 3 });
+          // white trim: eave band + crossed ridge caps read as the nested chevrons; lit after dark
+          themeParts.push({ geom: box(w + 0.9, 1.3, w + 0.9, cx, base + wallTop + 0.2, cz, ryG), color: wc, lit: wl, mix: 1, slot, style: 3 });
           for (const ns of [0, 1]) {
             const rg = box(w, 0.75, 0.75, 0, 0, 0, 0);
             rg.rotateY(ryG + ns * Math.PI / 2);
             rg.translate(cx, base + apex - 0.2, cz);
-            lmTrim.push({ geom: rg, color: wc, style: 3 });
+            themeParts.push({ geom: rg, color: wc, lit: wl, mix: 1, slot, style: 3 });
           }
         }
       };
@@ -6454,7 +6493,7 @@
         for (const [w, top] of [[36, 223], [26, 233], [17, 242]]) {
           appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, w, w), base + 180, base + top, c, 3, base);
         }
-        crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite);
+        crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite, themeSlotN++ % 4);
         lmTrim.push({ geom: pyr4(cx, cz, 8, base + 251, base + 258, 1.0), color: cSilver, style: 3 });
         const mast = new THREE.CylinderGeometry(0.7, 1.0, 23, 8); mast.translate(cx, base + 258 + 11.5, cz);
         lmTrim.push({ geom: mast, color: cSilver, style: 3 });
@@ -6470,7 +6509,7 @@
         appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 36, 36), base + 148, base + 185, c, 3, base);
         appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 34, 34), base + 183, base + 207, c, 3, base);
         appendBuilding(getGlassChunk(cx, cz), sqPoly(cx, cz, 22, 22), base + 205, base + 224, c, 3, base);
-        crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite);
+        crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite, themeSlotN++ % 4);
         lmTrim.push({ geom: pyr4(cx, cz, 5, base + 253, base + 258, 0.4), color: cWhite, style: 3 });
       }
       // --- City Hall: the full Second Empire block (its outline was dropped at pack
@@ -6485,6 +6524,8 @@
         const cWhiteM = new THREE.Color(0xdde0e2);           // painted metal above the masonry limit
         const cDome = new THREE.Color(0xbfc9d3);
         const cPenn = new THREE.Color(0x4c4536);             // weathered bronze, warm dark
+        const chSlot = themeSlotN++ % 4;                     // Round 81: the tower is floodlit in the night's colour
+        const floodlit = (geom, col, k, mix) => themeParts.push({ geom, color: col, lit: col.clone().multiplyScalar(k), mix, slot: chSlot, style: 3 });
         // hollow square around the courtyard, arched-window facade style, mansard wings
         c.copy(cStone);
         appendBuilding(getChunk(bx, bz), sqPoly(bx, bz, 148, 143), base - 1, base + 27, c, 1, base, [sqPoly(bx, bz, 64, 59)]);
@@ -6515,7 +6556,7 @@
         for (const su of [-1, 1]) for (const sv of [-1, 1]) {
           const tx = cx + fl.nx * su * 8 + fl.dx * sv * 8, tz = cz + fl.nz * su * 8 + fl.dz * sv * 8;
           const tur = new THREE.CylinderGeometry(1.5, 1.5, 23, 8); tur.translate(tx, base + 103 + 11.5, tz);
-          lmTrim.push({ geom: tur, color: cWhiteM, style: 3 });
+          floodlit(tur, cWhiteM, 0.3, 0.55);
           const tc = new THREE.CylinderGeometry(0.1, 1.5, 3.2, 8); tc.translate(tx, base + 126.5 + 1.6, tz);
           lmTrim.push({ geom: tc, color: cDome, style: 3 });
         }
@@ -6530,17 +6571,20 @@
           disc.rotateZ(Math.PI / 2);
           disc.rotateY(ryG + ns * Math.PI / 2);
           disc.translate(cx + ux * s * 8.45, base + 116, cz + uz * s * 8.45);
-          lmTrim.push({ geom: disc, color: new THREE.Color(0xe9dca6), style: 3 });
+          floodlit(disc, new THREE.Color(0xe9dca6), 0.5, 0.3);   // the clock faces: lit amber, tinted a little by the theme
         }
         // ogee dome as stacked frustums, then the lantern
         for (const [w0, w1, y0, y1] of [[16.5, 12.5, 124, 133], [12.5, 7.5, 133, 143], [7.5, 3.6, 143, 151.5]]) {
           const f = new THREE.CylinderGeometry(w1 * 0.707, w0 * 0.707, y1 - y0, 4, 1);
           f.rotateY(Math.PI / 4 + ryG);
           f.translate(cx, base + (y0 + y1) / 2, cz);
-          lmTrim.push({ geom: f, color: cDome, style: 3 });
+          floodlit(f, cDome, 0.3, 0.55);
         }
         const lant = new THREE.CylinderGeometry(2.0, 2.6, 4.3, 8); lant.translate(cx, base + 151.5 + 2.15, cz);
-        lmTrim.push({ geom: lant, color: cWhiteM, style: 3 });
+        floodlit(lant, cWhiteM, 0.35, 0.55);
+        // the wash: sheets outside the masonry shaft and the clock stage, the floodlit tower of the photo
+        sheetOf(box(23, 62, 23, cx, base + 72, cz, ryG), chSlot, 0.5, true);
+        sheetOf(box(17.3, 21.3, 17.3, cx, base + 113.35, cz, ryG), chSlot, 0.45, true);
         // William Penn — 37 ft figure sculpted from primitives: stockinged calves under
         // a knee-length coat flaring at the hem, broad shoulders, brimmed hat, left arm
         // extended northeast (toward Penn Treaty Park). Reads as the statue, not a post.
@@ -6975,6 +7019,7 @@
       const STEEL = '#2452a6', CABLE = '#214a96', FLOOR = '#1c3f7c', ASPHALT = '#262422', WALK = '#6e6656';
       const GRANITE = '#4c3320', GRANITE_LO = '#3e2818', GRANITE_HI = '#563b26', GRANITE_TOP = '#5e422b';   // a sunlit south face takes about twice the tower face's light: darker still
       const CAB = 15.5, TRUSS_H = 8.2, TRUSS_LO = 1.6, TRUSS_HI = TRUSS_LO + TRUSS_H;   // the cable planes; the truss chords over the floor
+      const cableLit = new THREE.Color(0x8c96a4), cableCol = new THREE.Color(CABLE);   // Round 81: the cables carry the LED strings, white most nights, the theme's colour on its nights
       const deckY = (t) => yA + (yMid - yA) * Math.sin(Math.PI * t) * 0.85 + (yMid - yA) * 0.15 * (1 - Math.abs(2 * t - 1));
       const segs = 80, len = L / segs, endRun = 34 / L;   // 12 m truss panels; the floor narrows inside the anchorages
       for (let i = 0; i < segs; i++) {
@@ -7064,10 +7109,59 @@
           g.rotateZ(Math.atan2(y1 - y0, len));
           g.rotateY(ry);
           g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2);
-          addP(g, CABLE);
+          const slot = Math.floor(i / 10) % 4;   // a two-colour night runs in bands of ten panels
+          themeParts.push({ geom: g, color: cableCol, lit: cableLit, mix: 1, slot, style: 3 });
           const top = deckY(t0) + TRUSS_HI + 0.5;   // the suspender lands on the truss's top chord
-          if (t0 > endRun && t0 < 1 - endRun && y0 - top > 1.5) addP(box(0.3, y0 - top, 0.3, x0, (y0 + top) / 2, z0, 0), CABLE);
+          if (t0 > endRun && t0 < 1 - endRun && y0 - top > 1.5) themeParts.push({ geom: box(0.3, y0 - top, 0.3, x0, (y0 + top) / 2, z0, 0), color: cableCol, lit: cableLit, mix: 1, slot, style: 3 });
         }
+      }
+      // Round 81: the walkway lamps (one a panel a side outside the anchorage runs, the real 12 m
+      // spacing), the LED strings' nodes every 6 m along the cables and the deck edges, and a wash
+      // on the towers' legs and piers
+      {
+        const lampG = mergeColored([
+          { geom: new THREE.CylinderGeometry(0.07, 0.12, 4.2, 6).translate(0, 2.1, 0), color: new THREE.Color(0x2a2a2c), style: 3 },
+          { geom: new THREE.BoxGeometry(0.5, 0.45, 0.5).translate(0, 4.4, 0), color: new THREE.Color(0x3a3a3c), style: 3 },
+        ]);
+        const lampAt = [];
+        for (let i = 0; i < segs; i++) {
+          const t = (i + 0.5) / segs;
+          if (t < endRun || t > 1 - endRun) continue;
+          const yD = deckY(t) + 4.475;
+          for (const s of [-1, 1]) lampAt.push([A[0] + dx * t - uz * s * 18.9, yD, A[1] + dz * t + ux * s * 18.9]);
+        }
+        bfbLampMesh = new THREE.InstancedMesh(lampG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.2 }), lampAt.length);
+        const mtx = new THREE.Matrix4();
+        lampAt.forEach((p, i) => { mtx.makeRotationY(ry); mtx.setPosition(p[0], p[1], p[2]); bfbLampMesh.setMatrixAt(i, mtx); });
+        bfbLampMesh.castShadow = true; bfbLampMesh.frustumCulled = false;
+        groupCity.add(bfbLampMesh);
+        for (const p of lampAt) bfbLampPts.push(p[0], p[1] + 4.4, p[2]);   // the lamp heads: glow points on the streetlamps' material, made in that step
+        const nodePos = [], nodeSlot = [], nN = Math.round(L / 6);
+        for (let i = 0; i <= nN; i++) {
+          const t = i / nN, sl = Math.floor(t * 7.99) % 4;
+          for (const s of [-1, 1]) {
+            nodePos.push(A[0] + dx * t - uz * s * CAB, cableY(t) + 0.8, A[1] + dz * t + ux * s * CAB); nodeSlot.push(sl);
+            if (t > endRun && t < 1 - endRun) { nodePos.push(A[0] + dx * t - uz * s * 19.8, deckY(t) + 0.9, A[1] + dz * t + ux * s * 19.8); nodeSlot.push(sl); }   // on the floor's outer edge, under the walkway
+          }
+        }
+        const ng = new THREE.BufferGeometry();
+        ng.setAttribute('position', new THREE.BufferAttribute(new Float32Array(nodePos), 3));
+        ng.setAttribute('color', new THREE.BufferAttribute(new Float32Array(nodePos.length), 3));
+        bfbNodesMat = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
+        bfbNodesMat.onBeforeCompile = (sh) => {
+          sh.vertexShader = sh.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * clamp(1600.0 / max(1.0, -mvPosition.z), 1.6, 6.0);');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.1, length(gl_PointCoord - vec2(0.5)));');
+        };
+        postRaw(bfbNodesMat);
+        bfbNodes = new THREE.Points(ng, bfbNodesMat);
+        bfbNodes.frustumCulled = false; bfbNodes.renderOrder = 11; bfbNodes.visible = false;
+        bfbNodes.userData.slot = new Float32Array(nodeSlot);
+        groupCity.add(bfbNodes);
+        tw.forEach((t, ti) => {   // the wash: the piers and the legs above the deck, floodlit granite and steel
+          const x = A[0] + dx * t, z = A[1] + dz * t, dY = deckY(t);
+          sheetOf(box(47, 14.5, 21, x, TERRAIN.water + 3, z, pry), ti, 0.55, true);
+          for (const s of [-1, 1]) sheetOf(box(7.6, topY - (dY + 7), 9.4, x - uz * s * CAB, (dY + 7 + topY) / 2, z + ux * s * CAB, pry), ti, 0.45, true);
+        });
       }
       const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.3 }));
       m.castShadow = true;
@@ -7215,6 +7309,48 @@
           });
         }
       }
+    }
+    if (themeParts.length) {   // the night's themed lights (Round 81): one mesh, the house colour in aLit, the theme in uTheme0..3 by aSlot, mixed by aMix
+      const g = mergeColored(themeParts); freeOnUpload(g);
+      THEME.nParts = themeParts.length;
+      themeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
+      themeMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uNight = nightUniform;
+        for (const k in themeU) sh.uniforms[k] = themeU[k];
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', '#include <common>\nattribute vec3 aLit; attribute float aMix; attribute float aSlot; varying vec3 vLit; varying vec2 vTheme;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLit = aLit; vTheme = vec2(aMix, aSlot);');
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <common>', '#include <common>\nuniform float uNight, uThemeOn; uniform vec3 uTheme0, uTheme1, uTheme2, uTheme3; varying vec3 vLit; varying vec2 vTheme;')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, vTheme.y)), mix(uTheme2, uTheme3, step(2.5, vTheme.y)), step(1.5, vTheme.y));\n  totalEmissiveRadiance += mix(vLit, tc, uThemeOn * vTheme.x) * uNight * 2.4; }');
+      };
+      themeMesh = new THREE.Mesh(g, themeMat);
+      themeMesh.castShadow = true;
+      groupCity.add(themeMesh);
+    }
+    if (themeSheets.length) {   // the wash sheets: additive colour over the floodlit masonry and the lit crown floors, rewritten as the theme eases
+      const geoms = themeSheets.map((sh) => (sh.geom.index ? sh.geom.toNonIndexed() : sh.geom));
+      let n = 0; for (const g of geoms) n += g.attributes.position.count;
+      const pos = new Float32Array(n * 3), slot = new Float32Array(n), wgt = new Float32Array(n);
+      let o = 0;
+      themeSheets.forEach((sh, i) => {
+        const g = geoms[i], vc = g.attributes.position.count, p = g.attributes.position.array;
+        pos.set(p, o * 3); slot.fill(sh.slot, o, o + vc);
+        let y0 = Infinity, y1 = -Infinity;
+        for (let v = 0; v < vc; v++) { const y = p[v * 3 + 1]; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+        for (let v = 0; v < vc; v++) wgt[o + v] = sh.grad && y1 > y0 ? sh.w * (1.25 - 0.75 * (p[v * 3 + 1] - y0) / (y1 - y0)) : sh.w;   // the floods stand at the foot
+        o += vc;
+      });
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3), 3));
+      themeSheetMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+      postRaw(themeSheetMat);
+      themeSheet = new THREE.Mesh(g, themeSheetMat);
+      themeSheet.frustumCulled = false; themeSheet.renderOrder = 10; themeSheet.visible = false;
+      themeSheet.userData.slot = slot; themeSheet.userData.w = wgt;
+      THEME.nSheets = themeSheets.length;
+      groupCity.add(themeSheet);
     }
     for (const [nm, x, z, hh] of [['Lincoln Financial Field', -1920, 4932, 50], ['Citizens Bank Park', -1869, 4375, 58], ['Xfinity Mobile Arena (Wells Fargo Center)', -2327, 4880, 50]]) {
       const el = document.createElement('div'); el.className = 'lbl'; el.textContent = nm; labelsRoot.appendChild(el);
@@ -9625,9 +9761,11 @@
         ['Streetlights', 'Every one of the city\'s 200,000 street lamps, lit at dusk.']] }],
     ['Concerts and games', {
       d: [['Concerts', 'From 9 am on the day of a show a placard hangs over the venue with the night\'s lineup and a Tickets link. The M key or the layers panel turns them off.'],
-        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.']],
+        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.'],
+        ['Lights', 'After dark the skyline\'s crowns and the Ben Franklin Bridge glow in the night\'s colour: a team\'s on its game day, a cause\'s from BOMA Philadelphia\'s illumination calendar. The time panel names it.']],
       t: [['Concerts', 'From 9 am on the day of a show a placard hangs over the venue with the night\'s lineup and a Tickets link. The layers panel turns them off.'],
-        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.']] }],
+        ['Games', 'While the Phillies, Eagles, Flyers or 76ers play, a score bubble hangs over the ballpark, the stadium or the arena, and for an hour after the final.'],
+        ['Lights', 'After dark the skyline\'s crowns and the Ben Franklin Bridge glow in the night\'s colour: a team\'s on its game day, a cause\'s from BOMA Philadelphia\'s illumination calendar. The time panel names it.']] }],
     ['Names and places', {
       d: [['Street names', 'Painted on the roads. The N key.'],
         ['Landmark labels', 'Off by default. The L key turns the citywide set on.'],
@@ -13794,6 +13932,16 @@
     poleGlow.renderOrder = 11;
     poleGlow.visible = false;
     groupCity.add(poleGlow);
+    if (bfbLampPts.length) {   // the Ben Franklin Bridge's walkway lamps (Round 81): warm LED points, on with the streetlamps
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(bfbLampPts), 3));
+      const bc = new Float32Array(bfbLampPts.length);
+      for (let i = 0; i < bc.length; i += 3) { bc[i] = 1.0; bc[i + 1] = 0.8; bc[i + 2] = 0.55; }
+      bg.setAttribute('color', new THREE.BufferAttribute(bc, 3));
+      bfbLampGlow = new THREE.Points(bg, poleMat);
+      bfbLampGlow.frustumCulled = false; bfbLampGlow.renderOrder = 11; bfbLampGlow.visible = false;
+      groupCity.add(bfbLampGlow);
+    }
     if (POLE_MESH_CAP > 0) {
       // one instanced pole: tapered shaft + arm + head, 9 m reference height,
       // y-scaled per pole (uniform-in-plane, so the rotation gotcha never bites)
@@ -13915,10 +14063,13 @@
       if (floodPts) { floodPts.visible = night > 0.01; floodMat.opacity = night * 0.95; }
       if (haloMesh) { haloMesh.visible = night > 0.01; haloMat.opacity = night * 0.16; }
     }
+    if (themeSheet) { themeSheet.visible = night > 0.01; themeSheetMat.opacity = night * 0.6; }   // the skyline lights' wash and the bridge's LED nodes (Round 81)
+    if (bfbNodes) { bfbNodes.visible = night > 0.01; bfbNodesMat.opacity = night; }
     if (!LIGHTS.ready) return;
     const show = LIGHTS.on && night > 0.01;
     poleGlow.visible = show;
     if (show) poleMat.opacity = night;
+    if (bfbLampGlow) bfbLampGlow.visible = show;
     if (poleMesh) {
       poleMesh.visible = LIGHTS.on;
       if (LIGHTS.on && (now >= poleReconAt || camera.position.distanceToSquared(poleLastCam) > 220 * 220)) {
@@ -13927,6 +14078,165 @@
         poleReconcile();
       }
     }
+  }
+
+  // ---------------------------------------------------------------- skyline lights (Round 81)
+  // Philadelphia's crowns light in one colour most nights: the Eagles' green on a game day, the
+  // Phillies' red, the Flyers' orange, the Sixers' blue, else the cause BOMA Philadelphia's Building
+  // Illumination Calendar lists for the date (lights.json, baked from the calendar's own JSON by
+  // bake_lights.py, the served copy taken when it is newer), else every crown's own white. The
+  // theme follows the MODEL date like the markets (a pinned clock shows that night's colour); the
+  // game days come from ESPN's scoreboards for the day viewed (regular season and postseason, home
+  // or away, four small answers once per day per session); every change eases twenty seconds. The
+  // themed geometry rides one mesh (themeMat: the vertex colour by day, aLit the house night colour,
+  // aMix how far the theme replaces it, aSlot which of the night's colours), the wash sheets a
+  // second (additive, their colour rewritten as the ease moves), the bridge's LED nodes a third.
+  // ?lights=<team|colour[,colour]|hex|off> pins it; __dbg.lights(name), __dbg.lightsState().
+  let themeMesh = null, themeMat = null, themeSheet = null, themeSheetMat = null;
+  let bfbNodes = null, bfbNodesMat = null, bfbLampMesh = null, bfbLampGlow = null;
+  const bfbLampPts = [];   // the bridge's lamp heads, for the streetlamps step
+  const themeU = { uTheme0: { value: new THREE.Color(0) }, uTheme1: { value: new THREE.Color(0) }, uTheme2: { value: new THREE.Color(0) }, uTheme3: { value: new THREE.Color(0) }, uThemeOn: { value: 0 } };
+  const LIGHT_COLORS = { white: 0xf4f1ea, green: 0x1ec24a, red: 0xff2a2a, orange: 0xff7a1a, blue: 0x2457ff, teal: 0x14c8c8, purple: 0x8a2bff, pink: 0xff5fb0, yellow: 0xffd21a, gold: 0xffb300, cyan: 0x22d8ff, magenta: 0xff30e0, crimson: 0xc8102e, gray: 0xb8bcc2, maroon: 0x8a1c2b, burgundy: 0x7a1030, silver: 0xd8dde3, lavender: 0xb69cff, navy: 0x1a2a8a, lightblue: 0x7fc8ff };
+  const LIGHT_TEAMS = [{ k: 'nfl', name: 'Go Birds', color: 'green' }, { k: 'mlb', name: 'Go Phils', color: 'red' }, { k: 'nhl', name: 'Go Flyers', color: 'orange' }, { k: 'nba', name: 'Go Sixers', color: 'blue' }];
+  const LIGHT_PINS = { eagles: 'nfl', birds: 'nfl', phillies: 'mlb', phils: 'mlb', flyers: 'nhl', sixers: 'nba', '76ers': 'nba' };
+  function lightsDateKey(y, m, d) { return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d; }
+  function lightsDayGap(a, b) {   // whole days from one YYYY-MM-DD to another
+    const pa = a.split('-'), pb = b.split('-');
+    return Math.round((Date.UTC(+pb[0], +pb[1] - 1, +pb[2]) - Date.UTC(+pa[0], +pa[1] - 1, +pa[2])) / 86400000);
+  }
+  function lightsLocalKey(ms) {   // the Philadelphia calendar day of an instant (the offset read on the local day, as setClockToNow does)
+    const u = new Date(ms);
+    let off = tzOffsetMin(u.getUTCFullYear(), u.getUTCMonth() + 1, u.getUTCDate());
+    let l = new Date(ms + off * 60000);
+    off = tzOffsetMin(l.getUTCFullYear(), l.getUTCMonth() + 1, l.getUTCDate());
+    l = new Date(ms + off * 60000);
+    return lightsDateKey(l.getUTCFullYear(), l.getUTCMonth() + 1, l.getUTCDate());
+  }
+  function lightsGameDays(d, into) {   // an ESPN scoreboard answer -> the Philadelphia days a Philadelphia team plays (never preseason), into[day] = true
+    let n = 0;
+    for (const e of (d && d.events) || []) {
+      const c = e && e.competitions && e.competitions[0];
+      if (!c || (e.season && +e.season.type === 1)) continue;
+      if (!(c.competitors || []).some((t) => t && t.team && t.team.abbreviation === 'PHI')) continue;
+      const ms = Date.parse(e.date);
+      if (!(ms > 0)) continue;
+      into[lightsLocalKey(ms)] = true; n++;
+    }
+    return n;
+  }
+  function lightsCalOf(d) {   // the calendar's rows, checked: dates, known colours, a plain name
+    if (!d || !Array.isArray(d.rows)) return null;
+    const ok = /^\d{4}-\d{2}-\d{2}$/;
+    const rows = d.rows.filter((r) => r && ok.test(r.from) && ok.test(r.to) && r.to >= r.from && Array.isArray(r.c) && r.c.length)
+      .map((r) => ({ from: r.from, to: r.to, c: r.c.filter((c) => LIGHT_COLORS[c] !== undefined), n: String(r.n || '').replace(/[<>]/g, '').slice(0, 120) }))
+      .filter((r) => r.c.length);
+    return { t: +d.t || 0, rows };
+  }
+  function lightsThemeAt(y, m, d, games, cal) {   // -> { colors, name, src }: a team's game day first (Eagles, Phillies, Flyers, Sixers), then the calendar's most specific request, then the house white
+    const key = lightsDateKey(y, m, d);
+    for (const t of LIGHT_TEAMS) { const s = games && games[t.k]; if (s && s[key]) return { colors: [t.color], name: t.name, src: t.k }; }
+    let best = null, bestSpan = 0;
+    for (const r of (cal && cal.rows) || []) {
+      if (key < r.from || key > r.to) continue;
+      const span = lightsDayGap(r.from, r.to);
+      if (!best || span < bestSpan || (span === bestSpan && r.from > best.from)) { best = r; bestSpan = span; }
+    }
+    if (best) return { colors: best.c.slice(0, 4), name: best.n, src: 'boma' };
+    return { colors: ['white'], name: '', src: 'house' };
+  }
+  function lightsPinTheme(pin) {   // ?lights=<team|colour[,colour]|hex|off> -> a theme, or null when the pin says nothing
+    if (!pin) return null;
+    const p = String(pin).toLowerCase();
+    if (p === 'off' || p === 'house') return { colors: ['white'], name: '', src: 'house' };
+    const tk = LIGHT_PINS[p];
+    if (tk) { const t = LIGHT_TEAMS.find((q) => q.k === tk); return { colors: [t.color], name: t.name, src: 'pin' }; }
+    if (/^[0-9a-f]{6}$/.test(p)) return { colors: ['#' + p], name: '', src: 'pin' };
+    const cs = p.split(',').filter((c) => LIGHT_COLORS[c] !== undefined).slice(0, 4);
+    return cs.length ? { colors: cs, name: '', src: 'pin' } : null;
+  }
+  function lightsLabel(th) { return th.colors.join(' and ') + (th.name ? ', ' + th.name : ''); }
+  const THEME = {
+    key: '', gen: 0, pin: (/[?&]lights=([a-z0-9,]+)/i.exec(location.search) || [])[1] || null,
+    label: '', src: '', name: '', colors: [], nParts: 0, nSheets: 0,
+    tgt: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)), cur: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)),
+    on: 0, tOn: 0, seeded: false, settled: false, calSrc: 'built in',
+    cal: lightsCalOf(typeof LIGHTS_CAL !== 'undefined' ? LIGHTS_CAL : null) || { t: 0, rows: [] },
+  };
+  const LGAMES = { days: { nfl: {}, mlb: {}, nhl: {}, nba: {} }, fetched: {}, busy: '', fails: 0, retryAt: 0 };
+  const LIGHTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/lights.json' : 'https://philly3d.com/lights.json';
+  const _thSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _thHouse = new THREE.Color(0.55, 0.56, 0.6), _thTmp = new THREE.Color();
+  function fetchLightsCal() {   // the served calendar (baked twice a day on philly3d.com) replaces the built-in copy when it is newer
+    if (!septaCanFetch) return;
+    fetch(LIGHTS_URL, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined })
+      .then((r) => (r && r.ok ? r.json() : null))
+      .then((d) => { const cal = lightsCalOf(d); if (cal && cal.t > THEME.cal.t) { THEME.cal = cal; THEME.calSrc = 'served'; THEME.gen++; } })
+      .catch(() => {});
+  }
+  function lightsFetchDate(key, now) {   // the four scoreboards for one calendar day, once per day per session (the answers are small; the season schedules run to megabytes)
+    if (!septaCanFetch || document.hidden || LGAMES.fetched[key] || LGAMES.busy || now < LGAMES.retryAt) return;
+    LGAMES.busy = key;
+    Promise.all(LIGHT_TEAMS.map((t) => fetch(SCORE_URL(t.k) + '?dates=' + key.replace(/-/g, ''), { signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined }).then((r) => (r && r.ok ? r.json() : null)).catch(() => null)))
+      .then((res) => {
+        LGAMES.busy = '';
+        let ok = 0;
+        res.forEach((d, i) => { if (d && Array.isArray(d.events)) { ok++; lightsGameDays(d, LGAMES.days[LIGHT_TEAMS[i].k]); } });
+        if (ok) { LGAMES.fetched[key] = true; if (ok === LIGHT_TEAMS.length) LGAMES.fails = 0; }
+        if (ok < LIGHT_TEAMS.length) { LGAMES.fails++; LGAMES.retryAt = performance.now() + Math.min(600000, 30000 * LGAMES.fails); }
+        THEME.gen++;
+      });
+  }
+  function lightsRetarget() {   // the date, the pin or the data changed: the night's colours and the panel's line
+    const th = lightsPinTheme(THEME.pin) || lightsThemeAt(clock.y, clock.m, clock.d, LGAMES.days, THEME.cal);
+    THEME.src = th.src; THEME.name = th.name; THEME.colors = th.colors;
+    THEME.label = lightsLabel(th);
+    THEME.tOn = th.src === 'house' ? 0 : 1;
+    const n = th.colors.length;
+    for (let i = 0; i < 4; i++) { const c = th.colors[i % n]; THEME.tgt[i].setHex(c[0] === '#' ? parseInt(c.slice(1), 16) : LIGHT_COLORS[c]); }
+    THEME.settled = false;
+    refreshTimeUI();
+  }
+  function updateLightsTheme(now, dt) {
+    if (!themeMat && !themeSheet && !bfbNodes) return;
+    const dk = lightsDateKey(clock.y, clock.m, clock.d);
+    if (!THEME.pin) lightsFetchDate(dk, now);   // the day's games, once per day viewed
+    const key = dk + ':' + (THEME.pin || '') + ':' + THEME.gen;
+    if (key !== THEME.key) { THEME.key = key; lightsRetarget(); }
+    const e = THEME.seeded ? 1 - Math.exp(-dt / 20) : 1;   // the first evaluation lands; every later change eases twenty seconds
+    THEME.seeded = true;
+    let moving = false;
+    for (let i = 0; i < 4; i++) { const c = THEME.cur[i], t = THEME.tgt[i]; if (Math.abs(c.r - t.r) + Math.abs(c.g - t.g) + Math.abs(c.b - t.b) > 0.003) { c.lerp(t, e); moving = true; } }
+    if (Math.abs(THEME.on - THEME.tOn) > 0.003) { THEME.on += (THEME.tOn - THEME.on) * e; moving = true; }
+    if (THEME.settled && !moving) return;
+    if (!moving) { for (let i = 0; i < 4; i++) THEME.cur[i].copy(THEME.tgt[i]); THEME.on = THEME.tOn; }
+    THEME.settled = !moving;
+    for (let i = 0; i < 4; i++) {
+      // the emissive reads the colour in linear light (the palette is sRGB; a stored value is lifted on output, gotcha 11), 0.45 of it,
+      // lifted for a hue whose luminance would read dim (a pure red or blue) up to 2.2 times
+      const c = THEME.cur[i];
+      _thTmp.copy(c).convertSRGBToLinear();
+      const lum = 0.2126 * _thTmp.r + 0.7152 * _thTmp.g + 0.0722 * _thTmp.b;
+      themeU['uTheme' + i].value.copy(_thTmp).multiplyScalar(0.45 * clamp(0.75 / Math.max(0.2, lum), 1, 2.2));
+      _thSlot[i].copy(_thHouse).lerp(c, THEME.on);   // the sheets and the nodes write display colour (postRaw undoes the tone map): the colour itself, the house white when the theme is off
+    }
+    themeU.uThemeOn.value = THEME.on;
+    if (themeSheet) {
+      const a = themeSheet.geometry.attributes.color, sl = themeSheet.userData.slot, w = themeSheet.userData.w;
+      for (let i = 0; i < sl.length; i++) { const c = _thSlot[sl[i]]; a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i]; }
+      a.needsUpdate = true;
+    }
+    if (bfbNodes) {
+      const a = bfbNodes.geometry.attributes.color, sl = bfbNodes.userData.slot;
+      for (let i = 0; i < sl.length; i++) { const c = _thSlot[sl[i]]; a.array[i * 3] = c.r; a.array[i * 3 + 1] = c.g; a.array[i * 3 + 2] = c.b; }
+      a.needsUpdate = true;
+    }
+  }
+  function lightsPin(n) { THEME.pin = n == null ? null : String(n); THEME.gen++; THEME.seeded = false; }   // a pin lands at once; only the calendar's own changes ease
+  function lightsSettle() { THEME.seeded = false; THEME.gen++; }   // __dbg: land the next evaluation without the ease
+  function lightsState() {
+    return { src: THEME.src, colors: THEME.colors, name: THEME.name, label: THEME.label, on: +THEME.on.toFixed(3), tOn: THEME.tOn, pin: THEME.pin,
+      cal: { t: THEME.cal.t, rows: THEME.cal.rows.length, src: THEME.calSrc }, games: Object.fromEntries(LIGHT_TEAMS.map((t) => [t.k, Object.keys(LGAMES.days[t.k]).length])), fetched: Object.keys(LGAMES.fetched),
+      parts: THEME.nParts, sheets: THEME.nSheets, nodes: bfbNodes ? bfbNodes.geometry.attributes.position.count : 0, lamps: bfbLampMesh ? bfbLampMesh.count : 0,
+      uniforms: [0, 1, 2, 3].map((i) => themeU['uTheme' + i].value.getHexString()) };
   }
 
   // ---- street closures (Round 79). The Streets Department's live closure permits and the
@@ -15682,6 +15992,7 @@
     timeSunEl.textContent = '↑ ' + fmtTime(sunCache.rise) + '  ↓ ' + fmtTime(sunCache.set)
       + (WX.ok ? '   ☁ ' + Math.round(WX.cover * 100) + '%' + (WX.temp == null ? '' : ' ' + Math.round(WX.temp) + '°F') + (wxLabelFull() ? ' ' + wxLabelFull() : '') : '')
       + (AQI.ok && AQI.aqi != null ? '   Air quality: ' + AQI.aqi + ', ' + AQI.cat : '')
+      + (THEME.label ? '   Lights: ' + THEME.label : '')
       + (LTN.live && LTN.n10 > 0 ? '   ⚡ ' + LTN.n10 + (LTN.n10 === 1 ? ' strike' : ' strikes') + ' in 10 min, nearest ' + Math.max(1, Math.round(LTN.nearestKm * 0.6214)) + ' mi' : '')
       + '   ☾ ' + phase + ' ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', Up ' + oct : ', Set');
   }
@@ -15961,6 +16272,7 @@
     updateAmtrak(now, dt);
     updateTraffic(now, dt);
     updateLights(now);
+    updateLightsTheme(now, dt);
     updateTreePick();
     updateMarkets();
     updateMarketPick();
@@ -15989,6 +16301,7 @@
   setInterval(fetchWeather, 15 * 60 * 1000);
   fetchAqi();
   setInterval(fetchAqi, 15 * 60 * 1000);   // the readings are hourly; 15 min keeps a value at most 75 min old
+  fetchLightsCal();   // the illumination calendar's served copy, once (Round 81); the day's games follow the clock in updateLightsTheme
   fetchNws();
   setInterval(fetchNws, 5 * 60 * 1000);   // the NWS caches its answers ~5 min anyway
   // remembered layers and clock, then the share hash on top of them; the rows
@@ -16058,7 +16371,7 @@
         { id: 't2170', num: '2170', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
         { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
-      wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi,
+      wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal,
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     if (hashView.p) applyHashView(hashView.p);

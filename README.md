@@ -27,6 +27,10 @@ real solar clock over it all.
   says they are open; tap a tent for the hours and payments, or search a market by name.
 - **Markers and art.** The state's 348 historical markers stand at their posts with the
   full text a tap away, and the city's Percent for Art works on their plinths.
+- **Lights.** After dark the researched crowns, City Hall's tower and the Ben Franklin Bridge
+  glow in the night's colour: a Philadelphia team's on its game day (Eagles, then Phillies,
+  Flyers, Sixers), otherwise the cause on BOMA Philadelphia's Building Illumination Calendar,
+  else white. The time panel names it; `?lights=eagles` or `?lights=purple` pins it.
 - **Search** (/): an address, a landmark, a neighborhood, a street, a SEPTA route, and
   near six thousand named places from the city's own basemap: schools, churches, parks,
   rec centers, hospitals, libraries.
@@ -74,7 +78,9 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
   domain); traffic volumes: PennDOT RMSTRAFFIC.
 - Live: SEPTA TransitView, Indego / Bicycle Transit Systems, adsb.fi (ADS-B), aisstream.io
   (AIS), Amtraker (Amtrak positions, ODC-By), Open-Meteo (weather), Air Management
-  Services (air quality), the Streets Department (closures), OpenStreetMap Nominatim (search).
+  Services (air quality), the Streets Department (closures), ESPN's public scoreboards (scores
+  and the game days that colour the skyline), BOMA Philadelphia's Building Illumination
+  Calendar (the other nights' colours), OpenStreetMap Nominatim (search).
 - Rendering: [Three.js](https://threejs.org/) r149 (MIT), inlined.
 - Landmark massing and colors researched from public photographs, Philadelphia OPA
   parcels, and city LiDAR.

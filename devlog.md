@@ -3850,3 +3850,87 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   for the Pages copy; `nginx -t` passed, the reload took, and the first curl after it still
   hit an old worker (the old headers for a second, then the new). The capture in
   `ops/philly3d.vhost.live` is the new live file.
+
+## Round 81: the skyline's lighting theme, and lamps on the Ben Franklin Bridge (Sep 17)
+
+- **Mike, with five photos: the skyscrapers and the Ben Franklin Bridge usually wear a light
+  theme, almost always the colour of the team playing that day (Eagles first, then Phillies,
+  Flyers, Sixers), otherwise BOMA Philadelphia's Building Illumination Calendar; add it, and
+  put lampposts along the bridge at the photo's density.** His picks in planning: regular season
+  and postseason count, home or away, preseason never; the calendar is baked into the page at
+  every build and re-baked twice a day on the VPS.
+- **The sources.** BOMA's page is Squarespace: `?format=json` returns the events collection
+  (`upcoming` and `past`, 30 a page, `pagination.nextPageOffset` to walk it; 212 entries from
+  December 2022 to November 2026, epoch-millisecond dates starting at Eastern midnight), the
+  colour only in the title ("LIGHT UP BLUE!", "GREEN/WHITE/RED", "PINK & BLUE", "(BLUE/YELLOW)",
+  and 69 titles with no colour word: "GO BIRDS!!!", "FLYERS HOME OPENER", "Breast Cancer
+  Awareness"); no CORS header, so `fetch_lights.py` pages it and `bake_lights.py` parses it
+  (the colour words in title order with aliases folded and a rainbow expanded, a team or cause
+  keyword when the title names none, the lighting clause and the "(Copy)" duplicates stripped,
+  dates as Philadelphia calendar days through `zoneinfo`, rows older than a year dropped): 94
+  rows from the 212, nine titles dropped for naming no colour (Welcome Cherelle Parker, Election
+  Day, World Smile Day and the like, all past). The DRPA publishes no bridge schedule, only a
+  request form (the fan site's "lighting schedule" page has none either), so the bridge follows
+  the same theme. ESPN's season schedules answer a browser (`teams/phi/schedule`) but run 0.8 to
+  2.8 MB a league and list only the current season type (the NHL and NBA were in preseason on
+  Sep 17), so the page reads the scoreboard for the day it is showing instead
+  (`scoreboard?dates=YYYYMMDD`, 22 to 230 KB a league, every event carrying its
+  `season.type`), four answers once per day viewed per session; curl gets 403 from ESPN, a
+  browser does not, so the game days are the page's, never the VPS's.
+- **What glows.** A themed crown is a `theme` flag in `towers.json` (`bake_towers.py`'s
+  override table: the Comcast Center, both Liberty Places, BNY Mellon, Three Logan, FMC (given
+  the `lit` it lacked), Cira, Two Logan, One South Broad, and the PECO Building with a new `band`
+  crown, a 2.6 m LED band around the parapet that cuts nothing off the body); the CTC's blade
+  and the PSFS sign keep their own colour, as Mike's skyline photo shows the CTC white while the
+  city is green. Their lit parts, the Liberty Places' chevron trim (the eave bands and ridge
+  caps, never lit before), City Hall's turrets, dome frusta, lantern and clock faces (mix 0.55
+  and 0.3: floodlit metal, tinted amber faces) and the bridge's 160 cable boxes and suspenders
+  ride one merged mesh, `themeParts` → `themeMat`: the vertex colour is the day colour,
+  `aLit` the house night colour (what each glowed before), `aMix` how far the theme replaces
+  it, `aSlot` which of the night's four colours (`mergeColored` carries the three attributes
+  when any part has a `lit`), the emissive `mix(aLit, uTheme[slot], uThemeOn * aMix) * uNight *
+  2.4`. Wash sheets (`themeSheets`: one additive mesh through `postRaw`, colours rewritten as
+  the theme eases, MAX-blended over the facade) give BNY's lattice its glowing faces, the
+  Comcast Center, Three Logan, FMC and Cira their lit crown floors, City Hall's shaft and clock
+  stage the floodlit wash (weights 0.5 and 0.45, brighter at the foot and fading up: the
+  first cut at 0.9 flat was an opaque green block), and the bridge's piers and legs theirs.
+  A two-colour night deals the colours across the buildings in build order (One Liberty blue,
+  Two Liberty pink) and in bands of ten panels along the bridge. 348 themed parts, 13 sheets.
+- **The bridge.** 148 walkway lamps, one a panel a side outside the anchorage runs (12.3 m,
+  the photo's spacing), a 4.2 m shaft with a lantern head as one instanced mesh that casts
+  shadows, their heads warm LED points on the streetlamps' own material so they obey the G
+  layer and civil dusk; 636 LED nodes every 6 m along each main cable and each floor edge (the
+  first cut put the deck nodes on the walkway line, where they blended with the lamps into
+  pinkish dots); the cable strings' house colour a pale white. The DRPA's own 2023 LED system
+  runs the suspenders and cables and does colour effects, white by default.
+- **The resolver and the clock.** `lightsThemeAt` (a pure block, `tests/test_lights_js.py`
+  runs it under JavaScriptCore with the clock's DST helpers): the first team in the order whose
+  day set holds the date, else the calendar row containing it with the shortest span (ties to
+  the later start: a one-day request beats a month), else the house white. It follows the
+  MODEL date like the markets, so a pinned clock shows that night's colour; the served
+  `/lights.json` replaces the built-in copy when its `t` is newer. Changes ease twenty seconds
+  (the haze's curve); a `?lights=<team|colour[,colour]|hex|off>` pin lands at once. The time
+  panel gains "Lights: green, Go Birds", "Lights: teal, OCD Awareness Week", "Lights: white".
+  The palette is sRGB and the emissive is linear (gotcha 11): the first build read mint, the
+  colours now convert with `convertSRGBToLinear` and a luminance lift up to 2.2 for dim hues.
+- **Found on the way.** BNY Mellon's lattice had stood inside its shaft since Round 54: a
+  researched tower whose record is a glass-tower part (`t === 10`) was drawn to its full height
+  on that branch instead of the crown datum `hTop`; it is cut now and the pyramid stands over
+  the shaft with its mast.
+- **Verified in the pane** with `?lights=eagles` at night: the skyline from South Philly (CTC
+  white, the rest green), the Liberty chevrons, BNY's pyramid, the Logans, One South Broad's
+  lantern, PECO's band, FMC and Cira, City Hall's wash, the bridge from the river and along the
+  span (cables, suspenders, nodes, lamps, piers); `?lights=off` gives white strings and every
+  crown its old colour; `pink,blue` deals the pair; noon shows nothing lit and white chevrons;
+  the live path with the pane's hidden flag spoofed resolves Sep 17 to "red, Go Phils" once the
+  scoreboard lands (the calendar's "blue, Pulmonary Fibrosis Awareness Month" until then),
+  Sep 29 to "orange, Go Flyers" from the calendar, Oct 12 to "teal, OCD Awareness Week"; the
+  phone viewport renders it without bloom. 11.9 M triangles and 387 calls at the skyline pose.
+- **On the VPS (Sep 17, 04:52 UTC, Mike's pick).** `fetch_lights.py` and `bake_lights.py` in
+  `/opt/philly3d`, `lights-bake.timer` every twelve hours (the first bake 94 rows, 8.8 KB, 2.3
+  KB gzipped), `location = /lights.json` (max-age 600, ACAO * for the Pages copy) in the live
+  vhost after a backup and `nginx -t`, captured back into `ops/philly3d.vhost.live`.
+  97 tests pass (24 new: `test_lights_bake.py`, `test_lights_js.py`; `test_towers.py` learned
+  the `band` crown, `test_build.py` the `LIGHTS_CAL` const). Page 26.65 MB (+35 KB). Devlog,
+  handoff, DATA-LICENSE (a BOMA section, ESPN's scoreboards among the live feeds), README,
+  CLAUDE.md, ops/README section 10, the credit lines and the About panel, the guide's card.
