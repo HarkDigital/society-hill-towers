@@ -1357,11 +1357,23 @@
   // the road loops' read: the drawn ground where it is land, null where the mesh is water (the
   // carved Schuylkill channel, the Delaware bed, the WWB dip), so the bridge and deck logic
   // that keys off siteY and the DEM keeps the inputs it was tuned on there
+  const BANK_BAND = 40, BANK_BLEND = 30;   // the carve band, and the width over which the two reads are mixed
   function groundMeshLandY(x, z) {
     const y = groundMeshY(x, z);
     if (y === null || y <= TERRAIN.water + 0.85) return null;   // the carve's bank floor, not the sheet's 0.3 (Round 85: a bank road read the carved slope and sawtoothed to the water)
-    if (schEdges && schEdges(x, z)[0] < 40) return null;         // inside the bank ramp a road stands on the DEM, like the overpass chains
-    return y;
+    if (!schEdges) return y;
+    // Inside the bank ramp a road stands on the DEM, like the overpass chains (Round 85), and
+    // a quay skirt walls the gap. Round 87 eases the handover instead of switching at the band
+    // edge: the DEM is smeared 150 m there and stands 3.5 m over the carved ground at the
+    // median and 12.5 m at the worst, so the old hard test stepped a bank road 6.7 m in one
+    // 30 m interval, which is the break the owner saw along Kelly Drive. Mixed over
+    // BANK_BLEND the same two heights meet in a ramp.
+    const d = schEdges(x, z)[0];
+    if (d >= BANK_BAND + BANK_BLEND) return y;
+    if (d < BANK_BAND) return null;                              // fully the DEM's, as before
+    const dem = siteY(x, z, 'road');
+    const t = (d - BANK_BAND) / BANK_BLEND;                      // 0 at the band edge, 1 where the mesh wins outright
+    return dem + (y - dem) * t;
   }
   // the bank floor (Round 85, the critique): a non-deck roadway, a car, a bus or a drum on the Schuylkill's DEM-smeared bank never sits
   // under water + 1.2 inside the outline, eased to the low-land datum (water + 0.45) across the 40 m carve band and nothing beyond it,
@@ -2509,6 +2521,11 @@
   // the parking podium's north face; the approaches enter it through two open cuts whose floors, walls and
   // headwalls the rail step builds. Each cut is an oriented box: centre, the direction from its open end to
   // the headwall, its length and width, the floor height and the headwall's top (model frame)
+  // 30th Street Station: the covered lower level, from Chestnut Street to the podium's face.
+  // Both RAIL_CUTS footprints lie inside it with room to spare (south z -870.8 to -795.2,
+  // north z -1396 to -1370), which is the whole point: a window that clips a cut leaves the
+  // track in that half undrawn (Round 87).
+  const RAIL_STATION = { x0: -3330, x1: -3050, z0: -1490, z1: -630 };
   const RAIL_CUTS = [
     { cx: -3223.8, cz: -833, dx: 0.25, dz: -0.968, len: 62, w: 62, floor: -4.3, head: 3.2 },   // south: Chestnut Street to the old Post Office's face (head: the DEM at the headwall, 10.8 to 11.7 m ASL)
     { cx: -3131, cz: -1383, dx: 0, dz: 1, len: 26, w: 86, floor: -4.2, head: 2.5 },            // north: the podium's face
@@ -5582,13 +5599,44 @@
   // line can draw from the same distribution and stop reading as a darker, redder city past the
   // outer districts' edge; the draw is per building, not tied to any block
   const WIDE_COLS = [], WIDE_COLS_N = 1024;
-  // Round 68 (Mike: the buildings without Mapillary data should be lighter, so the divide is
-  // less jarring): the far ring and the towns draw the outer districts' own colours, yet from
-  // over East Park the far side rendered a third darker (masked building pixels 116 against
-  // 154 luminance, Sep 16): block strips with wall-to-wall roofs, no street trees, no yards. A
-  // gain on their low walls and their roof caps closes what the eye sees
-  const FAR_LIGHT = 1.8, FAR_DESAT = 0.15;   // 1.35 lifted the far side from 116 to 131; the register saturates, so the gain runs ahead of the read
-  const farLight = (c) => { const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b; c.r = Math.min(1, (c.r + (l - c.r) * FAR_DESAT) * FAR_LIGHT); c.g = Math.min(1, (c.g + (l - c.g) * FAR_DESAT) * FAR_LIGHT); c.b = Math.min(1, (c.b + (l - c.b) * FAR_DESAT) * FAR_LIGHT); return c; };
+  // Round 68 had put a 1.8 gain with a 0.15 desaturation on the far ring's low walls and roof
+  // caps, because from over East Park the far side rendered a third darker (masked building
+  // pixels 116 against 154 luminance): block strips with wall-to-wall roofs, no street trees,
+  // no yards. Round 87 takes it out (Mike: the buildings coloured with Mapillary data and those
+  // that aren't must read closer). The gain was compensating a structural difference with a
+  // colour error, and it paid for it twice over: at 1.8 the register saturates, which the old
+  // comment admitted ("the gain runs ahead of the read"), so the mean stored red reached 0.973
+  // of 1.0 and hue variety died with it. Measured across the York Street band, the same
+  // rowhouse neighbourhood read 0.508 luminance on the outer districts' side and 0.821 on the
+  // far ring's, a 62 per cent step visible as a line across North Philadelphia. The reservoir
+  // already holds the outer districts' own final colours, so a gain of 1 makes the two tiers
+  // statistically identical by construction, and Round 87's woodland and street trees close the
+  // structural gap Round 68 was really looking at.
+  // The walls take no gain at all: the reservoir already holds the outer districts' own
+  // final colours, so 1.0 is an exact statistical match (0.482 against their 0.480).
+  // The roof CAPS are the part of Round 68's reading that was real. city.b64's roof words
+  // draw a darker set of ROOF_PAL entries than wide.b64's, so the far ring's caps measured
+  // 0.202 luminance against the outer districts' 0.248, and since the far ring is merged
+  // block strips with wall-to-wall roofs seen from above, those caps are most of what the
+  // eye reads there. FAR_CAP_LIGHT matches the two tiers' cap means instead of lifting the
+  // whole city 80 per cent to compensate, and at 1.23 nothing clips.
+  const FAR_LIGHT = 1.0, FAR_DESAT = 0, FAR_CAP_LIGHT = 1.23;
+  const farGain = (c, gain) => {
+    if (gain === 1 && FAR_DESAT === 0) return c;
+    const l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b;
+    // a soft knee, never a per-channel clamp: at 1.8 the old clamp pinned 81.8 per cent of
+    // the red channels at exactly 1.0 and crushed the tier's red spread from 0.101 to 0.073
+    const KNEE = 0.8;
+    const g = (v) => {
+      const u = (v + (l - v) * FAR_DESAT) * gain;
+      // below the knee a plain gain; above it an exponential approach to 1, so the map stays
+      // monotone and a channel that would have overshot keeps its order against its neighbours
+      return u <= KNEE ? u : KNEE + (1 - KNEE) * (1 - Math.exp(-(u - KNEE) / (1 - KNEE)));
+    };
+    c.r = g(c.r); c.g = g(c.g); c.b = g(c.b); return c;
+  };
+  const farLight = (c) => farGain(c, FAR_LIGHT);
+  const farCapLight = (c) => farGain(c, FAR_CAP_LIGHT);
   // per-tier colour tallies for __dbg.colStats() (Round 65): the mean wall colour handed to the
   // chunk builder for every low building, and how many roofs carried a measured cap colour
   const COL_STAT = {};
@@ -5664,21 +5712,37 @@
     // sRGB triples as the photos show them and one byte per building record, 255 for
     // none. wallInv puts a photographed colour into the register the hand palettes
     // use (linear values, r149 legacy pipeline): a street photo's wall median is a
-    // shaded, half-exposed surface, so its luminance is lifted on a 0.56 power (0.2
-    // lands at 0.41, the palLow register; Round 48 set 0.6, Round 50 lifted it); a cool or
+    // shaded, half-exposed surface, so its luminance is lifted on a power; a cool or
     // green cast (blue over red is skylight on a shaded wall, green over both is foliage
-    // and camera balance, neither is a wall) is folded to a neutral grey of the same
-    // luminance; and a warm colour gets back the chroma the median lost to trim and
-    // windows (1.6 since Round 50; 1.25 in Round 48), while a grey stays the grey it was
-    // measured as
+    // and camera balance, neither is a wall) is folded toward a neutral grey of the same
+    // luminance; and a warm colour gets back some of the chroma the median lost to trim
+    // and windows, while a grey stays the grey it was measured as.
+    // Round 87 (Mike: the photographed buildings and the rest must read closer) retunes
+    // three constants that had put the photographed fifth of the tier 15.4 per cent
+    // darker than the four fifths beside it (0.420 luminance against 0.496, measured
+    // over 24,570 and 87,445 walls):
+    //   WALL_LIFT 0.56 -> 0.45. The only knob that moves luminance. 0.42 closes the gap
+    //     to nothing; 0.45 leaves the photographs a shade darker than the invented
+    //     colours, which is the direction the measurement should win.
+    //   WALL_FOLD_MAX. The fold was capped at 1, and with the divisor at 0.12 * lum it
+    //     saturated for every cool palette entry: 14 of the 32 folded to EXACTLY zero
+    //     chroma and painted 8,145 buildings flat neutral grey, a quarter darker than the
+    //     brick around them. Those are the grey patches. Raising the divisor is measured
+    //     dead (0.12 -> 0.50 moves 8,145 to 7,895) because f still saturates, so the cap
+    //     is what has to move: at 0.6 a folded entry keeps 40 per cent of its cast and
+    //     reads as cool grey rather than dead grey.
+    //   WALL_WARM 1.6 -> 1.3. At 1.6 the blue channel clipped to zero on six entries
+    //     (#643c27 reached chroma 0.79), which is where the photographed population's
+    //     saturation spread of 0.185 came from against the fallback's 0.099.
+    const WALL_LIFT = 0.45, WALL_FOLD_MAX = 0.6, WALL_WARM = 1.3;
     const wallInv = (sr, sg, sb) => {
       let r = Math.pow(sr / 255, 2.2), g = Math.pow(sg / 255, 2.2), b = Math.pow(sb / 255, 2.2);
       const lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
       const cast = Math.max(b - r, g - Math.max(r, b));
-      if (cast > 0) { const f = Math.min(1, cast / Math.max(1e-4, 0.12 * lum)); r += (lum - r) * f; g += (lum - g) * f; b += (lum - b) * f; }
-      const lift = Math.pow(Math.max(lum, 0.01), 0.56);
+      if (cast > 0) { const f = Math.min(WALL_FOLD_MAX, cast / Math.max(1e-4, 0.12 * lum)); r += (lum - r) * f; g += (lum - g) * f; b += (lum - b) * f; }
+      const lift = Math.pow(Math.max(lum, 0.01), WALL_LIFT);
       const gain = lift / Math.max(lum, 1e-4);
-      const warm = r > g && g >= b ? 1.6 : 1.0;
+      const warm = r > g && g >= b ? WALL_WARM : 1.0;
       r = lift + (r * gain - lift) * warm; g = lift + (g * gain - lift) * warm; b = lift + (b * gain - lift) * warm;
       return new THREE.Color(Math.min(1, Math.max(0, r)), Math.min(1, Math.max(0, g)), Math.min(1, Math.max(0, b)));
     };
@@ -7647,7 +7711,7 @@
       else style = fabricStyle(fa, h, t, Math.abs(signedArea(poly)), i, 0);
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
-      if (capC && h <= 45 && t <= 6) farLight(capC);
+      if (capC && h <= 45 && t <= 6) farCapLight(capC);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + (capC ? 'Cap' : 'NoCap'), capC); colStat(tk + 'St' + style); colStat(fa ? tk + 'Fa' : tk + 'NoFa'); colStat(tk + 'Fh' + (fh > 0 ? 1 : 0)); COL_STAT[tk + 'Area'] = (COL_STAT[tk + 'Area'] || 0) + Math.abs(signedArea(poly)); }
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + 'Form' + rb[1]); colStat(rplan ? tk + 'Pitched' : tk + 'Flat'); if (wideSeam && cz > -5180 && cz < -4480 && cx > -3700 && cx < 2300) { colStat('farBandForm' + rb[1]); colStat(rplan ? 'farBandPitched' : 'farBandFlat'); colStat(capC ? 'farBandCap' : 'farBandNoCap', capC); colStat('farBand', c); } }
@@ -7716,6 +7780,17 @@
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
       roadRecs.push({ pts: densify(pts, 30), w, t, i });
     }
+    // how many runs end at each half-metre node key: a run's own end gets a mitre disc only
+    // where another run really meets it, so a genuine dangling end stays a plain square end
+    const endN = new Map();
+    for (const rc of roadRecs) {
+      if (rc.pts.length < 2) continue;
+      for (const e of [rc.pts[0], rc.pts[rc.pts.length - 1]]) {
+        const key = Math.round(e[0] * 2) + ':' + Math.round(e[1] * 2);
+        endN.set(key, (endN.get(key) || 0) + 1);
+      }
+    }
+    const endShared = (e) => (endN.get(Math.round(e[0] * 2) + ':' + Math.round(e[1] * 2)) || 0) > 1;
     const paveRoads = async () => {
       for (let ri = 0; ri < roadRecs.length; ri++) {
       const { pts, w, t, i } = roadRecs[ri];
@@ -7781,7 +7856,15 @@
             const dl = Math.hypot(ddx, ddz) || 1;
             rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, ddx / dl, ddz / dl, cls);
           }
+        } else if (endShared(a)) {
+          // Round 87: the fan ran at interior bends only, so where two OSM ways met at a node
+          // the two ribbons butted together unmitred and the grass showed through the corner,
+          // up to 7.86 m of it in Fairmount Park. A disc at a run's first point closes it, and
+          // only where another run really ends there, so the count stays in hand (240 of the
+          // park's 333 endpoint keys are shared, 93 are the real dangling ends).
+          rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls);
         }
+        if (j === pts.length - 2 && endShared(q)) rcFanF(q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls);
       }
       if ((ri & 2047) === 2047) await yieldNow();
       }
@@ -7876,9 +7959,15 @@
     // its footprint is cut from the north strip along that strip's own grid
     // lines, so the two meshes butt exactly (T-junction verts only, no overlap)
     const farGroundMat = groundSurfMat();
+    // the woodland tint rides vertex colour as a ratio against the shared meadow. Round 87
+    // gives it to the four far strips as well as the NW patch: the PPR parkland rings behind
+    // nwParkAt are citywide (West Fairmount Park 4.72 km2, East Fairmount 2.34, the Wissahickon
+    // 6.71), and until now the tint only reached the patch, whose box stops at z = -6600, so
+    // almost the whole of Fairmount Park read as the same flat olive as bare earth
+    const woodGroundMat = groundSurfMat({ vertexColors: true });
     let nwGroundMat = null, nwParkAt = null, nwWaterAt = null;
     if (P) {
-      nwGroundMat = groundSurfMat({ vertexColors: true });   // woodland tint rides vertex color as a ratio against the shared meadow
+      nwGroundMat = woodGroundMat;
       // official PPR parkland boundaries (nw_parks.json): the central Wissahickon
       // has no park polygon in the OSM extract (a nature_reserve relation the
       // city fetch never pulled), so the woodland tint reads the City's own lines
@@ -7926,7 +8015,7 @@
     }
     const pkC2 = new THREE.Color(WOODLAND), gdC2 = new THREE.Color(COLORS.ground);
     const nwR = [pkC2.r / gdC2.r, pkC2.g / gdC2.g, pkC2.b / gdC2.b];
-    const mkFarGround = (x0, x1, z0, z1, cell, hole, tint) => {
+    const mkFarGround = (x0, x1, z0, z1, cell, hole, tint, sink) => {
       const nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
       const pos = [];
       for (let j = 0; j <= nz; j++) for (let i = 0; i <= nx; i++) {
@@ -7936,11 +8025,11 @@
         const del = (beyondDem(x, z) || delawareTurn(x, z)) && delawareAt(x, z);
         let yy = (del ? TERRAIN.bed : (y < TERRAIN.water + 0.6 ? (eastOfDelaware(x, z) ? TERRAIN.bed : TERRAIN.water + 0.45) : y)) - 0.07;
         yy = riverCarve(x, z, yy);   // the Schuylkill's channel
-        if (tint && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
+        if (sink && nwWaterAt(x, z)) yy -= 3.0;   // bed under the draped creek/canal/river
         pos.push(x, yy, z);
       }
       let col = null;
-      if (tint) {
+      if (tint && nwParkAt) {
         // park membership blurred once so the woodland green feathers over a
         // cell instead of stair-stepping at the 50 m grid
         const t0 = new Float32Array((nx + 1) * (nz + 1));
@@ -7975,7 +8064,7 @@
       // the drawn surface, for conformDrape and the tufts; the NW patch registers after the
       // strip whose hole it fills, so it is searched first there
       registerGround(g, x0, x1, z0, z1, nx, nz, hole, skip, cell);
-      const m = new THREE.Mesh(g, tint ? nwGroundMat : farGroundMat);
+      const m = new THREE.Mesh(g, col ? woodGroundMat : farGroundMat);
       m.matrixAutoUpdate = false;
       groupCity.add(m);
     };
@@ -7992,8 +8081,8 @@
     for (const [x0, x1, z0, z1] of [
       [W.x0, W.x1, W.z0, WIDEB.z0], [W.x0, W.x1, WIDEB.z1, W.z1],
       [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
-    ]) mkFarGround(x0, x1, z0, z1, 100, nwHole, false);
-    if (nwHole) mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true);
+    ]) mkFarGround(x0, x1, z0, z1, 100, nwHole, true, false);
+    if (nwHole) mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true, true);
     // the apron: dark ground from the world's edge out to 60 km, well under the
     // river beds so nothing fights it. From altitude the city used to end in a
     // hard diagonal against the sky dome's below-horizon band; now it ends in
@@ -8758,21 +8847,38 @@
       v = new Int16Array(buf.buffer, 16);
     } catch (err) { console.error('tree inventory decode failed', err); plantProceduralTrees(); return; }
     const nAll = head[1];
+    // the packer's quantum, in millimetres in the header's fourth slot since Round 87 (it was a
+    // zero while the blob was 0.2 m units and the wide box only; 0 still decodes as 0.2)
+    const TQ = head[3] > 0 ? head[3] / 1000 : 0.2;
     const WB = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };  // wide tier (pack_wide.py)
+    // Round 87: the inventory is the whole city now (150,887 trees, 101,849 of them past the
+    // wide box), because the far ring had none at all and West Philadelphia, the Northeast and
+    // every park beyond x = -3700 stood bare. The wide box keeps its full forest; the trees
+    // beyond it are their own tier, a cheap crown on a stub trunk over a coarser chunk grid,
+    // since at that range they read as canopy cover rather than as trees
+    const OB = { x0: -11800, x1: 16300, z0: -21500, z1: 9500 };   // pack_trees.py CITY
+    const inWide = (x, z) => x > WB.x0 && x < WB.x1 && z > WB.z0 && z < WB.z1;
     const inCore = (x, z) => x > CORE_EXT.x0 && x < CORE_EXT.x1 && z > CORE_EXT.z0 && z < CORE_EXT.z1;
     const X = new Float32Array(nAll + 512), Z = new Float32Array(nAll + 512), GY = new Float32Array(nAll + 512);
     const CR = new Float32Array(nAll + 512), CY = new Float32Array(nAll + 512);
     const DBH = new Uint8Array(nAll + 512), NI = new Int16Array(nAll + 512);
-    const CORE = new Uint8Array(nAll + 512);
+    const CORE = new Uint8Array(nAll + 512), OUT = new Uint8Array(nAll + 512);
     let n = 0;
-    const keepTree = (x, z, dbh, ni, core) => {
+    // Bole height from the trunk diameter. Round 87 raised the cap from 5.2 m to 9: the old
+    // one was tuned on street trees, and once the survey came in citywide the parks brought
+    // trees of 40 to 60 inches, whose crown radius clamps at 7.5 m. Held to a 5.2 m bole,
+    // their crowns reached within a few centimetres of the grass (the canopy shader's
+    // per-vertex scale runs to 1.21) and read as boulders lying in the field rather than as
+    // trees. At 9 m a 60-inch oak carries its crown 2.6 m clear of the ground.
+    const boleH = (dbh) => clamp(2.4 + dbh * 0.1, 2.6, 9);
+    const keepTree = (x, z, dbh, ni, core, outer) => {
       if (vineCut(x, z, 2) !== null) return;   // no trees floating over the expressway cut
       const g = ni >= 0 ? (TREE_NAMES.g[ni] || 0) : 0;
       const st = TREE_STYLE[g] || TREE_STYLE[0];
-      X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0;
+      X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0; OUT[n] = outer ? 1 : 0;
       GY[n] = siteY(x, z, 'ground');
       CR[n] = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5);
-      CY[n] = GY[n] + clamp(2.4 + dbh * 0.1, 2.6, 5.2) * 0.75 + CR[n] * st[4] * 0.72;
+      CY[n] = GY[n] + boleH(dbh) * 0.75 + CR[n] * st[4] * 0.72;
       const k = Math.floor(x / TREE_CELL) + ':' + Math.floor(z / TREE_CELL);
       let cell = treePickGrid.get(k);
       if (!cell) { cell = []; treePickGrid.set(k, cell); }
@@ -8800,9 +8906,10 @@
       return false;
     };
     for (let i = 0; i < nAll; i++) {
-      const x = v[i * 4] / 5, z = v[i * 4 + 1] / 5;
+      const x = v[i * 4] * TQ, z = v[i * 4 + 1] * TQ;
       const core = inCore(x, z);
-      if (!core && isTouch && (i & 1)) continue;          // touch keeps half the wide forest
+      const outer = !core && !inWide(x, z);
+      if (!core && isTouch && (i & 1)) continue;          // touch keeps half the forest
       if (inWater(x, z) > -2) continue;
       if (core) {
         // the core's landmarks were rebuilt by hand and differ from the city
@@ -8810,8 +8917,8 @@
         if (insideBuilding(x, z) || nearBuildingEdge(x, z, 0.8)) continue;
         if (nearRoad(x, z, -1.2)) continue;               // >1.2 m INSIDE a road ribbon only
         if (bermHit(x, z)) continue;
-      } else if (septaSnapRoad(x, z, 2.4)) continue;      // wide tier: centerline strip only
-      keepTree(x, z, clamp(v[i * 4 + 2], 1, 60), v[i * 4 + 3], core);
+      } else if (septaSnapRoad(x, z, 2.4)) continue;      // the surveyed point can sit on a centerline
+      keepTree(x, z, clamp(v[i * 4 + 2], 1, 60), v[i * 4 + 3], core, outer);
     }
     const nInv = n;
     // curated grounds the survey doesn't cover: the towers' lawns, pool
@@ -8938,12 +9045,34 @@
       new THREE.IcosahedronGeometry(1, 0).scale(1.02, 0.5, 1.02).translate(0, 0.42, 0),
     ]);
     const pyrG = new THREE.ConeGeometry(1, 1.7, 7);
+    // The outer tier draws 101,849 trees past the wide box, so it takes the crown detail phones
+    // have had since Round 58 (the 20-face icosahedron, against 80 inside the wide box) and the
+    // wide tier's own trunk. Measured at the skyline, park, seam and high poses, the wide
+    // tier's 80-face crown on all of them cost 18.0 M triangles a frame against 13.3 M this
+    // way and 11.9 M before the round, which phones could not carry. The shader does the rest:
+    // canMat's per-vertex random scale lumps every crown and its 3D-noise mottle breaks up the
+    // facets, so the two tiers differ in smoothness, not in character. A per-chunk detail
+    // swap on camera distance would buy the near ones back and is the obvious next step.
+    const canOuterG = new THREE.IcosahedronGeometry(1, 0);
+    const trunkOuterG = new THREE.CylinderGeometry(0.18, 0.27, 3.6, 5, 1, true);
+    trunkOuterG.translate(0, 1.0, 0);   // trunkWideG's shape and datum, without the hidden caps
     const CHN = 3;
     const chunkOf = (x, z) => {
       const cx2 = clamp(Math.floor((x - WB.x0) / ((WB.x1 - WB.x0) / CHN)), 0, CHN - 1);
       const cz2 = clamp(Math.floor((z - WB.z0) / ((WB.z1 - WB.z0) / CHN)), 0, CHN - 1);
       return cx2 * CHN + cz2;
     };
+    // the outer tier's own grid: 8 by 8 over the city, so a chunk is about 3.5 by 3.9 km and
+    // culls as a whole, and the empty ones (the city is not a rectangle) cost nothing
+    const OCHN = 8, ocW = (OB.x1 - OB.x0) / OCHN, ocD = (OB.z1 - OB.z0) / OCHN;
+    const outerChunkOf = (x, z) => {
+      const cx2 = clamp(Math.floor((x - OB.x0) / ocW), 0, OCHN - 1);
+      const cz2 = clamp(Math.floor((z - OB.z0) / ocD), 0, OCHN - 1);
+      return cx2 * OCHN + cz2;
+    };
+    const ocCX = (c) => OB.x0 + (Math.floor(c / OCHN) + 0.5) * ocW;
+    const ocCZ = (c) => OB.z0 + ((c % OCHN) + 0.5) * ocD;
+    const ocR = Math.hypot(ocW, ocD) / 2 + 40;
     // instance transforms don't grow a shared geometry's unit-sized bounding
     // sphere, so every mesh gets its own cloned geometry with a hand-set
     // sphere over its real extent — wide chunks still frustum-cull as wholes
@@ -8995,9 +9124,13 @@
     // canopies split by shape (round crowns keep the core/wide chunk split;
     // vases, pyramids and conifer spires draw citywide in one mesh each), and
     // every non-conifer tree gets its trunk from the tier trunk meshes
-    const buckets = { core: [], cones: [], vases: [], pyrs: [], wide: [], tCore: [], tWide: [] };
+    const buckets = { core: [], cones: [], vases: [], pyrs: [], wide: [], tCore: [], tWide: [], outer: [] };
     for (let c = 0; c < CHN * CHN; c++) { buckets.wide.push([]); buckets.tWide.push([]); }
+    for (let c = 0; c < OCHN * OCHN; c++) buckets.outer.push([]);
     for (let i = 0; i < n; i++) {
+      // past the wide box every shape draws as the one cheap crown: at that range the species
+      // silhouettes cost more than they show
+      if (OUT[i]) { buckets.outer[outerChunkOf(X[i], Z[i])].push(i); continue; }
       const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
       const shape = (TREE_STYLE[g] || TREE_STYLE[0])[6];
       if (shape === 1) { buckets.cones.push(i); continue; }
@@ -9010,13 +9143,13 @@
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), cCan = new THREE.Color();
     const trunkScale = (dbh) => {
       const r = clamp(dbh * 0.0127, 0.06, 0.55) / 0.28;
-      const h = clamp(2.4 + dbh * 0.1, 2.6, 5.2) / 3.6;
+      const h = boleH(dbh) / 3.6;
       return [r, h];
     };
     const canopyAt = (i, st) => {
       // crown base clears head height; center rises with the crown's own
       // vertical extent so puffs sit low and columns ride high
-      const th = clamp(2.4 + DBH[i] * 0.1, 2.6, 5.2);
+      const th = boleH(DBH[i]);
       return GY[i] + th * 0.75 + CR[i] * st[4] * 0.72;
     };
     const paint = (mesh, idx, canopy, full) => {
@@ -9084,6 +9217,15 @@
       // (the wide tier carried a second lobe per crown for a round; the lumpy displacement
       // gives every crown its asymmetry now, and the lobes were 3.2M triangles a frame)
       if (wi.length && cardG) paintCards(wi, chCX(c), chCZ(c), chR, false, cardWideG);
+    }
+    // the outer tier: one crown mesh and one trunk mesh per non-empty city chunk
+    let nOuter = 0, nOuterChunks = 0;
+    for (let c = 0; c < OCHN * OCHN; c++) {
+      const oi = buckets.outer[c];
+      if (!oi.length) continue;
+      nOuter += oi.length; nOuterChunks++;
+      paint(instMesh(trunkOuterG, trunkMat, oi.length, ocCX(c), ocCZ(c), ocR), oi, false, false);
+      paint(instMesh(canOuterG, canMat, oi.length, ocCX(c), ocCZ(c), ocR), oi, true, false);
     }
     // species silhouettes, citywide: zelkova/elm vases and linden pyramids
     if (buckets.vases.length) paint(instMesh(vaseG, canMat, buckets.vases.length, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR), buckets.vases, true, false);
@@ -11987,11 +12129,11 @@
   // across a bridge and above the water on the river crossings, the tunnel and covered runs
   // (the 30th Street train shed) in the grid but not drawn. ?rails=0 skips the drawing.
   const railGrid = new Map(), RAIL_CELL = 36;
-  const railSegs = [];   // ax, az, bx, bz, ay, by, flags (1 tunnel, 2 bridge), per segment
+  const railSegs = [];   // ax, az, bx, bz, ay, by, flags (1 tunnel, 2 bridge), chain, per segment
   let railReady = false, RAIL_STATS = null;   // RAIL_STATS: the stitched corridor's counts (Round 85), __dbg.rail()
-  function railAdd(ax, az, bx, bz, ay, by, flags) {
+  function railAdd(ax, az, bx, bz, ay, by, flags, chain) {
     const s = railSegs.length;
-    railSegs.push(ax, az, bx, bz, ay, by, flags);
+    railSegs.push(ax, az, bx, bz, ay, by, flags, chain == null ? -1 : chain);
     const x0 = Math.floor(Math.min(ax, bx) / RAIL_CELL), x1 = Math.floor(Math.max(ax, bx) / RAIL_CELL);
     const z0 = Math.floor(Math.min(az, bz) / RAIL_CELL), z1 = Math.floor(Math.max(az, bz) / RAIL_CELL);
     for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
@@ -12001,9 +12143,17 @@
       a.push(s);
     }
   }
-  function railSnap(x, z, maxD) {   // [px, pz, ux, uz, py, flags] of the nearest track within maxD, or null
+  // [px, pz, ux, uz, py, flags, chain] of the nearest track within maxD, or null.
+  // The corridor's tracks sit a median 4.0 m apart and 73 per cent of close neighbours belong
+  // to different chains with independently smoothed heights and their own bridge and tunnel
+  // flags, so a plain nearest-segment answer hops between them (Round 87). `prefer` names the
+  // chain the caller is already riding: a segment of that chain wins unless another is nearer
+  // by more than `margin` metres.
+  function railSnap(x, z, maxD, prefer, margin) {
     const gx = Math.floor(x / RAIL_CELL), gz = Math.floor(z / RAIL_CELL), r = Math.ceil(maxD / RAIL_CELL);
-    let bd = maxD * maxD, best = null;
+    let bd = maxD * maxD, bs = -1, bt = 0;
+    let pd = maxD * maxD, ps = -1, pt = 0;
+    const want = prefer == null ? -1 : prefer;
     for (let cx2 = gx - r; cx2 <= gx + r; cx2++) for (let cz2 = gz - r; cz2 <= gz + r; cz2++) {
       const a = railGrid.get(cx2 + ':' + cz2);
       if (!a) continue;
@@ -12013,25 +12163,49 @@
         let t = ((x - ax) * dx + (z - az) * dz) / L2;
         t = t < 0 ? 0 : t > 1 ? 1 : t;
         const ex = ax + dx * t - x, ez = az + dz * t - z, d2 = ex * ex + ez * ez;
-        if (d2 < bd) { bd = d2; const L = Math.sqrt(L2); best = [ax + dx * t, az + dz * t, dx / L, dz / L, railSegs[s + 4] + (railSegs[s + 5] - railSegs[s + 4]) * t, railSegs[s + 6]]; }
+        if (d2 < bd) { bd = d2; bs = s; bt = t; }
+        if (want >= 0 && railSegs[s + 7] === want && d2 < pd) { pd = d2; ps = s; pt = t; }
       }
     }
-    return best;
+    let s = bs, t = bt;
+    if (ps >= 0 && Math.sqrt(pd) <= Math.sqrt(bd) + (margin || 0)) { s = ps; t = pt; }
+    if (s < 0) return null;
+    const ax = railSegs[s], az = railSegs[s + 1], dx = railSegs[s + 2] - ax, dz = railSegs[s + 3] - az;
+    const L = Math.hypot(dx, dz) || 1e-9;
+    return [ax + dx * t, az + dz * t, dx / L, dz / L, railSegs[s + 4] + (railSegs[s + 5] - railSegs[s + 4]) * t, railSegs[s + 6], railSegs[s + 7]];
   }
-  function railWalk(x, z, dx, dz, dist) {   // along the rails from (x, z) facing (dx, dz) for dist metres (negative walks back); [x, z, dx, dz, y, flags]
-    let px = x, pz = z, py = 0, fl = 0, left = Math.abs(dist);
+  // along the rails from (x, z) facing (dx, dz) for dist metres (negative walks back);
+  // [x, z, dx, dz, y, flags, chain]. `chain` in and out keeps a walk on the track it started
+  // on. Round 87: the step was 30 m, so one 24 to 27 m coupling walk was a single straight
+  // chord followed by a free nearest-track snap, and a bend of 13 degrees threw the tail
+  // 5.5 m sideways onto the parallel track. Simulated over the real grid that put 12 to 22
+  // per cent of the cars of a curving consist on another chain, changing membership every
+  // frame, with 377 tunnel-flag mismatches blinking cars out of existence and bridge-flag
+  // flips stepping them metres vertically. RAIL_STEP 6 m holds the overshoot under 1.4 m at
+  // the worst bend in the corridor, inside the 2 m that decides the neighbour.
+  const RAIL_STEP = 6, RAIL_WALK_R = 30;
+  // the right-of-way's floor over the drawn ground. Round 87 raised it from 0.45: at that
+  // value the ballast top sat 0.20 m over the ground and the railhead 0.36, and measured over
+  // the park's corridor half the samples were within 0.25 m of the mesh, so the track read as
+  // pale strips lying on the grass rather than as a raised roadbed on a skirt
+  const RAIL_LIFT = 0.75;
+  function railWalk(x, z, dx, dz, dist, chain) {
+    let px = x, pz = z, py = null, fl = 0, cc = chain == null ? -1 : chain;
+    let lx = x, lz = z, left = Math.abs(dist);
     const sgn = dist < 0 ? -1 : 1;
-    for (let guard = 0; left > 0 && guard < 400; guard++) {
-      const step = Math.min(left, 30);
+    const maxIt = Math.ceil(left / RAIL_STEP) + 4;
+    for (let it = 0; left > 0 && it < maxIt; it++) {
+      const step = Math.min(left, RAIL_STEP);
       px += dx * step * sgn; pz += dz * step * sgn;
-      const sn = railSnap(px, pz, 60);
-      if (!sn) break;
-      px = sn[0]; pz = sn[1]; py = sn[4]; fl = sn[5];
+      const sn = railSnap(px, pz, RAIL_WALK_R, cc >= 0 ? cc : undefined, 1.5);
+      if (!sn) { px = lx; pz = lz; break; }   // off the end of the data: stay on the last railhead
+      px = sn[0]; pz = sn[1]; py = sn[4]; fl = sn[5]; cc = sn[6];
+      lx = px; lz = pz;
       if (sn[2] * dx + sn[3] * dz < 0) { dx = -sn[2]; dz = -sn[3]; } else { dx = sn[2]; dz = sn[3]; }   // the heading stays continuous across a segment
       left -= step;
     }
-    if (!py) { const sn = railSnap(px, pz, 60); if (sn) { py = sn[4]; fl = sn[5]; } }
-    return [px, pz, dx, dz, py, fl];
+    if (py == null) { const sn = railSnap(px, pz, 60, cc >= 0 ? cc : undefined, 1.5); if (sn) { py = sn[4]; fl = sn[5]; cc = sn[6]; } }
+    return [px, pz, dx, dz, py == null ? 0 : py, fl, cc];
   }
   step('Laying the Northeast Corridor', () => {
     if (typeof RAIL_AMTRAK === 'undefined' || !RAIL_AMTRAK || !RAIL_AMTRAK.lines) return;
@@ -12052,43 +12226,60 @@
     const ends = new Map();
     lines.forEach((ln, i) => { for (const e of [0, 1]) { const k = nk(e ? ln.p[ln.p.length - 1] : ln.p[0]); let a2 = ends.get(k); if (!a2) { a2 = []; ends.set(k, a2); } a2.push([i, e]); } });
     const used = new Uint8Array(lines.length);
-    const chains = [];   // [{ pts: [[x, z, t, b], ...] }]
+    // A chain is { p: [[x, z], ...], sf: [flags per SEGMENT] }. Round 87 keeps the flags on the
+    // segments rather than on the points: a point at a stitched joint belongs to two ways, and
+    // combining its neighbours' flags got the run between them wrong either way. With the OR a
+    // tunnel bit walked backwards over a whole simplified chord, so six tunnels of 32 to 223 m
+    // in Fairmount Park became six undrawn holes of 81 to 266 m, 1,130 m in all, which is what
+    // left isolated strips of track between the Zoo and Belmont. With an AND a covered run lost
+    // its first and last sample and the station's lower level surfaced 7.6 m mid-concourse.
+    // A segment belongs to exactly one way, so it takes that way's flags and nothing bleeds.
+    const chains = [];
     const next = (i, e) => { const k = nk(e ? lines[i].p[lines[i].p.length - 1] : lines[i].p[0]); const a2 = ends.get(k); if (!a2 || a2.length !== 2) return null; const o = a2[0][0] === i && a2[0][1] === e ? a2[1] : a2[0]; return used[o[0]] ? null : o; };
-    const withFlags = (ln, rev) => { const q = ln.p.map((p) => [p[0], p[1], ln.t ? 1 : 0, ln.b ? 1 : 0]); return rev ? q.reverse() : q; };
+    const withFlags = (ln, rev) => {
+      const q = ln.p.map((p) => [p[0], p[1]]);
+      if (rev) q.reverse();
+      const f = (ln.t ? 1 : 0) | (ln.b ? 2 : 0);
+      return { p: q, sf: new Array(Math.max(0, q.length - 1)).fill(f) };
+    };
     for (let i0 = 0; i0 < lines.length; i0++) {
       if (used[i0]) continue;
       used[i0] = 1;
-      let pts = withFlags(lines[i0], false);
+      const ch = withFlags(lines[i0], false);
       let ti = i0, te = 1;   // the chain's tail: which line and which of its ends sits there
       for (let guard = 0; guard < 4000; guard++) {
         const o = next(ti, te);
         if (!o) break;
         used[o[0]] = 1;
-        pts = pts.concat(withFlags(lines[o[0]], o[1] === 1).slice(1));   // joined at its end: reversed, so its start is the new tail
+        const q = withFlags(lines[o[0]], o[1] === 1);   // joined at its end: reversed, so its start is the new tail
+        ch.p = ch.p.concat(q.p.slice(1)); ch.sf = ch.sf.concat(q.sf);
         ti = o[0]; te = o[1] === 1 ? 0 : 1;
-        if (nk(pts[pts.length - 1]) === nk(pts[0])) break;
+        if (nk(ch.p[ch.p.length - 1]) === nk(ch.p[0])) break;
       }
       let hi = i0, he = 0;   // the chain's head
       for (let guard = 0; guard < 4000; guard++) {
         const o = next(hi, he);
         if (!o) break;
         used[o[0]] = 1;
-        pts = withFlags(lines[o[0]], o[1] === 0).slice(0, -1).concat(pts);   // joined at its start: reversed, so its end meets our head
+        const q = withFlags(lines[o[0]], o[1] === 0);   // joined at its start: reversed, so its end meets our head
+        ch.p = q.p.slice(0, -1).concat(ch.p); ch.sf = q.sf.concat(ch.sf);
         hi = o[0]; he = o[1] === 0 ? 1 : 0;
-        if (nk(pts[pts.length - 1]) === nk(pts[0])) break;
+        if (nk(ch.p[ch.p.length - 1]) === nk(ch.p[0])) break;
       }
-      chains.push(pts);
+      chains.push(ch);
     }
     const overWater = (x, z) => !!(schRaster && schRaster(x, z));
     const nodeY = new Map();   // the height every chain end at a node shares
     const built = [];
-    for (const src of chains) {
+    for (const chn of chains) {
+      const src = chn.p, sfl = chn.sf;
       const pts = [], fl = [];
       for (let i = 0; i + 1 < src.length; i++) {
         const a2 = src[i], b2 = src[i + 1], n = Math.max(1, Math.round(Math.hypot(b2[0] - a2[0], b2[1] - a2[1]) / 20));
-        for (let k = 0; k < n; k++) { pts.push([a2[0] + (b2[0] - a2[0]) * k / n, a2[1] + (b2[1] - a2[1]) * k / n]); fl.push((a2[2] | b2[2] ? 1 : 0) | (a2[3] | b2[3] ? 2 : 0)); }
+        const sf = sfl[i] || 0;
+        for (let k = 0; k < n; k++) { pts.push([a2[0] + (b2[0] - a2[0]) * k / n, a2[1] + (b2[1] - a2[1]) * k / n]); fl.push(sf); }
       }
-      const last = src[src.length - 1]; pts.push([last[0], last[1]]); fl.push((last[2] ? 1 : 0) | (last[3] ? 2 : 0));
+      const last = src[src.length - 1]; pts.push([last[0], last[1]]); fl.push(sfl.length ? (sfl[sfl.length - 1] || 0) : 0);
       const n = pts.length;
       const ys = new Float64Array(n), water = new Uint8Array(n), fixed = new Uint8Array(n);
       const gnd = new Float64Array(n);   // the drawn ground under each sample (the mesh the eye sees, not the bilinear grid it was sampled from)
@@ -12096,7 +12287,7 @@
         const gm = groundMeshLandY(pts[i][0], pts[i][1]);
         gnd[i] = gm !== null ? gm : siteY(pts[i][0], pts[i][1], 'ground');
         water[i] = overWater(pts[i][0], pts[i][1]) ? 1 : 0;
-        ys[i] = Math.max(gnd[i] + 0.45, TERRAIN.water + 0.45);
+        ys[i] = Math.max(gnd[i] + RAIL_LIFT, TERRAIN.water + RAIL_LIFT);
       }
       // the spans: every run that is bridge-tagged or over the water ramps between its two abutments (never flat at the
       // higher one: a street overpass on a grade left a step at its low end) and, over the water, never under 9 m
@@ -12107,7 +12298,7 @@
         let wet = false; for (let k = i; k <= j; k++) if (water[k]) wet = true;
         let yA = i > 0 ? ys[i - 1] : ys[i], yB = j + 1 < n ? ys[j + 1] : ys[j];
         if (wet) { yA = Math.max(yA, TERRAIN.water + 9); yB = Math.max(yB, TERRAIN.water + 9); }
-        for (let k = i; k <= j; k++) { const t = (k - i + 1) / (j - i + 2); ys[k] = Math.max(yA + (yB - yA) * t, gnd[k] + 0.45, wet ? TERRAIN.water + 9 : -1e9); fixed[k] = 1; fl[k] |= 2; }   // never under the drawn ground: where the DEM carries the fill between two spans the ballast rides it
+        for (let k = i; k <= j; k++) { const t = (k - i + 1) / (j - i + 2); ys[k] = Math.max(yA + (yB - yA) * t, gnd[k] + RAIL_LIFT, wet ? TERRAIN.water + 9 : -1e9); fixed[k] = 1; fl[k] |= 2; }   // never under the drawn ground: where the DEM carries the fill between two spans the ballast rides it
         for (let r = 1; r <= 8; r++) {   // the approaches
           const kA = i - r, kB = j + r, w = 1 - r / 9;
           if (kA >= 0 && !fixed[kA]) ys[kA] = Math.max(ys[kA], ys[kA] + (yA - ys[kA]) * w);
@@ -12118,20 +12309,29 @@
       // the station shed (Round 85): the covered points inside 30th Street's box take flag 4, a straight grade
       // between the two approaches held 60 m out from each portal (the plateau's edge used to lift the last samples)
       for (let i = 0; i < n;) {
-        const shed = (k) => ((fl[k] & 1) || railCut(pts[k][0], pts[k][1], 40) !== null) && pts[k][0] > -3300 && pts[k][0] < -3080 && pts[k][1] > -1380 && pts[k][1] < -830;   // the covered points and the open stubs within 40 m of a cut
+        // the covered points and the open stubs within 40 m of a cut, anywhere under the
+        // station. Round 87: this window was hand-typed as z -1380 to -830 and it cut THROUGH
+        // both portal cuts, whose footprints span z -870.8 to -795.2 (south) and -1396 to
+        // -1370 (north). A covered sample in the excluded half never got flag 4, so hidden()
+        // dropped its whole run: 889 m of track went undrawn and every one of the eight tracks
+        // stopped 7 to 36 m short of the mouth with bare cut floor in front of it, which is the
+        // gap in the owner's screenshot. RAIL_STATION spans Chestnut Street to the podium and
+        // contains both cuts whole.
+        const shed = (k) => ((fl[k] & 1) || railCut(pts[k][0], pts[k][1], 40) !== null)
+          && pts[k][0] > RAIL_STATION.x0 && pts[k][0] < RAIL_STATION.x1 && pts[k][1] > RAIL_STATION.z0 && pts[k][1] < RAIL_STATION.z1;
         if (!shed(i)) { i++; continue; }
         let j = i; while (j + 1 < n && shed(j + 1)) j++;
         const i0 = Math.max(0, i - 3), j0 = Math.min(n - 1, j + 3);
         let cA = null, cB = null;   // a run through a cut anchors its grade to the cut floors (the first and last samples inside one)
         for (let k = i; k <= j; k++) { const cf = railCut(pts[k][0], pts[k][1], 0); if (cf !== null) { if (cA === null) cA = cf; cB = cf; } }
-        const yA = cA !== null ? cA + 0.45 : (i0 > 0 ? ys[i0 - 1] : (i > 0 ? ys[i - 1] : -3.8)), yB = cB !== null ? cB + 0.45 : (j0 < n - 1 ? ys[j0 + 1] : (j < n - 1 ? ys[j + 1] : -3.6));
+        const yA = cA !== null ? cA + RAIL_LIFT : (i0 > 0 ? ys[i0 - 1] : (i > 0 ? ys[i - 1] : -3.8)), yB = cB !== null ? cB + RAIL_LIFT : (j0 < n - 1 ? ys[j0 + 1] : (j < n - 1 ? ys[j + 1] : -3.6));
         for (let k = i0; k <= j0; k++) { const t = (k - i0 + 1) / (j0 - i0 + 2); ys[k] = yA + (yB - yA) * t; fixed[k] = 1; if (k >= i && k <= j) fl[k] |= 4; }
         i = j + 1;
       }
       built.push({ pts, fl, ys, fixed, gnd });
       for (const e of [0, n - 1]) {   // a node's height: the mean of the span or shed ends there (they decide), else the ground reading every chain shares (an approach's lift never humps the through track, a plateau reading never lifts a shed head)
         const k = nk(pts[e]); let r = nodeY.get(k); if (!r) { r = { fs: 0, fn: 0, fy: -1e9 }; nodeY.set(k, r); }
-        if (fixed[e]) { r.fs += ys[e]; r.fn++; } else r.fy = Math.max(r.fy, Math.max(gnd[e] + 0.45, TERRAIN.water + 0.45));
+        if (fixed[e]) { r.fs += ys[e]; r.fn++; } else r.fy = Math.max(r.fy, Math.max(gnd[e] + RAIL_LIFT, TERRAIN.water + RAIL_LIFT));
       }
     }
     for (const ch of built) {   // the ends meet their node's height, then the free points smooth toward the pinned ones
@@ -12141,7 +12341,7 @@
         const s0 = Float64Array.from(ys);
         for (let i = 0; i < n; i++) { if (fixed[i]) continue; let a2 = 0, c2 = 0; for (let j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) { a2 += s0[j]; c2++; } ys[i] = a2 / c2; }
       }
-      for (let i = 0; i < n; i++) if (!fixed[i]) ys[i] = Math.max(ys[i], gnd[i] + 0.45);   // the smoothing never buries a crest: the skirt fills the dips instead
+      for (let i = 0; i < n; i++) if (!fixed[i]) ys[i] = Math.max(ys[i], gnd[i] + RAIL_LIFT);   // the smoothing never buries a crest: the skirt fills the dips instead
     }
     // one ribbon per chain: the ballast slab 3.4 m wide, the two rails 1.44 m apart, mitred at every bend
     const strip = (pts, ys, w, off, col, side, bots) => {   // bots: a skirt from the strip's edges down to these heights (the ballast reaches the drawn ground)
@@ -12175,11 +12375,13 @@
       parts.push({ geom: g, color: col });
     };
     let drawnSeg = 0, hiddenSeg = 0;
+    let chIx = -1;
     for (const ch of built) {
+      chIx++;
       const { pts, fl, ys, gnd } = ch, n = pts.length;
       for (let i = 0; i + 1 < n; i++) {
         if (Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) < 0.5) continue;
-        railAdd(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], ys[i], ys[i + 1], fl[i] | (fl[i + 1] & 2));
+        railAdd(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], ys[i], ys[i + 1], fl[i] | (fl[i + 1] & 2), chIx);
       }
       if (!draw) continue;
       // the drawn runs: everything but the covered points, the station shed excepted
@@ -12730,11 +12932,10 @@
   syncAboutInert();
   document.getElementById('btnAbout').addEventListener('click', toggleAbout);
   document.getElementById('btnCloseAbout').addEventListener('click', closeAbout);
-  // the i button stays hidden; the credit line's "credits" link is the way in
-  // (Escape and the close button still close it, see the keydown handler)
-  const creditsLink = document.getElementById('creditsLink');
-  if (creditsLink) creditsLink.addEventListener('click', (e) => { e.preventDefault(); openAbout(); });
-  const guideCredits = document.getElementById('guideCredits');   // phones: the guide carries the Credits link the hidden bottom line used to (Round 69)
+  // the i button stays hidden and the bottom credit line is gone (Round 87, Mike: the copyright data
+  // leaves the screen and lives in the info panel), so the guide's "Credits" link is the way in on
+  // every device, with the i key beside it (Escape and the close button close it, see the keydown handler)
+  const guideCredits = document.getElementById('guideCredits');
   if (guideCredits) guideCredits.addEventListener('click', (e) => { e.preventDefault(); const gc = document.getElementById('btnGuideClose'); if (gc) gc.click(); openAbout(); });
 
 
@@ -13660,7 +13861,7 @@
 
   // ---------------------------------------------------------------- live Amtrak trains
   // (Round 80) Amtrak's trains through the city, from Amtraker (a community mirror of
-  // Amtrak's own tracker, ODC-By 1.0, the credit line names it; SEPTA's rail was removed in
+  // Amtrak's own tracker, ODC-By 1.0, the About panel names it; SEPTA's rail was removed in
   // Round 20 as underground and hard to track, and these are neither). ops/amtrak_bake.py on
   // the VPS writes the trains near the city to amtrak.json every 30 s; the page polls it
   // every 30 s, treats a file 150 s stale as a stopped baker and then pulls Amtraker itself
@@ -13678,14 +13879,33 @@
   const AMTRAK_BAKED = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/amtrak.json' : 'https://philly3d.com/amtrak.json';
   const AMTRAK_DIRECT = 'https://api-v3.amtraker.com/v3/trains';
   const AMTRAK_POLL = 30000, AMTRAK_DIRECT_POLL = 60000, AMTRAK_STALE = 150, AMTRAK_CAP = 48, AMTRAK_CAR_CAP = 512;
-  const AMTRAK_RUN = 240, AMTRAK_SNAP = 600;   // dead reckoning runs this long past a fix (Amtrak's fixes average about four minutes apart); a fix farther than this from the reckoned head snaps
+  // Dead reckoning runs this long past a fix, and a fix farther than AMTRAK_SNAP from the
+  // reckoned head is taken as a real disagreement and snapped to.
+  // Round 87: at 240 s this was the reason the trains jumped. Round 80 measured Amtraker's
+  // fixes arriving 171 to 201 s old and about 224 s apart, so when a fix lands the previous
+  // one needs roughly 185 + 224 = 409 s of reckoning behind it. Capped at 240 the head ran
+  // out 55 s after each fix, sat parked for the remaining 169 s, and then teleported by
+  // 169 * v when the next fix arrived: 605 m at 8 mph, 4.5 km at 60 mph, over the 600 m
+  // snap threshold for every train that was moving at all. 480 s covers the measured lag
+  // and interval with a missed poll in hand, and the threshold comes down to 400 m so a
+  // genuine disagreement still snaps while a reckoning error is walked off.
+  const AMTRAK_RUN = 480, AMTRAK_SNAP = 400, AMTRAK_FADE = 60;   // AMTRAK_FADE: seconds over which the reckoned speed eases to zero past AMTRAK_RUN
   const AMTRAK_KIND = (route) => /acela/i.test(route) ? 0 : /regional/i.test(route) ? 1 : /keystone|pennsylvanian/i.test(route) ? 2 : 3;
   const AMTRAK_CONSIST = [[1, 2, 2, 2, 2, 2, 2, 2, 2, 1], [0, 2, 2, 2, 2, 2, 2, 2, 2], [0, 2, 2, 2, 2, 2], [0, 2, 2, 2, 2, 2, 2, 2, 2, 2]];   // car kinds by train kind: 0 ACS-64, 1 Acela power car, 2 Amfleet
   const AMTRAK_LEN = [20.3, 21.2, 25.9];
   const AMTRAK_CHIP = ['#b0203a', '#1f4fa3', '#1f8a8a', '#3a4a7a'];
-  const AMTRAK_HDG = { N: [0, -1], NE: [0.707, -0.707], E: [1, 0], SE: [0.707, 0.707], S: [0, 1], SW: [-0.707, 0.707], W: [-1, 0], NW: [-0.707, -0.707] };
+  // Amtraker's compass, all sixteen points: the eight-point table missed NNE, ENE and their
+  // kin outright (rec.hdg is sliced to three characters), which left those fixes with no
+  // direction at all and the walk falling back on a remembered one (Round 87)
+  const AMTRAK_HDG = {
+    N: [0, -1], NNE: [0.383, -0.924], NE: [0.707, -0.707], ENE: [0.924, -0.383],
+    E: [1, 0], ESE: [0.924, 0.383], SE: [0.707, 0.707], SSE: [0.383, 0.924],
+    S: [0, 1], SSW: [-0.383, 0.924], SW: [-0.707, 0.707], WSW: [-0.924, 0.383],
+    W: [-1, 0], WNW: [-0.924, -0.383], NW: [-0.707, -0.707], NNW: [-0.383, -0.924],
+  };
   const amText = (s) => String(s == null ? '' : s).replace(/\s*[‒–—―·•]\s*/g, ', ').trim();
   const amtrakMap = new Map();
+  let amtrakLastT = 0;   // the last updateAmtrak timestamp, for the trains' own real-time delta
   const amtrakPick = [[], [], []], amtrakPinPick = [];
   let amtrakLoco = null, amtrakAcela = null, amtrakCoach = null, amtrakPin = null, amtrakReady = false;
   const btnAmtrak = document.getElementById('btnAmtrak');
@@ -13786,7 +14006,7 @@
     if (!rec || !rec.id || !isFinite(+rec.lat) || !isFinite(+rec.lon)) return;
     const x = (+rec.lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(+rec.lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
     let p = amtrakMap.get(rec.id);
-    if (!p) { p = { id: rec.id, kind: AMTRAK_KIND(rec.route || ''), sign: 0, hx: null, hz: null, hy: 0, cars: [], fx: null, fz: null, fix: 0 }; amtrakMap.set(rec.id, p); }
+    if (!p) { p = { id: rec.id, kind: AMTRAK_KIND(rec.route || ''), sign: 0, ux: 0, uz: 0, ch: -1, hx: null, hz: null, hy: 0, cars: [], fx: null, fz: null, fix: 0 }; amtrakMap.set(rec.id, p); }
     p.num = amText(rec.num); p.route = amText(rec.route); p.dest = amText(rec.dest); p.next = rec.next || null; p.timely = amText(rec.timely);
     p.v = Math.max(0, (+rec.mph || 0) * 0.44704);
     p.seenT = nowP;
@@ -13797,18 +14017,28 @@
     const sn = railSnap(x, z, 120);
     p.off = !sn;
     if (!sn) return;
-    // the way along the track: the compass against the tangent when it speaks clearly, else
-    // the displacement since the last fix, else the sign it had (never flipped on a curve)
+    // The way along the track: the compass against the tangent when it speaks clearly, else
+    // the displacement since the last fix, else the way it was going last time.
+    // Round 87 remembers that as a world unit vector rather than a sign. A sign is only
+    // meaningful against the chain it was measured on, and 686 of the corridor's 2,351
+    // near-parallel neighbour pairs are stored in opposite point order, so a fix that
+    // snapped to the 4 m neighbour under GPS noise could apply the old sign to a chain
+    // running the other way and walk the train backwards by twice its reckoning.
     const hv = AMTRAK_HDG[(rec.hdg || '').toUpperCase()] || null;
-    let sign = 0;
-    if (hv) { const dot = hv[0] * sn[2] + hv[1] * sn[3]; if (Math.abs(dot) > 0.3) sign = dot > 0 ? 1 : -1; }
-    if (!sign && prevFx != null) { const dot = (x - prevFx) * sn[2] + (z - prevFz) * sn[3]; if (Math.abs(dot) > 5) sign = dot > 0 ? 1 : -1; }
-    if (sign) p.sign = sign;
-    const s = p.sign || 1;
+    let dirx = 0, dirz = 0;
+    if (hv) { const dot = hv[0] * sn[2] + hv[1] * sn[3]; if (Math.abs(dot) > 0.3) { dirx = hv[0]; dirz = hv[1]; } }
+    if (!dirx && !dirz && prevFx != null) {
+      const ddx = x - prevFx, ddz = z - prevFz, dl = Math.hypot(ddx, ddz);
+      if (dl > 5) { dirx = ddx / dl; dirz = ddz / dl; }
+    }
+    if (!dirx && !dirz && (p.ux || p.uz)) { dirx = p.ux; dirz = p.uz; }
+    let tx = sn[2], tz = sn[3];
+    if ((dirx || dirz) && tx * dirx + tz * dirz < 0) { tx = -tx; tz = -tz; }
+    p.ux = tx; p.uz = tz;
     // the target: the snapped fix walked along the rails by what the train ran since the fix
-    const w = railWalk(sn[0], sn[1], sn[2] * s, sn[3] * s, Math.min(age, AMTRAK_RUN) * p.v);
-    p.tx = w[0]; p.tz = w[1]; p.tdx = w[2]; p.tdz = w[3];
-    if (p.hx == null || Math.hypot(p.tx - p.hx, p.tz - p.hz) > AMTRAK_SNAP) { p.hx = w[0]; p.hz = w[1]; p.dx = w[2]; p.dz = w[3]; p.hy = w[4]; p.hfl = w[5]; }
+    const w = railWalk(sn[0], sn[1], tx, tz, Math.min(age, AMTRAK_RUN) * p.v, sn[6]);
+    p.tx = w[0]; p.tz = w[1]; p.tdx = w[2]; p.tdz = w[3]; p.tch = w[6];
+    if (p.hx == null || Math.hypot(p.tx - p.hx, p.tz - p.hz) > AMTRAK_SNAP) { p.hx = w[0]; p.hz = w[1]; p.dx = w[2]; p.dz = w[3]; p.hy = w[4]; p.hfl = w[5]; p.ch = w[6]; }
   }
   function amtrakGot(list, nowP, nowS) {
     for (const rec of list || []) amtrakUpsert(rec, nowP, nowS);
@@ -13830,7 +14060,11 @@
     const direct = () => {
       AMTRAK.nextT = now + AMTRAK_DIRECT_POLL;
       amtrakFetch(AMTRAK_DIRECT, 20000,
-        (raw) => { AMTRAK.busy = false; AMTRAK.fails = 0; AMTRAK.host = 'amtraker'; amtrakGot(amtrakProject(raw), performance.now(), Date.now() / 1000); },
+        // the baked path dates its fixes by the server's clock and the direct path by this
+        // machine's; a skew of S seconds biases the whole reckoning by S * v and jumps the
+        // train by that much on the poll where the source changes, so the offset the baked
+        // path learned is carried over (Round 87)
+        (raw) => { AMTRAK.busy = false; AMTRAK.fails = 0; AMTRAK.host = 'amtraker'; amtrakGot(amtrakProject(raw), performance.now(), Date.now() / 1000 + (AMTRAK.clkOff || 0)); },
         () => { AMTRAK.busy = false; AMTRAK.fails++; amtrakStatus(); });
     };
     if (!AMTRAK.baked) { direct(); return; }
@@ -13839,6 +14073,7 @@
       (d, sNow) => {
         if (!d || !(d.t > 0) || !Array.isArray(d.trains) || sNow - d.t > AMTRAK_STALE) { AMTRAK.baked = false; AMTRAK.bakedRetryT = now + 300000; direct(); return; }   // stale: the baker is down
         AMTRAK.busy = false; AMTRAK.fails = 0; AMTRAK.host = 'philly3d';
+        AMTRAK.clkOff = sNow - Date.now() / 1000;   // this machine's clock against the server's, for the direct fallback
         amtrakGot(d.trains, performance.now(), sNow);
       },
       () => { AMTRAK.baked = false; AMTRAK.bakedRetryT = now + 300000; direct(); });
@@ -13877,6 +14112,14 @@
       return;
     }
     amtrakPoll(now);
+    // The trains integrate against REAL elapsed time, not the render loop's dt, which is
+    // clamped to 50 ms: at 15 fps that clamp advanced a train at three quarters of its true
+    // speed and at 10 fps at half, so the reckoned head fell behind its target by 0.25 to
+    // 0.5 v a second and crossed the snap threshold on its own (Round 87). The half-mile rule
+    // means trains are only drawn when the camera is close, which is when the frame rate is
+    // lowest. Capped at a second so a backgrounded tab returns to a walk, not a leap.
+    const adt = amtrakLastT ? Math.min((now - amtrakLastT) / 1000, 1) : dt;
+    amtrakLastT = now;
     _aqB.copy(camera.quaternion);
     const counts = [0, 0, 0];
     let np = 0;
@@ -13885,19 +14128,24 @@
       if (now - p.seenT > 900000) { gone.push(p.id); continue; }   // unseen for 15 min: gone
       if (p.off || p.hx == null) continue;
       const fixAge = (now - p.fixT) / 1000;
-      // the target runs on at the train's speed (AMTRAK_RUN past the fix at most), the head converges on it
-      if (fixAge < AMTRAK_RUN && p.v > 0.05 && dt > 0) { const w = railWalk(p.tx, p.tz, p.tdx, p.tdz, p.v * dt); p.tx = w[0]; p.tz = w[1]; p.tdx = w[2]; p.tdz = w[3]; }
+      // The target runs on at the train's speed and the head converges on it. The speed eases
+      // out over AMTRAK_FADE past AMTRAK_RUN rather than switching off in one frame.
+      const vf = fixAge < AMTRAK_RUN ? 1 : Math.max(0, 1 - (fixAge - AMTRAK_RUN) / AMTRAK_FADE);
+      if (vf > 0 && p.v > 0.05 && adt > 0) { const w = railWalk(p.tx, p.tz, p.tdx, p.tdz, p.v * adt * vf, p.tch); p.tx = w[0]; p.tz = w[1]; p.tdx = w[2]; p.tdz = w[3]; p.tch = w[6]; }
       const gap = (p.tx - p.hx) * p.dx + (p.tz - p.hz) * p.dz;
-      const adv = Math.max(0, (fixAge < AMTRAK_RUN ? p.v * dt : 0) + gap * (1 - Math.exp(-dt / 4)));
-      if (adv > 0.005) { const w = railWalk(p.hx, p.hz, p.dx, p.dz, adv); p.hx = w[0]; p.hz = w[1]; p.dx = w[2]; p.dz = w[3]; p.hy = w[4]; p.hfl = w[5]; }
+      // signed, so a head that has run ahead of its target backs up instead of waiting for the
+      // target to catch it, and rate-limited, so closing a residual error never reads as a dash
+      const lim = (0.5 * p.v + 5) * adt;
+      const adv = p.v * adt * vf + clamp(gap * (1 - Math.exp(-adt / 4)), -lim, lim);
+      if (Math.abs(adv) > 0.005) { const w = railWalk(p.hx, p.hz, p.dx, p.dz, adv, p.ch); p.hx = w[0]; p.hz = w[1]; p.dx = w[2]; p.dz = w[3]; p.hy = w[4]; p.hfl = w[5]; p.ch = w[6]; }
       // the consist, car by car back along the rails
       const consist = AMTRAK_CONSIST[p.kind];
-      let cx = p.hx, cz = p.hz, cdx = p.dx, cdz = p.dz, cy = p.hy, cfl = p.hfl, prevL = 0;
+      let cx = p.hx, cz = p.hz, cdx = p.dx, cdz = p.dz, cy = p.hy, cfl = p.hfl, cch = p.ch, prevL = 0;
       for (let k = 0; k < consist.length; k++) {
         const ck = consist[k], L = AMTRAK_LEN[ck];
         if (k) {
-          const w = railWalk(cx, cz, cdx, cdz, -(prevL / 2 + 1.2 + L / 2));
-          cx = w[0]; cz = w[1]; cdx = w[2]; cdz = w[3]; cy = w[4]; cfl = w[5];
+          const w = railWalk(cx, cz, cdx, cdz, -(prevL / 2 + 1.2 + L / 2), cch);
+          cx = w[0]; cz = w[1]; cdx = w[2]; cdz = w[3]; cy = w[4]; cfl = w[5]; cch = w[6];
         }
         prevL = L;
         if ((cfl & 1) && !(cfl & 4)) continue;   // in a tunnel; the station shed (flag 4) is ridden through under the plateau (Round 85)
@@ -14020,7 +14268,10 @@
         const uL = Math.hypot(ux, uz) || 1; ux /= uL; uz /= uL;
         let dead = false;
         const core = inCore(x, z);
-        let y = siteY(x, z, 'road');
+        // the drawn ground where there is one, exactly as the road ribbon reads it: on the raw
+        // DEM the far ring's cars rode a different surface from their own road (Round 87)
+        let y = groundMeshLandY(x, z);
+        if (y === null) y = siteY(x, z, 'road');
         y = Math.max(y, bankFloor(x, z));   // the bank roads' floor (Round 85)
         if (cls === 0 && core) {
           // I-95 rides DOWN in the trench (the road step's motY blend, replicated)
@@ -16919,7 +17170,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),

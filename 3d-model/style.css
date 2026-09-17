@@ -944,49 +944,22 @@ body.touchfly .pad { display: flex; }
 #timepanel .readout span { white-space: nowrap; }
 #layerspanel .lrow kbd, #vehinfo .vroute { font-weight: 600; }
 
-/* ---------- credits line (the i button stays hidden; its "credits" link opens the About panel) ----------
-   One strip flush with the bottom edge, no taller than the bar's 16 px offset, so it can run
-   under the centered bar without touching it; the panel plate + 0.74 paper reads at 5.5:1 over a
-   day sky. Narrow screens keep only the OSM credit (required) and the link. */
-#osmcredit {
-  position: fixed;
-  right: 8px;
-  bottom: 0;
-  z-index: 8;
-  max-width: calc(100vw - 16px);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 500;
-  line-height: 1;
-  letter-spacing: 0.03em;
-  white-space: nowrap;
-  color: rgba(239, 233, 220, 0.74);
-  background: var(--panel);
-  padding: 2px 8px;
-  border-radius: 3px 3px 0 0;
-  user-select: none;
-}
-#osmcredit a { color: inherit; }
-#osmcredit a:hover, #osmcredit a:focus-visible { color: var(--paper); }
-@media (max-width: 900px) {
-  #osmcredit .more { display: none; }   /* the Credits link keeps every attribution reachable */
-}
 /* iOS Safari zooms the page when a focused input is under 16px; the viewport no longer pins the scale */
 @media (pointer: coarse) {
   #searchInput, #timepanel input[type="date"] { font-size: 16px; }
 }
-#guideCredits { display: none; float: right; color: var(--paper-faint); text-decoration: none; border-bottom: 1px solid var(--line); }   /* phones only: the credit line is gone there */
+/* the guide's Credits link is the only way into the About panel (Round 87, Mike: the bottom credit line
+   is gone on every device and the attributions live in the info panel); the i button and the i key still work */
+#guideCredits { display: inline; float: right; color: var(--paper-faint); text-decoration: none; border-bottom: 1px solid var(--line); }
 #guideCredits:hover, #guideCredits:focus-visible { color: var(--paper); }
-/* phones (Round 69, Mike): no hint box and no credit line (the guide's Credits link keeps every attribution one
-   tap away), Move labelled through the flight like Look, the compass and the climb buttons 5 px off the right edge */
+/* phones (Round 69, Mike): no hint box, Move labelled through the flight like Look, the compass and the
+   climb buttons 5 px off the right edge */
 @media (pointer: coarse) {
   #hint { display: none; }
-  #osmcredit { display: none; }
   #compass { right: 5px; }   /* Round 70: the safe-area inset (59 px on a notched phone) had held them 64 px off the edge */
   #flyctl { right: 5px; }
   #bar { bottom: 6px; }
   #padL.active { color: var(--paper-dim); }
-  #guideCredits { display: inline; }
 }
 
 /* ---------- short viewports (a landscape phone): Enter and the load line must stay reachable ---------- */

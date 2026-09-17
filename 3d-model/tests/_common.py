@@ -181,8 +181,11 @@ def walk_trees():
     if len(body) < 4 * n:
         raise AssertionError('trees.b64: body holds %d int16 but the header promises %d trees x 4' % (len(body), n))
     sat = sum(1 for i in range(n) for k in (0, 1) if abs(body[4 * i + k]) == INT16_SAT)
-    trees = [(body[4 * i] * 0.2, body[4 * i + 1] * 0.2, body[4 * i + 2], body[4 * i + 3]) for i in range(n)]
-    return dict(header=hdr, trees=trees, leftover=len(body) - 4 * n, saturated=sat)
+    # the packer's quantum, in millimetres in the header's fourth slot since Round 87 (0 there
+    # is the pre-Round-87 blob, which was 0.2 m units and the wide box only)
+    unit = hdr[3] / 1000 if hdr[3] > 0 else 0.2
+    trees = [(body[4 * i] * unit, body[4 * i + 1] * unit, body[4 * i + 2], body[4 * i + 3]) for i in range(n)]
+    return dict(header=hdr, trees=trees, unit=unit, leftover=len(body) - 4 * n, saturated=sat)
 
 
 def walk_poles():

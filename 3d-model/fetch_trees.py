@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
-"""Download the PPR Tree Inventory 2025 (OpenDataPhilly / City ArcGIS) for the
-wide-tier envelope via the ArcGIS REST API and write
+"""Download the PPR Tree Inventory 2025 (OpenDataPhilly / City ArcGIS) and write
 lidar_cache/phl_trees_raw.json: {"trees": [[lon, lat, dbh_in, name], ...]}.
-Only the wide tier is fetched (~50k trees) — the far ring has no trees in the
-model and stays that way. Resumable: per-page files in lidar_cache/tree_pages/.
-Run with plain python3; pack_trees.py projects, filters, and packs the result."""
-import json, os, time, urllib.request, urllib.parse
+Round 87 fetches the whole city (151,726 trees) instead of the wide tier's
+envelope (50,073): the far ring had no trees at all, so West Philadelphia, the
+Northeast and everything past x = -3700 stood bare. Resumable: per-page files in
+lidar_cache/tree_pages/<env tag>/, keyed by envelope so a widened box never
+reads the old box's pages back. Run with plain python3; pack_trees.py projects,
+filters, and packs the result."""
+import hashlib, json, os, time, urllib.request, urllib.parse
 try:
     import provenance   # append-only fetch log (3d-model/provenance.jsonl); optional
 except Exception:
@@ -14,14 +16,18 @@ except Exception:
 HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
 PAGES = os.path.join(CACHE, 'tree_pages')
-os.makedirs(PAGES, exist_ok=True)
 BASE = ('https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/'
         'ppr_tree_inventory_2025/FeatureServer/0/query')
 PAGE = 2000
-# wide box (pack_wide.py WIDE) in lon/lat plus a ~30 m margin
-ENV = '-75.1885,39.8873,-75.1174,39.9862'
+# the whole city in lon/lat, a little past the city line so the far ring's edge
+# is planted too (Round 87; the wide box alone was '-75.1885,39.8873,-75.1174,39.9862')
+ENV = '-75.2900,39.8600,-74.9400,40.1500'
 GEO = {'geometry': ENV, 'geometryType': 'esriGeometryEnvelope', 'inSR': '4326',
        'spatialRel': 'esriSpatialRelIntersects'}
+# the page cache is keyed by envelope: p{off}.json for one box says nothing about
+# another, and reading it back silently truncates the fetch to the old extent
+PAGES = os.path.join(PAGES, hashlib.sha1(ENV.encode()).hexdigest()[:10])
+os.makedirs(PAGES, exist_ok=True)
 
 def total_count():
     q = urllib.parse.urlencode({'where': '1=1', **GEO, 'returnCountOnly': 'true', 'f': 'json'})
@@ -53,7 +59,7 @@ def fetch_page(off):
 def main():
     n = total_count()
     offsets = list(range(0, n, PAGE))
-    print(f'{n} trees in the wide envelope, {len(offsets)} pages', flush=True)
+    print(f'{n} trees in {ENV}, {len(offsets)} pages', flush=True)
     for i, off in enumerate(offsets):
         fetch_page(off)
         if (i + 1) % 5 == 0 or i + 1 == len(offsets):

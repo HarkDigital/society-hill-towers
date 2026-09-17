@@ -77,7 +77,8 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
 - Building heights from the City of Philadelphia 2022 LiDAR survey (building footprints
   layer and point cloud); facade era, material and use from OPA property records; roof
   colours sampled from the City's 2024 orthophotos.
-- Street trees: Philadelphia Parks & Recreation Tree Inventory 2025; streetlights: Streets
+- Street and park trees: Philadelphia Parks & Recreation Tree Inventory 2025, all 150,887 of them
+  citywide since Round 87; streetlights: Streets
   Department Street Poles inventory; parkland: Parks & Recreation; neighborhoods, historic
   districts, farmers' markets, Percent for Art and the named places of the city basemap: City
   of Philadelphia via OpenDataPhilly (CC-BY); historical markers: Pennsylvania Historical and Museum Commission (public

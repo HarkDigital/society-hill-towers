@@ -160,9 +160,16 @@ class BlobRecords(unittest.TestCase):
         idx = [tr[3] for tr in t['trees']]
         self.assertTrue(all(0 <= i < n_names for i in idx), 'tree nameIdx out of range')
         self.assertTrue(all(1 <= tr[2] <= 60 for tr in t['trees']), 'tree dbh outside 1..60 in')
-        x0, x1, z0, z1 = C.WIDE_BOX
+        # Round 87: the inventory is the whole city, not the wide box, and the quantum moved to
+        # 0.7 m because int16 at 0.2 m saturates at +-6,553 m while the city reaches 15,871
+        self.assertGreater(t['unit'], 0, 'trees.b64 header carries no unit')
+        x0, x1, z0, z1 = C.CITY_BOX
         outside = sum(1 for x, z, _d, _n in t['trees'] if not (x0 - 1 <= x <= x1 + 1 and z0 - 1 <= z <= z1 + 1))
-        self.assertEqual(0, outside, '%d trees outside the wide box' % outside)
+        self.assertEqual(0, outside, '%d trees outside the city box' % outside)
+        self.assertEqual(0, t['saturated'], 'a tree coordinate saturated int16')
+        wx0, wx1, wz0, wz1 = C.WIDE_BOX
+        beyond = sum(1 for x, z, _d, _n in t['trees'] if not (wx0 <= x <= wx1 and wz0 <= z <= wz1))
+        self.assertGreater(beyond, 50000, 'only %d trees past the wide box: the far ring is bare again' % beyond)
 
     def test_pole_bits(self):
         """packed bits: 0-1 lamp kind (0..2), 2-8 height ft (1..127), 9 two-luminaire flag."""

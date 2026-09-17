@@ -21,3 +21,6 @@ __pycache__/
 3d-model/storefronts.json
 3d-model/wall_colors.json
 3d-model/wall_palette.json
+.claude/skills/philly3d-capture/scripts/captures/
+3d-model/city_streets_tiles/
+3d-model/city_streets_raw.json

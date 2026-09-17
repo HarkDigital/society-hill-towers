@@ -16,7 +16,7 @@ Frame: philly_frame.py (the scene's own projection). This script used to hardcod
 KX=85350, which put the far ring up to ~1.1 m east of the scene at its 16.5 km edge;
 the committed city.b64 keeps that offset until the next rerun.
 Run with the scratchpad venv python (needs shapely)."""
-import argparse, json, math, struct, base64, sys
+import argparse, json, math, os, struct, base64, sys
 from pack_common import dedupe_stacked, nudge_coplanar   # Round 71: no two walls on one plane facing the same way
 from shapely.geometry import Polygon, LineString, box as sbox
 from shapely.ops import unary_union, polygonize
@@ -37,8 +37,17 @@ BT = {'generic': 0, 'house': 1, 'residential': 1, 'terrace': 1, 'apartments': 2,
 HDEF = {'house': 8.0, 'residential': 8.0, 'detached': 7.5, 'terrace': 8.5, 'semidetached_house': 8.0, 'apartments': 11,
         'garage': 3.5, 'garages': 3.5, 'shed': 3, 'commercial': 7.5, 'retail': 7.5, 'office': 10, 'industrial': 8,
         'warehouse': 9, 'church': 13, 'cathedral': 15, 'chapel': 9, 'school': 10, 'hospital': 14, 'university': 12}
-RT = {'motorway': 0, 'motorway_link': 0, 'trunk': 1, 'trunk_link': 1, 'primary': 2, 'secondary': 3, 'tertiary': 4, 'residential': 5}
-RW = {0: 16, 1: 14, 2: 12, 3: 10, 4: 9, 5: 7}
+# Round 87 adds unclassified, living_street and pedestrian, from city_streets_raw.json: they
+# are exactly the classes pack_wide.py already draws, and in Fairmount Park they ARE the
+# connecting drives (Lemon Hill, Waterworks, Aquarium and Sedgley Drives are all
+# `unclassified`). Without them the far ring carried 68 per cent of the park's road length
+# against the wide tier's 90, and a quarter of its run endpoints dangled in the grass.
+RT = {'motorway': 0, 'motorway_link': 0, 'trunk': 1, 'trunk_link': 1, 'primary': 2, 'secondary': 3, 'tertiary': 4,
+      'residential': 5, 'unclassified': 5, 'living_street': 5, 'pedestrian': 6}
+RW = {0: 16, 1: 14, 2: 12, 3: 10, 4: 9, 5: 7, 6: 5}
+# the classes the wide tier also draws: their runs are cut OUT of the wide box so the two
+# tiers never pave the same street twice
+LOCAL_CLASSES = ('residential', 'tertiary', 'unclassified', 'living_street', 'pedestrian')
 
 raw = json.load(open('osm_city_raw.json'))
 els = raw['elements']
@@ -270,7 +279,37 @@ def _runs(pts, keepFn):
 
 CITYM = (CITY[0] - 300, CITY[1] + 300, CITY[2] - 300, CITY[3] + 300)
 WIDEM = (WIDE[0] - 150, WIDE[1] + 150, WIDE[2] - 150, WIDE[3] + 150)
-for el in ways:
+
+# the supplementary street classes (fetch_city_streets.py). That fetch uses `out geom`, so a
+# way carries its own coordinates rather than node ids; they are projected into the same
+# `nodes` table under synthetic ids so the loop below needs no special case.
+road_ways = list(ways)
+if os.path.exists('city_streets_raw.json'):
+    _st = json.load(open('city_streets_raw.json'))['elements']
+    _sid = -1
+    _n_st = 0
+    for el in _st:
+        if el.get('type') != 'way':
+            continue
+        geom = el.get('geometry') or []
+        if len(geom) < 2:
+            continue
+        ids = []
+        for g in geom:
+            if g is None or 'lon' not in g:
+                continue
+            nodes[_sid] = ((g['lon'] - LON0) * KX, (LAT0 - g['lat']) * KZ)
+            ids.append(_sid)
+            _sid -= 1
+        if len(ids) < 2:
+            continue
+        road_ways.append({'type': 'way', 'id': el.get('id'), 'nodes': ids, 'tags': el.get('tags') or {}})
+        _n_st += 1
+    print(f'city_streets_raw.json: {_n_st} supplementary street ways', flush=True)
+else:
+    print('city_streets_raw.json missing - the far ring keeps the pre-Round-87 class list', flush=True)
+
+for el in road_ways:
     t = el.get('tags') or {}
     rt = None; w = None
     if t.get('highway') in RT:
@@ -284,7 +323,7 @@ for el in ways:
     if rt == 5 and t.get('highway') == 'residential' and not any(inBox(p[0], p[1], RES_BOX) for p in raw):
         continue
     for run in _runs(raw, lambda q: inBox(q[0], q[1], CITYM)):
-        subruns = _runs(run, lambda q: not inBox(q[0], q[1], WIDEM)) if t.get('highway') in ('residential', 'tertiary') else [run]
+        subruns = _runs(run, lambda q: not inBox(q[0], q[1], WIDEM)) if t.get('highway') in LOCAL_CLASSES else [run]
         for sub in subruns:
             pts = list(LineString(sub).simplify(1.6).coords) if len(sub) > 2 else sub
             if len(pts) < 2: continue

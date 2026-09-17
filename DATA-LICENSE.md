@@ -29,9 +29,9 @@ Philadelphia data (below). The raw Overpass dumps and `city_tiles/` are OSM data
 
 What ODbL asks: attribution wherever the data or works made from it are published, and
 share-alike (the same license) for any derivative *database* that is publicly used. The
-rendered page is a Produced Work under the license and carries the notice: the bottom
-credit line (`#osmcredit`) and the About panel link to
-https://www.openstreetmap.org/copyright. That link must stay in any copy of the page, and
+rendered page is a Produced Work under the license and carries the notice: the About panel
+(reached from the guide's Credits link and the `i` key; the bottom credit line was removed in
+Round 87) links to https://www.openstreetmap.org/copyright. That link must stay in any copy of the page, and
 the files above must keep this notice if they are redistributed.
 
 | `rail_amtrak.json` | `bake_rail.py` | Overpass: the `railway=rail` ways Amtrak operates over the far-ring box and the Northeast Corridor and Keystone Corridor ways by name (Round 80), the track the live trains ride and the drawn corridor |

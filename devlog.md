@@ -4193,3 +4193,232 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
 - Verified in the pane: `cardFor` on all four fixture trains returns the per-train href, no
   `amtrak.com` remains anywhere in the document, and the Acela card reads "TRACK TRAIN 2151 ON
   RAILRAT". 101 tests pass. Page 26.70 MB (+18 bytes).
+
+## Round 87: the parks planted, the far ring's colour seam closed, the trains stopped jumping, the credit line retired (Sep 17)
+
+**Mike, with three screenshots of the Fairmount Park reach, the 30th Street cut and a high oblique
+over the Northeast: "This section of the model still is very broken. The streets and train tracks
+are all broken up, the trains jump around when they are on the tracks. Tree coverage is not
+correct. The tracks need to go all the way into the tunnel under 30th st station and overall this
+entire area needs work." And: "There is still a distinct difference from the buildings colored with
+mapillary data and those that arent. we need to get that closer to one another." Mid-round: "remove
+the copyright data at the bottom of the screen. That can live in the info panel."**
+
+Five investigators over the five subsystems, then the fixes and a capture pass. Every number below
+is measured, before and after, not estimated.
+
+### The colour seam: Round 68's gain was spending itself on the clamp
+
+`__dbg.colStats()` across the York Street band, the same rowhouse neighbourhood 700 m either side
+of the wide tier's edge:
+
+| population | before | after | note |
+|---|---|---|---|
+| `wideBand` (outer districts) | 0.508 | 0.510 | untouched |
+| `farBand` (far ring) | **0.821** | **0.497** | the step across the boundary: +62% to −2.5% |
+| `wideBandCap` | 0.228 | 0.228 | |
+| `farBandCap` | **0.377** | **0.257** | +65% to +13% |
+| `widePhoto` (Mapillary) | **0.420** | **0.477** | |
+| `widePlain` (fallback) | 0.496 | 0.496 | |
+| photo against fallback | **−15.4%** | **−3.8%** | |
+| `far` tier / `wide` tier | 0.816 / 0.480 | 0.494 / 0.492 | +70% to +0.4% |
+
+`FAR_LIGHT` 1.8 with `FAR_DESAT` 0.15 went in Round 68 because from over East Park the far side
+rendered a third darker (masked building pixels 116 against 154). It was compensating a structural
+difference with a colour error, and paying for it twice: at 1.8 the per-channel `Math.min(1, …)`
+pinned **81.8% of the far ring's red channels at exactly 1.0** and crushed the tier's red spread
+from 0.101 to 0.073, which is arithmetically the uniform pale salmon Mike photographed, and 6.3% of
+the reservoir came out pure white, drawn per merged block strip at a 366 m² mean footprint, which is
+the white patches. The old comment admitted it: "the register saturates, so the gain runs ahead of
+the read."
+
+So the walls take **no gain at all** (`FAR_LIGHT` 1.0): the 1,024-colour reservoir already holds the
+outer districts' own final colours, so 1.0 is an exact statistical match by construction. What was
+real in Round 68's reading is the roof **caps** — `city.b64`'s roof words draw a darker set of
+`ROOF_PAL` entries than `wide.b64`'s, 0.202 against 0.248, and the far ring is merged block strips
+with wall-to-wall roofs seen from above — so `FAR_CAP_LIGHT` 1.23 matches the two tiers' cap means
+instead of lifting the whole city 80%. `farGain` keeps a monotone soft knee above 0.8 in place of
+the clamp, so any future gain never flattens hue. The structural half of Round 68's problem is
+closed by this round's trees, which is what it was really looking at.
+
+Within the outer districts, three constants in `wallInv`, all measured by sweep:
+
+- `WALL_LIFT` 0.56 → **0.45**. The only knob that moves luminance; 0.42 closes the gap to nothing
+  and 0.45 leaves the photographs a shade darker than the invented colours, which is the direction
+  the measurement should win.
+- `WALL_FOLD_MAX`, new, **0.6**. The cool-cast fold was capped at 1 and with the divisor at
+  `0.12 * lum` it saturated for every cool palette entry: **14 of the 32 folded to exactly zero
+  chroma and painted 8,145 buildings flat neutral grey**, a quarter darker than the brick around
+  them. Those are the grey patches. Raising the divisor is measured dead (0.12 → 0.50 moves 8,145
+  to 7,895, because `f` still saturates); the cap is what has to move.
+- `WALL_WARM` 1.6 → **1.3**. At 1.6 the blue channel clipped to zero on six entries (`#643c27`
+  reached chroma 0.79), which is where the photographed population's saturation spread of 0.185
+  against the fallback's 0.099 came from.
+
+The three populations now sit inside 4% of one another in the register, against 94.5% before.
+
+### Tree coverage: the survey was clipped to the wide box
+
+`fetch_trees.py` fetched the wide tier's envelope only and `pack_trees.py` clipped to the same box,
+so **West Fairmount Park held 0 trees** and East Park 572 (2.3/ha against 150 to 400 in real closed
+canopy) — those 572 being the Kelly Drive rows. Everything past x = −3700 stood bare: West
+Philadelphia, Southwest, the Northeast, and every park in them. The fetch is now the whole city:
+**151,726 trees against 50,073**, and the packer keeps 150,887 of them (49,038 in the wide box,
+101,849 beyond it). The PPR 2025 inventory turns out to cover park interiors, not only streets, so
+West Fairmount Park goes from 0 to **11,229** trees and East Park from 572 to **8,264** — real
+surveyed positions, so no procedural fill was needed.
+
+Two things had to move for it. The blob's quantum: int16 at 0.2 m saturates at ±6,553 m and the city
+reaches x = 15,871 and z = −21,229, so a widened clip would have tripped the packer's own assert.
+It is **0.7 m** now, poles.b64's quantum, and the header's fourth slot (a zero until now) carries
+the unit in millimetres so the decoder never guesses. And the page needed a third tree tier: the
+wide box keeps its full forest on the 3×3 chunk grid, and the trees beyond it draw on an 8×8 grid
+over the city, one crown and one trunk mesh per non-empty chunk so each culls whole.
+
+The outer crown is the 20-face icosahedron phones have had since Round 58, not the wide tier's
+80-face one. That was measured, not assumed: the wide tier's crown on all 101,849 outer trees cost
+**18.0 M triangles** a frame at the skyline, park and seam poses against 13.4 M this way and 11.9 M
+before the round. `canMat` does the rest — its per-vertex random scale lumps every crown and its
+3D-noise mottle breaks up the facets — so the tiers differ in smoothness, not in character. A
+per-chunk detail swap on camera distance would buy the near ones back and is the obvious next step.
+
+Raising the survey citywide exposed a law tuned on street trees: `boleH`, the trunk height, was
+capped at 5.2 m, and the parks brought trees of 40 to 60 inches whose crown radius clamps at 7.5 m.
+Held to a 5.2 m bole their crowns reached within centimetres of the grass (the canopy shader's
+per-vertex scale runs to 1.21) and read as boulders lying in the field. The cap is **9 m** now, so a
+60-inch oak carries its crown 2.6 m clear. Street trees are unaffected: their dbh never binds the
+new cap, and the wide-tier close-up is pixel-identical before and after.
+
+The **woodland tint** now reaches the whole city. `nwParkAt` is built from PPR's own parkland rings
+and has always been citywide (West Fairmount Park 4.72 km², East Fairmount 2.34, the Wissahickon
+6.71), but the only `mkFarGround` call that asked for a tint was the NW patch, whose box stops at
+z = −6600 — north of almost the whole park. The four far strips now carry it too, on a separate flag
+from the NW creek-bed drop that used to share it. Measured straight down from 500 m: West Park's
+ground reads **[59, 75, 45]** against **[74, 87, 60]** for non-park ground beyond it, 17% darker.
+
+### The Amtrak corridor and the 30th Street cut: two bugs, both in flag handling
+
+`hidden` segments **89 → 37**, drawn 9,499 → 9,559.
+
+The corridor's flags were the OR of both endpoints of a chord applied to every 20 m sample of it,
+and at a stitched joint one endpoint belongs to the neighbouring way — so a tunnel bit walked
+backwards over a whole simplified chord. Six tunnels of 32 to 223 m in Fairmount Park became six
+undrawn holes of 81 to 266 m, **1,130 m in all**, which is what left isolated strips of 12, 89 and
+260 m between the Zoo and Belmont. An AND is not the fix either: tried first, it cost a covered run
+its first and last sample and surfaced the station's lower level 7.6 m mid-concourse (`__dbg.rail()`
+reported a 38.7% grade at (−3206, −954), which is how it was caught). A chain now carries its
+flags **per segment**, taken from the way each segment belongs to, and nothing bleeds in either
+direction.
+
+The tracks stopped short of the portals because the `shed` predicate's window was hand-typed as
+`z > -1380 && z < -830` and **it cut through both cut footprints** (south z −870.8…−795.2, north
+−1396…−1370). A covered sample in the excluded half never got flag 4, so `hidden()` dropped its
+whole run: **889 m of track went undrawn and all eight tracks stopped 7 to 36 m short of the mouth**
+with bare cut floor in front, which is exactly Mike's screenshot. `RAIL_STATION` spans Chestnut
+Street to the podium and contains both cuts whole. `under` rises 20 → 34 and both readings are at
+(−3202, −839), the south cut: more of the covered level is drawn under the plateau now, which is the
+point.
+
+`RAIL_LIFT`, new, **0.75** where the floor was 0.45: the ballast top sat 0.20 m over the ground and
+the railhead 0.36, and half the park corridor's samples were within 0.25 m of the mesh, so the
+surviving track read as pale strips lying on the grass rather than a roadbed on a skirt.
+
+### The trains
+
+Four causes, all measured:
+
+- **`AMTRAK_RUN` 240 → 480 s.** This was the jumping. Round 80's own measurements have Amtraker's
+  fixes arriving 171 to 201 s old and about 224 s apart, so when a fix lands the previous one needs
+  roughly 409 s of reckoning behind it. Capped at 240 the head ran out 55 s after each fix, **sat
+  parked for the remaining 169 s, then teleported by 169 × v** when the next one arrived: 605 m at
+  8 mph, 4.5 km at 60 mph, over the 600 m snap threshold for every train that was moving at all.
+  `AMTRAK_SNAP` comes down to 400 m, `adv` is signed so a head that has run ahead backs up instead
+  of waiting, the catch-up rate is clamped to half the train's own speed plus 5 m/s, and the speed
+  eases out over `AMTRAK_FADE` 60 s instead of switching off in one frame.
+- **The consist hopped tracks.** `railWalk`'s step was 30 m, so one 24 to 27 m coupling walk was a
+  single straight chord followed by a free nearest-track snap, and the corridor's tracks sit a median
+  4.0 m apart with 73% of close neighbours on different chains. A 13° bend threw the tail 5.5 m
+  sideways onto the parallel track; simulated over the real grid that put 12 to 22% of a curving
+  consist's cars on another chain, changing membership every frame, with 377 tunnel-flag mismatches
+  blinking cars out of existence and bridge-flag flips stepping them metres vertically. `railSegs`
+  carries the chain now, `railSnap` takes a `prefer` chain with a 1.5 m margin, and `RAIL_STEP` is
+  6 m, which holds the overshoot under 1.4 m at the worst bend in the corridor. Verified with the
+  new `__dbg.railWalk` probe: **every car of all four `amtrakTest` fixtures stays on the head's
+  chain, 0 off-chain against 12 to 22% before.**
+- **The render loop's dt clamp.** Trains integrated against `Math.min(rawMs / 1000, 0.05)`, so at
+  15 fps a train advanced at three quarters of its true speed and at 10 fps at half, and the head
+  fell behind its own target by 0.25 to 0.5 v a second and crossed the snap threshold unaided. The
+  half-mile rule means trains only draw when the camera is close, which is when the frame rate is
+  lowest. They keep their own real-time delta now, capped at a second.
+- **The direction was a sign.** A sign is only meaningful against the chain it was measured on, and
+  686 of the corridor's 2,351 near-parallel neighbour pairs are stored in opposite point order, so a
+  fix that snapped to the 4 m neighbour under GPS noise could apply the old sign to a chain running
+  the other way and walk the train backwards by twice its reckoning, consist reversed. It is a world
+  unit vector now, re-derived against each new chain's tangent. `AMTRAK_HDG` also gained the eight
+  16-point compass keys it was missing, which had been yielding no direction at all for NNE, ENE and
+  their kin. And the direct Amtraker fallback now carries the clock offset the baked path learns,
+  so a skewed client clock no longer biases the whole reckoning by S × v.
+
+Head motion over 60 real-time frames: max step 1.41 m, max Δy 0.10 m, zero tunnel flips, on all four
+fixtures.
+
+### The far ring's roads
+
+Not finished this round, and the reason is in the next section. Four fixes did land, all free:
+
+- **The bank band's 6.7 m step.** `groundMeshLandY` handed a road inside the Schuylkill's 40 m
+  carve to the DEM (Round 85, so a bank road would not follow the carved slope down to the water),
+  but it switched at the band edge, and the DEM is smeared 150 m there and stands 3.5 m over the
+  carved ground at the median and 12.5 m at the worst. One 30 m interval of Kelly Drive stepped
+  6.7 m. The two reads are now mixed over `BANK_BLEND` 30 m, so they meet in a ramp.
+- **Unmitred joints.** The far ring laid its fan disc at interior bends only, so where two OSM ways
+  met at a node the ribbons butted together square and the grass showed through the corner, up to
+  7.86 m of it in the park. A run's ends now take a disc too, and only where another run really ends
+  there (240 of the park's 333 endpoint keys are shared), so a genuine dangling end stays square.
+- **Far-ring traffic rode the raw DEM** while its own road ribbon read the drawn mesh. Same read now.
+- `__dbg.railWalk` joins the probe list.
+
+### What is not done
+
+The far ring never fetched `unclassified`, `living_street` or `pedestrian` — and in Fairmount Park
+those ARE the connecting drives: Lemon Hill Drive, Waterworks Drive, Aquarium Drive and Sedgley
+Drive are all `unclassified`. Measured over the park's own rings, the far ring's class list carries
+**68% of the road length against the wide tier's 90%**, and **84 of its 333 run endpoints (25%) are
+true dangling ends**, a median 27 m from the nearest other road. That is the "road just stops in the
+grass" in the screenshot, and it is the one part of Mike's first message this round does not fix.
+
+`fetch_city_streets.py` and the `pack_city.py` merge are written and the classes are wired
+(`RT` gains `unclassified` and `living_street` at width 7 and `pedestrian` at 5, `LOCAL_CLASSES`
+cuts all of them out of the wide box so the two tiers never pave the same street twice). It is a
+supplement rather than a wider `fetch_city.py` query on purpose: the 92 tiles in `city_tiles/` are
+keyed by tile name and not by query, so widening that query means refetching 510 MB of buildings,
+parks and water to get a few megabytes of streets. What is left is the fetch itself: Overpass is
+throttling this envelope badly (tiles alternate between 1 s and 240 s, 21 of 92 done in an hour on
+the one mirror that answers at all), and `overpass.py` exits non-zero rather than write a partial
+extract, so nothing can ship half-covered. It runs to completion and `city.b64` is repacked next.
+
+Two lessons worth keeping: a tile cache keyed by name and not by query is a trap, and
+`fetch_trees.py`'s page cache now carries a hash of its envelope for exactly that reason; and
+`out geom` instead of an `out body` with the node recursion took a tile from minutes to seconds.
+
+### The credit line
+
+**Mike, mid-round: remove the copyright data at the bottom of the screen, it can live in the info
+panel.** `#osmcredit` is gone on every device, which extends Round 69's phone decision to the
+desktop, and `#guideCredits` — the guide's "Credits" link, which was the phone path — now shows at
+every width. The About panel is the home, and it is reachable by that link and by the `i` key; the
+`i` button stays out of the bar, as it has since Round 53. Checked before removing anything: every
+source the bottom line named is already credited in the panel, and the panel's formal `.credits`
+block gained the five it was carrying only in prose (the Streets Department's closure permits, the
+PHMC markers, Percent for Art, the basemap Landmarks, Amtraker, Air Management Services and
+Ticketmaster), so the attribution of record is complete in one place. ODbL asks for the notice in
+the Produced Work, not on the screen at all times.
+
+- Verified by capture at the same poses as the screenshots: the York Street seam reads as one city,
+  West Fairmount Park is planted and tinted, the Zoo corridor runs unbroken, both 30th Street
+  portals take the rails into the dark, the wide tier's street trees are unchanged. Triangles
+  **13.4 to 13.6 M** at the skyline, park and seam poses against 11.9 M in Round 84, 372 to 484
+  draw calls. 101 tests pass (`tests/_common.walk_trees` reads the header's unit;
+  `test_blobs.test_tree_names_consistent` asserts the city box, no saturation, and more than 50,000
+  trees past the wide box so the far ring cannot go bare again). Page 27.80 MB (+1.10 MB, the tree
+  blob). Devlog Round 87, handoff, README, CLAUDE.md, DATA-LICENSE, the About panel.

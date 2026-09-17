@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """lidar_cache/phl_trees_raw.json -> trees.b64 + tree_names.json : the real PPR
-tree inventory packed for the app (int16, 0.2 m units, wide tier only).
-Layout: Int32[4] header (magic 0x53485454 'SHTT', nTrees, nNames, 0), then
-Int16 x4 per tree: x*5, z*5, dbh_inches, nameIdx.
+tree inventory packed for the app (int16, 0.7 m units, the whole city).
+Layout: Int32[4] header (magic 0x53485454 'SHTT', nTrees, nNames, unit in mm),
+then Int16 x4 per tree: x/unit, z/unit, dbh_inches, nameIdx.
+Round 87 widened the clip from the wide box to the whole city, which forced the
+quantum: at 0.2 m units int16 saturates at +-6,553 m and the city reaches
+x = 15,871 and z = -21,229, so a widened clip would have tripped the assert.
+0.7 m units (poles.b64's quantum) reach +-22,937 m; the header's fourth slot,
+which used to be a zero, now carries the unit in millimetres so the decoder
+never has to guess (a reader seeing 0 there falls back to the old 0.2 m).
 tree_names.json: {"names": [common...], "latin": [botanical...], "g": [groupIdx...]}
 Filtering: clip to the wide box, drop dead/stump rows, dedupe within 0.6 m, and
 reject trees inside a building footprint (lidar_cache/phl_footprints_local.json,
@@ -17,6 +23,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 CACHE = os.path.join(HERE, 'lidar_cache')
 from philly_frame import LON0, LAT0, KX, KZ   # the one scene frame
 WIDE = (-3700, 2300, -4480, 6400)    # pack_wide.py wide bbox, local meters
+# the whole city, from city_limit.json's buffered bound: the camera never leaves it and the
+# PPR inventory is the city's own, so nothing useful lies outside (Round 87)
+CITY = (-11800, 16300, -21500, 9500)
+UNIT = 0.7                           # metres per stored count; the header carries it in mm
 MAGIC = 0x53485454                   # 'SHTT'
 DEAD = re.compile(r'stump|dead|vacan|removal|removed|no tree|planting site', re.I)
 
@@ -95,7 +105,7 @@ def main():
             continue
         x = (lon - LON0) * KX
         z = (LAT0 - lat) * KZ
-        if not (WIDE[0] <= x <= WIDE[1] and WIDE[2] <= z <= WIDE[3]):
+        if not (CITY[0] <= x <= CITY[1] and CITY[2] <= z <= CITY[3]):
             n_clip += 1
             continue
         key = (int(x / 0.6), int(z / 0.6))
@@ -124,9 +134,9 @@ def main():
         d = int(round(dbh)) if dbh and dbh > 0 else 6
         kept.append((x, z, max(1, min(60, d)), names[nk]))
 
-    body = bytearray(struct.pack('<4i', MAGIC, len(kept), len(name_list), 0))
+    body = bytearray(struct.pack('<4i', MAGIC, len(kept), len(name_list), int(round(UNIT * 1000))))
     for x, z, d, ni in kept:
-        xi = int(round(x * 5)); zi = int(round(z * 5))
+        xi = int(round(x / UNIT)); zi = int(round(z / UNIT))
         assert -32767 <= xi <= 32767 and -32767 <= zi <= 32767, (x, z)
         body += struct.pack('<4h', xi, zi, d, ni)
     b64 = base64.b64encode(bytes(body)).decode('ascii')
@@ -138,7 +148,9 @@ def main():
 
     from collections import Counter
     gc = Counter(meta['g'][ni] for _x, _z, _d, ni in kept)
-    print(f'kept {len(kept)}  (clipped {n_clip}, dead {n_dead}, dupes {n_dupe}, in-building {n_bldg})')
+    n_wide = sum(1 for x, z, _d, _n in kept if WIDE[0] <= x <= WIDE[1] and WIDE[2] <= z <= WIDE[3])
+    print(f'kept {len(kept)}  ({n_wide} in the wide box, {len(kept) - n_wide} beyond it)')
+    print(f'  (clipped {n_clip}, dead {n_dead}, dupes {n_dupe}, in-building {n_bldg})')
     print(f'{len(name_list)} species; group counts {dict(sorted(gc.items()))}')
     print(f"trees.b64 {len(b64) / 1e6:.2f} MB, tree_names.json {os.path.getsize(os.path.join(HERE, 'tree_names.json')) / 1e3:.1f} KB", flush=True)
 
