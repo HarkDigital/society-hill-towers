@@ -13,6 +13,7 @@ Everything in this directory is applied **by hand, by the owner**, on the lionsp
 | `ais_relay.py` + `ais-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | one aisstream.io socket → `/var/www/philly3d/ais.json` every 4 s |
 | `concerts_bake.py` + `concerts-bake.service` + `concerts-bake.timer` | `/opt/philly3d/`, `/etc/systemd/system/` | Ticketmaster Discovery API (Philadelphia music, 3 days) → `/var/www/philly3d/concerts.json` every 15 min; the key in `/etc/philly3d/concerts.env` |
 | `closures_bake.py` + `closures-bake.service` + `closures-bake.timer` | `/opt/philly3d/`, `/etc/systemd/system/` | the Streets Department's closure permits and paving status (City ArcGIS, no key) → `/var/www/philly3d/closures.json` every 30 min |
+| `amtrak_bake.py` + `amtrak-bake.service` (loop) | `/opt/philly3d/`, `/etc/systemd/system/` | the Amtrak trains near the city from Amtraker (no key, ODC-By) → `/var/www/philly3d/amtrak.json` every 30 s |
 | `../deploy_philly3d.sh` | run from the laptop | tests → build → gzip gate → keep prev pair → `rsync --delay-updates` → live sha256 verify; `--rollback` |
 
 ## 1. Rebuild the VPS from scratch
@@ -164,6 +165,33 @@ The page polls the file every 30 minutes while visible, treats a `t` older than 
 the file is missing. On philly3d.com the fetch is same-origin. The GitHub Pages copy needs the
 `location = /closures.json` block in `philly3d.vhost.example` (ACAO *, like the other feeds; a
 vhost edit, `nginx -t` between steps, your go) before it posts a barrel.
+
+## 9. Amtrak baker (Round 80)
+
+Stdlib only, no key. A loop (not a timer: 30 s is under systemd's timer accuracy) pulls the
+Amtraker API every 30 seconds with `Accept-Encoding: gzip` and a User-Agent (Amtraker
+refuses a call without one), keeps the Active trains inside a box about 11 km beyond the
+model's, and writes their position, heading, speed, route, destination, next stop with its
+lateness and the fix time to `/var/www/philly3d/amtrak.json` (+ `.gz` twin, atomic, 0644;
+a few kilobytes). The upstream is 1.3 MB a pull for the whole country and refreshes about
+once a minute, so two pulls a minute from one host is the floor it asks for, about 430 MB a
+day of ingress. Amtraker's data is ODC-By 1.0: the page credits it in the credit line and
+the About panel (the attribution is required, and prominent).
+
+```sh
+cp amtrak_bake.py /opt/philly3d/ && chmod 755 /opt/philly3d/amtrak_bake.py
+python3 /opt/philly3d/amtrak_bake.py --out /var/www/philly3d/amtrak.json -v && ls -l /var/www/philly3d/amtrak.json*   # one bake, by hand
+cp amtrak-bake.service /etc/systemd/system/ && systemctl daemon-reload
+systemctl enable --now amtrak-bake.service
+systemctl status amtrak-bake ; journalctl -u amtrak-bake -n 5
+curl -s https://philly3d.com/amtrak.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["trains"]), "trains, fix age", round(d["t"]-d["src"]), "s")'
+```
+
+The page polls the file every 30 seconds while visible; a `t` older than 150 seconds is a
+stopped baker, and the page then pulls Amtraker itself every 60 seconds (its CORS header
+allows it) and retries the baked file every 5 minutes, so the trains keep running either
+way. The GitHub Pages copy needs the `location = /amtrak.json` block in
+`philly3d.vhost.example` (ACAO *) to read the baked file; without it, it rides the direct pull.
 
 ## Lightning relay
 

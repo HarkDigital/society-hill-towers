@@ -34,6 +34,8 @@ credit line (`#osmcredit`) and the About panel link to
 https://www.openstreetmap.org/copyright. That link must stay in any copy of the page, and
 the files above must keep this notice if they are redistributed.
 
+| `rail_amtrak.json` | `bake_rail.py` | Overpass: the `railway=rail` ways Amtrak operates over the far-ring box and the Northeast Corridor and Keystone Corridor ways by name (Round 80), the track the live trains ride and the drawn corridor |
+
 ## City of Philadelphia open data (CC-BY 4.0 unless the dataset says otherwise)
 
 | File | Made by | Source |
@@ -93,8 +95,14 @@ stored: the PM2.5 sets the haze and the AQI line on the time panel), the Streets
 street closure permits and paving status (StreetSmartPHL and LaneClosure_Master on the City
 ArcGIS, City of Philadelphia License; philly3d.com keeps a trimmed copy refreshed every thirty
 minutes, the permits in force with their purpose, dates and the city's permit link, dropped by
-the page once it is three hours old), and OpenStreetMap Nominatim for search (ODbL data;
-subject to the Nominatim usage policy). Each feed has its own terms of use; the page credits them.
+the page once it is three hours old), Amtrak train positions through the Amtraker API
+(https://amtraker.com, a community mirror of Amtrak's own tracker by piemadd, its data under
+the Open Data Commons Attribution License, ODC-By 1.0, which asks for prominent attribution:
+the credit line and the About panel name Amtraker; philly3d.com keeps a copy of the trains
+near the city refreshed every thirty seconds, the page pulls Amtraker itself when that copy
+is stale; Amtrak is a registered service mark of the National Railroad Passenger Corporation
+and the page is unaffiliated), and OpenStreetMap Nominatim for search (ODbL data; subject to
+the Nominatim usage policy). Each feed has its own terms of use; the page credits them.
 
 ## Fonts (SIL Open Font License 1.1)
 

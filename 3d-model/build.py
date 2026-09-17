@@ -23,7 +23,7 @@ REQUIRED = {
     "wide.b64": 4_800_000, "city.b64": 8_200_000, "outskirts.b64": 1_640_000, "storefronts.b64": 40_000, "trees.b64": 420_000, "poles.b64": 1_300_000, "paved.b64": 250_000, "traffic.b64": 100_000,
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
     "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000, "parking_south.json": 9_000,
-    "towers.json": 4_000, "schuylkill.json": 8_000, "delaware.json": 8_000, "markets.json": 3_000, "markers.json": 120_000, "landmarks.json": 100_000,
+    "towers.json": 4_000, "schuylkill.json": 8_000, "delaware.json": 8_000, "markets.json": 3_000, "markers.json": 120_000, "landmarks.json": 100_000, "rail_amtrak.json": 30_000,
 }
 MAX_HTML = 75_000_000   # runaway-growth tripwire, raised from 25 MB on 2026-09-02 for the roof, colour and storefront passes (the page was ~25 MB; the old 16 MB artifact cap is long moot)
 # Packed int16 blobs are stored byte-planar (header, all low bytes, all high
@@ -157,6 +157,7 @@ const("PARKING_SOUTH", text_of("parking_south.json", "null"))
 const("TOWERS", text_of("towers.json", "null"))
 const("SCHUYLKILL_DATA", text_of("schuylkill.json", "null"))
 const("DELAWARE_DATA", text_of("delaware.json", "null"))   # the tidal Delaware's outline (bake_delaware.py): the shoreline past the DEM and the sheets past the ground box
+const("RAIL_AMTRAK", text_of("rail_amtrak.json", "null"))   # Amtrak's tracks through the city (bake_rail.py, Round 80): the live trains ride them
 const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud models (pack_clouds.py): the cloud field of Round 67
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)

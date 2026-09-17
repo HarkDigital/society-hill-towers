@@ -9472,6 +9472,7 @@
     else if (k === 'g') toggleLightsLayer();
     else if (k === 'm') toggleConcerts();
     else if (k === 'u') toggleClosures();
+    else if (k === 'k') toggleAmtrak();
     else if (k === '?') toggleGuide();
     else if (k === 'i') openAbout();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
@@ -9823,10 +9824,17 @@
   const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures'];
   const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true, amtrak: true, closures: true };
   const LAYER_MASK_V2 = 1024, LAYER_MASK_V3 = 4096;
-  // Amtrak (Round 80 fills this in): the flag, its row sync and its toggle hold the eleventh bit
+  // Amtrak (Round 80; the eleventh bit was reserved in Round 79): the flag and its toggle live
+  // here with the layer bits, the layer itself in the live Amtrak trains section
   const AMTRAK = { on: true };
   function syncAmtrakBtn() { syncLayerBtn(document.getElementById('btnAmtrak'), AMTRAK.on); }
-  function toggleAmtrak() { AMTRAK.on = !AMTRAK.on; syncAmtrakBtn(); }
+  function toggleAmtrak() {
+    if (!septaCanFetch) return;
+    AMTRAK.on = !AMTRAK.on;
+    syncAmtrakBtn();
+    if (AMTRAK.on) AMTRAK.nextT = 0;
+    else if (pickedTrain) { pickedTrain = null; vehinfoEl.hidden = true; }
+  }
   let prefsReady = false, prefsTimer = 0;
   let hashClock = false, clockTouched = false;   // a shared link's pinned clock is not saved until the user changes the time
   function layerFlags() {
@@ -9998,6 +10006,7 @@
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
   let pickedVeh = null;
+  let pickedTrain = null;   // an Amtrak train's card follows its head car (Round 80)
   let pickedClosure = null;   // a street closure's card follows its block (Round 79)
   let pickedMarker = null, pickedArt = null;   // a historical marker's or an artwork's card follows its post (Round 77)
   let pickedMarket = null;   // a farmers' market's card follows its tents (Round 76)
@@ -10156,7 +10165,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -10183,7 +10192,8 @@
     const mAct = marketsReady && marketTentN > 0;      // the open markets' tents (Round 76)
     const kAct = markersReady;                         // the historical markers and the art (Round 77)
     const cAct = closuresReady && CLOSURES.on && (barrelMesh.count > 0 || coneMesh.count > 0);   // the closed blocks (Round 79)
-    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct) return;
+    const aAct = amtrakReady && AMTRAK.on && (amtrakCoach.count > 0 || amtrakLoco.count > 0 || amtrakAcela.count > 0);   // the trains (Round 80)
+    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -10231,21 +10241,26 @@
     if (mAct) for (const m of marketMeshes) if (m.count) targets.push(m);
     if (kAct) { for (const m of markerMeshes) if (m.count) targets.push(m); for (const m of artMeshes) if (m.count) targets.push(m); }
     if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); }
+    if (aAct) { for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) if (m.count) targets.push(m); }
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
       const h = hits[0];
       let v = null, hitSt = null;
       if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.shipKind !== undefined || h.object === shipAnchor) {
         const p = h.object === shipAnchor ? shipPick[SHIP_KIND_N][h.instanceId] : shipPick[h.object.userData.shipKind][h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.marketWay !== undefined) {
         const m = marketPick[h.object.userData.marketWay][h.instanceId];
-        if (m) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedMarket = m; marketCard(m); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (m) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedMarket = m; marketCard(m); vehinfoEl.hidden = false; cardUnlock(); return; }
+      }
+      if (aAct && (h.object.userData.amKind !== undefined || h.object === amtrakPin)) {
+        const p = h.object === amtrakPin ? amtrakPinPick[h.instanceId] : amtrakPick[h.object.userData.amKind][h.instanceId];
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = p; amtrakCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object === barrelMesh || h.object === coneMesh) {
         const rec = (h.object === barrelMesh ? closurePickB : closurePickC)[h.instanceId];
@@ -10261,8 +10276,8 @@
       else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
       else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
       else if (h.object === indegoBadge) hitSt = indegoPickB[h.instanceId];
-      if (v) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
-      if (hitSt) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
+      if (v) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      if (hitSt) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle or bike dock within reach of the
     // tap point (a little wider under the crosshair, where aiming is coarser)
@@ -10321,12 +10336,24 @@
       if (d2 < bestD) { bestD = d2; bestC = rec; bestV = null; bestS = null; bestM = null; bestK = null; }
     }
     if (bestK && pickOccluded(bestK.x, bestK.gy + 1.6, bestK.z)) bestK = null;
+    let bestA = null;   // a train's head within reach of the tap
+    if (aAct) for (const p of amtrakMap.values()) {
+      if (p.off || p.hx == null || (p.hfl & 1)) continue;
+      _ssv.set(p.hx, p.hy + 3, p.hz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) continue;
+      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
+      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD) { bestD = d2; bestA = p; bestV = null; bestS = null; bestM = null; bestK = null; bestC = null; }
+    }
     if (bestC && pickOccluded(bestC.mx, bestC.my + 1.2, bestC.mz)) bestC = null;
+    if (bestA && pickOccluded(bestA.hx, bestA.hy + 2.5, bestA.hz)) bestA = null;
+    if (bestA) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = bestA; amtrakCard(bestA); vehinfoEl.hidden = false; cardUnlock(); return; }
     if (bestC) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = bestC; closureCard(bestC); vehinfoEl.hidden = false; cardUnlock(); return; }
-    if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
     if (bestK) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = bestKm ? bestK : null; pickedArt = bestKm ? null : bestK; if (bestKm) markerCard(bestK); else artCard(bestK); vehinfoEl.hidden = false; cardUnlock(); return; }
-    if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
-    if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
+    if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
+    if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
     // canopy spheres (tapping a crown is the natural gesture), then fall back
     // to the nearest tree around the tapped ground point (trunk-level taps)
@@ -10367,7 +10394,7 @@
       if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; vehinfoEl.hidden = true; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -11379,7 +11406,7 @@
     searchFlyTo(e.x, gy + (e.kind === 'landmark' ? 30 : 8), e.z, wide ? 600 : mid ? 400 : e.kind === 'landmark' ? 250 : 220);
     if (wide) clearSearchMark(); else placeSearchMark(e.x, gy, e.z, e.name);
     if ((e.kind === 'market' || e.kind === 'marker' || e.kind === 'art') && e.ref) {   // arrive with the card open (a market's says when it opens)
-      pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null;
+      pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
       if (e.kind === 'market') { pickedMarket = e.ref; marketCard(e.ref); }
       else if (e.kind === 'marker') { pickedMarker = e.ref; markerCard(e.ref); }
       else { pickedArt = e.ref; artCard(e.ref); }
@@ -11548,6 +11575,112 @@
     el.castShadow = true;
     el.receiveShadow = true;
     groupCity.add(el);
+  });
+
+  // ---- Amtrak's tracks (Round 80). RAIL_AMTRAK (bake_rail.py: the railway=rail ways Amtrak
+  // operates over the city, from OSM, every track its own line with tunnel and bridge flags)
+  // becomes a snap grid the live trains ride and a drawn corridor: a ballast slab and two
+  // rails per 20 m segment, the profile smoothed like the El's, held at the higher abutment
+  // across a bridge and above the water on the river crossings, the tunnel and covered runs
+  // (the 30th Street train shed) in the grid but not drawn. ?rails=0 skips the drawing.
+  const railGrid = new Map(), RAIL_CELL = 36;
+  const railSegs = [];   // ax, az, bx, bz, ay, by, flags (1 tunnel, 2 bridge), per segment
+  let railReady = false;
+  function railAdd(ax, az, bx, bz, ay, by, flags) {
+    const s = railSegs.length;
+    railSegs.push(ax, az, bx, bz, ay, by, flags);
+    const x0 = Math.floor(Math.min(ax, bx) / RAIL_CELL), x1 = Math.floor(Math.max(ax, bx) / RAIL_CELL);
+    const z0 = Math.floor(Math.min(az, bz) / RAIL_CELL), z1 = Math.floor(Math.max(az, bz) / RAIL_CELL);
+    for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
+      const key = gx + ':' + gz;
+      let a = railGrid.get(key);
+      if (!a) { a = []; railGrid.set(key, a); }
+      a.push(s);
+    }
+  }
+  function railSnap(x, z, maxD) {   // [px, pz, ux, uz, py, flags] of the nearest track within maxD, or null
+    const gx = Math.floor(x / RAIL_CELL), gz = Math.floor(z / RAIL_CELL), r = Math.ceil(maxD / RAIL_CELL);
+    let bd = maxD * maxD, best = null;
+    for (let cx2 = gx - r; cx2 <= gx + r; cx2++) for (let cz2 = gz - r; cz2 <= gz + r; cz2++) {
+      const a = railGrid.get(cx2 + ':' + cz2);
+      if (!a) continue;
+      for (const s of a) {
+        const ax = railSegs[s], az = railSegs[s + 1], dx = railSegs[s + 2] - ax, dz = railSegs[s + 3] - az;
+        const L2 = dx * dx + dz * dz || 1e-9;
+        let t = ((x - ax) * dx + (z - az) * dz) / L2;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const ex = ax + dx * t - x, ez = az + dz * t - z, d2 = ex * ex + ez * ez;
+        if (d2 < bd) { bd = d2; const L = Math.sqrt(L2); best = [ax + dx * t, az + dz * t, dx / L, dz / L, railSegs[s + 4] + (railSegs[s + 5] - railSegs[s + 4]) * t, railSegs[s + 6]]; }
+      }
+    }
+    return best;
+  }
+  function railWalk(x, z, dx, dz, dist) {   // along the rails from (x, z) facing (dx, dz) for dist metres (negative walks back); [x, z, dx, dz, y, flags]
+    let px = x, pz = z, py = 0, fl = 0, left = Math.abs(dist);
+    const sgn = dist < 0 ? -1 : 1;
+    for (let guard = 0; left > 0 && guard < 400; guard++) {
+      const step = Math.min(left, 30);
+      px += dx * step * sgn; pz += dz * step * sgn;
+      const sn = railSnap(px, pz, 60);
+      if (!sn) break;
+      px = sn[0]; pz = sn[1]; py = sn[4]; fl = sn[5];
+      if (sn[2] * dx + sn[3] * dz < 0) { dx = -sn[2]; dz = -sn[3]; } else { dx = sn[2]; dz = sn[3]; }   // the heading stays continuous across a segment
+      left -= step;
+    }
+    if (!py) { const sn = railSnap(px, pz, 60); if (sn) { py = sn[4]; fl = sn[5]; } }
+    return [px, pz, dx, dz, py, fl];
+  }
+  step('Laying the Northeast Corridor', () => {
+    if (typeof RAIL_AMTRAK === 'undefined' || !RAIL_AMTRAK || !RAIL_AMTRAK.lines) return;
+    const draw = !/[?&]rails=0\b/.test(location.search);
+    const parts = [];
+    const ballast = new THREE.Color(0x3a3733), railC = new THREE.Color(0x4a4d4a);
+    const boxAt = (sx, sy, sz, x, y, z, yaw, pitch, col) => {
+      const g = new THREE.BoxGeometry(sx, sy, sz);
+      if (pitch) g.rotateZ(pitch);
+      g.rotateY(yaw);
+      g.translate(x, y, z);
+      parts.push({ geom: g, color: col });
+    };
+    for (const ln of RAIL_AMTRAK.lines) {
+      const src = ln.p;
+      if (!src || src.length < 2) continue;
+      const flags = (ln.t ? 1 : 0) | (ln.b ? 2 : 0);
+      const pts = [];
+      for (let i = 0; i + 1 < src.length; i++) {
+        const ax = src[i][0], az = src[i][1], bx = src[i + 1][0], bz = src[i + 1][1];
+        const n = Math.max(1, Math.round(Math.hypot(bx - ax, bz - az) / 20));
+        for (let s = 0; s < n; s++) pts.push([ax + (bx - ax) * s / n, az + (bz - az) * s / n]);
+      }
+      pts.push(src[src.length - 1]);
+      const ys = pts.map((p) => Math.max(siteY(p[0], p[1], 'ground') + 0.45, TERRAIN.water + (ln.b ? 9 : 0.45)));
+      if (ln.b) { const top = Math.max(ys[0], ys[ys.length - 1]); for (let i = 0; i < ys.length; i++) ys[i] = Math.max(ys[i], top); }   // a bridge holds the higher abutment
+      else for (let pass = 0; pass < 2; pass++) {
+        const s0 = ys.slice();
+        for (let i = 0; i < ys.length; i++) { let a = 0, n = 0; for (let j = Math.max(0, i - 3); j <= Math.min(ys.length - 1, i + 3); j++) { a += s0[j]; n++; } ys[i] = a / n; }
+      }
+      for (let i = 0; i + 1 < pts.length; i++) {
+        const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
+        const L = Math.hypot(bx - ax, bz - az);
+        if (L < 0.5) continue;
+        railAdd(ax, az, bx, bz, ys[i], ys[i + 1], flags);
+        if (!draw || ln.t) continue;
+        const mx = (ax + bx) / 2, mz = (az + bz) / 2, my = (ys[i] + ys[i + 1]) / 2;
+        const yaw = Math.atan2(-(bz - az), bx - ax), pitch = Math.atan2(ys[i + 1] - ys[i], L);
+        const lx = Math.sin(yaw), lz = Math.cos(yaw);
+        boxAt(L + 0.3, 0.35, 3.4, mx, my - 0.42, mz, yaw, pitch, ballast);
+        if (!isTouch) {
+          boxAt(L + 0.3, 0.16, 0.14, mx - lx * 0.72, my - 0.17, mz - lz * 0.72, yaw, pitch, railC);
+          boxAt(L + 0.3, 0.16, 0.14, mx + lx * 0.72, my - 0.17, mz + lz * 0.72, yaw, pitch, railC);
+        }
+      }
+    }
+    if (draw && parts.length) {
+      const mesh = new THREE.Mesh(mergeColored(parts), new THREE.MeshLambertMaterial({ vertexColors: true }));
+      mesh.receiveShadow = true;
+      groupCity.add(mesh);
+    }
+    railReady = true;
   });
 
   step('Rolling out the SEPTA fleet', () => {
@@ -12920,6 +13053,289 @@
     }
   }
 
+  // ---------------------------------------------------------------- live Amtrak trains
+  // (Round 80) Amtrak's trains through the city, from Amtraker (a community mirror of
+  // Amtrak's own tracker, ODC-By 1.0, the credit line names it; SEPTA's rail was removed in
+  // Round 20 as underground and hard to track, and these are neither). ops/amtrak_bake.py on
+  // the VPS writes the trains near the city to amtrak.json every 30 s; the page polls it
+  // every 30 s, treats a file 150 s stale as a stopped baker and then pulls Amtraker itself
+  // every 60 s (1.3 MB, CORS open), retrying the baked file every 5 min. Every fix snaps to
+  // the baked track (railSnap); the head then runs on along the rails at the reported speed,
+  // capped at 180 s past the fix, converging on a new fix over about 4 s and never backing
+  // (a fix more than 400 m off snaps). The 8-point compass only signs the track direction
+  // (it is never a yaw); when it is ambiguous the displacement since the last fix decides,
+  // else the sign it had. A consist follows the head car by car along the rails, so a 26 m
+  // coach tracks the curve, and a car on a tunnel or covered run (the 30th Street shed) is
+  // not drawn. Acela: a power car, eight coaches, a power car; Regional: an ACS-64 and eight
+  // Amfleets; Keystone and Pennsylvanian: an ACS-64 and five; anything else: an ACS-64 and
+  // nine. The K key and the eleventh layer bit (reserved since Round 79).
+  Object.assign(AMTRAK, { ok: false, fails: 0, busy: false, nextT: 0, baked: true, bakedRetryT: 0, host: '' });
+  const AMTRAK_BAKED = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/amtrak.json' : 'https://philly3d.com/amtrak.json';
+  const AMTRAK_DIRECT = 'https://api-v3.amtraker.com/v3/trains';
+  const AMTRAK_POLL = 30000, AMTRAK_DIRECT_POLL = 60000, AMTRAK_STALE = 150, AMTRAK_CAP = 48, AMTRAK_CAR_CAP = 512;
+  const AMTRAK_RUN = 240, AMTRAK_SNAP = 600;   // dead reckoning runs this long past a fix (Amtrak's fixes average about four minutes apart); a fix farther than this from the reckoned head snaps
+  const AMTRAK_KIND = (route) => /acela/i.test(route) ? 0 : /regional/i.test(route) ? 1 : /keystone|pennsylvanian/i.test(route) ? 2 : 3;
+  const AMTRAK_CONSIST = [[1, 2, 2, 2, 2, 2, 2, 2, 2, 1], [0, 2, 2, 2, 2, 2, 2, 2, 2], [0, 2, 2, 2, 2, 2], [0, 2, 2, 2, 2, 2, 2, 2, 2, 2]];   // car kinds by train kind: 0 ACS-64, 1 Acela power car, 2 Amfleet
+  const AMTRAK_LEN = [20.3, 21.2, 25.9];
+  const AMTRAK_CHIP = ['#b0203a', '#1f4fa3', '#1f8a8a', '#3a4a7a'];
+  const AMTRAK_HDG = { N: [0, -1], NE: [0.707, -0.707], E: [1, 0], SE: [0.707, 0.707], S: [0, 1], SW: [-0.707, 0.707], W: [-1, 0], NW: [-0.707, -0.707] };
+  const amText = (s) => String(s == null ? '' : s).replace(/\s*[‒–—―·•]\s*/g, ', ').trim();
+  const amtrakMap = new Map();
+  const amtrakPick = [[], [], []], amtrakPinPick = [];
+  let amtrakLoco = null, amtrakAcela = null, amtrakCoach = null, amtrakPin = null, amtrakReady = false;
+  const btnAmtrak = document.getElementById('btnAmtrak');
+  function amtrakCarGeom(kind) {   // 0 ACS-64, 1 Acela power car, 2 Amfleet coach: x along the length, y up from the rail top
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), r, g, b, glow));
+    const L = AMTRAK_LEN[kind];
+    box(L - 2, 0.5, 2.4, 0, 0.95, 0, 0.12, 0.12, 0.13);                 // the underframe
+    box(2.6, 0.9, 2.2, -L / 2 + 2.6, 0.5, 0, 0.1, 0.1, 0.11);            // and the bogies
+    box(2.6, 0.9, 2.2, L / 2 - 2.6, 0.5, 0, 0.1, 0.1, 0.11);
+    if (kind === 2) {   // the Amfleet: a stainless tube with a continuous window band
+      box(L, 2.9, 3.05, 0, 2.65, 0, 0.50, 0.52, 0.55);
+      box(L - 3, 0.8, 3.12, 0, 3.0, 0, 0.58, 0.64, 0.72, 1);            // the band glows at night
+      box(L - 2, 0.35, 2.2, 0, 4.25, 0, 0.42, 0.44, 0.46);
+    } else if (kind === 0) {   // the ACS-64: a boxy body, the blue band, cab glass at both ends, the pantograph well
+      box(L, 3.0, 3.0, 0, 2.7, 0, 0.56, 0.58, 0.60);
+      box(L - 0.4, 0.55, 3.06, 0, 2.0, 0, 0.10, 0.20, 0.45);
+      box(0.3, 0.9, 2.6, -L / 2 + 0.05, 3.1, 0, 0.55, 0.62, 0.72, 1);
+      box(0.3, 0.9, 2.6, L / 2 - 0.05, 3.1, 0, 0.55, 0.62, 0.72, 1);
+      box(L - 2, 0.4, 2.4, 0, 4.4, 0, 0.30, 0.31, 0.33);
+      box(4, 0.35, 2.0, 0, 4.9, 0, 0.18, 0.18, 0.2);
+    } else {   // the Acela power car: a longer, lower nose each end, the red stripe
+      box(L - 4, 3.2, 3.1, 0, 2.8, 0, 0.55, 0.60, 0.66);
+      box(4.5, 2.4, 2.9, L / 2 - 2.1, 2.2, 0, 0.55, 0.60, 0.66);
+      box(4.5, 2.4, 2.9, -L / 2 + 2.1, 2.2, 0, 0.55, 0.60, 0.66);
+      box(L - 4.2, 0.5, 3.16, 0, 2.6, 0, 0.55, 0.12, 0.10);
+      box(0.3, 0.8, 2.2, L / 2 - 0.1, 3.0, 0, 0.55, 0.62, 0.72, 1);
+      box(0.3, 0.8, 2.2, -L / 2 + 0.1, 3.0, 0, 0.55, 0.62, 0.72, 1);
+    }
+    return septaMerge(parts);
+  }
+  function amtrakPinTexture() {   // the aircraft badge's casing with a train's face: two windows, a headlight, the pilot
+    const cv = document.createElement('canvas');
+    cv.width = 256; cv.height = 320;
+    const g = cv.getContext('2d');
+    const bw = 240, bh = 200, bx = 8, by = 8, rad = 34;
+    g.fillStyle = '#12294a'; g.strokeStyle = '#fdfbf6'; g.lineWidth = 10;
+    g.beginPath(); g.moveTo(128 - 30, by + bh - 6); g.lineTo(128, 312); g.lineTo(128 + 30, by + bh - 6); g.closePath(); g.fill(); g.stroke();
+    g.beginPath(); g.moveTo(bx + rad, by); g.arcTo(bx + bw, by, bx + bw, by + bh, rad); g.arcTo(bx + bw, by + bh, bx, by + bh, rad); g.arcTo(bx, by + bh, bx, by, rad); g.arcTo(bx, by, bx + bw, by, rad); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#fdfbf6';
+    g.beginPath(); g.moveTo(58, 176); g.lineTo(58, 90); g.quadraticCurveTo(58, 44, 104, 44); g.lineTo(152, 44); g.quadraticCurveTo(198, 44, 198, 90); g.lineTo(198, 176); g.closePath(); g.fill();
+    g.fillStyle = '#12294a';
+    g.fillRect(74, 66, 46, 36); g.fillRect(136, 66, 46, 36);
+    g.beginPath(); g.arc(128, 140, 14, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#7fb3ff'; g.beginPath(); g.arc(128, 140, 8, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#fdfbf6'; g.fillRect(40, 176, 176, 12);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding;
+    tex.anisotropy = anisoOf(4);
+    return tex;
+  }
+  function amtrakInit() {
+    const mk = (geom, cap, kind) => {
+      const m = new THREE.InstancedMesh(geom, septaMats.body, cap);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0; m.frustumCulled = false; m.castShadow = !isTouch;
+      m.userData.amKind = kind;
+      for (let k = 0; k < cap; k++) m.setColorAt(k, _sc.setRGB(1, 1, 1));   // the geometry carries its own scheme
+      m.instanceColor.needsUpdate = true;
+      groupCity.add(m);
+      return m;
+    };
+    amtrakLoco = mk(amtrakCarGeom(0), AMTRAK_CAP, 0);
+    amtrakAcela = mk(amtrakCarGeom(1), AMTRAK_CAP * 2, 1);
+    amtrakCoach = mk(amtrakCarGeom(2), AMTRAK_CAR_CAP, 2);
+    amtrakPin = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
+      postRaw(new THREE.MeshBasicMaterial({ map: amtrakPinTexture(), transparent: true, depthWrite: false, fog: false, toneMapped: false }), { mask: true }), AMTRAK_CAP);
+    amtrakPin.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    amtrakPin.frustumCulled = false; amtrakPin.count = 0; amtrakPin.renderOrder = 12;
+    groupCity.add(amtrakPin);
+    amtrakReady = true;
+    amtrakStatus();
+  }
+  function amtrakProject(raw) {   // the baker's contract from Amtraker's own answer (the direct fallback)
+    const out = [];
+    for (const k in raw) {
+      const group = raw[k];
+      if (!Array.isArray(group)) continue;
+      for (const t of group) {
+        if (!t || String(t.trainState || '').toLowerCase() !== 'active') continue;
+        const lat = +t.lat, lon = +t.lon;
+        if (!isFinite(lat) || !isFinite(lon) || lat < 39.75 || lat > 40.25 || lon < -75.45 || lon > -74.8) continue;
+        let next = null;
+        for (const s of t.stations || []) {
+          if (!s || s.bus || String(s.status || '').toLowerCase() === 'departed') continue;
+          const sch = Date.parse(s.schArr || s.schDep || '') / 1000, est = Date.parse(s.arr || s.dep || '') / 1000;
+          next = { code: amText(s.code), name: amText(s.name), sch: sch > 0 ? sch : null, est: est > 0 ? est : null, late: sch > 0 && est > 0 ? Math.round((est - sch) / 60) : null };
+          break;
+        }
+        const fix = Date.parse(t.lastValTS || t.updatedAt || '') / 1000;
+        out.push({ id: amText(t.trainID || t.trainNum), num: amText(t.trainNum), route: amText(t.routeName), lat, lon, hdg: String(t.heading || '').toUpperCase().slice(0, 3),
+          mph: +t.velocity || 0, state: 'Active', fix: fix > 0 ? fix : 0, orig: amText(t.origCode), dest: amText(t.destName), destCode: amText(t.destCode), next, timely: amText(t.trainTimely) });
+      }
+    }
+    return out;
+  }
+  function amtrakUpsert(rec, nowP, nowS) {
+    if (!rec || !rec.id || !isFinite(+rec.lat) || !isFinite(+rec.lon)) return;
+    const x = (+rec.lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(+rec.lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+    let p = amtrakMap.get(rec.id);
+    if (!p) { p = { id: rec.id, kind: AMTRAK_KIND(rec.route || ''), sign: 0, hx: null, hz: null, hy: 0, cars: [], fx: null, fz: null, fix: 0 }; amtrakMap.set(rec.id, p); }
+    p.num = amText(rec.num); p.route = amText(rec.route); p.dest = amText(rec.dest); p.next = rec.next || null; p.timely = amText(rec.timely);
+    p.v = Math.max(0, (+rec.mph || 0) * 0.44704);
+    p.seenT = nowP;
+    if (p.fx === x && p.fz === z && p.fix === (rec.fix || 0)) return;   // the same fix again
+    const prevFx = p.fx, prevFz = p.fz;
+    const age = rec.fix > 0 ? clamp(nowS - rec.fix, 0, 1800) : 0;
+    p.fx = x; p.fz = z; p.fix = rec.fix || 0; p.fixT = nowP - age * 1000;
+    const sn = railSnap(x, z, 120);
+    p.off = !sn;
+    if (!sn) return;
+    // the way along the track: the compass against the tangent when it speaks clearly, else
+    // the displacement since the last fix, else the sign it had (never flipped on a curve)
+    const hv = AMTRAK_HDG[(rec.hdg || '').toUpperCase()] || null;
+    let sign = 0;
+    if (hv) { const dot = hv[0] * sn[2] + hv[1] * sn[3]; if (Math.abs(dot) > 0.3) sign = dot > 0 ? 1 : -1; }
+    if (!sign && prevFx != null) { const dot = (x - prevFx) * sn[2] + (z - prevFz) * sn[3]; if (Math.abs(dot) > 5) sign = dot > 0 ? 1 : -1; }
+    if (sign) p.sign = sign;
+    const s = p.sign || 1;
+    // the target: the snapped fix walked along the rails by what the train ran since the fix
+    const w = railWalk(sn[0], sn[1], sn[2] * s, sn[3] * s, Math.min(age, AMTRAK_RUN) * p.v);
+    p.tx = w[0]; p.tz = w[1]; p.tdx = w[2]; p.tdz = w[3];
+    if (p.hx == null || Math.hypot(p.tx - p.hx, p.tz - p.hz) > AMTRAK_SNAP) { p.hx = w[0]; p.hz = w[1]; p.dx = w[2]; p.dz = w[3]; p.hy = w[4]; p.hfl = w[5]; }
+  }
+  function amtrakGot(list, nowP, nowS) {
+    for (const rec of list || []) amtrakUpsert(rec, nowP, nowS);
+    AMTRAK.ok = true;
+    amtrakStatus();
+  }
+  function amtrakFetch(url, ms, ok, miss) {
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), ms) : 0;
+    fetch(url, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json().then((d) => ({ d, sNow: serverNow(r) })); })
+      .then(({ d, sNow }) => { clearTimeout(timer); ok(d, sNow); })
+      .catch(() => { clearTimeout(timer); miss(); });
+  }
+  function amtrakPoll(now) {
+    if (!amtrakReady || !AMTRAK.on || !septaCanFetch || document.hidden || AMTRAK.busy || now < AMTRAK.nextT) return;
+    if (!AMTRAK.baked && now >= AMTRAK.bakedRetryT) AMTRAK.baked = true;   // give the baker another try every 5 min
+    AMTRAK.busy = true;
+    const direct = () => {
+      AMTRAK.nextT = now + AMTRAK_DIRECT_POLL;
+      amtrakFetch(AMTRAK_DIRECT, 20000,
+        (raw) => { AMTRAK.busy = false; AMTRAK.fails = 0; AMTRAK.host = 'amtraker'; amtrakGot(amtrakProject(raw), performance.now(), Date.now() / 1000); },
+        () => { AMTRAK.busy = false; AMTRAK.fails++; amtrakStatus(); });
+    };
+    if (!AMTRAK.baked) { direct(); return; }
+    AMTRAK.nextT = now + AMTRAK_POLL;
+    amtrakFetch(AMTRAK_BAKED, 12000,
+      (d, sNow) => {
+        if (!d || !(d.t > 0) || !Array.isArray(d.trains) || sNow - d.t > AMTRAK_STALE) { AMTRAK.baked = false; AMTRAK.bakedRetryT = now + 300000; direct(); return; }   // stale: the baker is down
+        AMTRAK.busy = false; AMTRAK.fails = 0; AMTRAK.host = 'philly3d';
+        amtrakGot(d.trains, performance.now(), sNow);
+      },
+      () => { AMTRAK.baked = false; AMTRAK.bakedRetryT = now + 300000; direct(); });
+  }
+  function amtrakStatus() {
+    if (!btnAmtrak) return;
+    let n = 0;
+    for (const p of amtrakMap.values()) if (!p.off && p.hx != null) n++;
+    const off = !AMTRAK.ok && AMTRAK.fails >= 3;
+    btnAmtrak.title = 'Amtrak Trains (K): ' + (off ? 'Feed Offline' : n ? n + (n === 1 ? ' Train Tracked' : ' Trains Tracked') : 'No Trains in the City');
+    const cc = document.getElementById('amtrakCount');
+    if (cc) cc.textContent = off ? 'Offline' : n ? String(n) : '';
+  }
+  function amtrakCard(p) {
+    const n = AMTRAK_CONSIST[p.kind].length, mph = Math.round(p.v / 0.44704);
+    const fixAge = (performance.now() - p.fixT) / 1000;
+    let html = '<span class="vroute" style="background:' + AMTRAK_CHIP[p.kind] + ';color:#fdfbf6">' + septaEsc(p.route || 'Amtrak') + '</span>' +
+      '<span class="vdest">Train ' + septaEsc(p.num) + (p.dest ? ' to ' + septaEsc(p.dest) : '') + '</span>' +
+      '<div class="vmeta">' + septaEsc(n + ' Cars, ' + (mph > 1 ? mph + ' mph' : 'Stopped')) + '</div>';
+    if (p.next && p.next.name) {
+      const late = p.next.late;
+      const st = late == null ? '' : late > 0 ? late + ' Min Late' : late < 0 ? (-late) + ' Min Early' : 'On Time';
+      html += '<div class="vmeta">Next Stop: ' + septaEsc(p.next.name) + (st ? ', ' + st : '') + '</div>';
+    }
+    if (fixAge > AMTRAK_STALE) html += '<div class="vmeta">Estimated Position, Awaiting a Fix</div>';
+    html += '<div class="vmeta">Amtrak Positions via Amtraker</div>' +
+      '<a class="vlink" href="https://www.amtrak.com/track-your-train.html" target="_blank" rel="noopener">Track Train ' + septaEsc(p.num) + ' on Amtrak</a>';
+    cardSet(p, html);
+  }
+  function updateAmtrak(now, dt) {
+    if (!btnAmtrak) return;
+    if (!septaCanFetch) { btnAmtrak.style.display = 'none'; if (!amtrakMap.size) return; }
+    if (!amtrakReady) { if (septaMats.body && railReady) amtrakInit(); return; }
+    if (!AMTRAK.on) {
+      if (amtrakCoach.count || amtrakLoco.count || amtrakAcela.count || amtrakPin.count) for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) { m.count = 0; m.instanceMatrix.needsUpdate = true; }
+      return;
+    }
+    amtrakPoll(now);
+    _aqB.copy(camera.quaternion);
+    const counts = [0, 0, 0];
+    let np = 0;
+    const gone = [];
+    for (const p of amtrakMap.values()) {
+      if (now - p.seenT > 900000) { gone.push(p.id); continue; }   // unseen for 15 min: gone
+      if (p.off || p.hx == null) continue;
+      const fixAge = (now - p.fixT) / 1000;
+      // the target runs on at the train's speed (AMTRAK_RUN past the fix at most), the head converges on it
+      if (fixAge < AMTRAK_RUN && p.v > 0.05 && dt > 0) { const w = railWalk(p.tx, p.tz, p.tdx, p.tdz, p.v * dt); p.tx = w[0]; p.tz = w[1]; p.tdx = w[2]; p.tdz = w[3]; }
+      const gap = (p.tx - p.hx) * p.dx + (p.tz - p.hz) * p.dz;
+      const adv = Math.max(0, (fixAge < AMTRAK_RUN ? p.v * dt : 0) + gap * (1 - Math.exp(-dt / 4)));
+      if (adv > 0.005) { const w = railWalk(p.hx, p.hz, p.dx, p.dz, adv); p.hx = w[0]; p.hz = w[1]; p.dx = w[2]; p.dz = w[3]; p.hy = w[4]; p.hfl = w[5]; }
+      // the consist, car by car back along the rails
+      const consist = AMTRAK_CONSIST[p.kind];
+      let cx = p.hx, cz = p.hz, cdx = p.dx, cdz = p.dz, cy = p.hy, cfl = p.hfl, prevL = 0;
+      for (let k = 0; k < consist.length; k++) {
+        const ck = consist[k], L = AMTRAK_LEN[ck];
+        if (k) {
+          const w = railWalk(cx, cz, cdx, cdz, -(prevL / 2 + 1.2 + L / 2));
+          cx = w[0]; cz = w[1]; cdx = w[2]; cdz = w[3]; cy = w[4]; cfl = w[5];
+        }
+        prevL = L;
+        if (cfl & 1) continue;   // in the shed or a tunnel
+        if (!insideLimit(cx, cz)) continue;
+        const mesh = ck === 0 ? amtrakLoco : ck === 1 ? amtrakAcela : amtrakCoach;
+        const i = counts[ck]++;
+        if (i >= (ck === 2 ? AMTRAK_CAR_CAP : ck === 1 ? AMTRAK_CAP * 2 : AMTRAK_CAP)) continue;
+        _fe.set(0, Math.atan2(-cdz, cdx), 0, 'YZX');
+        _fq.setFromEuler(_fe);
+        _sp.set(cx, cy, cz);
+        _ss.set(1, 1, 1);
+        _sm.compose(_sp, _fq, _ss);
+        mesh.setMatrixAt(i, _sm);
+        amtrakPick[ck][i] = p;
+      }
+      if (np < AMTRAK_CAP && !(p.hfl & 1) && insideLimit(p.hx, p.hz)) {   // the badge over the head car, holding size like the aircraft pins
+        _sp.set(p.hx, p.hy + 6, p.hz);
+        const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
+        _ss.set(aps, aps, aps);
+        _sm.compose(_sp, _aqB, _ss);
+        amtrakPin.setMatrixAt(np, _sm);
+        amtrakPinPick[np] = p;
+        np++;
+      }
+    }
+    if (gone.length) { for (const g of gone) { const p = amtrakMap.get(g); amtrakMap.delete(g); if (pickedTrain === p) { pickedTrain = null; vehinfoEl.hidden = true; } } amtrakStatus(); }
+    amtrakLoco.count = Math.min(counts[0], AMTRAK_CAP); amtrakAcela.count = Math.min(counts[1], AMTRAK_CAP * 2); amtrakCoach.count = Math.min(counts[2], AMTRAK_CAR_CAP); amtrakPin.count = np;
+    for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) flushInst(m, -1);
+    if (pickedTrain) {
+      amtrakCard(pickedTrain);
+      _ssv.set(pickedTrain.hx, pickedTrain.hy + 5, pickedTrain.hz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else {
+        vehinfoEl.style.opacity = '1';
+        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      }
+    }
+  }
+  if (btnAmtrak) btnAmtrak.addEventListener('click', toggleAmtrak);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) AMTRAK.nextT = 0; });
+
   // ---------------------------------------------------------------- traffic
   // Typical vehicle traffic: synthesized cars at PennDOT's measured street
   // volumes (RMSTRAFFIC AADT conflated onto the OSM grid by bake_traffic.py),
@@ -13794,7 +14210,7 @@
     syncClosuresBtn();
     closureReconAt = 0;
     if (CLOSURES.on) CLOSURES.nextT = 0;
-    else if (pickedClosure) { pickedClosure = null; vehinfoEl.hidden = true; }
+    else if (pickedClosure) { pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; }
   }
   if (btnClosures) btnClosures.addEventListener('click', toggleClosures);
 
@@ -15528,7 +15944,7 @@
     // shadow map (autoUpdate is off): vehicles moving through the box get a
     // fresh depth pass every 4th frame; a changed static caster set (docks
     // arriving with the first Indego poll) gets one immediately
-    const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0);
+    const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0) || (amtrakReady && AMTRAK.on && amtrakCoach.count > 0);
     const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + marketTentN * 16777216 + (movers ? 1 << 30 : 0);   // bikes cast too, and a market opening its tents; movers switching off needs one last redraw
     if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
     sky.position.copy(camera.position);
@@ -15542,6 +15958,7 @@
     updateIndego(now, dt);
     updateFlights(now, dt);
     updateShips(now, dt);
+    updateAmtrak(now, dt);
     updateTraffic(now, dt);
     updateLights(now);
     updateTreePick();
@@ -15636,7 +16053,11 @@
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
-        paving: [{ id: 'p1', k: 'paved', week: true, addr: '200 Block of Pine St', g: [[-75.14550, 39.94340], [-75.14700, 39.94370]] }] }); closureStatus(); return CLOSURES.recs.length; }, cardFor: (kind, id) => { if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+        paving: [{ id: 'p1', k: 'paved', week: true, addr: '200 Block of Pine St', g: [[-75.14550, 39.94340], [-75.14700, 39.94370]] }] }); closureStatus(); return CLOSURES.recs.length; }, amtrak: () => ({ on: AMTRAK.on, ok: AMTRAK.ok, fails: AMTRAK.fails, baked: AMTRAK.baked, host: AMTRAK.host, n: amtrakMap.size, drawn: amtrakReady ? [amtrakLoco.count, amtrakAcela.count, amtrakCoach.count, amtrakPin.count] : null, list: [...amtrakMap.values()].map((p) => ({ id: p.id, route: p.route, num: p.num, off: !!p.off, x: p.hx == null ? null : Math.round(p.hx), z: p.hz == null ? null : Math.round(p.hz), y: +(p.hy || 0).toFixed(1), mph: Math.round(p.v / 0.44704), sign: p.sign, tunnel: !!(p.hfl & 1), fixAge: p.fixT ? Math.round((performance.now() - p.fixT) / 1000) : null })) }), amtrakTest: () => { AMTRAK.nextT = performance.now() + 600000; AMTRAK.ok = true; const nowS = Date.now() / 1000; amtrakGot([
+        { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
+        { id: 't2170', num: '2170', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
+        { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi,
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

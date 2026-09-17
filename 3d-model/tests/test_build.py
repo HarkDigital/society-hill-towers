@@ -112,7 +112,7 @@ class BuiltPage(unittest.TestCase):
         self.need_page()
         for const in ('SCENE_DATA', 'META', 'DEM', 'DEM_WIDE', 'DEM_SOUTH', 'WWB_PTS', 'WIDE_NAMES', 'DEM_CITY',
                       'FACADE_PAL', 'ST_LABELS', 'TREE_NAMES', 'PLACES', 'OVERPASSES', 'DEM_NW', 'NW_PARKS', 'NW_WATER',
-                      'TOWERS'):
+                      'TOWERS', 'MARKETS', 'MARKERS', 'LANDMARKS', 'RAIL_AMTRAK'):
             with self.subTest(const=const):
                 n = len(re.findall(r'\bconst %s = ' % const, self.page))
                 self.assertEqual(1, n, 'const %s declared %d times' % (const, n))

@@ -18,10 +18,11 @@ real solar clock over it all.
   overcast, fog, drizzle, rain, downpour, hail, snow, blizzard, sleet) pins a preset.
   The haze follows the city's own air monitors: a smoke day shortens the view and tints
   the sky tan (`?aqi=unhealthy` pins it).
-- **Layers** (F): live SEPTA vehicles, Indego bike share, flights, ships, concerts, typical
-  traffic, live street closures (barrels and cones from the Streets Department's permits,
-  fresh asphalt on the season's paved blocks), streetlights, street names, landmark labels,
-  and neighborhood names.
+- **Layers** (F): live SEPTA vehicles, Indego bike share, flights, ships, Amtrak trains
+  riding the real Northeast Corridor and Keystone tracks, concerts, typical traffic, live
+  street closures (barrels and cones from the Streets Department's permits, fresh asphalt on
+  the season's paved blocks), streetlights, street names, landmark labels, and neighborhood
+  names.
 - **Markets.** The city's 34 farmers' markets pitch their tents only while the clock
   says they are open; tap a tent for the hours and payments, or search a market by name.
 - **Markers and art.** The state's 348 historical markers stand at their posts with the
@@ -72,8 +73,8 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
   of Philadelphia via OpenDataPhilly (CC-BY); historical markers: Pennsylvania Historical and Museum Commission (public
   domain); traffic volumes: PennDOT RMSTRAFFIC.
 - Live: SEPTA TransitView, Indego / Bicycle Transit Systems, adsb.fi (ADS-B), aisstream.io
-  (AIS), Open-Meteo (weather), Air Management Services (air quality), OpenStreetMap
-  Nominatim (search).
+  (AIS), Amtraker (Amtrak positions, ODC-By), Open-Meteo (weather), Air Management
+  Services (air quality), the Streets Department (closures), OpenStreetMap Nominatim (search).
 - Rendering: [Three.js](https://threejs.org/) r149 (MIT), inlined.
 - Landmark massing and colors researched from public photographs, Philadelphia OPA
   parcels, and city LiDAR.

@@ -3788,3 +3788,56 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   keeps it on. 69 tests pass (`tests/test_closures_bake.py`). The baker itself is Mike's to
   install on the VPS (ops/README section 8) with the vhost block; until then the row stands
   with an empty count and reads Feed Offline after three misses.
+
+## Round 80: Amtrak on the Northeast Corridor (Sep 16)
+
+- **Mike's pick from the survey, his call to revisit rail: Amtrak comes in.** SEPTA's
+  Regional Rail went out in Round 20 as underground and hard to track; every Amtrak train
+  through the city runs on the surface (the Arsenal bridge, 30th Street, Zoo, the North
+  Philadelphia viaduct, Frankford Junction, Holmesburg, Torresdale; the Keystones west past
+  Overbrook), and Amtraker (a community mirror of Amtrak's own tracker by piemadd, ODC-By
+  1.0, CORS open, a User-Agent required) had 218 trains and seven inside the box on Sep 16.
+  Its answer is the whole country, 1.29 MB raw and 121 KB gzipped a pull, and Amtrak's
+  fixes come about every 224 seconds on average.
+- **The track.** Nothing in the page held a rail polyline (fetch_wide.py pulls the ways,
+  nothing keeps them; the El is the only track). `bake_rail.py` asks Overpass for the
+  railway=rail ways Amtrak operates over the far-ring box plus the Northeast Corridor and
+  Keystone Corridor ways by name, drops the 130 service and industrial ways, keeps each
+  way's tunnel/covered and bridge flags, clips, simplifies to 1.5 m (a stdlib
+  Douglas-Peucker) and writes `rail_amtrak.json`: 713 lines (every track its own), 213 track
+  km, 21 lines in tunnel (the 30th Street shed), 224 on bridges, 72 KB; the nearest line is
+  3 m from 30th Street Station, 6 m from North Philadelphia and 15 m from Overbrook. The
+  page's `step('Laying the Northeast Corridor')` builds a 36 m snap grid (`railSnap` gives
+  the point, tangent, height and flags; `railWalk` walks the rails for a distance, the
+  heading kept continuous across segments) and draws the corridor from 20 m segments: a
+  ballast slab and, on desktop, two rails, the profile smoothed like the El's, a bridge held
+  at its higher abutment and 9 m over the water, the tunnel runs in the grid and not drawn.
+- **The baker and the page.** `ops/amtrak_bake.py` (a loop service, 30 s, gzip, the
+  concerts skeleton) keeps the Active trains inside a box 11 km beyond the model's with
+  route, position, compass heading, speed, the fix time, destination, the first station not
+  yet departed and its lateness, and writes `amtrak.json`, a few hundred bytes. The page
+  polls it every 30 s, treats 150 s stale as a stopped baker and then pulls Amtraker itself
+  every 60 s through the same projection (`amtrakProject`), retrying the baked file every 5
+  min. A fix snaps to the track; the compass letter signs the direction against the tangent
+  when it speaks clearly (never a yaw), the displacement since the last fix decides
+  otherwise, else the sign stands. The target is the fix walked along the rails by what the
+  train ran since (`AMTRAK_RUN` 240 s at most, raised from 180 when the live check found
+  fixes 171 and 201 s old); the head runs on at the train's speed and converges on the
+  target over about four seconds, never backing, and a target more than 600 m off snaps. The
+  consist follows car by car back along the rails (an ACS-64 and eight Amfleets for a
+  Regional, a power car, eight coaches and a power car for an Acela, five coaches for a
+  Keystone), each car re-snapped so a 26 m coach follows the curve, a car in the shed not
+  drawn; the cars ride the fleet's night material with a glowing window band, a badge with
+  a train's face floats over the head car, and the card gives "Train 192 to Boston South,
+  9 Cars, 60 mph, Next Stop: Philadelphia 30th Street, 7 Min Late" with Amtrak's own
+  track-your-train link. The K key and the eleventh layer bit, the row after Live Ships,
+  Amtraker in the credit line and the About panel with the service-mark notice.
+- **Measured in the pane** with a live bake served locally: two Northeast Regionals landed
+  on the first poll (177 southbound past Torresdale at 100 mph drawn with its loco, eight
+  coaches and pin; 198 at the box edge held back by the limit); captures of 177 on its drawn
+  track across the neighbourhood, the Acela seed on the North Philadelphia viaduct with the
+  red stripe leading, the viaduct from the air with the tracks drawn, and 30th Street with
+  the stopped seed hidden in the shed. Page 26.61 MB (the track 72 KB, the code about 30 KB).
+  73 tests pass (`tests/test_amtrak_bake.py`, `tests/test_rail.py`). The baker service and the
+  vhost block are Mike's to install (ops/README section 9); until then the page rides the
+  direct pull.

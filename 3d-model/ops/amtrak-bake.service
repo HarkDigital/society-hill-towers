@@ -1,0 +1,31 @@
+# philly3d: the Amtrak baker, a loop that pulls Amtraker every 30 s and writes the trains near the city.
+# Install:  cp amtrak_bake.py /opt/philly3d/  (chmod 755)
+#           cp amtrak-bake.service /etc/systemd/system/
+#           systemctl daemon-reload && systemctl enable --now amtrak-bake.service
+# Check:    systemctl status amtrak-bake ; journalctl -u amtrak-bake -n 5
+#           curl -s https://philly3d.com/amtrak.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(len(d["trains"]), "trains, fix age", round(d["t"]-d["src"]), "s")'
+# Remove:   systemctl disable --now amtrak-bake.service ; rm /etc/systemd/system/amtrak-bake.service ; systemctl daemon-reload
+#
+# A loop, not a timer: 30 s is under systemd's timer accuracy, and the baker keeps nothing
+# between pulls. Two gzipped pulls a minute is about 430 MB a day of ingress, the floor the
+# upstream asks for (Amtrak itself refreshes about once a minute).
+[Unit]
+Description=philly3d: bake the Amtrak trains near the city to /var/www/philly3d/amtrak.json
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/philly3d
+ExecStart=/usr/bin/python3 /opt/philly3d/amtrak_bake.py --loop --interval 30 --out /var/www/philly3d/amtrak.json
+Restart=always
+RestartSec=10
+Nice=10
+ProtectSystem=strict
+ReadWritePaths=/var/www/philly3d
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
