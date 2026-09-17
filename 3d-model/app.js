@@ -9609,6 +9609,8 @@
     else if (k === 'm') toggleConcerts();
     else if (k === 'u') toggleClosures();
     else if (k === 'k') toggleAmtrak();
+    else if (k === 'j') toggleMarkers();
+    else if (k === 'o') toggleArt();
     else if (k === '?') toggleGuide();
     else if (k === 'i') openAbout();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
@@ -9742,7 +9744,7 @@
         ['Sideways', 'Turn the phone sideways to explore. The pads stay faintly visible while you fly.']] }],
     ['Layers', {
       d: [['Layers button', 'Bottom bar, or the F key. Every row is a layer: click it to turn it on or off. The square lights when it is on, the number shows what is live.'],
-        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, M concerts, R traffic, G streetlights, N street names, L landmark labels, P neighborhoods.'],
+        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, N street names, L landmark labels, P neighborhoods.'],
         ['Reset Layers', 'Back to the default set.'],
         ['Take Me To', 'Eight stops that glide you to the city\'s places.']],
       t: [['Layers button', 'Bottom bar. Every row is a layer: tap it to turn it on or off. The square lights when it is on, the number shows what is live.'],
@@ -9956,12 +9958,22 @@
   // layer bitmask, low bit first (the hash's l= uses it): 1 SEPTA, 2 Indego,
   // 4 flights, 8 ships, 16 traffic, 32 streetlights, 64 street names,
   // 128 landmark labels, 256 neighborhood names, 512 concerts, 1024 Amtrak trains (Round 80;
-  // the slot is reserved since Round 79), 2048 street closures; 4096 marks a link written with
-  // twelve bits and 1024 alone one written with ten (a nine-bit link from before Round 56
-  // keeps the concerts at their default, a ten-bit one keeps the trains and the closures at theirs)
-  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures'];
-  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true, amtrak: true, closures: true };
-  const LAYER_MASK_V2 = 1024, LAYER_MASK_V3 = 4096;
+  // the slot is reserved since Round 79), 2048 street closures, 4096 historical markers and
+  // 8192 public art (Round 83); 16384 marks a link written with fourteen bits, 4096 alone one
+  // written with twelve and 1024 alone one written with ten (a nine-bit link from before Round 56
+  // keeps the concerts at their default, a ten-bit one the trains and the closures, a twelve-bit
+  // one the markers and the art at theirs)
+  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures', 'markers', 'art'];
+  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true, amtrak: true, closures: true, markers: true, art: true };
+  const LAYER_MASK_V2 = 1024, LAYER_MASK_V3 = 4096, LAYER_MASK_V4 = 16384;
+  // the historical markers and the public art (Round 83): the flags and toggles live here with the
+  // layer bits, the layers themselves in their own section (the reconcile reads the flags)
+  const HMARK = { on: true }, PUBART = { on: true };
+  function syncMarkersBtn() { syncLayerBtn(document.getElementById('btnMarkers'), HMARK.on); }
+  function syncArtBtn() { syncLayerBtn(document.getElementById('btnArt'), PUBART.on); }
+  function toggleMarkers() { HMARK.on = !HMARK.on; syncMarkersBtn(); markerReconAt = 0; if (!HMARK.on && pickedMarker) { pickedMarker = null; vehinfoEl.hidden = true; } }
+  function toggleArt() { PUBART.on = !PUBART.on; syncArtBtn(); markerReconAt = 0; if (!PUBART.on && pickedArt) { pickedArt = null; vehinfoEl.hidden = true; } }
+  { const bM = document.getElementById('btnMarkers'), bA = document.getElementById('btnArt'); if (bM) bM.addEventListener('click', toggleMarkers); if (bA) bA.addEventListener('click', toggleArt); }
   // Amtrak (Round 80; the eleventh bit was reserved in Round 79): the flag and its toggle live
   // here with the layer bits, the layer itself in the live Amtrak trains section
   const AMTRAK = { on: true };
@@ -9976,7 +9988,7 @@
   let prefsReady = false, prefsTimer = 0;
   let hashClock = false, clockTouched = false;   // a shared link's pinned clock is not saved until the user changes the time
   function layerFlags() {
-    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn, concerts: CONCERTS.on, amtrak: AMTRAK.on, closures: CLOSURES.on };
+    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn, concerts: CONCERTS.on, amtrak: AMTRAK.on, closures: CLOSURES.on, markers: HMARK.on, art: PUBART.on };
   }
   function setLayerFlags(f) {
     if ('septa' in f) SEPTA.on = !!f.septa;
@@ -9991,10 +10003,12 @@
     if ('concerts' in f) CONCERTS.on = !!f.concerts;
     if ('amtrak' in f) AMTRAK.on = !!f.amtrak;
     if ('closures' in f) CLOSURES.on = !!f.closures;
+    if ('markers' in f) HMARK.on = !!f.markers;
+    if ('art' in f) PUBART.on = !!f.art;
   }
-  function layerMask() { const f = layerFlags(); let m = LAYER_MASK_V2 | LAYER_MASK_V3; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }
-  function layersFromMask(m) { const f = {}; const n = (m & LAYER_MASK_V3) ? LAYER_KEYS.length : (m & LAYER_MASK_V2) ? 10 : 9; LAYER_KEYS.slice(0, n).forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }   // V3 first: a twelve-bit link with the trains on has 1024 set as a layer, not a marker
-  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); syncConcertsBtn(); syncAmtrakBtn(); syncClosuresBtn(); }
+  function layerMask() { const f = layerFlags(); let m = LAYER_MASK_V4; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }   // a fourteen-bit link: 1024 and 4096 are layers in it (the trains, the markers), 16384 the marker
+  function layersFromMask(m) { const f = {}; const n = (m & LAYER_MASK_V4) ? LAYER_KEYS.length : (m & LAYER_MASK_V3) ? 12 : (m & LAYER_MASK_V2) ? 10 : 9; LAYER_KEYS.slice(0, n).forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }   // newest marker first: an older link's marker bit is a layer bit in a newer one
+  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); syncConcertsBtn(); syncAmtrakBtn(); syncClosuresBtn(); syncMarkersBtn(); syncArtBtn(); }
   function syncLayerBtn(btn, on) {
     // every layer row: the check mark, the pressed state for readers, and the blob
     if (btn) { btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
@@ -10035,7 +10049,7 @@
         if (!v.every((n) => isFinite(n))) continue;
         if (k === 'p' && v.length === 5) out.p = v;
         else if (k === 't' && v.length === 2) out.t = v;
-        else if (k === 'l' && v.length === 1) out.l = v[0] & 8191;   // twelve layer bits and the V3 marker (Round 79)
+        else if (k === 'l' && v.length === 1) out.l = v[0] & 32767;   // fourteen layer bits and the V4 marker (Round 83)
       }
     } catch (e) { }
     return out;
@@ -10830,7 +10844,7 @@
   // panel footer: back to the shipped layers, and a link to this exact view
   document.getElementById('btnResetLayers').addEventListener('click', () => {
     // through the real toggles, so the live polls start and stop with the flags
-    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts, amtrak: toggleAmtrak, closures: toggleClosures };
+    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts, amtrak: toggleAmtrak, closures: toggleClosures, markers: toggleMarkers, art: toggleArt };
     const f = layerFlags();
     for (const k of LAYER_KEYS) if (f[k] !== LAYER_DEFAULTS[k]) toggles[k]();
     setLapse(false);
@@ -14871,13 +14885,16 @@
     artPin = pinMesh(pinTexture('#b8862b', '#fdfbf6', glyphPlinth), nMat[0] + nMat[1] + nMat[2] + nMat[3], 'artPin');
     markersReady = true;
     markerReconAt = 0; markerLastCam.set(1e9, 0, 1e9);
+    const elM = document.getElementById('markersCount'), elA = document.getElementById('artCount');
+    if (elM) elM.textContent = String(markerRecs.length);
+    if (elA) elA.textContent = String(artRecs.length);
   });
   function markersReconcile() {   // the posts and plinths within the half mile, nearest first (Round 82)
     const cx = camera.position.x, cz = camera.position.z, cellR = Math.ceil(NEAR_R / 400), gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400);
     const near = [];
     for (let gx = gx0 - cellR; gx <= gx0 + cellR; gx++) for (let gz = gz0 - cellR; gz <= gz0 + cellR; gz++) {
       const arr = markerCells.get(gx + ':' + gz);
-      if (arr) for (const e of arr) if (nearCam(e.rec.x, e.rec.gy, e.rec.z)) near.push(e);
+      if (arr) for (const e of arr) if ((e.isM ? HMARK.on : PUBART.on) && nearCam(e.rec.x, e.rec.gy, e.rec.z)) near.push(e);   // the J and O layers (Round 83)
     }
     const counts = [0, 0], ac = [0, 0, 0, 0];
     for (const { rec, isM } of near) {

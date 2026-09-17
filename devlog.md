@@ -3974,3 +3974,21 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   plinth pin, a full closure's pin and a partial one's opened the PHMC, Art, Closed and Partly
   Closed cards. 99 tests pass (`tests/test_near.py`). Page 26.66 MB (+11 KB). Devlog, handoff,
   README, CLAUDE.md.
+
+## Round 83: the markers and the art on their own layers (Sep 17)
+
+- **Mike: add filter options for art, street closures, historical markers.** The closures had
+  their row and the U key since Round 79; the markers and the art were always on with no bit
+  (Round 77). Two rows after Street Closures now: Historical Markers (J, bit 4096, the count 348)
+  and Public Art (O, bit 8192, the count 224), default on, in `layerFlags` / `setLayerFlags`, the
+  reset map and the guide's Keys line. `LAYER_MASK_V4` 16384 marks a fourteen-bit link (4096
+  alone still reads as a twelve-bit one, 1024 alone a ten-bit one; a new link carries the V4
+  marker only, since 1024 and 4096 are layers in it), `parseHash` keeps 32767. The flags gate
+  `markersReconcile` (Round 82's camera-centred rebuild), a toggle sets `markerReconAt` to 0 so
+  the next frame re-deals, and a toggle off drops the open card. `tests/test_layers.py` pins the
+  key order (the link format), the markers, the hash width, a row and key per layer and the reset
+  map; `test_near.py` follows the gated reconcile line.
+- **Measured in the pane:** clicks and the J and O keys (the first-visit guide holds the keyboard
+  until its close button) take 61 posts and 40 plinths with their pins to 0 and back, the
+  address bar's `l=` reads 32639 with both on and 20351 with both off, Reset Layers restores
+  them. 101 tests pass. Page 26.66 MB (+2.6 KB). Devlog, handoff, README, CLAUDE.md.

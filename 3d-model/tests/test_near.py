@@ -24,7 +24,7 @@ class NearRule(unittest.TestCase):
                        "if (!nearCam(cx, cy, cz)) continue;",                                                     # Amtrak cars
                        "&& nearCam(p.hx, p.hy, p.hz)) {",                                                         # the Amtrak badge
                        "if (!nearCam(m.x, m.gy, m.z)) continue;   // open, but past the half mile",               # market tents
-                       "if (arr) for (const e of arr) if (nearCam(e.rec.x, e.rec.gy, e.rec.z)) near.push(e);",    # markers and art
+                       "if ((e.isM ? HMARK.on : PUBART.on) && nearCam(e.rec.x, e.rec.gy, e.rec.z)) near.push(e);",   # markers and art (behind their J and O layers since Round 83)
                        "const inv = closureInv, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, R = NEAR_R;"):   # closures
             self.assertIn(anchor, s, 'a ground layer lost its half-mile gate: ' + anchor[:50])
         # flights and ships never ask
