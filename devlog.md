@@ -3841,3 +3841,12 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   73 tests pass (`tests/test_amtrak_bake.py`, `tests/test_rail.py`). The baker service and the
   vhost block are Mike's to install (ops/README section 9); until then the page rides the
   direct pull.
+- **Installed (Sep 17, 04:08 UTC, on Mike's go).** Both bakers went to the VPS: `closures_bake.py`
+  on its 30-minute timer (the first bake wrote 4,694 closures and 476 strips, 2 MB, 187 KB
+  gzipped) and `amtrak_bake.py` as a loop service (no trains in the box at midnight, a 44-byte
+  file). The live vhost, which had none of the example's per-feed blocks (its one `location /`
+  serves every feed same-origin with `no-cache`), gained `location = /closures.json`
+  (max-age 120) and `location = /amtrak.json` (max-age 15), both `gzip_static` with ACAO *
+  for the Pages copy; `nginx -t` passed, the reload took, and the first curl after it still
+  hit an old worker (the old headers for a second, then the new). The capture in
+  `ops/philly3d.vhost.live` is the new live file.

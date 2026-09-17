@@ -1,7 +1,3 @@
-# Captured read-only from the VPS on 2026-09-02 (/etc/nginx/sites-available/philly3d), after the
-# Cache-Control no-cache line was added to location / with Mike's go (backup: philly3d.bak-20260902),
-# and the manifest's MIME location on 2026-09-05 (backup: philly3d.bak-20260905).
-# The .example beside this file is this block plus the still-planned additions.
 server {
     listen 80;
     listen [::]:80;
@@ -57,6 +53,23 @@ server {
     location = /manifest.webmanifest {
         default_type application/manifest+json;
         add_header Cache-Control "no-cache" always;
+    }
+
+    # the Streets Department's closures and paving, baked every 30 min by
+    # /opt/philly3d/closures_bake.py (Round 79): 120 s against the bake, ACAO * so the
+    # GitHub Pages copy can read it (philly3d.com itself reads it same-origin)
+    location = /closures.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=120" always;
+        add_header Access-Control-Allow-Origin * always;
+    }
+
+    # the Amtrak trains near the city, baked every 30 s by /opt/philly3d/amtrak_bake.py
+    # (Round 80): 15 s against the bake, ACAO * for the Pages copy
+    location = /amtrak.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=15" always;
+        add_header Access-Control-Allow-Origin * always;
     }
 
     location / {

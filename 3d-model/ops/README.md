@@ -164,7 +164,8 @@ The page polls the file every 30 minutes while visible, treats a `t` older than 
 "baker down" (every barrel drops, nothing lingers from a stopped baker) and stays silent when
 the file is missing. On philly3d.com the fetch is same-origin. The GitHub Pages copy needs the
 `location = /closures.json` block in `philly3d.vhost.example` (ACAO *, like the other feeds; a
-vhost edit, `nginx -t` between steps, your go) before it posts a barrel.
+vhost edit, `nginx -t` between steps, your go) before it posts a barrel. Installed Sep 17,
+2026 (timer and vhost block both live; the live file is captured in `philly3d.vhost.live`).
 
 ## 9. Amtrak baker (Round 80)
 
@@ -192,6 +193,7 @@ stopped baker, and the page then pulls Amtraker itself every 60 seconds (its COR
 allows it) and retries the baked file every 5 minutes, so the trains keep running either
 way. The GitHub Pages copy needs the `location = /amtrak.json` block in
 `philly3d.vhost.example` (ACAO *) to read the baked file; without it, it rides the direct pull.
+Installed Sep 17, 2026 (the loop service and the vhost block are live).
 
 ## Lightning relay
 
