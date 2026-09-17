@@ -1,0 +1,24 @@
+# philly3d: one bake of the Streets Department's closures and paving status (closures-bake.timer fires it).
+# Install:  cp closures_bake.py /opt/philly3d/  (chmod 755)
+#           cp closures-bake.service closures-bake.timer /etc/systemd/system/
+#           systemctl daemon-reload && systemctl enable --now closures-bake.timer
+# Check:    systemctl list-timers closures-bake.timer ; journalctl -u closures-bake -n 5
+#           curl -s https://philly3d.com/closures.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["day"], len(d["closures"]), "closures,", len(d["paving"]), "paving")'
+# Remove:   systemctl disable --now closures-bake.timer ; rm /etc/systemd/system/closures-bake.* ; systemctl daemon-reload
+#
+# A oneshot on a 30 min timer (the city's layers update every 30 minutes), no key, no env file.
+[Unit]
+Description=philly3d: bake the Streets Department closures to /var/www/philly3d/closures.json
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/philly3d
+ExecStart=/usr/bin/python3 /opt/philly3d/closures_bake.py --out /var/www/philly3d/closures.json
+Nice=10
+ProtectSystem=strict
+ReadWritePaths=/var/www/philly3d
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectHome=true

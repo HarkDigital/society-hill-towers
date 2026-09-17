@@ -18,8 +18,10 @@ real solar clock over it all.
   overcast, fog, drizzle, rain, downpour, hail, snow, blizzard, sleet) pins a preset.
   The haze follows the city's own air monitors: a smoke day shortens the view and tints
   the sky tan (`?aqi=unhealthy` pins it).
-- **Layers** (F): live SEPTA vehicles, Indego bike share, flights, ships, typical
-  traffic, streetlights, street names, landmark labels, and neighborhood names.
+- **Layers** (F): live SEPTA vehicles, Indego bike share, flights, ships, concerts, typical
+  traffic, live street closures (barrels and cones from the Streets Department's permits,
+  fresh asphalt on the season's paved blocks), streetlights, street names, landmark labels,
+  and neighborhood names.
 - **Markets.** The city's 34 farmers' markets pitch their tents only while the clock
   says they are open; tap a tent for the hours and payments, or search a market by name.
 - **Markers and art.** The state's 348 historical markers stand at their posts with the

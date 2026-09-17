@@ -3725,3 +3725,66 @@ Data © OpenStreetMap contributors (ODbL) — the credit link in the About panel
   `applyFly` had carried it, so the circle ran from the old spot a kilometre off; it now
   starts from `fly.pos`, the glide's landing, which a stalled frame on a phone would have hit
   the same way. 67 tests pass (`tests/test_landmarks_bake.py`).
+
+## Round 79: the closed blocks (Sep 16)
+
+- **Mike's pick from the survey: live street closures and paving.** The Streets Department
+  keeps its StreetSmartPHL map on the City ArcGIS (CORS open, no key, updated every 30
+  minutes): closure permits as city centreline segments with type, occupancy, dates, purpose
+  and the permit link (6,761 rows, all "Current", 5,775 in force on Sep 16, of which 1,213
+  full closures, 4,353 partial and 211 sidewalk; the partials are mostly parking
+  relaxations for dumpsters), the paving season's status per block (1,832 rows: 601
+  scheduled for milling, 468 paving scheduled by PennDOT, 416 paved with striping pending,
+  175 complete, 112 ready to pave, 30 paved by PennDOT, 30 milled and waiting), and this
+  week's milling and paving lists (empty today). A date filter works only as
+  `ExpirationDate>=CURRENT_TIMESTAMP` (epoch literals return 400), some expiries run to
+  2103, and the purposes are padded, capitalised free text. Three GeoJSON pages of a
+  megabyte each per viewer per half hour is the wrong shape, so `ops/closures_bake.py` on
+  the VPS (a oneshot on a 30-minute timer, the concerts baker's skeleton without the key)
+  fetches the permits in force, joins LaneClosure_Master's addresses by permit number,
+  groups by segment with the strictest occupancy of the permits that vote (parking
+  relaxations, dumpsters, containers, loading zones and valet stands do not; a segment with
+  only those is dropped), caps an open-ended permit at 180 days, drops one starting more
+  than a week out, title-cases the purposes with the city's acronyms kept, keeps a permit
+  link only on stsweb.phila.gov, and writes `closures.json`: 4,695 closures (1,086 full, 124
+  sidewalk) from 5,775 permits and 476 paving strips, 2 MB raw and 187 KB gzipped. The
+  page treats a file three hours old as a stopped baker.
+- **In the page** (`step('Posting the street closures')`, the U key, the twelfth layer bit):
+  each segment's length-midpoint is snapped to the drawn street with `septaSnapRoad` and the
+  whole line moved by that offset (the city's centreline sits a few metres off OSM's, and the
+  endpoints are at intersections where a snap finds the cross street), then trimmed 7 m at
+  each end. A closed block gets a barricade row of drums across each end (three to seven
+  by the street's width, the core's road grid knowing the width and the outer streets taken
+  at 4.5 m) and one every 10 m down its middle; a partial closure cones every 6 m along one
+  kerb; a closed sidewalk cones every 8 m on the pavement. Heights follow the traffic
+  layer's road formula with the bridge decks and the overpasses. 84,896 objects posted
+  citywide, drawn within 2.5 km of the camera on the streetlights' cadence (two instanced
+  meshes, standard materials so the build-end weather pass lays snow on them, 6,000 each on
+  desktop and 1,200 on a phone). The paving strips are `ribbon`s six centimetres over the
+  lane paint (polygon offset is banned on the flats), fresh black for the paved blocks and a
+  rough grey for the milled, one merged mesh each. Typical traffic wants no cars on a run
+  whose midpoint lies within 25 m of a fully closed block's (`CLOSE_TRAFFIC`, 83 runs today;
+  a run is a chunk up to 400 m, so it is coarse and Mike can flip the constant). Tap a drum,
+  a cone or the block's midpoint for the card: Closed, Partly Closed or Sidewalk Closed, the
+  block's address, each permit's purpose and type with its dates ("Through Dec 28, 2026"),
+  the permit link, "Streets Department Permit". `__dbg.closures()`, `closureNear(x, z, o)`,
+  `pavingNear(x, z)`, `closureTest()` (a full closure on Locust, a partial on Spruce, a
+  sidewalk on 3rd, a paved block of Pine), `cardFor('closure', addr)`.
+- **The layer bits.** Ten keys became twelve: bit 1024 is reserved for Round 80's Amtrak
+  trains (its flag, row sync and toggle exist now so the bit holds still), 2048 is the
+  closures, `LAYER_MASK_V3 = 4096` marks a twelve-bit link and `layersFromMask` tests it
+  before the ten-bit marker (a twelve-bit link with the trains on has 1024 set as a layer, not
+  a marker); `parseHash` widened its mask to 8191. A ten-bit link keeps both new layers at
+  their defaults. The vhost gains a `location = /closures.json` block (max-age 120, ACAO *)
+  for Mike to apply, and `ops/README.md` a section 8.
+- **Measured in the pane** with a live bake served from the scratch directory: 4,695 records
+  and 84,896 posted objects landed, 5,615 drawn from the first camera, 83 traffic runs
+  closed; captures of the barricade row of drums across the Unit Block of S 2nd Street with
+  more down its middle, the cones along the far kerb of the 100 block of Walnut, and the
+  darkened 700 block of Locust; `closureTest()` seeds three blocks by the towers and the
+  card reads "Closed, 300 Block of Locust St, Trench and Install Water Main, Utility Work
+  Excavation, Through Oct 16, 2026". A twelve-bit link with the closures bit clear
+  (`#l=6143`) loads the layer off and the U key brings it back; a ten-bit link (`#l=2047`)
+  keeps it on. 69 tests pass (`tests/test_closures_bake.py`). The baker itself is Mike's to
+  install on the VPS (ops/README section 8) with the vhost block; until then the row stands
+  with an empty count and reads Feed Offline after three misses.

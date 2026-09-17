@@ -9471,6 +9471,7 @@
     else if (k === 'r') toggleTraffic();
     else if (k === 'g') toggleLightsLayer();
     else if (k === 'm') toggleConcerts();
+    else if (k === 'u') toggleClosures();
     else if (k === '?') toggleGuide();
     else if (k === 'i') openAbout();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
@@ -9815,15 +9816,21 @@
   const PREFS_KEY = 'philly3d.prefs';
   // layer bitmask, low bit first (the hash's l= uses it): 1 SEPTA, 2 Indego,
   // 4 flights, 8 ships, 16 traffic, 32 streetlights, 64 street names,
-  // 128 landmark labels, 256 neighborhood names, 512 concerts; 1024 marks a link written with
-  // ten bits (a nine-bit link from before Round 56 keeps the concerts at their default)
-  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts'];
-  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true };
-  const LAYER_MASK_V2 = 1024;
+  // 128 landmark labels, 256 neighborhood names, 512 concerts, 1024 Amtrak trains (Round 80;
+  // the slot is reserved since Round 79), 2048 street closures; 4096 marks a link written with
+  // twelve bits and 1024 alone one written with ten (a nine-bit link from before Round 56
+  // keeps the concerts at their default, a ten-bit one keeps the trains and the closures at theirs)
+  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures'];
+  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true, amtrak: true, closures: true };
+  const LAYER_MASK_V2 = 1024, LAYER_MASK_V3 = 4096;
+  // Amtrak (Round 80 fills this in): the flag, its row sync and its toggle hold the eleventh bit
+  const AMTRAK = { on: true };
+  function syncAmtrakBtn() { syncLayerBtn(document.getElementById('btnAmtrak'), AMTRAK.on); }
+  function toggleAmtrak() { AMTRAK.on = !AMTRAK.on; syncAmtrakBtn(); }
   let prefsReady = false, prefsTimer = 0;
   let hashClock = false, clockTouched = false;   // a shared link's pinned clock is not saved until the user changes the time
   function layerFlags() {
-    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn, concerts: CONCERTS.on };
+    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn, concerts: CONCERTS.on, amtrak: AMTRAK.on, closures: CLOSURES.on };
   }
   function setLayerFlags(f) {
     if ('septa' in f) SEPTA.on = !!f.septa;
@@ -9836,10 +9843,12 @@
     if ('labels' in f) labelsOn = !!f.labels;
     if ('places' in f) { placesOn = !!f.places; if (nbMesh) nbMesh.visible = false; }   // applyLighting re-shows it by altitude
     if ('concerts' in f) CONCERTS.on = !!f.concerts;
+    if ('amtrak' in f) AMTRAK.on = !!f.amtrak;
+    if ('closures' in f) CLOSURES.on = !!f.closures;
   }
-  function layerMask() { const f = layerFlags(); let m = LAYER_MASK_V2; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }
-  function layersFromMask(m) { const f = {}; const n = (m & LAYER_MASK_V2) ? LAYER_KEYS.length : 9; LAYER_KEYS.slice(0, n).forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }
-  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); syncConcertsBtn(); }
+  function layerMask() { const f = layerFlags(); let m = LAYER_MASK_V2 | LAYER_MASK_V3; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }
+  function layersFromMask(m) { const f = {}; const n = (m & LAYER_MASK_V3) ? LAYER_KEYS.length : (m & LAYER_MASK_V2) ? 10 : 9; LAYER_KEYS.slice(0, n).forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }   // V3 first: a twelve-bit link with the trains on has 1024 set as a layer, not a marker
+  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); syncConcertsBtn(); syncAmtrakBtn(); syncClosuresBtn(); }
   function syncLayerBtn(btn, on) {
     // every layer row: the check mark, the pressed state for readers, and the blob
     if (btn) { btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
@@ -9880,7 +9889,7 @@
         if (!v.every((n) => isFinite(n))) continue;
         if (k === 'p' && v.length === 5) out.p = v;
         else if (k === 't' && v.length === 2) out.t = v;
-        else if (k === 'l' && v.length === 1) out.l = v[0] & 2047;
+        else if (k === 'l' && v.length === 1) out.l = v[0] & 8191;   // twelve layer bits and the V3 marker (Round 79)
       }
     } catch (e) { }
     return out;
@@ -9989,6 +9998,7 @@
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
   let pickedVeh = null;
+  let pickedClosure = null;   // a street closure's card follows its block (Round 79)
   let pickedMarker = null, pickedArt = null;   // a historical marker's or an artwork's card follows its post (Round 77)
   let pickedMarket = null;   // a farmers' market's card follows its tents (Round 76)
   const septaEsc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -10146,7 +10156,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -10172,7 +10182,8 @@
     const tAct = !!treeInv;                            // the forest picks with every live layer off
     const mAct = marketsReady && marketTentN > 0;      // the open markets' tents (Round 76)
     const kAct = markersReady;                         // the historical markers and the art (Round 77)
-    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct) return;
+    const cAct = closuresReady && CLOSURES.on && (barrelMesh.count > 0 || coneMesh.count > 0);   // the closed blocks (Round 79)
+    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -10219,21 +10230,26 @@
     if (shAct) { for (const m of shipMeshes) if (m.count) targets.push(m); targets.push(shipAnchor); }
     if (mAct) for (const m of marketMeshes) if (m.count) targets.push(m);
     if (kAct) { for (const m of markerMeshes) if (m.count) targets.push(m); for (const m of artMeshes) if (m.count) targets.push(m); }
+    if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); }
     const hits = septaRay.intersectObjects(targets, false);
     if (hits.length && hits[0].instanceId != null && !pickOccluded(hits[0].point.x, hits[0].point.y, hits[0].point.z)) {
       const h = hits[0];
       let v = null, hitSt = null;
       if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.shipKind !== undefined || h.object === shipAnchor) {
         const p = h.object === shipAnchor ? shipPick[SHIP_KIND_N][h.instanceId] : shipPick[h.object.userData.shipKind][h.instanceId];
-        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = p; shipCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.marketWay !== undefined) {
         const m = marketPick[h.object.userData.marketWay][h.instanceId];
-        if (m) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedMarket = m; marketCard(m); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (m) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedMarket = m; marketCard(m); vehinfoEl.hidden = false; cardUnlock(); return; }
+      }
+      if (h.object === barrelMesh || h.object === coneMesh) {
+        const rec = (h.object === barrelMesh ? closurePickB : closurePickC)[h.instanceId];
+        if (rec) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = rec; closureCard(rec); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.markerType !== undefined || h.object.userData.artMat !== undefined) {
         const isM = h.object.userData.markerType !== undefined;
@@ -10245,8 +10261,8 @@
       else if (h.object === indegoSolid) hitSt = indegoPickS[h.instanceId];
       else if (h.object === indegoBike) hitSt = indegoPickK[h.instanceId];
       else if (h.object === indegoBadge) hitSt = indegoPickB[h.instanceId];
-      if (v) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
-      if (hitSt) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
+      if (v) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedVeh = v; septaCard(v); vehinfoEl.hidden = false; return; }
+      if (hitSt) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedStation = hitSt; indegoCard(hitSt); vehinfoEl.hidden = false; return; }
     }
     // forgiving fallback: the nearest vehicle or bike dock within reach of the
     // tap point (a little wider under the crosshair, where aiming is coarser)
@@ -10295,11 +10311,22 @@
     if (bestV && pickOccluded(bestV.dx != null ? bestV.dx : bestV.x, (bestV.gy || 0) + 2.5, bestV.dz != null ? bestV.dz : bestV.z)) bestV = null;
     if (bestS && pickOccluded(bestS.x, bestS.y + 2, bestS.z)) bestS = null;
     if (bestM && pickOccluded(bestM.x, bestM.gy + 2, bestM.z)) bestM = null;
+    let bestC = null;   // a closed block's midpoint within reach (its barrels are small from the air)
+    if (cAct) for (const rec of CLOSURES.drawn) {
+      _ssv.set(rec.mx, rec.my + 1.5, rec.mz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) continue;
+      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
+      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD) { bestD = d2; bestC = rec; bestV = null; bestS = null; bestM = null; bestK = null; }
+    }
     if (bestK && pickOccluded(bestK.x, bestK.gy + 1.6, bestK.z)) bestK = null;
-    if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestC && pickOccluded(bestC.mx, bestC.my + 1.2, bestC.mz)) bestC = null;
+    if (bestC) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = bestC; closureCard(bestC); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
     if (bestK) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = bestKm ? bestK : null; pickedArt = bestKm ? null : bestK; if (bestKm) markerCard(bestK); else artCard(bestK); vehinfoEl.hidden = false; cardUnlock(); return; }
-    if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
-    if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
+    if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
+    if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
     // canopy spheres (tapping a crown is the natural gesture), then fall back
     // to the nearest tree around the tapped ground point (trunk-level taps)
@@ -10340,7 +10367,7 @@
       if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; vehinfoEl.hidden = true; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -10586,7 +10613,7 @@
   // panel footer: back to the shipped layers, and a link to this exact view
   document.getElementById('btnResetLayers').addEventListener('click', () => {
     // through the real toggles, so the live polls start and stop with the flags
-    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts };
+    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts, amtrak: toggleAmtrak, closures: toggleClosures };
     const f = layerFlags();
     for (const k of LAYER_KEYS) if (f[k] !== LAYER_DEFAULTS[k]) toggles[k]();
     setLapse(false);
@@ -11352,7 +11379,7 @@
     searchFlyTo(e.x, gy + (e.kind === 'landmark' ? 30 : 8), e.z, wide ? 600 : mid ? 400 : e.kind === 'landmark' ? 250 : 220);
     if (wide) clearSearchMark(); else placeSearchMark(e.x, gy, e.z, e.name);
     if ((e.kind === 'market' || e.kind === 'marker' || e.kind === 'art') && e.ref) {   // arrive with the card open (a market's says when it opens)
-      pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null;
+      pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null;
       if (e.kind === 'market') { pickedMarket = e.ref; marketCard(e.ref); }
       else if (e.kind === 'marker') { pickedMarker = e.ref; markerCard(e.ref); }
       else { pickedArt = e.ref; artCard(e.ref); }
@@ -13123,6 +13150,7 @@
     for (let q = 0; q < conn.length; q += 2) {
       const r2 = trafficRuns[conn[q]], e2 = conn[q + 1];
       if (e2 === 1 && r2.oneway) continue;             // can't enter a one-way at its far end
+      if (r2.closed) continue;                          // nor a closed block (Round 79)
       const m = r2.xs.length;
       let ux = e2 ? r2.xs[m - 1] - r2.xs[m - 2] : r2.xs[1] - r2.xs[0];
       let uz = e2 ? r2.zs[m - 1] - r2.zs[m - 2] : r2.zs[1] - r2.zs[0];
@@ -13155,7 +13183,7 @@
       const dx = r.mx - cx, dz = r.mz - cz;
       const d = Math.sqrt(dx * dx + dz * dz + cy * cy);
       const w = d < 1500 ? 1 : d > 4000 ? 0 : (4000 - d) / 2500;
-      r.want = w ? r.aadt * frac / TRAFFIC_SPEED[r.cls] * (r.len / 1000) * w : 0;
+      r.want = (w && !r.closed) ? r.aadt * frac / TRAFFIC_SPEED[r.cls] * (r.len / 1000) * w : 0;   // a closed block (Round 79) wants no cars
       implied += r.want;
     }
     TRAFFIC.scale = Math.min(1, TRAFFIC.cap / Math.max(1, implied));
@@ -13484,6 +13512,291 @@
       }
     }
   }
+
+  // ---- street closures (Round 79). The Streets Department's live closure permits and the
+  // paving season's status (StreetSmartPHL and LaneClosure_Master on the City ArcGIS, updated
+  // every 30 minutes) are trimmed on the VPS by ops/closures_bake.py into closures.json: one
+  // record per city street segment in force today with the most restrictive occupancy of its
+  // permits (3 a full closure, 2 partial, 1 the footway), the permits themselves for the card,
+  // and the season's freshly paved and milled blocks. The city's centreline sits a few metres
+  // off OSM's and its endpoints are at intersections, where a snap finds the cross street, so
+  // each segment's length-midpoint is snapped to the drawn street with septaSnapRoad and the
+  // whole line moved by that offset, then trimmed at the ends; a closed block gets a barricade
+  // row of drums across each end and one every 10 m down its middle, a partial closure cones
+  // along one kerb, a closed sidewalk cones on the pavement; a fresh black strip lies on the
+  // season's paved blocks and a rougher grey on the milled ones, six centimetres over the
+  // lane paint (polygon offset is banned on the flats). Heights follow the traffic layer's road
+  // formula, the bridge decks and overpasses included. Typical traffic leaves a fully closed
+  // block empty (CLOSE_TRAFFIC; a run is a chunk up to 400 m, so it is coarse: the run whose
+  // midpoint lies within 25 m of the block's). Drawn within 2.5 km of the camera on the
+  // streetlights' cadence, capped like the poles. The U key and the twelfth layer bit; a file
+  // three hours stale is a stopped baker and draws nothing.
+  const CLOSURES = { on: true, ok: false, fails: 0, nextT: 0, busy: false, t: 0, recs: [], paving: [], drawn: [], pavedN: 0, milledN: 0, runsClosed: 0 };
+  const CLOSURES_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/closures.json' : 'https://philly3d.com/closures.json';
+  const CLOSURE_POLL = 1800000, CLOSURE_STALE = 3 * 3600;   // 30 min while visible; a file 3 h old is a stopped baker
+  const CLOSURE_R = 2500, CLOSURE_CAP = isTouch ? 1200 : 6000, CLOSE_TRAFFIC = true;
+  const closureInv = { X: [], Y: [], Z: [], YAW: [], K: [], R: [], cells: new Map() };   // every posted drum (K 0) and cone (K 1), by 400 m cell
+  const closurePickB = [], closurePickC = [];
+  let closuresReady = false, barrelMesh = null, coneMesh = null, pavedMesh = null, milledMesh = null, closureReconAt = 0, closureRunCells = null;
+  const closureLastCam = new V3(1e9, 0, 1e9);
+  const btnClosures = document.getElementById('btnClosures');
+  function closureGeom(kind) {
+    const parts = [];
+    const add = (g, r, gg, b) => parts.push(septaColored(g, r, gg, b));
+    if (kind === 0) {   // a drum: three bands, orange white orange, on a black base
+      add(new THREE.BoxGeometry(0.7, 0.05, 0.7).translate(0, 0.025, 0), 0.08, 0.08, 0.08);
+      add(new THREE.CylinderGeometry(0.25, 0.24, 0.3, 8).translate(0, 0.2, 0), 0.72, 0.26, 0.03);
+      add(new THREE.CylinderGeometry(0.265, 0.25, 0.3, 8).translate(0, 0.5, 0), 0.62, 0.62, 0.58);
+      add(new THREE.CylinderGeometry(0.28, 0.265, 0.3, 8).translate(0, 0.8, 0), 0.72, 0.26, 0.03);
+    } else {   // a cone with its white collar on a square base
+      add(new THREE.BoxGeometry(0.4, 0.03, 0.4).translate(0, 0.015, 0), 0.72, 0.26, 0.03);
+      add(new THREE.ConeGeometry(0.19, 0.72, 6).translate(0, 0.39, 0), 0.72, 0.26, 0.03);
+      add(new THREE.CylinderGeometry(0.135, 0.155, 0.09, 6).translate(0, 0.42, 0), 0.62, 0.62, 0.58);
+    }
+    return septaMerge(parts);
+  }
+  function mergeGeoms(list) {   // a few ribbons into one geometry (position and normal only)
+    let n = 0;
+    for (const g of list) n += g.attributes.position.count;
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+    let o = 0;
+    for (const g of list) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; g.dispose(); }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    return out;
+  }
+  step('Posting the street closures', () => {
+    if (!septaCanFetch) { if (btnClosures) btnClosures.style.display = 'none'; return; }
+    const mk = (kind) => {
+      const m = new THREE.InstancedMesh(closureGeom(kind), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85 }), CLOSURE_CAP);
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.count = 0; m.frustumCulled = false; m.castShadow = !isTouch; m.receiveShadow = true;
+      groupCity.add(m);
+      return m;
+    };
+    barrelMesh = mk(0); coneMesh = mk(1);
+    pavedMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.75 }));
+    milledMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 1.0 }));
+    for (const m of [pavedMesh, milledMesh]) { m.frustumCulled = false; m.receiveShadow = true; m.visible = false; groupCity.add(m); }
+    closuresReady = true;
+    syncClosuresBtn();
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) CLOSURES.nextT = 0; });
+  });
+  function closuresPoll(now) {
+    if (!closuresReady || !CLOSURES.on || !septaCanFetch || document.hidden || CLOSURES.busy || now < CLOSURES.nextT) return;
+    CLOSURES.busy = true;
+    CLOSURES.nextT = now + Math.min(3600000, CLOSURE_POLL * (1 + CLOSURES.fails));
+    const ctl = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    const timer = ctl ? setTimeout(() => ctl.abort(), 25000) : 0;
+    const miss = () => { clearTimeout(timer); CLOSURES.fails++; CLOSURES.busy = false; closureStatus(); };
+    fetch(CLOSURES_URL, { cache: 'no-store', signal: ctl ? ctl.signal : undefined })
+      .then((r) => { if (!r.ok) throw new Error('http ' + r.status); return r.json().then((d) => ({ d, now: serverNow(r) })); })
+      .then(({ d, now: sNow }) => {
+        clearTimeout(timer);
+        if (!d || !(d.t > 0) || !Array.isArray(d.closures)) { miss(); return; }
+        CLOSURES.busy = false; CLOSURES.fails = 0; CLOSURES.ok = true; CLOSURES.t = d.t;
+        closuresProject(sNow - d.t > CLOSURE_STALE ? { closures: [], paving: [] } : d);   // a stale file is a stopped baker: nothing lingers
+        closureStatus();
+      })
+      .catch(miss);
+  }
+  const closureGeo = (g) => { const out = []; for (const p of g || []) if (p && isFinite(+p[0]) && isFinite(+p[1])) out.push([(+p[0] - SEPTA_GEO.lon0) * SEPTA_GEO.mx, -(+p[1] - SEPTA_GEO.lat0) * SEPTA_GEO.mz]); return out; };
+  function roadHalfW(x, z) {   // the drawn street's half width: the core's road grid knows it, the outer streets are taken at 4.5 m
+    const a = roadGrid.get(Math.floor(x / ROAD_CELL) + ':' + Math.floor(z / ROAD_CELL));
+    let best = 4.5, bd = 20 * 20;
+    if (a) for (const s of a) {
+      const ax = roadSegs[s], az = roadSegs[s + 1], dx = roadSegs[s + 2] - ax, dz = roadSegs[s + 3] - az;
+      const L2 = dx * dx + dz * dz || 1e-9, t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
+      const px = ax + dx * t - x, pz = az + dz * t - z, d2 = px * px + pz * pz;
+      if (d2 < bd) { bd = d2; best = roadSegs[s + 4]; }
+    }
+    return clamp(best, 2.5, 14);
+  }
+  function closureY(x, z, ux, uz) {   // the traffic layer's road height (its trench aside): the bridge decks and the overpasses lift it
+    let y = siteY(x, z, 'road'), lift = inCore(x, z) ? LAYER.road + 0.04 : LAYER.road + 2 * 0.055 + 0.05;
+    const bY = bridgeDeckLift(x, z);
+    if (bY !== null && bY > y) { y = bY; lift = 0.12; }
+    const oy = ovpDeckY(x, z, ux, uz);
+    if (oy !== null && oy > y) { y = oy; lift = 0.1; }
+    return y + lift;
+  }
+  function closureSnapLine(pts) {   // the city centreline onto the drawn street: snap the length-midpoint, move the whole line
+    let L = 0;
+    const cum = [0];
+    for (let i = 1; i < pts.length; i++) { L += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); cum.push(L); }
+    if (L < 4) return null;
+    let mi = 1;
+    while (mi < pts.length - 1 && cum[mi] < L / 2) mi++;
+    const f = (L / 2 - cum[mi - 1]) / ((cum[mi] - cum[mi - 1]) || 1);
+    const mx = pts[mi - 1][0] + (pts[mi][0] - pts[mi - 1][0]) * f, mz = pts[mi - 1][1] + (pts[mi][1] - pts[mi - 1][1]) * f;
+    const sn = septaSnapRoad(mx, mz, 25);
+    const ox = sn ? sn[0] - mx : 0, oz = sn ? sn[1] - mz : 0;
+    return { pts: pts.map((p) => [p[0] + ox, p[1] + oz]), L, cum, mx: mx + ox, mz: mz + oz };
+  }
+  function closureAlong(ln, s) {   // the point s metres along the line, with the unit heading there
+    const pts = ln.pts, cum = ln.cum;
+    let i = 1;
+    while (i < pts.length - 1 && cum[i] < s) i++;
+    const f = clamp((s - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1), 0, 1);
+    let ux = pts[i][0] - pts[i - 1][0], uz = pts[i][1] - pts[i - 1][1];
+    const uL = Math.hypot(ux, uz) || 1;
+    ux /= uL; uz /= uL;
+    return [pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * f, pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * f, ux, uz];
+  }
+  function closuresProject(d) {
+    const inv = closureInv;
+    inv.X.length = inv.Y.length = inv.Z.length = inv.YAW.length = inv.K.length = inv.R.length = 0;
+    inv.cells.clear();
+    CLOSURES.recs = []; CLOSURES.paving = []; CLOSURES.drawn = [];
+    const post = (rec, x, z, yaw, kind, ux, uz) => {
+      const i = inv.X.length;
+      inv.X.push(x); inv.Y.push(closureY(x, z, ux, uz)); inv.Z.push(z); inv.YAW.push(yaw); inv.K.push(kind); inv.R.push(rec);
+      const key = Math.floor(x / 400) + ':' + Math.floor(z / 400);
+      let a = inv.cells.get(key);
+      if (!a) { a = []; inv.cells.set(key, a); }
+      a.push(i);
+    };
+    for (const r of d.closures || []) {
+      const raw = closureGeo(r.g);
+      if (raw.length < 2 || !raw.some((p) => insideLimit(p[0], p[1]))) continue;
+      const ln = closureSnapLine(raw);
+      if (!ln) continue;
+      const rec = { id: String(r.id || ''), o: clamp(r.o | 0, 1, 3), addr: String(r.addr || ''), permits: Array.isArray(r.permits) ? r.permits.slice(0, 4) : [], mx: ln.mx, mz: ln.mz, my: closureY(ln.mx, ln.mz) };
+      const hw = roadHalfW(ln.mx, ln.mz);
+      const trim = ln.L > 24 ? 7 : ln.L * 0.2, s0 = trim, s1 = ln.L - trim;
+      const side = hash01(ln.mx * 0.31 + ln.mz * 0.17) < 0.5 ? 1 : -1;
+      if (rec.o >= 3) {
+        for (const s of [s0, s1]) {   // a barricade row across the road at each end
+          const [x, z, ux, uz] = closureAlong(ln, s);
+          const n = clamp(Math.round(2 * hw / 1.2), 3, 7), yaw = Math.atan2(ux, uz), span = 2 * hw - 1.2;
+          for (let k = 0; k < n; k++) { const t = (k - (n - 1) / 2) * span / Math.max(1, n - 1); post(rec, x - uz * t, z + ux * t, yaw, 0, ux, uz); }
+        }
+        for (let s = s0 + 10; s < s1 - 5; s += 10) { const [x, z, ux, uz] = closureAlong(ln, s); const t = (Math.floor(s / 10) & 1) ? 0.5 : -0.5; post(rec, x - uz * t, z + ux * t, Math.atan2(ux, uz), 0, ux, uz); }
+      } else {
+        const off = rec.o === 2 ? side * (hw - 0.8) : side * (hw + 0.9), step = rec.o === 2 ? 6 : 8;
+        for (let s = s0; s <= s1; s += step) { const [x, z, ux, uz] = closureAlong(ln, s); post(rec, x - uz * off, z + ux * off, Math.atan2(ux, uz), 1, ux, uz); }
+      }
+      CLOSURES.recs.push(rec);
+    }
+    const strips = { paved: [], milled: [] };
+    for (const p of d.paving || []) {
+      const raw = closureGeo(p.g);
+      if (raw.length < 2 || !raw.some((q) => insideLimit(q[0], q[1]))) continue;
+      const ln = closureSnapLine(raw);
+      if (!ln) continue;
+      const hw = roadHalfW(ln.mx, ln.mz);
+      strips[p.k === 'milled' ? 'milled' : 'paved'].push(ribbon(ln.pts, 2 * hw - 1.0, 0, (x, z) => closureY(x, z) + 0.06, null));
+      CLOSURES.paving.push({ id: String(p.id || ''), k: p.k, addr: String(p.addr || ''), mx: ln.mx, mz: ln.mz });
+    }
+    if (pavedMesh) {
+      pavedMesh.geometry.dispose(); pavedMesh.geometry = mergeGeoms(strips.paved);
+      milledMesh.geometry.dispose(); milledMesh.geometry = mergeGeoms(strips.milled);
+      CLOSURES.pavedN = strips.paved.length; CLOSURES.milledN = strips.milled.length;
+    }
+    if (CLOSE_TRAFFIC && trafficReady) closureTraffic();
+    closureReconAt = 0;
+  }
+  function closureTraffic() {   // typical traffic: a fully closed block wants no cars (the run whose midpoint lies within 25 m of the block's)
+    for (const r of trafficRuns) r.closed = false;
+    if (!closureRunCells) {
+      closureRunCells = new Map();
+      trafficRuns.forEach((r, i) => { const k = Math.floor(r.mx / 200) + ':' + Math.floor(r.mz / 200); let a = closureRunCells.get(k); if (!a) { a = []; closureRunCells.set(k, a); } a.push(i); });
+    }
+    let n = 0;
+    for (const rec of CLOSURES.recs) {
+      if (rec.o < 3) continue;
+      const gx = Math.floor(rec.mx / 200), gz = Math.floor(rec.mz / 200);
+      for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
+        const a = closureRunCells.get(cx2 + ':' + cz2);
+        if (!a) continue;
+        for (const i of a) { const r = trafficRuns[i]; if (!r.closed && r.cls >= 3 && r.len <= 250 && Math.hypot(r.mx - rec.mx, r.mz - rec.mz) < 25) { r.closed = true; n++; } }
+      }
+    }
+    CLOSURES.runsClosed = n;
+  }
+  function closuresReconcile() {
+    const inv = closureInv, cx = camera.position.x, cz = camera.position.z;
+    const cellR = Math.ceil(CLOSURE_R / 400), gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400);
+    const cand = [];
+    for (let gx = gx0 - cellR; gx <= gx0 + cellR; gx++) for (let gz = gz0 - cellR; gz <= gz0 + cellR; gz++) {
+      const arr = inv.cells.get(gx + ':' + gz);
+      if (arr) for (const i of arr) { const dx = inv.X[i] - cx, dz = inv.Z[i] - cz, d2 = dx * dx + dz * dz; if (d2 < CLOSURE_R * CLOSURE_R) cand.push([d2, i]); }
+    }
+    if (cand.length > CLOSURE_CAP * 2) cand.sort((a2, b2) => a2[0] - b2[0]);
+    let nb = 0, nc = 0;
+    const drawn = new Set();
+    for (const [, i] of cand) {
+      const kind = inv.K[i];
+      if ((kind === 0 ? nb : nc) >= CLOSURE_CAP) continue;
+      _plp.set(inv.X[i], inv.Y[i], inv.Z[i]);
+      _plq.setFromAxisAngle(TRAFFIC_UP, inv.YAW[i]);
+      _pls.set(1, 1, 1);
+      _plm.compose(_plp, _plq, _pls);
+      if (kind === 0) { barrelMesh.setMatrixAt(nb, _plm); closurePickB[nb] = inv.R[i]; nb++; } else { coneMesh.setMatrixAt(nc, _plm); closurePickC[nc] = inv.R[i]; nc++; }
+      drawn.add(inv.R[i]);
+    }
+    barrelMesh.count = nb; coneMesh.count = nc;
+    barrelMesh.instanceMatrix.needsUpdate = true; coneMesh.instanceMatrix.needsUpdate = true;
+    CLOSURES.drawn = [...drawn];
+  }
+  function updateClosures(now) {
+    if (!closuresReady) return;
+    if (!CLOSURES.on) {
+      if (barrelMesh.count || coneMesh.count) { barrelMesh.count = coneMesh.count = 0; barrelMesh.instanceMatrix.needsUpdate = coneMesh.instanceMatrix.needsUpdate = true; CLOSURES.drawn = []; }
+      pavedMesh.visible = milledMesh.visible = false;
+      return;
+    }
+    pavedMesh.visible = CLOSURES.pavedN > 0; milledMesh.visible = CLOSURES.milledN > 0;
+    if (now >= closureReconAt || camera.position.distanceToSquared(closureLastCam) > 220 * 220) {
+      closureReconAt = now + 900;
+      closureLastCam.copy(camera.position);
+      closuresReconcile();
+    }
+    if (pickedClosure) {
+      _ssv.set(pickedClosure.mx, pickedClosure.my + 2.5, pickedClosure.mz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else {
+        vehinfoEl.style.opacity = '1';
+        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
+          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
+          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      }
+    }
+  }
+  const CLOSURE_CHIP = { 3: ['Closed', '#e07a1f'], 2: ['Partly Closed', '#d9a441'], 1: ['Sidewalk Closed', '#8a8580'] };
+  function closureDate(s) { return new Date(s * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/New_York' }); }
+  function closureCard(rec) {
+    const [chip, col] = CLOSURE_CHIP[rec.o] || CLOSURE_CHIP[2];
+    const nowS = Date.now() / 1000;
+    let html = '<span class="vroute" style="background:' + col + '">' + chip + '</span><span class="vdest">' + septaEsc(rec.addr || 'Street Closure') + '</span>';
+    let link = '';
+    for (const p of rec.permits) {
+      if (!p) continue;
+      const when = p.from > nowS ? 'From ' + closureDate(p.from) + ' Through ' + closureDate(p.until) : 'Through ' + closureDate(p.until);
+      const what = [p.why, p.type].filter(Boolean).join(', ');
+      html += (what ? '<div class="vmeta">' + septaEsc(what) + '</div>' : '') + '<div class="vmeta">' + septaEsc(when) + '</div>';
+      if (!link && p.url && /^https:\/\/stsweb\.phila\.gov\//.test(p.url)) link = '<a class="vlink" href="' + septaEsc(p.url) + '" target="_blank" rel="noopener">Permit ' + septaEsc(p.n || '') + '</a>';
+    }
+    vehinfoBody.innerHTML = html + '<div class="vmeta">Streets Department Permit</div>' + link;
+  }
+  function closureStatus() {
+    if (!btnClosures) return;
+    const n = CLOSURES.recs.reduce((t, r) => t + (r.o >= 3 ? 1 : 0), 0), off = !CLOSURES.ok && CLOSURES.fails >= 3;
+    btnClosures.title = 'Street Closures (U): ' + (off ? 'Feed Offline' : n ? n + ' Closed Blocks Today' : 'No Closures On Yet');
+    const cc = document.getElementById('closureCount');
+    if (cc) cc.textContent = off ? 'Offline' : n ? String(n) : '';
+  }
+  function syncClosuresBtn() { syncLayerBtn(btnClosures, CLOSURES.on); }
+  function toggleClosures() {
+    if (!septaCanFetch) return;
+    CLOSURES.on = !CLOSURES.on;
+    syncClosuresBtn();
+    closureReconAt = 0;
+    if (CLOSURES.on) CLOSURES.nextT = 0;
+    else if (pickedClosure) { pickedClosure = null; vehinfoEl.hidden = true; }
+  }
+  if (btnClosures) btnClosures.addEventListener('click', toggleClosures);
 
   // ---- farmers' markets (Round 76). The City's 34 farmers' markets (MARKETS, from
   // fetch_markets.py / bake_markets.py: the scene frame, per-weekday hours in minutes, the
@@ -15238,6 +15551,7 @@
     updateSearchMark(now);
     scoresPoll(now); scoresRender();
     concertsPoll(now); concertsRender();
+    closuresPoll(now); updateClosures(now);
     if (lotStripes) {
       // the stall lines are 1 px lines: past a few hundred metres they alias into moire over
       // the whole lot, so they fade out between 500 and 1500 m instead of cutting at 3.5 km
@@ -15318,7 +15632,11 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, cardFor: (kind, id) => { if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+        { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
+        { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
+        { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
+        paving: [{ id: 'p1', k: 'paved', week: true, addr: '200 Block of Pine St', g: [[-75.14550, 39.94340], [-75.14700, 39.94370]] }] }); closureStatus(); return CLOSURES.recs.length; }, cardFor: (kind, id) => { if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi,
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }

@@ -12,6 +12,7 @@ Everything in this directory is applied **by hand, by the owner**, on the lionsp
 | `lightning_relay.py` + `lightning-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | Blitzortung community MQTT relay → `/var/www/philly3d/lightning.json` every 2 s (strikes within 110 km, last 15 min) |
 | `ais_relay.py` + `ais-relay.service` | `/opt/philly3d/`, `/etc/systemd/system/` | one aisstream.io socket → `/var/www/philly3d/ais.json` every 4 s |
 | `concerts_bake.py` + `concerts-bake.service` + `concerts-bake.timer` | `/opt/philly3d/`, `/etc/systemd/system/` | Ticketmaster Discovery API (Philadelphia music, 3 days) → `/var/www/philly3d/concerts.json` every 15 min; the key in `/etc/philly3d/concerts.env` |
+| `closures_bake.py` + `closures-bake.service` + `closures-bake.timer` | `/opt/philly3d/`, `/etc/systemd/system/` | the Streets Department's closure permits and paving status (City ArcGIS, no key) → `/var/www/philly3d/closures.json` every 30 min |
 | `../deploy_philly3d.sh` | run from the laptop | tests → build → gzip gate → keep prev pair → `rsync --delay-updates` → live sha256 verify; `--rollback` |
 
 ## 1. Rebuild the VPS from scratch
@@ -137,6 +138,32 @@ same-origin. The GitHub Pages copy needs the `location = /concerts.json` block i
 `philly3d.vhost.example` (ACAO *, like the other feeds; a vhost edit, `nginx -t` between
 steps, your go) before it shows any placard. A healthy baker on a quiet day writes
 `"events": []`.
+
+## 8. Closures baker (Round 79)
+
+Stdlib only (Python 3.9+, `zoneinfo`), no key. Every 30 minutes the timer runs one bake: the
+Streets Department's closure permits in force (StreetSmartPHL's closure segments with their
+permit links, joined to LaneClosure_Master's addresses), grouped by city street segment with
+the most restrictive occupancy of the permits that count (parking relaxations, dumpsters,
+containers, loading zones and valet stands do not close a street), plus the paving season's
+freshly paved and milled blocks and this week's milling and paving lists, written to
+`/var/www/philly3d/closures.json` (+ `.gz` twin, atomic, 0644; about 2 MB raw, 300 KB
+gzipped). A bake takes a few seconds and five requests.
+
+```sh
+cp closures_bake.py /opt/philly3d/ && chmod 755 /opt/philly3d/closures_bake.py
+python3 /opt/philly3d/closures_bake.py --out /var/www/philly3d/closures.json -v && ls -l /var/www/philly3d/closures.json*   # one bake, by hand
+cp closures-bake.service closures-bake.timer /etc/systemd/system/ && systemctl daemon-reload
+systemctl enable --now closures-bake.timer
+systemctl list-timers closures-bake.timer ; journalctl -u closures-bake -n 5
+curl -s https://philly3d.com/closures.json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["day"], len(d["closures"]), "closures,", len(d["paving"]), "paving")'
+```
+
+The page polls the file every 30 minutes while visible, treats a `t` older than 3 hours as
+"baker down" (every barrel drops, nothing lingers from a stopped baker) and stays silent when
+the file is missing. On philly3d.com the fetch is same-origin. The GitHub Pages copy needs the
+`location = /closures.json` block in `philly3d.vhost.example` (ACAO *, like the other feeds; a
+vhost edit, `nginx -t` between steps, your go) before it posts a barrel.
 
 ## Lightning relay
 

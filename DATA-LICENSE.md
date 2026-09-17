@@ -89,9 +89,12 @@ outside that window; names, times, venues, one image link and the ticket link be
 and are shown with a link to the event page; the page is unaffiliated), the City of
 Philadelphia's Air Management Services latest core-site readings (Department of Public Health,
 ArcGIS Online, City of Philadelphia License; read by the page every fifteen minutes, nothing
-stored: the PM2.5 sets the haze and the AQI line on the time panel), and OpenStreetMap
-Nominatim for search (ODbL data; subject to the Nominatim usage policy). Each feed has its own
-terms of use; the page credits them.
+stored: the PM2.5 sets the haze and the AQI line on the time panel), the Streets Department's
+street closure permits and paving status (StreetSmartPHL and LaneClosure_Master on the City
+ArcGIS, City of Philadelphia License; philly3d.com keeps a trimmed copy refreshed every thirty
+minutes, the permits in force with their purpose, dates and the city's permit link, dropped by
+the page once it is three hours old), and OpenStreetMap Nominatim for search (ODbL data;
+subject to the Nominatim usage policy). Each feed has its own terms of use; the page credits them.
 
 ## Fonts (SIL Open Font License 1.1)
 
