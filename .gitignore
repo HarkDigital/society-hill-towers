@@ -2,7 +2,8 @@
 3d-model/osm_wide_raw.json
 3d-model/osm_south_raw.json
 3d-model/baseline.html
-.claude/
+.claude/*
+!.claude/skills/
 3d-model/osm_city_raw.json
 3d-model/city_tiles/
 3d-model/outskirts_tiles/

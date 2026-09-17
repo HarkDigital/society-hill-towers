@@ -34,6 +34,12 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # pipeline 
 Laptop caveat: the Browser pane's dev server cannot `getcwd()` inside CloudStorage, so serve
 the built page from a scratch copy (the `sht-*-scratch` entries in `.claude/launch.json`),
 not from the checkout. The pane runs no rAF: drive frames with `__dbg.frameOnce()`.
+The whole verification loop is the `philly3d-capture` skill (`.claude/skills/philly3d-capture/`,
+the one part of `.claude/` that is committed): the staging and before/after steps, the capture
+sink and `__cap` helper, the day and night pose tables and the `__dbg` probe list, and the pane
+gotchas that cost the most time (the hidden tab's throttling, the reload that does not reload,
+`document.hidden` never clearing, the uniforms `applyLighting` overwrites every frame). Read it
+before any visual round rather than rediscovering it.
 
 ## Hard constraints
 
