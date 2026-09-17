@@ -55,12 +55,18 @@ whole city rather than one frame.
 | Call | Returns |
 |------|---------|
 | `__dbg.groundAt(x, z)` | `{mesh, dem, river, beyondDem, south, east}` at a point |
-| `__dbg.railSnap(x, z, r)` | `[x, z, dx, dz, y, flags]` for the nearest track |
+| `__dbg.railSnap(x, z, r, prefer, margin)` | `[x, z, dx, dz, y, flags, chain]` for the nearest track; `prefer` biases toward a chain |
+| `__dbg.railWalk(x, z, dx, dz, dist, chain)` | walks the rails and returns `[x, z, dx, dz, y, flags, chain]`; articulate a consist with it and compare `[6]` per car to prove the train stays on one track |
 | `__dbg.rail()` | the corridor's under / float / grade extremes with locations |
 | `__dbg.colStats()` | per-tier means of wall and roof colours handed to the builders |
 | `__dbg.towers().log` | every researched tower spec match in the wide loop |
 | `__dbg.amtrak()` | the live train list with positions and fix ages |
 | `__dbg.perf()` | per-step build ms, frame p50/p95, renderer.info, heap |
+
+`renderer.info` with `autoReset = false` is also the only honest way to price a
+change: Round 87 priced three tree LODs that way in three builds (18.0 M triangles
+a frame for the full-detail crown citywide against 13.4 M for the phone crown)
+rather than arguing about it.
 
 A grid of `railSnap` against `groundAt().mesh` is a one-second citywide survey of
 buried or floating track. Reach for that shape of check whenever a question is

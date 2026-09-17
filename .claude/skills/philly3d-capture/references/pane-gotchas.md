@@ -65,7 +65,21 @@ symptom shows up later as a wrong conclusion rather than a failure.
   `frameOnce`. Count triangles and draw calls instead:
   `renderer.info` with `autoReset = false`.
 - **Freed geometries cannot be raycast or bounding-boxed** from `__dbg.scene`
-  (`freeOnUpload`). Verify those with screenshots or with packer-side probes.
+  (`freeOnUpload`), and their attribute arrays read back `null`, so a vertex colour
+  cannot be sampled from the scene graph at all. Measure the **pixels** instead:
+  point the camera straight down, drive `frameOnce()`, then `drawImage` the WebGL
+  canvas into a small 2D canvas and average `getImageData`. Round 87 settled
+  "is the woodland tint actually landing" that way in one call, with West Park's
+  ground at [59, 75, 45] against [74, 87, 60] for non-park ground beside it.
+
+  ```js
+  const off = document.createElement('canvas'); off.width = off.height = 120;
+  const ctx = off.getContext('2d');
+  __dbg.goFly(x, 500, z, 0, -1.5707);
+  for (let i = 0; i < 8; i++) __dbg.frameOnce();
+  ctx.drawImage(__dbg.renderer.domElement, cv.width / 2 - 60, cv.height / 2 - 60, 120, 120, 0, 0, 120, 120);
+  // then average ctx.getImageData(0, 0, 120, 120).data
+  ```
 - **Live shader experiments need a new cache key.** r149 reuses the first
   variant's compiled program, so set
   `mat.customProgramCacheKey = () => 'variantN'` and `needsUpdate`.
