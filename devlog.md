@@ -4644,3 +4644,27 @@ Avenue again. The buildings drifted with the shapely version, not the change: 18
 attribute and roof word count the same, the blob 10.21 to 9.76 MB. Checked at 60 m in Grays
 Ferry against the previous blob: the same buildings, the same colours. Page 27.39 MB (−436 KB
 against HEAD).
+
+### Round 88 coda 2: the pins, and the Phillies' own red (same day)
+
+**Mike: "Yes to the pins" (no partly closed construction pins, there are too many; a painter's
+palette on the art pins; the pins animate in jarringly), and, with a screenshot of the skyline
+on the Phillies night: "the red lights should match the red in the Phillies P".**
+
+The pins. A partial closure no longer carries a pin (its cones and its card stay; `closurePinPart`
+is built at count 0 for the pick lists). The art pin's glyph is a palette: the board with its
+thumb hole, five wells and a brush across it, drawn into the same 256 x 320 casing. And every pin
+eases in: `pinRise(rec, now)` keeps a map from the record itself to the frame it was first drawn,
+and the pin's billboard scale takes an ease-out cubic over 550 ms from nothing, again after a
+second out of reach; the closures' blocks, the markers, the art, the trains and the SEPTA badges
+all pass through it, and a sweep drops entries unseen for half a minute. Measured on an art pin
+after a jump into Old City: scale 0, 1.88, 3.08, 4.02, 4.61, 4.97, 5.14, 5.21 over the first eight
+frames at 60 ms, then steady. `__dbg.pins()` counts the tracked records.
+
+The red. The morning's fix had pulled the bands from salmon to (206, 87, 86), and the residual green
+and blue turned out to be the LED parts' own grey-blue DAY colour lit by the moon and the sky
+hemisphere at night: hiding the additive sheet changed nothing, the theme mesh alone carried it.
+An LED emits, it does not reflect the sky, so the theme shader takes a themed part's diffuse to a
+tenth after dark, and the palette's red is the Phillies' own #e81828. The bands measured **(234,
+29, 48)** against the P's (232, 24, 40), with the saturated gain back up to 0.42 of a white's
+(0.3 had left them at 211 red). Verified by capture on the chevrons and the crown bands.

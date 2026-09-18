@@ -7751,7 +7751,12 @@
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLit = aLit; vTheme = vec3(aMix, aSlot, aGain);');
         sh.fragmentShader = sh.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uNight, uThemeOn, uStripeN; uniform vec3 uTheme0, uTheme1, uTheme2, uTheme3, uStripe0, uStripe1, uStripe2, uStripe3; varying vec3 vLit; varying vec3 vTheme;')
-          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float s = vTheme.y; float si = mod(floor(max(s - 4.0, 0.0) + 0.5), max(uStripeN, 1.0));\n  vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, s)), mix(uTheme2, uTheme3, step(2.5, s)), step(1.5, s));\n  vec3 sc = mix(mix(uStripe0, uStripe1, step(0.5, si)), mix(uStripe2, uStripe3, step(2.5, si)), step(1.5, si));\n  tc = mix(tc, sc, step(3.5, s));\n  vec3 te = mix(vLit, tc, uThemeOn * vTheme.x); float tm = max(te.r, max(te.g, te.b)); float tsat = tm > 1e-4 ? 1.0 - min(te.r, min(te.g, te.b)) / tm : 0.0;\n  totalEmissiveRadiance += te * uNight * 2.4 * vTheme.z * mix(1.0, 0.3, tsat); }');   // Round 88 (Mike: the red reads as pink): a saturated colour takes 0.3 of the gain a white does. Under the ACES fit a pure red at 2.4 radiance leaks into green and blue through the input matrix and comes out (231, 129, 108), salmon; held near 1.0 it stays (255, 60, 60). The whites keep today's brightness   // aGain: a thin LED line gets the radiance a wash box has (Round 85); a slot of 4 or more is a stripe index into the night's stripe palette (a team's pair), reduced by its length so a two-colour palette alternates and a three-colour one cycles three
+          // Round 88 (Mike: the red lights should match the red in the Phillies P): a lit part emits,
+          // it does not reflect the sky. Its grey-blue day colour under the moon and the hemisphere
+          // put (87, 98) of green and blue under a (230) red, the pink; after dark the diffuse of a
+          // themed part goes to a tenth, and the emissive stands alone
+          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - uNight * vTheme.x * 0.9;')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float s = vTheme.y; float si = mod(floor(max(s - 4.0, 0.0) + 0.5), max(uStripeN, 1.0));\n  vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, s)), mix(uTheme2, uTheme3, step(2.5, s)), step(1.5, s));\n  vec3 sc = mix(mix(uStripe0, uStripe1, step(0.5, si)), mix(uStripe2, uStripe3, step(2.5, si)), step(1.5, si));\n  tc = mix(tc, sc, step(3.5, s));\n  vec3 te = mix(vLit, tc, uThemeOn * vTheme.x); float tm = max(te.r, max(te.g, te.b)); float tsat = tm > 1e-4 ? 1.0 - min(te.r, min(te.g, te.b)) / tm : 0.0;\n  totalEmissiveRadiance += te * uNight * 2.4 * vTheme.z * mix(1.0, 0.42, tsat); }');   // Round 88 (Mike: the red reads as pink): a saturated colour takes 0.42 of the gain a white does. Under the ACES fit a pure red at 2.4 radiance leaks into green and blue through the input matrix and comes out (231, 129, 108), salmon; held near 1.0 it stays (255, 60, 60). The whites keep today's brightness   // aGain: a thin LED line gets the radiance a wash box has (Round 85); a slot of 4 or more is a stripe index into the night's stripe palette (a team's pair), reduced by its length so a two-colour palette alternates and a three-colour one cycles three
       };
       themeMesh = new THREE.Mesh(g, themeMat);
       themeMesh.castShadow = true;
@@ -11283,6 +11288,22 @@
     groupCity.add(m);
     return m;
   }
+  // ---- the pins' entrance (Round 88, Mike: the pins animate in jarringly). A pin used to stand
+  // at full size the first frame its record came within the half mile, or the first frame after
+  // a reconcile found it, so a flight across the city was a field of badges popping. Now a pin
+  // grows from nothing over PIN_RISE ms on an ease-out the first frame it is drawn, and again
+  // after it has been out of reach for a second; the record itself is the key, whatever the
+  // layer (the closures' blocks, the markers, the art, the trains, the SEPTA vehicles), so the
+  // one map serves every pin. Entries not seen for half a minute are swept.
+  const PIN_RISE = 550, pinBorn = new Map();
+  let pinSweepAt = 0;
+  function pinRise(rec, now) {
+    let e = pinBorn.get(rec);
+    if (!e) { e = [now, now]; pinBorn.set(rec, e); } else { if (now - e[1] > 1000) e[0] = now; e[1] = now; }
+    const t = Math.min(1, (now - e[0]) / PIN_RISE), u = 1 - t;
+    return 1 - u * u * u;
+  }
+  function pinSweep(now) { if (now < pinSweepAt) return; pinSweepAt = now + 5000; for (const [k, e] of pinBorn) if (now - e[1] > 30000) pinBorn.delete(k); }
   const glyphDrum = (g) => {   // a drum: the pale barrel with two dark bands on a base
     g.fillStyle = '#fdfbf6';
     g.beginPath(); g.moveTo(88, 62); g.lineTo(168, 62); g.lineTo(176, 166); g.lineTo(80, 166); g.closePath(); g.fill();
@@ -11296,7 +11317,26 @@
     g.fillStyle = '#1f4e9c';
     for (let i = 0; i < 3; i++) g.fillRect(96, 92 + i * 20, 64, 8);
   };
-  const glyphPlinth = (g) => {   // a plinth with its upright form
+  const glyphPalette = (g) => {   // a painter's palette (Round 88, Mike): the board with its thumb hole, five paint wells and a brush
+    g.fillStyle = '#fdfbf6';
+    g.beginPath();
+    g.moveTo(128, 52);
+    g.bezierCurveTo(196, 52, 216, 100, 206, 132);
+    g.bezierCurveTo(200, 152, 178, 150, 172, 164);
+    g.bezierCurveTo(166, 182, 152, 182, 128, 178);
+    g.bezierCurveTo(84, 172, 44, 146, 50, 106);
+    g.bezierCurveTo(56, 70, 90, 52, 128, 52);
+    g.closePath(); g.fill();
+    g.fillStyle = '#b8862b';                          // the thumb hole, the body colour showing through
+    g.beginPath(); g.ellipse(150, 146, 17, 13, -0.5, 0, Math.PI * 2); g.fill();
+    for (const [x, y, c] of [[84, 96, '#d7263d'], [110, 74, '#f4a300'], [146, 74, '#1e7bd6'], [180, 100, '#2f9e44'], [78, 132, '#6a3fb8']]) {
+      g.fillStyle = c; g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2); g.fill();
+    }
+    g.strokeStyle = '#3a2f1f'; g.lineWidth = 7; g.lineCap = 'round';   // the brush, laid across
+    g.beginPath(); g.moveTo(62, 176); g.lineTo(158, 96); g.stroke();
+    g.strokeStyle = '#d7263d'; g.lineWidth = 9; g.beginPath(); g.moveTo(158, 96); g.lineTo(174, 82); g.stroke();
+  };
+  const glyphPlinth = (g) => {   // a plinth with its upright form (the art pin's glyph until Round 88)
     g.fillStyle = '#fdfbf6';
     g.fillRect(84, 150, 88, 24); g.fillRect(112, 74, 32, 76); g.fillRect(96, 58, 64, 16);
   };
@@ -11376,7 +11416,7 @@
       if (bi < 1024) {
         const py0 = v.gy + spec.h + 0.6;
         _sp.set(v.dx, py0, v.dz);
-        const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
+        const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14) * pinRise(v, now);
         _sp.y += Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
         _ss.set(s, s, s);
         _sm.compose(_sp, _sqB, _ss);
@@ -14390,7 +14430,7 @@
       }
       if (np < AMTRAK_CAP && !((p.hfl & 1) && !(p.hfl & 4)) && insideLimit(p.hx, p.hz) && nearCam(p.hx, p.hy, p.hz)) {   // the badge over the head car, holding size like the aircraft pins; within the half mile (Round 82)
         _sp.set(p.hx, ((p.hfl & 4) ? Math.max(p.hy, siteY(p.hx, p.hz, 'ground')) : p.hy) + 6, p.hz);   // a train at the platforms carries its pin over the concourse, never under it (Round 85)
-        const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
+        const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190) * pinRise(p, now);
         _ss.set(aps, aps, aps);
         _sm.compose(_sp, _aqB, _ss);
         amtrakPin.setMatrixAt(np, _sm);
@@ -15044,7 +15084,7 @@
   const bfbLampPts = [];   // the bridge's lamp heads, for the streetlamps step
   const themeU = { uTheme0: { value: new THREE.Color(0) }, uTheme1: { value: new THREE.Color(0) }, uTheme2: { value: new THREE.Color(0) }, uTheme3: { value: new THREE.Color(0) }, uThemeOn: { value: 0 },
     uStripe0: { value: new THREE.Color(0) }, uStripe1: { value: new THREE.Color(0) }, uStripe2: { value: new THREE.Color(0) }, uStripe3: { value: new THREE.Color(0) }, uStripeN: { value: 1 } };   // the stripe bank (Round 85): the Comcast crowns' and the FMC's bands on a team night
-  const LIGHT_COLORS = { white: 0xf4f1ea, green: 0x1ec24a, red: 0xff2a2a, orange: 0xff7a1a, blue: 0x2457ff, teal: 0x14c8c8, purple: 0x8a2bff, pink: 0xff5fb0, yellow: 0xffd21a, gold: 0xffb300, cyan: 0x22d8ff, magenta: 0xff30e0, crimson: 0xc8102e, gray: 0xb8bcc2, maroon: 0x8a1c2b, burgundy: 0x7a1030, silver: 0xd8dde3, lavender: 0xb69cff, navy: 0x1a2a8a, lightblue: 0x7fc8ff };
+  const LIGHT_COLORS = { white: 0xf4f1ea, green: 0x1ec24a, red: 0xe81828, orange: 0xff7a1a, blue: 0x2457ff, teal: 0x14c8c8, purple: 0x8a2bff, pink: 0xff5fb0, yellow: 0xffd21a, gold: 0xffb300, cyan: 0x22d8ff, magenta: 0xff30e0, crimson: 0xc8102e, gray: 0xb8bcc2, maroon: 0x8a1c2b, burgundy: 0x7a1030, silver: 0xd8dde3, lavender: 0xb69cff, navy: 0x1a2a8a, lightblue: 0x7fc8ff };
   const LIGHT_TEAMS = [{ k: 'nfl', name: 'Go Birds', color: 'green', stripes: ['green', 'white'] }, { k: 'mlb', name: 'Go Phils', color: 'red', stripes: ['red', 'white'] }, { k: 'nhl', name: 'Go Flyers', color: 'orange', stripes: ['orange', 'white'] }, { k: 'nba', name: 'Go Sixers', color: 'blue', stripes: ['blue', 'red', 'white'] }];   // stripes: the striped LED parts' palette on a team night (the skyline stays the one colour, Round 81's photo); a calendar night or a pin deals its own colours to the stripes
   const LIGHT_PINS = { eagles: 'nfl', birds: 'nfl', phillies: 'mlb', phils: 'mlb', flyers: 'nhl', sixers: 'nba', '76ers': 'nba' };
   function lightsDateKey(y, m, d) { return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d; }
@@ -15428,20 +15468,22 @@
     barrelMesh.instanceMatrix.needsUpdate = true; coneMesh.instanceMatrix.needsUpdate = true;
     CLOSURES.drawn = [...drawn.keys()];
   }
-  function closurePinsUpdate() {   // the pins over the drawn blocks (Round 82): billboards every frame, the SEPTA badges' size rule
+  function closurePinsUpdate(now) {   // the pins over the drawn blocks (Round 82): billboards every frame, the SEPTA badges' size rule
+    // Round 88 (Mike: get rid of the partly closed construction pins, there are too many): only a
+    // full closure carries a pin now; a partial closure keeps its cones on the ground and its card
+    // through them. closurePinPart stays built, at count 0, for the pick lists
     _kqB.copy(camera.quaternion);
-    let nf = 0, npt = 0;
+    let nf = 0;
     for (const rec of CLOSURES.drawn) {
-      const full = rec.o >= 3, i = full ? nf : npt;
-      if (i >= CLOSURE_PIN_CAP) continue;
+      if (rec.o < 3 || nf >= CLOSURE_PIN_CAP) continue;
       _sp.set(rec.mx, rec.my + 2.2, rec.mz);
-      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
+      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14) * pinRise(rec, now);
       _ss.set(sc, sc, sc);
       _sm.compose(_sp, _kqB, _ss);
-      if (full) { closurePin.setMatrixAt(nf, _sm); closurePinPick[nf++] = rec; } else { closurePinPart.setMatrixAt(npt, _sm); closurePinPickP[npt++] = rec; }
+      closurePin.setMatrixAt(nf, _sm); closurePinPick[nf++] = rec;
     }
-    closurePin.count = nf; closurePinPart.count = npt;
-    flushInst(closurePin, -1); flushInst(closurePinPart, -1);
+    closurePin.count = nf; if (closurePinPart.count) { closurePinPart.count = 0; closurePinPart.instanceMatrix.needsUpdate = true; }
+    flushInst(closurePin, -1);
   }
   function updateClosures(now) {
     if (!closuresReady) return;
@@ -15457,7 +15499,7 @@
       closureLastCam.copy(camera.position);
       closuresReconcile();
     }
-    closurePinsUpdate();
+    closurePinsUpdate(now);
     if (pickedClosure) {
       _ssv.set(pickedClosure.mx, pickedClosure.my + 2.5, pickedClosure.mz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
@@ -15769,7 +15811,7 @@
     for (const m of markerMeshes) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     for (const m of artMeshes) m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     markerPin = pinMesh(pinTexture('#1f4e9c', '#f2d27a', glyphKeystone), nType[0] + nType[1], 'markerPin');
-    artPin = pinMesh(pinTexture('#b8862b', '#fdfbf6', glyphPlinth), nMat[0] + nMat[1] + nMat[2] + nMat[3], 'artPin');
+    artPin = pinMesh(pinTexture('#b8862b', '#fdfbf6', glyphPalette), nMat[0] + nMat[1] + nMat[2] + nMat[3], 'artPin');   // a painter's palette since Round 88 (Mike); the plinth glyph before
     markersReady = true;
     markerReconAt = 0; markerLastCam.set(1e9, 0, 1e9);
     const elM = document.getElementById('markersCount'), elA = document.getElementById('artCount');
@@ -15806,7 +15848,7 @@
     let nm = 0, na = 0;
     for (const { rec, isM } of markersNear) {
       _sp.set(rec.x, rec.gy + (isM ? 3.2 : 2.9), rec.z);
-      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
+      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14) * pinRise(rec, now);
       _ss.set(sc, sc, sc);
       _sm.compose(_sp, _kqB, _ss);
       if (isM) { markerPin.setMatrixAt(nm, _sm); markerPinPick[nm++] = rec; } else { artPin.setMatrixAt(na, _sm); artPinPick[na++] = rec; }
@@ -17326,6 +17368,7 @@
     updateMarketPick();
     updateMarkerPick();
     updateMarkersNear(now);
+    pinSweep(now);
     updateSearchMark(now);
     scoresPoll(now); scoresRender();
     concertsPoll(now); concertsRender();
@@ -17419,7 +17462,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), roads: () => ({ strips: ROAD_STATS, decks: PERF.decks || null, wideSegs: wideRoadSegs.length / 4, lamp: lampUniform.value, glint: glintK, wwbLamps: WWB_LAMP_N, bridgeLampPts: bfbLampPts ? bfbLampPts.length / 3 : 0 }), drape: (ring, y) => { const out = []; const ok = drapeConvex(ring, y, (x, y2, z) => out.push([x, y2, z])); return { ok, out }; }, gridAt: (x, z) => { const G = groundGridAt(x, z); return G ? { x0: G.x0, x1: G.x1, z0: G.z0, z1: G.z1, nx: G.nx, nz: G.nz, cell: G.cell, hole: G.hole, skip: !!G.skip } : null; }, landY: groundMeshLandY, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), theme: () => ({ mesh: themeMesh, mat: themeMat, sheet: themeSheet, sheetMat: themeSheetMat, u: themeU }), pins: () => ({ tracked: pinBorn.size, rise: PIN_RISE }), roads: () => ({ strips: ROAD_STATS, decks: PERF.decks || null, wideSegs: wideRoadSegs.length / 4, lamp: lampUniform.value, glint: glintK, wwbLamps: WWB_LAMP_N, bridgeLampPts: bfbLampPts ? bfbLampPts.length / 3 : 0 }), drape: (ring, y) => { const out = []; const ok = drapeConvex(ring, y, (x, y2, z) => out.push([x, y2, z])); return { ok, out }; }, gridAt: (x, z) => { const G = groundGridAt(x, z); return G ? { x0: G.x0, x1: G.x1, z0: G.z0, z1: G.z1, nx: G.nx, nz: G.nz, cell: G.cell, hole: G.hole, skip: !!G.skip } : null; }, landY: groundMeshLandY, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),

@@ -38,8 +38,10 @@ class NearRule(unittest.TestCase):
         for anchor in ("pinMesh(pinTexture('#e07a1f', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePin')",
                        "pinMesh(pinTexture('#d9a441', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePinPart')",
                        "pinMesh(pinTexture('#1f4e9c', '#f2d27a', glyphKeystone)",
-                       "pinMesh(pinTexture('#b8862b', '#fdfbf6', glyphPlinth)",
-                       "closurePinsUpdate();", "updateMarkersNear(now);", "updateMarkets(now);",
+                       "pinMesh(pinTexture('#b8862b', '#fdfbf6', glyphPalette)",   # a painter's palette since Round 88
+                       "closurePinsUpdate(now);", "updateMarkersNear(now);", "updateMarkets(now);",
+                       "pinRise(rec, now)", "pinRise(p, now)", "pinRise(v, now)", "pinSweep(now);",   # the pins' entrance (Round 88)
+                       "if (rec.o < 3 || nf >= CLOSURE_PIN_CAP) continue;",   # no pin over a partial closure (Round 88)
                        "if (markerPin.count) targets.push(markerPin); if (artPin.count) targets.push(artPin);",
                        "if (closurePin.count) targets.push(closurePin); if (closurePinPart.count) targets.push(closurePinPart);",
                        "markerDrawnN * 4294967296"):
