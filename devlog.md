@@ -4826,3 +4826,62 @@ exclusive with the other three both ways and closes on Escape.
 
 - 103 tests pass (`tests/test_schuylkill.py`). Page 27.40 MB (+12.6 KB). Devlog Round 89,
   CLAUDE.md.
+
+### Round 89 coda: the strips in the river, actually found (Sep 18)
+
+**Mike, with three arrows on the Schuylkill between Parkside and East Park: "These strips of land
+need to not be there. This is like the 8th time we've been over this. They do not exist in real
+life."**
+
+They were still there, and the reason this took eight goes is that every check before this one
+measured the wrong thing. Recording both mistakes, because they are the lesson:
+
+1. **A per-row minimum hides the defect it is looking for.** Earlier in this same session I walked
+   every 10 m row across the reach and reported the LOWEST drawn ground in each: −9.4 m or lower in
+   196 of 196 rows, which read as "the channel is carved everywhere". It is. The ridge sits *beside*
+   the trough, in the same row, and taking the minimum threw it away.
+2. **The water level was guessed, not measured.** I tested the ground against −2 m. `TERRAIN.water`
+   is `0.5 - DATUM` and `DATUM` is the DEM at the towers' centroid, so the sheet is at **−7.34** in
+   model units. Recovered exactly from the carve floor: `bedMin` −10.94 = `TERRAIN.bed − 0.6`, so
+   DATUM is 8.34. Against −2 m nothing looked wrong; against −7.34 the ground rose **1.10 m over the
+   water**.
+
+What it is: the far strips were a **100 m** grid, `riverCarve` only pulls down the grid NODES that
+fall inside the river, and a 150 m DEM has no idea the channel is there. So wherever no node landed
+in the water, one triangle spanned the whole 120 m channel at land height. Measured across all three
+bands, the bed dips to −10.94 either side and ridges back to **−6.24, −6.78 and −6.87** in the
+middle. Confirmed the bands are on that grid by walking +x and reading the slope breaks: every
+100 m plus the quad diagonal, against a clean 100 m off the river.
+
+Three things were wrong with the water treatment, all now fixed:
+
+- `FAR_CELL` is **50 m**. At 50 no triangle's hypotenuse reaches across a 120 m channel, so the
+  carve always has nodes in the water. One constant, used by the strips and by the NW hole's
+  snapping (which hardcoded 100 and would have torn).
+- `riverCarve`'s eased band ran to 40 m with a floor of `water + 0.9`, which is **0.4 m ABOVE the
+  sheet**: the bank poked through its own river at the edge. The band runs to 60 m now, so a 50 m
+  cell straddling the bank has every corner pulled down.
+- That floor is a metre **under** the sheet. At `water + 0.3` there was only 0.2 m of headroom and
+  one 10 m peak still came through on the centreline past Manayunk.
+
+**`__dbg.riverCheck()`** is the durable part: one call that walks the river's own centreline at 10 m
+and reports every sample where the drawn ground rides above the sheet, skipping anything past the
+sheet's own `z_range`. It exists so this is never hand-rolled again.
+
+| | before | after |
+|---|---|---|
+| centreline samples over the sheet, whole river | many | **1** |
+| worst, in the reach Mike photographed | **+1.10 m** | under the sheet |
+| worst anywhere | | **+0.04 m**, one sample past Manayunk |
+| meadow-green pixels on the centreline, reach | **20 of 1,045** | **0** |
+| triangles, skyline pose | 13.6 M | 14.4 M |
+
+The pixel test is the one that matches what Mike sees: fly straight down in 400 m steps so a 10 m
+band is tens of pixels, project every centreline point, and read the rendered colour. The 7 pale
+hits that remain are 149 to 191 grey at x −4180..−4219, which is the Girard Avenue bridge deck
+crossing the water, as it should.
+
+The 0.8 M extra triangles are the price of the finer strips, and they buy better terrain under
+every far-ring road as well. Verified by capture at Mike's own camera and closer.
+
+- 103 tests pass. Page 27.41 MB (+3.1 KB). Devlog, CLAUDE.md, the capture skill's probe table.

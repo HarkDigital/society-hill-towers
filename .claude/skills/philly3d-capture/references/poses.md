@@ -58,6 +58,8 @@ whole city rather than one frame.
 | `__dbg.railSnap(x, z, r, prefer, margin)` | `[x, z, dx, dz, y, flags, chain]` for the nearest track; `prefer` biases toward a chain |
 | `__dbg.railWalk(x, z, dx, dz, dist, chain)` | walks the rails and returns `[x, z, dx, dz, y, flags, chain]`; articulate a consist with it and compare `[6]` per car to prove the train stays on one track |
 | `__dbg.rail()` | the corridor's under / float / grade extremes with locations |
+| `__dbg.riverCheck()` | the Schuylkill's centreline against the water sheet: every sample where the DRAWN ground rides above the water, which is what a "strip of land in the river" is. Use this instead of rolling your own: a per-row minimum finds the carved trough and HIDES the ridge beside it, and the sheet sits at -7.34 in model units, not near zero. Both mistakes cost Round 89 an afternoon |
+| `__dbg.trafficChurn(reset)` | car births and deaths a second by cause, age at death, and how many the viewer could see |
 | `__dbg.colStats()` | per-tier means of wall and roof colours handed to the builders |
 | `__dbg.towers().log` | every researched tower spec match in the wide loop |
 | `__dbg.amtrak()` | the live train list with positions and fix ages |

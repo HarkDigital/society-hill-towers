@@ -2379,7 +2379,13 @@
     const e = schEdges(x, z);
     const inside = e[0] < 8 ? e[1] < 0 : schRaster(x, z);
     if (inside) return Math.min(yy, TERRAIN.bed - 0.6);
-    if (e[0] < 40) return Math.min(yy, TERRAIN.water + 0.9 + (yy - TERRAIN.water - 0.9) * smooth(0, 40, e[0]));
+    // Round 89: the band was 40 m with a floor of water + 0.9, which is 0.4 m ABOVE the water
+    // sheet at water + 0.5, so the bank poked through its own river at the edge. The floor is
+    // now a metre UNDER the sheet and the band runs to 60 m, so a 50 m cell straddling the bank
+    // has every corner pulled well down and the surface interpolated between them cannot break
+    // the water. A floor of water + 0.3 left only 0.2 m of headroom and one 10 m peak still
+    // came through, on the centreline past Manayunk where the channel is narrow.
+    if (e[0] < 60) return Math.min(yy, TERRAIN.water - 0.5 + (yy - TERRAIN.water + 0.5) * smooth(0, 60, e[0]));
     return yy;
   }
   function schuylkillCut(x, z) {
@@ -8243,6 +8249,16 @@
     }
     const pkC2 = new THREE.Color(WOODLAND), gdC2 = new THREE.Color(COLORS.ground);
     const nwR = [pkC2.r / gdC2.r, pkC2.g / gdC2.g, pkC2.b / gdC2.b];
+    // The far strips' cell. Round 89: it was 100 m, and riverCarve only pulls down the grid NODES
+    // that fall inside the river, so wherever no node landed in the water a single triangle
+    // spanned the whole channel at land height and rode up through the water sheet. Measured
+    // across the Schuylkill in Fairmount Park, the bed dipped to -10.9 either side and RIDGED
+    // back to -6.2 in the middle, three metres over a water surface at about -9.5, which is the
+    // three strips of land Mike kept reporting in the river. A 150 m DEM does not know the
+    // channel is there, so the interpolation is all the mesh has. At 50 m no triangle's
+    // hypotenuse reaches across a 120 m channel, so the carve always has nodes in the water.
+    // Costs 4x the strips' cells, about 0.4 M triangles a frame against a 13.4 M scene.
+    const FAR_CELL = 50;
     const mkFarGround = (x0, x1, z0, z1, cell, hole, tint, sink) => {
       const nx = Math.max(1, Math.round((x1 - x0) / cell)), nz = Math.max(1, Math.round((z1 - z0) / cell));
       const pos = [];
@@ -8300,7 +8316,7 @@
     let nwHole = null;
     if (P) {
       const sx0 = W.x0, sx1 = W.x1, sz0 = W.z0, sz1 = WIDEB.z0;
-      const nxN = Math.max(1, Math.round((sx1 - sx0) / 100)), nzN = Math.max(1, Math.round((sz1 - sz0) / 100));
+      const nxN = Math.max(1, Math.round((sx1 - sx0) / FAR_CELL)), nzN = Math.max(1, Math.round((sz1 - sz0) / FAR_CELL));
       const cw = (sx1 - sx0) / nxN, chz = (sz1 - sz0) / nzN;
       const i0 = Math.ceil((P.x0 - sx0) / cw), i1 = Math.floor((P.x1 - sx0) / cw);
       const j0 = Math.ceil((P.z0 - sz0) / chz), j1 = Math.floor((P.z1 - sz0) / chz);
@@ -8309,7 +8325,7 @@
     for (const [x0, x1, z0, z1] of [
       [W.x0, W.x1, W.z0, WIDEB.z0], [W.x0, W.x1, WIDEB.z1, W.z1],
       [W.x0, WIDEB.x0, WIDEB.z0, WIDEB.z1], [WIDEB.x1, W.x1, WIDEB.z0, WIDEB.z1],
-    ]) mkFarGround(x0, x1, z0, z1, 100, nwHole, true, false);
+    ]) mkFarGround(x0, x1, z0, z1, FAR_CELL, nwHole, true, false);
     if (nwHole) mkFarGround(nwHole.x0, nwHole.x1, nwHole.z0, nwHole.z1, 50, null, true, true);
     // the apron: dark ground from the world's edge out to 60 km, well under the
     // river beds so nothing fights it. From altitude the city used to end in a
@@ -17648,7 +17664,32 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), theme: () => ({ mesh: themeMesh, mat: themeMat, sheet: themeSheet, sheetMat: themeSheetMat, u: themeU }), pins: () => ({ tracked: pinBorn.size, rise: PIN_RISE }), roads: () => ({ strips: ROAD_STATS, decks: PERF.decks || null, wideSegs: wideRoadSegs.length / 4, lamp: lampUniform.value, glint: glintK, wwbLamps: WWB_LAMP_N, bridgeLampPts: bfbLampPts ? bfbLampPts.length / 3 : 0 }), drape: (ring, y) => { const out = []; const ok = drapeConvex(ring, y, (x, y2, z) => out.push([x, y2, z])); return { ok, out }; }, gridAt: (x, z) => { const G = groundGridAt(x, z); return G ? { x0: G.x0, x1: G.x1, z0: G.z0, z1: G.z1, nx: G.nx, nz: G.nz, cell: G.cell, hole: G.hole, skip: !!G.skip } : null; }, landY: groundMeshLandY, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk,
+      // Round 89: the one call that settles "are there strips of land in the river". Walks the
+      // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
+      // water sheet, which is exactly what a strip is. Mike reported those strips eight times
+      // before this existed; every hand-rolled check before it measured the wrong thing (a row
+      // minimum, which finds the carved trough and hides the ridge beside it, or a guessed water
+      // level). Anything past the sheet's own z range is skipped, since no water is drawn there.
+      riverCheck: (step) => {
+        const SH = TERRAIN.water + 0.5, zr = (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.z_range) || [-1e9, 1e9];
+        const over = [];
+        let n = 0, worst = -1e9, worstAt = null;
+        for (const LN of SCHUYLKILL_LINES) for (let i = 0; i + 1 < LN.length; i++) {
+          const a = LN[i], b = LN[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]), k = Math.max(1, Math.round(L / (step || 10)));
+          for (let q = 0; q < k; q++) {
+            const t = q / k, x = a[0] + (b[0] - a[0]) * t, z = a[1] + (b[1] - a[1]) * t;
+            if (z < zr[0] || z > zr[1]) continue;
+            const m = groundMeshY(x, z);
+            if (m === null) continue;
+            n++;
+            if (m > worst) { worst = m; worstAt = [Math.round(x), Math.round(z)]; }
+            if (m > SH) over.push([Math.round(x), Math.round(z), +(m - SH).toFixed(2)]);
+          }
+        }
+        return { sheet: +SH.toFixed(2), samples: n, aboveSheet: over.length, highest: +worst.toFixed(2), highestAt: worstAt, over: over.slice(0, 20) };
+      },
+      groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), theme: () => ({ mesh: themeMesh, mat: themeMat, sheet: themeSheet, sheetMat: themeSheetMat, u: themeU }), pins: () => ({ tracked: pinBorn.size, rise: PIN_RISE }), roads: () => ({ strips: ROAD_STATS, decks: PERF.decks || null, wideSegs: wideRoadSegs.length / 4, lamp: lampUniform.value, glint: glintK, wwbLamps: WWB_LAMP_N, bridgeLampPts: bfbLampPts ? bfbLampPts.length / 3 : 0 }), drape: (ring, y) => { const out = []; const ok = drapeConvex(ring, y, (x, y2, z) => out.push([x, y2, z])); return { ok, out }; }, gridAt: (x, z) => { const G = groundGridAt(x, z); return G ? { x0: G.x0, x1: G.x1, z0: G.z0, z1: G.z1, nx: G.nx, nz: G.nz, cell: G.cell, hole: G.hole, skip: !!G.skip } : null; }, landY: groundMeshLandY, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),

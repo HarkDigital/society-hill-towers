@@ -85,8 +85,18 @@ before any visual round rather than rediscovering it.
   never pave one street twice; `service` stays out of both, so a park drive can still end where a service road
   meets it); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
-  Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways; its water rings
-  must be SIMPLE polygons, guarded by `tests/test_schuylkill.py`, because the page triangulates them with earcut and
+  Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways. THE invariant, and
+  the one Mike reported eight times before it was found: the DRAWN ground down the river's centreline must stay under
+  the water sheet at `TERRAIN.water + 0.5`, or it rides up through the water as a strip of land. Check it with ONE
+  call, `__dbg.riverCheck()`, which walks the centreline at 10 m and reports every sample above the sheet; do not
+  hand-roll it, because every hand-rolled check before it measured the wrong thing (a per-row minimum, which finds
+  the carved trough and hides the ridge beside it, or a guessed water level: the sheet is at -7.34 in model units,
+  not near zero). The far strips are `FAR_CELL` 50 m for this reason (100 m let a single triangle span the 120 m
+  channel with all three corners on land, since `riverCarve` only pulls down grid NODES inside the river and a 150 m
+  DEM does not know the channel is there: the bed dipped to -10.9 either side and ridged back to -6.2 in the middle,
+  1.1 m over the water), and `riverCarve`'s eased band runs to 60 m with its floor a metre UNDER the sheet, not the
+  0.4 m OVER it that it was. Its water rings
+  must also be SIMPLE polygons, guarded by `tests/test_schuylkill.py`, because the page triangulates them with earcut and
   an invalid ring leaves pockets untriangulated: from Round 85 to Round 89 the sheet had holes in it and the carved
   channel showed through them as strips of land lying in the river. The cause was not the geometry but the 0.1 m
   rounding at emit closing zero-width spikes in the ring, so `bake_schuylkill.py` despikes before it rounds and
@@ -165,7 +175,7 @@ before any visual round rather than rediscovering it.
 
 `?dev=1` exposes `window.__dbg` (camera/fly/scene/renderer handles, `wx('storm')`, `bolt()`,
 `flightTest()`, `shipTest()`, `frameOnce()`, `goFly(...)`, `goWalk(...)`, `post`, `postMats()`, `skyMat`,
-`cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `railWalk(x, z, dx, dz, dist, chain)` (Round 87: pass a chain in and read `[6]` out to prove a consist stays on one track), `trafficChurn(reset)` (Round 89: car births and deaths a second by cause, the mean and youngest age at death, and how many of each were in view), `colStats()` (per-tier means of the wall and roof colours handed to the
+`cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `railWalk(x, z, dx, dz, dist, chain)` (Round 87: pass a chain in and read `[6]` out to prove a consist stays on one track), `trafficChurn(reset)` (Round 89: car births and deaths a second by cause, the mean and youngest age at death, and how many of each were in view), `riverCheck(step)` (Round 89: the Schuylkill's centreline against the water sheet, the one call that settles whether there are strips of land in the river), `colStats()` (per-tier means of the wall and roof colours handed to the
 chunk builders, styles, OPA words and roof forms, whole tier and a band either side of York Street), `perf()` with
 per-step build timings, frame-time p50/p95, `renderer.info` and heap) plus an on-screen perf
 readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
