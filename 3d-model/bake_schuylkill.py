@@ -20,9 +20,10 @@ into the model frame (philly_frame.py) and writes:
          outline itself and not the 25 m ground grid surfacing through the sheet
 
 Data (c) OpenStreetMap contributors, ODbL (see ../DATA-LICENSE.md). Needs shapely."""
-import json, os, sys, time
-from shapely.geometry import LineString, Polygon, MultiPolygon, box
+import json, math, os, sys, time
+from shapely.geometry import LineString, LinearRing, Polygon, MultiPolygon, box
 from shapely.ops import unary_union, polygonize
+from shapely.validation import explain_validity
 from philly_frame import to_xz
 try:
     import provenance
@@ -40,6 +41,42 @@ Z_MIN, Z_MAX = -13000.0, 7500.0   # the modelled reach of the river
 QUERY_OUTLINE = ('[out:json][timeout:180];way["waterway"="river"]["name"~"Schuylkill",i](39.85,-75.30,40.09,-75.12)->.w;'
                  '(rel(around.w:60)["natural"="water"];way(around.w:60)["natural"="water"];way(around.w:60)["waterway"="riverbank"];);out geom;')
 OUT = 'schuylkill.json'
+
+
+def despike(coords, eps=0.25):
+    """Drop needle tips from a ring.
+
+    Uniting the OSM riverbank faces with the buffered centreline leaves a handful of zero-width
+    spikes: the boundary runs out and straight back, so vertex i sits between two neighbours only
+    millimetres apart. The geometry is valid at full precision, but ROUNDING it for the json moves
+    each vertex up to half a quantum and the two sides of the spike cross, which makes the ring
+    self-intersecting. The shipped file carried exactly that (measured: edge pairs 4 to 6 mm apart
+    near (-8247, -9788) and (-8150, -9840), invalid at any quantum coarser than 1 mm), and earcut
+    on an invalid ring leaves pockets untriangulated: the water sheet had holes in it and the
+    carved channel showed through them as strips of land lying in the river (Round 89, Mike).
+    Six vertices go and the ring survives 0.1 m rounding, the area moving 0.02 km2.
+    """
+    pts = [tuple(p) for p in coords]
+    if pts and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    changed = True
+    while changed and len(pts) > 4:
+        n = len(pts)
+        drop = [math.hypot(pts[(i - 1) % n][0] - pts[(i + 1) % n][0],
+                           pts[(i - 1) % n][1] - pts[(i + 1) % n][1]) < eps for i in range(n)]
+        changed = any(drop)
+        if changed:
+            pts = [p for i, p in enumerate(pts) if not drop[i]]
+    return pts
+
+
+def emit_ring(coords, nd=1):
+    """despike, round to nd decimals, drop repeats: the ring as it goes in the json."""
+    r = [[round(x, nd), round(z, nd)] for x, z in despike(coords)]
+    out = [r[0]] + [p for i, p in enumerate(r[1:], 1) if p != r[i - 1]]
+    if len(out) > 1 and out[0] == out[-1]:
+        out.pop()
+    return out
 
 
 def main():
@@ -90,8 +127,16 @@ def main():
     for g in sorted(geoms, key=lambda g: -g.area):
         if g.area < 5000:
             continue
-        ring = [[round(x, 1), round(z, 1)] for x, z in g.exterior.coords][:-1]
-        holes = [[[round(x, 1), round(z, 1)] for x, z in h.coords][:-1] for h in g.interiors if Polygon(h).area > 300]
+        ring = emit_ring(g.exterior.coords)
+        holes = [emit_ring(h.coords) for h in g.interiors if Polygon(h).area > 300]
+        # never ship a ring earcut cannot triangulate: an invalid ring leaves whole pockets
+        # untriangulated and the carved channel shows through the water sheet (Round 89)
+        for name, r in [('ring', ring)] + [('hole', h) for h in holes]:
+            if len(r) < 3 or not LinearRing(r + [r[0]]).is_simple:
+                raise SystemExit('bake_schuylkill: emitted %s is not a simple ring (%d pts)' % (name, len(r)))
+        if not Polygon(ring, holes).is_valid:
+            raise SystemExit('bake_schuylkill: emitted polygon invalid: %s'
+                             % explain_validity(Polygon(ring, holes))[:120])
         polys.append({'ring': ring, 'holes': holes})
     out = {'src': 'OpenStreetMap waterway=river ways named Schuylkill and the natural=water polygons around them, via Overpass (ODbL), model frame (philly_frame.py)',
            'fetched': time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime()), 'half_w': HALF_W, 'z_range': [Z_MIN, Z_MAX],

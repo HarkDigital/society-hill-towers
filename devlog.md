@@ -4698,3 +4698,131 @@ rectangle of the footprint's oriented bounding BOX; Cira's footprint is a parall
 crown block stood outside the real walls on one side. The crown is now the footprint itself cut
 by one line at `keep` of its length (the Comcast Center's sides-3 plan is unchanged), the wash
 sheet sized from the cut ring. Verified by capture from the bridge with the camera turned to it.
+
+## Round 89: the strips in the river, the cars' churn, and a share card (Sep 18)
+
+Three things from Mike, in one session.
+
+### The three strips of land in the river
+
+**Mike, with `#p=-3630.8,845.7,-2291.0,-0.524,-0.781&l=17777` over the Schuylkill between Mantua
+and East Park: "we still have those 3 thin strips of land appearing in this view in the river.
+That should not be happening."**
+
+Four hypotheses went down before the right one, and the discipline of killing each with a
+measurement is the only reason the fifth was found rather than guessed at:
+
+- **The ground bridging the channel.** The far strips there are a 100 m grid and the river is
+  about 120 m wide, which is the classic way a river gets bridged. Measured `groundAt().mesh`
+  along every 10 m row through the reach: the carved channel bottoms out at −9.4 m or lower in
+  **every** row, 196 of 196. Not it.
+- **The water outline missing the channel.** Walked the river's own centreline through the reach
+  at 10 m: 344 of 344 samples fall inside the outline. Not it.
+- **A tier's green sheet drawn over the water.** Two Fairmount Park rings do cover water there,
+  but kind 0 is `conformDrape`d onto the drawn ground, which inside the river is the carved bed
+  6 to 7 m BELOW the water sheet, so a park sheet there is invisible. The far ring's own
+  `natural=water` polygons (kind 1) are skipped when their centroid is inside `schRaster`. Not it.
+- **Corner-cutting by a coarse outline.** The ring's edges run to 445 m, so this was plausible,
+  and 43 cells within 45 m of the centreline do read dry, but they cluster into one 80 by 100 m
+  patch and a dozen one-cell specks. One patch is not three strips.
+
+What it was: **the water ring is self-intersecting, so the polygon is invalid.** Shapely:
+`Ring Self-intersection[-5320.9, -7319.2]`, `is_valid False`. The page triangulates that ring
+with earcut, and earcut on an invalid ring leaves whole pockets untriangulated, so the water
+sheet had holes in it and the carved channel showed through them. The holes need not be anywhere
+near the intersection, which is why every position-based test came up clean.
+
+The cause is at the emit, not in the geometry. Every stage of `bake_schuylkill.py` is valid,
+including `simplify(1.5)`; it is **rounding the coordinates to 0.1 m for the json** that breaks
+it. The union of the riverbank faces with the buffered centreline leaves a handful of zero-width
+spikes, where the boundary runs out and straight back, and the two sides sit 4 to 6 mm apart
+(measured: edge pairs 130/132 near (−8247, −9788) and 1330/1332 near (−8150, −9840)). Rounding
+moves each vertex up to half a quantum and the two sides cross. Measured at three precisions: at
+0.1 m invalid, at 0.01 m still invalid, at 0.001 m valid. Erosion and dilation at 0.05, 0.15 and
+0.3 m does not help, because the spike is not a sliver of area.
+
+So the bake **despikes** instead: a vertex whose two neighbours are closer than 0.25 m is a needle
+tip and goes. Six vertices leave the ring (1,449 to 1,443 before rounding, 1,300 to 1,292 as
+shipped), the area is unchanged to three decimals at 12.839 km², and the ring survives 0.1 m
+rounding. `emit_ring` does despike, round and de-duplicate together, and the bake now refuses to
+write a ring that is not simple or a polygon that is not valid.
+
+`tests/test_schuylkill.py` guards the shipped file, in the standard library only: a grid sweep for
+crossing edges, and a needle test. Checked against the old file, which fails it with a 0.000 m
+needle at (−5277.6, −7360.6), and against the new one, which passes. Verified by capture straight
+down over the reach and at Mike's own camera: the channel runs unbroken.
+
+Left alone and recorded: the one 80 by 100 m patch at x −3390..−3320, z −2110..−2020 that the
+outline genuinely calls dry. The half-width is 60 m and my test threshold was 45 m off a fitted
+centreline, so that may well be real bank; it is not what the screenshot showed.
+
+### The cars
+
+**Mike: "The cars are now popping up and disappearing even quicker. Can we sort that out?"**
+
+Round 88's coda had made the cars spawn out of sight, and made this worse. Instrumented first
+(`__dbg.trafficChurn`, births and deaths by cause with the age at death), camera held still on the
+Spring Garden bridge:
+
+| | before | after |
+|---|---|---|
+| births a second | 214 | 166 |
+| retirements a second | 165 | 113 |
+| dead-end deaths a second | 52 | 54 |
+| mean age at death | 2,126 ms | 3,586 ms |
+| youngest death | **0 ms** | |
+| population swing, camera still | **378** | **0** |
+| **visible births a second** | not instrumented | **10** |
+| **visible deaths a second** | not instrumented | **6** |
+
+Four causes, each measured:
+
+1. **Spawn and retire were fighting.** Coda 3 picked the FARTHEST hidden spot to be born in, and
+   the reconcile retires the farthest car first, so a new car was the next one killed: the
+   youngest death was 0 ms, a car retired in the frame it was born. `carSpotRank` replaces
+   `carSpotHidden` with three ranks, and within a rank `carSpawn` now takes the NEAREST spot, so a
+   car is born just off the edge of the view and drives into it.
+2. **Every junction crossing cost a birth and a death.** The population is regulated per run while
+   the cars move between runs, so a car leaving run A put A one under target, which backfilled at
+   once, and B one over, which shed at once. About 2,100 cars on city blocks cross a junction every
+   nine seconds or so, which is the ~230 a second the tally showed. A one-car deadband on both
+   sides absorbs the transfer, and the population went from swinging 378 with a still camera to
+   dead flat.
+3. **Nothing checked whether a car was in view when it died.** The retire pass sorted by distance,
+   and a car 700 m down a straight road from a bridge is in full view. It sorts by rank first now,
+   and spends a car in view only when the run is more than four over target. `CAR_MIN_LIFE` 4 s
+   also keeps a newborn off the retire list, so no car is born and killed inside its own 900 ms
+   fade.
+4. **Dead ends.** A car that reaches a run the network hands on nowhere from faded out in place,
+   54 a second. Out of sight that is fine; in view it now turns round, which is what a car at a
+   dead end does, and dies only once it is off the screen or has turned six times.
+
+93 per cent of births and 95 per cent of deaths now happen where the viewer cannot see them, and
+at street level and from the skyline pose the visible deaths measure zero.
+
+### A share card
+
+**Mike: "Can we add a share button that creates a share card for users to send links to exact
+coordinates?"**
+
+The machinery existed: `viewState(true)` is the string the address bar already carries, plus the
+clock when it is pinned, and `applyHashView` lands on it exactly. What was missing was a way to
+get at it. `#btnShare` joins the bar between the camera and the `?`, and opens `#sharepanel` on
+the same strip as layers, search and time, one panel at a time, Escape closing it like the others.
+
+The card names the place from the baked neighborhoods layer (`PLACES.nb`, nearest within 2.6 km,
+else Philadelphia), gives the latitude and longitude to five decimals through the scene frame's own
+inverse, the eye height and the sixteen-point heading, and carries the link in a read-only field
+with Copy Link beside it. It refreshes on `updateHash`'s own 500 ms cadence while open, so what
+you copy is what you are looking at. `navigator.share` appears as a second button where the
+platform has it (phones) and stays hidden where it does not. The clipboard write falls back to
+selecting the field and `execCommand`, and then to telling the reader to press Command C, so it
+works on an insecure origin too.
+
+Verified in the pane: the card reads "Queen Village, 39.93733, −75.14826, 240 m up, facing NW" at
+the skyline pose; the link carries the pose, the pinned clock and the layer mask; loading it back
+lands the camera at exactly (1100, 140, 250) with yaw −1.347 and pitch −0.100; the panel is
+exclusive with the other three both ways and closes on Escape.
+
+- 103 tests pass (`tests/test_schuylkill.py`). Page 27.40 MB (+12.6 KB). Devlog Round 89,
+  CLAUDE.md.

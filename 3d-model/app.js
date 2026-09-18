@@ -10671,6 +10671,8 @@
     // nothing while the veil is up or the attract loop is still circling
     if (!force && (introSpin || orbitSpin || !veil.classList.contains('hidden') || now < hashT)) return;
     hashT = now + 500;
+    shareRefresh();
+    if (shareNoteT && now > shareNoteT) { shareNoteT = 0; shareNoteEl.classList.remove('on'); }
     const s = viewState();
     if (s === hashLast) return;
     hashLast = s;
@@ -10688,9 +10690,11 @@
   }
   // one bottom panel at a time: layers, search and time share the strip above the bar
   const btnTime = document.getElementById('btnTime');
-  const PANEL_NAMES = ['layers', 'search', 'time'];
-  function panelOf(n) { return n === 'layers' ? layersPanel : n === 'search' ? searchPanel : timePanel; }
-  function panelBtn(n) { return n === 'layers' ? btnLayers : n === 'search' ? btnSearch : btnTime; }
+  const btnShare = document.getElementById('btnShare');
+  const sharePanel = document.getElementById('sharepanel');
+  const PANEL_NAMES = ['layers', 'search', 'time', 'share'];
+  function panelOf(n) { return n === 'layers' ? layersPanel : n === 'search' ? searchPanel : n === 'time' ? timePanel : sharePanel; }
+  function panelBtn(n) { return n === 'layers' ? btnLayers : n === 'search' ? btnSearch : n === 'time' ? btnTime : btnShare; }
   function openPanel(name, open) {
     const want = open !== undefined ? !!open : !panelOf(name).classList.contains('open');
     for (const n of PANEL_NAMES) {
@@ -10702,6 +10706,77 @@
     return want;
   }
   function openPanelName() { for (const n of PANEL_NAMES) if (panelOf(n).classList.contains('open')) return n; return null; }
+
+  // ---- the share card (Round 89, Mike: a share button that creates a share card for users to
+  // send links to exact coordinates). The link is viewState(true), the same string the address
+  // bar carries plus the clock when it is pinned, so a shared view lands on the exact spot with
+  // the same heading and layers. It refreshes while the card is open, so what you copy is what
+  // you are looking at.
+  const shareUrlEl = document.getElementById('shareUrl');
+  const sharePlaceEl = document.getElementById('sharePlace');
+  const shareCoordEl = document.getElementById('shareCoord');
+  const shareNoteEl = document.getElementById('shareNote');
+  const shareCopyBtn = document.getElementById('shareCopy');
+  const shareNativeBtn = document.getElementById('shareNative');
+  let shareNoteT = 0;
+  function shareLink() { return location.origin + location.pathname + '#' + viewState(true); }
+  function sharePlaceName(x, z) {
+    // the nearest neighborhood the baked places layer knows, so the card says where this is.
+    // PLACES.nb is { names, l }, l being name index, x, z and a height per entry, stride 4
+    const nb = (typeof PLACES !== 'undefined' && PLACES && PLACES.nb) ? PLACES.nb : null;
+    if (!nb || !nb.l || !nb.names) return 'Philadelphia';
+    let best = null, bd = Infinity;
+    const L = nb.l;
+    for (let i = 0; i + 3 < L.length; i += 4) {
+      const dx = L[i + 1] - x, dz = L[i + 2] - z, d = dx * dx + dz * dz;
+      if (d < bd) { bd = d; best = nb.names[L[i]]; }
+    }
+    return best && bd < 2600 * 2600 ? best : 'Philadelphia';
+  }
+  function shareNote(msg) {
+    shareNoteEl.textContent = msg;
+    shareNoteEl.classList.add('on');
+    shareNoteT = performance.now() + 1800;
+  }
+  function shareRefresh() {
+    if (!sharePanel.classList.contains('open')) return;
+    const p = camera.position;
+    const lat = SEPTA_GEO.lat0 - p.z / SEPTA_GEO.mz, lon = SEPTA_GEO.lon0 + p.x / SEPTA_GEO.mx;
+    camera.getWorldDirection(tmpV);
+    const deg = (Math.atan2(tmpV.x, -tmpV.z) * 180 / Math.PI + 360) % 360;
+    const COMPASS = ['N', 'NNE', 'NE', 'ENE', 'E', 'ESE', 'SE', 'SSE', 'S', 'SSW', 'SW', 'WSW', 'W', 'WNW', 'NW', 'NNW'];
+    sharePlaceEl.textContent = sharePlaceName(p.x, p.z);
+    shareCoordEl.textContent = lat.toFixed(5) + ', ' + lon.toFixed(5) + ', '
+      + Math.round(p.y) + ' m up, facing ' + COMPASS[Math.round(deg / 22.5) % 16];
+    const u = shareLink();
+    if (shareUrlEl.value !== u && document.activeElement !== shareUrlEl) shareUrlEl.value = u;
+  }
+  if (shareCopyBtn) shareCopyBtn.addEventListener('click', async () => {
+    const u = shareLink();
+    shareUrlEl.value = u;
+    try {
+      await navigator.clipboard.writeText(u);
+      shareNote('Copied');
+    } catch (e) {
+      // no clipboard permission (or an insecure origin): select it so one keystroke copies
+      shareUrlEl.focus(); shareUrlEl.setSelectionRange(0, u.length);
+      let ok = false;
+      try { ok = document.execCommand('copy'); } catch (e2) { ok = false; }
+      shareNote(ok ? 'Copied' : 'Press Command C');
+    }
+  });
+  if (shareNativeBtn && navigator.share) {
+    shareNativeBtn.style.display = '';
+    shareNativeBtn.addEventListener('click', () => {
+      const u = shareLink();
+      navigator.share({ title: 'Philly3D', text: 'A view over ' + sharePlaceName(camera.position.x, camera.position.z), url: u })
+        .catch(() => { });
+    });
+  }
+  if (btnShare) btnShare.addEventListener('click', () => {
+    const open = openPanel('share');
+    if (open) { shareRefresh(); shareNoteEl.classList.remove('on'); }
+  });
   function closePanels() {
     const n = openPanelName();
     if (!n) return false;
@@ -14691,30 +14766,58 @@
   // past the distance a car reads as more than a speck (Round 88, Mike: the cars pop up out of
   // nowhere and then disappear). carSpawn prefers such a spot; the fade only covers the rest
   const _csF = new V3(), _csP = new V3();
-  function carSpotHidden(x, y, z) {
+  // 2 = off the screen and close enough to drive into view shortly: the best place to be born.
+  // 1 = so far away it cannot be seen, which also makes it the reconcile's first retire
+  //     candidate, so a car born there tends to die before it ever moves.
+  // 0 = in view.
+  function carSpotRank(x, y, z) {
     _csP.set(x - camera.position.x, y - camera.position.y, z - camera.position.z);
     const d2 = _csP.lengthSq();
-    if (d2 > 700 * 700) return true;
     camera.getWorldDirection(_csF);
     const c = _csP.dot(_csF) / (Math.sqrt(d2) || 1);
-    return c < 0.62;   // over about 52 degrees off the axis: past the edge of any pane at the widths the page runs
+    const off = c < 0.62;   // over about 52 degrees off the axis: past the edge of any pane at the widths the page runs
+    if (d2 > 700 * 700) return off ? 2 : 1;
+    return off ? 2 : 0;
+  }
+  // Round 89: a churn tally, so "the cars pop in and out" is a number and not an impression.
+  // CARC counts births and deaths by cause and the age at death.
+  const CARC = { born: 0, bornSeen: 0, dieRetire: 0, dieEnd: 0, dieSeen: 0, ageSum: 0, ageN: 0, ageMin: 1e9 };
+  const CAR_MIN_LIFE = 4000;   // ms a car is safe from the reconcile: long enough to be seen driving, not parked
+  function carDeath(car, now, why, r) {
+    CARC[why]++;
+    if (r && carSpotRank(r.xs[car.seg], r.ys[car.seg], r.zs[car.seg]) === 0) CARC.dieSeen++;
+    const age = now - car.born;
+    CARC.ageSum += age; CARC.ageN++; CARC.ageMin = Math.min(CARC.ageMin, age);
   }
   function carSpawn(r, now) {
     const jit = 0.85 + Math.random() * 0.3, offJit = Math.random();
-    // spawn out of sight when possible: of six candidate spots keep a hidden one (behind the eye,
-    // off the edge of the view, or far), else the farthest from the camera (Round 88; three
-    // candidates by distance alone before, which on a bridge at 15 m put every one in view)
-    let s = Math.random() * r.len, bd = -1, hidden = false;
+    // Spawn out of sight when possible, and among equally hidden spots take the NEAREST rather
+    // than the farthest (Round 89). Round 88 preferred the farthest, which put every new car at
+    // the far end of its run, and the reconcile retires the farthest car first: measured from
+    // the Spring Garden bridge with the camera still, 214 cars a second were born and 165
+    // retired, the mean age at death was 2.1 s against a 900 ms fade in and out, and the
+    // youngest death was 0 ms, a car retired in the frame it was born. A near hidden spot
+    // drives into view instead.
+    let s = Math.random() * r.len, bd = Infinity, rank = -1;
     for (let t = 0; t < 6; t++) {
       const cs = Math.random() * r.len;
       let g = 0;
       while (g < r.cum.length - 2 && r.cum[g + 1] < cs) g++;
       const dx2 = r.xs[g] - camera.position.x, dz2 = r.zs[g] - camera.position.z;
       const d2 = dx2 * dx2 + dz2 * dz2;
-      const h = carSpotHidden(r.xs[g], r.ys[g], r.zs[g]);
-      if ((h && !hidden) || (h === hidden && d2 > bd)) { bd = d2; s = cs; hidden = h; }
+      const k = carSpotRank(r.xs[g], r.ys[g], r.zs[g]);
+      // a better rank always wins; within a rank the nearest spot wins
+      if (k > rank || (k === rank && d2 < bd)) { bd = d2; s = cs; rank = k; }
     }
-    return { s, dir: r.oneway ? 1 : (Math.random() < 0.5 ? 1 : -1), off: carOffset(r, offJit), offJit, jit, seg: 0,
+    let dir = r.oneway ? 1 : (Math.random() < 0.5 ? 1 : -1);
+    // and not pointed at a dead end a few metres away: a car born there reached it inside its own
+    // fade-in and died at once (Round 89: 55 of those a second). Turn it round when the run has
+    // nowhere to hand it on that way.
+    const runOut = dir > 0 ? r.len - s : s;
+    if (runOut < 20 && !(r.conn && r.conn[dir > 0 ? 1 : 0]) && !r.oneway) dir = -dir;
+    CARC.born++;
+    if (rank === 0) CARC.bornSeen++;
+    return { s, dir, off: carOffset(r, offJit), offJit, jit, seg: 0,
       v: TRAFFIC_SPEED[r.cls] / 3.6 * jit,
       col: CAR_PAL[(Math.random() * CAR_PAL.length) | 0],
       born: now, die: 0, fr: 0 };
@@ -14775,17 +14878,47 @@
     for (let i = 0; i < trafficRuns.length; i++) {
       const r = trafficRuns[i];
       const tgt = Math.min(60, Math.floor(r.want * TRAFFIC.scale + hash01(i * 7.3)));
-      while (r.cars.length < tgt) r.cars.push(carSpawn(r, now));
-      let extra = r.cars.length - tgt;
+      // A deadband on BOTH sides of the target (Round 89). The population is regulated per run
+      // while the cars themselves move between runs, so without it the two rules fight: a car
+      // crossing a junction leaves the run it came from one under target, which backfills at
+      // once, and the run it joins one over, which sheds at once. Measured from the Spring
+      // Garden bridge, that is what 197 births and 124 retirements a second were: about 2,100
+      // cars on city blocks cross a junction every nine seconds or so, and each crossing was
+      // costing one birth and one death. A one-car band absorbs the transfer at both ends.
+      const lo = tgt <= 2 ? tgt : tgt - 1;
+      while (r.cars.length < lo) r.cars.push(carSpawn(r, now));
+      // Round 89: a deadband of one car, because carTransfer moves a car onto a neighbouring
+      // run and pushed it over target, so every arrival at a junction retired a car on the
+      // receiving run, often the arrival itself. And a car is not eligible to be retired until
+      // it has lived CAR_MIN_LIFE, so it is never born and killed inside its own fade.
+      let extra = r.cars.length - tgt - 1;
       if (extra > 0) {
-        // retire the farthest-from-camera first, so churn stays out of sight
         const alive = r.cars.filter((c2) => !c2.die);
-        alive.sort((a2, b2) => {
-          const da = (r.xs[a2.seg] - cx) ** 2 + (r.zs[a2.seg] - cz) ** 2;
-          const db = (r.xs[b2.seg] - cx) ** 2 + (r.zs[b2.seg] - cz) ** 2;
-          return db - da;
-        });
-        for (let q = 0; q < alive.length && extra > 0; q++) { alive[q].die = now; extra--; }
+        const dist = (c2) => (r.xs[c2.seg] - cx) ** 2 + (r.zs[c2.seg] - cz) ** 2;
+        // the farthest first, so churn stays out of sight, but only among cars old enough to
+        // have been seen driving; a newborn is spent only when the run is far over its target,
+        // which is the one case where leaving it over would show as a jam
+        // Round 89: sort by whether the viewer can SEE the car, not by distance alone. A car
+        // 700 m down a straight road from a bridge is in full view, and fading it out there is
+        // exactly what "they pop up and disappear" describes. Off the screen first (farthest of
+        // those), then merely far, and a car in view only when the run is well over target.
+        const rank = (c2) => carSpotRank(r.xs[c2.seg], r.ys[c2.seg], r.zs[c2.seg]);
+        const ripe = alive.filter((c2) => now - c2.born >= CAR_MIN_LIFE);
+        ripe.sort((a2, b2) => (rank(b2) - rank(a2)) || (dist(b2) - dist(a2)));
+        const desperate = r.cars.length > tgt + 4;
+        for (const c2 of ripe) {
+          if (extra <= 0) break;
+          if (rank(c2) === 0 && !desperate) break;   // nothing hidden left to spend: leave the run over
+          carDeath(c2, now, 'dieRetire', r); c2.die = now; extra--;
+        }
+        if (extra > 0 && desperate) {
+          const green = alive.filter((c2) => !c2.die && now - c2.born < CAR_MIN_LIFE);
+          green.sort((a2, b2) => (rank(b2) - rank(a2)) || (dist(b2) - dist(a2)));
+          for (const c2 of green) {
+            if (extra <= 0) break;
+            carDeath(c2, now, 'dieRetire', r); c2.die = now; extra--;
+          }
+        }
       }
       n += Math.min(r.cars.length, tgt);
     }
@@ -14839,7 +14972,16 @@
           if (car.die) { cars.splice(c, 1); continue; }
           const t = carTransfer(r, c, car);
           if (t) rr = t;
-          else { car.s = clamp(car.s, 0, r.len); car.die = now; }   // true dead end: ease out in place
+          else {
+            // A true dead end: the run hands on nowhere this way, or the only movement left is a
+            // hard U-turn carTransfer refuses. Round 89: fading out in place is fine where nobody
+            // is looking, but on a bridge those were 59 deaths a second and some of them in full
+            // view, which is most of what "the cars pop up and disappear" is. In view the car
+            // turns round instead, which is what a car at a dead end actually does.
+            car.s = clamp(car.s, 0, r.len);
+            if (carSpotRank(r.xs[car.seg], r.ys[car.seg], r.zs[car.seg]) === 0) { car.dir = -car.dir; car.turned = (car.turned || 0) + 1; }
+            if (car.turned > 6 || carSpotRank(r.xs[car.seg], r.ys[car.seg], r.zs[car.seg]) !== 0) { carDeath(car, now, 'dieEnd', r); car.die = now; }
+          }
         }
         if (i >= TRAFFIC.cap) continue;
         let seg = car.seg;
@@ -17510,7 +17652,7 @@
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
-      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), trafficChurn: (reset) => { const o = Object.assign({}, CARC, { ageMean: CARC.ageN ? Math.round(CARC.ageSum / CARC.ageN) : 0 }); if (reset) { CARC.born = CARC.bornSeen = CARC.dieRetire = CARC.dieEnd = CARC.dieSeen = CARC.ageSum = CARC.ageN = 0; CARC.ageMin = 1e9; } return o; }, traffic: () => ({ runs: trafficRuns.length, drawn: TRAFFIC.n, scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob

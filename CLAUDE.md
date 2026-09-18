@@ -57,7 +57,12 @@ before any visual round rather than rediscovering it.
 - No em dashes or middot separators in any user-facing string (veil, hints, cards, panels,
   tooltips, loading messages). Commas, colons, sentences. Docs and code comments are exempt.
 - Owner decisions that stand until Mike says otherwise: landmark labels OFF by default (the
-  citywide tier is behind the L key); the About panel stays out of the bar (the "Credits" link in the bottom credit line opens it); fly is the only mode
+  citywide tier is behind the L key); the About panel stays out of the bar (the guide's "Credits" link opens it); the bar carries a share
+  button (Round 89, Mike: a share button that creates a share card for users to send links to exact coordinates):
+  `#btnShare` opens `#sharepanel` on the same strip as layers, search and time, one panel at a time, and the card
+  names the place from `PLACES.nb`, gives the latitude and longitude through the scene frame's inverse with the eye
+  height and a sixteen-point heading, and carries `viewState(true)` in a read-only field with Copy Link and, where
+  the platform has it, `navigator.share`; it refreshes on `updateHash`'s 500 ms cadence while open; fly is the only mode
   (orbit is the attract loop, walk is `__dbg.goWalk` only); everything that stands on the ground draws only within half a mile of the eye (Round 82, Mike: `NEAR_R` 804.67 m, the straight-line distance, so the circle tightens with height; the SEPTA vehicles and badges, the Indego docks, the Amtrak trains, the closures' drums, cones and pins, the marker posts, the plinths and the market tents; flights and ships keep their range; the concert placards and score bubbles are building-anchored events and keep theirs); every street outside the core is painted ON the drawn ground (Round 88, Mike: "if the elevation is going to cause clipping the road needs to be painted just above that elevation": `drapeConvex` cuts each strip and bend disc against the registered ground's cells so it sits exactly its lift above the mesh everywhere, `roadStrip` / `roadFan` in both loops, the decks and the bank roads keep the flat quad, `__dbg.roads()` counts them), the elevated decks are lifted over the drawn ground with a 7% grade limiter and `ovpIndex()` rebuilt after them, the far ring cedes a road in the wide box's 200 m margin only where `wideOwned` finds a wide segment along it (the wide extract holds only ways that enter its box, and `pack_city.py` cuts a local way out of the 150 m band only when the way has a node inside the box), and `schEdges` reads to 80 m (at 40 the Round 87 bank blend in `groundMeshLandY` handed every road in the city the DEM); the wide loop routes a building to the curtain-wall glass only for `isGlassStyle` (20 to 31: the style word carries variant flags at 32 and up, and `style >= 20` drew 70,000 rowhouses as glass from Sep 2 to Round 88, which was the pink inner tier); the lamps are a photocell (`lampUniform`: first light 1.5 degrees over the horizon, full at -3, the cloud deck bringing it 3.5 degrees forward and storm gloom 2 more; the windows take the same advance), the moon takes the sun's deck term and `glintK` kills the water's sparkle under a deck, the cloud deck is the low and mid cloud with the high layer taken out of the total's 0.45 share (`WX.high`) and a METAR layer based at 6 km or more not counted; the skyline theme's gain is saturation-aware (a saturated hue takes 0.42 of a white's) and a themed part's diffuse goes to a tenth after dark (an LED emits, it does not reflect the sky), so the red is the Phillies' own 0xe81828 on the bands, measured (234, 29, 48) against the P's (232, 24, 40); a partial closure carries no pin (its cones and card stay), the art pin wears a painter's palette, and every pin eases in over 550 ms (`pinRise`, keyed on the record); a car, a bus or a drum on a street rides the street's OWN deck (`ovpDeckY`: the nearest aligned chain within `OVP_OWN_R` 4 m, never the highest deck nearby, which flew cars at every braid and fork), a car spawns where the eye is not looking (`carSpotHidden`: behind it, off the view's width, or past 700 m), and a sloped crown is cut from the footprint itself, never from its bounding box (Cira's parallelogram), the stadiums' night sheets are neutral white, and the Walt Whitman carries the Ben Franklin's lamp standard every 36 m a side with no LED strings; the closed blocks, the historical markers and the public art carry pins since Round 82 (the aircraft badge's casing in the layer's colours: orange or gold with a drum, PHMC blue with the keystone, gold with a plinth; `pinTexture` / `pinMesh`), the trains had theirs from Round 80; SEPTA/Indego markers and the ground pins are occluded
   by buildings, and so are the concert placards and score bubbles (Round 62: a roof-grid line of sight, `losClear`,
   their pins depth-tested), neighborhood names and the search pin are not; roof forms come from the LiDAR
@@ -80,7 +85,12 @@ before any visual round rather than rediscovering it.
   never pave one street twice; `service` stays out of both, so a park drive can still end where a service road
   meets it); facades come from the 19-style vocabulary in `fabricStyle`/`towerStyle` (app.js) and the
   Center City towers from `towers.json` (research-derived facade archetype, crown, tint); the
-  Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways),
+  Schuylkill's course and its park reach's water come from `schuylkill.json` (OSM waterway ways; its water rings
+  must be SIMPLE polygons, guarded by `tests/test_schuylkill.py`, because the page triangulates them with earcut and
+  an invalid ring leaves pockets untriangulated: from Round 85 to Round 89 the sheet had holes in it and the carved
+  channel showed through them as strips of land lying in the river. The cause was not the geometry but the 0.1 m
+  rounding at emit closing zero-width spikes in the ring, so `bake_schuylkill.py` despikes before it rounds and
+  refuses to write a ring that is not simple),
   and the packers inset any record whose wall shares a plane with a larger one facing the same way (`pack_common.py`, Round 71: the far ring
   and the towns too, over their own coordinate grids) while the facade shader fades a floor pattern under 1.5 render pixels a floor (`rowPx`) rather than alias it, by day only: after dark the
   lit windows stand to the distances they always did (Round 73 coda); the look leans toward
@@ -104,6 +114,15 @@ before any visual round rather than rediscovering it.
   PPR's parkland rings on all four far ground strips, not only the NW patch; wind in the crowns and blades, saturated palettes, rooftop
   clutter on desktop, awnings, lane paint on every road (`aLane` + `lanePatch`: a double yellow centre from
   6.5 m wide, white dashes by width, edge lines on the divided highways, nothing on service and footways),
+  the typical traffic is born and retired out of sight (Round 89, Mike: the cars pop up and disappear):
+  `carSpotRank` ranks a spot off the screen, merely far, or in view, `carSpawn` takes the NEAREST spot of the best
+  rank so a car drives into view rather than sitting at the far edge waiting to be culled, the reconcile keeps a
+  one-car deadband on BOTH sides of a run's target (the cars move between runs while the population is regulated per
+  run, so every junction crossing used to cost a birth and a death, about 230 a second), retires by rank before
+  distance and spends a car in view only when a run is more than four over, `CAR_MIN_LIFE` 4 s keeps a newborn off
+  the retire list, and a car at a dead end turns round while it is in view instead of fading out where you can see
+  it; measure with `__dbg.trafficChurn(reset)`, which counts births and deaths by cause, the age at death and how
+  many of each the viewer could see;
   stored-dark asphalt lots (`LOT_COL`) with stall stripes that fade past 500 m, and every surface lot, industrial and retail yard, rail yard and apron in the city paved from `paved.b64` (`fetch_paved.py` / `pack_paved.py`, the 'Paving the lots and yards' step, `conformDrape` under the parks), and on desktop WebGL2 an HDR
   post pipeline: half-float target, ACES + sRGB composite, bloom on the sun, the glints and the cloud rims
   with the markers and labels masked out of it (`postRaw(mat, { mask: true })`), `?bloom=0` off), never its
@@ -146,7 +165,7 @@ before any visual round rather than rediscovering it.
 
 `?dev=1` exposes `window.__dbg` (camera/fly/scene/renderer handles, `wx('storm')`, `bolt()`,
 `flightTest()`, `shipTest()`, `frameOnce()`, `goFly(...)`, `goWalk(...)`, `post`, `postMats()`, `skyMat`,
-`cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `railWalk(x, z, dx, dz, dist, chain)` (Round 87: pass a chain in and read `[6]` out to prove a consist stays on one track), `colStats()` (per-tier means of the wall and roof colours handed to the
+`cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `railWalk(x, z, dx, dz, dist, chain)` (Round 87: pass a chain in and read `[6]` out to prove a consist stays on one track), `trafficChurn(reset)` (Round 89: car births and deaths a second by cause, the mean and youngest age at death, and how many of each were in view), `colStats()` (per-tier means of the wall and roof colours handed to the
 chunk builders, styles, OPA words and roof forms, whole tier and a band either side of York Street), `perf()` with
 per-step build timings, frame-time p50/p95, `renderer.info` and heap) plus an on-screen perf
 readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather

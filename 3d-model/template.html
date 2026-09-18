@@ -88,6 +88,7 @@
   <button id="btnSearch" class="iconbtn panel" title="Find an Address (/)" aria-expanded="false" aria-controls="searchpanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
   <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)" aria-expanded="false" aria-controls="timepanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.35 5.35l1.85 1.85M16.8 16.8l1.85 1.85M5.35 18.65l1.85-1.85M16.8 7.2l1.85-1.85"/></svg></button>
   <button id="btnShot" class="iconbtn panel" title="Save a Picture of This View"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M4 8.4h3.4l1.5-2.4h6.2l1.5 2.4H20v9.8H4z"/><circle cx="12" cy="13" r="3.1"/></svg></button>
+  <button id="btnShare" class="iconbtn panel" title="Share This View" aria-expanded="false" aria-controls="sharepanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5.6" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18.4" r="2.6"/><path d="M15.7 6.85 8.3 10.75M8.3 13.25l7.4 3.9"/></svg></button>
   <button id="btnHelp" class="iconbtn panel" title="How to Use Philly3D (?)" aria-expanded="false" aria-controls="guide">?</button>
   <button id="btnAbout" class="iconbtn panel" title="About this model (I)" style="display:none">i</button>
 </div>
@@ -146,6 +147,19 @@
 
 <div id="hint">Drag, scroll, or press W A S D to take flight.</div>
 
+
+<div id="sharepanel" class="panel" role="group" aria-label="Share this view">
+  <div class="kicker">Share This View</div>
+  <div class="shareplace" id="sharePlace"></div>
+  <div class="sharecoord" id="shareCoord"></div>
+  <input id="shareUrl" class="shareurl" type="text" readonly aria-label="Link to this view">
+  <div class="sharerow">
+    <button class="mini" id="shareCopy">Copy Link</button>
+    <button class="mini" id="shareNative" style="display:none">Share</button>
+    <span class="sharenote" id="shareNote"></span>
+  </div>
+  <div class="sharehint">The link opens on this exact spot, looking the same way, with the layers you have on. A pinned date and time travel with it; a live clock does not.</div>
+</div>
 
 <div id="about" class="panel" role="dialog" aria-label="About Philly3D">
   <button class="close" id="btnCloseAbout" title="Close">&times;</button>

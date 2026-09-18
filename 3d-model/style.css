@@ -980,3 +980,95 @@ body.touchfly .pad { display: flex; }
   #timepanel, #searchpanel, #layerspanel { top: 62px; max-height: calc(100vh - 70px); max-height: calc(100dvh - 70px); overflow-y: auto; }
   #searchOut { max-height: 110px; }
 }
+
+/* ---------- share card (Round 89, Mike: a share button that creates a share card for users to
+   send links to exact coordinates). The bar's panels all hang from the same strip below it, so
+   this one borrows the search panel's frame and adds the read-only link and its two actions. */
+#sharepanel {
+  position: fixed;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 74px;
+  z-index: 12;
+  width: min(380px, calc(100vw - 24px));
+  padding: 13px 15px 12px;
+  display: none;
+}
+#sharepanel.open { display: block; }
+#sharepanel .kicker {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  color: var(--bronze);
+  margin-bottom: 9px;
+}
+#sharepanel .shareplace {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--paper);
+  margin-bottom: 2px;
+}
+#sharepanel .sharecoord {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  color: var(--paper-dim);
+  margin-bottom: 9px;
+}
+#sharepanel .shareurl {
+  width: 100%;
+  box-sizing: border-box;
+  appearance: none;
+  -webkit-appearance: none;
+  background: rgba(239,233,220,0.06);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--paper);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  padding: 7px 8px;
+  margin-bottom: 9px;
+}
+#sharepanel .shareurl:focus-visible { outline: 1px solid var(--bronze); outline-offset: 1px; }
+#sharepanel .sharerow { display: flex; gap: 8px; align-items: center; }
+#sharepanel .mini {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  background: rgba(239,233,220,0.06);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  color: var(--paper-dim);
+  font-family: var(--display);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+#sharepanel .mini:hover { color: var(--paper); border-color: var(--line-strong); }
+#sharepanel .mini:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
+#sharepanel .sharenote {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--bronze);
+  opacity: 0;
+  transition: opacity 160ms linear;
+}
+#sharepanel .sharenote.on { opacity: 1; }
+#sharepanel .sharehint {
+  margin-top: 10px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--paper-faint);
+}
+/* the phone keeps the OS share sheet and loses the hint: the strip is short there */
+@media (pointer: coarse) {
+  #sharepanel .sharehint { display: none; }
+  #sharepanel .shareurl { font-size: 16px; }   /* iOS zooms a focused input under 16px */
+  #sharepanel .mini { min-height: 44px; }
+}
