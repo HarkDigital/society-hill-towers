@@ -4885,3 +4885,46 @@ The 0.8 M extra triangles are the price of the finer strips, and they buy better
 every far-ring road as well. Verified by capture at Mike's own camera and closer.
 
 - 103 tests pass. Page 27.41 MB (+3.1 KB). Devlog, CLAUDE.md, the capture skill's probe table.
+
+## Round 90: the sports banners on the day of the game, and Home or Away (Sep 18)
+
+**Mike: "Can we have the sporting events act like the concerts for the day of? Also on the sports
+banners, change the away/home to be Away/Home."**
+
+The concerts had the better rule and the scores did not share it. A concert placard rises at 9 am
+Philadelphia time on the day of the show and stands until the show ends; a score bubble only
+appeared once the game was already `in`, so a Phillies day game was invisible all morning and the
+city gave no sign anything was on. The bubble now rises at the same 9 am instant.
+
+`scoreDayStart(startMs)` is the page's own version of what `ops/concerts_bake.py` bakes for a show.
+The scores have no baker, so it takes ESPN's start instant, asks the zone itself for the
+Philadelphia calendar day (`toLocaleDateString('en-CA', { timeZone: 'America/New_York' })` renders
+YYYY-MM-DD), and turns that local 9 am back into UTC through the clock's own `tzOffsetMin`. Checked
+across a DST boundary: a 7:05 pm EDT start in September opens at 13:00Z, a 1 pm EST start in January
+at 14:00Z, and the spring-forward Sunday at 13:00Z, all of them 9:00 AM in Philadelphia.
+
+Before the game there is no score to show, so the first line reads the matchup, `PHI vs NYM` at home
+and `PHI at NYM` away, with ESPN's start time under it, and the dot goes a still bronze
+(`.lbl.score.pre`) rather than the live red or the final grey. Once ESPN flips the state to `in` the
+score takes over, and the hour past the final is unchanged. The upper bound on the pre-game window
+is only a guard against a feed that never flips.
+
+Found while wiring it: ESPN reports a **postponed or canceled** game in the same `pre` state, which
+under the new rule would have parked a banner over the venue all day for a game nobody is playing.
+Those are skipped on the status name.
+
+And the banner now says **Home** or **Away**, capitalised. It used to append ", away" in lower case
+and say nothing at all for a home game.
+
+Verified by reading the rendered banners rather than eyeballing them, all four states at once from
+`__dbg.scoreTest()`, which grew an away pre-game fixture so both the `vs` and `at` forms are covered:
+
+```
+live away   PHI 4, NYM 2    Bot 7th, Away        red dot, pulsing
+live home   PHI 17, DAL 10  3rd 8:41, Home       red dot, pulsing
+final       PHI 2, PIT 3    Final/OT, Home       grey dot, still
+pre away    PHI at BOS      7:30 PM ET, Away     bronze dot, still
+```
+
+- 103 tests pass. Page 27.41 MB (+2.6 KB). Devlog Round 90, CLAUDE.md. CLAUDE.md's Round 88 note
+  naming `carSpotHidden` also corrected: Round 89 replaced it with `carSpotRank`.

@@ -11965,13 +11965,19 @@
       ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
   }
   // ---------------------------------------------------------------- live scores
-  // A bubble over each team's venue while its game is on, home or away, and for an hour
-  // after the final (Mike): ESPN's public scoreboards (CORS-open, cached a few seconds at
-  // their end) for the Phillies over the ballpark, the Eagles over the Linc, the Flyers and
-  // 76ers over the arena. Polled once a minute while the tab is visible; the bubble carries
-  // the Philadelphia side first, the team colour on its border, the clock or inning, and
-  // "away" when they are on the road. A final's hour runs from the moment the feed turned
-  // it final, or, for a page that arrived later, from the start time plus a typical length.
+  // A bubble over each team's venue on the day of its game, home or away (Mike): ESPN's public
+  // scoreboards (CORS-open, cached a few seconds at their end) for the Phillies over the
+  // ballpark, the Eagles over the Linc, the Flyers and 76ers over the arena. Polled once a
+  // minute while the tab is visible; the bubble carries the Philadelphia side first, the team
+  // colour on its border, the clock or inning, and Home or Away.
+  //
+  // Round 90 (Mike: have the sporting events act like the concerts for the day of): the bubble
+  // rises at 9 am Philadelphia time on the day of the game, exactly as a concert placard does,
+  // instead of waiting for the first pitch. Before the game it reads "PHI vs NYM" or "PHI at
+  // NYM" with the start time; ESPN flips the state to 'in' when it starts and the score takes
+  // over. Judged against REAL time, never the pinned model clock, as the concerts and the
+  // skyline's game days are. A final's hour runs from the moment the feed turned it final, or,
+  // for a page that arrived later, from the start time plus a typical length.
   const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [], pins: [], ended: {}, seenLive: {} };
   const SCORE_LEN = { mlb: 3.0 * 3600000, nfl: 3.3 * 3600000, nhl: 2.6 * 3600000, nba: 2.4 * 3600000 };
   // h: where the bubble hangs; top: the roof the pin drops to
@@ -11983,6 +11989,18 @@
     nhl: ARENA_VENUE, nba: ARENA_VENUE,
   };
   const SCORE_KEYS = ['mlb', 'nfl', 'nhl', 'nba'];
+  // 9 am Philadelphia time on the day the game starts, as a unix ms instant. The Philadelphia
+  // calendar day comes from the zone itself (en-CA renders YYYY-MM-DD), and tzOffsetMin turns
+  // that local 9 am back into UTC, so it is right either side of a DST change. ops/concerts_bake.py
+  // bakes the same instant for a show; the scores have no baker, so the page does it.
+  function scoreDayStart(startMs) {
+    if (!(startMs > 0)) return Infinity;
+    const iso = new Date(startMs).toLocaleDateString('en-CA', { timeZone: 'America/New_York' });
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+    if (!m) return startMs;
+    const y = +m[1], mo = +m[2], d = +m[3];
+    return Date.UTC(y, mo - 1, d, 9, 0) - tzOffsetMin(y, mo, d) * 60000;
+  }
   const SCORE_URL = (k) => 'https://site.api.espn.com/apis/site/v2/sports/' + ({ mlb: 'baseball/mlb', nfl: 'football/nfl', nhl: 'hockey/nhl', nba: 'basketball/nba' })[k] + '/scoreboard';
   const _scv = new V3();
   function scoresPoll(now) {
@@ -12007,16 +12025,27 @@
             const them = (c.competitors || []).find((t) => t !== us);
             const id = k + ':' + (e.id || e.date);
             const live = st.state === 'in';
-            let show = live, detail = st.shortDetail || '';
+            const start = Date.parse(e.date) || 0;
+            let show = live, pre = false, detail = st.shortDetail || '';
             if (live) SCORES.seenLive[id] = nowMs;
             else if (st.state === 'post' || st.completed) {
               let end = SCORES.ended[id];
-              if (!end) { end = SCORES.seenLive[id] ? nowMs : (Date.parse(e.date) || 0) + SCORE_LEN[k]; SCORES.ended[id] = end; }
+              if (!end) { end = SCORES.seenLive[id] ? nowMs : start + SCORE_LEN[k]; SCORES.ended[id] = end; }
               show = nowMs < end + 3600000;
               detail = st.shortDetail || 'Final';
+            } else {
+              // before the game: up from 9 am Philadelphia time on its own day. The upper bound is
+              // only a guard for a stale feed that never flips the state to 'in'. ESPN reports a
+              // postponed or canceled game in the 'pre' state too, and those get no bubble: there
+              // is no game to stand over.
+              if (/POSTPONED|CANCELL?ED|SUSPENDED/i.test(st.name || '')) continue;
+              pre = true;
+              show = nowMs >= scoreDayStart(start) && nowMs < start + SCORE_LEN[k] + 3600000;
+              detail = st.shortDetail || st.detail || '';
             }
             if (!show) continue;
-            games.push({ k, live, us: us.team.abbreviation, uscore: us.score, them: them && them.team ? them.team.abbreviation : '', tscore: them ? them.score : '', color: us.team.color, logo: us.team.logo || '', detail: detail + (us.homeAway === 'home' ? '' : ', away') });
+            const at = us.homeAway === 'home' ? 'Home' : 'Away';
+            games.push({ k, live, pre, us: us.team.abbreviation, uscore: us.score, them: them && them.team ? them.team.abbreviation : '', tscore: them ? them.score : '', color: us.team.color, logo: us.team.logo || '', at, detail: detail ? detail + ', ' + at : at });
           }
         });
         SCORES.fails = ok ? 0 : SCORES.fails + 1;
@@ -12031,10 +12060,13 @@
     SCORES.games = games;
     games.forEach((g, i) => {
       const el = document.createElement('div');
-      el.className = 'lbl score' + (g.live ? '' : ' final');
+      el.className = 'lbl score' + (g.live ? '' : (g.pre ? ' pre' : ' final'));
       const ok = /^[0-9a-f]{6}$/i.test(g.color || '');
       const logo = /^https:\/\/[a-z0-9.-]*espncdn\.com\//i.test(g.logo || '') ? '<img class="logo" alt="" src="' + septaEsc(g.logo) + '" onerror="this.remove()">' : '';
-      el.innerHTML = logo + '<span class="txt"><span class="live"></span>' + septaEsc(g.us + ' ' + g.uscore + ', ' + g.them + ' ' + g.tscore) + '<br>' + septaEsc(g.detail) + '</span>';
+      // a game that has not started has no score to show: the matchup reads vs at home, at away
+      const head = g.pre ? (g.us + (g.at === 'Home' ? ' vs ' : ' at ') + g.them)
+        : (g.us + ' ' + g.uscore + ', ' + g.them + ' ' + g.tscore);
+      el.innerHTML = logo + '<span class="txt"><span class="live"></span>' + septaEsc(head) + '<br>' + septaEsc(g.detail) + '</span>';
       if (ok) el.style.borderColor = '#' + g.color;
       labelsRoot.appendChild(el);
       SCORES.els.push(el);
@@ -17656,7 +17688,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

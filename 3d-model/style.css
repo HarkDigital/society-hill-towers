@@ -811,6 +811,7 @@ body.touchfly .pad { display: flex; }
 .lbl.score .live { display: inline-block; width: 6px; height: 6px; margin: 0 7px 1px 0; border-radius: 50%; background: #e0483e; animation: scorelive 1.6s ease-in-out infinite; }
 @keyframes scorelive { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
 .lbl.score.final .live { background: #8a8580; animation: none; }   /* a final: the dot goes still and gray */
+.lbl.score.pre .live { background: var(--bronze); animation: none; }   /* Round 90: today's game, not started: a still bronze dot, neither live red nor final gray */
 /* concert placards over the venues, from 9 am on a show day (Ticketmaster listings, Round 56) */
 .lbl.concert { border-color: var(--limestone-dim); }
 .lbl.concert .logo { width: 48px; height: 27px; object-fit: cover; border-radius: 1px; }
