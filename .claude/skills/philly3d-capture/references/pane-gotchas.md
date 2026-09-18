@@ -80,6 +80,15 @@ symptom shows up later as a wrong conclusion rather than a failure.
   ctx.drawImage(__dbg.renderer.domElement, cv.width / 2 - 60, cv.height / 2 - 60, 120, 120, 0, 0, 120, 120);
   // then average ctx.getImageData(0, 0, 120, 120).data
   ```
+- **Read pixels in the same call as the frames, with no `await` between.** The pattern
+  `await __cap(...)` then `getImageData` measures a cleared buffer (Round 88 lost a red
+  measurement to it): drive `frameOnce()` and `drawImage` in one synchronous run.
+- **To find which material draws a thing, paint the materials.** Traverse `__dbg.scene` for
+  the material, wrap its `onBeforeCompile` to force `gl_FragColor.rgb` a flat colour after
+  `#include <dithering_fragment>`, give it a new `customProgramCacheKey` and set `needsUpdate`.
+  One frame answers what three code readings could not (Round 88: the inner tier's salmon
+  rowhouses were the curtain-wall glass material, not the facade shader). `visible = false`
+  is no test: `cullFogged` re-shows the ring chunks every frame.
 - **Live shader experiments need a new cache key.** r149 reuses the first
   variant's compiled program, so set
   `mat.customProgramCacheKey = () => 'variantN'` and `needsUpdate`.

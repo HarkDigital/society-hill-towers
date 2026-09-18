@@ -574,6 +574,27 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
     aBase and the Round 54 glass tint `aTint`; `tests/test_vbuf.py` runs the buffer for real under
     JavaScriptCore and checks the upload mode. And a glass tint must be a per-vertex attribute, never
     a world-position hash: 28 m cells cut one tower into three colours.
+23. **The style word is `st + 32 * variant`: test the low five bits (Round 88).** `fabricStyle`
+    packs the dark and tall variants of a plain row at 32 and up, and the wide loop's
+    `if (style >= 20)` glass test read the whole word, so 70,000 rowhouses drew as blank tinted
+    glass for two weeks and read as a pink inner tier with a hard seam. `isGlassStyle` (20 to 31)
+    is the test; never compare a style word against a threshold without masking the variant.
+24. **`schEdges` returns a distance only as far as its grid search reaches (Round 88).** It started
+    `best` at 40² over a ±2-cell search of 20 m cells, so it never said more than 40, and the
+    Round 87 bank blend in `groundMeshLandY` (40 to 70 m) took t = 0 everywhere: every road in the
+    city read the DEM instead of the drawn mesh and the 100 m far mesh cut through the strips.
+    It reads to 80 m now (`EC` 40, `best` 6400); a band that starts where the read caps is a
+    band that never engages. And a flat quad at two centreline heights is never "on" a
+    heightfield: `drapeConvex` is how a strip sits on the drawn ground.
+25. **A margin one tier cedes must be a margin the other tier really paves (Round 88).** The far
+    ring skipped the wide box's 200 m margin outright, but the wide extract only holds ways that
+    ENTER its box, so a road running alongside the edge was in neither blob (21 km, I-76 at
+    Passyunk). Cede by geometry (`wideOwned`), not by box.
+26. **Debug a "wrong material" by painting materials, not by reading code (Round 88).** Wrapping
+    a material's `onBeforeCompile` in the pane to force `gl_FragColor` a flat colour, with a new
+    `customProgramCacheKey`, showed in one frame which material owned the salmon rowhouses; three
+    investigators reading the shader had concluded nothing was tier-specific. And never `await`
+    between `frameOnce()` and a canvas `getImageData` read, or the compositor hands back black.
 
 More rules the log paid for (details in `devlog.md`):
 

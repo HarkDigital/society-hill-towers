@@ -78,10 +78,11 @@ html, body {
 #compass:hover { border-color: var(--line-strong); }
 #compass:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
 
-/* ---------- bottom control bar ---------- */
+/* ---------- the control bar (top centre since Round 88, Mike: move the buttons to the top of the
+   screen and make them yellow to match the logo; the panels hang under it) ---------- */
 #bar {
   position: fixed;
-  bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+  top: calc(16px + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 10;
@@ -115,9 +116,11 @@ html, body {
 #bar .iconbtn {
   background: rgba(30, 36, 42, 0.85);
   border: 1px solid var(--line);
+  color: var(--bronze);   /* the mark's gold (Round 88) */
 }
 .seg button + button { border-left: 1px solid var(--line); }
-.seg button:hover, #bar .iconbtn:hover { color: var(--paper); }
+.seg button:hover { color: var(--paper); }
+#bar .iconbtn:hover, #bar .iconbtn[aria-expanded="true"] { color: var(--paper); border-color: var(--bronze-dim); }
 .seg button.active {
   color: var(--ink);
   background: var(--bronze);
@@ -572,8 +575,9 @@ body.touchfly .pad { display: flex; }
 /* ---------- date / time panel ---------- */
 #timepanel {
   position: fixed;
-  right: 16px;
-  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  top: 74px;
   z-index: 11;
   width: 262px;
   padding: 14px 16px 14px;
@@ -641,7 +645,7 @@ body.touchfly .pad { display: flex; }
 #timepanel .mini:hover { color: var(--paper); border-color: var(--line-strong); }
 #timepanel .mini:focus-visible, #timepanel input:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
 @media (max-width: 640px) {
-  #timepanel { right: 8px; left: 8px; width: auto; bottom: 66px; }
+  #timepanel { right: 8px; left: 8px; width: auto; transform: none; top: 66px; }
   #timepanel .mini { min-height: 44px; }
 }
 
@@ -706,13 +710,14 @@ body.touchfly .pad { display: flex; }
 #btnSearch svg { width: 16px; height: 16px; display: block; }
 #btnLayers svg { width: 17px; height: 17px; display: block; }
 #btnShot svg { width: 17px; height: 17px; display: block; }
+#btnTime svg { width: 18px; height: 18px; display: block; }   /* the sun (Round 88, Mike: the time of day button should have a sun icon) */
 
 /* ---------- address search panel ---------- */
 #searchpanel {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 74px;
+  top: 74px;
   z-index: 12;
   width: min(360px, calc(100vw - 24px));
   padding: 13px 15px 12px;
@@ -816,7 +821,7 @@ body.touchfly .pad { display: flex; }
 .lbl.concert a:hover { color: var(--paper); border-bottom-color: var(--paper); }
 .lbl.concert .src { display: block; color: var(--paper-faint); font-size: 9.5px; letter-spacing: 0.08em; margin-top: 2px; }
 @media (max-width: 640px) {
-  #searchpanel { bottom: 66px; }
+  #searchpanel { top: 66px; }
 }
 
 /* ---------- Caslon prose in the About panel ---------- */
@@ -827,7 +832,7 @@ body.touchfly .pad { display: flex; }
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: 74px;
+  top: 74px;
   z-index: 12;
   width: min(640px, calc(100vw - 24px));   /* wide and short (Round 59): the rows in two columns, the stops in four */
   padding: 13px 14px 10px;
@@ -933,7 +938,7 @@ body.touchfly .pad { display: flex; }
 #layerspanel { max-height: calc(100vh - 100px); overflow-y: auto; }
 @media (max-width: 640px) {
   /* nine 44 px rows plus the footer outgrow a small phone: the panel scrolls (dvh where it exists) */
-  #layerspanel { bottom: 66px; max-height: calc(100vh - 150px); max-height: calc(100dvh - 80px); overflow-y: auto; }
+  #layerspanel { top: 66px; max-height: calc(100vh - 150px); max-height: calc(100dvh - 80px); overflow-y: auto; }
   #layerspanel .lrow, #layerspanel .mini { min-height: 44px; }
 }
 
@@ -958,7 +963,7 @@ body.touchfly .pad { display: flex; }
   #hint { display: none; }
   #compass { right: 5px; }   /* Round 70: the safe-area inset (59 px on a notched phone) had held them 64 px off the edge */
   #flyctl { right: 5px; }
-  #bar { bottom: 6px; }
+  #bar { top: 6px; }
   #padL.active { color: var(--paper-dim); }
 }
 
@@ -972,6 +977,6 @@ body.touchfly .pad { display: flex; }
   #veil .sub { display: none; }
   #veil .enter { margin-top: 14px; padding: 11px 26px 10px; }
   #veil .loading { margin-top: 12px; }
-  #timepanel, #searchpanel, #layerspanel { bottom: 62px; max-height: calc(100vh - 70px); max-height: calc(100dvh - 70px); overflow-y: auto; }
+  #timepanel, #searchpanel, #layerspanel { top: 62px; max-height: calc(100vh - 70px); max-height: calc(100dvh - 70px); overflow-y: auto; }
   #searchOut { max-height: 110px; }
 }

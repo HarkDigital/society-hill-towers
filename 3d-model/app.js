@@ -1581,6 +1581,130 @@
     return g;
   }
 
+  // ---- drapeConvex (Round 88, Mike at the Passyunk Avenue interchange: "if the elevation is
+  // such that it is going to cause clipping, the road needs to be painted just above that
+  // elevation"). A street was a flat quad at its two centreline heights, so on any cross slope
+  // one edge sank into the ground, and across a ridge of the 100 m far mesh the whole strip went
+  // under mid-span: I-76 there read as tilted slabs in the grass. A CONVEX ring (a strip's
+  // quad, a bend's disc) is cut against the registered ground's cells and each cell's diagonal,
+  // the cuts conformDrape makes for a park, so every triangle of it lies inside ONE ground
+  // triangle and the ring sits exactly yOff above the drawn mesh at every point of it.
+  // Convexity spares the earcut: every cut piece is a fan. A ring wholly inside one ground
+  // triangle (most of the far ring's 30 m strips on its 100 m cells) comes back as its own two
+  // triangles, so the count grows only where the ground actually bends under the street.
+  // Returns false, emitting nothing, where a corner lies off every grid or a piece lands on a
+  // cell the builder skipped (the Vine Street cut): the caller keeps its flat quad there.
+  // emit(x, y, z) is called three times a triangle; the lane paint's u and s are linear in the
+  // position, so the caller derives its attributes from it.
+  const ROAD_STATS = { draped: 0, flat: 0, fans: 0, flatFans: 0, tris: 0, ms: 0 };
+  PERF.roads = ROAD_STATS;   // __dbg.roads()
+  const _dcOut = [];
+  function drapeConvex(ring, yOff, emit) {
+    const t0 = performance.now();
+    let bx0 = Infinity, bz0 = Infinity, bx1 = -Infinity, bz1 = -Infinity;
+    for (const q of ring) {
+      if (!groundGridAt(q[0], q[1])) return false;
+      if (q[0] < bx0) bx0 = q[0]; if (q[0] > bx1) bx1 = q[0]; if (q[1] < bz0) bz0 = q[1]; if (q[1] > bz1) bz1 = q[1];
+    }
+    const out = _dcOut; out.length = 0;
+    const fan = (r, G, i, j, side) => {
+      r = tidyRing(r);
+      if (!r) return;
+      if (signedArea(r) > 0) r.reverse();   // (B - A) x (C - A) < 0 in (x, z), the strips' own winding
+      const sx = G.nx / (G.x1 - G.x0), sz = G.nz / (G.z1 - G.z0);
+      const A = r[0];
+      for (let k = 1; k + 1 < r.length; k++) {
+        const B = r[k], C = r[k + 1];
+        if (Math.abs((B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0])) < 1e-4) continue;   // a sliver the cuts left
+        for (const P of [A, B, C]) {
+          const u = (P[0] - G.x0) * sx - i, v = (P[1] - G.z0) * sz - j;
+          out.push(P[0], groundPlaneY(G, i, j, side, u, v) + yOff, P[1]);
+        }
+      }
+    };
+    for (let gi = groundGrids.length - 1; gi >= 0; gi--) {
+      const G = groundGrids[gi];
+      if (bx1 <= G.x0 || bx0 >= G.x1 || bz1 <= G.z0 || bz0 >= G.z1) continue;
+      const whole = bx0 >= G.x0 && bx1 <= G.x1 && bz0 >= G.z0 && bz1 <= G.z1;
+      const piece = whole ? ring : clipRect(ring, G.x0, G.x1, G.z0, G.z1);
+      if (!piece) continue;
+      const nx = G.nx, nz = G.nz, cw = (G.x1 - G.x0) / nx, ch = (G.z1 - G.z0) / nz;
+      let px0 = bx0, px1 = bx1, pz0 = bz0, pz1 = bz1;
+      if (!whole) { px0 = Infinity; px1 = -Infinity; pz0 = Infinity; pz1 = -Infinity; for (const q of piece) { if (q[0] < px0) px0 = q[0]; if (q[0] > px1) px1 = q[0]; if (q[1] < pz0) pz0 = q[1]; if (q[1] > pz1) pz1 = q[1]; } }
+      const i0 = clamp(Math.floor((px0 - G.x0) / cw), 0, nx - 1), i1 = clamp(Math.floor((px1 - G.x0) / cw), 0, nx - 1);
+      const j0 = clamp(Math.floor((pz0 - G.z0) / ch), 0, nz - 1), j1 = clamp(Math.floor((pz1 - G.z0) / ch), 0, nz - 1);
+      const one = i0 === i1 && j0 === j1;
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        if (G.skip && G.skip[j * nx + i]) {
+          // a hole's cell belongs to the patch registered after this strip (the NW hills), and
+          // that patch has already had the piece; any other skipped cell is a real gap
+          if (G.hole && G.x0 + cw * i >= G.hole.x0 - 0.01 && G.x0 + cw * (i + 1) <= G.hole.x1 + 0.01 && G.z0 + ch * j >= G.hole.z0 - 0.01 && G.z0 + ch * (j + 1) <= G.hole.z1 + 0.01) continue;
+          ROAD_STATS.ms += performance.now() - t0;
+          return false;
+        }
+        const xa = G.x0 + cw * i, za = G.z0 + ch * j;
+        const cl = one ? piece : clipRect(piece, xa, xa + cw, za, za + ch);
+        if (!cl) continue;
+        const sA = clipDiag(cl, xa, za, cw, ch, 1), sB = clipDiag(cl, xa, za, cw, ch, -1);
+        if (sA) fan(sA, G, i, j, 0);
+        if (sB) fan(sB, G, i, j, 1);
+      }
+    }
+    for (let k = 0; k < out.length; k += 3) emit(out[k], out[k + 1], out[k + 2]);
+    ROAD_STATS.tris += out.length / 9;
+    ROAD_STATS.ms += performance.now() - t0;
+    return out.length > 0;
+  }
+  // a street strip's quad for the two road loops: on the drawn ground through drapeConvex where
+  // the segment stands on registered land (onMesh), else the flat quad at the two centreline
+  // heights it always was (the bridge decks, the Schuylkill's bank roads, the water). The lane
+  // paint's u is the signed offset across the strip and s the distance along it, both linear in
+  // the position. lane(v, u, s, hw, cls) is the loop's own aLane writer.
+  function roadStrip(rc, lane, a, q, dx, dz, hw, ya, yb, jr, onMesh, cr, cg, cb, sA, sAcc, cls) {
+    const px = -dz * hw, pz = dx * hw;
+    if (onMesh) {
+      const ring = [[a[0] + px, a[1] + pz], [q[0] + px, q[1] + pz], [q[0] - px, q[1] - pz], [a[0] - px, a[1] - pz]];
+      if (drapeConvex(ring, jr, (x, y, z) => {
+        rc.pos.push(x, y, z); rc.col.push(cr, cg, cb);
+        lane(rc.n, (x - a[0]) * -dz + (z - a[1]) * dx, sA + (x - a[0]) * dx + (z - a[1]) * dz, hw, cls);
+        rc.idx.push(rc.n); rc.n++;
+      })) { ROAD_STATS.draped++; return; }
+    }
+    ROAD_STATS.flat++;
+    const b0 = rc.n;
+    rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
+    for (let m = 0; m < 4; m++) rc.col.push(cr, cg, cb);
+    lane(b0, hw, sA, hw, cls); lane(b0 + 1, hw, sAcc, hw, cls); lane(b0 + 2, -hw, sAcc, hw, cls); lane(b0 + 3, -hw, sA, hw, cls);
+    rc.n += 4;
+    rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+  }
+  // the joint disc at a bend or a shared end, 2 cm under its strips so their paint wins the
+  // overlap: a hexagon on the drawn ground where the strip is, else the flat disc as before.
+  // Its aLane rides the averaged heading (ddx, ddz): u = offset . n, s = sA + offset . d
+  function roadFan(rc, lane, x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh) {
+    if (onMesh) {
+      const ring = [];
+      for (let s6 = 0; s6 < 6; s6++) { const ang = s6 / 6 * Math.PI * 2; ring.push([x + Math.cos(ang) * hw, z + Math.sin(ang) * hw]); }
+      if (drapeConvex(ring, jr - 0.02, (vx, vy, vz) => {
+        const ox = vx - x, oz = vz - z;
+        rc.pos.push(vx, vy, vz); rc.col.push(cr, cg, cb);
+        lane(rc.n, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls);
+        rc.idx.push(rc.n); rc.n++;
+      })) { ROAD_STATS.fans++; return; }
+    }
+    ROAD_STATS.flatFans++;
+    const c0 = rc.n;
+    y -= 0.02;
+    rc.pos.push(x, y, z); rc.col.push(cr, cg, cb); lane(rc.n, 0, sA, hw, cls); rc.n++;
+    for (let s6 = 0; s6 < 7; s6++) {
+      const ang = s6 / 6 * Math.PI * 2;
+      const ox = Math.cos(ang) * hw, oz = Math.sin(ang) * hw;
+      rc.pos.push(x + ox, y, z + oz);
+      rc.col.push(cr, cg, cb); lane(rc.n, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls); rc.n++;
+    }
+    for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
+  }
+
   function offsetPolyline(pts, d) {
     const out = [];
     for (let i = 0; i < pts.length; i++) {
@@ -2191,11 +2315,16 @@
   // radius while the sheet followed the outline, and wherever the two disagreed the 25 m
   // ground grid surfaced through the water as a staircase. Inside/outside comes from a 10 m
   // scanline raster of the polygon (rows against edges once, at start), the distance and the
-  // side near the edge from a 20 m grid of the edges themselves.
+  // side near the edge from a 40 m grid of the edges themselves (20 m before Round 88).
   const SCH_POLYS = (typeof SCHUYLKILL_DATA !== 'undefined' && SCHUYLKILL_DATA && SCHUYLKILL_DATA.polys && SCHUYLKILL_DATA.polys.length) ? SCHUYLKILL_DATA.polys : null;
   let schRaster = null, schEdges = null;
   if (SCH_POLYS) {
-    const RC = 10, EC = 20;
+    // EC 40 with a ±2-cell search reads a distance to 80 m (Round 88). At 20 the read capped at 40,
+    // and Round 87's BANK_BLEND band (40 to 70 m) in groundMeshLandY, which was to ease a bank
+    // road from the DEM to the drawn mesh, never saw a distance past its own start: every street in
+    // the city farther than 40 m from the Schuylkill fell into the blend at t = 0 and read the DEM,
+    // never the drawn ground, which is why the far ring's 100 m mesh cut through its roads
+    const RC = 10, EC = 40;
     let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
     const rings = [];
     for (const pg of SCH_POLYS) { rings.push(pg.ring); for (const h of (pg.holes || [])) rings.push(h); for (const q of pg.ring) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < z0) z0 = q[1]; if (q[1] > z1) z1 = q[1]; } }
@@ -2230,7 +2359,7 @@
     }
     // [distance to the nearest edge within 40 m (else 40), +1 outside / -1 inside by that edge]
     schEdges = (x, z) => {
-      let best = 1600, side = 0;
+      let best = 6400, side = 0;   // 80 m, the reach of the ±2-cell search below
       const gx = Math.floor(x / EC), gz = Math.floor(z / EC);
       for (let a = -2; a <= 2; a++) for (let b2 = -2; b2 <= 2; b2++) {
         const l = egrid.get((gx + a) + ':' + (gz + b2)); if (!l) continue;
@@ -2325,7 +2454,10 @@
   const OVP_CELL = 28;
   const ovpSegs = [];   // ax, az, bx, bz, ya, yb, hw, cls, chainId (stride 9; cls -1 open cut, -2 covered)
   const OVP_STRIDE = 9;
-  {
+  // the index is built here and again in 'Raising the overpasses' once the decks' profiles have
+  // been lifted over the drawn ground (Round 88): ovpDeckY carries the traffic and the buses
+  function ovpIndex() {
+    ovpGrid.clear(); ovpSegs.length = 0;
     const add = (a, b, hw, cls, id) => {
       const idx = ovpSegs.length;
       ovpSegs.push(a[0], a[1], b[0], b[1], a[2], b[2], hw, cls, id);
@@ -2343,6 +2475,7 @@
     // (suppresses the packed road but leaves the ground alone)
     OVP.sk.forEach((c, ci) => { for (let i = 0; i + 1 < c.p.length; i++) add(c.p[i], c.p[i + 1], c.w / 2 + 2, c.cov ? -2 : -1, 1000 + ci); });
   }
+  ovpIndex();
   // a packed road segment lying along a baked chain is the same OSM way: the
   // deck (or sunken roadway) build owns it, so the flat ribbon must not draw.
   // The radius is a FIXED 2.6 m: same-way centerlines coincide within the two
@@ -2372,6 +2505,50 @@
     // both ENDPOINTS suffice: requiring the midpoint too let curved duplicates
     // escape where the simplified chain corner-cuts the arc (mid bulges ~5 m)
     return hit(ax, az) && hit(bx, bz);
+  }
+  // ---- the outer districts' streets, indexed for the far ring's seam (Round 88). The far
+  // ring skipped every segment within 200 m of the wide box on the assumption that the wide
+  // set paves that margin (pack_wide carries a way 200 m past the box), but the wide extract
+  // only holds ways that ENTER its box: a road running alongside the edge inside the margin
+  // was in neither tier, 21 km of it citywide, 5.7 km of that motorway, and at the Passyunk
+  // Avenue interchange I-76 itself stopped dead in the grass. Now the wide loop registers its
+  // raw segments here and the far ring cedes a margin segment only where one really lies
+  // along it: the same fixed-radius, direction-aligned test as ovpOwned, 3 m for the two
+  // packers' simplification tolerances (1.6 m at 0.7 m units against 0.6 m at 0.2 m).
+  const WR_CELL = 40;
+  const wideRoadGrid = new Map(), wideRoadSegs = [];
+  function wideRoadAdd(ax, az, bx, bz) {
+    const idx = wideRoadSegs.length;
+    wideRoadSegs.push(ax, az, bx, bz);
+    const minx = Math.floor((Math.min(ax, bx) - 3) / WR_CELL), maxx = Math.floor((Math.max(ax, bx) + 3) / WR_CELL);
+    const minz = Math.floor((Math.min(az, bz) - 3) / WR_CELL), maxz = Math.floor((Math.max(az, bz) + 3) / WR_CELL);
+    for (let gx = minx; gx <= maxx; gx++) for (let gz = minz; gz <= maxz; gz++) {
+      const k = gx + ':' + gz;
+      let arr = wideRoadGrid.get(k);
+      if (!arr) { arr = []; wideRoadGrid.set(k, arr); }
+      arr.push(idx);
+    }
+  }
+  function wideOwned(ax, az, bx, bz) {
+    if (!wideRoadSegs.length) return false;
+    let ux = bx - ax, uz = bz - az;
+    const L = Math.hypot(ux, uz) || 1;
+    ux /= L; uz /= L;
+    const hit = (x, z) => {
+      const arr = wideRoadGrid.get(Math.floor(x / WR_CELL) + ':' + Math.floor(z / WR_CELL));
+      if (!arr) return false;
+      for (const s of arr) {
+        const sax = wideRoadSegs[s], saz = wideRoadSegs[s + 1], dx = wideRoadSegs[s + 2] - sax, dz = wideRoadSegs[s + 3] - saz;
+        const sl = Math.hypot(dx, dz) || 1;
+        if (Math.abs((dx * ux + dz * uz) / sl) < 0.8) continue;
+        let t = ((x - sax) * dx + (z - saz) * dz) / (sl * sl);
+        t = clamp(t, 0, 1);
+        const px = sax + dx * t - x, pz = saz + dz * t - z;
+        if (px * px + pz * pz < 9) return true;
+      }
+      return false;
+    };
+    return hit(ax, az) && hit(bx, bz) && hit((ax + bx) / 2, (az + bz) / 2);
   }
   // does a building footprint straddle a motorway deck or an open cut? (an OSM
   // artifact: nothing real stands across I-95 — Mike's building through the
@@ -2548,19 +2725,20 @@
   // too. No vertex displacement: shorelines and copings stay watertight. Amplitude
   // follows the live wind (applyWx); a distance fade keeps far water calm so the
   // ripple field never aliases into noise at the horizon.
-  const waterU = { uTime: { value: 7.3 }, uWAmp: { value: 1.0 }, uWDir: { value: new THREE.Vector2(0.86, 0.5) }, uSun: { value: new THREE.Vector3(0.3, 0.8, 0.2) } };
+  const waterU = { uTime: { value: 7.3 }, uWAmp: { value: 1.0 }, uWDir: { value: new THREE.Vector2(0.86, 0.5) }, uSun: { value: new THREE.Vector3(0.3, 0.8, 0.2) }, uGlint: { value: 1 } };   // uGlint: the sparkle through the deck (Round 88)
   function liquify(mat, scale, amp, speed) {
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = waterU.uTime;
       sh.uniforms.uWAmp = waterU.uWAmp;
       sh.uniforms.uWDir = waterU.uWDir;
       sh.uniforms.uSun = waterU.uSun;
+      sh.uniforms.uGlint = waterU.uGlint;
       sh.uniforms.uNite = nightUniform;   // resolved at first render, after its declaration
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vWq;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvWq = (modelMatrix * vec4(transformed, 1.0)).xyz;');
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying vec3 vWq;\nuniform float uTime, uWAmp, uNite;\nuniform vec2 uWDir;\nuniform vec3 uSun;\nfloat wGlint = 0.0;\n' +
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWq;\nuniform float uTime, uWAmp, uNite, uGlint;\nuniform vec2 uWDir;\nuniform vec3 uSun;\nfloat wGlint = 0.0;\n' +
           'float whash(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\n' +
           'float wvn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(whash(i), whash(i + vec2(1.0, 0.0)), u.x), mix(whash(i + vec2(0.0, 1.0)), whash(i + vec2(1.0, 1.0)), u.x), u.y); }\n' +
           'vec2 wgrad(vec2 p, vec2 d, float lam, float sp, float t) {\n' +
@@ -2634,7 +2812,7 @@
           // rivers throw toward the sun, not just point glitter
           '  wspec += pow(max(dot(wview, reflect(-normalize(uSun), wn)), 0.0), 14.0) * 0.08;\n' +
           // at night uSun is the MOON: keep a faint moonglade, not a sequin field
-          '  wGlint = wspec * smoothstep(0.02, 0.1, uSun.y) * (0.55 + 0.45 * uWAmp) * wfade * (1.0 - uNite * 0.85);\n' +
+          '  wGlint = wspec * smoothstep(0.02, 0.1, uSun.y) * (0.55 + 0.45 * uWAmp) * wfade * (1.0 - uNite * 0.85) * uGlint;\n' +
           '}\n')
         // the sky's reflection comes back blue and dimmer than the sky itself: a wide sheet
         // seen at a grazing angle otherwise turns the colour of the horizon (pale), where the
@@ -3532,6 +3710,10 @@
     const variant = ((trim >= 2) ? 0 : (hv < 0.35 || trim === 1) ? 1 : 0) + ((e <= 3 && hash01(seed * 2.2 + 0.1) < 0.5) ? 2 : 0);
     return st + 32 * variant;
   }
+  // the researched curtain walls are styles 20 to 25 (TOWER_STYLE, the Comcast pair at 24 and 25)
+  // and carry no variant flags; fabricStyle's word is st + 32 * variant with st at most 13, so
+  // the low five bits are the style and anything at 32 or over is a plain row's variant
+  const isGlassStyle = (style) => style >= 20 && style < 32;
   // a tower's facade when no researched spec names it: the OPA era, else the type and a draw
   function towerStyle(fa, t, seed) {
     const e = fa ? fa[2] : 8, hs = hash01(seed * 6.37 + 0.2);
@@ -3847,6 +4029,13 @@
   // procedural windows: world-space grid darkening on wall faces only
   // (shared by the generic fabric and landmark walls)
   const nightUniform = { value: 0 };
+  // the lamps' own switch (Round 88, Mike at an overcast dusk: "the street lights are on in the
+  // real Philadelphia so they should be here as well"): a photocell fires at an ambient level,
+  // not a sun angle, so the cloud deck brings the lamps on early. applyLighting writes it from the
+  // sun's elevation less an overcast advance; the poles, the bridge lamps, the headlights, the
+  // stadium floods and the skyline sheets all read it (they read nightUniform before, which
+  // starts at the horizon whatever the sky is doing)
+  const lampUniform = { value: 0 };
   // how far the facade detail (windows, and with them the lit windows at night) survives:
   // < 1 stretches the fade, so a phone at 1266 x 585 keeps its lit windows to about the
   // distance a 1080p desktop does instead of losing them at half of it. The masks stay
@@ -5944,7 +6133,7 @@
         appendBuilding(chk, A.concat(B), base + y0, base + y1, c, 3, base, null, 0, capHex ? cap.set(capHex) : null);
         return idx;
       };
-      // the night halo: additive warm sheets over the seats and the field, on with the lamps
+      // the night halo: additive floodlit sheets over the seats and the field, on with the lamps
       const haloBand = (keepFn, sc, y) => {
         const idx = arcIdx(keepFn);
         if (idx.length < 2) return;
@@ -6184,7 +6373,15 @@
         appendBuilding(getChunk(cx, cz), pent, base + h - 0.3, base + h + hp, cP, 3, base);
         if (hash01(i * 12.7) < 0.33) { const mg = new THREE.CylinderGeometry(0.35, 0.8, 10 + hash01(i * 5.5) * 14, 6); mg.translate(obR.cx + axR.ax * axR.hl * su0, base + h + hp + 5 + hash01(i * 5.5) * 7, obR.cz + axR.az * axR.hl * su0); crownTrim.push({ geom: mg, color: new THREE.Color(0x6b7075), style: 3 }); }
       }
-      if (style >= 20) {   // a researched glass tower: the reflective curtain wall in its own tint
+      // a researched glass tower: the reflective curtain wall in its own tint. The style word
+      // carries fabricStyle's variant flags in multiples of 32 (the dark and the tall variants of
+      // a plain row), and from Sep 2 to Round 88 this test read the whole word, so 65,000 of the
+      // tier's 112,000 rowhouses (every variant 1, 2 or 3) were drawn as blank tinted glass:
+      // salmon boxes with salmon roofs, no brick, no windows, and a hard seam against the far
+      // ring, which routes nothing here. That was the "disparity between the inner and outer
+      // ring" Mike saw, and the distinct look of the unphotographed buildings Round 87 had
+      // chased with colour constants (a photographed face with trim keeps variant 0)
+      if (isGlassStyle(style)) {
         appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base);
         if ((i & 4095) === 4095) { loadmsg.textContent = 'Raising the outer districts, ' + Math.round(i / nb * 100) + '%'; flushUploads(); await yieldNow(); }
         continue;
@@ -6366,7 +6563,7 @@
             const steps = cr.steps || 3, dh = hc / steps;
             for (let k2 = 0; k2 < steps; k2++) {
               c.copy(th.color);
-              appendBuilding(chk2, rectOf(ob, ax, 1.0 - 0.13 * (k2 + 1)), y0 + k2 * dh, y0 + (k2 + 1) * dh + 0.01, c, th.style >= 20 ? 17 : th.style, th.base);
+              appendBuilding(chk2, rectOf(ob, ax, 1.0 - 0.13 * (k2 + 1)), y0 + k2 * dh, y0 + (k2 + 1) * dh + 0.01, c, isGlassStyle(th.style) ? 17 : th.style, th.base);
             }
             if (lit) glow(box(ax.hl * 2 * 0.5, 1.2, ax.hs * 2 * 0.5, ob.cx, y1 + 0.6, ob.cz, ry), 0.45);
             if (themed) { const sc = 1.0 - 0.13 * steps; sheetOf(box(ax.hl * 2 * sc + 0.8, dh, ax.hs * 2 * sc + 0.8, ob.cx, y0 + (steps - 0.5) * dh, ob.cz, ry), tslot, 0.5); }   // the top tier washed
@@ -6403,7 +6600,7 @@
             const keep = 0.62, plan = cr.sides === 3 ? [[-0.8, -1], [0.8, -1], [0.8, 0.1], [-0.8, 0.1]] : [[-1, -1], [2 * keep - 1, -1], [2 * keep - 1, 1], [-1, 1]];
             const half = plan.map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
             c.copy(th.color);
-            if (th.style >= 20) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
+            if (isGlassStyle(th.style)) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
             else appendBuilding(chk2, half, y0 - 0.5, y1, c, th.style, th.base);
             const su0 = cr.sides === 3 ? 0 : keep - 1, sv0 = cr.sides === 3 ? -0.45 : 0, sw = cr.sides === 3 ? 1.6 : 2 * keep, sd = cr.sides === 3 ? 1.1 : 2;   // the drawn crown plan's centre and extent
             const scx = ob.cx + ax.ax * ax.hl * su0 + ax.px * ax.hs * sv0, scz = ob.cz + ax.az * ax.hl * su0 + ax.pz * ax.hs * sv0;
@@ -6466,10 +6663,10 @@
       floodPts.frustumCulled = false; floodPts.renderOrder = 11; floodPts.visible = false;
       groupCity.add(floodPts);
     }
-    if (halo.length) {   // the warm sheets: a faint additive glow over each bowl and its field after dark
+    if (halo.length) {   // the floodlit sheets: a faint additive glow over each bowl and its field after dark
       const hg = new THREE.BufferGeometry();
       hg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(halo), 3));
-      haloMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+      haloMat = new THREE.MeshBasicMaterial({ color: 0xf2f1ec, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });   // a neutral floodlit white since Round 88 (Mike: why are the stadiums orange? they should be lit normally, no colour hues; the sheets were 0xffd9a0, and over a black bowl that read as an orange fill)
       postRaw(haloMat);
       haloMesh = new THREE.Mesh(hg, haloMat);
       haloMesh.frustumCulled = false; haloMesh.renderOrder = 10; haloMesh.visible = false;
@@ -6496,28 +6693,13 @@
     };
     // the joint fan sits 2 cm below its strip so the strip's paint wins the overlap; its
     // aLane rides the averaged heading (ddx, ddz) at the bend: rim u = offset . n, s = sA + offset . d
-    const rcFan = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls) => {
-      const c0 = rc.n;
-      y -= 0.02;
-      rc.pos.push(x, y, z);
-      rc.col.push(cr, cg, cb);
-      rcLane(rc.n, 0, sA, hw, cls);
-      rc.n++;
-      for (let s6 = 0; s6 < 7; s6++) {
-        const ang = s6 / 6 * Math.PI * 2;
-        const ox = Math.cos(ang) * hw, oz = Math.sin(ang) * hw;
-        rc.pos.push(x + ox, y, z + oz);
-        rc.col.push(cr, cg, cb);
-        rcLane(rc.n, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls);
-        rc.n++;
-      }
-      for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
-    };
+    const rcFan = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh) => roadFan(rc, rcLane, x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh);
     for (let i = 0; i < hdr[2]; i++) {
       const n = body[k++], w = body[k++] / 10, t = body[k++];
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
+      for (let j = 0; j + 1 < pts.length; j++) wideRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);   // for the far ring's seam (Round 88)
       pts = lotDensify(pts);   // 6 m inside the sports complex's fill sheets, 15 m elsewhere
       c.set(roadCol[t] || 0x3b3833);
       const hw = w / 2;
@@ -6550,19 +6732,18 @@
         const bl = clamp(dOut / 60, 0, 1);
         const jr = lerp(LAYER.road + hash01(i * 3.7 + 1.1) * 0.06,
           LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 3.7 + 1.1) * 0.1, bl);
-        const bank = !!(schEdges && schEdges((a[0] + q[0]) / 2, (a[1] + q[1]) / 2)[0] < 60);   // the Schuylkill's bank (Round 85)
-        let ya0 = groundMeshLandY(a[0], a[1]) ?? siteY(a[0], a[1], 'road'), yb0 = groundMeshLandY(q[0], q[1]) ?? siteY(q[0], q[1], 'road');
+        const bankD = schEdges ? schEdges(mx, mz)[0] : Infinity;
+        const bank = bankD < 60;   // the Schuylkill's bank (Round 85)
+        const meshA = groundMeshLandY(a[0], a[1]), meshB = groundMeshLandY(q[0], q[1]);
+        let ya0 = meshA ?? siteY(a[0], a[1], 'road'), yb0 = meshB ?? siteY(q[0], q[1], 'road');
         if (deck) {
           ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
           yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
         } else { ya0 = Math.max(ya0, bankFloor(a[0], a[1])); yb0 = Math.max(yb0, bankFloor(q[0], q[1])); }   // the bank floor: no roadway awash (Round 85; the Schuylkill's band only, FDR Park and the airport lie as low)
         const ya = ySnap(yMapW, a[0], a[1], ya0 + jr), yb = ySnap(yMapW, q[0], q[1], yb0 + jr);
-        const b0 = rc.n;
-        rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
-        for (let m = 0; m < 4; m++) rc.col.push(c.r * 255, c.g * 255, c.b * 255);
-        rcLane(b0, hw, sA, hw, cls); rcLane(b0 + 1, hw, sAcc, hw, cls); rcLane(b0 + 2, -hw, sAcc, hw, cls); rcLane(b0 + 3, -hw, sA, hw, cls);
-        rc.n += 4;
-        rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+        // on registered land, clear of the bank blend, the strip is laid on the drawn ground (Round 88)
+        const onMesh = !deck && meshA !== null && meshB !== null && bankD >= BANK_BAND + BANK_BLEND;
+        roadStrip(rc, rcLane, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls);
         if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
           for (const sg of [1, -1]) {
             const ex0 = a[0] + px * sg, ez0 = a[1] + pz * sg, ex1 = q[0] + px * sg, ez1 = q[1] + pz * sg;
@@ -6586,7 +6767,7 @@
           if (ux0 * dx + uz0 * dz < 0.99) {
             let ddx = ux0 + dx, ddz = uz0 + dz;
             const dl = Math.hypot(ddx, ddz) || 1;
-            rcFan(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, ddx / dl, ddz / dl, cls);
+            rcFan(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, ddx / dl, ddz / dl, cls, jr, onMesh);
           }
         }
       }
@@ -7521,6 +7702,28 @@
         const m = new THREE.Mesh(mergeColored(parts), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, metalness: 0.3 }));
         m.castShadow = true;
         groupCity.add(m);
+        // Round 88 (Mike: lamp posts on the Walt Whitman just like the Ben Franklin, no colour lights):
+        // the same standard as the Ben Franklin's walkway lamps, one every 36 m a side along both
+        // deck edges from the Packer Avenue approach to the Jersey landing, their heads on the
+        // streetlamps' warm LED points (on with the lamps); none of the Ben Franklin's LED strings
+        {
+          const lampG = mergeColored([
+            { geom: new THREE.CylinderGeometry(0.07, 0.12, 4.2, 6).translate(0, 2.1, 0), color: new THREE.Color(0x2a2a2c), style: 3 },
+            { geom: new THREE.BoxGeometry(0.5, 0.45, 0.5).translate(0, 4.4, 0), color: new THREE.Color(0x3a3a3c), style: 3 },
+          ]);
+          const lampAt = [];
+          for (let sv = 30; sv < sEnd - 30; sv += 36) {
+            const q = at(sv), yD = deckYAt(sv, q.x, q.z);
+            for (const sg of [-1, 1]) lampAt.push([q.x - q.uz * sg * 13.2, yD, q.z + q.ux * sg * 13.2, q.ry]);
+          }
+          const lm = new THREE.InstancedMesh(lampG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.2 }), lampAt.length);
+          const mtx = new THREE.Matrix4();
+          lampAt.forEach((p, i) => { mtx.makeRotationY(p[3]); mtx.setPosition(p[0], p[1], p[2]); lm.setMatrixAt(i, mtx); });
+          lm.castShadow = true; lm.frustumCulled = false;
+          groupCity.add(lm);
+          for (const p of lampAt) bfbLampPts.push(p[0], p[1] + 4.4, p[2]);
+          WWB_LAMP_N = lampAt.length;
+        }
         const qm = at(mid);
         labels.push({ el: (() => { const el = document.createElement('div'); el.className = 'lbl'; el.textContent = 'Walt Whitman Bridge'; labelsRoot.appendChild(el); return el; })(), pos: new V3(qm.x, W0 + 125, qm.z), visible: false, far: true });
         {  // traffic rides the deck (deckAt's profile, arc-length form; box top = deckAt)
@@ -7548,7 +7751,7 @@
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLit = aLit; vTheme = vec3(aMix, aSlot, aGain);');
         sh.fragmentShader = sh.fragmentShader
           .replace('#include <common>', '#include <common>\nuniform float uNight, uThemeOn, uStripeN; uniform vec3 uTheme0, uTheme1, uTheme2, uTheme3, uStripe0, uStripe1, uStripe2, uStripe3; varying vec3 vLit; varying vec3 vTheme;')
-          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float s = vTheme.y; float si = mod(floor(max(s - 4.0, 0.0) + 0.5), max(uStripeN, 1.0));\n  vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, s)), mix(uTheme2, uTheme3, step(2.5, s)), step(1.5, s));\n  vec3 sc = mix(mix(uStripe0, uStripe1, step(0.5, si)), mix(uStripe2, uStripe3, step(2.5, si)), step(1.5, si));\n  tc = mix(tc, sc, step(3.5, s));\n  totalEmissiveRadiance += mix(vLit, tc, uThemeOn * vTheme.x) * uNight * 2.4 * vTheme.z; }');   // aGain: a thin LED line gets the radiance a wash box has (Round 85); a slot of 4 or more is a stripe index into the night's stripe palette (a team's pair), reduced by its length so a two-colour palette alternates and a three-colour one cycles three
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float s = vTheme.y; float si = mod(floor(max(s - 4.0, 0.0) + 0.5), max(uStripeN, 1.0));\n  vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, s)), mix(uTheme2, uTheme3, step(2.5, s)), step(1.5, s));\n  vec3 sc = mix(mix(uStripe0, uStripe1, step(0.5, si)), mix(uStripe2, uStripe3, step(2.5, si)), step(1.5, si));\n  tc = mix(tc, sc, step(3.5, s));\n  vec3 te = mix(vLit, tc, uThemeOn * vTheme.x); float tm = max(te.r, max(te.g, te.b)); float tsat = tm > 1e-4 ? 1.0 - min(te.r, min(te.g, te.b)) / tm : 0.0;\n  totalEmissiveRadiance += te * uNight * 2.4 * vTheme.z * mix(1.0, 0.3, tsat); }');   // Round 88 (Mike: the red reads as pink): a saturated colour takes 0.3 of the gain a white does. Under the ACES fit a pure red at 2.4 radiance leaks into green and blue through the input matrix and comes out (231, 129, 108), salmon; held near 1.0 it stays (255, 60, 60). The whites keep today's brightness   // aGain: a thin LED line gets the radiance a wash box has (Round 85); a slot of 4 or more is a stripe index into the night's stripe palette (a team's pair), reduced by its length so a two-colour palette alternates and a three-colour one cycles three
       };
       themeMesh = new THREE.Mesh(g, themeMat);
       themeMesh.castShadow = true;
@@ -7745,8 +7948,11 @@
       rc.lane[v * 4] = u; rc.lane[v * 4 + 1] = s; rc.lane[v * 4 + 2] = hw; rc.lane[v * 4 + 3] = cls;
     };
     // pack_wide carries roads 200 m past its box (runs_of(..., 200)); a 30 m
-    // margin here left a 170 m band where both tiers paved the same streets
+    // margin here left a 170 m band where both tiers paved the same streets. Inside the box
+    // itself the wide set paves everything (nothing is ceded there that it lacks, measured);
+    // in the margin only what a wide segment really lies along is ceded (wideOwned, Round 88)
     const inWide = (p) => p[0] > WIDEB.x0 - 200 && p[0] < WIDEB.x1 + 200 && p[1] > WIDEB.z0 - 200 && p[1] < WIDEB.z1 + 200;
+    const inWideBox = (p) => p[0] > WIDEB.x0 && p[0] < WIDEB.x1 && p[1] > WIDEB.z0 && p[1] < WIDEB.z1;
     const yMapF = new Map();
     const ySnapF = (x, z, y) => {
       const key = Math.round(x * 2) + ':' + Math.round(z * 2);
@@ -7755,18 +7961,7 @@
       yMapF.set(key, y);
       return y;
     };
-    const rcFanF = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls) => {   // 2 cm below its strip, like the wide rcFan
-      const c0 = rc.n;
-      y -= 0.02;
-      rc.pos.push(x, y, z); rc.col.push(cr, cg, cb); rcLane(rc.n, 0, sA, hw, cls); rc.n++;
-      for (let s6 = 0; s6 < 7; s6++) {
-        const ang = s6 / 6 * Math.PI * 2;
-        const ox = Math.cos(ang) * hw, oz = Math.sin(ang) * hw;
-        rc.pos.push(x + ox, y, z + oz);
-        rc.col.push(cr, cg, cb); rcLane(rc.n, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls); rc.n++;
-      }
-      for (let s6 = 0; s6 < 6; s6++) rc.idx.push(c0, c0 + 1 + s6, c0 + 2 + s6);
-    };
+    const rcFanF = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh) => roadFan(rc, rcLane, x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh);   // 2 cm below its strip, like the wide rcFan
     // the roads are DECODED here and PAVED at upload (uploadRing calls paveRoads once the far
     // strips and the NW patch are in the ground registry), so their heights read the drawn
     // ground like the sheets do (groundMeshLandY); paved here they read the DEM, and a park
@@ -7814,23 +8009,21 @@
         }
         if (deck && (wwbNear(mx, mz) || bfbNear(mx, mz))) continue;   // the custom WWB and BFB decks own their crossings
         if (t <= 1 && wwbUnder(mx, mz)) continue;      // and its Jersey viaduct: no flat twin beneath
-        if (wideSeam && inWide(a) && inWide(q)) continue;   // the wide set paves there (the far ring only: the outskirts packer already cedes the wide box, and the wide data ends at lat 39.890 while this margin runs to z 6600)
+        if (wideSeam && inWide(a) && inWide(q) && ((inWideBox(a) && inWideBox(q)) || wideOwned(a[0], a[1], q[0], q[1]))) continue;   // the wide set paves there (the far ring only: the outskirts packer already cedes the wide box, and the wide data ends at lat 39.890 while this margin runs to z 6600)
         if (ovpOwned(a[0], a[1], q[0], q[1])) continue; // a baked overpass deck owns it
         const px = -dz * hw, pz = dx * hw;
         const jr = LAYER.road + (6 - Math.min(t, 6)) * 0.055 + hash01(i * 2.9 + 0.4) * 0.1;
-        const bank = !!(schEdges && schEdges((a[0] + q[0]) / 2, (a[1] + q[1]) / 2)[0] < 60);   // the Schuylkill's bank (Round 85)
-        let ya0 = groundMeshLandY(a[0], a[1]) ?? siteY(a[0], a[1], 'road'), yb0 = groundMeshLandY(q[0], q[1]) ?? siteY(q[0], q[1], 'road');
+        const bankD = schEdges ? schEdges(mx, mz)[0] : Infinity;
+        const bank = bankD < 60;   // the Schuylkill's bank (Round 85)
+        const meshA = groundMeshLandY(a[0], a[1]), meshB = groundMeshLandY(q[0], q[1]);
+        let ya0 = meshA ?? siteY(a[0], a[1], 'road'), yb0 = meshB ?? siteY(q[0], q[1], 'road');
         if (deck) {
           ya0 = Math.max(ya0, TERRAIN.water + (aLow ? deck : deck * 0.35));
           yb0 = Math.max(yb0, TERRAIN.water + (qLow ? deck : deck * 0.35));
         } else { ya0 = Math.max(ya0, bankFloor(a[0], a[1])); yb0 = Math.max(yb0, bankFloor(q[0], q[1])); }   // the bank floor (Round 85)
         const ya = ySnapF(a[0], a[1], ya0 + jr), yb = ySnapF(q[0], q[1], yb0 + jr);
-        const b0 = rc.n;
-        rc.pos.push(a[0] + px, ya, a[1] + pz, q[0] + px, yb, q[1] + pz, q[0] - px, yb, q[1] - pz, a[0] - px, ya, a[1] - pz);
-        for (let m = 0; m < 4; m++) rc.col.push(c.r * 255, c.g * 255, c.b * 255);
-        rcLane(b0, hw, sA, hw, cls); rcLane(b0 + 1, hw, sAcc, hw, cls); rcLane(b0 + 2, -hw, sAcc, hw, cls); rcLane(b0 + 3, -hw, sA, hw, cls);
-        rc.n += 4;
-        rc.idx.push(b0, b0 + 1, b0 + 2, b0, b0 + 2, b0 + 3);
+        const onMesh = !deck && meshA !== null && meshB !== null && bankD >= BANK_BAND + BANK_BLEND;   // on the drawn ground (Round 88)
+        roadStrip(rc, rcLane, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls);
         if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
           for (const sg of [1, -1]) {
             const ex0 = a[0] + px * sg, ez0 = a[1] + pz * sg, ex1 = q[0] + px * sg, ez1 = q[1] + pz * sg;
@@ -7854,7 +8047,7 @@
           if (ux0 * dx + uz0 * dz < 0.99) {
             let ddx = ux0 + dx, ddz = uz0 + dz;
             const dl = Math.hypot(ddx, ddz) || 1;
-            rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, ddx / dl, ddz / dl, cls);
+            rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, ddx / dl, ddz / dl, cls, jr, onMesh);
           }
         } else if (endShared(a)) {
           // Round 87: the fan ran at interior bends only, so where two OSM ways met at a node
@@ -7862,9 +8055,9 @@
           // up to 7.86 m of it in Fairmount Park. A disc at a run's first point closes it, and
           // only where another run really ends there, so the count stays in hand (240 of the
           // park's 333 endpoint keys are shared, 93 are the real dangling ends).
-          rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls);
+          rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
         }
-        if (j === pts.length - 2 && endShared(q)) rcFanF(q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls);
+        if (j === pts.length - 2 && endShared(q)) rcFanF(q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
       }
       if ((ri & 2047) === 2047) await yieldNow();
       }
@@ -8354,6 +8547,39 @@
       }
       return nrm;
     };
+    // ---- the decks held over the drawn ground (Round 88, Mike at the Passyunk Avenue interchange).
+    // bake_overpasses.py solves a chain's profile against the DEM; the drawn far mesh is that DEM
+    // smeared over 100 m cells and the NW patch a sharpened 50 m one, so 191 of the 534 chains
+    // dipped under the ground they cross somewhere, by up to 6.5 m, and the terrain sliced their
+    // ends off on a diagonal. Every chain is densified to 13 m (once, in place, so the index
+    // rebuilt below agrees with the deck drawn), each point raised to clear the highest of five
+    // ground reads across the deck's width by DECK_LIFT, and a lifted point pulls its neighbours
+    // up so the deck never falls from it faster than DECK_GRADE (the ramps' own grade)
+    const DECK_LIFT = LAYER.road + 0.4, DECK_GRADE = 0.07;
+    let deckLifted = 0, deckLiftMax = 0;
+    for (const c of OVP.el) {
+      if (c.p.length < 2) continue;
+      const pts = dens3(c.p, 13), nrm = norms(pts), hw = Math.max(1.6, c.w / 2);
+      let lifted = false;
+      for (let i = 0; i < pts.length; i++) {
+        let g = -Infinity;
+        for (const s of [-1, -0.5, 0, 0.5, 1]) {
+          const x = pts[i][0] + nrm[i][0] * hw * s, z = pts[i][1] + nrm[i][1] * hw * s;
+          const gy = groundMeshY(x, z) ?? siteY(x, z, 'ground');
+          if (gy > g) g = gy;
+        }
+        const need = g + DECK_LIFT;
+        if (pts[i][2] < need) { if (need - pts[i][2] > deckLiftMax) deckLiftMax = need - pts[i][2]; pts[i][2] = need; lifted = true; }
+      }
+      if (!lifted) continue;
+      deckLifted++;
+      for (let i = 1; i < pts.length; i++) { const ds = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); if (pts[i][2] < pts[i - 1][2] - DECK_GRADE * ds) pts[i][2] = pts[i - 1][2] - DECK_GRADE * ds; }
+      for (let i = pts.length - 2; i >= 0; i--) { const ds = Math.hypot(pts[i][0] - pts[i + 1][0], pts[i][1] - pts[i + 1][1]); if (pts[i][2] < pts[i + 1][2] - DECK_GRADE * ds) pts[i][2] = pts[i + 1][2] - DECK_GRADE * ds; }
+      c.p = pts;
+    }
+    if (deckLifted) ovpIndex();
+    PERF.decks = { lifted: deckLifted, of: OVP.el.length, maxLift: +deckLiftMax.toFixed(2) };
+    if (/[?&]dev\b/.test(location.search)) console.info('overpasses: ' + deckLifted + ' of ' + OVP.el.length + ' deck chains lifted over the drawn ground, the most by ' + deckLiftMax.toFixed(2) + ' m');
     // closed box ribbon: top at y+dyT, bottom at bots[i] (or y+dyB), both sides.
     // seg gate (i) can suppress individual segments (parapet gaps at ramp mouths).
     const boxRibbon = (pts, hw, dyT, dyB, colTop, colSide, bots, gate) => {
@@ -10065,11 +10291,11 @@
     ['Welcome to Philly3D', {
       d: [['The city', 'Every building in Philadelphia at its measured height, with live transit, flights, ships, concerts, the real sun and the real weather.'],
         ['These cards', 'Everything in the app, one card at a time. Use Back and Next, the dots or the arrow keys.'],
-        ['Later', 'The ? button at the bottom brings this guide back any time.'],
+        ['Later', 'The ? button at the top brings this guide back any time.'],
         ['The edge', 'You can fly anywhere over the city and a little past its line. Everything beyond that is scenery.']],
       t: [['The city', 'Every building in Philadelphia at its measured height, with live transit, flights, ships, concerts, the real sun and the real weather.'],
         ['These cards', 'Everything in the app, one card at a time. Swipe, or tap the dots.'],
-        ['Later', 'The ? button at the bottom brings this guide back any time.'],
+        ['Later', 'The ? button at the top brings this guide back any time.'],
         ['The edge', 'You can fly anywhere over the city and a little past its line. Everything beyond that is scenery.']] }],
     ['Flying', {
       d: [['Drag', 'Look around. Click the scene to take the mouse, Esc gives it back.'],
@@ -10128,15 +10354,15 @@
         ['Weather', 'Live clouds, wind, rain and snow, refreshed every 15 minutes.'],
         ['Every visit', 'Opens at Philadelphia\'s own time. Only a copied link carries a pinned clock.']] }],
     ['Search, share and more', {
-      d: [['Search', 'Bottom bar, or the / key: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
+      d: [['Search', 'Top bar, or the / key: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
         ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
         ['Camera', 'Saves a picture of the view.'],
-        ['Credits', 'The line at the bottom opens the About panel, the story of the model and its data. The I key too.'],
+        ['Credits', 'The Credits link above opens the About panel, the story of the model and its data. The I key too.'],
         ['Install', 'Chrome and Edge install Philly3D as an app from the address bar, Safari from File, then Add to Dock.']],
-      t: [['Search', 'Bottom bar: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
+      t: [['Search', 'Top bar: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
         ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
         ['Camera', 'Opens the share sheet with a picture of the view.'],
-        ['Credits', 'The line at the bottom opens the About panel, the story of the model and its data.'],
+        ['Credits', 'The Credits link above opens the About panel, the story of the model and its data.'],
         ['Install', 'On an iPhone, Share, then Add to Home Screen. On Android, the browser menu, then Add to Home screen. Philly3D then opens as an app.']] }],
   ];
   function guideBuild() {
@@ -11708,10 +11934,10 @@
   const VENUE_NAMED = [
     [/underground arts/i, -1217.1, -1506.5], [/franklin music hall|electric factory/i, -421.2, -1516.7], [/union transfer/i, -904.1, -1759.3],
     [/kimmel|verizon hall|perelman theat/i, -1792.5, -136.9], [/miller theat|merriam theat/i, -1723.6, -236.7], [/academy of music/i, -1745.3, -282.1],
-    [/milkboy/i, -1199.4, -501.3], [/^noto\b/i, -1218.3, -1379.1], [/stateside|live!? casino/i, -1714.1, 3954.0], [/td pavilion|mann center|mann music/i, -6667.7, -4179.9],
+    [/milkboy/i, -1199.4, -501.3], [/^noto\b/i, -1218.3, -1379.1], [/live!? casino/i, -1714.1, 3954.0], [/td pavilion|mann center|mann music/i, -6667.7, -4179.9],
     [/fillmore|foundry|brooklyn bowl/i, 839.3, -2224.4], [/theatre of living arts|\btla\b/i, -342.1, 455.8], [/nikki lopez/i, -269.4, 457.9],
     [/johnny brenda/i, 898.3, -2617.4], [/kung fu necktie/i, 752.9, -2743.1], [/philamoca/i, -1084.6, -1854.7], [/ortlieb/i, 204.3, -2106.7],
-    [/forrest theat/i, -1268.2, -334.8], [/xfinity live/i, -1937.1, 4527.8], [/city winery/i, -967.9, -752.0], [/chris'? jazz/i, -1759.8, -539.6],
+    [/forrest theat/i, -1268.2, -334.8], [/stateside|xfinity live/i, -2120.0, 4570.0], [/city winery/i, -967.9, -752.0], [/chris'? jazz/i, -1759.8, -539.6],
     [/silk city/i, -111.4, -1756.3], [/rivers casino/i, 1057.2, -2029.4], [/cherry street pier/i, 485.9, -777.9], [/world caf/i, -3448.0, -739.9], [/tower theat/i, -9724.0, -1702.0],
   ];
   const venueNamed = (name) => { const s = String(name || ''); for (const v of VENUE_NAMED) if (v[0].test(s)) return [v[1], v[2]]; return null; };
@@ -14510,7 +14736,7 @@
       trafficLastMin = clock.minutes; trafficLastDate = dkey;
       trafficReconcile(now);
     }
-    const night = clamp((nightUniform.value - 0.06) / 0.25, 0, 1);
+    const night = clamp((lampUniform.value - 0.25) / 0.6, 0, 1);   // the headlights, a beat after the lamps (Round 88)
     carLights.material.opacity = night;
     trafficFrame++;
     let i = 0, cDirty = -1;   // lowest slot that changed hands this frame; tints upload from there
@@ -14590,6 +14816,7 @@
   let poleGlow = null, poleMesh = null, poleInv = null, poleMat = null;
   let towerGlow = null, towerMat = null;
   let floodPts = null, floodMat = null;   // the stadiums' floodlights (built with the outer districts)
+  let WWB_LAMP_N = 0;                      // the Walt Whitman's lamp posts (Round 88; __dbg.roads)
   let haloMesh = null, haloMat = null;     // and their night halo
   let STOREFRONT_N = 0;                    // storefronts dressed (perf readout)
   let WALL_N = 0;   // outer-district buildings that took a Mapillary wall colour (__dbg.walls)
@@ -14773,15 +15000,15 @@
   if (btnLights) btnLights.addEventListener('click', toggleLightsLayer);
   syncLightsBtn();
   function updateLights(now) {
-    // lamps come on at civil dusk, a beat before the headlights
-    const night = clamp((nightUniform.value - 0.02) / 0.2, 0, 1);
+    // the lamps' own switch (Round 88): the photocell term applyLighting writes, a beat before the headlights
+    const night = lampUniform.value;
     // tower windows are building light, not street light — they ignore the G
     // layer and outlive a missing pole blob
     if (towerGlow) {
       towerGlow.visible = night > 0.01;
       if (towerGlow.visible) towerMat.opacity = night;
       if (floodPts) { floodPts.visible = night > 0.01; floodMat.opacity = night * 0.95; }
-      if (haloMesh) { haloMesh.visible = night > 0.01; haloMat.opacity = night * 0.16; }
+      if (haloMesh) { haloMesh.visible = night > 0.01; haloMat.opacity = night * 0.11; }   // 0.16 in the warm days; the neutral white carries more luminance (Round 88)
     }
     if (themeSheet) { themeSheet.visible = night > 0.01; themeSheetMat.opacity = night * 0.6; }   // the skyline lights' wash and the bridge's LED nodes (Round 81)
     if (bfbNodes) { bfbNodes.visible = night > 0.01; bfbNodesMat.opacity = night; }
@@ -15770,9 +15997,15 @@
     WX.snowfall = cur.snowfall || 0;
     WX.cover = clamp((cur.cloud_cover == null ? 22 : cur.cloud_cover) / 100, 0, 1);
     // the deck is the low and mid cloud: a high veil alone (Mike's photo, a thin cirrostratus
-    // over a half-covered cumulus sky reported as 80+ total) must not close the sky
+    // over a half-covered cumulus sky reported as 80+ total) must not close the sky. Round 88
+    // (Mike: it is not that cloudy in Philly): the 0.45 share of the TOTAL let a cirrus sky
+    // through as cumulus (the evening's 60 total was 62 high, 4 low, 0 mid, KPHL "Partly
+    // Cloudy": a deck at 0.27 drawn as dark-bellied puffs at dusk), so the high layer is taken
+    // out of the total before that share is read; the layer is kept in WX.high for the record
     if (cur.cloud_cover_low != null && cur.cloud_cover_mid != null) {
-      WX.cover = clamp(Math.max(cur.cloud_cover_low, cur.cloud_cover_mid * 0.8, (cur.cloud_cover || 0) * 0.45) / 100, 0, 1);
+      const high = cur.cloud_cover_high || 0;
+      WX.high = clamp(high / 100, 0, 1);
+      WX.cover = clamp(Math.max(cur.cloud_cover_low, cur.cloud_cover_mid * 0.8, Math.max(0, (cur.cloud_cover || 0) - high) * 0.45) / 100, 0, 1);
     }
     if (WX.precip > 0.1) WX.cover = Math.max(WX.cover, 0.85);
     if (WX.snowfall > 0.02) WX.cover = Math.max(WX.cover, 0.8);
@@ -15892,7 +16125,7 @@
         const pw = Array.isArray(pr.presentWeather) ? pr.presentWeather : [];
         const ts = pw.some((w) => /thunder/i.test(w.weather || '') || /TS/.test(w.rawString || '')) || /thunder/i.test(pr.textDescription || '');
         if (ts) tsObs = true;
-        for (const cl of (pr.cloudLayers || [])) { const a = String(cl.amount || ''); if (a === 'OVC') nwsCover = Math.max(nwsCover, 0.97); else if (a === 'BKN') nwsCover = Math.max(nwsCover, 0.8); }
+        for (const cl of (pr.cloudLayers || [])) { const a = String(cl.amount || ''); const base = cl.base && cl.base.value != null ? +cl.base.value : 0; if (base >= 6000) continue; if (a === 'OVC') nwsCover = Math.max(nwsCover, 0.97); else if (a === 'BKN') nwsCover = Math.max(nwsCover, 0.8); }   // a layer based at 6 km or more is cirrus, not the deck (Round 88)
         if (!text && pr.textDescription) text = pr.textDescription;
       }
       let warn = false, watch = false;
@@ -16629,6 +16862,7 @@
   const moonDir = new V3(0.35, 0.62, 0.45).normalize();   // live lunar position (applyLighting)
   const moonHigh = new V3(0.35, 0.62, 0.45).normalize();  // moonless-night fill direction
   const glintDir = new V3(0.3, 0.8, 0.2);                 // what the water sparkles toward
+  let glintK = 1;                                          // and how hard, through the cloud deck (Round 88)
   const _vA = new THREE.Vector3();
   let moonNow = { el: -90, az: 0, k: 0.5, wax: true };
   let lastEnvEl = 999, envGap = 0, envNextT = 0;   // envGap: a floor between PMREM rebakes (the time-lapse sets it)
@@ -16645,11 +16879,25 @@
     const el = sp.elev;
     const dayF = smooth(-4, 10, el);
     const twi = Math.exp(-Math.pow((el + 1) / 7, 2)) * (1 - dayF * 0.6);
-    const night = 1 - smooth(-9, 1, el);
+    // the overcast advance (Round 88): a heavy deck brings dusk forward. The windows light and
+    // the lamps fire on the ambient level, so both read the sun's elevation less 3.5 degrees
+    // at full cover (about twenty minutes at this latitude) and 2 more under storm gloom
+    const elAmb = el - 3.5 * WX.cover - 2 * WXFX.gloom;
+    const night = 1 - smooth(-9, 1, elAmb);
+    // the lamps: first light 1.5 degrees over the horizon in clear air (a few minutes before
+    // sunset, as the photocells go), fully lit at -3 (before, they began AT the horizon and
+    // were full at -2 whatever the sky did, so an overcast dusk stood dark while the real city was lit)
+    lampUniform.value = 1 - smooth(-3, 1.5, elAmb);
     WXFX.dayF = dayF;   // the particle boxes dim toward night with the sky
+    // the deck over the key light, the sun's and the moon's alike (Round 88, Mike: "I can't see
+    // the moon because of cloud cover, but I still see the moonlight coming through"): the moon
+    // kept 40 per cent of its light and all of its glint under a full deck that had already
+    // erased its disc, so the roofs and the river still threw a moonglade at an overcast sky
+    const deckK = 1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover);
+    glintK = (1 - 0.9 * smooth(0.25, 1.0, WX.cover)) * (1 - 0.6 * WXFX.gloom);   // the water's sparkle and the glass reveals: gone under the deck
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 1.85 * smooth(-3, 15, el) * (1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.55 * WXFX.gloom);
+      sun.intensity = 1.85 * smooth(-3, 15, el) * deckK * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
       if (WXFX.hazeTint > 0.003) {   // smoke: a dimmer, redder sun
         sun.intensity *= 1 - 0.3 * WXFX.hazeTint;
@@ -16657,9 +16905,9 @@
       }
       glintDir.copy(sp.dir);
     } else if (mp.el > 2) {
-      // moonlight follows the real moon: direction, and strength by phase
+      // moonlight follows the real moon: direction, and strength by phase, through the deck like the sun
       sunDir.copy(moonDir);
-      sun.intensity = (0.05 + 0.13 * mp.k) * (1 - 0.6 * WX.cover);
+      sun.intensity = 0.05 * (1 - 0.6 * WX.cover) + 0.13 * mp.k * deckK;
       sun.color.set(0x8ea0c0);
       glintDir.copy(moonDir);
     } else {
@@ -17064,6 +17312,7 @@
     if (!reducedMotion) waterU.uTime.value += dt;
     grassUpdate();
     waterU.uSun.value.copy(glintDir);
+    waterU.uGlint.value = glintK;
     updateTransit(now, dt);
     updateIndego(now, dt);
     updateFlights(now, dt);
@@ -17160,7 +17409,7 @@
     if (/[?&]dev\b/.test(location.search)) {
       devHud = document.createElement('div');
       devHud.id = 'devhud';
-      devHud.style.cssText = 'position:fixed;left:8px;top:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
+      devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
       window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', detail: 'Bot 7th, away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', detail: '3rd 8:41' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', detail: 'Final/OT' }]); }, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
@@ -17170,7 +17419,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), roads: () => ({ strips: ROAD_STATS, decks: PERF.decks || null, wideSegs: wideRoadSegs.length / 4, lamp: lampUniform.value, glint: glintK, wwbLamps: WWB_LAMP_N, bridgeLampPts: bfbLampPts ? bfbLampPts.length / 3 : 0 }), drape: (ring, y) => { const out = []; const ok = drapeConvex(ring, y, (x, y2, z) => out.push([x, y2, z])); return { ok, out }; }, gridAt: (x, z) => { const G = groundGridAt(x, z); return G ? { x0: G.x0, x1: G.x1, z0: G.z0, z1: G.z1, nx: G.nx, nz: G.nz, cell: G.cell, hole: G.hole, skip: !!G.skip } : null; }, landY: groundMeshLandY, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),

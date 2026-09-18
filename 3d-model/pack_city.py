@@ -322,8 +322,16 @@ for el in road_ways:
     if len(raw) < 2: continue
     if rt == 5 and t.get('highway') == 'residential' and not any(inBox(p[0], p[1], RES_BOX) for p in raw):
         continue
+    # Round 88: a local way is cut out of the wide margin only when the wide extract carries it,
+    # which means a node inside the wide box (Overpass returns whole ways that touch the bbox, and
+    # fetch_wide's bbox is the box). A way running alongside the edge inside the 150 m band never
+    # reached the wide set, so cutting it here left it in neither tier: 139 ways and 13.9 km
+    # (Napoli Way, Genoa Drive, South 24th Street, Bambrey Terrace) plus 26 and 1.7 km of the
+    # supplementary classes. The page's far ring cedes a margin segment only where a wide
+    # segment really lies along it (wideOwned), so what stays here is never paved twice.
+    inWideAny = any(inBox(p[0], p[1], WIDE) for p in raw)
     for run in _runs(raw, lambda q: inBox(q[0], q[1], CITYM)):
-        subruns = _runs(run, lambda q: not inBox(q[0], q[1], WIDEM)) if t.get('highway') in LOCAL_CLASSES else [run]
+        subruns = _runs(run, lambda q: not inBox(q[0], q[1], WIDEM)) if (t.get('highway') in LOCAL_CLASSES and inWideAny) else [run]
         for sub in subruns:
             pts = list(LineString(sub).simplify(1.6).coords) if len(sub) > 2 else sub
             if len(pts) < 2: continue

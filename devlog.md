@@ -4470,3 +4470,177 @@ the fix is an alias: `Host github-sht` with `IdentityFile ~/.ssh/harkdigital_lap
 remote `gh-ssh` pointing at it. `origin` stays HTTPS on purpose, because this checkout lives in
 Dropbox and a machine-local alias in `.git/config` would follow it to the other Mac and break
 there. The key I had generated was deleted unused.
+
+## Round 88: the roads painted on the ground, the inner tier's rowhouses back in brick, the lamps on an overcast dusk, the bar at the top (Sep 17)
+
+**Mike, with a screenshot of the Passyunk Avenue interchange at dusk: "The scene at
+`#p=-4486.3,354.9,2650.5,1.675,-0.601` is terrible. This is what I am talking about. We cannot
+have roads cutting off like this. If the elevation is such that it is going to cause clipping,
+the road needs to be painted just above that elevation. You have the data, make it happen. The
+disparity between the inner and outer ring needs to be lessened. This is way off. Move the
+buttons to the top of the screen and make them yellow to match the logo. The time of day button
+should have a sun icon on it. At this hour of day the street lights are on in the real
+Philadelphia so they should be here as well. What time do you have them set to come on?" Then,
+through the round: the red reads as pink, make it a vibrant Phillies red; the moon is hidden by
+cloud but the moonlight still comes through; it is not that cloudy in Philly, where does the
+cloud cover come from; the stadiums are orange, they should be lit normally with no colour hue;
+lamp posts on the Walt Whitman like the Ben Franklin's, no colour lights; the Stateside Live pin
+is on the casino, Stateside Live is at the south-west corner of 11th and Pattison.**
+
+Every number below is measured in the pane before and after, on this laptop, with the deployed
+build as the baseline.
+
+### The interchange: three faults on top of each other
+
+The screenshot showed I-76's carriageways and the Passyunk and 26th Street ramps as tilted
+slabs cut off in the grass, with the streetlamps standing in a line where the road should have
+been. Three separate things were wrong there, and each of them was citywide.
+
+**1. The seam gap.** The far ring skipped every segment with both ends within 200 m of the wide
+box on the assumption that the wide set paves that margin (`pack_wide`'s `runs_of(..., 200)`
+carries a way 200 m past the box). But the wide extract only holds ways that ENTER its box
+(`fetch_wide.py`'s bbox is the box itself), so a road running alongside the edge inside the
+margin was in neither tier. Decoding both blobs offline and testing every ceded far-ring segment
+against a 40 m grid of the wide segments: **21.1 km of road ceded to a tier that does not carry
+it**, 5.74 km of it motorway (86 segments), 7.43 km primary and secondary, 5.97 km residential.
+Nothing strictly inside the box was lost. I-76 between x -3900 and -3811 at Passyunk is in that
+band, which is why it stopped dead. `wideRoadAdd` now indexes the wide loop's raw segments and
+the far ring cedes a margin segment only where `wideOwned` finds a direction-aligned wide segment
+within 3 m of both ends and the midpoint (the same shape as `ovpOwned`; 3 m for the two packers'
+simplification tolerances). Inside the box itself the old unconditional skip stands, measured
+safe. The packer had the same gap one layer down: `pack_city.py` cut the local classes out of the
+box's 150 m band whether or not the wide set had them. 139 main-set ways (13.9 km: Napoli Way,
+Genoa Drive, South 24th Street, Bambrey Terrace) and 26 supplementary ways (1.7 km) never enter
+the box and were in neither blob. The cut now applies only to a way with a node inside the box,
+and `city.b64` is repacked (the numbers are in the coda below).
+
+**2. Every road in the city read the DEM, not the drawn ground, since Round 87.** Round 87's
+`BANK_BLEND` in `groundMeshLandY` eases a bank road from the DEM to the mesh between 40 and 70 m
+from the Schuylkill's edge. `schEdges` searched two 20 m cells around the point and started
+`best` at 1600, so it never returned a distance over 40. Every street farther than that from the
+river fell into the blend at t = 0 and took `dem + (mesh - dem) * 0`: the DEM. The far ring's
+100 m mesh sits up to a couple of metres off the DEM's bilinear read on any slope, so the strips
+went under it mid-span. `EC` is 40 and `best` 6400 (80 m, the reach of the ±2-cell search), the
+blend band exists again, and the mesh is what the roads read.
+
+**3. The strips were flat quads.** A strip took its two centreline heights and nothing else, so on
+any cross slope one edge sank in and across a ridge of the mesh the middle did. `drapeConvex`
+(with `conformDrape`) cuts a convex ring against the registered ground's cells and their
+diagonals, so every triangle lies inside one ground triangle and the strip sits exactly its lift
+above the drawn mesh at every point; convexity spares the earcut, each cut piece is a fan, and a
+ring wholly inside one ground triangle comes back as its own two triangles. `roadStrip` and
+`roadFan` route both loops through it wherever the segment stands on registered land clear of the
+bank blend; a deck, a bank road, the water and the Vine Street cut keep the flat quad. The lane
+paint's u and s are linear in the position, so the attributes come from it. Measured after:
+**313,208 strips draped, 8,147 flat; 69,554 bend and end discs draped, 1,012 flat; 1.66 M road
+triangles** against about 1.06 M before, 3.0 s of build in a hidden pane (inflated, see the
+gotchas). `__dbg.roads()` reports it.
+
+**And the decks.** The baked chains' profiles are solved against the DEM (`bake_overpasses.py`),
+so they dipped under the drawn mesh as well: sampling every chain at 10 m across five points of
+its width, **191 of the 534 elevated chains were under the ground somewhere, by up to 6.5 m**
+(chain 466 in the NW hills, over the 50 m patch), and the terrain sliced their ends off on a
+diagonal. In 'Raising the overpasses' every chain is now densified to 13 m in place, each point
+raised to clear the highest of five ground reads across the deck by `DECK_LIFT` (0.64 m), and a
+lifted point pulls its neighbours up so the deck never falls from it faster than `DECK_GRADE`
+7%. With the lift counted, 482 chains move (most by the 0.64 at their grade ends), the most by
+7.14 m. `ovpIndex` rebuilds the deck index afterwards so `ovpDeckY` carries the traffic and the
+buses on the lifted decks.
+
+Verified by capture: the interchange from Mike's pose and from 60 m at two angles (every
+carriageway and ramp continuous, the decks proud of the ground, the flat roads painted on it),
+top-down at 450 m, the NW hills' streets following the terrain, the north seam at Diamond Street
+continuous across the box edge.
+
+### The "inner and outer ring disparity" was 70,000 rowhouses drawn as glass
+
+Round 87 had measured the two tiers' stored colours to an exact statistical match, and by day
+from 300 m they render alike. From 1,500 m they did not: top-down over the box edge in West
+Philadelphia, outer half against inner half, **noon 101/111/92 against 126/131/118, dusk 27/28/26
+against 45/43/42, night 11 against 18**. Patching the facade shader in the pane to paint every
+fragment it owns showed the inner tier's salmon rowhouses did not take the paint at all: they were
+not the facade material. Painting the curtain-wall glass material magenta turned every one of
+them magenta. The wide loop routes a building to the glass chunks with `if (style >= 20)`, and
+`fabricStyle`'s word is `st + 32 * variant` (the dark and the tall variants of a plain row, in
+place since Sep 2's nineteen-style vocabulary, commit 3236c4d), so **every variant 1, 2 or 3 row,
+about 70,700 of the tier's 111,996 buildings, was drawn as blank tinted glass**: flat salmon
+walls, salmon roofs, no brick, no windows, and a hard seam against the far ring, which routes
+nothing there. That was the pink Mike saw in the outer districts, and the distinct look of the
+unphotographed buildings Round 87 chased with colour constants: a photographed face with trim
+keeps variant 0 and rendered right. `isGlassStyle` (20 to 31) at the three tests. After: **noon
+102/112/94 against 108/115/103, dusk 32/34/31 against 36/37/36, night 16/17/17 against 17/17/18**.
+The luminance step across the seam at 1,500 m went from +25% to +5% by day, +62% to +11% at dusk
+and +64% to +4% at night. Verified by capture at 60 m in Point Breeze: brick, windows, dark roofs
+and the pitched forms on the rows that were salmon boxes in the deployed build and in Round 86's.
+
+### The lamps: a sun angle, not a photocell
+
+The lamps read `nightUniform`, which is `1 - smooth(-9, 1, el)`, through a remap that started at
+the horizon and was full at -2 degrees, and nothing in it knew the weather. A photocell fires at
+an ambient level. `applyLighting` now derives `elAmb = el - 3.5 * cover - 2 * gloom` and writes
+`lampUniform = 1 - smooth(-3, 1.5, elAmb)`: first light 1.5 degrees over the horizon in clear air,
+full at -3, and a full deck brings that forward 3.5 degrees, about twenty minutes here. The windows
+(`nightUniform`) take the same advance. The poles, the bridge lamps, the stadium floods and the
+skyline sheets read `lampUniform`; the headlights follow it a beat later. Measured at 18:50 on the
+model clock: overcast 0.59, clear 0.
+
+### The moon through the deck, and the cloud cover's source
+
+At night `sunLight` is swung onto the moon with `(0.05 + 0.13 k) * (1 - 0.6 cover)`, so under a
+full deck the moon kept 40% of its light while `uMoonI` had already erased its disc at 15%, and
+the water's glint had no cloud term at all. The moon now takes the sun's own deck term
+(`deckK`, 12% at full cover) and `glintK` scales the water's sparkle and the reveals through a new
+`uGlint` (0.13 at full cover, measured). The cloud cover is Open-Meteo's `current` block
+(cloud_cover with its low, mid and high layers) every 15 minutes, with KPHL's and KPNE's METAR
+able to raise it, never lower it. The deck's share of the TOTAL (0.45) let a cirrus sky through
+as cumulus: this evening's reading was 60 total, 62 high, 4 low, 0 mid, KPHL "Partly Cloudy",
+scattered at 3,048 m, and the page drew a deck at 0.27 of dark-bellied puffs at dusk. The high
+layer is now subtracted from the total before that share is read, a METAR layer based at 6 km or
+more is cirrus and does not count, and the layer is kept in `WX.high`.
+
+### The bar, the red, the stadiums, the Walt Whitman, Stateside Live
+
+The bar sits at the top centre, its icons in the mark's gold (`--bronze`), white when open, the
+layers, search and time panels hanging 74 px under it (66 on a phone, 62 on a short viewport),
+and the time button carries a sun. The guide's copy follows (top bar; the Credits link above). On
+a 375 px phone the bar spans 62 to 314 and the compass starts at 326. The dev readout moved to
+the bottom right, out from under the bar.
+
+The red: `LIGHT_COLORS.red` 0xff2a2a at 2.4 radiance measured **(231, 129, 108)** on the lit
+bands, salmon. Under the ACES fit a pure red that bright leaks into green and blue through the
+input matrix; held near 1.0 it stays red. The theme shader's gain is now saturation-aware, a
+saturated hue taking 0.3 of what a white does (the whites keep today's brightness): **(206, 87,
+86)** after, verified by capture on the Liberty Places' chevrons and the crown bands. The
+stadiums' night sheets were 0xffd9a0 at 0.16, which over a black bowl read as an orange fill:
+neutral 0xf2f1ec at 0.11 now, the floods and the field glow as they were. The Xfinity Mobile
+Arena keeps the skyline theme Mike asked for in Round 84. The Walt Whitman carries the Ben
+Franklin's lamp standard every 36 m a side along both deck edges, 196 posts, their heads on the
+streetlamps' warm points, no LED strings (344 bridge lamp points in all). Stateside Live is the
+14 m complex at the south-west corner of 11th and Pattison (`VENUE_NAMED` at -2120, 4570, found
+by walking `roofAt` over the block: 676 samples at 14 m, centroid -2135, 4565); the old
+`/stateside|live!? casino/` entry had put it on the casino and the old Xfinity point stood on the
+ballpark's lot east of 11th.
+
+### Found and left
+
+- Kelly Drive's chords through the hillside (Round 85's note) are moot: the drape follows the
+  mesh now. Not re-surveyed this round.
+- The perf readout in the pane says the drape costs about 3 s at build in a hidden tab, which
+  the gotchas file says to distrust; a visible-pane timing is owed before anyone tunes it.
+- The first message of the round that arrived inside a tool result (pins: no partly-closed
+  construction pins, a palette on the art pins, a smoother pin entrance) was not acted on; it is
+  awaiting Mike's word in chat.
+
+101 tests pass. Page 27.84 MB.
+
+### Round 88 coda: the far ring repacked (same day)
+
+`pack_city.py` ran on this laptop under a fresh `.venv` (shapely 2.1.2), 3 min 17 s. Roads
+24,171 to 24,277: 164 runs added (28.18 km) and 58 removed (12.74 km, the old cut-at-the-band
+versions of ways now kept whole), net +15.4 km, 109 of the added runs (11.47 km) wholly inside
+the 150 m band, all residential, tertiary or unclassified. South 24th Street stands at Oregon
+Avenue again. The buildings drifted with the shapely version, not the change: 180,107 to
+180,097, the mean ring 6.91 to 6.43 vertices, the footprint 66.24 to 65.95 km² (−0.4%), every
+attribute and roof word count the same, the blob 10.21 to 9.76 MB. Checked at 60 m in Grays
+Ferry against the previous blob: the same buildings, the same colours. Page 27.39 MB (−436 KB
+against HEAD).

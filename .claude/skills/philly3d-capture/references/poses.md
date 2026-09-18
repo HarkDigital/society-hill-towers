@@ -62,6 +62,8 @@ whole city rather than one frame.
 | `__dbg.towers().log` | every researched tower spec match in the wide loop |
 | `__dbg.amtrak()` | the live train list with positions and fix ages |
 | `__dbg.perf()` | per-step build ms, frame p50/p95, renderer.info, heap |
+| `__dbg.roads()` | the strips draped on the ground against the flat fallbacks, the bend discs, road triangles, the decks lifted and by how much, the wide segments indexed for the seam, the lamp term and the glint term (Round 88) |
+| `__dbg.drape(ring, yOff)` | runs `drapeConvex` on a convex ring and returns its triangles; `__dbg.gridAt(x, z)` the registered ground grid there, `__dbg.landY(x, z)` the road loops' ground read |
 
 `renderer.info` with `autoReset = false` is also the only honest way to price a
 change: Round 87 priced three tree LODs that way in three builds (18.0 M triangles
