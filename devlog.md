@@ -4668,3 +4668,33 @@ An LED emits, it does not reflect the sky, so the theme shader takes a themed pa
 tenth after dark, and the palette's red is the Phillies' own #e81828. The bands measured **(234,
 29, 48)** against the P's (232, 24, 40), with the saturated gain back up to 0.42 of a white's
 (0.3 had left them at 211 red). Verified by capture on the chevrons and the crown bands.
+
+### Round 88 coda 3: the cars on their own deck, spawned out of sight, and Cira's crown (Sep 18)
+
+**Mike, with a screenshot from the Spring Garden Street bridge looking south
+(`#p=-3005.2,14.7,-1665.9,3.136,-0.035`): "the cars are animating in and look like they are
+flying well above the roadway. Also is there a better way we can have them animate in so they
+don't just pop up out of nowhere and then disappear? Please take a look at the building on the
+right also, the top of it appears to be leaning off the edge of the building."**
+
+The flying. `ovpDeckY` handed a street the HIGHEST aligned deck within a half width and a metre
+and a half of the point, so wherever two chains braid or fork (I-76 at Spring Garden has the
+mainline at 3 to 13 m and two ramps at 3 to 8.5 m within a few metres of it) a car on the lower
+deck took the upper one's height for the stretch they overlapped, and a frontage street beside a
+viaduct rode the viaduct. The street IS one chain, within the 2.6 m `ovpOwned` uses, so the read
+is now the nearest aligned segment within `OVP_OWN_R` 4 m and nothing beyond it. The buses and the
+closures' drums read the same function.
+
+The popping. A car already scaled in over 900 ms, but it chose its spawn spot by distance alone
+from three candidates, and on a bridge at 15 m every candidate on a 400 m run is in view.
+`carSpotHidden` tests a spot against the eye: behind it, more than about 52 degrees off the view
+axis, or past 700 m; `carSpawn` draws six candidates and takes a hidden one over any visible one,
+the farthest among equals, so cars enter the world where nobody is looking and drive into view.
+The fade covers the runs with no hidden spot at all; the reconcile still retires the farthest
+cars first.
+
+The crown. The Cira Centre's `sloped` crown keeps 62 per cent of the plan, and the plan was a
+rectangle of the footprint's oriented bounding BOX; Cira's footprint is a parallelogram, so the
+crown block stood outside the real walls on one side. The crown is now the footprint itself cut
+by one line at `keep` of its length (the Comcast Center's sides-3 plan is unchanged), the wash
+sheet sized from the cut ring. Verified by capture from the bridge with the camera turned to it.

@@ -2631,22 +2631,32 @@
   }
   // deck-top height at a point, aligned to a travel direction when one is given
   // (buses and street labels ride the deck; things merely passing beneath do not)
+  // the deck a car, a bus or a drum on a street rides: the chain the street IS (Round 88). The old
+  // read took the HIGHEST aligned deck within a half width and a metre and a half of the point, so
+  // wherever two decks braid or fork (I-76 at Spring Garden, every ramp mouth) a car on the lower
+  // one took the upper one's height and flew (Mike: "the cars look like they are flying well
+  // above the roadway"), and a frontage street under a viaduct rode the viaduct. The street's own
+  // chain lies within OVP_OWN_R of it (the same 2.6 m ovpOwned uses, with a margin for the
+  // traffic bake's own sampling), so the nearest aligned segment within that radius is the deck,
+  // and a street farther than that from every chain is on the ground, whatever stands over it
+  const OVP_OWN_R = 4.0;
   function ovpDeckY(x, z, ux, uz) {
     const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
     if (!arr) return null;
-    let best = null;
+    let best = null, bestD = OVP_OWN_R * OVP_OWN_R;
     for (const s of arr) {
       if (ovpSegs[s + 7] < 0) continue;            // sunken carriageways never lift
-      const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3], hw = ovpSegs[s + 6];
+      const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3];
       const dx = sbx - sax, dz = sbz - saz;
       const sl = Math.hypot(dx, dz) || 1;
       if (ux !== undefined && Math.abs((dx * ux + dz * uz) / sl) < 0.72) continue;
       let t = ((x - sax) * dx + (z - saz) * dz) / (sl * sl);
       t = clamp(t, 0, 1);
       const px = sax + dx * t - x, pz = saz + dz * t - z;
-      if (px * px + pz * pz > (hw + 1.5) * (hw + 1.5)) continue;
-      const y = ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t;
-      if (best === null || y > best) best = y;
+      const d2 = px * px + pz * pz;
+      if (d2 >= bestD) continue;
+      bestD = d2;
+      best = ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t;
     }
     return best;
   }
@@ -6597,12 +6607,32 @@
           }
           case 'notch':
           case 'sloped': {   // the top floors keep only part of the plan; sides 3 recesses three faces and keeps one long face flush
-            const keep = 0.62, plan = cr.sides === 3 ? [[-0.8, -1], [0.8, -1], [0.8, 0.1], [-0.8, 0.1]] : [[-1, -1], [2 * keep - 1, -1], [2 * keep - 1, 1], [-1, 1]];
-            const half = plan.map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
+            const keep = 0.62, plan = cr.sides === 3 ? [[-0.8, -1], [0.8, -1], [0.8, 0.1], [-0.8, 0.1]] : null;
+            let half, su0, sv0, sw, sd;   // the drawn crown plan, and its centre and extent in the box's frame (the wash sheet's)
+            if (plan) {
+              half = plan.map(([su, sv]) => [ob.cx + ax.ax * ax.hl * su + ax.px * ax.hs * sv, ob.cz + ax.az * ax.hl * su + ax.pz * ax.hs * sv]);
+              su0 = 0; sv0 = -0.45; sw = 1.6; sd = 1.1;
+            } else {
+              // Round 88 (Mike: the top of the Cira Centre leans off the edge of the building): the kept
+              // part of the plan was a rectangle of the footprint's oriented bounding BOX, and Cira's
+              // footprint is a parallelogram, so the crown block overhung the real walls on one side.
+              // The crown is the footprint itself cut by one line at `keep` of its length, so it
+              // never stands outside the walls it sits on, whatever the plan's shape
+              const cut = (2 * keep - 1) * ax.hl, ring = [], n2 = th.poly.length;
+              const uOf = (q) => (q[0] - ob.cx) * ax.ax + (q[1] - ob.cz) * ax.az;
+              for (let j = 0; j < n2; j++) {
+                const a2 = th.poly[j], b2 = th.poly[(j + 1) % n2], fa = cut - uOf(a2), fb = cut - uOf(b2);
+                if (fa >= 0) ring.push(a2);
+                if ((fa >= 0) !== (fb >= 0)) { const tq = fa / (fa - fb); ring.push([a2[0] + (b2[0] - a2[0]) * tq, a2[1] + (b2[1] - a2[1]) * tq]); }
+              }
+              half = tidyRing(ring) || th.poly;
+              let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+              for (const q of half) { const u = uOf(q), v = (q[0] - ob.cx) * ax.px + (q[1] - ob.cz) * ax.pz; if (u < u0) u0 = u; if (u > u1) u1 = u; if (v < v0) v0 = v; if (v > v1) v1 = v; }
+              su0 = (u0 + u1) / 2 / ax.hl; sv0 = (v0 + v1) / 2 / ax.hs; sw = (u1 - u0) / ax.hl; sd = (v1 - v0) / ax.hs;
+            }
             c.copy(th.color);
             if (isGlassStyle(th.style)) appendBuilding(getGlassChunk(th.cx, th.cz), half, y0 - 0.5, y1, c, th.style, th.base);
             else appendBuilding(chk2, half, y0 - 0.5, y1, c, th.style, th.base);
-            const su0 = cr.sides === 3 ? 0 : keep - 1, sv0 = cr.sides === 3 ? -0.45 : 0, sw = cr.sides === 3 ? 1.6 : 2 * keep, sd = cr.sides === 3 ? 1.1 : 2;   // the drawn crown plan's centre and extent
             const scx = ob.cx + ax.ax * ax.hl * su0 + ax.px * ax.hs * sv0, scz = ob.cz + ax.az * ax.hl * su0 + ax.pz * ax.hs * sv0;
             if (lit) glow(box(ax.hl * sw * 0.9, 1.4, ax.hs * sd * 0.9, scx, y1 + 0.7, scz, ry), 0.45);   // the roof strip caps the crown block that is drawn (the sides 3 plan used to get the keep plan's strip, 25 m past its face)
             if (themed) {   // the crown floors read as one lit block: a wash sheet 0.4 m outside them
@@ -14657,18 +14687,32 @@
     // carriageways spread across their own width
     return r.oneway ? (j * 2 - 1) * CAR_OFFW[r.cls] * 0.7 : CAR_OFFW[r.cls] * (0.75 + j * 0.5);
   }
+  // is a spot on a street out of the viewer's sight: behind the eye, outside the view's width, or
+  // past the distance a car reads as more than a speck (Round 88, Mike: the cars pop up out of
+  // nowhere and then disappear). carSpawn prefers such a spot; the fade only covers the rest
+  const _csF = new V3(), _csP = new V3();
+  function carSpotHidden(x, y, z) {
+    _csP.set(x - camera.position.x, y - camera.position.y, z - camera.position.z);
+    const d2 = _csP.lengthSq();
+    if (d2 > 700 * 700) return true;
+    camera.getWorldDirection(_csF);
+    const c = _csP.dot(_csF) / (Math.sqrt(d2) || 1);
+    return c < 0.62;   // over about 52 degrees off the axis: past the edge of any pane at the widths the page runs
+  }
   function carSpawn(r, now) {
     const jit = 0.85 + Math.random() * 0.3, offJit = Math.random();
-    // spawn out of sight when possible: of three candidate spots keep the one
-    // farthest from the camera, so cars enter the world where nobody watches
-    let s = Math.random() * r.len, bd = -1;
-    for (let t = 0; t < 3; t++) {
+    // spawn out of sight when possible: of six candidate spots keep a hidden one (behind the eye,
+    // off the edge of the view, or far), else the farthest from the camera (Round 88; three
+    // candidates by distance alone before, which on a bridge at 15 m put every one in view)
+    let s = Math.random() * r.len, bd = -1, hidden = false;
+    for (let t = 0; t < 6; t++) {
       const cs = Math.random() * r.len;
       let g = 0;
       while (g < r.cum.length - 2 && r.cum[g + 1] < cs) g++;
       const dx2 = r.xs[g] - camera.position.x, dz2 = r.zs[g] - camera.position.z;
       const d2 = dx2 * dx2 + dz2 * dz2;
-      if (d2 > bd) { bd = d2; s = cs; }
+      const h = carSpotHidden(r.xs[g], r.ys[g], r.zs[g]);
+      if ((h && !hidden) || (h === hidden && d2 > bd)) { bd = d2; s = cs; hidden = h; }
     }
     return { s, dir: r.oneway ? 1 : (Math.random() < 0.5 ? 1 : -1), off: carOffset(r, offJit), offJit, jit, seg: 0,
       v: TRAFFIC_SPEED[r.cls] / 3.6 * jit,
