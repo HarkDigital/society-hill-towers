@@ -1,0 +1,66 @@
+<!doctype html><meta charset="utf-8"><title>Glass Reflection Checks</title>
+<style>body{background:#15212c;color:#eee;font:14px/1.5 system-ui;padding:24px}pre{white-space:pre-wrap}</style>
+<h1>Glass Reflection Checks</h1><p>Production glass under a controlled environment: angle-dependent reflections, environment response, smooth panes with matte frames, deterministic distortion, and reflection-probe color and daylight response.</p><pre id="result">Running…</pre>
+<script src="../three.min.js"></script><script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const cut=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
+ const helpers=cut('  const WINDOW_INTERIOR_GLSL =','  const cityMat =');
+ const VBuf=new Function('THREE','freeOnUpload',cut('  class IdxBuf {','  const groupCity')+'return VBuf;')(THREE,()=>{});
+ const glassFactory=new Function('nightUniform','detFarUniform',helpers+'const outerGlassMat={};'+cut('        outerGlassMat.onBeforeCompile =','\n      }\n      addChunkMesh(g, outerGlassMat);')+'return outerGlassMat.onBeforeCompile;');
+ const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',helpers+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.52,.34,1.0);');
+ const probeFactory=new Function('THREE','renderer','scene','COLORS','sunDir','postU','WX',
+  cut('  const INV_GLSL =','  // materials that opt out')+
+  'const MOON_R=.0182,SKY_DITHER=0;'+cut('  const skyMat =','  const sky =')+
+  cut('  const envScene =','  // ---------------------------------------------------------------- data-driven build')+
+  'return {skyMat,envScene,envSky,envSun,envGround,refreshEnv,dispose(){envRT.dispose();pmremGen.dispose();}};');
+ const check=(ok,msg)=>{if(!ok)throw Error(msg);},results=[],errors=[];const oldError=console.error;console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+ for(const logarithmicDepthBuffer of [false,true]){
+  const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});r.setSize(128,128);r.outputEncoding=THREE.LinearEncoding;r.setClearColor(0);
+  const pm=new THREE.PMREMGenerator(r),envScene=new THREE.Scene();
+  const envMaterial=new THREE.MeshBasicMaterial({color:new THREE.Color(.3,.3,.3),side:THREE.BackSide});envScene.add(new THREE.Mesh(new THREE.BoxGeometry(100,100,100),envMaterial));
+  const env=pm.fromScene(envScene,0),scene=new THREE.Scene();scene.environment=env.texture;
+  const camera=new THREE.PerspectiveCamera(30,1,.1,500),target=new THREE.WebGLRenderTarget(128,128),p=new Uint8Array(128*128*4);
+  const night={value:0},det={value:1};
+  const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.38,metalness:.05,envMapIntensity:1.1,emissive:0xffffff,emissiveIntensity:0});mat.onBeforeCompile=glassFactory(night,det);
+  const wall=(st)=>{const b=new VBuf(4);for(const [x,y,u]of[[-40,0,0],[40,0,80],[40,80,80],[-40,80,0]])b.push(x,y,0,0,0,1,.13,.25,.36,st,0,0,.42,u,80,80);b.idx.push(0,1,2,0,2,3);return b.geometry(true);};
+  const mesh=new THREE.Mesh(wall(20),mat);scene.add(mesh);
+  const render=(eye,aim=[.76,17.6,0])=>{camera.position.fromArray(eye);camera.lookAt(...aim);camera.updateMatrixWorld();r.setRenderTarget(target);r.render(scene,camera);r.readRenderTargetPixels(target,0,0,128,128,p);return p.slice();};
+  const center=(a)=>{const out=[0,0,0];for(let y=62;y<66;y++)for(let x=62;x<66;x++)for(let c=0;c<3;c++)out[c]+=a[(y*128+x)*4+c]/16;return out;};
+  const face=center(render([.76,17.6,8])),grazing=center(render([9.76,17.6,1.3]));
+  check(grazing.reduce((a,v)=>a+v,0)>face.reduce((a,v)=>a+v,0)*1.6,'Glass does not gain reflection at grazing angles: '+JSON.stringify({face,grazing}));
+  envMaterial.color.setRGB(.08,.15,.6);const blueEnv=pm.fromScene(envScene,0);scene.environment=blueEnv.texture;
+  const blue=center(render([.76,17.6,8]));check(blue[2]>blue[0]*1.5,'Glass does not reflect environment color');
+  const a=render([.76,17.6,8]),b=render([.76,17.6,8]);check(a.every((v,i)=>v===b[i]),'Pane distortion changes between identical frames');
+  // The actual material reports its optical mask / roughness after production
+  // patches. A glass pane must be polished and its metal mullion must stay rough.
+  const diagnostic=mat.clone(),hook=glassFactory(night,det);diagnostic.onBeforeCompile=sh=>{hook(sh);sh.fragmentShader=sh.fragmentShader.replace('#include <dithering_fragment>','gl_FragColor=vec4(opticalGlass,roughnessFactor,0.0,1.0);');};diagnostic.customProgramCacheKey=()=> 'glass-optics-mask';mesh.material=diagnostic;
+  const pane=center(render([.76,17.6,5])),frame=center(render([0,17.6,2],[0,17.6,0]));
+  check(pane[0]>240&&pane[1]<35,'Glass lost its polished surface '+pane);
+  check(frame[0]<100&&frame[1]>55,'Mullion became polished '+frame);
+  // Run the same diagnostic on a real rowhouse facade, not just the helper.
+  const house=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.92}),fh=facadeFactory(house,{value:new THREE.Vector3(0,1,0)},night,det);
+  house.onBeforeCompile=sh=>{fh(sh);sh.fragmentShader=sh.fragmentShader.replace('#include <dithering_fragment>','gl_FragColor=vec4(opticalGlass,roughnessFactor,0.0,1.0);');};house.customProgramCacheKey=()=> 'house-optics-mask';
+  const hgeo=wall(0);mesh.geometry=hgeo;mesh.material=house;
+  const housePane=center(render([-38.72,4.98,2],[-38.72,4.98,0])),brick=center(render([-37.80,4.98,2],[-37.80,4.98,0]));
+  check(housePane[0]>200&&housePane[1]<45,'House window is still matte '+housePane);
+  check(brick[0]<20&&brick[1]>200,'Masonry became reflective '+brick);
+  check(errors.length===0,'Shader errors '+errors.join('\n'));check(r.getContext().getError()===0,'WebGL error');
+  // Exercise the real sky/probe shader, not a duplicated color formula. A 50%
+  // display-gray dome should become about 21% linear radiance, not wash glass
+  // with 50% radiance. Noon / night changes must also remove the old white sun.
+  const probe=probeFactory(THREE,r,new THREE.Scene(),{skyZenith:0x808080,skyHorizon:0x808080,skyGround:0x808080,sun:0xffffff},new THREE.Vector3(0,1,0),{uPost:{value:1},uExposure:{value:1}},{cover:0});
+  const pu=probe.skyMat.uniforms;for(const key of ['cZenith','cHorizon','cGround'])pu[key].value.setRGB(.5,.5,.5);
+  pu.cSun.value.setRGB(0,0,0);pu.uSunVis.value=0;pu.uCloud.value=0;probe.refreshEnv();
+  const skyCamera=new THREE.PerspectiveCamera(30,1,.1,1000);skyCamera.up.set(0,0,1);skyCamera.lookAt(0,1,0);
+  r.setRenderTarget(target);r.render(probe.envScene,skyCamera);r.readRenderTargetPixels(target,0,0,128,128,p);
+  const linearSky=center(p);check(linearSky.every(v=>v>51&&v<58),'Reflection sky is not scene-linear '+linearSky);
+  pu.cSun.value.setRGB(1,1,1);pu.uSunVis.value=1;probe.refreshEnv();check(probe.envSun.visible&&probe.envSun.material.color.r>1,'Daylight glint absent');
+  pu.uSunVis.value=0;probe.refreshEnv();check(!probe.envSun.visible&&probe.envSun.material.color.r===0,'Sun reflection remains bright at night');
+  probe.dispose();probe.envScene.traverse(o=>{if(o.geometry)o.geometry.dispose();if(o.material)o.material.dispose();});probe.skyMat.dispose();
+  results.push({linearSky,nightSunHidden:true,depth:logarithmicDepthBuffer?'logarithmic':'standard',face,grazing,blueEnvironment:blue,pane,frame,housePane,brick,stable:true});
+  target.dispose();env.dispose();blueEnv.dispose();pm.dispose();mat.dispose();house.dispose();diagnostic.dispose();hgeo.dispose();r.dispose();r.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>

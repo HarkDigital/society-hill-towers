@@ -29,7 +29,8 @@ const THREE=require(THREE_PATH),PERF={};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),hash01=()=>0;
 const signedArea=p=>p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-b[0]*a[1];},0)/2;
 const schEdges=null,TERRAIN={water:-1000};let sample=(x,z)=>0;
-const siteY=(x,z)=>sample(x,z);
+const siteY=(x,z)=>sample(x,z);let owned=()=>false;
+const ovpOwned=(...args)=>owned(...args);
 HELPERS
 RIBBON
 DENSIFY
@@ -65,6 +66,12 @@ const path=ribbon([[10,50],[90,50]],6,.32),street=ribbon([[10,50],[90,50]],12,.2
 result.path=measure(path.attributes.position.array,null,sample);
 result.core=measure(street.attributes.position.array,null,sample);
 result.core.lanes=street.attributes.aLane.count===street.attributes.position.count;
+// The core must cede a road to its elevated deck without deleting crossing roads.
+owned=(ax,az,bx,bz)=>az===50&&bz===50;
+result.deckOwned=ribbon([[10,50],[90,50]],12,.24,null,{cls:0},false,true).attributes.position.count;
+result.crossing=measure(ribbon([[50,10],[50,90]],12,.24,null,{cls:0},false,true).attributes.position.array,null,sample);
+result.legacyRoad=ribbon([[10,50],[90,50]],12,.24,null,{cls:0}).attributes.position.count;
+owned=()=>false;
 reset();grid(0,50,0,100,5,10,(x,z)=>.2*z);grid(50,100,0,100,5,10,(x,z)=>.2*z);
 result.seam=road([10,50],[90,50],4,true,10.3,10.3);
 reset();grid(0,50,0,100,5,10,(x,z)=>.2*z);grid(50,100,0,100,5,10,(x,z)=>.2*z+3);
@@ -150,6 +157,12 @@ console.log(JSON.stringify(result));
         for name, minimum in [('core', .21), ('path', .31)]:
             self.assertGreaterEqual(self.results[name]['min'], minimum)
         self.assertTrue(self.results['core']['lanes'])
+
+    def test_core_cedes_only_owned_decks(self):
+        self.assertEqual(0, self.results['deckOwned'])
+        self.assertGreater(self.results['legacyRoad'], 0)
+        self.assertGreaterEqual(self.results['crossing']['area'], 960)
+        self.assertGreaterEqual(self.results['crossing']['min'], .21)
 
     def test_grid_seams_and_patch_have_complete_single_coverage(self):
         for name, area in [('seam', 640), ('patch', 144), ('step', 640), ('edge', 480)]:

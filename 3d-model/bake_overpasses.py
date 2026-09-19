@@ -232,6 +232,22 @@ def in_core_trench(x, z):
     o = (x - fl["px"]) * fl["nx"] + (z - fl["pz"]) * fl["nz"]
     return 5 < o < 78 and -1250 < z < 1850
 
+# The southern core is an approach to the viaduct, not a continuation of the
+# Penn's Landing trench. OSM splits its embankments from the short bridge spans;
+# keep the connected I-95 mainline through those untagged gaps and the core seam.
+def i95_south_approach(tags, pts):
+    return (tags.get("highway") == "motorway" and tags.get("ref") == "I 95"
+            and tags.get("tunnel") in (None, "no")
+            and all(-160 < x < 225 and 220 < z < 1400 for x, z in pts))
+
+def i95_approach_y(z, grade_y):
+    # Rise out of the existing tunnel/cut over a full city block sequence, then
+    # keep the normal viaduct clearance. Heights are model estimates, not survey.
+    t = max(0.0, min(1.0, (z - 230.0) / 490.0))
+    t = t * t * (3.0 - 2.0 * t)
+    trench_surface = 1.5 - DATUM + 0.55 + 0.24
+    return trench_surface * (1.0 - t) + (grade_y + 6.8) * t
+
 # ---------------------------------------------------------------- classify ways
 def parse_layer(t):
     try:
@@ -251,10 +267,13 @@ for wid, w in raw_ways.items():
     if br and ly <= 0: ly = 1
     if tu and ly >= 0: ly = -1
     name = t.get("name") or ""
+    approach = i95_south_approach(t, [nodes[n] for n in nds])
+    if approach:
+        br = True; ly = max(1, ly)
     W[wid] = {"nds": nds, "pts": [nodes[n] for n in nds], "cls": CLS[hw], "hw": hw,
               "w": ROAD_W.get(hw, 7), "mo": hw in MOTOR, "layer": ly, "tunnel": tu,
               "elev": (br or ly > 0) and not tu, "sunk": tu or ly < 0,
-              "skipname": any(s in name for s in SKIP_NAMES)}
+              "skipname": any(s in name for s in SKIP_NAMES), "i95core": approach, "core_ramp": False}
 def way_len(w):
     return sum(math.hypot(w["pts"][i + 1][0] - w["pts"][i][0], w["pts"][i + 1][1] - w["pts"][i][1])
                for i in range(len(w["pts"]) - 1))
@@ -263,6 +282,21 @@ ends = {}
 for wid, w in W.items():
     for n in (w["nds"][0], w["nds"][-1]):
         ends.setdefault(n, []).append(wid)
+# Access ramps must join the same profile as the mainline. Follow only connected
+# motorway links in the southern core; adjacent Front Street/Columbus stay down.
+approach_nodes = {n for w in W.values() if w["i95core"] for n in w["nds"]}
+changed = True
+while changed:
+    changed = False
+    for w in W.values():
+        if (w["hw"] != "motorway_link" or w["tunnel"] or w["core_ramp"]
+                or not all(50 < x < 240 and 220 < z < 830 for x, z in w["pts"])
+                or not approach_nodes.intersection(w["nds"])):
+            continue
+        w["core_ramp"] = True; w["elev"] = True; w["layer"] = max(1, w["layer"])
+        approach_nodes.update(w["nds"]); changed = True
+core_ramp_nodes = {n for w in W.values() if w["core_ramp"] for n in (w["nds"][0], w["nds"][-1])}
+
 def other_end(w, n):
     return w["nds"][-1] if w["nds"][0] == n else w["nds"][0]
 
@@ -432,6 +466,10 @@ grade_bridge = set()
 for wid, w in W.items():
     if not w["elev"] or w["skipname"]:
         continue
+    if w["i95core"]:
+        continue
+    if w["core_ramp"]:
+        grade_bridge.add(wid); continue
     cr = crossings_under(wid)
     if cr:
         if all(W[c]["sunk"] or any(in_core_trench(p[0], p[1]) for p in W[c]["pts"]) for c in cr):
@@ -486,6 +524,8 @@ def solve_chain(cids, sunk):
             y = g[i] + lift
             if over_water(p[0], p[1]):
                 y = max(y, WATER + (20 if w["cls"] == 0 else 13))
+            if w["i95core"]:
+                y = i95_approach_y(p[1], g[i])
             tgt.append(y)
     tgt = [tgt[0]] + [(tgt[i - 1] + tgt[i] + tgt[i + 1]) / 3 for i in range(1, n - 1)] + [tgt[-1]]
     cls0 = min(W[c]["cls"] for c in cids)
@@ -493,6 +533,9 @@ def solve_chain(cids, sunk):
     chain_set = set(cids)
     def end_constraint(idx):
         nid = P[idx][3]
+        w = W[P[idx][2]]
+        if (w["i95core"] or w["core_ramp"]) and P[idx][1] < 250:
+            return i95_approach_y(230, g[idx])
         if nid in node_y:
             return node_y[nid]
         touch = ends.get(nid, ()) if nid is not None else ()
@@ -526,25 +569,31 @@ def solve_chain(cids, sunk):
     for i in range(n - 2, 0, -1):
         d = (s[i + 1] - s[i]) * slope
         y[i] = min(max(y[i], y[i + 1] - d), y[i + 1] + d)
+    # The detailed core carves a real trench below the bare-earth DEM. Its
+    # emerging motorway/ramp can be below that DEM without being below the mesh.
+    def road_floor(i, lift):
+        w = W[P[i][2]]
+        return min(g[i] + lift, i95_approach_y(P[i][1], g[i])) if w["i95core"] or w["core_ramp"] else g[i] + lift
     # Round 85: an elevated deck never sits under the DEM it is meant to clear (the slope limit could not climb the
     # concourse's rise at 30th Street, so Schuylkill Avenue's ramp ran 1.7 to 4.2 m under the drawn ground)
     if not sunk:
         for i in range(1, n - 1):
-            y[i] = max(y[i], g[i] + 0.45)
+            y[i] = max(y[i], road_floor(i, 0.45))
     # soften profile kinks (ends stay pinned); junction heights register AFTER
     # smoothing so ramps meet the smoothed mainline exactly
     for _ in range(2):
         y = [y[0]] + [(y[i - 1] + y[i] + y[i + 1]) / 3 for i in range(1, n - 1)] + [y[-1]]
     if not sunk:
         for i in range(1, n - 1):
-            y[i] = max(y[i], g[i] + 0.3)
+            y[i] = max(y[i], road_floor(i, 0.3))
     for i, p in enumerate(P):
         if p[3] is not None and p[3] not in node_y:
             node_y[p[3]] = y[i]
     return P, s, g, y, ek
 
-def simplify_profile(P, y, tol2d=0.9, toly=0.22):
+def simplify_profile(P, y, tol2d=0.9, toly=0.22, keep_nodes=()):
     keep = {0, len(P) - 1}
+    keep.update(i for i, p in enumerate(P) if p[3] in keep_nodes)
     def dp(i0, i1):
         if i1 - i0 < 2:
             return
@@ -562,7 +611,11 @@ def simplify_profile(P, y, tol2d=0.9, toly=0.22):
                 best, bi = m, i
         if best > 1:
             keep.add(bi); dp(i0, bi); dp(bi, i1)
-    dp(0, len(P) - 1)
+    # Keep the merging node itself, not just a nearby simplified chord at a
+    # slightly different height. The ramp shares this exact xyz with its deck.
+    anchors = sorted(keep)
+    for a, b in zip(anchors, anchors[1:]):
+        dp(a, b)
     ks = sorted(keep)
     return [[round(P[i][0], 1), round(P[i][1], 1), round(y[i], 2)] for i in ks]
 
@@ -585,10 +638,10 @@ def clip_core(prof):
 def run_len(run):
     return sum(math.hypot(run[i + 1][0] - run[i][0], run[i + 1][1] - run[i][1]) for i in range(len(run) - 1))
 
-def emit_runs(P, y, ek, prof):
+def emit_runs(P, y, ek, prof, keep_core=False):
     """Split at the core box, carrying end kinds: an interior cut keeps kind 1
     (the roadway continues; the deck must not taper there)."""
-    runs = clip_core(prof)
+    runs = [prof] if keep_core else clip_core(prof)
     out = []
     for run in runs:
         f0 = ek[0] if run[0] == prof[0] else 1
@@ -641,13 +694,17 @@ for cids in elev_chains:
     P, s, g, y, ek = r
     if max(y[i] - g[i] for i in range(len(P))) < 0.35:
         continue
-    prof = simplify_profile(P, y)
+    keep_core = any(W[c]["i95core"] or W[c]["core_ramp"] for c in cids)
+    prof = simplify_profile(P, y, keep_nodes=core_ramp_nodes if keep_core else ())
     cmin = min(W[c]["cls"] for c in cids)
     wmax = max(W[c]["w"] for c in cids)
-    for run, f0, f1 in emit_runs(P, y, ek, prof):
+    for run, f0, f1 in emit_runs(P, y, ek, prof, keep_core):
         if run_len(run) < 24:
             continue
-        out_el.append({"c": cmin, "w": wmax, "p": run, "e": [f0, f1]})
+        record = {"c": cmin, "w": wmax, "p": run, "e": [f0, f1]}
+        if keep_core:
+            record["core"] = "i95" if any(W[c]["i95core"] for c in cids) else "i95-ramp"
+        out_el.append(record)
 
 # ---------------------------------------------------------------- Vine corridor
 def corridor_runs():

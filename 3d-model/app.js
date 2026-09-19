@@ -1046,11 +1046,13 @@
   // direction at their point and sit 2 cm BELOW their strip: the strips win the overlap,
   // so a fan's slightly different parameterisation at a bend never z-fights the strip's
   // paint, and a fan can never rise above a crossing street more than its strip already does
-  function ribbon(pts, w, y, yFn, lane, labelSurface = false) {
+  function ribbon(pts, w, y, yFn, lane, labelSurface = false, skipDeck = false) {
     pts = densify(pts, 10);
     // deterministic few-cm lift so no two ribbons are ever exactly coplanar
     y += hash01(pts[0][0] * 0.13 + pts[0][1] * 0.71) * 0.06;
     const hw = w / 2, edges = routeOffsets(pts);
+    // The mapped deck owns both core and outer streets, including its approach.
+    const keep = pts.slice(1).map((p,i)=>!skipDeck || !ovpOwned(pts[i][0],pts[i][1],p[0],p[1]));
     const tris = [];
     const lanes = lane ? [] : null, cls = lane ? lane.cls : 0;
     const ys = pts.map(p => y + (yFn ? yFn(p[0], p[1]) : siteY(p[0], p[1], 'road')));
@@ -1069,7 +1071,7 @@
       const ax = pts[i][0], az = pts[i][1], bx = pts[i + 1][0], bz = pts[i + 1][1];
       let dx = bx - ax, dz = bz - az;
       const len = Math.hypot(dx, dz);
-      if (len < 0.01) continue;
+      if (len < 0.01 || !keep[i]) continue;
       dx /= len; dz /= len;
       const px = -dz * hw, pz = dx * hw;
       const ya = ys[i], yb = ys[i + 1];
@@ -1080,6 +1082,7 @@
       },false);
     }
     for (const i of [0, pts.length - 1]) {
+      if (!keep[i === 0 ? 0 : keep.length - 1]) continue;
       const cx = pts[i][0], cz = pts[i][1], yc = ys[i] - (lane ? 0.02 : 0);
       const S = 8;
       const ddx = lane ? hd[i * 2] : 0, ddz = lane ? hd[i * 2 + 1] : 0, si = ss[i];
@@ -1842,32 +1845,55 @@
   // width. Off ordinary land, retain the bridge/bank centreline grade as a minimum. The lane
   // paint's u is the signed offset across the strip and s the distance along it, both linear in
   // the position. lane(v, u, s, hw, cls) is the loop's own aLane writer.
+  // Round 122 (Mike: the phone loads several times over and then "a problem repeatedly
+  // occurred"). The drape handed every street to its mesh as a triangle SOUP: three fresh
+  // vertices a triangle into boxed arrays, 5 M vertices citywide where the quads they replaced
+  // had 1.9 M. On a phone profile that was the largest single step in the page's memory from
+  // Round 86 to Round 88 (GPU buffers 602 to 716 MB, the peak JS heap 993 to 1,627 MB), and iOS
+  // kills the tab. Within one strip a vertex is a function of its position alone (the ground's
+  // height, the lane paint's u and s, the one colour), so the soup is welded as it arrives:
+  // roadWeld keeps a map of the strip's points at a centimetre, a repeat costs an index and
+  // nothing else, and the street index (labels, terrain clearance) still sees every triangle
+  // a street mesh's normals as normalized bytes, the way VBuf packs the buildings' (Round 122):
+  // computeVertexNormals leaves three floats a vertex, 12 B where 3 do, on the largest meshes
+  // in the scene after the fabric
+  function packNormals(g) {
+    const a = g.attributes.normal; if (!a) return;
+    const src = a.array, out = new Int8Array(src.length);
+    for (let i = 0; i < src.length; i++) out[i] = Math.round(src[i] * 127);
+    g.setAttribute('normal', new THREE.BufferAttribute(out, 3, true));
+  }
+  const _rwSeen = new Map(), _rwTri = new Float64Array(9);
+  let _rwN = 0;
+  function roadWeldBegin() { _rwSeen.clear(); _rwN = 0; }
+  function roadWeld(rc, x, y, z, fresh) {   // fresh(i) writes the new vertex i's other attributes
+    _rwTri[_rwN++] = x; _rwTri[_rwN++] = y; _rwTri[_rwN++] = z;
+    if (_rwN === 9) { _rwN = 0; if (streetSurfaceIndex || terrainRoadGrid) rememberStreetTriangle([_rwTri[0], _rwTri[2], _rwTri[1]], [_rwTri[3], _rwTri[5], _rwTri[4]], [_rwTri[6], _rwTri[8], _rwTri[7]]); }
+    const key = (Math.round(x * 100) + 4e6) * 1e7 + (Math.round(z * 100) + 4e6);
+    let i = _rwSeen.get(key);
+    if (i === undefined) { i = rc.n++; _rwSeen.set(key, i); rc.pos.push(x, y, z); fresh(i); ROAD_STATS.verts = (ROAD_STATS.verts || 0) + 1; }
+    rc.idx.push(i);
+  }
   function roadStrip(rc, lane, a, q, dx, dz, hw, ya, yb, jr, onMesh, cr, cg, cb, sA, sAcc, cls, edgeA, edgeB) {
-    const labelStart=rc.pos.length;
     const ring = routeQuad(a,q,edgeA || [-dz,dx],edgeB || [-dz,dx],hw,ya,yb);
+    roadWeldBegin();
     drapeRouteQuad(ring,jr,(x,y,z)=>{
-      rc.pos.push(x,y,z); rc.col.push(cr,cg,cb);
-      lane(rc.n,(x-a[0])*-dz+(z-a[1])*dx,sA+(x-a[0])*dx+(z-a[1])*dz,hw,cls);
-      rc.idx.push(rc.n++);
+      roadWeld(rc, x, y, z, (i) => { rc.col.push(cr,cg,cb); lane(i,(x-a[0])*-dz+(z-a[1])*dx,sA+(x-a[0])*dx+(z-a[1])*dz,hw,cls); });
     },onMesh);
-    rememberStreetArray(rc.pos,labelStart);
     ROAD_STATS.draped++;
   }
   // the joint disc at a bend or a shared end, 2 cm under its strips so their paint wins the
   // overlap: a hexagon conformed to the same ground and minimum grade as its strip.
   // Its aLane rides the averaged heading (ddx, ddz): u = offset . n, s = sA + offset . d
   function roadFan(rc, lane, x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh) {
-    const labelStart=rc.pos.length;
     {
       const grade=()=>y-0.02;
       const ring = [];
       for (let s6 = 0; s6 < 6; s6++) { const ang = s6 / 6 * Math.PI * 2; ring.push([x + Math.cos(ang) * hw, z + Math.sin(ang) * hw]); }
+      roadWeldBegin();   // drapeConvex emits nothing unless it succeeds, so a failed drape leaves rc untouched
       if (drapeConvex(ring, jr - 0.02, (vx, vy, vz) => {
-        const ox = vx - x, oz = vz - z;
-        rc.pos.push(vx, vy, vz); rc.col.push(cr, cg, cb);
-        lane(rc.n, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls);
-        rc.idx.push(rc.n); rc.n++;
-      }, onMesh ? null : grade, grade)) { rememberStreetArray(rc.pos,labelStart); ROAD_STATS.fans++; return; }
+        roadWeld(rc, vx, vy, vz, (i) => { const ox = vx - x, oz = vz - z; rc.col.push(cr, cg, cb); lane(i, -ox * ddz + oz * ddx, sA + ox * ddx + oz * ddz, hw, cls); });
+      }, onMesh ? null : grade, grade)) { ROAD_STATS.fans++; return; }
     }
     ROAD_STATS.flatFans++;
     const c0 = rc.n;
@@ -2592,12 +2618,18 @@
   // building silhouettes so reflections have structure; refreshed as the sun moves
   const envScene = new THREE.Scene();
   const envSky = new THREE.Mesh(new THREE.SphereGeometry(50, 16, 10), skyMat.clone());
-  envSky.material.uniforms.uPost = { value: 0 };   // the environment map wants the raw dome, never the pre-image
+  // The visible dome paints display colors; PMREM needs linear radiance. Its
+  // small reflection scene also needs clouds across the sky, since the separate
+  // world cloud volume is not drawn into this probe.
+  envSky.material.fragmentShader=envSky.material.fragmentShader
+    .replace('float horiz = smoothstep(0.0, 0.03, h) * (1.0 - smoothstep(0.04, 0.12, h));','float horiz = smoothstep(0.015, 0.12, h);')
+    .replace('gl_FragColor = vec4(col, skyA);','gl_FragColor = vec4(pFromSRGB(max(col,vec3(0.0))), skyA);');
+  envSky.material.uniforms.uPost = { value: 0 };   // decode once, without the main scene's inverse tone mapping
   envScene.add(envSky);
   const envGround = new THREE.Mesh(new THREE.CircleGeometry(45, 16), new THREE.MeshBasicMaterial({ color: COLORS.skyGround }));
   envGround.rotation.x = -Math.PI / 2; envGround.position.y = -4;
   envScene.add(envGround);
-  const envSun = new THREE.Mesh(new THREE.SphereGeometry(3.5, 10, 8), new THREE.MeshBasicMaterial({ color: 0xfff2d8 }));
+  const envSun = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), new THREE.MeshBasicMaterial({ color: 0xfff2d8, toneMapped: false }));
   envScene.add(envSun);
   {
     const bm = new THREE.MeshBasicMaterial({ color: 0x23262c });
@@ -2618,11 +2650,14 @@
     envSky.material.uniforms.uCloud.value = skyMat.uniforms.uCloud.value;
     envSky.material.uniforms.uCloudLight.value = skyMat.uniforms.uCloudLight.value;
     envSky.material.uniforms.uCloudOff.value.copy(skyMat.uniforms.uCloudOff.value);
-    // the env sun ball must dim with cloud cover or overcast glass keeps a clear-sky hotspot
-    envSun.material.color.set(0xfff2d8).multiplyScalar(1 - 0.65 * WX.cover);
-    envGround.material.color.copy(skyMat.uniforms.cGround.value);
+    // A compact sun glint follows twilight and cloud cover. The old 9-degree
+    // white ball made daylight glass look like it had a floodlight painted on it.
+    const sunVis=skyMat.uniforms.uSunVis.value;
+    envSun.visible=sunVis>.001;
+    envSun.material.color.copy(skyMat.uniforms.cSun.value).convertSRGBToLinear().multiplyScalar(8*sunVis*(1-.95*WX.cover));
+    envGround.material.color.copy(skyMat.uniforms.cGround.value).convertSRGBToLinear();
     envSun.position.copy(skyMat.uniforms.uSun.value).multiplyScalar(44);
-    const rt = pmremGen.fromScene(envScene, 0.05);
+    const rt = pmremGen.fromScene(envScene, 0.012);
     scene.environment = rt.texture;
     if (envRT) envRT.dispose();
     envRT = rt;
@@ -4206,7 +4241,7 @@
       const openRuns = /motorway/.test(r.t) || /columbus boulevard|front street/i.test(r.name || '')
         ? [r.pts] : capClipRoad(r.pts);
       for (const run of openRuns.flatMap(runsOf)) {
-        const g = ribbon(run, r.w, y, mot ? motY : null, lane, true);
+        const g = ribbon(run, r.w, y, mot ? motY : null, lane, true, true);
         if (!/footway|path|steps|cycleway/.test(r.t)) {
           for (let i = 0; i < run.length - 1; i++) {
             addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
@@ -5103,6 +5138,40 @@
     }
   `;
 
+  // Optical glass over an opaque interior approximation. Keep the wall/frame
+  // masks exact; roughness and Fresnel belong to the pane, not the masonry.
+  const GLASS_OPTICS_GLSL = `
+    float glassHash(vec2 p) {
+      vec3 q=fract(vec3(p.xyx)*.1031);q+=dot(q,q.yzx+33.33);
+      return fract((q.x+q.y)*q.z);
+    }
+    vec3 glassPaneNormal(vec3 n,vec3 wn,vec2 uv,vec2 id,float seed,float mask) {
+      float detail=1.0-smoothstep(.05,.24,max(fwidth(uv.x),fwidth(uv.y)));
+      vec2 bend=vec2(sin(uv.x*6.2831853),sin(uv.y*6.2831853));
+      vec2 tilt=vec2(glassHash(id+seed),glassHash(id+seed+23.7))-.5;
+      vec2 slope=(bend*.0035+tilt*.004)*detail*mask;
+      vec3 tangent=normalize(vec3(-wn.z,0.0,wn.x)+vec3(.00001,0.0,0.0));
+      return normalize(n+mat3(viewMatrix)*(tangent*slope.x+vec3(0.0,slope.y,0.0)));
+    }
+  `;
+  function glassOpticsPatch(shader, opt) {
+    const rough=(opt.roughness === undefined ? .10 : opt.roughness).toFixed(3);
+    const coat=(opt.coating === undefined ? .08 : opt.coating).toFixed(3);
+    const depth=(opt.depth === undefined ? .55 : opt.depth).toFixed(3);
+    shader.fragmentShader=shader.fragmentShader
+      .replace('#include <common>','#include <common>\n'+GLASS_OPTICS_GLSL+'\nfloat opticalGlass=0.0;')
+      .replace('#include <roughnessmap_fragment>',`#include <roughnessmap_fragment>
+        opticalGlass=clamp(${opt.mask},0.0,1.0);
+        roughnessFactor=mix(roughnessFactor,${rough}+.025*glassHash(${opt.id}+${opt.seed}),opticalGlass);`)
+      .replace('#include <metalnessmap_fragment>',`#include <metalnessmap_fragment>
+        metalnessFactor*=1.0-opticalGlass;`)
+      .replace('#include <normal_fragment_maps>',`#include <normal_fragment_maps>
+        normal=glassPaneNormal(normal,normalize(${opt.normal}),${opt.uv},${opt.id},${opt.seed},opticalGlass);`)
+      .replace('#include <lights_physical_fragment>',`#include <lights_physical_fragment>
+        material.specularColor=mix(material.specularColor,vec3(${coat})*vec3(.96,1.0,1.04),opticalGlass);
+        material.diffuseColor*=1.0-opticalGlass*${depth};`);
+  }
+
   function apartmentWindowHook(shader) {
     shader.vertexShader=shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aInterior; varying vec4 vInterior; varying vec3 vInteriorNormal;')
@@ -5117,6 +5186,7 @@
         vec3 lobbyLight=vec3(1.0,.78,.49)*(.28+.35*exp(-lobbyY*lobbyY));
         totalEmissiveRadiance*=mix(interior,lobbyLight,lobby)*(1.0-step(.35,abs(normalize(vInteriorNormal).y)));
         }`);
+    glassOpticsPatch(shader,{mask:'1.0-step(.35,abs(vInteriorNormal.y))',normal:'vInteriorNormal',uv:'fract(vInterior.xy)',id:'floor(vInterior.xy)',seed:'vInterior.z',coating:.095,roughness:.105,depth:.60});
   }
   function towerRoomCoordinates(g, axis, inner, bayW, gridBot, floorH, seed, lobby = 0) {
     const p=g.attributes.position,n=g.attributes.normal,a=new Float32Array(p.count*4);
@@ -5149,6 +5219,7 @@
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;',
           'float shtLit = 0.0; vec3 shtLamp = vec3(1.0, 0.76, 0.46);',
           'float shtGlass = 0.0;',
+          'vec2 shtPaneUV=vec2(0.5),shtPaneID=vec2(0.0);',
           'uniform vec3 uSunW;',
           // a window's reveal: the jamb on the sun's side and the head throw a shadow onto the
           // glass beside them, deeper the higher the sun and the more the wall faces it, plus a
@@ -5598,7 +5669,8 @@
           '    vec3 paneCol = gTint * (0.65 + 0.45 * lit + 0.24 * paneV);',
           '    paneCol = mix(paneCol, vec3(0.30, 0.29, 0.26), blinds * 0.44);',
           '    col = mix(col, paneCol, glass * 0.56);',
-          '    shtGlass = glass * det * (tower ? 0.82 : 0.58);',
+          '    shtGlass = max(0.0,glass-roomFrame) * det;',
+          '    shtPaneUV=roomUV; shtPaneID=roomID;',
           '    col *= 1.0 - 0.14 * (1.0 - smoothstep(0.0, 5.0, v));',
           // local shading (Round 54): the ends of a wall (quoins, party walls) take a little shade
           // and the cornice throws a band of shadow under itself; towers keep a lighter touch
@@ -5670,11 +5742,10 @@
           '  }',
           '}',
         ].join('\n'))
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, shtGlass);')
-        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(metalnessFactor, 0.62, shtGlass);')
         // lit windows dim with distance (aerial perspective by night): the far ring's mass
         // of them otherwise resolves to a white band along the horizon
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += shtLamp * shtLit * uNight * 0.95 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));');
+      glassOpticsPatch(shader,{mask:'shtGlass',normal:'vWNorm',uv:'shtPaneUV',id:'shtPaneID',seed:'vTint*7.1',coating:.085,roughness:.115,depth:.48});
     };
     cityMat.onBeforeCompile = facadeHook(FACADE_GAIN, ROOF_GAIN, 1.2);
     cityMat.customProgramCacheKey = () => 'fabric';   // the two hooks share one source: keyed by hand (gotcha 15)
@@ -6605,7 +6676,7 @@
     }
     if (glassParts2.length) {
       const m = new THREE.Mesh(mergeColored(glassParts2, false, 'base'),
-        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.7, envMapIntensity: 1.5 }));
+        new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.0 }));
       m.castShadow = true;
       groupCity.add(m);
       rylandGlassMat = m.material;
@@ -6616,10 +6687,10 @@
       rylandGlassMat.onBeforeCompile = (shader) => {
         shader.uniforms.uNight = nightUniform;
         shader.vertexShader = shader.vertexShader
-          .replace('#include <common>', '#include <common>\nattribute float aBase;\nvarying float vRyB;\nvarying vec3 vRyW;')
-          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRyB = aBase;\nvRyW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+          .replace('#include <common>', '#include <common>\nattribute float aBase;\nvarying float vRyB;\nvarying vec3 vRyW; varying vec3 vRyN;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRyB = aBase; vRyN=normalize(mat3(modelMatrix)*objectNormal);\nvRyW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
         shader.fragmentShader = shader.fragmentShader
-          .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vRyB;\nvarying vec3 vRyW;\n' +
+          .replace('#include <common>', '#include <common>\nuniform float uNight;\nvarying float vRyB;\nvarying vec3 vRyW; varying vec3 vRyN;\n' +
             // sin-lattice hashes streak along the grid (lit "worms"); this
             // fract-cascade hash is uniform on integer cells
             WINDOW_INTERIOR_GLSL)
@@ -6643,6 +6714,7 @@
             '  vec3 lobby = vec3(1.0,.77,.48)*(.3+.4*exp(-lobbyY*lobbyY));\n' +
             '  totalEmissiveRadiance += mix(interior,lobby,amen)*uNight*(1.0-step(.35,abs(fn.y)));\n' +
             '}');
+        glassOpticsPatch(shader,{mask:'1.0-step(.35,abs(vRyN.y))',normal:'vRyN',uv:'fract(vec2(dot(vRyW.xz,normalize(vec2(-vRyN.z,vRyN.x)+vec2(.00001)))/3.0,(vRyW.y-vRyB)/3.13))',id:'floor(vec2(dot(vRyW.xz,normalize(vec2(-vRyN.z,vRyN.x)+vec2(.00001)))/3.0,(vRyW.y-vRyB)/3.13))',seed:'vRyB*.031',coating:.12,roughness:.095,depth:.62});
       };
     }
   });
@@ -6837,7 +6909,7 @@
 
     const glassMesh = new THREE.Mesh(
       mergeColored(glassParts),
-      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.18, metalness: 0.55, envMapIntensity: 1.25 })
+      new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.12, metalness: 0.05, envMapIntensity: 1.0 })
     );
     groupCity.add(glassMesh);
     towerGlassMat = glassMesh.material;
@@ -8692,7 +8764,7 @@
     for (const ch of glassChunks.values()) {
       const g = ch.geometry(true);   // aStyle, aBase and aTint: geometry(false) silently dropped every curtain-wall variant (Round 54)
       if (!outerGlassMat) {
-        outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.21, metalness: 0.40, envMapIntensity: 0.64 });
+        outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.05, envMapIntensity: 1.10 });
         outerGlassMat.emissive = new THREE.Color(0xffffff);
         outerGlassMat.emissiveIntensity = 0;
         // curtain-wall rhythm: darker spandrel band at each floor line, thin vertical
@@ -8714,9 +8786,9 @@
               uniform float uDetFar, uNight;
               varying vec3 vGWp, vGNm, vGF; varying float vGSt, vGBs, vGT;
               float gWall = 0.0, gLit = 0.0, gSpand = 0.0, gGlazing = 0.0;
+              vec2 gPaneUV=vec2(.5),gPaneID=vec2(0.0);
               vec3 gLamp = vec3(1.0);
               float gh(vec2 p) { vec3 q=fract(vec3(p.xyx)*0.1031); q+=dot(q,q.yzx+33.33); return fract((q.x+q.y)*q.z); }
-              float gn(vec2 p) {vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(gh(i),gh(i+vec2(1,0)),f.x),mix(gh(i+vec2(0,1)),gh(i+vec2(1)),f.x),f.y);}
               float gLine(float d,float width,float aa) {return 1.0-smoothstep(max(0.0,width-aa*.5),width+aa*.5,d);}`)
             .replace('#include <color_fragment>', `#include <color_fragment>
               {
@@ -8739,17 +8811,8 @@
                 vec2 pid=vec2(floor(u/muP),floor(yG/fp));
                 float ph=gh(pid+vGT*137.0);
                 float office=gh(vec2(floor(pid.x/3.0),pid.y)+vGT*47.0);
-                // A restrained reflected skyline breaks up flat glazing; the actual
-                // environment map still supplies sky colour and moving sunlight.
-                vec3 eye=normalize(cameraPosition-vGWp), refl=reflect(-eye,nn);
-                float az=atan(refl.z,refl.x);
-                float skyline=gn(vec2(az*21.0,1.7))*.20-.04;
-                float reflectedCity=(1.0-smoothstep(skyline-.08,skyline+.11,refl.y));
-                float sheen=gn(vec2(az*5.0,refl.y*8.0+vGT*3.0));
-                float fres=pow(1.0-abs(dot(eye,nn)),3.0);
-                vec3 glassCol=diffuseColor.rgb*(.77+.12*sheen+.14*clamp(yG/260.0,0.0,1.0));
-                glassCol*=1.0-wall*reflectedCity*.28*(1.0-uNight);
-                glassCol=mix(glassCol,glassCol*vec3(.88,1.02,1.13),wall*fres*.42);
+                vec3 glassCol=diffuseColor.rgb*(.80+.10*clamp(yG/260.0,0.0,1.0));
+                gPaneUV=fract(vec2(u/muP,yG/fp));gPaneID=pid;
                 glassCol*=1.0-det*(1.0-spand)*(.035+ph*.07);
                 float blind=step(.78,office)*gLine(abs(fract(yG/fp)-.25),.14,aaV/fp)*det;
                 glassCol=mix(glassCol,glassCol*1.28,blind*.35);
@@ -8788,9 +8851,8 @@
                 // Enclosed glazed crowns are mechanical space, not stacks of offices.
                 if(gv==29.0)gLit*=.035;
               }`)
-            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor=mix(0.38,0.19,gGlazing);')
-            .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor=mix(0.56,0.40,gGlazing);')
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance*=gLamp*gWall*gLit*(1.0-gSpand*.98)*1.8;');
+          glassOpticsPatch(sh,{mask:'gGlazing',normal:'vGNm',uv:'gPaneUV',id:'gPaneID',seed:'vGT*7.1',coating:.14,roughness:.075,depth:.86});
         };
       }
       addChunkMesh(g, outerGlassMat);
@@ -8815,6 +8877,7 @@
         if (rc.lane) g.setAttribute('aLane', new THREE.BufferAttribute(rc.lane.subarray(0, rc.n * 4), 4));
         g.setIndex(rc.idx);
         g.computeVertexNormals();
+        packNormals(g);
         g.computeBoundingSphere();
         freeOnUpload(g);
         if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
@@ -9635,6 +9698,7 @@
       if (rc.lane) g.setAttribute('aLane', new THREE.BufferAttribute(rc.lane.subarray(0, rc.n * 4), 4));
       g.setIndex(rc.idx);
       g.computeVertexNormals();
+      packNormals(g);
       g.computeBoundingSphere();
       freeOnUpload(g);
       if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
@@ -10112,9 +10176,10 @@
     if (/[?&]dev\b/.test(location.search)) console.info('overpasses: ' + deckLifted + ' of ' + OVP.el.length + ' deck chains lifted over the drawn ground, the most by ' + deckLiftMax.toFixed(2) + ' m');
     // closed box ribbon: top at y+dyT, bottom at bots[i] (or y+dyB), both sides.
     // seg gate (i) can suppress individual segments (parapet gaps at ramp mouths).
-    const boxRibbon = (pts, hw, dyT, dyB, colTop, colSide, bots, gate, labelSurface = false) => {
+    const boxRibbon = (pts, hw, dyT, dyB, colTop, colSide, bots, gate, labelSurface = false, laneClass = null) => {
       const nrm = norms(pts);
-      const top = [], side = [];
+      const top = [], side = [], paint = [];
+      let distance = 0;
       for (let i = 0; i + 1 < pts.length; i++) {
         if (gate && !gate(i)) continue;
         const a = pts[i], b = pts[i + 1], na = nrm[i], nb = nrm[i + 1];
@@ -10124,7 +10189,10 @@
         const aB = bots ? bots[i] : a[2] + dyB, bB = bots ? bots[i + 1] : b[2] + dyB;
         top.push(aL[0], aT, aL[1], bL[0], bT, bL[1], bR[0], bT, bR[1],
                  aL[0], aT, aL[1], bR[0], bT, bR[1], aR[0], aT, aR[1]);
-        if(labelSurface){const len=Math.hypot(b[0]-a[0],b[1]-a[1])||1;rememberStreetArray(top,top.length-18,(b[0]-a[0])/len,(b[1]-a[1])/len);}
+        const len=Math.hypot(b[0]-a[0],b[1]-a[1])||1;
+        if(labelSurface)rememberStreetArray(top,top.length-18,(b[0]-a[0])/len,(b[1]-a[1])/len);
+        if(laneClass!==null)for(const [u,v] of [[hw,distance],[hw,distance+len],[-hw,distance+len],[hw,distance],[-hw,distance+len],[-hw,distance]])paint.push(u,v,hw,laneClass);
+        distance+=len;
         side.push(aL[0], aB, aL[1], bL[0], bB, bL[1], bR[0], bB, bR[1],
                   aL[0], aB, aL[1], bR[0], bB, bR[1], aR[0], aB, aR[1]);
         for (const [p0, p1] of [[aL, bL], [aR, bR]]) {
@@ -10137,6 +10205,7 @@
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(arr), 3));
         g.computeVertexNormals();
+        if(arr===top && paint.length)g.setAttribute('aLane',new THREE.Float32BufferAttribute(paint,4));
         parts.push({ geom: g, color: col, style: 3 });
       };
       mk(top, colTop);
@@ -10270,7 +10339,7 @@
         const gy = siteY(p[0], p[1], 'ground'), gm = groundMeshY(p[0], p[1]) ?? gy;   // near-grade by the DEM, the skirt down to the drawn mesh (the carved bank, Round 85)
         return p[2] - gy < 2.2 ? Math.min(p[2] - dep, gm - 0.4) : p[2] - dep;
       });
-      boxRibbon(pts, hw, 0, -dep, tint(cTop[c.c] || COLORS.asphalt, 1), tint(cConc, jit), bots, null, true);
+      boxRibbon(pts, hw, 0, -dep, tint(cTop[c.c] || COLORS.asphalt, 1), tint(cConc, jit), bots, null, true, c.core ? 1 : null);
       // parapets: fade in past the ends, break at every ramp mouth on their side
       const nrm = norms(pts);
       const ss = [0];
@@ -10494,7 +10563,7 @@
       }
     }
     if (parts.length) {
-      const ovpMat = surfMat({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
+      const ovpMat = roadMat({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
       mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
       mesh.receiveShadow = true;
@@ -13069,7 +13138,7 @@
         // (aligned to its snapped street axis so passing under a viaduct never lifts)
         if (v.sdx || v.sdz) {
           const oy = ovpDeckY(v.dx, v.dz, v.sdx, v.sdz);
-          if (oy !== null && oy > v.gy) v.gy = oy;
+          if (oy !== null) v.gy = oy;
         }
       }
       const spec = SEPTA_KIND[v.kind];
@@ -13234,7 +13303,7 @@
       const inCutName=/expressway/i.test(ST_LABELS.names[L2[i]]||'');
       const roadHeight=(x,z)=>{
         let y=siteY(x,z,'road');const deck=ovpDeckY(x,z,f.dx,f.dz);
-        if(deck!==null && deck>y)y=deck;
+        if(deck!==null)y=deck;
         else if(inCutName){const cut=vineCut(x,z,-2);if(cut!==null)y=cut+0.45;}
         return y;
       };
@@ -16560,7 +16629,9 @@
           }
         }
         const oy = ovpDeckY(x, z, ux, uz);
-        if (oy !== null && oy > y) { y = oy; lift = 0.1; }
+        // The aligned road's deck owns its height, including an approach that
+        // emerges below the bare-earth/embankment sample beside the core cut.
+        if (oy !== null) { y = oy; lift = 0.1; }
         else if (cls <= 1) {
           const sy = sunkCutNear(x, z, 1);
           if (sy !== null && sy < y - 0.5) { y = sy; lift = 0.35; }
@@ -17339,7 +17410,7 @@
     const bY = bridgeDeckLift(x, z);
     if (bY !== null && bY > y) { y = bY; lift = 0.12; }
     const oy = ovpDeckY(x, z, ux, uz);
-    if (oy !== null && oy > y) { y = oy; lift = 0.1; }
+    if (oy !== null) { y = oy; lift = 0.1; }
     return y + lift;
   }
   function closureSnapLine(pts) {   // the city centreline onto the drawn street: snap the length-midpoint, move the whole line

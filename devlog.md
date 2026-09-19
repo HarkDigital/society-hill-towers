@@ -5878,3 +5878,129 @@ The roofline GPU sweep passed 2,184 cases with zero glass or light in the top
 half-metre. All 30 facade styles compile under both depth modes and detail budgets.
 The Python/Node suite completed 168 tests with one existing expected failure.
 Local preview rebuilt; no deployment.
+
+
+### Round 120: Reflective glass windows (Sep 19)
+
+Reworked window optics across the shared house/apartment facade styles, Center
+City curtain walls, Ryland and Society Hill Towers. A shared glass shader now
+separates polished panes from matte sash frames and masonry, uses dielectric
+Fresnel with a stronger coated-glass response on skyscrapers, and reduces the
+opaque diffuse fill behind the glass. Small fixed variations in pane normals
+and surface roughness break up perfectly uniform reflections; subpixel distortion
+fades by footprint. The existing warm interior gradients, room identities,
+window grids, roofline gaps and themed crown lighting remain in place.
+
+The shared environment probe now decodes the sky's display colors to linear
+radiance, with sharper PMREM filtering and approximate weather-driven clouds
+across the reflection hemisphere. The oversized reflected sun was replaced by
+a compact glint that follows the sun's color, twilight and cloud cover. Removed
+the separate painted skyline tint from curtain-wall diffuse color. Reflections
+are still the lightweight shared sky/ground/building-silhouette approximation,
+not per-building scene captures or ray tracing. No new scene draws, render
+targets, textures or per-window lights.
+
+Visual checks covered houses, apartment glazing, Center City towers and Comcast
+in daylight and after dark. The new production GPU test checks angle-dependent
+reflection strength, blue-sky response, deterministic frames, pane/frame/masonry
+roughness isolation, linear probe colors and a hidden reflected sun at night in
+both depth modes. The existing interior-lighting GPU checks pass unchanged.
+
+All 30 facade styles passed the four depth/detail configurations without shader
+errors. The complete Python/Node suite ran 168 tests with one existing expected
+failure; syntax, build guards, documentation coverage and whitespace checks passed.
+The roofline GPU sweep passed all 2,184 cases with zero glass or emission in the
+upper clearance strip. Local preview rebuilt; no deployment.
+
+
+### Round 121: Continuous elevated I-95 southern approach (Sep 19)
+
+Fixed the abrupt drop in Mike's view at `(218.4,119.5,1006.7,-0.899,-0.364)`.
+The overpass baker clipped decks at the rectangular detailed-core boundary, and
+untagged I-95 embankment segments between mapped bridges fell back to the core's
+generic trench. Both carriageways now continue across that boundary, through
+their connected southern approach, and gradually descend toward the mapped
+tunnel exit. The vertical profile is a model estimate rather than surveyed data.
+Only the two existing mainline chains and two connected ramp chains change;
+532 other elevated chains, all sunken runs and the Vine corridor remain identical.
+
+Ramp junction nodes now survive profile simplification so the joining road has
+the same xyz as the through deck. The core street builder cedes owned road
+segments to the actual deck, whose lane attributes now paint the elevated
+surface. Cars, live buses, closures and the label height lookup take their
+aligned deck height even when the surrounding bare-earth sample is higher.
+This eliminated a measured 6.49 m traffic height error along the emerging ramps.
+Re-baked street labels moved one Columbus Boulevard placement clear of a ramp;
+the 3,774-label count and the font atlas/name ordering stay unchanged.
+
+Browser checks covered the reported view and lower/northern approach views.
+All three ramp-to-mainline joins agree exactly after runtime terrain clearance;
+189 local traffic samples agree with deck height plus wheel clearance within
+0.000003 m. The new tests exercise the classifier, continuous baked carriageways,
+gradual transition, exact joins, production ownership/height lookups, lane
+geometry and below-earth traffic heights. The terrain test also checks core
+deck suppression without removing crossing streets. The full suite ran 175
+tests with one existing expected failure; syntax, build, documentation coverage
+and whitespace checks passed. Local preview rebuilt; no deployment.
+
+## Round 122 — the phone's memory, the SEPTA feed, and Rounds 120 and 121 brought over (Sep 19)
+
+**Mike, after the folder went live: "The mobile version is loading multiple times and then I am
+getting the error 'a problem repeatedly occurred on philly3d.com'. Also, wire up septa and ais."
+And, with `GLASS-I95-HANDOFF.md`: "Can you make these changes as well."**
+
+### Rounds 120 and 121 ported, not redone
+
+The handoff describes finished work in a second checkout (`~/Desktop/Codex/SHT`). A recursive
+diff showed that tree to be this one plus exactly those two rounds, with no line here missing
+there, so the ten files were copied across as they stood (`app.js`, `bake_overpasses.py`,
+`overpasses.json`, `street_labels.json`, four test files, `devlog.md`, `handoff.md`). The page
+built here came out byte-identical to the Codex build, and the suite ran the handoff's own 175.
+
+### The phone: measured, not guessed
+
+"A problem repeatedly occurred" is iOS killing a tab for memory and giving up after the reloads.
+Every build was staged with a counter injected ahead of the page (it wraps `bufferData`,
+`deleteBuffer`, `texImage2D`, `texStorage2D` and `renderbufferStorage`, and logs the JS heap at
+each build step) and loaded under a touch profile (740 x 360, coarse pointer, so `isTouch`):
+
+| build | GPU buffers settled | JS heap peak | JS heap at Ready |
+|---|---|---|---|
+| Round 86 | 602 MB | 993 MB | 565 MB |
+| Round 88 | 716 MB | 1,627 MB | 536 MB |
+| Round 90 | 780 MB | 1,280 MB | about 460 MB |
+| Round 121 (what was live) | **890 MB** | 1,292 MB | **1,222 MB** |
+| Round 122 | **764 MB** | 1,567 MB | **676 MB** |
+
+The largest single step in that table is Round 88's own street drape: it handed every street to
+its mesh as a triangle SOUP, three fresh vertices a triangle through boxed JS arrays, and by
+Round 121 that was 2.92 M triangles on 8.75 M vertices. Within one strip a vertex is a function
+of its position alone (the ground's height, the lane paint's u and s, one colour), so `roadWeld`
+welds the soup as it arrives: a map of the strip's points at a centimetre, a repeat costing an
+index and nothing else, the street index (labels, terrain clearance) still fed every triangle
+through `rememberStreetTriangle`. 8.75 M vertices became 2.78 M. `packNormals` stores the street
+meshes' normals as normalized bytes the way `VBuf` packs the buildings' (12 B to 3). An
+attribution pass over the scene (bytes by material) put the fabric at about 390 MB for 13.35 M
+vertices, already packed at 29 B, and everything else under 65 MB a material, so the streets
+were the place to cut. Peak heap is GC-timing noise in a throttled pane (Round 88 itself read
+1,627); the heap at Ready and the settled buffers are the honest columns. Verified by capture on
+the desktop profile: the Passyunk interchange and Spruce Street with their lane paint, and Round
+121's I-95 view. Not verifiable from here: a real phone. If it still dies, the next tranche is a
+phone-only street path (no subdivision in the far ring) and the 158 MB of textures.
+
+Found on the way and left: the drape costs 34 s of build in a hidden pane against Round 88's 3 s
+in the same conditions, so Rounds 95 and 96 made it about ten times dearer; and the shader
+program count went from 28 (Round 90) to 70.
+
+### The VPS: SEPTA live, AIS staged
+
+`/septa.json`, `/ais.json` and `/b` had answered 404 since the vhost was hand-merged: the live
+file never carried their locations, and `septa-bake` was never installed. With Mike's word: the
+vhost backed up to `/root/philly3d.vhost.bak-2026-09-19-183137`, two `location =` blocks added
+after the lights block in the amtrak block's shape (`gzip_static`, `max-age=10`, ACAO `*`),
+`nginx -t` green, reload; `septa-bake.service` installed and enabled (the script on the box
+already matched the repo's by sha256). `/septa.json` answers 614 vehicles, 8 s old, gzipped.
+`ais_relay.py` and `ais-relay.service` are installed but NOT started: the relay needs the
+aisstream key in `/etc/philly3d/ais.env`, and placing a key is Mike's to do (one command, in the
+session's reply). Until then the page's own socket fallback carries the ships as before. `/b`
+stays 404: the beacon is the owner's decision (ops/README section 5).
