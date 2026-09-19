@@ -6017,3 +6017,59 @@ match the first), and the `.sub` paragraph and the `.welcomehint` footer are gon
 markup. Their CSS rules stay, harmless, so a later line can come back without restyling. The
 facts row and the button close up under the title. Verified by the pane's own screenshot of the
 card during load. 175 tests pass.
+
+## Round 124 — the phone again: a lighter phone build, a breadcrumb, and a lite build it can fall back to (Sep 19)
+
+**Mike, after Round 122 went out: "a problem repeatedly occurred on philly3d.com".**
+
+Round 122's cut was not deep enough, and from here a phone's limit cannot be seen, only the
+page's footprint under a touch profile. Two lessons about that instrument first. Chrome's
+`usedJSHeapSize` is mostly garbage during a load: the same build read a 1,048 MB peak in one run
+and 1,483 in the next, and both settled to about 450 MB live after a nudge to the collector, so
+the heap columns in Round 122's table are noise and only the GPU columns are honest. And the
+probe's texture figure assumes four bytes a pixel, so an R8 atlas reads four times its size.
+
+What every phone now gets:
+
+- **Only the towns inside the flight limit.** The towns across the line are scenery the camera can
+  never reach, and they cost 164 MB of GPU buffers. `raiseRing` takes an optional `keepAt`; a
+  touch device passes `insideLimit` (the city line buffered 2 km: the Navy Yard's south half, the
+  near bank of Camden, the first streets over the county line) and the rest goes to meadow. 66 MB.
+- **The Indego badge atlas at half size** (`INDEGO_ATLAS_K`): 4096 x 2048 was a 33 MB canvas and a
+  44 MB texture with its mips for badges drawn at a few dozen pixels. The UVs are fractions of the
+  atlas, so only the canvas and the drawing transform change.
+- **The streets' build, faster on every device.** A first guess blamed `drapeConvex` clipping
+  each strip against all ten ground grids, and a bounding-box rejection went in (harmless, the
+  same triangles). It was the wrong suspect: 20,000 drapes cost 120 ms. The time was in what each
+  emitted triangle did next: `rememberStreetTriangle` paid for four arrays, a bounds array, a Set
+  and a closure for every one of 2.9 M street triangles before finding, nearly always, that no
+  label frame and no terrain patch stood in its cell. `streetTriNear` asks that first, on bare
+  numbers, with a box a centimetre generous so its no is exactly the full walk's no. Same pane
+  state, back to back: **32.7 s to 18.6 s of street build, 116 s to 83 s to Ready** (about 3 s
+  and 18 s when the pane is not throttled), with the terrain index's counts (210,154 surfaces,
+  44,573 triangles, 27,048 trimmed) and the labels' 243,752 triangles identical before and after.
+  And thirty million fewer short-lived objects for a phone's collector. A lesson for the capture
+  skill: the pane's throttle state changes between loads, so a timing is only comparable with
+  the load taken immediately beside it.
+
+Settled GPU buffers under the touch profile: 890 MB (what was live this morning), 764 (Round
+122), **708** now, against Round 86's 602.
+
+And what a phone that still dies gets, because guessing its limit a third time is not a plan:
+
+- **A breadcrumb.** `bootMark` writes the current build step to `localStorage` (`philly3d.boot`)
+  at every step and at Ready; `bootClear` takes it back 20 s after Ready (the first frames upload
+  another fifth of the geometry, so the city has to stand a while) and on `pagehide`, which an
+  ordinary leave fires and a kill does not. A load that finds a fresh breadcrumb knows the last
+  one died, and at which step.
+- **A lite build.** A touch load that finds one builds LITE: no towns at all, the far ring's
+  BUILDINGS only within `LITE_R` 8 km of the centre (its streets, parks and ground stay citywide,
+  so the map still reads), a 1024 shadow map. **532 MB** of buffers and 8.2 M triangles against
+  15.7 M. The choice sticks to that device for a fortnight (`philly3d.lite`), or every other visit
+  would try the full build and die again; then it gets another go. `?lite=1` forces it on any
+  device, `?lite=0` forbids it and clears the flag, `__dbg.boot()` reports what was found.
+
+Verified in the pane: the breadcrumb read "Raising the rest of Philadelphia" mid-load; a leftover
+breadcrumb planted from another page on the origin made the next touch load report one failure
+and build lite; the lite numbers above; `tests/test_boot_lite.py` guards the wiring and that no
+street emitter pushes a soup again. 180 tests pass. Not verifiable from here: the phone itself.

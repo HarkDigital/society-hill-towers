@@ -120,6 +120,35 @@
   });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  // ---- the boot breadcrumb and the lite build (Round 124, Mike's phone: "a problem repeatedly
+  // occurred"). A phone that runs out of memory mid-load is killed without a word, reloads, and
+  // dies the same way until the browser gives up. The page now leaves a breadcrumb in
+  // localStorage at every build step and takes it back once the city has stood for a while, or
+  // when the page is left in the ordinary way (pagehide does not fire on a kill). A touch load
+  // that finds a fresh breadcrumb knows the last one died, and where, and builds LITE: no towns
+  // across the line, the far ring's buildings only within LITE_R of the centre (its streets,
+  // parks and ground stay citywide), a smaller shadow map. `?lite=1` forces it and `?lite=0`
+  // forbids it; `__dbg.boot()` reports both the breadcrumb found and the mode taken
+  const BOOT_KEY = 'philly3d.boot', LITE_R = 8000;
+  let bootPrev = null;
+  try { bootPrev = JSON.parse(localStorage.getItem(BOOT_KEY) || 'null'); } catch (e) { bootPrev = null; }
+  const bootDied = !!(bootPrev && bootPrev.step && Date.now() - bootPrev.t < 30 * 60000);
+  // a device that died once keeps the lite build for a fortnight, or every other visit would
+  // try the full one and die again; after that it gets another go at the full build
+  const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14;
+  let liteSticky = false;
+  try {
+    if (/[?&]lite=0\b/.test(location.search)) localStorage.removeItem(LITE_KEY);
+    else if (isTouch && bootDied) localStorage.setItem(LITE_KEY, String(Date.now()));
+    const ls = +localStorage.getItem(LITE_KEY) || 0;
+    liteSticky = ls > 0 && Date.now() - ls < LITE_DAYS * 86400000;
+  } catch (e) { liteSticky = false; }
+  const LITE = /[?&]lite=1\b/.test(location.search) || (isTouch && (bootDied || liteSticky) && !/[?&]lite=0\b/.test(location.search));
+  const bootFails = bootDied ? (bootPrev.fails || 0) + 1 : 0;
+  const bootMark = (step) => { try { localStorage.setItem(BOOT_KEY, JSON.stringify({ step, t: Date.now(), fails: bootFails, lite: LITE })); } catch (e) { /* private mode: no breadcrumb, no lite */ } };
+  const bootClear = () => { try { localStorage.removeItem(BOOT_KEY); } catch (e) { /* nothing to clear */ } };
+  bootMark('start');
+  window.addEventListener('pagehide', bootClear);
   // the installable app: a network-only service worker beside the page (sw.js) is what lets
   // Chrome and Edge offer Install; the manifest is linked from the template. Only over https,
   // so a dev server never gets a worker
@@ -1726,6 +1755,13 @@
       if (!G) continue;
       const next = [], nx=G.nx, nz=G.nz, cw=(G.x1-G.x0)/nx, ch=(G.z1-G.z0)/nz;
       for (const ringPart of remaining) {
+        // Round 124: a part whose box misses this grid is passed on without the four-sided clip
+        // and its allocations (the same branch the clip's null took). A strip touches one or two
+        // of the ten grids, and clipping it against all of them made the streets' build about ten
+        // times dearer than Round 88's, a main-thread block of seconds on a phone
+        let bx0=Infinity,bx1=-Infinity,bz0=Infinity,bz1=-Infinity;
+        for(const q of ringPart){if(q[0]<bx0)bx0=q[0];if(q[0]>bx1)bx1=q[0];if(q[1]<bz0)bz0=q[1];if(q[1]>bz1)bz1=q[1];}
+        if (bx1<=G.x0 || bx0>=G.x1 || bz1<=G.z0 || bz0>=G.z1) { next.push(ringPart); continue; }
         const piece = clipRect(ringPart,G.x0,G.x1,G.z0,G.z1);
         if (!piece || Math.abs(signedArea(piece)) < 1e-6) { next.push(ringPart); continue; }
         outsideRect(ringPart,G.x0,G.x1,G.z0,G.z1,next);
@@ -1868,7 +1904,7 @@
   function roadWeldBegin() { _rwSeen.clear(); _rwN = 0; }
   function roadWeld(rc, x, y, z, fresh) {   // fresh(i) writes the new vertex i's other attributes
     _rwTri[_rwN++] = x; _rwTri[_rwN++] = y; _rwTri[_rwN++] = z;
-    if (_rwN === 9) { _rwN = 0; if (streetSurfaceIndex || terrainRoadGrid) rememberStreetTriangle([_rwTri[0], _rwTri[2], _rwTri[1]], [_rwTri[3], _rwTri[5], _rwTri[4]], [_rwTri[6], _rwTri[8], _rwTri[7]]); }
+    if (_rwN === 9) { _rwN = 0; if ((streetSurfaceIndex || terrainRoadGrid) && streetTriNear(_rwTri[0], _rwTri[2], _rwTri[3], _rwTri[5], _rwTri[6], _rwTri[8])) rememberStreetTriangle([_rwTri[0], _rwTri[2], _rwTri[1]], [_rwTri[3], _rwTri[5], _rwTri[4]], [_rwTri[6], _rwTri[8], _rwTri[7]]); }
     const key = (Math.round(x * 100) + 4e6) * 1e7 + (Math.round(z * 100) + 4e6);
     let i = _rwSeen.get(key);
     if (i === undefined) { i = rc.n++; _rwSeen.set(key, i); rc.pos.push(x, y, z); fresh(i); ROAD_STATS.verts = (ROAD_STATS.verts || 0) + 1; }
@@ -1941,7 +1977,24 @@
     return [x0,x1,z0,z1];
   }
   function streetOverlap(a,b) { return a[0]<=b[1] && a[1]>=b[0] && a[2]<=b[3] && a[3]>=b[2]; }
+  // Round 124: does either build-only index hold anything near this triangle? Each emitted
+  // street triangle (2.9 M of them) used to pay for four arrays, a bounds array, a Set and a
+  // closure before finding, nearly always, that no label frame and no terrain patch was in its
+  // cell: most of the streets' build time, and thirty million short-lived objects on a phone.
+  // The box is a centimetre generous on every side, so a no here is exactly the no the full
+  // walk would have reached (the full walk rounds to float first and can only see fewer cells)
+  function streetTriNear(ax,az,bx,bz,cx,cz) {
+    const x0=Math.min(ax,bx,cx)-0.01,x1=Math.max(ax,bx,cx)+0.01,z0=Math.min(az,bz,cz)-0.01,z1=Math.max(az,bz,cz)+0.01;
+    if(terrainRoadGrid)
+      for(let x=Math.floor(x0/TERRAIN_PATCH_CELL);x<=Math.floor(x1/TERRAIN_PATCH_CELL);x++)
+        for(let z=Math.floor(z0/TERRAIN_PATCH_CELL);z<=Math.floor(z1/TERRAIN_PATCH_CELL);z++)if(terrainRoadGrid.has(x+':'+z))return true;
+    if(streetSurfaceIndex)
+      for(let gx=Math.floor(x0/100);gx<=Math.floor(x1/100);gx++)
+        for(let gz=Math.floor(z0/100);gz<=Math.floor(z1/100);gz++)if(streetSurfaceIndex.has(gx+':'+gz))return true;
+    return false;
+  }
   function rememberStreetTriangle(a,b,c,dx=0,dz=0) { // input [x,z,y], final GPU precision
+    if(!streetTriNear(a[0],a[1],b[0],b[1],c[0],c[1]))return;
     rememberTerrainRoad(a,b,c);
     if(!streetSurfaceIndex)return;
     const tri=[a,b,c].map(p=>p.map(Math.fround)),bounds=streetBounds(tri),seen=new Set();
@@ -2173,7 +2226,7 @@
   let lastAim = { cx: -120, cz: 0, extent: 640 };
   const sun = new THREE.DirectionalLight(COLORS.sun, 1.58);
   sun.castShadow = true;
-  const SHADOW_RES = window.matchMedia('(pointer: coarse)').matches ? 2048 : 4096;
+  const SHADOW_RES = LITE ? 1024 : window.matchMedia('(pointer: coarse)').matches ? 2048 : 4096;
   sun.shadow.mapSize.set(SHADOW_RES, SHADOW_RES);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 1.4;
@@ -9393,7 +9446,7 @@
   // a park touching the Schuylkill's pool reach is draped finely so it dips into the channel
   const poolTouch = (poly) => { const bb = bboxOf(poly); return bb[1] > -4500 && bb[0] < -3500 && bb[3] > -6750 && bb[2] < -2250; };
   const withinP = (bb) => P && bb[0] > P.x0 && bb[1] < P.x1 && bb[2] > P.z0 && bb[3] < P.z1;
-  async function raiseRing(bin, S, label, wideSeam) {
+  async function raiseRing(bin, S, label, wideSeam, keepAt, buildingsOnly) {   // keepAt(x, z): an optional filter on a record's centre (Round 124: a phone keeps only the towns inside the flight limit); buildingsOnly leaves the streets and the areas whole (the lite far ring)
     const hdr = new Int32Array(bin.buffer, 0, 4);
     const hasAttr = hdr[0] === 0x5348545B || hdr[0] === 0x5348545C;
     const roofPacked = hdr[0] === 0x5348545C;   // the roof word carries form and rise
@@ -9460,6 +9513,7 @@
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
+      if (keepAt && !keepAt(cx, cz)) continue;
       if (boathouseAt(cx,cz)) continue;
       if (ovpStraddle(poly, cx, cz)) { if ((i & 4095) === 4095) { setLoadingMessage(label + ', ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); } continue; }
       if (wxWater(cx, cz) || (demY(cx, cz) < TERRAIN.water + 0.5 && riverCorridor(cx, cz))) continue;   // nothing floats mid-river
@@ -9550,6 +9604,7 @@
       const n = body[k++], w = body[k++] / 10, t = body[k++];
       const pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
+      if (keepAt && !buildingsOnly && !keepAt(pts[pts.length >> 1][0], pts[pts.length >> 1][1])) continue;
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
       roadRecs.push({ pts: densify(pts, 30), w, t, i });
     }
@@ -9641,6 +9696,7 @@
       const n = body[k++], kind = body[k++];
       const poly = new Array(n);
       for (let j = 0; j < n; j++) poly[j] = [body[k++] * S, body[k++] * S];
+      if (keepAt && !buildingsOnly && kind !== 1) { const kc = polyCentroid(poly); if (!keepAt(kc[0], kc[1])) continue; }   // the water stays whole
       if (kind !== 1) {
         const [acx, acz] = polyCentroid(poly);
         if (wwbNear(acx, acz)) continue;               // the WWB deck owns its crossing
@@ -9713,7 +9769,7 @@
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
     const bin = unb64(CITY_B64, 'CITY');
     CITY_B64 = null;   // 7 MB of base64 freed
-    const R = await raiseRing(bin, 0.7, 'Raising the rest of Philadelphia', true);
+    const R = await raiseRing(bin, 0.7, 'Raising the rest of Philadelphia', true, LITE ? ((x, z) => x * x + z * z < LITE_R * LITE_R) : null, true);   // a lite build keeps the far ring's buildings near the centre (Round 124)
     if (!R) return;
     const { nwParks, nwWaters, waterAreaParts } = R;
     const W = RING_W;
@@ -9978,9 +10034,15 @@
     // covered (pack_outskirts.py). Scenery beyond the flight limit, so the world no
     // longer ends at the river or the county line
     if (typeof OUTSKIRTS_B64 === 'undefined' || !OUTSKIRTS_B64) return;
+    if (LITE) { OUTSKIRTS_B64 = null; return; }   // a lite build raises no towns (Round 124)
     const bin = unb64(OUTSKIRTS_B64, 'OUTSKIRTS');
     OUTSKIRTS_B64 = null;
-    const R = await raiseRing(bin, 1.0, 'Raising the towns across the line', false);
+    // Round 124 (Mike's phone still answered "a problem repeatedly occurred" after Round 122): the
+    // towns are scenery the camera can never reach, and they cost 164 MB of GPU buffers and the
+    // tallest heap step of the load. A phone keeps only what lies inside the flight limit (the
+    // city line buffered 2 km: the Navy Yard's south half, the near bank of Camden and the
+    // first streets over the county line) and lets the rest go to meadow
+    const R = await raiseRing(bin, 1.0, 'Raising the towns across the line', false, isTouch ? insideLimit : null);
     if (!R) return;
     setLoadingMessage('Raising the towns across the line, uploading');
     await uploadRing(R);
@@ -14760,6 +14822,10 @@
   let indegoReady = false, indegoDirty = false, indegoSolid = null, indegoBike = null, indegoBadge = null;
   let indegoReconAt = 0; const indegoLastCam = new V3(1e9, 0, 1e9);   // the half-mile rule (Round 82): the docks are rebuilt on the streetlights' cadence too
   let indegoTex = null, indegoCtx = null, pickedStation = null;
+  // the badge atlas at half size on a phone (Round 124): 4096 x 2048 is a 33 MB canvas and a
+  // 44 MB texture with its mips, for badges a phone draws at a few dozen pixels. The UVs are
+  // fractions of the atlas, so only the canvas and the drawing transform change
+  const INDEGO_ATLAS_K = isTouch ? 0.5 : 1;
   const indegoPickS = [], indegoPickK = [], indegoPickB = [];
   const btnIndego = document.getElementById('btnIndego');
   const _iq = new THREE.Quaternion(), _iqB = new THREE.Quaternion();
@@ -14824,6 +14890,7 @@
     if (sig === INDEGO.sig) return;
     INDEGO.sig = sig;
     const g = indegoCtx;
+    g.setTransform(INDEGO_ATLAS_K, 0, 0, INDEGO_ATLAS_K, 0, 0);   // the tiles are drawn in the 4096 x 2048 frame whatever the canvas holds
     g.clearRect(0, 0, 4096, 2048);
     g.textAlign = 'center';
     g.textBaseline = 'middle';
@@ -15042,7 +15109,7 @@
   step('Docking the Indego bikes', () => {
     if (!septaCanFetch) { btnIndego.style.display = 'none'; return; }
     const cv = document.createElement('canvas');
-    cv.width = 4096; cv.height = 2048;
+    cv.width = 4096 * INDEGO_ATLAS_K; cv.height = 2048 * INDEGO_ATLAS_K;
     indegoCtx = cv.getContext('2d');
     indegoTex = new THREE.CanvasTexture(cv);
     indegoTex.encoding = THREE.sRGBEncoding;
@@ -19300,6 +19367,7 @@
     for (const s of buildSteps) {
       document.getElementById('loadProgress').value = 70 + 30 * builtSteps++ / buildSteps.length;
       setLoadingMessage(s.msg);
+      bootMark(s.msg);
       await yieldNow();
       const t0 = performance.now();
       try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; PERF.failed.push([s.msg, String(err && err.message || err)]); console.error('build step failed:', s.msg, err); try { flushUploads(true); } catch (e2) { /* nothing staged */ } }
@@ -19307,6 +19375,8 @@
       if (BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
     }
     PERF.ready = Math.round(performance.now() - PERF.t0);
+    bootMark('ready');
+    setTimeout(bootClear, 20000);   // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived
     beacon('ready', { ms: PERF.ready, fail: failures });
     setLoadingMessage(failures ? 'Ready (some detail could not be built)' : 'Ready');
     loadmsg.classList.add('done');   // the pulse stops with the wait
@@ -19602,7 +19672,7 @@
         }
         return { sheet: +SH.toFixed(2), samples: n, aboveSheet: over.length, highest: +worst.toFixed(2), highestAt: worstAt, over: over.slice(0, 20) };
       },
-      groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), theme: () => ({ mesh: themeMesh, mat: themeMat, sheet: themeSheet, sheetMat: themeSheetMat, u: themeU }), pins: () => ({ tracked: pinBorn.size, rise: PIN_RISE }), roads: () => ({ strips: ROAD_STATS, decks: PERF.decks || null, wideSegs: wideRoadSegs.length / 4, lamp: lampUniform.value, glint: glintK, wwbLamps: WWB_LAMP_N, bridgeLampPts: bfbLampPts ? bfbLampPts.length / 3 : 0 }), drape: (ring, y) => { const out = []; const ok = drapeConvex(ring, y, (x, y2, z) => out.push([x, y2, z])); return { ok, out }; }, gridAt: (x, z) => { const G = groundGridAt(x, z); return G ? { x0: G.x0, x1: G.x1, z0: G.z0, z1: G.z1, nx: G.nx, nz: G.nz, cell: G.cell, hole: G.hole, skip: !!G.skip } : null; }, landY: groundMeshLandY, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
+      groundAt: (x, z) => ({ mesh: groundMeshY(x, z), dem: demY(x, z), river: delawareAt(x, z), beyondDem: beyondDem(x, z), south: southReach(x, z), east: eastOfDelaware(x, z) }), boot: () => ({ found: bootPrev, died: bootDied, sticky: liteSticky, lite: LITE, fails: bootFails, touch: isTouch }), theme: () => ({ mesh: themeMesh, mat: themeMat, sheet: themeSheet, sheetMat: themeSheetMat, u: themeU }), pins: () => ({ tracked: pinBorn.size, rise: PIN_RISE }), roads: () => ({ strips: ROAD_STATS, decks: PERF.decks || null, wideSegs: wideRoadSegs.length / 4, lamp: lampUniform.value, glint: glintK, wwbLamps: WWB_LAMP_N, bridgeLampPts: bfbLampPts ? bfbLampPts.length / 3 : 0 }), drape: (ring, y) => { const out = []; const ok = drapeConvex(ring, y, (x, y2, z) => out.push([x, y2, z])); return { ok, out }; }, gridAt: (x, z) => { const G = groundGridAt(x, z); return G ? { x0: G.x0, x1: G.x1, z0: G.z0, z1: G.z1, nx: G.nx, nz: G.nz, cell: G.cell, hole: G.hole, skip: !!G.skip } : null; }, landY: groundMeshLandY, concerts: () => ({ on: CONCERTS.on, ok: CONCERTS.ok, fails: CONCERTS.fails, events: CONCERTS.events.length, shown: CONCERTS.shown.map((s) => ({ venue: s.venue, shows: s.rows.map((e) => (e.artist || e.name) + ' ' + (e.time || 'TBA')), x: Math.round(s.x), y: Math.round(s.y), z: Math.round(s.z) })) }), roofAt, concertTest: () => { CONCERTS.nextT = performance.now() + 600000; const t0 = Date.now() / 1000; const mk = (id, artist, venue, lat, lon, time) => ({ id, name: artist, artist, genre: 'Rock', url: 'https://www.ticketmaster.com/event/' + id, image: '', venue: { id: 'v' + id, name: venue, lat, lon }, date: '2026-09-11', time, tba: !time, start: t0 + 3600, from: t0 - 60, until: t0 + 5 * 3600, status: 'onsale' }); CONCERTS.ok = true; CONCERTS.events = [mk('t1', 'The War on Drugs', 'The Met Philadelphia', 39.9701, -75.1591, '20:00'), mk('t2', 'Japanese Breakfast', 'Union Transfer', 39.9614, -75.1553, '19:30'), mk('t3', 'Kurt Vile', 'The Fillmore Philadelphia', 39.9695, -75.1335, '20:00'), mk('t4', 'Bruce Springsteen', 'Wells Fargo Center', 39.9012, -75.1720, '19:30'), mk('t5', 'Hall and Oates', 'Freedom Mortgage Pavilion', 39.9345, -75.1292, ''), mk('t6', 'Sun Ra Arkestra', "Johnny Brenda's", 39.9720, -75.1345, '21:00')]; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, wxSurfU, waterU, flightTest, shipTest, DPR, PERF, perf: perfStats, fetchWeather, fetchNws, lightning: () => ({ live: LTN.live, ok: LTN.ok, fails: LTN.fails, n: LTN.n, n10: LTN.n10, nearestKm: LTN.nearestKm, queued: LTN.queue.length, drawn: LTN.drawn }), strike: (lat, lon) => spawnStrike(performance.now(), [Date.now() / 1000, lat, lon, 0]),
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap, elTracks: () => EL_STATS,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),

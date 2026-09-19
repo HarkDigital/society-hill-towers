@@ -6,6 +6,15 @@ symptom shows up later as a wrong conclusion rather than a failure.
 
 ## Timing and throttling
 
+- **The pane's throttle state changes between loads, without telling you.** The same build read
+  3 s and 34 s of street build an hour apart, and 18 s and 116 s to Ready (Round 124). A timing is
+  only comparable with the load taken immediately beside it: A, then B, then A again if it
+  matters. For a function, a micro-benchmark through a `__dbg` handle in ONE page is steadier
+  than two loads (20,000 drapes in 120 ms settled what two hours of load timings could not).
+- **`performance.memory.usedJSHeapSize` is mostly garbage during a load.** The same build peaked
+  at 1,048 MB and 1,483 MB in consecutive runs and settled to 450 MB both times. Measure GPU bytes
+  by wrapping `bufferData` / `texImage2D` / `texStorage2D` ahead of the page (devlog Round 122),
+  and read the heap only after the load has idled.
 - **A hidden pane is CPU- and timer-throttled.** Build timings measured while the
   pane is hidden are inflated several fold. Only compare A/B runs in the same pane
   state, and take any performance number from a visible pane.
