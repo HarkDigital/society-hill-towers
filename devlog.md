@@ -6004,3 +6004,16 @@ already matched the repo's by sha256). `/septa.json` answers 614 vehicles, 8 s o
 aisstream key in `/etc/philly3d/ais.env`, and placing a key is Mike's to do (one command, in the
 session's reply). Until then the page's own socket fallback carries the ships as before. `/b`
 stays 404: the beacon is the owner's decision (ops/README section 5).
+
+## Round 123 — the welcome card's copy (Sep 19)
+
+**Mike, with a screenshot of the welcome card: remove the period after Philadelphia, change "A
+New Perspective" to "Data In Motion", remove "Fly above the skyline. Follow the rhythm of the
+streets. Discover a living Philadelphia, from the rivers to the rooftops.", remove "Made for the
+Curious. Built for Exploring."**
+
+`template.html`: the title is `Philadelphia` over `Data In Motion` (no period on either line, to
+match the first), and the `.sub` paragraph and the `.welcomehint` footer are gone from the
+markup. Their CSS rules stay, harmless, so a later line can come back without restyling. The
+facts row and the button close up under the title. Verified by the pane's own screenshot of the
+card during load. 175 tests pass.
