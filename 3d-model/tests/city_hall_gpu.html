@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>City Hall Light Checks</title>
+<style>body{background:#151d27;color:#eee8dc;font:14px system-ui;padding:24px}pre{white-space:pre-wrap}canvas{width:300px;height:180px;margin:8px}</style>
+<h1>City Hall Light Checks</h1><p>Production floodlight shader: continuous horizontal and vertical fades, brighter architectural features, night-only illumination, theme changes and both depth modes.</p><pre id="result">Running…</pre><div id="gallery"></div>
+<script src="../three.min.js"></script><script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const interiorCode=src.includes('  const WINDOW_INTERIOR_GLSL =')?src.slice(src.indexOf('  const WINDOW_INTERIOR_GLSL ='),src.indexOf('  const cityMat =')):'';
+ const cut=(a,b)=>{const i=src.indexOf(a),j=src.indexOf(b,i);if(i<0||j<0)throw Error('Missing source '+a);return src.slice(i,j);};
+ const patch=new Function(cut('  function cityHallFloodPatch(','  const BOATHOUSE_PLANS')+'return cityHallFloodPatch;')();
+ const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.27,.17,1.2);');
+ const VBuf=new Function('THREE','freeOnUpload',cut('  class IdxBuf {','  const groupCity')+'return VBuf;')(THREE,()=>{});
+ const check=(v,m)=>{if(!v)throw Error(m);},out=[],errors=[];const oldError=console.error;
+ console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+ for(const logarithmicDepthBuffer of [false,true]){
+  const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});r.setSize(512,128);r.outputEncoding=THREE.LinearEncoding;
+  const uniforms={uHallColor:{value:new THREE.Color(1,0,0)},uHallCenter:{value:new THREE.Vector3()},uHallAxes:{value:new THREE.Vector4(1,0,0,1)},uHallOn:{value:1},uNight:{value:1},vertical:{value:0}};
+  const sh={uniforms,fragmentShader:`#include <common>
+   varying vec2 uv0;uniform float uNight,vertical;
+   void main(){
+    vec3 vWPos=mix(vec3(mix(-90.,90.,uv0.x),16.,-71.5),vec3(11.,uv0.x*126.,-55.),vertical);
+    vec3 vWNorm=vec3(0.,0.,1.);vec4 diffuseColor=vec4(1.);vec3 totalEmissiveRadiance=vec3(0.);
+    #include <emissivemap_fragment>
+    gl_FragColor=vec4(totalEmissiveRadiance/2.,1.);
+   }`};patch(sh,uniforms);
+  const mat=new THREE.ShaderMaterial({uniforms,vertexShader:'varying vec2 uv0;void main(){uv0=uv;gl_Position=vec4(position.xy,0.,1.);}',fragmentShader:sh.fragmentShader});
+  const sc=new THREE.Scene(),camera=new THREE.Camera(),quad=new THREE.Mesh(new THREE.PlaneGeometry(2,2),mat);sc.add(quad);
+  const rt=new THREE.WebGLRenderTarget(512,128),pix=new Uint8Array(512*128*4);
+  const render=()=>{r.setRenderTarget(rt);r.render(sc,camera);r.readRenderTargetPixels(rt,0,0,512,128,pix);return pix.slice();};
+  const row=p=>Array.from({length:512},(_,x)=>p[(64*512+x)*4]);
+  const jump=a=>Math.max(...a.slice(1).map((v,i)=>Math.abs(v-a[i])));
+  const h=row(render()),sample=x=>h[Math.round((x+90)/180*511)];
+  check(jump(h)<=4,'Horizontal light cutoff: '+jump(h));
+  check(sample(62)>sample(32)+15,'Pavilions lost their brighter pools');
+  check(sample(0)>sample(32)+15,'Tower lost its brighter pool');
+  uniforms.vertical.value=1;const v=row(render());check(jump(v)<=2,'Vertical light cutoff: '+jump(v));
+  uniforms.uNight.value=0;check(row(render()).every(x=>x===0),'Daytime wash remains');uniforms.uNight.value=1;uniforms.vertical.value=0;
+  const themeSamples=[];for(const c of [0xff0000,0x00ff00,0xffffff]){uniforms.uHallColor.value.setHex(c);const p=render(),i=(64*512+256)*4;themeSamples.push(Array.from(p.slice(i,i+3)));}
+  check(themeSamples[0][0]>100&&themeSamples[0][1]===0&&themeSamples[1][1]>100&&themeSamples[1][0]===0&&new Set(themeSamples[2]).size===1,'Theme routing failed');
+  // Compile the hook on the real procedural facade too, rather than only on a swatch.
+  const vb=new VBuf(4);for(const [x,y,u]of[[-74,0,0],[74,0,148],[74,32,148],[-74,32,0]])vb.push(x,y,-71.5,0,0,1,.55,.5,.43,1,0,3.1,.42,u,148,32);
+  vb.idx.push(0,1,2,0,2,3);const geom=vb.geometry(true),stone=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.92});
+  const facade=facadeFactory(stone,{value:new THREE.Vector3(0,1,0)},uniforms.uNight,{value:1});stone.onBeforeCompile=s=>{facade(s);patch(s,uniforms);};
+  sc.remove(quad);sc.add(new THREE.Mesh(geom,stone));const cam=new THREE.PerspectiveCamera(40,4,.1,1000);cam.position.set(0,16,50);cam.lookAt(0,16,-71.5);
+  r.setRenderTarget(rt);r.render(sc,cam);r.readRenderTargetPixels(rt,0,0,512,128,pix);check(pix.some((v,i)=>i%4===0&&v>10),'Production facade failed to draw');
+  if(!logarithmicDepthBuffer){r.setRenderTarget(null);r.render(sc,cam);const cv=document.createElement('canvas');cv.width=512;cv.height=128;cv.getContext('2d').drawImage(r.domElement,0,0);document.getElementById('gallery').append(cv);}
+  check(errors.length===0,'Shader errors: '+errors.join('\n'));check(r.getContext().getError()===0,'WebGL error');
+  out.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',maxHorizontalJump:jump(h),maxVerticalJump:jump(v),pavilion:sample(62),connectingWing:sample(32),themeSamples});
+  mat.dispose();stone.dispose();geom.dispose();quad.geometry.dispose();rt.dispose();r.dispose();r.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(out,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>

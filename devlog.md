@@ -4928,3 +4928,953 @@ pre away    PHI at BOS      7:30 PM ET, Away     bronze dot, still
 
 - 103 tests pass. Page 27.41 MB (+2.6 KB). Devlog Round 90, CLAUDE.md. CLAUDE.md's Round 88 note
   naming `carSpotHidden` also corrected: Round 89 replaced it with `carSpotRank`.
+
+
+## Round 91: a local interface design review (Sep 18)
+
+Mike asked for a review, suggestions, and a more aesthetically pleasing app. The local
+review build keeps the City Hall mark, Montserrat, charcoal and gold, the top navigation,
+the existing layer defaults and the renderer. The interface now has a unified navigation
+dock, labelled desktop actions, a redesigned welcome with measured assembly progress,
+and eight described destinations in Explore. Layers uses switches, Sun & sky separates
+its facts and shows selected presets, and Share, the guide, About, and map cards share
+the same spacing and panel treatment. A small neighborhood/time readout orients desktop
+visitors.
+
+Search results are native buttons. Edits and panel switches invalidate pending address
+lookups. The guide's hidden slides are inert, Credits participates in its focus loop,
+and the welcome isolates background controls until entry. Outdated guide directions
+were corrected. The share card also refreshes during automatic orbit: updateHash's
+orbit guard previously skipped its refresh and left the visible coordinates and URL
+frozen, even though the copy action itself calculated the current pose.
+
+Verified in the local browser at desktop, 844 by 390, and 390 by 844: destination glide,
+local City Hall search, Tab to results, cleared-query suggestions, panel switching,
+night preset and selected state, guide slide bounds, and the credits route. The time
+panel shows live weather and air quality separately from the selected solar clock.
+The Python suite passes 103 tests with one expected failure; the air-quality and skyline
+light UI assertions were updated from the former concatenated line to their labelled
+facts. JavaScript syntax, build guards, documentation coverage, and a focused share
+refresh/cadence check pass. This is a local review, not a deployment. The page adds
+about 24 KB without new assets or dependencies. DESIGN-REVIEW.md records the findings,
+next-work priorities, and validation limits.
+
+## Round 92: stadiums, skyline, and night lighting (Sep 18)
+
+Mike asked to revamp the 3D model, especially the South Philadelphia stadiums and
+skyline. Replaced the two block-like stadium builders with actual stepped seating
+bands, aisles, concourses, glazing, roof structures, and procedural playing surfaces.
+Citizens Bank Park has an open three-tier horseshoe, warning track and diamond,
+lattice light standards, the larger current PhanaVision proportions, and a neon bell.
+The Linc has a regulation-size N8W field with markings and goals, sideline and end-zone
+tiers, scoreboard openings, tapered canopies, roof ribs, tiebacks, and solar modules.
+Separate deck segments prevent an end-zone polygon from roofing over the field.
+
+The arena now has a curved roof eyebrow, roof seams and plant, glass entrances and
+three canopies, northeast/northwest/south screens, and visible corner strut lights
+following the existing theme calendar. Venue screens show identity graphics rather
+than fabricated game data. The old flat additive stadium halos are removed; a merged
+material carries per-vertex neutral floodlight response, while canvas textures carry
+the fields and signs. Night parking paint now dims with daylight instead of glowing
+white. Smaller floodlight sprites and a soft bloom threshold keep point lights cleaner.
+
+One and Two Liberty Place's shafts now use their intended silver-banded glass style,
+with deeper blue tints and thinner crown trim. The Comcast pair has more restrained
+glass. CTC's broad imported 142 m office wings are raised to an estimated 213.5 m
+terrace datum beneath the existing hotel, including the occlusion grid; its total
+height stays 342 m. Raised facade chevrons and three-story belts follow the imported
+plans. Curtain-wall panels have restrained variation and grouped occupied offices;
+window lighting has warm/cool variation and less white glare. Added four Explore
+views, bringing the list to twelve.
+
+Compared the existing and revised skyline at (-900,250,-180,-0.98,-0.05), Sep 18 at
+17:30. Inspected all three venues in daylight and at night, including a green skyline
+theme with neutral stadium fields, readable markings, scoreboard openings, the bell,
+and the arena's roof and corner lights. No console/shader errors in the final browser
+check. The final Linc view reports about 14.49 M triangles versus a roughly 14 M city;
+frame times in this pane are not a physical-device performance benchmark. Explore
+navigation and its scrolling twelve-stop panel work in the preview. A requested
+viewport override did not change this pane's reported 1280x720 viewport and was reset;
+no new physical-mobile or touch-device rendering claim is made.
+
+JavaScript syntax, build guards, docs_check, and git diff --check pass. The suite runs
+107 tests with one pre-existing expected failure, including four new tests executing
+the actual venue geometry with vendored Three.js under Node. The page is 27.45 MB;
+this model pass adds about 12 KB of app source, no libraries or downloaded assets.
+MODEL-REVIEW.md records the references and remaining approximations, including CBP's
+unexcavated field terrain and the estimated CTC terrace. This remains a local review
+build, with no production deployment.
+
+## Round 93: blue seats and fuller outfield at Citizens Bank Park (Sep 18)
+
+Mike asked for blue baseball seats, outfield seating, and a scoreboard rotation.
+All three main tiers and the alternating row shades now use blue. Expanded low
+left- and right-field terraces follow the angular fence, with 22 rows, split
+sections and aisles, rear promenades and railings, and a center-field batter's-eye
+gap. Brick pavilions sit behind the new seating. PhanaVision and its steel supports
+rotate together about 26 degrees toward home plate.
+
+Rebuilt the single-file page. JavaScript syntax, the four venue geometry tests,
+and whitespace checks pass. Visually checked the elevated view and the view from
+behind home plate in daylight and at night; the browser reports no errors.
+The two detailed venue batches total 56,042 triangles. Changes remain local.
+
+## Round 94: flush Linc scoreboards and a stable baseball field (Sep 18)
+
+Mike supplied model screenshots and real stadium photos, asking to align the Linc's
+scoreboards and fix flickering on the baseball field. The Linc boards used the field
+bearing with the wrong sign for PlaneGeometry's rotation convention. Both displays
+and housings now derive their facing from the inward field axis, rotating 16 degrees
+to sit flush across the end-zone openings.
+
+CBP's concave foul-corner outline had been triangulated as a centroid fan. That fan
+overlapped itself and had reversed face winding, causing coplanar flicker and dark
+daylight shading. The authored outline now uses ShapeUtils polygon triangulation:
+one correctly wound surface with the existing texture and field boundaries.
+
+Added two geometry regressions: triangle intersection area on the actual baseball
+mesh, and field-relative alignment of both football displays and their cases.
+Both failed before the fixes and pass afterward. All six venue tests, JavaScript
+syntax, the build guards, docs_check, and whitespace checks pass. Browser checks
+cover CBP from behind home plate and during its overview glide, and the Linc from
+the overview and an aligned (-1909.87,170,5142.4,-0.139626,-0.63) pose at 12:30.
+The field is clean at those angles, both boards align with the seating, and the
+final browser error log is empty. Rebuilt locally; no production deployment.
+
+
+## Round 95: streets, paths and rail clear the terrain (Sep 18)
+
+Mike reported streets, roads, paths and railway tracks being clipped by elevation.
+The remaining flat fallbacks were the problem: core ribbons used centreline heights,
+bank roads bypassed ground conformance, a partly uncovered/holed road reverted its
+entire strip to a flat quad, and the wide tier built its boundary roads before the
+far heightfields existed. Rail beds also checked their centres rather than their
+full width and the terrain between samples.
+
+Road ribbons, strips and bend fans now split at ground cells/diagonals across their
+whole footprints. Only missing cells use the original grade; bank/bridge grades stay
+as minimums. Each tier seam clears both adjacent mesh edges. The core ground now
+ends exactly at CORE_EXT instead of overshooting by a rounded cell, and has a
+road-only registry entry so hand-built core plazas retain their placement.
+Wide road ownership is registered immediately, preserving far-tier deduplication,
+but the geometry is built after all terrain tiers are ready.
+
+The browser comparison found a second source of clipping: wide park polygons that
+extended beyond the wide mesh had already been draped on the DEM, floating above
+the eventual far mesh and burying roads. Their surfaces now wait for the finished
+ground too; small wide parks also conform. At East Park the isolated pale road
+fragments now join into continuous routes. No new map data or rendering dependencies.
+
+Rail clearance covers the entire ballast footprint, including bends and ridges
+between samples. Shared chain endpoints stay aligned and trains use the corrected
+height profile. Covered 30th Street approaches retain their portal levels. Elevated
+road clearance checks the two actual deck triangles between samples before its
+existing grade limiter runs; tunnel geometry keeps its existing treatment.
+
+Six new geometry regression tests execute the source helpers against synthetic
+slopes, ridges, terrain holes and stepped tier seams. Five of the six test groups
+failed against the pre-change source and pass after the fixes. The full suite ran
+115 tests in 12.35 s, with one pre-existing expected failure. Node syntax, the build,
+docs_check and whitespace checks pass. Rebuilt page: 27.45 MB.
+
+An ignored, instrumented browser build tested vertices, edge midpoints and centroids
+of generated transport triangles against the actual drawn heightfields. Its final
+16,931,866 surface-transport samples contain no values below ground (minimums:
+core roads 0.139 m, paths 0.160 m, wide 0.239 m, far 0.221 m, towns 0.254 m,
+elevated roads 0.592 m, surface ballast 0.500 m). This is a sampled mesh-clearance
+check, not a proof of visibility through all buildings or hand-built overlays;
+intentional tunnels and the covered station area are excluded from the rail audit.
+Terrain collars are counted separately, also with no buried samples. Audit code
+stays in ignored .audit previews, outside the shipped page.
+
+Visual checks: East Park (-3980,180,-3340,0.55,-0.55), 30th Street's south approach
+(-3000,150,-690,-0.4,-0.56), and the Roxborough Park river/hillside routes
+(-8550,220,-9750,-0.2,-0.65). Browser errors were empty. Changes remain local.
+
+
+## Round 96: continuous road and rail bends (Sep 18)
+
+Mike supplied the exact view (-3744.1,166.8,-2508.3,-1.706,-0.552), showing jagged
+highway edges and broken-looking tracks near Mantua. Round 95's heightfield audit
+could establish clearance but could not detect overlapping or disconnected bend
+geometry. The exact-view comparison confirmed that independent rectangular road
+segments left notches on the outside of bends and overlapping surfaces inside.
+Rail strips additionally put coplanar fan triangles over the ballast and rails.
+
+Core ribbons, wide roads, far roads and surface rail strips now share cross-sections
+at bends using bounded miter offsets. Terrain conformance remains in place; authored
+grades use the actual triangular surface, keeping adjacent ends at identical heights.
+Rail ballast and both rails follow the same joins with no coplanar fill discs. Bank
+skirts follow the corrected road edges. Road endpoint caps remain for joins between
+separate OSM ways. Hairpin miters are limited to twice the half width.
+
+The rail drawing loop was also still testing the next point's tunnel bit when ending
+a visible run. Since flags belong to segments, this omitted one visible segment
+before a tunnel. Visible runs now include the final endpoint of their last surface
+segment and continue to the actual portal; intentionally covered segments stay hidden.
+
+Three added tests cover road bend overlap and matching edge coordinates, ballast
+triangle overlap/counts, and tunnel segment ranges. On the Round 95 source the bend
+fixture had 6.38 m2 of road overlap and 24.67 m2 of ballast overlap. With the change,
+both are zero to test tolerance. The full suite runs 118 tests with the existing one
+expected failure. JavaScript syntax, build guards, docs_check and whitespace checks
+pass. The citywide sampled audit again reports no buried surface-transport points
+among 16,052,238 samples (same exclusions and limits as Round 95). No browser errors.
+
+Compared before and after at Mike's exact camera and Sep 18, 12:30 with clear weather.
+The Expressway edges are continuous through the curve, the tracks remain continuous,
+and the previous protruding strip ends are gone. Also inspected the 30th Street south
+portal from (-3235,85,-650,0.055,-0.55); the tracks reach the entrance. Rebuilt the local single-file page;
+production has not been updated by this pass.
+
+## Round 97: welcome-screen title case (Sep 18)
+
+Mike asked for title case throughout the welcome screen except its descriptive
+paragraph. Updated the kicker, headline, facts, ready button, progress accessibility
+label and footer. Removed the kicker's forced uppercase. Loading messages use title
+case at display time, preserving internal step names and acronyms such as SEPTA.
+The descriptive paragraph is unchanged. Rebuilt locally; syntax, representative
+loading-copy checks, exact paragraph comparison and whitespace checks pass. Inspected
+the rendered welcome screen and accessibility tree at the ready state.
+
+## Round 98: street labels follow the rendered pavement (Sep 18)
+
+Mike reported clipped street names at (-3547.8,163.9,-2087.9,0.478,-0.800).
+Reproduced the missing ends of Martin Luther King Junior Drive and missing middle
+of Schuylkill Expressway. Labels sampled the road's DEM centerline rather than the
+rendered pavement, used the same height across their width, and capped neighboring
+column rises at one metre. This forced text below slopes and raised road sections.
+
+A temporary spatial index now retains actual road-top triangles only where baked
+labels need them, including core ribbons, wide/far streets and their endpoint caps,
+elevated/cut roads, and the custom Ben Franklin and Walt Whitman decks. Labels use
+shared grids at <=4 m spacing in both directions, the complete existing SDF atlas
+rectangle, and at least 18 cm clearance. Each text triangle also checks intersections
+with road triangles and terrain-cell edges/diagonals; interior crests cannot be
+missed by vertex samples. Removed the downward slope clamp. The temporary index is
+released after the single label mesh is built. Depth testing remains enabled;
+unrelated crossing decks are excluded from the supporting-road lookup, and the
+covered-road suppression is preserved.
+
+The instrumented city build compares the previous height algorithm with the final
+Float32 label geometry. Of 3,774 placements, 336 previously intersected terrain or
+supporting pavement; the worst was a Walt Whitman Bridge label ~42.96 m below the
+custom deck. Afterward, all 3,774 placements render with zero intersecting triangles
+or buried samples across 243,752 triangles and 6,824,948 sample checks; minimum
+sampled clearance is 0.18004 m. Thirteen placements have no recorded road triangle
+(Aquarium Drive, Ogden Street, and eleven small streets/courts); these were checked
+against actual terrain using the fallback grade. This audit concerns road/ground
+intersection, not visibility through vehicles, buildings, bridge structures, or
+from every possible camera angle. Local audit generator and reference build are
+in `.audit/street-labels/` and `3d-model/.audit/`.
+
+Five new Node-backed regression tests cover steep longitudinal/cross slopes,
+interior road crests, raised decks versus crossing bridges, ground ridges, complete
+texture coverage, finite coordinates and upward winding. The full suite runs 123
+tests with one pre-existing expected failure. Syntax/build/docs/whitespace checks
+pass. Compared the exact reported view before/after in the browser: both names
+are complete. Additional bridge/cut views check elevated and depressed placement.
+The rebuilt page is local; this pass has not deployed to production.
+
+## Round 99: intact, clickable pins above buildings (Sep 18)
+
+Mike reported building faces cutting through art pins and requested that no pin
+kind clip buildings. Reproduced this on the Puma pin at The Caring Center beside
+North 31st Street, using (-3637,52,-1959,-0.600,-0.250) at Sep 18, 21:00. A roof
+cut away the left side of the palette badge.
+
+All annotation pins now use `pinOverlay`: transparent, depth test/write disabled,
+render order 100. This covers the shared art/historical/closure badge builder,
+SEPTA, Indego, both aircraft variants, ships, Amtrak, search destinations, and the
+score/concert connector lines and anchor balls. Pins remain at their geographic
+anchors and retain their distance gates, layer toggles and entrance animation.
+Their complete faces paint over the city; the physical vehicles, docks, marker
+posts, art forms and buildings keep normal depth testing.
+
+Picking now gives visible annotations priority over scene models and bypasses
+the building-occlusion gate for icon hits. Transparent parts of the badge texture
+are rejected, including Indego's per-instance atlas tiles. Overlapping icons pick
+the last drawn batch/instance. Physical-model and ground fallback picks still
+respect buildings. The formerly hidden part of Puma's icon was clicked in the
+browser and correctly opened the Puma / Eric Berg / The Caring Center card.
+
+Six new tests cover overlay materials (including line/ball connectors), selection
+through building depth, transparent-corner click-through, per-instance bike atlas
+coordinates, overlapping badges and all pin-family call sites. Full suite: 129
+tests, one pre-existing expected failure. Syntax, build, documentation coverage
+and whitespace checks pass. The nighttime before/after view confirms the roof no
+longer cuts the badge. Local rebuilt preview only; not deployed.
+
+The runtime material audit confirmed all ten live badge batches (art, historical,
+full/partial closures, SEPTA, Indego, fixed-wing/helicopter, ships and Amtrak) use
+the shared overlay policy. The daylight comparison also shows a complete icon.
+Browser console: no errors. Audit preview/generator are kept under the ignored
+`.audit/pin-clipping/` and `3d-model/.audit/` directories.
+
+## Round 100: clouds at varied elevations, smoother volume (Sep 18)
+
+Mike reported that the clouds all sat at the invisible flight boundary and looked
+pixelated. The old renderer started every cloud on a 1,900 m plane, assumed the
+camera was always below it, and used 18 desktop / 9 touch samples with a random
+per-pixel offset. The flight ceiling remains 1,600 m.
+
+Replaced that plane with two world-space atmospheric bands. Lower-bank bases vary
+from 780 to 1,720 m, with independently varying depth up to 980 m; the upper bank
+starts between 3,000 and 3,850 m with up to 1,150 m depth. Different pattern scales,
+seeds and wind speeds separate them. A camera-centred enclosing mesh supplies view
+rays only: cloud density stays in world space, and the ray intervals work below,
+inside and above lower banks, including downward views. Fragment depth comes from
+the first cloud contribution rather than the enclosing mesh, so foreground
+buildings hide clouds and clouds can veil more distant geometry. Both standard
+and logarithmic depth are supported. Ground shadows retain an approximate mean
+lower-bank projection at 1,550 m.
+
+Removed the pixel-random march offsets. Stable midpoint integration, filtered noise
+at pixel and sample footprints, vertical boundary smoothing, and a small 3D density
+component give softer edges and fuller shapes. A lower optical density and diffuse
+heavy-weather lighting reduce harsh bands. The maximum budgets are 64 + 36 samples
+on desktop and 32 + 20 on touch, with interval rejection, empty-sample skips and
+transmittance early exits. Existing weather, sun/night colour, fog and wind controls
+remain connected. The opt-in low-poly fallback also uses the varied height bands.
+
+Validation: built and inspected clear skies at 350 m and 1,450 m and heavy overcast
+above the skyline. The desktop preview at DPR 1.25 reported p50 16.8 ms initially and 33.3 ms
+in the final overcast view (p95 33.4 ms); these are local observations, not a
+mobile benchmark or a guaranteed frame rate.
+`tests/clouds_gpu.html` loads the actual app shader and checks four combinations of
+desktop/touch budgets and standard/log depth, including camera heights, downward
+rays, zero weather cover, clear versus overcast, fixed-view stability, near-wall
+occlusion, clouds in front of distant geometry, varied bases and the upper bank.
+All four variants pass. The density slice measured 375 m of base variation across
+its sampled 12 km strip; no foreground pixels bled through. The Python suite runs
+129 tests with one pre-existing expected failure. The page is rebuilt locally.
+
+## Round 101: building fabric and recognizable skyscrapers (Sep 18)
+
+Mike asked for a model-wide building review with particular attention to real-world
+Center City skyscrapers. Compared the existing live scene with the RAMSA Comcast
+Center project, Enclos' CTC/Cira facade studies and photographs, and Liberty Place
+references linked in MODEL-REVIEW.md. Kept the imported plans/heights and the
+previous stadium, terrain, labeling, pin and cloud work.
+
+- `VBuf` now carries `aFacade` as two signed decimetre shorts. Signed wall width
+  encodes the two U endpoints (negative=start, positive=end); the second short is
+  the wall top above `aBase`. The vertex shader decodes before interpolation.
+  Both packed builders supply these values for courtyard and exterior walls;
+  roofs/trim default to zero. Core float attributes still work with the same hook.
+  Four bytes/vertex rather than three new floats, about 59 MiB of GPU storage in
+  this build; upload releases staging arrays. Keep this endpoint encoding in mind
+  if adding intermediate vertices to wall quads in the future.
+- All fabric styles benefit from wall-fitting windows, eave shadows and a restrained
+  coping/frieze/base treatment. Frames are quieter, sash/mullion detail survives
+  the final glass-tint mix, and windows have subtle blind/pane variation.
+  Style 19 provides brick apartment windows, with the OPA masonry palette preserved.
+  Mid/high-rise selection now preserves industrial lofts and uses the mapped era.
+- Replaced the outer curtain-wall hook with differentiated framing, stable panel
+  variation, view-dependent procedural sheen and grouped warm/cool night offices.
+  Actual sky reflections still use the existing environment. Floors and mullions
+  fade separately by pixel footprint. Styles 24/25 remain the Comcast pair;
+  26 is Liberty's central bays, 27 FMC, 28 Cira and 29 enclosed glazed crowns.
+- Liberty shafts gain recessed corners; Two Liberty gains central bays too. The
+  crown trim is finer, and mechanical-crown windows no longer compete with the
+  nighttime chevrons. The source/model height and existing theme system remain.
+- Landmarks gain restrained coping, corner lines and stone piers in the existing
+  trim batch. Comcast Center gains south-facing sky-atrium accents, and CTC gains
+  mechanical belts and a quieter hotel stack. Three Logan's rose-gray stone and
+  `stone_piers` style are persisted in both towers.json and bake_towers.py.
+- BNY Mellon's pyramid gains glass below the ribs and additional horizontal rings,
+  with its excessive mast shortened. Winding respects either OBB convention; the
+  opaque skin stays inside the existing night-wash sheet. Enclosed-crown style 29
+  suppresses office lights in this steep pyramid as well as the Liberty crowns.
+- Cira Centre previously shared the rectangular `notch` builder despite its
+  `sloped` crown type. It now has a continuous faceted, inward-leaning glass mass
+  and a sloping roof, capped at the researched 133 m and inside the surveyed plan.
+  Its upper night-wash skin follows that geometry. This is a visual approximation
+  of the documented complex facade, not exact construction geometry.
+
+Verification: production geometry helpers run under Node in the seven new
+`tests/test_architecture.py` cases (buffer growth/defaults/release, both tiers'
+wall datums and winding, Liberty plan triangulation, pyramid normals, part-bound
+trim, Cira footprint/height bounds, and facade family selection).
+`tests/buildings_gpu.html` compiles the real material hooks for all 30 base styles,
+checks 20 packed/core facade matches and 28 lit style families, plus subdued
+mechanical crowns, for all four detail-budget/depth-mode combinations. All pass
+with zero shader errors. The instrumented city audit found complete wall metrics
+on 8,530,716 nonblank packed wall vertices. Live daytime neighborhood/tower views
+and the nighttime downtown cluster were inspected. Full suite: 136 tests, one
+existing expected failure. `node --check`, build, docs check and whitespace checks
+pass. Audit pages and the start-of-turn source snapshot are under ignored .audit
+folders; the shipping page has no review controls. Rebuilt locally, not deployed.
+
+
+## Round 102: cut-edge grass no longer swallows streets (Sep 18)
+
+Mike's exact Logan Square view (`#p=-1913.8,144.6,-1406.9,-0.321,-1.097`)
+showed grass covering most of the Vine Street frontage and parts of Franklin
+Town Boulevard. Reproduced it in the browser, then hid the cut-edge grass alone:
+the entire road network underneath was intact. These secondary terrain meshes
+were absent from the earlier heightfield-only clearance audit.
+
+- Expressway/ramp grass now uses `terrainRibbon`: a skin on the ground triangles,
+  without a road ribbon's centreline minimum grade, random lift or round end caps.
+- A build-only spatial index retains actual pavement near cut patches and the core
+  landscape. `trimTerrainPatch` subtracts interfering road footprints by convex
+  triangle intersection, including narrow roads passing through the interior of
+  a large grass triangle. It leaves ground under clear high bridges in place.
+  The safety margin is 8 cm and the index is released before live feed setup.
+- Rail portal grass gets the same protection using the actual road and ballast
+  tops. Core parks and the waterfront promenade also had incidental path/street
+  overlaps; those are fitted to the existing pavement. The promenade waits for
+  both road tiers. Explicit I-95 park/plaza caps retain the roads below them.
+- Pitched bridge end walls were being recorded as upward-facing pavement. Only
+  sufficiently upward-facing box surfaces now participate in road-label and
+  terrain clearance; below-grade foundation faces are not driving the checks.
+
+The instrumented sweep examined 2,280,731 road/path surface triangles against
+480,544 captured overlay triangles, plus 15,926,510 heightfield samples. It uses
+exact projected triangle intersections for overlays, not just centreline probes.
+Before: 25,140 intersecting road-cut-grass/road triangle pairs and 614 rail-cut-
+grass/road pairs. After: zero for both; minimum remaining overlap clearance is
+8.09 cm and 17.86 cm respectively. The promenade also has zero interfering
+pairs (8.02 cm minimum). Far/town parks, sports lots and paved yards remain clear.
+Core park flags outside the authored I-95 cap areas are gone.
+
+This is a geometry clearance audit, not a claim every object in the model is
+visible from every camera. It intentionally also reports covered I-95 decks,
+water/fountain fixtures, cut-floor/tunnel transitions, and bridge-abutment edge
+contacts; those are distinct from the grass strips covering ordinary streets.
+The report summary is preserved under ignored `.audit/road-overlays/` along
+with the before source, audit generator and before/after preview pages.
+
+Browser spot checks cover the exact report, eastern Vine Street, the Chestnut
+Street bridge, MLK Drive/Schuylkill Expressway and the northern station approach.
+Five new production-helper regressions cover the subtraction geometry, full
+cross-slope skin, high bridges, ramps, tunnel caps and bridge end-face filtering.
+The page is rebuilt locally with no new dependencies. Not deployed.
+
+Final validation: 141 tests, one existing expected failure; JavaScript syntax,
+build guards, documentation coverage and whitespace checks pass. No browser
+errors in the audit preview. The normal preview is reopened at Mike’s exact pose.
+
+
+## Round 103 — Comcast crowns, City Hall floodlighting and Boathouse Row
+
+Mike supplied six reference photos and requested the Comcast Center's defining
+upper cutout, fully illuminated selectable crown bands, cleaner Technology Center
+bracing, architectural rather than blanket City Hall lighting, and accurate day
+and night Boathouse Row models.
+
+- Comcast Center now has a real 37 m crown assembly: side piers, a recessed
+  mechanical back wall, a dark soffit and a supported lintel. The rectangular
+  recess is physical geometry on both broad faces, not a dark decal. Its depth
+  and relative proportions are visual interpretations of the supplied photograph.
+  The existing mapped lower wings and other towers' notch crowns are preserved.
+- Continuous LED panels cover the crown's exterior faces at night, leaving the
+  recess dark. They disappear by day to expose the underlying glass and mullions.
+  Both Comcast crowns select contiguous horizontal bands from a 1–4 color palette;
+  normalized height replaces the old repeated floor-by-floor color cycling.
+  A separate raw-color material preserves saturated red/blue without a gray
+  daylight lighting contribution. CTC uses a frosted lantern and slim baffles.
+- CTC's repetitive V geometry is replaced by alternating single diagonal members
+  on the office elevations. Short return walls and the hotel retain clean glazing.
+- City Hall has its own facade material: repeated arched storeys, illumination
+  concentrated on the tower and projecting pavilions, restrained connecting walls,
+  cornice courses and pilasters, dark slate roofs, and theme-responsive upper metal.
+  Floodlight color multiplies the actual stone and window shading. The old solid
+  overlay sleeves flattened the windows and have been removed from this landmark.
+- Eleven Boathouse Row clubhouse plans come from the existing raw OSM data.
+  `boathouses.json` records their plans, palettes and visual height approximations.
+  Custom models add distinct cross-gables/dormers, masonry and half-timber facades,
+  river-facing arched boat doors, upper windows, balconies, a small turret, quay
+  landings and roof/arch/trim outline lights. Generic duplicates are suppressed in
+  both city tiers. The outlines follow the current skyline theme automatically.
+- Sun & Sky now offers Automatic, Warm White, team palettes, Red/White/Blue,
+  Purple/Gold and custom 1–4 color palettes, plus banded/solid Comcast crowns.
+  Manual changes apply immediately. `lights` and `bands` are kept in shared URLs;
+  encoded comma-separated hex palettes are parsed with URLSearchParams.
+
+Reference interpretation also checked against the architect's project pages:
+https://www.ramsa.com/expertise/project/comcast-center and
+https://www.fosterandpartners.com/projects/comcast-technology-center .
+Club identities and ordering were cross-checked with the Schuylkill Navy:
+https://boathouserow.org/boathouse-row-beyond-history/ . No downloaded textures,
+new dependencies or deployment. The photographic forms remain lightweight
+architectural approximations rather than a survey-grade reconstruction.
+
+Validation: rebuilt the 27.50 MB standalone page; JavaScript syntax, documentation
+inventory (49 build inputs and 62 scripts), and whitespace checks passed. The full
+suite ran 145 tests with one existing expected failure. Browser checks covered
+day/night views of all four landmarks, red/white/blue and solid crown lighting,
+custom one-to-four-color controls, and palette restoration from shared URLs.
+The normal preview loaded without browser errors.
+
+
+## Round 104 — Penn's Landing CAP as an elevated construction site
+
+Replaced the authored finished lawn and 70 planted trees at the I-95 cap with a
+construction-stage model based on the supplied photo. The site follows the rotated
+Front Street grid between Chestnut and Walnut, instead of the old horizontal
+rectangle. Separate I-section beams, median/edge piers, bearings and limited poured
+decking span I-95; only the northern section of the Columbus Boulevard extension
+has beams. Blue hoarding encloses a graded riverside staging yard with stockpiles,
+material stacks, cabins and two lattice crawler cranes. These are representative
+construction details, not a survey or live inventory of site equipment.
+
+Removed the park-specific terrain slope and its solid portal faces. Existing
+Foglietta/Vietnam memorial decks remain. Cap height includes the modeled motorway
+ramp shoulders and both boulevard carriageways; the clearance regression samples
+full roadway widths at one-metre intervals. Its minimum modeled clearance is
+5.65 m, and no pier/footing intersects the sampled road corridors. The median
+support line was shifted to account for the highway's curve at the south end.
+
+Obsolete footpaths and access roads are split at the construction fence, including
+segments whose endpoints both lie outside the zone. Typical local-road traffic,
+surveyed/procedural trees, and former park lamps are suppressed within the site.
+I-95 and Columbus Boulevard stay open under the structure. The riverside yard
+uses a level earthwork surface to avoid grass breaking through a mismatched drape.
+
+Reference status: PennDOT's June 30, 2026 update describes staged beam setting and
+support-pier work over I-95 and Columbus Boulevard:
+https://95revive.com/news/cap-construction-update-summer-2026/ .
+
+Validation: four new structural/boundary regressions; full suite ran 149 tests
+with one existing expected failure. Standalone page rebuilt (27.51 MB).
+Browser verification covered the supplied aerial viewpoint and both highway
+approaches beneath the beams. No browser errors; syntax, documentation inventory
+and whitespace checks passed. The normal preview is left at the supplied pose.
+
+
+## Round 105 — Buildings block every pin family
+
+The user explicitly requested no pins visible through buildings, superseding the
+Round 99 annotation overlay treatment. Renamed the shared helper to
+`pinSceneDepth` and enabled depth testing for all its materials. This covers art,
+historical markers, closures, SEPTA, Indego, Amtrak, aircraft/helicopters, ships,
+search destinations, and score/concert connectors and anchor balls. Depth writes
+remain off so transparent billboard rectangles do not mask other geometry.
+Occlusion uses the actual GPU scene depth, including packed building meshes whose
+CPU vertex data has been released. Layer toggles, distance limits, anchors and
+entrance animation are retained.
+
+Pin hit selection now runs the existing scene-occlusion check before draw-order
+priority, allowing unobstructed hits to win over a hidden pin. Search destination
+text additionally uses the line-of-sight rule already applied to event placards.
+The neighborhood-name atlas remains a cartographic label layer rather than a pin.
+
+Revised the six pin helper regressions to require depth-tested pins and rejection
+of blocked picks. Added `tests/pins_gpu.html`, which runs the production shared
+policy and bloom material hook with standard and logarithmic depth: badges, search
+pins, event lines and anchor balls produce zero changed pixels behind a foreground
+wall, appear in front or when uncovered, and badges respect partial building edges.
+All four GPU configurations passed.
+
+Full validation: 149 Python/Node tests, with one existing expected failure;
+JavaScript syntax, documentation inventory and whitespace checks pass. Browser
+verification at the Puma artwork on North 31st Street confirms the roof now
+blocks the intersecting portion of the icon. The page reports no browser errors.
+
+## Round 106 — Ground, river and sky material pass
+
+Rebalanced the city’s environmental palette as one system. Streets now use a
+shared charcoal/slate palette across the core, wide and far districts and the
+bridge decks. Concrete walks, aprons and waterfront paving use warmer mineral
+tones; brick walks/plazas, parking lots, service yards and rail ballast have more
+distinct, restrained colours. Core sidewalks and the Society Hill plaza now use
+the procedural surface treatment. Daytime street text is darker for contrast.
+The green-surface classifier checks green against both red and blue, keeping
+cool gray asphalt from accidentally receiving a grass texture.
+
+The deterministic meadow tile retains its fine blades and mipmaps, with softer
+tufts, greener colour, less dry-yellow contrast and much gentler macro variation.
+The distance filters still fade detail to its mean, so the lawn does not darken
+or shimmer when zooming out. Existing terrain/transport geometry is unchanged.
+
+Water has a deeper green-blue body, a subtle olive-silt shoreline tint, gentler
+long waves and restrained highlights. Angle-dependent reflections now use the
+live sky palette in scene-linear light; solar/lunar glints use the active light
+colour. The sky and weather continue to drive the shared river, basin and pool
+materials. `liquify` now keys programs by its closure parameters so river and
+fountain ripple scales cannot alias to the same compiled shader.
+
+Clear sky shifts from the former violet-blue toward atmospheric blue and pearl
+haze. Twilight has a peach horizon toward the sun and a cooler opposite horizon;
+night uses a deeper navy/blue-gray palette. The reflection dome carries the new
+twilight uniform. Sun/moon positions, cloud altitude, weather effects and the
+existing lighting intensity/exposure remain intact.
+
+Validation: `tests/environment_gpu.html` renders the actual production shaders
+in four desktop/touch × standard/logarithmic depth configurations. All pass:
+stable frozen surfaces, near/far grass brightness, mineral asphalt classification,
+lane paint, rain darkening, snow layering, animated water, distinct fountain
+scales, warm/cool sky response, darker night water and directional twilight.
+The full suite ran 149 tests with one existing expected failure. Syntax,
+documentation inventory and whitespace checks pass; the standalone page is rebuilt.
+Visual checks covered Logan Square streets, Society Hill/waterfront paving,
+Boathouse Row/Fairmount lawns and both rivers in daylight, sunset and night,
+plus overcast at the Delaware. No browser errors were reported.
+
+## Round 107 — Continuous traffic and a varied vehicle fleet
+
+Replaced the traffic layer's unbounded reconciliation/render truncation with a
+single bounded population that includes retiring vehicles. Cars already in view
+keep their identities through time-of-day and density changes; new traffic is
+prepared offscreen or beyond a broad distance fade. The initial population is
+seeded under the loading screen. Offscreen births start at full coverage, while
+distant transitions use a fixed-size ordered coverage fade instead of shrinking
+cars into the pavement. Bodies, headlights and shadow passes share that fade.
+
+The graph now splits ways where other endpoints meet their interiors: 6,052
+runs become 9,047 connected pieces, preserving the same 1,080 km of roads.
+Height checks preserve overpasses, and one-way direction is respected. Vehicles
+retain their model, paint and distance overshoot through transfers, steer through
+joints more smoothly, use discrete lanes and maintain length-aware following
+gaps with gradual acceleration. Unresolved visible dead ends hold vehicles until
+they can continue or leave view; they no longer force a U-turn or visible removal.
+This remains ambient traffic, without a traffic-signal or cross-traffic priority
+simulation.
+
+Six distinct metric models replace the single three-box sedan: compact, sedan,
+wagon, SUV, pickup and delivery van. Sloping glass, painted roofs, mirrors,
+neutral trim, four tires with hubs, pickup beds and taller cargo bodies give
+them distinct silhouettes. Six instanced batches retain the desktop/touch
+population limits; commercial vehicles occur more often on arterials.
+
+Validation: seven new production-code tests cover the pool over two simulated
+minutes including camera and clock changes, graph connectivity/grade separation,
+route identity and overshoot, birth spacing, following, dead ends and geometry.
+The full suite ran 156 tests with one existing expected failure. GPU checks pass
+for all models, paint/trim separation, fixed-size half fades, hidden lamps/shadows
+and standard/logarithmic depth with and without bloom hooks. At the same fixed
+Schuylkill viewpoint, a 20-second baseline recorded 55 visible births and 80
+visible removals; the revised build recorded zero of each. A second 20-second
+nighttime check after moving to the Delaware waterfront also recorded zero.
+These are observed samples, not a guarantee covering every camera movement.
+The standalone page is rebuilt; syntax, documentation and whitespace checks pass.
+
+## Round 108 — Comcast Center opening and Phillies crown correction
+
+Corrected the previous interpretation of the reference photograph. The dark
+applied panels at 49, 98 and 147 m made the closed lower sky atria look like
+additional cutouts, so those overlays are removed and the façade stays glazed.
+The actual upper recess moves below a separate, complete lantern: modeled
+247–271 m opening, 271–297 m crown. These datums are visual approximations of the
+supplied photo. The rear façade remains closed. The architect's description of
+the glazed tower and lower sky atria was also checked at
+https://www.ramsa.com/expertise/project/comcast-center .
+
+The cut is shared across the tallest shaft and its imported shoulder sections.
+Previously those 266.8 m shoulders filled the bottom of the opening, leaving a
+false shelf. `comcastFacadePieces` clips each affected horizontal slice against
+the common opening. Side piers, recessed back wall and soffit make the depth
+physical; no coping or LED panel spans the void. The daylight crown has clearer
+glass instead of the former dark mechanical tint.
+
+The crown's four faces and roof receive continuous light panels, above rather
+than around the recess. Slots 200–201 identify Comcast Center within the shared
+crown batch. Both the automatic Phillies game-day theme and the manual Phillies
+selection set `uComcastSolid`, producing solid Phillies red without changing
+other buildings' stripe palettes. Explicit custom palettes still select broad
+horizontal bands and the existing solid option still works.
+
+Validation: the 158-test suite passed with one existing expected failure.
+Regression checks exercise the actual packed building parts and all rotated
+opening plans. `tests/comcast_gpu.html` renders the production crown geometry and
+shader in four standard/logarithmic depth and bloom combinations: every sampled
+face and roof pixel is RGB (232, 24, 40) under Phillies, while the custom flag
+palette retains three bands. A full-city canvas probe independently confirms
+the same red. Day/night front, opposite and angled views were checked in the
+browser without errors. Syntax, documentation and whitespace checks pass; the
+self-contained page is rebuilt.
+
+## Round 109 — Soft City Hall floodlight gradients
+
+Mike pointed out the unnatural straight edges in City Hall's themed illumination.
+The old fragment shader used binary pavilion masks and a brightness reset every
+28 m up the tower. `cityHallFloodPatch` replaces these with overlapping Gaussian
+light pools at the corner pavilions, entrance pavilions and tower. A soft union
+keeps overlaps from forming bright seams, and continuous vertical attenuation
+with a broad clock-stage wash removes the repeated horizontal cutoffs. The field
+uses the block's world-space axes so separate wall meshes share the same gradient.
+Window/stone detail, dark slate roofs and the existing night/theme controls remain.
+Compared the old/new full-city views and inspected red, green and white nights
+plus daylight in the local browser; the connecting walls now taper smoothly.
+
+Validation: production shader GPU checks pass with standard and logarithmic depth,
+including red/green/white routing and zero added light by day. Across the sampled
+facade, the largest adjacent brightness change is 2/255 horizontally and 1/255
+vertically; corner pools remain twice as bright as connecting wings. The real
+procedural facade hook compiles and renders in both modes. All 158 Python tests
+pass with the one existing expected failure. JavaScript syntax, documentation
+inventory and whitespace checks pass; rebuilt the 27.52 MB standalone page.
+
+## Round 110 — Soft lunar terminator
+
+Mike requested a gentle fade between the visible moon and its unlit side. The
+previous 0.07-radius blend read as a rigid edge at the normal display size. The
+sky shader now uses a 0.22-radius blend at quarter phase, tapering it with the
+lunar chord and available phase width so thin crescents retain their shape.
+Screen-space filtering sets a minimum antialiasing width on small displays;
+derivatives are evaluated outside the conditional disc branch. New and full
+moon endpoints are explicit. Position, orientation, phase calculations, maria,
+outer limb and the existing phase-scaled halo are preserved; no earthshine disc
+is added.
+
+Validation: `tests/moon_gpu.html` renders the production sky shader at 24- and
+96-pixel moon diameters with standard and logarithmic depth. Quarter-phase
+10–90% transitions cover 4 and 12 pixels respectively; integrated mask areas
+stay within 0.24 percentage points of the requested phases. New moon is empty,
+reversed bright-limb orientations match, and day/night plus post-pipeline shaders
+compile cleanly. Crescent, quarter, gibbous and full samples and the actual city
+sky were inspected. Syntax, documentation and whitespace checks pass; the
+standalone page is rebuilt at 27.52 MB.
+
+## Round 111 — Comcast Center's illuminated façade grid
+
+Mike supplied nighttime references showing the crown's fine vertical mullions and
+horizontal floor bands through the themed lighting. The independent light skin
+had been obscuring that glass detail. Its shader now retains the full theme color
+between darker framing: 1.52 m mullions, stronger posts every four panes, 4.15 m
+floor bands and corner framing. Panel-local metric coordinates share the daylight
+façade's datum and stay continuous through the half-metre lighting slices. The
+periodic bars are integrated over the pixel footprint to soften under-resolution
+detail without thickening it into flickering screen-width lines. The roof and CTC
+carry zero grid coordinates. No additional geometry or draw calls are introduced.
+Phillies still fills the crown red, and custom palettes keep their selected bands.
+
+Validation: the production crown GPU check passes standard/logarithmic depth and
+post on/off, with visible mullion and floor-band contrast in red and green, custom
+red/white/blue bands, a red roof, and no lighting across the opening. In the red
+sample the pane is RGB (232,24,40), a mullion (209,21,35), and a floor band
+(150,11,22). The fixture now includes the opaque crown behind its lighting skin,
+as in the actual city; without it, far-side panels incorrectly overwrite front
+samples. The 158-test Python suite passes with one existing expected failure.
+The full city is inspected from Mike's view. Syntax, documentation and whitespace
+checks pass; rebuilt the standalone page (27.52 MB).
+
+## Round 112 — Restore visible, sustained traffic
+
+The no-pop-in pass had left visible streets under-supplied: cars could only be
+born offscreen, random junction choices favoured busy arterials, and no upstream
+route was reserved to refill an empty visible block. The traffic bake also still
+ended at the old wide-area boundary, leaving most roads west of the Schuylkill
+view without any traffic data. Short ways under 25 m and simplified junction
+vertices had broken additional connections.
+
+The bake now includes city OSM and the supplemental park drives, deduplicated by
+way ID. It follows the rendered far-ring residential extent, retains connectors
+down to 2 m, and simplifies only between shared junctions. The new 700 mm unit in
+the header covers the city without int16 coordinate saturation; the decoder also
+accepts the legacy zero/200 mm header. The baked network contains 29,749 ways and
+5,614 km before runtime water/site cuts. The compact junction-preserving bake
+adds about 0.69 MB to the previous standalone build, now 28.21 MB.
+
+Initial loading seeds the visible roads uniformly. Later shortages search
+upstream for an offscreen spawn and reserve a legal route into the empty block;
+inbound vehicles count against demand. Junction choices account for occupancy,
+nearby streets get refill priority and a modest density lift, and offscreen
+surplus vehicles release pool slots. The 2,200 desktop / 550 touch limit, six
+vehicle models, lane spacing, directional links, depth and coverage fades remain.
+Visible vehicles still survive density changes and unresolved dead ends.
+
+Validation: the full suite ran 160 tests with one existing expected failure;
+the nine traffic tests passed again after compacting the bake and matching the
+rendered street extent. New cases check actual upstream arrivals without visible
+births/deaths, retained short links, geographic coverage and unsaturated packing.
+The full city was inspected at the Schuylkill, Center City and waterfront, in
+daylight and evening. The original Center City sample had 11 moving cars within
+the frustum; the first revised sample had 127, with zero visible births/removals
+across the sampled camera transition. These are frustum counts, not an occlusion
+or whole-city guarantee. The final evening Schuylkill sample had 342 moving cars
+versus one in the baseline. Observed desktop frame-time medians remained around
+17 ms. Build, syntax, documentation and whitespace checks pass. No deployment.
+
+## Round 113 — Rocky on the upper pedestal
+
+Moved the existing bronze Rocky figure from the lawn beside the lower steps to
+the center of the light octagonal pedestal on the museum's upper landing, as
+requested. His feet meet the pedestal top at T + 0.9 m, and he retains the
+raised-glove pose facing Eakins Oval. Removed the old two-tier base and the
+former fountain's hidden water insert. The local Rocky search entry now shares
+the built statue's horizontal position and pedestal elevation.
+
+Verified the rebuilt city in close and museum-wide views: the figure is centered
+and rests on the light stone, with no duplicate at the old location. The search
+anchor matches (-3084.754, 19.819972, -2215.514). Browser error log was empty.
+JavaScript syntax, build, documentation and whitespace checks pass.
+
+## Round 114 — complete window rows below the roofline
+
+The shared fabric shader now reserves an opaque roofline band: roughly 0.65–0.9 m
+on low buildings, 0.85–1.4 m on masonry towers, and 1.25 m below the deeper
+Victorian/siding cornices. Window coordinates fit complete rows into the available
+wall with at most 17% vertical compression. The highest point of each opening,
+including its frame/lintel, must fit; storefronts, fanlights and other ground-floor
+variants use the same clearance. Masonry courses and roof trim retain their real
+world coordinates. Both the core float wall attributes and packed citywide wall
+attributes use this shared behavior. Purpose-built curtain walls, landmark crown
+lighting and the Society Hill Towers' existing parapets retain their own treatment.
+Distant averaged window light also stops below the roofline.
+
+Validation: the production shader passed 2,184 GPU roof-clearance cases across 26
+façade variants, seven building heights, explicit/fallback floor heights,
+core/packed attributes, elevated bases, three detail budgets and both depth modes.
+The original shader fails the same regression on Georgian and stone-pier façades.
+All 30 building-material styles also passed the existing four GPU configurations,
+including packed/core equivalence and nighttime illumination. The Python suite
+ran 160 tests with one existing expected failure. Syntax, build and docs checks
+passed. Also inspected close and neighborhood-wide Old City views in daylight and
+at night; the browser error log was empty. Rebuilt the local HTML; no deployment.
+
+## Round 115 — tracks on the elevated railway
+
+Added two complete tracks to both existing Market–Frankford elevated alignments:
+14.84 km from the Callowhill and 46th Street portals toward Frankford and 69th
+Street. Each has a dark track bed, paired running rails with feet/webs/heads,
+outside third rails, and 41,236 instanced cross-ties at a continuous 0.72 m pitch.
+`elTrackFrames` and `elTrackRibbon` share mitered cross-sections through bends;
+`elTrackSleepers` keeps its distance phase across segment boundaries. All details
+ride the existing smoothed and portal-ramped deck profile. Pitched deck boxes now
+use their slope length. Three meshes total, two added draw calls; upload releases
+static geometry buffers. `__dbg.elTracks()` reports counts.
+
+Visually checked North Front Street, West Market Street and the Kensington bend.
+The four running rails stay continuous and the ties sit on the deck. No browser
+errors. Three production geometry tests cover bend gauge/join continuity, upward
+railhead normals, sleeper phase on uneven segment lengths and sloped profiles,
+finite full-route geometry and instancing. The full suite passed 163 tests with
+one existing expected failure. Build, JavaScript syntax, documentation and
+whitespace checks passed. Rebuilt locally; no deployment.
+
+Also checked SEPTA's public API documentation (https://api.septa.org/) and actual
+TransitView responses for L1, B1, B2 and B3 on Sep 18, 2026. L1 returned five rows
+and B1 seven; all twelve had exactly the same coordinates (39.952187, -75.15995),
+VehicleID "None" and Offset 998. B2/B3 were empty. These are not usable vehicle
+positions. Existing bus/trolley live tracking stays in place. No subway trains
+were presented as live. A future timetable-based animation must explicitly say
+its positions are estimated; a reliable live subway layer requires another feed.
+
+## Round 116 — I-95 wall extent and El tunnel approaches
+
+The broad white barrier across the Callowhill lanes was the core's hand-built
+Front Street trench wall, extrapolated from z = -1200 to 1800 although the
+constructed trench and its heightfield end at CORE_EXT (-520 to 850). Toggling
+that mesh in the reported view confirmed the cause. Bound both straight walls
+to the actual core trench; mapped overpasses keep their own parapets outside it.
+
+Both El alignments now share a cached `elTrackProfiles` result for rails, deck,
+excavation and portal masonry. The first 280 m climbs smoothly from a tunnel
+5.6 m below the starting ground to the elevated alignment. Concrete retaining
+walls, coping, a lintel and a short shadowed covered continuation frame each
+entrance. Rails and ties remain continuous into the tunnel. Portal details join
+the existing structure batch, adding no draw calls. `__dbg.elTracks()` also
+reports each portal and its excavated length (77.4 m Callowhill, 170 m West Market).
+
+`elPortalClipGround` subtracts the exact 9 m-wide opening from indexed wide/far
+heightfield triangles, retaining outside ground and interpolated heights,
+normals and colours. It does not remove coarse 25/50 m cells or lower adjoining
+highway pavement. The ground registry retains the surrounding surface grade for
+road fitting; `elPortalAt` explicitly excludes trees and grass from the opening.
+The close-up visual pass caught floating grass instances and verified their
+exclusion. No change to SEPTA live-data behavior.
+
+Checked the reported aerial view, both tunnel mouths at track level and the
+remaining Society Hill trench. No browser errors. Extended the production El
+geometry tests with excavation-area conservation, zero ground coverage inside
+the openings, interpolated attributes, upward winding, rising portal grades and
+tunnel clearance. All 165 tests passed with one existing expected failure;
+JavaScript syntax and the local HTML build passed. No deployment.
+
+## Round 117 — Roof lighting follows the building footprint
+
+The reported view at (-1593.8, 208.4, -712.0) exposed a solid red slab cutting
+across the chamfered/recessed rooftop next to the green-lit W/Element tower.
+The generic flat-roof `band` crown was a filled oriented bounding box, so its
+horizontal faces spilled across roofs and its sides ignored the actual plan.
+
+`roofLightBand` now builds only a vertical perimeter fascia from the surveyed
+footprint, with shared mitered corners, 0.20 m wall clearance and its upper edge
+0.20 m below the roof. No horizontal luminous roof cap remains. All flat-roof
+band crowns use the helper; existing theme colours, palette slots and batches
+are preserved, with no extra draw calls.
+
+Compared before/after at the exact reported camera with the user's red, white
+and green palette, then checked the opposite side in daylight and at night,
+plus surrounding western skyline bands. No browser errors. Production-geometry
+tests audit all 23 currently rendered band landmarks against the real packed
+plans, plus rotated rectangles, chamfers and concave returns in both windings.
+They check finite positions, outward vertical faces, roof exclusion, joined
+corners and clearance. One Logan's existing spec does not match its tall packed
+part, so it has no band to audit; no matching/data changes in this round.
+
+The 167-test suite completed successfully with one existing expected failure.
+JavaScript syntax, build, documentation coverage and whitespace checks passed.
+Local preview rebuilt; no deployment.
+
+## Round 118 — Soft architectural theme lighting
+
+The roof in the reported Murano-area view (-2641.1, 208.5, -1042.4) still read
+as a painted stripe after the footprint correction. Replaced the 2.6 m solid
+flat-crown bands with narrow 0.32 m fixtures beneath the parapet and a separate
+4.8 m facade wash that falls smoothly downward. Notched/sloped crowns now use
+their actual wall plans for both fixtures and wash instead of filled roof boxes.
+All wash skins discard horizontal caps and use continuous shader falloff,
+including feathered upper/lower edges and distinct uplight/downlight profiles.
+
+The shared theme rendering now explicitly identifies architectural emitters for
+bloom. Saturated red/blue sources previously sat below the luminance threshold,
+so increasing brightness either did nothing or washed them toward pastel.
+`architecturalBloom` encodes source coverage above 1 in the existing HDR scene
+alpha, preserving ordinary geometry and pin masks. Transparent lights use
+independent alpha blending without changing their color blending. The bright
+pass filters four samples and extracts a restrained peak-channel halo; the
+composite protects the source pixels so large crowns retain their colors/grid.
+Opaque buildings still block the source before the blur. Theme fixtures,
+Comcast crown panels, City Hall, wash skins, bridge nodes and the existing
+Boathouse Row outline batch share this treatment. No extra scene passes,
+render targets or per-fixture draw calls. Direct-render/mobile clients retain
+the softer fixtures and facade falloff without post-process bloom.
+
+Visual checks covered the exact reported roof, the nearby skyline, Comcast's
+custom bands and solid Phillies crown, City Hall, Boathouse Row and daylight.
+No browser errors. The new GPU regression runs the production post pipeline
+with standard/log depth and opaque/transparent sources: colored halos fade,
+covered sources remain blocked, labels do not glow, and large panels preserve
+their palette. The red fixture measures (232,24,40) while its surrounding halo
+fades to black. Fallback wash gradients and daylight-off checks also pass;
+existing Comcast-grid and City Hall GPU pages pass. The 168-test Python/Node
+suite completed with one existing expected failure. Syntax, build, documentation
+coverage and whitespace checks passed. Local build only, no deployment.
+
+
+## Round 119 — Layered interior window lighting
+
+Replaced the uniformly filled lit windows across houses and skyscrapers with a
+shared room shader. Homes have warm, offset lamp pools and shaded window reveals;
+offices have a broader ceiling wash, mixed warm/neutral/cool temperatures and
+suite-level occupancy. Individual rooms vary in brightness, with partial blinds,
+curtains and quiet shadows near the floor. The opening coordinates follow each
+facade style's actual windows, including paired and arched sashes and storefronts.
+Sash bars, mullions and residential posts now block the interior emission instead
+of lighting up with the glass. Existing parapet clearances and theme lighting stay
+in place. The curtain-wall material starts from white emission so its own room
+colors are not multiplied by a second amber tint.
+
+The same treatment covers Ryland's custom glass and the explicitly modelled
+Society Hill towers. The latter carry local room coordinates through their merged
+glass and curtain geometry, so their overlays agree on the room being lit. Lobby
+glass gets a softer continuous ceiling wash. All room identities are deterministic;
+fine lighting detail converges to an average by pixel footprint. No per-window
+light objects, additional draw calls, textures or render targets. Interior shader
+work is skipped when the night lighting is off.
+
+Visual review compared the original flat windows with the new house windows,
+Society Hill / Ryland, Center City offices, Comcast and the wider skyline, plus
+daylight. Runtime reported no shader errors. The new GPU page checks actual room
+profiles and production apartment/facade hooks in standard/logarithmic depth:
+all occupied test rooms have a recessed gradient; occupancy is identical across
+repeated renders and the low-resolution pass; home/office temperatures differ;
+sash frames stay dark; horizontal glass and daylight have no interior emission.
+The roofline GPU sweep passed 2,184 cases with zero glass or light in the top
+half-metre. All 30 facade styles compile under both depth modes and detail budgets.
+The Python/Node suite completed 168 tests with one existing expected failure.
+Local preview rebuilt; no deployment.

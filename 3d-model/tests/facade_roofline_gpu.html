@@ -1,0 +1,68 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Facade Roofline Checks</title>
+<style>body{background:#17212a;color:#eee;font:14px/1.5 system-ui;padding:20px}#gallery{display:flex;flex-wrap:wrap;gap:12px}figure{margin:0}canvas{width:240px;height:300px}pre{white-space:pre-wrap}</style>
+<h1>Facade Roofline Checks</h1>
+<p>Production window and emission masks at varied building heights, floor heights, elevations, detail budgets and depth modes. The upper 0.5 m must contain no windows or window light. Full-height façades must retain visible windows below the parapet.</p>
+<pre id="result">Running…</pre><div id="gallery"></div>
+<script src="../three.min.js"></script>
+<script>
+(async()=>{
+ const baseline=new URLSearchParams(location.search).has('baseline');
+ const src=await(await fetch(baseline?'../.audit/window-roofline-before.js':'../app.js',{cache:'no-store'})).text();
+ const interiorCode=src.includes('  const WINDOW_INTERIOR_GLSL =')?src.slice(src.indexOf('  const WINDOW_INTERIOR_GLSL ='),src.indexOf('  const cityMat =')):'';
+ const a=src.indexOf('    const facadeHook ='),b=src.indexOf('    cityMat.onBeforeCompile = facadeHook',a);
+ const factory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+src.slice(a,b)+'\nreturn facadeHook(.52,.34,1.0);');
+ const packedCode=src.slice(src.indexOf('  class IdxBuf {'),src.indexOf('  const groupCity'));
+ const VBuf=new Function('THREE','freeOnUpload',packedCode+'\nreturn VBuf;')(THREE,()=>{});
+ const errors=[],failures=[],results=[];const oldError=console.error;console.error=(...args)=>{errors.push(args.join(' '));oldError(...args);};
+ const styles=baseline?[0,7,14,16,19]:[...Array.from({length:20},(_,i)=>i).filter(i=>i!==3),64,68,69,72,73,74,75];
+ const heights=baseline?[12.2,14.6]:[3.5,6.1,8.8,9.2,12.2,14.6,24.4];
+ const W=240,H=300;
+ for(const log of (baseline?[false]:[false,true])){
+  const renderer=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer:log});renderer.setSize(W,H);renderer.setClearColor(0x000000);
+  renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  const scene=new THREE.Scene(),cam=new THREE.OrthographicCamera(-6,6,15,0,.1,26000);
+  const light=new THREE.DirectionalLight(0xffe6c9,2.0);light.position.set(-12,20,25);scene.add(light,new THREE.HemisphereLight(0xbcd9f3,0x44352a,1.1));
+  const night={value:1},det={value:1},sun={value:light.position.clone().normalize()};
+  const normal=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.92});normal.onBeforeCompile=factory(normal,sun,night,det);
+  const mask=normal.clone(),hook=factory(mask,sun,night,det);mask.onBeforeCompile=shader=>{hook(shader);shader.fragmentShader=shader.fragmentShader.replace('#include <dithering_fragment>','gl_FragColor=vec4(shtGlass,shtLit,0.0,1.0);');};mask.customProgramCacheKey=()=> 'roofline-mask';
+  const target=new THREE.WebGLRenderTarget(W,H),pixels=new Uint8Array(W*H*4);
+  const wall=(style,height,floor,base,core)=>{
+   const vb=new VBuf(4);for(const [x,y,u]of[[-6,0,0],[6,0,12],[6,height,12],[-6,height,0]])vb.push(x,y+base,0,0,0,1,.47,.24,.15,style,base,floor,.42,u,12,height);
+   vb.idx.push(0,1,2,0,2,3);const g=vb.geometry(true);
+   if(core){const fa=g.attributes.aFacade;for(const [key,axis]of[['aWallU',0],['aWallL',1],['aWallH',2]])g.setAttribute(key,new THREE.Float32BufferAttribute(Array.from({length:4},(_,i)=>(axis===0?Math.max(0,fa.array[i*2]):axis===1?Math.abs(fa.array[i*2]):fa.array[i*2+1])*.1),1));g.deleteAttribute('aFacade');}
+   return g;
+  };
+  let samples=0,maxRoofGlass=0,maxRoofLight=0;
+  for(const floor of (baseline?[0]:[0,31]))for(const budget of (baseline?[1]:[1,.55,100]))for(const style of styles)for(const height of heights){
+   const base=floor?123:0,geometry=wall(style,height,floor,base,!!floor),mesh=new THREE.Mesh(geometry,mask);scene.add(mesh);
+   cam.top=height;cam.bottom=0;cam.position.set(0,base,40);cam.lookAt(0,base,0);cam.updateProjectionMatrix();cam.updateMatrixWorld();det.value=budget;
+   renderer.setRenderTarget(target);renderer.render(scene,cam);renderer.readRenderTargetPixels(target,0,0,W,H,pixels);
+   let roofGlass=0,roofLight=0,totalGlass=0;
+   for(let y=0;y<H;y++)for(let x=8;x<W-8;x++){
+    const i=(y*W+x)*4,roofDistance=height*(1-(y+.5)/H);
+    if(roofDistance<.50&&roofDistance>.12){roofGlass=Math.max(roofGlass,pixels[i]);roofLight=Math.max(roofLight,pixels[i+1]);}
+    totalGlass+=pixels[i];
+   }
+   if(roofGlass>3||roofLight>3)failures.push({log,floor,budget,style,height,roofGlass,roofLight});
+   if(height===24.4&&budget!==100&&totalGlass<1000)failures.push({log,floor,budget,style,height,error:'Windows missing below roof'});
+   maxRoofGlass=Math.max(maxRoofGlass,roofGlass);maxRoofLight=Math.max(maxRoofLight,roofLight);samples++;
+   scene.remove(mesh);geometry.dispose();
+   if(samples%14===0){document.getElementById('result').textContent='Checking '+(log?'logarithmic':'standard')+' depth: '+samples+' walls';await new Promise(resolve=>setTimeout(resolve,0));}
+  }
+  // The visual contact sheet uses the same production material, not the diagnostic mask.
+  if(!log){
+   det.value=1;night.value=0;
+   for(const [style,name]of[[0,'Brick / Shutters'],[9,'Victorian'],[12,'Industrial'],[13,'Contemporary'],[19,'Brick Apartment'],[14,'Stone Piers']]){
+    const height=12.2,g=wall(style,height,0,0,false),mesh=new THREE.Mesh(g,normal);scene.add(mesh);
+    cam.top=height+.3;cam.bottom=-.3;cam.position.set(0,0,40);cam.lookAt(0,0,0);cam.updateProjectionMatrix();cam.updateMatrixWorld();renderer.setClearColor(0x6d96ad);renderer.setRenderTarget(null);renderer.render(scene,cam);
+    const fig=document.createElement('figure'),copy=document.createElement('canvas');copy.width=W;copy.height=H;copy.getContext('2d').drawImage(renderer.domElement,0,0);const cap=document.createElement('figcaption');cap.textContent=name;fig.append(copy,cap);document.getElementById('gallery').append(fig);scene.remove(mesh);g.dispose();
+   }
+  }
+  results.push({depth:log?'logarithmic':'standard',samples,maxRoofGlass,maxRoofLight});
+  target.dispose();normal.dispose();mask.dispose();renderer.dispose();renderer.forceContextLoss();
+ }
+ document.getElementById('result').textContent=(failures.length||errors.length?'FAIL':'PASS')+'\n'+JSON.stringify({baseline,results,failures:failures.slice(0,12),failureCount:failures.length,errors},null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>

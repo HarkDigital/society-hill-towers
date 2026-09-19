@@ -1,0 +1,70 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Building Material Checks</title>
+<style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}#gallery{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}figure{margin:0}canvas{width:160px;height:160px}pre{white-space:pre-wrap}</style>
+<h1>Building Material Checks</h1>
+<p>Compiles the production facade and curtain-wall hooks, exercises all styles, compares packed/core wall coordinates, and checks day/night behavior with both depth modes and detail budgets.</p>
+<pre id="result">Running…</pre><div id="gallery"></div>
+<script src="../three.min.js"></script>
+<script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const interiorCode=src.includes('  const WINDOW_INTERIOR_GLSL =')?src.slice(src.indexOf('  const WINDOW_INTERIOR_GLSL ='),src.indexOf('  const cityMat =')):'';
+ const cut=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
+ const facadeCode=cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook');
+ const glassCode=cut('        outerGlassMat.onBeforeCompile =','\n      }\n      addChunkMesh(g, outerGlassMat);');
+ const packedCode=cut('  class IdxBuf {','  const groupCity');
+ const VBuf=new Function('THREE','freeOnUpload',packedCode+'\nreturn VBuf;')(THREE,()=>{});
+ const factory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+facadeCode+'\nreturn facadeHook(.27,.17,1.2);');
+ const glassFactory=new Function('nightUniform','detFarUniform',interiorCode+'const outerGlassMat={};\n'+glassCode+'\nreturn outerGlassMat.onBeforeCompile;');
+ const check=(ok,message)=>{if(!ok)throw Error(message);};
+ const results=[],errors=[];const oldError=console.error;
+ console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+ const names=['Georgian','Church','Office Grid','Blank','Civic','Storefront','Loft / Shop','Ribbon','Postwar Row','Victorian','Porch','Siding','Industrial','Contemporary','Stone Piers','Horizontal Bands','Precast Grid','Prewar Stone','Residential Slab','Brick Apartment','Glass','Liberty Shaft','Dark Glass','Framed Glass','Comcast Technology','Comcast Center','Liberty Spine','FMC','Cira / Pyramid','Glazed Crown'];
+ for(const logarithmicDepthBuffer of [false,true])for(const touch of [false,true]){
+  const renderer=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});renderer.setSize(160,160);renderer.setClearColor(0x12191e);
+  renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(42,1,.1,26000);camera.position.set(0,12,36);camera.lookAt(0,12,0);camera.updateMatrixWorld();
+  const hemi=new THREE.HemisphereLight(0xc1d9ee,0x4c4439,1.1);scene.add(hemi);
+  const sun=new THREE.DirectionalLight(0xffebca,2);sun.position.set(10,20,25);scene.add(sun);
+  const night={value:0},det={value:touch?.55:1},sunW={value:sun.position.clone().normalize()};
+  const mat=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.92});mat.onBeforeCompile=factory(mat,sunW,night,det);
+  const glass=new THREE.MeshStandardMaterial({vertexColors:true,roughness:.21,metalness:.4,emissive:0xffffff});glass.onBeforeCompile=glassFactory(night,det);
+  const target=new THREE.WebGLRenderTarget(160,160),pixels=new Uint8Array(160*160*4);
+  const wall=(st)=>{const b=new VBuf(4),c=st>=20?[.14,.27,.38]:[.30,.15,.10];
+   for(const [x,y,u]of[[-9,0,0],[9,0,18],[9,24,18],[-9,24,0]])b.push(x,y,0,0,0,1,...c,st,0,3.1,.42,u,18,24);
+   b.idx.push(0,1,2,0,2,3);return b.geometry(true);};
+  let mesh;
+  const render=()=>{renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,160,160,pixels);renderer.setRenderTarget(null);renderer.render(scene,camera);return pixels.slice();};
+  const sum=p=>{let s=0;for(let y=24;y<136;y++)for(let x=32;x<128;x++){let i=(y*160+x)*4;s+=p[i]+p[i+1]+p[i+2];}return s;};
+  const hashes=[],nightGain=[];let lit=0;
+  for(let st=0;st<30;st++){
+   const geometry=wall(st);mesh=new THREE.Mesh(geometry,st<20?mat:glass);scene.add(mesh);
+   night.value=0;glass.emissiveIntensity=0;hemi.intensity=1.1;sun.intensity=2;
+   const day=render();check(sum(day)>100000,'Missing facade '+st);
+   hashes.push(day.reduce((a,v,i)=>(a+v*(i%101))%1000000007,0));
+   // Local metric decoding must match the original float attributes, including when
+   // switching draw calls between core and packed geometries (disabled attributes).
+   const core=geometry.clone(),fa=core.attributes.aFacade;
+   for(const [key,axis]of[['aWallU',0],['aWallL',1],['aWallH',2]]){
+    core.setAttribute(key,new THREE.Float32BufferAttribute(Array.from({length:4},(_,i)=>(axis===0?Math.max(0,fa.array[i*2]):axis===1?Math.abs(fa.array[i*2]):fa.array[i*2+1])/10),1));
+   }
+   core.deleteAttribute('aFacade');
+   if(st<20){mesh.geometry=core;const coreDay=render();let err=0;for(let i=0;i<day.length;i++)err+=Math.abs(day[i]-coreDay[i]);check(err/day.length<.1,'Packed/core attribute mismatch '+st);mesh.geometry=geometry;}
+   if(!logarithmicDepthBuffer&&!touch){const figure=document.createElement('figure'),copy=document.createElement('canvas');copy.width=copy.height=160;copy.getContext('2d').drawImage(renderer.domElement,0,0);const caption=document.createElement('figcaption');caption.textContent=st+' · '+names[st];figure.append(copy,caption);document.getElementById('gallery').append(figure);}
+   night.value=1;hemi.intensity=.035;sun.intensity=0;glass.emissiveIntensity=.55;
+   const nightPixels=render();glass.emissiveIntensity=0;night.value=0;const unlit=render();
+   nightGain.push(sum(nightPixels)-sum(unlit));
+   if(st!==3&&st!==29){check(sum(nightPixels)>sum(unlit)+1000,'Night windows absent '+st);lit++;}
+   scene.remove(mesh);geometry.dispose();core.dispose();
+  }
+  check(new Set(hashes.slice(20,29)).size===9,'Landmark variants collapse to identical materials');
+  check(nightGain[29]<nightGain[21]*.35,'Mechanical crown glows like occupied offices');
+  check(errors.length===0,'Shader compilation errors: '+errors.join('\n'));
+  check(renderer.getContext().getError()===0,'WebGL error');
+  results.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',budget:touch?'touch':'desktop',styles:30,corePackedMatches:20,nightStyles:lit,shaderErrors:errors.length});
+  target.dispose();mat.dispose();glass.dispose();renderer.dispose();renderer.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);console.log('BUILDINGS_GPU_PASS',JSON.stringify(results));
+})().catch(error=>{document.getElementById('result').textContent='FAIL\n'+error.stack;console.error(error);});
+</script>

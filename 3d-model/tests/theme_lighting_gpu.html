@@ -1,0 +1,78 @@
+<!doctype html><meta charset="utf-8"><title>Architectural Lighting Checks</title>
+<style>body{background:#151d27;color:#eee8dc;font:14px system-ui;padding:24px}pre{white-space:pre-wrap}canvas{width:768px;max-width:100%;margin:8px}</style>
+<h1>Architectural Lighting Checks</h1><p>Production HDR bloom, theme-source tagging and facade wash: colored halos, scene-depth occlusion, non-glowing labels, preserved hues, continuous falloff and daylight behavior.</p><pre id="result">Running…</pre><div id="gallery"></div>
+<script src="../three.min.js"></script><script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const cut=(a,b)=>{const i=src.indexOf(a),j=src.indexOf(b,i);if(i<0||j<0)throw Error('Missing '+a);return src.slice(i,j);};
+ const postCode=cut('  const ACES_GLSL =','  const scene = new THREE.Scene();');
+ const washCode=cut('  function themeWashGeometry(','  function recessedTowerPlan(');
+ const make=new Function('THREE','renderer','POST','postU','nightUniform',postCode+washCode+'return {postRaw,architecturalBloom,themeWashGeometry,themeWashPatch,renderPost,dispose:()=>{for(const t of [postRT,postA,postB])if(t)t.dispose();}};');
+ const check=(v,m)=>{if(!v)throw Error(m);},out=[],errors=[];const oldError=console.error;
+ console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+ for(const log of [false,true])for(const transparent of [false,true]){
+  const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer:log,preserveDrawingBuffer:true});r.setSize(768,384);r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=THREE.NoToneMapping;
+  const night={value:1},api=make(THREE,r,{on:true,w:0,h:0},{uExposure:{value:1}},night);
+  const sc=new THREE.Scene();sc.background=new THREE.Color(0,0,0);
+  const cam=new THREE.OrthographicCamera(-48,48,24,-24,.1,100);cam.position.z=20;cam.lookAt(0,0,0);
+  const sourceMaterials=[],rgb=[0xe81828,0x2457ff,0x66ff00],xs=[-28,0,28];
+  for(let i=0;i<3;i++){
+   const m=new THREE.MeshBasicMaterial({color:new THREE.Color(rgb[i]).convertSRGBToLinear(),toneMapped:false,transparent,opacity:1,depthWrite:!transparent});
+   api.postRaw(m);api.architecturalBloom(m);sourceMaterials.push(m);
+   const bar=new THREE.Mesh(new THREE.BoxGeometry(20,.375,.1),m);bar.position.x=xs[i];sc.add(bar);
+  }
+  // The solid building hides the right half of the red fixture at all depths.
+  const block=new THREE.Mesh(new THREE.BoxGeometry(10,8,1),new THREE.MeshBasicMaterial({color:0x010101}));block.position.set(-21,0,1);sc.add(block);
+  const pinMat=new THREE.MeshBasicMaterial({color:0xffffff,toneMapped:false,transparent:true});api.postRaw(pinMat,{mask:true});
+  const pin=new THREE.Mesh(new THREE.PlaneGeometry(4,4),pinMat);pin.position.set(28,12,2);sc.add(pin);
+  const pix=new Uint8Array(768*384*4),render=()=>{api.renderPost(sc,cam);r.getContext().readPixels(0,0,768,384,r.getContext().RGBA,r.getContext().UNSIGNED_BYTE,pix);return pix.slice();};
+  const at=(p,x,y)=>{const px=Math.round((x+48)*8),py=Math.round((y+24)*8);return Array.from(p.slice((py*768+px)*4,(py*768+px)*4+3));};
+  const lit=render(),samples=[];
+  for(let i=0;i<3;i++){
+   const x=i===0?-32:xs[i],channel=[0,2,1][i],core=at(lit,x,0),near=at(lit,x,.625),far=at(lit,x,2.5);
+   check(near[channel]>8,'Missing colored halo '+JSON.stringify({log,transparent,i,core,near,far}));
+   check(near[channel]>far[channel]+4,'Halo fails to fade '+JSON.stringify({near,far}));
+   check(core[channel]>Math.max(...core.filter((v,j)=>j!==channel))*1.6,'Theme washed to white '+core);
+   samples.push({core,near,far});
+  }
+  const bars=sc.children.filter(o=>sourceMaterials.includes(o.material));
+  for(const b of bars)b.scale.y=32;
+  const broad=render();
+  for(let i=0;i<3;i++){
+   const x=i===0?-32:xs[i],core=at(broad,x,0),reference=samples[i].core;
+   check(core.every((v,j)=>Math.abs(v-reference[j])<8),'Broad light washes out its palette '+JSON.stringify({core,reference}));
+  }
+  for(const b of bars)b.scale.y=1;
+  const covered=at(lit,-20,.625),pinHalo=at(lit,28,15);
+  check(Math.max(...covered)<15,'Hidden fixture leaks through building '+covered);
+  check(Math.max(...pinHalo)<4,'Label blooms '+pinHalo);
+  // Untagged surfaces at the same RGB must not acquire the new colored glow.
+  if(transparent){for(const m of sourceMaterials){m.blendSrcAlpha=THREE.ZeroFactor;m.blendDstAlpha=THREE.OneFactor;}}
+  else night.value=0;
+  const untagged=render();
+  check(at(lit,-32,.625)[0]>at(untagged,-32,.625)[0]+5,'Red source bypasses bloom tag');
+  const cv=document.createElement('canvas');cv.width=768;cv.height=384;const ctx=cv.getContext('2d'),im=ctx.createImageData(768,384);for(let y=0;y<384;y++)im.data.set(lit.subarray(y*3072,(y+1)*3072),(383-y)*3072);ctx.putImageData(im,0,0);document.getElementById('gallery').append(cv);
+  out.push({log,transparent,samples,covered,pinHalo});
+  check(errors.length===0,'Shader errors '+errors.join('\n'));check(r.getContext().getError()===0,'WebGL error');
+  api.dispose();sc.traverse(o=>{o.geometry?.dispose();o.material?.dispose();});r.dispose();r.forceContextLoss();
+ }
+ // The same soft facade falloff works on the direct-render mobile/no-bloom path.
+ for(const log of [false,true]){
+  const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer:log});r.setSize(128,256);r.outputEncoding=THREE.sRGBEncoding;
+  const api=make(THREE,r,{on:false,w:0,h:0},{uExposure:{value:1}},{value:1});
+  const sc=new THREE.Scene(),cam=new THREE.OrthographicCamera(-4,4,8,-8,.1,100);cam.position.z=20;
+  const g=api.themeWashGeometry([{geom:new THREE.BoxGeometry(12,16,2),slot:0,w:1,grad:-1}]);
+  const c=g.attributes.color;for(let i=0;i<c.count;i++)c.setXYZ(i,.5,.005,.008);
+  const m=new THREE.MeshBasicMaterial({vertexColors:true,transparent:true,opacity:.6,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide,toneMapped:false});m.onBeforeCompile=api.themeWashPatch;sc.add(new THREE.Mesh(g,m));
+  const backing=new THREE.Mesh(new THREE.BoxGeometry(11.9,16,.9),new THREE.MeshBasicMaterial({color:0x000000}));sc.add(backing);
+  const rt=new THREE.WebGLRenderTarget(128,256);rt.texture.encoding=THREE.sRGBEncoding;
+  const pix=new Uint8Array(128*256*4),render=()=>{r.setRenderTarget(rt);r.render(sc,cam);r.readRenderTargetPixels(rt,0,0,128,256,pix);return Array.from({length:256},(_,y)=>pix[(y*128+64)*4]);};
+  const row=render(),jump=Math.max(...row.slice(1).map((v,i)=>Math.abs(v-row[i])));
+  check(jump<12,'Rigid wash boundary '+jump);check(row[190]>row[40]+40,'No downward falloff');check(row[0]<8&&row[255]<12,'Wash fails to fade at bounds');
+  m.opacity=0;check(render().every(v=>v===0),'Daylight wash remains');
+  check(errors.length===0,'Shader errors '+errors.join('\n'));out.push({log,fallback:true,jump,lower:row[40],upper:row[190]});
+  rt.dispose();g.dispose();m.dispose();r.dispose();r.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(out,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>

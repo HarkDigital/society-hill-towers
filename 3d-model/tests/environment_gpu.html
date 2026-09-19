@@ -1,0 +1,86 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Environment Material Checks</title>
+<style>body{background:#152029;color:#eee9df;font:14px/1.5 monospace;padding:24px}pre{white-space:pre-wrap}canvas{width:256px;height:192px;margin:6px}</style>
+<h1>Environment Material Checks</h1>
+<p>Production ground, weather, water and sky shaders: both depth modes and desktop/touch wave budgets. Checks stable grass filtering, wet/snow layering, moving water, night brightness, sky reflection colour and independent fountain scales.</p>
+<pre id="result">Running…</pre>
+<script src="../three.min.js"></script>
+<script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const cut=(a,b)=>{const start=src.indexOf(a),end=src.indexOf(b,start);if(start<0||end<0)throw Error('Missing production section: '+a);return src.slice(start,end);};
+ const colors=cut('  const COLORS =','  // ---------------------------------------------------------------- dom');
+ const inverse=cut('  const INV_GLSL =','  // materials that opt out');
+ const skyCode=cut('  const MOON_SCALE =','  // World-space cloud banks');
+ const grassCode=cut('  const MEADOW_GAIN =','  // a grass tuft:');
+ const surfaceCode=cut('  function surfTexPatch','  // decorrelated per-particle gate');
+ const laneCode=cut('  const LANE_GLSL =','  // streets follow the terrain:');
+ const waterCode=cut('  const waterU =','  // ordered dither on the big smooth surfaces');
+ const create=new Function('THREE','renderer','scene','isTouch','nightUniform','postU',colors+inverse+`
+ const sunDir=new THREE.Vector3(.4,.7,-.3).normalize(),SKY_DITHER=1/255,groundMats=[],MAT_DITHER=true;
+ const wxSurfU={uSnowAcc:{value:0},uWet:{value:0}};
+ `+skyCode+grassCode+surfaceCode+laneCode+waterCode+`
+ texU.uGrass.value=paintGrassTex(isTouch?512:1024);
+ return {COLORS,sky,skyMat,waterU,liquify,roadMat,surfTexPatch,wxSurfacePatch,wxSurfU,texU,cloudShU};`);
+ const check=(v,label)=>{if(!v)throw Error(label);},results=[],errors=[];
+ const oldError=console.error;console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+ for(const touch of [false,true])for(const logarithmicDepthBuffer of [false,true]){
+  const renderer=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});renderer.setSize(256,192);renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(50,4/3,.1,26000),night={value:0},post={uPost:{value:0},uExposure:{value:1}};
+  const a=create(THREE,renderer,scene,touch,night,post);a.sky.visible=false;a.cloudShU.uCloudSh.value=0;
+  const sun=new THREE.DirectionalLight(0xffe5b8,1.85);sun.position.set(100,200,50);scene.add(sun);
+  const hemi=new THREE.HemisphereLight(0xdde7f2,0x9c8e74,.54);scene.add(hemi);
+  const target=new THREE.WebGLRenderTarget(256,192);target.texture.encoding=THREE.sRGBEncoding;
+  const px=new Uint8Array(256*192*4);
+  const plane=new THREE.Mesh(new THREE.PlaneGeometry(4000,4000),new THREE.MeshStandardMaterial({color:a.COLORS.ground,roughness:.96}));plane.rotation.x=-Math.PI/2;scene.add(plane);
+  plane.material.onBeforeCompile=sh=>{a.wxSurfacePatch(sh);a.surfTexPatch(sh,true);};
+  const render=()=>{camera.updateMatrixWorld();renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,256,192,px);return px.slice();};
+  const mean=p=>{const sum=[0,0,0];for(let y=32;y<160;y++)for(let x=32;x<224;x++)for(let k=0;k<3;k++)sum[k]+=p[(y*256+x)*4+k];return sum.map(v=>v/(128*192));};
+  const lum=p=>mean(p).reduce((v,n)=>v+n,0)/3;
+  const changed=(p,q)=>p.reduce((n,v,i)=>n+(Math.abs(v-q[i])>1),0);
+  const capture=()=>{renderer.setRenderTarget(null);renderer.render(scene,camera);const c=document.createElement('canvas');c.width=256;c.height=192;c.getContext('2d').drawImage(renderer.domElement,0,0);document.body.append(c);};
+  camera.position.set(0,12,.01);camera.lookAt(0,0,0);
+  const near=render();check(lum(near)>10,'Grass is missing');check(changed(near,render())===0,'Frozen grass shimmers');
+  camera.position.set(0,350,.01);camera.lookAt(0,0,0);const far=render();check(Math.abs(lum(near)-lum(far))/lum(near)<.15,'Grass filtering changes average brightness');
+  a.wxSurfU.uWet.value=1;const wet=render();check(lum(wet)<lum(far),'Rain fails to darken grass');
+  a.wxSurfU.uSnowAcc.value=1;const snow=render();check(lum(snow)>lum(wet)*1.2,'Snow fails to cover textured grass');
+  a.wxSurfU.uWet.value=0;a.wxSurfU.uSnowAcc.value=0;
+  plane.material.dispose();
+  // A cool charcoal road must remain mineral pavement, not trip the meadow tint
+  // classifier. Exercise the actual lane/weather hook as well as bare asphalt.
+  plane.material=a.roadMat({color:a.COLORS.asphalt,roughness:.95});
+  const prev=plane.material.onBeforeCompile;plane.material.onBeforeCompile=sh=>{a.wxSurfacePatch(sh);prev(sh);};
+  camera.position.set(0,50,.01);camera.lookAt(0,0,0);
+  const road=render(),roadRGB=mean(road);check(roadRGB[1]<roadRGB[0]*1.13,'Cool asphalt is mistaken for grass');
+  const lane=new Float32Array(plane.geometry.attributes.position.count*4);
+  for(let i=0;i<plane.geometry.attributes.position.count;i++){lane[i*4]=plane.geometry.attributes.position.getX(i);lane[i*4+1]=plane.geometry.attributes.position.getY(i);lane[i*4+2]=8;lane[i*4+3]=0;}
+  plane.geometry.setAttribute('aLane',new THREE.BufferAttribute(lane,4));const painted=render();check(changed(road,painted)>100,'Lane paint disappeared');
+  a.wxSurfU.uWet.value=1;check(lum(render())<lum(painted),'Wet asphalt fails to darken');a.wxSurfU.uSnowAcc.value=1;check(lum(render())>lum(painted),'Snow fails to cover lane paint');
+  a.wxSurfU.uWet.value=0;a.wxSurfU.uSnowAcc.value=0;plane.material.dispose();
+  const waterScales=[1,.12,.055],waterMaterials=waterScales.map(scale=>{const m=new THREE.MeshStandardMaterial({color:a.COLORS.water,roughness:.23,metalness:.04});a.liquify(m,scale,.75,.8);return m;});
+  check(new Set(waterMaterials.map(m=>m.customProgramCacheKey())).size===3,'River/fountain shaders share a cache key');
+  camera.position.set(0,40,160);camera.lookAt(0,0,-130);plane.material=waterMaterials[0];
+  const day=render();check(changed(day,render())===0,'Frozen water is unstable');
+  a.waterU.uTime.value+=12;const moved=render();check(changed(day,moved)>100,'Water has no animated ripples');
+  const scaleImages=[];for(const m of waterMaterials){plane.material=m;scaleImages.push(render());}check(changed(scaleImages[0],scaleImages[1])>100&&changed(scaleImages[1],scaleImages[2])>100,'Fountain wave scales collapse to one shader');
+  plane.material=waterMaterials[0];a.waterU.uGlint.value=0;
+  a.waterU.uWaterHorizon.value.setRGB(.8,.2,.05);a.waterU.uWaterZenith.value.setRGB(.4,.1,.02);const warm=mean(render());
+  a.waterU.uWaterHorizon.value.setRGB(.05,.2,.8);a.waterU.uWaterZenith.value.setRGB(.02,.1,.4);const cool=mean(render());
+  check(warm[0]>cool[0]+2&&cool[2]>warm[2]+2,'River does not reflect changing sky colour');
+  night.value=1;sun.intensity=.05;hemi.intensity=.12;a.waterU.uWaterHorizon.value.setRGB(.008,.014,.022);a.waterU.uWaterZenith.value.setRGB(.002,.005,.012);
+  const dark=render();check(lum(dark)<lum(day)*.65,'Water stays luminous at night');
+  if(!touch&&!logarithmicDepthBuffer)capture();
+  plane.visible=false;a.sky.visible=true;renderer.toneMapping=THREE.NoToneMapping;
+  a.skyMat.uniforms.uCloud.value=0;a.skyMat.uniforms.uSunVis.value=0;a.skyMat.uniforms.uTwilight.value=1;
+  a.skyMat.uniforms.cZenith.value.set(0x3d557a);a.skyMat.uniforms.cHorizon.value.set(0xe5af89);a.skyMat.uniforms.uSun.value.set(0,0,-1);
+  camera.position.set(0,0,0);camera.lookAt(0,30,-1000);const sunset=mean(render());camera.lookAt(0,30,1000);const opposite=mean(render());
+  check(sunset[0]-sunset[2]>opposite[0]-opposite[2]+8,'Twilight horizon lacks direction');
+  post.uPost.value=1;render();
+  check(renderer.info.programs.every(p=>!p.diagnostics||p.diagnostics.runnable),'Shader program is not runnable');check(!errors.length,'GPU error: '+errors.join('\n'));
+  results.push({touch,logarithmicDepthBuffer,grassNear:+lum(near).toFixed(1),grassFar:+lum(far).toFixed(1),waterDay:+lum(day).toFixed(1),waterNight:+lum(dark).toFixed(1),animatedPixels:changed(day,moved),independentWaterScales:waterMaterials.length});
+  plane.geometry.dispose();waterMaterials.forEach(m=>m.dispose());a.sky.geometry.dispose();a.skyMat.dispose();a.texU.uGrass.value.dispose();target.dispose();renderer.dispose();renderer.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL: '+e.stack;console.error(e);});
+</script>

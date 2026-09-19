@@ -8,6 +8,8 @@ real solar clock over it all.
 
 **Live model:** https://philly3d.com/
 
+See [the design review](DESIGN-REVIEW.md) for the interface refresh and prioritized product suggestions, and [the model review](MODEL-REVIEW.md) for the building, skyline and stadium improvements.
+
 - **Fly.** Drag, scroll, or press W A S D; E/Q for altitude, shift to boost, scroll
   sets cruise speed. Any first touch takes off.
 - **Sun and sky** (T): any date and time of day with real Philadelphia solar
@@ -22,6 +24,9 @@ real solar clock over it all.
   street closures (barrels and cones from the Streets Department's permits, fresh asphalt on
   the season's paved blocks), historical markers, public art, streetlights, street names,
   landmark labels, and neighborhood names.
+- **Traffic.** Six vehicle models follow connected city roads, with busier nearby streets,
+  offscreen inflow and gradual distance fades. Activity follows the model clock and
+  typical traffic counts; vehicle positions are simulated.
 - **Markets.** The city's 34 farmers' markets pitch their tents only while the clock
   says they are open; tap a tent for the hours and payments, or search a market by name.
 - **Markers and art.** The state's 348 historical markers stand at their posts with the
@@ -36,7 +41,7 @@ real solar clock over it all.
   of City Hall, the Xfinity Mobile Arena and the Ben Franklin Bridge glow in the night's colour: a Philadelphia team's on its game day (Eagles, then Phillies,
   Flyers, Sixers), otherwise the cause on BOMA Philadelphia's Building Illumination Calendar,
   else white. The time panel names it; `?lights=eagles` or `?lights=purple` pins it.
-- **Search** (/): an address, a landmark, a neighborhood, a street, a SEPTA route, and
+- **Explore** (/): eight curated viewpoints, plus search for an address, a landmark, a neighborhood, a street, a SEPTA route, and
   near six thousand named places from the city's own basemap: schools, churches, parks,
   rec centers, hospitals, libraries.
 
@@ -97,3 +102,5 @@ assets live in `3d-model/brand/`; `make_brand.py` regenerates `brand/dist/`.
 - Data: OpenStreetMap under ODbL 1.0; City of Philadelphia open data under CC-BY 4.0 and
   the other sources' open terms; see `DATA-LICENSE.md`.
 - Type: Montserrat, SIL Open Font License 1.1 (`3d-model/brand/OFL.txt`).
+
+The local [model and lighting review](MODEL-REVIEW.md) describes the stadium and skyline refresh, architectural references, and modeling limits.

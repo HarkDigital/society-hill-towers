@@ -55,9 +55,9 @@ class AqiRuntime(unittest.TestCase):
         self.src = C.path('app.js').read_text(encoding='utf-8')
 
     def test_block_is_wired(self):
-        """The fog distances scale by WXFX.haze and the time panel prints the air quality line."""
+        """The fog distances scale by WXFX.haze and the time panel prints the air quality fact."""
         self.assertIn('scene.fog.far = fogBase.far * WXFX.haze', self.src, 'the far fog distance no longer follows the haze')
-        self.assertIn("'   Air quality: '", self.src, 'the time panel lost its air quality line')
+        self.assertIn("fact('Live air quality', AQI.ok && AQI.aqi != null ? AQI.aqi + ', ' + AQI.cat", self.src, 'the time panel lost its live air quality reading and category')
         self.assertNotIn('—', aqi_snippet(self.src), 'no em dash in the air-quality strings')
 
     def test_index_and_cleaning(self):

@@ -1,0 +1,93 @@
+<!doctype html><meta charset="utf-8"><title>Window Interior Checks</title>
+<style>body{background:#101821;color:#e9e5dc;font:14px/1.5 system-ui;padding:24px}pre{white-space:pre-wrap}#gallery{display:flex;flex-wrap:wrap;gap:16px}canvas{width:512px;max-width:100%;height:auto}figure{margin:0}</style>
+<h1>Window Interior Checks</h1>
+<p>Production room shader: soft interior falloff, warm homes and varied office suites, dark rooms, stable occupancy, distance filtering, and custom apartment glass in both depth modes.</p>
+<pre id="result">Running…</pre><div id="gallery"></div>
+<script src="../three.min.js"></script><script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const interiorCode=src.slice(src.indexOf('  const WINDOW_INTERIOR_GLSL ='),src.indexOf('  const cityMat ='));
+ const {glsl,hook,coords}=new Function('THREE',interiorCode+'return {glsl:WINDOW_INTERIOR_GLSL,hook:apartmentWindowHook,coords:towerRoomCoordinates};')(THREE);
+ const cut=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
+ const VBuf=new Function('THREE','freeOnUpload',cut('  class IdxBuf {','  const groupCity')+'return VBuf;')(THREE,()=>{});
+ const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.52,.34,1.0);');
+ const errors=[],results=[];const oldError=console.error;console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+ const check=(v,m)=>{if(!v)throw Error(m);};
+ const W=512,H=320;
+ for(const logarithmicDepthBuffer of [false,true]){
+  const renderer=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});renderer.setSize(W,H);renderer.outputEncoding=THREE.LinearEncoding;
+  const scene=new THREE.Scene(),camera=new THREE.OrthographicCamera(-1,1,1,-1,.1,100);camera.position.z=3;
+  const uniforms={office:{value:0},seed:{value:.42}};
+  const mat=new THREE.ShaderMaterial({uniforms,vertexShader:'varying vec2 roomV;void main(){roomV=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:glsl+`
+   varying vec2 roomV;uniform float office,seed;
+   void main(){vec2 g=roomV*vec2(16.0,10.0);gl_FragColor=vec4(roomLight(fract(g),floor(g),seed,office),1.0);}`});
+  const mesh=new THREE.Mesh(new THREE.PlaneGeometry(2,2),mat);scene.add(mesh);
+  const target=new THREE.WebGLRenderTarget(W,H),pixels=new Uint8Array(W*H*4);
+  const render=()=>{renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,W,H,pixels);return pixels.slice();};
+  const picture=label=>{renderer.setRenderTarget(null);renderer.render(scene,camera);const fig=document.createElement('figure'),c=document.createElement('canvas');c.width=W;c.height=H;c.getContext('2d').drawImage(renderer.domElement,0,0);const cap=document.createElement('figcaption');cap.textContent=label;fig.append(c,cap);document.getElementById('gallery').append(fig);};
+  const metrics=[];
+  for(const office of [0,1]){
+   uniforms.office.value=office;const p=render(),repeat=render();check(p.every((x,i)=>x===repeat[i]),'Room occupancy changed between identical frames');
+   let lit=0,warm=0,cool=0,soft=0,contrast=0;
+   for(let row=0;row<10;row++)for(let col=0;col<16;col++){
+    const idx=(x,y)=>((row*32+y)*W+col*32+x)*4;
+    let peak=0,edge=0,red=0,blue=0;const levels=new Set();
+    for(let y=1;y<31;y++)for(let x=1;x<31;x++){
+     const i=idx(x,y),v=p[i]+p[i+1]+p[i+2];peak=Math.max(peak,v);levels.add(v);red+=p[i];blue+=p[i+2];
+    }
+    if(peak>35){lit++;if(red>blue*1.3)warm++;if(blue>red*1.05)cool++;
+     for(let y=2;y<30;y++){const i=idx(1,y);edge+=p[i]+p[i+1]+p[i+2];}edge/=28;
+     if(levels.size>60)soft++;if(peak>edge*1.8)contrast++;
+    }
+   }
+   check(lit>40&&lit<110,'Unnatural occupancy: '+lit+'/160');
+   check(soft===lit&&contrast===lit,'Flat rooms or missing recessed falloff');
+   check(office?warm>4&&cool>4:warm===lit,'Interior color temperatures missing');
+   metrics.push({kind:office?'offices':'homes',occupied:lit,softGradientRooms:soft,recessedRooms:contrast,warm,cool});
+   if(!logarithmicDepthBuffer)picture(office?'Office Suites: Ceiling Wash and Blinds':'Homes: Lamp Pools and Curtains');
+  }
+  // At one pixel per room, fine blind/slat details must average away, not alias.
+  uniforms.office.value=0;
+  renderer.setSize(16,10);const small=new THREE.WebGLRenderTarget(16,10),low=new Uint8Array(640);
+  renderer.setRenderTarget(small);renderer.render(scene,camera);renderer.readRenderTargetPixels(small,0,0,16,10,low);
+  let dark=0,lit=0;for(let i=0;i<low.length;i+=4){if(low[i]+low[i+1]+low[i+2]>15)lit++;else dark++;}
+  check(lit===metrics[0].occupied&&dark+lit===160,'Distance changed room occupancy');
+  renderer.setSize(W,H);scene.remove(mesh);
+  // Explicit Society Hill panes carry local room coordinates through rotated
+  // geometry. They use exactly the same interior on glass and curtain overlays.
+  const geometry=coords(new THREE.PlaneGeometry(16,10).translate(0,5,0),'x',16,1,0,1,.42);
+  const apart=new THREE.MeshStandardMaterial({color:0x070a0e,emissive:0xffffff,emissiveIntensity:1});apart.onBeforeCompile=hook;
+  const apt=new THREE.Mesh(geometry,apart);scene.add(apt);camera.left=-8;camera.right=8;camera.top=10;camera.bottom=0;camera.updateProjectionMatrix();
+  const on=render();apart.emissiveIntensity=0;const off=render();
+  check(on.reduce((a,v,i)=>a+(i%4===3?0:v),0)>100000,'Custom apartment lights absent');
+  check(off.every((v,i)=>i%4===3||v===0),'Window light remains on in daylight');
+  // Wall normals reject emission from horizontal glass caps.
+  apart.emissiveIntensity=1;geometry.attributes.normal.array.fill(0);for(let i=1;i<geometry.attributes.normal.array.length;i+=3)geometry.attributes.normal.array[i]=1;geometry.attributes.normal.needsUpdate=true;
+  const roof=render();check(roof.every((v,i)=>i%4===3||v===0),'Horizontal glass emits room lights');
+  // Real brick windows must keep their sash bars dark, including when the
+  // source material is shared with packed city geometry.
+  scene.remove(apt);
+  const night={value:1},sashMat=new THREE.MeshStandardMaterial({vertexColors:true});
+  sashMat.onBeforeCompile=facadeFactory(sashMat,{value:new THREE.Vector3(0,1,0)},night,{value:1});
+  const vb=new VBuf(4),height=12.2,width=12;
+  for(const [x,y,u]of[[-6,0,0],[6,0,12],[6,height,12],[-6,height,0]])vb.push(x,y,0,0,0,1,.47,.24,.15,0,0,0,.42,u,width,height);
+  vb.idx.push(0,1,2,0,2,3);const sashGeo=vb.geometry(true),sash=new THREE.Mesh(sashGeo,sashMat);scene.add(sash);
+  camera.left=-6;camera.right=6;camera.top=height;camera.bottom=0;camera.updateProjectionMatrix();
+  const panes=render(),scale=(3*3.05+2.94)/(height-.9-.04);
+  const sample=(u,v)=>{const x=Math.min(W-1,Math.floor(u/width*W)),y=Math.min(H-1,Math.floor(v/height*H)),i=(y*W+x)*4;return panes[i]+panes[i+1]+panes[i+2];};
+  let checkedFrames=0;
+  for(let row=1;row<4;row++)for(let col=0;col<6;col++){
+   const u=1.25+col*1.9,v=(row*3.05+.85+1.75*.62)/scale;
+   const side=Math.max(sample(u-.21,v),sample(u+.21,v)),bar=sample(u,v);
+   if(side>35){check(bar<side*.40,'Sash frame glows with interior: '+bar+'/'+side);checkedFrames++;}
+  }
+  check(checkedFrames>=4,'Too few lit sash windows checked');
+  night.value=0;const daylight=render();check(daylight.every((v,i)=>i%4===3||v===0),'Generic facade emission remains in daylight');
+  sashGeo.dispose();sashMat.dispose();
+  check(errors.length===0,'Shader errors '+errors.join('\n'));check(renderer.getContext().getError()===0,'WebGL error');
+  results.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',metrics,stableFrames:true,distantOccupancy:lit,apartmentNightOnly:true,noRoofEmission:true,darkSashFrames:checkedFrames});
+  small.dispose();target.dispose();geometry.dispose();mesh.geometry.dispose();mat.dispose();apart.dispose();renderer.dispose();renderer.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>

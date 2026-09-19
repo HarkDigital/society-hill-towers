@@ -84,9 +84,9 @@ class LightsRuntime(unittest.TestCase):
         self.src = C.path('app.js').read_text(encoding='utf-8')
 
     def test_block_is_wired(self):
-        """The frame drives the theme, the time panel prints its line, the strings carry no em dash."""
+        """The frame drives the theme, the time panel prints its fact, the strings carry no em dash."""
         self.assertIn('updateLightsTheme(now, dt);', self.src, 'the frame no longer updates the skyline lights')
-        self.assertIn("'   Lights: '", self.src, 'the time panel lost its lights line')
+        self.assertIn("THEME.label ? fact('Skyline lights', THEME.label, true)", self.src, 'the time panel lost its skyline light theme')
         self.assertIn("typeof LIGHTS_CAL !== 'undefined'", self.src, 'the built-in calendar is not read')
         self.assertIn('lightsFetchDate(dk, now)', self.src, "the day's games are not fetched")
         self.assertIn("case 'band':", self.src, 'the PECO band crown is missing from the crown builder')

@@ -1,0 +1,47 @@
+<!doctype html><meta charset="utf-8"><title>Comcast Crown Checks</title>
+<style>body{background:#151d27;color:#f0e9df;font:14px system-ui;padding:24px}pre{white-space:pre-wrap}canvas{width:300px;height:300px;margin:12px}</style>
+<h1>Comcast Crown Checks</h1><p>Production crown panels and lighting shader: visible crown mullions and floor bands, complete red coverage for Phillies, custom bands, an intact roof, and no panels across the recess.</p><div id="gallery"></div><pre id="result">Running…</pre>
+<script src="../three.min.js"></script><script>
+(async()=>{
+const src=await(await fetch('../app.js',{cache:'no-store'})).text(),cut=(a,b)=>{const i=src.indexOf(a),j=src.indexOf(b,i);if(i<0||j<0)throw Error('Missing source '+a);return src.slice(i,j);};
+const helpers=[cut('  function signedArea(','  function pointInPoly('),cut('  function orientedBox(','\n  function '),cut('  function obbAxis(','  function obbEnd('),cut('  function mergeColored(','  // drop near-collinear'),cut('  function comcastCrownPlan(','  const BOATHOUSE_PLANS')].join('\n');
+const build=cut("          case 'comcast-notch': {","          case 'notch':").replace("          case 'comcast-notch': {",'{').replace('            break;','');
+const factory=new Function('THREE',helpers+`return {crownPanelPatch,make:()=>{const th={poly:[[-22,-13],[22,-13],[22,13],[-22,13]],h:297,base:0,color:new THREE.Color(.2,.3,.4),cx:0,cz:0};const ob=orientedBox(th.poly),ax=obbAxis(ob),ry=Math.atan2(-ax.az,ax.ax),crownTrim=[],crownPanels=[];const getGlassChunk=()=>null,appendBuilding=()=>{},ledRing=()=>new THREE.BufferGeometry();`+build+`return {geometry:mergeColored(crownPanels),cp:comcastCrownPlan(th.poly,th.h)};}};`);
+const {crownPanelPatch,make}=factory(THREE),inverse=cut('  const INV_GLSL =','  // materials that opt out'),raw=cut('  const postRaw =','  let postRT ='),aces=cut('  const ACES_GLSL =','  const INV_GLSL =');
+const rawFactory=new Function('THREE','POST','postU',inverse+raw+'return postRaw;');
+const acesText=new Function(aces+'return ACES_GLSL;')();
+const check=(v,m)=>{if(!v)throw Error(m);},out=[],errors=[];const oldError=console.error;console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+for(const log of [false,true])for(const bloom of [false,true]){
+ const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer:log});r.setSize(240,240);r.outputEncoding=THREE.sRGBEncoding;r.toneMapping=bloom?THREE.NoToneMapping:THREE.ACESFilmicToneMapping;
+ const sc=new THREE.Scene(),cam=new THREE.PerspectiveCamera(38,1,.1,1000);cam.position.set(0,284,100);cam.lookAt(0,284,0);
+ const {geometry,cp}=make();const uniforms={uStripeN:{value:2},uCrownSolid:{value:0},uComcastSolid:{value:1}};
+ for(let i=0;i<4;i++)uniforms['uCrown'+i]={value:new THREE.Color(i%2?0xf4f1ea:0xe81828).convertSRGBToLinear()};
+ const mat=new THREE.MeshBasicMaterial({side:THREE.DoubleSide,toneMapped:false,transparent:true,depthWrite:false});mat.extensions={derivatives:true};mat.onBeforeCompile=s=>crownPanelPatch(s,uniforms);rawFactory(THREE,{on:bloom},{uExposure:{value:1}})(mat);sc.add(new THREE.Mesh(geometry,mat));
+ // Opaque crown behind its lighting skin, as in the city, blocks far-side panels.
+ const body=new THREE.Mesh(new THREE.BoxGeometry(cp.w*2,cp.top-cp.lintel,cp.d*2),new THREE.MeshBasicMaterial({color:0x1b2630}));body.position.y=(cp.top+cp.lintel)/2;sc.add(body);
+ const rt=new THREE.WebGLRenderTarget(240,240,{type:THREE.HalfFloatType}),dest=new THREE.WebGLRenderTarget(240,240);dest.texture.encoding=bloom?THREE.LinearEncoding:THREE.sRGBEncoding;
+ const comp=new THREE.Scene(),cc=new THREE.Camera(),cm=new THREE.ShaderMaterial({depthTest:false,depthWrite:false,uniforms:{map:{value:rt.texture}},vertexShader:'varying vec2 uv0;void main(){uv0=uv;gl_Position=vec4(position.xy,0.,1.);}',fragmentShader:acesText+'\nuniform sampler2D map;varying vec2 uv0;void main(){gl_FragColor=vec4(pToSRGB(pACES(texture2D(map,uv0).rgb,1.)),1.);}'});comp.add(new THREE.Mesh(new THREE.PlaneGeometry(2,2),cm));
+ const pix=new Uint8Array(240*240*4),render=()=>{if(bloom){r.setRenderTarget(rt);r.render(sc,cam);r.setRenderTarget(dest);r.render(comp,cc);}else{r.setRenderTarget(dest);r.render(sc,cam);}r.readRenderTargetPixels(dest,0,0,240,240,pix);return pix.slice();};
+ const sample=(p,x,y)=>Array.from(p.slice((y*240+x)*4,(y*240+x)*4+3));
+ geometry.computeBoundingBox();const faceZ=geometry.boundingBox.max.z;
+ const at=(p,x,y)=>{const q=new THREE.Vector3(x,y,faceZ).project(cam);return sample(p,Math.floor((q.x*.5+.5)*240),Math.floor((q.y*.5+.5)*240));};
+ const red=render(),samples=[70,90,110,130,150,170].map(y=>sample(red,120,y));
+ check(samples.every(p=>p[0]>160&&p[0]>p[1]*2.5&&p[0]>p[2]*2.5),'Crown is not fully red '+JSON.stringify({log,bloom,samples}));
+ const frameY=4.15*69,paneY=frameY+2.075;
+ const pane=at(red,.76,paneY),mullion=at(red,0,paneY),floorBand=at(red,.76,frameY);
+ check(pane[0]>mullion[0]+8&&pane[0]>floorBand[0]+8,'Crown grid missing '+JSON.stringify({pane,mullion,floorBand}));
+ uniforms.uCrown0.value.setHex(0x1edc45).convertSRGBToLinear();const green=render();
+ check(at(green,.76,paneY)[1]>at(green,0,paneY)[1]+8,'Green theme hides mullions');
+ uniforms.uComcastSolid.value=0;uniforms.uStripeN.value=3;[0xe81828,0xf4f1ea,0x2457ff,0xe81828].forEach((c,i)=>uniforms['uCrown'+i].value.setHex(c).convertSRGBToLinear());
+ const flag=render(),b=sample(flag,120,85),w=sample(flag,120,120),t=sample(flag,120,155);
+ check(b[0]>b[2]*2&&Math.max(...w)-Math.min(...w)<15&&t[2]>t[0]*2,'Custom bands missing '+JSON.stringify({b,w,t}));
+ const pa=geometry.attributes.position;let minY=Infinity;for(let i=0;i<pa.count;i++)minY=Math.min(minY,pa.getY(i));check(minY>=cp.lintel-.01,'Lighting crosses the recess');
+ cam.position.set(0,360,0);cam.lookAt(0,297,0);uniforms.uComcastSolid.value=1;uniforms.uStripeN.value=2;uniforms.uCrown0.value.setHex(0xe81828).convertSRGBToLinear();
+ const roof=sample(render(),120,120);check(roof[0]>160&&roof[0]>roof[1]*2.5,'Roof not red '+roof);
+ check(errors.length===0,'Shader errors '+errors.join('\n'));check(r.getContext().getError()===0,'WebGL error');out.push({log,bloom,samples,roof,grid:{pane,mullion,floorBand}});
+ if(!log)for(const shot of [red,green,flag]){const cv=document.createElement('canvas');cv.width=cv.height=240;const ctx=cv.getContext('2d'),im=ctx.createImageData(240,240);for(let y=0;y<240;y++)im.data.set(shot.subarray(y*960,(y+1)*960),(239-y)*960);ctx.putImageData(im,0,0);document.getElementById('gallery').append(cv);}
+ body.geometry.dispose();body.material.dispose();geometry.dispose();mat.dispose();rt.dispose();dest.dispose();cm.dispose();r.dispose();r.forceContextLoss();
+}
+document.getElementById('result').textContent='PASS\n'+JSON.stringify(out,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>

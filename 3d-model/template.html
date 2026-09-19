@@ -34,7 +34,33 @@
 </head>
 <body>
 
-<canvas id="gl"></canvas>
+<div id="appUI" inert>
+<canvas id="gl" aria-label="Interactive 3D model of Philadelphia"></canvas>
+
+<header id="brand" aria-label="Philly3D">
+  <svg class="brandmark" viewBox="0 0 512 512" aria-hidden="true">
+      <g>
+        <ellipse cx="256" cy="50" rx="28" ry="5.5"/>
+        <path d="M 243 50 Q 244 34 256 34 Q 268 34 269 50 Z"/>
+        <rect x="249" y="50" width="14" height="10"/>
+        <path d="M 240 60 Q 256 53 272 60 Q 281 90 283 130 L 229 130 Q 231 90 240 60 Z"/>
+        <path d="M 264 64 L 300 72 Q 309 74 307 83 Q 305 91 296 89 L 261 80 Z"/>
+        <rect x="240" y="130" width="32" height="8"/>
+        <rect x="246" y="138" width="20" height="20"/>
+        <rect x="230" y="158" width="52" height="12"/>
+        <path d="M 230 170 C 226 200 210 226 190 246 L 322 246 C 302 226 286 200 282 170 Z"/>
+        <rect x="178" y="246" width="156" height="14"/>
+        <path fill-rule="evenodd" d="M 190 260 L 322 260 L 322 370 L 190 370 Z M 256 275 A 40 40 0 1 0 256 355 A 40 40 0 1 0 256 275 Z"/>
+        <rect x="253" y="283" width="6" height="34"/>
+        <path d="M 256 312 L 282 326 L 279 332 L 254 318 Z"/>
+        <circle cx="256" cy="315" r="6"/>
+        <rect x="178" y="370" width="156" height="14"/>
+        <path fill-rule="evenodd" d="M 186 384 L 326 384 L 326 478 L 186 478 Z M 212 415 Q 212 402 225 402 Q 238 402 238 415 L 238 462 L 212 462 Z M 274 415 Q 274 402 287 402 Q 300 402 300 415 L 300 462 L 274 462 Z"/>
+        <rect x="172" y="478" width="168" height="18"/>
+      </g>
+    </svg>
+  <div><span class="brandname">Philly<span>3D</span></span><span class="brandtag">A city in motion</span></div>
+</header>
 
 <button id="compass" class="panel" type="button" aria-label="Face north" title="Face north">
   <svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true">
@@ -42,19 +68,34 @@
       <polygon points="17,4 20.4,17 17,14.6 13.6,17" fill="#c89b5e"/>
       <polygon points="17,30 20.4,17 17,19.4 13.6,17" fill="rgba(239,233,220,0.35)"/>
     </g>
-    <text x="17" y="8.6" text-anchor="middle" font-size="6.5" fill="rgba(239,233,220,0.0)">N</text>
+    <text x="17" y="8.6" text-anchor="middle" font-size="6.5" fill="#efe9dc">N</text>
   </svg>
 </button>
 
 <div id="labels" aria-hidden="true"></div>
 
-<div id="searchpanel" class="panel" role="search" aria-label="Find an Address">
-  <div class="kicker">Find a Place in Philadelphia</div>
+<div id="searchpanel" class="panel" role="search" aria-label="Explore Philadelphia">
+  <div class="panelhead"><div><div class="kicker">Explore Philadelphia</div><h2>Where to?</h2></div><button class="panelclose" data-close-panel="search" aria-label="Close Explore">&times;</button></div>
   <div class="row">
-    <input type="text" id="searchInput" placeholder="Address, Place, or Bus Route (Try 1420 Locust or 33)" autocomplete="off" spellcheck="false">
-    <button id="searchGo" class="mini">Go</button>
+    <input type="text" id="searchInput" placeholder="Search a place, address or SEPTA route" aria-label="Search a place, address or SEPTA route" aria-describedby="searchHelp" autocomplete="off" spellcheck="false">
+    <button id="searchGo" class="mini">Find</button>
   </div>
-  <div id="searchOut"></div>
+  <p id="searchHelp" class="panelnote">Try City Hall, 1420 Locust or a bus route like 33.</p>
+  <div id="searchOut" aria-live="polite"></div>
+  <div id="searchHome"><div class="sectionhead"><span>Start somewhere memorable</span><span>12 places</span></div><div class="destinationgrid">
+    <button class="destination" data-stop="cityhall"><span class="destnum" aria-hidden="true">01</span><span class="destcopy"><strong>City Hall</strong><small>At the heart of the city</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="schuylkill"><span class="destnum" aria-hidden="true">02</span><span class="destcopy"><strong>Schuylkill Skyline</strong><small>The city from the river</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="ballpark"><span class="destnum" aria-hidden="true">03</span><span class="destcopy"><strong>Citizens Bank Park</strong><small>Above the diamond</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="linc"><span class="destnum" aria-hidden="true">04</span><span class="destcopy"><strong>Lincoln Financial Field</strong><small>An Eagles-eye view</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="arena"><span class="destnum" aria-hidden="true">05</span><span class="destcopy"><strong>Xfinity Mobile Arena</strong><small>The lights of South Philly</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="centercity"><span class="destnum" aria-hidden="true">06</span><span class="destcopy"><strong>Above Center City</strong><small>Philadelphia's signature towers</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="artmuseum"><span class="destnum" aria-hidden="true">07</span><span class="destcopy"><strong>Art Museum Steps</strong><small>An iconic perspective</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="towers"><span class="destnum" aria-hidden="true">08</span><span class="destcopy"><strong>Society Hill Towers</strong><small>Modernism above the rooftops</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="indhall"><span class="destnum" aria-hidden="true">09</span><span class="destcopy"><strong>Independence Hall</strong><small>Where a nation began</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="battleship"><span class="destnum" aria-hidden="true">10</span><span class="destcopy"><strong>Battleship New Jersey</strong><small>History on the Delaware</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="airport"><span class="destnum" aria-hidden="true">11</span><span class="destcopy"><strong>Airport Approach</strong><small>Watch the city take flight</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+    <button class="destination" data-stop="wissahickon"><span class="destnum" aria-hidden="true">12</span><span class="destcopy"><strong>The Wissahickon</strong><small>A little room to breathe</small></span><span class="destarrow" aria-hidden="true">&#8599;</span></button>
+  </div></div>
 </div>
 
 <div id="vehinfo" class="panel" hidden>
@@ -83,18 +124,18 @@
   </div>
 </div>
 
-<div id="bar">
-  <button id="btnLayers" class="iconbtn panel" title="Layers (F)" aria-expanded="false" aria-controls="layerspanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg></button>
-  <button id="btnSearch" class="iconbtn panel" title="Find an Address (/)" aria-expanded="false" aria-controls="searchpanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg></button>
-  <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)" aria-expanded="false" aria-controls="timepanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.35 5.35l1.85 1.85M16.8 16.8l1.85 1.85M5.35 18.65l1.85-1.85M16.8 7.2l1.85-1.85"/></svg></button>
-  <button id="btnShot" class="iconbtn panel" title="Save a Picture of This View"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M4 8.4h3.4l1.5-2.4h6.2l1.5 2.4H20v9.8H4z"/><circle cx="12" cy="13" r="3.1"/></svg></button>
-  <button id="btnShare" class="iconbtn panel" title="Share This View" aria-expanded="false" aria-controls="sharepanel"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5.6" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18.4" r="2.6"/><path d="M15.7 6.85 8.3 10.75M8.3 13.25l7.4 3.9"/></svg></button>
-  <button id="btnHelp" class="iconbtn panel" title="How to Use Philly3D (?)" aria-expanded="false" aria-controls="guide">?</button>
+<nav id="bar" class="panel" aria-label="City controls">
+  <button id="btnSearch" class="iconbtn panel" title="Explore and Search (/)" aria-expanded="false" aria-controls="searchpanel" aria-label="Explore and search"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg><span class="navlabel">Explore</span></button>
+  <button id="btnLayers" class="iconbtn panel" title="Layers (F)" aria-expanded="false" aria-controls="layerspanel" aria-label="Layers"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg><span class="navlabel">Layers</span></button>
+  <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)" aria-expanded="false" aria-controls="timepanel" aria-label="Sun and sky"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.35 5.35l1.85 1.85M16.8 16.8l1.85 1.85M5.35 18.65l1.85-1.85M16.8 7.2l1.85-1.85"/></svg><span class="navlabel">Sun &amp; sky</span></button>
+  <button id="btnShot" class="iconbtn panel" title="Save a Picture of This View" aria-label="Save a picture"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M4 8.4h3.4l1.5-2.4h6.2l1.5 2.4H20v9.8H4z"/><circle cx="12" cy="13" r="3.1"/></svg></button>
+  <button id="btnShare" class="iconbtn panel" title="Share This View" aria-expanded="false" aria-controls="sharepanel" aria-label="Share this view"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5.6" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18.4" r="2.6"/><path d="M15.7 6.85 8.3 10.75M8.3 13.25l7.4 3.9"/></svg></button>
+  <button id="btnHelp" class="iconbtn panel" title="How to Use Philly3D (?)" aria-expanded="false" aria-controls="guide" aria-label="Open the guide">?</button>
   <button id="btnAbout" class="iconbtn panel" title="About this model (I)" style="display:none">i</button>
-</div>
+</nav>
 
 <div id="layerspanel" class="panel" role="group" aria-label="Layers">
-  <div class="kicker">Layers</div>
+  <div class="panelhead"><div><div class="kicker">Make it your city</div><h2>Map layers</h2></div><button class="panelclose" data-close-panel="layers" aria-label="Close Layers">&times;</button></div><p class="panelnote">Choose what brings Philadelphia to life.</p>
   <div class="lgrid">
   <button class="lrow" id="btnTransit" title="Live SEPTA Vehicles (V)"><span class="lmark"></span><svg class="lseptalogo" viewBox="0 0 500 370" aria-hidden="true"><rect x="54" y="15" width="392" height="340" fill="#ece8dd"/><path fill="#f14728" d="M441.775,14.666H340.441L180.888,127.332h148.665l115.779,115.333L333.556,355.107h108.22c25.555,0,44.221-25.332,44.221-43.331V58.221C485.996,39.998,467.33,14.666,441.775,14.666z"/><path fill="#f14728" d="M206.443,137.998H192.22l87.111,87.107c4.001,3.338,7.11,7.336,13.999,6.893h14.89l-87.555-86.889C216.665,140.664,213.776,137.998,206.443,137.998z"/><path fill="#1f4fa3" d="M58.666,355.107h101.111l159.554-112.219H170.887L54.666,127.332L167.11,14.666H58.666c-25.778,0-44,25.332-44,43.776v253.555C14.666,329.775,32.888,355.107,58.666,355.107z"/></svg><span class="ltext">Live SEPTA Vehicles</span><span class="lcount" id="transitCount"></span><kbd>V</kbd></button>
   <button class="lrow" id="btnIndego" title="Indego Bike Share (B)"><span class="lmark"></span><svg class="lbike" viewBox="0 0 24 13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.8" cy="8.7" r="3.4"/><circle cx="19.2" cy="8.7" r="3.4"/><path d="M4.8 8.7 8.9 2.9h4.2l6.1 5.8M8.9 2.9l3.5 5.8H4.8M13.1 2.9l1.4-1.2h1.7M8.9 2.9H6.8"/></svg><span class="ltext">Indego Bike Share</span><span class="lcount" id="indegoCount"></span><kbd>B</kbd></button>
@@ -115,21 +156,11 @@
     <button id="btnResetLayers" class="mini" title="Back to the default layers">Reset Layers</button>
     <button id="btnCopyLink" class="mini" title="Copy a link that opens this exact view">Copy Link to This View</button>
   </div>
-  <div class="kicker tkick">Take Me To</div>
-  <div class="tgrid">
-    <button class="lrow trow" data-stop="cityhall"><span class="ltext">City Hall</span></button>
-    <button class="lrow trow" data-stop="schuylkill"><span class="ltext">Schuylkill Skyline</span></button>
-    <button class="lrow trow" data-stop="artmuseum"><span class="ltext">Art Museum Steps</span></button>
-    <button class="lrow trow" data-stop="towers"><span class="ltext">Society Hill Towers</span></button>
-    <button class="lrow trow" data-stop="indhall"><span class="ltext">Independence Hall</span></button>
-    <button class="lrow trow" data-stop="battleship"><span class="ltext">Battleship New Jersey</span></button>
-    <button class="lrow trow" data-stop="airport"><span class="ltext">Airport Approach</span></button>
-    <button class="lrow trow" data-stop="wissahickon"><span class="ltext">The Wissahickon</span></button>
-  </div>
+
 </div>
 
 <div id="timepanel" class="panel" role="group" aria-label="Date and time">
-  <div class="kicker">Philadelphia Sun and Sky</div>
+  <div class="panelhead"><div><div class="kicker">A different light</div><h2>Sun &amp; sky</h2></div><button class="panelclose" data-close-panel="time" aria-label="Close Sun and sky">&times;</button></div><p class="panelnote">Follow Philadelphia time or find your golden hour.</p>
   <div class="row">
     <input type="date" id="timeDate" aria-label="Date">
     <button id="timePlay" class="mini" title="Sun time-lapse, about two hours a second" aria-pressed="false">Play</button>
@@ -143,22 +174,51 @@
     <button class="mini" data-preset="dusk">Dusk</button>
     <button class="mini" data-preset="night">Night</button>
   </div>
+  <fieldset class="lightcontrols">
+    <legend>Architectural Lighting</legend>
+    <label for="lightTheme">Skyline Theme</label>
+    <select id="lightTheme">
+      <option value="auto">Automatic · Games &amp; Calendar</option>
+      <option value="house">Warm White</option>
+      <option value="eagles">Eagles · Green &amp; White</option>
+      <option value="phillies">Phillies · Red &amp; White</option>
+      <option value="sixers">Sixers · Blue, Red &amp; White</option>
+      <option value="flyers">Flyers · Orange &amp; White</option>
+      <option value="red,white,blue">Red, White &amp; Blue</option>
+      <option value="purple,gold">Purple &amp; Gold</option>
+      <option value="custom">Custom Colors</option>
+    </select>
+    <div id="customLights" hidden>
+      <label for="lightCount">Number of Colors</label>
+      <select id="lightCount"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+      <div class="lightswatches">
+        <label>Bottom<input type="color" id="lightColor0" value="#e81828" aria-label="First Color, Bottom Band"></label>
+        <label>Second<input type="color" id="lightColor1" value="#f4f1ea" aria-label="Second Band Color"></label>
+        <label>Third<input type="color" id="lightColor2" value="#2457ff" aria-label="Third Band Color"></label>
+        <label>Top<input type="color" id="lightColor3" value="#ffb300" aria-label="Fourth Color, Top Band"></label>
+      </div>
+    </div>
+    <label for="lightPattern">Comcast Crown Pattern</label>
+    <select id="lightPattern"><option value="bands">Horizontal Bands</option><option value="solid">Solid Color</option></select>
+    <p class="lightnote">Colors rise from bottom to top. Select Night to see the skyline and Boathouse Row illuminate.</p>
+  </fieldset>
 </div>
 
 <div id="hint">Drag, scroll, or press W A S D to take flight.</div>
+<div id="viewcontext" class="panel"><span class="contextdot" aria-hidden="true"></span><div><span id="viewPlace">Philadelphia</span><span id="viewClock">Local city time</span></div></div>
 
 
 <div id="sharepanel" class="panel" role="group" aria-label="Share this view">
-  <div class="kicker">Share This View</div>
+  <div class="panelhead"><div><div class="kicker">Send a little Philadelphia</div><h2>Share this view</h2></div><button class="panelclose" data-close-panel="share" aria-label="Close Share">&times;</button></div>
   <div class="shareplace" id="sharePlace"></div>
   <div class="sharecoord" id="shareCoord"></div>
   <input id="shareUrl" class="shareurl" type="text" readonly aria-label="Link to this view">
   <div class="sharerow">
     <button class="mini" id="shareCopy">Copy Link</button>
     <button class="mini" id="shareNative" style="display:none">Share</button>
-    <span class="sharenote" id="shareNote"></span>
+    <span class="sharenote" id="shareNote" role="status"></span>
   </div>
-  <div class="sharehint">The link opens on this exact spot, looking the same way, with the layers you have on. A pinned date and time travel with it; a live clock does not.</div>
+  <div class="sharehint">Your viewpoint and layers, ready to explore. A custom date and time are included when set.</div>
 </div>
 
 <div id="about" class="panel" role="dialog" aria-label="About Philly3D">
@@ -188,11 +248,10 @@
     <tr><td><kbd>Esc</kbd></td><td>Release the Mouse</td></tr>
     <tr><td>Compass</td><td>Face North</td></tr>
   </table>
-  <p>Outside claude.ai&rsquo;s sandbox the sky also follows the real Philadelphia weather:
-    live cloud cover and wind via Open-Meteo, refreshed every 15 minutes
-    (the &#9729; figure in the time panel), and the haze follows the city&rsquo;s own air
-    monitors: the Air Management Services hourly PM2.5 and ozone readings set how far you
-    can see and tint a smoke day tan (the air quality line in the time panel).</p>
+  <p>The sky follows Philadelphia&rsquo;s live weather, with cloud cover and wind
+    from Open-Meteo refreshed every 15 minutes. The city&rsquo;s Air Management Services
+    readings set the haze. Find both in Sun &amp; sky; weather and air quality remain
+    live when you explore a different date or time.</p>
   <div class="credits">
     Building footprints and streets &copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL).
     Street trees: Philadelphia Parks &amp; Recreation Tree Inventory 2025;
@@ -208,7 +267,7 @@
     traffic (RMSTRAFFIC, open data); the cars are synthesized typical
     flows at those volumes, not live vehicle positions.
     Vehicle positions: SEPTA real-time API. Live flights: adsb.fi community
-    ADS-B data. Live ships: AIS via aisstream.io. Live train positions: Amtraker (ODC-By). Weather: Open-Meteo. Air quality: Philadelphia Air Management Services hourly PM2.5 and ozone. Concert listings: Ticketmaster Discovery (unaffiliated). Scores over the venues during home games and the game days that colour the skyline: ESPN's public scoreboards (unaffiliated). The night's colour on other nights: BOMA Philadelphia's Building Illumination Calendar (unaffiliated). Wall colours in the outer districts: Mapillary street-level imagery, CC BY-SA 4.0.
+    ADS-B data. Live ships: AIS via aisstream.io. Live train positions: Amtraker (ODC-By). Weather: Open-Meteo. Air quality: Philadelphia Air Management Services hourly PM2.5 and ozone. Concert listings: Ticketmaster Discovery (unaffiliated). Scores over the venues on Philadelphia game days and the game days that colour the skyline: ESPN's public scoreboards (unaffiliated). The night's colour on other nights: BOMA Philadelphia's Building Illumination Calendar (unaffiliated). Wall colours in the outer districts: Mapillary street-level imagery, CC BY-SA 4.0.
     Address search: Nominatim / OpenStreetMap.
     This is an independent project, not affiliated with or endorsed by SEPTA
     or Indego.
@@ -217,7 +276,9 @@
   </div>
 </div>
 
-<div id="veil">
+</div>
+
+<div id="veil" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
   <div class="card">
     <svg class="veilmark" viewBox="0 0 512 512" aria-hidden="true">
       <g>
@@ -240,13 +301,15 @@
         <rect x="172" y="478" width="168" height="18"/>
       </g>
     </svg>
-    <div class="kicker">A living model of</div>
-    <h2>Philadelphia</h2>
-    <div class="sub">Every block of the city at its true measured height, a quarter-million
-      buildings from the Delaware to the Schuylkill, with SEPTA's buses and trolleys
-      moving through the streets live. Take the controls and fly it: the skyline, the rivers, the rowhouse blocks.</div>
+    <div class="kicker">Philly3D / A Living City</div>
+    <h2 id="welcomeTitle">Philadelphia. <span>A New Perspective.</span></h2>
+    <div class="sub">Fly above the skyline. Follow the rhythm of the streets.
+      Discover a living Philadelphia, from the rivers to the rooftops.</div>
+    <div class="welcomefacts"><span>250,000+ Buildings</span><span>Live City Feeds</span><span>Real Sun &amp; Weather</span></div>
     <button class="enter" id="btnEnter" disabled>Preparing&hellip;</button>
+    <progress id="loadProgress" max="100" value="0" aria-label="Preparing the City"></progress>
     <div class="loading" id="loadmsg">Assembling Philadelphia</div>
+    <div class="welcomehint">Made for the Curious. Built for Exploring.</div>
   </div>
 </div>
 

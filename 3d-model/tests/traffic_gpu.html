@@ -1,0 +1,42 @@
+<!doctype html>
+<meta charset="utf-8"><title>Traffic Vehicle Checks</title>
+<style>body{background:#131c23;color:#e8e7df;font:14px/1.5 system-ui;padding:24px}h1{font-weight:500}pre{white-space:pre-wrap;font:12px monospace}.gallery{display:grid;grid-template-columns:repeat(3,256px);gap:12px}figure{margin:0;background:#202e38;padding:10px;border-radius:10px}canvas{width:256px;height:192px}figcaption{padding:4px 10px;color:#e2c384}</style>
+<h1>Philadelphia Traffic · Vehicle Collection</h1><p>Production models and material hooks. Checks body, lamp and shadow visibility without shrinking the vehicles, in both depth modes and bloom material variants.</p><pre id="result">Running…</pre><div class="gallery" id="gallery"></div>
+<script src="../three.min.js"></script><script>
+(async()=>{
+const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+const cut=(a,b)=>{const i=src.indexOf(a),j=src.indexOf(b,i);if(i<0||j<0)throw Error('Source missing '+a);return src.slice(i,j);};
+const geometry=cut('  function septaMerge(','  function septaVehGeom('),models=cut('  const CAR_MODELS =','  function trafficPrepareGraph('),inverse=cut('  const INV_GLSL =','  // materials that opt out'),raw=cut('  const postRaw =','  let postRT =');
+const create=new Function('THREE','groupCity','POST','postU',`const isTouch=false,TRAFFIC={cap:12};`+inverse+raw+geometry+models+'trafficCreateFleet();return {trafficFleet,CAR_MODELS};');
+const check=(v,m)=>{if(!v)throw Error(m);};const results=[],errors=[];const prevError=console.error;console.error=(...a)=>{errors.push(a.join(' '));prevError(...a);};
+for(const logarithmicDepthBuffer of [false,true])for(const bloom of [false,true]){
+ const renderer=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});renderer.setSize(256,192);renderer.outputEncoding=THREE.sRGBEncoding;renderer.toneMapping=THREE.ACESFilmicToneMapping;
+ const scene=new THREE.Scene(),group=new THREE.Group();scene.add(group);const camera=new THREE.PerspectiveCamera(38,4/3,.1,200);camera.position.set(6.8,4.3,7.2);camera.lookAt(0,1,0);
+ scene.add(new THREE.HemisphereLight(0xd8e9fa,0x59634d,1.1));const sun=new THREE.DirectionalLight(0xffefd5,2);sun.position.set(3,8,5);scene.add(sun);
+ const {trafficFleet,CAR_MODELS}=create(THREE,group,{on:bloom},{uExposure:{value:1}}),target=new THREE.WebGLRenderTarget(256,192);target.texture.encoding=THREE.sRGBEncoding;
+ const pixels=new Uint8Array(256*192*4),identity=new THREE.Matrix4();
+ const render=()=>{renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,256,192,pixels);return pixels.slice();};
+ const count=p=>{let n=0;for(let i=0;i<p.length;i+=4)if(p[i]+p[i+1]+p[i+2]>2)n++;return n;};
+ const size=p=>{let x0=256,x1=0,y0=192,y1=0;for(let y=0;y<192;y++)for(let x=0;x<256;x++){let i=(y*256+x)*4;if(p[i]+p[i+1]+p[i+2]>2){x0=Math.min(x,x0);x1=Math.max(x,x1);y0=Math.min(y,y0);y1=Math.max(y,y1);}}return [x1-x0,y1-y0];};
+ let tested=0;const hashes=[];
+ for(let k=0;k<trafficFleet.length;k++){
+  const f=trafficFleet[k];f.body.count=1;f.body.setMatrixAt(0,identity);f.body.setColorAt(0,new THREE.Color(0x677781));f.fade.array[0]=1;f.fade.needsUpdate=true;
+  const full=render();check(count(full)>1000,'Missing vehicle '+k);hashes.push(full.reduce((s,v,i)=>(s+v*(i%61))%1000000007,0));
+  f.body.setColorAt(0,new THREE.Color(0x70221c));f.body.instanceColor.needsUpdate=true;const red=render();let fixed=0,changed=0;
+  for(let i=0;i<red.length;i+=4)if(full[i]+full[i+1]+full[i+2]>8){let d=Math.abs(red[i]-full[i])+Math.abs(red[i+1]-full[i+1])+Math.abs(red[i+2]-full[i+2]);if(d<2)fixed++;else if(d>10)changed++;}
+  check(fixed>100&&changed>100,'Paint incorrectly recolours trim/glass '+k);
+  if(!bloom&&!logarithmicDepthBuffer){f.body.setColorAt(0,new THREE.Color([0x275368,0x767a77,0x76322e,0x293b32,0x655b4c,0x9a9b93][k]));f.body.instanceColor.needsUpdate=true;renderer.setRenderTarget(null);renderer.render(scene,camera);const cv=document.createElement('canvas');cv.width=256;cv.height=192;cv.getContext('2d').drawImage(renderer.domElement,0,0);const fig=document.createElement('figure'),label=document.createElement('figcaption');label.textContent=CAR_MODELS[k].name;fig.append(cv,label);document.getElementById('gallery').append(fig);}
+  f.fade.array[0]=.5;f.fade.needsUpdate=true;const half=render(),ratio=count(half)/count(full),a=size(full),b=size(half);
+  check(ratio>.40&&ratio<.60,'Fade is not half coverage '+k);check(Math.abs(a[0]-b[0])<4&&Math.abs(a[1]-b[1])<4,'Fade shrinks the silhouette '+k);
+  f.fade.array[0]=0;f.fade.needsUpdate=true;check(count(render())===0,'Invisible body leaves pixels '+k);
+  scene.overrideMaterial=f.body.customDepthMaterial;check(count(render())===0,'Invisible body leaves a shadow silhouette '+k);f.fade.array[0]=1;f.fade.needsUpdate=true;check(count(render())>1000,'Shadow shader failed '+k);scene.overrideMaterial=null;
+  f.body.count=0;f.lights.count=1;f.lights.material.opacity=1;f.lights.setMatrixAt(0,identity);f.lights.instanceMatrix.needsUpdate=true;check(count(render())>5,'Head/tail lamps missing '+k);
+  f.fade.array[0]=0;f.fade.needsUpdate=true;check(count(render())===0,'Lamps outlive an invisible car '+k);f.lights.count=0;tested++;
+ }
+ check(new Set(hashes).size===6,'Vehicle silhouettes repeat');check(errors.length===0,'Shader errors '+errors.join('\n'));
+ results.push({logarithmicDepthBuffer,bloom,tested,distinctModels:new Set(hashes).size});
+ for(const f of trafficFleet){f.body.geometry.dispose();f.body.material.dispose();f.body.customDepthMaterial.dispose();f.lights.geometry.dispose();f.lights.material.dispose();}target.dispose();renderer.dispose();renderer.forceContextLoss();
+}
+document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL: '+e.stack;console.error(e);});
+</script>

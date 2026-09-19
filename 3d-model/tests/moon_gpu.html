@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><title>Moon Phase Checks</title>
+<style>body{background:#161c28;color:#eee8dc;font:14px system-ui;padding:24px}pre{white-space:pre-wrap}.row{display:flex;gap:12px;flex-wrap:wrap}figure{margin:0}canvas{width:256px;height:192px}</style>
+<h1>Moon Phase Checks</h1><p>Production sky shader at small and enlarged moon sizes: soft terminator, preserved phases, no unlit disc, both orientations and depth modes.</p><div class="row" id="gallery"></div><pre id="result">Running…</pre>
+<script src="../three.min.js"></script><script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const cut=(a,b)=>{const i=src.indexOf(a),j=src.indexOf(b,i);if(i<0||j<0)throw Error('Missing source '+a);return src.slice(i,j);};
+ const create=new Function('THREE','scene','postU',cut('  const COLORS =','  // ---------------------------------------------------------------- dom')+cut('  const INV_GLSL =','  // materials that opt out')+'const SKY_DITHER=0,sunDir=new THREE.Vector3(0,-1,0);'+cut('  const MOON_SCALE =','  // World-space cloud banks')+'return {sky,skyMat,MOON_R};');
+ const check=(v,m)=>{if(!v)throw Error(m);},results=[],errors=[];const oldError=console.error;console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
+ for(const log of [false,true]){
+  const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer:log});r.setSize(256,192);r.outputEncoding=THREE.LinearEncoding;
+  const scene=new THREE.Scene(),post={uPost:{value:0},uExposure:{value:1}},a=create(THREE,scene,post),u=a.skyMat.uniforms;
+  u.uMoon.value.set(0,0,-1);u.uMoonU.value.set(1,0,0);u.uMoonV.value.set(0,1,0);u.uMoonE.value.set(1,0,0);u.uMoonN.value.set(0,1,0);u.uMoonI.value=1;u.uCloud.value=0;u.cSun.value.setRGB(0,0,0);u.uSunVis.value=0;
+  for(const k of ['cZenith','cHorizon','cGround'])u[k].value.setRGB(.12,.14,.19);
+  // Expose only the production phase mask for quantitative checks, without
+  // albedo/sky/halo differences obscuring the light-to-shadow transition.
+  const mask=a.skyMat.clone();mask.uniforms=u;mask.fragmentShader=mask.fragmentShader.replace('void main(){','void main(){float mask=0.;').replace('col = mix(col, mix(mc','mask=inD*lit; col = mix(col, mix(mc').replace('gl_FragColor = vec4(col, skyA);','gl_FragColor = vec4(vec3(mask),1.);');
+  const camera=new THREE.PerspectiveCamera(10,4/3,.1,10000),rt=new THREE.WebGLRenderTarget(256,192),pixels=new Uint8Array(256*192*4);
+  const render=()=>{r.setRenderTarget(rt);r.render(scene,camera);r.readRenderTargetPixels(rt,0,0,256,192,pixels);return pixels.slice();};
+  for(const diameter of [24,96]){
+   camera.fov=2*Math.atan(192*Math.tan(a.MOON_R)/diameter)*180/Math.PI;camera.updateProjectionMatrix();a.sky.material=mask;
+   const areas=[];
+   for(const k of [0,.05,.25,.5,.75,1]){
+    u.uMoonK.value=k;const p=render();let sum=0;for(let i=0;i<p.length;i+=4)sum+=p[i]/255;
+    const fraction=sum/(Math.PI*(diameter/2)**2);areas.push(+fraction.toFixed(4));check(Math.abs(fraction-k)<.025,'Phase fraction changed '+JSON.stringify({diameter,k,fraction}));
+    if(k===0)check(sum===0,'New moon has a visible dark disc');
+   }
+   u.uMoonK.value=.5;const half=render();const row=Array.from({length:256},(_,x)=>half[(96*256+x)*4]);
+   const fade=row.filter((v,x)=>Math.abs(x-127.5)<diameter*.2&&v>25&&v<230).length;
+   check(fade>=Math.max(2,Math.floor(diameter*.09)),'Terminator too rigid '+JSON.stringify({diameter,fade}));
+   check(row[Math.round(128-diameter*.25)]===0,'Unlit hemisphere reappeared');
+   u.uMoonU.value.set(-1,0,0);const reverse=render();let delta=0;for(let x=0;x<256;x++)delta+=Math.abs(row[x]-reverse[(96*256+255-x)*4]);
+   check(delta<100,'Waning orientation changes phase');u.uMoonU.value.set(1,0,0);
+   results.push({log,diameter,fadePixels:fade,phaseAreas:areas});
+  }
+  a.sky.material=a.skyMat;
+  for(const [label,k,day]of[['Crescent',.05,0],['Quarter',.5,0],['Gibbous',.75,0],['Full',1,0],['Day Quarter',.5,1]]){
+   u.uMoonK.value=k;u.uMoonD.value=day;const p=render();check(p.some((v,i)=>i%4===0&&v>80),'Moon did not render '+label);
+   if(!log){r.setRenderTarget(null);r.render(scene,camera);const cv=document.createElement('canvas');cv.width=256;cv.height=192;cv.getContext('2d').drawImage(r.domElement,0,0);const f=document.createElement('figure'),c=document.createElement('figcaption');c.textContent=label;f.append(cv,c);document.getElementById('gallery').append(f);}
+  }
+  post.uPost.value=1;render();check(r.info.programs.every(p=>!p.diagnostics||p.diagnostics.runnable),'Shader program failed');check(!errors.length,'Shader errors '+errors.join('\n'));check(r.getContext().getError()===0,'WebGL error');
+  a.sky.geometry.dispose();a.skyMat.dispose();mask.dispose();rt.dispose();r.dispose();r.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>

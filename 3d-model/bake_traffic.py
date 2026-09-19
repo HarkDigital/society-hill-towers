@@ -2,19 +2,22 @@
 """OSM drivable ways + PennDOT AADT -> traffic.b64 for the ambient traffic layer.
 
 Sources the raw Overpass dumps (NOT the scene jsons): the raw ways carry way IDs
-(exact dedup between the wide and south dumps), oneway, and tunnel tags — all
+(exact dedup between the wide, south and city dumps), oneway, and tunnel tags — all
 three load-bearing (head-on traffic on I-95's carriageways would be glaring).
 PennDOT RMSTRAFFIC segments (fetch_traffic.py) are conflated onto the ways by
 nearest-parallel-edge matching; unmatched ways take a class-default AADT so the
 whole rendered network carries cars, with real counts wherever the state has them.
 
-Layout (int16 after Int32[4] header magic 0x53485454, nWays, nPts, 0):
-  way: n, clsFlags, aadt10, then n x [x/0.2, z/0.2]
+Layout (int16 after Int32[4] header magic 0x53485454, nWays, nPts, unit_mm):
+  way: n, clsFlags, aadt10, then n x [x/unit, z/unit]
   clsFlags bits 0-2 class (pack_wide RT), bit 3 oneway, bit 4 penndot-matched."""
 import json, math, pathlib, struct, base64
+from collections import Counter
 
 HERE = pathlib.Path(__file__).parent
-WIDE = (-3700, 2300, -4480, 6400)
+EXTENT = (-12000, 16500, -21700, 9700)
+RES_BOX = (-9500, 9500, -13500, 9700)  # same local-street coverage as pack_city.py
+UNIT = 0.7  # city-wide int16 coverage; recorded as millimetres in header[3]
 LAT0, LON0 = 39.945473644755005, -75.14474803850973
 MX = 111320 * math.cos(math.radians(LAT0))
 MZ = 110574
@@ -65,9 +68,9 @@ def runs_of(pts, box, m):
 def length_of(pts):
     return sum(math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]) for i in range(len(pts) - 1))
 
-# ---- load OSM ways (wide + south raw, dedup by way id) --------------------
+# ---- load OSM ways (wide + south + city raw, dedup by way id) --------------------
 nodes, ways, seen = {}, [], set()
-for fn in ('osm_wide_raw.json', 'osm_south_raw.json'):
+for fn in ('osm_wide_raw.json', 'osm_south_raw.json', 'osm_city_raw.json'):
     p = HERE / fn
     if not p.exists():
         print(f'WARNING: {fn} missing — its area gets no traffic'); continue
@@ -75,6 +78,13 @@ for fn in ('osm_wide_raw.json', 'osm_south_raw.json'):
         if el['type'] == 'node':
             nodes[el['id']] = (el['lat'], el['lon'])
         elif el['type'] == 'way' and el['id'] not in seen:
+            seen.add(el['id']); ways.append(el)
+
+# The far-ring drive connectors are supplied as inline Overpass geometry.
+supplement = HERE / 'city_streets_raw.json'
+if supplement.exists():
+    for el in json.load(open(supplement)).get('elements', []):
+        if el.get('type') == 'way' and el['id'] not in seen:
             seen.add(el['id']); ways.append(el)
 
 sel = []
@@ -87,11 +97,23 @@ for w in ways:
     if t.get('tunnel') in ('yes', 'building_passage') or t.get('covered') == 'yes': continue
     ow = t.get('oneway', '')
     oneway = ow in ('yes', 'true', '1') or hw in ('motorway', 'motorway_link') or t.get('junction') == 'roundabout'
-    pts = [to_xz(*nodes[n]) for n in w['nodes'] if n in nodes]
+    pts = ([to_xz(p['lat'], p['lon']) for p in w['geometry'] if p and 'lon' in p]
+           if w.get('geometry') else [to_xz(*nodes[n]) for n in w.get('nodes', []) if n in nodes])
     if len(pts) < 2: continue
+    if hw == 'residential' and not any(RES_BOX[0] <= x <= RES_BOX[1] and RES_BOX[2] <= z <= RES_BOX[3] for x,z in pts): continue
     if ow == '-1':
         pts.reverse(); oneway = True
     sel.append({'hw': hw, 'cls': RT[hw], 'oneway': oneway, 'pts': pts})
+
+# Preserve every shared junction while simplifying only the shape between them.
+# This avoids both disconnected T-junctions and a large, redundant vertex payload.
+node_use = Counter(p for w in sel for p in set(w['pts']))
+def simplify_route(run):
+    anchors = [0] + [i for i in range(1, len(run)-1) if node_use[run[i]] > 1] + [len(run)-1]
+    result = []
+    for lo,hi in zip(anchors, anchors[1:]):
+        result.extend(simplify_open(run[lo:hi+1], 1.2)[:-1])
+    return result + [run[-1]]
 
 # ---- PennDOT sub-edge index ------------------------------------------------
 GRID = 60
@@ -161,10 +183,10 @@ km_by_cls = [0.0] * 6
 implied_peak = 0.0
 wd_n = [v / sum(WD_FRAC) for v in WD_FRAC]
 for w in sel:
-    for run in runs_of(w['pts'], WIDE, 200):
-        run = simplify_open(run, 1.2) if len(run) > 3 else run
+    for run in runs_of(w['pts'], EXTENT, 200):
+        run = simplify_route(run)
         L = length_of(run)
-        if L < 25: continue
+        if L < 2: continue
         # sample midpoints (long segments every ~25 m) against the PennDOT index
         votes = []
         n_samp = 0
@@ -195,13 +217,13 @@ for w in sel:
         flags = w['cls'] | (8 if w['oneway'] else 0) | (16 if is_matched else 0)
         body += [len(run), flags, min(32767, int(round(aadt / 10)))]
         for q in run:
-            body += [max(-32767, min(32767, int(round(q[0] / 0.2)))),
-                     max(-32767, min(32767, int(round(q[1] / 0.2))))]
+            body += [max(-32767, min(32767, int(round(q[0] / UNIT)))),
+                     max(-32767, min(32767, int(round(q[1] / UNIT))))]
         nW += 1; nP += len(run)
         km_by_cls[w['cls']] += L / 1000
         implied_peak += aadt * wd_n[17] / SPEED_KMH[w['cls']] * (L / 1000)
 
-buf = struct.pack('<4i', 0x53485454, nW, nP, 0) + struct.pack('<%dh' % len(body), *body)
+buf = struct.pack('<4i', 0x53485454, nW, nP, round(UNIT * 1000)) + struct.pack('<%dh' % len(body), *body)
 b64 = base64.b64encode(buf).decode('ascii')
 (HERE / 'traffic.b64').write_text(b64)
 print(f'ways {nW} ({matched} penndot-matched, {halved} halved oneways), points {nP}')

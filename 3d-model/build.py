@@ -24,7 +24,7 @@ REQUIRED = {
     "street_labels.json": 70_000, "street_sdf.json": 1_200_000, "tree_names.json": 8_000, "places.json": 12_000,
     "overpasses.json": 80_000, "nw_parks.json": 45_000, "nw_water.json": 55_000, "parking_south.json": 9_000,
     "towers.json": 4_000, "schuylkill.json": 8_000, "delaware.json": 8_000, "markets.json": 3_000, "markers.json": 120_000, "landmarks.json": 100_000, "rail_amtrak.json": 30_000,
-    "lights.json": 500,
+    "lights.json": 500, "boathouses.json": 2000,
 }
 MAX_HTML = 75_000_000   # runaway-growth tripwire, raised from 25 MB on 2026-09-02 for the roof, colour and storefront passes (the page was ~25 MB; the old 16 MB artifact cap is long moot)
 # Packed int16 blobs are stored byte-planar (header, all low bytes, all high
@@ -159,6 +159,7 @@ const("PARKING_SOUTH", text_of("parking_south.json", "null"))
 const("TOWERS", text_of("towers.json", "null"))
 const("SCHUYLKILL_DATA", text_of("schuylkill.json", "null"))
 const("DELAWARE_DATA", text_of("delaware.json", "null"))   # the tidal Delaware's outline (bake_delaware.py): the shoreline past the DEM and the sheets past the ground box
+const("BOATHOUSES", text_of("boathouses.json", "null"))
 const("RAIL_AMTRAK", text_of("rail_amtrak.json", "null"))   # Amtrak's tracks through the city (bake_rail.py, Round 80): the live trains ride them
 const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud models (pack_clouds.py): the cloud field of Round 67
 const("NW_WATER", text_of("nw_water.json", "null"))
@@ -175,7 +176,8 @@ let_blob("PAVED_B64", "paved.b64")
 # advances with the bytes. The transfer maps to 0-70%; app.js's build steps take
 # the line from there.
 PG_JS = ("window.PG = function (i, n) { var l = document.getElementById('loadmsg'); "
-         "if (l) l.textContent = 'Downloading Philadelphia, ' + Math.round(i / n * 70) + '%'; };")
+         "if (l) l.textContent = 'Downloading Philadelphia, ' + Math.round(i / n * 70) + '%'; "
+         "var p = document.getElementById('loadProgress'); if (p) p.value = i / n * 70; };")
 data_total = sum(len(js.encode("utf-8")) for _, js in DATA_PARTS)
 data_html, done = [], 0
 for label, js in DATA_PARTS:

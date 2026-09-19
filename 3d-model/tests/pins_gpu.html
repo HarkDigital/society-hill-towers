@@ -1,0 +1,48 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pin Occlusion Checks</title>
+<style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}pre{white-space:pre-wrap}canvas{width:160px;height:160px;margin:6px}</style>
+<h1>Pin Occlusion Checks</h1>
+<p>Production pin materials must disappear behind buildings, remain visible in front, and respect partial coverage. Tests standard/logarithmic depth and bloom material variants.</p>
+<pre id="result">Running…</pre>
+<script src="../three.min.js"></script>
+<script>
+(async()=>{
+ const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+ const cut=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
+ const source=cut('  const INV_GLSL =','  let postRT =')+cut('  function pinTexture(','  function pinMesh(');
+ const factory=new Function('THREE','POST','postU','anisoOf','clamp',source+'\nreturn {pinSceneDepth,pinTexture,postRaw};');
+ const results=[],check=(ok,m)=>{if(!ok)throw Error(m);};
+ for(const logarithmicDepthBuffer of [false,true])for(const bloom of [false,true]){
+  const renderer=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});renderer.setSize(160,160);renderer.setClearColor(0x111722);
+  const {pinSceneDepth,pinTexture,postRaw}=factory(THREE,{on:bloom},{uExposure:{value:1.06}},()=>1,(v,a,b)=>Math.max(a,Math.min(b,v)));
+  const scene=new THREE.Scene(),camera=new THREE.PerspectiveCamera(45,1,.1,26000);camera.position.z=15;camera.updateMatrixWorld();
+  const target=new THREE.WebGLRenderTarget(160,160),pixels=new Uint8Array(160*160*4);
+  const wall=new THREE.Mesh(new THREE.BoxGeometry(8,8,1),new THREE.MeshBasicMaterial({color:0x556677}));scene.add(wall);
+  const tex=pinTexture('#b8862b','#fdfbf6',g=>{g.fillStyle='#374dbb';g.fillRect(75,55,100,100);});
+  const badge=new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6,5.75),postRaw(new THREE.MeshBasicMaterial({map:tex,transparent:true,depthWrite:false,toneMapped:false}),{mask:true}),1);
+  badge.setMatrixAt(0,new THREE.Matrix4());badge.count=1;
+  const search=new THREE.Mesh(new THREE.ConeGeometry(1.6,5,5),new THREE.MeshBasicMaterial({color:0xc89b5e}));
+  const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,-3,0),new THREE.Vector3(0,3,0)]),new THREE.LineBasicMaterial({color:0xff6600}));
+  const ball=new THREE.Mesh(new THREE.SphereGeometry(1.5,12,8),new THREE.MeshBasicMaterial({color:0xff6600}));
+  const read=()=>{renderer.setRenderTarget(target);renderer.render(scene,camera);renderer.readRenderTargetPixels(target,0,0,160,160,pixels);return pixels.slice();};
+  const diff=(a,b)=>{let n=0;for(let i=0;i<a.length;i+=4)if(Math.abs(a[i]-b[i])+Math.abs(a[i+1]-b[i+1])+Math.abs(a[i+2]-b[i+2])>5)n++;return n;};
+  const checks=[];
+  for(const [name,m]of[['Instanced Badge',badge],['Search Pin',search],['Event Connector',line],['Event Anchor',ball]]){
+   pinSceneDepth(m);scene.add(m);m.position.z=-2;wall.position.x=0;
+   m.visible=false;const blockedBase=read();m.visible=true;const hidden=diff(blockedBase,read());check(hidden===0,name+' leaks through foreground building');
+   m.position.z=2;m.visible=false;const frontBase=read();m.visible=true;const front=diff(frontBase,read());check(front>30,name+' disappears in front of building');
+   m.position.z=-2;wall.position.x=20;m.visible=false;const openBase=read();m.visible=true;const open=diff(openBase,read());check(open>30,name+' stays hidden after building moves away');
+   if(name==='Instanced Badge'){
+    wall.position.x=3.5;m.visible=false;const halfBase=read();m.visible=true;const partial=diff(halfBase,read());
+    check(partial>20&&partial<open*.8,'Building edge fails to partially occlude badge');
+    renderer.setRenderTarget(null);renderer.render(scene,camera);const copy=document.createElement('canvas');copy.width=copy.height=160;copy.getContext('2d').drawImage(renderer.domElement,0,0);document.body.append(copy);
+   }
+   checks.push({name,hidden,front,open});scene.remove(m);m.geometry.dispose();m.material.dispose();
+  }
+  check(renderer.getContext().getError()===0,'WebGL error');results.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',bloom,checks});
+  tex.dispose();wall.geometry.dispose();wall.material.dispose();target.dispose();renderer.dispose();renderer.forceContextLoss();
+ }
+ document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);console.log('PINS_GPU_PASS',JSON.stringify(results));
+})().catch(e=>{document.getElementById('result').textContent='FAIL\n'+e.stack;console.error(e);});
+</script>
