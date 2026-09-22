@@ -716,6 +716,10 @@ body.touchfly .pad { display: flex; }
 }
 #vehinfo.wide { max-width: 340px; }   /* a historical marker's full text (Round 77) */
 #vehinfo .vtext { line-height: 1.45; max-height: 38vh; overflow: auto; color: var(--paper); }
+/* the near me card's rows (Round 135): each a place to glide to, set as text, not as a button */
+#vehinfo .vnear { display: block; width: 100%; margin: 5px 0 0; padding: 0; background: none; border: 0; color: var(--paper); font: inherit; font-size: 12px; font-weight: 600; text-align: left; cursor: pointer; }
+#vehinfo .vnear:hover, #vehinfo .vnear:focus-visible { color: var(--bronze); text-decoration: underline; outline: none; }
+#vehinfo .vsub { padding-left: 10px; }
 #vehinfo .vlink { display: inline-block; margin-top: 7px; font-family: var(--display); font-size: 10px; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: var(--limestone); text-decoration: none; border-bottom: 1px solid var(--limestone-dim); }
 #vehinfo .vlink:hover { color: var(--paper); border-bottom-color: var(--paper); }
 #vehinfoX {

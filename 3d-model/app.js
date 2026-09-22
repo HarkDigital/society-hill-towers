@@ -12963,7 +12963,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedCivic = null; pickedStop = null; pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedNear = null; pickedCivic = null; pickedStop = null; pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -13043,7 +13043,7 @@
     if (p[1] < g + 2) return false;   // the ground, a road, a lawn: not a building
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
     pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
-    pickedStop = null; pickedCivic = null;
+    pickedStop = null; pickedCivic = null; pickedNear = null;
     const seq = ++BPICK.seq, st = { loading: true };
     pickedBldg = { x: p[0], y: p[1] + 1, z: p[2], seq };
     bldgCard(st); vehinfoEl.hidden = false; cardUnlock();
@@ -13062,7 +13062,7 @@
   }
   function updateBldgPick() {
     if (!pickedBldg) return;
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedStop || pickedCivic || vehinfoEl.hidden) { pickedBldg = null; return; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedStop || pickedCivic || pickedNear || vehinfoEl.hidden) { pickedBldg = null; return; }
     _ssv.set(pickedBldg.x, pickedBldg.y, pickedBldg.z).project(camera);
     if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
@@ -13299,7 +13299,7 @@
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
     if (bldgPick(cx, cy)) return;   // nothing live under the tap: the building, if one stands there (Round 132)
-    if (pickedCivic || pickedStop || pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedStop = null; pickedCivic = null; vehinfoEl.hidden = true; }
+    if (pickedNear || pickedCivic || pickedStop || pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedStop = null; pickedCivic = null; pickedNear = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -18689,7 +18689,7 @@
     vehinfoBody.innerHTML = tag + body;
   }
   function openStopCard(rec) {
-    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedCivic = null;
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedCivic = null; pickedNear = null;
     const st = { rec, loading: true, rows: [], elev: [] };
     pickedStop = st; stopCard(st); vehinfoEl.hidden = false; cardUnlock();
     stopRefresh(st);
@@ -18789,7 +18789,7 @@
     }
   }
   function openCivicCard(rec) {
-    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedStop = null;
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedStop = null; pickedNear = null;
     pickedCivic = rec; civicCard(rec); vehinfoEl.hidden = false; cardUnlock();
   }
   function updateCivicPick() {
@@ -20225,9 +20225,73 @@
     tourStop();
     searchFlyTo(x, gy + 12, z, acc > 400 ? 600 : 300);   // a coarse fix (a desktop on wifi) reads from higher up
     placeSearchMark(x, gy, z, 'You are here');
+    nearMeOpen(x, z);   // Round 135
     notice(acc > 400 ? 'You are about here. Your browser could only place you within ' + (acc >= 1000 ? (acc / 1609.34).toFixed(1) + ' miles' : Math.round(acc / 0.3048 / 100) * 100 + ' feet') + '.' : 'You are here.');
     return true;
   }
+  // ---- near me (Round 135, the last of Mike's six): when the location lands inside the city, a card on
+  // the "You are here" mark lists what is around: the nearest bus stops with the buses on their way, the
+  // nearest Regional Rail station with its next departures, Indego docks with bikes, closures within a
+  // few blocks, the markets open now, the nearest library, and an active weather alert with the nearest
+  // open cooling or warming center. Each row glides there and opens that place's own card. The data is
+  // read whether or not its layer is on; the position is still kept nowhere.
+  let pickedNear = null;
+  function nearDist(m) { return m < 161 ? Math.max(50, Math.round(m / 0.3048 / 50) * 50) + ' ft' : (m / 1609.34).toFixed(1) + ' mi'; }
+  function nearCardRender(st) {
+    let h = '<span class="vroute" style="background:#8a6a3a">Near You</span><span class="vdest">Around you</span>';
+    st.acts = [];
+    const row = (text, act, sub) => { const k = st.acts.length; st.acts.push(act); h += '<button type="button" class="vnear" data-k="' + k + '">' + septaEsc(text) + '</button>'; for (const t of sub || []) h += '<div class="vmeta vsub">' + septaEsc(t) + '</div>'; };
+    for (const a of st.alerts) h += '<div class="vmeta">' + septaEsc(a) + '</div>';
+    if (st.site) row((ALERTS.sitesKind === 'warm' ? 'Warming center: ' : 'Cooling center: ') + st.site.name + ', ' + nearDist(st.site.d), () => nearGo(st.site.x, st.site.z, st.site.name));
+    for (const b of st.bus) row('Bus: ' + b.rec.n + ', ' + nearDist(b.d), () => { nearGo(b.rec.x, b.rec.z); openStopCard(b.rec); },
+      b.rows === undefined ? ['Checking the live buses'] : b.rows.length ? b.rows.slice(0, 2).map((q) => 'Route ' + q.route + ' to ' + q.head + ': ' + (q.away === 0 ? (q.dist < 180 ? 'arriving' : 'next stop') : q.away + (q.away === 1 ? ' stop away' : ' stops away'))) : ['No bus on its way right now']);
+    if (st.rail) row('Rail: ' + st.rail.rec.n + ', ' + nearDist(st.rail.d), () => { nearGo(st.rail.rec.x, st.rail.rec.z); openStopCard(st.rail.rec); },
+      st.rail.rows === undefined ? ['Checking the departures'] : (st.rail.rows || []).slice(0, 2).map((t) => railClock(t.sched_time) + ', ' + (t.line || '') + ' to ' + (t.destination || '')));
+    for (const q of st.bikes) row('Indego: ' + q.st.name + ', ' + q.st.bikes + (q.st.bikes === 1 ? ' bike, ' : ' bikes, ') + q.st.docksOpen + ' open docks, ' + nearDist(q.d), () => { nearGo(q.st.x, q.st.z); pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = q.st; indegoCard(q.st); vehinfoEl.hidden = false; });
+    for (const q of st.closures) row('Closure: ' + (q.r.addr || 'a street') + (q.r.o >= 3 ? ', closed' : ', partly closed') + ', ' + nearDist(q.d), () => { nearGo(q.r.mx, q.r.mz); pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = null; pickedClosure = q.r; closureCard(q.r); vehinfoEl.hidden = false; });
+    for (const q of st.markets) row('Market open: ' + q.m.n + ', ' + nearDist(q.d), () => { nearGo(q.m.x, q.m.z); pickedVeh = null; pickedTree = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = null; pickedMarket = q.m; marketCard(q.m); vehinfoEl.hidden = false; });
+    if (st.lib) row('Library: ' + st.lib.r.n + ', ' + nearDist(st.lib.d), () => { nearGo(st.lib.r.x, st.lib.r.z); openCivicCard(st.lib.r); });
+    if (st.acts.length === 0 && !st.alerts.length) h += '<div class="vmeta">Nothing to report within a few blocks.</div>';
+    h += '<div class="vmeta">Distances in a straight line</div>';
+    vehinfoBody.innerHTML = h;
+  }
+  function nearGo(x, z, name) {
+    const gy = siteY(x, z, 'ground');
+    searchFlyTo(x, gy + 8, z, 200);
+    placeSearchMark(x, gy, z, name || '');
+    pickedNear = null;
+  }
+  function nearMeOpen(x, z) {
+    const by = (arr, fx, fz, max, n) => arr.map((o) => ({ o, d: Math.hypot(fx(o) - x, fz(o) - z) })).filter((q) => q.d <= max).sort((a, b) => a.d - b.d).slice(0, n);
+    const st = { x, z, y: siteY(x, z, 'ground') + 6, alerts: ALERTS.list.map((a) => a.event + (a.until ? ' until ' + alertClock(a.until) : '')), site: null, bus: [], rail: null, bikes: [], closures: [], markets: [], lib: null };
+    if (ALERTS.sites.length) { const s1 = by(ALERTS.sites, (q) => q.x, (q) => q.z, 5000, 1)[0]; if (s1) st.site = { ...s1.o, d: s1.d }; }
+    st.bus = by(STOPS.bus, (q) => q.x, (q) => q.z, 400, 2).map((q) => ({ rec: q.o, d: q.d, rows: undefined }));
+    { const r1 = by(STOPS.rail, (q) => q.x, (q) => q.z, 1500, 1)[0]; if (r1) st.rail = { rec: r1.o, d: r1.d, rows: undefined }; }
+    st.bikes = by([...indegoSt.values()].filter((q) => q.act !== false && q.bikes > 0), (q) => q.x, (q) => q.z, 800, 2).map((q) => ({ st: q.o, d: q.d }));
+    st.closures = by(CLOSURES.recs || [], (q) => q.mx, (q) => q.mz, 250, 2).map((q) => ({ r: q.o, d: q.d }));
+    st.markets = by(markets.filter((m) => marketOpen(m)), (q) => q.x, (q) => q.z, 1500, 2).map((q) => ({ m: q.o, d: q.d }));
+    { const l1 = by(CIVIC_S.lib, (q) => q.x, (q) => q.z, 2500, 1)[0]; if (l1) st.lib = { r: l1.o, d: l1.d }; }
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedStop = null; pickedCivic = null;
+    pickedNear = st; nearCardRender(st); vehinfoEl.hidden = false;
+    for (const b of st.bus) busComing(b.rec).then((rows) => { b.rows = rows || []; if (pickedNear === st) nearCardRender(st); }).catch(() => { b.rows = []; });
+    if (st.rail) railDepartures(st.rail.rec).then((rows) => { st.rail.rows = rows || []; if (pickedNear === st) nearCardRender(st); });
+  }
+  vehinfoBody.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('.vnear');
+    if (!b || !pickedNear) return;
+    const act = pickedNear.acts && pickedNear.acts[+b.dataset.k];
+    if (act) act();
+  });
+  function updateNearPick() {
+    if (!pickedNear) return;
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedBldg || pickedStop || pickedCivic || vehinfoEl.hidden) { pickedNear = null; if (cardWideN) { cardWideN = false; vehinfoEl.classList.remove('wide'); } return; }
+    if (!cardWideN) { cardWideN = true; vehinfoEl.classList.add('wide'); }
+    _ssv.set(pickedNear.x, pickedNear.y, pickedNear.z).project(camera);
+    if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
+    vehinfoEl.style.opacity = '1';
+    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+  }
+  let cardWideN = false;
   function locateMe() {
     if (!veil.classList.contains('hidden')) return;
     closePanels();
@@ -20537,7 +20601,7 @@
     updateMarketPick();
     updateBldgPick();
     updateStopsNear(now); updateStopPick(now);
-    updateCivicNear(now); updateCivicPick();
+    updateCivicNear(now); updateCivicPick(); updateNearPick();
     updateMarkerPick();
     updateMarkersNear(now);
     pinSweep(now);

@@ -6363,3 +6363,25 @@ cards give the address and phone and link the branch's page or the Parks & Rec F
 in the search index and arrive with their card. Verified in the pane (Parkway Central's card, a playground's,
 the search hit, the link's bit). `tests/test_civic.py`, the layer test's Z row.
 
+## Round 135 — near me (Sep 22)
+
+The last of the six. When the Round 125 location lands inside the city, `nearMeOpen` puts a card on the
+"You are here" mark listing what is around, each row a place to glide to that opens its own card: the two
+nearest bus stops within 400 m with the buses on their way (Round 133's `busComing`), the nearest Regional
+Rail station within 1.5 km with its next two departures, the two nearest Indego docks with bikes within
+800 m, closures within 250 m, markets open now on the model clock within 1.5 km, the nearest library within
+2.5 km, and an active weather alert with the nearest open cooling or warming center (Round 131). Empty
+sections are left out; distances are straight-line, feet under a tenth of a mile, miles above. The data
+is read whether or not its layer is on, and the position is still kept nowhere.
+
+Verified in the pane with a fix at Rittenhouse Square and live data: W Rittenhouse Square & Locust St
+(350 ft, "Route 17 to 20th-Johnston: next stop"), Walnut St & 19th St (Routes 21 and 12), Suburban Station
+(0.4 mi, the 5:30 and 5:32 departures), the Philadelphia City Institute library (450 ft); the first row
+opened the stop's own card. The hidden pane never polls Indego or the closures (the `document.hidden`
+gotcha), so their rows were checked in the code (the docks' records carry the `x`/`z` the card reads),
+not live. `tests/test_near_me.py`.
+
+The plan's six are done: Rounds 131 (alerts), 132 (tap a building), 133 (stops and departure boards),
+134 (libraries and rec centers), 135 (near me), after Rounds 127 to 130 took Mike's messages that came in
+while they were being built.
+
