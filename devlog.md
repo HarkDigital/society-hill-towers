@@ -6255,3 +6255,27 @@ asphalt: a 27 m disc between the lot and its stall lines, fading from the foot, 
 own switch (`lotPools`, `lotPoolU`). The pools overlap into one lit field around the arena, the Linc
 and the ballpark. Verified by capture at 9:30 pm and 2 pm. 181 tests.
 
+## Round 130 — sidewalks that stop at the kerb, zebras for crossings (Sep 22)
+
+Mike, with a screenshot of Head House Square: "Sidewalks/crosswalks overlapping look pretty bad. Can we
+clean that up somehow?"
+
+Four things overlapped in the core's street pass, all at once at Head House:
+
+- **Generated sidewalks crossed the cross street.** Each street's two 3 m sidewalks ran on to the node in
+  the middle of every junction, straight over the other street's carriageway. They now wait until every
+  carriageway is known and stop at the kerb of any street they would cross (`walkJobs`, a local
+  carriageway grid `carSegs`/`carHit`, 1.5 m samples).
+- **Mapped footways doubled them.** OSM's separately mapped sidewalks lay beside the generated ones as a
+  second, misaligned band. A footway stretch running alongside a street that has generated sidewalks
+  (parallel within 0.85, inside the sidewalk band) is dropped; a mapped cycle lane along a carriageway
+  is dropped rather than bricked over the road.
+- **Crossings were brick bands over the asphalt.** Where a footway crosses a carriageway (square to it
+  within 0.6) it is painted as a zebra: bars 3.2 m along the traffic every 1.1 m across the walk.
+- **2nd Street's setts ran through Pine's junction** as a grey band, and Pine's own extract stopped 12 m
+  short on each side: setts now sit just under any asphalt, and a same-named street whose two pieces stop
+  within 32 m, in line and with no footprint between, is joined (Pine at 2nd, South 2nd across Pine).
+
+`PERF.walks` counts it: 385 of 418 sidewalk lines cut at a kerb, 323 of 674 footways partly dropped as
+duplicates, 227 zebras; `PERF.roadJoins` 2. Verified by capture at Pine and at Lombard. 181 tests.
+

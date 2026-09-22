@@ -4312,35 +4312,140 @@
       const ts = t * t * (3 - 2 * t);
       return lerp(base, TERRAIN.trenchFloor + 0.55, ts);
     };
+    // a street the extract leaves in two pieces a few metres apart, in line (Pine Street at South 2nd: 12 m of
+    // missing carriageway where the plaza showed through as a pale band): join the ends (Round 127)
+    {
+      const ends = [];
+      for (const r of D.roads) {
+        if (!r.name || r.pts.length < 2 || /footway|path|steps|cycleway|pedestrian|motorway/.test(r.t)) continue;
+        const n = r.pts.length, a = r.pts[0], b = r.pts[n - 1];
+        ends.push([r, a, [a[0] - r.pts[1][0], a[1] - r.pts[1][1]]], [r, b, [b[0] - r.pts[n - 2][0], b[1] - r.pts[n - 2][1]]]);
+      }
+      const add = [];
+      for (let i = 0; i < ends.length; i++) for (let k = i + 1; k < ends.length; k++) {
+        const [r1, p1, d1] = ends[i], [r2, p2, d2] = ends[k];
+        if (r1 === r2 || r1.name !== r2.name) continue;
+        const gx = p2[0] - p1[0], gz = p2[1] - p1[1], g = Math.hypot(gx, gz);
+        if (g < 1.5 || g > 32) continue;   // South 2nd Street stops 30 m short across Pine
+        const l1 = Math.hypot(d1[0], d1[1]) || 1, l2 = Math.hypot(d2[0], d2[1]) || 1;
+        // each end points along the gap, toward the other piece
+        if ((d1[0] * gx + d1[1] * gz) / (l1 * g) < 0.9 || (-d2[0] * gx - d2[1] * gz) / (l2 * g) < 0.9) continue;
+        if (ends.some(([r3, p3]) => r3 !== r1 && r3 !== r2 && r3.name === r1.name && Math.hypot(p3[0] - p1[0], p3[1] - p1[1]) < 1.5)) continue;   // already joined at the node
+        let blocked = false;   // a real interruption (a building across the line) is never bridged
+        for (let q = 1; q < 8 && !blocked; q++) {   // the footprints themselves: they register only after the streets are paved
+          const x = p1[0] + gx * q / 8, z = p1[1] + gz * q / 8;
+          for (const b of D.buildings) {
+            if (!b.poly || b.poly.length < 3) continue;
+            const q0 = b.poly[0]; if (Math.abs(q0[0] - x) > 150 || Math.abs(q0[1] - z) > 150) continue;
+            if (pointInPoly(x, z, b.poly)) { blocked = true; break; }
+          }
+        }
+        if (blocked) continue;
+        add.push({ pts: [p1, p2], w: Math.min(r1.w, r2.w), t: r1.t, name: r1.name });
+      }
+      for (const r of add) D.roads.push(r);
+      PERF.roadJoins = add.length;
+    }
+    const walkJobs = [], footJobs = [], carSegs = [], carGrid = new Map();
+    const carAdd = (a, b, hw, walks) => {
+      const k = carSegs.length; carSegs.push(a[0], a[1], b[0], b[1], hw, walks ? 1 : 0);
+      for (let gx = Math.floor((Math.min(a[0], b[0]) - hw) / 20); gx <= Math.floor((Math.max(a[0], b[0]) + hw) / 20); gx++)
+        for (let gz = Math.floor((Math.min(a[1], b[1]) - hw) / 20); gz <= Math.floor((Math.max(a[1], b[1]) + hw) / 20); gz++) {
+          const key = gx + ':' + gz; let arr = carGrid.get(key); if (!arr) { arr = []; carGrid.set(key, arr); } arr.push(k);
+        }
+    };
     for (const r of D.roads) {
       if (r.pts.length < 2) continue;
       if (/Delancey|Cypress|American|Philip|Stamper|Addison|Panama|Peter's Way|Naudain|Kenilworth/i.test(r.name || '')) r.w = Math.min(r.w, 6);
       const foot = /footway|path|steps|pedestrian|cycleway/.test(r.t);
       const mot = /motorway/.test(r.t);
-      const y = foot ? LAYER.footway : LAYER.road;
       const setts = /Dock Street/i.test(r.name || '') || (/2nd Street/i.test(r.name || '') && r.pts[0][1] > 250 && r.pts[0][1] < 420);
+      // setts sit just under any asphalt (ribbon adds 0 to 6 cm): where a cobbled street runs through a crossing
+      // street's junction the asphalt wins (Round 127: 2nd Street's setts laid a grey band across Pine)
+      const y = foot ? LAYER.footway : setts ? LAYER.road - 0.07 : LAYER.road;
       // lane class for the paint: divided (no centre yellow) on the highways and their links,
       // no markings on service and pedestrian ways; the brick parts never carry the attribute
       const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) ? 2 : 0) };
       const openRuns = /motorway/.test(r.t) || /columbus boulevard|front street/i.test(r.name || '')
         ? [r.pts] : capClipRoad(r.pts);
       for (const run of openRuns.flatMap(runsOf)) {
+        // Round 127 (Mike: "sidewalks/crosswalks overlapping look pretty bad"): the mapped footways and the
+        // generated sidewalks wait until every carriageway is known (below)
+        if (/footway|path|steps|cycleway/.test(r.t)) { footJobs.push({ run, w: r.w }); continue; }
         const g = ribbon(run, r.w, y, mot ? motY : null, lane, true, true);
-        if (!/footway|path|steps|cycleway/.test(r.t)) {
-          for (let i = 0; i < run.length - 1; i++) {
-            addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
-            if (!/pedestrian/.test(r.t)) septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]);
-          }
+        const walks = /^(residential|tertiary|living_street|unclassified|secondary|primary)$/.test(r.t);
+        for (let i = 0; i < run.length - 1; i++) {
+          addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
+          if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]); carAdd(run[i], run[i + 1], r.w / 2, walks); }
         }
         (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)) });
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
-        if (/^(residential|tertiary|living_street|unclassified|secondary|primary)$/.test(r.t)) {
+        if (walks) {
           const walkCol = /residential|tertiary|living_street/.test(r.t) ? cBrickWalk : cConcWalk;
           const off = r.w / 2 + 1.55;
-          for (const s of [-1, 1]) brickParts.push({ geom: ribbon(offsetPolyline(run, off * s), 3.0, LAYER.sidewalk), color: walkCol });
+          for (const s of [-1, 1]) walkJobs.push({ line: offsetPolyline(run, off * s), col: walkCol });
         }
       }
     }
+    // ---- sidewalks and crossings, now that every carriageway is known (Round 127). A generated sidewalk
+    // stops at the kerb of any street it would cross (it ran on to the node in the middle of the junction,
+    // straight over the cross street); a mapped footway that only doubles a generated sidewalk is dropped;
+    // where a footway crosses a carriageway it is painted as a zebra instead of a brick band over the
+    // asphalt; a mapped cycle lane running along a carriageway is dropped rather than bricked over it
+    const carHit = (x, z, pad) => {   // the carriageway segment a point stands in: [ux, uz] of its direction, else null
+      const a = carGrid.get(Math.floor(x / 20) + ':' + Math.floor(z / 20));
+      if (!a) return null;
+      for (const k of a) {
+        const ax = carSegs[k], az = carSegs[k + 1], bx = carSegs[k + 2], bz = carSegs[k + 3], hw = carSegs[k + 4];
+        const dx = bx - ax, dz = bz - az, L2 = dx * dx + dz * dz || 1, t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
+        const px = ax + dx * t - x, pz = az + dz * t - z;
+        if (px * px + pz * pz < (hw + pad) * (hw + pad)) { const L = Math.sqrt(L2); return [dx / L, dz / L]; }
+      }
+      return null;
+    };
+    const besideWalked = (x, z, ux, uz) => {   // a street with generated sidewalks runs alongside, its sidewalk band here
+      const a = carGrid.get(Math.floor(x / 20) + ':' + Math.floor(z / 20));
+      if (!a) return false;
+      for (const k of a) {
+        if (!carSegs[k + 5]) continue;
+        const ax = carSegs[k], az = carSegs[k + 1], bx = carSegs[k + 2], bz = carSegs[k + 3], hw = carSegs[k + 4];
+        const dx = bx - ax, dz = bz - az, L = Math.hypot(dx, dz) || 1;
+        if (Math.abs(dx / L * ux + dz / L * uz) < 0.85) continue;
+        const t = clamp(((x - ax) * dx + (z - az) * dz) / (L * L), 0, 1), d = Math.hypot(ax + dx * t - x, az + dz * t - z);
+        if (d > hw - 0.5 && d < hw + 4.5) return true;
+      }
+      return false;
+    };
+    const splitRuns = (pts, keep) => { const out = []; let cur = []; for (let i = 0; i < pts.length; i++) { if (keep[i]) cur.push(pts[i]); else { if (cur.length > 1) out.push(cur); cur = []; } } if (cur.length > 1) out.push(cur); return out; };
+    const cZebra = new THREE.Color(0xb8b5ad);
+    let zebras = 0, cutWalk = 0, dupFoot = 0;
+    for (const j of walkJobs) {
+      const pts = densify(j.line, 1.5), keep = pts.map((q) => !carHit(q[0], q[1], -0.3));
+      if (keep.some((k) => !k)) cutWalk++;
+      for (const run of splitRuns(pts, keep)) brickParts.push({ geom: ribbon(run, 3.0, LAYER.sidewalk), color: j.col });
+    }
+    for (const j of footJobs) {
+      const pts = densify(j.run, 1.0), n = pts.length, cls = new Array(n);
+      for (let i = 0; i < n; i++) {
+        const q = pts[Math.min(i + 1, n - 1)], o = pts[Math.max(i - 1, 0)];
+        let ux = q[0] - o[0], uz = q[1] - o[1]; const L = Math.hypot(ux, uz) || 1; ux /= L; uz /= L;
+        const hit = carHit(pts[i][0], pts[i][1], -0.3);
+        cls[i] = hit ? (Math.abs(hit[0] * ux + hit[1] * uz) < 0.6 ? 'x' : 'd') : besideWalked(pts[i][0], pts[i][1], ux, uz) ? 'd' : 'k';
+      }
+      if (cls.some((c) => c === 'd')) dupFoot++;
+      for (const run of splitRuns(pts, cls.map((c) => c === 'k'))) brickParts.push({ geom: ribbon(run, j.w, LAYER.footway, null, null, true, true), color: new THREE.Color(COLORS.footway) });
+      for (const run of splitRuns(pts, cls.map((c) => c === 'x'))) {   // a zebra: bars along the traffic, every 1.1 m across the walk
+        const a = run[0], b = run[run.length - 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 3) continue;
+        const wx = (b[0] - a[0]) / L, wz = (b[1] - a[1]) / L, tx = -wz, tz = wx;
+        for (let t = 0.5; t < L - 0.3; t += 1.1) {
+          const cx = a[0] + wx * t, cz = a[1] + wz * t;
+          brickParts.push({ geom: ribbon([[cx - tx * 1.6, cz - tz * 1.6], [cx + tx * 1.6, cz + tz * 1.6]], 0.55, LAYER.road + 0.09), color: cZebra });   // over the road's own few-cm lift
+        }
+        zebras++;
+      }
+    }
+    PERF.walks = { zebras, cutWalk, dupFoot, walks: walkJobs.length, foot: footJobs.length };
     const asphalt = new THREE.Mesh(
       mergeColored(asphaltParts),
       roadMat({ vertexColors: true, roughness: 0.95 })
