@@ -6312,6 +6312,81 @@
         liftB(m0, b);
       }
     }
+    // The Irish Famine Memorial (Round 127, Mike with two photos: "a statue similar to the Irish Famine
+    // Memorial on the corner of Spruce and 38th Parallel"), in the paved plaza north-east of that corner:
+    // a rounded granite plinth carrying a low bronze rock that rises to a prow, some twenty cloaked figures
+    // on and around it (hats, bundles, a few kneeling at the famine end), two Celtic crosses and gravestones
+    // at the west end. Representative, not a survey of Glenna Goodacre's thirty-five figures. Colours are
+    // stored very dark for the detail material's lift (the tavern's calibration).
+    {
+      const cx = 84, cz = 104;
+      const sp0 = [63.3, 119.3], sp1 = [121, 128];   // Spruce Street's line here: the long axis runs with it
+      const L0 = Math.hypot(sp1[0] - sp0[0], sp1[1] - sp0[1]), ux = (sp1[0] - sp0[0]) / L0, uz = (sp1[1] - sp0[1]) / L0;
+      const ry = ryAlign(ux, uz), yG = siteY(cx, cz, 'ground');
+      const BRONZE = '#050403', BRONZE_L = '#080605', GRANITE = '#0b0c0d', GRANITE_T = '#111213', PAVE = '#3b3a37';
+      const place = (g, u, y, v, rot, leanX, leanZ) => {
+        if (leanZ) g.rotateZ(leanZ); if (leanX) g.rotateX(leanX); if (rot) g.rotateY(rot);
+        g.translate(u, y, v); g.rotateY(ry); g.translate(cx, yG, cz); return g;
+      };
+      const H0 = 0.95;   // the plinth's top above the plaza
+      { const b = new THREE.CylinderGeometry(1, 1, 0.12, 40); b.scale(11.5, 1, 8.2); ad(place(b, 0, 0.02, 0), PAVE); }   // the paved apron the photos show, not lawn
+      { const b = new THREE.CylinderGeometry(1, 1, H0 + 0.4, 32); b.scale(7.2, 1, 4.3); ad(place(b, 0, (H0 - 0.4) / 2, 0), GRANITE); }
+      { const b = new THREE.CylinderGeometry(1, 1, 0.08, 32); b.scale(7.35, 1, 4.45); ad(place(b, 0, H0, 0), GRANITE_T); }
+      // the rock: lumpy low-poly masses, jittered by position so shared corners stay shared
+      const lump = (su, sy, sv, u, y, v, seed) => {
+        const g = new THREE.IcosahedronGeometry(1, 1);
+        const p = g.attributes.position;
+        for (let k = 0; k < p.count; k++) {
+          const x = p.getX(k), yy = p.getY(k), z = p.getZ(k), h = hash01(Math.round(x * 97) * 7.1 + Math.round(yy * 97) * 13.3 + Math.round(z * 97) * 3.7 + seed);
+          const f = 0.82 + 0.3 * h;
+          p.setXYZ(k, x * su * f, Math.max(-0.35, yy) * sy * f, z * sv * f);
+        }
+        g.computeVertexNormals();
+        ad(place(g, u, y, v), BRONZE);
+      };
+      lump(5.4, 1.0, 2.3, -0.6, H0 + 0.25, 0.1, 1);
+      lump(2.3, 1.9, 1.9, 3.3, H0 + 0.35, -0.2, 2);      // the prow, the ship's rise at the east end
+      lump(2.0, 0.7, 1.6, -4.3, H0 + 0.2, 0.3, 3);     // the low famine end
+      const topY = (u) => u > 1.6 ? H0 + 0.35 + 1.75 * (1 - Math.min(1, Math.abs(u - 3.3) / 2.4)) : H0 + 0.25 + 0.95 * Math.max(0, 1 - Math.pow((u + 0.6) / 5.4, 2));
+      // a figure: a cloak tapering up, shoulders, a head; a hat or a bundle for some; a slight lean
+      const figure = (u, v, yb, h, facing, lean, hat, pack, col) => {
+        const k = h / 1.8 * 1.25, parts = [];   // a touch over life size, as the bronzes are
+        parts.push([new THREE.CylinderGeometry(0.22 * k, 0.42 * k, 1.25 * k, 7), 0.625 * k]);
+        parts.push([new THREE.SphereGeometry(0.26 * k, 7, 5), 1.3 * k]);
+        parts.push([new THREE.IcosahedronGeometry(0.13 * k, 0), 1.58 * k]);
+        if (hat === 1) { parts.push([new THREE.CylinderGeometry(0.2 * k, 0.2 * k, 0.03 * k, 8), 1.69 * k]); parts.push([new THREE.CylinderGeometry(0.1 * k, 0.11 * k, 0.16 * k, 8), 1.78 * k]); }
+        else if (hat === 2) parts.push([new THREE.ConeGeometry(0.19 * k, 0.34 * k, 7), 1.62 * k]);   // a shawl drawn over the head
+        for (const [g, y] of parts) { g.translate(0, y, 0); ad(place(g, u, yb, v, facing, lean, lean * 0.4), col); }
+        if (pack) { const g = new THREE.BoxGeometry(0.34 * k, 0.4 * k, 0.26 * k); g.translate(0, 1.15 * k, -0.24 * k); ad(place(g, u, yb, v, facing, lean, 0), col); }
+      };
+      const FIG = [   // u, v, height, facing, lean, hat, pack; standing on the rock unless on the rim (r)
+        [-3.4, 0.4, 1.0, 0.4, 0.1, 2, 0], [-2.7, -0.6, 1.1, -0.3, 0.25, 2, 0], [-1.9, 0.5, 1.75, 1.2, 0.05, 2, 1],
+        [-1.1, -0.3, 1.8, 1.4, 0.08, 1, 0], [-0.3, 0.6, 1.7, 1.5, 0.04, 0, 1], [0.4, -0.5, 1.85, 1.6, 0.1, 1, 1],
+        [1.1, 0.3, 1.8, 1.5, 0.06, 2, 0], [1.9, -0.2, 1.75, 1.7, 0.12, 0, 1], [2.8, 0.5, 1.8, 1.6, 0.05, 1, 0],
+        [3.4, -0.4, 1.85, 1.5, 0.15, 0, 1], [4.2, 0.2, 1.8, 1.5, 0.2, 1, 0],
+        [-5.4, 2.6, 1.0, -0.2, 0.3, 2, 0, 'r'], [-4.2, -3.0, 1.7, 3.0, 0.05, 2, 0, 'r'], [-1.5, 3.4, 1.75, 0.2, 0.06, 1, 1, 'r'],
+        [1.4, -3.5, 1.8, 3.3, 0.05, 0, 1, 'r'], [3.9, 3.0, 1.8, 0.4, 0.08, 1, 0, 'r'], [5.8, -1.6, 1.75, 1.9, 0.1, 2, 1, 'r'],
+        [6.2, 1.2, 1.8, 1.4, 0.18, 0, 0, 'r'], [0.2, 3.6, 1.7, -0.1, 0.04, 2, 0, 'r'],
+      ];
+      for (const [u, v, h, f, lean, hat, pack, rim] of FIG) figure(u, v, rim ? H0 : topY(u) - 0.25, h, f, lean, hat, pack, rim ? BRONZE_L : BRONZE);
+      // the famine end: two Celtic crosses and three gravestones on the plinth
+      const cross = (u, v, h) => {
+        const g1 = new THREE.BoxGeometry(0.24, h, 0.18); g1.translate(0, h / 2, 0);
+        const g2 = new THREE.BoxGeometry(0.95, 0.22, 0.18); g2.translate(0, h - 0.62, 0);
+        const g3 = new THREE.TorusGeometry(0.33, 0.055, 5, 14); g3.translate(0, h - 0.62, 0);
+        const g4 = new THREE.BoxGeometry(0.62, 0.34, 0.44); g4.translate(0, 0.17, 0);
+        for (const g of [g1, g2, g3, g4]) ad(place(g, u, H0, v, Math.PI / 2, 0, 0), BRONZE_L);
+      };
+      cross(-5.9, -0.9, 2.9); cross(-4.9, 1.5, 2.3);
+      for (const [u, v, w, h] of [[-6.4, 0.6, 0.7, 1.2], [-5.2, -2.2, 0.6, 0.95], [-3.9, 2.4, 0.55, 0.85]]) {
+        const g = new THREE.BoxGeometry(0.2, h, w); g.translate(0, h / 2, 0); ad(place(g, u, H0, v, 0.15, 0, 0), BRONZE_L);
+      }
+      // keep the trees and the grass tufts off the plinth, and let nobody walk through it
+      const oval = (ru, rv) => { const o = []; for (let k = 0; k < 20; k++) { const a = k / 20 * Math.PI * 2, lu = Math.cos(a) * ru, lv = Math.sin(a) * rv; o.push([cx + ux * lu - uz * lv, cz + uz * lu + ux * lv]); } return o; };
+      const ring = oval(7.4, 4.5);
+      registerPoly(ring); noSow(oval(11.7, 8.4));   // no tufts through the paved apron either
+      for (let k = 0; k < ring.length; k++) { const p0 = ring[k], p1 = ring[(k + 1) % ring.length]; addColSeg(p0[0], p0[1], p1[0], p1[1]); }
+    }
     // Glory Beer Bar & Kitchen, 126 Chestnut (mid-block, Front-2nd): one deep
     // narrow lot — dark cast-iron storefront with granite piers at the street,
     // five brick floors over it, low rear range down the lot
@@ -9054,6 +9129,20 @@
         const pp = toRing(fl2);
         NO_SOW_RINGS.push(pp); NO_SOW_RING_BB.push(bboxOf(pp));
         try { areaParts.push({ geom: conformDrape(pp, LAYER.plaza + LOT_UP, 10), color: new THREE.Color(LOT_COL), style: 3 }); } catch (e) { continue; }
+        // Round 127 (Mike: the stadium lots look too dark at night): light masts on a 42 m grid square to the
+        // street grid, 5 m in from the lot's edge; 'Lighting the streetlamps' adds them to the pole inventory
+        // and pools their light on the asphalt
+        {
+          const pc0 = polyCentroid(pp);
+          let umin = Infinity, umax = -Infinity, vmin = Infinity, vmax = -Infinity;
+          for (const q of pp) { const u = (q[0] - pc0[0]) * fl.dx + (q[1] - pc0[1]) * fl.dz, v = (q[0] - pc0[0]) * fl.nx + (q[1] - pc0[1]) * fl.nz; umin = Math.min(umin, u); umax = Math.max(umax, u); vmin = Math.min(vmin, v); vmax = Math.max(vmax, v); }
+          const edgeD = (x, z) => { let b = Infinity; for (let k = 0; k < pp.length; k++) { const a = pp[k], c = pp[(k + 1) % pp.length], vx = c[0] - a[0], vz = c[1] - a[1], L2 = vx * vx + vz * vz || 1, t = clamp(((x - a[0]) * vx + (z - a[1]) * vz) / L2, 0, 1); b = Math.min(b, Math.hypot(x - a[0] - vx * t, z - a[1] - vz * t)); } return b; };
+          for (let u = umin + 21; u < umax; u += 42) for (let v = vmin + 21; v < vmax; v += 42) {
+            const x = pc0[0] + fl.dx * u + fl.nx * v, z = pc0[1] + fl.dz * u + fl.nz * v;
+            if (!pointInPoly(x, z, pp) || edgeD(x, z) < 5) continue;
+            LOT_LAMPS.push(x, z, (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + LAYER.plaza + LOT_UP);
+          }
+        }
         // the stalls, as they read from above: double rows 18.5 m apart, each with its two
         // stall-front lines running the row's length and ticks every 2.7 m between them.
         // Rows follow the street grid (whichever grid axis the lot's long side is nearer),
@@ -17148,6 +17237,8 @@
   let TOWER_CROWN_N = 0;   // researched tower crowns raised (__dbg.towers)
   let TOWER_MATCH_LOG = null;   // ?dev=1: every spec match in the wide loop (name, crown, h, mh, top, near)
   let lotStripes = null;                   // the sports complex's stall lines (shown within 3.5 km, they alias into noise beyond)
+  const LOT_LAMPS = [];                    // the stadium lots' light masts, x, z, surface y (Round 127)
+  let lotPools = null; const lotPoolU = { value: 0 };
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
@@ -17162,11 +17253,20 @@
       if (head[0] !== 0x53485450) throw new Error('bad pole magic');
       v = new Int16Array(buf.buffer, 16);
     } catch (err) { console.error('street pole decode failed', err); if (btnLights) btnLights.style.display = 'none'; return; }
-    const nAll = head[1];
+    const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nAll = nPoles + nLot;   // the stadium lots' masts ride along (Round 127)
     const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll);
     const pos = new Float32Array(nAll * 3), pcol = new Float32Array(nAll * 3);
     const cells = new Map();   // 400 m buckets for the near-mesh reconcile
     for (let i = 0; i < nAll; i++) {
+      if (i >= nPoles) {   // a lot mast: 15 m, LED white, bright
+        const k = (i - nPoles) * 3, x = LOT_LAMPS[k], z = LOT_LAMPS[k + 1], gy = LOT_LAMPS[k + 2];
+        X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = 15;
+        pos[i * 3] = x; pos[i * 3 + 1] = gy + 15; pos[i * 3 + 2] = z;
+        pcol[i * 3] = 1.5; pcol[i * 3 + 1] = 1.3; pcol[i * 3 + 2] = 1.0;
+        const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400);
+        let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i);
+        continue;
+      }
       const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7, pk = v[i * 3 + 2];
       if(inCapSite(x,z)) { pos[i*3+1]=-1000; continue; }
       const kind = pk & 3, hft = (pk >> 2) & 127, lum2 = (pk >> 9) & 1;
@@ -17200,6 +17300,37 @@
         '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
     };
     postRaw(poleMat);
+    if (nLot) {   // each mast's pool of light on the asphalt: a disc fading from the foot outward, between the lot and its stall lines
+      const R = 27, SEG = 16, RINGS = 3, pp2 = [], ar = [], ix = [];   // wider than half the 42 m grid, so neighbouring pools overlap
+      for (let m = 0; m < nLot; m++) {
+        const cx = LOT_LAMPS[m * 3], cz = LOT_LAMPS[m * 3 + 1], base = pp2.length / 3;
+        pp2.push(cx, LOT_LAMPS[m * 3 + 2] + 0.015, cz); ar.push(0);
+        for (let r = 1; r <= RINGS; r++) for (let a = 0; a < SEG; a++) {
+          const t = a / SEG * Math.PI * 2, x = cx + Math.cos(t) * R * r / RINGS, z = cz + Math.sin(t) * R * r / RINGS;
+          pp2.push(x, (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + LAYER.plaza + 0.075, z); ar.push(r / RINGS);
+        }
+        for (let a = 0; a < SEG; a++) ix.push(base, base + 1 + (a + 1) % SEG, base + 1 + a);
+        for (let r = 1; r < RINGS; r++) for (let a = 0; a < SEG; a++) {
+          const i0 = base + 1 + (r - 1) * SEG + a, i1 = base + 1 + (r - 1) * SEG + (a + 1) % SEG, j0 = i0 + SEG, j1 = i1 + SEG;
+          ix.push(i0, i1, j0, i1, j1, j0);
+        }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pp2), 3));
+      g.setAttribute('aR', new THREE.BufferAttribute(new Float32Array(ar), 1));
+      g.setIndex(ix);
+      const pm = new THREE.MeshBasicMaterial({ color: 0xfff0dc, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide });
+      pm.onBeforeCompile = (sh) => {
+        sh.uniforms.uLamp = lotPoolU;
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aR; varying float vR;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvR = aR;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp; varying float vR;')
+          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a *= uLamp * 0.26 * (1.0 - vR) * (1.0 - vR);');
+      };
+      postRaw(pm);
+      lotPools = new THREE.Mesh(g, pm);
+      lotPools.frustumCulled = false; lotPools.renderOrder = 4; lotPools.visible = false;
+      groupCity.add(lotPools);
+    }
     poleGlow = new THREE.Points(pg, poleMat);
     poleGlow.frustumCulled = false;
     poleGlow.renderOrder = 11;
@@ -17342,6 +17473,7 @@
     const show = LIGHTS.on && night > 0.01;
     poleGlow.visible = show;
     if (show) poleMat.opacity = night;
+    if (lotPools) { lotPools.visible = show; lotPoolU.value = night; }
     if (bfbLampGlow) bfbLampGlow.visible = show;
     if (poleMesh) {
       poleMesh.visible = LIGHTS.on;

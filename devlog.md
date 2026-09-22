@@ -6233,3 +6233,25 @@ street level across Dock Street) and is not painted under the deck. `tests/test_
 seeds the new cap form. Verified by capture: the plaza's lawns and path grid, Spruce Street across it,
 the memorial's circle, I-95 diving under at Dock Street and out past the memorial. 181 tests.
 
+## Round 129 — the Irish Famine Memorial, and light in the stadium lots (Sep 22)
+
+Mike, with two photos: "Can we also add a statue similar to the Irish Famine Memorial on the corner of
+spruce and 38th parallel?" Then: "We need lamp posts in the parking lots for the stadium. They look too
+dark at night."
+
+**The memorial** stands in a paved apron north-east of Spruce and 38th Parallel Place (84, 104), its long
+axis with Spruce Street: a rounded granite plinth, a low bronze rock of jittered low-poly lumps rising to
+a prow at the east end, nineteen cloaked figures on and around it a touch over life size (hats, shawls,
+bundles, the low famine end's figures kneeling), two Celtic crosses and three gravestones at the west end.
+Representative, not a survey of the thirty-five figures. The trees, the grass tufts and the walker are
+kept off it (`registerPoly`, `noSow`, collision segments). The bronze and granite are stored nearly black
+(`#050403`, `#0b0c0d`): the detail material's lift, as the tavern's roof measured in Round 127, read the
+first pass's `#0c0806` as milk-chocolate brown.
+
+**The lots**: 741 light masts on a 42 m grid square to the street grid, 5 m in from every lot's edge in
+`parking_south.json` (`LOT_LAMPS`, laid in the lot loop), ride the streetlamp inventory as 15 m LED
+poles (glow points, the near pole meshes, the G layer, the photocell), and each pools its light on the
+asphalt: a 27 m disc between the lot and its stall lines, fading from the foot, additive, on the lamps'
+own switch (`lotPools`, `lotPoolU`). The pools overlap into one lit field around the arena, the Linc
+and the ballpark. Verified by capture at 9:30 pm and 2 pm. 181 tests.
+
