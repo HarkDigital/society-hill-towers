@@ -128,6 +128,7 @@
   <button id="btnSearch" class="iconbtn panel" title="Explore and Search (/)" aria-expanded="false" aria-controls="searchpanel" aria-label="Explore and search"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round"><circle cx="10.4" cy="10.4" r="5.7"/><line x1="14.7" y1="14.7" x2="19.6" y2="19.6"/></svg><span class="navlabel">Explore</span></button>
   <button id="btnLayers" class="iconbtn panel" title="Layers (F)" aria-expanded="false" aria-controls="layerspanel" aria-label="Layers"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"><path d="M12 3.5 21 8.5 12 13.5 3 8.5Z"/><path d="M4.8 12.2 3 13.2l9 5 9-5-1.8-1"/></svg><span class="navlabel">Layers</span></button>
   <button id="btnTime" class="iconbtn panel" title="Date &amp; Time of Day (T)" aria-expanded="false" aria-controls="timepanel" aria-label="Sun and sky"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="4.1"/><path d="M12 2.6v2.6M12 18.8v2.6M2.6 12h2.6M18.8 12h2.6M5.35 5.35l1.85 1.85M16.8 16.8l1.85 1.85M5.35 18.65l1.85-1.85M16.8 7.2l1.85-1.85"/></svg><span class="navlabel">Sun &amp; sky</span></button>
+  <button id="btnLocate" class="iconbtn panel" title="Fly to Where You Are" aria-label="Fly to where you are"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><circle cx="12" cy="12" r="5.6"/><circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/><path d="M12 2.8v3.4M12 17.8v3.4M2.8 12h3.4M17.8 12h3.4"/></svg></button>
   <button id="btnShot" class="iconbtn panel" title="Save a Picture of This View" aria-label="Save a picture"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round" stroke-linecap="round"><path d="M4 8.4h3.4l1.5-2.4h6.2l1.5 2.4H20v9.8H4z"/><circle cx="12" cy="13" r="3.1"/></svg></button>
   <button id="btnShare" class="iconbtn panel" title="Share This View" aria-expanded="false" aria-controls="sharepanel" aria-label="Share this view"><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5.6" r="2.6"/><circle cx="6" cy="12" r="2.6"/><circle cx="18" cy="18.4" r="2.6"/><path d="M15.7 6.85 8.3 10.75M8.3 13.25l7.4 3.9"/></svg></button>
   <button id="btnHelp" class="iconbtn panel" title="How to Use Philly3D (?)" aria-expanded="false" aria-controls="guide" aria-label="Open the guide">?</button>
@@ -205,6 +206,7 @@
 </div>
 
 <div id="hint">Drag, scroll, or press W A S D to take flight.</div>
+<div id="notice" class="panel" role="status" aria-live="polite" hidden></div>
 <div id="viewcontext" class="panel"><span class="contextdot" aria-hidden="true"></span><div><span id="viewPlace">Philadelphia</span><span id="viewClock">Local city time</span></div></div>
 
 

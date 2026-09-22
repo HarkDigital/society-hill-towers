@@ -6073,3 +6073,41 @@ Verified in the pane: the breadcrumb read "Raising the rest of Philadelphia" mid
 breadcrumb planted from another page on the origin made the next touch load report one failure
 and build lite; the lite numbers above; `tests/test_boot_lite.py` guards the wiring and that no
 street emitter pushes a soup again. 180 tests pass. Not verifiable from here: the phone itself.
+
+## Round 125 — where you are: a location button (Sep 22)
+
+Mike: "Can we add a feature/button that puts users right where they actually are using
+Geolocation? If they are not in Philadelphia, take them to City Hall and show a message along the
+lines of 'You are not located in Philadelphia'."
+
+A target button (`#btnLocate`) sits in the bar after Sun & sky, before the camera. It asks the
+browser for one fix on the tap and never before it (`navigator.geolocation.getCurrentPosition`,
+low accuracy, a 12 s timeout, a fix up to a minute old accepted), converts it through the scene
+frame like a SEPTA vehicle, and tests it against the REAL city line: `CITY_LIMIT.city`, the OSM
+relation that `city_limit.json` has carried beside the buffered `bound` since the boundary was
+fetched, not the 2 km flight buffer. Camden and Cheltenham are within the buffer and are not
+Philadelphia, so they get the City Hall answer.
+
+- **In the city:** `searchFlyTo` glides in and circles the spot, as a search result does, under a
+  "You are here" search mark, with a notice that says so. A fix coarser than 400 m (a desktop on
+  wifi) reads from 600 m instead of 300 and the notice gives the radius in feet or miles.
+- **Anywhere else, or no fix to be had:** the City Hall viewpoint (`viewpoints`, the same glide
+  as the Explore row) and a notice: "You are not located in Philadelphia. Here is City Hall
+  instead." A declined prompt and a failed fix get their own line to the same place; a browser
+  without the API too.
+- **The notice** is a new element, `#notice`, a slate line centred under the bar for 7 s with a
+  short ease-in, because `#hint` is hidden on phones and the card follows a scene anchor.
+  `role="status"` for readers.
+- The position is used once for the glide and kept nowhere. The guide's last card says so.
+- `__dbg.locateAt(lat, lon, acc)` drives the same path with a given fix, `__dbg.inPhiladelphia(x, z)`
+  tests the line, `__dbg.notice(text)` shows a line.
+
+Verified in the pane: `inPhiladelphia` true at Independence Hall, false at the Camden waterfront and
+at Cherry Hill; a fix at Independence Hall glided the camera to an orbit about (-451, -371) under a
+"You are here" mark; a Cherry Hill fix parked the camera at the City Hall stop (-1560, 145, -280)
+with the notice under the bar; the real button with the browser's geolocation stubbed showed the
+busy pulse while waiting, took the fix, and on a code 1 error went to City Hall with the declined
+line; at 812 by 375 the bar holds all seven buttons and the notice sits 12 px under it. 180 tests,
+the two `test_lights_bake` failures fail identically at HEAD (a fixture row count, 6 against 5) and
+are not this round's. Page 28.25 MB, +5 KB.
+

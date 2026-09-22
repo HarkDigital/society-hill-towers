@@ -12025,11 +12025,13 @@
     ['Search, share and more', {
       d: [['Search', 'Top bar, or the / key: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
         ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
+        ['Where you are', 'The target button flies to where you are standing, if you are in Philadelphia. Anywhere else, City Hall. Your location is used once for the flight and never kept.'],
         ['Camera', 'Saves a picture of the view.'],
         ['Credits', 'The Credits link above opens the About panel, the story of the model and its data. The I key too.'],
         ['Install', 'Chrome and Edge install Philly3D as an app from the address bar, Safari from File, then Add to Dock.']],
       t: [['Search', 'Top bar: an address, a landmark, a school, a church, a park, a neighborhood, a street or a SEPTA route number. The result glides in and circles until you take the controls. A route number follows its nearest live bus.'],
         ['Copy Link', 'In the layers panel: a link that opens this exact view, with its layers and its clock.'],
+        ['Where you are', 'The target button flies to where you are standing, if you are in Philadelphia. Anywhere else, City Hall. Your location is used once for the flight and never kept.'],
         ['Camera', 'Opens the share sheet with a picture of the view.'],
         ['Credits', 'The Credits link above opens the About panel, the story of the model and its data.'],
         ['Install', 'On an iPhone, Share, then Add to Home Screen. On Android, the browser menu, then Add to Home screen. Philly3D then opens as an app.']] }],
@@ -19358,6 +19360,58 @@
       setTimeout(() => URL.revokeObjectURL(url), 10000);
     }, 'image/png');
   });
+  // --- where you are (Round 125, Mike: a button that puts users right where they actually are).
+  // The browser's own fix, asked for on the tap and never before it, used once for the glide and
+  // kept nowhere. Inside the city line (CITY_LIMIT.city, the real boundary, not the 2 km flight
+  // buffer) the camera glides in and circles the spot under a "You are here" mark, as a search
+  // result does; anywhere else, or with no fix to be had, it goes to City Hall and a notice under
+  // the bar says why. The notice is its own element because #hint is hidden on phones.
+  const btnLocate = document.getElementById('btnLocate');
+  const noticeEl = document.getElementById('notice');
+  let noticeT = 0;
+  function notice(text, ms) {
+    if (!noticeEl) return;
+    noticeEl.hidden = true;                   // restart the ease-in when one notice follows another
+    noticeEl.textContent = text;
+    void noticeEl.offsetWidth;
+    noticeEl.hidden = false;
+    clearTimeout(noticeT);
+    noticeT = setTimeout(() => { noticeEl.hidden = true; }, ms || 7000);
+  }
+  const CITY_POLY = (typeof CITY_LIMIT !== 'undefined' && CITY_LIMIT && CITY_LIMIT.city && CITY_LIMIT.city.length > 3) ? CITY_LIMIT.city : null;
+  function inPhiladelphia(x, z) { return CITY_POLY ? pointInPoly(x, z, CITY_POLY) : insideLimit(x, z); }
+  function locateBusy(on) { if (!btnLocate) return; btnLocate.classList.toggle('busy', on); btnLocate.disabled = on; }
+  function locateCityHall(text) {
+    const vp = viewpoints.find((v) => v.name === 'City Hall');
+    tourStop(); clearSearchMark();
+    if (vp) vp.fn();
+    notice(text);
+  }
+  function locateFix(lat, lon, acc) {
+    // a fix in degrees: the same frame as the SEPTA feed and the search results
+    const x = (lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z = -(lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+    if (!inPhiladelphia(x, z)) { locateCityHall('You are not located in Philadelphia. Here is City Hall instead.'); return false; }
+    const gy = siteY(x, z, 'ground');
+    tourStop();
+    searchFlyTo(x, gy + 12, z, acc > 400 ? 600 : 300);   // a coarse fix (a desktop on wifi) reads from higher up
+    placeSearchMark(x, gy, z, 'You are here');
+    notice(acc > 400 ? 'You are about here. Your browser could only place you within ' + (acc >= 1000 ? (acc / 1609.34).toFixed(1) + ' miles' : Math.round(acc / 0.3048 / 100) * 100 + ' feet') + '.' : 'You are here.');
+    return true;
+  }
+  function locateMe() {
+    if (!veil.classList.contains('hidden')) return;
+    closePanels();
+    if (!navigator.geolocation) { locateCityHall('This browser cannot share your location. Here is City Hall instead.'); return; }
+    locateBusy(true);
+    navigator.geolocation.getCurrentPosition((pos) => {
+      locateBusy(false);
+      locateFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 0);
+    }, (err) => {
+      locateBusy(false);
+      locateCityHall(err && err.code === 1 ? 'Location access was declined. Here is City Hall instead.' : 'Your location could not be found. Here is City Hall instead.');
+    }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
+  }
+  if (btnLocate) btnLocate.addEventListener('click', locateMe);
 
   // ---------------------------------------------------------------- build & loop
   const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Raising the towns across the line', 'Planting the street trees']);
@@ -19647,7 +19701,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk,
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice,
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

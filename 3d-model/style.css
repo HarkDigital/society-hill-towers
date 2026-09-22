@@ -177,6 +177,32 @@ html, body {
   max-width: 40vw;
 }
 
+/* ---------- notice: a short line under the bar (Round 125, the location button) ---------- */
+#notice {
+  position: fixed;
+  top: calc(82px + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  font-family: var(--body);
+  font-size: 13px;
+  font-weight: 550;
+  color: var(--paper);
+  padding: 10px 16px;
+  border-radius: 9px;
+  pointer-events: none;
+  user-select: none;
+  max-width: calc(100vw - 32px);
+  text-align: center;
+  animation: noticein 0.35s ease-out;
+}
+#notice[hidden] { display: none; }
+@keyframes noticein { from { opacity: 0; transform: translate(-50%, -6px); } to { opacity: 1; transform: translateX(-50%); } }
+#bar #btnLocate.busy svg { animation: locatepulse 0.9s ease-in-out infinite; }
+@keyframes locatepulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { #notice, #bar #btnLocate.busy svg { animation: none; } }
+@media (max-height: 460px) { #notice { top: 76px; font-size: 12px; padding: 8px 13px; } }   /* the bar sits at 6px on a phone held sideways */
+
 /* ---------- crosshair (walk mode) ---------- */
 #crosshair {
   position: fixed;
