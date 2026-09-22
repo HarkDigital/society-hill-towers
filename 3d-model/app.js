@@ -12944,7 +12944,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -12955,6 +12955,100 @@
   // lets go when one of those cards opens, the way the guide does; the next click on the
   // scene takes it back (Round 63).
   function cardUnlock() { if (walk.locked && document.exitPointerLock) document.exitPointerLock(); }
+  // ---- tap a building (Round 132, one of the six features Mike picked). A tap that finds no pin, vehicle,
+  // dock or tree asks what solid stands under it: a one-pixel render of the city's view distance through
+  // the tap (occRender with the camera's view offset), so the outer chunks that freeOnUpload leaves
+  // un-raycastable answer too. A hit 2 m or more over the ground is a building: the card anchors there and
+  // the city's property database (phl.carto.com, open to the browser) fills it from the PWD parcel under
+  // the point joined to its OPA record, the Philadelphia Register and its local district, and L&I permits
+  // issued within a year nearby. No owner names, no values. A newer tap cancels an older lookup.
+  let pickedBldg = null;
+  const BPICK = { rt: null, buf: new Uint8Array(4), seq: 0 };
+  const CARTO_SQL = 'https://phl.carto.com/api/v2/sql?q=';
+  function bldgPointAt(cx, cy) {
+    if (!BPICK.rt) BPICK.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false });
+    const W = window.innerWidth, H = window.innerHeight;
+    camera.setViewOffset(W, H, Math.floor(cx), Math.floor(cy), 1, 1); camera.updateProjectionMatrix();
+    try { occRender(BPICK.rt, 1, 1, BPICK.buf, true); }
+    finally { camera.clearViewOffset(); camera.updateProjectionMatrix(); }
+    const vz = occUnpack(BPICK.buf, 0);
+    if (!(vz > 1) || vz >= PIN_OCC.far * 0.99) return null;
+    const dir = septaRay.ray.direction, fwd = camera.getWorldDirection(_ssv), c = dir.dot(fwd);
+    if (c <= 0.05) return null;
+    const t = vz / c, o = septaRay.ray.origin;
+    return [o.x + dir.x * t, o.y + dir.y * t, o.z + dir.z * t, t];
+  }
+  function bldgSql(kind, lon, lat) {   // numbers only ever reach the query
+    if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
+    const pt = 'ST_SetSRID(ST_Point(' + lon.toFixed(6) + ',' + lat.toFixed(6) + '),4326)';
+    if (kind === 'parcel') return 'SELECT p.address, p.bldg_desc, p.gross_area, o.parcel_number, o.location, o.year_built, o.number_stories, o.category_code_description AS cat, o.building_code_description_new AS bdesc FROM pwd_parcels p LEFT JOIN opa_properties_public o ON o.parcel_number = p.brt_id WHERE ST_Intersects(p.the_geom, ' + pt + ') LIMIT 1';
+    if (kind === 'register') return 'SELECT DISTINCT loc FROM historic_sites_philreg WHERE ST_Intersects(the_geom, ' + pt + ') LIMIT 1';
+    if (kind === 'district') return 'SELECT name FROM historicdistricts_local WHERE ST_Intersects(the_geom, ' + pt + ') LIMIT 1';
+    if (kind === 'permits') return "SELECT typeofwork, permittype, permitissuedate FROM permits WHERE ST_DWithin(the_geom, " + pt + ", 0.00025) AND permitissuedate > now() - interval '12 months' ORDER BY permitissuedate DESC LIMIT 3";
+    return null;
+  }
+  const bldgTitle = (t) => String(t || '').toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\bSt\b/g, 'St').replace(/\s+/g, ' ').trim();
+  function bldgQuery(kind, lon, lat) {
+    const q = bldgSql(kind, lon, lat);
+    if (!q) return Promise.resolve(null);
+    return fetch(CARTO_SQL + encodeURIComponent(q), { signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined })
+      .then((r) => (r.ok ? r.json() : null)).then((d) => (d && Array.isArray(d.rows) ? d.rows : null)).catch(() => null);
+  }
+  function bldgCard(st) {
+    const tag = '<span class="vroute" style="background:#55636b">Property</span>';
+    if (st.loading) { vehinfoBody.innerHTML = tag + '<span class="vdest">Looking up this building</span>'; return; }
+    const r = st.row;
+    if (!r) { vehinfoBody.innerHTML = tag + '<span class="vdest">No property record here</span><div class="vmeta">The city\'s parcel map has no lot at this spot.</div>'; return; }
+    const rows = [], yr = parseInt(r.year_built, 10), condo = /condo/i.test(r.bldg_desc || '');
+    if (yr > 1600 && yr <= new Date().getFullYear()) rows.push('Built ' + yr + ', as the city records it');
+    if (condo) rows.push('Condominium building' + (r.gross_area > 0 ? ', ' + Number(r.gross_area).toLocaleString('en-US') + ' sq ft' : ''));
+    else if (r.number_stories > 0) rows.push(r.number_stories + (r.number_stories === 1 ? ' story' : ' stories'));
+    const use = r.bdesc || r.cat || r.bldg_desc;
+    if (use && !condo) rows.push(bldgTitle(use));
+    if (st.register) rows.push('Philadelphia Register of Historic Places' + (st.district ? ', ' + st.district + ' Historic District' : ''));
+    else if (st.district) rows.push('In the ' + st.district + ' Historic District');
+    for (const p of st.permits || []) {
+      const d = p.permitissuedate ? new Date(p.permitissuedate).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'America/New_York' }) : '';
+      rows.push('Permit' + (d ? ' ' + d : '') + ': ' + bldgTitle(p.typeofwork || p.permittype || 'work'));
+    }
+    const link = r.parcel_number && /^\d{9}$/.test(r.parcel_number) ? '<a class="vlink" href="https://property.phila.gov/?p=' + r.parcel_number + '" target="_blank" rel="noopener">Property Record</a>' : '';
+    vehinfoBody.innerHTML = tag + '<span class="vdest">' + septaEsc(bldgTitle(r.location || r.address)) + '</span>' +
+      rows.map((t) => '<div class="vmeta">' + septaEsc(t) + '</div>').join('') +
+      '<div class="vmeta">City of Philadelphia: OPA, PWD, Historical Commission, L&amp;I</div>' + link;
+  }
+  function bldgPick(cx, cy) {
+    let p = null;
+    try { p = bldgPointAt(cx, cy); } catch (e) { p = null; }
+    if (!p) return false;
+    const g = groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground');
+    if (p[1] < g + 2) return false;   // the ground, a road, a lawn: not a building
+    const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
+    const seq = ++BPICK.seq, st = { loading: true };
+    pickedBldg = { x: p[0], y: p[1] + 1, z: p[2], seq };
+    bldgCard(st); vehinfoEl.hidden = false; cardUnlock();
+    const lon = SEPTA_GEO.lon0 + x / SEPTA_GEO.mx, lat = SEPTA_GEO.lat0 - z / SEPTA_GEO.mz;
+    bldgQuery('parcel', lon, lat).then((rows) => {
+      if (!pickedBldg || pickedBldg.seq !== seq) return;
+      st.loading = false; st.row = rows && rows[0] ? rows[0] : null; bldgCard(st);
+      if (!st.row) return;
+      Promise.all([bldgQuery('register', lon, lat), bldgQuery('district', lon, lat), bldgQuery('permits', lon, lat)]).then(([rg, ds, pm]) => {
+        if (!pickedBldg || pickedBldg.seq !== seq) return;
+        st.register = !!(rg && rg.length); st.district = ds && ds[0] ? String(ds[0].name || '') : ''; st.permits = pm || [];
+        bldgCard(st);
+      });
+    });
+    return true;
+  }
+  function updateBldgPick() {
+    if (!pickedBldg) return;
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || vehinfoEl.hidden) { pickedBldg = null; return; }
+    _ssv.set(pickedBldg.x, pickedBldg.y, pickedBldg.z).project(camera);
+    if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
+    vehinfoEl.style.opacity = '1';
+    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+  }
+
   function isShortTap(e) { return Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) <= 8 && performance.now() - vpDownT <= 500; }
   canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
   canvas.addEventListener('pointerup', (e) => {
@@ -13174,7 +13268,8 @@
       if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; }
+    if (bldgPick(cx, cy)) return;   // nothing live under the tap: the building, if one stands there (Round 132)
+    if (pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -19981,32 +20076,47 @@
       PIN_OCC.rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false });
       PIN_OCC.h = H; PIN_OCC.buf = new Uint8Array(W * H * 4);
     }
-    if (!PIN_OCC.mat) PIN_OCC.mat = new THREE.ShaderMaterial({
+    pinOccMat();
+    pinOccCaptureRest();
+  }
+  function pinOccMat() {   // the view-distance override, shared with the building tap (Round 132)
+    if (PIN_OCC.mat) return PIN_OCC.mat;
+    PIN_OCC.mat = new THREE.ShaderMaterial({
       uniforms: { uFar: { value: PIN_OCC.far } }, side: THREE.DoubleSide,
       vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nvarying float vViewZ;\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\n  vViewZ = -mvPosition.z;\n}',
       fragmentShader: '#include <packing>\n#include <logdepthbuf_pars_fragment>\nuniform float uFar;\nvarying float vViewZ;\nvoid main() {\n#include <logdepthbuf_fragment>\n  gl_FragColor = packDepthToRGBA(clamp(vViewZ / uFar, 0.0, 0.9999));\n}',
     });
-    const hid = [];
+    return PIN_OCC.mat;
+  }
+  function pinOccCaptureRest() {
+    occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false);
+    PIN_OCC.view.copy(camera.matrixWorldInverse); PIN_OCC.proj.copy(camera.projectionMatrix);
+    PIN_OCC.ok = true; PIN_OCC.n++;
+  }
+  // the city's view distance into a target: every transparent, line, point and pin object hidden (and, for the
+  // building tap, every instanced mesh: the trees, the cars, the lamps), the shadow map untouched
+  function occRender(rt, W, H, buf, noInstanced) {
+    const r = renderer, hid = [];
+    pinOccMat();
     scene.traverse((o) => {
       if (!o.visible || o === scene) return;
       const m = o.material, tr = m && (Array.isArray(m) ? m.some((q) => q.transparent) : m.transparent);
-      if (o.isPoints || o.isLine || o.isSprite || tr || (o.userData && o.userData.pinSceneDepth)) { o.visible = false; hid.push(o); }
+      if (o.isPoints || o.isLine || o.isSprite || tr || (o.userData && o.userData.pinSceneDepth) || (noInstanced && o.isInstancedMesh)) { o.visible = false; hid.push(o); }
     });
     const prevRT = r.getRenderTarget(), prevUp = r.shadowMap.autoUpdate, prevNeed = r.shadowMap.needsUpdate;
     const prevOver = scene.overrideMaterial, prevBg = scene.background, prevA = r.getClearAlpha();
     r.getClearColor(_pocc);
     r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false;
     scene.overrideMaterial = PIN_OCC.mat; scene.background = null;
-    r.setRenderTarget(PIN_OCC.rt); r.setClearColor(0xffffff, 1); r.clear(true, true, false);
+    r.setRenderTarget(rt); r.setClearColor(0xffffff, 1); r.clear(true, true, false);
     r.render(scene, camera);
-    r.readRenderTargetPixels(PIN_OCC.rt, 0, 0, W, H, PIN_OCC.buf);
+    r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
     r.setRenderTarget(prevRT); r.setClearColor(_pocc, prevA);
     scene.overrideMaterial = prevOver; scene.background = prevBg;
     r.shadowMap.autoUpdate = prevUp; r.shadowMap.needsUpdate = prevNeed;
     for (const o of hid) o.visible = true;
-    PIN_OCC.view.copy(camera.matrixWorldInverse); PIN_OCC.proj.copy(camera.projectionMatrix);
-    PIN_OCC.ok = true; PIN_OCC.n++;
   }
+  const occUnpack = (b, o) => (b[o] / 16777216 + b[o + 1] / 65536 + b[o + 2] / 256 + b[o + 3]) / 256 * PIN_OCC.far;   // bytes / 255, times three.js's 255 / 256 unpack scale, times the far
   function pinOccVisible(x, y, z) {
     if (!PIN_OCC.ok) return true;
     _pov.set(x, y, z).applyMatrix4(PIN_OCC.view);
@@ -20015,10 +20125,10 @@
     _pov.applyMatrix4(PIN_OCC.proj);
     const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H);
     if (px < 0 || py < 0 || px >= W || py >= H) return true;
-    const b = PIN_OCC.buf, need = vz - (2.5 + vz * 0.02), k = PIN_OCC.far / 255 * (255 / 256);
+    const b = PIN_OCC.buf, need = vz - (2.5 + vz * 0.02);
     for (let j = Math.max(0, py - 1); j <= Math.min(H - 1, py + 1); j++) for (let i = Math.max(0, px - 1); i <= Math.min(W - 1, px + 1); i++) {
       const o = (j * W + i) * 4;
-      const d = (b[o] / 16777216 + b[o + 1] / 65536 + b[o + 2] / 256 + b[o + 3]) * k;
+      const d = occUnpack(b, o);
       if (d >= need) return true;
     }
     return false;
@@ -20141,6 +20251,7 @@
     updateTreePick();
     updateMarkets(now);
     updateMarketPick();
+    updateBldgPick();
     updateMarkerPick();
     updateMarkersNear(now);
     pinSweep(now);
@@ -20239,7 +20350,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

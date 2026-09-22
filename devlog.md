@@ -6298,3 +6298,23 @@ real Philadelphia time (`alertClock`), never the pinned model clock. `__dbg.aler
 `__dbg.alerts()`; `tests/test_alerts.py` (the heat and cold lists, the clock's zone, one alerts poll).
 Verified in the pane with a Heat Advisory and a Wind Chill Advisory fixture.
 
+## Round 132 — tap a building for its property card (Sep 22)
+
+The second of Mike's six. A tap that finds no pin, vehicle, dock or tree now asks what solid stands under
+it: `bldgPointAt` renders the city's view distance through that one pixel (the camera's view offset, the
+pin occlusion's override material through the shared `occRender`, every instanced mesh hidden), so the
+outer chunks `freeOnUpload` leaves un-raycastable answer as exactly as the core. A hit 2 m or more over
+the drawn ground is a building; the card anchors there (`updateBldgPick`) and reads "Looking up this
+building" while the city's database answers (phl.carto.com, open to the browser): the PWD parcel under a
+point 1.5 m in from the wall joined to its OPA record (address, the year the city records, stories, use;
+a condominium gives its building and floor area instead of one unit), then the Philadelphia Register and
+the local historic district, and L&I permits issued within a year nearby. No owner names, no values;
+`bldgSql` only ever writes two fixed-point numbers into a query, and a newer tap cancels an older
+lookup. The link opens the property on property.phila.gov.
+
+Verified in the pane: the tavern gives "127-29 Spruce St, Built 1895, as the city records it, Colleges &
+University, Philadelphia Register of Historic Places, Society Hill Historic District" (the city's year for
+a 1759 house, which is why the card says whose year it is); a freed far-district rowhouse gives "2601
+Tulip St, Built 1875, 3 stories, Row Typical"; the middle of Washington Square opens nothing.
+`tests/test_building_card.py`. `__dbg.bldgTap(x, y)`.
+
