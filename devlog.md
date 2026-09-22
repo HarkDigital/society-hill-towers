@@ -6279,3 +6279,22 @@ Four things overlapped in the core's street pass, all at once at Head House:
 `PERF.walks` counts it: 385 of 418 sidewalk lines cut at a kerb, 323 of 674 footways partly dropped as
 duplicates, 227 zebras; `PERF.roadJoins` 2. Verified by capture at Pine and at Lombard. 181 tests.
 
+## Round 131 — weather alerts, and cooling and warming centers (Sep 22)
+
+The first of the six features Mike picked from the list of things Philadelphians would use (the plan:
+alerts, tap a building, transit stops with arrivals and departure boards, near me, libraries and rec
+centers).
+
+`fetchNws` already asked the Weather Service for the model point's active alerts every five minutes, and
+read only the storm events out of them. `alertsSet` now keeps every active alert (tests and cancels
+dropped, expired ones dropped): a new one shows once in the Round 125 notice line for 12 s (held until the
+loading veil is gone, so an alert that lands during the build is not lost), and the time panel lists them
+("Weather alert: Heat Advisory until 10 PM") while they stand. Philadelphia publishes no machine-readable
+Code Red or Code Blue, so a heat product (Heat Advisory, Excessive or Extreme Heat) or a cold one (Cold
+Weather Advisory, Extreme Cold, Wind Chill, Freeze) stands in: it brings in the city's operating sites from
+OEM's `Warming_Cooling_Sites_PUBLICVIEW` layer (`site_status` open, a site marked no for the kind left
+out: 57 today, mostly libraries and rec centers), counted on the panel and named in the notice. Times are
+real Philadelphia time (`alertClock`), never the pinned model clock. `__dbg.alertTest(event)`,
+`__dbg.alerts()`; `tests/test_alerts.py` (the heat and cold lists, the clock's zone, one alerts poll).
+Verified in the pane with a Heat Advisory and a Wind Chill Advisory fixture.
+

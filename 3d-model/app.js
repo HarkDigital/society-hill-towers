@@ -18679,6 +18679,56 @@
       .catch(miss);
   }
   let nwsBusy = false;
+  // ---- weather alerts (Round 131, Mike picked it from the list of things residents would use): every
+  // active National Weather Service alert for the model's point, from the same alerts call fetchNws already
+  // makes every five minutes. A new one shows once in the notice line under the bar, and the time panel
+  // lists them while they stand. Philadelphia publishes no Code Red or Code Blue feed, so a heat or cold
+  // product stands in for one: it brings in the city's open cooling or warming sites (the Office of
+  // Emergency Management's Warming_Cooling_Sites layer), counted on the panel and offered by the near
+  // me card. Alert times are real Philadelphia time, never the pinned model clock.
+  const ALERTS = { list: [], seen: new Set(), sites: [], sitesT: 0, sitesKind: '' };
+  const ALERT_HEAT = /Heat Advisory|Excessive Heat|Extreme Heat/i, ALERT_COLD = /Cold Weather Advisory|Extreme Cold|Wind Chill|Hard Freeze|Freeze Warning/i;
+  const ALERT_SITES_URL = 'https://services.arcgis.com/fLeGjb7u4uXqeF9q/arcgis/rest/services/Warming_Cooling_Sites_PUBLICVIEW/FeatureServer/0/query?where=site_status%3D%27open%27&outFields=site_name,site_type,site_address,site_hours,warming_site,cooling_site&outSR=4326&f=json';
+  function alertClock(ms) {   // "8 PM", "8:30 PM", or "Tue 8 PM" when it ends on another day, in Philadelphia time
+    if (!ms) return '';
+    const o = { timeZone: 'America/New_York' }, d = new Date(ms);
+    const t = d.toLocaleTimeString('en-US', { ...o, hour: 'numeric', minute: '2-digit' }).replace(':00', '');
+    const today = new Date().toLocaleDateString('en-US', o) === d.toLocaleDateString('en-US', o);
+    return today ? t : d.toLocaleDateString('en-US', { ...o, weekday: 'short' }) + ' ' + t;
+  }
+  function alertKind() { return ALERTS.list.some((a) => ALERT_HEAT.test(a.event)) ? 'cool' : ALERTS.list.some((a) => ALERT_COLD.test(a.event)) ? 'warm' : ''; }
+  function alertsSet(props) {
+    const now = Date.now();
+    ALERTS.list = props.filter((p) => p.event && p.status !== 'Test' && p.messageType !== 'Cancel')
+      .map((p) => ({ id: p.id || p.event, event: String(p.event), until: Date.parse(p.ends || p.expires || '') || 0, severity: p.severity || '' }))
+      .filter((a) => !a.until || a.until > now);
+    const kind = alertKind();
+    if (kind && (kind !== ALERTS.sitesKind || now - ALERTS.sitesT > 30 * 60000)) alertSitesFetch(kind);
+    if (!kind) { ALERTS.sites = []; ALERTS.sitesKind = ''; }
+    const fresh = ALERTS.list.filter((a) => !ALERTS.seen.has(a.id));
+    if (fresh.length && !veil.classList.contains('hidden')) { clearTimeout(ALERTS.wait); ALERTS.wait = setTimeout(() => alertsSet(props), 3000); }   // held until the city is up
+    else if (fresh.length) { for (const a of fresh) ALERTS.seen.add(a.id); notice(alertLine(fresh[0]), 12000); ALERTS.last = { a: fresh[0], t: Date.now() }; }
+    refreshTimeUI();
+  }
+  function alertLine(a) {
+    const k = ALERT_HEAT.test(a.event) ? ' Cooling centers are open across the city.' : ALERT_COLD.test(a.event) ? ' Warming centers are open across the city.' : '';
+    return a.event + (a.until ? ' until ' + alertClock(a.until) : '') + '.' + (k && ALERTS.sites.length ? k : '');
+  }
+  function alertSitesFetch(kind) {
+    ALERTS.sitesT = Date.now(); ALERTS.sitesKind = kind;
+    fetch(ALERT_SITES_URL, { signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined }).then((r) => (r.ok ? r.json() : null)).then((d) => {
+      if (!d || !Array.isArray(d.features)) return;
+      const yes = (v) => (v == null || v === '' ? null : v === 1 || v === true || /^(y|yes|true|1)$/i.test(String(v)));   // null: the layer does not say
+      ALERTS.sites = d.features.filter((f) => f.geometry && f.attributes).map((f) => {
+        const a = f.attributes, g = f.geometry;
+        return { name: String(a.site_name || 'Site'), addr: String(a.site_address || ''), hours: String(a.site_hours || ''), type: String(a.site_type || ''),
+          cool: yes(a.cooling_site), warm: yes(a.warming_site),
+          x: (g.x - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z: -(g.y - SEPTA_GEO.lat0) * SEPTA_GEO.mz };
+      }).filter((q) => (kind === 'cool' ? q.cool !== false : q.warm !== false));   // a site marked no for this kind is left out
+      if (ALERTS.last && Date.now() - ALERTS.last.t < 15000) notice(alertLine(ALERTS.last.a), 12000);   // the notice just shown gains its centers line
+      refreshTimeUI();
+    }).catch(() => {});
+  }
   function fetchNws() {
     if (!wxCanFetch || WX_PRESETS[wxForced] || document.hidden || nwsBusy) return;
     nwsBusy = true;
@@ -18711,6 +18761,7 @@
           else if (/Special Weather Statement/i.test(ev) && /thunder|lightning/i.test(String((f.properties || {}).description || ''))) watch = true;
         }
       }
+      if (al && Array.isArray(al.features)) alertsSet(al.features.map((f) => f.properties || {}));
       if (!any) return;   // both calls failed: keep the last facts until they expire
       WX.tsObs = tsObs; WX.tsWarn = warn; WX.tsWatch = watch; WX.nwsText = text; WX.nwsT = performance.now(); WX.nwsCover = nwsCover;
       if (nwsCover > WX.cover) WX.cover = nwsCover;   // an observed overcast deck beats the model's cloud estimate
@@ -19630,6 +19681,8 @@
       + fact('Live weather', WX.ok ? (WX.temp == null ? '' : Math.round(WX.temp) + '°F, ')
         + (wxLabelFull() || Math.round(WX.cover * 100) + '% cloud cover') : 'Awaiting live conditions')
       + fact('Live air quality', AQI.ok && AQI.aqi != null ? AQI.aqi + ', ' + AQI.cat : 'Awaiting live reading')
+      + (ALERTS.list.length ? fact('Weather alert', ALERTS.list.map((a) => a.event + (a.until ? ' until ' + alertClock(a.until) : '')).join(', '), true) : '')
+      + (ALERTS.sites.length ? fact(ALERTS.sitesKind === 'warm' ? 'Warming centers' : 'Cooling centers', ALERTS.sites.length + ' open', true) : '')
       + fact('Moon', phase + ', ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', up ' + oct : ', set'), true)
       + (THEME.label ? fact('Skyline lights', THEME.label, true) : '')
       + (LTN.live && LTN.n10 > 0 ? fact('Lightning', LTN.n10 + (LTN.n10 === 1 ? ' strike' : ' strikes')
@@ -20186,7 +20239,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times
