@@ -6113,3 +6113,45 @@ were: `deploy_philly3d.sh` gates on the suite and refused. Fixture row f ended o
 `Main` tests baked on the wall clock, so on 2026-09-21 it aged past `KEEP_DAYS` and the count fell from 6 to 5.
 The tests now pin `bake_lights.time.time` to the file's NOW. 180 tests pass. Page 28.25 MB, +5 KB.
 
+## Round 126 — the Marriott's porte-cochere, and the pins' depth (Sep 22)
+
+Mike, with a screenshot of the Marriott Old City from over Front Street: "The portico for the old
+city marriott is in the wrong place. It should be in the corner behind the tree from this angle."
+Then, with a second screenshot of a bus on Columbus Boulevard wearing a marker pin and an art pin
+from blocks away over its badge: "I should not be able to see further pins clipping through closer
+pins. I am also still seeing a lot of building clipping with the pins."
+
+### The porte-cochere
+
+The canopy was anchored to the polygon's westernmost vertex, which is the far end of the north wing.
+It now finds the L's inner corner itself: the reflex vertex with the longest pair of edges, the face
+leaving it (the north wing's courtyard side), the outward normal by `pointInPoly` (a winding guess
+first put it inside the wing), and stands 2 to 16 m along that face from the corner, 7.5 m into the
+courtyard beside the circular drive, aligned by `ryAlign`. Verified by capture at Mike's own pose
+(`p=3.9,22.8,-90.3,1.281,-0.379`): the canopy is in the corner behind the tree.
+
+### The pins
+
+Every pin is a screen-facing quad that holds its size with distance, so beside a facade it can stand
+the size of a house. `pinSceneDepth` depth-tested its own corners against the city, which sliced it
+wherever the facade passed through the quad, and wrote no depth, which left the pins in draw order
+among themselves: the SEPTA badges are built before the markers and the art, so a marker three blocks
+off painted over the bus in front of it, which is Mike's screenshot.
+
+Now every corner of a pin carries the depth of its ANCHOR, the instance origin at the pin's tip
+(`PIN_ANCHOR_GLSL`, chained after any hook the material already had: Indego's atlas remap, `postRaw`'s
+exposure undo, with `customProgramCacheKey` telling the programs apart). Nothing beside the tip cuts
+the quad, only a wall in front of the tip hides it, so Round 62's occlusion stands. With one depth per
+pin the flat pins write depth (`alphaTest` 0.5 keeps the sprite's clear pixels out) and sort among
+themselves whatever the draw order. Under the logarithmic depth buffer the fragment depth comes from
+`vFragDepth`, so that carries the anchor's w; the plain buffer takes `gl_Position.z`; the WebGL1
+no-extension path takes the log of it. The search tether stays a plain line that writes none.
+
+Verified in the pane, same poses before and after: at the densest pin cluster near 12th and Walnut
+the art pin stands whole beside a facade with the marker pin behind it; from 70 m behind a live bus
+on Market Street the badge covers the marker and art pins beyond it whole, the marker's blue peeking
+over the badge's top edge as it should; no shader errors in the console. `tests/test_pins.py` now
+asserts the flat pins write depth at `alphaTest` 0.5, the tether does not, the anchor block lands in
+the vertex shader on both depth paths, a chained hook still runs, and the two programs never share a
+cache key. 181 tests pass. Page 28.25 MB.
+

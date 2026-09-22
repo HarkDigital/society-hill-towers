@@ -6121,10 +6121,30 @@
         const m0 = mark();
         aw(buildingGeom(b.poly, b.holes, 16.5, -1.5), '#95513f');
         ad(extrudePoly(b.poly, b.holes, 17.1, 16.5), '#3c3f44');
-        let wx = 1e9, wz = 0;
-        for (const p of b.poly) { if (p[0] < wx) { wx = p[0]; wz = p[1]; } }
-        ad(box(14, 0.6, 7.5, wx - 3.5, 4.4, wz, 0), '#efeae0');
-        for (const s of [-1, 1]) ad(box(0.6, 4.2, 0.6, wx - 6.8, 2.1, wz + s * 3.2, 0), '#95513f');
+        // the porte-cochere stands in the inner corner of the L, on the north wing's courtyard
+        // face beside the circular drive (Round 126, Mike: it sat at the wing's far west end).
+        // The corner is the polygon's reflex vertex with the longest pair of edges; the canopy
+        // runs along the face from 2 m off the corner and reaches 7.5 m into the courtyard.
+        const pl = b.poly, n = pl.length;
+        const area = pl.reduce((a, q, i) => a + q[0] * pl[(i + 1) % n][1] - pl[(i + 1) % n][0] * q[1], 0);
+        let ci = -1, best = 0;
+        for (let i = 0; i < n; i++) {
+          const a = pl[(i + n - 1) % n], q = pl[i], c = pl[(i + 1) % n];
+          const cross = (q[0] - a[0]) * (c[1] - q[1]) - (q[1] - a[1]) * (c[0] - q[0]);
+          if ((cross < 0) !== (area > 0)) continue;   // convex
+          const e = Math.min(Math.hypot(q[0] - a[0], q[1] - a[1]), Math.hypot(c[0] - q[0], c[1] - q[1]));
+          if (e > best) { best = e; ci = i; }
+        }
+        if (ci >= 0) {
+          const q = pl[ci], c = pl[(ci + 1) % n];   // the face leaving the corner: the north wing's courtyard side
+          const L = Math.hypot(c[0] - q[0], c[1] - q[1]), ux = (c[0] - q[0]) / L, uz = (c[1] - q[1]) / L;
+          let nx = uz, nz = -ux;   // the outward normal of that face: whichever side is outside the footprint
+          if (pointInPoly(q[0] + ux * 9 + nx * 2, q[1] + uz * 9 + nz * 2, pl)) { nx = -nx; nz = -nz; }
+          const ry = ryAlign(ux, uz);
+          const cx = q[0] + ux * 9 + nx * 3.75, cz = q[1] + uz * 9 + nz * 3.75;
+          ad(box(14, 0.6, 7.5, cx, 4.4, cz, ry), '#efeae0');
+          for (const s of [-1, 1]) ad(box(0.6, 4.2, 0.6, cx + nx * 3.3 + ux * s * 3.2, 2.1, cz + nz * 3.3 + uz * s * 3.2, ry), '#95513f');
+        }
         liftB(m0, b);
       }
     }
@@ -13044,11 +13064,35 @@
   // Every pin and connector respects the rendered city depth, including the
   // packed building tiers whose CPU geometry has been released. Transparent
   // texels never write depth, so a badge cannot leave a rectangular cutout.
+  // Round 126 (Mike: farther pins paint over nearer ones, and pins are cut by buildings): a pin is a
+  // screen-facing quad that can stand the size of a house beside a facade, and a depth test on its own
+  // corners sliced it wherever the facade passed through it, while depthWrite off left the pins in draw
+  // order among themselves. Now every corner of a pin carries the depth of its ANCHOR (the instance
+  // origin, the pin's tip), so nothing beside the tip cuts it and only a wall in front of the tip hides
+  // it, and the pins write that one depth each and sort among themselves (alphaTest keeps the sprite's
+  // clear pixels out of the depth buffer). Under the logarithmic depth buffer the fragment depth comes
+  // from vFragDepth, so that is what carries the anchor's w; the plain buffer takes gl_Position.z.
+  const PIN_ANCHOR_GLSL = '#include <logdepthbuf_vertex>\n{\n' +
+    '#ifdef USE_INSTANCING\n  vec4 pinA = projectionMatrix * modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n' +
+    '#else\n  vec4 pinA = projectionMatrix * modelViewMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n#endif\n' +
+    '#if defined(USE_LOGDEPTHBUF_EXT)\n  vFragDepth = 1.0 + pinA.w;\n' +
+    '#elif defined(USE_LOGDEPTHBUF)\n  gl_Position.z = log2(max(EPSILON, pinA.w + 1.0)) * logDepthBufFC - 1.0; gl_Position.z *= gl_Position.w;\n' +
+    '#else\n  gl_Position.z = pinA.z / pinA.w * gl_Position.w;\n#endif\n}';
   function pinSceneDepth(mesh) {
+    const flat = !mesh.isLine;   // the search tether keeps a plain line
     for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
       mat.transparent = true;
       mat.depthTest = true;
-      mat.depthWrite = false;
+      mat.depthWrite = flat;
+      if (flat) {
+        mat.alphaTest = 0.5;
+        const prev = mat.onBeforeCompile;
+        mat.onBeforeCompile = (shader, r) => {
+          if (prev) prev(shader, r);
+          shader.vertexShader = shader.vertexShader.replace('#include <logdepthbuf_vertex>', PIN_ANCHOR_GLSL);
+        };
+        mat.customProgramCacheKey = () => 'pinAnchor:' + (prev ? prev.toString() : '');   // the Indego badge chains its atlas remap: never share its program
+      }
     }
     mesh.renderOrder = 100;
     mesh.userData.pinSceneDepth = true;

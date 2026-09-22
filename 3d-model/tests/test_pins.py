@@ -14,7 +14,7 @@ class Pins(unittest.TestCase):
         if not shutil.which('node'):
             raise unittest.SkipTest('Node.js unavailable')
         cls.source = (ROOT / 'app.js').read_text()
-        helpers = cls.source[cls.source.index('  function pinSceneDepth('):cls.source.index('  function pinMesh(')]
+        helpers = cls.source[cls.source.index('  const PIN_ANCHOR_GLSL'):cls.source.index('  function pinMesh(')]
         script = r'''
 const THREE=require(THREE_PATH),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 HELPERS
@@ -23,7 +23,13 @@ const wall=new THREE.Mesh(new THREE.BoxGeometry(8,8,8),new THREE.MeshBasicMateri
 const badge=pinSceneDepth(new THREE.InstancedMesh(new THREE.PlaneGeometry(4,5),new THREE.MeshBasicMaterial(),2));
 const line=pinSceneDepth(new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial()));
 const ball=pinSceneDepth(new THREE.Mesh(new THREE.SphereGeometry(),new THREE.MeshBasicMaterial()));
-result.render=[badge,line,ball].map(m=>({depthTest:m.material.depthTest,depthWrite:m.material.depthWrite,transparent:m.material.transparent,order:m.renderOrder}));
+result.render=[badge,line,ball].map(m=>({depthTest:m.material.depthTest,depthWrite:m.material.depthWrite,transparent:m.material.transparent,order:m.renderOrder,alphaTest:m.material.alphaTest}));
+// Round 126: a flat pin carries its anchor's depth in the vertex shader, chained after any shader hook the material already had (Indego's atlas remap)
+const chained=new THREE.MeshBasicMaterial();let prevRan=false;chained.onBeforeCompile=(sh)=>{prevRan=true;sh.vertexShader=sh.vertexShader.replace('#include <uv_vertex>','vUv = uv;');};
+pinSceneDepth(new THREE.InstancedMesh(new THREE.PlaneGeometry(),chained,1));
+const sh={vertexShader:'#include <uv_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\n',fragmentShader:''};chained.onBeforeCompile(sh,null);
+const sh2={vertexShader:'#include <logdepthbuf_vertex>\n',fragmentShader:''};badge.material.onBeforeCompile(sh2,null);
+result.anchor={prevRan,keepsPrev:sh.vertexShader.includes('vUv = uv;'),anchorLog:sh.vertexShader.includes('vFragDepth = 1.0 + pinA.w'),anchorPlain:sh.vertexShader.includes('gl_Position.z = pinA.z / pinA.w * gl_Position.w'),instanced:sh.vertexShader.includes('instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)'),badgeToo:sh2.vertexShader.includes('pinA'),keyDiffers:chained.customProgramCacheKey()!==badge.material.customProgramCacheKey(),lineHook:(()=>{const s3={vertexShader:'#include <logdepthbuf_vertex>\n',fragmentShader:''};line.material.onBeforeCompile(s3,null);return s3.vertexShader;})()};
 result.wall={depthTest:wall.material.depthTest,depthWrite:wall.material.depthWrite,transparent:wall.material.transparent};
 const point=new THREE.Vector3(0,0,-10);
 const hit=(object,id=0,distance=10)=>({object,instanceId:id,distance,point,uv:new THREE.Vector2(.5,.5)});
@@ -59,12 +65,24 @@ console.log(JSON.stringify(result));
         cls.result = json.loads(run.stdout)
 
     def test_badges_and_pin_connectors_respect_scene_depth(self):
-        for material in self.result['render']:
+        badge, line, ball = self.result['render']
+        for material in (badge, line, ball):
             self.assertTrue(material['depthTest'])
-            self.assertFalse(material['depthWrite'])
             self.assertTrue(material['transparent'])
             self.assertGreater(material['order'], 60)
+        # Round 126: a flat pin writes its anchor's depth so the pins sort among themselves, its
+        # clear pixels kept out by alphaTest; the search tether stays a plain line that writes none
+        for material in (badge, ball):
+            self.assertTrue(material['depthWrite'])
+            self.assertEqual(0.5, material['alphaTest'])
+        self.assertFalse(line['depthWrite'])
         self.assertEqual(self.result['wall'], {'depthTest': True, 'depthWrite': True, 'transparent': False})
+
+    def test_flat_pins_carry_their_anchor_depth(self):
+        a = self.result['anchor']
+        for key in ('prevRan', 'keepsPrev', 'anchorLog', 'anchorPlain', 'instanced', 'badgeToo', 'keyDiffers'):
+            self.assertTrue(a[key], key)
+        self.assertNotIn('pinA', a['lineHook'])   # the tether's default hook (three's no-op) leaves its shader alone
 
     def test_buildings_block_pins_and_hidden_pins_do_not_take_clicks(self):
         for key in ('hiddenPin', 'visiblePin', 'hiddenSolid', 'visibleSolid', 'hiddenDoesNotSteal', 'blockedPinFallsBack'):
