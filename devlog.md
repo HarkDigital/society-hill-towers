@@ -6155,3 +6155,58 @@ asserts the flat pins write depth at `alphaTest` 0.5, the tether does not, the a
 the vertex shader on both depth paths, a chained hook still runs, and the two programs never share a
 cache key. 181 tests pass. Page 28.25 MB.
 
+## Round 127 — pins shown or hidden whole, the corner smear, A Man Full of Trouble, the street names, the lights on load (Sep 22)
+
+Mike, in a run of messages with screenshots: a marker pin still cut by a building; "I dont want the
+concert pins to clip through buildings, they should be obscured if a building is in between"; "remove
+whatever that black shadow in the upper left corner is"; A Man Full of Trouble "needs to be reworked"
+with a photo; street names "a bit lighter to stand out, not a ton"; "the colored lights seem to start
+off white and then slowly change into the proper color".
+
+### Pins: all or nothing
+
+Round 126 gave a pin its tip's depth, which stopped walls BESIDE a pin slicing it, but any building
+nearer than the tip still cut the part of the pin it overlapped on screen. Now:
+
+- **Nothing cuts a pin.** `pinDepthClear`, an invisible mesh at renderOrder 99, clears the depth buffer
+  in its `onBeforeRender` (with the depth mask forced on, or the clear does nothing after a
+  depthWrite-false object). The pins at 100 then sort only among themselves on their anchor depths.
+- **A hidden pin is hidden whole.** Every few frames (5 desktop, 10 touch) `pinOccCapture` draws the
+  city's view distance into a 256-pixel-wide target with a packed-RGBA override material, every
+  transparent, line, point and pin object hidden, the shadow map untouched, and reads it back. Each
+  instanced pin carries `aPinVis`; `pinOccApply` tests every tip against the image through the
+  capture's own matrices (a 3x3 neighbourhood, 2.5 m + 2% bias) and a hidden pin collapses to a point.
+  Taps skip a hidden pin. `__dbg.pinOcc()` reports captures and hidden counts.
+- **Concert placards and score bubbles** (a DOM placard, a tether and a ball) are shown or hidden
+  together by `pinBlocked` on their roof landing point, the depth image within 4 km, `losClear`'s
+  roof grid beyond it. The tethers draw with the pins now, so no building cuts them either.
+
+Measured: street-level poses in Center City hide 19 to 34 pins whole; beside a facade the art pin
+stands whole over the building's edge where Round 126 cut it. 181 tests.
+
+### The black smear
+
+The 74 landmark labels (off by default) were created with `visible: false` but at full opacity, so
+`updateLabels`, which only hides a label it thinks is visible, never touched them: they sat stacked
+just above the screen's top-left corner and their box shadows bled into view. A label now hides
+whenever its opacity is not already 0.
+
+### A Man Full of Trouble
+
+Three faults: the storefront pass dressed its street face as a shop under a purple awning (storefronts
+never checked for a researched model; now they skip any custom footprint), the old model's pent,
+cornice and dormers faced north, away from Spruce Street, and its walls took style 0, the generic
+window pattern. Rebuilt from Mike's photo on blank walls: window, door, window, door below, four
+windows above in cream shutters, a shingled pent on a cream fascia, a cream cornice, a steep gable
+roof with two dormers, a chimney at the west end and one behind the ridge, downspouts. Calibrated in
+the pane: the detail material lifts a sunlit flat far past its stored value, so shingles stored
+`#33241b` read pale beige at 2 pm and `#120c08` reads the photo's cedar brown.
+
+### Street names and the lights
+
+The day ink goes from `0x0b1013`, the asphalt's own value, to `ST_INK_DAY` `0x323c46`; a first try
+at `0x4a5661` read clearly pale, more than Mike asked. The skyline lights landed their first
+evaluation, but that runs before the day's scoreboard and the served calendar arrive, and their
+arrival eased twenty seconds from white; data for the date already in view now lands at once, and
+only a change of date eases.
+

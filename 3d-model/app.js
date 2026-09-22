@@ -6198,50 +6198,86 @@
         liftB(m0, b);
       }
     }
-    // Man Full of Trouble Tavern (1759): two brick floors under a gambrel roof
-    // with dormers, cream pent + cornice, big end chimney — a block from the pool
+    // A Man Full of Trouble (1759), 127 Spruce (Round 127, Mike with a photo: the storefront pass had
+    // dressed it as a shop under a purple awning, and the old model's dormers and trim faced away from
+    // the street). Rebuilt from the photo: two brick floors facing Spruce (south), a shingled pent between
+    // them on a cream fascia, a cream cornice, a steep shingled gable roof with two gabled dormers, a
+    // chimney at the west end and one behind the ridge; window, door, window, door below and four
+    // windows above, each in cream shutters. The walls are blank (style 3), so every opening is applied.
     {
       const b = get('Man Full of Troubles Tavern');
       if (b) {
         const m0 = mark();
-        const ob = orientedBox(b.poly);
-        const a = obbAxis(ob);
-        const ry = ryAlign(a.ax, a.az);
-        const EAVE = 6.6, BRK = 8.8, RIDGE = 9.8, INSET = 1.9;
-        aw(buildingGeom(b.poly, null, EAVE, -1.5), '#77402f', 0);
-        { // gambrel: two slopes a side + pentagon gable ends (detail mat is DoubleSide)
-          const hl = a.hl + 0.35, hs = a.hs + 0.3;
-          const P = (u, v, y) => [ob.cx + a.ax * u + a.px * v, y, ob.cz + a.az * u + a.pz * v];
-          const pos = [];
-          const tri = (A, B, C) => pos.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
-          for (const s of [-1, 1]) {
-            const v0 = s * hs, v1 = s * (hs - INSET);
-            tri(P(-hl, v0, EAVE), P(hl, v0, EAVE), P(hl, v1, BRK)); tri(P(-hl, v0, EAVE), P(hl, v1, BRK), P(-hl, v1, BRK));
-            tri(P(-hl, v1, BRK), P(hl, v1, BRK), P(hl, 0, RIDGE)); tri(P(-hl, v1, BRK), P(hl, 0, RIDGE), P(-hl, 0, RIDGE));
-          }
-          for (const e of [-1, 1]) {
-            const u = e * hl;
-            const ring = [P(u, -hs, EAVE), P(u, -(hs - INSET), BRK), P(u, 0, RIDGE), P(u, hs - INSET, BRK), P(u, hs, EAVE)];
-            for (let i2 = 1; i2 < ring.length - 1; i2++) tri(ring[0], ring[i2], ring[i2 + 1]);
-          }
-          const g = new THREE.BufferGeometry();
-          g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
-          g.computeVertexNormals();
-          ad(g, '#4a3627');
+        const ob = orientedBox(b.poly), a = obbAxis(ob), ry = ryAlign(a.ax, a.az);
+        const EAVE = 6.5, RIDGE = 10.2, OVH = 0.35, K = a.hl / 5.9;   // the photo's 11.8 m front, scaled to the footprint
+        // detail colours are stored very dark: the detail material lifts a sunlit flat far past its stored value
+        // (measured in the pane: #33241b shingles read pale beige at 2 pm, #120c08 reads the photo's cedar brown)
+        const BRICK = '#8f4430', BRICK_D = '#2a120c', CREAM = '#e9e2c8', SHUT = '#ddd5b4', SHINGLE = '#120c08', GLASS = '#232830', STONE = '#6e6a62';
+        aw(buildingGeom(b.poly, b.holes, EAVE, -1.5), BRICK, 3);
+        const sv = a.pz > 0 ? 1 : -1;                          // Spruce Street lies south (+z) of the house
+        const nx = a.px * sv, nz = a.pz * sv;                  // the street face's outward normal
+        const su = Math.sign(a.ax * nz - a.az * nx) || 1;      // +x runs left to right for someone on Spruce
+        const P3 = (x, out, y) => [ob.cx + a.ax * su * x + nx * (a.hs + out), y, ob.cz + a.az * su * x + nz * (a.hs + out)];
+        const fb = (w, h, d, x, y, out, col) => { const q = P3(x, out, y); ad(box(w, h, d, q[0], q[1], q[2], ry), col); };
+        const tris = (col) => { const pos = []; return { t: (A, B, C) => pos.push(...A, ...B, ...C), done: () => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.computeVertexNormals(); ad(g, col); } }; };
+        // the gable roof along the long axis, its brick gable ends, and the rear eave
+        const hl = a.hl, hs = a.hs, R = tris(SHINGLE), G = tris(BRICK_D);
+        for (const side of [0, -2 * hs]) {                     // the street slope, then the rear slope
+          const e = side === 0 ? OVH : -2 * hs - OVH, top = -hs;
+          R.t(P3(-hl - OVH, e, EAVE), P3(hl + OVH, e, EAVE), P3(hl + OVH, top, RIDGE));
+          R.t(P3(-hl - OVH, e, EAVE), P3(hl + OVH, top, RIDGE), P3(-hl - OVH, top, RIDGE));
         }
-        const northV = (a.pz < 0) ? 1 : -1;                // v-sign toward Spruce Street
-        const fx2 = a.px * northV, fz2 = a.pz * northV;
-        // cream pent between the floors and cornice at the eave, street face
-        ad(box(a.hl * 2 + 0.5, 0.2, 0.8, ob.cx + fx2 * (a.hs + 0.3), 3.7, ob.cz + fz2 * (a.hs + 0.3), ry), '#e9e3d0');
-        ad(box(a.hl * 2 + 0.5, 0.28, 0.55, ob.cx + fx2 * (a.hs + 0.2), EAVE - 0.1, ob.cz + fz2 * (a.hs + 0.2), ry), '#e9e3d0');
-        for (const du of [-0.42, 0.42]) {                  // dormers on the street slope
-          const dx2 = ob.cx + a.ax * du * a.hl + fx2 * (a.hs - 1.0), dz2 = ob.cz + a.az * du * a.hl + fz2 * (a.hs - 1.0);
-          ad(box(1.35, 1.6, 1.5, dx2, BRK - 0.75, dz2, ry), '#efe9dc');
-          const dr = new THREE.CylinderGeometry(0.02, 1.05, 1.0, 4);
-          dr.rotateY(ry + Math.PI / 4); dr.translate(dx2, BRK + 0.55, dz2);
-          ad(dr, '#5b4433');
+        for (const x of [-hl, hl]) G.t(P3(x, 0, EAVE), P3(x, -2 * hs, EAVE), P3(x, -hs, RIDGE));
+        // the dormers: a front wall, cheeks, a small gable roof, a sash window
+        for (const dx of [-3.0 * K, 2.6 * K]) {
+          const fo = -0.35, y0 = EAVE + 0.35, y1 = EAVE + 2.1, w = 1.5;   // the front stands just behind the eave, so the whole sash clears the slope
+          fb(w, y1 - y0, 2.4, dx, (y0 + y1) / 2, fo - 1.2, CREAM);
+          const D = tris(SHINGLE);
+          D.t(P3(dx - w / 2 - 0.15, fo + 0.1, y1), P3(dx, fo + 0.1, y1 + 0.75), P3(dx, fo - 2.4, y1 + 0.75));
+          D.t(P3(dx - w / 2 - 0.15, fo + 0.1, y1), P3(dx, fo - 2.4, y1 + 0.75), P3(dx - w / 2 - 0.15, fo - 2.4, y1));
+          D.t(P3(dx + w / 2 + 0.15, fo + 0.1, y1), P3(dx + w / 2 + 0.15, fo - 2.4, y1), P3(dx, fo - 2.4, y1 + 0.75));
+          D.t(P3(dx + w / 2 + 0.15, fo + 0.1, y1), P3(dx, fo - 2.4, y1 + 0.75), P3(dx, fo + 0.1, y1 + 0.75));
+          D.t(P3(dx - w / 2, fo + 0.02, y1), P3(dx + w / 2, fo + 0.02, y1), P3(dx, fo + 0.02, y1 + 0.72));
+          D.done();
+          fb(0.95, 1.12, 0.08, dx, y1 - 0.7, fo + 0.02, CREAM);
+          fb(0.8, 0.98, 0.08, dx, y1 - 0.7, fo + 0.05, GLASS);
         }
-        ad(box(1.5, 2.6, 1.1, ob.cx - a.ax * (a.hl * 0.42), RIDGE + 0.6, ob.cz - a.az * (a.hl * 0.42), ry), '#67382b');
+        R.done(); G.done();
+        // chimneys: the west end on the ridge, and one just behind the ridge near the middle
+        fb(1.1, 3.4, 0.9, -hl + 0.9, RIDGE - 0.3, -hs, BRICK_D);
+        fb(0.9, 2.6, 0.9, -0.4 * K, RIDGE - 0.2, -hs - 1.3, BRICK_D);
+        // cornice at the eave, front and back
+        fb(2 * hl + 0.5, 0.42, 0.55, 0, EAVE - 0.18, 0.18, CREAM);
+        fb(2 * hl, 0.28, 0.08, 0, EAVE - 0.55, 0.03, CREAM);
+        { const q = P3(0, -2 * hs - 0.18, EAVE - 0.18); ad(box(2 * hl + 0.5, 0.42, 0.55, q[0], q[1], q[2], ry), CREAM); }
+        // the pent between the floors: a shingled board sloping off the wall over a cream fascia
+        {
+          const g = new THREE.BoxGeometry(2 * hl + 0.3, 0.12, 0.9);
+          const sz = Math.sign(-a.az * nx + a.ax * nz) || 1;   // which way the box's +z faces after ryAlign
+          g.rotateX(0.38 * sz); g.rotateY(ry);
+          const q = P3(0, 0.42, 3.42); g.translate(q[0], q[1], q[2]); ad(g, SHINGLE);
+          fb(2 * hl + 0.3, 0.24, 0.07, 0, 3.18, 0.86, CREAM);
+          fb(2 * hl, 0.3, 0.08, 0, 3.02, 0.03, CREAM);
+        }
+        // openings: a nine-light sash in a cream frame between shutters; a panelled door under a transom
+        const win = (x, sill, w, h) => {
+          const yc = sill + h / 2;
+          fb(w + 0.2, h + 0.2, 0.08, x, yc, 0.03, CREAM);
+          fb(w, h, 0.08, x, yc, 0.06, GLASS);
+          for (const f of [-1 / 6, 1 / 6]) { fb(0.05, h, 0.06, x + f * w * 2, yc, 0.1, CREAM); fb(w, 0.05, 0.06, x, yc + f * h * 2, 0.1, CREAM); }
+          fb(w + 0.3, 0.1, 0.2, x, sill - 0.05, 0.1, STONE);
+          for (const sgn of [-1, 1]) fb(0.42, h + 0.1, 0.06, x + sgn * (w / 2 + 0.33), yc, 0.07, SHUT);
+        };
+        const door = (x) => {
+          fb(1.15, 2.85, 0.07, x, 1.43, 0.03, CREAM);
+          fb(0.88, 2.2, 0.07, x, 1.2, 0.06, SHUT);
+          fb(0.8, 0.34, 0.07, x, 2.55, 0.06, GLASS);
+          fb(1.3, 0.18, 0.5, x, 0.09, 0.25, STONE);
+        };
+        for (const x of [-4.0, 1.15]) win(x * K, 0.95, 0.95, 1.75);
+        for (const x of [-1.97, 4.0]) door(x * K);
+        for (const x of [-4.0, -1.97, 1.15, 4.04]) win(x * K, 3.95, 0.9, 1.75);
+        for (const x of [-0.9, 5.45]) fb(0.12, EAVE - 0.5, 0.12, x * K, (EAVE - 0.5) / 2, 0.1, CREAM);   // downspouts
         liftB(m0, b);
       }
     }
@@ -10154,11 +10190,21 @@
     const cGlass = new THREE.Color(0x0e1216), cLit = new THREE.Color(0x6a5a3c), cFrame = new THREE.Color(0x2a2724);
     const parts = [], glow = [];
     let made = 0;
+    // a building with its own researched model dresses its own ground floor (Round 127: A Man Full of
+    // Trouble wore a shop window and a purple awning over the model's walls)
+    const own = [];
+    for (const [b2, sp] of upgraded) if (sp.mode === 'custom' && b2.poly) {
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const q of b2.poly) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
+      own.push([x0 - 2, x1 + 2, z0 - 2, z1 + 2, b2.poly]);
+    }
+    const ownsIt = (x, z) => { for (const o2 of own) if (x > o2[0] && x < o2[1] && z > o2[2] && z < o2[3] && pointInPoly(x, z, o2[4])) return true; return false; };
     for (let i = 0; i < n; i++) {
       const o = i * 8;
       const x = body[o] * 0.2, z = body[o + 1] * 0.2, ang = body[o + 2] / 1000, w = body[o + 3] / 10, kind = body[o + 4], col = body[o + 5] & 15, fh = body[o + 6] / 10, flags = body[o + 7];
       if (w < 2.5 || fh < 2.5) continue;
       const nx = Math.cos(ang), nz = Math.sin(ang), ry = Math.atan2(-nx, -nz);   // box length along the facade tangent (-nz, nx)
+      if (ownsIt(x - nx * 1.2, z - nz * 1.2)) continue;
       const gy = siteY(x, z, 'ground');
       const glassH = (flags & 4) ? fh - 0.6 : fh * 0.55;
       const mk = (bw, bh, bd, off, y, tilt) => { const g = new THREE.BoxGeometry(bw, bh, bd); if (tilt) g.rotateX(tilt); g.rotateY(ry); g.translate(x + nx * off, y, z + nz * off); return g; };
@@ -11420,6 +11466,7 @@
       const el = document.createElement('div');
       el.className = 'lbl' + (cls ? ' ' + cls : '');
       el.textContent = text;
+      el.style.opacity = '0';   // born hidden, matching visible: false (Round 127: at full opacity the 74 unplaced tags sat stacked at the screen's corner and their shadows read as a black smear above the brand)
       labelsRoot.appendChild(el);
       labels.push({ el, pos: new V3(x, y + siteY(x, z, 'ground'), z), visible: false });
     }
@@ -11462,7 +11509,7 @@
   function updateLabels() {
     const w = window.innerWidth, h = window.innerHeight;
     for (const l of labels) {
-      if (!labelsOn) { if (l.visible) { l.el.style.opacity = '0'; l.visible = false; } continue; }
+      if (!labelsOn) { if (l.visible || l.el.style.opacity !== '0') { l.el.style.opacity = '0'; l.visible = false; } continue; }   // every creator pushes visible: false over a tag at full opacity (Round 127)
       tmpV.copy(l.pos).project(camera);
       const dist = camera.position.distanceTo(l.pos);
       const behind = tmpV.z > 1 || tmpV.z < -1;
@@ -11471,7 +11518,7 @@
       let op = 1 - clamp((dist - f0) / (f1 - f0), 0, 1);
       if (dist < 26) op = Math.min(op, (dist - 12) / 14);
       if (behind || off || op <= 0.02) {
-        if (l.visible) { l.el.style.opacity = '0'; l.visible = false; }
+        if (l.visible || l.el.style.opacity !== '0') { l.el.style.opacity = '0'; l.visible = false; }
         continue;
       }
       const x = (tmpV.x * 0.5 + 0.5) * w, y = (-tmpV.y * 0.5 + 0.5) * h;
@@ -13078,6 +13125,14 @@
     '#if defined(USE_LOGDEPTHBUF_EXT)\n  vFragDepth = 1.0 + pinA.w;\n' +
     '#elif defined(USE_LOGDEPTHBUF)\n  gl_Position.z = log2(max(EPSILON, pinA.w + 1.0)) * logDepthBufFC - 1.0; gl_Position.z *= gl_Position.w;\n' +
     '#else\n  gl_Position.z = pinA.z / pinA.w * gl_Position.w;\n#endif\n}';
+  // Round 127 (Mike: "still seeing clipping with the historical markers and buildings"): a pin's tip
+  // depth alone still let any building NEARER than the tip cut the part of the pin it overlapped.
+  // Now a pin is all or nothing. The pins draw after `pinDepthClear` wipes the depth buffer, so no
+  // building cuts one and they only sort among themselves on their anchor depths; and each instance
+  // carries aPinVis, which `pinOccApply` sets from a small depth image of the city (`pinOccCapture`),
+  // collapsing a pin whose tip is behind a building to a point. PIN_MESHES lists the instanced pins.
+  const PIN_MESHES = [];
+  const PIN_VIS_GLSL = '#include <begin_vertex>\n#ifdef USE_INSTANCING\n  transformed *= aPinVis;\n#endif';
   function pinSceneDepth(mesh) {
     const flat = !mesh.isLine;   // the search tether keeps a plain line
     for (const mat of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
@@ -13089,12 +13144,21 @@
         const prev = mat.onBeforeCompile;
         mat.onBeforeCompile = (shader, r) => {
           if (prev) prev(shader, r);
-          shader.vertexShader = shader.vertexShader.replace('#include <logdepthbuf_vertex>', PIN_ANCHOR_GLSL);
+          shader.vertexShader = shader.vertexShader
+            .replace('#include <common>', '#include <common>\n#ifdef USE_INSTANCING\nattribute float aPinVis;\n#endif')
+            .replace('#include <begin_vertex>', PIN_VIS_GLSL)
+            .replace('#include <logdepthbuf_vertex>', PIN_ANCHOR_GLSL);
         };
         mat.customProgramCacheKey = () => 'pinAnchor:' + (prev ? prev.toString() : '');   // the Indego badge chains its atlas remap: never share its program
       }
     }
-    mesh.renderOrder = 100;
+    if (flat && mesh.isInstancedMesh) {
+      const cap = mesh.instanceMatrix.count, a = new THREE.InstancedBufferAttribute(new Float32Array(cap).fill(1), 1);
+      a.setUsage(THREE.DynamicDrawUsage);
+      mesh.geometry.setAttribute('aPinVis', a);
+      PIN_MESHES.push(mesh);
+    }
+    mesh.renderOrder = 100;   // tethers too: a concert or score pin is shown or hidden whole (Round 127), never cut
     mesh.userData.pinSceneDepth = true;
     return mesh;
   }
@@ -13113,6 +13177,7 @@
     let best = null;
     for (const hit of hits) {
       if (hit.instanceId == null || !hit.object.userData.pinSceneDepth || !pinHitOpaque(hit)) continue;
+      { const v = hit.object.geometry.attributes.aPinVis; if (v && v.getX(hit.instanceId) < 0.5) continue; }   // hidden behind a building (Round 127)
       if (occluded(hit.point.x, hit.point.y, hit.point.z)) continue;
       // Among unobstructed hits, match rendering: later batches/instances paint over earlier
       // ones. This also makes an overlapping visible badge win over a solid model.
@@ -13341,6 +13406,7 @@
     syncStreetsBtn();
   }
   btnStreets.addEventListener('click', toggleStreets);
+  const ST_INK_DAY = 0x323c46;   // street names by day (Round 127, Mike: a little lighter to stand out; was 0x0b1013, which sat at the asphalt's own value)
   step('Lettering the streets', async () => {
     if (typeof ST_LABELS === 'undefined' || !ST_LABELS || !ST_LABELS.names) { btnStreets.style.display = 'none'; return; }
     // Preferred path: the offline signed-distance-field atlas (bake_street_sdf.py).
@@ -13436,7 +13502,7 @@
     if (sdfMode) {
       // luminance SDF rides in the alphaMap (.g); the 0.5 level-set is the true
       // outline, thresholded with fwidth-scaled AA — crisp at every zoom
-      stMat = new THREE.MeshBasicMaterial({ alphaMap: tex, transparent: true, depthWrite: false, color: 0x0b1013 });
+      stMat = new THREE.MeshBasicMaterial({ alphaMap: tex, transparent: true, depthWrite: false, color: ST_INK_DAY });
       stMat.onBeforeCompile = (shader) => {
         shader.fragmentShader = shader.fragmentShader.replace(
           '#include <alphamap_fragment>',
@@ -13447,7 +13513,7 @@
           '}');
       };
     } else {
-      stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: 0x0b1013 });
+      stMat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, color: ST_INK_DAY });
       // Alpha-tested magnification fallback: bilinear coverage approximates a
       // distance field near edges; re-threshold with fwidth AA to cut the blocks.
       stMat.onBeforeCompile = (shader) => {
@@ -13785,6 +13851,7 @@
       ball.position.set(v.x, gy + v.top, v.z); pinSceneDepth(ball);
       groupCity.add(line); groupCity.add(ball);
       SCORES.pins.push(line, ball);
+      g.top = gy + v.top; g.line = line; g.ball = ball;
     });
     // the concert placards stack over the games: a game arriving or ending re-stacks them
     CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh();
@@ -13793,7 +13860,9 @@
     for (let i = 0; i < SCORES.games.length; i++) {
       const g = SCORES.games[i], el = SCORES.els[i], v = SCORE_VENUES[g.k];
       _scv.set(v.x, g.y, v.z);
-      const far = camera.position.distanceTo(_scv) > 14000 || !losClear(v.x, g.y, v.z);   // behind a roof or a hill: hidden (Round 62)
+      const blocked = pinBlocked(v.x, (g.top != null ? g.top : g.y) + 3, v.z);   // shown or hidden whole (Round 127), as the concerts
+      if (g.line) g.line.visible = g.ball.visible = !blocked;
+      const far = camera.position.distanceTo(_scv) > 14000 || blocked;
       _scv.project(camera);
       if (far || _scv.z > 1 || _scv.z < -1 || _scv.x < -1.1 || _scv.x > 1.1 || _scv.y < -1.2 || _scv.y > 1.2) { el.style.opacity = '0'; continue; }
       el.style.opacity = '1';
@@ -13935,7 +14004,7 @@
       ball.position.set(sp.x, top, sp.z); pinSceneDepth(ball);
       groupCity.add(line); groupCity.add(ball);
       CONCERTS.pins.push(line, ball);
-      CONCERTS.shown.push({ e: all[0], rows: all, venue: sp.venues.map((v) => v.name).join(', '), x: sp.x, y, z: sp.z, el });
+      CONCERTS.shown.push({ e: all[0], rows: all, venue: sp.venues.map((v) => v.name).join(', '), x: sp.x, y, z: sp.z, el, top, line, ball });
     }
     concertStatus();
   }
@@ -13943,7 +14012,11 @@
     concertsRefresh();
     for (const s of CONCERTS.shown) {
       _ccv.set(s.x, s.y, s.z);
-      const far = camera.position.distanceTo(_ccv) > 14000 || !losClear(s.x, s.y, s.z);   // behind a roof or a hill: hidden (Round 62)
+      // Round 127 (Mike: no concert pin through a building): the placard, its tether and its ball are
+      // shown or hidden together, by whether the pin's landing point on the roof is in clear view
+      const blocked = pinBlocked(s.x, s.top + 3, s.z);
+      if (s.line) s.line.visible = s.ball.visible = !blocked;
+      const far = camera.position.distanceTo(_ccv) > 14000 || blocked;
       _ccv.project(camera);
       if (far || _ccv.z > 1 || _ccv.z < -1 || _ccv.x < -1.1 || _ccv.x > 1.1 || _ccv.y < -1.2 || _ccv.y > 1.2) { s.el.style.opacity = '0'; s.el.style.visibility = 'hidden'; continue; }
       s.el.style.opacity = '1'; s.el.style.visibility = '';
@@ -17369,7 +17442,13 @@
     const dk = lightsDateKey(clock.y, clock.m, clock.d);
     if (!THEME.pin) lightsFetchDate(dk, now);   // the day's games, once per day viewed
     const key = dk + ':' + (THEME.pin || '') + ':' + THEME.gen;
-    if (key !== THEME.key) { THEME.key = key; lightsRetarget(); }
+    if (key !== THEME.key) {
+      // the day's own data arriving (the scoreboard, the served calendar) for the date already in view lands at
+      // once; only a new date eases (Round 127, Mike: the lights loaded white and slowly turned the proper colour)
+      const sameDay = THEME.key != null && THEME.key.startsWith(dk + ':' + (THEME.pin || '') + ':');
+      THEME.key = key; lightsRetarget();
+      if (sameDay) THEME.seeded = false;
+    }
     const e = THEME.seeded ? 1 - Math.exp(-dt / 20) : 1;   // the first evaluation lands; every later change eases twenty seconds
     THEME.seeded = true;
     let moving = false;
@@ -19226,7 +19305,7 @@
     if (postBright) postBright.uniforms.uThr.value = 1.25 + 1.2 * dayF;
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
-    if (stMat) stMat.color.copy(_c1.set(0x0b1013)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
+    if (stMat) stMat.color.copy(_c1.set(ST_INK_DAY)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
     if (nbMat) {
       const nbFade = placesOn ? smooth(420, 1000, camera.position.y) : 0;   // names live at altitude
       nbMat.opacity = nbFade * 0.96;
@@ -19555,6 +19634,92 @@
     const p = perfStats();
     return 'p50 ' + p.p50 + ' ms  p95 ' + p.p95 + ' ms  |  ' + p.calls + ' calls  ' + (p.tris / 1e6).toFixed(2) + ' M tris  ' + p.programs + ' prog  |  dpr ' + p.dpr.toFixed(2) + (p.heapMB ? '  heap ' + p.heapMB + ' MB' : '') + '  |  ready ' + (p.readyMs / 1000).toFixed(1) + ' s';
   }
+  // ---- pin occlusion (Round 127): see PIN_MESHES. Every few frames the city's view distance is
+  // drawn into a small target (a packed-RGBA depth override with every transparent, line, point and
+  // pin object hidden), read back, and each pin's tip is tested against it through the capture's own
+  // matrices; a 3x3 neighbourhood with any sample behind the tip keeps a pin on a building's edge.
+  const PIN_OCC = { w: isTouch ? 160 : 256, h: 0, rt: null, buf: null, mat: null, ok: false, far: 4000,
+    every: isTouch ? 10 : 5, view: new THREE.Matrix4(), proj: new THREE.Matrix4(), n: 0, hid: 0, want: -99 };
+  const pinDepthClear = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01),
+    new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, colorWrite: false }));
+  pinDepthClear.renderOrder = 99; pinDepthClear.frustumCulled = false;
+  pinDepthClear.onBeforeRender = (r) => { r.state.buffers.depth.setMask(true); r.clearDepth(); };
+  scene.add(pinDepthClear);
+  const _pov = new THREE.Vector3(), _pocc = new THREE.Color();
+  function pinOccCapture() {
+    const r = renderer, W = PIN_OCC.w, H = Math.max(1, Math.round(W * window.innerHeight / Math.max(1, window.innerWidth)));
+    if (!PIN_OCC.rt || PIN_OCC.h !== H) {
+      if (PIN_OCC.rt) PIN_OCC.rt.dispose();
+      PIN_OCC.rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false });
+      PIN_OCC.h = H; PIN_OCC.buf = new Uint8Array(W * H * 4);
+    }
+    if (!PIN_OCC.mat) PIN_OCC.mat = new THREE.ShaderMaterial({
+      uniforms: { uFar: { value: PIN_OCC.far } }, side: THREE.DoubleSide,
+      vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nvarying float vViewZ;\nvoid main() {\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\n  vViewZ = -mvPosition.z;\n}',
+      fragmentShader: '#include <packing>\n#include <logdepthbuf_pars_fragment>\nuniform float uFar;\nvarying float vViewZ;\nvoid main() {\n#include <logdepthbuf_fragment>\n  gl_FragColor = packDepthToRGBA(clamp(vViewZ / uFar, 0.0, 0.9999));\n}',
+    });
+    const hid = [];
+    scene.traverse((o) => {
+      if (!o.visible || o === scene) return;
+      const m = o.material, tr = m && (Array.isArray(m) ? m.some((q) => q.transparent) : m.transparent);
+      if (o.isPoints || o.isLine || o.isSprite || tr || (o.userData && o.userData.pinSceneDepth)) { o.visible = false; hid.push(o); }
+    });
+    const prevRT = r.getRenderTarget(), prevUp = r.shadowMap.autoUpdate, prevNeed = r.shadowMap.needsUpdate;
+    const prevOver = scene.overrideMaterial, prevBg = scene.background, prevA = r.getClearAlpha();
+    r.getClearColor(_pocc);
+    r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false;
+    scene.overrideMaterial = PIN_OCC.mat; scene.background = null;
+    r.setRenderTarget(PIN_OCC.rt); r.setClearColor(0xffffff, 1); r.clear(true, true, false);
+    r.render(scene, camera);
+    r.readRenderTargetPixels(PIN_OCC.rt, 0, 0, W, H, PIN_OCC.buf);
+    r.setRenderTarget(prevRT); r.setClearColor(_pocc, prevA);
+    scene.overrideMaterial = prevOver; scene.background = prevBg;
+    r.shadowMap.autoUpdate = prevUp; r.shadowMap.needsUpdate = prevNeed;
+    for (const o of hid) o.visible = true;
+    PIN_OCC.view.copy(camera.matrixWorldInverse); PIN_OCC.proj.copy(camera.projectionMatrix);
+    PIN_OCC.ok = true; PIN_OCC.n++;
+  }
+  function pinOccVisible(x, y, z) {
+    if (!PIN_OCC.ok) return true;
+    _pov.set(x, y, z).applyMatrix4(PIN_OCC.view);
+    const vz = -_pov.z;
+    if (vz <= 1 || vz >= PIN_OCC.far * 0.999) return true;
+    _pov.applyMatrix4(PIN_OCC.proj);
+    const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H);
+    if (px < 0 || py < 0 || px >= W || py >= H) return true;
+    const b = PIN_OCC.buf, need = vz - (2.5 + vz * 0.02), k = PIN_OCC.far / 255 * (255 / 256);
+    for (let j = Math.max(0, py - 1); j <= Math.min(H - 1, py + 1); j++) for (let i = Math.max(0, px - 1); i <= Math.min(W - 1, px + 1); i++) {
+      const o = (j * W + i) * 4;
+      const d = (b[o] / 16777216 + b[o + 1] / 65536 + b[o + 2] / 256 + b[o + 3]) * k;
+      if (d >= need) return true;
+    }
+    return false;
+  }
+  // the building-anchored pins (concert placards, score bubbles) ask here: the depth image within its
+  // range, the roof grid's line of sight beyond it; asking keeps the image fresh while they stand
+  function pinBlocked(x, y, z) {
+    PIN_OCC.want = frameNo;
+    if (PIN_OCC.ok && camera.position.distanceTo(_pov.set(x, y, z)) < PIN_OCC.far * 0.95) return !pinOccVisible(x, y, z);
+    return !losClear(x, y, z);
+  }
+  function pinOccUpdate() {
+    let any = frameNo - PIN_OCC.want < 3;
+    for (const m of PIN_MESHES) if (m.visible && m.count > 0) { any = true; break; }
+    if (!any) return;
+    if (!PIN_OCC.ok || frameNo % PIN_OCC.every === 0) pinOccCapture();
+    let hid = 0;
+    for (const m of PIN_MESHES) {
+      const a = m.geometry.attributes.aPinVis, e = m.instanceMatrix.array, n = m.count;
+      let dirty = false;
+      for (let i = 0; i < n; i++) {
+        const k = i * 16, v = pinOccVisible(e[k + 12], e[k + 13], e[k + 14]) ? 1 : 0;
+        if (!v) hid++;
+        if (a.array[i] !== v) { a.array[i] = v; dirty = true; }
+      }
+      if (dirty) a.needsUpdate = true;
+    }
+    PIN_OCC.hid = hid;
+  }
   function frame(now, once) {
     if (window.innerWidth !== fitW || window.innerHeight !== fitH) fitView();
     if (!once) requestAnimationFrame(frame);
@@ -19665,6 +19830,7 @@
     }
     updateLabels();
     updateHash(now);
+    pinOccUpdate();
     if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);
   }
 
@@ -19745,7 +19911,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice,
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times
