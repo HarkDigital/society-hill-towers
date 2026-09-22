@@ -12139,6 +12139,8 @@
     else if (k === 'k') toggleAmtrak();
     else if (k === 'j') toggleMarkers();
     else if (k === 'o') toggleArt();
+    else if (k === 'c') toggleStops();      // Round 133
+    else if (k === 'y') toggleStations();
     else if (k === '?') toggleGuide();
     else if (k === 'i') openAbout();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
@@ -12272,7 +12274,7 @@
         ['Sideways', 'Turn the phone sideways to explore. The pads stay faintly visible while you fly.']] }],
     ['Layers', {
       d: [['Layers button', 'Top bar, or the F key. Every row is a layer: click it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
-        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, N street names, L landmark labels, P neighborhoods.'],
+        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, C bus stops, Y rail stations, N street names, L landmark labels, P neighborhoods.'],
         ['Reset Layers', 'Back to the default set.'],
         ['Explore', 'Eight favorite viewpoints in the Explore panel, plus search for any place.']],
       t: [['Layers button', 'Top bar. Every row is a layer: tap it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
@@ -12493,9 +12495,22 @@
   // written with twelve and 1024 alone one written with ten (a nine-bit link from before Round 56
   // keeps the concerts at their default, a ten-bit one the trains and the closures, a twelve-bit
   // one the markers and the art at theirs)
-  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures', 'markers', 'art'];
-  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true, amtrak: true, closures: true, markers: true, art: true };
-  const LAYER_MASK_V2 = 1024, LAYER_MASK_V3 = 4096, LAYER_MASK_V4 = 16384;
+  // Round 133: 16384 bus stops, 32768 Regional Rail stations, 65536 libraries and rec centers (Round 135's,
+  // reserved now so one marker covers all three), 131072 marks a seventeen-bit link; a fourteen-bit link's
+  // 16384 is its marker, not the stops, so the newest marker is read first
+  const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures', 'markers', 'art', 'stops', 'stations', 'civic'];
+  const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true, amtrak: true, closures: true, markers: true, art: true, stops: false, stations: true, civic: false };
+  const LAYER_MASK_V2 = 1024, LAYER_MASK_V3 = 4096, LAYER_MASK_V4 = 16384, LAYER_MASK_V5 = 131072;
+  const CIVIC = { on: false };   // Round 135's layer: the flag now, the layer then
+  const STOPS = { on: false, stations: true, ready: false, bus: [], rail: [], cells: new Map(), near: [], reconAt: 0, drawn: 0 };   // the transit stops' state (their section is after the markers)
+  let pickedStop = null;
+  function syncStopsBtn() { syncLayerBtn(document.getElementById('btnStops'), STOPS.on); }
+  function syncStationsBtn() { syncLayerBtn(document.getElementById('btnStations'), STOPS.stations); }
+  function syncCivicBtn() { syncLayerBtn(document.getElementById('btnCivic'), CIVIC.on); }
+  function toggleStops() { STOPS.on = !STOPS.on; syncStopsBtn(); STOPS.reconAt = 0; if (!STOPS.on && pickedStop && pickedStop.rec.kind === 'bus') { pickedStop = null; vehinfoEl.hidden = true; } }
+  function toggleStations() { STOPS.stations = !STOPS.stations; syncStationsBtn(); STOPS.reconAt = 0; if (!STOPS.stations && pickedStop && pickedStop.rec.kind === 'rail') { pickedStop = null; vehinfoEl.hidden = true; } }
+  function toggleCivic() { CIVIC.on = !CIVIC.on; syncCivicBtn(); if (typeof civicRecon === 'function') civicRecon(); }
+  { const bS = document.getElementById('btnStops'), bR = document.getElementById('btnStations'), bC = document.getElementById('btnCivic'); if (bS) bS.addEventListener('click', toggleStops); if (bR) bR.addEventListener('click', toggleStations); if (bC) bC.addEventListener('click', toggleCivic); }
   // the historical markers and the public art (Round 83): the flags and toggles live here with the
   // layer bits, the layers themselves in their own section (the reconcile reads the flags)
   const HMARK = { on: true }, PUBART = { on: true };
@@ -12518,7 +12533,7 @@
   let prefsReady = false, prefsTimer = 0;
   let hashClock = false, clockTouched = false;   // a shared link's pinned clock is not saved until the user changes the time
   function layerFlags() {
-    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn, concerts: CONCERTS.on, amtrak: AMTRAK.on, closures: CLOSURES.on, markers: HMARK.on, art: PUBART.on };
+    return { septa: SEPTA.on, indego: INDEGO.on, flights: FLIGHTS.on, ships: SHIPS.on, traffic: TRAFFIC.on, lights: LIGHTS.on, streets: stOn, labels: labelsOn, places: placesOn, concerts: CONCERTS.on, amtrak: AMTRAK.on, closures: CLOSURES.on, markers: HMARK.on, art: PUBART.on, stops: STOPS.on, stations: STOPS.stations, civic: CIVIC.on };
   }
   function setLayerFlags(f) {
     if ('septa' in f) SEPTA.on = !!f.septa;
@@ -12535,10 +12550,13 @@
     if ('closures' in f) CLOSURES.on = !!f.closures;
     if ('markers' in f) HMARK.on = !!f.markers;
     if ('art' in f) PUBART.on = !!f.art;
+    if ('stops' in f) STOPS.on = !!f.stops;
+    if ('stations' in f) STOPS.stations = !!f.stations;
+    if ('civic' in f) CIVIC.on = !!f.civic;
   }
-  function layerMask() { const f = layerFlags(); let m = LAYER_MASK_V4; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }   // a fourteen-bit link: 1024 and 4096 are layers in it (the trains, the markers), 16384 the marker
-  function layersFromMask(m) { const f = {}; const n = (m & LAYER_MASK_V4) ? LAYER_KEYS.length : (m & LAYER_MASK_V3) ? 12 : (m & LAYER_MASK_V2) ? 10 : 9; LAYER_KEYS.slice(0, n).forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }   // newest marker first: an older link's marker bit is a layer bit in a newer one
-  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); syncConcertsBtn(); syncAmtrakBtn(); syncClosuresBtn(); syncMarkersBtn(); syncArtBtn(); }
+  function layerMask() { const f = layerFlags(); let m = LAYER_MASK_V5; LAYER_KEYS.forEach((k, i) => { if (f[k]) m |= 1 << i; }); return m; }   // a seventeen-bit link (Round 133)   // a fourteen-bit link: 1024 and 4096 are layers in it (the trains, the markers), 16384 the marker
+  function layersFromMask(m) { const f = {}; const n = (m & LAYER_MASK_V5) ? LAYER_KEYS.length : (m & LAYER_MASK_V4) ? 14 : (m & LAYER_MASK_V3) ? 12 : (m & LAYER_MASK_V2) ? 10 : 9; LAYER_KEYS.slice(0, n).forEach((k, i) => { f[k] = !!(m & (1 << i)); }); return f; }   // newest marker first: an older link's marker bit is a layer bit in a newer one
+  function syncLayerBtns() { syncTransitBtn(); syncIndegoBtn(); syncFlightsBtn(); syncShipsBtn(); syncTrafficBtn(); syncLightsBtn(); syncStreetsBtn(); syncLabelsBtn(); syncPlacesBtn(); syncConcertsBtn(); syncAmtrakBtn(); syncClosuresBtn(); syncMarkersBtn(); syncArtBtn(); syncStopsBtn(); syncStationsBtn(); syncCivicBtn(); }
   function syncLayerBtn(btn, on) {
     // every layer row: the check mark, the pressed state for readers, and the blob
     if (btn) { btn.classList.toggle('on', on); btn.setAttribute('aria-pressed', on ? 'true' : 'false'); }
@@ -12579,7 +12597,7 @@
         if (!v.every((n) => isFinite(n))) continue;
         if (k === 'p' && v.length === 5) out.p = v;
         else if (k === 't' && v.length === 2) out.t = v;
-        else if (k === 'l' && v.length === 1) out.l = v[0] & 32767;   // fourteen layer bits and the V4 marker (Round 83)
+        else if (k === 'l' && v.length === 1) out.l = v[0] & 262143;   // seventeen layer bits and the V5 marker (Round 133)
       }
     } catch (e) { }
     return out;
@@ -12944,7 +12962,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedStop = null; pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -13024,6 +13042,7 @@
     if (p[1] < g + 2) return false;   // the ground, a road, a lawn: not a building
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
     pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
+    pickedStop = null;
     const seq = ++BPICK.seq, st = { loading: true };
     pickedBldg = { x: p[0], y: p[1] + 1, z: p[2], seq };
     bldgCard(st); vehinfoEl.hidden = false; cardUnlock();
@@ -13042,7 +13061,7 @@
   }
   function updateBldgPick() {
     if (!pickedBldg) return;
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || vehinfoEl.hidden) { pickedBldg = null; return; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedStop || vehinfoEl.hidden) { pickedBldg = null; return; }
     _ssv.set(pickedBldg.x, pickedBldg.y, pickedBldg.z).project(camera);
     if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
@@ -13066,7 +13085,7 @@
     const kAct = markersReady && markerDrawnN > 0;     // the historical markers and the art within the half mile (Round 77, Round 82)
     const cAct = closuresReady && CLOSURES.on && (barrelMesh.count > 0 || coneMesh.count > 0 || closurePin.count > 0 || closurePinPart.count > 0);   // the closed blocks (Round 79)
     const aAct = amtrakReady && AMTRAK.on && (amtrakCoach.count > 0 || amtrakLoco.count > 0 || amtrakAcela.count > 0);   // the trains (Round 80)
-    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct) return;
+    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct && !STOPS.ready) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -13114,10 +13133,15 @@
     if (kAct) { for (const m of markerMeshes) if (m.count) targets.push(m); for (const m of artMeshes) if (m.count) targets.push(m); if (markerPin.count) targets.push(markerPin); if (artPin.count) targets.push(artPin); }
     if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); if (closurePin.count) targets.push(closurePin); if (closurePinPart.count) targets.push(closurePinPart); }
     if (aAct) { for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) if (m.count) targets.push(m); }
+    if (STOPS.ready) { if (busStopPin.count) targets.push(busStopPin); if (railStationPin.count) targets.push(railStationPin); }   // Round 133
     const hits = septaRay.intersectObjects(targets, false);
     const h = pickSceneHit(hits, pickOccluded);
     if (h) {
       let v = null, hitSt = null;
+      if (h.object.userData.busStopPin || h.object.userData.railStationPin) {
+        const rec = (h.object.userData.busStopPin ? busStopPick : railStationPick)[h.instanceId];
+        if (rec) { openStopCard(rec); return; }
+      }
       if (h.object === flightMesh || h.object === flightPin || h.object === heliMesh || h.object === flightPinH) {
         const p = (h.object === heliMesh || h.object === flightPinH) ? heliPick[h.instanceId] : flightPick[h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedShip = null; pickedPlane = p; flightCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
@@ -13269,7 +13293,7 @@
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
     if (bldgPick(cx, cy)) return;   // nothing live under the tap: the building, if one stands there (Round 132)
-    if (pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; }
+    if (pickedStop || pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedStop = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -13686,7 +13710,7 @@
   // panel footer: back to the shipped layers, and a link to this exact view
   document.getElementById('btnResetLayers').addEventListener('click', () => {
     // through the real toggles, so the live polls start and stop with the flags
-    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts, amtrak: toggleAmtrak, closures: toggleClosures, markers: toggleMarkers, art: toggleArt };
+    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts, amtrak: toggleAmtrak, closures: toggleClosures, markers: toggleMarkers, art: toggleArt, stops: toggleStops, stations: toggleStations, civic: toggleCivic };
     const f = layerFlags();
     for (const k of LAYER_KEYS) if (f[k] !== LAYER_DEFAULTS[k]) toggles[k]();
     setLapse(false);
@@ -14404,10 +14428,10 @@
   // districts, the named buildings and towers, and the painted street names, all
   // already in scene metres. Built once, on the first search.
   let nameIx = null;
-  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, bridge: 3, nature: 3, building: 4, street: 5 };
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, bridge: 3, nature: 3, building: 4, street: 5 };
   const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art',
     school: 'School', college: 'College', worship: 'Place of Worship', hospital: 'Hospital', park: 'Park', rec: 'Recreation Center', cemetery: 'Cemetery', museum: 'Museum', site: 'Historic Site',
-    venue: 'Venue', civic: 'Public Building', station: 'Station', bridge: 'Bridge', nature: 'Natural Feature', building: 'Building', street: 'Street' };
+    venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', bridge: 'Bridge', nature: 'Natural Feature', building: 'Building', street: 'Street' };
   let rockySite = null;   // built landmark anchor; search follows the relocated statue
   // the city basemap's named places (LANDMARKS, Round 78): cls in landmarks.json indexes this
   const LM_KIND = ['school', 'college', 'worship', 'hospital', 'park', 'rec', 'cemetery', 'museum', 'site', 'venue', 'civic', 'station', 'bridge', 'building', 'nature'];
@@ -14428,6 +14452,7 @@
     for (const m of markets) add(m.n, m.x, m.z, 'market', m);
     for (const r of markerRecs) add(r.name, r.x, r.z, 'marker', r);
     for (const r of artRecs) add(r.title, r.x, r.z, 'art', r);
+    for (const r of STOPS.rail) add(r.n.replace(/\s+Station$/i, '') + ' Station', r.x, r.z, 'rail', r);   // Regional Rail stations open their departure board (Round 133)
     for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
     for (const lm of META_L) {
       const b = lm && lm.name ? findBuilding(lm.name) : null;
@@ -14480,6 +14505,7 @@
       else { pickedArt = e.ref; artCard(e.ref); }
       vehinfoEl.hidden = false;
     }
+    if (e.kind === 'rail' && e.ref) openStopCard(e.ref);   // a station arrives with its departure board (Round 133)
     if (isTouch) toggleSearch(false);
   }
   function searchLocalSubmit(qy) {
@@ -18517,6 +18543,168 @@
     }
   }
 
+  // ---------------------------------------------------------------- transit stops (Round 133)
+  // Mike picked "bus stop arrivals" and "Regional Rail departure boards" from the list of things
+  // residents would use, and chose stations on by default with bus stops behind their toggle.
+  // septa_stops.json (bake_septa_stops.py, SEPTA's GTFS): 8,469 bus and trolley stops and 64
+  // Regional Rail stations inside the flight limit, pinned within the half mile like the markers.
+  // A stop's card lists the buses on their way to it from SEPTA's live v2 feeds (open to the
+  // browser): v2/stops gives each route's stop order by direction, v2/trips each live bus's next
+  // stop, so a bus is "3 stops away, 2 min late". SEPTA's BusSchedules endpoint, which the plan
+  // meant to read scheduled times from, answers every query with an error since Sep 22, so no
+  // minutes are promised. A station's card is its departure board from the Arrivals API (JSONP,
+  // no CORS) with any elevator the v2 feed reports out. Both refresh every 30 s while open.
+  const stopLastCam = new THREE.Vector3(1e9, 0, 1e9);
+  let busStopPin = null, railStationPin = null;
+  const busStopPick = [], railStationPick = [];
+  const _tq = new THREE.Quaternion(), _tp = new THREE.Vector3(), _ts = new THREE.Vector3(), _tm = new THREE.Matrix4();
+  const glyphBus = (g) => {   // a bus from the front: body, windscreen, lamps, wheels
+    g.fillStyle = '#fdfbf6';
+    g.beginPath(); g.moveTo(84, 150); g.lineTo(84, 74); g.quadraticCurveTo(84, 58, 100, 58); g.lineTo(156, 58); g.quadraticCurveTo(172, 58, 172, 74); g.lineTo(172, 150); g.closePath(); g.fill();
+    g.fillStyle = '#1f4fa3'; g.fillRect(94, 72, 68, 36); g.fillRect(94, 118, 68, 6);
+    g.fillStyle = '#f2d27a'; g.beginPath(); g.arc(102, 136, 6, 0, Math.PI * 2); g.arc(154, 136, 6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#fdfbf6'; g.fillRect(90, 150, 18, 16); g.fillRect(148, 150, 18, 16);
+  };
+  const glyphTrain = (g) => {   // a Regional Rail car from the front, on its rails
+    g.fillStyle = '#fdfbf6';
+    g.beginPath(); g.moveTo(88, 146); g.lineTo(88, 80); g.quadraticCurveTo(88, 56, 128, 56); g.quadraticCurveTo(168, 56, 168, 80); g.lineTo(168, 146); g.closePath(); g.fill();
+    g.fillStyle = '#45637a'; g.fillRect(100, 72, 56, 30);
+    g.fillStyle = '#f2d27a'; g.beginPath(); g.arc(106, 128, 6, 0, Math.PI * 2); g.arc(150, 128, 6, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#fdfbf6'; g.lineWidth = 6; g.beginPath(); g.moveTo(100, 150); g.lineTo(84, 172); g.moveTo(156, 150); g.lineTo(172, 172); g.moveTo(78, 166); g.lineTo(178, 166); g.stroke();
+  };
+  step('Posting the transit stops', () => {
+    if (typeof SEPTA_STOPS === 'undefined' || !SEPTA_STOPS || !SEPTA_STOPS.bus) { for (const id of ['btnStops', 'btnStations']) { const b = document.getElementById(id); if (b) b.style.display = 'none'; } return; }
+    const put = (rec) => { const k = Math.floor(rec.x / 400) + ':' + Math.floor(rec.z / 400); let a = STOPS.cells.get(k); if (!a) { a = []; STOPS.cells.set(k, a); } a.push(rec); };
+    const B = SEPTA_STOPS.bus, R = SEPTA_STOPS.rail;
+    for (let i = 0; i < B.id.length; i++) {
+      const x = B.x[i] / 2, z = B.z[i] / 2;
+      const rec = { kind: 'bus', id: B.id[i], x, z, gy: siteY(x, z, 'ground'), n: B.n[i], r: B.r[i] };
+      STOPS.bus.push(rec); put(rec);
+    }
+    for (let i = 0; i < R.id.length; i++) {
+      const x = R.x[i] / 2, z = R.z[i] / 2;
+      const rec = { kind: 'rail', id: R.id[i], x, z, gy: siteY(x, z, 'ground'), n: (R.d && R.d[i]) || R.n[i], board: R.n[i] };   // n shown, board asked (Market East is Jefferson Station)
+      STOPS.rail.push(rec); put(rec);
+    }
+    busStopPin = pinMesh(pinTexture('#1f4fa3', '#fdfbf6', glyphBus), 900, 'busStopPin');
+    railStationPin = pinMesh(pinTexture('#45637a', '#fdfbf6', glyphTrain), 80, 'railStationPin');
+    STOPS.ready = true;
+    const cS = document.getElementById('stopsCount'), cR = document.getElementById('stationsCount');
+    if (cS) cS.textContent = Math.round(STOPS.bus.length / 100) / 10 + 'k';
+    if (cR) cR.textContent = String(STOPS.rail.length);
+  });
+  function updateStopsNear(now) {
+    if (!STOPS.ready) return;
+    if (now >= STOPS.reconAt || camera.position.distanceToSquared(stopLastCam) > 220 * 220) {
+      STOPS.reconAt = now + 900; stopLastCam.copy(camera.position);
+      const cx = camera.position.x, cz = camera.position.z, cellR = Math.ceil(NEAR_R / 400), gx0 = Math.floor(cx / 400), gz0 = Math.floor(cz / 400), near = [];
+      for (let gx = gx0 - cellR; gx <= gx0 + cellR; gx++) for (let gz = gz0 - cellR; gz <= gz0 + cellR; gz++) {
+        const arr = STOPS.cells.get(gx + ':' + gz);
+        if (arr) for (const rec of arr) if ((rec.kind === 'bus' ? STOPS.on : STOPS.stations) && nearCam(rec.x, rec.gy, rec.z)) near.push(rec);
+      }
+      STOPS.near = near;
+    }
+    _tq.copy(camera.quaternion);
+    let nb = 0, nr = 0;
+    for (const rec of STOPS.near) {
+      _tp.set(rec.x, rec.gy + (rec.kind === 'bus' ? 2.8 : 4.5), rec.z);
+      const sc = clamp(camera.position.distanceTo(_tp) / 135, 2.2, 14) * pinRise(rec, now) * (rec.kind === 'bus' ? 0.85 : 1.15);
+      _ts.set(sc, sc, sc); _tm.compose(_tp, _tq, _ts);
+      if (rec.kind === 'bus') { if (nb < 900) { busStopPin.setMatrixAt(nb, _tm); busStopPick[nb++] = rec; } }
+      else if (nr < 80) { railStationPin.setMatrixAt(nr, _tm); railStationPick[nr++] = rec; }
+    }
+    busStopPin.count = nb; railStationPin.count = nr; STOPS.drawn = nb + nr;
+    flushInst(busStopPin, -1); flushInst(railStationPin, -1);
+  }
+  // ---- the live data
+  const SEPTA_V2 = 'https://www3.septa.org/api/v2/';
+  const v2Stops = new Map();
+  const v2Get = (path) => fetch(SEPTA_V2 + path, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
+  function routeStops(r) { if (!v2Stops.has(r)) v2Stops.set(r, v2Get('stops/?route_id=' + encodeURIComponent(r))); return v2Stops.get(r); }
+  function busComing(rec) {   // the buses on their way to a stop, nearest first: [{route, head, away, delay, dist, layover}]
+    const routes = String(rec.r || '').split(',').filter(Boolean).slice(0, 10), out = [];
+    return Promise.all(routes.map((r) => Promise.all([routeStops(r), v2Get('trips/?route_id=' + encodeURIComponent(r))]).then(([stops, trips]) => {
+      if (!Array.isArray(stops) || !Array.isArray(trips)) return;
+      for (const st of stops) {
+        if (String(st.stop_id) !== String(rec.id)) continue;
+        for (const t of trips) {
+          if (+t.direction_id !== +st.direction_id || +t.trip_completion >= 100) continue;
+          const ns = +t.next_stop_sequence;
+          if (!(ns > 0) || ns > +st.stop_sequence) continue;   // already past this stop
+          const bx = (+t.lon - SEPTA_GEO.lon0) * SEPTA_GEO.mx, bz = -(+t.lat - SEPTA_GEO.lat0) * SEPTA_GEO.mz;
+          out.push({ route: r, head: String(t.trip_headsign || ''), away: +st.stop_sequence - ns, delay: +t.delay || 0, dist: Math.hypot(bx - rec.x, bz - rec.z), layover: /layover/i.test(t.status || '') });
+        }
+      }
+    }))).then(() => { out.sort((a, b) => a.away - b.away || a.dist - b.dist); return out; });
+  }
+  function jsonpUrl(url, cb) {   // septaJsonp for a full URL that already carries its query
+    let done = false;
+    const name = '__septaCb' + (septaCbN++), script = document.createElement('script');
+    const fin = (d) => { if (done) return; done = true; clearTimeout(timer); try { delete window[name]; } catch (e) { window[name] = undefined; } if (script.parentNode) script.parentNode.removeChild(script); cb(d); };
+    window[name] = fin; script.async = true; script.onerror = () => fin(null);
+    const timer = setTimeout(() => fin(null), 15000);
+    script.src = url + (url.includes('?') ? '&' : '?') + 'callback=' + name;
+    document.head.appendChild(script);
+  }
+  let elevCache = null, elevAt = 0;
+  function elevatorsOut() { if (!elevCache || performance.now() - elevAt > 300000) { elevAt = performance.now(); elevCache = v2Get('elevators/').then((d) => (Array.isArray(d) ? d : (d && d.results) || [])); } return elevCache; }
+  const normSt = (n) => String(n || '').toLowerCase().replace(/\bstation\b|\bst\b|\bstreet\b|[^a-z0-9]/g, '');
+  function railDepartures(rec) {   // the next trains from a station, each direction merged, soonest first
+    return new Promise((resolve) => jsonpUrl('https://www3.septa.org/api/Arrivals/index.php?station=' + encodeURIComponent(rec.board || rec.n) + '&results=5', (d) => {
+      if (!d || typeof d !== 'object') { resolve(null); return; }
+      const top = Object.values(d)[0], out = [];
+      if (Array.isArray(top)) for (const dir of top) for (const k in dir) if (Array.isArray(dir[k])) for (const t of dir[k]) out.push(t);
+      out.sort((a, b) => String(a.sched_time).localeCompare(String(b.sched_time)));
+      resolve(out);
+    }));
+  }
+  const railClock = (t) => { const m = /(\d{2}):(\d{2})/.exec(String(t || '').split(' ')[1] || ''); if (!m) return ''; const h = +m[1]; return (h % 12 || 12) + ':' + m[2] + (h < 12 ? ' AM' : ' PM'); };
+  function stopCard(st) {
+    const rec = st.rec, bus = rec.kind === 'bus';
+    const tag = bus ? '<span class="vroute" style="background:#1f4fa3">Bus Stop</span>' : '<span class="vroute" style="background:#45637a">Regional Rail</span>';
+    let body = '<span class="vdest">' + septaEsc(rec.n) + '</span>';
+    if (bus && rec.r) body += '<div class="vmeta">' + septaEsc((rec.r.includes(',') ? 'Routes ' : 'Route ') + rec.r.replace(/,/g, ', ')) + '</div>';
+    if (st.loading) body += '<div class="vmeta">' + (bus ? 'Checking the live buses' : 'Checking the departures') + '</div>';
+    else if (st.rows === null) body += '<div class="vmeta">SEPTA did not answer. Try again in a moment.</div>';
+    else if (!st.rows.length) body += '<div class="vmeta">' + (bus ? 'No bus on its way right now' : 'No departures listed right now') + '</div>';
+    else if (bus) for (const b of st.rows.slice(0, 5)) {
+      const where = b.away === 0 ? (b.dist < 180 ? 'arriving' : 'next stop') : b.away + (b.away === 1 ? ' stop away' : ' stops away');
+      body += '<div class="vmeta">' + septaEsc('Route ' + b.route + ' to ' + b.head + ': ' + where + ', ' + (b.delay >= 1 ? Math.round(b.delay) + ' min late' : 'on time') + (b.layover ? ', waiting at its terminal' : '')) + '</div>';
+    }
+    else for (const t of st.rows.slice(0, 6)) {
+      const late = /on time/i.test(t.status || '') ? 'on time' : /(\d+)\s*min/i.test(t.status || '') ? RegExp.$1 + ' min late' : String(t.status || '').toLowerCase();
+      body += '<div class="vmeta">' + septaEsc(railClock(t.sched_time) + ', ' + (t.line || '') + ' to ' + (t.destination || '') + ', ' + late + (t.track ? ', track ' + t.track + (t.track_change ? ' (changed)' : '') : '')) + '</div>';
+    }
+    for (const e of st.elev || []) body += '<div class="vmeta">' + septaEsc('Elevator out: ' + (e.elevator_name || 'an elevator')) + '</div>';
+    body += '<div class="vmeta">' + (bus ? 'Live from SEPTA\'s vehicle feed' : 'Live from SEPTA\'s departure board') + '</div>';
+    vehinfoBody.innerHTML = tag + body;
+  }
+  function openStopCard(rec) {
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null;
+    const st = { rec, loading: true, rows: [], elev: [] };
+    pickedStop = st; stopCard(st); vehinfoEl.hidden = false; cardUnlock();
+    stopRefresh(st);
+  }
+  function stopRefresh(st) {
+    st.next = performance.now() + 30000;
+    const done = (rows, elev) => { if (pickedStop !== st) return; st.loading = false; st.rows = rows; if (elev) st.elev = elev; stopCard(st); };
+    if (st.rec.kind === 'bus') busComing(st.rec).then((rows) => done(rows)).catch(() => done(null));
+    else Promise.all([railDepartures(st.rec), elevatorsOut()]).then(([rows, el]) => {
+      const key = normSt(st.rec.n), key2 = normSt(st.rec.board);
+      done(rows, (el || []).filter((e) => { if (!e.is_out) return false; const k = normSt(e.station_name); return k === key || k === key2 || (key.length > 5 && k.includes(key)); }));
+    });
+  }
+  function updateStopPick(now) {
+    if (!pickedStop) return;
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedBldg || vehinfoEl.hidden) { pickedStop = null; return; }
+    if (now > pickedStop.next) stopRefresh(pickedStop);
+    const r = pickedStop.rec;
+    _tp.set(r.x, r.gy + (r.kind === 'bus' ? 3.2 : 5), r.z).project(camera);
+    if (_tp.z > 1 || _tp.z < -1) { vehinfoEl.style.opacity = '0'; return; }
+    vehinfoEl.style.opacity = '1';
+    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_tp.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_tp.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+  }
+
   // ---------------------------------------------------------------- solar clock
   // NOAA solar position for the towers' latitude/longitude; Philadelphia local
   // time with US daylight-saving rules. Drives sun, sky, fog, and the lit windows.
@@ -20252,6 +20440,7 @@
     updateMarkets(now);
     updateMarketPick();
     updateBldgPick();
+    updateStopsNear(now); updateStopPick(now);
     updateMarkerPick();
     updateMarkersNear(now);
     pinSweep(now);
@@ -20350,7 +20539,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

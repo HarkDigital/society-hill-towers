@@ -6318,3 +6318,34 @@ a 1759 house, which is why the card says whose year it is); a freed far-district
 Tulip St, Built 1875, 3 stories, Row Typical"; the middle of Washington Square opens nothing.
 `tests/test_building_card.py`. `__dbg.bldgTap(x, y)`.
 
+## Round 133 — bus stops with the buses on their way, Regional Rail departure boards (Sep 22)
+
+The third of Mike's six ("bus stop arrivals", "Regional Rail departure boards"; stations on by default,
+bus stops behind their toggle).
+
+**Data.** `fetch_septa_stops.py` caches SEPTA's GTFS release and the Arrivals API's station list;
+`bake_septa_stops.py` writes `septa_stops.json` (432 KB, inlined as `SEPTA_STOPS`): 8,469 bus and trolley
+stops inside the flight limit (route types 3 and 0; the subway stays out as Mike decided in Round 20) with
+their GTFS ids, cleaned names and routes, and 64 Regional Rail stations under the name the departure board
+takes plus the name a rider knows (the API still calls Jefferson Station "Market East").
+
+**Layers.** Bus Stops (C, bit 16384, off) and Rail Stations (Y, bit 32768, on); bit 65536 is reserved for
+Round 135's libraries and rec centers so one new marker covers all three: `LAYER_MASK_V5` 131072, read
+first, `parseHash` keeps 262143, and a fourteen-bit link (whose 16384 is its marker, not the stops) still
+decodes. Pins within the half mile, a bus on SEPTA blue, a rail car on slate, `pinRise`, the Round 127
+occlusion; stations are in the search index and arrive with their board.
+
+**The cards.** The plan meant a stop's card to read scheduled times from SEPTA's BusSchedules endpoint;
+since this afternoon it answers every query, with or without a callback, with "An invalid parameter was
+used", including the one the morning's probe confirmed. So the card promises no minutes: from the live v2
+feeds (open to the browser) it lists the buses on their way, by route and headsign, how many stops away
+(v2/stops gives each route's stop order by direction, v2/trips each bus's next stop) and how late each is
+running, "arriving" inside 180 m. A station's card is its departure board from the Arrivals API (JSONP):
+time, line, destination, lateness, track, a track change flagged, and any elevator the v2 feed reports out.
+Both refresh every 30 s while open.
+
+Verified in the pane with live data at 5:15 pm: Suburban Station listed six departures ("5:19 PM,
+Lansdale/Doylestown to Doylestown, 2 min late, track 1"); Market St & 15th St listed "Route 33 to
+5th-Market: 1 stop away, 4 min late" and four more; 134 stop pins within the half mile at City Hall.
+`tests/test_septa_stops.py` (the file's shape and bounds, the board names, the link across V3, V4, V5).
+
