@@ -2083,7 +2083,7 @@
         const poly=[a,b,c].map(p=>p.map(Math.fround));
         if(Math.abs(signedArea(poly))<1e-7)return;
         const x=(a[0]+b[0]+c[0])/3,z=(a[1]+b[1]+c[1])/3,y=(a[2]+b[2]+c[2])/3;
-        const cap=CAPS.find(c=>z>c.z0 && z<c.z1);
+        const cap=capAt(x,z);
         if(cap && frontOff(x,z)>TERRAIN.trenchW && frontOff(x,z)<TERRAIN.trenchE
           && y<frontDem(z)+cap.dy-0.2)return;
         surface={poly,bounds:streetBounds(poly),height:triangleGrade(...poly)};
@@ -3521,10 +3521,16 @@
     }
     return z < SHORE[0][1] ? SHORE[0][0] : SHORE[SHORE.length - 1][0];
   }
+  // Round 127 (Mike: "that entire area is actually above 95. Foglietta plaza and the veterans memorial"):
+  // one deck from Dock Street's south kerb to the memorial park's south edge, Spruce Street's crossing
+  // included, measured from the two parks' OSM outlines in the along-Front coordinate `capAlong`, so its
+  // ends follow the cross streets (square to Front Street) instead of raw z. The old z bands ran from
+  // 55 m north of Dock Street (roofing open trench) to z 122, short of Spruce at the trench (z 130 to
+  // 144), and left the whole memorial over bare lanes.
   const CAPS = [
-    { z0: -25, z1: 64, kind: 'deck', dy: 0 },  // Foglietta Plaza: Dock -> Spruce
-    { z0: 64, z1: 122, kind: 'deck', dy: -1 }, // Vietnam Veterans Memorial deck
+    { s0: 11, s1: 222, kind: 'deck', dy: 0 },  // Foglietta Plaza, Spruce Street, the Vietnam Veterans Memorial
   ];
+  function capAt(x, z) { const s = (x - fl.px) * fl.dx + (z - fl.pz) * fl.dz; return CAPS.find((c) => s > c.s0 && s < c.s1); }
   // Penn's Landing CAP: a construction-stage model, not the future finished park.
   // Local s follows Front Street; o measures east toward the river. The working
   // limits follow Chestnut/Walnut, including the demolished Chestnut crossing.
@@ -3727,7 +3733,7 @@
     }
     if (inRiver(x, z)) return TERRAIN.bulkhead;
     const o = frontOff(x, z);
-    const cap = CAPS.find(c => z > c.z0 && z < c.z1);
+    const cap = capAt(x, z);
     if (o < TERRAIN.trenchW) return cityY(x, z) + plazaLift(x, z);
     if (o < TERRAIN.trenchE) return (cap && cap.kind === 'deck') ? frontDem(z) + cap.dy : (mode === 'road' ? frontDem(z) : TERRAIN.trenchFloor);
     return shelfY(x, z);
@@ -4197,8 +4203,8 @@
     // cap decks over the trench: slab + edge fascia + a header beam over each
     // portal face, so I-95 visibly dives UNDER the plazas instead of sliding
     // beneath a floating carpet
-    const portalFace = (z, topY, dyDrop) => {
-      const a = frontPt(TERRAIN.trenchW, z), b = frontPt(TERRAIN.trenchE, z);
+    const portalFace = (sv, topY, dyDrop) => {   // sv: the along-Front coordinate of the deck's end
+      const a = capPoint(TERRAIN.trenchW, sv), b = capPoint(TERRAIN.trenchE, sv);
       const arr = new Float32Array([a[0], TERRAIN.trenchFloor - 0.4, a[1], b[0], TERRAIN.trenchFloor - 0.4, b[1], b[0], topY, b[1],
                                     a[0], TERRAIN.trenchFloor - 0.4, a[1], b[0], topY, b[1], a[0], topY, a[1]]);
       const g = new THREE.BufferGeometry();
@@ -4215,13 +4221,38 @@
     };
     for (const c of CAPS) {
       if (c.kind !== 'deck') continue;
-      const dg = flatPoly(band(TERRAIN.trenchW - 3, TERRAIN.trenchE + 3, c.z0, c.z1), null, c.dy + 0.12, true);
-      const dp = dg.attributes.position;
-      for (let i = 0; i < dp.count; i++) dp.setY(i, dp.getY(i) + frontDem(dp.getZ(i)));
+      const o0 = TERRAIN.trenchW, o1 = TERRAIN.trenchE;   // flush with the walls: 3 m past them it showed as pale slivers over the lower shelf
+      // the slab is the structure, its top just UNDER the drawn ground (the ground mesh, the parks, the paths and
+      // Spruce Street ride siteY, which is the deck here): at +0.12 it sheeted over all of them (Round 127)
+      // a grid every 5 m along and 4 across, each vertex on frontDem: a single quad over the 211 m span
+      // interpolated straight between its ends and stood over the ground mid-span (measured in the pane)
+      const NS = Math.max(1, Math.ceil((c.s1 - c.s0) / 5)), NO = 4, dpos = [], didx = [];
+      for (let j = 0; j <= NS; j++) for (let i = 0; i <= NO; i++) {
+        const q = capPoint(o0 + (o1 - o0) * i / NO, c.s0 + (c.s1 - c.s0) * j / NS);
+        dpos.push(q[0], frontDem(q[1]) + c.dy - 0.3, q[1]);
+      }
+      for (let j = 0; j < NS; j++) for (let i = 0; i < NO; i++) {
+        const a = j * (NO + 1) + i, b = a + 1, cc = a + NO + 1, dd = cc + 1;
+        didx.push(a, cc, b, b, cc, dd);
+      }
+      const dg = new THREE.BufferGeometry();
+      dg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(dpos), 3));
+      dg.setIndex(didx); dg.computeVertexNormals();
       parts.push({ geom: dg, color: new THREE.Color(c.dy < 0 ? 0x8f8a80 : 0x9a6a52), style: 3 });
-      for (const ze of [c.z0, c.z1]) {
-        const deckY = frontDem(ze) + c.dy + 0.12;
-        portalFace(ze, deckY + 0.02, 0.55);
+      // the deck's river edge: a concrete fascia from the shelf up to the deck, where the deck stands over it
+      for (let j = 0; j < NS; j++) {
+        const sa = c.s0 + (c.s1 - c.s0) * j / NS, sb = c.s0 + (c.s1 - c.s0) * (j + 1) / NS;
+        const A = capPoint(o1, sa), B = capPoint(o1, sb);
+        const ta = frontDem(A[1]) + c.dy, tb = frontDem(B[1]) + c.dy, ba = shelfY(A[0] + 3, A[1]) - 0.3, bb = shelfY(B[0] + 3, B[1]) - 0.3;
+        if (ta <= ba + 0.2 && tb <= bb + 0.2) continue;
+        const fg = new THREE.BufferGeometry();
+        fg.setAttribute('position', new THREE.BufferAttribute(new Float32Array([A[0], ba, A[1], B[0], bb, B[1], B[0], tb, B[1], A[0], ba, A[1], B[0], tb, B[1], A[0], ta, A[1]]), 3));
+        fg.computeVertexNormals();
+        parts.push({ geom: fg, color: new THREE.Color(0x6e6b64), style: 3 });
+      }
+      for (const se of [c.s0, c.s1]) {
+        const mid = capPoint((TERRAIN.trenchW + TERRAIN.trenchE) / 2, se);
+        portalFace(se, frontDem(mid[1]) + c.dy - 0.28, 0.55);
       }
     }
     // No finished lawn or solid portal face across the construction-stage cap.
@@ -13475,10 +13506,17 @@
       const r=rects[L2[i]],f=streetFootprints[i/5];
       if(!r){stats.missingAtlas++;continue;}
       const inCutName=/expressway/i.test(ST_LABELS.names[L2[i]]||'');
+      // the core's I-95 trench (Round 127): its name follows the motorway's own grade down the cut (the core
+      // road loop's motY), where it used to float at street level across Dock Street, and under the
+      // Foglietta and Vietnam memorial deck it is not painted at all
+      const coreCut=(x,z)=>{if(!inCore(x,z))return null;const o=frontOff(x,z);if(o<=TERRAIN.trenchW||o>=TERRAIN.trenchE)return null;
+        const eo=Math.min(o-TERRAIN.trenchW,TERRAIN.trenchE-o)/14,ez=Math.min(z-(CORE_EXT.z0+4),(CORE_EXT.z1-4)-z)/60,t=clamp(Math.min(eo,ez),0,1),ts=t*t*(3-2*t);
+        return lerp(siteY(x,z,'road'),TERRAIN.trenchFloor+0.55,ts);};
+      if(inCutName&&coreCut(f.x,f.z)!==null&&capAt(f.x,f.z)){stats.buried++;continue;}
       const roadHeight=(x,z)=>{
         let y=siteY(x,z,'road');const deck=ovpDeckY(x,z,f.dx,f.dz);
         if(deck!==null)y=deck;
-        else if(inCutName){const cut=vineCut(x,z,-2);if(cut!==null)y=cut+0.45;}
+        else if(inCutName){const cc=coreCut(x,z);if(cc!==null)y=cc;else{const cut=vineCut(x,z,-2);if(cut!==null)y=cut+0.45;}}
         return y;
       };
       // Labels inside covered tunnels remain hidden; their roofs are not pavement.

@@ -6210,3 +6210,26 @@ evaluation, but that runs before the day's scoreboard and the served calendar ar
 arrival eased twenty seconds from white; data for the date already in view now lands at once, and
 only a change of date eases.
 
+## Round 128 — Foglietta Plaza and the Vietnam memorial on the I-95 deck (Sep 22)
+
+Mike, at `#p=142.3,14.9,212.8,0.457,-0.630`: "this view is rendering the sidewalks above the street.
+That entire area is actually above 95. Foglietta plaza and the veterans memorial."
+
+The core's two caps were raw z bands, -25 to 64 and 64 to 122. At the trench the street grid runs
+10 degrees off the axes, so Dock Street crosses at z 25 to 35 and Spruce at z 130 to 144: the first band
+roofed 55 m of open trench north of Dock Street and the second stopped short of Spruce, leaving the
+whole memorial's lawns and paths lying in the cut beside the lanes. And even where a band was right,
+the plaza never showed: the slab stood 0.12 m over the ground, and as a single quad over its span it
+interpolated straight between its ends and stood over the ground mid-span too, so every capped metre
+was a bare pale sheet with trees on it (the old Foglietta band included, measured by hiding meshes one
+at a time over the deck and reading the pixel).
+
+Now one deck, `{ s0: 11, s1: 222 }` in the along-Front coordinate (`capAt`, square to the cross streets),
+from Dock Street's south kerb to the memorial park's south edge, both read off the OSM park outlines;
+the slab is a 5 m by 4 grid on `frontDem` 0.3 m under the drawn ground, flush with the trench walls,
+with a concrete fascia down its river edge where it stands over the shelf; the portals follow the new
+ends. The expressway's painted name follows the motorway's own grade in the core cut (it floated at
+street level across Dock Street) and is not painted under the deck. `tests/test_terrain_patches.py`
+seeds the new cap form. Verified by capture: the plaza's lawns and path grid, Spruce Street across it,
+the memorial's circle, I-95 diving under at Dock Street and out past the memorial. 181 tests.
+

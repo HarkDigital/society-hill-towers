@@ -21,6 +21,7 @@ const THREE=require(THREE_PATH),PERF={};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const signedArea=p=>p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-b[0]*a[1];},0)/2;
 const OVP={cor:[[[0,0,0,15],[100,0,0,15]]],sk:[]},RAIL_CUTS=[],CAPS=[];
+const fl={px:0,pz:0,dx:0,dz:1};function capAt(x,z){const s=(x-fl.px)*fl.dx+(z-fl.pz)*fl.dz;return CAPS.find(c=>s>c.s0&&s<c.s1);}   // Round 127: caps are along-Front bands
 const CORE_EXT={x0:-100,x1:100,z0:-100,z1:100};
 let sample=(x,z)=>.4*z+20;
 const siteY=(x,z)=>sample(x,z),schEdges=null,TERRAIN={water:-1000,trenchW:0,trenchE:100};
@@ -49,7 +50,7 @@ result.bridge=run(patch,plate(-40,40,-4,4,()=>30));
 // A ramp falls through the terrain; preserve its horizontal route and trim
 // the interfering grass even when the height planes cross inside a triangle.
 result.ramp=run(patch,plate(-40,40,-5,5,x=>20+.1*x));
-CAPS.push({kind:'deck',dy:0,z0:-40,z1:40});
+CAPS.push({kind:'deck',dy:0,s0:-40,s1:40});
 result.tunnel=run(plate(1,40,-30,30,()=>20),plate(1,40,-30,30,()=>10));
 CAPS.length=0;
 // A box's inclined end wall extends below grade but is not a road surface.
