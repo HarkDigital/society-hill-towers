@@ -12141,6 +12141,7 @@
     else if (k === 'o') toggleArt();
     else if (k === 'c') toggleStops();      // Round 133
     else if (k === 'y') toggleStations();
+    else if (k === 'z') toggleCivic();
     else if (k === '?') toggleGuide();
     else if (k === 'i') openAbout();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
@@ -12274,7 +12275,7 @@
         ['Sideways', 'Turn the phone sideways to explore. The pads stay faintly visible while you fly.']] }],
     ['Layers', {
       d: [['Layers button', 'Top bar, or the F key. Every row is a layer: click it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
-        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, C bus stops, Y rail stations, N street names, L landmark labels, P neighborhoods.'],
+        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, C bus stops, Y rail stations, Z libraries and rec centers, N street names, L landmark labels, P neighborhoods.'],
         ['Reset Layers', 'Back to the default set.'],
         ['Explore', 'Eight favorite viewpoints in the Explore panel, plus search for any place.']],
       t: [['Layers button', 'Top bar. Every row is a layer: tap it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
@@ -12962,7 +12963,7 @@
     else { septaSetFilter(null); if (pickedVeh) { pickedVeh = null; vehinfoEl.hidden = true; } }   // off also clears a route filter; only a SEPTA card closes, a plane or ship keeps its own
   }
   btnTransit.addEventListener('click', toggleTransit);
-  document.getElementById('vehinfoX').addEventListener('click', () => { pickedStop = null; pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
+  document.getElementById('vehinfoX').addEventListener('click', () => { pickedCivic = null; pickedStop = null; pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; vehinfoEl.hidden = true; });
   // tap/click picking (orbit mode, or any touch tap): a short press on a vehicle
   const septaRay = new THREE.Raycaster(), septaNdc = new THREE.Vector2();
   const septaOccRay = new THREE.Raycaster();
@@ -13042,7 +13043,7 @@
     if (p[1] < g + 2) return false;   // the ground, a road, a lawn: not a building
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
     pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
-    pickedStop = null;
+    pickedStop = null; pickedCivic = null;
     const seq = ++BPICK.seq, st = { loading: true };
     pickedBldg = { x: p[0], y: p[1] + 1, z: p[2], seq };
     bldgCard(st); vehinfoEl.hidden = false; cardUnlock();
@@ -13061,7 +13062,7 @@
   }
   function updateBldgPick() {
     if (!pickedBldg) return;
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedStop || vehinfoEl.hidden) { pickedBldg = null; return; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedStop || pickedCivic || vehinfoEl.hidden) { pickedBldg = null; return; }
     _ssv.set(pickedBldg.x, pickedBldg.y, pickedBldg.z).project(camera);
     if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
@@ -13134,10 +13135,15 @@
     if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); if (closurePin.count) targets.push(closurePin); if (closurePinPart.count) targets.push(closurePinPart); }
     if (aAct) { for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) if (m.count) targets.push(m); }
     if (STOPS.ready) { if (busStopPin.count) targets.push(busStopPin); if (railStationPin.count) targets.push(railStationPin); }   // Round 133
+    if (CIVIC_S.ready) { if (libPin.count) targets.push(libPin); if (recPin.count) targets.push(recPin); }   // Round 134
     const hits = septaRay.intersectObjects(targets, false);
     const h = pickSceneHit(hits, pickOccluded);
     if (h) {
       let v = null, hitSt = null;
+      if (h.object.userData.libPin || h.object.userData.recPin) {
+        const rec = (h.object.userData.libPin ? libPick : recPick)[h.instanceId];
+        if (rec) { openCivicCard(rec); return; }
+      }
       if (h.object.userData.busStopPin || h.object.userData.railStationPin) {
         const rec = (h.object.userData.busStopPin ? busStopPick : railStationPick)[h.instanceId];
         if (rec) { openStopCard(rec); return; }
@@ -13293,7 +13299,7 @@
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
     if (bldgPick(cx, cy)) return;   // nothing live under the tap: the building, if one stands there (Round 132)
-    if (pickedStop || pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedStop = null; vehinfoEl.hidden = true; }
+    if (pickedCivic || pickedStop || pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedStop = null; pickedCivic = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
   // streets: raw GPS scatters ±10 m and the straight tween between fixes cuts
@@ -14428,10 +14434,10 @@
   // districts, the named buildings and towers, and the painted street names, all
   // already in scene metres. Built once, on the first search.
   let nameIx = null;
-  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, bridge: 3, nature: 3, building: 4, street: 5 };
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, library: 3, bridge: 3, nature: 3, building: 4, street: 5 };
   const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art',
     school: 'School', college: 'College', worship: 'Place of Worship', hospital: 'Hospital', park: 'Park', rec: 'Recreation Center', cemetery: 'Cemetery', museum: 'Museum', site: 'Historic Site',
-    venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', bridge: 'Bridge', nature: 'Natural Feature', building: 'Building', street: 'Street' };
+    venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', library: 'Free Library', bridge: 'Bridge', nature: 'Natural Feature', building: 'Building', street: 'Street' };
   let rockySite = null;   // built landmark anchor; search follows the relocated statue
   // the city basemap's named places (LANDMARKS, Round 78): cls in landmarks.json indexes this
   const LM_KIND = ['school', 'college', 'worship', 'hospital', 'park', 'rec', 'cemetery', 'museum', 'site', 'venue', 'civic', 'station', 'bridge', 'building', 'nature'];
@@ -14452,7 +14458,9 @@
     for (const m of markets) add(m.n, m.x, m.z, 'market', m);
     for (const r of markerRecs) add(r.name, r.x, r.z, 'marker', r);
     for (const r of artRecs) add(r.title, r.x, r.z, 'art', r);
-    for (const r of STOPS.rail) add(r.n.replace(/\s+Station$/i, '') + ' Station', r.x, r.z, 'rail', r);   // Regional Rail stations open their departure board (Round 133)
+    for (const r of STOPS.rail) add(r.n.replace(/\s+Station$/i, '') + ' Station', r.x, r.z, 'rail', r);
+    for (const r of CIVIC_S.lib) add(r.n, r.x, r.z, 'library', r);   // Round 134
+    for (const r of CIVIC_S.rec) add(r.n, r.x, r.z, 'rec', r);   // Regional Rail stations open their departure board (Round 133)
     for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
     for (const lm of META_L) {
       const b = lm && lm.name ? findBuilding(lm.name) : null;
@@ -14506,6 +14514,7 @@
       vehinfoEl.hidden = false;
     }
     if (e.kind === 'rail' && e.ref) openStopCard(e.ref);   // a station arrives with its departure board (Round 133)
+    if ((e.kind === 'library' || e.kind === 'rec') && e.ref && e.ref.kind) openCivicCard(e.ref);   // a branch or a center arrives with its card (Round 134)
     if (isTouch) toggleSearch(false);
   }
   function searchLocalSubmit(qy) {
@@ -18680,7 +18689,7 @@
     vehinfoBody.innerHTML = tag + body;
   }
   function openStopCard(rec) {
-    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null;
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedCivic = null;
     const st = { rec, loading: true, rows: [], elev: [] };
     pickedStop = st; stopCard(st); vehinfoEl.hidden = false; cardUnlock();
     stopRefresh(st);
@@ -18696,10 +18705,97 @@
   }
   function updateStopPick(now) {
     if (!pickedStop) return;
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedBldg || vehinfoEl.hidden) { pickedStop = null; return; }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedBldg || pickedCivic || vehinfoEl.hidden) { pickedStop = null; return; }
     if (now > pickedStop.next) stopRefresh(pickedStop);
     const r = pickedStop.rec;
     _tp.set(r.x, r.gy + (r.kind === 'bus' ? 3.2 : 5), r.z).project(camera);
+    if (_tp.z > 1 || _tp.z < -1) { vehinfoEl.style.opacity = '0'; return; }
+    vehinfoEl.style.opacity = '1';
+    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_tp.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_tp.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+  }
+
+  // ---------------------------------------------------------------- libraries and rec centers (Round 134)
+  // The last of Mike's six picks: the Free Library's 54 branches and Parks and Recreation's centers
+  // (civic.json from bake_civic.py), pins within the half mile on the Z layer, off by default like the
+  // stops. Mike chose pins without hours: the Free Library publishes none as data and PPR's layers carry
+  // none, so a card gives the address and phone and links the branch's own page instead of guessing.
+  const CIVIC_S = { ready: false, lib: [], rec: [], cells: new Map(), near: [], reconAt: 0, drawn: 0 };
+  const civicLastCam = new THREE.Vector3(1e9, 0, 1e9);
+  let libPin = null, recPin = null, pickedCivic = null;
+  const libPick = [], recPick = [];
+  function civicRecon() { CIVIC_S.reconAt = 0; if (!CIVIC.on && pickedCivic) { pickedCivic = null; vehinfoEl.hidden = true; } }
+  const glyphBook = (g) => {   // an open book
+    g.fillStyle = '#fdfbf6';
+    g.beginPath(); g.moveTo(128, 76); g.quadraticCurveTo(104, 62, 72, 66); g.lineTo(72, 150); g.quadraticCurveTo(104, 146, 128, 160); g.closePath(); g.fill();
+    g.beginPath(); g.moveTo(128, 76); g.quadraticCurveTo(152, 62, 184, 66); g.lineTo(184, 150); g.quadraticCurveTo(152, 146, 128, 160); g.closePath(); g.fill();
+    g.strokeStyle = '#b03a2e'; g.lineWidth = 4; g.beginPath(); g.moveTo(128, 78); g.lineTo(128, 158); g.stroke();
+    g.lineWidth = 3; for (const y of [92, 108, 124]) { g.beginPath(); g.moveTo(84, y); g.lineTo(116, y + 4); g.moveTo(140, y + 4); g.lineTo(172, y); g.stroke(); }
+  };
+  const glyphRec = (g) => {   // a ball over a court line: the rec center
+    g.fillStyle = '#fdfbf6'; g.beginPath(); g.arc(128, 104, 38, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = '#2f7d4a'; g.lineWidth = 5;
+    g.beginPath(); g.moveTo(90, 104); g.lineTo(166, 104); g.moveTo(128, 66); g.lineTo(128, 142); g.stroke();
+    g.beginPath(); g.arc(128, 104, 38, -0.9, 0.9); g.stroke(); g.beginPath(); g.arc(128, 104, 38, Math.PI - 0.9, Math.PI + 0.9); g.stroke();
+    g.strokeStyle = '#fdfbf6'; g.lineWidth = 6; g.beginPath(); g.moveTo(76, 164); g.lineTo(180, 164); g.stroke();
+  };
+  step('Opening the libraries and rec centers', () => {
+    if (typeof CIVIC_DATA === 'undefined' || !CIVIC_DATA || !CIVIC_DATA.lib) { const b = document.getElementById('btnCivic'); if (b) b.style.display = 'none'; return; }
+    const put = (rec) => { const k = Math.floor(rec.x / 400) + ':' + Math.floor(rec.z / 400); let a = CIVIC_S.cells.get(k); if (!a) { a = []; CIVIC_S.cells.set(k, a); } a.push(rec); };
+    for (const r of CIVIC_DATA.lib) { if (!insideLimit(r[0], r[1])) continue; const rec = { kind: 'lib', x: r[0], z: r[1], gy: siteY(r[0], r[1], 'ground'), n: r[2], addr: r[3], zip: r[4], phone: r[5], url: r[6] }; CIVIC_S.lib.push(rec); put(rec); }
+    for (const r of CIVIC_DATA.rec) { if (!insideLimit(r[0], r[1])) continue; const rec = { kind: 'rec', x: r[0], z: r[1], gy: siteY(r[0], r[1], 'ground'), n: r[2], older: r[3] === 1, gym: r[4] === 1 }; CIVIC_S.rec.push(rec); put(rec); }
+    libPin = pinMesh(pinTexture('#b03a2e', '#fdfbf6', glyphBook), 40, 'libPin');
+    recPin = pinMesh(pinTexture('#2f7d4a', '#fdfbf6', glyphRec), 80, 'recPin');
+    CIVIC_S.ready = true;
+    const c = document.getElementById('civicCount'); if (c) c.textContent = String(CIVIC_S.lib.length + CIVIC_S.rec.length);
+  });
+  function updateCivicNear(now) {
+    if (!CIVIC_S.ready) return;
+    if (now >= CIVIC_S.reconAt || camera.position.distanceToSquared(civicLastCam) > 220 * 220) {
+      CIVIC_S.reconAt = now + 900; civicLastCam.copy(camera.position);
+      const near = [];
+      if (CIVIC.on) {
+        const cellR = Math.ceil(NEAR_R / 400), gx0 = Math.floor(camera.position.x / 400), gz0 = Math.floor(camera.position.z / 400);
+        for (let gx = gx0 - cellR; gx <= gx0 + cellR; gx++) for (let gz = gz0 - cellR; gz <= gz0 + cellR; gz++) {
+          const arr = CIVIC_S.cells.get(gx + ':' + gz);
+          if (arr) for (const rec of arr) if (nearCam(rec.x, rec.gy, rec.z)) near.push(rec);
+        }
+      }
+      CIVIC_S.near = near;
+    }
+    _tq.copy(camera.quaternion);
+    let nl = 0, nr = 0;
+    for (const rec of CIVIC_S.near) {
+      _tp.set(rec.x, rec.gy + 3.4, rec.z);
+      const sc = clamp(camera.position.distanceTo(_tp) / 135, 2.2, 14) * pinRise(rec, now);
+      _ts.set(sc, sc, sc); _tm.compose(_tp, _tq, _ts);
+      if (rec.kind === 'lib') { if (nl < 40) { libPin.setMatrixAt(nl, _tm); libPick[nl++] = rec; } }
+      else if (nr < 80) { recPin.setMatrixAt(nr, _tm); recPick[nr++] = rec; }
+    }
+    libPin.count = nl; recPin.count = nr; CIVIC_S.drawn = nl + nr;
+    flushInst(libPin, -1); flushInst(recPin, -1);
+  }
+  function civicCard(rec) {
+    if (rec.kind === 'lib') {
+      vehinfoBody.innerHTML = '<span class="vroute" style="background:#b03a2e">Free Library</span><span class="vdest">' + septaEsc(rec.n) + '</span>' +
+        (rec.addr ? '<div class="vmeta">' + septaEsc(rec.addr + (rec.zip ? ', Philadelphia ' + rec.zip : '')) + '</div>' : '') +
+        (rec.phone ? '<div class="vmeta">' + septaEsc(rec.phone) + '</div>' : '') +
+        '<div class="vmeta">Hours are on the branch\'s page</div>' +
+        (rec.url ? '<a class="vlink" href="' + septaEsc(rec.url) + '" target="_blank" rel="noopener">Branch Page</a>' : '');
+    } else {
+      vehinfoBody.innerHTML = '<span class="vroute" style="background:#2f7d4a">Parks &amp; Rec</span><span class="vdest">' + septaEsc(rec.n) + '</span>' +
+        '<div class="vmeta">' + (rec.older ? 'Older adult center' : 'Recreation center') + (rec.gym ? ', with a gym' : '') + '</div>' +
+        '<div class="vmeta">Programs and hours are in the Parks &amp; Rec Finder</div>' +
+        '<a class="vlink" href="https://www.phila.gov/parks-rec-finder/" target="_blank" rel="noopener">Parks &amp; Rec Finder</a>';
+    }
+  }
+  function openCivicCard(rec) {
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedStop = null;
+    pickedCivic = rec; civicCard(rec); vehinfoEl.hidden = false; cardUnlock();
+  }
+  function updateCivicPick() {
+    if (!pickedCivic) return;
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedBldg || pickedStop || vehinfoEl.hidden) { pickedCivic = null; return; }
+    _tp.set(pickedCivic.x, pickedCivic.gy + 3.8, pickedCivic.z).project(camera);
     if (_tp.z > 1 || _tp.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
     vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_tp.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_tp.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
@@ -20441,6 +20537,7 @@
     updateMarketPick();
     updateBldgPick();
     updateStopsNear(now); updateStopPick(now);
+    updateCivicNear(now); updateCivicPick();
     updateMarkerPick();
     updateMarkersNear(now);
     pinSweep(now);
@@ -20539,7 +20636,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

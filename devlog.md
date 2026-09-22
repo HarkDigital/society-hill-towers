@@ -6349,3 +6349,17 @@ Lansdale/Doylestown to Doylestown, 2 min late, track 1"); Market St & 15th St li
 5th-Market: 1 stop away, 4 min late" and four more; 134 stop pins within the half mile at City Hall.
 `tests/test_septa_stops.py` (the file's shape and bounds, the board names, the link across V3, V4, V5).
 
+## Round 134 — libraries and rec centers (Sep 22)
+
+Taken before "near me" so that card can name the nearest branch from its first version. Mike chose pins
+without hours: the Free Library publishes no hours as data (its site answers scripts with a bot check) and
+Parks and Recreation's layers carry none, so nothing on a card can be wrong. `fetch_civic.py` /
+`bake_civic.py` → `civic.json` (16 KB, `CIVIC_DATA`): the 54 branches (name, address, zip, phone, branch
+page) and 163 centers (157 recreation, 6 older adult; the pools left out as Mike declined them in
+September; the gym flag kept), 53 library points and 8 center points stepped out of their own footprints
+with `bake_markers.py`'s `FootGrid` so their pins stand in the open under Round 127's occlusion. The layer
+is the reserved bit 65536 on Z, off by default; a book on Free Library red, a ball on Parks green; the
+cards give the address and phone and link the branch's page or the Parks & Rec Finder for hours; both are
+in the search index and arrive with their card. Verified in the pane (Parkway Central's card, a playground's,
+the search hit, the link's bit). `tests/test_civic.py`, the layer test's Z row.
+
