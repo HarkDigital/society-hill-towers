@@ -231,7 +231,8 @@ class Main(unittest.TestCase):
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
-        self.saved = (B.RAW, B.OUT, F.fetch_all)
+        self.saved = (B.RAW, B.OUT, F.fetch_all, B.time.time)
+        B.time.time = lambda: NOW      # main() bakes on the wall clock; pinned to NOW, or row f ages past the year cut on 2026-09-21 and the counts drift (Round 125)
         B.RAW = os.path.join(self.tmp.name, 'boma.json')
         B.OUT = os.path.join(self.tmp.name, 'lights.json')
         with open(B.RAW, 'w') as f:
@@ -241,7 +242,7 @@ class Main(unittest.TestCase):
 
     def tearDown(self):
         self.quiet.__exit__(None, None, None)
-        B.RAW, B.OUT, F.fetch_all = self.saved
+        B.RAW, B.OUT, F.fetch_all, B.time.time = self.saved
         self.tmp.cleanup()
 
     def test_pipeline_mode_no_gz(self):

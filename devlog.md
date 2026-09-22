@@ -6109,5 +6109,7 @@ with the notice under the bar; the real button with the browser's geolocation st
 busy pulse while waiting, took the fix, and on a code 1 error went to City Hall with the declined
 line; at 812 by 375 the bar holds all seven buttons and the notice sits 12 px under it. 180 tests,
 the two `test_lights_bake` failures fail identically at HEAD (a fixture row count, 6 against 5) and
-are not this round's. Page 28.25 MB, +5 KB.
+were: `deploy_philly3d.sh` gates on the suite and refused. Fixture row f ended on 2025-09-20 and the two
+`Main` tests baked on the wall clock, so on 2026-09-21 it aged past `KEEP_DAYS` and the count fell from 6 to 5.
+The tests now pin `bake_lights.time.time` to the file's NOW. 180 tests pass. Page 28.25 MB, +5 KB.
 
