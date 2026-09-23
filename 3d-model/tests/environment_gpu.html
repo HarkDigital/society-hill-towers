@@ -14,7 +14,7 @@
  const inverse=cut('  const INV_GLSL =','  // materials that opt out');
  const skyCode=cut('  const MOON_SCALE =','  // World-space cloud banks');
  const grassCode=cut('  const MEADOW_GAIN =','  // a grass tuft:');
- const surfaceCode=cut('  function surfTexPatch','  // decorrelated per-particle gate');
+ const surfaceCode='const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLampOn:{value:0},uLampFade:{value:new THREE.Vector4(0,0,0,1)}};'+cut('  function lampLightPatch(','  function surfTexPatch(')+cut('  function surfTexPatch','  // decorrelated per-particle gate');
  const laneCode=cut('  const LANE_GLSL =','  // streets follow the terrain:');
  const waterCode=cut('  const waterU =','  // ordered dither on the big smooth surfaces');
  const create=new Function('THREE','renderer','scene','isTouch','nightUniform','postU',colors+inverse+`

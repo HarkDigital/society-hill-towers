@@ -52,10 +52,19 @@ console.log(JSON.stringify(out));
         s = self.src
         self.assertNotIn('lotPools', s)                         # Round 130's discs, which fought the lots for depth
         self.assertIn("lampLightPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // Round 140", s)
-        self.assertIn("lampLightPatch(shader, 'vWPos', true);", s)
+        self.assertIn("lampLightPatch(shader, 'vWPos', 'wall');", s)
+        self.assertIn("lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'blade');", s)   # the grass tufts
         self.assertIn('lampMapU.uLampOn.value = show ? night : 0;\n    if (show) lampMapUpdate();', s)
-        # the lamps only light walls on their first storeys, never roofs
+        # the lamps only light walls on their first storeys, never roofs; the ground path only faces turned up
         self.assertIn("(1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(2.5, 11.0, lwp.y - vBase))", s)
+        self.assertIn("smoothstep(0.35, 0.7, inverseTransformDirection(normal, viewMatrix).y)", s)
+        # review: the edge fades on a circle round the unsnapped look-ahead point, inside the snapped map
+        self.assertIn('lampMapU.uLampFade.value.set(ax, az, S / 2 - step, S * 0.15);', s)
+        upd = s[s.index('  function lampMapUpdate() {'):s.index('  const _lmDir')]
+        self.assertLess(upd.index('lampMapU.uLampFade.value.set('), upd.index('if (LAMPMAP.rt && cx === LAMPMAP.cx && cz === LAMPMAP.cz) return;'))   # every frame, not only on a re-render
+        # review: bounded, a bright albedo taken at most at 0.35 and anything over 0.5 rolled off under the bloom threshold
+        self.assertIn('vec3 la = min(diffuseColor.rgb, vec3(0.35))', s)
+        self.assertIn('totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0);', s)
         # the splat's soft pool: brightest under the lamp, nothing past its radius
         self.assertIn('float f = exp(-d * d * 3.2) * (1.0 - d * d);', s)
 

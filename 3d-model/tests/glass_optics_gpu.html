@@ -8,7 +8,7 @@
  const helpers=cut('  const WINDOW_INTERIOR_GLSL =','  const cityMat =');
  const VBuf=new Function('THREE','freeOnUpload',cut('  class IdxBuf {','  const groupCity')+'return VBuf;')(THREE,()=>{});
  const glassFactory=new Function('nightUniform','detFarUniform',helpers+'const outerGlassMat={};'+cut('        outerGlassMat.onBeforeCompile =','\n      }\n      addChunkMesh(g, outerGlassMat);')+'return outerGlassMat.onBeforeCompile;');
- const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',helpers+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.52,.34,1.0);');
+ const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',helpers+'const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLampOn:{value:0},uLampFade:{value:new THREE.Vector4(0,0,0,1)}};'+cut('  function lampLightPatch(','  function surfTexPatch(')+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.52,.34,1.0);');
  const probeFactory=new Function('THREE','renderer','scene','COLORS','sunDir','postU','WX',
   cut('  const INV_GLSL =','  // materials that opt out')+
   'const MOON_R=.0182,SKY_DITHER=0;'+cut('  const skyMat =','  const sky =')+

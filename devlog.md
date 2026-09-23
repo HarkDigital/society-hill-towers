@@ -6588,3 +6588,17 @@ first storeys of the rowhouses; the stadium lots in soft overlapping pools with 
 carrying their pools; Center City's streets glowing between the towers. `__dbg.lampMap()` and `__dbg.lampGain(k)`.
 `tests/test_lamp_light.py` proves the map's texel for a world point is the one the shaders read (the page's own
 camera setup under Node) and holds the wiring.
+
+The round's adversarial review (three lenses, a skeptic per finding) confirmed six findings, all fixed the same
+day. (1) The lit ground's far edge jumped: the map's edge fade (6 % of its span, 720 m) was narrower than its
+750 m re-centre step, so from altitude a band of the city switched lit or dark in one frame. The light now ends on
+a circle round the unsnapped look-ahead point (`uLampFade`, radius span/2 less a step, fading over 15 % of the
+span), set every frame and always inside the snapped map; measured across a forced re-centre at 1,400 m, the lamp
+light per screen row changed by at most 0.8 of a grey level. (2) Unbounded on bright surfaces: on snow the pools
+came out three to six times brighter than the same snow at noon and bloomed. The term now takes the albedo at most
+at 0.35 and rolls off anything over 0.5 toward 1.0, under the night bloom threshold; the dark asphalt it was set on
+is untouched. (3) Every surfMat face took full light whatever its orientation: piers, the I-95 cap's soffit and the
+Wildey Street skins glowed. The ground path now lights only faces turned up. (4) The grass tufts were unlit dark
+specks on lit ground: they take the patch in a 'blade' mode. (5, 6) Six GPU harnesses (buildings, City Hall,
+glass optics, window interiors, facade roofline, environment) cut the facade hook or surfTexPatch out of app.js
+and threw on the new call; each now cuts `lampLightPatch` and stubs `lampMapU`, and all six pass in the pane.

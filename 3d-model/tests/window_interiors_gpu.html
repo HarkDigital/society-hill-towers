@@ -10,7 +10,7 @@
  const {glsl,hook,coords}=new Function('THREE',interiorCode+'return {glsl:WINDOW_INTERIOR_GLSL,hook:apartmentWindowHook,coords:towerRoomCoordinates};')(THREE);
  const cut=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
  const VBuf=new Function('THREE','freeOnUpload',cut('  class IdxBuf {','  const groupCity')+'return VBuf;')(THREE,()=>{});
- const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.52,.34,1.0);');
+ const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+'const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLampOn:{value:0},uLampFade:{value:new THREE.Vector4(0,0,0,1)}};'+cut('  function lampLightPatch(','  function surfTexPatch(')+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.52,.34,1.0);');
  const errors=[],results=[];const oldError=console.error;console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
  const check=(v,m)=>{if(!v)throw Error(m);};
  const W=512,H=320;

@@ -5935,7 +5935,7 @@
         // of them otherwise resolves to a white band along the horizon
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += shtLamp * shtLit * uNight * 0.95 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));');
       glassOpticsPatch(shader,{mask:'shtGlass',normal:'vWNorm',uv:'shtPaneUV',id:'shtPaneID',seed:'vTint*7.1',coating:.085,roughness:.115,depth:.48});
-      lampLightPatch(shader, 'vWPos', true);   // Round 140: the street lamps wash the lower storeys
+      lampLightPatch(shader, 'vWPos', 'wall');   // Round 140: the street lamps wash the lower storeys
     };
     cityMat.onBeforeCompile = facadeHook(FACADE_GAIN, ROOF_GAIN, 1.2);
     cityMat.customProgramCacheKey = () => 'fabric';   // the two hooks share one source: keyed by hand (gotcha 15)
@@ -11783,6 +11783,7 @@
         .replace('#include <common>', '#include <common>\nuniform float uTime;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n{\n  vec4 gw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = gw.x * 0.31 + gw.z * 0.23;\n  float sw = sin(uTime * 1.7 + ph) * 0.55 + sin(uTime * 3.1 + ph * 2.7) * 0.3;\n  float up = position.y * position.y;\n  transformed.x += sw * 0.28 * up; transformed.z += sw * 0.12 * up;\n}');
       cloudShadowPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
+      lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'blade');   // Round 140 review: the tufts take the pool the ground under them does
     };
     grassMesh = new THREE.InstancedMesh(g, mat, GRASS_N);
     grassMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -17686,7 +17687,7 @@
   // lost the depth test wherever a lot rose above them, black specks that crawled as the eye moved (the log depth
   // buffer ignores a polygon offset), and they were hard-edged.
   const LAMPMAP = { size: isTouch ? 1024 : 2048, span: isTouch ? 8000 : 12000, rt: null, scene: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, store: 0.25 };
-  const lampMapU = { uLampMap: { value: null }, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: { value: 0 } };
+  const lampMapU = { uLampMap: { value: null }, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: { value: 0 }, uLampFade: { value: new THREE.Vector4(0, 0, 0, 1) } };
   let LAMP_GAIN = 4.0;   // the pools' strength over a surface's own colour (__dbg.lampGain; calibrated on Mike's South Philly street at 9:30 pm)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
@@ -19779,7 +19780,12 @@
     const S = LAMPMAP.span, step = S / 16;
     camera.getWorldDirection(_lmDir);
     const hl = Math.hypot(_lmDir.x, _lmDir.z) || 1, ahead = clamp(camera.position.y * 3, 0, S * 0.3);
-    const cx = Math.round((camera.position.x + _lmDir.x / hl * ahead) / step) * step, cz = Math.round((camera.position.z + _lmDir.z / hl * ahead) / step) * step;
+    const ax = camera.position.x + _lmDir.x / hl * ahead, az = camera.position.z + _lmDir.z / hl * ahead;
+    const cx = Math.round(ax / step) * step, cz = Math.round(az / step) * step;
+    // the lit ground ends on a circle round the unsnapped look-ahead point, gliding with the eye every frame; it always
+    // lies inside the snapped map (the point is within half a step of the centre on each axis), so a re-centre never
+    // moves the edge (review: the map's own edge fade was narrower than a step and jumped 750 m at once)
+    lampMapU.uLampFade.value.set(ax, az, S / 2 - step, S * 0.15);
     if (LAMPMAP.rt && cx === LAMPMAP.cx && cz === LAMPMAP.cz) return;
     if (!LAMPMAP.rt) {
       LAMPMAP.rt = new THREE.WebGLRenderTarget(LAMPMAP.size, LAMPMAP.size, { depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
@@ -19795,19 +19801,26 @@
     lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / LAMPMAP.store);
   }
   const _lmDir = new THREE.Vector3(), _lmCol = new THREE.Color();
-  function lampLightPatch(shader, worldExpr, wall) {   // wall: the facade shader, lit on its vertical faces and its first storeys only
+  // mode: 'wall' the facade shader (vertical faces, the first storeys), 'blade' the grass tufts (no gate), else the
+  // ground: faces turned up only, so a pier, a soffit, a pit wall or a party-wall skin never takes a pool from below
+  function lampLightPatch(shader, worldExpr, mode) {
     if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap;') !== -1) return;
-    shader.uniforms.uLampMap = lampMapU.uLampMap; shader.uniforms.uLampBox = lampMapU.uLampBox; shader.uniforms.uLampOn = lampMapU.uLampOn;
+    shader.uniforms.uLampMap = lampMapU.uLampMap; shader.uniforms.uLampBox = lampMapU.uLampBox; shader.uniforms.uLampOn = lampMapU.uLampOn; shader.uniforms.uLampFade = lampMapU.uLampFade;
+    const gate = mode === 'wall' ? '0.75 * (1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(2.5, 11.0, lwp.y - vBase))'
+      : mode === 'blade' ? '1.0' : 'smoothstep(0.35, 0.7, inverseTransformDirection(normal, viewMatrix).y)';
     shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox; uniform float uLampOn;\nvoid main() {')
+      .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn;\nvoid main() {')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
         'if (uLampOn > 0.001) {',
         '  vec3 lwp = ' + worldExpr + ';',
         '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
         '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
         // a surface lit by the lamps: its own colour times their light, fading out at the map's edge
-        '  float lk = ' + (wall ? '0.75 * (1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(2.5, 11.0, lwp.y - vBase))' : '1.0') + ';',
-        '  if (le > 0.0 && lk > 0.0) totalEmissiveRadiance += diffuseColor.rgb * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk * smoothstep(0.0, 0.06, le));',
+        '  float lk = ' + gate + ' * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
+        // bounded (review): a bright albedo (snow, lane paint, a pale plaza) is taken at most at 0.35, and anything over
+        // 0.5 rolls off toward 1.0, under the bloom's night threshold; the dark asphalt the gain was set on is untouched
+        '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
+        '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
         '}',
       ].join('\n'));
   }

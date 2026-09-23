@@ -11,7 +11,7 @@
  const src=await(await fetch('../app.js',{cache:'no-store'})).text();
  const interiorCode=src.includes('  const WINDOW_INTERIOR_GLSL =')?src.slice(src.indexOf('  const WINDOW_INTERIOR_GLSL ='),src.indexOf('  const cityMat =')):'';
  const cut=(a,b)=>src.slice(src.indexOf(a),src.indexOf(b,src.indexOf(a)));
- const facadeCode=cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook');
+ const facadeCode='const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLampOn:{value:0},uLampFade:{value:new THREE.Vector4(0,0,0,1)}};'+cut('  function lampLightPatch(','  function surfTexPatch(')+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook');
  const glassCode=cut('        outerGlassMat.onBeforeCompile =','\n      }\n      addChunkMesh(g, outerGlassMat);');
  const packedCode=cut('  class IdxBuf {','  const groupCity');
  const VBuf=new Function('THREE','freeOnUpload',packedCode+'\nreturn VBuf;')(THREE,()=>{});

@@ -7,7 +7,7 @@
  const interiorCode=src.includes('  const WINDOW_INTERIOR_GLSL =')?src.slice(src.indexOf('  const WINDOW_INTERIOR_GLSL ='),src.indexOf('  const cityMat =')):'';
  const cut=(a,b)=>{const i=src.indexOf(a),j=src.indexOf(b,i);if(i<0||j<0)throw Error('Missing source '+a);return src.slice(i,j);};
  const patch=new Function(cut('  function cityHallFloodPatch(','  const BOATHOUSE_PLANS')+'return cityHallFloodPatch;')();
- const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.27,.17,1.2);');
+ const facadeFactory=new Function('cityMat','sunWUniform','nightUniform','detFarUniform',interiorCode+'const lampMapU={uLampMap:{value:null},uLampBox:{value:new THREE.Vector4()},uLampOn:{value:0},uLampFade:{value:new THREE.Vector4(0,0,0,1)}};'+cut('  function lampLightPatch(','  function surfTexPatch(')+cut('    const facadeHook =','    cityMat.onBeforeCompile = facadeHook')+'return facadeHook(.27,.17,1.2);');
  const VBuf=new Function('THREE','freeOnUpload',cut('  class IdxBuf {','  const groupCity')+'return VBuf;')(THREE,()=>{});
  const check=(v,m)=>{if(!v)throw Error(m);},out=[],errors=[];const oldError=console.error;
  console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
