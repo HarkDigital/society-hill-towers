@@ -6748,3 +6748,22 @@ metre over the pole's ground, is no longer raised (1,401 of them). Every elevate
 deck 22 m wide or more, its arm turned in over the lanes (`poleInv.ROT`), 2,476 in all; they ride the poles'
 arrays, so they draw as poles near the eye, glow as points and splat pools into the light map, which lights the deck
 through the road material. The Ben Franklin and the Walt Whitman keep their own lamps. `__dbg.PERF.lampsDeck`.
+
+## Round 145 — the Custom House's three zones, and Boathouse Row's bay doors in their own colour (Sep 23)
+
+Mike, with two night photos: "The customs house on 2nd st needs to be lit up at night. They recently added new
+colored lights that have 3 lighting zones for different colors". One photo shows the whole building washed warm white
+with a lit ring at the lantern's head; the other, the lower block and the tower in gold and the setback's pavilions in
+blue. The Custom House model (Restoring the landmarks) now records its footprint and frame (`CUSTOM_HOUSE_AT`), and
+the skyline lights give it three uplight washes on three consecutive theme slots: the lower block (its footprint grown
+0.6 m, from the ground to 40 m), the setback's square stage (40 to 49 m) and the tower (the two octagonal drums and
+the lantern, 49 to 81.5 m, 8-sided sheets proud of each), plus a ring of light at the lantern's head on the tower's
+slot. A two-colour night deals them gold, blue, gold, as in the second photo; a plain night washes all three in their
+own white, as in the first. Checked with `__dbg.lights('gold,blue')` and on a plain night at 9:30 pm.
+
+Then: "Can we also add another color lights to the bay doors on the boathouse row homes?" The bulbs round each boat
+bay's arch were on the house's outline slot. They now go with a new `bays` list on the slot after the outline's,
+with a soft glow on the doors inside each arch (the door boards moved 3 cm out in front of it). A themed night lights
+the bays in the next colour (blue outlines with gold bays, then the reverse, down the row); a plain night keeps the
+white outlines with amber bays. `tests/test_landmark_lighting.py` counts every clubhouse's bay lights and checks the
+slots and the Custom House's zones.

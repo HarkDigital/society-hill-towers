@@ -60,9 +60,9 @@ for(const angle of [0,.159,1.2])for(const flip of [false,true]){
 }
 for(const spec of BOATHOUSE_PLANS){
  const m=boathouseGeometry(spec,6);let finite=true,maxY=-Infinity,minY=Infinity;
- for(const p of [...m.parts,...m.lights]){const a=p.geom.attributes.position;for(let i=0;i<a.count;i++){finite&&=[a.getX(i),a.getY(i),a.getZ(i)].every(Number.isFinite);maxY=Math.max(maxY,a.getY(i));minY=Math.min(minY,a.getY(i));}}
+ for(const p of [...m.parts,...m.lights,...m.bays]){const a=p.geom.attributes.position;for(let i=0;i<a.count;i++){finite&&=[a.getX(i),a.getY(i),a.getZ(i)].every(Number.isFinite);maxY=Math.max(maxY,a.getY(i));minY=Math.min(minY,a.getY(i));}}
  const [x,z]=polyCentroid(spec.poly);
- out.boats.push({dark:m.parts.filter(p=>p.lit&&p.lit.r===0&&p.lit.g===0&&p.lit.b===0).length/m.parts.length,n:spec.number,finite,lit:m.lights.length,parts:m.parts.length,minY,maxY,h:spec.h,replace:boathouseAt(x,z)===spec,theme:m.lights.every(p=>p.mix===1&&p.lit&&p.gain>0)});
+ out.boats.push({dark:m.parts.filter(p=>p.lit&&p.lit.r===0&&p.lit.g===0&&p.lit.b===0).length/m.parts.length,n:spec.number,finite,lit:m.lights.length,parts:m.parts.length,minY,maxY,h:spec.h,replace:boathouseAt(x,z)===spec,theme:m.lights.every(p=>p.mix===1&&p.lit&&p.gain>0),bays:m.bays.length,wantBays:spec.bays,bayTheme:m.bays.every(p=>p.mix===1&&p.lit&&p.gain>0&&p.lit.r>p.lit.b)});
 }
 for(let n=1;n<=4;n++)for(const solid of [false,true]){
  const values=Array.from({length:1000},(_,i)=>crownBandIndex(100+(i+.5)/1000,n,solid));
@@ -98,11 +98,25 @@ console.log(JSON.stringify(out));
         self.assertEqual([2,4,5,6,7,9,10,11,12,13,14],[b['n'] for b in boats])
         for b in boats:
             self.assertTrue(b['finite'] and b['theme'] and b['replace'],b)
-            self.assertGreater(b['lit'],25)
+            self.assertGreater(b['lit']+b['bays'],25)   # the arches' bulbs moved to the bays in Round 145
+            self.assertGreater(b['lit'],5)
             self.assertGreater(b['parts'],50)
             self.assertGreater(b['dark'],.90, 'Walls and roofs must not inherit the light batch default glow')
             self.assertGreater(b['minY'],4)
             self.assertLess(b['maxY'],6+b['h']+2)
+            # Round 145: every bay door carries its own coloured arch (17 runs of bulbs) and a glow, amber on a plain night
+            self.assertEqual(b['bays'],b['wantBays']*18,b)
+            self.assertTrue(b['bayTheme'],b)
+
+    def test_bays_and_the_custom_house_take_their_own_slots(self):
+        s=(ROOT/'app.js').read_text()
+        self.assertIn('const slot=themeSlotN++%4,baySlot=themeSlotN%4;',s)
+        self.assertIn('for(const p of model.bays)themeParts.push({...p,slot:baySlot});',s)
+        # the Custom House: three consecutive slots, the lower block, the setback's square stage, the tower
+        self.assertIn('const sA = themeSlotN % 4, sB = (themeSlotN + 1) % 4, sC = (themeSlotN + 2) % 4;',s)
+        self.assertIn('CUSTOM_HOUSE_AT = { poly: b.poly, ob, ry };',s)
+        for part in ('sheetOf(buildingGeom(grown, null, 40.2, 0.3).translate(0, base, 0), sA, 0.5, true);','sheetOf(box(34, 9.2, 34, ob.cx, base + 44.6, ob.cz, ry), sB, 0.62, true);','sheetOf(g, sC, 0.55, true);'):
+            self.assertIn(part,s)
 
     def test_one_to_four_bands_are_contiguous_and_solid_uses_first_color(self):
         for b in self.result['bands']:

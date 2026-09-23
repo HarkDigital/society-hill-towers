@@ -4803,7 +4803,7 @@
   // Photo-led clubhouse elevations on surveyed plans. Geometry and outline
   // lights share the same coordinates, so the bulbs follow every gable and arch.
   function boathouseGeometry(spec,base) {
-    const ob=orientedBox(spec.poly),parts=[],lights=[];
+    const ob=orientedBox(spec.poly),parts=[],lights=[],bays=[];   // bays: the bay doors' arches and glow, their own colour (Round 145)
     let ux=ob.ux,uz=ob.uz,w=ob.w,d=ob.d;
     if(Math.abs(ux)<Math.abs(uz)){[ux,uz]=[-uz,ux];[w,d]=[d,w];}
     if(ux<0){ux=-ux;uz=-uz;}
@@ -4818,9 +4818,11 @@
       if(len<.01)return;
       const g=new THREE.CylinderGeometry(r,r,len,6).applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0,1,0),delta.normalize()));
       g.translate((p[0]+q[0])/2,(p[1]+q[1])/2,(p[2]+q[2])/2);
-      if(on)lights.push({geom:g,color:color(0xc9c1a2),lit:new THREE.Color(.5,.43,.3),mix:1,gain:1.8,style:3});else part(g,h);
+      if(on==='bay')bays.push({geom:g,color:color(0xc9b28a),lit:new THREE.Color(.62,.34,.08),mix:1,gain:1.8,style:3});
+      else if(on)lights.push({geom:g,color:color(0xc9c1a2),lit:new THREE.Color(.5,.43,.3),mix:1,gain:1.8,style:3});else part(g,h);
     };
     const outline=(a,b)=>seg(a,b,.13,0,true);
+    const bayOutline=(a,b)=>seg(a,b,.13,0,'bay');
     const face=(points,h)=>{
       const shape=points.map(p=>new THREE.Vector2(p[0],p[1]));
       const ix=THREE.ShapeUtils.triangulateShape(shape,[]).flat();
@@ -4850,8 +4852,15 @@
       const pts=[[u-rr,.65,z],[u+rr,.65,z],[u+rr,arch,z]];
       for(let j=1;j<=16;j++){const t=j*Math.PI/16;pts.push([u+rr*Math.cos(t),arch+rr*.45*Math.sin(t),z]);}
       face(pts,trim);
-      for(let j=0;j<pts.length-1;j++){seg(pts[j],pts[j+1],.14,0xbeb6a3);if(j>0)outline([pts[j][0],pts[j][1],z+.20],[pts[j+1][0],pts[j+1][1],z+.20]);}
-      for(const du of [-bw*.25,0,bw*.25])cub(u+du,2,z+.07,.045,2.6,.06,0x292f2b);
+      for(let j=0;j<pts.length-1;j++){seg(pts[j],pts[j+1],.14,0xbeb6a3);if(j>0)bayOutline([pts[j][0],pts[j][1],z+.20],[pts[j+1][0],pts[j+1][1],z+.20]);}
+      // Round 145 (Mike: "add another color lights to the bay doors on the boathouse row homes"): the arch's bulbs and a
+      // soft glow on the doors inside it take the bays' own colour, amber against the white outline on a plain night,
+      // the next colour of a themed one
+      { const inner=pts.map(p=>[u+(p[0]-u)*.9,.65+(p[1]-.65)*.94,z+.09]);
+        const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(inner.flatMap(p=>P(...p)),3));
+        g.setIndex(THREE.ShapeUtils.triangulateShape(inner.map(p=>new THREE.Vector2(p[0],p[1])),[]).flat());g.computeVertexNormals();
+        bays.push({geom:g,color:color(0x3a2c20),lit:new THREE.Color(.62,.34,.08),mix:1,gain:.35,style:3}); }
+      for(const du of [-bw*.25,0,bw*.25])cub(u+du,2,z+.10,.045,2.6,.06,0x292f2b);
       cub(u,6.5,z+.11,bw*.65,2.0,.10,0x243d46);
       parts[parts.length-1].lit=new THREE.Color(.035,.023,.010);
       for(const yy of [5.48,7.52])cub(u,yy,z+.20,bw*.72,.13,.18,trim);
@@ -4894,7 +4903,7 @@
     for(const u of [-hw-.04,hw+.04])for(let v=-hd+3;v<hd-1;v+=4){cub(u,6.2,v,.12,1.6,1.15,0x253b43);}
     // Low landing and parallel shell racks at the water edge.
     cub(0,-.25,hd+3.1,w*.8,.30,4.1,0x8b8778);
-    return {parts,lights,center:[ob.cx,ob.cz],height:ridge+1.6};
+    return {parts,lights,bays,center:[ob.cx,ob.cz],height:ridge+1.6};
   }
   // Cira's chamfered, inward-leaning glass follows the surveyed polygon. The
   // taper and folded roof are a visual approximation of Enclos' facade study;
@@ -6009,6 +6018,7 @@
   // 4/8 without asking); lazy, the renderer exists before any atlas is built
   let hwAniso = 0;
   const anisoOf = (n) => Math.min(n, hwAniso || (hwAniso = renderer.capabilities.getMaxAnisotropy() || 1));
+  let CUSTOM_HOUSE_AT = null;   // the Custom House's footprint and frame, for its night wash in the skyline lights (Round 145)
   step('Restoring the landmarks', () => {
     const walls = [];   // gets the window shader
     const detail = [];  // roofs, spires, columns, trim — plain material
@@ -6337,6 +6347,7 @@
         fin.translate(ob.cx, 87 + 1.4, ob.cz);
         ad(facet(fin), '#b2a993');
         liftB(m0, b);
+        CUSTOM_HOUSE_AT = { poly: b.poly, ob, ry };
       }
     }
     // A Man Full of Trouble (1759), 127 Spruce (Round 127, Mike with a photo: the storefront pass had
@@ -8496,8 +8507,9 @@
       const [x,z]=polyCentroid(spec.poly),base=siteY(x,z,'ground');
       const model=boathouseGeometry(spec,base);
       venueParts.push(...model.parts);
-      const slot=themeSlotN++%4;
+      const slot=themeSlotN++%4,baySlot=themeSlotN%4;   // the bays take the colour after the outline's (Round 145)
       for(const p of model.lights)themeParts.push({...p,slot});
+      for(const p of model.bays)themeParts.push({...p,slot:baySlot});
       roofNote(x,z,base+model.height,Math.abs(signedArea(spec.poly)));
     }
     if (venueParts.length) {
@@ -8742,6 +8754,27 @@
       // --- City Hall: the full Second Empire block (its outline was dropped at pack
       // time for containing part centroids, and the wings were never mapped as parts,
       // so the tower used to rise from bare ground), plus the ornate tower and Penn
+      // Round 145 (Mike, with two night photos: "The customs house on 2nd st needs to be lit up at night. They recently
+      // added new colored lights that have 3 lighting zones for different colors"): the lower block (base and brick
+      // shaft to 40 m), the square stage of the setback (40 to 49 m) and the tower (the two octagonal drums and the
+      // lantern, 49 to 81.5 m) each take an uplight wash on its own consecutive slot, so a two-colour night deals them
+      // gold, blue, gold as in the second photo, and a plain night washes all three in their own warm white as in the
+      // first; a ring of light at the lantern's head goes with the tower
+      if (CUSTOM_HOUSE_AT) {
+        const { poly, ob, ry } = CUSTOM_HOUSE_AT, [pcx, pcz] = polyCentroid(poly), base = siteY(pcx, pcz, 'ground');
+        const sA = themeSlotN % 4, sB = (themeSlotN + 1) % 4, sC = (themeSlotN + 2) % 4;
+        themeSlotN += 3;
+        const grown = poly.map(([x, z]) => { const dx = x - pcx, dz = z - pcz, l = Math.hypot(dx, dz) || 1; return [x + dx / l * 0.6, z + dz / l * 0.6]; });
+        sheetOf(buildingGeom(grown, null, 40.2, 0.3).translate(0, base, 0), sA, 0.5, true);
+        sheetOf(box(34, 9.2, 34, ob.cx, base + 44.6, ob.cz, ry), sB, 0.62, true);
+        for (const [r0, r1, y0, y1] of [[14.9, 13.7, 49, 62], [10.5, 9.7, 62, 73], [6.9, 6.1, 73, 81.5]]) {
+          const g = new THREE.CylinderGeometry(r1, r0, y1 - y0, 8, 1, true); g.rotateY(ry + Math.PI / 8); g.translate(ob.cx, base + (y0 + y1) / 2, ob.cz);
+          sheetOf(g, sC, 0.55, true);
+        }
+        const ring = new THREE.CylinderGeometry(6.05, 6.05, 0.7, 24, 1, true); ring.translate(ob.cx, base + 81.1, ob.cz);
+        const warm = new THREE.Color(0xfff1d6);
+        themeParts.push({ geom: ring, color: warm.clone().multiplyScalar(0.6), lit: warm, mix: 1, slot: sC, gain: 1.6, style: 3 });
+      }
       {
         const cx = -1603, cz = -802, base = siteY(cx, cz, 'ground');
         const bx = cx + fl.dx * 55, bz = cz + fl.dz * 55;    // block center: tower on the north face
