@@ -894,10 +894,23 @@
     }
     return out;
   }
+  // Round 150 (Mike: "Can we also add air conditioning and other hardware to roofs? They look too plain"): every flat roof
+  // of the packed tiers is noted here (centre, top, long axis, half sizes, seed: 8 floats), and 'Fitting out the
+  // rooftops' lays the hardware near the eye from these notes as instanced condensers, rooftop units, hatches, vent
+  // stacks and dishes, on phones too. Nothing is baked into the chunks, so the far city costs nothing
+  const ROOF_KIT = { buf: new Float32Array(8 * 65536), n: 0 };
+  function roofKitNote(ob, ax, top, area, seed) {
+    if (area < 25 || area > 40000) return;
+    if (ROOF_KIT.n * 8 + 8 > ROOF_KIT.buf.length) { const nb = new Float32Array(ROOF_KIT.buf.length * 2); nb.set(ROOF_KIT.buf); ROOF_KIT.buf = nb; }
+    ROOF_KIT.buf.set([ob.cx, ob.cz, top, ax.ax, ax.az, ax.hl, ax.hs, seed], ROOF_KIT.n * 8);
+    ROOF_KIT.n++;
+  }
   function roofClutter(add, poly, base, h, area, t, fa, seed, wallC, far) {
-    if (isTouch || h < 5) return;
+    if (h < 3) return;
     const ob = orientedBox(poly), ax = obbAxis(ob);
     if (ax.hs < 2.2) return;
+    roofKitNote(ob, ax, base + h, area, seed);
+    if (isTouch || h < 5) return;
     const top = base + h;
     const at = (u, v) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v];
     const rect = (u, v, w, d) => [at(u - w / 2, v - d / 2), at(u + w / 2, v - d / 2), at(u + w / 2, v + d / 2), at(u - w / 2, v + d / 2)];
@@ -5950,7 +5963,10 @@
         ].join('\n'))
         // lit windows dim with distance (aerial perspective by night): the far ring's mass
         // of them otherwise resolves to a white band along the horizon
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += shtLamp * shtLit * uNight * 0.95 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += shtLamp * shtLit * uNight * 0.95 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));' +
+          // Round 150 (Mike: "the tops of the buildings look too dark. Can we light them just a bit at night?"): the city's
+          // own glow on the roofs, a share of each roof's colour after dark on every face turned up, whatever its height
+          '\ntotalEmissiveRadiance += diffuseColor.rgb * uNight * ' + ROOF_NIGHT.toFixed(3) + ' * smoothstep(0.35, 0.75, vWNorm.y);')
       glassOpticsPatch(shader,{mask:'shtGlass',normal:'vWNorm',uv:'shtPaneUV',id:'shtPaneID',seed:'vTint*7.1',coating:.085,roughness:.115,depth:.48});
       lampLightPatch(shader, 'vWPos', 'wall');   // Round 140: the street lamps wash the lower storeys
     };
@@ -18384,6 +18400,7 @@
   // buffer ignores a polygon offset), and they were hard-edged.
   const LAMPMAP = { size: isTouch ? 1024 : 2048, span: isTouch ? 8000 : 12000, rt: null, scene: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, store: 0.25 };
   const lampMapU = { uLampMap: { value: null }, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: { value: 0 }, uLampFade: { value: new THREE.Vector4(0, 0, 0, 1) } };
+  const ROOF_NIGHT = 0.3;   // Round 150: the roofs' night glow, a share of their own colour (the facade hook)
   let LAMP_GAIN = 3.2;   // Round 146: 4.0 read a tad bright once the pools widened (Round 144) and the trees and roofs took them   // the pools' strength over a surface's own colour (__dbg.lampGain; calibrated on Mike's South Philly street at 9:30 pm)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
@@ -18648,6 +18665,121 @@
     if (el) el.textContent = Math.round(nAll / 1000) + 'k';
     LIGHTS.ready = true;
   });
+  // ---- the rooftops' hardware (Round 150). The flat roofs noted in ROOF_KIT are bucketed in 160 m cells; near the eye
+  // (ROOFKIT.r) every roof's kit is laid from its seed into five instanced meshes, the nearest cells first, up to each
+  // mesh's cap, again when the eye has moved 30 m or 1.5 s have passed. A roof one house deep and longer than 14 m is a
+  // strip of rowhouses cut into 5.4 m houses, each with a condenser (seven in ten), a hatch (about half), one or two vent
+  // stacks and now and then a dish turned south-south-west; a single house takes one house's kit; a bigger roof takes
+  // rooftop units by its area on a jittered grid, hatches, vents and, under 900 m2, a few condensers. After dark they
+  // take the roofs' own glow (ROOF_NIGHT), so they read against the roofs they stand on
+  const ROOFKIT = { r: isTouch ? 260 : 420, cell: 160, cells: null, meshes: [], at: 0, cam: new THREE.Vector3(1e9, 0, 0), laid: 0 };
+  step('Fitting out the rooftops', () => {
+    if (!ROOF_KIT.n) return;
+    const B = ROOF_KIT.buf, cells = new Map();
+    for (let i = 0; i < ROOF_KIT.n; i++) {
+      const k = Math.floor(B[i * 8] / ROOFKIT.cell) + ':' + Math.floor(B[i * 8 + 1] / ROOFKIT.cell);
+      let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(i);
+    }
+    ROOFKIT.cells = new Map([...cells].map(([k, a]) => [k, Int32Array.from(a)]));
+    const lin = (hex) => new THREE.Color(hex);
+    const part = (g, hex) => ({ geom: g, color: lin(hex) });
+    const cyl = (r0, r1, h, y, seg) => new THREE.CylinderGeometry(r0, r1, h, seg || 10).translate(0, y, 0);
+    // stored dark, as every flat is (the legacy colour pipeline lifts a stored value about 2.5 times, gotcha 11)
+    const kinds = [
+      // a residential condenser: a grey cabinet with its dark fan grille on top
+      { cap: isTouch ? 5000 : 16000, parts: [part(new THREE.BoxGeometry(0.85, 0.75, 0.85).translate(0, 0.375, 0), 0x2a2c2b), part(cyl(0.34, 0.34, 0.03, 0.765, 12), 0x040405)] },
+      // a commercial rooftop unit: a long cabinet, two fan grilles and the intake hood at one end
+      { cap: isTouch ? 1500 : 5000, parts: [part(new THREE.BoxGeometry(2.4, 1.1, 1.5).translate(0, 0.55, 0), 0x262827), part(cyl(0.36, 0.36, 0.03, 1.115, 12).translate(-0.55, 0, 0), 0x040405), part(cyl(0.36, 0.36, 0.03, 1.115, 12).translate(0.45, 0, 0), 0x040405), part(new THREE.BoxGeometry(0.35, 0.7, 1.3).translate(1.37, 0.45, 0), 0x1a1b1b)] },
+      // a roof hatch: the curb and its lid
+      { cap: isTouch ? 3500 : 12000, parts: [part(new THREE.BoxGeometry(0.9, 0.3, 0.9).translate(0, 0.15, 0), 0x0e0f10), part(new THREE.BoxGeometry(1.0, 0.06, 1.0).translate(0, 0.33, 0), 0x17181a)] },
+      // a vent stack and its cap
+      { cap: isTouch ? 5000 : 20000, parts: [part(cyl(0.06, 0.06, 0.7, 0.35, 6), 0x0a0a0b), part(cyl(0.1, 0.1, 0.08, 0.72, 6), 0x0f1011)] },
+      // a satellite dish on a short mast, facing +z tilted up (the placement turns it south-south-west)
+      { cap: isTouch ? 1200 : 4000, parts: [part(cyl(0.03, 0.03, 0.45, 0.225, 5), 0x17181a), part(new THREE.CylinderGeometry(0.3, 0.02, 0.1, 12).rotateX(0.8).translate(0, 0.55, 0.05), 0x3a3c3c)] },
+    ];
+    for (const kd of kinds) {
+      const g = mergeColored(kd.parts);
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.1 });
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uNight = nightUniform;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * uNight * ' + ROOF_NIGHT.toFixed(3) + ';');
+      };
+      const m = new THREE.InstancedMesh(g, mat, kd.cap);
+      m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = !isTouch;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      groupCity.add(m);
+      ROOFKIT.meshes.push(m);
+    }
+    PERF.roofKit = { roofs: ROOF_KIT.n, cells: ROOFKIT.cells.size };
+  });
+  function roofKitLay() {
+    const cx = camera.position.x, cz = camera.position.z, R = ROOFKIT.r, C = ROOFKIT.cell, M = ROOFKIT.meshes, B = ROOF_KIT.buf;
+    const cnt = [0, 0, 0, 0, 0], caps = M.map((m) => m.instanceMatrix.count);
+    const put = (kind, x, y, z, rot, s = 1) => {
+      const n = cnt[kind]; if (n >= caps[kind]) return;
+      const e = M[kind].instanceMatrix.array, o = n * 16, c = Math.cos(rot) * s, sn = Math.sin(rot) * s;
+      e[o] = c; e[o + 1] = 0; e[o + 2] = -sn; e[o + 3] = 0; e[o + 4] = 0; e[o + 5] = s; e[o + 6] = 0; e[o + 7] = 0;
+      e[o + 8] = sn; e[o + 9] = 0; e[o + 10] = c; e[o + 11] = 0; e[o + 12] = x; e[o + 13] = y; e[o + 14] = z; e[o + 15] = 1;
+      cnt[kind] = n + 1;
+    };
+    if (camera.position.y < 1500) {
+      const list = [], gx0 = Math.floor(cx / C), gz0 = Math.floor(cz / C), cr = Math.ceil(R / C);
+      for (let gx = gx0 - cr; gx <= gx0 + cr; gx++) for (let gz = gz0 - cr; gz <= gz0 + cr; gz++) {
+        const a = ROOFKIT.cells.get(gx + ':' + gz); if (!a) continue;
+        const d = Math.hypot((gx + 0.5) * C - cx, (gz + 0.5) * C - cz);
+        if (d < R + C) list.push([d, a]);
+      }
+      list.sort((p, q) => p[0] - q[0]);
+      for (const [, a] of list) for (let q = 0; q < a.length; q++) {
+        const o = a[q] * 8, x0 = B[o], z0 = B[o + 1];
+        if ((x0 - cx) ** 2 + (z0 - cz) ** 2 > R * R) continue;
+        const y = B[o + 2], ux = B[o + 3], uz = B[o + 4], hl = B[o + 5], hs = B[o + 6], seed = B[o + 7];
+        const px = -uz, pz = ux, rot = Math.atan2(-uz, ux);
+        const at = (u, v) => [x0 + ux * u + px * v, z0 + uz * u + pz * v];
+        const H = (k) => hash01(seed * 1.37 + k * 0.731);
+        const item = (kind, u, v, r) => { const [x, z] = at(u, v); put(kind, x, y, z, r); };
+        const house = (u0, W, D, k) => {   // one house: its centre along the axis, its width along it and its depth across it
+          const side = H(k + 1) < 0.5 ? -1 : 1;
+          if (H(k + 2) < 0.7) item(0, u0 + (H(k + 3) - 0.5) * W * 0.45, side * D * 0.28, rot + (H(k + 4) < 0.5 ? 0 : Math.PI / 2));
+          if (H(k + 5) < 0.55) item(2, u0 + (H(k + 6) - 0.5) * W * 0.35, -side * D * 0.08, rot);
+          const nv = H(k + 7) < 0.4 ? 2 : 1;
+          for (let j = 0; j < nv; j++) item(3, u0 + (j ? -1 : 1) * W * 0.38, (H(k + 8 + j) - 0.5) * D * 0.7, rot);
+          if (H(k + 11) < 0.22) { const [x, z] = at(u0 + (H(k + 12) - 0.5) * W * 0.5, side * D * 0.38); put(4, x, y, z, -0.35, 1); }
+        };
+        if (2 * hl > 14 && hs >= 3 && hs <= 9) {   // a strip of rowhouses
+          const n = Math.max(1, Math.round(2 * hl / 5.4)), W = 2 * hl / n;
+          for (let k = 0; k < n; k++) house(-hl + (k + 0.5) * W, W, 2 * hs, k * 17);
+        } else if (hl * hs * 4 < 220) {   // a single house: its depth runs along the long axis
+          const k = 0, side = H(1) < 0.5 ? -1 : 1;
+          if (H(2) < 0.7) item(0, side * hl * 0.45, (H(3) - 0.5) * hs * 0.8, rot);
+          if (H(5) < 0.55) item(2, -side * hl * 0.1, (H(6) - 0.5) * hs * 0.6, rot);
+          item(3, (H(7) - 0.5) * hl, (H(8) < 0.5 ? -1 : 1) * hs * 0.75, rot);
+          if (H(11) < 0.22) { const [x, z] = at(side * hl * 0.6, (H(12) - 0.5) * hs); put(4, x, y, z, -0.35, 1); }
+        } else {   // a bigger roof: rooftop units on a jittered grid, hatches, vents, and condensers on the smaller ones
+          const area = 4 * hl * hs, nR = clamp(Math.round(area / 260), 1, 10);
+          const cols = Math.max(1, Math.round(Math.sqrt(nR * hl / hs))), rows = Math.max(1, Math.ceil(nR / cols));
+          for (let k = 0; k < nR; k++) {
+            const cu = k % cols, cv = Math.floor(k / cols);
+            item(1, (-0.5 + (cu + 0.5 + (H(20 + k) - 0.5) * 0.5) / cols) * hl * 1.4, (-0.5 + (cv + 0.5 + (H(40 + k) - 0.5) * 0.5) / rows) * hs * 1.4, rot + (H(60 + k) < 0.3 ? Math.PI / 2 : 0));
+          }
+          item(2, (H(80) - 0.5) * hl * 1.2, (H(81) - 0.5) * hs * 1.2, rot);
+          if (area > 1500) item(2, (H(82) - 0.5) * hl * 1.2, (H(83) - 0.5) * hs * 1.2, rot);
+          for (let k = 0; k < 2 + Math.floor(H(84) * 3); k++) item(3, (H(85 + k) - 0.5) * hl * 1.6, (H(90 + k) - 0.5) * hs * 1.6, rot);
+          if (area < 900) for (let k = 0; k < 1 + Math.floor(H(95) * 3); k++) item(0, (H(96 + k) - 0.5) * hl * 1.4, (H(100 + k) - 0.5) * hs * 1.4, rot);
+        }
+        if (cnt[0] >= caps[0] && cnt[1] >= caps[1] && cnt[3] >= caps[3]) break;
+      }
+    }
+    for (let k = 0; k < M.length; k++) { M[k].count = cnt[k]; M[k].instanceMatrix.needsUpdate = true; }
+    ROOFKIT.laid = cnt.reduce((a, b) => a + b, 0);
+  }
+  function updateRoofKit(now) {
+    if (!ROOFKIT.meshes.length) return;
+    if (now < ROOFKIT.at && camera.position.distanceToSquared(ROOFKIT.cam) < 900) return;
+    ROOFKIT.at = now + 1500; ROOFKIT.cam.copy(camera.position);
+    roofKitLay();
+  }
   step('Lighting the skyline', () => {
     // tall buildings wear lit windows that survive distance: additive points
     // scattered on the shaft perimeter with the same screen-px floor as the
@@ -21777,6 +21909,7 @@
     updatePatco(now, dt);
     updateTraffic(now, dt);
     updateLights(now);
+    updateRoofKit(now);   // Round 150
     updateLightsTheme(now, dt);
     updateTreePick();
     updateMarkets(now);
@@ -21882,7 +22015,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { _pov.set(x, y, z).applyMatrix4(PIN_OCC.view); const vz = -_pov.z; _pov.applyMatrix4(PIN_OCC.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(PIN_OCC.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(vz - (2.5 + vz * 0.02)), px, py, ds, vis: pinOccVisible(x, y, z) }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccVisible(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]) ? 1 : 0, st ? st.tgt[i] : -1, st ? st.pendC[i] : -1]); return o; }) : undefined }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { _pov.set(x, y, z).applyMatrix4(PIN_OCC.view); const vz = -_pov.z; _pov.applyMatrix4(PIN_OCC.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(PIN_OCC.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(vz - (2.5 + vz * 0.02)), px, py, ds, vis: pinOccVisible(x, y, z) }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccVisible(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]) ? 1 : 0, st ? st.tgt[i] : -1, st ? st.pendC[i] : -1]); return o; }) : undefined }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

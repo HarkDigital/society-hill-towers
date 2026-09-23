@@ -6822,3 +6822,25 @@ at 2.0 and floors at 1.0, the 15-frame adaptive step unchanged (it still sheds r
 frame runs over 22 ms). Checked in the pane's phone emulation at 740 by 360: a 2x drawing buffer of 1480 by 720. Not
 checked on a real phone from here: an older phone will sit at the 1.0 floor and may run warmer; the numbers are
 `DPR_CAP` and `DPR.min` if it needs pulling back.
+
+## Round 150 — the roofs a little lit at night, and hardware on them (Sep 23)
+
+Mike: "the tops of the buildings look too dark. Can we light them just a bit at night?", then "Can we also add air
+conditioning and other hardware to roofs? They look too plain."
+
+The glow: the lamps' wash stops at 16 m since Round 147, so the roofs had only the moon and the hemisphere. The facade
+hook now adds `ROOF_NIGHT` (0.3) of a face's own colour after dark wherever the face turns up (smoothstep 0.35 to 0.75 on
+the world normal, so the pitched slopes count), at any height: a city's sky glow, not a lamp. 0.12 read unchanged.
+
+The hardware: the existing clutter was desktop only, gave a rowhouse at most a chimney on a third of them, and baked
+into the chunks. `roofClutter` now notes every flat roof of the packed tiers before its touch return (`ROOF_KIT`: centre,
+top, long axis, half sizes, seed; 185,552 roofs, 8 floats each), and 'Fitting out the rooftops' builds five instanced
+meshes: a condenser with its fan grille, a commercial rooftop unit with two grilles and a hood, a hatch with its lid, a
+vent stack with its cap, a dish on a mast turned south-south-west. Within 420 m of the eye (260 on a phone), nearest
+160 m cell first and up to each mesh's cap, every roof's kit is laid from its seed, again when the eye has moved 30 m or
+1.5 s have passed: a roof one house deep and longer than 14 m is a strip cut into 5.4 m houses, each with a condenser in
+seven of ten, a hatch in about half, one or two vents and a dish in about a fifth; a single house takes one house's kit;
+a bigger roof takes rooftop units by area on a jittered grid, hatches, vents and, under 900 m2, a few condensers. They
+take the roofs' night glow too. Two misses on the way: `put` had no default scale, so four kinds drew as NaN and only the
+dishes showed; and the colours had to be stored at about a fifth of their look (the legacy lift), as every flat is.
+Pitched roofs take nothing (a gable carries no condenser in the model). `__dbg.roofKit()`, `tests/test_roof_kit.py`.
