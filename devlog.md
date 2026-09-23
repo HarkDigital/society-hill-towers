@@ -6487,3 +6487,27 @@ after the page had settled on a plain night: the old build's theme weight was 0.
 0.005 the next (still white, easing); this build's is 1 on the first frame, the crowns and the windows
 purple at once. The pane checks before it all used pins, which set `seeded` themselves, which is why they
 missed it. `tests/test_sht_windows.py` holds the order.
+
+## Round 138 — pins that ease instead of flashing (Sep 23)
+
+Mike: "I am now seeing a problem with the pins flashing and disappearing while I move around. Is there a
+smoother way we can handle this?" Round 127's pins are shown or hidden whole from a 256-pixel depth image of
+the city, recaptured every fifth frame while the eye moves; each capture decided every pin's `aPinVis` as 0
+or 1 and the pin snapped to a point or back. A tip beside a building's edge lands on either side of it from
+one capture to the next, so it blinked. Round 136 made it more common: it stepped 232 stop and station points
+out of their footprints to 2.5 m from the wall, which is exactly that edge.
+
+`pinOccUpdate` now keeps a state per pin slot (`pinOccState`): a pin changes its mind only when two captures
+agree, or when the answer has held `PIN_HOLD` 0.45 s (a moving pin while the eye is still, when no capture
+comes); a new state is kept at least `PIN_DWELL` 0.3 s (passing a narrow gap does not blink it); and
+`aPinVis` eases over `PIN_FADE` 0.2 s on a smoothstep, so the pin sinks into its tip and rises out of it. A
+pin new to its slot (a larger count, or a slot handed to a pin more than 30 m away when the set reshuffles)
+takes its answer at once, since `pinRise` brings it in. The pick still refuses a pin under half size.
+
+Measured in the pane with the same layer mask (every fixed-pin layer on, every moving one off) over three
+scripted flights (Old City at 28 and 22 m, Market Street at 45 m, 150 frames each), counting a blink as a
+pin that hides and returns within 12 frames without moving: the old build 31 blinks and 364 hard flips,
+two agreeing captures alone 8 and 183, with the dwell 0 blinks and 135 changes, every one eased. About
+22 ms a frame in the pane either way. `tests/test_pin_fade.py` runs the block under Node against scripted
+captures (a one-capture blip ignored, two captures hide it on a monotone ease, the dwell, the still-eye
+timeout, a new pin in a slot).

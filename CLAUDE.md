@@ -79,7 +79,7 @@ before any visual round rather than rediscovering it.
   (`PIN_ANCHOR_GLSL`) and the pins draw after `pinDepthClear` wipes the depth buffer, so nothing cuts one and they sort
   among themselves; a small depth image of the city (`pinOccCapture`, every 5th frame, 10th on touch, and since Round 136 only when the eye has moved or turned or 120 frames
   have passed, packed to 30 km, the sky and every non-depth-writing mesh hidden) decides per tip
-  whether a building hides it (`aPinVis`, `pinOccVisible`; a tap picks a pin by the same flag since Round 136), and the concert placards and score bubbles ask the same
+  whether a building hides it (`aPinVis`, `pinOccVisible`; a tap picks a pin by the same flag since Round 136; since Round 138 a pin changes state only when two captures agree or 0.45 s has passed, keeps a new state 0.3 s and eases `aPinVis` over 0.2 s instead of snapping, `PIN_FADE`/`PIN_HOLD`/`PIN_DWELL`, `tests/test_pin_fade.py`), and the concert placards and score bubbles ask the same
   image for their roof landing point (`pinBlocked`); `__dbg.pinOcc()`, `tests/test_pins.py`; the storefront pass skips
   every researched custom footprint (Round 127); the Marriott Old City's porte-cochere
   stands in the L's inner corner beside the circular drive (Round 126), found as the reflex vertex, never a min-x vertex; roof forms come from the LiDAR

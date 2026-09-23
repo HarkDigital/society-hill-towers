@@ -20555,23 +20555,50 @@
     if (PIN_OCC.ok && camera.position.distanceTo(_pov.set(x, y, z)) < PIN_OCC.far * 0.95) return !pinOccVisible(x, y, z);
     return !losClear(x, y, z);
   }
-  function pinOccUpdate() {
+  // Round 138 (Mike: the pins flash and disappear while I move around): a tip beside a building's edge can land on
+  // either side of it in the 256-pixel image from one capture to the next, and a binary aPinVis snapped the pin
+  // to nothing and back. Now a pin changes its mind only when two captures agree (or the answer has held
+  // PIN_HOLD seconds, for a pin that moves while the eye is still and no capture comes), and then shrinks into
+  // its tip or grows out of it over PIN_FADE seconds. A pin new to its slot (or a slot handed to a pin 30 m
+  // away when the set reshuffles) takes its answer at once: pinRise brings it in. A pin that has just changed
+  // keeps its new state PIN_DWELL seconds, so passing a lamp post or a narrow gap does not blink it.
+  const PIN_FADE = 0.2, PIN_HOLD = 0.45, PIN_DWELL = 0.3;
+  function pinOccState(m) {
+    const cap = m.instanceMatrix.count;
+    let st = m.userData.occ;
+    if (!st || st.cap !== cap) st = m.userData.occ = { cap, n: 0, tgt: new Uint8Array(cap), lin: new Float32Array(cap), pendC: new Uint8Array(cap), pendT: new Float32Array(cap), age: new Float32Array(cap), px: new Float32Array(cap), pz: new Float32Array(cap) };
+    return st;
+  }
+  function pinOccUpdate(dt = 1 / 60) {
     let any = frameNo - PIN_OCC.want < 3;
     for (const m of PIN_MESHES) if (m.visible && m.count > 0) { any = true; break; }
     if (!any) return;
+    let captured = false;
     if (!PIN_OCC.ok || (frameNo % PIN_OCC.every === 0 && (camera.position.distanceToSquared(PIN_OCC.lastPos) > 0.09 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.lastQuat)) > 2e-6 || frameNo - PIN_OCC.lastFrame > 120))) {
-      pinOccCapture();
+      pinOccCapture(); captured = true;
       PIN_OCC.lastPos.copy(camera.position); PIN_OCC.lastQuat.copy(camera.quaternion); PIN_OCC.lastFrame = frameNo;
     }
+    const step = Math.min(1, dt / PIN_FADE);
     let hid = 0;
     for (const m of PIN_MESHES) {
-      const a = m.geometry.attributes.aPinVis, e = m.instanceMatrix.array, n = m.count;
+      const a = m.geometry.attributes.aPinVis, e = m.instanceMatrix.array, n = m.count, st = pinOccState(m);
       let dirty = false;
       for (let i = 0; i < n; i++) {
-        const k = i * 16, v = pinOccVisible(e[k + 12], e[k + 13], e[k + 14]) ? 1 : 0;
-        if (!v) hid++;
+        const k = i * 16, x = e[k + 12], z = e[k + 14], raw = pinOccVisible(x, e[k + 13], z) ? 1 : 0;
+        if (i >= st.n || Math.abs(st.px[i] - x) + Math.abs(st.pz[i] - z) > 30) {   // a new pin in this slot: its answer at once
+          st.tgt[i] = raw; st.lin[i] = raw; st.pendC[i] = 0; st.pendT[i] = 0; st.age[i] = PIN_DWELL;
+        } else if (raw !== st.tgt[i]) {
+          st.pendT[i] += dt; if (captured) st.pendC[i]++; st.age[i] += dt;
+          if ((st.pendC[i] >= 2 || st.pendT[i] >= PIN_HOLD) && st.age[i] >= PIN_DWELL) { st.tgt[i] = raw; st.pendC[i] = 0; st.pendT[i] = 0; st.age[i] = 0; }
+        } else { st.pendC[i] = 0; st.pendT[i] = 0; st.age[i] += dt; }
+        st.px[i] = x; st.pz[i] = z;
+        const l = st.tgt[i] ? Math.min(1, st.lin[i] + step) : Math.max(0, st.lin[i] - step);
+        st.lin[i] = l;
+        const v = l * l * (3 - 2 * l);   // eased: the pin sinks into its tip and rises out of it
+        if (!st.tgt[i]) hid++;
         if (a.array[i] !== v) { a.array[i] = v; dirty = true; }
       }
+      st.n = n;
       if (dirty) a.needsUpdate = true;
     }
     PIN_OCC.hid = hid;
@@ -20689,7 +20716,7 @@
     }
     updateLabels();
     updateHash(now);
-    pinOccUpdate();
+    pinOccUpdate(dt);
     if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);
   }
 
