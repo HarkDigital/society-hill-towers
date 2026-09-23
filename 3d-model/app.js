@@ -5230,6 +5230,19 @@
   // into dots rather than shimmer
   const detFarUniform = { value: isTouch ? 0.55 : 1.0 };
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
+  // five windows of the South Tower's south face that Mike picked (Round 137: "light up those specific windows with
+  // the same colors the skyline had every night"): floor index 16, the 14th row of glass down from the parapet, bays
+  // 5 to 9 counted from the west. After dark those rooms emit the skyline's colour of the night instead of a lamp,
+  // the night's colours dealt across them in order, the house white on a plain night, easing with the crowns;
+  // by day the glass is untouched. The glass shader finds them by room: the face's seed, the floor and the bays
+  const SHT_THEMED = { tower: /South Building/, floor: 16, from: 5, to: 9 };
+  const shtWinU = { uLitWin: { value: new THREE.Vector4(-99, -99, 0, -1) }, uThemeNight: nightUniform,
+    uWin0: { value: new THREE.Color(0) }, uWin1: { value: new THREE.Color(0) }, uWin2: { value: new THREE.Color(0) }, uWin3: { value: new THREE.Color(0) }, uWin4: { value: new THREE.Color(0) } };
+  function shtWinDeal(colors) { return [0, 1, 2, 3, 4].map((j) => colors[j % colors.length]); }   // the night's colours in order across the five, as the bridge runs its bands
+  function shtSouthSide(sides, ang) {   // the face whose outward normal points furthest south (+z) once the tower is turned by ang
+    const k = (s) => (s.axis === 'x' ? Math.cos(ang) : -Math.sin(ang)) * Math.sign(s.off);
+    return sides.reduce((a, b) => (k(b) > k(a) ? b : a));
+  }
   const groundMats = [];   // the bare-earth materials (groundSurfMat): the meadow shader forced green, never retinted
   // the fabric's overall brightness, one number: with the meadow and the water at the game's
   // depth the pale walls read washed out beside them (Mike), so every wall and roof on the
@@ -5342,7 +5355,26 @@
         float lobbyY=(fract(vInterior.y)-.78)*3.8;
         vec3 lobbyLight=vec3(1.0,.78,.49)*(.28+.35*exp(-lobbyY*lobbyY));
         totalEmissiveRadiance*=mix(interior,lobbyLight,lobby)*(1.0-step(.35,abs(normalize(vInteriorNormal).y)));
+        #ifdef THEMED_ROOMS
+        { vec2 rid=floor(vInterior.xy);
+          float lit=step(abs(vInterior.z-uLitWin.x),.005)*step(abs(rid.y-uLitWin.y),.5)*step(uLitWin.z-.5,rid.x)*step(rid.x,uLitWin.w+.5)*(1.0-lobby)*(1.0-step(.35,abs(normalize(vInteriorNormal).y)));
+          if(lit>.5) {
+            float k=rid.x-uLitWin.z;
+            vec3 te=mix(mix(mix(uWin0,uWin1,step(.5,k)),mix(uWin2,uWin3,step(2.5,k)),step(1.5,k)),uWin4,step(3.5,k));
+            float tm=max(te.r,max(te.g,te.b)); float tsat=tm>1e-4?1.0-min(te.r,min(te.g,te.b))/tm:0.0;
+            vec2 wp=fract(vInterior.xy); float we=min(min(wp.x,1.0-wp.x),min(wp.y,1.0-wp.y)); float wy=(wp.y-.83)*4.3;
+            // the skyline's own emission (themeMat): the colour at 2.4 by the night, a saturated hue at 0.42 of a white's gain,
+            // held a little darker toward the frame and brighter under the ceiling so it reads as a lit room, not a panel
+            totalEmissiveRadiance=te*uThemeNight*2.4*mix(1.0,.42,tsat)*(.6+.4*smoothstep(0.0,.14,we))*(.88+.12*exp(-wy*wy));
+            themedRoom=1.0;
+          }
+        }
+        #endif
         }`);
+    // the themed rooms bloom like the crowns (architecturalBloom's mask in the target's alpha); the rest of the glass does not
+    shader.fragmentShader=shader.fragmentShader
+      .replace('#include <common>', '#include <common>\n#ifdef THEMED_ROOMS\nuniform vec4 uLitWin; uniform float uThemeNight; uniform vec3 uWin0, uWin1, uWin2, uWin3, uWin4; float themedRoom=0.0;\n#endif')
+      .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n#ifdef THEMED_BLOOM\ngl_FragColor.a+=uThemeNight*.7*themedRoom;\n#endif');
     glassOpticsPatch(shader,{mask:'1.0-step(.35,abs(vInteriorNormal.y))',normal:'vInteriorNormal',uv:'fract(vInterior.xy)',id:'floor(vInterior.xy)',seed:'vInterior.z',coating:.095,roughness:.105,depth:.60});
   }
   function towerRoomCoordinates(g, axis, inner, bayW, gridBot, floorH, seed, lobby = 0) {
@@ -7087,6 +7119,7 @@
         { len: Dp, off: W / 2, axis: 'z' },
         { len: Dp, off: -W / 2, axis: 'z' },
       ];
+      const themedSide = SHT_THEMED.tower.test(t.name || '') ? shtSouthSide(sides, ang) : null;   // Round 137
       for (const s of sides) {
         const inner = s.len - 2 * TOWER.cornerW;
         // researched facade: 18 bays on the wide faces, 12 on the narrow — fixed, not
@@ -7127,9 +7160,11 @@
         const roomSeed=ti*.71+s.off*.13+(s.axis==='x'?0:3.7);
         towerRoomCoordinates(gGeom,s.axis,inner,bayW,gridBot,floorH,roomSeed);
         add(glassParts, gGeom, new THREE.Color(COLORS.glass));
+        if (s === themedSide) shtWinU.uLitWin.value.set(roomSeed, SHT_THEMED.floor, SHT_THEMED.from, SHT_THEMED.to);
         // sparse per-window variation (curtains, blinds, interior depth)
         for (let fi = 0; fi < floors; fi++) {
           for (let bi = 0; bi < bays; bi++) {
+            if (s === themedSide && fi === SHT_THEMED.floor && bi >= SHT_THEMED.from && bi <= SHT_THEMED.to) continue;   // nothing hangs in front of the themed rooms
             const r = hash01(ti * 977 + s.off * 31 + fi * 13.7 + bi * 3.1);
             if (r > 0.26) continue;
             const u = -inner / 2 + (bi + 0.5) * bayW;
@@ -7202,7 +7237,9 @@
     groupCity.add(glassMesh);
     towerGlassMat = glassMesh.material;
     towerGlassMat.emissive = new THREE.Color(0xffffff);
-    towerGlassMat.onBeforeCompile = apartmentWindowHook;
+    // the same room shader with the themed rooms compiled in (Round 137); the variation panes keep the plain hook
+    towerGlassMat.defines = { ...(towerGlassMat.defines || {}), THEMED_ROOMS: '', ...(POST.on ? { THEMED_BLOOM: '' } : {}) };
+    towerGlassMat.onBeforeCompile = (sh) => { apartmentWindowHook(sh); Object.assign(sh.uniforms, shtWinU); };
     towerGlassMat.emissiveIntensity = 0;
 
     if (variedParts.length) {
@@ -17782,12 +17819,19 @@
     label: '', src: '', name: '', colors: [], nParts: 0, nSheets: 0,
     tgt: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)), cur: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)),
     stripes: null, stripeN: 1, stgt: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)), scur: [0, 1, 2, 3].map(() => new THREE.Color(1, 1, 1)),   // the stripe palette and its eased colours
+    wtgt: [0, 1, 2, 3, 4].map(() => new THREE.Color(1, 1, 1)), wcur: [0, 1, 2, 3, 4].map(() => new THREE.Color(1, 1, 1)),   // the South Tower's five themed windows (Round 137), one colour each
     on: 0, tOn: 0, seeded: false, settled: false, calSrc: 'built in',
     cal: lightsCalOf(typeof LIGHTS_CAL !== 'undefined' ? LIGHTS_CAL : null) || { t: 0, rows: [] },
   };
   const LGAMES = { days: { nfl: {}, mlb: {}, nhl: {}, nba: {} }, fetched: {}, busy: '', fails: 0, retryAt: 0 };
   const LIGHTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/lights.json' : 'https://philly3d.com/lights.json';
   const _thSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _stSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _thHouse = new THREE.Color(0.55, 0.56, 0.6), _thTmp = new THREE.Color();
+  const _thHouseLin = new THREE.Color(), _thWinLin = new THREE.Color();
+  function themeLift(src, out) {   // a palette colour (sRGB) to the emissive the crowns get: linear, 0.45 of it, a dim hue lifted up to 2.2 times
+    out.copy(src).convertSRGBToLinear();
+    const lum = 0.2126 * out.r + 0.7152 * out.g + 0.0722 * out.b;
+    return out.multiplyScalar(0.45 * clamp(0.75 / Math.max(0.2, lum), 1, 2.2));
+  }
   const slotCol = (sl) => sl >= 4 ? _stSlot[crownBandIndex(sl,THEME.stripeN,themeU.uCrownSolid.value>0)] : _thSlot[sl];   // a sheet's display colour: the stripe bank for a stripe index
   function fetchLightsCal() {   // the served calendar (baked twice a day on philly3d.com) replaces the built-in copy when it is newer
     if (!septaCanFetch) return;
@@ -17820,11 +17864,12 @@
     const st = th.stripes || th.colors, m = st.length;   // the striped parts: the team's palette, else the night's own colours
     THEME.stripes = th.stripes || null; THEME.stripeN = m; themeU.uStripeN.value = m;
     for (let i = 0; i < 4; i++) { const c = st[i % m]; THEME.stgt[i].setHex(c[0] === '#' ? parseInt(c.slice(1), 16) : LIGHT_COLORS[c]); }
+    shtWinDeal(th.colors).forEach((c, j) => THEME.wtgt[j].setHex(c[0] === '#' ? parseInt(c.slice(1), 16) : LIGHT_COLORS[c]));   // Round 137: the skyline's colours across the five windows
     THEME.settled = false;
     refreshTimeUI();
   }
   function updateLightsTheme(now, dt) {
-    if (!themeMat && !themeSheet && !bfbNodes) return;
+    if (!themeMat && !themeSheet && !bfbNodes && !towerGlassMat) return;
     const dk = lightsDateKey(clock.y, clock.m, clock.d);
     if (!THEME.pin) lightsFetchDate(dk, now);   // the day's games, once per day viewed
     const key = dk + ':' + (THEME.pin || '') + ':' + THEME.gen;
@@ -17832,17 +17877,19 @@
       // the day's own data arriving (the scoreboard, the served calendar) for the date already in view lands at
       // once; only a new date eases (Round 127, Mike: the lights loaded white and slowly turned the proper colour)
       const sameDay = THEME.key != null && THEME.key.startsWith(dk + ':' + (THEME.pin || '') + ':');
+      const wasSettled = THEME.settled;   // read before lightsRetarget, which clears it (Round 137 review: after it, the test was always false and late same-day data eased from white again)
       THEME.key = key; lightsRetarget();
-      if (sameDay && THEME.settled) THEME.seeded = false;   // never cut short a date change's ease already under way (review, Sep 22)
+      if (sameDay && wasSettled) THEME.seeded = false;   // never cut short a date change's ease already under way (review, Sep 22)
     }
     const e = THEME.seeded ? 1 - Math.exp(-dt / 20) : 1;   // the first evaluation lands; every later change eases twenty seconds
     THEME.seeded = true;
     let moving = false;
     for (let i = 0; i < 4; i++) { const c = THEME.cur[i], t = THEME.tgt[i]; if (Math.abs(c.r - t.r) + Math.abs(c.g - t.g) + Math.abs(c.b - t.b) > 0.003) { c.lerp(t, e); moving = true; } }
     for (let i = 0; i < 4; i++) { const c = THEME.scur[i], t = THEME.stgt[i]; if (Math.abs(c.r - t.r) + Math.abs(c.g - t.g) + Math.abs(c.b - t.b) > 0.003) { c.lerp(t, e); moving = true; } }
+    for (let i = 0; i < 5; i++) { const c = THEME.wcur[i], t = THEME.wtgt[i]; if (Math.abs(c.r - t.r) + Math.abs(c.g - t.g) + Math.abs(c.b - t.b) > 0.003) { c.lerp(t, e); moving = true; } }
     if (Math.abs(THEME.on - THEME.tOn) > 0.003) { THEME.on += (THEME.tOn - THEME.on) * e; moving = true; }
     if (THEME.settled && !moving) return;
-    if (!moving) { for (let i = 0; i < 4; i++) { THEME.cur[i].copy(THEME.tgt[i]); THEME.scur[i].copy(THEME.stgt[i]); } THEME.on = THEME.tOn; }
+    if (!moving) { for (let i = 0; i < 4; i++) { THEME.cur[i].copy(THEME.tgt[i]); THEME.scur[i].copy(THEME.stgt[i]); } for (let i = 0; i < 5; i++) THEME.wcur[i].copy(THEME.wtgt[i]); THEME.on = THEME.tOn; }
     THEME.settled = !moving;
     for (let i = 0; i < 4; i++) {
       // the emissive reads the colour in linear light (the palette is sRGB; a stored value is lifted on output, gotcha 11), 0.45 of it,
@@ -17860,6 +17907,10 @@
       themeU['uCrown'+i].value.copy(c2).convertSRGBToLinear();
     }
     themeU.uThemeOn.value = THEME.on;
+    // the five windows (Round 137): each its colour lifted as the crowns' is, the house white under it as THEME.on eases
+    // (a plain night is the white the skyline's own white nights are)
+    themeLift(_thTmp.setHex(LIGHT_COLORS.white), _thHouseLin);
+    for (let i = 0; i < 5; i++) shtWinU['uWin' + i].value.copy(_thHouseLin).lerp(themeLift(_thTmp.copy(THEME.wcur[i]), _thWinLin), THEME.on);
     if (themeSheet) {
       const a = themeSheet.geometry.attributes.color, sl = themeSheet.userData.slot, w = themeSheet.userData.w;
       for (let i = 0; i < sl.length; i++) { const c = slotCol(sl[i]); a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i]; }
@@ -17877,7 +17928,8 @@
     return { src: THEME.src, colors: THEME.colors, stripes: THEME.stripes, stripeN: THEME.stripeN, comcastSolid: themeU.uComcastSolid.value>0, name: THEME.name, label: THEME.label, on: +THEME.on.toFixed(3), tOn: THEME.tOn, pin: THEME.pin,
       cal: { t: THEME.cal.t, rows: THEME.cal.rows.length, src: THEME.calSrc }, games: Object.fromEntries(LIGHT_TEAMS.map((t) => [t.k, Object.keys(LGAMES.days[t.k]).length])), fetched: Object.keys(LGAMES.fetched),
       parts: THEME.nParts, sheets: THEME.nSheets, nodes: bfbNodes ? bfbNodes.geometry.attributes.position.count : 0, lamps: bfbLampMesh ? bfbLampMesh.count : 0,
-      uniforms: [0, 1, 2, 3].map((i) => themeU['uTheme' + i].value.getHexString()), stripeU: [0, 1, 2, 3].map((i) => themeU['uStripe' + i].value.getHexString()) };
+      uniforms: [0, 1, 2, 3].map((i) => themeU['uTheme' + i].value.getHexString()), stripeU: [0, 1, 2, 3].map((i) => themeU['uStripe' + i].value.getHexString()),
+      windows: { at: shtWinU.uLitWin.value.toArray().map((v) => +v.toFixed(4)), colors: THEME.wcur.map((c) => '#' + c.getHexString()), uniforms: [0, 1, 2, 3, 4].map((i) => shtWinU['uWin' + i].value.getHexString()) } };
   }
 
   // ---- street closures (Round 79). The Streets Department's live closure permits and the

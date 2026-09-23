@@ -6446,3 +6446,44 @@ bake needs the footprints it now reads.
 Verified in the pane (building taps on the sky, the Delaware, the bridge deck, the tavern and a far-ring
 row; combined and "from ... until" alerts; the near card wide with the site card) and in captures of the
 Foglietta deck, Bainbridge Green and Head House. 199 tests pass.
+
+## Round 137 — the South Tower's five windows in the skyline's colours (Sep 22)
+
+Mike, pointing back at the five windows he boxed in red on the South Tower's south face before Round 131
+(the question then went unanswered because nothing about those panes differed from their neighbours):
+"light up those specific windows with the same colors the skyline had every night". They are the 14th row
+of glass down from the parapet, floor index 16 of 30, and bays 5 to 9 counted from the west; the variation
+panes in that row (curtains at bays 3, 4 and 10) sit just outside them, exactly as in his screenshot.
+
+The tower glass already lights each room from its own coordinates (`towerRoomCoordinates`: the bay and
+floor in `aInterior.xy`, the face's seed in `.z`), so no geometry was added. `towerGlassMat` compiles
+`apartmentWindowHook` with a `THEMED_ROOMS` define and the `shtWinU` uniforms: `uLitWin` holds the face's
+seed, the floor and the bay range, and a room that matches all three emits the night's colour after dark
+in place of a lamp, by the crowns' own formula (`uNight` 2.4 times the colour, a saturated hue at 0.42 of a
+white's gain), a touch darker toward the frame so it still reads as a room. With the post pipeline it
+blooms like the crowns (`THEMED_BLOOM`, the target's alpha, only for those rooms). The face is found by
+its outward normal (`shtSouthSide`), the tower by name (`SHT_THEMED`), and the variation loop leaves the
+five bare. By day the glass is untouched.
+
+The colours ride the theme: `lightsRetarget` deals the night's colours across the five in order
+(`shtWinDeal`: one colour fills all five, green, white and red read green, white, red, green, white),
+`THEME.wtgt`/`wcur` ease them with the crowns over 20 s and land them on the first evaluation, and a
+plain night is the white the skyline's white nights are (`themeLift`, the same lift the crowns take).
+`__dbg.lightsState().windows` reports the face, the colours and the uniforms.
+
+Verified in the pane at 9:30 pm: the five uniforms equal the crowns' (`cb0205` on a Phillies pin, the
+Ben Franklin Bridge the same red behind them), green, white, red, green, white on a three-colour pin, the
+white on a plain night, all green on an Eagles pin, and the same row by day at Mike's framing with plain
+glass in it; compiled and lit with `?bloom=0`, the phones' path. `tests/test_sht_windows.py`.
+
+An adversarial review of the round (three lenses, the shader, the theme's timing, the selection, each
+finding put to a skeptic) found one real defect, and it was Round 136's, not this round's: the same-day
+landing (Round 127) never fired. Round 136 made it `if (sameDay && THEME.settled)`, but `lightsRetarget`
+ends by clearing `THEME.settled`, so the test read a flag just cleared and was always false; on an
+unpinned game day the scoreboard answers after the first evaluation, and the skyline (and now the five
+windows) eased from white to the team colour for about a minute, Mike's Round 127 complaint back. The
+flag is now read before the retarget (`wasSettled`). Measured in the pane with a served calendar landing
+after the page had settled on a plain night: the old build's theme weight was 0.002 one frame later and
+0.005 the next (still white, easing); this build's is 1 on the first frame, the crowns and the windows
+purple at once. The pane checks before it all used pins, which set `seeded` themselves, which is why they
+missed it. `tests/test_sht_windows.py` holds the order.
