@@ -6811,3 +6811,14 @@ County, 7 KB, inlined as `I95_DATA`). The page stands a 12 m highway lamp every 
 shoulder (the right of travel, 7.5 m off the centreline), the arm over the lanes, except where the road rides an
 elevated deck (its standards light it), in the Vine Street cut, or within 10 m of a pole or a standard: 621 lamps.
 `__dbg.PERF.lampsDeck` counts both. Checked at 9:30 pm south-west past the airport and over the South Philly piers.
+
+## Round 149 — sharper on phones (Sep 23)
+
+Mike: "The model is somewhat blurry/grainy on mobile. is there anything we can do about that?" A phone's screen is
+about 3 device pixels to the point, and the page drew at most 1.25 (Round 74's cap, from 1.5) and dropped to 0.72 under
+load, then the browser stretched the image: under half the screen's sharpness each way, and the fine noise textures
+went grainy at the floor. Offered moderate (1.75 / 0.9), sharp (2.0 / 1.0) or leave it; Mike chose sharp. Touch now caps
+at 2.0 and floors at 1.0, the 15-frame adaptive step unchanged (it still sheds resolution by a fifth when the median
+frame runs over 22 ms). Checked in the pane's phone emulation at 740 by 360: a 2x drawing buffer of 1480 by 720. Not
+checked on a real phone from here: an older phone will sit at the 1.0 floor and may run warmer; the numbers are
+`DPR_CAP` and `DPR.min` if it needs pulling back.
