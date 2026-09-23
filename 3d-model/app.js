@@ -1075,10 +1075,10 @@
   // direction at their point and sit 2 cm BELOW their strip: the strips win the overlap,
   // so a fan's slightly different parameterisation at a bend never z-fights the strip's
   // paint, and a fan can never rise above a crossing street more than its strip already does
-  function ribbon(pts, w, y, yFn, lane, labelSurface = false, skipDeck = false) {
+  function ribbon(pts, w, y, yFn, lane, labelSurface = false, skipDeck = false, jitter = 0.06) {
     pts = densify(pts, 10);
     // deterministic few-cm lift so no two ribbons are ever exactly coplanar
-    y += hash01(pts[0][0] * 0.13 + pts[0][1] * 0.71) * 0.06;
+    y += hash01(pts[0][0] * 0.13 + pts[0][1] * 0.71) * jitter;
     const hw = w / 2, edges = routeOffsets(pts);
     // The mapped deck owns both core and outer streets, including its approach.
     const keep = pts.slice(1).map((p,i)=>!skipDeck || !ovpOwned(pts[i][0],pts[i][1],p[0],p[1]));
@@ -4312,40 +4312,8 @@
       const ts = t * t * (3 - 2 * t);
       return lerp(base, TERRAIN.trenchFloor + 0.55, ts);
     };
-    // a street the extract leaves in two pieces a few metres apart, in line (Pine Street at South 2nd: 12 m of
-    // missing carriageway where the plaza showed through as a pale band): join the ends (Round 127)
-    {
-      const ends = [];
-      for (const r of D.roads) {
-        if (!r.name || r.pts.length < 2 || /footway|path|steps|cycleway|pedestrian|motorway/.test(r.t)) continue;
-        const n = r.pts.length, a = r.pts[0], b = r.pts[n - 1];
-        ends.push([r, a, [a[0] - r.pts[1][0], a[1] - r.pts[1][1]]], [r, b, [b[0] - r.pts[n - 2][0], b[1] - r.pts[n - 2][1]]]);
-      }
-      const add = [];
-      for (let i = 0; i < ends.length; i++) for (let k = i + 1; k < ends.length; k++) {
-        const [r1, p1, d1] = ends[i], [r2, p2, d2] = ends[k];
-        if (r1 === r2 || r1.name !== r2.name) continue;
-        const gx = p2[0] - p1[0], gz = p2[1] - p1[1], g = Math.hypot(gx, gz);
-        if (g < 1.5 || g > 32) continue;   // South 2nd Street stops 30 m short across Pine
-        const l1 = Math.hypot(d1[0], d1[1]) || 1, l2 = Math.hypot(d2[0], d2[1]) || 1;
-        // each end points along the gap, toward the other piece
-        if ((d1[0] * gx + d1[1] * gz) / (l1 * g) < 0.9 || (-d2[0] * gx - d2[1] * gz) / (l2 * g) < 0.9) continue;
-        if (ends.some(([r3, p3]) => r3 !== r1 && r3 !== r2 && r3.name === r1.name && Math.hypot(p3[0] - p1[0], p3[1] - p1[1]) < 1.5)) continue;   // already joined at the node
-        let blocked = false;   // a real interruption (a building across the line) is never bridged
-        for (let q = 1; q < 8 && !blocked; q++) {   // the footprints themselves: they register only after the streets are paved
-          const x = p1[0] + gx * q / 8, z = p1[1] + gz * q / 8;
-          for (const b of D.buildings) {
-            if (!b.poly || b.poly.length < 3) continue;
-            const q0 = b.poly[0]; if (Math.abs(q0[0] - x) > 150 || Math.abs(q0[1] - z) > 150) continue;
-            if (pointInPoly(x, z, b.poly)) { blocked = true; break; }
-          }
-        }
-        if (blocked) continue;
-        add.push({ pts: [p1, p2], w: Math.min(r1.w, r2.w), t: r1.t, name: r1.name });
-      }
-      for (const r of add) D.roads.push(r);
-      PERF.roadJoins = add.length;
-    }
+    // (Round 130's join pass is gone: its two joins paved across Bainbridge Green and through Lawrence Court's
+    // turning circle, and Pine Street at 2nd was never split in the first place; review, Sep 22)
     const walkJobs = [], footJobs = [], carSegs = [], carGrid = new Map();
     const carAdd = (a, b, hw, walks) => {
       const k = carSegs.length; carSegs.push(a[0], a[1], b[0], b[1], hw, walks ? 1 : 0);
@@ -4362,7 +4330,7 @@
       const setts = /Dock Street/i.test(r.name || '') || (/2nd Street/i.test(r.name || '') && r.pts[0][1] > 250 && r.pts[0][1] < 420);
       // setts sit just under any asphalt (ribbon adds 0 to 6 cm): where a cobbled street runs through a crossing
       // street's junction the asphalt wins (Round 127: 2nd Street's setts laid a grey band across Pine)
-      const y = foot ? LAYER.footway : setts ? LAYER.road - 0.07 : LAYER.road;
+      const y = foot ? LAYER.footway : setts ? LAYER.road - 0.015 : LAYER.road;   // with a 1 cm jitter (below) the setts sit between the sidewalks' 0.16 to 0.22 and the asphalt's 0.24 to 0.30
       // lane class for the paint: divided (no centre yellow) on the highways and their links,
       // no markings on service and pedestrian ways; the brick parts never carry the attribute
       const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) ? 2 : 0) };
@@ -4372,11 +4340,11 @@
         // Round 127 (Mike: "sidewalks/crosswalks overlapping look pretty bad"): the mapped footways and the
         // generated sidewalks wait until every carriageway is known (below)
         if (/footway|path|steps|cycleway/.test(r.t)) { footJobs.push({ run, w: r.w }); continue; }
-        const g = ribbon(run, r.w, y, mot ? motY : null, lane, true, true);
+        const g = ribbon(run, r.w, y, mot ? motY : null, lane, true, true, setts ? 0.01 : 0.06);
         const walks = /^(residential|tertiary|living_street|unclassified|secondary|primary)$/.test(r.t);
         for (let i = 0; i < run.length - 1; i++) {
           addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
-          if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]); carAdd(run[i], run[i + 1], r.w / 2, walks); }
+          if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]); if (!mot) carAdd(run[i], run[i + 1], r.w / 2, walks); }   // the core's I-95 runs in its trench or under the deck: nothing crosses it at grade (review, Sep 22)
         }
         (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)) });
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
@@ -12123,6 +12091,8 @@
       if (k === 'escape' || k === 'i') closeAbout();
       return;
     }
+    // a held key repeats: a layer hotkey toggles once per press (review, Sep 22: holding C flickered the stops)
+    if (e.repeat && !['w', 'a', 's', 'd', 'e', 'q', 'c', ' '].includes(k) && k.indexOf('arrow') !== 0) return;
     if (k === 'l') toggleLabels();
     else if (k === 't') toggleTimePanel();
     else if (k === 'v') toggleTransit();
@@ -12139,9 +12109,8 @@
     else if (k === 'k') toggleAmtrak();
     else if (k === 'j') toggleMarkers();
     else if (k === 'o') toggleArt();
-    else if (k === 'c') toggleStops();      // Round 133
-    else if (k === 'y') toggleStations();
-    else if (k === 'z') toggleCivic();
+    else if (k === 'y') toggleStops();      // Round 133; C stays the descend key it has always been (review, Sep 22)
+    else if (k === 'z') toggleStations();   // the libraries and rec centers have no letter left: the layers panel turns them on
     else if (k === '?') toggleGuide();
     else if (k === 'i') openAbout();
     else if (k === '/') { toggleSearch(true); e.preventDefault(); }   // the local name index works everywhere
@@ -12275,7 +12244,7 @@
         ['Sideways', 'Turn the phone sideways to explore. The pads stay faintly visible while you fly.']] }],
     ['Layers', {
       d: [['Layers button', 'Top bar, or the F key. Every row is a layer: click it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
-        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, C bus stops, Y rail stations, Z libraries and rec centers, N street names, L landmark labels, P neighborhoods.'],
+        ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, Y bus stops, Z rail stations, N street names, L landmark labels, P neighborhoods.'],
         ['Reset Layers', 'Back to the default set.'],
         ['Explore', 'Eight favorite viewpoints in the Explore panel, plus search for any place.']],
       t: [['Layers button', 'Top bar. Every row is a layer: tap it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
@@ -12982,6 +12951,8 @@
   // the point joined to its OPA record, the Philadelphia Register and its local district, and L&I permits
   // issued within a year nearby. No owner names, no values. A newer tap cancels an older lookup.
   let pickedBldg = null;
+  // the pre-Round-132 cards: their openers do not know the newer picked* variables, so an async result checks this
+  const oldPick = () => !!(pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null);
   const BPICK = { rt: null, buf: new Uint8Array(4), seq: 0 };
   const CARTO_SQL = 'https://phl.carto.com/api/v2/sql?q=';
   function bldgPointAt(cx, cy) {
@@ -12991,36 +12962,38 @@
     try { occRender(BPICK.rt, 1, 1, BPICK.buf, true); }
     finally { camera.clearViewOffset(); camera.updateProjectionMatrix(); }
     const vz = occUnpack(BPICK.buf, 0);
-    if (!(vz > 1) || vz >= PIN_OCC.far * 0.99) return null;
+    if (!(vz > 1) || vz > 3000) return null;   // a building card is for what the eye can make out, not the horizon
     const dir = septaRay.ray.direction, fwd = camera.getWorldDirection(_ssv), c = dir.dot(fwd);
     if (c <= 0.05) return null;
     const t = vz / c, o = septaRay.ray.origin;
     return [o.x + dir.x * t, o.y + dir.y * t, o.z + dir.z * t, t];
   }
-  function bldgSql(kind, lon, lat) {   // numbers only ever reach the query
+  function bldgSql(kind, lon, lat, extra) {   // numbers, and a nine-digit account, only ever reach the query
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
     const pt = 'ST_SetSRID(ST_Point(' + lon.toFixed(6) + ',' + lat.toFixed(6) + '),4326)';
     if (kind === 'parcel') return 'SELECT p.address, p.bldg_desc, p.gross_area, o.parcel_number, o.location, o.year_built, o.number_stories, o.category_code_description AS cat, o.building_code_description_new AS bdesc FROM pwd_parcels p LEFT JOIN opa_properties_public o ON o.parcel_number = p.brt_id WHERE ST_Intersects(p.the_geom, ' + pt + ') LIMIT 1';
     if (kind === 'register') return 'SELECT DISTINCT loc FROM historic_sites_philreg WHERE ST_Intersects(the_geom, ' + pt + ') LIMIT 1';
     if (kind === 'district') return 'SELECT name FROM historicdistricts_local WHERE ST_Intersects(the_geom, ' + pt + ') LIMIT 1';
-    if (kind === 'permits') return "SELECT typeofwork, permittype, permitissuedate FROM permits WHERE ST_DWithin(the_geom, " + pt + ", 0.00025) AND permitissuedate > now() - interval '12 months' ORDER BY permitissuedate DESC LIMIT 3";
+    // the permits for THIS property (its OPA account), not any within 25 m (review, Sep 22)
+    if (kind === 'permits') return /^\d{9}$/.test(extra || '') ? "SELECT typeofwork, permittype, permitissuedate FROM permits WHERE opa_account_num = '" + extra + "' AND permitissuedate > now() - interval '12 months' ORDER BY permitissuedate DESC LIMIT 3" : null;
     return null;
   }
   const bldgTitle = (t) => String(t || '').toLowerCase().replace(/\b([a-z])/g, (m) => m.toUpperCase()).replace(/\bSt\b/g, 'St').replace(/\s+/g, ' ').trim();
-  function bldgQuery(kind, lon, lat) {
-    const q = bldgSql(kind, lon, lat);
-    if (!q) return Promise.resolve(null);
+  function bldgQuery(kind, lon, lat, extra) {
+    const q = bldgSql(kind, lon, lat, extra);
+    if (!q || !septaCanFetch) return Promise.resolve(null);   // the live-feed gate every other feed obeys
     return fetch(CARTO_SQL + encodeURIComponent(q), { signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined })
       .then((r) => (r.ok ? r.json() : null)).then((d) => (d && Array.isArray(d.rows) ? d.rows : null)).catch(() => null);
   }
   function bldgCard(st) {
     const tag = '<span class="vroute" style="background:#55636b">Property</span>';
     if (st.loading) { vehinfoBody.innerHTML = tag + '<span class="vdest">Looking up this building</span>'; return; }
+    if (st.failed) { vehinfoBody.innerHTML = tag + '<span class="vdest">The city\'s property records did not answer</span><div class="vmeta">Tap the building again in a moment.</div>'; return; }
     const r = st.row;
     if (!r) { vehinfoBody.innerHTML = tag + '<span class="vdest">No property record here</span><div class="vmeta">The city\'s parcel map has no lot at this spot.</div>'; return; }
     const rows = [], yr = parseInt(r.year_built, 10), condo = /condo/i.test(r.bldg_desc || '');
     if (yr > 1600 && yr <= new Date().getFullYear()) rows.push('Built ' + yr + ', as the city records it');
-    if (condo) rows.push('Condominium building' + (r.gross_area > 0 ? ', ' + Number(r.gross_area).toLocaleString('en-US') + ' sq ft' : ''));
+    if (condo) rows.push('Condominium building');   // PWD's gross_area is the lot's, not the building's floor area (review, Sep 22)
     else if (r.number_stories > 0) rows.push(r.number_stories + (r.number_stories === 1 ? ' story' : ' stories'));
     const use = r.bdesc || r.cat || r.bldg_desc;
     if (use && !condo) rows.push(bldgTitle(use));
@@ -13039,8 +13012,12 @@
     let p = null;
     try { p = bldgPointAt(cx, cy); } catch (e) { p = null; }
     if (!p) return false;
-    const g = groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground');
-    if (p[1] < g + 2) return false;   // the ground, a road, a lawn: not a building
+    const g = Math.max(groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground'), TERRAIN.water + 0.5);   // a river's sheet stands over its carved bed
+    if (p[1] < g + 2) return false;   // the ground, a road, a lawn, the water: not a building
+    // a bridge or an elevated deck, not a building (review, Sep 22): the two river crossings' corridors, or a mapped deck
+    // within a few metres of the hit's height (the roof grid cannot say it: it notes no roof under 250 m2, no rowhouse)
+    if (bfbNear(p[0], p[2], 25) || wwbNear(p[0], p[2], 25)) return false;
+    { const dk = ovpDeckY(p[0], p[2]); if (dk !== null && Math.abs(dk - p[1]) < 4) return false; }
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
     pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
     pickedStop = null; pickedCivic = null; pickedNear = null;
@@ -13048,12 +13025,13 @@
     pickedBldg = { x: p[0], y: p[1] + 1, z: p[2], seq };
     bldgCard(st); vehinfoEl.hidden = false; cardUnlock();
     const lon = SEPTA_GEO.lon0 + x / SEPTA_GEO.mx, lat = SEPTA_GEO.lat0 - z / SEPTA_GEO.mz;
+    const mine = () => pickedBldg && pickedBldg.seq === seq && !oldPick();   // an older-style card opened meanwhile owns #vehinfo now
     bldgQuery('parcel', lon, lat).then((rows) => {
-      if (!pickedBldg || pickedBldg.seq !== seq) return;
-      st.loading = false; st.row = rows && rows[0] ? rows[0] : null; bldgCard(st);
+      if (!mine()) return;
+      st.loading = false; st.failed = rows === null; st.row = rows && rows[0] ? rows[0] : null; bldgCard(st);
       if (!st.row) return;
-      Promise.all([bldgQuery('register', lon, lat), bldgQuery('district', lon, lat), bldgQuery('permits', lon, lat)]).then(([rg, ds, pm]) => {
-        if (!pickedBldg || pickedBldg.seq !== seq) return;
+      Promise.all([bldgQuery('register', lon, lat), bldgQuery('district', lon, lat), bldgQuery('permits', lon, lat, st.row.parcel_number)]).then(([rg, ds, pm]) => {
+        if (!mine()) return;
         st.register = !!(rg && rg.length); st.district = ds && ds[0] ? String(ds[0].name || '') : ''; st.permits = pm || [];
         bldgCard(st);
       });
@@ -13070,7 +13048,8 @@
   }
 
   function isShortTap(e) { return Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) <= 8 && performance.now() - vpDownT <= 500; }
-  canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; });
+  let vpLockReq = false;   // this press asked for pointer lock: its click takes the controls and opens no building card (review, Sep 22)
+  canvas.addEventListener('pointerdown', (e) => { vpDownX = e.clientX; vpDownY = e.clientY; vpDownT = performance.now(); vpWasLocked = walk.locked; vpLockReq = e.pointerType !== 'touch' && (mode === MODE.WALK || mode === MODE.FLY) && !walk.locked && !walk.dragLook && !panelTap; });
   canvas.addEventListener('pointerup', (e) => {
     if (panelTap) {
       // the press began with a panel open: a tap only dismisses it (a drag kept it)
@@ -13298,7 +13277,7 @@
       if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
       if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
-    if (bldgPick(cx, cy)) return;   // nothing live under the tap: the building, if one stands there (Round 132)
+    if (!vpLockReq && bldgPick(cx, cy)) return;   // nothing live under the tap: the building, if one stands there (Round 132)
     if (pickedNear || pickedCivic || pickedStop || pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedStop = null; pickedCivic = null; pickedNear = null; vehinfoEl.hidden = true; }
   });
   // Road-network spatial hash for snapping live street vehicles onto their
@@ -13527,8 +13506,10 @@
     let best = null;
     for (const hit of hits) {
       if (hit.instanceId == null || !hit.object.userData.pinSceneDepth || !pinHitOpaque(hit)) continue;
-      { const v = hit.object.geometry.attributes.aPinVis; if (v && v.getX(hit.instanceId) < 0.5) continue; }   // hidden behind a building (Round 127)
-      if (occluded(hit.point.x, hit.point.y, hit.point.z)) continue;
+      // a pin carrying aPinVis is drawn whole over any nearer building (Round 127), so its tip's visibility, which
+      // is exactly what the render used, decides the pick; a ray to the hit point would refuse the parts of a drawn
+      // pin that overlap a nearer facade (review, Sep 22). Pins without it keep the ray test.
+      { const v = hit.object.geometry.attributes.aPinVis; if (v) { if (v.getX(hit.instanceId) < 0.5) continue; } else if (occluded(hit.point.x, hit.point.y, hit.point.z)) continue; }
       // Among unobstructed hits, match rendering: later batches/instances paint over earlier
       // ones. This also makes an overlapping visible badge win over a solid model.
       if (!best || hit.object.renderOrder > best.object.renderOrder ||
@@ -17852,7 +17833,7 @@
       // once; only a new date eases (Round 127, Mike: the lights loaded white and slowly turned the proper colour)
       const sameDay = THEME.key != null && THEME.key.startsWith(dk + ':' + (THEME.pin || '') + ':');
       THEME.key = key; lightsRetarget();
-      if (sameDay) THEME.seeded = false;
+      if (sameDay && THEME.settled) THEME.seeded = false;   // never cut short a date change's ease already under way (review, Sep 22)
     }
     const e = THEME.seeded ? 1 - Math.exp(-dt / 20) : 1;   // the first evaluation lands; every later change eases twenty seconds
     THEME.seeded = true;
@@ -18538,7 +18519,7 @@
       (r.img ? '<a class="vlink" href="' + septaEsc(r.img) + '" target="_blank" rel="noopener">View the Image (PDF)</a>' : '');
   }
   function updateMarkerPick() {
-    const wide = !!pickedMarker;   // a 460-character marker text needs the wide card
+    const wide = !!pickedMarker || !!pickedNear;   // a 460-character marker text, and the near me card (Round 135), need the wide card; one owner of the class (review, Sep 22)
     if (wide !== cardWide) { cardWide = wide; vehinfoEl.classList.toggle('wide', wide); }
     const r = pickedMarker || pickedArt;
     if (!r) return;
@@ -18628,12 +18609,17 @@
   // ---- the live data
   const SEPTA_V2 = 'https://www3.septa.org/api/v2/';
   const v2Stops = new Map();
-  const v2Get = (path) => fetch(SEPTA_V2 + path, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined }).then((r) => (r.ok ? r.json() : null)).catch(() => null);
-  function routeStops(r) { if (!v2Stops.has(r)) v2Stops.set(r, v2Get('stops/?route_id=' + encodeURIComponent(r))); return v2Stops.get(r); }
+  const v2Get = (path) => (septaCanFetch ? fetch(SEPTA_V2 + path, { cache: 'no-store', signal: AbortSignal.timeout ? AbortSignal.timeout(15000) : undefined }).then((r) => (r.ok ? r.json() : null)).catch(() => null) : Promise.resolve(null));
+  function routeStops(r) {   // cached per route, but a failed answer is dropped so the next card asks again (review, Sep 22)
+    if (!v2Stops.has(r)) v2Stops.set(r, v2Get('stops/?route_id=' + encodeURIComponent(r)).then((d) => { if (!Array.isArray(d)) v2Stops.delete(r); return d; }));
+    return v2Stops.get(r);
+  }
   function busComing(rec) {   // the buses on their way to a stop, nearest first: [{route, head, away, delay, dist, layover}]
     const routes = String(rec.r || '').split(',').filter(Boolean).slice(0, 10), out = [];
+    let answered = 0;
     return Promise.all(routes.map((r) => Promise.all([routeStops(r), v2Get('trips/?route_id=' + encodeURIComponent(r))]).then(([stops, trips]) => {
       if (!Array.isArray(stops) || !Array.isArray(trips)) return;
+      answered++;
       for (const st of stops) {
         if (String(st.stop_id) !== String(rec.id)) continue;
         for (const t of trips) {
@@ -18644,9 +18630,10 @@
           out.push({ route: r, head: String(t.trip_headsign || ''), away: +st.stop_sequence - ns, delay: +t.delay || 0, dist: Math.hypot(bx - rec.x, bz - rec.z), layover: /layover/i.test(t.status || '') });
         }
       }
-    }))).then(() => { out.sort((a, b) => a.away - b.away || a.dist - b.dist); return out; });
+    }))).then(() => { if (routes.length && !answered) return null; out.sort((a, b) => a.away - b.away || a.dist - b.dist); return out; });   // null: SEPTA did not answer, not 'no bus'
   }
   function jsonpUrl(url, cb) {   // septaJsonp for a full URL that already carries its query
+    if (!septaCanFetch) { cb(null); return; }
     let done = false;
     const name = '__septaCb' + (septaCbN++), script = document.createElement('script');
     const fin = (d) => { if (done) return; done = true; clearTimeout(timer); try { delete window[name]; } catch (e) { window[name] = undefined; } if (script.parentNode) script.parentNode.removeChild(script); cb(d); };
@@ -18696,7 +18683,7 @@
   }
   function stopRefresh(st) {
     st.next = performance.now() + 30000;
-    const done = (rows, elev) => { if (pickedStop !== st) return; st.loading = false; st.rows = rows; if (elev) st.elev = elev; stopCard(st); };
+    const done = (rows, elev) => { if (pickedStop !== st || oldPick()) return; st.loading = false; st.rows = rows; if (elev) st.elev = elev; stopCard(st); };
     if (st.rec.kind === 'bus') busComing(st.rec).then((rows) => done(rows)).catch(() => done(null));
     else Promise.all([railDepartures(st.rec), elevatorsOut()]).then(([rows, el]) => {
       const key = normSt(st.rec.n), key2 = normSt(st.rec.board);
@@ -18775,6 +18762,12 @@
     flushInst(libPin, -1); flushInst(recPin, -1);
   }
   function civicCard(rec) {
+    if (rec.kind === 'site') {   // a cooling or warming center from the near me card (Round 131's OEM layer)
+      vehinfoBody.innerHTML = '<span class="vroute" style="background:' + (rec.warm ? '#9a5b2e' : '#2e6e9a') + '">' + (rec.warm ? 'Warming Center' : 'Cooling Center') + '</span><span class="vdest">' + septaEsc(rec.n) + '</span>' +
+        (rec.addr ? '<div class="vmeta">' + septaEsc(rec.addr) + '</div>' : '') + (rec.hours ? '<div class="vmeta">' + septaEsc(rec.hours) + '</div>' : '') +
+        '<div class="vmeta">Office of Emergency Management</div>';
+      return;
+    }
     if (rec.kind === 'lib') {
       vehinfoBody.innerHTML = '<span class="vroute" style="background:#b03a2e">Free Library</span><span class="vdest">' + septaEsc(rec.n) + '</span>' +
         (rec.addr ? '<div class="vmeta">' + septaEsc(rec.addr + (rec.zip ? ', Philadelphia ' + rec.zip : '')) + '</div>' : '') +
@@ -19075,23 +19068,39 @@
     const today = new Date().toLocaleDateString('en-US', o) === d.toLocaleDateString('en-US', o);
     return today ? t : d.toLocaleDateString('en-US', { ...o, weekday: 'short' }) + ' ' + t;
   }
-  function alertKind() { return ALERTS.list.some((a) => ALERT_HEAT.test(a.event)) ? 'cool' : ALERTS.list.some((a) => ALERT_COLD.test(a.event)) ? 'warm' : ''; }
+  function alertKind() { const l = activeAlerts(); return l.some((a) => ALERT_HEAT.test(a.event)) ? 'cool' : l.some((a) => ALERT_COLD.test(a.event)) ? 'warm' : ''; }
+  // review, Sep 22: an alert is a hazard, not a message. Its key is the event and its onset, so the NWS's routine
+  // updates of one hazard (a new message id each time) are not announced again; its span is the hazard's onset and
+  // ends, not the message's expiry (an open-ended alert has no "until"); a hazard not yet in effect reads "from";
+  // every new one is announced, not only the first; the veil hold re-reads the list when it ends, so a hazard
+  // cancelled meanwhile is not announced; and the panel and near me read only what is still in effect.
+  const alertKey = (a) => a.event + '|' + Math.round((a.onset || 0) / 60000);   // the onset to the minute
+  function activeAlerts() { const now = Date.now(); return ALERTS.list.filter((a) => (!a.until || a.until > now) && (!a.expires || a.expires > now || a.until > now)); }
+  function alertSpan(a) { const now = Date.now(); return (a.onset && a.onset > now ? ' from ' + alertClock(a.onset) : '') + (a.until ? ' until ' + alertClock(a.until) : ''); }
   function alertsSet(props) {
     const now = Date.now();
     ALERTS.list = props.filter((p) => p.event && p.status !== 'Test' && p.messageType !== 'Cancel')
-      .map((p) => ({ id: p.id || p.event, event: String(p.event), until: Date.parse(p.ends || p.expires || '') || 0, severity: p.severity || '' }))
-      .filter((a) => !a.until || a.until > now);
+      .map((p) => ({ id: p.id || p.event, event: String(p.event), onset: Date.parse(p.onset || p.effective || '') || 0, until: Date.parse(p.ends || '') || 0, expires: Date.parse(p.expires || '') || 0, severity: p.severity || '' }))
+      .filter((a) => (!a.until || a.until > now) && (!a.expires || a.expires > now || a.until > now));
+    const seenKeys = new Set();   // one line per hazard even when the feed carries its update beside it
+    ALERTS.list = ALERTS.list.filter((a) => { const k = alertKey(a); if (seenKeys.has(k)) return false; seenKeys.add(k); return true; });
     const kind = alertKind();
     if (kind && (kind !== ALERTS.sitesKind || now - ALERTS.sitesT > 30 * 60000)) alertSitesFetch(kind);
     if (!kind) { ALERTS.sites = []; ALERTS.sitesKind = ''; }
-    const fresh = ALERTS.list.filter((a) => !ALERTS.seen.has(a.id));
-    if (fresh.length && !veil.classList.contains('hidden')) { clearTimeout(ALERTS.wait); ALERTS.wait = setTimeout(() => alertsSet(props), 3000); }   // held until the city is up
-    else if (fresh.length) { for (const a of fresh) ALERTS.seen.add(a.id); notice(alertLine(fresh[0]), 12000); ALERTS.last = { a: fresh[0], t: Date.now() }; }
+    alertsAnnounce();
     refreshTimeUI();
+  }
+  function alertsAnnounce() {
+    const fresh = activeAlerts().filter((a) => !ALERTS.seen.has(alertKey(a)));
+    if (!fresh.length) return;
+    if (!veil.classList.contains('hidden')) { clearTimeout(ALERTS.wait); ALERTS.wait = setTimeout(alertsAnnounce, 3000); return; }   // held until the city is up, then the list as it is by then
+    for (const a of fresh) ALERTS.seen.add(alertKey(a));
+    notice(fresh.slice(0, 3).map(alertLine).join(' '), 12000 + 3000 * Math.min(2, fresh.length - 1));
+    ALERTS.last = { list: fresh.slice(0, 3), t: Date.now() };
   }
   function alertLine(a) {
     const k = ALERT_HEAT.test(a.event) ? ' Cooling centers are open across the city.' : ALERT_COLD.test(a.event) ? ' Warming centers are open across the city.' : '';
-    return a.event + (a.until ? ' until ' + alertClock(a.until) : '') + '.' + (k && ALERTS.sites.length ? k : '');
+    return a.event + alertSpan(a) + '.' + (k && ALERTS.sites.length ? k : '');
   }
   function alertSitesFetch(kind) {
     ALERTS.sitesT = Date.now(); ALERTS.sitesKind = kind;
@@ -19104,7 +19113,7 @@
           cool: yes(a.cooling_site), warm: yes(a.warming_site),
           x: (g.x - SEPTA_GEO.lon0) * SEPTA_GEO.mx, z: -(g.y - SEPTA_GEO.lat0) * SEPTA_GEO.mz };
       }).filter((q) => (kind === 'cool' ? q.cool !== false : q.warm !== false));   // a site marked no for this kind is left out
-      if (ALERTS.last && Date.now() - ALERTS.last.t < 15000) notice(alertLine(ALERTS.last.a), 12000);   // the notice just shown gains its centers line
+      if (ALERTS.last && Date.now() - ALERTS.last.t < 15000) notice(ALERTS.last.list.map(alertLine).join(' '), 12000);   // the notice just shown gains its centers line
       refreshTimeUI();
     }).catch(() => {});
   }
@@ -20060,8 +20069,8 @@
       + fact('Live weather', WX.ok ? (WX.temp == null ? '' : Math.round(WX.temp) + '°F, ')
         + (wxLabelFull() || Math.round(WX.cover * 100) + '% cloud cover') : 'Awaiting live conditions')
       + fact('Live air quality', AQI.ok && AQI.aqi != null ? AQI.aqi + ', ' + AQI.cat : 'Awaiting live reading')
-      + (ALERTS.list.length ? fact('Weather alert', ALERTS.list.map((a) => a.event + (a.until ? ' until ' + alertClock(a.until) : '')).join(', '), true) : '')
-      + (ALERTS.sites.length ? fact(ALERTS.sitesKind === 'warm' ? 'Warming centers' : 'Cooling centers', ALERTS.sites.length + ' open', true) : '')
+      + (activeAlerts().length ? fact('Weather alert', activeAlerts().map((a) => a.event + alertSpan(a)).join(', '), true) : '')
+      + (ALERTS.sites.length && alertKind() ? fact(ALERTS.sitesKind === 'warm' ? 'Warming centers' : 'Cooling centers', ALERTS.sites.length + ' open', true) : '')
       + fact('Moon', phase + ', ' + Math.round(mp.k * 100) + '%' + (mp.el > 0 ? ', up ' + oct : ', set'), true)
       + (THEME.label ? fact('Skyline lights', THEME.label, true) : '')
       + (LTN.live && LTN.n10 > 0 ? fact('Lightning', LTN.n10 + (LTN.n10 === 1 ? ' strike' : ' strikes')
@@ -20242,15 +20251,15 @@
     st.acts = [];
     const row = (text, act, sub) => { const k = st.acts.length; st.acts.push(act); h += '<button type="button" class="vnear" data-k="' + k + '">' + septaEsc(text) + '</button>'; for (const t of sub || []) h += '<div class="vmeta vsub">' + septaEsc(t) + '</div>'; };
     for (const a of st.alerts) h += '<div class="vmeta">' + septaEsc(a) + '</div>';
-    if (st.site) row((ALERTS.sitesKind === 'warm' ? 'Warming center: ' : 'Cooling center: ') + st.site.name + ', ' + nearDist(st.site.d), () => nearGo(st.site.x, st.site.z, st.site.name));
-    for (const b of st.bus) row('Bus: ' + b.rec.n + ', ' + nearDist(b.d), () => { nearGo(b.rec.x, b.rec.z); openStopCard(b.rec); },
-      b.rows === undefined ? ['Checking the live buses'] : b.rows.length ? b.rows.slice(0, 2).map((q) => 'Route ' + q.route + ' to ' + q.head + ': ' + (q.away === 0 ? (q.dist < 180 ? 'arriving' : 'next stop') : q.away + (q.away === 1 ? ' stop away' : ' stops away'))) : ['No bus on its way right now']);
-    if (st.rail) row('Rail: ' + st.rail.rec.n + ', ' + nearDist(st.rail.d), () => { nearGo(st.rail.rec.x, st.rail.rec.z); openStopCard(st.rail.rec); },
-      st.rail.rows === undefined ? ['Checking the departures'] : (st.rail.rows || []).slice(0, 2).map((t) => railClock(t.sched_time) + ', ' + (t.line || '') + ' to ' + (t.destination || '')));
-    for (const q of st.bikes) row('Indego: ' + q.st.name + ', ' + q.st.bikes + (q.st.bikes === 1 ? ' bike, ' : ' bikes, ') + q.st.docksOpen + ' open docks, ' + nearDist(q.d), () => { nearGo(q.st.x, q.st.z); pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = q.st; indegoCard(q.st); vehinfoEl.hidden = false; });
-    for (const q of st.closures) row('Closure: ' + (q.r.addr || 'a street') + (q.r.o >= 3 ? ', closed' : ', partly closed') + ', ' + nearDist(q.d), () => { nearGo(q.r.mx, q.r.mz); pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = null; pickedClosure = q.r; closureCard(q.r); vehinfoEl.hidden = false; });
-    for (const q of st.markets) row('Market open: ' + q.m.n + ', ' + nearDist(q.d), () => { nearGo(q.m.x, q.m.z); pickedVeh = null; pickedTree = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = null; pickedMarket = q.m; marketCard(q.m); vehinfoEl.hidden = false; });
-    if (st.lib) row('Library: ' + st.lib.r.n + ', ' + nearDist(st.lib.d), () => { nearGo(st.lib.r.x, st.lib.r.z); openCivicCard(st.lib.r); });
+    if (st.site) row((ALERTS.sitesKind === 'warm' ? 'Warming center: ' : 'Cooling center: ') + st.site.name + ', ' + nearDist(st.site.d), () => { nearGo(st.site.x, st.site.z, st.site.name); openCivicCard({ kind: 'site', x: st.site.x, z: st.site.z, gy: siteY(st.site.x, st.site.z, 'ground'), n: st.site.name, addr: st.site.addr, hours: st.site.hours, warm: ALERTS.sitesKind === 'warm' }); });
+    for (const b of st.bus) row('Bus: ' + b.rec.n + ', ' + nearDist(b.d), () => { nearGo(b.rec.x, b.rec.z, b.rec.n); openStopCard(b.rec); },
+      b.rows === undefined ? ['Checking the live buses'] : b.rows === null ? ['SEPTA did not answer'] : b.rows.length ? b.rows.slice(0, 2).map((q) => 'Route ' + q.route + ' to ' + q.head + ': ' + (q.away === 0 ? (q.dist < 180 ? 'arriving' : 'next stop') : q.away + (q.away === 1 ? ' stop away' : ' stops away'))) : ['No bus on its way right now']);
+    if (st.rail) row('Rail: ' + st.rail.rec.n + ', ' + nearDist(st.rail.d), () => { nearGo(st.rail.rec.x, st.rail.rec.z, st.rail.rec.n); openStopCard(st.rail.rec); },
+      st.rail.rows === undefined ? ['Checking the departures'] : st.rail.rows === null ? ['SEPTA did not answer'] : st.rail.rows.slice(0, 2).map((t) => railClock(t.sched_time) + ', ' + (t.line || '') + ' to ' + (t.destination || '')));
+    for (const q of st.bikes) row('Indego: ' + q.st.name + ', ' + q.st.bikes + (q.st.bikes === 1 ? ' bike, ' : ' bikes, ') + q.st.docksOpen + ' open docks, ' + nearDist(q.d), () => { nearGo(q.st.x, q.st.z, q.st.name); pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = q.st; indegoCard(q.st); vehinfoEl.hidden = false; });
+    for (const q of st.closures) row('Closure: ' + (q.r.addr || 'a street') + (q.r.o >= 3 ? ', closed' : q.r.o === 1 ? ', sidewalk closed' : ', partly closed') + ', ' + nearDist(q.d), () => { nearGo(q.r.mx, q.r.mz, q.r.addr || 'Street closure'); pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = null; pickedClosure = q.r; closureCard(q.r); vehinfoEl.hidden = false; });
+    for (const q of st.markets) row('Market open: ' + q.m.n + ', ' + nearDist(q.d), () => { nearGo(q.m.x, q.m.z, q.m.n); pickedVeh = null; pickedTree = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = null; pickedMarket = q.m; marketCard(q.m); vehinfoEl.hidden = false; });
+    if (st.lib) row('Library: ' + st.lib.r.n + ', ' + nearDist(st.lib.d), () => { nearGo(st.lib.r.x, st.lib.r.z, st.lib.r.n); openCivicCard(st.lib.r); });
     if (st.acts.length === 0 && !st.alerts.length) h += '<div class="vmeta">Nothing to report within a few blocks.</div>';
     h += '<div class="vmeta">Distances in a straight line</div>';
     vehinfoBody.innerHTML = h;
@@ -20258,23 +20267,24 @@
   function nearGo(x, z, name) {
     const gy = siteY(x, z, 'ground');
     searchFlyTo(x, gy + 8, z, 200);
-    placeSearchMark(x, gy, z, name || '');
+    placeSearchMark(x, gy, z, name || 'Here');
     pickedNear = null;
   }
   function nearMeOpen(x, z) {
     const by = (arr, fx, fz, max, n) => arr.map((o) => ({ o, d: Math.hypot(fx(o) - x, fz(o) - z) })).filter((q) => q.d <= max).sort((a, b) => a.d - b.d).slice(0, n);
-    const st = { x, z, y: siteY(x, z, 'ground') + 6, alerts: ALERTS.list.map((a) => a.event + (a.until ? ' until ' + alertClock(a.until) : '')), site: null, bus: [], rail: null, bikes: [], closures: [], markets: [], lib: null };
-    if (ALERTS.sites.length) { const s1 = by(ALERTS.sites, (q) => q.x, (q) => q.z, 5000, 1)[0]; if (s1) st.site = { ...s1.o, d: s1.d }; }
+    const st = { x, z, y: siteY(x, z, 'ground') + 6, alerts: activeAlerts().map((a) => a.event + alertSpan(a)), site: null, bus: [], rail: null, bikes: [], closures: [], markets: [], lib: null };
+    if (ALERTS.sites.length && alertKind()) { const s1 = by(ALERTS.sites, (q) => q.x, (q) => q.z, 5000, 1)[0]; if (s1) st.site = { ...s1.o, d: s1.d }; }
     st.bus = by(STOPS.bus, (q) => q.x, (q) => q.z, 400, 2).map((q) => ({ rec: q.o, d: q.d, rows: undefined }));
     { const r1 = by(STOPS.rail, (q) => q.x, (q) => q.z, 1500, 1)[0]; if (r1) st.rail = { rec: r1.o, d: r1.d, rows: undefined }; }
-    st.bikes = by([...indegoSt.values()].filter((q) => q.act !== false && q.bikes > 0), (q) => q.x, (q) => q.z, 800, 2).map((q) => ({ st: q.o, d: q.d }));
-    st.closures = by(CLOSURES.recs || [], (q) => q.mx, (q) => q.mz, 250, 2).map((q) => ({ r: q.o, d: q.d }));
+    // the docks and the closures only while their layers are on: off, their data stops refreshing and nothing positions their cards
+    if (INDEGO.on && INDEGO.ok) st.bikes = by([...indegoSt.values()].filter((q) => q.act !== false && q.bikes > 0), (q) => q.x, (q) => q.z, 800, 2).map((q) => ({ st: q.o, d: q.d }));
+    if (CLOSURES.on && CLOSURES.ok) st.closures = by(CLOSURES.recs || [], (q) => q.mx, (q) => q.mz, 250, 2).map((q) => ({ r: q.o, d: q.d }));
     st.markets = by(markets.filter((m) => marketOpen(m)), (q) => q.x, (q) => q.z, 1500, 2).map((q) => ({ m: q.o, d: q.d }));
     { const l1 = by(CIVIC_S.lib, (q) => q.x, (q) => q.z, 2500, 1)[0]; if (l1) st.lib = { r: l1.o, d: l1.d }; }
     pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedBldg = null; pickedStop = null; pickedCivic = null;
     pickedNear = st; nearCardRender(st); vehinfoEl.hidden = false;
-    for (const b of st.bus) busComing(b.rec).then((rows) => { b.rows = rows || []; if (pickedNear === st) nearCardRender(st); }).catch(() => { b.rows = []; });
-    if (st.rail) railDepartures(st.rail.rec).then((rows) => { st.rail.rows = rows || []; if (pickedNear === st) nearCardRender(st); });
+    for (const b of st.bus) busComing(b.rec).then((rows) => { b.rows = rows; if (pickedNear === st) st.dirty = true; }).catch(() => { b.rows = null; if (pickedNear === st) st.dirty = true; });
+    if (st.rail) railDepartures(st.rail.rec).then((rows) => { st.rail.rows = rows; if (pickedNear === st) st.dirty = true; });
   }
   vehinfoBody.addEventListener('click', (e) => {
     const b = e.target.closest && e.target.closest('.vnear');
@@ -20284,14 +20294,13 @@
   });
   function updateNearPick() {
     if (!pickedNear) return;
-    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedBldg || pickedStop || pickedCivic || vehinfoEl.hidden) { pickedNear = null; if (cardWideN) { cardWideN = false; vehinfoEl.classList.remove('wide'); } return; }
-    if (!cardWideN) { cardWideN = true; vehinfoEl.classList.add('wide'); }
+    if (pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null || pickedBldg || pickedStop || pickedCivic || vehinfoEl.hidden) { pickedNear = null; return; }
+    if (pickedNear.dirty && !cardHold && (isTouch || !vehinfoEl.matches(':hover'))) { pickedNear.dirty = false; nearCardRender(pickedNear); }   // a live result waits out a press on the card (the Round 63 lost click)
     _ssv.set(pickedNear.x, pickedNear.y, pickedNear.z).project(camera);
     if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
     vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
   }
-  let cardWideN = false;
   function locateMe() {
     if (!veil.classList.contains('hidden')) return;
     closePanels();
@@ -20409,8 +20418,13 @@
   // drawn into a small target (a packed-RGBA depth override with every transparent, line, point and
   // pin object hidden), read back, and each pin's tip is tested against it through the capture's own
   // matrices; a 3x3 neighbourhood with any sample behind the tip keeps a pin on a building's edge.
-  const PIN_OCC = { w: isTouch ? 160 : 256, h: 0, rt: null, buf: null, mat: null, ok: false, far: 4000,
-    every: isTouch ? 10 : 5, view: new THREE.Matrix4(), proj: new THREE.Matrix4(), n: 0, hid: 0, want: -99 };
+  // far is only the packing range: 30 km, so the skyline and the hills hide a flight or a ship pin behind them (at
+  // 4 km every pin past it read as visible). The capture runs only when the eye has moved or turned, or two seconds
+  // have passed, since the city it records does not change on its own (review, Sep 22: every 5th frame cost a full
+  // opaque re-render and a readPixels stall while the camera sat still)
+  const PIN_OCC = { w: isTouch ? 160 : 256, h: 0, rt: null, buf: null, mat: null, ok: false, far: 30000,
+    every: isTouch ? 10 : 5, view: new THREE.Matrix4(), proj: new THREE.Matrix4(), n: 0, hid: 0, want: -99,
+    lastPos: new THREE.Vector3(1e9, 0, 0), lastQuat: new THREE.Quaternion(), lastFrame: -1e9 };
   const pinDepthClear = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01),
     new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, colorWrite: false }));
   pinDepthClear.renderOrder = 99; pinDepthClear.frustumCulled = false;
@@ -20449,7 +20463,8 @@
     scene.traverse((o) => {
       if (!o.visible || o === scene) return;
       const m = o.material, tr = m && (Array.isArray(m) ? m.some((q) => q.transparent) : m.transparent);
-      if (o.isPoints || o.isLine || o.isSprite || tr || (o.userData && o.userData.pinSceneDepth) || (noInstanced && o.isInstancedMesh)) { o.visible = false; hid.push(o); }
+      const nd = m && (Array.isArray(m) ? m.some((q) => q.depthWrite === false) : m.depthWrite === false);   // occludes nothing in the real render either
+      if (o === sky || o === cloudDeck || nd || o.isPoints || o.isLine || o.isSprite || tr || (o.userData && o.userData.pinSceneDepth) || (noInstanced && o.isInstancedMesh)) { o.visible = false; hid.push(o); }   // the sky dome drawn at its 5.2 km radius hid distant pins and made the sky a building (review, Sep 22)
     });
     const prevRT = r.getRenderTarget(), prevUp = r.shadowMap.autoUpdate, prevNeed = r.shadowMap.needsUpdate;
     const prevOver = scene.overrideMaterial, prevBg = scene.background, prevA = r.getClearAlpha();
@@ -20492,7 +20507,10 @@
     let any = frameNo - PIN_OCC.want < 3;
     for (const m of PIN_MESHES) if (m.visible && m.count > 0) { any = true; break; }
     if (!any) return;
-    if (!PIN_OCC.ok || frameNo % PIN_OCC.every === 0) pinOccCapture();
+    if (!PIN_OCC.ok || (frameNo % PIN_OCC.every === 0 && (camera.position.distanceToSquared(PIN_OCC.lastPos) > 0.09 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.lastQuat)) > 2e-6 || frameNo - PIN_OCC.lastFrame > 120))) {
+      pinOccCapture();
+      PIN_OCC.lastPos.copy(camera.position); PIN_OCC.lastQuat.copy(camera.quaternion); PIN_OCC.lastFrame = frameNo;
+    }
     let hid = 0;
     for (const m of PIN_MESHES) {
       const a = m.geometry.attributes.aPinVis, e = m.instanceMatrix.array, n = m.count;
@@ -20700,7 +20718,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev) => { alertsSet([{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', ends: new Date(Date.now() + 5 * 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

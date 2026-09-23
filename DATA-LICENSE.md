@@ -38,9 +38,14 @@ the files above must keep this notice if they are redistributed.
 
 ## City of Philadelphia open data (CC-BY 4.0 unless the dataset says otherwise)
 
+`septa_stops.json` (`fetch_septa_stops.py` → `bake_septa_stops.py`) is SEPTA's public GTFS release
+(github.com/septadev/GTFS) and its Arrivals station list: stop ids, names, positions and the routes
+serving them. SEPTA marks belong to SEPTA; the page is unaffiliated.
+
 | File | Made by | Source |
 |---|---|---|
 | `places.json` | `fetch_places.py` → `bake_places.py` | Philadelphia Register historic districts and neighborhood boundaries, City of Philadelphia via OpenDataPhilly / phl.carto.com. CC-BY 4.0: attribution to the City of Philadelphia is required. |
+| `civic.json` | `fetch_civic.py` → `bake_civic.py` | The Free Library's branch locations (`library_locations`) and Parks & Recreation's program sites (`PPR_Program_Sites`, the recreation and older adult centers), City of Philadelphia via the City ArcGIS: names, addresses, phone numbers and branch-page links on the Round 134 cards |
 | `markets.json` | `fetch_markets.py` → `bake_markets.py` | Farmers' Market Locations (`Farmers_Markets`, City of Philadelphia via OpenDataPhilly / City ArcGIS): names, hours, season, payments and websites shown on the tents' cards |
 | `landmarks.json` | `fetch_landmarks.py` → `bake_landmarks.py` | City Landmarks (`Landmark_Poly`, `Landmark_Points`, Office of Innovation and Technology via OpenDataPhilly / City ArcGIS): the names and positions of the city's schools, places of worship, parks, hospitals and other named places, for the search index |
 | `markers.json`, the `a` rows | `fetch_markers.py` → `bake_markers.py` | Percent for Art (`Percent_for_Art_Public`, Office of Arts, Culture and the Creative Economy via OpenDataPhilly / City ArcGIS): titles, artists, dates, media and locations on the plinths' cards, with a link to the city's own image PDF (never copied) |
@@ -112,7 +117,14 @@ the credit line and the About panel name Amtraker; philly3d.com keeps a copy of 
 near the city refreshed every thirty seconds, the page pulls Amtraker itself when that copy
 is stale; Amtrak is a registered service mark of the National Railroad Passenger Corporation
 and the page is unaffiliated), ESPN's public team schedules for the four Philadelphia teams,
-read by the page to know a game day (nothing stored; the page is unaffiliated), and
+read by the page to know a game day (nothing stored; the page is unaffiliated), SEPTA's
+live v2 trips, stops and elevator feeds and its Arrivals departure boards, read when a stop or
+station card is open (nothing stored), the National Weather Service's active alerts (public domain,
+api.weather.gov), the Office of Emergency Management's cooling and warming sites
+(`Warming_Cooling_Sites_PUBLICVIEW` on the City ArcGIS) while a heat or cold alert stands, the City's
+property records on phl.carto.com (the Office of Property Assessment, the Water Department's parcels,
+the Historical Commission's register and local districts, Licenses and Inspections' permits, read only
+when a building is tapped; no owner names or values are shown and nothing is stored), and
 OpenStreetMap Nominatim for search (ODbL data; subject to the Nominatim usage policy). Each
 feed has its own terms of use; the page credits them.
 

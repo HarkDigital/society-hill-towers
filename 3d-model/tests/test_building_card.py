@@ -21,7 +21,10 @@ class BuildingCard(unittest.TestCase):
         script = fn + title + r'''
 const out = {};
 out.parcel = bldgSql('parcel', -75.144606, 39.94456);
-out.permits = bldgSql('permits', -75.1446061234, 39.944560987);
+out.permits = bldgSql('parcel', -75.1446061234, 39.944560987);
+out.permitsOwn = bldgSql('permits', -75.1, 39.9, '771745000');
+out.permitsNoAcct = bldgSql('permits', -75.1, 39.9);
+out.permitsBadAcct = bldgSql('permits', -75.1, 39.9, "1' OR '1'='1");
 out.nan = bldgSql('parcel', NaN, 39.9);
 out.inf = bldgSql('district', -75.1, Infinity);
 out.injected = bldgSql('parcel', "-75.1); DROP TABLE x; --", 39.9);
@@ -39,7 +42,9 @@ console.log(JSON.stringify(out));
         self.assertIn('ST_Point(-75.144606,39.944561)', self.r['permits'])
 
     def test_bad_points_ask_nothing(self):
-        for k in ('nan', 'inf', 'injected', 'unknown'):
+        self.assertIn("opa_account_num = '771745000'", self.r['permitsOwn'], "the property's own permits, by its OPA account")
+        self.assertNotIn('ST_DWithin', self.r['permitsOwn'])
+        for k in ('nan', 'inf', 'injected', 'unknown', 'permitsNoAcct', 'permitsBadAcct'):
             self.assertIsNone(self.r[k], k)
 
     def test_no_owner_or_value_fields(self):

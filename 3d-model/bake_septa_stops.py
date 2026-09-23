@@ -14,6 +14,7 @@ n is the board's key, d the name a rider knows (the API still says "Market East"
 Run with plain python3."""
 import csv, io, json, os, re, sys, zipfile
 from philly_frame import to_xz
+from bake_markers import FootGrid, load_footprints
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'septa_raw')
@@ -80,6 +81,16 @@ def main():
         if not pip(x, z, bound):
             continue
         R['id'].append(int(s['stop_id'])); R['x'].append(round(x * 2)); R['z'].append(round(z * 2)); R['n'].append(nm); R['d'].append(DISPLAY.get(nm, nm))
+    # a stop or station point inside one of the page's footprints is stepped 2.5 m out past the wall, so its pin
+    # stands in the open instead of hiding behind its own building (review, Sep 22; the markers' FootGrid)
+    grid = FootGrid(load_footprints())
+    moved = 0
+    for P in (B, R):
+        for i in range(len(P['id'])):
+            x, z, m = grid.step_out(P['x'][i] / 2, P['z'][i] / 2)
+            if m:
+                P['x'][i], P['z'][i] = round(x * 2), round(z * 2); moved += 1
+    print(f'{moved} stop and station points stepped out of a footprint')
     out = {'src': 'SEPTA GTFS (github.com/septadev/GTFS) and the Arrivals station list; scene frame, 0.5 m units',
            'bus': B, 'rail': R}
     with open(OUT + '.tmp', 'w') as f:

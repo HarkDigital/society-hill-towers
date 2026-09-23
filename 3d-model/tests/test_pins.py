@@ -21,6 +21,7 @@ HELPERS
 const result={};
 const wall=new THREE.Mesh(new THREE.BoxGeometry(8,8,8),new THREE.MeshBasicMaterial());
 const badge=pinSceneDepth(new THREE.InstancedMesh(new THREE.PlaneGeometry(4,5),new THREE.MeshBasicMaterial(),2));
+badge.geometry.deleteAttribute('aPinVis');   // the legacy checks below model a pin without aPinVis, which keeps the ray test
 const line=pinSceneDepth(new THREE.Line(new THREE.BufferGeometry(),new THREE.LineBasicMaterial()));
 const ball=pinSceneDepth(new THREE.Mesh(new THREE.SphereGeometry(),new THREE.MeshBasicMaterial()));
 result.render=[badge,line,ball].map(m=>({depthTest:m.material.depthTest,depthWrite:m.material.depthWrite,transparent:m.material.transparent,order:m.renderOrder,alphaTest:m.material.alphaTest}));
@@ -50,6 +51,7 @@ image.width=4096;image.height=2048;
 badge.geometry.setAttribute('aTile',new THREE.InstancedBufferAttribute(new Float32Array([2/32,1-4/16,7/32,1-10/16]),2));
 pinHitOpaque({...icon,instanceId:1});result.indegoPixel=lastPixel;
 const other=pinSceneDepth(new THREE.InstancedMesh(new THREE.PlaneGeometry(),new THREE.MeshBasicMaterial(),2));
+other.geometry.deleteAttribute('aPinVis');
 const later=hit(other,0,100);
 result.batchOrder=pickPinHit([icon,later],()=>false)===later;
 const last=hit(other,1,200);result.instanceOrder=pickPinHit([last,later],()=>false)===last;
@@ -57,6 +59,14 @@ const hiddenLater={...later,point:new THREE.Vector3(1,0,-100)};
 result.hiddenDoesNotSteal=pickSceneHit([icon,hiddenLater],x=>x===1)===icon;
 icon.point=new THREE.Vector3(1,0,-20);
 result.blockedPinFallsBack=pickSceneHit([icon,solid],x=>x===1)===solid;
+// review, Sep 22: a pin that carries aPinVis is picked by its tip's visibility, exactly what the render used, so a
+// drawn pin overlapping a nearer wall still takes the tap, and a hidden one never does
+const tipPin=pinSceneDepth(new THREE.InstancedMesh(new THREE.PlaneGeometry(4,5),new THREE.MeshBasicMaterial(),2));
+tipPin.material.map=badge.material.map;
+const tipHit=hit(tipPin,0,20);
+result.tipVisibleOverWall=pickSceneHit([tipHit,solid],()=>true)===tipHit;
+tipPin.geometry.attributes.aPinVis.setX(0,0);
+result.tipHiddenFallsBack=pickSceneHit([tipHit,solid],()=>false)===solid;
 console.log(JSON.stringify(result));
 '''.replace('THREE_PATH', json.dumps(str(ROOT / 'three.min.js'))).replace('HELPERS', helpers)
         run = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=20)
@@ -85,7 +95,7 @@ console.log(JSON.stringify(result));
         self.assertNotIn('pinA', a['lineHook'])   # the tether's default hook (three's no-op) leaves its shader alone
 
     def test_buildings_block_pins_and_hidden_pins_do_not_take_clicks(self):
-        for key in ('hiddenPin', 'visiblePin', 'hiddenSolid', 'visibleSolid', 'hiddenDoesNotSteal', 'blockedPinFallsBack'):
+        for key in ('hiddenPin', 'visiblePin', 'hiddenSolid', 'visibleSolid', 'hiddenDoesNotSteal', 'blockedPinFallsBack', 'tipVisibleOverWall', 'tipHiddenFallsBack'):
             self.assertTrue(self.result[key], key)
 
     def test_transparent_texture_corners_do_not_steal_clicks(self):

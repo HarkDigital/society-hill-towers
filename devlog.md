@@ -6385,3 +6385,64 @@ The plan's six are done: Rounds 131 (alerts), 132 (tap a building), 133 (stops a
 134 (libraries and rec centers), 135 (near me), after Rounds 127 to 130 took Mike's messages that came in
 while they were being built.
 
+
+## Round 136 — the review's fixes (Sep 22)
+
+An adversarial review of Rounds 127 to 135 (a workflow of finders by dimension, each finding put to
+skeptics told to refute it) confirmed 44 findings, several of them the same defect found from two sides.
+All of them are fixed here.
+
+**Pins.** A pin carrying `aPinVis` is drawn whole over any nearer building (Round 127), so the pick now
+asks that same per-instance visibility and nothing else: the old ray to the hit point refused the part of
+a drawn pin that overlapped a nearer facade, and the tap fell through to the building's property card.
+Pins without the attribute keep the ray test. `PIN_OCC.far` is 30 km, not 4: past 4 km every flight and
+ship pin read as visible, so they drew through the skyline and the hills. The capture hides the sky dome,
+the cloud deck and anything that does not write depth (the dome at 5,200 m was hiding distant pins at the
+screen's sides), and it runs only when the eye has moved 0.3 m or turned, or two seconds have passed:
+the city it records does not change on its own, and every fifth frame was a full opaque re-render and a
+`readPixels` stall while the camera sat still. `bake_septa_stops.py` steps a stop or station point that
+falls inside one of the page's footprints 2.5 m out past the wall with `bake_markers.py`'s `FootGrid`
+(232 of them), so a pin no longer hides behind its own building.
+
+**Building taps.** The click that takes pointer lock on desktop (fly or walk) no longer opens a card
+(`vpLockReq`). The one-pixel depth render keeps to 3 km. A river's sheet, the two bridges' corridors
+(`bfbNear`, `wwbNear`) and any mapped deck within 4 m of the hit (`ovpDeckY`) are not buildings. A failed
+lookup reads "The city's property records did not answer", not "No property record here". The permits
+are this property's, by its nine-digit OPA account (only digits ever reach the query), not anything within
+25 m. A condominium no longer shows PWD's `gross_area`, which is the lot's. Every lookup obeys
+`septaCanFetch` like the other feeds.
+
+**Cards.** `oldPick()` names the pre-Round-132 cards, and an async result for a building, stop or near me
+card checks it, so a lookup that lands after another card opened no longer overwrites it. `.wide` has one
+owner (`updateMarkerPick`: a marker or the near me card). The near card rerenders its rows from a `dirty`
+flag that waits out `cardHold` and a hover (the Round 63 lost click). Its cooling or warming row opens a
+real card (`kind: 'site'`), every row labels its search mark, a sidewalk-only closure says so, the Indego
+and closure rows appear only while those layers are on and polled, and a SEPTA call that did not answer
+reads "SEPTA did not answer" rather than "no bus". `routeStops` drops a failed route from its cache, and
+`busComing` returns null when no route answered.
+
+**Keys.** C is descend again, as it always was. Bus Stops is Y, Rail Stations is Z, and the libraries
+and rec centers have no letter (the layers panel turns them on). A held key toggles a layer once.
+
+**Streets.** Round 130's road-join pass is gone: its two joins paved across Bainbridge Green and through
+Lawrence Court's turning circle, and Pine at 2nd was never split. The core's I-95 lanes no longer register
+as streets a footway crosses, so the Foglietta and Vietnam memorial deck paths and the Spruce, Dock and
+Market sidewalks over the highway stay paths instead of zebras or cuts (`PERF.walks` zebras 194, cut 375).
+The setts sit at road minus 1.5 cm with a 1 cm jitter, between the sidewalks and the asphalt, so the
+cross streets' sidewalk ends no longer draw over the cobbles at Head House.
+
+**Lights and alerts.** The same-day snap waits for a date change's ease to settle. An alert is a hazard
+keyed by its event and onset to the minute, so the NWS's routine updates are not announced again; every
+new hazard is announced (up to three on one line); the veil hold re-reads the list when it ends; the span
+is the hazard's onset and ends ("from" when it is still ahead, no "until" when it is open-ended), not the
+message's expiry; and the time panel and near me read only what is still in effect, the centers only
+while a heat or cold alert is.
+
+**Credits and pipeline.** The About panel and `DATA-LICENSE.md` credit SEPTA's GTFS, v2 and Arrivals
+feeds, the Weather Service, OEM's sites, the Free Library, PPR and the city's property records, and say
+the location is kept nowhere. `pipeline.py`'s build step needs the stops and civic bakes, and the stops
+bake needs the footprints it now reads.
+
+Verified in the pane (building taps on the sky, the Delaware, the bridge deck, the tavern and a far-ring
+row; combined and "from ... until" alerts; the near card wide with the site card) and in captures of the
+Foglietta deck, Bainbridge Green and Head House. 199 tests pass.

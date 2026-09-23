@@ -12,7 +12,7 @@ except ImportError:
 KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures', 'markers', 'art', 'stops', 'stations', 'civic']   # Round 133 appended three
 ROWS = {'btnTransit': 'V', 'btnIndego': 'B', 'btnFlights': 'X', 'btnShips': 'H', 'btnAmtrak': 'K', 'btnConcerts': 'M', 'btnTraffic': 'R',
         'btnClosures': 'U', 'btnMarkers': 'J', 'btnArt': 'O', 'btnLights': 'G', 'btnStreets': 'N', 'btnLabels': 'L', 'btnPlaces': 'P',
-        'btnStops': 'C', 'btnStations': 'Y', 'btnCivic': 'Z'}
+        'btnStops': 'Y', 'btnStations': 'Z'}   # C stays descend; the libraries and rec centers have a row and no letter
 
 
 class Layers(unittest.TestCase):
@@ -38,9 +38,12 @@ class Layers(unittest.TestCase):
     def test_rows_and_keys(self):
         for btn, key in ROWS.items():
             self.assertRegex(self.tpl, r'id="%s"[^\n]*<kbd>%s</kbd>' % (btn, key), '%s row with its %s key' % (btn, key))
-        for key, fn in (('j', 'toggleMarkers'), ('o', 'toggleArt'), ('u', 'toggleClosures'), ('k', 'toggleAmtrak'), ('c', 'toggleStops'), ('y', 'toggleStations'), ('z', 'toggleCivic')):
+        for key, fn in (('j', 'toggleMarkers'), ('o', 'toggleArt'), ('u', 'toggleClosures'), ('k', 'toggleAmtrak'), ('y', 'toggleStops'), ('z', 'toggleStations')):
             self.assertIn("else if (k === '%s') %s();" % (key, fn), self.src)
         self.assertIn("if ((e.isM ? HMARK.on : PUBART.on) && nearCam(", self.src, 'the reconcile reads the two flags')
+        self.assertNotIn("(k === 'c')", self.src, 'C is the descend key, never a layer (review, Sep 22)')
+        self.assertIn("walk.keys['c']", self.src)
+        self.assertRegex(self.tpl, r'id="btnCivic"', 'the libraries row stays in the panel')
         self.assertIn("getElementById('markersCount')", self.src)
         self.assertIn("getElementById('artCount')", self.src)
 
