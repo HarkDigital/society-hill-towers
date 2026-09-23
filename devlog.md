@@ -6844,3 +6844,23 @@ a bigger roof takes rooftop units by area on a jittered grid, hatches, vents and
 take the roofs' night glow too. Two misses on the way: `put` had no default scale, so four kinds drew as NaN and only the
 dishes showed; and the colours had to be stored at about a fifth of their look (the legacy lift), as every flat is.
 Pitched roofs take nothing (a gable carries no condenser in the model). `__dbg.roofKit()`, `tests/test_roof_kit.py`.
+
+## Round 151 — the RiverLink ferry, on its timetable (Sep 23)
+
+Mike, with RiverLink's departure table: "Can we add the riverlink ferry to camden? I assume there is no actual location
+data for that, but maybe on a schedule?" Scheduled, never live, on the ships layer, one vessel (the Freedom) between the
+two OSM ferry landings (Penn's Landing at 211 S. Columbus Blvd, Camden at Wiggins Park; the berths found by walking
+from each landing toward the other until the Delaware's outline, then 9 m out). The 2026 season from
+riverlinkferry.com: full service May 23 to Sep 7, Tuesday to Sunday and the Memorial Day and Labor Day Mondays, Camden
+departing on the half hour 10:30 to 4:30 and Philadelphia on the hour 11:00 to 5:00, Saturday and Sunday adding 9:30,
+5:30 and 6:30 from Camden and 10:00, 6:00 and 7:00 from Philadelphia; weekends only Sep 8 to Oct 27; and on a model date
+with a Freedom Mortgage Pavilion show in the Ticketmaster feed, a shuttle from two hours before the show until four after.
+`ferryDay` builds the day's candidates and takes them in time order only from where the boat is and only once it is free
+(a 12 minute crossing and a minute's margin), so the timetable can never put it in two places. A crossing is a cubic arc
+bowed 70 m downstream, eased like PATCO's runs, and the boat swings round off the berth over its first eighth; between
+runs it lies at its berth as it came in, Camden overnight and out of season. Model: a pointed white hull with a blue
+sheer band, the glazed main cabin (lit after dark), an open upper deck under a blue canopy, the pilothouse, a stack.
+A ferry pin, and a card sharing the trains' slot: "To Camden, Wiggins Park, Arrives 11:12 AM" or "Docked at Penn's
+Landing, Next Departure 11:00 AM" or "No Sailings Today", always "Timetable Position, Not Live", with the schedule's
+link. The model date is a Wednesday after Labor Day, so today it lies at Camden. `__dbg.ferry()`, `__dbg.ferryCard()`,
+`tests/test_ferry.py` (the season, the holiday Mondays, the weekend extras, the alternation, a show-day shuttle).

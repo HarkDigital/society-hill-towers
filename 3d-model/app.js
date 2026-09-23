@@ -13587,7 +13587,8 @@
     const cAct = closuresReady && CLOSURES.on && (barrelMesh.count > 0 || coneMesh.count > 0 || closurePin.count > 0 || closurePinPart.count > 0);   // the closed blocks (Round 79)
     const aAct = amtrakReady && AMTRAK.on && (amtrakCoach.count > 0 || amtrakLoco.count > 0 || amtrakAcela.count > 0);   // the trains (Round 80)
     const pAct = patcoReady && AMTRAK.on && (patcoCar.count > 0 || patcoPin.count > 0);   // PATCO, scheduled (Round 141)
-    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct && !pAct && !STOPS.ready) return;
+    const yAct = FERRY.ready && SHIPS.on && FERRY.mesh.count > 0;   // the RiverLink ferry, scheduled (Round 151)
+    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct && !pAct && !yAct && !STOPS.ready) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -13636,6 +13637,7 @@
     if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); if (closurePin.count) targets.push(closurePin); if (closurePinPart.count) targets.push(closurePinPart); }
     if (aAct) { for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) if (m.count) targets.push(m); }
     if (pAct) { for (const m of [patcoCar, patcoPin]) if (m.count) targets.push(m); }
+    if (yAct) targets.push(FERRY.mesh, FERRY.pin);
     if (STOPS.ready) { if (busStopPin.count) targets.push(busStopPin); if (railStationPin.count) targets.push(railStationPin); }   // Round 133
     if (CIVIC_S.ready) { if (libPin.count) targets.push(libPin); if (recPin.count) targets.push(recPin); }   // Round 134
     const hits = septaRay.intersectObjects(targets, false);
@@ -13665,6 +13667,9 @@
       if (aAct && (h.object.userData.amKind !== undefined || h.object === amtrakPin)) {
         const p = h.object === amtrakPin ? amtrakPinPick[h.instanceId] : amtrakPick[h.object.userData.amKind][h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = p; amtrakCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+      }
+      if (yAct && (h.object === FERRY.mesh || h.object === FERRY.pin)) {
+        const p = FERRY.rec; pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = p; ferryCard(p); vehinfoEl.hidden = false; cardUnlock(); return;
       }
       if (pAct && (h.object === patcoCar || h.object === patcoPin)) {
         const p = h.object === patcoPin ? patcoPinPick[h.instanceId] : patcoPick[h.instanceId];
@@ -17669,7 +17674,7 @@
     if (gone.length) { for (const g of gone) { const p = amtrakMap.get(g); amtrakMap.delete(g); if (pickedTrain === p) { pickedTrain = null; vehinfoEl.hidden = true; } } amtrakStatus(); }
     amtrakLoco.count = Math.min(counts[0], AMTRAK_CAP); amtrakAcela.count = Math.min(counts[1], AMTRAK_CAP * 2); amtrakCoach.count = Math.min(counts[2], AMTRAK_CAR_CAP); amtrakPin.count = np;
     for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) flushInst(m, -1);
-    if (pickedTrain && !pickedTrain.patco) {   // a PATCO card is kept by updatePatco
+    if (pickedTrain && !pickedTrain.patco && !pickedTrain.ferry) {   // a PATCO card is kept by updatePatco, the ferry's by updateFerry (Round 151)
       amtrakCard(pickedTrain);
       _ssv.set(pickedTrain.hx, pickedTrain.hy + 5, pickedTrain.hz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
@@ -17818,7 +17823,166 @@
       '<a class="vlink" href="https://www.ridepatco.org/schedules/schedules.asp" target="_blank" rel="noopener">PATCO Schedules</a>';
     cardSet(p, html);
   }
-  function trainCard(p) { if (p.patco) patcoCard(p); else amtrakCard(p); }
+  // ---- the RiverLink ferry (Round 151, Mike: "Can we add the riverlink ferry to camden? I assume there is no actual
+  // location data for that, but maybe on a schedule?"). SCHEDULED, never live, on the ships layer. The 2026 season from
+  // riverlinkferry.com and Mike's timetable: full service May 23 to Sep 7, Tuesday to Sunday and the Memorial Day and
+  // Labor Day Mondays, Camden departing on the half hour 10:30 to 4:30 and Philadelphia on the hour 11:00 to 5:00, with
+  // Saturday and Sunday adding 9:30, 5:30 and 6:30 from Camden and 10:00, 6:00 and 7:00 from Philadelphia; weekends only
+  // from Sep 8 to Oct 27; and a shuttle for a Freedom Mortgage Pavilion show on the model date (the Ticketmaster feed),
+  // Philadelphia every half hour from two hours before the show until four after, Camden a quarter hour behind. One
+  // vessel, the Freedom: a crossing takes FERRY.run seconds on a gentle downstream arc between the two OSM landings,
+  // accepted in time order only from where the boat is, so the timetable can never put it in two places; between runs
+  // it lies at its berth, Camden overnight and out of season.
+  const FERRY = { phl: [436.7, -83.4], cam: [1035.6, 133.7], run: 720, ready: false, mesh: null, pin: null, P: null, key: '', runs: [], rec: { ferry: true, x: 0, y: 0, z: 0, vis: true }, s: { pinKey: '', drift: 0, lastT: 0 } };
+  const FERRY_SEASON = { full: [20260523, 20260907], weekends: [20260908, 20261027], holidays: [20260525, 20260907], shows: [20260501, 20261027] };
+  const FERRY_BASE = { cam: [630, 690, 750, 810, 870, 930, 990], phl: [660, 720, 780, 840, 900, 960, 1020] };
+  const FERRY_WKND = { cam: [570, 1050, 1110], phl: [600, 1080, 1140] };
+  const FERRY_BLUE = '#1d4f91';
+  const glyphFerry = (g) => {   // a double-deck ferry from the side: the hull, the cabin's window band, the upper deck's canopy
+    g.fillStyle = '#fdfbf6';
+    g.beginPath(); g.moveTo(40, 150); g.lineTo(216, 150); g.lineTo(196, 182); g.lineTo(58, 182); g.closePath(); g.fill();
+    g.fillRect(62, 110, 132, 38); g.fillRect(84, 70, 92, 8);
+    for (const x of [88, 172]) g.fillRect(x, 78, 5, 32);
+    g.fillStyle = FERRY_BLUE; g.fillRect(70, 120, 116, 14);
+    g.fillStyle = '#fdfbf6'; g.fillRect(150, 86, 26, 22);
+  };
+  function ferryGeom() {   // the Freedom, about 24 m by 8: a pointed white hull with a blue sheer band, the glazed main cabin, an open upper deck under a blue canopy, the pilothouse; x toward the bow, y up from the waterline
+    const parts = [];
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), r, g, b, glow));
+    const hullShape = new THREE.Shape([new THREE.Vector2(-12, -4), new THREE.Vector2(7, -4), new THREE.Vector2(12, 0), new THREE.Vector2(7, 4), new THREE.Vector2(-12, 4)]);
+    const hull = new THREE.ExtrudeGeometry(hullShape, { depth: 1.9, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, -0.7, 0);
+    hull.computeVertexNormals();
+    parts.push(septaColored(hull, 0.80, 0.81, 0.83));
+    const band = new THREE.ExtrudeGeometry(hullShape, { depth: 0.3, bevelEnabled: false }).rotateX(-Math.PI / 2).scale(1.004, 1, 1.02).translate(0, 0.85, 0);
+    band.computeVertexNormals();
+    parts.push(septaColored(band, 0.02, 0.09, 0.30));
+    box(17, 2.4, 7.2, -1.5, 2.4, 0, 0.78, 0.79, 0.81);                    // the main cabin
+    box(16.2, 1.0, 7.3, -1.5, 2.45, 0, 0.12, 0.15, 0.19, 1);              // its window band, lit after dark
+    box(18.5, 0.2, 7.6, -1.5, 3.7, 0, 0.72, 0.73, 0.75);                  // the upper deck
+    for (const s of [-1, 1]) box(18.5, 0.06, 0.06, -1.5, 4.7, s * 3.75, 0.70, 0.71, 0.73);   // its rails
+    for (let k = 0; k < 7; k++) for (const s of [-1, 1]) box(0.06, 1.0, 0.06, -10.3 + k * 2.9, 4.25, s * 3.75, 0.70, 0.71, 0.73);
+    for (const [x, s] of [[-9, -1], [-9, 1], [0.5, -1], [0.5, 1]]) box(0.12, 2.0, 0.12, x, 4.8, s * 3.3, 0.70, 0.71, 0.73);   // the canopy's posts
+    box(11, 0.16, 7.2, -4.2, 5.85, 0, 0.03, 0.11, 0.34);                  // the blue canopy
+    box(3.6, 2.2, 4.4, 4.6, 4.9, 0, 0.80, 0.81, 0.83);                    // the pilothouse
+    box(0.12, 0.9, 4.0, 6.42, 5.35, 0, 0.12, 0.15, 0.19, 1);              // its windscreen
+    box(0.8, 1.6, 0.8, -10.5, 4.6, 0, 0.60, 0.61, 0.63);                  // the stack
+    return septaMerge(parts);
+  }
+  function ferryInit() {
+    // the berths: from each OSM landing toward the other until the river's outline, then 9 m out, so the hull lies in the water
+    const berth = (a, b) => {
+      const dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L;
+      let t = 0; while (t < 200 && !delawareAt(a[0] + ux * t, a[1] + uz * t)) t += 2;
+      return [a[0] + ux * (t + 9), a[1] + uz * (t + 9)];
+    };
+    const P0 = berth(FERRY.phl, FERRY.cam), P3 = berth(FERRY.cam, FERRY.phl), dx = P3[0] - P0[0], dz = P3[1] - P0[1], L = Math.hypot(dx, dz);
+    const ux = dx / L, uz = dz / L, sx = 0, sz = 1;   // the arc bows downstream (south, +z) on the ebb and the flood alike
+    FERRY.P = [P0, [P0[0] + ux * L * 0.3 + sx * 70, P0[1] + uz * L * 0.3 + sz * 70], [P3[0] - ux * L * 0.3 + sx * 70, P3[1] - uz * L * 0.3 + sz * 70], P3];
+    FERRY.mesh = new THREE.InstancedMesh(ferryGeom(), septaMats.body, 1);
+    FERRY.mesh.setColorAt(0, _sc.setRGB(1, 1, 1)); FERRY.mesh.instanceColor.needsUpdate = true;
+    FERRY.mesh.frustumCulled = false; FERRY.mesh.castShadow = !isTouch; FERRY.mesh.count = 0; FERRY.mesh.userData.ferry = true;
+    groupCity.add(FERRY.mesh);
+    FERRY.pin = pinMesh(pinTexture(FERRY_BLUE, '#fdfbf6', glyphFerry), 1, 'ferryPin');
+    FERRY.ready = true;
+  }
+  function ferryNowSec(now) {   // seconds after the model day's midnight, as PATCO's clock reads it (its own state)
+    const S = FERRY.s, dt = S.lastT ? Math.min(1, (now - S.lastT) / 1000) : 0;
+    S.lastT = now;
+    if (clock.live) { S.pinKey = ''; return clock.minutes * 60 + (Date.now() / 1000) % 60; }
+    const key = clock.y + '-' + clock.m + '-' + clock.d + ':' + clock.minutes;
+    if (key !== S.pinKey) { S.pinKey = key; S.drift = 0; } else S.drift += dt;
+    return clock.minutes * 60 + S.drift % 3600;
+  }
+  function ferryDay(y, m, d) {   // the day's accepted runs: [start s, 'cam' | 'phl' origin, concert]
+    const ymd = y * 10000 + m * 100 + d, dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(), wk = dow === 0 || dow === 6, cand = [];
+    const inR = (r) => ymd >= r[0] && ymd <= r[1];
+    let base = false, wknd = false;
+    if (inR(FERRY_SEASON.full) && (dow !== 1 || FERRY_SEASON.holidays.includes(ymd))) { base = true; wknd = wk; }
+    else if (inR(FERRY_SEASON.weekends) && wk) { base = true; wknd = true; }
+    if (base) for (const o of ['cam', 'phl']) { for (const mn of FERRY_BASE[o]) cand.push([mn * 60, o, false]); if (wknd) for (const mn of FERRY_WKND[o]) cand.push([mn * 60, o, false]); }
+    if (inR(FERRY_SEASON.shows) && typeof CONCERTS !== 'undefined') {
+      const ds = y + '-' + String(m).padStart(2, '0') + '-' + String(d).padStart(2, '0');
+      for (const e of CONCERTS.events || []) {
+        if (!e || e.date !== ds || !e.time || !/Freedom Mortgage Pavilion|Susquehanna Bank Center|BB&T Pavilion/i.test((e.venue && e.venue.name) || '')) continue;
+        const S = (+e.time.slice(0, 2)) * 60 + (+e.time.slice(3, 5));
+        for (let T = S - 120; T <= S + 240; T += 30) { cand.push([T * 60, 'phl', true]); cand.push([(T + 15) * 60, 'cam', true]); }
+      }
+    }
+    cand.sort((a, b) => a[0] - b[0]);
+    const runs = []; let at = 'cam', free = 0;
+    for (const c of cand) if (c[1] === at && c[0] >= free) { runs.push(c); at = at === 'cam' ? 'phl' : 'cam'; free = c[0] + FERRY.run + 60; }
+    return runs;
+  }
+  const _fyA = [0, 0];
+  function ferryBez(u, out) {
+    const [a, b, c, d] = FERRY.P, v = 1 - u;
+    out[0] = v * v * v * a[0] + 3 * v * v * u * b[0] + 3 * v * u * u * c[0] + u * u * u * d[0];
+    out[1] = v * v * v * a[1] + 3 * v * v * u * b[1] + 3 * v * u * u * c[1] + u * u * u * d[1];
+    return out;
+  }
+  function ferryState(sec) {   // where the boat is: moving on a run, or at a berth, and the run or the next one
+    const runs = FERRY.runs;
+    for (let i = 0; i < runs.length; i++) {
+      const r = runs[i];
+      if (sec >= r[0] && sec < r[0] + FERRY.run) return { moving: true, run: r, u: (sec - r[0]) / FERRY.run };
+    }
+    let last = null, next = null;
+    for (const r of runs) { if (r[0] + FERRY.run <= sec) last = r; else if (!next && r[0] > sec) next = r; }
+    return { moving: false, at: last ? (last[1] === 'cam' ? 'phl' : 'cam') : 'cam', next, last };
+  }
+  function ferryCard(p) {
+    const st = p.st;
+    let html = '<span class="vroute" style="background:' + FERRY_BLUE + ';color:#fdfbf6">RiverLink Ferry</span>';
+    if (st.moving) {
+      const toCam = st.run[1] === 'phl';
+      html += '<span class="vdest">' + (toCam ? 'To Camden, Wiggins Park' : 'To Philadelphia, Penn&#8217;s Landing') + '</span>' +
+        '<div class="vmeta">' + septaEsc('Arrives ' + fmtTime(Math.round((st.run[0] + FERRY.run) / 60) % 1440) + (st.run[2] ? ', Concert Service' : '')) + '</div>';
+    } else {
+      html += '<span class="vdest">' + (st.at === 'cam' ? 'Docked at Camden, Wiggins Park' : 'Docked at Penn&#8217;s Landing') + '</span>' +
+        '<div class="vmeta">' + septaEsc(st.next ? 'Next Departure: ' + fmtTime(Math.round(st.next[0] / 60) % 1440) + (st.next[2] ? ', Concert Service' : '') : (FERRY.runs.length ? 'No More Sailings Today' : 'No Sailings Today')) + '</div>';
+    }
+    html += '<div class="vmeta">Timetable Position, Not Live</div>' +
+      '<a class="vlink" href="https://www.riverlinkferry.com/general-service/" target="_blank" rel="noopener">RiverLink Schedule</a>';
+    cardSet(p, html);
+  }
+  function updateFerry(now) {
+    if (!FERRY.ready) { if (septaMats.body && typeof delawareAt === 'function') ferryInit(); if (!FERRY.ready) return; }
+    if (!SHIPS.on) { if (FERRY.mesh.count) { FERRY.mesh.count = 0; FERRY.pin.count = 0; FERRY.mesh.instanceMatrix.needsUpdate = true; FERRY.pin.instanceMatrix.needsUpdate = true; } if (pickedTrain === FERRY.rec) { pickedTrain = null; vehinfoEl.hidden = true; } return; }
+    const key = clock.y + '-' + clock.m + '-' + clock.d + ':' + ((typeof CONCERTS !== 'undefined' && CONCERTS.events) ? CONCERTS.events.length : 0);
+    if (key !== FERRY.key) { FERRY.key = key; FERRY.runs = ferryDay(clock.y, clock.m, clock.d); }
+    const sec = ferryNowSec(now), st = ferryState(sec), p = FERRY.rec;
+    p.st = st;
+    let x, z, hx, hz;
+    const tan = (u, sgn) => { const a = ferryBez(Math.max(0, u - 0.01), [0, 0]), b = ferryBez(Math.min(1, u + 0.01), [0, 0]); return [(b[0] - a[0]) * sgn, (b[1] - a[1]) * sgn]; };
+    if (st.moving) {
+      const fwd = st.run[1] === 'phl', w = patcoRun(st.u), u = fwd ? w : 1 - w, sg = fwd ? 1 : -1;
+      ferryBez(u, _fyA); x = _fyA[0]; z = _fyA[1];
+      [hx, hz] = tan(u, sg);
+      const turn = clamp(st.u / 0.12, 0, 1);   // it swings round off the berth: from the heading it arrived on to the run's own
+      if (turn < 1) { const [ax, az] = tan(fwd ? 0 : 1, -sg); const a0 = Math.atan2(az, ax), a1 = Math.atan2(hz, hx); let da = a1 - a0; da -= Math.round(da / (2 * Math.PI)) * 2 * Math.PI; const aa = a0 + da * (turn * turn * (3 - 2 * turn)); hx = Math.cos(aa); hz = Math.sin(aa); }
+    } else {
+      const atCam = st.at === 'cam', B = atCam ? FERRY.P[3] : FERRY.P[0];
+      x = B[0]; z = B[1];
+      [hx, hz] = tan(atCam ? 1 : 0, atCam ? 1 : -1);   // lying as it came in
+    }
+    const bob = Math.sin(now / 1400) * 0.06;
+    p.x = x; p.z = z; p.y = TERRAIN.water + 0.1;
+    _fe.set(Math.sin(now / 1900) * 0.012, Math.atan2(-hz, hx), 0, 'YZX'); _fq.setFromEuler(_fe);
+    _sp.set(x, p.y + bob, z); _ss.set(1, 1, 1); _sm.compose(_sp, _fq, _ss);
+    FERRY.mesh.setMatrixAt(0, _sm); FERRY.mesh.count = 1; FERRY.mesh.instanceMatrix.needsUpdate = true;
+    _aqB.copy(camera.quaternion);
+    _sp.set(x, p.y + 12, z);
+    const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190) * pinRise(p, now);
+    _ss.set(aps, aps, aps); _sm.compose(_sp, _aqB, _ss);
+    FERRY.pin.setMatrixAt(0, _sm); FERRY.pin.count = 1; FERRY.pin.instanceMatrix.needsUpdate = true;
+    if (pickedTrain === p) {
+      ferryCard(p);
+      _ssv.set(x, p.y + 9, z).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else { vehinfoEl.style.opacity = '1'; vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)'; }
+    }
+  }
+  function trainCard(p) { if (p.ferry) ferryCard(p); else if (p.patco) patcoCard(p); else amtrakCard(p); }
   function updatePatco(now, dt) {
     if (!patcoReady) { if (septaMats.body && typeof PATCO_DATA !== 'undefined' && PATCO_DATA && patcoTracks().length === 2) patcoInit(); if (!patcoReady) return; }
     const sec = patcoNowSec(now);
@@ -21907,6 +22071,7 @@
     updateShips(now, dt);
     updateAmtrak(now, dt);
     updatePatco(now, dt);
+    updateFerry(now);   // Round 151
     updateTraffic(now, dt);
     updateLights(now);
     updateRoofKit(now);   // Round 150
@@ -22015,7 +22180,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { _pov.set(x, y, z).applyMatrix4(PIN_OCC.view); const vz = -_pov.z; _pov.applyMatrix4(PIN_OCC.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(PIN_OCC.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(vz - (2.5 + vz * 0.02)), px, py, ds, vis: pinOccVisible(x, y, z) }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccVisible(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]) ? 1 : 0, st ? st.tgt[i] : -1, st ? st.pendC[i] : -1]); return o; }) : undefined }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { _pov.set(x, y, z).applyMatrix4(PIN_OCC.view); const vz = -_pov.z; _pov.applyMatrix4(PIN_OCC.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(PIN_OCC.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(vz - (2.5 + vz * 0.02)), px, py, ds, vis: pinOccVisible(x, y, z) }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccVisible(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]) ? 1 : 0, st ? st.tgt[i] : -1, st ? st.pendC[i] : -1]); return o; }) : undefined }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, runs: FERRY.runs, st: FERRY.rec.st, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z), P: FERRY.P }), ferryCard: () => { pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

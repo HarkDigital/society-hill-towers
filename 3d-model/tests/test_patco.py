@@ -93,7 +93,7 @@ console.log(JSON.stringify(out));
         self.assertLess(s.index("step('Laying the PATCO tracks',"), s.index("step('Rolling out the SEPTA fleet',"))
         self.assertIn('    updatePatco(now, dt);\n', s)
         self.assertIn('trainCard(bestA);', s)
-        self.assertIn('if (pickedTrain && !pickedTrain.patco) {', s)
+        self.assertIn('if (pickedTrain && !pickedTrain.patco && !pickedTrain.ferry) {', s)   # the ferry shares the slot since Round 151
         upd = s[s.index('  function updatePatco('):s.index('  function updatePatco(') + 5000]
         self.assertIn('if (!insideLimit(cx, cz) || !nearCam(cx, cy, cz)) continue;', upd)   # the half-mile rule (Round 82), like Amtrak's
         self.assertIn('if (sc < tr.sFaceP - PATCO_COVER || sc > tr.sFaceC + PATCO_LEN / 2 + 0.3) continue;', upd)   # nothing drawn underground (Round 20)
