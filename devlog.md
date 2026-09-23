@@ -6676,3 +6676,29 @@ span's grade breaks (they now sit on their truck centres); the ties' instanced m
 origin and vanished from most views, and so were the El's since it was built; and a bus opened from search left a
 train card's record set, so the train card took the slot back. Measured after: the walkway 0.205 m over a car's roof,
 the bed on the span exactly the floor's top, 58 piers, 6,343 ties, 4.57 km of track.
+
+## Round 142 — the new houses at 209 and 211 E Wildey St (Sep 23)
+
+Mike: "add the new houses at 209 and 211 E Wildey". Round 139 had noted them: the model's right neighbour of the pit
+(wide record 74404) was the old semi-detached house on 209, demolished in 2025 (ZP-2025-000103, DP-2025-000011); the lot
+was split in two (ZP-2025-000106) and a mirrored pair of attached single-family houses built on it (RP-2025-003196 and
+-003197, both completed), listed this year as 19 ft by 58 ft lots, three storeys over a finished basement, a Roman
+brick facade with oversized loft windows, a roof deck. The listing's front photo (both houses, 207's lot bare beside
+them) and its rear-patio photo are the model.
+
+74404 joins `DEMOLISHED` (skipped at run time, counted in `wideColK`, as 207 was). The new step 'Raising 209 and 211
+East Wildey Street' (`buildWildeyRow`) lays the pair in the row's own frame, on the pit's right line and along its front
+line (`WILDEY_ROW`: 5.79 m each, 12.5 m deep, coping at 11.2 m, roof at 10.45 m), carried out by one right-handed basis:
+per house a front wall cut round two openings (the recessed two-storey window bay, 0.30 m deep, and the recessed ground
+floor, 0.35 m) with their backs and reveals, the canvas facade drawn in facade metres (pale grey Roman brick in 5.2 cm
+courses, two black loft windows of four sashes each, stone sills, the string-course groove, the black party-line
+reveal, the door on the outer side, the shopfront over a black base, globe sconces), mirrored for 211; a black steel
+canopy; grey siding on the exposed side walls (209's faces the pit, 211's the parking beside it); white board-and-batten
+at the back with a glazed ground floor and two windows a floor; a membrane roof with a porcelain paver deck behind a
+rail at 3.2 m, a charcoal pilothouse with a glass door and a condenser at the back; a paver patio in a cedar fence.
+After dark an emissive map scaled by the night uniform lights some rooms and not others, the shopfronts and the sconces.
+The pit's right foundation now runs the new house's whole depth from the street line (`right: [0, 0.685]`), and an
+empty strip run is skipped rather than built degenerate.
+
+Checked in the pane from the street by day and at 9:30 pm, from over the pit and from behind; `tests/test_ground_pits.py`
+covers both demolished records, the right span against `WILDEY_ROW.depth`, and the step's order before the sow.

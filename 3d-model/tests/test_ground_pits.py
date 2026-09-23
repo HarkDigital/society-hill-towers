@@ -55,13 +55,14 @@ class GroundPits(unittest.TestCase):
         cls.buildings = [(i, b[1], b[4]) for i, b in enumerate(scene['buildings'])]
         cls.roads = scene['roads']
 
-    def test_the_point_names_one_house(self):
-        (px, pz), = self.demolished
-        hits = [(i, h) for i, h, poly in self.buildings if inside(px, pz, poly)]
-        self.assertEqual(len(hits), 1, hits)
-        i, h = hits[0]
-        self.assertEqual(i, 74399)
-        self.assertAlmostEqual(h, 7.0, places=1)
+    def test_each_point_names_one_house(self):
+        # 207 (74399, 7 m) and, since Round 142, the old house on 209 (74404, 8 m) that the new pair replaced
+        for (px, pz), want, wh in zip(self.demolished, (74399, 74404), (7.0, 8.0)):
+            hits = [(i, h) for i, h, poly in self.buildings if inside(px, pz, poly)]
+            self.assertEqual(len(hits), 1, hits)
+            i, h = hits[0]
+            self.assertEqual(i, want)
+            self.assertAlmostEqual(h, wh, places=1)
 
     def test_ring_is_convex_and_holds_only_that_house(self):
         r = self.ring
@@ -71,7 +72,7 @@ class GroundPits(unittest.TestCase):
         self.assertEqual(held, [74399])
         # every other house near it stays outside the ring but for a sliver on a shared wall (the rings are rounded to 1 cm)
         for i, h, poly in self.buildings:
-            if i == 74399 or abs(poly[0][0] - r[0][0]) > 60 or abs(poly[0][1] - r[0][1]) > 60:
+            if i in (74399, 74404) or abs(poly[0][0] - r[0][0]) > 60 or abs(poly[0][1] - r[0][1]) > 60:
                 continue
             for q in poly:
                 if inside(q[0], q[1], r):
@@ -88,7 +89,12 @@ class GroundPits(unittest.TestCase):
 
     def test_party_wall_spans_sit_on_the_neighbours(self):
         F1, F2, R2, R1 = self.ring
-        for (a, b), span, want in (((F1, R1), self.left, 74408), ((F2, R2), self.right, 74404)):
+        # the right side is the new 209 (Round 142): it stands on the pit's right line from the street line back WILDEY_ROW.depth
+        m = re.search(r'const WILDEY_ROW = \{ widths: \[([^\]]+)\], depth: ([\d.]+)', self.src)
+        depth = float(m.group(2))
+        self.assertEqual(self.right[0], 0)
+        self.assertAlmostEqual(self.right[1] * math.hypot(R2[0] - F2[0], R2[1] - F2[1]), depth, delta=0.05)
+        for (a, b), span, want in (((F1, R1), self.left, 74408),):
             p0 = (a[0] + (b[0] - a[0]) * span[0], a[1] + (b[1] - a[1]) * span[0])
             p1 = (a[0] + (b[0] - a[0]) * span[1], a[1] + (b[1] - a[1]) * span[1])
             poly = next(poly for i, h, poly in self.buildings if i == want)
@@ -102,6 +108,8 @@ class GroundPits(unittest.TestCase):
         self.assertIn('if (h <= 45 && t <= 6) wideColK++;', s)   # the far ring's colour reservoir keeps its count
         self.assertIn('.concat(GROUND_PITS.map(p=>({poly:p.ring,bounds:streetBounds(p.ring)}))', s)
         self.assertIn("step('Digging on East Wildey Street', buildGroundPits);", s)
+        self.assertIn("step('Raising 209 and 211 East Wildey Street', buildWildeyRow);", s)
+        self.assertLess(s.index("step('Raising 209 and 211"), s.index("step('Sowing the grass'"))   # its noSow before the sow
         self.assertLess(s.index("step('Digging on East Wildey Street'"), s.index("step('Sowing the grass'"))   # noSow before the sow
         self.assertIn('noSow(P.ring.map(', s)
         # the floor faces up and every wall strip faces into the pit (review: the weather wrap and the shadow bias read the raw normal)

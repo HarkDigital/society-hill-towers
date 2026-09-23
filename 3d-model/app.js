@@ -7421,10 +7421,18 @@
   // GROUND_PITS are convex rings cut out of the drawn ground (elPortalClipGround) with a closed pit built under each:
   // corners front-left, front-right, rear-right, rear-left as seen from the street; `left`/`right` are the spans
   // (fractions of the depth from the front) where a neighbour's wall stands on the edge and its foundation is laid bare:
-  // 205's concrete block on the left (74408), the house on 209 in poured concrete on the right (74404)
-  const DEMOLISHED = [[1028.8, -2504.3]];   // 207 E Wildey St, wide record 74399
+  // 205's concrete block on the left (74408), the new 209's poured concrete on the right (Round 142: the whole depth of
+  // the new house, from the street line back, WILDEY_ROW.depth over the pit's 18.26 m)
+  // Round 142 (Mike: "add the new houses at 209 and 211 E Wildey"): the old semi-detached house on 209 (74404) was
+  // demolished in 2025, the lot split in two and a mirrored pair of attached houses built on it (RP-2025-003196/7,
+  // finished 2026): 19 ft each on the street line, three storeys to an 11.2 m coping in pale Roman brick, a recessed
+  // two-storey bay of black loft windows over a black steel canopy and a glazed ground floor, the doors on the outer
+  // sides, siding at the back, a paver roof deck with a pilothouse. Built in 'Raising 209 and 211 East Wildey Street'
+  const DEMOLISHED = [[1028.8, -2504.3], [1034.5, -2506.9]];   // 207 E Wildey St (74399); the old 209 (74404)
   const GROUND_PITS = [{ name: '207 E Wildey St', ring: [[1030.44, -2493.22], [1036.02, -2495.87], [1028.47, -2512.49], [1022.89, -2509.84]],
-    left: [0.324, 0.853], right: [0.321, 0.850] }];
+    left: [0.324, 0.853], right: [0, 0.685] }];
+  // the pair stands on the pit's right line (F2 to R2), running along its front line: widths from the pit side, depth back from the street
+  const WILDEY_ROW = { widths: [5.79, 5.79], depth: 12.5, height: 11.2, roof: 10.45 };
   const pitAt = (x, z) => GROUND_PITS.some((p) => pointInPoly(x, z, p.ring));
   const PIT_CENTRES = GROUND_PITS.map((p) => polyCentroid(p.ring)), PIT_NEIGH = [];   // the wide houses beside a pit, with their eaves, noted as they are raised
   // the fill sheets' boxes: a wide road segment lying inside one is densified at 6 m instead of
@@ -11121,6 +11129,7 @@
       { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals(); dirt.push(g); }
       // the walls: a strip from grade to the floor's edge along a run of the ring, `inset` metres into the pit
       const strip = (pts, inset, inward, colour, uv) => {   // pts: [s, t] samples in order
+        if (pts.length < 2) return null;   // an empty run (Round 142: the new 209 covers the right side from the street line)
         const p2 = [], c2 = [], u2 = [], i2 = []; let L = 0;
         pts.forEach(([s, t], k) => {
           const [x0, z0] = at(s, t), x = x0 + inward.x * inset, z = z0 + inward.z * inset, gy = grade(x0, z0), fy = gy - depth(s, t) - 0.08;
@@ -11140,7 +11149,7 @@
       const soil = (dd, s, t) => tc.copy(dd < 0.28 ? cTop : cDirt).lerp(cClay, sm(0.4, 1.4, dd) * 0.6).multiplyScalar(0.8 + 0.2 * (0.5 + 0.5 * Math.sin(dd * 9 + s * 13 + t * 31)));
       const grey = lin(0x8d8b85), concrete = (dd) => tc.copy(grey).multiplyScalar(dd < 0.12 ? 0.85 : 1.0);
       const runS = (t, s0, s1) => { const o = []; for (let i = Math.round(s0 * NS); i <= Math.round(s1 * NS); i++) o.push([i / NS, t]); return o; };
-      const runT = (s, t0, t1) => { const o = [], n = Math.max(1, Math.round((t1 - t0) * NT)); for (let k = 0; k <= n; k++) o.push([s, t0 + (t1 - t0) * k / n]); return o; };
+      const runT = (s, t0, t1) => { if (t1 - t0 < 1e-6) return []; const o = [], n = Math.max(1, Math.round((t1 - t0) * NT)); for (let k = 0; k <= n; k++) o.push([s, t0 + (t1 - t0) * k / n]); return o; };
       const inR = eu.clone(), inL = eu.clone().negate(), inF = ev.clone(), inB = ev.clone().negate();
       dirt.push(strip(runS(0, 0, 1), 0, inF, soil), strip(runS(1, 0, 1), 0, inB, soil));
       dirt.push(strip(runT(0, 0, P.left[0]), 0, inR, soil), strip(runT(0, P.left[1], 1), 0, inR, soil));
@@ -11148,7 +11157,7 @@
       const block = strip(runT(0, P.left[0], P.left[1]), 0.04, inR, (dd) => tc.setRGB(0.82, 0.82, 0.82).multiplyScalar(dd > 1.2 ? 0.85 : 1), true);
       dirt.push(strip(runT(1, P.right[0], P.right[1]), 0.04, inL, concrete));
       const dirtG = (() => {   // the floor and walls in one draw, their own vertex colours kept (mergeColored paints a part one colour)
-        const gs = dirt.map((g) => (g.index ? g.toNonIndexed() : g)); let n = 0, o = 0;
+        const gs = dirt.filter(Boolean).map((g) => (g.index ? g.toNonIndexed() : g)); let n = 0, o = 0;
         for (const g of gs) n += g.attributes.position.count;
         const out = {}; for (const k of ['position', 'normal', 'color']) out[k] = new Float32Array(n * 3);
         for (const g of gs) { for (const k in out) out[k].set(g.attributes[k].array, o * 3); o += g.attributes.position.count; }
@@ -11219,6 +11228,217 @@
     }
   }
   step('Digging on East Wildey Street', buildGroundPits);   // Round 139
+  // ---- 209 and 211 E Wildey St (Round 142). The mirrored pair built on the old 209's lot in 2025 and 2026, from the
+  // listing's photos: pale grey Roman brick in long thin courses on the street line, a recessed bay of two black loft
+  // windows (four sashes of 2 by 2 panes over four more), a stone sill, a black steel canopy over a recessed glazed
+  // ground floor with the door on the outer side, globe sconces, a black reveal on the party line and a plain coping at
+  // 11.2 m; grey siding on the exposed side walls (as Mike's photos of the pit showed it), white board-and-batten at the
+  // back with big windows, a paver roof deck behind a rail, a pilothouse and a condenser, and a fenced paver patio.
+  // Everything is laid in the row's own frame (u along the street from the pit, d back from the street line, y from
+  // the street grade) and carried out by one right-handed basis, so each quad's winding is decided once, facing out.
+  // The windows glow after dark through an emissive map scaled by the night uniform, some rooms lit and some not.
+  function wildeyTex(Wm, Hm, pxm, draw) {
+    const cv = document.createElement('canvas'); cv.width = Math.min(1024, THREE.MathUtils.ceilPowerOfTwo(Wm * pxm)); cv.height = Math.min(1024, THREE.MathUtils.ceilPowerOfTwo(Hm * pxm));
+    const x = cv.getContext('2d'), sx = cv.width / Wm, sy = cv.height / Hm;
+    const R = (u0, y0, u1, y1, c) => { x.fillStyle = c; x.fillRect(u0 * sx, (Hm - y1) * sy, (u1 - u0) * sx, (y1 - y0) * sy); };
+    draw(x, R, sx, sy, cv);
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding; tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+    return tex;
+  }
+  function buildWildeyRow() {
+    const P = GROUND_PITS[0], [F1, F2, R2] = P.ring, WR = WILDEY_ROW;
+    const W0 = Math.hypot(F2[0] - F1[0], F2[1] - F1[1]), D0 = Math.hypot(R2[0] - F2[0], R2[1] - F2[1]);
+    const eu = new THREE.Vector3((F2[0] - F1[0]) / W0, 0, (F2[1] - F1[1]) / W0), ev = new THREE.Vector3((R2[0] - F2[0]) / D0, 0, (R2[1] - F2[1]) / D0);
+    const grade = (x, z) => groundMeshY(x, z) ?? siteY(x, z, 'ground');
+    const wx = (u, d) => [F2[0] + eu.x * u + ev.x * d, F2[1] + eu.z * u + ev.z * d];
+    const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+    const H = WR.height, RF = WR.roof, D = WR.depth, cMid = lin(0x17181a);
+    const nightMat = (map, emit, rough) => {
+      const m = new THREE.MeshStandardMaterial({ map, roughness: rough, metalness: 0, envMapIntensity: 0.3 });
+      if (emit) {
+        m.emissive.set(0xffffff); m.emissiveMap = emit;
+        m.onBeforeCompile = (sh) => {
+          sh.uniforms.uRowNight = nightUniform;
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uRowNight;')
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= uRowNight * 1.6;');
+        };
+        m.customProgramCacheKey = () => 'wildey-row';
+      }
+      return m;
+    };
+    // the brick and the windows, in facade metres (u from the house's left as seen from the street, y up from the street grade)
+    const brick = (x, R, sx, sy, Wm, Hm, seed) => {
+      R(0, 0, Wm, Hm, '#bdbab2');
+      const ch = 0.052, bl = 0.30;
+      for (let r = 0; r * ch < Hm; r++) for (let c = -1; c * bl < Wm + bl; c++) {
+        const u0 = c * bl + (r % 2) * bl / 2, h = hash01(r * 12.9 + c * 3.1 + seed), v = Math.round(204 + 22 * h - 9 * hash01(r * 0.37 + seed));
+        R(u0 + 0.008, r * ch + 0.009, u0 + bl - 0.008, (r + 1) * ch, 'rgb(' + v + ',' + (v - 1) + ',' + (v - 5) + ')');
+      }
+    };
+    const window4 = (R, E, u0, y0, u1, y1, lit) => {   // four sashes, each a 2 by 2 upper light over a 2 by 2 lower
+      R(u0, y0, u1, y1, '#121314'); E(u0, y0, u1, y1, '#000');
+      const sw = (u1 - u0) / 4, ym = (y0 + y1) / 2;
+      for (let k = 0; k < 4; k++) for (const [a, b] of [[y0 + 0.06, ym - 0.035], [ym + 0.035, y1 - 0.06]]) for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+        const pu0 = u0 + k * sw + 0.05 + i * (sw - 0.1) / 2 + 0.017, pu1 = u0 + k * sw + 0.05 + (i + 1) * (sw - 0.1) / 2 - 0.017;
+        const py0 = a + j * (b - a) / 2 + 0.017, py1 = a + (j + 1) * (b - a) / 2 - 0.017, g = 0.5 + 0.5 * (py0 - y0) / (y1 - y0);
+        R(pu0, py0, pu1, py1, 'rgb(' + Math.round(38 + 40 * g) + ',' + Math.round(52 + 44 * g) + ',' + Math.round(68 + 52 * g) + ')');
+        if (lit > 0) E(pu0, py0, pu1, py1, 'rgb(' + Math.round(255 * lit) + ',' + Math.round(196 * lit) + ',' + Math.round(128 * lit) + ')');
+      }
+    };
+    const frontTex = (mirror, seed) => {
+      const Wm = WR.widths[0], Hm = H, lits = [0.2 + 0.8 * hash01(seed * 3.1), hash01(seed * 7.7) < 0.55 ? 0.9 : 0.08, hash01(seed * 5.3) < 0.7 ? 1 : 0.1];
+      let E = null;
+      const emit = wildeyTex(Wm, Hm, 90, (x, R) => { R(0, 0, Wm, Hm, '#000'); E = (u0, y0, u1, y1, c) => R(mirror ? Wm - u1 : u0, y0, mirror ? Wm - u0 : u1, y1, c); });
+      // the emissive canvas is painted alongside the map, through E
+      const map = wildeyTex(Wm, Hm, 90, (x, R0, sx, sy) => {
+        const R = (u0, y0, u1, y1, c) => R0(mirror ? Wm - u1 : u0, y0, mirror ? Wm - u0 : u1, y1, c);
+        brick(x, R0, sx, sy, Wm, Hm, seed);
+        R(0, 10.44, Wm, 10.47, '#a9a69e');   // the string course's groove
+        R(0.8, 9.95, 4.71, 10.0, '#aaa79f');   // the bay head's shadow line
+        R(0.8, 3.62, 4.71, 3.79, '#d8d5cc'); R(0.8, 6.98, 4.71, 7.04, '#d8d5cc');   // the sills
+        const Ex = (u0, y0, u1, y1, c) => E && E(u0, y0, u1, y1, c);
+        window4(R, Ex, 0.84, 7.04, 4.67, 9.32, lits[0]); window4(R, Ex, 0.84, 3.79, 4.67, 6.0, lits[1]);
+        // the ground floor: black soffit and canopy band, the door, the shopfront over its black base
+        R(1.1, 2.68, 4.72, 3.45, '#141516'); R(1.1, -2, 2.08, 2.68, '#1f2021'); R(1.2, 0.08, 1.95, 2.52, '#0f1011'); R(1.82, 1.1, 1.86, 1.4, '#6d6e70');
+        R(2.08, -2, 4.72, 0.58, '#151617'); R(2.08, 0.58, 4.72, 2.68, '#121314');
+        for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) {
+          const pu0 = 2.14 + i * 0.64, py0 = 0.64 + j * 0.66;
+          R(pu0, py0, pu0 + 0.58, py0 + 0.6, 'rgb(' + (46 + j * 10) + ',' + (56 + j * 10) + ',' + (66 + j * 12) + ')');
+          Ex(pu0, py0, pu0 + 0.58, py0 + 0.6, 'rgb(' + Math.round(250 * lits[2]) + ',' + Math.round(200 * lits[2]) + ',' + Math.round(140 * lits[2]) + ')');
+        }
+        R(Wm - 0.05, -2, Wm, Hm, '#141516');   // the party line's black reveal
+        for (const [u, y, r] of [[0.49, 2.29, 0.075], [5.3, 2.29, 0.075], [1.35, 2.92, 0.05]]) {   // the globe sconces and the recess light
+          const cu = mirror ? Wm - u : u; x.fillStyle = '#f4f2ea'; x.beginPath(); x.arc(cu * sx, (Hm - y) * sy, r * sx, 0, 7); x.fill();
+          Ex(u - r, y - r, u + r, y + r, '#fff1d0');
+        }
+      });
+      emit.needsUpdate = true;
+      return { map, emit };
+    };
+    const sidingTex = (hex, Wm, wins) => {
+      let E = null;
+      const emit = wins ? wildeyTex(Wm, H, 64, (x, R) => { R(0, 0, Wm, H, '#000'); E = R; }) : null;
+      const map = wildeyTex(Wm, H, 64, (x, R) => {
+        R(0, 0, Wm, H, hex);
+        for (let u = 0.2; u < Wm; u += 0.4) { R(u - 0.03, 0, u + 0.03, H, 'rgba(255,255,255,0.10)'); R(u + 0.03, 0, u + 0.045, H, 'rgba(0,0,0,0.16)'); }
+        R(0, H - 0.08, Wm, H, '#9fa2a2');
+        for (const [u0, y0, u1, y1, lit] of wins || []) {
+          R(u0, y0, u1, y1, '#131415');
+          const n = Math.max(1, Math.round((u1 - u0) / 0.9));
+          for (let k = 0; k < n; k++) {
+            const a = u0 + 0.06 + k * (u1 - u0 - 0.06) / n, b = u0 + (k + 1) * (u1 - u0 - 0.06) / n;
+            R(a, y0 + 0.06, b, y1 - 0.06, '#40505e');
+            if (lit) E(a, y0 + 0.06, b, y1 - 0.06, 'rgb(' + Math.round(250 * lit) + ',' + Math.round(192 * lit) + ',' + Math.round(126 * lit) + ')');
+          }
+        }
+      });
+      if (emit) emit.needsUpdate = true;
+      return { map, emit };
+    };
+    const roofTex = wildeyTex(WR.widths[0], D, 48, (x, R) => {
+      R(0, 0, WR.widths[0], D, '#cfd1cf');   // the TPO membrane
+      for (let u = 0.35; u < WR.widths[0] - 0.95; u += 0.6) for (let d = 0.4; d < 7.4; d += 0.6) {   // porcelain pavers on pedestals, the deck in front of the pilothouse
+        const v = Math.round(142 + 16 * hash01(u * 7.1 + d * 3.3)); R(u + 0.012, d + 0.012, u + 0.588, d + 0.588, 'rgb(' + v + ',' + (v - 3) + ',' + (v - 8) + ')');
+      }
+    });
+    // the build, in the row's frame: local x = u, y = up from the street grade, z = -d (toward the street)
+    const bases = [], pos = new Map();
+    const bucket = (mat) => { if (!pos.has(mat)) pos.set(mat, { p: [], n: [], uv: [] }); return pos.get(mat); };
+    const quad = (mat, A, B, C, Dq, uvs) => {   // A, B, C, D counter-clockwise seen from outside, local [u, y, d]
+      const b = bucket(mat), q = [A, B, C, Dq].map(([u, y, d]) => new THREE.Vector3(u, y, -d));
+      const n = q[1].clone().sub(q[0]).cross(q[2].clone().sub(q[0])).normalize();
+      for (const i of [0, 1, 2, 0, 2, 3]) { b.p.push(q[i].x, q[i].y, q[i].z); b.n.push(n.x, n.y, n.z); b.uv.push(uvs[i][0], uvs[i][1]); }
+    };
+    const parts = [];
+    const lbox = (u0, u1, y0, y1, d0, d1, hex) => parts.push({ geom: new THREE.BoxGeometry(u1 - u0, y1 - y0, d1 - d0).translate((u0 + u1) / 2, (y0 + y1) / 2, -(d0 + d1) / 2), color: lin(hex) });
+    const [fx, fz] = wx(WR.widths[0], 0), g0 = grade(fx, fz);   // the street grade at the party line, the pair's datum
+    const Wt = WR.widths.reduce((a, b) => a + b, 0);
+    let uAt = 0, low = Infinity;
+    for (const [u, d] of [[0, 0], [Wt, 0], [0, D], [Wt, D], [Wt / 2, D / 2]]) low = Math.min(low, grade(...wx(u, d)) - g0);
+    const yb = Math.min(-0.6, low - 0.5);
+    const sideM = nightMat(sidingTex('#8a8f92', D).map, null, 0.9), roofM = nightMat(roofTex, null, 0.85);
+    for (let k = 0; k < WR.widths.length; k++) {
+      const W = WR.widths[k], U = uAt, mirror = k % 2 === 1, mu = (u) => (mirror ? W - u : u);
+      const ft = frontTex(mirror, 11 + k * 17), frontM = nightMat(ft.map, ft.emit, 0.82);
+      const rw = [[0.5, 0.15, 5.3, 2.95, hash01(k * 4.4 + 1) < 0.6 ? 0.9 : 0], [0.6, 3.9, 2.5, 6.2, hash01(k * 2.2 + 3) < 0.5 ? 0.8 : 0], [3.3, 3.9, 5.2, 6.2, 0], [0.6, 7.2, 2.5, 9.5, hash01(k * 6.6 + 5) < 0.5 ? 0.85 : 0], [3.3, 7.2, 5.2, 9.5, 0]];
+      const rt = sidingTex('#e2e3de', W, rw), rearM = nightMat(rt.map, rt.emit, 0.88);
+      const fuv = (u, y) => [u / W, (y) / H];   // the front canvas, facade metres
+      // the front wall around its two openings (the bay and the ground floor), then each opening's back and reveals
+      const holes = [[mu(0.8), mu(4.71), 3.62, 9.95, 0.3], [mu(1.1), mu(4.72), yb, 3.1, 0.35]].map(([a, b, y0, y1, r]) => [Math.min(a, b), Math.max(a, b), y0, y1, r]);
+      const cuts = [...new Set([0, W, ...holes.flatMap((h) => [h[0], h[1]])])].sort((a, b) => a - b);
+      const fq = (u0, u1, y0, y1, d) => quad(frontM, [U + u0, y0, d], [U + u1, y0, d], [U + u1, y1, d], [U + u0, y1, d], [fuv(u0, y0), fuv(u1, y0), fuv(u1, y1), fuv(u0, y1)]);
+      for (let c = 0; c + 1 < cuts.length; c++) {
+        const u0 = cuts[c], u1 = cuts[c + 1], um = (u0 + u1) / 2;
+        const hs = holes.filter((h) => h[0] < um && um < h[1]).sort((a, b) => a[2] - b[2]);
+        let y = yb;
+        for (const h of hs) { if (h[2] > y) fq(u0, u1, y, h[2], 0); y = Math.max(y, h[3]); }
+        if (y < H) fq(u0, u1, y, H, 0);
+      }
+      for (const [u0, u1, y0, y1, r] of holes) {
+        fq(u0, u1, y0, y1, r);
+        const tex = fuv;
+        quad(frontM, [U + u0, y0, 0], [U + u0, y0, r], [U + u0, y1, r], [U + u0, y1, 0], [tex(u0, y0), tex(u0 - r, y0), tex(u0 - r, y1), tex(u0, y1)]);   // left reveal, facing +u
+        quad(frontM, [U + u1, y0, r], [U + u1, y0, 0], [U + u1, y1, 0], [U + u1, y1, r], [tex(u1 + r, y0), tex(u1, y0), tex(u1, y1), tex(u1 + r, y1)]);   // right reveal, facing -u
+        quad(frontM, [U + u0, y1, r], [U + u1, y1, r], [U + u1, y1, 0], [U + u0, y1, 0], [tex(u0, y1 + r), tex(u1, y1 + r), tex(u1, y1), tex(u0, y1)]);   // the head, facing down
+        const yf = y0 < 0 ? 0.02 : y0;   // the sill, or the ground floor's step
+        quad(frontM, [U + u0, yf, 0], [U + u1, yf, 0], [U + u1, yf, r], [U + u0, yf, r], [tex(u0, yf), tex(u1, yf), tex(u1, yf - r), tex(u0, yf - r)]);   // facing up
+      }
+      // the rear (seen from behind, its canvas runs from the far side) and the exposed side walls
+      const ruv = (u, y) => [(W - u) / W, y / H];
+      quad(rearM, [U + W, yb, D], [U, yb, D], [U, H, D], [U + W, H, D], [ruv(W, yb), ruv(0, yb), ruv(0, H), ruv(W, H)]);
+      const suv = (d, y) => [d / D, y / H];
+      if (k === 0) quad(sideM, [U, yb, D], [U, yb, 0], [U, H, 0], [U, H, D], [suv(D, yb), suv(0, yb), suv(0, H), suv(D, H)]);
+      if (k === WR.widths.length - 1) quad(sideM, [U + W, yb, 0], [U + W, yb, D], [U + W, H, D], [U + W, H, 0], [suv(0, yb), suv(D, yb), suv(D, H), suv(0, H)]);
+      // the roof: the membrane and deck inside a 0.25 m parapet, its inner faces, and a coping
+      const t = 0.25, a0 = U + t, a1 = U + W - t, d0 = t, d1 = D - t;
+      const rduv = (u, d) => [mirror ? (W - (u - U)) / W : (u - U) / W, d / D];
+      quad(roofM, [a0, RF, d0], [a1, RF, d0], [a1, RF, d1], [a0, RF, d1], [rduv(a0, d0), rduv(a1, d0), rduv(a1, d1), rduv(a0, d1)]);
+      const pc = 0x9c9e9c;
+      lbox(U, U + W, RF - 0.02, RF, 0, D, 0x8e908e);   // the roof slab's edge under the parapets, in case a gap shows
+      lbox(U, U + W, RF, H, 0, t, pc); lbox(U, U + W, RF, H, D - t, D, pc); lbox(U, U + t, RF, H, t, D - t, pc); lbox(U + W - t, U + W, RF, H, t, D - t, pc);
+      for (const [u0, u1, dd0, dd1] of [[U - 0.02, U + W + 0.02, -0.03, t + 0.02], [U - 0.02, U + W + 0.02, D - t - 0.02, D + 0.03], [U - 0.02, U + t + 0.02, t, D - t], [U + W - t - 0.02, U + W + 0.02, t, D - t]]) lbox(u0, u1, H, H + 0.05, dd0, dd1, 0xc4c6c3);
+      // the pilothouse at the back on the outer side, its glass door onto the deck; the deck rail; the condenser
+      const pu0 = U + mu(0.35), pu1 = U + mu(2.75), [q0, q1] = [Math.min(pu0, pu1), Math.max(pu0, pu1)];
+      lbox(q0, q1, RF, RF + 2.9, 7.5, D - t - 0.1, 0x2c2e31); lbox(q0, q1, RF + 2.9, RF + 3.0, 7.45, D - t - 0.05, 0x1c1d1f);
+      lbox(q0 + 0.5, q0 + 1.45, RF + 0.05, RF + 2.25, 7.47, 7.5, 0x3a4a58);
+      const railD = 3.2;
+      lbox(a0, a1, RF + 1.02, RF + 1.07, railD - 0.02, railD + 0.02, 0x141516);
+      for (let u = a0 + 0.05; u < a1; u += 1.2) lbox(u - 0.025, u + 0.025, RF, RF + 1.05, railD - 0.025, railD + 0.025, 0x141516);
+      lbox(a0 + 0.02, a0 + 0.02 + 0.03, RF + 0.1, RF + 1.0, railD, 7.5, 0x141516);
+      const cu = U + mu(W - 1.0);
+      lbox(cu - 0.45, cu + 0.45, RF, RF + 0.85, 10.6, 11.4, 0xb9bcbc);
+      // the canopy over the ground floor
+      lbox(Math.min(U + mu(0.88), U + mu(4.8)), Math.max(U + mu(0.88), U + mu(4.8)), 3.1, 3.38, -0.55, 0.02, 0x17181a);
+      bases.push([U, W]);
+      uAt += W;
+    }
+    // the patios behind: pavers inside a cedar fence
+    const ydD = D0 - D;
+    for (const [U, W] of bases) {
+      const y = (u, d) => grade(...wx(u, d)) - g0 + 0.08;
+      const b = bucket('patio'), q = [[U, D], [U + W, D], [U + W, D0], [U, D0]].map(([u, d]) => new THREE.Vector3(u, y(u, d), -d));
+      for (const i of [0, 1, 2, 0, 2, 3]) { b.p.push(q[i].x, q[i].y, q[i].z); b.n.push(0, 1, 0); b.uv.push(0, 0); }
+      const fy = y(U + W / 2, D0);
+      lbox(U, U + W, fy - 0.3, fy + 1.75, D0 - 0.05, D0, 0x9b7652);
+      lbox(U + W - 0.03, U + W + 0.03, fy - 0.3, fy + 1.75, D, D0, 0x8e6b49);
+      if (U === 0) lbox(0, 0.05, fy - 0.3, fy + 1.75, D, D0, 0x8e6b49);
+    }
+    const basis = new THREE.Matrix4().makeBasis(eu, new THREE.Vector3(0, 1, 0), ev.clone().negate()).setPosition(F2[0], g0, F2[1]);
+    for (const [mat, b] of pos) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(b.p, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(b.n, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(b.uv, 2));
+      g.applyMatrix4(basis);
+      const m = new THREE.Mesh(g, mat === 'patio' ? surfMat({ color: 0x9d998f, roughness: 0.9 }) : mat);
+      m.castShadow = mat !== 'patio'; m.receiveShadow = true; groupCity.add(m);
+    }
+    const pg = mergeColored(parts); pg.applyMatrix4(basis);
+    const pm = new THREE.Mesh(pg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.1 }));
+    pm.castShadow = pm.receiveShadow = true; groupCity.add(pm);
+    // no grass through the floors or the patios
+    noSow([wx(-0.2, -0.2), wx(uAt + 0.2, -0.2), wx(uAt + 0.2, D0 + 0.2), wx(-0.2, D0 + 0.2)]);
+  }
+  step('Raising 209 and 211 East Wildey Street', buildWildeyRow);   // Round 142
   step('Painting the meadow', () => {
     texU.uGrass.value = paintGrassTex(isTouch ? 512 : 1024);
     tuftTex = paintTuftTex(256);
