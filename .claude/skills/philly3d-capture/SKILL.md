@@ -137,6 +137,17 @@ constraints that produce silent garbage when broken:
 The canvas never includes the HUD or any DOM card. For those, take the pane's own
 screenshot instead, which means the pane has to be visible.
 
+### 7b. Measure pins and flicker instead of eyeballing them
+
+Mike has reported pins that flash or vanish (Rounds 126, 127, 138, 143) and flicker
+(Rounds 130, 140, 144) again and again; settle each with a number, before and after:
+
+- **Pins**: inject `scripts/pin_sweep.js`, then `__pinSweep([[x, y, z, yaw0, yaw1], ...])`
+  on the deployed build (`before.html`) and the new one at the same eyes. It returns
+  on-screen showings and blinks; Round 143 went from 135 of 189 to 5 of 47.
+- **Flicker**: three PNG captures 0.5 m apart, then
+  `python3 scripts/flicker_diff.py captures/<prefix> --crop x0,y0,x1,y1` and read the crop.
+
 ### 8. Syntax-check after every app.js edit
 
 ```bash

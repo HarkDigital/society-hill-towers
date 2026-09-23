@@ -29,7 +29,9 @@ symptom shows up later as a wrong conclusion rather than a failure.
   so a timed-out call leaves you unsure what completed. Keep calls short and
   single-purpose.
 - **Page load**: about 6 s warm, 40 to 45 s cold. `window.__dbg` is undefined until
-  the build finishes.
+  the build finishes. In a hidden pane a cold load of a rebuilt page can run past 80 s
+  (four times on Sep 23): when the 38 s poll comes back not ready, poll again in a
+  fresh call rather than reloading, which starts the load over.
 
 ## Reloading and tabs
 
