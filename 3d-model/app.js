@@ -5935,6 +5935,7 @@
         // of them otherwise resolves to a white band along the horizon
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += shtLamp * shtLit * uNight * 0.95 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));');
       glassOpticsPatch(shader,{mask:'shtGlass',normal:'vWNorm',uv:'shtPaneUV',id:'shtPaneID',seed:'vTint*7.1',coating:.085,roughness:.115,depth:.48});
+      lampLightPatch(shader, 'vWPos', true);   // Round 140: the street lamps wash the lower storeys
     };
     cityMat.onBeforeCompile = facadeHook(FACADE_GAIN, ROOF_GAIN, 1.2);
     cityMat.customProgramCacheKey = () => 'fabric';   // the two hooks share one source: keyed by hand (gotcha 15)
@@ -7409,6 +7410,19 @@
   const GRASS_POLYS = [];   // park and lawn rings from every tier, the grass field sows on them near the camera
   const NO_SOW_RINGS = [], NO_SOW_RING_BB = [];   // rings the bare-ground tuft sow keeps off: the sports complex's sheets and lots, every water sheet (inWater knows only the Delaware's bank), the far ring's aprons, the NW creeks
   const noSow = (poly) => { NO_SOW_RINGS.push(poly); NO_SOW_RING_BB.push(bboxOf(poly)); };
+  // Round 139 (Mike, with two photos: "can we remove the home at 207 E Wildey St? ... That should be replaced with
+  // a hole in the ground"): the city's permits agree (the house was hand-demolished in May 2026, excavation permitted
+  // Sep 15). DEMOLISHED holds scene points: the wide footprint holding one is not raised (skipped at run time, so every
+  // index-aligned read, the wall colours, the palette and roof draws seeded by the record number, stays put).
+  // GROUND_PITS are convex rings cut out of the drawn ground (elPortalClipGround) with a closed pit built under each:
+  // corners front-left, front-right, rear-right, rear-left as seen from the street; `left`/`right` are the spans
+  // (fractions of the depth from the front) where a neighbour's wall stands on the edge and its foundation is laid bare:
+  // 205's concrete block on the left (74408), the house on 209 in poured concrete on the right (74404)
+  const DEMOLISHED = [[1028.8, -2504.3]];   // 207 E Wildey St, wide record 74399
+  const GROUND_PITS = [{ name: '207 E Wildey St', ring: [[1030.44, -2493.22], [1036.02, -2495.87], [1028.47, -2512.49], [1022.89, -2509.84]],
+    left: [0.324, 0.853], right: [0.321, 0.850] }];
+  const pitAt = (x, z) => GROUND_PITS.some((p) => pointInPoly(x, z, p.ring));
+  const PIT_CENTRES = GROUND_PITS.map((p) => polyCentroid(p.ring)), PIT_NEIGH = [];   // the wide houses beside a pit, with their eaves, noted as they are raised
   // the fill sheets' boxes: a wide road segment lying inside one is densified at 6 m instead of
   // 15, so the strip bends with the 25 m ground cells the lot sheets conform to instead of
   // cutting a chord across them
@@ -7996,6 +8010,10 @@
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
+      if (DEMOLISHED.some((q) => Math.abs(q[0] - cx) < 60 && Math.abs(q[1] - cz) < 60 && pointInPoly(q[0], q[1], poly))) {   // Round 139: demolished
+        if (h <= 45 && t <= 6) wideColK++;   // the far ring's colour reservoir counts it as it did, so its draw stays as it was
+        continue;
+      }
       if (boathouseAt(cx,cz)) continue;
       if (BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) continue;
       if (ovpStraddle(poly, cx, cz)) continue;   // nothing real stands across a motorway deck
@@ -8186,6 +8204,7 @@
         }
       } else {
         const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+        if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
         else {
@@ -11020,6 +11039,172 @@
     }
     return null;
   }
+  // ---- the excavation at 207 E Wildey St (Round 139). Under the ground's cut (GROUND_PITS, elPortalClipGround) a
+  // closed pit: a dug floor on a bilinear grid of the lot, a hand deep in churned mud at the front, ramping to about
+  // 1.45 m, a deeper trench along the left foundation where the underpinning goes, a spoil mound in the middle and a
+  // lip at the rear; soil walls from the drawn grade (groundMeshY, the uncut plane, so the rim meets the cut exactly)
+  // down to the floor's own edge; the neighbours' foundations bare where their walls stand on the lot line (205's
+  // concrete block with the surveyor's orange marks, 209's poured concrete), 4 cm proud of the line so they never
+  // fight the wide tier's walls, which run a metre under grade; and what the photos show in it: the wooden trench
+  // box, boards against the block, a blue drum, the black basin at the front, a rubble pile, black mesh fencing.
+  function pitCmuTexture() {
+    const cv = document.createElement('canvas'); cv.width = 1024; cv.height = 256;   // 8 m of wall by 2 m
+    const x = cv.getContext('2d');
+    x.fillStyle = '#7d7a73'; x.fillRect(0, 0, 1024, 256);
+    const bw = 52, bh = 26;   // an 8 by 16 inch block at 128 px a metre
+    for (let r = 0; r < 10; r++) for (let c = -1; c < 21; c++) {
+      const x0 = c * bw + (r % 2) * bw / 2, y0 = 14 + r * bh, v = 150 + Math.floor(hash01(r * 31.7 + c * 7.3) * 30) - 15;
+      x.fillStyle = 'rgb(' + (v + 6) + ',' + (v + 4) + ',' + v + ')'; x.fillRect(x0 + 2, y0 + 2, bw - 4, bh - 4);
+    }
+    x.fillStyle = '#5a5046'; x.fillRect(0, 0, 1024, 16);   // the rough course under the stucco
+    x.strokeStyle = x.fillStyle = '#ff5b1c'; x.lineWidth = 4; x.font = 'bold 26px sans-serif';
+    const marks = ['C', '|', 'D', '|', 'X', '|', '|', 'C', '|', 'D', '|', '|'];
+    marks.forEach((m, i) => {
+      const px = 36 + i * 82 + hash01(i * 3.3) * 18, py = 66 + hash01(i * 5.1) * 12;
+      if (m === '|') { x.beginPath(); x.moveTo(px, py - 22); x.lineTo(px + 3, py + 20); x.stroke(); } else x.fillText(m, px - 9, py + 9);
+    });
+    const tex = new THREE.CanvasTexture(cv);
+    tex.encoding = THREE.sRGBEncoding; tex.wrapS = THREE.RepeatWrapping; tex.anisotropy = 4;
+    return tex;
+  }
+  function buildGroundPits() {
+    const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
+    const sm = (a, b, v) => { const q = clamp((v - a) / (b - a), 0, 1); return q * q * (3 - 2 * q); };
+    for (const P of GROUND_PITS) {
+      const [F1, F2, R2, R1] = P.ring;
+      const at = (s, t) => {
+        const ax = F1[0] + (F2[0] - F1[0]) * s, az = F1[1] + (F2[1] - F1[1]) * s, bx = R1[0] + (R2[0] - R1[0]) * s, bz = R1[1] + (R2[1] - R1[1]) * s;
+        return [ax + (bx - ax) * t, az + (bz - az) * t];
+      };
+      const grade = (x, z) => groundMeshY(x, z) ?? siteY(x, z, 'ground');
+      const W = Math.hypot(F2[0] - F1[0], F2[1] - F1[1]), D = Math.hypot(R1[0] - F1[0], R1[1] - F1[1]);
+      const eu = new THREE.Vector3((F2[0] - F1[0]) / W, 0, (F2[1] - F1[1]) / W), ev = new THREE.Vector3((R1[0] - F1[0]) / D, 0, (R1[1] - F1[1]) / D);
+      const nz = (s, t) => 0.55 * Math.sin(s * 11.3 + t * 7.1 + 1.3) * Math.sin(t * 23.7 + 0.7) + 0.3 * Math.sin(s * 27.1 - t * 13.9 + 2.1) + 0.15 * Math.sin(t * 61.0 + s * 5.0);
+      const depth = (s, t) => {
+        let d = t < 0.14 ? 0.1 + 0.12 * t / 0.14 : 0.22 + 1.23 * sm(0.14, 0.34, t);
+        d += (0.8 - d) * sm(0.9, 1.0, t);   // the lip under the rear fence
+        d += 0.55 * (1 - sm(0.1, 0.22, s)) * sm(0.3, 0.38, t) * (1 - sm(0.8, 0.88, t));   // the underpinning trench
+        d -= 0.8 * Math.exp(-(((s - 0.6) / 0.16) ** 2 + ((t - 0.55) / 0.09) ** 2));   // the spoil mound
+        d += 0.1 * nz(s, t) * sm(0.08, 0.3, t);
+        return Math.max(0.06, d);
+      };
+      const cMud = lin(0x57442f), cDirt = lin(0x674d36), cClay = lin(0x7d5f42), cWet = lin(0x43352a), cTop = lin(0x392d22), tc = new THREE.Color();
+      // the floor
+      const NS = 16, NT = 48, pos = [], col = [], idx = [];
+      for (let j = 0; j <= NT; j++) for (let i = 0; i <= NS; i++) {
+        const s = i / NS, t = j / NT, [x, z] = at(s, t), d = depth(s, t);
+        pos.push(x, grade(x, z) - d, z);
+        const n2 = 0.5 + 0.5 * Math.sin(s * 17.0 + t * 29.0) * Math.cos(t * 13.0 - s * 7.0);
+        tc.copy(cDirt).lerp(cClay, 0.35 * n2 + 0.4 * sm(0.3, 0.75, 1.45 - d));
+        if (t < 0.18) { tc.copy(cMud).lerp(cDirt, 0.25 * n2); for (const r of [0.33, 0.67]) tc.multiplyScalar(1 - 0.3 * Math.exp(-(((s - r) / 0.045) ** 2))); }   // tyre ruts in the mud
+        tc.lerp(cWet, 0.7 * (1 - sm(0.1, 0.22, s)) * sm(0.3, 0.38, t) * (1 - sm(0.8, 0.88, t)));
+        tc.multiplyScalar(0.72 + 0.28 * sm(0, 0.06, Math.min(s, 1 - s, t, 1 - t)));   // darker where the walls close in
+        col.push(tc.r, tc.g, tc.b);
+      }
+      const up = (F2[0] - F1[0]) * (R1[1] - F1[1]) - (F2[1] - F1[1]) * (R1[0] - F1[0]) < 0;   // is (eu, ev) mirrored against (x, z)? then (a, b, c) faces up
+      for (let j = 0; j < NT; j++) for (let i = 0; i < NS; i++) { const a = j * (NS + 1) + i, b = a + 1, c = a + NS + 1, d = c + 1; if (up) idx.push(a, b, c, b, d, c); else idx.push(a, c, b, b, c, d); }   // the floor faces up (review: the weather and the shadow bias read the raw normal)
+      const dirt = [];
+      { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setIndex(idx); g.computeVertexNormals(); dirt.push(g); }
+      // the walls: a strip from grade to the floor's edge along a run of the ring, `inset` metres into the pit
+      const strip = (pts, inset, inward, colour, uv) => {   // pts: [s, t] samples in order
+        const p2 = [], c2 = [], u2 = [], i2 = []; let L = 0;
+        pts.forEach(([s, t], k) => {
+          const [x0, z0] = at(s, t), x = x0 + inward.x * inset, z = z0 + inward.z * inset, gy = grade(x0, z0), fy = gy - depth(s, t) - 0.08;
+          if (k) { const [xp, zp] = at(pts[k - 1][0], pts[k - 1][1]); L += Math.hypot(x0 - xp, z0 - zp); }
+          p2.push(x, gy + 0.01, z, x, fy, z);
+          for (const y of [gy, fy]) { const dd = gy - y; tc.copy(colour(dd, s, t)); c2.push(tc.r, tc.g, tc.b); }
+          u2.push(L / 8, 1, L / 8, 1 - (gy - fy) / 2);
+          if (k) { const a = (k - 1) * 2; i2.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); }
+        });
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(p2, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(c2, 3));
+        if (uv) g.setAttribute('uv', new THREE.Float32BufferAttribute(u2, 2));
+        g.setIndex(i2); g.computeVertexNormals();
+        const nn = g.attributes.normal;   // every strip faces into the pit
+        if (nn.count && nn.getX(0) * inward.x + nn.getZ(0) * inward.z < 0) { for (let q = 0; q < i2.length; q += 3) { const tq = i2[q + 1]; i2[q + 1] = i2[q + 2]; i2[q + 2] = tq; } g.setIndex(i2); g.computeVertexNormals(); }
+        return g;
+      };
+      const soil = (dd, s, t) => tc.copy(dd < 0.28 ? cTop : cDirt).lerp(cClay, sm(0.4, 1.4, dd) * 0.6).multiplyScalar(0.8 + 0.2 * (0.5 + 0.5 * Math.sin(dd * 9 + s * 13 + t * 31)));
+      const grey = lin(0x8d8b85), concrete = (dd) => tc.copy(grey).multiplyScalar(dd < 0.12 ? 0.85 : 1.0);
+      const runS = (t, s0, s1) => { const o = []; for (let i = Math.round(s0 * NS); i <= Math.round(s1 * NS); i++) o.push([i / NS, t]); return o; };
+      const runT = (s, t0, t1) => { const o = [], n = Math.max(1, Math.round((t1 - t0) * NT)); for (let k = 0; k <= n; k++) o.push([s, t0 + (t1 - t0) * k / n]); return o; };
+      const inR = eu.clone(), inL = eu.clone().negate(), inF = ev.clone(), inB = ev.clone().negate();
+      dirt.push(strip(runS(0, 0, 1), 0, inF, soil), strip(runS(1, 0, 1), 0, inB, soil));
+      dirt.push(strip(runT(0, 0, P.left[0]), 0, inR, soil), strip(runT(0, P.left[1], 1), 0, inR, soil));
+      dirt.push(strip(runT(1, 0, P.right[0]), 0, inL, soil), strip(runT(1, P.right[1], 1), 0, inL, soil));
+      const block = strip(runT(0, P.left[0], P.left[1]), 0.04, inR, (dd) => tc.setRGB(0.82, 0.82, 0.82).multiplyScalar(dd > 1.2 ? 0.85 : 1), true);
+      dirt.push(strip(runT(1, P.right[0], P.right[1]), 0.04, inL, concrete));
+      const dirtG = (() => {   // the floor and walls in one draw, their own vertex colours kept (mergeColored paints a part one colour)
+        const gs = dirt.map((g) => (g.index ? g.toNonIndexed() : g)); let n = 0, o = 0;
+        for (const g of gs) n += g.attributes.position.count;
+        const out = {}; for (const k of ['position', 'normal', 'color']) out[k] = new Float32Array(n * 3);
+        for (const g of gs) { for (const k in out) out[k].set(g.attributes[k].array, o * 3); o += g.attributes.position.count; }
+        const g = new THREE.BufferGeometry(); for (const k in out) g.setAttribute(k, new THREE.BufferAttribute(out[k], 3)); return g;
+      })();
+      const pit = new THREE.Mesh(dirtG, surfMat({ vertexColors: true, roughness: 1, side: THREE.DoubleSide }));
+      pit.receiveShadow = true; groupCity.add(pit);
+      const cmu = new THREE.Mesh(block, new THREE.MeshStandardMaterial({ map: pitCmuTexture(), vertexColors: true, roughness: 0.95, side: THREE.DoubleSide }));
+      groupCity.add(cmu);
+      // the party walls above grade: the facade shader paints windows on every wall, and these were hidden behind the house.
+      // A blank skin 4 cm proud of each neighbour's wall, from grade to its eave: 205's stucco, the new 209's grey siding
+      const skins = [];
+      for (const [s0, span, inward, hex] of [[0, P.left, eu, 0xb3ad9f], [1, P.right, eu.clone().negate(), 0x7e8386]]) {
+        const [xa, za] = at(s0, span[0]), [xb, zb] = at(s0, span[1]);
+        const onLine = (q) => Math.abs((xb - xa) * (q[1] - za) - (zb - za) * (q[0] - xa)) / Math.hypot(xb - xa, zb - za) < 0.3;
+        const nb = PIT_NEIGH.find((n) => n.poly.filter(onLine).length >= 2);
+        if (!nb) continue;
+        const ox = inward.x * 0.04, oz = inward.z * 0.04, ya = grade(xa, za), yb = grade(xb, zb), top = nb.eave, c0 = lin(hex), c1 = c0.clone().multiplyScalar(0.78);
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute([xa + ox, ya, za + oz, xb + ox, yb, zb + oz, xa + ox, top, za + oz, xb + ox, top, zb + oz], 3));
+        g.setAttribute('color', new THREE.Float32BufferAttribute([c1.r, c1.g, c1.b, c1.r, c1.g, c1.b, c0.r, c0.g, c0.b, c0.r, c0.g, c0.b], 3));
+        g.setIndex([0, 1, 2, 2, 1, 3]); g.computeVertexNormals(); skins.push(g);
+      }
+      for (const g of skins) groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+      // what stands in it, in the lot's frame: x along the front (eu), y up, z toward the street (-ev), right-handed
+      const basis = new THREE.Matrix4().makeBasis(eu, new THREE.Vector3(0, 1, 0), ev.clone().negate());
+      const parts = [], _m = new THREE.Matrix4();
+      const floorAt = (s, t) => { const [x, z] = at(s, t); return grade(x, z) - depth(s, t); };
+      const put = (g, s, t, y, hex, rx = 0, ry = 0, rz = 0) => {
+        g.applyMatrix4(_m.makeRotationFromEuler(new THREE.Euler(rx, ry, rz, 'YXZ'))).applyMatrix4(basis);
+        const [x, z] = at(s, t); g.translate(x, floorAt(s, t) + y, z);
+        parts.push({ geom: g, color: lin(hex) });
+      };
+      const plank = 0x9a6a44, plank2 = 0x7d5638;
+      // the trench box at the rear: four board walls and a pallet in it
+      for (const [dx, dz, w, dd] of [[0, -0.72, 1.5, 0.06], [0, 0.72, 1.5, 0.06], [-0.72, 0, 0.06, 1.5], [0.72, 0, 0.06, 1.5]]) {
+        const g = new THREE.BoxGeometry(w, 1.1, dd); g.translate(dx, 0.55, dz); put(g, 0.58, 0.9, -0.05, plank, 0, 0.12);
+      }
+      { const g = new THREE.BoxGeometry(1.2, 0.14, 1.0); g.translate(0, 0.07, 0); put(g, 0.58, 0.9, 0, plank2, 0, 0.12); }
+      // boards leaning on the block, and two on the floor
+      [[0.4, 0.33], [0.47, 0.42], [0.58, 0.3], [0.66, 0.38]].forEach(([t, a], k) => { const g = new THREE.BoxGeometry(0.04, 2.3 - k * 0.2, 0.22); g.translate(0, (2.3 - k * 0.2) / 2, 0); put(g, 0.1 + 0.03 * k, t, -0.05, k % 2 ? plank : plank2, 0, 0, a); });
+      { const g = new THREE.BoxGeometry(2.4, 0.04, 0.2); put(g, 0.42, 0.7, 0.05, plank, 0, 0.5); }
+      { const g = new THREE.BoxGeometry(2.0, 0.04, 0.2); put(g, 0.3, 0.26, 0.04, plank2, 0, -0.35); }
+      // the blue drum by the right foundation and the black basin on the front apron
+      { const g = new THREE.CylinderGeometry(0.29, 0.29, 0.88, 16); g.translate(0, 0.44, 0); put(g, 0.9, 0.62, 0, 0x1f5cc4); }
+      { const g = new THREE.CylinderGeometry(0.33, 0.3, 0.7, 16); g.translate(0, 0.35, 0); put(g, 0.8, 0.09, 0, 0x151617); }
+      { const g = new THREE.CylinderGeometry(0.35, 0.35, 0.05, 16); g.translate(0, 0.725, 0); put(g, 0.8, 0.09, 0, 0x222325); }
+      // the rubble at the front left
+      for (let k = 0; k < 14; k++) {
+        const r = 0.1 + 0.16 * hash01(k * 3.7), g = new THREE.IcosahedronGeometry(r, 0);
+        g.scale(1, 0.6 + 0.3 * hash01(k * 5.3), 1);
+        put(g, 0.05 + 0.2 * hash01(k * 1.9), 0.02 + 0.11 * hash01(k * 2.3), r * 0.4 + 0.12 * hash01(k * 4.1), hash01(k * 6.1) < 0.7 ? 0xb3ac9c : 0x857b6b, k * 0.7, k * 1.3);
+      }
+      // black mesh fencing on the right half of the front and a return down the right side
+      const fence = (s0, t0, s1, t1) => {
+        const [xa, za] = at(s0, t0), [xb, zb] = at(s1, t1), L = Math.hypot(xb - xa, zb - za), ya = grade(xa, za), yb = grade(xb, zb);
+        const ry = Math.atan2(-(zb - za), xb - xa);
+        parts.push({ geom: box(L, 1.8, 0.03, (xa + xb) / 2, (ya + yb) / 2 + 0.9, (za + zb) / 2, ry), color: lin(0x121314) });
+        parts.push({ geom: box(L, 0.08, 0.04, (xa + xb) / 2, (ya + yb) / 2 + 1.55, (za + zb) / 2, ry), color: lin(0xff6a1a) });
+        for (let k = 0; k <= Math.ceil(L / 2.4); k++) { const f = Math.min(1, k * 2.4 / L), x = xa + (xb - xa) * f, z = za + (zb - za) * f; parts.push({ geom: box(0.06, 1.9, 0.06, x, grade(x, z) + 0.95, z, ry), color: lin(0x3a3b3d) }); }
+      };
+      fence(0.985, 0.0, 0.985, 0.3);   // down the right side of the front, where the photo has it
+      const propG = mergeColored(parts);
+      groupCity.add(new THREE.Mesh(propG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0 })));
+      // the grass stays off the lot: its tufts sit at the uncut grade and would float over the hole
+      const [ccx, ccz] = polyCentroid(P.ring);
+      noSow(P.ring.map(([x, z]) => { const l = Math.hypot(x - ccx, z - ccz) || 1; return [x + (x - ccx) / l * 0.3, z + (z - ccz) / l * 0.3]; }));
+    }
+  }
+  step('Digging on East Wildey Street', buildGroundPits);   // Round 139
   step('Painting the meadow', () => {
     texU.uGrass.value = paintGrassTex(isTouch ? 512 : 1024);
     tuftTex = paintTuftTex(256);
@@ -14749,7 +14934,8 @@
   function elPortalClipGround(g) {
     g.computeBoundingBox();
     const box=g.boundingBox,bounds=[box.min.x,box.max.x,box.min.z,box.max.z];
-    const cuts=elTrackProfiles().filter(p=>streetOverlap(bounds,p.bounds)).flatMap(p=>p.cuts);
+    const cuts=elTrackProfiles().filter(p=>streetOverlap(bounds,p.bounds)).flatMap(p=>p.cuts)
+      .concat(GROUND_PITS.map(p=>({poly:p.ring,bounds:streetBounds(p.ring)})).filter(c=>streetOverlap(bounds,c.bounds)));   // Round 139: the excavations
     if(!cuts.length)return g;
     const pos=g.attributes.position,idx=g.index,indices=[],extra={};
     for(const name of Object.keys(g.attributes))extra[name]=[];
@@ -17491,7 +17677,17 @@
   let TOWER_MATCH_LOG = null;   // ?dev=1: every spec match in the wide loop (name, crown, h, mh, top, near)
   let lotStripes = null;                   // the sports complex's stall lines (shown within 3.5 km, they alias into noise beyond)
   const LOT_LAMPS = [];                    // the stadium lots' light masts, x, z, surface y (Round 127)
-  let lotPools = null; const lotPoolU = { value: 0 };
+  // Round 140 (Mike: "The lamp posts are not putting out enough light at night. it is much too dark throughout the
+  // city", the stadium lots' "larger light circles" should be "more diffused", and "a lot of flickering" over the
+  // Navy Yard): the lamps light the ground itself. Every pole and lot mast is splatted as a soft pool into a light
+  // map (a render target LAMPMAP.span metres square, re-centred ahead of the eye in steps, drawn only at night),
+  // and every surface on surfTexPatch (the ground, the roads, the lots, the parks, the plazas) adds its own colour
+  // times that light (`lampLightPatch`). Round 130's pool discs are gone: laid a few centimetres over the lots they
+  // lost the depth test wherever a lot rose above them, black specks that crawled as the eye moved (the log depth
+  // buffer ignores a polygon offset), and they were hard-edged.
+  const LAMPMAP = { size: isTouch ? 1024 : 2048, span: isTouch ? 8000 : 12000, rt: null, scene: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, store: 0.25 };
+  const lampMapU = { uLampMap: { value: null }, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: { value: 0 } };
+  let LAMP_GAIN = 4.0;   // the pools' strength over a surface's own colour (__dbg.lampGain; calibrated on Mike's South Philly street at 9:30 pm)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
@@ -17553,36 +17749,38 @@
         '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
     };
     postRaw(poleMat);
-    if (nLot) {   // each mast's pool of light on the asphalt: a disc fading from the foot outward, between the lot and its stall lines
-      const R = 27, SEG = 16, RINGS = 3, pp2 = [], ar = [], ix = [];   // wider than half the 42 m grid, so neighbouring pools overlap
-      for (let m = 0; m < nLot; m++) {
-        const cx = LOT_LAMPS[m * 3], cz = LOT_LAMPS[m * 3 + 1], base = pp2.length / 3;
-        pp2.push(cx, LOT_LAMPS[m * 3 + 2] + 0.015, cz); ar.push(0);
-        for (let r = 1; r <= RINGS; r++) for (let a = 0; a < SEG; a++) {
-          const t = a / SEG * Math.PI * 2, x = cx + Math.cos(t) * R * r / RINGS, z = cz + Math.sin(t) * R * r / RINGS;
-          pp2.push(x, (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + LAYER.plaza + 0.075, z); ar.push(r / RINGS);
-        }
-        for (let a = 0; a < SEG; a++) ix.push(base, base + 1 + (a + 1) % SEG, base + 1 + a);
-        for (let r = 1; r < RINGS; r++) for (let a = 0; a < SEG; a++) {
-          const i0 = base + 1 + (r - 1) * SEG + a, i1 = base + 1 + (r - 1) * SEG + (a + 1) % SEG, j0 = i0 + SEG, j1 = i1 + SEG;
-          ix.push(i0, i1, j0, i1, j1, j0);
-        }
+    {   // the light map's splats: one soft point per lamp, its radius from its mounting height (a lot mast casts widest)
+      const lp = new Float32Array(nAll * 3), lc = new Float32Array(nAll * 3), lr = new Float32Array(nAll);
+      let m = 0;
+      for (let i = 0; i < nAll; i++) {
+        if (pos[i * 3 + 1] < -500) continue;   // the cap site's poles are not there
+        lp[m * 3] = X[i]; lp[m * 3 + 1] = 0; lp[m * 3 + 2] = Z[i];
+        const mast = i >= nPoles, k = mast ? 0.25 : 1.0;   // a lot mast's pool is wide and many overlap: a quarter of a pole's weight keeps the lots from washing white
+        lc[m * 3] = pcol[i * 3] * k; lc[m * 3 + 1] = pcol[i * 3 + 1] * k; lc[m * 3 + 2] = pcol[i * 3 + 2] * k;
+        lr[m] = mast ? 40 : clamp(HM[i] * 2.4, 10, 30);
+        m++;
       }
       const g = new THREE.BufferGeometry();
-      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pp2), 3));
-      g.setAttribute('aR', new THREE.BufferAttribute(new Float32Array(ar), 1));
-      g.setIndex(ix);
-      const pm = new THREE.MeshBasicMaterial({ color: 0xfff0dc, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide });
-      pm.onBeforeCompile = (sh) => {
-        sh.uniforms.uLamp = lotPoolU;
-        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aR; varying float vR;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvR = aR;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp; varying float vR;')
-          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.a *= uLamp * 0.26 * (1.0 - vR) * (1.0 - vR);');
-      };
-      postRaw(pm);
-      lotPools = new THREE.Mesh(g, pm);
-      lotPools.frustumCulled = false; lotPools.renderOrder = 4; lotPools.visible = false;
-      groupCity.add(lotPools);
+      g.setAttribute('position', new THREE.BufferAttribute(lp.subarray(0, m * 3), 3));
+      g.setAttribute('aCol', new THREE.BufferAttribute(lc.subarray(0, m * 3), 3));
+      g.setAttribute('aR', new THREE.BufferAttribute(lr.subarray(0, m), 1));
+      const maxPt = (renderer.capabilities && renderer.getContext().getParameter(renderer.getContext().ALIASED_POINT_SIZE_RANGE)[1]) || 64;
+      const mat = new THREE.ShaderMaterial({
+        uniforms: { uPxPerM: { value: LAMPMAP.size / LAMPMAP.span }, uMaxPt: { value: maxPt }, uStore: { value: LAMPMAP.store } },
+        vertexShader: 'attribute vec3 aCol; attribute float aR; uniform float uPxPerM, uMaxPt; varying vec3 vCol; varying float vK;\n' +
+          'void main() { vCol = aCol; float px = aR * 2.0 * uPxPerM; float sz = clamp(px, 2.0, uMaxPt); vK = px / sz;\n' +
+          '  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); gl_PointSize = sz; }',
+        // a broad soft pool: brightest under the lamp, a long gentle shoulder, nothing past its radius
+        fragmentShader: 'uniform float uStore; varying vec3 vCol; varying float vK;\n' +
+          'void main() { float d = length(gl_PointCoord - vec2(0.5)) * 2.0 / vK; if (d >= 1.0) discard;\n' +
+          '  float f = exp(-d * d * 3.2) * (1.0 - d * d); gl_FragColor = vec4(vCol * f * uStore, 1.0); }',
+        blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true,
+      });
+      const pts = new THREE.Points(g, mat); pts.frustumCulled = false;
+      LAMPMAP.scene = new THREE.Scene(); LAMPMAP.scene.add(pts);
+      LAMPMAP.cam = new THREE.OrthographicCamera(-LAMPMAP.span / 2, LAMPMAP.span / 2, LAMPMAP.span / 2, -LAMPMAP.span / 2, 1, 4000);
+      LAMPMAP.cam.up.set(0, 0, -1);
+      LAMPMAP.n = m;
     }
     poleGlow = new THREE.Points(pg, poleMat);
     poleGlow.frustumCulled = false;
@@ -17726,7 +17924,8 @@
     const show = LIGHTS.on && night > 0.01;
     poleGlow.visible = show;
     if (show) poleMat.opacity = night;
-    if (lotPools) { lotPools.visible = show; lotPoolU.value = night; }
+    lampMapU.uLampOn.value = show ? night : 0;
+    if (show) lampMapUpdate();
     if (bfbLampGlow) bfbLampGlow.visible = show;
     if (poleMesh) {
       poleMesh.visible = LIGHTS.on;
@@ -19574,6 +19773,44 @@
   // one mottle, everything else gets a neutral mottle. `opt === true` forces the meadow branch
   // (the bare ground, whose vertex tints must never fall out of the green test); r149 passes the
   // WebGLRenderer as the second argument, so opt is tested for identity, never truthiness
+  // the light map, re-centred ahead of the eye (further ahead the higher it flies) in steps of a sixteenth of its span
+  function lampMapUpdate() {
+    if (!LAMPMAP.scene) return;
+    const S = LAMPMAP.span, step = S / 16;
+    camera.getWorldDirection(_lmDir);
+    const hl = Math.hypot(_lmDir.x, _lmDir.z) || 1, ahead = clamp(camera.position.y * 3, 0, S * 0.3);
+    const cx = Math.round((camera.position.x + _lmDir.x / hl * ahead) / step) * step, cz = Math.round((camera.position.z + _lmDir.z / hl * ahead) / step) * step;
+    if (LAMPMAP.rt && cx === LAMPMAP.cx && cz === LAMPMAP.cz) return;
+    if (!LAMPMAP.rt) {
+      LAMPMAP.rt = new THREE.WebGLRenderTarget(LAMPMAP.size, LAMPMAP.size, { depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+      lampMapU.uLampMap.value = LAMPMAP.rt.texture;
+    }
+    LAMPMAP.cam.position.set(cx, 2000, cz); LAMPMAP.cam.lookAt(cx, 0, cz); LAMPMAP.cam.updateMatrixWorld();
+    const r = renderer, prevRT = r.getRenderTarget(), prevA = r.getClearAlpha(), prevAuto = r.autoClear;
+    r.getClearColor(_lmCol);
+    r.setRenderTarget(LAMPMAP.rt); r.setClearColor(0x000000, 1); r.clear(true, false, false);
+    r.autoClear = false; r.render(LAMPMAP.scene, LAMPMAP.cam); r.autoClear = prevAuto;
+    r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
+    LAMPMAP.cx = cx; LAMPMAP.cz = cz; LAMPMAP.renders++;
+    lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / LAMPMAP.store);
+  }
+  const _lmDir = new THREE.Vector3(), _lmCol = new THREE.Color();
+  function lampLightPatch(shader, worldExpr, wall) {   // wall: the facade shader, lit on its vertical faces and its first storeys only
+    if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap;') !== -1) return;
+    shader.uniforms.uLampMap = lampMapU.uLampMap; shader.uniforms.uLampBox = lampMapU.uLampBox; shader.uniforms.uLampOn = lampMapU.uLampOn;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox; uniform float uLampOn;\nvoid main() {')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
+        'if (uLampOn > 0.001) {',
+        '  vec3 lwp = ' + worldExpr + ';',
+        '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
+        '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
+        // a surface lit by the lamps: its own colour times their light, fading out at the map's edge
+        '  float lk = ' + (wall ? '0.75 * (1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(2.5, 11.0, lwp.y - vBase))' : '1.0') + ';',
+        '  if (le > 0.0 && lk > 0.0) totalEmissiveRadiance += diffuseColor.rgb * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk * smoothstep(0.0, 0.06, le));',
+        '}',
+      ].join('\n'));
+  }
   function surfTexPatch(shader, opt) {
     const forced = opt === true;
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
@@ -19613,6 +19850,7 @@
         'diffuseColor.rgb = mix(diffuseColor.rgb * am, grass * gTint, isGreen);',
       ].join('\n'));
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
+    lampLightPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // Round 140
   }
   // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the post-build
   // weather wrap (the hookup at the end of build() keys the wrapped program, gotcha 15)
@@ -20797,7 +21035,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

@@ -6511,3 +6511,80 @@ two agreeing captures alone 8 and 183, with the dwell 0 blinks and 135 changes, 
 22 ms a frame in the pane either way. `tests/test_pin_fade.py` runs the block under Node against scripted
 captures (a one-capture blip ignored, two captures hide it on a monotone ease, the dwell, the still-eye
 timeout, a new pin in a slot).
+
+## Round 139 — 207 E Wildey St, demolished and dug out (Sep 23)
+
+Mike, with a camera link and two photos of the lot: "can we remove the home at 207 E Wildey St? It is the one
+with the crosshair dot on the roof. That should be replaced with a hole in the ground, a la the attached
+photos". The city's records agree: a full demolition permit in February, the vacant two-storey frame house
+hand-demolished and the permit closed May 11, 2026, new construction permitted Sep 1 (three storeys, with
+sheeting, shoring and underpinning) and an excavation permit Sep 15.
+
+The house was wide.b64 record 74399 (6.2 by 9.7 m, 7 m), the one record under the link's centre ray. It is
+skipped at run time, not repacked: `pack_wide.py` reproduces its blobs byte for byte, so a repack would be
+safe for the data, but removing a record renumbers the 38,352 after it, and the runtime seeds each wide
+building's palette, facade, pitched-roof lottery, clutter and the far ring's colour reservoir by the record
+number, so a third of the tier would have changed its look. `DEMOLISHED` holds scene points; the loop skips
+the footprint holding one before any consumer sees it and still counts it in `wideColK`, so the reservoir
+deals exactly as before.
+
+`GROUND_PITS` rings are cut out of the drawn ground by `elPortalClipGround`, the exact convex cut the El
+portal already uses (the lot sits inside one 25 m cell, so dropping cells or lowering nodes was out). The ring
+runs the house's party-wall lines out to the parcel's front and rear lines (PWD's parcel, 6.3 by 18.3 m). The
+new step 'Digging on East Wildey Street' builds a closed pit under it on a bilinear grid of the lot: a hand of
+churned mud with tyre ruts at the front, a ramp to about 1.45 m, a deeper underpinning trench along the left
+foundation, a spoil mound, a lip at the rear, soil walls from the drawn grade (`groundMeshY`, the uncut plane,
+so the rim meets the cut) down to the floor's own edge. The neighbours' foundations are bare where their walls
+stand on the lot line (205's concrete block with the surveyor's orange marks, a canvas texture; 209's poured
+concrete), 4 cm proud of the line, because the wide tier's walls run a metre under grade and would fight them.
+Above grade the facade shader paints windows on every wall, and these party walls had been hidden behind the
+house, so each takes a blank skin up to its own eave (`PIT_NEIGH`, noted in the wide loop with the roof plan's
+rise): 205's grey stucco and the new 209's siding. In it, from the photos: the wooden trench box at the rear,
+boards leaning on the block and two on the floor, the blue drum by the right foundation, the black basin on
+the front apron, a rubble pile at the front left, and black mesh fencing with an orange band down the right
+side of the front. The grass is kept off the lot (`noSow`): its tufts sit at the uncut grade and would float.
+
+Checked in the pane: from Mike's link the lot is a dug gap in the row; from the sidewalk and from the photo's
+front right corner the block, marks, boards, box, drum, basin, rubble and fence read as in his photos, with no
+seam at the rim. `tests/test_ground_pits.py` walks the packed tier: the point names exactly one house (74399),
+the ring is convex and holds only that house, clears the drawn street, and its party-wall spans end on the
+neighbours' corners; plus the wiring. The El tracks' Node harness gains a `GROUND_PITS` stub.
+
+An adversarial review (two lenses, a skeptic per finding) confirmed one defect, found from both sides: the pit
+floor copied the ground builders' index order, but its axes (along the front, then toward the rear) are mirrored
+against x and z, so every floor normal pointed down. DoubleSide hid it in the lit colour; the weather wrap and the
+shadow bias read the raw normal, so snow and rain would have skipped the floor and its shadow lookups sat 1.4 m
+under it; the front and right wall strips faced outward too. The floor now picks its winding from the ring's
+handedness, and each strip flips itself to face its `inward` vector.
+
+Noted for Mike, not done: the model's right neighbour (74404) is the old house on 209, demolished in April
+2025; the two new attached houses on 209 and 211 (finished this year) are not in the source data.
+
+## Round 140 — the lamps light the city (Sep 23)
+
+Three messages from Mike in a row, one cause. "https://philly3d.com/#p=239.4,463.7,6151.6,... There is a lot of
+flickering going on in this view"; over the stadium lots, "can we have those larger light circles be more
+diffused?"; and "The lamp posts are not putting out enough light at night. it is much too dark throughout the
+city", with a South Philly street at 32 m as the example. The flicker at 464 m over the Navy Yard was Round 130's
+pool discs on the stadium lots: laid a few centimetres over the asphalt, they lost the depth test wherever a lot
+rose above them, black specks that crawled as the eye moved (the log depth buffer writes the fragment depth, so
+a polygon offset does nothing). They were hard-edged too. And the other 200,000 lamps lit nothing: a point of
+light each, the streets under them black.
+
+Now the lamps light the surfaces themselves. Every pole and lot mast is splatted as a soft pool (a broad
+Gaussian cut at its radius, 2.4 times the mounting height between 10 and 30 m, 40 m for a mast at a quarter of a
+pole's weight so the overlapping lots do not wash white) into a light map: a render target `LAMPMAP.span` square
+(12 km at 2048 px on a desktop, 8 km at 1024 on a phone) drawn by an orthographic camera looking down, re-centred
+ahead of the eye in steps of a sixteenth of its span (further ahead the higher it flies), and drawn only while the
+lamps are on. `lampLightPatch` puts it in `surfTexPatch`, so the ground, the roads, the lots, the parks and the
+plazas add their own colour times the light (`LAMP_GAIN` 4, calibrated on Mike's street at 9:30 pm), and in the
+facade shader, where it washes vertical faces only and fades out between 2.5 and 11 m over the building's base,
+so the lower storeys glow and the roofs stay dark. Nothing lies over a surface any more, so nothing can fight it,
+and the pools are as soft as the splat. The map fades out over the last 6 % of its edge; past it the city is the
+carpet of lamp points it was.
+
+Checked in the pane at 9:30 pm at all four of Mike's views: the South Philly street lit, with its verges and the
+first storeys of the rowhouses; the stadium lots in soft overlapping pools with no specks; the Navy Yard's roads
+carrying their pools; Center City's streets glowing between the towers. `__dbg.lampMap()` and `__dbg.lampGain(k)`.
+`tests/test_lamp_light.py` proves the map's texel for a world point is the one the shaders read (the page's own
+camera setup under Node) and holds the wiring.
