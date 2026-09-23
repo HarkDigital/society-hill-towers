@@ -6767,3 +6767,16 @@ with a soft glow on the doors inside each arch (the door boards moved 3 cm out i
 the bays in the next colour (blue outlines with gold bays, then the reverse, down the row); a plain night keeps the
 white outlines with amber bays. `tests/test_landmark_lighting.py` counts every clubhouse's bay lights and checks the
 slots and the Custom House's zones.
+
+## Round 146 — the lamps light the trees, the upper storeys and a little of the roofs (Sep 23)
+
+Mike, with a night screenshot over a South Philly street: "At night, the trees do not reflect the light from the lamps
+and appear black", then "the tops of the buildings need to be lit up a bit. Can we have the street lights diffuse
+upwards more to light up more than just the bottom of buildings?" Round 140's light map reached the ground, the roads,
+the lower storeys and the grass tufts, but not the crowns or the trunks, and a wall's wash was gone by 11 m.
+
+The crowns (`canMat`) and trunks now call `lampLightPatch` in a new `crown` mode, a flat gate of 0.12 on every face:
+at 0.8 and then 0.35 they came out lime green, daylight at night, because a crown's albedo reaches the patch's 0.35 cap
+and the result sits at its 0.5 roll-off either way. The wall gate fades over 3 to 22 m instead of 2.5 to 11 and never
+below 0.3, and a roof (a face turned up or down) takes 0.3 of a wall's light where Round 140 gave it none. Compared at
+9:30 pm over Spruce Street, a South Philly grid and a wide view south of Washington Avenue against the deployed build.

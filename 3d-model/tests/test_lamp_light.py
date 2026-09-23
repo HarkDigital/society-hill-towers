@@ -55,8 +55,12 @@ console.log(JSON.stringify(out));
         self.assertIn("lampLightPatch(shader, 'vWPos', 'wall');", s)
         self.assertIn("lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'blade');", s)   # the grass tufts
         self.assertIn('lampMapU.uLampOn.value = show ? night : 0;\n    if (show) lampMapUpdate();', s)
-        # the lamps only light walls on their first storeys, never roofs; the ground path only faces turned up
-        self.assertIn("(1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(2.5, 11.0, lwp.y - vBase))", s)
+        # the lamps light walls most on their first storeys (a roof a little, Round 146); the ground path only faces turned up
+        # since Round 146 the wash climbs further (3 to 22 m, floored at 0.3) and a roof takes 0.3 of a wall's light
+        self.assertIn("0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * mix(0.3, 1.0, 1.0 - smoothstep(3.0, 22.0, lwp.y - vBase))", s)
+        # the trees read the map too (Round 146)
+        self.assertIn("lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'crown');", s)
+        self.assertIn("trunkMat.onBeforeCompile = (sh) => lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'crown');", s)
         self.assertIn("smoothstep(0.35, 0.7, inverseTransformDirection(normal, viewMatrix).y)", s)
         # review: the edge fades on a circle round the unsnapped look-ahead point, inside the snapped map
         self.assertIn('lampMapU.uLampFade.value.set(ax, az, S / 2 - step, S * 0.15);', s)

@@ -11604,8 +11604,11 @@
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCY = position.y;\n{\n  vec4 tw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = tw.x * 0.07 + tw.z * 0.05;\n  float sw = sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25;\n  float up = clamp(position.y * 0.5 + 0.5, 0.0, 1.0);\n  transformed.x += sw * 0.07 * up; transformed.z += sw * 0.035 * up; transformed.y += sin(uTime * 3.1 + ph * 5.0 + position.x * 2.0) * 0.02 * up;\n}');
       cloudShadowPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
     };
+    // Round 146 (Mike, with a night screenshot: "At night, the trees do not reflect the light from the lamps and appear
+    // black"): the crowns and the trunks read the lamps' light map as the ground under them does
     canMat.onBeforeCompile = (sh) => {
       canopySway(sh);
+      lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'crown');
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vOP;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n{ float vh = fract(sin(dot(position + vec3(instanceMatrix[3].x, 0.0, instanceMatrix[3].z) * 0.037, vec3(12.9898, 78.233, 37.719))) * 43758.5453); transformed *= 0.79 + 0.42 * vh; }\nvOP = position * 5.0 + vec3(instanceMatrix[3].x, 0.0, instanceMatrix[3].z) * 0.73;');
@@ -11614,6 +11617,7 @@
         .replace('#include <color_fragment>', '#include <color_fragment>\n{ float cN = 0.6 * cn3(vOP) + 0.3 * cn3(vOP * 2.3 + 7.1) + 0.1 * cn3(vOP * 5.1 + 3.3); diffuseColor.rgb *= 0.7 + 0.5 * cN; }');
     };
     const trunkMat = new THREE.MeshStandardMaterial({ color: COLORS.trunk, roughness: 1 });
+    trunkMat.onBeforeCompile = (sh) => lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'crown');
     const trunkCoreG = new THREE.CylinderGeometry(0.17, 0.28, 3.6, 6);
     trunkCoreG.translate(0, 1.0, 0);   // extends below grade so raised layers never slice the base
     const trunkWideG = new THREE.CylinderGeometry(0.18, 0.27, 3.6, 5);
@@ -20549,8 +20553,11 @@
   function lampLightPatch(shader, worldExpr, mode) {
     if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap;') !== -1) return;
     shader.uniforms.uLampMap = lampMapU.uLampMap; shader.uniforms.uLampBox = lampMapU.uLampBox; shader.uniforms.uLampOn = lampMapU.uLampOn; shader.uniforms.uLampFade = lampMapU.uLampFade;
-    const gate = mode === 'wall' ? '0.75 * (1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(2.5, 11.0, lwp.y - vBase))'
-      : mode === 'blade' ? '1.0' : 'smoothstep(0.35, 0.7, inverseTransformDirection(normal, viewMatrix).y)';
+    // Round 146 (Mike: "the tops of the buildings need to be lit up a bit. Can we have the street lights diffuse upwards
+    // more to light up more than just the bottom of buildings?"): the wash on a wall fades over 3 to 22 m instead of 2.5 to
+    // 11 and never below 0.3, and a roof takes 0.3 of a wall's light where it had none
+    const gate = mode === 'wall' ? '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * mix(0.3, 1.0, 1.0 - smoothstep(3.0, 22.0, lwp.y - vBase))'
+      : mode === 'blade' ? '1.0' : mode === 'crown' ? '0.12' : 'smoothstep(0.35, 0.7, inverseTransformDirection(normal, viewMatrix).y)';   // crown: a tree takes the pool it stands in on every face (Round 146)
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn;\nvoid main() {')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
