@@ -71,12 +71,19 @@ console.log(JSON.stringify(out));
         self.assertIn('totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0);', s)
         # the splat's soft pool: brightest under the lamp, nothing past its radius; since Round 144 flatter, lower and 1.4 times wider
         self.assertIn('float f = 0.8 * exp(-d * d * 1.9) * (1.0 - d * d);', s)
-        self.assertIn('lr[m] = mast ? 56 : clamp(HM[i] * 3.4, 14, 42);', s)
+        self.assertIn('lr[m] = mast ? 56 : pier ? 20 : clamp(HM[i] * 3.4, 14, 42);', s)
         # Round 144: no pole stands in a deck; the elevated decks carry their own standards, arms over the lanes
         self.assertIn("if (deckOver(x, z, gy)) { pos[i * 3 + 1] = -1000; underDeck++; continue; }", s)
         self.assertIn("if (y - gy < 4.5 || wwbNear(x, z, 40) || bfbNear(x, z, 40)) continue;", s)
         self.assertIn("Math.atan2(nz * sg, -nx * sg)", s)
         self.assertIn("Number.isNaN(poleInv.ROT[i]) ? hash01(i * 1.7 + 0.3) * Math.PI * 2 : poleInv.ROT[i]", s)
+        # Round 148: the piers' water-facing edges and I-95's outer shoulders carry lamps (the pier pools a fifth of a pole's)
+        self.assertIn("if (!wet(mx + nx * 6, mz + nz * 6)) { carry = 14; continue; }", s)
+        self.assertIn("k = mast ? 0.25 : pier ? 0.2 : 1.0;", s)
+        self.assertIn("if (deckOver(cx, cz, gy) || vineCut(cx, cz, 4) !== null) continue;", s)
+        i95 = json.loads((ROOT / 'i95.json').read_text())
+        self.assertGreaterEqual(len(i95['chains']), 2)
+        self.assertLess(min(p[0] for c in i95['chains'] for p in c), -12000)   # it runs past the airport, beyond the city line
         # the paved kinds that overlap each other never share a lift (Round 144's rail yard flicker)
         self.assertIn('const PAVED_UP = { 1: 0.055, 2: 0.025, 3: 0.04, 4: 0.04 };', s)
 

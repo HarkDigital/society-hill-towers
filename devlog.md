@@ -6789,3 +6789,25 @@ the roads, the trees and the walls alike), and the wall gate loses Round 146's 0
 3 m to nothing at 16 m, so a tower's upper storeys are dark again and a rowhouse's front is lit to about its second
 floor; a roof takes 0.3 of a wall's light at its own height, which a low roof catches and a tall one does not. Compared
 against Round 146 at 9:30 pm over Spruce Street and south of Washington Avenue with the skyline behind.
+
+## Round 148 — lamps along the piers and along I-95, in the city and past it (Sep 23)
+
+Mike, with a night screenshot north along the Delaware: "All of the piers in the city should have lamp posts lining the
+outside of them", then "can you light up 95 south even outside of the city?"
+
+Piers: both builders now note their rings (`PIER_RINGS`: the core's `D.areas` piers at their deck height, the outer
+tier's paved flats at the ground plus 1.2 m). The outer tier's kind 2 mixes piers with aprons and plazas, so the lamps
+go only on an edge whose outside, 6 m out, is open water (the Delaware's outline or the Schuylkill's raster): a 7 m
+lamp every 28 m, the rhythm carried round corners, 0.8 m in from the edge with its arm over the deck, none within 10 m
+of a pole already there; 674 lamps. The splat loop had treated every lamp after the packed poles as a lot mast (a 56 m
+pool at a quarter weight), the deck standards included, which is how Round 144 tuned them and so they stay; a pier
+lamp now takes a 20 m pool at a fifth of a pole's weight, because a pale pier lined both sides washed white at 56 m and
+still did at 24 m and half weight (checked with the gain at zero: it was the lamps).
+
+I-95: the packed tiers carry no names, so `bake_i95.py` reads the far ring's raw dump (`osm_city_raw.json`) for the
+motorway ways whose ref names I 95, stitches them by shared end nodes into chains in the direction of travel and
+simplifies them to 2 m (`i95.json`: 182 ways, 4 chains, 59.5 km, from past the airport in Delaware County to Bucks
+County, 7 KB, inlined as `I95_DATA`). The page stands a 12 m highway lamp every 50 m on each carriageway's outer
+shoulder (the right of travel, 7.5 m off the centreline), the arm over the lanes, except where the road rides an
+elevated deck (its standards light it), in the Vine Street cut, or within 10 m of a pole or a standard: 621 lamps.
+`__dbg.PERF.lampsDeck` counts both. Checked at 9:30 pm south-west past the airport and over the South Philly piers.

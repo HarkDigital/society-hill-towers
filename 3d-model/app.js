@@ -4448,6 +4448,7 @@
         const [pcx, pcz] = polyCentroid(a.poly);
         const pg = extrudePoly(a.poly, null, 1.4, 0);
         pg.translate(0, siteY(pcx, pcz, 'ground'), 0);
+        PIER_RINGS.push({ poly: a.poly, y: siteY(pcx, pcz, 'ground') + 1.4, lift: 0 });
         pierParts.push({ geom: pg, color: new THREE.Color(COLORS.pier) });
       }
     }
@@ -6018,6 +6019,7 @@
   // 4/8 without asking); lazy, the renderer exists before any atlas is built
   let hwAniso = 0;
   const anisoOf = (n) => Math.min(n, hwAniso || (hwAniso = renderer.capabilities.getMaxAnisotropy() || 1));
+  const PIER_RINGS = [];   // every pier and paved flat, with its deck height, for the pier lamps (Round 148): { poly, y: fixed top or null, lift over the ground }
   let CUSTOM_HOUSE_AT = null;   // the Custom House's footprint and frame, for its night wash in the skyline lights (Round 145)
   step('Restoring the landmarks', () => {
     const walls = [];   // gets the window shader
@@ -9146,7 +9148,7 @@
           parkPolys.push({ poly, pa, i });
         }
         else if (kind === 1) { noSow(poly); const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }
-        else { noSow(poly); areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 }); }
+        else { noSow(poly); areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 }); PIER_RINGS.push({ poly, y: null, lift: 1.2 }); }
       } catch (e) { /* degenerate polygon */ }
     }
     setLoadingMessage('Raising the outer districts, uploading');
@@ -18413,7 +18415,7 @@
       }
       return false;
     };
-    const DECK_LAMPS = [];   // x, z, deck y, the arm's rotation
+    const DECK_LAMPS = [];   // x, z, deck y, the arm's rotation, the mounting height (the decks' and, since Round 148, the piers')
     {
       const STEP = 42;
       let chain = -1, acc = 0, next = 0, k = 0;
@@ -18430,23 +18432,83 @@
           if (y - gy < 4.5 || wwbNear(x, z, 40) || bfbNear(x, z, 40)) continue;
           for (const sg of hw >= 11 ? [-1, 1] : [(k & 1) ? 1 : -1]) {
             const off = Math.max(0.5, hw - 0.45);
-            DECK_LAMPS.push(x + nx * sg * off, z + nz * sg * off, y, Math.atan2(nz * sg, -nx * sg));   // the arm (local +x) turned to -n*sg, over the lanes
+            DECK_LAMPS.push(x + nx * sg * off, z + nz * sg * off, y, Math.atan2(nz * sg, -nx * sg), 12);   // the arm (local +x) turned to -n*sg, over the lanes; 12 m
           }
           k++;
         }
         acc += L;
       }
     }
-    const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nDeck = DECK_LAMPS.length / 4, nAll = nPoles + nLot + nDeck;   // the stadium lots' masts ride along (Round 127), the deck standards after them (Round 144)
+    // Round 148 (Mike: "All of the piers in the city should have lamp posts lining the outside of them"): every edge of a
+    // pier (or any paved flat) that faces open water, the Delaware's or the Schuylkill's, carries a 7 m lamp every 28 m,
+    // 0.8 m in from the edge with its arm over the deck, unless a packed pole already stands within 10 m. An inland
+    // plaza has no water-facing edge, so the outer tier's paved flats, which mix piers with aprons, sort themselves
+    {
+      const near = new Map(), key = (x, z) => Math.floor(x / 20) + ':' + Math.floor(z / 20);
+      for (let i = 0; i < head[1]; i++) { const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7, k = key(x, z); let a = near.get(k); if (!a) near.set(k, a = []); a.push(x, z); }
+      const poleNear = (x, z) => { const gx = Math.floor(x / 20), gz = Math.floor(z / 20); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const c = near.get((gx + a) + ':' + (gz + b)); if (c) for (let j = 0; j < c.length; j += 2) if ((c[j] - x) ** 2 + (c[j + 1] - z) ** 2 < 100) return true; } return false; };
+      const wet = (x, z) => delawareAt(x, z) || !!(schRaster && schRaster(x, z));
+      for (const R of PIER_RINGS) {
+        const P = R.poly, n = P.length;
+        if (Math.abs(signedArea(P)) < 150) continue;
+        let carry = 14;
+        for (let e = 0; e < n; e++) {
+          const a = P[e], b = P[(e + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+          if (L < 1e-6) continue;
+          let nx = dz / L, nz = -dx / L;   // the edge's outward normal: whichever side of it is outside the ring
+          const mx = (a[0] + b[0]) / 2, mz = (a[1] + b[1]) / 2;
+          if (pointInPoly(mx + nx * 0.5, mz + nz * 0.5, P)) { nx = -nx; nz = -nz; }
+          if (!wet(mx + nx * 6, mz + nz * 6)) { carry = 14; continue; }   // a landward edge: none, and the next water run starts afresh
+          let t = carry;   // the 28 m rhythm runs on round a corner
+          for (; t < L; t += 28) {
+            const x = a[0] + dx * t / L - nx * 0.8, z = a[1] + dz * t / L - nz * 0.8;
+            if (poleNear(x, z) || !pointInPoly(x, z, P)) continue;
+            DECK_LAMPS.push(x, z, R.y ?? siteY(x, z, 'ground') + R.lift, Math.atan2(nz, -nx), 7);   // the arm (local +x) turned to -n, over the deck
+          }
+          carry = t - L;
+        }
+      }
+    }
+    // Round 148 (Mike: "can you light up 95 south even outside of the city?"): I-95's carriageways (i95.json, in the
+    // direction of travel) carry a 12 m highway lamp every 50 m on the outer shoulder (the right of travel, 7.5 m off the
+    // centreline), the arm over the lanes, in the city and past the city line; not where the road rides an elevated deck
+    // (its own standards light it), not in the Vine Street cut, not within 10 m of a pole already there
+    let i95Lamps = 0;
+    if (typeof I95_DATA !== 'undefined' && I95_DATA && I95_DATA.chains) {
+      const near = new Map(), key = (x, z) => Math.floor(x / 20) + ':' + Math.floor(z / 20);
+      const addNear = (x, z) => { const k = key(x, z); let a2 = near.get(k); if (!a2) near.set(k, a2 = []); a2.push(x, z); };
+      for (let i = 0; i < head[1]; i++) addNear(v[i * 3] * 0.7, v[i * 3 + 1] * 0.7);
+      for (let j = 0; j < DECK_LAMPS.length; j += 5) addNear(DECK_LAMPS[j], DECK_LAMPS[j + 1]);
+      const taken = (x, z) => { const gx = Math.floor(x / 20), gz = Math.floor(z / 20); for (let a2 = -1; a2 <= 1; a2++) for (let b2 = -1; b2 <= 1; b2++) { const c = near.get((gx + a2) + ':' + (gz + b2)); if (c) for (let q = 0; q < c.length; q += 2) if ((c[q] - x) ** 2 + (c[q + 1] - z) ** 2 < 100) return true; } return false; };
+      for (const C of I95_DATA.chains) {
+        let carry = 25;
+        for (let e = 0; e + 1 < C.length; e++) {
+          const a2 = C[e], b2 = C[e + 1], dx = b2[0] - a2[0], dz = b2[1] - a2[1], L = Math.hypot(dx, dz);
+          if (L < 1e-6) continue;
+          const rx = -dz / L, rz = dx / L;   // the right of travel: the outer shoulder
+          let t = carry;
+          for (; t < L; t += 50) {
+            const cx = a2[0] + dx * t / L, cz = a2[1] + dz * t / L, gy = groundMeshY(cx, cz) ?? siteY(cx, cz, 'ground');
+            if (deckOver(cx, cz, gy) || vineCut(cx, cz, 4) !== null) continue;
+            const x = cx + rx * 7.5, z = cz + rz * 7.5;
+            if (taken(x, z)) continue;
+            DECK_LAMPS.push(x, z, groundMeshY(x, z) ?? siteY(x, z, 'ground'), Math.atan2(rz, -rx), 12);   // the arm turned to -r, over the lanes
+            i95Lamps++;
+          }
+          carry = t - L;
+        }
+      }
+    }
+    const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nDeck = DECK_LAMPS.length / 5, nAll = nPoles + nLot + nDeck;   // the stadium lots' masts ride along (Round 127), the deck standards after them (Round 144)
     const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll), ROT = new Float32Array(nAll).fill(NaN);
     let underDeck = 0;
     const pos = new Float32Array(nAll * 3), pcol = new Float32Array(nAll * 3);
     const cells = new Map();   // 400 m buckets for the near-mesh reconcile
     for (let i = 0; i < nAll; i++) {
       if (i >= nPoles + nLot) {   // a deck standard: 12 m on the deck, LED white, a highway lamp's brightness
-        const k = (i - nPoles - nLot) * 4, x = DECK_LAMPS[k], z = DECK_LAMPS[k + 1], gy = DECK_LAMPS[k + 2];
-        X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = 12; ROT[i] = DECK_LAMPS[k + 3];
-        pos[i * 3] = x; pos[i * 3 + 1] = gy + 12; pos[i * 3 + 2] = z;
+        const k = (i - nPoles - nLot) * 5, x = DECK_LAMPS[k], z = DECK_LAMPS[k + 1], gy = DECK_LAMPS[k + 2], hm = DECK_LAMPS[k + 4];
+        X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = hm; ROT[i] = DECK_LAMPS[k + 3];
+        pos[i * 3] = x; pos[i * 3 + 1] = gy + hm; pos[i * 3 + 2] = z;
         pcol[i * 3] = 1.3; pcol[i * 3 + 1] = 1.08; pcol[i * 3 + 2] = 0.78;
         const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400);
         let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i);
@@ -18501,9 +18563,12 @@
       for (let i = 0; i < nAll; i++) {
         if (pos[i * 3 + 1] < -500) continue;   // the cap site's poles are not there
         lp[m * 3] = X[i]; lp[m * 3 + 1] = 0; lp[m * 3 + 2] = Z[i];
-        const mast = i >= nPoles, k = mast ? 0.25 : 1.0;   // a lot mast's pool is wide and many overlap: a quarter of a pole's weight keeps the lots from washing white
+        // a lot mast's pool is wide and many overlap: a quarter of a pole's weight keeps the lots from washing white; the deck
+        // standards (Round 144) were tuned on the same pool; a pier lamp (Round 148, 7 m) takes a 20 m pool at a fifth of a
+        // pole's weight, since a narrow pale pier lined both sides washed white under anything more
+        const pier = i >= nPoles + nLot && HM[i] < 10, mast = i >= nPoles && !pier, k = mast ? 0.25 : pier ? 0.2 : 1.0;
         lc[m * 3] = pcol[i * 3] * k; lc[m * 3 + 1] = pcol[i * 3 + 1] * k; lc[m * 3 + 2] = pcol[i * 3 + 2] * k;
-        lr[m] = mast ? 56 : clamp(HM[i] * 3.4, 14, 42);   // Round 144 (Mike: "diffuse all of the lamposts more and have that light stretch a bit further"): 1.4 times the Round 140 reach
+        lr[m] = mast ? 56 : pier ? 20 : clamp(HM[i] * 3.4, 14, 42);   // Round 144 (Mike: "diffuse all of the lamposts more and have that light stretch a bit further"): 1.4 times the Round 140 reach
         m++;
       }
       const g = new THREE.BufferGeometry();
@@ -18575,7 +18640,7 @@
       groupCity.add(poleMesh);
     }
     poleInv = { X, Z, GY, HM, ROT, cells, n: nAll };
-    PERF.lampsDeck = { standards: nDeck, underDeck };   // __dbg.PERF.lampsDeck
+    PERF.lampsDeck = { standards: nDeck, underDeck, piers: DECK_LAMPS.filter((q, j) => j % 5 === 4 && q === 7).length, i95: i95Lamps };   // __dbg.PERF.lampsDeck
     const el = document.getElementById('lightsCount');
     if (el) el.textContent = Math.round(nAll / 1000) + 'k';
     LIGHTS.ready = true;
