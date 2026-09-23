@@ -6723,3 +6723,28 @@ every such vanishing is wrong). The deployed build: 135 of 189 on-screen showing
 After: 5 of 47. The showings fell because the occluded pins no longer flash in at the edges. `__dbg.pinOcc(true)` now
 lists each pin's raw verdict, state and pending count, and `__dbg.pinOccAt(x, y, z)` its view depth against the image;
 `tests/test_pin_fade.py` gains the edge case and the wide image's wiring.
+
+## Round 144 — the rail yard's flicker, softer and wider lamps, lit elevated highways (Sep 23)
+
+Three messages from Mike. (1) "https://philly3d.com/#p=169.2,286.7,5947.6,-0.497,-0.336 I am still seeing lots of
+flickering at this view on the concrete": the concrete is the Packer Avenue rail yard (paved.b64 kind 3) with
+ordinary yards (kind 2) inside it, and the yards, rail yards and aprons all sat at 0.04 m. pack_paved.py unions each
+kind, but the kinds overlap one another: yards under aprons over 389,000 m2 and under rail yards over 154,000 m2 (rail
+yards and aprons never; lots over all of them already at 0.055). Coplanar, they fought in dark patches that moved with
+the eye. The yards now sit at 0.025, so every overlapping pair keeps at least the 1.5 cm a lot keeps over a yard;
+three frames 0.5 m apart from Mike's link show no patches.
+
+(2) "Can we diffuse all of the lamposts more and have that light stretch a bit further?": each splat into the light
+map is 1.4 times wider (a pole's radius 3.4 times its mounting height between 14 and 42 m, a lot mast 56 m) with a
+flatter Gaussian (1.9 against 3.2) and a peak of 0.8, so the light spreads over the sidewalks instead of pooling under
+the head. Compared at 9:30 pm over Spruce Street and a South Philly grid against the deployed build.
+
+(3) "lamp posts should not clip through elevated highways. The highways also need lamp posts where they are elevated
+so they look lit up like in real life", with a link over the Vine Street Expressway at 5th Street: a line of heads ran
+down the deck's middle (the poles of the street beneath standing through it), and their pools lit the deck's top in
+bands from below, the light map being flat. A packed pole within a deck's half width and 2 m, the deck more than a
+metre over the pole's ground, is no longer raised (1,401 of them). Every elevated stretch of every deck (more than
+4.5 m over the drawn ground) now carries a 12 m LED standard at the deck edge every 42 m, staggered, both sides on a
+deck 22 m wide or more, its arm turned in over the lanes (`poleInv.ROT`), 2,476 in all; they ride the poles'
+arrays, so they draw as poles near the eye, glow as points and splat pools into the light map, which lights the deck
+through the road material. The Ben Franklin and the Walt Whitman keep their own lamps. `__dbg.PERF.lampsDeck`.

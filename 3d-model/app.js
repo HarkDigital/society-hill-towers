@@ -10395,7 +10395,11 @@
   // so nothing of one kind is ever coplanar with itself, and both kinds conform to the same
   // ground triangles, so the gap is exact everywhere, gotcha 17)
   const PAVED_COL = { 1: 0x111516, 2: 0x1b1c19, 3: 0x26251f, 4: 0x30332f };   // asphalt, service yards, warm ballast, concrete aprons
-  const PAVED_UP = { 1: 0.055, 2: 0.04, 3: 0.04, 4: 0.04 };   // a lot over a yard keeps 1.5 cm (5 mm shimmered from 500 m); all under the parks at 0.06
+  // Round 144 (Mike: "lots of flickering at this view on the concrete", over the Packer Avenue rail yard): the kinds
+  // overlap each other, not only themselves (yards under aprons over 389,000 m2, yards under rail yards over 154,000 m2,
+  // rail yards and aprons never), and at one lift they were coplanar and fought. The yards now sit under both, so every
+  // overlapping pair keeps at least the 1.5 cm a lot keeps over a yard
+  const PAVED_UP = { 1: 0.055, 2: 0.025, 3: 0.04, 4: 0.04 };   // a lot over a yard keeps 1.5 cm (5 mm shimmered from 500 m); all under the parks at 0.06
   const PAVED_KIND = { 1: 'lots', 2: 'yards', 3: 'rail yards', 4: 'aprons' };
   step('Fitting streets to the terrain', async () => {
     for(const pave of wideSurfaceTasks){pave();await yieldNow();}
@@ -18353,11 +18357,64 @@
       if (head[0] !== 0x53485450) throw new Error('bad pole magic');
       v = new Int16Array(buf.buffer, 16);
     } catch (err) { console.error('street pole decode failed', err); if (btnLights) btnLights.style.display = 'none'; return; }
-    const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nAll = nPoles + nLot;   // the stadium lots' masts ride along (Round 127)
-    const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll);
+    // Round 144 (Mike: "lamp posts should not clip through elevated highways. The highways also need lamp posts where
+    // they are elevated so they look lit up like in real life"): a packed pole standing under a deck (within its half
+    // width and 2 m, the deck more than a metre over the pole's ground) is not raised, since its head stood in or
+    // through the deck and its pool lit the deck's top from below; and every elevated stretch of every deck (more
+    // than 4.5 m over the drawn ground) carries its own 12 m LED standards at the deck edge every 42 m, staggered side
+    // to side, both sides on a deck 22 m wide or more, the arm turned in over the lanes. The two bridges with their
+    // own lamps (the Ben Franklin, the Walt Whitman) keep theirs
+    const deckOver = (x, z, gy) => {
+      const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
+      if (!arr) return false;
+      for (const s of arr) {
+        if (ovpSegs[s + 7] < 0) continue;   // the sunken carriageways stand over nothing
+        const ax = ovpSegs[s], az = ovpSegs[s + 1], dx = ovpSegs[s + 2] - ax, dz = ovpSegs[s + 3] - az, L2 = dx * dx + dz * dz || 1e-9;
+        const t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1), hw = ovpSegs[s + 6] + 2;
+        if ((ax + dx * t - x) ** 2 + (az + dz * t - z) ** 2 > hw * hw) continue;
+        if (ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t > gy + 1) return true;
+      }
+      return false;
+    };
+    const DECK_LAMPS = [];   // x, z, deck y, the arm's rotation
+    {
+      const STEP = 42;
+      let chain = -1, acc = 0, next = 0, k = 0;
+      for (let s = 0; s < ovpSegs.length; s += OVP_STRIDE) {
+        if (ovpSegs[s + 7] < 0) continue;
+        if (ovpSegs[s + 8] !== chain) { chain = ovpSegs[s + 8]; acc = 0; next = 20; }
+        const ax = ovpSegs[s], az = ovpSegs[s + 1], dx = ovpSegs[s + 2] - ax, dz = ovpSegs[s + 3] - az, L = Math.hypot(dx, dz), hw = ovpSegs[s + 6];
+        if (L < 1e-6) continue;
+        const nx = -dz / L, nz = dx / L;
+        while (next <= acc + L) {
+          const t = (next - acc) / L, x = ax + dx * t, z = az + dz * t, y = ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t;
+          next += STEP;
+          const gy = groundMeshY(x, z) ?? siteY(x, z, 'ground');
+          if (y - gy < 4.5 || wwbNear(x, z, 40) || bfbNear(x, z, 40)) continue;
+          for (const sg of hw >= 11 ? [-1, 1] : [(k & 1) ? 1 : -1]) {
+            const off = Math.max(0.5, hw - 0.45);
+            DECK_LAMPS.push(x + nx * sg * off, z + nz * sg * off, y, Math.atan2(nz * sg, -nx * sg));   // the arm (local +x) turned to -n*sg, over the lanes
+          }
+          k++;
+        }
+        acc += L;
+      }
+    }
+    const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nDeck = DECK_LAMPS.length / 4, nAll = nPoles + nLot + nDeck;   // the stadium lots' masts ride along (Round 127), the deck standards after them (Round 144)
+    const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll), ROT = new Float32Array(nAll).fill(NaN);
+    let underDeck = 0;
     const pos = new Float32Array(nAll * 3), pcol = new Float32Array(nAll * 3);
     const cells = new Map();   // 400 m buckets for the near-mesh reconcile
     for (let i = 0; i < nAll; i++) {
+      if (i >= nPoles + nLot) {   // a deck standard: 12 m on the deck, LED white, a highway lamp's brightness
+        const k = (i - nPoles - nLot) * 4, x = DECK_LAMPS[k], z = DECK_LAMPS[k + 1], gy = DECK_LAMPS[k + 2];
+        X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = 12; ROT[i] = DECK_LAMPS[k + 3];
+        pos[i * 3] = x; pos[i * 3 + 1] = gy + 12; pos[i * 3 + 2] = z;
+        pcol[i * 3] = 1.3; pcol[i * 3 + 1] = 1.08; pcol[i * 3 + 2] = 0.78;
+        const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400);
+        let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i);
+        continue;
+      }
       if (i >= nPoles) {   // a lot mast: 15 m, LED white, bright
         const k = (i - nPoles) * 3, x = LOT_LAMPS[k], z = LOT_LAMPS[k + 1], gy = LOT_LAMPS[k + 2];
         X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = 15;
@@ -18371,6 +18428,7 @@
       if(inCapSite(x,z)) { pos[i*3+1]=-1000; continue; }
       const kind = pk & 3, hft = (pk >> 2) & 127, lum2 = (pk >> 9) & 1;
       const gy = siteY(x, z, 'ground');
+      if (deckOver(x, z, gy)) { pos[i * 3 + 1] = -1000; underDeck++; continue; }   // Round 144: it stood in the deck
       const hm = clamp(hft * 0.3048, 3.5, 15);
       X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = hm;
       pos[i * 3] = x; pos[i * 3 + 1] = gy + hm; pos[i * 3 + 2] = z;
@@ -18408,7 +18466,7 @@
         lp[m * 3] = X[i]; lp[m * 3 + 1] = 0; lp[m * 3 + 2] = Z[i];
         const mast = i >= nPoles, k = mast ? 0.25 : 1.0;   // a lot mast's pool is wide and many overlap: a quarter of a pole's weight keeps the lots from washing white
         lc[m * 3] = pcol[i * 3] * k; lc[m * 3 + 1] = pcol[i * 3 + 1] * k; lc[m * 3 + 2] = pcol[i * 3 + 2] * k;
-        lr[m] = mast ? 40 : clamp(HM[i] * 2.4, 10, 30);
+        lr[m] = mast ? 56 : clamp(HM[i] * 3.4, 14, 42);   // Round 144 (Mike: "diffuse all of the lamposts more and have that light stretch a bit further"): 1.4 times the Round 140 reach
         m++;
       }
       const g = new THREE.BufferGeometry();
@@ -18421,10 +18479,11 @@
         vertexShader: 'attribute vec3 aCol; attribute float aR; uniform float uPxPerM, uMaxPt; varying vec3 vCol; varying float vK;\n' +
           'void main() { vCol = aCol; float px = aR * 2.0 * uPxPerM; float sz = clamp(px, 2.0, uMaxPt); vK = px / sz;\n' +
           '  gl_Position = projectionMatrix * viewMatrix * vec4(position, 1.0); gl_PointSize = sz; }',
-        // a broad soft pool: brightest under the lamp, a long gentle shoulder, nothing past its radius
+        // a broad soft pool: brightest under the lamp, a long gentle shoulder, nothing past its radius. Round 144: a flatter
+        // Gaussian (1.9 against 3.2) and a lower peak (0.8), so the light spreads instead of pooling hard under the head
         fragmentShader: 'uniform float uStore; varying vec3 vCol; varying float vK;\n' +
           'void main() { float d = length(gl_PointCoord - vec2(0.5)) * 2.0 / vK; if (d >= 1.0) discard;\n' +
-          '  float f = exp(-d * d * 3.2) * (1.0 - d * d); gl_FragColor = vec4(vCol * f * uStore, 1.0); }',
+          '  float f = 0.8 * exp(-d * d * 1.9) * (1.0 - d * d); gl_FragColor = vec4(vCol * f * uStore, 1.0); }',
         blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true,
       });
       const pts = new THREE.Points(g, mat); pts.frustumCulled = false;
@@ -18478,7 +18537,8 @@
       poleMesh.frustumCulled = false;
       groupCity.add(poleMesh);
     }
-    poleInv = { X, Z, GY, HM, cells, n: nAll };
+    poleInv = { X, Z, GY, HM, ROT, cells, n: nAll };
+    PERF.lampsDeck = { standards: nDeck, underDeck };   // __dbg.PERF.lampsDeck
     const el = document.getElementById('lightsCount');
     if (el) el.textContent = Math.round(nAll / 1000) + 'k';
     LIGHTS.ready = true;
@@ -18546,7 +18606,7 @@
     for (let q = 0; q < nUse; q++) {
       const i = cand[q][1];
       _plp.set(poleInv.X[i], poleInv.GY[i], poleInv.Z[i]);
-      _plq.setFromAxisAngle(TRAFFIC_UP, hash01(i * 1.7 + 0.3) * Math.PI * 2);
+      _plq.setFromAxisAngle(TRAFFIC_UP, Number.isNaN(poleInv.ROT[i]) ? hash01(i * 1.7 + 0.3) * Math.PI * 2 : poleInv.ROT[i]);   // a deck standard's arm points over its lanes
       _pls.set(1, poleInv.HM[i] / 9, 1);
       _plm.compose(_plp, _plq, _pls);
       poleMesh.setMatrixAt(q, _plm);

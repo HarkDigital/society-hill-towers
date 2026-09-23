@@ -65,8 +65,16 @@ console.log(JSON.stringify(out));
         # review: bounded, a bright albedo taken at most at 0.35 and anything over 0.5 rolled off under the bloom threshold
         self.assertIn('vec3 la = min(diffuseColor.rgb, vec3(0.35))', s)
         self.assertIn('totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0);', s)
-        # the splat's soft pool: brightest under the lamp, nothing past its radius
-        self.assertIn('float f = exp(-d * d * 3.2) * (1.0 - d * d);', s)
+        # the splat's soft pool: brightest under the lamp, nothing past its radius; since Round 144 flatter, lower and 1.4 times wider
+        self.assertIn('float f = 0.8 * exp(-d * d * 1.9) * (1.0 - d * d);', s)
+        self.assertIn('lr[m] = mast ? 56 : clamp(HM[i] * 3.4, 14, 42);', s)
+        # Round 144: no pole stands in a deck; the elevated decks carry their own standards, arms over the lanes
+        self.assertIn("if (deckOver(x, z, gy)) { pos[i * 3 + 1] = -1000; underDeck++; continue; }", s)
+        self.assertIn("if (y - gy < 4.5 || wwbNear(x, z, 40) || bfbNear(x, z, 40)) continue;", s)
+        self.assertIn("Math.atan2(nz * sg, -nx * sg)", s)
+        self.assertIn("Number.isNaN(poleInv.ROT[i]) ? hash01(i * 1.7 + 0.3) * Math.PI * 2 : poleInv.ROT[i]", s)
+        # the paved kinds that overlap each other never share a lift (Round 144's rail yard flicker)
+        self.assertIn('const PAVED_UP = { 1: 0.055, 2: 0.025, 3: 0.04, 4: 0.04 };', s)
 
 
 if __name__ == '__main__':
