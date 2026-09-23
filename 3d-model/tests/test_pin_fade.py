@@ -29,7 +29,7 @@ const PIN_OCC = { ok: false, every: 5, want: -99, hid: 0, lastFrame: -1e9, lastP
 const camera = { position: { distanceToSquared: () => (moving ? 1 : 0) }, quaternion: { dot: () => 1 } };
 let captures = 0;
 function pinOccCapture() { PIN_OCC.ok = true; captures++; }
-function pinOccVisible() { return answer === 1; }
+function pinOccVisible(x, y, z, rad = 1) { return answer === 'edge' ? rad >= 2 : answer === 1; }   // 'edge': only the wide neighbourhood finds the gap
 function mesh(xs) {
   const cap = 8, mat = new Float32Array(cap * 16), vis = new Float32Array(cap).fill(1);
   xs.forEach((x, i) => { mat[i * 16 + 12] = x; });
@@ -98,6 +98,25 @@ m.count = 2; m.instanceMatrix.array[16 + 12] = 900;        // a pin new to slot 
 frameNo++; pinOccUpdate(1 / 60); const fresh = +m.geometry.attributes.aPinVis.array[1].toFixed(3);
 console.log(JSON.stringify({ moved, fresh }));''')
         self.assertEqual(out, {'moved': 0, 'fresh': 0})
+
+    def test_an_edge_pin_keeps_its_state(self):
+        # Round 143: a tip on a building's edge (visible only to the 5 by 5 ask) neither hides a shown pin nor shows a hidden one
+        out = self.run_js('''
+run(30, 1); const shown = run(120, 'edge');
+const m2 = mesh([500]); PIN_MESHES.length = 0; PIN_MESHES.push(m2);
+const v2 = () => +m2.geometry.attributes.aPinVis.array[0].toFixed(3);
+const hid = []; for (let i = 0; i < 120; i++) { answer = 'edge'; frameNo++; pinOccUpdate(1 / 60); hid.push(v2()); }
+console.log(JSON.stringify({ shownMin: Math.min(...shown), hiddenMax: Math.max(...hid) }));''')
+        self.assertEqual(out, {'shownMin': 1, 'hiddenMax': 0})
+
+    def test_wide_image(self):
+        src = (ROOT / 'app.js').read_text()
+        # Round 143: the depth image covers 1.5 times the screen each way through its own camera, with the real near and far
+        self.assertIn('w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5,', src)
+        self.assertIn('c.near = camera.near; c.far = camera.far;', src)
+        self.assertIn('c.projectionMatrix.elements[0] /= PIN_OCC.wide; c.projectionMatrix.elements[5] /= PIN_OCC.wide;', src)
+        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c);', src)
+        self.assertIn('PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix);', src)
 
     def test_wiring(self):
         src = (ROOT / 'app.js').read_text()

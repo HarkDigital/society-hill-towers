@@ -21375,7 +21375,12 @@
   // 4 km every pin past it read as visible). The capture runs only when the eye has moved or turned, or two seconds
   // have passed, since the city it records does not change on its own (review, Sep 22: every 5th frame cost a full
   // opaque re-render and a readPixels stall while the camera sat still)
-  const PIN_OCC = { w: isTouch ? 160 : 256, h: 0, rt: null, buf: null, mat: null, ok: false, far: 30000,
+  // Round 143 (Mike: "I can see them on either side of my screen, but then I turn in their direction and they
+  // disappear"): a tip outside the image reads as visible, and while the eye turns the image is up to `every` frames
+  // old, so a pin swinging in from a side edge behind a building was tested against an image it was not in, shown,
+  // and hidden again once a capture caught up with it. The image now covers PIN_OCC.wide times the screen each way,
+  // at the same pixel density, through its own camera, so a pin turning into view is already inside it.
+  const PIN_OCC = { w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5, cam: new THREE.PerspectiveCamera(), h: 0, rt: null, buf: null, mat: null, ok: false, far: 30000,
     every: isTouch ? 10 : 5, view: new THREE.Matrix4(), proj: new THREE.Matrix4(), n: 0, hid: 0, want: -99,
     lastPos: new THREE.Vector3(1e9, 0, 0), lastQuat: new THREE.Quaternion(), lastFrame: -1e9 };
   const pinDepthClear = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01),
@@ -21385,7 +21390,7 @@
   scene.add(pinDepthClear);
   const _pov = new THREE.Vector3(), _pocc = new THREE.Color();
   function pinOccCapture() {
-    const r = renderer, W = PIN_OCC.w, H = Math.max(1, Math.round(W * window.innerHeight / Math.max(1, window.innerWidth)));
+    const r = renderer, W = PIN_OCC.w, H = Math.max(1, Math.round(W * window.innerHeight / Math.max(1, window.innerWidth)));   // the wide image keeps the screen's aspect
     if (!PIN_OCC.rt || PIN_OCC.h !== H) {
       if (PIN_OCC.rt) PIN_OCC.rt.dispose();
       PIN_OCC.rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false });
@@ -21404,13 +21409,19 @@
     return PIN_OCC.mat;
   }
   function pinOccCaptureRest() {
-    occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false);
-    PIN_OCC.view.copy(camera.matrixWorldInverse); PIN_OCC.proj.copy(camera.projectionMatrix);
+    camera.updateMatrixWorld();
+    const c = PIN_OCC.cam;
+    c.matrixAutoUpdate = false; c.matrixWorldAutoUpdate = false; c.near = camera.near; c.far = camera.far;   // the log depth buffer reads far
+    c.matrix.copy(camera.matrixWorld); c.matrixWorld.copy(camera.matrixWorld); c.matrixWorldInverse.copy(camera.matrixWorldInverse);
+    c.projectionMatrix.copy(camera.projectionMatrix); c.projectionMatrix.elements[0] /= PIN_OCC.wide; c.projectionMatrix.elements[5] /= PIN_OCC.wide;
+    c.projectionMatrixInverse.copy(c.projectionMatrix).invert();
+    occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c);
+    PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix);
     PIN_OCC.ok = true; PIN_OCC.n++;
   }
   // the city's view distance into a target: every transparent, line, point and pin object hidden (and, for the
   // building tap, every instanced mesh: the trees, the cars, the lamps), the shadow map untouched
-  function occRender(rt, W, H, buf, noInstanced) {
+  function occRender(rt, W, H, buf, noInstanced, cam = camera) {
     const r = renderer, hid = [];
     pinOccMat();
     scene.traverse((o) => {
@@ -21425,7 +21436,7 @@
     r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false;
     scene.overrideMaterial = PIN_OCC.mat; scene.background = null;
     r.setRenderTarget(rt); r.setClearColor(0xffffff, 1); r.clear(true, true, false);
-    r.render(scene, camera);
+    r.render(scene, cam);
     r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
     r.setRenderTarget(prevRT); r.setClearColor(_pocc, prevA);
     scene.overrideMaterial = prevOver; scene.background = prevBg;
@@ -21433,7 +21444,7 @@
     for (const o of hid) o.visible = true;
   }
   const occUnpack = (b, o) => (b[o] / 16777216 + b[o + 1] / 65536 + b[o + 2] / 256 + b[o + 3]) / 256 * PIN_OCC.far;   // bytes / 255, times three.js's 255 / 256 unpack scale, times the far
-  function pinOccVisible(x, y, z) {
+  function pinOccVisible(x, y, z, rad = 1) {   // rad: the neighbourhood's half-width in pixels (a shown pin asks with 2, Round 143)
     if (!PIN_OCC.ok) return true;
     _pov.set(x, y, z).applyMatrix4(PIN_OCC.view);
     const vz = -_pov.z;
@@ -21442,7 +21453,7 @@
     const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H);
     if (px < 0 || py < 0 || px >= W || py >= H) return true;
     const b = PIN_OCC.buf, need = vz - (2.5 + vz * 0.02);
-    for (let j = Math.max(0, py - 1); j <= Math.min(H - 1, py + 1); j++) for (let i = Math.max(0, px - 1); i <= Math.min(W - 1, px + 1); i++) {
+    for (let j = Math.max(0, py - rad); j <= Math.min(H - 1, py + rad); j++) for (let i = Math.max(0, px - rad); i <= Math.min(W - 1, px + rad); i++) {
       const o = (j * W + i) * 4;
       const d = occUnpack(b, o);
       if (d >= need) return true;
@@ -21485,7 +21496,10 @@
       const a = m.geometry.attributes.aPinVis, e = m.instanceMatrix.array, n = m.count, st = pinOccState(m);
       let dirty = false;
       for (let i = 0; i < n; i++) {
-        const k = i * 16, x = e[k + 12], z = e[k + 14], raw = pinOccVisible(x, e[k + 13], z) ? 1 : 0;
+        // hysteresis in space (Round 143): a tip on a building's edge fell on either side of it as the image's pixels
+        // shifted with the heading, and two captures could agree either way, so a shown pin keeps showing while
+        // anything in a 5 by 5 neighbourhood lies behind its tip, and a hidden one comes back on the 3 by 3 test
+        const k = i * 16, x = e[k + 12], z = e[k + 14], raw = pinOccVisible(x, e[k + 13], z, i < st.n && st.tgt[i] ? 2 : 1) ? 1 : 0;
         if (i >= st.n || Math.abs(st.px[i] - x) + Math.abs(st.pz[i] - z) > 30) {   // a new pin in this slot: its answer at once
           st.tgt[i] = raw; st.lin[i] = raw; st.pendC[i] = 0; st.pendT[i] = 0; st.age[i] = PIN_DWELL;
         } else if (raw !== st.tgt[i]) {
@@ -21699,7 +21713,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { _pov.set(x, y, z).applyMatrix4(PIN_OCC.view); const vz = -_pov.z; _pov.applyMatrix4(PIN_OCC.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(PIN_OCC.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(vz - (2.5 + vz * 0.02)), px, py, ds, vis: pinOccVisible(x, y, z) }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccVisible(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]) ? 1 : 0, st ? st.tgt[i] : -1, st ? st.pendC[i] : -1]); return o; }) : undefined }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

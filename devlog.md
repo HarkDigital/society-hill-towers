@@ -6702,3 +6702,24 @@ empty strip run is skipped rather than built degenerate.
 
 Checked in the pane from the street by day and at 9:30 pm, from over the pit and from behind; `tests/test_ground_pits.py`
 covers both demolished records, the right span against `WILDEY_ROW.depth`, and the step's order before the sow.
+
+## Round 143 — pins that showed at the screen's edges and vanished when faced (Sep 23)
+
+Mike: "I can see them on either side of my screen, but then I turn in their direction and they disappear". Two causes,
+both measured in the pane by sweeping the heading 0.02 rad a frame at 60 Hz from four fixed eyes and counting pins that
+showed on screen and then vanished while still on screen (from a fixed eye nothing can change what hides a pin, so
+every such vanishing is wrong). The deployed build: 135 of 189 on-screen showings ended that way.
+
+1. The depth image covered exactly the screen, and a tip outside it read as visible. While the eye turns the image is
+   up to five frames old, so a pin swinging in from a side behind a building was tested against an image it was not in,
+   shown, and hidden once a capture caught up. The image now covers 1.5 times the screen each way at the same pixel
+   density (384 px wide on a desktop, 240 on a phone), through its own camera carrying the real near and far (the log
+   depth buffer reads far; a fresh camera's 2,000 m broke it); `occRender` takes the camera, and the building tap
+   still uses the screen's.
+2. A tip on a building's edge fell on either side of it as the image's pixels shifted with the heading, and two
+   captures could agree either way, so it flipped. Now a shown pin keeps showing while anything in a 5 by 5
+   neighbourhood lies behind its tip, and a hidden one returns on the 3 by 3 test (`pinOccVisible`'s `rad`).
+
+After: 5 of 47. The showings fell because the occluded pins no longer flash in at the edges. `__dbg.pinOcc(true)` now
+lists each pin's raw verdict, state and pending count, and `__dbg.pinOccAt(x, y, z)` its view depth against the image;
+`tests/test_pin_fade.py` gains the edge case and the wide image's wiring.
