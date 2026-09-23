@@ -6780,3 +6780,12 @@ at 0.8 and then 0.35 they came out lime green, daylight at night, because a crow
 and the result sits at its 0.5 roll-off either way. The wall gate fades over 3 to 22 m instead of 2.5 to 11 and never
 below 0.3, and a roof (a face turned up or down) takes 0.3 of a wall's light where Round 140 gave it none. Compared at
 9:30 pm over Spruce Street, a South Philly grid and a wide view south of Washington Avenue against the deployed build.
+
+## Round 147 — the lamps a tad dimmer, and the wash fading out up the walls (Sep 23)
+
+Mike, on Round 146: "Everything is a tad too bright now. We also dont need the upward diffusion on the large
+buildings. It should diffuse out in a gradient at some point." `LAMP_GAIN` 4.0 to 3.2 (a fifth down, for the ground,
+the roads, the trees and the walls alike), and the wall gate loses Round 146's 0.3 floor: the wash fades smoothly from
+3 m to nothing at 16 m, so a tower's upper storeys are dark again and a rowhouse's front is lit to about its second
+floor; a roof takes 0.3 of a wall's light at its own height, which a low roof catches and a tall one does not. Compared
+against Round 146 at 9:30 pm over Spruce Street and south of Washington Avenue with the skyline behind.

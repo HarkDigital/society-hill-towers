@@ -18379,7 +18379,7 @@
   // buffer ignores a polygon offset), and they were hard-edged.
   const LAMPMAP = { size: isTouch ? 1024 : 2048, span: isTouch ? 8000 : 12000, rt: null, scene: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, store: 0.25 };
   const lampMapU = { uLampMap: { value: null }, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: { value: 0 }, uLampFade: { value: new THREE.Vector4(0, 0, 0, 1) } };
-  let LAMP_GAIN = 4.0;   // the pools' strength over a surface's own colour (__dbg.lampGain; calibrated on Mike's South Philly street at 9:30 pm)
+  let LAMP_GAIN = 3.2;   // Round 146: 4.0 read a tad bright once the pools widened (Round 144) and the trees and roofs took them   // the pools' strength over a surface's own colour (__dbg.lampGain; calibrated on Mike's South Philly street at 9:30 pm)
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
@@ -20553,10 +20553,11 @@
   function lampLightPatch(shader, worldExpr, mode) {
     if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap;') !== -1) return;
     shader.uniforms.uLampMap = lampMapU.uLampMap; shader.uniforms.uLampBox = lampMapU.uLampBox; shader.uniforms.uLampOn = lampMapU.uLampOn; shader.uniforms.uLampFade = lampMapU.uLampFade;
-    // Round 146 (Mike: "the tops of the buildings need to be lit up a bit. Can we have the street lights diffuse upwards
-    // more to light up more than just the bottom of buildings?"): the wash on a wall fades over 3 to 22 m instead of 2.5 to
-    // 11 and never below 0.3, and a roof takes 0.3 of a wall's light where it had none
-    const gate = mode === 'wall' ? '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * mix(0.3, 1.0, 1.0 - smoothstep(3.0, 22.0, lwp.y - vBase))'
+    // Round 146 (Mike: the street lights should "light up more than just the bottom of buildings", then "we don't need the
+    // upward diffusion on the large buildings. It should diffuse out in a gradient at some point"): the wash on a wall
+    // fades smoothly from 3 m to nothing at 16 m (Round 140 stopped at 11), and a roof takes 0.3 of a wall's light at its
+    // own height, so a low roof catches a little and a tall building's none
+    const gate = mode === 'wall' ? '0.75 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * (1.0 - smoothstep(3.0, 16.0, lwp.y - vBase))'
       : mode === 'blade' ? '1.0' : mode === 'crown' ? '0.12' : 'smoothstep(0.35, 0.7, inverseTransformDirection(normal, viewMatrix).y)';   // crown: a tree takes the pool it stands in on every face (Round 146)
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn;\nvoid main() {')
