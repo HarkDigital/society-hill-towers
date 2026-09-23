@@ -2996,6 +2996,10 @@
   // motorway there became a flat "deck" 20 m over the water, a grey band beneath the real
   // roadway at 41 m; the on-land approaches keep their ribbons, as the Whitman's do
   const BFB_A = [400, -940], BFB_B = [1360, -722];
+  function bfbDeckY(t) {   // the Ben Franklin Bridge's deck profile, the floor's centre (its top is 1 m over it), t from BFB_A to BFB_B
+    const yA = siteY(BFB_A[0], BFB_A[1], 'ground') + 12, yMid = TERRAIN.water + 41;
+    return yA + (yMid - yA) * Math.sin(Math.PI * t) * 0.85 + (yMid - yA) * 0.15 * (1 - Math.abs(2 * t - 1));
+  }
   function bfbNear(x, z, r) {
     r = r || 60;
     const dx = BFB_B[0] - BFB_A[0], dz = BFB_B[1] - BFB_A[1], L2 = dx * dx + dz * dz;
@@ -8579,6 +8583,7 @@
           }
           if (deck && (wwbNear(mx, mz) || bfbNear(mx, mz))) continue;   // the custom WWB and BFB decks own their crossings
           if (ovpOwned(a[0], a[1], q[0], q[1])) continue;      // a baked overpass deck or sunken roadway owns it
+          if (hw < 4 && patcoCutAt(mx, mz)) continue;          // a footway over PATCO's open cut at 5th Street (Round 141 review)
           // a wide segment lying ALONG a core street is a duplicate and would z-fight it
           if (a[0] > CORE_EXT.x0 - 38 && a[0] < CORE_EXT.x1 + 38 && a[1] > CORE_EXT.z0 - 38 && a[1] < CORE_EXT.z1 + 38 &&
               q[0] > CORE_EXT.x0 - 38 && q[0] < CORE_EXT.x1 + 38 && q[1] > CORE_EXT.z0 - 38 && q[1] < CORE_EXT.z1 + 38 &&
@@ -9355,7 +9360,7 @@
       const GRANITE = '#4c3320', GRANITE_LO = '#3e2818', GRANITE_HI = '#563b26', GRANITE_TOP = '#5e422b';   // a sunlit south face takes about twice the tower face's light: darker still
       const CAB = 15.5, TRUSS_H = 8.2, TRUSS_LO = 1.6, TRUSS_HI = TRUSS_LO + TRUSS_H;   // the cable planes; the truss chords over the floor
       const cableLit = new THREE.Color(0x8c96a4), cableCol = new THREE.Color(CABLE);   // Round 81: the cables carry the LED strings, white most nights, the theme's colour on its nights
-      const deckY = (t) => yA + (yMid - yA) * Math.sin(Math.PI * t) * 0.85 + (yMid - yA) * 0.15 * (1 - Math.abs(2 * t - 1));
+      const deckY = bfbDeckY;   // the one profile, shared with PATCO's track (Round 141)
       const segs = 80, len = L / segs, endRun = 34 / L;   // 12 m truss panels; the floor narrows inside the anchorages
       for (let i = 0; i < segs; i++) {
         const t0 = i / segs, t1 = (i + 1) / segs;
@@ -9364,7 +9369,7 @@
         const slope = Math.atan2(y1 - y0, len);
         const inAnchor = t0 < endRun || t1 > 1 - endRun;
         const seg = (g, hex) => { g.rotateZ(slope); g.rotateY(ry); g.translate((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2); if(hex===ASPHALT)rememberStreetGeometry(g,ux,uz); addP(g, hex); };
-        seg(box(len + 0.5, 2.0, inAnchor ? 30 : 39, 0, 0, 0, 0), FLOOR);      // the floor system: the roadway between the trusses, the PATCO tracks outboard
+        seg(box(len + 0.5, 2.0, 39, 0, 0, 0, 0), FLOOR);      // the floor system: the roadway between the trusses, the PATCO tracks outboard (full width through the anchorages since Round 141, the tracks run on it)
         seg(box(len + 0.5, 0.3, 27, 0, 1.1, 0, 0), ASPHALT);                    // seven lanes of asphalt
         for (const s of [-1, 1]) {
           seg(box(len + 0.5, 1.2, 1.0, 0, TRUSS_LO, s * CAB, 0), STEEL);        // stiffening-truss bottom chord
@@ -9375,8 +9380,8 @@
           seg(dg, STEEL);
           seg(box(0.7, TRUSS_H, 0.7, len / 2, (TRUSS_LO + TRUSS_HI) / 2, s * CAB, 0), STEEL);   // truss verticals
           if (inAnchor) continue;
-          seg(box(len + 0.5, 0.35, 3.0, 0, 4.3, s * 18.0, 0), WALK);            // the walkway, raised over the tracks
-          seg(box(len + 0.5, 1.1, 0.15, 0, 5.0, s * 19.4, 0), STEEL);           // its outer rail
+          seg(box(len + 0.5, 0.35, 3.0, 0, 5.8, s * 18.0, 0), WALK);            // the walkway, raised over the tracks (Round 141: 1.5 m higher, clear of a PATCO car's roof)
+          seg(box(len + 0.5, 1.1, 0.15, 0, 6.5, s * 19.4, 0), STEEL);           // its outer rail
         }
       }
       // steel lattice towers: battered legs on granite piers, X-braced above the roadway and below it
@@ -9390,14 +9395,17 @@
         addP(box(48, 1.2, 22, x, pierTop - 0.4, z, pry), GRANITE_HI);          // its coping
         for (const s of [-1, 1]) {
           const lx = x - uz * s * CAB, lz = z + ux * s * CAB;
-          addP(box(8.5, dY + 7 - pierTop, 10, lx, (pierTop + dY + 7) / 2, lz, pry), STEEL);   // the wider lower leg
+          // the wider lower leg, split since Round 141 so the PATCO track and the walkway pass under the upper leg: its inner
+          // part to the strut, its outer foot stopping under the floor
+          addP(box(4.75, dY + 7 - pierTop, 10, x - uz * s * 13.625, (pierTop + dY + 7) / 2, z + ux * s * 13.625, pry), STEEL);
+          addP(box(3.75, dY - 1.0 - pierTop, 10, x - uz * s * 17.875, (pierTop + dY - 1.0) / 2, z + ux * s * 17.875, pry), STEEL);
           addP(box(6.8, topY - (dY + 7), 8.6, lx, (dY + 7 + topY) / 2, lz, pry), STEEL);      // the upper leg
           addP(box(8, 3.6, 10, lx, topY + 1.4, lz, pry), STEEL);                               // saddle housing over the cable
         }
         // portal struts: at the pier, above the roadway, mid-height, and the cap
         const sy = [dY + 7, (dY + 7 + topY - 4) / 2, topY - 4];
         addP(box(31, 3.2, 6, x, pierTop + 2.6, z, pry), STEEL);
-        for (const yv of sy) addP(box(34, 4.2, 6.5, x, yv, z, pry), STEEL);
+        for (const yv of sy) addP(box(yv === sy[0] ? 32 : 34, 4.2, 6.5, x, yv, z, pry), STEEL);   // the first strut ends inside the cable planes: a PATCO car passes under its ends (Round 141)
         addP(box(37, 5, 9, x, topY - 0.5, z, pry), STEEL);                     // cap beam carrying the saddles
         addP(box(39, 1.4, 11, x, topY + 2.6, z, pry), STEEL);                  // its cornice
         // heavy latticed X panels: two between the struts, one more below the deck to the pier
@@ -9421,7 +9429,12 @@
         const at = (a, y, w, h, d, hex) => addP(box(w, h, d, ex - uz * a, y, ez + ux * a, ry), hex);
         const base = g0 - 2, sill = yD - 1.6, arch = yD + 15;
         at(0, (base + sill) / 2, 61, sill - base, 46, GRANITE_LO);              // the solid base below the roadway
-        for (const s of [-1, 1]) at(s * 19.5, (sill + arch) / 2, 61, arch - sill, 7, GRANITE);   // the portal's piers
+        for (const s of [-1, 1]) {   // the portal's piers, since Round 141 an outer pier and a lintel over PATCO's passage, on a floor block in the landward half
+          at(s * 21.5, (sill + arch) / 2, 61, arch - sill, 3, GRANITE);
+          const pTop = yD + 8.5, land = ex === A[0] ? -1 : 1;
+          at(s * 18, (pTop + arch) / 2, 61, arch - pTop, 4, GRANITE);
+          addP(box(30.5, yA + 1 - sill, 4, ex + ux * land * 15.25 - uz * s * 18, (sill + yA + 1) / 2, ez + uz * land * 15.25 + ux * s * 18, ry), GRANITE_LO);
+        }
         for (const s of [-1, 1]) at(s * 13.5, arch - 2.5, 61, 5, 5, GRANITE);   // the arch's springing blocks
         for (const s of [-1, 1]) at(s * 9.5, arch - 1, 61, 2, 3, GRANITE);      // and its crown blocks
         at(0, (arch + 36) / 2, 61, 36 - arch, 46, GRANITE);                    // the mass over the portal
@@ -9462,7 +9475,8 @@
         for (let i = 0; i < segs; i++) {
           const t = (i + 0.5) / segs;
           if (t < endRun || t > 1 - endRun) continue;
-          const yD = deckY(t) + 4.475;
+          if (tw.some((q) => Math.abs(q - t) * L < 6)) continue;   // not through a tower's leg
+          const yD = deckY(t) + 5.975;   // on the walkway, raised in Round 141
           for (const s of [-1, 1]) lampAt.push([A[0] + dx * t - uz * s * 18.9, yD, A[1] + dz * t + ux * s * 18.9]);
         }
         bfbLampMesh = new THREE.InstancedMesh(lampG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.2 }), lampAt.length);
@@ -11246,7 +11260,7 @@
     // trees. At 9 m a 60-inch oak carries its crown 2.6 m clear of the ground.
     const boleH = (dbh) => clamp(2.4 + dbh * 0.1, 2.6, 9);
     const keepTree = (x, z, dbh, ni, core, outer) => {
-      if (inCapSite(x,z,4) || elPortalAt(x,z) || vineCut(x, z, 2) !== null) return;   // no trees in the work zone or expressway cut
+      if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2) !== null) return;   // no trees in the work zone, the expressway cut or PATCO's
       const g = ni >= 0 ? (TREE_NAMES.g[ni] || 0) : 0;
       const st = TREE_STYLE[g] || TREE_STYLE[0];
       X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0; OUT[n] = outer ? 1 : 0;
@@ -11836,7 +11850,7 @@
         const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
         if (d2 > GRASS_R * GRASS_R) continue;
         if (pg ? !pointInPoly(x, z, pg) : !bareGroundAt(x, z)) continue;
-        if (elPortalAt(x, z)) continue;   // the excavated ground cannot carry floating grass
+        if (elPortalAt(x, z) || patcoCutAt(x, z)) continue;   // the excavated ground cannot carry floating grass
         if (septaSnapRoad(x, z, 4)) continue;
         if (inWater(x, z) > -2) continue;
         // on the drawn ground where a grid is registered (the sheets conform to it), drapeY in the core
@@ -12477,11 +12491,13 @@
       d: [['SEPTA', 'Every tracked bus and street trolley at its live position. Click one for its route and how late it is running.'],
         ['Indego', 'Every bike-share dock with its live count of bikes. Click one for the station.'],
         ['Flights and ships', 'Aircraft over the city and vessels on the Delaware, each at its live position. Click one for what it is.'],
+        ['Trains', 'Amtrak trains at their live positions on the real tracks, and PATCO trains over the Ben Franklin Bridge where its timetable puts them. Click one for its run.'],
         ['Traffic', 'Typical cars at PennDOT\'s measured volumes where the state counts and class averages elsewhere, swelling at rush hour and thinning at night.'],
         ['Streetlights', 'Every one of the city\'s 200,000 street lamps, lit at dusk.']],
       t: [['SEPTA', 'Every tracked bus and street trolley at its live position. Tap one for its route and how late it is running.'],
         ['Indego', 'Every bike-share dock with its live count of bikes. Tap one for the station.'],
         ['Flights and ships', 'Aircraft over the city and vessels on the Delaware, each at its live position. Tap one for what it is.'],
+        ['Trains', 'Amtrak trains at their live positions on the real tracks, and PATCO trains over the Ben Franklin Bridge where its timetable puts them. Tap one for its run.'],
         ['Traffic', 'Typical cars at PennDOT\'s measured volumes where the state counts and class averages elsewhere, swelling at rush hour and thinning at night.'],
         ['Streetlights', 'Every one of the city\'s 200,000 street lamps, lit at dusk.']] }],
     ['Concerts and games', {
@@ -13288,7 +13304,8 @@
     const kAct = markersReady && markerDrawnN > 0;     // the historical markers and the art within the half mile (Round 77, Round 82)
     const cAct = closuresReady && CLOSURES.on && (barrelMesh.count > 0 || coneMesh.count > 0 || closurePin.count > 0 || closurePinPart.count > 0);   // the closed blocks (Round 79)
     const aAct = amtrakReady && AMTRAK.on && (amtrakCoach.count > 0 || amtrakLoco.count > 0 || amtrakAcela.count > 0);   // the trains (Round 80)
-    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct && !STOPS.ready) return;
+    const pAct = patcoReady && AMTRAK.on && (patcoCar.count > 0 || patcoPin.count > 0);   // PATCO, scheduled (Round 141)
+    if (!sAct && !iAct && !fAct && !shAct && !tAct && !mAct && !kAct && !cAct && !aAct && !pAct && !STOPS.ready) return;
     // Works in every mode. Under pointer lock (desktop walk/fly look-around) the
     // cursor doesn't exist, so a click picks whatever's under the crosshair —
     // screen center. Unlocked (orbit, drag-look, touch), a short tap picks at
@@ -13336,6 +13353,7 @@
     if (kAct) { for (const m of markerMeshes) if (m.count) targets.push(m); for (const m of artMeshes) if (m.count) targets.push(m); if (markerPin.count) targets.push(markerPin); if (artPin.count) targets.push(artPin); }
     if (cAct) { if (barrelMesh.count) targets.push(barrelMesh); if (coneMesh.count) targets.push(coneMesh); if (closurePin.count) targets.push(closurePin); if (closurePinPart.count) targets.push(closurePinPart); }
     if (aAct) { for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) if (m.count) targets.push(m); }
+    if (pAct) { for (const m of [patcoCar, patcoPin]) if (m.count) targets.push(m); }
     if (STOPS.ready) { if (busStopPin.count) targets.push(busStopPin); if (railStationPin.count) targets.push(railStationPin); }   // Round 133
     if (CIVIC_S.ready) { if (libPin.count) targets.push(libPin); if (recPin.count) targets.push(recPin); }   // Round 134
     const hits = septaRay.intersectObjects(targets, false);
@@ -13366,15 +13384,19 @@
         const p = h.object === amtrakPin ? amtrakPinPick[h.instanceId] : amtrakPick[h.object.userData.amKind][h.instanceId];
         if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = p; amtrakCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
+      if (pAct && (h.object === patcoCar || h.object === patcoPin)) {
+        const p = h.object === patcoPin ? patcoPinPick[h.instanceId] : patcoPick[h.instanceId];
+        if (p) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = p; patcoCard(p); vehinfoEl.hidden = false; cardUnlock(); return; }
+      }
       if (h.object === barrelMesh || h.object === coneMesh || h.object.userData.closurePin || h.object.userData.closurePinPart) {
         const rec = (h.object === barrelMesh ? closurePickB : h.object === coneMesh ? closurePickC : h.object.userData.closurePin ? closurePinPick : closurePinPickP)[h.instanceId];
-        if (rec) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = rec; closureCard(rec); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (rec) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedTrain = null; pickedClosure = rec; closureCard(rec); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object.userData.markerType !== undefined || h.object.userData.artMat !== undefined || h.object.userData.markerPin || h.object.userData.artPin) {
         const isM = h.object.userData.markerType !== undefined || !!h.object.userData.markerPin;
         const r = h.object.userData.markerPin ? markerPinPick[h.instanceId] : h.object.userData.artPin ? artPinPick[h.instanceId]
           : isM ? markerPick[h.object.userData.markerType][h.instanceId] : artPick[h.object.userData.artMat][h.instanceId];
-        if (r) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = isM ? r : null; pickedArt = isM ? null : r; if (isM) markerCard(r); else artCard(r); vehinfoEl.hidden = false; cardUnlock(); return; }
+        if (r) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedTrain = null; pickedMarker = isM ? r : null; pickedArt = isM ? null : r; if (isM) markerCard(r); else artCard(r); vehinfoEl.hidden = false; cardUnlock(); return; }
       }
       if (h.object === septaSolid) v = septaPickS[h.instanceId];
       else if (h.object === septaBadge) v = septaPickB[h.instanceId];
@@ -13452,12 +13474,21 @@
       const d2 = dx * dx + dy * dy;
       if (d2 < bestD) { bestD = d2; bestA = p; bestV = null; bestS = null; bestM = null; bestK = null; bestC = null; }
     }
+    if (pAct) for (const p of patcoMap.values()) {   // a PATCO train's pin tip (the walkway over it can stop a ray to the car)
+      if (!p.vis || !nearCam(p.hx, p.hy, p.hz)) continue;
+      _ssv.set(p.hx, p.pinY, p.hz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) continue;
+      const dx = (_ssv.x * 0.5 + 0.5) * window.innerWidth - cx;
+      const dy = (-_ssv.y * 0.5 + 0.5) * window.innerHeight - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < bestD) { bestD = d2; bestA = p; bestV = null; bestS = null; bestM = null; bestK = null; bestC = null; }
+    }
     if (bestC && pickOccluded(bestC.mx, bestC.my + 1.2, bestC.mz)) bestC = null;
-    if (bestA && pickOccluded(bestA.hx, bestA.hy + 2.5, bestA.hz)) bestA = null;
-    if (bestA) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = bestA; amtrakCard(bestA); vehinfoEl.hidden = false; cardUnlock(); return; }
-    if (bestC) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = bestC; closureCard(bestC); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestA && pickOccluded(bestA.hx, bestA.patco ? bestA.pinY : bestA.hy + 2.5, bestA.hz)) bestA = null;
+    if (bestA) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = bestA; trainCard(bestA); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestC) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedTrain = null; pickedClosure = bestC; closureCard(bestC); vehinfoEl.hidden = false; cardUnlock(); return; }
     if (bestM) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedMarket = bestM; marketCard(bestM); vehinfoEl.hidden = false; cardUnlock(); return; }
-    if (bestK) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = bestKm ? bestK : null; pickedArt = bestKm ? null : bestK; if (bestKm) markerCard(bestK); else artCard(bestK); vehinfoEl.hidden = false; cardUnlock(); return; }
+    if (bestK) { pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedTrain = null; pickedMarker = bestKm ? bestK : null; pickedArt = bestKm ? null : bestK; if (bestKm) markerCard(bestK); else artCard(bestK); vehinfoEl.hidden = false; cardUnlock(); return; }
     if (bestV) { pickedStation = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedVeh = bestV; septaCard(bestV); vehinfoEl.hidden = false; return; }
     if (bestS) { pickedVeh = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedPlane = null; pickedShip = null; pickedStation = bestS; indegoCard(bestS); vehinfoEl.hidden = false; return; }
     // no vehicle or dock: try the forest. First march the pick ray against the
@@ -13498,7 +13529,7 @@
         }
       }
       if (bestT >= 0 && pickOccluded(treeInv.x[bestT], treeInv.cy[bestT], treeInv.z[bestT])) bestT = -1;
-      if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
+      if (bestT >= 0) { pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTrain = null; pickedTree = bestT; treeCard(bestT); vehinfoEl.hidden = false; return; }
     }
     if (!vpLockReq && bldgPick(cx, cy)) return;   // nothing live under the tap: the building, if one stands there (Round 132)
     if (pickedNear || pickedCivic || pickedStop || pickedBldg || pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null) { pickedBldg = null; pickedVeh = null; pickedStation = null; pickedPlane = null; pickedShip = null; pickedTree = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null; pickedStop = null; pickedCivic = null; pickedNear = null; vehinfoEl.hidden = true; }
@@ -14606,6 +14637,7 @@
     const x = v.dx != null ? v.dx : v.x, z = v.dz != null ? v.dz : v.z;
     searchFlyTo(x, (v.gy || siteY(x, z, 'road')) + 6, z, 220, true);
     septaSetFilter(v.route, v.routeLabel);   // the map shows this route alone until the search is cleared
+    pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;   // an open train card would take the slot back next frame (Round 141 review)
     pickedVeh = v;
     septaCard(v);
     vehinfoEl.hidden = false;
@@ -14932,11 +14964,110 @@
   // Subtract the exact narrow opening from the existing ground triangles. Do
   // not discard 25/50 m cells: their oversized holes would eat the adjacent
   // highway. New boundary vertices retain the triangle's height and colour.
+  // ---- PATCO's track over the Ben Franklin Bridge (Round 141, Mike: "add the scheduled PATCO trains on the bridge").
+  // PATCO_DATA (bake_patco.py) carries each direction's track from OSM, ordered Philadelphia to Camden, with its
+  // stops and portals. OSM seats the tracks 11.9 m north and 15.3 m south of the model's bridge axis, which is the
+  // roadway and the truss line here, so on the span and through the anchorages each track is re-seated at
+  // PATCO_OUT from the axis, on the floor outboard of the trusses under the walkway (the south track eastbound,
+  // the north westbound: right-hand running), eased back to OSM's course over the approaches. The rail bed follows
+  // the deck's floor on the span; on the Philadelphia approach it climbs out of the 5th Street mouth, holds level
+  // over I-95 and its ramps and comes down to the anchorage; on the Camden side it falls to the portals. Samples
+  // every PATCO_STEP m carry x, y (the rail bed), z, the arc length s, the along-axis a, and a hidden flag: a
+  // car is drawn only between the mouths, and PATCO_COVER m into the Philadelphia tunnel (the ground hides that part,
+  // so a train slides in rather than vanishing); the Camden portals are covered boxes a car disappears into.
+  const PATCO_OUT = 17.75, PATCO_COVER = 25, PATCO_STEP = 5, PATCO_CAM_BOX = 26, PATCO_CAM_IN = 10.5;   // the Camden box outruns a car's length past PATCO_CAM_IN
+  let PATCO_T = null;
+  function patcoPiece(T, a) {   // piecewise linear through [[a, y], ...]
+    if (a <= T[0][0]) return T[0][1];
+    for (let i = 1; i < T.length; i++) if (a <= T[i][0]) return T[i - 1][1] + (T[i][1] - T[i - 1][1]) * (a - T[i - 1][0]) / (T[i][0] - T[i - 1][0]);
+    return T[T.length - 1][1];
+  }
+  function patcoBedY(a, L, yA) {
+    if (a >= 0 && a <= L) return bfbDeckY(a / L) + 1.0;   // the floor's top
+    if (a < 0) return patcoPiece([[-1200, -33.7], [-660, 0.0], [-540, 7.5], [-420, 9.7], [-97.4, 9.7], [-30.5, yA + 1], [0, yA + 1]], a);
+    return patcoPiece([[L, yA + 1], [L + 30.5, yA + 1], [1556.5, 2.7], [2200, 2.7 - 0.06 * 643.5]], a);
+  }
+  function patcoTracks() {
+    if (PATCO_T !== null) return PATCO_T;
+    PATCO_T = [];
+    if (typeof PATCO_DATA === 'undefined' || !PATCO_DATA || !Array.isArray(PATCO_DATA.chains)) return PATCO_T;
+    const A = BFB_A, B = BFB_B, L = Math.hypot(B[0] - A[0], B[1] - A[1]), ux = (B[0] - A[0]) / L, uz = (B[1] - A[1]) / L, nx = -uz, nz = ux;
+    const yA = siteY(A[0], A[1], 'ground') + 12;
+    const sm = (e0, e1, v) => { const q = clamp((v - e0) / (e1 - e0), 0, 1); return q * q * (3 - 2 * q); };
+    for (const c of PATCO_DATA.chains) {
+      const side = c.trk === 'south' ? 1 : -1, P = c.p, F = c.f;
+      const xs = [], zs = [], so = [], fl = [];
+      let acc = 0;
+      for (let i = 0; i < P.length - 1; i++) {
+        const x0 = P[i][0], z0 = P[i][1], x1 = P[i + 1][0], z1 = P[i + 1][1], d = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.ceil(d / PATCO_STEP));
+        for (let k = 0; k < n; k++) { xs.push(x0 + (x1 - x0) * k / n); zs.push(z0 + (z1 - z0) * k / n); so.push(acc + d * k / n); fl.push(F[i]); }
+        acc += d;
+      }
+      xs.push(P[P.length - 1][0]); zs.push(P[P.length - 1][1]); so.push(acc); fl.push(F[F.length - 1]);
+      const N = xs.length, al = new Float32Array(N), nl = new Float32Array(N);
+      for (let i = 0; i < N; i++) { al[i] = (xs[i] - A[0]) * ux + (zs[i] - A[1]) * uz; nl[i] = (xs[i] - A[0]) * nx + (zs[i] - A[1]) * nz; }
+      const near = (i) => al[i] > -700 && al[i] < L + 700 && Math.abs(nl[i]) < 80;   // the approaches and the span; the tunnels beyond keep OSM's course
+      const latAt = (a0) => { for (let i = 0; i < N - 1; i++) if (near(i) && (al[i] - a0) * (al[i + 1] - a0) <= 0) { const t = (a0 - al[i]) / ((al[i + 1] - al[i]) || 1e-9); return nl[i] + (nl[i + 1] - nl[i]) * t; } return side * PATCO_OUT; };
+      // the Philadelphia approach sits a little off OSM's line: the south track's piers off Florist Street, the north deck clear of the building at (142, -1022)
+      const shiftP = (side > 0 ? 22.6 : -10.6) - latAt(-150.5), on = side * PATCO_OUT;
+      const x = new Float32Array(N), y = new Float32Array(N), z = new Float32Array(N), sN = new Float32Array(N), hid = new Uint8Array(N), aa = new Float32Array(N);
+      for (let i = 0; i < N; i++) {
+        const a = al[i];
+        let n = nl[i];
+        if (near(i)) {
+          if (a >= -30.5 && a <= L + 30.5) n = on;
+          else if (a < -30.5) { const w = sm(-150.5, -30.5, a); n = (n + shiftP) * (1 - w) + on * w; }
+          else { const w = 1 - sm(L + 30.5, L + 180.5, a); n = n * (1 - w) + on * w; n += side > 0 ? 2.0 * sm(1515, 1555, a) : -3.0 * sm(1480, 1540, a); }   // both tracks eased off the at-grade road ribbons beside them (the north one 3 m north of OSM's line: the 16 m westbound road lies to its south, review)
+          x[i] = A[0] + ux * a + nx * n; z[i] = A[1] + uz * a + nz * n; y[i] = patcoBedY(a, L, yA);
+        } else { x[i] = xs[i]; z[i] = zs[i]; y[i] = patcoBedY(clamp(a, -1200, 2200), L, yA); }   // the tunnels continue the approach grades
+        aa[i] = (x[i] - A[0]) * ux + (z[i] - A[1]) * uz;
+        if (i) sN[i] = sN[i - 1] + Math.hypot(x[i] - x[i - 1], z[i] - z[i - 1]);   // plan length, as the stops were measured
+      }
+      // round the approach grades' vertical curves (the span and the anchorages keep the deck's own profile)
+      for (let pass = 0; pass < 3; pass++) {
+        const y0 = y.slice();
+        for (let i = 3; i < N - 3; i++) if (near(i) && (aa[i] < -36 || aa[i] > L + 36) && aa[i] > -640) { let m = 0, c = 0; for (let j = -3; j <= 3; j++) if (near(i + j)) { m += y0[i + j]; c++; } y[i] = m / c; }   // only over the window's own samples
+      }
+      const toS = (sOld) => { for (let i = 0; i < N - 1; i++) if (so[i + 1] >= sOld) return sN[i] + (sN[i + 1] - sN[i]) * (sOld - so[i]) / ((so[i + 1] - so[i]) || 1e-9); return sN[N - 1]; };
+      const aOf = (sOld) => { for (let i = 0; i < N - 1; i++) if (so[i + 1] >= sOld) return aa[i]; return aa[N - 1]; };
+      const mouthP = aOf(c.vis[0]), mouthC = side > 0 ? aOf(c.vis[1]) : Math.min(aOf(c.vis[1]), 1620.0);   // the north mouth short of OSM's portal: past it the westbound road converges on the track and its 26 m box would stand on the road (measured clear against the wide roads and footprints)
+      for (let i = 0; i < N; i++) hid[i] = (!near(i) || aa[i] < mouthP - PATCO_COVER || aa[i] > mouthC + PATCO_CAM_IN) ? 1 : 0;   // the probes' view of it; the cars test their own ends by arc length (sFaceP, sFaceC)
+      const st = {};
+      for (const k in c.s) st[k] = toS(c.s[k]);
+      const sAtA = (a0) => { for (let i = 0; i < N - 1; i++) if (near(i) && near(i + 1) && (aa[i] - a0) * (aa[i + 1] - a0) <= 0) return sN[i] + (sN[i + 1] - sN[i]) * (a0 - aa[i]) / ((aa[i + 1] - aa[i]) || 1e-9); return a0 < 0 ? sN[0] : sN[N - 1]; };
+      PATCO_T.push({ d: c.d, h: c.h, side, n: N, x, y, z, s: sN, a: aa, hid, st, mouthP, mouthC, L, near, sFaceP: sAtA(mouthP), sFaceC: sAtA(mouthC) });
+    }
+    PATCO_T.sort((p, q) => p.d - q.d);   // index = direction_id
+    return PATCO_T;
+  }
+  // the open cut at the Philadelphia mouth, out of the drawn ground (elPortalClipGround): convex quads 2.4 m either side
+  // of each track wherever its bed lies under the ground, from the mouth east
+  let PATCO_CUTS = null;
+  const patcoCutAt = (x, z) => patcoCuts().some((c) => x >= c.bounds[0] && x <= c.bounds[1] && z >= c.bounds[2] && z <= c.bounds[3] && pointInPoly(x, z, c.poly));
+  function patcoCuts() {
+    if (PATCO_CUTS) return PATCO_CUTS;
+    PATCO_CUTS = [];
+    for (const t of patcoTracks()) {
+      let prev = -1;
+      for (let i = 0; i < t.n; i++) {
+        const inCut = t.near(i) && t.a[i] >= t.mouthP - 0.5 && t.a[i] < -400 && t.y[i] < siteY(t.x[i], t.z[i], 'ground') - 0.3;
+        if (inCut && prev >= 0) {
+          const dx = t.x[i] - t.x[prev], dz = t.z[i] - t.z[prev], l = Math.hypot(dx, dz) || 1, ox = -dz / l * 2.4, oz = dx / l * 2.4;
+          const poly = [[t.x[prev] + ox, t.z[prev] + oz], [t.x[i] + ox, t.z[i] + oz], [t.x[i] - ox, t.z[i] - oz], [t.x[prev] - ox, t.z[prev] - oz]];
+          PATCO_CUTS.push({ poly, bounds: streetBounds(poly) });
+          noSow(poly);   // no tufts sown on the removed ground (review)
+        }
+        prev = inCut ? i : -1;
+      }
+    }
+    return PATCO_CUTS;
+  }
   function elPortalClipGround(g) {
     g.computeBoundingBox();
     const box=g.boundingBox,bounds=[box.min.x,box.max.x,box.min.z,box.max.z];
     const cuts=elTrackProfiles().filter(p=>streetOverlap(bounds,p.bounds)).flatMap(p=>p.cuts)
-      .concat(GROUND_PITS.map(p=>({poly:p.ring,bounds:streetBounds(p.ring)})).filter(c=>streetOverlap(bounds,c.bounds)));   // Round 139: the excavations
+      .concat(GROUND_PITS.map(p=>({poly:p.ring,bounds:streetBounds(p.ring)})).filter(c=>streetOverlap(bounds,c.bounds)))   // Round 139: the excavations
+      .concat(patcoCuts().filter(c=>streetOverlap(bounds,c.bounds)));   // Round 141: PATCO's open cut at 5th Street
     if(!cuts.length)return g;
     const pos=g.attributes.position,idx=g.index,indices=[],extra={};
     for(const name of Object.keys(g.attributes))extra[name]=[];
@@ -15067,7 +15198,7 @@
       pose.position.set(x, y, z); pose.rotation.set(0, yaw, pitch, 'YXZ'); pose.updateMatrix();
       ties.setMatrixAt(i, pose.matrix);
     }
-    ties.instanceMatrix.needsUpdate = true;
+    ties.instanceMatrix.needsUpdate = true; ties.frustumCulled = false;   // the box's own sphere sits at the origin, so it culled from most views (Round 141 review)
     ties.name = 'El Cross Ties';
     ties.receiveShadow = true;
     groupCity.add(ties);
@@ -15448,6 +15579,117 @@
     railReady = true;
   });
 
+  let PATCO_STATS = null;
+  step('Laying the PATCO tracks', () => {   // Round 141: the track between the mouths, and what carries it
+    const T = patcoTracks();
+    if (!T.length) return;
+    const parts = [], railParts = [], ties = [];
+    const cBed = new THREE.Color(0x171d1b), cFoot = new THREE.Color(0x302a24), cHead = new THREE.Color(0x586469), cThird = new THREE.Color(0x444b47);
+    const cCon = new THREE.Color(0x4a4c48), cCope = new THREE.Color(0x5e625b), cDark = new THREE.Color(0x0a0b0c), cPier = new THREE.Color(0x44463f);
+    const boxAt = (sx, sy, sz, x, y, z, yaw, col) => { const g = new THREE.BoxGeometry(sx, sy, sz); g.rotateY(yaw); g.translate(x, y, z); parts.push({ geom: g, color: col }); };
+    const grd = (x, z) => groundMeshY(x, z) ?? siteY(x, z, 'ground');
+    const onDeck = (x, z) => OVP.el.some((c) => { const hw = c.w / 2 + 1.6; for (let i = 0; i + 1 < c.p.length; i++) { const p = c.p[i], q = c.p[i + 1], dx = q[0] - p[0], dz = q[1] - p[1], l2 = dx * dx + dz * dz || 1e-9, u = clamp(((x - p[0]) * dx + (z - p[1]) * dz) / l2, 0, 1); if (Math.hypot(p[0] + dx * u - x, p[1] + dz * u - z) < hw) return true; } return false; });
+    let trackM = 0, piers = 0;
+    for (const t of T) {
+      let i0 = -1, i1 = -1;
+      for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= t.mouthP - 6 && t.a[i] <= t.mouthC + PATCO_CAM_BOX) { if (i0 < 0) i0 = i; i1 = i; }
+      if (i0 < 0 || i1 - i0 < 4) continue;
+      const pts = [], ys = [], gs = [], as = [];
+      for (let i = i0; i <= i1; i++) { pts.push([t.x[i], t.z[i]]); ys.push(t.y[i]); gs.push(grd(t.x[i], t.z[i])); as.push(t.a[i]); }
+      const fr = elTrackFrames(pts);
+      // the track: ballast, the running rails, the third rail outboard, ties every 0.72 m; it ends just inside the Camden portal
+      const rEnd = as.findIndex((a) => a > t.mouthC + 2), rp = rEnd > 1 ? pts.slice(0, rEnd + 1) : pts, ry = ys.slice(0, rp.length), rf = elTrackFrames(rp);   // past the face, into the box
+      parts.push({ geom: elTrackRibbon(rp, ry, rf, 0, 1.47, 0.015, 0.045), color: cBed });
+      for (const sd of [-1, 1]) {
+        parts.push({ geom: elTrackRibbon(rp, ry, rf, sd * 0.7175, 0.095, 0.19, 0.225), color: cFoot });
+        railParts.push({ geom: elTrackRibbon(rp, ry, rf, sd * 0.7175, 0.035, 0.225, 0.35), color: cHead });
+        railParts.push({ geom: elTrackRibbon(rp, ry, rf, sd * 0.7175, 0.06, 0.35, 0.40), color: cHead });
+      }
+      railParts.push({ geom: elTrackRibbon(rp, ry, rf, t.side * 1.19, 0.1, 0.3, 0.45), color: cThird });
+      {
+        let st = 0, next = 0.36;
+        for (let i = 0; i + 1 < rp.length; i++) {
+          const ax = rp[i][0], az = rp[i][1], dx = rp[i + 1][0] - ax, dz = rp[i + 1][1] - az, L2 = Math.hypot(dx, dz);
+          if (L2 < 1e-6) continue;
+          const dy = ry[i + 1] - ry[i];
+          while (next < st + L2) { const u = (next - st) / L2; ties.push([ax + dx * u, ry[i] + dy * u + 0.12, az + dz * u, Math.atan2(-dz, dx), Math.atan2(dy, L2)]); next += 0.72; }
+          st += L2; trackM += L2;
+        }
+      }
+      // the approaches: a viaduct where the bed stands over 2.2 m above the ground, a retained fill under that, the cut's walls
+      // below the ground (the span and the anchorages carry the track on the bridge's own floor)
+      const cls = as.map((a, k) => (a >= -30.5 && a <= t.L + 30.5) ? 0 : ys[k] - gs[k] > 2.2 ? 1 : ys[k] - gs[k] >= -0.3 ? 2 : 3);
+      let k0 = 0;
+      for (let k = 1; k <= pts.length; k++) {
+        if (k < pts.length && cls[k] === cls[k0]) continue;
+        const k1 = Math.min(k, pts.length - 1), c = cls[k0];
+        if (c && k1 > k0) {
+          const ks = k0 > 0 && cls[k0 - 1] === 0 ? k0 - 1 : k0;   // a run after the anchorage starts at its face, not 4 m short (review)
+          const sp = pts.slice(ks, k1 + 1), sy = ys.slice(ks, k1 + 1), sg = gs.slice(ks, k1 + 1), sf = elTrackFrames(sp), zero = sp.map(() => 0);
+          if (c === 1) {
+            parts.push({ geom: elTrackRibbon(sp, zero, sf, 0, 2.2, sy.map((v) => v - 1.45), sy.map((v) => v - 0.01)), color: cCon });
+            for (const sd of [-1, 1]) parts.push({ geom: elTrackRibbon(sp, sy, sf, sd * 2.05, 0.15, -0.02, 1.05), color: cCope });
+          } else if (c === 2) {
+            parts.push({ geom: elTrackRibbon(sp, zero, sf, 0, 2.2, sg.map((v) => v - 0.8), sy.map((v) => v - 0.01)), color: cCon });
+          } else {
+            parts.push({ geom: elTrackRibbon(sp, zero, sf, 0, 2.2, sy.map((v) => v - 0.5), sy.map((v) => v - 0.01)), color: cCon });
+            for (const sd of [-1, 1]) {
+              const top = sg.map((v) => v + 0.45);
+              parts.push({ geom: elTrackRibbon(sp, zero, sf, sd * 2.35, 0.25, sy.map((v) => v - 0.5), top), color: cCon });
+              parts.push({ geom: elTrackRibbon(sp, top, sf, sd * 2.35, 0.32, 0, 0.15), color: cCope });
+            }
+          }
+        }
+        k0 = k1;   // runs share their boundary sample, so nothing opens between them
+      }
+      // the viaduct's piers, every 24 m, never on a street
+      {
+        let acc = 12;
+        for (let k = 0; k + 1 < pts.length; k++) {
+          const dx = pts[k + 1][0] - pts[k][0], dz = pts[k + 1][1] - pts[k][1], L2 = Math.hypot(dx, dz);
+          acc += L2;
+          if (acc < 24 || cls[k] !== 1) continue;
+          const x = pts[k][0], z = pts[k][1], top = ys[k] - 1.45, g = gs[k];
+          if (top - g < 1.5 || septaSnapRoad(x, z, 9.6) || onDeck(x, z)) continue;   // clear of a 16 m carriageway's width and of the elevated decks (review)
+          acc = 0; piers++;
+          boxAt(1.6, top - g + 0.8, 3.2, x, (top + g - 0.8) / 2, z, Math.atan2(-dz, dx), cPier);
+        }
+      }
+      // the Philadelphia mouth under 5th Street: a lintel, a roof over the first metres, its walls, a dark end
+      {
+        const kM = Math.max(1, as.findIndex((a) => a >= t.mouthP));
+        const x = pts[kM][0], z = pts[kM][1], dx = pts[kM + 1][0] - x, dz = pts[kM + 1][1] - z, l = Math.hypot(dx, dz) || 1, ex = dx / l, ez = dz / l, yaw = Math.atan2(-ez, ex), y0 = ys[kM];
+        boxAt(1.2, 0.7, 5.4, x, y0 + 5.4, z, yaw, cCope);
+        boxAt(7, 0.45, 5.0, x - ex * 3.5, y0 + 5.28, z - ez * 3.5, yaw, cCon);
+        for (const sd of [-1, 1]) boxAt(7, 5.3, 0.3, x - ex * 3.5 - ez * sd * 2.35, y0 + 2.4, z - ez * 3.5 + ex * sd * 2.35, yaw, cCon);
+        boxAt(0.3, 5.1, 4.4, x - ex * 6.8, y0 + 2.4, z - ez * 6.8, yaw, cDark);
+      }
+      // the Camden portal: the track runs into a covered box on the fill, long enough to swallow a whole car, its mouth dark
+      {
+        const kA = as.findIndex((a) => a >= t.mouthC), kB = as.findIndex((a) => a >= t.mouthC + PATCO_CAM_BOX);
+        if (kA > 0) {
+          const kE = kB > kA ? kB : pts.length - 1, sp = pts.slice(kA, kE + 1), sy = ys.slice(kA, kE + 1), sg = gs.slice(kA, kE + 1), sf = elTrackFrames(sp);
+          parts.push({ geom: elTrackRibbon(sp, sp.map(() => 0), sf, 0, 2.9, sg.map((v) => v - 0.6), sy.map((v) => v + 5.4)), color: cCon });
+          const x = sp[0][0], z = sp[0][1], dx = sp[1][0] - x, dz = sp[1][1] - z, l = Math.hypot(dx, dz) || 1, ex = dx / l, ez = dz / l;
+          boxAt(0.12, 4.6, 4.4, x - ex * 0.08, sy[0] + 2.4, z - ez * 0.08, Math.atan2(-ez, ex), cDark);
+        }
+      }
+    }
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const st = new THREE.Mesh(mergeColored(parts), mat);
+    st.castShadow = st.receiveShadow = true;
+    groupCity.add(st);
+    const rails = new THREE.Mesh(mergeColored(railParts), new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.42, roughness: 0.52 }));
+    rails.receiveShadow = true;
+    groupCity.add(rails);
+    const tm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.24, 0.14, 2.6), new THREE.MeshLambertMaterial({ color: 0x302820 }), Math.max(1, ties.length));
+    const pose = new THREE.Object3D();
+    ties.forEach(([x, y, z, yaw, pitch], i) => { pose.position.set(x, y, z); pose.rotation.set(0, yaw, pitch, 'YXZ'); pose.updateMatrix(); tm.setMatrixAt(i, pose.matrix); });
+    tm.count = ties.length; tm.instanceMatrix.needsUpdate = true; tm.receiveShadow = true; tm.frustumCulled = false;   // the box's own sphere sits at the origin (review)
+    groupCity.add(tm);
+    freeOnUpload(st.geometry); freeOnUpload(rails.geometry); freeOnUpload(tm.geometry);
+    PATCO_STATS = { trackM: Math.round(trackM), ties: ties.length, piers, cuts: patcoCuts().length, mouths: T.map((t) => ({ d: t.d, phl: +t.mouthP.toFixed(1), cam: +t.mouthC.toFixed(1) })) };
+  });
   step('Rolling out the SEPTA fleet', () => {
     terrainRoadGrid = null;   // build-only pavement near cut patches; release even without rail data
     if (!septaCanFetch) { btnTransit.style.display = 'none'; return; }
@@ -17052,10 +17294,10 @@
     if (!btnAmtrak) return;
     let n = 0;
     for (const p of amtrakMap.values()) if (!p.off && p.hx != null) n++;
-    const off = !AMTRAK.ok && AMTRAK.fails >= 3;
-    btnAmtrak.title = 'Amtrak Trains (K): ' + (off ? 'Feed Offline' : n ? n + (n === 1 ? ' Train Tracked' : ' Trains Tracked') : 'No Trains in the City');
+    const off = !AMTRAK.ok && AMTRAK.fails >= 3, np = patcoMap.size;   // PATCO's scheduled trains ride this layer (Round 141)
+    btnAmtrak.title = 'Trains (K): ' + (off ? 'Amtrak Feed Offline' : n ? n + (n === 1 ? ' Amtrak Train Tracked' : ' Amtrak Trains Tracked') : 'No Amtrak Trains in the City') + (np ? ', ' + np + ' PATCO Scheduled' : '');
     const cc = document.getElementById('amtrakCount');
-    if (cc) cc.textContent = off ? 'Offline' : n ? String(n) : '';
+    if (cc) cc.textContent = off && !np ? 'Offline' : (n + np) ? String(n + np) : '';
   }
   function amtrakCard(p) {
     const n = AMTRAK_CONSIST[p.kind].length, mph = Math.round(p.v / 0.44704);
@@ -17145,7 +17387,7 @@
     if (gone.length) { for (const g of gone) { const p = amtrakMap.get(g); amtrakMap.delete(g); if (pickedTrain === p) { pickedTrain = null; vehinfoEl.hidden = true; } } amtrakStatus(); }
     amtrakLoco.count = Math.min(counts[0], AMTRAK_CAP); amtrakAcela.count = Math.min(counts[1], AMTRAK_CAP * 2); amtrakCoach.count = Math.min(counts[2], AMTRAK_CAR_CAP); amtrakPin.count = np;
     for (const m of [amtrakLoco, amtrakAcela, amtrakCoach, amtrakPin]) flushInst(m, -1);
-    if (pickedTrain) {
+    if (pickedTrain && !pickedTrain.patco) {   // a PATCO card is kept by updatePatco
       amtrakCard(pickedTrain);
       _ssv.set(pickedTrain.hx, pickedTrain.hy + 5, pickedTrain.hz).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
@@ -17159,6 +17401,194 @@
   }
   if (btnAmtrak) btnAmtrak.addEventListener('click', toggleAmtrak);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) AMTRAK.nextT = 0; });
+
+  // ---------------------------------------------------------------- PATCO, scheduled (Round 141)
+  // PATCO publishes no live positions (no GTFS-realtime, no train tracker; its own minutes say the train data stays
+  // on a closed signal network), so its trains run from the published timetable (PATCO_DATA, bake_patco.py) and
+  // the card says so. A trip crossing the bridge runs from its Philadelphia-side stop (Franklin Square, or 8th and
+  // Market when it skips it) to its Camden-side stop (City Hall, or Broadway) between its two scheduled minutes, on
+  // a trapezoid (accelerating over the first PATCO_RAMP of the run, braking over the last), along patcoTracks();
+  // only the part between the mouths is drawn (the Round 20 rule: nothing underground). Consists are not in the
+  // timetable, so a stated rule sets them: six cars into the city in the morning peak and out of it in the evening
+  // peak, four through the day, two at night and on owl runs. The clock is the model's: live, the train is where the
+  // timetable puts it now; on a pinned clock or a lapse it runs on from the pinned minute. The trains ride the
+  // trains layer (K) with Amtrak's, share its card slot (pickedTrain, a record with `patco`), and keep the half-mile
+  // rule (Round 82). Outside the feed's dates the weekly pattern stands in and the card says Typical Timetable.
+  const PATCO_LEN = 20.42, PATCO_W = 3.05, PATCO_GAP = 1.0, PATCO_CAP = 8, PATCO_CAR_CAP = 48, PATCO_RED = '#bc0035', PATCO_RAMP = 0.15;
+  const PATCO_STOP = { 11: '8th and Market', 10: 'Franklin Square', 9: 'City Hall', 8: 'Broadway' };
+  const PATCO_S = { pinKey: '', drift: 0, lastT: 0, force: null, reconAt: 0, key: '', typical: false };
+  const patcoMap = new Map(), patcoPick = [], patcoPinPick = [];
+  let patcoCar = null, patcoPin = null, patcoReady = false;
+  function patcoCarGeom() {   // a rebuilt Budd/Vickers car: stainless, the red belt, a window band that glows at night; x along, y up from the rail top
+    const parts = [], L = PATCO_LEN, W = PATCO_W;
+    const box = (sx, sy, sz, cx, cy, cz, r, g, b, glow) => parts.push(septaColored(new THREE.BoxGeometry(sx, sy, sz).translate(cx, cy, cz), r, g, b, glow));
+    box(L - 2, 0.5, 2.5, 0, 0.95, 0, 0.12, 0.12, 0.13);                   // the underframe
+    for (const e of [-1, 1]) box(2.5, 0.85, 2.3, e * (L / 2 - 3.0), 0.45, 0, 0.10, 0.10, 0.11);   // the trucks
+    box(L, 0.95, W, 0, 1.675, 0, 0.50, 0.52, 0.55);                      // the fluted lower body
+    box(L - 0.1, 0.10, W + 0.04, 0, 1.94, 0, 0.012, 0.05, 0.296);         // the blue belt
+    box(L - 0.1, 0.14, W + 0.04, 0, 2.08, 0, 0.50, 0.0, 0.036);           // PATCO red
+    box(L, 1.55, W, 0, 2.925, 0, 0.56, 0.58, 0.61);                      // the upper body
+    box(L - 3.4, 0.95, W + 0.06, 0, 2.85, 0, 0.15, 0.17, 0.20, 1);        // the window band
+    for (const e of [-1, 1]) box(0.12, 1.0, 2.5, e * (L / 2 + 0.02), 2.85, 0, 0.15, 0.17, 0.20, 1);   // cab glass at each end
+    box(L - 0.8, 0.2, W - 0.4, 0, 3.8, 0, 0.44, 0.46, 0.48);               // the roof
+    for (const e of [-1, 1]) box(3.0, 0.12, 2.0, e * (L / 2 - 4.2), 3.96, 0, 0.40, 0.41, 0.43);   // the air conditioning housings
+    return septaMerge(parts);
+  }
+  const glyphPatco = (g) => {   // a PATCO car's face: the wide windshield, two headlights, the red belt
+    g.fillStyle = '#fdfbf6';
+    g.beginPath(); g.moveTo(62, 176); g.lineTo(62, 84); g.quadraticCurveTo(62, 48, 98, 48); g.lineTo(158, 48); g.quadraticCurveTo(194, 48, 194, 84); g.lineTo(194, 176); g.closePath(); g.fill();
+    g.fillStyle = '#1b2230'; g.fillRect(78, 66, 100, 42);
+    g.fillStyle = PATCO_RED; g.fillRect(62, 126, 132, 12);
+    g.fillStyle = '#ffd98a'; for (const x of [88, 168]) { g.beginPath(); g.arc(x, 154, 9, 0, Math.PI * 2); g.fill(); }
+  };
+  function patcoInit() {
+    patcoCar = new THREE.InstancedMesh(patcoCarGeom(), septaMats.body, PATCO_CAR_CAP);
+    patcoCar.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    patcoCar.count = 0; patcoCar.frustumCulled = false; patcoCar.castShadow = !isTouch;
+    patcoCar.userData.patcoCar = true;
+    for (let k = 0; k < PATCO_CAR_CAP; k++) patcoCar.setColorAt(k, _sc.setRGB(1, 1, 1));
+    patcoCar.instanceColor.needsUpdate = true;
+    groupCity.add(patcoCar);
+    patcoPin = pinMesh(pinTexture(PATCO_RED, '#fdfbf6', glyphPatco), PATCO_CAP, 'patcoPin');
+    patcoReady = true;
+  }
+  function patcoNowSec(now) {   // seconds after the model day's midnight
+    const dt = PATCO_S.lastT ? Math.min(1, (now - PATCO_S.lastT) / 1000) : 0;   // real time, capped at a second a frame (the Round 87 lesson)
+    PATCO_S.lastT = now;
+    if (PATCO_S.force != null) return PATCO_S.force;
+    // live: the HUD's own minute and the second within it, so the trains and the clock always agree (review: an elapsed-
+    // since-midnight reading went negative for the first hour of the autumn clock change)
+    if (clock.live) { PATCO_S.pinKey = ''; return clock.minutes * 60 + (Date.now() / 1000) % 60; }
+    // pinned: the trains run on through the pinned hour and start again from its minute (review: an unbounded drift
+    // emptied the bridge once it passed the day's last run, and a re-pinned minute took back the old drift)
+    const key = clock.y + '-' + clock.m + '-' + clock.d + ':' + clock.minutes;
+    if (key !== PATCO_S.pinKey) { PATCO_S.pinKey = key; PATCO_S.drift = 0; } else PATCO_S.drift += dt;
+    return clock.minutes * 60 + PATCO_S.drift % 3600;
+  }
+  function patcoServices(y, m, d) {   // the service bitmask for a date: the feed's own day, else the weekly pattern
+    const D = PATCO_DATA, t0 = Date.UTC(+D.feed.from.slice(0, 4), +D.feed.from.slice(5, 7) - 1, +D.feed.from.slice(8, 10));
+    const k = Math.round((Date.UTC(y, m - 1, d) - t0) / 86400000);
+    if (k >= 0 && k < D.days.length) return { mask: D.days[k], typical: false };
+    return { mask: D.week[(new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7], typical: true };
+  }
+  function patcoCars(svc, d, t) {   // the consist rule (the timetable does not carry one)
+    const h = (t % 86400) / 3600, wk = /weekday/i.test(svc);
+    if (wk && ((d === 0 && h >= 6.5 && h < 9.5) || (d === 1 && h >= 15.5 && h < 18.5))) return 6;
+    return h >= 6 && h < 22 ? 4 : 2;
+  }
+  function patcoRecon(sec) {
+    const D = PATCO_DATA, T = patcoTracks(), want = new Set();
+    const prev = new Date(Date.UTC(clock.y, clock.m - 1, clock.d) - 86400000), next = new Date(Date.UTC(clock.y, clock.m - 1, clock.d) + 86400000);
+    let typical = false;
+    for (const [yy, mm, dd, off] of [[clock.y, clock.m, clock.d, 0], [prev.getUTCFullYear(), prev.getUTCMonth() + 1, prev.getUTCDate(), 86400], [next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate(), -86400]]) {   // yesterday's late runs, and tomorrow's owls once a pinned hour runs past midnight
+      const sv = patcoServices(yy, mm, dd);
+      if (!off) typical = sv.typical;
+      const tS = sec + off;
+      for (let si = 0; si < D.svc.length; si++) {
+        if (!(sv.mask & (1 << si))) continue;
+        for (const d of [0, 1]) {
+          const tr = T[d];
+          if (!tr) continue;
+          for (const r of D.trips[si][d]) {
+            const code = r[2] || 0, tP = r[0], tC = r[1];
+            const t0 = d === 1 ? tP : tC, t1 = d === 1 ? tC : tP;
+            if (tS < t0 || tS > t1) continue;
+            const key = yy + '-' + mm + '-' + dd + ':' + si + ':' + d + ':' + t0;
+            want.add(key);
+            if (patcoMap.has(key)) continue;
+            const sP = tr.st[code & 1 ? '11' : '10'], sC = tr.st[code & 2 ? '8' : '9'];
+            patcoMap.set(key, { id: key, patco: true, d, off, t0, t1, s0: d === 1 ? sP : sC, s1: d === 1 ? sC : sP,
+              cars: code ? 2 : patcoCars(D.svc[si], d, t0), dest: tr.h === 'Philadelphia' ? 'Philadelphia' : 'Lindenwold',
+              next: PATCO_STOP[d === 1 ? (code & 2 ? '8' : '9') : (code & 1 ? '11' : '10')], hx: 0, hy: 0, hz: 0, pinY: 0, vis: false });
+          }
+        }
+      }
+    }
+    PATCO_S.typical = typical;
+    let gone = false;
+    for (const [k, p] of patcoMap) if (!want.has(k)) { patcoMap.delete(k); gone = true; if (pickedTrain === p) { pickedTrain = null; vehinfoEl.hidden = true; } }
+    if (gone || want.size) amtrakStatus();
+  }
+  const _pcA = { x: 0, y: 0, z: 0 }, _pcF = { x: 0, y: 0, z: 0 }, _pcR = { x: 0, y: 0, z: 0 };
+  function patcoAt(T, s, out) {   // the track's point at arc length s: x, the rail top's y, z; returns the sample index below it
+    let lo = 0, hi = T.n - 1;
+    if (s <= T.s[0]) { out.x = T.x[0]; out.y = T.y[0] + 0.4; out.z = T.z[0]; return 0; }
+    if (s >= T.s[hi]) { out.x = T.x[hi]; out.y = T.y[hi] + 0.4; out.z = T.z[hi]; return hi; }
+    while (hi - lo > 1) { const m = (lo + hi) >> 1; if (T.s[m] <= s) lo = m; else hi = m; }
+    const u = (s - T.s[lo]) / ((T.s[hi] - T.s[lo]) || 1e-9);
+    out.x = T.x[lo] + (T.x[hi] - T.x[lo]) * u; out.y = T.y[lo] + (T.y[hi] - T.y[lo]) * u + 0.4; out.z = T.z[lo] + (T.z[hi] - T.z[lo]) * u;
+    return u < 0.5 ? lo : hi;
+  }
+  function patcoRun(u) {   // the share of the run covered at u of its time: accelerate, cruise, brake
+    const r = PATCO_RAMP, v = 1 / (1 - r);
+    if (u <= 0) return 0; if (u >= 1) return 1;
+    if (u < r) return v * u * u / (2 * r);
+    if (u > 1 - r) return 1 - v * (1 - u) * (1 - u) / (2 * r);
+    return v * (u - r / 2);
+  }
+  function patcoCard(p) {
+    const until = Math.round((p.t1 % 86400) / 60);   // the run ends at the next stop
+    let html = '<span class="vroute" style="background:' + PATCO_RED + ';color:#fdfbf6">PATCO</span>' +
+      '<span class="vdest">' + septaEsc((p.d === 1 ? 'Eastbound to ' : 'Westbound to ') + p.dest) + '</span>' +
+      '<div class="vmeta">' + septaEsc('Scheduled, Shown With ' + p.cars + ' Cars') + '</div>' +
+      '<div class="vmeta">' + septaEsc('Next Stop: ' + p.next + ', ' + fmtTime(until)) + '</div>' +
+      '<div class="vmeta">' + (PATCO_S.typical ? 'Typical Timetable, Not Live' : 'Timetable Position, Not Live') + '</div>' +
+      '<a class="vlink" href="https://www.ridepatco.org/schedules/schedules.asp" target="_blank" rel="noopener">PATCO Schedules</a>';
+    cardSet(p, html);
+  }
+  function trainCard(p) { if (p.patco) patcoCard(p); else amtrakCard(p); }
+  function updatePatco(now, dt) {
+    if (!patcoReady) { if (septaMats.body && typeof PATCO_DATA !== 'undefined' && PATCO_DATA && patcoTracks().length === 2) patcoInit(); if (!patcoReady) return; }
+    const sec = patcoNowSec(now);
+    if (!AMTRAK.on) { if (patcoCar.count || patcoPin.count) { patcoCar.count = 0; patcoPin.count = 0; patcoCar.instanceMatrix.needsUpdate = true; patcoPin.instanceMatrix.needsUpdate = true; } return; }
+    const ckey = clock.y + '-' + clock.m + '-' + clock.d;
+    if (now >= PATCO_S.reconAt || ckey !== PATCO_S.key) { PATCO_S.reconAt = now + 1000; PATCO_S.key = ckey; patcoRecon(sec); }
+    const T = patcoTracks(), L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]), ux = (BFB_B[0] - BFB_A[0]) / L, uz = (BFB_B[1] - BFB_A[1]) / L;
+    _aqB.copy(camera.quaternion);
+    let nc = 0, np = 0;
+    for (const p of patcoMap.values()) {
+      const tr = T[p.d], u = ((sec + p.off) - p.t0) / ((p.t1 - p.t0) || 1), sHead = p.s0 + (p.s1 - p.s0) * patcoRun(u), dir = Math.sign(p.s1 - p.s0) || 1;
+      p.vis = false;
+      let front = false;
+      for (let k = 0; k < p.cars && nc < PATCO_CAR_CAP; k++) {
+        const sc = sHead - dir * (k * (PATCO_LEN + PATCO_GAP) + PATCO_LEN / 2);
+        // drawn from PATCO_COVER m inside the Philadelphia mouth (the ground hides it there) until its whole length is inside
+        // a Camden box: by arc length from each face, the car's own ends (review: the nearest sample's flag let a nose out)
+        if (sc < tr.sFaceP - PATCO_COVER || sc > tr.sFaceC + PATCO_LEN / 2 + 0.3) continue;
+        // posed on its truck centres, not its ends, so it sits on the rails over the grade breaks (review: 0.28 m of float)
+        patcoAt(tr, sc + dir * (PATCO_LEN / 2 - 3), _pcF); patcoAt(tr, sc - dir * (PATCO_LEN / 2 - 3), _pcR);
+        const cx = (_pcF.x + _pcR.x) / 2, cy = (_pcF.y + _pcR.y) / 2, cz = (_pcF.z + _pcR.z) / 2;
+        if (!insideLimit(cx, cz) || !nearCam(cx, cy, cz)) continue;   // the half-mile rule (Round 82)
+        const fx = _pcF.x - _pcR.x, fz = _pcF.z - _pcR.z;
+        _fe.set(0, Math.atan2(-fz, fx), Math.atan2(_pcF.y - _pcR.y, Math.hypot(fx, fz)), 'YZX');
+        _fq.setFromEuler(_fe); _sp.set(cx, cy, cz); _ss.set(1, 1, 1); _sm.compose(_sp, _fq, _ss);
+        patcoCar.setMatrixAt(nc, _sm); patcoPick[nc] = p; nc++;
+        p.vis = true;
+        if (!front) { front = true; patcoAt(tr, sc + dir * PATCO_LEN / 2, _pcA); p.hx = _pcA.x; p.hy = _pcA.y; p.hz = _pcA.z; }   // the pin over the car's nose
+      }
+      if (front && np < PATCO_CAP) {   // the badge over the leading drawn car, above the walkway and the trusses on the span
+        const ta = ((p.hx - BFB_A[0]) * ux + (p.hz - BFB_A[1]) * uz) / L;
+        p.pinY = Math.max(p.hy + 6, ta >= 0 && ta <= 1 ? bfbDeckY(ta) + 12 : -1e9);
+        _sp.set(p.hx, p.pinY, p.hz);
+        const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190) * pinRise(p, now);
+        _ss.set(aps, aps, aps); _sm.compose(_sp, _aqB, _ss);
+        patcoPin.setMatrixAt(np, _sm); patcoPinPick[np] = p; np++;
+      }
+    }
+    patcoCar.count = nc; patcoPin.count = np;
+    flushInst(patcoCar, -1); flushInst(patcoPin, -1);
+    if (pickedTrain && pickedTrain.patco) {
+      const p = pickedTrain;
+      if (!p.vis) { if (!p.goneT) p.goneT = now; else if (now - p.goneT > 2000) { pickedTrain = null; vehinfoEl.hidden = true; return; } } else p.goneT = 0;
+      patcoCard(p);
+      _ssv.set(p.hx, p.hy + 5, p.hz).project(camera);
+      if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
+      else {
+        vehinfoEl.style.opacity = '1';
+        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      }
+    }
+  }
 
   // ---------------------------------------------------------------- traffic
   // Typical vehicle traffic: synthesized cars at PennDOT's measured street
@@ -20924,7 +21354,7 @@
     // shadow map (autoUpdate is off): vehicles moving through the box get a
     // fresh depth pass every 4th frame; a changed static caster set (docks
     // arriving with the first Indego poll) gets one immediately
-    const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0) || (amtrakReady && AMTRAK.on && amtrakCoach.count > 0);
+    const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0) || (amtrakReady && AMTRAK.on && amtrakCoach.count > 0) || (patcoReady && AMTRAK.on && patcoCar.count > 0);
     const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + marketTentN * 16777216 + (movers ? 1 << 30 : 0)
       + markerDrawnN * 4294967296 + (closuresReady && barrelMesh ? (barrelMesh.count + coneMesh.count) * 8796093022208 : 0);   // bikes cast too, and a market opening its tents; movers switching off needs one last redraw; the posts, plinths and drums come and go with the half mile (Round 82)
     if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
@@ -20941,6 +21371,7 @@
     updateFlights(now, dt);
     updateShips(now, dt);
     updateAmtrak(now, dt);
+    updatePatco(now, dt);
     updateTraffic(now, dt);
     updateLights(now);
     updateLightsTheme(now, dt);
@@ -21048,7 +21479,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOcc: () => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

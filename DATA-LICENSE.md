@@ -35,6 +35,7 @@ Round 87) links to https://www.openstreetmap.org/copyright. That link must stay 
 the files above must keep this notice if they are redistributed.
 
 | `rail_amtrak.json` | `bake_rail.py` | Overpass: the `railway=rail` ways Amtrak operates over the far-ring box and the Northeast Corridor and Keystone Corridor ways by name (Round 80), the track the live trains ride and the drawn corridor |
+| `patco.json` | `fetch_patco.py`, `bake_patco.py` | Overpass: the `railway=subway` ways PATCO operates between 8th and Market and Broadway (Round 141), the track its scheduled trains ride over the Ben Franklin Bridge |
 
 ## City of Philadelphia open data (CC-BY 4.0 unless the dataset says otherwise)
 
@@ -116,7 +117,10 @@ the Open Data Commons Attribution License, ODC-By 1.0, which asks for prominent 
 the credit line and the About panel name Amtraker; philly3d.com keeps a copy of the trains
 near the city refreshed every thirty seconds, the page pulls Amtraker itself when that copy
 is stale; Amtrak is a registered service mark of the National Railroad Passenger Corporation
-and the page is unaffiliated), ESPN's public team schedules for the four Philadelphia teams,
+and the page is unaffiliated), PATCO's timetable from its public GTFS feed (the permalink its developer
+page links, www.ridepatco.org/developers; no licence is stated there or in the Mobility Database's entry
+mdb-3035; baked into the page at each build, the trains shown where the schedule puts them and labelled
+scheduled, never live; PATCO is a service of the Delaware River Port Authority and the page is unaffiliated), ESPN's public team schedules for the four Philadelphia teams,
 read by the page to know a game day (nothing stored; the page is unaffiliated), SEPTA's
 live v2 trips, stops and elevator feeds and its Arrivals departure boards, read when a stop or
 station card is open (nothing stored), the National Weather Service's active alerts (public domain,

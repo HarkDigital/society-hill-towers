@@ -6602,3 +6602,77 @@ Wildey Street skins glowed. The ground path now lights only faces turned up. (4)
 specks on lit ground: they take the patch in a 'blade' mode. (5, 6) Six GPU harnesses (buildings, City Hall,
 glass optics, window interiors, facade roofline, environment) cut the facade hook or surfTexPatch out of app.js
 and threw on the new call; each now cuts `lampLightPatch` and stubs `lampMapU`, and all six pass in the pane.
+
+## Round 141 — scheduled PATCO trains over the Ben Franklin Bridge (Sep 23)
+
+Mike asked whether the PATCO trains over the bridge could be tracked. A research workflow (official feeds, third
+parties, direct probes, a skeptic) found no live source at all: no GTFS-realtime, no JSON behind PATCO's site or
+app, nothing on the registries, the "live" third-party trackers schedule-based or rider-sourced; PATCO's own advisory
+committee minutes say the train data stays on a closed signal network, with real-time "still being explored" into
+2026. Mike: "yes, add the scheduled PATCO trains on the bridge".
+
+Data. `fetch_patco.py` takes PATCO's public GTFS (the permalink its developer page links, feed 19, valid Sep 21 to
+Dec 31 2026) and the OSM ways PATCO operates between 8th and Market and Broadway (Overpass, `out geom`, a generic
+User-Agent). `bake_patco.py` stitches the two main tracks by shared end nodes (the crossovers, spurs and yard ways
+dropped; right-hand running confirmed by `railway:preferred_direction`), keeps each from 150 m past 8th and Market to
+150 m past Broadway with tunnel, bridge and covered flags, projects the four stops on, reduces every bridge-crossing
+trip to its two bracketing minutes (Franklin Square or 8th and Market, City Hall or Broadway) and resolves the
+calendar to a service mask a day with a swap-day repair: feed 19's Sep 26 adds the Bike MS timetable and removes
+194 Sunday, which does not run that Saturday, so a literal reading ran both (114 duplicate trips); a service added on
+a date that shares over a quarter of its trips with a base service running that date now replaces it. 9.5 KB.
+
+Track. OSM seats the tracks 11.9 m north and 15.3 m south of the model's bridge axis, which is the roadway and the
+truss line, so `patcoTracks()` re-seats them at 17.75 m either side on the span and through the anchorages (the floor
+outboard of the trusses, under the walkway, as on the real bridge) and eases back to OSM over the approaches. The bed
+follows the deck's floor on the span (`bfbDeckY`, now the bridge block's own profile too) and a profile on the
+approaches: out of the 5th Street mouth at 6.2 %, level over I-95 and its ramps, down to the anchorage; on the Camden
+side down to the portals. 'Laying the PATCO tracks' lays ballast, rails, a third rail and 6,363 ties over 4.6 km,
+a viaduct with 72 piers (none on a street) where the bed stands over 2.2 m, a retained fill under that, and a walled
+cut with a lintelled, dark mouth at 5th Street (18 cut quads out of the drawn ground through `elPortalClipGround`);
+Camden's ground and roads leave no room for a true below-grade mouth, so the tracks run into covered portal boxes.
+
+The bridge had to make room: a car is about 3.8 m tall and the walkway was 3.1 m over the floor, so the walkways,
+their rails and lamps rise 1.5 m (0.2 m over a car's roof); the lower tower legs split so the track and walkway pass
+under the upper legs; the first tower strut ends inside the cable planes; each anchorage portal pier became an outer
+pier, a lintel over the track and a floor block in the landward half; the floor runs full width through the
+anchorages.
+
+Trains. A trip crossing the bridge runs between its two scheduled minutes on a trapezoid (accelerating over the first
+15 %, braking over the last) along its track, drawn only between the mouths and PATCO_COVER 25 m into the Philadelphia
+tunnel (the ground hides that part, so a train slides in) and hidden once its tail is inside a Camden box. Consists
+are not in the timetable, so a stated rule sets them: six cars into the city in the morning peak and out of it in the
+evening peak, four through the day, two at night and on owl runs. The clock is the model's: live, a train is where
+the timetable puts it now; on a pinned clock it runs on from the pinned minute. The cars (stainless, the blue and
+PATCO-red belts, a window band that glows after dark) ride the trains layer (K) with Amtrak's, keep the half-mile
+rule, carry a red pin with a car's face, and open a card: "Westbound to Philadelphia", "Scheduled, Shown With 6
+Cars", "Next Stop: Franklin Square, 8:01 AM", "Timetable Position, Not Live", a PATCO Schedules link. Outside the feed's
+dates the weekly pattern stands in and the card says Typical Timetable. The layer row is now "Trains", its count
+Amtrak's tracked trains plus PATCO's running ones. A pre-existing bug fixed on the way: five pick branches (closures,
+markers and art, the screen-space closure and marker fallbacks, the trees) left `pickedTrain` set, so with a train
+card open, tapping one of those opened its card and the next frame put the train's back.
+
+Verified in the pane at 8:00 am (a six-car westbound mid-span on the north track under the walkway, its pin over the
+trusses, the card) and 9:30 pm (the window band lit), with captures of the Philadelphia viaduct, the cut and its
+mouth, and both Camden portals; `__dbg.patcoCheck()`: the bed on the span exactly the floor's top, the walkway 0.205 m
+over a car's roof. `tests/test_patco.py`.
+
+The round's adversarial review (four lenses: the schedule, the geometry, the bridge, the integration; a skeptic per
+finding, with node replays against the real patco.json and the packed roads) confirmed fourteen findings, all fixed
+before shipping. The clock: on a pinned clock the drift grew without bound and the bridge emptied once it passed the
+day's last run (and nothing looked at tomorrow's owls), a re-pinned minute took back the old drift, and the live
+seconds, measured from a midnight the tz helper puts an hour off on the autumn change, went negative for that hour.
+Now the live clock is the HUD's own minute plus the second within it, a pinned clock's trains run through its hour
+and start again from its minute, and the recon also reads tomorrow's service. Camden: a 3.5 to 4 m gap between the
+anchorage and the viaduct (a run following the anchorage now starts at its face); the north track ran along the edge
+of the 16 m westbound road ribbon and its portal box stood on it (the north track is now eased 3 m north of OSM's
+line and its mouth is at 1,620 m along, measured clear of every wide road and footprint); its rails stopped 4.7 m
+short of the box; a westbound car showed 3 m of nose outside the box (the cars now test their own ends by arc length
+from each face); and the approach smoothing read the tunnels' flat -35.9 m beds past the window and dove the north
+box's roof (the tunnels now continue the grades, and the smoothing reads only the window). Elsewhere: the cut was
+known only to the ground mesh, so tufts floated over it and a footway was drawn across it (the cut now keeps the
+sow, the trees and the narrow ways off); piers stood inside 16 m carriageways and through the elevated I-95 decks
+(a pier now clears a road centreline by 9.6 m and every deck's width); the cars rode 0.28 m over the rails at the
+span's grade breaks (they now sit on their truck centres); the ties' instanced mesh was frustum-culled against the
+origin and vanished from most views, and so were the El's since it was built; and a bus opened from search left a
+train card's record set, so the train card took the slot back. Measured after: the walkway 0.205 m over a car's roof,
+the bed on the span exactly the floor's top, 58 piers, 6,343 ties, 4.57 km of track.
