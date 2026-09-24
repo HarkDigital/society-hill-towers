@@ -1,0 +1,17 @@
+{
+  "appId": "com.philly3d.app",
+  "appName": "Philly3D",
+  "webDir": "www",
+  "appendUserAgent": "Philly3DApp",
+  "backgroundColor": "#161a1e",
+  "ios": {
+    "contentInset": "never",
+    "scheme": "capacitor"
+  },
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

@@ -6952,3 +6952,22 @@ and pagehide, and a hidden tab's timer no longer erases the one in front; www.ph
 had lost its worker and Copy Link its query); only the app rewrites share links, so the dev server shares its own; the
 app marker is tested before the dev-server test; the overlay after a second loss reloads on a tap in the app. Left for
 Mike's go, since they are VPS edits: CORS on concerts.json and lightning.json, and exposing the Date header on the feeds.
+
+## Round 156 — the Capacitor project (Sep 24)
+
+Mike: "yes to the server change, set up the Capacitor project". The server: concerts.json and lightning.json now answer
+any origin (the app's are capacitor://localhost and https://localhost), and every feed that did already (septa, ais,
+amtrak, closures, lights, adsb) exposes its Date header, so the app reads the server's clock; tested, reloaded, backed up
+to /root/philly3d.vhost.bak.20260924151152, and ops/philly3d.vhost.live is the live file again (it had lacked the septa
+and ais blocks).
+
+The app lives in app/, beside the page and apart from it (the page's build stays npm-free): Capacitor 8.5.2 with the App
+plugin, app id com.philly3d.app, `appendUserAgent: 'Philly3DApp'` (the marker the page's IN_APP reads), the https scheme
+on Android. `npm run sync` copies the built page into www/index.html and both native projects. Checked in Capacitor's own
+source rather than taken on trust: iOS already reloads a killed web content process and sends other sites and
+window.open to Safari; Android's default answer to a killed renderer crashes the app, so MainActivity answers true and
+recreates the activity; Android asks for coarse and fine location at run time, so the manifest declares both, and iOS
+has its location prompt text. Icons and splash come from the brand mark (scripts/make-assets.py, then @capacitor/assets:
+74 Android, 7 iOS). The page hides the screenshot button in the app where the web view has no share sheet (Android).
+node_modules and the build folders are marked for Dropbox to skip. Building needs Xcode, Android Studio and the two
+developer accounts, none of them on this Mac yet: app/README.md.

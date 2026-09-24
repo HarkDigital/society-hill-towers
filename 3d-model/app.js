@@ -21589,6 +21589,8 @@
   // --- screenshot: the GL frame alone (no HUD) with a small stamp, offered to
   // the share sheet on touch where files are shareable, saved as a download elsewhere
   const btnShot = document.getElementById('btnShot');
+  // Round 155: inside the app a web view without the share sheet (Android's) cannot save the image through <a download> either
+  if (IN_APP && !(navigator.share && navigator.canShare)) btnShot.style.display = 'none';
   btnShot.addEventListener('click', () => {
     if (!veil.classList.contains('hidden')) return;
     frame(performance.now(), true);          // a fresh render, read back in this same tick (no preserveDrawingBuffer)
