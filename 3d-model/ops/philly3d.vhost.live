@@ -46,6 +46,7 @@ server {
         proxy_cache_lock on;
         proxy_hide_header Set-Cookie;
         add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
         add_header Cache-Control no-store always;
     }
 
@@ -62,6 +63,7 @@ server {
         gzip_static on;
         add_header Cache-Control "public, max-age=120" always;
         add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
     }
 
     # the Amtrak trains near the city, baked every 30 s by /opt/philly3d/amtrak_bake.py
@@ -70,6 +72,7 @@ server {
         gzip_static on;
         add_header Cache-Control "public, max-age=15" always;
         add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
     }
 
     # BOMA Philadelphia's illumination calendar, baked twice a day by
@@ -78,6 +81,42 @@ server {
         gzip_static on;
         add_header Cache-Control "public, max-age=600" always;
         add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
+    }
+
+    # SEPTA TransitViewAll, baked every 10 s by /opt/philly3d/septa_bake.py (ops/README section 3):
+    # 10 s against the bake; the page treats a t older than 90 s as baker down and falls back
+    # to SEPTA itself
+    location = /septa.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=10" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
+    }
+
+    # the AIS fleet on the rivers, written every 4 s by /opt/philly3d/ais_relay.py (ops/README
+    # section 4): 10 s against the write; the page treats a t older than 60 s as relay down and
+    # falls back to its own socket
+    location = /ais.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=10" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
+    }
+
+    # the concert placards (ops/concerts_bake.py, every 15 min) and the lightning (ops/lightning_relay.py): readable from the
+    # Capacitor app (capacitor://localhost, https://localhost), Round 155
+    location = /concerts.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=60" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
+    }
+    location = /lightning.json {
+        gzip_static on;
+        add_header Cache-Control "public, max-age=10" always;
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Expose-Headers Date always;
     }
 
     location / {
