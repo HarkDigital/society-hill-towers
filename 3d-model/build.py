@@ -186,7 +186,8 @@ data_total = sum(len(js.encode("utf-8")) for _, js in DATA_PARTS)
 data_html, done = [], 0
 for label, js in DATA_PARTS:
     done += len(js.encode("utf-8"))
-    data_html.append(f"<script>\n{js}</script>\n<script>PG({done}, {data_total})</script>")
+    # data-blob: the page removes these once its build is done (Round 153: their 27 MB of text outlived their values)
+    data_html.append(f"<script data-blob>\n{js}</script>\n<script data-blob>PG({done}, {data_total})</script>")
 data_js = "\n".join(data_html)
 
 # brand icons inlined as data: URIs in the head (brand/make_brand.py fills dist/)

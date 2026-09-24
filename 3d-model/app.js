@@ -1458,6 +1458,7 @@
   // the barycentric blend of the three corner normals, so a sheet shades like the ground under it
   function groundPlaneN(G, i, j, side, u, v, out) {
     const a = j * (G.nx + 1) + i, b = a + 1, c = a + G.nx + 1, d = c + 1, N = G.nrm;
+    if (!N) { out[0] = 0; out[1] = 1; out[2] = 0; return out; }   // Round 153: the normals are released once the build is done
     let wa = 0, wb, wc, wd = 0;
     if (side === 0) { wa = 1 - u - v; wb = u; wc = v; } else { wd = u + v - 1; wb = 1 - v; wc = 1 - u; }
     let nx = N[a * 3] * wa + N[b * 3] * wb + N[c * 3] * wc + N[d * 3] * wd;
@@ -1667,7 +1668,7 @@
             const a = j * (nx + 1) + i, b = a + 1, cc = a + nx + 1, d = cc + 1;
             pos.push(xa, ys[a] + yOff, za, xa, ys[cc] + yOff, zb, xb, ys[b] + yOff, za);
             pos.push(xb, ys[b] + yOff, za, xa, ys[cc] + yOff, zb, xb, ys[d] + yOff, zb);
-            for (const vi of [a, cc, b, b, cc, d]) nor.push(N[vi * 3], N[vi * 3 + 1], N[vi * 3 + 2]);
+            for (const vi of [a, cc, b, b, cc, d]) if (N) nor.push(N[vi * 3], N[vi * 3 + 1], N[vi * 3 + 2]); else nor.push(0, 1, 0);   // Round 153: after the build the normals are gone
             tris += 2;
             continue;
           }
@@ -10275,6 +10276,7 @@
       // strip whose hole it fills, so it is searched first there
       registerGround(g, x0, x1, z0, z1, nx, nz, hole, skip, cell);
       const m = new THREE.Mesh(elPortalClipGround(g), col ? woodGroundMat : farGroundMat);
+      freeOnUpload(m.geometry);   // Round 153: never raycast; the registry keeps its own heights (G.ys) and, until the build ends, its normals
       m.matrixAutoUpdate = false;
       groupCity.add(m);
     };
@@ -10677,9 +10679,9 @@
     const crossingRoadNear = (x, z, r, ux, uz) => {
       const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
       for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
-        const a = septaRoadGrid.get(cx2 + ':' + cz2);
-        if (!a) continue;
-        for (let i = 0; i < a.length; i += 4) {
+        const [q0, q1] = septaRoadCell(cx2, cz2), a = SRG.seg, ids = SRG.ids;
+        for (let q = q0; q < q1; q++) {
+          const i = ids[q] * 4;
           const ax = a[i], az = a[i + 1], dx = a[i + 2] - ax, dz = a[i + 3] - az;
           const L2 = dx * dx + dz * dz || 1e-9;
           let tt = ((x - ax) * dx + (z - az) * dz) / L2;
@@ -13827,25 +13829,51 @@
   // corners, both of which parked buses inside buildings. Fed by all three road
   // passes (core / wide / far) with drivable classes, queried per vehicle a few
   // times a second and smoothed.
-  const septaRoadGrid = new Map();
+  // Round 153 (the phones' memory): the grid was a Map of 36 m cells, each a JS array holding a copy of every segment whose
+  // bounding box touched it, about 717,000 entries and 65 to 75 MB of heap on a phone. Now the road passes append the
+  // segments to one Float64Array, and the first read freezes a dense cell index over the data's own extent (a count pass,
+  // a prefix sum, a fill pass: every segment registered in the same cells as before, so every read sees the same segments
+  // in the same order), about 7 MB. A write after the freeze (none happens today) unfreezes it for the next read.
   const SEPTA_RG_CELL = 36;
+  const SRG = { seg: new Float64Array(4 * 65536), n: 0, off: null, ids: null, gx0: 0, gz0: 0, w: 0, h: 0, freezes: 0 };
   function septaRoadAdd(ax, az, bx, bz) {
-    const x0 = Math.floor(Math.min(ax, bx) / SEPTA_RG_CELL), x1 = Math.floor(Math.max(ax, bx) / SEPTA_RG_CELL);
-    const z0 = Math.floor(Math.min(az, bz) / SEPTA_RG_CELL), z1 = Math.floor(Math.max(az, bz) / SEPTA_RG_CELL);
-    for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) {
-      const key = gx + ':' + gz;
-      let a = septaRoadGrid.get(key);
-      if (!a) { a = []; septaRoadGrid.set(key, a); }
-      a.push(ax, az, bx, bz);
+    if (SRG.n * 4 + 4 > SRG.seg.length) { const nb = new Float64Array(SRG.seg.length * 2); nb.set(SRG.seg); SRG.seg = nb; }
+    SRG.seg.set([ax, az, bx, bz], SRG.n * 4); SRG.n++;
+    SRG.off = null;
+  }
+  function septaRoadFreeze() {
+    const S = SRG.seg, n = SRG.n, C = SEPTA_RG_CELL;
+    let gx0 = Infinity, gx1 = -Infinity, gz0 = Infinity, gz1 = -Infinity;
+    for (let k = 0; k < n; k++) {
+      const o = k * 4;
+      gx0 = Math.min(gx0, Math.floor(Math.min(S[o], S[o + 2]) / C)); gx1 = Math.max(gx1, Math.floor(Math.max(S[o], S[o + 2]) / C));
+      gz0 = Math.min(gz0, Math.floor(Math.min(S[o + 1], S[o + 3]) / C)); gz1 = Math.max(gz1, Math.floor(Math.max(S[o + 1], S[o + 3]) / C));
     }
+    if (!n) { gx0 = gx1 = gz0 = gz1 = 0; }
+    const w = gx1 - gx0 + 1, h = gz1 - gz0 + 1, off = new Uint32Array(w * h + 1);
+    const each = (fn) => { for (let k = 0; k < n; k++) { const o = k * 4, x0 = Math.floor(Math.min(S[o], S[o + 2]) / C) - gx0, x1 = Math.floor(Math.max(S[o], S[o + 2]) / C) - gx0, z0 = Math.floor(Math.min(S[o + 1], S[o + 3]) / C) - gz0, z1 = Math.floor(Math.max(S[o + 1], S[o + 3]) / C) - gz0; for (let gx = x0; gx <= x1; gx++) for (let gz = z0; gz <= z1; gz++) fn(gz * w + gx, k); } };
+    each((c) => { off[c + 1]++; });
+    for (let c = 0; c < w * h; c++) off[c + 1] += off[c];
+    const ids = new Uint32Array(off[w * h]), fill = off.slice(0, w * h);
+    each((c, k) => { ids[fill[c]++] = k; });
+    SRG.seg = S.slice(0, n * 4);   // the slack goes
+    Object.assign(SRG, { off, ids, gx0, gz0, w, h, freezes: SRG.freezes + 1 });
+  }
+  // the cell's first and one-past-last index into SRG.ids, or an empty range off the grid
+  const _srgR = [0, 0];
+  function septaRoadCell(gx, gz) {
+    if (!SRG.off) septaRoadFreeze();
+    const i = gx - SRG.gx0, j = gz - SRG.gz0;
+    if (i < 0 || j < 0 || i >= SRG.w || j >= SRG.h) { _srgR[0] = _srgR[1] = 0; return _srgR; }
+    const c = j * SRG.w + i; _srgR[0] = SRG.off[c]; _srgR[1] = SRG.off[c + 1]; return _srgR;
   }
   function septaSnapRoad(x, z, maxD) {
     const gx = Math.floor(x / SEPTA_RG_CELL), gz = Math.floor(z / SEPTA_RG_CELL);
     let bd = maxD * maxD, bx2 = 0, bz2 = 0, bdx = 1, bdz = 0, found = false;
     for (let cx2 = gx - 1; cx2 <= gx + 1; cx2++) for (let cz2 = gz - 1; cz2 <= gz + 1; cz2++) {
-      const a = septaRoadGrid.get(cx2 + ':' + cz2);
-      if (!a) continue;
-      for (let i = 0; i < a.length; i += 4) {
+      const [q0, q1] = septaRoadCell(cx2, cz2), a = SRG.seg, ids = SRG.ids;
+      for (let q = q0; q < q1; q++) {
+        const i = ids[q] * 4;
         const ax = a[i], az = a[i + 1], dx = a[i + 2] - ax, dz = a[i + 3] - az;
         const L2 = dx * dx + dz * dz || 1e-9;
         let tt = ((x - ax) * dx + (z - az) * dz) / L2;
@@ -18153,7 +18181,7 @@
         split.push({...r,xs:Float32Array.from(xs),ys:Float32Array.from(ys),zs:Float32Array.from(zs),cum:Float32Array.from(cum),len:hi-lo,mx:(xs[0]+xs[xs.length-1])*.5,mz:(zs[0]+zs[zs.length-1])*.5,cars:[],conn:[[],[]]});
       }
     }
-    runs.length=0;runs.push(...split);
+    runs.length=0;for(const r of split)runs.push(r);   // Round 153: a spread of 46,145 arguments can overflow a phone's stack
     const ends=new Map();
     for(let i=0;i<runs.length;i++)for(const e of [0,1]) {
       const r=runs[i],j=e?r.xs.length-1:0,k=Math.floor(r.xs[j])+':'+Math.floor(r.zs[j]);
@@ -21709,6 +21737,12 @@
       if (BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
     }
     PERF.ready = Math.round(performance.now() - PERF.t0);
+    // Round 153 (the phones' memory): what only the build needed goes. The ground registry's normals (the far strips'
+    // arrays stay alive through them; every conformDrape and groundPlaneN caller is a build step), and the 43 inline data
+    // scripts, whose text (27 MB) stayed attached to the page after their values were read
+    for (const G of groundGrids) G.nrm = null;
+    if (coreRoadGround) coreRoadGround.nrm = null;
+    for (const el of document.querySelectorAll('script[data-blob]')) el.remove();
     bootMark('ready');
     setTimeout(bootClear, 20000);   // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived
     beacon('ready', { ms: PERF.ready, fail: failures });

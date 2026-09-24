@@ -6908,3 +6908,24 @@ triangles), textures 108 MB against 148 MB (Round 142's ten Wildey canvases at 1
 The hotfix: touch goes back to Round 74's 1.25 cap and 0.72 floor (Round 149 reverted: any raise needs a real phone
 first), the Wildey canvases are 512 on a phone, and `PIER_RINGS` (every paved flat's outline, held only for the pier
 lamps) is emptied once they are placed. After: 925 by 450, 123 MB of textures, a 521 MB heap.
+
+## Round 154 — the phones' memory: what only the build needed now goes (Sep 24)
+
+After Round 153's hotfix Mike chose to go ahead with the no-visual-cost savings from a read-only audit (16 agents:
+heap retention, the phone's GPU and triangle budget, app web views; a skeptic per proposed saving; a ranked plan).
+
+- The SEPTA road-snap grid (buses onto their streets, the overpass junction test, the grass sow) was a Map of 36 m cells,
+  each a JS array with a copy of every segment whose bounding box touched it: about 717,000 entries, 65 to 75 MB of heap
+  on a phone, most of it grown inside 'Raising the rest of Philadelphia', the heaviest step. The road passes now append
+  to one Float64Array (`SRG`) and the first read freezes a dense index over the data's own extent (count, prefix sum,
+  fill; the same cells, the same order), about 7 MB. `tests/test_septa_grid.py` runs it under Node against the old Map
+  over random networks, a write after the freeze included: identical answers on 7,000 queries.
+- The 43 inline data scripts (and their 43 progress ticks) kept their 27 MB of text attached to the page after their
+  values were read: build.py tags them `data-blob` and the page removes them when its build is done.
+- The far ground strips' vertex arrays are freed on upload (never raycast); the ground registry's normals, which kept
+  them alive and are read only by build steps, are released when the build is done (`groundPlaneN` and `conformDrape`
+  fall back to straight up after that).
+- One spread of 46,145 arguments into `runs.push` (the traffic graph) is a loop: a spread that size can overflow a phone's
+  stack.
+Measured under touch emulation: the heap 486 MB (521 after the hotfix, 579 on Round 152, 497 before Round 142), the
+page's script text 2 MB (29 MB), the build clean, the far ring drawn.
