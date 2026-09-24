@@ -6971,3 +6971,30 @@ has its location prompt text. Icons and splash come from the brand mark (scripts
 74 Android, 7 iOS). The page hides the screenshot button in the app where the web view has no share sheet (Android).
 node_modules and the build folders are marked for Dropbox to skip. Building needs Xcode, Android Studio and the two
 developer accounts, none of them on this Mac yet: app/README.md.
+
+## Round 157 — a phone's far windows (Sep 24)
+
+Mike: "On mobile, the lights on buildings are not visible until you get very close. Is there anything we can do about
+that that doesn't involve breaking the app on mobile?" Measured first, the same night poses at 740 x 360 touch (pixel
+ratio 1.25, 925 x 450 render pixels) and at 1480 x 720 desktop (1.75, 2590 x 1260): from Society Hill the desktop draws
+window grids on the Center City towers 1 to 2 km out and the phone draws grey slabs with a few skyline points. The
+cause is not `detFarUniform` (it stretches `det`, which holds a phone's tower windows to about 2.7 km) but the second
+gate in `resolved`: a room is drawn only while a floor spans 0.8 to 2.4 render pixels, and under that both facade
+shaders fall back to a flat glow, 0.035 of warm light in the fabric and 0.055 in the curtain-wall glass, a quarter to a
+fifth of the rooms' own mean (about 0.48 of rooms lit at 0.47 each, times the glass share). With a third of the pixels
+a phone crosses that gate at a third of the distance: its towers fade 0.63 to 1.9 km where a desktop's fade 1.8 to 5.3.
+
+The fix, touch only (`FAR_LIT = isTouch`; the desktop's shader strings are the untouched else branches, and a desktop
+capture differed only in the pins, the wind in the trees and a theme colour caught mid-ease): under the resolved rooms
+both shaders draw a pyramid of room blocks (`FAR_LIT_GLSL`). Each axis takes its own level, 2 to the L bays or floors,
+so a block is at least two render pixels each way and a slanted wall gets narrow blocks rather than ones sized by its
+worse axis; the four blocks around the level are blended, so a block never pops as the eye closes in. A block is lit at
+odds of 0.35 and 1.37 times the rooms' brightness when it is, so the mean is the rooms' 0.48 (the test runs the hash)
+while a block reads as a light rather than a lit wall, in the rooms' own warm tints. The blocks' weight is the desktop's
+own resolve (its det at uDetFar 1 and its pixels-a-floor gate) evaluated at `FAR_K` 2.4 times the phone's pixels, so
+the specks stand exactly as far as a desktop's windows do. The first cut faded them by a fixed 3.5 to 6 km instead, and
+lit every mid-rise at 2.5 km into a field of specks busier than a desktop ever shows; the second cut's blocks were
+three pixels on the worse axis and cool white, which read as a mosaic. The blocks are anchored to the wall: two frames
+3 m apart hold the same pattern, moved with the buildings. Cost: no geometry, texture or memory; eight hashes on the
+far wall pixels, cheaper than the roomLight the near ones already run. No pixel-ratio change (Round 153 stands).
+`tests/test_far_lit.py`.

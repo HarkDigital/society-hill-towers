@@ -5276,6 +5276,36 @@
   // anti-aliased by the true pixel footprint, so past the natural range the windows soften
   // into dots rather than shimmer
   const detFarUniform = { value: isTouch ? 0.55 : 1.0 };
+  // Round 157 (Mike: "On mobile, the lights on buildings are not visible until you get very close"): a lit window
+  // is drawn only while a floor spans about 0.8 to 2.4 render pixels, and under that both facade shaders fall back
+  // to a flat glow a quarter to a fifth of the rooms' own mean. A phone renders about a third of a desktop's pixels,
+  // so its towers went to grey slabs at 0.6 to 1.9 km where a desktop keeps its windows to 5 km. On a phone the
+  // fallback is now a pyramid of room blocks instead: at each distance the facade's rooms are grouped into blocks
+  // at least two render pixels each way (2 to the Lx bays by 2 to the Ly floors, the nearest levels blended so a
+  // block never pops), each block lit or dark by its own hash, so the mean is the lit windows' mean and the tower
+  // reads as specks of light the way a desktop's resolved windows do. The
+  // blocks are anchored to the wall, so they hold still as the eye moves, and they stand exactly as far as a desktop's
+  // windows would: their weight is the desktop's own resolve (the same det and pixels-a-floor gates) evaluated at
+  // FAR_K times the phone's pixel density, so they fade where a desktop's windows fade (a fixed 6 km reach lit every
+  // mid-rise at 2.5 km into a field of specks busier than the desktop ever shows). Touch only: the desktop's shaders
+  // are unchanged. No geometry, texture or memory; a few hashes on the far pixels
+  const FAR_LIT = isTouch;
+  const FAR_K = 2.4;   // a desktop's render pixels over a phone's, linear: 1260 against 450 to 490 rows in landscape
+  // q is the room grid (bays, floors) and fpx its rooms per render pixel along each axis: the two axes take their own
+  // level, so a wall seen at a slant gets narrow tall blocks rather than blocks sized by its worse axis. A block is
+  // lit at odds of 0.35 and 1.37 times the rooms' mean when it is (the rooms' own 0.48 at their brightness, rarer and
+  // brighter so a block reads as a light rather than a lit wall), and the four blocks around the level are blended
+  const FAR_LIT_GLSL = `
+    float farCell(vec2 q, vec2 L, float seed) {
+      vec2 key = floor(q / exp2(L)) + vec2(seed * 113.7 + L.x * 17.0 + L.y * 5.1, seed * 39.1 - L.y * 5.3 + L.x * 2.9);
+      return step(.65, roomHash(key)) * (.82 + 1.1 * roomHash(key + 29.1));
+    }
+    float farLitCells(vec2 q, vec2 fpx, float seed) {
+      vec2 Lf = max(log2(max(2.0 * fpx, vec2(1.0e-6))), 0.0), L0 = floor(Lf), t = Lf - L0;
+      return mix(mix(farCell(q, L0, seed), farCell(q, L0 + vec2(1.0, 0.0), seed), t.x),
+                 mix(farCell(q, L0 + vec2(0.0, 1.0), seed), farCell(q, L0 + 1.0, seed), t.x), t.y);
+    }
+  `;
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
   // five windows of the South Tower's south face that Mike picked (Round 137: "light up those specific windows with
   // the same colors the skyline had every night"): floor index 16, the 14th row of glass down from the parapet, bays
@@ -5450,6 +5480,7 @@
         .replace('#include <common>', [
           '#include <common>',
           WINDOW_INTERIOR_GLSL,
+          FAR_LIT ? FAR_LIT_GLSL : '',
           'uniform float uNight;',
           'uniform float uDetFar;',
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;',
@@ -5575,6 +5606,23 @@
           '    float lit = 0.0, glass = 0.0;',
           '    vec2 roomUV = vec2(0.5), roomID = vec2(0.0); float roomFrame = 0.0;',
           '    float roomOffice = float(st == 2 || st == 7 || st == 14 || st == 15 || st == 16);',
+          // Round 157, phones: the room blocks that stand in for windows too small to draw (FAR_LIT_GLSL); the
+          // rooms' mean over a facade is its glass share (half a tower's, a fifth of a house's) times 0.47
+          ...(FAR_LIT ? [
+            '    float farOn = 0.0, farV = 0.0; vec3 farLamp = vec3(0.82, 0.67, 0.47);',
+            '    vec2 farFpx = vec2(fwidth(uW) / 3.2, fwidth(fv) / facadeFp);',
+            '    if (uNight > 0.001) {',
+            // the desktop's resolve at FAR_K times the pixels: its det at uDetFar 1 and its pixels-a-floor gate
+            '      float fwD = fwidth(v) / ' + FAR_K.toFixed(2) + ';',
+            '      float detD = clamp(1.0 - (0.6 * fwD + 0.004 - 0.16) / 0.42, 0.0, 1.0);',
+            '      if (tower) detD = max(detD, clamp(1.0 - (0.6 * fwD - 0.5) / 1.6, 0.0, 1.0));',
+            '      farOn = detD * smoothstep(0.8, 2.4, ' + FAR_K.toFixed(2) + ' / max(fwidth(uW) / 2.0, fwidth(fv) / facadeFp));',
+            '      if (farOn > 0.001) {',
+            '        farV = farLitCells(vec2(uW / 3.2, fv / facadeFp), farFpx, vTint*7.1 + vWallL*.017 + vWallH*.013 + vBase*.031) * (tower ? 0.235 : 0.105) * windowArea;',
+            '        farLamp = mix(vec3(1.0, 0.71, 0.44), vec3(1.0, 0.82, 0.58), roomOffice);',
+            '      }',
+            '    }',
+          ] : []),
           // every window/door/shutter mask below is multiplied by det, so once
           // the detail fade has reached zero (about 900 m at 58 deg / 1080 px,
           // i.e. most far-ring and outer-tier pixels of a wide view) the whole
@@ -5583,7 +5631,7 @@
           '      vec3 farAvg0 = diffuseColor.rgb * 0.9; float farW0 = 0.35;',
           '      if (st == 2 || st == 6 || st == 7 || (st >= 14 && st <= 19)) { farAvg0 = mix(diffuseColor.rgb, vec3(0.115, 0.13, 0.155), (st == 16 || st == 17) ? 0.3 : 0.48); farW0 = 0.92; }',
           '      diffuseColor.rgb = mix(col, farAvg0, farW0 * windowArea);',
-          '      shtLit = 0.05 * windowArea;',
+          FAR_LIT ? '      shtLit = mix(0.05 * windowArea, farV, farOn); shtLamp = mix(shtLamp, farLamp, farOn);' : '      shtLit = 0.05 * windowArea;',
           '    } else {',
           '    if (st == 1) {',
           '      float pitch = 4.4;',
@@ -5971,8 +6019,8 @@
           '    vec3 interior = vec3(0.0);',
           '    if(uNight > 0.001) interior = roomLight(roomUV,roomID,roomSeed,roomOffice);',
           '    float resolved = det * smoothstep(0.8,2.4,1.0/max(fwidth(uW)/2.0,fwidth(fv)/facadeFp));',
-          '    shtLit = mix(0.035*windowArea,max(0.0,glass-roomFrame*.98),resolved);',
-          '    shtLamp = mix(vec3(0.82,0.67,0.47),interior,resolved);',
+          FAR_LIT ? '    shtLit = mix(mix(0.035*windowArea,farV,farOn),max(0.0,glass-roomFrame*.98),resolved);' : '    shtLit = mix(0.035*windowArea,max(0.0,glass-roomFrame*.98),resolved);',
+          FAR_LIT ? '    shtLamp = mix(mix(vec3(0.82,0.67,0.47),farLamp,farOn),interior,resolved);' : '    shtLamp = mix(vec3(0.82,0.67,0.47),interior,resolved);',
           '    diffuseColor.rgb = col;',
           '    }',
           '  }',
@@ -9211,6 +9259,7 @@
           sh.fragmentShader = sh.fragmentShader
             .replace('#include <common>', `#include <common>
               ${WINDOW_INTERIOR_GLSL}
+              ${FAR_LIT ? FAR_LIT_GLSL : ''}
               uniform float uDetFar, uNight;
               varying vec3 vGWp, vGNm, vGF; varying float vGSt, vGBs, vGT;
               float gWall = 0.0, gLit = 0.0, gSpand = 0.0, gGlazing = 0.0;
@@ -9274,8 +9323,15 @@
                 vec2 roomGrid=vec2(u/(muP*2.0),yG/fp);
                 float resolved=min(det,smoothstep(.8,2.4,muP*2.0/aaU));
                 gLamp=vec3(.82,.75,.62);
+                ${FAR_LIT ? `// Round 157, phones: the room blocks under the resolved rooms (FAR_LIT_GLSL), at the rooms' own mean
+                float farOn=0.0,farV=0.0;vec2 farFpx=vec2(aaU/(muP*2.0),aaV/fp);
+                if(uNight > .001){
+                  farOn=min(clamp((fp*${FAR_K.toFixed(2)}/aaV-1.3)/2.4,0.0,1.0)*wall,smoothstep(.8,2.4,muP*2.0*${FAR_K.toFixed(2)}/aaU));   // the desktop's resolve at FAR_K times the pixels
+                  farV=farLitCells(roomGrid,farFpx,roomSeed)*.47;
+                  gLamp=mix(gLamp,mix(vec3(1.0,.82,.58),vec3(1.0,.71,.44),residential),farOn);
+                }` : ''}
                 if(uNight > .001)gLamp=mix(gLamp,roomLight(fract(roomGrid),floor(roomGrid),roomSeed,1.0-residential),resolved);
-                gLit=mix(.055,1.0,resolved);
+                gLit=${FAR_LIT ? 'mix(mix(.055,farV,farOn),1.0,resolved)' : 'mix(.055,1.0,resolved)'};
                 // Enclosed glazed crowns are mechanical space, not stacks of offices.
                 if(gv==29.0)gLit*=.035;
               }`)

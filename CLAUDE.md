@@ -181,7 +181,8 @@ before any visual round rather than rediscovering it.
   building whatever point the feed carries (`VENUE_NAMED`, Round 66: Ticketmaster's geocoder misses half the halls by up to 1.2 km).
   The Ben Franklin Bridge is Round 66's: Ben Franklin blue measured through the pipeline, the trusses over the roadway, granite portals.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
-  visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances; a phone also runs the plain shadow filter, redraws
+  visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances, and under the resolved rooms both facade shaders draw
+  `FAR_LIT_GLSL`'s room blocks at the rooms' own mean, weighted by the desktop's resolve at `FAR_K` 2.4 times the pixels (Round 157, touch only); a phone also runs the plain shadow filter, redraws
   the buses' depth pass every 12th frame, caps its pixel ratio at 1.25 and may drop it to 0.72 under load (Rounds 72 and 74; Round 149's 2.0 / 1.0 broke phones and Round 153 put these back: any raise needs a real-device test first), judged every 15 frames
   (Rounds 72 and 74), aims its shadow box at the camera in 300 m steps and freezes it above 600 m (Round 74). The first visit
   meets the guide (Round 60: `#guide`, eight cards on dots from `GUIDE_SLIDES`, computer and phone copy by
