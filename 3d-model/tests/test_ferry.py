@@ -40,6 +40,18 @@ class Ferry(unittest.TestCase):
         self.assertIn('shipLink(v);', b)
         self.assertNotRegex(b, '[—·]')   # no em dashes or middots in what the card says
 
+    def test_review_fixes(self):
+        s, b = self.s, self.block
+        # a moving fix is reckoned at most 30 s and never onto land; the ferry eases its own fix (SHIP_CAP can stop the ships loop first)
+        self.assertIn('if (moving) { const a = Math.min(age, 30); tx += v.vx * a; tz += v.vz * a; if (!delawareAt(tx, tz)) { tx = v.fx; tz = v.fz; } }', b)
+        self.assertIn('const p = FERRY.rec, x = FERRY.ex, z = FERRY.ez;', b)
+        # the heading eases; the direction of travel is the course, not the bow
+        self.assertIn('FERRY.ha += da * (1 - Math.exp(-dt / 1.2));', b)
+        self.assertIn('mx = moving ? Math.sin(cg) : hx', b)
+        # the relay's fix ages run on the server's clock; turning the trains layer off leaves the ferry's card alone
+        self.assertIn('const nowP = performance.now(), nowS = sNow;', s)
+        self.assertIn('else if (pickedTrain && !pickedTrain.ferry) { pickedTrain = null; vehinfoEl.hidden = true; }', s)
+
     def test_wiring(self):
         s = self.s
         self.assertIn('    updateFerry(now);   // Round 151\n', s)

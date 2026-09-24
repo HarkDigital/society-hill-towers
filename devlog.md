@@ -6884,3 +6884,16 @@ while under way, else its last heading, else across the river toward the nearer 
 Toward Philadelphia" or "Stopped on the Delaware", "Live Position (AIS), Fix 8 min Ago", the MarineTraffic link.
 Checked in the pane against the live relay: one boat at the Camden pier, the card as above, 44 vessels in the layer.
 `tests/test_ferry.py` now pins the AIS wiring and that no timetable is left.
+
+Round 152's review (three lenses: the live and timetable switch, position and heading, integration; a skeptic per
+finding, 12 agents, the skeptics polling the live relay) ran on the first cut, which still kept the timetable as a
+fallback; it confirmed thirteen findings. Three went with the timetable (the switch flapping every few missed moored
+reports, the jump from the timetable spot on load, the next departure ignoring the landing). The rest are fixed. The
+ships loop reckons a moving fix up to 10 minutes, and the Freedom's reports reach the relay one to three minutes apart,
+so a crossing ferry slid past its berth into Wiggins Park while its card said live: the ferry now eases its own fix,
+reckoned at most 30 s and never onto land (`delawareAt`), which also frees it from the ships loop's SHIP_CAP break that
+could freeze it at its first fix. Its heading eases instead of snapping at each fix. "Toward Camden/Philadelphia" comes
+from the course over ground, not the bow, so a ferry backing out is named for where it is going. The relay's fix ages
+now run on the server's clock (the response's Date), not the viewer's, for every vessel. And turning the trains layer
+off no longer closes an open ferry card (they share the card slot; this predated Round 152). `__dbg.ferryFix(x, z, hdg,
+sog, age)` plants a fix: a two minute old one at 8 knots ends 30 s on, in the river, not 500 m inland.
