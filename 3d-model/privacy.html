@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Philly3D Privacy</title>
+<meta name="description" content="What the Philly3D website and apps do with your information.">
+<style>
+  :root { --ink: #161a1e; --panel: #1f252b; --text: #e8e4da; --muted: #a9a79f; --line: #c9b58a; --link: #e3c98e; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --ink: #f6f3ec; --panel: #ffffff; --text: #1d2126; --muted: #5b5f64; --line: #9a8350; --link: #7a5d1c; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--ink); color: var(--text); font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 720px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 6px; letter-spacing: 0.01em; }
+  .updated { color: var(--muted); margin: 0 0 28px; font-size: 15px; }
+  h2 { font-size: 20px; margin: 34px 0 8px; padding-top: 14px; border-top: 1px solid color-mix(in srgb, var(--line) 45%, transparent); }
+  p, li { color: var(--text); }
+  ul { padding-left: 22px; }
+  li { margin: 6px 0; }
+  a { color: var(--link); }
+  .summary { background: var(--panel); border-left: 3px solid var(--line); padding: 14px 18px; border-radius: 6px; }
+  .summary p { margin: 6px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Philly3D Privacy</h1>
+  <p class="updated">Last updated September 24, 2026. This covers the website at philly3d.com and the Philly3D apps for iPhone, iPad and Android.</p>
+
+  <div class="summary">
+    <p><strong>In short:</strong> there are no accounts, no advertising and no tracking. Your location never leaves your device. We keep ordinary web server logs for up to 14 days.</p>
+  </div>
+
+  <h2>Your location</h2>
+  <p>Philly3D asks for your location only when you tap the locate button. Your device works out the position and the app uses it right there, to fly the view to where you are. It is not stored and it is not sent to us or to anyone else.</p>
+  <p>If you are in Philadelphia, the app shows what is near you. To show live bus and train arrivals for the stops closest to you, it asks SEPTA for those stops' arrival times by stop number. Your coordinates are not included.</p>
+  <p>You can turn location access off at any time in your device's settings. Everything else in Philadelphia's model works without it.</p>
+
+  <h2>What stays on your device</h2>
+  <p>The app keeps a few settings in your browser's or the app's local storage: which map layers you turned on, whether you have seen the welcome guide, and a note that helps the app recover if your device runs out of memory while it is loading. These never leave your device. Clearing your browser's site data, or deleting the app, removes them.</p>
+
+  <h2>Live data the app fetches</h2>
+  <p>To show the city as it is right now, the app downloads public data: SEPTA vehicles, stops and arrivals, Indego bike stations, flights and ships, Amtrak trains, weather and air quality from the National Weather Service and the City of Philadelphia, street closures, events and game scores. Some of it comes through philly3d.com and some straight from the provider. As with any web request, those services see your device's IP address. We send them nothing else about you.</p>
+  <p>When you tap a building, the app looks up that property's public record from the City of Philadelphia's open data. Links on the cards (tickets, flight and ship tracking, permits) open the provider's own site, under its own privacy policy.</p>
+
+  <h2>What our server keeps</h2>
+  <p>Like most websites, philly3d.com keeps standard access logs: your IP address, the time, the file requested and your browser type. We use them only to keep the site running and secure, and they are deleted after 14 days.</p>
+  <p>While the model loads, the page may also report to our server how far loading got and how long it took, with your device's general capability (screen density, number of processor cores, memory class and graphics support). This helps us find where phones run out of memory. It includes no name, account, location or advertising identifier, and it is not linked to you.</p>
+
+  <h2>What we do not do</h2>
+  <ul>
+    <li>No accounts, sign-ins or contact details.</li>
+    <li>No advertising, and no advertising or tracking identifiers.</li>
+    <li>No analytics services and no tracking across other apps or websites.</li>
+    <li>We never sell or share your information.</li>
+  </ul>
+
+  <h2>Children</h2>
+  <p>Philly3D collects no personal information from anyone, including children under 13.</p>
+
+  <h2>Changes and contact</h2>
+  <p>If this policy changes, the date at the top will change with it. Questions: <a href="mailto:privacy@philly3d.com">privacy@philly3d.com</a>.</p>
+</main>
+</body>
+</html>

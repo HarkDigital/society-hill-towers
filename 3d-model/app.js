@@ -21589,8 +21589,13 @@
   // --- screenshot: the GL frame alone (no HUD) with a small stamp, offered to
   // the share sheet on touch where files are shareable, saved as a download elsewhere
   const btnShot = document.getElementById('btnShot');
-  // Round 155: inside the app a web view without the share sheet (Android's) cannot save the image through <a download> either
-  if (IN_APP && !(navigator.share && navigator.canShare)) btnShot.style.display = 'none';
+  // Round 155: inside the app neither web view saves an <a download> (Capacitor has no download handler on iOS or Android),
+  // so the button stays only where the share sheet takes an image file
+  if (IN_APP) {
+    let canImg = false;
+    try { canImg = !!(navigator.share && navigator.canShare && navigator.canShare({ files: [new File([new Uint8Array(1)], 'philly3d.png', { type: 'image/png' })] })); } catch (e) { canImg = false; }
+    if (!canImg) btnShot.style.display = 'none';
+  }
   btnShot.addEventListener('click', () => {
     if (!veil.classList.contains('hidden')) return;
     frame(performance.now(), true);          // a fresh render, read back in this same tick (no preserveDrawingBuffer)

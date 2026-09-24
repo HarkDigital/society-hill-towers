@@ -56,3 +56,25 @@ Chrome's phone emulation does not reproduce WebKit's memory accounting. Run the 
 Android phone: first load, flying around for a few minutes, background and foreground, the locate button, an outside
 link, sharing a view. In Safari's Develop menu (iOS) and chrome://inspect (Android) you can watch the page's memory and
 console while it runs.
+
+## Before submitting (from the Round 156 research: 14 agents, each answer checked against its primary source)
+
+- **Privacy policy URL**: both stores require one, and Apple wants it reachable inside the app (5.1.1(i)). A draft is
+  `3d-model/privacy.html`; once approved it goes to https://philly3d.com/privacy.html and gets a link in the About panel.
+- **App Privacy labels (Apple) and Data safety (Google)**: location is used only on the device and is not "collected".
+  The load beacon keeps performance data, so declare Diagnostics: Performance Data, not linked to the user (or turn the
+  beacon off inside the app). No tracking, no identifiers. Capacitor 8.5.2 ships its own PrivacyInfo.xcprivacy with no
+  required-reason APIs, and the page's localStorage is not a required-reason API.
+- **Guideline 4.2 (minimum functionality)**: Apple rejects "a repackaged website". The page is bundled, not loaded from
+  the web, and is an interactive 3D city with live data, which is the kind of app-like content 4.2 asks for; say so in
+  the review notes and include a short screen recording.
+- **Location on iOS** asks twice: iOS's own prompt, then WebKit's per-site prompt naming "localhost", which may return on
+  later launches. The @capacitor/geolocation plugin avoids the second one; wire it into the locate button after the first
+  device test if it proves annoying.
+- **Downloads**: neither platform saves an `<a download>` in Capacitor, so the page shows its screenshot button in the
+  app only where the share sheet takes an image file.
+- **Google Play**: new apps must target API 36 from Aug 31, 2026 (the project does) and ship an App Bundle. A personal
+  developer account created after Nov 13, 2023 must run a closed test with 12 testers for 14 days before production;
+  registering as an organization is reported to avoid that (Google's page does not say either way).
+- **Dropbox**: Xcode and Gradle may trip over this CloudStorage folder the way the dev server does. If the first build
+  fails on paths, copy `app/` outside Dropbox (or clone the repo there) and build from that copy.
