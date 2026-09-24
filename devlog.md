@@ -6864,3 +6864,23 @@ A ferry pin, and a card sharing the trains' slot: "To Camden, Wiggins Park, Arri
 Landing, Next Departure 11:00 AM" or "No Sailings Today", always "Timetable Position, Not Live", with the schedule's
 link. The model date is a Wednesday after Labor Day, so today it lies at Camden. `__dbg.ferry()`, `__dbg.ferryCard()`,
 `tests/test_ferry.py` (the season, the holiday Mondays, the weekend extras, the alternation, a show-day shuttle).
+
+## Round 152 — the RiverLink ferry is M/V Freedom, on its own AIS (Sep 23)
+
+Mike: "Does the ferry show up on our marine traffic website? If so can we leverage that data for location?" It does:
+the Freedom broadcasts AIS as MMSI 368417620 ("M/V FREEDOM", 28 m), and the aisstream relay was already carrying it,
+reporting it stopped at Wiggins Park within a few metres of where Round 151's timetable berthed it. So Round 151 drew it
+twice: the ships layer's generic hull with an anchor pin and a "Vessel M/V FREEDOM" card, and the scheduled ferry
+beside it (Mike's screenshot of the live site). Then: "this boat is the riverlink so get rid of the riverlink schedule
+and label M/V Freedom as the Riverlink."
+
+The timetable is gone (the season, the sailings, the show-day shuttle, the arcs, the berths, the schedule link). The
+ships loop still eases the Freedom's fix like any vessel's, then skips drawing it (`FERRY_MMSI`); `updateFerry` stands the
+Round 151 model and the ferry pin at that fix under the ships layer's own rules (on with the layer, gone with the 30 minute
+despawn, live whatever the model clock says). Heading: the vessel's own compass when AIS carries one (both ingest paths
+now note it as `v.th`; the Freedom reports 94 degrees moored, with course over ground a meaningless 360), else its course
+while under way, else its last heading, else across the river toward the nearer landing. The card: "RiverLink Ferry",
+"M/V Freedom", "Docked at Camden, Wiggins Park" (within 80 m of a landing and under half a knot) or "Under Way, 6.2 kn,
+Toward Philadelphia" or "Stopped on the Delaware", "Live Position (AIS), Fix 8 min Ago", the MarineTraffic link.
+Checked in the pane against the live relay: one boat at the Camden pier, the card as above, 44 vessels in the layer.
+`tests/test_ferry.py` now pins the AIS wiring and that no timetable is left.
