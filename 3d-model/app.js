@@ -179,17 +179,17 @@
     veil.style.display = 'none';
     return;
   }
-  // Round 149 (Mike: "The model is somewhat blurry/grainy on mobile", then chose the sharp setting): a phone's 3x screen drawn
-  // at 1.25 was under half its sharpness each way, and 0.72 under load softer still. Touch now caps at 2.0 and floors at
-  // 1.0; the adaptive step still sheds resolution when frames run long (1.5 until Round 74, 1.25 from Round 74 to 148)
-  const DPR_CAP = window.matchMedia('(pointer: coarse)').matches ? 2.0 : 1.75;   // the fill cost is the square of it
+  // Round 149 raised touch to a 2.0 cap and a 1.0 floor for sharpness (Mike chose it); Round 153 (Mike: "The app is again not
+  // working on mobile") puts back Round 74's 1.25 and 0.72: at 2.0 a phone drew 2.6 times the pixels of every frame, with
+  // the multisampled backbuffer on top, over the same 11 million triangles, and that is the change that broke it
+  const DPR_CAP = window.matchMedia('(pointer: coarse)').matches ? 1.25 : 1.75;   // the fill cost is the square of it
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP));
   // adaptive resolution: the cap alone treated a 2019 integrated GPU and a
   // 4090 alike. frame() keeps a rolling median of frame time and steps the
   // ratio down 15% when frames run long, back up when they stay short;
   // fragment cost scales with the square, so 1.75 -> 1.25 halves the shading
   // work. ?dpr=1.5 pins it.
-  const DPR = { cap: renderer.getPixelRatio(), min: isTouch ? 1.0 : 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, fast: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
+  const DPR = { cap: renderer.getPixelRatio(), min: isTouch ? 0.72 : 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, fast: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
   {
     const q = /[?&]dpr=([\d.]+)/.exec(location.search);
     if (q) { DPR.pinned = true; DPR.cur = clamp(+q[1], 0.5, 3); renderer.setPixelRatio(DPR.cur); }
@@ -11296,7 +11296,8 @@
   // the street grade) and carried out by one right-handed basis, so each quad's winding is decided once, facing out.
   // The windows glow after dark through an emissive map scaled by the night uniform, some rooms lit and some not.
   function wildeyTex(Wm, Hm, pxm, draw) {
-    const cv = document.createElement('canvas'); cv.width = Math.min(1024, THREE.MathUtils.ceilPowerOfTwo(Wm * pxm)); cv.height = Math.min(1024, THREE.MathUtils.ceilPowerOfTwo(Hm * pxm));
+    const cap = isTouch ? 512 : 1024;   // Round 153: a phone takes the quarter-size canvases (the ten of them were 40 MB of texture)
+    const cv = document.createElement('canvas'); cv.width = Math.min(cap, THREE.MathUtils.ceilPowerOfTwo(Wm * pxm)); cv.height = Math.min(cap, THREE.MathUtils.ceilPowerOfTwo(Hm * pxm));
     const x = cv.getContext('2d'), sx = cv.width / Wm, sy = cv.height / Hm;
     const R = (u0, y0, u1, y1, c) => { x.fillStyle = c; x.fillRect(u0 * sx, (Hm - y1) * sy, (u1 - u0) * sx, (y1 - y0) * sy); };
     draw(x, R, sx, sy, cv);
@@ -18640,6 +18641,7 @@
         }
       }
     }
+    PIER_RINGS.length = 0;   // Round 153: every paved flat's outline was held for the pier lamps alone; let it go
     const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nDeck = DECK_LAMPS.length / 5, nAll = nPoles + nLot + nDeck;   // the stadium lots' masts ride along (Round 127), the deck standards after them (Round 144)
     const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll), ROT = new Float32Array(nAll).fill(NaN);
     let underDeck = 0;

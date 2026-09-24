@@ -6897,3 +6897,14 @@ from the course over ground, not the bow, so a ferry backing out is named for wh
 now run on the server's clock (the response's Date), not the viewer's, for every vessel. And turning the trains layer
 off no longer closes an open ferry card (they share the card slot; this predated Round 152). `__dbg.ferryFix(x, z, hdg,
 sog, age)` plants a fix: a two minute old one at 8 knots ends 30 s on, in the river, not 500 m inland.
+
+## Round 153 — phones working again (Sep 24)
+
+Mike: "The app is again not working on mobile. What can we do to fix this. I am just about ready to package this up as
+an app and submit to the markets. This needs to be addressed immediately." Measured under the pane's touch emulation,
+the build before Round 142 against the one deployed: the drawing buffer 925 by 450 against 1480 by 720 (Round 149's
+2.0 pixel ratio: 2.6 times the pixels of every frame, with the multisampled backbuffer on top, over the same 11 million
+triangles), textures 108 MB against 148 MB (Round 142's ten Wildey canvases at 1024), the JS heap 497 MB against 579 MB.
+The hotfix: touch goes back to Round 74's 1.25 cap and 0.72 floor (Round 149 reverted: any raise needs a real phone
+first), the Wildey canvases are 512 on a phone, and `PIER_RINGS` (every paved flat's outline, held only for the pier
+lamps) is emptied once they are placed. After: 925 by 450, 123 MB of textures, a 521 MB heap.

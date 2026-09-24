@@ -182,7 +182,7 @@ before any visual round rather than rediscovering it.
   The Ben Franklin Bridge is Round 66's: Ben Franklin blue measured through the pipeline, the trusses over the roadway, granite portals.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances; a phone also runs the plain shadow filter, redraws
-  the buses' depth pass every 12th frame, caps its pixel ratio at 2.0 and may drop it to 1.0 under load (Round 149, Mike chose sharp over the 1.25 / 0.72 of Rounds 72 and 74), judged every 15 frames
+  the buses' depth pass every 12th frame, caps its pixel ratio at 1.25 and may drop it to 0.72 under load (Rounds 72 and 74; Round 149's 2.0 / 1.0 broke phones and Round 153 put these back: any raise needs a real-device test first), judged every 15 frames
   (Rounds 72 and 74), aims its shadow box at the camera in 300 m steps and freezes it above 600 m (Round 74). The first visit
   meets the guide (Round 60: `#guide`, eight cards on dots from `GUIDE_SLIDES`, computer and phone copy by
   `isTouch`, `localStorage philly3d.guide`), and the ? button beside the camera brings it back; the touch
