@@ -6929,3 +6929,26 @@ heap retention, the phone's GPU and triangle budget, app web views; a skeptic pe
   stack.
 Measured under touch emulation: the heap 486 MB (521 after the hotfix, 579 on Round 152, 497 before Round 142), the
 page's script text 2 MB (29 MB), the build clean, the far ring drawn.
+
+## Round 155 — the page ready for the Capacitor app (Sep 24)
+
+From the audit's app list, the page-side part (Mike: the app is to be packaged with Capacitor). `IN_APP` (the wrapper's
+'Philly3DApp' user-agent marker, capacitor://, or https://localhost) always takes the phone path, so an iPad with a
+trackpad no longer builds the desktop city; the five philly3d.com feeds (concerts, Amtrak, lights, closures, lightning)
+are relative only on the dev server (`DEV_LOCAL`), so in the app they no longer resolve into the bundle; share links and
+Copy Link carry https://philly3d.com/ in the app (with only the page's own lights and bands settings); the service
+worker registers only on the site; ships run from the relay alone in the app; the beacon reaches philly3d.com/b from the
+app; the one unguarded AbortSignal.timeout is guarded. Phones recover by themselves: after a lost WebGL context the page
+reloads (once in any two minutes), and a memory kill during use now counts, because the breadcrumb says 'running' while
+the city is in front.
+
+An adversarial review of the first cut (two lenses, a skeptic per finding, 10 agents) confirmed eight findings, all
+fixed before this shipped: a context loss in the background (routine on iOS and Android) was taken for a memory death
+and pinned lite for a fortnight, so now a background loss reloads the full build once the page is in front and a loss in
+front makes only that tab lite (`philly3d.litenow` in sessionStorage); a 'running' crumb is fresh for three minutes, not
+thirty, and one death while running makes that load lite while the fortnight needs a death mid-build or a second one
+(a swipe from the app switcher or an in-app browser's Done never runs pagehide); the crumb is cleared on hidden, blur
+and pagehide, and a hidden tab's timer no longer erases the one in front; www.philly3d.com counts as the site again (it
+had lost its worker and Copy Link its query); only the app rewrites share links, so the dev server shares its own; the
+app marker is tested before the dev-server test; the overlay after a second loss reloads on a tap in the app. Left for
+Mike's go, since they are VPS edits: CORS on concerts.json and lightning.json, and exposing the Date header on the feeds.

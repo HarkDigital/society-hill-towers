@@ -98,7 +98,15 @@
   // ms since load, coarse pointer, DPR, cores, deviceMemory, WebGL2, build
   // date. Progressive because an iOS memory kill sends no pagehide: the
   // server's last-seen checkpoint IS the death point. Errors cap at three.
-  const BEACON = location.hostname === 'philly3d.com' ? '/b' : null;
+  // Round 154, the store app: Capacitor serves the page from capacitor://localhost (iOS) or https://localhost (Android), and
+  // the wrapper adds 'Philly3DApp' to the user agent. The app always takes the phone path (an iPad with a trackpad reports
+  // a fine pointer and would build the desktop city), reads its feeds from philly3d.com, shares philly3d.com links, runs
+  // ships from the relay only, beacons to philly3d.com and registers no service worker. The site is philly3d.com and its
+  // www host; an http localhost without the marker is the dev server (review: the marker is tested first)
+  const IN_APP = /Philly3DApp/.test(navigator.userAgent) || location.protocol === 'capacitor:' || (location.protocol === 'https:' && location.hostname === 'localhost');
+  const ON_SITE = !IN_APP && /(^|\.)philly3d\.com$/.test(location.hostname);
+  const DEV_LOCAL = !IN_APP && location.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
+  const BEACON = ON_SITE ? '/b' : IN_APP ? 'https://philly3d.com/b' : null;
   const beaconSeen = new Set();
   let beaconErrs = 0;
   function beacon(st, extra) {
@@ -119,7 +127,7 @@
     if (document.hidden && !PERF.ready && lm) beacon('bail', { step: lm.textContent.slice(0, 40) });
   });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  const isTouch = window.matchMedia('(pointer: coarse)').matches;
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || IN_APP;
   // ---- the boot breadcrumb and the lite build (Round 124, Mike's phone: "a problem repeatedly
   // occurred"). A phone that runs out of memory mid-load is killed without a word, reloads, and
   // dies the same way until the browser gives up. The page now leaves a breadcrumb in
@@ -132,18 +140,26 @@
   const BOOT_KEY = 'philly3d.boot', LITE_R = 8000;
   let bootPrev = null;
   try { bootPrev = JSON.parse(localStorage.getItem(BOOT_KEY) || 'null'); } catch (e) { bootPrev = null; }
-  const bootDied = !!(bootPrev && bootPrev.step && Date.now() - bootPrev.t < 30 * 60000);
+  // Round 154 review: a 'running' crumb (written every minute while the city is in front) is fresh for 3 minutes, not 30,
+  // and a single death while running makes THIS load lite; the fortnight's sticky lite needs a death mid-build or a second
+  // death while running, so one close the page never heard (a swipe from the app switcher, an in-app browser's Done) does
+  // not cost two weeks
+  const bootAge = bootPrev && bootPrev.t ? Date.now() - bootPrev.t : Infinity;
+  const bootDied = !!(bootPrev && bootPrev.step && bootAge < (bootPrev.step === 'running' ? 3 * 60000 : 30 * 60000));
+  const bootStick = bootDied && (bootPrev.step !== 'running' || (bootPrev.fails || 0) >= 1);
+  let sessLite = false;   // lite for this tab only: a foreground context loss reloads into it (Round 154 review)
+  try { sessLite = sessionStorage.getItem('philly3d.litenow') === '1'; } catch (e) { sessLite = false; }
   // a device that died once keeps the lite build for a fortnight, or every other visit would
   // try the full one and die again; after that it gets another go at the full build
   const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14;
   let liteSticky = false;
   try {
     if (/[?&]lite=0\b/.test(location.search)) localStorage.removeItem(LITE_KEY);
-    else if (isTouch && bootDied) localStorage.setItem(LITE_KEY, String(Date.now()));
+    else if (isTouch && bootStick) localStorage.setItem(LITE_KEY, String(Date.now()));
     const ls = +localStorage.getItem(LITE_KEY) || 0;
     liteSticky = ls > 0 && Date.now() - ls < LITE_DAYS * 86400000;
   } catch (e) { liteSticky = false; }
-  const LITE = /[?&]lite=1\b/.test(location.search) || (isTouch && (bootDied || liteSticky) && !/[?&]lite=0\b/.test(location.search));
+  const LITE = /[?&]lite=1\b/.test(location.search) || (isTouch && (bootDied || liteSticky) && !/[?&]lite=0\b/.test(location.search)) || (isTouch && sessLite && !/[?&]lite=0\b/.test(location.search));
   const bootFails = bootDied ? (bootPrev.fails || 0) + 1 : 0;
   const bootMark = (step) => { try { localStorage.setItem(BOOT_KEY, JSON.stringify({ step, t: Date.now(), fails: bootFails, lite: LITE })); } catch (e) { /* private mode: no breadcrumb, no lite */ } };
   const bootClear = () => { try { localStorage.removeItem(BOOT_KEY); } catch (e) { /* nothing to clear */ } };
@@ -152,7 +168,7 @@
   // the installable app: a network-only service worker beside the page (sw.js) is what lets
   // Chrome and Edge offer Install; the manifest is linked from the template. Only over https,
   // so a dev server never gets a worker
-  if ('serviceWorker' in navigator && location.protocol === 'https:') {
+  if ('serviceWorker' in navigator && ON_SITE && location.protocol === 'https:') {   // Round 154: the site only (never inside the app, never a dev server)
     try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) { /* no worker */ }
   }
 
@@ -182,7 +198,7 @@
   // Round 149 raised touch to a 2.0 cap and a 1.0 floor for sharpness (Mike chose it); Round 153 (Mike: "The app is again not
   // working on mobile") puts back Round 74's 1.25 and 0.72: at 2.0 a phone drew 2.6 times the pixels of every frame, with
   // the multisampled backbuffer on top, over the same 11 million triangles, and that is the change that broke it
-  const DPR_CAP = window.matchMedia('(pointer: coarse)').matches ? 1.25 : 1.75;   // the fill cost is the square of it
+  const DPR_CAP = isTouch ? 1.25 : 1.75;   // the fill cost is the square of it
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP));
   // adaptive resolution: the cap alone treated a 2019 integrated GPU and a
   // 4090 alike. frame() keeps a rolling median of frame time and steps the
@@ -2243,7 +2259,7 @@
   let lastAim = { cx: -120, cz: 0, extent: 640 };
   const sun = new THREE.DirectionalLight(COLORS.sun, 1.58);
   sun.castShadow = true;
-  const SHADOW_RES = LITE ? 1024 : window.matchMedia('(pointer: coarse)').matches ? 2048 : 4096;
+  const SHADOW_RES = LITE ? 1024 : isTouch ? 2048 : 4096;   // isTouch: the app counts as a phone (Round 154)
   sun.shadow.mapSize.set(SHADOW_RES, SHADOW_RES);
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 1.4;
@@ -13171,7 +13187,14 @@
   const shareCopyBtn = document.getElementById('shareCopy');
   const shareNativeBtn = document.getElementById('shareNative');
   let shareNoteT = 0;
-  function shareLink() { return location.origin + location.pathname + '#' + viewState(true); }
+  const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;   // Round 154: the app shares the site's links, never its own origin
+  const shareQuery = () => {   // the app's query holds only what the page itself put there (the skyline theme, the crown bands)
+    if (!IN_APP) return location.search;
+    const u = new URLSearchParams(location.search), o = new URLSearchParams();
+    for (const k of ['lights', 'bands']) if (u.has(k)) o.set(k, u.get(k));
+    const t = o.toString(); return t ? '?' + t : '';
+  };
+  function shareLink() { return SITE_URL + '#' + viewState(true); }
   function sharePlaceName(x, z) {
     // the nearest neighborhood the baked places layer knows, so the card says where this is.
     // PLACES.nb is { names, l }, l being name index, x, z and a height per entry, stride 4
@@ -14278,7 +14301,7 @@
   const copyLabel = btnCopyLink.textContent;
   btnCopyLink.addEventListener('click', () => {
     updateHash(performance.now(), true);   // the link carries this pose, not the last 500 ms tick
-    const url = location.origin + location.pathname + location.search + '#' + viewState(true);   // with the pinned clock, if any
+    const url = SITE_URL + shareQuery() + '#' + viewState(true);   // with the pinned clock, if any
     const done = () => { btnCopyLink.textContent = 'Copied'; setTimeout(() => { btnCopyLink.textContent = copyLabel; }, 1500); };
     const legacy = () => {
       // no async clipboard (plain http, older WebKit): select a throwaway field and copy
@@ -14683,7 +14706,7 @@
     if (document.hidden || SCORES.busy || now < SCORES.nextT) return;
     SCORES.busy = true;
     SCORES.nextT = now + Math.min(300000, (SCORES.games.some((g) => g.live) ? 45000 : 90000) * (1 + SCORES.fails));
-    Promise.all(SCORE_KEYS.map((k) => fetch(SCORE_URL(k), { signal: AbortSignal.timeout(12000) }).then((r) => (r && r.ok ? r.json() : null)).catch(() => null)))
+    Promise.all(SCORE_KEYS.map((k) => fetch(SCORE_URL(k), { signal: AbortSignal.timeout ? AbortSignal.timeout(12000) : undefined }).then((r) => (r && r.ok ? r.json() : null)).catch(() => null)))
       .then((res) => {
         const games = [];
         const nowMs = Date.now();
@@ -14788,7 +14811,7 @@
   // ballpark and the stadium heights the scores use, stacking over a game there. A missing or
   // stale file means no placards, silently: there is no keyless fallback.
   const CONCERTS = { on: true, ok: false, fails: 0, nextT: 0, busy: false, events: [], shown: [], els: [], pins: [], tick: -1, shownKey: null };
-  const CONCERTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/concerts.json' : 'https://philly3d.com/concerts.json';
+  const CONCERTS_URL = DEV_LOCAL ? '/concerts.json' : 'https://philly3d.com/concerts.json';
   const CONCERT_POLL = 600000, CONCERT_STALE = 3 * 3600;   // 10 min while visible; a file 3 h old is a stopped baker
   const CONCERT_HANG = 60, CONCERT_ROOF = 12;   // the placard hangs 60 m over the roof; a venue the grid does not know stands 12 m
   const CONCERT_MERGE = 80;   // venues this close share one placard (the rooms of one building; 130 until Round 66 pinned the Fillmore's rooms at one point, and merged Underground Arts with NOTO, 127 m up 12th Street, at a pin between them)
@@ -16933,7 +16956,7 @@
   // a key is pasted into AIS_KEY. Ships dead-reckon between reports (they are
   // slow, so a few-second cadence renders glassy smooth), moored and anchored
   // vessels hold station, and the card knows a tug from a tanker.
-  const AIS_KEY = 'f9148033287fd7b2fd6c82142e0b78ac0f1906cf';   // aisstream.io, Mike's free key
+  const AIS_KEY = IN_APP ? '' : 'f9148033287fd7b2fd6c82142e0b78ac0f1906cf';   // the app runs from the relay alone (Round 154)   // aisstream.io, Mike's free key
   // The free key streams to ONE client at a time, so a direct socket makes the
   // layer single-viewer. ops/ais_relay.py holds that one socket on the VPS and
   // writes ais.json every 4 s for everyone; the page polls it and falls back
@@ -17406,7 +17429,7 @@
   // Amfleets; Keystone and Pennsylvanian: an ACS-64 and five; anything else: an ACS-64 and
   // nine. The K key and the eleventh layer bit (reserved since Round 79).
   Object.assign(AMTRAK, { ok: false, fails: 0, busy: false, nextT: 0, baked: true, bakedRetryT: 0, host: '' });
-  const AMTRAK_BAKED = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/amtrak.json' : 'https://philly3d.com/amtrak.json';
+  const AMTRAK_BAKED = DEV_LOCAL ? '/amtrak.json' : 'https://philly3d.com/amtrak.json';
   const AMTRAK_DIRECT = 'https://api-v3.amtraker.com/v3/trains';
   const AMTRAK_POLL = 30000, AMTRAK_DIRECT_POLL = 60000, AMTRAK_STALE = 150, AMTRAK_CAP = 48, AMTRAK_CAR_CAP = 512;
   // Dead reckoning runs this long past a fix, and a fix farther than AMTRAK_SNAP from the
@@ -19122,7 +19145,7 @@
     cal: lightsCalOf(typeof LIGHTS_CAL !== 'undefined' ? LIGHTS_CAL : null) || { t: 0, rows: [] },
   };
   const LGAMES = { days: { nfl: {}, mlb: {}, nhl: {}, nba: {} }, fetched: {}, busy: '', fails: 0, retryAt: 0 };
-  const LIGHTS_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/lights.json' : 'https://philly3d.com/lights.json';
+  const LIGHTS_URL = DEV_LOCAL ? '/lights.json' : 'https://philly3d.com/lights.json';
   const _thSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _stSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _thHouse = new THREE.Color(0.55, 0.56, 0.6), _thTmp = new THREE.Color();
   const _thHouseLin = new THREE.Color(), _thWinLin = new THREE.Color();
   function themeLift(src, out) {   // a palette colour (sRGB) to the emissive the crowns get: linear, 0.45 of it, a dim hue lifted up to 2.2 times
@@ -19249,7 +19272,7 @@
   // before) on the streetlights' cadence, capped like the poles, a pin over each block (Round 82). The U
   // key and the twelfth layer bit; a file three hours stale is a stopped baker and draws nothing.
   const CLOSURES = { on: true, ok: false, fails: 0, nextT: 0, busy: false, t: 0, recs: [], paving: [], drawn: [], pavedN: 0, milledN: 0, runsClosed: 0 };
-  const CLOSURES_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/closures.json' : 'https://philly3d.com/closures.json';
+  const CLOSURES_URL = DEV_LOCAL ? '/closures.json' : 'https://philly3d.com/closures.json';
   const CLOSURE_POLL = 1800000, CLOSURE_STALE = 3 * 3600;   // 30 min while visible; a file 3 h old is a stopped baker
   const CLOSURE_CAP = isTouch ? 1200 : 6000, CLOSE_TRAFFIC = true, CLOSURE_PIN_CAP = 400;   // drawn within NEAR_R since Round 82 (2.5 km before)
   const closureInv = { X: [], Y: [], Z: [], YAW: [], K: [], R: [], cells: new Map() };   // every posted drum (K 0) and cone (K 1), by 400 m cell
@@ -20370,7 +20393,7 @@
   // within 110 km for 15 min). The page polls it every 4 s and draws a bolt at
   // each new strike's real position, so the storm over New Jersey shows from
   // here. While the feed is live the synthetic random bolts stand down.
-  const LIGHTNING_URL = (location.hostname === 'localhost' || location.hostname === '127.0.0.1') ? '/lightning.json' : 'https://philly3d.com/lightning.json';
+  const LIGHTNING_URL = DEV_LOCAL ? '/lightning.json' : 'https://philly3d.com/lightning.json';
   const LTN = { live: false, ok: false, busy: false, fails: 0, nextT: 0, lastSeen: 0, queue: [], n10: 0, nearestKm: null, n: 0, drawn: 0, nextDraw: 0 };
   const LTN_DRAW_KM = 80;   // 50 miles
   function ltnPoll(now) {
@@ -21744,7 +21767,19 @@
     if (coreRoadGround) coreRoadGround.nrm = null;
     for (const el of document.querySelectorAll('script[data-blob]')) el.remove();
     bootMark('ready');
-    setTimeout(bootClear, 20000);   // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived
+    // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived.
+    // Round 154: after that the breadcrumb says 'running' while the page is in front, so a phone or the app killed for memory
+    // DURING use also comes back lite; it is taken back whenever the page goes to the background or is left, so an app
+    // closed or suspended in the ordinary way is not mistaken for a crash
+    setTimeout(() => {
+      // review: the interval only ever writes (a hidden tab's timer must not erase what the tab in front writes); the crumb
+      // goes on hidden, on blur (WebKit blurs the window when the app resigns active) and on pagehide
+      const bootRun = () => { if (document.visibilityState === 'visible' && document.hasFocus()) bootMark('running'); };
+      bootRun(); setInterval(bootRun, 60000);
+      document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') bootRun(); else bootClear(); });
+      window.addEventListener('focus', bootRun);
+      window.addEventListener('blur', bootClear);
+    }, 20000);
     beacon('ready', { ms: PERF.ready, fail: failures });
     setLoadingMessage(failures ? 'Ready (some detail could not be built)' : 'Ready');
     loadmsg.classList.add('done');   // the pulse stops with the wait
@@ -21783,11 +21818,29 @@
   window.addEventListener('resize', fitView);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fitView);
   fitView();
+  let shownAt = 0;   // performance.now() of the last return to the front (a context loss within 5 s of it is a background loss)
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') shownAt = performance.now(); });
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
+    // Round 154: a phone (or the app, which has no reload button) comes straight back in the lite build, once a session;
+    // the view is in the address, so it returns where it was
+    // review: a loss in the background (routine on iOS and Android when the GPU is reclaimed) is not a memory death: the page
+    // reloads the full build once it is in front again. A loss in front reloads THIS tab lite (sessionStorage), never the
+    // fortnight's sticky flag. Guarded by time, not count: another reload only if the last one was over two minutes ago
+    if (isTouch) {
+      let last = 0; try { last = +sessionStorage.getItem('philly3d.ctxlost') || 0; } catch (err) { last = Date.now(); }
+      if (Date.now() - last > 120000) {
+        const front = document.visibilityState === 'visible' && performance.now() - shownAt > 5000;
+        const go = () => { try { sessionStorage.setItem('philly3d.ctxlost', String(Date.now())); if (front) sessionStorage.setItem('philly3d.litenow', '1'); } catch (err) { /* private mode */ } location.reload(); };
+        if (document.visibilityState === 'visible') go();
+        else document.addEventListener('visibilitychange', function once() { if (document.visibilityState === 'visible') { document.removeEventListener('visibilitychange', once); go(); } });
+        return;
+      }
+    }
     const el = document.getElementById('nogl');
+    if (isTouch) el.onclick = () => location.reload();   // the app has no reload button: a tap brings the city back
     el.style.display = 'flex';
-    el.firstElementChild.innerHTML = 'The 3D view was interrupted (graphics memory pressure).<br>Reload the page to continue exploring.';
+    el.firstElementChild.innerHTML = 'The 3D view was interrupted (graphics memory pressure).<br>' + (isTouch ? 'Tap to continue exploring.' : 'Reload the page to continue exploring.');
   });
 
   // THREE.Fog saturates at fog.far, so a chunk whose every point lies deeper

@@ -14,8 +14,22 @@ class BootLite(unittest.TestCase):
     def test_breadcrumb_is_written_and_cleared(self):
         s = self.src
         for anchor in ("bootMark('start');", "bootMark(s.msg);", "bootMark('ready');",
-                       "setTimeout(bootClear, 20000);", "window.addEventListener('pagehide', bootClear);"):
+                       "setInterval(bootRun, 60000);", "window.addEventListener('blur', bootClear);", "window.addEventListener('pagehide', bootClear);"):
             self.assertIn(anchor, s, 'missing: ' + anchor)
+
+    def test_the_app_and_the_running_crumb(self):
+        s = self.src
+        # Round 154 and its review: the wrapper's marker first, the www host is the site, only the app rewrites share links
+        self.assertIn("const IN_APP = /Philly3DApp/.test(navigator.userAgent) || location.protocol === 'capacitor:'", s)
+        self.assertIn("const ON_SITE = !IN_APP && /(^|\\.)philly3d\\.com$/.test(location.hostname);", s)
+        self.assertIn("const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;", s)
+        # a 'running' crumb is fresh for 3 minutes; one such death is lite for this load only
+        self.assertIn("bootAge < (bootPrev.step === 'running' ? 3 * 60000 : 30 * 60000)", s)
+        self.assertIn("else if (isTouch && bootStick) localStorage.setItem(LITE_KEY, String(Date.now()));", s)
+        # the interval only writes; a background context loss reloads full, a foreground one lite for this tab
+        self.assertIn("const bootRun = () => { if (document.visibilityState === 'visible' && document.hasFocus()) bootMark('running'); };", s)
+        self.assertIn("if (front) sessionStorage.setItem('philly3d.litenow', '1');", s)
+        self.assertNotIn("localStorage.setItem(LITE_KEY, String(Date.now())); } catch (err)", s)
 
     def test_lite_is_touch_only_unless_forced(self):
         s = self.src
