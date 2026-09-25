@@ -20,7 +20,7 @@ class ElevatedTracks(unittest.TestCase):
         script = r'''
 const THREE=require(THREE_PATH),groupCity=new THREE.Group();
 const GROUND_PITS=[];   // Round 139: the excavations elPortalClipGround also cuts (none in this harness)
-const freeOnUpload=()=>{},step=(name,fn)=>fn(),siteY=(x,z)=>12+Math.sin(x/700)*3+Math.cos(z/800)*2;
+const freeOnUpload=()=>{},dropUploadedArray=function(){this.array=null;},step=(name,fn)=>fn(),siteY=(x,z)=>12+Math.sin(x/700)*3+Math.cos(z/800)*2;
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 const signedArea=p=>p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-b[0]*a[1];},0)/2;
 CLIP_HELPERS

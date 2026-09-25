@@ -24,6 +24,7 @@ class VenueGeometry(unittest.TestCase):
 const THREE = require(THREE_PATH), V3 = THREE.Vector3;
 const c = new THREE.Color(), nightUniform = {value:0}, flood=[], themeParts=[];
 const renderer = {capabilities:{getMaxAnisotropy:()=>8}};
+const freeTexOnUpload = (t) => t;   // Round 158: a phone frees a texture's canvas at upload; not what this harness checks
 const ctx = new Proxy({}, {get:(_,k)=>k==='createLinearGradient'?()=>({addColorStop(){}}):()=>{},set:()=>true});
 const document = {createElement:()=>({getContext:()=>ctx})};
 let maps=[], solids=[];
