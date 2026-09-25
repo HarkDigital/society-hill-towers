@@ -1929,12 +1929,18 @@
   // nothing else, and the street index (labels, terrain clearance) still sees every triangle
   // a street mesh's normals as normalized bytes, the way VBuf packs the buildings' (Round 122):
   // computeVertexNormals leaves three floats a vertex, 12 B where 3 do, on the largest meshes
-  // in the scene after the fabric
+  // in the scene after the fabric.
+  // FOUR bytes a vertex, the fourth a zero the shader never reads (it declares a vec3): WebKit
+  // draws WebGL through ANGLE's Metal backend on the iPhone and the Mac, and ANGLE converts any
+  // vertex buffer whose stride is not a multiple of 4 into a padded copy that it caches beside the
+  // original (VertexArrayMtl's needConversion, kVertexAttribBufferStrideAlignment 4, the
+  // tightly packed override R8G8B8_SNORM -> R8G8B8A8_SNORM), so three bytes a vertex cost seven
+  // there. Four are drawn as they stand on Metal, D3D11 and GL alike.
   function packNormals(g) {
     const a = g.attributes.normal; if (!a) return;
-    const src = a.array, out = new Int8Array(src.length);
-    for (let i = 0; i < src.length; i++) out[i] = Math.round(src[i] * 127);
-    g.setAttribute('normal', new THREE.BufferAttribute(out, 3, true));
+    const src = a.array, n = a.count, out = new Int8Array(n * 4);
+    for (let i = 0; i < n; i++) for (let k = 0; k < 3; k++) { const v = Math.round(src[i * 3 + k] * 127); out[i * 4 + k] = v > 127 ? 127 : v < -127 ? -127 : v; }
+    g.setAttribute('normal', new THREE.BufferAttribute(out, 4, true));
   }
   const _rwSeen = new Map(), _rwTri = new Float64Array(9);
   let _rwN = 0;
@@ -3898,8 +3904,101 @@
   // merged geometry we never raycast, the CPU-side typed arrays are pure waste
   function freeOnUpload(g) {
     if (!g.boundingSphere) g.computeBoundingSphere();   // frustum culling must never touch a nulled array
-    for (const k in g.attributes) g.attributes[k].onUpload(function () { this.array = null; });
+    for (const k in g.attributes) { const a = g.attributes[k]; (a.isInterleavedBufferAttribute ? a.data : a).onUpload(function () { this.array = null; }); }   // an interleaved attribute uploads through its buffer
     if (g.index) g.index.onUpload(function () { this.array = null; });
+  }
+  // a raycast target (rayTargets) must keep what Mesh.raycast reads: the positions, the index and
+  // any uv (r149 reads no normal and no colour). Its shading arrays, the normals, the colours and the
+  // lane paint, are dead once the GPU holds them (gotcha 12 still holds for the rest)
+  function freeShadingOnUpload(g) {
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    for (const k in g.attributes) {
+      if (k === 'position' || k === 'uv' || k === 'uv2') continue;
+      const a = g.attributes[k]; (a.isInterleavedBufferAttribute ? a.data : a).onUpload(function () { this.array = null; });
+    }
+  }
+  // ---- resident packing (the phones' memory, Sep 24). Measured at ready on the phone path, 48
+  // static geometries still carried Float32 normals and colours (5.3 M vertices: the ground sheets,
+  // the flats and lots, the far ground, the water, the weather's surfaces), and the overpass decks
+  // 1.1 M more: 24 B a vertex where 12 draw the same picture. Every mesh under groupCity passes
+  // through packResident before its first upload: in flushUploads ahead of each render behind the
+  // veil, and once as build() ends, ahead of the first frame (nothing else renders the scene first).
+  // - A normal goes to four normalized bytes (packNormals; why four and not three is there).
+  // - A colour whose every channel lies in [0, 1] goes to normalized SHORTS, never bytes: the
+  //   stored-dark palette sits near 0.007 linear, where one byte step is more than half the value. A colour of
+  //   three is laid in an interleaved buffer four shorts a vertex, an 8 B stride Metal draws as it
+  //   stands (a tight 6 B stride is converted to a padded copy kept beside it, 14 B in all, more than
+  //   the floats). It keeps its itemSize of 3: at 4 three turns on vertexAlphas and compiles a
+  //   second program for every material. A water sheet's colour already has four (the shore alpha).
+  // - A Uint32 index becomes Uint16 when every index is under 65,535 (0xFFFF is WebGL 2's primitive
+  //   restart, which is why three itself switches there).
+  // A colour moves at most half of 1/65535 and a normal's direction well under a degree, so nothing
+  // on screen changes; tests/test_pack_resident.py runs this block under Node.
+  // Left alone: a geometry already uploaded (its arrays freed, or seen by an earlier pass: a replaced
+  // attribute would strand its GL buffer until the geometry is disposed), instanced meshes, points
+  // and lines, any attribute with a dynamic usage, a normal holding anything but directions, a colour
+  // outside [0, 1] (the wide strips' Fairmount tint is a ratio over 1), and the skyline's wash sheets,
+  // whose colours updateLightsTheme rewrites on every eased frame. The ground registry's G.nrm holds
+  // its own reference to the Float32 normals it registered, so conformDrape reads what it always did.
+  // A freeOnUpload hook moves to the packed attribute (or its interleaved buffer).
+  const PACKED = new WeakSet();
+  PERF.pack = { passes: 0, geoms: 0, normals: 0, colors: 0, indices: 0, fromB: 0, toB: 0 };   // __dbg.PERF.pack: the bytes before and after
+  const packable = (a) => !!(a && a.isBufferAttribute && !a.isInstancedBufferAttribute && a.usage === THREE.StaticDrawUsage && a.array);
+  function packHand(from, to) { if (Object.prototype.hasOwnProperty.call(from, 'onUploadCallback')) to.onUploadCallback = from.onUploadCallback; }
+  function packInRange(arr, lo, hi) { for (let i = 0; i < arr.length; i++) { const v = arr[i]; if (!(v >= lo && v <= hi)) return false; } return true; }   // a NaN is out of range too
+  function packColors(g) {
+    const c = g.attributes.color, n = c.count, src = c.array, out = new Uint16Array(n * 4);
+    let a;
+    if (c.itemSize === 4) {
+      for (let i = 0; i < out.length; i++) out[i] = Math.round(src[i] * 65535);
+      a = new THREE.BufferAttribute(out, 4, true); packHand(c, a);
+    } else {
+      for (let i = 0; i < n; i++) { out[i * 4] = Math.round(src[i * 3] * 65535); out[i * 4 + 1] = Math.round(src[i * 3 + 1] * 65535); out[i * 4 + 2] = Math.round(src[i * 3 + 2] * 65535); }
+      const buf = new THREE.InterleavedBuffer(out, 4); packHand(c, buf);
+      a = new THREE.InterleavedBufferAttribute(buf, 3, 0, true);
+    }
+    g.setAttribute('color', a);
+    return a;
+  }
+  function packIndex(g) {
+    const ix = g.index, src = ix.array;
+    for (let i = 0; i < src.length; i++) if (src[i] >= 65535) return null;
+    const a = new THREE.BufferAttribute(new Uint16Array(src), 1); packHand(ix, a);
+    g.setIndex(a);
+    return a;
+  }
+  function packGeometry(g) {
+    const A = g.attributes, P = PERF.pack;
+    if (!A.position || g.isInstancedBufferGeometry || Object.keys(g.morphAttributes).length) return false;
+    for (const k in A) if (!A[k].array) return false;   // uploaded and freed already
+    let did = false, from = 0, to = 0;
+    const nrm = A.normal;
+    if (packable(nrm) && nrm.array instanceof Float32Array && nrm.itemSize === 3 && packInRange(nrm.array, -1.001, 1.001)) {
+      packNormals(g); packHand(nrm, A.normal);
+      P.normals++; from += nrm.array.byteLength; to += A.normal.array.byteLength; did = true;
+    }
+    const col = A.color;
+    if (packable(col) && col.array instanceof Float32Array && (col.itemSize === 3 || col.itemSize === 4) && packInRange(col.array, 0, 1)) {
+      const a = packColors(g);
+      P.colors++; from += col.array.byteLength; to += a.array.byteLength; did = true;
+    }
+    const ix = g.index;
+    if (packable(ix) && ix.array instanceof Uint32Array && A.position.count <= 65535) {
+      const a = packIndex(g);
+      if (a) { P.indices++; from += ix.array.byteLength; to += a.array.byteLength; did = true; }
+    }
+    if (did) { P.geoms++; P.fromB += from; P.toB += to; }
+    return did;
+  }
+  function packResident(root) {
+    PERF.pack.passes++;
+    root.traverse((o) => {
+      const g = o.geometry;
+      if (!g || !g.isBufferGeometry || PACKED.has(g)) return;
+      PACKED.add(g);   // every geometry is looked at once, the skipped kinds too: a later pass must never repack one already on the GPU
+      if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o === themeSheet || o.userData.noPack || g.userData.noPack) return;
+      try { packGeometry(g); } catch (e) { PERF.pack.errors = (PERF.pack.errors || 0) + 1; }   // never the build's death: an unpacked geometry draws as it always did
+    });
   }
   // base64 -> bytes for the packed blobs. The charCodeAt loop is 6x faster
   // than Uint8Array.from(str, fn) (which walks the iterator path and calls the
@@ -7603,6 +7702,7 @@
   const flushUploads = (all) => {
     // each flush is a full-scene draw: batch a dozen sealed chunks per render
     if (!pendingUpload.length || (!all && pendingUpload.length < 12)) return;
+    packResident(groupCity);   // everything this render uploads goes up packed (see packResident)
     // upload now, behind the veil, and free the arrays; under the post pipeline the draw goes
     // into the float target so every program compiles once, in the variant the frames use
     if (POST.on) { if (!postCam) postInit(); postSize(); renderer.setRenderTarget(postRT); renderer.render(scene, camera); renderer.setRenderTarget(null); } else renderer.render(scene, camera);
@@ -11138,6 +11238,7 @@
     if (parts.length) {
       const ovpMat = roadMat({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
       const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
+      freeShadingOnUpload(mesh.geometry);   // 1.1 M vertices at ready on the phone path: a raycast target keeps its positions, the rest goes once uploaded
       mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
       mesh.receiveShadow = true;
       groupCity.add(mesh);
@@ -21964,6 +22065,7 @@
       PERF.steps.push([s.msg, Math.round(performance.now() - t0)]);
       if (BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
     }
+    packResident(groupCity);   // what the steps after the far ring's last flush built uploads in the first frame: packed before it
     PERF.ready = Math.round(performance.now() - PERF.t0);
     bootMark('ready');
     // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived.
