@@ -118,9 +118,22 @@
     if (st === 'err') { if (++beaconErrs > 3) return; }
     else if (beaconSeen.has(st)) return;
     else beaconSeen.add(st);
-    const q = { st, t: Math.round(performance.now()), tch: isTouch ? 1 : 0, dpr: (window.devicePixelRatio || 1).toFixed(2),
+    // the recovery round: every read of a later let or const goes through `safe`, because reading one before its line has run
+    // throws (the TDZ; `typeof` does not help), and the error handler above can beacon that early. Besides the old fields:
+    // tier and lr, the tier this load builds and why (see LITE_WHY); sa, the home-screen app or the app; nav, the navigation
+    // type's initial (n, r, b); hc, 1 when the page came from the HTTP cache (no bytes over the wire, a body all the same:
+    // WebKit's crash reload and a session restore take the cached copy; sw says the worker answered, whose sizes a browser may
+    // report differently); rd, the render pixel ratio (dpr is the display's,
+    // always 3.00 on an iPhone); pv, the step the last load's crumb names, which is where a dead load died. Nothing personal
+    const safe = (f, d) => { try { return f(); } catch (e) { return d; } };
+    const nav = safe(() => performance.getEntriesByType('navigation')[0] || null, null);
+    const q = { st, t: Math.round(performance.now()), tch: safe(() => (isTouch ? 1 : 0), ''), dpr: (window.devicePixelRatio || 1).toFixed(2),
       cores: navigator.hardwareConcurrency || 0, mem: navigator.deviceMemory || 0,
-      gl2: (typeof renderer !== 'undefined' && renderer && renderer.capabilities && renderer.capabilities.isWebGL2) ? 1 : 0, b: document.lastModified };
+      gl2: safe(() => (renderer && renderer.capabilities && renderer.capabilities.isWebGL2 ? 1 : 0), 0), b: document.lastModified,
+      tier: safe(() => TIER, ''), lr: safe(() => LITE_WHY, ''),
+      sa: safe(() => (navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches ? 1 : 0), ''),
+      nav: nav && nav.type ? String(nav.type)[0] : '', hc: nav && nav.transferSize === 0 && nav.decodedBodySize > 0 ? 1 : 0, sw: nav && nav.workerStart > 0 ? 1 : 0,
+      rd: safe(() => DPR.cur.toFixed(2), ''), pv: safe(() => (bootPrev && bootPrev.step ? String(bootPrev.step).slice(0, 24) : ''), '') };
     if (extra) for (const k in extra) if (extra[k] != null) q[k] = extra[k];
     const url = BEACON + '?' + new URLSearchParams(q).toString();
     try { fetch(url, { method: 'POST', keepalive: true, referrerPolicy: 'no-referrer', cache: 'no-store' }).catch(() => {}); }
@@ -141,34 +154,67 @@
   // across the line, the far ring's buildings only within LITE_R of the centre (its streets,
   // parks and ground stay citywide), a smaller shadow map. `?lite=1` forces it and `?lite=0`
   // forbids it; `__dbg.boot()` reports both the breadcrumb found and the mode taken
-  const BOOT_KEY = 'philly3d.boot', LITE_R = 8000;
+  // The recovery round (Mike's iPhone had not finished a session on any build since Sep 19, and the lite build died there
+  // too, after the trees): the lite build is now tier 1 of three. TIER 0 is the full city, 1 the lite build above, 2 the lite
+  // build with the far ring's buildings only within 5 km, no street trees past the wide box, no typical traffic and no rooftop
+  // hardware. A first death builds tier 1 and a second in a row tier 2, and a sticky death of a load that already ran a tier
+  // builds the one above it, since the same tier would die the same way; the tier a sticky death reached is kept a fortnight
+  // in its own key (LITE_KEY stays a bare timestamp, because the builds still in phones' caches read it with a unary plus).
+  // `?lite=0|1|2` forces a tier and skips the gate (bootGate). LITE stays the boolean every older switch reads (TIER >= 1)
+  const BOOT_KEY = 'philly3d.boot', TIER_KEY = 'philly3d.tier';
   let bootPrev = null;
   try { bootPrev = JSON.parse(localStorage.getItem(BOOT_KEY) || 'null'); } catch (e) { bootPrev = null; }
   // Round 154 review: a 'running' crumb (written every minute while the city is in front) is fresh for 3 minutes, not 30,
   // and a single death while running makes THIS load lite; the fortnight's sticky lite needs a death mid-build or a second
   // death while running, so one close the page never heard (a swipe from the app switcher, an in-app browser's Done) does
   // not cost two weeks
+  // The recovery round: a 'ctxlost' crumb (a context loss in front, which reloads the page) reads like 'running', the same
+  // memory death caught in time. A 'gate' crumb is a load that waited for a tap and was left there: it built nothing, so it
+  // is no death, but its count and its tier carry. And a death is sticky whatever the phase when the load that died was the
+  // full build (the one-death rule was for a lite session killed once in use; the full build had died on this phone five
+  // times out of five, and each lite session that ended normally sent the next launch back to it)
   const bootAge = bootPrev && bootPrev.t ? Date.now() - bootPrev.t : Infinity;
-  const bootDied = !!(bootPrev && bootPrev.step && bootAge < (bootPrev.step === 'running' ? 3 * 60000 : 30 * 60000));
-  const bootStick = bootDied && (bootPrev.step !== 'running' || (bootPrev.fails || 0) >= 1);
+  const bootShort = !!(bootPrev && (bootPrev.step === 'running' || bootPrev.step === 'ctxlost'));
+  const bootAtGate = !!(bootPrev && bootPrev.step === 'gate' && bootAge < 30 * 60000);
+  const bootDied = !!(bootPrev && bootPrev.step && !bootAtGate && bootAge < (bootShort ? 3 * 60000 : 30 * 60000));
+  const bootStick = bootDied && (!bootShort || (bootPrev.fails || 0) >= 1 || !bootPrev.lite);
+  const bootFails = bootDied ? (bootPrev.fails || 0) + 1 : bootAtGate ? bootPrev.fails || 0 : 0;
+  const bootTierWas = bootPrev ? (bootPrev.tier != null ? Math.max(0, Math.min(2, bootPrev.tier | 0)) : bootPrev.lite ? 1 : 0) : 0;   // the tier the crumb's load ran (a crumb from before the tiers says only lite)
+  const tierDeath = bootDied ? Math.min(2, Math.max(bootFails >= 2 ? 2 : 1, bootStick ? bootTierWas + 1 : 0)) : 0;
   let sessLite = false;   // lite for this tab only: a foreground context loss reloads into it (Round 154 review)
   try { sessLite = sessionStorage.getItem('philly3d.litenow') === '1'; } catch (e) { sessLite = false; }
   // a device that died once keeps the lite build for a fortnight, or every other visit would
   // try the full one and die again; after that it gets another go at the full build
   const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14;
-  let liteSticky = false;
+  let liteSticky = false, tierSaved = 0;
   try {
     if (/[?&]lite=0\b/.test(location.search)) localStorage.removeItem(LITE_KEY);
     else if (isTouch && bootStick) localStorage.setItem(LITE_KEY, String(Date.now()));
     const ls = +localStorage.getItem(LITE_KEY) || 0;
     liteSticky = ls > 0 && Date.now() - ls < LITE_DAYS * 86400000;
   } catch (e) { liteSticky = false; }
-  const LITE = /[?&]lite=1\b/.test(location.search) || (isTouch && (bootDied || liteSticky) && !/[?&]lite=0\b/.test(location.search)) || (isTouch && sessLite && !/[?&]lite=0\b/.test(location.search));
-  const bootFails = bootDied ? (bootPrev.fails || 0) + 1 : 0;
-  const bootMark = (step) => { try { localStorage.setItem(BOOT_KEY, JSON.stringify({ step, t: Date.now(), fails: bootFails, lite: LITE })); } catch (e) { /* private mode: no breadcrumb, no lite */ } };
-  const bootClear = () => { try { localStorage.removeItem(BOOT_KEY); } catch (e) { /* nothing to clear */ } };
+  try {
+    if (/[?&]lite=0\b/.test(location.search)) localStorage.removeItem(TIER_KEY);
+    const ts = JSON.parse(localStorage.getItem(TIER_KEY) || 'null');
+    if (ts && ts.t && Date.now() - ts.t < LITE_DAYS * 86400000) tierSaved = Math.max(0, Math.min(2, ts.tier | 0));
+    if (isTouch && bootStick && !/[?&]lite=0\b/.test(location.search) && tierDeath > tierSaved) {
+      tierSaved = tierDeath;
+      localStorage.setItem(TIER_KEY, JSON.stringify({ tier: tierDeath, t: Date.now() }));
+    }
+  } catch (e) { tierSaved = 0; }
+  const qLite = /[?&]lite=(\d)\b/.exec(location.search);
+  const TIER = qLite ? Math.min(2, +qLite[1]) : isTouch ? Math.max(tierSaved, tierDeath, bootAtGate ? bootTierWas : 0, liteSticky ? 1 : 0, sessLite ? 1 : 0) : 0;
+  const LITE = TIER >= 1, TIER2 = TIER >= 2;
+  const LITE_R = TIER2 ? 5000 : 8000;   // the far ring's buildings stand within this of the centre on a lite build
+  // the beacon's lr: f forced, c a crumb's death, g the gate's tier, t the saved tier, s the fortnight flag, x this tab's context loss
+  const LITE_WHY = qLite ? 'f' : !isTouch ? '' : (tierDeath ? 'c' : '') + (bootAtGate && bootTierWas ? 'g' : '') + (tierSaved ? 't' : '') + (liteSticky ? 's' : '') + (sessLite ? 'x' : '');
+  const BOOT_GATE = isTouch && bootDied && !/[?&]lite=/.test(location.search);   // a phone that died last time builds nothing until a tap (bootGate)
+  let bootHeld = false;   // the context-loss reload's crumb must outlive the unload's own clears (webglcontextlost)
+  const bootMark = (step) => { if (bootHeld) return; try { localStorage.setItem(BOOT_KEY, JSON.stringify({ step, t: Date.now(), fails: bootFails, lite: LITE, tier: TIER })); } catch (e) { /* private mode: no breadcrumb, no lite */ } };
+  const bootClear = () => { if (bootHeld) return; try { localStorage.removeItem(BOOT_KEY); } catch (e) { /* nothing to clear */ } };
   bootMark('start');
   window.addEventListener('pagehide', bootClear);
+  PERF.boot = { tier: TIER, why: LITE_WHY, gate: BOOT_GATE, died: bootDied, stick: bootStick, fails: bootFails, prev: bootPrev };   // __dbg.PERF.boot
   // the installable app: a network-only service worker beside the page (sw.js) is what lets
   // Chrome and Edge offer Install; the manifest is linked from the template. Only over https,
   // so a dev server never gets a worker
@@ -11792,6 +11838,7 @@
       const x = v[i * 4] * TQ, z = v[i * 4 + 1] * TQ;
       const core = inCore(x, z);
       const outer = !core && !inWide(x, z);
+      if (outer && TIER2) continue;                       // tier 2 plants nothing past the wide box (the recovery round)
       if (!core && isTouch && (i & 1)) continue;          // touch keeps half the forest
       if (inWater(x, z) > -2) continue;
       if (core) {
@@ -18480,6 +18527,7 @@
     }
   }
   step('Setting the traffic flowing', () => {
+    if (TIER2 && typeof TRAFFIC_B64 !== 'undefined') TRAFFIC_B64 = null;   // tier 2 runs no typical traffic (the recovery round): the no-data path below
     if (typeof TRAFFIC_B64 === 'undefined' || !TRAFFIC_B64) { if (btnTraffic) btnTraffic.style.display = 'none'; return; }
     const bin = unb64(TRAFFIC_B64, 'TRAFFIC');
     TRAFFIC_B64 = null;
@@ -19147,6 +19195,7 @@
   // take the roofs' own glow (ROOF_NIGHT), so they read against the roofs they stand on
   const ROOFKIT = { r: isTouch ? 260 : 420, cell: 160, cells: null, meshes: [], at: 0, cam: new THREE.Vector3(1e9, 0, 0), laid: 0 };
   step('Fitting out the rooftops', () => {
+    if (TIER2) { ROOF_KIT.buf = null; ROOF_KIT.n = 0; return; }   // tier 2 lays no rooftop hardware, and the roof notes go (the recovery round)
     if (!ROOF_KIT.n) return;
     const B = ROOF_KIT.buf, cells = new Map();
     for (let i = 0; i < ROOF_KIT.n; i++) {
@@ -22052,7 +22101,32 @@
 
   // ---------------------------------------------------------------- build & loop
   const BEACON_STEPS = new Set(['Raising the outer districts', 'Raising the rest of Philadelphia', 'Raising the towns across the line', 'Planting the street trees']);
+  // ---- the recovery gate (the recovery round). WebKit reloads a page killed for memory once, and when that reload dies
+  // within 30 s of finishing its load, iOS gives up with "A problem repeatedly occurred" and the page never says a word. A
+  // touch load that finds a death (BOOT_GATE) therefore builds nothing until a tap: the reload is only the parsed page, so it
+  // lives through WebKit's window, and the veil says what happened and that the next city is lighter. The crumb says 'gate'
+  // meanwhile, which the next load reads as no death (nothing was built) while keeping its count and its tier
+  let gateGo = null;   // the Enter button's tap while the gate waits (btnEnter's click handler)
+  function bootGate() {
+    bootMark('gate');
+    loadmsg.textContent = TIER >= 2 ? 'This device ran out of memory again. Tap to load the lightest city.' : 'Philadelphia ran out of memory on this device last time. Tap to load a lighter city.';
+    loadmsg.classList.add('done');
+    btnEnter.textContent = 'Load the City';
+    btnEnter.disabled = false;
+    beacon('gate', { fails: bootFails });
+    return new Promise((resolve) => {
+      gateGo = () => {
+        gateGo = null;
+        btnEnter.disabled = true;
+        btnEnter.textContent = 'Preparing…';
+        loadmsg.classList.remove('done');
+        beacon('gatego', { ms: Math.round(performance.now()) });
+        resolve();
+      };
+    });
+  }
   async function build() {
+    if (BOOT_GATE) await bootGate();
     let failures = 0;
     let builtSteps = 0;
     for (const s of buildSteps) {
@@ -22063,7 +22137,8 @@
       const t0 = performance.now();
       try { const r = s.fn(); if (r && typeof r.then === 'function') await r; } catch (err) { failures++; PERF.failed.push([s.msg, String(err && err.message || err)]); console.error('build step failed:', s.msg, err); try { flushUploads(true); } catch (e2) { /* nothing staged */ } }
       PERF.steps.push([s.msg, Math.round(performance.now() - t0)]);
-      if (BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
+      // the recovery round: a phone reports every step, so the step after its last report is the one that killed it
+      if (isTouch || BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
     }
     packResident(groupCity);   // what the steps after the far ring's last flush built uploads in the first frame: packed before it
     PERF.ready = Math.round(performance.now() - PERF.t0);
@@ -22091,6 +22166,7 @@
 
   btnEnter.addEventListener('click', () => {
     btnEnter.blur();   // #veil.hidden is opacity only; a focused Enter button would swallow every key
+    if (gateGo) { gateGo(); return; }   // the recovery gate's tap starts the build (bootGate)
     beacon('enter', { ms: Math.round(performance.now()) });
     setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode }); }, 60000);
     veil.classList.add('hidden');
@@ -22120,9 +22196,15 @@
   if (window.visualViewport) window.visualViewport.addEventListener('resize', fitView);
   fitView();
   let shownAt = 0;   // performance.now() of the last return to the front (a context loss within 5 s of it is a background loss)
+  let glDead = false;   // the context is gone for good: frame() draws nothing more (webglcontextlost)
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') shownAt = performance.now(); });
   canvas.addEventListener('webglcontextlost', (e) => {
     e.preventDefault();
+    // the recovery round: nothing is drawn on a lost context again, reload or not. preventDefault asks the browser to restore
+    // it, r149 re-initialises, and its first render re-uploads geometry whose arrays freeOnUpload has dropped, which threw
+    // 'Unsupported buffer data format' on every frame (an iPhone beaconed it three times on Sep 16); only a reload brings the
+    // city back
+    glDead = true;
     // Round 154: a phone (or the app, which has no reload button) comes straight back in the lite build, once a session;
     // the view is in the address, so it returns where it was
     // review: a loss in the background (routine on iOS and Android when the GPU is reclaimed) is not a memory death: the page
@@ -22132,7 +22214,17 @@
       let last = 0; try { last = +sessionStorage.getItem('philly3d.ctxlost') || 0; } catch (err) { last = Date.now(); }
       if (Date.now() - last > 120000) {
         const front = document.visibilityState === 'visible' && performance.now() - shownAt > 5000;
-        const go = () => { try { sessionStorage.setItem('philly3d.ctxlost', String(Date.now())); if (front) sessionStorage.setItem('philly3d.litenow', '1'); } catch (err) { /* private mode */ } location.reload(); };
+        // the recovery round: the reload's pagehide (and the unload's own hidden and blur) must not erase what it recovers
+        // from. A loss in front leaves a 'ctxlost' crumb, which the next load reads as a death while running (fresh for 3
+        // minutes, counted toward the tier, gated); a loss behind is no death, and its crumb goes
+        const go = () => {
+          try { sessionStorage.setItem('philly3d.ctxlost', String(Date.now())); if (front) sessionStorage.setItem('philly3d.litenow', '1'); } catch (err) { /* private mode */ }
+          window.removeEventListener('pagehide', bootClear);
+          if (front) bootMark('ctxlost'); else bootClear();
+          bootHeld = true;
+          beacon('ctxlost', { f: front ? 1 : 0, ms: Math.round(performance.now()) });
+          location.reload();
+        };
         if (document.visibilityState === 'visible') go();
         else document.addEventListener('visibilitychange', function once() { if (document.visibilityState === 'visible') { document.removeEventListener('visibilitychange', once); go(); } });
         return;
@@ -22331,6 +22423,7 @@
     PIN_OCC.hid = hid;
   }
   function frame(now, once) {
+    if (glDead) return;   // a lost context is never drawn on again, and the loop stops here (webglcontextlost)
     if (window.innerWidth !== fitW || window.innerHeight !== fitH) fitView();
     if (!once) requestAnimationFrame(frame);
     const rawMs = now - last;
