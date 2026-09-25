@@ -1,0 +1,7 @@
+prof-*/
+snapprof-*/
+meas-*.json
+snap-*.json
+*.heapsnapshot
+*.out
+*.err
