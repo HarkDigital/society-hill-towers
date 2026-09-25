@@ -23,8 +23,10 @@ class BootLite(unittest.TestCase):
         self.assertIn("const IN_APP = /Philly3DApp/.test(navigator.userAgent) || location.protocol === 'capacitor:'", s)
         self.assertIn("const ON_SITE = !IN_APP && /(^|\\.)philly3d\\.com$/.test(location.hostname);", s)
         self.assertIn("const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;", s)
-        # a 'running' crumb is fresh for 3 minutes; one such death is lite for this load only
-        self.assertIn("bootAge < (bootPrev.step === 'running' ? 3 * 60000 : 30 * 60000)", s)
+        # a 'running' crumb (and since the recovery round a 'ctxlost' one) is fresh for 3 minutes; one such death of a lite
+        # session is lite for this load only (tests/test_recovery.py runs the arithmetic)
+        self.assertIn("const bootShort = !!(bootPrev && (bootPrev.step === 'running' || bootPrev.step === 'ctxlost'));", s)
+        self.assertIn("bootAge < (bootShort ? 3 * 60000 : 30 * 60000)", s)
         self.assertIn("else if (isTouch && bootStick) localStorage.setItem(LITE_KEY, String(Date.now()));", s)
         # the interval only writes; a background context loss reloads full, a foreground one lite for this tab
         self.assertIn("const bootRun = () => { if (document.visibilityState === 'visible' && document.hasFocus()) bootMark('running'); };", s)
@@ -33,7 +35,9 @@ class BootLite(unittest.TestCase):
 
     def test_lite_is_touch_only_unless_forced(self):
         s = self.src
-        self.assertIn("(isTouch && (bootDied || liteSticky) && !/[?&]lite=0\\b/.test(location.search))", s)
+        # the recovery round: LITE is tier 1 or above, and only a forced ?lite= gives the desktop a tier
+        self.assertIn("const TIER = qLite ? Math.min(2, +qLite[1]) : isTouch ? Math.max(", s)
+        self.assertIn("const LITE = TIER >= 1, TIER2 = TIER >= 2;", s)
         self.assertIn("const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14;", s)
 
     def test_what_a_lite_build_drops(self):
