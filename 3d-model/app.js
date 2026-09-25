@@ -665,9 +665,9 @@
     const nor = new Float32Array(count * 3);
     const col = new Float32Array(count * 3);
     const full = facade === true;
-    const sty = full ? new Float32Array(count) : null;
-    const flh = full ? new Float32Array(count) : null;
-    const tin = full ? new Float32Array(count) : null;   // the glass tint key, from the unshaded colour (before the ao ramp)
+    // style, floor height and the glass tint key (from the unshaded colour, before the ao ramp) in one aligned vec4, aSFT,
+    // as raw floats with a 0 in the fourth slot: the chunks write the same attribute as bytes (VBuf, Round 158)
+    const sft = full ? new Float32Array(count * 4) : null;
     const wu = full ? new Float32Array(count) : null, wl = full ? new Float32Array(count) : null, wh = full ? new Float32Array(count) : null;
     const bs = facade ? new Float32Array(count) : null;
     // the lane paint's aLane rides along when any part carries it (zeros elsewhere: the shader skips them)
@@ -694,7 +694,7 @@
       if (ln && g.attributes.aLane) ln.set(g.attributes.aLane.array, o * 4);
       if (cg && g.attributes.aCrownGrid) cg.set(g.attributes.aCrownGrid.array, o * 3);
       if (ir && g.attributes.aInterior) ir.set(g.attributes.aInterior.array, o * 4);
-      if (full) { sty.fill(styleV, o, o + vc); flh.fill(flhV, o, o + vc); tin.fill(parts[pi].tint !== undefined ? parts[pi].tint : glassTintKey(color, styleV), o, o + vc); }
+      if (full) { const tv = parts[pi].tint !== undefined ? parts[pi].tint : glassTintKey(color, styleV); for (let i = 0; i < vc; i++) { const q = (o + i) * 4; sft[q] = styleV; sft[q + 1] = flhV; sft[q + 2] = tv; } }
       if (bs) bs.fill(baseY, o, o + vc);
       if (tl) {
         const lc = parts[pi].lit || white1;
@@ -717,12 +717,10 @@
     out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
     out.setAttribute('color', new THREE.BufferAttribute(col, 3));
     if (full) {
-      out.setAttribute('aStyle', new THREE.BufferAttribute(sty, 1));
-      out.setAttribute('aFloorH', new THREE.BufferAttribute(flh, 1));
+      out.setAttribute('aSFT', new THREE.BufferAttribute(sft, 4));
       out.setAttribute('aWallU', new THREE.BufferAttribute(wu, 1));
       out.setAttribute('aWallL', new THREE.BufferAttribute(wl, 1));
       out.setAttribute('aWallH', new THREE.BufferAttribute(wh, 1));
-      out.setAttribute('aTint', new THREE.BufferAttribute(tin, 1));
     }
     if (bs) out.setAttribute('aBase', new THREE.BufferAttribute(bs, 1));
     if (ln) out.setAttribute('aLane', new THREE.BufferAttribute(ln, 4));
@@ -2139,6 +2137,25 @@
   const TERRAIN_PATCH_CELL = 50, TERRAIN_PATCH_CLEARANCE = 0.08;
   const PROMENADE_Z0 = -1100, PROMENADE_Z1 = 1700;
   let terrainRoadGrid = null;
+  // Round 158 (the phones' memory, found in a heap snapshot): every road triangle near a cut patch used to be kept as an
+  // object with a three-array ring, a bounds array and a triangleGrade closure over eight captured values, about 480 B
+  // each; the city has some 345,000 of them, 165 MB held from the street steps through 'Rolling out the SEPTA fleet',
+  // which is where the iPhones died. They are nine float32 words each now (the ring, exactly the Math.fround values it
+  // was), and the grid's bins hold their numbers; trimTerrainPatch rebuilds a candidate's ring, bounds and plane from
+  // those words, the same values in the same order, so its output is unchanged. About 12 MB
+  const TRS = { w: new Float32Array(9 * 65536), n: 0 };
+  function trsAdd(poly) {
+    if ((TRS.n + 1) * 9 > TRS.w.length) { const w = new Float32Array(TRS.w.length * 2); w.set(TRS.w); TRS.w = w; }
+    const o = TRS.n * 9, w = TRS.w;
+    for (let v = 0; v < 3; v++) { w[o + v * 3] = poly[v][0]; w[o + v * 3 + 1] = poly[v][1]; w[o + v * 3 + 2] = poly[v][2]; }
+    return TRS.n++;
+  }
+  function trsPoly(id) { const o = id * 9, w = TRS.w; return [[w[o], w[o + 1], w[o + 2]], [w[o + 3], w[o + 4], w[o + 5]], [w[o + 6], w[o + 7], w[o + 8]]]; }
+  function trsOverlap(bounds, id) {   // streetOverlap(bounds, streetBounds(ring)) without building the ring
+    const o = id * 9, w = TRS.w;
+    const x0 = Math.min(w[o], w[o + 3], w[o + 6]), x1 = Math.max(w[o], w[o + 3], w[o + 6]), z0 = Math.min(w[o + 1], w[o + 4], w[o + 7]), z1 = Math.max(w[o + 1], w[o + 4], w[o + 7]);
+    return bounds[0] <= x1 && bounds[1] >= x0 && bounds[2] <= z1 && bounds[3] >= z0;
+  }
   const terrainOverlayTasks = [];
   const TERRAIN_PATCH_STATS = { surfaces: 0, triangles: 0, trimmed: 0 };
   PERF.terrainPatches = TERRAIN_PATCH_STATS;
@@ -2165,17 +2182,17 @@
   }
   function rememberTerrainRoad(a,b,c) {
     if(!terrainRoadGrid)return;
-    const bounds=streetBounds([a,b,c]);let surface=null;
+    const bounds=streetBounds([a,b,c]);let surface=-1;
     terrainPatchCells(bounds,key=>{
       const bin=terrainRoadGrid.get(key);if(!bin)return;
-      if(!surface){
+      if(surface<0){
         const poly=[a,b,c].map(p=>p.map(Math.fround));
         if(Math.abs(signedArea(poly))<1e-7)return;
         const x=(a[0]+b[0]+c[0])/3,z=(a[1]+b[1]+c[1])/3,y=(a[2]+b[2]+c[2])/3;
         const cap=capAt(x,z);
         if(cap && frontOff(x,z)>TERRAIN.trenchW && frontOff(x,z)<TERRAIN.trenchE
           && y<frontDem(z)+cap.dy-0.2)return;
-        surface={poly,bounds:streetBounds(poly),height:triangleGrade(...poly)};
+        surface=trsAdd(poly);   // Round 158: nine words, not an object and a closure
         TERRAIN_PATCH_STATS.surfaces++;
       }
       bin.push(surface);
@@ -2205,13 +2222,14 @@
       const tri=[0,1,2].map(j=>{const i=idx?idx.getX(k+j):k+j;return [p.getX(i),p.getZ(i),p.getY(i)];});
       if(Math.abs(signedArea(tri))<1e-7)continue;
       const bounds=streetBounds(tri),height=triangleGrade(...tri),candidates=new Set();
-      terrainPatchCells(bounds,key=>{for(const s of terrainRoadGrid.get(key)||[])if(streetOverlap(bounds,s.bounds))candidates.add(s);});
+      terrainPatchCells(bounds,key=>{for(const id of terrainRoadGrid.get(key)||[])if(trsOverlap(bounds,id))candidates.add(id);});
       let pieces=[tri];
-      for(const s of candidates){
-        const overlap=streetIntersection(tri,s.poly);
+      for(const id of candidates){
+        const sPoly=trsPoly(id),sHeight=triangleGrade(...sPoly);   // the ring and plane the surface object used to carry
+        const overlap=streetIntersection(tri,sPoly);
         if(overlap.length<3 || Math.abs(signedArea(overlap))<1e-7)continue;
-        if(overlap.every(q=>height(...q)<s.height(...q)-TERRAIN_PATCH_CLEARANCE))continue;
-        pieces=pieces.flatMap(piece=>outsideConvex(piece,s.poly));
+        if(overlap.every(q=>height(...q)<sHeight(...q)-TERRAIN_PATCH_CLEARANCE))continue;
+        pieces=pieces.flatMap(piece=>outsideConvex(piece,sPoly));
         TERRAIN_PATCH_STATS.trimmed++;
         if(!pieces.length)break;
       }
@@ -4089,25 +4107,58 @@
     }
     view() { return this.a.subarray(0, this.n); }
   }
+  // a byte colour stream on a 4-byte stride (Round 158: ANGLE's Metal backend keeps a padded copy of any 3-byte stream):
+  // the triples in slots of four, read as three normalized items, so the colour path and its program are unchanged
+  function rgbStride4(triples) {
+    const n = Math.floor(triples.length / 3), u = new Uint8Array(n * 4);
+    for (let i = 0; i < n; i++) { u[i * 4] = triples[i * 3]; u[i * 4 + 1] = triples[i * 3 + 1]; u[i * 4 + 2] = triples[i * 3 + 2]; }
+    return new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(u, 4), 3, 0, true);
+  }
+  const _sftI8 = new Int8Array(1), _sftU8 = new Uint8Array(_sftI8.buffer);   // VBuf.push: an Int8 store read back as its byte
+  // the facade and curtain-wall shaders read style, floor height and tint through aSFT (Round 158): bytes from the
+  // chunks (fourth slot 1.0: the byte recovered from its normalized value and read signed, as the Int8 arrays were), raw
+  // floats from mergeColored (fourth slot 0); the old names stay as macros so the shaders' bodies are unchanged
+  const SFT_GLSL = [
+    'attribute vec4 aSFT;',
+    'float sftByte(float v) { float b = floor(v * 255.0 + 0.5); return b > 127.5 ? b - 256.0 : b; }',
+    '#define aStyle (aSFT.w > 0.5 ? sftByte(aSFT.x) : aSFT.x)',
+    '#define aFloorH (aSFT.w > 0.5 ? sftByte(aSFT.y) : aSFT.y)',
+    '#define aTint aSFT.z',
+  ].join('\n');
   class VBuf {
     constructor(cap) { this.n = 0; this.cap = 0; this.grow(cap); this.idx = new IdxBuf(cap * 3); }
+    // Round 158 (the phones' memory, measured in WebKit's own ANGLE): the Metal backend copies every vertex attribute
+    // whose stride or offset is not a multiple of 4 bytes into a padded buffer and keeps that copy as long as the
+    // buffer lives (kVertexAttribBufferStrideAlignment, VertexArrayMtl::syncDirtyAttrib, on every Safari from 17 to 26).
+    // The chunks' 3-byte normals and colours and their three 1-byte words cost 29 B a vertex uploaded and 49 B
+    // resident on an iPhone, some 240 MB over the city's 12 M vertices. So every stream is 4-aligned now: the normal and
+    // the colour ride a 4-byte slot each (an interleaved buffer of stride 4 read as 3 items, so the shaders and the
+    // colour path are untouched), and style, floor height and tint share one 4-byte word, aSFT, whose fourth byte
+    // (255) tells the shader these are bytes (mergeColored writes the same attribute as raw floats with a 0 there).
+    // 32 B a vertex, no copies, the same values bit for bit: the bytes are stored exactly as the old Int8 and Uint8
+    // arrays stored them and decoded signed where they were signed
     grow(cap) {
-      const pos = new Float32Array(cap * 3), nor = new Int8Array(cap * 3), col = new Uint8Array(cap * 3);
-      const sty = new Int8Array(cap), bas = new Float32Array(cap), flh = new Int8Array(cap), tin = new Uint8Array(cap), fac = new Int16Array(cap * 2);
+      const pos = new Float32Array(cap * 3), nor = new Int8Array(cap * 4), col = new Uint8Array(cap * 4);
+      const sft = new Uint8Array(cap * 4), bas = new Float32Array(cap), fac = new Int16Array(cap * 2);
       if (this.n) {
         const n = this.n;
-        pos.set(this.pos.subarray(0, n * 3)); nor.set(this.nor.subarray(0, n * 3)); col.set(this.col.subarray(0, n * 3));
-        sty.set(this.sty.subarray(0, n)); bas.set(this.bas.subarray(0, n)); flh.set(this.flh.subarray(0, n)); tin.set(this.tin.subarray(0, n)); fac.set(this.fac.subarray(0, n * 2));
+        pos.set(this.pos.subarray(0, n * 3)); nor.set(this.nor.subarray(0, n * 4)); col.set(this.col.subarray(0, n * 4));
+        sft.set(this.sft.subarray(0, n * 4)); bas.set(this.bas.subarray(0, n)); fac.set(this.fac.subarray(0, n * 2));
       }
-      this.pos = pos; this.nor = nor; this.col = col; this.sty = sty; this.bas = bas; this.flh = flh; this.tin = tin; this.fac = fac; this.cap = cap;
+      this.pos = pos; this.nor = nor; this.col = col; this.sft = sft; this.bas = bas; this.fac = fac; this.cap = cap;
     }
     push(x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint, wallU, wallL, wallH) {
       if (this.n === this.cap) this.grow(this.cap * 2);
-      const i = this.n, j = i * 3;
+      const i = this.n, j = i * 3, k = i * 4;
       this.pos[j] = x; this.pos[j + 1] = y; this.pos[j + 2] = z;
-      this.nor[j] = nx * 127; this.nor[j + 1] = ny * 127; this.nor[j + 2] = nz * 127;
-      this.col[j] = r * 255; this.col[j + 1] = g * 255; this.col[j + 2] = b * 255;
-      this.sty[i] = st; this.bas[i] = base; this.flh[i] = fh ? Math.round(fh * 10) : 0; this.tin[i] = tint ? tint * 255 : 0;
+      this.nor[k] = nx * 127; this.nor[k + 1] = ny * 127; this.nor[k + 2] = nz * 127;
+      this.col[k] = r * 255; this.col[k + 1] = g * 255; this.col[k + 2] = b * 255;
+      // the style and floor bytes go through an Int8 view and are read back as their byte, exactly what the old Int8
+      // arrays held (the shader decodes them signed); the tint is the Uint8 it was
+      _sftI8[0] = st; this.sft[k] = _sftU8[0];
+      _sftI8[0] = fh ? Math.round(fh * 10) : 0; this.sft[k + 1] = _sftU8[0];
+      this.sft[k + 2] = tint ? tint * 255 : 0; this.sft[k + 3] = 255;
+      this.bas[i] = base;
       // Wall quads only have start/end vertices: signed width encodes U=0/L.
       // Two decimetre shorts replace three floats (4 bytes, range 3276.7 m).
       this.fac[i * 2] = Math.min(32767, Math.max(0, Math.round((wallL || 0) * 10))) * (wallU > 0 ? 1 : -1);
@@ -4118,19 +4169,17 @@
     geometry(facade) {
       const g = new THREE.BufferGeometry(), n = this.n;
       g.setAttribute('position', new THREE.BufferAttribute(this.pos.subarray(0, n * 3), 3));
-      g.setAttribute('normal', new THREE.BufferAttribute(this.nor.subarray(0, n * 3), 3, true));
-      g.setAttribute('color', new THREE.BufferAttribute(this.col.subarray(0, n * 3), 3, true));
+      g.setAttribute('normal', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(this.nor.subarray(0, n * 4), 4), 3, 0, true));
+      g.setAttribute('color', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(this.col.subarray(0, n * 4), 4), 3, 0, true));
       if (facade) {
-        g.setAttribute('aStyle', new THREE.BufferAttribute(this.sty.subarray(0, n), 1));
-        g.setAttribute('aFloorH', new THREE.BufferAttribute(this.flh.subarray(0, n), 1));
+        g.setAttribute('aSFT', new THREE.BufferAttribute(this.sft.subarray(0, n * 4), 4, true));
         g.setAttribute('aBase', new THREE.BufferAttribute(this.bas.subarray(0, n), 1));
-        g.setAttribute('aTint', new THREE.BufferAttribute(this.tin.subarray(0, n), 1, true));
         g.setAttribute('aFacade', new THREE.BufferAttribute(this.fac.subarray(0, n * 2), 2));
       }
       g.setIndex(new THREE.BufferAttribute(this.idx.view(), 1));
       g.computeBoundingSphere();
       freeOnUpload(g);
-      this.pos = this.nor = this.col = this.sty = this.bas = this.flh = this.tin = this.fac = this.idx = null;
+      this.pos = this.nor = this.col = this.sft = this.bas = this.fac = this.idx = null;
       return g;
     }
   }
@@ -5623,7 +5672,7 @@
       shader.uniforms.uDetFar = detFarUniform;
       cityMat.userData.shader = shader;
       shader.vertexShader = shader.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute float aStyle; attribute float aFloorH; attribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase; attribute float aTint; attribute vec2 aFacade;\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;')
+        .replace('#include <common>', '#include <common>\n' + SFT_GLSL + '\nattribute float aWallU; attribute float aWallL; attribute float aWallH; attribute float aBase; attribute vec2 aFacade;\nvarying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;')
         .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;\nvWNorm = normalize(mat3(modelMatrix) * objectNormal);\nvStyle = aStyle; vFloorH = aFloorH; vWallU = aWallU + max(aFacade.x, 0.0) * 0.1; vWallL = aWallL + abs(aFacade.x) * 0.1; vWallH = aWallH + aFacade.y * 0.1; vBase = aBase; vTint = aTint;');
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', [
@@ -9431,7 +9480,8 @@
           sh.uniforms.uNight = nightUniform;
           sh.vertexShader = sh.vertexShader
             .replace('#include <common>', `#include <common>
-              attribute float aStyle; attribute float aBase; attribute float aTint; attribute vec2 aFacade;
+              ${SFT_GLSL}
+              attribute float aBase; attribute vec2 aFacade;
               varying vec3 vGWp, vGNm, vGF; varying float vGSt, vGBs, vGT;`)
             .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
               vGWp = (modelMatrix * vec4(transformed, 1.0)).xyz;
@@ -9538,7 +9588,7 @@
       if (rc.n) {
         const g = new THREE.BufferGeometry();
         g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
-        g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
+        g.setAttribute('color', rgbStride4(rc.col));
         if (rc.lane) g.setAttribute('aLane', new THREE.BufferAttribute(rc.lane.subarray(0, rc.n * 4), 4));
         g.setIndex(rc.idx);
         g.computeVertexNormals();
@@ -10385,7 +10435,7 @@
     if (rc.n) {
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(rc.pos), 3));
-      g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(rc.col), 3, true));
+      g.setAttribute('color', rgbStride4(rc.col));
       if (rc.lane) g.setAttribute('aLane', new THREE.BufferAttribute(rc.lane.subarray(0, rc.n * 4), 4));
       g.setIndex(rc.idx);
       g.computeVertexNormals();
@@ -16294,7 +16344,7 @@
     PATCO_STATS = { trackM: Math.round(trackM), ties: ties.length, piers, cuts: patcoCuts().length, mouths: T.map((t) => ({ d: t.d, phl: +t.mouthP.toFixed(1), cam: +t.mouthC.toFixed(1) })) };
   });
   step('Rolling out the SEPTA fleet', () => {
-    terrainRoadGrid = null;   // build-only pavement near cut patches; release even without rail data
+    terrainRoadGrid = null; TRS.w = new Float32Array(9); TRS.n = 0;   // build-only pavement near cut patches; release even without rail data
     if (!septaCanFetch) { btnTransit.style.display = 'none'; return; }
     // Night look: only the glass band + windshield glow (aGlow mask), the body
     // keeps a faint presence — a flat material-wide emissive washed every bus
