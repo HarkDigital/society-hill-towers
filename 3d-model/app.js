@@ -6220,8 +6220,13 @@
           '    vec3 interior = vec3(0.0);',
           '    if(uNight > 0.001) interior = roomLight(roomUV,roomID,roomSeed,roomOffice);',
           '    float resolved = det * smoothstep(0.8,2.4,1.0/max(fwidth(uW)/2.0,fwidth(fv)/facadeFp));',
-          FAR_LIT ? '    shtLit = mix(mix(0.035*windowArea,farV,farOn),max(0.0,glass-roomFrame*.98),resolved);' : '    shtLit = mix(0.035*windowArea,max(0.0,glass-roomFrame*.98),resolved);',
-          FAR_LIT ? '    shtLamp = mix(mix(vec3(0.82,0.67,0.47),farLamp,farOn),interior,resolved);' : '    shtLamp = mix(vec3(0.82,0.67,0.47),interior,resolved);',
+          // Round 159 (Mike, two night screenshots: "The skyscrapers are too lightly colored at distance"): the light itself is
+          // blended between the far glow and the rooms, not its colour and its amount separately. Their product lit every dark
+          // room part way through the fade: at resolved 0.5 an unlit window gave (0.035 + 0.965 / 2) x 0.82 / 2 = 0.21 where the
+          // blend of its two ends is 0.015, so a tower in the fade glowed pale grey from wall to wall. A phone's fade sits at
+          // 0.6 to 2 km, right in the view; a desktop's at 2 to 5 km. Both ends are exactly what they were
+          FAR_LIT ? '    shtLamp = mix(mix(vec3(0.82,0.67,0.47)*(0.035*windowArea),farLamp*farV,farOn),interior*max(0.0,glass-roomFrame*.98),resolved); shtLit = 1.0;'
+            : '    shtLamp = mix(vec3(0.82,0.67,0.47)*(0.035*windowArea),interior*max(0.0,glass-roomFrame*.98),resolved); shtLit = 1.0;',
           '    diffuseColor.rgb = col;',
           '    }',
           '  }',
@@ -9556,16 +9561,18 @@
                 // A room spans two glass panels; both panes see the same interior.
                 vec2 roomGrid=vec2(u/(muP*2.0),yG/fp);
                 float resolved=min(det,smoothstep(.8,2.4,muP*2.0/aaU));
-                gLamp=vec3(.82,.75,.62);
+                // Round 159: the light is blended between the far glow and the rooms (gLamp carries it all, gLit is 1), not their
+                // colours and amounts separately, whose product lit every dark room part way through the fade (the facade shader's note)
+                gLamp=vec3(.82,.75,.62)*.055;
                 ${FAR_LIT ? `// Round 157, phones: the room blocks under the resolved rooms (FAR_LIT_GLSL), at the rooms' own mean
                 float farOn=0.0,farV=0.0;vec2 farFpx=vec2(aaU/(muP*2.0),aaV/fp);
                 if(uNight > .001){
                   farOn=min(clamp((fp*${FAR_K.toFixed(2)}/aaV-1.3)/2.4,0.0,1.0)*wall,smoothstep(.8,2.4,muP*2.0*${FAR_K.toFixed(2)}/aaU));   // the desktop's resolve at FAR_K times the pixels
                   farV=farLitCells(roomGrid,farFpx,roomSeed)*.47;
-                  gLamp=mix(gLamp,mix(vec3(1.0,.82,.58),vec3(1.0,.71,.44),residential),farOn);
+                  gLamp=mix(gLamp,mix(vec3(1.0,.82,.58),vec3(1.0,.71,.44),residential)*farV,farOn);
                 }` : ''}
                 if(uNight > .001)gLamp=mix(gLamp,roomLight(fract(roomGrid),floor(roomGrid),roomSeed,1.0-residential),resolved);
-                gLit=${FAR_LIT ? 'mix(mix(.055,farV,farOn),1.0,resolved)' : 'mix(.055,1.0,resolved)'};
+                gLit=1.0;
                 // Enclosed glazed crowns are mechanical space, not stacks of offices.
                 if(gv==29.0)gLit*=.035;
               }`)

@@ -7049,3 +7049,15 @@ What changed:
 Pixel diffs of desktop and phone, day and night, differ only in pins, swaying trees and cars. 279 tests. Left for Mike: the
 gate's copy and tier 2's contents, and (a VPS edit) Cache-Control no-store on / so a crash reload outside the worker has no
 copy to go stale.
+
+## Round 159 — the skyscrapers' pale fade (Sep 25)
+
+Mike, with two night screenshots (the phone's towers pale grey slabs, the desktop's dark with lit windows): "The
+skyscrapers are too lightly colored at distance." Not Round 157's far blocks: the Round 156 build showed the same pale
+towers at the same poses. Both window shaders faded from the resolved rooms to the far glow by blending the light's colour
+(shtLamp, gLamp) and its amount (shtLit, gLit) separately, then multiplying the two. The product lights every dark room
+part way through the fade: an unlit window at resolved 0.5 gave (0.035 + 0.965 / 2) x 0.82 / 2 = 0.21 where the blend of its
+ends is 0.015, some fifteen times over, so a tower in its fade glowed pale grey from wall to wall. A phone's fade lies at
+0.6 to 2 km, right in the view; a desktop's at 2 to 5 km. Both shaders now blend the finished light (the colour carries it,
+the amount is 1), exact at both ends. Captures at the same poses: the phone's towers dark with lit windows like the
+desktop's, and the desktop's far towers no longer pale. tests/test_far_lit.py holds the blend and its arithmetic.

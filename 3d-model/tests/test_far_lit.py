@@ -39,11 +39,30 @@ class FarLit(unittest.TestCase):
     def test_both_shaders_carry_it_and_the_desktop_keeps_its_fallback(self):
         self.assertIn("FAR_LIT ? FAR_LIT_GLSL : ''", self.src)                 # the facade hook
         self.assertIn("${FAR_LIT ? FAR_LIT_GLSL : ''}", self.src)              # the curtain-wall glass
-        # the desktop's own strings are the else branches, unchanged
+        # the desktop's far glow is the else branch, unchanged
         self.assertIn(": '      shtLit = 0.05 * windowArea;'", self.src)
-        self.assertIn(": '    shtLit = mix(0.035*windowArea,max(0.0,glass-roomFrame*.98),resolved);'", self.src)
-        self.assertIn(": '    shtLamp = mix(vec3(0.82,0.67,0.47),interior,resolved);'", self.src)
-        self.assertIn(": 'mix(.055,1.0,resolved)'", self.src)
+
+    def test_the_fade_blends_the_light_itself(self):
+        """Round 159 (Mike: "The skyscrapers are too lightly colored at distance"): both shaders blend the finished light
+        between the far glow and the rooms. They used to blend its colour and its amount separately and multiply, which lit
+        every dark room part way through the fade, so a tower in its fade (0.6 to 2 km on a phone) glowed pale grey."""
+        s = self.src
+        self.assertIn(": '    shtLamp = mix(vec3(0.82,0.67,0.47)*(0.035*windowArea),interior*max(0.0,glass-roomFrame*.98),resolved); shtLit = 1.0;'", s)
+        self.assertIn("'    shtLamp = mix(mix(vec3(0.82,0.67,0.47)*(0.035*windowArea),farLamp*farV,farOn),interior*max(0.0,glass-roomFrame*.98),resolved); shtLit = 1.0;'", s)
+        self.assertIn('gLamp=vec3(.82,.75,.62)*.055;', s)
+        self.assertIn('gLit=1.0;', s)
+        self.assertIn("residential)*farV,farOn);", s)
+        for gone in ('mix(0.035*windowArea,max(0.0,glass-roomFrame*.98),resolved)', 'mix(.055,1.0,resolved)', "mix(vec3(0.82,0.67,0.47),interior,resolved)"):
+            self.assertNotIn(gone, s, 'the product of two blends is back: ' + gone)
+        # the arithmetic: an unlit room's window (glass 1, interior 0) through the fade, old product against the blend
+        def old(r): return (0.035 + (1 - 0.035) * r) * 0.82 * (1 - r)
+        def new(r): return 0.82 * 0.035 * (1 - r)
+        for r in (0.0, 1.0):
+            self.assertAlmostEqual(old(r), new(r), places=12, msg='both ends are exactly what they were')
+        self.assertGreater(old(0.5) / new(0.5), 14, 'the old fade lit a dark room some 15 times its ends')
+        for k in range(11):
+            r = k / 10
+            self.assertLessEqual(new(r), max(new(0), new(1)) + 1e-12)
 
     def test_weight_is_the_desktops_resolve(self):
         # the facade: the desktop's det at uDetFar 1 on fwidth / FAR_K, and its pixels-a-floor gate times FAR_K
