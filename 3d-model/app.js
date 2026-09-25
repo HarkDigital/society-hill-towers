@@ -18227,48 +18227,95 @@
     // OSM ways often meet the MIDDLE of another way. Split at those endpoints
     // before linking; endpoint-only links made ordinary intersections dead ends.
     // Small horizontal tolerance + a height check never joins stacked overpasses.
-    const cell=32,grid=new Map(),cuts=runs.map(()=>[]),tol=.8;
-    const key=(x,z)=>Math.floor(x/cell)+':'+Math.floor(z/cell);
-    for(let ri=0;ri<runs.length;ri++) {
-      const r=runs[ri];
-      for(let j=0;j<r.xs.length-1;j++) {
-        for(let x=Math.floor((Math.min(r.xs[j],r.xs[j+1])-tol)/cell);x<=Math.floor((Math.max(r.xs[j],r.xs[j+1])+tol)/cell);x++)
-          for(let z=Math.floor((Math.min(r.zs[j],r.zs[j+1])-tol)/cell);z<=Math.floor((Math.max(r.zs[j],r.zs[j+1])+tol)/cell);z++) {
-            const k=x+':'+z;if(!grid.has(k))grid.set(k,[]);grid.get(k).push(ri,j);
+    // Round 158 (the phones' memory): the same graph from typed arrays. The cell index was a Map of 'gx:gz' strings
+    // to JS arrays, 616,000 segment entries in 203,000 cells (about 39 MB) that stayed reachable through the split; the
+    // split built all 46,145 new runs while the 32,300 old ones lived (about 17 MB more); the ends were a second Map
+    // of 92,290 small objects (about 13 MB). Now the index is counted and filled in the old push order inside cutsOf,
+    // so it is garbage before the split starts; each old run is let go the moment its pieces exist; and the ends are
+    // one sort and a sweep that reads the cells and the lists in the old order. The output is the old linker's to the
+    // bit, conn order included: tests/test_traffic_link.py runs the old one beside this on the real traffic.b64.
+    const tol=.8;
+    function cutsOf() {
+      // 32 m cells over the network's own extent (grown by tol, as the old keys were): one pass counts each cell's
+      // entries, a second writes (run, segment) pairs at each cell's cursor, so a cell lists them run by run and
+      // segment by segment exactly as the old Map's array did. About 8 MB against 39, and gone when this returns.
+      const cell=32,n=runs.length,cuts=new Array(n);
+      let x0=Infinity,x1=-Infinity,z0=Infinity,z1=-Infinity;
+      for(let ri=0;ri<n;ri++){const xs=runs[ri].xs,zs=runs[ri].zs;for(let j=0;j<xs.length;j++){const x=xs[j],z=zs[j];if(x<x0)x0=x;if(x>x1)x1=x;if(z<z0)z0=z;if(z>z1)z1=z;}}
+      if(!(x0<=x1&&z0<=z1))return cuts;
+      const gx0=Math.floor((x0-tol)/cell),gz0=Math.floor((z0-tol)/cell),W=Math.floor((x1+tol)/cell)-gx0+1,H=Math.floor((z1+tol)/cell)-gz0+1,C=W*H;
+      const start=new Int32Array(C+1);let ent=null;
+      for(let pass=0;pass<2;pass++) {
+        for(let ri=0;ri<n;ri++) {
+          const xs=runs[ri].xs,zs=runs[ri].zs;
+          for(let j=0;j<xs.length-1;j++) {
+            const xa=Math.floor((Math.min(xs[j],xs[j+1])-tol)/cell)-gx0,xb=Math.floor((Math.max(xs[j],xs[j+1])+tol)/cell)-gx0;
+            const za=Math.floor((Math.min(zs[j],zs[j+1])-tol)/cell)-gz0,zb=Math.floor((Math.max(zs[j],zs[j+1])+tol)/cell)-gz0;
+            for(let x=xa;x<=xb;x++)for(let z=za;z<=zb;z++) {
+              const c=x*H+z;
+              if(pass){const w=start[c]++*2;ent[w]=ri;ent[w+1]=j;}else start[c+1]++;
+            }
           }
+        }
+        if(!pass){for(let c=0;c<C;c++)start[c+1]+=start[c];ent=new Int32Array(start[C]*2);}
       }
-    }
-    for(let ri=0;ri<runs.length;ri++)for(const e of [0,runs[ri].xs.length-1]) {
-      const r=runs[ri],x=r.xs[e],z=r.zs[e],y=r.ys[e],near=grid.get(key(x,z))||[];
-      for(let k=0;k<near.length;k+=2) {
-        const qi=near[k],j=near[k+1];if(qi===ri)continue;
-        const q=runs[qi],dx=q.xs[j+1]-q.xs[j],dz=q.zs[j+1]-q.zs[j],l2=dx*dx+dz*dz;
-        if(l2<.01)continue;
-        const t=clamp(((x-q.xs[j])*dx+(z-q.zs[j])*dz)/l2,0,1),s=q.cum[j]+t*(q.cum[j+1]-q.cum[j]);
-        if(s<1.5||s>q.len-1.5)continue;
-        if(Math.hypot(q.xs[j]+t*dx-x,q.zs[j]+t*dz-z)>tol||Math.abs(q.ys[j]+(q.ys[j+1]-q.ys[j])*t-y)>1.5)continue;
-        cuts[qi].push(s);
+      for(let c=C;c>0;c--)start[c]=start[c-1];start[0]=0;   // the fill ran every cursor to its cell's end: shift them back to the starts
+      for(let ri=0;ri<n;ri++)for(let t=0;t<2;t++) {
+        const r=runs[ri],e=t?r.xs.length-1:0,x=r.xs[e],z=r.zs[e],y=r.ys[e],gx=Math.floor(x/cell)-gx0,gz=Math.floor(z/cell)-gz0;
+        if(gx<0||gx>=W||gz<0||gz>=H)continue;
+        for(let w=start[gx*H+gz]*2,w1=start[gx*H+gz+1]*2;w<w1;w+=2) {
+          const qi=ent[w],j=ent[w+1];if(qi===ri)continue;
+          const q=runs[qi],dx=q.xs[j+1]-q.xs[j],dz=q.zs[j+1]-q.zs[j],l2=dx*dx+dz*dz;
+          if(l2<.01)continue;
+          const t=clamp(((x-q.xs[j])*dx+(z-q.zs[j])*dz)/l2,0,1),s=q.cum[j]+t*(q.cum[j+1]-q.cum[j]);
+          if(s<1.5||s>q.len-1.5)continue;
+          if(Math.hypot(q.xs[j]+t*dx-x,q.zs[j]+t*dz-z)>tol||Math.abs(q.ys[j]+(q.ys[j+1]-q.ys[j])*t-y)>1.5)continue;
+          (cuts[qi]||(cuts[qi]=[])).push(s);
+        }
       }
+      return cuts;
     }
-    const split=[];
+    const cuts=cutsOf(),split=[];
     for(let ri=0;ri<runs.length;ri++) {
-      const r=runs[ri],stops=[0,...cuts[ri].sort((a,b)=>a-b).filter((v,i,a)=>!i||v-a[i-1]>1),r.len];
+      const r=runs[ri],stops=[0,...(cuts[ri]||[]).sort((a,b)=>a-b).filter((v,i,a)=>!i||v-a[i-1]>1),r.len];
+      runs[ri]=null;cuts[ri]=null;   // the old run goes as its pieces are made, so the two sets never stand in full together
+      const rc=r.cum,rx=r.xs,ry=r.ys,rz=r.zs,nc=rc.length;
       for(let k=0;k<stops.length-1;k++) {
-        const lo=stops[k],hi=stops[k+1],ss=[lo,...Array.from(r.cum).filter(s=>s>lo+.01&&s<hi-.01),hi];
-        const xs=[],ys=[],zs=[],cum=[];let j=0;
-        for(const s of ss){while(j<r.cum.length-2&&s>r.cum[j+1])j++;const t=(s-r.cum[j])/(r.cum[j+1]-r.cum[j]||1);xs.push(lerp(r.xs[j],r.xs[j+1],t));ys.push(lerp(r.ys[j],r.ys[j+1],t));zs.push(lerp(r.zs[j],r.zs[j+1],t));cum.push(s-lo);}
-        split.push({...r,xs:Float32Array.from(xs),ys:Float32Array.from(ys),zs:Float32Array.from(zs),cum:Float32Array.from(cum),len:hi-lo,mx:(xs[0]+xs[xs.length-1])*.5,mz:(zs[0]+zs[zs.length-1])*.5,cars:[],conn:[[],[]]});
+        // the piece's vertices are lo, every old vertex strictly inside it by 1 cm, and hi, counted first so each
+        // array is made once at its size (the old boxed arrays rounded to float32 the same way at Float32Array.from)
+        const lo=stops[k],hi=stops[k+1];let m=2;
+        for(let q=0;q<nc;q++)if(rc[q]>lo+.01&&rc[q]<hi-.01)m++;
+        const xs=new Float32Array(m),ys=new Float32Array(m),zs=new Float32Array(m),cum=new Float32Array(m);
+        let j=0,o=0,xa=0,za=0,xb=0,zb=0;
+        for(let q=-1;q<=nc;q++) {
+          const s=q<0?lo:q===nc?hi:rc[q];
+          if(q>=0&&q<nc&&!(s>lo+.01&&s<hi-.01))continue;
+          while(j<nc-2&&s>rc[j+1])j++;
+          const t=(s-rc[j])/(rc[j+1]-rc[j]||1),x=lerp(rx[j],rx[j+1],t),z=lerp(rz[j],rz[j+1],t);
+          if(!o){xa=x;za=z;}xb=x;zb=z;   // the midpoint is taken from the unrounded ends, as it was
+          xs[o]=x;ys[o]=lerp(ry[j],ry[j+1],t);zs[o]=z;cum[o++]=s-lo;
+        }
+        split.push({...r,xs,ys,zs,cum,len:hi-lo,mx:(xa+xb)*.5,mz:(za+zb)*.5,cars:[],conn:[[],[]]});
       }
     }
-    runs.length=0;for(const r of split)runs.push(r);   // Round 153: a spread of 46,145 arguments can overflow a phone's stack
-    const ends=new Map();
-    for(let i=0;i<runs.length;i++)for(const e of [0,1]) {
-      const r=runs[i],j=e?r.xs.length-1:0,k=Math.floor(r.xs[j])+':'+Math.floor(r.zs[j]);
-      if(!ends.has(k))ends.set(k,[]);ends.get(k).push({i,e,x:r.xs[j],y:r.ys[j],z:r.zs[j]});
-    }
-    for(const list of ends.values())for(const a of list) {
-      for(let x=Math.floor(a.x)-1;x<=Math.floor(a.x)+1;x++)for(let z=Math.floor(a.z)-1;z<=Math.floor(a.z)+1;z++)
-        for(const b of ends.get(x+':'+z)||[])if(a.i!==b.i&&Math.hypot(a.x-b.x,a.z-b.z)<=tol&&Math.abs(a.y-b.y)<=1.5)runs[a.i].conn[a.e].push(b.i,b.e);
+    runs.length=0;for(const r of split)runs.push(r);split.length=0;   // Round 153: a spread of 46,145 arguments can overflow a phone's stack
+    // The ends: endpoint p = 2 * run + end in 1 m cells, keyed column by column with a spare row either side so a
+    // neighbour row never wraps into the next column, and sorted by (cell, p), which is the old Map's list order. For
+    // each end, one binary search per neighbour column and a sweep over its three rows visits the cells x then z and
+    // each cell's ends in list order, so every conn list is pushed in the old order. About 2.5 MB against 13.
+    const N=runs.length*2,ex=new Float32Array(N),ey=new Float32Array(N),ez=new Float32Array(N);
+    let fx0=Infinity,fz0=Infinity,fz1=-Infinity;
+    for(let p=0;p<N;p++){const r=runs[p>>1],j=p&1?r.xs.length-1:0;ex[p]=r.xs[j];ey[p]=r.ys[j];ez[p]=r.zs[j];const fx=Math.floor(ex[p]),fz=Math.floor(ez[p]);if(fx<fx0)fx0=fx;if(fz<fz0)fz0=fz;if(fz>fz1)fz1=fz;}
+    const H=fz1-fz0+3,ek=new Float64Array(N),ord=new Int32Array(N);
+    for(let p=0;p<N;p++){ek[p]=(Math.floor(ex[p])-fx0+1)*H+(Math.floor(ez[p])-fz0+1);ord[p]=p;}
+    ord.sort((a,b)=>ek[a]-ek[b]||a-b);
+    for(let p=0;p<N;p++) {
+      const ax=ex[p],ay=ey[p],az=ez[p],conn=runs[p>>1].conn[p&1];
+      for(let dx=-1;dx<=1;dx++) {
+        const k0=ek[p]+dx*H-1,k1=k0+2;
+        let lo=0,hi=N;while(lo<hi){const m=(lo+hi)>>1;if(ek[ord[m]]<k0)lo=m+1;else hi=m;}
+        for(let q=lo;q<N&&ek[ord[q]]<=k1;q++){const b=ord[q];if((b>>1)!==(p>>1)&&Math.hypot(ax-ex[b],az-ez[b])<=tol&&Math.abs(ay-ey[b])<=1.5)conn.push(b>>1,b&1);}
+      }
     }
   }
   step('Setting the traffic flowing', () => {
