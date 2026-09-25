@@ -2,6 +2,10 @@
    Coordinate system: x = east, y = up, z = south, meters, origin at the towers' centroid. */
 (function () {
   'use strict';
+  // Round 158 (the phones' memory): the 43 inline data scripts (build.py's `data-blob`) have all run by the time this one
+  // does (template.html puts the data before the app), their values live in their own let and const bindings, and nothing
+  // reads the elements again, so their text (27 MB) goes now instead of after the last build step (Round 153's place for it)
+  for (const el of document.querySelectorAll('script[data-blob]')) el.remove();
 
   // ---------------------------------------------------------------- config
   // Facade spec from published sources + photo measurement (see About panel):
@@ -6103,6 +6107,33 @@
   // 4/8 without asking); lazy, the renderer exists before any atlas is built
   let hwAniso = 0;
   const anisoOf = (n) => Math.min(n, hwAniso || (hwAniso = renderer.capabilities.getMaxAnisotropy() || 1));
+  // Round 158 (the phones' memory): a static texture's source, a canvas's backing store or a DataTexture's array, is dead
+  // weight once the GPU holds its copy (r149 calls texture.onUpdate right after the upload and its mips), so a phone lets
+  // it go there, as freeOnUpload does for geometry: the canvas to 0 by 0, the array to null. Touch only, because a phone
+  // reloads on a lost context (nothing is ever re-uploaded from the source there) and the desktop keeps what it had. Never
+  // for a texture flagged needsUpdate after its first upload (the Indego atlas, the light map), which would upload an
+  // empty source. hitMask keeps a pin badge's alpha (one bit a texel, 10 KB against a 320 KB canvas) for pinHitOpaque,
+  // which reads the badge's pixels to decide a tap
+  function freeTexOnUpload(tex, hitMask) {
+    if (!isTouch || !tex) return tex;
+    const im = tex.image;
+    if (hitMask && im && im.getContext) {
+      const w = im.width, h = im.height, a = im.getContext('2d').getImageData(0, 0, w, h).data, bits = new Uint8Array((w * h + 7) >> 3);
+      for (let i = 0; i < w * h; i++) if (a[i * 4 + 3] >= 16) bits[i >> 3] |= 1 << (i & 7);
+      tex.userData.hitMask = { w, h, bits };
+    }
+    tex.onUpdate = () => {
+      tex.onUpdate = null;
+      const src = tex.image;
+      if (src && src.getContext) src.width = src.height = 0;
+      else if (src && src.data) src.data = null;
+    };
+    return tex;
+  }
+  // an attribute's onUpload callback that lets its array go. It lives out here on purpose: a callback written inline in a
+  // build step closes over that step's whole scope and keeps it for the page's life (Round 158 measured it: an inline one
+  // on the El's ties held every box and ribbon of the El step, 6 MB of objects and 7 MB of arrays, from then on)
+  function dropUploadedArray() { this.array = null; }
   const PIER_RINGS = [];   // every pier and paved flat, with its deck height, for the pier lamps (Round 148): { poly, y: fixed top or null, lift over the ground }
   let CUSTOM_HOUSE_AT = null;   // the Custom House's footprint and frame, for its night wash in the skyline lights (Round 145)
   step('Restoring the landmarks', () => {
@@ -7842,7 +7873,7 @@
       draw(cv.getContext('2d'), w, h);
       const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding;
       tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-      return tex;
+      return freeTexOnUpload(tex);   // Round 158: drawn once, never redrawn
     };
     const venueMapped = (geom, tex, nightGain, roughness = 0.9) => {
       const mat = new THREE.MeshStandardMaterial({ map: tex, color: nightGain < 1.5 ? 0xc7cec7 : 0xffffff, roughness, envMapIntensity: 0.08, side: THREE.DoubleSide });
@@ -7855,9 +7886,13 @@
       mat.customProgramCacheKey = () => 'venue-texture-' + nightGain;
       const mesh = addChunkMesh(geom, mat); mesh.receiveShadow = true; return mesh;
     };
+    // Round 158: a screen's picture depends only on its title, sub and accent, so the six screens share three textures
+    // (each a 1024 by 512 canvas and its GPU copy with mips, 2.1 and 2.8 MB)
+    const venueScreenTex = new Map();
     const venueScreen = (P, u, v, y, w, h, facing, title, sub, accent) => {
       // Screen content is a fixed venue identity, never a fabricated live score.
-      const tex = venueTexture((ctx, cw, ch) => {
+      const tkey = title + '|' + sub + '|' + accent;
+      const tex = venueScreenTex.get(tkey) || venueScreenTex.set(tkey, venueTexture((ctx, cw, ch) => {
         const bg = ctx.createLinearGradient(0, 0, cw, ch); bg.addColorStop(0, '#071b23'); bg.addColorStop(1, accent);
         ctx.fillStyle = bg; ctx.fillRect(0, 0, cw, ch);
         ctx.strokeStyle = 'rgba(255,255,255,.035)'; ctx.lineWidth = 1;
@@ -7865,7 +7900,7 @@
         ctx.textAlign = 'center'; ctx.fillStyle = '#f3f5f1'; ctx.font = 'italic bold 92px Georgia'; ctx.fillText(title, cw / 2, ch * 0.52, cw * 0.86);
         ctx.font = '600 24px Arial'; ctx.fillText(sub, cw / 2, ch * 0.77, cw * 0.82);
         ctx.fillStyle = '#e1bb69'; ctx.fillRect(cw * 0.38, ch * 0.86, cw * 0.24, 4);
-      }, 1024, 512);
+      }, 1024, 512)).get(tkey);
       const pt = P(u, v, y), ry = facing;
       venuePart(box(w + 1.8, h + 1.8, 1.6, pt[0], pt[1], pt[2], ry), 0x10191c);
       const g = new THREE.PlaneGeometry(w, h); g.rotateY(ry); g.translate(pt[0] + Math.sin(ry) * 0.86, pt[1], pt[2] + Math.cos(ry) * 0.86);
@@ -10535,7 +10570,14 @@
     for(const fit of terrainOverlayTasks)fit();
     terrainOverlayTasks.length=0;
   });
+  // Round 158 (the phones' memory): the ground registry's normals (the far strips' arrays, about 6 MB, kept alive past
+  // freeOnUpload through G.nrm) are read only by groundPlaneN inside conformDrape, and this step makes the last
+  // conformDrape call of the build (the outer districts', the far ring's and these; groundMeshN has no caller), so they go
+  // when it ends, however it ends, instead of at build()'s tail after nineteen more steps (Round 153's place for it)
   step('Paving the lots and yards', () => {
+    try { paveLotsAndYards(); } finally { for (const G of groundGrids) G.nrm = null; if (coreRoadGround) coreRoadGround.nrm = null; }
+  });
+  function paveLotsAndYards() {
     if (typeof PAVED_B64 === 'undefined' || !PAVED_B64) return;
     let v;
     try {
@@ -10574,7 +10616,7 @@
     PERF.paved = counts;   // read through ?dev's __dbg.PERF.paved
     drapeLog('the lots and yards');
     if (/[?&]dev\b/.test(location.search)) console.info('paved ground: ' + Object.keys(counts).map(k => counts[k] + ' ' + PAVED_KIND[k]).join(', ') + ' of ' + nPolys + ' rings' + (skipped ? ', ' + skipped + ' degenerate' : '') + (unknown ? ', ' + unknown + ' of an unknown kind' : ''));
-  });
+  }
   step('Dressing the storefronts', () => {
     // Tier 2 of the facade plan: OSM's shops, cafes, bars, banks and the rest, each on the
     // facade edge of its building that faces the street (bake_storefronts.py). A glazed
@@ -11219,7 +11261,7 @@
     });
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding; tex.wrapS = THREE.RepeatWrapping; tex.anisotropy = 4;
-    return tex;
+    return freeTexOnUpload(tex);   // Round 158: drawn once, never redrawn
   }
   function buildGroundPits() {
     const lin = (hex) => new THREE.Color(hex).convertSRGBToLinear();
@@ -11377,7 +11419,7 @@
     draw(x, R, sx, sy, cv);
     const tex = new THREE.CanvasTexture(cv);
     tex.encoding = THREE.sRGBEncoding; tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
-    return tex;
+    return freeTexOnUpload(tex);   // Round 158: an emit map is still drawn into after this returns, but always before its first upload
   }
   function buildWildeyRow() {
     const P = GROUND_PITS[0], [F1, F2, R2] = P.ring, WR = WILDEY_ROW;
@@ -11574,8 +11616,7 @@
   step('Raising 209 and 211 East Wildey Street', buildWildeyRow);   // Round 142
   step('Painting the meadow', () => {
     texU.uGrass.value = paintGrassTex(isTouch ? 512 : 1024);
-    tuftTex = paintTuftTex(256);
-    leafTex = paintLeafTex(isTouch ? 256 : 512);
+    tuftTex = paintTuftTex(256);   // (the leaf cards' sprite is painted by the trees step, only while CARDS is above 0: Round 158)
   });
   step('Planting the street trees', () => {
     if (typeof TREES_B64 === 'undefined' || !TREES_B64 || typeof TREE_NAMES === 'undefined' || !TREE_NAMES) { plantProceduralTrees(); return; }
@@ -11760,7 +11801,7 @@
     };
     const cardG = CARDS ? cardGeom(CARDS, 0.7) : null;          // the core's crowns
     const cardWideG = CARDS ? cardGeom(14, 2.3) : null;         // the outer districts' (a third of the fill)
-    const leafMat = CARDS ? new THREE.MeshStandardMaterial({ map: leafTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, envMapIntensity: 0.25 }) : null;
+    const leafMat = CARDS ? new THREE.MeshStandardMaterial({ map: leafTex = paintLeafTex(isTouch ? 256 : 512), alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, envMapIntensity: 0.25 }) : null;   // the sprite also sets texU.leafNorm, read only where canK is under 1, that is with the cards
     if (leafMat) leafMat.onBeforeCompile = (sh) => {   // lit as a shell on the crown's normal: no faceDirection flip, or half the cards show their dark backs
       canopySway(sh);
       sh.fragmentShader = sh.fragmentShader.replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal = normal * faceDirection;', ''));
@@ -14141,14 +14182,16 @@
     return mesh;
   }
   function pinHitOpaque(hit) {
-    const mesh = hit.object, tex = mesh.material.map, image = tex && tex.image;
-    if (!hit.uv || !image || !image.getContext) return true;
+    const mesh = hit.object, tex = mesh.material.map, image = tex && tex.image, hm = tex && tex.userData.hitMask;
+    if (!hit.uv || !image || !(hm || image.getContext)) return true;
     const uv = hit.uv.clone(), tiles = mesh.geometry.attributes.aTile;
     // Indego's instance shader remaps the badge UV into its live number atlas.
     if (tiles && hit.instanceId != null) uv.set(uv.x / 32 + tiles.getX(hit.instanceId), uv.y / 16 + tiles.getY(hit.instanceId));
     tex.transformUv(uv);
-    const x = clamp(Math.floor(uv.x * image.width), 0, image.width - 1);
-    const y = clamp(Math.floor(uv.y * image.height), 0, image.height - 1);
+    const W = hm ? hm.w : image.width, H = hm ? hm.h : image.height;
+    const x = clamp(Math.floor(uv.x * W), 0, W - 1);
+    const y = clamp(Math.floor(uv.y * H), 0, H - 1);
+    if (hm) return ((hm.bits[(y * W + x) >> 3] >> ((y * W + x) & 7)) & 1) === 1;   // Round 158: a phone's badge canvas is freed at upload, its alpha kept (freeTexOnUpload)
     return image.getContext('2d').getImageData(x, y, 1, 1).data[3] >= 16;
   }
   function pickPinHit(hits, occluded) {
@@ -14174,6 +14217,7 @@
     return solid && !occluded(solid.point.x, solid.point.y, solid.point.z) ? solid : null;
   }
   function pinMesh(tex, cap, key) {
+    freeTexOnUpload(tex, true);   // Round 158: every caller hands a pinTexture badge, drawn once and never redrawn
     const m = new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0),
       postRaw(new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, fog: false, toneMapped: false }), { mask: true }), Math.max(1, cap));
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -14404,20 +14448,26 @@
       let img = new Image();
       await new Promise((res) => { img.onload = res; img.onerror = res; img.src = 'data:image/png;base64,' + ST_SDF.png; });
       ST_SDF = null;   // the atlas PNG lives in the texture now
-      const cv = document.createElement('canvas');
-      cv.width = AW; cv.height = AH;
-      const g = cv.getContext('2d');
-      g.drawImage(img, 0, 0);
-      img = null;
       // R channel in 256-row bands: one getImageData of the whole atlas was a
-      // 36.8 MB RGBA spike on top of the decoded image, the kind phones die on
+      // 36.8 MB RGBA spike on top of the decoded image, the kind phones die on.
+      // Round 158: nor is the whole atlas drawn into a canvas of its own size any more (another 36.8 MB beside the
+      // decoded image): one canvas a band high takes each band through a 1:1 source rectangle, cleared first so every
+      // band lands on transparent pixels as the whole image did. Canvas row r of band y is image row y + r, which is the
+      // row the old getImageData(0, y, ...) read from the full canvas, so lum is the same array byte for byte
+      const BAND = 256;
+      const cv = document.createElement('canvas');
+      cv.width = AW; cv.height = Math.min(BAND, AH);
+      const g = cv.getContext('2d');
       const lum = new Uint8Array(AW * AH);
-      for (let y = 0; y < AH; y += 256) {
-        const rows = Math.min(256, AH - y);
-        const px = g.getImageData(0, y, AW, rows).data;
+      for (let y = 0; y < AH; y += BAND) {
+        const rows = Math.min(BAND, AH - y);
+        g.clearRect(0, 0, AW, rows);
+        g.drawImage(img, 0, y, AW, rows, 0, 0, AW, rows);
+        const px = g.getImageData(0, 0, AW, rows).data;
         for (let i = 0, o = y * AW; i < rows * AW; i++) lum[o + i] = px[i * 4];
       }
       cv.width = cv.height = 0;   // release the canvas backing store
+      img.onload = img.onerror = null; img.removeAttribute('src'); img = null;   // and the decoded image with its 1.5 MB data: URL
       tex = new THREE.DataTexture(lum, AW, AH, THREE.RedFormat, THREE.UnsignedByteType);  // R8: WebGL2 mipmappable (LUMINANCE is not)
       tex.magFilter = THREE.LinearFilter;
       tex.minFilter = THREE.LinearMipmapLinearFilter;
@@ -14425,6 +14475,10 @@
       tex.flipY = true;                    // the UV math below assumes canvas orientation
       tex.anisotropy = anisoOf(16);   // ground-draped street atlas: grazing angles want the full cap
       tex.needsUpdate = true;
+      // Round 158: upload it now rather than in the first frame after ready, and on a phone let lum (9.2 MB) go with the
+      // upload instead of holding it through every later step and for good (nothing flags this texture again)
+      freeTexOnUpload(tex);
+      renderer.initTexture(tex);
     } else {
       try { await document.fonts.load('italic 600 27px "Montserrat"'); } catch (e) { /* fall back to the stack */ }
       const cv = document.createElement('canvas');
@@ -14486,6 +14540,7 @@
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
     geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
     geo.setIndex(idx);
+    freeOnUpload(geo);   // Round 158: about 6.7 MB; stMesh is only ever shown or hidden, never raycast or rebuilt
     if (sdfMode) {
       // luminance SDF rides in the alphaMap (.g); the 0.5 level-set is the true
       // outline, thresholded with fwidth-scaled AA — crisp at every zoom
@@ -14573,7 +14628,7 @@
       return r;
     };
     const nbRects = PLACES.nb.names.map((nm) => put(nm, true));
-    const tex = new THREE.CanvasTexture(cv);
+    const tex = freeTexOnUpload(new THREE.CanvasTexture(cv));   // Round 158: the 2048 by 1024 atlas (8.4 MB) goes once the names first show
     tex.encoding = THREE.sRGBEncoding;
     tex.anisotropy = anisoOf(16);   // ground-draped neighborhood labels
     const makeMesh = (entries, mat) => {
@@ -15526,7 +15581,7 @@
         }
         railParts.push({ geom: elTrackRibbon(pts, ys, frames, center + Math.sign(center) * 1.19, 0.10, 0.30, 0.45), color: thirdRail });
       }
-      sleepers.push(...elTrackSleepers(pts, ys));
+      for (const sl of elTrackSleepers(pts, ys)) sleepers.push(sl);   // Round 158: never a spread of 28,344 arguments (the stack-overflow pattern Round 153 took out of the traffic)
       const concrete=new THREE.Color(0x424541),cope=new THREE.Color(0x5e625b),tunnel=new THREE.Color(0x101411);
       const wallEnd=Math.min(pts.length-1,cutEnd+3);
       for(const side of [-1,1]){
@@ -15599,6 +15654,7 @@
     groupCity.add(ties);
     EL_STATS = { portals: elTrackProfiles().map(p=>({x:p.pts[p.mouth][0],z:p.pts[p.mouth][1],railY:p.ys[p.mouth]+.4,clearance:4.475,cutLength:+(p.stations[p.cutEnd]-p.stations[p.mouth]).toFixed(1)})), corridors: EL_TRACK.length, routeKm: +(trackLength / 1000).toFixed(2), runningRails: 4, gauge: EL_RAIL.gauge, tiePitch: EL_RAIL.tiePitch, sleepers: sleepers.length, segments: trackSegments, addedDrawCalls: 2 };
     freeOnUpload(el.geometry); freeOnUpload(rails.geometry); freeOnUpload(ties.geometry);
+    ties.instanceMatrix.onUpload(dropUploadedArray);   // Round 158: 2.6 MB; the ties are posed once, here, and never setMatrixAt again (frustumCulled is off, so no sphere is ever taken from them)
   });
 
   // ---- Amtrak's tracks (Round 80). RAIL_AMTRAK (bake_rail.py: the railway=rail ways Amtrak
@@ -15961,14 +16017,18 @@
       }
     }
     RAIL_STATS = { lines: lines.length, chains: chains.length, drawn: drawnSeg, hidden: hiddenSeg, under, underMax: +underMax.toFixed(2), underAt, floatMax: +floatMax.toFixed(1), grade: +(grade * 100).toFixed(1), gradeAt };
+    // Round 158: both meshes free their arrays at upload (about 6 MB on a phone); nothing reads them back (the trains ride
+    // railSegs, the picks never raycast them), and freeOnUpload's bounding sphere keeps the structures' shadow culling
     if (draw && parts.length) {
       const mesh = new THREE.Mesh(mergeColored(parts), new THREE.MeshLambertMaterial({ vertexColors: true }));
       mesh.receiveShadow = true;
+      freeOnUpload(mesh.geometry);
       groupCity.add(mesh);
     }
     if (draw && sparts.length) {
       const smesh = new THREE.Mesh(mergeColored(sparts), new THREE.MeshLambertMaterial({ vertexColors: true }));
       smesh.castShadow = true; smesh.receiveShadow = true;
+      freeOnUpload(smesh.geometry);
       groupCity.add(smesh);
     }
     railReady = true;
@@ -18682,6 +18742,42 @@
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
   const _plm = new THREE.Matrix4(), _plq = new THREE.Quaternion(), _pls = new THREE.Vector3(), _plp = new THREE.Vector3();
+  // Round 158 (the phones' memory): the pier lamps and I-95's lamps each ask one question, is a lamp already standing
+  // within 10 m, and each used to answer it from its own string-keyed 20 m grid of all 200,805 poles (159,785 cells, about
+  // 24 MB apiece, both alive to the step's end). The questions are only ever asked within 0.8 m of a pier ring's edge or
+  // 7.5 m of an I-95 segment, so a pole that can answer one lies within 10.8 m or 17.5 m of that ring's or segment's
+  // bounding box. This one grid, numerically keyed, holds only the poles in the 100 m cells that meet those boxes grown by
+  // 30 m, which is every such pole, and the answer is still the exact 10 m test over the 3 by 3 cells round the question,
+  // so every answer, and every lamp placed, is the old one (tests/test_memory_cuts.py checks it against the old grid of all the poles).
+  // add() puts a point in (the I-95 block adds the deck and pier lamps, as its old grid had them); near() asks
+  function lampNearGrid(v, nPoles, rings, chains) {
+    const key = (gx, gz) => gx * 65536 + gz, MASK = 100, GROW = 30, mask = new Set(), cells = new Map();
+    const mark = (x0, z0, x1, z1) => {
+      const gx1 = Math.floor((x1 + GROW) / MASK), gz0 = Math.floor((z0 - GROW) / MASK), gz1 = Math.floor((z1 + GROW) / MASK);
+      for (let gx = Math.floor((x0 - GROW) / MASK); gx <= gx1; gx++) for (let gz = gz0; gz <= gz1; gz++) mask.add(key(gx, gz));
+    };
+    for (const R of rings) {
+      let x0 = Infinity, z0 = Infinity, x1 = -Infinity, z1 = -Infinity;
+      for (const p of R.poly) { if (p[0] < x0) x0 = p[0]; if (p[0] > x1) x1 = p[0]; if (p[1] < z0) z0 = p[1]; if (p[1] > z1) z1 = p[1]; }
+      if (x0 <= x1) mark(x0, z0, x1, z1);
+    }
+    for (const C of chains) for (let e = 0; e + 1 < C.length; e++) {
+      const a = C[e], b = C[e + 1];
+      mark(Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[0], b[0]), Math.max(a[1], b[1]));
+    }
+    let n = 0;
+    const add = (x, z) => { const k = key(Math.floor(x / 20), Math.floor(z / 20)); let c = cells.get(k); if (!c) cells.set(k, c = []); c.push(x, z); n++; };
+    for (let i = 0; i < nPoles; i++) {
+      const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7;
+      if (mask.has(key(Math.floor(x / MASK), Math.floor(z / MASK)))) add(x, z);
+    }
+    const near = (x, z) => {
+      const gx = Math.floor(x / 20), gz = Math.floor(z / 20);
+      for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const c = cells.get(key(gx + a, gz + b)); if (c) for (let j = 0; j < c.length; j += 2) if ((c[j] - x) ** 2 + (c[j + 1] - z) ** 2 < 100) return true; }
+      return false;
+    };
+    return { add, near, poles: n, cells: mask.size };
+  }
   step('Lighting the streetlamps', () => {
     if (typeof POLES_B64 === 'undefined' || !POLES_B64) { if (btnLights) btnLights.style.display = 'none'; return; }
     let head, v;
@@ -18739,10 +18835,10 @@
     // pier (or any paved flat) that faces open water, the Delaware's or the Schuylkill's, carries a 7 m lamp every 28 m,
     // 0.8 m in from the edge with its arm over the deck, unless a packed pole already stands within 10 m. An inland
     // plaza has no water-facing edge, so the outer tier's paved flats, which mix piers with aprons, sort themselves
+    const I95_CHAINS = (typeof I95_DATA !== 'undefined' && I95_DATA && I95_DATA.chains) || [];
+    const lampNear = lampNearGrid(v, head[1], PIER_RINGS, I95_CHAINS);   // Round 158: one small grid for both blocks below
     {
-      const near = new Map(), key = (x, z) => Math.floor(x / 20) + ':' + Math.floor(z / 20);
-      for (let i = 0; i < head[1]; i++) { const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7, k = key(x, z); let a = near.get(k); if (!a) near.set(k, a = []); a.push(x, z); }
-      const poleNear = (x, z) => { const gx = Math.floor(x / 20), gz = Math.floor(z / 20); for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) { const c = near.get((gx + a) + ':' + (gz + b)); if (c) for (let j = 0; j < c.length; j += 2) if ((c[j] - x) ** 2 + (c[j + 1] - z) ** 2 < 100) return true; } return false; };
+      const poleNear = lampNear.near;
       const wet = (x, z) => delawareAt(x, z) || !!(schRaster && schRaster(x, z));
       for (const R of PIER_RINGS) {
         const P = R.poly, n = P.length;
@@ -18770,13 +18866,10 @@
     // centreline), the arm over the lanes, in the city and past the city line; not where the road rides an elevated deck
     // (its own standards light it), not in the Vine Street cut, not within 10 m of a pole already there
     let i95Lamps = 0;
-    if (typeof I95_DATA !== 'undefined' && I95_DATA && I95_DATA.chains) {
-      const near = new Map(), key = (x, z) => Math.floor(x / 20) + ':' + Math.floor(z / 20);
-      const addNear = (x, z) => { const k = key(x, z); let a2 = near.get(k); if (!a2) near.set(k, a2 = []); a2.push(x, z); };
-      for (let i = 0; i < head[1]; i++) addNear(v[i * 3] * 0.7, v[i * 3 + 1] * 0.7);
-      for (let j = 0; j < DECK_LAMPS.length; j += 5) addNear(DECK_LAMPS[j], DECK_LAMPS[j + 1]);
-      const taken = (x, z) => { const gx = Math.floor(x / 20), gz = Math.floor(z / 20); for (let a2 = -1; a2 <= 1; a2++) for (let b2 = -1; b2 <= 1; b2++) { const c = near.get((gx + a2) + ':' + (gz + b2)); if (c) for (let q = 0; q < c.length; q += 2) if ((c[q] - x) ** 2 + (c[q + 1] - z) ** 2 < 100) return true; } return false; };
-      for (const C of I95_DATA.chains) {
+    if (I95_CHAINS.length) {
+      for (let j = 0; j < DECK_LAMPS.length; j += 5) lampNear.add(DECK_LAMPS[j], DECK_LAMPS[j + 1]);   // the deck standards and the pier lamps so far, never this loop's own
+      const taken = lampNear.near;
+      for (const C of I95_CHAINS) {
         let carry = 25;
         for (let e = 0; e + 1 < C.length; e++) {
           const a2 = C[e], b2 = C[e + 1], dx = b2[0] - a2[0], dz = b2[1] - a2[1], L = Math.hypot(dx, dz);
@@ -18797,18 +18890,22 @@
     }
     PIER_RINGS.length = 0;   // Round 153: every paved flat's outline was held for the pier lamps alone; let it go
     const nPoles = head[1], nLot = LOT_LAMPS.length / 3, nDeck = DECK_LAMPS.length / 5, nAll = nPoles + nLot + nDeck;   // the stadium lots' masts ride along (Round 127), the deck standards after them (Round 144)
-    const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll), ROT = new Float32Array(nAll).fill(NaN);
+    // Round 158: the inventory (ROT and the 400 m cells, with X, Z, GY and HM kept past the step) feeds only poleReconcile,
+    // which runs only for the desktop's near pole meshes; a phone (POLE_MESH_CAP 0) keeps X, Z, GY and HM for this step
+    // alone and builds neither ROT nor the cells (about 5.8 MB it held for good)
+    const keepInv = POLE_MESH_CAP > 0;
+    const X = new Float32Array(nAll), Z = new Float32Array(nAll), GY = new Float32Array(nAll), HM = new Float32Array(nAll), ROT = keepInv ? new Float32Array(nAll).fill(NaN) : null;
     let underDeck = 0;
     const pos = new Float32Array(nAll * 3), pcol = new Float32Array(nAll * 3);
-    const cells = new Map();   // 400 m buckets for the near-mesh reconcile
+    const cells = keepInv ? new Map() : null;   // 400 m buckets for the near-mesh reconcile
+    const cellAdd = (x, z, i) => { if (!cells) return; const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400); let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i); };
     for (let i = 0; i < nAll; i++) {
       if (i >= nPoles + nLot) {   // a deck standard: 12 m on the deck, LED white, a highway lamp's brightness
         const k = (i - nPoles - nLot) * 5, x = DECK_LAMPS[k], z = DECK_LAMPS[k + 1], gy = DECK_LAMPS[k + 2], hm = DECK_LAMPS[k + 4];
-        X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = hm; ROT[i] = DECK_LAMPS[k + 3];
+        X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = hm; if (ROT) ROT[i] = DECK_LAMPS[k + 3];
         pos[i * 3] = x; pos[i * 3 + 1] = gy + hm; pos[i * 3 + 2] = z;
         pcol[i * 3] = 1.3; pcol[i * 3 + 1] = 1.08; pcol[i * 3 + 2] = 0.78;
-        const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400);
-        let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i);
+        cellAdd(x, z, i);
         continue;
       }
       if (i >= nPoles) {   // a lot mast: 15 m, LED white, bright
@@ -18816,8 +18913,7 @@
         X[i] = x; Z[i] = z; GY[i] = gy; HM[i] = 15;
         pos[i * 3] = x; pos[i * 3 + 1] = gy + 15; pos[i * 3 + 2] = z;
         pcol[i * 3] = 1.5; pcol[i * 3 + 1] = 1.3; pcol[i * 3 + 2] = 1.0;
-        const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400);
-        let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i);
+        cellAdd(x, z, i);
         continue;
       }
       const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7, pk = v[i * 3 + 2];
@@ -18836,10 +18932,7 @@
       else { r = 1.0; g2 = 0.8; b = 0.55; }
       const amp = (0.9 + hash01(i * 3.7 + 1.1) * 0.25) * (lum2 ? 1.25 : 1) * (hft >= 38 ? 1.35 : hft <= 16 ? 0.65 : 1);
       pcol[i * 3] = r * amp; pcol[i * 3 + 1] = g2 * amp; pcol[i * 3 + 2] = b * amp;
-      const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400);
-      let arr = cells.get(ck);
-      if (!arr) { arr = []; cells.set(ck, arr); }
-      arr.push(i);
+      cellAdd(x, z, i);
     }
     const pg = new THREE.BufferGeometry();
     pg.setAttribute('position', new THREE.BufferAttribute(pos, 3));
@@ -18872,6 +18965,7 @@
       g.setAttribute('position', new THREE.BufferAttribute(lp.subarray(0, m * 3), 3));
       g.setAttribute('aCol', new THREE.BufferAttribute(lc.subarray(0, m * 3), 3));
       g.setAttribute('aR', new THREE.BufferAttribute(lr.subarray(0, m), 1));
+      freeOnUpload(g);   // Round 158: 5.6 MB, uploaded at the first night frame; the light map only ever renders it
       const maxPt = (renderer.capabilities && renderer.getContext().getParameter(renderer.getContext().ALIASED_POINT_SIZE_RANGE)[1]) || 64;
       const mat = new THREE.ShaderMaterial({
         uniforms: { uPxPerM: { value: LAMPMAP.size / LAMPMAP.span }, uMaxPt: { value: maxPt }, uStore: { value: LAMPMAP.store } },
@@ -18891,6 +18985,7 @@
       LAMPMAP.cam.up.set(0, 0, -1);
       LAMPMAP.n = m;
     }
+    freeOnUpload(pg);   // Round 158: 4.8 MB; poleGlow is only ever shown or hidden (the splat loop above read pos and pcol, never the attributes)
     poleGlow = new THREE.Points(pg, poleMat);
     poleGlow.frustumCulled = false;
     poleGlow.renderOrder = 11;
@@ -18936,7 +19031,7 @@
       poleMesh.frustumCulled = false;
       groupCity.add(poleMesh);
     }
-    poleInv = { X, Z, GY, HM, ROT, cells, n: nAll };
+    poleInv = keepInv ? { X, Z, GY, HM, ROT, cells, n: nAll } : null;
     PERF.lampsDeck = { standards: nDeck, underDeck, piers: DECK_LAMPS.filter((q, j) => j % 5 === 4 && q === 7).length, i95: i95Lamps };   // __dbg.PERF.lampsDeck
     const el = document.getElementById('lightsCount');
     if (el) el.textContent = Math.round(nAll / 1000) + 'k';
@@ -21870,12 +21965,6 @@
       if (BEACON_STEPS.has(s.msg)) beacon('step:' + s.msg, { ms: PERF.steps[PERF.steps.length - 1][1] });
     }
     PERF.ready = Math.round(performance.now() - PERF.t0);
-    // Round 153 (the phones' memory): what only the build needed goes. The ground registry's normals (the far strips'
-    // arrays stay alive through them; every conformDrape and groundPlaneN caller is a build step), and the 43 inline data
-    // scripts, whose text (27 MB) stayed attached to the page after their values were read
-    for (const G of groundGrids) G.nrm = null;
-    if (coreRoadGround) coreRoadGround.nrm = null;
-    for (const el of document.querySelectorAll('script[data-blob]')) el.remove();
     bootMark('ready');
     // the first frames upload another fifth of the geometry: the city has to stand a while before the load counts as survived.
     // Round 154: after that the breadcrumb says 'running' while the page is in front, so a phone or the app killed for memory
@@ -22298,13 +22387,22 @@
     // standard material in the built scene. Other materials with their own onBeforeCompile
     // (water, vehicles, glass, street text, poles) are left alone, as is anything created
     // later (planes, ships, live vehicles).
+    // Round 158 (the phones' memory): every material re-hooked here is disposed at once. r149 keeps each program a
+    // material has compiled in that material's own programs map and releases them only on its 'dispose' event, so the
+    // variant compiled behind the veil stayed resident beside the wx one the first frame compiles (its source strings in
+    // the page, ANGLE's translation and the Metal library in the GPU process). The event releases the material's programs
+    // (deleted once no other material holds them) and forgets its renderer properties; its textures and every geometry are
+    // untouched, and the next render finds no programs map and compiles the new key, as the first frame did anyway. A
+    // material never compiled has no listener, so its dispose does nothing
     {
       const prevCity = cityMat.onBeforeCompile;
       cityMat.onBeforeCompile = (sh, r) => { prevCity(sh, r); wxSurfacePatch(sh); };
       cityMat.customProgramCacheKey = () => 'fabric|wx';
+      cityMat.dispose();
       const prevCore = coreMat.onBeforeCompile;
       coreMat.onBeforeCompile = (sh, r) => { prevCore(sh, r); wxSurfacePatch(sh); };
       coreMat.customProgramCacheKey = () => 'fabric-core|wx';
+      coreMat.dispose();
       const seen = new Set([cityMat, coreMat]);
       scene.traverse((o) => {
         const ms = o.material;
@@ -22315,11 +22413,13 @@
             const prev = m.onBeforeCompile;
             m.onBeforeCompile = (sh, r) => { wxSurfacePatch(sh); prev(sh, r); };
             m.customProgramCacheKey = () => 'wx|' + prev.toString();
+            m.dispose();
             continue;
           }
           if (Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile')) continue;
           if (m.flatShading) continue;
           m.onBeforeCompile = wxSurfacePatch;
+          m.dispose();
         }
       });
     }
