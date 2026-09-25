@@ -4118,16 +4118,6 @@
     return new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(u, 4), 3, 0, true);
   }
   const _sftI8 = new Int8Array(1), _sftU8 = new Uint8Array(_sftI8.buffer);   // VBuf.push: an Int8 store read back as its byte
-  // the facade and curtain-wall shaders read style, floor height and tint through aSFT (Round 158): bytes from the
-  // chunks (fourth slot 1.0: the byte recovered from its normalized value and read signed, as the Int8 arrays were), raw
-  // floats from mergeColored (fourth slot 0); the old names stay as macros so the shaders' bodies are unchanged
-  const SFT_GLSL = [
-    'attribute vec4 aSFT;',
-    'float sftByte(float v) { float b = floor(v * 255.0 + 0.5); return b > 127.5 ? b - 256.0 : b; }',
-    '#define aStyle (aSFT.w > 0.5 ? sftByte(aSFT.x) : aSFT.x)',
-    '#define aFloorH (aSFT.w > 0.5 ? sftByte(aSFT.y) : aSFT.y)',
-    '#define aTint aSFT.z',
-  ].join('\n');
   class VBuf {
     constructor(cap) { this.n = 0; this.cap = 0; this.grow(cap); this.idx = new IdxBuf(cap * 3); }
     // Round 158 (the phones' memory, measured in WebKit's own ANGLE): the Metal backend copies every vertex attribute
@@ -5666,6 +5656,16 @@
     return g;
   }
 
+  // the facade and curtain-wall shaders read style, floor height and tint through aSFT (Round 158): bytes from the
+  // chunks (fourth slot 1.0: the byte recovered from its normalized value and read signed, as the Int8 arrays were), raw
+  // floats from mergeColored (fourth slot 0); the old names stay as macros so the shaders' bodies are unchanged
+  const SFT_GLSL = [
+    'attribute vec4 aSFT;',
+    'float sftByte(float v) { float b = floor(v * 255.0 + 0.5); return b > 127.5 ? b - 256.0 : b; }',
+    '#define aStyle (aSFT.w > 0.5 ? sftByte(aSFT.x) : aSFT.x)',
+    '#define aFloorH (aSFT.w > 0.5 ? sftByte(aSFT.y) : aSFT.y)',
+    '#define aTint aSFT.z',
+  ].join('\n');
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9, dithering: MAT_DITHER });
   let coreMat = null;   // the core's fabric: the same shader at the core's gains (set with the hook below)
   {
