@@ -79,6 +79,16 @@ BODY
         self.assertEqual(r.returncode, 0, r.stderr[-3000:])
         return json.loads(r.stdout)
 
+
+    def test_facade_geometry_keeps_its_float_normal(self):
+        """Review: the facade and curtain-wall shaders take a world-anchored window grid's direction from the normal, so a
+        byte normal slid the grid by the wall's distance from the origin times the rounding (a metre on the Custom House
+        crown). mergeColored's full-facade geometries (they carry aWallL) keep their Float32 normals."""
+        src = (ROOT / 'app.js').read_text() if 'ROOT' in globals() else None
+        if src is None:
+            from pathlib import Path as _P
+            src = (_P(__file__).resolve().parents[1] / 'app.js').read_text()
+        self.assertIn('if (!A.aWallL && packable(nrm) && nrm.array instanceof Float32Array', src)
     def test_normals_and_colours_pack(self):
         out = self.run_js(r'''
 const A = geom(5000), W = geom(3000, { colorSize: 4, seed: 11 });

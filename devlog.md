@@ -6998,3 +6998,54 @@ three pixels on the worse axis and cool white, which read as a mosaic. The block
 3 m apart hold the same pattern, moved with the buildings. Cost: no geometry, texture or memory; eight hashes on the
 far wall pixels, cheaper than the roomLight the near ones already run. No pixel-ratio change (Round 153 stands).
 `tests/test_far_lit.py`.
+
+## Round 158 — the iPhone's memory, measured (Sep 24 to 25)
+
+Mike: "The PWA is still getting the error on load". The server's beacons said more than any phone could: his iPhone
+(iOS 27; Safari, the home-screen app and Chrome) had not finished a session on any build since Sep 19. On the builds up to
+Sep 17 it reached the 60 s mark in 14 of 22 loads; since, 20 loads, 4 ready, none past a minute. Every death on the
+Sep 23 to 25 builds came after the 'Planting the street trees' beacon, with the next load inside a second or two (WebKit's
+one automatic reload), and no JavaScript error ever came from a phone: iOS killed the page for memory, reloaded it once,
+and on the second death showed "A problem repeatedly occurred". Eleven of those reloads ran an OLDER build with no request
+reaching the server at all, the Sep 5 build as late as Sep 18.
+
+Four workflows (investigation 16 agents, implementation 4 in worktrees, two ANGLE skeptics, two reviews 17 agents) and the
+primary sources settled the mechanics. WebKit charges WebGL buffers and textures to the page's own process, so the jetsam
+limit covers JS and GPU together. It reloads a killed page with ReturnCacheDataElseLoad ("We allow stale content when
+reloading a WebProcess that's been killed or crashed"), a session restore the same, and the service worker's fetch(e.request)
+passed that mode through: hence the stale builds. And its ANGLE Metal backend copies every vertex attribute whose stride or
+offset is not a multiple of 4 into a padded buffer it keeps as long as the buffer lives (kVertexAttribBufferStrideAlignment,
+VertexArrayMtl::syncDirtyAttrib, on every Safari from 17.0 to 26): the chunks' 3-byte normals and colours and their three
+1-byte words cost 49 B a vertex on an iPhone where they upload 29, and a WebGL audit (wrapping vertexAttribPointer and
+bufferData) measured those hidden copies at 247 MB.
+
+Measured, not guessed: a headless Chrome over CDP forcing a GC at every build step, with the WebGL audit injected, on
+tonight's build, the merged fixes, and the two Sep 17 builds from git, the last that worked on his phone and the first that
+did not. The pane's heap readings (800 to 1,500 MB) were garbage Chrome had not collected; the live heap at ready is 114 MB.
+GPU plus hidden copies after the first frames: Sep 17 (worked) 981 MB, tonight 1,167, now 875. The build's worst moment
+(live heap plus GPU): about 920, 1,200 and 830 MB. JS with its typed arrays at ready (full snapshots): about 260 then, 200 now.
+
+What changed:
+- The chunks on 4-byte streams (VBuf): normal and colour in stride-4 interleaved buffers read as three items, style, floor
+  height and tint in one aSFT word (fourth byte 255 = bytes; mergeColored writes raw floats with 0), decoded through macros
+  to the exact old values (a test runs all 256 bytes in float32 math); road colours through rgbStride4. 32 B a vertex, none
+  copied. The audit reads 0 MB of padded copies now.
+- A heap snapshot at 'Raising the outer districts' held 1.87 M arrays, 1.7 M boxed numbers and 345,000 closures: every road
+  triangle near a terrain patch kept as an object with a triangleGrade closure, 165 MB alive from the street steps to 'Rolling
+  out the SEPTA fleet', exactly the steps where the phones died. Nine float32 words each now (TRS); the trimmed ground is
+  identical (359,902 surfaces, 105,662 triangles, 33,061 trims either way).
+- The traffic linker on typed arrays, byte-identical graph (tests/test_traffic_link.py); the data scripts dropped before the
+  build; the street-name SDF read in bands; one small numeric lamp grid; static texture sources freed after upload on touch;
+  late meshes freed; no pole inventory on touch; ground normals dropped after paving; the weather pass's orphaned programs
+  disposed; the resident flats, lots, roads and overpass packed (Int8x4 normals, Uint16 colours on 8-byte strides), facade
+  geometry keeping its float normals (its window grid is world-anchored: a byte normal slid it a metre on the Custom House).
+- Recovery: sw.js revalidates every navigation (no-cache: never stale, a 304 when unchanged); a touch load that finds a death
+  waits behind a gate ("Philadelphia ran out of memory on this device last time. Tap to load a lighter city."), the build held
+  until 32 s after load so WebKit's crash window has passed; tier 1 (today's LITE) then tier 2 (far ring 5 km, no far trees,
+  traffic or roof kit); full-build deaths and context losses count; a second loss inside two minutes is still recorded;
+  beacons carry the tier, why, standalone, navigation type, cache hit, render ratio and the previous crumb, and every step on
+  touch.
+
+Pixel diffs of desktop and phone, day and night, differ only in pins, swaying trees and cars. 279 tests. Left for Mike: the
+gate's copy and tier 2's contents, and (a VPS edit) Cache-Control no-store on / so a crash reload outside the worker has no
+copy to go stale.

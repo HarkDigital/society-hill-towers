@@ -197,7 +197,7 @@
     if (/[?&]lite=0\b/.test(location.search)) localStorage.removeItem(TIER_KEY);
     const ts = JSON.parse(localStorage.getItem(TIER_KEY) || 'null');
     if (ts && ts.t && Date.now() - ts.t < LITE_DAYS * 86400000) tierSaved = Math.max(0, Math.min(2, ts.tier | 0));
-    if (isTouch && bootStick && !/[?&]lite=0\b/.test(location.search) && tierDeath > tierSaved) {
+    if (isTouch && bootStick && !/[?&]lite=0\b/.test(location.search) && tierDeath >= tierSaved) {   // review: >= refreshes a capped tier 2's fortnight, as LITE_KEY is refreshed
       tierSaved = tierDeath;
       localStorage.setItem(TIER_KEY, JSON.stringify({ tier: tierDeath, t: Date.now() }));
     }
@@ -4037,7 +4037,10 @@
     for (const k in A) if (!A[k].array) return false;   // uploaded and freed already
     let did = false, from = 0, to = 0;
     const nrm = A.normal;
-    if (packable(nrm) && nrm.array instanceof Float32Array && nrm.itemSize === 3 && packInRange(nrm.array, -1.001, 1.001)) {
+    // review: a facade geometry (mergeColored's full path: the core walls, the glazed crowns) keeps its float normal: its
+    // shaders take the window grid's direction from the normal and its phase from world position, so a byte normal slid
+    // the grid by the wall's distance from the origin times the rounding (a metre on the Custom House crown)
+    if (!A.aWallL && packable(nrm) && nrm.array instanceof Float32Array && nrm.itemSize === 3 && packInRange(nrm.array, -1.001, 1.001)) {
       packNormals(g); packHand(nrm, A.normal);
       P.normals++; from += nrm.array.byteLength; to += A.normal.array.byteLength; did = true;
     }
@@ -22164,14 +22167,24 @@
     btnEnter.textContent = 'Load the City';
     btnEnter.disabled = false;
     beacon('gate', { fails: bootFails });
+    // review: WebKit forgets the last crash only 30 s after this reload finished loading, so a tap in those first seconds
+    // would start a build that could die inside the window and bring back iOS's error page. The tap is taken at once and
+    // the build waits out the window (32 s from the load event, a margin for the UI process), counting down on the button
+    let loadedAt = document.readyState === 'complete' ? performance.now() : null;
+    if (loadedAt === null) window.addEventListener('load', () => { loadedAt = performance.now(); }, { once: true });
     return new Promise((resolve) => {
       gateGo = () => {
         gateGo = null;
         btnEnter.disabled = true;
-        btnEnter.textContent = 'Preparing…';
         loadmsg.classList.remove('done');
         beacon('gatego', { ms: Math.round(performance.now()) });
-        resolve();
+        const wait = () => {
+          const left = loadedAt === null ? 32000 : loadedAt + 32000 - performance.now();
+          if (left <= 0) { btnEnter.textContent = 'Preparing…'; resolve(); return; }
+          btnEnter.textContent = 'Starting in ' + Math.ceil(left / 1000) + ' s';
+          setTimeout(wait, Math.min(1000, left));
+        };
+        wait();
       };
     });
   }
@@ -22180,6 +22193,7 @@
     let failures = 0;
     let builtSteps = 0;
     for (const s of buildSteps) {
+      if (glDead) break;   // review: a lost context is never drawn again (a reload or the overlay follows): building on is only memory
       document.getElementById('loadProgress').value = 70 + 30 * builtSteps++ / buildSteps.length;
       setLoadingMessage(s.msg);
       bootMark(s.msg);
@@ -22270,7 +22284,9 @@
         const go = () => {
           try { sessionStorage.setItem('philly3d.ctxlost', String(Date.now())); if (front) sessionStorage.setItem('philly3d.litenow', '1'); } catch (err) { /* private mode */ }
           window.removeEventListener('pagehide', bootClear);
-          if (front) bootMark('ctxlost'); else bootClear();
+          // review: before ready the dead build's own step crumb stands (a death mid-build: sticky, the tier above); only a
+          // loss while running is a 'ctxlost'
+          if (!front) bootClear(); else if (PERF.ready) bootMark('ctxlost');
           bootHeld = true;
           beacon('ctxlost', { f: front ? 1 : 0, ms: Math.round(performance.now()) });
           location.reload();
@@ -22281,7 +22297,20 @@
       }
     }
     const el = document.getElementById('nogl');
-    if (isTouch) el.onclick = () => location.reload();   // the app has no reload button: a tap brings the city back
+    if (isTouch) {   // the app has no reload button: a tap brings the city back
+      // review: a second loss inside the guard's two minutes is a death too. Recorded as go() records it, or the tap's reload
+      // (pagehide) erased the crumb and the phone looped at the tier that had just died; marked again at the tap, since the
+      // crumb is fresh for three minutes and the overlay may sit longer
+      const front = document.visibilityState === 'visible' && performance.now() - shownAt > 5000;
+      window.removeEventListener('pagehide', bootClear);
+      if (!front) bootClear(); else if (PERF.ready) bootMark('ctxlost');   // before ready the step's own crumb stands, as in go()
+      bootHeld = true;
+      beacon('ctxlost', { f: front ? 1 : 0, ms: Math.round(performance.now()), o: 1 });
+      el.onclick = () => {
+        if (front) { try { sessionStorage.setItem('philly3d.litenow', '1'); } catch (err) { /* private mode */ } if (PERF.ready) { bootHeld = false; bootMark('ctxlost'); bootHeld = true; } }
+        location.reload();
+      };
+    }
     el.style.display = 'flex';
     el.firstElementChild.innerHTML = 'The 3D view was interrupted (graphics memory pressure).<br>' + (isTouch ? 'Tap to continue exploring.' : 'Reload the page to continue exploring.');
   });

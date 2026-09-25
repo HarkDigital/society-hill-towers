@@ -58,7 +58,7 @@ function load(o) {
   const doc = { visibilityState: o.hidden ? 'hidden' : 'visible', addEventListener: (t, f) => docL.push(f), removeEventListener: (t, f) => { const i = docL.indexOf(f); if (i >= 0) docL.splice(i, 1); }, getElementById: () => ({ style: {}, firstElementChild: {} }) };
   const perf = { now: () => (o.now == null ? 60000 : o.now) };
   const cv = { addEventListener: (t, f) => { if (t === 'webglcontextlost') lost = f; } };
-  const S = LOAD(o.touch !== false, { search: o.search || '', reload: () => reloads.push(1) }, LS, SS, win, {}, doc, perf, cv, (st, x) => beacons.push([st, x]), reloads);
+  const S = LOAD(o.touch !== false, { search: o.search || '', reload: () => reloads.push(1) }, LS, SS, win, o.perf || {}, doc, perf, cv, (st, x) => beacons.push([st, x]), reloads);
   S.listeners = listeners; S.beacons = beacons; S.reloads = reloads;
   S.lose = () => lost({ preventDefault() {} });
   S.show = () => { doc.visibilityState = 'visible'; for (const f of docL.slice()) f(); };
@@ -162,7 +162,7 @@ crumb('Sowing the grass', 5, { fails: 1, lite: true, tier: 1 }); out.afterGate =
     def test_the_context_loss_crumb(self):
         o = self.loads(r'''
 // a loss in front: the crumb says 'ctxlost', survives the reload's pagehide and the unload's clears, and the reload is gated
-reset(); let S = load(); S.lose(); out.front = { dead: S.dead(), reloads: S.reloads.length, beacon: S.beacons.map((b) => b[0]), pagehide: (S.listeners.pagehide || []).length };
+reset(); let S = load({ perf: { ready: 12000 } }); S.lose(); out.front = { dead: S.dead(), reloads: S.reloads.length, beacon: S.beacons.map((b) => b[0]), pagehide: (S.listeners.pagehide || []).length };
 S.unload(); S.bootMark('running'); out.frontCrumb = saved().boot.step;
 out.next = pick(load());
 // a loss behind: no crumb, no gate
@@ -184,6 +184,39 @@ reset(); S = load({ touch: false }); S.lose(); out.desk = { dead: S.dead(), relo
         self.assertFalse(o['stale']['died'])
         self.assertEqual(o['noReload'], {'dead': True, 'reloads': 0})
         self.assertEqual(o['desk'], {'dead': True, 'reloads': 0})
+
+    def test_review_fixes(self):
+        """The review of the recovery round: a second context loss inside the two-minute guard is still a death (the tap's
+        reload used to erase it); a tier-2 death refreshes the tier's fortnight; the gate waits out WebKit's 30 s window;
+        the build stops on a dead context."""
+        o = self.loads(r'''
+reset(); let S = load({ perf: { ready: 12000 } }); sess.set('philly3d.ctxlost', String(Date.now() - 30000)); S.lose(); S.unload(); S.bootMark('running');
+out.second = { crumb: saved().boot && saved().boot.step, reloads: S.reloads.length, beacon: S.beacons.map((b) => b[0]) }; out.secondNext = pick(load());
+// a loss before ready leaves the dying step's crumb (a death mid-build: sticky, the tier above), in go() and in the overlay
+reset(); S = load(); S.bootMark('Sowing the grass'); S.lose(); S.unload(); out.preReady = saved().boot.step; out.preReadyNext = pick(load());
+reset(); S = load(); sess.set('philly3d.ctxlost', String(Date.now() - 30000)); S.bootMark('Sowing the grass'); S.lose(); S.unload(); out.preReadyOverlay = saved().boot.step;
+reset(); S = load({ hidden: true }); sess.set('philly3d.ctxlost', String(Date.now() - 30000)); S.lose(); S.unload(); out.secondBehind = saved().boot;
+reset(); LS.setItem('philly3d.tier', JSON.stringify({ tier: 2, t: Date.now() - 13 * 864e5 })); crumb('Sowing the grass', 5, { lite: true, tier: 2 }); out.t2 = pick(load()); out.t2Saved = saved().tier;
+''')
+        self.assertEqual(o['second']['crumb'], 'ctxlost', 'a second loss in front must leave its crumb through the tap reload')
+        self.assertEqual(o['second']['reloads'], 0)
+        self.assertEqual(o['second']['beacon'], ['ctxlost'])
+        n = o['secondNext']
+        self.assertEqual((n['died'], n['gate'], n['fails']), (True, True, 1))
+        self.assertIsNone(o['secondBehind'], 'a loss behind is no death')
+        self.assertEqual(o['preReady'], 'Sowing the grass', 'before ready the dying step names the death')
+        p = o['preReadyNext']
+        self.assertEqual((p['died'], p['stick'], p['gate'], p['tier']), (True, True, True, 1))
+        self.assertEqual(o['preReadyOverlay'], 'Sowing the grass')
+        self.assertEqual(o['t2']['tier'], 2)
+        self.assertEqual(o['t2Saved']['tier'], 2)
+        import time
+        self.assertGreater(o['t2Saved']['t'], (time.time() - 3600) * 1000, 'a tier-2 death must refresh the tier key')
+        g = cut(self.src, '  function bootGate() {', '\n  }\n')
+        self.assertIn('loadedAt + 32000 - performance.now()', g, 'the gate waits out WebKit\'s 30 s crash window after the load event')
+        self.assertIn("'Starting in ' + Math.ceil(left / 1000) + ' s'", g)
+        b = cut(self.src, '  async function build() {', '    PERF.ready = ')
+        self.assertIn('if (glDead) break;', b, 'the build stops on a dead context')
 
     def test_the_frame_loop_stops_on_a_dead_context(self):
         head = '  function frame(now, once) {\n'
@@ -273,7 +306,7 @@ async function fire(request) { calls = []; let p = null; listeners.fetch({ reque
 '''.replace('SW', self.sw)
         o = self.node_run(script)
         self.assertEqual(o['ok']['r'], 'network')
-        self.assertEqual(o['ok']['calls'], [['https://philly3d.com/#v=1', {'cache': 'no-store', 'credentials': 'same-origin'}]])
+        self.assertEqual(o['ok']['calls'], [['https://philly3d.com/#v=1', {'cache': 'no-cache', 'credentials': 'same-origin'}]])
         self.assertEqual(o['offline']['r'], 'request')
         self.assertEqual(o['offline']['calls'][1], ['request:force-cache', None])
         self.assertEqual(o['redirect']['r'], 'request')
