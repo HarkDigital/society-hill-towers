@@ -148,6 +148,25 @@ Mike has reported pins that flash or vanish (Rounds 126, 127, 138, 143) and flic
 - **Flicker**: three PNG captures 0.5 m apart, then
   `python3 scripts/flicker_diff.py captures/<prefix> --crop x0,y0,x1,y1` and read the crop.
 
+### 7c. Measure memory the way an iPhone counts it (Round 158)
+
+Never read the pane's `performance.memory` as live memory: Chrome collects lazily, and Round 158 read 800 to 1,500 MB
+there against a live heap of 114 MB. On iOS the page is charged for its JS heap AND every WebGL buffer and texture, and
+WebKit's ANGLE Metal backend keeps a padded copy of any vertex stream whose stride or offset is not a multiple of 4.
+The tools in `scripts/memory/` (Node 18+, Google Chrome installed; they launch their own headless Chrome):
+
+- `inject.py in.html out.html`: stages a build with `gpuhook.js` (bufferData / texImage2D / renderbuffer bytes, the
+  peak, and the ANGLE audit: `__gpu.mis`, bytes of padded copies by stream format) ahead of everything.
+- `measure.mjs <url> <label> <port>`: phone emulation (740x360 at 1.25, touch), a forced GC and the live heap at every
+  loading-message change, then Enter, six frames and a look around; writes `meas-<label>.json` (peak live and where,
+  GPU and copies at ready, after the frames, after the look, triangles, `PERF.failed`, the tier). Add `&lite=0|1|2`.
+- `snap.mjs <url> <label> <port> <regex>`: a heap snapshot at the first loading message matching the regex, summarised
+  by constructor and largest strings; `node --max-old-space-size=8192 retainers.mjs snap-<label>.heapsnapshot` groups
+  closures, arrays, strings and numbers by their retainer chain (it found Round 158's 345,000 road-triangle closures).
+
+Compare against a build from git that is known to work on the phone (`git show <sha>:3d-model/society-hill-towers.html`):
+Round 158's reference is Sep 17's e90c765, 981 MB of GPU plus copies after the first frames, 162 MB peak live heap.
+
 ### 8. Syntax-check after every app.js edit
 
 ```bash
