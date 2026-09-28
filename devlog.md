@@ -7061,3 +7061,34 @@ ends is 0.015, some fifteen times over, so a tower in its fade glowed pale grey 
 0.6 to 2 km, right in the view; a desktop's at 2 to 5 km. Both shaders now blend the finished light (the colour carries it,
 the amount is 1), exact at both ends. Captures at the same poses: the phone's towers dark with lit windows like the
 desktop's, and the desktop's far towers no longer pale. tests/test_far_lit.py holds the blend and its arithmetic.
+
+## Round 160 — the Reading Terminal's 125 m slab (Sep 27)
+
+Mike: fix the 125 m LiDAR bug first. Found while modelling the Reading Terminal for the landmark proposals: a sheer
+curtain-wall slab 125 m tall, 82 m wide and 13 m deep stood behind the headhouse in every view. It was OSM way 335512395,
+the two-storey link between the headhouse and the train shed (building:levels 2, no height), packed at 125.2 m. Two faults
+compounded. The City footprint over the headhouse reads max_hgt 125.07 m over approx_hgt 44.5 m, a ratio of 2.81 under
+the 3x contamination guard, while the point cloud's own roof pass measures the headhouse way flat at 44.6 m (P90), so the
+max is a spike (a crane, a mast or a bad return) the guard missed. And the pre-LiDAR snapshot is not pristine there: it
+was frozen from a scene an earlier in-place join had already patched, so it holds 125.1 for the headhouse outline and the
+link, and the tall protection (never lower a snapshot tall) defended the spike. Rebuilding the snapshot was ruled out:
+process_osm on today's extract differs from it on 99,000 of 111,000 records (Comcast Center 6 m), because the scene's
+heights came from research passes, not raw tags. Neither building:levels (Centre Square, Jefferson Tower and ARIA carry
+their podium's levels on the tower outline) nor the ratio alone separates a spike from a real tower or steeple.
+
+lidar_join.py now CONFIRMS a spike with two witnesses against the max: an OSM way whose LiDAR roof is flat (P90 - P10 under
+1 m, so anything taller covers under a tenth of it) covers half the footprint and the max stands over 1.5 x that roof +
+10 m, and the City's approx_hgt agrees with that roof within 25 % while the max is at least twice it. A confirmed spike
+contributes approx_hgt; places of worship keep the max (a steeple is indistinguishable from a spike in these numbers, and
+the app gives steeples their own LANDMARK_H rows); and the protection no longer defends a snapshot tall that is exactly
+what the spiked join gives. 51 footprints confirmed citywide. A plain rerun of the old code reproduces all 117,442 wide and
+south heights exactly, and pack_wide reproduces wide.b64 byte for byte, so every change is the rule's: 43 scene records
+lower, 36 packed (25 in h, 11 in h and the storey pitch derived from it), no geometry, order, road, area or wall colour
+moved. The big ones: the link and the headhouse outline 125.1 to 44.5, Blue Horizon 63 to 22, the Academy of the Fine Arts
+55.7 to 21.9, the Athenaeum 45.4 to 18, a block at Broad and Locust 65.1 to 28.1. The far ring's lidar_city_heights.json is
+kept (--skip-city; a rerun would also carry the old KX frame fix). Captures at the same poses: the slab is gone from 12th
+and Market, from the air and from the west; 113 tower specs and 233 crown matches either way. The link is still 44.5 m, not
+its real 14: the footprint covers the headhouse and the link together; the Reading Terminal rebuild replaces both. The
+Marriott skybridge (building:min_level 1, ignored by process_osm) still stands on 12th Street; the rebuild draws its own.
+tests/test_lidar_spike.py.
+

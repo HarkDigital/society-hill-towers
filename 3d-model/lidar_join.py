@@ -30,6 +30,9 @@ Rules:
     that mean cover >= 45% of the target, use just those (tower-on-podium ways)
   - contamination guard: a city footprint with max_hgt > 3x approx_hgt (approx >=
     3 m, max >= 8 m) is ignored (crane/tree-contaminated outliers)
+  - confirmed spikes (Round 160): a footprint under the 3x guard whose max_hgt the
+    point cloud contradicts contributes approx_hgt instead (see spike_check), and the
+    tall protection below no longer defends a snapshot height that is that spike
   - tag protection (scenes): if existing h > 30 and measured < 0.6*h, keep h
     (spires and buildings finished after the 2022 flight); pack_city applies
     max(tag, measured) since it still sees real OSM tags
@@ -51,9 +54,67 @@ COVER_MIN = 0.25
 CLAMP_LO, CLAMP_HI = 2.5, 550.0
 SKIP_T = {'ship', 'stadium', 'arena'}
 
+SPIKE_RATIO = 2.0          # a spike's max stands at least this many times the footprint's approx_hgt
+SPIKE_ROOF_K, SPIKE_ROOF_M = 1.5, 10.0   # ... and over 1.5 x the flat LiDAR roof + 10 m
+SPIKE_AGREE = 0.25         # ... while approx_hgt agrees with that roof within 25 %
+SPIKE_COVER = 0.5          # the flat-roofed way covers at least half the footprint
+WORSHIP_T = 'worship'
+
+def flat_roof_ways():
+    """{way id: (scene-frame Polygon, P90 AGL m)} for every OSM building way the citywide LiDAR roof pass
+    (lidar_city_roofs.json, fetch_lidar_roofs.py) measured flat: P90 - P10 under 1 m over its cells, or a level
+    roof with bulkheads. Polygons from whichever OSM raws are on disk (the pass's own rings are UTM)."""
+    roofs = json.load(open('lidar_city_roofs.json')) if os.path.exists('lidar_city_roofs.json') else {}
+    flat = {int(k): v[2] for k, v in roofs.items() if v[0] == 0}
+    out = {}
+    for f in ('osm_wide_raw.json', 'osm_south_raw.json', 'osm_city_raw.json'):
+        if not os.path.exists(f):
+            continue
+        els = json.load(open(f))['elements']
+        nodes = {e['id']: (e['lon'], e['lat']) for e in els if e.get('type') == 'node'}
+        for e in els:
+            if e.get('type') != 'way' or e['id'] not in flat or e['id'] in out:
+                continue
+            g = e.get('geometry')
+            pts = ([((q['lon'] - LON0) * KX, (LAT0 - q['lat']) * KZ) for q in g] if g else
+                   [((nodes[n][0] - LON0) * KX, (LAT0 - nodes[n][1]) * KZ) for n in e.get('nodes', []) if n in nodes])
+            if len(pts) < 4:
+                continue
+            try:
+                pg = Polygon(pts).buffer(0)
+            except Exception:
+                continue
+            if pg.area > 20:
+                out[e['id']] = (pg, flat[e['id']])
+        del els, nodes
+    return out
+
+def spike_check(pg, h, a, flat_tree, flat_list):
+    """True when this footprint's max_hgt is a CONFIRMED spike (Round 160). The Reading Terminal headhouse's City
+    footprint reads max 125.07 m over approx 44.5 m, a ratio of 2.81 under the 3x guard, so the headhouse outline and
+    its two-storey link to the train shed stood 125 m tall. Two independent measures must agree against the max: an
+    OSM way covering at least half the footprint has a FLAT LiDAR roof (P90 - P10 under 1 m, so anything taller covers
+    under a tenth of it: a crane, a mast, a bad return, never a building's mass) and the max stands over 1.5 x that
+    roof + 10 m; and the City's own approx_hgt agrees with that roof within 25 % while the max is at least twice it.
+    A steeple is indistinguishable from a spike in these numbers, which is why the caller exempts places of worship."""
+    if not (a and a >= 3.0 and h >= 20.0 and h >= SPIKE_RATIO * a):
+        return False
+    for j in flat_tree.query(pg):
+        wpg, p90 = flat_list[j]
+        if (h > SPIKE_ROOF_K * p90 + SPIKE_ROOF_M and abs(a - p90) <= SPIKE_AGREE * p90
+                and pg.intersection(wpg).area >= SPIKE_COVER * pg.area):
+            return True
+    return False
+
+print('loading flat LiDAR roofs...', flush=True)
+_flat = list(flat_roof_ways().values())
+flat_tree = STRtree([w[0] for w in _flat])
+print(f'{len(_flat)} flat-roofed ways', flush=True)
+
 print('loading city footprints...', flush=True)
 fpd = json.load(open('lidar_cache/phl_footprints_local.json'))['fps']
-fp_geoms, fp_h = [], []
+fp_geoms, fp_h, fp_hmax = [], [], []   # fp_h: a confirmed spike's approx_hgt; fp_hmax: max_hgt as the City gives it
+spiked = set()             # indices into fp_geoms
 n_guard = 0
 for h, a, rings in fpd:
     if h is None or h <= 0:
@@ -72,38 +133,46 @@ for h, a, rings in fpd:
             continue
     except Exception:
         continue
+    if spike_check(pg, h, a, flat_tree, _flat):
+        spiked.add(len(fp_geoms))
     fp_geoms.append(pg)
-    fp_h.append(min(CLAMP_HI, h))
-print(f'{len(fp_geoms)} usable footprints ({n_guard} dropped by contamination guard)', flush=True)
+    fp_hmax.append(min(CLAMP_HI, h))
+    fp_h.append(min(CLAMP_HI, a if len(fp_geoms) - 1 in spiked else h))
+print(f'{len(fp_geoms)} usable footprints ({n_guard} dropped by contamination guard, {len(spiked)} confirmed spikes)', flush=True)
+del _flat, flat_tree
 tree = STRtree(fp_geoms)
 
-def measure(poly_pts, holes_pts=None):
-    """poly in local meters -> (h, coverage) or (None, cov)."""
+def measure(poly_pts, holes_pts=None, use_max=False):
+    """poly in local meters -> (h, coverage, touched) or (None, cov, touched). use_max reads max_hgt even where a
+    footprint's max is a confirmed spike (places of worship: their spike is the steeple); touched says whether any
+    confirmed spike overlapped the polygon."""
+    H = fp_hmax if use_max else fp_h
     try:
         pg = Polygon(poly_pts, holes_pts or None)
         if not pg.is_valid:
             pg = pg.buffer(0)
         if pg.is_empty or pg.area < 2:
-            return None, 0.0
+            return None, 0.0, False
     except Exception:
-        return None, 0.0
+        return None, 0.0, False
     idxs = tree.query(pg)
     if len(idxs) == 0:
-        return None, 0.0
-    inters = []
+        return None, 0.0, False
+    inters, touched = [], False
     for i in idxs:
         try:
             ia = pg.intersection(fp_geoms[i]).area
         except Exception:
             continue
         if ia > 0.5:
-            inters.append((ia, fp_h[i]))
+            inters.append((ia, H[i]))
+            touched = touched or i in spiked
     if not inters:
-        return None, 0.0
+        return None, 0.0, touched
     tot = sum(ia for ia, _ in inters)
     cov = tot / pg.area
     if cov < COVER_MIN:
-        return None, cov
+        return None, cov, touched
     wmean = sum(ia * h for ia, h in inters) / tot
     # dominant tall mass: when the tallest pieces carry most of the footprint, the
     # box stands at their height (a tower sharing its OSM way with a podium must
@@ -121,9 +190,10 @@ def measure(poly_pts, holes_pts=None):
             tall_cov = sum(ia for ia, _ in tall) / pg.area
             if tall and tall_cov >= 0.45:
                 wmean = sum(ia * h for ia, h in tall) / sum(ia for ia, _ in tall)
-    return max(CLAMP_LO, min(CLAMP_HI, wmean)), cov
+    return max(CLAMP_LO, min(CLAMP_HI, wmean)), cov, touched
 
-report = {'footprints': len(fp_geoms), 'contamination_guard': n_guard, 'sets': {}}
+report = {'footprints': len(fp_geoms), 'contamination_guard': n_guard, 'confirmed_spikes': len(spiked), 'sets': {}}
+spike_log = []   # (set, name, cx, cz, what the join gave before Round 160, what it gives now)
 deltas = []  # (|dh|, set, name, cx, cz, old, new)
 
 def snapshot_path(path):
@@ -155,24 +225,35 @@ def patch_scene(path, tag):
             continue
         st['total'] += 1
         old = b0['h']          # the ORIGINAL OSM value from the snapshot, never our own previous output
-        h, cov = measure(poly, b.get('holes'))
+        worship = b.get('t') == WORSHIP_T
+        h, cov, touched = measure(poly, b.get('holes'), use_max=worship)
         if h is None:
             st['unmeasured'] += 1
             b['h'] = old
             continue
+        # Round 160: the snapshot is not pristine everywhere (it was frozen from a scene an earlier join had already
+        # patched in place: the Reading Terminal link reads 125.1 there, though OSM tags it two storeys), so the
+        # protection below must not defend a tall that is exactly what a confirmed spike gives this very join
+        inherited = False
+        if touched and not worship and old > 30:
+            h_max = measure(poly, b.get('holes'), use_max=True)[0]
+            inherited = h_max is not None and abs(old - h_max) < 1.0 and h < h_max - 0.05
         # talls (>30 = explicitly tagged in practice) follow OSM's max-height tag
         # semantics: LiDAR may raise them (stale/low tags) but never lower them —
         # mixed tower+podium ways would otherwise read 30% short, and the two
         # known wrong-HIGH tags are hand-overridden in the app anyway
-        if old > 30 and h < old:
+        if old > 30 and h < old and not inherited:
             st['protected'] += 1
             b['h'] = old
             continue
         st['measured'] += 1
+        cx = sum(p[0] for p in poly) / len(poly)
+        cz = sum(p[1] for p in poly) / len(poly)
+        if inherited:
+            st['spike_released'] = st.get('spike_released', 0) + 1
+            spike_log.append((tag, b.get('name'), round(cx), round(cz), old, round(h, 1)))
         b['h'] = round(h, 1)
         if abs(h - old) > 0.05:
-            cx = sum(p[0] for p in poly) / len(poly)
-            cz = sum(p[1] for p in poly) / len(poly)
             deltas.append((round(abs(h - old), 1), tag, b.get('name'), round(cx), round(cz), old, round(h, 1)))
     json.dump(d, open(path, 'w'), separators=(',', ':'))
     report['sets'][tag] = st
@@ -192,7 +273,7 @@ for i, b in enumerate(core['buildings']):
         st['skipped'] += 1
         continue
     st['total'] += 1
-    h, cov = measure(poly, b.get('holes'))
+    h, cov, _ = measure(poly, b.get('holes'), use_max=b.get('t') == WORSHIP_T)
     if h is None:
         st['unmeasured'] += 1
         continue
@@ -207,6 +288,7 @@ if '--skip-city' in sys.argv:
     print('skipping city LUT (--skip-city; lidar_city_heights.json kept as-is)', flush=True)
     deltas.sort(key=lambda e: -e[0])
     report['top_deltas'] = deltas[:50]
+    report['spike_released'] = spike_log
     rep_old = json.load(open('lidar_report.json')) if os.path.exists('lidar_report.json') else {}
     if 'sets' in rep_old and 'city_lut' in rep_old.get('sets', {}):
         report['sets']['city_lut'] = rep_old['sets']['city_lut']
@@ -242,7 +324,7 @@ for el in els:
     if len(pts) < 3:
         continue
     st['total'] += 1
-    h, cov = measure(pts)
+    h, cov, _ = measure(pts, use_max=t.get('amenity') == 'place_of_worship')
     if h is None:
         st['unmeasured'] += 1
         continue
@@ -254,6 +336,7 @@ print('city_lut', st, flush=True)
 
 deltas.sort(key=lambda e: -e[0])
 report['top_deltas'] = deltas[:50]
+report['spike_released'] = spike_log
 # known-truth spot checks out of the patched scenes
 truths = {}
 for path, tag in (('scene_wide.json', 'wide'),):
