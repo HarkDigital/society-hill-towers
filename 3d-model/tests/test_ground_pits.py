@@ -103,8 +103,9 @@ class GroundPits(unittest.TestCase):
 
     def test_wiring(self):
         s = self.src
-        loop = s[s.index('      const [cx, cz] = polyCentroid(poly);\n      if (DEMOLISHED'):]
-        self.assertLess(loop.index('if (DEMOLISHED'), loop.index('if (h >= 45) tallGlow.push'))   # before any consumer
+        # since Round 161 the rebuilt landmarks' skip shares the test (if (rbId || DEMOLISHED.some(...)))
+        loop = s[s.index('      const [cx, cz] = polyCentroid(poly);\n      const rbId = '):]
+        self.assertLess(loop.index('if (rbId || DEMOLISHED.some('), loop.index('if (h >= 45) tallGlow.push'))   # before any consumer
         self.assertIn('if (h <= 45 && t <= 6) wideColK++;', s)   # the far ring's colour reservoir keeps its count
         self.assertIn('.concat(GROUND_PITS.map(p=>({poly:p.ring,bounds:streetBounds(p.ring)}))', s)
         self.assertIn("step('Digging on East Wildey Street', buildGroundPits);", s)

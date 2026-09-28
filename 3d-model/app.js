@@ -4188,6 +4188,7 @@
     initTerrainPatches();
     initStreetSurfaces();
     const groundMat = groundSurfMat();
+    GROUND_MEADOW_MAT = groundMat;   // Round 161: Founder's Hall lays its lawn apron in it
     const Z0 = CORE_EXT.z0, Z1 = CORE_EXT.z1;
     const flat = (poly, y) => { const g = new THREE.ShapeGeometry(shapeFromPoly(poly, null)); g.rotateX(-Math.PI / 2); g.translate(0, y, 0); return g; };
     // city heightfield (12.5 m) riding the DEM, diving into the trench east of Front St
@@ -7764,6 +7765,54 @@
   // the pair stands on the pit's right line (F2 to R2), running along its front line: widths from the pit side, depth back from the street
   const WILDEY_ROW = { widths: [5.79, 5.79], depth: 12.5, height: 11.2, roof: 10.45 };
   const pitAt = (x, z) => GROUND_PITS.some((p) => pointInPoly(x, z, p.ring));
+  // ---- the landmark rebuilds (Round 161, Mike: "add all the proposed buildings"). Seven landmarks the city drew as
+  // generic blocks, or not at all, rebuilt from their real plans in the Sep 25 design study: 30th Street Station, the
+  // Fairmount Water Works, Eastern State Penitentiary, the Divine Lorraine, Founder's Hall, the Reading Terminal and
+  // the Sparks Shot Tower. Each is rebuilds/<id>.js (build.py inlines them ahead of this file as RB.defs) and draws
+  // itself through a small api in 'Rebuilding the landmarks'. A wide footprint whose centroid lies in a def's skip ring
+  // is not raised (skipped at run time like DEMOLISHED, so the record-seeded draws stay put and wideColK still counts
+  // it) and its outline joins REBUILD_OCC, the ground the rebuilds own, with any ring a def registers itself: no tree,
+  // packed pole or storefront stands on it. REBUILD_PINS moves a rail station whose stop lies in a ring to the point a
+  // def names (30th Street's Rail Stations pin onto the attic, where the new concourse no longer hides it)
+  const REBUILDS = typeof RB !== 'undefined' && RB && Array.isArray(RB.defs) ? RB.defs : [];
+  const rbBox = (ring) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const q of ring) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0, x1, z0, z1]; };
+  const REBUILD_SKIP = REBUILDS.flatMap((d) => (d.skip || []).map((ring) => ({ id: d.id, ring, bb: rbBox(ring) })));
+  const REBUILD_OCC = [], REBUILD_PINS = [], REBUILT = [];   // REBUILT: what each def built, for ?dev's __dbg.rebuilds()
+  let GROUND_MEADOW_MAT = null;   // the bare ground's meadow material ('Laying out the ground'): Founder's Hall lays its lawn in it
+  const rebuildSkipAt = (cx, cz) => {
+    for (const s of REBUILD_SKIP) if (cx >= s.bb[0] && cx <= s.bb[1] && cz >= s.bb[2] && cz <= s.bb[3] && pointInPoly(cx, cz, s.ring)) return s.id;
+    return null;
+  };
+  const rbDist = (x, z, ring) => {   // 0 inside the ring, else the distance to its outline
+    if (pointInPoly(x, z, ring)) return 0;
+    let m = Infinity;
+    for (let i = 0, n = ring.length; i < n; i++) {
+      const a = ring[i], b = ring[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L2 = dx * dx + dz * dz || 1e-9;
+      const t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / L2));
+      m = Math.min(m, (a[0] + dx * t - x) ** 2 + (a[1] + dz * t - z) ** 2);
+    }
+    return Math.sqrt(m);
+  };
+  // on a rebuild's ground: inside an owned ring or within pad metres (plus the ring's own pad) of its outline
+  function rebuildAt(x, z, pad) {
+    for (const o of REBUILD_OCC) {
+      const q = pad + (o.pad || 0);   // a def's own margin on top of the caller's
+      if (x < o.bb[0] - q || x > o.bb[1] + q || z < o.bb[2] - q || z > o.bb[3] + q) continue;
+      if (rbDist(x, z, o.ring) <= q) return true;
+    }
+    return false;
+  }
+  // a tree whose crown (reach metres round its trunk, its underside at `under`) overhangs a ring a def registered with
+  // the top of what stands there, below that top (the Water Works' mill house at the water's edge). The generic
+  // outlines a skip removed carry no top, so the street trees along them keep the plain trunk test
+  function rebuildCrownAt(x, z, reach, under) {
+    for (const o of REBUILD_OCC) {
+      if (o.top == null || under >= o.top) continue;
+      if (x < o.bb[0] - reach || x > o.bb[1] + reach || z < o.bb[2] - reach || z > o.bb[3] + reach) continue;
+      if (rbDist(x, z, o.ring) < reach) return true;
+    }
+    return false;
+  }
   const PIT_CENTRES = GROUND_PITS.map((p) => polyCentroid(p.ring)), PIT_NEIGH = [];   // the wide houses beside a pit, with their eaves, noted as they are raised
   // the fill sheets' boxes: a wide road segment lying inside one is densified at 6 m instead of
   // 15, so the strip bends with the 25 m ground cells the lot sheets conform to instead of
@@ -8357,8 +8406,13 @@
       const poly = new Array(n);
       for (let j = 0; j < n; j++) { poly[j] = [body[k++] * S, body[k++] * S]; }
       const [cx, cz] = polyCentroid(poly);
-      if (DEMOLISHED.some((q) => Math.abs(q[0] - cx) < 60 && Math.abs(q[1] - cz) < 60 && pointInPoly(q[0], q[1], poly))) {   // Round 139: demolished
+      const rbId = REBUILD_SKIP.length ? rebuildSkipAt(cx, cz) : null;
+      if (rbId || DEMOLISHED.some((q) => Math.abs(q[0] - cx) < 60 && Math.abs(q[1] - cz) < 60 && pointInPoly(q[0], q[1], poly))) {   // Round 139: demolished; Round 161: rebuilt
         if (h <= 45 && t <= 6) wideColK++;   // the far ring's colour reservoir counts it as it did, so its draw stays as it was
+        if (rbId) {
+          REBUILD_OCC.push({ id: rbId, ring: poly, bb: rbBox(poly) });
+          if (h >= 6) roofNote(cx, cz, siteY(cx, cz, 'ground') + h, Math.abs(signedArea(poly)));   // the roof grid keeps its note: losClear and the placards read it (review)
+        }
         continue;
       }
       if (boathouseAt(cx,cz)) continue;
@@ -10121,6 +10175,55 @@
     }
   });
 
+  // ---- the landmark rebuilds (Round 161; see REBUILDS). Right after the outer districts, whose loop skipped the
+  // generic footprints: the wide ground grids are registered and nothing later changes them, so a rebuild stands on
+  // the ground it was designed on, and it runs before the trees, the storefronts, the lamps and the transit pins read
+  // REBUILD_OCC and REBUILD_PINS. The api is the design harness's with the app's own handles in place of its lookups:
+  // ground(x, z) the drawn ground, night the facade's night term, lamp the street lamps' photocell, lampU the lamp map's
+  // uniforms (lampLightPatch's), dayF the sky's day factor, lawn the bare ground's meadow material, occupy(ring, top,
+  // pad) ground a rebuild owns (with a roof for the placards' roof grid and a margin of its own), pinAt(ring, [x, y, z])
+  // a rail pin's new anchor.
+  // A def that throws leaves its site bare and the rest standing
+  step('Rebuilding the landmarks', () => {
+    if (!REBUILDS.length) return;
+    const K = RB.kit(THREE);
+    const dev = /[?&]dev\b/.test(location.search);
+    const api = {
+      THREE, K, where: 'app',
+      ground: (x, z) => { const y = groundMeshY(x, z); return y == null || !Number.isFinite(y) ? siteY(x, z, 'ground') : y; },
+      night: nightUniform, lamp: lampUniform, lampU: lampMapU, dayF: () => WXFX.dayF, lawn: GROUND_MEADOW_MAT,
+      occupy: (ring, top, pad) => {
+        REBUILD_OCC.push({ id: 'def', ring, bb: rbBox(ring), pad: pad || 0, top: top || null });
+        if (top) { const c = polyCentroid(ring); roofNote(c[0], c[1], top, Math.abs(signedArea(ring))); }
+      },
+      pinAt: (ring, at) => REBUILD_PINS.push({ ring, bb: rbBox(ring), at }),
+      log: dev ? (...a) => console.log('[rebuild]', ...a) : () => {},
+    };
+    for (const d of REBUILDS) {
+      const t0 = performance.now();
+      try {
+        const obj = d.build(api);
+        let tris = 0, meshes = 0;
+        obj.traverse((o) => {
+          if (!o.isMesh) return;
+          o.castShadow = !o.userData.noShadow; o.receiveShadow = true; meshes++;
+          const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
+          if (isTouch) freeOnUpload(g);   // a phone keeps no copy of what the GPU holds (Round 158)
+          o.frustumCulled = false; pendingUpload.push(o);   // drawn unculled once behind the veil so it uploads (and frees) now, as addChunkMesh's are
+          for (const t of [o.material && o.material.map, o.material && o.material.emissiveMap]) if (t && t.isCanvasTexture) freeTexOnUpload(t);
+        });
+        obj.name = 'rebuild-' + d.id;
+        groupCity.add(obj);
+        REBUILT.push({ id: d.id, tris: Math.round(tris), meshes, ms: Math.round(performance.now() - t0) });
+      } catch (err) {
+        console.error('rebuild ' + d.id + ' failed', err);
+        REBUILT.push({ id: d.id, error: String((err && err.message) || err) });
+        PERF.failed.push(['Rebuilding the landmarks: ' + d.id, String((err && err.message) || err)]);
+      }
+    }
+    flushUploads(true);
+  });
+
   // ------------------------------------------------ the far ring: the rest of Philadelphia
   // ---- the two packed rings share one decoder: the far ring (city.b64, 0.7 m units,
   // facade attributes) and the towns across the city line (outskirts.b64, 1.0 m units,
@@ -10849,6 +10952,8 @@
       for (const q of b2.poly) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
       own.push([x0 - 2, x1 + 2, z0 - 2, z1 + 2, b2.poly]);
     }
+    for (const o of REBUILD_OCC) own.push([o.bb[0] - 2, o.bb[1] + 2, o.bb[2] - 2, o.bb[3] + 2, o.ring]);   // and so does every rebuilt landmark (Round 161)
+    for (const s of REBUILD_SKIP) own.push([s.bb[0] - 2, s.bb[1] + 2, s.bb[2] - 2, s.bb[3] + 2, s.ring]);   // its whole site, not only the outlines it replaced (review)
     const ownsIt = (x, z) => { for (const o2 of own) if (x > o2[0] && x < o2[1] && z > o2[2] && z < o2[3] && pointInPoly(x, z, o2[4])) return true; return false; };
     for (let i = 0; i < n; i++) {
       const o = i * 8;
@@ -11861,9 +11966,14 @@
     // trees. At 9 m a 60-inch oak carries its crown 2.6 m clear of the ground.
     const boleH = (dbh) => clamp(2.4 + dbh * 0.1, 2.6, 9);
     const keepTree = (x, z, dbh, ni, core, outer) => {
-      if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2) !== null) return;   // no trees in the work zone, the expressway cut or PATCO's
+      if (inCapSite(x,z,4) || elPortalAt(x,z) || patcoCutAt(x, z) || vineCut(x, z, 2) !== null || rebuildAt(x, z, 2)) return;   // no trees in the work zone, the expressway cut or PATCO's, nor on a rebuilt landmark's ground (Round 161)
       const g = ni >= 0 ? (TREE_NAMES.g[ni] || 0) : 0;
       const st = TREE_STYLE[g] || TREE_STYLE[0];
+      if (REBUILD_OCC.length) {   // Round 161: nor with its crown over a rebuilt landmark: the drawn crown, as the instance
+        // matrix below scales it (CR x st[3] across, CR x st[4] tall, centred at CY) and the canopy shader grows it to 1.21
+        const cr = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5), cy = siteY(x, z, 'ground') + boleH(dbh) * 0.75 + cr * st[4] * 0.72;
+        if (rebuildCrownAt(x, z, cr * st[3] * 1.21, cy - cr * st[4] * 1.21)) return;
+      }
       X[n] = x; Z[n] = z; DBH[n] = dbh; NI[n] = ni; CORE[n] = core ? 1 : 0; OUT[n] = outer ? 1 : 0;
       GY[n] = siteY(x, z, 'ground');
       CR[n] = clamp((1.1 + dbh * 0.14) * st[5], 1.3, 7.5);
@@ -19126,7 +19236,7 @@
         continue;
       }
       const x = v[i * 3] * 0.7, z = v[i * 3 + 1] * 0.7, pk = v[i * 3 + 2];
-      if(inCapSite(x,z)) { pos[i*3+1]=-1000; continue; }
+      if(inCapSite(x,z) || rebuildAt(x, z, 1)) { pos[i*3+1]=-1000; continue; }   // Round 161: none on a rebuilt landmark's ground
       const kind = pk & 3, hft = (pk >> 2) & 127, lum2 = (pk >> 9) & 1;
       const gy = siteY(x, z, 'ground');
       if (deckOver(x, z, gy)) { pos[i * 3 + 1] = -1000; underDeck++; continue; }   // Round 144: it stood in the deck
@@ -20355,6 +20465,7 @@
     for (let i = 0; i < R.id.length; i++) {
       const x = R.x[i] / 2, z = R.z[i] / 2;
       const rec = { kind: 'rail', id: R.id[i], x, z, gy: siteY(x, z, 'ground'), n: (R.d && R.d[i]) || R.n[i], board: R.n[i] };   // n shown, board asked (Market East is Jefferson Station)
+      for (const p of REBUILD_PINS) if (x >= p.bb[0] && x <= p.bb[1] && z >= p.bb[2] && z <= p.bb[3] && pointInPoly(x, z, p.ring)) { rec.x = p.at[0]; rec.z = p.at[2]; rec.gy = p.at[1] - 4.5; break; }   // Round 161: the pin stands 4.5 m over rec.gy
       STOPS.rail.push(rec); put(rec);
     }
     busStopPin = pinMesh(pinTexture('#1f4fa3', '#fdfbf6', glyphBus), 900, 'busStopPin');
@@ -22709,7 +22820,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

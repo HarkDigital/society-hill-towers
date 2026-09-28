@@ -7092,3 +7092,41 @@ its real 14: the footprint covers the headhouse and the link together; the Readi
 Marriott skybridge (building:min_level 1, ignored by process_osm) still stands on 12th Street; the rebuild draws its own.
 tests/test_lidar_spike.py.
 
+## Round 161 — seven landmarks rebuilt (Sep 27)
+
+Mike: "add all the proposed buildings". The Sep 25 design study modelled seven landmarks the city drew as generic blocks,
+or not at all, from their real plans (HABS and HAER drawings, OSM footprints, photos), each by a research agent, an
+independent reviewer and a revision pass, in a scratch harness that loaded the stock build, skipped the generic
+footprints and mounted the model at the same camera, clock and weather (the private page "Philly3D Landmark Proposals"):
+30th Street Station (20,118 triangles), the Fairmount Water Works with the dam's crest (24,928), Eastern State
+Penitentiary, wall, towers, front and all fifteen cellblocks (21,806), the Divine Lorraine with its lit sign (32,269),
+Founder's Hall (36,030), the Reading Terminal headhouse and train shed (33,718) and the Sparks Shot Tower, which the app
+never drew (3,080).
+
+They live in 3d-model/rebuilds/: _kit.js (the study's modelling kit, RB.kit(THREE); K.mat stores a photo colour for the
+legacy pipeline, calibrated on the Museum of Art's Kasota stone) and one file per building, RB.add({ id, name, center,
+skip, views, build(api) }), inlined by build.py as one script ahead of app.js. app.js reads RB.defs: a wide footprint
+whose centroid lies in a skip ring is skipped at run time like DEMOLISHED (wideColK still counts it, its roof note kept
+for losClear and the placards) and its outline joins REBUILD_OCC; 'Rebuilding the landmarks', right after the outer
+districts (the wide ground grids are registered, nothing later moves them), builds each def through an api of the app's
+own handles (the drawn ground, nightUniform, lampUniform, lampMapU, WXFX.dayF, the meadow material, occupy, pinAt), draws
+it unculled once behind the veil so a phone frees its arrays there, and counts a def that throws in PERF.failed. Trees
+keep off a rebuild's ground (trunk within 2 m, or a crown overhanging a ring a def registered below its top: the drawn
+crown, CR x st[3] across), the packed poles too, the storefronts off every skip ring, and 30th Street's Rail Stations pin
+moves onto the attic where the new concourse no longer hides it. The ports replaced the harness's scene lookups with
+those handles and dropped its emulation (tree and pole clearing, the storefront cut, the pin wrap), which the app now
+does itself. build.py: SHT_BUILD_OUT writes a scratch page, SHT_REBUILDS keeps only the named rebuilds.
+
+Verified: all 24 of the study's views, day and night, against its reviewed captures: the same poses, 0.02 to 3.4 % of
+pixels different (cars, swaying trees, pins, the night's theme colour), no page errors, no failed steps. A four-lens
+review (wiring, porting, phones, build) with an adversarial check on each finding confirmed 11 of 21, all fixed: the
+kit's builder held every pre-merge part through the defs' shader hooks (so a phone's freeOnUpload freed almost nothing;
+parts.clear() after the merge), the meshes missed the behind-the-veil upload, the Shot Tower owned no ground (a surveyed
+Goldenrain tree grew through its shaft), ten Reading Terminal storefronts stood in the skip ring, the skip left holes in
+ROOF_GRID, a failed def went uncounted, the Reading Terminal's sign canvases stayed resident on touch, SHT_REBUILDS
+ignored unknown ids, and stale comments. Phone emulation, GC-normalised: live heap at ready 113 to 115 MB, GPU 667 to
+681 MB with no padded copies (every stream a 4-byte multiple), the worst moment (live plus GPU at the towns' upload) 867
+to 890..910 MB against the Sep 17 build's 920. tests/test_rebuilds.py builds every def under Node against r149 (finite, on
+its site, under 40k triangles, 4-byte streams, the skip counts per def against wide.b64, the app's wiring and the page).
+The capture skill's memory tools now decode their own path (the checkout's spaces broke them).
+

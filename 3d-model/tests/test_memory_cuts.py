@@ -304,7 +304,9 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
             for line in s.splitlines():
                 if 'freeTexOnUpload(' in line and 'function freeTexOnUpload' not in line:
                     self.assertNotIn(live, line)
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 7)   # the definition and its six uses
+        # Round 161: the landmark rebuilds' sign canvases (drawn once, in their build()) go the same way on touch
+        self.assertIn('if (t && t.isCanvasTexture) freeTexOnUpload(t);', cut(s, "  step('Rebuilding the landmarks'", '  // ------------------------------------------------ the far ring'))
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 8)   # the definition and its seven uses
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

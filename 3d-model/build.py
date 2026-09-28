@@ -4,10 +4,11 @@
 Everything the page needs — Three.js, the app, the styles, every packed data
 blob — is inlined so one file serves philly3d.com with no assets beside it.
 """
-import argparse, base64, json, pathlib, re, subprocess, sys
+import argparse, base64, json, os, pathlib, re, subprocess, sys
 
 ROOT = pathlib.Path(__file__).parent
-OUT = ROOT / "society-hill-towers.html"
+# SHT_BUILD_OUT puts the page (and its manifest) somewhere else: a scratch test build that never touches the committed page
+OUT = pathlib.Path(os.environ["SHT_BUILD_OUT"]).resolve() if os.environ.get("SHT_BUILD_OUT") else ROOT / "society-hill-towers.html"
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--allow-missing", action="store_true", help="ship without an input instead of aborting")
@@ -102,6 +103,30 @@ m = re.search(r'"use strict";const e="(\d+)"', three)
 if not m or m.group(1) != THREE_REV:
     sys.exit(f"FATAL: three.min.js is r{m.group(1) if m else '?'}, expected r{THREE_REV} (see the pin note in build.py)")
 app = (ROOT / "app.js").read_text(encoding="utf-8")
+
+# The landmark rebuilds (Round 161): rebuilds/_kit.js (the modelling kit) and one file per rebuilt building, inlined as
+# one script ahead of app.js. Each building file calls RB.add({ id, name, center, skip, views, build(api) }); app.js
+# skips the generic footprints under each `skip` ring in the wide loop and builds the rest in 'Rebuilding the landmarks'.
+# SHT_REBUILDS=t30,gc keeps only those (a scratch test build); SHT_REBUILDS=none keeps none.
+RB_DIR = ROOT / "rebuilds"
+rb_only = os.environ.get("SHT_REBUILDS")
+rb_files = sorted(p for p in RB_DIR.glob("*.js") if p.name != "_kit.js")
+if rb_only:
+    keep = {s.strip() for s in rb_only.split(",") if s.strip()}
+    unknown = keep - {p.stem for p in rb_files} - {"none"}
+    if unknown:
+        sys.exit(f"FATAL: SHT_REBUILDS names unknown rebuilds: {sorted(unknown)}")
+    rb_files = [p for p in rb_files if p.stem in keep]
+    print("rebuilds kept: " + (", ".join(p.stem for p in rb_files) or "none"))
+if not (RB_DIR / "_kit.js").exists():
+    sys.exit("FATAL: rebuilds/_kit.js is missing")
+rebuilds = ("const RB = { defs: [], kit: null, add(def) { RB.defs.push(def); } };\n"
+            + (RB_DIR / "_kit.js").read_text(encoding="utf-8") + "\n")
+for p in rb_files:
+    src = p.read_text(encoding="utf-8")
+    if "RB.add(" not in src:
+        sys.exit(f"FATAL: rebuilds/{p.name} never calls RB.add(")
+    rebuilds += f"// ---- rebuilds/{p.name}\n" + src + "\n"
 
 scene = json.loads(path_of("scene.json").read_text(encoding="utf-8"))   # through the floor check like every other input
 meta_path = path_of("meta.json")   # tower facts + landmark research, written by hand after workflow
@@ -206,7 +231,7 @@ touch_b64 = brand_b64("apple-touch-icon.png")
 # start_url and scope are "./": the page is index.html on the VPS, and 3d-model/index.html
 # on Pages is a redirect to the page. Icons ride as data URLs (brand/make_pwa_icons.py), so
 # the one manifest needs no icon path that differs between the two homes
-MANIFEST = ROOT / "manifest.webmanifest"
+MANIFEST = OUT.parent / "manifest.webmanifest"   # beside the page (the scratch build keeps its own)
 def icon(name, size, purpose):
     return {"src": "data:image/png;base64," + brand_b64(name), "sizes": f"{size}x{size}", "type": "image/png", "purpose": purpose}
 manifest = {
@@ -225,7 +250,7 @@ manifest = {
 MANIFEST.write_text(json.dumps(manifest, indent=1), encoding="utf-8")
 
 # </script> inside embedded JS strings would terminate the tag early
-for name, blob in (("three", three), ("pg", PG_JS), ("app", app), ("css", css), ("about", about_body),
+for name, blob in (("three", three), ("pg", PG_JS), ("app", app), ("rebuilds", rebuilds), ("css", css), ("about", about_body),
                    ("favicon_svg_b64", fav_svg_b64), ("favicon_32_b64", fav_32_b64), ("apple_icon_b64", touch_b64),
                    *(("data:" + label, js) for label, js in DATA_PARTS)):
     if re.search(r"</script", blob, re.I):
@@ -237,6 +262,7 @@ page = (template
         .replace("{{THREE}}", three)
         .replace("{{PG}}", "<script>" + PG_JS + "</script>")
         .replace("{{DATA}}", data_js)
+        .replace("{{REBUILDS}}", rebuilds)
         .replace("{{APP}}", app)
         .replace("{{FAVICON_SVG_B64}}", fav_svg_b64)
         .replace("{{FAVICON_32_B64}}", fav_32_b64)
@@ -252,7 +278,7 @@ OUT.write_text(page, encoding="utf-8")
 size = OUT.stat().st_size
 
 # the report: what went in, and how the page moved against the committed build
-SIZES += [("three.min.js", len(three)), ("app.js", len(app)), ("style.css", len(css))]
+SIZES += [("three.min.js", len(three)), ("app.js", len(app)), ("rebuilds", len(rebuilds)), ("style.css", len(css))]
 for label, n in sorted(SIZES, key=lambda t: -t[1]):
     if n >= 50_000:
         print(f"  {label:14s} {n:>12,d}")

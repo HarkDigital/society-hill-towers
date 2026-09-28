@@ -5,8 +5,8 @@ Philadelphia: a detailed Society Hill core, the wide Center City / South Philly 
 ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flights / ships,
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (the VPS, and the
 only home since Mike retired the GitHub Pages copy on Sep 17, 2026). Everything is in `3d-model/`;
-`app.js` (~11,000 lines, one IIFE) is the whole application, `build.py` inlines it with the
-data into `society-hill-towers.html` (24.85 MB raw / 10.58 MB gzip). The old claude.ai
+`app.js` (~22,800 lines, one IIFE) is the application and `rebuilds/` the seven landmark rebuilds (Round 161),
+`build.py` inlines them with the data into `society-hill-towers.html` (24.85 MB raw / 10.58 MB gzip). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -220,7 +220,12 @@ places, address search, live Indego, live flights, live ships, live Amtrak train
 sit before the SEPTA fleet step), traffic, streetlights, the skyline lights (Round 81: the theme resolver, the bridge's strings and lamps), the live street closures, farmers'
 markets on the clock, the historical markers and public art,
 solar clock + weather (and the air quality), build & loop; the post pipeline sits with the renderer near the top. Build steps are `step('Name', fn)` calls run in order by
-`build()`. `template.html` is the chrome, `style.css` the HUD + embedded Montserrat,
+`build()`. `rebuilds/<id>.js` over `rebuilds/_kit.js` are the landmark rebuilds (Round 161: 30th Street Station, the Fairmount
+Water Works, Eastern State, the Divine Lorraine, Founder's Hall, the Reading Terminal, the Sparks Shot Tower), each
+`RB.add({ id, skip, views, build(api) })`; the wide loop skips the generic footprints under a `skip` ring, 'Rebuilding
+the landmarks' builds them right after the outer districts, and `REBUILD_OCC` keeps trees, packed poles and storefronts
+off their ground (`__dbg.rebuilds()`; a scratch build: `SHT_BUILD_OUT=<path> SHT_REBUILDS=t30 python3 build.py`).
+`template.html` is the chrome, `style.css` the HUD + embedded Montserrat,
 `about_body.html` the hidden About panel. Pipeline scripts and data files are tabulated in
 `handoff.md` ("What's in 3d-model/").
 
