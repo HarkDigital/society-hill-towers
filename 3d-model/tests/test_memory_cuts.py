@@ -377,8 +377,12 @@ class FreedArrays(unittest.TestCase):
     def test_the_el(self):
         el = cut(self.src, "  step('Raising the Frankford El'", "  // ---- Amtrak's tracks")
         self.assertNotIn('push(...', el)
-        self.assertIn('ties.instanceMatrix.onUpload(dropUploadedArray);', el)
-        self.assertEqual(el.count('ties.setMatrixAt('), 1)
+        # Round 167: the ties are posed in culled runs (tieRuns), each run's matrices going at upload as the one mesh's did
+        self.assertIn('tieRuns(sleepers, ', el)
+        runs = cut(self.src, '  function tieRuns(', '  function tieRunsNear(')
+        self.assertIn('run.instanceMatrix.onUpload(dropUploadedArray);', runs)
+        self.assertIn('freeOnUpload(run.geometry);', runs)
+        self.assertEqual(runs.count('run.setMatrixAt('), 1)
         self.assertEqual(self.src.count("'El Cross Ties'"), 1)
 
 

@@ -7325,3 +7325,69 @@ Round 166 coda (Sep 28): build 3 (1.0 (3), npm run bump, the page byte for byte 
 Connect through app/ios/UploadOptions.plist: "Upload succeeded". Both internal groups have access to all builds, so it
 reaches Mike and Kaitlin when processing ends. philly3d.com stays on HEAD~ until a build 3 session reaches `settled`.
 
+## Round 167 (part) — the trees and the ties cull, and the pins' depth image is read without waiting (Sep 28)
+
+Mike approved the "no visible change" package to cut what phones draw. His iPhone's beacons: 9 to 12 M triangles a frame at
+about 29 ms, geometry-bound, and about 7.5 M of them drawn in every view because the big meshes can never be culled. This
+part takes three items.
+
+- The trees cull. r149's InstancedMesh constructor sets `frustumCulled = false`, so the 68 tree meshes (2.27 M triangles on a
+  phone) drew in every view: the hand-set chunk spheres in `instMesh` were never consulted. `fitInstSphere` (beside
+  `pendingUpload`) now sets each mesh's geometry sphere round every instance as drawn: each instance's copy of the shape's
+  own sphere through its matrix, a crown grown by `CROWN_GROW` 1.21 (canMat's lumps, `0.79 + 0.42 * vh` about the shape's
+  origin) plus `CROWN_SLACK` 0.1 of the unit shape (the sway reaches 0.07), 2 m of margin. Checked in the page against the
+  real data: 68 meshes, 111,683 instances, 10.1 M vertex positions at both lump extremes plus the sway, every one at least
+  2.02 m inside its sphere. The hand-set spheres (chunk centre at y 10, half diagonal plus 40 m) are gone with their helpers.
+- The ties cull. The El's 41,236 sleepers and PATCO's 6,343 were two InstancedMeshes whose box's sphere sat at the origin
+  (0.57 M triangles from everywhere). `tieRuns` poses them in runs of up to `TIE_RUN` 500 m of track (a step over 10 m
+  starts a new run: the next track or corridor), 41 meshes in two groups ('El Cross Ties', 'PATCO Cross Ties'), each culled
+  by its own fitted sphere; `tieRunsNear` (every frame, before anything renders) hides a run whose box is farther than
+  `TIE_NEAR` 700 m, or farther than where a tie's 0.24 m is 0.15 of a drawing-buffer pixel (`TIE_PX_M` times the focal length:
+  700 m on a phone at 1.25, about 1 km at 720p, 1.8 km on a 2x desktop). Each run keeps what the one mesh had: `freeOnUpload`
+  on its box, its matrices dropped at upload through `dropUploadedArray` (the sphere is taken first).
+- Gotcha 12: every newly culled mesh goes into `pendingUpload` unculled and `frame()` sets it culled after the first frame,
+  which is drawn behind the veil, so each uploads there as before with no extra render (an extra flush at the build's end
+  would also compile programs the weather pass then disposes). `tieRunsNear` hides nothing until that frame has drawn.
+- The pins' depth image no longer stalls the page. `pinOccCapture` read it with `readRenderTargetPixels` into an array every
+  10th frame on a phone, which waits for the GPU to draw the whole city into the target (the likely source of the 104 ms
+  p95). On WebGL 2 the read now goes into a pixel pack buffer behind a fence (`PIN_ASYNC`, `pinOccIssue`): three's own
+  `readRenderTargetPixels` with the buffer bound and 0 as the offset, the buffer unbound in a `finally` at once, `fenceSync`,
+  `flush`. `pinOccPoll`, first thing in every frame, asks the fence and once it has passed copies the pixels with
+  `getBufferSubData` and only then installs that capture's view and projection, so the image and its matrices always match;
+  the frame it lands counts as the capture for the Round 138 agreement (`PIN_OCC.fresh`). One read in flight ('busy' skips a
+  turn and keeps its cadence); the first image, a resize, a jump of the eye over `PIN_JUMP` 300 m since the last capture (a
+  shared link, a located fix; the fastest flight covers under 270 m between captures), WebGL 1, a refused first read (one
+  `getError` check), a lost context, or a fence that has not passed in 120 frames counted only after a task has ended (a
+  fence passes only between tasks) take the synchronous read, the last three for good. `__dbg.pinAsync(false)` forces it.
+  The capture cadence and `PIN_FADE`/`PIN_HOLD`/`PIN_DWELL` are unchanged; the building tap's `occRender` still reads at once.
+- Measured headless (Chrome, SwiftShader, phone emulation 740 x 360 at 1.25, touch, e292604 against this build, concerts
+  seeded so the pin capture runs, traffic on). Main pass, triangles and calls a frame:
+  entry 9.40 M / 356 to 8.18 M / 330 (-1.22 M), skyline 11.12 M / 450 to 10.40 M / 432 (-0.72 M), high looking north
+  12.34 M / 574 to 11.38 M / 552 (-0.97 M), Center City looking west at 250 m 8.97 M / 343 to 7.45 M / 310 (-1.52 M),
+  Spruce Street 9.97 M / 388 to 8.95 M / 360 (-1.02 M), 150 m looking north 11.64 M / 485 to 10.90 M / 467 (-0.74 M): the
+  trees drew 1.34 to 2.13 M of their 2.27 M and the ties none of their 0.57 M at these six. The pin capture (clock pinned):
+  9.56 to 8.46 M, 11.77 to 10.97, 12.42 to 11.70, 9.33 to 8.03, 10.21 to 9.37, 11.99 to 11.28 M a capture. Hooked GPU
+  681.3 MB at ready and 859.4 MB after the first frames in both, `__gpu.mis` 0 in both; live heap 115.0 / 117.6 MB against
+  115.2 / 117.9. SwiftShader cannot price the stall (its GPU is the CPU, which was loaded to 60 to 120 by other work), so the
+  readPixels audit is the proof: the old build made a synchronous 240 x 117 read at every capture, this one only at the first
+  image and at each pose jump, and issued the others in 0.3 ms (max 0.9).
+- `tests/pin_readback_gpu.html` runs the production `PIN_ASYNC` block on a real WebGL 2 context: the image read through the
+  pack buffer is the synchronous one byte for byte (0 of 115,200 differ), lands after one poll, carries its capture's
+  matrices, and three's synchronous read of another target works while it is in flight (PASS under SwiftShader).
+- Pixels, same poses at 925 x 450, share of pixels more than 8/255 apart: with the pin and live layers off, the El up
+  Front Street from 70 m 0.0014% (6 px, max 22) and from 120 m 0.0086% (36 px, max 42), skyline 0.0014%, the Ben Franklin
+  at night from the river 0.0005% (2 px), a night view by the span 0%; with the pin layers on, Center City 0.0010%, skyline
+  0.0014%, 150 m north 0.0094%, a park 0.0029%, the skyline at night 0.0053%. Three views differed by 0.2 to 0.5%, all of it
+  live AIS anchor pins present in one run and not the other (the AIS socket got past the blocked-URL list in one run) and a
+  PATCO train's lights; the crops at 5x show the same geometry.
+- tests/test_cull.py (16): `fitInstSphere` under Node against random poses of every tree shape and the tie box (every vertex
+  as the shader can move it inside, the box right), the crown bounds against the shader's own literals, every tree mesh fitted
+  and pending, the tie runs' wiring and their hiding by distance and by sharpness, the first-frame release, and the async block
+  against a scripted WebGL 2 context (landing with its own matrices, busy, resize, jump, WebGL 1, a refused read, a fence that
+  never passes counted only across tasks, a lost context) and pinOccUpdate with landings a frame late. test_el_tracks checks
+  every El tie inside its run's sphere and within 500 m of the run's first; test_memory_cuts and test_patco follow the ties
+  into `tieRuns`. The capture skill's `pin_sweep.js` yields a task every frame (in one task no fence can pass) and its
+  `gpuhook.js` counts a pixel pack buffer against its own binding (it read the array buffer's and overwrote that size).
+- Not taken: the two bridges' walkway lamps (`bfbLampMesh` and the Walt Whitman's, 340 lamps, 12,240 triangles) are the only
+  other static InstancedMeshes; they have no fitted sphere and are 0.1% of a frame. The roof kit, the grass, the cars, the
+  pins and the fleets are re-laid round the eye or move, and keep `frustumCulled = false`.

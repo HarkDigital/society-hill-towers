@@ -83,7 +83,7 @@ before any visual round rather than rediscovering it.
   and 127, Mike: farther pins painted over nearer ones, buildings cut them): each flat pin carries its ANCHOR's depth
   (`PIN_ANCHOR_GLSL`) and the pins draw after `pinDepthClear` wipes the depth buffer, so nothing cuts one and they sort
   among themselves; a small depth image of the city (`pinOccCapture`, every 5th frame, 10th on touch, and since Round 136 only when the eye has moved or turned or 120 frames
-  have passed, packed to 30 km, the sky and every non-depth-writing mesh hidden; since Round 143 1.5 times the screen each way through its own camera, and a shown pin keeps showing on a 5 by 5 test while a hidden one returns on 3 by 3) decides per tip
+  have passed, packed to 30 km, the sky and every non-depth-writing mesh hidden; since Round 143 1.5 times the screen each way through its own camera, and a shown pin keeps showing on a 5 by 5 test while a hidden one returns on 3 by 3; since Round 167 read back on WebGL 2 through a pixel pack buffer behind a fence and installed with its own matrices once the fence passes, `PIN_ASYNC`, the first image, a resize, a jump of the eye over `PIN_JUMP` and any failure reading synchronously) decides per tip
   whether a building hides it (`aPinVis`, `pinOccVisible`; a tap picks a pin by the same flag since Round 136; since Round 138 a pin changes state only when two captures agree or 0.45 s has passed, keeps a new state 0.3 s and eases `aPinVis` over 0.2 s instead of snapping, `PIN_FADE`/`PIN_HOLD`/`PIN_DWELL`, `tests/test_pin_fade.py`), and the concert placards and score bubbles ask the same
   image for their roof landing point (`pinBlocked`); `__dbg.pinOcc()`, `tests/test_pins.py`; the storefront pass skips
   every researched custom footprint (Round 127); a demolished house is skipped at run time by a scene point in `DEMOLISHED` (Round 139, 207 E Wildey St: never repack wide.b64 to drop one, the record number seeds every later building's look, and the skip still counts `wideColK`), and a `GROUND_PITS` ring is cut out of the drawn ground by `elPortalClipGround` with a closed pit, the neighbours' bare foundations and blank party-wall skins built in 'Digging on East Wildey Street'; the Marriott Old City's porte-cochere
@@ -142,7 +142,8 @@ before any visual round rather than rediscovering it.
   survey is citywide since Round 87 (150,887 packed, 106,887 drawn against 40,982: West Fairmount Park held zero trees
   before it), the wide box keeping the 80-face crown on its 3x3 chunk grid while the 101,849 trees beyond it take the
   phone's 20-face crown on an 8x8 city grid (the 80-face crown on all of them measured 18.0 M triangles a frame against
-  13.4 M), `boleH` capped at 9 m so a 60-inch park oak carries its crown clear of the grass, and the woodland tint from
+  13.4 M; since Round 167 every tree mesh frustum-culls on `fitInstSphere`'s sphere round its instances as the crown shader
+  draws them, and the El's and PATCO's ties are culled runs, `tieRuns`, hidden past 700 m on a phone, farther on a sharper screen), `boleH` capped at 9 m so a 60-inch park oak carries its crown clear of the grass, and the woodland tint from
   PPR's parkland rings on all four far ground strips, not only the NW patch; wind in the crowns and blades, saturated palettes, rooftop
   clutter on desktop, awnings, lane paint on every road (`aLane` + `lanePatch`: a double yellow centre from
   6.5 m wide, white dashes by width, edge lines on the divided highways, nothing on service and footways),

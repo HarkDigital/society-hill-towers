@@ -84,6 +84,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 | `tests/test_traffic.py` / `tests/traffic_checks.js` | Rounds 107/112: production traffic lifecycle and geometry under Node, upstream inflow to empty visible streets, citywide baked coverage and short connectors; population caps, camera/clock changes, visible-car preservation, T-junction connectivity, separated overpasses, route transfers, following gaps, birth spacing and one-way dead ends. |
 | `tests/traffic_gpu.html` | Round 107: all six production vehicle models, paint/trim separation, fixed-size coverage fades, shadow and lamp fades across standard/logarithmic depth and bloom hooks. Add `#gallery` to view the fleet. |
 | `tests/pins_gpu.html` | Round 105: production pin materials on the GPU; foreground buildings fully/partially hide badges, search pins and event connectors/anchors, with standard/logarithmic depth and bloom material variants. |
+| `tests/pin_readback_gpu.html` | Round 167: the production `PIN_ASYNC` block on a real WebGL 2 context; the depth image read back through a pixel pack buffer behind a fence lands byte for byte the synchronous read's image, with its own capture's matrices, and three's synchronous read (the building tap's) works while it is in flight. |
 | `tests/clouds_gpu.html` | Browser GPU regression page; serve `3d-model` and open `/tests/clouds_gpu.html`. Loads the production cloud shader and tests desktop/touch sample budgets with standard/log depth: altitude intervals, lower/upper banks, varied bases, clear/overcast coverage, stable pixels, and foreground/background occlusion. Separate from the Python suite. |
 | `docs_check.py` | Stdlib check that every `build.py` input and every script here is mentioned in this section; exits non-zero naming the gaps. |
 
@@ -557,7 +558,11 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
     so the "memory diet" is only real for what those renders see; anything that must be freed
     at build time needs `frustumCulled = false` for that render (or an explicit upload), and
     anything that must stay raycastable must never go through `freeOnUpload` at all (Round
-    41's tooltip kill was a raycast into a freed chunk).
+    41's tooltip kill was a raycast into a freed chunk). Round 167: a mesh a step builds after
+    the last `flushUploads(true)` (the trees, the tie runs) goes into `pendingUpload` unculled
+    and `frame()` sets it culled after the first frame, which is drawn behind the veil, so it
+    uploads there without an extra render (and without compiling programs the weather pass
+    would dispose).
 
 13. **Render targets and r149's colour pipeline (Round 51).** A render-target pass is forced to
     LinearEncoding but is still tone-mapped for every toneMapped material, so a post pipeline
@@ -665,7 +670,7 @@ More rules the log paid for (details in `devlog.md`):
 - Rocky placement (Round 113): the museum-frame `pt(38, 0)` light pedestal carries the statue, feet at terrace T + 0.9 m, facing the Oval. The former lawn-side figure/base is removed. `rockySite` carries the built position into local search, including its raised anchor height.
 - Roofline clearance (Round 114): the shared `facadeHook` reserves `roofGap` and fits the window-only `fv` coordinates to complete rows, using `rowHead` for each style's full frame/lintel. Keep masonry/cornices in physical `v` coordinates and preserve `windowArea` on far averaged light. `tests/facade_roofline_gpu.html` checks roof glass/emission across heights, variants, attribute formats and detail/depth modes; `tests/buildings_gpu.html` checks the full material set.
 - El portals / I-95 walls (Round 116): `elTrackProfiles()` is the shared cached rail/deck/excavation profile. `elPortalClipGround` cuts exact narrow openings into wide/far indexed terrain while preserving outside triangles and attributes; the registry keeps the original surface grade for road fitting. Use `elPortalAt` to exclude vegetation. Portal masonry shares the El structure batch. Straight Front Street trench walls must stay within `CORE_EXT.z0/z1`; extending them into the outer districts created the white wall across Callowhill's curved highway lanes.
-- El tracks (Round 115): `elTrackFrames` / `elTrackRibbon` build shared mitered rails above the existing `EL_TRACK` deck profile. `elTrackSleepers` keeps distance phase through joints; all ties share one instanced box. There are four running rails, outside third rails and two track beds on each elevated corridor. `__dbg.elTracks()` and `tests/test_el_tracks.py` check this. L1/B1 live-feed records were verified as placeholder locations again on Sep 18, 2026; never label timetable-based subway animation as live GPS.
+- El tracks (Round 115): `elTrackFrames` / `elTrackRibbon` build shared mitered rails above the existing `EL_TRACK` deck profile. `elTrackSleepers` keeps distance phase through joints; the ties are instanced boxes in runs of about 500 m (`tieRuns`, Round 167), each culled by its own sphere and hidden past `TIE_NEAR` 700 m, or past where a tie's 0.24 m is 0.15 of a pixel on a sharper screen (`tieRunsNear`); PATCO's ties go through the same helper. There are four running rails, outside third rails and two track beds on each elevated corridor. `__dbg.elTracks()` and `tests/test_el_tracks.py` check this. L1/B1 live-feed records were verified as placeholder locations again on Sep 18, 2026; never label timetable-based subway animation as live GPS.
 - Traffic coverage and inflow (Round 112): the bake reads wide, south and city raw OSM plus the optional city-street supplement. Match the rendered far-ring residential extent; never extend cars onto omitted streets. Simplify only between shared junctions, retain links down to 2 m, and read the header coordinate unit. `carFeed` searches upstream for offscreen spawn positions and reserves incoming cars against destination demand. Planned routes preserve one-way directions and building/terrain depth; births remain outside the frustum. Nearby streets get a modest density lift and refill priority within the same 2,200 desktop / 550 touch pool.
 - Traffic continuity (Round 107): `trafficCars` includes retiring vehicles and must stay within `TRAFFIC.cap`; never truncate a draw batch to control population. After loading, births and removals must be outside the camera frustum or beyond the fade radius. Visible cars survive density changes and hold at unresolved dead ends. `trafficPrepareGraph` splits T-junctions with horizontal/height tolerances; do not connect stacked roads. `CAR_MODELS` dimensions drive spacing and lamp locations. Every fleet's body, lights and shadow material must share `aCarFade`; fades change coverage, never vehicle scale. Day/night counts are simulated AADT, not live vehicle locations.
 - Never compute tight highlights on unnormalised interpolated directions over a coarse dome
@@ -674,7 +679,10 @@ More rules the log paid for (details in `devlog.md`):
 - Colour variation must live in hue + saturation, not lightness (the day pipeline flattens
   lightness); pick flat-surface colours by rendered swatch; calibrate stored colours against a
   measured transfer curve, not a guessed divisor.
-- InstancedMesh: `frustumCulled = false` (instance bounds don't follow the fleet); never bake a
+- InstancedMesh: `frustumCulled = false` (instance bounds don't follow the fleet; r149's constructor sets it, and the
+  test reads the geometry's own sphere, the unit shape's at the origin). A STATIC instanced mesh may cull only with
+  `fitInstSphere`'s sphere round every instance as its shader draws it (Round 167: the trees, with the crowns' lump and
+  sway, and the tie runs), set before any upload can drop the matrices; such a mesh is never a ray target. Never bake a
   rotation into a part that gets non-uniform instance scale; every mesh sharing
   `septaMats.body` must `setColorAt` (uninitialised instance colour reads black); a shared
   program expects instance colours.
@@ -688,6 +696,12 @@ More rules the log paid for (details in `devlog.md`):
   (Round 105). `pinSceneDepth` enforces depth testing for all badges, search pins and event
   connectors/anchors. Preserve this across new pin types. Neighborhood map names are labels,
   not item pins. Pin selection filters occluded hits before applying draw-order priority.
+  Round 167: on WebGL 2 the pins' depth image (`pinOccCapture`) is read through a pixel pack
+  buffer behind a fence (`PIN_ASYNC`, `pinOccIssue`, `pinOccPoll`) and installed with its own
+  capture's matrices only once the fence passes; the first image, a resize, WebGL 1 and any
+  failure read synchronously, and the building tap's `occRender` read always does. A fence
+  passes only between tasks, so a probe looping `frameOnce` in one task sees no new image
+  until it yields (`__dbg.pinAsync(false)` forces the synchronous read).
 - Deploy: stage + `chmod 644` before rsync (CloudStorage files are 0600 → site-wide 403);
   the nginx `/adsb` upstream must resolve at request time (`resolver … ipv6=off` + a
   variable `proxy_pass`) or an upgrade-time DNS blip keeps nginx from starting at all.

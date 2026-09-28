@@ -1,0 +1,54 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pin Readback Checks</title>
+<style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}pre{white-space:pre-wrap}</style>
+<h1>Pin Readback Checks</h1>
+<p>Round 167: the pins' depth image read back through a pixel pack buffer behind a fence (the production PIN_ASYNC block from app.js, on a real WebGL 2 context) must land byte for byte the image the synchronous read gives, with the matrices of the capture that drew it, and must leave three's own synchronous read (the building tap's) working while it is in flight.</p>
+<pre id="result">Running…</pre>
+<script src="../three.min.js"></script>
+<script>
+(async()=>{
+ const out=document.getElementById('result');
+ try{
+  const src=await(await fetch('../app.js',{cache:'no-store'})).text();
+  const block=src.slice(src.indexOf('  const PIN_JUMP = '),src.indexOf('  function pinOccMat() {'));
+  const W=240,H=120;
+  const renderer=new THREE.WebGLRenderer({antialias:false});renderer.setSize(W,H);
+  if(!renderer.capabilities.isWebGL2)throw Error('WebGL 2 unavailable: nothing to check');
+  // a small city: boxes at many depths, drawn with a depth-packing override like the capture's
+  const scene=new THREE.Scene(),mat=new THREE.ShaderMaterial({vertexShader:'varying float vz;void main(){vec4 mv=modelViewMatrix*vec4(position,1.0);vz=-mv.z;gl_Position=projectionMatrix*mv;}',fragmentShader:'#include <packing>\nvarying float vz;void main(){gl_FragColor=packDepthToRGBA(clamp(vz/3000.0,0.0,0.9999));}'});
+  for(let i=0;i<60;i++){const b=new THREE.Mesh(new THREE.BoxGeometry(20+i%7*9,30+i%5*40,20),mat);b.position.set((i%10-5)*60,0,-100-Math.floor(i/10)*300);b.rotation.y=i*0.37;scene.add(b);}
+  const camera=new THREE.PerspectiveCamera(58,2,1,26000);camera.position.set(0,40,120);camera.lookAt(0,20,-800);camera.updateMatrixWorld();
+  const PIN_OCC={w:W,h:0,rt:null,buf:null,ok:false,n:0,view:new THREE.Matrix4(),proj:new THREE.Matrix4(),cam:new THREE.PerspectiveCamera(),fresh:false};
+  const win={innerWidth:W*2,innerHeight:H*2};
+  const pinOccCam=()=>{const c=PIN_OCC.cam;c.matrixAutoUpdate=false;c.matrixWorldAutoUpdate=false;c.near=camera.near;c.far=camera.far;c.matrix.copy(camera.matrixWorld);c.matrixWorld.copy(camera.matrixWorld);c.matrixWorldInverse.copy(camera.matrixWorldInverse);c.projectionMatrix.copy(camera.projectionMatrix);c.projectionMatrixInverse.copy(c.projectionMatrix).invert();return c;};
+  function occRender(rt,w,h,buf,noInst,cam,read){const prev=renderer.getRenderTarget();renderer.setRenderTarget(rt);renderer.setClearColor(0xffffff,1);renderer.clear(true,true,false);renderer.render(scene,cam);let o=false;if(read)o=read();else renderer.readRenderTargetPixels(rt,0,0,w,h,buf);renderer.setRenderTarget(prev);return o;}
+  const pinOccCaptureRest=()=>{const c=pinOccCam();occRender(PIN_OCC.rt,PIN_OCC.w,PIN_OCC.h,PIN_OCC.buf,false,c);PIN_OCC.view.copy(c.matrixWorldInverse);PIN_OCC.proj.copy(c.projectionMatrix);PIN_OCC.ok=true;PIN_OCC.n++;};
+  const api=new Function('THREE','renderer','camera','PIN_OCC','window','pinOccMat','pinOccCam','pinOccCaptureRest','occRender',block+'\nreturn {PIN_ASYNC,pinOccCapture,pinOccPoll,pinOccTick};')(THREE,renderer,camera,PIN_OCC,win,()=>{},pinOccCam,pinOccCaptureRest,occRender);
+  const task=()=>new Promise(r=>setTimeout(r,20));
+  const checks=[],check=(ok,m)=>{checks.push((ok?'ok   ':'FAIL ')+m);if(!ok)throw Error(m);};
+  check(api.pinOccCapture()==='now','the first image is read at once');
+  const sync=PIN_OCC.buf.slice(),syncView=PIN_OCC.view.clone();
+  let nonWhite=0;for(let i=0;i<sync.length;i+=4)if(sync[i+3]!==255)nonWhite++;
+  check(nonWhite>W*H*0.05,'the image holds depths ('+nonWhite+' of '+W*H+' pixels on a box)');
+  PIN_OCC.buf.fill(0);PIN_OCC.view.identity();   // wiped: whatever stands there after the landing came from the read
+  check(api.pinOccCapture()==='later','the next capture, of the same view, is read without waiting');
+  const gl=renderer.getContext();
+  check(gl.getParameter(gl.PIXEL_PACK_BUFFER_BINDING)===null,'the pack buffer is unbound once the read is issued');
+  // the building tap's synchronous read of another target while the pins' read is in flight
+  const tapRT=new THREE.WebGLRenderTarget(4,4),tap=new Uint8Array(64);
+  occRender(tapRT,4,4,tap,true,camera);
+  check(tap.some(v=>v!==0),'three\'s synchronous read works with the pins\' read in flight');
+  check(api.pinOccCapture()==='busy','one read in flight at a time');
+  let frames=0;
+  while(!PIN_OCC.fresh&&frames<400){await task();api.pinOccPoll();frames++;}
+  check(PIN_OCC.fresh,'the read landed after '+frames+' polls');
+  let differ=0;for(let i=0;i<sync.length;i++)if(PIN_OCC.buf[i]!==sync[i])differ++;
+  check(differ===0,'the image read back through the pack buffer is the synchronous one byte for byte ('+differ+' bytes differ)');
+  check(PIN_OCC.view.equals(syncView),'the matrices installed with it are its capture\'s');
+  check(PIN_OCC.n===2&&api.PIN_ASYNC.landed===1&&!api.PIN_ASYNC.off,'counted, and the async path stays on');
+  api.pinOccTick.port1.close();
+  out.textContent='PASS\n'+checks.join('\n');
+ }catch(e){out.textContent='FAIL '+e.message+'\n'+(e.stack||'');}
+})();
+</script>

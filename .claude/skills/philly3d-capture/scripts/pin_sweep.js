@@ -1,20 +1,23 @@
 // pin blink sweep (Round 143): turns the eye in place 0.02 rad a frame with 16 ms of real time per frame and counts
 // pins that were shown on screen (aPinVis > 0.5, |ndc| < 0.95) and then vanished (< 0.1) while still on screen. From a
 // fixed eye nothing can change what hides a pin, so every such vanishing is a blink. Inject as a string through
-// javascript_tool, then: __pinSweep([[x, y, z, yaw0, yaw1], ...]). Keep one call to about two runs (45 s limit).
+// javascript_tool, then: await __pinSweep([[x, y, z, yaw0, yaw1], ...]). Keep one call to about two runs (45 s limit).
+// Round 167: each frame is its own task (a MessageChannel yield before the 16 ms), because on WebGL 2 the pins' depth image
+// is read back behind a fence, and a fence passes only between tasks: a sweep in one task would see no new image at all.
 // Limits: it sees only the pins loaded in this session (live feeds differ between loads, so compare builds with
 // several runs, not one pin), and the first 70 settle frames must pass real time or the half-second hold never lapses.
-window.__pinSweep = function (runs, pitch) {
+window.__pinSweep = async function (runs, pitch) {
   const d = __dbg, cam = d.camera, V = new THREE.Vector3(), meshes = [];
   d.scene.traverse((o) => { if (o.isInstancedMesh && o.geometry.attributes.aPinVis) meshes.push(o); });
-  const wait = () => { const t = performance.now(); while (performance.now() - t < 16) {} };
+  const task = () => new Promise((r) => { const c = new MessageChannel(); c.port1.onmessage = () => r(); c.port2.postMessage(0); });
+  const wait = async () => { const t = performance.now(); await task(); while (performance.now() - t < 16) {} };
   const hist = new Map(); let blinks = 0, shown = 0;
   for (const [x, y, z, y0, y1] of runs) {
-    d.goFly(x, y, z, y0, pitch ?? -0.12); for (let i = 0; i < 70; i++) { wait(); d.frameOnce(); }
+    d.goFly(x, y, z, y0, pitch ?? -0.12); for (let i = 0; i < 70; i++) { await wait(); d.frameOnce(); }
     hist.clear();
     const n = Math.round(Math.abs(y1 - y0) / 0.02);
     for (let f = 0; f <= n; f++) {
-      d.goFly(x, y, z, y0 + (y1 - y0) * f / n, pitch ?? -0.12); wait(); d.frameOnce();
+      d.goFly(x, y, z, y0 + (y1 - y0) * f / n, pitch ?? -0.12); await wait(); d.frameOnce();
       for (const m of meshes) {
         if (!m.visible) continue;
         const e = m.instanceMatrix.array, a = m.geometry.attributes.aPinVis.array;

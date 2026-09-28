@@ -9,7 +9,10 @@
     if (!C) return; var P = C.prototype;
     var bd = P.bufferData;
     P.bufferData = function (target, data) {
-      var b = this.getParameter(target === this.ELEMENT_ARRAY_BUFFER ? this.ELEMENT_ARRAY_BUFFER_BINDING : this.ARRAY_BUFFER_BINDING);
+      // the binding of the target actually written: since Round 167 the pins' pixel pack buffer is one, and read as the array
+      // buffer's binding it overwrote whatever vertex buffer was bound with its own size
+      var q = target === 0x8893 ? 0x8895 : target === 0x88EB ? 0x88ED : target === 0x88EC ? 0x88EF : target === 0x8A11 ? 0x8A28 : target === 0x8F36 || target === 0x8F37 ? target : 0x8894;
+      var b = this.getParameter(q);
       var n = typeof data === 'number' ? data : (data && data.byteLength) || 0;
       if (b) { G.buf += n - (bsz.get(b) || 0); bsz.set(b, n); bump(); }
       return bd.apply(this, arguments);

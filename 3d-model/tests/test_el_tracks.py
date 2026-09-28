@@ -21,15 +21,27 @@ class ElevatedTracks(unittest.TestCase):
 const THREE=require(THREE_PATH),groupCity=new THREE.Group();
 const GROUND_PITS=[];   // Round 139: the excavations elPortalClipGround also cuts (none in this harness)
 const freeOnUpload=()=>{},dropUploadedArray=function(){this.array=null;},step=(name,fn)=>fn(),siteY=(x,z)=>12+Math.sin(x/700)*3+Math.cos(z/800)*2;
+const pendingUpload=[];   // Round 167: the tie runs wait here to draw unculled once behind the veil
+FIT
 const smooth=(a,b,x)=>{const t=Math.max(0,Math.min(1,(x-a)/(b-a)));return t*t*(3-2*t);};
 const signedArea=p=>p.reduce((s,a,i)=>{const b=p[(i+1)%p.length];return s+a[0]*b[1]-b[0]*a[1];},0)/2;
 CLIP_HELPERS
 MERGE
 BUILD
 const out={stats:EL_STATS,meshes:groupCity.children.length,finite:true};
-for(const m of groupCity.children){for(const a of Object.values(m.geometry.attributes))for(const v of a.array)if(!Number.isFinite(v))out.finite=false;}
+groupCity.traverse(m=>{if(!m.geometry)return;for(const a of Object.values(m.geometry.attributes).concat(m.isInstancedMesh?[m.instanceMatrix]:[]))for(const v of a.array)if(!Number.isFinite(v))out.finite=false;});   // the tie runs sit in a group (Round 167)
 const ties=groupCity.getObjectByName('El Cross Ties');
-out.instanced=ties.isInstancedMesh;out.tieCount=ties.count;
+// Round 167: the ties are runs of about TIE_RUN metres, each an InstancedMesh round its own ties, culled as a whole
+out.instanced=ties.children.length>1&&ties.children.every(m=>m.isInstancedMesh);out.tieCount=ties.children.reduce((a,m)=>a+m.count,0);
+out.runs=ties.children.length;out.pending=ties.children.every(m=>pendingUpload.includes(m)&&m.frustumCulled===false);
+{ // every corner of every tie inside its run's sphere, and no run longer than TIE_RUN
+  const e=new THREE.Matrix4(),v=new THREE.Vector3();let worst=-1e9,span=0;
+  for(const m of ties.children){const sp=m.geometry.boundingSphere;m.getMatrixAt(0,e);const fx=e.elements[12],fz=e.elements[14];
+    for(let i=0;i<m.count;i++){m.getMatrixAt(i,e);span=Math.max(span,Math.hypot(e.elements[12]-fx,e.elements[14]-fz));
+      for(const sx of[-1,1])for(const sy of[-1,1])for(const sz of[-1,1]){v.set(sx*EL_RAIL.tieWidth/2,sy*.07,sz*EL_RAIL.tieLength/2).applyMatrix4(e);worst=Math.max(worst,v.distanceTo(sp.center)-sp.radius);}}
+  }
+  out.sphereWorst=worst;out.runSpan=span;out.tieRunLimit=TIE_RUN;
+}
 const pts=[[0,0],[10,0],[16,6],[16,20]],ys=[12,12.5,13,14],frames=elTrackFrames(pts);
 let gaugeError=0,joinError=0,topNormal=1;
 for(let i=0;i<pts.length-1;i++){
@@ -82,6 +94,7 @@ console.log(JSON.stringify(out));
         clip += cut('  function outsideConvex(', '  function trimTerrainPatch(')
         script = script.replace('CLIP_HELPERS', clip)
         script = script.replace('MERGE', cut('  function mergeColored(', '\n  function box('))
+        script = script.replace('FIT', cut('  function fitInstSphere(', '  // ring meshes upload in batches'))
         script = script.replace('BUILD', cut('  const EL_TRACK =', "  // ---- Amtrak's tracks"))
         result = subprocess.run(['node', '-e', script], capture_output=True, text=True, check=True)
         cls.data = json.loads(result.stdout)
@@ -120,6 +133,15 @@ console.log(JSON.stringify(out));
         self.assertEqual(d['meshes'], 3)
         self.assertEqual(d['tieCount'], d['stats']['sleepers'])
         self.assertTrue(35000 < d['tieCount'] < 60000)
+
+    def test_ties_are_runs_that_cull(self):
+        # Round 167: every tie inside its run's sphere, within TIE_RUN of its run's first, all drawn unculled once behind the veil
+        d = self.data
+        self.assertEqual(d['runs'], d['stats']['tieRuns'])
+        self.assertTrue(20 < d['runs'] < 80)
+        self.assertLessEqual(d['sphereWorst'], 1e-6)
+        self.assertLessEqual(d['runSpan'], d['tieRunLimit'])
+        self.assertTrue(d['pending'])
 
 
 if __name__ == '__main__':

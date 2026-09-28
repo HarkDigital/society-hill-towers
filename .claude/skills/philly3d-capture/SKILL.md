@@ -142,8 +142,11 @@ screenshot instead, which means the pane has to be visible.
 Mike has reported pins that flash or vanish (Rounds 126, 127, 138, 143) and flicker
 (Rounds 130, 140, 144) again and again; settle each with a number, before and after:
 
-- **Pins**: inject `scripts/pin_sweep.js`, then `__pinSweep([[x, y, z, yaw0, yaw1], ...])`
-  on the deployed build (`before.html`) and the new one at the same eyes. It returns
+- **Pins**: inject `scripts/pin_sweep.js`, then `await __pinSweep([[x, y, z, yaw0, yaw1], ...])`
+  on the deployed build (`before.html`) and the new one at the same eyes. Since Round 167 the
+  pins' depth image is read back behind a fence on WebGL 2, and a fence passes only between
+  tasks: a probe that loops `frameOnce()` in one call sees no new image until it yields (the
+  sweep yields every frame; `__dbg.pinAsync(false)` forces the old synchronous read). It returns
   on-screen showings and blinks; Round 143 went from 135 of 189 to 5 of 47.
 - **Flicker**: three PNG captures 0.5 m apart, then
   `python3 scripts/flicker_diff.py captures/<prefix> --crop x0,y0,x1,y1` and read the crop.
