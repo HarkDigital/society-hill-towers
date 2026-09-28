@@ -4212,6 +4212,163 @@
       try { packGeometry(g); } catch (e) { PERF.pack.errors = (PERF.pack.errors || 0) + 1; }   // never the build's death: an unpacked geometry draws as it always did
     });
   }
+  // ---- tiles (Round 167, the phones' triangles). A merged world-space mesh that spans the city carries one bounding
+  // sphere as wide as the city, so frustum culling can never drop it: the far ring's streets, ground strips, parks and
+  // water, the outer districts' streets and parks, the overpass decks, the lots and yards and the street lettering were
+  // drawn whole in every view, about 3.4 M triangles a frame on a phone. tileGeometry cuts one into a grid of tiles by
+  // triangle centroid on the chunk grids' own origin, each tile with its own bounding sphere, so a tile out of view is
+  // not drawn (TILE_CELL says which meshes and at what cell). Nothing on screen changes: every triangle keeps its
+  // vertices bit for bit and its order within its tile; every attribute keeps its array type, item size, normalization
+  // and usage, and an interleaved buffer its stride and every attribute its offset in it (the 4-byte strides of Round 158
+  // stand); an upload hook (freeOnUpload and its kin) rides along. A vertex a seam crosses is copied into both tiles. An
+  // index is Uint16 when the tile's vertices allow it (as packResident would make it). geometry.groups are kept as runs
+  // of each tile's triangles, a triangle outside every group dropped (r149 never draws one); overlapping groups, morph
+  // targets, instancing or an attribute already freed answer null and the caller keeps the mesh whole. The source is consumed as it is copied (its index, then each
+  // attribute, dropped once every tile holds its part), so the split never holds two whole copies of a big mesh.
+  // tests/test_tiles.py runs it under Node.
+  function tileGeometry(g, cell) {
+    const A = g.attributes, pos = A.position, idx = g.index;
+    if (!pos || !(cell > 0) || g.isInstancedBufferGeometry || Object.keys(g.morphAttributes).length) return null;
+    for (const k in A) {
+      const a = A[k];
+      if (a.isInstancedBufferAttribute || (a.isInterleavedBufferAttribute ? (a.data.isInstancedInterleavedBuffer || !a.data.array) : !a.array)) return null;
+    }
+    if (idx && !idx.array) return null;
+    const total = idx ? idx.count : pos.count;
+    const s0 = Math.max(0, g.drawRange.start), s1 = Math.min(total, g.drawRange.start + g.drawRange.count);
+    const nTri = Math.max(0, Math.floor((s1 - s0) / 3));
+    if (!nTri) return null;
+    let triMat = null;   // each triangle's group materialIndex, -1 outside every group
+    if (g.groups.length) {
+      triMat = new Int32Array(nTri).fill(-1);
+      for (const gr of g.groups) {
+        const a0 = Math.max(s0, gr.start), a1 = Math.min(s0 + nTri * 3, gr.start + gr.count);
+        for (let o = a0; o + 2 < a1; o += 3) {
+          if ((o - s0) % 3) return null;   // a group that starts mid-triangle
+          const t = (o - s0) / 3;
+          if (triMat[t] !== -1) return null;   // a triangle drawn twice
+          triMat[t] = gr.materialIndex || 0;
+        }
+      }
+    }
+    const ia = idx ? idx.array : null;
+    const pa = !pos.isInterleavedBufferAttribute && pos.itemSize === 3 && !pos.normalized ? pos.array : null;
+    // each triangle's tile, the tiles in order of first appearance
+    const triTile = new Int32Array(nTri), keyId = new Map(), counts = [];
+    let lastKey = NaN, lastId = -1;   // neighbouring triangles share a tile: skip the map for a run of them
+    for (let t = 0; t < nTri; t++) {
+      if (triMat && triMat[t] < 0) { triTile[t] = -1; continue; }
+      const o = s0 + t * 3, a = ia ? ia[o] : o, b = ia ? ia[o + 1] : o + 1, c = ia ? ia[o + 2] : o + 2;
+      const cx = pa ? (pa[a * 3] + pa[b * 3] + pa[c * 3]) / 3 : (pos.getX(a) + pos.getX(b) + pos.getX(c)) / 3;
+      const cz = pa ? (pa[a * 3 + 2] + pa[b * 3 + 2] + pa[c * 3 + 2]) / 3 : (pos.getZ(a) + pos.getZ(b) + pos.getZ(c)) / 3;
+      const key = (Math.floor(cx / cell) + 32768) * 65536 + (Math.floor(cz / cell) + 32768);   // NaN keys share one tile, drawn as the whole mesh was
+      let id = key === lastKey ? lastId : keyId.get(key);
+      if (id === undefined) { id = counts.length; keyId.set(key, id); counts.push(0); }
+      lastKey = key; lastId = id;
+      triTile[t] = id; counts[id]++;
+    }
+    const nT = counts.length;
+    if (!nT) return null;
+    const start = new Int32Array(nT + 1);
+    for (let i = 0; i < nT; i++) start[i + 1] = start[i] + counts[i];
+    const order = new Int32Array(start[nT]), fill = start.slice(0, nT);
+    for (let t = 0; t < nTri; t++) if (triTile[t] >= 0) order[fill[triTile[t]]++] = t;
+    // each tile's vertices (source ids in local order) and index
+    const tiles = [];
+    const stamp = ia ? new Int32Array(pos.count).fill(-1) : null, local = ia ? new Int32Array(pos.count) : null;
+    for (let id = 0; id < nT; id++) {
+      const n = counts[id], verts = new Int32Array(n * 3);
+      let nv = 0, index = null;
+      if (ia) {
+        const ix = new Uint32Array(n * 3);
+        for (let q = start[id], w = 0; q < start[id + 1]; q++) {
+          const o = s0 + order[q] * 3;
+          for (let j = 0; j < 3; j++) {
+            const v = ia[o + j];
+            if (stamp[v] !== id) { stamp[v] = id; local[v] = nv; verts[nv++] = v; }
+            ix[w++] = local[v];
+          }
+        }
+        index = nv <= 65535 ? new Uint16Array(ix) : ix;   // every index under 65,535 (WebGL 2's primitive restart), packIndex's own test
+      } else {
+        for (let q = start[id]; q < start[id + 1]; q++) { const o = s0 + order[q] * 3; verts[nv++] = o; verts[nv++] = o + 1; verts[nv++] = o + 2; }
+      }
+      let groups = null;
+      if (triMat) {
+        groups = [];
+        for (let q = start[id]; q < start[id + 1]; q++) {
+          const m = triMat[order[q]], last = groups[groups.length - 1];
+          if (last && last.materialIndex === m) last.count += 3;
+          else groups.push({ start: (q - start[id]) * 3, count: 3, materialIndex: m });
+        }
+      }
+      tiles.push({ verts: nv === verts.length ? verts : verts.slice(0, nv), nv, index, groups });
+    }
+    const idxOwn = idx && Object.prototype.hasOwnProperty.call(idx, 'onUploadCallback') ? idx.onUploadCallback : null;
+    if (idx) g.setIndex(null);   // consumed: the tiles hold every triangle now
+    const out = tiles.map(() => new THREE.BufferGeometry());
+    const hand = (from, to) => { if (Object.prototype.hasOwnProperty.call(from, 'onUploadCallback')) to.onUploadCallback = from.onUploadCallback; };
+    const bufs = new Map();   // a source interleaved buffer -> its tiles' buffers
+    for (const name of Object.keys(A)) {
+      const a = A[name];
+      if (a.isInterleavedBufferAttribute) {
+        let per = bufs.get(a.data);
+        if (!per) {
+          const d = a.data, st = d.stride, src = d.array, C = src.constructor;
+          per = tiles.map((T) => {
+            const arr = new C(T.nv * st), vs = T.verts;
+            for (let i = 0; i < T.nv; i++) { const so = vs[i] * st, dO = i * st; for (let k = 0; k < st; k++) arr[dO + k] = src[so + k]; }
+            const nb = new THREE.InterleavedBuffer(arr, st);
+            nb.setUsage(d.usage); hand(d, nb);
+            return nb;
+          });
+          bufs.set(a.data, per);
+        }
+        for (let i = 0; i < tiles.length; i++) { const na = new THREE.InterleavedBufferAttribute(per[i], a.itemSize, a.offset, a.normalized); na.name = a.name; out[i].setAttribute(name, na); }
+      } else {
+        const src = a.array, C = src.constructor, is = a.itemSize;
+        for (let i = 0; i < tiles.length; i++) {
+          const T = tiles[i], arr = new C(T.nv * is), vs = T.verts;
+          if (is === 1) for (let v = 0; v < T.nv; v++) arr[v] = src[vs[v]];
+          else for (let v = 0; v < T.nv; v++) { const so = vs[v] * is, dO = v * is; for (let k = 0; k < is; k++) arr[dO + k] = src[so + k]; }
+          const na = new THREE.BufferAttribute(arr, is, a.normalized);
+          na.setUsage(a.usage); na.name = a.name; hand(a, na);
+          out[i].setAttribute(name, na);
+        }
+      }
+      g.deleteAttribute(name);   // consumed
+    }
+    bufs.clear();
+    for (let i = 0; i < tiles.length; i++) {
+      const T = tiles[i], tg = out[i];
+      if (T.index) { const ib = new THREE.BufferAttribute(T.index, 1); if (idxOwn) ib.onUploadCallback = idxOwn; tg.setIndex(ib); }
+      if (T.groups) for (const gr of T.groups) tg.addGroup(gr.start, gr.count, gr.materialIndex);
+      tg.name = g.name; tg.userData = Object.assign({}, g.userData);
+      tg.computeBoundingSphere();   // before an upload hook frees the positions
+    }
+    return out;
+  }
+  // a mesh as its tiles: each shares the mesh's material and carries its render order, layers, shadow flags, visibility,
+  // culling flag, user data, render hooks and matrices (its origin too, where r149 takes a mesh's sort depth from)
+  function tileMesh(mesh, cell) {
+    if (!mesh.isMesh || mesh.isInstancedMesh || mesh.isSkinnedMesh) return null;
+    const geos = tileGeometry(mesh.geometry, cell);
+    if (!geos) return null;
+    const own = (k) => Object.prototype.hasOwnProperty.call(mesh, k);
+    return geos.map((tg) => {
+      const t = new THREE.Mesh(tg, mesh.material);
+      t.name = mesh.name; t.renderOrder = mesh.renderOrder; t.layers.mask = mesh.layers.mask;
+      t.castShadow = mesh.castShadow; t.receiveShadow = mesh.receiveShadow; t.visible = mesh.visible; t.frustumCulled = mesh.frustumCulled;
+      t.userData = Object.assign({}, mesh.userData);
+      t.position.copy(mesh.position); t.quaternion.copy(mesh.quaternion); t.scale.copy(mesh.scale);
+      t.matrixAutoUpdate = mesh.matrixAutoUpdate; t.matrix.copy(mesh.matrix); t.matrixWorld.copy(mesh.matrixWorld);
+      if (own('onBeforeRender')) t.onBeforeRender = mesh.onBeforeRender;
+      if (own('onAfterRender')) t.onAfterRender = mesh.onAfterRender;
+      if (mesh.customDepthMaterial) t.customDepthMaterial = mesh.customDepthMaterial;
+      if (mesh.customDistanceMaterial) t.customDistanceMaterial = mesh.customDistanceMaterial;
+      return t;
+    });
+  }
   // base64 -> bytes for the packed blobs. The charCodeAt loop is 6x faster
   // than Uint8Array.from(str, fn) (which walks the iterator path and calls the
   // mapper 7.7 M times). build.py stores the int16 blobs byte-PLANAR (16-byte
@@ -8006,6 +8163,34 @@
     for (const m of pendingUpload) m.frustumCulled = true;
     pendingUpload.length = 0;
   };
+  // Round 167: a city-wide merged mesh goes into the scene as its tiles (tileMesh), each staged like a chunk: drawn unculled
+  // once behind the veil, so it uploads and frees its arrays (gotcha 12), by the next flushUploads or, for what the steps
+  // build after the last flush, by the first frame (see frame), exactly when the mesh it replaces was drawn first. A mesh
+  // that cannot be cut goes in whole, as it always did. The cells were chosen on a phone's frustum at six poses (the entry
+  // view, the skyline, high over the city looking north, Center City looking west, Spruce Street, 150 m looking north)
+  // from a 600 m cut of every mesh, trading the triangles a coarser cell draws against the calls a finer one adds. Measured
+  // on the phone path (740 x 360 at 1.25): 55 to 92 more draw calls in a typical view and 122 high over the city looking
+  // north, for 1.1 to 1.6 M triangles fewer a frame (0.65 M on that overview), 1.0 to 1.5 M fewer in each pin-occlusion
+  // capture, and 7.5 MB less GPU memory (the tiles' indices fit in Uint16). The far water (its tiles mostly out past the Delaware), the outer districts' parks and
+  // the street lettering stay whole: they lie where the camera is, or so far out that no cell paid for its calls (under
+  // 35,000 triangles a view for 7 to 15 calls). ?tiles=0 draws every mesh whole (the A/B hatch). PERF.tiles counts the
+  // meshes, tiles and vertices in and out
+  const TILE_CELL = { 'ring roads': 4800, 'far ground': 7200, 'decks': 4800, 'lots': 9600, 'ring areas': 19200, 'wide roads': 1800 };
+  const TILE_OFF = /[?&]tiles=0\b/.test(location.search);
+  PERF.tiles = {};
+  function addTiles(mesh, label, parent = groupCity) {
+    const pos = mesh.geometry && mesh.geometry.attributes.position, vIn = pos ? pos.count : 0;
+    const tiles = TILE_OFF ? null : tileMesh(mesh, TILE_CELL[label]);
+    if (!tiles) { parent.add(mesh); return [mesh]; }
+    let vOut = 0;
+    for (const t of tiles) {
+      parent.add(t); vOut += t.geometry.attributes.position.count;
+      if (t.frustumCulled) { t.frustumCulled = false; pendingUpload.push(t); }
+    }
+    const s = PERF.tiles[label] || (PERF.tiles[label] = { meshes: 0, tiles: 0, vIn: 0, vOut: 0 });
+    s.meshes++; s.tiles += tiles.length; s.vIn += vIn; s.vOut += vOut;
+    return tiles;
+  }
   // Wide roads and parks extend past their terrain tier. Build their surfaces only
   // after the far heightfields exist, while registering road ownership immediately.
   const wideSurfaceTasks = [];
@@ -9806,7 +9991,7 @@
         freeOnUpload(g);
         if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
         rc.pos = rc.col = rc.idx = rc.lane = null;
-        groupCity.add(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+        addTiles(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })), 'wide roads');   // Round 167
       }
     });
     // the sports complex is mostly asphalt: the surface lots from OSM (fetch_parking.py),
@@ -10702,10 +10887,10 @@
       freeOnUpload(g);
       if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
       rc.pos = rc.col = rc.idx = rc.lane = null;
-      groupCity.add(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })));
+      addTiles(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })), 'ring roads');   // Round 167: tiled, culled per tile
     }
     const areaParts = ringAreaParts(R);
-    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
+    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); addTiles(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 })), 'ring areas'); }
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
   }
   step('Raising the rest of Philadelphia', async () => {
@@ -10839,7 +11024,7 @@
       const m = new THREE.Mesh(elPortalClipGround(g), col ? woodGroundMat : farGroundMat);
       freeOnUpload(m.geometry);   // Round 153: never raycast; the registry keeps its own heights (G.ys) and, until the build ends, its normals
       m.matrixAutoUpdate = false;
-      groupCity.add(m);
+      addTiles(m, 'far ground');   // Round 167: tiled after it registered (the registry reads its own arrays, never the mesh)
     };
     // patch hole snapped to the north strip's grid (the strip containing it)
     let nwHole = null;
@@ -11065,7 +11250,7 @@
       freeOnUpload(g);
       const m = new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }));
       m.receiveShadow = true;
-      groupCity.add(m);
+      addTiles(m, 'lots');   // Round 167
     }
     PERF.paved = counts;   // read through ?dev's __dbg.PERF.paved
     drapeLog('the lots and yards');
@@ -11597,8 +11782,7 @@
       freeShadingOnUpload(mesh.geometry);   // 1.1 M vertices at ready on the phone path: a raycast target keeps its positions, the rest goes once uploaded
       mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
       mesh.receiveShadow = true;
-      groupCity.add(mesh);
-      rayTargets.push(mesh);
+      for (const t of addTiles(mesh, 'decks')) rayTargets.push(t);   // Round 167: each tile a raycast target (positions kept, freeShadingOnUpload)
     }
     if (collarParts.length) {
       for(const p of collarParts)p.geom=trimTerrainPatch(p.geom);
@@ -22981,6 +23165,10 @@
     updateHash(now);
     pinOccUpdate(dt);
     if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);
+    // Round 167: what the steps staged after the last flushUploads (the late tiles: the outer districts' streets, the lots
+    // and yards, the overpass decks) was drawn unculled in this frame, behind the veil, as the merged meshes they replace
+    // were: uploaded and freed now, and culled from here on
+    if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }
   }
 
   setHint();
