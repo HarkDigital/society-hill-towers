@@ -14,7 +14,7 @@ class BootLite(unittest.TestCase):
     def test_breadcrumb_is_written_and_cleared(self):
         s = self.src
         for anchor in ("bootMark('start');", "bootMark(s.msg);", "bootMark('ready');",
-                       "setInterval(bootRun, 60000);", "window.addEventListener('blur', bootClear);", "window.addEventListener('pagehide', bootClear);"):
+                       "setInterval(bootRun, 5000);", "window.addEventListener('blur', bootClear);", "window.addEventListener('pagehide', bootClear);"):
             self.assertIn(anchor, s, 'missing: ' + anchor)
 
     def test_the_app_and_the_running_crumb(self):
@@ -29,7 +29,11 @@ class BootLite(unittest.TestCase):
         self.assertIn("bootAge < (bootShort ? 3 * 60000 : 30 * 60000)", s)
         self.assertIn("else if (isTouch && bootStick) localStorage.setItem(LITE_KEY, String(Date.now()));", s)
         # the interval only writes; a background context loss reloads full, a foreground one lite for this tab
-        self.assertIn("const bootRun = () => { if (document.visibilityState === 'visible' && document.hasFocus()) bootMark('running'); };", s)
+        self.assertIn("const bootRun = () => { if (document.visibilityState === 'visible' && document.hasFocus()) bootMark('running', bootCtx()); };", s)
+        # Round 167: the crumb says what the city was doing, and the next load's beacons carry it (pc), sanitised and short
+        self.assertIn("JSON.stringify({ step, t: Date.now(), fails: bootFails, lite: LITE, tier: TIER, ctx: ctx || '' })", s)
+        self.assertIn("pc: safe(() => (bootPrev && bootPrev.ctx ? String(bootPrev.ctx).replace(/[^\\w.,:-]/g, '').slice(0, 80) : ''), '')", s)
+        self.assertIn("function bootCtx() {", s)
         self.assertIn("if (front) sessionStorage.setItem('philly3d.litenow', '1');", s)
         self.assertNotIn("localStorage.setItem(LITE_KEY, String(Date.now())); } catch (err)", s)
 

@@ -7347,4 +7347,14 @@ and sporting events. The pin should not come back unless someone taps on the bui
   lower arena bubble dropped the upper one to 114 m; a TLA placard stayed hidden through a full reload and returned from a
   tap on the hall; a later tap on the same hall opened its property card. The privacy policy's device-storage list names
   the closed markers. tests/test_event_dismiss.py (the wiring, and eventHide / eventTapRestore under Node).
+- Build 3 on Mike's iPhone (Sep 28, 7:02 PM, after dark): ready 10.5 s, and at the 60 s perf beacon p50 79 ms, p95 106, 9.9 M
+  triangles, the display paced at 30 Hz (dpv 33.3: Low Power Mode or a hot phone), dpt 1.1.0.0 (one step down undone, the
+  floor probe kept: at night the phone was partly fill-bound, 40 ms at 1.25 and 32 or less at 0.72), dpm 0.77. The page died
+  75 to 85 s after Enter at 0.72, the ratio the old controller would have sat at, and the next launch took the gate and
+  tier 1 (pv running, lr cts). The only real-phone death the log holds since Round 158 (the 11:24 one was the Simulator
+  reinstall); slow sessions are not new (p50 56 to 75 ms at every hour since Sep 16). So the crumb now says what the city was
+  doing: bootRun writes it every 5 s with bootCtx (s seconds since Enter, r the ratio, t an open trial, n ratio changes, c
+  seconds since the last, v the display's interval, d the day factor, m the recent frame median), and every beacon of the
+  next load carries it as pc. Mike asked whether a server upgrade would help: no, the city is built and drawn on the phone;
+  the server only serves the page and the small live feeds.
 
