@@ -7203,3 +7203,11 @@ console if you need to mention anything about those."
 - Xcode was installed with its license not yet accepted, which turns /usr/bin's python3 and git into license errors;
   commands here ran with DEVELOPER_DIR=/Library/Developer/CommandLineTools (the scratch server's launch entry too).
 
+Round 164 coda (Sep 28), the first Xcode build: with the license accepted, xcodebuild still needed its first-launch
+components (xcodebuild -runFirstLaunch, no password), then built the app for a device (Release, unsigned) straight from
+the Dropbox folder in 19 s: BUILD SUCCEEDED, two harmless upstream warnings (Capacitor's App plugin, AppIntents). The
+bundle holds PrivacyInfo.xcprivacy, the landscape-only and export-compliance Info.plist, the geolocation plugin
+(registered in packageClassList and linked), and the live page byte for byte. Package.resolved is committed so every
+build resolves the same Capacitor and ion-ios-geolocation. No simulator runtime is installed yet, and no signing identity:
+archiving for TestFlight waits on the Apple ID and team in Xcode.
+

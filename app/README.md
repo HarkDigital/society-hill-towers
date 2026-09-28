@@ -63,7 +63,9 @@ The code side is done (see the iOS notes above; `3d-model/tests/test_app_ios.py`
 accounts and Xcode, and it is the same every upload after the first:
 
 1. Install Xcode, open it once, run `sudo xcode-select -s /Applications/Xcode.app`, and add your Apple ID under Xcode >
-   Settings > Accounts (the one in the Apple Developer Program).
+   Settings > Accounts (the one in the Apple Developer Program). Accept the license (`sudo xcodebuild -license accept`) and install
+   the first-launch components (`xcodebuild -runFirstLaunch`); until both, `xcodebuild` (and /usr/bin's git and python3)
+   refuse to run. Sep 28: done, and the unsigned device build succeeds.
 2. Build the page and put it in the app: `cd 3d-model && python3 build.py`, then `cd ../app && npm install && npm run sync`.
    `npm run sync` must run after every page build; the app ships whatever `ios/App/App/public` holds.
 3. For every upload after the first: `npm run bump` (TestFlight refuses a build number it has seen; it raises iOS's
