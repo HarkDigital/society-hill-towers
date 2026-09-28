@@ -7182,3 +7182,24 @@ built or archived; every file was linted (plutil, xmllint) and the page's side e
 Left for Mike: the Apple Developer account and Xcode, the App Store Connect record, and the privacy policy (the draft,
 3d-model/privacy.html, is accurate; publishing it and linking it from About waits on his go).
 
+## Round 164 — the privacy policy published, and Google Analytics kept to the website (Sep 28)
+
+Mike: "publish the privacy policy and link it from About. I am going to be adding google analytics and google search
+console if you need to mention anything about those."
+
+- privacy.html is at https://philly3d.com/privacy.html: deploy_philly3d.sh stages it with the page and fails unless the
+  live copy hashes the same. The About panel links it (#aboutPrivacy, in the credits' bronze, above the data credits):
+  Apple wants the policy reachable inside the app, where the link opens in Safari.
+- The policy (dated Sep 28) now covers Google Analytics on the website only: what it records (pages, time, referrer,
+  city and country from an IP it does not keep, device and browser, a random identifier in a cookie), no advertising
+  features, the shortest retention Google allows, Google's policy and opt-out links; Search Console (how the site shows in
+  Google Search, as totals, nothing about visitors); "no analytics services" is gone from the promises, the children's
+  section says the site does not knowingly collect from under-13s.
+- One loader, app.js's GA_ID behind ON_SITE (philly3d.com, never the app, never a dev or scratch host), off until the
+  measurement ID is filled in, with allow_google_signals and allow_ad_personalization_signals false. The apps' privacy
+  manifest and App Store labels declare no analytics, so a plain tag in template.html, which would run inside the app, is
+  what tests/test_privacy.py refuses. The property's Enhanced measurement must not count history changes as page views:
+  updateHash rewrites the address every 500 ms in flight.
+- Xcode was installed with its license not yet accepted, which turns /usr/bin's python3 and git into license errors;
+  commands here ran with DEVELOPER_DIR=/Library/Developer/CommandLineTools (the scratch server's launch entry too).
+

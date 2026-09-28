@@ -486,6 +486,8 @@ html, body {
   color: var(--paper-faint);
 }
 #about .credits a { color: var(--bronze); text-decoration: none; }
+#aboutPrivacy a { color: var(--bronze); font-weight: 600; text-decoration: none; border-bottom: 1px solid var(--bronze-dim); }   /* Round 164: the privacy policy, in the credits' own bronze */
+#aboutPrivacy a:hover, #aboutPrivacy a:focus-visible { color: var(--paper); border-color: var(--paper); }
 #about .credits a:hover { text-decoration: underline; }
 
 /* ---------- touch joystick ---------- */

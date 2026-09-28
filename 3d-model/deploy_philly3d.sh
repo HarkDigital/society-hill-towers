@@ -110,6 +110,9 @@ cp brand/dist/favicon.ico brand/dist/favicon.svg \
 # service worker (both linked from the page by relative URL, so they sit at the site root)
 [ -s manifest.webmanifest ] || fatal "missing manifest.webmanifest (build.py writes it)"
 cp manifest.webmanifest sw.js "$TMP/"
+# the privacy policy (Round 164: published at /privacy.html, linked from About; the App Store wants it reachable in the app)
+[ -s privacy.html ] || fatal "missing privacy.html"
+cp privacy.html "$TMP/"
 grep -q "FLIGHT_PROXY = 'https://philly3d.com/adsb'" "$TMP/index.html" \
   || fatal "refusing to ship a proxyless build (FLIGHT_PROXY is not the philly3d.com /adsb passthrough)"
 grep -q 'property="og:image"' "$TMP/index.html" \
@@ -133,11 +136,14 @@ echo "== rsync"
 rsync -az --delay-updates "$TMP/index.html" "$TMP/index.html.gz" \
   "$TMP/favicon.ico" "$TMP/favicon.svg" \
   "$TMP/apple-touch-icon.png" "$TMP/og.png" \
-  "$TMP/manifest.webmanifest" "$TMP/sw.js" \
+  "$TMP/manifest.webmanifest" "$TMP/sw.js" "$TMP/privacy.html" \
   "$HOST:$WEB/"
 
 # 4. prove the live site serves exactly this build
 echo "== verifying $URL against local sha256 $WANT"
 verify_live "$WANT"
+curl -fsS --max-time 60 -H 'Cache-Control: no-cache' -o "$TMP/live-privacy.html" "${URL}privacy.html?deploy=$(date +%s)" \
+  || fatal "could not fetch ${URL}privacy.html"
+[ "$(sha "$TMP/live-privacy.html")" = "$(sha "$TMP/privacy.html")" ] || fatal "the live privacy.html does not match this one"
 echo "deployed: $URL serves the new build (gzip $GZ bytes, sha256 $WANT)"
 echo "previous pair kept in $HOST:$PREV — '$0 --rollback' restores it"

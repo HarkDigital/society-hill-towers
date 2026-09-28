@@ -111,6 +111,21 @@
   const ON_SITE = !IN_APP && /(^|\.)philly3d\.com$/.test(location.hostname);
   const DEV_LOCAL = !IN_APP && location.protocol === 'http:' && /^(localhost|127\.0\.0\.1)$/.test(location.hostname);
   const BEACON = ON_SITE ? '/b' : IN_APP ? 'https://philly3d.com/b' : null;
+  // ---- Google Analytics (Round 164, Mike: "I am going to be adding google analytics"): the website only (ON_SITE), never
+  // inside the app, whose privacy manifest and App Store labels declare no analytics, and never on a dev or scratch host.
+  // Off until GA_ID holds the property's measurement ID ('G-XXXXXXXXXX'). No advertising features (Google signals and ad
+  // personalization off), as the privacy policy (privacy.html) says. In the property's Enhanced measurement, turn off "page
+  // changes based on browser history events": updateHash rewrites the address every 500 ms in flight
+  const GA_ID = '';
+  if (GA_ID && ON_SITE) {
+    window.dataLayer = window.dataLayer || [];
+    window.gtag = function () { window.dataLayer.push(arguments); };
+    window.gtag('js', new Date());
+    window.gtag('config', GA_ID, { allow_google_signals: false, allow_ad_personalization_signals: false });
+    const ga = document.createElement('script');
+    ga.async = true; ga.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(GA_ID);
+    document.head.appendChild(ga);
+  }
   const beaconSeen = new Set();
   let beaconErrs = 0;
   function beacon(st, extra) {
