@@ -7130,3 +7130,27 @@ to 890..910 MB against the Sep 17 build's 920. tests/test_rebuilds.py builds eve
 its site, under 40k triangles, 4-byte streams, the skip counts per def against wide.b64, the app's wiring and the page).
 The capture skill's memory tools now decode their own path (the checkout's spaces broke them).
 
+## Round 162 — the first-run flow: pick your layers, then the how-to (Sep 27)
+
+Mike, for the app on its way to TestFlight: "I want users to select the filters they want to see initially. Then walk
+through the how to. Several slides currently have not uniform font sizes. Fix that."
+
+The flow. A first visit's Enter opens the guide on one more card, "Choose what you see": the seventeen layers as toggle
+chips in three groups (Getting around, Around the city, On the map), each in the layers panel's own name and icon, with
+Recommended (the shipped defaults, landmark labels, bus stops and libraries off), All and None. A chip switches its layer
+live through the panel's own toggle (layerToggles(), now shared with Reset Layers), so a feed's polls start and stop with
+it and the choice is saved like any other (philly3d.prefs); a chip always shows the flag as it is. Next goes on to the
+eight how-to cards; the ? button opens the how-to alone. Exercised headless: the picker first with 17 chips on the
+defaults, None then saved all off, Recommended plus Landmark Labels saved exactly that and the panel agreed, Next to
+Welcome, closing marks the guide seen, ? reopens at Welcome with eight cards.
+
+The type. In Chrome every card already computed the same sizes; the unevenness is iOS's text autosizing, which in
+landscape (the only way a phone sees the city) inflates a paragraph it judges long and leaves a short one alone, so The
+live city's long rows grew past Flying's short ones. html now sets -webkit-text-size-adjust: 100%. The cards also carried
+three sizes in every row (a 23 px title, 12 px text and 9 px spaced capitals for the key labels, 19/11/9 on a phone) and
+the Round 60 step-down rules had been dead since the redesign overrode them: now two sizes, the title and everything
+else, the key labels at the body's size in bold bronze (22/13 px on a computer, 18/12 on a phone), one scale in one
+place. Measured on every card, computer and phone: one size set each. A card with more than fits scrolls with a fade at
+its foot (Search, share and more had clipped its Install row on a computer), the card is a little roomier (700 by 560),
+and a new card opens at its top. Inside the app the Install row (Add to Home Screen) is left out. tests/test_guide.py.
+

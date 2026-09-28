@@ -13162,7 +13162,7 @@
   // 1/2/3 keys. Orbit remains the attract loop; walk stays reachable only via
   // the ?dev goWalk hook.
   // ---------------------------------------------------------------- the guide
-  // The first-visit how-to (Round 60, Mike): eight cards on dot navigation, never scrolling,
+  // The first-visit how-to (Round 60, Mike): eight cards on dot navigation (a card with more than fits scrolls, Round 162),
   // the copy chosen for the device (a mouse and keyboard, or thumbs on a phone), opened once
   // after the first Enter (localStorage philly3d.guide remembers) and any time from the ?
   // button beside the camera or the ? key. It replaces the touch primer that used to follow
@@ -13171,7 +13171,7 @@
   const guideSlidesEl = document.getElementById('guideSlides'), guideDotsEl = document.getElementById('guideDots');
   const btnHelp = document.getElementById('btnHelp');
   const GUIDE_KEY = 'philly3d.guide';
-  const GUIDE = { i: 0, open: false, built: false };
+  const GUIDE = { i: 0, open: false, built: null, pick: false, n: 0 };   // built: the pick mode the cards were built for; n: how many cards
   // [title, rows]; a row is [control, sentence]; d for a computer, t for a phone
   const GUIDE_SLIDES = [
     ['Welcome to Philly3D', {
@@ -13255,27 +13255,82 @@
         ['Credits', 'The Credits link above opens the About panel, the story of the model and its data.'],
         ['Install', 'On an iPhone, Share, then Add to Home Screen. On Android, the browser menu, then Add to Home screen. Philly3D then opens as an app.']] }],
   ];
-  function guideBuild() {
-    if (GUIDE.built || !guideEl) return;
-    GUIDE.built = true;
-    const kind = isTouch ? 't' : 'd';
-    guideSlidesEl.innerHTML = GUIDE_SLIDES.map(([title, rows], i) =>
-      '<div class="slide" id="guideSlide' + i + '" role="tabpanel" aria-labelledby="guideTab' + i + '" data-i="' + i + '"><div class="stitle">' + septaEsc(title) + '</div>' +
-      rows[kind].map(([k, txt]) => '<div class="grow"><span class="gk">' + septaEsc(k) + '</span><span>' + septaEsc(txt) + '</span></div>').join('') + '</div>').join('');
-    guideDotsEl.innerHTML = GUIDE_SLIDES.map(([title], i) => '<button class="dot" role="tab" id="guideTab' + i + '" aria-controls="guideSlide' + i + '" data-i="' + i + '" aria-label="' + septaEsc(title) + '" title="' + septaEsc(title) + '"></button>').join('');
-    guideDotsEl.addEventListener('click', (e) => { const b = e.target.closest('.dot'); if (b) guideGo(+b.dataset.i); });
+  // ---- the first-run picker (Round 162, Mike: "I want users to select the filters they want to see initially. Then walk
+  // through the how to"). A first visit opens the guide on one more card: the layers as toggle chips in three groups, in
+  // the layers panel's own names and icons, switched live through the panel's own toggles (a feed's polls start and stop
+  // with its flag, and the choice is saved like any other, philly3d.prefs), with Recommended (the shipped defaults), All
+  // and None; Next goes on to the how-to cards. The ? button opens the how-to alone. A layer the build hid (no data) is
+  // left out, and a chip always shows the flag as it really is (a feed that cannot fetch here stays off)
+  const PICK_GROUPS = [
+    ['Getting around', ['septa', 'stations', 'stops', 'amtrak', 'indego', 'traffic']],
+    ['Around the city', ['concerts', 'closures', 'markers', 'art', 'civic', 'flights', 'ships']],
+    ['On the map', ['streets', 'places', 'labels', 'lights']],
+  ];
+  const PICK_BTN = { septa: 'btnTransit', indego: 'btnIndego', flights: 'btnFlights', ships: 'btnShips', traffic: 'btnTraffic', lights: 'btnLights', streets: 'btnStreets', labels: 'btnLabels', places: 'btnPlaces', concerts: 'btnConcerts', amtrak: 'btnAmtrak', closures: 'btnClosures', markers: 'btnMarkers', art: 'btnArt', stops: 'btnStops', stations: 'btnStations', civic: 'btnCivic' };
+  const PICK_TITLE = 'Choose what you see';
+  function pickCard() {
+    let h = '<div class="slide pick-card" id="guideSlide0" role="tabpanel" aria-labelledby="guideTab0" data-i="0"><div class="stitle">' + PICK_TITLE + '</div>' +
+      '<p class="pick-intro">Pick the layers to start with. You can change them any time in the Layers panel.</p>' +
+      '<div class="pick-quick" role="group" aria-label="Quick choices"><button type="button" class="pick-preset" data-preset="rec">Recommended</button><button type="button" class="pick-preset" data-preset="all">All</button><button type="button" class="pick-preset" data-preset="none">None</button></div>';
+    for (const [name, keys] of PICK_GROUPS) {
+      const chips = keys.map((k) => {
+        const b = document.getElementById(PICK_BTN[k]);
+        if (!b || b.style.display === 'none') return '';
+        const svg = b.querySelector('svg'), label = (b.querySelector('.ltext') || {}).textContent || k;
+        return '<button type="button" class="pick" data-layer="' + k + '" aria-pressed="false"><span class="pmark" aria-hidden="true"></span>' +
+          (svg ? svg.outerHTML : '<span class="pglyph" aria-hidden="true">Aa</span>') + '<span class="pick-name">' + septaEsc(label) + '</span></button>';
+      }).join('');
+      if (chips) h += '<div class="pick-group">' + septaEsc(name) + '</div><div class="pick-grid">' + chips + '</div>';
+    }
+    return h + '</div>';
+  }
+  function pickSync() {
+    const f = layerFlags();
+    for (const b of guideSlidesEl.querySelectorAll('.pick')) b.setAttribute('aria-pressed', f[b.dataset.layer] ? 'true' : 'false');
+  }
+  function pickSet(want) {   // key -> on, through the real toggles; only the layers the card shows
+    const f = layerFlags(), t = layerToggles();
+    for (const b of guideSlidesEl.querySelectorAll('.pick')) { const k = b.dataset.layer; if (k in want && !!f[k] !== !!want[k] && t[k]) t[k](); }
+    pickSync();
+  }
+  function guideBuild(pick) {
+    if (!guideEl || GUIDE.built === pick) return;
+    GUIDE.built = pick; GUIDE.pick = pick;
+    const kind = isTouch ? 't' : 'd', off = pick ? 1 : 0;
+    GUIDE.n = GUIDE_SLIDES.length + off;
+    guideSlidesEl.innerHTML = (pick ? pickCard() : '') + GUIDE_SLIDES.map(([title, rows], j) => {
+      const i = j + off;
+      return '<div class="slide" id="guideSlide' + i + '" role="tabpanel" aria-labelledby="guideTab' + i + '" data-i="' + i + '"><div class="stitle">' + septaEsc(title) + '</div>' +
+        rows[kind].filter(([k]) => !(IN_APP && k === 'Install')).map(([k, txt]) => '<div class="grow"><span class="gk">' + septaEsc(k) + '</span><span>' + septaEsc(txt) + '</span></div>').join('') + '</div>';   // an installed app needs no Add to Home Screen
+    }).join('');
+    const titles = (pick ? [PICK_TITLE] : []).concat(GUIDE_SLIDES.map(([title]) => title));
+    guideDotsEl.innerHTML = titles.map((title, i) => '<button class="dot" role="tab" id="guideTab' + i + '" aria-controls="guideSlide' + i + '" data-i="' + i + '" aria-label="' + septaEsc(title) + '" title="' + septaEsc(title) + '"></button>').join('');
+    if (pick) pickSync();
   }
   function guideGo(i) {
-    GUIDE.i = ((i % GUIDE_SLIDES.length) + GUIDE_SLIDES.length) % GUIDE_SLIDES.length;
+    GUIDE.i = ((i % GUIDE.n) + GUIDE.n) % GUIDE.n;
     for (const s of guideSlidesEl.children) { const on = +s.dataset.i === GUIDE.i; s.classList.toggle('on', on); s.inert = !on; s.setAttribute('aria-hidden', String(!on)); }
     for (const d of guideDotsEl.children) { const on = +d.dataset.i === GUIDE.i; d.classList.toggle('on', on); d.setAttribute('aria-selected', on ? 'true' : 'false'); }
-    const last = GUIDE.i === GUIDE_SLIDES.length - 1;
+    const last = GUIDE.i === GUIDE.n - 1;
     const nb = document.getElementById('guideNext');
     nb.textContent = last ? 'Done' : 'Next'; nb.title = last ? 'Close the guide' : 'Next card';
+    guideSlidesEl.scrollTop = 0;   // a phone scrolls the stack, a desktop each card: a new card opens at its top
+    for (const c of guideSlidesEl.children) c.scrollTop = 0;
+    guideMore();
   }
-  function openGuide(i) {
+  // a card with more below than fits fades at its foot until it is scrolled to the end (Round 162): the picker and the
+  // longest cards scroll, and a hard edge gave no sign of what was under it
+  function guideMore() {
+    const s = guideSlidesEl.querySelector('.slide.on');
+    guideSlidesEl.classList.remove('more');
+    for (const c of guideSlidesEl.children) c.classList.remove('more');
+    if (!s) return;
+    const sc = s.scrollHeight > s.clientHeight + 1 ? s : guideSlidesEl;
+    sc.classList.toggle('more', sc.scrollTop + sc.clientHeight < sc.scrollHeight - 4);
+  }
+  function openGuide(i, pick) {   // pick: the first-run flow, the layer picker first
     if (!guideEl) return;
-    guideBuild();
+    guideBuild(!!pick);
     closePanels();
     if (walk.locked && document.exitPointerLock) document.exitPointerLock();   // the mouse comes back for the cards
     GUIDE.open = true;
@@ -13300,7 +13355,16 @@
     try { guideEl.inert = true; } catch (e) { }
     document.getElementById('btnGuideClose').addEventListener('click', closeGuide);
     document.getElementById('guidePrev').addEventListener('click', () => guideGo(GUIDE.i - 1));
-    document.getElementById('guideNext').addEventListener('click', () => { if (GUIDE.i === GUIDE_SLIDES.length - 1) closeGuide(); else guideGo(GUIDE.i + 1); });
+    document.getElementById('guideNext').addEventListener('click', () => { if (GUIDE.i === GUIDE.n - 1) closeGuide(); else guideGo(GUIDE.i + 1); });
+    guideDotsEl.addEventListener('click', (e) => { const b = e.target.closest('.dot'); if (b) guideGo(+b.dataset.i); });
+    guideSlidesEl.addEventListener('scroll', guideMore, { capture: true, passive: true });   // scroll does not bubble: capture it from every card
+    window.addEventListener('resize', () => { if (GUIDE.open) guideMore(); });
+    guideSlidesEl.addEventListener('click', (e) => {   // the picker's chips and quick choices
+      const q = e.target.closest('.pick-preset');
+      if (q) { const v = q.dataset.preset; pickSet(Object.fromEntries(LAYER_KEYS.map((k) => [k, v === 'all' ? true : v === 'none' ? false : LAYER_DEFAULTS[k]]))); return; }
+      const c = e.target.closest('.pick');
+      if (c) { const t = layerToggles()[c.dataset.layer]; if (t) t(); pickSync(); }
+    });
     guideEl.addEventListener('click', (e) => { if (e.target === guideEl) closeGuide(); });   // the dimmed city closes it
     // a swipe turns the card on a phone
     let gx0 = null;
@@ -13424,6 +13488,10 @@
   // reserved now so one marker covers all three), 131072 marks a seventeen-bit link; a fourteen-bit link's
   // 16384 is its marker, not the stops, so the newest marker is read first
   const LAYER_KEYS = ['septa', 'indego', 'flights', 'ships', 'traffic', 'lights', 'streets', 'labels', 'places', 'concerts', 'amtrak', 'closures', 'markers', 'art', 'stops', 'stations', 'civic'];
+  // the layers' own toggles, so a caller turns a feed's polls on and off with its flag (Reset Layers, the first-run picker)
+  function layerToggles() {
+    return { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts, amtrak: toggleAmtrak, closures: toggleClosures, markers: toggleMarkers, art: toggleArt, stops: toggleStops, stations: toggleStations, civic: toggleCivic };
+  }
   const LAYER_DEFAULTS = { septa: true, indego: true, flights: true, ships: true, traffic: true, lights: true, streets: true, labels: false, places: true, concerts: true, amtrak: true, closures: true, markers: true, art: true, stops: false, stations: true, civic: false };
   const LAYER_MASK_V2 = 1024, LAYER_MASK_V3 = 4096, LAYER_MASK_V4 = 16384, LAYER_MASK_V5 = 131072;
   const CIVIC = { on: false };   // Round 135's layer: the flag now, the layer then
@@ -14708,7 +14776,7 @@
   // panel footer: back to the shipped layers, and a link to this exact view
   document.getElementById('btnResetLayers').addEventListener('click', () => {
     // through the real toggles, so the live polls start and stop with the flags
-    const toggles = { septa: toggleTransit, indego: toggleIndego, flights: toggleFlights, ships: toggleShips, traffic: toggleTraffic, lights: toggleLightsLayer, streets: toggleStreets, labels: toggleLabels, places: togglePlaces, concerts: toggleConcerts, amtrak: toggleAmtrak, closures: toggleClosures, markers: toggleMarkers, art: toggleArt, stops: toggleStops, stations: toggleStations, civic: toggleCivic };
+    const toggles = layerToggles();
     const f = layerFlags();
     for (const k of LAYER_KEYS) if (f[k] !== LAYER_DEFAULTS[k]) toggles[k]();
     setLapse(false);
@@ -22355,7 +22423,7 @@
     veil.inert = true;
     document.getElementById('appUI').inert = false;
     veil.setAttribute('aria-hidden', 'true');
-    if (!guideSeen()) setTimeout(() => { if (!GUIDE.open && !guideSeen()) openGuide(0); }, 900);   // the first visit meets the guide once the veil has faded (unless the ? button beat the timer)
+    if (!guideSeen()) setTimeout(() => { if (!GUIDE.open && !guideSeen()) openGuide(0, true); }, 900);   // Round 162: the first visit picks its layers first   // the first visit meets the guide once the veil has faded (unless the ? button beat the timer)
     if (mode === MODE.ORBIT) orbit.goalR = 700;   // glide in from the veil's wide shot
     if (reducedMotion) {
       orbit.r = orbit.goalR; orbit.theta = orbit.goalTheta; orbit.phi = orbit.goalPhi;

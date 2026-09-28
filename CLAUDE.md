@@ -186,7 +186,11 @@ before any visual round rather than rediscovering it.
   the buses' depth pass every 12th frame, caps its pixel ratio at 1.25 and may drop it to 0.72 under load (Rounds 72 and 74; Round 149's 2.0 / 1.0 broke phones and Round 153 put these back: any raise needs a real-device test first), judged every 15 frames
   (Rounds 72 and 74), aims its shadow box at the camera in 300 m steps and freezes it above 600 m (Round 74). The first visit
   meets the guide (Round 60: `#guide`, eight cards on dots from `GUIDE_SLIDES`, computer and phone copy by
-  `isTouch`, `localStorage philly3d.guide`), and the ? button beside the camera brings it back; the touch
+  `isTouch`, `localStorage philly3d.guide`), since Round 162 opened on a layer picker (Mike: users select the filters they
+  want first, then the how-to: `PICK_GROUPS`, every layer once through the panel's own `layerToggles()`, saved in
+  `philly3d.prefs`), and the ? button beside the camera brings the how-to back without it; every card has two type sizes,
+  the title and the rest (`-webkit-text-size-adjust: 100%`, or iOS inflates the long rows in landscape), a long card
+  scrolls with a fade at its foot, and the app (`IN_APP`) never shows the Install row; the touch
   primer that followed the first touch is gone.
 - The page is an installable app (Round 53): `build.py` writes `manifest.webmanifest` beside it,
   `sw.js` is the network-only worker (registered over https only, caches nothing), both deploy to

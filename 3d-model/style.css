@@ -27,6 +27,7 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 button { touch-action: manipulation; }   /* the viewport allows zoom again; no double-tap wait on the HUD */
 
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }   /* Round 162: iOS never inflates a paragraph it judges long (the guide's uneven rows in landscape) */
 html, body {
   height: 100%;
   overflow: hidden;
@@ -283,9 +284,9 @@ html, body {
 #guide .slides { position: relative; flex: 1 1 auto; min-height: 0; overflow: hidden; }
 #guide .slide { position: absolute; inset: 0; opacity: 0; pointer-events: none; transition: opacity 0.18s; }
 #guide .slide.on { opacity: 1; pointer-events: auto; }
-#guide .stitle { font-family: var(--display); font-size: 17px; font-weight: 600; letter-spacing: 0.04em; color: var(--paper); margin: 2px 0 8px; }
+#guide .stitle { font-family: var(--display); color: var(--paper); margin: 2px 0 8px; }   /* sizes: the Round 162 scale below */
 #guide .grow { display: flex; gap: 12px; margin: 6px 0; font-size: 13px; line-height: 1.4; color: var(--paper-dim); }
-#guide .gk { flex: 0 0 104px; color: var(--limestone); font-family: var(--display); font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; padding-top: 2px; }
+#guide .gk { font-family: var(--display); }
 #guide .gnav { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
 #guide .gbtn {
   appearance: none; -webkit-appearance: none; background: rgba(239,233,220,0.06); border: 1px solid var(--line); border-radius: 2px;
@@ -301,9 +302,6 @@ html, body {
 @media (max-height: 460px), (max-width: 520px) {   /* a phone held sideways, or a narrow window: the card takes the screen, the type steps down */
   #guide .card { height: calc(100vh - 16px); height: calc(100dvh - 16px); width: calc(100vw - 16px); padding: 12px 16px 10px; }
   #guide .kicker { margin-bottom: 4px; }
-  #guide .stitle { font-size: 14px; margin: 0 0 4px; }
-  #guide .grow { font-size: 11.5px; line-height: 1.3; margin: 4px 0; gap: 8px; }
-  #guide .gk { flex-basis: 84px; font-size: 9px; }
   #guide .gnav { margin-top: 4px; padding-top: 6px; }
 }
 /* ---------- intro veil ---------- */
@@ -1238,13 +1236,38 @@ button { -webkit-tap-highlight-color: transparent; }
 #guide .card { width: min(630px, calc(100vw - 32px)); height: min(460px, calc(100dvh - 32px)); padding: 26px; }
 #guide .kicker { padding-right: 44px; margin-bottom: 20px; font-size: 9px; letter-spacing: 0.12em; }
 #guide .close { top: 18px; right: 18px; border-radius: 50%; width: 32px; height: 32px; font-size: 20px; }
-#guide .stitle { font-size: 23px; font-weight: 550; letter-spacing: -0.5px; margin: 0 0 18px; }
-#guide .grow { font-size: 12px; line-height: 1.6; margin: 9px 0; gap: 15px; }
-#guide .gk { font-size: 9px; letter-spacing: 0.06em; color: var(--bronze); }
+#guide .stitle { margin: 0 0 18px; }
 #guide .gnav { padding-top: 17px; }
 #guide .dot { width: 25px; height: 32px; }
 #guide .dot::before { top: 12px; width: 6px; height: 6px; }
 #guide .dot.on::before { width: 14px; left: 3px; border-radius: 8px; }
+/* Round 162 (Mike: "Several slides currently have not uniform font sizes"): one type scale for every card, two sizes, the
+   title and everything else. The key labels take the body's size, set apart by weight and colour instead of 9 px spaced
+   capitals, and iOS's text autosizing is off (html, above), which in landscape grew a long row past a short one on the
+   same card. A card with more than fits scrolls instead of clipping its last row (Search, share and more lost Install) */
+#guide .stitle { font-size: 22px; font-weight: 600; letter-spacing: -0.3px; line-height: 1.2; }
+#guide .grow { font-size: 13px; line-height: 1.55; margin: 8px 0; gap: 16px; }
+#guide .gk { flex: 0 0 136px; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; line-height: 1.55; padding-top: 0; color: var(--bronze); }
+#guide .slide { overflow-y: auto; overscroll-behavior: contain; }
+#guide .card { width: min(700px, calc(100vw - 32px)); height: min(560px, calc(100dvh - 32px)); }
+#guide .slides.more, #guide .slide.more { -webkit-mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent); mask-image: linear-gradient(to bottom, #000 calc(100% - 44px), transparent); }
+/* the first-run layer picker (Round 162): the layers as chips in three groups, the same sizes as every card */
+#guide .pick-intro { margin: -8px 0 12px; font-size: 13px; line-height: 1.55; color: var(--paper-dim); }
+#guide .pick-quick { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 4px; }
+#guide .pick-preset { appearance: none; font: 550 13px/1.2 var(--body); color: var(--paper-dim); background: transparent; border: 1px solid var(--line-strong); border-radius: 999px; padding: 7px 13px; cursor: pointer; }
+#guide .pick-preset:hover, #guide .pick-preset:focus-visible { color: var(--paper); border-color: var(--bronze-dim); outline: none; }
+#guide .pick-group { margin: 12px 0 6px; font: 600 13px/1.3 var(--display); color: var(--bronze); }
+#guide .pick-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(196px, 1fr)); gap: 6px; }
+#guide .pick { appearance: none; display: flex; align-items: center; gap: 9px; min-height: 44px; padding: 7px 10px; text-align: left; font: 500 13px/1.25 var(--body); color: var(--paper-dim); background: rgba(255, 255, 255, 0.02); border: 1px solid var(--line); border-radius: 9px; cursor: pointer; }
+#guide .pick:hover { border-color: var(--line-strong); color: var(--paper); }
+#guide .pick:focus-visible { outline: 1px solid var(--bronze); outline-offset: -1px; }
+#guide .pick svg { flex: 0 0 18px; width: 18px; height: 18px; }
+#guide .pick svg.lseptalogo { height: 14px; }
+#guide .pglyph { flex: 0 0 18px; font: 700 11px/1 var(--display); text-align: center; color: var(--limestone); }
+#guide .pmark { position: relative; flex: 0 0 16px; width: 16px; height: 16px; border-radius: 5px; border: 1px solid var(--line-strong); box-sizing: border-box; }
+#guide .pick[aria-pressed="true"] { color: var(--paper); border-color: var(--bronze-dim); background: rgba(200, 155, 94, 0.10); }
+#guide .pick[aria-pressed="true"] .pmark { background: var(--bronze); border-color: var(--bronze); }
+#guide .pick[aria-pressed="true"] .pmark::after { content: ''; position: absolute; left: 4.5px; top: 1.5px; width: 4px; height: 8px; border: solid var(--ink); border-width: 0 2px 2px 0; transform: rotate(45deg); }
 #about { width: min(440px, 94vw); padding: 30px 28px 40px; border-radius: 18px 0 0 18px; }
 #about h2 { letter-spacing: -0.6px; text-transform: none; font-size: 28px; }
 #about p { font-size: 12px; color: var(--paper-dim); }
@@ -1269,9 +1292,11 @@ button { -webkit-tap-highlight-color: transparent; }
   #viewcontext { right: 12px; bottom: 14px; padding: 9px 12px; }
   #hint { display: none; }
   #guide .card { padding: 20px; }
-  #guide .grow { font-size: 11px; line-height: 1.5; gap: 10px; }
-  #guide .gk { flex-basis: 86px; }
-  #guide .stitle { font-size: 20px; }
+  #guide .stitle { font-size: 19px; }
+  #guide .grow, #guide .gk, #guide .pick-intro, #guide .pick, #guide .pick-preset, #guide .pick-group { font-size: 12px; line-height: 1.5; }
+  #guide .grow { gap: 12px; }
+  #guide .gk { flex-basis: 116px; }
+  #guide .pick-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
   #veil .card { padding: 24px; }
   #veil .sub { font-size: 12px; }
   .welcomefacts { gap: 10px 14px; }
@@ -1307,8 +1332,14 @@ button { -webkit-tap-highlight-color: transparent; }
   #veil .loading { margin-top: 9px; }
   #guide .card { height: calc(100dvh - 20px); padding: 17px 22px 12px; }
   #guide .kicker { margin-bottom: 10px; }
-  #guide .stitle { font-size: 19px; margin-bottom: 10px; }
-  #guide .grow { font-size: 11px; line-height: 1.4; margin: 6px 0; }
+  #guide .stitle { font-size: 18px; margin-bottom: 10px; }
+  #guide .grow, #guide .gk, #guide .pick-intro, #guide .pick, #guide .pick-preset, #guide .pick-group { font-size: 12px; line-height: 1.45; }
+  #guide .grow { margin: 6px 0; }
+  #guide .gk { flex-basis: 116px; }
+  #guide .pick { min-height: 34px; padding: 5px 9px; }
+  #guide .pick-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  #guide .pick-intro { margin: -4px 0 8px; }
+  #guide .pick-group { margin: 8px 0 4px; }
   #guide .gnav { padding-top: 8px; }
   #guide .slides { overflow-y: auto; }
   #guide .slide { position: relative; display: none; }
