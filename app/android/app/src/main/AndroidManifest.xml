@@ -32,8 +32,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
-    <!-- the "locate me" button: Capacitor's WebChromeClient requests both at run time; the page asks for a low-accuracy fix,
-         and the person may grant approximate only -->
+    <!-- the "locate me" button: the geolocation plugin (@capacitor/geolocation, Round 163) requests both at run time; the page
+         asks for a low-accuracy fix, and the person may grant approximate only -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />

@@ -7154,3 +7154,31 @@ place. Measured on every card, computer and phone: one size set each. A card wit
 its foot (Search, share and more had clipped its Install row on a computer), the card is a little roomier (700 by 560),
 and a new card opens at its top. Inside the app the Install row (Add to Home Screen) is left out. tests/test_guide.py.
 
+## Round 163 — the iOS app ready for TestFlight, the code side (Sep 27)
+
+Mike: "do the code side for TestFlight now". Xcode is not on this Mac (the command-line tools only), so nothing here was
+built or archived; every file was linted (plutil, xmllint) and the page's side exercised headless.
+
+- Info.plist: landscape only on iPhone and iPad (the page's rotate gate would face a portrait phone, and a small iPad in
+  portrait matches its 820 px query too), UIRequiresFullScreen (App Store validation wants every iPad orientation
+  otherwise), ITSAppUsesNonExemptEncryption false (HTTPS only, exempt), arm64 in place of the template's armv7.
+- ios/App/App/PrivacyInfo.xcprivacy, the app target's own manifest, added to the target's Resources in the pbxproj: no
+  tracking, no tracking domains, no required-reason APIs; the load beacon's Performance Data and Other Diagnostic Data,
+  not linked, for app functionality. Location is not collected (the fix never leaves the phone; the near-me card asks
+  SEPTA by stop number).
+- The launch screen's background is the splash's own ink, not systemBackgroundColor (white in light mode); the three
+  unreferenced 2732 px template splash files are gone.
+- One location prompt: @capacitor/geolocation 8.2.2, registered by cap sync on both platforms (CapApp-SPM's Package.swift,
+  capacitor.settings.gradle). Inside the app the page takes the fix from Capacitor.Plugins.Geolocation (the bridge
+  injects it, no bundler), so iOS asks once in its own prompt; WKWebView's navigator.geolocation asked again naming
+  "localhost". Posing as the app headless with a stubbed plugin: a grant flew to City Hall, said "You are here." and
+  opened the near-me card; a refusal checked the permission and said "Location access was declined. Here is City Hall
+  instead."; navigator.geolocation was never called. A browser takes the old path.
+- npm run sync: the app's bundled page is the current build (it was Sep 25's). npm run bump raises iOS's
+  CURRENT_PROJECT_VERSION and Android's versionCode together for each upload after the first (tried on a copy).
+- app/README.md: what is done, and TestFlight step by step (Xcode and the team, sync, bump, signing, App Store Connect's
+  record and privacy labels, archive and upload, internal and external testers). tests/test_app_ios.py guards the lot.
+
+Left for Mike: the Apple Developer account and Xcode, the App Store Connect record, and the privacy policy (the draft,
+3d-model/privacy.html, is accurate; publishing it and linking it from About waits on his go).
+

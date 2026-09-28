@@ -19,6 +19,10 @@ street grid is ~10° off the axes: use the fitted Front St line (`fl`/`ryG`), ne
 flight limit is the city line buffered 2 km (`city_limit.json`, `insideLimit`/`clampLimit`):
 the camera never leaves it, the towns beyond it are scenery.
 
+The iOS and Android apps are `app/` (Capacitor 8, Round 156; `IN_APP` in app.js since Round 155). After a page build,
+`cd app && npm run sync` puts it in both apps; `npm run bump` before each store upload; `app/README.md` has the
+TestFlight steps (Round 163: landscape only, the privacy manifest, one location prompt through `@capacitor/geolocation`).
+
 ## Commands
 
 ```bash

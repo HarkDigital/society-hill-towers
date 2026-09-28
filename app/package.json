@@ -7,12 +7,14 @@
     "copy-web": "node scripts/copy-web.mjs",
     "sync": "node scripts/copy-web.mjs && npx cap sync",
     "open:ios": "npx cap open ios",
-    "open:android": "npx cap open android"
+    "open:android": "npx cap open android",
+    "bump": "node scripts/bump-build.mjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.5.2",
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.2",
+    "@capacitor/geolocation": "^8.2.2",
     "@capacitor/ios": "^8.5.2"
   },
   "devDependencies": {

@@ -22323,9 +22323,28 @@
     vehinfoEl.style.opacity = '1';
     vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
   }
+  // Round 163 (TestFlight): inside the app the fix comes from the native plugin (@capacitor/geolocation, injected by the
+  // bridge as Capacitor.Plugins.Geolocation, no bundler needed), so iOS asks once, in its own prompt with the app's usage
+  // string; WKWebView's navigator.geolocation asked a second time, naming "localhost", and could ask again on later launches
+  const appGeo = () => { const C = IN_APP && window.Capacitor; return (C && C.Plugins && C.Plugins.Geolocation) || null; };
+  const LOC_DECLINED = 'Location access was declined. Here is City Hall instead.', LOC_FAILED = 'Your location could not be found. Here is City Hall instead.';
   function locateMe() {
     if (!veil.classList.contains('hidden')) return;
     closePanels();
+    const G = appGeo();
+    if (G) {
+      locateBusy(true);
+      G.getCurrentPosition({ enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 }).then((pos) => {
+        locateBusy(false);
+        locateFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 0);
+      }, () => {
+        locateBusy(false);
+        // the plugin's errors are strings per platform: the permission state says whether it was a refusal
+        const done = (denied) => locateCityHall(denied ? LOC_DECLINED : LOC_FAILED);
+        Promise.resolve(G.checkPermissions ? G.checkPermissions() : null).then((p) => done(!!p && (p.location === 'denied' || p.coarseLocation === 'denied')), () => done(false));
+      });
+      return;
+    }
     if (!navigator.geolocation) { locateCityHall('This browser cannot share your location. Here is City Hall instead.'); return; }
     locateBusy(true);
     navigator.geolocation.getCurrentPosition((pos) => {
@@ -22333,7 +22352,7 @@
       locateFix(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy || 0);
     }, (err) => {
       locateBusy(false);
-      locateCityHall(err && err.code === 1 ? 'Location access was declined. Here is City Hall instead.' : 'Your location could not be found. Here is City Hall instead.');
+      locateCityHall(err && err.code === 1 ? LOC_DECLINED : LOC_FAILED);
     }, { enableHighAccuracy: false, timeout: 12000, maximumAge: 60000 });
   }
   if (btnLocate) btnLocate.addEventListener('click', locateMe);
