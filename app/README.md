@@ -80,6 +80,12 @@ accounts and Xcode, and it is the same every upload after the first:
    functionality, and nothing else (location never leaves the phone). Add the privacy policy URL once it is published.
 7. In Xcode choose Any iOS Device (arm64), then Product > Archive, and in the Organizer Distribute App > App Store Connect
    > Upload. The encryption question is already answered by the Info.plist.
+   Or from the command line (how build 1.0 (1) went up on Sep 28), from `app/ios/App` after `npm run bump`:
+   `xcodebuild -project App.xcodeproj -scheme App -destination 'generic/platform=iOS' -configuration Release
+   -archivePath /tmp/Philly3D.xcarchive -allowProvisioningUpdates archive`, then
+   `xcodebuild -exportArchive -archivePath /tmp/Philly3D.xcarchive -exportOptionsPlist ../UploadOptions.plist
+   -exportPath /tmp/Philly3D-upload -allowProvisioningUpdates` (app-store-connect, upload, team 72U2ZL3GVM, automatic
+   signing through the Xcode account, the build number left as the project has it).
 8. When the build finishes processing (about 15 minutes), add yourself and your team as internal testers in TestFlight:
    they can install at once. External testers need Beta App Review: add review notes saying the city is bundled in the
    app (not loaded from the web) and is an interactive 3D model with live transit (guideline 4.2), with a short screen

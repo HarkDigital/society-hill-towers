@@ -7253,3 +7253,8 @@ Profile: com.philly3d.app", signed by the team's existing cloud-managed Apple Di
 The exported App.ipa (13.5 MB, 1.0 (1)) is signed com.philly3d.app / 72U2ZL3GVM and carries the live page byte for byte.
 App Store Connect's New App list now has the bundle id; the upload waits on the app record and Mike's go.
 
+Round 165 third coda (Sep 28), the first TestFlight upload (Mike: "app record created, upload it to TestFlight"). The icon
+checked first (1024 by 1024, no alpha, the City Hall mark), then the same archive, 1.0 (1), com.philly3d.app, exported with
+destination upload through the Xcode account: "Upload succeeded", processing on Apple's side. The options are
+app/ios/UploadOptions.plist and app/README.md step 7 has the two commands. Build 1 is spent: `npm run bump` before the next.
+
