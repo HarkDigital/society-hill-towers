@@ -7242,3 +7242,14 @@ DEVELOPMENT_TEAM 72U2ZL3GVM in both configurations and DevelopmentTeam in its ta
 writes them, with automatic signing; the simulator build still succeeds. Xcode registers com.philly3d.app under
 QuincySoft LLC the first time it resolves signing (the Signing & Capabilities tab or a device build), and only then does App
 Store Connect's New App list offer the bundle id. tests/test_app_ios.py guards the team; app/README.md's step 4 says so.
+
+Round 165 second coda (Sep 28), the bundle id registered (Mike: "go ahead and register it"). A device build with
+-allowProvisioningUpdates created an Apple Development certificate (Michael Harkins, S935B3DCBU) and QuincySoft's wildcard
+development profile (XC Wildcard, 72U2ZL3GVM.*), but no explicit App ID: an app with no capabilities signs for development
+under the wildcard, and App Store Connect never lists a wildcard. Only App Store signing needs the explicit id, so the app
+was archived and exported for app-store-connect with destination export (a local IPA, nothing uploaded): that registered
+com.philly3d.app as "XC com philly3d app" (72U2ZL3GVM.com.philly3d.app) with the profile "iOS Team Store Provisioning
+Profile: com.philly3d.app", signed by the team's existing cloud-managed Apple Distribution certificate (expires Aug 4, 2027).
+The exported App.ipa (13.5 MB, 1.0 (1)) is signed com.philly3d.app / 72U2ZL3GVM and carries the live page byte for byte.
+App Store Connect's New App list now has the bundle id; the upload waits on the app record and Mike's go.
+
