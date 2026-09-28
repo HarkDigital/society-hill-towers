@@ -86,6 +86,11 @@ accounts and Xcode, and it is the same every upload after the first:
    `xcodebuild -exportArchive -archivePath /tmp/Philly3D.xcarchive -exportOptionsPlist ../UploadOptions.plist
    -exportPath /tmp/Philly3D-upload -allowProvisioningUpdates` (app-store-connect, upload, team 72U2ZL3GVM, automatic
    signing through the Xcode account, the build number left as the project has it).
+   TestFlight chores go through the App Store Connect API: `python3 app/scripts/asc.py status` (every build's beta state
+   and every group's testers) and `python3 app/scripts/asc.py invite <email>` (send or resend an invitation). It reads
+   `~/.appstoreconnect/philly3d.json` and `~/.appstoreconnect/private_keys/AuthKey_<id>.p8` (App Manager, QuincySoft
+   LLC), never anything in the repo; the same key uploads without Xcode's sign-in through `-authenticationKeyPath`,
+   `-authenticationKeyID` and `-authenticationKeyIssuerID` on the export.
 8. When the build finishes processing (about 15 minutes), add yourself and your team as internal testers in TestFlight:
    they can install at once. External testers need Beta App Review: add review notes saying the city is bundled in the
    app (not loaded from the web) and is an interactive 3D model with live transit (guideline 4.2), with a short screen

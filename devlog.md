@@ -7267,3 +7267,12 @@ tests/test_app_ios.py, which had refused the key, now requires it and guards the
 .whenInUse and nothing else, no location background mode). npm run bump made it build 2 (Android versionCode 2 with it),
 archived and uploaded the same way: "Upload succeeded".
 
+Round 165 fifth coda (Sep 28), the TestFlight invites (Mike: "Still havent gotten the invite. Are you able to send
+directly?"). Mike made an App Store Connect API key (App Manager); it lives in ~/.appstoreconnect/private_keys (0600) with
+its ids in ~/.appstoreconnect/philly3d.json, never in the repo. app/scripts/asc.py signs the ES256 token with openssl (no
+packages; the DER signature converted to r||s, checked 20 of 20 against a throwaway key) and reads the truth: both builds
+VALID and internal IN_BETA_TESTING, both groups (18F and the new "Philly 3D") holding both builds and both testers, Mike
+INSTALLED, Kaitlin INVITED. "Ready to Submit" on the web is the external state and never held an internal tester back. The
+invitation to Kaitlin was resent through POST /v1/betaTesterInvitations (201). `asc.py status` and `asc.py invite <email>`
+are the chores from here on (app/README.md step 7).
+
