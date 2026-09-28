@@ -188,8 +188,18 @@ before any visual round rather than rediscovering it.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances, and under the resolved rooms both facade shaders draw
   `FAR_LIT_GLSL`'s room blocks at the rooms' own mean, weighted by the desktop's resolve at `FAR_K` 2.4 times the pixels (Round 157, touch only); Round 158 (Mike: the PWA still failing on load; the iPhone had not finished a session since Sep 19): WebGL memory is charged to the page on iOS, and WebKit's ANGLE Metal backend keeps a padded copy of every vertex stream whose stride or offset is not a multiple of 4 bytes, so NEVER upload a 3-byte or 1-byte stream (the chunks' normals and colours ride stride-4 interleaved buffers, style, floor and tint one `aSFT` word, road colours `rgbStride4`); measure with the WebGL audit and a GC-normalised headless run against the Sep 17 build that last worked (981 MB GPU plus copies), never Chrome's pane heap, which is mostly garbage; a touch load that finds a death waits behind a gate ('Load the City', the build held until 32 s after load so WebKit's crash window has passed) and climbs `TIER` 1 (LITE) then 2 (far ring 5 km, no far trees, traffic or roof kit); a phone also runs the plain shadow filter, redraws
-  the buses' depth pass every 12th frame, caps its pixel ratio at 1.25 and may drop it to 0.72 under load (Rounds 72 and 74; Round 149's 2.0 / 1.0 broke phones and Round 153 put these back: any raise needs a real-device test first), judged every 15 frames
-  (Rounds 72 and 74), aims its shadow box at the camera in 300 m steps and freezes it above 600 m (Round 74). The first visit
+  the buses' depth pass every 12th frame, caps its pixel ratio at 1.25 with a floor of 0.72 (Rounds 72 and 74; Round 149's 2.0 / 1.0 was blamed for breaking phones and Round 153 put these back, though Round 158 later found the deaths were vertex padding and heap, not the ratio: any raise of the cap still needs a real-device test first), judged every 15 frames
+  (Rounds 72 and 74) and, since Round 166 (Mike, from the TestFlight app: pixelated), lowered only where lowering buys time:
+  every phone had been ending at the floor while geometry-bound (29 ms at 0.72 on his iPhone), so `dprJudge` makes each step
+  an A-B-A trial from Enter on (`DPR.live`), on each window's mean without its slowest fifth: three windows over 22 ms try a
+  rung down, kept only if every trial window beats the lightest look at the rung before by `DPR_GAIN` 12%; headroom against
+  the display's own interval (snapped to 60, 90, 120, 144 Hz, or 30 in Low Power Mode) or 10 s stood tries a rung up, kept
+  inside 85% of the budget or at most `DPR_COST` 8% dearer; a refused step is retried only on a changed load (20%) or after
+  `DPR_HOLD_MAX`, trials are `DPR_GAP` 20 s apart unless urgent (over 40 ms), a kept step holds the reverse at least 30 s,
+  doubling as steps keep reversing, the first refusal from the cap probes the floor once, and a gap over 250 ms (the app in
+  the background) abandons a trial; so a geometry-bound phone rests at 1.25 (three times the drawing-buffer pixels it rested
+  at before, about 15 MB). The `perf` and `settled` beacons carry `dpt`, `dpm`, `dpl`, `dpv` and `dpf`; `__dbg.dpr()`;
+  `tests/test_dpr_controller.py` runs the real hook against modelled devices, aims its shadow box at the camera in 300 m steps and freezes it above 600 m (Round 74). The first visit
   meets the guide (Round 60: `#guide`, eight cards on dots from `GUIDE_SLIDES`, computer and phone copy by
   `isTouch`, `localStorage philly3d.guide`), since Round 162 opened on a layer picker (Mike: users select the filters they
   want first, then the how-to: `PICK_GROUPS`, every layer once through the panel's own `layerToggles()`, saved in
@@ -208,7 +218,7 @@ before any visual round rather than rediscovering it.
 
 ## URL flags
 
-`?dev=1` exposes `window.__dbg` (camera/fly/scene/renderer handles, `wx('storm')`, `bolt()`,
+`?dev=1` exposes `window.__dbg` (camera/fly/scene/renderer handles, `dpr()` (Round 166: the resolution ladder, the open trial, the beacon fields), `wx('storm')`, `bolt()`,
 `flightTest()`, `shipTest()`, `frameOnce()`, `goFly(...)`, `goWalk(...)`, `post`, `postMats()`, `skyMat`,
 `cloudDeck`, `sunLight`, `hemi`, `refreshEnv()`, `railWalk(x, z, dx, dz, dist, chain)` (Round 87: pass a chain in and read `[6]` out to prove a consist stays on one track), `trafficChurn(reset)` (Round 89: car births and deaths a second by cause, the mean and youngest age at death, and how many of each were in view), `riverCheck(step)` (Round 89: the Schuylkill's centreline against the water sheet, the one call that settles whether there are strips of land in the river), `colStats()` (per-tier means of the wall and roof colours handed to the
 chunk builders, styles, OPA words and roof forms, whole tier and a band either side of York Street), `perf()` with

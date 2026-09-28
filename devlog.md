@@ -7276,3 +7276,52 @@ INSTALLED, Kaitlin INVITED. "Ready to Submit" on the web is the external state a
 invitation to Kaitlin was resent through POST /v1/betaTesterInvitations (201). `asc.py status` and `asc.py invite <email>`
 are the chores from here on (app/README.md step 7).
 
+## Round 166 — the resolution controller lowers the ratio only where lowering it buys time (Sep 28)
+
+Mike, from the TestFlight app (build 2): "The graphics are looking pretty pixelated. Are we able to spruce those up while
+maintaining performance?" Then: "Do the smarter resolution controller", and "ship build 3 to TestFlight when it's ready".
+
+- The evidence, from the server's beacon log. His iPhone (app, tier 0, fly) started at the touch cap, 1.25, and by the 60 s
+  perf beacon sat at the floor, 0.72, a quarter of the screen's own resolution each way, with p50 29 ms, p95 104, 380 calls
+  and 10.7 M triangles. Every phone perf beacon since Sep 25 that reports the render ratio ended at 0.72, the site's as well
+  as the app's, with p50 anywhere from 17 to 75 ms at 8 to 10.7 M triangles. The phones are held back by geometry, so every
+  step down cost sharpness and bought nothing, and the way back up (four windows under 13 ms) never came: a 60 Hz display
+  never shows a frame under 16.7 ms. The history (a workflow reading Rounds 72 to 161): Round 153 blamed Round 149's 2.0 / 1.0
+  for the phone deaths, but the deaths began four days before Round 149 and survived its revert, and Round 158 found them in
+  ANGLE's padded vertex copies (247 MB) and 165 MB of road closures on the heap; the ratio's own cost is the drawing buffer,
+  about 24 MB at 1.25 on a landscape iPhone with the multisampled backbuffer, which the page already allocates at load.
+- The controller (`dprInit`, `dprJudge`, `dprGap`, `dprBeacon` after `applyDPR`; frame()'s hook): a ladder of rungs from the
+  cap down by Round 74's steps to the floor (touch 1.25, 1.0, 0.8, 0.72; desktop 1.75, 1.49, 1.26, 1.07, 0.9; no rung so close
+  to the floor that the last step could not buy 12% in pixels). Judged from Enter on, per window (15 frames on a phone), on
+  the mean without the slowest fifth, since a median of display-paced frames jumps a whole refresh at a time. Every step is
+  an A-B-A trial: three windows over 22 ms start a step down, one window settles, two are measured at the trial rung, one
+  more back at the rung before; kept only when every trial window beats the lightest look at the rung before by 12%. A step
+  up starts on headroom against the display's own interval (the fastest frames snapped to 144, 120, 90, 60 Hz, or 30 in Low
+  Power Mode) or once a level has stood 10 s, and is kept inside 85% of the budget or at most 8% dearer than the heaviest look.
+  A refused step holds 20 s doubling to 320 s and is retried only on a load 20% heavier (down) or lighter (up), or after the
+  320 s; trials are 20 s apart unless three windows run over 40 ms; a kept step holds the reverse step at least 30 s, doubling
+  when steps keep reversing; the first refusal from the cap tries the floor once (frames paced at 60 Hz can gain nothing one
+  rung down and half at the floor); a gap over 250 ms abandons a trial and forgets the windows. The cap is unchanged, so the
+  load's peak is unchanged; a geometry-bound phone now rests at 1.25, three times the pixels it rested at, about 15 MB more.
+- Reviewed by a workflow on three lenses (the loop's logic, how iPhones really pace and reallocate, telemetry and tests),
+  each finding put to a skeptic. The first design (a median, one look at the rung before, 13 ms headroom, no reverse holds)
+  failed in the reviewers' simulations: a 60 Hz phone that stepped down never came back (99% of the time below the cap), a
+  view swinging on an 8 s turn sank a geometry-bound phone to 0.72 (76%), a trial straddling the app in the background was
+  judged across the gap, and a pixel-bound phone near the budget flipped 5.6 to 8.4 times a minute. All of it is fixed and
+  tested. What stays: snow and 1 px lines are sized in drawing-buffer pixels, so on phones they now draw at 0.58 of the size
+  they had at 0.72; on desktop a rung change reallocates the post pipeline's target (rare now).
+- The beacons: `perf` (60 s after Enter) and the new `settled` (180 s, named so `st=perf&` stays one sample a session) carry
+  `dpt` (down kept, down undone, up kept, up undone), `dpm` (the time-weighted ratio), `dpl` (the lowest ratio tried), `dpv`
+  (the display's interval) and `dpf` (the last frame ms at each rung): on a real phone they say what the ratio bought. The
+  privacy policy's beacon sentence now says the page reports again one and three minutes into the city, and how smoothly it
+  draws. `__dbg.dpr()`. tests/test_dpr_controller.py (17 tests) cuts the DPR literal, the controller and the hook out of
+  app.js and runs modelled devices frame by frame under Node: geometry-bound (constant, 60 Hz paced, noisy, a drifting view,
+  the app backgrounded mid-trial, Low Power Mode) stays at the cap; pixel-bound steps down, stops where the gain stops, finds a
+  gain only at the floor, answers a load that turns heavy within seconds, and does not hunt.
+- The site waits for the phone: the resting ratio rises, so build 3 goes to TestFlight first, and philly3d.com gets it once a
+  session on Mike's iPhone reaches the `settled` beacon without a crash crumb.
+
+Round 166 coda (Sep 28): build 3 (1.0 (3), npm run bump, the page byte for byte in the archive) uploaded to App Store
+Connect through app/ios/UploadOptions.plist: "Upload succeeded". Both internal groups have access to all builds, so it
+reaches Mike and Kaitlin when processing ends. philly3d.com stays on HEAD~ until a build 3 session reaches `settled`.
+

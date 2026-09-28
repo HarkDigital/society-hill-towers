@@ -234,7 +234,8 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # pipeline 
     `flights()`, `indego()`, `traffic()`, `frameOnce()`, `goWalk(x,z,yaw)`,
     `goFly(x,y,z,yaw,pitch)`) plus `__dbg.perf()` (per-step build timings, frame-time
     p50/p95, `renderer.info`, heap) and a small on-screen perf readout.
-  - `?dpr=N` pins the adaptive pixel ratio (default: adaptive, capped 1.75 desktop / 1.5 touch).
+  - `?dpr=N` pins the adaptive pixel ratio (default: adaptive, capped 1.75 desktop / 1.25 touch, floored 0.9 / 0.72;
+    `__dbg.dpr()` shows the ladder, the open trial and the beacon fields).
   - `?wx=clear|overcast|fog|drizzle|rain|downpour|storm|hail|snow|blizzard|sleet` pins the
     weather (the live Open-Meteo fetch is skipped).
   - `?logdepth=0` is the depth-buffer escape hatch (logarithmic depth is on everywhere).
@@ -282,7 +283,7 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   pipeline), tall labels.
   Far ring: `CITY_B64` into 2,400 m chunks, 100 m ground strips, far roads, district labels.
   **All three load on phones** (Round 7 removed the old touch skip); touch instead keeps DPR
-  ≤ 1.5, 2048 shadow maps, half the wide forest, no pole meshes and no deck shadows.
+  ≤ 1.25, 2048 shadow maps, half the wide forest, no pole meshes and no deck shadows.
   `freeOnUpload()` nulls the chunk arrays after GPU upload (they are never raycast), and the
   big `let` blobs are nulled after decode (Round 28's memory diet).
 - **Facade shader:** `cityMat.onBeforeCompile` draws windows, lintels, shutters, doors in world
@@ -433,10 +434,14 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   yield between build steps.
 - **Runtime:** `renderer.shadowMap.autoUpdate` is off; `aimSun` requests a redraw when the box
   or the sun moves and `frame()` refreshes every 4th frame while vehicles move. `cullFogged`
-  hides outer meshes beyond `fog.far` (view depth). `DPR` adapts the pixel ratio to frame time
-  between 0.9 and the display's own ratio (`?dpr=N` pins). `flushInst(m, colorFrom)` is the
+  hides outer meshes beyond `fog.far` (view depth). `DPR` adapts the pixel ratio on a ladder
+  from the display's ratio under `DPR_CAP` (1.75 desktop, 1.25 touch) down to 0.9 / 0.72, judged from Enter on; since
+  Round 166 every step is an A-B-A trial kept only when it pays (`dprJudge`; `tests/test_dpr_controller.py`) (`?dpr=N` pins). `flushInst(m, colorFrom)` is the
   one InstancedMesh upload helper. `PERF`/`__dbg.perf()` and the `?dev` readout carry per-step
-  timings and frame p50/p95; `beacon()` posts checkpoints to `/b` on philly3d.com only.
+  timings and frame p50/p95; `beacon()` posts checkpoints to philly3d.com's `/b` from the site and the
+  apps; the `perf` (60 s after Enter) and `settled` (180 s) beacons add frame p50/p95, calls, triangles and the
+  controller's record (`dpt` trials kept and undone each way, `dpm` time-weighted ratio, `dpl` lowest ratio tried, `dpv`
+  the display's interval, `dpf` the last frame ms at each rung).
 - **Feeds:** `septaFetchBaked` reads `/septa.json` (ops/septa_bake.py) before the JSONP rotation;
   `shipRelayPoll`/`shipUpsertRelay` read `/ais.json` (ops/ais_relay.py) and only fall back to the
   direct aisstream socket while the relay is missing or stale (90 s / 60 s gates); `concertsPoll`

@@ -265,12 +265,26 @@
   // the multisampled backbuffer on top, over the same 11 million triangles, and that is the change that broke it
   const DPR_CAP = isTouch ? 1.25 : 1.75;   // the fill cost is the square of it
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, DPR_CAP));
-  // adaptive resolution: the cap alone treated a 2019 integrated GPU and a
-  // 4090 alike. frame() keeps a rolling median of frame time and steps the
-  // ratio down 15% when frames run long, back up when they stay short;
-  // fragment cost scales with the square, so 1.75 -> 1.25 halves the shading
-  // work. ?dpr=1.5 pins it.
-  const DPR = { cap: renderer.getPixelRatio(), min: isTouch ? 0.72 : 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, fast: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
+  // adaptive resolution: the cap alone treated a 2019 integrated GPU and a 4090 alike, so frame() hands the median of every
+  // window of frames to dprJudge, which moves the ratio along a ladder from the cap down to the floor. ?dpr=1.5 pins it.
+  // Round 166 (Mike, from the TestFlight app: "The graphics are looking pretty pixelated. Are we able to spruce those up while
+  // maintaining performance?"): the ratio is lowered only where lowering it buys time. Every phone beacon since Sep 25 had
+  // ended at the floor, 0.72 (a quarter of an iPhone's own resolution each way), with frames of 17 to 75 ms at 8 to 10.7 M
+  // triangles: the phones are held back by geometry, not pixels, so each step down cost sharpness and bought nothing, and
+  // the old way back up (four windows under 13 ms, which a 60 Hz display never delivers) never came. Now every step is a
+  // trial, judged A-B-A (the rung before, the trial rung, the rung before again, so a view that gets lighter or heavier
+  // during the trial is not read as the ratio's doing) on the mean of each window without its slowest fifth (a median of
+  // display-paced frames jumps a whole refresh at a time). A step down is kept only when it makes the frame DPR_GAIN faster
+  // than the lighter of the two looks at the rung before; a step up is tried when the frame has headroom against the
+  // display's own interval, or once the level has stood DPR_UP_AFTER, and kept inside DPR_KEEP_UP of the budget or at most
+  // DPR_COST dearer. A rejected trial holds that step off for DPR_HOLD, doubling up to DPR_HOLD_MAX; a kept step holds the
+  // reverse step off at least DPR_STAY, doubling when steps keep reversing, so the ratio never chases the view; a gap (the
+  // app sent to the background, a stall over 250 ms) abandons a trial and forgets the windows. So a phone held back by
+  // geometry rests at its cap and checks again every few minutes at most. The cap is unchanged (DPR_CAP): no step goes
+  // above what the page allocates at the start, so the load's peak is unchanged; but a phone that used to rest at 0.72
+  // after Enter now rests at its cap, three times the drawing-buffer pixels (about 15 MB more on a landscape iPhone with the
+  // multisampled backbuffer), which is why the TestFlight build goes to a real phone before the site does
+  const DPR = { cap: renderer.getPixelRatio(), min: isTouch ? 0.72 : 0.9, cur: renderer.getPixelRatio(), ring: new Float32Array(30), tmp: new Float32Array(30), i: 0, pinned: false };   // cap = the display's own ratio under DPR_CAP: never supersample
   {
     const q = /[?&]dpr=([\d.]+)/.exec(location.search);
     if (q) { DPR.pinned = true; DPR.cur = clamp(+q[1], 0.5, 3); renderer.setPixelRatio(DPR.cur); }
@@ -282,6 +296,122 @@
     if (towerMat) towerMat.size = r;
     if (floodMat) floodMat.size = r;
     if (bfbNodesMat) bfbNodesMat.size = r;
+  }
+  const DPR_SLOW = 22, DPR_FAST = 13;          // ms: over the budget; headroom on a display faster than 60 Hz
+  const DPR_GAIN = 0.12, DPR_COST = 0.08;      // a step down must buy 12%; a step up may cost 8% and still be kept
+  const DPR_KEEP_UP = 0.85;                    // or an up step is kept when it stays inside 85% of the budget (hysteresis)
+  const DPR_SETTLE = 1, DPR_TRIAL = 2, DPR_RECHECK = 1;   // windows: the one a resize lands in is not judged, then 2 at the trial rung, 1 back
+  const DPR_UP_AFTER = 10000, DPR_STAY = 30000, DPR_PROVEN = 60000, DPR_HOLD = 20000, DPR_HOLD_MAX = 320000;   // ms
+  const DPR_GAP = 20000, DPR_URGENT = 40;      // ms between trials, unless three windows in a row are over DPR_URGENT ms
+  const DPR_STEP = isTouch ? 0.8 : 0.85;       // the ladder's rung (Round 74's steps)
+  const dprMean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+  const DPR_HZ = [1000 / 144, 1000 / 120, 1000 / 90, 1000 / 60, 1000 / 30];
+  function dprInit() {
+    // the last rung above the floor must be able to buy DPR_GAIN in pixels, or the floor could never be kept
+    const L = [DPR.cap], near = DPR.min / Math.sqrt(1 - DPR_GAIN);
+    while (L[L.length - 1] * DPR_STEP > near) L.push(L[L.length - 1] * DPR_STEP);
+    if (L[L.length - 1] > near) L.push(DPR.min);
+    DPR.levels = L; DPR.k = 0; DPR.hist = []; DPR.trial = null; DPR.since = -1; DPR.lastKeep = null; DPR.next = 0;
+    DPR.holdDn = L.map(() => 0); DPR.holdUp = L.map(() => 0); DPR.waitDn = L.map(() => DPR_HOLD); DPR.waitUp = L.map(() => DPR_HOLD);
+    DPR.rejBase = L.map(() => 0);              // the load a down trial was refused at: only a heavier one, or DPR_HOLD_MAX, retries it
+    DPR.rejT = L.map(() => 0);
+    DPR.upRej = L.map(() => 0); DPR.upRejT = L.map(() => 0);   // the load an up trial was refused at: only a lighter one, or DPR_HOLD_MAX, retries it
+    DPR.floorProbed = false;                   // the first refused step down from the cap also tries the floor, once
+    DPR.proven = L.map(() => 0);               // a rung reached by a kept step down: no slow-and-stood probe up from it until then
+    DPR.seen = L.map(() => 0);                 // the last measured window at each rung, for the beacon (0: never measured)
+    DPR.tri = [0, 0, 0, 0];                    // trials: down kept, down undone, up kept, up undone
+    DPR.vs = 0;                                // the display's frame interval: the fastest frames seen (16.7 ms at 60 Hz, 8.3 at 120)
+    DPR.tw = 0; DPR.tt = 0; DPR.low = DPR.cur; // the ratio-weighted and total ms of judged frames since Enter (dpm = tw / tt), the lowest ratio tried
+    DPR.live = false;                          // judged from Enter on: the build behind the veil is not the city's frame time
+  }
+  dprInit();
+  function dprGo(k) { DPR.k = k; applyDPR(DPR.levels[k]); DPR.low = Math.min(DPR.low, DPR.cur); }
+  function dprGap(now) {   // the app went to the background, or a stall: the windows no longer describe this moment
+    const t = DPR.trial;
+    if (t && DPR.k !== t.from) dprGo(t.from);   // abandoned without a verdict or a hold
+    DPR.trial = null; DPR.hist = []; DPR.i = 0; DPR.since = now;
+  }
+  function dprJudge(v, lo, now) {
+    // v: a window's frame time (its mean without the slowest fifth); lo: its second-fastest frame
+    const D = DPR, t = D.trial, last = D.levels.length - 1;
+    if (D.since < 0) D.since = now;
+    // the display's interval, from the fastest frames, snapped to a real refresh rate (144, 120, 90, 60 Hz, or 30 in iOS's
+    // Low Power Mode): a device that never reaches its refresh, or runs unpaced, says nothing about it
+    for (const q of DPR_HZ) if (Math.abs(lo - q) <= q * 0.06 && (!D.vs || q < D.vs)) { D.vs = q; break; }
+    if (t) {
+      if (t.settle > 0) { t.settle--; return; }   // the resize's own hitch, and frames drawn half at the old size
+      if (!t.back) {
+        t.b.push(v);
+        if (t.b.length < DPR_TRIAL) return;
+        D.seen[t.to] = dprMean(t.b);
+        t.back = true; t.settle = DPR_SETTLE; dprGo(t.from);   // A-B-A: look at the rung before once more
+        return;
+      }
+      t.a.push(v);
+      if (t.a.length < t.na + DPR_RECHECK) return;
+      D.seen[t.from] = v; D.trial = null; D.hist = []; D.since = now; D.next = now + DPR_GAP;
+      // a step down is kept only when EVERY window at the trial rung beats the lightest look at the rung before, so a view
+      // that swings during the trial cannot pass for the ratio's doing; a step up is judged against the heaviest look
+      const loA = Math.min(...t.a), hiA = Math.max(...t.a);
+      const keep = t.dn ? Math.max(...t.b) <= loA * (1 - DPR_GAIN) : dprMean(t.b) <= Math.max(DPR_KEEP_UP * DPR_SLOW, hiA * (1 + DPR_COST));
+      if (!keep) {
+        if (t.dn) {
+          D.tri[1]++;
+          // frames paced by the display can gain nothing one rung down and half at the floor: the first refusal from the cap
+          // tries the floor once before the hold (frame time only falls with the ratio, so a miss there settles it)
+          if (t.from === 0 && t.to < last && !D.floorProbed) {
+            D.floorProbed = true; D.next = 0;
+            D.trial = { dn: true, from: 0, to: last, a: t.a.slice(), na: t.a.length, b: [], settle: DPR_SETTLE, back: false }; dprGo(last);
+            return;
+          }
+          D.holdDn[t.from] = now + D.waitDn[t.from]; D.waitDn[t.from] = Math.min(DPR_HOLD_MAX, D.waitDn[t.from] * 2); D.rejBase[t.from] = loA; D.rejT[t.from] = now;
+        } else { D.tri[3]++; D.holdUp[t.from] = now + D.waitUp[t.from]; D.waitUp[t.from] = Math.min(DPR_HOLD_MAX, D.waitUp[t.from] * 2); D.upRej[t.from] = hiA; D.upRejT[t.from] = now; }
+        return;
+      }
+      const lk = D.lastKeep, reversal = !!lk && lk.from === t.to && lk.to === t.from;
+      D.lastKeep = { from: t.from, to: t.to };
+      dprGo(t.to);
+      if (t.dn) {
+        D.tri[0]++;
+        if (!reversal) D.waitDn[t.from] = DPR_HOLD;
+        D.holdUp[t.to] = now + Math.max(DPR_STAY, D.waitUp[t.to]); D.waitUp[t.to] = Math.min(DPR_HOLD_MAX, D.waitUp[t.to] * 2);
+        D.proven[t.to] = now + DPR_PROVEN; D.rejBase[t.to] = 0; D.upRej[t.from] = 0;
+      } else {
+        D.tri[2]++;
+        if (!reversal) D.waitUp[t.from] = DPR_HOLD;
+        D.holdDn[t.to] = now + Math.max(DPR_STAY, D.waitDn[t.to]); D.waitDn[t.to] = Math.min(DPR_HOLD_MAX, D.waitDn[t.to] * 2);
+        D.upRej[t.to] = 0; D.rejBase[t.from] = 0;
+      }
+      return;
+    }
+    D.hist.push(v); if (D.hist.length > 4) D.hist.shift();
+    if (D.hist.length < 2) return;
+    // windows agree before anything moves: three slow ones in a row (a second and a half on a phone) for a step down, so a
+    // heavy turn or a hitch that straddles two windows is not the device; two at the display's own pace for a step up
+    const n = D.hist.length, last3 = D.hist.slice(-3), base = dprMean(last3);
+    const slow = n >= 3 && Math.min(...last3) > DPR_SLOW;
+    const fast = Math.max(D.hist[n - 2], D.hist[n - 1]) <= Math.max(DPR_FAST, Math.min(DPR_KEEP_UP * DPR_SLOW, D.vs * 1.15));
+    D.seen[D.k] = base;
+    // a hold earned under a lighter load gives way when the load has been far heavier for four windows (night, weather, a
+    // phone running hot); its backoff still doubles, so a view that swings through heavy moments cannot keep reopening it
+    const heavier = D.rejBase[D.k] > 0 && D.hist.length === 4 && Math.min(...D.hist) > 1.6 * D.rejBase[D.k];
+    const urgent = slow && Math.min(...last3) > DPR_URGENT;
+    if (now < D.next && !urgent) return;   // one trial at a time, spaced, so the picture does not keep changing
+    // a refused step is retried only when the load has changed (a step down that bought nothing at 29 ms cannot buy anything
+    // at 29 ms a minute later), or once DPR_HOLD_MAX has passed, so a phone held back by geometry sees no more trial dips
+    const dnOk = now >= D.holdDn[D.k] && (!D.rejBase[D.k] || base > 1.2 * D.rejBase[D.k] || now - D.rejT[D.k] >= DPR_HOLD_MAX);
+    const upOk = now >= D.holdUp[D.k] && (!D.upRej[D.k] || base < 0.8 * D.upRej[D.k] || now - D.upRejT[D.k] >= DPR_HOLD_MAX);
+    if (slow && D.k < last && (dnOk || heavier)) {
+      D.trial = { dn: true, from: D.k, to: D.k + 1, a: last3.slice(), na: last3.length, b: [], settle: DPR_SETTLE, back: false }; dprGo(D.k + 1);
+    } else if (D.k > 0 && upOk && (fast || (now - D.since >= DPR_UP_AFTER && now >= D.proven[D.k]))) {
+      const a = D.hist.slice(-2);
+      D.trial = { dn: false, from: D.k, to: D.k - 1, a, na: a.length, b: [], settle: DPR_SETTLE, back: false }; dprGo(D.k - 1);
+    }
+  }
+  function dprBeacon() {   // Round 166: what the controller did on this device, for the perf beacons
+    const D = DPR;
+    return { dpt: D.tri.join('.'), dpm: D.tt ? (D.tw / D.tt).toFixed(2) : '', dpl: D.low.toFixed(2), dpv: D.vs ? D.vs.toFixed(1) : '',
+      dpf: D.levels.map((r, k) => Math.round(r * 100) + ':' + Math.round(D.seen[k])).join('.') };
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
   // the installed app (PWA) opens its window at one size and lays the page out at another, and
@@ -22456,7 +22586,9 @@
     btnEnter.blur();   // #veil.hidden is opacity only; a focused Enter button would swallow every key
     if (gateGo) { gateGo(); return; }   // the recovery gate's tap starts the build (bootGate)
     beacon('enter', { ms: Math.round(performance.now()) });
-    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode }); }, 60000);
+    DPR.live = true; DPR.tw = 0; DPR.tt = 0; DPR.i = 0; DPR.ring.fill(0); DPR.hist = []; DPR.since = -1;   // Round 166: the controller judges the city from here
+    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon() }); }, 60000);
+    setTimeout(() => { const p = perfStats(); beacon('settled', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon() }); }, 180000);   // Round 166: where it settled
     veil.classList.add('hidden');
     veil.inert = true;
     document.getElementById('appUI').inert = false;
@@ -22735,20 +22867,25 @@
     frameNo++;
     if (!once && rawMs < 500) { PERF.ring[PERF.ri] = rawMs; PERF.ri = (PERF.ri + 1) % 600; PERF.rn++; }
     if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
-    // adaptive resolution: 30-frame windows; a >250 ms gap is a stall or a
-    // throttled tab, not a slow frame, and is not counted
-    if (!once && !DPR.pinned && rawMs < 250 && !document.hidden) {
-      // a phone judges every 15 frames and steps down by a fifth, so a turn into the dense
-      // half of the city settles in a quarter of a second instead of two (Round 74)
-      const win = isTouch ? 15 : 30, down = isTouch ? 0.8 : 0.85;
-      DPR.ring[DPR.i++] = rawMs;
-      if (DPR.i === win) {
-        DPR.i = 0;
-        DPR.tmp.set(DPR.ring); DPR.tmp.sort();
-        const med = DPR.tmp[30 - win + (win >> 1)];   // the window's median (the ring holds 30; a shorter window sorts its zeros first)
-        if (med > 22) { DPR.fast = 0; if (DPR.cur > DPR.min) applyDPR(Math.max(DPR.min, DPR.cur * down)); }
-        else if (med < 13) { if (++DPR.fast >= 4 && DPR.cur < DPR.cap) { DPR.fast = 0; applyDPR(Math.min(DPR.cap, DPR.cur / 0.85)); } }
-        else DPR.fast = 0;
+    // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
+    // of the city is answered in a quarter of a second, not two); a gap over 250 ms (a stall, the app in the background)
+    // is not a slow frame: it abandons a trial and forgets the windows (dprGap)
+    if (!once && !DPR.pinned && DPR.live) {
+      if (rawMs >= 250 || document.hidden) dprGap(now);
+      else {
+        const win = isTouch ? 15 : 30;
+        DPR.tw += DPR.cur * rawMs; DPR.tt += rawMs;
+        DPR.ring[DPR.i++] = rawMs;
+        if (DPR.i === win) {
+          DPR.i = 0;
+          DPR.tmp.set(DPR.ring); DPR.tmp.sort();
+          // the window sits at the top of the sorted ring (a 15-frame window leaves 15 zeros below it): its mean without the
+          // slowest fifth, which moves smoothly where a median of display-paced frames jumps a whole refresh, and its
+          // second-fastest frame, which finds the display's own interval
+          const o = 30 - win, n = Math.round(win * 0.8);
+          let sum = 0; for (let j = o; j < o + n; j++) sum += DPR.tmp[j];
+          dprJudge(sum / n, DPR.tmp[o + 1], now);
+        }
       }
     }
     if (introSpin && !interacted) orbit.goalTheta += dt * 0.045;
@@ -22926,7 +23063,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
