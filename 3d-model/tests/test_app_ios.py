@@ -54,6 +54,14 @@ class AppIos(unittest.TestCase):
         res = re.search(r'/\* Resources \*/ = \{\s*isa = PBXResourcesBuildPhase;.*?files = \((.*?)\);', self.pbx, re.S).group(1)
         self.assertIn(bf, res)
 
+    def test_signs_as_quincysoft(self):
+        # Mike's team for every app (Sep 28): with it set, Xcode's automatic signing registers com.philly3d.app, which is
+        # what App Store Connect's New App list needs before it offers the bundle id
+        self.assertEqual(self.pbx.count('DEVELOPMENT_TEAM = 72U2ZL3GVM;'), 2)            # Debug and Release
+        self.assertIn('DevelopmentTeam = 72U2ZL3GVM;', self.pbx)                          # the target attribute Xcode reads
+        self.assertEqual(self.pbx.count('CODE_SIGN_STYLE = Automatic;'), 2)
+        self.assertNotRegex(self.pbx, r'DEVELOPMENT_TEAM = (?!72U2ZL3GVM;)')
+
     def test_launch_screen_and_assets(self):
         sb = (IOS / 'App' / 'Base.lproj' / 'LaunchScreen.storyboard').read_text()
         self.assertNotIn('systemBackgroundColor', sb)                  # white in light mode: a flash before the dark city

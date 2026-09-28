@@ -50,7 +50,7 @@ Then, after every page build:
 ```bash
 cd app
 npm run sync
-npm run open:ios        # Xcode: pick your team under Signing & Capabilities, then Run on a phone or Archive
+npm run open:ios        # Xcode: signs as QuincySoft LLC; Run on a phone or Archive
 npm run open:android    # Android Studio: Run on a phone, or Build > Generate Signed App Bundle
 ```
 
@@ -70,8 +70,9 @@ accounts and Xcode, and it is the same every upload after the first:
    `npm run sync` must run after every page build; the app ships whatever `ios/App/App/public` holds.
 3. For every upload after the first: `npm run bump` (TestFlight refuses a build number it has seen; it raises iOS's
    `CURRENT_PROJECT_VERSION` and Android's `versionCode` together and leaves the version, 1.0, alone).
-4. `npm run open:ios`. In the App target's Signing & Capabilities, tick Automatically manage signing and pick your team.
-   Xcode registers `com.philly3d.app` for you the first time. The first open resolves the Swift packages (Capacitor and
+4. `npm run open:ios`. The App target signs automatically as QuincySoft LLC (team 72U2ZL3GVM, Mike's team for every app;
+   set in the project since Sep 28). Opening its Signing & Capabilities tab, or the first device build, has Xcode register
+   `com.philly3d.app` under that team, after which App Store Connect's New App list offers it. The first open resolves the Swift packages (Capacitor and
    `ion-ios-geolocation` from GitHub), which needs the network.
 5. Run it once on your own iPhone (a cable, or Wi-Fi after the first time): the locate button should ask once.
 6. In App Store Connect, create the app (Philly3D, bundle id `com.philly3d.app`, any SKU). Under App Privacy, declare

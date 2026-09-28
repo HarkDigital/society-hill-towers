@@ -22,6 +22,7 @@ the camera never leaves it, the towns beyond it are scenery.
 The iOS and Android apps are `app/` (Capacitor 8, Round 156; `IN_APP` in app.js since Round 155). After a page build,
 `cd app && npm run sync` puts it in both apps; `npm run bump` before each store upload; `app/README.md` has the
 TestFlight steps (Round 163: landscape only, the privacy manifest, one location prompt through `@capacitor/geolocation`).
+The app signs automatically as Mike's team, QuincySoft LLC (`DEVELOPMENT_TEAM` 72U2ZL3GVM, never the Personal Team).
 
 ## Commands
 

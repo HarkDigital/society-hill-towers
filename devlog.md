@@ -7236,3 +7236,9 @@ trying to create in app store connect."
   and App Store Connect's New App list shows only App IDs registered on the team. Xcode's account holds two teams,
   QuincySoft LLC (a paid company team) and a free Personal Team; choosing the paid team under Signing & Capabilities
   registers the ID, or it can be registered at developer.apple.com under Identifiers.
+
+Round 165 coda (Sep 28), the team: Mike: "QuincySoft LLC is always the team i use." The App target now carries
+DEVELOPMENT_TEAM 72U2ZL3GVM in both configurations and DevelopmentTeam in its target attributes, as Xcode's own picker
+writes them, with automatic signing; the simulator build still succeeds. Xcode registers com.philly3d.app under
+QuincySoft LLC the first time it resolves signing (the Signing & Capabilities tab or a device build), and only then does App
+Store Connect's New App list offer the bundle id. tests/test_app_ios.py guards the team; app/README.md's step 4 says so.
