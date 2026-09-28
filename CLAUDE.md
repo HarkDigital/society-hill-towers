@@ -184,6 +184,12 @@ before any visual round rather than rediscovering it.
   heading (the Fillmore, the Foundry and Brooklyn Bowl are one building); the M key and the tenth layer bit; the pin lands on the roof
   from the build's `ROOF_GRID`, or on the score venues' roofs, stacking over a game there; a venue the page knows by name stands at its
   building whatever point the feed carries (`VENUE_NAMED`, Round 66: Ticketmaster's geocoder misses half the halls by up to 1.2 km).
+  Every score bubble and concert placard carries an X in its upper right corner (Round 167, Mike: "The pin should not come
+  back unless someone taps on the building those events are happening in"): `eventHide` keeps the event's own id in
+  `localStorage philly3d.hiddenEvents` (id to the end of its day), so the bubble, tether and ball stay down through polls,
+  re-renders and reloads, a dismissed game leaves no gap in the arena's stack, and a new event at the building is a new id;
+  `bldgPick` asks `eventTapRestore` first (the tap's point within `EVENT_TAP_R` 60 m of a placard's spot, or a score venue's
+  own `r`, at any distance a placard shows), and a tap that restores opens no property card; `__dbg.events()`.
   The Ben Franklin Bridge is Round 66's: Ben Franklin blue measured through the pipeline, the trusses over the roadway, granite portals.
   Phones: portrait shows the turn-sideways gate, the Move and Look thumb pads stay faintly
   visible in flight, and `detFarUniform` keeps lit windows alive to desktop distances, and under the resolved rooms both facade shaders draw

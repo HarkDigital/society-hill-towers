@@ -14150,18 +14150,18 @@
   const oldPick = () => !!(pickedVeh || pickedStation || pickedPlane || pickedShip || pickedMarket || pickedMarker || pickedArt || pickedClosure || pickedTrain || pickedTree != null);
   const BPICK = { rt: null, buf: new Uint8Array(4), seq: 0 };
   const CARTO_SQL = 'https://phl.carto.com/api/v2/sql?q=';
-  function bldgPointAt(cx, cy) {
+  function bldgPointAt(cx, cy, maxD = 3000) {
     if (!BPICK.rt) BPICK.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false });
     const W = window.innerWidth, H = window.innerHeight;
     camera.setViewOffset(W, H, Math.floor(cx), Math.floor(cy), 1, 1); camera.updateProjectionMatrix();
     try { occRender(BPICK.rt, 1, 1, BPICK.buf, true); }
     finally { camera.clearViewOffset(); camera.updateProjectionMatrix(); }
     const vz = occUnpack(BPICK.buf, 0);
-    if (!(vz > 1) || vz > 3000) return null;   // a building card is for what the eye can make out, not the horizon
+    if (!(vz > 1) || vz > maxD) return null;   // a building card is for what the eye can make out, not the horizon (3 km)
     const dir = septaRay.ray.direction, fwd = camera.getWorldDirection(_ssv), c = dir.dot(fwd);
     if (c <= 0.05) return null;
     const t = vz / c, o = septaRay.ray.origin;
-    return [o.x + dir.x * t, o.y + dir.y * t, o.z + dir.z * t, t];
+    return [o.x + dir.x * t, o.y + dir.y * t, o.z + dir.z * t, t, vz];
   }
   function bldgSql(kind, lon, lat, extra) {   // numbers, and a nine-digit account, only ever reach the query
     if (!Number.isFinite(lon) || !Number.isFinite(lat)) return null;
@@ -14205,8 +14205,11 @@
   }
   function bldgPick(cx, cy) {
     let p = null;
-    try { p = bldgPointAt(cx, cy); } catch (e) { p = null; }
+    try { p = bldgPointAt(cx, cy, 14000); } catch (e) { p = null; }   // a placard shows to 14 km: its building answers that far
     if (!p) return false;
+    // Round 167: a tap on the building of a dismissed game or show brings its bubble back, and is spent on that
+    if ((SCORES.games.some((g) => g.hidden) || CONCERTS.shown.some((s) => s.hidden)) && eventTapRestore(p[0], p[2])) return true;
+    if (p[4] > 3000) return false;   // the building card is for what the eye can make out, not the horizon
     const g = Math.max(groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground'), TERRAIN.water + 0.5);   // a river's sheet stands over its carved bed
     if (p[1] < g + 2) return false;   // the ground, a road, a lawn, the water: not a building
     // a bridge or an elevated deck, not a building (review, Sep 22): the two river crossings' corridors, or a mapped deck
@@ -15337,14 +15340,32 @@
   // over. Judged against REAL time, never the pinned model clock, as the concerts and the
   // skyline's game days are. A final's hour runs from the moment the feed turned it final, or,
   // for a page that arrived later, from the start time plus a typical length.
+  // ---- Round 167 (Mike: "I would like an X in the upper right corner to get rid of concert and sporting events. The pin
+  // should not come back unless someone taps on the building those events are happening in"): every score bubble and
+  // concert placard carries an X. A dismissed event is remembered by its own id on this device (localStorage, the id and
+  // the moment it can be forgotten, the end of its day), so the bubble, its tether and its ball stay down through every
+  // poll, re-render and reload; a new event at the same building is a new id and shows. A tap on the event's building
+  // (bldgPick's point within EVENT_TAP_R of the placard's spot, or anywhere on a stadium or the arena) brings it back.
+  const HIDDEN_EV_KEY = 'philly3d.hiddenEvents';
+  const hiddenEv = (() => {
+    try {
+      const o = JSON.parse(localStorage.getItem(HIDDEN_EV_KEY) || '{}'), now = Date.now(), out = {};
+      for (const k in o) if (typeof k === 'string' && k.length < 80 && o[k] > now) out[k] = o[k];
+      return out;
+    } catch (e) { return {}; }
+  })();
+  function hiddenEvSave() { try { localStorage.setItem(HIDDEN_EV_KEY, JSON.stringify(hiddenEv)); } catch (e) { /* private mode: this session only */ } }
+  const evHidden = (ids) => ids.length > 0 && ids.every((id) => hiddenEv[id] > Date.now());
+  const EVENT_TAP_R = 60;   // m from a placard's spot: its hall (the placards stand on the building's own centroid)
+  const EVENT_X = '<button type="button" class="lx" aria-label="Hide this until you tap its building">×</button>';
   const SCORES = { nextT: 0, busy: false, fails: 0, games: [], els: [], pins: [], ended: {}, seenLive: {} };
   const SCORE_LEN = { mlb: 3.0 * 3600000, nfl: 3.3 * 3600000, nhl: 2.6 * 3600000, nba: 2.4 * 3600000 };
   // h: where the bubble hangs; top: the roof the pin drops to
   // the arena is one record for both tenants: the stacks below test venue identity, and two
   // literals put a Flyers bubble, a 76ers bubble and a concert placard on one spot (Round 56)
-  const ARENA_VENUE = { x: -2327, z: 4892, h: 115, top: 40 };
+  const ARENA_VENUE = { x: -2327, z: 4892, h: 115, top: 40, r: 110 };   // r: a tap this near is on the building (Round 167)
   const SCORE_VENUES = {
-    mlb: { x: -1857, z: 4383, h: 135, top: 44 }, nfl: { x: -1946, z: 4954, h: 150, top: 57 },
+    mlb: { x: -1857, z: 4383, h: 135, top: 44, r: 170 }, nfl: { x: -1946, z: 4954, h: 150, top: 57, r: 170 },
     nhl: ARENA_VENUE, nba: ARENA_VENUE,
   };
   const SCORE_KEYS = ['mlb', 'nfl', 'nhl', 'nba'];
@@ -15404,7 +15425,7 @@
             }
             if (!show) continue;
             const at = us.homeAway === 'home' ? 'Home' : 'Away';
-            games.push({ k, live, pre, us: us.team.abbreviation, uscore: us.score, them: them && them.team ? them.team.abbreviation : '', tscore: them ? them.score : '', color: us.team.color, logo: us.team.logo || '', at, detail: detail ? detail + ', ' + at : at });
+            games.push({ id, start, k, live, pre, us: us.team.abbreviation, uscore: us.score, them: them && them.team ? them.team.abbreviation : '', tscore: them ? them.score : '', color: us.team.color, logo: us.team.logo || '', at, detail: detail ? detail + ', ' + at : at });
           }
         });
         SCORES.fails = ok ? 0 : SCORES.fails + 1;
@@ -15418,6 +15439,7 @@
     SCORES.els = []; SCORES.pins = [];
     SCORES.games = games;
     games.forEach((g, i) => {
+      g.hidden = !!g.id && evHidden(['s:' + g.id]);
       const el = document.createElement('div');
       el.className = 'lbl score' + (g.live ? '' : (g.pre ? ' pre' : ' final'));
       const ok = /^[0-9a-f]{6}$/i.test(g.color || '');
@@ -15425,13 +15447,14 @@
       // a game that has not started has no score to show: the matchup reads vs at home, at away
       const head = g.pre ? (g.us + (g.at === 'Home' ? ' vs ' : ' at ') + g.them)
         : (g.us + ' ' + g.uscore + ', ' + g.them + ' ' + g.tscore);
-      el.innerHTML = logo + '<span class="txt"><span class="live"></span>' + septaEsc(head) + '<br>' + septaEsc(g.detail) + '</span>';
+      el.innerHTML = logo + '<span class="txt"><span class="live"></span>' + septaEsc(head) + '<br>' + septaEsc(g.detail) + '</span>' + (g.id ? EVENT_X.replace('<button ', '<button data-kind="s" data-i="' + i + '" ') : '');
       if (ok) el.style.borderColor = '#' + g.color;
+      if (g.hidden) el.style.display = 'none';
       labelsRoot.appendChild(el);
       SCORES.els.push(el);
       const v = SCORE_VENUES[g.k];
       const gy = siteY(v.x, v.z, 'ground');
-      g.y = gy + v.h + (games.slice(0, i).some((o) => SCORE_VENUES[o.k] === v) ? 22 : 0);   // two at the arena stack
+      g.y = gy + v.h + (games.slice(0, i).some((o) => SCORE_VENUES[o.k] === v && !o.hidden) ? 22 : 0);   // two at the arena stack (a dismissed one leaves no gap)
       // the pin: a line from the bubble down to the roof, a small ball where it lands
       const col = ok ? '#' + g.color : 0xc89b5e;
       const lg = new THREE.BufferGeometry();
@@ -15440,6 +15463,7 @@
       pinSceneDepth(line); line.frustumCulled = false;
       const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: col, depthWrite: false }));
       ball.position.set(v.x, gy + v.top, v.z); pinSceneDepth(ball);
+      if (g.hidden) line.visible = ball.visible = false;
       groupCity.add(line); groupCity.add(ball);
       SCORES.pins.push(line, ball);
       g.top = gy + v.top; g.line = line; g.ball = ball;
@@ -15450,13 +15474,14 @@
   function scoresRender() {
     for (let i = 0; i < SCORES.games.length; i++) {
       const g = SCORES.games[i], el = SCORES.els[i], v = SCORE_VENUES[g.k];
+      if (g.hidden) continue;   // dismissed (Round 167): down until its building is tapped
       _scv.set(v.x, g.y, v.z);
       const blocked = pinBlocked(v.x, (g.top != null ? g.top : g.y) + 3, v.z);   // shown or hidden whole (Round 127), as the concerts
       if (g.line) g.line.visible = g.ball.visible = !blocked;
       const far = camera.position.distanceTo(_scv) > 14000 || blocked;
       _scv.project(camera);
-      if (far || _scv.z > 1 || _scv.z < -1 || _scv.x < -1.1 || _scv.x > 1.1 || _scv.y < -1.2 || _scv.y > 1.2) { el.style.opacity = '0'; continue; }
-      el.style.opacity = '1';
+      if (far || _scv.z > 1 || _scv.z < -1 || _scv.x < -1.1 || _scv.x > 1.1 || _scv.y < -1.2 || _scv.y > 1.2) { el.style.opacity = '0'; el.style.visibility = 'hidden'; continue; }   // hidden, not only clear: its X must not catch a tap
+      el.style.opacity = '1'; el.style.visibility = '';
       el.style.transform = 'translate(-50%,-100%) translate(' + ((_scv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_scv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
     }
   }
@@ -15570,7 +15595,7 @@
       if (sv) { sp.x = sv.x; sp.z = sv.z; }
       const gy = siteY(sp.x, sp.z, 'ground');
       let top = null, hang = CONCERT_HANG, stack = 0;
-      if (sv) { top = gy + sv.top; hang = sv.h - sv.top; stack = SCORES.games.filter((g) => SCORE_VENUES[g.k] === sv).length; }
+      if (sv) { top = gy + sv.top; hang = sv.h - sv.top; stack = SCORES.games.filter((g) => SCORE_VENUES[g.k] === sv && !g.hidden).length; }
       if (top === null) { const r = roofAt(sp.x, sp.z); top = r > gy + 3 ? r : gy + CONCERT_ROOF; }
       const y = top + hang + 22 * stack;
       const el = document.createElement('div');
@@ -15583,7 +15608,9 @@
         const link = /^https:\/\/[a-z0-9.-]*ticketmaster\.com\//i.test(e.url || '') ? '<a href="' + septaEsc(e.url) + '" target="_blank" rel="noopener">Tickets</a>' : '';
         return '<span class="row">' + septaEsc(plainText(e.artist || e.name) + ', ' + when) + link + '</span>';
       }).join('')).join('');
-      el.innerHTML = img + '<span class="txt">' + body + '<span class="src">Listed by Ticketmaster</span></span>';
+      const ids = all.map((e) => 'c:' + e.id), hidden = evHidden(ids);
+      el.innerHTML = img + '<span class="txt">' + body + '<span class="src">Listed by Ticketmaster</span></span>' + EVENT_X.replace('<button ', '<button data-kind="c" data-i="' + CONCERTS.shown.length + '" ');
+      if (hidden) el.style.display = 'none';
       labelsRoot.appendChild(el);
       CONCERTS.els.push(el);
       // the pin: a line from the placard down to the roof, a small ball where it lands
@@ -15593,15 +15620,17 @@
       pinSceneDepth(line); line.frustumCulled = false;
       const ball = new THREE.Mesh(new THREE.SphereGeometry(2.4, 10, 8), new THREE.MeshBasicMaterial({ color: 0xd9d1bd, depthWrite: false }));
       ball.position.set(sp.x, top, sp.z); pinSceneDepth(ball);
+      if (hidden) line.visible = ball.visible = false;
       groupCity.add(line); groupCity.add(ball);
       CONCERTS.pins.push(line, ball);
-      CONCERTS.shown.push({ e: all[0], rows: all, venue: sp.venues.map((v) => v.name).join(', '), x: sp.x, y, z: sp.z, el, top, line, ball });
+      CONCERTS.shown.push({ e: all[0], rows: all, ids, hidden, r: sv ? sv.r : EVENT_TAP_R, venue: sp.venues.map((v) => v.name).join(', '), x: sp.x, y, z: sp.z, el, top, line, ball });
     }
     concertStatus();
   }
   function concertsRender() {
     concertsRefresh();
     for (const s of CONCERTS.shown) {
+      if (s.hidden) continue;   // dismissed (Round 167)
       _ccv.set(s.x, s.y, s.z);
       // Round 127 (Mike: no concert pin through a building): the placard, its tether and its ball are
       // shown or hidden together, by whether the pin's landing point on the roof is in clear view
@@ -15621,6 +15650,46 @@
     const cc = document.getElementById('concertCount');
     if (cc) cc.textContent = off ? 'Offline' : n ? String(n) : '';
   }
+  // Round 167: the X on a bubble or a placard, and the tap on its building that brings it back
+  function eventHide(kind, i) {
+    const now = Date.now();
+    if (kind === 's') {
+      const g = SCORES.games[i];
+      if (!g || !g.id) return false;
+      hiddenEv['s:' + g.id] = Math.max(now + 3600000, (g.start || now) + (SCORE_LEN[g.k] || 4 * 3600000) + 3 * 3600000);   // past the bubble's own last hour
+    } else {
+      const s = CONCERTS.shown[i];
+      if (!s) return false;
+      for (const e of s.rows) hiddenEv['c:' + e.id] = Math.max(now + 3600000, (+e.until || 0) * 1000 + 3600000);
+    }
+    hiddenEvSave();
+    eventsRelayout();
+    notice('Hidden. Tap its building to bring it back.', 5000);
+    return true;
+  }
+  function eventsRelayout() {   // the games re-stack without a dismissed one, and the placards over them follow (scoresSet re-runs the concerts)
+    scoresSet(SCORES.games.slice());
+  }
+  function eventTapRestore(x, z) {
+    let hit = false;
+    for (const g of SCORES.games) {
+      const v = SCORE_VENUES[g.k];
+      if (g.hidden && v && Math.hypot(x - v.x, z - v.z) <= v.r) { delete hiddenEv['s:' + g.id]; hit = true; }
+    }
+    for (const s of CONCERTS.shown) {
+      if (s.hidden && Math.hypot(x - s.x, z - s.z) <= s.r) { for (const id of s.ids) delete hiddenEv[id]; hit = true; }
+    }
+    if (!hit) return false;
+    hiddenEvSave();
+    eventsRelayout();
+    return true;
+  }
+  labelsRoot.addEventListener('click', (e) => {
+    const b = e.target && e.target.closest ? e.target.closest('.lx') : null;
+    if (!b) return;
+    e.preventDefault(); e.stopPropagation();
+    eventHide(b.dataset.kind, +b.dataset.i);
+  });
   function syncConcertsBtn() { syncLayerBtn(btnConcerts, CONCERTS.on); }
   function toggleConcerts() {
     if (!septaCanFetch) return;
@@ -23063,7 +23132,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

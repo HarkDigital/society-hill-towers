@@ -7325,3 +7325,26 @@ Round 166 coda (Sep 28): build 3 (1.0 (3), npm run bump, the page byte for byte 
 Connect through app/ios/UploadOptions.plist: "Upload succeeded". Both internal groups have access to all builds, so it
 reaches Mike and Kaitlin when processing ends. philly3d.com stays on HEAD~ until a build 3 session reaches `settled`.
 
+## Round 167 — an X on the event markers, and the no-visible-change triangle cuts (Sep 28)
+
+Mike: "go ahead with the no-visible-change package. Also I would like an X in the upper right corner to get rid of concert
+and sporting events. The pin should not come back unless someone taps on the building those events are happening in."
+
+- The X: every score bubble and concert placard carries a small round mark on its upper right corner (`.lbl.score .lx`,
+  a 20 px mark with a finger-sized target around it; #labels stays click-through). `eventHide` records the event's own id
+  (`s:<espn id>` for a game, `c:<ticketmaster id>` for each show on a placard) in localStorage `philly3d.hiddenEvents`
+  with the moment it can be forgotten (the game's start plus its typical length plus three hours; the show's end plus an
+  hour), prunes expired ids on load, and re-lays the labels: a dismissed game leaves no gap in the arena's two-bubble
+  stack and the placards over the games re-stack; the bubble, its tether and its ball stay down through every poll,
+  re-render and reload, while a new game or show at the same building is a new id and shows. A notice under the bar says
+  "Hidden. Tap its building to bring it back." `bldgPick` now takes its point out to 14 km (a placard shows that far) and
+  asks `eventTapRestore` before anything else: a point within 60 m of a placard's spot (`EVENT_TAP_R`, the halls stand on
+  their own centroids) or within a score venue's own radius (170 m for the ballpark and the stadium, 110 m for the arena,
+  so the field and the stands count) brings its events back, and that tap opens no property card; a tap with nothing
+  hidden, or on another building, is the building card as before (still 3 km). A bubble off screen or behind a building
+  is now hidden with visibility as well as opacity, so its X cannot catch a tap while invisible. Checked in the pane:
+  the X is the element under its own centre; the ballpark's bubble hid and came back from a tap on the stands; hiding the
+  lower arena bubble dropped the upper one to 114 m; a TLA placard stayed hidden through a full reload and returned from a
+  tap on the hall; a later tap on the same hall opened its property card. The privacy policy's device-storage list names
+  the closed markers. tests/test_event_dismiss.py (the wiring, and eventHide / eventTapRestore under Node).
+

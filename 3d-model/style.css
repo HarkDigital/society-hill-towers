@@ -849,6 +849,11 @@ body.touchfly .pad { display: flex; }
 .lbl.score.pre .live { background: var(--bronze); animation: none; }   /* Round 90: today's game, not started: a still bronze dot, neither live red nor final gray */
 /* concert placards over the venues, from 9 am on a show day (Ticketmaster listings, Round 56) */
 .lbl.concert { border-color: var(--limestone-dim); }
+/* Round 167 (Mike: an X in the upper right corner to get rid of concert and sporting events): a small mark on the corner,
+   a finger-sized target around it; the label itself stays click-through except for its links and this */
+.lbl.score .lx { position: absolute; top: -9px; right: -9px; width: 20px; height: 20px; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: rgba(30, 36, 42, 0.96); color: var(--paper-dim); font: 600 14px/17px var(--body); text-align: center; cursor: pointer; pointer-events: auto; }
+.lbl.score .lx::after { content: ''; position: absolute; inset: -11px; }
+.lbl.score .lx:hover, .lbl.score .lx:focus-visible { color: var(--paper); border-color: var(--limestone); outline: none; }
 .lbl.concert .logo { width: 48px; height: 27px; object-fit: cover; border-radius: 1px; }
 .lbl.concert b { font-weight: 700; display: block; margin-bottom: 1px; }
 .lbl.concert .row + b { margin-top: 4px; }   /* the next venue's heading in a shared placard */
