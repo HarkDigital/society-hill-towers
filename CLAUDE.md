@@ -195,7 +195,9 @@ before any visual round rather than rediscovering it.
   `philly3d.prefs`), and the ? button beside the camera brings the how-to back without it; every card has two type sizes,
   the title and the rest (`-webkit-text-size-adjust: 100%`, or iOS inflates the long rows in landscape), a long card
   scrolls with a fade at its foot, and the app (`IN_APP`) never shows the Install row; the touch
-  primer that followed the first touch is gone.
+  primer that followed the first touch is gone. Every card on an anchor is placed by `vehinfoAt` (Round 165, the first run in the iOS
+  Simulator: the near me card lost its top in landscape), which keeps it inside the window and the safe area; the card
+  scrolls past the window's height. Never write `vehinfoEl.style.transform` anywhere else.
 - The page is an installable app (Round 53): `build.py` writes `manifest.webmanifest` beside it,
   `sw.js` is the network-only worker (registered over https only, caches nothing), both deploy to
   the site root, `3d-model/index.html` is the Pages redirect for `start_url` `./`, and `fitView()`

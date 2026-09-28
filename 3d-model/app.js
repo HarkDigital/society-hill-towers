@@ -11537,9 +11537,7 @@
     if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
     else {
       vehinfoEl.style.opacity = '1';
-      vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-        ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-        ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
     }
   }
   function groundPointAt(cx, cy) {
@@ -13817,6 +13815,28 @@
   const btnTransit = document.getElementById('btnTransit');
   const vehinfoEl = document.getElementById('vehinfo');
   const vehinfoBody = document.getElementById('vehinfoBody');
+  // Round 165: every card on an anchor is placed here. It stands on its point (bottom centre) but never past the window:
+  // in the iOS app, in landscape, the near me card over the "You are here" mark was taller than the room above the mark
+  // and lost its top under the screen's edge, so a card that would cross an edge slides back inside it, the safe area's
+  // notch and home bar included (measured once per size from a probe, because JS cannot read env()). A card taller than
+  // the window scrolls (max-height in style.css).
+  const VEH_EDGE = 8;
+  let vehInset = null;
+  window.addEventListener('resize', () => { vehInset = null; });
+  function vehinfoAt(px, py) {
+    if (!vehInset) {
+      const p = document.createElement('div');
+      p.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top,0px) env(safe-area-inset-right,0px) env(safe-area-inset-bottom,0px) env(safe-area-inset-left,0px)';
+      document.body.appendChild(p);
+      const cs = getComputedStyle(p);
+      vehInset = [cs.paddingTop, cs.paddingRight, cs.paddingBottom, cs.paddingLeft].map((v) => (parseFloat(v) || 0) + VEH_EDGE);
+      p.remove();
+    }
+    const w = vehinfoEl.offsetWidth, h = vehinfoEl.offsetHeight;
+    const x = Math.max(vehInset[3], Math.min(px - w / 2, window.innerWidth - vehInset[1] - w));
+    const y = Math.max(vehInset[0], Math.min(py - h, window.innerHeight - vehInset[2] - h));
+    vehinfoEl.style.transform = 'translate(' + x.toFixed(1) + 'px,' + y.toFixed(1) + 'px)';
+  }
   let pickedVeh = null;
   let pickedTrain = null;   // an Amtrak train's card follows its head car (Round 80)
   let pickedClosure = null;   // a street closure's card follows its block (Round 79)
@@ -14089,7 +14109,7 @@
     _ssv.set(pickedBldg.x, pickedBldg.y, pickedBldg.z).project(camera);
     if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
-    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
   }
 
   function isShortTap(e) { return Math.hypot(e.clientX - vpDownX, e.clientY - vpDownY) <= 8 && performance.now() - vpDownT <= 500; }
@@ -14774,9 +14794,7 @@
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
-        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+        vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
       }
     }
   }
@@ -16884,9 +16902,7 @@
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
-        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+        vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
       }
     }
   }
@@ -17458,9 +17474,7 @@
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
-        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+        vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
       }
     }
   }
@@ -17922,9 +17936,7 @@
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
-        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+        vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
       }
     }
   }
@@ -18251,9 +18263,7 @@
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
-        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+        vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
       }
     }
   }
@@ -18505,7 +18515,7 @@
       ferryCard(p);
       _ssv.set(x, p.y + 9, z).project(camera);
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
-      else { vehinfoEl.style.opacity = '1'; vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)'; }
+      else { vehinfoEl.style.opacity = '1'; vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight); }
     }
   }
   function trainCard(p) { if (p.ferry) ferryCard(p); else if (p.patco) patcoCard(p); else amtrakCard(p); }
@@ -18557,7 +18567,7 @@
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
-        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+        vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
       }
     }
   }
@@ -20121,9 +20131,7 @@
       if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
       else {
         vehinfoEl.style.opacity = '1';
-        vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-          ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-          ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+        vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
       }
     }
   }
@@ -20325,9 +20333,7 @@
     if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
     else {
       vehinfoEl.style.opacity = '1';
-      vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-        ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-        ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
     }
   }
 
@@ -20501,9 +20507,7 @@
     if (_ssv.z > 1 || _ssv.z < -1) vehinfoEl.style.opacity = '0';
     else {
       vehinfoEl.style.opacity = '1';
-      vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' +
-        ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' +
-        ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+      vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
     }
   }
 
@@ -20673,7 +20677,7 @@
     _tp.set(r.x, r.gy + (r.kind === 'bus' ? 3.2 : 5), r.z).project(camera);
     if (_tp.z > 1 || _tp.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
-    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_tp.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_tp.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    vehinfoAt((_tp.x * 0.5 + 0.5) * window.innerWidth, (-_tp.y * 0.5 + 0.5) * window.innerHeight);
   }
 
   // ---------------------------------------------------------------- libraries and rec centers (Round 134)
@@ -20766,7 +20770,7 @@
     _tp.set(pickedCivic.x, pickedCivic.gy + 3.8, pickedCivic.z).project(camera);
     if (_tp.z > 1 || _tp.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
-    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_tp.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_tp.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    vehinfoAt((_tp.x * 0.5 + 0.5) * window.innerWidth, (-_tp.y * 0.5 + 0.5) * window.innerHeight);
   }
 
   // ---------------------------------------------------------------- solar clock
@@ -22336,7 +22340,7 @@
     _ssv.set(pickedNear.x, pickedNear.y, pickedNear.z).project(camera);
     if (_ssv.z > 1 || _ssv.z < -1) { vehinfoEl.style.opacity = '0'; return; }
     vehinfoEl.style.opacity = '1';
-    vehinfoEl.style.transform = 'translate(-50%,-100%) translate(' + ((_ssv.x * 0.5 + 0.5) * window.innerWidth).toFixed(1) + 'px,' + ((-_ssv.y * 0.5 + 0.5) * window.innerHeight).toFixed(1) + 'px)';
+    vehinfoAt((_ssv.x * 0.5 + 0.5) * window.innerWidth, (-_ssv.y * 0.5 + 0.5) * window.innerHeight);
   }
   // Round 163 (TestFlight): inside the app the fix comes from the native plugin (@capacitor/geolocation, injected by the
   // bridge as Capacitor.Plugins.Geolocation, no bundler needed), so iOS asks once, in its own prompt with the app's usage

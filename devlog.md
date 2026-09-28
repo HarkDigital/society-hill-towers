@@ -7211,3 +7211,28 @@ bundle holds PrivacyInfo.xcprivacy, the landscape-only and export-compliance Inf
 build resolves the same Capacitor and ion-ios-geolocation. No simulator runtime is installed yet, and no signing identity:
 archiving for TestFlight waits on the Apple ID and team in Xcode.
 
+
+## Round 165 — the first run in the iOS Simulator (Sep 28)
+
+Mike: "install the simulator runtime and run it. I am logged into xcode with my apple ID. I do not see the bundle when
+trying to create in app store connect."
+
+- The iOS 27.0 Simulator runtime (8.05 GB, `xcodebuild -downloadPlatform iOS`) is installed; the app built for an iPhone
+  17 simulator (Debug) and ran. iOS turns the landscape-only app on its side on a portrait device, as it should. The
+  build loads to Ready, the first visit opens the layer picker ("Choose what you see") and then the how-to cards in one
+  type scale, and the Locate button raises exactly one prompt, iOS's own, with the Info.plist's words; with a simulated fix
+  at 39.9496, -75.1503 and Allow While Using App it glides in, marks "You are here" and opens the near me card.
+- Two faults showed, both fixed. The near me card is taller than the room above the mark in the middle of a landscape
+  phone (402 points) and lost its top under the screen's edge: the fifteen places that positioned the card
+  (`vehinfoEl.style.transform = 'translate(-50%,-100%) ...'`) now call one `vehinfoAt(px, py)`, which keeps the card
+  standing on its point but slides it back inside the window and the safe area (the notch and the home bar, read once per
+  size from a probe because JS cannot read env()), the top winning over the bottom; `#vehinfo` has a max-height of the
+  window and scrolls past it. The web on a phone has the same landscape height, so the site gets it too. And the veil's
+  Explore arrow (U+2197 in `.enter::after`) drew as a blue emoji tile on iOS: it carries U+FE0E now.
+  tests/test_card_fit.py.
+- After a reinstall the gate reads "ran out of memory last time": simctl's install kills the app in the foreground, with
+  the Round 158 crumb still set. A user's force quit or an App Store update backgrounds the app first, which clears it.
+- The bundle ID: the project had no team (DEVELOPMENT_TEAM empty), so com.philly3d.app was never registered as an App ID,
+  and App Store Connect's New App list shows only App IDs registered on the team. Xcode's account holds two teams,
+  QuincySoft LLC (a paid company team) and a free Personal Team; choosing the paid team under Signing & Capabilities
+  registers the ID, or it can be registered at developer.apple.com under Identifiers.

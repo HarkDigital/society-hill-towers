@@ -685,6 +685,11 @@ body.touchfly .pad { display: flex; }
   pointer-events: auto;
   transform: translate(-50%, -100%);
   will-change: transform;
+  /* Round 165: never taller than the window (vehinfoAt keeps it inside the edges); a longer card scrolls */
+  max-height: calc(100vh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  max-height: calc(100dvh - 16px - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 #vehinfo[hidden] { display: none; }
 #vehinfo .vroute {
@@ -1219,7 +1224,7 @@ button { -webkit-tap-highlight-color: transparent; }
 .welcomefacts span { display: flex; align-items: center; gap: 7px; }
 .welcomefacts span::before { content: ''; width: 4px; height: 4px; border-radius: 50%; background: var(--bronze); }
 #veil .enter { border-radius: 10px; padding: 16px 29px; min-width: 206px; font-size: 12px; font-weight: 600; letter-spacing: 0.025em; text-transform: none; margin-top: 30px; box-shadow: 0 3px 18px rgba(0,0,0,0.18); }
-#veil .enter:not(:disabled)::after { content: '\2197'; margin-left: 20px; font-size: 15px; }
+#veil .enter:not(:disabled)::after { content: '\2197\FE0E';   /* U+FE0E: text presentation, or iOS draws the arrow as a blue emoji tile */ margin-left: 20px; font-size: 15px; }
 #veil .enter:disabled { opacity: 0.5; cursor: progress; }
 #loadProgress { display: block; appearance: none; -webkit-appearance: none; border: 0; border-radius: 8px; overflow: hidden; width: 206px; height: 3px; margin: 24px auto 0; background: rgba(239,233,220,0.1); accent-color: var(--bronze); }
 #loadProgress::-webkit-progress-bar { background: rgba(239,233,220,0.1); }
