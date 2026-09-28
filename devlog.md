@@ -7258,3 +7258,12 @@ checked first (1024 by 1024, no alpha, the City Hall mark), then the same archiv
 destination upload through the Xcode account: "Upload succeeded", processing on Apple's side. The options are
 app/ios/UploadOptions.plist and app/README.md step 7 has the two commands. Build 1 is spent: `npm run bump` before the next.
 
+Round 165 fourth coda (Sep 28), ITMS-90683 on build 1: App Store Connect accepted build 1 but mailed "Missing purpose string
+in Info.plist": NSLocationAlwaysAndWhenInUseUsageDescription. Apple's scan found requestAlwaysAuthorization in
+ion-ios-geolocation (IONGLOCAuthorisationRequestType's .always branch); @capacitor/geolocation only ever requests
+.whenInUse, so the prompt stays When In Use and nothing runs in the background, but the key is required once the symbol is
+linked. Info.plist carries it now ("only while you are using the app ... never uses your location in the background");
+tests/test_app_ios.py, which had refused the key, now requires it and guards the real invariant (the plugin asks
+.whenInUse and nothing else, no location background mode). npm run bump made it build 2 (Android versionCode 2 with it),
+archived and uploaded the same way: "Upload succeeded".
+

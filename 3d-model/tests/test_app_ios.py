@@ -35,7 +35,16 @@ class AppIos(unittest.TestCase):
         self.assertIs(self.info['ITSAppUsesNonExemptEncryption'], False)
         self.assertEqual(self.info['UIRequiredDeviceCapabilities'], ['arm64'])
         self.assertIn('locate button', self.info['NSLocationWhenInUseUsageDescription'])
-        self.assertNotIn('NSLocationAlwaysAndWhenInUseUsageDescription', self.info)   # when in use only
+        # ITMS-90683 (build 1, Sep 28): ion-ios-geolocation compiles in a requestAlwaysAuthorization branch, so Apple's scan
+        # wants the Always string too, though nothing calls it. The app still asks when in use only: the plugin requests
+        # .whenInUse and nothing else, and there is no background location mode.
+        self.assertIn('never uses your location in the background', self.info['NSLocationAlwaysAndWhenInUseUsageDescription'])
+        self.assertNotIn('location', self.info.get('UIBackgroundModes', []))
+        plug = APP / 'node_modules' / '@capacitor' / 'geolocation' / 'ios' / 'Sources' / 'GeolocationPlugin' / 'GeolocationPlugin.swift'
+        if plug.exists():
+            src = plug.read_text()
+            self.assertIn('requestLocationAuthorisation(type: .whenInUse)', src)
+            self.assertNotIn('type: .always', src)
 
     def test_the_privacy_manifest(self):
         pm = plistlib.loads((IOS / 'App' / 'PrivacyInfo.xcprivacy').read_bytes())

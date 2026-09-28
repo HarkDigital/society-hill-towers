@@ -8,6 +8,8 @@
 	<string>en</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Philly3D uses your location only when you tap the locate button, to fly the view to where you are in Philadelphia. It is never stored or sent anywhere.</string>
+	<key>NSLocationAlwaysAndWhenInUseUsageDescription</key>
+	<string>Philly3D uses your location only while you are using the app, when you tap the locate button, to fly the view to where you are in Philadelphia. It never uses your location in the background, and it is never stored or sent anywhere.</string>
 	<key>CFBundleDisplayName</key>
         <string>Philly3D</string>
 	<key>CFBundleExecutable</key>
