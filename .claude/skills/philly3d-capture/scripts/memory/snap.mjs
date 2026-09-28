@@ -3,9 +3,10 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 const [url, label, portArg, pat] = process.argv.slice(2);
 const port = +portArg || 9360;
-const DIR = path.dirname(new URL(import.meta.url).pathname);
+const DIR = path.dirname(fileURLToPath(import.meta.url));   // decoded: the checkout's path has spaces
 const udd = mkdtempSync(path.join(DIR, 'snapprof-' + label + '-'));
 const chrome = spawn('/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', ['--headless=new', '--remote-debugging-port=' + port, '--user-data-dir=' + udd,
   '--use-angle=swiftshader', '--enable-unsafe-swiftshader', '--no-first-run', '--window-size=740,360', 'about:blank'], { stdio: 'ignore' });
