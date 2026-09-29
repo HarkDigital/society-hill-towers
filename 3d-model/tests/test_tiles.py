@@ -296,7 +296,7 @@ console.log(JSON.stringify({ tiles: ts.length, nan: nan.length, tris: ts.reduce(
         self.assertNotIn('rayTargets.push(mesh);\n    }\n    if (collarParts.length)', s)
         # kept whole, as before
         self.assertIn('stMesh = new THREE.Mesh(geo, stMat);\n    stMesh.renderOrder = 5;', s)
-        self.assertIn('freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }\n  }\n  step(\'Raising the rest of Philadelphia\'', s)
+        self.assertIn('freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins\' capture\n  }\n  step(\'Raising the rest of Philadelphia\'', s)
         frame = cut(s, '  function frame(now, once) {', '\n  setHint();')
         tail = frame[frame.index('if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);'):]
         self.assertIn('if (pendingUpload.length) { for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0; }', tail)

@@ -2124,6 +2124,7 @@
     return y;
   }
   const _dcOut = [];
+  const DRAPE_FB = { n: 0 };   // Round 168: pieces drapeConvex laid at the caller's grade instead of on a registered ground (a cut cell, past every grid); the road loops read it for rc.raised
   function drapeConvex(ring, yOff, emit, floorY = null, fallbackY = floorY) {
     const t0 = performance.now(), out = _dcOut; out.length = 0;
     const fallback = fallbackY && ((x,z) => Math.max(fallbackY(x,z), roadGroundEdgeY(x,z) + yOff));
@@ -2172,7 +2173,7 @@
             if(!cl || Math.abs(signedArea(cl))<1e-6)continue;
             if(G.skip && G.skip[j*nx+i]){
               if(!fallbackY)return false;
-              fan(cl,fallback);continue;
+              DRAPE_FB.n++;fan(cl,fallback);continue;
             }
             for(const side of [0,1]){
               const r=clipDiag(cl,xa,za,cw,ch,side ? -1 : 1);
@@ -2189,6 +2190,7 @@
       remaining=next;
     }
     if(remaining.length && !fallbackY)return false;
+    if(remaining.length)DRAPE_FB.n++;
     for(const part of remaining)fan(part,fallback);
     for(let k=0;k<out.length;k+=3)emit(out[k],out[k+1],out[k+2]);
     ROAD_STATS.tris+=out.length/9;ROAD_STATS.ms+=performance.now()-t0;
@@ -2345,6 +2347,23 @@
     }
   }
 
+  // Round 168 (the pins' capture, occFlatTiles): does a street segment the two road loops just laid (the triangles of rc.idx
+  // from r0 on: its strip, a bank's skirts, its fans) stand up off the drawn ground? A strip laid on the ground (onMesh)
+  // sits its lift over it, at most OCC_FLAT_TOL; a bridge deck, a quay-wall skirt, a piece drapeConvex laid at the caller's
+  // grade (a cut cell, past every grid: DRAPE_FB) and a flat fan do stand up. Any other strip off the mesh (a bank road on
+  // the DEM, a low street on the made land by the airport and the Navy Yard) was still cut to the ground's cells with its
+  // height the higher of the ground's plus its lift and its own grade, so each of its triangles lies over one ground
+  // triangle and its vertices say how far it stands over the ground everywhere: raised only past OCC_FLAT_TOL
+  const OCC_FLAT_TOL = 0.75;   // the highest a street on the ground stands over it: LAYER.road plus a motorway's class lift and its jitter, 0.67
+  function roadRaised(rc, r0, onMesh, deck, skirt, fb0, ff0) {
+    if (deck || skirt || DRAPE_FB.n !== fb0 || ROAD_STATS.flatFans !== ff0) return true;
+    if (onMesh) return false;
+    for (let k = r0; k < rc.idx.length; k++) {
+      const v = rc.idx[k] * 3, g = groundMeshY(rc.pos[v], rc.pos[v + 2]);
+      if (g === null || rc.pos[v + 1] - g > OCC_FLAT_TOL) return true;
+    }
+    return false;
+  }
   // Keep only road triangles beneath baked label footprints while the city builds.
   // Sampling the DEM alone misses the lifted, mitered and bank-supported pavement.
   const STREET_TEXT_HEIGHT = [7, 5.6, 4.4], STREET_TEXT_CLEARANCE = 0.18;
@@ -4810,11 +4829,12 @@
     // edge (the strip along the south edge, then the east, Round 55 codas)
     const water = new THREE.Mesh(flat([[RING_W.x0, RING_W.z0], [RING_W.x1, RING_W.z0], [RING_W.x1, RING_W.z1], [RING_W.x0, RING_W.z1]], TERRAIN.water), waterMat);
     water.receiveShadow = true;
+    water.userData.occFlat = true;   // Round 168: a flat sheet under every pin (see occFlatTiles)
     groupCity.add(water);
     const slipParts = [];
     const rectPoly = (r) => [[r[0], r[2]], [r[1], r[2]], [r[1], r[3]], [r[0], r[3]]];
     for (const sl of slips) slipParts.push({ geom: flatPoly(rectPoly(sl), null, TERRAIN.water + 0.05, true), color: new THREE.Color(COLORS.water) });
-    if (slipParts.length) groupCity.add(new THREE.Mesh(mergeColored(slipParts), waterMat));
+    if (slipParts.length) groupCity.add(occFlatTiles([new THREE.Mesh(mergeColored(slipParts), waterMat)])[0]);
     // OSM-mapped water bodies (basins, fountains)
     const wparts = [];
     for (const a of D.areas || []) {
@@ -8507,6 +8527,52 @@
     s.meshes++; s.tiles += tiles.length; s.vIn += vIn; s.vOut += vOut;
     return tiles;
   }
+  // ---- the flats the pins' capture passes over (Round 168, the phones' GPU). The pins' depth image (occRender) drew the
+  // whole city every 10th frame while the eye moved, the streets and the lots with it. A sheet laid on the drawn ground
+  // (a street, a lot or yard, a far park or apron) or a flat water sheet hides nothing the ground under it does not: it
+  // stands centimetres over that ground and a pin stands metres over its own. So occRender, drawing for the pins, skips
+  // what carries userData.occFlat: the far ring's and the towns' streets and areas, the outer districts' streets, the lots
+  // and yards and the water sheets (the Delaware's, the slips, the far and outer ponds). Never the ground itself, and
+  // never what stands up off it: the few street triangles that do (a bridge deck over a river, a bank road over the carved
+  // slope and its quay-wall skirt, a piece at its own grade; roadRaised, noted in rc.raised) are copied into a mesh of
+  // their own that only the pins' capture draws (OCC_ONLY: positions and an index, 34,000 triangles, about 1 MB), so the
+  // image holds every one of them where it did; and the overpass decks, the bridges, the buildings, the landmarks, the
+  // trees, the rail structures, the core's streets (its cross streets bridge the I-95 trench), parks and piers, and the
+  // outer districts' areas (their piers stand 1.2 m up) are drawn as they were. The building tap's one-pixel render
+  // (BPICK) draws everything as it did, and from an eye low over the ground the pins' capture does too (occFlatsOff).
+  // Checked on the phone path by capturing both ways at the same eye, every static pin layer on: 13,475 pins at 288 eyes
+  // over the whole city and 23,154 at 150 places from 2.5 to 45 m over the ground (hills, banks, piers, lots, the
+  // airport), every answer the same, 3 by 3 and 5 by 5. The capture draws 1.0 to 1.5 M triangles fewer (14 to 17%), 46
+  // to 63 calls fewer and 0.21 to 0.29 ms less of an M2's GPU at the entry view, over Center City, on Spruce Street and
+  // 150 m up, three times a second while the eye moves
+  const OCC_ONLY = [];
+  function occFlatTiles(tiles) {   // flag what addTiles returned (or a lone mesh) as flat for the pins' capture
+    for (const t of tiles) t.userData.occFlat = true;
+    return tiles;
+  }
+  // the raised triangles of a road loop's rc (its rc.raised index ranges) as a capture-only mesh: its positions are the
+  // street mesh's own (the same Float32 rounding of rc.pos), so the capture draws them to the same depth. Hidden but in
+  // occRender for the pins; it uploads (and frees its arrays) in the first capture, the first frame a pin stands
+  function occRaisedMesh(rc) {
+    const R = rc.raised, map = new Map(), P = [], I = [];
+    for (let r = 0; r + 1 < R.length; r += 2) for (let k = R[r]; k < R[r + 1]; k++) {
+      const v = rc.idx[k];
+      let j = map.get(v);
+      if (j === undefined) { j = P.length / 3; map.set(v, j); P.push(rc.pos[v * 3], rc.pos[v * 3 + 1], rc.pos[v * 3 + 2]); }
+      I.push(j);
+    }
+    if (!I.length) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+    g.setIndex(new THREE.BufferAttribute(P.length / 3 <= 65535 ? new Uint16Array(I) : new Uint32Array(I), 1));
+    freeOnUpload(g);
+    const m = new THREE.Mesh(g, OCC_ONLY_MAT);
+    m.visible = false; m.frustumCulled = false; m.matrixAutoUpdate = false; m.userData.occOnly = true; m.userData.noPack = true;
+    groupCity.add(m); OCC_ONLY.push(m);
+    PERF.occRaised = (PERF.occRaised || 0) + I.length / 3;   // __dbg.PERF.occRaised
+    return m;
+  }
+  const OCC_ONLY_MAT = new THREE.MeshBasicMaterial();   // never compiled: the capture draws through its override material
   // Wide roads and parks extend past their terrain tier. Build their surfaces only
   // after the far heightfields exist, while registering road ownership immediately.
   const wideSurfaceTasks = [];
@@ -9576,7 +9642,7 @@
     // outer streets. Continuity work: endpoint-snapped heights (no steps at OSM way
     // splits), joint fans at bends, real bridge decks over the rivers, aligned-only
     // duplicate dropping, and a lift blend at the core seam.
-    const rc = { pos: [], col: [], idx: [], n: 0, lane: new Float32Array(1 << 20), label: 'wide' };
+    const rc = { pos: [], col: [], idx: [], n: 0, lane: new Float32Array(1 << 20), label: 'wide', raised: [] };   // raised: index ranges off the drawn ground (Round 168, occFlatTiles)
     const roadCol = ROAD_COLORS;
     // aLane (u, s, hw, cls) for vertex v, in a growable Float32Array (a boxed array here
     // would stage the whole tier at ~92 B a vertex, the phone killer, see IdxBuf)
@@ -9651,7 +9717,9 @@
           const ya = ySnap(yMapW, a[0], a[1], ya0 + jr), yb = ySnap(yMapW, q[0], q[1], yb0 + jr);
           // on registered land, clear of the bank blend, the strip is laid on the drawn ground (Round 88)
           const onMesh = !deck && meshA !== null && meshB !== null && bankD >= BANK_BAND + BANK_BLEND;
+          const r0 = rc.idx.length, fb0 = DRAPE_FB.n, ff0 = ROAD_STATS.flatFans;   // Round 168: this segment's triangles from here (its strip, a bank's skirts, its fans)
           roadStrip(rc, rcLane, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls, edges[j], edges[j + 1]);
+          let skirt = false;   // Round 168: a quay wall stands up off the ground (rc.raised)
           if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
             for (const sg of [1, -1]) {
               const ex0 = a[0] + edges[j][0] * hw * sg, ez0 = a[1] + edges[j][1] * hw * sg, ex1 = q[0] + edges[j + 1][0] * hw * sg, ez1 = q[1] + edges[j + 1][1] * hw * sg;
@@ -9664,11 +9732,12 @@
               for (let m = 0; m < 4; m++) rc.col.push(c.r * 175, c.g * 175, c.b * 175);
               rcLane(s0, hw, sA, hw, 2); rcLane(s0 + 1, hw, sAcc, hw, 2); rcLane(s0 + 2, hw, sAcc, hw, 2); rcLane(s0 + 3, hw, sA, hw, 2);
               rc.n += 4;
-              rc.idx.push(s0, s0 + 1, s0 + 2, s0, s0 + 2, s0 + 3);
+              rc.idx.push(s0, s0 + 1, s0 + 2, s0, s0 + 2, s0 + 3); skirt = true;
             }
           }
           if (j === 0) rcFan(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
           if (j === pts.length - 2) rcFan(q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sAcc, dx, dz, cls, jr, onMesh);
+          if (roadRaised(rc, r0, onMesh, deck, skirt, fb0, ff0)) rc.raised.push(r0, rc.idx.length);   // Round 168: see roadRaised
         }
       }
       wideRoadRecs.length=0;
@@ -10311,8 +10380,9 @@
         g.computeBoundingSphere();
         freeOnUpload(g);
         if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
-        rc.pos = rc.col = rc.idx = rc.lane = null;
-        addTiles(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })), 'wide roads');   // Round 167
+        occRaisedMesh(rc);   // Round 168: the pins' capture draws the raised triangles alone (occFlatTiles)
+        rc.pos = rc.col = rc.idx = rc.lane = rc.raised = null;
+        occFlatTiles(addTiles(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })), 'wide roads'));   // Round 167
       }
     });
     // the sports complex is mostly asphalt: the surface lots from OSM (fetch_parking.py),
@@ -10414,7 +10484,7 @@
       drapeLog('the outer districts');
       if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
     });
-    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
+    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
     // widen the world: camera clamps and fog
     bounds.minX = -3700; bounds.maxX = 2300; bounds.minZ = -4480; bounds.maxZ = 6400;
     fogBase.near = 5000; fogBase.far = 20000;
@@ -11024,7 +11094,7 @@
     // bend fans, bridge decks over the river corridors
     // the far ring skips aLane on phones (its lines are under a pixel at phone distances,
     // and the attribute is 16 B a vertex); the shader's guard makes the missing attribute safe
-    const rc = { pos: [], col: [], idx: [], n: 0, lane: isTouch ? null : new Float32Array(1 << 21), label };
+    const rc = { pos: [], col: [], idx: [], n: 0, lane: isTouch ? null : new Float32Array(1 << 21), label, raised: [] };   // raised: see the wide set's
     const roadCol = ROAD_COLORS;
     const rcLane = (v, u, s, hw, cls) => {   // see the wide tier's rcLane
       if (!rc.lane) return;
@@ -11109,7 +11179,9 @@
         } else { ya0 = Math.max(ya0, bankFloor(a[0], a[1])); yb0 = Math.max(yb0, bankFloor(q[0], q[1])); }   // the bank floor (Round 85)
         const ya = ySnapF(a[0], a[1], ya0 + jr), yb = ySnapF(q[0], q[1], yb0 + jr);
         const onMesh = !deck && meshA !== null && meshB !== null && bankD >= BANK_BAND + BANK_BLEND;   // on the drawn ground (Round 88)
+        const r0 = rc.idx.length, fb0 = DRAPE_FB.n, ff0 = ROAD_STATS.flatFans;   // Round 168: this segment's triangles from here (see the wide set's)
         roadStrip(rc, rcLane, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls, edges[j], edges[j + 1]);
+        let skirt = false;   // Round 168: see the wide set's
         if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
           for (const sg of [1, -1]) {
             const ex0 = a[0] + edges[j][0] * hw * sg, ez0 = a[1] + edges[j][1] * hw * sg, ex1 = q[0] + edges[j + 1][0] * hw * sg, ez1 = q[1] + edges[j + 1][1] * hw * sg;
@@ -11122,7 +11194,7 @@
             for (let m = 0; m < 4; m++) rc.col.push(c.r * 175, c.g * 175, c.b * 175);
             rcLane(s0, hw, sA, hw, 2); rcLane(s0 + 1, hw, sAcc, hw, 2); rcLane(s0 + 2, hw, sAcc, hw, 2); rcLane(s0 + 3, hw, sA, hw, 2);
             rc.n += 4;
-            rc.idx.push(s0, s0 + 1, s0 + 2, s0, s0 + 2, s0 + 3);
+            rc.idx.push(s0, s0 + 1, s0 + 2, s0, s0 + 2, s0 + 3); skirt = true;
           }
         }
         if (j === 0 && endShared(a)) {
@@ -11134,6 +11206,7 @@
           rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
         }
         if (j === pts.length - 2 && endShared(q)) rcFanF(q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
+        if (roadRaised(rc, r0, onMesh, deck, skirt, fb0, ff0)) rc.raised.push(r0, rc.idx.length);   // Round 168: see roadRaised
       }
       if ((ri & 2047) === 2047) await yieldNow();
       }
@@ -11210,12 +11283,13 @@
       g.computeBoundingSphere();
       freeOnUpload(g);
       if (/[?&]dev\b/.test(location.search)) console.info('roads: ' + rc.label + ' rc.n = ' + rc.n + (rc.lane ? ' with aLane' : ' without aLane'));
-      rc.pos = rc.col = rc.idx = rc.lane = null;
-      addTiles(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })), 'ring roads');   // Round 167: tiled, culled per tile
+      occRaisedMesh(rc);   // Round 168: the pins' capture draws the raised triangles alone (occFlatTiles)
+      rc.pos = rc.col = rc.idx = rc.lane = rc.raised = null;
+      occFlatTiles(addTiles(new THREE.Mesh(g, roadMat({ vertexColors: true, roughness: 0.95, side: THREE.DoubleSide })), 'ring roads'));   // Round 167: tiled, culled per tile
     }
     const areaParts = ringAreaParts(R);
-    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); addTiles(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 })), 'ring areas'); }
-    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, riverMat)); }
+    if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); occFlatTiles(addTiles(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 })), 'ring areas')); }   // Round 168: flat for the pins' capture
+    if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
   }
   step('Raising the rest of Philadelphia', async () => {
     if (typeof CITY_B64 === 'undefined' || !CITY_B64) return;
@@ -11574,7 +11648,7 @@
       freeOnUpload(g);
       const m = new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }));
       m.receiveShadow = true;
-      addTiles(m, 'lots');   // Round 167
+      occFlatTiles(addTiles(m, 'lots'));   // Round 167; Round 168: flat for the pins' capture
     }
     PERF.paved = counts;   // read through ?dev's __dbg.PERF.paved
     drapeLog('the lots and yards');
@@ -19675,7 +19749,7 @@
             while (mid < n2 - 1 && c2[mid] < len / 2) mid++;
             trafficRuns.push({ xs: Float32Array.from(r.xs.slice(j0, j1 + 1)), zs: Float32Array.from(r.zs.slice(j0, j1 + 1)),
               ys: Float32Array.from(r.ys.slice(j0, j1 + 1)), cum: c2, len, cls, oneway, aadt,
-              mx: r.xs[j0 + mid], mz: r.zs[j0 + mid], want: 0, cars: [] });
+              mx: r.xs[j0 + mid], mz: r.zs[j0 + mid], want: 0, cars: [], busy: false });   // busy: on trafficLeaders' walk (Round 168)
           }
           j0 = j1;
         }
@@ -19744,7 +19818,7 @@
     const jit=.87+Math.random()*.24,car={...best,id:trafficNextId++,run:r,dir,lane,off,kind,jit,
       v:TRAFFIC_SPEED[r.cls]/3.6*jit,col:CAR_PAL[Math.floor(Math.random()*CAR_PAL.length)],born:now,die:0,fr:0,alpha:(allowSeen||bestRank===2)?1:0,
       px:best.x,py:best.y,pz:best.z,heading:best.yaw,leader:null};
-    r.cars.push(car);trafficCars++;CARC.born++;if(bestRank===0)CARC.bornSeen++;return car;
+    r.cars.push(car);trafficHold(r);trafficCars++;CARC.born++;if(bestRank===0)CARC.bornSeen++;return car;
   }
   function carEntryGap(r,end,lane,car) {
     let gap=Infinity;const dir=end?-1:1;
@@ -19771,7 +19845,7 @@
     car.dir=entry?-1:1;car.lane=lane;car.off=carOffset(next,lane);
     const travel=Math.min(overshoot,next.len,Math.max(0,gap));car.s=entry?next.len-travel:travel;
     car.run=next;if(car.route?.length)car.route.shift();if(car.destination===next)car.destination=null;
-    next.cars.push(car);CARC.transfers++;return next;
+    next.cars.push(car);trafficHold(next);CARC.transfers++;return next;
   }
   function carFeed(destination,now) {
     // Walk upstream to the nearest offscreen entry. Cars drive the intervening
@@ -19848,14 +19922,39 @@
   function syncTrafficBtn(){syncLayerBtn(btnTraffic,TRAFFIC.on);}
   function toggleTraffic(){TRAFFIC.on=!TRAFFIC.on;syncTrafficBtn();if(TRAFFIC.on)trafficNextRecon=0;}
   if(btnTraffic)btnTraffic.addEventListener('click',toggleTraffic);syncTrafficBtn();
+  // Round 168 (the phones' JS): each frame put every run's cars in order (direction, lane, distance along) and named each
+  // car's leader, and it did so by calling sort on all 46,131 runs, nearly all of them empty (a few hundred cars ride a
+  // few hundred runs): 0.6 to 0.9 ms of the 1.1 to 1.8 ms of JS traffic took a frame on an M2 on the phone path.
+  // Now it walks only the runs that have held a car (trafficBusy: a run joins when a car is pushed on, carSpawn and
+  // carTransfer, the only two places one is, and leaves when this walk finds it empty); a lone car has no leader; two or
+  // more are put in order by insertion, a single pass over the order the last frame left (a car moves centimetres a frame
+  // and a new one is pushed on the end). Insertion is stable, as Array.prototype.sort is, and the runs are independent
+  // of each other, so the order and every leader are exactly the full sort's (tests/test_traffic_order.py runs it against
+  // it under Node). trafficLeaders 0.7 to 0.9 ms a frame to 0.01 to 0.03, updateTraffic 1.4 to 1.8 to 0.6 to 0.8 (600 frames at
+  // each of three views, twice, 5 pm traffic, performance.now round both)
+  const trafficBusy = [];
+  function trafficHold(r){if(!r.busy){r.busy=true;trafficBusy.push(r);}}
+  function trafficOrder(cars) {
+    for(let i=1;i<cars.length;i++) {
+      const c=cars[i];let j=i-1;
+      while(j>=0&&(cars[j].dir-c.dir||cars[j].lane-c.lane||cars[j].s-c.s)>0){cars[j+1]=cars[j];j--;}
+      cars[j+1]=c;
+    }
+  }
   function trafficLeaders() {
-    for(const r of trafficRuns) {
-      r.cars.sort((a,b)=>a.dir-b.dir||a.lane-b.lane||a.s-b.s);
-      for(let i=0;i<r.cars.length;i++) {
-        const c=r.cars[i],lead=r.cars[i+(c.dir>0?1:-1)];
+    let k=0;
+    for(let q=0;q<trafficBusy.length;q++) {
+      const r=trafficBusy[q],cars=r.cars,n=cars.length;
+      if(!n){r.busy=false;continue;}   // empty: off the walk until a car is pushed on again
+      trafficBusy[k++]=r;
+      if(n<2){cars[0].leader=null;continue;}
+      trafficOrder(cars);
+      for(let i=0;i<n;i++) {
+        const c=cars[i],lead=cars[i+(c.dir>0?1:-1)];
         c.leader=lead&&lead.dir===c.dir&&lead.lane===c.lane?lead:null;
       }
     }
+    trafficBusy.length=k;
   }
   function trafficAdvance(now,dt) {
     trafficLeaders();trafficFrame++;
@@ -20154,6 +20253,19 @@
         'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);');   // smaller cores (Round 54)
       shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
         '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
+      // Round 168 (the phones' GPU): the glow's log depth goes in from the vertex, not written by each fragment. A point's
+      // varyings are one value over the whole sprite, so the fragment path's gl_FragDepth, log2(1 + w) * FC / 2 from the
+      // vertex's own w, is the very depth the vertex path hands the rasterizer (z = (log2(1 + w) * FC - 1) * w): the same
+      // number, to a float's rounding. But a shader that writes gl_FragDepth sends every fragment through itself before
+      // the depth test, the lamps behind the buildings with the rest; without it the GPU rejects those first. The standard
+      // depth still clips a point nearer than the near plane or past the far one, as it did. Measured on an M2 at 1.25 at
+      // night, alternating blocks: 0.2 to 0.8 ms a frame by the fastest frame, 0.3 to 1.2 by the five fastest, at the entry
+      // view, over Center City, on Spruce Street and 150 m up (the whole glow costs about 2); captured both ways, at most 6
+      // isolated pixels of 416,250 differ. A cut of the points into frustum-culled tiles was tried first and saved 0.02 ms
+      // (a lamp off the screen costs next to nothing; the cost is the fragments) for 52 to 113 more draw calls: not kept
+      shader.vertexShader = '#undef USE_LOGDEPTHBUF_EXT\n' + shader.vertexShader.replace('#include <logdepthbuf_vertex>',
+        'float stdZ = gl_Position.z;\n#include <logdepthbuf_vertex>\nif (stdZ < -gl_Position.w || stdZ > gl_Position.w) gl_Position.z = stdZ;');
+      shader.fragmentShader = '#undef USE_LOGDEPTHBUF_EXT\n' + shader.fragmentShader;
     };
     postRaw(poleMat);
     {   // the light map's splats: one soft point per lamp, its radius from its mounting height (a lot mast casts widest)
@@ -23507,7 +23619,7 @@
     if (PIN_ASYNC.sync) return 'busy';
     PIN_ASYNC.eye.copy(camera.position);
     const c = pinOccCam();
-    if (occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, pinOccIssue)) {
+    if (occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, pinOccIssue, occFlatsOff())) {
       PIN_ASYNC.view.copy(c.matrixWorldInverse); PIN_ASYNC.proj.copy(c.projectionMatrix);
       return 'later';
     }
@@ -23594,21 +23706,33 @@
   }
   function pinOccCaptureRest() {   // the synchronous capture: drawn, read and installed at once
     const c = pinOccCam();
-    occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c);
+    occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, null, occFlatsOff());
     PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix);
     PIN_OCC.ok = true; PIN_OCC.n++;
   }
+  // Round 168: the pins' capture passes over the flats (occFlatTiles) only while the eye stands OCC_FLAT_EYE metres or more
+  // over the ground under it. From lower, a line of sight to a pin can skim the ground, and a street or a park's sheet a few
+  // centimetres over it then hides a tip at the edge of a tree or a wall that the bare ground would let show: the sweep
+  // found such pins only from eyes 2.5 and 6 m up (7 of 7,721 pins at 110 places, and 2 more from one of 402 eyes over the
+  // whole city, at the fly floor), none of 15,433 from 12, 20, 30 and 45 m, so from lower than this the capture draws the
+  // flats as it always did
+  const OCC_FLAT_EYE = 20;
+  function occFlatsOff() {
+    const cp = camera.position, g = groundMeshY(cp.x, cp.z);
+    return cp.y - Math.max(g === null ? siteY(cp.x, cp.z, 'ground') : g, TERRAIN.water) >= OCC_FLAT_EYE;
+  }
   // the city's view distance into a target: every transparent, line, point and pin object hidden (and, for the
   // building tap, every instanced mesh: the trees, the cars, the lamps), the shadow map untouched. `read`, when given,
-  // replaces the synchronous read into `buf` and its answer is returned (the pins' async read, Round 167)
-  function occRender(rt, W, H, buf, noInstanced, cam = camera, read = null) {
+  // replaces the synchronous read into `buf` and its answer is returned (the pins' async read, Round 167). `noFlats`, the
+  // pins' capture: the sheets on the drawn ground and the flat water hidden too (userData.occFlat, Round 168; see occFlatTiles)
+  function occRender(rt, W, H, buf, noInstanced, cam = camera, read = null, noFlats = false) {
     const r = renderer, hid = [];
     pinOccMat();
     scene.traverse((o) => {
       if (!o.visible || o === scene) return;
       const m = o.material, tr = m && (Array.isArray(m) ? m.some((q) => q.transparent) : m.transparent);
       const nd = m && (Array.isArray(m) ? m.some((q) => q.depthWrite === false) : m.depthWrite === false);   // occludes nothing in the real render either
-      if (o === sky || o === cloudDeck || nd || o.isPoints || o.isLine || o.isSprite || tr || (o.userData && o.userData.pinSceneDepth) || (noInstanced && o.isInstancedMesh)) { o.visible = false; hid.push(o); }   // the sky dome drawn at its 5.2 km radius hid distant pins and made the sky a building (review, Sep 22)
+      if (o === sky || o === cloudDeck || nd || o.isPoints || o.isLine || o.isSprite || tr || (o.userData && (o.userData.pinSceneDepth || (noFlats && o.userData.occFlat))) || (noInstanced && o.isInstancedMesh)) { o.visible = false; hid.push(o); }   // the sky dome drawn at its 5.2 km radius hid distant pins and made the sky a building (review, Sep 22)
     });
     const prevRT = r.getRenderTarget(), prevUp = r.shadowMap.autoUpdate, prevNeed = r.shadowMap.needsUpdate;
     const prevOver = scene.overrideMaterial, prevBg = scene.background, prevA = r.getClearAlpha();
@@ -23616,7 +23740,8 @@
     r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false;
     scene.overrideMaterial = PIN_OCC.mat; scene.background = null;
     r.setRenderTarget(rt); r.setClearColor(0xffffff, 1); r.clear(true, true, false);
-    r.render(scene, cam);
+    if (noFlats) for (const m of OCC_ONLY) m.visible = true;   // the raised street triangles the skipped tiles held (occRaisedMesh)
+    try { r.render(scene, cam); } finally { if (noFlats) for (const m of OCC_ONLY) m.visible = false; }
     let out = false;
     if (read) out = read(); else r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
     r.setRenderTarget(prevRT); r.setClearColor(_pocc, prevA);
