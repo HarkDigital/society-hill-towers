@@ -11502,29 +11502,31 @@
     // anchors — lat/lon through the SEPTA frame, height hand-set per landmark.
     // (Core towers keep their WIDE_NAMES tags; the stadium trio, PHL and the
     // bridges are labeled where they are built.)
+    // Round 169 (Mike: the Met's search result was wrong): eight of these stood 80 m to 2.2 km off their places; each is now
+    // the OSM outline centroid, and tests/test_landmark_labels.py holds every label to the basemap's point for its name.
     for (const [nm, la, lo, lh] of [
       ['Independence Hall', 39.94883, -75.15003, 46],
       ['Philadelphia City Hall', 39.95258, -75.16352, 172],
       ['Reading Terminal Market', 39.95331, -75.15908, 28],
       ["Elfreth's Alley", 39.95296, -75.14243, 22],
-      ['Christ Church', 39.95012, -75.14335, 62],
+      ['Christ Church', 39.95073, -75.14387, 62],
       ['National Constitution Center', 39.95307, -75.14893, 26],
       ['Philadelphia Museum of Art', 39.96562, -75.18101, 42],
       ['Eastern State Penitentiary', 39.96833, -75.17265, 32],
       ['The Franklin Institute', 39.95815, -75.17284, 32],
       ['Boathouse Row', 39.96895, -75.18754, 18],
-      ['The Met Philadelphia', 39.96851, -75.15852, 32],
-      ['Divine Lorraine Hotel', 39.96993, -75.15977, 42],
+      ['The Met Philadelphia', 39.96983, -75.1603, 32],
+      ['Divine Lorraine Hotel', 39.96679, -75.16, 42],
       ['Girard College', 39.97316, -75.16659, 32],
       ['Penn Treaty Park', 39.9657, -75.1293, 18],
-      ['Frankford Arsenal', 40.01464, -75.0684, 28],
+      ['Frankford Arsenal', 40.00747, -75.06573, 28],
       ['30th Street Station', 39.95562, -75.1819, 42],
       ['University of Pennsylvania', 39.95219, -75.1979, 50],
       ['Drexel University', 39.95664, -75.18987, 46],
       ['Penn Museum', 39.94915, -75.19107, 24],
       ['Philadelphia Zoo', 39.97151, -75.19555, 26],
       ['Please Touch Museum', 39.9796, -75.20991, 30],
-      ['The Mann Center', 39.97847, -75.2215, 26],
+      ['The Mann Center', 39.98314, -75.22276, 26],
       ["Saint Joseph's University", 39.99506, -75.2394, 36],
       ["Bartram's Garden", 39.93269, -75.21285, 20],
       ['Navy Yard', 39.88938, -75.17771, 36],
@@ -11536,14 +11538,14 @@
       ['La Salle University', 40.03771, -75.15521, 36],
       ['Einstein Medical Center', 40.0368, -75.1415, 40],
       ['Cliveden', 40.05147, -75.17851, 22],
-      ['Valley Green Inn', 40.05285, -75.21669, 18],
+      ['Valley Green Inn', 40.05414, -75.21818, 18],
       ['Morris Arboretum', 40.08858, -75.22252, 22],
-      ['Chestnut Hill College', 40.06345, -75.21868, 30],
+      ['Chestnut Hill College', 40.08669, -75.22681, 30],
       ['Fox Chase Cancer Center', 40.07162, -75.09, 34],
       ['Northeast Philadelphia Airport', 40.0819, -75.01062, 30],
       ['Pennypack Park', 40.06427, -75.0561, 20],
       ['Adventure Aquarium', 39.9448, -75.1312, 22],
-      ['Freedom Mortgage Pavilion', 39.93446, -75.1292, 26],
+      ['Freedom Mortgage Pavilion', 39.94075, -75.12976, 26],
       ['USS New Jersey (BB-62)', 39.93951, -75.13309, 38],
       ['Benjamin Franklin Bridge', 39.95299, -75.13444, 58],
     ]) {
@@ -16168,6 +16170,8 @@
     [/johnny brenda/i, 898.3, -2617.4], [/kung fu necktie/i, 752.9, -2743.1], [/philamoca/i, -1084.6, -1854.7], [/ortlieb/i, 204.3, -2106.7],
     [/forrest theat/i, -1268.2, -334.8], [/stateside|xfinity live/i, -2120.0, 4570.0], [/city winery/i, -967.9, -752.0], [/chris'? jazz/i, -1759.8, -539.6],
     [/silk city/i, -111.4, -1756.3], [/rivers casino/i, 1057.2, -2029.4], [/cherry street pier/i, 485.9, -777.9], [/world caf/i, -3448.0, -739.9], [/tower theat/i, -9724.0, -1702.0],
+    // Round 169 (Mike: the Met is at the south-west corner of Broad and Poplar; the feed puts it across Broad, 106 m off)
+    [/\bthe met\b|metropolitan opera/i, -1326.8, -2693.7], [/freedom mortgage pavilion|bb&t pavilion|susquehanna bank cent/i, 1279.7, 521.5],
   ];
   const venueNamed = (name) => { const s = String(name || ''); for (const v of VENUE_NAMED) if (v[0].test(s)) return [v[1], v[2]]; return null; };
   const btnConcerts = document.getElementById('btnConcerts');
