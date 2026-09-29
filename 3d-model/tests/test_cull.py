@@ -278,6 +278,7 @@ function pinOccMat() {}
 function pinOccCam() { camN++; const c = PIN_OCC.cam; c.position.set(camN, 0, 0); c.updateMatrixWorld(); c.matrixWorldInverse.copy(c.matrixWorld).invert(); c.projectionMatrix.makeScale(camN, 1, 1); return c; }
 function pinOccCaptureRest() { const c = pinOccCam(); PIN_OCC.buf.fill(9); PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix); PIN_OCC.ok = true; PIN_OCC.n++; }
 function occRender(rt, W, H, buf, noInstanced, cam, read) { return read ? read() : false; }
+function occFlatsOff() { return true; }   // Round 168: the capture's flats gate (test_occ_flats.py)
 BLOCK
 const viewX = () => -PIN_OCC.view.elements[12];   // the capture camera's x, which pinOccCam counts up
 BODY
@@ -377,7 +378,7 @@ console.log(JSON.stringify({ off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, fre
     def test_wiring(self):
         # the building tap keeps its synchronous read; only the pins' capture passes a read
         self.assertIn('try { occRender(BPICK.rt, 1, 1, BPICK.buf, true); }', SRC)
-        self.assertEqual(SRC.count('pinOccIssue)'), 1)
+        self.assertEqual(SRC.count('pinOccIssue, occFlatsOff())'), 1)   # Round 168: the pins' capture also passes over the flats, from high enough
         occ = cut('  function occRender(', '  const occUnpack =')
         self.assertIn('if (read) out = read(); else r.readRenderTargetPixels(rt, 0, 0, W, H, buf);', occ)
         # the pack buffer is unbound in a finally, straight after the read is issued

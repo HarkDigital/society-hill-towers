@@ -214,7 +214,7 @@ class TrafficLink(unittest.TestCase):
         self.assertGreater(o['after'], o['before'] + 5000, o)   # the mid-way splits fired
         self.assertGreater(o['links'], 50000, o)
         self.assertGreater(o['deadEnds'], 100, o)                # and so did the misses: height, dead water, true ends
-        self.assertEqual(o['keys'], 'xs,zs,ys,cum,len,cls,oneway,aadt,mx,mz,want,cars,conn', o)
+        self.assertEqual(o['keys'], 'xs,zs,ys,cum,len,cls,oneway,aadt,mx,mz,want,cars,busy,conn', o)   # busy: on trafficLeaders' walk (Round 168)
         for f in o['fuzz']:
             self.assertEqual(f['bad'], 0, f)
             self.assertGreater(f['after'], f['before'] + 500, f)
