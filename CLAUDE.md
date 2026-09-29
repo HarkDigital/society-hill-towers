@@ -143,7 +143,7 @@ before any visual round rather than rediscovering it.
   before it), the wide box keeping the 80-face crown on its 3x3 chunk grid while the 101,849 trees beyond it take the
   phone's 20-face crown on an 8x8 city grid (the 80-face crown on all of them measured 18.0 M triangles a frame against
   13.4 M; since Round 167 every tree mesh frustum-culls on `fitInstSphere`'s sphere round its instances as the crown shader
-  draws them, and the El's and PATCO's ties are culled runs, `tieRuns`, hidden past 700 m on a phone, farther on a sharper screen), `boleH` capped at 9 m so a 60-inch park oak carries its crown clear of the grass, and the woodland tint from
+  draws them, and the El's and PATCO's ties are runs of up to 500 m, `tieRuns`, culled by the frustum and never by distance: a hide past 700 m changed pixels and came out on review), `boleH` capped at 9 m so a 60-inch park oak carries its crown clear of the grass, and the woodland tint from
   PPR's parkland rings on all four far ground strips, not only the NW patch; wind in the crowns and blades, saturated palettes, rooftop
   clutter on desktop, awnings, lane paint on every road (`aLane` + `lanePatch`: a double yellow centre from
   6.5 m wide, white dashes by width, edge lines on the divided highways, nothing on service and footways),

@@ -3,12 +3,15 @@
 - The tree meshes cull: r149's InstancedMesh never did (its constructor turns frustumCulled off), so all 68 of them,
   2.27 M triangles on a phone, drew in every view. fitInstSphere gives each mesh a sphere round every instance as its
   shader draws it (a crown lumped up to CROWN_GROW and swayed CROWN_SLACK), run here under Node against random poses.
-- The El's and PATCO's ties are runs of about TIE_RUN metres (tieRuns), each culled by its own sphere and hidden past
-  TIE_NEAR (tieRunsNear), where they were two meshes drawn from everywhere.
+- The El's and PATCO's ties are runs of about TIE_RUN metres (tieRuns), each culled by its own sphere and by nothing
+  else, where they were two meshes drawn from everywhere. (A hide past 700 m went in with them and came out on review:
+  the ties still reached a pixel and a half there, and an El overview differed by 751 pixels. Culling alone changes no
+  pixel, which the Node run below checks against random eyes: a run with any corner of any tie in view is never culled.)
 - Every mesh newly culled draws unculled once behind the veil (pendingUpload, released after the first frame), so it
   uploads there as before (handoff gotcha 12).
 - The pins' depth image is read back through a pixel pack buffer behind a fence on WebGL 2 (PIN_ASYNC), installed with
-  its own matrices only once the fence has passed; run here under Node against a scripted WebGL 2 context.
+  its own matrices only once the fence has passed; run here under Node against a scripted WebGL 2 context. A turn that
+  finds a read in flight tries again the next frame, so late fences cost no whole cadence.
 """
 import json
 import re
@@ -25,6 +28,13 @@ THREE = json.dumps(str(ROOT / 'three.min.js'))
 def cut(start, end):
     a = SRC.index(start)
     return SRC[a:SRC.index(end, a)]
+
+
+# the tree step's shapes, cut from the source so the test fits the real ones (Round 167 review: the vase is concatGeo's
+# cylinder AND its scaled icosahedron cap); run under both values of isTouch, as the step builds them
+SHAPES = (cut('    const trunkCoreG = new THREE.CylinderGeometry(', '    const canWideG = ')
+          + cut('    const canWideG = ', '\n') + '\n'
+          + cut('    const coneG = new THREE.ConeGeometry(', '    const CHN = 3;'))
 
 
 def node(script):
@@ -44,16 +54,16 @@ const THREE = require(THREE_PATH);
 FIT
 let seed = 7; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
 const out = [];
-// the tree shapes as the step builds them, and the ties' boxes
-const shapes = {
-  crown: () => new THREE.IcosahedronGeometry(1, 1),
-  crown20: () => new THREE.IcosahedronGeometry(1, 0),
-  trunk: () => new THREE.CylinderGeometry(0.17, 0.28, 3.6, 6).translate(0, 1.0, 0),
-  cone: () => new THREE.ConeGeometry(1, 1, 7).translate(0, 0.5, 0),
-  pyramid: () => new THREE.ConeGeometry(1, 1.7, 7),
-  vase: () => new THREE.CylinderGeometry(1.0, 0.3, 1.3, 7).translate(0, -0.25, 0),
-  tie: () => new THREE.BoxGeometry(0.24, 0.14, 2.7),
-};
+// the tree shapes exactly as the step builds them (cut from app.js, both crown details), and the ties' boxes
+const SH = {};
+for (const isTouch of [false, true]) {
+SHAPES
+  Object.assign(SH, isTouch ? { crownWideTouch: canWideG } : { trunkCore: trunkCoreG, trunkWide: trunkWideG, crownCore: canCoreG, crownWide: canWideG,
+    cone: coneG, vase: vaseG, pyramid: pyrG, crownOuter: canOuterG, trunkOuter: trunkOuterG });
+}
+const shapes = Object.fromEntries(Object.entries(SH).map(([k, g]) => [k, () => g.clone()]));
+shapes.tie = () => new THREE.BoxGeometry(0.24, 0.14, 2.7);
+shapes.patcoTie = () => new THREE.BoxGeometry(0.24, 0.14, 2.6);
 for (const [name, make] of Object.entries(shapes)) {
   for (const [grow, slack] of [[1, 0], [1.21, 0.1]]) {
     const g = make(), n = 300, m = new THREE.InstancedMesh(g, new THREE.MeshBasicMaterial(), n);
@@ -91,13 +101,15 @@ fitInstSphere(e0, 1, 0, 0);
 const es = e0.geometry.boundingSphere;
 out.push({ finite: [es.center.x, es.center.y, es.center.z, es.radius].every(Number.isFinite) });
 console.log(JSON.stringify(out));
-'''.replace('THREE_PATH', THREE).replace('FIT', cut('  function fitInstSphere(', '  // ring meshes upload in batches'))
+'''.replace('THREE_PATH', THREE).replace('FIT', cut('  function fitInstSphere(', '  // ring meshes upload in batches')).replace('SHAPES', SHAPES)
         cls.rows = node(script)
 
     def test_every_vertex_as_drawn_is_inside(self):
+        names = {r['name'] for r in self.rows[:-1]}
+        self.assertTrue({'vase', 'pyramid', 'cone', 'crownCore', 'crownWide', 'crownWideTouch', 'crownOuter', 'trunkCore', 'trunkWide', 'trunkOuter', 'tie'} <= names, names)
         for r in self.rows[:-1]:
             self.assertLessEqual(r['worst'], 1e-6, r)       # no vertex, lumped and swayed, outside the sphere
-            self.assertEqual(r['outBox'], 0, r)             # nor outside the returned box (the ties' distance test)
+            self.assertEqual(r['outBox'], 0, r)             # nor outside the box fitInstSphere returns
             self.assertTrue(r['loose'], r)
 
     def test_an_empty_mesh_gets_a_finite_sphere(self):
@@ -132,9 +144,10 @@ class Trees(unittest.TestCase):
 
 class TiesAndUploads(unittest.TestCase):
     def test_tie_runs(self):
-        runs = cut('  function tieRuns(', '  function tieRunsNear(')
-        self.assertIn('const TIE_RUN = 500, TIE_NEAR = 700, TIE_PX_M = 0.24 / 0.15, TIE_RUNS = [];', SRC)
-        self.assertIn('TIE_RUNS.push({ mesh: run, bb: fitInstSphere(run, 1, 0, 1) });', runs)
+        runs = cut('  function tieRuns(', '  // One cached alignment/profile')
+        self.assertIn('const TIE_RUN = 500, TIE_RUNS = [];', SRC)
+        self.assertIn('fitInstSphere(run, 1, 0, 1);', runs)
+        self.assertIn('TIE_RUNS.push(run);', runs)
         self.assertIn('freeOnUpload(run.geometry);', runs)
         self.assertIn('run.instanceMatrix.onUpload(dropUploadedArray);', runs)
         self.assertIn('run.frustumCulled = false; pendingUpload.push(run);', runs)
@@ -142,70 +155,88 @@ class TiesAndUploads(unittest.TestCase):
         self.assertLess(runs.index('fitInstSphere(run'), runs.index('run.instanceMatrix.onUpload('))
         self.assertIn("tieRuns(sleepers, new THREE.BoxGeometry(EL_RAIL.tieWidth, 0.14, EL_RAIL.tieLength),", SRC)
         self.assertIn("const tm = tieRuns(ties, new THREE.BoxGeometry(0.24, 0.14, 2.6),", SRC)
-        near = cut('  function tieRunsNear(', '  // One cached alignment/profile')
-        self.assertIn('if (pendingUpload.length) return;', near)   # never hidden before the upload frame
-        # the hiding distance grows with the screen's sharpness: a tie hides only once its width is under 0.15 px
-        self.assertIn('const near = Math.max(TIE_NEAR, TIE_PX_M * f)', near)
-        f_phone = 740 * 360 / 740 * 1.25 / 2 / __import__('math').tan(__import__('math').radians(29))   # 740x360 at 1.25, fov 58
-        self.assertLess(0.24 / 0.15 * f_phone, 700)                    # a phone keeps 700 m
-        self.assertIn('new THREE.PerspectiveCamera(58,', SRC)
 
-    def test_runs_hide_past_the_near_distance(self):
+    def test_no_run_is_hidden_by_distance(self):
+        # Round 167 review: the hide past TIE_NEAR (tieRunsNear) changed pixels along the El and PATCO (751 px of an El
+        # overview by day), so it is gone; a run is culled by the frustum alone, and nothing else touches its visibility
+        for gone in ('tieRunsNear', 'TIE_NEAR', 'TIE_PX_M', 'addedDrawCalls'):
+            self.assertNotIn(gone, SRC)
+        runs = cut('  function tieRuns(', '  // One cached alignment/profile')
+        self.assertNotIn('.visible', runs)
+        # TIE_RUNS is declared, filled in tieRuns, and read only by __dbg.cull
+        dbg = SRC[SRC.index('cull: () => {'):SRC.index('lampGain: (k) =>', SRC.index('cull: () => {'))]
+        self.assertNotIn('.visible =', dbg)
+        rest = SRC.replace(dbg, '').replace(runs, '')
+        self.assertEqual(len(re.findall(r'\bTIE_RUNS\.', rest)), 0)
+        self.assertEqual(runs.count('TIE_RUNS.push(run);'), 1)
+
+    def test_culling_never_drops_a_tie_in_view(self):
         if not shutil.which('node'):
             self.skipTest('Node.js unavailable')
-        script = r'''
+        script = r"""
 const THREE = require(THREE_PATH);
 (() => {
 const freeOnUpload = () => {}, dropUploadedArray = function () { this.array = null; }, pendingUpload = [];
-const camera = new THREE.PerspectiveCamera(58, 2, 1, 26000), renderer = { domElement: { height: 450 } };
-FIT
-RUNS
-// two tracks 4 km long, 3.7 m apart, ties every 0.72 m, then a second corridor far away
+__FIT__
+__RUNS__
+// two tracks 4 km long, 3.7 m apart, ties every 0.72 m, climbing and curving, then a second corridor far away
 const ties = [];
-for (let s = 0; s < 4000; s += 0.72) for (const o of [-1.85, 1.85]) ties.push([s, 10 + s * 0.001, o, 0, 0]);
+for (let s = 0; s < 4000; s += 0.72) for (const o of [-1.85, 1.85]) { const a = s / 3000; ties.push([s + Math.sin(a) * o, 10 + s * 0.004 + Math.sin(s / 300) * 6, o * Math.cos(a) + 400 * Math.sin(a * a), -a, Math.atan(0.004)]); }
 for (let s = 0; s < 800; s += 0.72) ties.push([9000 + s, 12, 5000, 0, 0]);
 const g = tieRuns(ties, new THREE.BoxGeometry(0.24, 0.14, 2.7), new THREE.MeshBasicMaterial(), 'Test Ties');
-const out = { runs: g.children.length, counts: g.children.reduce((a, m) => a + m.count, 0), n: ties.length, pending: pendingUpload.length };
-camera.position.set(-100, 60, 0);
-tieRunsNear(); out.beforeRelease = g.children.filter((m) => m.visible).length;   // the upload frame: nothing hidden
-for (const m of pendingUpload) m.frustumCulled = true; pendingUpload.length = 0;
-tieRunsNear(); out.near = g.children.map((m) => m.visible ? 1 : 0).join('');
-renderer.domElement.height = 2000;   // a sharp screen: the 0.15 px rule reaches farther than 700 m
-tieRunsNear(); out.sharp = g.children.map((m) => m.visible ? 1 : 0).join('');
+const out = { runs: g.children.length, counts: g.children.reduce((a, m) => a + m.count, 0), n: ties.length, pending: pendingUpload.length,
+  unculled: g.children.every((m) => m.frustumCulled === false && m.visible), listed: TIE_RUNS.length };
 out.firstX = g.children.map((m) => { const e = new THREE.Matrix4(); m.getMatrixAt(0, e); return Math.round(e.elements[12]); });
-// each run's nearest tie centre from the eye, measured from the ties themselves
-out.nearest = g.children.map((m) => { const e = new THREE.Matrix4(); let d = Infinity; for (let i = 0; i < m.count; i++) { m.getMatrixAt(i, e); d = Math.min(d, Math.hypot(e.elements[12] - camera.position.x, e.elements[13] - camera.position.y, e.elements[14] - camera.position.z)); } return Math.round(d); });
+// the property that makes the culling invisible: from random eyes, every run with any corner of any tie inside the view
+// frustum passes three's own test (Frustum.intersectsObject, what the renderer asks of a culled mesh)
+let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+const cam = new THREE.PerspectiveCamera(58, 740 / 360, 1, 26000), f = new THREE.Frustum(), M = new THREE.Matrix4(), e = new THREE.Matrix4(), v = new THREE.Vector3();
+let eyes = 0, missed = 0, culled = 0, seen = 0;
+for (let k = 0; k < 400; k++) {
+  const near = rnd() < 0.5;
+  cam.position.set(near ? -200 + rnd() * 4400 : -3000 + rnd() * 15000, 2 + rnd() * (near ? 60 : 900), near ? -300 + rnd() * 900 : -3000 + rnd() * 11000);
+  cam.aspect = 0.5 + rnd() * 2; cam.fov = 30 + rnd() * 50; cam.updateProjectionMatrix();
+  const yaw = rnd() * 6.3, p = -1.2 + rnd() * 1.3, cp = Math.cos(p);
+  cam.lookAt(cam.position.x + Math.sin(yaw) * cp, cam.position.y + Math.sin(p), cam.position.z - Math.cos(yaw) * cp); cam.updateMatrixWorld();
+  f.setFromProjectionMatrix(M.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse));
+  eyes++;
+  for (const m of g.children) {
+    m.frustumCulled = true;
+    const passes = f.intersectsObject(m);
+    if (!passes) culled++;
+    let inView = false;
+    for (let i = 0; i < m.count && !inView; i++) {
+      m.getMatrixAt(i, e);
+      for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1]) if (!inView && f.containsPoint(v.set(sx * 0.12, sy * 0.07, sz * 1.35).applyMatrix4(e))) inView = true;
+    }
+    if (inView) seen++;
+    if (inView && !passes) missed++;
+  }
+}
+Object.assign(out, { eyes, missed, culled, seen });
 console.log(JSON.stringify(out));
 })();
-'''.replace('THREE_PATH', THREE).replace('FIT', cut('  function fitInstSphere(', '  // ring meshes upload in batches')).replace('RUNS', cut('  const TIE_RUN = 500,', '  // One cached alignment/profile'))
+""".replace('THREE_PATH', THREE).replace('__FIT__', cut('  function fitInstSphere(', '  // ring meshes upload in batches')).replace('__RUNS__', cut('  const TIE_RUN = 500,', '  // One cached alignment/profile'))
         out = node(script)
         self.assertEqual(out['counts'], out['n'])
         self.assertEqual(out['pending'], out['runs'])
-        self.assertEqual(out['beforeRelease'], out['runs'])
-        # runs start every 500 m along the 4 km line (8 runs) and one for the far corridor; the eye stands 100 m short of
-        # the line's start, so only the runs whose nearest tie is within 700 m show: those starting at 0 and 500
-        # runs of about 500 m along the line, and the far corridor on its own
+        self.assertEqual(out['listed'], out['runs'])
+        self.assertTrue(out['unculled'])                 # every run draws unculled until the first frame releases it
+        # runs of about 500 m along the line, and the far corridor on its own (a jump of over 10 m starts a new run)
         starts = out['firstX']
         line = [x for x in starts if x < 5000]
         self.assertEqual(line[0], 0)
-        self.assertEqual(len(line), 8)
-        self.assertTrue(all(495 <= b - a <= 510 for a, b in zip(line, line[1:])), starts)
-        self.assertEqual([x for x in starts if x >= 5000], [9000, 9500])   # a jump of over 10 m starts a new run
-        # a run shows exactly when its nearest tie is within the distance (700 m on a 450 px screen; 2000 px tall: f = 1804 px,
-        # and 0.24 m is 0.15 px at 2886 m), give or take the tie's own half length
-        for key, dist in (('near', 700), ('sharp', 0.24 / 0.15 * 1000 / __import__('math').tan(__import__('math').radians(29)))):
-            for shown, d in zip(out[key], out['nearest']):
-                if d < dist - 2:
-                    self.assertEqual(shown, '1', (key, d))
-                elif d > dist + 2:
-                    self.assertEqual(shown, '0', (key, d))
-        self.assertEqual(out['near'].count('1'), 2)
-        self.assertGreater(out['sharp'].count('1'), 4)
+        self.assertTrue(7 <= len(line) <= 9, starts)
+        self.assertTrue(all(480 <= b - a <= 510 for a, b in zip(line, line[1:])), starts)
+        self.assertEqual([x for x in starts if x >= 5000], [9000, 9500])
+        # culling did cut (runs out of view), and never a run with a tie in view
+        self.assertGreater(out['culled'], out['eyes'])
+        self.assertGreater(out['seen'], out['eyes'] // 4)
+        self.assertEqual(out['missed'], 0)
 
     def test_the_first_frame_releases_what_is_pending(self):
         fr = cut('  function frame(now, once) {', '\n  setHint();')
-        # the runs are sized to the eye before anything draws, the pins read, and the release comes after the render
-        self.assertLess(fr.index('tieRunsNear();'), fr.index('pinOccUpdate(dt);'))
+        # the pins' read lands first thing, and the release comes after the render
         self.assertLess(fr.index('pinOccPoll();'), fr.index('applyLighting();'))   # first thing: before the frame queues GL work
         self.assertLess(fr.index('pinOccPoll();'), fr.index('pinOccUpdate(dt);'))
         render = fr.index('if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);')
@@ -402,6 +433,38 @@ console.log(JSON.stringify({ s, captures, busy }));
         # the capture at frame 25 lands at 26, the one at 30 lands at 31: the ease starts on the second landing
         self.assertEqual(first, 31 - 21)
         self.assertEqual(out['busy'], 0)                             # every read landed before the next turn
+
+    def test_a_busy_turn_tries_again_the_next_frame(self):
+        # Round 167 review: a turn that found a read in flight waited a whole cadence, so when fences ran later than the
+        # cadence the images came half as often. Now it tries again each frame: an image is issued the frame the last one
+        # lands, never two in flight, and a fence faster than the cadence keeps the cadence exactly
+        block = cut('  const PIN_FADE = ', '  function frame(now, once) {')
+        script = r'''
+let frameNo = 0, inFlight = null, issued = [], landed = 0, busy = 0, most = 0;
+const PIN_OCC = { ok: true, every: 10, want: -99, hid: 0, lastFrame: -1e9, fresh: false, lastPos: { copy() {} }, lastQuat: { copy() {} } };
+const camera = { position: { distanceToSquared: () => 1 }, quaternion: { dot: () => 1 } };   // a flight: moved at every turn
+let LAT = 1;
+function pinOccCapture() { if (inFlight) { busy++; return 'busy'; } inFlight = { at: frameNo }; issued.push(frameNo); return 'later'; }
+function poll() { PIN_OCC.fresh = false; if (inFlight && frameNo - inFlight.at >= LAT) { inFlight = null; landed++; PIN_OCC.fresh = true; } }
+function pinOccVisible() { return true; }
+const cap = 8, mat = new Float32Array(cap * 16), vis = new Float32Array(cap).fill(1);
+const m = { visible: true, count: 1, userData: {}, instanceMatrix: { count: cap, array: mat }, geometry: { attributes: { aPinVis: { array: vis, needsUpdate: false } } } };
+const PIN_MESHES = [m];
+BLOCK
+const run = (lat, n) => { LAT = lat; issued = []; landed = 0; busy = 0; inFlight = null; PIN_OCC.retry = false; for (let i = 0; i < n; i++) { frameNo++; poll(); pinOccUpdate(1 / 60); } return { issued: issued.slice(), landed, busy }; };
+frameNo = 0;
+const fast = run(2, 100);      // lands two frames after it went: the cadence of ten holds
+const slow = run(14, 140);     // later than the cadence: issued as each one lands
+console.log(JSON.stringify({ fast, slow }));
+'''.replace('BLOCK', block)
+        out = node(script)
+        fast, slow = out['fast'], out['slow']
+        self.assertEqual(fast['busy'], 0)
+        self.assertTrue(all(b - a == 10 for a, b in zip(fast['issued'], fast['issued'][1:])), fast['issued'])
+        gaps = [b - a for a, b in zip(slow['issued'], slow['issued'][1:])]
+        self.assertTrue(gaps and all(g == 14 for g in gaps), slow['issued'])   # the frame each one lands, not the next multiple of ten (20)
+        self.assertGreaterEqual(len(slow['issued']), 9)
+        self.assertGreater(slow['busy'], 0)
 
 
 if __name__ == '__main__':

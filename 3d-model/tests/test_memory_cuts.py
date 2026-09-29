@@ -379,7 +379,7 @@ class FreedArrays(unittest.TestCase):
         self.assertNotIn('push(...', el)
         # Round 167: the ties are posed in culled runs (tieRuns), each run's matrices going at upload as the one mesh's did
         self.assertIn('tieRuns(sleepers, ', el)
-        runs = cut(self.src, '  function tieRuns(', '  function tieRunsNear(')
+        runs = cut(self.src, '  function tieRuns(', '  // One cached alignment/profile')
         self.assertIn('run.instanceMatrix.onUpload(dropUploadedArray);', runs)
         self.assertIn('freeOnUpload(run.geometry);', runs)
         self.assertEqual(runs.count('run.setMatrixAt('), 1)

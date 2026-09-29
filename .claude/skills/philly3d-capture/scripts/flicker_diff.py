@@ -2,7 +2,8 @@
 """Flicker diff (Round 144): z-fighting shows as pixels that change between captures a few decimetres apart.
 
 Capture three frames 0.5 m apart with __cap as PNG (a jpeg's own noise swamps the count), e.g.
-  __cap('fl-a.png', x, y, z, yaw, pitch, 8); __cap('fl-b.png', x + .4, y + .2, z - .4, ...); __cap('fl-c.png', x + .8, ...)
+  await __cap('fl-a.png', x, y, z, yaw, pitch, 8); await __cap('fl-b.png', x + .4, y + .2, z - .4, ...); await __cap('fl-c.png', x + .8, ...)
+(await each: since Round 167 __cap yields a task between frames, and two at once would interleave their frames)
 then: python3 flicker_diff.py captures/fl [--rows 280:640] [--crop 200,330,760,620]
 It prints the pixels changing by more than 60 (summed RGB) between neighbouring frames and writes <prefix>-mask.png
 (the changing pixels in red over frame a) and, with --crop, <prefix>-crop.png (a over b, doubled). Limit: the camera's

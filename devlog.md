@@ -7391,3 +7391,42 @@ part takes three items.
 - Not taken: the two bridges' walkway lamps (`bfbLampMesh` and the Walt Whitman's, 340 lamps, 12,240 triangles) are the only
   other static InstancedMeshes; they have no fitted sphere and are 0.1% of a frame. The roof kit, the grass, the cars, the
   pins and the fleets are re-laid round the eye or move, and keep `frustumCulled = false`.
+
+Round 167 (part) review coda (Sep 28): an independent verifier compared e292604 with db18f58 on the phone canvas and found
+the ties' distance hide visible. Confirmed, and fixed with the three minor points.
+
+- The hide is gone. `tieRunsNear` hid a run past `TIE_NEAR` 700 m on a rule that looked only at a tie's 0.24 m width; its
+  2.6 m length is still about 1.5 px there, antialiasing mixed it into the bed, and a whole 500 m run switched at once. Our
+  own captures had missed it because none faced the El from far off. Measured headless on the real GPU (Chrome, ANGLE Metal,
+  Apple M2 Max; phone emulation 740 x 360 at 1.25, traffic and the pin and live layers off, clock pinned), share of pixels
+  more than 8/255 from e292604: db18f58 differed by 808 px (0.194%, max 57) in the El overview (`goFly(-200, 400, -400,
+  0.46, -0.25)`), 95 looking across the El from 830 m, 57 high looking north and 72 in the El overview at night, all on the
+  El and PATCO lines; this build 0, 11, 0 and 18, at the load-to-load floor (e292604 against itself: 0 to 70 px a view,
+  scattered roof and grass pixels, none on the tracks), and the El crops of the two show the same pixels. On SwiftShader,
+  the verifier's renderer, the El overview is 0 px by day and 3 at night (751 and 86 for db18f58 there), across the El 14. The runs still frustum-cull, which
+  changes no pixel: `tests/test_cull.py` now checks from 400 random eyes that a run with any corner of any tie in the frustum
+  always passes three's own `intersectsObject`. `TIE_RUN` stays 500 m: 250 m runs would draw 50 k fewer tie triangles at the
+  skyline, 9 k at 150 m and none at the other poses, for 6 to 20 more calls (a Node census of the El's own ties).
+- A pin capture turn that finds a read in flight tries again the next frame (`PIN_OCC.retry`) instead of waiting for the
+  next multiple of `every`, so late fences cost no whole cadence. Under the page's own rAF loop on the real GPU a read lands
+  3 to 4 frames after it goes (150 to 400 ms at the headless 20 to 30 fps), under the cadence, so the retry never fires
+  there: 10 or 11 images installed in each of three 111-frame turns, against 11 for e292604 and 10 or 11 for db18f58, and
+  0 blinks in all three builds (frame p95 there 83 to 117 ms against e292604's 117 to 150). In the bench's unpaced loop,
+  where fences ran over 10 frames late, each read went as the last landed. A real phone's latency is still unmeasured.
+- The capture skill's `cap.js`: `__cap` and `__frames` yield a task between frames and are async (await each); a name ending
+  in `.png` is written as a PNG, which `flicker_diff.py` always asked for. SKILL.md section 7 says why.
+- `EL_STATS.addedDrawCalls` is gone (the ties are 31 runs, a draw each in view); `__dbg.cull()` drops `tieNear` and adds
+  `tieTrisAll`.
+- Numbers, e292604 against this build, same Metal bench with concerts seeded and traffic on. Main pass, triangles and calls a
+  frame: entry 9.40 M / 356 to 8.33 M / 340 (-1.07 M), skyline 11.24 M / 450 to 10.76 M / 447 (-0.48 M), high looking north
+  12.49 M / 574 to 11.96 M / 583 (-0.53 M, 9 more calls: 31 tie runs in view), Center City west at 250 m 9.19 M / 343 to
+  7.83 M / 320 (-1.36 M), Spruce Street 10.18 M / 388 to 9.32 M / 370 (-0.86 M), 150 m north 11.83 M / 485 to 11.38 M / 486
+  (-0.45 M). The ties in view: 155 k of their 571 k at entry, Center City and the street, 222 k at the skyline, 285 k at
+  150 m, 416 k high looking north (db18f58's hide drew none at these six, which is where its larger numbers came from). The
+  pin capture: 9.56 to 8.61 M, 11.77 to 11.49, 12.62 to 12.33, 9.54 to 8.38, 10.45 to 9.74, 12.23 to 12.06 M. Hooked GPU 681.3
+  MB at ready in both, 874.3 against 874.4 MB after the first frames (the pack buffer, 0.11 MB), `__gpu.mis` 0 in both; live
+  heap 115.0 / 117.7 against 115.2 / 117.9 MB. `tests/pin_readback_gpu.html` passes on Metal as on SwiftShader.
+- Tests: `test_cull.py` (18) drops the hide's test for `test_no_run_is_hidden_by_distance` and the random-eye culling check,
+  fits the tree shapes cut from app.js itself (the vase is `concatGeo`'s cylinder and scaled icosahedron cap, both crown
+  details), and adds `test_a_busy_turn_tries_again_the_next_frame` (a fence 14 frames late: an image every 14 frames, where
+  the old turn gave one every 20).
