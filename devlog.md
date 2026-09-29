@@ -7464,3 +7464,35 @@ the ties' distance hide visible. Confirmed, and fixed with the three minor point
   fits the tree shapes cut from app.js itself (the vase is `concatGeo`'s cylinder and scaled icosahedron cap, both crown
   details), and adds `test_a_busy_turn_tries_again_the_next_frame` (a fence 14 frames late: an image every 14 frames, where
   the old turn gave one every 20).
+
+## Round 167 (part) — the city-wide flats go in as frustum-culled tiles, and the merge (Sep 28)
+
+- A merged world-space mesh that spans the city has one bounding sphere as wide as the city, so frustum culling never
+  dropped it: every view drew the far ring's streets (1.10 M triangles on a phone), its ground strips (0.66 M), the outer
+  districts' streets (0.55 M), the overpass decks (0.37 M), the lots and yards (0.24 M) and the far parks (0.12 M) whole.
+  `tileGeometry` cuts each into grid tiles by triangle centroid before the first upload (every triangle's vertices bit for
+  bit and in order within its tile; every attribute's type, item size, normalisation, usage, interleaved stride and offset;
+  the upload hooks; a Uint16 index where packIndex would make one; the source consumed attribute by attribute), `tileMesh`
+  gives each tile the source's material, order, layers, shadow flags, userData and hooks, and `addTiles` stages them like the
+  chunks. `TILE_CELL`: streets and decks 4.8 km, ground 7.2 km, lots 9.6 km, the ring's areas 19.2 km, the outer districts'
+  streets 1.8 km, chosen from a 600 m cut of every mesh on a phone's frustum at six poses; the far water, the outer
+  districts' parks and the street lettering stay whole (no cell paid for its calls). The decks' tiles are the raycast
+  targets. `?tiles=0` draws them whole. tests/test_tiles.py.
+- Independent verification (headless phone path, e292604 against the tiles alone): 0.67 to 1.64 M triangles fewer a frame at
+  six poses and 0.60 to 1.54 M fewer in each pin capture, for 47 to 115 more draw calls; GPU after the first frames 859 to
+  852 MB, padded copies 0 in both, every tile uploaded and freed, pixels within the baseline's own run-to-run noise (0 to
+  0.007% over 8/255, the entry view and the far views bit-identical). Two corrections to the author: the claimed drop in the
+  load's peak live heap (257 to 201 MB) did not hold under a second sampler, and the far ring's 48 tiles, staged just after
+  uploadRing's own flush, set off one extra whole-scene render in the towns loop; a run of one mesh's tiles now counts once
+  toward flushUploads' dozen. Seams: where two flat triangles overlap exactly, the later one wins, and tiling changes which;
+  nothing showed with the real materials at 104 seam spots. The draw calls' cost on a real iPhone is unmeasured: build 5's
+  perf beacons against build 4's will say.
+- The merge of r167-cull and r167-tiles into main: devlog entries side by side, and one copy of the drain both parts added
+  after the first frame (whatever was staged after the last flush, the trees, the tie runs and the late tiles, culls from the
+  second frame). The merged page loads with no failed step in the pane: 202 tiles, 31 of 68 tree meshes and 10 of 41 tie runs
+  drawn over Center City looking west, the pins' async read issued and landed on WebGL 2. 360 tests.
+- The merged page against build 4's (measure.mjs, phone emulation 740 x 360 at 1.25): triangles after the look round
+  10,037,853 to 7,692,802 (-23%), GPU after the first frames 877 to 870 MB and after the look 892 to 885, padded copies 0 in
+  both, live heap at ready 115 to 116 MB, the load's peak live heap 256 to 257 (unchanged, as the verifier found), no failed
+  step. Build 5 carries it to TestFlight.
+

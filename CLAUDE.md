@@ -160,7 +160,7 @@ before any visual round rather than rediscovering it.
   post pipeline: half-float target, ACES + sRGB composite, bloom on the sun, the glints and the cloud rims
   with the markers and labels masked out of it (`postRaw(mat, { mask: true })`), `?bloom=0` off), never its
   assets; every flat outside the core (parks, lots, aprons) is laid with `conformDrape` on the drawn ground
-  mesh (`groundGrids`/`groundMeshY`), never with `drapedPoly` (its point cap put big sheets at 36 to 61 m
+  mesh (`groundGrids`/`groundMeshY`), never with `drapedPoly`; since Round 167 the city-wide flats (the far ring's and the towns' roads and areas, the far ground strips, the outer districts' streets, the lots and yards, the overpass decks) go in through `addTiles`, which cuts them into `TILE_CELL` grid tiles by triangle centroid before their first upload (`tileGeometry`: every attribute, interleaved stride and upload hook kept, so no 1- or 3-byte stream and no second CPU copy), each tile frustum-culled after one unculled draw behind the veil, a run of one mesh's tiles counting once toward `flushUploads`' dozen (its point cap put big sheets at 36 to 61 m
   against a 25 m mesh and the ground rose through them); the Round 54
   key-to-fill ratio (sun 1.85, hemi 0.12 + 0.42 dayF, the Sep 8 rebalance of Round 50's 2.0 / 0.10 + 0.36) and the deep-blue zenith stand;
   the outer curtain wall uploads with `geometry(true)` (aStyle, aBase, aTint; `tests/test_vbuf.py` guards it) and reads
@@ -235,7 +235,7 @@ readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
 pins the air at Good. `?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardous>` pins the
 air quality (Round 75: the live PM2.5 scales the clear-air distances and tints a smoke day;
 `__dbg.aqi(n)`, `__dbg.aqiState()`).
-`?logdepth=0` is the depth-buffer escape hatch.
+`?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question).
 
 ## Where things are
 
