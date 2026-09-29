@@ -98,12 +98,14 @@ console.log(JSON.stringify(out));
         self.assertIn('if (!insideLimit(cx, cz) || !nearCam(cx, cy, cz)) continue;', upd)   # the half-mile rule (Round 82), like Amtrak's
         self.assertIn('if (sc < tr.sFaceP - PATCO_COVER || sc > tr.sFaceC + PATCO_LEN / 2 + 0.3) continue;', upd)   # nothing drawn underground (Round 20)
         # review fixes: the live clock is the HUD's own minute, a pinned hour loops, tomorrow's owls are looked at,
-        # the cars sit on their trucks, the ties are never culled, the piers clear a road's width and the decks
+        # the cars sit on their trucks, the ties cull only by their own runs' spheres (Round 167: the box's own sphere at the
+        # origin culled the one mesh from most views, Round 141 review), the piers clear a road's width and the decks
         self.assertIn('if (clock.live) { PATCO_S.pinKey = \'\'; return clock.minutes * 60 + (Date.now() / 1000) % 60; }', s)
         self.assertIn('return clock.minutes * 60 + PATCO_S.drift % 3600;', s)
         self.assertIn('next.getUTCDate(), -86400]]', s)
         self.assertIn('patcoAt(tr, sc + dir * (PATCO_LEN / 2 - 3), _pcF);', upd)
-        self.assertIn('tm.frustumCulled = false;', s)
+        self.assertIn("const tm = tieRuns(ties, new THREE.BoxGeometry(0.24, 0.14, 2.6), ", s)
+        self.assertNotIn('frustumCulled', s[s.index("  step('Laying the PATCO tracks',"):s.index("  step('Rolling out the SEPTA fleet',")])
         self.assertIn('septaSnapRoad(x, z, 9.6) || onDeck(x, z)', s)
         self.assertIn('if (hw < 4 && patcoCutAt(mx, mz)) continue;', s)
         self.assertIn('.concat(patcoCuts().filter(c=>streetOverlap(bounds,c.bounds)));', s)

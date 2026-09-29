@@ -7991,9 +7991,46 @@
     }
     return out;
   }
+  // Round 167: an InstancedMesh's sphere round every instance as drawn, so a static instanced mesh frustum-culls as a
+  // whole. r149's InstancedMesh never culls (its constructor turns frustumCulled off) and the test it would make reads
+  // the GEOMETRY's sphere, the unit shape's at the origin; so each instance's copy of the shape's own sphere (its centre
+  // through the instance's matrix, its radius times the matrix's largest scale) is enclosed here, and the sphere set on
+  // the mesh's own geometry. `grow` is a vertex shader's scale of the shape about its own origin (the crowns' lumps,
+  // CROWN_GROW), `slack` anything else the shader moves a vertex, in the shape's units (the crowns' sway), and `pad`
+  // metres of margin on the whole. The sphere is a world one (the mesh sits at the origin), so a mesh fitted here must
+  // never be a ray target (no tree and no tie is). Returns the box of the instances' spheres, [x0, x1, y0, y1, z0, z1].
+  function fitInstSphere(mesh, grow = 1, slack = 0, pad = 0) {
+    const g = mesh.geometry;
+    if (!g.boundingSphere) g.computeBoundingSphere();   // the shape's own, from its positions (fitted before any upload)
+    const s = g.boundingSphere, sx = s.center.x, sy = s.center.y, sz = s.center.z;
+    const rs = s.radius * grow + Math.hypot(sx, sy, sz) * (grow - 1) + slack;
+    const e = mesh.instanceMatrix.array, n = mesh.count;
+    const bb = [Infinity, -Infinity, Infinity, -Infinity, Infinity, -Infinity];
+    const at = (i, out) => {   // instance i's sphere: centre and radius
+      const k = i * 16;
+      out[0] = e[k] * sx + e[k + 4] * sy + e[k + 8] * sz + e[k + 12];
+      out[1] = e[k + 1] * sx + e[k + 5] * sy + e[k + 9] * sz + e[k + 13];
+      out[2] = e[k + 2] * sx + e[k + 6] * sy + e[k + 10] * sz + e[k + 14];
+      out[3] = rs * Math.sqrt(Math.max(e[k] * e[k] + e[k + 1] * e[k + 1] + e[k + 2] * e[k + 2], e[k + 4] * e[k + 4] + e[k + 5] * e[k + 5] + e[k + 6] * e[k + 6], e[k + 8] * e[k + 8] + e[k + 9] * e[k + 9] + e[k + 10] * e[k + 10]));
+    };
+    const q = [0, 0, 0, 0];
+    for (let i = 0; i < n; i++) {
+      at(i, q);
+      for (let a = 0; a < 3; a++) { if (q[a] - q[3] < bb[a * 2]) bb[a * 2] = q[a] - q[3]; if (q[a] + q[3] > bb[a * 2 + 1]) bb[a * 2 + 1] = q[a] + q[3]; }
+    }
+    if (!n) { g.boundingSphere = new THREE.Sphere(); return bb; }   // an empty mesh draws nothing whatever its sphere
+    const c = new THREE.Vector3((bb[0] + bb[1]) / 2, (bb[2] + bb[3]) / 2, (bb[4] + bb[5]) / 2);
+    let r = 0;
+    for (let i = 0; i < n; i++) { at(i, q); r = Math.max(r, Math.hypot(q[0] - c.x, q[1] - c.y, q[2] - c.z) + q[3]); }
+    g.boundingSphere = new THREE.Sphere(c, r + pad);
+    return bb;
+  }
   // ring meshes upload in batches behind the veil. A frustum-culled mesh is
   // never drawn, so it never uploads and never frees its CPU arrays; every
-  // new mesh draws unculled exactly once, in flushUploads' render.
+  // new mesh draws unculled exactly once, in flushUploads' render. Round 167: what
+  // the steps after the last flush leave here (the trees, the tie runs) draws
+  // unculled in the first frame, which is behind the veil too, and culls from the
+  // second on (frame)
   const pendingUpload = [];
   const addChunkMesh = (g, mat) => {
     if (!g.boundingSphere) g.computeBoundingSphere();   // the frustum test would otherwise compute it from the freed arrays
@@ -12082,6 +12119,7 @@
     texU.uGrass.value = paintGrassTex(isTouch ? 512 : 1024);
     tuftTex = paintTuftTex(256);   // (the leaf cards' sprite is painted by the trees step, only while CARDS is above 0: Round 158)
   });
+  let TREE_MESHES = [];   // the survey's tree meshes, fitted and culled (Round 167; __dbg.cull)
   step('Planting the street trees', () => {
     if (typeof TREES_B64 === 'undefined' || !TREES_B64 || typeof TREE_NAMES === 'undefined' || !TREE_NAMES) { plantProceduralTrees(); return; }
     let head, v;
@@ -12201,6 +12239,9 @@
     // a three-octave mottle breaks each facet into leaf clusters. The sway is shared with the
     // cards (canopySway); the displacement is the crown's alone (a card must stay a quad)
     const canMat = new THREE.MeshStandardMaterial({ roughness: 1, envMapIntensity: 0.25, flatShading: true });   // matte: the sky's sheen read as a second object
+    // the most the crown shader moves a vertex, for the meshes' spheres (Round 167): the lumps scale the shape by
+    // 0.79 + 0.42 * vh about its centre, vh in [0, 1), and the sway adds under 0.07 of the unit shape
+    const CROWN_GROW = 1.21, CROWN_SLACK = 0.1;
     const canopySway = (sh) => {   // the leaves move: a slow sway from the wind, per tree, plus a flutter; the crown is lit on top and dark underneath
       sh.uniforms.uTime = waterU.uTime;
       sh.fragmentShader = sh.fragmentShader
@@ -12326,17 +12367,17 @@
       const cz2 = clamp(Math.floor((z - OB.z0) / ocD), 0, OCHN - 1);
       return cx2 * OCHN + cz2;
     };
-    const ocCX = (c) => OB.x0 + (Math.floor(c / OCHN) + 0.5) * ocW;
-    const ocCZ = (c) => OB.z0 + ((c % OCHN) + 0.5) * ocD;
-    const ocR = Math.hypot(ocW, ocD) / 2 + 40;
     // instance transforms don't grow a shared geometry's unit-sized bounding
-    // sphere, so every mesh gets its own cloned geometry with a hand-set
-    // sphere over its real extent — wide chunks still frustum-cull as wholes
-    const instMesh = (base, mat2, count, sx2, sz2, rad) => {
+    // sphere, so every mesh gets its own cloned geometry, and once its instances
+    // are posed fitInstSphere sets that geometry's sphere round all of them (Round
+    // 167, at the end of this step): the chunks frustum-cull as wholes
+    const treeMeshes = [];
+    const instMesh = (base, mat2, count) => {
       const g2 = base.clone();
-      g2.boundingSphere = new THREE.Sphere(new V3(sx2, 10, sz2), rad);
       g2.isCanopyCore = base === canCoreG || base === canWideG || base === vaseG || base === pyrG;
-      return new THREE.InstancedMesh(g2, mat2, count);
+      const im = new THREE.InstancedMesh(g2, mat2, count);
+      treeMeshes.push(im);
+      return im;
     };
     // the species colour as a tint on the painted leaves: normalised on green, eased to white;
     // the crown's core and lumps take the same tint (times the sprite's mean) so a ginkgo is
@@ -12348,8 +12389,8 @@
       out.r = Math.min(out.r, 1.6); out.b = Math.min(out.b, 1.6);
       return out.lerp(white, 0.30).multiplyScalar(0.8 + hash01(i * 2.3) * 0.3);
     };
-    const paintCards = (idx, sx2, sz2, rad, full, geom, conifer) => {
-      const mesh = instMesh(geom || cardG, leafMat, idx.length, sx2, sz2, rad);
+    const paintCards = (idx, full, geom, conifer) => {
+      const mesh = instMesh(geom || cardG, leafMat, idx.length);
       for (let k = 0; k < idx.length; k++) {
         const i = idx[k];
         const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
@@ -12370,13 +12411,6 @@
       mesh.castShadow = !!full; mesh.receiveShadow = false;
       groupCity.add(mesh);
     };
-    const coreCX = (CORE_EXT.x0 + CORE_EXT.x1) / 2, coreCZ = (CORE_EXT.z0 + CORE_EXT.z1) / 2;
-    const coreR = Math.hypot(CORE_EXT.x1 - CORE_EXT.x0, CORE_EXT.z1 - CORE_EXT.z0) / 2 + 40;
-    const chW = (WB.x1 - WB.x0) / CHN, chD = (WB.z1 - WB.z0) / CHN;
-    const chR = Math.hypot(chW, chD) / 2 + 40;
-    const chCX = (c) => WB.x0 + (Math.floor(c / CHN) + 0.5) * chW;
-    const chCZ = (c) => WB.z0 + ((c % CHN) + 0.5) * chD;
-    const wideR = Math.hypot(WB.x1 - WB.x0, WB.z1 - WB.z0) / 2 + 40;
     // canopies split by shape (round crowns keep the core/wide chunk split;
     // vases, pyramids and conifer spires draw citywide in one mesh each), and
     // every non-conifer tree gets its trunk from the tier trunk meshes
@@ -12437,11 +12471,11 @@
       groupCity.add(mesh);
     };
     // core: trunks + faceted canopies + two extra lobes each, with shadows
-    if (buckets.tCore.length) paint(instMesh(trunkCoreG, trunkMat, buckets.tCore.length, coreCX, coreCZ, coreR), buckets.tCore, false, true);
+    if (buckets.tCore.length) paint(instMesh(trunkCoreG, trunkMat, buckets.tCore.length), buckets.tCore, false, true);
     const ci = buckets.core;
     if (ci.length) {
-      paint(instMesh(canCoreG, canMat, ci.length, coreCX, coreCZ, coreR), ci, true, true);
-      const lumps = instMesh(canCoreG, canMat, ci.length * 2, coreCX, coreCZ, coreR);
+      paint(instMesh(canCoreG, canMat, ci.length), ci, true, true);
+      const lumps = instMesh(canCoreG, canMat, ci.length * 2);
       for (let k = 0; k < ci.length; k++) {
         const i = ci[k];
         const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
@@ -12462,17 +12496,17 @@
       if (lumps.instanceColor) lumps.instanceColor.needsUpdate = true;
       lumps.castShadow = true;
       groupCity.add(lumps);
-      if (cardG) paintCards(ci, coreCX, coreCZ, coreR, true);
+      if (cardG) paintCards(ci, true);
     }
     // wide tier: one light trunk + canopy pair per chunk so whole chunks cull
     for (let c = 0; c < CHN * CHN; c++) {
       const ti = buckets.tWide[c];
-      if (ti.length) paint(instMesh(trunkWideG, trunkMat, ti.length, chCX(c), chCZ(c), chR), ti, false, false);
+      if (ti.length) paint(instMesh(trunkWideG, trunkMat, ti.length), ti, false, false);
       const wi = buckets.wide[c];
-      if (wi.length) paint(instMesh(canWideG, canMat, wi.length, chCX(c), chCZ(c), chR), wi, true, false);
+      if (wi.length) paint(instMesh(canWideG, canMat, wi.length), wi, true, false);
       // (the wide tier carried a second lobe per crown for a round; the lumpy displacement
       // gives every crown its asymmetry now, and the lobes were 3.2M triangles a frame)
-      if (wi.length && cardG) paintCards(wi, chCX(c), chCZ(c), chR, false, cardWideG);
+      if (wi.length && cardG) paintCards(wi, false, cardWideG);
     }
     // the outer tier: one crown mesh and one trunk mesh per non-empty city chunk
     let nOuter = 0, nOuterChunks = 0;
@@ -12480,18 +12514,18 @@
       const oi = buckets.outer[c];
       if (!oi.length) continue;
       nOuter += oi.length; nOuterChunks++;
-      paint(instMesh(trunkOuterG, trunkMat, oi.length, ocCX(c), ocCZ(c), ocR), oi, false, false);
-      paint(instMesh(canOuterG, canMat, oi.length, ocCX(c), ocCZ(c), ocR), oi, true, false);
+      paint(instMesh(trunkOuterG, trunkMat, oi.length), oi, false, false);
+      paint(instMesh(canOuterG, canMat, oi.length), oi, true, false);
     }
     // species silhouettes, citywide: zelkova/elm vases and linden pyramids
-    if (buckets.vases.length) paint(instMesh(vaseG, canMat, buckets.vases.length, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR), buckets.vases, true, false);
-    if (buckets.pyrs.length) paint(instMesh(pyrG, canMat, buckets.pyrs.length, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR), buckets.pyrs, true, false);
-    if (cardG && buckets.vases.length) paintCards(buckets.vases, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR, false, cardWideG);
-    if (cardG && buckets.pyrs.length) paintCards(buckets.pyrs, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR, false, cardWideG);
+    if (buckets.vases.length) paint(instMesh(vaseG, canMat, buckets.vases.length), buckets.vases, true, false);
+    if (buckets.pyrs.length) paint(instMesh(pyrG, canMat, buckets.pyrs.length), buckets.pyrs, true, false);
+    if (cardG && buckets.vases.length) paintCards(buckets.vases, false, cardWideG);
+    if (cardG && buckets.pyrs.length) paintCards(buckets.pyrs, false, cardWideG);
     // conifers: cones straight from the ground, both tiers in one mesh
     const ki = buckets.cones;
     if (ki.length) {
-      const cones = instMesh(coneG, canMat, ki.length, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR);
+      const cones = instMesh(coneG, canMat, ki.length);
       for (let k = 0; k < ki.length; k++) {
         const i = ki[k];
         const h = clamp(3 + DBH[i] * 0.25, 3.5, 14), r = clamp(0.8 + DBH[i] * 0.06, 1, 3.5);
@@ -12505,8 +12539,20 @@
       if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
       cones.castShadow = true;
       groupCity.add(cones);
-      if (cardG) paintCards(ki, (WB.x0 + WB.x1) / 2, (WB.z0 + WB.z1) / 2, wideR, false, cardWideG, true);
+      if (cardG) paintCards(ki, false, cardWideG, true);
     }
+    // Round 167: the tree meshes cull. r149's InstancedMesh never did (its constructor turns frustumCulled off), so all
+    // of them, 68 meshes and 2.27 M triangles a frame on a phone, drew in every view with a third or more of them out of
+    // it; the chunk grid was laid out for culling that never ran. Each mesh's sphere now encloses every instance as
+    // drawn: a crown as its shader lumps and sways it (CROWN_GROW, CROWN_SLACK), a trunk as posed, 2 m of margin on
+    // each. Drawn unculled once behind the veil (the first frame) so every one still uploads there (gotcha 12); the
+    // arrays stay, as they always have (nothing frees a tree's)
+    for (const im of treeMeshes) {
+      const crown = im.material !== trunkMat;
+      fitInstSphere(im, crown ? CROWN_GROW : 1, crown ? CROWN_SLACK : 0, 2);
+      im.frustumCulled = false; pendingUpload.push(im);
+    }
+    TREE_MESHES = treeMeshes;
     console.log('planted', nInv, 'surveyed trees +', n - nInv, 'curated,',
       buckets.cones.length, 'conifers,', buckets.vases.length, 'vases,', buckets.pyrs.length, 'pyramids');
   });
@@ -15986,6 +16032,43 @@
     }
     return out;
   }
+  // Round 167: the ties in runs of about TIE_RUN metres of track, each its own InstancedMesh with a sphere round its own
+  // ties (fitInstSphere), in one group. The El's 41,236 ties and PATCO's 6,343 were two meshes whose box's own sphere
+  // sat at the origin, so they could never cull: 0.57 M triangles a frame from everywhere in the city. A run out of view
+  // now frustum-culls, which changes no pixel; a run in view draws whatever its distance (a hide past 700 m went in the
+  // same round and came out on review: a 2.6 m tie still reaches 1.5 px there, antialiasing mixed it into the bed, 751 px
+  // of an El overview differed, and a whole run switching at once would pop in flight). `ties` are [x, y, z, yaw,
+  // pitch] in track order; a step of over 10 m between neighbours (the next corridor or track) starts a new run. Each
+  // run is what the one mesh was: its box's arrays and its matrices go at upload, and it draws unculled once behind the
+  // veil so it uploads there (gotcha 12)
+  const TIE_RUN = 500, TIE_RUNS = [];   // TIE_RUNS: every run's mesh (__dbg.cull)
+  function tieRuns(ties, box, mat, name) {
+    const group = new THREE.Group(), pose = new THREE.Object3D();
+    group.name = name;
+    let a = 0;
+    for (let b = 1; b <= ties.length; b++) {
+      if (b < ties.length) {
+        const p = ties[b - 1], q = ties[b], s = ties[a];
+        if (Math.hypot(q[0] - p[0], q[2] - p[2]) < 10 && Math.hypot(q[0] - s[0], q[2] - s[2]) < TIE_RUN) continue;
+      }
+      const run = new THREE.InstancedMesh(box.clone(), mat, b - a);
+      for (let i = a; i < b; i++) {
+        const [x, y, z, yaw, pitch] = ties[i];
+        pose.position.set(x, y, z); pose.rotation.set(0, yaw, pitch, 'YXZ'); pose.updateMatrix();
+        run.setMatrixAt(i - a, pose.matrix);
+      }
+      run.instanceMatrix.needsUpdate = true;
+      run.receiveShadow = true;
+      fitInstSphere(run, 1, 0, 1);
+      TIE_RUNS.push(run);
+      freeOnUpload(run.geometry);
+      run.instanceMatrix.onUpload(dropUploadedArray);   // Round 158: the ties are posed once, here, and never setMatrixAt again; the sphere is taken above, before the upload drops the matrices
+      run.frustumCulled = false; pendingUpload.push(run);
+      group.add(run);
+      a = b;
+    }
+    return group;
+  }
   // One cached alignment/profile drives the rail, excavation and portal walls.
   // The old 170 m approach followed each DEM bump and disappeared into intact
   // grass. Use a smooth grade out of a train-height tunnel instead.
@@ -16266,22 +16349,12 @@
     rails.name = 'El Running Rails and Third Rails';
     rails.receiveShadow = true;
     groupCity.add(rails);
-    // One instanced sleeper mesh: the whole alignment adds only two draw calls,
-    // with one shared box instead of tens of thousands of separate geometries.
-    const ties = new THREE.InstancedMesh(new THREE.BoxGeometry(EL_RAIL.tieWidth, 0.14, EL_RAIL.tieLength), new THREE.MeshLambertMaterial({ color: 0x302820 }), sleepers.length);
-    const pose = new THREE.Object3D();
-    for (let i = 0; i < sleepers.length; i++) {
-      const [x, y, z, yaw, pitch] = sleepers[i];
-      pose.position.set(x, y, z); pose.rotation.set(0, yaw, pitch, 'YXZ'); pose.updateMatrix();
-      ties.setMatrixAt(i, pose.matrix);
-    }
-    ties.instanceMatrix.needsUpdate = true; ties.frustumCulled = false;   // the box's own sphere sits at the origin, so it culled from most views (Round 141 review)
-    ties.name = 'El Cross Ties';
-    ties.receiveShadow = true;
+    // The sleepers are instanced, one shared box instead of tens of thousands of separate geometries; since Round 167
+    // in runs that cull (tieRuns), where they were one mesh drawn from everywhere
+    const ties = tieRuns(sleepers, new THREE.BoxGeometry(EL_RAIL.tieWidth, 0.14, EL_RAIL.tieLength), new THREE.MeshLambertMaterial({ color: 0x302820 }), 'El Cross Ties');
     groupCity.add(ties);
-    EL_STATS = { portals: elTrackProfiles().map(p=>({x:p.pts[p.mouth][0],z:p.pts[p.mouth][1],railY:p.ys[p.mouth]+.4,clearance:4.475,cutLength:+(p.stations[p.cutEnd]-p.stations[p.mouth]).toFixed(1)})), corridors: EL_TRACK.length, routeKm: +(trackLength / 1000).toFixed(2), runningRails: 4, gauge: EL_RAIL.gauge, tiePitch: EL_RAIL.tiePitch, sleepers: sleepers.length, segments: trackSegments, addedDrawCalls: 2 };
-    freeOnUpload(el.geometry); freeOnUpload(rails.geometry); freeOnUpload(ties.geometry);
-    ties.instanceMatrix.onUpload(dropUploadedArray);   // Round 158: 2.6 MB; the ties are posed once, here, and never setMatrixAt again (frustumCulled is off, so no sphere is ever taken from them)
+    EL_STATS = { portals: elTrackProfiles().map(p=>({x:p.pts[p.mouth][0],z:p.pts[p.mouth][1],railY:p.ys[p.mouth]+.4,clearance:4.475,cutLength:+(p.stations[p.cutEnd]-p.stations[p.mouth]).toFixed(1)})), corridors: EL_TRACK.length, routeKm: +(trackLength / 1000).toFixed(2), runningRails: 4, gauge: EL_RAIL.gauge, tiePitch: EL_RAIL.tiePitch, sleepers: sleepers.length, segments: trackSegments, tieRuns: ties.children.length };   // the ties' runs draw only in view (Round 167: a draw each; __dbg.cull() counts those drawn)
+    freeOnUpload(el.geometry); freeOnUpload(rails.geometry);
   });
 
   // ---- Amtrak's tracks (Round 80). RAIL_AMTRAK (bake_rail.py: the railway=rail ways Amtrak
@@ -16764,13 +16837,10 @@
     const rails = new THREE.Mesh(mergeColored(railParts), new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.42, roughness: 0.52 }));
     rails.receiveShadow = true;
     groupCity.add(rails);
-    const tm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.24, 0.14, 2.6), new THREE.MeshLambertMaterial({ color: 0x302820 }), Math.max(1, ties.length));
-    const pose = new THREE.Object3D();
-    ties.forEach(([x, y, z, yaw, pitch], i) => { pose.position.set(x, y, z); pose.rotation.set(0, yaw, pitch, 'YXZ'); pose.updateMatrix(); tm.setMatrixAt(i, pose.matrix); });
-    tm.count = ties.length; tm.instanceMatrix.needsUpdate = true; tm.receiveShadow = true; tm.frustumCulled = false;   // the box's own sphere sits at the origin (review)
+    const tm = tieRuns(ties, new THREE.BoxGeometry(0.24, 0.14, 2.6), new THREE.MeshLambertMaterial({ color: 0x302820 }), 'PATCO Cross Ties');   // in culled runs, each round its own ties (Round 167; the box's own sphere sat at the origin, so the one mesh never culled)
     groupCity.add(tm);
-    freeOnUpload(st.geometry); freeOnUpload(rails.geometry); freeOnUpload(tm.geometry);
-    PATCO_STATS = { trackM: Math.round(trackM), ties: ties.length, piers, cuts: patcoCuts().length, mouths: T.map((t) => ({ d: t.d, phl: +t.mouthP.toFixed(1), cam: +t.mouthC.toFixed(1) })) };
+    freeOnUpload(st.geometry); freeOnUpload(rails.geometry);
+    PATCO_STATS = { trackM: Math.round(trackM), ties: ties.length, tieRuns: tm.children.length, piers, cuts: patcoCuts().length, mouths: T.map((t) => ({ d: t.d, phl: +t.mouthP.toFixed(1), cam: +t.mouthC.toFixed(1) })) };
   });
   step('Rolling out the SEPTA fleet', () => {
     terrainRoadGrid = null; TRS.w = new Float32Array(9); TRS.n = 0;   // build-only pavement near cut patches; release even without rail data
@@ -22802,22 +22872,111 @@
   // at the same pixel density, through its own camera, so a pin turning into view is already inside it.
   const PIN_OCC = { w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5, cam: new THREE.PerspectiveCamera(), h: 0, rt: null, buf: null, mat: null, ok: false, far: 30000,
     every: isTouch ? 10 : 5, view: new THREE.Matrix4(), proj: new THREE.Matrix4(), n: 0, hid: 0, want: -99,
-    lastPos: new THREE.Vector3(1e9, 0, 0), lastQuat: new THREE.Quaternion(), lastFrame: -1e9 };
+    lastPos: new THREE.Vector3(1e9, 0, 0), lastQuat: new THREE.Quaternion(), lastFrame: -1e9, retry: false };
   const pinDepthClear = new THREE.Mesh(new THREE.PlaneGeometry(0.01, 0.01),
     new THREE.MeshBasicMaterial({ transparent: true, depthTest: false, depthWrite: false, colorWrite: false }));
   pinDepthClear.renderOrder = 99; pinDepthClear.frustumCulled = false;
   pinDepthClear.onBeforeRender = (r) => { r.state.buffers.depth.setMask(true); r.clearDepth(); };
   scene.add(pinDepthClear);
   const _pov = new THREE.Vector3(), _pocc = new THREE.Color();
-  function pinOccCapture() {
-    const r = renderer, W = PIN_OCC.w, H = Math.max(1, Math.round(W * window.innerHeight / Math.max(1, window.innerWidth)));   // the wide image keeps the screen's aspect
-    if (!PIN_OCC.rt || PIN_OCC.h !== H) {
+  // Round 167: the capture reads its image back without waiting for it. readRenderTargetPixels into an array stalls the
+  // page until the GPU has drawn the whole city into the target, every 10th frame on a phone (the likely cause of its
+  // 104 ms p95). On WebGL 2 the read goes into a pixel pack buffer behind a fence instead; each frame pinOccPoll asks the
+  // fence, and once it has passed copies the pixels into PIN_OCC.buf and only then installs the capture's own view and
+  // projection, so the image and its matrices always match. The pins see an image a frame or two older than a
+  // synchronous read would give them, which the Round 138 and 143 hysteresis already rides out. One read in flight at a
+  // time; the pack buffer is unbound the moment the read is issued, so three's own readPixels (the building tap's) works
+  // as it did. The first image, a new size, a jump of the eye (PIN_JUMP since the last capture: a shared link, a located
+  // fix, never a flight, which covers under 270 m between captures at its fastest), WebGL 1, and anything that fails
+  // (after which it never tries again) take the synchronous read, so after a jump the pins answer to the new place as soon
+  // as they always did
+  const PIN_JUMP = 300;
+  const PIN_ASYNC = { pbo: null, bytes: 0, sync: null, age: 0, view: new THREE.Matrix4(), proj: new THREE.Matrix4(), eye: new THREE.Vector3(1e9, 0, 0), off: false, issued: 0, landed: 0, dropped: 0, checked: false };
+  function pinOccCapture() {   // 'now': a new image stands in PIN_OCC.buf; 'later': one is on its way; 'busy': a read is still in flight, nothing drawn
+    const W = PIN_OCC.w, H = Math.max(1, Math.round(W * window.innerHeight / Math.max(1, window.innerWidth)));   // the wide image keeps the screen's aspect
+    const fresh = !PIN_OCC.rt || PIN_OCC.h !== H;
+    if (fresh) {
+      pinOccDrop();   // a read in flight is of the old size
       if (PIN_OCC.rt) PIN_OCC.rt.dispose();
       PIN_OCC.rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false });
       PIN_OCC.h = H; PIN_OCC.buf = new Uint8Array(W * H * 4);
     }
     pinOccMat();
-    pinOccCaptureRest();
+    const jump = camera.position.distanceToSquared(PIN_ASYNC.eye) > PIN_JUMP * PIN_JUMP;
+    if (fresh || jump || !PIN_OCC.ok || PIN_ASYNC.off || !renderer.capabilities.isWebGL2) {
+      pinOccDrop();   // a read in flight is of the place before the jump
+      PIN_ASYNC.eye.copy(camera.position);
+      pinOccCaptureRest(); return 'now';
+    }
+    if (PIN_ASYNC.sync) return 'busy';
+    PIN_ASYNC.eye.copy(camera.position);
+    const c = pinOccCam();
+    if (occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, pinOccIssue)) {
+      PIN_ASYNC.view.copy(c.matrixWorldInverse); PIN_ASYNC.proj.copy(c.projectionMatrix);
+      return 'later';
+    }
+    PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix);   // the issue failed and read it synchronously
+    PIN_OCC.ok = true; PIN_OCC.n++;
+    return 'now';
+  }
+  // occRender's read on the async path, with the capture's target bound: true when the read is on its way. It never
+  // throws (occRender has the scene's materials and visibility to put back): a failure reads synchronously, for good
+  function pinOccIssue() {
+    const A = PIN_ASYNC, r = renderer, gl = r.getContext(), n = PIN_OCC.buf.byteLength;
+    try {
+      if (!A.checked) gl.getError();   // clears anything older, so the one check below reads this read alone
+      if (!A.pbo || A.bytes !== n) {
+        if (A.pbo) gl.deleteBuffer(A.pbo);
+        A.pbo = gl.createBuffer(); A.bytes = n;
+        gl.bindBuffer(gl.PIXEL_PACK_BUFFER, A.pbo);
+        gl.bufferData(gl.PIXEL_PACK_BUFFER, n, gl.STREAM_READ);
+      } else gl.bindBuffer(gl.PIXEL_PACK_BUFFER, A.pbo);
+      try { r.readRenderTargetPixels(PIN_OCC.rt, 0, 0, PIN_OCC.w, PIN_OCC.h, 0); }   // three's own binding of the target; with a pack buffer bound the last argument is its byte offset
+      finally { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); }   // at once: a readPixels into an array must never find it bound
+      if (!A.checked) { A.checked = true; if (gl.getError() !== gl.NO_ERROR) throw new Error('pack read refused'); }   // once, the first time: a read the driver refused would land as zeros and hide every pin
+      const s = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      if (!s) throw new Error('no fence');
+      gl.flush();   // the capture's commands go now, so the fence can pass by the next frame
+      A.sync = s; A.age = 0; A.issued++;
+      A.tick = false; pinOccTick.port2.postMessage(0);
+      return true;
+    } catch (e) {
+      A.off = true; pinOccDrop();
+      try { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); r.readRenderTargetPixels(PIN_OCC.rt, 0, 0, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf); } catch (e2) { /* a lost context: nothing is drawn again */ }
+      return false;
+    }
+  }
+  // A fence can pass only between tasks (the WebGL 2 rule), so a read counts its frames toward giving up only once a task
+  // has ended since it was issued: a page's frames are tasks of their own, a dev probe's loop of frameOnce is one task
+  const pinOccTick = new MessageChannel();
+  pinOccTick.port1.onmessage = () => { PIN_ASYNC.tick = true; };
+  // every frame, first thing: the read in flight lands once its fence has passed (PIN_OCC.fresh for that frame). The copy
+  // waits for the GL work queued before it (a synchronous call in Chrome's and WebKit's GPU processes), so it comes
+  // before the frame queues any
+  function pinOccPoll() {
+    const A = PIN_ASYNC;
+    PIN_OCC.fresh = false;
+    if (!A.sync) return;
+    const gl = renderer.getContext();
+    try {
+      if (gl.isContextLost()) { A.sync = null; A.pbo = null; A.off = true; return; }   // the handles died with the context
+      if (gl.getSyncParameter(A.sync, gl.SYNC_STATUS) !== gl.SIGNALED) {
+        if (A.tick && ++A.age > 120) { pinOccDrop(); A.off = true; }   // a fence that never passes: the synchronous read from now on
+        return;
+      }
+      gl.deleteSync(A.sync); A.sync = null;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, A.pbo);
+      try { gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, PIN_OCC.buf); } finally { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); }
+    } catch (e) { pinOccDrop(); A.off = true; return; }
+    PIN_OCC.view.copy(A.view); PIN_OCC.proj.copy(A.proj);
+    PIN_OCC.ok = true; PIN_OCC.n++; A.landed++;
+    PIN_OCC.fresh = true;
+  }
+  function pinOccDrop() {   // forget the read in flight (a new size, a failure)
+    const A = PIN_ASYNC;
+    if (!A.sync) return;
+    try { renderer.getContext().deleteSync(A.sync); } catch (e) { /* a lost context */ }
+    A.sync = null; A.dropped++;
   }
   function pinOccMat() {   // the view-distance override, shared with the building tap (Round 132)
     if (PIN_OCC.mat) return PIN_OCC.mat;
@@ -22828,20 +22987,25 @@
     });
     return PIN_OCC.mat;
   }
-  function pinOccCaptureRest() {
+  function pinOccCam() {   // the capture's own camera: the eye's, PIN_OCC.wide times the screen each way
     camera.updateMatrixWorld();
     const c = PIN_OCC.cam;
     c.matrixAutoUpdate = false; c.matrixWorldAutoUpdate = false; c.near = camera.near; c.far = camera.far;   // the log depth buffer reads far
     c.matrix.copy(camera.matrixWorld); c.matrixWorld.copy(camera.matrixWorld); c.matrixWorldInverse.copy(camera.matrixWorldInverse);
     c.projectionMatrix.copy(camera.projectionMatrix); c.projectionMatrix.elements[0] /= PIN_OCC.wide; c.projectionMatrix.elements[5] /= PIN_OCC.wide;
     c.projectionMatrixInverse.copy(c.projectionMatrix).invert();
+    return c;
+  }
+  function pinOccCaptureRest() {   // the synchronous capture: drawn, read and installed at once
+    const c = pinOccCam();
     occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c);
     PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix);
     PIN_OCC.ok = true; PIN_OCC.n++;
   }
   // the city's view distance into a target: every transparent, line, point and pin object hidden (and, for the
-  // building tap, every instanced mesh: the trees, the cars, the lamps), the shadow map untouched
-  function occRender(rt, W, H, buf, noInstanced, cam = camera) {
+  // building tap, every instanced mesh: the trees, the cars, the lamps), the shadow map untouched. `read`, when given,
+  // replaces the synchronous read into `buf` and its answer is returned (the pins' async read, Round 167)
+  function occRender(rt, W, H, buf, noInstanced, cam = camera, read = null) {
     const r = renderer, hid = [];
     pinOccMat();
     scene.traverse((o) => {
@@ -22857,11 +23021,13 @@
     scene.overrideMaterial = PIN_OCC.mat; scene.background = null;
     r.setRenderTarget(rt); r.setClearColor(0xffffff, 1); r.clear(true, true, false);
     r.render(scene, cam);
-    r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
+    let out = false;
+    if (read) out = read(); else r.readRenderTargetPixels(rt, 0, 0, W, H, buf);
     r.setRenderTarget(prevRT); r.setClearColor(_pocc, prevA);
     scene.overrideMaterial = prevOver; scene.background = prevBg;
     r.shadowMap.autoUpdate = prevUp; r.shadowMap.needsUpdate = prevNeed;
     for (const o of hid) o.visible = true;
+    return out;
   }
   const occUnpack = (b, o) => (b[o] / 16777216 + b[o + 1] / 65536 + b[o + 2] / 256 + b[o + 3]) / 256 * PIN_OCC.far;   // bytes / 255, times three.js's 255 / 256 unpack scale, times the far
   function pinOccVisible(x, y, z, rad = 1) {   // rad: the neighbourhood's half-width in pixels (a shown pin asks with 2, Round 143)
@@ -22905,10 +23071,18 @@
     let any = frameNo - PIN_OCC.want < 3;
     for (const m of PIN_MESHES) if (m.visible && m.count > 0) { any = true; break; }
     if (!any) return;
-    let captured = false;
-    if (!PIN_OCC.ok || (frameNo % PIN_OCC.every === 0 && (camera.position.distanceToSquared(PIN_OCC.lastPos) > 0.09 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.lastQuat)) > 2e-6 || frameNo - PIN_OCC.lastFrame > 120))) {
-      pinOccCapture(); captured = true;
-      PIN_OCC.lastPos.copy(camera.position); PIN_OCC.lastQuat.copy(camera.quaternion); PIN_OCC.lastFrame = frameNo;
+    let captured = !!PIN_OCC.fresh;   // Round 167: an image read back without waiting counts as a capture on the frame it lands (pinOccPoll)
+    // a turn that found a read still in flight tries again the next frame (Round 167 review: waiting a whole cadence halved
+    // the images when the fences ran late), so an image is issued as soon as the last one lands and never two at once
+    const due = PIN_OCC.retry || frameNo % PIN_OCC.every === 0;
+    PIN_OCC.retry = false;
+    if (!PIN_OCC.ok || (due && (camera.position.distanceToSquared(PIN_OCC.lastPos) > 0.09 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.lastQuat)) > 2e-6 || frameNo - PIN_OCC.lastFrame > 120))) {
+      const got = pinOccCapture();
+      if (got === 'busy') PIN_OCC.retry = true;   // one read in flight at a time
+      else {
+        if (got !== 'later') captured = true;
+        PIN_OCC.lastPos.copy(camera.position); PIN_OCC.lastQuat.copy(camera.quaternion); PIN_OCC.lastFrame = frameNo;
+      }
     }
     const step = Math.min(1, dt / PIN_FADE);
     let hid = 0;
@@ -22946,6 +23120,7 @@
     const dt = Math.min(rawMs / 1000, 0.05);
     last = now;
     frameNo++;
+    pinOccPoll();   // Round 167: the pins' last read lands here once its fence has passed, first thing, before this frame queues any GL work its copy would wait behind
     if (!once && rawMs < 500) { PERF.ring[PERF.ri] = rawMs; PERF.ri = (PERF.ri + 1) % 600; PERF.rn++; }
     if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
     // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
@@ -23062,6 +23237,10 @@
     updateHash(now);
     pinOccUpdate(dt);
     if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);
+    if (pendingUpload.length) {   // Round 167: the first frame, behind the veil, drew what the last steps left unculled, so it uploaded: from here it culls
+      for (const m of pendingUpload) m.frustumCulled = true;
+      pendingUpload.length = 0;
+    }
   }
 
   setHint();
@@ -23152,7 +23331,7 @@
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { _pov.set(x, y, z).applyMatrix4(PIN_OCC.view); const vz = -_pov.z; _pov.applyMatrix4(PIN_OCC.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(PIN_OCC.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(vz - (2.5 + vz * 0.02)), px, py, ds, vis: pinOccVisible(x, y, z) }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccVisible(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]) ? 1 : 0, st ? st.tgt[i] : -1, st ? st.pendC[i] : -1]); return o; }) : undefined }), lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { _pov.set(x, y, z).applyMatrix4(PIN_OCC.view); const vz = -_pov.z; _pov.applyMatrix4(PIN_OCC.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(PIN_OCC.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(vz - (2.5 + vz * 0.02)), px, py, ds, vis: pinOccVisible(x, y, z) }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccVisible(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]) ? 1 : 0, st ? st.tgt[i] : -1, st ? st.pendC[i] : -1]); return o; }) : undefined }), pinAsync: (on) => { if (on === false) { pinOccDrop(); PIN_ASYNC.off = true; } else if (on === true) PIN_ASYNC.off = false; return { webgl2: renderer.capabilities.isWebGL2, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, issued: PIN_ASYNC.issued, landed: PIN_ASYNC.landed, dropped: PIN_ASYNC.dropped, captures: PIN_OCC.n }; }, cull: () => { const f = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 * m.count; let tIn = 0, tTri = 0, tAll = 0, rIn = 0, rTri = 0; for (const m of TREE_MESHES) { tAll += tri(m); if (!m.frustumCulled || f.intersectsObject(m)) { tIn++; tTri += tri(m); } } for (const m of TIE_RUNS) if (m.parent && m.parent.visible && (!m.frustumCulled || f.intersectsObject(m))) { rIn++; rTri += 12 * m.count; } return { pending: pendingUpload.length, trees: TREE_MESHES.length, treesDrawn: tIn, treeTris: tTri, treeTrisAll: tAll, tieRuns: TIE_RUNS.length, tieRunsDrawn: rIn, tieTris: rTri, tieTrisAll: TIE_RUNS.reduce((a, m) => a + 12 * m.count, 0) }; }, lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

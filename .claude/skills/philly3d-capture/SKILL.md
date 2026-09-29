@@ -125,8 +125,23 @@ Inject `scripts/cap.js` as a string, then:
 await __cap('skyline-after.jpg', -300, 240, 900, -0.653, -0.12, 6);
 ```
 
-Files land in `captures/` beside the sink script; `Read` them afterwards. Two
-constraints that produce silent garbage when broken:
+Files land in `captures/` beside the sink script; `Read` them afterwards (a name
+ending in `.png` is written as a PNG, anything else as a jpeg).
+
+Since Round 167 `__cap` and `__frames` yield a task between frames and are async:
+`await` every call and never start a second capture before the first resolves. On
+WebGL 2 the pins' depth image is read back behind a fence, and a fence passes only
+between tasks, so frames driven inside one task (a bare `frameOnce()` loop) judge
+the pins against the image of the pose before, and after a move under 300 m the
+pins in the capture belong to the old view. Even yielding, an unpaced loop can
+leave a read in flight for 30 frames or more (measured headless on Metal: a read
+lands 150 to 400 ms after it goes under the page's own loop, later in an unpaced
+one), so when the pins must answer to the captured
+pose call `__dbg.pinAsync(false)` first, which forces the synchronous read, and
+`__dbg.pinAsync(true)` after. `__dbg.pinAsync()` reports how many reads were issued
+and landed.
+
+Two constraints that produce silent garbage when broken:
 
 - **Never `await` between the last `frameOnce()` and `toBlob`.** The compositor
   can present and clear the buffer in that gap and you get a 17 KB all-black jpeg
@@ -142,8 +157,11 @@ screenshot instead, which means the pane has to be visible.
 Mike has reported pins that flash or vanish (Rounds 126, 127, 138, 143) and flicker
 (Rounds 130, 140, 144) again and again; settle each with a number, before and after:
 
-- **Pins**: inject `scripts/pin_sweep.js`, then `__pinSweep([[x, y, z, yaw0, yaw1], ...])`
-  on the deployed build (`before.html`) and the new one at the same eyes. It returns
+- **Pins**: inject `scripts/pin_sweep.js`, then `await __pinSweep([[x, y, z, yaw0, yaw1], ...])`
+  on the deployed build (`before.html`) and the new one at the same eyes. Since Round 167 the
+  pins' depth image is read back behind a fence on WebGL 2, and a fence passes only between
+  tasks: a probe that loops `frameOnce()` in one call sees no new image until it yields (the
+  sweep yields every frame; `__dbg.pinAsync(false)` forces the old synchronous read). It returns
   on-screen showings and blinks; Round 143 went from 135 of 189 to 5 of 47.
 - **Flicker**: three PNG captures 0.5 m apart, then
   `python3 scripts/flicker_diff.py captures/<prefix> --crop x0,y0,x1,y1` and read the crop.
