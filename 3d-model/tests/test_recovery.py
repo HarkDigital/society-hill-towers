@@ -21,26 +21,10 @@ def cut(src, start, end, inclusive=False):
     return src[i:j + (len(end) if inclusive else 0)]
 
 
-class Recovery(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.src = (ROOT / 'app.js').read_text()
-        cls.sw = (ROOT / 'sw.js').read_text()
-        cls.boot = cut(cls.src, '  const BOOT_KEY = ', '  // the installable app:')
-        cls.ctx = cut(cls.src, "  canvas.addEventListener('webglcontextlost', (e) => {", '\n  });\n', inclusive=True)
-        cls.beacon = cut(cls.src, '  function beacon(st, extra) {', '\n  }\n', inclusive=True)
-        cls.node = shutil.which('node')
-
-    def node_run(self, script):
-        if not self.node:
-            self.skipTest('Node.js unavailable')
-        r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=60)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        return json.loads(r.stdout)
-
-    # ---- the boot block under Node: one call is one load, over one shared localStorage
-    def loads(self, body):
-        script = r'''
+# the boot block runs under Node, one call one load, over one shared localStorage. Round 168: the block starts with the
+# Graphics choice (GFX, gfxSet), which the tier reads; tests/test_gfx.py loads through the same harness
+BOOT_START, BOOT_END = '  // ---- the Graphics choice (Round 168', '  // the installable app:'
+HARNESS = r"""
 const store = new Map(), sess = new Map();
 const mkStore = (m) => ({ getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); } });
 const LS = mkStore(store), SS = mkStore(sess);
@@ -49,7 +33,8 @@ const LOAD = new Function('isTouch', 'location', 'localStorage', 'sessionStorage
   let shownAt = -1e9;
   let glDead = false;
 ` + CTX + `
-  return { TIER, LITE, TIER2, LITE_R, LITE_WHY, BOOT_GATE, bootDied, bootStick, bootFails, bootMark, bootClear, dead: () => glDead };`);
+  return { TIER, LITE, TIER2, LITE_R, LITE_WHY, BOOT_GATE, bootDied, bootStick, bootFails, bootMark, bootClear, dead: () => glDead,
+    GFX, gfxSet, gfxTierFor, tierAuto, tierSoft, tierClimb };`);
 function load(o) {
   o = o || {};
   const listeners = {}, win = { addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); }, removeEventListener: (t, f) => { listeners[t] = (listeners[t] || []).filter((g) => g !== f); } };
@@ -66,15 +51,47 @@ function load(o) {
   return S;
 }
 const crumb = (step, ageS, extra) => LS.setItem('philly3d.boot', JSON.stringify(Object.assign({ step, t: Date.now() - ageS * 1000, fails: 0, lite: false, tier: 0 }, extra || {})));
-const saved = () => ({ tier: JSON.parse(LS.getItem('philly3d.tier') || 'null'), lite: LS.getItem('philly3d.lite'), boot: JSON.parse(LS.getItem('philly3d.boot') || 'null') });
+const J = (k) => JSON.parse(LS.getItem(k) || 'null');
+const saved = () => ({ tier: J('philly3d.tier'), lite: LS.getItem('philly3d.lite'), boot: J('philly3d.boot'), soft: J('philly3d.tiersoft'), run: J('philly3d.tierrun'), ok: J('philly3d.tierok'), gfx: J('philly3d.gfx'), v: LS.getItem('philly3d.tierv') });
 const pick = (S) => ({ tier: S.TIER, lite: S.LITE, t2: S.TIER2, r: S.LITE_R, why: S.LITE_WHY, gate: S.BOOT_GATE, died: S.bootDied, stick: S.bootStick, fails: S.bootFails });
-const reset = () => { store.clear(); sess.clear(); };
+// a clean session at the tier it built: stood 180 s after Enter (the mark, which app.js writes only on a lighter city:
+// tests/test_gfx.py checks the writer), then left the ordinary way (the crumb goes)
+const clean = (S) => { if (S.TIER >= 1) LS.setItem('philly3d.tierok', JSON.stringify({ tier: S.TIER, t: Date.now() })); S.unload(); };
+const days = (n) => Date.now() - n * 864e5;
+const resetRaw = () => { store.clear(); sess.clear(); };   // a device this build has never seen (the migration runs)
+const reset = () => { resetRaw(); store.set('philly3d.tierv', '2'); };   // a device already on Round 168's rules
 const out = {};
 BODY
 console.log(JSON.stringify(out));
-'''
-        script = script.replace('BOOT', json.dumps(self.boot), 1).replace('CTX', json.dumps(self.ctx), 1).replace('BODY', body)
-        return self.node_run(script)
+"""
+
+
+def boot_script(src, body):
+    boot = cut(src, BOOT_START, BOOT_END)
+    ctx = cut(src, "  canvas.addEventListener('webglcontextlost', (e) => {", '\n  });\n', inclusive=True)
+    return HARNESS.replace('BOOT', json.dumps(boot), 1).replace('CTX', json.dumps(ctx), 1).replace('BODY', body)
+
+
+def run_node(tc, script):
+    if not shutil.which('node'):
+        tc.skipTest('Node.js unavailable')
+    r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=60)
+    tc.assertEqual(r.returncode, 0, r.stderr)
+    return json.loads(r.stdout)
+
+
+class Recovery(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.src = (ROOT / 'app.js').read_text()
+        cls.sw = (ROOT / 'sw.js').read_text()
+        cls.beacon = cut(cls.src, '  function beacon(st, extra) {', '\n  }\n', inclusive=True)
+
+    def node_run(self, script):
+        return run_node(self, script)
+
+    def loads(self, body):
+        return self.node_run(boot_script(self.src, body))
 
     def test_tier_arithmetic(self):
         o = self.loads(r'''
@@ -129,11 +146,12 @@ reset(); crumb('Sowing the grass', 5); out.deskDied = pick(load({ touch: false }
 
     def test_running_deaths_and_the_gate_crumb(self):
         o = self.loads(r'''
-// a lite session killed once while running: lite for this load only (the Round 154 rule), still gated
+// Round 168: a death while running makes the next load one tier lighter than the one that died, held until a clean
+// session (the soft tier), never a fortnight on its own; still gated
 reset(); crumb('running', 30, { lite: true, tier: 1 }); out.liteRun = pick(load()); out.liteRunSaved = saved();
-// the full build killed while running: sticky (the recovery round)
+// the full build killed while running: tier 1, NOT sticky (build 5 made this one death cost two weeks)
 reset(); crumb('running', 30); out.fullRun = pick(load()); out.fullRunSaved = saved();
-// a second death while running
+// a second death in a row while running: tier 2 by the count, and still not sticky at a new tier
 reset(); crumb('running', 30, { lite: true, tier: 1, fails: 1 }); out.twoRun = pick(load());
 // 'running' is fresh for 3 minutes, a build step for 30
 reset(); crumb('running', 200); out.staleRun = pick(load());
@@ -145,19 +163,116 @@ reset(); crumb('gate', 60, { fails: 1, lite: true, tier: 1 }); out.gate = pick(l
 crumb('Sowing the grass', 5, { fails: 1, lite: true, tier: 1 }); out.afterGate = pick(load());
 ''')
         lr = o['liteRun']
-        self.assertEqual((lr['tier'], lr['died'], lr['stick'], lr['gate']), (1, True, False, True))
+        self.assertEqual((lr['tier'], lr['died'], lr['stick'], lr['gate'], lr['why']), (2, True, False, True, 'cr'))
         self.assertIsNone(o['liteRunSaved']['tier'])
         self.assertIsNone(o['liteRunSaved']['lite'])
+        self.assertEqual(o['liteRunSaved']['soft']['tier'], 2)
+        self.assertEqual(list(o['liteRunSaved']['run']), ['1'], 'the running-death log keeps the tier that died')
         fr = o['fullRun']
-        self.assertEqual((fr['tier'], fr['stick'], fr['gate']), (1, True, True))
-        self.assertEqual(o['fullRunSaved']['tier']['tier'], 1)
-        self.assertEqual((o['twoRun']['tier'], o['twoRun']['stick']), (2, True))
+        self.assertEqual((fr['tier'], fr['stick'], fr['gate'], fr['why']), (1, False, True, 'cr'))
+        self.assertIsNone(o['fullRunSaved']['tier'], 'one death while running is not saved for a fortnight')
+        self.assertIsNone(o['fullRunSaved']['lite'])
+        self.assertEqual(o['fullRunSaved']['soft']['tier'], 1)
+        self.assertEqual((o['twoRun']['tier'], o['twoRun']['stick'], o['twoRun']['fails']), (2, False, 2))
         self.assertFalse(o['staleRun']['died'])
         self.assertTrue(o['lateStep']['died'])
         self.assertFalse(o['staleStep']['died'])
         g = o['gate']
         self.assertEqual((g['died'], g['gate'], g['fails'], g['tier'], g['why']), (False, False, 1, 1, 'g'))
         self.assertEqual((o['afterGate']['fails'], o['afterGate']['tier']), (2, 2))
+
+    def test_the_soft_tier_climbs_back_after_clean_sessions(self):
+        o = self.loads(r'''
+// the full city dies while running: the next load is tier 1
+reset(); crumb('running', 30); let S = load(); out.a = pick(S);
+// that session is left before it stood 180 s: no mark, so the next launch keeps tier 1
+S.unload(); S = load(); out.b = pick(S); out.bSaved = saved();
+// a clean session at tier 1 (the mark, an ordinary leave): the next launch tries the full city, and the soft tier goes
+clean(S); S = load(); out.c = pick(S); out.cSaved = saved();
+// and the full city stays
+clean(S); S = load(); out.d = pick(S);
+// from tier 2 the climb is one step per clean session: 2, then 1, then the full city
+reset(); LS.setItem('philly3d.tiersoft', JSON.stringify({ tier: 2, t: Date.now() - 6e5 })); S = load(); out.s2 = pick(S);
+clean(S); S = load(); out.s1 = pick(S); out.s1Saved = saved().soft;
+clean(S); S = load(); out.s0 = pick(S); out.s0Saved = saved().soft;
+// a mark from before the soft tier was set does not climb it (the session that stood was not at that tier)
+reset(); LS.setItem('philly3d.tierok', JSON.stringify({ tier: 1, t: Date.now() - 6e5 })); LS.setItem('philly3d.tiersoft', JSON.stringify({ tier: 1, t: Date.now() })); out.early = pick(load());
+// a load that finds a death ignores the mark: the session stood 180 s and then died
+reset(); LS.setItem('philly3d.tiersoft', JSON.stringify({ tier: 1, t: Date.now() - 6e5 })); LS.setItem('philly3d.tierok', JSON.stringify({ tier: 1, t: Date.now() - 6e4 })); crumb('running', 30, { lite: true, tier: 1 }); out.okThenDied = pick(load()); out.okThenDiedSaved = saved();
+// a soft tier holds a fortnight at most, like the sticky one
+reset(); LS.setItem('philly3d.tiersoft', JSON.stringify({ tier: 2, t: days(15) })); out.softOld = pick(load()); out.softOldSaved = saved().soft;
+// a clean session under a sticky tier climbs the soft one only: the fortnight's tier stands
+reset(); LS.setItem('philly3d.tier', JSON.stringify({ tier: 1, t: Date.now() })); LS.setItem('philly3d.tiersoft', JSON.stringify({ tier: 1, t: Date.now() - 6e5 })); LS.setItem('philly3d.tierok', JSON.stringify({ tier: 1, t: Date.now() })); out.underSticky = pick(load()); out.underStickySaved = saved();
+''')
+        self.assertEqual(o['a']['tier'], 1)
+        self.assertEqual((o['b']['tier'], o['b']['gate'], o['b']['died'], o['b']['why']), (1, False, False, 'r'))
+        self.assertEqual(o['bSaved']['soft']['tier'], 1)
+        self.assertEqual((o['c']['tier'], o['c']['why']), (0, 'u'))
+        self.assertIsNone(o['cSaved']['soft'])
+        self.assertIsNone(o['cSaved']['ok'], 'the mark is read once')
+        self.assertEqual(o['d']['tier'], 0)
+        self.assertEqual((o['s2']['tier'], o['s1']['tier'], o['s0']['tier']), (2, 1, 0))
+        self.assertEqual(o['s1Saved']['tier'], 1)
+        self.assertIsNone(o['s0Saved'])
+        self.assertEqual(o['early']['tier'], 1)
+        t = o['okThenDied']
+        self.assertEqual((t['tier'], t['died'], t['stick']), (2, True, False))
+        self.assertEqual(o['okThenDiedSaved']['soft']['tier'], 2)
+        self.assertEqual((o['softOld']['tier'], o['softOldSaved']), (0, None))
+        u = o['underSticky']
+        self.assertEqual((u['tier'], u['why']), (1, 'tu'))
+        self.assertIsNone(o['underStickySaved']['soft'])
+        self.assertEqual(o['underStickySaved']['tier']['tier'], 1)
+
+    def test_a_second_running_death_at_the_same_tier_is_sticky(self):
+        o = self.loads(r'''
+// two deaths while running on the full city within a fortnight: the second saves tier 1 for a fortnight, as a build death does
+reset(); crumb('running', 30); let S = load(); clean(S); S = load(); out.between = pick(S);
+crumb('running', 30); S = load(); out.second = pick(S); out.secondSaved = saved();
+// deaths at different tiers are each a first
+reset(); crumb('running', 30); S = load(); crumb('running', 30, { lite: true, tier: 1, fails: 0 }); S = load(); out.otherTier = pick(S); out.otherTierSaved = saved();
+// a first death more than a fortnight ago does not count
+reset(); LS.setItem('philly3d.tierrun', JSON.stringify({ 0: days(15) })); crumb('running', 30); out.oldFirst = pick(load()); out.oldFirstSaved = saved();
+// a 'ctxlost' crumb is a death while running too
+reset(); LS.setItem('philly3d.tierrun', JSON.stringify({ 0: days(3) })); crumb('ctxlost', 30); out.ctx = pick(load());
+// ?lite=0 forgets the soft tier and the log as well as the fortnight's keys
+reset(); LS.setItem('philly3d.tierrun', JSON.stringify({ 0: days(3) })); LS.setItem('philly3d.tiersoft', JSON.stringify({ tier: 1, t: Date.now() })); out.off = pick(load({ search: '?lite=0' })); out.offSaved = saved();
+''')
+        self.assertEqual(o['between']['tier'], 0, 'a clean session brought the full city back')
+        s = o['second']
+        self.assertEqual((s['tier'], s['stick'], s['gate'], s['why']), (1, True, True, 'cts'))
+        self.assertEqual(o['secondSaved']['tier']['tier'], 1)
+        self.assertRegex(o['secondSaved']['lite'], r'^\d{13}$')
+        ot = o['otherTier']
+        self.assertEqual((ot['tier'], ot['stick']), (2, False))
+        self.assertIsNone(o['otherTierSaved']['tier'])
+        self.assertEqual(sorted(o['otherTierSaved']['run']), ['0', '1'])
+        self.assertEqual((o['oldFirst']['tier'], o['oldFirst']['stick']), (1, False))
+        self.assertIsNone(o['oldFirstSaved']['tier'])
+        self.assertEqual((o['ctx']['tier'], o['ctx']['stick']), (1, True))
+        self.assertEqual(o['off']['tier'], 0)
+        for k in ('tier', 'lite', 'soft', 'run'):
+            self.assertIsNone(o['offSaved'][k], k)
+
+    def test_the_one_time_migration(self):
+        o = self.loads(r'''
+// Mike's phone: build 3's running death on Sep 28 saved tier 1 and the fortnight flag. The first load of this build forgets
+// both, once, and builds the full city
+resetRaw(); LS.setItem('philly3d.tier', JSON.stringify({ tier: 1, t: days(1) })); LS.setItem('philly3d.lite', String(days(1)));
+let S = load(); out.first = pick(S); out.firstSaved = saved();
+// the rules' version is recorded, so a death saved from now on is kept
+crumb('Sowing the grass', 5); S = load(); out.death = pick(S); S.unload(); S = load(); out.after = pick(S); out.afterSaved = saved();
+// the desktop is migrated too (it never saved a tier, but the keys are the device's)
+resetRaw(); LS.setItem('philly3d.tier', JSON.stringify({ tier: 2, t: days(1) })); out.desk = pick(load({ touch: false })); out.deskSaved = saved();
+''')
+        self.assertEqual((o['first']['tier'], o['first']['why']), (0, ''))
+        self.assertIsNone(o['firstSaved']['tier'])
+        self.assertIsNone(o['firstSaved']['lite'])
+        self.assertEqual(o['firstSaved']['v'], '2')
+        self.assertEqual((o['death']['tier'], o['death']['stick']), (1, True))
+        self.assertEqual((o['after']['tier'], o['after']['why']), (1, 'ts'), 'a build death after the migration is kept a fortnight')
+        self.assertEqual(o['afterSaved']['tier']['tier'], 1)
+        self.assertEqual((o['desk']['tier'], o['deskSaved']['tier'], o['deskSaved']['v']), (0, None, '2'))
 
     def test_the_context_loss_crumb(self):
         o = self.loads(r'''
