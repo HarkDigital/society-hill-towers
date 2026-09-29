@@ -161,6 +161,37 @@
   });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isTouch = window.matchMedia('(pointer: coarse)').matches || IN_APP;
+  // ---- the Graphics choice (Round 168, Mike: up the visuals and the performance on his iPhone). One setting per device,
+  // three words in a strip at the top of the Layers panel: Smoother (the lighter city on a phone), Auto (the default: the
+  // crash rules below choose the city) and Sharper (the full city on a phone, whatever a crash saved). It is kept in its own
+  // key as { pick, t }, never in philly3d.prefs or a share link, and Reset Layers leaves it alone; `?gfx=smoother|auto|sharper`
+  // pins it for a test and saves nothing (neither the pick nor Sharper's forgetting). The city's tier is decided once, below,
+  // before anything is built, so a change of tier waits for the next launch (#gfxNote says so and offers Reload Now), while
+  // everything that can change live does, through GFX.hooks: each hook is called with the new pick after every change (never
+  // at load: read GFX.pick then), and one that throws does not stop the others. gfxTierFor(pick) forecasts the next launch
+  const GFX_KEY = 'philly3d.gfx', GFX_PICKS = ['smoother', 'auto', 'sharper'];
+  const GFX = (() => {
+    const q = /[?&]gfx=(smoother|auto|sharper)\b/.exec(location.search);
+    let pick = q ? q[1] : null;
+    if (!pick) { try { const s = JSON.parse(localStorage.getItem(GFX_KEY) || 'null'); if (s && GFX_PICKS.indexOf(s.pick) >= 0) pick = s.pick; } catch (e) { pick = null; } }
+    // fell: a death during Sharper's build handed the pick back to Auto this load; forgot: Sharper forgot the saved crash
+    // tiers; autoNext: the city Auto would build at the next launch; ui: the strip's refresh (the layers panel sets it)
+    return { pick: pick || 'auto', pinned: !!q, hooks: [], ui: null, fell: false, forgot: false, autoNext: 0 };
+  })();
+  function gfxSave() {
+    if (GFX.pinned) return;
+    try { localStorage.setItem(GFX_KEY, JSON.stringify({ pick: GFX.pick, t: Date.now() })); } catch (e) { /* private mode: the pick lasts the session */ }
+  }
+  function gfxSet(pick) {
+    if (GFX_PICKS.indexOf(pick) < 0 || pick === GFX.pick) return false;
+    GFX.pick = pick;
+    GFX.fell = false;
+    gfxSave();
+    if (pick === 'sharper' && !GFX.pinned) tierForget();
+    for (const f of GFX.hooks) { try { f(pick); } catch (e) { console.error('graphics hook failed', e); } }
+    if (GFX.ui) GFX.ui();
+    return true;
+  }
   // ---- the boot breadcrumb and the lite build (Round 124, Mike's phone: "a problem repeatedly
   // occurred"). A phone that runs out of memory mid-load is killed without a word, reloads, and
   // dies the same way until the browser gives up. The page now leaves a breadcrumb in
@@ -178,6 +209,31 @@
   // in its own key (LITE_KEY stays a bare timestamp, because the builds still in phones' caches read it with a unary plus).
   // `?lite=0|1|2` forces a tier and skips the gate (bootGate). LITE stays the boolean every older switch reads (TIER >= 1)
   const BOOT_KEY = 'philly3d.boot', TIER_KEY = 'philly3d.tier';
+  // a device that died once keeps the lite build for a fortnight, or every other visit would
+  // try the full one and die again; after that it gets another go at the full build
+  const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14, TIER_TTL = LITE_DAYS * 86400000;
+  // Round 168: a running death's tier, held until a clean session (TIER_SOFT_KEY, { tier, t }); the last death while running
+  // at each tier (TIER_RUN_KEY, { tier: t }); a clean session's mark (TIER_OK_KEY, { tier, t }); the rules' version (TIER_VER_KEY)
+  const TIER_SOFT_KEY = 'philly3d.tiersoft', TIER_RUN_KEY = 'philly3d.tierrun', TIER_OK_KEY = 'philly3d.tierok', TIER_VER_KEY = 'philly3d.tierv';
+  const qLite = /[?&]lite=(\d)\b/.exec(location.search), liteOff = /[?&]lite=0\b/.test(location.search);
+  // Round 168, once per device. Builds up to 5 made ONE death while running on the full city sticky for a fortnight (the
+  // `|| !bootPrev.lite` clause), and the app has no address bar for ?lite=0, so nothing could undo it: Mike's iPhone died
+  // once on Sep 28 at 7:02 PM, 75 to 85 s after Enter on build 3, and has built the lighter city since, until about Oct 12.
+  // Under the rules below that death would have cost one lighter load, not two weeks, so the first load of this build
+  // forgets what the old rules saved (the tier and the fortnight flag) and records the rules' version. A build death the
+  // old rules saved is forgotten with it: if the full build still dies mid-load, that death is saved again
+  try {
+    if ((+localStorage.getItem(TIER_VER_KEY) || 0) < 2) {
+      localStorage.removeItem(TIER_KEY);
+      localStorage.removeItem(LITE_KEY);
+      localStorage.setItem(TIER_VER_KEY, '2');
+    }
+  } catch (e) { /* private mode: nothing was saved */ }
+  function tierForget() {   // Sharper: every saved crash tier goes (the fortnight's tier and flag, a running death's tier, this tab's)
+    GFX.forgot = true;
+    try { localStorage.removeItem(TIER_KEY); localStorage.removeItem(LITE_KEY); localStorage.removeItem(TIER_SOFT_KEY); } catch (e) { /* nothing saved */ }
+    try { sessionStorage.removeItem('philly3d.litenow'); } catch (e) { /* nothing saved */ }
+  }
   let bootPrev = null;
   try { bootPrev = JSON.parse(localStorage.getItem(BOOT_KEY) || 'null'); } catch (e) { bootPrev = null; }
   // Round 154 review: a 'running' crumb (written every minute while the city is in front) is fresh for 3 minutes, not 30,
@@ -188,49 +244,95 @@
   // memory death caught in time. A 'gate' crumb is a load that waited for a tap and was left there: it built nothing, so it
   // is no death, but its count and its tier carry. And a death is sticky whatever the phase when the load that died was the
   // full build (the one-death rule was for a lite session killed once in use; the full build had died on this phone five
-  // times out of five, and each lite session that ended normally sent the next launch back to it)
+  // times out of five, and each lite session that ended normally sent the next launch back to it). Round 168 took that last
+  // clause out again and replaced the one-load rule with the soft tier below
   const bootAge = bootPrev && bootPrev.t ? Date.now() - bootPrev.t : Infinity;
   const bootShort = !!(bootPrev && (bootPrev.step === 'running' || bootPrev.step === 'ctxlost'));
   const bootAtGate = !!(bootPrev && bootPrev.step === 'gate' && bootAge < 30 * 60000);
   const bootDied = !!(bootPrev && bootPrev.step && !bootAtGate && bootAge < (bootShort ? 3 * 60000 : 30 * 60000));
-  const bootStick = bootDied && (!bootShort || (bootPrev.fails || 0) >= 1 || !bootPrev.lite);
   const bootFails = bootDied ? (bootPrev.fails || 0) + 1 : bootAtGate ? bootPrev.fails || 0 : 0;
   const bootTierWas = bootPrev ? (bootPrev.tier != null ? Math.max(0, Math.min(2, bootPrev.tier | 0)) : bootPrev.lite ? 1 : 0) : 0;   // the tier the crumb's load ran (a crumb from before the tiers says only lite)
-  const tierDeath = bootDied ? Math.min(2, Math.max(bootFails >= 2 ? 2 : 1, bootStick ? bootTierWas + 1 : 0)) : 0;
+  // Round 168, a fairer crash rule (tiers.md's Q1: one death while running is weak evidence, and the fortnight it cost Mike's
+  // phone came from the full build's clause above, now gone). A death DURING THE BUILD (any crumb step but 'running',
+  // 'ctxlost' and 'gate') is sticky as before: the load itself does not fit, so the tier above is kept a fortnight. A death
+  // WHILE RUNNING makes the next load one tier lighter than the one that died and keeps that tier only until a clean session
+  // (TIER_SOFT_KEY): a session at it that stands 180 s after Enter in front writes TIER_OK_KEY, and the next load reads it
+  // and tries the tier above, one step per clean session (tier 2, then 1, then the full city). Only a second death while
+  // running AT THE SAME TIER within a fortnight (TIER_RUN_KEY keeps the last one at each tier) is sticky, as a build death is.
+  // A second death in a row still reaches tier 2 (bootFails), and every death still meets the gate first
+  let bootRuns = {};
+  try { bootRuns = JSON.parse(localStorage.getItem(TIER_RUN_KEY) || '{}') || {}; } catch (e) { bootRuns = {}; }
+  const bootRunAgain = bootDied && bootShort && Date.now() - (+bootRuns[bootTierWas] || 0) < TIER_TTL;
+  const bootStick = bootDied && (!bootShort || bootRunAgain);
+  const tierDeath = bootDied ? Math.min(2, Math.max(bootFails >= 2 ? 2 : 1, bootTierWas + 1)) : 0;
+  // Sharper builds the full city whatever a crash saved. But a death DURING ITS BUILD would come back at every launch behind
+  // the veil, where the Layers panel cannot be reached (and the app has no address bar), so that death hands the pick back
+  // to Auto, whose rules then take it like any other; the gate and #gfxNote say so. A death while running keeps Sharper:
+  // that city stood long enough for the pick to be changed
+  if (isTouch && !qLite && GFX.pick === 'sharper' && !GFX.pinned && bootDied && !bootShort) { GFX.pick = 'auto'; GFX.fell = true; gfxSave(); }
   let sessLite = false;   // lite for this tab only: a foreground context loss reloads into it (Round 154 review)
   try { sessLite = sessionStorage.getItem('philly3d.litenow') === '1'; } catch (e) { sessLite = false; }
-  // a device that died once keeps the lite build for a fortnight, or every other visit would
-  // try the full one and die again; after that it gets another go at the full build
-  const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14;
   let liteSticky = false, tierSaved = 0;
   try {
-    if (/[?&]lite=0\b/.test(location.search)) localStorage.removeItem(LITE_KEY);
+    if (liteOff) localStorage.removeItem(LITE_KEY);
     else if (isTouch && bootStick) localStorage.setItem(LITE_KEY, String(Date.now()));
     const ls = +localStorage.getItem(LITE_KEY) || 0;
-    liteSticky = ls > 0 && Date.now() - ls < LITE_DAYS * 86400000;
+    liteSticky = ls > 0 && Date.now() - ls < TIER_TTL;
   } catch (e) { liteSticky = false; }
   try {
-    if (/[?&]lite=0\b/.test(location.search)) localStorage.removeItem(TIER_KEY);
+    if (liteOff) localStorage.removeItem(TIER_KEY);
     const ts = JSON.parse(localStorage.getItem(TIER_KEY) || 'null');
-    if (ts && ts.t && Date.now() - ts.t < LITE_DAYS * 86400000) tierSaved = Math.max(0, Math.min(2, ts.tier | 0));
-    if (isTouch && bootStick && !/[?&]lite=0\b/.test(location.search) && tierDeath >= tierSaved) {   // review: >= refreshes a capped tier 2's fortnight, as LITE_KEY is refreshed
+    if (ts && ts.t && Date.now() - ts.t < TIER_TTL) tierSaved = Math.max(0, Math.min(2, ts.tier | 0));
+    if (isTouch && bootStick && !liteOff && tierDeath >= tierSaved) {   // review: >= refreshes a capped tier 2's fortnight, as LITE_KEY is refreshed
       tierSaved = tierDeath;
       localStorage.setItem(TIER_KEY, JSON.stringify({ tier: tierDeath, t: Date.now() }));
     }
   } catch (e) { tierSaved = 0; }
-  const qLite = /[?&]lite=(\d)\b/.exec(location.search);
-  const TIER = qLite ? Math.min(2, +qLite[1]) : isTouch ? Math.max(tierSaved, tierDeath, bootAtGate ? bootTierWas : 0, liteSticky ? 1 : 0, sessLite ? 1 : 0) : 0;
+  let tierSoft = 0, tierClimb = false;   // a running death's tier, and whether a clean session climbed it this load
+  try {
+    if (liteOff) { localStorage.removeItem(TIER_SOFT_KEY); localStorage.removeItem(TIER_RUN_KEY); }
+    let soft = JSON.parse(localStorage.getItem(TIER_SOFT_KEY) || 'null');
+    if (!(soft && soft.t && Date.now() - soft.t < TIER_TTL)) soft = null;   // a fortnight is the longest a soft tier holds
+    const ok = JSON.parse(localStorage.getItem(TIER_OK_KEY) || 'null');
+    localStorage.removeItem(TIER_OK_KEY);   // the last session's mark, read once
+    if (soft && ok && !bootDied && (ok.tier | 0) >= (soft.tier | 0) && ok.t >= soft.t) {
+      soft = soft.tier > 1 ? { tier: soft.tier - 1, t: Date.now() } : null;
+      tierClimb = true;
+    }
+    if (isTouch && bootDied && bootShort && !liteOff) {
+      bootRuns[bootTierWas] = Date.now();
+      localStorage.setItem(TIER_RUN_KEY, JSON.stringify(bootRuns));
+      if (!bootStick && (!soft || tierDeath >= soft.tier)) soft = { tier: tierDeath, t: Date.now() };
+    }
+    if (soft) localStorage.setItem(TIER_SOFT_KEY, JSON.stringify(soft)); else localStorage.removeItem(TIER_SOFT_KEY);
+    tierSoft = soft ? Math.max(0, Math.min(2, soft.tier | 0)) : 0;
+  } catch (e) { tierSoft = 0; }
+  if (isTouch && !qLite && GFX.pick === 'sharper' && !GFX.pinned) tierForget();   // after the deaths are recorded (the run log stays)
+  // the city Auto builds (the crash rules alone); the pick then sets the tier on touch: Smoother at least the lite city (a
+  // death may still take it to tier 2), Sharper always the full city, Auto the rules. The desktop has no tiers
+  const tierAuto = Math.max(tierSaved, tierSoft, tierDeath, bootAtGate ? bootTierWas : 0, liteSticky ? 1 : 0, sessLite ? 1 : 0);
+  const TIER = qLite ? Math.min(2, +qLite[1]) : isTouch ? (GFX.pick === 'sharper' ? 0 : GFX.pick === 'smoother' ? Math.max(1, tierAuto) : tierAuto) : 0;
   const LITE = TIER >= 1, TIER2 = TIER >= 2;
   const LITE_R = TIER2 ? 5000 : 8000;   // the far ring's buildings stand within this of the centre on a lite build
-  // the beacon's lr: f forced, c a crumb's death, g the gate's tier, t the saved tier, s the fortnight flag, x this tab's context loss
-  const LITE_WHY = qLite ? 'f' : !isTouch ? '' : (tierDeath ? 'c' : '') + (bootAtGate && bootTierWas ? 'g' : '') + (tierSaved ? 't' : '') + (liteSticky ? 's' : '') + (sessLite ? 'x' : '');
+  GFX.autoNext = Math.max(tierSaved, tierSoft, liteSticky ? 1 : 0, sessLite ? 1 : 0);   // Auto's city at the next launch, a clean leave assumed
+  function gfxTierFor(pick) {   // the tier a launch with this pick would build (#gfxNote's forecast)
+    if (qLite) return TIER;   // a forced tier stays forced
+    if (!isTouch) return 0;
+    const auto = GFX.forgot ? 0 : GFX.autoNext;
+    return pick === 'sharper' ? 0 : pick === 'smoother' ? Math.max(1, auto) : auto;
+  }
+  // the beacon's lr: f forced, c a crumb's death, g the gate's tier, t the saved tier, s the fortnight flag, x this tab's
+  // context loss; since Round 168 r a running death's tier (held until a clean session), u a clean session climbed it this
+  // load, p the Graphics pick chose the tier (Smoother raised it or Sharper lowered it), a a death in Sharper's build handed
+  // the pick back to Auto
+  const LITE_WHY = qLite ? 'f' : !isTouch ? '' : (tierDeath ? 'c' : '') + (bootAtGate && bootTierWas ? 'g' : '') + (tierSaved ? 't' : '') + (liteSticky ? 's' : '') + (sessLite ? 'x' : '') + (tierSoft ? 'r' : '') + (tierClimb ? 'u' : '') + (TIER !== tierAuto ? 'p' : '') + (GFX.fell ? 'a' : '');
   const BOOT_GATE = isTouch && bootDied && !/[?&]lite=/.test(location.search);   // a phone that died last time builds nothing until a tap (bootGate)
   let bootHeld = false;   // the context-loss reload's crumb must outlive the unload's own clears (webglcontextlost)
   const bootMark = (step, ctx) => { if (bootHeld) return; try { localStorage.setItem(BOOT_KEY, JSON.stringify({ step, t: Date.now(), fails: bootFails, lite: LITE, tier: TIER, ctx: ctx || '' })); } catch (e) { /* private mode: no breadcrumb, no lite */ } };
   const bootClear = () => { if (bootHeld) return; try { localStorage.removeItem(BOOT_KEY); } catch (e) { /* nothing to clear */ } };
   bootMark('start');
   window.addEventListener('pagehide', bootClear);
-  PERF.boot = { tier: TIER, why: LITE_WHY, gate: BOOT_GATE, died: bootDied, stick: bootStick, fails: bootFails, prev: bootPrev };   // __dbg.PERF.boot
+  PERF.boot = { tier: TIER, why: LITE_WHY, gate: BOOT_GATE, died: bootDied, stick: bootStick, fails: bootFails, prev: bootPrev, auto: tierAuto, soft: tierSoft, pick: GFX.pick };   // __dbg.PERF.boot
   // the installable app: a network-only service worker beside the page (sw.js) is what lets
   // Chrome and Edge offer Install; the manifest is linked from the template. Only over https,
   // so a dev server never gets a worker
@@ -13582,9 +13684,11 @@
     ['Layers', {
       d: [['Layers button', 'Top bar, or the F key. Every row is a layer: click it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
         ['Keys', 'Each row has its letter: V transit, B bikes, X flights, H ships, K trains, M concerts, R traffic, U closures, G streetlights, J markers, O art, Y bus stops, Z rail stations, N street names, L landmark labels, P neighborhoods.'],
+        ['Graphics', 'At the top of the Layers panel. Smoother keeps the flight quick and steady, Sharper draws at the highest resolution, and Auto balances the two.'],
         ['Reset Layers', 'Back to the default set.'],
         ['Explore', 'Eight favorite viewpoints in the Explore panel, plus search for any place.']],
       t: [['Layers button', 'Top bar. Every row is a layer: tap it to turn it on or off. The switch lights when it is on, the number shows what is live.'],
+        ['Graphics', 'At the top of the Layers panel. Smoother keeps the flight steady and the phone cool, Sharper shows the whole city at full resolution, and Auto balances the two.'],
         ['Reset Layers', 'Back to the default set.'],
         ['Explore', 'Eight favorite viewpoints in the Explore panel, plus search for any place.']] }],
     ['The live city', {
@@ -14056,7 +14160,7 @@
   let shareNoteT = 0;
   const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;   // Round 154: the app shares the site's links, never its own origin
   const shareQuery = () => {   // the app's query holds only what the page itself put there (the skyline theme, the crown bands)
-    if (!IN_APP) return location.search;
+    if (!IN_APP) return location.search.replace(/[?&]gfx=[^&#]*/g, '').replace(/^&/, '?');   // Round 168: a ?gfx= test pin is this device's, never the link's
     const u = new URLSearchParams(location.search), o = new URLSearchParams();
     for (const k of ['lights', 'bands']) if (u.has(k)) o.set(k, u.get(k));
     const t = o.toString(); return t ? '?' + t : '';
@@ -15207,6 +15311,61 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, legacy);
     else legacy();
   });
+  // ---- the Graphics strip (Round 168; GFX, gfxSet and the tier are in the boot block): three radios at the top of the panel,
+  // the arrow keys move the pick (and never fly), and #gfxNote says what the pick does, what a crash did, and when a change
+  // of city waits for the next launch, with Reload Now (a plain reload; inside the app it reloads the bundled page)
+  const gfxSeg = document.getElementById('gfxSeg'), gfxNoteText = document.getElementById('gfxNoteText'), gfxReload = document.getElementById('gfxReload');
+  const gfxBtns = gfxSeg ? [...gfxSeg.querySelectorAll('[data-gfx]')] : [];
+  const GFX_SAYS = {
+    smoother: isTouch ? 'Smoother: a lighter city and a faster frame rate.' : 'Smoother: a softer picture and a faster frame rate.',
+    auto: 'Auto: sharp when this device can keep up.',
+    sharper: isTouch ? 'Sharper: the full city at the highest resolution, a steadier 30 frames a second.' : 'Sharper: the highest resolution this screen allows.',
+  };
+  function gfxNote() {   // [the status line, whether Reload Now shows]
+    const p = GFX.pick, next = gfxTierFor(p);
+    let more = '';
+    if (next !== TIER) more = next > TIER ? 'The lighter city loads the next time Philly3D opens.' : next === 0 ? 'The whole city loads the next time Philly3D opens.' : 'A fuller city loads the next time Philly3D opens.';
+    else if (GFX.fell && p === 'auto') more = 'Sharper ran out of memory, so Graphics are back on Auto.';
+    else if (!qLite && TIER > 0 && p === 'auto') more = 'Using a lighter city after a crash. Sharper brings the full city back.';
+    else if (!qLite && TIER >= 2 && p === 'smoother') more = 'Using the lightest city after a crash.';
+    return [GFX_SAYS[p] + (more ? ' ' + more : ''), next !== TIER];
+  }
+  function gfxUi() {
+    for (const b of gfxBtns) {
+      const on = b.dataset.gfx === GFX.pick;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-checked', on ? 'true' : 'false');
+      b.tabIndex = on ? 0 : -1;
+    }
+    if (!gfxNoteText) return;
+    const [text, reload] = gfxNote();
+    gfxNoteText.textContent = text;
+    gfxReload.hidden = !reload;
+  }
+  GFX.ui = gfxUi;
+  for (const b of gfxBtns) b.addEventListener('click', () => gfxSet(b.dataset.gfx));
+  if (gfxSeg) gfxSeg.addEventListener('keydown', (e) => {
+    const i = Math.max(0, GFX_PICKS.indexOf(GFX.pick)), k = e.key;
+    const j = k === 'ArrowRight' || k === 'ArrowDown' ? (i + 1) % 3 : k === 'ArrowLeft' || k === 'ArrowUp' ? (i + 2) % 3 : k === 'Home' ? 0 : k === 'End' ? 2 : -1;   // a radio group wraps
+    if (j < 0) return;
+    e.preventDefault();
+    e.stopPropagation();   // the window's handler would fly on an arrow
+    gfxSet(GFX_PICKS[j]);
+    const b = gfxBtns.find((x) => x.dataset.gfx === GFX_PICKS[j]);
+    if (b) b.focus();
+  });
+  if (gfxReload) gfxReload.addEventListener('click', () => location.reload());
+  gfxUi();
+  // a clean session: 180 s after Enter, in front and drawing, the next load may climb a running death's tier (TIER_OK_KEY).
+  // A listener of its own, a task after the click, so the Enter handler has hidden the veil (the gate's tap does not)
+  btnEnter.addEventListener('click', () => setTimeout(() => {
+    if (!veil.classList.contains('hidden') || GFX.okT) return;
+    GFX.okT = setTimeout(() => {
+      if (TIER < 1 || glDead || document.visibilityState !== 'visible') return;
+      try { localStorage.setItem(TIER_OK_KEY, JSON.stringify({ tier: TIER, t: Date.now() })); } catch (e) { /* private mode: no climb */ }
+    }, 180000);
+  }, 0));
+  if (/[?&]dev\b/.test(location.search)) window.__gfx = { GFX, gfxSet, gfxTierFor, gfxNote, boot: PERF.boot };   // the tier before the build is done (__dbg comes after it)
 
   // ---------------------------------------------------------------- street names
   // Ground-painted street labels: placements baked offline by
@@ -22850,7 +23009,10 @@
   let gateGo = null;   // the Enter button's tap while the gate waits (btnEnter's click handler)
   function bootGate() {
     bootMark('gate');
-    loadmsg.textContent = TIER >= 2 ? 'This device ran out of memory again. Tap to load the lightest city.' : 'Philadelphia ran out of memory on this device last time. Tap to load a lighter city.';
+    // Round 168: Sharper keeps the full city after a death while running; a death in Sharper's build handed the pick to Auto
+    loadmsg.textContent = GFX.fell ? 'Philadelphia ran out of memory at Sharper last time. Tap to load a lighter city.'
+      : TIER === 0 ? 'Philadelphia ran out of memory on this device last time. Tap to load the full city again.'
+      : TIER >= 2 ? 'This device ran out of memory again. Tap to load the lightest city.' : 'Philadelphia ran out of memory on this device last time. Tap to load a lighter city.';
     loadmsg.classList.add('done');
     btnEnter.textContent = 'Load the City';
     btnEnter.disabled = false;

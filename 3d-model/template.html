@@ -137,6 +137,17 @@
 
 <div id="layerspanel" class="panel" role="group" aria-label="Layers">
   <div class="panelhead"><div><div class="kicker">Make it your city</div><h2>Map layers</h2></div><button class="panelclose" data-close-panel="layers" aria-label="Close Layers">&times;</button></div><p class="panelnote">Choose what brings Philadelphia to life.</p>
+  <div class="gfx" id="gfx">
+    <div class="gfxrow">
+      <span class="gfxlabel" id="gfxLabel">Graphics</span>
+      <div class="seg gfxseg" id="gfxSeg" role="radiogroup" aria-labelledby="gfxLabel">
+        <button type="button" role="radio" data-gfx="smoother" aria-checked="false" tabindex="-1" title="Steadier Flight, Cooler Phone">Smoother</button>
+        <button type="button" role="radio" data-gfx="auto" aria-checked="true" tabindex="0" class="active" title="Balanced for This Device">Auto</button>
+        <button type="button" role="radio" data-gfx="sharper" aria-checked="false" tabindex="-1" title="The Whole City, Full Resolution">Sharper</button>
+      </div>
+    </div>
+    <div class="gfxnote" id="gfxNote" aria-live="polite"><span id="gfxNoteText">Auto: sharp when this device can keep up.</span><button type="button" id="gfxReload" class="mini" hidden>Reload Now</button></div>
+  </div>
   <div class="lgrid">
   <button class="lrow" id="btnTransit" title="Live SEPTA Vehicles (V)"><span class="lmark"></span><svg class="lseptalogo" viewBox="0 0 500 370" aria-hidden="true"><rect x="54" y="15" width="392" height="340" fill="#ece8dd"/><path fill="#f14728" d="M441.775,14.666H340.441L180.888,127.332h148.665l115.779,115.333L333.556,355.107h108.22c25.555,0,44.221-25.332,44.221-43.331V58.221C485.996,39.998,467.33,14.666,441.775,14.666z"/><path fill="#f14728" d="M206.443,137.998H192.22l87.111,87.107c4.001,3.338,7.11,7.336,13.999,6.893h14.89l-87.555-86.889C216.665,140.664,213.776,137.998,206.443,137.998z"/><path fill="#1f4fa3" d="M58.666,355.107h101.111l159.554-112.219H170.887L54.666,127.332L167.11,14.666H58.666c-25.778,0-44,25.332-44,43.776v253.555C14.666,329.775,32.888,355.107,58.666,355.107z"/></svg><span class="ltext">Live SEPTA Vehicles</span><span class="lcount" id="transitCount"></span><kbd>V</kbd></button>
   <button class="lrow" id="btnIndego" title="Indego Bike Share (B)"><span class="lmark"></span><svg class="lbike" viewBox="0 0 24 13" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="4.8" cy="8.7" r="3.4"/><circle cx="19.2" cy="8.7" r="3.4"/><path d="M4.8 8.7 8.9 2.9h4.2l6.1 5.8M8.9 2.9l3.5 5.8H4.8M13.1 2.9l1.4-1.2h1.7M8.9 2.9H6.8"/></svg><span class="ltext">Indego Bike Share</span><span class="lcount" id="indegoCount"></span><kbd>B</kbd></button>

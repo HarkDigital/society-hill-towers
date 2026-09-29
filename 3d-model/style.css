@@ -1372,3 +1372,19 @@ button { -webkit-tap-highlight-color: transparent; }
 .lightswatches label { flex: 1; color: var(--paper-dim); font-size: 10px; text-align: center; }
 .lightswatches input { display: block; width: 100%; height: 38px; padding: 3px; margin-top: 5px; border: 1px solid var(--line-strong); border-radius: 7px; background: transparent; cursor: pointer; }
 .lightnote { font-size: 10px; line-height: 1.6; color: var(--paper-dim); margin-bottom: 0; }
+
+/* ---------- the Graphics choice (Round 168): a strip at the top of the Layers panel. The old mode bar's .seg in the
+   panels' language: limestone lines, the chosen word in bronze, 44 px finger targets, one status line under it ---------- */
+#layerspanel .gfx { margin: -4px 0 12px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+#layerspanel .gfxrow { display: flex; align-items: center; gap: 14px; }
+#layerspanel .gfxlabel { flex: none; font-size: 11px; font-weight: 600; color: var(--paper); }
+#layerspanel .gfxseg { flex: 1; min-width: 0; border: 1px solid var(--line-strong); border-radius: 9px; background: rgba(0, 0, 0, 0.17); }
+#layerspanel .gfxseg button { flex: 1 1 0; min-width: 0; min-height: 44px; padding: 0 8px; font-size: 10.5px; letter-spacing: 0.14em; }
+#layerspanel .gfxseg button + button { border-left-color: var(--line-strong); }
+#layerspanel .gfxseg button.active { color: var(--ink); background: var(--bronze); }
+#layerspanel .gfxseg button:focus-visible { outline: 2px solid var(--paper); outline-offset: -3px; }
+#layerspanel .gfxnote { display: flex; align-items: center; gap: 10px; margin-top: 8px; min-height: 18px; font-size: 10.5px; line-height: 1.5; color: var(--paper-dim); }
+#layerspanel .gfxnote span { flex: 1; min-width: 0; }
+#layerspanel .gfxnote .mini { flex: none; min-height: 36px; padding: 6px 12px; }
+#layerspanel .gfxnote .mini[hidden] { display: none; }
+@media (pointer: coarse) { #layerspanel .gfxnote .mini { min-height: 44px; } }

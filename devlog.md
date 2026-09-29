@@ -7496,3 +7496,53 @@ the ties' distance hide visible. Confirmed, and fixed with the three minor point
   both, live heap at ready 115 to 116 MB, the load's peak live heap 256 to 257 (unchanged, as the verifier found), no failed
   step. Build 5 carries it to TestFlight.
 
+## Round 168 (part) — the Graphics choice and a fairer crash rule (Sep 29)
+
+Mike approved a plan to up the visuals and the performance on his iPhone (the TestFlight app). This part is the choice, its
+storage, the city's tier it sets and the crash rule; the frame rate and the resolution ladder are another part of the round,
+which hooks into it.
+
+- The choice: a Graphics strip at the top of the Layers panel, under the panel note (quality/ux.md's placement): Smoother,
+  Auto (the middle, and the default), Sharper, a radiogroup on the old mode bar's `.seg` in the panels' language (limestone
+  lines, the chosen word in bronze, 44 px targets), the arrow keys moving the pick with wrap, Home and End, and never flying
+  (the window's keydown flies on an arrow, so the group stops them). One status line under it, `#gfxNote`: "Smoother: a
+  lighter city and a faster frame rate.", "Auto: sharp when this device can keep up.", "Sharper: the full city at the highest
+  resolution, a steadier 30 frames a second." (on a computer "a softer picture and a faster frame rate" and "the highest
+  resolution this screen allows"), then one of "The lighter city loads the next time Philly3D opens." / "The whole city
+  loads the next time Philly3D opens." with a Reload Now button when the pick changes the tier, "Using a lighter city after a
+  crash. Sharper brings the full city back." under Auto on a crash tier, "Sharper ran out of memory, so Graphics are back on
+  Auto." and "Using the lightest city after a crash." The how-to's Layers card has a Graphics row on both copies.
+- Storage and the API: localStorage `philly3d.gfx` as `{ pick, t }`, never in `philly3d.prefs` or a link (the site's Copy
+  Link drops a `?gfx=`), and Reset Layers leaves it alone; `?gfx=smoother|auto|sharper` pins it for a test and writes
+  nothing. `GFX` (`pick`, `pinned`, `hooks`), `gfxSet(pick)` and `gfxTierFor(pick)` are defined in the boot block before the
+  tier and the resolution ladder, so both can read them; `gfxSet` saves, calls every hook with the new pick (one that throws
+  does not stop the others) and refreshes the strip. Hooks are for what can change live; the tier waits for a launch.
+- The tier on touch: Smoother builds tier 1 at least (a death still takes it to 2), Sharper always tier 0 and forgets the saved
+  crash tiers when picked and at load, Auto the crash rules. One exception to "always", my call against the plan's letter:
+  a death DURING Sharper's build hands the pick back to Auto (saved, the gate says "Philadelphia ran out of memory at Sharper
+  last time. Tap to load a lighter city."), because that build would die at every launch behind the veil, where the Layers
+  panel cannot be reached and the app has no address bar. A death while running keeps Sharper and the full city ("Tap to load
+  the full city again."): that city stood long enough to change the pick. A `?gfx=` pin never falls back.
+- The fairer crash rule (quality/tiers.md's Q1): a death mid-build is sticky for a fortnight as before; the `|| !bootPrev.lite`
+  clause that made one death while running on the full city sticky is gone. A death while running makes the next load one
+  tier lighter than the one that died and holds that tier (`philly3d.tiersoft`) only until a clean session: a session that
+  stands 180 s after Enter in front writes `philly3d.tierok` (its own listener on the Enter button, a task after the click,
+  so the gate's tap does not count), and the next load climbs one tier, 2 to 1 to the full city. A second death while running
+  at the same tier within 14 days (`philly3d.tierrun`) is sticky. `?lite=0` forgets all of it. The beacon's `lr` gains r (the
+  soft tier), u (a climb), p (the pick set the tier) and a (Sharper fell back to Auto).
+- Build 6's first load forgets the old rules' tier and fortnight flag once (`philly3d.tierv` 2): Mike's phone has built the
+  lighter city since build 3's one death while running on Sep 28, and would have until about Oct 12.
+- Checked in headless Chrome (SwiftShader, phone emulation 740 x 360 at 1.25 with touch, and 1280 x 800): the strip renders
+  in both (quality/gfx-strip.png, gfx-strip-smoother.png, gfx-strip-desk.png); a touch or a click on each word moves the
+  bronze, `aria-checked` and the tab stop, rewrites the note and `philly3d.gfx`; the arrows went Sharper to Smoother to
+  Sharper, Home to Smoother, Down to Auto, focus following, no fly key held and the eye moved 0 m; a pushed hook saw every
+  change in order; Reset Layers left the pick and its time as they were; on the phone, Smoother from the full city showed
+  Reload Now, and the reload built tier 1 (lr p), while the computer never shows it. Ten crumb situations loaded as expected
+  (none: 0; mid-build: 1, gated, sticky; running: 1, gated, soft; left at the gate: 1; Mike's locked phone: 0, migrated; a
+  climb: 0, lr u; a second running death: 1, sticky; Sharper mid-build: 1 on Auto; Sharper running: 0, gated; Smoother: 1).
+  End to end: a running death's load (tier 1, gated, soft), the gate's tap and the build, no mark at 170 s after Enter and
+  the mark at 185 s, an ordinary leave, and the next launch built the full city (lr u, the soft tier and the mark gone).
+- tests/test_gfx.py (13); tests/test_recovery.py's harness is shared and runs the new rules (the soft tier's climb, the
+  second running death, the migration); tests/test_boot_lite.py follows. The privacy policy's storage list names the
+  Graphics choice.
+

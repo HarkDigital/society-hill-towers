@@ -23,11 +23,13 @@ class BootLite(unittest.TestCase):
         self.assertIn("const IN_APP = /Philly3DApp/.test(navigator.userAgent) || location.protocol === 'capacitor:'", s)
         self.assertIn("const ON_SITE = !IN_APP && /(^|\\.)philly3d\\.com$/.test(location.hostname);", s)
         self.assertIn("const SITE_URL = IN_APP ? 'https://philly3d.com/' : location.origin + location.pathname;", s)
-        # a 'running' crumb (and since the recovery round a 'ctxlost' one) is fresh for 3 minutes; one such death of a lite
-        # session is lite for this load only (tests/test_recovery.py runs the arithmetic)
+        # a 'running' crumb (and since the recovery round a 'ctxlost' one) is fresh for 3 minutes; since Round 168 one such death
+        # makes the next load one tier lighter until a clean session, never a fortnight (tests/test_recovery.py runs the arithmetic)
         self.assertIn("const bootShort = !!(bootPrev && (bootPrev.step === 'running' || bootPrev.step === 'ctxlost'));", s)
         self.assertIn("bootAge < (bootShort ? 3 * 60000 : 30 * 60000)", s)
         self.assertIn("else if (isTouch && bootStick) localStorage.setItem(LITE_KEY, String(Date.now()));", s)
+        self.assertIn("const bootStick = bootDied && (!bootShort || bootRunAgain);", s)
+        self.assertNotIn("(bootPrev.fails || 0) >= 1 || !bootPrev.lite)", s, 'one death while running on the full city is no longer sticky (Round 168)')
         # the interval only writes; a background context loss reloads full, a foreground one lite for this tab
         self.assertIn("const bootRun = () => { if (document.visibilityState === 'visible' && document.hasFocus()) bootMark('running', bootCtx()); };", s)
         # Round 167: the crumb says what the city was doing, and the next load's beacons carry it (pc), sanitised and short
@@ -39,10 +41,12 @@ class BootLite(unittest.TestCase):
 
     def test_lite_is_touch_only_unless_forced(self):
         s = self.src
-        # the recovery round: LITE is tier 1 or above, and only a forced ?lite= gives the desktop a tier
-        self.assertIn("const TIER = qLite ? Math.min(2, +qLite[1]) : isTouch ? Math.max(", s)
+        # the recovery round: LITE is tier 1 or above, and only a forced ?lite= gives the desktop a tier; Round 168: on touch
+        # the Graphics pick sets it from Auto's crash rules (tests/test_gfx.py runs the mapping)
+        self.assertIn("const TIER = qLite ? Math.min(2, +qLite[1]) : isTouch ? (GFX.pick === 'sharper' ? 0 : GFX.pick === 'smoother' ? Math.max(1, tierAuto) : tierAuto) : 0;", s)
+        self.assertIn("const tierAuto = Math.max(tierSaved, tierSoft, tierDeath, bootAtGate ? bootTierWas : 0, liteSticky ? 1 : 0, sessLite ? 1 : 0);", s)
         self.assertIn("const LITE = TIER >= 1, TIER2 = TIER >= 2;", s)
-        self.assertIn("const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14;", s)
+        self.assertIn("const LITE_KEY = 'philly3d.lite', LITE_DAYS = 14,", s)
 
     def test_what_a_lite_build_drops(self):
         s = self.src
