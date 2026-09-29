@@ -7546,3 +7546,18 @@ which hooks into it.
   second running death, the migration); tests/test_boot_lite.py follows. The privacy policy's storage list names the
   Graphics choice.
 
+## Round 168 — the integration, and Mike's two calls (Sep 29)
+
+- Merged into main: r168-gfx (the Graphics strip and the fairer crash rule, with the migration that frees Mike's phone from
+  the Oct 12 lock), r168-vdepth (the far facades' vertex-stage log depth on phones: 16 to 24% off a Mac frame by day, 20 to 37%
+  at night, sub-pixel speckle 1 to 5 km out the only change), r168-misc (the lamp glow's vertex depth, the pins' capture over
+  the flats from 20 m up, incremental traffic order, the theme menu's middots), on top of the pacing commit. All merged without
+  a conflict; test_glow_depth's global count of the vertex-depth switch now allows the far facades' one constant.
+- Mike's answers to the two look-changing questions: "Turn them off" (moon shadows after dusk) and "Only buildings hide pins".
+  A phone's key light stops casting once it is the moon's (the sun 3 degrees under), one recompile each way per session; the
+  pins' capture leaves out every instanced mesh (trees, cars, tie runs, rooftop units), both the async and the synchronous read.
+- The reviewers' loose ends: VDEPTH's warm-up restores culling only on meshes it unculled (a mesh still staged in pendingUpload
+  is left to that list's drain), vdepthInit is guarded (a failure leaves fragment depth and a PERF.failed entry), and the
+  flats comment records the rare flips toward showing an independent sweep still found (about 1 in 10,000 from 20 m up).
+  Left as is: the capture-only raised-street mesh (0.73 MB) uploads with the first capture rather than behind the veil.
+

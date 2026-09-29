@@ -22871,6 +22871,11 @@
       sun.color.set(0x8ea0c0);
       glintDir.set(0, -1, 0);              // no moon, no moonglade
     }
+    // Round 168 (Mike: moon shadows off after dusk): on a phone the moon's faint shadows cost 2 to 7 ms of a night frame, so the key
+    // light stops casting once it is the moon's (the sun 3 degrees under) and casts again at sunrise. The toggle recompiles the lit
+    // programs once each way and three keeps both sets, so a session that crosses dusk hitches once; a load after dark builds
+    // with the sun's set and swaps at its first frame, behind the veil
+    if (isTouch) { const cast = el > -3; if (sun.castShadow !== cast) { sun.castShadow = cast; if (cast) renderer.shadowMap.needsUpdate = true; } }
     aimSun(lastAim.cx, lastAim.cz, lastAim.extent);
     skyMat.uniforms.uSun.value.copy(sp.dir);
     skyMat.uniforms.uSunVis.value = smooth(-1.1, 0.4, el);   // below the horizon the disc is gone, only the glow lingers
@@ -23516,12 +23521,14 @@
     if (!VDEPTH.on) return;
     const R = VDEPTH.recs;
     if (VDEPTH.warm === 1) {   // the first frame after the build, behind the veil: every twin a mesh can draw compiles and draws once
-      for (const q of R) if (!q.host) { q.mesh.material = q.twin; q.far = true; q.cull = q.mesh.frustumCulled; q.mesh.frustumCulled = false; }
+      // (review: only a mesh that culls is unculled for this draw and culled again after it; one still staged in pendingUpload is
+      // left to that list's own drain, or the restore below would leave it unculled for good)
+      for (const q of R) if (!q.host) { q.mesh.material = q.twin; q.far = true; q.cull = q.mesh.frustumCulled; if (q.cull) q.mesh.frustumCulled = false; }
       VDEPTH.warm = 2;
       vdepthSync();
       return;
     }
-    if (VDEPTH.warm === 2) { for (const q of R) if (!q.host) q.mesh.frustumCulled = q.cull; VDEPTH.warm = 0; VDEPTH.eye.set(1e9, 0, 0); }
+    if (VDEPTH.warm === 2) { for (const q of R) if (!q.host && q.cull) q.mesh.frustumCulled = true; VDEPTH.warm = 0; VDEPTH.eye.set(1e9, 0, 0); }
     vdepthSync();
     // every 4th frame, and at once after a jump (a search, a share link, goFly): in the frames between, the eye comes at
     // most the few metres of three frames' flight inside the line
@@ -23619,7 +23626,9 @@
     if (PIN_ASYNC.sync) return 'busy';
     PIN_ASYNC.eye.copy(camera.position);
     const c = pinOccCam();
-    if (occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, pinOccIssue, occFlatsOff())) {
+    // Round 168 (Mike: "Only buildings hide pins"): the capture leaves out every instanced mesh (the trees, the cars, the tie runs,
+    // the rooftop units), as the building tap's render always has; trees were the largest part of a capture three times a second in flight
+    if (occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c, pinOccIssue, occFlatsOff())) {
       PIN_ASYNC.view.copy(c.matrixWorldInverse); PIN_ASYNC.proj.copy(c.projectionMatrix);
       return 'later';
     }
@@ -23706,7 +23715,7 @@
   }
   function pinOccCaptureRest() {   // the synchronous capture: drawn, read and installed at once
     const c = pinOccCam();
-    occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, null, occFlatsOff());
+    occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c, null, occFlatsOff());   // only buildings hide pins (Round 168)
     PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix);
     PIN_OCC.ok = true; PIN_OCC.n++;
   }
@@ -23715,7 +23724,8 @@
   // centimetres over it then hides a tip at the edge of a tree or a wall that the bare ground would let show: the sweep
   // found such pins only from eyes 2.5 and 6 m up (7 of 7,721 pins at 110 places, and 2 more from one of 402 eyes over the
   // whole city, at the fly floor), none of 15,433 from 12, 20, 30 and 45 m, so from lower than this the capture draws the
-  // flats as it always did
+  // flats as it always did (review: an independent sweep still found rare flips toward showing from 20 m up, about 1 in
+  // 10,000 judgments, all on sightlines grazing a street or a park's sheet; and since Round 168 only buildings hide pins at all)
   const OCC_FLAT_EYE = 20;
   function occFlatsOff() {
     const cp = camera.position, g = groundMeshY(cp.x, cp.z);
@@ -24108,7 +24118,7 @@
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), trafficChurn: (reset) => { const o = Object.assign({}, CARC, { ageMean: CARC.ageN ? Math.round(CARC.ageSum / CARC.ageN) : 0 }); if (reset) { CARC.born = CARC.bornSeen = CARC.dieRetire = CARC.dieEnd = CARC.dieSeen = CARC.ageSum = CARC.ageN = 0; CARC.ageMin = 1e9; CARC.transfers = CARC.blockedBirths = 0; } return o; }, traffic: () => ({ runs: trafficRuns.length, active: trafficCars, cap: TRAFFIC.cap, drawn: TRAFFIC.n, models: trafficFleet.map((f,i)=>({name:CAR_MODELS[i].name,n:f.n})), scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover, layers: CLOUD_LAYERS.map(l => ({ min: l.base, max: l.base + l.spread + l.thickness, steps: l.steps })) }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
-    vdepthInit();   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use
+    try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob

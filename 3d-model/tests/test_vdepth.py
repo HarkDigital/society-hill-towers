@@ -121,9 +121,10 @@ class Wiring(unittest.TestCase):
 
     def test_init_after_the_weather_rehook_and_before_the_first_frame(self):
         tail = SRC[SRC.index('  build().then(() => {'):]
-        self.assertEqual(tail.count('    vdepthInit();'), 1)
-        self.assertGreater(tail.index('    vdepthInit();'), tail.index("coreMat.customProgramCacheKey = () => 'fabric-core|wx';"))
-        self.assertLess(tail.index('    vdepthInit();'), tail.index('requestAnimationFrame(frame);'))
+        call = '    try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push(\'vdepth\'); }'   # review: a failure leaves fragment depth
+        self.assertEqual(tail.count(call), 1)
+        self.assertGreater(tail.index(call), tail.index("coreMat.customProgramCacheKey = () => 'fabric-core|wx';"))
+        self.assertLess(tail.index(call), tail.index('requestAnimationFrame(frame);'))
         self.assertIn('if (window.__dbg) window.__dbg.vdepth = vdepthDbg;', tail)
 
     def test_three_r149_log_depth_paths(self):

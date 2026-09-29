@@ -115,7 +115,7 @@ console.log(JSON.stringify({ shownMin: Math.min(...shown), hiddenMax: Math.max(.
         self.assertIn('w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5,', src)
         self.assertIn('c.near = camera.near; c.far = camera.far;', src)
         self.assertIn('c.projectionMatrix.elements[0] /= PIN_OCC.wide; c.projectionMatrix.elements[5] /= PIN_OCC.wide;', src)
-        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, null, occFlatsOff());', src)   # Round 168: the flats passed over, from high enough
+        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c, null, occFlatsOff());', src)   # Round 168: the flats passed over, from high enough
         self.assertIn('PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix);', src)
 
     def test_wiring(self):

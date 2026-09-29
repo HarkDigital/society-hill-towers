@@ -104,7 +104,9 @@ console.log(JSON.stringify({ worst, n }));''')
         self.assertEqual(out['n'], 20001)
 
     def test_only_the_glow_material(self):
-        self.assertEqual(self.src.count("'#undef USE_LOGDEPTHBUF_EXT\\n'"), 2)   # the glow's two shaders, nothing else
+        # the glow's two shaders; the far facades' twins (Round 168, VDEPTH_UNDEF) are the only other user, one named constant
+        self.assertEqual(self.src.count("'#undef USE_LOGDEPTHBUF_EXT\\n'"), 3)
+        self.assertEqual(self.src.count("const VDEPTH_UNDEF = '#undef USE_LOGDEPTHBUF_EXT\\n';"), 1)
         step = self.src[self.src.index("  step('Lighting the streetlamps', () => {"):self.src.index("  // ---- the rooftops' hardware")]
         self.assertIn('poleGlow = new THREE.Points(pg, poleMat);', step)
         self.assertIn('poleGlow.frustumCulled = false;', step)

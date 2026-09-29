@@ -105,8 +105,8 @@ console.log(JSON.stringify({ n: I.length, want: want.length, bad, u16: I instanc
         self.assertIn('(noFlats && o.userData.occFlat)', occ)
         self.assertIn('if (noFlats) for (const m of OCC_ONLY) m.visible = true;', occ)
         self.assertIn('finally { if (noFlats) for (const m of OCC_ONLY) m.visible = false; }', occ)
-        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, pinOccIssue, occFlatsOff())', s)
-        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false, c, null, occFlatsOff());', s)
+        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c, pinOccIssue, occFlatsOff())', s)
+        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c, null, occFlatsOff());', s)   # Round 168: only buildings hide pins (no instanced meshes)
         self.assertIn('occRender(BPICK.rt, 1, 1, BPICK.buf, true);', s)   # the building tap draws everything, as it did
         self.assertEqual(s.count('occRender('), 4)
 

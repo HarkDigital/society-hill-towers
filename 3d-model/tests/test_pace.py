@@ -13,7 +13,10 @@ import shutil
 import subprocess
 import unittest
 
-from test_dpr_controller import HARNESS
+try:
+    from test_dpr_controller import HARNESS
+except ImportError:   # run as tests.test_pace from 3d-model/
+    from tests.test_dpr_controller import HARNESS
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -100,6 +103,23 @@ class Pace(unittest.TestCase):
         # a night that misses the pace at 1.25 (41 ms) and holds it at 1.0 (29 ms): it steps down
         o = self.sim('DPR.top = 1.6; dprInit(); DPR.live = true; dprPace(30);', '9 + 20 * r * r')
         self.assertLessEqual(o['end'], 1.0)
+
+
+class MikesTwoCalls(unittest.TestCase):
+    """Round 168, Mike's answers: "Turn them off" (moon shadows after dusk) and "Only buildings hide pins"."""
+    @classmethod
+    def setUpClass(cls):
+        cls.src = (ROOT / 'app.js').read_text()
+
+    def test_moon_shadows_off_on_a_phone(self):
+        self.assertIn("if (isTouch) { const cast = el > -3; if (sun.castShadow !== cast) { sun.castShadow = cast; if (cast) renderer.shadowMap.needsUpdate = true; } }", self.src)
+        # the same line where the key light becomes the moon's: el > -3 is the sun's branch of applyLighting
+        self.assertIn("    if (el > -3) {\n      sunDir.copy(sp.dir);", self.src)
+
+    def test_only_buildings_hide_pins(self):
+        s = self.src
+        self.assertEqual(s.count('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c,'), 2)   # both the async and the synchronous read
+        self.assertNotIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false', s)
 
 
 if __name__ == '__main__':

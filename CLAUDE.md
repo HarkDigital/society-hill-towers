@@ -213,7 +213,15 @@ before any visual round rather than rediscovering it.
   `philly3d.prefs`), and the ? button beside the camera brings the how-to back without it; every card has two type sizes,
   the title and the rest (`-webkit-text-size-adjust: 100%`, or iOS inflates the long rows in landscape), a long card
   scrolls with a fade at its foot, and the app (`IN_APP`) never shows the Install row; the touch
-  primer that followed the first touch is gone. Every card on an anchor is placed by `vehinfoAt` (Round 165, the first run in the iOS
+  primer that followed the first touch is gone. Since Round 168 (Mike, iPhone 18 Pro Max, Low Power Mode off: "blurry, pixelated, and had framerate drops") a phone
+  draws at a steady pace after Enter (`PACE`: at most 30 frames a second while anything moves, 60 in Smoother, 12 once nothing
+  has moved or been touched for 2.5 s; a skipped refresh makes no GL call), the resolution trials judge against that pace
+  (`dprPace`) and climb a ladder from the load's 1.25 up to the Graphics choice's top (`GFX_PERF`: Auto to 1.6, Sharper 1.6 to 2.0,
+  Smoother 1.0 with a 9 km haze), the far facades past max(300 m, 8 times a mesh's longest edge) write their log depth from the
+  vertex stage (`VDEPTH`, touch only; overlay hosts keep fragment depth), the key light stops casting once it is the moon's
+  (Mike's call: moon shadows off after dusk, phones), and only buildings hide pins (Mike's call: the pins' capture leaves out
+  every instanced mesh, trees included, and the flats from 20 m up); the perf, settled and ten-minute late beacons carry where a
+  phone's frame goes (`jp`, `jr`, `fg`, `fg95`, `sk`, `idl`, `gx`). Every card on an anchor is placed by `vehinfoAt` (Round 165, the first run in the iOS
   Simulator: the near me card lost its top in landscape), which keeps it inside the window and the safe area; the card
   scrolls past the window's height. Never write `vehinfoEl.style.transform` anywhere else.
 - The page is an installable app (Round 53): `build.py` writes `manifest.webmanifest` beside it,
@@ -235,7 +243,7 @@ readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
 pins the air at Good. `?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardous>` pins the
 air quality (Round 75: the live PM2.5 scales the clear-air distances and tints a smoke day;
 `__dbg.aqi(n)`, `__dbg.aqiState()`).
-`?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question).
+`?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question). `?vdepth=0` keeps every facade on fragment depth and `?vdepth=<m>` sets the near line on any device (Round 168; `__dbg.vdepth()`); `?gfx=smoother|auto|sharper` pins the Graphics choice without saving it (Round 168).
 
 ## Where things are
 
