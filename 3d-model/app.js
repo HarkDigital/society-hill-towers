@@ -304,15 +304,28 @@
   const DPR_SETTLE = 1, DPR_TRIAL = 2, DPR_RECHECK = 1;   // windows: the one a resize lands in is not judged, then 2 at the trial rung, 1 back
   const DPR_UP_AFTER = 10000, DPR_STAY = 30000, DPR_PROVEN = 60000, DPR_HOLD = 20000, DPR_HOLD_MAX = 320000;   // ms
   const DPR_GAP = 20000, DPR_URGENT = 40;      // ms between trials, unless three windows in a row are over DPR_URGENT ms
+  // Round 168: the budget the trials judge against. Unpaced (desktop) it is the fixed 22 / 13 / 40 ms above; a phone is paced
+  // (PACE, frame()): its frames come every 1000 / fps ms when it keeps up, so 'slow' is missing the pace by 30%, 'urgent' is two
+  // paced frames, and holding the pace is the headroom that lets a trial climb (the snapped display interval does the rest)
+  const DPR_BUDGET = { slow: DPR_SLOW, fast: DPR_FAST, urgent: DPR_URGENT };
+  function dprPace(fps) {
+    if (fps > 0) { const b = 1000 / fps; DPR_BUDGET.slow = b * 1.3; DPR_BUDGET.urgent = b * 2; }
+    else { DPR_BUDGET.slow = DPR_SLOW; DPR_BUDGET.urgent = DPR_URGENT; }
+  }
   const DPR_STEP = isTouch ? 0.8 : 0.85;       // the ladder's rung (Round 74's steps)
   const dprMean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
   const DPR_HZ = [1000 / 144, 1000 / 120, 1000 / 90, 1000 / 60, 1000 / 30];
   function dprInit() {
     // the last rung above the floor must be able to buy DPR_GAIN in pixels, or the floor could never be kept
-    const L = [DPR.cap], near = DPR.min / Math.sqrt(1 - DPR_GAIN);
+    // Round 168: the ladder passes through the ratio the controller has now (the load's 1.25 until Enter), climbs by the rung
+    // to DPR.top (a Graphics choice may raise it over the start, DPR.cap; a last rung within 6% of the top becomes the top)
+    // and steps down to the floor as before
+    const top = Math.max(DPR.top || DPR.cap, DPR.min), cur = clamp(DPR.cur, DPR.min, top), near = DPR.min / Math.sqrt(1 - DPR_GAIN);
+    const up = []; for (let r = cur; r < top - 1e-6;) { r = Math.min(top, r / DPR_STEP); if (top - r < 0.06 * top) r = top; up.push(r); }
+    const L = up.reverse().concat([cur]);
     while (L[L.length - 1] * DPR_STEP > near) L.push(L[L.length - 1] * DPR_STEP);
     if (L[L.length - 1] > near) L.push(DPR.min);
-    DPR.levels = L; DPR.k = 0; DPR.hist = []; DPR.trial = null; DPR.since = -1; DPR.lastKeep = null; DPR.next = 0;
+    DPR.levels = L; DPR.k = up.length; DPR.hist = []; DPR.trial = null; DPR.since = -1; DPR.lastKeep = null; DPR.next = 0;
     DPR.holdDn = L.map(() => 0); DPR.holdUp = L.map(() => 0); DPR.waitDn = L.map(() => DPR_HOLD); DPR.waitUp = L.map(() => DPR_HOLD);
     DPR.rejBase = L.map(() => 0);              // the load a down trial was refused at: only a heavier one, or DPR_HOLD_MAX, retries it
     DPR.rejT = L.map(() => 0);
@@ -354,7 +367,7 @@
       // a step down is kept only when EVERY window at the trial rung beats the lightest look at the rung before, so a view
       // that swings during the trial cannot pass for the ratio's doing; a step up is judged against the heaviest look
       const loA = Math.min(...t.a), hiA = Math.max(...t.a);
-      const keep = t.dn ? Math.max(...t.b) <= loA * (1 - DPR_GAIN) : dprMean(t.b) <= Math.max(DPR_KEEP_UP * DPR_SLOW, hiA * (1 + DPR_COST));
+      const keep = t.dn ? Math.max(...t.b) <= loA * (1 - DPR_GAIN) : dprMean(t.b) <= Math.max(DPR_KEEP_UP * DPR_BUDGET.slow, hiA * (1 + DPR_COST));
       if (!keep) {
         if (t.dn) {
           D.tri[1]++;
@@ -390,13 +403,13 @@
     // windows agree before anything moves: three slow ones in a row (a second and a half on a phone) for a step down, so a
     // heavy turn or a hitch that straddles two windows is not the device; two at the display's own pace for a step up
     const n = D.hist.length, last3 = D.hist.slice(-3), base = dprMean(last3);
-    const slow = n >= 3 && Math.min(...last3) > DPR_SLOW;
-    const fast = Math.max(D.hist[n - 2], D.hist[n - 1]) <= Math.max(DPR_FAST, Math.min(DPR_KEEP_UP * DPR_SLOW, D.vs * 1.15));
+    const slow = n >= 3 && Math.min(...last3) > DPR_BUDGET.slow;
+    const fast = Math.max(D.hist[n - 2], D.hist[n - 1]) <= Math.max(DPR_BUDGET.fast, Math.min(DPR_KEEP_UP * DPR_BUDGET.slow, D.vs * 1.15));
     D.seen[D.k] = base;
     // a hold earned under a lighter load gives way when the load has been far heavier for four windows (night, weather, a
     // phone running hot); its backoff still doubles, so a view that swings through heavy moments cannot keep reopening it
     const heavier = D.rejBase[D.k] > 0 && D.hist.length === 4 && Math.min(...D.hist) > 1.6 * D.rejBase[D.k];
-    const urgent = slow && Math.min(...last3) > DPR_URGENT;
+    const urgent = slow && Math.min(...last3) > DPR_BUDGET.urgent;
     if (now < D.next && !urgent) return;   // one trial at a time, spaced, so the picture does not keep changing
     // a refused step is retried only when the load has changed (a step down that bought nothing at 29 ms cannot buy anything
     // at 29 ms a minute later), or once DPR_HOLD_MAX has passed, so a phone held back by geometry sees no more trial dips
@@ -415,7 +428,7 @@
     const now = performance.now(), D = DPR, p = PERF.rn ? perfStats() : null;
     return 's' + (PERF.enterT ? Math.round((now - PERF.enterT) / 1000) : -1) + ',r' + D.cur.toFixed(2) + ',t' + (D.trial ? (D.trial.dn ? 'd' : 'u') : '-') +
       ',n' + (D.nch || 0) + ',c' + (D.chT ? Math.round((now - D.chT) / 1000) : -1) + ',v' + (D.vs ? D.vs.toFixed(0) : 0) +
-      ',d' + (typeof WXFX !== 'undefined' ? (+WXFX.dayF || 0).toFixed(1) : '') + ',m' + (p && p.p50 != null ? Math.round(p.p50) : -1);
+      ',d' + (typeof WXFX !== 'undefined' ? (+WXFX.dayF || 0).toFixed(1) : '') + ',m' + (p && p.p50 != null ? Math.round(p.p50) : -1) + ',g' + gfxPick()[0] + ',i' + (PACE.on && performance.now() - PACE.lastInput >= PACE_IDLE_AFTER && performance.now() - PACE.moved >= PACE_IDLE_AFTER ? 1 : 0);   // Round 168: the choice, and whether it sat idle
   }
   function dprBeacon() {   // Round 166: what the controller did on this device, for the perf beacons
     const D = DPR;
@@ -423,6 +436,47 @@
       dpf: D.levels.map((r, k) => Math.round(r * 100) + ':' + Math.round(D.seen[k])).join('.') };
   }
   renderer.setSize(window.innerWidth, window.innerHeight);
+  // ---- Round 168 (Mike, iPhone 18 Pro Max, Low Power Mode off: "blurry, pixelated, and had framerate drops"; 29 ms frames at noon,
+  // 68 to 79 ms at night, paced at 30 Hz): the page drew the whole city at every display refresh, touched or not, and the phone
+  // heated until iOS throttled it. On a phone the city is now drawn at most PACE.fps times a second while anything moves (a steady
+  // 30 looks smoother than frames that swing between 24 and 40, and runs cooler) and PACE_IDLE_FPS once nothing has moved or been
+  // touched for PACE_IDLE_AFTER; a refresh that is skipped makes no GL call, so the last picture stays up. The time saved buys
+  // sharpness: the ratio ladder now runs above the load's 1.25 (the load's peak is unchanged) and the trials climb it while the
+  // phone holds its pace. GFX_PERF is the Graphics choice's performance side (the choice, its strip and its storage are GFX, in
+  // the boot region): Smoother paces at 60 with a lighter ratio and a 9 km view, Auto at 30 up to 1.6, Sharper at 30 from 1.6 to 2.
+  const GFX_PERF = {
+    touch: { smoother: { fps: 60, top: 1.0, min: 0.72, start: 1.0, far: 9000 }, auto: { fps: 30, top: 1.6, min: 0.72, start: 1.25, far: 0 }, sharper: { fps: 30, top: 2.0, min: 1.0, start: 1.6, far: 0 } },
+    desk: { smoother: { fps: 0, top: 1.25, min: 0.9, start: 1.25, far: 0 }, auto: { fps: 0, top: 1.75, min: 0.9, start: 1.75, far: 0 }, sharper: { fps: 0, top: 2.0, min: 1.25, start: 2.0, far: 0 } },
+  };
+  const gfxPick = () => (typeof GFX !== 'undefined' && GFX && GFX_PERF.touch[GFX.pick] ? GFX.pick : 'auto');
+  const gfxPerf = () => GFX_PERF[isTouch ? 'touch' : 'desk'][gfxPick()];
+  const PACE_IDLE_FPS = 12, PACE_IDLE_AFTER = 2500;   // frames a second once still, and after how long (ms)
+  const PACE = { on: false, fps: 0, lastDraw: -1e9, lastInput: 0, moved: 0, idle: false, prevActive: false, pos: new THREE.Vector3(1e9, 0, 0), quat: new THREE.Quaternion(),
+    refreshes: 0, drawn: 0, idleMs: 0, liveMs: 0, pre: new Float32Array(120), sub: new Float32Array(120), gap: new Float32Array(120), pi: 0, pn: 0 };
+  for (const ev of ['pointerdown', 'pointermove', 'touchstart', 'touchmove', 'keydown', 'wheel']) window.addEventListener(ev, () => { PACE.lastInput = performance.now(); }, { passive: true, capture: true });
+  function paceApply() { const g = gfxPerf(); PACE.fps = g.fps; PACE.on = isTouch && g.fps > 0; dprPace(PACE.on ? g.fps : 0); }
+  // the ladder for the choice: its top, floor and the rung to stand on (the load's own ratio until Enter, the choice's start after)
+  function dprMode() {
+    if (DPR.pinned) return;
+    const g = gfxPerf(), dev = window.devicePixelRatio || 1;
+    DPR.top = Math.min(dev, g.top); DPR.min = Math.min(g.min, DPR.top);
+    const keep = { tri: DPR.tri, tw: DPR.tw, tt: DPR.tt, live: DPR.live, vs: DPR.vs, low: DPR.low, nch: DPR.nch, chT: DPR.chT };
+    DPR.cur = DPR.live ? clamp(g.start, DPR.min, DPR.top) : Math.min(DPR.cur, DPR.top);
+    dprInit();
+    Object.assign(DPR, keep);
+    if (Math.abs(DPR.cur - renderer.getPixelRatio()) > 1e-3) {
+      if (DPR.live) dprGo(DPR.k);
+      else renderer.setPixelRatio(DPR.cur);   // before Enter the sprites' materials do not exist yet: the ratio alone (Smoother's 1.0)
+    }
+  }
+  paceApply(); dprMode();
+  if (typeof GFX !== 'undefined' && GFX && GFX.hooks) GFX.hooks.push(() => { paceApply(); dprMode(); });
+  function paceBeacon() {   // Round 168: where a paced phone's frame goes (ms medians of the last 120 drawn frames), for the perf beacons
+    const P = PACE, n = Math.min(P.pn, 120), m = (a) => { if (!n) return ''; const b = Array.from(a.subarray(0, n)).sort((x, y) => x - y); return b[n >> 1].toFixed(1); };
+    const q95 = (a) => { if (!n) return ''; const b = Array.from(a.subarray(0, n)).sort((x, y) => x - y); return b[Math.floor(n * 0.95)].toFixed(0); };
+    return { gx: gfxPick()[0], pf: P.on ? P.fps : 0, jp: m(P.pre), jr: m(P.sub), fg: m(P.gap), fg95: q95(P.gap),
+      sk: P.refreshes ? Math.round(100 * (1 - P.drawn / P.refreshes)) : '', idl: P.liveMs ? Math.round(100 * P.idleMs / P.liveMs) : '' };
+  }
   // the installed app (PWA) opens its window at one size and lays the page out at another, and
   // the resize can land while the build is still running: every frame checks the window
   // against the size the canvas was last fitted to (fitView, below the camera)
@@ -22503,6 +22557,7 @@
     // orange day, 0.1 in wildfire smoke; everything fogged follows scene.fog.far, cullFogged too)
     scene.fog.near = fogBase.near * WXFX.haze * (1 - 0.65 * night) * (1 - 0.75 * murk) * (1 - WXFX.fog) + 55 * WXFX.fog;
     scene.fog.far = fogBase.far * WXFX.haze * (1 - 0.6 * night) * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
+    { const gf = gfxPerf().far; if (gf) { scene.fog.far = Math.min(scene.fog.far, gf); scene.fog.near = Math.min(scene.fog.near, gf * 0.3); } }   // Round 168: Smoother's shorter view (its choice; clear air stays Auto's)
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xdde7f2), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
     if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x9c8e74), dayF);
@@ -22923,9 +22978,10 @@
     if (gateGo) { gateGo(); return; }   // the recovery gate's tap starts the build (bootGate)
     beacon('enter', { ms: Math.round(performance.now()) });
     PERF.enterT = performance.now();
-    DPR.live = true; DPR.tw = 0; DPR.tt = 0; DPR.i = 0; DPR.ring.fill(0); DPR.hist = []; DPR.since = -1;   // Round 166: the controller judges the city from here
-    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon() }); }, 60000);
-    setTimeout(() => { const p = perfStats(); beacon('settled', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon() }); }, 180000);   // Round 166: where it settled
+    DPR.live = true; dprMode(); PACE.lastInput = performance.now(); DPR.tw = 0; DPR.tt = 0; DPR.i = 0; DPR.ring.fill(0); DPR.hist = []; DPR.since = -1;   // Round 166: the controller judges the city from here
+    setTimeout(() => { const p = perfStats(); beacon('perf', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon() }); }, 60000);
+    setTimeout(() => { const p = perfStats(); beacon('settled', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon() }); }, 180000);
+    setTimeout(() => { const p = perfStats(); beacon('late', { p50: p.p50, p95: p.p95, calls: p.calls, tris: p.tris, dpr: p.dpr.toFixed(2), mode, ...dprBeacon(), ...paceBeacon() }); }, 600000);   // Round 168: ten minutes in, where a phone's heat shows   // Round 166: where it settled
     veil.classList.add('hidden');
     veil.inert = true;
     document.getElementById('appUI').inert = false;
@@ -23302,8 +23358,21 @@
     if (glDead) return;   // a lost context is never drawn on again, and the loop stops here (webglcontextlost)
     if (window.innerWidth !== fitW || window.innerHeight !== fitH) fitView();
     if (!once) requestAnimationFrame(frame);
+    // Round 168: a paced phone draws at most PACE.fps times a second while anything moves (input, or the camera moved in the last
+    // PACE_IDLE_AFTER: a glide, the intro's circle, a fling's coast) and PACE_IDLE_FPS once still; a skipped refresh does nothing
+    let paceActive = true;
+    if (!once && PACE.on && DPR.live) {
+      PACE.refreshes++;
+      paceActive = now - PACE.lastInput < PACE_IDLE_AFTER || now - PACE.moved < PACE_IDLE_AFTER;
+      if (now - PACE.lastDraw < 1000 / (paceActive ? PACE.fps : PACE_IDLE_FPS) - 4) return;
+      PACE.drawn++;
+      const since = Math.min(now - PACE.lastDraw, 250);
+      PACE.liveMs += since; if (!paceActive) PACE.idleMs += since;
+      PACE.lastDraw = now;
+    }
+    const tFrame = performance.now();
     const rawMs = now - last;
-    const dt = Math.min(rawMs / 1000, 0.05);
+    const dt = Math.min(rawMs / 1000, PACE.on ? 0.1 : 0.05);   // an idle phone's 12 frames a second still move the city at its own speed
     last = now;
     frameNo++;
     pinOccPoll();   // Round 167: the pins' last read lands here once its fence has passed, first thing, before this frame queues any GL work its copy would wait behind
@@ -23312,7 +23381,10 @@
     // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
     // of the city is answered in a quarter of a second, not two); a gap over 250 ms (a stall, the app in the background)
     // is not a slow frame: it abandons a trial and forgets the windows (dprGap)
-    if (!once && !DPR.pinned && DPR.live) {
+    // a paced phone judges only frames drawn while active after an active one (the idle cadence says nothing of the load)
+    const paceJudge = !PACE.on || (paceActive && PACE.prevActive);
+    PACE.prevActive = paceActive;
+    if (!once && !DPR.pinned && DPR.live && paceJudge) {
       if (rawMs >= 250 || document.hidden) dprGap(now);
       else {
         const win = isTouch ? 15 : 30;
@@ -23344,6 +23416,10 @@
     if (mode === MODE.ORBIT) applyOrbit(dt);
     else if (mode === MODE.WALK) applyWalk(dt);
     else applyFly(dt);
+    if (PACE.on) {   // the camera moved this frame (a glide, the intro's circle, a fling's coast): keep the full pace a while longer
+      if (camera.position.distanceToSquared(PACE.pos) > 1e-4 || 1 - Math.abs(camera.quaternion.dot(PACE.quat)) > 1e-8) PACE.moved = now;
+      PACE.pos.copy(camera.position); PACE.quat.copy(camera.quaternion);
+    }
 
     // the shadow box rides with the camera: tight on foot, growing with altitude in flight,
     // re-aimed a little ahead of the view only after a good move so the depth pass stays rare
@@ -23422,7 +23498,11 @@
     updateLabels();
     updateHash(now);
     pinOccUpdate(dt);
+    const tPre = performance.now();
     if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);
+    if (!once && DPR.live) {   // Round 168: where the frame's time goes on this device (the JS before the draw, the draw call's own CPU, the gap between drawn frames)
+      const P = PACE, i = P.pi; P.pre[i] = tPre - tFrame; P.sub[i] = performance.now() - tPre; P.gap[i] = Math.min(rawMs, 999); P.pi = (i + 1) % 120; P.pn++;
+    }
     // Round 167: what the steps staged after the last flushUploads (the trees and the tie runs, and the late tiles: the outer
     // districts' streets, the lots and yards, the overpass decks, the towns' roads and areas) was drawn unculled in this
     // frame, behind the veil, as the merged meshes they replace were: uploaded and freed now, and culled from here on
@@ -23509,7 +23589,7 @@
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { bootCtx, events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { bootCtx, paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
