@@ -126,8 +126,9 @@ class MikesTwoCalls(unittest.TestCase):
 
     def test_only_buildings_hide_pins(self):
         s = self.src
-        self.assertEqual(s.count('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c,'), 2)   # both the async and the synchronous read
-        self.assertNotIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, false', s)
+        # Round 169: the pins' one capture call (every kind of image, read at once or later) leaves out the instanced meshes
+        self.assertEqual(s.count('occRender(s.rt, W, H, ch.cpu.buf, true, c,'), 1)
+        self.assertEqual(s.count('occRender(s.rt,'), 1)
 
 
 if __name__ == '__main__':

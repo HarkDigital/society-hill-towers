@@ -82,10 +82,27 @@ before any visual round rather than rediscovering it.
   their pins depth-tested), neighborhood names and the search pin are not; every pin is shown or hidden WHOLE (Rounds 126
   and 127, Mike: farther pins painted over nearer ones, buildings cut them): each flat pin carries its ANCHOR's depth
   (`PIN_ANCHOR_GLSL`) and the pins draw after `pinDepthClear` wipes the depth buffer, so nothing cuts one and they sort
-  among themselves; a small depth image of the city (`pinOccCapture`, every 5th frame, 10th on touch, and since Round 136 only when the eye has moved or turned or 120 frames
-  have passed, packed to 30 km, the sky and every non-depth-writing mesh hidden; since Round 143 1.5 times the screen each way through its own camera, and a shown pin keeps showing on a 5 by 5 test while a hidden one returns on 3 by 3; since Round 167 read back on WebGL 2 through a pixel pack buffer behind a fence and installed with its own matrices once the fence passes, `PIN_ASYNC`, the first image, a resize, a jump of the eye over `PIN_JUMP` and any failure reading synchronously) decides per tip
-  whether a building hides it (`aPinVis`, `pinOccVisible`; a tap picks a pin by the same flag since Round 136; since Round 138 a pin changes state only when two captures agree or 0.45 s has passed, keeps a new state 0.3 s and eases `aPinVis` over 0.2 s instead of snapping, `PIN_FADE`/`PIN_HOLD`/`PIN_DWELL`, `tests/test_pin_fade.py`), and the concert placards and score bubbles ask the same
-  image for their roof landing point (`pinBlocked`); `__dbg.pinOcc()`, `tests/test_pins.py`; the storefront pass skips
+  among themselves; a small depth image of the city (`pinOccCapture`, packed to 30 km, the sky and every non-depth-writing mesh hidden, since Round 143
+  1.5 times the screen each way through its own camera; since Round 167 read back on WebGL 2 through a pixel pack buffer behind a fence and installed with its own
+  matrices once the fence passes, `PIN_ASYNC`, the first image, a resize, a jump of the eye over `PIN_JUMP` and any failure reading synchronously) decides per tip
+  whether a building hides it (`aPinVis`; a tap picks a pin by the same flag since Round 136). Since Round 169 (Mike, from the phone: pins through buildings when he
+  first turned to look at them, "avoid this at all costs") nothing shows that an image has not cleared and hiding waits for nothing: every instanced pin's vertex
+  shader reads the latest images itself (`PIN_GATE`, `PIN_GATE_GLSL`: the packed depth, NEAREST, with each image's own view and projection, the CPU's 3 by 3 rule
+  and need exactly) and collapses a pin whose tip is covered, outside the image, past its reach or with no image yet, so no readback latency applies to hiding;
+  the CPU's state (`pinOccStep`, `pinOccJudge`) hides at once on a covered answer (no fade, hold or dwell), takes unknown as hidden (a pin coming into view,
+  `pinZone`, waits for an image drawn after its arrival) and shows with the old guard (one image after an unknown; two images or `PIN_HOLD` 0.45 s, and
+  `PIN_DWELL` 0.3 s since the last covered answer, after a covered one) and the 0.2 s fade in (`PIN_FADE`); Round 143's 5 by 5 stay-visible test is gone (it
+  showed pins whose own 3 by 3 was covered); drawing an image is apart from reading it back: while the eye moves an image every drawn frame on a computer and
+  every 2nd on a phone (`PIN_OCC_MOVE_EVERY`), and at once when the newest no longer holds the screen widened 1.25 times (`pinOccCovers`), a still eye keeping
+  the old cadence; two targets per kind take turns, never the one a read is in flight from, and the newest unread image is read when none is in flight, at
+  most every 4th frame on a phone and every 2nd on a computer (`PIN_OCC_READ_EVERY`: a read's landing, getBufferSubData, is a synchronous call that waits
+  while the GPU process catches up, 4 to 5 ms a landing headless);
+  an image reaches only as far as the farthest tip in view (10% and 50 m on, never under `PIN_REACH_MIN` 300 m: a third of the triangles for the ground pins),
+  and a phone with a flight, a ship or a placard in view draws a near image (945 m, every ground pin) between complete ones every 10 drawn frames
+  (`PIN_OCC_FULL_EVERY`), a far tip reading the near image for what stands within it and the complete one for the rest (`occImgBoth`); the concert placards and
+  score bubbles keep the same state per tip (`pinBlocked`, `PIN_TIPS`) and, having no gate, once the eye has moved or turned are judged on the samples an image
+  drawn now would take, carried back and clear along the whole slide a nearer building could have made (`pinOccTipAnswer`); `__dbg.pinOcc()`, `__dbg.pinGate()`,
+  `tests/test_pins.py`, `tests/test_pin_fade.py`, `tests/test_pin_gate.py`, `tests/pin_gate_gpu.html`; the storefront pass skips
   every researched custom footprint (Round 127); a demolished house is skipped at run time by a scene point in `DEMOLISHED` (Round 139, 207 E Wildey St: never repack wide.b64 to drop one, the record number seeds every later building's look, and the skip still counts `wideColK`), and a `GROUND_PITS` ring is cut out of the drawn ground by `elPortalClipGround` with a closed pit, the neighbours' bare foundations and blank party-wall skins built in 'Digging on East Wildey Street'; the Marriott Old City's porte-cochere
   stands in the L's inner corner beside the circular drive (Round 126), found as the reflex vertex, never a min-x vertex; roof forms come from the LiDAR
   streaming pass, then OSM roof:shape, then the lottery, packed in the roof word (see

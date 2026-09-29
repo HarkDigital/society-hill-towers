@@ -162,7 +162,14 @@ Mike has reported pins that flash or vanish (Rounds 126, 127, 138, 143) and flic
   pins' depth image is read back behind a fence on WebGL 2, and a fence passes only between
   tasks: a probe that loops `frameOnce()` in one call sees no new image until it yields (the
   sweep yields every frame; `__dbg.pinAsync(false)` forces the old synchronous read). It returns
-  on-screen showings and blinks; Round 143 went from 135 of 189 to 5 of 47.
+  on-screen showings and blinks; Round 143 went from 135 of 189 to 5 of 47. Since Round 169 a pin with
+  aPinVis 1 can still be collapsed by the gate in its vertex shader (`__dbg.pinGate()` names the images it
+  reads), so the sweep's aPinVis alone overcounts what is shown.
+- **Pins through buildings** (Round 169): inject `scripts/pin_through.js`, run a scripted turn or fly with
+  `await __PM.run(...)`, then `__PM.post()`: every recorded frame against a ground-truth image at its own
+  camera, the gate recomputed. Compare `through` and `placardThrough` on `before.html` and the new build;
+  set `__PM.fps = 60` on a computer-sized page. Round 169 went from 981 to 8,388 pin-frames a run to 0 to
+  105 on a phone (every one on a frame a phone draws no image) and 0 on a computer.
 - **Flicker**: three PNG captures 0.5 m apart, then
   `python3 scripts/flicker_diff.py captures/<prefix> --crop x0,y0,x1,y1` and read the crop.
 
