@@ -42,10 +42,12 @@ class Pace(unittest.TestCase):
         self.assertLess(f.index('if (!once) requestAnimationFrame(frame);'), i_skip)     # the loop keeps running
         self.assertLess(i_skip, f.index('last = now;'))                                  # a drawn frame's rawMs spans the skipped refreshes
         self.assertLess(i_skip, f.index('frameNo++;'))
-        self.assertIn('if (!once && PACE.on && DPR.live) {', f)                          # paced only in the city, never behind the veil
+        self.assertIn('if (!once && PACE.on && DPR.live) {', f)
+        self.assertIn('paceActive = lapse.on || ', f)                                   # review: a playing time-lapse is motion
+        self.assertIn('if (!once && rawMs < 500 && paceJudge) { PERF.ring', f)         # review: the p50 reads motion frames only                          # paced only in the city, never behind the veil
         self.assertIn('const dt = Math.min(rawMs / 1000, PACE.on ? 0.1 : 0.05);', f)
         self.assertIn('const paceJudge = !PACE.on || (paceActive && PACE.prevActive);', f)
-        self.assertIn('if (!once && !DPR.pinned && DPR.live && paceJudge) {', f)
+        self.assertIn('else if (!once && !DPR.pinned && DPR.live && paceJudge) {', f)
         self.assertIn('PACE.moved = now;', f)
         i_render = f.index('if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);')
         self.assertLess(f.index('const tPre = performance.now();'), i_render)
@@ -71,7 +73,7 @@ class Pace(unittest.TestCase):
         i = src.index('  const DPR = { cap: renderer.getPixelRatio()')
         literal = src[i:src.index('\n', i)]
         block = src[src.index('  const DPR_SLOW = '):src.index('  renderer.setSize(window.innerWidth, window.innerHeight);')]
-        h = src.index('    if (!once && !DPR.pinned && DPR.live && paceJudge) {')
+        h = src.index('    if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);')
         hook = src[h:src.index('    if (introSpin && !interacted)', h)]
         hook = 'const paceJudge = true;\n' + hook
         script = HARNESS.replace('DPR.live = true;', 'DPR.live = true;\n' + prelude)
@@ -112,7 +114,13 @@ class MikesTwoCalls(unittest.TestCase):
         cls.src = (ROOT / 'app.js').read_text()
 
     def test_moon_shadows_off_on_a_phone(self):
-        self.assertIn("if (isTouch) { const cast = el > -3; if (sun.castShadow !== cast) { sun.castShadow = cast; if (cast) renderer.shadowMap.needsUpdate = true; } }", self.src)
+        # review: through receiveShadow (r149's per-object uniform), never castShadow, which recompiled every lit program
+        self.assertIn('    if (isTouch) moonShadowsOff(el <= -3);', self.src)
+        self.assertNotIn('sun.castShadow = cast', self.src)
+        f = self.src[self.src.index('  function moonShadowsOff(off) {'):]
+        f = f[:f.index('\n  }\n')]
+        self.assertIn('o.receiveShadow = false; moonNoRecv.push(o);', f)
+        self.assertIn('for (const o of moonNoRecv) o.receiveShadow = true;', f)
         # the same line where the key light becomes the moon's: el > -3 is the sun's branch of applyLighting
         self.assertIn("    if (el > -3) {\n      sunDir.copy(sp.dir);", self.src)
 

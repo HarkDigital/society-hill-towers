@@ -57,7 +57,7 @@ class DprController(unittest.TestCase):
         i = src.index('  const DPR = { cap: renderer.getPixelRatio()')
         cls.literal = src[i:src.index('\n', i)]
         cls.block = src[src.index('  const DPR_SLOW = '):src.index('  renderer.setSize(window.innerWidth, window.innerHeight);')]
-        h = src.index('    if (!once && !DPR.pinned && DPR.live && paceJudge) {')   # Round 168: a paced phone judges only its active frames
+        h = src.index('    if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);')   # Round 168: a paced phone judges only its active frames
         cls.hook = 'const paceJudge = true;\n' + src[h:src.index('    if (introSpin && !interacted)', h)]
 
     def sim(self, model, seconds=600, touch=True, start=0, q=0, jitter=0.0, gaps=(), seed=7):
@@ -192,8 +192,9 @@ class DprController(unittest.TestCase):
 
     def test_wiring(self):
         s = self.src
-        self.assertIn('if (!once && !DPR.pinned && DPR.live && paceJudge) {', s)
-        self.assertIn('if (rawMs >= 250 || document.hidden) dprGap(now);', s)
+        self.assertIn('else if (!once && !DPR.pinned && DPR.live && paceJudge) {', s)
+        self.assertIn('if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);', s)   # review: a gap resets the controller whatever the pace judges
+        self.assertIn('if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);', s)
         self.assertEqual(s.count('dprJudge(sum / n, DPR.tmp[o + 1], now);'), 1)
         self.assertNotIn('DPR.fast', s)
         self.assertIn('const DPR_CAP = isTouch ? 1.25 : 1.75;', s)          # the cap, and so the load's peak, unchanged

@@ -7561,3 +7561,15 @@ which hooks into it.
   flats comment records the rare flips toward showing an independent sweep still found (about 1 in 10,000 from 20 m up).
   Left as is: the capture-only raised-street mesh (0.73 MB) uploads with the first capture rather than behind the veil.
 
+Round 168 build 6 check (Sep 29): an independent measure against build 5 (M2 Max, Metal, phone emulation, interleaved blocks)
+found build 6 11 to 45% cheaper at every pose at the same ratio, Auto's 1.6 costing about what build 5 cost at 1.25, the pins'
+capture drawing 41 to 47% fewer triangles, memory and load unchanged, 12 frames a second parked and 30 touched, Auto climbing to
+1.6 within 3 s on a 3x screen; the only visible changes the moon's shadows at night and distant rooftop speckle. An integration
+review found one HIGH: the moon-shadow toggle through castShadow recompiled every lit program (1.3 to 2 s at a dusk crossing on
+the Mac, 85 to 126 programs kept). Now `moonShadowsOff` turns off r149's per-object receiveShadow uniform on every receiving mesh
+once the key light is the moon's and restores it at sunrise: in the probe the dusk crossing took 140 ms over two frames with 9
+new programs (the night-only materials build 5 also compiles there), back to day 26 ms, no new programs. The review's lesser
+findings are fixed: a stall or the app's return resets the controller whatever the pace judges, the beacons' choice letter is
+m / a / s, PERF.ring keeps only motion frames, a playing time-lapse counts as motion, and the display interval is measured afresh
+after a Graphics change.
+

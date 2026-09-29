@@ -218,8 +218,9 @@ before any visual round rather than rediscovering it.
   has moved or been touched for 2.5 s; a skipped refresh makes no GL call), the resolution trials judge against that pace
   (`dprPace`) and climb a ladder from the load's 1.25 up to the Graphics choice's top (`GFX_PERF`: Auto to 1.6, Sharper 1.6 to 2.0,
   Smoother 1.0 with a 9 km haze), the far facades past max(300 m, 8 times a mesh's longest edge) write their log depth from the
-  vertex stage (`VDEPTH`, touch only; overlay hosts keep fragment depth), the key light stops casting once it is the moon's
-  (Mike's call: moon shadows off after dusk, phones), and only buildings hide pins (Mike's call: the pins' capture leaves out
+  vertex stage (`VDEPTH`, touch only; overlay hosts keep fragment depth), every mesh stops receiving the key light's shadow once it is the moon's
+  (Mike's call: moon shadows off after dusk, phones; `moonShadowsOff` through r149's per-object `receiveShadow` uniform, never
+  `castShadow`, whose toggle recompiled every lit program: a 1 to 2 s freeze and both program sets kept), and only buildings hide pins (Mike's call: the pins' capture leaves out
   every instanced mesh, trees included, and the flats from 20 m up); the perf, settled and ten-minute late beacons carry where a
   phone's frame goes (`jp`, `jr`, `fg`, `fg95`, `sk`, `idl`, `gx`). Every card on an anchor is placed by `vehinfoAt` (Round 165, the first run in the iOS
   Simulator: the near me card lost its top in landscape), which keeps it inside the window and the safe area; the card

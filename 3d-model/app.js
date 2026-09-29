@@ -530,7 +530,7 @@
     const now = performance.now(), D = DPR, p = PERF.rn ? perfStats() : null;
     return 's' + (PERF.enterT ? Math.round((now - PERF.enterT) / 1000) : -1) + ',r' + D.cur.toFixed(2) + ',t' + (D.trial ? (D.trial.dn ? 'd' : 'u') : '-') +
       ',n' + (D.nch || 0) + ',c' + (D.chT ? Math.round((now - D.chT) / 1000) : -1) + ',v' + (D.vs ? D.vs.toFixed(0) : 0) +
-      ',d' + (typeof WXFX !== 'undefined' ? (+WXFX.dayF || 0).toFixed(1) : '') + ',m' + (p && p.p50 != null ? Math.round(p.p50) : -1) + ',g' + gfxPick()[0] + ',i' + (PACE.on && performance.now() - PACE.lastInput >= PACE_IDLE_AFTER && performance.now() - PACE.moved >= PACE_IDLE_AFTER ? 1 : 0);   // Round 168: the choice, and whether it sat idle
+      ',d' + (typeof WXFX !== 'undefined' ? (+WXFX.dayF || 0).toFixed(1) : '') + ',m' + (p && p.p50 != null ? Math.round(p.p50) : -1) + ',g' + GFX_LETTER[gfxPick()] + ',i' + (PACE.on && performance.now() - PACE.lastInput >= PACE_IDLE_AFTER && performance.now() - PACE.moved >= PACE_IDLE_AFTER ? 1 : 0);   // Round 168: the choice, and whether it sat idle
   }
   function dprBeacon() {   // Round 166: what the controller did on this device, for the perf beacons
     const D = DPR;
@@ -552,6 +552,7 @@
   };
   const gfxPick = () => (typeof GFX !== 'undefined' && GFX && GFX_PERF.touch[GFX.pick] ? GFX.pick : 'auto');
   const gfxPerf = () => GFX_PERF[isTouch ? 'touch' : 'desk'][gfxPick()];
+  const GFX_LETTER = { smoother: 'm', auto: 'a', sharper: 's' };   // for the beacons and the crumb (review: 's' named both ends)
   const PACE_IDLE_FPS = 12, PACE_IDLE_AFTER = 2500;   // frames a second once still, and after how long (ms)
   const PACE = { on: false, fps: 0, lastDraw: -1e9, lastInput: 0, moved: 0, idle: false, prevActive: false, pos: new THREE.Vector3(1e9, 0, 0), quat: new THREE.Quaternion(),
     refreshes: 0, drawn: 0, idleMs: 0, liveMs: 0, pre: new Float32Array(120), sub: new Float32Array(120), gap: new Float32Array(120), pi: 0, pn: 0 };
@@ -562,7 +563,7 @@
     if (DPR.pinned) return;
     const g = gfxPerf(), dev = window.devicePixelRatio || 1;
     DPR.top = Math.min(dev, g.top); DPR.min = Math.min(g.min, DPR.top);
-    const keep = { tri: DPR.tri, tw: DPR.tw, tt: DPR.tt, live: DPR.live, vs: DPR.vs, low: DPR.low, nch: DPR.nch, chT: DPR.chT };
+    const keep = { tri: DPR.tri, tw: DPR.tw, tt: DPR.tt, live: DPR.live, low: DPR.low, nch: DPR.nch, chT: DPR.chT };   // review: vs is measured afresh (Smoother's 60 would hold a 30 pace's headroom test at 19 ms)
     DPR.cur = DPR.live ? clamp(g.start, DPR.min, DPR.top) : Math.min(DPR.cur, DPR.top);
     dprInit();
     Object.assign(DPR, keep);
@@ -576,7 +577,7 @@
   function paceBeacon() {   // Round 168: where a paced phone's frame goes (ms medians of the last 120 drawn frames), for the perf beacons
     const P = PACE, n = Math.min(P.pn, 120), m = (a) => { if (!n) return ''; const b = Array.from(a.subarray(0, n)).sort((x, y) => x - y); return b[n >> 1].toFixed(1); };
     const q95 = (a) => { if (!n) return ''; const b = Array.from(a.subarray(0, n)).sort((x, y) => x - y); return b[Math.floor(n * 0.95)].toFixed(0); };
-    return { gx: gfxPick()[0], pf: P.on ? P.fps : 0, jp: m(P.pre), jr: m(P.sub), fg: m(P.gap), fg95: q95(P.gap),
+    return { gx: GFX_LETTER[gfxPick()], pf: P.on ? P.fps : 0, jp: m(P.pre), jr: m(P.sub), fg: m(P.gap), fg95: q95(P.gap),
       sk: P.refreshes ? Math.round(100 * (1 - P.drawn / P.refreshes)) : '', idl: P.liveMs ? Math.round(100 * P.idleMs / P.liveMs) : '' };
   }
   // the installed app (PWA) opens its window at one size and lays the page out at another, and
@@ -22825,6 +22826,13 @@
   const _pz = new THREE.Color(), _ph = new THREE.Color(), _pg = new THREE.Color();   // the frame's sky palette
   let _ephMs = NaN, _ephSun = null, _ephMoon = null;   // solar()/lunar() memo: the clock moves once a minute
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  // Round 168 (Mike: moon shadows off after dusk): the meshes a phone stopped receiving on, restored at sunrise; a mesh made after
+  // dusk keeps receiving as before
+  let moonNoRecv = null;
+  function moonShadowsOff(off) {
+    if (off && !moonNoRecv) { moonNoRecv = []; scene.traverse((o) => { if (o.receiveShadow) { o.receiveShadow = false; moonNoRecv.push(o); } }); }
+    else if (!off && moonNoRecv) { for (const o of moonNoRecv) o.receiveShadow = true; moonNoRecv = null; }
+  }
   function applyLighting() {
     const ms = clockUtcMs(clock, clock.minutes);
     if (ms !== _ephMs) { _ephMs = ms; _ephSun = solar(ms); _ephMoon = lunar(ms); }
@@ -22875,7 +22883,10 @@
     // light stops casting once it is the moon's (the sun 3 degrees under) and casts again at sunrise. The toggle recompiles the lit
     // programs once each way and three keeps both sets, so a session that crosses dusk hitches once; a load after dark builds
     // with the sun's set and swaps at its first frame, behind the veil
-    if (isTouch) { const cast = el > -3; if (sun.castShadow !== cast) { sun.castShadow = cast; if (cast) renderer.shadowMap.needsUpdate = true; } }
+    // (review: switching castShadow recompiled every lit program, a 1 to 2 s freeze at a dusk crossing with both sets kept in
+    // memory; r149's receiveShadow is a per-object uniform the lit shaders branch on, so a phone turns receiving off on every
+    // mesh that received once the light is the moon's, and back at sunrise: no program changes, the filter's taps skipped)
+    if (isTouch) moonShadowsOff(el <= -3);
     aimSun(lastAim.cx, lastAim.cz, lastAim.extent);
     skyMat.uniforms.uSun.value.copy(sp.dir);
     skyMat.uniforms.uSunVis.value = smooth(-1.1, 0.4, el);   // below the horizon the disc is gone, only the glow lingers
@@ -23852,7 +23863,7 @@
     let paceActive = true;
     if (!once && PACE.on && DPR.live) {
       PACE.refreshes++;
-      paceActive = now - PACE.lastInput < PACE_IDLE_AFTER || now - PACE.moved < PACE_IDLE_AFTER;
+      paceActive = lapse.on || now - PACE.lastInput < PACE_IDLE_AFTER || now - PACE.moved < PACE_IDLE_AFTER;   // a playing time-lapse is motion (review)
       if (now - PACE.lastDraw < 1000 / (paceActive ? PACE.fps : PACE_IDLE_FPS) - 4) return;
       PACE.drawn++;
       const since = Math.min(now - PACE.lastDraw, 250);
@@ -23865,7 +23876,6 @@
     last = now;
     frameNo++;
     pinOccPoll();   // Round 167: the pins' last read lands here once its fence has passed, first thing, before this frame queues any GL work its copy would wait behind
-    if (!once && rawMs < 500) { PERF.ring[PERF.ri] = rawMs; PERF.ri = (PERF.ri + 1) % 600; PERF.rn++; }
     if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
     // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
     // of the city is answered in a quarter of a second, not two); a gap over 250 ms (a stall, the app in the background)
@@ -23873,9 +23883,14 @@
     // a paced phone judges only frames drawn while active after an active one (the idle cadence says nothing of the load)
     const paceJudge = !PACE.on || (paceActive && PACE.prevActive);
     PACE.prevActive = paceActive;
-    if (!once && !DPR.pinned && DPR.live && paceJudge) {
-      if (rawMs >= 250 || document.hidden) dprGap(now);
-      else {
+    // review: the perf beacons' p50 and p95 read frames drawn in motion only, never the idle cadence (a paced phone's p50 is then
+    // its pace when it keeps up, and more when it does not)
+    if (!once && rawMs < 500 && paceJudge) { PERF.ring[PERF.ri] = rawMs; PERF.ri = (PERF.ri + 1) % 600; PERF.rn++; }
+    // review: a stall or the app's return from the background resets the controller whatever the pace judges (the first frame
+    // back is idle: no touch inside the page yet); an idle frame's own 83 ms never trips the 250 ms test
+    if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);
+    else if (!once && !DPR.pinned && DPR.live && paceJudge) {
+      {
         const win = isTouch ? 15 : 30;
         DPR.tw += DPR.cur * rawMs; DPR.tt += rawMs;
         DPR.ring[DPR.i++] = rawMs;
