@@ -6134,7 +6134,117 @@
     '#define aFloorH (aSFT.w > 0.5 ? sftByte(aSFT.y) : aSFT.y)',
     '#define aTint aSFT.z',
   ].join('\n');
+  // Round 168 (the phones' GPU time, plan item 1a): vertex-only log depth for the far fabric. The log depth buffer writes
+  // gl_FragDepth from every fragment of every program, and a shader that writes depth loses the early depth test (and, on
+  // Apple's tile GPUs, hidden-surface removal): measured on an M2 Max in phone emulation, the buildings' and the trees'
+  // fragment depth was 4.7 ms of a 14.7 ms frame. A facade mesh far enough from the eye draws with a twin of its material
+  // compiled with USE_LOGDEPTHBUF_EXT undefined, so three writes the same log depth from the vertex stage (gl_Position.z)
+  // and the fragment stage keeps early z. The two paths agree exactly at every vertex; across a triangle the vertex path
+  // interpolates the log linearly on the screen, which sets a surface deeper than it is by up to w (ln(w2 / w1))^2 / 8,
+  // where w1 and w2 are the depths of the triangle's ends: whatever lies that close behind it shows through. With every
+  // chunk on it a big near roof let buried geometry through at (-1400, 180, -600); with the line at 300 m alone the pier
+  // warehouses on the Delaware, 300 m walls seen along their length from 400 to 900 m, showed the ground inside their
+  // footprints through the lower third of the wall. So a mesh goes to vertex depth only when its nearest point is past
+  // VDEPTH.near AND past VDEPTH.k times its own longest triangle edge (vdepthMeasure, taken before the upload frees the
+  // arrays): at k 8 the error is under 0.0009 of the distance, a band under a third of a pixel at a wall's foot at any
+  // pitch, where k 4 was a pixel. Everything that is not a facade keeps fragment depth (the flats lose their lane paint and
+  // stall stripes to it). The facade materials say so with userData.vdepth: cityMat (and its clones coreMat and City
+  // Hall's), and the curtain wall. And a facade mesh that carries an overlay keeps it too: what lies ON a wall (the skyline
+  // lights' crown panels, washes and LED lines, the landmarks' trim and accents) writes one fragment depth for every sample
+  // of its pixel, where the vertex path gives each of the canvas's multisamples its own, so a coplanar overlay failed the
+  // depth test on the samples where the wall leans toward the eye: a lit crown seen from 3 km went muddy, half its light
+  // gone. A slope-scaled offset on the far walls brought it back but widened the lamp-lit streets at night (the 16 px tile
+  // means of a far view moved up to 15/255); keeping those meshes whole on fragment depth left the lights at the capture
+  // noise. vdepthNoteOverlay marks the overlays' 100 m cells and their lowest point as they are merged, vdepthMeasure each
+  // facade mesh's own cells and its tallest point in each: an overlay can only sit on what reaches its height, so a crown
+  // 250 m up holds its tower's chunk on fragment depth and not the rowhouses sealed beside it.
+  // The storefronts are everywhere and not marked: past a mesh's line a shop is a few pixels, which move as the far
+  // fabric's own do, and captures at 7 times show no difference. Touch only, a desktop unchanged; ?vdepth=0 turns it off
+  // and ?vdepth=<metres> sets the floor on any device (the A/B hatch); __dbg.vdepth() reports it, __dbg.vdepth(m, k) sets
+  // it, 0 off.
+  // A twin shares everything with its original: the hook is the original's own, called at compile time (so the weather
+  // chained on after the build is in it), every uniform object a hook sets is the same object, the program key is the
+  // original's plus '|vdepth', and the material properties the frames write (the curtain wall's night emissive) are
+  // copied across every frame. Each twin is made right after its original (vdepthTwin at cityMat, coreMat, City Hall's and
+  // the curtain wall's creation): three orders the opaque draws by material id, so the far facades keep their place among
+  // the city's other draws (made after the build they drew after everything, a coplanar tie went the other way, and the
+  // pins' depth image differed by a few bytes). It compiles behind the veil: the first frame after the build draws every
+  // facade mesh that can go far with its twin, unculled, and the second puts back the culling and the originals within the
+  // line, so no mesh crossing it later compiles a program or builds a pipeline in flight. The shadow pass draws with a depth material
+  // of its own and the pins' and the building tap's depth image with scene.overrideMaterial: neither sees either material.
+  const VDEPTH_Q = /[?&]vdepth=(\d+(?:\.\d+)?)/.exec(location.search);
+  const VDEPTH = { on: false, near: VDEPTH_Q ? +VDEPTH_Q[1] : 300, k: 8, band: 40, recs: [], twins: new Map(), hosts: new Map(), warm: 0, far: 0, swaps: 0, decided: 0, eye: new V3(1e9, 0, 0) };
+  const VDEPTH_CELL = 100;   // metres: the overlays' cells and the facade meshes' own
+  const VDEPTH_WANT = !!window.__useLogDepth && (VDEPTH_Q ? VDEPTH.near > 0 : isTouch);   // the build takes the spans only then
+  const VDEPTH_UNDEF = '#undef USE_LOGDEPTHBUF_EXT\n';   // three's prefix defines it ahead of the body, so this line wins
+  const VDEPTH_SYNC = ['emissiveIntensity', 'envMapIntensity', 'roughness', 'metalness', 'opacity', 'visible', 'side'];
+  // the longest edge of any triangle in a geometry, and in each 100 m cell its triangles start in (a grid over its bounding
+  // sphere) the top of the tallest of them, from its own arrays: a span of Infinity once they are freed (never far).
+  // About 50 ms over the whole fabric's 6.1 M triangles on an M2 Max, spread over the chunks as they are sealed
+  function vdepthMeasure(g) {
+    const P = g.attributes.position, pos = P && !P.isInterleavedBufferAttribute && P.itemSize === 3 ? P.array : null;
+    const ix = g.index ? g.index.array : null;
+    if (!pos || (g.index && !ix)) return { span: Infinity, cells: null };
+    if (!g.boundingSphere) g.computeBoundingSphere();
+    const C = VDEPTH_CELL, bs = g.boundingSphere, gx0 = Math.floor((bs.center.x - bs.radius) / C), gz0 = Math.floor((bs.center.z - bs.radius) / C);
+    const nx = Math.floor((bs.center.x + bs.radius) / C) - gx0 + 1, nz = Math.floor((bs.center.z + bs.radius) / C) - gz0 + 1, top = new Float32Array(nx * nz).fill(-Infinity);
+    const n = ix ? ix.length : P.count;
+    let m = 0;
+    for (let t = 0; t + 2 < n; t += 3) {
+      const i = (ix ? ix[t] : t) * 3, j = (ix ? ix[t + 1] : t + 1) * 3, k = (ix ? ix[t + 2] : t + 2) * 3;
+      const ax = pos[i], ay = pos[i + 1], az = pos[i + 2], bx = pos[j], by = pos[j + 1], bz = pos[j + 2], cx = pos[k], cy = pos[k + 1], cz = pos[k + 2];
+      let d = (ax - bx) * (ax - bx) + (ay - by) * (ay - by) + (az - bz) * (az - bz); if (d > m) m = d;
+      d = (bx - cx) * (bx - cx) + (by - cy) * (by - cy) + (bz - cz) * (bz - cz); if (d > m) m = d;
+      d = (ax - cx) * (ax - cx) + (ay - cy) * (ay - cy) + (az - cz) * (az - cz); if (d > m) m = d;
+      const ox = Math.floor(ax / C) - gx0, oz = Math.floor(az / C) - gz0, y = ay > by ? (ay > cy ? ay : cy) : (by > cy ? by : cy);
+      if (ox >= 0 && oz >= 0 && ox < nx && oz < nz && y > top[oz * nx + ox]) top[oz * nx + ox] = y;
+    }
+    return { span: Math.sqrt(m), cells: { gx0, gz0, nx, nz, top } };
+  }
+  // an overlay's 100 m cells and the lowest of its vertices in each (taken as it is merged, before the upload frees them)
+  function vdepthNoteOverlay(g) {
+    if (!VDEPTH_WANT) return;
+    const P = g.attributes.position, pos = P && !P.isInterleavedBufferAttribute && P.itemSize === 3 ? P.array : null;
+    if (!pos) return;
+    const H = VDEPTH.hosts;
+    for (let i = 0; i < pos.length; i += 3) {
+      const key = Math.floor(pos[i] / VDEPTH_CELL) + ',' + Math.floor(pos[i + 2] / VDEPTH_CELL), y = pos[i + 1], was = H.get(key);
+      if (was === undefined || y < was) H.set(key, y);
+    }
+  }
+  // does a facade mesh carry an overlay: geometry of it reaching an overlay's height (less 2 m) in that overlay's cell or
+  // one beside it
+  function vdepthHosts(cells) {
+    if (!cells) return true;   // nothing to tell by: kept on fragment depth
+    const { gx0, gz0, nx, nz, top } = cells;
+    for (const [key, low] of VDEPTH.hosts) {
+      const c = key.indexOf(','), hx = +key.slice(0, c) - gx0, hz = +key.slice(c + 1) - gz0;
+      if (hx < -1 || hz < -1 || hx > nx || hz > nz) continue;
+      for (let z = Math.max(0, hz - 1); z <= Math.min(nz - 1, hz + 1); z++) for (let x = Math.max(0, hx - 1); x <= Math.min(nx - 1, hx + 1); x++) if (top[z * nx + x] >= low - 2) return true;
+    }
+    return false;
+  }
+  function vdepthTwin(m) {
+    const had = VDEPTH.twins.get(m);
+    if (had) return had;
+    const ud = m.userData;
+    let t;
+    m.userData = {};   // Material.clone copies userData through JSON, and a compiled facade keeps its shader there
+    try { t = m.clone(); } finally { m.userData = ud; }
+    t.onBeforeCompile = (sh, r) => {
+      m.onBeforeCompile(sh, r);
+      sh.vertexShader = VDEPTH_UNDEF + sh.vertexShader;
+      sh.fragmentShader = VDEPTH_UNDEF + sh.fragmentShader;
+    };
+    t.customProgramCacheKey = () => m.customProgramCacheKey() + '|vdepth';
+    t.userData.ver = m.version;
+    m.addEventListener('dispose', () => t.dispose());
+    VDEPTH.twins.set(m, t);
+    return t;
+  }
   const cityMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.92, metalness: 0, envMapIntensity: 0.9, dithering: MAT_DITHER });
+  cityMat.userData.vdepth = true;   // Round 168: far chunks draw its vertex-depth twin on a phone (vdepthUpdate); coreMat and City Hall's material are its clones and carry the flag
+  if (VDEPTH_WANT) vdepthTwin(cityMat);   // made now, so it sorts beside its original
   let coreMat = null;   // the core's fabric: the same shader at the core's gains (set with the hook below)
   {
     const facadeHook = (gW, gR, sat) => (shader) => {
@@ -6712,6 +6822,7 @@
     cityMat.onBeforeCompile = facadeHook(FACADE_GAIN, ROOF_GAIN, 1.2);
     cityMat.customProgramCacheKey = () => 'fabric';   // the two hooks share one source: keyed by hand (gotcha 15)
     coreMat = cityMat.clone();   // r149's clone drops the hook; assigned fresh
+    if (VDEPTH_WANT) vdepthTwin(coreMat);   // Round 168: beside its original in the draw order
     coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0);
     coreMat.customProgramCacheKey = () => 'fabric-core';
   }
@@ -8347,6 +8458,7 @@
   const pendingUpload = [];
   const addChunkMesh = (g, mat) => {
     if (!g.boundingSphere) g.computeBoundingSphere();   // the frustum test would otherwise compute it from the freed arrays
+    if (VDEPTH_WANT && mat.userData.vdepth) g.userData.vd = vdepthMeasure(g);   // Round 168: taken while the arrays are here
     const m = new THREE.Mesh(g, mat);
     m.matrixAutoUpdate = false;
     m.frustumCulled = false;
@@ -9438,6 +9550,7 @@
     }
     if (glowParts.length) {   // unthemed landmark accents retain their house color after dark
       const g = mergeColored(glowParts); freeOnUpload(g);
+      vdepthNoteOverlay(g);   // Round 168: the facades under it keep fragment depth (vdepthHosts)
       const gm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, side: THREE.DoubleSide });
       gm.onBeforeCompile = (sh) => {
         sh.uniforms.uNight = nightUniform;
@@ -9813,6 +9926,7 @@
           pennAt(new THREE.BoxGeometry(0.9, 1.1, 0.5).rotateY(Math.atan2(-nez, nex)), -pex * 1.1 + nex * 0.75, y0 + 6.6, -pez * 1.1 + nez * 0.75, cBronze);   // the charter scroll
         }
         const hallMat=cityMat.clone(),hallFacade=cityMat.onBeforeCompile;
+        if (VDEPTH_WANT) vdepthTwin(hallMat);   // Round 168: beside its original in the draw order
         hallMat.onBeforeCompile=(sh,r)=>{
           hallFacade(sh,r);
           cityHallFloodPatch(sh,{
@@ -10069,6 +10183,8 @@
         outerGlassMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.38, metalness: 0.05, envMapIntensity: 1.10 });
         outerGlassMat.emissive = new THREE.Color(0xffffff);
         outerGlassMat.emissiveIntensity = 0;
+        outerGlassMat.userData.vdepth = true;   // Round 168: the curtain wall is a facade too (vdepthUpdate)
+        if (VDEPTH_WANT) vdepthTwin(outerGlassMat);   // beside its original in the draw order
         // curtain-wall rhythm: darker spandrel band at each floor line, thin vertical
         // mullions between panels — world-space, anti-aliased, fading with distance
         outerGlassMat.onBeforeCompile = (sh) => {
@@ -10177,6 +10293,7 @@
     for (const cp of crownTrim) lmTrim.push(cp);
     if (lmTrim.length) {                     // white chevron trim, masts, City Hall metalwork + Penn
       const g = mergeColored(lmTrim); freeOnUpload(g);
+      vdepthNoteOverlay(g);   // Round 168: the facades under it keep fragment depth (vdepthHosts)
       addChunkMesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 })).castShadow = true;
     }
     for (const ch of chunks.values()) addChunkMesh(ch.geometry(true), cityMat);
@@ -10649,6 +10766,7 @@
     }
     if (themeParts.length) {   // the night's themed lights (Round 81): one mesh, the house colour in aLit, the theme in uTheme0..3 by aSlot, mixed by aMix
       const g = mergeColored(themeParts); freeOnUpload(g);
+      vdepthNoteOverlay(g);   // Round 168: the facades under it keep fragment depth (vdepthHosts)
       THEME.nParts = themeParts.length;
       themeMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
       themeMat.onBeforeCompile = (sh) => {
@@ -10673,6 +10791,7 @@
     }
     if(crownPanels.length) {
       const g=mergeColored(crownPanels);freeOnUpload(g);
+      vdepthNoteOverlay(g);   // Round 168 (vdepthHosts)
       themeCrownMat=new THREE.MeshBasicMaterial({side:THREE.DoubleSide,toneMapped:false});
       themeCrownMat.extensions={derivatives:true};
       themeCrownMat.onBeforeCompile=sh=>crownPanelPatch(sh,themeU);
@@ -10683,6 +10802,7 @@
     }
     if (themeSheets.length) {
       const g = themeWashGeometry(themeSheets);
+      vdepthNoteOverlay(g);   // Round 168 (vdepthHosts)
       themeSheetMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
       themeSheetMat.onBeforeCompile = themeWashPatch;
       postRaw(themeSheetMat);
@@ -23243,6 +23363,78 @@
       m.visible = _cullD.copy(bs.center).sub(cp).dot(_cullF) - bs.radius < far;
     }
   }
+  // Round 168: the far facades' vertex-only log depth, decided here every few frames (the twins, their spans and the
+  // reasons are with the facade materials: VDEPTH)
+  function vdepthSync() {   // the properties three reads off the material itself (the uniforms the hooks set are shared)
+    for (const [m, t] of VDEPTH.twins) {
+      for (const k of VDEPTH_SYNC) if (t[k] !== m[k]) t[k] = m[k];
+      if (m.color && !t.color.equals(m.color)) t.color.copy(m.color);
+      if (m.emissive && !t.emissive.equals(m.emissive)) t.emissive.copy(m.emissive);
+      if (t.userData.ver !== m.version) { t.userData.ver = m.version; t.needsUpdate = true; }
+    }
+  }
+  function vdepthCollect() {   // every facade mesh, with its world bounding sphere, its span and whether it carries an overlay (the meshes never move)
+    scene.updateMatrixWorld();
+    const s = new THREE.Sphere();
+    scene.traverse((o) => {
+      const m = o.material;
+      if (!o.isMesh || o.isInstancedMesh || !m || Array.isArray(m) || !m.userData.vdepth) return;
+      const g = o.geometry;
+      if (!g.boundingSphere) { const p = g.attributes.position; if (!p || !(p.isInterleavedBufferAttribute ? p.data.array : p.array)) return; g.computeBoundingSphere(); }
+      s.copy(g.boundingSphere).applyMatrix4(o.matrixWorld);
+      const vd = g.userData.vd || vdepthMeasure(g), e = o.matrixWorld.elements;
+      g.userData.vd = null;   // the cells are read once
+      const span = vd.span * o.matrixWorld.getMaxScaleOnAxis();
+      // a mesh away from the origin cannot be read against the world cells: it keeps fragment depth
+      const host = !!(e[12] || e[13] || e[14] || e[0] !== 1 || e[5] !== 1 || e[10] !== 1) || vdepthHosts(vd.cells);
+      VDEPTH.recs.push({ mesh: o, mat: m, twin: vdepthTwin(m), host, x: s.center.x, y: s.center.y, z: s.center.z, r: s.radius, span, far: false, cull: false });
+    });
+  }
+  // a mesh goes to vertex depth once its nearest point is past its line (near, or k times its span) plus the band, and
+  // comes back as soon as it is inside the line
+  const vdepthFar = (far, d, line, band) => (far ? d >= line : d > line + band);
+  function vdepthInit() {
+    const ok = window.__useLogDepth && (renderer.capabilities.isWebGL2 || renderer.extensions.has('EXT_frag_depth'));
+    VDEPTH.on = !!ok && (VDEPTH_Q ? VDEPTH.near > 0 : isTouch);
+    if (!VDEPTH.on) return;
+    vdepthCollect();
+    VDEPTH.warm = 1;
+  }
+  function vdepthUpdate() {
+    if (!VDEPTH.on) return;
+    const R = VDEPTH.recs;
+    if (VDEPTH.warm === 1) {   // the first frame after the build, behind the veil: every twin a mesh can draw compiles and draws once
+      for (const q of R) if (!q.host) { q.mesh.material = q.twin; q.far = true; q.cull = q.mesh.frustumCulled; q.mesh.frustumCulled = false; }
+      VDEPTH.warm = 2;
+      vdepthSync();
+      return;
+    }
+    if (VDEPTH.warm === 2) { for (const q of R) if (!q.host) q.mesh.frustumCulled = q.cull; VDEPTH.warm = 0; VDEPTH.eye.set(1e9, 0, 0); }
+    vdepthSync();
+    // every 4th frame, and at once after a jump (a search, a share link, goFly): in the frames between, the eye comes at
+    // most the few metres of three frames' flight inside the line
+    const eye = camera.position;
+    if ((frameNo & 3) !== 1 && eye.distanceToSquared(VDEPTH.eye) < 400) return;
+    VDEPTH.eye.copy(eye); VDEPTH.decided++;
+    const near = VDEPTH.near, k = VDEPTH.k, band = VDEPTH.band;
+    let n = 0;
+    for (const q of R) {
+      const d = Math.max(0, Math.hypot(q.x - eye.x, q.y - eye.y, q.z - eye.z) - q.r);
+      const far = !q.host && vdepthFar(q.far, d, Math.max(near, k * q.span), band);
+      if (far !== q.far) { q.far = far; q.mesh.material = far ? q.twin : q.mat; VDEPTH.swaps++; }
+      if (far) n++;
+    }
+    VDEPTH.far = n;
+  }
+  function vdepthDbg(near, k) {   // __dbg.vdepth(): the state; __dbg.vdepth(m, k): the floor and the span factor, 0 off (every original back)
+    if (near !== undefined) {
+      if (k > 0) VDEPTH.k = +k;
+      if (!(near > 0)) { VDEPTH.on = false; for (const q of VDEPTH.recs) { q.far = false; q.mesh.material = q.mat; } }
+      else { VDEPTH.near = +near; if (!VDEPTH.recs.length) vdepthCollect(); VDEPTH.on = true; VDEPTH.eye.set(1e9, 0, 0); }
+    }
+    const sp = VDEPTH.recs.map((q) => q.span).sort((a, b) => a - b), at = (f) => (sp.length ? Math.round(sp[Math.min(sp.length - 1, Math.floor(sp.length * f))]) : null);
+    return { on: VDEPTH.on, near: VDEPTH.near, k: VDEPTH.k, band: VDEPTH.band, meshes: VDEPTH.recs.length, far: VDEPTH.on ? VDEPTH.far : 0, twins: VDEPTH.twins.size, hosts: VDEPTH.recs.filter((q) => q.host).length, hostCells: VDEPTH.hosts.size, swaps: VDEPTH.swaps, decided: VDEPTH.decided, warm: VDEPTH.warm, span: [at(0), at(0.5), at(0.9), at(1)] };
+  }
   let last = performance.now();
   let shadowMode = -1;
   let lastBearing = null;
@@ -23610,6 +23802,7 @@
 
     // fabric chunks wholly beyond the fog wall would shade to flat fog colour
     if ((frameNo & 3) === 2) cullFogged();
+    vdepthUpdate();   // Round 168: the far facades' vertex-only log depth (touch only)
     // shadow map (autoUpdate is off): vehicles moving through the box get a
     // fresh depth pass every 4th frame; a changed static caster set (docks
     // arriving with the first Indego poll) gets one immediately
@@ -23790,6 +23983,8 @@
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
       bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), trafficChurn: (reset) => { const o = Object.assign({}, CARC, { ageMean: CARC.ageN ? Math.round(CARC.ageSum / CARC.ageN) : 0 }); if (reset) { CARC.born = CARC.bornSeen = CARC.dieRetire = CARC.dieEnd = CARC.dieSeen = CARC.ageSum = CARC.ageN = 0; CARC.ageMin = 1e9; CARC.transfers = CARC.blockedBirths = 0; } return o; }, traffic: () => ({ runs: trafficRuns.length, active: trafficCars, cap: TRAFFIC.cap, drawn: TRAFFIC.n, models: trafficFleet.map((f,i)=>({name:CAR_MODELS[i].name,n:f.n})), scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover, layers: CLOUD_LAYERS.map(l => ({ min: l.base, max: l.base + l.spread + l.thickness, steps: l.steps })) }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
+    vdepthInit();   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use
+    if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);
