@@ -39,15 +39,15 @@ class PinPolicy(unittest.TestCase):
         # images: pinOccCapture records a render at frameNo; its read lands LAT frames later (poll), when the CPU's image becomes it.
         # truth(x, f): the answer an image drawn at frame f gives for the pin at x (1 clear, 0 covered, -1 outside). zone(x): in view
         script = r'''
-let frameNo = 0, moving = true, LAT = 1, covers = true;
+let frameNo = 0, moving = true, LAT = 1, covers = true, dirty = false, step2 = 1;   // dirty: the eye has moved since the last image, by step2 (squared)
 const isTouch = TOUCH, PIN_NEAR = 900, PIN_JUMP = 300, PIN_COVER = 1.25;
 let truth = () => 1, zone = () => true;
 const mkCh = () => ({ slots: [], gate: -1, cpu: { ok: false, frame: -1e9 }, last: -1e9 });
 const PIN_OCC = { ok: false, every: isTouch ? 10 : 5, moveEvery: isTouch ? 2 : 1, fullEvery: isTouch ? 10 : 1, far: 30000, want: -99, hid: 0, wait: -1e9, waitFar: false, waitTip: -1e9, waitTipFar: false,
   lastFrame: -1e9, fresh: false, reach: 0, reachTip: 0, near: mkCh(), full: mkCh(), cause: { first: 0, old: 0, jump: 0, cadence: 0, cover: 0, wait: 0, reach: 0, full: 0, near: 0 },
-  lastPos: { copy() {} }, lastQuat: { copy() {} }, pvPos: { copy() {} }, pvQuat: { copy() {} } };
+  lastPos: { copy() { dirty = false; } }, lastQuat: { copy() {} }, pvPos: { copy() {} }, pvQuat: { copy() {} } };
 const PIN_ASYNC = { eye: {} };
-const camera = { position: { x: 0, y: 0, z: 0, distanceToSquared: () => (moving ? 1 : 0) }, quaternion: { dot: () => 1 }, updateMatrixWorld() {}, projectionMatrix: {}, matrixWorldInverse: {} };
+const camera = { position: { x: 0, y: 0, z: 0, distanceToSquared: (o) => (o === PIN_OCC.lastPos ? (moving || dirty ? step2 : 0) : moving ? 1 : 0) }, quaternion: { dot: () => 1 }, updateMatrixWorld() {}, projectionMatrix: {}, matrixWorldInverse: {} };
 const _pzm = { multiplyMatrices() {} };
 const renders = [], landed = [];
 let inflight = [];
@@ -74,7 +74,7 @@ const PIN_MESHES = [];
 BLOCK
 const m = mesh([0]); PIN_MESHES.push(m);
 const vis = (i = 0) => +m.geometry.attributes.aPinVis.array[i].toFixed(3);
-const step = (dt = 1 / 60) => { frameNo++; poll(); pinOccUpdate(dt); };
+const step = (dt = 1 / 60) => { frameNo++; if (moving) dirty = true; poll(); pinOccUpdate(dt); };
 const run = (n, dt = 1 / 60) => { const out = []; for (let i = 0; i < n; i++) { step(dt); out.push(vis()); } return out; };
 BODY
 '''.replace('TOUCH', 'true' if touch else 'false').replace('BLOCK', self.block).replace('BODY', body)
@@ -157,7 +157,7 @@ console.log(JSON.stringify({ ups, max: Math.max(...s.slice(10)) }));''')
         # PIN_HOLD (and the dwell), one moving behind a building hides at once, on the answer the old image gives its new place
         out = self.run_js('''
 run(30);
-moving = false; const r0 = renders.length;
+moving = false; run(2); const r0 = renders.length;   // the stop's own image (review) comes first
 truth = (x, f) => (x > 5 ? 0 : 1);
 m.instanceMatrix.array[12] = 10; const hide = run(3);
 m.instanceMatrix.array[12] = 0; const back = run(60);
@@ -197,13 +197,50 @@ console.log(JSON.stringify({ s }));''')
     def test_cadence_moving_and_still(self):
         out = self.run_js('''
 moving = true; run(40); const mv = renders.filter(([f]) => f > 10).map(([f]) => f);
-renders.length = 0; moving = false; run(100); const still = renders.length;
+run(1); renders.length = 0; moving = false; run(100); const still = renders.length;   // 41 frames: the last one drew an image
 covers = false; moving = true; renders.length = 0; run(6); const cov = renders.map(([f]) => f);
 console.log(JSON.stringify({ gaps: mv.slice(1).map((f, i) => f - mv[i]), still, cov }));''')
         self.assertTrue(out['gaps'] and all(g == 2 for g in out['gaps']), out['gaps'])   # every 2nd drawn frame on a phone while moving
         self.assertEqual(out['still'], 0)                             # a still eye that has not changed draws none
         cov = out['cov']
         self.assertEqual([b - a for a, b in zip(cov, cov[1:])], [1] * (len(cov) - 1))   # the newest no longer holds the screen: every frame
+
+    def test_an_image_the_frame_the_eye_stops(self):
+        # review: a phone draws an image every 2nd frame while the eye moves, so the eye stops on a frame that drew none as often
+        # as not, and the gate then read the image of a step before until the still cadence came round (10 frames): a pin fading
+        # in showed through a building's edge for up to 0.3 s. Now the first still frame draws the pose the eye rests at, once
+        out = self.run_js('''
+const stop = (n) => { moving = true; run(n); const last = renders.length && renders[renders.length - 1][0] === frameNo; renders.length = 0; moving = false; run(30); return { last, still: renders.map(([f]) => f - frameNo + 30) }; };
+const a = stop(40), b = stop(41);
+step2 = 0.16 * 0.16; const c = stop(40), e = stop(41);   // a slow flight's last step, 16 cm: under the old 30 cm, it stood through the hold
+console.log(JSON.stringify({ a, b, c, e }));''')
+        runs = [out['a'], out['b']]
+        self.assertEqual([out['c'], out['e']], runs)
+        self.assertEqual(sorted(r['last'] for r in runs), [False, True])   # one stop on a frame with an image, one without
+        for r in runs:
+            if r['last']:
+                self.assertEqual(r['still'], [])                          # the image already holds the pose it rests at
+            else:
+                self.assertEqual(r['still'], [1])                         # the first still frame, and only that one
+
+    def test_a_pin_that_changes_slots_keeps_its_state(self):
+        # review: the half-mile reconcile writes the slots afresh in a new order, and a vehicle or a flight that goes shifts every
+        # later one down a slot: a pin that only changed slots keeps its own state (no blink out and fade back), whatever order;
+        # a pin that was nowhere near still arrives
+        out = self.run_js('''
+moving = true; m.count = 3; const e = m.instanceMatrix.array;
+e[12] = 0; e[16 + 12] = 100; e[32 + 12] = 200;
+run(40); const before = [vis(0), vis(1), vis(2)];
+e[12] = 200; e[16 + 12] = 0; e[32 + 12] = 100; step(); const shuffled = [vis(0), vis(1), vis(2)];
+for (let i = 0; i < 3; i++) e[i * 16 + 12] += 12; step(); const moved = [vis(0), vis(1), vis(2)];   // moving pins, not new
+e[12] = e[16 + 12]; e[16 + 12] = e[32 + 12] + 12; m.count = 2; step(); const shifted = [vis(0), vis(1)];   // the first went: a shift down
+m.count = 3; e[32 + 12] = 900; step(); const arrived = vis(2);
+console.log(JSON.stringify({ before, shuffled, moved, shifted, arrived }));''')
+        self.assertEqual(out['before'], [1, 1, 1])
+        self.assertEqual(out['shuffled'], [1, 1, 1])
+        self.assertEqual(out['moved'], [1, 1, 1])
+        self.assertEqual(out['shifted'], [1, 1])
+        self.assertEqual(out['arrived'], 0)
 
     def test_cadence_on_a_computer(self):
         out = self.run_js('''
@@ -237,8 +274,14 @@ console.log(JSON.stringify({ kinds: f.map((q) => q[1][0]).join(''), reach: PIN_O
         # the 5 by 5 stay-visible test is gone: one 3 by 3 rule, as the gate's
         self.assertNotIn('st.tgt[i] ? 2 : 1', SRC)
         self.assertNotIn('pinOccVisible(x, y, z, rad', SRC)
-        # the pick still refuses a pin that is more than half gone
-        self.assertIn('if (v.getX(hit.instanceId) < 0.5) continue;', SRC)
+        # the pick still refuses a pin that is more than half gone, and one the gate hides (review)
+        self.assertIn('if (v.getX(hit.instanceId) < 0.5 || !pinGateShows(...pinTipOf(hit.object, hit.instanceId))) continue;', SRC)
+        # and the things a tap finds without a gate ask the same images whether a building covers them (review)
+        self.assertIn('      return pinGateCovers(tx, ty, tz);   // Round 169 (review)', SRC)
+        # the still eye's image the frame it stops (review), never after `every` frames
+        self.assertIn('if (moving ? since >= PIN_OCC.moveEvery : off) { C.cadence++; due = 1; }', SRC)
+        # and by the moving test's own centimetre: a slow flight's last step (16 cm) under the old 30 cm stood through a hold
+        self.assertIn('const off = changed || camera.position.distanceToSquared(PIN_OCC.lastPos) > 1e-4 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.lastQuat)) > 1e-9;', SRC)
         # Round 143's wide image through its own camera, now with a reach
         self.assertIn('w: Math.round((isTouch ? 160 : 256) * 1.5), wide: 1.5,', SRC)
         self.assertIn("e[10] = -(f + n) / (f - n); e[14] = -2 * f * n / (f - n);", SRC)

@@ -85,7 +85,9 @@ before any visual round rather than rediscovering it.
   among themselves; a small depth image of the city (`pinOccCapture`, packed to 30 km, the sky and every non-depth-writing mesh hidden, since Round 143
   1.5 times the screen each way through its own camera; since Round 167 read back on WebGL 2 through a pixel pack buffer behind a fence and installed with its own
   matrices once the fence passes, `PIN_ASYNC`, the first image, a resize, a jump of the eye over `PIN_JUMP` and any failure reading synchronously) decides per tip
-  whether a building hides it (`aPinVis`; a tap picks a pin by the same flag since Round 136). Since Round 169 (Mike, from the phone: pins through buildings when he
+  whether a building hides it (`aPinVis`; a tap picks a pin by the same flag since Round 136, and since Round 169 only when the gate's own images, read back
+  at the tap, show it too: `pinGateShows`; the same images refuse whatever else a tap finds, a post, a plinth, a bus or a tree, with a building in front of it,
+  `pinGateCovers` in `pickOccluded`, whose ray knows only the core's buildings). Since Round 169 (Mike, from the phone: pins through buildings when he
   first turned to look at them, "avoid this at all costs") nothing shows that an image has not cleared and hiding waits for nothing: every instanced pin's vertex
   shader reads the latest images itself (`PIN_GATE`, `PIN_GATE_GLSL`: the packed depth, NEAREST, with each image's own view and projection, the CPU's 3 by 3 rule
   and need exactly) and collapses a pin whose tip is covered, outside the image, past its reach or with no image yet, so no readback latency applies to hiding;
@@ -93,8 +95,11 @@ before any visual round rather than rediscovering it.
   `pinZone`, waits for an image drawn after its arrival) and shows with the old guard (one image after an unknown; two images or `PIN_HOLD` 0.45 s, and
   `PIN_DWELL` 0.3 s since the last covered answer, after a covered one) and the 0.2 s fade in (`PIN_FADE`); Round 143's 5 by 5 stay-visible test is gone (it
   showed pins whose own 3 by 3 was covered); drawing an image is apart from reading it back: while the eye moves an image every drawn frame on a computer and
-  every 2nd on a phone (`PIN_OCC_MOVE_EVERY`), and at once when the newest no longer holds the screen widened 1.25 times (`pinOccCovers`), a still eye keeping
-  the old cadence; two targets per kind take turns, never the one a read is in flight from, and the newest unread image is read when none is in flight, at
+  every 2nd on a phone (`PIN_OCC_MOVE_EVERY`), and at once when the newest no longer holds the screen widened 1.25 times (`pinOccCovers`), a still eye that
+  has moved since the newest image drawing one at once, one a stop (the review: a phone stops on a frame that drew none as often as not, and waiting for the
+  still cadence showed a fading-in pin through an edge for up to 0.3 s); a pin the half-mile reconcile only moved to another slot keeps its own state
+  (`pinOccCarry`: the nearest tip of the frame before within `PIN_CARRY` 30 m, the distance that makes a slot new; the review found up to twenty pins at once
+  blinking out and fading back every 0.8 s of a flight); two targets per kind take turns, never the one a read is in flight from, and the newest unread image is read when none is in flight, at
   most every 4th frame on a phone and every 2nd on a computer (`PIN_OCC_READ_EVERY`: a read's landing, getBufferSubData, is a synchronous call that waits
   while the GPU process catches up, 4 to 5 ms a landing headless);
   an image reaches only as far as the farthest tip in view (10% and 50 m on, never under `PIN_REACH_MIN` 300 m: a third of the triangles for the ground pins),

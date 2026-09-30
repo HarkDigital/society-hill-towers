@@ -129,6 +129,41 @@ console.log(JSON.stringify(r));''')
         self.assertEqual(out['movedDown'], 0)                       # the eye went 3 m down: the roof edge rose over the tip
         self.assertEqual(out['highMoved'], 1)
 
+    def test_a_tap_asks_the_gates_images(self):
+        # review: while the eye moves the gate reads images newer than the CPU's, so a pin at half its fade or more could be hidden
+        # by the gate and still take a tap. The tap reads the gate's own images (each once) and asks them what the gate asks
+        tap = cut('  const PIN_TAP = ', '  // the building-anchored pins')
+        out = self.run_js(r'''
+const pinOccImg = () => ({ buf: null, view: new THREE.Matrix4(), viewInv: new THREE.Matrix4(), proj: new THREE.Matrix4(), frame: -1e9, reach: 0, ok: false });
+let reads = 0;
+const renderer = { capabilities: { vertexTextures: true }, readRenderTargetPixels(rt, x, y, w, h, buf) { reads++; buf.set(rt.buf); } };
+const slot = (I) => ({ rt: { buf: I.buf }, view: I.view, viewInv: I.viewInv, proj: I.proj, reach: I.reach, frame: I.frame, eye: I.eye, quat: I.quat });
+PIN_OCC.near.slots = []; PIN_OCC.near.gate = -1; PIN_OCC.full.slots = []; PIN_OCC.full.gate = -1; PIN_OCC.moveEvery = 2;
+const pinOccNewest = () => { const a = PIN_OCC.near.slots[PIN_OCC.near.gate], b = PIN_OCC.full.slots[PIN_OCC.full.gate]; return a && (!b || a.frame > b.frame) ? a : b; };
+''' + tap + r'''
+const r = {};
+const tip = at(-0.5, 0, 300).toArray(), far = at(-0.5, -0.5, 5000).toArray(), farClear = at(0.5, 0.5, 5000).toArray();
+r.none = pinGateShows(...tip);                                            // no image: the gate hides every pin
+PIN_OCC.full.cpu = image(() => 1e9, FAR, 90);                             // the CPU's image, older: clear
+PIN_OCC.full.slots = [slot(image((x) => (x < 0 ? 100 : 1e9), FAR, 99))]; PIN_OCC.full.gate = 0;   // the gate's, newer: a wall
+r.cpu = pinOccAnswer(...tip); r.gate = pinGateShows(...tip); r.clear = pinGateShows(...at(0.5, 0, 300).toArray());
+r.reads = reads;                                                          // the gate's image read once for both questions
+PIN_OCC.near.slots = [slot(image((x, y) => (x < 0 && y < 0 ? 200 : 1e9), 945, 100))]; PIN_OCC.near.gate = 0;   // a newer near image
+r.nearTip = pinGateShows(...at(-0.5, 0.5, 500).toArray());                // within its reach: the near image alone (clear there)
+r.farBehind = pinGateShows(...far); r.farClear = pinGateShows(...farClear);   // past it: both, as the gate reads them
+r.reads2 = reads;
+renderer.capabilities.vertexTextures = false; r.noGate = pinGateShows(...tip);   // no gate on this GPU: the CPU's state alone
+// the things a tap finds without a gate (a post, a bus, a tree: pickOccluded) ask whether a building covers them, only while the
+// newest image is the eye's own (drawn this frame or the one before, or the eye has not moved since)
+PIN_OCC.near.slots = []; PIN_OCC.near.gate = -1;
+r.covers = pinGateCovers(...tip); r.coversClear = pinGateCovers(...at(0.5, 0, 300).toArray()); r.coversOutside = pinGateCovers(...at(1.6, 0, 300).toArray());
+frameNo = 200; r.coversStill = pinGateCovers(...tip);                     // an old image, the eye where it was drawn
+camera.position.x += 1; camera.updateMatrixWorld(); r.coversMoved = pinGateCovers(...tip);   // an old image from elsewhere: it says nothing
+console.log(JSON.stringify(r));''')
+        self.assertEqual(out, {'none': False, 'cpu': 1, 'gate': False, 'clear': True, 'reads': 1, 'nearTip': True, 'farBehind': False,
+                               'farClear': True, 'reads2': 2, 'noGate': True, 'covers': True, 'coversClear': False, 'coversOutside': False,
+                               'coversStill': True, 'coversMoved': False})
+
     def test_the_gate_text(self):
         g = cut('  const PIN_GATE_GLSL = `', '`;\n')
         # the need and the sky's clamp, the packing, the 3 by 3 neighbourhood, NEAREST reads at pixel centres

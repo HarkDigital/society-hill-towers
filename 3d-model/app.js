@@ -14896,7 +14896,7 @@
       for (let t = 30, tEnd = L - 12; t < tEnd; t += 40) {
         if (o.y + d.y * t < demY(o.x + d.x * t, o.z + d.z * t) - 0.5) return true;
       }
-      return false;
+      return pinGateCovers(tx, ty, tz);   // Round 169 (review): every building, from the pins' own depth images
     };
     const targets = [];
     if (sAct) targets.push(septaSolid, septaBadge);
@@ -15403,6 +15403,11 @@ float pinOccGate() {
     if (hm) return ((hm.bits[(y * W + x) >> 3] >> ((y * W + x) & 7)) & 1) === 1;   // Round 158: a phone's badge canvas is freed at upload, its alpha kept (freeTexOnUpload)
     return image.getContext('2d').getImageData(x, y, 1, 1).data[3] >= 16;
   }
+  const _ptm = new THREE.Matrix4(), _ptv = new THREE.Vector3();
+  function pinTipOf(mesh, i) {   // the tip as the gate finds it: the instance's origin through the pin's own model matrix
+    mesh.getMatrixAt(i, _ptm);
+    return _ptv.setFromMatrixPosition(_ptm).applyMatrix4(mesh.matrixWorld).toArray();
+  }
   function pickPinHit(hits, occluded) {
     let best = null;
     for (const hit of hits) {
@@ -15410,7 +15415,8 @@ float pinOccGate() {
       // a pin carrying aPinVis is drawn whole over any nearer building (Round 127), so its tip's visibility, which
       // is exactly what the render used, decides the pick; a ray to the hit point would refuse the parts of a drawn
       // pin that overlap a nearer facade (review, Sep 22). Pins without it keep the ray test.
-      { const v = hit.object.geometry.attributes.aPinVis; if (v) { if (v.getX(hit.instanceId) < 0.5) continue; } else if (occluded(hit.point.x, hit.point.y, hit.point.z)) continue; }
+      // Round 169 (review): and the gate's own answer, which hides a pin the frame an image covers it, before the CPU's state knows
+      { const v = hit.object.geometry.attributes.aPinVis; if (v) { if (v.getX(hit.instanceId) < 0.5 || !pinGateShows(...pinTipOf(hit.object, hit.instanceId))) continue; } else if (occluded(hit.point.x, hit.point.y, hit.point.z)) continue; }
       // Among unobstructed hits, match rendering: later batches/instances paint over earlier
       // ones. This also makes an overlapping visible badge win over a solid model.
       if (!best || hit.object.renderOrder > best.object.renderOrder ||
@@ -23671,7 +23677,8 @@ float pinOccGate() {
   // - the cadence: drawing an image (for the gate, at once) is apart from reading it back (for the CPU's state, the taps
   //   and the placards). While the eye moves or turns an image is drawn every PIN_OCC_MOVE_EVERY drawn frames (every frame
   //   on a computer, every 2nd on a phone) and at once whenever the newest no longer holds the screen with a margin
-  //   (pinOccCovers); a still eye keeps the old cadence. Each kind of image has two targets that take turns, a read is
+  //   (pinOccCovers); a still eye that has moved since the newest image draws one at once (one a stop). Each kind of image
+  //   has two targets that take turns, a read is
   //   issued for the newest image when none is in flight and PIN_OCC_READ_EVERY frames have passed since the last, and an
   //   image is never drawn into the target a read is in flight from
   // - the reach: an image goes only as far as the farthest tip in view needs (the frame before's, times 1.1 and 50 m on;
@@ -24048,6 +24055,39 @@ float pinOccGate() {
     }
     return true;
   }
+  // review: a tap asks the gate's own images too. While the eye moves the gate reads an image a few frames newer than the CPU's,
+  // so a pin could stand at half its fade or more (aPinVis) while the gate hid it, and a tap on the building in front of it took
+  // the hidden pin's card. The tap reads the images the gate reads back synchronously, once each (a tap is rare, and the
+  // building tap renders the city synchronously anyway), and asks them what the gate asks. The same images answer for the
+  // things a tap finds without a gate (a marker's post, a plinth, a bus, a tree: pickOccluded), whose ray test knows only the
+  // core's buildings: a tap on a building over a hidden marker opened the marker's card, still or moving, before Round 169 too
+  const PIN_TAP = { A: null, B: null };
+  function pinGateTapImg(key, s) {
+    const I = PIN_TAP[key] || (PIN_TAP[key] = pinOccImg()), n = PIN_OCC.w * PIN_OCC.h * 4;
+    if (I.ok && I.slot === s && I.frame === s.frame && I.buf.length === n) return I;
+    if (!I.buf || I.buf.length !== n) I.buf = new Uint8Array(n);
+    renderer.readRenderTargetPixels(s.rt, 0, 0, PIN_OCC.w, PIN_OCC.h, I.buf);
+    I.view.copy(s.view); I.viewInv.copy(s.viewInv); I.proj.copy(s.proj); I.reach = s.reach; I.frame = s.frame; I.slot = s; I.ok = true;
+    return I;
+  }
+  function pinGateAnswer(x, y, z) {   // the gate's answer for a point (pinOccGate), on the CPU: 1 clear, 0 covered, -1 unknown
+    const a = PIN_OCC.near.slots[PIN_OCC.near.gate], b = PIN_OCC.full.slots[PIN_OCC.full.gate];
+    if (!b) return -1;
+    const B = pinGateTapImg('B', b);
+    if (!(a && a.frame > b.frame)) return occImgAnswer(B, x, y, z);
+    const A = pinGateTapImg('A', a);
+    _pov.set(x, y, z).applyMatrix4(A.view);
+    return -_pov.z <= A.reach ? occImgAnswer(A, x, y, z) : occImgBoth(A, B, x, y, z);
+  }
+  function pinGateShows(x, y, z) {   // the gate draws a pin with its tip here (pickPinHit)
+    if (!renderer.capabilities.vertexTextures) return true;   // no gate (pinSceneDepth): the CPU's state alone
+    try { return pinGateAnswer(x, y, z) === 1; } catch (e) { return true; }   // a read that failed (a lost context): the CPU's state alone
+  }
+  function pinGateCovers(x, y, z) {   // a building stands in front of the point (pickOccluded); only while the newest image is the eye's own
+    const s = pinOccNewest();   // no pin in view draws no image: an old one says nothing of where the eye is now
+    if (!s || (frameNo - s.frame > PIN_OCC.moveEvery && (camera.position.distanceToSquared(s.eye) > 1e-4 || 1 - Math.abs(camera.quaternion.dot(s.quat)) > 1e-9))) return false;
+    try { return pinGateAnswer(x, y, z) === 0; } catch (e) { return false; }
+  }
   // the building-anchored pins (concert placards, score bubbles) ask here: the depth images within their range, the roof grid's
   // line of sight beyond it. Each tip keeps the same state as an instanced pin (Round 169: unknown is hidden, a covered answer
   // hides at once, showing waits as a pin's does), kept by where it stands so a feed's new records carry it over; asking keeps
@@ -24112,7 +24152,11 @@ float pinOccGate() {
   }
   // the cadence (Round 169): 0 when no image is due, else its kind. A complete image when there is none, after 120 frames, after a
   // jump; while the eye moves or turns an image every moveEvery drawn frames, and at once when the newest no longer holds the
-  // screen; a still eye that has changed since the last image every `every` frames; a pin waiting for an image drawn after its
+  // screen; a still eye that stands anywhere but where the newest image was drawn (by the moving test's own centimetre, never
+  // the old 30 cm and 0.2 degrees) at once, one image a stop. Review: the eye stops on a frame that drew none as often as not on
+  // a phone, and waiting `every` frames for the pose it rests at left the gate reading the image of a step before: a pin fading
+  // in showed through a building's edge for up to 0.3 s the moment a turn stopped; and a slow flight's last step (16 cm at
+  // 10 m/s) under the old threshold kept it there for the whole hold, 49 frames. A pin waiting for an image drawn after its
   // arrival, or a tip nearing an image's reach. The image is the near kind only on a phone that moves while a tip past PIN_NEAR
   // stands in view, between complete ones every fullEvery frames (and a complete one whenever it no longer holds the screen or
   // a far tip waits)
@@ -24124,10 +24168,11 @@ float pinOccGate() {
     if (camera.position.distanceToSquared(PIN_ASYNC.eye) > PIN_JUMP * PIN_JUMP) { C.jump++; return 'full'; }
     const moving = camera.position.distanceToSquared(PIN_OCC.pvPos) > 1e-4 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.pvQuat)) > 1e-9;
     const changed = camera.position.distanceToSquared(PIN_OCC.lastPos) > 0.09 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.lastQuat)) > 2e-6;
+    const off = changed || camera.position.distanceToSquared(PIN_OCC.lastPos) > 1e-4 || 1 - Math.abs(camera.quaternion.dot(PIN_OCC.lastQuat)) > 1e-9;   // not where the newest image was drawn
     const far = PIN_OCC.reach > PIN_NEAR;
     const short = PIN_OCC.reach > 0.95 * fs.reach && fs.reach < PIN_OCC.far;   // the farthest tip nears the complete image's reach
     let due = 0;
-    if (moving ? since >= PIN_OCC.moveEvery : changed && since >= PIN_OCC.every) { C.cadence++; due = 1; }
+    if (moving ? since >= PIN_OCC.moveEvery : off) { C.cadence++; due = 1; }
     else if (changed && !pinOccCovers(pinOccNewest(), PIN_COVER)) { C.cover++; due = 1; }
     else if (since >= PIN_OCC.moveEvery) {
       if (PIN_OCC.wait > PIN_OCC.lastFrame) { C.wait++; due = 1; }
@@ -24139,6 +24184,34 @@ float pinOccGate() {
     if (!far || !moving || PIN_OCC.fullEvery <= PIN_OCC.moveEvery || frameNo - F.last >= PIN_OCC.fullEvery || short || PIN_OCC.waitFar || !pinOccCovers(fs, 1)) { C.full++; return 'full'; }
     C.near++;
     return 'near';
+  }
+  // review: the half-mile reconcile writes a layer's slots afresh in a new order (every 900 ms or 220 m of a flight), and a flight
+  // or a vehicle that goes shifts every later one down a slot. A slot whose tip moved more than PIN_CARRY is new, and a new slot
+  // used to arrive (hidden until an image drawn after it said clear, then the fade in): up to twenty pins blinked out and back
+  // every 0.8 s of a flight, Round 138's complaint. Now a new slot first looks for its pin among the frame before's tips (the
+  // nearest within PIN_CARRY, the distance that made it new) and carries that pin's state; only a pin that was nowhere near
+  // arrives. The gate still hides a carried pin the frame an image covers it, whatever state it carries
+  const PIN_CARRY = 30, PIN_CARRY_KEYS = ['tgt', 'lin', 'why', 'okC', 'okT', 'age', 'arr', 'on'];
+  function pinOccCarryMap(st) {   // the frame before's tips in PIN_CARRY cells, with a copy of their state
+    const old = { px: st.px.slice(0, st.n), pz: st.pz.slice(0, st.n), grid: new Map() };
+    for (const q of PIN_CARRY_KEYS) old[q] = st[q].slice(0, st.n);
+    for (let j = 0; j < st.n; j++) {
+      const key = Math.floor(old.px[j] / PIN_CARRY) * 65536 + Math.floor(old.pz[j] / PIN_CARRY);
+      const b = old.grid.get(key);
+      if (b) b.push(j); else old.grid.set(key, [j]);
+    }
+    return old;
+  }
+  function pinOccCarry(st, i, old, x, z) {   // slot i's pin stood within PIN_CARRY of one of the frame before's tips: its state, and true
+    const gx = Math.floor(x / PIN_CARRY), gz = Math.floor(z / PIN_CARRY);
+    let best = -1, bd = PIN_CARRY;
+    for (let a = -1; a <= 1; a++) for (let b = -1; b <= 1; b++) {
+      const B = old.grid.get((gx + a) * 65536 + gz + b);
+      if (B) for (const j of B) { const d = Math.abs(old.px[j] - x) + Math.abs(old.pz[j] - z); if (d <= bd) { bd = d; best = j; } }
+    }
+    if (best < 0) return false;
+    for (const q of PIN_CARRY_KEYS) st[q][i] = old[q][best];
+    return true;
   }
   function pinOccOff(m) {   // a layer off: every pin out of view, so each one arrives anew when it comes back
     const st = m.userData.occ;
@@ -24167,10 +24240,12 @@ float pinOccGate() {
       const a = m.geometry.attributes.aPinVis, e = m.instanceMatrix.array, n = m.count, st = pinOccState(m);
       if (!m.visible) { pinOccOff(m); continue; }
       st.off = false;
-      let dirty = false;
+      let dirty = false, old = null;
+      for (let i = 0; i < n; i++) if (i >= st.n || Math.abs(st.px[i] - e[i * 16 + 12]) + Math.abs(st.pz[i] - e[i * 16 + 14]) > PIN_CARRY) { old = pinOccCarryMap(st); break; }
       for (let i = 0; i < n; i++) {
         const k = i * 16, x = e[k + 12], y = e[k + 13], z = e[k + 14];
-        const fresh = i >= st.n || Math.abs(st.px[i] - x) + Math.abs(st.pz[i] - z) > 30;   // a new pin in this slot (or the set reshuffled): it arrives now
+        // a new pin in this slot arrives now, unless it only changed slots (review: the reconcile's reshuffle)
+        const fresh = (i >= st.n || Math.abs(st.px[i] - x) + Math.abs(st.pz[i] - z) > PIN_CARRY) && !(old && pinOccCarry(st, i, old, x, z));
         st.px[i] = x; st.pz[i] = z;
         pinOccJudge(st, i, x, y, z, pinZone(x, y, z, _pzm), fresh, captured, dt);
         let r2 = 0;
