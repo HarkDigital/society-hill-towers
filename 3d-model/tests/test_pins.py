@@ -17,6 +17,7 @@ class Pins(unittest.TestCase):
         helpers = cls.source[cls.source.index('  const PIN_ANCHOR_GLSL'):cls.source.index('  function pinMesh(')]
         script = r'''
 const THREE=require(THREE_PATH),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+let gateShows=true,gateAsked=null;const pinGateShows=(x,y,z)=>{gateAsked=[x,y,z];return gateShows;};   // Round 169: the gate's own answer at the tap (test_pin_gate.py)
 HELPERS
 const result={};
 const wall=new THREE.Mesh(new THREE.BoxGeometry(8,8,8),new THREE.MeshBasicMaterial());
@@ -65,6 +66,9 @@ const tipPin=pinSceneDepth(new THREE.InstancedMesh(new THREE.PlaneGeometry(4,5),
 tipPin.material.map=badge.material.map;
 const tipHit=hit(tipPin,0,20);
 result.tipVisibleOverWall=pickSceneHit([tipHit,solid],()=>true)===tipHit;
+// Round 169 (review): a pin the gate hides (its image newer than the CPU's state) never takes the tap, asked at the instance's tip
+tipPin.setMatrixAt(0,new THREE.Matrix4().makeTranslation(3,4,-20));gateShows=false;
+result.tipGateHiddenFallsBack=pickSceneHit([tipHit,solid],()=>false)===solid;result.gateAskedAt=gateAsked;gateShows=true;
 tipPin.geometry.attributes.aPinVis.setX(0,0);
 result.tipHiddenFallsBack=pickSceneHit([tipHit,solid],()=>false)===solid;
 console.log(JSON.stringify(result));
@@ -95,8 +99,9 @@ console.log(JSON.stringify(result));
         self.assertNotIn('pinA', a['lineHook'])   # the tether's default hook (three's no-op) leaves its shader alone
 
     def test_buildings_block_pins_and_hidden_pins_do_not_take_clicks(self):
-        for key in ('hiddenPin', 'visiblePin', 'hiddenSolid', 'visibleSolid', 'hiddenDoesNotSteal', 'blockedPinFallsBack', 'tipVisibleOverWall', 'tipHiddenFallsBack'):
+        for key in ('hiddenPin', 'visiblePin', 'hiddenSolid', 'visibleSolid', 'hiddenDoesNotSteal', 'blockedPinFallsBack', 'tipVisibleOverWall', 'tipHiddenFallsBack', 'tipGateHiddenFallsBack'):
             self.assertTrue(self.result[key], key)
+        self.assertEqual(self.result['gateAskedAt'], [3, 4, -20])   # the gate is asked at the instance's own tip
 
     def test_transparent_texture_corners_do_not_steal_clicks(self):
         for key in ('clearCorner', 'clearCornerBehindWall', 'opaqueFace'):

@@ -10,8 +10,9 @@
 - Every mesh newly culled draws unculled once behind the veil (pendingUpload, released after the first frame), so it
   uploads there as before (handoff gotcha 12).
 - The pins' depth image is read back through a pixel pack buffer behind a fence on WebGL 2 (PIN_ASYNC), installed with
-  its own matrices only once the fence has passed; run here under Node against a scripted WebGL 2 context. A turn that
-  finds a read in flight tries again the next frame, so late fences cost no whole cadence.
+  its own matrices only once the fence has passed; run here under Node against a scripted WebGL 2 context. Since Round 169
+  drawing an image (the gate reads it at once) is apart from reading it back: an image is drawn whatever is in flight,
+  never into the target a read is in flight from, and the newest unread one is read as soon as the last read lands.
 """
 import json
 import re
@@ -249,19 +250,20 @@ console.log(JSON.stringify(out));
 
 
 class PinAsync(unittest.TestCase):
-    """The async block under Node, with a scripted WebGL 2 context and occRender reduced to its read."""
+    """The pins' images under Node (Round 167's read into a pack buffer behind a fence, Round 169's drawing apart from reading):
+    a scripted WebGL 2 context, occRender reduced to its read."""
 
     @classmethod
     def setUpClass(cls):
         if not shutil.which('node'):
             raise unittest.SkipTest('Node.js unavailable')
 
-    def run_js(self, body, webgl2=True):
+    def run_js(self, body, webgl2=True, touch=True):
         script = r'''
 const THREE = require(THREE_PATH);
 (async () => {
-const window = { innerWidth: 800, innerHeight: 400 };
-const PIN_OCC = { w: 240, h: 0, rt: null, buf: null, ok: false, n: 0, view: new THREE.Matrix4(), proj: new THREE.Matrix4(), cam: new THREE.PerspectiveCamera() };
+const window = { innerWidth: 800, innerHeight: 400 }, isTouch = TOUCH, scene = { add() {} };
+let frameNo = 1;
 const G = { PIXEL_PACK_BUFFER: 0x88EB, STREAM_READ: 0x88E1, SYNC_GPU_COMMANDS_COMPLETE: 0x9117, SYNC_STATUS: 0x9114, SIGNALED: 0x9119, UNSIGNALED: 0x9118, NO_ERROR: 0,
   bound: null, lost: false, err: 0, signal: false, fences: 0, deleted: 0, log: [], data: null,
   createBuffer() { return { id: 'pbo' }; }, deleteBuffer() {}, bindBuffer(t, b) { this.bound = b; this.log.push(b ? 'bind' : 'unbind'); },
@@ -270,202 +272,189 @@ const G = { PIXEL_PACK_BUFFER: 0x88EB, STREAM_READ: 0x88E1, SYNC_GPU_COMMANDS_CO
   getSyncParameter(s) { return this.signal ? this.SIGNALED : this.UNSIGNALED; }, deleteSync() { this.deleted++; }, isContextLost() { return this.lost; },
   getBufferSubData(t, off, dst) { if (!this.bound) throw new Error('nothing bound'); dst.fill(this.data); this.log.push('sub'); } };
 const renderer = { capabilities: { isWebGL2: WEBGL2 }, getContext: () => G, reads: [],
-  readRenderTargetPixels(rt, x, y, w, h, dst) { this.reads.push({ into: typeof dst === 'number' ? 'pbo' : 'array', packBound: !!G.bound }); if (typeof dst !== 'number') dst.fill(5); } };
-THREE.WebGLRenderTarget.prototype.dispose = function () {};
-let camera = new THREE.PerspectiveCamera(); camera.position.set(1, 2, 3); camera.updateMatrixWorld();
-let camN = 0;
+  readRenderTargetPixels(rt, x, y, w, h, dst) { this.reads.push({ into: typeof dst === 'number' ? 'pbo' : 'array', packBound: !!G.bound, rt: rt.id }); if (typeof dst !== 'number') dst.fill(rt.id); } };
+let rtN = 0;
+THREE.WebGLRenderTarget = function (w, h, o) { this.id = ++rtN; this.w = w; this.h = h; this.o = o; this.texture = { rt: this.id }; this.dispose = () => {}; };
+const camera = new THREE.PerspectiveCamera(); camera.position.set(1, 2, 3); camera.updateMatrixWorld();
+const PIN_GATE = { texA: { value: null }, texB: { value: null }, viewA: { value: new THREE.Matrix4() }, viewAInv: { value: new THREE.Matrix4() }, projA: { value: new THREE.Matrix4() },
+  viewB: { value: new THREE.Matrix4() }, projB: { value: new THREE.Matrix4() }, info: { value: new THREE.Vector4() }, reach: { value: new THREE.Vector4() }, frame: -1e9 };
+let camN = 0, reachAsked = [];
 function pinOccMat() {}
-function pinOccCam() { camN++; const c = PIN_OCC.cam; c.position.set(camN, 0, 0); c.updateMatrixWorld(); c.matrixWorldInverse.copy(c.matrixWorld).invert(); c.projectionMatrix.makeScale(camN, 1, 1); return c; }
-function pinOccCaptureRest() { const c = pinOccCam(); PIN_OCC.buf.fill(9); PIN_OCC.view.copy(c.matrixWorldInverse); PIN_OCC.proj.copy(c.projectionMatrix); PIN_OCC.ok = true; PIN_OCC.n++; }
-function occRender(rt, W, H, buf, noInstanced, cam, read) { return read ? read() : false; }
+function pinOccCam(reach) { camN++; reachAsked.push(reach); const c = new THREE.PerspectiveCamera(); c.position.set(camN, 0, 0); c.updateMatrixWorld(); c.far = Math.min(reach, 26000); c.projectionMatrix.makeScale(camN, 1, 1); return c; }
 function occFlatsOff() { return true; }   // Round 168: the capture's flats gate (test_occ_flats.py)
+const drawn = [];
+function occRender(rt, W, H, buf, noInstanced, cam, read) { drawn.push(rt.id); if (read) return read(); renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf); return false; }
 BLOCK
-const viewX = () => -PIN_OCC.view.elements[12];   // the capture camera's x, which pinOccCam counts up
+const viewX = (I) => -I.view.elements[12];   // the capture camera's x, which pinOccCam counts up
+const F = PIN_OCC.full.cpu, N = PIN_OCC.near.cpu;
 BODY
 pinOccTick.port1.close();
 })().catch((e) => { console.error(e); process.exit(1); });
-'''.replace('THREE_PATH', THREE).replace('WEBGL2', 'true' if webgl2 else 'false').replace('BLOCK', cut('  const PIN_JUMP = ', '  function pinOccMat() {')).replace('BODY', body)
+'''.replace('THREE_PATH', THREE).replace('WEBGL2', 'true' if webgl2 else 'false').replace('TOUCH', 'true' if touch else 'false').replace('BLOCK', cut('  const PIN_OCC_MOVE_EVERY = ', '  function pinOccMat() {')).replace('BODY', body)
         return node(script)
 
     def test_the_read_lands_with_its_own_matrices(self):
         out = self.run_js('''
 const r = {};
 r.first = pinOccCapture();                                   // the first image: synchronous, installed now
-r.firstView = viewX();
-G.data = 42; G.signal = false;
-r.second = pinOccCapture();                                  // then a read into the pack buffer
+r.firstView = viewX(F);
+frameNo++; G.data = 42; G.signal = false;
+r.second = pinOccCapture();                                  // drawn for the gate at once; read later
+r.gateB = PIN_GATE.texB.value.rt; r.secondRt = drawn[drawn.length - 1];
+pinOccRead();                                                // the newest image into the pack buffer
 r.read = renderer.reads[renderer.reads.length - 1];
 r.unboundAfter = G.bound === null;
 r.flushed = G.log.includes('flush');
-r.busy = pinOccCapture();                                    // one in flight: nothing drawn
-pinOccPoll(); r.beforeFence = { fresh: PIN_OCC.fresh, view: viewX(), buf: PIN_OCC.buf[0] };
+frameNo++; r.third = pinOccCapture();                        // a read in flight: the image is still drawn, never into its target
+r.thirdRt = drawn[drawn.length - 1]; r.gateB3 = PIN_GATE.texB.value.rt;
+pinOccRead(); r.issued = PIN_ASYNC.issued;                   // one read in flight at a time
+pinOccPoll(); r.beforeFence = { fresh: PIN_OCC.fresh, view: viewX(F), buf: F.buf[0] };
 G.signal = true; pinOccPoll();
-r.landed = { fresh: PIN_OCC.fresh, view: viewX(), buf: PIN_OCC.buf[0], n: PIN_OCC.n, unbound: G.bound === null, deleted: G.deleted };
+r.landed = { fresh: PIN_OCC.fresh, view: viewX(F), buf: F.buf[0], n: PIN_OCC.n, unbound: G.bound === null, deleted: G.deleted, frame: F.frame };
 pinOccPoll(); r.nextFrame = PIN_OCC.fresh;
-r.third = pinOccCapture();
+pinOccRead(); r.tooSoon = PIN_ASYNC.issued;                           // a frame after the last read went: not yet (PIN_OCC_READ_EVERY)
+frameNo += 3; pinOccRead(); r.next = renderer.reads[renderer.reads.length - 1].rt; r.issued2 = PIN_ASYNC.issued;   // four frames on: the newest image goes next
 console.log(JSON.stringify(r));''')
         self.assertEqual(out['first'], 'now')
         self.assertEqual(out['firstView'], 1)
         self.assertEqual(out['second'], 'later')
-        self.assertEqual(out['read'], {'into': 'pbo', 'packBound': True})
+        self.assertEqual(out['gateB'], out['secondRt'])               # the gate reads the new image the frame it is drawn
+        self.assertEqual(out['read'], {'into': 'pbo', 'packBound': True, 'rt': out['secondRt']})
         self.assertTrue(out['unboundAfter'])
         self.assertTrue(out['flushed'])
-        self.assertEqual(out['busy'], 'busy')
-        # before the fence passes nothing changes: the old image with the old matrices
-        self.assertEqual(out['beforeFence'], {'fresh': False, 'view': 1, 'buf': 9})
-        # once it has: the new pixels and the matrices of the capture that drew them (the second camera), together
-        self.assertEqual(out['landed'], {'fresh': True, 'view': 2, 'buf': 42, 'n': 2, 'unbound': True, 'deleted': 1})
-        self.assertFalse(out['nextFrame'])
         self.assertEqual(out['third'], 'later')
+        self.assertNotEqual(out['thirdRt'], out['secondRt'])          # a render never disturbs the read in flight
+        self.assertEqual(out['gateB3'], out['thirdRt'])
+        self.assertEqual(out['issued'], 1)
+        # before the fence passes nothing changes: the old image with the old matrices
+        self.assertEqual(out['beforeFence'], {'fresh': False, 'view': 1, 'buf': 1})   # the first image's pixels (its target's id, as the stub reads)
+        # once it has: the new pixels and the matrices of the capture that drew them (the second camera), together
+        self.assertEqual(out['landed'], {'fresh': True, 'view': 2, 'buf': 42, 'n': 2, 'unbound': True, 'deleted': 1, 'frame': 2})
+        self.assertFalse(out['nextFrame'])
+        self.assertEqual(out['tooSoon'], 1)
+        self.assertEqual(out['next'], out['thirdRt'])
+        self.assertEqual(out['issued2'], 2)
 
     def test_a_new_size_reads_synchronously(self):
         out = self.run_js('''
-pinOccCapture(); G.signal = false; pinOccCapture();
+pinOccCapture(); frameNo++; G.signal = false; pinOccCapture(); pinOccRead();
 window.innerHeight = 300;                                    // resized with a read in flight
-const got = pinOccCapture();
-console.log(JSON.stringify({ got, h: PIN_OCC.h, dropped: PIN_ASYNC.dropped, inFlight: !!PIN_ASYNC.sync, view: viewX() }));''')
-        self.assertEqual(out, {'got': 'now', 'h': 90, 'dropped': 1, 'inFlight': False, 'view': 3})
+const got = pinOccCapture('near');                           // a new size draws the complete kind, read at once
+console.log(JSON.stringify({ got, h: PIN_OCC.h, dropped: PIN_ASYNC.dropped, inFlight: !!PIN_ASYNC.sync, view: viewX(F), nearOk: N.ok, near: PIN_OCC.rendersNear }));''')
+        self.assertEqual(out, {'got': 'now', 'h': 90, 'dropped': 1, 'inFlight': False, 'view': 3, 'nearOk': False, 'near': 0})
 
     def test_a_jump_reads_synchronously(self):
         # a shared link or a located fix moves the eye hundreds of metres at once: the read in flight (of the old place)
-        # is dropped and the capture at the next turn is read at once, as before Round 167; a flight's steps are not jumps
+        # is dropped and the next image is read at once, as before Round 167; a flight's steps are not jumps
         out = self.run_js('''
 pinOccCapture(); G.signal = false;
-camera.position.x += 250; const step = pinOccCapture();       // 250 m since the last capture: still a flight
-camera.position.x += 301; const jumped = pinOccCapture();     // a read in flight, and the eye 301 m away
-console.log(JSON.stringify({ step, jumped, dropped: PIN_ASYNC.dropped, inFlight: !!PIN_ASYNC.sync, view: viewX() }));''')
+camera.position.x += 250; frameNo++; const step = pinOccCapture(); pinOccRead();   // 250 m since the last image: still a flight
+camera.position.x += 301; frameNo++; const jumped = pinOccCapture();              // a read in flight, and the eye 301 m away
+console.log(JSON.stringify({ step, jumped, dropped: PIN_ASYNC.dropped, inFlight: !!PIN_ASYNC.sync, view: viewX(F) }));''')
         self.assertEqual(out, {'step': 'later', 'jumped': 'now', 'dropped': 1, 'inFlight': False, 'view': 3})
 
-    def test_webgl1_reads_synchronously(self):
+    def test_webgl1_reads_synchronously_at_the_old_cadence(self):
+        # without a pack buffer every image still reaches the gate, but the stalling read comes only at the old cadence (or for a
+        # pin that waits), as before Round 169
         out = self.run_js('''
-const a = pinOccCapture(), b = pinOccCapture();
-console.log(JSON.stringify({ a, b, pbo: renderer.reads.some((x) => x.into === 'pbo'), fences: G.fences }));''', webgl2=False)
-        self.assertEqual(out, {'a': 'now', 'b': 'now', 'pbo': False, 'fences': 0})
+const got = [];
+for (let i = 0; i < 12; i++) { frameNo++; got.push(pinOccCapture()); pinOccRead(); }
+PIN_OCC.wait = frameNo + 1; frameNo++; got.push(pinOccCapture());   // a pin waiting, a frame after the last read: not yet
+frameNo += 3; got.push(pinOccCapture());                              // four frames on: read at once
+console.log(JSON.stringify({ got, pbo: renderer.reads.some((x) => x.into === 'pbo'), fences: G.fences, drawn: drawn.length }));''', webgl2=False)
+        self.assertEqual(out['got'][0], 'now')
+        self.assertEqual(out['got'][1:10], ['later'] * 9)
+        self.assertEqual(out['got'][10], 'now')                   # ten frames on: the old cadence
+        self.assertEqual(out['got'][-2:], ['later', 'now'])       # a pin waiting: read at once, but never more than every 4th frame
+        self.assertFalse(out['pbo'])
+        self.assertEqual(out['fences'], 0)
+        self.assertEqual(out['drawn'], 14)
 
     def test_a_refused_read_goes_synchronous_for_good(self):
         out = self.run_js('''
 pinOccCapture();
-G.err = 0x502;                                               // the driver refuses the pack read (checked once)
-const oldGetError = G.getError; let calls = 0; G.getError = function () { calls++; return calls === 2 ? 0x502 : 0; };
-const got = pinOccCapture();
+let calls = 0; G.getError = function () { calls++; return calls === 2 ? 0x502 : 0; };   // the driver refuses the pack read (checked once)
+frameNo++; const got = pinOccCapture(); pinOccRead();
 const last = renderer.reads[renderer.reads.length - 1];
-const later = pinOccCapture();
-console.log(JSON.stringify({ got, off: PIN_ASYNC.off, last, later, unbound: G.bound === null, view: viewX() }));''')
-        self.assertEqual(out['got'], 'now')                       # read synchronously in its place, matrices installed at once
+const fresh = PIN_OCC.fresh, view = viewX(F);
+frameNo++; const later = pinOccCapture();
+console.log(JSON.stringify({ got, off: PIN_ASYNC.off, last: { into: last.into, packBound: last.packBound }, fresh, view, unbound: G.bound === null, later }));''')
+        self.assertEqual(out['got'], 'later')
         self.assertTrue(out['off'])
-        self.assertEqual(out['last'], {'into': 'array', 'packBound': False})
-        self.assertEqual(out['later'], 'now')
+        self.assertEqual(out['last'], {'into': 'array', 'packBound': False})   # read synchronously in its place, installed at once
+        self.assertTrue(out['fresh'])
+        self.assertEqual(out['view'], 2)
         self.assertTrue(out['unbound'])
-        self.assertEqual(out['view'], 3)
+        self.assertEqual(out['later'], 'later')                    # from now on the old cadence's synchronous read
 
     def test_a_fence_that_never_passes_is_given_up_only_across_tasks(self):
         out = self.run_js('''
-pinOccCapture(); G.signal = false; pinOccCapture();
+pinOccCapture(); frameNo++; G.signal = false; pinOccCapture(); pinOccRead();
 for (let i = 0; i < 500; i++) pinOccPoll();                  // one task: the fence cannot pass yet, nothing is given up
 const within = { off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync };
 await new Promise((r) => setTimeout(r, 30));
 for (let i = 0; i < 121; i++) pinOccPoll();                  // frames in later tasks: 120 of them and it goes synchronous
+frameNo += 20;
 console.log(JSON.stringify({ within, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, next: pinOccCapture() }));''')
         self.assertEqual(out, {'within': {'off': False, 'inFlight': True}, 'off': True, 'inFlight': False, 'next': 'now'})
 
     def test_a_lost_context(self):
         out = self.run_js('''
-pinOccCapture(); G.signal = false; pinOccCapture();
+pinOccCapture(); frameNo++; G.signal = false; pinOccCapture(); pinOccRead();
 G.lost = true; pinOccPoll();
-console.log(JSON.stringify({ off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, fresh: PIN_OCC.fresh, view: viewX() }));''')
+console.log(JSON.stringify({ off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, fresh: PIN_OCC.fresh, view: viewX(F) }));''')
         self.assertEqual(out, {'off': True, 'inFlight': False, 'fresh': False, 'view': 1})
 
-    def test_wiring(self):
-        # the building tap keeps its synchronous read; only the pins' capture passes a read
+    def test_two_kinds(self):
+        # a phone's near image: its own targets, its own reach (5% past PIN_NEAR), read after the complete one; the gate reads it
+        # with the complete one while it is the newer, and the complete one alone once that is
+        out = self.run_js('''
+PIN_OCC.reach = 4000;
+pinOccCapture(); frameNo++;
+const first = pinOccCapture('near');                          // the first near image is read at once
+const g1 = { a: PIN_GATE.reach.value.x, b: PIN_GATE.reach.value.y, aNewer: PIN_GATE.reach.value.z, texA: PIN_GATE.texA.value.rt };
+frameNo++; pinOccCapture('near'); frameNo++; pinOccCapture('full');
+const g2 = { aNewer: PIN_GATE.reach.value.z };
+G.signal = false; pinOccRead(); const readFull = renderer.reads[renderer.reads.length - 1].rt, fullRts = PIN_OCC.full.slots.map((s) => s.rt.id);
+console.log(JSON.stringify({ first, reaches: reachAsked, g1, g2, readFull: fullRts.includes(readFull), nearOk: N.ok, rendersNear: PIN_OCC.rendersNear, nearRts: PIN_OCC.near.slots.map((s) => s.rt.id), fullRts }));''')
+        self.assertEqual(out['first'], 'now')
+        self.assertEqual(out['reaches'][0], 30000)                # the first image reaches the packing range
+        self.assertAlmostEqual(out['reaches'][1], 900 * 1.05)     # a near image: 5% past PIN_NEAR
+        self.assertAlmostEqual(out['reaches'][3], 4000 * 1.1 + 50)   # a complete one: the farthest tip, 10% and 50 m on
+        self.assertEqual(out['g1'], {'a': 945, 'b': 26000, 'aNewer': 1, 'texA': out['nearRts'][0]})
+        self.assertEqual(out['g2'], {'aNewer': 0})
+        self.assertTrue(out['readFull'])
+        self.assertEqual(out['rendersNear'], 2)
+        self.assertTrue(set(out['nearRts']).isdisjoint(out['fullRts']))
+
+    def test_nearest_filtering_and_the_wiring(self):
+        slot = cut('  function pinOccSlot(W, H) {', '  const pinOccNoRead')
+        self.assertIn('minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false', slot)
+        # the building tap keeps its synchronous read; the pins' one capture call reads at once or leaves it to pinOccRead
         self.assertIn('try { occRender(BPICK.rt, 1, 1, BPICK.buf, true); }', SRC)
-        self.assertEqual(SRC.count('pinOccIssue, occFlatsOff())'), 1)   # Round 168: the pins' capture also passes over the flats, from high enough
+        self.assertIn('occRender(s.rt, W, H, ch.cpu.buf, true, c, now ? null : pinOccNoRead, nf);', SRC)
         occ = cut('  function occRender(', '  const occUnpack =')
         self.assertIn('if (read) out = read(); else r.readRenderTargetPixels(rt, 0, 0, W, H, buf);', occ)
         # the pack buffer is unbound in a finally, straight after the read is issued
-        issue = cut('  function pinOccIssue() {', '  const pinOccTick =')
+        issue = cut('  function pinOccIssue(s, dst) {', '  const pinOccTick =')
         self.assertIn('finally { gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null); }', issue)
         self.assertIn('gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0)', issue)
+        # never into the target a read is in flight from
+        self.assertIn('const k = A.sync && A.chan === ch ? 1 - A.slot : ch.gate === 0 ? 1 : 0;', SRC)
         # __dbg can force either path (a probe's loop of frameOnce is one task, where no fence can pass)
         self.assertIn('pinAsync: (on) =>', SRC)
-        # the cadence and the fade are Round 138's and 143's
-        self.assertIn('every: isTouch ? 10 : 5,', SRC)
-        # a jump is past the fastest flight between two captures: 500 m/s boosted 3.2 times over 5 frames at 60 fps (desktop),
-        # 500 m/s over 10 frames at 20 fps (a phone); both under PIN_JUMP
+        self.assertIn('every: isTouch ? 10 : 5, moveEvery: PIN_OCC_MOVE_EVERY, fullEvery: PIN_OCC_FULL_EVERY,', SRC)
+        # a jump is past the fastest flight between two images: 500 m/s boosted 3.2 times over a frame at 60 fps (a computer draws an
+        # image every frame while moving), 500 m/s over 10 frames at 20 fps (a phone's complete image); both under PIN_JUMP
         self.assertIn('const PIN_JUMP = 300;', SRC)
         self.assertIn('clamp(fly.speed * Math.exp(-e.deltaY * 0.0012), 10, 500)', SRC)
         self.assertIn("const boost = walk.keys['shift'] ? 3.2 : 1;", SRC)
         self.assertLess(500 * 3.2 * 5 / 60, 300)
         self.assertLess(500 * 10 / 20, 300)
-        self.assertIn('const PIN_FADE = 0.2, PIN_HOLD = 0.45, PIN_DWELL = 0.3;', SRC)
-
-
-class PinAsyncFade(unittest.TestCase):
-    """pinOccUpdate with reads that land a frame after their capture: two landed images still decide, a busy turn waits."""
-
-    @classmethod
-    def setUpClass(cls):
-        if not shutil.which('node'):
-            raise unittest.SkipTest('Node.js unavailable')
-
-    def test_landed_images_count_as_captures(self):
-        block = cut('  const PIN_FADE = ', '  function frame(now, once) {')
-        script = r'''
-let frameNo = 0, answer = 1, inFlight = 0, captures = 0, busy = 0;
-const PIN_OCC = { ok: false, every: 5, want: -99, hid: 0, lastFrame: -1e9, fresh: false, lastPos: { copy() {} }, lastQuat: { copy() {} } };
-const camera = { position: { distanceToSquared: () => 1 }, quaternion: { dot: () => 1 } };
-let seen = 1;   // the answer the installed image gives
-function pinOccCapture() { if (!PIN_OCC.ok) { PIN_OCC.ok = true; seen = answer; return 'now'; } if (inFlight) { busy++; return 'busy'; } inFlight = { a: answer }; captures++; return 'later'; }
-function poll() { PIN_OCC.fresh = false; if (inFlight) { seen = inFlight.a; inFlight = 0; PIN_OCC.fresh = true; } }   // lands the frame after
-function pinOccVisible() { return seen === 1; }
-const cap = 8, mat = new Float32Array(cap * 16), vis = new Float32Array(cap).fill(1);
-const m = { visible: true, count: 1, userData: {}, instanceMatrix: { count: cap, array: mat }, geometry: { attributes: { aPinVis: { array: vis, needsUpdate: false } } } };
-const PIN_MESHES = [m];
-BLOCK
-const run = (n, a) => { const o = []; for (let i = 0; i < n; i++) { answer = a; frameNo++; poll(); pinOccUpdate(1 / 60); o.push(+vis[0].toFixed(3)); } return o; };
-run(20, 1);
-const s = run(40, 0);
-console.log(JSON.stringify({ s, captures, busy }));
-'''.replace('BLOCK', block)
-        out = node(script)
-        s = out['s']
-        self.assertEqual(s[0], 1)
-        self.assertEqual(s[-1], 0)                                   # two landed images agree: hidden
-        first = next(i for i, v in enumerate(s) if v < 1)
-        # the capture at frame 25 lands at 26, the one at 30 lands at 31: the ease starts on the second landing
-        self.assertEqual(first, 31 - 21)
-        self.assertEqual(out['busy'], 0)                             # every read landed before the next turn
-
-    def test_a_busy_turn_tries_again_the_next_frame(self):
-        # Round 167 review: a turn that found a read in flight waited a whole cadence, so when fences ran later than the
-        # cadence the images came half as often. Now it tries again each frame: an image is issued the frame the last one
-        # lands, never two in flight, and a fence faster than the cadence keeps the cadence exactly
-        block = cut('  const PIN_FADE = ', '  function frame(now, once) {')
-        script = r'''
-let frameNo = 0, inFlight = null, issued = [], landed = 0, busy = 0, most = 0;
-const PIN_OCC = { ok: true, every: 10, want: -99, hid: 0, lastFrame: -1e9, fresh: false, lastPos: { copy() {} }, lastQuat: { copy() {} } };
-const camera = { position: { distanceToSquared: () => 1 }, quaternion: { dot: () => 1 } };   // a flight: moved at every turn
-let LAT = 1;
-function pinOccCapture() { if (inFlight) { busy++; return 'busy'; } inFlight = { at: frameNo }; issued.push(frameNo); return 'later'; }
-function poll() { PIN_OCC.fresh = false; if (inFlight && frameNo - inFlight.at >= LAT) { inFlight = null; landed++; PIN_OCC.fresh = true; } }
-function pinOccVisible() { return true; }
-const cap = 8, mat = new Float32Array(cap * 16), vis = new Float32Array(cap).fill(1);
-const m = { visible: true, count: 1, userData: {}, instanceMatrix: { count: cap, array: mat }, geometry: { attributes: { aPinVis: { array: vis, needsUpdate: false } } } };
-const PIN_MESHES = [m];
-BLOCK
-const run = (lat, n) => { LAT = lat; issued = []; landed = 0; busy = 0; inFlight = null; PIN_OCC.retry = false; for (let i = 0; i < n; i++) { frameNo++; poll(); pinOccUpdate(1 / 60); } return { issued: issued.slice(), landed, busy }; };
-frameNo = 0;
-const fast = run(2, 100);      // lands two frames after it went: the cadence of ten holds
-const slow = run(14, 140);     // later than the cadence: issued as each one lands
-console.log(JSON.stringify({ fast, slow }));
-'''.replace('BLOCK', block)
-        out = node(script)
-        fast, slow = out['fast'], out['slow']
-        self.assertEqual(fast['busy'], 0)
-        self.assertTrue(all(b - a == 10 for a, b in zip(fast['issued'], fast['issued'][1:])), fast['issued'])
-        gaps = [b - a for a, b in zip(slow['issued'], slow['issued'][1:])]
-        self.assertTrue(gaps and all(g == 14 for g in gaps), slow['issued'])   # the frame each one lands, not the next multiple of ten (20)
-        self.assertGreaterEqual(len(slow['issued']), 9)
-        self.assertGreater(slow['busy'], 0)
+        # the frame: the read lands first thing, the images are drawn in pinOccUpdate before the render
+        fr = cut('  function frame(now, once) {', '\n  setHint();')
+        self.assertLess(fr.index('pinOccPoll();'), fr.index('pinOccUpdate(dt);'))
+        self.assertLess(fr.index('pinOccUpdate(dt);'), fr.index('if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);'))
 
 
 if __name__ == '__main__':

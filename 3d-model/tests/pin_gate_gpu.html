@@ -1,0 +1,94 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Pin Gate Checks</title>
+<style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}pre{white-space:pre-wrap}</style>
+<h1>Pin Gate Checks</h1>
+<p>Round 169: every instanced pin's vertex shader reads the latest images of the city itself (PIN_GATE_GLSL, the production block from app.js, on a real GPU) and must collapse exactly the pins whose tips the CPU's own answer (pinOccAnswer, cut from app.js) calls covered or unknown: one image, and two (a near image that is the newer, a complete one drawn from another eye), with no image at all hiding every pin. Each pin is drawn alone into a small target that its quad fills, and a pin that leaves a pixel was shown.</p>
+<pre id="result">Running…</pre>
+<script src="../three.min.js"></script>
+<script>
+(async () => {
+  const out = document.getElementById('result');
+  const lines = [], check = (ok, m) => { lines.push((ok ? 'ok   ' : 'FAIL ') + m); if (!ok) throw Error(m); };
+  try {
+    const src = await (await fetch('../app.js', { cache: 'no-store' })).text();
+    const cut = (a, b) => { const i = src.indexOf(a); return src.slice(i, src.indexOf(b, i)); };
+    const pins = cut('  const PIN_ANCHOR_GLSL', '  function pinHitOpaque(');
+    const answers = cut('  const occUnpack = ', '  // the zone a pin is judged in');
+    const W = 240, H = 117, FAR = 30000;
+    const renderer = new THREE.WebGLRenderer({ antialias: false }); renderer.setSize(64, 64);
+    check(renderer.capabilities.vertexTextures, 'the GPU reads textures in a vertex shader');
+    // a small city: boxes at many depths and heights, drawn with the capture's depth-packing override
+    const scene = new THREE.Scene(), packMat = new THREE.ShaderMaterial({
+      uniforms: { uFar: { value: FAR } }, side: THREE.DoubleSide,
+      vertexShader: 'varying float vViewZ; void main() { vec4 mv = modelViewMatrix * vec4(position, 1.0); vViewZ = -mv.z; gl_Position = projectionMatrix * mv; }',
+      fragmentShader: '#include <packing>\nuniform float uFar; varying float vViewZ; void main() { gl_FragColor = packDepthToRGBA(clamp(vViewZ / uFar, 0.0, 0.9999)); }' });
+    let seed = 11; const rnd = () => (seed = (seed * 16807) % 2147483647) / 2147483647;
+    for (let i = 0; i < 160; i++) {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(15 + rnd() * 40, 20 + rnd() * 140, 15 + rnd() * 40), packMat);
+      const a = rnd() * Math.PI * 1.2 - 0.6, d = 60 + rnd() * rnd() * 3500;
+      b.position.set(Math.sin(a) * d, b.geometry.parameters.height / 2, -Math.cos(a) * d); b.rotation.y = rnd() * 3;
+      scene.add(b);
+    }
+    // an image as the page draws one: its camera PIN_OCC.wide times the eye's each way, as far as its reach
+    const eye = new THREE.PerspectiveCamera(55, 740 / 360, 0.75, 26000);
+    function image(pos, yaw, pitch, reach, frame) {
+      eye.position.copy(pos); eye.rotation.set(pitch, yaw, 0, 'YXZ'); eye.updateMatrixWorld(); eye.updateProjectionMatrix();
+      const c = eye.clone(), n = c.near, f = Math.min(c.far, reach), e = c.projectionMatrix.elements;
+      e[0] /= 1.5; e[5] /= 1.5; e[10] = -(f + n) / (f - n); e[14] = -2 * f * n / (f - n);
+      c.projectionMatrixInverse.copy(c.projectionMatrix).invert(); c.matrixAutoUpdate = false; c.matrixWorldAutoUpdate = false;
+      c.matrixWorld.copy(eye.matrixWorld); c.matrixWorldInverse.copy(eye.matrixWorldInverse);
+      const rt = new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false });
+      renderer.setRenderTarget(rt); renderer.setClearColor(0xffffff, 1); renderer.clear(); renderer.render(scene, c);
+      const buf = new Uint8Array(W * H * 4); renderer.readRenderTargetPixels(rt, 0, 0, W, H, buf); renderer.setRenderTarget(null);
+      return { rt, buf, view: c.matrixWorldInverse.clone(), viewInv: c.matrixWorld.clone(), proj: c.projectionMatrix.clone(), frame, reach: f, eye: pos.clone(), quat: eye.quaternion.clone(), ok: true };
+    }
+    const PIN_OCC = { w: W, h: H, far: FAR, wide: 1.5, near: { cpu: { ok: false, frame: -1e9 } }, full: { cpu: { ok: false, frame: -1e9 } } };
+    const api = new Function('THREE', 'PIN_OCC', 'camera', 'frameNo', 'const _pov = new THREE.Vector3();\n' + pins + answers + '\nreturn { PIN_GATE, pinSceneDepth, pinOccAnswer };')(THREE, PIN_OCC, eye, 0);
+    const G = api.PIN_GATE;
+    const gateFrom = (A, B) => {   // pinGateSync's selection, from the images themselves
+      const aNew = !!(A && B && A.frame > B.frame);
+      if (B) { G.texB.value = B.rt.texture; G.viewB.value.copy(B.view); G.projB.value.copy(B.proj); }
+      if (aNew) { G.texA.value = A.rt.texture; G.viewA.value.copy(A.view); G.viewAInv.value.copy(A.viewInv); G.projA.value.copy(A.proj); }
+      G.info.value.set(W, H, FAR, 0); G.reach.value.set(aNew ? A.reach : 0, B ? B.reach : 0, aNew ? 1 : 0, 0);
+      PIN_OCC.full.cpu = B || { ok: false, frame: -1e9 }; PIN_OCC.near.cpu = A || { ok: false, frame: -1e9 };
+    };
+    // the pins: a badge-sized quad per instance, a white MeshBasicMaterial through the production hook
+    const pin = api.pinSceneDepth(new THREE.InstancedMesh(new THREE.PlaneGeometry(4.6, 5.75).translate(0, 2.95, 0), new THREE.MeshBasicMaterial({ color: 0xffffff }), 1));
+    pin.frustumCulled = false;
+    const pinScene = new THREE.Scene(); pinScene.add(pin);
+    const look = new THREE.PerspectiveCamera(40, 1, 0.5, 30000), tgt = new THREE.WebGLRenderTarget(16, 16), px = new Uint8Array(16 * 16 * 4), m4 = new THREE.Matrix4();
+    function shown(p) {   // the pin at p drawn alone, filling the target: a pixel left means the gate let it through
+      m4.makeTranslation(p.x, p.y, p.z); pin.setMatrixAt(0, m4); pin.instanceMatrix.needsUpdate = true;
+      look.position.set(p.x, p.y + 2.9, p.z + 9); look.lookAt(p.x, p.y + 2.9, p.z); look.updateMatrixWorld();
+      renderer.setRenderTarget(tgt); renderer.setClearColor(0x000000, 1); renderer.clear(); renderer.render(pinScene, look);
+      renderer.readRenderTargetPixels(tgt, 0, 0, 16, 16, px); renderer.setRenderTarget(null);
+      for (let i = 0; i < px.length; i += 4) if (px[i] > 128) return true;
+      return false;
+    }
+    const tips = [];
+    for (let i = 0; i < 700; i++) { const a = rnd() * 2.4 - 1.2, d = 40 + rnd() * rnd() * 5000; tips.push(new THREE.Vector3(Math.sin(a) * d, rnd() * rnd() * 90, -Math.cos(a) * d)); }
+    const compare = (label) => {
+      let n = 0, bad = 0, clear = 0; const ex = [];
+      for (const t of tips) { const cpu = api.pinOccAnswer(t.x, t.y, t.z) === 1, gpu = shown(t); n++; if (cpu) clear++; if (cpu !== gpu) { bad++; if (ex.length < 3) ex.push([t.toArray().map(Math.round), cpu, gpu]); } }
+      check(bad === 0, label + ': the gate agrees with the CPU for ' + (n - bad) + ' of ' + n + ' tips (' + clear + ' clear)' + (bad ? ' ' + JSON.stringify(ex) : ''));
+      check(clear > n * 0.15 && clear < n * 0.95, label + ': a fair share of both answers');
+    };
+    gateFrom(null, null);
+    { let any = false; for (const t of tips.slice(0, 40)) if (shown(t)) any = true; check(!any, 'no image yet: every pin collapsed'); }
+    const B = image(new THREE.Vector3(3, 25, 40), 0.06, -0.05, 26000, 10);
+    gateFrom(null, B); compare('one image');
+    const Bn = image(new THREE.Vector3(3, 25, 40), 0.06, -0.05, 900, 10);
+    gateFrom(null, Bn); compare('one image reaching 900 m');
+    const A = image(new THREE.Vector3(0, 24, 30), 0.0, -0.04, 945, 12);
+    gateFrom(A, B); compare('a near image, the newer, with the complete one');
+    const B2 = image(new THREE.Vector3(0, 24, 30), 0.0, -0.04, 26000, 13);
+    gateFrom(A, B2); compare('the complete one, the newer, alone');
+    out.textContent = lines.join('\n') + '\n\nALL PASS';
+    document.title = 'PASS';
+  } catch (e) {
+    out.textContent = lines.join('\n') + '\n\n' + (e && e.stack || e);
+    document.title = 'FAIL';
+  }
+})();
+</script>

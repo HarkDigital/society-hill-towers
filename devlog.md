@@ -7573,3 +7573,194 @@ findings are fixed: a stall or the app's return resets the controller whatever t
 m / a / s, PERF.ring keeps only motion frames, a playing time-lapse counts as motion, and the display interval is measured afresh
 after a Graphics change.
 
+## Round 169 — no pin through a building (Sep 29)
+
+Mike, from the TestFlight app on his iPhone 18 Pro Max, with a screenshot (bus stops, markers, art and closures over Society
+Hill): "I am still seeing pins through buildings when I first turn to look at them. They quickly disappear but I want to avoid
+this at all costs."
+
+Why it happened: a tip outside the depth image read as VISIBLE; a shown pin hid only after two captures agreed or PIN_HOLD
+0.45 s had passed, then kept the state PIN_DWELL 0.3 s and faded over PIN_FADE 0.2 s; Round 143's 5 by 5 test kept a shown pin
+while anything two image pixels round its tip was clear; and a phone drew an image every 10th drawn frame (three a second at
+the paced 30), read back a frame or three later. A pin behind a building showed for up to a second as the eye turned, and a
+pin whose own 3 by 3 neighbourhood was covered could show forever from a still eye (22 of them at one Society Hill eye).
+
+What changed (app.js, the pin occlusion section and pinSceneDepth):
+- Unknown is hidden. `pinOccAnswer` returns 1 clear, 0 covered, -1 unknown: no image, the tip outside it, behind its eye or
+  past its reach, or the image drawn before the pin came into view. A pin coming into view (`pinZone`: in front, inside the
+  capture's own 1.5 times the screen), new in its slot or back with its layer starts hidden (`arr`, its arrival frame) and
+  shows only once an image drawn after its arrival says it is clear; a pin waiting asks for an image at the moving cadence.
+- A covered answer hides at once, no fade out, no hold, no dwell (`pinOccStep`). Showing keeps the guard: one image after an
+  unknown, two images (or PIN_HOLD of a still eye) and PIN_DWELL since the last covered answer after a covered one, then the
+  0.2 s fade in. Round 143's 5 by 5 stay-visible test is gone: it could show a pin whose own 3 by 3 was covered, and against a
+  gate that hides at once it would snap pins back without the guard. An edge pin now stays hidden instead of blinking.
+- The gate: every instanced pin's vertex shader reads the latest images itself (`PIN_GATE`, `PIN_GATE_GLSL`): the packed
+  depth through NEAREST targets, each image's own view and projection, the CPU's 3 by 3 rule and need exactly, and collapses
+  the pin when its tip is covered, outside, past the reach or with no image yet; aPinVis still multiplies in. So a pin is hidden
+  the frame an image that covers it is drawn. tests/pin_gate_gpu.html runs the production shader on the GPU against the CPU's
+  answers: 700 of 700 tips agree in each of four set-ups (one image, one reaching 900 m, a near image with an older complete
+  one, the complete one alone), and every pin is collapsed with no image yet (headless Chrome, Metal, M2 Max).
+- The cadence: drawing an image (the gate reads it at once) is apart from reading it back (the CPU's state, the taps, the
+  placards). While the eye moves or turns an image every drawn frame on a computer and every 2nd on a phone
+  (`PIN_OCC_MOVE_EVERY`), and at once whenever the newest no longer holds the screen widened 1.25 times (`pinOccCovers`); a
+  still eye keeps the old cadence. Two targets per kind take turns and an image is never drawn into the one a read is in
+  flight from; one read in flight, of the newest image, at most every 4th frame on a phone and 2nd on a computer
+  (`PIN_OCC_READ_EVERY`): a read's landing (getBufferSubData) is a synchronous call that waits while the GPU process catches
+  up, 4 to 5 ms a landing in headless Chrome, 2.0 ms a frame when it landed every other frame, 0.7 at every 4th.
+- The reach, to keep an image every 2nd frame cheap on a phone: an image goes only as far as the farthest tip in view needs
+  (10% and 50 m on, never under PIN_REACH_MIN 300 m), and its frustum's far plane culls the city beyond. The ground pins all
+  stand within the half mile: an image of them draws 1.4 to 2.0 M triangles and 0.55 to 0.74 ms of the M2's GPU against the
+  3.4 to 5.9 M and 1.1 to 1.7 ms of one to the camera's far plane (four places, phone-sized). A flight, a ship or a placard in
+  view would take every image out to it (the flights draw anywhere in the city box), so there are two kinds: the complete image
+  reaches every tip, and while a tip past PIN_NEAR (900 m) stands in view a phone draws it only every 10th frame while moving
+  (`PIN_OCC_FULL_EVERY`) and a near image (945 m, every ground pin) in the frames between. A tip past the near image's reach
+  reads each of its 3 by 3 samples through both (`occImgBoth`): clear when nothing within the near reach stands in it and the
+  complete image, read along the same ray at the tip's depth, lies behind the tip in all four of its pixels round the ray.
+- The placards (concert placards, score bubbles) have no gate: `pinBlocked` keeps the same state per tip (`PIN_TIPS`, by
+  where it stands, so a feed's new records carry it over), and once the eye has moved or turned since the image it reads was
+  drawn, `pinOccTipAnswer` carries back the nine samples an image drawn now would take (exact for a turn) and calls the tip
+  clear only when every image pixel is clear along the segment a nearer building could have slid across since (the eye's move
+  in the image's frame over the nearest depth round the tip); otherwise covered, so a placard at a narrow gap does not blink.
+- `__dbg.pinOcc()` counts images by kind and cause, `__dbg.pinGate()` names the images the gate reads, `__dbg.PIN_OCC` for
+  knobs. The building tap and the Round 168 capture rules (only buildings, the flats from 20 m up) are as they were.
+
+Measured (headless Chrome on the M2 Max's GPU through ANGLE Metal, phone emulation 740 x 360 at 1.25 with touch, the page's
+own frames at 30 a second of real time with a two-frame swap-chain backlog; every static pin layer on, bus stops and libraries
+included, six concert and four game fixtures for placards; a ground truth at every frame's exact camera by the page's own
+capture rule, only buildings; `pin_through.js` in the capture skill):
+- Through a building (a pin shown with its tip covered), twelve scripted runs over Society Hill, Center City and the Delaware
+  waterfront (turns at 45, 90 and 180 degrees a second from 25 to 60 m up; flights at 10, 30 and 80 m/s, 6,464 frames): the
+  instanced pins 37,246 pin-frames in 5,202 frames before, 423 in 358 frames after (98.9% fewer), 67 to 198 distinct pins a
+  run before, 0 to 63 after, each for a frame; the placards 505 before, 7 after. Every one of the 423 but two falls on a
+  frame when a phone draws no image (the gate reads the image of the frame before, its pixel grid a turn or a move away: a tip
+  within about a pixel of a building's edge); the two are far tips read through the older complete image.
+- On a computer (1280 x 720, 60 a second, an image every frame), five runs (turns at 90 degrees a second over Society Hill
+  and Center City, flights at 30 and 80 m/s, 2,582 frames): 12,135 pin-frames in 1,964 frames and 436 placard-frames
+  before, 0 and 0 after.
+- How long a pin that comes into clear view takes to appear (displayed past half its fade), on the phone: from out of view,
+  median 0 to 167 ms and 90th percentile 67 to 267 ms by run; from behind a building (the guard), median 33 to 433 ms and 90th
+  percentile 67 to 533 ms. Before, 0: everything showed at once, through buildings included. Of the pin-frames the truth calls
+  clear, 58 to 86% are shown after against 75 to 100% before. The difference is mostly pins at a roof line that the images
+  call covered and clear by turns, held by the guard (of such hidden frames on a turn and a flight, the truth itself had called
+  the pin covered within the ten frames before in 87 to 90%), then pins waiting for an image after coming into view, and the
+  fade in.
+- GPU (the profiler's method: EXT_disjoint_timer_query_webgl2 round each frame, a one-pixel readPixels to settle the queue):
+  an image costs the M2 at phone size 1.1 to 1.7 ms and 3.4 to 5.9 M triangles to the camera's far plane, 0.8 to 1.2 ms to 3
+  km, 0.55 to 0.74 ms and 1.4 to 2.0 M triangles to 945 m. While moving a phone drew one every 10th frame before (0.11 to 0.17
+  ms and 0.34 to 0.59 M triangles a frame on average) and one every 2nd after (0.28 to 0.37 ms and 0.7 to 1.0 M; with a far tip
+  in view, four near to one complete, 0.33 to 0.47 ms and 0.9 to 1.4 M), against a frame of 6 to 9 M triangles. The frame's GPU
+  time along four scripted paths (a turn, flights at 30 and 80 m/s) averaged 17.3 ms before and 17.3 after without the event
+  fixtures, 17.4 and 17.4 with them: the difference is inside the runs' noise of about half a millisecond. Still, nothing is
+  drawn after the image the eye stopped on, as before, and the gate's texture reads (9 to 36 a pin vertex, a few hundred pins)
+  are too small to time.
+- CPU (the page's frame, M2): 4.4 to 5.3 ms before, 4.5 to 5.4 after.
+- Memory: 871.4 MB of WebGL buffers, textures and renderbuffers after the runs against 870.8 before (four targets of 240 x
+  117 and their depth where there was one, +0.64 MB), `__gpu.mis` 0 in both, no new vertex stream; the live heap after a GC 128
+  MB after, 146 before (a second 112 KB image buffer).
+
+What is not zero, and why:
+- A phone draws an image every 2nd frame while moving, so on the frames between the gate reads an image one frame old: a tip
+  within about a pixel of an edge can read clear there and covered from the exact camera, for that one frame (0 to 105
+  pin-frames a run, 423 in all). `PIN_OCC_MOVE_EVERY = 1` on a phone makes it zero, for a near image every frame (1.4 to 2.0 M
+  triangles, 0.55 to 0.74 ms of the M2 at phone size, and a phone is geometry-bound).
+- A far tip (a flight, a ship, a placard) read through the near image and a complete one up to ten frames older: what stands
+  past 945 m shifts up to a pixel in that time; 2 pin-frames in all.
+- The placards have no gate and read an image a frame or more old; the motion test covers what a move or a turn can slide
+  over them, but a building's corner can still cut between four pixel centres: 7 placard-frames in 3,158 shown. The test hides
+  more placards while the eye moves (3,158 shown against 8,505 before) and brings them back once it stops.
+
+Tests: tests/test_pin_fade.py (the state and the cadence under Node against scripted images, 13), tests/test_pin_gate.py (the
+answers against synthetic images and the gate's text, 4), tests/test_cull.py's PinAsync rewritten for drawing apart from
+reading (9), test_occ_flats and test_pace follow the one capture call; tests/pin_gate_gpu.html (new) and
+tests/pin_readback_gpu.html (a read in flight while the next image is drawn) pass on the GPU.
+
+### Round 169, the review (Sep 29)
+
+An independent check of the commit above (its own counter: headless Chrome on the M2's GPU through Metal, phone-sized, the
+page's own frames, every pin layer and the event fixtures on, a ground truth at every drawn frame's exact camera, eight
+scripted scenarios of turns, holds and flights) found the through-building problem almost solved and two faults, and a third
+came out of checking the taps:
+
+- The stop gap. A phone draws an image every 2nd frame while the eye moves, so the eye stops on a frame that drew none as
+  often as not, and the still cadence then waited 10 frames, and only for a change over 30 cm or 0.2 degrees, before drawing
+  the pose the eye rests at: the gate read the image of the step before, and a pin fading in showed through a building's edge
+  for up to 9 frames (0.3 s), the thing Mike described. Our reruns found a 49-frame one: a 10 m/s flight's last step (16 cm)
+  was under the 30 cm, so no image came for the whole hold. Now `pinOccDue` draws one image the first still frame the eye
+  stands anywhere but where the newest image was drawn (the moving test's own centimetre and 1e-9): one image a stop.
+- Blinks, a regression. The half-mile reconcile writes a layer's slots afresh in a new order every 900 ms or 220 m of a flight,
+  and a slot whose tip moved over 30 m was a new arrival: hidden until an image drawn after it said clear, then the fade in.
+  About 300 blinks per eight scenarios on a phone, up to twenty pins at once every 0.8 s of a flight, 153 on a computer, none
+  in Round 168: Round 138's complaint back. Now a new slot first looks for its pin among the frame before's tips (`pinOccCarry`,
+  the nearest within `PIN_CARRY` 30 m, the distance that makes a slot new) and carries its state; only a pin that was nowhere
+  near arrives. The gate still hides a carried pin the frame an image covers it.
+- Taps. While the eye moves the gate reads images a few frames newer than the CPU's, so a pin could stand at half its fade or
+  more while the gate hid it, and `pickPinHit` took the tap: synthetic taps the frame the page drew, over four places while
+  turning, opened the hidden pin's own card 290 times in 290. Now `pinGateShows` reads the gate's images back at the tap
+  (synchronously, once each) and asks what the gate asks. And the ray test for whatever else a tap finds (a marker's post, a
+  plinth, a bus, a dock, a tent, a train, a tree: `pickOccluded`) knows only the core's buildings, so a tap on a Center City
+  building over a hidden marker opened the marker's card, still or moving, in Round 168 too; `pinGateCovers` now refuses a
+  point those images put behind a building, while the newest image is the eye's own (drawn this frame or the one before, or
+  the eye has not moved since: with no pin in view no image is drawn, and an old one says nothing of where the eye is). After:
+  no tap opens the hidden pin's card, and 20 of 366 open any card, each of something standing clear near the tap point (a
+  tree's crown, another marker's post); still, the reviewer's taps give the pin's card on a shown pin and the property card on
+  a hidden one or a building (Round 168 and the commit above gave a hidden Center City marker's card through its building).
+
+Numbers, the reviewer's counter and scenarios (the clock pinned to Sep 26 at 11:00, every layer on; a phone 740 x 360 at 1.25
+with touch, 25 to 28 frames a second under the counter). Pin-frames shown through a building by the design truth:
+
+| Scenario (scene x, z; eye height) | Round 168 | the commit above (two runs) | now (three runs) |
+|---|---|---|---|
+| SH, Society Hill (150, 420), 110 m | 4,161 | 91 / 66 | 82 / 72 / 91 |
+| CC, Center City (-1250, -650), 140 m | 8,801 | 17 / 25 | 28 / 23 / 24 |
+| DW, the Delaware (420, -350), 35 m | 8,585 | 81 / 42 | 55 / 44 / 55 |
+| OC (-200, -150), 50 m | 9,838 | 36 / 54 | 39 / 40 / 30 |
+| FT (600, -1700), 70 m | 1,908 | 36 / 28 | 41 / 28 / 36 |
+| SP, South Philly (-1500, 3800), 90 m | 16 | 2 / 1 | 1 / 1 / 3 |
+| OC street, 20 m/s at 8 m | 9,366 | 4 / 2 | 3 / 3 / 0 |
+| OC walk, 1.5 m/s at 5 m | 10,440 | 0 / 0 | 0 / 2 / 0 |
+| Total | 53,115 | 267 / 218 | 249 / 213 / 239 |
+
+- Every one is a single frame. Of 683 events (a pin through a building on a frame; pins standing at one spot count once), 678
+  fall on a frame a phone draws no image (the gate reads the image of the frame before: a tip within about a pixel of a
+  building's edge), 3 are far tips read through the older complete image, 2 fall on a fresh image (the packed depth's
+  precision at an edge). No event lasts two frames in three runs (the counter's 2 and 3 frame events are pins at one spot
+  counted each on one frame). The placards: 0. A computer, five scenarios twice: 0 and 0 (18,741 in Round 168).
+- Blinks (a shown pin hidden while the truth calls it clear, then shown again): 301 and 293 before (272 and 274 of them slot
+  changes), 49, 26 and 28 now, none a slot change. The rest are far flights, 5 to 9 km off, that the two-image rule (all four
+  of the complete image's pixels round a carried ray) hides at a skyline during a turn for a median 1 or 2 frames: the
+  conservative side, never through a building. A computer: 153 before (all slot changes), 0 and 1 now.
+- Appearing (a phone, to half the fade): from off screen a median 0 to 115 ms and a 90th percentile 118 to 215 ms by scenario
+  (before: 0 to 125 and 144 to 186); from behind a building a median 0 to 482 ms, 90th percentile up to 530 (before: 194 to
+  270, up to 680). Of the pin-frames the truth calls clear, 0.92 to 0.99 are shown (before 0.88 to 0.98; Round 168 0.95 to 1.0).
+- GPU per frame, four phone paths, frames driven one at a time behind a timer query and a one-pixel sync, two runs each
+  interleaved: moving 30.0 / 28.1 ms in Round 168, 29.9 / 29.0 before, 29.2 / 29.4 now; still 30.5 / 28.4, 30.5 / 29.1,
+  29.0 / 30.0; identical runs differ by 2 to 3 ms. The page's CPU while moving 5.1 / 5.1, 6.3 / 5.8, 6.2 / 6.1 ms (the commit
+  above's reads, as the reviewer found); still 4.6 / 4.5, 4.9 / 4.7, 5.1 / 4.6. WebGL memory 870.6, 871.2 and 871.2 MB,
+  `__gpu.mis` empty in all.
+
+Not done: `PIN_OCC_MOVE_EVERY = 1` on a phone (an image every frame while moving) would take away nearly all the single frames
+(the reviewer: 2 pin-frames left, both the fresh-image precision case) for about 1.9 ms more GPU a moving frame on the M2 on
+average (-1.6 to +5.3, noisy), on a phone that is already geometry-bound. The frames it would remove are tips within about one
+image pixel of an edge, the slack the 3 by 3 rule allows every frame anyway (the reviewer: a third of shown pin-frames have a tip
+up to about 7 CSS px inside a building's outline, in Round 168 as now).
+
+Tests: test_pin_fade.py (the stop's image, a 16 cm last step included; a pin that changes slots keeps its state), test_pin_gate.py
+(a tap asks the gate's images; `pinGateCovers` answers only on the eye's own image), test_pins.py (a pin the gate hides never
+takes the tap). 435 tests.
+
+## Round 169 (part) — the Met stands at Broad and Poplar, and build 7 (Sep 29)
+
+- Mike: "Fix the location of the Met on north broad. The map location when searching is wrong. The met is at the south west
+  corner of broad and poplar." The citywide label list (Round 44), which is also what search finds, had 'The Met Philadelphia'
+  at 39.96851, -75.15852, 211 m south of the building; OSM way 335078446 (The Met, addr:housename Metropolitan Opera House)
+  centres at 39.96983, -75.16030, scene (-1326.8, -2693.7). Checking the whole list against landmarks.json's point for each
+  name found seven more: the Divine Lorraine 347 m north of the hotel (beside the Met), the Mann Center 563 m, Freedom
+  Mortgage Pavilion 697 m, Chestnut Hill College 2.2 km, Frankford Arsenal 825 m, Christ Church 80 m, Valley Green Inn 190 m.
+  Each is now its OSM outline centroid. The campuses, the Navy Yard, the Italian Market, Laurel Hill and the airport are
+  areas and keep their hand-set points.
+- VENUE_NAMED pins a Met concert (`/\bthe met\b|metropolitan opera/i`) and a Freedom Mortgage Pavilion one to their buildings:
+  Ticketmaster's point for the Met (39.9701, -75.1591) is across Broad Street, 106 m off.
+- tests/test_landmark_labels.py: every label within 90 m of the basemap's point for its name (400 m for the listed areas),
+  the Met on its outline and south-west of the corner, the Divine Lorraine on its rebuild, the Met regex matching the Met and
+  not the Metropolitan Bakery.
+- Merged r169-pins (the pins never through a building, with the review's fixes) and shipped both as build 7. 438 tests.

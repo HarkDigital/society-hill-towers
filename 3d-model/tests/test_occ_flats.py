@@ -105,10 +105,12 @@ console.log(JSON.stringify({ n: I.length, want: want.length, bad, u16: I instanc
         self.assertIn('(noFlats && o.userData.occFlat)', occ)
         self.assertIn('if (noFlats) for (const m of OCC_ONLY) m.visible = true;', occ)
         self.assertIn('finally { if (noFlats) for (const m of OCC_ONLY) m.visible = false; }', occ)
-        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c, pinOccIssue, occFlatsOff())', s)
-        self.assertIn('occRender(PIN_OCC.rt, PIN_OCC.w, PIN_OCC.h, PIN_OCC.buf, true, c, null, occFlatsOff());', s)   # Round 168: only buildings hide pins (no instanced meshes)
+        # Round 169: one call draws every image of the pins (the near and the complete kinds, read at once or later), over the flats
+        # from high enough (nf = occFlatsOff()) and without the instanced meshes (Round 168: only buildings hide pins)
+        self.assertIn('const s = ch.slots[k], c = pinOccCam(reach), nf = occFlatsOff();', s)
+        self.assertIn('occRender(s.rt, W, H, ch.cpu.buf, true, c, now ? null : pinOccNoRead, nf);', s)
         self.assertIn('occRender(BPICK.rt, 1, 1, BPICK.buf, true);', s)   # the building tap draws everything, as it did
-        self.assertEqual(s.count('occRender('), 4)
+        self.assertEqual(s.count('occRender('), 3)
 
     def test_only_from_an_eye_well_over_the_ground(self):
         block = cut(self.src, '  const OCC_FLAT_EYE = ', '\n  // the city')
