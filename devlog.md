@@ -7787,3 +7787,5 @@ takes the tap). 435 tests.
   Smoother pick seeded natively and `Library/WebKit` deleted, the relaunch restored all three into localStorage, reloaded
   once, built tier 1 with `fails: 0`, and stood with the landmark labels on. The simulator build tool's xcodebuild hung
   reading the CloudStorage checkout; xcodebuild from the shell with a scratch `-derivedDataPath` built it.
+- Build 8 (1.0 (8), `npm run bump`, the page byte for byte in the archive, the Preferences plugin linked, the manifest's
+  UserDefaults entry in the bundle) archived and uploaded through app/ios/UploadOptions.plist: "Upload succeeded".
