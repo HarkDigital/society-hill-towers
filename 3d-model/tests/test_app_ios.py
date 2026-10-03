@@ -4,7 +4,7 @@ The Capacitor project in ../app: the app runs in landscape only (the page's rota
 small iPad), and so full screen on an iPad (App Store validation wants every orientation or UIRequiresFullScreen); export
 compliance is answered in the plist (HTTPS only, exempt); the device requirement is arm64, not the template's armv7; the
 app target ships its own privacy manifest (no tracking, the load beacon's performance and diagnostic data, not linked,
-for app functionality; no required-reason APIs) and the project really copies it; the launch screen has no white frame;
+for app functionality; since Round 170 one required-reason API, UserDefaults for @capacitor/preferences, reason CA92.1) and the project really copies it; the launch screen has no white frame;
 the asset catalog holds no stray files; the geolocation plugin is installed and registered, so iOS asks once, and the
 page takes the fix from it inside the app; the build number has a one-command bump."""
 import json
@@ -50,7 +50,7 @@ class AppIos(unittest.TestCase):
         pm = plistlib.loads((IOS / 'App' / 'PrivacyInfo.xcprivacy').read_bytes())
         self.assertIs(pm['NSPrivacyTracking'], False)
         self.assertEqual(pm['NSPrivacyTrackingDomains'], [])
-        self.assertEqual(pm['NSPrivacyAccessedAPITypes'], [])
+        self.assertEqual(pm['NSPrivacyAccessedAPITypes'], [{'NSPrivacyAccessedAPIType': 'NSPrivacyAccessedAPICategoryUserDefaults', 'NSPrivacyAccessedAPITypeReasons': ['CA92.1']}])   # Round 170: @capacitor/preferences
         kinds = {d['NSPrivacyCollectedDataType']: d for d in pm['NSPrivacyCollectedDataTypes']}
         self.assertEqual(set(kinds), {'NSPrivacyCollectedDataTypePerformanceData', 'NSPrivacyCollectedDataTypeOtherDiagnosticData'})
         for d in kinds.values():

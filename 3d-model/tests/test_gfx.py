@@ -67,7 +67,7 @@ class Gfx(unittest.TestCase):
     def test_the_pick_is_the_devices_own(self):
         s = self.src
         self.assertIn("const GFX_KEY = 'philly3d.gfx', GFX_PICKS = ['smoother', 'auto', 'sharper'];", s)
-        self.assertIn("localStorage.setItem(GFX_KEY, JSON.stringify({ pick: GFX.pick, t: Date.now() }))", s)
+        self.assertIn("keepSet(GFX_KEY, JSON.stringify({ pick: GFX.pick, t: Date.now() }))", s)
         reset = cut(s, "  document.getElementById('btnResetLayers').addEventListener('click', () => {", '\n  });\n')
         for w in ('GFX', 'gfx'):
             self.assertNotIn(w, reset, 'Reset Layers leaves the Graphics choice alone')

@@ -15,7 +15,8 @@
     "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.5.2",
     "@capacitor/geolocation": "^8.2.2",
-    "@capacitor/ios": "^8.5.2"
+    "@capacitor/ios": "^8.5.2",
+    "@capacitor/preferences": "^8.0.1"
   },
   "devDependencies": {
     "@capacitor/cli": "^8.5.2"

@@ -21,29 +21,30 @@ def cut(src, start, end, inclusive=False):
     return src[i:j + (len(end) if inclusive else 0)]
 
 
-# the boot block runs under Node, one call one load, over one shared localStorage. Round 168: the block starts with the
-# Graphics choice (GFX, gfxSet), which the tier reads; tests/test_gfx.py loads through the same harness
-BOOT_START, BOOT_END = '  // ---- the Graphics choice (Round 168', '  // the installable app:'
+# the boot block runs under Node, one call one load, over one shared localStorage. Round 168: the block holds the
+# Graphics choice (GFX, gfxSet), which the tier reads; tests/test_gfx.py loads through the same harness. Round 170: the app's
+# native copy of the kept keys (KEPT, keepSet, keepRemove) opens the block; tests/test_kept.py drives it with a fake plugin
+BOOT_START, BOOT_END = "  // ---- the app's own copy of the person's choices (Round 170", '  // the installable app:'
 HARNESS = r"""
 const store = new Map(), sess = new Map();
 const mkStore = (m) => ({ getItem: (k) => (m.has(k) ? m.get(k) : null), setItem: (k, v) => { m.set(k, String(v)); }, removeItem: (k) => { m.delete(k); } });
 const LS = mkStore(store), SS = mkStore(sess);
-const LOAD = new Function('isTouch', 'location', 'localStorage', 'sessionStorage', 'window', 'PERF', 'document', 'performance', 'canvas', 'beacon', 'reloads',
+const LOAD = new Function('IN_APP', 'isTouch', 'location', 'localStorage', 'sessionStorage', 'window', 'PERF', 'document', 'performance', 'canvas', 'beacon', 'reloads',
   BOOT + `
   let shownAt = -1e9;
   let glDead = false;
 ` + CTX + `
   return { TIER, LITE, TIER2, LITE_R, LITE_WHY, BOOT_GATE, bootDied, bootStick, bootFails, bootMark, bootClear, dead: () => glDead,
-    GFX, gfxSet, gfxTierFor, tierAuto, tierSoft, tierClimb };`);
+    GFX, gfxSet, gfxTierFor, tierAuto, tierSoft, tierClimb, KEPT, keepSet, keepRemove };`);
 function load(o) {
   o = o || {};
-  const listeners = {}, win = { addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); }, removeEventListener: (t, f) => { listeners[t] = (listeners[t] || []).filter((g) => g !== f); } };
+  const listeners = {}, win = { Capacitor: o.cap, addEventListener: (t, f) => { (listeners[t] = listeners[t] || []).push(f); }, removeEventListener: (t, f) => { listeners[t] = (listeners[t] || []).filter((g) => g !== f); } };
   let lost = null; const beacons = [], reloads = [];
   const docL = [];
   const doc = { visibilityState: o.hidden ? 'hidden' : 'visible', addEventListener: (t, f) => docL.push(f), removeEventListener: (t, f) => { const i = docL.indexOf(f); if (i >= 0) docL.splice(i, 1); }, getElementById: () => ({ style: {}, firstElementChild: {} }) };
   const perf = { now: () => (o.now == null ? 60000 : o.now) };
   const cv = { addEventListener: (t, f) => { if (t === 'webglcontextlost') lost = f; } };
-  const S = LOAD(o.touch !== false, { search: o.search || '', reload: () => reloads.push(1) }, LS, SS, win, o.perf || {}, doc, perf, cv, (st, x) => beacons.push([st, x]), reloads);
+  const S = LOAD(!!o.app, o.touch !== false, { search: o.search || '', reload: () => reloads.push(1) }, LS, SS, win, o.perf || {}, doc, perf, cv, (st, x) => beacons.push([st, x]), reloads);
   S.listeners = listeners; S.beacons = beacons; S.reloads = reloads;
   S.lose = () => lost({ preventDefault() {} });
   S.show = () => { doc.visibilityState = 'visible'; for (const f of docL.slice()) f(); };

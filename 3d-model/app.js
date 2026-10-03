@@ -161,6 +161,66 @@
   });
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const isTouch = window.matchMedia('(pointer: coarse)').matches || IN_APP;
+  // ---- the app's own copy of the person's choices (Round 170, Mike: use Capacitor Preferences for the app builds). iOS may
+  // clear a web view's data when the phone runs short of space; @capacitor/preferences (UserDefaults on iOS, SharedPreferences
+  // on Android; the bridge injects it as Capacitor.Plugins.Preferences, as it does the geolocation plugin) it does not.
+  // localStorage stays the working copy every read takes, synchronously, as on the site, and inside the app each write of a
+  // KEPT key goes to both (keepSet, keepRemove). At launch the two are reconciled once: a key the native store holds that
+  // localStorage lost is written back, and when it shapes the load (the layers, the Graphics pick, the hidden events; not the
+  // guide, read only at the first Enter) the page reloads once a tab to read it, but only while the city is still building
+  // (PERF.ready); a key localStorage holds that the native store lacks or holds differently is copied over (the first launch
+  // of this build). Until the reconcile lands a write reaches localStorage alone and is copied after, so a default written
+  // before the saved value arrived never overwrites it. The crash tiers and the boot breadcrumb stay in localStorage alone:
+  // they are written at every build step, synchronously, and a bridge call is neither. The block stands before the Graphics
+  // choice because gfxSave can run during the boot (a death in Sharper's build). `__dbg.kept()`
+  const KEPT_KEYS = ['philly3d.prefs', 'philly3d.gfx', 'philly3d.hiddenEvents', 'philly3d.guide'];
+  const KEPT_RELOAD = new Set(['philly3d.prefs', 'philly3d.gfx', 'philly3d.hiddenEvents']);
+  const KEPT = { on: false, ready: false, pending: new Set(), restored: [], copied: [], reloaded: false, failed: 0 };
+  const appPrefs = () => { const C = IN_APP && window.Capacitor; return (C && C.Plugins && C.Plugins.Preferences) || null; };
+  function keepNative(k, v) {   // v null removes; a failure is counted, never thrown (the working copy has it)
+    const P = appPrefs();
+    if (!P || KEPT_KEYS.indexOf(k) < 0) return;
+    if (!KEPT.ready) { KEPT.pending.add(k); return; }
+    try { Promise.resolve(v === null ? P.remove({ key: k }) : P.set({ key: k, value: v })).catch(() => { KEPT.failed++; }); } catch (e) { KEPT.failed++; }
+  }
+  function keepSet(k, v) { keepNative(k, v); localStorage.setItem(k, v); }   // localStorage throws as it always did (private mode): the caller's catch
+  function keepRemove(k) { keepNative(k, null); localStorage.removeItem(k); }
+  {
+    const P = appPrefs();
+    KEPT.on = !!P;
+    if (!P) KEPT.ready = true;
+    else {
+      const local = (k) => { try { return localStorage.getItem(k); } catch (e) { return null; } };
+      const atLoad = KEPT_KEYS.map(local);   // before anything this load writes
+      Promise.all(KEPT_KEYS.map((k) => {
+        try { return Promise.resolve(P.get({ key: k })).then((r) => (r && typeof r.value === 'string' ? r.value : null), () => undefined); } catch (e) { return undefined; }
+      })).then((vals) => {
+        let reload = false;
+        KEPT_KEYS.forEach((k, i) => {
+          const nv = vals[i];
+          if (nv === undefined) { KEPT.failed++; return; }   // that read failed: the native copy is left alone, the pending write still goes
+          if (atLoad[i] === null && nv !== null) {
+            try { localStorage.setItem(k, nv); } catch (e) { return; }
+            KEPT.restored.push(k);
+            KEPT.pending.delete(k);   // whatever this load wrote before now came from the defaults
+            if (KEPT_RELOAD.has(k)) reload = true;
+          } else if (atLoad[i] !== null && atLoad[i] !== nv) { KEPT.pending.add(k); KEPT.copied.push(k); }
+        });
+        let once = false;
+        try { once = sessionStorage.getItem('philly3d.keptback') === '1'; } catch (e) { once = true; }
+        if (reload && !once && !PERF.ready) {
+          try { sessionStorage.setItem('philly3d.keptback', '1'); } catch (e) { /* no reload loop: once is unset only where it can be set */ }
+          KEPT.reloaded = true;
+          bootClear();   // a reload is no death
+          location.reload();
+          return;
+        }
+        KEPT.ready = true;
+        for (const k of KEPT.pending) keepNative(k, local(k));
+        KEPT.pending.clear();
+      }, () => { KEPT.ready = true; KEPT.failed++; });
+    }
+  }
   // ---- the Graphics choice (Round 168, Mike: up the visuals and the performance on his iPhone). One setting per device,
   // three words in a strip at the top of the Layers panel: Smoother (the lighter city on a phone), Auto (the default: the
   // crash rules below choose the city) and Sharper (the full city on a phone, whatever a crash saved). It is kept in its own
@@ -180,7 +240,7 @@
   })();
   function gfxSave() {
     if (GFX.pinned) return;
-    try { localStorage.setItem(GFX_KEY, JSON.stringify({ pick: GFX.pick, t: Date.now() })); } catch (e) { /* private mode: the pick lasts the session */ }
+    try { keepSet(GFX_KEY, JSON.stringify({ pick: GFX.pick, t: Date.now() })); } catch (e) { /* private mode: the pick lasts the session */ }
   }
   function gfxSet(pick) {
     if (GFX_PICKS.indexOf(pick) < 0 || pick === GFX.pick) return false;
@@ -14084,7 +14144,7 @@
     GUIDE.open = false;
     guideEl.classList.remove('show');
     try { guideEl.inert = true; } catch (e) { }
-    try { localStorage.setItem(GUIDE_KEY, '1'); } catch (e) { }
+    try { keepSet(GUIDE_KEY, '1'); } catch (e) { }
     if (btnHelp) btnHelp.setAttribute('aria-expanded', 'false');
     if (document.activeElement && guideEl.contains(document.activeElement)) document.activeElement.blur();
   }
@@ -14303,14 +14363,14 @@
     // layer flags only: the clock is never remembered (Mike: every load is the exact time
     // in Philadelphia), and only a copied link carries a pinned clock
     const o = layerFlags();
-    try { localStorage.setItem(PREFS_KEY, JSON.stringify(o)); } catch (e) { }
+    try { keepSet(PREFS_KEY, JSON.stringify(o)); } catch (e) { }
   }
   function loadPrefs() {
     try { const s = localStorage.getItem(PREFS_KEY); return s ? JSON.parse(s) : null; } catch (e) { return null; }
   }
   function clearPrefs() {
     clearTimeout(prefsTimer);
-    try { localStorage.removeItem(PREFS_KEY); } catch (e) { }
+    try { keepRemove(PREFS_KEY); } catch (e) { }
   }
   function applyClock(y, m, d, minutes) {
     if (!(y >= 1900 && y <= 2200 && m >= 1 && m <= 12 && d >= 1 && d <= 31 && minutes >= 0 && minutes <= 1439)) return false;
@@ -16072,7 +16132,7 @@ float pinOccGate() {
       return out;
     } catch (e) { return {}; }
   })();
-  function hiddenEvSave() { try { localStorage.setItem(HIDDEN_EV_KEY, JSON.stringify(hiddenEv)); } catch (e) { /* private mode: this session only */ } }
+  function hiddenEvSave() { try { keepSet(HIDDEN_EV_KEY, JSON.stringify(hiddenEv)); } catch (e) { /* private mode: this session only */ } }
   const evHidden = (ids) => ids.length > 0 && ids.every((id) => hiddenEv[id] > Date.now());
   const EVENT_TAP_R = 60;   // m from a placard's spot: its hall (the placards stand on the building's own centroid)
   const EVENT_X = '<button type="button" class="lx" aria-label="Hide this until you tap its building">×</button>';
@@ -24511,7 +24571,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { bootCtx, paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

@@ -7764,3 +7764,26 @@ takes the tap). 435 tests.
   the Met on its outline and south-west of the corner, the Divine Lorraine on its rebuild, the Met regex matching the Met and
   not the Metropolitan Bakery.
 - Merged r169-pins (the pins never through a building, with the review's fixes) and shipped both as build 7. 438 tests.
+
+## Round 170 — the app keeps the person's choices natively (Oct 3)
+
+- Mike: "use Capacitor Preferences for the app builds." iOS may clear a web view's data when the phone runs short of space,
+  and the layers (`philly3d.prefs`), the Graphics pick (`philly3d.gfx`), the dismissed events (`philly3d.hiddenEvents`) and
+  the guide's seen mark (`philly3d.guide`) lived only in localStorage. `@capacitor/preferences` 8.0.1 is in `app/` (UserDefaults
+  on iOS, SharedPreferences on Android), and the page reaches it as `Capacitor.Plugins.Preferences`, as it does geolocation.
+- localStorage stays the working copy every read takes, synchronously; inside the app those four keys write through
+  `keepSet` / `keepRemove` to both. Each launch reconciles once: a key the native store holds that localStorage lost is
+  written back, with one reload a tab (`sessionStorage philly3d.keptback`) while the city is still building (`PERF.ready`)
+  when it shapes the load (not the guide, read only at the first Enter); a key localStorage holds differently is copied over
+  (the first launch of this build). Writes before the reconcile reach localStorage only and are copied after, so a default
+  written into a cleared web view never overwrites the saved value. The reload clears the breadcrumb first, so it is no
+  death. The crash tiers and the breadcrumb stay in localStorage alone (written every build step, synchronously). The block
+  stands before the Graphics choice: gfxSave runs during the boot after a death in Sharper's build, and KEPT in its TDZ
+  there made the first draft's gfxSave throw into its own catch and save nothing (the boot harness caught it).
+- iOS privacy manifest: UserDefaults is a required-reason API, declared with CA92.1 (the plugin ships no manifest of its own).
+- tests/test_kept.py (10 tests, the boot block under Node with a fake async plugin); test_recovery's harness takes
+  `IN_APP` and `window.Capacitor` and starts at the new block. 448 tests.
+- In the iOS Simulator (iPhone 17, iOS 27): the first launch copied the guide mark into UserDefaults; with prefs and a
+  Smoother pick seeded natively and `Library/WebKit` deleted, the relaunch restored all three into localStorage, reloaded
+  once, built tier 1 with `fails: 0`, and stood with the landmark labels on. The simulator build tool's xcodebuild hung
+  reading the CloudStorage checkout; xcodebuild from the shell with a scratch `-derivedDataPath` built it.

@@ -13,6 +13,9 @@ and from there into both native projects. The page's build stays plain Python wi
   `https://philly3d.com/` links, runs ships from the relay only, sends its load beacons to philly3d.com, and registers
   no service worker.
 - Hides the screenshot button where the web view has no share sheet (Android's).
+- Keeps the layers, the Graphics pick, the dismissed events and the guide's seen mark in `@capacitor/preferences` as well as
+  localStorage (Round 170, `keepSet` in app.js): iOS may clear a web view's data under storage pressure, and a launch that
+  finds them gone writes them back and reloads once.
 - Recovers from memory trouble: a lost WebGL context reloads the page (lite only for a loss in front), and a kill during
   use leaves a breadcrumb so the next load builds the lighter city.
 
@@ -26,7 +29,7 @@ and from there into both native projects. The page's build stays plain Python wi
   validation wants every iPad orientation otherwise), `ITSAppUsesNonExemptEncryption` false (HTTPS only, exempt, so
   App Store Connect asks nothing about encryption), `arm64` in place of the template's `armv7`, the app target's own
   `PrivacyInfo.xcprivacy` (no tracking; the load beacon's Performance Data and Other Diagnostic Data, not linked, for app
-  functionality; no required-reason APIs), a launch screen in the splash's own ink (no white frame), and the locate
+  functionality; one required-reason API since Round 170, UserDefaults for the Preferences plugin, reason CA92.1), a launch screen in the splash's own ink (no white frame), and the locate
   button through `@capacitor/geolocation` (the page calls `Capacitor.Plugins.Geolocation` inside the app), so iOS asks
   for location once, in its own prompt, where the web view used to ask a second time naming "localhost".
 - **Android**: Capacitor's default answer to a killed renderer is to crash the app, so

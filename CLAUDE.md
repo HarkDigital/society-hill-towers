@@ -23,6 +23,9 @@ The iOS and Android apps are `app/` (Capacitor 8, Round 156; `IN_APP` in app.js 
 `cd app && npm run sync` puts it in both apps; `npm run bump` before each store upload; `app/README.md` has the
 TestFlight steps (Round 163: landscape only, the privacy manifest, one location prompt through `@capacitor/geolocation`).
 The app signs automatically as Mike's team, QuincySoft LLC (`DEVELOPMENT_TEAM` 72U2ZL3GVM, never the Personal Team).
+Since Round 170 the app keeps the person's choices (`philly3d.prefs`, `.gfx`, `.hiddenEvents`, `.guide`) in `@capacitor/preferences`
+too: write them only through `keepSet` / `keepRemove`, never `localStorage.setItem` (`tests/test_kept.py`); localStorage stays the
+working copy, and a launch that finds it cleared writes the native copy back and reloads once while the city builds.
 
 ## Commands
 
