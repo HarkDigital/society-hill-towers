@@ -13578,6 +13578,15 @@
     );
   }
 
+  // Round 172 (Mike, from the app: movement is very sluggish): a phone has no scroll wheel to raise fly.speed, so it flew at
+  // 90 m/s (216 at full stick) at every height, and from 500 m up the city crawled past. On touch the speed now scales with
+  // the height over the ground: unchanged up to FLY_ALT_REF, then in proportion, up to FLY_ALT_MAX times at 480 m and over
+  const FLY_ALT_REF = 80, FLY_ALT_MAX = 6;
+  function flyAltK() {
+    if (!isTouch) return 1;
+    const g = Math.max(siteY(fly.pos.x, fly.pos.z, 'ground'), TERRAIN.water);
+    return clamp((fly.pos.y - g) / FLY_ALT_REF, 1, FLY_ALT_MAX);
+  }
   function applyFly(dt) {
     const boost = walk.keys['shift'] ? 3.2 : 1;
     const cp0 = Math.cos(walk.pitch);
@@ -13595,7 +13604,7 @@
       // on touch the stick doubles as the throttle: past the ring it pushes to
       // ~2.4x cruise, so mobile can actually cross the city (no scroll wheel)
       const jm = joy.active ? Math.max(0.3, Math.min(2.4, Math.hypot(joy.x, joy.y))) : 1;
-      wish.normalize().multiplyScalar(fly.speed * boost * jm);
+      wish.normalize().multiplyScalar(fly.speed * boost * jm * flyAltK());
       fly.vel.lerp(wish, 1 - Math.exp(-dt * 6));
     } else {
       fly.vel.multiplyScalar(Math.exp(-dt * 5));

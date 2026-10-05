@@ -7797,3 +7797,14 @@ takes the tap). 435 tests.
   facts, the button and the progress below as before. Their now-unused rules went from style.css (the veil's kicker in all
   four places, `#veil h2 span` in both). The brand's tag at the top left ("A city in motion") and the page title stay.
   Checked in the pane at 800x600 and at a landscape phone's 844x390. 448 tests.
+
+## Round 172 — a phone flies faster the higher it is (Oct 5)
+
+- Mike, from the app: "Movement in the app is very sluggish." Two things in the evidence. The phone perf beacons (Sep 23 to
+  Oct 1, app and site) run 29 to 79 ms a frame median at 4.0 to 10.7 M triangles and 200 to 524 calls, with the paced app's
+  JS only 5 to 9 ms of it (`jp`): the phones are held by the GPU, which is a round of its own. And the controls: a desktop
+  raises `fly.speed` with the wheel (10 to 500 m/s), a phone has no wheel, so it flew at 90 m/s (216 at full stick) at every
+  height, and from 500 m up the city crawled past.
+- On touch `applyFly` now scales the speed with the height over the ground (`flyAltK`): unchanged up to `FLY_ALT_REF` 80 m,
+  then in proportion, capped at `FLY_ALT_MAX` 6 times from 480 m. Measured in the pane at a phone's size: 90 m/s at 30 m,
+  132 at 120, 331 at 300, 540 at 900 (before the stick's throttle). The desktop is unchanged. 448 tests.
