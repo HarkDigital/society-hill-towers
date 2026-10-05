@@ -324,14 +324,6 @@ html, body {
   margin: 0 auto 14px;
   fill: var(--bronze);
 }
-#veil .kicker {
-  font-family: var(--mono);
-  font-size: 10px;
-  letter-spacing: 0.3em;
-  text-transform: uppercase;
-  color: var(--bronze);
-  margin-bottom: 18px;
-}
 #veil h2 {
   font-family: var(--display);
   font-weight: 600;
@@ -984,7 +976,7 @@ body.touchfly .pad { display: flex; }
 }
 
 /* ---------- Montserrat role weights (one family, hierarchy by weight) ---------- */
-#timepanel .kicker, #searchpanel .kicker, #layerspanel .kicker, #veil .kicker, #about .kicker { font-weight: 600; }
+#timepanel .kicker, #searchpanel .kicker, #layerspanel .kicker, #about .kicker { font-weight: 600; }
 #hint, #veil .loading { font-weight: 500; }
 #timepanel .readout { font-size: 10.5px; letter-spacing: 0.02em; flex-wrap: wrap; gap: 2px 10px; }
 #timepanel .readout span { white-space: nowrap; }
@@ -1013,7 +1005,6 @@ body.touchfly .pad { display: flex; }
   #veil { overflow-y: auto; align-items: center; }   /* centred on a landscape phone (Round 69, Mike); the card's auto margins keep it scrollable when taller than the screen */
   #veil .card { padding: 12px 24px 16px; margin: auto; }
   #veil .veilmark { width: 34px; height: 34px; margin-bottom: 6px; }
-  #veil .kicker { margin-bottom: 8px; }
   #veil h2 { font-size: clamp(20px, 5vh, 28px); }
   #veil .sub { display: none; }
   #veil .enter { margin-top: 14px; padding: 11px 26px 10px; }
@@ -1221,9 +1212,7 @@ button { -webkit-tap-highlight-color: transparent; }
 #veil { background: radial-gradient(ellipse at 50% 40%, rgba(21,29,34,0.76), rgba(15,22,27,0.97)); }
 #veil .card { max-width: 790px; padding: 36px; }
 #veil .veilmark { width: 66px; height: 66px; margin-bottom: 22px; }
-#veil .kicker { letter-spacing: 0.23em; font-size: 10px; margin-bottom: 21px; text-transform: none; }
 #veil h2 { font-size: clamp(38px, 6.5vw, 76px); font-weight: 550; letter-spacing: -0.055em; text-transform: none; line-height: 1.08; }
-#veil h2 span { display: block; color: var(--bronze); font-weight: 450; font-size: 0.68em; letter-spacing: -0.045em; margin-top: 8px; }
 #veil .sub { max-width: 445px; margin: 23px auto 0; font-size: 13px; line-height: 1.8; color: #c1c5c3; }
 .welcomefacts { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px 22px; margin-top: 24px; color: var(--paper-faint); font-size: 9px; }
 .welcomefacts span { display: flex; align-items: center; gap: 7px; }
@@ -1334,9 +1323,7 @@ button { -webkit-tap-highlight-color: transparent; }
   #searchpanel, #layerspanel, #timepanel, #sharepanel { top: calc(70px + env(safe-area-inset-top, 0px)); max-height: calc(100dvh - 82px - env(safe-area-inset-top, 0px)); padding: 16px; }
   #veil .card { padding: 16px 24px; margin: auto; }
   #veil .veilmark { width: 30px; height: 30px; margin-bottom: 8px; }
-  #veil .kicker { margin-bottom: 10px; font-size: 8px; }
   #veil h2 { font-size: 36px; }
-  #veil h2 span { display: inline; font-size: 0.7em; margin-left: 10px; }
   #veil .sub, .welcomehint { display: none; }
   .welcomefacts { margin-top: 17px; }
   #veil .enter { margin-top: 18px; padding: 13px 24px; }

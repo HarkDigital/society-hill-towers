@@ -7789,3 +7789,11 @@ takes the tap). 435 tests.
   reading the CloudStorage checkout; xcodebuild from the shell with a scratch `-derivedDataPath` built it.
 - Build 8 (1.0 (8), `npm run bump`, the page byte for byte in the archive, the Preferences plugin linked, the manifest's
   UserDefaults entry in the bundle) archived and uploaded through app/ios/UploadOptions.plist: "Upload succeeded".
+
+## Round 171 — the loading screen is just Philadelphia (Oct 5)
+
+- Mike: "Remove the Data in motion and a living city from the loading screen." The veil's kicker ("Philly3D / A Living
+  City") and the heading's second line ("Data In Motion") are gone; the heading reads Philadelphia under the mark, with the
+  facts, the button and the progress below as before. Their now-unused rules went from style.css (the veil's kicker in all
+  four places, `#veil h2 span` in both). The brand's tag at the top left ("A city in motion") and the page title stay.
+  Checked in the pane at 800x600 and at a landscape phone's 844x390. 448 tests.
