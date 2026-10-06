@@ -7808,3 +7808,5 @@ takes the tap). 435 tests.
 - On touch `applyFly` now scales the speed with the height over the ground (`flyAltK`): unchanged up to `FLY_ALT_REF` 80 m,
   then in proportion, capped at `FLY_ALT_MAX` 6 times from 480 m. Measured in the pane at a phone's size: 90 m/s at 30 m,
   132 at 120, 331 at 300, 540 at 900 (before the stick's throttle). The desktop is unchanged. 448 tests.
+- Build 9 (1.0 (9), `npm run bump`, the page byte for byte in the archive: Rounds 171 and 172) uploaded through
+  app/ios/UploadOptions.plist: "Upload succeeded".
