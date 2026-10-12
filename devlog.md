@@ -7819,3 +7819,23 @@ takes the tap). 435 tests.
   its own ship id, which AIS does not carry. `shipLink` now opens VesselFinder's `/vessels/details/<MMSI>`, which takes the
   MMSI itself: the Freedom's 368417620 opened "MV FREEDOM", position two minutes old. The ships' cards and the ferry's
   share it. `tests/test_ship_link.py` keeps marinetraffic.com out of the page. 451 tests.
+
+## Round 174 — Society Hill's roofs match the city round it (Oct 12)
+
+- Mike, with a screenshot over Old City looking south: "there appears to be a distinct cutoff where there is no roof
+  hardware on buildings in society hill", then "those buildings all appear to stand out from the rest color wise". Both
+  are the core's edge (`CORE_EXT`, x -640 to 770, z -520 to 850). Round 150's hardware is laid from `ROOF_KIT` notes, and
+  only the packed tiers' loops called `roofClutter`; 'Raising 2,800 buildings' never did, so the condensers, hatches and
+  vents stopped at Market Street. The core's flat roofs now take the tiers' clutter and note (in world space after the
+  lift, the clutter's tier colours pulled back by `FACADE_GAIN / CORE_FACADE_GAIN`): 5,001 pieces laid with the eye over
+  Society Hill.
+- The colour: measured with only the two fabric materials drawn (the fabric meshes and the lights on a spare layer, the
+  camera on it alone), the walls matched across the edge (116 against 117 displayed, saturation 0.18 both) but the roofs
+  did not: 101 to 110 against 86 to 88, saturation 0.13 to 0.15 against 0.17 to 0.21, straight down over the west and north
+  edges. Round 52 coda gave the core its own gains (then 0.42 / 0.28, Round 53's 0.52 / 0.34) against a dark wall gap; the
+  tiers' colours were reworked many times since and the roof gain was left high. Both tiers' roofs are `ROOF_PAL` entries,
+  so the core's roofs now render at the tiers' own gain and saturation (`CORE_ROOF_GAIN = ROOF_GAIN`, `CORE_ROOF_SAT` 1.2
+  through a roof-only term in `facadeHook`): 87 / 88 at the west edge, 81 / 86 at the north. The south edge's 91 / 73 is
+  Queen Village's darker sampled roofs, not the tiers (an empirical 0.20 and 1.45 matched the west and north closer and
+  left the three edges further apart on average, +8 against +4). Before and after at both edges in the pane.
+  `tests/test_core_roofs.py`. 453 tests.

@@ -11738,6 +11738,7 @@ RB.add({
         const r2 = hEff / b.fa[3];
         if (r2 >= 2.2 && r2 <= 5.2) flhV = Math.min(4.6, r2);
       }
+      let flatTop = 0;   // a flat roof's height, for its rooftop hardware below
       try {
         if (quad) {
           let eaveH, ridgeTop, rrad = null;
@@ -11789,6 +11790,7 @@ RB.add({
           // floating slope (the session's roof rule)
           const hFlat = (mr && mForm > 0) ? Math.max(3, mr[1] + 0.35 * (mr[2] - mr[1])) : b.h;
           parts.push({ geom: buildingGeom(b.poly, b.holes, hFlat, b.minH ? b.minH : -1.5), color, style, flh: flhV });
+          if (!b.minH && hFlat < 60) flatTop = hFlat;
           // sampled roof color as a thin overlay cap. It must clear the cornice
           // SLAB (a solid extrusion to hFlat+0.06 whose cream top used to play
           // "roof" on every rowhouse) - 9 cm up, deterministic, never coplanar;
@@ -11814,6 +11816,17 @@ RB.add({
         const [lx, lz] = polyCentroid(b.poly);
         const ty = siteY(lx, lz, 'ground');
         if (ty) for (let k = p0; k < parts.length; k++) { parts[k].geom.translate(0, ty, 0); parts[k].baseY = ty; }
+        // Oct 12 (Mike, over Old City: "a distinct cutoff where there is no roof hardware on buildings in society hill"):
+        // the core's flat roofs take the packed tiers' clutter and their ROOF_KIT note, so the instanced hardware runs on
+        // across the core's edge. Laid in world space after the lift; the clutter's colours are the tiers' own, pulled
+        // back by the gain the core's material adds over the tiers'
+        if (flatTop) {
+          const kG = FACADE_GAIN / CORE_FACADE_GAIN;
+          roofClutter((pg, y0, y1, hex, st2, holes) => {
+            const g = extrudePoly(pg, holes, y1, y0);
+            parts.push({ geom: g, color: new THREE.Color(hex).multiplyScalar(kG), style: st2, baseY: ty || 0 });
+          }, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false);   // the wall in the tiers' register: its darkened lip comes back to the core's
+        }
       }
       registerPoly(b.poly);
       for (let k = 0; k < b.poly.length; k++) {
@@ -11901,8 +11914,15 @@ RB.add({
   // the core's own pair: Society Hill's brick palette and sampled roofs sit a fifth darker and
   // redder than the outer districts' photo-sampled walls, and at one gain the core stood out as a
   // dark block from any height (Mike: jarring), so it takes a higher gain and a milder saturation
-  // boost (1.0 against the tiers' 1.2) on a material of its own
-  const CORE_FACADE_GAIN = 0.52, CORE_ROOF_GAIN = 0.34;
+  // boost (1.0 against the tiers' 1.2) on a material of its own. Oct 12 (Mike, over Old City: Society Hill's buildings
+  // "all appear to stand out from the rest color wise"): the walls still matched across the core's edge (116 against
+  // 117 displayed, saturation 0.18 both, buildings alone, a level view along x = -640), but the roofs had drifted pale
+  // and grey as the tiers' colours were reworked after Round 52 (101 to 110 against 86 to 88, saturation 0.13 to 0.15
+  // against 0.17 to 0.21, straight down over the west and north edges). Both tiers' roofs are ROOF_PAL entries, so the
+  // core's roofs now take the tiers' own gain and saturation and a sampled roof renders the same on either side: 87 / 88
+  // at the west edge, 81 / 86 at the north; the south edge's 91 / 73 is Queen Village's darker sampled roofs, not the
+  // tiers (an empirical 0.20 and 1.45 matched the west and north but left the three edges further apart on average)
+  const CORE_FACADE_GAIN = 0.52, CORE_ROOF_GAIN = ROOF_GAIN, CORE_ROOF_SAT = 1.2;
   // Shared, facade-local room illumination. No extra lights, textures, draw calls,
   // or time-dependent randomness: occupancy belongs to rooms / office suites.
   const WINDOW_INTERIOR_GLSL = `
@@ -12155,7 +12175,7 @@ RB.add({
   if (VDEPTH_WANT) vdepthTwin(cityMat);   // made now, so it sorts beside its original
   let coreMat = null;   // the core's fabric: the same shader at the core's gains (set with the hook below)
   {
-    const facadeHook = (gW, gR, sat) => (shader) => {
+    const facadeHook = (gW, gR, sat, satR) => (shader) => {
       shader.uniforms.uSunW = sunWUniform;
       shader.uniforms.uNight = nightUniform;
       shader.uniforms.uDetFar = detFarUniform;
@@ -12201,6 +12221,7 @@ RB.add({
           '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, ' + sat.toFixed(2) + ');',
           '  vec3 n = normalize(vWNorm);',
           '  diffuseColor.rgb *= mix(' + gW.toFixed(2) + ', ' + gR.toFixed(2) + ', step(0.7, n.y));',
+          satR ? '  diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, ' + satR.toFixed(2) + '), step(0.7, n.y));' : '',
           '  float stF = vStyle + 0.5;',
           '  float variantF = floor(stF / 32.0);',
           '  int st = int(stF - variantF * 32.0);',
@@ -12731,7 +12752,7 @@ RB.add({
     cityMat.customProgramCacheKey = () => 'fabric';   // the two hooks share one source: keyed by hand (gotcha 15)
     coreMat = cityMat.clone();   // r149's clone drops the hook; assigned fresh
     if (VDEPTH_WANT) vdepthTwin(coreMat);   // Round 168: beside its original in the draw order
-    coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0);
+    coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0, CORE_ROOF_SAT);
     coreMat.customProgramCacheKey = () => 'fabric-core';
   }
 
