@@ -96,6 +96,37 @@ console.log(JSON.stringify({
         self.assertEqual(o['dec31Elm'][:2], ['winter', 'winter'])
 
 
+class Atlas(unittest.TestCase):
+    """Round 184's ten looks ran past the foot of an atlas laid out six cells a row for 18, and those trees (the broadleaf
+    among them) drew as striped boxes: every look's two cells must lie on the canvas, on a computer and on a phone."""
+
+    @unittest.skipUnless(shutil.which('node'), 'node is not installed')
+    def test_every_look_fits(self):
+        s = (ROOT / 'app.js').read_text()
+        d = json.loads((ROOT / 'tree_art.json').read_text())
+        js = ('const THREE = { CanvasTexture: function (c) { this.image = c; } };\n'
+              'const renderer = { capabilities: { getMaxAnisotropy: () => 8 } };\n'
+              'const document = { createElement: () => ({ getContext: () => ({}) }) };\n'
+              'const TREE_ART = ' + json.dumps({k: d[k] for k in ('looks', 'side', 'top')}) + ';\n'
+              'const out = [];\n'
+              'for (const isTouch of [false, true]) {\n' + fn(s, 'treeArtAtlas') +
+              '  for (const v of ["side", "top"]) { const a = treeArtAtlas(v); out.push([isTouch, v, a.N, a.A, a.C]); }\n}\n'
+              'console.log(JSON.stringify(out));')
+        r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        cells = 2 * len(d['looks'])
+        for touch, view, N, A, C in json.loads(r.stdout):
+            last = cells - 1
+            self.assertLessEqual((last % C + 1) * N, A, (touch, view))
+            self.assertLessEqual((last // C + 1) * N, A, (touch, view))
+            self.assertGreaterEqual(N, 128 if view == 'side' and not touch else 64, (touch, view))
+        # the drawing and the shader read the same columns
+        self.assertIn('x = (k % at.C) * at.N, y = Math.floor(k / at.C) * at.N', s)
+        self.assertIn('colS = mod(kS, ${C.toFixed(1)}), rowS = floor(kS / ${C.toFixed(1)} + 1e-3)', s)
+        self.assertIn('TREE_ART_VERT(S.N, S.A, T.N, T.A, S.C)', s)
+        self.assertNotIn('k % 6', s)
+
+
 class Page(unittest.TestCase):
     def test_wiring(self):
         s = (ROOT / 'app.js').read_text()

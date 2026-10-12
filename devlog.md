@@ -8069,3 +8069,14 @@ takes the tap). 435 tests.
   textures, their metres), `tests/test_memory_cuts.py` (eleven `freeTexOnUpload` uses). 484 tests.
 - Image API spend this round: 183 fronts and tiles and 3 street textures from `gpt-image-2` at high quality, 58 tree
   images from `gpt-image-1.5` at medium (the sidecars hold each one's tokens).
+- Round 184 coda, the same evening (Mike, with a screenshot of a park: striped red and green boxes among the trees,
+  "I am assuming they are trees that did not load properly"): the tree atlases were Round 179's, six cells a row on a
+  canvas sized for 18 looks, and the 28 looks' cells 36 to 55 lay past its foot. The ten looks there (dogwood,
+  serviceberry, silver maple, Crimson King, sycamore, river birch, willow, spruce, holly and the broadleaf, which 81
+  species fall back to) sampled the clamped edge row: stretched stripes on an opaque card. Round 184's own South
+  Philadelphia capture held one, taken for a hedge. `treeArtAtlas` now lays the cells in as many columns as a square of
+  them needs (8) on the same canvas, each cell shrunk to fit (a side card 256 px on a computer against 320, 128 on a
+  phone; the canvas, and so the memory, unchanged), the drawing and the shader reading the same column count (`C`), and
+  throws if the cells do not fit. `tests/test_tree_art.py` lays out the atlas under node for a computer and a phone and
+  checks the last look's cells lie on the canvas. Washington Square by day from 45 m and 18 m and the South Philadelphia
+  street: every tree a picture. 485 tests.

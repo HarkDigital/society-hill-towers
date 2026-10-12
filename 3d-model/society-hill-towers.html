@@ -18574,14 +18574,19 @@ RB.add({
     return [s, s, 0];
   }
   const TREEART = { side: null, top: null, img: new Map(), state: [], at: -1e9, key: '', uLk: null, uLk2: null, uResH: { value: 900 }, busy: false, meshes: [], n: 0 };
-  // the atlases: two cells a look (its two current seasons), six cells a row, on a power-of-two canvas; a phone at half
+  // the atlases: two cells a look (its two current seasons) on a power-of-two canvas; a phone at half. The canvas is the
+  // one Round 179 sized for 18 looks (six stored cells a row); since Round 184 the cells take as many columns as a square
+  // of them needs (C, the same for both views) and shrink to fit it: 28 looks in rows of six ran past the canvas's foot,
+  // and the ten looks there (the broadleaf among them, 81 species) sampled its clamped edge as striped boxes
   function treeArtAtlas(view) {
-    const N = (view === 'side' ? TREE_ART.side : TREE_ART.top) >> (isTouch ? 1 : 0);
-    let A = 1; while (A < 6 * N) A *= 2;
+    const N0 = (view === 'side' ? TREE_ART.side : TREE_ART.top) >> (isTouch ? 1 : 0), cells = 2 * TREE_ART.looks.length;
+    let A = 1; while (A < 6 * N0) A *= 2;
+    const C = Math.max(6, Math.ceil(Math.sqrt(cells))), N = Math.min(N0, Math.floor(A / C));
+    if (Math.ceil(cells / C) * N > A) throw new Error('tree atlas: ' + cells + ' cells do not fit ' + A);
     const cv = document.createElement('canvas'); cv.width = cv.height = A;
     const tex = new THREE.CanvasTexture(cv);
     tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);   // left linear: one shader samples both atlases and decodes them itself
-    return { view, N, A, cv, ctx: cv.getContext('2d'), tex };
+    return { view, N, A, C, cv, ctx: cv.getContext('2d'), tex };
   }
   function treeArtImage(look, view, season) {
     const L = TREE_ART.images[look], v = L && L[view];
@@ -18615,7 +18620,7 @@ RB.add({
           const got = [await treeArtImage(looks[li], 'side', season), await treeArtImage(looks[li], 'top', season)];
           if (!got[0] || !got[1]) continue;   // not to be had now: the cell keeps what it holds, and the next pass asks again
           [TREEART.side, TREEART.top].forEach((at, vi) => {
-            const g = got[vi], k = li * 2 + slot, x = (k % 6) * at.N, y = Math.floor(k / 6) * at.N;
+            const g = got[vi], k = li * 2 + slot, x = (k % at.C) * at.N, y = Math.floor(k / at.C) * at.N;
             at.ctx.clearRect(x, y, at.N, at.N);
             at.ctx.drawImage(g.im, x, y, at.N, at.N);
             (at.view === 'side' ? TREEART.uLk : TREEART.uLk2).value[li].setComponent(slot + 1, at.view === 'side' ? g.rec.hf : g.rec.df);
@@ -18639,7 +18644,7 @@ RB.add({
   // from the side view to the top view. In the shadow pass the eye is the sun: a low sun casts the tree's side, a high
   // one its crown. aLS = (look, seed); uLk[look] = (share of the change done, side fill A, B, -), uLk2[look] = (-, top
   // fill A, B, -). The instance's scale x is the tree's height, z its crown's span
-  const TREE_ART_VERT = (NS, AS, NT, AT) => `
+  const TREE_ART_VERT = (NS, AS, NT, AT, C) => `
   void tCard(out vec3 wpOut, out vec3 nrmOut) {
       vec3 tb = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
       float H = length(instanceMatrix[0].xyz), D = length(instanceMatrix[2].xyz);
@@ -18668,7 +18673,7 @@ RB.add({
       wpOut = piv + rt * (position.x * S + sw) + up * ((yy - py) * S - 0.03 * (1.0 - lean));   // world space
       tTw = tw;
       vec2 cs = vec2(position.x + 0.5, yy);
-      float kS = lk * 2.0 + slot, colS = mod(kS, 6.0), rowS = floor(kS / 6.0);
+      float kS = lk * 2.0 + slot, colS = mod(kS, ${C.toFixed(1)}), rowS = floor(kS / ${C.toFixed(1)} + 1e-3);
       tUvS = vec2((colS + cs.x) * ${(NS / AS).toFixed(6)}, 1.0 - (rowS + 1.0 - cs.y) * ${(NS / AS).toFixed(6)});
       tUvT = vec2((colS + cs.x) * ${(NT / AT).toFixed(6)}, 1.0 - (rowS + 1.0 - cs.y) * ${(NT / AT).toFixed(6)});
       // the alpha firmed as the card shrinks on screen (its mips average the gaps in), by the texels a pixel covers
@@ -18682,7 +18687,7 @@ RB.add({
     // the card is built in world space: project_vertex multiplies by the instance matrix, so the vertex undoes it first
     const lit = !depth;   // the depth shader carries beginnormal_vertex too, but only under USE_DISPLACEMENTMAP
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;\n' + TREE_ART_VERT(S.N, S.A, T.N, T.A) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
+      .replace('#include <common>', '#include <common>\nattribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;\n' + TREE_ART_VERT(S.N, S.A, T.N, T.A, S.C) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
       .replace(lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>', 'vec3 tWP, tNrm; tCard(tWP, tNrm);\n' + (lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>'))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (tInv(instanceMatrix) * vec4(tWP, 1.0)).xyz;   // built in world space: the instance matrix undone');
     if (lit) sh.vertexShader = sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * tNrm;');
