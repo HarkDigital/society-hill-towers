@@ -7810,3 +7810,12 @@ takes the tap). 435 tests.
   132 at 120, 331 at 300, 540 at 900 (before the stick's throttle). The desktop is unchanged. 448 tests.
 - Build 9 (1.0 (9), `npm run bump`, the page byte for byte in the archive: Rounds 171 and 172) uploaded through
   app/ios/UploadOptions.plist: "Upload succeeded".
+
+## Round 173 — every ship's card links to that ship (Oct 12)
+
+- Mike: "The marine traffic links are not tracking individual ships. All ships go to the same URL." The cards built a
+  different href for each MMSI, but MarineTraffic now redirects every `/en/ais/details/ships/mmsi:N` to one world map
+  (`/en/ais/home/centerx:-12.0/centery:25.0/zoom:4`, followed in the pane), its search URL 404s, and its ship pages want
+  its own ship id, which AIS does not carry. `shipLink` now opens VesselFinder's `/vessels/details/<MMSI>`, which takes the
+  MMSI itself: the Freedom's 368417620 opened "MV FREEDOM", position two minutes old. The ships' cards and the ferry's
+  share it. `tests/test_ship_link.py` keeps marinetraffic.com out of the page. 451 tests.

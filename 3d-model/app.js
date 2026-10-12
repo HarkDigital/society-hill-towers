@@ -18848,12 +18848,14 @@ float pinOccGate() {
       (v.dest ? '<div class="vmeta">' + septaEsc('Bound For ' + v.dest) + '</div>' : '') +
       shipLink(v));
   }
-  // the vessel's page on MarineTraffic, by its MMSI (the AIS positions come from aisstream.io,
-  // which has no page per ship; MarineTraffic is the public lookup for an MMSI, Round 61)
+  // the vessel's page on VesselFinder, by its MMSI (the AIS positions come from aisstream.io, which has no page per
+  // ship). Round 61 linked MarineTraffic's /ais/details/ships/mmsi:N, which by Oct 2026 redirected every ship to the
+  // same world map (Mike: all ships go to the same URL); its ship pages now need MarineTraffic's own ship id, which AIS
+  // does not carry. VesselFinder's /vessels/details/ takes the MMSI itself (checked with the Freedom, 368417620)
   function shipLink(v) {
     const m = String(v.mmsi || '').trim();
     if (!/^[0-9]{9}$/.test(m)) return '';
-    return '<a class="vlink" href="https://www.marinetraffic.com/en/ais/details/ships/mmsi:' + m + '" target="_blank" rel="noopener">Track MMSI ' + m + ' on MarineTraffic</a>';
+    return '<a class="vlink" href="https://www.vesselfinder.com/vessels/details/' + m + '" target="_blank" rel="noopener">Track MMSI ' + m + ' on VesselFinder</a>';
   }
   function syncShipsBtn() { syncLayerBtn(btnShips, SHIPS.on); }
   function shipRelease() {
