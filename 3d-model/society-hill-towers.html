@@ -7016,7 +7016,10 @@ RB.add({
       let A = V(g.a, eaveH), B = V(g.b, eaveH);
       const R = V(r, ridgeH);
       const mx = (g.a[0] + g.b[0]) / 2 - cx, mz = (g.a[1] + g.b[1]) / 2 - cz;
-      const nx = (B[2] - A[2]), nz = -(B[0] - A[0]); // normal of tri (A,B,R) in xz
+      // the face normal of (A, B, R), (B - A) x (R - A), has the horizontal part (-(Bz - Az), Bx - Ax). Until Oct 12 this
+      // read (Bz - Az, -(Bx - Ax)), the opposite, so every gable end faced into its house and was culled: wherever a
+      // pitched row ended or stepped down you saw into the roof (Mike, over Spruce Street: "missing a piece on the side")
+      const nx = -(B[2] - A[2]), nz = (B[0] - A[0]);
       if (nx * mx + nz * mz < 0) { const tmp = A; A = B; B = tmp; }
       pushTri(ends, A, B, R);
       endU.push(0, g.len, g.len / 2);

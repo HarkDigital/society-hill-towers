@@ -7868,3 +7868,16 @@ takes the tap). 435 tests.
   phone takes the atlases at half size through a canvas freed on upload. 77 fronts (35 and 42), fronts.json 1.43 MB.
   Before and after at street level and from 30 m on both blocks, and on the phone path at 740x360.
   `tests/test_fronts.py`. 460 tests.
+
+## Round 176 — every gable end faces out of its house (Oct 12)
+
+- Mike, with a screenshot over Spruce Street's 300 block: "The roofs look broken. they are missing a piece on the side so
+  you cant see into them". Not the fronts (the deployed build before them drew the same). `quadGable` turns each end
+  triangle (A, B, R) so its normal points away from the quad's centre, but read the horizontal normal as
+  (Bz - Az, -(Bx - Ax)) where (B - A) x (R - A) gives (-(Bz - Az), Bx - Ax): every gable end was wound into its house and
+  culled by the front-side fabric materials, so wherever a pitched row ended, met a lower neighbour or stood alone, you
+  looked into the roof. One sign, and it was citywide: the core, the outer districts' and far ring's pitched rows through
+  `raisePitched`, and the researched gables all use `quadGable` (since the realism pass, 8770d0a). Before and after over the
+  row: the corner house's end went from a see-through tan triangle to its brick gable. `tests/test_gable_ends.py` runs the
+  page's own `quadGable` under node on a quad in four rotations, both windings and three ridge directions (it fails on
+  the old line). 461 tests.
