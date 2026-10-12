@@ -7910,3 +7910,24 @@ takes the tap). 435 tests.
   (East Passyunk at street level, from above and at night; Center City at 160 m, low among the towers and at night).
   The rooftop boxes floating over East Passyunk's corner and its flat grey shopfront panel are in today's build too.
   `tests/test_fronts.py` (tiles, awnings, the no-awning prompts, the cladding hooks). 465 tests.
+
+## Round 178 — rooftop hardware stands only on its roof (Oct 12)
+
+- Seen in Round 177's captures and in the build before it: condensers, a hatch and a vent hanging in the air beside a
+  wedge-shaped corner building on East Passyunk Avenue (eye (-1370, 2.0, 1481.9) toward (-1351, 3.9, 1475)). Round 150's
+  `ROOF_KIT` note kept only the roof's oriented box, and `roofKitLay` scatters units across up to 1.4 to 1.6 times its half
+  length, so on a roof that is not its own box some stood beyond the roof at roof height; `roofClutter`'s baked boxes used
+  the same box. It was not one building: measured over the whole city, only 36,714 of 187,752 noted roofs (20%) fill their
+  box; 73,322 are a few cells short, 52,331 have a rear ell or similar (two thirds to five sixths of the box), and 25,000
+  are half or less (wedges, Ls, courtyards).
+- Each note now carries an occupancy mask of its box, 8 cells along the long axis by 6 across, in the lay's own frame
+  (its perpendicular is (-uz, ux), the opposite of `obbAxis`'s): a cell is on the roof when its centre and the corners of
+  its middle half are inside the footprint and outside its holes (the whole corners dropped every row's edge cells, 18%
+  of the units). 48 bits in two floats, exact in a float32 (`ROOF_KIT_STRIDE` 10, from 8). Every unit and dish in the
+  lay asks it (`roofKitOn`), the baked boxes are tested against the footprint itself, the core passes its courtyards, and
+  a roof with no cell left takes no note (5 in the city). Near the eye over Society Hill the lay places 4,093 units where
+  it placed 4,766: the 673 gone stood over yards, beside ells and off wedges. `__dbg.roofKit()` reports `partial`, `empty`,
+  `hist` (roofs by cells on, in eighths) and `off`. Before and after at street level and from 45 m on East Passyunk, over
+  Society Hill and straight down over two South Philadelphia blocks: the floating units gone, the roofs' own unchanged.
+- `tests/test_roof_kit.py` (Round 150's file) gains the mask run under node on a rectangle, an L and a courtyard, and the
+  gating of every placement. 468 tests.

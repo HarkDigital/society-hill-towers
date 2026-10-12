@@ -7167,18 +7167,61 @@ RB.add({
   // of the packed tiers is noted here (centre, top, long axis, half sizes, seed: 8 floats), and 'Fitting out the
   // rooftops' lays the hardware near the eye from these notes as instanced condensers, rooftop units, hatches, vent
   // stacks and dishes, on phones too. Nothing is baked into the chunks, so the far city costs nothing
-  const ROOF_KIT = { buf: new Float32Array(8 * 65536), n: 0 };
-  function roofKitNote(ob, ax, top, area, seed) {
+  // Oct 12 (Mike, over East Passyunk Avenue: rooftop units hanging in the air beside a corner building): a note was only
+  // the roof's oriented box, and the lay scatters units across up to 1.6 times its half length, so on any roof that is not
+  // its own box (a wedge on a diagonal avenue, an L, a courtyard) some landed beyond the roof, in the air at roof height.
+  // Each note now carries an occupancy mask of its box, 8 cells along the long axis by 6 across, in the lay's own frame
+  // (the perpendicular (-uz, ux)); a cell is on the roof only when its centre and the corners of its middle half are all
+  // inside the footprint and outside its holes (its whole corners dropped the edge cells of every row a few centimetres
+  // out of square: 91% of roofs partial and 18% of the units gone). 48 bits in two floats (24 bits each, exact in a float32): 10 a note
+  const ROOF_KIT_STRIDE = 10, RK_NU = 8, RK_NV = 6;
+  const ROOF_KIT = { buf: new Float32Array(ROOF_KIT_STRIDE * 65536), n: 0, partial: 0, empty: 0, hist: new Uint32Array(7) };   // hist: roofs by cells on, in eighths of 48
+  function roofKitMask(ob, ax, poly, holes) {
+    const ux = ax.ax, uz = ax.az, px = -uz, pz = ux, hl = ax.hl, hs = ax.hs;
+    const on = (u, v) => {
+      const x = ob.cx + ux * u + px * v, z = ob.cz + uz * u + pz * v;
+      if (!pointInPoly(x, z, poly)) return false;
+      if (holes) for (const hr of holes) if (hr && hr.length > 2 && pointInPoly(x, z, hr)) return false;
+      return true;
+    };
+    let lo = 0, hi = 0;
+    for (let b = 0; b < RK_NV; b++) for (let a = 0; a < RK_NU; a++) {
+      const cu = -hl + (a + 0.5) * (2 * hl / RK_NU), cv = -hs + (b + 0.5) * (2 * hs / RK_NV);
+      const du = 0.5 * hl / RK_NU, dv = 0.5 * hs / RK_NV;
+      if (on(cu, cv) && on(cu - du, cv - dv) && on(cu + du, cv - dv) && on(cu + du, cv + dv) && on(cu - du, cv + dv)) {
+        const k = b * RK_NU + a;
+        if (k < 24) lo += 2 ** k; else hi += 2 ** (k - 24);
+      }
+    }
+    return [lo, hi];
+  }
+  function roofKitNote(ob, ax, top, area, seed, poly, holes) {
     if (area < 25 || area > 40000) return;
-    if (ROOF_KIT.n * 8 + 8 > ROOF_KIT.buf.length) { const nb = new Float32Array(ROOF_KIT.buf.length * 2); nb.set(ROOF_KIT.buf); ROOF_KIT.buf = nb; }
-    ROOF_KIT.buf.set([ob.cx, ob.cz, top, ax.ax, ax.az, ax.hl, ax.hs, seed], ROOF_KIT.n * 8);
+    const S = ROOF_KIT_STRIDE;
+    if (ROOF_KIT.n * S + S > ROOF_KIT.buf.length) { const nb = new Float32Array(ROOF_KIT.buf.length * 2); nb.set(ROOF_KIT.buf); ROOF_KIT.buf = nb; }
+    const [lo, hi] = poly ? roofKitMask(ob, ax, poly, holes) : [0xffffff, 0xffffff];
+    if (lo === 0 && hi === 0) { ROOF_KIT.empty++; return; }   // nowhere on it a unit could stand
+    { let c = 0; for (let k = 0; k < 24; k++) c += (Math.floor(lo / 2 ** k) % 2) + (Math.floor(hi / 2 ** k) % 2); ROOF_KIT.hist[Math.min(6, Math.floor(c / 8))]++; }
+    if (lo !== 0xffffff || hi !== 0xffffff) ROOF_KIT.partial++;
+    ROOF_KIT.buf.set([ob.cx, ob.cz, top, ax.ax, ax.az, ax.hl, ax.hs, seed, lo, hi], ROOF_KIT.n * S);
     ROOF_KIT.n++;
   }
-  function roofClutter(add, poly, base, h, area, t, fa, seed, wallC, far) {
+  // a point in the lay's frame (u along the long axis, v across) on a note's mask
+  function roofKitOn(lo, hi, u, v, hl, hs) {
+    const a = Math.floor((u / hl + 1) * RK_NU / 2), b = Math.floor((v / hs + 1) * RK_NV / 2);
+    if (a < 0 || b < 0 || a >= RK_NU || b >= RK_NV) return false;
+    const k = b * RK_NU + a;
+    return k < 24 ? Math.floor(lo / 2 ** k) % 2 === 1 : Math.floor(hi / 2 ** (k - 24)) % 2 === 1;
+  }
+  function roofClutter(add, poly, base, h, area, t, fa, seed, wallC, far, holes) {
     if (h < 3) return;
     const ob = orientedBox(poly), ax = obbAxis(ob);
     if (ax.hs < 2.2) return;
-    roofKitNote(ob, ax, base + h, area, seed);
+    roofKitNote(ob, ax, base + h, area, seed, poly, holes);
+    // the baked boxes below stand only where their whole footprint is on the roof (the same fault as the lay's)
+    const onRoof = (pts) => pts.every((q) => pointInPoly(q[0], q[1], poly) && !(holes && holes.some((hr) => hr && hr.length > 2 && pointInPoly(q[0], q[1], hr))));
+    const add0 = add;
+    add = (pg, y0, y1, hex, st2, hs2) => { if (hs2 || onRoof(pg)) add0(pg, y0, y1, hex, st2, hs2); };
     if (isTouch || h < 5) return;
     const top = base + h;
     const at = (u, v) => [ob.cx + ax.ax * u + ax.px * v, ob.cz + ax.az * u + ax.pz * v];
@@ -11835,7 +11878,7 @@ RB.add({
           roofClutter((pg, y0, y1, hex, st2, holes) => {
             const g = extrudePoly(pg, holes, y1, y0);
             parts.push({ geom: g, color: new THREE.Color(hex).multiplyScalar(kG), style: st2, baseY: ty || 0 });
-          }, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false);   // the wall in the tiers' register: its darkened lip comes back to the core's
+          }, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false, b.holes && b.holes.length ? b.holes : null);   // the wall in the tiers' register: its darkened lip comes back to the core's
         }
         if (wallTop && !spec0 && wallTop < 30) frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, 'core');
         if (wallTop && !spec0 && b.h > 35) towerSkinNote(b.poly, ty || 0, (ty || 0) + wallTop, style, null, i, color, !!b.minH, 0);
@@ -26772,13 +26815,13 @@ float pinOccGate() {
   // stacks and now and then a dish turned south-south-west; a single house takes one house's kit; a bigger roof takes
   // rooftop units by its area on a jittered grid, hatches, vents and, under 900 m2, a few condensers. After dark they
   // take the roofs' own glow (ROOF_NIGHT), so they read against the roofs they stand on
-  const ROOFKIT = { r: isTouch ? 260 : 420, cell: 160, cells: null, meshes: [], at: 0, cam: new THREE.Vector3(1e9, 0, 0), laid: 0 };
+  const ROOFKIT = { r: isTouch ? 260 : 420, cell: 160, cells: null, meshes: [], at: 0, cam: new THREE.Vector3(1e9, 0, 0), laid: 0, off: 0 };
   step('Fitting out the rooftops', () => {
     if (TIER2) { ROOF_KIT.buf = null; ROOF_KIT.n = 0; return; }   // tier 2 lays no rooftop hardware, and the roof notes go (the recovery round)
     if (!ROOF_KIT.n) return;
     const B = ROOF_KIT.buf, cells = new Map();
     for (let i = 0; i < ROOF_KIT.n; i++) {
-      const k = Math.floor(B[i * 8] / ROOFKIT.cell) + ':' + Math.floor(B[i * 8 + 1] / ROOFKIT.cell);
+      const k = Math.floor(B[i * ROOF_KIT_STRIDE] / ROOFKIT.cell) + ':' + Math.floor(B[i * ROOF_KIT_STRIDE + 1] / ROOFKIT.cell);
       let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(i);
     }
     ROOFKIT.cells = new Map([...cells].map(([k, a]) => [k, Int32Array.from(a)]));
@@ -26812,7 +26855,7 @@ float pinOccGate() {
       groupCity.add(m);
       ROOFKIT.meshes.push(m);
     }
-    PERF.roofKit = { roofs: ROOF_KIT.n, cells: ROOFKIT.cells.size };
+    PERF.roofKit = { roofs: ROOF_KIT.n, cells: ROOFKIT.cells.size, partial: ROOF_KIT.partial, empty: ROOF_KIT.empty, hist: Array.from(ROOF_KIT.hist) };
   });
   function roofKitLay() {
     const cx = camera.position.x, cz = camera.position.z, R = ROOFKIT.r, C = ROOFKIT.cell, M = ROOFKIT.meshes, B = ROOF_KIT.buf;
@@ -26833,20 +26876,22 @@ float pinOccGate() {
       }
       list.sort((p, q) => p[0] - q[0]);
       for (const [, a] of list) for (let q = 0; q < a.length; q++) {
-        const o = a[q] * 8, x0 = B[o], z0 = B[o + 1];
+        const o = a[q] * ROOF_KIT_STRIDE, x0 = B[o], z0 = B[o + 1];
         if ((x0 - cx) ** 2 + (z0 - cz) ** 2 > R * R) continue;
-        const y = B[o + 2], ux = B[o + 3], uz = B[o + 4], hl = B[o + 5], hs = B[o + 6], seed = B[o + 7];
+        const y = B[o + 2], ux = B[o + 3], uz = B[o + 4], hl = B[o + 5], hs = B[o + 6], seed = B[o + 7], mlo = B[o + 8], mhi = B[o + 9];
         const px = -uz, pz = ux, rot = Math.atan2(-uz, ux);
         const at = (u, v) => [x0 + ux * u + px * v, z0 + uz * u + pz * v];
         const H = (k) => hash01(seed * 1.37 + k * 0.731);
-        const item = (kind, u, v, r) => { const [x, z] = at(u, v); put(kind, x, y, z, r); };
+        // a unit stands only where the roof is (roofKitMask); a full mask skips the test
+        const full = mlo === 0xffffff && mhi === 0xffffff;
+        const item = (kind, u, v, r) => { if (!full && !roofKitOn(mlo, mhi, u, v, hl, hs)) { ROOFKIT.off++; return; } const [x, z] = at(u, v); put(kind, x, y, z, r); };
         const house = (u0, W, D, k) => {   // one house: its centre along the axis, its width along it and its depth across it
           const side = H(k + 1) < 0.5 ? -1 : 1;
           if (H(k + 2) < 0.7) item(0, u0 + (H(k + 3) - 0.5) * W * 0.45, side * D * 0.28, rot + (H(k + 4) < 0.5 ? 0 : Math.PI / 2));
           if (H(k + 5) < 0.55) item(2, u0 + (H(k + 6) - 0.5) * W * 0.35, -side * D * 0.08, rot);
           const nv = H(k + 7) < 0.4 ? 2 : 1;
           for (let j = 0; j < nv; j++) item(3, u0 + (j ? -1 : 1) * W * 0.38, (H(k + 8 + j) - 0.5) * D * 0.7, rot);
-          if (H(k + 11) < 0.22) { const [x, z] = at(u0 + (H(k + 12) - 0.5) * W * 0.5, side * D * 0.38); put(4, x, y, z, -0.35, 1); }
+          if (H(k + 11) < 0.22) { const du = u0 + (H(k + 12) - 0.5) * W * 0.5, dv = side * D * 0.38; if (full || roofKitOn(mlo, mhi, du, dv, hl, hs)) { const [x, z] = at(du, dv); put(4, x, y, z, -0.35, 1); } }
         };
         if (2 * hl > 14 && hs >= 3 && hs <= 9) {   // a strip of rowhouses
           const n = Math.max(1, Math.round(2 * hl / 5.4)), W = 2 * hl / n;
@@ -26856,7 +26901,7 @@ float pinOccGate() {
           if (H(2) < 0.7) item(0, side * hl * 0.45, (H(3) - 0.5) * hs * 0.8, rot);
           if (H(5) < 0.55) item(2, -side * hl * 0.1, (H(6) - 0.5) * hs * 0.6, rot);
           item(3, (H(7) - 0.5) * hl, (H(8) < 0.5 ? -1 : 1) * hs * 0.75, rot);
-          if (H(11) < 0.22) { const [x, z] = at(side * hl * 0.6, (H(12) - 0.5) * hs); put(4, x, y, z, -0.35, 1); }
+          if (H(11) < 0.22) { const du = side * hl * 0.6, dv = (H(12) - 0.5) * hs; if (full || roofKitOn(mlo, mhi, du, dv, hl, hs)) { const [x, z] = at(du, dv); put(4, x, y, z, -0.35, 1); } }
         } else {   // a bigger roof: rooftop units on a jittered grid, hatches, vents, and condensers on the smaller ones
           const area = 4 * hl * hs, nR = clamp(Math.round(area / 260), 1, 10);
           const cols = Math.max(1, Math.round(Math.sqrt(nR * hl / hs))), rows = Math.max(1, Math.ceil(nR / cols));
@@ -30854,7 +30899,7 @@ float pinOccGate() {
         { id: 't192', num: '192', route: 'Northeast Regional', lat: 39.94614, lon: -75.19313, hdg: 'NE', mph: 60, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'Boston South', destCode: 'BOS', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS + 300, est: nowS + 720, late: 7 }, timely: '7 Minutes Late' },
         { id: 't2151', num: '2151', route: 'Acela', lat: 39.99732, lon: -75.15534, hdg: 'NE', mph: 110, state: 'Active', fix: nowS - 5, orig: 'WAS', dest: 'New York Penn', destCode: 'NYP', next: { code: 'TRE', name: 'Trenton', sch: nowS + 900, est: nowS + 900, late: 0 }, timely: 'On Time' },
         { id: 't655', num: '655', route: 'Keystone', lat: 39.98922, lon: -75.24937, hdg: 'W', mph: 40, state: 'Active', fix: nowS - 5, orig: 'NYP', dest: 'Harrisburg', destCode: 'HAR', next: { code: 'PAO', name: 'Paoli', sch: nowS + 1200, est: nowS + 1080, late: -2 }, timely: '2 Minutes Early' },
-        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { const F = PIN_OCC.full.cpu; if (!F.ok) return null; _pov.set(x, y, z).applyMatrix4(F.view); const vz = -_pov.z; _pov.applyMatrix4(F.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(F.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(occNeed(vz)), px, py, ds, vis: pinOccVisible(x, y, z), answer: pinOccAnswer(x, y, z), tip: pinOccTipAnswer(x, y, z), frame: F.frame, nearFrame: PIN_OCC.near.cpu.frame }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear, cause: { ...PIN_OCC.cause }, frame: PIN_OCC.full.cpu.frame, nearFrame: PIN_OCC.near.cpu.frame, gateFrame: PIN_GATE.frame, reach: Math.round(PIN_OCC.reach), hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, tips: PIN_TIPS.size, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccAnswer(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]), st ? st.tgt[i] : -1, st ? st.why[i] : -1]); return o; }) : undefined }), PIN_OCC, PIN_TIPS, PIN_GATE, pinGate: () => { const im = (ch) => { const t = ch.slots[ch.gate]; return t ? { view: t.view.toArray(), viewInv: t.viewInv.toArray(), proj: t.proj.toArray(), reach: t.reach, frame: t.frame, noFlats: t.noFlats } : null; }; const r = PIN_GATE.reach.value; return { on: r.y > 0 ? 1 : 0, aNewer: r.z > 0, now: frameNo, frame: PIN_GATE.frame, W: PIN_OCC.w, H: PIN_OCC.h, far: PIN_OCC.far, A: im(PIN_OCC.near), B: im(PIN_OCC.full), vertexTextures: renderer.capabilities.vertexTextures }; }, pinAsync: (on) => { if (on === false) { pinOccDrop(); PIN_ASYNC.off = true; } else if (on === true) PIN_ASYNC.off = false; return { webgl2: renderer.capabilities.isWebGL2, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, issued: PIN_ASYNC.issued, landed: PIN_ASYNC.landed, dropped: PIN_ASYNC.dropped, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear }; }, cull: () => { const f = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 * m.count; let tIn = 0, tTri = 0, tAll = 0, rIn = 0, rTri = 0; for (const m of TREE_MESHES) { tAll += tri(m); if (!m.frustumCulled || f.intersectsObject(m)) { tIn++; tTri += tri(m); } } for (const m of TIE_RUNS) if (m.parent && m.parent.visible && (!m.frustumCulled || f.intersectsObject(m))) { rIn++; rTri += 12 * m.count; } return { pending: pendingUpload.length, trees: TREE_MESHES.length, treesDrawn: tIn, treeTris: tTri, treeTrisAll: tAll, tieRuns: TIE_RUNS.length, tieRunsDrawn: rIn, tieTris: rTri, tieTrisAll: TIE_RUNS.reduce((a, m) => a + 12 * m.count, 0) }; }, lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
+        { id: 't90', num: '90', route: 'Palmetto', lat: 39.9560, lon: -75.1815, hdg: 'N', mph: 0, state: 'Active', fix: nowS - 5, orig: 'SAV', dest: 'New York Penn', destCode: 'NYP', next: { code: 'PHL', name: 'Philadelphia 30th Street', sch: nowS - 60, est: nowS + 120, late: 3 }, timely: '3 Minutes Late' }], performance.now(), nowS); return amtrakMap.size; }, cardFor: (kind, id) => { if (kind === 'amtrak') { const p = amtrakMap.get(id); if (!p) return false; pickedTrain = p; amtrakCard(p); } else if (kind === 'patco') { const p = patcoMap.get(id) || [...patcoMap.values()][0]; if (!p) return false; pickedTrain = p; patcoCard(p); } else if (kind === 'closure') { const r = CLOSURES.recs.find((q) => q.id === id || q.addr === id); if (!r) return false; pickedClosure = r; closureCard(r); } else if (kind === 'flight') { const p = flightMap.get(id); if (!p) return false; flightCard(p); } else if (kind === 'market') { const m = markets.find((q) => q.n === id); if (!m) return false; pickedMarket = m; marketCard(m); } else if (kind === 'marker') { const r = markerRecs.find((q) => q.name === id); if (!r) return false; pickedMarker = r; markerCard(r); } else if (kind === 'art') { const r = artRecs.find((q) => q.title === id); if (!r) return false; pickedArt = r; artCard(r); } else { const v = shipMap.get(id); if (!v) return false; shipCard(v); } vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, railWalk, locateAt: locateFix, inPhiladelphia, notice, civic: () => ({ lib: CIVIC_S.lib.length, rec: CIVIC_S.rec.length, drawn: CIVIC_S.drawn, on: CIVIC.on }), civicOpen: (name) => { const r = CIVIC_S.lib.concat(CIVIC_S.rec).find((q) => q.n === name); if (!r) return false; openCivicCard(r); return vehinfoBody.innerHTML; }, stops: () => ({ bus: STOPS.bus.length, rail: STOPS.rail.length, drawn: STOPS.drawn, on: STOPS.on, stations: STOPS.stations, busPins: busStopPin && busStopPin.count, railPins: railStationPin && railStationPin.count }), stopOpen: (kind, name) => { const r = (kind === 'rail' ? STOPS.rail : STOPS.bus).find((q) => q.n === name || String(q.id) === String(name)); if (!r) return false; openStopCard(r); return true; }, bldgTap: (cx, cy) => { septaNdc.set((cx / window.innerWidth) * 2 - 1, -(cy / window.innerHeight) * 2 + 1); septaRay.setFromCamera(septaNdc, camera); return bldgPick(cx, cy); }, bldgCardHtml: () => vehinfoBody.innerHTML, alerts: () => ({ list: ALERTS.list, sites: ALERTS.sites.length, kind: ALERTS.sitesKind }), alertTest: (ev, list) => { alertsSet(list || [{ id: 'test-' + Date.now(), event: ev || 'Heat Advisory', onset: new Date(Date.now() - 3600e3).toISOString(), ends: new Date(Date.now() + 5 * 3600e3).toISOString(), expires: new Date(Date.now() + 3600e3).toISOString(), status: 'Actual', messageType: 'Alert' }]); return ALERTS.list.length; }, patco: () => ({ ready: patcoReady, on: AMTRAK.on, stats: PATCO_STATS, typical: PATCO_S.typical, sec: Math.round(patcoNowSec(performance.now())), running: [...patcoMap.values()].map((p) => ({ id: p.id, d: p.d, cars: p.cars, t0: p.t0, t1: p.t1, vis: p.vis, x: Math.round(p.hx), y: +p.hy.toFixed(1), z: Math.round(p.hz) })), drawn: patcoReady ? [patcoCar.count, patcoPin.count] : null }), patcoTest: (sec) => { PATCO_S.force = sec == null ? null : +sec; PATCO_S.reconAt = 0; return sec; }, patcoCheck: () => { const L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]); return patcoTracks().map((t) => { let dev = 0, walk = 1e9; for (let i = 0; i < t.n; i++) if (t.near(i) && t.a[i] >= 0 && t.a[i] <= L) { const f = bfbDeckY(t.a[i] / L) + 1.0; dev = Math.max(dev, Math.abs(t.y[i] - f)); walk = Math.min(walk, (bfbDeckY(t.a[i] / L) + 5.625) - (t.y[i] + 0.4 + 4.02)); } return { d: t.d, side: t.side, mouthP: +t.mouthP.toFixed(1), mouthC: +t.mouthC.toFixed(1), stops: t.st, bedDevOnSpan: +dev.toFixed(3), walkwayClear: +walk.toFixed(3) }; }); }, pinOccAt: (x, y, z) => { const F = PIN_OCC.full.cpu; if (!F.ok) return null; _pov.set(x, y, z).applyMatrix4(F.view); const vz = -_pov.z; _pov.applyMatrix4(F.proj); const W = PIN_OCC.w, H = PIN_OCC.h, px = Math.floor((_pov.x * 0.5 + 0.5) * W), py = Math.floor((_pov.y * 0.5 + 0.5) * H); const ds = []; for (let j = py - 1; j <= py + 1; j++) for (let i = px - 1; i <= px + 1; i++) if (i >= 0 && j >= 0 && i < W && j < H) ds.push(Math.round(occUnpack(F.buf, (j * W + i) * 4))); return { vz: Math.round(vz), need: Math.round(occNeed(vz)), px, py, ds, vis: pinOccVisible(x, y, z), answer: pinOccAnswer(x, y, z), tip: pinOccTipAnswer(x, y, z), frame: F.frame, nearFrame: PIN_OCC.near.cpu.frame }; }, pinOcc: (rows) => ({ captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear, cause: { ...PIN_OCC.cause }, frame: PIN_OCC.full.cpu.frame, nearFrame: PIN_OCC.near.cpu.frame, gateFrame: PIN_GATE.frame, reach: Math.round(PIN_OCC.reach), hidden: PIN_OCC.hid, w: PIN_OCC.w, h: PIN_OCC.h, meshes: PIN_MESHES.length, tips: PIN_TIPS.size, rows: rows ? PIN_MESHES.flatMap((m, mi) => { const e = m.instanceMatrix.array, st = m.userData.occ; const o = []; if (!m.visible) return o; for (let i = 0; i < m.count; i++) o.push([mi, i, Math.round(e[i * 16 + 12]), Math.round(e[i * 16 + 13]), Math.round(e[i * 16 + 14]), pinOccAnswer(e[i * 16 + 12], e[i * 16 + 13], e[i * 16 + 14]), st ? st.tgt[i] : -1, st ? st.why[i] : -1]); return o; }) : undefined }), PIN_OCC, PIN_TIPS, PIN_GATE, pinGate: () => { const im = (ch) => { const t = ch.slots[ch.gate]; return t ? { view: t.view.toArray(), viewInv: t.viewInv.toArray(), proj: t.proj.toArray(), reach: t.reach, frame: t.frame, noFlats: t.noFlats } : null; }; const r = PIN_GATE.reach.value; return { on: r.y > 0 ? 1 : 0, aNewer: r.z > 0, now: frameNo, frame: PIN_GATE.frame, W: PIN_OCC.w, H: PIN_OCC.h, far: PIN_OCC.far, A: im(PIN_OCC.near), B: im(PIN_OCC.full), vertexTextures: renderer.capabilities.vertexTextures }; }, pinAsync: (on) => { if (on === false) { pinOccDrop(); PIN_ASYNC.off = true; } else if (on === true) PIN_ASYNC.off = false; return { webgl2: renderer.capabilities.isWebGL2, off: PIN_ASYNC.off, inFlight: !!PIN_ASYNC.sync, issued: PIN_ASYNC.issued, landed: PIN_ASYNC.landed, dropped: PIN_ASYNC.dropped, captures: PIN_OCC.n, renders: PIN_OCC.renders, rendersNear: PIN_OCC.rendersNear }; }, cull: () => { const f = new THREE.Frustum().setFromProjectionMatrix(new THREE.Matrix4().multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)); const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3 * m.count; let tIn = 0, tTri = 0, tAll = 0, rIn = 0, rTri = 0; for (const m of TREE_MESHES) { tAll += tri(m); if (!m.frustumCulled || f.intersectsObject(m)) { tIn++; tTri += tri(m); } } for (const m of TIE_RUNS) if (m.parent && m.parent.visible && (!m.frustumCulled || f.intersectsObject(m))) { rIn++; rTri += 12 * m.count; } return { pending: pendingUpload.length, trees: TREE_MESHES.length, treesDrawn: tIn, treeTris: tTri, treeTrisAll: tAll, tieRuns: TIE_RUNS.length, tieRunsDrawn: rIn, tieTris: rTri, tieTrisAll: TIE_RUNS.reduce((a, m) => a + 12 * m.count, 0) }; }, lampGain: (k) => { LAMP_GAIN = +k; LAMPMAP.cx = 1e9; return LAMP_GAIN; }, ferry: () => ({ ready: FERRY.ready, vis: FERRY.rec.vis, docked: FERRY.rec.docked, x: Math.round(FERRY.rec.x), z: Math.round(FERRY.rec.z) }), ferryFix: (x, z, hdg, sog, age) => { const gms = sog * 0.5144; shipMap.set(FERRY_MMSI, { mmsi: FERRY_MMSI, name: 'M/V FREEDOM', fx: x, fz: z, ft: performance.now() - (age || 0) * 1000, dx: x, dz: z, sog, cog: hdg, hdg, th: true, moored: sog < 0.25, vx: Math.sin(hdg * DEG) * gms, vz: -Math.cos(hdg * DEG) * gms, len: 28, beam: 14, tn: 'Passenger' }); return true; }, ferryCard: () => { if (!FERRY.rec.vis) return false; pickedTrain = FERRY.rec; ferryCard(FERRY.rec); vehinfoEl.hidden = false; return vehinfoBody.innerHTML; }, roofKit: () => ({ ...(PERF.roofKit || {}), laid: ROOFKIT.laid, off: ROOFKIT.off, counts: ROOFKIT.meshes.map((m) => m.count), r: ROOFKIT.r }), roofKitOn, lampMap: () => ({ cx: LAMPMAP.cx, cz: LAMPMAP.cz, renders: LAMPMAP.renders, lamps: LAMPMAP.n, on: +lampMapU.uLampOn.value.toFixed(3), gain: LAMP_GAIN, span: LAMPMAP.span, size: LAMPMAP.size }),
       // Round 89: the one call that settles "are there strips of land in the river". Walks the
       // Schuylkill's own centreline at 10 m and reports where the DRAWN ground rises above the
       // water sheet, which is exactly what a strip is. Mike reported those strips eight times

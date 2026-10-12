@@ -27,7 +27,7 @@ class CoreRoofs(unittest.TestCase):
         lift = c.index('parts[k].geom.translate(0, ty, 0)')
         call = c.index('roofClutter(', lift)
         self.assertLess(lift, call)
-        self.assertIn('}, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false);', c)
+        self.assertIn('}, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false, b.holes && b.holes.length ? b.holes : null);', c)   # Round 178: and its courtyards
         self.assertIn('const kG = FACADE_GAIN / CORE_FACADE_GAIN;', c)
 
     def test_core_roofs_render_like_the_tiers(self):
