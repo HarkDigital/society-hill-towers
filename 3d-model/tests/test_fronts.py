@@ -64,6 +64,12 @@ class PageWiring(unittest.TestCase):
     def test_a_wide_deep_building_keeps_its_own_facade(self):
         self.assertIn('if (k >= 2 && depth > 18) return null;', self.s)
 
+    def test_a_phone_takes_half_size_atlases(self):
+        s = self.s
+        self.assertIn('if (!isTouch) return new THREE.Texture(src);', s)
+        self.assertIn('cv.width = src.width >> 1; cv.height = src.height >> 1;', s)
+        self.assertIn('return freeTexOnUpload(new THREE.CanvasTexture(cv));', s)
+
     def test_only_the_glass_glows(self):
         self.assertRegex(self.s, re.escape("float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb"))
         self.assertIn("lampLightPatch(sh, 'vWPos', 'wall');", self.s)

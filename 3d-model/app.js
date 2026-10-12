@@ -11123,8 +11123,16 @@
       for (const [setName, list] of perSet) {
         const S = FRONTS_DATA.sets[setName]; if (!S) continue;
         const [im, mk] = await Promise.all([img(S.img), img(S.mask)]);
-        const map = new THREE.Texture(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso; map.needsUpdate = true;
-        const mask = new THREE.Texture(mk); mask.needsUpdate = true;
+        // a phone takes each atlas at half size (a 2048 atlas and its mips are 21 MB of the GPU memory iOS charges the
+        // page, Round 158), through a canvas let go once it is uploaded; the cells' UVs are fractions, so nothing else moves
+        const tex = (src) => {
+          if (!isTouch) return new THREE.Texture(src);
+          const cv = document.createElement('canvas'); cv.width = src.width >> 1; cv.height = src.height >> 1;
+          cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
+          return freeTexOnUpload(new THREE.CanvasTexture(cv));
+        };
+        const map = tex(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso; map.needsUpdate = true;
+        const mask = tex(mk); mask.needsUpdate = true;
         const AW = S.cols * S.cell[0], AH = S.rows * S.cell[1], N = S.cells.length;
         const cellUV = (k) => {
           const col = k % S.cols, row = Math.floor(k / S.cols);
