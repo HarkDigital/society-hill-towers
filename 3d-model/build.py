@@ -191,6 +191,7 @@ const("RAIL_AMTRAK", text_of("rail_amtrak.json", "null"))   # Amtrak's tracks th
 const("PATCO_DATA", text_of("patco.json", "null"))   # PATCO's track and timetable over the Ben Franklin Bridge (bake_patco.py, Round 141): scheduled trains, not live
 const("I95_DATA", text_of("i95.json", "null"))   # I-95's carriageways for its highway lamps, in the city and past it (bake_i95.py, Round 148)
 const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud models (pack_clouds.py): the cloud field of Round 67
+const("TREE_ART", text_of("tree_art.json", "null"))   # the trees' species images (bake_tree_art.py): side and top cards by season, Oct 12
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and runs (bake_fronts.py): the facade prototype, Oct 12
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)

@@ -12765,6 +12765,155 @@
     [0.30, 0.16, 0.19, 0.72, 1.40, 1.0, 0],    // 10 tall broadleaf: silvery gray-green column
     [0.24, 0.40, 0.15, 1.05, 0.92, 1.0, 0],    // 11 urban misc: dusty olive
   ];
+  // ---- the trees as their species look (Oct 12, Mike: "Can you have Open AI create more realistic looking trees? ... Can
+  // we make them look like their real life counterparts?"). TREE_ART (bake_tree_art.py) holds, for 18 looks the inventory's
+  // species map onto, generated images of the whole tree from the side and of its crown from straight above, in summer,
+  // autumn and winter, and in bloom for the flowering ones. A tree is two cards: the side card turns about its trunk to
+  // face the eye (or, in the shadow pass, the sun), the top card lies over the crown; the two cross-fade, dithered, as the
+  // view steepens, so from the street a tree is its photograph and from the air its crown. The season follows the model's
+  // date per look (TREE_CAL): each look holds two seasons at once in the atlases, and every tree turns on a day of its own
+  // within the change, so a block colours tree by tree, red maples first and oaks and ginkgos last. ?trees=lowpoly
+  // brings back Round 58's faceted crowns
+  const TREE_ART_ON = typeof TREE_ART !== 'undefined' && !!TREE_ART && !!TREE_ART.images && !/[?&]trees=lowpoly\b/.test(location.search);
+  // per look: the days the autumn colour comes on and the leaves drop, against Philadelphia's mean (summer to autumn over
+  // Oct 1 to 31, autumn to winter over Nov 5 to 30); a flowering look's bloom; the pine never changes
+  const TREE_CAL = {
+    plane: [8, 10], redmaple: [-8, -5], sugarmaple: [-2, 0], cherry: [-12, -8, 'bloom'], pear: [14, 10, 'bloom'],
+    locust: [-10, -8], redoak: [10, 12], pinoak: [12, 18], zelkova: [0, 0], ginkgo: [16, 12], lilac: [0, -3, 'june'],
+    redbud: [-5, -3, 'bloom'], crabapple: [0, 0, 'bloom'], linden: [-6, -4], sweetgum: [6, 6], pine: null, elm: [-4, -2],
+    broadleaf: [0, 0],
+  };
+  // a look's season on a day of the year: [from, to, share of the change done]; between changes from === to
+  function treeSeasonOf(look, doy) {
+    const c = TREE_CAL[look];
+    if (!c) return ['summer', 'summer', 0];
+    const segs = c[2] === 'bloom' ? [[85, 95, 'winter', 'spring'], [108, 120, 'spring', 'summer']]
+      : c[2] === 'june' ? [[100, 125, 'winter', 'summer'], [150, 156, 'summer', 'spring'], [166, 173, 'spring', 'summer']]
+      : [[100, 125, 'winter', 'summer']];
+    segs.push([274 + c[0], 304 + c[0], 'summer', 'autumn'], [309 + c[1], 334 + c[1], 'autumn', 'winter']);
+    let s = 'winter';
+    for (const [d0, d1, a, b] of segs) {
+      if (doy < d0) return [s, s, 0];
+      if (doy < d1) return [a, b, (doy - d0) / (d1 - d0)];
+      s = b;
+    }
+    return [s, s, 0];
+  }
+  const TREEART = { side: null, top: null, img: new Map(), state: [], at: -1e9, key: '', uLk: null, uLk2: null, uResH: { value: 900 }, busy: false, meshes: [], n: 0 };
+  // the atlases: two cells a look (its two current seasons), six cells a row, on a power-of-two canvas; a phone at half
+  function treeArtAtlas(view) {
+    const N = (view === 'side' ? TREE_ART.side : TREE_ART.top) >> (isTouch ? 1 : 0);
+    let A = 1; while (A < 6 * N) A *= 2;
+    const cv = document.createElement('canvas'); cv.width = cv.height = A;
+    const tex = new THREE.CanvasTexture(cv);
+    tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);   // left linear: one shader samples both atlases and decodes them itself
+    return { view, N, A, cv, ctx: cv.getContext('2d'), tex };
+  }
+  function treeArtImage(look, view, season) {
+    const L = TREE_ART.images[look], v = L && L[view];
+    const rec = v && (v[season] || v.summer);
+    if (!rec) return null;
+    const key = look + '|' + view + '|' + (v[season] ? season : 'summer');
+    let p = TREEART.img.get(key);
+    if (!p) {
+      p = new Promise((res) => { const im = new Image(); im.onload = () => res({ im, rec }); im.onerror = () => res(null); im.src = rec.img; });
+      TREEART.img.set(key, p);
+    }
+    return p;
+  }
+  // bring every look's two cells to the model's date: draws whatever changed, then the uniforms
+  async function treeArtSeason(force) {
+    if (!TREEART.side || TREEART.busy) return;
+    const doy = Math.round((Date.UTC(clock.y, clock.m - 1, clock.d) - Date.UTC(clock.y, 0, 1)) / 864e5) + clock.minutes / 1440;
+    const looks = TREE_ART.looks, want = looks.map((lk) => treeSeasonOf(lk, doy));
+    TREEART.busy = true;
+    try {
+      let drew = false;
+      for (let li = 0; li < looks.length; li++) {
+        const [a, b, t] = want[li], st = TREEART.state[li] || (TREEART.state[li] = {});
+        for (const [slot, season] of [[0, a], [1, b]]) {
+          if (!force && st[slot] === season) continue;
+          for (const at of [TREEART.side, TREEART.top]) {
+            const got = await treeArtImage(looks[li], at.view, season);
+            const k = li * 2 + slot, x = (k % 6) * at.N, y = Math.floor(k / 6) * at.N;
+            at.ctx.clearRect(x, y, at.N, at.N);
+            if (got) at.ctx.drawImage(got.im, x, y, at.N, at.N);
+            const f = got ? (at.view === 'side' ? got.rec.hf : got.rec.df) : 1;
+            (at.view === 'side' ? TREEART.uLk : TREEART.uLk2).value[li].setComponent(slot + 1, f);
+          }
+          st[slot] = season; drew = true;
+        }
+        TREEART.uLk.value[li].x = t;
+      }
+      if (drew) { TREEART.side.tex.needsUpdate = true; TREEART.top.tex.needsUpdate = true; }
+      TREEART.key = want.map((w) => w[0] + w[1]).join();
+    } finally { TREEART.busy = false; }
+  }
+  function updateTreeArt(now) {
+    if (!TREEART.side || now - TREEART.at < 2000) return;
+    TREEART.at = now;
+    treeArtSeason(false);
+  }
+  // one card a tree (the first pass drew a side card and a top card and dithered between them, which read as speckled,
+  // see-through crowns from the air): it stands on its trunk and turns about it to face the eye while the view is low,
+  // leans back to face the eye as the view steepens, pivoting up to the crown's middle, and its picture cross-dissolves
+  // from the side view to the top view. In the shadow pass the eye is the sun: a low sun casts the tree's side, a high
+  // one its crown. aLS = (look, seed); uLk[look] = (share of the change done, side fill A, B, -), uLk2[look] = (-, top
+  // fill A, B, -). The instance's scale x is the tree's height, z its crown's span
+  const TREE_ART_VERT = (NS, AS, NT, AT) => `
+  void tCard(out vec3 wpOut, out vec3 nrmOut) {
+      vec3 tb = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+      float H = length(instanceMatrix[0].xyz), D = length(instanceMatrix[2].xyz);
+      float lk = aLS.x, seedT = aLS.y;
+      vec4 L1 = uLk[int(lk + 0.5)], L2 = uLk2[int(lk + 0.5)];
+      float slot = step(seedT, L1.x - 1e-4);
+      float hf = max(0.2, mix(L1.y, L1.z, slot)), df = max(0.3, mix(L2.y, L2.z, slot));
+      // the eye from the view matrix (the depth pass sets no cameraPosition); an orthographic view (the sun's) looks along
+      // its own axis
+      vec3 vt = viewMatrix[3].xyz;
+      vec3 eye = -vec3(dot(viewMatrix[0].xyz, vt), dot(viewMatrix[1].xyz, vt), dot(viewMatrix[2].xyz, vt));
+      vec3 fwd = -vec3(viewMatrix[0].z, viewMatrix[1].z, viewMatrix[2].z);
+      vec3 mid = tb + vec3(0.0, H * 0.55, 0.0);
+      vec3 toEye = projectionMatrix[3][3] > 0.5 ? -fwd : normalize(eye - mid);
+      float el = clamp(toEye.y, 0.0, 1.0);
+      float lean = smoothstep(0.30, 0.85, el), tw = smoothstep(0.55, 0.82, el);
+      vec2 fh = normalize(toEye.xz + vec2(1e-5, 0.0));
+      vec3 rt = vec3(fh.y, 0.0, -fh.x);
+      vec3 upC = normalize(cross(toEye, rt));                    // the eye's up, square to the line of sight
+      vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), upC, lean));
+      float S = mix(H / hf, D / df, tw);                          // the card's size: the tree's height, then its crown's span
+      float py = 0.5 * lean;                                      // the pivot climbs from the trunk's foot to the card's middle
+      vec3 piv = tb + vec3(0.0, S * py, 0.0);
+      float ph = tb.x * 0.07 + tb.z * 0.05, yy = position.y + 0.5;
+      float sw = (sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25) * 0.012 * yy * yy * S * (1.0 - tw);
+      wpOut = piv + rt * (position.x * S + sw) + up * ((yy - py) * S - 0.03 * (1.0 - lean));   // world space
+      tTw = tw;
+      vec2 cs = vec2(position.x + 0.5, yy);
+      float kS = lk * 2.0 + slot, colS = mod(kS, 6.0), rowS = floor(kS / 6.0);
+      tUvS = vec2((colS + cs.x) * ${(NS / AS).toFixed(6)}, 1.0 - (rowS + 1.0 - cs.y) * ${(NS / AS).toFixed(6)});
+      tUvT = vec2((colS + cs.x) * ${(NT / AT).toFixed(6)}, 1.0 - (rowS + 1.0 - cs.y) * ${(NT / AT).toFixed(6)});
+      // the alpha firmed as the card shrinks on screen (its mips average the gaps in), by the texels a pixel covers
+      float px = S * projectionMatrix[1][1] * 0.5 * uResH / max(1.0, length(eye - mid));
+      tBoost = 1.0 + 0.35 * max(0.0, log2(${NS.toFixed(1)} / max(px, 1.0)));
+      nrmOut = normalize(mix(vec3(fh.x * 0.45, 1.0, fh.y * 0.45), vec3(0.0, 1.0, 0.0), tw));
+  }`;
+  function treeArtPatch(sh, depth) {
+    const S = TREEART.side, T = TREEART.top;
+    Object.assign(sh.uniforms, { uLk: TREEART.uLk, uLk2: TREEART.uLk2, uTime: waterU.uTime, uResH: TREEART.uResH, tSide: { value: S.tex }, tTop: { value: T.tex } });
+    // the card is built in world space: project_vertex multiplies by the instance matrix, so the vertex undoes it first
+    const lit = !depth;   // the depth shader carries beginnormal_vertex too, but only under USE_DISPLACEMENTMAP
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;\n' + TREE_ART_VERT(S.N, S.A, T.N, T.A) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
+      .replace(lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>', 'vec3 tWP, tNrm; tCard(tWP, tNrm);\n' + (lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>'))
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (tInv(instanceMatrix) * vec4(tWP, 1.0)).xyz;   // built in world space: the instance matrix undone');
+    if (lit) sh.vertexShader = sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * tNrm;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n{ vec4 a = texture2D(tSide, tUvS), b = texture2D(tTop, tUvT);\n' +
+        '  vec4 tx = tTw <= 0.0 ? a : tTw >= 1.0 ? b : mix(a, b, tTw);\n' +
+        (depth ? '' : '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2));\n') +
+        '  diffuseColor.a *= clamp(tx.a * tBoost, 0.0, 1.0); }');
+  }
   function treeChipColor(g) {
     const s = TREE_STYLE[g] || TREE_STYLE[0];
     return 'hsl(' + Math.round(s[0] * 360) + ',' + Math.round(s[1] * 100) + '%,' + Math.round((s[2] + 0.13) * 100) + '%)';
@@ -13505,116 +13654,180 @@
       else if (CORE[i]) buckets.core.push(i);
       else buckets.wide[chunkOf(X[i], Z[i])].push(i);
     }
-    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), cCan = new THREE.Color();
-    const trunkScale = (dbh) => {
-      const r = clamp(dbh * 0.0127, 0.06, 0.55) / 0.28;
-      const h = boleH(dbh) / 3.6;
-      return [r, h];
-    };
-    const canopyAt = (i, st) => {
-      // crown base clears head height; center rises with the crown's own
-      // vertical extent so puffs sit low and columns ride high
-      const th = boleH(DBH[i]);
-      return GY[i] + th * 0.75 + CR[i] * st[4] * 0.72;
-    };
-    const paint = (mesh, idx, canopy, full) => {
-      for (let k = 0; k < idx.length; k++) {
-        const i = idx[k];
-        const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
-        const st = TREE_STYLE[g] || TREE_STYLE[0];
-        q.setFromAxisAngle(_sup, hash01(i * 9.1) * Math.PI * 2);
-        if (canopy) {
+    // ---- the trees as cards (TREE_ART): a side card and a top card a tree, by the same chunks so whole chunks cull; the
+    // trunk is in the side card's photograph, so no trunk mesh. The crowns below stand when the art is off
+    if (TREE_ART_ON) {
+      const looks = TREE_ART.looks, LOOK = new Uint8Array(n), bl = looks.indexOf('broadleaf'), pl = looks.indexOf('pine');
+      for (let i = 0; i < n; i++) LOOK[i] = NI[i] >= 0 && TREE_ART.speciesLook[NI[i]] != null ? TREE_ART.speciesLook[NI[i]] : bl;
+      TREEART.uLk = { value: looks.map(() => new THREE.Vector4(0, 1, 1, 0)) };
+      TREEART.uLk2 = { value: looks.map(() => new THREE.Vector4(0, 1, 1, 0)) };
+      TREEART.side = treeArtAtlas('side'); TREEART.top = treeArtAtlas('top');
+      // the card: a unit quad the shader builds in world space. Its sphere, at an instance scale of the tree's height (x,
+      // y) and span (z), encloses the card standing (up to twice the height tall) or lying over the crown
+      const cardG = new THREE.PlaneGeometry(1, 1);
+      cardG.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.4);
+      const mat = new THREE.MeshStandardMaterial({ alphaTest: 0.5, side: THREE.DoubleSide, roughness: 1, metalness: 0, envMapIntensity: 0.2, color: new THREE.Color(0.82, 0.82, 0.82) });
+      mat.onBeforeCompile = (sh) => {
+        treeArtPatch(sh, false);
+        lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'crown');
+        cloudShadowPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
+      };
+      mat.customProgramCacheKey = () => 'tree-card';
+      const dmat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaTest: 0.5, side: THREE.DoubleSide });
+      dmat.onBeforeCompile = (sh) => treeArtPatch(sh, true);
+      dmat.customProgramCacheKey = () => 'tree-card-depth';
+      const m4 = new THREE.Matrix4(), q4 = new THREE.Quaternion(), v1 = new V3(), v2 = new V3();
+      const lay = (idx, shadows) => {
+        if (!idx.length) return;
+        const g2 = cardG.clone(); g2.boundingSphere = cardG.boundingSphere.clone();
+        const im = new THREE.InstancedMesh(g2, mat, idx.length);
+        const ls = new Float32Array(idx.length * 2);
+        for (let k = 0; k < idx.length; k++) {
+          const i = idx[k], lk = LOOK[i];
+          const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0, st = TREE_STYLE[g] || TREE_STYLE[0];
+          // the tree's height (a conifer's spire as the cones had it, a broadleaf to the top of its crown) and its span
+          // (the faceted crowns' shader grew them to 1.21: the cards are sized to the crowns as drawn, or the city's canopy
+          // shrank by a fifth from the air)
+          const H = lk === pl ? clamp(3 + DBH[i] * 0.25, 3.5, 14) * 1.1 : (CY[i] - GY[i]) + CR[i] * st[4] * (1.15 + hash01(i * 7.7) * 0.2);
+          const D = lk === pl ? 2.4 * clamp(0.8 + DBH[i] * 0.06, 1, 3.5) : 2 * CR[i] * st[3] * 1.32;
+          m4.compose(v1.set(X[i], GY[i], Z[i]), q4.identity(), v2.set(H, H, D));
+          im.setMatrixAt(k, m4);
+          ls[k * 2] = lk; ls[k * 2 + 1] = hash01(i * 3.17 + 0.41);
+        }
+        g2.setAttribute('aLS', new THREE.InstancedBufferAttribute(ls, 2));
+        im.instanceMatrix.needsUpdate = true;
+        im.customDepthMaterial = dmat;
+        im.castShadow = !!shadows; im.receiveShadow = false;
+        im.userData.treeCard = true;
+        groupCity.add(im);
+        treeMeshes.push(im);
+        TREEART.meshes.push(im);
+        TREEART.n += idx.length;
+      };
+      const core = [], wide = [], outer = [];
+      for (let c = 0; c < CHN * CHN; c++) wide.push([]);
+      for (let c = 0; c < OCHN * OCHN; c++) outer.push([]);
+      for (let i = 0; i < n; i++) {
+        if (OUT[i]) outer[outerChunkOf(X[i], Z[i])].push(i);
+        else if (CORE[i]) core.push(i);
+        else wide[chunkOf(X[i], Z[i])].push(i);
+      }
+      lay(core, !isTouch);
+      for (const w of wide) lay(w, !isTouch);
+      for (const o of outer) lay(o, false);
+      treeArtSeason(true);   // the atlases fill as their images decode, behind the veil
+    } else {
+      const m = new THREE.Matrix4(), q = new THREE.Quaternion(), cCan = new THREE.Color();
+      const trunkScale = (dbh) => {
+        const r = clamp(dbh * 0.0127, 0.06, 0.55) / 0.28;
+        const h = boleH(dbh) / 3.6;
+        return [r, h];
+      };
+      const canopyAt = (i, st) => {
+        // crown base clears head height; center rises with the crown's own
+        // vertical extent so puffs sit low and columns ride high
+        const th = boleH(DBH[i]);
+        return GY[i] + th * 0.75 + CR[i] * st[4] * 0.72;
+      };
+      const paint = (mesh, idx, canopy, full) => {
+        for (let k = 0; k < idx.length; k++) {
+          const i = idx[k];
+          const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
+          const st = TREE_STYLE[g] || TREE_STYLE[0];
+          q.setFromAxisAngle(_sup, hash01(i * 9.1) * Math.PI * 2);
+          if (canopy) {
+            const cy = canopyAt(i, st);
+            const kk = mesh.geometry.isCanopyCore ? canK : 1;   // round crowns shrink under their cards
+            m.compose(new V3(X[i], cy, Z[i]), q, new V3(CR[i] * st[3] * kk, CR[i] * st[4] * (0.9 + hash01(i * 7.7) * 0.25) * kk, CR[i] * st[3] * kk));
+            mesh.setMatrixAt(k, m);
+            if (kk !== 1) cardTint(i, st, cCan).multiply(texU.leafNorm).multiplyScalar(0.06);   // the core wears the cards' own colour, at the sprite's mean
+            else cCan.setHSL(st[0] + 0.04 + (hash01(i * 4.9) - 0.5) * 0.045, Math.min(1, (st[1] + (hash01(i * 6.1) - 0.5) * 0.12) * 1.05), st[2] + (hash01(i * 8.3) - 0.5) * 0.04);   // greener than the phone tuning now the crown is the whole tree (Round 58; lightness barely shows through the day pipeline, the sway shader's multiplier carries the depth)
+            mesh.setColorAt(k, cCan);
+          } else {
+            const [rs, hs] = trunkScale(DBH[i]);
+            const oT = frontOff(X[i], Z[i]);
+            const capLift = (CORE[i] && oT > TERRAIN.trenchW - 1 && oT < TERRAIN.trenchE + 1) ? 0.82 : 0;
+            m.compose(new V3(X[i], GY[i] + capLift, Z[i]), q, new V3(rs, hs, rs));
+            mesh.setMatrixAt(k, m);
+          }
+        }
+        mesh.instanceMatrix.needsUpdate = true;
+        if (canopy && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+        mesh.castShadow = !!full;
+        mesh.receiveShadow = false;
+        groupCity.add(mesh);
+      };
+      // core: trunks + faceted canopies + two extra lobes each, with shadows
+      if (buckets.tCore.length) paint(instMesh(trunkCoreG, trunkMat, buckets.tCore.length), buckets.tCore, false, true);
+      const ci = buckets.core;
+      if (ci.length) {
+        paint(instMesh(canCoreG, canMat, ci.length), ci, true, true);
+        const lumps = instMesh(canCoreG, canMat, ci.length * 2);
+        for (let k = 0; k < ci.length; k++) {
+          const i = ci[k];
+          const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
+          const st = TREE_STYLE[g] || TREE_STYLE[0];
           const cy = canopyAt(i, st);
-          const kk = mesh.geometry.isCanopyCore ? canK : 1;   // round crowns shrink under their cards
-          m.compose(new V3(X[i], cy, Z[i]), q, new V3(CR[i] * st[3] * kk, CR[i] * st[4] * (0.9 + hash01(i * 7.7) * 0.25) * kk, CR[i] * st[3] * kk));
-          mesh.setMatrixAt(k, m);
-          if (kk !== 1) cardTint(i, st, cCan).multiply(texU.leafNorm).multiplyScalar(0.06);   // the core wears the cards' own colour, at the sprite's mean
-          else cCan.setHSL(st[0] + 0.04 + (hash01(i * 4.9) - 0.5) * 0.045, Math.min(1, (st[1] + (hash01(i * 6.1) - 0.5) * 0.12) * 1.05), st[2] + (hash01(i * 8.3) - 0.5) * 0.04);   // greener than the phone tuning now the crown is the whole tree (Round 58; lightness barely shows through the day pipeline, the sway shader's multiplier carries the depth)
-          mesh.setColorAt(k, cCan);
-        } else {
-          const [rs, hs] = trunkScale(DBH[i]);
-          const oT = frontOff(X[i], Z[i]);
-          const capLift = (CORE[i] && oT > TERRAIN.trenchW - 1 && oT < TERRAIN.trenchE + 1) ? 0.82 : 0;
-          m.compose(new V3(X[i], GY[i] + capLift, Z[i]), q, new V3(rs, hs, rs));
-          mesh.setMatrixAt(k, m);
+          for (let l = 0; l < 2; l++) {
+            const a = hash01(i * 3.3 + l * 17.1) * Math.PI * 2;
+            const r = CR[i] * (0.45 + 0.25 * hash01(i * 4.1 + l)) * canK;
+            const ls = CR[i] * (0.5 + 0.25 * hash01(i * 6.3 + l * 5)) * canK;
+            m.compose(new V3(X[i] + Math.cos(a) * r, cy - CR[i] * 0.15 + hash01(i + l * 3) * CR[i] * 0.35, Z[i] + Math.sin(a) * r), q, new V3(ls, ls * 0.9, ls));
+            lumps.setMatrixAt(k * 2 + l, m);
+            if (canK !== 1) cardTint(i, st, cCan).multiply(texU.leafNorm).multiplyScalar(0.055 + 0.01 * l);
+            else cCan.setHSL(st[0] + (hash01(i * 4.9) - 0.5) * 0.04, st[1] - 0.06, st[2] + 0.05 + 0.02 * l);
+            lumps.setColorAt(k * 2 + l, cCan);
+          }
         }
+        lumps.instanceMatrix.needsUpdate = true;
+        if (lumps.instanceColor) lumps.instanceColor.needsUpdate = true;
+        lumps.castShadow = true;
+        groupCity.add(lumps);
+        if (cardG) paintCards(ci, true);
       }
-      mesh.instanceMatrix.needsUpdate = true;
-      if (canopy && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-      mesh.castShadow = !!full;
-      mesh.receiveShadow = false;
-      groupCity.add(mesh);
-    };
-    // core: trunks + faceted canopies + two extra lobes each, with shadows
-    if (buckets.tCore.length) paint(instMesh(trunkCoreG, trunkMat, buckets.tCore.length), buckets.tCore, false, true);
-    const ci = buckets.core;
-    if (ci.length) {
-      paint(instMesh(canCoreG, canMat, ci.length), ci, true, true);
-      const lumps = instMesh(canCoreG, canMat, ci.length * 2);
-      for (let k = 0; k < ci.length; k++) {
-        const i = ci[k];
-        const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0;
-        const st = TREE_STYLE[g] || TREE_STYLE[0];
-        const cy = canopyAt(i, st);
-        for (let l = 0; l < 2; l++) {
-          const a = hash01(i * 3.3 + l * 17.1) * Math.PI * 2;
-          const r = CR[i] * (0.45 + 0.25 * hash01(i * 4.1 + l)) * canK;
-          const ls = CR[i] * (0.5 + 0.25 * hash01(i * 6.3 + l * 5)) * canK;
-          m.compose(new V3(X[i] + Math.cos(a) * r, cy - CR[i] * 0.15 + hash01(i + l * 3) * CR[i] * 0.35, Z[i] + Math.sin(a) * r), q, new V3(ls, ls * 0.9, ls));
-          lumps.setMatrixAt(k * 2 + l, m);
-          if (canK !== 1) cardTint(i, st, cCan).multiply(texU.leafNorm).multiplyScalar(0.055 + 0.01 * l);
-          else cCan.setHSL(st[0] + (hash01(i * 4.9) - 0.5) * 0.04, st[1] - 0.06, st[2] + 0.05 + 0.02 * l);
-          lumps.setColorAt(k * 2 + l, cCan);
+      // wide tier: one light trunk + canopy pair per chunk so whole chunks cull
+      for (let c = 0; c < CHN * CHN; c++) {
+        const ti = buckets.tWide[c];
+        if (ti.length) paint(instMesh(trunkWideG, trunkMat, ti.length), ti, false, false);
+        const wi = buckets.wide[c];
+        if (wi.length) paint(instMesh(canWideG, canMat, wi.length), wi, true, false);
+        // (the wide tier carried a second lobe per crown for a round; the lumpy displacement
+        // gives every crown its asymmetry now, and the lobes were 3.2M triangles a frame)
+        if (wi.length && cardG) paintCards(wi, false, cardWideG);
+      }
+      // the outer tier: one crown mesh and one trunk mesh per non-empty city chunk
+      let nOuter = 0, nOuterChunks = 0;
+      for (let c = 0; c < OCHN * OCHN; c++) {
+        const oi = buckets.outer[c];
+        if (!oi.length) continue;
+        nOuter += oi.length; nOuterChunks++;
+        paint(instMesh(trunkOuterG, trunkMat, oi.length), oi, false, false);
+        paint(instMesh(canOuterG, canMat, oi.length), oi, true, false);
+      }
+      // species silhouettes, citywide: zelkova/elm vases and linden pyramids
+      if (buckets.vases.length) paint(instMesh(vaseG, canMat, buckets.vases.length), buckets.vases, true, false);
+      if (buckets.pyrs.length) paint(instMesh(pyrG, canMat, buckets.pyrs.length), buckets.pyrs, true, false);
+      if (cardG && buckets.vases.length) paintCards(buckets.vases, false, cardWideG);
+      if (cardG && buckets.pyrs.length) paintCards(buckets.pyrs, false, cardWideG);
+      // conifers: cones straight from the ground, both tiers in one mesh
+      const ki = buckets.cones;
+      if (ki.length) {
+        const cones = instMesh(coneG, canMat, ki.length);
+        for (let k = 0; k < ki.length; k++) {
+          const i = ki[k];
+          const h = clamp(3 + DBH[i] * 0.25, 3.5, 14), r = clamp(0.8 + DBH[i] * 0.06, 1, 3.5);
+          q.setFromAxisAngle(_sup, hash01(i * 9.1) * Math.PI * 2);
+          m.compose(new V3(X[i], GY[i], Z[i]), q, new V3(r, h, r));
+          cones.setMatrixAt(k, m);
+          cCan.setHSL(0.36 + (hash01(i * 4.9) - 0.5) * 0.03, 0.4, (cardG ? 0.075 : 0.14) + (hash01(i * 8.3) - 0.5) * 0.03);
+          cones.setColorAt(k, cCan);
         }
+        cones.instanceMatrix.needsUpdate = true;
+        if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
+        cones.castShadow = true;
+        groupCity.add(cones);
+        if (cardG) paintCards(ki, false, cardWideG, true);
       }
-      lumps.instanceMatrix.needsUpdate = true;
-      if (lumps.instanceColor) lumps.instanceColor.needsUpdate = true;
-      lumps.castShadow = true;
-      groupCity.add(lumps);
-      if (cardG) paintCards(ci, true);
-    }
-    // wide tier: one light trunk + canopy pair per chunk so whole chunks cull
-    for (let c = 0; c < CHN * CHN; c++) {
-      const ti = buckets.tWide[c];
-      if (ti.length) paint(instMesh(trunkWideG, trunkMat, ti.length), ti, false, false);
-      const wi = buckets.wide[c];
-      if (wi.length) paint(instMesh(canWideG, canMat, wi.length), wi, true, false);
-      // (the wide tier carried a second lobe per crown for a round; the lumpy displacement
-      // gives every crown its asymmetry now, and the lobes were 3.2M triangles a frame)
-      if (wi.length && cardG) paintCards(wi, false, cardWideG);
-    }
-    // the outer tier: one crown mesh and one trunk mesh per non-empty city chunk
-    let nOuter = 0, nOuterChunks = 0;
-    for (let c = 0; c < OCHN * OCHN; c++) {
-      const oi = buckets.outer[c];
-      if (!oi.length) continue;
-      nOuter += oi.length; nOuterChunks++;
-      paint(instMesh(trunkOuterG, trunkMat, oi.length), oi, false, false);
-      paint(instMesh(canOuterG, canMat, oi.length), oi, true, false);
-    }
-    // species silhouettes, citywide: zelkova/elm vases and linden pyramids
-    if (buckets.vases.length) paint(instMesh(vaseG, canMat, buckets.vases.length), buckets.vases, true, false);
-    if (buckets.pyrs.length) paint(instMesh(pyrG, canMat, buckets.pyrs.length), buckets.pyrs, true, false);
-    if (cardG && buckets.vases.length) paintCards(buckets.vases, false, cardWideG);
-    if (cardG && buckets.pyrs.length) paintCards(buckets.pyrs, false, cardWideG);
-    // conifers: cones straight from the ground, both tiers in one mesh
-    const ki = buckets.cones;
-    if (ki.length) {
-      const cones = instMesh(coneG, canMat, ki.length);
-      for (let k = 0; k < ki.length; k++) {
-        const i = ki[k];
-        const h = clamp(3 + DBH[i] * 0.25, 3.5, 14), r = clamp(0.8 + DBH[i] * 0.06, 1, 3.5);
-        q.setFromAxisAngle(_sup, hash01(i * 9.1) * Math.PI * 2);
-        m.compose(new V3(X[i], GY[i], Z[i]), q, new V3(r, h, r));
-        cones.setMatrixAt(k, m);
-        cCan.setHSL(0.36 + (hash01(i * 4.9) - 0.5) * 0.03, 0.4, (cardG ? 0.075 : 0.14) + (hash01(i * 8.3) - 0.5) * 0.03);
-        cones.setColorAt(k, cCan);
-      }
-      cones.instanceMatrix.needsUpdate = true;
-      if (cones.instanceColor) cones.instanceColor.needsUpdate = true;
-      cones.castShadow = true;
-      groupCity.add(cones);
-      if (cardG) paintCards(ki, false, cardWideG, true);
     }
     // Round 167: the tree meshes cull. r149's InstancedMesh never did (its constructor turns frustumCulled off), so all
     // of them, 68 meshes and 2.27 M triangles a frame on a phone, drew in every view with a third or more of them out of
@@ -13623,7 +13836,7 @@
     // each. Drawn unculled once behind the veil (the first frame) so every one still uploads there (gotcha 12); the
     // arrays stay, as they always have (nothing frees a tree's)
     for (const im of treeMeshes) {
-      const crown = im.material !== trunkMat;
+      const crown = im.material !== trunkMat && !im.userData.treeCard;
       fitInstSphere(im, crown ? CROWN_GROW : 1, crown ? CROWN_SLACK : 0, 2);
       im.frustumCulled = false; pendingUpload.push(im);
     }
@@ -14860,6 +15073,7 @@
   function applyClock(y, m, d, minutes) {
     if (!(y >= 1900 && y <= 2200 && m >= 1 && m <= 12 && d >= 1 && d <= 31 && minutes >= 0 && minutes <= 1439)) return false;
     clock.live = false; clock.y = y; clock.m = m; clock.d = d; clock.minutes = Math.round(minutes);
+    TREEART.at = -1e9;   // a new date turns the trees' seasons on the next frame, not up to 2 s later
     return true;
   }
   // the share hash: #p=x,y,z,yaw,pitch&t=YYYYMMDD,minutes&l=mask (metres to 0.1,
@@ -24944,6 +25158,7 @@ float pinOccGate() {
     updateTraffic(now, dt);
     updateLights(now);
     updateRoofKit(now);   // Round 150
+    if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     updateLightsTheme(now, dt);
     updateTreePick();
     updateMarkets(now);

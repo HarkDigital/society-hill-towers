@@ -134,7 +134,11 @@ class Trees(unittest.TestCase):
         step = cut("  step('Planting the street trees',", '  function plantProceduralTrees() {')
         self.assertNotIn('g2.boundingSphere = new THREE.Sphere', step)   # the hand-set chunk spheres are gone
         self.assertIn('treeMeshes.push(im);', step)
-        self.assertEqual(step.count('new THREE.InstancedMesh('), 1)       # every tree mesh is made by instMesh
+        # every tree mesh is made by instMesh, or (Round 179) is a tree card, which joins the same list and fit
+        self.assertEqual(step.count('new THREE.InstancedMesh('), 2)
+        cards = step[step.index('    if (TREE_ART_ON) {'):step.index('    } else {', step.index('    if (TREE_ART_ON) {'))]
+        self.assertIn('const im = new THREE.InstancedMesh(g2, mat, idx.length);', cards)
+        self.assertIn('treeMeshes.push(im);', cards)
         fit = step[step.index('for (const im of treeMeshes) {'):]
         self.assertIn('fitInstSphere(im, crown ? CROWN_GROW : 1, crown ? CROWN_SLACK : 0, 2);', fit)
         self.assertIn('im.frustumCulled = false; pendingUpload.push(im);', fit)

@@ -7931,3 +7931,38 @@ takes the tap). 435 tests.
   Society Hill and straight down over two South Philadelphia blocks: the floating units gone, the roofs' own unchanged.
 - `tests/test_roof_kit.py` (Round 150's file) gains the mask run under node on a rectangle, an L and a courtyard, and the
   gating of every placement. 468 tests.
+
+## Round 179 — the trees look like their species, by the season (Oct 12)
+
+- Mike: "Can you have Open AI create more realistic looking trees? The data for tree species already exists in the app.
+  Can we make them look like their real life counterparts?" The PPR inventory carries 296 species over 150,887 trees, the
+  top thirty 70% of them; Round 58's trees were faceted crowns in twelve species colours.
+- `fetch_tree_art.py` asks OpenAI's image API for 18 looks (London planetree, red and sugar maple, Kwanzan cherry, Callery
+  pear, honeylocust, northern red and pin oak, zelkova, ginkgo, Japanese tree lilac, redbud, crabapple, linden, sweetgum,
+  white pine, elm, a generic broadleaf), each from the side (the whole tree, level, from far off) and from straight above
+  (as an aerial map shows a crown), in summer, autumn and winter, and in bloom for the five that flower: 114 images on a
+  transparent background. `gpt-image-2` refuses a transparent background on this account, so `gpt-image-1.5` at medium.
+  The first top view drew single leaves the size of a hand; the prompt now asks for the crown as clumps seen from high
+  up. The model fills the gaps between winter twigs with an opaque pale haze (50 to 75% of the covered pixels of 15 of the
+  18): `bake_tree_art.py`'s `dehaze` keys the crown on darkness and spares the trunk's column (the planetree's bark is
+  cream). The bake crops, fits, bleeds and firms each image into a square cell, records its framing, and maps every
+  species onto a look (`LOOK_OF`); `tree_art.json` is 2.46 MB.
+- The page draws a tree as one card (`TREE_ART_VERT`, `treeArtPatch`): standing on its trunk and turned about it to the
+  eye while the view is low, leaning back to face the eye as the view steepens (pivoting up to the card's middle), its
+  picture cross-dissolving from the side view to the top view between 0.55 and 0.82 of the way to straight down, its size
+  from the tree's height to its crown's span. The first pass drew a side card and a top card and dithered between them,
+  which read as speckled, see-through crowns from the air; and the card was first built after `beginnormal_vertex` read
+  its variables, which left every tree black. In the shadow pass the eye is the sun (a low sun casts the side, a high one
+  the crown; the depth shader has `beginnormal_vertex` only under displacement, so the pass is told, not sniffed). Cards
+  are sized to the crowns as Round 58's shader drew them (1.21 times), or the city's canopy shrank by a fifth.
+- Seasons follow the model's date per look (`TREE_CAL`, `treeSeasonOf`): leaf-out over April 10 to May 5, the colour over
+  October from a look's own offset (red maples and honeylocusts first, oaks, ginkgos and pears last), leaf fall over
+  November; cherries, pears, redbuds and crabapples in bloom late March to mid-April, the tree lilac in June. Each look's
+  two current seasons sit in the atlases (`treeArtSeason`, a canvas a view, six cells a row, half size on a phone) and
+  every tree turns on a day of its own within a change, so a block colours tree by tree. A clock change turns them on the
+  next frame. `?trees=lowpoly` keeps Round 58's crowns.
+- Cost: from the air over Washington Square the trees draw 0.2 M triangles a frame against 5.5 M (the whole frame 7.0 M
+  against 12.4 M), and on a phone's view 85 k; draw calls a few fewer. Before and after at street level on Spruce Street,
+  over Washington Square and straight down, and July, October, January, April and a night in October; the phone path at
+  740x360. `tests/test_tree_art.py` (the data, the species mapping, the calendar under node, the wiring);
+  `tests/test_cull.py` counts the cards' mesh in the fitted list. 472 tests.
