@@ -5912,6 +5912,7 @@
         if (r2 >= 2.2 && r2 <= 5.2) flhV = Math.min(4.6, r2);
       }
       let flatTop = 0;   // a flat roof's height, for its rooftop hardware below
+      let wallTop = 0;   // the street wall's top (the eave, or the flat roof), for a house front
       try {
         if (quad) {
           let eaveH, ridgeTop, rrad = null;
@@ -5926,6 +5927,7 @@
             eaveH = b.h - rise; ridgeTop = b.h + 0.05;
           }
           parts.push({ geom: buildingGeom(quad, null, eaveH, -1.5), color, style, flh: flhV });
+          wallTop = eaveH;
           const roofCol = (b.rp != null && ROOF_PAL)
             ? ROOF_PAL[b.rp].clone().multiplyScalar(0.92 + hash01(i * 8.9) * 0.18)
             : new THREE.Color(roofPalette[Math.floor(hash01(i * 3.1) * roofPalette.length) % roofPalette.length])
@@ -5964,6 +5966,7 @@
           const hFlat = (mr && mForm > 0) ? Math.max(3, mr[1] + 0.35 * (mr[2] - mr[1])) : b.h;
           parts.push({ geom: buildingGeom(b.poly, b.holes, hFlat, b.minH ? b.minH : -1.5), color, style, flh: flhV });
           if (!b.minH && hFlat < 60) flatTop = hFlat;
+          if (!b.minH) wallTop = hFlat;
           // sampled roof color as a thin overlay cap. It must clear the cornice
           // SLAB (a solid extrusion to hFlat+0.06 whose cream top used to play
           // "roof" on every rowhouse) - 9 cm up, deterministic, never coplanar;
@@ -6000,6 +6003,7 @@
             parts.push({ geom: g, color: new THREE.Color(hex).multiplyScalar(kG), style: st2, baseY: ty || 0 });
           }, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false);   // the wall in the tiers' register: its darkened lip comes back to the core's
         }
+        if (wallTop && !spec0 && wallTop < 30) frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, 'core');
       }
       registerPoly(b.poly);
       for (let k = 0; k < b.poly.length; k++) {
@@ -9401,6 +9405,7 @@
         const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
         if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
+        if (!mh && !spec && h < 30) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, 'wide');
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
         else {
           appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
@@ -11029,6 +11034,187 @@
     }
     flushUploads(true);
   });
+
+  // ---- house fronts (the facade prototype, Oct 12; Mike: "I would love for the buildings to be much more varied", then
+  // "prototype both blocks with AI-generated fronts"). FRONTS_DATA (bake_fronts.py) carries, per set, an atlas of whole
+  // house fronts (one straight-on elevation a cell, party wall to party wall, sidewalk to cornice), a mask atlas in the
+  // same layout (r the window glass, g a number per window, b the door) and the runs: street centrelines whose houses take
+  // a front. The core's and the outer districts' loops hand every house standing near a run to frontNote (its footprint,
+  // its ground and its wall top); 'Hanging the house fronts' finds each one's street wall (the edge parallel to the run,
+  // facing it, nearest it), lays a quad 5 cm proud of it from the ground to the wall top, cut into as many cells as the
+  // wall is front widths wide, and deals the cells so no two neighbours share one. By day the glass is glossy; after dark
+  // a lit window (per house and per window, from the mask's numbers) glows warm. The procedural facade stays under it
+  const FRONTS_ON = typeof FRONTS_DATA !== 'undefined' && !!FRONTS_DATA && !!FRONTS_DATA.runs && !TIER2;
+  const FRONTS = { runs: [], cands: [], laid: [], meshes: [], ms: 0, error: null };
+  if (FRONTS_ON) for (const r of FRONTS_DATA.runs) {
+    const dx = r.b[0] - r.a[0], dz = r.b[1] - r.a[1], L = Math.hypot(dx, dz) || 1, P = 24;
+    FRONTS.runs.push({ ...r, dx: dx / L, dz: dz / L, L, bb: [Math.min(r.a[0], r.b[0]) - P, Math.min(r.a[1], r.b[1]) - P, Math.max(r.a[0], r.b[0]) + P, Math.max(r.a[1], r.b[1]) + P] });
+  }
+  function frontNote(poly, base, top, seed, tier) {
+    if (!FRONTS_ON || !(top - base > 2.5)) return;
+    const x = poly[0][0], z = poly[0][1];
+    for (const r of FRONTS.runs) if (x >= r.bb[0] && x <= r.bb[2] && z >= r.bb[1] && z <= r.bb[3]) { FRONTS.cands.push({ poly, base, top, seed, tier }); return; }
+  }
+  // the street wall of a house on a run: an edge within 15 degrees of the run, 2.5 to 16 m off its centreline, its
+  // outward normal toward it; the nearest such edge, or null
+  function frontEdge(c, r) {
+    const P = c.poly, n = P.length;
+    let cx = 0, cz = 0; for (const p of P) { cx += p[0]; cz += p[1]; } cx /= n; cz /= n;
+    let best = null;
+    for (let i = 0; i < n; i++) {
+      const p = P[i], q = P[(i + 1) % n], ex = q[0] - p[0], ez = q[1] - p[1], el = Math.hypot(ex, ez);
+      if (el < 2.4 || Math.abs((ex * r.dx + ez * r.dz) / el) < 0.966) continue;
+      const mx = (p[0] + q[0]) / 2, mz = (p[1] + q[1]) / 2;
+      const t = (mx - r.a[0]) * r.dx + (mz - r.a[1]) * r.dz;
+      if (t < -2 || t > r.L + 2) continue;
+      const s = (mx - r.a[0]) * r.dz - (mz - r.a[1]) * r.dx;   // signed distance off the centreline
+      if (Math.abs(s) < 2.5 || Math.abs(s) > 16) continue;
+      let nx = -ez / el, nz = ex / el;
+      if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
+      const fx = r.a[0] + r.dx * t - mx, fz = r.a[1] + r.dz * t - mz, fl = Math.hypot(fx, fz) || 1;
+      if ((nx * fx + nz * fz) / fl < 0.9) continue;   // the wall must face the street
+      if (!best || Math.abs(s) < best.s) best = { p, q, nx, nz, t, s: Math.abs(s), side: s < 0 ? 0 : 1, el };
+    }
+    return best;
+  }
+  // a box standing on a wall: along the wall from (x0, z0) to (x1, z1), out0 to out1 metres along its outward normal,
+  // y0 to y1; the face against the wall is left out. Flat-shaded triangles into pos / nor / col
+  function frontBox(B, x0, z0, x1, z1, nx, nz, out0, out1, y0, y1, col) {
+    const P = (x, z, o, y) => [x + nx * o, y, z + nz * o];
+    const a0 = P(x0, z0, out0, y0), b0 = P(x1, z1, out0, y0), a1 = P(x0, z0, out1, y0), b1 = P(x1, z1, out1, y0);
+    const a2 = P(x0, z0, out0, y1), b2 = P(x1, z1, out0, y1), a3 = P(x0, z0, out1, y1), b3 = P(x1, z1, out1, y1);
+    const cx = (x0 + x1) / 2 + nx * (out0 + out1) / 2, cy = (y0 + y1) / 2, cz = (z0 + z1) / 2 + nz * (out0 + out1) / 2;
+    const quad = (p, q, r, s) => {   // any order round the face: turned to face away from the box's centre
+      const ux = q[0] - p[0], uy = q[1] - p[1], uz = q[2] - p[2], vx = s[0] - p[0], vy = s[1] - p[1], vz = s[2] - p[2];
+      let fx = uy * vz - uz * vy, fy = uz * vx - ux * vz, fz = ux * vy - uy * vx; const fl = Math.hypot(fx, fy, fz) || 1; fx /= fl; fy /= fl; fz /= fl;
+      const mx = (p[0] + r[0]) / 2 - cx, my = (p[1] + r[1]) / 2 - cy, mz = (p[2] + r[2]) / 2 - cz;
+      let vs = [p, q, r, p, r, s];
+      if (fx * mx + fy * my + fz * mz < 0) { vs = [p, s, r, p, r, q]; fx = -fx; fy = -fy; fz = -fz; }
+      for (const v of vs) { B.pos.push(v[0], v[1], v[2]); B.nor.push(fx, fy, fz); B.col.push(col.r, col.g, col.b); }
+    };
+    quad(a1, b1, b3, a3);   // the face
+    quad(a3, b3, b2, a2);   // the top
+    quad(a0, b0, b1, a1);   // the soffit
+    quad(b0, b1, b3, b2);   // the ends
+    quad(a0, a1, a3, a2);
+  }
+  step('Hanging the house fronts', async () => {
+    if (!FRONTS_ON || !FRONTS.cands.length) return;
+    const t0 = performance.now();
+    try {
+      const img = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('front atlas did not decode')); im.src = src; });
+      const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
+      const perSet = new Map();
+      for (const c of FRONTS.cands) for (let ri = 0; ri < FRONTS.runs.length; ri++) {
+        const r = FRONTS.runs[ri], e = frontEdge(c, r); if (!e) continue;
+        if (!perSet.has(r.set)) perSet.set(r.set, []);
+        perSet.get(r.set).push({ c, r, ri, e }); break;
+      }
+      for (const [setName, list] of perSet) {
+        const S = FRONTS_DATA.sets[setName]; if (!S) continue;
+        const [im, mk] = await Promise.all([img(S.img), img(S.mask)]);
+        const map = new THREE.Texture(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso; map.needsUpdate = true;
+        const mask = new THREE.Texture(mk); mask.needsUpdate = true;
+        const AW = S.cols * S.cell[0], AH = S.rows * S.cell[1], N = S.cells.length;
+        const cellUV = (k) => {
+          const col = k % S.cols, row = Math.floor(k / S.cols);
+          return [(col * S.cell[0] + S.pad) / AW, ((col + 1) * S.cell[0] - S.pad) / AW,
+            1 - ((row + 1) * S.cell[1] - S.pad) / AH, 1 - (row * S.cell[1] + S.pad) / AH];   // u0, u1, v0 (foot), v1 (head); the atlas is flipped on upload
+        };
+        // deal the cells along each side of each run in order, never the same as the house before
+        list.sort((a, b) => a.ri - b.ri || a.e.side - b.e.side || a.e.t - b.e.t);
+        const pos = [], uv = [], seed = [], base = [], idx = [], R = { pos: [], nor: [], col: [] };
+        // a photographed colour into the stored register, as the landmark kit does (gotcha 11): linear, at the set's gain
+        const stored = (hex) => new THREE.Color(hex).convertSRGBToLinear().multiplyScalar(S.gain || 0.88);
+        let prev = -1, prevKey = '';
+        for (const { c, ri, e } of list) {
+          if (ri + ':' + e.side !== prevKey) { prev = -1; prevKey = ri + ':' + e.side; }
+          // left to right as seen from the street: the viewer faces -n, their right is (nz, -nx)
+          let a = e.p, b = e.q;
+          if ((b[0] - a[0]) * e.nz - (b[1] - a[1]) * e.nx < 0) { a = e.q; b = e.p; }
+          const k = Math.max(1, Math.round(e.el / S.w)), y0 = c.base - 0.4, y1 = c.top, off = 0.05;
+          for (let j = 0; j < k; j++) {
+            let cell = Math.floor(hash01(c.seed * 3.71 + j * 0.37) * N) % N;
+            if (cell === prev) cell = (cell + 1 + Math.floor(hash01(c.seed * 1.9 + j) * (N - 1))) % N;
+            prev = cell;
+            const f0 = j / k, f1 = (j + 1) / k;
+            const ax = a[0] + (b[0] - a[0]) * f0 + e.nx * off, az = a[1] + (b[1] - a[1]) * f0 + e.nz * off;
+            const bx = a[0] + (b[0] - a[0]) * f1 + e.nx * off, bz = a[1] + (b[1] - a[1]) * f1 + e.nz * off;
+            const [u0, u1, v0, v1] = cellUV(cell), o = pos.length / 3, sd = hash01(c.seed * 7.7 + j);
+            pos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
+            uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
+            seed.push(sd, sd, sd, sd); base.push(c.base, c.base, c.base, c.base);
+            idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+            FRONTS.laid.push({ set: setName, cell: S.cells[cell].id, x: Math.round((ax + bx) / 2), z: Math.round((az + bz) / 2), w: +(e.el / k).toFixed(1), h: +(y1 - y0).toFixed(1), tier: c.tier });
+            // the relief: the front's own cornice projected 34 cm along the wall's head, and a stoop under its door
+            const cm = S.cells[cell], cw = e.el / k;
+            const wx0 = a[0] + (b[0] - a[0]) * f0, wz0 = a[1] + (b[1] - a[1]) * f0, wx1 = a[0] + (b[0] - a[0]) * f1, wz1 = a[1] + (b[1] - a[1]) * f1;
+            frontBox(R, wx0, wz0, wx1, wz1, e.nx, e.nz, 0, 0.34, y1 - 0.42, y1 + 0.06, stored(cm.cornice));
+            if (cm.door) {
+              const ux = (wx1 - wx0) / cw, uz = (wz1 - wz0) / cw, du = (cm.door[0] + cm.door[2]) / 2 * cw;
+              const sw = Math.min(cw * 0.6, Math.max(1.1, (cm.door[2] - cm.door[0]) * cw * 1.5));
+              const sx = wx0 + ux * du, sz = wz0 + uz * du, gy = siteY(sx + e.nx * 0.6, sz + e.nz * 0.6, 'ground') || c.base;
+              const s0x = sx - ux * sw / 2, s0z = sz - uz * sw / 2, s1x = sx + ux * sw / 2, s1z = sz + uz * sw / 2, sc = stored(S.step);
+              frontBox(R, s0x, s0z, s1x, s1z, e.nx, e.nz, 0.05, 0.95, gy - 0.3, gy + 0.2, sc);
+              frontBox(R, s0x, s0z, s1x, s1z, e.nx, e.nz, 0.05, 0.62, gy + 0.2, gy + 0.4, sc);
+            }
+          }
+        }
+        if (R.pos.length) {
+          const rg = new THREE.BufferGeometry();
+          rg.setAttribute('position', new THREE.Float32BufferAttribute(R.pos, 3));
+          rg.setAttribute('normal', new THREE.Float32BufferAttribute(R.nor, 3));
+          rg.setAttribute('color', new THREE.Float32BufferAttribute(R.col, 3));
+          const rm = new THREE.Mesh(rg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 }));
+          rm.castShadow = !isTouch; rm.receiveShadow = true; rm.name = 'fronts-relief-' + setName;
+          rm.frustumCulled = false; pendingUpload.push(rm);
+          groupCity.add(rm);
+          FRONTS.meshes.push(rm);
+        }
+        if (!idx.length) continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
+        g.setAttribute('aBase', new THREE.Float32BufferAttribute(base, 1));
+        g.setIndex(idx);
+        g.computeVertexNormals();
+        const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(S.gain || 0.88, S.gain || 0.88, S.gain || 0.88), roughness: 0.9, metalness: 0 });
+        mat.onBeforeCompile = (sh) => {
+          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; attribute float aBase; varying float vSeed; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;')
+            .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed; vBase = aBase;')
+            .replace('#include <project_vertex>', '#include <project_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal);');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase; vec4 frMask;')
+            .replace('#include <map_fragment>', 'frMask = texture2D(uMask, vUv);\n#include <map_fragment>')
+            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, frMask.r);')
+            // a lit window: four houses in ten, and in a lit house about two windows in three, each its own warmth; only
+            // the glass glows (the front's own dark pixels inside the mask), never the frames and muntins round it
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.6, fract(vSeed * 7.31)); float wr = fract(sin(frMask.g * 255.0 * 12.9898 + vSeed * 78.233) * 43758.5453); float wl = step(0.34, wr);\n' +
+              '  float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + (S.gain || 0.88).toFixed(2) + ');\n' +
+              '  vec3 warm = mix(vec3(1.0, 0.68, 0.38), vec3(0.95, 0.82, 0.62), fract(wr * 3.7));\n' +
+              '  totalEmissiveRadiance += frMask.r * glass * hl * wl * uNight * warm * (0.45 + 0.25 * fract(wr * 9.1)); }');
+          lampLightPatch(sh, 'vWPos', 'wall');   // the street lamps wash the lower storeys, as they do the facades round them
+        };
+        mat.customProgramCacheKey = () => 'house-fronts';
+        const m = new THREE.Mesh(g, mat);
+        m.receiveShadow = true; m.castShadow = false; m.name = 'fronts-' + setName;
+        m.frustumCulled = false; pendingUpload.push(m);
+        groupCity.add(m);
+        FRONTS.meshes.push(m);
+      }
+      flushUploads(true);
+    } catch (err) {
+      FRONTS.error = String((err && err.message) || err);
+      PERF.failed.push(['Hanging the house fronts', FRONTS.error]);
+    }
+    FRONTS.ms = Math.round(performance.now() - t0);
+  });
+  function frontsProbe() {
+    const per = {};
+    for (const f of FRONTS.laid) { const k = f.set + ':' + f.tier; per[k] = (per[k] || 0) + 1; }
+    return { on: FRONTS_ON, runs: FRONTS.runs.map((r) => r.name || r.set), cands: FRONTS.cands.length, laid: FRONTS.laid.length, per, meshes: FRONTS.meshes.length, ms: FRONTS.ms, error: FRONTS.error, first: FRONTS.laid.slice(0, 8) };
+  }
 
   // ------------------------------------------------ the far ring: the rest of Philadelphia
   // ---- the two packed rings share one decoder: the far ring (city.b64, 0.7 m units,
@@ -24603,7 +24789,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), fronts: frontsProbe,rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
