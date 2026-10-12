@@ -7839,3 +7839,32 @@ takes the tap). 435 tests.
   Queen Village's darker sampled roofs, not the tiers (an empirical 0.20 and 1.45 matched the west and north closer and
   left the three edges further apart on average, +8 against +4). Before and after at both edges in the pane.
   `tests/test_core_roofs.py`. 453 tests.
+
+## Round 175 — house fronts on two blocks, the facade prototype (Oct 12)
+
+- Mike, after a robotaxi game on a real San Francisco (mindblown.ai's Teleoperator: about 130 whole-house front images
+  in seven sets, each with its window, bay and cornice map): "I would love for the buildings to be much more varied",
+  then "prototype both blocks with AI-generated fronts", then "deploy the two blocks so I can see them on my phone".
+  Measured first: 71% of the outer districts' 112,000 buildings draw two facade styles (Victorian row 38%, Georgian
+  row 33%), and 93% of the far ring's 180,000 five row styles.
+- `fetch_fronts.py` asks OpenAI's image API (`gpt-image-2`, 768x1280, high; the key only in
+  `~/.config/philly3d/openai.env`) for sixteen straight-on fronts, party wall to party wall and sidewalk to cornice:
+  eight Society Hill (`federal`: Flemish bond, fanlights, marble steps, shutters, a Greek Revival, an Italianate, a 1960s
+  infill) and eight South Philadelphia (`southrow`: brick, formstone, a bay front, painted and stucco fronts, awnings).
+  `bake_fronts.py` cuts each set into a 2048 atlas of 512x1024 cells with an 8 px gutter, a half-size mask (r glass,
+  g a number per window, b the door) and each cell's cornice colour. Its window finder took five passes on the real
+  fronts: dark NEUTRAL glass at 384x640 (a dark red brick reads as dark as a pane by brightness alone, a sky-lit pane is
+  0.16 to 0.2 against a 0.35 brick), a 1 px close (a muntin is 2 px, the frame between a shutter and its sash 5), a
+  narrow box against a sash is a shutter but a narrow modern window standing clear is not, green is never glass, deep
+  shade on brick stays red, the door is the tallest dark opening in the lowest third and taller than the usual opening.
+- The page: the core's and the outer districts' loops hand every house near a run (`RUNS`: Spruce Street's 300 block,
+  Wilder Street's 900 block, from the street labels) to `frontNote`; 'Hanging the house fronts' finds each one's street
+  wall (`frontEdge`: within 15 degrees of the run, 2.5 to 16 m off it, facing it), lays a quad 5 cm proud of it from the
+  ground to the wall top cut into round(width / front width) cells, deals the cells so neighbours never match, and
+  projects each cell's cornice (34 cm) and a stoop under a found door (`frontBox`). A wall two or more fronts wide takes
+  them only at a row strip's depth (18 m: Wilder Street's corner loft had taken six; a 22 m limit on every house cost
+  Spruce Street fourteen of its deep rows). Glass is glossy by day; after dark four houses in ten light about two windows
+  in three, only the dark glass inside the mask glowing, and the street lamps wash the fronts (`lampLightPatch`). A
+  phone takes the atlases at half size through a canvas freed on upload. 77 fronts (35 and 42), fronts.json 1.43 MB.
+  Before and after at street level and from 30 m on both blocks, and on the phone path at 740x360.
+  `tests/test_fronts.py`. 460 tests.
