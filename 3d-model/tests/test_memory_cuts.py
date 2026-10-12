@@ -311,7 +311,10 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('tex.image = pic; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function frontSetRes(s) {', '  function frontGlobals() {'))
         # and the tower tiles' (Round 177), the same way
         self.assertIn('t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, "  step('Cladding the towers'", 'TSKIN.ms = Math.round(performance.now() - t0);'))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 10)   # the definition and its nine uses
+        # Round 184: a phone's half-size tower tiles from the bake upload as they come, and the streets' detail textures
+        self.assertIn('if (!isTouch || halved) { t = new THREE.Texture(src); if (isTouch) freeTexOnUpload(t); }', cut(s, "  step('Cladding the towers'", 'TSKIN.ms = Math.round(performance.now() - t0);'))
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function loadGroundArt() {', '  let tuftTex = null'))
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 12)   # the definition and its eleven uses
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

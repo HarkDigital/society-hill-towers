@@ -6,7 +6,7 @@ ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flight
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (the VPS, and the
 only home since Mike retired the GitHub Pages copy on Sep 17, 2026). Everything is in `3d-model/`;
 `app.js` (~22,800 lines, one IIFE) is the application and `rebuilds/` the seven landmark rebuilds (Round 161),
-`build.py` inlines them with the data into `society-hill-towers.html` (24.85 MB raw / 10.58 MB gzip). The old claude.ai
+`build.py` inlines them with the data into `society-hill-towers.html` (29.56 MB raw / 12.62 MB gzip; the generated art, 18 MB, is files under `art/` since Round 184). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -53,7 +53,12 @@ before any visual round rather than rediscovering it.
 
 - No npm, no bundler, no framework: plain Python 3 build, vendored `three.min.js` (r149,
   pinned; see handoff gotcha 11 before touching it), one self-contained HTML that any static
-  host can serve as a file. Every asset is inlined (fonts, icons, data).
+  host can serve as a file. Every asset is inlined (fonts, icons, data), except the AI-generated art (Round 184, Mike's
+  call: load it on demand): the house fronts, tower tiles, tree and ground images are files under `3d-model/art/<kind>/`
+  named by their content's hash (`art_files.py`), the page loads them by relative path from the small manifests it
+  inlines (`artImage`, `artSrc` takes a phone's half copy), `build.py` refuses a manifest naming a missing file,
+  `deploy_philly3d.sh` ships `art/` before the page and never deletes there, and `app/scripts/copy-web.mjs` copies it
+  into `www/art`. Never inline those images again: they were 8 MB of the page's gzip.
 - `build.py` must keep its guards: missing/undersized input, leftover `{{PLACEHOLDER}}`,
   `</script` inside a blob, page over `MAX_HTML` (75 MB since Sep 2, a runaway tripwire, not a
   target; the binding constraints are load time and phone memory).
@@ -293,7 +298,7 @@ off their ground (`__dbg.rebuilds()`; a scratch build: `SHT_BUILD_OUT=<path> SHT
 
 ## Deploy
 
-`3d-model/deploy_philly3d.sh` builds and rsyncs to the VPS and verifies philly3d.com against
+`3d-model/deploy_philly3d.sh` builds and rsyncs to the VPS (the `art/` folder first, Round 184) and verifies philly3d.com against
 the local sha256 (stages + chmods 644 because this checkout's files are 0600). **philly3d.com is
 the site.** Mike retired the GitHub Pages copy on Sep 17, 2026: do not deploy to it, wait on it
 or verify it. `git push` is now only for the history, and the built page is still committed as

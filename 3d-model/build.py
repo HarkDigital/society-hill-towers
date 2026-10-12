@@ -191,9 +191,34 @@ const("RAIL_AMTRAK", text_of("rail_amtrak.json", "null"))   # Amtrak's tracks th
 const("PATCO_DATA", text_of("patco.json", "null"))   # PATCO's track and timetable over the Ben Franklin Bridge (bake_patco.py, Round 141): scheduled trains, not live
 const("I95_DATA", text_of("i95.json", "null"))   # I-95's carriageways for its highway lamps, in the city and past it (bake_i95.py, Round 148)
 const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud models (pack_clouds.py): the cloud field of Round 67
-const("TREE_ART", text_of("tree_art.json", "null"))
-const("GROUND_ART", text_of("ground_art.json", "null"))   # the generated lawn and verge (bake_ground_art.py), Round 183   # the trees' species images (bake_tree_art.py): side and top cards by season, Oct 12
-const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and runs (bake_fronts.py): the facade prototype, Oct 12
+const("TREE_ART", text_of("tree_art.json", "null"))   # the trees' species images (bake_tree_art.py): side and top cards by season, Oct 12
+const("GROUND_ART", text_of("ground_art.json", "null"))   # the generated lawn, verge and street textures (bake_ground_art.py), Round 183
+const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
+
+
+def art_paths(o):
+    """Every art/ path a manifest names (Round 184: the generated images are files beside the page, art_files.py)."""
+    if isinstance(o, str):
+        return [o] if o.startswith("art/") else []
+    if isinstance(o, dict):
+        return [p for v in o.values() for p in art_paths(v)]
+    if isinstance(o, list):
+        return [p for v in o for p in art_paths(v)]
+    return []
+
+
+# the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
+ART_FILES = []
+for name in ("tree_art.json", "ground_art.json", "fronts.json"):
+    if (ROOT / name).exists():
+        man = json.loads((ROOT / name).read_text())
+        if re.search(r'"data:image/', (ROOT / name).read_text()):
+            sys.exit(f"FATAL: {name} still inlines data URLs; re-run its bake (Round 184 writes the images to art/)")
+        ART_FILES += art_paths(man)
+missing = [p for p in ART_FILES if not (ROOT / p).exists()]
+if missing:
+    sys.exit(f"FATAL: {len(missing)} art file(s) the manifests name are missing, first {missing[0]}")
+ART_BYTES = sum((ROOT / p).stat().st_size for p in ART_FILES)
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
 let_blob("POLES_B64", "poles.b64")
@@ -292,3 +317,4 @@ try:
 except Exception:
     delta = ""
 print(f"wrote {OUT} ({size/1e6:.2f} MB){delta}")
+print(f"art: {len(ART_FILES)} files, {ART_BYTES/1e6:.1f} MB under art/ (loaded on demand)")

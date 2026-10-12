@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Bake the house fronts (the facade prototype, Oct 12) into fronts.json, which build.py inlines as FRONTS_DATA.
+"""Bake the house fronts (the facade prototype, Oct 12) into fronts.json, which build.py inlines as FRONTS_DATA, and
+the atlases themselves into art/fronts/ and art/tiles/ (Round 184: files the page loads on demand, art_files.py).
 
 Per set, the fronts made by fetch_fronts.py (lidar_cache/fronts_raw/<set>/<id>.png) are cut into an atlas of CELL-sized
 cells (each front stretched to the cell, its edge pixels run out into a PAD gutter so the mips never bleed), and a mask
@@ -10,13 +11,15 @@ dark box standing on the foot of the front is the door. The page finds every hou
 
 Usage: python3 bake_fronts.py [--placeholder] [--preview DIR]   (--preview writes each front with its mask over it)"""
 import argparse, base64, io, json, math, os, sys
+import art_files
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'fronts_raw')
 OUT = os.path.join(HERE, 'fronts.json')
-CELL = (512, 1024)   # px per front in the atlas, 1:2; the page stretches a cell to the wall it dresses
+CELL = (384, 768)   # px per front in the atlas, 1:2; the page stretches a cell to the wall it dresses (Round 184: 16 a
+# set, 4 by 4, and a phone's copy at half, 192 by 384)
 PAD = 8
 MASK_DIV = 2
 COLS = 4
@@ -33,13 +36,28 @@ SETS = {   # w, h: a front's nominal width and wall height (m); step: the stoop'
     'newbuild': {'w': 5.5, 'h': 11.0, 'gain': 0.88, 'step': '#9a9a98', 'awn': 0.0},    # Fishtown, Point Breeze: 2010s and 2020s
     'stonetwin': {'w': 7.5, 'h': 9.0, 'gain': 0.88, 'step': '#c9c3b8', 'awn': 0.0},    # Germantown, Mount Airy: stone and stucco
     'siding': {'w': 4.8, 'h': 7.5, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.35},      # Kensington, Port Richmond: siding rows
+    # Round 184: six more, each with its own place or record (frontSetOf in app.js)
+    'univcity': {'w': 6.8, 'h': 12.0, 'gain': 0.88, 'step': '#b9a08a', 'awn': 0.0},    # University City's Victorian twins (porched)
+    'chestnut': {'w': 9.0, 'h': 9.5, 'gain': 0.88, 'step': '#c9c3b8', 'awn': 0.0},     # Chestnut Hill's stone houses
+    'manayunk': {'w': 4.4, 'h': 7.6, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.15},    # Manayunk's narrow hillside rows
+    'loft': {'w': 12.0, 'h': 20.0, 'gain': 0.88, 'step': '#9a9a98', 'awn': 0.2},       # Old City, Callowhill: loft warehouses
+    'mixeduse': {'w': 6.0, 'h': 14.5, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.55},   # Center City: a shop under three floors
+    'rittenhouse': {'w': 6.4, 'h': 15.0, 'gain': 0.88, 'step': '#b9a08a', 'awn': 0.0}, # Rittenhouse: four-storey townhouses
 }
+# the sets whose fronts were made without their porch: the page builds one (Round 184: a flag, not the name)
+PORCHED = ('porch', 'univcity')
 # the towers' facade tiles (fetch_fronts.py TILES): one bay's width and one floor's height in metres, and whether the wall
 # is mostly glass (its mask is then the darker half of the glass, not dark panes in a light wall)
 TILES = {'glass': (1.6, 4.0, True), 'glassdark': (1.6, 4.0, True), 'precast': (1.6, 3.8, False), 'deco': (1.6, 3.9, False),
          'brick': (1.6, 2.9, False), 'resi': (1.6, 2.9, False), 'silver': (1.6, 4.0, True), 'blackgrid': (1.6, 3.8, True),
-         'officebrick': (1.6, 3.7, False), 'glassresi': (1.6, 3.1, True)}
-TILE = 1024
+         'officebrick': (1.6, 3.7, False), 'glassresi': (1.6, 3.1, True),
+         # Round 184: fifteen more kinds
+         'goldglass': (1.6, 4.0, True), 'greenglass': (1.6, 4.0, True), 'ribbon': (1.6, 3.8, False), 'brutalist': (1.6, 3.8, False),
+         'limestone': (1.6, 3.9, False), 'marble': (1.6, 3.8, False), 'terracotta': (1.6, 3.9, False), 'blueband': (1.6, 4.0, True),
+         'unitized': (1.6, 4.0, True), 'hotel': (1.6, 2.9, False), 'granite': (1.6, 3.9, False), 'fins': (1.6, 4.0, True),
+         'darkbrick': (1.6, 3.0, False), 'metalpanel': (1.6, 3.6, False), 'greygrid': (1.6, 3.8, False)}
+TILE = 1024        # the tower tiles are cropped at this, then written at 640 and a phone's 320 (Round 184: 25 kinds)
+TILE_OUT = 640
 
 
 def lum(a):
@@ -84,8 +102,10 @@ def blobs(m):
     return out
 
 
-def find_openings(img):
-    """Windows and the door of one front, as fractions of its width and height from the top-left: (wins, door)."""
+def find_openings(img, fill_min=0.55):
+    """Windows and the door of one front, as fractions of its width and height from the top-left: (wins, door). A front
+    where no window passes is tried again at a fill of 0.38 (Round 184: panes with a sky reflection read under half dark,
+    two of the 240 fronts, a loft and a mixed-use block); the bar stays where it was for every front that finds one."""
     # at half the generated size (768 x 1280): a muntin is about 2 px and the white frame between a shutter and its sash
     # about 5, so a 1 px close joins a sash's panes and leaves the shutters beside it apart
     W, H = 384, 640
@@ -106,7 +126,7 @@ def find_openings(img):
         if bw < W * 0.035 or bh < H * 0.05:   # an awning's shadow line, a sliver
             continue
         fill = dark[y0:y1 + 1, x0:x1 + 1].mean()
-        if fill < 0.55 or bw / bh > 2.5 or (bh > H * 0.35 and y1 < H * 0.85) or y0 > H * 0.85:   # bands, lattices, basement grilles (a tall door on a two-storey front is no band)
+        if fill < fill_min or bw / bh > 2.5 or (bh > H * 0.35 and y1 < H * 0.85) or y0 > H * 0.85:   # bands, lattices, basement grilles (a tall door on a two-storey front is no band)
             continue
         cand.append([x0, y0, x1, y1])
     # the door: the tallest dark opening reaching into the lowest third, taller than a sash (a stoop can lift it) and
@@ -135,6 +155,8 @@ def find_openings(img):
     if door:
         door = (door[0] / W, door[1] / H, (door[2] + 1) / W, (door[3] + 1) / H)
     wins.sort(key=lambda b: (round(b[1] * 20), b[0]))
+    if not wins and fill_min > 0.4:
+        return find_openings(img, 0.38)
     return wins, door
 
 
@@ -211,8 +233,11 @@ def bake_set(set_, fronts, preview):
         # the cornice's colour: the front's top 3% (the page projects a cornice of it along the wall's head)
         top = np.asarray(im.convert('RGB').resize((64, 200), Image.BILINEAR))[:6].reshape(-1, 3)
         cor = '#%02x%02x%02x' % tuple(int(v) for v in np.median(top, axis=0))
-        # the ground floor's openings (centred in the lowest 40%): the span an awning covers, and the top it hangs over
-        gfo = [b for b in wins + ([door] if door else []) if (b[1] + b[3]) / 2 > 0.6]
+        # the ground floor's openings: the span an awning covers, and the top it hangs over. Centred in the lowest 40% on a
+        # front of three storeys or fewer; on a taller one in its lowest floor and a sixth (Round 184: on four-storey
+        # mixed-use fronts and lofts the lowest 40% held the second floor's windows too, and the awning hung at their sills)
+        gf_line = max(0.6, 1 - 1.15 / (SETS[set_]['h'] / 3.4))
+        gfo = [b for b in wins + ([door] if door else []) if (b[1] + b[3]) / 2 > gf_line]
         gf = [round(min(b[0] for b in gfo), 3), round(max(b[2] for b in gfo), 3), round(min(b[1] for b in gfo), 3)] if gfo else None
         cells.append({'id': fid, 'wins': len(wins), 'door': [round(v, 3) for v in door] if door else None, 'cornice': cor, 'gf': gf})
         if preview:
@@ -224,9 +249,16 @@ def bake_set(set_, fronts, preview):
                 o.rectangle((door[0] * W, door[1] * H, door[2] * W, door[3] * H), outline=(0, 200, 255), width=3)
             v.save(os.path.join(preview, '%s-%s.jpg' % (set_, fid)), quality=85)
     spec = SETS[set_]
-    return {'img': data_url(atlas, 'WEBP', quality=82, method=6), 'mask': data_url(mask, 'PNG', optimize=True),
+    # Round 184: files, not data URLs (art_files), and a phone's copy at half (its pad halves with it, so a cell's
+    # fractions hold)
+    half = atlas.resize((atlas.width // 2, atlas.height // 2), Image.LANCZOS)
+    mhalf = mask.resize((mask.width // 2, mask.height // 2), Image.NEAREST)
+    return {'img': art_files.write(atlas, 'fronts', set_, 'WEBP', quality=82, method=6),
+            'imgHalf': art_files.write(half, 'fronts', set_ + '-half', 'WEBP', quality=80, method=6),
+            'mask': art_files.write(mask, 'fronts', set_ + '-mask', 'PNG', optimize=True),
+            'maskHalf': art_files.write(mhalf, 'fronts', set_ + '-mask-half', 'PNG', optimize=True),
             'cols': COLS, 'rows': rows, 'cell': [W, H], 'pad': PAD, 'w': spec['w'], 'h': spec['h'], 'gain': spec['gain'],
-            'step': spec['step'], 'awn': spec.get('awn', 0), 'cells': cells}
+            'step': spec['step'], 'awn': spec.get('awn', 0), 'porch': int(set_ in PORCHED), 'cells': cells}
 
 
 def period(profile, expect):
@@ -276,7 +308,11 @@ def bake_tile(tid, im, preview):
     if preview:
         t.save(os.path.join(preview, 'tile-%s.jpg' % tid), quality=85)
         Image.fromarray(mk).save(os.path.join(preview, 'tile-%s-mask.png' % tid))
-    return {'img': data_url(t, 'WEBP', quality=80, method=6), 'mask': data_url(Image.fromarray(mk), 'PNG', optimize=True),
+    full, half = t.resize((TILE_OUT, TILE_OUT), Image.LANCZOS), t.resize((TILE_OUT // 2, TILE_OUT // 2), Image.LANCZOS)
+    mki = Image.fromarray(mk)
+    return {'img': art_files.write(full, 'tiles', tid, 'WEBP', quality=80, method=6),
+            'imgHalf': art_files.write(half, 'tiles', tid + '-half', 'WEBP', quality=78, method=6),
+            'mask': art_files.write(mki.resize((TILE_OUT // 2, TILE_OUT // 2), Image.NEAREST), 'tiles', tid + '-mask', 'PNG', optimize=True),
             'w': round(nx * bayW, 2), 'h': round(ny * floorH, 2), 'nb': int(nx), 'nf': int(ny), 'glass': glassy,
             'period': [int(px or 0), int(py or 0)]}
 
@@ -285,6 +321,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--placeholder', action='store_true')
     ap.add_argument('--preview', default='')
+    ap.add_argument('--partial', action='store_true', help='skip a set with no fronts yet (engine work while a run is going)')
     a = ap.parse_args()
     if a.preview:
         os.makedirs(a.preview, exist_ok=True)
@@ -296,12 +333,15 @@ def main():
             d = os.path.join(RAW, set_)
             names = sorted(f for f in os.listdir(d) if f.endswith('.png')) if os.path.isdir(d) else []
             fronts = [(os.path.splitext(f)[0], Image.open(os.path.join(d, f))) for f in names]
+        if not fronts and a.partial:
+            print('%-9s skipped: no fronts yet' % set_)
+            continue
         if not fronts:
             sys.exit('no fronts for %s in %s (run fetch_fronts.py, or --placeholder for engine work)' % (set_, RAW))
         sets[set_] = bake_set(set_, fronts, a.preview)
         print('%-9s %d fronts, %d windows, %d doors, atlas %d KB, mask %d KB' % (
             set_, len(fronts), sum(c['wins'] for c in sets[set_]['cells']), sum(bool(c['door']) for c in sets[set_]['cells']),
-            len(sets[set_]['img']) * 3 // 4 // 1024, len(sets[set_]['mask']) * 3 // 4 // 1024))
+            art_files.size(sets[set_]['img']) // 1024, art_files.size(sets[set_]['mask']) // 1024))
     tiles = {}
     td = os.path.join(RAW, 'tower')
     if not a.placeholder and os.path.isdir(td):
@@ -311,8 +351,9 @@ def main():
                 tiles[tid] = bake_tile(tid, Image.open(os.path.join(td, f)), a.preview)
                 print('tile %-9s %d x %d bays and floors, %.1f x %.1f m, period %s, %d KB' % (
                     tid, tiles[tid]['nb'], tiles[tid]['nf'], tiles[tid]['w'], tiles[tid]['h'], tiles[tid]['period'],
-                    len(tiles[tid]['img']) * 3 // 4 // 1024))
-    out = {'v': 3, 'placeholder': a.placeholder, 'sets': sets, 'tiles': tiles}
+                    art_files.size(tiles[tid]['img']) // 1024))
+    print('pruned %d old front files, %d old tile files' % (art_files.prune('fronts'), art_files.prune('tiles')))
+    out = {'v': 4, 'placeholder': a.placeholder, 'sets': sets, 'tiles': tiles}
     with open(OUT + '.tmp', 'w') as f:
         json.dump(out, f, separators=(',', ':'))
     os.replace(OUT + '.tmp', OUT)

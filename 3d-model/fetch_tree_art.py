@@ -86,6 +86,29 @@ LOOKS = [
      'drooping at the tips.', 'in autumn, its leaves yellow', None),
     ('broadleaf', 'mixed-species shade tree, a typical young urban hardwood', 'A rounded, slightly irregular crown '
      'on a straight grey trunk.', 'in autumn, its leaves a mix of yellow, orange and green', None),
+    # Round 184: ten more looks, so the inventory's next species stop borrowing a neighbour's
+    ('magnolia', 'saucer magnolia (Magnolia x soulangeana)', 'A low, spreading, multi-stemmed tree with smooth grey bark and '
+     'large leathery leaves.', 'in autumn, its leaves dull yellow and brown', 'in early spring bloom, its bare branches '
+     'covered in large pink-and-white goblet-shaped flowers'),
+    ('dogwood', 'flowering dogwood (Cornus florida)', 'A small tree with a flat-topped, layered crown of horizontal branches.',
+     'at peak autumn colour, its leaves deep red and purple with red berries', 'in spring bloom, its layered branches '
+     'covered in white four-petalled flowers'),
+    ('serviceberry', 'serviceberry (Amelanchier)', 'A small, upright, multi-stemmed tree with smooth grey bark.',
+     'at peak autumn colour, its leaves orange and red', 'in early spring bloom, covered in clouds of small white flowers'),
+    ('silvermaple', 'silver maple (Acer saccharinum)', 'A large, fast-growing tree with a broad, irregular, open crown and '
+     'deeply cut leaves whose silvery undersides show.', 'in autumn, its leaves pale yellow', None),
+    ('crimsonking', "'Crimson King' Norway maple (Acer platanoides)", 'A dense, rounded crown of large leaves that are deep '
+     'maroon-purple all summer.', 'in autumn, its leaves dark bronze and brown', None),
+    ('sycamore', 'American sycamore (Platanus occidentalis)', 'A very large tree with an open, wide crown and striking white '
+     'peeling upper bark on the branches; big broad leaves.', 'in autumn, its leaves dull brown and tan', None),
+    ('riverbirch', 'river birch (Betula nigra)', 'A graceful multi-stemmed tree with peeling salmon-pink and cream bark and a '
+     'light oval crown of small leaves.', 'in autumn, its leaves clear yellow', None),
+    ('willow', 'weeping willow (Salix babylonica)', 'A broad tree with long weeping branches that hang down like curtains of '
+     'narrow leaves.', 'in autumn, its hanging leaves yellow', None),
+    ('spruce', 'Colorado blue spruce (Picea pungens)', 'A conifer with a dense, symmetrical, narrow pyramidal shape of '
+     'stiff silvery blue-green needles all the way to the ground.', None, None),
+    ('holly', 'American holly (Ilex opaca)', 'A broad pyramidal evergreen of dense, spiny, dark glossy green leaves with '
+     'scattered red berries.', None, None),
 ]
 
 

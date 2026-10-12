@@ -19,11 +19,22 @@ FRAME = ('Seamless tileable ground texture for a 3D city model: a photograph tak
          'horizon, no perspective, no shadows of objects, no trees, no paths, no people, no objects, no edges or borders. '
          'Soft even overcast daylight. Natural colours, photorealistic, uniform detail across the whole image so it '
          'repeats without a visible seam.')
+# the streets' detail textures (Round 184) cover less ground: their own frames say how much
+FRAME_STREET = ('Seamless tileable texture for a 3D city model: a photograph taken looking straight down at {what}, filling '
+                'the whole frame evenly. No perspective, no shadows of objects, no paint markings, no objects, no edges or '
+                'borders. Soft even overcast daylight. Natural colours, photorealistic, uniform detail across the whole image '
+                'so it repeats without a visible seam.')
 GROUNDS = [
     ('lawn', 'a mown park lawn in a Philadelphia city park in summer: dense green turf grass with slight variation in '
      'tone, a few clover patches'),
     ('meadow', 'a rougher, less tended urban grass verge in late summer: grass of mixed greens and straw-dry blades, '
      'clover, a few dandelion leaves and small patches of bare brown soil showing through'),
+    ('asphalt', 'a patch of worn city street asphalt about four metres across: fine dark grey aggregate, a few darker '
+     'tar-sealed cracks and a slightly lighter repaired patch, no lane markings', 'street'),
+    ('concrete', 'a concrete city sidewalk about three metres across: four square slabs with tooled joints between them, '
+     'light grey with faint stains and wear', 'street'),
+    ('bricks', 'an old red brick sidewalk in Society Hill, Philadelphia, about two metres across: bricks laid in a '
+     'herringbone pattern, weathered, some darker and some lighter, fine sand in the joints', 'street'),
 ]
 
 
@@ -40,12 +51,12 @@ def api_key():
     sys.exit('no OPENAI_API_KEY in the environment or ~/.config/philly3d/openai.env')
 
 
-def make(key, gid, what, force):
+def make(key, gid, what, force, kind=None):
     os.makedirs(RAW, exist_ok=True)
     base = os.path.join(RAW, gid)
     if os.path.exists(base + '.png') and not force:
         return gid, 'kept'
-    prompt = FRAME.format(what=what)
+    prompt = (FRAME_STREET if kind == 'street' else FRAME).format(what=what)
     body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1,
                        'output_format': 'png'}).encode()
     err = ''
@@ -82,7 +93,7 @@ def main():
     only = set(filter(None, a.only.split(',')))
     jobs = [g for g in GROUNDS if not only or g[0] in only]
     with concurrent.futures.ThreadPoolExecutor(2) as ex:
-        for gid, what in ex.map(lambda g: make(key, g[0], g[1], a.force), jobs):
+        for gid, what in ex.map(lambda g: make(key, g[0], g[1], a.force, g[2] if len(g) > 2 else None), jobs):
             print(gid, what, flush=True)
 
 

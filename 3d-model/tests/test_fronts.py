@@ -25,15 +25,19 @@ class FrontsData(unittest.TestCase):
     def test_sets(self):
         d = self.d
         self.assertFalse(d['placeholder'], 'stand-in fronts never ship')
-        self.assertEqual(set(d['sets']), {'federal', 'southrow', 'shop', 'victorian', 'porch', 'airlite', 'newbuild', 'stonetwin', 'siding'})
+        self.assertEqual(set(d['sets']), {'federal', 'southrow', 'shop', 'victorian', 'porch', 'airlite', 'newbuild', 'stonetwin', 'siding',
+                                          'univcity', 'chestnut', 'manayunk', 'loft', 'mixeduse', 'rittenhouse'})   # Round 184: six more
         self.assertNotIn('runs', d)   # the page finds every house's street wall itself since Round 181
         for name, s in d['sets'].items():
-            self.assertTrue(s['img'].startswith('data:image/webp;base64,'), name)
-            self.assertTrue(s['mask'].startswith('data:image/png;base64,'), name)
-            self.assertEqual(s['cell'], [512, 1024])
-            self.assertGreaterEqual(len(s['cells']), 8)
+            # Round 184: files under art/fronts/, a phone's half of each beside it
+            for k, ext in (('img', 'webp'), ('imgHalf', 'webp'), ('mask', 'png'), ('maskHalf', 'png')):
+                self.assertRegex(s[k], r'^art/fronts/%s(-mask)?(-half)?\.[0-9a-f]{10}\.%s$' % (name, ext))
+                self.assertTrue((ROOT / s[k]).exists(), s[k])
+            self.assertEqual(s['cell'], [384, 768])
+            self.assertEqual(len(s['cells']), 16, name)   # sixteen a set since Round 184
             self.assertLessEqual(len(s['cells']), s['cols'] * s['rows'])
-            self.assertTrue(4 <= s['w'] <= 8, (name, s['w']))
+            self.assertEqual(s['porch'], int(name in ('porch', 'univcity')), name)
+            self.assertTrue(4 <= s['w'] <= 12, (name, s['w']))
             for c in s['cells']:
                 self.assertRegex(c['cornice'], r'^#[0-9a-f]{6}$')
                 self.assertGreater(c['wins'], 0, (name, c['id']))
@@ -42,9 +46,13 @@ class FrontsData(unittest.TestCase):
 class TowerTiles(unittest.TestCase):
     def test_tiles(self):
         d = json.loads((ROOT / 'fronts.json').read_text())
-        self.assertEqual(set(d['tiles']), {'glass', 'glassdark', 'precast', 'deco', 'brick', 'resi', 'silver', 'blackgrid', 'officebrick', 'glassresi'})
+        self.assertEqual(set(d['tiles']), {'glass', 'glassdark', 'precast', 'deco', 'brick', 'resi', 'silver', 'blackgrid', 'officebrick', 'glassresi',
+                                           'goldglass', 'greenglass', 'ribbon', 'brutalist', 'limestone', 'marble', 'terracotta', 'blueband',
+                                           'unitized', 'hotel', 'granite', 'fins', 'darkbrick', 'metalpanel', 'greygrid'})   # 25 since Round 184
         for k, t in d['tiles'].items():
-            self.assertTrue(t['img'].startswith('data:image/webp;base64,'), k)
+            for f in ('img', 'imgHalf', 'mask'):
+                self.assertRegex(t[f], r'^art/tiles/%s(-mask)?(-half)?\.[0-9a-f]{10}\.(webp|png)$' % k)
+                self.assertTrue((ROOT / t[f]).exists(), t[f])
             self.assertTrue(8 <= t['w'] <= 24 and 8 <= t['h'] <= 24, (k, t['w'], t['h']))   # a few floors by a few bays
             self.assertGreaterEqual(t['nb'], 3, k)
             self.assertGreaterEqual(t['nf'], 2, k)
@@ -102,7 +110,10 @@ class PageWiring(unittest.TestCase):
         s = self.s
         a = s.index('  function frontSetRes(s) {')
         f = s[a:s.index('\n  }\n', a)]
-        self.assertIn('if (isTouch) { const cv = document.createElement(\'canvas\'); cv.width = im.width >> 1; cv.height = im.height >> 1;', f)
+        # Round 184: the bake's half files (artSrc), and halved here only when a record has none
+        self.assertIn('artImage(artSrc(full, half))', f)
+        self.assertIn('load(S.img, S.imgHalf, map), load(S.mask, S.maskHalf, mask)', f)
+        self.assertIn("if (isTouch && !half) { const cv = document.createElement('canvas'); cv.width = im.width >> 1; cv.height = im.height >> 1;", f)
 
     def test_only_the_glass_glows(self):
         self.assertRegex(self.s, re.escape("float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb"))
@@ -130,8 +141,11 @@ def fn(src, name):
 class SetsAndSides(unittest.TestCase):
     def run_js(self, body):
         s = (ROOT / 'app.js').read_text()
-        js = ("const FR_SETS = ['federal', 'southrow', 'shop', 'victorian', 'porch', 'airlite', 'newbuild', 'stonetwin', 'siding'];\n"
-              "const FR_SET_IX = (name) => FR_SETS.indexOf(name), FR_STRIDE = 10;\n" + fn(s, 'frontSetOf') + fn(s, 'frontSide') + body)
+        a = s.index('  const FR_AREAS = {')
+        areas = s[a:s.index('\n  // the set a house', a)]
+        js = ("const FR_SETS = ['federal', 'southrow', 'shop', 'victorian', 'porch', 'airlite', 'newbuild', 'stonetwin', 'siding',"
+              " 'univcity', 'chestnut', 'manayunk', 'loft', 'mixeduse', 'rittenhouse'];\n"
+              "const FR_SET_IX = (name) => FR_SETS.indexOf(name), FR_STRIDE = 10;\n" + areas + '\n' + fn(s, 'frontSetOf') + fn(s, 'frontSide') + body)
         r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
@@ -146,11 +160,22 @@ console.log(JSON.stringify({
   porch: n(frontSetOf([0, 0, 3, 2], 1, 8, 160, false, 10)), tall: n(frontSetOf([0, 0, 3, 3], 1, 11, 90, false, 9)),
   low: n(frontSetOf([0, 0, 3, 2], 1, 7.5, 70, false, 9)), tower: n(frontSetOf([0, 0, 6, 20], 2, 60, 900, false, 18)),
   factory: n(frontSetOf([5, 0, 2, 3], 4, 12, 600, false, 12)), flats: n(frontSetOf([0, 0, 3, 4], 2, 14, 600, false, 18)),
+  // Round 184: the six more, by record and by place (Rittenhouse Square, 40th and Spruce, Germantown Avenue at Highland,
+  // Manayunk's Green Lane, 3rd and Race, 13th and Walnut, and a new factory)
+  rit: n(frontSetOf([0, 0, 2, 4], 1, 14, 120, false, 9, -2300, -200)), uc: n(frontSetOf([0, 0, 3, 3], 1, 11, 160, false, 10, -4900, -500)),
+  ucLow: n(frontSetOf([0, 0, 3, 2], 1, 8, 160, false, 10, -4900, -500)), ch: n(frontSetOf([0, 2, 2, 3], 1, 9, 400, false, 0, -5500, -14400)),
+  chBig: n(frontSetOf([0, 0, 3, 3], 1, 10, 800, false, 0, -5500, -14400)), mk: n(frontSetOf([0, 0, 3, 2], 1, 7.5, 70, false, 9, -6800, -9000)),
+  loftOC: n(frontSetOf([3, 0, 2, 5], 3, 18, 900, false, 6, -100, -900)), shopOC: n(frontSetOf([3, 0, 2, 2], 3, 9, 200, false, 5, -100, -900)),
+  mixCC: n(frontSetOf([3, 0, 3, 4], 3, 13, 300, false, 5, -1200, -600)), shopCC: n(frontSetOf([3, 0, 3, 2], 3, 9, 300, false, 5, -1200, -600)),
+  newFactory: n(frontSetOf([5, 0, 6, 3], 4, 12, 600, false, 12)), ritLow: n(frontSetOf([0, 0, 2, 2], 1, 8, 90, false, 9, -2300, -200)),
 }));
 ''')
         self.assertEqual(o, {'core': 'federal', 'shop': 'shop', 'frame': 'siding', 'stone': 'stonetwin', 'newer': 'newbuild',
                              'postwar': 'airlite', 'porch': 'porch', 'tall': 'victorian', 'low': 'southrow', 'tower': None,
-                             'factory': None, 'flats': None})
+                             'factory': 'loft', 'flats': None,
+                             'rit': 'rittenhouse', 'uc': 'univcity', 'ucLow': 'porch', 'ch': 'chestnut', 'chBig': 'chestnut',
+                             'mk': 'manayunk', 'loftOC': 'loft', 'shopOC': 'shop', 'mixCC': 'mixeduse', 'shopCC': 'shop',
+                             'newFactory': None, 'ritLow': 'southrow'})
 
     def test_the_street_side(self):
         # a rowhouse 5 m wide and 14 m deep, its long axis along z, a street along x 9 m north of its front wall and

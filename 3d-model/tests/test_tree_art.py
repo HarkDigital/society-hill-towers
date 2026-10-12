@@ -21,21 +21,24 @@ class Data(unittest.TestCase):
 
     def test_every_look_has_its_seasons(self):
         d = self.d
-        self.assertEqual(len(d['looks']), 18)
+        self.assertEqual(len(d['looks']), 28)   # Round 184: ten more
         for look in d['looks']:
             im = d['images'][look]
             for view in ('side', 'top'):
                 self.assertIn('summer', im[view], (look, view))
-                if look != 'pine':
+                if look not in ('pine', 'spruce', 'holly'):
                     self.assertIn('autumn', im[view], (look, view))
                     self.assertIn('winter', im[view], (look, view))
                 for rec in im[view].values():
-                    self.assertTrue(rec['img'].startswith('data:image/webp;base64,'))
+                    # Round 184: files under art/trees/, a phone's half beside each
+                    for k in ('img', 'imgHalf'):
+                        self.assertRegex(rec[k], r'^art/trees/[a-z]+-(side|top)-[a-z]+(-half)?\.[0-9a-f]{10}\.webp$')
+                        self.assertTrue((ROOT / rec[k]).exists(), rec[k])
                     if view == 'side':
                         self.assertTrue(0.3 <= rec['hf'] <= 1.0, (look, rec['hf']))
                     else:
                         self.assertTrue(0.5 <= rec['df'] <= 1.0, (look, rec['df']))
-        for look in ('cherry', 'pear', 'redbud', 'crabapple', 'lilac'):
+        for look in ('cherry', 'pear', 'redbud', 'crabapple', 'lilac', 'magnolia', 'dogwood', 'serviceberry'):
             self.assertIn('spring', d['images'][look]['side'], look)
 
     def test_species_map_onto_their_looks(self):
@@ -46,7 +49,13 @@ class Data(unittest.TestCase):
                            ('Callery Pear', 'pear'), ('Kwanzan Cherry', 'cherry'), ('Honeylocust', 'locust'),
                            ('Northern Red Oak', 'redoak'), ('Pin Oak', 'pinoak'), ('Japanese Zelkova', 'zelkova'),
                            ('Ginkgo', 'ginkgo'), ('Japanese Tree Lilac', 'lilac'), ('Eastern Redbud', 'redbud'),
-                           ('Little Leaf Linden', 'linden'), ('Sweetgum', 'sweetgum'), ('Eastern White Pine', 'pine')):
+                           ('Little Leaf Linden', 'linden'), ('Sweetgum', 'sweetgum'), ('Eastern White Pine', 'pine'),
+                           # Round 184's ten, each ahead of the broader pattern it used to fall under
+                           ('American Sycamore', 'sycamore'), ('Silver Maple', 'silvermaple'), ('Crimson King Norway Maple', 'crimsonking'),
+                           ('Saucer Magnolia', 'magnolia'), ('Kousa Dogwood', 'dogwood'), ('Apple Serviceberry', 'serviceberry'),
+                           ('River Birch', 'riverbirch'), ('Weeping Willow', 'willow'), ('Willow Oak', 'pinoak'),
+                           ('Colorado Spruce', 'spruce'), ('Douglas Fir', 'spruce'), ('American Holly', 'holly'), ('Yew', 'holly')):
+            self.assertIn(name, look)
             if name in look:
                 self.assertEqual(look[name], want, name)
 

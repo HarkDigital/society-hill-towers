@@ -7067,8 +7067,22 @@
       const src = tex.image;
       if (src && src.getContext) src.width = src.height = 0;
       else if (src && src.data) src.data = null;
+      else if (src && src.decode && src.naturalWidth) tex.image = { width: src.width, height: src.height };   // a decoded <img> (Round 184)
     };
     return tex;
+  }
+  // Round 184 (Mike: the generated art loads on demand): the AI-made images are files under art/ beside the page
+  // (art_files.py, a content hash in every name, so a browser may keep one forever), not data URLs inside it; a record's
+  // half copy is a phone's, made by the bake, so a phone neither downloads nor decodes the full size. artImage resolves to
+  // the decoded image, or null when it cannot be had (one retry after 4 s: a phone on a train drops a request now and then)
+  const artSrc = (full, half) => (isTouch && half ? half : full);
+  function artImage(src) {
+    return new Promise((res) => {
+      if (!src) { res(null); return; }
+      let tries = 0;
+      const go = () => { const im = new Image(); im.decoding = 'async'; im.onload = () => res(im); im.onerror = () => { if (++tries < 2) setTimeout(go, 4000); else res(null); }; im.src = src; };
+      go();
+    });
   }
   // an attribute's onUpload callback that lets its array go. It lives out here on purpose: a callback written inline in a
   // build step closes over that step's whole scope and keeps it for the page's life (Round 158 measured it: an inline one
@@ -11107,14 +11121,38 @@
   const FRONTS = { buf: new Float32Array(FR_STRIDE * (FRONTS_ON ? 65536 : 1)), n: 0, side: null, cells: null, r: isTouch ? 240 : 380, cell: 160,
     cam: new THREE.Vector3(1e9, 0, 0), at: 0, set: [], glob: null, laid: 0, perSet: {}, noStreet: 0, ms: 0, error: null };
   const FR_SET_IX = (name) => FR_SETS.indexOf(name);
-  // the set a house's record picks, or -1 (a tower, a block of flats, a factory, a church keep their own facade)
-  function frontSetOf(fa, t, h, area, core, style) {
-    if (h > 18 || h < 2.8 || area > 900 || t === 4 || t >= 5) return -1;
+  // Round 184: six more sets, four of them with a place of their own (scene-frame boxes: x0, x1, z0, z1)
+  const FR_AREAS = {
+    cc: [-3050, -650, -1390, 470],         // Center City, Vine to South, the Schuylkill to 7th Street: the mixed-use blocks
+    rit: [-3050, -1650, -700, 470],        // Rittenhouse and Fitler Square, Walnut to South west of Broad: the townhouses
+    lofts: [[-450, 400, -1400, -350], [-1650, 400, -2720, -1390]],   // the loft districts: Old City (5th Street to the river,
+    // Chestnut to Vine), and Callowhill and Northern Liberties (Vine to Girard, Broad to the river)
+    uc: [-6500, -3300, -1900, 900],        // University City, Powelton, Spruce Hill, Cedar Park: the big Victorian twins
+    ch: [-7700, -3860, -16000, -12670],    // Chestnut Hill: the stone houses
+    mk: [-8150, -5160, -10010, -8240],     // Manayunk: the hillside rows
+  };
+  const frIn = (b, x, z) => x > b[0] && x < b[1] && z > b[2] && z < b[3];
+  // the set a house's record picks, or -1 (a tower, a block of flats, a factory, a church keep their own facade); x, z
+  // any point of its outline
+  function frontSetOf(fa, t, h, area, core, style, x, z) {
+    if (h < 2.8 || t >= 5) return -1;
     const u = fa ? fa[0] : -1, m = fa ? fa[1] : -1, e = fa ? fa[2] : 8;
-    if (u === 5) return -1;
-    if (u === 3 || u === 4 || t === 3) return h < 16 && area < 700 ? FR_SET_IX('shop') : -1;
+    // a loft: an old factory or warehouse of three to seven floors anywhere, and in the loft districts any old commercial
+    // block of four floors and up
+    if (h >= 10 && h <= 28 && area <= 6000 && (e <= 3 || e === 8) && (u === 5 || t === 4 || ((u === 3 || u === 4 || t === 3) && h >= 12 && FR_AREAS.lofts.some((b) => frIn(b, x, z))))) return FR_SET_IX('loft');
+    if (h > 20 || area > 900 || t === 4 || u === 5) return -1;
+    if (u === 3 || u === 4 || t === 3) {
+      if (area >= 700) return -1;
+      if (h >= (frIn(FR_AREAS.cc, x, z) ? 11 : 13.5)) return FR_SET_IX('mixeduse');
+      return h < 16 ? FR_SET_IX('shop') : -1;
+    }
+    if (h > 18) return -1;
     if (core) return h >= 8 ? FR_SET_IX('federal') : FR_SET_IX('southrow');
+    if (frIn(FR_AREAS.ch, x, z) && (m === 2 || area >= 140)) return FR_SET_IX('chestnut');
     if (area > 420) return -1;
+    if (h >= 9.5 && frIn(FR_AREAS.rit, x, z)) return FR_SET_IX('rittenhouse');
+    if (h < 9.5 && frIn(FR_AREAS.mk, x, z)) return FR_SET_IX('manayunk');
+    if (h >= 10 && (style === 10 || style === 9 || m === 2 || e <= 3) && frIn(FR_AREAS.uc, x, z)) return FR_SET_IX('univcity');
     if (m === 1) return FR_SET_IX('siding');
     if (m === 2) return FR_SET_IX('stonetwin');
     if (e === 6 || e === 7) return FR_SET_IX('newbuild');
@@ -11124,7 +11162,7 @@
   }
   function frontNote(poly, base, top, seed, fa, t, area, core, style) {
     if (!FRONTS_ON) return;
-    const s = frontSetOf(fa, t, top - base, area, core, style & 31);
+    const s = frontSetOf(fa, t, top - base, area, core, style & 31, poly[0][0], poly[0][1]);
     if (s < 0) return;
     const ob = orientedBox(poly);
     if (!ob || ob.area > area * 1.8 + 8) return;   // an outline far from its box (a wedge, a court) keeps its facade
@@ -11203,9 +11241,12 @@
       ['#29513a', '#21432f', 6.25, true], ['#6e2a2a', '#ebe6dc', 3.3, true]],
     airlite: [['#e4e4de', '#bdbdb6', 6.25, true], ['#2f6b43', '#e9e8e0', 3.3, true], ['#29513a', '#21432f', 6.25, true]],
     siding: [['#e4e4de', '#bdbdb6', 6.25, true], ['#6a4a35', '#58402f', 6.25, true]],
+    manayunk: [['#e4e4de', '#bdbdb6', 6.25, true], ['#2f6b43', '#e9e8e0', 3.3, true], ['#6e2a2a', '#ebe6dc', 3.3, true]],
     shop: [['#2e6a45', '#ebe8de', 2.6, false], ['#a3302d', '#ece6da', 2.6, false], ['#22324f', '#22324f', 0, false],
       ['#1f1f1f', '#1f1f1f', 0, false], ['#5e2333', '#5e2333', 0, false], ['#b49a6e', '#6b4c33', 2.6, false]],
   };
+  AWNING_KINDS.mixeduse = AWNING_KINDS.loft = AWNING_KINDS.shop;   // Round 184
+  const AWN_WIDE = { shop: 1, mixeduse: 1, loft: 1 };   // a storefront's awning runs the width of the front
   const PORCH_COLS = ['#ece8de', '#e4e0d6', '#3b4a3a', '#6b4a3a', '#d8d2c4', '#2f3a48'];
   // the shared vertex work of every front mesh: the world position and normal, and a dithered fade over the radius's last
   // fifth (the procedural facade stands under it, so the front dissolves into it rather than popping)
@@ -11223,15 +11264,20 @@
     const S = FRONTS_DATA.sets[FR_SETS[s]], blank = document.createElement('canvas'); blank.width = blank.height = 1;
     const map = new THREE.Texture(blank), mask = new THREE.Texture(blank);
     map.encoding = THREE.sRGBEncoding; map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
-    const R = { ready: false, map, mask, mesh: null, cap: isTouch ? 1400 : 4000 };
+    const R = { ready: false, failed: false, used: performance.now(), map, mask, mesh: null, cap: isTouch ? 1400 : 4000 };
     FRONTS.set[s] = R;
-    const load = (src, tex) => new Promise((res) => { const im = new Image(); im.onload = () => {
-      // a phone takes the atlas at half size (the GPU memory iOS charges the page, Round 158)
+    // a phone takes the atlas at half size (the GPU memory iOS charges the page, Round 158): the bake's half file since
+    // Round 184, else halved here
+    const load = (full, half, tex) => artImage(artSrc(full, half)).then((im) => {
+      if (!im) return false;
       let pic = im;
-      if (isTouch) { const cv = document.createElement('canvas'); cv.width = im.width >> 1; cv.height = im.height >> 1; cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); pic = cv; }
+      if (isTouch && !half) { const cv = document.createElement('canvas'); cv.width = im.width >> 1; cv.height = im.height >> 1; cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); pic = cv; }
       tex.image = pic; tex.needsUpdate = true; freeTexOnUpload(tex);   // a phone keeps no copy of what the GPU holds (Round 158)
-      res(); }; im.onerror = () => res(); im.src = src; });
-    Promise.all([load(S.img, map), load(S.mask, mask)]).then(() => {
+      return true;
+    });
+    Promise.all([load(S.img, S.imgHalf, map), load(S.mask, S.maskHalf, mask)]).then(([a, b]) => {
+      if (FRONTS.set[s] !== R) return;   // let go while it loaded
+      if (!a || !b) { R.failed = true; FRONTS.error = 'set ' + FR_SETS[s] + ' did not load'; return; }   // its houses keep the procedural facade
       try { renderer.initTexture(map); renderer.initTexture(mask); } catch (e) { }
       R.ready = true; FRONTS.at = 0;
     });
@@ -11338,27 +11384,32 @@
   // glass), hands its footprint here with its facade kind; 'Cladding the towers' lays the kind's tile round every wall
   // 12 cm proud of it from 5 m up (the lobby keeps its own storefront) to the wall top, repeating in metres, the glass
   // tinted with the tower's own colour. After dark about two windows in five light, cell by cell
-  const TOWER_TILE_OF = { concrete_grid: 'precast', glass: 'glass', deco: 'deco', brick: 'brick', glass_bands: 'glassdark',
-    stone_piers: 'deco', glass_dark: 'glassdark', precast_bands: 'precast' };
-  // a researched facade's alternates: the kinds that read as that facade (Round 182)
-  const TOWER_TILE_ALT = { glass: ['glass', 'silver'], glassdark: ['glassdark', 'blackgrid'], precast: ['precast'], deco: ['deco', 'officebrick'], brick: ['brick', 'officebrick'] };
+  const TOWER_TILE_OF = { concrete_grid: 'precast', glass: 'glass', deco: 'deco', brick: 'brick', glass_bands: 'bands',
+    stone_piers: 'stone', glass_dark: 'glassdark', precast_bands: 'bands' };
+  // a researched facade's alternates: the kinds that read as that facade (Round 182; Round 184's fifteen more kinds)
+  const TOWER_TILE_ALT = { glass: ['glass', 'silver', 'unitized', 'fins', 'greenglass'], glassdark: ['glassdark', 'blackgrid', 'goldglass'],
+    precast: ['precast', 'greygrid', 'brutalist'], deco: ['deco', 'officebrick', 'limestone', 'terracotta'], brick: ['brick', 'officebrick', 'darkbrick'],
+    stone: ['deco', 'limestone', 'granite', 'marble'], bands: ['glassdark', 'ribbon', 'blueband'] };
   const TSKIN = { cands: [], meshes: [], laid: {}, ms: 0, error: null };
   const TSKIN_ON = FRONTS_ON && !!FRONTS_DATA.tiles && Object.keys(FRONTS_DATA.tiles).length > 0;
   function towerSkinNote(poly, y0, y1, style, spec, seed, col, lifted, t) {
     if (!TSKIN_ON || y1 - y0 < 30 || (style >= 24 && style <= 29)) return;
-    // Round 182: ten kinds, and two or more a style dealt per tower, so neighbouring towers of one era differ
+    // Round 182: ten kinds, and two or more a style dealt per tower, so neighbouring towers of one era differ (Round 184: 25)
     const pick = (a) => { const ok = a.filter((k) => FRONTS_DATA.tiles[k]); return ok.length ? ok[Math.floor(hash01(seed * 2.3 + 0.7) * ok.length) % ok.length] : null; };
     let kind = spec ? (TOWER_TILE_OF[spec.facade] || null) : null;
     if (kind) kind = pick(TOWER_TILE_ALT[kind] || [kind]);
-    else kind = pick(t === 10 || style === 13 ? ['glass', 'silver', 'glassresi'] : style === 2 ? ['glass', 'glassdark', 'silver', 'blackgrid']
-      : style === 15 ? ['glassdark', 'blackgrid'] : style === 16 ? ['precast', 'blackgrid'] : style === 17 || style === 14 ? ['deco', 'officebrick']
-      : style === 18 ? ['resi', 'glassresi'] : style === 19 || style === 12 ? ['brick', 'officebrick'] : ['precast', 'officebrick']);
+    else kind = pick(t === 10 || style === 13 ? ['glass', 'silver', 'glassresi', 'unitized', 'fins', 'darkbrick']
+      : style === 2 ? ['glass', 'glassdark', 'silver', 'blackgrid', 'goldglass', 'greenglass', 'unitized', 'blueband']
+      : style === 15 ? ['glassdark', 'blackgrid', 'ribbon', 'blueband'] : style === 16 ? ['precast', 'blackgrid', 'greygrid', 'brutalist']
+      : style === 17 || style === 14 ? ['deco', 'officebrick', 'limestone', 'terracotta', 'marble', 'granite']
+      : style === 18 ? ['resi', 'glassresi', 'hotel', 'brick'] : style === 19 || style === 12 ? ['brick', 'officebrick', 'darkbrick']
+      : ['precast', 'officebrick', 'metalpanel', 'greygrid']);
     if (!kind) return;
     TSKIN.cands.push({ poly, y0: lifted ? y0 : y0 + 5, y1, kind, seed, col: col.clone() });
   }
   function frontsProbe() {
     return { on: FRONTS_ON, notes: FRONTS.n, sets: FR_SETS, laid: FRONTS.laid, perSet: { ...FRONTS.perSet }, relief: FRONTS.relief ? { ...FRONTS.relief } : null,
-      noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
+      dropped: FRONTS.dropped || 0, keep: FR_KEEP, failed: FRONTS.set.map((r, s) => r && r.failed ? FR_SETS[s] : null).filter(Boolean), noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
       r: FRONTS.r, ms: FRONTS.ms, error: FRONTS.error, build: PERF.fronts || null,
       towers: { on: TSKIN_ON, cands: TSKIN.cands.length, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, ms: TSKIN.ms, error: TSKIN.error } };
   }
@@ -12662,6 +12713,9 @@
     plane: [8, 10], redmaple: [-8, -5], sugarmaple: [-2, 0], cherry: [-12, -8, 'bloom'], pear: [14, 10, 'bloom'],
     locust: [-10, -8], redoak: [10, 12], pinoak: [12, 18], zelkova: [0, 0], ginkgo: [16, 12], lilac: [0, -3, 'june'],
     redbud: [-5, -3, 'bloom'], crabapple: [0, 0, 'bloom'], linden: [-6, -4], sweetgum: [6, 6], pine: null, elm: [-4, -2],
+    // Round 184's ten: the magnolias, dogwoods and serviceberries bloom; the spruces and hollies never change
+    magnolia: [2, 4, 'bloom'], dogwood: [-4, -2, 'bloom'], serviceberry: [-6, -4, 'bloom'], silvermaple: [-2, 0], crimsonking: [4, 4],
+    sycamore: [6, 8], riverbirch: [-6, -4], willow: [10, 14], spruce: null, holly: null,
     broadleaf: [0, 0],
   };
   // a look's season on a day of the year: [from, to, share of the change done]; between changes from === to
@@ -12697,7 +12751,7 @@
     const key = look + '|' + view + '|' + (v[season] ? season : 'summer');
     let p = TREEART.img.get(key);
     if (!p) {
-      p = new Promise((res) => { const im = new Image(); im.onload = () => res({ im, rec }); im.onerror = () => res(null); im.src = rec.img; });
+      p = artImage(artSrc(rec.img, rec.imgHalf)).then((im) => { if (!im) { TREEART.img.delete(key); return null; } return { im, rec }; });
       TREEART.img.set(key, p);
     }
     return p;
@@ -12710,18 +12764,23 @@
     TREEART.busy = true;
     try {
       let drew = false;
+      // Round 184: the images are files now, so every one this pass needs is asked for at once and drawn as they land
+      for (let li = 0; li < looks.length; li++) {
+        const [a, b] = want[li], st = TREEART.state[li] || {};
+        for (const [slot, season] of [[0, a], [1, b]]) if (force || st[slot] !== season) { treeArtImage(looks[li], 'side', season); treeArtImage(looks[li], 'top', season); }
+      }
       for (let li = 0; li < looks.length; li++) {
         const [a, b, t] = want[li], st = TREEART.state[li] || (TREEART.state[li] = {});
         for (const [slot, season] of [[0, a], [1, b]]) {
           if (!force && st[slot] === season) continue;
-          for (const at of [TREEART.side, TREEART.top]) {
-            const got = await treeArtImage(looks[li], at.view, season);
-            const k = li * 2 + slot, x = (k % 6) * at.N, y = Math.floor(k / 6) * at.N;
+          const got = [await treeArtImage(looks[li], 'side', season), await treeArtImage(looks[li], 'top', season)];
+          if (!got[0] || !got[1]) continue;   // not to be had now: the cell keeps what it holds, and the next pass asks again
+          [TREEART.side, TREEART.top].forEach((at, vi) => {
+            const g = got[vi], k = li * 2 + slot, x = (k % 6) * at.N, y = Math.floor(k / 6) * at.N;
             at.ctx.clearRect(x, y, at.N, at.N);
-            if (got) at.ctx.drawImage(got.im, x, y, at.N, at.N);
-            const f = got ? (at.view === 'side' ? got.rec.hf : got.rec.df) : 1;
-            (at.view === 'side' ? TREEART.uLk : TREEART.uLk2).value[li].setComponent(slot + 1, f);
-          }
+            at.ctx.drawImage(g.im, x, y, at.N, at.N);
+            (at.view === 'side' ? TREEART.uLk : TREEART.uLk2).value[li].setComponent(slot + 1, at.view === 'side' ? g.rec.hf : g.rec.df);
+          });
           st[slot] = season; drew = true;
         }
         TREEART.uLk.value[li].x = t;
@@ -21146,22 +21205,25 @@ float pinOccGate() {
     if (!TSKIN_ON || !TSKIN.cands.length) return;
     const t0 = performance.now();
     try {
-      const img = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('tower tile did not decode')); im.src = src; });
       const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
-      const tex = (src) => {
+      // Round 184: a phone takes the bake's half file (the mask is already small), so it uploads the image as it comes
+      const tex = (src, halved) => {
         let t;
-        if (!isTouch) t = new THREE.Texture(src);
+        if (!isTouch || halved) { t = new THREE.Texture(src); if (isTouch) freeTexOnUpload(t); }
         else { const cv = document.createElement('canvas'); cv.width = src.width >> 1; cv.height = src.height >> 1; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height); t = freeTexOnUpload(new THREE.CanvasTexture(cv)); }
         t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
         return t;
       };
       const byKind = new Map();
       for (const c of TSKIN.cands) { if (!byKind.has(c.kind)) byKind.set(c.kind, []); byKind.get(c.kind).push(c); }
+      // every kind's files asked for at once (one at a time cost the build 4.3 s of round trips), each awaited in turn
+      const got = new Map([...byKind.keys()].map((kind) => { const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])]; }));
       for (const [kind, list] of byKind) {
         const T = FRONTS_DATA.tiles[kind];
-        const [im, mk] = await Promise.all([img(T.img), img(T.mask)]);
-        const map = tex(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso;
-        const mask = tex(mk);
+        const [im, mk] = await got.get(kind);
+        if (!im || !mk) { TSKIN.error = 'tile ' + kind + ' did not load'; continue; }   // its towers keep the procedural facade
+        const map = tex(im, !!T.imgHalf); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso;
+        const mask = tex(mk, true);
         const pos = [], nor = [], uv = [], col = [], seed = [], idx = [];
         for (const c of list) {
           const P = c.poly, n = P.length, sg = signedArea(P) > 0 ? 1 : -1;
@@ -21250,6 +21312,7 @@ float pinOccGate() {
       a[o + 8] = Zx; a[o + 9] = 0; a[o + 10] = Zz; a[o + 11] = 0; a[o + 12] = px; a[o + 13] = py; a[o + 14] = pz; a[o + 15] = 1;
     };
     let noStreet = 0, laid = 0;
+    const want = new Set();
     if (cy < R + 60) {
       const list = [], gx0 = Math.floor(cx / C), gz0 = Math.floor(cz / C), cr = Math.ceil(R / C);
       for (let gx = gx0 - cr; gx <= gx0 + cr; gx++) for (let gz = gz0 - cr; gz <= gz0 + cr; gz++) {
@@ -21265,6 +21328,7 @@ float pinOccGate() {
         if (s === -2) s = SIDE[k] = frontSide(k);
         if (s < 0) { noStreet++; continue; }
         const set = B[o + 9], Rs = frontSetRes(set);
+        want.add(set);
         if (!Rs.ready) continue;
         const n0 = cnt.get(set) || 0;
         if (n0 >= Rs.cap) continue;
@@ -21291,7 +21355,7 @@ float pinOccGate() {
           const gfY = cm.gf ? y1 - cm.gf[2] * H : 0;
           // a porch (the porch set's fronts were made without theirs): its deck at the ground, its roof over the ground floor
           let porch = false;
-          if (name === 'porch' && cm.gf && hash01(seed * 2.9 + j) < 0.85 && gc.porch < G.porch.instanceMatrix.count) {
+          if ((S.porch != null ? S.porch : name === 'porch') && cm.gf && hash01(seed * 2.9 + j) < 0.85 && gc.porch < G.porch.instanceMatrix.count) {
             const gy = siteY(px + rx * cw * 0.5 + nx * 1.2, pz + rz * cw * 0.5 + nz * 1.2, 'ground') || base, ph = gfY + 0.35 - gy;
             if (ph > 2.4 && ph < 4.8) {
               put(G.porch, gc.porch, px, gy, pz, rx * cw / 5, rz * cw / 5, ph, nx, nz);
@@ -21309,7 +21373,7 @@ float pinOccGate() {
           // an awning over the ground floor's openings, for the set's share of its houses (a shop's runs the width)
           const kinds = AWNING_KINDS[name];
           if (kinds && cm.gf && !porch && hash01(seed * 5.3 + j * 1.7) < (S.awn || 0)) {
-            const shop = name === 'shop', M = shop ? G.awnF : G.awnS, i2 = shop ? gc.awnF : gc.awnS;
+            const shop = !!AWN_WIDE[name], M = shop ? G.awnF : G.awnS, i2 = shop ? gc.awnF : gc.awnS;
             const s0 = (shop ? 0.03 : Math.max(0, cm.gf[0] - 0.04)) * cw, s1 = (shop ? 0.97 : Math.min(1, cm.gf[1] + 0.04)) * cw, yA = gfY + (shop ? 0.35 : 0.3);
             if (s1 - s0 > 1.2 && yA > base + 2.4 && i2 < M.instanceMatrix.count) {
               const kd = Rs.awnKinds[Math.floor(hash01(seed * 9.1 + j) * Rs.awnKinds.length) % Rs.awnKinds.length];
@@ -21329,6 +21393,25 @@ float pinOccGate() {
     });
     for (const k of Object.keys(gc)) { const m = G[k]; m.count = gc[k]; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; if (m.aAwn) m.aAwn.needsUpdate = true; }
     FRONTS.laid = laid; FRONTS.noStreet = noStreet; FRONTS.relief = gc;
+    // Round 184: fifteen sets at about 27 MB of atlas each on a computer, so the least recently wanted are let go past
+    // FR_KEEP (a flight across the city does not end holding all of them); a set wanted again loads again
+    const now = performance.now();
+    for (const s2 of want) FRONTS.set[s2].used = now;
+    const live = [];
+    FRONTS.set.forEach((Rs, s2) => { if (Rs) live.push(s2); });
+    if (live.length > FR_KEEP) {
+      live.sort((a, b) => FRONTS.set[a].used - FRONTS.set[b].used);
+      let over = live.length - FR_KEEP;
+      for (const s2 of live) { if (over <= 0) break; if (want.has(s2)) continue; frontSetDrop(s2); over--; }
+    }
+  }
+  const FR_KEEP = isTouch ? 4 : 8;
+  function frontSetDrop(s) {
+    const R = FRONTS.set[s];
+    if (!R) return;
+    FRONTS.set[s] = null; FRONTS.dropped = (FRONTS.dropped || 0) + 1; FRONTS.perSet[FR_SETS[s]] = 0;
+    if (R.mesh) { groupCity.remove(R.mesh); R.mesh.geometry.dispose(); R.mesh.material.dispose(); }
+    R.map.dispose(); R.mask.dispose();
   }
   function updateFronts(now) {
     if (!FRONTS.glob) return;
@@ -23168,7 +23251,11 @@ float pinOccGate() {
   // display 7 percent), so the gain sits on the painted meadow itself
   const MEADOW_GAIN = 0.82;
   const texU = { uGrass: { value: null }, uGrassK: { value: 1 }, uGrass2: { value: null },
-    uGrassTone: { value: new THREE.Vector3(1, 1, 1) }, uGrassTone2: { value: new THREE.Vector3(1, 1, 1) }, uGrassArt: { value: 0 } };
+    uGrassTone: { value: new THREE.Vector3(1, 1, 1) }, uGrassTone2: { value: new THREE.Vector3(1, 1, 1) }, uGrassArt: { value: 0 },
+    // Round 184: the streets' detail (asphalt, concrete slabs, herringbone brick) and each one's linear mean, so a surface
+    // takes only the grain and keeps its own calibrated colour
+    uAsph: { value: null }, uConc: { value: null }, uBrick: { value: null }, uStM: { value: new THREE.Vector3(1, 1, 1) },
+    uStBrick: { value: new THREE.Vector3(1, 1, 1) }, uStScale: { value: new THREE.Vector3(6, 1.5, 1.6) }, uStreetArt: { value: 0 } };
   // Round 183 (Mike: "If you could also update the grass/ground textures that would be great"): GROUND_ART
   // (bake_ground_art.py) holds two generated photographs of the ground, made to tile, a mown lawn and a rougher verge;
   // they take the painted tile's place, each toned to the painted tile's mean (its brightness matched, its colour pulled
@@ -23186,12 +23273,12 @@ float pinOccGate() {
     const painted = texU.uGrass.value && texU.uGrass.value.image;
     if (!painted) return;
     const P = linMean(painted), LP = 0.30 * P[0] + 0.59 * P[1] + 0.11 * P[2];
-    const load = (src) => new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
-    Promise.all([load(GROUND_ART.lawn), load(GROUND_ART.meadow)]).then(([a, b]) => {
+    // Round 184: files, and a phone's half (512) from the bake
+    Promise.all([artImage(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf)), artImage(artSrc(GROUND_ART.meadow, GROUND_ART.meadowHalf))]).then(([a, b]) => {
       if (!a || !b) return;
       const tex = (im) => {
         let pic = im;
-        if (isTouch) { const cv = document.createElement('canvas'); cv.width = cv.height = 512; cv.getContext('2d').drawImage(im, 0, 0, 512, 512); pic = cv; }
+        if (isTouch && im.width > 512) { const cv = document.createElement('canvas'); cv.width = cv.height = 512; cv.getContext('2d').drawImage(im, 0, 0, 512, 512); pic = cv; }
         const t = new THREE.Texture(pic); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
         t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
         return t;
@@ -23205,6 +23292,24 @@ float pinOccGate() {
       texU.uGrass.value = tex(a); texU.uGrass2.value = tex(b);
       texU.uGrassK.value = 1 / Math.max(1e-4, LA);   // the macro copy reads the raw lawn
       texU.uGrassArt.value = 1;
+    });
+    // Round 184: the streets' three, apart from the lawn so neither waits on the other
+    if (!GROUND_ART.asphalt || /[?&]streets=plain\b/.test(location.search)) return;
+    Promise.all(['asphalt', 'concrete', 'bricks'].map((k) => artImage(artSrc(GROUND_ART[k], GROUND_ART[k + 'Half'])))).then((ims) => {
+      if (ims.some((im) => !im)) return;
+      const lumOf = (M) => 0.2126 * M[0] + 0.7152 * M[1] + 0.0722 * M[2];
+      const M = ims.map(linMean);
+      const tex = (im) => {
+        const t = new THREE.Texture(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
+        return freeTexOnUpload(t);
+      };
+      texU.uAsph.value = tex(ims[0]); texU.uConc.value = tex(ims[1]); texU.uBrick.value = tex(ims[2]);
+      texU.uStM.value.set(lumOf(M[0]), lumOf(M[1]), lumOf(M[2]));
+      texU.uStBrick.value.set(M[2][0], M[2][1], M[2][2]);
+      const m = GROUND_ART.m || {};   // a tile's size in metres (the bake: the patterned ones cropped to whole repeats)
+      texU.uStScale.value.set(m.asphalt || 6, m.concrete || 1.5, m.bricks || 1.6);
+      texU.uStreetArt.value = 1;
     });
   }
   let tuftTex = null, leafTex = null;
@@ -23440,9 +23545,33 @@ float pinOccGate() {
     const forced = opt === true;
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
     shader.uniforms.uGrass2 = texU.uGrass2; shader.uniforms.uGrassTone = texU.uGrassTone; shader.uniforms.uGrassTone2 = texU.uGrassTone2; shader.uniforms.uGrassArt = texU.uGrassArt;
+    if (!forced) for (const k of ['uAsph', 'uConc', 'uBrick', 'uStM', 'uStBrick', 'uStScale', 'uStreetArt']) shader.uniforms[k] = texU[k];
+    // Round 184: a paved surface (never the bare ground, which is all meadow) takes the streets' generated detail: on the
+    // street grid's own axes (the fitted Front Street line, 9.6 degrees off east), asphalt as the mean of two tilings (6 m
+    // and a 37-degree 9.7 m) so no patch repeats, concrete slabs at 1.5 m, herringbone brick at 1.6 m (uStScale, from the
+    // bake). Which one by the
+    // surface's own colour (reddish is brick, dark is asphalt, light and grey is concrete), each as a ratio to its texture's
+    // mean, on up-facing faces only (a party-wall skin keeps none), and gone to the mean past 0.7 m a pixel
+    const street = forced ? '' : [
+      'vec2 stG = vec2(dot(sWP.xz, vec2(0.986, 0.167)), dot(sWP.xz, vec2(-0.167, 0.986)));',
+      'float stL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)), stMx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));',
+      'float stSat = (stMx - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b))) / max(stMx, 1e-4);',
+      'float stB = smoothstep(1.15, 1.4, diffuseColor.r / max(diffuseColor.g, 1e-4)) * (1.0 - isGreen);',
+      'float stA = (1.0 - stB) * (1.0 - smoothstep(0.10, 0.16, stL)) * (1.0 - isGreen);',
+      'float stC = (1.0 - stB) * smoothstep(0.13, 0.2, stL) * (1.0 - smoothstep(0.2, 0.35, stSat)) * (1.0 - isGreen);',
+      'float stUp = smoothstep(0.6, 0.85, dot(normalize(vNormal), (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz));',
+      'float stK = uStreetArt * stUp * (1.0 - smoothstep(0.08, 0.7, sfw));',
+      'const vec3 stY = vec3(0.2126, 0.7152, 0.0722);',
+      'float stAr = 0.5 * (dot(texture2D(uAsph, stG / uStScale.x).rgb, stY) + dot(texture2D(uAsph, vec2(stG.x * 0.799 - stG.y * 0.602, stG.x * 0.602 + stG.y * 0.799) / (uStScale.x * 1.62) + 0.31).rgb, stY)) / uStM.x;',
+      'float stCr = dot(texture2D(uConc, stG / uStScale.y).rgb, stY) / uStM.y;',
+      'vec3 stBt = texture2D(uBrick, stG / uStScale.z).rgb;',
+      'vec3 stBr = mix(vec3(dot(stBt, stY) / uStM.z), stBt / max(uStBrick, vec3(1e-4)), 0.5);',
+      'diffuseColor.rgb *= clamp(vec3(1.0) + stK * (vec3(stA * 0.75 * (stAr - 1.0) + stC * 0.8 * (stCr - 1.0)) + stB * 0.9 * (stBr - 1.0)), 0.4, 1.8);',
+    ].join('\n');
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
         'uniform sampler2D uGrass; uniform float uGrassK; uniform sampler2D uGrass2; uniform vec3 uGrassTone; uniform vec3 uGrassTone2; uniform float uGrassArt;',
+        forced ? '' : 'uniform sampler2D uAsph, uConc, uBrick; uniform vec3 uStM, uStBrick, uStScale; uniform float uStreetArt;',
         'float sth(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
         'float stn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
         '  return mix(mix(sth(i), sth(i + vec2(1.0, 0.0)), f.x), mix(sth(i + vec2(0.0, 1.0)), sth(i + vec2(1.0, 1.0)), f.x), f.y); }',
@@ -23478,6 +23607,7 @@ float pinOccGate() {
         'vec3 grass = gTex * mix(1.0, gMacL, 0.20) * (0.97 + 0.06 * sn1) * gMul * ' + MEADOW_GAIN.toFixed(2) + ';',
         'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88);',   // a little of the saturation out (Round 54)
         'vec3 gTint = clamp(diffuseColor.rgb / vec3(0.141, 0.22, 0.094), 0.3, 1.6);',
+        street,
         'diffuseColor.rgb = mix(diffuseColor.rgb * am, grass * gTint, isGreen);',
       ].join('\n'));
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');

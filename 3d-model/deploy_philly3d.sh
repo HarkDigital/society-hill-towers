@@ -5,7 +5,7 @@
 # (the GitHub Pages copy was retired Sep 17 2026; philly3d.com is the site.)
 #
 #   ./deploy_philly3d.sh             tests -> build -> gzip -> stage -> keep prev
-#                                    -> rsync --delay-updates -> verify live
+#                                    -> rsync art/ -> rsync --delay-updates -> verify live
 #   ./deploy_philly3d.sh --rollback  put the previous index.html + .gz pair back
 #                                    and verify the live site serves it
 #
@@ -125,13 +125,29 @@ GZ=$(wc -c < "$TMP/index.html.gz" | tr -d ' ')
 # stage + chmod before rsync: the laptop's CloudStorage checkout is all mode
 # 600 and -az faithfully ships that, which nginx answers with a site-wide 403
 # (learned the hard way; macOS openrsync has no --chmod to fix it in flight)
-chmod 644 "$TMP"/*
+find "$TMP" -maxdepth 1 -type f -exec chmod 644 {} +
+# the generated art (Round 184, Mike: load it on demand): files beside the page
+# under art/, each named by its content's hash, so a file never changes under
+# its name. Staged with the same modes (dirs 755), shipped BEFORE the page that
+# names them, added and never deleted on the box (a rolled-back page still
+# finds its own art). build.py already refused a manifest naming a missing file.
+[ -d art ] || fatal "missing art/ (the bakes write it: bake_fronts.py, bake_tree_art.py, bake_ground_art.py)"
+cp -R art "$TMP/art"
+find "$TMP/art" -type d -exec chmod 755 {} +
+find "$TMP/art" -type f -exec chmod 644 {} +
+ART_N=$(find "$TMP/art" -type f | wc -l | tr -d ' ')
 WANT=$(sha "$TMP/index.html")
 echo "   gzip $GZ bytes, sha256 $WANT"
 
 # 3. keep the live pair, then ship
 echo "== keeping the live pair in $HOST:$PREV"
 ssh "$HOST" "mkdir -p $PREV && cp -a $WEB/index.html $WEB/index.html.gz $PREV/ 2>/dev/null || true"
+echo "== rsync the art ($ART_N files)"
+ssh "$HOST" "mkdir -p $WEB/art && chmod 755 $WEB/art"
+rsync -az "$TMP/art/" "$HOST:$WEB/art/"
+(cd "$TMP/art" && find . -type f | sort) > "$TMP/art-local.txt"
+ssh "$HOST" "cd $WEB/art && find . -type f | sort" > "$TMP/art-remote.txt" || fatal "could not list $HOST:$WEB/art"
+[ -z "$(comm -23 "$TMP/art-local.txt" "$TMP/art-remote.txt")" ] || fatal "art files missing on $HOST after rsync: $(comm -23 "$TMP/art-local.txt" "$TMP/art-remote.txt" | head -3 | tr '\n' ' ')"
 echo "== rsync"
 rsync -az --delay-updates "$TMP/index.html" "$TMP/index.html.gz" \
   "$TMP/favicon.ico" "$TMP/favicon.svg" \
@@ -145,5 +161,12 @@ verify_live "$WANT"
 curl -fsS --max-time 60 -H 'Cache-Control: no-cache' -o "$TMP/live-privacy.html" "${URL}privacy.html?deploy=$(date +%s)" \
   || fatal "could not fetch ${URL}privacy.html"
 [ "$(sha "$TMP/live-privacy.html")" = "$(sha "$TMP/privacy.html")" ] || fatal "the live privacy.html does not match this one"
-echo "deployed: $URL serves the new build (gzip $GZ bytes, sha256 $WANT)"
+# one art file of each kind, fetched over https and compared byte for byte (nginx serves art/ as plain files)
+for kind in fronts tiles trees ground; do
+  f=$(cd "$TMP/art" && ls "$kind" 2>/dev/null | head -1)
+  [ -n "$f" ] || continue
+  curl -fsS --max-time 60 -o "$TMP/live-art" "${URL}art/$kind/$f" || fatal "could not fetch ${URL}art/$kind/$f"
+  [ "$(sha "$TMP/live-art")" = "$(sha "$TMP/art/$kind/$f")" ] || fatal "the live art/$kind/$f does not match this one"
+done
+echo "deployed: $URL serves the new build (gzip $GZ bytes, sha256 $WANT) and its $ART_N art files"
 echo "previous pair kept in $HOST:$PREV — '$0 --rollback' restores it"

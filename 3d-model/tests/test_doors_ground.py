@@ -9,6 +9,7 @@ from pathlib import Path
 import base64
 import io
 import json
+import re
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -25,13 +26,16 @@ class Doors(unittest.TestCase):
 class Ground(unittest.TestCase):
     def test_the_textures(self):
         d = json.loads((ROOT / 'ground_art.json').read_text())
-        self.assertEqual(set(d), {'lawn', 'meadow'})
+        # Round 184: the streets' three beside the lawn and verge, each a file under art/ground/ with a phone's half
+        kinds = ('lawn', 'meadow', 'asphalt', 'concrete', 'bricks')
+        self.assertEqual(set(d), set(kinds) | {k + 'Half' for k in kinds} | {'m'})
+        self.assertEqual(d.pop('m'), {'asphalt': 6.0, 'concrete': 1.5, 'bricks': 1.625})   # a tile's metres
         from PIL import Image
         import numpy as np
-        for k, url in d.items():
-            self.assertTrue(url.startswith('data:image/webp;base64,'), k)
-            a = np.asarray(Image.open(io.BytesIO(base64.b64decode(url.split(',', 1)[1]))).convert('RGB'), np.float32)
-            self.assertEqual(a.shape[:2], (1024, 1024))
+        for k, path in d.items():
+            self.assertTrue(re.fullmatch(r'art/ground/[a-z]+(-half)?\.[0-9a-f]{10}\.webp', path), path)
+            a = np.asarray(Image.open(ROOT / path).convert('RGB'), np.float32)
+            self.assertEqual(a.shape[:2], (512, 512) if k.endswith('Half') else (1024, 1024))
             # it tiles: the step across each edge is no larger than the image's own pixel to pixel steps
             inner = np.abs(np.diff(a, axis=1)).mean()
             self.assertLess(np.abs(a[:, 0] - a[:, -1]).mean(), inner * 1.6, k)

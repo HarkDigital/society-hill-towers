@@ -8008,3 +8008,64 @@ takes the tap). 435 tests.
   Passyunk, and from 45 m; the phone path at 740x360. `tests/test_fronts.py` (the nine sets, the set choice and the street
   side under node, the wiring), `tests/test_doors_ground.py`; `tests/test_memory_cuts.py` follows the fronts' and the
   towers' textures to their new places. 477 tests.
+
+## Round 184 — the generated art loads on demand; fifteen house types, 25 tower tiles, 28 tree looks, the streets (Oct 12)
+
+- Mike: "I added another $100 to the chat gpt api so we can use that to model many more items", and, asked, chose to
+  load the generated art separately from philly3d.com rather than inline it, with all four of more variety per type,
+  more house types, storefronts and streets, and trees and towers.
+- The page had reached 20.4 MB of gzip with the art inlined as data URLs, about 8 MB of it images. Now every generated
+  image is a file under `3d-model/art/<kind>/` named by the first 10 hex of its sha256 (`art_files.py`: `write` and
+  `prune`), and the manifests build.py still inlines (`fronts.json`, `tree_art.json`, `ground_art.json`) carry paths.
+  The page loads a file the first time it needs it (`artImage`, one retry after 4 s, null when it cannot be had: a
+  front set or a tower tile that does not load leaves the procedural facade standing, a tree image is asked again at
+  the next season pass and its cell keeps what it held), and a phone takes the bake's half copy (`artSrc`), so it
+  neither downloads nor decodes the full size and no longer halves the atlases through a canvas. A phone also lets a
+  decoded `<img>` go once the GPU holds it (`freeTexOnUpload`). build.py refuses a manifest naming a missing file or
+  still holding a data URL; `deploy_philly3d.sh` stages `art/` with 755 and 644 modes, rsyncs it BEFORE the page,
+  never deletes on the box (a rolled-back page still finds its own art), checks every file landed and fetches one of
+  each kind over https against its sha256; the app's `copy-web.mjs` copies it into `www/art`.
+- Variety and types: `fetch_fronts.py` made 183 more fronts and tiles from `gpt-image-2`: sixteen fronts a set for the
+  nine sets (eight each before), and six new sets with their own places (`FR_AREAS`, scene-frame boxes): `univcity`
+  (University City's three-storey Victorian twins, made without their porch, which the page builds, now a set flag
+  `porch` rather than the set's name), `chestnut` (Chestnut Hill's stone houses, up to 900 m2), `manayunk` (the narrow
+  hillside rows), `loft` (an old factory or warehouse of three to seven floors anywhere, and any old commercial block of
+  four floors and up in Old City, Callowhill and Northern Liberties), `mixeduse` (a shop under three floors of flats: a
+  commercial building of 11 m and up in Center City, 13.5 m elsewhere) and `rittenhouse` (four-storey townhouses west
+  of Broad). The atlas went from 512x1024 cells, 4 by 2, to 384x768, 4 by 4 (a phone's half 192x384). Fifteen sets at
+  about 27 MB of GPU atlas each on a computer would add up over a long flight, so the least recently wanted are let go
+  past `FR_KEEP` (eight, four on a phone; `frontSetDrop`), never one the current lay wants. The tower tiles went from
+  ten kinds to 25 (gold glass, green glass, ribbon windows, brutalist, limestone, marble, terracotta, blue bands,
+  unitized, hotel precast, red granite, white fins, dark brick, metal panel, grey grid), dealt among each style's and
+  researched facade's alternates, written at 640 (a phone's 320) and fetched all at once (one kind at a time cost the
+  build 4.3 s of round trips).
+- Trees: ten more looks from `gpt-image-1.5` (magnolia, dogwood and serviceberry with their spring bloom, silver maple,
+  Crimson King, American sycamore, river birch, willow, and spruce and holly evergreen), each ahead of the broader
+  pattern it used to fall under in `LOOK_OF` (the dogwoods, magnolias and serviceberries were crabapples, the spruces,
+  firs, hemlocks, hollies and yews pines), with `TREE_CAL` dates. The winter haze keying spared a near-white blot at the
+  willow's foot (its curtain of twigs); the trunk column now spares bark only, saturation 0.18 and up, and keys a
+  near-white grey there too. A season pass asks for every image it needs at once.
+- Streets: three more ground textures from `gpt-image-2`, worn asphalt, concrete sidewalk slabs and a Society Hill
+  herringbone brick walk. A regular pattern cannot take the lawn's half-roll blend (it doubles every joint across the
+  band), so `bake_ground_art.py` crops those two to whole repeats found by autocorrelation (the herringbone 208 by 100 px,
+  4 by 10 of them, 1.62 m a tile; the concrete one slab, 1.5 m) and cross-fades the edges over 16 px. `surfTexPatch`
+  lays them on every paved surface that is not the bare ground, on the street grid's own axes (the fitted Front Street
+  line), by the surface's own colour (reddish brick, dark asphalt, light grey concrete), as a ratio to the texture's
+  mean so the calibrated colours hold, the asphalt as the mean of two tilings (6 m, and 9.7 m at 37 degrees) so no
+  patch repeats, on up-facing faces only, gone past 0.7 m a pixel. `?streets=plain` keeps them off.
+- Two fronts' windows went unfound (a loft and a mixed-use block whose panes carry a sky reflection, under half of each
+  box dark): `find_openings` tries a front again at a fill of 0.38 when none passes at 0.55, so no other front changes.
+  A third (`p11`, a dark-brick bar front) was remade in lighter brick. On fronts of four storeys and more the "lowest
+  40%" rule for the ground floor took the second floor's windows too and hung the awnings at their sills; the band is
+  now the lowest floor and a sixth by the set's height (`gf_line`).
+- The page: 29.56 MB raw and 12.62 MB of gzip against 39.8 and 20.4; 489 art files, 18.2 MB, fetched as they are
+  needed (a desktop session in South Philadelphia and Center City asked for about 140, a phone only half copies and
+  masks: 125 halves of 135). `?dev=1` at street level: the southrow, Victorian, University City, Rittenhouse, loft,
+  mixed-use, Manayunk and Chestnut Hill fronts, the herringbone walks and asphalt in Society Hill, 24 of the 25 tower
+  kinds laid (1,181 walls), one front set let go past the cap; the phone path at 740x360. `tests/test_art_files.py`
+  (every named file under its own hash, nothing unnamed in `art/`, a phone copy of each, the loaders, the build guard,
+  the deploy order and modes, the app copy); `tests/test_fronts.py` (fifteen sets of sixteen, 25 tiles, the six sets'
+  places under node), `tests/test_tree_art.py` (28 looks, the new species), `tests/test_doors_ground.py` (five ground
+  textures, their metres), `tests/test_memory_cuts.py` (eleven `freeTexOnUpload` uses). 484 tests.
+- Image API spend this round: 183 fronts and tiles and 3 street textures from `gpt-image-2` at high quality, 58 tree
+  images from `gpt-image-1.5` at medium (the sidecars hold each one's tokens).

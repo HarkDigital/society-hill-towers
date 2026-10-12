@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Bake the street trees' images (fetch_tree_art.py) into tree_art.json, which build.py inlines as TREE_ART.
+"""Bake the street trees' images (fetch_tree_art.py) into tree_art.json, which build.py inlines as TREE_ART, and the
+images themselves into art/trees/ (Round 184: files the page loads on demand, a phone's copy at half; art_files.py).
 
 Per look, view and season: the generated image keyed (a winter image's opaque pale haze between the twigs, which the
 model leaves in place of transparency, goes clear: dehaze keys the crown on darkness and spares the trunk),
@@ -12,6 +13,7 @@ Every species in tree_names.json maps onto a look by its name (LOOK_OF, first ma
 written as speciesLook[] in the names' order. SIDE and TOP are the stored cell sizes; the page draws them at these on a
 computer and at half on a phone."""
 import argparse, base64, io, json, os, re, sys
+import art_files
 import numpy as np
 from PIL import Image
 
@@ -22,27 +24,40 @@ SIDE, TOP = 320, 160
 QUALITY = 78
 SEASONS = ('summer', 'autumn', 'winter', 'spring')
 
-LOOK_OF = [   # (look, species name pattern), on the inventory's common names
+LOOK_OF = [   # (look, species name pattern), on the inventory's common names; Round 184 added ten looks ahead of the
+    # broader patterns they used to fall under
+    ('sycamore', r'american sycamore'),
     ('plane', r'plane|sycamore'),
-    ('redmaple', r'red maple|freeman|silver maple|red sunset'),
+    ('silvermaple', r'silver maple'),
+    ('crimsonking', r'crimson king|royal red|schwedler|faassen'),
+    ('redmaple', r'red maple|freeman|red sunset'),
     ('sugarmaple', r'maple|boxelder'),
+    ('magnolia', r'magnolia'),
+    ('dogwood', r'dogwood'),
+    ('serviceberry', r'serviceberry|amelanchier'),
     ('pear', r'pear'),
     ('cherry', r'cherry|plum|prunus|apricot|peach'),
     ('locust', r'locust|pagoda|sophora|yellowwood|coffeetree|coffee tree|mimosa|silk tree'),
     ('pinoak', r'pin oak|willow oak|shingle oak|laurel oak'),
     ('redoak', r'\boak'),
+    ('willow', r'willow'),
+    ('riverbirch', r'birch'),
     ('zelkova', r'zelkova'),
     ('elm', r'elm|hackberry'),
     ('ginkgo', r'ginkgo'),
     ('lilac', r'lilac|fringe'),
     ('redbud', r'redbud'),
-    ('crabapple', r'crab|malus|apple|hawthorn|serviceberry|dogwood|magnolia|crape|crepe|smoke|witch|parrotia|golden ?rain'),
+    ('crabapple', r'crab|malus|apple|hawthorn|crape|crepe|smoke|witch|parrotia|golden ?rain'),
     ('linden', r'linden|basswood|hornbeam|hophornbeam'),
     ('sweetgum', r'sweetgum|tulip|katsura|sassafras|blackgum|black gum|tupelo|persimmon'),
-    ('pine', r'pine|spruce|\bfir\b|cedar|juniper|arborvitae|cypress|hemlock|holly|yew|cryptomeria|sequoia|redwood|larch'),
+    ('holly', r'holly|\byew\b'),
+    ('spruce', r'spruce|\bfir\b|hemlock'),
+    ('pine', r'pine|cedar|juniper|arborvitae|cypress|cryptomeria|sequoia|redwood|larch'),
 ]
 LOOKS = ['plane', 'redmaple', 'sugarmaple', 'cherry', 'pear', 'locust', 'redoak', 'pinoak', 'zelkova', 'ginkgo', 'lilac',
-         'redbud', 'crabapple', 'linden', 'sweetgum', 'pine', 'elm', 'broadleaf']
+         'redbud', 'crabapple', 'linden', 'sweetgum', 'pine', 'elm',
+         'magnolia', 'dogwood', 'serviceberry', 'silvermaple', 'crimsonking', 'sycamore', 'riverbirch', 'willow', 'spruce',
+         'holly', 'broadleaf']
 
 
 def look_of(name):
@@ -69,7 +84,11 @@ def dehaze(a, view):
     yy, xx = np.mgrid[0:H, 0:W]
     low = np.clip((yy - (y0 + (y1 - y0) * 0.72)) / ((y1 - y0) * 0.04), 0, 1)
     mid = np.clip(1 - (np.abs(xx - (x0 + x1) / 2) - (x1 - x0) * 0.10) / ((x1 - x0) * 0.03), 0, 1)
-    trunk = low * mid
+    # Round 184: the column spares bark, not haze: a near-white grey there (the willow's curtain of twigs left a white
+    # blot at its foot) still goes; pale bark is a warm cream or a birch's pinkish white, saturation 0.18 and up
+    sat = rgb.max(-1) - rgb.min(-1)
+    haze = np.clip((lum - 0.78) / 0.08, 0, 1) * np.clip((0.08 - sat) / 0.04, 0, 1)
+    trunk = low * mid * (1 - haze)
     a[..., 3] = al * (trunk + (1 - trunk) * dark)
     return a
 
@@ -120,10 +139,11 @@ def prep(path, view, season):
     return out, meta
 
 
-def data_url(im):
-    b = io.BytesIO()
-    im.save(b, 'WEBP', quality=QUALITY, method=6, alpha_quality=90)
-    return 'data:image/webp;base64,' + base64.b64encode(b.getvalue()).decode('ascii')
+def art(im, name):
+    """The image as a file under art/trees/ (Round 184, art_files), and a phone's copy at half."""
+    half = im.resize((im.width // 2, im.height // 2), Image.LANCZOS)
+    return (art_files.write(im, 'trees', name, 'WEBP', quality=QUALITY, method=6, alpha_quality=90),
+            art_files.write(half, 'trees', name + '-half', 'WEBP', quality=QUALITY, method=6, alpha_quality=90))
 
 
 def main():
@@ -140,9 +160,9 @@ def main():
                 if not os.path.exists(p):
                     continue
                 im, meta = prep(p, view, season)
-                url = data_url(im)
-                total += len(url) * 3 // 4
-                images.setdefault(look, {}).setdefault(view, {})[season] = dict(meta, img=url)
+                full, half = art(im, '%s-%s-%s' % (look, view, season))
+                total += art_files.size(full)
+                images.setdefault(look, {}).setdefault(view, {})[season] = dict(meta, img=full, imgHalf=half)
                 if a.preview:
                     os.makedirs(a.preview, exist_ok=True)
                     bg = Image.new('RGBA', im.size, (110, 130, 160, 255)); bg.alpha_composite(im)
@@ -151,7 +171,8 @@ def main():
     if missing:
         sys.exit('looks without a summer side and top: %s (run fetch_tree_art.py)' % ', '.join(missing))
     species_look = [LOOKS.index(look_of(n)) for n in names['names']]
-    out = {'v': 1, 'looks': LOOKS, 'side': SIDE, 'top': TOP, 'speciesLook': species_look, 'images': images}
+    print('pruned %d old tree files' % art_files.prune('trees'))
+    out = {'v': 2, 'looks': LOOKS, 'side': SIDE, 'top': TOP, 'speciesLook': species_look, 'images': images}
     with open(OUT + '.tmp', 'w') as f:
         json.dump(out, f, separators=(',', ':'))
     os.replace(OUT + '.tmp', OUT)
