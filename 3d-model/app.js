@@ -11075,6 +11075,16 @@
       if ((nx * fx + nz * fz) / fl < 0.9) continue;   // the wall must face the street
       if (!best || Math.abs(s) < best.s) best = { p, q, nx, nz, t, s: Math.abs(s), side: s < 0 ? 0 : 1, el };
     }
+    // one house's width takes a front at any depth (Society Hill's rows run back 25 to 35 m with their rear wings); a
+    // wall two or more fronts wide takes them only when it is a row strip's depth, so a loft, a warehouse or a school
+    // standing on the run keeps its own facade (Wilder Street's corner loft took six rowhouse fronts before this)
+    if (best) {
+      let depth = 0;
+      for (const v of P) depth = Math.max(depth, -((v[0] - best.p[0]) * best.nx + (v[1] - best.p[1]) * best.nz));
+      const S = FRONTS_DATA.sets[r.set], k = S ? Math.round(best.el / S.w) : 1;
+      best.depth = depth;
+      if (k >= 2 && depth > 18) return null;
+    }
     return best;
   }
   // a box standing on a wall: along the wall from (x0, z0) to (x1, z1), out0 to out1 metres along its outward normal,

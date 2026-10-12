@@ -79,31 +79,54 @@ def blobs(m):
 
 def find_openings(img):
     """Windows and the door of one front, as fractions of its width and height from the top-left: (wins, door)."""
-    W, H = 192, 320
+    # at half the generated size (768 x 1280): a muntin is about 2 px and the white frame between a shutter and its sash
+    # about 5, so a 1 px close joins a sash's panes and leaves the shutters beside it apart
+    W, H = 384, 640
     a = np.asarray(img.convert('RGB').resize((W, H), Image.BILINEAR), np.float32) / 255.0
     L = lum(a)
     med = float(np.median(L))
     # glass is darker than the wall and neutral or cool, where brick is warm: a dark red brick reads as dark as a pane
     # by brightness alone, so a pane is well under the median and no redder than a grey, or very dark whatever its hue
-    dark = ((L < 0.72 * med) & ((a[..., 0] - a[..., 2]) < 0.12)) | (L < 0.45 * med)
-    closed = erode(dilate(dark, 2), 2)          # bridge the muntins and the meeting rails
-    wins, door = [], None
+    # (measured on the first five: a sky-lit pane reads 0.16 to 0.2 against a 0.35 brick, so the bar is 0.85 of the
+    # median, held to neutral colours; a painted shutter is green, never glass, and is left out whatever its darkness)
+    r, g, b = a[..., 0], a[..., 1], a[..., 2]
+    green = (g - r > 0.025) & (g - b > 0.015)
+    dark = (((L < 0.85 * med) & (r - b < 0.06)) | ((L < 0.3 * med) & (r - b < 0.12))) & ~green   # brick in deep shade stays red
+    closed = erode(dilate(dark, 1), 1)
+    cand, door = [], None
     for y0, x0, y1, x1, _ in blobs(closed):
         bw, bh = x1 - x0 + 1, y1 - y0 + 1
-        if bw < W * 0.06 or bh < H * 0.05:
+        if bw < W * 0.035 or bh < H * 0.05:   # an awning's shadow line, a sliver
             continue
         fill = dark[y0:y1 + 1, x0:x1 + 1].mean()
-        if fill < 0.45:
+        if fill < 0.55 or bw / bh > 2.5 or (bh > H * 0.35 and y1 < H * 0.85) or y0 > H * 0.85:   # bands, lattices, basement grilles (a tall door on a two-storey front is no band)
             continue
-        asp = bw / bh
-        box = (x0 / W, y0 / H, (x1 + 1) / W, (y1 + 1) / H)
-        if y1 > H * 0.86 and asp < 0.75 and bh > H * 0.12:
-            if door is None or bh > (door[3] - door[1]) * H:
-                door = box
-            continue
-        if asp < 0.3 or asp > 2.2 or bh > H * 0.4:   # shutters, dark bands, the parapet's shadow
-            continue
-        wins.append(box)
+        cand.append([x0, y0, x1, y1])
+    # the door: the tallest dark opening reaching into the lowest third, taller than a sash (a stoop can lift it) and
+    # clearly taller than the openings' usual height (a green or red door is not dark glass, and then no window stands in)
+    hs = sorted(c[3] - c[1] for c in cand)
+    typical = hs[len(hs) // 2] if hs else 0
+    for c in cand:
+        x0, y0, x1, y1 = c
+        if y1 > H * 0.7 and (y1 - y0) > max(H * 0.15, typical * 1.15) and (x1 - x0) / (y1 - y0) < 0.7 and (door is None or y1 - y0 > door[3] - door[1]):
+            door = c
+    # a shutter is a narrow box with another box against its side at the same height (its sash, a frame away); a
+    # narrow modern window stands clear of its neighbours
+    def shutter(c):
+        x0, y0, x1, y1 = c
+        if (x1 - x0) / (y1 - y0) >= 0.36:
+            return False
+        gap = max(6, (x1 - x0) * 0.6)
+        for o in cand:
+            if o is c or o is door:
+                continue
+            over = min(y1, o[3]) - max(y0, o[1])
+            if over > 0.3 * (y1 - y0) and (0 <= o[0] - x1 <= gap or 0 <= x0 - o[2] <= gap):   # a split sash covers half
+                return True
+        return False
+    wins = [(c[0] / W, c[1] / H, (c[2] + 1) / W, (c[3] + 1) / H) for c in cand if c is not door and not shutter(c)]
+    if door:
+        door = (door[0] / W, door[1] / H, (door[2] + 1) / W, (door[3] + 1) / H)
     wins.sort(key=lambda b: (round(b[1] * 20), b[0]))
     return wins, door
 
