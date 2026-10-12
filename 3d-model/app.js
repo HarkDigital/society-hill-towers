@@ -6049,7 +6049,7 @@
             parts.push({ geom: g, color: new THREE.Color(hex).multiplyScalar(kG), style: st2, baseY: ty || 0 });
           }, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false, b.holes && b.holes.length ? b.holes : null);   // the wall in the tiers' register: its darkened lip comes back to the core's
         }
-        if (wallTop && !spec0 && wallTop < 30) frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, 'core');
+        if (wallTop && !spec0) frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, b.fa, tCode, area, true, style);
         if (wallTop && !spec0 && b.h > 35) towerSkinNote(b.poly, ty || 0, (ty || 0) + wallTop, style, null, i, color, !!b.minH, 0);
       }
       registerPoly(b.poly);
@@ -6805,8 +6805,14 @@
           '      float okRow = step(cell.y * fp + rowHead, wallTop) * inWall * det;',
           '      lit = 0.5 + 0.5 * shtHash(cell * 1.7 + 11.0);',
           '      vec3 gc = vec3(0.06, 0.07, 0.09) + vec3(0.10, 0.09, 0.06) * lit;',
-          '      float doorCol = step(2.5, mod(cell.x, 3.0));',
-          '      float isDoor = step(3.09, wallTop) * ground * doorCol * float(st == 0 || st == 8) * brickish * inWall * det * detU;',
+          // Oct 12 (Mike: "buildings have no doors and all look alike"): a door was every third bay, and a rowhouse wall is
+          // two or three bays wide, so most houses had none; Victorian, siding and porch rows had none at all. A wall of up
+          // to three bays (one house) now takes its door in an end bay, chosen per wall; a wider one (a row mapped as one
+          // building) keeps a door every third bay; every row style takes one, painted or brick
+          '      float nbD = local ? nb : 9.0;',
+          '      float doorBay = shtHash(vec2(floor(vWallL * 3.7) + 0.5, floor(vBase * 2.3) + 0.5)) < 0.5 ? 0.0 : nbD - 1.0;',
+          '      float doorCol = nbD <= 3.0 ? 1.0 - step(0.5, abs(cell.x - doorBay)) : step(2.5, mod(cell.x, 3.0));',
+          '      float isDoor = step(3.09, wallTop) * ground * doorCol * float(st == 0 || st == 8 || st == 9 || st == 10 || st == 11) * inWall * det * detU;',
           '      float isArch = step(3.02, wallTop) * ground * float(st == 4) * inWall * det;',
           '      float isShop = step(3.07, wallTop) * ground * float(st == 5) * inWall * det;',
           '      float sashOn = (1.0 - max(isDoor, max(isArch, max(isShop, porch)))) * okRow;',
@@ -9453,7 +9459,7 @@
         const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
         if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
-        if (!mh && !spec && h < 30) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, 'wide');
+        if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style);
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
         else {
           appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
@@ -11083,60 +11089,69 @@
     flushUploads(true);
   });
 
-  // ---- house fronts (the facade prototype, Oct 12; Mike: "I would love for the buildings to be much more varied", then
-  // "prototype both blocks with AI-generated fronts"). FRONTS_DATA (bake_fronts.py) carries, per set, an atlas of whole
-  // house fronts (one straight-on elevation a cell, party wall to party wall, sidewalk to cornice), a mask atlas in the
-  // same layout (r the window glass, g a number per window, b the door) and the runs: street centrelines whose houses take
-  // a front. The core's and the outer districts' loops hand every house standing near a run to frontNote (its footprint,
-  // its ground and its wall top); 'Hanging the house fronts' finds each one's street wall (the edge parallel to the run,
-  // facing it, nearest it), lays a quad 5 cm proud of it from the ground to the wall top, cut into as many cells as the
-  // wall is front widths wide, and deals the cells so no two neighbours share one. By day the glass is glossy; after dark
-  // a lit window (per house and per window, from the mask's numbers) glows warm. The procedural facade stays under it
-  const FRONTS_ON = typeof FRONTS_DATA !== 'undefined' && !!FRONTS_DATA && !!FRONTS_DATA.runs && !TIER2;
-  const FRONTS = { runs: [], cands: [], laid: [], meshes: [], ms: 0, error: null };
-  if (FRONTS_ON) for (const r of FRONTS_DATA.runs) {
-    const dx = r.b[0] - r.a[0], dz = r.b[1] - r.a[1], L = Math.hypot(dx, dz) || 1, P = 24;
-    FRONTS.runs.push({ ...r, dx: dx / L, dz: dz / L, L, bb: [Math.min(r.a[0], r.b[0]) - P, Math.min(r.a[1], r.b[1]) - P, Math.max(r.a[0], r.b[0]) + P, Math.max(r.a[1], r.b[1]) + P] });
+  // ---- house fronts, citywide (Round 181; Round 175's prototype dressed three hand-picked blocks. Mike: "much of the app is
+  // still showing the old style where buildings have no doors and all look alike"). FRONTS_DATA (bake_fronts.py) carries,
+  // per set, an atlas of whole house fronts (one straight-on elevation a cell, party wall to party wall, sidewalk to
+  // cornice), a mask atlas in the same layout (r the window glass, g a number per window, b 128 a shop's display glass) and
+  // each cell's door, ground-floor span and cornice colour. Every loop that raises a house hands it to frontNote: its
+  // oriented box, ground, wall top, seed and the set its property record picks (frontSetOf: the use, the material and the
+  // era, Round 170's OPA word). Ten floats a house, nothing more, because the streets that decide its front are not all
+  // indexed until the far ring is built. Near the eye ('Fitting the house fronts', laid as the rooftop hardware is) a
+  // house's street wall is the box side whose probe finds a road running along it nearest (septaSnapRoad, a long side
+  // penalised so a corner house keeps its front on the main street), and its fronts, cornices, stoops, awnings and porches
+  // go into instanced meshes, the fronts one a set; they fade out, dithered, over the radius's last fifth, and past it the
+  // procedural facade stands, with its doors. A set's atlas decodes and uploads the first time one of its houses is near
+  const FRONTS_ON = typeof FRONTS_DATA !== 'undefined' && !!FRONTS_DATA && !!FRONTS_DATA.sets && !TIER2;
+  const FR_SETS = FRONTS_ON ? Object.keys(FRONTS_DATA.sets) : [];
+  const FR_STRIDE = 10;   // cx, cz, ux, uz, half along u, half along v, base, wall top, seed, set
+  const FRONTS = { buf: new Float32Array(FR_STRIDE * (FRONTS_ON ? 65536 : 1)), n: 0, side: null, cells: null, r: isTouch ? 240 : 380, cell: 160,
+    cam: new THREE.Vector3(1e9, 0, 0), at: 0, set: [], glob: null, laid: 0, perSet: {}, noStreet: 0, ms: 0, error: null };
+  const FR_SET_IX = (name) => FR_SETS.indexOf(name);
+  // the set a house's record picks, or -1 (a tower, a block of flats, a factory, a church keep their own facade)
+  function frontSetOf(fa, t, h, area, core, style) {
+    if (h > 18 || h < 2.8 || area > 900 || t === 4 || t >= 5) return -1;
+    const u = fa ? fa[0] : -1, m = fa ? fa[1] : -1, e = fa ? fa[2] : 8;
+    if (u === 5) return -1;
+    if (u === 3 || u === 4 || t === 3) return h < 16 && area < 700 ? FR_SET_IX('shop') : -1;
+    if (core) return h >= 8 ? FR_SET_IX('federal') : FR_SET_IX('southrow');
+    if (area > 420) return -1;
+    if (m === 1) return FR_SET_IX('siding');
+    if (m === 2) return FR_SET_IX('stonetwin');
+    if (e === 6 || e === 7) return FR_SET_IX('newbuild');
+    if (e === 4 || e === 5) return FR_SET_IX('airlite');
+    if (style === 10) return FR_SET_IX('porch');
+    return h >= 9.5 ? FR_SET_IX('victorian') : FR_SET_IX('southrow');
   }
-  function frontNote(poly, base, top, seed, tier) {
-    if (!FRONTS_ON || !(top - base > 2.5)) return;
-    const x = poly[0][0], z = poly[0][1];
-    for (const r of FRONTS.runs) if (x >= r.bb[0] && x <= r.bb[2] && z >= r.bb[1] && z <= r.bb[3]) { FRONTS.cands.push({ poly, base, top, seed, tier }); return; }
+  function frontNote(poly, base, top, seed, fa, t, area, core, style) {
+    if (!FRONTS_ON) return;
+    const s = frontSetOf(fa, t, top - base, area, core, style & 31);
+    if (s < 0) return;
+    const ob = orientedBox(poly);
+    if (!ob || ob.area > area * 1.8 + 8) return;   // an outline far from its box (a wedge, a court) keeps its facade
+    if (FRONTS.n * FR_STRIDE + FR_STRIDE > FRONTS.buf.length) { const nb = new Float32Array(FRONTS.buf.length * 2); nb.set(FRONTS.buf); FRONTS.buf = nb; }
+    FRONTS.buf.set([ob.cx, ob.cz, ob.ux, ob.uz, ob.w / 2, ob.d / 2, base, top, seed, s], FRONTS.n * FR_STRIDE);
+    FRONTS.n++;
   }
-  // the street wall of a house on a run: an edge within 15 degrees of the run, 2.5 to 16 m off its centreline, its
-  // outward normal toward it; the nearest such edge, or null
-  function frontEdge(c, r) {
-    const P = c.poly, n = P.length;
-    let cx = 0, cz = 0; for (const p of P) { cx += p[0]; cz += p[1]; } cx /= n; cz /= n;
-    let best = null;
-    for (let i = 0; i < n; i++) {
-      const p = P[i], q = P[(i + 1) % n], ex = q[0] - p[0], ez = q[1] - p[1], el = Math.hypot(ex, ez);
-      if (el < 2.4 || Math.abs((ex * r.dx + ez * r.dz) / el) < 0.966) continue;
-      const mx = (p[0] + q[0]) / 2, mz = (p[1] + q[1]) / 2;
-      const t = (mx - r.a[0]) * r.dx + (mz - r.a[1]) * r.dz;
-      if (t < -2 || t > r.L + 2) continue;
-      const s = (mx - r.a[0]) * r.dz - (mz - r.a[1]) * r.dx;   // signed distance off the centreline
-      if (Math.abs(s) < 2.5 || Math.abs(s) > 16) continue;
-      let nx = -ez / el, nz = ex / el;
-      if (nx * (mx - cx) + nz * (mz - cz) < 0) { nx = -nx; nz = -nz; }
-      const fx = r.a[0] + r.dx * t - mx, fz = r.a[1] + r.dz * t - mz, fl = Math.hypot(fx, fz) || 1;
-      if ((nx * fx + nz * fz) / fl < 0.9) continue;   // the wall must face the street
-      if (!best || Math.abs(s) < best.s) best = { p, q, nx, nz, t, s: Math.abs(s), side: s < 0 ? 0 : 1, el };
-    }
-    // one house's width takes a front at any depth (Society Hill's rows run back 25 to 35 m with their rear wings); a
-    // wall two or more fronts wide takes them only when it is a row strip's depth, so a loft, a warehouse or a school
-    // standing on the run keeps its own facade (Wilder Street's corner loft took six rowhouse fronts before this)
-    if (best) {
-      let depth = 0;
-      for (const v of P) depth = Math.max(depth, -((v[0] - best.p[0]) * best.nx + (v[1] - best.p[1]) * best.nz));
-      const S = FRONTS_DATA.sets[r.set], k = S ? Math.round(best.el / S.w) : 1;
-      best.depth = depth;
-      if (k >= 2 && depth > 18) return null;
+  // the street side of note k: 0 +u, 1 -u, 2 +v, 3 -v, or -1. A side qualifies when a road 1.5 to 14 m out in front of
+  // its middle runs along it; the nearest wins, a side 1.8 times the other's length scored 6 m worse
+  function frontSide(k) {
+    const B = FRONTS.buf, o = k * FR_STRIDE, cx = B[o], cz = B[o + 1], ux = B[o + 2], uz = B[o + 3], hw = B[o + 4], hd = B[o + 5];
+    let best = -1, bs = 1e9;
+    for (let s = 0; s < 4; s++) {
+      const nx = s === 0 ? ux : s === 1 ? -ux : s === 2 ? -uz : uz, nz = s === 0 ? uz : s === 1 ? -uz : s === 2 ? ux : -ux;
+      const h = s < 2 ? hw : hd, len = s < 2 ? 2 * hd : 2 * hw, other = s < 2 ? 2 * hw : 2 * hd;
+      if (len < 2.4) continue;
+      const mx = cx + nx * h, mz = cz + nz * h;
+      const r = septaSnapRoad(mx + nx * 6, mz + nz * 6, 12);
+      if (!r) continue;
+      const dx = r[0] - mx, dz = r[1] - mz, ahead = dx * nx + dz * nz;
+      if (ahead < 1.5 || ahead > 14) continue;
+      if (Math.abs(r[2] * nz - r[3] * nx) < 0.8) continue;   // the road along the side, not across it
+      const sc = Math.hypot(dx, dz) + (len > 1.8 * other ? 6 : 0);
+      if (sc < bs) { bs = sc; best = s; }
     }
     return best;
   }
-  // a box standing on a wall: along the wall from (x0, z0) to (x1, z1), out0 to out1 metres along its outward normal,
-  // y0 to y1; the face against the wall is left out. Flat-shaded triangles into pos / nor / col
   function frontBox(B, x0, z0, x1, z1, nx, nz, out0, out1, y0, y1, col) {
     const P = (x, z, o, y) => [x + nx * o, y, z + nz * o];
     const a0 = P(x0, z0, out0, y0), b0 = P(x1, z1, out0, y0), a1 = P(x0, z0, out1, y0), b1 = P(x1, z1, out1, y0);
@@ -11148,37 +11163,25 @@
       const mx = (p[0] + r[0]) / 2 - cx, my = (p[1] + r[1]) / 2 - cy, mz = (p[2] + r[2]) / 2 - cz;
       let vs = [p, q, r, p, r, s];
       if (fx * mx + fy * my + fz * mz < 0) { vs = [p, s, r, p, r, q]; fx = -fx; fy = -fy; fz = -fz; }
-      for (const v of vs) { B.pos.push(v[0], v[1], v[2]); B.nor.push(fx, fy, fz); B.col.push(col.r, col.g, col.b); }
+      for (const v of vs) { B.pos.push(v[0], v[1], v[2]); B.nor.push(fx, fy, fz); if (B.col) B.col.push(col.r, col.g, col.b); }
     };
-    quad(a1, b1, b3, a3);   // the face
-    quad(a3, b3, b2, a2);   // the top
-    quad(a0, b0, b1, a1);   // the soffit
-    quad(b0, b1, b3, b2);   // the ends
-    quad(a0, a1, a3, a2);
+    quad(a1, b1, b3, a3); quad(a3, b3, b2, a2); quad(a0, b0, b1, a1); quad(b0, b1, b3, b2); quad(a0, a1, a3, a2);
   }
-  // an awning over a front's ground floor (Oct 12, Mike: "The awnings being drawn on in 2d is not great. I want to add
-  // more depth"): a canopy sloping from the wall at yA down drop metres to D metres out, a valance V deep at its front
-  // (scalloped, for the aluminium kind) and closed triangular sides; s0 to s1 metres along the wall from (wx0, wz0) on the
-  // unit (ux, uz). Stripes run down the slope: the shader mixes colA and colB by the metres along the wall (aAlong) at
-  // stripeK stripes a metre (0 solid). Each triangle is turned to face the normal it is given
-  function frontAwning(A, wx0, wz0, ux, uz, nx, nz, s0, s1, yA, D, drop, V, scallop, colA, colB, stripeK) {
+  // an awning (Round 177) as a unit to instance: built along +x from 0 to its nominal width, out along +z, its top edge at
+  // y 0 against the wall; the instance stretches it to the openings' span. aAlong carries metres along the nominal width
+  function frontAwning(A, wx0, wz0, ux, uz, nx, nz, s0, s1, yA, D, drop, V, scallop) {
     const P = (s, o, y) => [wx0 + ux * s + nx * o, y, wz0 + uz * s + nz * o];
     const tri = (p, q, r, n, sp, sq, sr) => {
       const e1 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], e2 = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
       const f = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
       let vs = [[p, sp], [q, sq], [r, sr]];
       if (f[0] * n[0] + f[1] * n[1] + f[2] * n[2] < 0) vs = [[p, sp], [r, sr], [q, sq]];
-      for (const [v, s] of vs) {
-        A.pos.push(v[0], v[1], v[2]); A.nor.push(n[0], n[1], n[2]);
-        A.col.push(colA.r, colA.g, colA.b); A.col2.push(colB.r, colB.g, colB.b); A.along.push(s); A.k.push(stripeK);
-      }
+      for (const [v, s] of vs) { A.pos.push(v[0], v[1], v[2]); A.nor.push(n[0], n[1], n[2]); A.along.push(s); }
     };
     const quad = (p, q, r, t, n, sp, sq, sr, st) => { tri(p, q, r, n, sp, sq, sr); tri(p, r, t, n, sp, sr, st); };
     const wo = 0.06, yF = yA - drop;
-    // the canopy: its normal is up and out, square to the wall line and the slope
     const sl = Math.hypot(D - wo, drop), nUp = [nx * drop / sl, (D - wo) / sl, nz * drop / sl];
     quad(P(s0, wo, yA), P(s1, wo, yA), P(s1, D, yF), P(s0, D, yF), nUp, s0, s1, s1, s0);
-    // the valance: a straight band, then for aluminium a row of scallops hanging under it
     const out = [nx, 0, nz], vb = yF - (scallop ? V * 0.55 : V);
     quad(P(s0, D, yF), P(s1, D, yF), P(s1, D, vb), P(s0, D, vb), out, s0, s1, s1, s0);
     if (scallop) {
@@ -11188,179 +11191,146 @@
         quad(P(sa, D, vb), P(sb, D, vb), P(sb, D, vb - dep * Math.sin(Math.PI * t1)), P(sa, D, vb - dep * Math.sin(Math.PI * t0)), out, sa, sb, sb, sa);
       }
     }
-    // the closed sides, and the valance's short return at each
     for (const [s, sg] of [[s0, -1], [s1, 1]]) {
       const n = [ux * sg, 0, uz * sg];
       tri(P(s, wo, yA), P(s, D, yF), P(s, wo, yF), n, s, s, s);
       quad(P(s, D - 0.12, yF), P(s, D, yF), P(s, D, vb), P(s, D - 0.12, vb), n, s, s, s, s);
     }
   }
-  // the awnings' kinds per set: [colA, colB, stripes a metre, scalloped]; photographed sRGB, stored like the fronts
+  // the awnings' kinds per set: [colA, colB, stripes a metre (0 solid), scalloped]; photographed sRGB, stored like the fronts
   const AWNING_KINDS = {
     southrow: [['#e4e4de', '#bdbdb6', 6.25, true], ['#2f6b43', '#e9e8e0', 3.3, true], ['#6a4a35', '#58402f', 6.25, true],
       ['#29513a', '#21432f', 6.25, true], ['#6e2a2a', '#ebe6dc', 3.3, true]],
+    airlite: [['#e4e4de', '#bdbdb6', 6.25, true], ['#2f6b43', '#e9e8e0', 3.3, true], ['#29513a', '#21432f', 6.25, true]],
+    siding: [['#e4e4de', '#bdbdb6', 6.25, true], ['#6a4a35', '#58402f', 6.25, true]],
     shop: [['#2e6a45', '#ebe8de', 2.6, false], ['#a3302d', '#ece6da', 2.6, false], ['#22324f', '#22324f', 0, false],
       ['#1f1f1f', '#1f1f1f', 0, false], ['#5e2333', '#5e2333', 0, false], ['#b49a6e', '#6b4c33', 2.6, false]],
   };
-  step('Hanging the house fronts', async () => {
-    if (!FRONTS_ON || !FRONTS.cands.length) return;
-    const t0 = performance.now();
-    try {
-      const img = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('front atlas did not decode')); im.src = src; });
-      const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
-      const perSet = new Map();
-      for (const c of FRONTS.cands) for (let ri = 0; ri < FRONTS.runs.length; ri++) {
-        const r = FRONTS.runs[ri], e = frontEdge(c, r); if (!e) continue;
-        if (!perSet.has(r.set)) perSet.set(r.set, []);
-        perSet.get(r.set).push({ c, r, ri, e }); break;
-      }
-      for (const [setName, list] of perSet) {
-        const S = FRONTS_DATA.sets[setName]; if (!S) continue;
-        const [im, mk] = await Promise.all([img(S.img), img(S.mask)]);
-        // a phone takes each atlas at half size (a 2048 atlas and its mips are 21 MB of the GPU memory iOS charges the
-        // page, Round 158), through a canvas let go once it is uploaded; the cells' UVs are fractions, so nothing else moves
-        const tex = (src) => {
-          if (!isTouch) return new THREE.Texture(src);
-          const cv = document.createElement('canvas'); cv.width = src.width >> 1; cv.height = src.height >> 1;
-          cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height);
-          return freeTexOnUpload(new THREE.CanvasTexture(cv));
-        };
-        const map = tex(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso; map.needsUpdate = true;
-        const mask = tex(mk); mask.needsUpdate = true;
-        const AW = S.cols * S.cell[0], AH = S.rows * S.cell[1], N = S.cells.length;
-        const cellUV = (k) => {
-          const col = k % S.cols, row = Math.floor(k / S.cols);
-          return [(col * S.cell[0] + S.pad) / AW, ((col + 1) * S.cell[0] - S.pad) / AW,
-            1 - ((row + 1) * S.cell[1] - S.pad) / AH, 1 - (row * S.cell[1] + S.pad) / AH];   // u0, u1, v0 (foot), v1 (head); the atlas is flipped on upload
-        };
-        // deal the cells along each side of each run in order, never the same as the house before
-        list.sort((a, b) => a.ri - b.ri || a.e.side - b.e.side || a.e.t - b.e.t);
-        const pos = [], uv = [], seed = [], base = [], idx = [], R = { pos: [], nor: [], col: [] };
-        const AWN = { pos: [], nor: [], col: [], col2: [], along: [], k: [] };
-        // a photographed colour into the stored register, as the landmark kit does (gotcha 11): linear, at the set's gain
-        const stored = (hex) => new THREE.Color(hex).convertSRGBToLinear().multiplyScalar(S.gain || 0.88);
-        let prev = -1, prevKey = '';
-        for (const { c, ri, e } of list) {
-          if (ri + ':' + e.side !== prevKey) { prev = -1; prevKey = ri + ':' + e.side; }
-          // left to right as seen from the street: the viewer faces -n, their right is (nz, -nx)
-          let a = e.p, b = e.q;
-          if ((b[0] - a[0]) * e.nz - (b[1] - a[1]) * e.nx < 0) { a = e.q; b = e.p; }
-          const k = Math.max(1, Math.round(e.el / S.w)), y0 = c.base - 0.4, y1 = c.top, off = 0.05;
-          for (let j = 0; j < k; j++) {
-            let cell = Math.floor(hash01(c.seed * 3.71 + j * 0.37) * N) % N;
-            if (cell === prev) cell = (cell + 1 + Math.floor(hash01(c.seed * 1.9 + j) * (N - 1))) % N;
-            prev = cell;
-            const f0 = j / k, f1 = (j + 1) / k;
-            const ax = a[0] + (b[0] - a[0]) * f0 + e.nx * off, az = a[1] + (b[1] - a[1]) * f0 + e.nz * off;
-            const bx = a[0] + (b[0] - a[0]) * f1 + e.nx * off, bz = a[1] + (b[1] - a[1]) * f1 + e.nz * off;
-            const [u0, u1, v0, v1] = cellUV(cell), o = pos.length / 3, sd = hash01(c.seed * 7.7 + j);
-            pos.push(ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az);
-            uv.push(u0, v0, u1, v0, u1, v1, u0, v1);
-            seed.push(sd, sd, sd, sd); base.push(c.base, c.base, c.base, c.base);
-            idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
-            FRONTS.laid.push({ set: setName, cell: S.cells[cell].id, x: Math.round((ax + bx) / 2), z: Math.round((az + bz) / 2), w: +(e.el / k).toFixed(1), h: +(y1 - y0).toFixed(1), tier: c.tier });
-            // the relief: the front's own cornice projected 34 cm along the wall's head, and a stoop under its door
-            const cm = S.cells[cell], cw = e.el / k;
-            const wx0 = a[0] + (b[0] - a[0]) * f0, wz0 = a[1] + (b[1] - a[1]) * f0, wx1 = a[0] + (b[0] - a[0]) * f1, wz1 = a[1] + (b[1] - a[1]) * f1;
-            frontBox(R, wx0, wz0, wx1, wz1, e.nx, e.nz, 0, 0.34, y1 - 0.42, y1 + 0.06, stored(cm.cornice));
-            if (cm.door) {
-              const ux = (wx1 - wx0) / cw, uz = (wz1 - wz0) / cw, du = (cm.door[0] + cm.door[2]) / 2 * cw;
-              const sw = Math.min(cw * 0.6, Math.max(1.1, (cm.door[2] - cm.door[0]) * cw * 1.5));
-              const sx = wx0 + ux * du, sz = wz0 + uz * du, gy = siteY(sx + e.nx * 0.6, sz + e.nz * 0.6, 'ground') || c.base;
-              const s0x = sx - ux * sw / 2, s0z = sz - uz * sw / 2, s1x = sx + ux * sw / 2, s1z = sz + uz * sw / 2, sc = stored(S.step);
-              frontBox(R, s0x, s0z, s1x, s1z, e.nx, e.nz, 0.05, 0.95, gy - 0.3, gy + 0.2, sc);
-              frontBox(R, s0x, s0z, s1x, s1z, e.nx, e.nz, 0.05, 0.62, gy + 0.2, gy + 0.4, sc);
-            }
-            // an awning over the ground floor's openings, for the set's share of its houses (a shop's runs the width)
-            const kinds = AWNING_KINDS[setName];
-            if (kinds && cm.gf && hash01(c.seed * 5.3 + j * 1.7) < (S.awn || 0)) {
-              const ux = (wx1 - wx0) / cw, uz = (wz1 - wz0) / cw, shop = setName === 'shop';
-              const s0 = (shop ? 0.03 : Math.max(0, cm.gf[0] - 0.04)) * cw, s1 = (shop ? 0.97 : Math.min(1, cm.gf[1] + 0.04)) * cw;
-              const yA = y1 - cm.gf[2] * (y1 - y0) + (shop ? 0.35 : 0.3);
-              const kd = kinds[Math.floor(hash01(c.seed * 9.1 + j) * kinds.length) % kinds.length];
-              if (s1 - s0 > 1.2 && yA > c.base + 2.4) frontAwning(AWN, wx0, wz0, ux, uz, e.nx, e.nz, s0, s1, yA, shop ? 1.35 : 0.95, shop ? 0.7 : 0.55, shop ? 0.3 : 0.28, kd[3], stored(kd[0]), stored(kd[1]), kd[2]);
-            }
-          }
-        }
-        if (AWN.pos.length) {
-          const ag = new THREE.BufferGeometry();
-          ag.setAttribute('position', new THREE.Float32BufferAttribute(AWN.pos, 3));
-          ag.setAttribute('normal', new THREE.Float32BufferAttribute(AWN.nor, 3));
-          ag.setAttribute('color', new THREE.Float32BufferAttribute(AWN.col, 3));
-          ag.setAttribute('aCol2', new THREE.Float32BufferAttribute(AWN.col2, 3));
-          ag.setAttribute('aAlong', new THREE.Float32BufferAttribute(AWN.along, 1));
-          ag.setAttribute('aStripeK', new THREE.Float32BufferAttribute(AWN.k, 1));
-          const am = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.05, side: THREE.DoubleSide });
-          am.onBeforeCompile = (sh) => {
-            sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aCol2; attribute float aAlong; attribute float aStripeK; varying vec3 vCol2; varying float vAlong; varying float vStripeK;')
-              .replace('#include <color_vertex>', '#include <color_vertex>\nvCol2 = aCol2; vAlong = aAlong; vStripeK = aStripeK;');
-            sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vCol2; varying float vAlong; varying float vStripeK;')
-              .replace('#include <color_fragment>', '#include <color_fragment>\nif (vStripeK > 0.0) { float sx = fract(vAlong * vStripeK); float aa = 0.04; diffuseColor.rgb = mix(diffuseColor.rgb, vCol2, smoothstep(0.5 - aa, 0.5 + aa, sx) - smoothstep(1.0 - aa, 1.0, sx)); }');
-          };
-          am.customProgramCacheKey = () => 'front-awnings';
-          const amesh = new THREE.Mesh(ag, am);
-          amesh.castShadow = !isTouch; amesh.receiveShadow = true; amesh.name = 'fronts-awnings-' + setName;
-          amesh.frustumCulled = false; pendingUpload.push(amesh);
-          groupCity.add(amesh);
-          FRONTS.meshes.push(amesh);
-          FRONTS.awnings = (FRONTS.awnings || 0) + AWN.pos.length / 3;
-        }
-        if (R.pos.length) {
-          const rg = new THREE.BufferGeometry();
-          rg.setAttribute('position', new THREE.Float32BufferAttribute(R.pos, 3));
-          rg.setAttribute('normal', new THREE.Float32BufferAttribute(R.nor, 3));
-          rg.setAttribute('color', new THREE.Float32BufferAttribute(R.col, 3));
-          const rm = new THREE.Mesh(rg, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0 }));
-          rm.castShadow = !isTouch; rm.receiveShadow = true; rm.name = 'fronts-relief-' + setName;
-          rm.frustumCulled = false; pendingUpload.push(rm);
-          groupCity.add(rm);
-          FRONTS.meshes.push(rm);
-        }
-        if (!idx.length) continue;
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
-        g.setAttribute('aBase', new THREE.Float32BufferAttribute(base, 1));
-        g.setIndex(idx);
-        g.computeVertexNormals();
-        const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(S.gain || 0.88, S.gain || 0.88, S.gain || 0.88), roughness: 0.9, metalness: 0 });
-        mat.onBeforeCompile = (sh) => {
-          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
-          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; attribute float aBase; varying float vSeed; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;')
-            .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed; vBase = aBase;')
-            .replace('#include <project_vertex>', '#include <project_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal);');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase; vec4 frMask;')
-            .replace('#include <map_fragment>', 'frMask = texture2D(uMask, vUv);\n#include <map_fragment>')
-            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, frMask.r);')
-            // a lit window: four houses in ten, and in a lit house about two windows in three, each its own warmth; only
-            // the glass glows (the front's own dark pixels inside the mask), never the frames and muntins round it
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.6, fract(vSeed * 7.31)); float wr = fract(sin(frMask.g * 255.0 * 12.9898 + vSeed * 78.233) * 43758.5453); float wl = step(0.34, wr);\n' +
-              // a shop's display glass (mask b 128): nine shops in ten lit, all of the window, a brighter and whiter light
-              '  float shopG = step(0.3, frMask.b) * (1.0 - step(0.7, frMask.b)); hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3))); wl = max(wl, shopG);\n' +
-              '  float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + (S.gain || 0.88).toFixed(2) + ');\n' +
-              // glass is near neutral; a shopfront's dark stained wood or navy board inside the box is strongly tinted
-              '  float cmx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)), cmn = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));\n' +
-              '  glass *= 1.0 - smoothstep(0.38, 0.62, (cmx - cmn) / max(cmx, 1e-4));\n' +
-              // a shop window is warm display light, a little brighter than a room (at 1.7 times and near white it blew out)
-              '  vec3 warm = mix(mix(vec3(1.0, 0.68, 0.38), vec3(0.95, 0.82, 0.62), fract(wr * 3.7)), vec3(1.0, 0.8, 0.56), shopG);\n' +
-              '  totalEmissiveRadiance += frMask.r * glass * hl * wl * uNight * warm * (0.45 + 0.25 * fract(wr * 9.1)) * (1.0 + 0.2 * shopG); }');
-          lampLightPatch(sh, 'vWPos', 'wall');   // the street lamps wash the lower storeys, as they do the facades round them
-        };
-        mat.customProgramCacheKey = () => 'house-fronts';
-        const m = new THREE.Mesh(g, mat);
-        m.receiveShadow = true; m.castShadow = false; m.name = 'fronts-' + setName;
-        m.frustumCulled = false; pendingUpload.push(m);
-        groupCity.add(m);
-        FRONTS.meshes.push(m);
-      }
-      flushUploads(true);
-    } catch (err) {
-      FRONTS.error = String((err && err.message) || err);
-      PERF.failed.push(['Hanging the house fronts', FRONTS.error]);
-    }
-    FRONTS.ms = Math.round(performance.now() - t0);
-  });
+  const PORCH_COLS = ['#ece8de', '#e4e0d6', '#3b4a3a', '#6b4a3a', '#d8d2c4', '#2f3a48'];
+  // the shared vertex work of every front mesh: the world position and normal, and a dithered fade over the radius's last
+  // fifth (the procedural facade stands under it, so the front dissolves into it rather than popping)
+  const FRONT_FADE_V = 'vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;';
+  const FRONT_FADE_F = '{ float fd = distance(vWPos, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign > 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }';
+  const frR = { value: FRONTS.r };
+  function frontFade(sh) {
+    sh.uniforms.uFrR = frR;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <project_vertex>', '#include <project_vertex>\n' + FRONT_FADE_V);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR; varying vec3 vWPos;').replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + FRONT_FADE_F);
+  }
+  // a set's front mesh and its atlas, made the first time one of its houses is laid
+  function frontSetRes(s) {
+    if (FRONTS.set[s]) return FRONTS.set[s];
+    const S = FRONTS_DATA.sets[FR_SETS[s]], blank = document.createElement('canvas'); blank.width = blank.height = 1;
+    const map = new THREE.Texture(blank), mask = new THREE.Texture(blank);
+    map.encoding = THREE.sRGBEncoding; map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
+    const R = { ready: false, map, mask, mesh: null, cap: isTouch ? 1400 : 4000 };
+    FRONTS.set[s] = R;
+    const load = (src, tex) => new Promise((res) => { const im = new Image(); im.onload = () => {
+      // a phone takes the atlas at half size (the GPU memory iOS charges the page, Round 158)
+      let pic = im;
+      if (isTouch) { const cv = document.createElement('canvas'); cv.width = im.width >> 1; cv.height = im.height >> 1; cv.getContext('2d').drawImage(im, 0, 0, cv.width, cv.height); pic = cv; }
+      tex.image = pic; tex.needsUpdate = true; freeTexOnUpload(tex);   // a phone keeps no copy of what the GPU holds (Round 158)
+      res(); }; im.onerror = () => res(); im.src = src; });
+    Promise.all([load(S.img, map), load(S.mask, mask)]).then(() => {
+      try { renderer.initTexture(map); renderer.initTexture(mask); } catch (e) { }
+      R.ready = true; FRONTS.at = 0;
+    });
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute([0, 0, 0, 1, 0, 0, 1, 1, 0, 0, 1, 0], 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute([0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1], 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute([0, 0, 1, 0, 1, 1, 0, 1], 2));
+    g.setIndex([0, 1, 2, 0, 2, 3]);
+    const aFr = new THREE.InstancedBufferAttribute(new Float32Array(R.cap * 4), 4); aFr.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('aFr', aFr);
+    const gain = S.gain || 0.88, cw = S.cell[0], ch = S.cell[1];
+    const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(gain, gain, gain), roughness: 0.9, metalness: 0 });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aFr; varying float vSeed; varying vec3 vWNorm; varying float vBase;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\n{ float cols = ' + S.cols.toFixed(1) + ', rows = ' + S.rows.toFixed(1) + ', pu = ' + (S.pad / cw).toFixed(5) + ', pv = ' + (S.pad / ch).toFixed(5) + ';\n' +
+          '  float col = mod(aFr.x, cols), row = floor(aFr.x / cols + 1e-3);\n' +
+          '  vUv = vec2((col + pu + position.x * (1.0 - 2.0 * pu)) / cols, 1.0 - (row + 1.0 - pv - position.y * (1.0 - 2.0 * pv)) / rows); }\n' +
+          'vSeed = aFr.y; vBase = aFr.z;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvWNorm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * vec3(0.0, 0.0, 1.0));');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; varying vec3 vWNorm; varying float vBase; vec4 frMask;')
+        .replace('#include <map_fragment>', 'frMask = texture2D(uMask, vUv);\n#include <map_fragment>')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, frMask.r);')
+        // a lit window: four houses in ten, and in a lit house about two windows in three; a shop's display glass in nine
+        // shops in ten; only the near-neutral dark glass inside the mask glows, never the frames or a painted board
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.6, fract(vSeed * 7.31)); float wr = fract(sin(frMask.g * 255.0 * 12.9898 + vSeed * 78.233) * 43758.5453); float wl = step(0.34, wr);\n' +
+          '  float shopG = step(0.3, frMask.b) * (1.0 - step(0.7, frMask.b)); hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3))); wl = max(wl, shopG);\n' +
+          '  float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + gain.toFixed(2) + ');\n' +
+          '  float cmx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)), cmn = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));\n' +
+          '  glass *= 1.0 - smoothstep(0.38, 0.62, (cmx - cmn) / max(cmx, 1e-4));\n' +
+          '  vec3 warm = mix(mix(vec3(1.0, 0.68, 0.38), vec3(0.95, 0.82, 0.62), fract(wr * 3.7)), vec3(1.0, 0.8, 0.56), shopG);\n' +
+          '  totalEmissiveRadiance += frMask.r * glass * hl * wl * uNight * warm * (0.45 + 0.25 * fract(wr * 9.1)) * (1.0 + 0.2 * shopG); }');
+      frontFade(sh);
+      lampLightPatch(sh, 'vWPos', 'wall');
+    };
+    mat.customProgramCacheKey = () => 'house-fronts-' + s;
+    const m = new THREE.InstancedMesh(g, mat, R.cap);
+    m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = false;
+    m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    m.name = 'fronts-' + FR_SETS[s];
+    groupCity.add(m);
+    R.mesh = m; R.aFr = aFr; R.cells = S.cells; R.S = S;
+    R.corCol = S.cells.map((c) => frontStored(c.cornice, gain)); R.stepCol = frontStored(S.step, gain);
+    R.porchCol = PORCH_COLS.map((h) => frontStored(h, gain));
+    R.awnKinds = (AWNING_KINDS[FR_SETS[s]] || []).map((kd) => [frontStored(kd[0], gain), frontStored(kd[1], gain), kd[2], kd[3]]);
+    return R;
+  }
+  // the meshes every set shares: cornices and stoops (instanced boxes in their own colours), the two awnings and porches
+  function frontGlobals() {
+    if (FRONTS.glob) return FRONTS.glob;
+    const caps = isTouch ? { cor: 1800, stoop: 1400, awnS: 500, awnF: 400, porch: 400 } : { cor: 5000, stoop: 4000, awnS: 1400, awnF: 1200, porch: 1200 };
+    const mk = (g, mat, cap, name, shadow) => {
+      const m = new THREE.InstancedMesh(g, mat, cap);
+      m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = shadow && !isTouch;
+      m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      m.setColorAt(0, new THREE.Color(1, 1, 1)); m.instanceColor.setUsage(THREE.DynamicDrawUsage);
+      m.name = name; groupCity.add(m); return m;
+    };
+    const plain = (key) => { const mt = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0 }); mt.onBeforeCompile = (sh) => frontFade(sh); mt.customProgramCacheKey = () => key; return mt; };
+    // a unit box, 0 to 1 on every axis: x along the wall, y up, z out
+    const box = new THREE.BoxGeometry(1, 1, 1).translate(0.5, 0.5, 0.5);
+    // a stoop at a width of 1: the step and the landing, from 0.3 below the ground
+    const stoopG = (() => { const B = { pos: [], nor: [] }; frontBox(B, 0, 0, 1, 0, 0, 1, 0.05, 0.95, -0.3, 0.2, null); frontBox(B, 0, 0, 1, 0, 0, 1, 0.05, 0.62, 0.2, 0.4, null);
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(B.pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(B.nor, 3)); return g; })();
+    // the awnings at a nominal width of 2.6 m, x along the wall, z out, the top edge at y 0
+    const awnG = (scallop) => { const A = { pos: [], nor: [], along: [] };
+      frontAwning(A, 0, 0, 1, 0, 0, 1, 0, 2.6, 0, scallop ? 0.95 : 1.35, scallop ? 0.55 : 0.7, scallop ? 0.28 : 0.3, scallop);
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(A.pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(A.nor, 3)); g.setAttribute('aAlong', new THREE.Float32BufferAttribute(A.along, 1)); return g; };
+    // a porch at a nominal width of 5 m, its deck at y 0 and its roof's underside at y 1 (the instance sets the height):
+    // the deck, the roof slab, two posts and a low rail between them
+    const porchG = (() => { const B = { pos: [], nor: [] };
+      frontBox(B, 0, 0, 5, 0, 0, 1, 0, 2.3, 0, 0.1, null);
+      frontBox(B, -0.05, 0, 5.05, 0, 0, 1, 0, 2.45, 1.0, 1.07, null);
+      for (const x of [0.12, 4.74]) frontBox(B, x, 0, x + 0.14, 0, 0, 1, 2.08, 2.22, 0.1, 1.0, null);
+      frontBox(B, 0.26, 0, 4.74, 0, 0, 1, 2.12, 2.18, 0.28, 0.33, null);
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(B.pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(B.nor, 3)); return g; })();
+    const awnMat = (key) => {
+      const mt = new THREE.MeshStandardMaterial({ roughness: 0.62, metalness: 0.05, side: THREE.DoubleSide });
+      mt.onBeforeCompile = (sh) => {
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aAlong; attribute vec4 aAwn; varying float vAlong; varying vec4 vAwn;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlong = aAlong * length(instanceMatrix[0].xyz); vAwn = aAwn;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vAlong; varying vec4 vAwn;')
+          .replace('#include <color_fragment>', '#include <color_fragment>\nif (vAwn.w > 0.0) { float sx = fract(vAlong * vAwn.w); diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, smoothstep(0.46, 0.54, sx) - smoothstep(0.96, 1.0, sx)); }');
+        frontFade(sh);
+      };
+      mt.customProgramCacheKey = () => key;
+      return mt;
+    };
+    const G = {
+      cor: mk(box, plain('front-cornice'), caps.cor, 'fronts-cornices', true),
+      stoop: mk(stoopG, plain('front-stoop'), caps.stoop, 'fronts-stoops', false),
+      awnS: mk(awnG(true), awnMat('front-awning-s'), caps.awnS, 'fronts-awnings-scalloped', true),
+      awnF: mk(awnG(false), awnMat('front-awning-f'), caps.awnF, 'fronts-awnings-flat', true),
+      porch: mk(porchG, plain('front-porch'), caps.porch, 'fronts-porches', true),
+    };
+    for (const k of ['awnS', 'awnF']) { const at = new THREE.InstancedBufferAttribute(new Float32Array(G[k].instanceMatrix.count * 4), 4); at.setUsage(THREE.DynamicDrawUsage); G[k].geometry.setAttribute('aAwn', at); G[k].aAwn = at; }
+    FRONTS.glob = G;
+    return G;
+  }
   // ---- tower skins (Oct 12, Mike: "regenerate the skyscrapers to look more realistic"). FRONTS_DATA.tiles holds square,
   // repeating facade sections generated per kind (glass, dark glass, precast grid, Art Deco limestone, brick apartment,
   // concrete balcony slab), each with its size in metres and a window mask. Every tower the loops raise (35 m and up),
@@ -11370,120 +11340,29 @@
   // tinted with the tower's own colour. After dark about two windows in five light, cell by cell
   const TOWER_TILE_OF = { concrete_grid: 'precast', glass: 'glass', deco: 'deco', brick: 'brick', glass_bands: 'glassdark',
     stone_piers: 'deco', glass_dark: 'glassdark', precast_bands: 'precast' };
+  // a researched facade's alternates: the kinds that read as that facade (Round 182)
+  const TOWER_TILE_ALT = { glass: ['glass', 'silver'], glassdark: ['glassdark', 'blackgrid'], precast: ['precast'], deco: ['deco', 'officebrick'], brick: ['brick', 'officebrick'] };
   const TSKIN = { cands: [], meshes: [], laid: {}, ms: 0, error: null };
   const TSKIN_ON = FRONTS_ON && !!FRONTS_DATA.tiles && Object.keys(FRONTS_DATA.tiles).length > 0;
   function towerSkinNote(poly, y0, y1, style, spec, seed, col, lifted, t) {
     if (!TSKIN_ON || y1 - y0 < 30 || (style >= 24 && style <= 29)) return;
-    let kind = spec ? TOWER_TILE_OF[spec.facade] : null;
-    if (!kind) kind = t === 10 || style === 13 ? 'glass' : style === 2 ? (hash01(seed * 2.3) < 0.55 ? 'glass' : 'glassdark')
-      : style === 15 ? 'glassdark' : style === 16 ? 'precast' : style === 17 || style === 14 ? 'deco' : style === 18 ? 'resi'
-      : style === 19 || style === 12 ? 'brick' : 'precast';
-    if (!FRONTS_DATA.tiles[kind]) return;
+    // Round 182: ten kinds, and two or more a style dealt per tower, so neighbouring towers of one era differ
+    const pick = (a) => { const ok = a.filter((k) => FRONTS_DATA.tiles[k]); return ok.length ? ok[Math.floor(hash01(seed * 2.3 + 0.7) * ok.length) % ok.length] : null; };
+    let kind = spec ? (TOWER_TILE_OF[spec.facade] || null) : null;
+    if (kind) kind = pick(TOWER_TILE_ALT[kind] || [kind]);
+    else kind = pick(t === 10 || style === 13 ? ['glass', 'silver', 'glassresi'] : style === 2 ? ['glass', 'glassdark', 'silver', 'blackgrid']
+      : style === 15 ? ['glassdark', 'blackgrid'] : style === 16 ? ['precast', 'blackgrid'] : style === 17 || style === 14 ? ['deco', 'officebrick']
+      : style === 18 ? ['resi', 'glassresi'] : style === 19 || style === 12 ? ['brick', 'officebrick'] : ['precast', 'officebrick']);
+    if (!kind) return;
     TSKIN.cands.push({ poly, y0: lifted ? y0 : y0 + 5, y1, kind, seed, col: col.clone() });
   }
-  step('Cladding the towers', async () => {
-    if (!TSKIN_ON || !TSKIN.cands.length) return;
-    const t0 = performance.now();
-    try {
-      const img = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('tower tile did not decode')); im.src = src; });
-      const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
-      const tex = (src) => {
-        let t;
-        if (!isTouch) t = new THREE.Texture(src);
-        else { const cv = document.createElement('canvas'); cv.width = src.width >> 1; cv.height = src.height >> 1; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height); t = freeTexOnUpload(new THREE.CanvasTexture(cv)); }
-        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
-        return t;
-      };
-      const byKind = new Map();
-      for (const c of TSKIN.cands) { if (!byKind.has(c.kind)) byKind.set(c.kind, []); byKind.get(c.kind).push(c); }
-      for (const [kind, list] of byKind) {
-        const T = FRONTS_DATA.tiles[kind];
-        const [im, mk] = await Promise.all([img(T.img), img(T.mask)]);
-        const map = tex(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso;
-        const mask = tex(mk);
-        const pos = [], nor = [], uv = [], col = [], seed = [], idx = [];
-        for (const c of list) {
-          const P = c.poly, n = P.length, sg = signedArea(P) > 0 ? 1 : -1;
-          // the tower's own colour (researched or drawn) tints its tile: its hue at the tile's brightness, half strength on
-          // glass and two fifths on masonry (one limestone tile for every masonry tower turned the skyline beige), and its
-          // lightness carried a little, so a dark tower stays darker than a pale one
-          const L = 0.2126 * c.col.r + 0.7152 * c.col.g + 0.0722 * c.col.b;
-          const tint = L > 0.01 ? c.col.clone().multiplyScalar(1 / L) : new THREE.Color(1, 1, 1);
-          tint.r = Math.min(tint.r, 1.6); tint.g = Math.min(tint.g, 1.6); tint.b = Math.min(tint.b, 1.6);
-          tint.lerp(new THREE.Color(1, 1, 1), T.glass ? 0.5 : 0.6);
-          tint.multiplyScalar(clamp(0.7 + Math.sqrt(Math.max(L, 0)) * 0.6, 0.75, 1.15) * (0.94 + hash01(c.seed * 3.1) * 0.12));
-          const sd = hash01(c.seed * 7.7);
-          let u = hash01(c.seed * 1.3) * T.w;   // each tower starts its pattern somewhere of its own
-          for (let i = 0; i < n; i++) {
-            const a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
-            if (len < 0.3) continue;
-            const nx = dz / len * sg, nz = -dx / len * sg, off = 0.12, o = pos.length / 3;
-            const ax = a[0] + nx * off, az = a[1] + nz * off, bx = b[0] + nx * off, bz = b[1] + nz * off;
-            pos.push(ax, c.y0, az, bx, c.y0, bz, bx, c.y1, bz, ax, c.y1, az);
-            for (let q = 0; q < 4; q++) { nor.push(nx, 0, nz); col.push(tint.r, tint.g, tint.b); seed.push(sd); }
-            const v1 = (c.y1 - c.y0) / T.h;
-            uv.push(u / T.w, 0, (u + len) / T.w, 0, (u + len) / T.w, v1, u / T.w, v1);
-            idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
-            u += len;
-          }
-          TSKIN.laid[kind] = (TSKIN.laid[kind] || 0) + 1;
-        }
-        if (!idx.length) continue;
-        const g = new THREE.BufferGeometry();
-        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-        g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
-        g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
-        g.setIndex(idx);
-        // the side the winding gives must be the side the normal names: wind each quad to its normal
-        { const p = g.attributes.position.array, ix = g.index.array;
-          for (let q = 0; q < ix.length; q += 3) {
-            const i0 = ix[q] * 3, i1 = ix[q + 1] * 3, i2 = ix[q + 2] * 3;
-            const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2], e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
-            const fx = e1y * e2z - e1z * e2y, fz = e1x * e2y - e1y * e2x, nn = g.attributes.normal.array;
-            if (fx * nn[i0] + fz * nn[i0 + 2] < 0) { const tmp = ix[q + 1]; ix[q + 1] = ix[q + 2]; ix[q + 2] = tmp; }
-          } }
-        const gain = 0.88;
-        const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, color: new THREE.Color(gain, gain, gain), roughness: T.glass ? 0.3 : 0.88, metalness: T.glass ? 0.2 : 0 });
-        mat.onBeforeCompile = (sh) => {
-          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
-          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; varying float vSeed;')
-            .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; vec4 tsMask;')
-            .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>')
-            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.14, tsMask.r);')
-            // a floor lights by suites, not by bays (a bay at a time read as salt and pepper): each floor (the tile's floors
-            // counted up the tower) is cut into suites of three to six bays from an offset of its own, and a suite lights
-            // about one time in three, warm or cool, at its own level
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float fl = floor(vUv.y * ' + T.nf.toFixed(1) + ');\n' +
-              '  float fh = fract(sin(fl * 91.17 + vSeed * 317.3) * 43758.5453);\n' +
-              '  float sw = 3.0 + floor(fh * 4.0), bay = vUv.x * ' + T.nb.toFixed(1) + ' + fh * 11.0;\n' +
-              '  float h = fract(sin(floor(bay / sw) * 12.9898 + fl * 78.233 + vSeed * 431.7) * 43758.5453);\n' +
-              '  float glass = 1.0 - smoothstep(0.04, 0.22, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));\n' +
-              '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(0.62, fract(h * 5.3)));\n' +
-              '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(0.66, h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
-        };
-        mat.customProgramCacheKey = () => 'tower-skin-' + kind;
-        const m = new THREE.Mesh(g, mat);
-        m.castShadow = false; m.receiveShadow = true; m.name = 'tower-skin-' + kind;
-        m.frustumCulled = false; pendingUpload.push(m);
-        groupCity.add(m);
-        TSKIN.meshes.push(m);
-      }
-      flushUploads(true);
-    } catch (err) {
-      TSKIN.error = String((err && err.message) || err);
-      PERF.failed.push(['Cladding the towers', TSKIN.error]);
-    }
-    TSKIN.ms = Math.round(performance.now() - t0);
-  });
   function frontsProbe() {
-    const per = {};
-    for (const f of FRONTS.laid) { const k = f.set + ':' + f.tier; per[k] = (per[k] || 0) + 1; }
-    return { on: FRONTS_ON, runs: FRONTS.runs.map((r) => r.name || r.set), cands: FRONTS.cands.length, laid: FRONTS.laid.length, per, meshes: FRONTS.meshes.length, awningVerts: FRONTS.awnings || 0, ms: FRONTS.ms, error: FRONTS.error, first: FRONTS.laid.slice(0, 8),
+    return { on: FRONTS_ON, notes: FRONTS.n, sets: FR_SETS, laid: FRONTS.laid, perSet: { ...FRONTS.perSet }, relief: FRONTS.relief ? { ...FRONTS.relief } : null,
+      noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
+      r: FRONTS.r, ms: FRONTS.ms, error: FRONTS.error, build: PERF.fronts || null,
       towers: { on: TSKIN_ON, cands: TSKIN.cands.length, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, ms: TSKIN.ms, error: TSKIN.error } };
   }
+
 
   // ------------------------------------------------ the far ring: the rest of Philadelphia
   // ---- the two packed rings share one decoder: the far ring (city.b64, 0.7 m units,
@@ -11609,6 +11488,8 @@
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + (capC ? 'Cap' : 'NoCap'), capC); colStat(tk + 'St' + style); colStat(fa ? tk + 'Fa' : tk + 'NoFa'); colStat(tk + 'Fh' + (fh > 0 ? 1 : 0)); COL_STAT[tk + 'Area'] = (COL_STAT[tk + 'Area'] || 0) + Math.abs(signedArea(poly)); }
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + 'Form' + rb[1]); colStat(rplan ? tk + 'Pitched' : tk + 'Flat'); if (wideSeam && cz > -5180 && cz < -4480 && cx > -3700 && cx < 2300) { colStat('farBandForm' + rb[1]); colStat(rplan ? 'farBandPitched' : 'farBandFlat'); colStat(capC ? 'farBandCap' : 'farBandNoCap', capC); colStat('farBand', c); } }
+      if (wideSeam && !mh && h >= 35 && t !== 8 && t !== 9) towerSkinNote(poly, base, base + h, style, null, i + 0.37, c, false, t);   // Round 182: the far ring's towers too
+      if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style);   // the far ring's houses (Round 181; a phone's stop at the outer districts)
       if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
       else {
         appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);
@@ -13341,6 +13222,8 @@
   step('Raising 209 and 211 East Wildey Street', buildWildeyRow);   // Round 142
   step('Painting the meadow', () => {
     texU.uGrass.value = paintGrassTex(isTouch ? 512 : 1024);
+    texU.uGrass2.value = texU.uGrass.value;
+    loadGroundArt();   // Round 183: the generated lawn and verge take its place once they decode
     tuftTex = paintTuftTex(256);   // (the leaf cards' sprite is painted by the trees step, only while CARDS is above 0: Round 158)
   });
   let TREE_MESHES = [];   // the survey's tree meshes, fitted and culled (Round 167; __dbg.cull)
@@ -21240,6 +21123,221 @@ float pinOccGate() {
     }
     PERF.roofKit = { roofs: ROOF_KIT.n, cells: ROOFKIT.cells.size, partial: ROOF_KIT.partial, empty: ROOF_KIT.empty, hist: Array.from(ROOF_KIT.hist) };
   });
+  // ---- the house fronts near the eye (Round 181; FRONTS above). The notes are bucketed in 160 m cells; near the eye
+  // (FRONTS.r) every note's street side is found once and kept, and its fronts and relief are laid, the nearest cells
+  // first, up to each mesh's cap, again when the eye has moved 30 m or 1.5 s have passed or a set's atlas has arrived
+  step('Fitting the house fronts', () => {
+    if (!FRONTS_ON || !FRONTS.n) return;
+    const B = FRONTS.buf, cells = new Map();
+    for (let i = 0; i < FRONTS.n; i++) {
+      const k = Math.floor(B[i * FR_STRIDE] / FRONTS.cell) + ':' + Math.floor(B[i * FR_STRIDE + 1] / FRONTS.cell);
+      let a = cells.get(k); if (!a) cells.set(k, a = []); a.push(i);
+    }
+    FRONTS.cells = new Map([...cells].map(([k, a]) => [k, Int32Array.from(a)]));
+    FRONTS.buf = B.slice(0, FRONTS.n * FR_STRIDE);   // the slack goes
+    FRONTS.side = new Int8Array(FRONTS.n).fill(-2);
+    frontGlobals();
+    const per = {};
+    for (let i = 0; i < FRONTS.n; i++) { const s = FR_SETS[FRONTS.buf[i * FR_STRIDE + 9]]; per[s] = (per[s] || 0) + 1; }
+    PERF.fronts = { notes: FRONTS.n, cells: FRONTS.cells.size, per };
+  });
+  // the towers' cladding runs after the far ring, whose towers it now dresses too (Round 182)
+  step('Cladding the towers', async () => {
+    if (!TSKIN_ON || !TSKIN.cands.length) return;
+    const t0 = performance.now();
+    try {
+      const img = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('tower tile did not decode')); im.src = src; });
+      const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
+      const tex = (src) => {
+        let t;
+        if (!isTouch) t = new THREE.Texture(src);
+        else { const cv = document.createElement('canvas'); cv.width = src.width >> 1; cv.height = src.height >> 1; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height); t = freeTexOnUpload(new THREE.CanvasTexture(cv)); }
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
+        return t;
+      };
+      const byKind = new Map();
+      for (const c of TSKIN.cands) { if (!byKind.has(c.kind)) byKind.set(c.kind, []); byKind.get(c.kind).push(c); }
+      for (const [kind, list] of byKind) {
+        const T = FRONTS_DATA.tiles[kind];
+        const [im, mk] = await Promise.all([img(T.img), img(T.mask)]);
+        const map = tex(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso;
+        const mask = tex(mk);
+        const pos = [], nor = [], uv = [], col = [], seed = [], idx = [];
+        for (const c of list) {
+          const P = c.poly, n = P.length, sg = signedArea(P) > 0 ? 1 : -1;
+          // the tower's own colour (researched or drawn) tints its tile: its hue at the tile's brightness, half strength on
+          // glass and two fifths on masonry (one limestone tile for every masonry tower turned the skyline beige), and its
+          // lightness carried a little, so a dark tower stays darker than a pale one
+          const L = 0.2126 * c.col.r + 0.7152 * c.col.g + 0.0722 * c.col.b;
+          const tint = L > 0.01 ? c.col.clone().multiplyScalar(1 / L) : new THREE.Color(1, 1, 1);
+          tint.r = Math.min(tint.r, 1.6); tint.g = Math.min(tint.g, 1.6); tint.b = Math.min(tint.b, 1.6);
+          tint.lerp(new THREE.Color(1, 1, 1), T.glass ? 0.5 : 0.6);
+          tint.multiplyScalar(clamp(0.7 + Math.sqrt(Math.max(L, 0)) * 0.6, 0.75, 1.15) * (0.94 + hash01(c.seed * 3.1) * 0.12));
+          const sd = hash01(c.seed * 7.7);
+          let u = hash01(c.seed * 1.3) * T.w;   // each tower starts its pattern somewhere of its own
+          for (let i = 0; i < n; i++) {
+            const a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+            if (len < 0.3) continue;
+            const nx = dz / len * sg, nz = -dx / len * sg, off = 0.12, o = pos.length / 3;
+            const ax = a[0] + nx * off, az = a[1] + nz * off, bx = b[0] + nx * off, bz = b[1] + nz * off;
+            pos.push(ax, c.y0, az, bx, c.y0, bz, bx, c.y1, bz, ax, c.y1, az);
+            for (let q = 0; q < 4; q++) { nor.push(nx, 0, nz); col.push(tint.r, tint.g, tint.b); seed.push(sd); }
+            const v1 = (c.y1 - c.y0) / T.h;
+            uv.push(u / T.w, 0, (u + len) / T.w, 0, (u + len) / T.w, v1, u / T.w, v1);
+            idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+            u += len;
+          }
+          TSKIN.laid[kind] = (TSKIN.laid[kind] || 0) + 1;
+        }
+        if (!idx.length) continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
+        g.setIndex(idx);
+        // the side the winding gives must be the side the normal names: wind each quad to its normal
+        { const p = g.attributes.position.array, ix = g.index.array;
+          for (let q = 0; q < ix.length; q += 3) {
+            const i0 = ix[q] * 3, i1 = ix[q + 1] * 3, i2 = ix[q + 2] * 3;
+            const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2], e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
+            const fx = e1y * e2z - e1z * e2y, fz = e1x * e2y - e1y * e2x, nn = g.attributes.normal.array;
+            if (fx * nn[i0] + fz * nn[i0 + 2] < 0) { const tmp = ix[q + 1]; ix[q + 1] = ix[q + 2]; ix[q + 2] = tmp; }
+          } }
+        const gain = 0.88;
+        const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, color: new THREE.Color(gain, gain, gain), roughness: T.glass ? 0.3 : 0.88, metalness: T.glass ? 0.2 : 0 });
+        mat.onBeforeCompile = (sh) => {
+          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; varying float vSeed;')
+            .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; vec4 tsMask;')
+            .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>')
+            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.14, tsMask.r);')
+            // a floor lights by suites, not by bays (a bay at a time read as salt and pepper): each floor (the tile's floors
+            // counted up the tower) is cut into suites of three to six bays from an offset of its own, and a suite lights
+            // about one time in three, warm or cool, at its own level
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float fl = floor(vUv.y * ' + T.nf.toFixed(1) + ');\n' +
+              '  float fh = fract(sin(fl * 91.17 + vSeed * 317.3) * 43758.5453);\n' +
+              '  float sw = 3.0 + floor(fh * 4.0), bay = vUv.x * ' + T.nb.toFixed(1) + ' + fh * 11.0;\n' +
+              '  float h = fract(sin(floor(bay / sw) * 12.9898 + fl * 78.233 + vSeed * 431.7) * 43758.5453);\n' +
+              '  float glass = 1.0 - smoothstep(0.04, 0.22, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));\n' +
+              '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(0.62, fract(h * 5.3)));\n' +
+              '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(0.66, h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
+        };
+        mat.customProgramCacheKey = () => 'tower-skin-' + kind;
+        const m = new THREE.Mesh(g, mat);
+        m.castShadow = false; m.receiveShadow = true; m.name = 'tower-skin-' + kind;
+        m.frustumCulled = false; pendingUpload.push(m);
+        groupCity.add(m);
+        TSKIN.meshes.push(m);
+      }
+      flushUploads(true);
+    } catch (err) {
+      TSKIN.error = String((err && err.message) || err);
+      PERF.failed.push(['Cladding the towers', TSKIN.error]);
+    }
+    TSKIN.ms = Math.round(performance.now() - t0);
+  });
+  const _frCol = new THREE.Color();
+  function frontStored(hex, gain) { return new THREE.Color(hex).convertSRGBToLinear().multiplyScalar(gain || 0.88); }
+  function frontsLay() {
+    const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, R = FRONTS.r, C = FRONTS.cell, B = FRONTS.buf, SIDE = FRONTS.side, G = FRONTS.glob;
+    const cnt = new Map(), gc = { cor: 0, stoop: 0, awnS: 0, awnF: 0, porch: 0 };
+    const put = (mesh, n, px, py, pz, Xx, Xz, Yy, Zx, Zz) => {
+      const a = mesh.instanceMatrix.array, o = n * 16;
+      a[o] = Xx; a[o + 1] = 0; a[o + 2] = Xz; a[o + 3] = 0; a[o + 4] = 0; a[o + 5] = Yy; a[o + 6] = 0; a[o + 7] = 0;
+      a[o + 8] = Zx; a[o + 9] = 0; a[o + 10] = Zz; a[o + 11] = 0; a[o + 12] = px; a[o + 13] = py; a[o + 14] = pz; a[o + 15] = 1;
+    };
+    let noStreet = 0, laid = 0;
+    if (cy < R + 60) {
+      const list = [], gx0 = Math.floor(cx / C), gz0 = Math.floor(cz / C), cr = Math.ceil(R / C);
+      for (let gx = gx0 - cr; gx <= gx0 + cr; gx++) for (let gz = gz0 - cr; gz <= gz0 + cr; gz++) {
+        const a = FRONTS.cells.get(gx + ':' + gz); if (!a) continue;
+        const d = Math.hypot((gx + 0.5) * C - cx, (gz + 0.5) * C - cz);
+        if (d < R + C) list.push([d, a]);
+      }
+      list.sort((p, q) => p[0] - q[0]);
+      for (const [, a] of list) for (let q = 0; q < a.length; q++) {
+        const k = a[q], o = k * FR_STRIDE, x0 = B[o], z0 = B[o + 1], base = B[o + 6];
+        if ((x0 - cx) ** 2 + (z0 - cz) ** 2 + (base - cy) ** 2 > R * R) continue;
+        let s = SIDE[k];
+        if (s === -2) s = SIDE[k] = frontSide(k);
+        if (s < 0) { noStreet++; continue; }
+        const set = B[o + 9], Rs = frontSetRes(set);
+        if (!Rs.ready) continue;
+        const n0 = cnt.get(set) || 0;
+        if (n0 >= Rs.cap) continue;
+        const ux = B[o + 2], uz = B[o + 3], hw = B[o + 4], hd = B[o + 5], top = B[o + 7], seed = B[o + 8];
+        const nx = s === 0 ? ux : s === 1 ? -ux : s === 2 ? -uz : uz, nz = s === 0 ? uz : s === 1 ? -uz : s === 2 ? ux : -ux;
+        const h = s < 2 ? hw : hd, len = s < 2 ? 2 * hd : 2 * hw;
+        // the side from the viewer's left to their right: they face -n, their right is (nz, -nx)
+        const rx = nz, rz = -nx, ax = x0 + nx * h - rx * len / 2, az = z0 + nz * h - rz * len / 2;
+        const S = Rs.S, name = FR_SETS[set], N = S.cells.length, kk = clamp(Math.round(len / S.w), 1, 4), cw = len / kk;
+        const y0 = base - 0.4, y1 = top, H = y1 - y0;
+        const first = Math.floor(hash01(seed * 3.71) * N);
+        let n = n0;
+        for (let j = 0; j < kk && n < Rs.cap; j++) {
+          const cell = (first + j * 3) % N, cm = S.cells[cell];
+          const px = ax + rx * cw * j, pz = az + rz * cw * j;
+          put(Rs.mesh, n, px + nx * 0.05, y0, pz + nz * 0.05, rx * cw, rz * cw, H, nx, nz);
+          Rs.aFr.array[n * 4] = cell; Rs.aFr.array[n * 4 + 1] = hash01(seed * 7.7 + j); Rs.aFr.array[n * 4 + 2] = base;
+          n++; laid++;
+          // the front's own cornice, 34 cm proud along its head
+          if (gc.cor < G.cor.instanceMatrix.count) {
+            put(G.cor, gc.cor, px, y1 - 0.42, pz, rx * cw, rz * cw, 0.48, nx * 0.34, nz * 0.34);
+            G.cor.setColorAt(gc.cor, Rs.corCol[cell]); gc.cor++;
+          }
+          const gfY = cm.gf ? y1 - cm.gf[2] * H : 0;
+          // a porch (the porch set's fronts were made without theirs): its deck at the ground, its roof over the ground floor
+          let porch = false;
+          if (name === 'porch' && cm.gf && hash01(seed * 2.9 + j) < 0.85 && gc.porch < G.porch.instanceMatrix.count) {
+            const gy = siteY(px + rx * cw * 0.5 + nx * 1.2, pz + rz * cw * 0.5 + nz * 1.2, 'ground') || base, ph = gfY + 0.35 - gy;
+            if (ph > 2.4 && ph < 4.8) {
+              put(G.porch, gc.porch, px, gy, pz, rx * cw / 5, rz * cw / 5, ph, nx, nz);
+              G.porch.setColorAt(gc.porch, Rs.porchCol[Math.floor(hash01(seed * 4.3 + j) * Rs.porchCol.length) % Rs.porchCol.length]); gc.porch++;
+              porch = true;
+            }
+          }
+          // a stoop under the door
+          if (cm.door && !porch && gc.stoop < G.stoop.instanceMatrix.count) {
+            const du = (cm.door[0] + cm.door[2]) / 2 * cw, sw = Math.min(cw * 0.6, Math.max(1.1, (cm.door[2] - cm.door[0]) * cw * 1.5));
+            const gy = siteY(px + rx * du + nx * 0.6, pz + rz * du + nz * 0.6, 'ground') || base;
+            put(G.stoop, gc.stoop, px + rx * (du - sw / 2), gy, pz + rz * (du - sw / 2), rx * sw, rz * sw, 1, nx, nz);
+            G.stoop.setColorAt(gc.stoop, Rs.stepCol); gc.stoop++;
+          }
+          // an awning over the ground floor's openings, for the set's share of its houses (a shop's runs the width)
+          const kinds = AWNING_KINDS[name];
+          if (kinds && cm.gf && !porch && hash01(seed * 5.3 + j * 1.7) < (S.awn || 0)) {
+            const shop = name === 'shop', M = shop ? G.awnF : G.awnS, i2 = shop ? gc.awnF : gc.awnS;
+            const s0 = (shop ? 0.03 : Math.max(0, cm.gf[0] - 0.04)) * cw, s1 = (shop ? 0.97 : Math.min(1, cm.gf[1] + 0.04)) * cw, yA = gfY + (shop ? 0.35 : 0.3);
+            if (s1 - s0 > 1.2 && yA > base + 2.4 && i2 < M.instanceMatrix.count) {
+              const kd = Rs.awnKinds[Math.floor(hash01(seed * 9.1 + j) * Rs.awnKinds.length) % Rs.awnKinds.length];
+              put(M, i2, px + rx * s0, yA, pz + rz * s0, rx * (s1 - s0) / 2.6, rz * (s1 - s0) / 2.6, 1, nx, nz);
+              M.setColorAt(i2, kd[0]); M.aAwn.array.set([kd[1].r, kd[1].g, kd[1].b, kd[2]], i2 * 4);
+              if (shop) gc.awnF++; else gc.awnS++;
+            }
+          }
+        }
+        cnt.set(set, n);
+      }
+    }
+    FRONTS.set.forEach((Rs, s) => {
+      if (!Rs) return;
+      Rs.mesh.count = cnt.get(s) || 0; Rs.mesh.instanceMatrix.needsUpdate = true; Rs.aFr.needsUpdate = true;
+      FRONTS.perSet[FR_SETS[s]] = Rs.mesh.count;
+    });
+    for (const k of Object.keys(gc)) { const m = G[k]; m.count = gc[k]; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; if (m.aAwn) m.aAwn.needsUpdate = true; }
+    FRONTS.laid = laid; FRONTS.noStreet = noStreet; FRONTS.relief = gc;
+  }
+  function updateFronts(now) {
+    if (!FRONTS.glob) return;
+    if (now < FRONTS.at && camera.position.distanceToSquared(FRONTS.cam) < 900) return;
+    FRONTS.at = now + 1500; FRONTS.cam.copy(camera.position);
+    const t0 = performance.now();
+    frontsLay();
+    FRONTS.ms = Math.round((performance.now() - t0) * 10) / 10;
+  }
   function roofKitLay() {
     const cx = camera.position.x, cz = camera.position.z, R = ROOFKIT.r, C = ROOFKIT.cell, M = ROOFKIT.meshes, B = ROOF_KIT.buf;
     const cnt = [0, 0, 0, 0, 0], caps = M.map((m) => m.instanceMatrix.count);
@@ -23069,7 +23167,46 @@ float pinOccGate() {
   // tint ratio is clamped and ACES compresses it, a 20 percent darker stored green moved the
   // display 7 percent), so the gain sits on the painted meadow itself
   const MEADOW_GAIN = 0.82;
-  const texU = { uGrass: { value: null }, uGrassK: { value: 1 } };
+  const texU = { uGrass: { value: null }, uGrassK: { value: 1 }, uGrass2: { value: null },
+    uGrassTone: { value: new THREE.Vector3(1, 1, 1) }, uGrassTone2: { value: new THREE.Vector3(1, 1, 1) }, uGrassArt: { value: 0 } };
+  // Round 183 (Mike: "If you could also update the grass/ground textures that would be great"): GROUND_ART
+  // (bake_ground_art.py) holds two generated photographs of the ground, made to tile, a mown lawn and a rougher verge;
+  // they take the painted tile's place, each toned to the painted tile's mean (its brightness matched, its colour pulled
+  // halfway to the olive) so the scene's calibrated balance holds, and the verge comes through the lawn on an 83 m noise
+  function linMean(src) {
+    const c = document.createElement('canvas'); c.width = c.height = 32;
+    const x = c.getContext('2d'); x.drawImage(src, 0, 0, 32, 32);
+    const d = x.getImageData(0, 0, 32, 32).data, lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    let r = 0, g = 0, b = 0;
+    for (let i = 0; i < 1024; i++) { r += lin(d[i * 4]); g += lin(d[i * 4 + 1]); b += lin(d[i * 4 + 2]); }
+    return [r / 1024, g / 1024, b / 1024];
+  }
+  function loadGroundArt() {
+    if (typeof GROUND_ART === 'undefined' || !GROUND_ART || !GROUND_ART.lawn || /[?&]ground=painted\b/.test(location.search)) return;
+    const painted = texU.uGrass.value && texU.uGrass.value.image;
+    if (!painted) return;
+    const P = linMean(painted), LP = 0.30 * P[0] + 0.59 * P[1] + 0.11 * P[2];
+    const load = (src) => new Promise((res) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => res(null); im.src = src; });
+    Promise.all([load(GROUND_ART.lawn), load(GROUND_ART.meadow)]).then(([a, b]) => {
+      if (!a || !b) return;
+      const tex = (im) => {
+        let pic = im;
+        if (isTouch) { const cv = document.createElement('canvas'); cv.width = cv.height = 512; cv.getContext('2d').drawImage(im, 0, 0, 512, 512); pic = cv; }
+        const t = new THREE.Texture(pic); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.generateMipmaps = true; t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
+        return t;
+      };
+      const tone = (im, out) => {
+        const M = linMean(im), LM = 0.30 * M[0] + 0.59 * M[1] + 0.11 * M[2], k = LP / Math.max(1e-4, LM);
+        out.set(Math.sqrt(k * P[0] / Math.max(1e-4, M[0])), Math.sqrt(k * P[1] / Math.max(1e-4, M[1])), Math.sqrt(k * P[2] / Math.max(1e-4, M[2])));
+        return LM;
+      };
+      const LA = tone(a, texU.uGrassTone.value); tone(b, texU.uGrassTone2.value);
+      texU.uGrass.value = tex(a); texU.uGrass2.value = tex(b);
+      texU.uGrassK.value = 1 / Math.max(1e-4, LA);   // the macro copy reads the raw lawn
+      texU.uGrassArt.value = 1;
+    });
+  }
   let tuftTex = null, leafTex = null;
   function prng(seed) { let s = (seed >>> 0) || 1; return () => { s += 0x6D2B79F5; let t = s; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   // a tileable value-noise field over a W x W tile: octaves of [cells across the tile, weight]
@@ -23302,9 +23439,10 @@ float pinOccGate() {
   function surfTexPatch(shader, opt) {
     const forced = opt === true;
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
+    shader.uniforms.uGrass2 = texU.uGrass2; shader.uniforms.uGrassTone = texU.uGrassTone; shader.uniforms.uGrassTone2 = texU.uGrassTone2; shader.uniforms.uGrassArt = texU.uGrassArt;
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
-        'uniform sampler2D uGrass; uniform float uGrassK;',
+        'uniform sampler2D uGrass; uniform float uGrassK; uniform sampler2D uGrass2; uniform vec3 uGrassTone; uniform vec3 uGrassTone2; uniform float uGrassArt;',
         'float sth(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
         'float stn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
         '  return mix(mix(sth(i), sth(i + vec2(1.0, 0.0)), f.x), mix(sth(i + vec2(0.0, 1.0)), sth(i + vec2(1.0, 1.0)), f.x), f.y); }',
@@ -23322,7 +23460,12 @@ float pinOccGate() {
         'vec3 am = vec3((0.97 + 0.06 * sn1) * (0.98 + 0.04 * sn2) * (1.0 + 0.10 * (sn3 - 0.5)));',
         // the meadow: the painted tile at 6.5 m, a rotated 47 m copy as the macro tone, the
         // world-space mottle as the block-to-block drift; the flat's own colour is a tint
-        'vec3 gTex = mix(texture2D(uGrass, sWP.xz * 0.1538).rgb, texture2D(uGrass, vec2(sWP.x * 0.9397 + sWP.z * 0.342, -sWP.x * 0.342 + sWP.z * 0.9397) * 0.0885 + 0.37).rgb, 0.5);',
+        'vec2 gUv1 = sWP.xz * 0.1538, gUv2 = vec2(sWP.x * 0.9397 + sWP.z * 0.342, -sWP.x * 0.342 + sWP.z * 0.9397) * 0.0885 + 0.37;',
+        'vec3 gTex = mix(texture2D(uGrass, gUv1).rgb, texture2D(uGrass, gUv2).rgb, 0.5);',
+        // Round 183: the generated lawn, toned, and the rougher verge through it on the 83 m noise (more of it on bare ground)
+        'if (uGrassArt > 0.5) { vec3 gB = mix(texture2D(uGrass2, gUv1).rgb, texture2D(uGrass2, gUv2).rgb, 0.5) * uGrassTone2;',
+        '  float mw = smoothstep(0.38, 0.72, stn(sWP.xz * 0.012 + 3.7) + ' + (forced ? '0.18' : '0.0') + ');',
+        '  gTex = mix(gTex * uGrassTone, gB, mw); }',
         'vec3 gMac = texture2D(uGrass, vec2(sWP.x * 0.866 - sWP.z * 0.5, sWP.x * 0.5 + sWP.z * 0.866) * 0.02128).rgb;',
         'float gMacL = dot(gMac, vec3(0.30, 0.59, 0.11)) * uGrassK;',
         // Broad, low-contrast moisture variation at 83 m and 22 m. Fine grain fades
@@ -25158,6 +25301,7 @@ float pinOccGate() {
     updateTraffic(now, dt);
     updateLights(now);
     updateRoofKit(now);   // Round 150
+    updateFronts(now);   // Round 181
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     updateLightsTheme(now, dt);
     updateTreePick();
@@ -25275,7 +25419,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), fronts: frontsProbe,rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[B[o + 9]] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[B[o + 9]], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

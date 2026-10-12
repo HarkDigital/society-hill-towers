@@ -6,8 +6,7 @@ cells (each front stretched to the cell, its edge pixels run out into a PAD gutt
 atlas in the same layout at a quarter of the size: r is the window glass, g a number per window (the page lights each
 window by its number), b the door. The windows are found by their dark glass: the pixels well under the front's own
 median, closed across the muntins, cut into connected blobs and kept when a blob is a filled, window-shaped box; a tall
-dark box standing on the foot of the front is the door. RUNS are the street centrelines (scene frame) whose houses take
-a set. --placeholder draws plain stand-in fronts instead (engine work only: they never ship, the bake says so).
+dark box standing on the foot of the front is the door. The page finds every house's street wall itself (Round 181). --placeholder draws plain stand-in fronts instead (engine work only: they never ship, the bake says so).
 
 Usage: python3 bake_fronts.py [--placeholder] [--preview DIR]   (--preview writes each front with its mask over it)"""
 import argparse, base64, io, json, math, os, sys
@@ -23,24 +22,24 @@ MASK_DIV = 2
 COLS = 4
 
 # one front's nominal width and wall height in metres: the page cuts a wider wall into round(width / w) fronts
-SETS = {   # step: the stoop's colour (photo sRGB); awn: the share of houses whose ground floor takes a 3D awning
+SETS = {   # w, h: a front's nominal width and wall height (m); step: the stoop's colour (photo sRGB); awn: the share of houses
+    # whose ground floor takes a 3D awning. Round 181: the city's other house types, each picked by the property records
     'federal': {'w': 5.8, 'h': 11.0, 'gain': 0.88, 'step': '#e4e0d6', 'awn': 0.0},     # Society Hill: three storeys and a half, three bays
     'southrow': {'w': 4.7, 'h': 7.8, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.45},    # South Philadelphia: two storeys, two bays
-    'shop': {'w': 5.6, 'h': 11.0, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.6},        # East Passyunk: shops under two floors of flats
+    'shop': {'w': 5.6, 'h': 11.0, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.6},        # shops under two floors of flats
+    'victorian': {'w': 5.6, 'h': 11.5, 'gain': 0.88, 'step': '#b9a08a', 'awn': 0.0},   # North Philadelphia, Fairmount: three storeys
+    'porch': {'w': 6.4, 'h': 8.0, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.0},        # West Philadelphia twins (the page builds the porch)
+    'airlite': {'w': 5.0, 'h': 7.5, 'gain': 0.88, 'step': '#c4bfb5', 'awn': 0.3},      # the Northeast's 1930s to 1950s rows
+    'newbuild': {'w': 5.5, 'h': 11.0, 'gain': 0.88, 'step': '#9a9a98', 'awn': 0.0},    # Fishtown, Point Breeze: 2010s and 2020s
+    'stonetwin': {'w': 7.5, 'h': 9.0, 'gain': 0.88, 'step': '#c9c3b8', 'awn': 0.0},    # Germantown, Mount Airy: stone and stucco
+    'siding': {'w': 4.8, 'h': 7.5, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.35},      # Kensington, Port Richmond: siding rows
 }
 # the towers' facade tiles (fetch_fronts.py TILES): one bay's width and one floor's height in metres, and whether the wall
 # is mostly glass (its mask is then the darker half of the glass, not dark panes in a light wall)
 TILES = {'glass': (1.6, 4.0, True), 'glassdark': (1.6, 4.0, True), 'precast': (1.6, 3.8, False), 'deco': (1.6, 3.9, False),
-         'brick': (1.6, 2.9, False), 'resi': (1.6, 2.9, False)}
+         'brick': (1.6, 2.9, False), 'resi': (1.6, 2.9, False), 'silver': (1.6, 4.0, True), 'blackgrid': (1.6, 3.8, True),
+         'officebrick': (1.6, 3.7, False), 'glassresi': (1.6, 3.1, True)}
 TILE = 1024
-# street centrelines (scene frame, from the street labels: Spruce's at (-341, 53) bearing 9 degrees, Wilder's at
-# (-1335, 1592) bearing 10, each run ending at its cross streets' centrelines)
-RUNS = [
-    {'set': 'federal', 'name': 'Spruce Street, 300 block', 'a': [-315.0, 57.1], 'b': [-177.0, 79.0]},
-    {'set': 'southrow', 'name': 'Wilder Street, 900 block', 'a': [-1406.0, 1579.5], 'b': [-1268.0, 1603.8]},
-    # East Passyunk Avenue's labels at (-1437, 1557) and (-1287, 1396), bearing 313 degrees, carried 30 m past each
-    {'set': 'shop', 'name': 'East Passyunk Avenue, 1500 and 1600 blocks', 'a': [-1457.5, 1579.0], 'b': [-1266.5, 1374.0]},
-]
 
 
 def lum(a):
@@ -200,7 +199,7 @@ def bake_set(set_, fronts, preview):
         m = Image.new('RGB', (mW, mH), (0, 0, 0))
         d = ImageDraw.Draw(m)
         iw, ih = mW - 2 * mP, mH - 2 * mP
-        shop = SETS[set_].get('awn', 0) and set_ == 'shop'
+        shop = set_ == 'shop'
         for j, (x0, y0, x1, y1) in enumerate(wins):
             # b 128 marks a shop's display glass (the lower 40% of a shop front): lit more often and brighter
             d.rectangle((mP + x0 * iw, mP + y0 * ih, mP + x1 * iw - 1, mP + y1 * ih - 1),
@@ -313,7 +312,7 @@ def main():
                 print('tile %-9s %d x %d bays and floors, %.1f x %.1f m, period %s, %d KB' % (
                     tid, tiles[tid]['nb'], tiles[tid]['nf'], tiles[tid]['w'], tiles[tid]['h'], tiles[tid]['period'],
                     len(tiles[tid]['img']) * 3 // 4 // 1024))
-    out = {'v': 2, 'placeholder': a.placeholder, 'sets': sets, 'runs': RUNS, 'tiles': tiles}
+    out = {'v': 3, 'placeholder': a.placeholder, 'sets': sets, 'tiles': tiles}
     with open(OUT + '.tmp', 'w') as f:
         json.dump(out, f, separators=(',', ':'))
     os.replace(OUT + '.tmp', OUT)

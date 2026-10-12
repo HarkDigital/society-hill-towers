@@ -7966,3 +7966,45 @@ takes the tap). 435 tests.
   over Washington Square and straight down, and July, October, January, April and a night in October; the phone path at
   740x360. `tests/test_tree_art.py` (the data, the species mapping, the calendar under node, the wiring);
   `tests/test_cull.py` counts the cards' mesh in the fitted list. 472 tests.
+
+## Rounds 180 to 183 — doors everywhere, house fronts citywide, more towers, a real lawn (Oct 12)
+
+- Mike: "Have you worked in the new building styles yet? much of the app is still showing the old style where buildings
+  have no doors and all look alike. Did you do anything with the skyscrapers?", then "Go for it. If you could also update
+  the grass/ground textures that would be great".
+- Round 180, doors: the facade shader drew a door every third bay (`step(2.5, mod(cell.x, 3.0))`) on the Georgian and
+  postwar rows only, on brick only, and a rowhouse wall is two or three bays wide, so most houses had none and the
+  Victorian rows (38% of the outer districts), the siding rows and the porch fronts never did. A wall of up to three bays
+  now takes its door in an end bay chosen per wall (`doorBay`, a hash of the wall's length and base), a wider one keeps
+  one every third bay, and every row style (0, 8, 9, 10, 11) takes one, painted or brick.
+- Round 181, house fronts citywide: 48 more fronts from `gpt-image-2` in six sets (`victorian`, North Philadelphia and
+  Fairmount; `porch`, West Philadelphia twins made without their porch; `airlite`, the Northeast's rows with garages;
+  `newbuild`, Fishtown and Point Breeze; `stonetwin`, Germantown and Mount Airy; `siding`, Kensington), nine with Round
+  175's three. Round 175's hand-placed runs are gone: every loop hands each house to `frontNote` with its OPA word, and
+  `frontSetOf` picks its set (commercial a shopfront, frame siding, stone a stone twin, the last thirty years a new build,
+  the 1920s to 1950s the Northeast's rows, a porch front a porch, else by height a Victorian or a two-storey row; the core
+  Federal). Only ten floats a house are kept (its oriented box, ground, wall top, seed, set), because the streets that
+  decide its front are not all indexed until the far ring is built and keeping 290,000 outlines that long would cost a
+  phone its memory. Near the eye ('Fitting the house fronts', after the far ring) `frontSide` takes the box side whose
+  probe finds a road running along it nearest (a long side 6 m worse, so a corner house keeps its front on the main
+  street; under node in the tests: the north street wins though the side street is nearer), once a house, and
+  `frontsLay` fills instanced meshes: a front a set, and shared cornices, stoops, awnings and porches (a deck, a roof on
+  two posts and a rail, over the ground floor of the porch set), refilled as the rooftop hardware is (30 m or 1.5 s, the
+  nearest cells first, 0.3 ms a lay); the fronts dissolve into the facade, dithered, over the radius's last fifth (380 m,
+  240 on a phone). A set's atlas decodes and uploads the first time one of its houses is near; a phone takes it at half
+  size and frees the canvas on upload. 254,674 houses noted (109,147 on a phone, which skips the far ring): 115,072
+  two-storey rows, 47,166 Northeast rows, 37,538 Victorians, 15,167 porch twins, 14,387 new builds, 10,573 shopfronts,
+  8,866 siding rows, 4,052 stone houses, 1,853 Federal rows. `__dbg.frontNear(x, z, set)`, `__dbg.frontsRadius(r)`.
+- Round 182, towers: four more tiles (silver fins, a black grid, a 1920s brick office, glass balconies), two or more
+  dealt per style and per researched facade (`TOWER_TILE_ALT`) so neighbouring towers of one era differ, and the
+  cladding moved after the far ring and dresses its towers too: 1,181 tower walls against 844.
+- Round 183, the ground: a mown lawn and a rougher verge from `gpt-image-2`, made to tile by `bake_ground_art.py` (a
+  blend with a half-rolled copy across, then down: no seam in a 3 by 2 repeat), swapped in for the painted meadow tile
+  by `loadGroundArt`, each toned to the painted tile's linear mean (its brightness matched, its colour pulled halfway
+  to the olive) so the scene's calibrated balance holds; the verge comes through the lawn on an 83 m noise, more of it
+  on bare ground. `?ground=painted` keeps the painted tile.
+- Before and after: a North Philadelphia street (live, the drawn facades with doors, with the fronts), and the fronts at
+  street level in South, North and West Philadelphia, Fishtown, Kensington, Germantown, the Northeast and on East
+  Passyunk, and from 45 m; the phone path at 740x360. `tests/test_fronts.py` (the nine sets, the set choice and the street
+  side under node, the wiring), `tests/test_doors_ground.py`; `tests/test_memory_cuts.py` follows the fronts' and the
+  towers' textures to their new places. 477 tests.

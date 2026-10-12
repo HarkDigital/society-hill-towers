@@ -306,10 +306,11 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
                     self.assertNotIn(live, line)
         # Round 161: the landmark rebuilds' sign canvases (drawn once, in their build()) go the same way on touch
         self.assertIn('if (t && t.isCanvasTexture) freeTexOnUpload(t);', cut(s, "  step('Rebuilding the landmarks'", '  // ------------------------------------------------ the far ring'))
-        # Round 175: a phone's half-size copies of the house fronts' atlases, drawn once into a canvas
-        self.assertIn('return freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, "  step('Hanging the house fronts'", '  function frontsProbe('))
+        # Round 175: a phone's half-size copies of the house fronts' atlases, drawn once into a canvas (Round 181: loaded a set
+        # at a time, the first time one of its houses is near)
+        self.assertIn('tex.image = pic; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function frontSetRes(s) {', '  function frontGlobals() {'))
         # and the tower tiles' (Round 177), the same way
-        self.assertIn('t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, "  step('Cladding the towers'", '  function frontsProbe('))
+        self.assertIn('t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, "  step('Cladding the towers'", 'TSKIN.ms = Math.round(performance.now() - t0);'))
         self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 10)   # the definition and its nine uses
 
     def test_venue_screens_share_textures(self):

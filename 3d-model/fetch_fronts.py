@@ -32,6 +32,12 @@ FRAME = ('Architectural front elevation photograph, perfectly orthographic and s
 SH = 'Society Hill'
 SP = 'South Philadelphia'
 EP = 'East Passyunk Avenue, South Philadelphia'
+NP = 'North Philadelphia'
+WP = 'West Philadelphia'
+NE = 'Northeast Philadelphia'
+FT = 'Fishtown'
+GT = 'Germantown'
+KS = 'Kensington'
 FRONTS = [
     # Society Hill: three storeys and a half, 18th- and early 19th-century rows on Spruce, Pine and Delancey
     ('federal', 'f1', SH, 'three-storey Federal-style rowhouse of red brick laid in Flemish bond, three bays wide, a black '
@@ -96,6 +102,93 @@ FRONTS = [
     ('shop', 'p8', EP, 'three-storey limestone-trimmed brick building with a restaurant storefront: tall arched wooden '
      'French doors and windows across the ground floor, a blank stone sign panel, three windows on each upper floor, a '
      'stone cornice'),
+    # Oct 12, citywide (Mike: "much of the app is still showing the old style where buildings have no doors and all
+    # look alike"): the city's other row and house types, one set a type, assigned by the property records
+    ('victorian', 'v1', NP, 'three-storey Italianate brick rowhouse, three bays, tall two-over-two windows with carved '
+     'brownstone lintels, a wooden door with a transom at one side up three brownstone steps, a deep bracketed wooden '
+     'cornice painted dark green'),
+    ('victorian', 'v2', NP, 'three-storey brownstone-fronted rowhouse, three bays, segmental arched window heads, a pair '
+     'of tall wooden doors with a glass transom up a brownstone stoop, a bracketed cornice'),
+    ('victorian', 'v3', NP, 'three-storey red brick Queen Anne rowhouse, two bays, decorative brick bands, arched windows '
+     'on the top floor, a stained-glass transom over a dark wooden door, a pressed-metal cornice'),
+    ('victorian', 'v4', NP, 'three-storey rowhouse with its brick painted white, three bays, black window frames, a black '
+     'door, a white bracketed cornice'),
+    ('victorian', 'v5', NP, 'three-storey worn red brick rowhouse, three bays, stone sills, one window boarded with '
+     'plywood, a metal security door, a plain brick cornice'),
+    ('victorian', 'v6', NP, 'three-storey rowhouse of dark red brick with yellow brick trim around the windows, three '
+     'bays, a deep red door, a decorative pressed-tin cornice painted cream'),
+    ('victorian', 'v7', NP, 'three-storey renovated brick rowhouse, three bays, new black-framed windows, a modern '
+     'charcoal door, the original bracketed cornice painted black'),
+    ('victorian', 'v8', NP, 'three-storey rowhouse with a stucco front painted pale grey, three bays, white trim, a teal '
+     'door, a simple cornice'),
+    ('porch', 'h1', WP, 'two-storey half of a brick twin house (the porch removed): a front door and a wide window on the '
+     'ground floor, two windows upstairs, red brick with white trim'),
+    ('porch', 'h2', WP, 'two-storey half of a twin house (the porch removed) with a grey Wissahickon stone ground floor and '
+     'stucco above, a dark wooden door, a double window, two windows upstairs with green shutters'),
+    ('porch', 'h3', WP, 'two-storey half of a brick twin house (the porch removed), tan brick, a door with sidelights, a '
+     'three-part window, two upstairs windows with stone lintels'),
+    ('porch', 'h4', WP, 'two-storey house front (the porch removed) clad in white clapboard, a blue door, a double window, '
+     'two upstairs windows with black shutters'),
+    ('porch', 'h5', WP, 'two-storey half of a brick twin house (the porch removed) with its brick painted dark red, a white '
+     'door, a wide window, two upstairs windows'),
+    ('porch', 'h6', WP, 'two-storey half of a twin house (the porch removed), yellow-brown brick, a wooden door with a '
+     'small glass panel, a picture window, two upstairs windows with arched brick heads'),
+    ('porch', 'h7', WP, 'two-storey house front (the porch removed) in grey stucco, a red door, a double window, two '
+     'upstairs windows'),
+    ('porch', 'h8', WP, 'two-storey half of a stone twin house (the porch removed), rough grey schist with white mortar, a '
+     'dark green door, white window frames'),
+    ('airlite', 'a1', NE, 'two-storey 1950s Northeast Philadelphia "airlite" brick rowhouse: a single garage door at the '
+     'bottom of the front, the front door and a large picture window up a short flight of steps above it, two windows '
+     'upstairs, a flat roof line'),
+    ('airlite', 'a2', NE, 'two-storey 1940s brick rowhouse, light tan brick, a front door at one side, a wide picture '
+     'window, two upstairs windows, a small stone band'),
+    ('airlite', 'a3', NE, 'two-storey 1950s rowhouse of orange-red brick with a garage door below and a glass-block window '
+     'beside the front door, two upstairs windows'),
+    ('airlite', 'a4', NE, 'two-storey 1930s brick rowhouse with a flat front, a dark door with a small arched window, a '
+     'three-part window on the ground floor, two windows upstairs, decorative brick at the top'),
+    ('airlite', 'a5', NE, 'two-storey 1950s brick rowhouse with the ground floor clad in white aluminium siding, a garage '
+     'door, a front door, two upstairs windows'),
+    ('airlite', 'a6', NE, 'two-storey 1940s brown brick rowhouse, a white storm door, a picture window, two upstairs '
+     'windows with white vinyl frames'),
+    ('airlite', 'a7', NE, 'two-storey 1950s rowhouse of pale grey brick, a garage door below, a red front door, a picture '
+     'window and two upstairs windows'),
+    ('airlite', 'a8', NE, 'two-storey 1930s Tudor-style brick rowhouse with a little stucco-and-timber detail at the top, '
+     'an arched wooden door, leaded windows'),
+    ('newbuild', 'n1', FT, 'three-storey 2020s new-construction rowhouse: a garage door and a glass front door on the '
+     'ground floor, dark grey brick, black-framed windows, charcoal fibre-cement panels on the top floor'),
+    ('newbuild', 'n2', FT, 'three-storey 2010s new rowhouse in red brick with large black-framed windows and a recessed '
+     'glass entrance, a wood-slat accent panel'),
+    ('newbuild', 'n3', FT, 'three-storey 2020s rowhouse clad in white brick with black windows and a black garage door'),
+    ('newbuild', 'n4', FT, 'three-storey 2010s rowhouse with grey stucco and vertical wood cladding, tall windows, a glass '
+     'front door'),
+    ('newbuild', 'n5', FT, 'four-storey 2020s condo rowhouse in dark brick with floor-to-ceiling windows and small black '
+     'Juliet balconies'),
+    ('newbuild', 'n6', FT, 'three-storey 2010s rowhouse with tan brick on the ground floor and dark blue fibre-cement '
+     'panels above, black windows'),
+    ('newbuild', 'n7', FT, 'three-storey 2020s rowhouse of black brick with bronze window frames and a wooden front door'),
+    ('newbuild', 'n8', FT, 'three-storey 2010s rowhouse with red brick below and grey metal cladding above, a garage door'),
+    ('stonetwin', 'g1', GT, 'two-and-a-half-storey Germantown house front of grey Wissahickon schist stone, a white '
+     'panelled door with a fanlight, white six-over-six windows with black shutters'),
+    ('stonetwin', 'g2', GT, 'two-storey colonial stone house front, rough grey stone, a red door, white windows'),
+    ('stonetwin', 'g3', GT, 'two-storey half of a stone twin house, schist stone below and stucco above, a dark wooden door, '
+     'windows with green shutters'),
+    ('stonetwin', 'g4', GT, 'two-storey Colonial Revival house front of red brick with a white door surround with pilasters, '
+     'white windows with black shutters'),
+    ('stonetwin', 'g5', GT, 'two-storey Tudor Revival house front, stone ground floor, stucco and dark timber above, an '
+     'arched wooden door, leaded casement windows'),
+    ('stonetwin', 'g6', GT, 'two-storey stone house front with a wide arched entry and white trim'),
+    ('stonetwin', 'g7', GT, 'two-storey Victorian twin house front clad in painted wooden shingles (sage green), white '
+     'trim, a dark door'),
+    ('stonetwin', 'g8', GT, 'two-storey stucco house front painted cream, a blue door, white windows with blue shutters'),
+    ('siding', 'k1', KS, 'two-storey rowhouse clad in white vinyl siding, a white aluminium storm door, one window on the '
+     'ground floor and two upstairs, a concrete step'),
+    ('siding', 'k2', KS, 'two-storey rowhouse clad in pale blue aluminium siding, a black security door, white windows'),
+    ('siding', 'k3', KS, 'two-storey rowhouse in beige vinyl siding with a glass-block window and a brown door'),
+    ('siding', 'k4', KS, 'two-storey rowhouse in grey vinyl siding, white windows, a red door'),
+    ('siding', 'k5', KS, 'two-storey rowhouse with a formstone ground floor and yellow aluminium siding upstairs'),
+    ('siding', 'k6', KS, 'two-storey rowhouse in green vinyl siding, white trim, a white door'),
+    ('siding', 'k7', KS, 'two-storey rowhouse clad in white aluminium siding with a window air-conditioner upstairs'),
+    ('siding', 'k8', KS, 'two-storey rowhouse in tan vinyl siding with brick showing on the ground floor, a dark door'),
 ]
 
 # the towers' facade sections (Oct 12, Mike: "regenerate the skyscrapers to look more realistic"): square, four storeys by
@@ -120,6 +213,11 @@ TILES = [
      'window air-conditioners'),
     ('tower', 'resi', 'a 1970s concrete residential high-rise with a continuous balcony slab at every floor, glass '
      'sliding doors and pale concrete railings'),
+    ('tower', 'silver', 'a 2010s office tower with a silver-blue glass curtain wall and slim vertical aluminium fins at '
+     'every bay'),
+    ('tower', 'blackgrid', 'a 1970s office tower with a grid of black anodized aluminium and dark tinted glass'),
+    ('tower', 'officebrick', 'a 1920s red brick office building with punched windows in pairs and limestone sills and bands'),
+    ('tower', 'glassresi', 'a 2010s residential tower of blue-green glass with glass-railed balconies at every floor'),
 ]
 
 

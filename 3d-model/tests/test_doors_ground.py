@@ -1,0 +1,50 @@
+"""Every house has a door, and the ground is the generated lawn (Oct 12, Mike: "much of the app is still showing the old
+style where buildings have no doors and all look alike", then "If you could also update the grass/ground textures").
+
+Round 180: the facade shader drew a door every third bay on two styles only, and a rowhouse wall is two or three bays
+wide, so most houses had none. A wall of up to three bays now takes its door in an end bay, chosen per wall, and every
+row style takes one. Round 183: GROUND_ART's lawn and verge, made to tile, take the painted meadow's place, toned to its
+mean."""
+from pathlib import Path
+import base64
+import io
+import json
+import unittest
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+class Doors(unittest.TestCase):
+    def test_every_house_wall_takes_a_door(self):
+        s = (ROOT / 'app.js').read_text()
+        self.assertIn("'      float doorCol = nbD <= 3.0 ? 1.0 - step(0.5, abs(cell.x - doorBay)) : step(2.5, mod(cell.x, 3.0));',", s)
+        self.assertIn("float(st == 0 || st == 8 || st == 9 || st == 10 || st == 11) * inWall * det * detU;',", s)
+        self.assertNotIn("float(st == 0 || st == 8) * brickish * inWall * det * detU;", s)
+
+
+class Ground(unittest.TestCase):
+    def test_the_textures(self):
+        d = json.loads((ROOT / 'ground_art.json').read_text())
+        self.assertEqual(set(d), {'lawn', 'meadow'})
+        from PIL import Image
+        import numpy as np
+        for k, url in d.items():
+            self.assertTrue(url.startswith('data:image/webp;base64,'), k)
+            a = np.asarray(Image.open(io.BytesIO(base64.b64decode(url.split(',', 1)[1]))).convert('RGB'), np.float32)
+            self.assertEqual(a.shape[:2], (1024, 1024))
+            # it tiles: the step across each edge is no larger than the image's own pixel to pixel steps
+            inner = np.abs(np.diff(a, axis=1)).mean()
+            self.assertLess(np.abs(a[:, 0] - a[:, -1]).mean(), inner * 1.6, k)
+            self.assertLess(np.abs(a[0] - a[-1]).mean(), np.abs(np.diff(a, axis=0)).mean() * 1.6, k)
+
+    def test_wiring(self):
+        s = (ROOT / 'app.js').read_text()
+        self.assertIn('loadGroundArt();   // Round 183', s)
+        self.assertIn("'if (uGrassArt > 0.5) { vec3 gB = mix(texture2D(uGrass2, gUv1).rgb, texture2D(uGrass2, gUv2).rgb, 0.5) * uGrassTone2;',", s)
+        self.assertIn("/[?&]ground=painted\\b/.test(location.search)", s)
+        b = (ROOT / 'build.py').read_text()
+        self.assertIn('const("GROUND_ART", text_of("ground_art.json", "null"))', b)
+
+
+if __name__ == '__main__':
+    unittest.main()
