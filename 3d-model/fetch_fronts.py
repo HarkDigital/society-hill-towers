@@ -26,10 +26,12 @@ FRAME = ('Architectural front elevation photograph, perfectly orthographic and s
          'edge is the sidewalk line at the foot of the front steps, and the top edge is the top of the cornice (no roof, '
          'no sky). No perspective, no vanishing lines, no camera tilt, every window the same size on its floor. Soft even '
          'overcast daylight with no cast shadows. No people, no cars, no trees, no street signs, no lettering or house '
-         'numbers. The window glass is dark and unlit with crisp frames. Photorealistic, high detail, natural colours.')
+         'numbers, no awnings and no canopies. The window glass is dark and unlit with crisp frames. Photorealistic, high '
+         'detail, natural colours.')
 
 SH = 'Society Hill'
 SP = 'South Philadelphia'
+EP = 'East Passyunk Avenue, South Philadelphia'
 FRONTS = [
     # Society Hill: three storeys and a half, 18th- and early 19th-century rows on Spruce, Pine and Delancey
     ('federal', 'f1', SH, 'three-storey Federal-style rowhouse of red brick laid in Flemish bond, three bays wide, a black '
@@ -56,11 +58,9 @@ FRONTS = [
      'white box cornice with a simple moulding'),
     # South Philadelphia: two-storey rows on the small streets between the numbered ones
     ('southrow', 's1', SP, 'two-storey red brick rowhouse, two bays wide, a white aluminium storm door and one window on '
-     'the ground floor under a scalloped aluminium awning, two windows upstairs, a two-step concrete stoop, a plain '
-     'brick parapet with a thin metal cap'),
-    ('southrow', 's2', SP, 'two-storey rowhouse faced in grey-beige formstone (cast stone veneer), two bays, a metal awning '
-     'over the door and front window, a glass-block window on the ground floor, two white vinyl windows upstairs, a '
-     'marble step'),
+     'the ground floor, two windows upstairs, a two-step concrete stoop, a plain brick parapet with a thin metal cap'),
+    ('southrow', 's2', SP, 'two-storey rowhouse faced in grey-beige formstone (cast stone veneer), two bays, a glass-block '
+     'window on the ground floor, two white vinyl windows upstairs, a marble step'),
     ('southrow', 's3', SP, 'two-storey brick rowhouse with a projecting second-floor bay window clad in painted dark green '
      'wood with three sashes, a dark door and one window on the ground floor, a small metal cornice above the bay'),
     ('southrow', 's4', SP, 'two-storey rowhouse with its brick painted dusty blue, two bays, a red front door, white '
@@ -68,12 +68,58 @@ FRONTS = [
     ('southrow', 's5', SP, 'two-storey late 19th-century brick rowhouse, two bays, tall narrow two-over-two windows with '
      'white marble lintels and sills, three white marble steps, an Italianate bracketed pressed-metal cornice painted '
      'brown'),
-    ('southrow', 's6', SP, 'two-storey rowhouse with a stucco front painted pale yellow, two bays, a striped green and '
-     'white aluminium awning over the door and window, a white storm door, two windows upstairs'),
+    ('southrow', 's6', SP, 'two-storey rowhouse with a stucco front painted pale yellow, two bays, a white storm door '
+     'and one window on the ground floor, two windows upstairs'),
     ('southrow', 's7', SP, 'renovated two-storey brick rowhouse, two bays, new black-framed windows, a modern dark grey '
-     'front door with a narrow glass panel, a black metal canopy over the door, a clean brick parapet'),
+     'front door with a narrow glass panel, a clean brick parapet'),
     ('southrow', 's8', SP, 'two-storey brown brick rowhouse, two bays, a black metal security storm door, a window '
-     'air-conditioner in one upstairs window, a faded aluminium awning, a single concrete step'),
+     'air-conditioner in one upstairs window, a single concrete step'),
+    # East Passyunk Avenue: three-storey rows with shops on the ground floor (Oct 12, Mike: "generate storefronts")
+    ('shop', 'p1', EP, 'three-storey brick rowhouse with a corner-bar storefront on the ground floor: dark stained wood '
+     'panelling, two large plate-glass windows either side of a recessed glazed door, a blank dark wooden signboard over '
+     'the shopfront, two sash windows on each upper floor, a bracketed cornice'),
+    ('shop', 'p2', EP, 'three-storey brick rowhouse with a bakery storefront on the ground floor: a white and green tiled '
+     'base, wide display windows with thin bronze frames, a glazed door at one side, a blank cream signboard, '
+     'Italianate windows with stone lintels above'),
+    ('shop', 'p3', EP, 'three-storey painted brick rowhouse (sage green) with a cafe storefront: black steel-framed '
+     'floor-to-ceiling glazing in a grid, a black door, a blank black signboard band, white-trimmed sash windows above'),
+    ('shop', 'p4', EP, 'three-storey 19th-century building with a cast-iron storefront painted dark red: slender fluted '
+     'columns, tall display windows, a recessed entry, a blank cornice board over the shopfront, brick upper floors with '
+     'arched window heads and a pressed-metal cornice'),
+    ('shop', 'p5', EP, 'two-storey brick rowhouse with a 1960s aluminium storefront: a wide plate-glass window and a glass '
+     'door in silver aluminium frames, a blank white signboard, a stuccoed upper floor with two windows'),
+    ('shop', 'p6', EP, 'three-storey brick rowhouse with a boutique storefront in painted wood (deep navy): a bay of small '
+     'display panes over a panelled base, a recessed door with a transom, a blank navy signboard, sash windows above'),
+    ('shop', 'p7', EP, 'three-storey brick rowhouse with a corner-store front: a metal roll-down security gate raised '
+     'halfway over a glass shop door and window, a blank faded signboard, a stucco-faced ground floor, sash windows '
+     'above'),
+    ('shop', 'p8', EP, 'three-storey limestone-trimmed brick building with a restaurant storefront: tall arched wooden '
+     'French doors and windows across the ground floor, a blank stone sign panel, three windows on each upper floor, a '
+     'stone cornice'),
+]
+
+# the towers' facade sections (Oct 12, Mike: "regenerate the skyscrapers to look more realistic"): square, four storeys by
+# ten bays (about 16 m a side), meant to repeat in both directions; bake_fronts.py crops each to its own period
+TILE_SIZE = '1024x1024'
+TILE_FRAME = ('Seamless tileable facade texture for a 3D city model: a perfectly orthographic, straight-on elevation of a '
+              'section of the wall of {what} in Center City Philadelphia, exactly four storeys tall and ten window bays '
+              'wide. The section repeats seamlessly in both directions: what leaves the right edge comes back at the left, '
+              'what leaves the top comes back at the bottom, and every floor line and bay line is evenly spaced. Only the '
+              'repeating wall: no ground floor, no roof, no sky, no building edges or corners. Flat even daylight, no '
+              'shadows, no reflections of other buildings, no people, no lettering. Photorealistic, high detail.')
+TILES = [
+    ('tower', 'glass', 'a 1990s office tower clad in a blue-green glass curtain wall: slim silver vertical mullions at '
+     'every bay and dark grey spandrel panels at every floor slab'),
+    ('tower', 'glassdark', 'a 1980s office tower of dark bronze reflective glass with continuous silver aluminium '
+     'horizontal bands at every floor'),
+    ('tower', 'precast', 'a 1960s office tower of white precast concrete: a deep grid of square concrete frames, one '
+     'recessed dark window set in each'),
+    ('tower', 'deco', 'a 1920s Art Deco office tower: buff limestone piers running up between the bays, recessed '
+     'windows with dark cast-metal spandrel panels between floors bearing geometric ornament'),
+    ('tower', 'brick', 'a postwar apartment tower of tan brick with punched aluminium windows, two to a bay, a few '
+     'window air-conditioners'),
+    ('tower', 'resi', 'a 1970s concrete residential high-rise with a continuous balcony slab at every floor, glass '
+     'sliding doors and pale concrete railings'),
 ]
 
 
@@ -90,14 +136,13 @@ def api_key():
     sys.exit('no OPENAI_API_KEY in the environment or ~/.config/philly3d/openai.env')
 
 
-def make(key, set_, fid, where, what, force):
+def make(key, set_, fid, prompt, size, force):
     out_dir = os.path.join(RAW, set_)
     os.makedirs(out_dir, exist_ok=True)
     png, meta = os.path.join(out_dir, fid + '.png'), os.path.join(out_dir, fid + '.json')
     if os.path.exists(png) and not force:
         return fid, 'kept'
-    prompt = FRAME.format(what=what, where=where)
-    body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1,
+    body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': size, 'quality': QUALITY, 'n': 1,
                        'output_format': 'png', 'background': 'opaque'}).encode()
     for attempt in range(4):
         req = urllib.request.Request(API, data=body, method='POST',
@@ -109,7 +154,7 @@ def make(key, set_, fid, where, what, force):
             with open(png + '.tmp', 'wb') as f:
                 f.write(img)
             os.replace(png + '.tmp', png)
-            json.dump({'id': fid, 'set': set_, 'prompt': prompt, 'model': MODEL, 'size': SIZE, 'quality': QUALITY,
+            json.dump({'id': fid, 'set': set_, 'prompt': prompt, 'model': MODEL, 'size': size, 'quality': QUALITY,
                        'created': d.get('created'), 'usage': d.get('usage')}, open(meta, 'w'), indent=1)
             return fid, 'made %d KB' % (len(img) // 1024)
         except urllib.error.HTTPError as e:
@@ -131,10 +176,12 @@ def main():
     a = ap.parse_args()
     key = api_key()
     only = set(filter(None, a.only.split(',')))
-    jobs = [f for f in FRONTS if not only or f[1] in only]
-    print('%d fronts, model %s, %s, quality %s' % (len(jobs), MODEL, SIZE, QUALITY), flush=True)
+    jobs = [(f[0], f[1], FRAME.format(what=f[3], where=f[2]), SIZE) for f in FRONTS]
+    jobs += [(t[0], t[1], TILE_FRAME.format(what=t[2]), TILE_SIZE) for t in TILES]
+    jobs = [j for j in jobs if not only or j[1] in only]
+    print('%d images, model %s, quality %s' % (len(jobs), MODEL, QUALITY), flush=True)
     with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
-        for fid, what in ex.map(lambda f: make(key, f[0], f[1], f[2], f[3], a.force), jobs):
+        for fid, what in ex.map(lambda j: make(key, j[0], j[1], j[2], j[3], a.force), jobs):
             print(fid, what, flush=True)
 
 

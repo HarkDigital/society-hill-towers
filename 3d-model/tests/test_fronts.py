@@ -21,7 +21,7 @@ class FrontsData(unittest.TestCase):
     def test_sets_and_runs(self):
         d = self.d
         self.assertFalse(d['placeholder'], 'stand-in fronts never ship')
-        self.assertEqual(set(d['sets']), {'federal', 'southrow'})
+        self.assertEqual(set(d['sets']), {'federal', 'southrow', 'shop'})
         for name, s in d['sets'].items():
             self.assertTrue(s['img'].startswith('data:image/webp;base64,'), name)
             self.assertTrue(s['mask'].startswith('data:image/png;base64,'), name)
@@ -35,6 +35,34 @@ class FrontsData(unittest.TestCase):
         self.assertEqual(sets, set(d['sets']))
         for r in d['runs']:
             self.assertGreater(((r['b'][0] - r['a'][0]) ** 2 + (r['b'][1] - r['a'][1]) ** 2) ** 0.5, 50)
+
+
+class TowerTiles(unittest.TestCase):
+    def test_tiles(self):
+        d = json.loads((ROOT / 'fronts.json').read_text())
+        self.assertEqual(set(d['tiles']), {'glass', 'glassdark', 'precast', 'deco', 'brick', 'resi'})
+        for k, t in d['tiles'].items():
+            self.assertTrue(t['img'].startswith('data:image/webp;base64,'), k)
+            self.assertTrue(8 <= t['w'] <= 24 and 8 <= t['h'] <= 24, (k, t['w'], t['h']))   # a few floors by a few bays
+            self.assertGreaterEqual(t['nb'], 3, k)
+            self.assertGreaterEqual(t['nf'], 2, k)
+
+
+class Awnings(unittest.TestCase):
+    def test_no_painted_awnings_in_the_prompts(self):
+        import fetch_fronts as F
+        self.assertIn('no awnings and no canopies', F.FRAME)
+        for f in F.FRONTS:
+            self.assertNotRegex(f[3], r'awning|canopy', f[1])
+
+    def test_awnings_are_built(self):
+        s = (ROOT / 'app.js').read_text()
+        self.assertIn('function frontAwning(A, wx0, wz0, ux, uz, nx, nz, s0, s1, yA, D, drop, V, scallop, colA, colB, stripeK)', s)
+        self.assertIn("if (kinds && cm.gf && hash01(c.seed * 5.3 + j * 1.7) < (S.awn || 0))", s)
+        d = json.loads((ROOT / 'fronts.json').read_text())
+        self.assertEqual(d['sets']['federal']['awn'], 0)          # Society Hill's Federal rows wear none
+        self.assertGreater(d['sets']['shop']['awn'], 0)
+        self.assertTrue(any(c['gf'] for c in d['sets']['shop']['cells']))
 
 
 class WindowFinder(unittest.TestCase):
@@ -73,6 +101,13 @@ class PageWiring(unittest.TestCase):
     def test_only_the_glass_glows(self):
         self.assertRegex(self.s, re.escape("float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb"))
         self.assertIn("lampLightPatch(sh, 'vWPos', 'wall');", self.s)
+
+    def test_towers_are_clad(self):
+        s = self.s
+        self.assertIn("if (h >= 35 && t !== 8 && t !== 9) towerSkinNote(poly, mh > 0 ? base + mh : base, base + hTop, style, spec, i, c, mh > 0, t);", s)
+        self.assertIn("if (!TSKIN_ON || y1 - y0 < 30 || (style >= 24 && style <= 29)) return;", s)   # the researched curtain walls keep theirs
+        self.assertIn("step('Cladding the towers'", s)
+        self.assertIn('float sw = 3.0 + floor(fh * 4.0)', s)   # windows light by suites, not by bays
 
     def test_build_inlines_it(self):
         b = (ROOT / 'build.py').read_text()

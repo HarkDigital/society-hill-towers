@@ -6007,6 +6007,7 @@
           }, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false);   // the wall in the tiers' register: its darkened lip comes back to the core's
         }
         if (wallTop && !spec0 && wallTop < 30) frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, 'core');
+        if (wallTop && !spec0 && b.h > 35) towerSkinNote(b.poly, ty || 0, (ty || 0) + wallTop, style, null, i, color, !!b.minH, 0);
       }
       registerPoly(b.poly);
       for (let k = 0; k < b.poly.length; k++) {
@@ -9324,6 +9325,7 @@
       // ring, which routes nothing here. That was the "disparity between the inner and outer
       // ring" Mike saw, and the distinct look of the unphotographed buildings Round 87 had
       // chased with colour constants (a photographed face with trim keeps variant 0)
+      if (h >= 35 && t !== 8 && t !== 9) towerSkinNote(poly, mh > 0 ? base + mh : base, base + hTop, style, spec, i, c, mh > 0, t);
       if (isGlassStyle(style)) {
         if(style===25) {
           const cp=comcastCrownPlan(specTopPlan.get(spec)||poly,spec.h);
@@ -11111,6 +11113,52 @@
     quad(b0, b1, b3, b2);   // the ends
     quad(a0, a1, a3, a2);
   }
+  // an awning over a front's ground floor (Oct 12, Mike: "The awnings being drawn on in 2d is not great. I want to add
+  // more depth"): a canopy sloping from the wall at yA down drop metres to D metres out, a valance V deep at its front
+  // (scalloped, for the aluminium kind) and closed triangular sides; s0 to s1 metres along the wall from (wx0, wz0) on the
+  // unit (ux, uz). Stripes run down the slope: the shader mixes colA and colB by the metres along the wall (aAlong) at
+  // stripeK stripes a metre (0 solid). Each triangle is turned to face the normal it is given
+  function frontAwning(A, wx0, wz0, ux, uz, nx, nz, s0, s1, yA, D, drop, V, scallop, colA, colB, stripeK) {
+    const P = (s, o, y) => [wx0 + ux * s + nx * o, y, wz0 + uz * s + nz * o];
+    const tri = (p, q, r, n, sp, sq, sr) => {
+      const e1 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], e2 = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
+      const f = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]];
+      let vs = [[p, sp], [q, sq], [r, sr]];
+      if (f[0] * n[0] + f[1] * n[1] + f[2] * n[2] < 0) vs = [[p, sp], [r, sr], [q, sq]];
+      for (const [v, s] of vs) {
+        A.pos.push(v[0], v[1], v[2]); A.nor.push(n[0], n[1], n[2]);
+        A.col.push(colA.r, colA.g, colA.b); A.col2.push(colB.r, colB.g, colB.b); A.along.push(s); A.k.push(stripeK);
+      }
+    };
+    const quad = (p, q, r, t, n, sp, sq, sr, st) => { tri(p, q, r, n, sp, sq, sr); tri(p, r, t, n, sp, sr, st); };
+    const wo = 0.06, yF = yA - drop;
+    // the canopy: its normal is up and out, square to the wall line and the slope
+    const sl = Math.hypot(D - wo, drop), nUp = [nx * drop / sl, (D - wo) / sl, nz * drop / sl];
+    quad(P(s0, wo, yA), P(s1, wo, yA), P(s1, D, yF), P(s0, D, yF), nUp, s0, s1, s1, s0);
+    // the valance: a straight band, then for aluminium a row of scallops hanging under it
+    const out = [nx, 0, nz], vb = yF - (scallop ? V * 0.55 : V);
+    quad(P(s0, D, yF), P(s1, D, yF), P(s1, D, vb), P(s0, D, vb), out, s0, s1, s1, s0);
+    if (scallop) {
+      const nS = Math.max(2, Math.round((s1 - s0) / 0.32)), w = (s1 - s0) / nS, dep = V * 0.45, seg = 5;
+      for (let i = 0; i < nS; i++) for (let j = 0; j < seg; j++) {
+        const t0 = j / seg, t1 = (j + 1) / seg, sa = s0 + w * (i + t0), sb = s0 + w * (i + t1);
+        quad(P(sa, D, vb), P(sb, D, vb), P(sb, D, vb - dep * Math.sin(Math.PI * t1)), P(sa, D, vb - dep * Math.sin(Math.PI * t0)), out, sa, sb, sb, sa);
+      }
+    }
+    // the closed sides, and the valance's short return at each
+    for (const [s, sg] of [[s0, -1], [s1, 1]]) {
+      const n = [ux * sg, 0, uz * sg];
+      tri(P(s, wo, yA), P(s, D, yF), P(s, wo, yF), n, s, s, s);
+      quad(P(s, D - 0.12, yF), P(s, D, yF), P(s, D, vb), P(s, D - 0.12, vb), n, s, s, s, s);
+    }
+  }
+  // the awnings' kinds per set: [colA, colB, stripes a metre, scalloped]; photographed sRGB, stored like the fronts
+  const AWNING_KINDS = {
+    southrow: [['#e4e4de', '#bdbdb6', 6.25, true], ['#2f6b43', '#e9e8e0', 3.3, true], ['#6a4a35', '#58402f', 6.25, true],
+      ['#29513a', '#21432f', 6.25, true], ['#6e2a2a', '#ebe6dc', 3.3, true]],
+    shop: [['#2e6a45', '#ebe8de', 2.6, false], ['#a3302d', '#ece6da', 2.6, false], ['#22324f', '#22324f', 0, false],
+      ['#1f1f1f', '#1f1f1f', 0, false], ['#5e2333', '#5e2333', 0, false], ['#b49a6e', '#6b4c33', 2.6, false]],
+  };
   step('Hanging the house fronts', async () => {
     if (!FRONTS_ON || !FRONTS.cands.length) return;
     const t0 = performance.now();
@@ -11145,6 +11193,7 @@
         // deal the cells along each side of each run in order, never the same as the house before
         list.sort((a, b) => a.ri - b.ri || a.e.side - b.e.side || a.e.t - b.e.t);
         const pos = [], uv = [], seed = [], base = [], idx = [], R = { pos: [], nor: [], col: [] };
+        const AWN = { pos: [], nor: [], col: [], col2: [], along: [], k: [] };
         // a photographed colour into the stored register, as the landmark kit does (gotcha 11): linear, at the set's gain
         const stored = (hex) => new THREE.Color(hex).convertSRGBToLinear().multiplyScalar(S.gain || 0.88);
         let prev = -1, prevKey = '';
@@ -11179,7 +11228,39 @@
               frontBox(R, s0x, s0z, s1x, s1z, e.nx, e.nz, 0.05, 0.95, gy - 0.3, gy + 0.2, sc);
               frontBox(R, s0x, s0z, s1x, s1z, e.nx, e.nz, 0.05, 0.62, gy + 0.2, gy + 0.4, sc);
             }
+            // an awning over the ground floor's openings, for the set's share of its houses (a shop's runs the width)
+            const kinds = AWNING_KINDS[setName];
+            if (kinds && cm.gf && hash01(c.seed * 5.3 + j * 1.7) < (S.awn || 0)) {
+              const ux = (wx1 - wx0) / cw, uz = (wz1 - wz0) / cw, shop = setName === 'shop';
+              const s0 = (shop ? 0.03 : Math.max(0, cm.gf[0] - 0.04)) * cw, s1 = (shop ? 0.97 : Math.min(1, cm.gf[1] + 0.04)) * cw;
+              const yA = y1 - cm.gf[2] * (y1 - y0) + (shop ? 0.35 : 0.3);
+              const kd = kinds[Math.floor(hash01(c.seed * 9.1 + j) * kinds.length) % kinds.length];
+              if (s1 - s0 > 1.2 && yA > c.base + 2.4) frontAwning(AWN, wx0, wz0, ux, uz, e.nx, e.nz, s0, s1, yA, shop ? 1.35 : 0.95, shop ? 0.7 : 0.55, shop ? 0.3 : 0.28, kd[3], stored(kd[0]), stored(kd[1]), kd[2]);
+            }
           }
+        }
+        if (AWN.pos.length) {
+          const ag = new THREE.BufferGeometry();
+          ag.setAttribute('position', new THREE.Float32BufferAttribute(AWN.pos, 3));
+          ag.setAttribute('normal', new THREE.Float32BufferAttribute(AWN.nor, 3));
+          ag.setAttribute('color', new THREE.Float32BufferAttribute(AWN.col, 3));
+          ag.setAttribute('aCol2', new THREE.Float32BufferAttribute(AWN.col2, 3));
+          ag.setAttribute('aAlong', new THREE.Float32BufferAttribute(AWN.along, 1));
+          ag.setAttribute('aStripeK', new THREE.Float32BufferAttribute(AWN.k, 1));
+          const am = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.62, metalness: 0.05, side: THREE.DoubleSide });
+          am.onBeforeCompile = (sh) => {
+            sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aCol2; attribute float aAlong; attribute float aStripeK; varying vec3 vCol2; varying float vAlong; varying float vStripeK;')
+              .replace('#include <color_vertex>', '#include <color_vertex>\nvCol2 = aCol2; vAlong = aAlong; vStripeK = aStripeK;');
+            sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vCol2; varying float vAlong; varying float vStripeK;')
+              .replace('#include <color_fragment>', '#include <color_fragment>\nif (vStripeK > 0.0) { float sx = fract(vAlong * vStripeK); float aa = 0.04; diffuseColor.rgb = mix(diffuseColor.rgb, vCol2, smoothstep(0.5 - aa, 0.5 + aa, sx) - smoothstep(1.0 - aa, 1.0, sx)); }');
+          };
+          am.customProgramCacheKey = () => 'front-awnings';
+          const amesh = new THREE.Mesh(ag, am);
+          amesh.castShadow = !isTouch; amesh.receiveShadow = true; amesh.name = 'fronts-awnings-' + setName;
+          amesh.frustumCulled = false; pendingUpload.push(amesh);
+          groupCity.add(amesh);
+          FRONTS.meshes.push(amesh);
+          FRONTS.awnings = (FRONTS.awnings || 0) + AWN.pos.length / 3;
         }
         if (R.pos.length) {
           const rg = new THREE.BufferGeometry();
@@ -11212,9 +11293,15 @@
             // a lit window: four houses in ten, and in a lit house about two windows in three, each its own warmth; only
             // the glass glows (the front's own dark pixels inside the mask), never the frames and muntins round it
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.6, fract(vSeed * 7.31)); float wr = fract(sin(frMask.g * 255.0 * 12.9898 + vSeed * 78.233) * 43758.5453); float wl = step(0.34, wr);\n' +
+              // a shop's display glass (mask b 128): nine shops in ten lit, all of the window, a brighter and whiter light
+              '  float shopG = step(0.3, frMask.b) * (1.0 - step(0.7, frMask.b)); hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3))); wl = max(wl, shopG);\n' +
               '  float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + (S.gain || 0.88).toFixed(2) + ');\n' +
-              '  vec3 warm = mix(vec3(1.0, 0.68, 0.38), vec3(0.95, 0.82, 0.62), fract(wr * 3.7));\n' +
-              '  totalEmissiveRadiance += frMask.r * glass * hl * wl * uNight * warm * (0.45 + 0.25 * fract(wr * 9.1)); }');
+              // glass is near neutral; a shopfront's dark stained wood or navy board inside the box is strongly tinted
+              '  float cmx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)), cmn = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));\n' +
+              '  glass *= 1.0 - smoothstep(0.38, 0.62, (cmx - cmn) / max(cmx, 1e-4));\n' +
+              // a shop window is warm display light, a little brighter than a room (at 1.7 times and near white it blew out)
+              '  vec3 warm = mix(mix(vec3(1.0, 0.68, 0.38), vec3(0.95, 0.82, 0.62), fract(wr * 3.7)), vec3(1.0, 0.8, 0.56), shopG);\n' +
+              '  totalEmissiveRadiance += frMask.r * glass * hl * wl * uNight * warm * (0.45 + 0.25 * fract(wr * 9.1)) * (1.0 + 0.2 * shopG); }');
           lampLightPatch(sh, 'vWPos', 'wall');   // the street lamps wash the lower storeys, as they do the facades round them
         };
         mat.customProgramCacheKey = () => 'house-fronts';
@@ -11231,10 +11318,128 @@
     }
     FRONTS.ms = Math.round(performance.now() - t0);
   });
+  // ---- tower skins (Oct 12, Mike: "regenerate the skyscrapers to look more realistic"). FRONTS_DATA.tiles holds square,
+  // repeating facade sections generated per kind (glass, dark glass, precast grid, Art Deco limestone, brick apartment,
+  // concrete balcony slab), each with its size in metres and a window mask. Every tower the loops raise (35 m and up),
+  // but the researched landmarks with walls of their own (the Comcast towers, Liberty Place, FMC, Cira, the crowned
+  // glass), hands its footprint here with its facade kind; 'Cladding the towers' lays the kind's tile round every wall
+  // 12 cm proud of it from 5 m up (the lobby keeps its own storefront) to the wall top, repeating in metres, the glass
+  // tinted with the tower's own colour. After dark about two windows in five light, cell by cell
+  const TOWER_TILE_OF = { concrete_grid: 'precast', glass: 'glass', deco: 'deco', brick: 'brick', glass_bands: 'glassdark',
+    stone_piers: 'deco', glass_dark: 'glassdark', precast_bands: 'precast' };
+  const TSKIN = { cands: [], meshes: [], laid: {}, ms: 0, error: null };
+  const TSKIN_ON = FRONTS_ON && !!FRONTS_DATA.tiles && Object.keys(FRONTS_DATA.tiles).length > 0;
+  function towerSkinNote(poly, y0, y1, style, spec, seed, col, lifted, t) {
+    if (!TSKIN_ON || y1 - y0 < 30 || (style >= 24 && style <= 29)) return;
+    let kind = spec ? TOWER_TILE_OF[spec.facade] : null;
+    if (!kind) kind = t === 10 || style === 13 ? 'glass' : style === 2 ? (hash01(seed * 2.3) < 0.55 ? 'glass' : 'glassdark')
+      : style === 15 ? 'glassdark' : style === 16 ? 'precast' : style === 17 || style === 14 ? 'deco' : style === 18 ? 'resi'
+      : style === 19 || style === 12 ? 'brick' : 'precast';
+    if (!FRONTS_DATA.tiles[kind]) return;
+    TSKIN.cands.push({ poly, y0: lifted ? y0 : y0 + 5, y1, kind, seed, col: col.clone() });
+  }
+  step('Cladding the towers', async () => {
+    if (!TSKIN_ON || !TSKIN.cands.length) return;
+    const t0 = performance.now();
+    try {
+      const img = (src) => new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = () => rej(new Error('tower tile did not decode')); im.src = src; });
+      const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
+      const tex = (src) => {
+        let t;
+        if (!isTouch) t = new THREE.Texture(src);
+        else { const cv = document.createElement('canvas'); cv.width = src.width >> 1; cv.height = src.height >> 1; cv.getContext('2d').drawImage(src, 0, 0, cv.width, cv.height); t = freeTexOnUpload(new THREE.CanvasTexture(cv)); }
+        t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
+        return t;
+      };
+      const byKind = new Map();
+      for (const c of TSKIN.cands) { if (!byKind.has(c.kind)) byKind.set(c.kind, []); byKind.get(c.kind).push(c); }
+      for (const [kind, list] of byKind) {
+        const T = FRONTS_DATA.tiles[kind];
+        const [im, mk] = await Promise.all([img(T.img), img(T.mask)]);
+        const map = tex(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso;
+        const mask = tex(mk);
+        const pos = [], nor = [], uv = [], col = [], seed = [], idx = [];
+        for (const c of list) {
+          const P = c.poly, n = P.length, sg = signedArea(P) > 0 ? 1 : -1;
+          // the tower's own colour (researched or drawn) tints its tile: its hue at the tile's brightness, half strength on
+          // glass and two fifths on masonry (one limestone tile for every masonry tower turned the skyline beige), and its
+          // lightness carried a little, so a dark tower stays darker than a pale one
+          const L = 0.2126 * c.col.r + 0.7152 * c.col.g + 0.0722 * c.col.b;
+          const tint = L > 0.01 ? c.col.clone().multiplyScalar(1 / L) : new THREE.Color(1, 1, 1);
+          tint.r = Math.min(tint.r, 1.6); tint.g = Math.min(tint.g, 1.6); tint.b = Math.min(tint.b, 1.6);
+          tint.lerp(new THREE.Color(1, 1, 1), T.glass ? 0.5 : 0.6);
+          tint.multiplyScalar(clamp(0.7 + Math.sqrt(Math.max(L, 0)) * 0.6, 0.75, 1.15) * (0.94 + hash01(c.seed * 3.1) * 0.12));
+          const sd = hash01(c.seed * 7.7);
+          let u = hash01(c.seed * 1.3) * T.w;   // each tower starts its pattern somewhere of its own
+          for (let i = 0; i < n; i++) {
+            const a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+            if (len < 0.3) continue;
+            const nx = dz / len * sg, nz = -dx / len * sg, off = 0.12, o = pos.length / 3;
+            const ax = a[0] + nx * off, az = a[1] + nz * off, bx = b[0] + nx * off, bz = b[1] + nz * off;
+            pos.push(ax, c.y0, az, bx, c.y0, bz, bx, c.y1, bz, ax, c.y1, az);
+            for (let q = 0; q < 4; q++) { nor.push(nx, 0, nz); col.push(tint.r, tint.g, tint.b); seed.push(sd); }
+            const v1 = (c.y1 - c.y0) / T.h;
+            uv.push(u / T.w, 0, (u + len) / T.w, 0, (u + len) / T.w, v1, u / T.w, v1);
+            idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+            u += len;
+          }
+          TSKIN.laid[kind] = (TSKIN.laid[kind] || 0) + 1;
+        }
+        if (!idx.length) continue;
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+        g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+        g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+        g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+        g.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
+        g.setIndex(idx);
+        // the side the winding gives must be the side the normal names: wind each quad to its normal
+        { const p = g.attributes.position.array, ix = g.index.array;
+          for (let q = 0; q < ix.length; q += 3) {
+            const i0 = ix[q] * 3, i1 = ix[q + 1] * 3, i2 = ix[q + 2] * 3;
+            const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2], e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
+            const fx = e1y * e2z - e1z * e2y, fz = e1x * e2y - e1y * e2x, nn = g.attributes.normal.array;
+            if (fx * nn[i0] + fz * nn[i0 + 2] < 0) { const tmp = ix[q + 1]; ix[q + 1] = ix[q + 2]; ix[q + 2] = tmp; }
+          } }
+        const gain = 0.88;
+        const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, color: new THREE.Color(gain, gain, gain), roughness: T.glass ? 0.3 : 0.88, metalness: T.glass ? 0.2 : 0 });
+        mat.onBeforeCompile = (sh) => {
+          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
+          sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; varying float vSeed;')
+            .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; vec4 tsMask;')
+            .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>')
+            .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.14, tsMask.r);')
+            // a floor lights by suites, not by bays (a bay at a time read as salt and pepper): each floor (the tile's floors
+            // counted up the tower) is cut into suites of three to six bays from an offset of its own, and a suite lights
+            // about one time in three, warm or cool, at its own level
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float fl = floor(vUv.y * ' + T.nf.toFixed(1) + ');\n' +
+              '  float fh = fract(sin(fl * 91.17 + vSeed * 317.3) * 43758.5453);\n' +
+              '  float sw = 3.0 + floor(fh * 4.0), bay = vUv.x * ' + T.nb.toFixed(1) + ' + fh * 11.0;\n' +
+              '  float h = fract(sin(floor(bay / sw) * 12.9898 + fl * 78.233 + vSeed * 431.7) * 43758.5453);\n' +
+              '  float glass = 1.0 - smoothstep(0.04, 0.22, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));\n' +
+              '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(0.62, fract(h * 5.3)));\n' +
+              '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(0.66, h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
+        };
+        mat.customProgramCacheKey = () => 'tower-skin-' + kind;
+        const m = new THREE.Mesh(g, mat);
+        m.castShadow = false; m.receiveShadow = true; m.name = 'tower-skin-' + kind;
+        m.frustumCulled = false; pendingUpload.push(m);
+        groupCity.add(m);
+        TSKIN.meshes.push(m);
+      }
+      flushUploads(true);
+    } catch (err) {
+      TSKIN.error = String((err && err.message) || err);
+      PERF.failed.push(['Cladding the towers', TSKIN.error]);
+    }
+    TSKIN.ms = Math.round(performance.now() - t0);
+  });
   function frontsProbe() {
     const per = {};
     for (const f of FRONTS.laid) { const k = f.set + ':' + f.tier; per[k] = (per[k] || 0) + 1; }
-    return { on: FRONTS_ON, runs: FRONTS.runs.map((r) => r.name || r.set), cands: FRONTS.cands.length, laid: FRONTS.laid.length, per, meshes: FRONTS.meshes.length, ms: FRONTS.ms, error: FRONTS.error, first: FRONTS.laid.slice(0, 8) };
+    return { on: FRONTS_ON, runs: FRONTS.runs.map((r) => r.name || r.set), cands: FRONTS.cands.length, laid: FRONTS.laid.length, per, meshes: FRONTS.meshes.length, awningVerts: FRONTS.awnings || 0, ms: FRONTS.ms, error: FRONTS.error, first: FRONTS.laid.slice(0, 8),
+      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, ms: TSKIN.ms, error: TSKIN.error } };
   }
 
   // ------------------------------------------------ the far ring: the rest of Philadelphia

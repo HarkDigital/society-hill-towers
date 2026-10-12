@@ -7881,3 +7881,32 @@ takes the tap). 435 tests.
   row: the corner house's end went from a see-through tan triangle to its brick gable. `tests/test_gable_ends.py` runs the
   page's own `quadGable` under node on a quad in four rotations, both windings and three ridge directions (it fails on
   the old line). 461 tests.
+
+## Round 177 — 3D awnings, East Passyunk's shopfronts and clad towers (Oct 12)
+
+- Mike: "The awnings being drawn on in 2d is not great. I want to add more depth to this. I would also like to generate
+  storefronts and regenerate the skyscrapers to look more realistic also".
+- Awnings: every prompt now says no awnings and no canopies (`FRAME`), and the five South Philadelphia fronts that had one
+  were made again without (the old ones kept in `fronts_raw/southrow-painted-awnings/`). The bake records each cell's
+  ground-floor span (`gf`: the openings centred in the lowest 40%), and `frontAwning` builds one over it for a set's share
+  of its houses (`awn`: none in Society Hill, 45% on the South Philadelphia rows, 60% of the shops): a canopy sloping 0.55
+  to 0.7 m down to 0.95 to 1.35 m out, a valance (scalloped aluminium on the rows, a straight band on the shops), closed
+  sides, stripes from the shader by metres along the wall (`AWNING_KINDS`), double sided, casting shadows on a computer.
+- Shops: eight East Passyunk storefronts (a corner bar, a bakery, a cafe, a cast-iron front, a 1960s aluminium front, a
+  boutique, a corner store with its gate half up, a restaurant's arched doors), with blank signboards, on a third run
+  (`RUNS`: the 1500 and 1600 blocks, from the avenue's labels at 313 degrees). The mask marks the display glass (b 128),
+  lit in nine shops in ten at a warm display light; only near-neutral pixels inside a box glow (a shop's stained wood and
+  navy boards stay dark). 47 shopfronts laid.
+- Towers: six square facade tiles (glass with silver mullions and grey spandrels, dark bronze banded glass, a white
+  precast grid, Art Deco limestone piers with cast spandrels, tan brick with punched windows, a concrete balcony slab),
+  each cropped by the bake to whole repeats of its own bay and floor (autocorrelation), the edges cross-faded, sized in
+  metres. Every tower of 35 m and up in both loops, but the researched curtain walls (styles 24 to 29), hands its walls
+  to `towerSkinNote` with its kind (`towers.json`'s facade, else its drawn style); 'Cladding the towers' lays the tile 12
+  cm proud of every wall from 5 m up (the lobby keeps its storefront), repeating in metres from an offset of its own,
+  tinted by the tower's own colour (half on glass, two fifths on masonry: one limestone tile on every masonry tower turned
+  the skyline beige on the first pass). After dark a floor lights by suites of three to six bays, about one in three
+  (a bay at a time read as salt and pepper on the first pass). 844 tower sections in six meshes, 1.5 s to build.
+- A phone takes the tiles at half size like the fronts. fronts.json 2.64 MB. Today against new at six identical poses
+  (East Passyunk at street level, from above and at night; Center City at 160 m, low among the towers and at night).
+  The rooftop boxes floating over East Passyunk's corner and its flat grey shopfront panel are in today's build too.
+  `tests/test_fronts.py` (tiles, awnings, the no-awning prompts, the cladding hooks). 465 tests.

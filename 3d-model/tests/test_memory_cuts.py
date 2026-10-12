@@ -308,7 +308,9 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('if (t && t.isCanvasTexture) freeTexOnUpload(t);', cut(s, "  step('Rebuilding the landmarks'", '  // ------------------------------------------------ the far ring'))
         # Round 175: a phone's half-size copies of the house fronts' atlases, drawn once into a canvas
         self.assertIn('return freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, "  step('Hanging the house fronts'", '  function frontsProbe('))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 9)   # the definition and its eight uses
+        # and the tower tiles' (Round 177), the same way
+        self.assertIn('t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, "  step('Cladding the towers'", '  function frontsProbe('))
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 10)   # the definition and its nine uses
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

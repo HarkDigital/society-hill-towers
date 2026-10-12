@@ -23,15 +23,23 @@ MASK_DIV = 2
 COLS = 4
 
 # one front's nominal width and wall height in metres: the page cuts a wider wall into round(width / w) fronts
-SETS = {   # step: the stoop's colour (photo sRGB): marble in Society Hill, concrete and worn marble to the south
-    'federal': {'w': 5.8, 'h': 11.0, 'gain': 0.88, 'step': '#e4e0d6'},    # Society Hill: three storeys and a half, three bays
-    'southrow': {'w': 4.7, 'h': 7.8, 'gain': 0.88, 'step': '#bdb8ae'},    # South Philadelphia: two storeys, two bays
+SETS = {   # step: the stoop's colour (photo sRGB); awn: the share of houses whose ground floor takes a 3D awning
+    'federal': {'w': 5.8, 'h': 11.0, 'gain': 0.88, 'step': '#e4e0d6', 'awn': 0.0},     # Society Hill: three storeys and a half, three bays
+    'southrow': {'w': 4.7, 'h': 7.8, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.45},    # South Philadelphia: two storeys, two bays
+    'shop': {'w': 5.6, 'h': 11.0, 'gain': 0.88, 'step': '#bdb8ae', 'awn': 0.6},        # East Passyunk: shops under two floors of flats
 }
+# the towers' facade tiles (fetch_fronts.py TILES): one bay's width and one floor's height in metres, and whether the wall
+# is mostly glass (its mask is then the darker half of the glass, not dark panes in a light wall)
+TILES = {'glass': (1.6, 4.0, True), 'glassdark': (1.6, 4.0, True), 'precast': (1.6, 3.8, False), 'deco': (1.6, 3.9, False),
+         'brick': (1.6, 2.9, False), 'resi': (1.6, 2.9, False)}
+TILE = 1024
 # street centrelines (scene frame, from the street labels: Spruce's at (-341, 53) bearing 9 degrees, Wilder's at
 # (-1335, 1592) bearing 10, each run ending at its cross streets' centrelines)
 RUNS = [
     {'set': 'federal', 'name': 'Spruce Street, 300 block', 'a': [-315.0, 57.1], 'b': [-177.0, 79.0]},
     {'set': 'southrow', 'name': 'Wilder Street, 900 block', 'a': [-1406.0, 1579.5], 'b': [-1268.0, 1603.8]},
+    # East Passyunk Avenue's labels at (-1437, 1557) and (-1287, 1396), bearing 313 degrees, carried 30 m past each
+    {'set': 'shop', 'name': 'East Passyunk Avenue, 1500 and 1600 blocks', 'a': [-1457.5, 1579.0], 'b': [-1266.5, 1374.0]},
 ]
 
 
@@ -192,8 +200,11 @@ def bake_set(set_, fronts, preview):
         m = Image.new('RGB', (mW, mH), (0, 0, 0))
         d = ImageDraw.Draw(m)
         iw, ih = mW - 2 * mP, mH - 2 * mP
+        shop = SETS[set_].get('awn', 0) and set_ == 'shop'
         for j, (x0, y0, x1, y1) in enumerate(wins):
-            d.rectangle((mP + x0 * iw, mP + y0 * ih, mP + x1 * iw - 1, mP + y1 * ih - 1), fill=(255, (j * 37 + 11) % 256, 0))
+            # b 128 marks a shop's display glass (the lower 40% of a shop front): lit more often and brighter
+            d.rectangle((mP + x0 * iw, mP + y0 * ih, mP + x1 * iw - 1, mP + y1 * ih - 1),
+                        fill=(255, (j * 37 + 11) % 256, 128 if shop and (y0 + y1) / 2 > 0.6 else 0))
         if door:
             x0, y0, x1, y1 = door
             d.rectangle((mP + x0 * iw, mP + y0 * ih, mP + x1 * iw - 1, mP + y1 * ih - 1), fill=(0, 0, 255))
@@ -201,7 +212,10 @@ def bake_set(set_, fronts, preview):
         # the cornice's colour: the front's top 3% (the page projects a cornice of it along the wall's head)
         top = np.asarray(im.convert('RGB').resize((64, 200), Image.BILINEAR))[:6].reshape(-1, 3)
         cor = '#%02x%02x%02x' % tuple(int(v) for v in np.median(top, axis=0))
-        cells.append({'id': fid, 'wins': len(wins), 'door': [round(v, 3) for v in door] if door else None, 'cornice': cor})
+        # the ground floor's openings (centred in the lowest 40%): the span an awning covers, and the top it hangs over
+        gfo = [b for b in wins + ([door] if door else []) if (b[1] + b[3]) / 2 > 0.6]
+        gf = [round(min(b[0] for b in gfo), 3), round(max(b[2] for b in gfo), 3), round(min(b[1] for b in gfo), 3)] if gfo else None
+        cells.append({'id': fid, 'wins': len(wins), 'door': [round(v, 3) for v in door] if door else None, 'cornice': cor, 'gf': gf})
         if preview:
             v = im.convert('RGB').resize((W, H))
             o = ImageDraw.Draw(v)
@@ -213,7 +227,59 @@ def bake_set(set_, fronts, preview):
     spec = SETS[set_]
     return {'img': data_url(atlas, 'WEBP', quality=82, method=6), 'mask': data_url(mask, 'PNG', optimize=True),
             'cols': COLS, 'rows': rows, 'cell': [W, H], 'pad': PAD, 'w': spec['w'], 'h': spec['h'], 'gain': spec['gain'],
-            'step': spec['step'], 'cells': cells}
+            'step': spec['step'], 'awn': spec.get('awn', 0), 'cells': cells}
+
+
+def period(profile, expect):
+    """The strongest repeat of a 1D profile within 0.6 to 1.5 times the expected one, in pixels, or None."""
+    p = profile - profile.mean()
+    n, best, lag0 = len(p), 0.0, None
+    for lag in range(max(4, int(expect * 0.6)), min(n // 2, int(expect * 1.5)) + 1):
+        c = float(np.dot(p[:-lag], p[lag:])) / (n - lag)
+        if c > best:
+            best, lag0 = c, lag
+    return lag0 if best > 0.05 * float(np.dot(p, p)) / n else None
+
+
+def bake_tile(tid, im, preview):
+    """One tower tile: cropped to a whole number of its own bay and floor repeats, the edges cross-faded, at TILE px,
+    with a half-size window mask; its size in metres from the repeats it holds."""
+    bayW, floorH, glassy = TILES[tid]
+    a = np.asarray(im.convert('RGB'), np.float32) / 255.0
+    H, W = a.shape[:2]
+    L = lum(a)
+    px, py = period(L.mean(0), W / 10), period(L.mean(1), H / 4)
+    nx = max(1, W // px) if px else 10
+    ny = max(1, H // py) if py else 4
+    cw, ch = (nx * px if px else W), (ny * py if py else H)
+    x0, y0 = (W - cw) // 2, (H - ch) // 2
+    t = Image.fromarray((a[y0:y0 + ch, x0:x0 + cw] * 255).astype(np.uint8)).resize((TILE, TILE), Image.LANCZOS)
+    b = np.asarray(t, np.float32)
+    k = 16   # cross-fade each edge with the opposite one so a near-repeat closes
+    w = np.linspace(0.5, 0.0, k)[None, :, None]
+    left, right = b[:, :k].copy(), b[:, -k:][:, ::-1].copy()
+    b[:, :k] = left * (1 - w) + right * w
+    b[:, -k:] = (right * (1 - w) + left * w)[:, ::-1]
+    w2 = np.linspace(0.5, 0.0, k)[:, None, None]
+    top, bot = b[:k].copy(), b[-k:][::-1].copy()
+    b[:k] = top * (1 - w2) + bot * w2
+    b[-k:] = (bot * (1 - w2) + top * w2)[::-1]
+    t = Image.fromarray(np.clip(b, 0, 255).astype(np.uint8))
+    m = np.asarray(t.resize((TILE // 2, TILE // 2), Image.BILINEAR), np.float32) / 255.0
+    Lm = lum(m)
+    if glassy:
+        glass = Lm < np.percentile(Lm, 60)
+    else:
+        med = float(np.median(Lm))
+        glass = ((Lm < 0.72 * med) & (m[..., 0] - m[..., 2] < 0.08)) | (Lm < 0.3 * med)
+    mk = np.zeros(m.shape, np.uint8)
+    mk[..., 0] = np.where(glass, 255, 0)
+    if preview:
+        t.save(os.path.join(preview, 'tile-%s.jpg' % tid), quality=85)
+        Image.fromarray(mk).save(os.path.join(preview, 'tile-%s-mask.png' % tid))
+    return {'img': data_url(t, 'WEBP', quality=80, method=6), 'mask': data_url(Image.fromarray(mk), 'PNG', optimize=True),
+            'w': round(nx * bayW, 2), 'h': round(ny * floorH, 2), 'nb': int(nx), 'nf': int(ny), 'glass': glassy,
+            'period': [int(px or 0), int(py or 0)]}
 
 
 def main():
@@ -237,7 +303,17 @@ def main():
         print('%-9s %d fronts, %d windows, %d doors, atlas %d KB, mask %d KB' % (
             set_, len(fronts), sum(c['wins'] for c in sets[set_]['cells']), sum(bool(c['door']) for c in sets[set_]['cells']),
             len(sets[set_]['img']) * 3 // 4 // 1024, len(sets[set_]['mask']) * 3 // 4 // 1024))
-    out = {'v': 1, 'placeholder': a.placeholder, 'sets': sets, 'runs': RUNS}
+    tiles = {}
+    td = os.path.join(RAW, 'tower')
+    if not a.placeholder and os.path.isdir(td):
+        for f in sorted(os.listdir(td)):
+            tid = os.path.splitext(f)[0]
+            if f.endswith('.png') and tid in TILES:
+                tiles[tid] = bake_tile(tid, Image.open(os.path.join(td, f)), a.preview)
+                print('tile %-9s %d x %d bays and floors, %.1f x %.1f m, period %s, %d KB' % (
+                    tid, tiles[tid]['nb'], tiles[tid]['nf'], tiles[tid]['w'], tiles[tid]['h'], tiles[tid]['period'],
+                    len(tiles[tid]['img']) * 3 // 4 // 1024))
+    out = {'v': 2, 'placeholder': a.placeholder, 'sets': sets, 'runs': RUNS, 'tiles': tiles}
     with open(OUT + '.tmp', 'w') as f:
         json.dump(out, f, separators=(',', ':'))
     os.replace(OUT + '.tmp', OUT)
