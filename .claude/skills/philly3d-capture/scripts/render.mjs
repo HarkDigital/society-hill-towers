@@ -10,7 +10,9 @@
 //   poses.json: [{ "name": "oldcity-day", "pos": [x, y, z], "yaw": rad, "pitch": rad, "clock": [2026, 10, 12, 840] }, ...]
 //     or { "name", "pos", "look": [x, y, z], "clock" } to aim at a point. clock minutes are Philadelphia local; add
 //     "js": "<expression>" to run in the page before the frames (a weather preset, a toggle).
-//   Prints a JSON summary (files written, PERF.failed, ms per pose).
+//   --eval <file.js> runs that file's expression in the page after the last pose and prints its value (a probe).
+//   --touch emulates a phone (touch points, mobile metrics, pixel ratio 1.25): the page's isTouch path; use --w 740 --h 360.
+//   Prints a JSON summary (files written, PERF.failed, the page's first 40 console warnings and errors, ms per pose).
 import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, readFileSync, mkdirSync, rmSync, statSync, createReadStream, existsSync } from 'node:fs';
 import path from 'node:path';
@@ -64,13 +66,21 @@ if (!ver) { console.error('chrome did not start'); releaseSlot(); process.exit(1
 const ws = new WebSocket(ver.webSocketDebuggerUrl);
 await new Promise((r) => ws.addEventListener('open', r, { once: true }));
 let id = 0; const pending = new Map();
-ws.addEventListener('message', (ev) => { const m = JSON.parse(ev.data); if (m.id && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.rej(new Error(JSON.stringify(m.error))) : p.res(m.result); } });
+const consoleErr = [];   // the page's warnings and errors (a shader that fails to compile says so only here)
+ws.addEventListener('message', (ev) => { const m = JSON.parse(ev.data);
+  if (m.method === 'Runtime.consoleAPICalled' && (m.params.type === 'error' || m.params.type === 'warning') && consoleErr.length < 40)
+    consoleErr.push(m.params.type + ': ' + m.params.args.map((a) => (a.value !== undefined ? String(a.value) : a.description || '')).join(' ').slice(0, 1500));
+  if (m.method === 'Runtime.exceptionThrown' && consoleErr.length < 40) consoleErr.push('exception: ' + String((m.params.exceptionDetails.exception && m.params.exceptionDetails.exception.description) || m.params.exceptionDetails.text).slice(0, 1500));
+  if (m.id && pending.has(m.id)) { const p = pending.get(m.id); pending.delete(m.id); m.error ? p.rej(new Error(JSON.stringify(m.error))) : p.res(m.result); } });
 const send = (method, params = {}, sessionId) => new Promise((res, rej) => { const i = ++id; pending.set(i, { res, rej }); ws.send(JSON.stringify({ id: i, method, params, sessionId })); });
 const { targetId } = await send('Target.createTarget', { url: 'about:blank' });
 const { sessionId } = await send('Target.attachToTarget', { targetId, flatten: true });
 const S = (m, p) => send(m, p, sessionId);
 await S('Runtime.enable'); await S('Page.enable');
-await S('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+if (args.includes('--touch')) {   // a phone: touch points and mobile metrics, so the page takes its isTouch path (fewer trees, half textures, no post)
+  await S('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 });
+  await S('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1.25, mobile: true });
+} else await S('Emulation.setDeviceMetricsOverride', { width: W, height: H, deviceScaleFactor: 1, mobile: false });
 // rAF held: frames are driven by __dbg.frameOnce, so a capture is exactly the frame drawn
 await S('Page.addScriptToEvaluateOnNewDocument', { source: 'window.__held = []; window.requestAnimationFrame = (cb) => { window.__held.push(cb); return 0; };' +
   "try { localStorage.setItem('philly3d.guide', '1'); } catch (e) {}" });
@@ -103,7 +113,8 @@ for (const p of poses) {
   out.push({ name: p.name, file: f, ms: Date.now() - t1 });
 }
 const failed = await ev('__dbg.PERF.failed');
-console.log(JSON.stringify({ url, buildSecs, failed, shots: out }, null, 1));
+const evalOut = opt('eval') ? await ev(readFileSync(opt('eval'), 'utf8')) : undefined;   // --eval <file.js>: an expression run after the poses, its value printed
+console.log(JSON.stringify({ url, buildSecs, failed, console: consoleErr, eval: evalOut, shots: out }, null, 1));
 ws.close(); chrome.kill(); if (server) server.close();
 try { rmSync(udd, { recursive: true, force: true }); } catch (e) {}
 process.exit(0);
