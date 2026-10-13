@@ -33,7 +33,7 @@ class RoofKit(unittest.TestCase):
     def test_every_flat_roof_is_noted_before_the_touch_return(self):
         s = self.s
         body = s[s.index('  function roofClutter('):s.index('  // ---- pitched roofs for the packed tiers')]
-        self.assertLess(body.index('roofKitNote(ob, ax, base + h, area, seed, poly, holes);'), body.index('if (isTouch || h < 5) return;'))
+        self.assertLess(body.index('roofKitNote(ob, ax, base + h, area, seed, poly, holes, '), body.index('if (isTouch || h < 5) return;'))
 
     def test_the_step_and_the_refill(self):
         s = self.s
@@ -44,9 +44,10 @@ class RoofKit(unittest.TestCase):
         self.assertIn('const put = (kind, x, y, z, rot, s = 1) => {', s)
         kinds = s[s.index('    const kinds = [\n'):s.index('    ];\n', s.index('    const kinds = [\n'))]
         self.assertEqual(len(re.findall(r'\{ cap: isTouch \?', kinds)), 5)
-        # the realism pass: the roof decks and the solar arrays come after the five, under REAL, so put()'s kinds 0 to 4 hold
+        # the realism pass: the roof decks, the solar arrays and the party walls' copings come after the five, under REAL,
+        # so put()'s kinds 0 to 4 hold (and the lay finds the decks at 5 and 6, the copings at 7)
         more = s[s.index('    const kinds = [\n'):s.index('    for (const [ki, kd] of kinds.entries()) {')]
-        self.assertEqual(more.count('kinds.push({ cap: isTouch ?'), 2)
+        self.assertEqual(more.count('kinds.push({ cap: isTouch ?'), 3)
         self.assertIn('    if (REAL) {\n      kinds[0].parts.push(', more)
 
 
@@ -72,7 +73,7 @@ class OnTheRoof(unittest.TestCase):
 
     def test_notes_carry_the_footprint(self):
         s = self.s
-        self.assertIn('roofKitNote(ob, ax, base + h, area, seed, poly, holes);', s)
+        self.assertIn('roofKitNote(ob, ax, base + h, area, seed, poly, holes, ', s)
         self.assertIn("Math.floor(B[i * ROOF_KIT_STRIDE] / ROOFKIT.cell)", s)
         self.assertNotIn('B[i * 8]', s)
         # the baked boxes are tested against the footprint too
