@@ -6,12 +6,15 @@ night read like an overcast day. A near map (LAMPNEAR) is drawn from the same sp
 ahead of the eye, each lamp scaled to put on the ground what its far splat puts there; the surfaces read it within a
 gliding circle, under an irradiance shoulder, and a wall reads the ground in front of itself up to about the height of the
 heads. The luminaires stand where the meshes put them (the glow at the head, the arm over the street), the survey's pole
-families are drawn (the lanterns, the wood poles; pole_families.json beside poles.b64, which stays as committed), with lit lenses and glare, and wet air puts a halo on every lamp and
-takes some saturation and contrast out of the grade. ?real=0 keeps Round 146's wash.
+families are drawn (the lanterns, the wood poles; pole_families.json beside poles.b64, which stays as committed), with
+lit lenses and a lens-sized glare. The wet air's halos, bloom and grade (weather#10) are realism/weather's alone
+(wxHaloMesh, wxGrade): this branch writes none of the composite's uniforms and grows no halo. ?real=0 keeps Round 146's
+wash and the shaft-top glow.
 
-Checked here: the families' bake and its alignment with poles.b64, the near kernel's energy against the far splat's (the shader's own formula, the
-shader's own constants), the arm's yaw convention against three's own rotation, the near map's orientation, and the wiring
-(REAL gates, phones, the old path kept whole)."""
+Checked here: the families' bake and its alignment with poles.b64, the near kernel's energy against the far splat's (the
+shader's own formula, the shader's own constants), the arm's yaw convention against three's own rotation, the near map's
+orientation, the glare's shape and its fog, the 8-bit map's rounding, and the wiring (REAL gates, the far map's shared
+gain, phones, the old path kept whole)."""
 import json
 import math
 from pathlib import Path
@@ -208,7 +211,7 @@ console.log(JSON.stringify(out));''')
         upd = cut(self.s, '  function lampNearUpdate() {', '  function lampLightPatch(')
         self.assertIn("N.cam.up.set(0, 0, -1);", upd)
         self.assertIn("N.cam.position.set(cx, 2000, cz); N.cam.lookAt(cx, 0, cz);", upd)
-        self.assertIn("U.uLampNearBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN * lampK() / N.store);", upd)
+        self.assertIn("U.uLampNearBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / N.store);", upd)
         self.assertIn("vec4 lnm = texture2D(uLampNear, vec2((lsp.x - uLampNearBox.x) * uLampNearBox.z, 1.0 - (lsp.y - uLampNearBox.y) * uLampNearBox.z));", self.s)
 
 
@@ -216,6 +219,14 @@ class Wiring(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.s = (ROOT / 'app.js').read_text()
+
+    def node(self, script):
+        if not shutil.which('node'):
+            raise unittest.SkipTest('Node.js unavailable')
+        script = 'const THREE = require(' + json.dumps(str(ROOT / 'three.min.js')) + ');\n' + script
+        r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
 
     def test_real_gates_the_new_look_and_keeps_the_old(self):
         s = self.s
@@ -228,14 +239,36 @@ class Wiring(unittest.TestCase):
         # the near meshes, the lenses and the glare only on a computer and only in the realistic look
         self.assertIn('if (REAL) polesRealBuild(maxPtOf());', cut(s, '    if (POLE_MESH_CAP > 0) {', '    poleInv = keepInv'))
         self.assertIn('const POLE_MESH_CAP = isTouch ? 0 : 1600;', s)
-        # both maps' gains carry the realistic strength (lampK), so the landmark rebuilds that read the far map with their own
-        # patch stand in the street's light; ?real=0 keeps LAMP_GAIN alone
-        self.assertIn('const lampK = () => (REAL ? LAMP_REAL_K : 1);', s)
-        self.assertIn('lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN * lampK() / LAMPMAP.store);', s)
+        # ?real=0 keeps the shaft-top glow, the far splats where they were and the hashed arms: headAt does nothing there,
+        # and the inventory carries no families or colours
+        self.assertIn('if (!ROT || !REAL) return;', s)
+        self.assertIn('const FAM = keepInv && REAL ? new Uint8Array(nAll) : null, PC = keepInv && REAL ? new Uint8Array(nAll * 3) : null;', s)
+
+    def test_the_far_map_gain_is_the_shared_contract(self):
+        # uLampBox.w is LAMP_GAIN over the store and nothing else: realism/weather's wet-street glints and canyons and its
+        # lamp-lit rain and snow read it as the lamps' gain. The realistic patch takes LAMP_REAL_K through uLampReal.y, and
+        # the landmark rebuilds through a box of their own
+        s = self.s
         far = cut(s, '  function lampMapUpdate() {', '  const _lmDir')
-        self.assertLess(far.index('lampMapU.uLampBox.value.w = LAMP_GAIN * lampK() / LAMPMAP.store;'), far.index('if (LAMPMAP.rt && cx === LAMPMAP.cx && cz === LAMPMAP.cz) return;'))
-        self.assertIn('lnm.rgb * uLampNearBox.w, nw) * (uLampOn * lf);', s)
-        self.assertNotIn('uLampReal.y * uLampOn', s)
+        self.assertIn('lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / LAMPMAP.store);', far)
+        self.assertEqual(far.count('uLampBox.value'), 1)
+        near = cut(s, '  function lampNearUpdate() {', '  function lampLightPatch(')
+        self.assertNotIn('lampK', far + near)
+        self.assertIn('lnm.rgb * uLampNearBox.w, nw) * (uLampReal.y * uLampOn * lf);', s)
+        self.assertIn('U.uLampReal.value.set(N.rt ? hk : 0, LAMP_REAL_K, 0, 0);', near)
+        self.assertIn('const lampK = () => (REAL ? LAMP_REAL_K : 1);', s)
+        self.assertIn('const LAMP_RB_U = { uLampMap: lampMapU.uLampMap, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: lampMapU.uLampOn, uLampFade: lampMapU.uLampFade };', s)
+        self.assertIn('lampU: LAMP_RB_U,', cut(s, "  step('Rebuilding the landmarks'", '      occupy:'))
+        fx = cut(s, '  function lampNightFx(', '  // ---------------------------------------------------------------- skyline lights')
+        self.assertIn('LAMP_RB_U.uLampBox.value.copy(lampMapU.uLampBox.value);\n    LAMP_RB_U.uLampBox.value.w *= lampK();', fx)
+        # nothing else writes the far map's own box
+        writes = re.findall(r'(?<!LAMP_RB_U\.)uLampBox\.value\.(?:set\(|w\s*[*+/-]?=|copy\(|multiplyScalar\()', s)
+        self.assertEqual(len(writes), 1, writes)
+        # and the rebuilds read only what their box carries
+        for f in ('esp.js', 'rtm.js'):
+            rb = (ROOT / 'rebuilds' / f).read_text()
+            self.assertIn('uLampBox', rb)
+            self.assertNotIn('uLampReal', rb)
 
     def test_the_wall_reads_the_ground_in_front_and_spares_the_glass(self):
         real = cut(self.s, '  function lampLightPatchReal(', '  function surfTexPatch(')
@@ -251,7 +284,7 @@ class Wiring(unittest.TestCase):
         upd = cut(self.s, '  function lampNearUpdate() {', '  function lampLightPatch(')
         self.assertIn('generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter', upd)
         # half float wherever the device draws into it, a phone too (8 bits rounded each channel apart: coloured blotches on
-        # a pale pavement), and the 8-bit map with its dither where the half-float target will not complete
+        # a pale pavement), and the 8-bit map where the half-float target will not complete
         self.assertIn("N.half = caps.isWebGL2 && (ext.has('EXT_color_buffer_float') || ext.has('EXT_color_buffer_half_float'));", upd)
         self.assertIn("if (!done) { N.rt.dispose(); N.half = false; N.rt = mk(false); }", upd)
         self.assertIn("N.store = N.half ? 1 : 0.12;", upd)
@@ -264,51 +297,78 @@ class Wiring(unittest.TestCase):
         far = cut(self.s, '  function lampMapUpdate() {', '  const _lmDir')
         self.assertLess(far.index('if (LAMPNEAR.on) lampNearUpdate();'), far.index('if (LAMPMAP.rt && cx === LAMPMAP.cx && cz === LAMPMAP.cz) return;'))
 
-    def test_wet_air(self):
-        fx = cut(self.s, '  function lampNightFx(', '  // ---------------------------------------------------------------- skyline lights')
-        self.assertIn('lampHaloU.value.set(h, (isTouch ? 2 : 4) * h);', fx)
-        # the glare: a lens's, a little wider than the glass, in clear air; the droplets' halo, metres across, in wet air
-        self.assertIn('u.y = 0.8 + 2.4 * wet; u.z = wet; u.w = 1 + 1.5 * F.fog;', fx)
-        self.assertIn("(0.42 * exp(-gr * gr * 12.0) + (0.05 + 0.15 * uGlare.z) * exp(-gr * gr * 3.5))", self.s)
-        self.assertIn('gradeU.uSat.value = G.wSat = G.sat - 0.2 * wxK; gradeU.uCon.value = G.wCon = G.con - 0.08 * wxK;', fx)
-        # a base is retaken whenever another hook has written the uniform since: the wet share adds to it, never replaces it
-        self.assertIn('if (gradeU.uSat.value !== G.wSat) G.sat = gradeU.uSat.value;', fx)
-        self.assertIn('if (ub && ub.value !== G.wBloom) G.bloom = ub.value;', fx)
-        self.assertIn('if (!REAL) return;', fx)
-        # the glow keeps its core inside its old radius and grows a halo round it
-        self.assertIn("diffuseColor.a *= max(smoothstep(0.5, 0.08, lgr * vHk), uLampHalo.x * 0.3 * exp(-lgr * lgr * 24.0));", self.s)
+    def test_the_wet_air_is_weathers(self):
+        # weather#10 has one owner, realism/weather (wxGrade, wxHaloMesh): this branch writes none of the composite's
+        # uniforms (two hooks each taking the other's output as its base ran the grade away within frames), grows no halo
+        # on the glow, and keeps the glare a lens's in every weather
+        s = self.s
+        fx = cut(s, '  function lampNightFx(', '  // ---------------------------------------------------------------- skyline lights')
+        for w in ('gradeU', 'uBloom', 'uSat', 'uCon', 'WXFX', 'F.fog', 'F.rain'):
+            self.assertNotIn(w, fx)
+        for w in ('lampHaloU', 'uLampHalo', 'LAMP_GRADE0', 'uGlare.z', 'uGlare.w'):
+            self.assertNotIn(w, s)
+        # the glow is Round 54's sprite again
+        self.assertIn("'#include <color_fragment>\\n\\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');", s)
+        self.assertIn('glareU: { value: new THREE.Vector2(500, 0.8) }', s)
 
-    def test_the_wet_grade_adds_to_whatever_base_stands(self):
-        # the wet share rides on the composite's grade: on its own values when nothing else writes them, and on another
-        # hook's when one sets them every frame (a merge with a time-of-day grade must not be undone)
-        if not shutil.which('node'):
-            raise unittest.SkipTest('Node.js unavailable')
-        fx = cut(self.s, '  function lampNightFx(', '  // ---------------------------------------------------------------- skyline lights')
-        body = fx[fx.index('    const G = LAMP_GRADE0'):fx.rindex('}')]
-        decl = cut(self.s, '  const LAMP_GRADE0 = {', '\n')
-        script = decl + r"""
-const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
-const gradeU = { uSat: { value: 0.84 }, uCon: { value: 1.05 } }, postComp = { uniforms: { uBloom: { value: 0.45 } } };
-const WX = { cover: 0 }, out = [];
-function frame(F, night, ext) {
-  if (ext != null) gradeU.uSat.value = ext;
-""" + body + r"""
-  out.push([+gradeU.uSat.value.toFixed(4), +gradeU.uCon.value.toFixed(4), +postComp.uniforms.uBloom.value.toFixed(4)]);
-}
-const dry = { rain: 0, snow: 0, fog: 0 }, wet = { rain: 1, snow: 0, fog: 0 };
-frame(dry, 1); frame(wet, 1); frame(wet, 1); frame(dry, 1);       // alone: down by the wet share and back
-frame(wet, 1, 0.9); frame(wet, 1, 0.9); frame(dry, 1, 0.75);      // another hook writing every frame: its value less the share
-console.log(JSON.stringify(out));"""
-        r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=60)
-        self.assertEqual(r.returncode, 0, r.stderr)
-        out = json.loads(r.stdout)
-        self.assertEqual(out[0], [0.84, 1.05, 0.45])
-        self.assertEqual(out[1], [0.64, 0.97, 0.8])
-        self.assertEqual(out[2], [0.64, 0.97, 0.8])
-        self.assertEqual(out[3], [0.84, 1.05, 0.45])
-        self.assertEqual(out[4][0], 0.7)
-        self.assertEqual(out[5][0], 0.7)
-        self.assertEqual(out[6][0], 0.75)
+    def test_the_glare_has_no_rim(self):
+        # the glare's shape rides the alpha and falls to nothing inside the sprite: no cut at a rim, under a hundredth of a
+        # percent of its peak at the circle, falling all the way out to it
+        s = self.s
+        self.assertIn("vec2 gq = gl_PointCoord - vec2(0.5); float gr2 = dot(gq, gq) * 4.0, gt = max(1.0 - gr2, 0.0);", s)
+        self.assertIn("diffuseColor.a *= (0.42 * exp(-gr2 * 12.0) + 0.05 * exp(-gr2 * 3.5) * gt * gt) * vGa;", s)
+        self.assertNotIn('smoothstep(0.8, 1.0, gr)', s)
+
+        def f(r):
+            r2 = r * r
+            return 0.42 * math.exp(-r2 * 12) + 0.05 * math.exp(-r2 * 3.5) * max(1 - r2, 0) ** 2
+        self.assertLess(f(1.0) / f(0.0), 1e-4)
+        self.assertLess(f(1.41) / f(0.0), 1e-8)   # the sprite's corners
+        prev = f(0.0)
+        for i in range(1, 101):
+            v = f(i / 100)
+            self.assertLess(v, prev)
+            prev = v
+
+    def test_the_fog_dims_the_glare_and_adds_no_grey(self):
+        # the fog chunk's mix put the fog's colour across the whole sprite (a grey ball with a rim round every near lamp on a
+        # fog night); the glare takes the fog as extinction instead, on three's own chunk and on an aerial-perspective chunk
+        # that mixes toward its own colour (realism/sky-atmos's), and drops fog on a chunk it cannot read
+        line = next(l for l in self.s.splitlines() if 'const fogMul = THREE.ShaderChunk.fog_fragment.replace(' in l)
+        rx = re.search(r'\.replace\((/.*/), ', line).group(1)
+        out = self.node('const rx = ' + rx + ''';
+const sky = ['#ifdef USE_FOG', '\\tvec3 fogMix = fogColor;', '\\tif ( fogAP.w > 0.5 ) { fogFactor = 1.0; }',
+  '\\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogMix, fogFactor );', '#endif'].join('\\n');
+console.log(JSON.stringify([THREE.ShaderChunk.fog_fragment, sky].map((c) => {
+  const m = c.replace(rx, 'gl_FragColor.rgb *= 1.0 - fogFactor;');
+  return [m.includes('gl_FragColor.rgb *= 1.0 - fogFactor;'), /mix\\(/.test(m)];
+})));''')
+        self.assertEqual(out, [[True, False], [True, False]])
+        self.assertIn(".replace('#include <fog_fragment>', fogMul.indexOf('*= 1.0 - fogFactor;') !== -1 ? fogMul : '');", self.s)
+
+    def test_the_8bit_rounding_keeps_the_mean(self):
+        # the 8-bit fallback rounds each splat up or down by its own remainder: the expected value is the splat's own, the
+        # dark gap's tiny values included, and never below zero
+        self.assertIn("if (uDither > 0.0) o = floor(o * 255.0 + fract(sin(dot(gl_FragCoord.xy + vec2(vH * 7.13, vQ * 3.71), vec2(12.9898, 78.233))) * 43758.5453)) / 255.0;", self.s)
+        n = 4096
+        for v in (0.0, 0.0004, 0.0021, 0.013, 0.2, 0.71):
+            vals = [math.floor(v * 255 + (k + 0.5) / n) for k in range(n)]
+            self.assertGreaterEqual(min(vals), 0)
+            self.assertLess(abs(sum(vals) / 255 / n - v), 1e-4, v)
+
+    def test_a_phone_holds_its_near_map(self):
+        s = self.s
+        # 256 px over 400 m on a phone: 0.7 MB in half float with its mips
+        self.assertIn('size: isTouch ? 256 : 1024, span: isTouch ? 400 : 640,', s)
+        self.assertIn('const LAMP_NEAR_EVERY = isTouch ? 250 : 0;', s)
+        upd = cut(s, '  function lampNearUpdate() {', '  function lampLightPatch(')
+        hold = 'if (N.rt && LAMP_NEAR_EVERY && now - N.at < LAMP_NEAR_EVERY && Math.max(Math.abs(cx - N.cx), Math.abs(cz - N.cz)) <= 2 * step) {'
+        self.assertIn(hold, upd)
+        # the circle stays within a step of the held map's centre (radius S/2 - step: it never reads past the edge)
+        self.assertIn('U.uLampNearFade.value.x = clamp(ax, N.cx - step, N.cx + step); U.uLampNearFade.value.y = clamp(az, N.cz - step, N.cz + step);', upd)
+        self.assertLess(upd.index('if (N.rt && cx === N.cx && cz === N.cz) return;'), upd.index(hold))
+        self.assertLess(upd.index(hold), upd.index('if (!N.rt) {'))
+        self.assertIn('N.cx = cx; N.cz = cz; N.renders++; N.at = now;', upd)
 
     def test_no_dash_in_user_strings(self):
         block = cut(self.s, '  const LAMPNEAR = {', '  const LOT_CENTER')

@@ -46,7 +46,7 @@ console.log(JSON.stringify(out));
         self.assertIn('LAMPMAP.cam.up.set(0, 0, -1);', self.src)
         self.assertIn('LAMPMAP.cam.position.set(cx, 2000, cz); LAMPMAP.cam.lookAt(cx, 0, cz);', self.src)
         self.assertIn("vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);", self.src)
-        self.assertIn('lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN * lampK() / LAMPMAP.store);', self.src)   # lampK: 1 under ?real=0
+        self.assertIn('lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / LAMPMAP.store);', self.src)
 
     def test_wiring(self):
         s = self.src
@@ -76,8 +76,9 @@ console.log(JSON.stringify(out));
         self.assertIn("if (deckOver(x, z, gy)) { pos[i * 3 + 1] = -1000; underDeck++; continue; }", s)
         self.assertIn("if (y - gy < 4.5 || wwbNear(x, z, 40) || bfbNear(x, z, 40)) continue;", s)
         self.assertIn("Math.atan2(nz * sg, -nx * sg)", s)
-        # the realism round: every other arm reaches over its street (poleArmRot), the old hash where none is within 26 m
-        self.assertIn("if (Number.isNaN(poleInv.ROT[i])) poleInv.ROT[i] = poleArmRot(poleInv.X[i], poleInv.Z[i], i);", s)
+        # the realism round: every other arm reaches over its street (poleArmRot), the old hash where none is within 26 m,
+        # and ?real=0 keeps the old hash for every arm
+        self.assertIn("if (Number.isNaN(poleInv.ROT[i])) poleInv.ROT[i] = REAL ? poleArmRot(poleInv.X[i], poleInv.Z[i], i) : hash01(i * 1.7 + 0.3) * Math.PI * 2;", s)
         self.assertIn("if (!s) return hash01(i * 1.7 + 0.3) * Math.PI * 2;", s)
         # Round 148: the piers' water-facing edges and I-95's outer shoulders carry lamps (the pier pools a fifth of a pole's)
         self.assertIn("if (!wet(mx + nx * 6, mz + nz * 6)) { carry = 14; continue; }", s)

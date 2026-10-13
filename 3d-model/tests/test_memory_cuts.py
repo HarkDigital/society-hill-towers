@@ -353,7 +353,7 @@ class FreedArrays(unittest.TestCase):
         self.assertIn('const keepInv = POLE_MESH_CAP > 0;', lamps)
         self.assertIn('const cells = keepInv ? new Map() : null;', lamps)
         self.assertIn('poleInv = keepInv ? { X, Z, GY, HM, ROT, FAM, PC, cells, n: nAll } : null;', lamps)
-        self.assertIn('const FAM = keepInv ? new Uint8Array(nAll) : null, PC = keepInv ? new Uint8Array(nAll * 3) : null;', lamps)
+        self.assertIn('const FAM = keepInv && REAL ? new Uint8Array(nAll) : null, PC = keepInv && REAL ? new Uint8Array(nAll * 3) : null;', lamps)
         # the only reader is poleReconcile, which runs only for the desktop's pole meshes
         uses = [m.start() for m in re.finditer(r'poleInv\.', self.src)]
         body = cut(self.src, '  function poleReconcile(', '  function syncLightsBtn(')

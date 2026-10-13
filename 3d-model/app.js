@@ -11320,7 +11320,7 @@
     const api = {
       THREE, K, where: 'app',
       ground: (x, z) => { const y = groundMeshY(x, z); return y == null || !Number.isFinite(y) ? siteY(x, z, 'ground') : y; },
-      night: nightUniform, lamp: lampUniform, lampU: lampMapU, dayF: () => WXFX.dayF, lawn: GROUND_MEADOW_MAT,
+      night: nightUniform, lamp: lampUniform, lampU: LAMP_RB_U, dayF: () => WXFX.dayF, lawn: GROUND_MEADOW_MAT,
       occupy: (ring, top, pad) => {
         REBUILD_OCC.push({ id: 'def', ring, bb: rbBox(ring), pad: pad || 0, top: top || null });
         if (top) { const c = polyCentroid(ring); roofNote(c[0], c[1], top, Math.abs(signedArea(ring))); }
@@ -21139,7 +21139,7 @@ float pinOccGate() {
     uLampNear: { value: null }, uLampNearBox: { value: new THREE.Vector4(0, 0, 1 / 640, 0) }, uLampNearFade: { value: new THREE.Vector4(0, 0, 0, 1) }, uLampReal: { value: new THREE.Vector4(0, 1, 0, 0) } };
   // The realism round (night#0, streets#10; Mike: "make this look more photo realistic and less cartoony"): at 5.9 m a texel
   // the light map cannot hold a pool, so poles 30 to 40 m apart merged into one even wash and a street at night read like
-  // an overcast day. A second, near map (LAMPNEAR, 0.62 m a texel on a computer, 0.78 on a phone) is drawn from the same
+  // an overcast day. A second, near map (LAMPNEAR, 0.62 m a texel on a computer, 1.56 on a phone) is drawn from the same
   // splats round a point ahead of the eye with a pool's own shape: a cosine-cubed core under each head, from the lamp's
   // mounting height, cut off past LAMP_CUT heads' heights out (a full cut-off head sends next to nothing above 60 degrees
   // from straight down, so the street between two pools goes dark), and a low shoulder, scaled so each lamp puts the
@@ -21147,7 +21147,11 @@ float pinOccGate() {
   // from the air shows, is untouched). Its alpha
   // carries the lamps' mean height, so a wall is lit to about the height of the heads in front of it. The surfaces read
   // it within a circle that glides with the eye, the far map beyond it and above 420 m. ?real=0 keeps Round 146's wash
-  const LAMPNEAR = { on: REAL && !LITE, size: isTouch ? 512 : 1024, span: isTouch ? 400 : 640, rt: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, half: false, store: 1 };
+  // A phone's is 256 px over 400 m (0.7 MB in half float with its mips, under the 8-bit 512 px map's 1.4: a pool under a
+  // 7.5 m head is still ten texels across and the gap between two of them twenty), and it is redrawn at most every
+  // LAMP_NEAR_EVERY ms while the eye turns (the centre sits up to 112 m ahead, so a turn alone moves it)
+  const LAMPNEAR = { on: REAL && !LITE, size: isTouch ? 256 : 1024, span: isTouch ? 400 : 640, rt: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, half: false, store: 1, at: 0 };
+  const LAMP_NEAR_EVERY = isTouch ? 250 : 0;
   const LAMP_SH = 0.10;          // the near pool's shoulder, against its core (both under one lamp's whole light)
   const LAMP_CUT = 1.8;          // the near pool's cut-off, in the head's own heights out (tan 61 degrees; __dbg.lampShape)
   const LAMP_SHOULDER = 0.04;    // the irradiance's shoulder (REAL): only a mast's or a crossing's hot spot is held back, a pool keeps its edge
@@ -21155,10 +21159,9 @@ float pinOccGate() {
   // height by the pole's own), a post-top lantern's glass centred 4.1 m up on its reference post
   const POLE_HEAD = { arm: 1.5, y: 8.81, lantern: 4.1 };
   const lanternSy = (hm) => clamp(hm / POLE_HEAD.lantern, 0.85, 1.5);
-  const lampHaloU = { value: new THREE.Vector2(0, 0) };   // wet air (weather#10): x the halo round every lamp's glow, y its growth
   // the realism round's near meshes (a computer's, REAL): the lanterns and the wood poles beside the cobra heads, the lit
-  // lenses and glass, and the glare round each near luminaire
-  const POLE_REAL = { lantern: null, wood: null, lens: null, glass: null, glare: null, glareGeo: null, lensOn: { value: 0 }, glareU: { value: new THREE.Vector4(500, 0.8, 0, 1) }, n: [0, 0, 0] };
+  // lenses and glass, and the glare round each near luminaire (uGlare: x the pixels a metre at one metre, y its size)
+  const POLE_REAL = { lantern: null, wood: null, lens: null, glass: null, glare: null, glareGeo: null, lensOn: { value: 0 }, glareU: { value: new THREE.Vector2(500, 0.8) }, n: [0, 0, 0] };
   // a pole's arm reaches over the street (night#5: they pointed anywhere, into lawns and walls): toward the nearest point
   // of the nearest drivable street within 26 m (the SEPTA snap's index, every tier's streets), else the old hash.
   // poleArmRot.hit says which; the mesh's +x is the arm, so the yaw is atan2(-dz, dx)
@@ -21173,11 +21176,14 @@ float pinOccGate() {
   }
   const ROOF_NIGHT = 0.3;   // Round 150: the roofs' night glow, a share of their own colour (the facade hook)
   let LAMP_GAIN = 3.2;   // Round 146: 4.0 read a tad bright once the pools widened (Round 144) and the trees and roofs took them   // the pools' strength over a surface's own colour (__dbg.lampGain; calibrated on Mike's South Philly street at 9:30 pm)
-  let LAMP_REAL_K = 0.5;   // REAL: the pools' strength under the realistic response, over LAMP_GAIN (__dbg.lampReal)
-  // the strength both maps' gains carry (uLampBox.w, uLampNearBox.w): the realistic look's LAMP_REAL_K, so the landmark rebuilds
-  // that read the far map through lampMapU with their own patch (Eastern State, the Reading Terminal) stand in the same light
-  // as the street outside them; ?real=0 keeps LAMP_GAIN alone
+  let LAMP_REAL_K = 0.5;   // REAL: the pools' strength under the realistic response, over LAMP_GAIN (uLampReal.y; __dbg.lampReal)
+  // uLampBox.w stays LAMP_GAIN over the store, the gain every reader of the far map shares (the wet streets' glints and
+  // canyons and the lamp-lit rain and snow read it too), and the realistic patch takes LAMP_REAL_K on its own through
+  // uLampReal.y. The landmark rebuilds that read the far map with their own patch (Eastern State, the Reading Terminal)
+  // take it through a box of their own (LAMP_RB_U, the rebuilds' api.lampU), so they stand in the same light as the street
+  // outside them; ?real=0 keeps LAMP_GAIN alone
   const lampK = () => (REAL ? LAMP_REAL_K : 1);
+  const LAMP_RB_U = { uLampMap: lampMapU.uLampMap, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: lampMapU.uLampOn, uLampFade: lampMapU.uLampFade };
   const LOT_CENTER = new V3(-2050, 20, 4650);
   let poleReconAt = 0;
   const poleLastCam = new THREE.Vector3(1e9, 0, 0);
@@ -21338,8 +21344,8 @@ float pinOccGate() {
     // the realism round (night#5): the family each pole is drawn as (pole_families.json from bake_pole_families.py, 2 bits a
     // pole in poles.b64's own order: 0 a cobra head on a standard, 1 a post-top lantern, 2 a wood or alley pole, 3 other,
     // drawn as 0; every pole a cobra head when its count is not poles.b64's) and its light's colour, for the near meshes, the
-    // lenses and the glare (a computer's alone, like ROT)
-    const FAM = keepInv ? new Uint8Array(nAll) : null, PC = keepInv ? new Uint8Array(nAll * 3) : null;
+    // lenses and the glare (a computer's alone, like ROT, and the realistic look's: ?real=0 keeps neither)
+    const FAM = keepInv && REAL ? new Uint8Array(nAll) : null, PC = keepInv && REAL ? new Uint8Array(nAll * 3) : null;
     let famOf = null;
     if (FAM && typeof POLE_FAMILIES !== 'undefined' && POLE_FAMILIES && POLE_FAMILIES.n === head[1]) {
       try { famOf = Uint8Array.from(atob(POLE_FAMILIES.b64), (ch) => ch.charCodeAt(0)); } catch (err) { famOf = null; }
@@ -21351,13 +21357,14 @@ float pinOccGate() {
     const cellAdd = (x, z, i) => { if (!cells) return; const ck = Math.floor(x / 400) + ':' + Math.floor(z / 400); let arr = cells.get(ck); if (!arr) { arr = []; cells.set(ck, arr); } arr.push(i); };
     // the glow and the pool stand at the luminaire, not on top of the shaft (night#5): the lantern's glass, or the head at
     // the end of the arm, which reaches over the nearest street (poleArmRot; the meshes' own geometry, POLE_HEAD). A phone
-    // draws no poles and keeps the shaft's top
+    // draws no poles and keeps the shaft's top, and so does ?real=0 (the glow, the far splats and the old hashed arms as
+    // they were, and no time spent aiming the arms at the build)
     const headAt = (i, fam) => {
-      if (!ROT) return;
+      if (!ROT || !REAL) return;
       if (Number.isNaN(ROT[i])) { const t0 = performance.now(); ROT[i] = poleArmRot(X[i], Z[i], i); tArm += performance.now() - t0; if (poleArmRot.hit) armRoad++; }
-      if (FAM) FAM[i] = fam;
-      if (PC) for (let c = 0; c < 3; c++) PC[i * 3 + c] = Math.round(clamp(pcol[i * 3 + c] / 2, 0, 1) * 255);
-      if (REAL && fam === 1) { pos[i * 3 + 1] = GY[i] + POLE_HEAD.lantern * lanternSy(HM[i]); return; }
+      FAM[i] = fam;
+      for (let c = 0; c < 3; c++) PC[i * 3 + c] = Math.round(clamp(pcol[i * 3 + c] / 2, 0, 1) * 255);
+      if (fam === 1) { pos[i * 3 + 1] = GY[i] + POLE_HEAD.lantern * lanternSy(HM[i]); return; }
       const r = ROT[i];
       pos[i * 3] = X[i] + Math.cos(r) * POLE_HEAD.arm; pos[i * 3 + 1] = GY[i] + POLE_HEAD.y * HM[i] / 9; pos[i * 3 + 2] = Z[i] - Math.sin(r) * POLE_HEAD.arm;
     };
@@ -21408,16 +21415,8 @@ float pinOccGate() {
       // so the far city reads as a carpet of lights (same trick as headlights)
       shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
         'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);');   // smaller cores (Round 54)
-      // weather#10 (the realism round): in rain, fog or snow every lamp wears a soft halo, the sprite grown round its old
-      // core (the nearer lamps more: a far one's sprite stays a dot or two) and the core kept inside its old radius
-      shader.uniforms.uLampHalo = lampHaloU;
-      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform vec2 uLampHalo; varying float vHk;')
-        .replace('gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);',
-          'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);\n\tvHk = 1.0 + uLampHalo.y * smoothstep(1.8, 5.0, gl_PointSize / size); gl_PointSize *= vHk;');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec2 uLampHalo; varying float vHk;')
-        .replace('#include <color_fragment>',
-          '#include <color_fragment>\n\tfloat lgr = length(gl_PointCoord - vec2(0.5));\n' +
-          '\tdiffuseColor.a *= max(smoothstep(0.5, 0.08, lgr * vHk), uLampHalo.x * 0.3 * exp(-lgr * lgr * 24.0));');
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
+        '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
       // Round 168 (the phones' GPU): the glow's log depth goes in from the vertex, not written by each fragment. A point's
       // varyings are one value over the whole sprite, so the fragment path's gl_FragDepth, log2(1 + w) * FC / 2 from the
       // vertex's own w, is the very depth the vertex path hands the rasterizer (z = (log2(1 + w) * FC - 1) * w): the same
@@ -21471,8 +21470,12 @@ float pinOccGate() {
         fragmentShader: 'uniform float uStore, uNear, uDither, uSh, uCut4; varying vec3 vCol; varying float vK, vQ, vN, vH;\n' +
           'void main() { float d = length(gl_PointCoord - vec2(0.5)) * 2.0 / vK; if (d >= 1.0) discard;\n' +
           '  if (uNear > 0.5) { float d2 = d * d, rh = vQ * vQ * d2; float f = vN * (pow(1.0 + rh, -1.5) * exp(-rh * rh / uCut4) * (1.0 - d2 * d2) + uSh * exp(-2.2 * d2) * (1.0 - d2));\n' +
-          '    float dz = (fract(sin(dot(gl_FragCoord.xy + vec2(vH * 7.13, vQ * 3.71), vec2(12.9898, 78.233))) * 43758.5453) - 0.5) * uDither;   // an 8-bit map: each splat rounds on its own\n' +
-          '    gl_FragColor = vec4(vCol * f * uStore + dz, f * dot(vCol, vec3(0.2126, 0.7152, 0.0722)) * vH / 16.0 * uStore + dz); return; }\n' +
+          '    vec4 o = vec4(vCol * f * uStore, f * dot(vCol, vec3(0.2126, 0.7152, 0.0722)) * vH / 16.0 * uStore);\n' +
+          // an 8-bit map: each splat rounds up or down by its own remainder, so the sums keep their mean whatever the hardware's
+          // rounding and a dark gap never gains from a negative dither clamped away; one draw for all four channels, so a
+          // texel's rounding does not tint it
+          '    if (uDither > 0.0) o = floor(o * 255.0 + fract(sin(dot(gl_FragCoord.xy + vec2(vH * 7.13, vQ * 3.71), vec2(12.9898, 78.233))) * 43758.5453)) / 255.0;\n' +
+          '    gl_FragColor = o; return; }\n' +
           '  float f = 0.8 * exp(-d * d * 1.9) * (1.0 - d * d); gl_FragColor = vec4(vCol * f * uStore, 1.0); }',
         // straight sums (the far map's alpha of 1 made Round 140's additive blend the same sum in its colour)
         blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
@@ -21963,7 +21966,7 @@ float pinOccGate() {
     let nc = 0, nl = 0, nw = 0, nLens = 0;
     for (let q = 0; q < nUse; q++) {
       const i = cand[q][1];
-      if (Number.isNaN(poleInv.ROT[i])) poleInv.ROT[i] = poleArmRot(poleInv.X[i], poleInv.Z[i], i);   // a deck standard's arm points over its lanes; every other arm over its street
+      if (Number.isNaN(poleInv.ROT[i])) poleInv.ROT[i] = REAL ? poleArmRot(poleInv.X[i], poleInv.Z[i], i) : hash01(i * 1.7 + 0.3) * Math.PI * 2;   // a deck standard's arm points over its lanes; every other arm over its street (?real=0: the old hash)
       const rot = poleInv.ROT[i], fam = fams ? fams[i] : 0;
       _plp.set(poleInv.X[i], poleInv.GY[i], poleInv.Z[i]);
       _plq.setFromAxisAngle(TRAFFIC_UP, rot);
@@ -21994,7 +21997,7 @@ float pinOccGate() {
   // the realism round's near meshes (night#5): the Franklin lanterns and post tops (FLP, C13, PTF, PTC, CCP in the survey:
   // an eight-sided post on a base, a four-sided glass lantern under a pyramid cap), the wood utility poles with a bracket arm and
   // a small head (most of the rowhouse streets), a lit lens under every head and lit glass in every lantern (dim frosted
-  // glass by day), and a soft glare round each near luminaire that grows in wet air. A computer's alone (POLE_MESH_CAP)
+  // glass by day), and a soft glare round each near luminaire. A computer's alone (POLE_MESH_CAP)
   function lampMerge(list) {
     const parts = list.map(([g, hex]) => [g.index ? g.toNonIndexed() : g, new THREE.Color(hex)]);
     let total = 0;
@@ -22052,10 +22055,13 @@ float pinOccGate() {
     R.glass = inst(new THREE.BoxGeometry(0.32, 0.48, 0.32).translate(0, Ly, 0), lensMat(1.6, 0.1), 'lamp-lantern-glass');
     for (const m of [R.lens, R.glass]) { m.setColorAt(0, _ptc.setRGB(1, 1, 1)); m.instanceColor.setUsage(THREE.DynamicDrawUsage); }
     // the glare: one soft sprite a near luminaire, uGlare.y metres across, pulled 0.6 m toward the eye so its own head never
-    // cuts it, its strength in its colour (display-referred under the post pipeline, like the glow) and gone past 700 m,
-    // where the glow's own dot is all a lamp is. In clear air it is a lens's glare, a little wider than the glass (0.8 m;
-    // the first cut, 1.6 m with a stronger skirt, hung an orb two or three lanterns wide round every near lamp, a fog
-    // night's look on a clear one); in wet air (uGlare.z) the lit droplets round the head widen it and its skirt
+    // cuts it, in the light's own colour (display-referred under the post pipeline, like the glow) and gone past 700 m,
+    // where the glow's own dot is all a lamp is. A lens's glare, a little wider than the glass (0.8 m; the first cut, 1.6 m
+    // with a stronger skirt, hung an orb two or three lanterns wide round every near lamp), the same in every weather: the
+    // wet air's halo round each lamp is realism/weather's (wxHaloMesh), and a second one grown here stacked on it. Its
+    // shape rides the alpha and reaches zero inside the sprite (the skirt eased by (1 - r^2)^2, no cut at a rim), and the
+    // fog takes light away from it rather than mixing its own colour in (the fog chunk's mix made a solid grey ball the
+    // size of the sprite, rim and all, round every near lamp on a fog night)
     const gg = new THREE.BufferGeometry();
     gg.setAttribute('position', new THREE.BufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage));
     gg.setAttribute('color', new THREE.BufferAttribute(new Float32Array(cap * 3), 3).setUsage(THREE.DynamicDrawUsage));
@@ -22063,16 +22069,18 @@ float pinOccGate() {
     const gm = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: 1 });
     gm.onBeforeCompile = (sh) => {
       sh.uniforms.uGlare = R.glareU;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec4 uGlare; varying float vGa;')
+      const fogMul = THREE.ShaderChunk.fog_fragment.replace(/gl_FragColor\.rgb\s*=\s*mix\(\s*gl_FragColor\.rgb,\s*\w+,\s*fogFactor\s*\);/, 'gl_FragColor.rgb *= 1.0 - fogFactor;');
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec2 uGlare; varying float vGa;')
         .replace('gl_PointSize = size;', [
           'float gd = max(1.0, -mvPosition.z);',
           'mvPosition.xyz += normalize(-mvPosition.xyz) * min(0.6, 0.5 * gd); gl_Position = projectionMatrix * mvPosition;',
           'gl_PointSize = min(uGlare.y * uGlare.x / gd, ' + Math.max(16, maxPt).toFixed(1) + ');',
           'vGa = 1.0 - smoothstep(350.0, 700.0, gd);',
         ].join('\n'));
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec4 uGlare; varying float vGa;')
-        .replace('#include <color_fragment>', '#include <color_fragment>\nfloat gr = length(gl_PointCoord - vec2(0.5)) * 2.0;\n' +
-          'diffuseColor.rgb *= (0.42 * exp(-gr * gr * 12.0) + (0.05 + 0.15 * uGlare.z) * exp(-gr * gr * 3.5)) * (1.0 - smoothstep(0.8, 1.0, gr)) * vGa * uGlare.w;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vGa;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\nvec2 gq = gl_PointCoord - vec2(0.5); float gr2 = dot(gq, gq) * 4.0, gt = max(1.0 - gr2, 0.0);\n' +
+          'diffuseColor.a *= (0.42 * exp(-gr2 * 12.0) + 0.05 * exp(-gr2 * 3.5) * gt * gt) * vGa;')
+        .replace('#include <fog_fragment>', fogMul.indexOf('*= 1.0 - fogFactor;') !== -1 ? fogMul : '');   // a fog chunk it cannot read: no fog, the 700 m fade alone
     };
     gm.customProgramCacheKey = () => 'lamp-glare';
     postRaw(gm);
@@ -22104,7 +22112,7 @@ float pinOccGate() {
     if (show) poleMat.opacity = night;
     lampMapU.uLampOn.value = show ? night : 0;
     if (show) lampMapUpdate();
-    lampNightFx(night, show);   // the realism round: the near meshes' lenses and glare, the wet air's halos and grade
+    lampNightFx(night, show);   // the realism round: the near meshes, their lenses and glare, the rebuilds' lamp box
     if (bfbLampGlow) bfbLampGlow.visible = show;
     if (poleMesh) {
       poleMesh.visible = LIGHTS.on;
@@ -22117,16 +22125,14 @@ float pinOccGate() {
   }
 
   // the realism round's night pass, every frame the pole blob stands: the near meshes on with the lamps' layer, their
-  // lenses and glare with the photocell; weather#10, wet air: in rain, fog or snow every lamp wears a halo (lampHaloU, the
-  // glow's own sprite) and the glare grows, the bloom widens by night, and by day or night the grade loses some of its
-  // saturation and contrast the way a wet day's photograph does (REAL; on the composite's own values: a base is taken
-  // again whenever the uniform holds anything but what this wrote last, so a grade another hook sets every frame stays
-  // the base and this only ever adds the wet air's share to it)
-  const LAMP_GRADE0 = { sat: null, con: null, bloom: null, wSat: null, wCon: null, wBloom: null };
+  // lenses and glare with the photocell, and the landmark rebuilds' copy of the far map's box at the realistic strength
+  // (LAMP_RB_U). The wet air's share of the night (weather#10: the halo round every lamp, the wider bloom, the grade's
+  // lost saturation and contrast) is realism/weather's alone (wxHaloMesh, wxGrade): two hooks each taking the other's
+  // output as its base subtracted again every frame, and three halos stacked on every lamp in fog
   const _v2lamp = new THREE.Vector2();
   function lampNightFx(night, show) {
     if (window.__dbg && !window.__dbg.lampNear) Object.assign(window.__dbg, {   // ?dev=1: the near map and the near meshes, and the realistic response's strength
-      lampNear: () => ({ on: LAMPNEAR.on, half: LAMPNEAR.half, cx: LAMPNEAR.cx, cz: LAMPNEAR.cz, renders: LAMPNEAR.renders, size: LAMPNEAR.size, span: LAMPNEAR.span, k: lampMapU.uLampReal.value.x, realK: LAMP_REAL_K, meshes: POLE_REAL.n, halo: lampHaloU.value.x, ...(PERF.lampsReal || {}) }),
+      lampNear: () => ({ on: LAMPNEAR.on, half: LAMPNEAR.half, cx: LAMPNEAR.cx, cz: LAMPNEAR.cz, renders: LAMPNEAR.renders, size: LAMPNEAR.size, span: LAMPNEAR.span, k: lampMapU.uLampReal.value.x, realK: LAMP_REAL_K, meshes: POLE_REAL.n, every: LAMP_NEAR_EVERY, held: LAMPNEAR.held || 0, ...(PERF.lampsReal || {}) }),
       lampReal: (k) => { if (k != null) LAMP_REAL_K = +k; lampMapU.uLampReal.value.y = LAMP_REAL_K; return LAMP_REAL_K; },
       lampShape: (sh, cut) => {   // the near pool's shoulder and cut-off (redraws the near map)
         const U = LAMPMAP.mat && LAMPMAP.mat.uniforms;
@@ -22160,8 +22166,8 @@ float pinOccGate() {
       },
     });
     lampMapU.uLampReal.value.y = LAMP_REAL_K;
-    const F = WXFX, wet = Math.max(F.rain * 0.6, F.fog, F.snow * 0.5), h = show ? night * wet : 0;
-    lampHaloU.value.set(h, (isTouch ? 2 : 4) * h);
+    LAMP_RB_U.uLampBox.value.copy(lampMapU.uLampBox.value);
+    LAMP_RB_U.uLampBox.value.w *= lampK();
     const R = POLE_REAL;
     if (R.lantern) {
       R.lantern.visible = R.wood.visible = R.lens.visible = R.glass.visible = LIGHTS.on;
@@ -22171,17 +22177,8 @@ float pinOccGate() {
         R.glare.material.opacity = night;
         const u = R.glareU.value;
         u.x = 0.5 * renderer.getDrawingBufferSize(_v2lamp).y / Math.tan(camera.fov * DEG / 2);
-        u.y = 0.8 + 2.4 * wet; u.z = wet; u.w = 1 + 1.5 * F.fog;
       }
     }
-    if (!REAL) return;
-    const G = LAMP_GRADE0, ub = postComp && postComp.uniforms && postComp.uniforms.uBloom;
-    if (gradeU.uSat.value !== G.wSat) G.sat = gradeU.uSat.value;
-    if (gradeU.uCon.value !== G.wCon) G.con = gradeU.uCon.value;
-    if (ub && ub.value !== G.wBloom) G.bloom = ub.value;
-    const wxK = Math.max(F.rain, F.snow * 0.8, F.fog, smooth(0.8, 1.0, WX.cover) * 0.5);
-    gradeU.uSat.value = G.wSat = G.sat - 0.2 * wxK; gradeU.uCon.value = G.wCon = G.con - 0.08 * wxK;
-    if (ub) ub.value = G.wBloom = G.bloom + (0.35 * F.rain + 0.6 * F.fog + 0.3 * F.snow) * night;
   }
 
   // ---------------------------------------------------------------- skyline lights (Round 81)
@@ -24120,7 +24117,6 @@ float pinOccGate() {
     // lies inside the snapped map (the point is within half a step of the centre on each axis), so a re-centre never
     // moves the edge (review: the map's own edge fade was narrower than a step and jumped 750 m at once)
     lampMapU.uLampFade.value.set(ax, az, S / 2 - step, S * 0.15);
-    lampMapU.uLampBox.value.w = LAMP_GAIN * lampK() / LAMPMAP.store;   // every frame: __dbg.lampReal and lampGain take at once
     if (LAMPMAP.rt && cx === LAMPMAP.cx && cz === LAMPMAP.cz) return;
     if (!LAMPMAP.rt) {
       LAMPMAP.rt = new THREE.WebGLRenderTarget(LAMPMAP.size, LAMPMAP.size, { depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
@@ -24133,7 +24129,7 @@ float pinOccGate() {
     r.autoClear = false; r.render(LAMPMAP.scene, LAMPMAP.cam); r.autoClear = prevAuto;
     r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
     LAMPMAP.cx = cx; LAMPMAP.cz = cz; LAMPMAP.renders++;
-    lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN * lampK() / LAMPMAP.store);
+    lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / LAMPMAP.store);
   }
   const _lmDir = new THREE.Vector3(), _lmCol = new THREE.Color();
   // the near map (the realism round, night#0): the same splats drawn with the pool's own shape into LAMPNEAR.span metres
@@ -24156,12 +24152,22 @@ float pinOccGate() {
     const ax = camera.position.x + _lmDir.x * ahead, az = camera.position.z + _lmDir.z * ahead;
     const cx = Math.round(ax / step) * step, cz = Math.round(az / step) * step;
     U.uLampNearFade.value.set(ax, az, S / 2 - step, S * 0.15);
-    U.uLampNearBox.value.w = LAMP_GAIN * lampK() / N.store;
+    U.uLampNearBox.value.w = LAMP_GAIN / N.store;
     if (N.rt && cx === N.cx && cz === N.cz) return;
+    // a phone holds its map while the centre has moved two steps or less within LAMP_NEAR_EVERY of the last draw (a turn
+    // of the eye alone swings the centre), the circle kept within a step of the map's own centre so it never reads past
+    // the edge; a longer move draws at once
+    const now = performance.now();
+    if (N.rt && LAMP_NEAR_EVERY && now - N.at < LAMP_NEAR_EVERY && Math.max(Math.abs(cx - N.cx), Math.abs(cz - N.cz)) <= 2 * step) {
+      U.uLampNearFade.value.x = clamp(ax, N.cx - step, N.cx + step); U.uLampNearFade.value.y = clamp(az, N.cz - step, N.cz + step);
+      N.held = (N.held || 0) + 1;
+      return;
+    }
     if (!N.rt) {
-      // half float wherever the device can draw into it, a phone too (the 8-bit map's rounding, dithered or not, came out as
-      // purple and green blotches on a pale pavement in the phone captures: each channel rounds on its own), 1.4 MB more at
-      // 512 px; a device that names the extension and still cannot complete the target keeps the 8-bit map and its dither
+      // half float wherever the device can draw into it, a phone too (the 8-bit map's rounding came out as purple and green
+      // blotches on a pale pavement in the phone captures), 0.7 MB with its mips at a phone's 256 px; a device that names
+      // the extension and still cannot complete the target keeps the 8-bit map, each splat rounded up or down by its own
+      // remainder
       const caps = renderer.capabilities, ext = renderer.extensions;
       const mk = (half) => new THREE.WebGLRenderTarget(N.size, N.size, { type: half ? THREE.HalfFloatType : THREE.UnsignedByteType, depthBuffer: false, stencilBuffer: false,
         generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
@@ -24188,8 +24194,8 @@ float pinOccGate() {
     r.autoClear = false; r.render(LAMPMAP.scene, N.cam); r.autoClear = prevAuto;
     r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
     mu.uNear.value = 0; mu.uPxPerM.value = LAMPMAP.size / LAMPMAP.span; mu.uStore.value = LAMPMAP.store; mu.uDither.value = 0;
-    N.cx = cx; N.cz = cz; N.renders++;
-    U.uLampNearBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN * lampK() / N.store);
+    N.cx = cx; N.cz = cz; N.renders++; N.at = now;
+    U.uLampNearBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / N.store);
     U.uLampReal.value.x = hk;
   }
   // mode: 'wall' the facade shader (vertical faces, the first storeys), 'blade' the grass tufts (no gate), else the
@@ -24254,7 +24260,7 @@ float pinOccGate() {
         '  if (le > 0.0 && lf > 0.0) {',
         '    float nw = uLampReal.x * (1.0 - smoothstep(uLampNearFade.z - uLampNearFade.w, uLampNearFade.z, distance(lsp, uLampNearFade.xy)));',
         gate,
-        '    vec3 lE = mix(texture2D(uLampMap, luv).rgb * uLampBox.w, lnm.rgb * uLampNearBox.w, nw) * (uLampOn * lf);',   // both gains carry LAMP_REAL_K (lampK)
+        '    vec3 lE = mix(texture2D(uLampMap, luv).rgb * uLampBox.w, lnm.rgb * uLampNearBox.w, nw) * (uLampReal.y * uLampOn * lf);',
         '    lE /= 1.0 + ' + LAMP_SHOULDER.toFixed(3) + ' * lE;',   // the shoulder on the light where it lands, then the face's own share of it
         '    vec3 la = min(diffuseColor.rgb, vec3(0.4)) * 0.85 * lE * lk;',
         '    vec3 lo = max(la - 0.8, 0.0); totalEmissiveRadiance += min(la, vec3(0.8)) + lo / (1.0 + lo * 2.0);',
