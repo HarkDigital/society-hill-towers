@@ -316,7 +316,11 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function loadGroundArt() {', '  let tuftTex = null'))
         # Round 185: the roofs' atlas and the yards, uploaded once and never flagged again
         self.assertEqual(cut(s, '  function loadGroundArt() {', '  let tuftTex = null').count('freeTexOnUpload(t);'), 3)
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 14)   # the definition and its thirteen uses
+        # the realism pass: the vehicles' two atlases and their masks (vartSet), the ships' container textures and the street
+        # signs' canvas, each uploaded once
+        self.assertEqual(cut(s, '  function vartSet(name) {', '  // the section').count('freeTexOnUpload(t);'), 2)
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function furnSignTexture() {', '  function furnGeoms() {'))
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 18)   # the definition and its seventeen uses
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

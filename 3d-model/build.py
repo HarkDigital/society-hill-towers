@@ -194,6 +194,8 @@ const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud mode
 const("TREE_ART", text_of("tree_art.json", "null"))   # the trees' species images (bake_tree_art.py): side and top cards by season, Oct 12
 const("GROUND_ART", text_of("ground_art.json", "null"))   # the generated lawn, verge and street textures (bake_ground_art.py), Round 183
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
+const("VEHICLE_ART", text_of("vehicle_art.json", "null"))   # the vehicles' generated atlases and profiles (bake_vehicle_art.py), the realism pass
+const("STREET_FURN", text_of("street_furniture.json", "null"))   # signals, stop signs, hydrants, benches, bins from OSM (bake_street_furniture.py), the realism pass
 
 
 def art_paths(o):
@@ -209,7 +211,7 @@ def art_paths(o):
 
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
-for name in ("tree_art.json", "ground_art.json", "fronts.json"):
+for name in ("tree_art.json", "ground_art.json", "fronts.json", "vehicle_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):
