@@ -46,7 +46,7 @@ console.log(JSON.stringify(out));
         self.assertIn('LAMPMAP.cam.up.set(0, 0, -1);', self.src)
         self.assertIn('LAMPMAP.cam.position.set(cx, 2000, cz); LAMPMAP.cam.lookAt(cx, 0, cz);', self.src)
         self.assertIn("vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);", self.src)
-        self.assertIn('lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN / LAMPMAP.store);', self.src)
+        self.assertIn('lampMapU.uLampBox.value.set(cx - S / 2, cz - S / 2, 1 / S, LAMP_GAIN * lampK() / LAMPMAP.store);', self.src)   # lampK: 1 under ?real=0
 
     def test_wiring(self):
         s = self.src
