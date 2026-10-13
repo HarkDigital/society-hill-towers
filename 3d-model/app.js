@@ -1739,7 +1739,7 @@
         const ox0 = Math.cos(a0) * hw, oz0 = Math.sin(a0) * hw, ox1 = Math.cos(a1) * hw, oz1 = Math.sin(a1) * hw;
         tris.push(cx, yc, cz, cx + ox1, yc, cz + oz1, cx + ox0, yc, cz + oz0);
         if (lanes) {
-          // rim u = offset . n_i (n_i the left normal (-dz, dx), the strip's own sense), s = s_i + offset . d_i
+          // rim u = offset . n_i (n_i = (-dz, dx), the strip's own sense: the right of travel in this frame), s = s_i + offset . d_i
           const s1 = si + ox1 * ddx + oz1 * ddz, s0 = si + ox0 * ddx + oz0 * ddz;
           lanes.push(0, si, hw, lw(si),
             -ox1 * ddz + oz1 * ddx, s1, hw, lw(s1),
@@ -1830,6 +1830,7 @@
     const prev = m.onBeforeCompile;
     m.onBeforeCompile = (sh, r) => { lanePatch(sh, fresh); prev(sh, r); };
     m.customProgramCacheKey = () => 'lane|' + prev.toString();
+    LANE_MATS.push(m);
     return m;
   }
   // ---- the realistic streets (Oct 12, the realism pass; Mike: "please do anything necessary to make this look more photo
@@ -1864,7 +1865,8 @@
     if (!isTouch) one('ballast', (im) => { U.uBallast.value = streetTex(im, false); U.uBallastM.value = A.ballastMean || 0.2; U.uBallastLen.value = A.ballastM || 7.2; if (A.ballastRails) U.uBallastRails.value.set(A.ballastRails[0], A.ballastRails[1]); U.uBallastOn.value = 1; });
     one('lot', (im) => { U.uLotTex.value = streetTex(im, false); U.uLotM.value = A.lotMean || 0.16; U.uLotOn.value = 1; });
   }
-  // the junction reach on aLane.w (the realism pass): a street's class alone (0 two-way, 1 divided, 2 unmarked, 3 milled)
+  // the junction reach on aLane.w (the realism pass): a street's class alone (0 two-way, 1 divided, 2 unmarked, 3 milled,
+  // 4 an airfield's pavement)
   // where no junction is known, else 1000 (cls + 1) + E, E the metres from this point along the street past the nearest
   // crossing street's kerb line (negative inside the junction's box, clamped to -200 .. 400). cls is constant along a
   // street, so the attribute interpolates exactly where E is linear, which splitAtS at junctionCuts makes true: a vertex at
@@ -1875,7 +1877,11 @@
     for (let k = 0; k < jl.length; k += 2) { const v = Math.abs(s - jl[k]) - jl[k + 1]; if (v < e) e = v; }
     return 1000 * (cls + 1) + Math.max(-200, Math.min(400, e));
   }
-  const STREET_JOINS = (t) => t >= 2 && t <= 5;   // the city streets that take crossings and count as crossed: primary to residential
+  // an airfield's pavement: pack_city.py packs PHL's runways (45 m) and taxiways (16 m) as class 5, and every residential way
+  // the packers carry is 7 m, so a class 5 record over 10 m is a runway or a taxiway (the review: the far ring's junction
+  // search paired them, and laid continental bars across a 45 m runway, a full-width stop bar, kerbs and manholes)
+  const isAirfield = (t, w) => t === 5 && w > 10;
+  const STREET_JOINS = (t, w) => t >= 2 && t <= 5 && !isAirfield(t, w);   // the city streets that take crossings and count as crossed: primary to residential
   // an outer street's lane class from its packed type and width (the wide set's and the far ring's): divided on the highways,
   // unmarked on a service way, a lane under 5.5 m or a residential way over 10 m (the runways and taxiways), else two-way.
   // The realism pass (the audit: a double yellow on every street, though 2,117 of the outer districts' 2,917 residential
@@ -1883,7 +1889,8 @@
   // residential way under RES_UNMARKED_W (every one the packers carry is 7 m, the core's too) is unmarked; its kerbs, its
   // wear and its crossings stay. Decided from the width alone, so nothing is repacked
   const RES_UNMARKED_W = 9;
-  const laneClsOf = (t, w) => (t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && (w > 10 || (REAL && w < RES_UNMARKED_W)))) ? 2 : 0);
+  // Class 4 (REAL only) is an airfield's pavement (isAirfield): no kerb, gutter, manhole, utility cut, lane wear or paint
+  const laneClsOf = (t, w) => (t <= 1 ? 1 : (REAL && isAirfield(t, w)) ? 4 : (t === 6 || w < 5.5 || (t === 5 && (w > 10 || (REAL && w < RES_UNMARKED_W)))) ? 2 : 0);
   // the s values a street's polyline must carry as vertices for E to interpolate exactly: each junction, and between two the
   // point where the nearest changes (the right arm of one meets the left arm of the next)
   function junctionCuts(jl) {
@@ -1910,8 +1917,8 @@
     return out;
   }
   // the junctions of a street tier: where two streets of different records cross or one ends on another (a T), found on a
-  // 25 m grid of their segments. recs: [{ pts, w, t }]; joins(t) says which classes take crossings (the city streets,
-  // primary to residential), cross(t) which count as the street crossed. Returns per record a flat [s, hwX, ...] sorted by s,
+  // 25 m grid of their segments. recs: [{ pts, w, t }]; joins(t, w) says which take crossings (the city streets, primary to
+  // residential, never an airfield's pavement), cross(t, w) which count as the street crossed. Returns per record a flat [s, hwX, ...] sorted by s,
   // hwX the crossing street's half width (the widest, where two meet at one point)
   function streetJunctions(recs, joins, cross, atGrade) {
     const C = 25, grid = new Map(), seg = [], lens = new Float64Array(recs.length);   // seg: x0, z0, x1, z1, rec, s0, L
@@ -1919,7 +1926,7 @@
       let s = 0;
       for (let i = 0; i + 1 < r.pts.length; i++) {
         const a = r.pts[i], b = r.pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-        if (L > 0.01 && (joins(r.t) || cross(r.t)) && (!atGrade || atGrade(a, b))) {
+        if (L > 0.01 && (joins(r.t, r.w) || cross(r.t, r.w)) && (!atGrade || atGrade(a, b))) {
           const k = seg.length / 7; seg.push(a[0], a[1], b[0], b[1], ri, s, L);
           for (let gx = Math.floor((Math.min(a[0], b[0]) - 2) / C); gx <= Math.floor((Math.max(a[0], b[0]) + 2) / C); gx++)
             for (let gz = Math.floor((Math.min(a[1], b[1]) - 2) / C); gz <= Math.floor((Math.max(a[1], b[1]) + 2) / C); gz++) {
@@ -1934,7 +1941,7 @@
     // (an OSM way split there), not a junction, unless a third ends there too
     const endN = new Map(), nk = (x, z) => Math.round(x * 2) * 100003 + Math.round(z * 2);
     for (const r of recs) {
-      if (r.pts.length < 2 || (!joins(r.t) && !cross(r.t))) continue;
+      if (r.pts.length < 2 || (!joins(r.t, r.w) && !cross(r.t, r.w))) continue;
       for (const e of [r.pts[0], r.pts[r.pts.length - 1]]) { const k = nk(e[0], e[1]); endN.set(k, (endN.get(k) || 0) + 1); }
     }
     const out = recs.map(() => []);
@@ -1958,8 +1965,8 @@
           if ((endN.get(nk(e[0], e[1])) || 0) < 3) continue;   // a bend between two ways of one street
         }
         const wi = recs[ri].w / 2, wj = recs[rj].w / 2;
-        if (joins(recs[ri].t) && cross(recs[rj].t)) out[ri].push(seg[i + 5] + Math.max(0, Math.min(seg[i + 6], ta)), wj);
-        if (joins(recs[rj].t) && cross(recs[ri].t)) out[rj].push(seg[j + 5] + Math.max(0, Math.min(seg[j + 6], tb)), wi);
+        if (joins(recs[ri].t, recs[ri].w) && cross(recs[rj].t, recs[rj].w)) out[ri].push(seg[i + 5] + Math.max(0, Math.min(seg[i + 6], ta)), wj);
+        if (joins(recs[rj].t, recs[rj].w) && cross(recs[ri].t, recs[ri].w)) out[rj].push(seg[j + 5] + Math.max(0, Math.min(seg[j + 6], tb)), wi);
       }
     }
     // sorted by s, and two within 3 m one junction (the widest crossing street's half width)
@@ -1982,6 +1989,13 @@
   // street, two lines on a narrow one), a stop bar over the inbound half and no lane lines through the box; a milled street
   // (the paving season) is grooved and unpainted
   const LANE_REAL = { lineW: '0.12', white: 'vec3(0.58, 0.58, 0.55)', yellow: 'vec3(0.55, 0.37, 0.06)', strength: '0.95' };
+  // the lane shader's fine detail (the utility cuts, the manholes and the milled grooves) is decided when a street's program
+  // compiles, and a phone goes without it (the review: every street pixel of the wide tier, which carries aLane on a phone,
+  // ran all of it; it is ten of the shader's eighteen hash evaluations a pixel, and sub-pixel from any height but a walk).
+  // The headless phone path could not resolve its cost (the same frame measured 4.8 and 5.8 s in SwiftShader), so the
+  // cheaper side was taken; PERF.laneDetail(on) recompiles every street with it on or off, the A/B for a real device
+  let laneDetail = !isTouch;
+  const LANE_MATS = [];
   function lanePatchReal(shader, fresh) {
     const T = LANE_REAL;
     for (const k in laneU) shader.uniforms[k] = laneU[k];
@@ -2010,8 +2024,9 @@
         'float lnAhead = dFdx(lnWv) * dFdx(vLane.y) + dFdy(lnWv) * dFdy(vLane.y);',   // < 0: the junction lies ahead along +s
         'if (vLane.z > 0.5) {',
         '  float lnHw = vLane.z, lnU = vLane.x, lnS = vLane.y, lnAu = abs(lnU), lnKd = lnHw - lnAu;',
-        '  float lnDiv = step(0.5, lnCls) * step(lnCls, 1.5), lnTwo = step(lnCls, 0.5), lnMill = step(2.5, lnCls);',
-        '  float lnStreet = 1.0 - lnDiv - lnMill, lnKerb = lnStreet * step(2.6, lnHw);',   // an alley or a lane under 5.2 m wide is flush, no kerb
+        '  float lnDiv = step(0.5, lnCls) * step(lnCls, 1.5), lnTwo = step(lnCls, 0.5), lnMill = step(2.5, lnCls) * step(lnCls, 3.5), lnAir = step(3.5, lnCls);',
+        '  float lnStreet = 1.0 - lnDiv - lnMill - lnAir, lnKerb = lnStreet * step(2.6, lnHw);',   // an alley or a lane under 5.2 m wide is flush, no kerb; an airfield none
+        '  float lnLaneK = (1.0 - lnMill) * (1.0 - lnAir);',   // the lanes' own wear (a runway has none of a street's)
         '  float lnN1 = lnDiv > 0.5 ? max(2.0, floor(2.0 * lnHw / 3.7 + 0.5)) : max(1.0, floor(lnHw / 3.3 + 0.5));',
         '  float lnP = lnDiv > 0.5 ? max(2.0 * lnHw / lnN1, 0.5) : max(lnHw / lnN1, 0.5);',
         '  float lnV = lnDiv > 0.5 ? lnU + lnHw : lnAu;',
@@ -2019,29 +2034,36 @@
         '  float lnAA = clamp(lnW / (0.25 * lnP), 0.0, 1.0);',
         '  float lnFar = (1.0 - smoothstep(1.5, 5.0, lnLs)) * (1.0 - uLaneFresh);',
         '  float lnMouth = lnJ * (1.0 - smoothstep(1.5, 2.5, lnE));',   // no kerb or gutter across a side street's mouth
-        '  float drip = exp(-pow((lnF - 0.5) / 0.09, 2.0)), wheel = exp(-pow((abs(lnF - 0.5) - 0.24) / 0.07, 2.0));',
-        '  float wear = mix(1.0 - 0.12 * drip + 0.05 * wheel, 0.995, lnAA);',
+        // squared by hand: pow() of a negative base is undefined in GLSL ES (some Mali and Adreno drivers return NaN)
+        '  float lnDd = (lnF - 0.5) / 0.09, lnWd = (abs(lnF - 0.5) - 0.24) / 0.07;',
+        '  float drip = exp(-lnDd * lnDd), wheel = exp(-lnWd * lnWd);',
+        '  float wear = mix(1.0 - (0.12 * drip - 0.05 * wheel) * (1.0 - lnAir), 0.995, lnAA);',
         '  if (uLaneWearOn > 0.5) {',
         '    vec2 wuv = vec2(mix(lnF, 1.0 - lnF, mod(lnLi, 2.0)), lnS / uLaneWearLen + fract(lnLi * 0.371 + lnHw * 0.173));',
         '    float wt = dot(texture2D(uLaneWear, wuv).rgb, vec3(0.2126, 0.7152, 0.0722)) / uLaneWearM;',
-        '    wear *= mix(1.0, clamp(wt, 0.4, 1.6), 0.55 * (1.0 - smoothstep(0.6, 2.5, max(lnLs, lnW))) * (1.0 - lnMill) * (1.0 - 0.8 * uLaneFresh));',
+        '    wear *= mix(1.0, clamp(wt, 0.4, 1.6), 0.55 * (1.0 - smoothstep(0.6, 2.5, max(lnLs, lnW))) * lnLaneK * (1.0 - 0.8 * uLaneFresh));',
         '  }',
-        '  vec2 lpc = vec2(floor(lnS / 7.0), floor((lnU + lnHw) / 2.4));',
-        '  float lph = lnH1(lpc + vec2(lnHw * 13.1, 7.7));',
-        '  vec2 lpd = abs(vec2(fract(lnS / 7.0) * 7.0, fract((lnU + lnHw) / 2.4) * 2.4) - vec2(3.5 + 1.4 * (fract(lph * 5.7) - 0.5), 1.2)) - vec2(0.6 + 2.0 * fract(lph * 7.31), 0.4 + 0.65 * fract(lph * 3.17));',
-        '  float lpa = 0.5 * (lnW + lnLs), lpk = step(0.94, lph) * lnFar * (1.0 - lnMill);',   // one cell in seventeen
-        '  wear *= mix(1.0, 0.78 + 0.1 * fract(lph * 11.3), lpk * (1.0 - smoothstep(-lpa, lpa, max(lpd.x, lpd.y))));',
-        '  wear *= 1.0 - 0.25 * lpk * (1.0 - smoothstep(0.0, lpa + 0.03, abs(max(lpd.x, lpd.y))));',   // its tar-sealed joint
+        // the utility cuts (laneDetail): darker patches with their sealed joints, one cell in seventeen
+        ...(laneDetail ? [
+          '  vec2 lpc = vec2(floor(lnS / 7.0), floor((lnU + lnHw) / 2.4));',
+          '  float lph = lnH1(lpc + vec2(lnHw * 13.1, 7.7));',
+          '  vec2 lpd = abs(vec2(fract(lnS / 7.0) * 7.0, fract((lnU + lnHw) / 2.4) * 2.4) - vec2(3.5 + 1.4 * (fract(lph * 5.7) - 0.5), 1.2)) - vec2(0.6 + 2.0 * fract(lph * 7.31), 0.4 + 0.65 * fract(lph * 3.17));',
+          '  float lpa = 0.5 * (lnW + lnLs), lpk = step(0.94, lph) * lnFar * lnLaneK;',
+          '  wear *= mix(1.0, 0.78 + 0.1 * fract(lph * 11.3), lpk * (1.0 - smoothstep(-lpa, lpa, max(lpd.x, lpd.y))));',
+          '  wear *= 1.0 - 0.25 * lpk * (1.0 - smoothstep(0.0, lpa + 0.03, abs(max(lpd.x, lpd.y))));',   // its tar-sealed joint
+        ] : []),
         '  wear *= mix(1.0, 0.8, (1.0 - smoothstep(0.15, 0.6, lnKd)) * (1.0 - lnAA) * lnKerb * (1.0 - lnMouth));',
-        '  wear *= mix(1.0, mix(0.86 + 0.28 * lnN(vec2(lnU * 14.0, lnS * 0.25)), 1.0, smoothstep(0.03, 0.15, lnW)), lnMill);',
+        laneDetail ? '  wear *= mix(1.0, mix(0.86 + 0.28 * lnN(vec2(lnU * 14.0, lnS * 0.25)), 1.0, smoothstep(0.03, 0.15, lnW)), lnMill);' : '',   // the milled grooves
         '  diffuseColor.rgb *= wear;',
-        // a manhole: an iron disc near the middle every 45 m or so (three in four cells)
-        '  float lmc = floor(lnS / 45.0), lmh = lnH1(vec2(lmc, lnHw * 3.7));',
-        '  vec2 lmp = vec2((lmc + 0.25 + 0.5 * lmh) * 45.0, (fract(lmh * 13.7) - 0.5) * min(2.4, lnHw));',
-        '  float lmd = length(vec2(lnS, lnU) - lmp), lma = lnW + lnLs;',
-        '  float lmk = (1.0 - smoothstep(0.36 - 0.5 * lma, 0.36 + 0.5 * lma, lmd)) * (1.0 - smoothstep(0.4, 1.0, lma)) * step(0.25, lmh) * lnStreet;',
-        '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.047, 0.043) * (0.8 + 0.4 * lnN(vec2(lnS, lnU) * 11.0)), lmk);',
-        '  diffuseColor.rgb *= 1.0 - 0.3 * lmk * (1.0 - smoothstep(0.0, 0.5 * lma + 0.025, abs(lmd - 0.32)));',
+        // a manhole (laneDetail): an iron disc near the middle every 45 m or so (three in four cells)
+        ...(laneDetail ? [
+          '  float lmc = floor(lnS / 45.0), lmh = lnH1(vec2(lmc, lnHw * 3.7));',
+          '  vec2 lmp = vec2((lmc + 0.25 + 0.5 * lmh) * 45.0, (fract(lmh * 13.7) - 0.5) * min(2.4, lnHw));',
+          '  float lmd = length(vec2(lnS, lnU) - lmp), lma = lnW + lnLs;',
+          '  float lmk = (1.0 - smoothstep(0.36 - 0.5 * lma, 0.36 + 0.5 * lma, lmd)) * (1.0 - smoothstep(0.4, 1.0, lma)) * step(0.25, lmh) * lnStreet;',
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.047, 0.043) * (0.8 + 0.4 * lnN(vec2(lnS, lnU) * 11.0)), lmk);',
+          '  diffuseColor.rgb *= 1.0 - 0.3 * lmk * (1.0 - smoothstep(0.0, 0.5 * lma + 0.025, abs(lmd - 0.32)));',
+        ] : []),
         // the kerb: its top on the road's outer 14 cm, its face in shade just inside
         '  float lkOn = lnKerb * (1.0 - lnMouth) * (1.0 - smoothstep(0.5, 1.4, lnW));',
         '  float lkt = 1.0 - smoothstep(0.14 - 0.5 * lnW, 0.14 + 0.5 * lnW, lnKd);',
@@ -2070,7 +2092,10 @@
         '    float lnXe = 1.0 - smoothstep(lnHw - 0.5, lnHw - 0.3, lnAu);',
         '    if (lnHw >= 4.5) lnX = lnLine(abs(fract(lnU / 1.2) - 0.5) * 1.2, 0.3, lnW) * lnXin * lnXe;',
         '    else lnX = max(lnLine(abs(lnE - 0.95), 0.15, lnLs), lnLine(abs(lnE - 3.65), 0.15, lnLs)) * lnXe;',
-        '    float lnInb = lnTwo > 0.5 ? step(0.0, -lnU * sign(-lnAhead)) : 1.0;',   // a two-way street's stop bar spans its inbound half
+        // a two-way street's stop bar spans its inbound half: u = offset . (-dz, dx) is the RIGHT of travel along +s in this frame
+        // (x east, z south, seen from above), the side a car drives on, so the lane approaching a junction that lies ahead
+        // (lnAhead < 0) is u > 0, and the one approaching a junction behind is u < 0 (the review: it barred the outbound half)
+        '    float lnInb = lnTwo > 0.5 ? step(0.0, lnU * sign(-lnAhead)) : 1.0;',
         '    lnX = max(lnX, lnLine(abs(lnE - 5.0), 0.22, lnLs) * lnXe * lnInb);',
         '    lnX *= 1.0 - smoothstep(2.0, 4.0, max(lnW, lnLs));',
         '  }',
@@ -5560,7 +5585,7 @@
       const tc = /^primary/.test(r.t) ? 2 : /^secondary/.test(r.t) ? 3 : /^tertiary/.test(r.t) ? 4 : /^(residential|living_street|unclassified)$/.test(r.t) ? 5 : /^service$/.test(r.t) ? 7 : 9;
       for (const run of openRuns.flatMap(runsOf)) coreRuns.push({ r, pts: run, w: r.w, t: tc });
     }
-    const coreJX = REAL ? streetJunctions(coreRuns, STREET_JOINS, (t) => STREET_JOINS(t) || t === 7, null) : null;
+    const coreJX = REAL ? streetJunctions(coreRuns, STREET_JOINS, (t, w) => STREET_JOINS(t, w) || t === 7, null) : null;
     for (let cr = 0; cr < coreRuns.length; cr++) {
       const r = coreRuns[cr].r, run = coreRuns[cr].pts;
       const foot = /footway|path|steps|pedestrian|cycleway/.test(r.t);
@@ -11183,10 +11208,7 @@
       if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
       if (lotSheetParts.length) {   // the realism pass: the sports complex's lots, the photographed lot asphalt on the street grid
         const g = mergeColored(lotSheetParts); freeOnUpload(g);
-        const m = surfMat({ vertexColors: true, roughness: 1 });
-        m.onBeforeCompile = (sh, r) => { lotPatch(sh, false); surfTexPatch(sh, r); };
-        m.customProgramCacheKey = () => 'lot sheets';
-        groupCity.add(new THREE.Mesh(g, m));
+        groupCity.add(new THREE.Mesh(g, lotSheetMat()));
       }
     });
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
@@ -12225,7 +12247,7 @@
       const edges = routeOffsets(pts);
       c.set(roadCol[t] || COLORS.asphalt).multiplyScalar(streetAge(i + 7919));
       const hw = w / 2;
-      const cls = laneClsOf(t, w);   // lane class: divided, two-way, or unmarked; runways (45 m) and taxiways (16 m) ride class 5
+      const cls = laneClsOf(t, w);   // lane class: divided, two-way, or unmarked; runways (45 m) and taxiways (16 m) ride type 5, an airfield's class 4 under REAL
       const thr = TERRAIN.water + 0.6;
       let sAcc = 0;   // distance along the densified polyline (the lane paint's s)
       for (let j = 0; j < pts.length - 1; j++) {
@@ -12696,9 +12718,10 @@
     try { paveLotsAndYards(); } finally { for (const G of groundGrids) G.nrm = null; if (coreRoadGround) coreRoadGround.nrm = null; }
   });
   // ---- the lots' stalls (the realism pass; the audit: "Parking lots are flat slabs: no stalls citywide"). A lot's frame is
-  // its longest outline edge (a lot is mostly a rectangle), snapped to the street grid within 15 degrees, and its centroid,
-  // carried in four bytes a vertex (aLot: the frame's angle over pi, the centroid's phase across the stalls' 2.7 m and
-  // along the rows' 18.5 m module, a seed), so every lot lays double-loaded rows on its own axes: 5.5 m stalls either side
+  // its longest outline edge (a lot is mostly a rectangle), snapped to the street grid within 15 degrees, and its outline's
+  // least extent along each axis, carried in four bytes a vertex (aLot: the frame's angle over pi, that corner's phase across
+  // the stalls' 2.7 m and along the rows' 18.5 m module, a seed), so every lot lays double-loaded rows on its own axes from
+  // its own edge: 5.5 m stalls either side
   // of a 7.5 m aisle, 10 cm lines, an oil stain under the engine of seven stalls in ten, all faded to their mean by the
   // pixel; and the photographed lot asphalt (STREET_ART.lot) at 6 m in the same frame
   const LOT_STALL_W = 2.7, LOT_MODULE = 18.5;
@@ -12708,10 +12731,16 @@
     ang = ((ang % Math.PI) + Math.PI) % Math.PI;
     const gAng = ((Math.atan2(fl.nz, fl.nx) % (Math.PI / 2)) + Math.PI / 2) % (Math.PI / 2);   // the street grid, folded into a quarter turn
     for (const g of [gAng, gAng + Math.PI / 2, gAng + Math.PI]) if (Math.abs(ang - g) < 0.26) ang = g % Math.PI;
-    const c = polyCentroid(poly), ux = Math.cos(ang), uz = Math.sin(ang);
-    const fu = (c[0] * ux + c[1] * uz) / LOT_STALL_W, fv = (-c[0] * uz + c[1] * ux) / LOT_MODULE;
+    // the phases are taken on the angle the shader rebuilds from its byte (the review: an angle step of up to pi / 510 moved
+    // the projection 10 to 30 m at 2 to 5 km from the origin, and the rows began anywhere), and anchored on the lot's own
+    // outline, its least extent along each axis, so the stall ticks start at the lot's end and a row's back line runs along
+    // its edge with a single row of stalls inside it
+    const aq = Math.round(ang / Math.PI * 255), ax = aq / 255 * Math.PI, ux = Math.cos(ax), uz = Math.sin(ax);
+    let u0 = Infinity, v0 = Infinity;
+    for (const p of poly) { u0 = Math.min(u0, p[0] * ux + p[1] * uz); v0 = Math.min(v0, -p[0] * uz + p[1] * ux); }
+    const fu = u0 / LOT_STALL_W, fv = v0 / LOT_MODULE;
     const ph = (f) => Math.round((f - Math.floor(f)) * 255) % 256;
-    return [Math.round(ang / Math.PI * 255), ph(fu), ph(fv), Math.floor(hash01(i * 3.17 + 0.5) * 255)];
+    return [aq, ph(fu), ph(fv), Math.floor(hash01(i * 3.17 + 0.5) * 255)];
   }
   function mergeLots(list) {   // conformDrape's soups into one: positions, the up normals and colours in four-byte slots, aLot
     let n = 0;
@@ -12776,6 +12805,12 @@
         '}',
       ].join('\n'));
   }
+  const lotSheetMat = () => {   // the sports complex's sheets: the photographed asphalt only (they carry their own stall lines)
+    const m = surfMat({ vertexColors: true, roughness: 1 });
+    m.onBeforeCompile = (sh, r) => { lotPatch(sh, false); surfTexPatch(sh, r); };
+    m.customProgramCacheKey = () => 'lot sheets';
+    return m;
+  };
   const lotMat = () => {
     const m = surfMat({ vertexColors: true, roughness: 1 });
     m.onBeforeCompile = (sh, r) => { lotPatch(sh); surfTexPatch(sh, r); };
@@ -12834,41 +12869,61 @@
   // Outside the core every rowhouse stood on a strip of lawn: the core lays its own walks ('Paving the streets') and nothing
   // paved the 3 to 5 m between an outer street's kerb and its facades. SIDEWALKS_B64 (bake_sidewalks.py, from wide.b64's
   // own streets and footprints) holds every band a city street carries, filled to the facades where a strip under 5.2 m
-  // was left, as simple rings: [magic 'SHWW', nRings, version 1, 0], then per ring n, kind (5 concrete, 6 brick in the
-  // historic districts), x0, z0 in 0.2 m units and n - 1 deltas. Each ring is densified to 12 m, earcut once and laid on the
-  // drawn ground at SIDEWALK_UP (a triangle whose middle would dip under the ground's own facets is split, twice at most),
-  // welded, its colour and up normal in four-byte slots (gotcha 158: never a 1- or 3-byte stream), cut into SIDEWALK_TILE
-  // tiles; a phone draws only the tiles within NEAR_R of the eye (updateStreets) and a LITE build none; the tuft field keeps
-  // off them (noSow). surfTexPatch gives the concrete its slab joints and the brick its herringbone by their colours
+  // was left, as simple rings cut on the bake's 400 m tiles (72 m across at the median, none over 400): [magic 'SHWW',
+  // nRings, version 1, 0], then per ring n, kind (5 concrete, 6 brick in the historic districts), x0, z0 in 0.2 m units and
+  // n - 1 deltas. The rings stay in that Int16 form (1.1 MB) with an offset and a box each, and swGeometry lays a set of
+  // them: each ring's edges densified to 12 m, earcut once and laid on the drawn ground at SIDEWALK_UP (a long earcut
+  // triangle whose middle would dip under the ground's 25 m facets is split, twice at most), welded and written straight
+  // into typed arrays (the review: 3.6 M boxed entries staged the whole set, 30 to 40 MB of a phone's heap in the build, the
+  // moment Round 158's deaths came in), the colour and the up normal in four-byte slots (gotcha 158: never a 1- or 3-byte
+  // stream) and the ring's own fade byte in the colour's fourth. A computer lays every ring at load in SIDEWALK_CELL squares
+  // (1,200 m, about fifty meshes: the first cut's 395 tiles at 400 m put up to three hundred more draw calls in a high view),
+  // staged like addTiles' (drawn unculled once behind the veil, then culled). A phone lays only the 200 m squares within
+  // NEAR_R of the eye, as the eye moves (updateStreets: the nearest first, about 3 ms a frame, a square dropped once it lies
+  // SIDEWALK_KEEP past the circle), so its GPU never holds the whole set; and each ring drops out at its own distance over
+  // the circle's last SIDEWALK_FADE metres (swFadePatch), so a phone's aerial shows the paving thin out ring by ring rather
+  // than end in a ring of squares. A LITE build lays none. The tuft field keeps off every ring through sidewalkAt (a 50 m
+  // grid of the rings' boxes and the ring test on the Int16 form: noSow's arrays of points kept 266,000 of them, some 17 MB,
+  // alive for the session). surfTexPatch gives the concrete its slab joints and the brick its herringbone by their colours
   const SIDEWALK_UP = 0.205;   // over the lots (0.055), the parks (0.06 to 0.09) and the sports complex's lots and stall lines (LAYER.plaza + 0.06 and + 0.09), under every street (0.24 up)
   const SIDEWALK_COL = { 5: 0x222320, 6: 0x2b1e18 };   // concrete (sRGB about 185 in sun beside the asphalt's 110), brick the core's own walks' (COLORS.footway under REAL)
-  const SIDEWALK_TILE = 400;
-  let sidewalkTiles = null;
-  step('Paving the sidewalks', () => {
-    if (!REAL || LITE || typeof SIDEWALKS_B64 === 'undefined' || !SIDEWALKS_B64) return;
-    let hdr, v;
-    try {
-      const u8 = unb64(SIDEWALKS_B64, 'SIDEWALKS');
-      SIDEWALKS_B64 = null;
-      hdr = new Int32Array(u8.buffer, u8.byteOffset, 4);
-      v = new Int16Array(u8.buffer, u8.byteOffset + 16, (u8.byteLength - 16) >> 1);
-    } catch (err) { console.error('sidewalks decode failed', err); return; }
-    if (hdr[0] !== 0x53485757 || hdr[2] !== 1) { console.error('sidewalks: bad magic or version', hdr[0], hdr[2]); return; }
-    const nRings = hdr[1], t0 = performance.now();
-    const pos = [], col = [], idx = [];
-    const cols = {};
-    for (const k in SIDEWALK_COL) { const c3 = new THREE.Color(SIDEWALK_COL[k]); cols[k] = [Math.round(c3.r * 255), Math.round(c3.g * 255), Math.round(c3.b * 255)]; }
+  const SIDEWALK_CELL = isTouch ? 200 : (TILE_OFF ? 1e5 : 1200), SIDEWALK_FADE = 220, SIDEWALK_KEEP = 200, SIDEWALK_HIT = 50;
+  const SW = { v: null, off: null, bb: null, n: 0, cols: null, cells: null, mat: null, hit0: null, hitIx: null, hx0: 0, hz0: 0, hnx: 0, hnz: 0,
+    queue: [], scanAt: 0, cam: new V3(1e9, 0, 1e9), built: 0, dropped: 0, tris: 0, verts: 0, split: 0 };
+  const swFadeU = { uSwFar: { value: 804.67 } };   // NEAR_R, followed every frame (__dbg.near moves it)
+  // a phone's fade: a fragment past its ring's own distance (NEAR_R less up to SIDEWALK_FADE, by the ring's byte) is not drawn
+  function swFadePatch(sh) {
+    sh.uniforms.uSwFar = swFadeU.uSwFar;
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute float aSwH; varying float vSwH;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvSwH = aSwH;');
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uSwFar; varying float vSwH;')
+      .replace('void main() {', 'void main() {\n  if (length(vViewPosition) > uSwFar - ' + SIDEWALK_FADE.toFixed(1) + ' * vSwH) discard;');
+  }
+  function swMat() {
+    const m = walkMat({ vertexColors: true, roughness: 1 });
+    if (!isTouch) return m;
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => { prev(sh, r); swFadePatch(sh); };
+    m.customProgramCacheKey = () => 'walks|fade';
+    return m;
+  }
+  // a set of rings (their indices) as one geometry, or null when nothing in them survives
+  function swGeometry(ids) {
+    const v = SW.v, off = SW.off, cols = SW.cols;
+    let cap = 1024, nv = 0, pos = new Float32Array(cap * 3), col = new Uint8Array(cap * 4), tris = 0, split = 0;
+    const idx = new IdxBuf(4096);
     const yAt = (x, z) => (groundMeshY(x, z) ?? siteY(x, z, 'ground')) + SIDEWALK_UP;
-    let split = 0, tris = 0, p = 0;
-    for (let ri = 0; ri < nRings && p + 4 <= v.length; ri++) {
-      const n = v[p], kind = v[p + 1];
+    for (const r of ids) {
+      let p = off[r];
+      const n = v[p], cc = cols[v[p + 1]] || cols[5], fade = Math.floor(hash01(r * 1.37 + 0.11) * 255);
       let x = v[p + 2], z = v[p + 3];
       p += 4;
       const ring = [[x * 0.2, z * 0.2]];
       for (let k = 1; k < n; k++) { x += v[p++]; z += v[p++]; ring.push([x * 0.2, z * 0.2]); }
-      const cc = cols[kind] || cols[5];
-      noSow(ring);   // the tuft field keeps off the paving
-      // densified to 12 m, so the earcut's triangles stay within reach of the ground's 25 m facets
+      // its edges densified to 12 m (an earcut triangle can still reach across the ring, up to 400 m: emit splits one whose
+      // middle dips under the drawn ground, twice at most)
       const dr = [];
       for (let k = 0; k < ring.length; k++) {
         const a = ring[k], b = ring[(k + 1) % ring.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]), m = Math.max(1, Math.ceil(L / 12));
@@ -12880,7 +12935,16 @@
       const vert = (q) => {
         const key = Math.round(q[0] * 50) * 1e6 + Math.round(q[1] * 50);
         let i = weld.get(key);
-        if (i === undefined) { i = pos.length / 3; weld.set(key, i); pos.push(q[0], q[2] !== undefined ? q[2] : yAt(q[0], q[1]), q[1]); col.push(cc[0], cc[1], cc[2]); }
+        if (i === undefined) {
+          if (nv === cap) {
+            cap *= 2;
+            const p2 = new Float32Array(cap * 3); p2.set(pos); pos = p2;
+            const c2 = new Uint8Array(cap * 4); c2.set(col); col = c2;
+          }
+          i = nv++; weld.set(key, i);
+          pos[i * 3] = q[0]; pos[i * 3 + 1] = q[2] !== undefined ? q[2] : yAt(q[0], q[1]); pos[i * 3 + 2] = q[1];
+          col[i * 4] = cc[0]; col[i * 4 + 1] = cc[1]; col[i * 4 + 2] = cc[2]; col[i * 4 + 3] = fade;
+        }
         return i;
       };
       const emit = (A, B, C, depth) => {
@@ -12902,23 +12966,164 @@
       };
       for (const f of faces) emit(dr[f[0]], dr[f[1]], dr[f[2]], 0);   // a point's height is cached on it (q[2]) the first time it is read
     }
-    if (!idx.length) return;
-    const nv = pos.length / 3, g = new THREE.BufferGeometry();
-    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    if (!nv || !idx.n) return null;
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos.subarray(0, nv * 3), 3));
     const nor = new Int8Array(nv * 4);
     for (let i = 0; i < nv; i++) nor[i * 4 + 1] = 127;
     g.setAttribute('normal', new THREE.BufferAttribute(nor, 4, true));
-    g.setAttribute('color', rgbStride4(col));
-    g.setIndex(nv > 65535 ? new THREE.BufferAttribute(new Uint32Array(idx), 1) : new THREE.BufferAttribute(new Uint16Array(idx), 1));
+    const cb = new THREE.InterleavedBuffer(col.subarray(0, nv * 4), 4);   // one 4-byte stream: the colour, and the ring's fade byte in its fourth
+    g.setAttribute('color', new THREE.InterleavedBufferAttribute(cb, 3, 0, true));
+    g.setAttribute('aSwH', new THREE.InterleavedBufferAttribute(cb, 1, 3, true));
+    g.setIndex(new THREE.BufferAttribute(idx.view(), 1));
     g.computeBoundingSphere();
     freeOnUpload(g);
-    const m = new THREE.Mesh(g, walkMat({ vertexColors: true, roughness: 1 }));
-    m.receiveShadow = true;
+    SW.tris += tris; SW.verts += nv; SW.split += split; SW.built++;
+    return g;
+  }
+  function swAdd(c, g, staged) {
+    const m = new THREE.Mesh(g, SW.mat);
     m.name = 'Sidewalks';
-    sidewalkTiles = streetTiles(m, SIDEWALK_TILE);
-    for (const t of sidewalkTiles) t.userData.occFlat = true;   // flat on the drawn ground: the pins' capture passes over them (occFlatTiles' flag)
-    PERF.sidewalks = { rings: nRings, tris, verts: nv, split, tiles: sidewalkTiles.length, ms: Math.round(performance.now() - t0) };
+    m.receiveShadow = !moonNoRecv;   // a phone's moon casts no shadow after dusk (moonShadowsOff): a square laid then joins its list
+    if (moonNoRecv) moonNoRecv.push(m);
+    m.userData.occFlat = true;   // flat on the drawn ground: the pins' capture passes over them (occFlatTiles' flag)
+    if (staged) { m.frustumCulled = false; m.userData.tileSet = SW; pendingUpload.push(m); }   // drawn once behind the veil, then culled (addTiles)
+    groupCity.add(m);
+    c.mesh = m;
+  }
+  function swDrop(c) {
+    groupCity.remove(c.mesh);
+    c.mesh.geometry.dispose();
+    c.mesh = null;
+    SW.dropped++;
+  }
+  // is (x, z) on a sidewalk ring (the tuft field's test, bareGroundAt): the 50 m grid's rings, their boxes, then the ring
+  function sidewalkAt(x, z) {
+    if (!SW.hitIx) return false;
+    const gx = Math.floor((x - SW.hx0) / SIDEWALK_HIT), gz = Math.floor((z - SW.hz0) / SIDEWALK_HIT);
+    if (gx < 0 || gz < 0 || gx >= SW.hnx || gz >= SW.hnz) return false;
+    const c = gz * SW.hnx + gx, bb = SW.bb;
+    for (let k = SW.hit0[c]; k < SW.hit0[c + 1]; k++) {
+      const r = SW.hitIx[k], b = r * 4;
+      if (x < bb[b] || x > bb[b + 1] || z < bb[b + 2] || z > bb[b + 3]) continue;
+      if (swRingHas(SW.off[r], x * 5, z * 5)) return true;
+    }
+    return false;
+  }
+  function swRingHas(p, x, z) {   // pointInPoly on the Int16 form, in its own 0.2 m units
+    const v = SW.v, n = v[p], fx = v[p + 2], fz = v[p + 3];
+    let inside = false, px = fx, pz = fz, q = p + 4;
+    for (let i = 1; i <= n; i++) {
+      let qx, qz;
+      if (i < n) { qx = px + v[q++]; qz = pz + v[q++]; } else { qx = fx; qz = fz; }
+      if ((pz > z) !== (qz > z) && x < (qx - px) * (z - pz) / (qz - pz) + px) inside = !inside;
+      px = qx; pz = qz;
+    }
+    return inside;
+  }
+  step('Paving the sidewalks', () => {
+    if (!REAL || LITE || typeof SIDEWALKS_B64 === 'undefined' || !SIDEWALKS_B64) return;
+    let hdr, v;
+    try {
+      const u8 = unb64(SIDEWALKS_B64, 'SIDEWALKS');
+      SIDEWALKS_B64 = null;
+      hdr = new Int32Array(u8.buffer, u8.byteOffset, 4);
+      v = new Int16Array(u8.buffer, u8.byteOffset + 16, (u8.byteLength - 16) >> 1);
+    } catch (err) { console.error('sidewalks decode failed', err); return; }
+    if (hdr[0] !== 0x53485757 || hdr[2] !== 1) { console.error('sidewalks: bad magic or version', hdr[0], hdr[2]); return; }
+    const t0 = performance.now(), nRings = hdr[1];
+    // every ring's offset and box
+    const off = new Int32Array(nRings), bb = new Float32Array(nRings * 4);
+    let p = 0, n = 0;
+    for (; n < nRings && p + 4 <= v.length; n++) {
+      const k = v[p];
+      if (k < 3 || p + 4 + 2 * (k - 1) > v.length) break;
+      let x = v[p + 2], z = v[p + 3], x0 = x, x1 = x, z0 = z, z1 = z;
+      off[n] = p; p += 4;
+      for (let q = 1; q < k; q++) { x += v[p++]; z += v[p++]; if (x < x0) x0 = x; if (x > x1) x1 = x; if (z < z0) z0 = z; if (z > z1) z1 = z; }
+      bb[n * 4] = x0 * 0.2; bb[n * 4 + 1] = x1 * 0.2; bb[n * 4 + 2] = z0 * 0.2; bb[n * 4 + 3] = z1 * 0.2;
+    }
+    if (!n) return;
+    SW.v = v; SW.off = off; SW.bb = bb; SW.n = n;
+    SW.cols = {};
+    for (const k in SIDEWALK_COL) { const c3 = new THREE.Color(SIDEWALK_COL[k]); SW.cols[k] = [Math.round(c3.r * 255), Math.round(c3.g * 255), Math.round(c3.b * 255)]; }
+    // the squares: each ring in the one its box's middle lies in, each square's box the union of its rings'
+    const C = SIDEWALK_CELL, byKey = new Map();
+    let hx0 = Infinity, hx1 = -Infinity, hz0 = Infinity, hz1 = -Infinity;
+    for (let r = 0; r < n; r++) {
+      const b = r * 4, key = (Math.floor((bb[b] + bb[b + 1]) / 2 / C) + 4096) * 8192 + Math.floor((bb[b + 2] + bb[b + 3]) / 2 / C) + 4096;
+      let c = byKey.get(key);
+      if (!c) { c = { ids: [], x0: Infinity, x1: -Infinity, z0: Infinity, z1: -Infinity, y: 0, d: 0, mesh: null, empty: false }; byKey.set(key, c); }
+      c.ids.push(r);
+      c.x0 = Math.min(c.x0, bb[b]); c.x1 = Math.max(c.x1, bb[b + 1]); c.z0 = Math.min(c.z0, bb[b + 2]); c.z1 = Math.max(c.z1, bb[b + 3]);
+      hx0 = Math.min(hx0, bb[b]); hx1 = Math.max(hx1, bb[b + 1]); hz0 = Math.min(hz0, bb[b + 2]); hz1 = Math.max(hz1, bb[b + 3]);
+    }
+    SW.cells = [...byKey.values()];
+    for (const c of SW.cells) { c.ids = Int32Array.from(c.ids); c.y = siteY((c.x0 + c.x1) / 2, (c.z0 + c.z1) / 2, 'ground'); }
+    // the tuft field's grid: every ring under each 50 m cell its box touches (two passes, counts then the list)
+    const H = SIDEWALK_HIT, hnx = Math.floor((hx1 - hx0) / H) + 1, hnz = Math.floor((hz1 - hz0) / H) + 1, hit0 = new Int32Array(hnx * hnz + 1);
+    const span = (r, fn) => {
+      const b = r * 4, gx0 = Math.floor((bb[b] - hx0) / H), gx1 = Math.floor((bb[b + 1] - hx0) / H), gz0 = Math.floor((bb[b + 2] - hz0) / H), gz1 = Math.floor((bb[b + 3] - hz0) / H);
+      for (let gz = gz0; gz <= gz1; gz++) for (let gx = gx0; gx <= gx1; gx++) fn(gz * hnx + gx);
+    };
+    for (let r = 0; r < n; r++) span(r, (c) => { hit0[c + 1]++; });
+    for (let c = 0; c < hnx * hnz; c++) hit0[c + 1] += hit0[c];
+    const hitIx = new Int32Array(hit0[hnx * hnz]), fill = hit0.slice(0, hnx * hnz);
+    for (let r = 0; r < n; r++) span(r, (c) => { hitIx[fill[c]++] = r; });
+    Object.assign(SW, { hit0, hitIx, hx0, hz0, hnx, hnz });
+    SW.mat = swMat();
+    if (!isTouch) {
+      for (const c of SW.cells) { const g = swGeometry(c.ids); if (g) swAdd(c, g, true); else c.empty = true; }
+    } else {
+      // the squares within the circle of the eye as it stands, so the program compiles behind the veil (the nearest one at
+      // least, wherever the eye is); updateStreets lays and drops the rest from the first frame on
+      const cam = camera.position;
+      const dist = (c) => Math.hypot(Math.max(c.x0 - cam.x, 0, cam.x - c.x1), Math.max(c.z0 - cam.z, 0, cam.z - c.z1), Math.max(0, cam.y - c.y));
+      const near = SW.cells.slice().sort((a, b) => dist(a) - dist(b));
+      for (let k = 0; k < near.length && (k === 0 || dist(near[k]) < NEAR_R); k++) { const g = swGeometry(near[k].ids); if (g) swAdd(near[k], g, true); else near[k].empty = true; }
+    }
+    PERF.sidewalks = { rings: n, cells: SW.cells.length, built: SW.built, tris: SW.tris, verts: SW.verts, split: SW.split, hit: hitIx.length, ms: Math.round(performance.now() - t0) };
   });
+  // a phone lays the squares within the half mile (NEAR_R) as the eye moves, the nearest first and about 3 ms of them a frame,
+  // and drops a square once it lies SIDEWALK_KEEP past the circle; a computer laid them all at load
+  function updateStreets(now) {
+    if (!SW.cells || !isTouch) return;
+    swFadeU.uSwFar.value = NEAR_R;
+    const cam = camera.position;
+    if (now >= SW.scanAt || cam.distanceToSquared(SW.cam) > 30 * 30) {
+      SW.scanAt = now + 300; SW.cam.copy(cam);
+      SW.queue.length = 0;
+      for (const c of SW.cells) {
+        const d = Math.hypot(Math.max(c.x0 - cam.x, 0, cam.x - c.x1), Math.max(c.z0 - cam.z, 0, cam.z - c.z1), Math.max(0, cam.y - c.y));
+        if (c.mesh) { if (d > NEAR_R + SIDEWALK_KEEP) swDrop(c); }
+        else if (!c.empty && d < NEAR_R) { c.d = d; SW.queue.push(c); }
+      }
+      SW.queue.sort((a, b) => b.d - a.d);   // the nearest last, so it is popped first
+    }
+    const tEnd = performance.now() + 3;
+    while (SW.queue.length) {
+      const c = SW.queue.pop(), g = swGeometry(c.ids);
+      if (g) swAdd(c, g, false); else c.empty = true;
+      if (performance.now() > tEnd) break;
+    }
+  }
+  // the streets' probe (__dbg.PERF.streets): the sidewalk squares laid and in the scene, and the lane shader's detail switch
+  PERF.streets = () => {
+    const live = SW.cells ? SW.cells.filter((c) => c.mesh) : [];
+    let tris = 0;
+    for (const c of live) tris += c.mesh.geometry.index ? c.mesh.geometry.index.count / 3 : 0;
+    return { cells: SW.cells ? SW.cells.length : 0, live: live.length, liveTris: Math.round(tris), built: SW.built, dropped: SW.dropped, queue: SW.queue.length, near: NEAR_R, laneDetail };
+  };
+  PERF.sidewalkAt = (x, z) => sidewalkAt(x, z);   // the tuft field's test, for a probe
+  PERF.laneDetail = (on) => {   // the lane shader's detail on or off, every street recompiled (the weather hookup's key kept, with a mark)
+    laneDetail = !!on;
+    for (const m of LANE_MATS) {
+      const k = m.userData.laneKey || (m.userData.laneKey = m.customProgramCacheKey);
+      m.customProgramCacheKey = () => k.call(m) + (laneDetail ? '' : '|lite');
+      m.needsUpdate = true;
+    }
+    return laneDetail;
+  };
   // the realism pass's flats into the scene as tiles, staged like addTiles' (drawn unculled once behind the veil, so each
   // uploads and frees its arrays), at a cell of their own
   function streetTiles(m, cell) {
@@ -12928,20 +13133,6 @@
       if (tiles && t.frustumCulled) { t.frustumCulled = false; t.userData.tileSet = m; pendingUpload.push(t); }
     }
     return tiles || [m];
-  }
-  // a phone draws the sidewalks only within the half mile (NEAR_R), checked as the eye moves; a computer draws them all
-  let streetsNearAt = 0;
-  const streetsNearCam = new V3(1e9, 0, 1e9);
-  function updateStreets(now) {
-    if (!sidewalkTiles || !isTouch || now < streetsNearAt) return;
-    streetsNearAt = now + 400;
-    if (camera.position.distanceToSquared(streetsNearCam) < 30 * 30) return;
-    streetsNearCam.copy(camera.position);
-    for (const t of sidewalkTiles) {
-      const bs = t.geometry.boundingSphere;
-      if (!bs || !t.frustumCulled) continue;   // never before its first draw has uploaded it and freed its arrays
-      t.visible = Math.hypot(bs.center.x - camera.position.x, bs.center.z - camera.position.z, Math.max(0, camera.position.y - bs.center.y)) - bs.radius < NEAR_R;
-    }
   }
   step('Dressing the storefronts', () => {
     // Tier 2 of the facade plan: OSM's shops, cafes, bars, banks and the rest, each on the
@@ -13027,6 +13218,22 @@
         steel ? '' : '  diffuseColor.rgb *= mix(1.0, 0.62, smoothstep(-0.3, -0.7, dwN.y));',   // a deck's soffit
         '}',
       ].join('\n'));
+  }
+  // the decks' and the El's hooks are written out here, never inline in their steps: a hook lives as long as its material,
+  // and one written in a build step keeps that step's whole scope (Round 158's leak; the review round found the decks' own
+  // inline hook holding every part of 'Raising the overpasses', its geometries and their arrays, for the page's life)
+  function deckConcrete(m) {
+    const prev = m.onBeforeCompile;
+    m.onBeforeCompile = (sh, r) => { deckWallPatch(sh, 'concrete'); prev(sh, r); };
+    m.customProgramCacheKey = () => 'decks|' + prev.toString();
+    return m;
+  }
+  function elSteelMat() {
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.25 });
+    m.onBeforeCompile = (sh) => deckWallPatch(sh, 'steel');
+    m.customProgramCacheKey = () => 'el steel';
+    m.userData.wxSurf = true;   // the weather hookup wraps it (snow on the deck) as it did the plain material
+    return m;
   }
   step('Raising the overpasses', () => {
     if (!OVP.el.length && !OVP.cor.length && !OVP.sk.length) return;
@@ -13491,11 +13698,7 @@
     }
     if (parts.length) {
       const ovpMat = roadMat({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
-      if (REAL) {   // the realism pass: the photographed concrete on every side, pier and parapet face, the soffits in shade (deckWallPatch)
-        const prevO = ovpMat.onBeforeCompile;
-        ovpMat.onBeforeCompile = (sh, r) => { deckWallPatch(sh, 'concrete'); prevO(sh, r); };
-        ovpMat.customProgramCacheKey = () => 'decks|' + prevO.toString();
-      }
+      if (REAL) deckConcrete(ovpMat);   // the realism pass: the photographed concrete on every side, pier and parapet face, the soffits in shade
       const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
       freeShadingOnUpload(mesh.geometry);   // 1.1 M vertices at ready on the phone path: a raycast target keeps its positions, the rest goes once uploaded
       mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
@@ -14770,6 +14973,7 @@
     if (inCore(x, z)) return false;
     for (const pi of grassNear) { const bb = grassPolyBB[pi]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, GRASS_POLYS[pi])) return false; }
     for (const li of noSowNear) { const bb = NO_SOW_RING_BB[li]; if (x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, NO_SOW_RINGS[li])) return false; }
+    if (sidewalkAt(x, z)) return false;   // the realism pass: the outer districts' sidewalks (their own grid, not noSow's arrays)
     return true;
   }
   function grassInit() {
@@ -18696,11 +18900,7 @@ float pinOccGate() {
     if (!REAL || isTouch) return;
     const el = groupCity.getObjectByName('El Structure and Track Beds');
     if (!el) return;
-    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.25 });
-    m.onBeforeCompile = (sh) => deckWallPatch(sh, 'steel');
-    m.customProgramCacheKey = () => 'el steel';
-    m.userData.wxSurf = true;   // the weather hookup wraps it (snow on the deck) as it did the plain material
-    el.material.dispose(); el.material = m;
+    el.material.dispose(); el.material = elSteelMat();
   });
   step('Laying the Northeast Corridor', () => {
     if (typeof RAIL_AMTRAK === 'undefined' || !RAIL_AMTRAK || !RAIL_AMTRAK.lines) return;
@@ -19009,8 +19209,7 @@ float pinOccGate() {
       g.computeVertexNormals();
       freeOnUpload(g);
       const m = new THREE.MeshLambertMaterial({ color: ballast });
-      m.onBeforeCompile = ballastPatch;
-      m.userData.wxSurf = true;   // the weather hookup wraps it, as it did the slab
+      m.onBeforeCompile = ballastPatch;   // Lambert like the slab under it: the weather hookup wraps only MeshStandard, so neither takes snow
       const mesh = new THREE.Mesh(g, m);
       mesh.receiveShadow = true; mesh.name = 'Amtrak Ties and Ballast';
       groupCity.add(mesh);

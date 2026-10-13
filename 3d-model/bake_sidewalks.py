@@ -13,16 +13,19 @@ schuylkill.json and delaware.json) and places.json's historic districts for the 
   S2  the facade fill: a morphological closing of S with the footprints (buffer 2.6 out and back), kept within 6.5 m
       of a kerb, which paves any strip under 5.2 m between the band and a facade (a rowhouse block) and leaves a real
       front lawn (a Northeast Philadelphia setback) alone
-  SW  = (S | S2) - CW - footprints - water - the core's box (it paves its own), simplified to 0.15 m, parts under
-      2 m2 dropped
+  SW  = (S | S2) - CW - footprints - water - the core's box (it paves its own), cut to the tile, simplified (--simplify,
+      0.25 m by default) and snapped to the 0.2 m grid, parts under 2 m2 dropped
 
-and SW is cut into 50 m cells on the outer districts' ground grid (x from -3700, z from -4480) so every piece is small,
-holes split, and each written as a ring. Brick (kind 6) inside Old City, Society Hill, Rittenhouse-Fitler and Spring
-Garden (places.json) and hand-drawn Queen Village and Washington Square West boxes; concrete (kind 5) elsewhere.
+Each part's holes are split away (no_holes: a cut through each hole), so every ring is simple, and written as a ring. The
+rings are cut only at the 400 m tile edges: 72 m across at the median, 150 m at the 90th percentile, none over 400 m (the
+page densifies each ring's edges to 12 m and splits any long earcut triangle that would dip under the drawn ground).
+Brick (kind 6) inside Old City, Society Hill, Rittenhouse-Fitler and Spring Garden (places.json) and hand-drawn Queen
+Village and Washington Square West boxes; concrete (kind 5) elsewhere.
 
 sidewalks.b64: Int32 header [magic 0x53485757 'SHWW', nRings, version 1, 0], then int16 per ring: n, kind, x0, z0 in
-0.2 m units of the model frame, then n - 1 deltas (dx, dz) in the same units. The page lays each ring with conformDrape
-on the drawn ground ('Paving the sidewalks')."""
+0.2 m units of the model frame, then n - 1 deltas (dx, dz) in the same units. The page keeps the rings in this form and
+lays them on the drawn ground ('Paving the sidewalks', swGeometry): a computer all of them at load in 1,200 m squares, a
+phone the 200 m squares within half a mile of the eye as it moves."""
 import argparse, base64, json, math, os, struct, sys, time
 import numpy as np
 import shapely
