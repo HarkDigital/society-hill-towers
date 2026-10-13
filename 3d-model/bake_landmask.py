@@ -8,11 +8,17 @@ browser may premultiply an image's colour by it on the way to the GPU, which wou
      averaged to the mask's 20 m, then blurred over about 60 m, and taken out where the ground is a park or a green
      (the scenes' park areas and the parkland rings). Rowhouse blocks read 0.5 and up, parkland and open ground 0. The
      shader lays yards, patios and alleys on built-up ground and keeps the lawn where it is low.
-  G  woods: the PPR parkland rings (nw_parks.json, already in the build) and the interiors of the scenes' big parks, away
+  G  woods: the PPR parkland rings (nw_parks.json, already in the build) and the interiors of the city's big parks, away
      from the drives and the buildings and where the street tree survey (trees.b64) finds few trees, since a surveyed tree
-     is a maintained one standing in a lawn;
+     is a maintained one standing in a lawn (only inside the city line: the survey stops there, so past it every park
+     would read as treeless and be wooded whole, the hard-edged rectangles of the first bake);
      past the city line, a share of whatever is not built up (Delaware County and Montgomery County are canopy and
-     roofs). The shader lays the generated forest canopy there.
+     roofs). The edges are broken by a seeded noise where the woods thin out, so a stand never ends on a polygon's
+     straight side. The shader lays the generated forest canopy there, and the wood field plants it.
+     Exactly 0 on water and on the railways (the review: about 10 km2 of reservoirs, lakes and creeks and the Amtrak
+     corridor took woods): every texel any water ring touches (the scenes' water areas, nw_water.json's creeks and
+     reservoirs, the two rivers) and every texel within 7 m of an Amtrak or PATCO track that is not in a tunnel. The wood
+     field takes a zero texel as no trees at all, whatever its neighbours.
   B  river bank: 1 at the Schuylkill's and the tidal Delaware's edge (schuylkill.json, delaware.json), 0 by 60 m inland,
      so the shader's tide band and riprap follow the two rivers and never the creeks (whose water stands at its own
      stepped levels) or low flat ground away from them.
@@ -88,6 +94,14 @@ def dist_px(mask, upto):
     return d
 
 
+def noise(seed, cell):
+    """A seeded value noise over the mask, 0 to 1, features about `cell` metres across (a coarse random grid, bicubic)."""
+    rng = np.random.default_rng(seed)
+    gw, gh = int(W * PX / cell) + 3, int(H * PX / cell) + 3
+    g = Image.fromarray((rng.random((gh, gw)) * 255).astype(np.uint8))
+    return np.asarray(g.resize((int(gw * cell / PX), int(gh * cell / PX)), Image.BICUBIC), np.float32)[:H, :W] / 255.0
+
+
 def smooth(e0, e1, x):
     t = np.clip((x - e0) / (e1 - e0), 0, 1)
     return t * t * (3 - 2 * t)
@@ -138,14 +152,17 @@ def main():
     # interiors, 50 m and more from a road, a little thinner than the parkland
     pk = np.asarray(Image.fromarray(park).filter(ImageFilter.GaussianBlur(1.5)), np.float32) / 255.0
     far = smooth(20, 70, road_d) * smooth(20, 70, bld_d) * (1 - smooth(0.04, 0.35, dens))
-    woods = np.maximum(pl, pk * 0.8 * smooth(50, 80, road_d)) * far
-    # past the city line, a share of the unbuilt ground
     lim = canvas()
     fill(lim, json.load(open(os.path.join(HERE, 'city_limit.json')))['city'])
     inside = np.asarray(lim.filter(ImageFilter.GaussianBlur(3)), np.float32) / 255.0
+    woods = np.maximum(pl, pk * 0.8 * smooth(50, 80, road_d) * smooth(0.5, 0.9, inside)) * far
+    # past the city line, a share of the unbuilt ground
     sub = (1 - inside) * 0.55 * (1 - smooth(0.1, 0.5, R)) * smooth(10, 50, road_d)
     G = np.clip(np.maximum(woods, sub), 0, 1)
-    G = np.asarray(Image.fromarray((G * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.0)), np.float32) / 255.0
+    G = np.asarray(Image.fromarray((G * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.6)), np.float32) / 255.0
+    # ragged edges: where the woods thin out (G between 0 and 1) a seeded noise of 100 to 400 m moves the line, and a
+    # stand's interior keeps a few thinner glades
+    G = np.clip(G + (noise(7, 400) * 0.6 + noise(11, 140) * 0.4 - 0.5) * (0.9 * 4 * G * (1 - G) + 0.12 * G), 0, 1)
     # A: the two rivers' banks
     water = canvas()
     s = json.load(open(os.path.join(HERE, 'schuylkill.json')))
@@ -154,6 +171,28 @@ def main():
         fill(water, p['ring'])
         for h in p.get('holes', []):
             fill(water, h, v=0)
+    # no woods on any water or railway: every 20 m texel a water ring or a track touches, drawn at 5 m with its outline
+    # (a creek narrower than a fine pixel still marks its texels)
+    wet = canvas(FINE)
+    wd_ = ImageDraw.Draw(wet)
+    rings = [p['ring'] for p in s['polys'] + d['polys'] + d.get('beyond', [])]
+    rings += [ring for kind, ring in areas if kind == 1]
+    rings += [list(zip(fl[0::2], fl[1::2])) for fl in json.load(open(os.path.join(HERE, 'nw_water.json')))['polys']]
+    for ring in rings:
+        if len(ring) >= 3:
+            pts = to_px(ring, FINE)
+            wd_.polygon(pts, fill=255)
+            wd_.line(pts + [pts[0]], fill=255, width=1)
+    nwet = len(rings)
+    rail = json.load(open(os.path.join(HERE, 'rail_amtrak.json')))
+    tracks = [l['p'] for l in rail['lines'] if not l.get('t')]
+    tracks += [c['p'] for c in json.load(open(os.path.join(HERE, 'patco.json')))['chains']]
+    for pts in tracks:
+        if len(pts) >= 2:
+            wd_.line(to_px([(q[0], q[1]) for q in pts], FINE), fill=255, width=3)   # 15 m: the ballast and its cleared margin
+    off = np.asarray(wet.filter(ImageFilter.MaxFilter(3)).resize((W, H), Image.BOX)) > 0   # grown by 5 m: a shore texel the fill missed
+    G[off] = 0.0
+    print('woods kept off %d water rings and %d tracks: %.1f km2' % (nwet, len(tracks), off.sum() * PX * PX / 1e6))
     wd = dist_px(np.asarray(water), 4) * PX                     # metres from the water, to 80 (0 on it)
     A = np.where(np.asarray(water) > 127, 1.0, 1 - smooth(10, 60, wd)).astype(np.float32)
     R = R * (1 - B)

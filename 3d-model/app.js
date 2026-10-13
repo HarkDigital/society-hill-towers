@@ -5583,6 +5583,7 @@ vec2 wRing(vec2 rc, float tt) {
     if (RAISED.piles3.length) {
       const P = RAISED.piles3, n = P.length / 3, g = new THREE.CylinderGeometry(0.28, 0.3, 1, 6, 1, true).translate(0, 0.5, 0);
       const im = new THREE.InstancedMesh(g, new THREE.MeshStandardMaterial({ color: PILE_COL, roughness: 0.95 }), n);
+      im.material.onBeforeCompile = (sh) => tidePatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // the tide's stain and its wet gloss (ground-veg's TIDE_GLSL)
       const M = new THREE.Matrix4();
       for (let i = 0; i < n; i++) { const yb = TERRAIN.bed, h = P[i * 3 + 2] - yb; M.makeScale(1, h, 1).setPosition(P[i * 3], yb, P[i * 3 + 1]); im.setMatrixAt(i, M); }
       im.receiveShadow = true;
@@ -15291,7 +15292,31 @@ vec2 wRing(vec2 rc, float tt) {
     const tex = new THREE.CanvasTexture(cv);
     tex.premultiplyAlpha = true;
     tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);   // left linear: one shader samples both atlases and decodes them itself
-    return { view, N, A, AH, C, cv, ctx: cv.getContext('2d'), tex };
+    const at = { view, N, A, AH, C, cv, ctx: cv.getContext('2d'), tex, live: false, cell: null, pend: [], subs: 0 };
+    // the review: the canvas is only the first fill. Once it is up, its backing store goes (56 MB at the full tier), and a
+    // season's change sends up only the cells it redrew (atlasCell; it re-sent the whole 45 MB canvas at every change)
+    tex.onUpdate = () => { if (at.live) return; at.live = true; at.cv.width = at.cv.height = 1; at.ctx = null; };
+    return at;
+  }
+  // one cell of an atlas: into the canvas until the texture is up, then queued for atlasFlush
+  function atlasCell(at, k, im) {
+    const x = (k % at.C) * at.N, y = Math.floor(k / at.C) * at.N;
+    if (!at.live) { at.ctx.clearRect(x, y, at.N, at.N); at.ctx.drawImage(im, x, y, at.N, at.N); at.dirty = true; return; }
+    at.pend.push([x, y, im]);
+  }
+  const _atPos = new THREE.Vector2();
+  function atlasFlush(at) {   // the queued cells straight into the texture, one cell's canvas each, the mips once at the last
+    if (at.dirty) { at.dirty = false; if (!at.live) at.tex.needsUpdate = true; }   // live already: the upload that made it so carried the canvas as drawn
+    if (!at.pend.length) return;
+    if (!at.cell) { const c = document.createElement('canvas'); c.width = c.height = at.N; at.cell = { ctx: c.getContext('2d'), tex: new THREE.Texture(c) }; }
+    const c = at.cell, mips = at.tex.generateMipmaps;
+    at.pend.forEach(([x, y, im], i) => {
+      c.ctx.clearRect(0, 0, at.N, at.N); c.ctx.drawImage(im, 0, 0, at.N, at.N);
+      at.tex.generateMipmaps = mips && i === at.pend.length - 1;
+      renderer.copyTextureToTexture(_atPos.set(x, at.AH - y - at.N), c.tex, at.tex);   // texSubImage2D, flipped: the cell's foot at the texture's row AH - y - N
+      at.subs++;
+    });
+    at.tex.generateMipmaps = mips; at.pend.length = 0;
   }
   function treeArtImage(look, view, season) {
     const L = TREE_ART.images[look], v = L && L[view];
@@ -15325,16 +15350,16 @@ vec2 wRing(vec2 rc, float tt) {
           const got = [await treeArtImage(looks[li], 'side', season), await treeArtImage(looks[li], 'top', season)];
           if (!got[0] || !got[1]) continue;   // not to be had now: the cell keeps what it holds, and the next pass asks again
           [TREEART.side, TREEART.top].forEach((at, vi) => {
-            const g = got[vi], k = li * 2 + slot, x = (k % at.C) * at.N, y = Math.floor(k / at.C) * at.N;
-            at.ctx.clearRect(x, y, at.N, at.N);
-            at.ctx.drawImage(g.im, x, y, at.N, at.N);
+            const g = got[vi];
+            atlasCell(at, li * 2 + slot, g.im);
             (at.view === 'side' ? TREEART.uLk : TREEART.uLk2).value[li].setComponent(slot + 1, at.view === 'side' ? g.rec.hf : g.rec.df);
           });
           st[slot] = season; drew = true;
         }
         TREEART.uLk.value[li].x = t;
+        TREEART.uLk.value[li].w = (st[0] === 'turning' ? 1 : 0) + (st[1] === 'turning' ? 2 : 0);   // which slot holds the turning picture (TREE_PICK)
       }
-      if (drew) { TREEART.side.tex.needsUpdate = true; TREEART.top.tex.needsUpdate = true; }
+      if (drew || TREEART.side.pend.length) { atlasFlush(TREEART.side); atlasFlush(TREEART.top); }
       TREEART.key = want.map((w) => w[0] + w[1]).join();
     } finally { TREEART.busy = false; }
   }
@@ -15381,14 +15406,15 @@ vec2 wRing(vec2 rc, float tt) {
       vec3 rt = vec3(fh.y, 0.0, -fh.x);
       vec3 upC = normalize(cross(toEye, rt));                    // the eye's up, square to the line of sight
       vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), upC, lean));
-      float S = mix(H / hf, D / df, tw) * (0.92 + 0.16 * v2);    // the card's size: the tree's height, then its crown's span
+      float S = mix(H / hf, D / df, tw)${REAL ? ' * (0.92 + 0.16 * v2)' : ''};    // the card's size: the tree's height, then its crown's span
       float py = 0.5 * lean;                                      // the pivot climbs from the trunk's foot to the card's middle
       vec3 piv = tb + vec3(0.0, S * py, 0.0);
       float ph = tb.x * 0.07 + tb.z * 0.05, yy = position.y + 0.5;
       float sw = (sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25) * 0.012 * yy * yy * S * (1.0 - tw);
-      wpOut = piv + rt * (position.x * S * (0.9 + 0.2 * v3) + sw) + up * ((yy - py) * S - 0.035 * S * (1.0 - lean));   // world space
-      tTw = tw; tTurn = turn; tVar = fract(seedT * 23.3 + 0.29); tCsY = yy; tWood = step(aLS.y, 0.0);
-      vec2 cs = vec2(mix(position.x + 0.5, 0.5 - position.x, step(0.5, v1)), yy);
+      wpOut = piv + rt * (position.x * S${REAL ? ' * (0.9 + 0.2 * v3)' : ''} + sw) + up * ((yy - py) * S - ${REAL ? '0.035 * S * (1.0 - lean)' : '0.03 * (1.0 - lean)'});   // world space
+      tTw = tw; tTurn = turn; tVar = fract(seedT * 23.3 + 0.29); tCsY = yy; tWood = step(aLS.y, 0.0); tTp = L1.w;
+      vec2 cs = ${REAL ? 'vec2(mix(position.x + 0.5, 0.5 - position.x, step(0.5, v1)), yy)' : 'vec2(position.x + 0.5, yy)'};
+      tQ = cs * 6.0 + vec2(seedT * 37.0, seedT * 91.0);          // the leaf clumps' noise, the tree's own
       tUvS = vec4(tCell(lk * 2.0, cs, ${NS.toFixed(1)}, ${AWS.toFixed(1)}, ${AHS.toFixed(1)}), tCell(lk * 2.0 + 1.0, cs, ${NS.toFixed(1)}, ${AWS.toFixed(1)}, ${AHS.toFixed(1)}));
       tUvT = vec4(tCell(lk * 2.0, cs, ${NT.toFixed(1)}, ${AWT.toFixed(1)}, ${AHT.toFixed(1)}), tCell(lk * 2.0 + 1.0, cs, ${NT.toFixed(1)}, ${AWT.toFixed(1)}, ${AHT.toFixed(1)}));
       // the alpha firmed as the card shrinks on screen (its mips average the gaps in), by the texels a pixel covers
@@ -15396,9 +15422,25 @@ vec2 wRing(vec2 rc, float tt) {
       tBoost = 1.0 + 0.35 * max(0.0, log2(${NS.toFixed(1)} / max(px, 1.0)));
       vec3 nC = normalize(cross(up, rt)); if (dot(nC, toEye) < 0.0) nC = -nC;
       vec2 q = vec2(position.x * 2.0, (yy - mix(0.62, 0.5, tw)) * 2.6);
-      nrmOut = normalize(rt * q.x * 0.75 + up * q.y * 0.75 + nC * 0.65 + vec3(0.0, 0.25, 0.0));
+      ${REAL ? 'nrmOut = normalize(rt * q.x * 0.75 + up * q.y * 0.75 + nC * 0.65 + vec3(0.0, 0.25, 0.0));' : 'nrmOut = normalize(mix(vec3(fh.x * 0.45, 1.0, fh.y * 0.45), vec3(0.0, 1.0, 0.0), tw));'}
   }`;
-  const TREE_VARY = 'varying vec4 tUvS; varying vec4 tUvT; varying float tTw; varying float tBoost; varying float tTurn; varying float tVar; varying float tCsY; varying float tWood;';
+  const TREE_VARY = 'varying vec4 tUvS; varying vec4 tUvT; varying float tTw; varying float tBoost; varying float tTurn; varying float tVar; varying float tCsY; varying float tWood; varying vec2 tQ; varying float tTp;';
+  // a tree between its two pictures. ?real=0: a plain dissolve. The realism pass (the review: on Nov 5 the turning picture
+  // read as a solid orange or yellow cap on a green crown): the change comes through in leaf clumps (a noise on the card,
+  // the tree's own), and in the turning picture (uLk.w: 1 slot A holds it, 2 slot B) about half the coloured clumps are
+  // still green, so the first colour is scattered over the crown's top rather than one cap
+  const TREE_PICK = REAL ? [
+    'float tHs(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
+    'float tNz(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(tHs(i), tHs(i + vec2(1.0, 0.0)), f.x), mix(tHs(i + vec2(0.0, 1.0)), tHs(i + vec2(1.0, 1.0)), f.x), f.y); }',
+    'float tNa = 0.5, tNb = 0.5;',
+    'vec4 tGreen(vec4 c) { float mx = max(c.r, max(c.g, c.b)), sat = (mx - min(c.r, min(c.g, c.b))) / max(mx, 1e-4);',
+    '  float red = smoothstep(0.0, 0.1 * max(c.a, 0.05), c.r - c.g * 0.9) * smoothstep(0.45, 0.6, sat);',
+    '  return vec4(mix(c.rgb, vec3(0.52, 0.78, 0.25) * dot(c.rgb, vec3(0.3, 0.59, 0.11)), red * smoothstep(0.34, 0.54, tNb)), c.a); }',   // the crown's own olive green, not a mint
+    'vec4 tPick(sampler2D s, vec4 uv, float k) {',
+    '  vec4 a = k >= 0.999 ? vec4(0.0) : texture2D(s, uv.xy), b = k <= 0.001 ? vec4(0.0) : texture2D(s, uv.zw);',
+    '  if (tTp > 0.5) { if (mod(tTp, 2.0) > 0.5) a = tGreen(a); if (tTp > 1.5) b = tGreen(b); }',
+    '  return mix(a, b, smoothstep(tNa - 0.15, tNa + 0.15, k * 1.3 - 0.15)); }',
+  ].join('\n') : 'vec4 tPick(sampler2D s, vec4 uv, float k) { if (k <= 0.001) return texture2D(s, uv.xy); if (k >= 0.999) return texture2D(s, uv.zw); return mix(texture2D(s, uv.xy), texture2D(s, uv.zw), k); }';
   function treeArtPatch(sh, depth) {
     const S = TREEART.side, T = TREEART.top;
     Object.assign(sh.uniforms, { uLk: TREEART.uLk, uLk2: TREEART.uLk2, uTime: waterU.uTime, uResH: TREEART.uResH, tSide: { value: S.tex }, tTop: { value: T.tex } });
@@ -15415,19 +15457,19 @@ vec2 wRing(vec2 rc, float tt) {
     if (lit) Object.assign(sh.uniforms, { uSnowAcc: wxSurfU.uSnowAcc, uTexelS: { value: 1.5 / S.AH } });
     if (lit) cardShadowReach(sh);   // the realism pass: its shadow lookup out of its own crown
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; ' + TREE_VARY + (lit ? ' uniform float uSnowAcc; uniform float uTexelS;' : '') + '\n' +
-        'vec4 tPick(sampler2D s, vec4 uv, float k) { if (k <= 0.001) return texture2D(s, uv.xy); if (k >= 0.999) return texture2D(s, uv.zw); return mix(texture2D(s, uv.xy), texture2D(s, uv.zw), k); }')
-      .replace('#include <map_fragment>', '#include <map_fragment>\n{ vec4 a = tPick(tSide, tUvS, tTurn), b = tPick(tTop, tUvT, tTurn);\n' +
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; ' + TREE_VARY + (lit ? ' uniform float uSnowAcc; uniform float uTexelS;' : '') + '\n' + TREE_PICK)
+      .replace('#include <map_fragment>', '#include <map_fragment>\n{ ' + (REAL ? 'tNa = tNz(tQ); tNb = tNz(tQ * 0.6 + 7.3);\n' : '') + '  vec4 a = tPick(tSide, tUvS, tTurn), b = tPick(tTop, tUvT, tTurn);\n' +
         '  vec4 tx = tTw <= 0.0 ? a : tTw >= 1.0 ? b : mix(a, b, tTw);\n' +
         '  tx.rgb = min(tx.rgb / max(tx.a, 0.004), vec3(1.0));   // the atlas holds premultiplied colour: the coverage divided back out\n' +
-        (depth ? '' : '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2));\n' +
-          '  diffuseColor.rgb *= mix(vec3(0.88, 0.92, 0.95), vec3(1.07, 1.04, 0.95), tVar) * mix(1.0, mix(0.72, 1.0, smoothstep(0.15, 0.85, tCsY)), 1.0 - tTw);\n' +
+        (depth ? '' : '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2));\n' + (REAL ?   // the realism pass's look; ?real=0 is Round 184's card
+          '  diffuseColor.rgb *= mix(vec3(0.88, 0.92, 0.95), vec3(1.07, 1.04, 0.95), tVar) * mix(1.0, mix(mix(0.72, 0.52, tWood), 1.0, smoothstep(0.15, 0.85, tCsY)), 1.0 - tTw);\n' +
           // a crown seen from the air is a little darker and greyer than its photograph's lit side, and a tree in the woods
-          // stands in its neighbours' shade
-          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))), diffuseColor.rgb, 0.88) * mix(1.0, 0.84, tTw) * mix(1.0, 0.56 + 0.36 * tVar, tWood);\n' +
+          // stands in its neighbours' shade: darker, greyer and, in leaf, a deeper green than a street tree's lime (the review)
+          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))), diffuseColor.rgb, mix(0.88, 0.72, tWood)) * mix(1.0, 0.84, tTw) * mix(1.0, 0.48 + 0.34 * tVar, tWood);\n' +
+          '  diffuseColor.r *= mix(1.0, 0.84, tWood * step(diffuseColor.r, diffuseColor.g));\n' +
           '  if (uSnowAcc > 0.01) { float above = tPick(tSide, tUvS + vec4(0.0, uTexelS, 0.0, uTexelS), tTurn).a;\n' +
           '    float sL = dot(tx.rgb, vec3(0.3, 0.59, 0.11)), sk = uSnowAcc * mix(clamp(1.4 * tx.a * (1.0 - above) + 0.15 * sL, 0.0, 1.0), 0.6 + 0.3 * sL, tTw);\n' +
-          '    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), clamp(sk, 0.0, 1.0)); }\n') +
+          '    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), clamp(sk, 0.0, 1.0)); }\n' : '')) +
         '  diffuseColor.a *= clamp(tx.a * tBoost, 0.0, 1.0); }');
   }
   function treeChipColor(g) {
@@ -15990,7 +16032,7 @@ vec2 wRing(vec2 rc, float tt) {
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', '#include <common>\nvarying float vCY; uniform float uSnowAcc;')
         .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.40, 0.50, 0.38), vec3(0.86, 0.98, 0.76), tp);' +
-          ' diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), uSnowAcc * smoothstep(-0.2, 0.9, vCY) * 0.85); }');   // Round 58: a fifth darker and greener top than the card era's (1.12, 1.08, 0.92), the crown is the whole tree now; the realism pass: snow on the crown's top (weather 9)
+          (REAL ? ' diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), uSnowAcc * smoothstep(-0.2, 0.9, vCY) * 0.85);' : '') + ' }');   // Round 58: a fifth darker and greener top than the card era's (1.12, 1.08, 0.92), the crown is the whole tree now; the realism pass: snow on the crown's top (weather 9)
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime; varying float vCY;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCY = position.y;\n{\n  vec4 tw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = tw.x * 0.07 + tw.z * 0.05;\n  float sw = sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25;\n  float up = clamp(position.y * 0.5 + 0.5, 0.0, 1.0);\n  transformed.x += sw * 0.07 * up; transformed.z += sw * 0.035 * up; transformed.y += sin(uTime * 3.1 + ph * 5.0 + position.x * 2.0) * 0.02 * up;\n}');
@@ -16666,13 +16708,25 @@ vec2 wRing(vec2 rc, float tt) {
   // and sycamores, river birches and silver maples along the rivers. Sown as the grass is, a slice a frame, again after
   // WOOD.MOVE of travel; a tree's place, look and size are its cell's own hash, so a re-sow plants the same forest. The
   // ground under it is the canopy texture, which carries the woods past the field and on a phone
-  const WOOD = { on: REAL && !isTouch && TIER === 0 && TREE_ART_ON, N: 36000, R: 1500, STEP: 8.5, MOVE: 400, UP: 1400,
-    mesh: null, mask: null, at: null, busy: false, k: 0, prev: 0, row: 0, ls: null, sows: 0 };
-  function woodAt(x, z) {   // the mask's woods (0 to 1) and bank (0 to 1) at a point, nearest texel
-    const M = WOOD.mask, i = Math.floor((x - M.x0) * M.kx), j = Math.floor((z - M.z0) * M.kz);
-    if (i < 0 || j < 0 || i >= M.w || j >= M.h) return null;
-    const o = (j * M.w + i) * 2;
-    return [M.gb[o] / 255, M.gb[o + 1] / 255];
+  // The review: the mask's woods are exactly 0 on every water ring and railway (bake_landmask.py), and a tree stands only
+  // where its own texel is not (woodAt's null); the stand's density reads the mask between texels, with a 60 m noise of its
+  // own, so a wood's edge is ragged rather than a 20 m staircase; a sow goes up to the GPU once, when it ends (the review:
+  // each of its 10 to 20 frames re-sent the whole 2.3 MB); ?woods=0 leaves the field out (an A/B for its cost)
+  const WOOD = { on: REAL && !isTouch && TIER === 0 && TREE_ART_ON && !/[?&]woods=0\b/.test(location.search), N: 36000, R: 1500, STEP: 8.5, MOVE: 400, UP: 1400,
+    mesh: null, mask: null, at: null, busy: false, k: 0, prev: 0, row: 0, ls: null, sows: 0, ms: 0 };
+  function woodAt(x, z) {   // the mask's woods (0 to 1, between texels) and bank (0 to 1) at a point; null off the mask, on water or a track
+    const M = WOOD.mask, fx = (x - M.x0) * M.kx - 0.5, fz = (z - M.z0) * M.kz - 0.5;
+    const i = Math.floor(fx + 0.5), j = Math.floor(fz + 0.5);
+    if (i < 0 || j < 0 || i >= M.w || j >= M.h || M.gb[(j * M.w + i) * 2] === 0) return null;   // its own texel: a zero is water or a railway
+    const i0 = clamp(Math.floor(fx), 0, M.w - 2), j0 = clamp(Math.floor(fz), 0, M.h - 2), tx = clamp(fx - i0, 0, 1), tz = clamp(fz - j0, 0, 1);
+    const at = (a, b, c) => M.gb[((j0 + b) * M.w + i0 + a) * 2 + c];
+    const bl = (c) => ((at(0, 0, c) * (1 - tx) + at(1, 0, c) * tx) * (1 - tz) + (at(0, 1, c) * (1 - tx) + at(1, 1, c) * tx) * tz) / 255;
+    return [bl(0), bl(1)];
+  }
+  function woodNoise(x, z) {   // a value noise of about 60 m, 0 to 1
+    const fx = x / 60, fz = z / 60, i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j;
+    const h = (a, b) => hash01((i + a) * 57.13 + (j + b) * 131.7 + 0.37), su = u * u * (3 - 2 * u), sv = v * v * (3 - 2 * v);
+    return (h(0, 0) * (1 - su) + h(1, 0) * su) * (1 - sv) + (h(0, 1) * (1 - su) + h(1, 1) * su) * sv;
   }
   function woodInit() {
     if (!WOOD.on || !TREEART.mat) { WOOD.on = false; return; }
@@ -16703,9 +16757,11 @@ vec2 wRing(vec2 rc, float tt) {
         const x = (gx + 0.15 + 0.7 * h1) * S, z = (gz + 0.15 + 0.7 * h2) * S;
         if ((x - cx) * (x - cx) + (z - cz) * (z - cz) > W.R * W.R) continue;
         const m = woodAt(x, z);
-        if (!m || m[0] < 0.4 || m[1] > 0.8) continue;
+        if (!m || m[1] > 0.8) continue;
+        const g = m[0] + 0.3 * (woodNoise(x, z) - 0.5);
+        if (g < 0.4) continue;
         const h3 = hash01(gx * 7.7 + gz * 1.3 + 0.25);
-        if (h3 > smooth(0.4, 0.8, m[0]) * 0.92) continue;
+        if (h3 > smooth(0.4, 0.85, g) * 0.92) continue;
         if (inWater(x, z) > -2 || septaSnapRoad(x, z, 7)) continue;
         const H = 12 + 13 * hash01(gx * 2.3 + gz * 9.1 + 0.7), D = H * (0.55 + 0.2 * h1);
         _wm.compose(_wv.set(x, siteY(x, z, 'ground'), z), _wq.identity(), _ws.set(H, H, D));
@@ -16716,16 +16772,18 @@ vec2 wRing(vec2 rc, float tt) {
       }
       W.row++;
     }
-    // while a sow runs the last one's trees stand in the slots it has not reached (the same trees: a cell's tree is its hash's)
-    im.count = Math.max(W.k, W.prev);
-    im.instanceMatrix.needsUpdate = true; W.ls.needsUpdate = true;
-    if (W.row > 2 * n || W.k >= W.N) { W.busy = false; W.sows++; im.count = W.prev = W.k; }
+    // while a sow runs the GPU keeps the last one's forest whole; the new one goes up in one piece when the sow ends
+    W.ms += performance.now() - tEnd + 3;
+    if (W.row > 2 * n || W.k >= W.N) {
+      W.busy = false; W.sows++; im.count = W.prev = W.k;
+      im.instanceMatrix.needsUpdate = true; W.ls.needsUpdate = true;
+    }
   }
   function woodUpdate() {
     const W = WOOD;
     if (!W.on || !W.mesh || !W.mask) return;
     const p = camera.position;
-    if (p.y > W.UP) { W.mesh.visible = false; return; }
+    if (p.y > W.UP || W.off) { W.mesh.visible = false; return; }   // W.off: __dbg.woods(false), an A/B of its cost
     W.mesh.visible = true;
     if (!W.busy && (!W.at || Math.hypot(p.x - W.at[0], p.z - W.at[1]) > W.MOVE)) {
       W.at = [p.x, p.z]; W.busy = true; W.row = 0; W.k = 0;
@@ -26753,11 +26811,11 @@ float pinOccGate() {
   }
   const vegMean = (m) => new THREE.Vector3(m[0], m[1], m[2]);
   function loadVegArt() {
-    if (VEG_ART && VEG_ART.parkmacro) artImage(artSrc(VEG_ART.parkmacro.img, VEG_ART.parkmacro.imgHalf)).then((im) => {
+    if (VEG_ART && VEG_ART.parkmacro && !TIER2) artImage(artSrc(VEG_ART.parkmacro.img, VEG_ART.parkmacro.imgHalf)).then((im) => {
       if (!im) return;
       vegU.uMacro.value = vegTex(im, true); vegU.uMacroMean.value = vegMean(VEG_ART.parkmacro.mean); vegU.uMacroOn.value = 1;
     });
-    if (VEG_ART && VEG_ART.alley) artImage(artSrc(VEG_ART.alley.img, VEG_ART.alley.imgHalf)).then((im) => {
+    if (VEG_ART && VEG_ART.alley && !TIER2) artImage(artSrc(VEG_ART.alley.img, VEG_ART.alley.imgHalf)).then((im) => {
       if (!im) return;
       // toned as the yards are: to the painted lawn's brightness, then lighter by as much (concrete is paler than grass)
       const M = VEG_ART.alley.mean;
@@ -26938,6 +26996,7 @@ float pinOccGate() {
         'void main() {',
       ].join('\n'))
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.35, vegWet * 0.8);');
+    if (isTouch) shader.fragmentShader = '#define VEG_NO_RIPRAP\n' + shader.fragmentShader;   // a phone never loads the riprap: no read, no unit
     canopyPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'isGreen');
   }
   // The texture budget. A ground program carries a dozen pictures of its own, and every pass chained on it adds its own
@@ -26965,6 +27024,7 @@ float pinOccGate() {
         else if (/^\w+$/.test(t) && VEG_THREE_MAPS.indexOf(t) < 0) names.add(t);
       }
     }
+    for (const [def, name] of VEG_DROP) if (sh.fragmentShader.indexOf('#define ' + def + '\n') !== -1) names.delete(name);   // already out (a phone's riprap)
     let n = names.size;
     for (const k of VEG_THREE_MAPS) if (sh[k]) n++;
     if (sh.transmission) n++;   // the transmission sampler
@@ -27028,7 +27088,8 @@ float pinOccGate() {
       const g = new THREE.InstancedBufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), 2));
       g.setIndex([0, 1, 2, 0, 2, 3]);
-      g.setAttribute('aT', new THREE.InstancedBufferAttribute(CANOPYMAP.data, 4));
+      g.setAttribute('aT', new THREE.InstancedBufferAttribute(CANOPYMAP.data, 4).onUpload(dropUploadedArray));   // the review: not kept on the CPU once it is up
+      CANOPYMAP.data = null;
       g.instanceCount = CANOPYMAP.n;
       const mat = new THREE.RawShaderMaterial({
         vertexShader: 'precision highp float; uniform mat4 projectionMatrix; uniform mat4 viewMatrix; attribute vec2 position; attribute vec4 aT; varying vec2 vQ; varying float vC;\n' +
@@ -27071,7 +27132,7 @@ float pinOccGate() {
       riprap: on(vegU.uRiprapOn), alley: on(vegU.uAlleyOn), lawn: vegU.uLawn.value.toArray().map((v) => +v.toFixed(3)),
       canopyMap: { trees: CANOPYMAP.n, renders: CANOPYMAP.renders, cx: CANOPYMAP.cx, cz: CANOPYMAP.cz, sun: canU.uCanSun.value.toArray().map((v) => +v.toFixed(3)) },
       tufts: grassMesh ? grassMesh.count : 0, tuftTint: grassTint.toArray().map((v) => +v.toFixed(3)), trees: TREEART.n,
-      woods: { on: WOOD.on, mask: !!WOOD.mask, trees: WOOD.mesh ? WOOD.mesh.count : 0, sows: WOOD.sows, busy: WOOD.busy },
+      woods: { on: WOOD.on, mask: !!WOOD.mask, trees: WOOD.mesh ? WOOD.mesh.count : 0, sows: WOOD.sows, busy: WOOD.busy, sowMs: Math.round(WOOD.ms) },
       atlas: TREEART.side ? { side: [TREEART.side.N, TREEART.side.A, TREEART.side.AH], top: [TREEART.top.N, TREEART.top.A, TREEART.top.AH] } : null,
       budget: { max: VEG_BUDGET.max, seen: Object.assign({}, VEG_BUDGET.seen) },
       seasons: TREEART.key, map: full && CANOPYMAP.rt ? vegMapProbe() : undefined };
@@ -27254,7 +27315,8 @@ float pinOccGate() {
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
         'float wxUpW = smoothstep(0.55, 0.85, clamp(dot(normalize(vNormal), (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), 0.0, 1.0));',
         'vec3 wxWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
-        'float wxN = smoothstep(0.25, 0.75, 0.55 * cshn(wxWP.xz * 0.08) + 0.30 * cshn(wxWP.xz * 0.35 + 7.1) + 0.15 * cshn(wxWP.xz * 1.7 + 3.3));',   // the realism pass (weather 8): drifts, not a checkerboard of 1.1 m squares
+        REAL ? 'float wxN = smoothstep(0.25, 0.75, 0.55 * cshn(wxWP.xz * 0.08) + 0.30 * cshn(wxWP.xz * 0.35 + 7.1) + 0.15 * cshn(wxWP.xz * 1.7 + 3.3));'   // the realism pass (weather 8): drifts, not a checkerboard of 1.1 m squares
+          : 'float wxN = fract(sin(dot(floor(wxWP.xz * 0.9), vec2(127.1, 311.7))) * 43758.5453);',
         'float wxSnowW = uSnowAcc * max(wxUpW, 0.14) * (0.78 + 0.22 * wxN);',
         'float wxDark = 1.0 - clamp(dot(diffuseColor.rgb, vec3(0.55)), 0.0, 1.0);',
         'float wxWetW = uWet * wxUpW * (1.0 - wxSnowW);',
@@ -29849,7 +29911,7 @@ float pinOccGate() {
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
-    if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); }   // the realism pass: the ground's and the trees' state
+    if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);
