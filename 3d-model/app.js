@@ -1561,11 +1561,23 @@
     if (Math.abs(aQ - area) <= area * 0.25 && span > 3.2 && span < 17 && long / span >= elMin && long / span < 5) return { sp, span, long };
     return null;
   }
-  function roofPlan(poly, area, h, t, form, rise, seed) {
+  // Round 185 (Mike: it looks like a kid's game): the lottery's share by the house's own kind. Philadelphia's rows are
+  // flat-roofed (a slight fall to the back, invisible from the street), and four in five of them gabled were a Monopoly
+  // board from the air: the gable goes to the porch twins, the stone and the timber houses, rarely to a row
+  function roofLot(style, fa) {
+    if (!REAL) return 0.8;
+    const st = style & 31, m = fa ? fa[1] : -1;
+    if (st === 10 || m === 2) return 0.75;    // West Philadelphia's porch twins, Germantown and Chestnut Hill's stone
+    if (m === 1 && st !== 11) return 0.5;     // frame houses
+    if (st === 0) return 0.2;                 // the oldest brick rows (some Federal, most flat)
+    if (st === 8 || st === 9 || st === 11 || st === 13) return 0.04;   // the postwar, Victorian, siding and new rows
+    return 0.3;
+  }
+  function roofPlan(poly, area, h, t, form, rise, seed, lot = 0.8) {
     if (form === 4 || form === 3 || h < 3.5) return null;
     let f = form;
     if (f === 0) {   // the lottery: small houses the passes never resolved, at rowhouse height
-      if (!(t === 1 || t === 0) || area >= 280 || h >= 12.5 || hash01(seed) >= 0.8) return null;
+      if (!(t === 1 || t === 0) || area >= 280 || h >= 12.5 || hash01(seed) >= lot) return null;
       f = 1;
     }
     const q = roofQuad(poly, area, f);
@@ -6517,6 +6529,7 @@
   let coreMat = null;   // the core's fabric: the same shader at the core's gains (set with the hook below)
   {
     const facadeHook = (gW, gR, sat, satR) => (shader) => {
+      Object.assign(shader.uniforms, roofArtU);   // Round 185: the flat roofs' generated textures
       shader.uniforms.uSunW = sunWUniform;
       shader.uniforms.uNight = nightUniform;
       shader.uniforms.uDetFar = detFarUniform;
@@ -6531,6 +6544,7 @@
           FAR_LIT ? FAR_LIT_GLSL : '',
           'uniform float uNight;',
           'uniform float uDetFar;',
+          'uniform sampler2D uRoofArt; uniform float uRoofOn, uRoofM, uRoofPad, uRoofOwn, uRoofDbg; uniform vec3 uRoofMean[4];',
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;',
           'float shtLit = 0.0; vec3 shtLamp = vec3(1.0, 0.76, 0.46);',
           'float shtGlass = 0.0;',
@@ -6579,7 +6593,33 @@
           '    float rnear = clamp(1.0 - (rfw - 0.02) / 0.10, 0.0, 1.0);',
           '    float rq = vWPos.x * 0.985 + vWPos.z * 0.174;',
           '    float rseam = 1.0 - smoothstep(0.02, 0.02 + rfw, abs(fract(rq / 0.95 + 0.5) - 0.5) * 0.95);',
-          '    diffuseColor.rgb *= (1.0 - 0.07 * rseam * rnear) * (1.0 + 0.10 * rnear * (shtVN(vWPos.xz * 24.0) - 0.5));',
+          '    diffuseColor.rgb *= (1.0 - 0.07 * rseam * rnear * (1.0 - uRoofOn)) * (1.0 + 0.10 * rnear * (shtVN(vWPos.xz * 24.0) - 0.5));',
+          // Round 185 (Mike: make it look photo realistic): a flat roof is one of four generated surfaces, black tar, silver
+          // coating, white membrane or gravel, picked by the roof's own colour (dark, middling, light) and a seed of the
+          // building, a share of them dealt the next kind for variety; laid on the street grid's axes at 8 m a tile from a
+          // 2 by 2 atlas (each cell padded with its own wrapped edge), half as its own grain on the roof's colour and half as
+          // its own colour at the roof's brightness, and gone to the plain colour past 1.4 m a pixel
+          '    if (uRoofOn > 0.5) {',
+          // the seed: a house's ground height to the centimetre (a row on one block face shares its wall colour, and so its
+          // tint, but no two houses stand at the same base to a centimetre), with the tint
+          '      float rsd = fract(sin(vBase * 371.3 + vTint * 91.7) * 43758.5453);',
+          '      float rL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + gR.toFixed(3) + ';',
+          '      float rk = rsd < 0.36 ? 1.0 : (rsd < 0.66 ? 0.0 : (rsd < 0.86 ? 2.0 : 3.0));',   // silver, tar, white, gravel
+          '      if (rL < 0.14 && rsd > 0.5) rk = 0.0; if (rL > 0.55 && rsd < 0.5) rk = 2.0;',   // a sampled black or white roof keeps it
+          '      vec2 rG = vec2(dot(vWPos.xz, vec2(0.986, 0.167)), dot(vWPos.xz, vec2(-0.167, 0.986))) / uRoofM + rsd * 17.0;',
+          '      float rSc = 0.5 * (1.0 - 2.0 * uRoofPad);',
+          '      vec2 rUV = vec2(mod(rk, 2.0) * 0.5, 0.5 - floor(rk / 2.0) * 0.5) + 0.5 * uRoofPad + fract(rG) * rSc;',
+          '#if __VERSION__ >= 300',
+          '      vec3 rT = textureGrad(uRoofArt, rUV, dFdx(rG) * rSc, dFdy(rG) * rSc).rgb;',
+          '#else',
+          '      vec3 rT = texture2D(uRoofArt, rUV).rgb;',
+          '#endif',
+          '      vec3 rMean = rk < 0.5 ? uRoofMean[0] : (rk < 1.5 ? uRoofMean[1] : (rk < 2.5 ? uRoofMean[2] : uRoofMean[3]));',
+          '      float rLm = max(dot(rMean, vec3(0.2126, 0.7152, 0.0722)), 1e-3), rLd = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));',
+          '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * ' + (gR * 0.9).toFixed(3) + ', uRoofOwn);',
+          '      diffuseColor.rgb = mix(diffuseColor.rgb, rCol, 1.0 - smoothstep(0.25, 1.4, rfw));',
+          '      if (uRoofDbg > 0.5) diffuseColor.rgb = rk < 0.5 ? vec3(0.3, 0.0, 0.0) : (rk < 1.5 ? vec3(0.0, 0.3, 0.0) : (rk < 2.5 ? vec3(0.0, 0.0, 0.3) : vec3(0.3, 0.3, 0.0)));',
+          '    }',
           '  }',
           '  if (abs(n.y) < 0.35 && st != 3 && v > 0.0) {',
           '    bool local = vWallL > 0.5;',
@@ -9615,7 +9655,7 @@
           venueBar(P(su*(hu-18+18.5*du),sv*(hv-18+18.5*dv),18.5),P(su*(hu-18+20*du),sv*(hv-18+20*dv),34.8),0.20,0x82979f,0.48,aslot);
         }
       } else {
-        const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+        const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5, roofLot(style, fa));
         if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
         if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style);
@@ -11682,7 +11722,7 @@
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       if (capC && h <= 45 && t <= 6) farCapLight(capC);
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + (capC ? 'Cap' : 'NoCap'), capC); colStat(tk + 'St' + style); colStat(fa ? tk + 'Fa' : tk + 'NoFa'); colStat(tk + 'Fh' + (fh > 0 ? 1 : 0)); COL_STAT[tk + 'Area'] = (COL_STAT[tk + 'Area'] || 0) + Math.abs(signedArea(poly)); }
-      const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5);
+      const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5, roofLot(style, fa));
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + 'Form' + rb[1]); colStat(rplan ? tk + 'Pitched' : tk + 'Flat'); if (wideSeam && cz > -5180 && cz < -4480 && cx > -3700 && cx < 2300) { colStat('farBandForm' + rb[1]); colStat(rplan ? 'farBandPitched' : 'farBandFlat'); colStat(capC ? 'farBandCap' : 'farBandNoCap', capC); colStat('farBand', c); } }
       if (wideSeam && !mh && h >= 35 && t !== 8 && t !== 9) towerSkinNote(poly, base, base + h, style, null, i + 0.37, c, false, t);   // Round 182: the far ring's towers too
       if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style);   // the far ring's houses (Round 181; a phone's stop at the outer districts)
@@ -23408,12 +23448,18 @@ float pinOccGate() {
   // tint ratio is clamped and ACES compresses it, a 20 percent darker stored green moved the
   // display 7 percent), so the gain sits on the painted meadow itself
   const MEADOW_GAIN = 0.82;
+  // Round 185: the flat roofs' atlas (bake_ground_art.py ROOFS: tar, silver, white, gravel) and its kinds' linear means;
+  // loadGroundArt fills it and turns it on, every facade material reads it
+  const roofArtU = { uRoofArt: { value: null }, uRoofOn: { value: 0 }, uRoofM: { value: 8 }, uRoofPad: { value: 0.03125 }, uRoofOwn: { value: 0.75 }, uRoofDbg: { value: 0 },
+    uRoofMean: { value: [new THREE.Vector3(0.1, 0.1, 0.1), new THREE.Vector3(0.3, 0.3, 0.3), new THREE.Vector3(0.6, 0.6, 0.6), new THREE.Vector3(0.3, 0.28, 0.25)] } };
   const texU = { uGrass: { value: null }, uGrassK: { value: 1 }, uGrass2: { value: null },
     uGrassTone: { value: new THREE.Vector3(1, 1, 1) }, uGrassTone2: { value: new THREE.Vector3(1, 1, 1) }, uGrassArt: { value: 0 },
     // Round 184: the streets' detail (asphalt, concrete slabs, herringbone brick) and each one's linear mean, so a surface
     // takes only the grain and keeps its own calibrated colour
     uAsph: { value: null }, uConc: { value: null }, uBrick: { value: null }, uStM: { value: new THREE.Vector3(1, 1, 1) },
-    uStBrick: { value: new THREE.Vector3(1, 1, 1) }, uStScale: { value: new THREE.Vector3(6, 1.5, 1.6) }, uStreetArt: { value: 0 } };
+    uStBrick: { value: new THREE.Vector3(1, 1, 1) }, uStScale: { value: new THREE.Vector3(6, 1.5, 1.6) }, uStreetArt: { value: 0 },
+    // Round 185: backyards and vacant lots (concrete, dirt, weeds) through the bare ground's lawn in patches
+    uYard: { value: null }, uYardTone: { value: 1 }, uYardOn: { value: 0 } };
   // Round 183 (Mike: "If you could also update the grass/ground textures that would be great"): GROUND_ART
   // (bake_ground_art.py) holds two generated photographs of the ground, made to tile, a mown lawn and a rougher verge;
   // they take the painted tile's place, each toned to the painted tile's mean (its brightness matched, its colour pulled
@@ -23451,6 +23497,27 @@ float pinOccGate() {
       texU.uGrassK.value = 1 / Math.max(1e-4, LA);   // the macro copy reads the raw lawn
       texU.uGrassArt.value = 1;
     });
+    // Round 185: the flat roofs' atlas and the yards, each as it comes
+    if (GROUND_ART.roofs && REAL) {
+      artImage(artSrc(GROUND_ART.roofs, GROUND_ART.roofsHalf)).then((im) => {
+        if (!im) return;
+        const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
+        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true; freeTexOnUpload(t);
+        roofArtU.uRoofArt.value = t; roofArtU.uRoofPad.value = GROUND_ART.roofPad || 0.03125;
+        roofArtU.uRoofM.value = (GROUND_ART.m && GROUND_ART.m.roof) || 8;
+        (GROUND_ART.roofMean || []).forEach((m, k) => roofArtU.uRoofMean.value[k].set(m[0], m[1], m[2]));
+        roofArtU.uRoofOn.value = 1;
+      });
+    }
+    if (GROUND_ART.yard && REAL) {
+      artImage(artSrc(GROUND_ART.yard, GROUND_ART.yardHalf)).then((im) => {
+        if (!im) return;
+        const M = linMean(im), LM = 0.30 * M[0] + 0.59 * M[1] + 0.11 * M[2];
+        const t = new THREE.Texture(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
+        t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true; freeTexOnUpload(t);
+        texU.uYard.value = t; texU.uYardTone.value = Math.min(2.5, LP / Math.max(1e-4, LM)); texU.uYardOn.value = 1;
+      });
+    }
     // Round 184: the streets' three, apart from the lawn so neither waits on the other
     if (!GROUND_ART.asphalt || /[?&]streets=plain\b/.test(location.search)) return;
     Promise.all(['asphalt', 'concrete', 'bricks'].map((k) => artImage(artSrc(GROUND_ART[k], GROUND_ART[k + 'Half'])))).then((ims) => {
@@ -23704,6 +23771,7 @@ float pinOccGate() {
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
     shader.uniforms.uGrass2 = texU.uGrass2; shader.uniforms.uGrassTone = texU.uGrassTone; shader.uniforms.uGrassTone2 = texU.uGrassTone2; shader.uniforms.uGrassArt = texU.uGrassArt;
     if (!forced) for (const k of ['uAsph', 'uConc', 'uBrick', 'uStM', 'uStBrick', 'uStScale', 'uStreetArt']) shader.uniforms[k] = texU[k];
+    if (forced) for (const k of ['uYard', 'uYardTone', 'uYardOn']) shader.uniforms[k] = texU[k];
     // Round 184: a paved surface (never the bare ground, which is all meadow) takes the streets' generated detail: on the
     // street grid's own axes (the fitted Front Street line, 9.6 degrees off east), asphalt as the mean of two tilings (6 m
     // and a 37-degree 9.7 m) so no patch repeats, concrete slabs at 1.5 m, herringbone brick at 1.6 m (uStScale, from the
@@ -23729,7 +23797,7 @@ float pinOccGate() {
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
         'uniform sampler2D uGrass; uniform float uGrassK; uniform sampler2D uGrass2; uniform vec3 uGrassTone; uniform vec3 uGrassTone2; uniform float uGrassArt;',
-        forced ? '' : 'uniform sampler2D uAsph, uConc, uBrick; uniform vec3 uStM, uStBrick, uStScale; uniform float uStreetArt;',
+        forced ? 'uniform sampler2D uYard; uniform float uYardTone, uYardOn;' : 'uniform sampler2D uAsph, uConc, uBrick; uniform vec3 uStM, uStBrick, uStScale; uniform float uStreetArt;',
         'float sth(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
         'float stn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
         '  return mix(mix(sth(i), sth(i + vec2(1.0, 0.0)), f.x), mix(sth(i + vec2(0.0, 1.0)), sth(i + vec2(1.0, 1.0)), f.x), f.y); }',
@@ -23753,6 +23821,8 @@ float pinOccGate() {
         'if (uGrassArt > 0.5) { vec3 gB = mix(texture2D(uGrass2, gUv1).rgb, texture2D(uGrass2, gUv2).rgb, 0.5) * uGrassTone2;',
         '  float mw = smoothstep(0.38, 0.72, stn(sWP.xz * 0.012 + 3.7) + ' + (forced ? '0.18' : '0.0') + ');',
         '  gTex = mix(gTex * uGrassTone, gB, mw); }',
+        // Round 185: the bare ground is not all lawn: yards and lots come through it on a 55 m noise, at the painted tile's brightness
+        forced ? 'if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9; vec3 gY = mix(texture2D(uYard, gUv1 * 0.65).rgb, texture2D(uYard, gUv2 * 1.3).rgb, 0.35) * uYardTone; gTex = mix(gTex, gY, yw); }' : '',
         'vec3 gMac = texture2D(uGrass, vec2(sWP.x * 0.866 - sWP.z * 0.5, sWP.x * 0.5 + sWP.z * 0.866) * 0.02128).rgb;',
         'float gMacL = dot(gMac, vec3(0.30, 0.59, 0.11)) * uGrassK;',
         // Broad, low-contrast moisture variation at 83 m and 22 m. Fine grain fades
@@ -25709,7 +25779,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[B[o + 9]] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[B[o + 9]], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[B[o + 9]] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[B[o + 9]], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

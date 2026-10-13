@@ -14,7 +14,12 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'ground_art_raw')
 OUT = os.path.join(HERE, 'ground_art.json')
-IDS = ('lawn', 'meadow', 'asphalt', 'concrete', 'bricks')   # Round 184: the streets' three
+IDS = ('lawn', 'meadow', 'asphalt', 'concrete', 'bricks', 'yard')   # Round 184: the streets' three; Round 185 the yards'
+# Round 185, the flat roofs: four kinds in one 2 by 2 atlas, each made to tile, its 960 px padded 32 px a side with its
+# own wrapped edge (so bilinear filtering and the first mips never meet a neighbour), with each kind's linear mean colour
+# for the page's tinting; a tile is ROOF_M metres
+ROOFS = ('roof_tar', 'roof_silver', 'roof_white', 'roof_gravel')
+ROOF_CELL, ROOF_PAD, ROOF_M = 1024, 32, 8.0
 N = 1024
 
 
@@ -85,10 +90,33 @@ def main():
             a = tileable(a)
             if gid in SPAN:
                 metres[gid] = SPAN[gid] * 1.5
+            if gid == 'yard':
+                metres[gid] = 10.0
         im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
         out[gid] = art_files.write(im, 'ground', gid, 'WEBP', quality=80, method=6)
         out[gid + 'Half'] = art_files.write(im.resize((N // 2, N // 2), Image.LANCZOS), 'ground', gid + '-half', 'WEBP', quality=80, method=6)
         print('%-8s %d KB, half %d KB' % (gid, art_files.size(out[gid]) // 1024, art_files.size(out[gid + 'Half']) // 1024))
+    roofs = [p for p in (os.path.join(RAW, r + '.png') for r in ROOFS) if os.path.exists(p)]
+    if len(roofs) == len(ROOFS):
+        inner = ROOF_CELL - 2 * ROOF_PAD
+        atlas = np.zeros((2 * ROOF_CELL, 2 * ROOF_CELL, 3), np.float32)
+        means = []
+        for k, p in enumerate(roofs):
+            a = tileable(np.asarray(Image.open(p).convert('RGB').resize((inner, inner), Image.LANCZOS), np.float32))
+            lin = (np.clip(a, 0, 255) / 255.0)
+            lin = np.where(lin <= 0.04045, lin / 12.92, ((lin + 0.055) / 1.055) ** 2.4)
+            means.append([round(float(v), 5) for v in lin.reshape(-1, 3).mean(0)])
+            cell = np.pad(a, ((ROOF_PAD, ROOF_PAD), (ROOF_PAD, ROOF_PAD), (0, 0)), mode='wrap')
+            y0, x0 = (k // 2) * ROOF_CELL, (k % 2) * ROOF_CELL
+            atlas[y0:y0 + ROOF_CELL, x0:x0 + ROOF_CELL] = cell
+        im = Image.fromarray(np.clip(atlas, 0, 255).astype(np.uint8))
+        out['roofs'] = art_files.write(im, 'ground', 'roofs', 'WEBP', quality=82, method=6)
+        out['roofsHalf'] = art_files.write(im.resize((ROOF_CELL, ROOF_CELL), Image.LANCZOS), 'ground', 'roofs-half', 'WEBP', quality=80, method=6)
+        out['roofKinds'] = [r[5:] for r in ROOFS]
+        out['roofMean'] = means
+        out['roofPad'] = ROOF_PAD / ROOF_CELL
+        metres['roof'] = ROOF_M
+        print('roofs    atlas %d KB, half %d KB, means %s' % (art_files.size(out['roofs']) // 1024, art_files.size(out['roofsHalf']) // 1024, means))
     print('pruned %d old ground files' % art_files.prune('ground'))
     out['m'] = {k: round(v, 3) for k, v in metres.items()}
     with open(OUT + '.tmp', 'w') as f:

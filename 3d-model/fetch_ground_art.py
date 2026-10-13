@@ -35,7 +35,22 @@ GROUNDS = [
      'light grey with faint stains and wear', 'street'),
     ('bricks', 'an old red brick sidewalk in Society Hill, Philadelphia, about two metres across: bricks laid in a '
      'herringbone pattern, weathered, some darker and some lighter, fine sand in the joints', 'street'),
+    # Round 185 (Mike: make it look photo realistic; he chose roof and ground textures): the flat roofs' four and the yards'
+    ('roof_tar', 'an old flat rowhouse roof of black modified bitumen in Philadelphia, about eight metres across: dark '
+     'charcoal with a few irregular lighter repair patches, faint tar-sealed cracks and a little dust, no regular seams', 'roof'),
+    ('roof_silver', 'a flat rowhouse roof coated with silver aluminium roof paint in Philadelphia, about eight metres across: '
+     'weathered silver grey with darker streaks, brush marks and a few small patches, no regular seams', 'roof'),
+    ('roof_white', 'a white TPO membrane flat roof of a commercial building, about eight metres across: off-white with grey dirt '
+     'streaks, scuffs and a few faint irregular welded seams', 'roof'),
+    ('roof_gravel', 'a ballasted flat roof covered in loose grey and tan river gravel, about eight metres across, uniform', 'roof'),
+    ('yard', 'the ground of urban backyards and a vacant lot in Philadelphia, about ten metres across: a patchwork of cracked '
+     'grey concrete, bare packed brown dirt, patches of weeds and grass and a little gravel, no fences, no objects'),
 ]
+# the roofs' frame (Round 185): a drone's view straight down at a roof surface, nothing standing on it
+FRAME_ROOF = ('Seamless tileable texture for a 3D city model: an aerial photograph taken by a drone looking straight down at '
+              '{what}, filling the whole frame evenly. No perspective, no parapets, no edges or borders, no vents, no '
+              'skylights, no HVAC units, no shadows of objects, no objects. Soft even overcast daylight. Natural colours, '
+              'photorealistic, uniform detail across the whole image so it repeats without a visible seam.')
 
 
 def api_key():
@@ -56,7 +71,7 @@ def make(key, gid, what, force, kind=None):
     base = os.path.join(RAW, gid)
     if os.path.exists(base + '.png') and not force:
         return gid, 'kept'
-    prompt = (FRAME_STREET if kind == 'street' else FRAME).format(what=what)
+    prompt = (FRAME_STREET if kind == 'street' else FRAME_ROOF if kind == 'roof' else FRAME).format(what=what)
     body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1,
                        'output_format': 'png'}).encode()
     err = ''

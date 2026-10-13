@@ -46,5 +46,31 @@ class Realism(unittest.TestCase):
         self.assertIn("if (REAL) { hemi.color.lerp(_c2.set(0x3a3240), 0.5 * night); hemi.groundColor.lerp(_c2.set(0x3a2814), 0.7 * night); }", s)
 
 
+class RoofsAndYards(unittest.TestCase):
+    """Round 185, step 2: the flat roofs' generated surfaces dealt per house, the gable lottery by the house's kind, the
+    yards through the bare ground's lawn."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.s = (ROOT / 'app.js').read_text()
+
+    def test_the_lottery_follows_the_house(self):
+        s = self.s
+        a = s.index('  function roofLot(style, fa) {')
+        f = s[a:s.index('\n  }\n', a)]
+        self.assertIn('if (!REAL) return 0.8;', f)
+        self.assertIn('if (st === 10 || m === 2) return 0.75;', f)
+        self.assertIn('if (st === 8 || st === 9 || st === 11 || st === 13) return 0.04;', f)
+        self.assertEqual(s.count('roofLot(style, fa))'), 2)   # the outer districts' loop and the far ring's
+
+    def test_a_roof_is_dealt_per_house(self):
+        # a row on one block face shares its wall colour and so its tint byte: the seed takes the base to the centimetre
+        self.assertIn("'      float rsd = fract(sin(vBase * 371.3 + vTint * 91.7) * 43758.5453);',", self.s)
+        self.assertIn("textureGrad(uRoofArt, rUV, dFdx(rG) * rSc, dFdy(rG) * rSc)", self.s)
+
+    def test_the_yards(self):
+        self.assertIn("if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9;", self.s)
+
+
 if __name__ == '__main__':
     unittest.main()

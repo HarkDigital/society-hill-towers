@@ -8125,3 +8125,26 @@ takes the tap). 435 tests.
   `__dbg.real()` its uniforms. Before and after in Old City at 3:30 pm, a South Philadelphia street at noon and 9 pm, and
   over the Delaware from 230 m; the effect is real but modest from the air, where the roofs and the lawns are most of the
   picture (step 2). `tests/test_realism.py`. 491 tests.
+
+## Round 185, step 2 — roofs and yards (Oct 12)
+
+- From the air most of the picture is roofs, and two things made it a toy town. The roof lottery (an unresolved small
+  house of rowhouse height takes a gable) dealt four in five of them gables, so South Philadelphia's rows stood as long
+  lines of little peaked roofs; Philadelphia's rows are flat-roofed (a slight fall to the back). `roofLot(style, fa)`
+  now takes the share by the house's own kind on the realistic look: 0.75 for the porch twins (style 10) and the stone
+  houses, 0.5 for frame houses, 0.2 for the oldest brick rows, 0.04 for the postwar, Victorian, siding and new rows,
+  0.3 otherwise (the old 0.8 under `?real=0`; the core's own LiDAR and Federal-gable lottery unchanged: Society Hill's
+  Federal houses are pitched). Flat, those rows take the rooftop hardware too.
+- And every flat roof was one calibrated colour. Four generated roof surfaces (`fetch_ground_art.py` ROOF frame, a drone
+  looking straight down, nothing standing on the roof): black modified bitumen with repairs, silver aluminium coating,
+  a white TPO membrane, gravel ballast, baked into one 2 by 2 atlas (`bake_ground_art.py` ROOFS: each made to tile, its
+  960 px padded 32 px a side with its own wrapped edge, the kinds' linear means beside it), loaded by `loadGroundArt`
+  into `roofArtU`, which every facade material reads. The facade shader's roof branch deals a kind per house (silver 36%,
+  tar 30%, white 20%, gravel 14%; a sampled black or white roof keeps it), on the street grid's axes at 8 m a tile through
+  `textureGrad` (the atlas cell's fract would otherwise pick the smallest mip along every tile edge), as three quarters the
+  texture's own colour in the roofs' register and a quarter its grain on the roof's colour, gone past 1.4 m a pixel. The
+  first seed was the tint byte, and a row on one block face shares its wall colour and so its tint: whole neighbourhoods
+  drew one kind; the seed is now the house's base to the centimetre (`uRoofDbg` paints the kinds red, green, blue, yellow).
+- The bare ground: a generated yard and vacant-lot surface (cracked concrete, packed dirt, weeds) comes through the lawn
+  on a 55 m noise at the painted tile's brightness (`uYard`), so the alleys and yards between rows stop reading as lawn.
+- Before and after over South Philadelphia from 90 m, over the Delaware from 230 m and in Old City. 494 tests.
