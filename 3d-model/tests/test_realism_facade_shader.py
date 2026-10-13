@@ -57,7 +57,7 @@ class WallArt(unittest.TestCase):
         # the page inlines it and build.py checks its files
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("WALL_ART", text_of("wall_art.json", "null"))', b)
-        self.assertIn('"wall_art.json"):', b)
+        self.assertIn('"wall_art.json"', b[b.index('for name in ("tree_art.json"'):].split('\n', 1)[0])   # in build.py's file check
 
     def test_the_fetch_never_prints_the_key(self):
         f = (ROOT / 'fetch_wall_art.py').read_text()
@@ -147,13 +147,16 @@ console.log(JSON.stringify({ eve: at(2026, 10, 12, 1260), late: at(2026, 10, 12,
         # a host that binds no clock keeps the old 0.48 of the homes and 0.54 of the suites
         self.assertIn('const vec4 uOcc = vec4(0.48, 0.54, 0.0, 0.0);', SRC)
         self.assertIn('float on=mix(step(1.0-uOcc.x,r),max(step(1.0-uOcc.y,zone)*floorOn,uOcc.z*step(floorHash,.08)),office);', SRC)
-        # every room host binds it: the fabric, the apartments, the Ryland, the curtain wall
-        self.assertEqual(SRC.count('occBind(shader);') + SRC.count('occBind(sh);'), 4)
+        # every room host binds it: the fabric, the apartments, the Ryland, the curtain wall (and, once merged, the towers'
+        # skins in fronts-skins' own material: a fifth)
+        self.assertGreaterEqual(SRC.count('occBind(shader);') + SRC.count('occBind(sh);'), 4)
         # the towers' far glow follows the offices; their skins are the fronts-skins workstream's material, which takes
         # the clock by its own occBind (this branch leaves it as it was)
         self.assertIn('towerMat.opacity = night * (REAL ? Math.min(1, occU.uOcc.value.y / 0.55) : 1);', SRC)
         a = SRC.index("  step('Cladding the towers'")
-        self.assertNotIn('uOcc', SRC[a:SRC.index("mat.customProgramCacheKey = () => 'tower-skin-' + kind;", a)])
+        skin = SRC[a:SRC.index("  step('", a + 10)]
+        self.assertNotIn('uniform vec4 uOcc', skin)
+        self.assertNotIn('sh.uniforms.uOcc', skin)
         # the weekday is worked out only when the model's date moves, not every frame
         u = fn('occUpdate')
         self.assertIn('if (clock.y !== occDay.y || clock.m !== occDay.m || clock.d !== occDay.d) {', u)
