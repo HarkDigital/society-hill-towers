@@ -318,7 +318,7 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertEqual(cut(s, '  function loadGroundArt() {', '  let tuftTex = null').count('freeTexOnUpload(t);'), 3)
         # the realism pass: the walls', pitched roofs' and snow's atlases, uploaded once (wallArtTex)
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function wallArtTex(im, aniso) {', '  const WALL_ART_ON'))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 17)   # the definition and its sixteen uses (the realism pass: wallArtTex, vegTex and the land mask)
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 18)   # the definition and its seventeen uses (the realism pass: wallArtTex, vegTex, the land mask and streetTex)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

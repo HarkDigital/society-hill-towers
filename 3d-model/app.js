@@ -1919,6 +1919,7 @@
   // paint, and a fan can never rise above a crossing street more than its strip already does
   function ribbon(pts, w, y, yFn, lane, labelSurface = false, skipDeck = false, jitter = 0.06) {
     pts = densify(pts, 10);
+    if (lane && lane.jl) pts = splitAtS(pts, junctionCuts(lane.jl));   // the realism pass: a vertex at every junction (laneW)
     // deterministic few-cm lift so no two ribbons are ever exactly coplanar
     y += hash01(pts[0][0] * 0.13 + pts[0][1] * 0.71) * jitter;
     const hw = w / 2, edges = routeOffsets(pts);
@@ -1926,6 +1927,7 @@
     const keep = pts.slice(1).map((p,i)=>!skipDeck || !ovpOwned(pts[i][0],pts[i][1],p[0],p[1]));
     const tris = [];
     const lanes = lane ? [] : null, cls = lane ? lane.cls : 0;
+    const lw = (sv) => (lane && lane.jl ? (lane.noX ? -1 : 1) * laneW(cls, lane.jl, sv) : cls);   // the class, or the junction reach (negative: no crossings painted)
     const ys = pts.map(p => y + (yFn ? yFn(p[0], p[1]) : siteY(p[0], p[1], 'road')));
     // s along the polyline and the averaged heading at every point (for the fans)
     const ss = new Float64Array(pts.length), hd = lane ? new Float64Array(pts.length * 2) : null;
@@ -1949,7 +1951,7 @@
       const ring = routeQuad([ax,az],[bx,bz],edges[i],edges[i+1],hw,ya,yb);
       drapeRouteQuad(ring,y,(x,h,z)=>{
         tris.push(x,h,z);
-        if(lanes)lanes.push((x-ax)*-dz+(z-az)*dx,ss[i]+(x-ax)*dx+(z-az)*dz,hw,cls);
+        if(lanes){const sv=ss[i]+(x-ax)*dx+(z-az)*dz;lanes.push((x-ax)*-dz+(z-az)*dx,sv,hw,lw(sv));}
       },false);
     }
     for (const i of [0, pts.length - 1]) {
@@ -1960,7 +1962,7 @@
       const ring=Array.from({length:S},(_,k)=>[cx+Math.cos(k/S*Math.PI*2)*hw,cz+Math.sin(k/S*Math.PI*2)*hw]);
       if(drapeConvex(ring,y-(lane?0.02:0),(x,h,z)=>{
         tris.push(x,h,z);
-        if(lanes)lanes.push(-(x-cx)*ddz+(z-cz)*ddx,si+(x-cx)*ddx+(z-cz)*ddz,hw,cls);
+        if(lanes){const sv=si+(x-cx)*ddx+(z-cz)*ddz;lanes.push(-(x-cx)*ddz+(z-cz)*ddx,sv,hw,lw(sv));}
       },()=>yc,()=>yc))continue;
       for (let k = 0; k < S; k++) {
         const a0 = (k / S) * Math.PI * 2, a1 = ((k + 1) / S) * Math.PI * 2;
@@ -1968,9 +1970,10 @@
         tris.push(cx, yc, cz, cx + ox1, yc, cz + oz1, cx + ox0, yc, cz + oz0);
         if (lanes) {
           // rim u = offset . n_i (n_i the left normal (-dz, dx), the strip's own sense), s = s_i + offset . d_i
-          lanes.push(0, si, hw, cls,
-            -ox1 * ddz + oz1 * ddx, si + ox1 * ddx + oz1 * ddz, hw, cls,
-            -ox0 * ddz + oz0 * ddx, si + ox0 * ddx + oz0 * ddz, hw, cls);
+          const s1 = si + ox1 * ddx + oz1 * ddz, s0 = si + ox0 * ddx + oz0 * ddz;
+          lanes.push(0, si, hw, lw(si),
+            -ox1 * ddz + oz1 * ddx, s1, hw, lw(s1),
+            -ox0 * ddz + oz0 * ddx, s0, hw, lw(s0));
         }
       }
     }
@@ -1998,7 +2001,8 @@
     laneTwoWay: '3.3', laneDivided: '3.7', yellowHw: '3.25', lineW: '0.16', dashP: '9.0',   // 0.16 m paint: the game's lines are wider than life so they read from a few hundred metres
     white: 'vec3(0.62, 0.62, 0.58)', yellow: 'vec3(0.62, 0.50, 0.14)', strength: '0.85',
   };
-  function lanePatch(shader) {
+  function lanePatch(shader, fresh) {
+    if (REAL) { lanePatchReal(shader, fresh); return; }   // the realism pass (below); ?real=0 keeps this one
     const T = LANE_GLSL;
     shader.vertexShader = shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aLane; varying vec4 vLane;')
@@ -2050,12 +2054,255 @@
   // earlier in the shader: lanePatch first here means the asphalt mottle runs first and the
   // paint goes over it (the weather hookup wraps snow over both and re-keys). r149 keys the
   // program on onBeforeCompile.toString(), so a wrapped hook needs its own cache key (gotcha 15).
-  function roadMat(o) {
+  function roadMat(o, fresh) {
     const m = surfMat(o);
+    if (REAL && m.roughness >= 0.9) m.roughness = 1;   // the realism pass: asphalt is as rough as GGX goes; at 0.95 the sky's sheen nearly doubled a far street's brightness
     const prev = m.onBeforeCompile;
-    m.onBeforeCompile = (sh, r) => { lanePatch(sh); prev(sh, r); };
+    m.onBeforeCompile = (sh, r) => { lanePatch(sh, fresh); prev(sh, r); };
     m.customProgramCacheKey = () => 'lane|' + prev.toString();
     return m;
+  }
+  // ---- the realistic streets (Oct 12, the realism pass; Mike: "please do anything necessary to make this look more photo
+  // realistic and less cartoony. This should apply to all surfaces"). Under REAL, and ?real=0 keeps every street as it was:
+  // the asphalt ladder is re-keyed. The stored streets were set to show near 200 under the legacy lift (the Skylines grey
+  // ribbon), the palest thing in an aerial frame and brighter than the roofs, and the core's charcoal ran navy (B/R 1.38)
+  // under the sky's fill. Now neutral-warm, R >= G >= B, at about 0.45 of the old linear value (aged asphalt at sRGB 95 to
+  // 120 in sun), each street a little older or newer than its neighbour (streetAge, 0.8 to 1.2: fresh blacktop and faded
+  // grey alternating block to block, as an aerial photograph shows them)
+  const STREET_REAL_COLS = [0x0b0b0a, 0x0b0b0a, 0x0c0c0b, 0x0c0c0b, 0x0d0d0c, 0x0e0e0d];
+  if (REAL) { for (let k = 0; k < 6; k++) ROAD_COLORS[k] = STREET_REAL_COLS[k]; COLORS.asphalt = 0x0c0c0b; COLORS.footway = ROAD_COLORS[6] = 0x2b1e18; }   // the brick walks a darker red-brown than the concrete, as laid brick reads in sun
+  const streetAge = (seed) => (REAL ? 0.8 + 0.4 * hash01(seed * 5.31 + 0.7) : 1);
+  // the streets' generated textures (STREET_ART, bake_street_art.py, its own manifest beside GROUND_ART): one lane's wear
+  // photographed straight down, the elevated roads' concrete, the El's steel, the main line's ties and a lot's asphalt.
+  // Each is applied as a ratio to its own linear mean, so every surface keeps its calibrated colour; phones take the halves
+  const laneU = { uLaneWear: { value: null }, uLaneWearOn: { value: 0 }, uLaneWearM: { value: 1 }, uLaneWearLen: { value: 14 } };
+  const streetArtU = { uConcWall: { value: null }, uConcWallM: { value: 1 }, uConcWallOn: { value: 0 }, uElSteel: { value: null }, uElSteelM: { value: 1 }, uElSteelOn: { value: 0 },
+    uBallast: { value: null }, uBallastM: { value: 1 }, uBallastOn: { value: 0 }, uBallastLen: { value: 7.2 }, uBallastRails: { value: new THREE.Vector2(0.33, 0.65) },
+    uLotTex: { value: null }, uLotM: { value: 1 }, uLotOn: { value: 0 } };
+  const streetTex = (im, mirror) => {
+    const t = new THREE.Texture(im); t.wrapS = t.wrapT = mirror ? THREE.MirroredRepeatWrapping : THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding;
+    t.anisotropy = anisoOf(8); t.minFilter = THREE.LinearMipmapLinearFilter; t.needsUpdate = true;
+    return freeTexOnUpload(t);
+  };
+  function loadStreetArt() {
+    if (!REAL || typeof STREET_ART === 'undefined' || !STREET_ART || /[?&]streets=plain\b/.test(location.search)) return;
+    const A = STREET_ART, U = streetArtU;
+    const one = (k, fn) => { if (A[k]) artImage(artSrc(A[k], A[k + 'Half'])).then((im) => { if (im) fn(im); }); };
+    one('lanewear', (im) => { laneU.uLaneWear.value = streetTex(im, false); laneU.uLaneWearM.value = A.lanewearMean || 0.17; laneU.uLaneWearLen.value = A.lanewearM || 14; laneU.uLaneWearOn.value = 1; });
+    one('concrete', (im) => { U.uConcWall.value = streetTex(im, true); U.uConcWallM.value = A.concreteMean || 0.3; U.uConcWallOn.value = 1; });
+    if (!isTouch) one('steel', (im) => { U.uElSteel.value = streetTex(im, true); U.uElSteelM.value = A.steelMean || 0.09; U.uElSteelOn.value = 1; });
+    if (!isTouch) one('ballast', (im) => { U.uBallast.value = streetTex(im, false); U.uBallastM.value = A.ballastMean || 0.2; U.uBallastLen.value = A.ballastM || 7.2; if (A.ballastRails) U.uBallastRails.value.set(A.ballastRails[0], A.ballastRails[1]); U.uBallastOn.value = 1; });
+    one('lot', (im) => { U.uLotTex.value = streetTex(im, false); U.uLotM.value = A.lotMean || 0.16; U.uLotOn.value = 1; });
+  }
+  // the junction reach on aLane.w (the realism pass): a street's class alone (0 two-way, 1 divided, 2 unmarked, 3 milled)
+  // where no junction is known, else 1000 (cls + 1) + E, E the metres from this point along the street past the nearest
+  // crossing street's kerb line (negative inside the junction's box, clamped to -200 .. 400). cls is constant along a
+  // street, so the attribute interpolates exactly where E is linear, which splitAtS at junctionCuts makes true: a vertex at
+  // every junction and every point between two where the nearest one changes (laneW writes it, lanePatchReal decodes it)
+  function laneW(cls, jl, s) {
+    if (!jl || !jl.length) return cls;
+    let e = Infinity;
+    for (let k = 0; k < jl.length; k += 2) { const v = Math.abs(s - jl[k]) - jl[k + 1]; if (v < e) e = v; }
+    return 1000 * (cls + 1) + Math.max(-200, Math.min(400, e));
+  }
+  const STREET_JOINS = (t) => t >= 2 && t <= 5;   // the city streets that take crossings and count as crossed: primary to residential
+  // the s values a street's polyline must carry as vertices for E to interpolate exactly: each junction, and between two the
+  // point where the nearest changes (the right arm of one meets the left arm of the next)
+  function junctionCuts(jl) {
+    const out = [];
+    for (let k = 0; k < jl.length; k += 2) {
+      out.push(jl[k]);
+      // where one crossing street is much wider than its neighbour its arm wins the whole gap: the kink is the junction itself
+      if (k + 2 < jl.length) out.push(Math.max(jl[k], Math.min(jl[k + 2], (jl[k] + jl[k + 2] + jl[k + 1] - jl[k + 3]) / 2)));
+    }
+    return out.sort((a, b) => a - b);
+  }
+  // a polyline with a vertex inserted at each s in cuts (sorted), so a strip drawn segment by segment carries them
+  function splitAtS(pts, cuts) {
+    if (!cuts.length) return pts;
+    const out = [pts[0]];
+    let s = 0, c = 0;
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const a = pts[i], b = pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      while (c < cuts.length && cuts[c] <= s + 0.05) c++;
+      while (c < cuts.length && cuts[c] < s + L - 0.05) { const t = (cuts[c] - s) / L; out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); c++; }
+      out.push(b);
+      s += L;
+    }
+    return out;
+  }
+  // the junctions of a street tier: where two streets of different records cross or one ends on another (a T), found on a
+  // 25 m grid of their segments. recs: [{ pts, w, t }]; joins(t) says which classes take crossings (the city streets,
+  // primary to residential), cross(t) which count as the street crossed. Returns per record a flat [s, hwX, ...] sorted by s,
+  // hwX the crossing street's half width (the widest, where two meet at one point)
+  function streetJunctions(recs, joins, cross, atGrade) {
+    const C = 25, grid = new Map(), seg = [], lens = new Float64Array(recs.length);   // seg: x0, z0, x1, z1, rec, s0, L
+    recs.forEach((r, ri) => {
+      let s = 0;
+      for (let i = 0; i + 1 < r.pts.length; i++) {
+        const a = r.pts[i], b = r.pts[i + 1], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L > 0.01 && (joins(r.t) || cross(r.t)) && (!atGrade || atGrade(a, b))) {
+          const k = seg.length / 7; seg.push(a[0], a[1], b[0], b[1], ri, s, L);
+          for (let gx = Math.floor((Math.min(a[0], b[0]) - 2) / C); gx <= Math.floor((Math.max(a[0], b[0]) + 2) / C); gx++)
+            for (let gz = Math.floor((Math.min(a[1], b[1]) - 2) / C); gz <= Math.floor((Math.max(a[1], b[1]) + 2) / C); gz++) {
+              const key = gx * 100003 + gz; let cell = grid.get(key); if (!cell) { cell = { gx, gz, a: [] }; grid.set(key, cell); } cell.a.push(k);
+            }
+        }
+        s += L;
+      }
+      lens[ri] = s;
+    });
+    // how many records end at each half-metre node: two records meeting end to end at an angle are one street's bend
+    // (an OSM way split there), not a junction, unless a third ends there too
+    const endN = new Map(), nk = (x, z) => Math.round(x * 2) * 100003 + Math.round(z * 2);
+    for (const r of recs) {
+      if (r.pts.length < 2 || (!joins(r.t) && !cross(r.t))) continue;
+      for (const e of [r.pts[0], r.pts[r.pts.length - 1]]) { const k = nk(e[0], e[1]); endN.set(k, (endN.get(k) || 0) + 1); }
+    }
+    const out = recs.map(() => []);
+    for (const cell of grid.values()) {
+      const arr = cell.a;
+      for (let p = 0; p < arr.length; p++) for (let q = p + 1; q < arr.length; q++) {
+        const i = arr[p] * 7, j = arr[q] * 7, ri = seg[i + 4], rj = seg[j + 4];
+        if (ri === rj) continue;
+        const ax = seg[i], az = seg[i + 1], ux = (seg[i + 2] - ax) / seg[i + 6], uz = (seg[i + 3] - az) / seg[i + 6];
+        const bx = seg[j], bz = seg[j + 1], vx = (seg[j + 2] - bx) / seg[j + 6], vz = (seg[j + 3] - bz) / seg[j + 6];
+        const den = ux * vz - uz * vx;
+        if (Math.abs(den) < 0.5) continue;   // within 30 degrees of each other: a continuation or a parallel, not a junction
+        const dx = bx - ax, dz = bz - az, ta = (dx * vz - dz * vx) / den, tb = (dx * uz - dz * ux) / den;
+        const tol = 1.5;   // a T whose end node the packer's simplification left a little short of, or past, the other street
+        if (ta < -tol || ta > seg[i + 6] + tol || tb < -tol || tb > seg[j + 6] + tol) continue;
+        const px = ax + ux * ta, pz = az + uz * ta;
+        if (Math.floor(px / C) !== cell.gx || Math.floor(pz / C) !== cell.gz) continue;   // a pair shares several cells: it counts in the one its crossing lies in
+        const si = seg[i + 5] + ta, sj = seg[j + 5] + tb;
+        if ((si < 1.6 || si > lens[ri] - 1.6) && (sj < 1.6 || sj > lens[rj] - 1.6)) {   // both at an end: a junction only where a third ends there too
+          const e = si < 1.6 ? recs[ri].pts[0] : recs[ri].pts[recs[ri].pts.length - 1];
+          if ((endN.get(nk(e[0], e[1])) || 0) < 3) continue;   // a bend between two ways of one street
+        }
+        const wi = recs[ri].w / 2, wj = recs[rj].w / 2;
+        if (joins(recs[ri].t) && cross(recs[rj].t)) out[ri].push(seg[i + 5] + Math.max(0, Math.min(seg[i + 6], ta)), wj);
+        if (joins(recs[rj].t) && cross(recs[ri].t)) out[rj].push(seg[j + 5] + Math.max(0, Math.min(seg[j + 6], tb)), wi);
+      }
+    }
+    // sorted by s, and two within 3 m one junction (the widest crossing street's half width)
+    return out.map((l) => {
+      if (!l.length) return l;
+      const pairs = [];
+      for (let k = 0; k < l.length; k += 2) pairs.push([l[k], l[k + 1]]);
+      pairs.sort((a, b) => a[0] - b[0]);
+      const m = [];
+      for (const [s, h] of pairs) { const n = m.length; if (n && s - m[n - 2] < 3) { m[n - 1] = Math.max(m[n - 1], h); } else m.push(s, h); }
+      return m;
+    });
+  }
+  // The realistic lane shader (REAL; lanePatch hands over to it): on every street with aLane, ahead of the paint, the wear a
+  // street photographed from above carries, all on the street's own axes and each term faded to its mean before it can
+  // shimmer: the oil down each lane's middle and the polished wheel paths either side, the lane photographs
+  // (STREET_ART.lanewear), darker utility cuts, an iron manhole every 45 m or so, the gutter's grime and the kerb (its pale
+  // top on the road's outer 14 cm and its face in shade just inside) on a city street; the paint is a saturated worn amber
+  // and a warm white, 12 cm wide and worn; the junctions (aLane.w, laneW) carry crossings (continental bars on a wide
+  // street, two lines on a narrow one), a stop bar over the inbound half and no lane lines through the box; a milled street
+  // (the paving season) is grooved and unpainted
+  const LANE_REAL = { lineW: '0.12', white: 'vec3(0.58, 0.58, 0.55)', yellow: 'vec3(0.55, 0.37, 0.06)', strength: '0.95' };
+  function lanePatchReal(shader, fresh) {
+    const T = LANE_REAL;
+    for (const k in laneU) shader.uniforms[k] = laneU[k];
+    shader.uniforms.uLaneFresh = { value: fresh ? 1 : 0 };   // this material's own: the paving season's fresh blacktop, unworn
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aLane; varying vec4 vLane;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLane = aLane;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec4 vLane;')
+      .replace('void main() {', [
+        'uniform sampler2D uLaneWear; uniform float uLaneWearOn, uLaneWearM, uLaneWearLen, uLaneFresh;',
+        'float lnLine(float d, float h, float aa){ return 1.0 - smoothstep(h - 0.5 * aa, h + 0.5 * aa, d); }',
+        'float lnH1(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
+        'float lnN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(lnH1(i), lnH1(i + vec2(1.0, 0.0)), f.x), mix(lnH1(i + vec2(0.0, 1.0)), lnH1(i + vec2(1.0, 1.0)), f.x), f.y); }',
+        'void main() {',
+      ].join('\n'))
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+        // the derivatives stay outside the branch (defined only in uniform control flow)
+        'float lnW = fwidth(vLane.x) + 1e-4;',
+        'float lnLs = fwidth(vLane.y) + 1e-4;',
+        'float lnWv = abs(vLane.w), lnNoX = step(vLane.w, -500.0);',   // negative: the junctions known, no crossings painted (the core's own zebras)
+        'float lnJ = step(500.0, lnWv);',
+        'float lnK = floor((lnWv + 500.0) / 1000.0);',
+        'float lnCls = mix(lnWv, lnK - 1.0, lnJ);',
+        'float lnE = mix(999.0, lnWv - 1000.0 * lnK, lnJ);',
+        'float lnAhead = dFdx(lnWv) * dFdx(vLane.y) + dFdy(lnWv) * dFdy(vLane.y);',   // < 0: the junction lies ahead along +s
+        'if (vLane.z > 0.5) {',
+        '  float lnHw = vLane.z, lnU = vLane.x, lnS = vLane.y, lnAu = abs(lnU), lnKd = lnHw - lnAu;',
+        '  float lnDiv = step(0.5, lnCls) * step(lnCls, 1.5), lnTwo = step(lnCls, 0.5), lnMill = step(2.5, lnCls);',
+        '  float lnStreet = 1.0 - lnDiv - lnMill, lnKerb = lnStreet * step(2.6, lnHw);',   // an alley or a lane under 5.2 m wide is flush, no kerb
+        '  float lnN1 = lnDiv > 0.5 ? max(2.0, floor(2.0 * lnHw / 3.7 + 0.5)) : max(1.0, floor(lnHw / 3.3 + 0.5));',
+        '  float lnP = lnDiv > 0.5 ? max(2.0 * lnHw / lnN1, 0.5) : max(lnHw / lnN1, 0.5);',
+        '  float lnV = lnDiv > 0.5 ? lnU + lnHw : lnAu;',
+        '  float lnLi = floor(lnV / lnP), lnF = fract(lnV / lnP);',
+        '  float lnAA = clamp(lnW / (0.25 * lnP), 0.0, 1.0);',
+        '  float lnFar = (1.0 - smoothstep(1.5, 5.0, lnLs)) * (1.0 - uLaneFresh);',
+        '  float lnMouth = lnJ * (1.0 - smoothstep(1.5, 2.5, lnE));',   // no kerb or gutter across a side street's mouth
+        '  float drip = exp(-pow((lnF - 0.5) / 0.09, 2.0)), wheel = exp(-pow((abs(lnF - 0.5) - 0.24) / 0.07, 2.0));',
+        '  float wear = mix(1.0 - 0.12 * drip + 0.05 * wheel, 0.995, lnAA);',
+        '  if (uLaneWearOn > 0.5) {',
+        '    vec2 wuv = vec2(mix(lnF, 1.0 - lnF, mod(lnLi, 2.0)), lnS / uLaneWearLen + fract(lnLi * 0.371 + lnHw * 0.173));',
+        '    float wt = dot(texture2D(uLaneWear, wuv).rgb, vec3(0.2126, 0.7152, 0.0722)) / uLaneWearM;',
+        '    wear *= mix(1.0, clamp(wt, 0.4, 1.6), 0.55 * (1.0 - smoothstep(0.6, 2.5, max(lnLs, lnW))) * (1.0 - lnMill) * (1.0 - 0.8 * uLaneFresh));',
+        '  }',
+        '  vec2 lpc = vec2(floor(lnS / 7.0), floor((lnU + lnHw) / 2.4));',
+        '  float lph = lnH1(lpc + vec2(lnHw * 13.1, 7.7));',
+        '  vec2 lpd = abs(vec2(fract(lnS / 7.0) * 7.0, fract((lnU + lnHw) / 2.4) * 2.4) - vec2(3.5 + 1.4 * (fract(lph * 5.7) - 0.5), 1.2)) - vec2(0.6 + 2.0 * fract(lph * 7.31), 0.4 + 0.65 * fract(lph * 3.17));',
+        '  float lpa = 0.5 * (lnW + lnLs), lpk = step(0.94, lph) * lnFar * (1.0 - lnMill);',   // one cell in seventeen
+        '  wear *= mix(1.0, 0.78 + 0.1 * fract(lph * 11.3), lpk * (1.0 - smoothstep(-lpa, lpa, max(lpd.x, lpd.y))));',
+        '  wear *= 1.0 - 0.25 * lpk * (1.0 - smoothstep(0.0, lpa + 0.03, abs(max(lpd.x, lpd.y))));',   // its tar-sealed joint
+        '  wear *= mix(1.0, 0.8, (1.0 - smoothstep(0.15, 0.6, lnKd)) * (1.0 - lnAA) * lnKerb * (1.0 - lnMouth));',
+        '  wear *= mix(1.0, mix(0.86 + 0.28 * lnN(vec2(lnU * 14.0, lnS * 0.25)), 1.0, smoothstep(0.03, 0.15, lnW)), lnMill);',
+        '  diffuseColor.rgb *= wear;',
+        // a manhole: an iron disc near the middle every 45 m or so (three in four cells)
+        '  float lmc = floor(lnS / 45.0), lmh = lnH1(vec2(lmc, lnHw * 3.7));',
+        '  vec2 lmp = vec2((lmc + 0.25 + 0.5 * lmh) * 45.0, (fract(lmh * 13.7) - 0.5) * min(2.4, lnHw));',
+        '  float lmd = length(vec2(lnS, lnU) - lmp), lma = lnW + lnLs;',
+        '  float lmk = (1.0 - smoothstep(0.36 - 0.5 * lma, 0.36 + 0.5 * lma, lmd)) * (1.0 - smoothstep(0.4, 1.0, lma)) * step(0.25, lmh) * lnStreet;',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.05, 0.047, 0.043) * (0.8 + 0.4 * lnN(vec2(lnS, lnU) * 11.0)), lmk);',
+        '  diffuseColor.rgb *= 1.0 - 0.3 * lmk * (1.0 - smoothstep(0.0, 0.5 * lma + 0.025, abs(lmd - 0.32)));',
+        // the kerb: its top on the road's outer 14 cm, its face in shade just inside
+        '  float lkOn = lnKerb * (1.0 - lnMouth) * (1.0 - smoothstep(0.5, 1.4, lnW));',
+        '  float lkt = 1.0 - smoothstep(0.14 - 0.5 * lnW, 0.14 + 0.5 * lnW, lnKd);',
+        '  float lkf = (1.0 - smoothstep(0.0, 0.6 * lnW + 0.02, abs(lnKd - 0.17))) * (1.0 - lkt);',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.155, 0.155, 0.145), lkt * lkOn);',   // a granite or concrete kerb, a shade over the sidewalk (SIDEWALK_COL)
+        '  diffuseColor.rgb *= 1.0 - 0.5 * lkf * lkOn;',
+        // the paint
+        '  float lnLineW = max(' + T.lineW + ', lnW * 0.9);',
+        '  float lnGain = clamp(' + T.lineW + ' / lnLineW, 0.55, 1.0);',
+        '  float lnFarP = 1.0 - smoothstep(1.2, 2.4, lnW);',
+        '  float lnDash = mix(step(fract(lnS / 9.0), 0.333), 0.333, smoothstep(1.5, 4.5, lnLs));',
+        '  float lnWhite = 0.0, lnYel = 0.0, lnX = 0.0;',
+        '  if (lnTwo > 0.5) {',
+        '    if (lnHw >= 3.25) lnYel = lnLine(abs(lnAu - 0.16), max(0.05, lnLineW * 0.5), lnW);',
+        '    float lnIn = step(0.5 * lnP, lnAu) * step(lnAu, lnHw - 0.5 * lnP);',
+        '    lnWhite = lnLine(abs(fract(lnAu / lnP + 0.5) - 0.5) * lnP, lnLineW * 0.5, lnW) * lnIn * lnDash;',
+        '  } else if (lnDiv > 0.5) {',
+        '    float lnIn = step(0.5 * lnP, lnV) * step(lnV, 2.0 * lnHw - 0.5 * lnP);',
+        '    lnWhite = lnLine(abs(fract(lnV / lnP + 0.5) - 0.5) * lnP, lnLineW * 0.5, lnW) * lnIn * lnDash;',
+        '    lnWhite = max(lnWhite, lnLine(abs(lnAu - (lnHw - 0.35)), lnLineW * 0.5, lnW));',
+        '  }',
+        '  lnYel *= 1.0 - lnJ * (1.0 - smoothstep(3.6, 4.0, lnE));',     // the centre line runs to the crossing
+        '  lnWhite *= 1.0 - lnJ * (1.0 - smoothstep(5.3, 5.7, lnE));',   // the lane lines to the stop bar
+        '  if (lnJ > 0.5 && lnNoX < 0.5 && lnE > 0.3 && lnE < 6.0 && lnStreet > 0.5) {',
+        '    float lnXin = smoothstep(0.8 - 0.5 * lnLs, 0.8 + 0.5 * lnLs, lnE) * (1.0 - smoothstep(3.8 - 0.5 * lnLs, 3.8 + 0.5 * lnLs, lnE));',
+        '    float lnXe = 1.0 - smoothstep(lnHw - 0.5, lnHw - 0.3, lnAu);',
+        '    if (lnHw >= 4.5) lnX = lnLine(abs(fract(lnU / 1.2) - 0.5) * 1.2, 0.3, lnW) * lnXin * lnXe;',
+        '    else lnX = max(lnLine(abs(lnE - 0.95), 0.15, lnLs), lnLine(abs(lnE - 3.65), 0.15, lnLs)) * lnXe;',
+        '    float lnInb = lnTwo > 0.5 ? step(0.0, -lnU * sign(-lnAhead)) : 1.0;',   // a two-way street's stop bar spans its inbound half
+        '    lnX = max(lnX, lnLine(abs(lnE - 5.0), 0.22, lnLs) * lnXe * lnInb);',
+        '    lnX *= 1.0 - smoothstep(2.0, 4.0, max(lnW, lnLs));',
+        '  }',
+        '  float lnPw = mix(0.45 + 0.55 * lnN(vec2(lnS * 2.3, lnU * 9.0)), 0.72, smoothstep(0.3, 1.2, lnW));',
+        '  lnPw *= mix(0.6 + 0.4 * lnN(vec2(lnS * 0.21, 3.1 + lnHw)), 0.8, smoothstep(1.5, 4.0, lnLs));',
+        '  float lnPaint = lnGain * ' + T.strength + ' * mix(lnPw, 1.0, uLaneFresh) * (1.0 - lnMill);',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, ' + T.white + ', clamp(max(lnWhite * lnFarP, lnX), 0.0, 1.0) * lnPaint);',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, ' + T.yellow + ', lnYel * lnFarP * lnPaint);',
+        '}',
+      ].join('\n'));
   }
   // streets follow the terrain: add a vertex every `step` meters
   function densify(pts, step) {
@@ -6491,9 +6738,10 @@ vec2 wRing(vec2 rc, float tt) {
   });
 
   step('Paving the streets', () => {
+    loadStreetArt();   // the realism pass: the streets' generated textures, each as it comes
     const asphaltParts = [], brickParts = [];
     const cBrickWalk = new THREE.Color(COLORS.footway);
-    const cConcWalk = new THREE.Color(COLORS.paving);
+    const cConcWalk = new THREE.Color(REAL ? SIDEWALK_COL[5] : COLORS.paving);   // the realism pass: the outer districts' concrete, so the two meet unseen
     // with the outer districts loaded, core streets stop at the core boundary (the wide set draws the rest)
     const haveWide = typeof WIDE_B64 !== 'undefined' && !!WIDE_B64;
     const M = 40;
@@ -6534,9 +6782,21 @@ vec2 wRing(vec2 rc, float tt) {
           const key = gx + ':' + gz; let arr = carGrid.get(key); if (!arr) { arr = []; carGrid.set(key, arr); } arr.push(k);
         }
     };
+    // the realism pass: every run is gathered first, so the junctions are known before a street is laid (streetJunctions):
+    // the core keeps its mapped zebras, so its junctions only break the kerbs and clear the lane lines from the box (laneW's
+    // negative form, no crossings painted)
+    const coreRuns = [];
     for (const r of D.roads) {
       if (r.pts.length < 2) continue;
       if (/Delancey|Cypress|American|Philip|Stamper|Addison|Panama|Peter's Way|Naudain|Kenilworth/i.test(r.name || '')) r.w = Math.min(r.w, 6);
+      const openRuns = /motorway/.test(r.t) || /columbus boulevard|front street/i.test(r.name || '')
+        ? [r.pts] : capClipRoad(r.pts);
+      const tc = /^primary/.test(r.t) ? 2 : /^secondary/.test(r.t) ? 3 : /^tertiary/.test(r.t) ? 4 : /^(residential|living_street|unclassified)$/.test(r.t) ? 5 : /^service$/.test(r.t) ? 7 : 9;
+      for (const run of openRuns.flatMap(runsOf)) coreRuns.push({ r, pts: run, w: r.w, t: tc });
+    }
+    const coreJX = REAL ? streetJunctions(coreRuns, STREET_JOINS, (t) => STREET_JOINS(t) || t === 7, null) : null;
+    for (let cr = 0; cr < coreRuns.length; cr++) {
+      const r = coreRuns[cr].r, run = coreRuns[cr].pts;
       const foot = /footway|path|steps|pedestrian|cycleway/.test(r.t);
       const mot = /motorway/.test(r.t);
       const setts = /Dock Street/i.test(r.name || '') || (/2nd Street/i.test(r.name || '') && r.pts[0][1] > 250 && r.pts[0][1] < 420);
@@ -6545,10 +6805,8 @@ vec2 wRing(vec2 rc, float tt) {
       const y = foot ? LAYER.footway : setts ? LAYER.road - 0.015 : LAYER.road;   // with a 1 cm jitter (below) the setts sit between the sidewalks' 0.16 to 0.22 and the asphalt's 0.24 to 0.30
       // lane class for the paint: divided (no centre yellow) on the highways and their links,
       // no markings on service and pedestrian ways; the brick parts never carry the attribute
-      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) ? 2 : 0) };
-      const openRuns = /motorway/.test(r.t) || /columbus boulevard|front street/i.test(r.name || '')
-        ? [r.pts] : capClipRoad(r.pts);
-      for (const run of openRuns.flatMap(runsOf)) {
+      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) ? 2 : 0), jl: coreJX && coreJX[cr].length ? coreJX[cr] : null, noX: true };
+      {
         // Round 127 (Mike: "sidewalks/crosswalks overlapping look pretty bad"): the mapped footways and the
         // generated sidewalks wait until every carriageway is known (below)
         if (/footway|path|steps|cycleway/.test(r.t)) { footJobs.push({ run, w: r.w }); continue; }
@@ -6558,7 +6816,7 @@ vec2 wRing(vec2 rc, float tt) {
           addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
           if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]); if (!mot) carAdd(run[i], run[i + 1], r.w / 2, walks); }   // the core's I-95 runs in its trench or under the deck: nothing crosses it at grade (review, Sep 22)
         }
-        (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)) });
+        (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)).multiplyScalar(foot || setts ? 1 : streetAge(cr + 3)) });
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
         if (walks) {
           const walkCol = /residential|tertiary|living_street/.test(r.t) ? cBrickWalk : cConcWalk;
@@ -6635,7 +6893,7 @@ vec2 wRing(vec2 rc, float tt) {
     freeOnUpload(asphalt.geometry);
     const brick = new THREE.Mesh(
       mergeColored(brickParts),
-      surfMat({ vertexColors: true, roughness: 0.94 })
+      REAL ? walkMat({ vertexColors: true, roughness: 1 }) : surfMat({ vertexColors: true, roughness: 0.94 })
     );
     brick.receiveShadow = true;
     groupCity.add(brick);
@@ -11755,7 +12013,6 @@ vec2 wRing(vec2 rc, float tt) {
     };
     // the joint fan sits 2 cm below its strip so the strip's paint wins the overlap; its
     // aLane rides the averaged heading (ddx, ddz) at the bend: rim u = offset . n, s = sA + offset . d
-    const rcFan = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh) => roadFan(rc, rcLane, x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh);
     const wideRoadRecs=[];
     for (let i = 0; i < hdr[2]; i++) {
       const n = body[k++], w = body[k++] / 10, t = body[k++];
@@ -11767,9 +12024,17 @@ vec2 wRing(vec2 rc, float tt) {
       wideRoadRecs.push({pts,w,t,i});
     }
     wideSurfaceTasks.push(() => {
-      for (const { pts, w, t, i } of wideRoadRecs) {
+      // the realism pass: the junctions, for the crossings, the stop bars and the kerbs' breaks (laneW); each street a
+      // little older or newer than the next (streetAge)
+      const tJ = performance.now();
+      const JX = REAL ? streetJunctions(wideRoadRecs, STREET_JOINS, STREET_JOINS, (a, q) => !ovpOwned(a[0], a[1], q[0], q[1])) : null;
+      if (JX) { const P = PERF.junctions || (PERF.junctions = {}); P.wide = JX.reduce((n, l) => n + l.length / 2, 0); P.wideMs = Math.round(performance.now() - tJ); }
+      for (let ri = 0; ri < wideRoadRecs.length; ri++) {
+        const { w, t, i } = wideRoadRecs[ri], jl = JX && JX[ri];
+        const pts = jl && jl.length ? splitAtS(wideRoadRecs[ri].pts, junctionCuts(jl)) : wideRoadRecs[ri].pts;
+        const laneJ = jl && jl.length ? (v, u, s, hw2, cls2) => rcLane(v, u, s, hw2, laneW(cls2, jl, s)) : rcLane;
         const edges = routeOffsets(pts);
-        c.set(roadCol[t] || COLORS.asphalt);
+        c.set(roadCol[t] || COLORS.asphalt).multiplyScalar(streetAge(i));
         const hw = w / 2;
         const cls = t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && w > 10)) ? 2 : 0;   // lane class: divided, two-way, or unmarked
         const thr = TERRAIN.water + 0.6;
@@ -11813,7 +12078,7 @@ vec2 wRing(vec2 rc, float tt) {
           // on registered land, clear of the bank blend, the strip is laid on the drawn ground (Round 88)
           const onMesh = !deck && meshA !== null && meshB !== null && bankD >= BANK_BAND + BANK_BLEND;
           const r0 = rc.idx.length, fb0 = DRAPE_FB.n, ff0 = ROAD_STATS.flatFans;   // Round 168: this segment's triangles from here (its strip, a bank's skirts, its fans)
-          roadStrip(rc, rcLane, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls, edges[j], edges[j + 1]);
+          roadStrip(rc, laneJ, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls, edges[j], edges[j + 1]);
           let skirt = false;   // Round 168: a quay wall stands up off the ground (rc.raised)
           if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
             for (const sg of [1, -1]) {
@@ -11830,8 +12095,8 @@ vec2 wRing(vec2 rc, float tt) {
               rc.idx.push(s0, s0 + 1, s0 + 2, s0, s0 + 2, s0 + 3); skirt = true;
             }
           }
-          if (j === 0) rcFan(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
-          if (j === pts.length - 2) rcFan(q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sAcc, dx, dz, cls, jr, onMesh);
+          if (j === 0) roadFan(rc, laneJ, a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
+          if (j === pts.length - 2) roadFan(rc, laneJ, q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sAcc, dx, dz, cls, jr, onMesh);
           if (roadRaised(rc, r0, onMesh, deck, skirt, fb0, ff0)) rc.raised.push(r0, rc.idx.length);   // Round 168: see roadRaised
         }
       }
@@ -12494,9 +12759,11 @@ vec2 wRing(vec2 rc, float tt) {
     // the plaza layer. The
     // fill sheet and the lots are an exact pair now (both conform to the same ground), so the
     // gap between them is wider than the old 1.5 cm, and the stripes sit above both
-    const LOT_FILL_COL = 0x101314, LOT_COL = 0x141819;   // weathered charcoal, related to the streets
+    // the realism pass: the streets' neutral-warm family, a touch lighter from wear, and the stall lines quieter (worn paint)
+    const LOT_FILL_COL = REAL ? 0x0d0d0c : 0x101314, LOT_COL = REAL ? 0x0e0e0d : 0x141819;   // weathered charcoal, related to the streets
     const LOT_FILL_UP = 0.02, LOT_UP = 0.06, LOT_STRIPE_UP = 0.09;   // over LAYER.plaza
-    const LOT_STRIPE_OPACITY = 0.28;
+    const LOT_STRIPE_OPACITY = REAL ? 0.16 : 0.28;
+    const lotSheetParts = [];   // the realism pass: the sports complex's sheets on their own mesh, as rough as the streets (below)
     if (typeof PARKING_SOUTH !== 'undefined' && PARKING_SOUTH && PARKING_SOUTH.polys) {
       const toRing = (fl2) => { const pp = new Array(fl2.length >> 1); for (let q = 0; q < pp.length; q++) pp[q] = [fl2[q * 2], fl2[q * 2 + 1]]; return pp; };
       // the district sheet first (the convex hull of the complex's lots: there is no lawn in
@@ -12508,14 +12775,14 @@ vec2 wRing(vec2 rc, float tt) {
       for (const fl2 of (PARKING_SOUTH.fill || [])) {
         const pp = toRing(fl2);
         NO_SOW_RINGS.push(pp); NO_SOW_RING_BB.push(bboxOf(pp));
-        try { areaParts.push({ geom: conformDrape(pp, LAYER.plaza + LOT_FILL_UP, 8), color: new THREE.Color(LOT_FILL_COL), style: 3 }); } catch (e) { /* degenerate */ }
+        try { (REAL ? lotSheetParts : areaParts).push({ geom: conformDrape(pp, LAYER.plaza + LOT_FILL_UP, 8), color: new THREE.Color(LOT_FILL_COL), style: 3 }); } catch (e) { /* degenerate */ }
       }
       const seg = [];
       const yAt = (x, z) => (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + LAYER.plaza + LOT_STRIPE_UP;
       for (const fl2 of PARKING_SOUTH.polys) {
         const pp = toRing(fl2);
         NO_SOW_RINGS.push(pp); NO_SOW_RING_BB.push(bboxOf(pp));
-        try { areaParts.push({ geom: conformDrape(pp, LAYER.plaza + LOT_UP, 10), color: new THREE.Color(LOT_COL), style: 3 }); } catch (e) { continue; }
+        try { (REAL ? lotSheetParts : areaParts).push({ geom: conformDrape(pp, LAYER.plaza + LOT_UP, 10), color: new THREE.Color(LOT_COL), style: 3 }); } catch (e) { continue; }
         // Round 127 (Mike: the stadium lots look too dark at night): light masts on a 42 m grid square to the
         // street grid, 5 m in from the lot's edge; 'Lighting the streetlamps' adds them to the pole inventory
         // and pools their light on the asphalt
@@ -12585,6 +12852,13 @@ vec2 wRing(vec2 rc, float tt) {
       parkPolys.length=0;
       drapeLog('the outer districts');
       if (areaParts.length) { const g = mergeColored(areaParts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, surfMat({ vertexColors: true, roughness: 0.95 }))); }
+      if (lotSheetParts.length) {   // the realism pass: the sports complex's lots, the photographed lot asphalt on the street grid
+        const g = mergeColored(lotSheetParts); freeOnUpload(g);
+        const m = surfMat({ vertexColors: true, roughness: 1 });
+        m.onBeforeCompile = (sh, r) => { lotPatch(sh, false); surfTexPatch(sh, r); };
+        m.customProgramCacheKey = () => 'lot sheets';
+        groupCity.add(new THREE.Mesh(g, m));
+      }
     });
     if (waterAreaParts.length) { const g = mergeWater(waterAreaParts); freeOnUpload(g); groupCity.add(occFlatTiles([new THREE.Mesh(g, riverMat)])[0]); }   // Round 168: flat for the pins' capture
     raisedFlush();   // realism, water: the basins, reservoirs, piers and jets the loop gathered
@@ -13588,7 +13862,6 @@ vec2 wRing(vec2 rc, float tt) {
       yMapF.set(key, y);
       return y;
     };
-    const rcFanF = (x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh) => roadFan(rc, rcLane, x, y, z, hw, cr, cg, cb, sA, ddx, ddz, cls, jr, onMesh);   // 2 cm below its strip, like the wide rcFan
     // the roads are DECODED here and PAVED at upload (uploadRing calls paveRoads once the far
     // strips and the NW patch are in the ground registry), so their heights read the drawn
     // ground like the sheets do (groundMeshLandY); paved here they read the DEM, and a park
@@ -13615,10 +13888,16 @@ vec2 wRing(vec2 rc, float tt) {
     }
     const endShared = (e) => (endN.get(Math.round(e[0] * 2) + ':' + Math.round(e[1] * 2)) || 0) > 1;
     const paveRoads = async () => {
+      // the realism pass (see the wide set's): the junctions where the ring carries aLane (a computer), each street's age
+      const tJ = performance.now();
+      const JX = REAL && rc.lane ? streetJunctions(roadRecs, STREET_JOINS, STREET_JOINS, (a, q) => !ovpOwned(a[0], a[1], q[0], q[1])) : null;
+      if (JX) { const P = PERF.junctions || (PERF.junctions = {}); P[label] = JX.reduce((n, l) => n + l.length / 2, 0); P[label + 'Ms'] = Math.round(performance.now() - tJ); }
       for (let ri = 0; ri < roadRecs.length; ri++) {
-      const { pts, w, t, i } = roadRecs[ri];
+      const { w, t, i } = roadRecs[ri], jl = JX && JX[ri];
+      const pts = jl && jl.length ? splitAtS(roadRecs[ri].pts, junctionCuts(jl)) : roadRecs[ri].pts;
+      const laneJ = jl && jl.length ? (v, u, s, hw2, cls2) => rcLane(v, u, s, hw2, laneW(cls2, jl, s)) : rcLane;
       const edges = routeOffsets(pts);
-      c.set(roadCol[t] || COLORS.asphalt);
+      c.set(roadCol[t] || COLORS.asphalt).multiplyScalar(streetAge(i + 7919));
       const hw = w / 2;
       const cls = t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && w > 10)) ? 2 : 0;   // lane class: divided, two-way, or unmarked; runways (45 m) and taxiways (16 m) ride class 5
       const thr = TERRAIN.water + 0.6;
@@ -13653,7 +13932,7 @@ vec2 wRing(vec2 rc, float tt) {
         const ya = ySnapF(a[0], a[1], ya0 + jr), yb = ySnapF(q[0], q[1], yb0 + jr);
         const onMesh = !deck && meshA !== null && meshB !== null && bankD >= BANK_BAND + BANK_BLEND;   // on the drawn ground (Round 88)
         const r0 = rc.idx.length, fb0 = DRAPE_FB.n, ff0 = ROAD_STATS.flatFans;   // Round 168: this segment's triangles from here (see the wide set's)
-        roadStrip(rc, rcLane, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls, edges[j], edges[j + 1]);
+        roadStrip(rc, laneJ, a, q, dx, dz, hw, ya, yb, jr, onMesh, c.r * 255, c.g * 255, c.b * 255, sA, sAcc, cls, edges[j], edges[j + 1]);
         let skirt = false;   // Round 168: see the wide set's
         if (bank) {   // Round 85: a bank road stands on the DEM over the carved slope; a skirt from each edge down to the drawn mesh reads as the quay wall it is
           for (const sg of [1, -1]) {
@@ -13676,9 +13955,9 @@ vec2 wRing(vec2 rc, float tt) {
           // up to 7.86 m of it in Fairmount Park. A disc at a run's first point closes it, and
           // only where another run really ends there, so the count stays in hand (240 of the
           // park's 333 endpoint keys are shared, 93 are the real dangling ends).
-          rcFanF(a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
+          roadFan(rc, laneJ, a[0], ya, a[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
         }
-        if (j === pts.length - 2 && endShared(q)) rcFanF(q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
+        if (j === pts.length - 2 && endShared(q)) roadFan(rc, laneJ, q[0], yb, q[1], hw, c.r * 255, c.g * 255, c.b * 255, sA, dx, dz, cls, jr, onMesh);
         if (roadRaised(rc, r0, onMesh, deck, skirt, fb0, ff0)) rc.raised.push(r0, rc.idx.length);   // Round 168: see roadRaised
       }
       if ((ri & 2047) === 2047) await yieldNow();
@@ -14071,6 +14350,7 @@ vec2 wRing(vec2 rc, float tt) {
   // so nothing of one kind is ever coplanar with itself, and both kinds conform to the same
   // ground triangles, so the gap is exact everywhere, gotcha 17)
   const PAVED_COL = { 1: 0x111516, 2: 0x1b1c19, 3: 0x26251f, 4: 0x30332f };   // asphalt, service yards, warm ballast, concrete aprons
+  if (REAL) { PAVED_COL[1] = 0x0e0e0d; PAVED_COL[2] = 0x121210; }   // the realism pass: the lots and yards in the streets' re-keyed family
   // Round 144 (Mike: "lots of flickering at this view on the concrete", over the Packer Avenue rail yard): the kinds
   // overlap each other, not only themselves (yards under aprons over 389,000 m2, yards under rail yards over 154,000 m2,
   // rail yards and aprons never), and at one lift they were coplanar and fought. The yards now sit under both, so every
@@ -14090,6 +14370,93 @@ vec2 wRing(vec2 rc, float tt) {
   step('Paving the lots and yards', () => {
     try { paveLotsAndYards(); } finally { for (const G of groundGrids) G.nrm = null; if (coreRoadGround) coreRoadGround.nrm = null; }
   });
+  // ---- the lots' stalls (the realism pass; the audit: "Parking lots are flat slabs: no stalls citywide"). A lot's frame is
+  // its longest outline edge (a lot is mostly a rectangle), snapped to the street grid within 15 degrees, and its centroid,
+  // carried in four bytes a vertex (aLot: the frame's angle over pi, the centroid's phase across the stalls' 2.7 m and
+  // along the rows' 18.5 m module, a seed), so every lot lays double-loaded rows on its own axes: 5.5 m stalls either side
+  // of a 7.5 m aisle, 10 cm lines, an oil stain under the engine of seven stalls in ten, all faded to their mean by the
+  // pixel; and the photographed lot asphalt (STREET_ART.lot) at 6 m in the same frame
+  const LOT_STALL_W = 2.7, LOT_MODULE = 18.5;
+  function lotFrame(poly, i) {
+    let best = 0, ang = 0;
+    for (let k = 0; k < poly.length; k++) { const a = poly[k], b = poly[(k + 1) % poly.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L > best) { best = L; ang = Math.atan2(b[1] - a[1], b[0] - a[0]); } }
+    ang = ((ang % Math.PI) + Math.PI) % Math.PI;
+    const gAng = ((Math.atan2(fl.nz, fl.nx) % (Math.PI / 2)) + Math.PI / 2) % (Math.PI / 2);   // the street grid, folded into a quarter turn
+    for (const g of [gAng, gAng + Math.PI / 2, gAng + Math.PI]) if (Math.abs(ang - g) < 0.26) ang = g % Math.PI;
+    const c = polyCentroid(poly), ux = Math.cos(ang), uz = Math.sin(ang);
+    const fu = (c[0] * ux + c[1] * uz) / LOT_STALL_W, fv = (-c[0] * uz + c[1] * ux) / LOT_MODULE;
+    const ph = (f) => Math.round((f - Math.floor(f)) * 255) % 256;
+    return [Math.round(ang / Math.PI * 255), ph(fu), ph(fv), Math.floor(hash01(i * 3.17 + 0.5) * 255)];
+  }
+  function mergeLots(list) {   // conformDrape's soups into one: positions, the up normals and colours in four-byte slots, aLot
+    let n = 0;
+    for (const p of list) n += p.geom.attributes.position.count;
+    const pos = new Float32Array(n * 3), nor = new Int8Array(n * 4), col = new Uint8Array(n * 4), lot = new Uint8Array(n * 4);
+    let o = 0;
+    for (const p of list) {
+      const g = p.geom, c = g.attributes.position.count, nn = g.attributes.normal.array;
+      pos.set(g.attributes.position.array, o * 3);
+      const r = Math.round(p.color.r * 255), gg = Math.round(p.color.g * 255), b = Math.round(p.color.b * 255);
+      for (let k = 0; k < c; k++) {
+        const q = (o + k) * 4;
+        for (let d = 0; d < 3; d++) nor[q + d] = Math.max(-127, Math.min(127, Math.round(nn[k * 3 + d] * 127)));
+        col[q] = r; col[q + 1] = gg; col[q + 2] = b;
+        lot[q] = p.lot[0]; lot[q + 1] = p.lot[1]; lot[q + 2] = p.lot[2]; lot[q + 3] = p.lot[3];
+      }
+      o += c; g.dispose();
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 4, true));
+    out.setAttribute('color', new THREE.InterleavedBufferAttribute(new THREE.InterleavedBuffer(col, 4), 3, 0, true));
+    out.setAttribute('aLot', new THREE.BufferAttribute(lot, 4, true));
+    out.computeBoundingSphere();
+    return out;
+  }
+  function lotPatch(shader, stalls = true) {   // stalls false: only the photographed asphalt, on the street grid (the sports complex's sheets carry their own stall lines)
+    for (const k of ['uLotTex', 'uLotM', 'uLotOn']) shader.uniforms[k] = streetArtU[k];
+    if (stalls) shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec4 aLot; varying vec4 vLot;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvLot = aLot;');
+    const gA = Math.atan2(fl.nz, fl.nx);   // the street grid's east-west axis
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\n' + (stalls ? 'varying vec4 vLot;\n' : 'const vec4 vLot = vec4(' + (((gA % Math.PI) + Math.PI) % Math.PI / Math.PI).toFixed(5) + ', 0.0, 0.0, 0.0);\n') + 'uniform sampler2D uLotTex; uniform float uLotM, uLotOn;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+        '{',
+        '  float la = ' + (stalls ? 'floor(vLot.x * 255.0 + 0.5) / 255.0' : 'vLot.x') + ' * 3.14159265;',
+        '  vec2 lU = vec2(cos(la), sin(la)), lV = vec2(-lU.y, lU.x);',
+        '  vec3 lw = cameraPosition - vViewPosition * mat3(viewMatrix);',
+        '  float lu = dot(lw.xz, lU) - vLot.y * ' + LOT_STALL_W.toFixed(1) + ', lv = dot(lw.xz, lV) - vLot.z * ' + LOT_MODULE.toFixed(1) + ';',
+        '  float lfw = max(fwidth(lu), fwidth(lv)) + 1e-4;',
+        '  float lnear = 1.0 - smoothstep(0.35, 1.4, lfw);',
+        '  float paint = 0.0, oil = 0.0;',
+        stalls ? [
+          '  float rv = mod(lv, ' + LOT_MODULE.toFixed(1) + '), su = mod(lu, ' + LOT_STALL_W.toFixed(1) + ');',
+          '  float stall = step(rv, 5.5) + step(13.0, rv);',
+          '  float tick = (1.0 - smoothstep(0.05 - 0.5 * lfw, 0.05 + 0.5 * lfw, min(su, ' + LOT_STALL_W.toFixed(1) + ' - su))) * stall;',
+          '  float back = 1.0 - smoothstep(0.05 - 0.5 * lfw, 0.05 + 0.5 * lfw, min(rv, ' + LOT_MODULE.toFixed(1) + ' - rv));',
+          '  float pwn = fract(sin(dot(floor(vec2(lu * 3.0, lv * 3.0)), vec2(41.3, 289.1))) * 43758.5453);',   // worn paint, broken at 33 cm
+          '  paint = mix(0.03, max(tick, back) * (0.55 + 0.45 * pwn), lnear);',
+          // the oil under the engine, 1.6 m in from the stall's front, in seven stalls of ten
+          '  float sf = rv < 9.25 ? 5.5 - rv : rv - 13.0;',
+          '  vec2 sid = vec2(floor(lu / ' + LOT_STALL_W.toFixed(1) + '), floor(lv / ' + LOT_MODULE.toFixed(1) + ') * 2.0 + step(9.25, rv));',
+          '  float sh = fract(sin(dot(sid + vLot.w * 37.0, vec2(12.9898, 78.233))) * 43758.5453);',
+          '  oil = (1.0 - smoothstep(0.75, 1.0, length(vec2(su - 1.35, sf - 1.6) / vec2(0.38, 0.75)))) * stall * step(0.3, sh);',
+          '  oil = mix(0.06, oil * (0.6 + 0.4 * sh), lnear);',
+        ].join('\n') : '',
+        '  float lt = 1.0;',
+        '  if (uLotOn > 0.5) lt = mix(dot(texture2D(uLotTex, vec2(lu, lv) / 6.0).rgb, vec3(0.2126, 0.7152, 0.0722)) / uLotM, 1.0, smoothstep(0.3, 1.5, lfw));',
+        '  diffuseColor.rgb *= mix(1.0, clamp(lt, 0.5, 1.5), 0.7) * (1.0 - 0.3 * oil);',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.40, 0.40, 0.38), paint * 0.5);',
+        '}',
+      ].join('\n'));
+  }
+  const lotMat = () => {
+    const m = surfMat({ vertexColors: true, roughness: 1 });
+    m.onBeforeCompile = (sh, r) => { lotPatch(sh); surfTexPatch(sh, r); };
+    m.customProgramCacheKey = () => 'lots';
+    return m;
+  };
   function paveLotsAndYards() {
     if (typeof PAVED_B64 === 'undefined' || !PAVED_B64) return;
     let v;
@@ -14102,7 +14469,7 @@ vec2 wRing(vec2 rc, float tt) {
     const nPolys = (v[2] & 0xffff) | ((v[3] & 0xffff) << 16);   // the words are unsigned; int16 reads a count past 32767 negative
     const cols = {};
     for (const k in PAVED_COL) cols[k] = new THREE.Color(PAVED_COL[k]);   // mergeColored copies the colour per vertex, one object per kind is enough
-    const parts = [], counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    const parts = [], lotParts = [], counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
     let p = 4, skipped = 0, unknown = 0;
     for (let i = 0; i < nPolys; i++) {
       if (p + 2 > v.length) { console.error('paved ground: ring ' + i + ' of ' + nPolys + ' runs past the end of the blob'); break; }
@@ -14115,7 +14482,8 @@ vec2 wRing(vec2 rc, float tt) {
       if (PAVED_UP[kind] === undefined) { unknown++; continue; }   // a kind this build does not draw
       let geom;
       try { geom = conformDrape(poly, PAVED_UP[kind], 20); } catch (e) { skipped++; continue; }   // a degenerate ring
-      parts.push({ geom, color: cols[kind], style: 3 });
+      if (REAL && kind === 1) lotParts.push({ geom, color: cols[kind], lot: lotFrame(poly, i) });   // the realism pass: a lot keeps its own frame for its stalls
+      else parts.push({ geom, color: cols[kind], style: 3 });
       noSow(poly);   // the tuft field keeps off asphalt
       counts[kind]++;
     }
@@ -14126,9 +14494,129 @@ vec2 wRing(vec2 rc, float tt) {
       m.receiveShadow = true;
       occFlatTiles(addTiles(m, 'lots'));   // Round 167; Round 168: flat for the pins' capture
     }
+    if (lotParts.length) {   // the lots on their own material: the stall rows, the oil, the photographed asphalt (lotPatch)
+      const g = mergeLots(lotParts);
+      freeOnUpload(g);
+      const m = new THREE.Mesh(g, lotMat());
+      m.receiveShadow = true;
+      for (const t of streetTiles(m, 9600)) t.userData.occFlat = true;   // the yards' cell (TILE_CELL.lots); flat for the pins' capture, as they are
+    }
     PERF.paved = counts;   // read through ?dev's __dbg.PERF.paved
     drapeLog('the lots and yards');
     if (/[?&]dev\b/.test(location.search)) console.info('paved ground: ' + Object.keys(counts).map(k => counts[k] + ' ' + PAVED_KIND[k]).join(', ') + ' of ' + nPolys + ' rings' + (skipped ? ', ' + skipped + ' degenerate' : '') + (unknown ? ', ' + unknown + ' of an unknown kind' : ''));
+  }
+  // ---- the outer districts' sidewalks (the realism pass; Mike: "make this look more photo realistic and less cartoony").
+  // Outside the core every rowhouse stood on a strip of lawn: the core lays its own walks ('Paving the streets') and nothing
+  // paved the 3 to 5 m between an outer street's kerb and its facades. SIDEWALKS_B64 (bake_sidewalks.py, from wide.b64's
+  // own streets and footprints) holds every band a city street carries, filled to the facades where a strip under 5.2 m
+  // was left, as simple rings: [magic 'SHWW', nRings, version 1, 0], then per ring n, kind (5 concrete, 6 brick in the
+  // historic districts), x0, z0 in 0.2 m units and n - 1 deltas. Each ring is densified to 12 m, earcut once and laid on the
+  // drawn ground at SIDEWALK_UP (a triangle whose middle would dip under the ground's own facets is split, twice at most),
+  // welded, its colour and up normal in four-byte slots (gotcha 158: never a 1- or 3-byte stream), cut into SIDEWALK_TILE
+  // tiles; a phone draws only the tiles within NEAR_R of the eye (updateStreets) and a LITE build none; the tuft field keeps
+  // off them (noSow). surfTexPatch gives the concrete its slab joints and the brick its herringbone by their colours
+  const SIDEWALK_UP = 0.205;   // over the lots (0.055), the parks (0.06 to 0.09) and the sports complex's lots and stall lines (LAYER.plaza + 0.06 and + 0.09), under every street (0.24 up)
+  const SIDEWALK_COL = { 5: 0x222320, 6: 0x2b1e18 };   // concrete (sRGB about 185 in sun beside the asphalt's 110), brick the core's own walks' (COLORS.footway under REAL)
+  const SIDEWALK_TILE = 400;
+  let sidewalkTiles = null;
+  step('Paving the sidewalks', () => {
+    if (!REAL || LITE || typeof SIDEWALKS_B64 === 'undefined' || !SIDEWALKS_B64) return;
+    let hdr, v;
+    try {
+      const u8 = unb64(SIDEWALKS_B64, 'SIDEWALKS');
+      SIDEWALKS_B64 = null;
+      hdr = new Int32Array(u8.buffer, u8.byteOffset, 4);
+      v = new Int16Array(u8.buffer, u8.byteOffset + 16, (u8.byteLength - 16) >> 1);
+    } catch (err) { console.error('sidewalks decode failed', err); return; }
+    if (hdr[0] !== 0x53485757 || hdr[2] !== 1) { console.error('sidewalks: bad magic or version', hdr[0], hdr[2]); return; }
+    const nRings = hdr[1], t0 = performance.now();
+    const pos = [], col = [], idx = [];
+    const cols = {};
+    for (const k in SIDEWALK_COL) { const c3 = new THREE.Color(SIDEWALK_COL[k]); cols[k] = [Math.round(c3.r * 255), Math.round(c3.g * 255), Math.round(c3.b * 255)]; }
+    const yAt = (x, z) => (groundMeshY(x, z) ?? siteY(x, z, 'ground')) + SIDEWALK_UP;
+    let split = 0, tris = 0, p = 0;
+    for (let ri = 0; ri < nRings && p + 4 <= v.length; ri++) {
+      const n = v[p], kind = v[p + 1];
+      let x = v[p + 2], z = v[p + 3];
+      p += 4;
+      const ring = [[x * 0.2, z * 0.2]];
+      for (let k = 1; k < n; k++) { x += v[p++]; z += v[p++]; ring.push([x * 0.2, z * 0.2]); }
+      const cc = cols[kind] || cols[5];
+      noSow(ring);   // the tuft field keeps off the paving
+      // densified to 12 m, so the earcut's triangles stay within reach of the ground's 25 m facets
+      const dr = [];
+      for (let k = 0; k < ring.length; k++) {
+        const a = ring[k], b = ring[(k + 1) % ring.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]), m = Math.max(1, Math.ceil(L / 12));
+        for (let q = 0; q < m; q++) dr.push([a[0] + (b[0] - a[0]) * q / m, a[1] + (b[1] - a[1]) * q / m]);
+      }
+      let faces;
+      try { faces = THREE.ShapeUtils.triangulateShape(dr.map((q) => new THREE.Vector2(q[0], -q[1])), []); } catch (e) { continue; }
+      const weld = new Map();
+      const vert = (q) => {
+        const key = Math.round(q[0] * 50) * 1e6 + Math.round(q[1] * 50);
+        let i = weld.get(key);
+        if (i === undefined) { i = pos.length / 3; weld.set(key, i); pos.push(q[0], q[2] !== undefined ? q[2] : yAt(q[0], q[1]), q[1]); col.push(cc[0], cc[1], cc[2]); }
+        return i;
+      };
+      const emit = (A, B, C, depth) => {
+        // the triangle's middle against the ground's own facets: a dip under it is split (the midpoints read the ground)
+        const yA = A[2] !== undefined ? A[2] : (A[2] = yAt(A[0], A[1])), yB = B[2] !== undefined ? B[2] : (B[2] = yAt(B[0], B[1])), yC = C[2] !== undefined ? C[2] : (C[2] = yAt(C[0], C[1]));
+        if (depth < 2) {
+          const mx = (A[0] + B[0] + C[0]) / 3, mz = (A[1] + B[1] + C[1]) / 3;
+          if ((yA + yB + yC) / 3 < yAt(mx, mz) - SIDEWALK_UP * 0.6) {
+            const ab = [(A[0] + B[0]) / 2, (A[1] + B[1]) / 2], bc = [(B[0] + C[0]) / 2, (B[1] + C[1]) / 2], ca = [(C[0] + A[0]) / 2, (C[1] + A[1]) / 2];
+            split++;
+            emit(A, ab, ca, depth + 1); emit(ab, B, bc, depth + 1); emit(ca, bc, C, depth + 1); emit(ab, bc, ca, depth + 1);
+            return;
+          }
+        }
+        const cr = (B[0] - A[0]) * (C[1] - A[1]) - (B[1] - A[1]) * (C[0] - A[0]);
+        if (Math.abs(cr) < 1e-6) return;
+        if (cr > 0) idx.push(vert(A), vert(C), vert(B)); else idx.push(vert(A), vert(B), vert(C));   // (B - A) x (C - A) negative in (x, z): +y
+        tris++;
+      };
+      for (const f of faces) emit(dr[f[0]], dr[f[1]], dr[f[2]], 0);   // a point's height is cached on it (q[2]) the first time it is read
+    }
+    if (!idx.length) return;
+    const nv = pos.length / 3, g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    const nor = new Int8Array(nv * 4);
+    for (let i = 0; i < nv; i++) nor[i * 4 + 1] = 127;
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 4, true));
+    g.setAttribute('color', rgbStride4(col));
+    g.setIndex(nv > 65535 ? new THREE.BufferAttribute(new Uint32Array(idx), 1) : new THREE.BufferAttribute(new Uint16Array(idx), 1));
+    g.computeBoundingSphere();
+    freeOnUpload(g);
+    const m = new THREE.Mesh(g, walkMat({ vertexColors: true, roughness: 1 }));
+    m.receiveShadow = true;
+    m.name = 'Sidewalks';
+    sidewalkTiles = streetTiles(m, SIDEWALK_TILE);
+    for (const t of sidewalkTiles) t.userData.occFlat = true;   // flat on the drawn ground: the pins' capture passes over them (occFlatTiles' flag)
+    PERF.sidewalks = { rings: nRings, tris, verts: nv, split, tiles: sidewalkTiles.length, ms: Math.round(performance.now() - t0) };
+  });
+  // the realism pass's flats into the scene as tiles, staged like addTiles' (drawn unculled once behind the veil, so each
+  // uploads and frees its arrays), at a cell of their own
+  function streetTiles(m, cell) {
+    const tiles = TILE_OFF ? null : tileMesh(m, cell);
+    for (const t of tiles || [m]) {
+      groupCity.add(t);
+      if (tiles && t.frustumCulled) { t.frustumCulled = false; t.userData.tileSet = m; pendingUpload.push(t); }
+    }
+    return tiles || [m];
+  }
+  // a phone draws the sidewalks only within the half mile (NEAR_R), checked as the eye moves; a computer draws them all
+  let streetsNearAt = 0;
+  const streetsNearCam = new V3(1e9, 0, 1e9);
+  function updateStreets(now) {
+    if (!sidewalkTiles || !isTouch || now < streetsNearAt) return;
+    streetsNearAt = now + 400;
+    if (camera.position.distanceToSquared(streetsNearCam) < 30 * 30) return;
+    streetsNearCam.copy(camera.position);
+    for (const t of sidewalkTiles) {
+      const bs = t.geometry.boundingSphere;
+      if (!bs || !t.frustumCulled) continue;   // never before its first draw has uploaded it and freed its arrays
+      t.visible = Math.hypot(bs.center.x - camera.position.x, bs.center.z - camera.position.z, Math.max(0, camera.position.y - bs.center.y)) - bs.radius < NEAR_R;
+    }
   }
   step('Dressing the storefronts', () => {
     // Tier 2 of the facade plan: OSM's shops, cafes, bars, banks and the rest, each on the
@@ -14190,13 +14678,39 @@ vec2 wRing(vec2 rc, float tt) {
     }
     STOREFRONT_N = made;
   });
+  // the realism pass: a photographed face (STREET_ART) on a structure's vertical faces, laid in world space along the face
+  // (its horizontal tangent) and up it, a ratio to its mean, gone to the mean past 0.8 m a pixel; the soffits under a deck in
+  // shade. 'concrete' for the elevated roads (every vertical face, 4 m a tile), 'steel' for the El (3 m a tile, only where
+  // the stored colour carries the steel's green cast, so its concrete cut and copes stay concrete)
+  function deckWallPatch(shader, kind) {
+    const steel = kind === 'steel', T = steel ? 'uElSteel' : 'uConcWall';
+    for (const k of [T, T + 'M', T + 'On']) shader.uniforms[k] = streetArtU[k];
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform sampler2D ' + T + '; uniform float ' + T + 'M, ' + T + 'On;\nvoid main() {')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+        '{',
+        '  vec3 dwN = normalize((vec4(vNormal, 0.0) * viewMatrix).xyz);',
+        '  vec3 dwP = cameraPosition - vViewPosition * mat3(viewMatrix);',
+        '  float dwFw = max(fwidth(dwP.x), max(fwidth(dwP.y), fwidth(dwP.z)));',
+        '  float dwSide = (1.0 - smoothstep(0.5, 0.75, abs(dwN.y)))' + (steel ? ' * smoothstep(1.06, 1.09, diffuseColor.g / max(diffuseColor.r, 1e-4))' : '') + ';',
+        '  if (' + T + 'On > 0.5 && dwSide > 0.0) {',
+        '    vec2 dwT = normalize(vec2(-dwN.z, dwN.x) + 1e-5);',
+        '    vec2 dwUv = vec2(dot(dwP.xz, dwT), -dwP.y) / ' + (steel ? '3.0' : '4.0') + ';',
+        '    float dwC = dot(texture2D(' + T + ', dwUv).rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + T + 'M;',
+        '    diffuseColor.rgb *= mix(1.0, clamp(dwC, 0.4, 1.7), ' + (steel ? '0.85' : '0.8') + ' * dwSide * (1.0 - smoothstep(0.15, 0.8, dwFw)));',
+        '  }',
+        steel ? '' : '  diffuseColor.rgb *= mix(1.0, 0.62, smoothstep(-0.3, -0.7, dwN.y));',   // a deck's soffit
+        '}',
+      ].join('\n'));
+  }
   step('Raising the overpasses', () => {
     if (!OVP.el.length && !OVP.cor.length && !OVP.sk.length) return;
     const parts = [];
     // stored DARK for the legacy color pipeline (flats render ~2.5x lighter)
     const cTop = ROAD_COLORS.slice(0, 6).concat(COLORS.paving);
-    const cConc = 0x6e6b64, cParapet = 0x7d7a73, cPier = 0x6b6760, cCap = 0x5c5852;
-    const cWall = 0x5a5751, cCope = 0x7d7a73, cFloor = 0x262421, cGutter = 0x504d47, cLine = 0x8a887f;
+    // the realism pass: weathered concrete at sRGB 135 to 155 in sun, not the pale plastic the legacy lift made of 0x6e6b64
+    const cConc = REAL ? 0x363430 : 0x6e6b64, cParapet = REAL ? 0x3e3c38 : 0x7d7a73, cPier = REAL ? 0x383632 : 0x6b6760, cCap = REAL ? 0x32302c : 0x5c5852;
+    const cWall = REAL ? 0x353330 : 0x5a5751, cCope = REAL ? 0x3e3c38 : 0x7d7a73, cFloor = 0x262421, cGutter = 0x504d47, cLine = 0x8a887f;
     const tint = (hex, m) => new THREE.Color(hex).multiplyScalar(m);
     const dens3 = (pts, step3) => {
       const out = [pts[0].slice()];
@@ -14652,6 +15166,11 @@ vec2 wRing(vec2 rc, float tt) {
     }
     if (parts.length) {
       const ovpMat = roadMat({ vertexColors: true, roughness: 0.92, side: THREE.DoubleSide });
+      if (REAL) {   // the realism pass: the photographed concrete on every side, pier and parapet face, the soffits in shade (deckWallPatch)
+        const prevO = ovpMat.onBeforeCompile;
+        ovpMat.onBeforeCompile = (sh, r) => { deckWallPatch(sh, 'concrete'); prevO(sh, r); };
+        ovpMat.customProgramCacheKey = () => 'decks|' + prevO.toString();
+      }
       const mesh = new THREE.Mesh(mergeColored(parts), ovpMat);
       freeShadingOnUpload(mesh.geometry);   // 1.1 M vertices at ready on the phone path: a raycast target keeps its positions, the rest goes once uploaded
       mesh.castShadow = !isTouch;   // phone GPUs skip the deck shadow pass
@@ -19995,6 +20514,38 @@ float pinOccGate() {
     if (py == null) { const sn = railSnap(px, pz, 60, cc >= 0 ? cc : undefined, 1.5); if (sn) { py = sn[4]; fl = sn[5]; cc = sn[6]; } }
     return [px, pz, dx, dz, py == null ? 0 : py, fl, cc];
   }
+  // the realism pass: the main line's ties and ballast photographed straight down (STREET_ART.ballast), across the 4.2 m bed
+  // so the texture's two rails fall under the drawn ones at 1.44 m (ballastRails, found by the bake), along it at the
+  // bake's whole number of 0.6 m tie pitches; the photograph's own colours at the slab's stored brightness, gone to that
+  // brightness past 0.6 m a pixel
+  function ballastPatch(shader) {
+    for (const k of ['uBallast', 'uBallastM', 'uBallastOn', 'uBallastLen', 'uBallastRails']) shader.uniforms[k] = streetArtU[k];
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nattribute vec2 aRail; varying vec2 vRail;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRail = aRail;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vRail;\nuniform sampler2D uBallast; uniform float uBallastM, uBallastOn, uBallastLen; uniform vec2 uBallastRails;')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+        'float bFw = fwidth(vRail.x) + fwidth(vRail.y);',
+        'if (uBallastOn > 0.5) {',
+        '  vec2 buv = vec2(uBallastRails.x + (vRail.x + 0.72) / 1.44 * (uBallastRails.y - uBallastRails.x), vRail.y / uBallastLen);',
+        '  vec3 bt = texture2D(uBallast, buv).rgb * (dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / uBallastM);',
+        '  diffuseColor.rgb = mix(diffuseColor.rgb, bt, 1.0 - smoothstep(0.25, 0.6, bFw));',
+        '}',
+      ].join('\n'));
+  }
+  // the realism pass: on a computer the El is painted steel (MeshStandard) with the photographed riveted girder on its
+  // steel's vertical faces (deckWallPatch, picked by the steel's green cast); a phone keeps the plain Lambert
+  step('Painting the El', () => {
+    if (!REAL || isTouch) return;
+    const el = groupCity.getObjectByName('El Structure and Track Beds');
+    if (!el) return;
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.72, metalness: 0.25 });
+    m.onBeforeCompile = (sh) => deckWallPatch(sh, 'steel');
+    m.customProgramCacheKey = () => 'el steel';
+    m.userData.wxSurf = true;   // the weather hookup wraps it (snow on the deck) as it did the plain material
+    el.material.dispose(); el.material = m;
+  });
   step('Laying the Northeast Corridor', () => {
     if (typeof RAIL_AMTRAK === 'undefined' || !RAIL_AMTRAK || !RAIL_AMTRAK.lines) return;
     const draw = !/[?&]rails=0\b/.test(location.search);
@@ -20151,6 +20702,22 @@ float pinOccGate() {
       const h=clearNodes.get(nk(ch.pts[e]));
       if(h!==undefined&&!(ch.fl[e]&1)&&!ch.hold[e])ch.ys[e]=Math.max(ch.ys[e],h);
     }
+    // the realism pass: on a computer the ballast's top carries its ties, a second sheet a centimetre over the slab's own top
+    // (the same colour wherever it fades, so the two never show a fight) with (across, along) per vertex, which lays the
+    // photographed ties and ballast (STREET_ART.ballast) with its rails under the drawn ones (ballastPatch); a phone keeps the slab
+    const TIES = REAL && !isTouch, tieTris = [], tieUV = [];
+    const tieTop = (pts, ys, w, off) => {
+      const n = pts.length, hw = w / 2, edges = routeOffsets(pts);
+      const at = (i, d) => [pts[i][0] + edges[i][0] * d, pts[i][1] + edges[i][1] * d];
+      let sAt = 0;
+      for (let i = 0; i + 1 < n; i++) {
+        const al = at(i, hw), ar = at(i, -hw), bl = at(i + 1, hw), br = at(i + 1, -hw), ya = ys[i] + off, yb = ys[i + 1] + off;
+        const sB = sAt + Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+        tieTris.push(al[0], ya, al[1], bl[0], yb, bl[1], br[0], yb, br[1], al[0], ya, al[1], br[0], yb, br[1], ar[0], ya, ar[1]);
+        tieUV.push(hw, sAt, hw, sB, -hw, sB, hw, sAt, -hw, sB, -hw, sAt);
+        sAt = sB;
+      }
+    };
     // one ribbon per chain: the ballast slab 3.4 m wide, the two rails 1.44 m apart, mitred at every bend
     const strip = (pts, ys, w, off, col, side, bots) => {   // bots: a skirt from the strip's edges down to these heights (the ballast reaches the drawn ground)
       const n = pts.length, hw = w / 2, tris = [];
@@ -20193,6 +20760,7 @@ float pinOccGate() {
           const sp = pts.slice(i, j + 1), sy = ys.slice(i, j + 1);
           const bots = new Float64Array(j - i + 1); for (let k = i; k <= j; k++) bots[k - i] = (fl[k] & 2) ? ys[k] - 0.6 : Math.min(ys[k] - 0.6, (groundMeshY(pts[k][0], pts[k][1]) ?? gnd[k]) - 0.4);   // down to the drawn mesh, the carved bank included
           strip(sp, sy, 4.2, -0.25, ballast, 0, bots);
+          if (TIES) tieTop(sp, sy, 4.2, -0.24);   // the realism pass: the ties, a centimetre over the slab
           if (!isTouch) { strip(sp, sy, 0.14, -0.09, railC, 0.72); strip(sp, sy, 0.14, -0.09, railC, -0.72); }
           // a bridge run is a structure, not a strip on the water: a steel deck under the ballast and a pier
           // every other segment down to the ground, or to the riverbed over the water
@@ -20276,6 +20844,19 @@ float pinOccGate() {
       const mesh = new THREE.Mesh(mergeColored(parts), new THREE.MeshLambertMaterial({ vertexColors: true }));
       mesh.receiveShadow = true;
       freeOnUpload(mesh.geometry);
+      groupCity.add(mesh);
+    }
+    if (draw && tieTris.length) {   // the realism pass: the ballast's top with its ties
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(tieTris), 3));
+      g.setAttribute('aRail', new THREE.BufferAttribute(new Float32Array(tieUV), 2));
+      g.computeVertexNormals();
+      freeOnUpload(g);
+      const m = new THREE.MeshLambertMaterial({ color: ballast });
+      m.onBeforeCompile = ballastPatch;
+      m.userData.wxSurf = true;   // the weather hookup wraps it, as it did the slab
+      const mesh = new THREE.Mesh(g, m);
+      mesh.receiveShadow = true; mesh.name = 'Amtrak Ties and Ballast';
       groupCity.add(mesh);
     }
     if (draw && sparts.length) {
@@ -23383,12 +23964,27 @@ float pinOccGate() {
         out.setAttribute('normal', new THREE.BufferAttribute(n2, 3));
         return out;
       };
-      const poleGeo = mergePlain([
+      // the realism pass (the audit: "pale five-sided tubes with a box head, one model citywide"): a galvanized cobra head
+      // (an eight-sided tapered shaft on a base collar, an upswept davit arm in three runs, a flattened luminaire) that reads
+      // as metal against the sky, and for every lamp under 5 m (the 12 to 15 ft pedestrian posts of Center City, Society Hill
+      // and Old City, 34,000 of the inventory) a black post with a fluted base and a four-sided lantern, on its own 4 m frame
+      const seg = (a, b, r, n) => {   // a cylinder from point a to point b
+        const d = new V3(b[0] - a[0], b[1] - a[1], b[2] - a[2]), L = d.length();
+        const g = new THREE.CylinderGeometry(r, r, L, n, 1);
+        g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), d.normalize()));
+        return g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
+      };
+      const poleGeo = REAL ? mergePlain([
+        new THREE.CylinderGeometry(0.2, 0.23, 0.5, 8).translate(0, 0.25, 0),
+        new THREE.CylinderGeometry(0.075, 0.13, 8.5, 8).translate(0, 4.75, 0),
+        seg([0, 8.45, 0], [0.55, 8.88, 0], 0.05, 6), seg([0.55, 8.88, 0], [1.3, 9.07, 0], 0.045, 6), seg([1.3, 9.07, 0], [1.95, 9.1, 0], 0.04, 6),
+        new THREE.SphereGeometry(1, 12, 6).scale(0.44, 0.12, 0.2).translate(2.3, 9.05, 0),
+      ]) : mergePlain([
         new THREE.CylinderGeometry(0.07, 0.13, 9, 5).translate(0, 4.5, 0),
         new THREE.CylinderGeometry(0.05, 0.05, 1.7, 4).rotateZ(Math.PI / 2).translate(0.8, 8.84, 0),
         new THREE.BoxGeometry(0.62, 0.14, 0.26).translate(1.5, 8.88, 0),
       ]);
-      poleMesh = new THREE.InstancedMesh(poleGeo, new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.9, metalness: 0.15 }), POLE_MESH_CAP);
+      poleMesh = new THREE.InstancedMesh(poleGeo, REAL ? new THREE.MeshStandardMaterial({ color: 0x3a3c3e, roughness: 0.45, metalness: 0.6 }) : new THREE.MeshStandardMaterial({ color: 0x2a2a2c, roughness: 0.9, metalness: 0.15 }), POLE_MESH_CAP);
       poleMesh.count = 0;
       poleMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       poleMesh.frustumCulled = false;
@@ -24332,15 +24928,17 @@ float pinOccGate() {
     }
     return septaMerge(parts);
   }
-  function mergeGeoms(list) {   // a few ribbons into one geometry (position and normal only)
+  function mergeGeoms(list) {   // a few ribbons into one geometry (position and normal, and the lane paint's aLane when every ribbon carries it)
     let n = 0;
     for (const g of list) n += g.attributes.position.count;
     const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+    const ln = list.length && list.every((g) => !!g.attributes.aLane) ? new Float32Array(n * 4) : null;
     let o = 0;
-    for (const g of list) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; g.dispose(); }
+    for (const g of list) { pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3); if (ln) ln.set(g.attributes.aLane.array, o * 4); o += g.attributes.position.count; g.dispose(); }
     const out = new THREE.BufferGeometry();
     out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    if (ln) out.setAttribute('aLane', new THREE.BufferAttribute(ln, 4));
     return out;
   }
   step('Posting the street closures', () => {
@@ -24355,8 +24953,11 @@ float pinOccGate() {
     barrelMesh = mk(0); coneMesh = mk(1);
     closurePin = pinMesh(pinTexture('#e07a1f', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePin');
     closurePinPart = pinMesh(pinTexture('#d9a441', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePinPart');
-    pavedMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.75 }));
-    milledMesh = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 1.0 }));
+    // the realism pass (the critic: they drew as flat sky-tinted slabs over the lane paint): under REAL both are streets, on the
+    // road material with the lane attribute, so they take the asphalt's grain, the wear and the paint; fresh blacktop a step
+    // darker than the street, the milled surface grooved and unpainted, neither mirroring the sky
+    pavedMesh = new THREE.Mesh(new THREE.BufferGeometry(), REAL ? roadMat({ color: 0x0a0a09, roughness: 0.85, envMapIntensity: 0.3 }, true) : new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.75 }));
+    milledMesh = new THREE.Mesh(new THREE.BufferGeometry(), REAL ? roadMat({ color: 0x1b1a18, roughness: 1.0, envMapIntensity: 0.3 }) : new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 1.0 }));
     for (const m of [pavedMesh, milledMesh]) { m.frustumCulled = false; m.receiveShadow = true; m.visible = false; groupCity.add(m); }
     closuresReady = true;
     syncClosuresBtn();
@@ -24465,7 +25066,9 @@ float pinOccGate() {
       const ln = closureSnapLine(raw);
       if (!ln) continue;
       const hw = roadHalfW(ln.mx, ln.mz);
-      strips[p.k === 'milled' ? 'milled' : 'paved'].push(ribbon(ln.pts, 2 * hw - 1.0, 0, (x, z) => closureY(x, z) + 0.06, null));
+      const pg = ribbon(ln.pts, 2 * hw - (REAL ? 0.6 : 1.0), 0, (x, z) => closureY(x, z) + 0.06, REAL ? { cls: p.k === 'milled' ? 3 : 2 * hw >= 6.5 ? 0 : 2 } : null);
+      if (REAL) { const la = pg.attributes.aLane.array; for (let q = 2; q < la.length; q += 4) la[q] = hw; }   // the street's own half width, so its lane lines fall where the street's do
+      strips[p.k === 'milled' ? 'milled' : 'paved'].push(pg);
       CLOSURES.paving.push({ id: String(p.id || ''), k: p.k, addr: String(p.addr || ''), mx: ln.mx, mz: ln.mz });
     }
     if (pavedMesh) {
@@ -26484,7 +27087,7 @@ float pinOccGate() {
       ].join('\n'));
   }
   function surfTexPatch(shader, opt) {
-    const forced = opt === true;
+    const forced = opt === true, walk = opt === 'walk';   // walk (the realism pass, walkMat): a sidewalk, concrete unless it is brick, whatever its brightness
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
     shader.uniforms.uGrass2 = texU.uGrass2; shader.uniforms.uGrassTone = texU.uGrassTone; shader.uniforms.uGrassTone2 = texU.uGrassTone2; shader.uniforms.uGrassArt = texU.uGrassArt;
     if (!forced) for (const k of ['uAsph', 'uConc', 'uBrick', 'uStM', 'uStBrick', 'uStScale', 'uStreetArt']) shader.uniforms[k] = texU[k];
@@ -26500,8 +27103,8 @@ float pinOccGate() {
       'float stL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)), stMx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b));',
       'float stSat = (stMx - min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b))) / max(stMx, 1e-4);',
       'float stB = smoothstep(1.15, 1.4, diffuseColor.r / max(diffuseColor.g, 1e-4)) * (1.0 - isGreen);',
-      'float stA = (1.0 - stB) * (1.0 - smoothstep(0.10, 0.16, stL)) * (1.0 - isGreen);',
-      'float stC = (1.0 - stB) * smoothstep(0.13, 0.2, stL) * (1.0 - smoothstep(0.2, 0.35, stSat)) * (1.0 - isGreen);',
+      walk ? 'float stA = 0.0;' : 'float stA = (1.0 - stB) * (1.0 - smoothstep(0.10, 0.16, stL)) * (1.0 - isGreen);',
+      walk ? 'float stC = (1.0 - stB) * (1.0 - isGreen);' : 'float stC = (1.0 - stB) * smoothstep(0.13, 0.2, stL) * (1.0 - smoothstep(0.2, 0.35, stSat)) * (1.0 - isGreen);',
       'float stUp = smoothstep(0.6, 0.85, dot(normalize(vNormal), (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz));',
       'float stK = uStreetArt * stUp * (1.0 - smoothstep(0.08, 0.7, sfw));',
       'const vec3 stY = vec3(0.2126, 0.7152, 0.0722);',
@@ -26545,6 +27148,8 @@ float pinOccGate() {
   // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the post-build
   // weather wrap (the hookup at the end of build() keys the wrapped program, gotcha 15)
   const surfMat = (o) => { const m = new THREE.MeshStandardMaterial(o); m.userData.wxSurf = true; m.onBeforeCompile = surfTexPatch; return m; };
+  // the realism pass: the sidewalks' material, surfMat with the walk classifier (concrete slabs, or herringbone where brick)
+  const walkMat = (o) => { const m = surfMat(o); m.onBeforeCompile = (sh, r) => surfTexPatch(sh, 'walk'); m.customProgramCacheKey = () => 'walks'; return m; };
   // the bare ground: the same meadow as the parks, forced green (its vertex tints ride as ratios),
   // one material per tier with no clone (r149's copy() drops onBeforeCompile and the cache key)
   const groundSurfMat = (o) => {
@@ -29030,6 +29635,7 @@ float pinOccGate() {
     scoresPoll(now); scoresRender();
     concertsPoll(now); concertsRender();
     closuresPoll(now); updateClosures(now);
+    updateStreets(now);   // the realism pass: a phone's sidewalks within the half mile
     if (lotStripes) {
       // the stall lines are 1 px lines: past a few hundred metres they alias into moire over
       // the whole lot, so they fade out between 500 and 1500 m. Painted asphalt also

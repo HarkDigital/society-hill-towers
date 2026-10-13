@@ -197,6 +197,7 @@ const("WALL_ART", text_of("wall_art.json", "null"))   # the walls' and pitched r
 const("LAND_MASK", text_of("land_mask.json", "null"))   # the ground's land mask: built up, woods, river bank (bake_landmask.py), the realism pass
 const("WATER_ART", text_of("water_art.json", "null"))   # the realism pass's pier deck and white water (bake_water_art.py), Oct 12
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
+const("STREET_ART", text_of("street_art.json", "null"))   # the streets' generated textures (bake_street_art.py), the realism pass
 
 
 def art_paths(o):
@@ -218,6 +219,8 @@ for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json",
         if re.search(r'"data:image/', (ROOT / name).read_text()):
             sys.exit(f"FATAL: {name} still inlines data URLs; re-run its bake (Round 184 writes the images to art/)")
         ART_FILES += art_paths(man)
+if (ROOT / "street_art.json").exists():   # the streets' own manifest (the realism pass)
+    ART_FILES += art_paths(json.loads((ROOT / "street_art.json").read_text()))
 missing = [p for p in ART_FILES if not (ROOT / p).exists()]
 if missing:
     sys.exit(f"FATAL: {len(missing)} art file(s) the manifests name are missing, first {missing[0]}")
@@ -230,6 +233,8 @@ const("POLE_FAMILIES", text_of("pole_families.json", "null"))   # the realism ro
 # rail yards and aprons, laid by the app under the parks and streets so the meadow stops
 # showing where the city is asphalt in life
 let_blob("PAVED_B64", "paved.b64")
+# the outer districts' sidewalks (bake_sidewalks.py, the realism pass), laid on the drawn ground between the kerbs and the facades
+let_blob("SIDEWALKS_B64", "sidewalks.b64")
 
 # Download progress. Nothing used to move on the veil until the whole page had
 # arrived and parsed. PG() rewrites the veil's load line, and a PG(i, n) tick
