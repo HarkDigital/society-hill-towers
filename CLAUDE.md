@@ -155,7 +155,12 @@ before any visual round rather than rediscovering it.
   refuses to write a ring that is not simple),
   and the packers inset any record whose wall shares a plane with a larger one facing the same way (`pack_common.py`, Round 71: the far ring
   and the towns too, over their own coordinate grids) while the facade shader fades a floor pattern under 1.5 render pixels a floor (`rowPx`) rather than alias it, by day only: after dark the
-  lit windows stand to the distances they always did (Round 73 coda); the look leans toward
+  lit windows stand to the distances they always did (Round 73 coda); the look leans toward realism since Round 185 (Mike: it
+  "still looks very much like minecraft, or a kid's game"; he chose lighting, shading and colour, then roof and ground textures,
+  then facades everywhere: `REAL`, ambient occlusion from the city's own depth on the desktop post pipeline, copied at
+  `pinDepthClear` before the pins wipe it (`aoCopyDepth`, `AO`), a filmic grade in the composite (`gradeU`: saturation 0.84,
+  contrast 1.05, warm lights and cool shadows), a quieter lawn and a warm night bounce on every device; `?real=0` is the old
+  palette below), and before that leaned toward
   Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, one glass tint per building carried
   as the `aTint` vertex byte (never a world-position hash), brick, stone, panel and stucco textures in the facade
   shader with every joint in anti-aliased relief, cornice and wall-end shading, limestone trim and mortar, seamed
@@ -274,7 +279,7 @@ readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
 pins the air at Good. `?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardous>` pins the
 air quality (Round 75: the live PM2.5 scales the clear-air distances and tints a smoke day;
 `__dbg.aqi(n)`, `__dbg.aqiState()`).
-`?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question). `?vdepth=0` keeps every facade on fragment depth and `?vdepth=<m>` sets the near line on any device (Round 168; `__dbg.vdepth()`); `?gfx=smoother|auto|sharper` pins the Graphics choice without saving it (Round 168).
+`?real=0` is the Cities: Skylines palette Round 185 replaced, `?ao=0` the realistic look without its occlusion, `?ao=show` the occlusion alone (`__dbg.real()` holds its uniforms). `?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question). `?vdepth=0` keeps every facade on fragment depth and `?vdepth=<m>` sets the near line on any device (Round 168; `__dbg.vdepth()`); `?gfx=smoother|auto|sharper` pins the Graphics choice without saving it (Round 168).
 
 ## Where things are
 

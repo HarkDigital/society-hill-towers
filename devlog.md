@@ -8098,3 +8098,30 @@ takes the tap). 435 tests.
   plinth: a face takes light as the square of how far it turns out toward the ring of floods, falling off with height
   over the plaza (e to the -0.5 a metre), as nine times its own colour, with a faint warm sheen. Daylight unchanged.
   Captured at 9 pm close and from the corner, and at 1 pm.
+
+## Round 185 — the realistic look, step 1: occlusion, a filmic grade, a city's night (Oct 12)
+
+- Mike: "How can we make this entire model look more photo realistic, similar to the game i sent in this thread
+  initially? It still looks very much like minecraft, or a kid's game." Asked, he chose the realism work before the
+  Custom House rebuild, and all three of lighting, shading and colour; roof and ground textures; facades everywhere. The
+  diagnosis from the captures: no ambient occlusion (every box sits on the ground like a toy block), a saturated palette
+  (lime lawns, flat grey roofs, spotless pavements: the Cities: Skylines brief since Round 54), flat untextured roofs from
+  the air, hard flat light and a black ground by night, boxy cars. This round is the first.
+- Ambient occlusion (desktop post pipeline, `AO`): the scene target is 4x MSAA with a depth renderbuffer, and the pins
+  wipe the depth partway through the frame (`pinDepthClear`, renderOrder 99), so the city's depth is blitted at that
+  moment, only while drawing into postRT, into a DEPTH24_STENCIL8 depth texture (`aoCopyDepth`; r149 resolves depth in a
+  blit when the formats match, and the copy restores three's own framebuffer binding). Scalable ambient obscurance at half
+  resolution: r149's log depth linearised (w = (far + 1)^d - 1, checked against a readback: a distinct, smooth value on
+  every row), normals from the depth (the nearer neighbour per axis), a radius of 5% of the distance (1.5 to 40 m), twelve
+  taps on a three-turn spiral rotated per pixel, a bias of 8% of the radius plus 6 cm (the roads' ribbons carry small
+  steps), faded within 10 m of the eye and past 2.5 km, then a depth-aware blur across and down. The composite darkens
+  the scene's own light by it before the bloom and tone mapping, never a lamp, a lit window or the sun. The first cut
+  banded every flat in the city: a half-res pixel's centre lies on the line between two depth texels, and on alternate
+  rows its neighbours were the same texel, so the normals there were garbage; the lookups snap to a texel's centre.
+- The grade (`gradeU`, after ACES on the display colour): saturation 0.84, contrast 1.05 about the mid tones, warm lights
+  and cool shadows. On every device: the lawn keeps 0.70 of its saturation (0.88 before), and by night the hemisphere's
+  sky takes half a warm grey and its ground 0.7 of a sodium brown with 0.06 more intensity, the light the lamps throw back
+  off the pavement. `?real=0` is the old palette, `?ao=0` the look without the occlusion, `?ao=show` the occlusion alone,
+  `__dbg.real()` its uniforms. Before and after in Old City at 3:30 pm, a South Philadelphia street at noon and 9 pm, and
+  over the Delaware from 230 m; the effect is real but modest from the air, where the roofs and the lawns are most of the
+  picture (step 2). `tests/test_realism.py`. 491 tests.
