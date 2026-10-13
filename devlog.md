@@ -9019,3 +9019,105 @@ Not done:
     fragment side stays at about 190 vector slots of WebGL 2's 224). Recorded, not changed: a switched front can bring a
     shop set the eye would not otherwise load (17 places, about 5 to 7.5 MB more on a phone while there, within the
     headroom).
+- The third review (realism, phone and correctness again), then the fixes on the same branch:
+  - Phone (the one must): the art was downloaded and decoded at the top of the build, and both decoded half images
+    (2048x1024 and 1024x512, about 10 MB of pixels) lived through the far ring's uploads, the build's peak (276 MB live
+    at 'Raising the Towns Across the Line, Uploading') and the window where iPhones have died; neither the gpuhook nor the
+    GC-normalised heap sees decoded images, so the second review's +0 MB did not cover them, and tier 1 did it too. A
+    phone now fetches only the bytes at the top of the build (sfArtPrefetch: two blobs, 380 KB, nothing decoded) and
+    makes and decodes its <img> from them at the step; a fetch that fails (a page opened as a file) asks for the file
+    there. The reviewer's check (phone emulation, a forced GC and queryObjects at every loading message): before, both
+    images alive from 'Laying Out the Ground' through 'Paving the Lots and Yards'; after, none through 'Raising the Towns
+    Across the Line', the two blob images only at the storefront step (sampled under 'Paving the Lots and Yards', which
+    only the step can make) and gone by 'Lettering the Streets'; the server saw each file asked for once, at the top. A
+    computer keeps its ImageBitmap prefetch.
+  - A desktop Safari before 17 or Firefox before 98 ignores createImageBitmap's imageOrientation, and with flipY false
+    would draw every panel and painted shop floor from the wrong rows of the atlas: SF_BITMAP keeps those on the <img>
+    (three's GLTFLoader draws the same line; the reviewer checked Safari 26.6.2 flips as asked).
+  - The awnings' stripes were a fixed smoothstep in fract space, stair-stepped at 20 to 25 m and shimmering further out,
+    the house fronts' awnings the same. One helper for both (AWN_STRIPE_GLSL): the stripe box-filtered over the pixel's
+    footprint along it (the length of its screen gradient: fwidth's sum read a diagonal stripe up to twice as fine and
+    greyed the slope of an awning seen up the street, found in the first render), going to the two colours' mean as a
+    stripe falls from 1.4 pixels to under one. The house fronts' awnings take it under the realistic look only (?real=0
+    keeps its edge). The Happy Rooster and Marathon renders: soft edges where the steps were.
+  - The awnings' cheeks were a flat panel in one colour (the stripe's at their end: a plain white board on a blue and white
+    awning seen obliquely). A cheek and a valance's end now wear the stripes upright across their depth, as the cloth is
+    cut, a shade darker with a binding along the sloped edge; the slope is lighter toward the front bar it is pulled taut
+    over, with a faint sag between rafters a metre apart and a pale crease along the fold, and the valance sits a shade
+    under the slope (Together Skateboarding's solid red reads as cloth).
+  - A panel on a style-5 wall stood over the facade shader's own shopfronts (Part A) without either knowing of the other:
+    at Hibachi 2 Go on South Broad its pier cut a bakery unit through its door frame and the unit's fascia showed 0.3 m
+    over its top; Prudential Savings Bank, KFC on North Broad and Green Valley Bank the same. The outer districts' and the
+    far ring's wall loops now note every style-5 wall the shader dresses (sfHostNote, 73,989 walls in 16 to 20 ms: the
+    records' laid lines in 40 m cells, decoded once by sfPlace, the placement sfBuild makes), with the shader's unit rule
+    and its fascia height ported (sfPartTop: facadeFp, rowHead, roofGap, rows and facadeScale); sfBuild takes each run of
+    panels on one wall out or in to the nearest joints of the units (sfSnapRun, at least one unit, at most 12.5 m alone),
+    seated on the wall's own line and normal, and over the fascia. 817 walls host 823 runs; 814 panels changed span and
+    269 were raised (computer). The width classes moved with them (XL 581 to 402, L 119 to 324, M 204 to 312, S 495 to
+    361). Hibachi 2 Go, Green Valley Bank, Prudential and KFC now stand between whole units with nothing over their tops.
+    The core's walls (buildingGeom) are not noted; its fronts dress them near the eye.
+  - The neighbour's rule counted only panels facing the same way within 15 m: 30 drawn pairs within 30 m wore one cell, 8
+    facing each other across a street (Ho Sai Gai and Jade Harbor in Chinatown, identical fronts 15 m apart), 5 round a
+    corner. It counts any panel within SF_NEIGH_R 30 m now, whichever way it faces: 0 pairs within 30 m, no unavoidable
+    repeat, 12 borrowed cells (7 before). 25 m left 17 pairs between 25 and 30 m and saved 6 borrows.
+  - On view 12 two Part A units side by side wore one navy frame over two racks of clothes (a cafe's cell and a
+    boutique's) and read as one shop of two bays. The shader deals a wall's units an odd stride apart, so the units side by
+    side always come from the other half of the places: bake_storefront_art.py now measures each cell's joinery colour
+    (frame, between the glass's columns, neither glass nor board) and orders gen so the most alike pairs (that colour, and
+    GEN_ALIKE's trades: the shop and the boutique, the restaurant and the cafe, the cafe and the bakery, the grocery and
+    the takeout, the restaurant and the takeout) sit on one half (gen_order). The atlas files are byte for byte the same;
+    only the manifest moved. View 12 now shows a dark-framed restaurant beside a salon with a white door frame.
+  - Trade fidelity: Hajimaru Ramen, Hibachi 2 Go and Oriental Chinese Restaurant showed one white-tablecloth dining room.
+    The counters' cuisines (noodle, ramen, poke, dumplings), takeaway=only, a name that says so ('2 Go', 'To Go',
+    'Takeout', 'Express') and a Chinese restaurant outside Center City now take the takeout's counter and stools: 28
+    records, Chinatown's and Center City's dining rooms kept (Jade Harbor, Ho Sai Gai). A heuristic, said so in the bake.
+  - Names: the bake cut at 40 characters and stripped only ' ,-&' ('Greater Philadelphia Health Action Inc.:',
+    "Francoluigi's Italian Restaurant & High"). cut_name takes the head before a separator, before an '&' or 'and' joining
+    two names, after a word that ends a business's name, before a connector, else at a word, and never leaves a connector
+    or separator: 14 names re-cut ('Greater Philadelphia Health Action', "Francoluigi's Italian Restaurant", 'Philadelphia
+    Brewing Company', 'Weitzman National Museum'); names that fit are untouched ('Ooh La La' keeps its La).
+  - Hours: parse_hours kept Wednesday's span for every weekday, so 'Tu-Su 17:00-24:00' opened on Mondays. Each hours entry
+    has a seventh value now, a bit for each weekday the shop keeps shut (Monday the first; a day OSM does not name is
+    shut), which the vertex shader reads from the hours' spare fourth float (today's and last night's span both); the
+    weekday span is the one most of Monday to Friday keep. 141 of 702 hours entries carry a shut weekday. The limit that
+    stays is in the docstring: one weekday span, so 'Mo-We 11:00-21:00; Th-Fr 11:00-23:00' closes at 21:00 all week.
+  - The name's slot index was the one integer word not rounded before it is taken apart (slot 4 arriving as 3.9999998
+    read row 1, column 3.99): floor(vSfBand.w + 0.5) now.
+  - uSfPartU packed each cell's corner as x + 4096 y and the facade shader decoded it with 4096 written in. Both sides take
+    the atlas's own width now (SF_AW), SF_PARTA refuses an atlas over 2^24 pixels, and bake_storefront_art.py refuses one
+    wider than 4096 (the decode's guard holds to there).
+  - The water mirror's reach read the panels' and awnings' geometry sphere, the unit's at the scene's origin, so it cut
+    them from the mirror wherever the eye stood more than 3.5 km from the origin and kept them everywhere nearer. Each
+    sphere holds its instances now (sfInstSphere); a mirror that is up draws them (2 calls, about 18k triangles).
+  - handoff.md had the textures as two freeTexOnUpload'd images: the computer's ImageBitmaps (flipY false, closed in
+    onUpdate, tex.image a stub, never re-uploadable), the old-browser caveat and the phone's bytes-only prefetch are in its
+    Storefronts bullet and gotchas now, with the Part A host port and the hours' seventh value.
+  - Corrections to the record above. Programs: the awnings' depth program is one more on a computer, not the default's
+    place (the reviewer's six-pose tour: 144 on the pre-round build, 145 on this branch; a phone casts none, 130 on both);
+    this round's thirteen-pose tour reads 148 for both 0f70cad and this fix. The fabric's 'about 190 vector slots of the
+    224' is the computer's unpacked upper bound (packed 108 to 133); a phone's is 103 to 129 unpacked, 65 to 90 packed:
+    more headroom than recorded. The second report said the 676 dissolving panels' names 'show only beyond the fronts'
+    radius'; they never show: sfNamesAssign gives a slot only within uSfK.z (160 m, 90 on a phone) and never to a near
+    panel inside frR (380 m, 240), and such a panel has dissolved within 0.8 frR. Now 679 of 1,399 panels on a computer
+    carry the near flag and 665 of the 1,367 named never show their name; on Broad Street (30 m either side of its line
+    from City Hall to Snyder Avenue) 20 of 35 panels, the Broad and Snyder row among them (Broad and Snyder Pharmacy, The
+    Classics Unisex Salon and Hub, Selbe's African Hair Braiding, China Garden, Metro by T-Mobile) under blank house-front
+    boards. Whether the front's board carries the OSM name or the panel wins near the eye is for Mike.
+  - Phone memory, for context (the reviewer's and this run agree that it is the pre-round build's own): at street level in
+    phone emulation (swiftshader, 740x360 at 1.25) the pre-round build already reaches 991 MB GPU on Broad Street (ref12),
+    972 in Old City and 973 on Passyunk, over the 981 MB 'known-good' figure, which is the 915 after the overhead
+    look-around; the second review's build added 3 to 4 MB at every pose. This fix's gpuhook run against 0f70cad: 869 /
+    913 / 930 MB at ready, after the first frames and after the look-around for both, and 1,005 / 968 / 968 / 987 / 987 at
+    the five street poses for both (ref12, Chinatown, Walnut, Old City, Passyunk); live heap peak 276 and 277 MB. +0 MB.
+  - Measured (computer, headless Metal): 1,399 panels (1,935 on a phone), 658 awnings (233 scalloped), 163 fronts switched
+    (150: the snapped spans meet more fronts), near 679 (676); every program linked (148 on the tour, 124 on the phone
+    tour), samplers at most 15 on a computer and 13 on a phone as before; 'Dressing the storefronts' 185 to 272 ms;
+    'Raising the outer districts' 3,390 to 3,463 ms against 3,377 (a first run after a shader change read 4,189 to 5,412:
+    macOS's Metal shader cache, not the notes, which take 16 to 20 ms). ?real=0 renders as 0f70cad's (the boxes pixel for
+    pixel; the differences are the traffic and the tufts). Tests: 772, OK with the one expected failure; the node harness
+    now also runs the host notes and the snap (a 25 m wall's three units, the joints, the raise), the sphere, the 30 m
+    rule, the cut names, the takeout rule and the shut weekdays through the vertex shader.
+  - Declined: tiling the panels so the mirror and three's culling could skip them away from the shops (2 calls and about
+    18k triangles in a mirror; tiles would add draw calls to every main pass); the names question above (Mike's); the
+    core's walls in the host notes (fronts there). Still waiting on API credit: the 24 borrowed second-set interiors and the
+    3 missing frames.

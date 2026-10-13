@@ -60,10 +60,15 @@ class Sidecar(unittest.TestCase):
         self.assertEqual(self.info['b64sha'], hashlib.sha256((ROOT / 'storefronts.b64').read_text().encode('ascii')).hexdigest())
 
     def test_the_names(self):
+        import re
         names = self.info['names']
         self.assertGreaterEqual(sum(1 for s in names if s), 2200)
         for s in names:
             self.assertLessEqual(len(s), 40, s)
+            # a long name cut at its best joint keeps no connector or separator at its end (the third review:
+            # 'Greater Philadelphia Health Action Inc.:', "Francoluigi's Italian Restaurant & High")
+            if len(s) >= 30:
+                self.assertIsNone(re.search(r'(?:\s(?:&|and|of|at|for|the|in)|[,;:/&|@-])$', s, re.I), s)
             for c in ('—', '–', '·', '​', '﻿'):
                 self.assertNotIn(c, s)
             self.assertEqual(s, s.strip())
@@ -73,7 +78,10 @@ class Sidecar(unittest.TestCase):
         self.assertEqual(self.info['families'], [f[0] for f in F.FAMILIES])
         H = self.info['hours']
         for h in H:
-            self.assertEqual(len(h), 6)
+            self.assertEqual(len(h), 7)
+            self.assertTrue(0 <= h[6] < 32, h)    # the weekdays it keeps shut, a bit each (the third review)
+            if h[6]:
+                self.assertGreaterEqual(h[0], 0, h)
             for k in range(0, 6, 2):
                 o, c = h[k], h[k + 1]
                 if o < 0:
@@ -193,16 +201,21 @@ class Hours(unittest.TestCase):
 
     def test_osm_strings(self):
         P = self.parse
-        self.assertEqual(P('24/7'), [0, 1440, 0, 1440, 0, 1440])
-        self.assertEqual(P('Mo-Su 00:00-24:00'), [0, 1440, 0, 1440, 0, 1440])
-        self.assertEqual(P('Mo-Fr 09:00-17:00; Sa 10:00-14:00; Su off'), [540, 1020, 600, 840, -1, -1])
-        # a range that wraps the week, and a close past midnight running on past 1440
-        self.assertEqual(P('Su-Th 11:00-22:00; Fr-Sa 11:00-02:00'), [660, 1320, 660, 1560, 660, 1320])
-        self.assertEqual(P('Mo-Sa 07:00-15:00; PH off'), [420, 900, 420, 900, -1, -1])
+        self.assertEqual(P('24/7'), [0, 1440, 0, 1440, 0, 1440, 0])
+        self.assertEqual(P('Mo-Su 00:00-24:00'), [0, 1440, 0, 1440, 0, 1440, 0])
+        self.assertEqual(P('Mo-Fr 09:00-17:00; Sa 10:00-14:00; Su off'), [540, 1020, 600, 840, -1, -1, 0])
+        # a range that wraps the week, and a close past midnight running on past 1440; the weekday's span the one most of
+        # Monday to Friday keep
+        self.assertEqual(P('Su-Th 11:00-22:00; Fr-Sa 11:00-02:00'), [660, 1320, 660, 1560, 660, 1320, 0])
+        self.assertEqual(P('Mo-Sa 07:00-15:00; PH off'), [420, 900, 420, 900, -1, -1, 0])
         # a day's two spans are its first opening to its last close; a comma between days
-        self.assertEqual(P('Mo-Fr 08:00-12:00,13:00-17:00'), [480, 1020, -1, -1, -1, -1])
-        self.assertEqual(P('Mo,We,Fr 10:00-18:00; Sa,Su 12:00-16:00'), [600, 1080, 720, 960, 720, 960])
-        self.assertEqual(P('Tu-Su 17:00-24:00'), [1020, 1440, 1020, 1440, 1020, 1440])
+        self.assertEqual(P('Mo-Fr 08:00-12:00,13:00-17:00'), [480, 1020, -1, -1, -1, -1, 0])
+        # the weekdays it keeps shut, Monday the first bit (the third review: 'Tu-Su' opened on Mondays; a day OSM does not
+        # name is shut)
+        self.assertEqual(P('Mo,We,Fr 10:00-18:00; Sa,Su 12:00-16:00'), [600, 1080, 720, 960, 720, 960, 2 + 8])
+        self.assertEqual(P('Tu-Su 17:00-24:00'), [1020, 1440, 1020, 1440, 1020, 1440, 1])
+        self.assertEqual(P('Th-Su 17:00-22:00'), [1020, 1320, 1020, 1320, 1020, 1320, 1 + 2 + 4])
+        self.assertEqual(P('Mo 11:00-22:00; Tu-Su 11:00-22:30'), [660, 1350, 660, 1350, 660, 1350, 0])
         for s in ('Jan-Mar Mo-Fr 09:00-17:00', 'sunrise-sunset', 'Mo-Fr 09:00-17:00 "by appointment"', 'Mo[1] 10:00-12:00', ''):
             self.assertIsNone(P(s), s)
 
@@ -218,12 +231,16 @@ const L = %s;
 const g = L.join('\\n');
 const a = g.indexOf('float m = uSfClock.x'), b = g.indexOf('  vSfP = vec4(');
 const body = g.slice(a, b).replace(/float /g, 'let ');
-const step = (e, x) => (x < e ? 0 : 1), floor = Math.floor, max = Math.max, mod = (x, y) => x - y * Math.floor(x / y);
-const f = new Function('uSfClock', 'aSfHours', 'aSfInfo', 'step', 'floor', 'max', 'mod', body + '; return [open, sgn];');
+const step = (e, x) => (x < e ? 0 : 1), floor = Math.floor, max = Math.max, mod = (x, y) => x - y * Math.floor(x / y), exp2 = (x) => 2 ** x;
+const f = new Function('uSfClock', 'aSfHours', 'aSfInfo', 'step', 'floor', 'max', 'mod', 'exp2', body + '; return [open, sgn];');
 const pk = (o, c) => (o < 0 ? -1 : o * 2048 + c);
 const H = { x: pk(1020, 1560), y: pk(1020, 1620), z: pk(720, 1320), w: 0 };   // weekdays 17:00 to 02:00, Saturday to 03:00, Sunday 12:00 to 22:00
-const at = (dw, m) => f({ x: m, y: dw }, H, { x: 4 }, step, floor, max, mod);
-console.log(JSON.stringify([at(3, 1200), at(3, 900), at(4, 60), at(4, 150), at(6, 90), at(0, 150), at(0, 200), at(1, 60), at(0, 800), at(1, 1400)]));
+const at = (dw, m, h) => f({ x: m, y: dw }, h || H, { x: 4 }, step, floor, max, mod, exp2);
+// and shut on Mondays and Thursdays (the third review): Monday 20:00 shut, Tuesday 01:00 shut (Monday's night never ran),
+// Tuesday 20:00 open, Thursday 20:00 shut, Friday 01:00 shut, Friday 20:00 open
+const S = Object.assign({}, H, { w: 1 + 8 });
+console.log(JSON.stringify([at(3, 1200), at(3, 900), at(4, 60), at(4, 150), at(6, 90), at(0, 150), at(0, 200), at(1, 60), at(0, 800), at(1, 1400),
+  at(1, 1200, S), at(2, 60, S), at(2, 1200, S), at(4, 1200, S), at(5, 60, S), at(5, 1200, S)]));
 """ % arr
         out = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=60)
         self.assertEqual(out.returncode, 0, out.stderr)
@@ -231,7 +248,46 @@ console.log(JSON.stringify([at(3, 1200), at(3, 900), at(4, 60), at(4, 150), at(6
         # Wed 20:00 open; Wed 15:00 shut; Thu 01:00 Wednesday's night still on; Thu 02:30 shut; Sat 01:30 Friday's night;
         # Sun 02:30 Saturday's night (to 03:00); Sun 03:20 shut; Mon 01:00 shut (Sunday closed at 22:00); Sun 13:20 open;
         # Mon 23:20 open
-        self.assertEqual(got, [1, 0, 1, 0, 1, 1, 0, 0, 1, 1])
+        self.assertEqual(got, [1, 0, 1, 0, 1, 1, 0, 0, 1, 1, 0, 0, 1, 0, 0, 1])
+
+
+def _bake_fns(names, consts):
+    """Several functions of bake_storefronts.py with the module constants they read, in one namespace."""
+    tree = ast.parse((ROOT / 'bake_storefronts.py').read_text())
+    keep = [n for n in tree.body if (isinstance(n, ast.FunctionDef) and n.name in names)
+            or (isinstance(n, ast.Assign) and any(getattr(t, 'id', None) in consts for t in n.targets))]
+    ns = {'re': __import__('re'), 'unicodedata': __import__('unicodedata'), 'math': math}
+    exec(compile(ast.Module(body=keep, type_ignores=[]), 'bake_storefronts.py', 'exec'), ns)
+    return ns
+
+
+class Names(unittest.TestCase):
+    """The third review: a name over 40 characters was cut at 40 and stripped of ' ,-&' only, and a trade read off the
+    cuisine alone dressed takeouts as white-tablecloth dining rooms."""
+
+    def test_a_long_name_is_cut_at_its_best_joint(self):
+        ns = _bake_fns(('clean_name', 'cut_name', 'trim_tail'), ('FORMAT', 'CORP', 'NAME_MAX', 'NAME_SEP', 'NAME_JOIN', 'NAME_END', 'NAME_TAIL'))
+        c = lambda n: ns['clean_name']({}, n)
+        self.assertEqual(c('Greater Philadelphia Health Action Inc.: Chinatown Medical Services'), 'Greater Philadelphia Health Action')
+        self.assertEqual(c("Francoluigi's Italian Restaurant & High Note Cafe"), "Francoluigi's Italian Restaurant")
+        self.assertEqual(c('The Dental Spa - Philadelphia | Dr. Jeremy D. Kay'), 'The Dental Spa')
+        self.assertEqual(c('Philadelphia Brewing Company Peacock Room Bar & Garden'), 'Philadelphia Brewing Company')
+        self.assertEqual(c('Weitzman National Museum of American Jewish History Museum Store'), 'Weitzman National Museum')
+        self.assertEqual(c('Independence National Historical Park Library and Archives'), 'Independence National Historical Park')
+        # a name that fits is never touched, whatever it ends with
+        for n in ('Ooh La La', 'Pub On Passyunk East', 'Wayne Kee Hardware & Kitchen Supplies Inc.', 'Xe Lua Vietnamese & Thai Restaurant'):
+            self.assertEqual(c(n), n.replace(' Inc.', ''))
+
+    def test_the_takeouts(self):
+        ns = _bake_fns(('family',), ('TAKEOUT_CUISINE', 'BAKERY_SHOP', 'COUNTER_CUISINE', 'TAKEOUT_NAME', 'CENTER_CITY'))
+        f = ns['family']
+        self.assertEqual(f(1, {'amenity': 'restaurant', 'cuisine': 'japanese;sushi'}, -2189, 2343, 'Hibachi 2 Go'), 2)
+        self.assertEqual(f(1, {'amenity': 'restaurant', 'cuisine': 'chinese'}, -2088, 1928, 'Oriental Chinese Restaurant'), 2)
+        self.assertEqual(f(1, {'amenity': 'restaurant', 'cuisine': 'noodle;japanese'}, 962, -2586, 'Hajimaru Ramen'), 2)
+        # Chinatown's dining rooms stay dining rooms, and a restaurant with nothing said of it stays one
+        self.assertEqual(f(1, {'amenity': 'restaurant', 'cuisine': 'chinese'}, -955, -1076, 'Jade Harbor Restaurant'), 1)
+        self.assertEqual(f(1, {'amenity': 'restaurant'}, -1939, -549, 'The Happy Rooster'), 1)
+        self.assertEqual(f(1, {'amenity': 'restaurant', 'cuisine': 'italian', 'takeaway': 'only'}, 0, 0, 'Slice'), 2)
 
 
 if __name__ == '__main__':

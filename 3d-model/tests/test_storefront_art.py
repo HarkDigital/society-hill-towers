@@ -64,6 +64,19 @@ class Manifest(unittest.TestCase):
                 c = self.m['cells'][k]
                 self.assertEqual(c['cls'], cls)
                 self.assertNotIn(self.m['fams'][c['fam']], ('bank', 'venue', 'trade'))
+            # the third review: two units side by side (an odd stride apart, so from the other half of the places) wore one
+            # navy frame over two racks of clothes. Every trade once a class, and the shop and the boutique on one half
+            fams = [self.m['fams'][self.m['cells'][k]['fam']] for k in g[cls]]
+            self.assertEqual(len(set(fams)), len(fams))
+            self.assertEqual(fams.index('retail') % 2, fams.index('boutique') % 2, (cls, fams))
+            for k in g[cls]:
+                self.assertRegex(self.m['cells'][k]['frame'], '^#[0-9a-f]{6}$')
+        # cafe-S-0 and boutique-S-1, the two navy frames of view 12, never side by side
+        ids = [self.m['cells'][k]['id'] for k in g['S']]
+        self.assertEqual(ids.index('cafe-S-0') % 2, ids.index('boutique-S-1') % 2)
+        # the page packs each cell's corner as x + w y in one float: the bake holds the atlas to 4096 wide
+        self.assertLessEqual(self.m['w'], 4096)
+        self.assertLessEqual(self.m['w'] * self.m['h'], 1 << 24)
 
     def test_the_files(self):
         from PIL import Image

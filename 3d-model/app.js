@@ -8899,13 +8899,15 @@ vec2 wRing(vec2 rc, float tt) {
   // Round 189 (Mike: "Do the storefront boxes on Broad Street too"): the painted shop floors (style 5's ground floor) wear
   // the storefronts' generated shopfronts, the same atlas and mask (one Texture each, set when they are up: uSfOn), eight
   // cells a width class for the trades that suit an anonymous wall (STOREFRONT_ART.gen): each cell's corner in the atlas's
-  // pixels (x + 4096 y, one float), its bulkhead's top, its glass head and its fascia's bottom (ten more for a trade open
-  // into the evening), the classes' widths and the cells' height in the atlas. The realistic look on WebGL 2 only (every
-  // read is textureGrad), never on a phone at tier 2 (the realism pass's other art is off there too); ?sfart=0 and ?real=0
-  // keep the paint
+  // pixels (x + w y for an atlas w wide, one float: exact while w h is at most 2^24, which SF_PARTA and the bake hold it
+  // to, the bake at 4096 wide; it was a hard-coded 4096 on both sides until the third review), its bulkhead's top, its
+  // glass head and its fascia's bottom (ten more for a trade open into the evening), the classes' widths and the cells'
+  // height in the atlas. The realistic look on WebGL 2 only (every read is textureGrad), never on a phone at tier 2 (the
+  // realism pass's other art is off there too); ?sfart=0 and ?real=0 keep the paint
   const SF_CROP = 0.5;   // the most of a shopfront's glass cut at its head (a storey shorter than the art's 4.2 m), before any is squashed
   const SF_PARTA_MIN = 3.4;   // the shortest wall a painted shop floor's shopfront dresses (shorter keeps masonry and the style's sashes)
-  const SF_PARTA = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.gen && !/[?&]sfart=0\b/.test(location.search);
+  const SF_PARTA = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.gen && STOREFRONT_ART.w * STOREFRONT_ART.h <= 16777216 && !/[?&]sfart=0\b/.test(location.search);
+  const SF_AW = (SF_PARTA ? STOREFRONT_ART.w : 4096).toFixed(1), SF_AH = (SF_PARTA ? STOREFRONT_ART.h : 2048).toFixed(1);
   const sfPartU = (() => {
     const U = { uSfArt: { value: null }, uSfMaskA: { value: null }, uSfOn: { value: 0 }, uSfGen: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
       uSfGenD: { value: new THREE.Vector4(0.05, 0.07, 0.1, 0.1) } };
@@ -8916,7 +8918,7 @@ vec2 wRing(vec2 rc, float tt) {
       for (let j = 0; j < 8; j++) {
         const c = A.cells[ids.length ? ids[j % ids.length] : 0], k = ci * 8 + j;
         const px = Math.round(c.rect[0] * A.w), py = Math.round(c.rect[1] * A.h);
-        U.uSfGen.value[k].set(px + 4096 * py, c.rows[0], c.rows[1], c.rows[2] + (['restaurant', 'takeout', 'grocery'].includes(A.fams[c.fam]) ? 10 : 0));
+        U.uSfGen.value[k].set(px + A.w * py, c.rows[0], c.rows[1], c.rows[2] + (['restaurant', 'takeout', 'grocery'].includes(A.fams[c.fam]) ? 10 : 0));
         if (j === 0) U.uSfGenD.value.setComponent(ci, c.rect[2]);
       }
     });
@@ -9639,7 +9641,7 @@ vec2 wRing(vec2 rc, float tt) {
             '          int ci = int(bc) * 8 + int(mod(floor(hw * 8.0) + sfUi * (1.0 + 2.0 * floor(fract(hw * 7.13) * 4.0)), 8.0));',
             '          vec4 G = uSfGen[ci]; float bb = G.w, mir = step(0.5, fract(hsh * 13.7));',
             '          sfLate = step(5.0, bb); bb -= 10.0 * sfLate; sfHs = hsh;',
-            '          float gyq = floor(G.x / 4096.0); vec2 g0 = vec2(G.x - gyq * 4096.0, gyq) / vec2(' + (typeof STOREFRONT_ART !== 'undefined' && STOREFRONT_ART ? STOREFRONT_ART.w + '.0, ' + STOREFRONT_ART.h + '.0' : '4096.0, 2048.0') + ');',
+            '          float gyq = floor(G.x / ' + SF_AW + ' + 0.0001); vec2 g0 = vec2(G.x - gyq * ' + SF_AW + ', gyq) / vec2(' + SF_AW + ', ' + SF_AH + ');',
             '          sfHh = min(min(facadeFp + 0.7, wallTop - 0.1), 4.2);',
             '          float y = clamp(fv, 0.0, sfHh), b0 = G.y * 4.2, fc = (1.0 - bb) * 4.2, mid = sfHh - b0 - fc, vv;',
             '          if (mid < 0.4) vv = y / sfHh; else if (y < b0) vv = y / 4.2; else if (y > sfHh - fc) vv = 1.0 - (sfHh - y) / 4.2;',
@@ -12023,6 +12025,7 @@ vec2 wRing(vec2 rc, float tt) {
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sg, nz = (-dx / L) * sg;
+        if (SF_HOST_ON && (st & 31) === 5) sfHostNote(a, q, L, nx, nz, st, base, y0, y1, fh);   // Round 189: a panel on a painted shop floor
         const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, 0, L, y1 - base);
         const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, L, L, y1 - base);
         const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh, tint, L, L, y1 - base);
@@ -14477,6 +14480,15 @@ vec2 wRing(vec2 rc, float tt) {
       quad(P(s, D - 0.12, yF), P(s, D, yF), P(s, D, vb), P(s, D - 0.12, vb), n, s, s, s, s);
     }
   }
+  // a canvas awning's stripe, box-filtered over the pixel (the third review: a fixed smoothstep in fract space stair-stepped
+  // at 20 to 25 m and would shimmer and moire further out): the second colour's share of the pixel's footprint along t
+  // (in stripes: the band from half to the whole of each period, F its running integral), going to the even share as a
+  // stripe falls from about 1.4 pixels to under one. w is the length of t's screen gradient (awnStripeW: fwidth's sum of
+  // the two read a diagonal stripe up to twice as fine as it is and greyed the slope of an awning seen up the street),
+  // taken by the caller where its control flow is uniform
+  const AWN_STRIPE_GLSL = 'float awnStripeF(float t) { return floor(t) * 0.5 + max(fract(t) - 0.5, 0.0); }\n' +
+    'float awnStripeW(float t) { return length(vec2(dFdx(t), dFdy(t))); }\n' +
+    'float awnStripe(float t, float w) { w = max(w, 1e-4); float c = (awnStripeF(t + 0.5 * w) - awnStripeF(t - 0.5 * w)) / w; return mix(c, 0.5, smoothstep(0.35, 0.65, w)); }';
   // the awnings' kinds per set: [colA, colB, stripes a metre (0 solid), scalloped]; photographed sRGB, stored like the fronts
   const AWNING_KINDS = {
     southrow: [['#e4e4de', '#bdbdb6', 6.25, true], ['#2f6b43', '#e9e8e0', 3.3, true], ['#6a4a35', '#58402f', 6.25, true],
@@ -14723,8 +14735,11 @@ vec2 wRing(vec2 rc, float tt) {
       mt.onBeforeCompile = (sh) => {
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aAlong; attribute vec4 aAwn; varying float vAlong; varying vec4 vAwn;')
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlong = aAlong * length(instanceMatrix[0].xyz); vAwn = aAwn;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vAlong; varying vec4 vAwn;')
-          .replace('#include <color_fragment>', '#include <color_fragment>\nif (vAwn.w > 0.0) { float sx = fract(vAlong * vAwn.w); diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, smoothstep(0.46, 0.54, sx) - smoothstep(0.96, 1.0, sx)); }');
+        // (the stripes filtered under the realistic look, awnStripe; ?real=0 keeps the old edge)
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vAlong; varying vec4 vAwn;' + (REAL ? '\n' + AWN_STRIPE_GLSL : ''))
+          .replace('#include <color_fragment>', '#include <color_fragment>\n' + (REAL
+            ? '{ float awT = vAlong * vAwn.w, awW = awnStripeW(awT); if (vAwn.w > 0.0) diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, awnStripe(awT, awW)); }'
+            : 'if (vAwn.w > 0.0) { float sx = fract(vAlong * vAwn.w); diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, smoothstep(0.46, 0.54, sx) - smoothstep(0.96, 1.0, sx)); }'));
         frontFade(sh);
         if (REAL) wxSurfacePatch(sh);
       };
@@ -14960,6 +14975,7 @@ vec2 wRing(vec2 rc, float tt) {
         const L = Math.hypot(dx, dz);
         if (L < 0.05) continue;
         const nx = (dz / L) * sign, nz = (-dx / L) * sign;
+        if (SF_HOST_ON && (st & 31) === 5) sfHostNote(a, q, L, nx, nz, st, base, y0, y1, fh);
         const i0 = pushV(ch, a[0], y0, a[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, 0, L, y1 - base);
         const i1 = pushV(ch, q[0], y0, q[1], nx, 0, nz, r0, g0, b0, st, base, fh, tint, L, L, y1 - base);
         const i2 = pushV(ch, q[0], y1, q[1], nx, 0, nz, r, g, b, st, base, fh, tint, L, L, y1 - base);
@@ -16037,6 +16053,7 @@ vec2 wRing(vec2 rc, float tt) {
   // grocery's and the trade's; the restaurant's the bar's, the cafe's and the venue's; and so on
   const SF_SIB = [[9, 7, 12], [4, 3, 11], [3, 7, 1], [8, 1, 2], [1, 3], [6, 11], [0, 5, 10], [0, 8, 2], [3, 7], [0, 10], [9, 0], [5, 1], [0, 7]];
   const SF_STRETCH = 0.25;
+  const SF_NEIGH_R = 30;   // the neighbour's rule's reach: no two panels within it wear one cell while another will do
   // the letters' colours (sRGB): cream, white, gold for a dark board; near-black, navy, oxblood, forest for a light one; a
   // corner store's red
   const SF_TXT_HEX = ['#efe6d2', '#ffffff', '#c9a24a', '#1c1b1a', '#1f2c48', '#6b2430', '#2f5a3e', '#b3261e'];
@@ -16045,17 +16062,50 @@ vec2 wRing(vec2 rc, float tt) {
   const SF_AWN = [['#2e6a45', '#ebe8de', 2.6], ['#a3302d', '#ece6da', 2.6], ['#22324f', '#22324f', 0], ['#1f1f1f', '#1f1f1f', 0], ['#5e2333', '#5e2333', 0], ['#b49a6e', '#6b4c33', 2.6],
     ['#24402e', '#24402e', 0], ['#5a1f24', '#5a1f24', 0], ['#1d2a40', '#1d2a40', 0], ['#191919', '#191919', 0], ['#9a4a2c', '#9a4a2c', 0], ['#a08a62', '#a08a62', 0],
     ['#2f6b43', '#e9e8e0', 3.3], ['#8e2a26', '#ebe6dc', 3.3], ['#28406a', '#e8e4da', 3.3], ['#202020', '#e6e2d8', 3.3]];
-  let sfArtP = null;
-  // the art's two images, asked for at the top of the build (build()) so they arrive while the city is raised
-  // Each is decoded off the main thread before it is handed on (the review: the step's upload was one long task of 320 ms on
-  // a computer, the 4096 by 2048 atlas's 176 of it). A computer takes it as an ImageBitmap, flipped as it is decoded, which
-  // uploads in 109 ms and is let go once it has (sfBitmapTex); a phone keeps the decoded <img> its freeTexOnUpload lets go
-  // (WebKit's createImageBitmap options are not to be trusted untested on a device)
+  let sfArtP = null, sfArtPre = null;
+  // the art's two images. A computer asks for them at the top of the build (build()) so they arrive while the city is
+  // raised, each decoded off the main thread before it is handed on (the review: the step's upload was one long task of
+  // 320 ms on a computer, the 4096 by 2048 atlas's 176 of it): an ImageBitmap, flipped as it is decoded, which uploads in
+  // 109 ms and is let go once it has (sfBitmapTex). A phone fetches only their bytes there (sfArtPrefetch: 380 KB as two
+  // blobs, nothing decoded) and makes and decodes its <img> from them at the step, which its freeTexOnUpload lets go (the
+  // third review: decoded at the top of the build, the two half images, some 10 MB of pixels, were held through the far
+  // ring's uploads, the build's peak and the window where iPhones have died; WebKit's createImageBitmap options are not
+  // to be trusted untested on a device)
+  // An old desktop Safari (before 17) or Firefox (before 98) ignores imageOrientation, which would put every panel and
+  // painted shop floor upside down: those keep the <img> (three's GLTFLoader draws the same line)
+  const SF_BITMAP = (() => {
+    if (isTouch || typeof createImageBitmap !== 'function' || typeof navigator === 'undefined') return false;
+    const ua = navigator.userAgent || '';
+    if (/^((?!chrome|android|crios|fxios|edg).)*safari/i.test(ua)) { const m = ua.match(/Version\/(\d+)/); return !!m && +m[1] >= 17; }
+    if (/Firefox\//.test(ua)) { const m = ua.match(/Firefox\/(\d+)/); return !!m && +m[1] >= 98; }
+    return true;
+  })();
+  function sfArtPrefetch() {
+    if (sfArtPre || sfArtP) return;
+    const A = STOREFRONT_ART;
+    const get = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));
+    sfArtPre = [get(artSrc(A.img, A.imgHalf)), get(artSrc(A.mask, A.maskHalf))];
+  }
   function sfArtLoad() {
-    const dec = (im) => !im ? im : !isTouch && typeof createImageBitmap === 'function'
-      ? createImageBitmap(im, { imageOrientation: 'flipY', premultiplyAlpha: 'none' }).then((b) => b, () => im)
-      : im.decode ? im.decode().then(() => im, () => im) : im;
-    if (!sfArtP) { const A = STOREFRONT_ART; sfArtP = Promise.all([artImage(artSrc(A.img, A.imgHalf)).then(dec), artImage(artSrc(A.mask, A.maskHalf)).then(dec)]); }
+    if (sfArtP) return sfArtP;
+    const A = STOREFRONT_ART;
+    if (SF_BITMAP) {
+      const dec = (im) => (!im ? im : createImageBitmap(im, { imageOrientation: 'flipY', premultiplyAlpha: 'none' }).then((b) => b, () => im));
+      sfArtP = Promise.all([artImage(artSrc(A.img, A.imgHalf)).then(dec), artImage(artSrc(A.mask, A.maskHalf)).then(dec)]);
+      return sfArtP;
+    }
+    // the <img> from the prefetched bytes where there are any (a page opened as a file, an old browser or a failed fetch
+    // asks for the file itself), decoded before it is handed on
+    const pre = sfArtPre || [null, null];
+    sfArtPre = null;
+    const one = (p, src) => Promise.resolve(p).then((blob) => {
+      const url = blob ? URL.createObjectURL(blob) : null;
+      return artImage(url || src).then((im) => (im || !url ? im : artImage(src))).then((im) => {
+        const done = () => { if (url) URL.revokeObjectURL(url); return im; };
+        return im && im.decode ? im.decode().then(done, done) : done();
+      });
+    });
+    sfArtP = Promise.all([one(pre[0], artSrc(A.img, A.imgHalf)), one(pre[1], artSrc(A.mask, A.maskHalf))]);
     return sfArtP;
   }
   function sfBitmapTex(tex) {
@@ -16105,6 +16155,10 @@ vec2 wRing(vec2 rc, float tt) {
     // last night's running on
     '  float m = uSfClock.x, dw = uSfClock.y;',
     '  float today = dw < 0.5 ? aSfHours.z : (dw > 5.5 ? aSfHours.y : aSfHours.x), yest = dw < 0.5 ? aSfHours.y : (dw < 1.5 ? aSfHours.z : aSfHours.x);',
+    // a weekday the shop keeps shut (aSfHours.w: a bit a weekday, Monday the first; the third review: 'Tu-Su' opened on Mondays)
+    '  float yd = dw < 0.5 ? 6.0 : dw - 1.0;',
+    '  if (dw > 0.5 && dw < 5.5 && mod(floor(aSfHours.w / exp2(dw - 1.0) + 0.001), 2.0) > 0.5) today = -1.0;',
+    '  if (yd > 0.5 && yd < 5.5 && mod(floor(aSfHours.w / exp2(yd - 1.0) + 0.001), 2.0) > 0.5) yest = -1.0;',
     '  float open = 0.0, late = 0.0;',
     '  if (today >= 0.0) { float o = floor(today / 2048.0), c = today - o * 2048.0; open = step(o, m) * step(m, c - 0.5); late = step(o, m) * step(m, 1379.5); }',
     '  if (yest >= 0.0) { float o = floor(yest / 2048.0), c = yest - o * 2048.0; if (c > 1440.0) open = max(open, step(m, c - 1440.5)); }',
@@ -16177,7 +16231,7 @@ vec2 wRing(vec2 rc, float tt) {
         '    float bw = 0.86 * (vSfBand.y - vSfBand.x) * sfW, bh = 0.78 * (yb1 - yb0), asp = min(8.0, bw / max(bh, 0.05)); bw = asp * bh;',
         '    float xc = mix(0.5 * (vSfBand.x + vSfBand.y), 1.0 - 0.5 * (vSfBand.x + vSfBand.y), sfMirror) * sfW;',
         '    vec2 pc = vec2((vSfP.x * sfW - xc) / bw + 0.5, (vSfP.y - 0.5 * (yb0 + yb1)) / bh + 0.5);',
-        '    float s = vSfBand.w, cl = mod(s, uSfSlots.x), rw = floor(s / uSfSlots.x + 0.001);',
+        '    float s = floor(vSfBand.w + 0.5), cl = mod(s, uSfSlots.x), rw = floor(s / uSfSlots.x + 0.001);',   // (rounded like the other words: a slot of 4 arriving as 3.9999998 read row 1, column 3.99)
         '    vec2 su = vec2((cl + 0.5 + (pc.x - 0.5) * asp / 8.0) / uSfSlots.x, 1.0 - (rw + 1.0 - pc.y) / uSfSlots.y);',
         '    vec2 sk = vec2(sfW / bw * asp / 8.0 / uSfSlots.x, 1.0 / bh / uSfSlots.y);',
         '    float cov = textureGrad(uSfNames, su, sfDx * sk, sfDy * sk).r;',
@@ -16235,18 +16289,32 @@ vec2 wRing(vec2 rc, float tt) {
     '  if (sc > 0.5 && vAwnL.z > 0.86 && vAwnL.y < sfAwnCut) discard; }';
   function sfAwningHook(sh) {
     sh.uniforms.uFrR = frR; sh.uniforms.uFrShop = frShopOn; sh.uniforms.uSunW = sunWUniform;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + SF_AWN_V_DECL + ' attribute vec4 aAwn; varying vec4 vAwn;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SF_AWN_V + ' vAwn = aAwn;')
+    // (vAwnZ: the metres out from the wall; vAwnS: 1 on a cheek or a valance's end, whose normal runs along the wall)
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + SF_AWN_V_DECL + ' attribute vec4 aAwn; varying vec4 vAwn; varying float vAwnZ, vAwnS;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SF_AWN_V + ' vAwn = aAwn; vAwnZ = position.z * length(instanceMatrix[2].xyz); vAwnS = abs(normal.x);')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSfW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + SF_AWN_F_DECL + ' uniform vec3 uSunW; varying vec4 vAwn;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + SF_AWN_F_DECL + ' uniform vec3 uSunW; varying vec4 vAwn; varying float vAwnZ, vAwnS;\n' + AWN_STRIPE_GLSL)
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + sfAwnCutGlsl('cameraPosition'))
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
-        'if (vAwn.w > 0.0) { float sx = fract(vAlong * vAwn.w); diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, smoothstep(0.46, 0.54, sx) - smoothstep(0.96, 1.0, sx)); }',
-        '{ float wf = fwidth(vAlong) + fwidth(vAwnL.z);',
+        // the stripes filtered over the pixel (awnStripe); a cheek and a valance's end wear them upright, across their depth,
+        // as the cloth is cut for them (the third review: the cheek took the one colour at its end of the stripes, a plain
+        // white board on a blue and white awning seen from up the street), the slope and the valance along the wall
+        '{ float side = step(0.5, vAwnS), awT = mix(vAlong, vAwnZ, side) * vAwn.w, awW = awnStripeW(awT);',
+        '  if (vAwn.w > 0.0) diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, awnStripe(awT, awW));',
+        '  float wf = fwidth(vAlong) + fwidth(vAwnL.z);',
         '  float weave = (sin(vAlong * 260.0) * sin(vAwnL.z * 260.0 + vAwnL.y * 260.0)) * (1.0 - smoothstep(0.004, 0.012, wf));',
         '  diffuseColor.rgb *= 1.0 + 0.04 * weave;',
-        '  float hem = step(0.98, vAwnL.z) * (1.0 - smoothstep(0.02, 0.05, vAwnL.y - sfAwnCut));',
-        '  diffuseColor.rgb *= 1.0 - 0.18 * hem;',
+        // the cloth's own shading (the third review: slope, valance and cheek in one flat tone read as a painted board): the
+        // slope lighter toward the front bar it is pulled taut over, with a faint sag between the frame's rafters a metre
+        // apart and a pale crease along the fold; the valance a shade under the slope, the cheeks under that with a darker
+        // binding along their sloped edge, and the valance's hem
+        '  float val = (1.0 - side) * step(0.985, vAwnL.z), slope = (1.0 - side) * (1.0 - val);',
+        '  float rp = vAlong / 1.05, sag = (1.0 - abs(2.0 * fract(rp) - 1.0)) * (1.0 - smoothstep(0.15, 0.35, fwidth(rp)));',
+        '  float tone = mix(1.0, (0.9 + 0.12 * smoothstep(0.06, 1.0, vAwnL.z)) * (1.0 - 0.07 * sag) * (1.0 + 0.10 * smoothstep(0.955, 0.985, vAwnL.z)), slope);',
+        '  tone *= 1.0 - 0.08 * val - 0.13 * side;',
+        '  float bind = side * (1.0 - smoothstep(0.02, 0.045, -0.6 * (vAwnL.z - 0.06) / 0.94 - vAwnL.y)) * step(vAwnL.y, -0.001);',
+        '  float hem = step(0.98, vAwnL.z) * (1.0 - side) * (1.0 - smoothstep(0.02, 0.05, vAwnL.y - sfAwnCut));',
+        '  diffuseColor.rgb *= tone * (1.0 - 0.18 * hem) * (1.0 - 0.2 * bind);',
         '  if (!gl_FrontFacing) diffuseColor.rgb *= 0.55; }',
       ].join('\n'))
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (!gl_FrontFacing) totalEmissiveRadiance += diffuseColor.rgb * 0.45 * max(uSunW.y, 0.0);');
@@ -16286,7 +16354,7 @@ vec2 wRing(vec2 rc, float tt) {
     return g;
   }
   // a string's 32-bit FNV hash: a chain's every branch mirrored the same way (and, its colour byte being a hash of the name,
-  // dealt the same cell, unless a panel within 15 m already wears it: the neighbour's rule in sfBuild comes first)
+  // dealt the same cell, unless a panel within SF_NEIGH_R already wears it: the neighbour's rule in sfBuild comes first)
   function sfHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function sfInfo(n) {
     const I = typeof STOREFRONT_INFO !== 'undefined' ? STOREFRONT_INFO : null;
@@ -16295,6 +16363,130 @@ vec2 wRing(vec2 rc, float tt) {
     for (let i = 0; i < b.length; i++) u8[i] = b.charCodeAt(i);
     const rec = new Int16Array(u8.buffer), st = I.stride || 8;   // 9 since the review: the panel's turn to its wall
     return rec.length === n * st ? { rec, st, names: I.names || [], hours: I.hours || [] } : null;
+  }
+  // a record where sfBuild lays it: its laid middle on the record's own line (cx, cz), the wall's line through it (wx, wz:
+  // the bake's out is measured along the record's normal, at the middle) and the panel's own frame (nx, nz), turned by its
+  // lean; null when it is too narrow or too low to lay, { hidden } when the bake found no wall for it
+  function sfPlace(body, info, i) {
+    const o = i * 8, x = body[o] * 0.2, z = body[o + 1] * 0.2, ang = body[o + 2] / 1000, fh = body[o + 6] / 10;
+    let w = body[o + 3] / 10;
+    if (w < 2.5 || fh < 2.5) return null;
+    let nx = Math.cos(ang), nz = Math.sin(ang), shift = 0, out = 0, lean = 0;
+    if (info) {
+      const r = info.rec, q = i * info.st;
+      shift = r[q] / 10; w = r[q + 1] / 10; out = r[q + 2] / 100;
+      if (info.st > 8) lean = r[q + 8] / 10000;
+      if (w <= 0) return { hidden: true };
+    }
+    const cx = x - nz * shift, cz = z + nx * shift, wx = cx + nx * out, wz = cz + nz * out;
+    if (lean) { const k = 1 / Math.sqrt(1 + lean * lean), tx = -nz, tz = nx; nx = (nx - tx * lean) * k; nz = (nz - tz * lean) * k; }
+    return { x, z, cx, cz, wx, wz, nx, nz, w, out, host: null, partTop: 0 };
+  }
+  // ---- the painted shop floors under a panel (the third review: at Hibachi 2 Go on South Broad a panel on a style-5 wall
+  // stood over the facade shader's own shopfronts, SF_PARTA, neither knowing of the other: its pier cut a unit through its
+  // door and the unit's fascia showed a third of a metre over its top; Prudential Savings Bank, KFC on North Broad and
+  // Green Valley Bank the same). While the outer districts and the far ring are raised, every style-5 wall the shader
+  // dresses notes the panels laid on its line (sfHostNote, from their wall loops) with the shader's own unit grid and the
+  // height of its fascia (sfPartTop); sfBuild takes each run of panels on such a wall out or in to the nearest joints of
+  // the units and up over their fascia (sfSnapRun), so a unit is wholly under a panel or wholly clear of one. The core's
+  // walls (buildingGeom) are not noted: its fronts dress them near the eye
+  const SF_HOST_ON = SF_ART_ON && SF_PARTA;
+  const SF_HOST_CELL = 40;
+  const SF_HOST = { grid: null, pl: null, at: new Map(), walls: 0, runs: 0, moved: 0, changed: 0, raised: 0, calls: 0, ms: 0 };
+  function sfHostInit() {
+    SF_HOST.grid = false;
+    if (typeof STOREFRONTS_B64 === 'undefined' || !STOREFRONTS_B64) return;
+    const bin = unb64(STOREFRONTS_B64, 'STOREFRONTS'), hdr = new Int32Array(bin.buffer, 0, 4);
+    if (hdr[0] !== 0x53485446) return;
+    const n = hdr[1], body = new Int16Array(bin.buffer, 16), info = sfInfo(n), pl = new Float32Array(n * 4).fill(NaN), grid = new Map();
+    for (let i = 0; i < n; i++) {
+      const p = sfPlace(body, info, i);
+      if (!p || p.hidden) continue;
+      pl.set([p.wx, p.wz, p.nx, p.nz], i * 4);
+      const key = (Math.floor(p.wx / SF_HOST_CELL) + 4096) * 8192 + Math.floor(p.wz / SF_HOST_CELL) + 4096;
+      let a = grid.get(key); if (!a) grid.set(key, a = []); a.push(i);
+    }
+    SF_HOST.grid = grid; SF_HOST.pl = pl;
+  }
+  // the top of a style-5 wall's painted shop floor over the wall's base, in metres, as the facade shader reckons it for a
+  // wall H tall (its aFacade height) with a floor height fh and a style word st: its facadeFp, rowHead, roofGap, rows and
+  // facadeScale, then sfHh in the scaled metres; 0 where it paints none (a wallTop under 2.9)
+  function sfPartTop(H, fh, st) {
+    let fq = Math.round((fh || 0) * 10); fq = ((fq + 128) % 256 + 256) % 256 - 128;   // aFloorH: a signed byte of decimetres
+    const rowHead = 2.94 + 0.3 * (st >= 64 ? 1 : 0), fp = Math.max(fq > 5 ? fq * 0.1 : 3.05, rowHead + 0.04);
+    let wallTop = Math.max(0, H - Math.min(0.9, Math.max(0.65, H * 0.1)));
+    let rows = Math.max(1, Math.floor(H / fp + 0.5));
+    rows = Math.min(rows, Math.max(1, Math.floor((wallTop * 1.2 - rowHead) / fp) + 1));
+    const sc = Math.min(1.2, Math.max(1, ((rows - 1) * fp + rowHead) / Math.max(0.1, wallTop - 0.04)));
+    wallTop *= sc;
+    return wallTop < 2.9 ? 0 : Math.min(fp + 0.7, wallTop - 0.1, 4.2) / sc;
+  }
+  // a style-5 wall from a to q (outward normal nx, nz) of a building based at base, its wall y0 to y1: the panels on its
+  // line (within 0.6 m, facing within 14 degrees, their middle between its ends) take it as their host, the nearest line
+  // where two walls offer
+  function sfHostNote(a, q, L, nx, nz, st, base, y0, y1, fh) {
+    const t0 = performance.now();
+    SF_HOST.calls++;
+    sfHostNote1(a, q, L, nx, nz, st, base, y0, y1, fh);
+    SF_HOST.ms += performance.now() - t0;
+  }
+  function sfHostNote1(a, q, L, nx, nz, st, base, y0, y1, fh) {
+    if (SF_HOST.grid === null) sfHostInit();
+    if (!SF_HOST.grid || y0 > base + 0.5) return;
+    const Lq = Math.round(L * 10) / 10;   // the wall's length as aFacade carries it (vWallL)
+    if (Lq < SF_PARTA_MIN) return;
+    const top = sfPartTop(Math.round((y1 - base) * 10) / 10, fh, st);
+    if (!top) return;
+    const ux = (q[0] - a[0]) / L, uz = (q[1] - a[1]) / L, G = SF_HOST.grid, P = SF_HOST.pl, C = SF_HOST_CELL;
+    let host = null;
+    for (let gx = Math.floor((Math.min(a[0], q[0]) - 1) / C); gx <= Math.floor((Math.max(a[0], q[0]) + 1) / C); gx++)
+      for (let gz = Math.floor((Math.min(a[1], q[1]) - 1) / C); gz <= Math.floor((Math.max(a[1], q[1]) + 1) / C); gz++) {
+        const ks = G.get((gx + 4096) * 8192 + gz + 4096); if (!ks) continue;
+        for (const k of ks) {
+          const o = k * 4;
+          if (P[o + 2] * nx + P[o + 3] * nz < 0.97) continue;
+          const d = (P[o] - a[0]) * nx + (P[o + 1] - a[1]) * nz, t = (P[o] - a[0]) * ux + (P[o + 1] - a[1]) * uz;
+          if (Math.abs(d) > 0.6 || t < 0 || t > L) continue;
+          const prev = SF_HOST.at.get(k);
+          if (prev && Math.abs(prev.d) <= Math.abs(d)) continue;
+          if (!host) {
+            // the shader's units: the width class whose whole number of units fills the wall with the least stretch
+            let bs = 1e9, bk = 1;
+            for (const w of [4.5, 6.0, 8.5]) { const kk = Math.max(1, Math.floor(Lq / w + 0.5)), sc = Math.abs(Math.log(Lq / kk / w)); if (sc < bs) { bs = sc; bk = kk; } }
+            host = { key: a[0] + ',' + a[1] + ',' + q[0] + ',' + q[1], ax: a[0], az: a[1], ux, uz, nx, nz, unit: (Lq / bk) * (L / Lq), nu: bk, top: base + top };
+            SF_HOST.walls++;
+          }
+          SF_HOST.at.set(k, { h: host, d });
+        }
+      }
+  }
+  // a run of panels side by side on one host wall (each within a metre of the next), its outer ends to the nearest joints
+  // of the shader's units (at least one unit, at most 12.5 m for a panel alone), each moved panel seated on the wall's
+  // own line and normal; every panel of the run raised over the units' fascia (partTop)
+  function sfSnapRun(g) {
+    const h = g[0].host, U = h.unit, N = h.nu;
+    for (const p of g) { p.s = (p.wx - h.ax) * h.ux + (p.wz - h.az) * h.uz; p.partTop = h.top; }
+    g.sort((a, b) => a.s - b.s);
+    const seat = (p, lo, hi) => {
+      if (hi - lo < 2.6 || hi - lo > 12.5) return false;
+      if (Math.abs((lo + hi) / 2 - p.s) > 0.05 || Math.abs(hi - lo - p.w) > 0.05) SF_HOST.changed++;
+      p.s = (lo + hi) / 2; p.w = hi - lo; p.nx = h.nx; p.nz = h.nz;
+      p.wx = h.ax + h.ux * p.s; p.wz = h.az + h.uz * p.s; p.cx = p.wx - p.nx * p.out; p.cz = p.wz - p.nz * p.out;
+      SF_HOST.moved++;
+      return true;
+    };
+    for (let j = 0; j < g.length;) {
+      let e = j;
+      while (e + 1 < g.length && (g[e + 1].s - g[e + 1].w / 2) - (g[e].s + g[e].w / 2) < 1.0) e++;
+      const A = g[j], B = g[e], lo = A.s - A.w / 2, hi = B.s + B.w / 2;
+      let k0 = Math.max(0, Math.min(N, Math.round(lo / U))), k1 = Math.max(0, Math.min(N, Math.round(hi / U)));
+      if (k1 <= k0) { k0 = Math.max(0, Math.min(N - 1, Math.floor((lo + hi) / 2 / U))); k1 = k0 + 1; }
+      if (A === B && (k1 - k0) * U > 12.5) { const m = Math.max(1, Math.floor(12.5 / U)); k0 = Math.max(0, Math.min(N - m, Math.round((lo + hi) / 2 / U - m / 2))); k1 = k0 + m; }
+      if (A === B) seat(A, k0 * U, k1 * U);
+      else { const aHi = A.s + A.w / 2, bLo = B.s - B.w / 2; seat(A, k0 * U, aHi); seat(B, bLo, k1 * U); }
+      SF_HOST.runs++;
+      j = e + 1;
+    }
   }
   // the review: a panel and a generated house front on one wall. Every front, of any set, in 40 m cells (sfBuild's own,
   // let go when it returns), and the fronts whose street wall holds a point 1.2 m inside a wall facing (nx, nz): its box
@@ -16330,6 +16522,20 @@ vec2 wRing(vec2 rc, float tt) {
     const s = h >= (frIn(FR_AREAS.cc, B[o], B[o + 1]) ? 11 : 13.5) ? FR_SET_IX('mixeduse') : (REAL && h < 7 ? FR_SET_IX('shop1') : FR_SET_IX('shop'));
     return s >= 0 ? s : FR_SET_IX('shop');
   }
+  // a sphere round every instance of an instanced mesh whose matrices are its world (the third review: the water mirror's
+  // reach read the geometry's own sphere, the unit's at the scene's origin, so it cut the panels and awnings from the
+  // mirror wherever the eye stood more than its 3.5 km from the origin, and kept them everywhere nearer; drawn unculled,
+  // they are now always in a mirror that is up, 2 calls)
+  function sfInstSphere(M, N, g) {
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, z0 = Infinity, z1 = -Infinity, ext = 0;
+    for (let k = 0; k < N; k++) {
+      const o = k * 16, x = M[o + 12], y = M[o + 13], z = M[o + 14];
+      x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); z0 = Math.min(z0, z); z1 = Math.max(z1, z);
+      ext = Math.max(ext, Math.hypot(M[o], M[o + 1], M[o + 2]) + Math.hypot(M[o + 4], M[o + 5], M[o + 6]) + Math.hypot(M[o + 8], M[o + 9], M[o + 10]));
+    }
+    if (!N) return;
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3((x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2), Math.hypot(x1 - x0, y1 - y0, z1 - z0) / 2 + ext);
+  }
   // the panels and their awnings, from the step's records and its tests (ownsIt, onBase: the old boxes' own, passed in so
   // nothing here holds the step's scope); false when there is nothing to build. Each record is laid where the sidecar puts
   // it (its shift and width, turned to its wall by its lean) and every test is made there, not at the record's own point
@@ -16356,40 +16562,45 @@ vec2 wRing(vec2 rc, float tt) {
     // the house fronts each switches to its shop set, made only once everything is built (the review: a throw after the
     // switch left the old boxes, built from the step's cells of before it, standing over a shop front)
     const toShop = new Map();
-    // [x, z, nx, nz, cell] of the panels laid, in 16 m cells, for the neighbour's rule (15 m: the cell and the eight about it)
-    const taken = new Map(), tKey = (x, z) => Math.floor(x / 16) + ':' + Math.floor(z / 16);
-    const worn = (c2, cx, cz, nx, nz) => {
-      const gx = Math.floor(cx / 16), gz = Math.floor(cz / 16);
+    // [x, z, cell] of the panels laid, in SF_NEIGH_R cells, for the neighbour's rule (the cell and the eight about it). Any
+    // panel within SF_NEIGH_R counts, whichever way it faces (the third review: 30 drawn pairs within 30 m wore one cell
+    // under the old 15 m, same-facing rule, 8 of them facing each other across a street, Ho Sai Gai and Jade Harbor's
+    // identical fronts 15 m apart in Chinatown among them, and 5 round a corner)
+    const taken = new Map(), tKey = (x, z) => Math.floor(x / SF_NEIGH_R) + ':' + Math.floor(z / SF_NEIGH_R);
+    const worn = (c2, cx, cz) => {
+      const gx = Math.floor(cx / SF_NEIGH_R), gz = Math.floor(cz / SF_NEIGH_R);
       for (let a = gx - 1; a <= gx + 1; a++) for (let b = gz - 1; b <= gz + 1; b++) {
         const L = taken.get(a + ':' + b); if (!L) continue;
-        for (const q of L) if (q[4] === c2 && (q[0] - cx) ** 2 + (q[1] - cz) ** 2 < 225 && q[2] * nx + q[3] * nz > 0.3) return true;
+        for (const q of L) if (q[2] === c2 && (q[0] - cx) ** 2 + (q[1] - cz) ** 2 < SF_NEIGH_R * SF_NEIGH_R) return true;
       }
       return false;
     };
     const recs = [];
-    let baseN = 0, nearN = 0, hidden = 0, switched = 0, borrowed = 0;
+    let baseN = 0, nearN = 0, hidden = 0, switched = 0, borrowed = 0, repeats = 0;
+    // every record laid (sfPlace), and the runs on a wall the facade shader paints its own shopfronts on taken to its units'
+    // joints (sfSnapRun) before any test is made, so the tests see the span that stands
+    const placed = new Array(n), runs = new Map();
     for (let i = 0; i < n; i++) {
-      const o = i * 8;
-      const x = body[o] * 0.2, z = body[o + 1] * 0.2, ang = body[o + 2] / 1000, kind = body[o + 4], col = body[o + 5] & 15, fh = body[o + 6] / 10, flags = body[o + 7];
-      let w = body[o + 3] / 10;
-      if (w < 2.5 || fh < 2.5) continue;
-      let nx = Math.cos(ang), nz = Math.sin(ang);
-      let shift = 0, out = 0, inn = 0, fp = 0, fam = SF_KIND_FAM[kind] ?? 0, hrs = null, hostH = 0, name = '', lean = 0;
+      const p = placed[i] = sfPlace(body, info, i), ht = p && !p.hidden ? SF_HOST.at.get(i) : null;
+      if (ht) { p.host = ht.h; let g = runs.get(ht.h.key); if (!g) runs.set(ht.h.key, g = []); g.push(p); }
+    }
+    for (const g of runs.values()) sfSnapRun(g);
+    for (let i = 0; i < n; i++) {
+      const p = placed[i];
+      if (!p) continue;
+      if (p.hidden) { hidden++; continue; }
+      const o = i * 8, kind = body[o + 4], col = body[o + 5] & 15, fh = body[o + 6] / 10, flags = body[o + 7];
+      let inn = 0, fp = 0, fam = SF_KIND_FAM[kind] ?? 0, hrs = null, hostH = 0, name = '';
       if (info) {
         const r = info.rec, q = i * info.st;
-        shift = r[q] / 10; w = r[q + 1] / 10; out = r[q + 2] / 100; inn = r[q + 3] / 100; fp = r[q + 4] / 10; fam = r[q + 5]; hostH = (r[q + 7] >> 2) / 10;
-        if (info.st > 8) lean = r[q + 8] / 10000;
+        inn = r[q + 3] / 100; fp = r[q + 4] / 10; fam = r[q + 5]; hostH = (r[q + 7] >> 2) / 10;
         if (r[q + 6] >= 0) hrs = info.hours[r[q + 6]];
         name = info.names[i] || '';
-        if (w <= 0) { hidden++; continue; }
       }
-      // the laid middle on the record's own line, then the wall's line through it (the bake's out and in are measured
-      // along the record's normal, at the middle) and the panel's own frame, turned by the lean. Every test is made at the
-      // wall's line, not the record's (the review: a tower's base drawn 1.4 to 2.8 m behind the record's line put the
-      // point 1.2 m inside the line still in front of the wall, so five panels missed their street floor and stood in the
-      // air, Insomnia Cookies on Broad Street among them)
-      const cx = x - nz * shift, cz = z + nx * shift, wx = cx + nx * out, wz = cz + nz * out;
-      if (lean) { const k = 1 / Math.sqrt(1 + lean * lean), tx = -nz, tz = nx; nx = (nx - tx * lean) * k; nz = (nz - tz * lean) * k; }
+      // every test is made at the wall's line, not the record's (the review: a tower's base drawn 1.4 to 2.8 m behind the
+      // record's line put the point 1.2 m inside the line still in front of the wall, so five panels missed their street
+      // floor and stood in the air, Insomnia Cookies on Broad Street among them)
+      const { x, z, cx, cz, wx, wz, nx, nz, w, out } = p;
       if (ownsIt(wx - nx * 1.2, wz - nz * 1.2)) continue;
       if (baseOn && onBase(wx - nx * 1.2, wz - nz * 1.2)) { baseN++; continue; }
       let near = 0;
@@ -16406,15 +16617,17 @@ vec2 wRing(vec2 rc, float tt) {
       nearN += near;
       const cls = clsOf(w), list = choices(fam, w, cls), own = (byFamCls.get(fam + ':' + cls) || []).length;
       const h = sfHash(name || 'k' + kind + '@' + Math.round(x) + ',' + Math.round(z));
-      // a panel within 15 m facing the same way already wears it: the next of its own, then the borrowed
+      // a panel within SF_NEIGH_R already wears it: the next of its own, then the borrowed (and where every one is worn,
+      // its own first: a repeat, counted)
       const n0 = Math.max(1, own), start = col % n0;
-      let cell = list[start];
+      let cell = list[start], free = false;
       for (let t = 0; t < list.length; t++) {
         const c2 = list[t < n0 ? (start + t) % n0 : t];
-        if (!worn(c2, cx, cz, nx, nz)) { cell = c2; if (t >= n0) borrowed++; break; }
+        if (!worn(c2, cx, cz)) { cell = c2; free = true; if (t >= n0) borrowed++; break; }
       }
-      { const key = tKey(cx, cz); let L = taken.get(key); if (!L) taken.set(key, L = []); L.push([cx, cz, nx, nz, cell]); }
-      recs.push({ i, cx, cz, nx, nz, w, fh, kind, col, flags, out, inn, fp, fam, hrs, hostH, name, near, cell, cls: cells[cell].cls, mirror: (h >>> 7) & 1, seed: 0.01 + 0.98 * hash01(i * 0.731 + 0.17) });
+      if (!free) repeats++;
+      { const key = tKey(cx, cz); let L = taken.get(key); if (!L) taken.set(key, L = []); L.push([cx, cz, cell]); }
+      recs.push({ i, cx, cz, nx, nz, w, fh, kind, col, flags, out, inn, fp, fam, hrs, hostH, name, near, cell, cls: cells[cell].cls, mirror: (h >>> 7) & 1, seed: 0.01 + 0.98 * hash01(i * 0.731 + 0.17), partTop: p.partTop });
     }
     if (!recs.length) return false;
     const N = recs.length;
@@ -16443,6 +16656,7 @@ vec2 wRing(vec2 rc, float tt) {
       let H = Math.min(r.fh, Math.max(3.4, (r.fp || 3.05) + 0.7));
       if (r.hostH > 0) H = Math.min(H, r.hostH - 0.15);
       H = Math.max(2.6, H);
+      if (r.partTop && r.partTop + 0.03 - yS > H) { H = r.partTop + 0.03 - yS; SF_HOST.raised++; }   // over the painted units' fascia
       const Hf = yS + H - foot, dRet = Math.max(0.12, r.out - r.inn + 0.10), face = r.out + 0.06;
       const lx = r.cx - rx * r.w / 2 + r.nx * face, lz = r.cz - rz * r.w / 2 + r.nz * face;
       const o = k * 16;
@@ -16458,9 +16672,9 @@ vec2 wRing(vec2 rc, float tt) {
       let txt = dark ? (r.fam === 1 || r.fam === 4 || r.fam === 8 ? [0, 2, 1][hb % 3] : [0, 1][hb % 2]) : [3, 4, 5, 6][hb % 4];
       if (r.fam === 7) txt = dark ? 1 : 7;
       aInfo.array.set([r.fam + 16 * txt, (SF_CHANNEL.has(r.fam) ? 1 : 0) + 4 * (A.warm && A.warm[r.fam] ? 1 : 0), r.near, Math.round(c.rows[0] * 1000) * 1000 + Math.round(c.rows[1] * 1000)], k * 4);
-      // (the hours' fourth float is spare: the stream stays a vec4, a stride of 16)
+      // (the hours' fourth float the weekdays it keeps shut, a bit each, Monday the first: the sidecar's seventh value)
       const hh = r.hrs || SF_DEF_HOURS[r.fam] || SF_DEF_HOURS[0], pack = (a, b) => (a < 0 || b < 0 ? -1 : a * 2048 + Math.min(2047, b));
-      aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), 0], k * 4);
+      aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), hh[6] | 0], k * 4);
       const nm = SF_SIGNS && r.name ? names.push(r.name) - 1 : -1;
       list.set([r.cx + r.nx * face, yS + H * 0.7, r.cz + r.nz * face, r.nx, r.nz, r.w, r.near, nm, k], k * 9);
       byFam[A.fams[r.fam]] = (byFam[A.fams[r.fam]] || 0) + 1; byCls[r.cls] = (byCls[r.cls] || 0) + 1;
@@ -16473,6 +16687,7 @@ vec2 wRing(vec2 rc, float tt) {
           drop: 0.6 + 0.1 * hash01(r.i * 3.1), scallop: hash01(r.i * 4.7) < 0.33, col: r.col, near: r.near });
       }
     });
+    sfInstSphere(M, N, geo);
     for (const a of [aCell, aBand, aDim, aInfo, aHours]) { a.onUpload(dropUploadedArray); }
     geo.setAttribute('aSfCell', aCell); geo.setAttribute('aSfBand', aBand); geo.setAttribute('aSfDim', aDim); geo.setAttribute('aSfInfo', aInfo); geo.setAttribute('aSfHours', aHours); geo.setAttribute('aSfSlot', aSlot);
     mesh.instanceMatrix.onUpload(dropUploadedArray);
@@ -16494,6 +16709,7 @@ vec2 wRing(vec2 rc, float tt) {
         const p = pal[a.col];
         am.setColorAt(k, p[0]); aAwn.array.set([p[1].r, p[1].g, p[1].b, p[2]], k * 4); aNear.array[k] = a.near + (a.scallop ? 2 : 0);
       });
+      sfInstSphere(MA, awnWant.length, g);
       aAwn.onUpload(dropUploadedArray); aNear.onUpload(dropUploadedArray); am.instanceMatrix.onUpload(dropUploadedArray); am.instanceColor.onUpload(dropUploadedArray);
       g.setAttribute('aAwn', aAwn); g.setAttribute('aSfNear', aNear); freeOnUpload(g);
       am.frustumCulled = false; am.receiveShadow = true; am.castShadow = !isTouch; am.name = 'storefront-awnings';
@@ -16505,12 +16721,12 @@ vec2 wRing(vec2 rc, float tt) {
     // boxes over them)
     for (const [k, d] of toShop) FRONTS.buf[k * FR_STRIDE + 9] += d;
     switched = toShop.size;
-    groupCity.add(mesh);   // never staged in pendingUpload: it draws unculled for good (its geometry's sphere is the unit panel's)
+    groupCity.add(mesh);   // never staged in pendingUpload: it draws unculled for good (its geometry's sphere holds every panel: sfInstSphere)
     if (am) { groupCity.add(am); SF.awn.push(am); }
     SF.mesh = mesh; SF.list = list; SF.names = names; SF.aSlot = aSlot; SF.byFam = byFam; SF.byCls = byCls; SF.named = named;
     SF.cellOf = Int16Array.from(recs, (r) => r.cell); SF.famOf = Uint8Array.from(recs, (r) => r.fam);
     // (the panel's own unit is 16 vertices and stays; its instance streams went at upload above, all but aSfSlot, which the names rewrite)
-    SF.n = N; SF.near = nearN; SF.base = baseN; SF.hidden = hidden; SF.switched = switched; SF.borrowed = borrowed; SF.ms = Math.round(performance.now() - t0);
+    SF.n = N; SF.near = nearN; SF.base = baseN; SF.hidden = hidden; SF.switched = switched; SF.borrowed = borrowed; SF.repeats = repeats; SF.ms = Math.round(performance.now() - t0);
     // the names last, on their own: a canvas a phone under pressure will not give leaves the panels with blank boards
     if (SF_SIGNS && names.length) {
       try { sfNamesInit(); } catch (e) { SF.slot = null; SF_U.uSfNames.value = null; SF.error = 'names: ' + String(e && e.message || e); }
@@ -16656,15 +16872,27 @@ vec2 wRing(vec2 rc, float tt) {
     SF.drawn += todo.length;
   }
   function sfProbe(near) {
-    if (near === 'repeats') {   // the review's count: panels facing the same way within 15 m wearing one cell, and of those the next-door pairs
-      const L = SF.list, C = SF.cellOf; let within = 0, adjacent = 0;
+    if (near === 'repeats') {   // the reviews' counts of panels wearing one cell: within 15 m facing the same way (the first rule's), and of those
+      // the next-door pairs; within SF_NEIGH_R facing any way (the rule's own); and within 30 m, split as the third review
+      // split them (facing each other, round a corner, on one side), all panels and those without the near flag
+      const L = SF.list, C = SF.cellOf; let within = 0, adjacent = 0, rule = 0;
+      const d30 = { all: 0, facing: 0, corner: 0, side: 0, drawn: 0 };
       for (let a = 0; a < SF.n; a++) for (let b = a + 1; b < SF.n; b++) {
         if (C[a] !== C[b]) continue;
-        const oa = a * 9, ob = b * 9, d = Math.hypot(L[oa] - L[ob], L[oa + 2] - L[ob + 2]);
-        if (d >= 15 || L[oa + 3] * L[ob + 3] + L[oa + 4] * L[ob + 4] < 0.3) continue;
+        const oa = a * 9, ob = b * 9, d = Math.hypot(L[oa] - L[ob], L[oa + 2] - L[ob + 2]), dot = L[oa + 3] * L[ob + 3] + L[oa + 4] * L[ob + 4];
+        if (d >= 30) continue;
+        d30.all++; if (dot < -0.5) d30.facing++; else if (dot < 0.5) d30.corner++; else d30.side++;
+        if (L[oa + 6] < 0.5 && L[ob + 6] < 0.5) d30.drawn++;
+        if (d < SF_NEIGH_R) rule++;
+        if (d >= 15 || dot < 0.3) continue;
         within++; if (d < (L[oa + 5] + L[ob + 5]) / 2 + 1) adjacent++;
       }
-      return { within, adjacent };
+      return { within, adjacent, rule, d30, unavoidable: SF.repeats || 0 };
+    }
+    if (near === 'list') {   // every panel: where it stands, its near flag, its width, its name and cell (a citywide survey)
+      const L = SF.list, out = [];
+      for (let k = 0; k < SF.n; k++) { const o = k * 9; out.push([Math.round(L[o]), Math.round(L[o + 2]), L[o + 6], +L[o + 5].toFixed(1), L[o + 7] >= 0 ? SF.names[L[o + 7]] : null, STOREFRONT_ART.cells[SF.cellOf[k]].id]); }
+      return out;
     }
     if (near) {   // the panels within near metres of the eye: where they stand, their name, slot and flags
       const L = SF.list, cam = camera.position, out = [];
@@ -16674,7 +16902,8 @@ vec2 wRing(vec2 rc, float tt) {
     const S = SF.slot;
     return { on: SF_ART_ON, state: SF.state, error: SF.error, info: SF.info, made: SF.n, near: SF.near, base: SF.base, hidden: SF.hidden, byFam: SF.byFam, byCls: SF.byCls,
       named: SF.named, signs: SF_SIGNS, slots: S ? { n: S.n, held: Array.from(S.owner).filter((k) => k >= 0).length, live: S.live, fonts: S.fonts, subs: S.subs, queue: S.queue.length } : null,
-      awnings: SF.awn.map((m) => m.count), scalloped: SF.scalloped || 0, switched: SF.switched || 0, borrowed: SF.borrowed || 0, partA: SF.partA, ms: SF.ms, k: SF_U.uSfK.value.toArray() };
+      awnings: SF.awn.map((m) => m.count), scalloped: SF.scalloped || 0, switched: SF.switched || 0, borrowed: SF.borrowed || 0, repeats: SF.repeats || 0, partA: SF.partA,
+      hosts: { walls: SF_HOST.walls, runs: SF_HOST.runs, seated: SF_HOST.moved, changed: SF_HOST.changed, raised: SF_HOST.raised, calls: SF_HOST.calls, ms: Math.round(SF_HOST.ms) }, ms: SF.ms, k: SF_U.uSfK.value.toArray() };
   }
   step('Dressing the storefronts', async () => {
     // Tier 2 of the facade plan: OSM's shops, cafes, bars, banks and the rest, each on the
@@ -16766,10 +16995,12 @@ vec2 wRing(vec2 rc, float tt) {
         await yieldNow();
         let built = false;
         try { built = sfBuild(body, n, ownsIt, onBase, baseCells.size > 0); } catch (e) { SF.error = String(e && e.message || e); console.error('storefronts:', e); }
+        SF_HOST.grid = SF_HOST.pl = null; SF_HOST.at = new Map();   // the walls' notes, done with
         if (SF_PARTA) { sfPartU.uSfArt.value = map; sfPartU.uSfMaskA.value = mask; sfPartU.uSfOn.value = 1; SF.partA = true; }   // the painted shop floors take them too
         if (built) { SF.state = 'built'; STOREFRONT_N = SF.n; STOREFRONT_NEAR = SF.near; STOREFRONT_BASE = SF.base; return; }
         SF.state = 'boxes';
       }
+      SF_HOST.grid = SF_HOST.pl = null; SF_HOST.at = new Map();
     }
     let nearN = 0, baseN = 0;
     for (let i = 0; i < n; i++) {
@@ -32787,7 +33018,7 @@ float pinOccGate() {
   }
   async function build() {
     if (BOOT_GATE) await bootGate();
-    if (SF_ART_ON) sfArtLoad();   // Round 189: the storefronts' art downloads while the city is raised
+    if (SF_ART_ON) { if (isTouch) sfArtPrefetch(); else sfArtLoad(); }   // Round 189: the storefronts' art downloads while the city is raised (a phone's as bytes only)
     let failures = 0;
     let builtSteps = 0;
     for (const s of buildSteps) {

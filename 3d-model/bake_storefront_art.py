@@ -41,8 +41,16 @@ H_M = 4.2           # every image is one storey, 4.2 m, sidewalk to the top of t
 CELL_H = 2 * int(round(H_M * PXM / 2))   # even, so the half-size mask's cells keep their rows
 PAD = 8
 AW, AH = 4096, 2048
+# the page packs each painted shop floor cell's corner as x + AW y in one float (uSfGen), exact while AW AH is at most 2^24,
+# and decodes it with a 1e-4 guard that holds to 4096 wide (the third review: both sides had 4096 written in)
+if AW > 4096 or AW * AH > 1 << 24:
+    sys.exit('ERROR: a %d by %d atlas is past what the page can address (at most 4096 wide and 2^24 pixels)' % (AW, AH))
 MASK_DIV = 2
 GEN_FAMS = ('retail', 'restaurant', 'cafe', 'grocery', 'bakery', 'boutique', 'salon', 'takeout')
+# trades that read alike through the glass (racks of clothes, tables, cases of pastry, shelves of goods): kept on one side
+# of gen_order's split
+GEN_ALIKE = {frozenset(p) for p in (('retail', 'boutique'), ('restaurant', 'cafe'), ('cafe', 'bakery'), ('grocery', 'takeout'),
+                                     ('restaurant', 'takeout'))}
 # the key: a pane's flat chroma green (and the anti-aliased pixels at its frames, which the paste's dilation covers)
 KEY_G, KEY_GAP = 0.5, 0.3
 DOOR_W = (0.5, 1.15, 0.25, 0.8)   # a door leaf's glass in metres: a single leaf's least and most, a pair's leaf's least and most
@@ -363,6 +371,52 @@ def gutter(img, W, H, pad):
     return Image.fromarray(np.pad(a, ((pad, pad), (pad, pad), (0, 0)), mode='edge'))
 
 
+def frame_colour(frame, A):
+    """The shopfront's joinery: the median of the pixels between its glass's columns and from its glass's head to its sills
+    that are neither glass (nor the key's fringe) nor board: the mullions, the posts and the door's frame."""
+    H, W = frame.shape[:2]
+    bulkTop, head = A['rows'][0], A['rows'][1]
+    y0, y1 = int((1 - head) * H), int((1 - bulkTop) * H)
+    x0, x1 = int(A['pier'][0] * W), int(A['pier'][1] * W)
+    key = dilate(A['key'], 3)[y0:y1, x0:x1]
+    px = frame[y0:y1, x0:x1][~key]
+    return np.median(px, 0) if len(px) > 50 else A['pierC']
+
+
+def lab(c):
+    """An sRGB colour (0 to 1) in CIE Lab, for a distance between two that the eye would draw."""
+    c = np.asarray(c, np.float64)
+    l = np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+    X, Y, Z = (np.array([[0.4124, 0.3576, 0.1805], [0.2126, 0.7152, 0.0722], [0.0193, 0.1192, 0.9505]]) @ l) / np.array([0.9505, 1.0, 1.089])
+    f = lambda t: np.where(t > 0.008856, np.cbrt(t), 7.787 * t + 16 / 116)
+    return np.array([116 * f(Y) - 16, 500 * (f(X) - f(Y)), 200 * (f(Y) - f(Z))])
+
+
+def gen_order(ids, by):
+    """A class's cells in the order the painted shop floors deal them. The facade shader deals a wall's units an odd stride
+    apart (1, 3, 5 or 7 of 8), so the units side by side always come from the other half of the places: the cells are split
+    four and four, the one that keeps the most alike pair apart (their joinery's colour, and GEN_ALIKE's trades counted
+    alike), and laid on alternate places (the third review: on view 12 two units side by side wore one navy frame over two
+    racks of clothes, a cafe's and a boutique's, and read as one shop of two bays)."""
+    import itertools
+    if len(ids) != 8:
+        return ids
+    hx = lambda h: lab([int(h[1:3], 16) / 255, int(h[3:5], 16) / 255, int(h[5:7], 16) / 255])
+    L = {i: hx(by[i].get('frame') or by[i]['pierHex']) for i in ids}
+    fam = {i: i.rsplit('-', 2)[0] for i in ids}
+    diff = lambda a, b: float(np.linalg.norm(L[a] - L[b])) - (25.0 if frozenset((fam[a], fam[b])) in GEN_ALIKE else 0.0)
+    best, bs = None, None
+    for rest in itertools.combinations(ids[1:], 3):
+        g0 = [ids[0], *rest]
+        g1 = [i for i in ids if i not in g0]
+        cross = sorted(diff(a, b) for a in g0 for b in g1)
+        score = (cross[0], cross[1], cross[2])
+        if bs is None or score > bs:
+            bs, best = score, (g0, g1)
+    g0, g1 = best
+    return [g[k] for k in range(4) for g in (g0, g1)]
+
+
 def bake(preview):
     cells = F.cells()
     made, missing = [], []
@@ -423,7 +477,7 @@ def bake(preview):
                 'band': [round(A['band'][1], 4), round(bandBot, 4), round(A['band'][3], 4), round(bandTop, 4)],
                 'rows': [round(bulkTop, 4), round(head, 4), round(bandBot, 4)],
                 'pier': [round(A['pier'][0], 4), round(A['pier'][1], 4)], 'door': A['door'],
-                'board': to_hex(A['boardC']), 'boardL': round(A['boardL'], 4), 'pierHex': to_hex(A['pierC']),
+                'board': to_hex(A['boardC']), 'boardL': round(A['boardL'], 4), 'pierHex': to_hex(A['pierC']), 'frame': to_hex(frame_colour(frame, A)),
                 'mean': to_hex(mean_in), 'glass': round(A['share'], 3), 'src': how}
         if A['notes']:
             cell['notes'] = A['notes']
@@ -447,7 +501,7 @@ def bake(preview):
             vi.save(os.path.join(preview, cid + '.jpg'), quality=82)
             sheet.append((cid, vi))
     # the painted shop floors' cells: of each class, a trade's first or second by turns (the second M and L of the grocery
-    # and the takeout are corner stores), the first where the second is missing
+    # and the takeout are corner stores), the first where the second is missing, in gen_order's order
     by = {c['id']: c for c in out_cells}
     gen = {}
     for cls in ('S', 'M', 'L'):
@@ -458,6 +512,7 @@ def bake(preview):
                 if cid in by:
                     ids.append(cid)
                     break
+        ids = gen_order(ids, by)
         gen[cls] = [next(k for k, c in enumerate(out_cells) if c['id'] == i) for i in ids]
     half = atlas.resize((AW // 2, AH // 2), Image.LANCZOS)
     mhalf = mask.resize((mAW // 2, mAH // 2), Image.BOX)

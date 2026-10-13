@@ -63,10 +63,22 @@ class Page(unittest.TestCase):
         self.assertIn("const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), 10000); })]);\n      clearTimeout(late);\n      sfArtP = null;", newp)
         # the two uploads a task each (the review: one 342 ms task), the build's own yield (a timer sleeps in a hidden tab)
         self.assertIn("try { renderer.initTexture(map); } catch (e) { }\n        await yieldNow();\n        try { renderer.initTexture(mask); } catch (e) { }\n        await yieldNow();", newp)
-        # a computer decodes the art into ImageBitmaps (flipped as decoded, closed once uploaded); a phone keeps its <img>
+        # a computer decodes the art into ImageBitmaps (flipped as decoded, closed once uploaded), but not an old desktop
+        # Safari or Firefox, which ignore the flip (the third review); a phone keeps its <img>
         b = self.block
-        self.assertIn("!isTouch && typeof createImageBitmap === 'function'", b)
+        gate = cut(b, '  const SF_BITMAP = (() => {', '  })();')
+        self.assertIn("if (isTouch || typeof createImageBitmap !== 'function'", gate)
+        self.assertIn("return !!m && +m[1] >= 17;", gate)
+        self.assertIn("return !!m && +m[1] >= 98;", gate)
+        self.assertIn("if (SF_BITMAP) {", b)
         self.assertIn("createImageBitmap(im, { imageOrientation: 'flipY', premultiplyAlpha: 'none' })", b)
+        # the third review (MUST): a phone fetches only the art's bytes at the top of the build and decodes its <img> at the
+        # step, so no decoded image is held through the far ring's uploads
+        self.assertIn("if (SF_ART_ON) { if (isTouch) sfArtPrefetch(); else sfArtLoad(); }", cut(self.s, '  async function build() {', '    let failures = 0;'))
+        pre = cut(b, '  function sfArtPrefetch() {', '  function sfArtLoad() {')
+        self.assertIn('fetch(src).then((r) => (r.ok ? r.blob() : null))', pre)
+        self.assertNotIn('decode', pre)
+        self.assertNotIn('artImage', pre)
         self.assertIn("tex.flipY = false;", cut(self.s, '  function sfBitmapTex(', '  function sfTextures('))
         self.assertIn("return [sfBitmapTex(map), sfBitmapTex(mask)];", b)
         self.assertIn("if (built) { SF.state = 'built'; STOREFRONT_N = SF.n; STOREFRONT_NEAR = SF.near; STOREFRONT_BASE = SF.base; return; }", newp)
@@ -163,6 +175,16 @@ class Page(unittest.TestCase):
         self.assertIn("'      float shop = rectM(m, vec2(0.0, 1.7), vec2(1.5, 2.5), aa) * isShop;',", s)
         self.assertIn("'      float awnOn = step(3.72, wallTop) * float(st == 5) * inWall * det * step(fv, 4.0);',", s)
         self.assertIn("if (SF_PARTA) { sfPartU.uSfArt.value = map; sfPartU.uSfMaskA.value = mask; sfPartU.uSfOn.value = 1; SF.partA = true; }", self.step)
+        # a cell's corner packed as x + w y by the atlas's own width on both sides (the third review: 4096 written in)
+        self.assertIn("U.uSfGen.value[k].set(px + A.w * py,", s)
+        self.assertIn("float gyq = floor(G.x / ' + SF_AW + ' + 0.0001); vec2 g0 = vec2(G.x - gyq * ' + SF_AW + ', gyq)", s)
+        self.assertIn('STOREFRONT_ART.w * STOREFRONT_ART.h <= 16777216', s)
+        self.assertNotIn('4096 * py', s)
+        # the slot's index rounded like every other word decoded from a varying
+        self.assertIn('float s = floor(vSfBand.w + 0.5), cl = mod(s, uSfSlots.x)', s)
+        # the stripes filtered over the pixel on both awnings (the fronts' under the realistic look only)
+        self.assertEqual(s.count('awnStripe(awT, awW)'), 2)
+        self.assertIn("'float awnStripeW(float t) { return length(vec2(dFdx(t), dFdy(t))); }", s)
 
     def test_the_build(self):
         b = (ROOT / 'build.py').read_text()
@@ -200,6 +222,8 @@ const frontStored = (h) => new THREE.Color(h);
 function frontAwning(A) { A.pos.push(0, 0, 0, 1, 0, 0, 0, 1, 0); A.nor.push(0, 0, 1, 0, 0, 1, 0, 0, 1); A.along.push(0, 1, 0); }
 const glassOpticsPatch = () => {}, lampLightPatch = () => {}, wxSurfacePatch = () => {};
 const artImage = () => Promise.resolve(null), artSrc = (a) => a;
+const SF_PARTA = true, SF_PARTA_MIN = 3.4;
+const unb64 = (b) => { const u = Buffer.from(b, 'base64'); return new Uint8Array(u.buffer.slice(u.byteOffset, u.byteOffset + u.length)); };
 let STOREFRONT_N = 0, STOREFRONT_NEAR = 0, STOREFRONT_BASE = 0;
 __HASH01__
 __BLOCK__
@@ -285,17 +309,21 @@ console.log(JSON.stringify({ want: want.length, asked: asked.length, based: base
         self.assertEqual(r['faceBad'], 0, r)
 
     def test_no_neighbour_wears_the_same_cell(self):
+        # the third review: within 30 m, whichever way they face (Ho Sai Gai and Jade Harbor across 10th Street, corners);
+        # a pair is allowed only where the later panel found every cell it may wear already worn (SF.repeats)
         r = self.run_js(r"""
 sfBuild(body, n, () => false, () => false, false);
-const L = SF.list, C = SF.cellOf; let pairs = 0;
+const L = SF.list, C = SF.cellOf; let pairs = 0, near = 0, R = SF_NEIGH_R;
 for (let a = 0; a < SF.n; a++) for (let b = a + 1; b < SF.n; b++) {
-  const pa = a * 9, pb = b * 9;
-  if (C[a] === C[b] && (L[pa] - L[pb]) ** 2 + (L[pa + 2] - L[pb + 2]) ** 2 < 225 && L[pa + 3] * L[pb + 3] + L[pa + 4] * L[pb + 4] > 0.3) pairs++;
+  const pa = a * 9, pb = b * 9, d2 = (L[pa] - L[pb]) ** 2 + (L[pa + 2] - L[pb + 2]) ** 2;
+  if (C[a] === C[b] && d2 < R * R) { pairs++; if (d2 < 225) near++; }
 }
-console.log(JSON.stringify({ n: SF.n, pairs }));
+console.log(JSON.stringify({ n: SF.n, pairs, near, repeats: SF.repeats, R }));
 """)
         self.assertGreater(r['n'], 1300)
-        self.assertEqual(r['pairs'], 0)
+        self.assertEqual(r['R'], 30)
+        self.assertLessEqual(r['pairs'], r['repeats'], r)
+        self.assertLessEqual(r['repeats'], 10, r)
 
     def test_a_front_is_switched_only_when_the_build_stands(self):
         r = self.run_js(r"""
@@ -319,6 +347,55 @@ console.log(JSON.stringify({ threw, after, set: FRONTS.buf[9], switched: SF.swit
         self.assertEqual(r['set'], 1)          # 'shop': 9 m, under the mixed-use 13.5 m
         self.assertEqual(r['switched'], 1)
         self.assertEqual(r['near'], 1)         # and the panel gives way near the eye to the front's own shopfront
+
+    def test_a_panel_on_a_painted_shop_floor_takes_its_units(self):
+        # the third review: a panel on a style-5 wall cut the facade shader's own shopfronts through a door and their fascia
+        # showed over its top. A 25 m wall along a laid record's line, from 9.5 m before its middle: the shader's units are
+        # three of 8.33 m (sfHostNote's grid, the facade hook's own rule); the panel goes to the joints and over the fascia
+        r = self.run_js(r"""
+var STOREFRONTS_B64 = raw.toString('base64');
+let k0 = -1;
+for (let i = 0; i < n && k0 < 0; i++) { const p = sfPlace(body, I, i); if (p && !p.hidden && p.w >= 4 && p.w <= 7) k0 = i; }
+const p0 = sfPlace(body, I, k0), tx = -p0.nz, tz = p0.nx, s0 = -9.5;
+const a = [p0.wx + tx * s0, p0.wz + tz * s0], q = [p0.wx + tx * (s0 + 25), p0.wz + tz * (s0 + 25)];
+sfHostNote(a, q, 25, p0.nx, p0.nz, 5, 1.0, 0.0, 13.0, 0);
+const ht = SF_HOST.at.get(k0);
+const g = [Object.assign(sfPlace(body, I, k0), { host: ht.h })];
+sfSnapRun(g);
+const U = ht.h.unit, lo = g[0].s - g[0].w / 2, hi = g[0].s + g[0].w / 2;
+const top = sfPartTop(12.0, 0, 5);
+sfBuild(body, n, () => false, () => false, false);
+console.log(JSON.stringify({ k0, U, nu: ht.h.nu, lo: lo / U, hi: hi / U, w0: p0.w, w: g[0].w, onLine: Math.hypot(g[0].wx - (a[0] + tx * g[0].s), g[0].wz - (a[1] + tz * g[0].s)),
+  top, hostTop: ht.h.top, partTop: g[0].partTop, moved: SF_HOST.moved, raised: SF_HOST.raised, walls: SF_HOST.walls }));
+""")
+        self.assertEqual(r['nu'], 3)
+        self.assertAlmostEqual(r['U'], 25 / 3, 3)
+        self.assertAlmostEqual(r['lo'], round(r['lo']), 4)        # both ends on the units' joints
+        self.assertAlmostEqual(r['hi'], round(r['hi']), 4)
+        self.assertGreaterEqual(round(r['hi']) - round(r['lo']), 1)
+        self.assertLess(r['onLine'], 1e-3)                          # seated on the wall's own line
+        self.assertAlmostEqual(r['top'], 3.75 / ((3 * 3.05 + 2.94) / (12.0 - 0.9 - 0.04)), 4)   # the shader's sfHh / facadeScale
+        self.assertAlmostEqual(r['hostTop'], 1.0 + r['top'], 4)
+        self.assertGreaterEqual(r['moved'], 2)                      # the run above, and sfBuild's own
+        self.assertGreaterEqual(r['raised'], 1)                     # its top over the fascia (4.43 m over a sidewalk at 0.15)
+
+    def test_every_instance_inside_its_sphere(self):
+        # the third review: the water mirror's reach read the unit panel's sphere at the scene's origin
+        r = self.run_js(r"""
+sfBuild(body, n, () => false, () => false, false);
+const out = [];
+for (const m of [SF.mesh, SF.awn[0]]) {
+  const S = m.geometry.boundingSphere, M = m.instanceMatrix.array, v = new THREE.Vector3(), mt = new THREE.Matrix4();
+  let bad = 0;
+  for (let k = 0; k < m.count; k++) { mt.fromArray(M, k * 16); for (const c of [[0, 0, 0], [1, 1, -1], [1, 0, 0], [0, 1, 0]]) { v.set(...c).applyMatrix4(mt); if (v.distanceTo(S.center) > S.radius + 1e-3) bad++; } }
+  out.push({ n: m.count, bad, r: Math.round(S.radius) });
+}
+console.log(JSON.stringify(out));
+""")
+        for m in r:
+            self.assertGreater(m['n'], 600)
+            self.assertEqual(m['bad'], 0, m)
+            self.assertGreater(m['r'], 1000)
 
     def test_a_cut_name_keeps_no_connector(self):
         r = self.run_js(r"""

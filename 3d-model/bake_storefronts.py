@@ -351,6 +351,13 @@ FAMILIES = ('retail', 'restaurant', 'takeout', 'cafe', 'bar', 'bank', 'pharmacy'
 TAKEOUT_CUISINE = {'pizza', 'burger', 'chicken', 'sandwich', 'donut', 'bagel', 'kebab', 'cheesesteak', 'fried_chicken',
                    'hot_dog', 'wings', 'chicken_wings', 'fish_and_chips', 'juice', 'bubble_tea', 'falafel'}
 BAKERY_SHOP = {'bakery', 'pastry', 'confectionery', 'chocolate', 'cheese', 'tea', 'wine', 'coffee'}
+# the third review (Hajimaru Ramen, Hibachi 2 Go, Oriental Chinese Restaurant all showed one white-tablecloth dining
+# room): the counters' cuisines, a name that says it is a takeout, OSM's takeaway=only, and a Chinese restaurant outside
+# Center City (the neighbourhoods' corner takeouts; Chinatown's and Center City's are dining rooms) take the takeout's
+# counter and stools
+COUNTER_CUISINE = {'noodle', 'ramen', 'noodles', 'poke', 'dumpling', 'dumplings'}
+TAKEOUT_NAME = re.compile(r"(?:\b(?:2|to)\s?go\b|\btake\s?-?\s?out\b|\bexpress\b|\bcarry\s?-?\s?out\b)", re.I)
+CENTER_CITY = (-3400, 400, -1450, 470)   # x0, x1, z0, z1: the Schuylkill to the Delaware, Vine (and Callowhill) to South
 LAYOUT_COS = math.cos(0.05)   # records on one wall line: normals within 0.05 rad,
 LAYOUT_OFF = 0.6              # their lines within 0.6 m,
 LAYOUT_OVER = -0.05           # and their spans meeting or overlapping (or their edges: see the grouping)
@@ -359,10 +366,13 @@ LAYOUT_MIN = 4.0              # a shrunk one keeps at least this
 LAYOUT_MAX_SHIFT = 30.0
 
 
-def family(kind, t):
+def family(kind, t, x=0.0, z=0.0, name=''):
     if kind == 1:
         cu = {c.strip() for c in (t.get('cuisine') or '').replace(',', ';').split(';') if c.strip()}
-        return 2 if t.get('amenity') == 'fast_food' or (cu & TAKEOUT_CUISINE) else 1
+        cc = CENTER_CITY[0] <= x <= CENTER_CITY[1] and CENTER_CITY[2] <= z <= CENTER_CITY[3]
+        take = (t.get('amenity') == 'fast_food' or (cu & TAKEOUT_CUISINE) or (cu & COUNTER_CUISINE) or t.get('takeaway') == 'only'
+                or bool(TAKEOUT_NAME.search(name or '')) or ('chinese' in cu and not cc))
+        return 2 if take else 1
     if kind == 6:
         return 8 if (t.get('shop') or '').split(';')[0].strip() in BAKERY_SHOP else 7
     return {0: 0, 2: 3, 3: 4, 4: 5, 5: 6, 7: 9, 8: 10, 9: 11, 10: 12}[kind]
@@ -376,26 +386,76 @@ def clean_name(t, name):
     s = unicodedata.normalize('NFC', s)
     s = FORMAT.sub('', s)
     s = s.replace('\u2014', ' - ').replace('\u2013', '-').replace('\u00b7', ' ').replace('\u2022', ' ')
-    s = re.sub('(,\\s*Inc\\.?|\\s+Inc\\.|\\s+LLC\\.?)$', '', s.strip(), flags=re.I)
-    s = re.sub('\\s+', ' ', s).strip()
-    if len(s) > 40:
-        cut = s[:41].rsplit(' ', 1)[0] if ' ' in s[:41] else s[:40]
-        s = cut.rstrip(' ,-&')
+    s = re.sub('\\s+', ' ', CORP.sub('', s.strip())).strip()
+    if len(s) > NAME_MAX:
+        s = CORP.sub('', cut_name(s)).strip()
     return s
+
+
+CORP = re.compile('(,\\s*Inc\\.?|\\s+Inc\\.|\\s+LLC\\.?)$', re.I)
+
+
+NAME_MAX = 40
+# what a name may be cut at, best first (the third review: cut at 40 characters and stripped of ' ,-&' only, the sidecar
+# carried 'Greater Philadelphia Health Action Inc.:' and "Francoluigi's Italian Restaurant & High"): its head before a
+# separator ('Blue Bird Distilling - Center City Tasting Room'), before an '&' or 'and' joining two names, after a word that
+# ends a business's name ('Philadelphia Brewing Company Peacock Room Bar & Garden'), before a connector ('Weitzman National
+# Museum of American Jewish History Museum Store'), else at the last word that fits; and then never a connector or a
+# separator left dangling at its end
+NAME_SEP = re.compile(r'\s+(?:-{1,2}|\||/)\s+|:\s+|\s+@\s+|\s+at\s+')
+NAME_JOIN = re.compile(r'\s+(?:&|and|\+)\s+', re.I)
+NAME_END = {'company', 'co.', 'restaurant', 'cafe', 'café', 'bar', 'shop', 'store', 'market', 'center', 'centre', 'museum',
+            'pharmacy', 'clinic', 'bakery', 'pizza', 'pizzeria', 'grill', 'kitchen', 'studio', 'salon', 'spa', 'library',
+            'gallery', 'hall', 'house', 'brewery', 'distilling', 'theatre', 'theater', 'college', 'emporium', 'parlor',
+            'deli', 'diner', 'tavern', 'pub', 'lounge', 'barbershop', 'boutique', 'supply', 'hardware'}
+NAME_TAIL = re.compile(r'(?:\s+(?:&|\+|and|n|of|the|at|on|for|by|with|in|de|la|y)|\s*[,;:/&+|@\-])\s*$', re.I)
+
+
+def trim_tail(s):
+    while True:
+        t = NAME_TAIL.sub('', s).rstrip()
+        if t == s or not t:
+            return s
+        s = t
+
+
+def cut_name(s):
+    for m in NAME_SEP.finditer(s):
+        head = trim_tail(s[:m.start()])
+        if 6 <= len(head) <= NAME_MAX:
+            return head
+    for m in NAME_JOIN.finditer(s):
+        head = trim_tail(s[:m.start()])
+        if 12 <= len(head) <= NAME_MAX:
+            return head
+    words = s.split(' ')
+    heads = [' '.join(words[:k]) for k in range(1, len(words)) if len(' '.join(words[:k])) <= NAME_MAX]
+    for h in reversed(heads):
+        if len(h) >= 12 and h.split(' ')[-1].lower() in NAME_END:
+            return trim_tail(h)
+    for k in range(len(heads), 0, -1):
+        nxt = words[k].lower() if k < len(words) else ''
+        if nxt in ('of', 'for', 'at', 'in', 'on', 'and', '&', 'with', 'by') and len(heads[k - 1]) >= 16:
+            return trim_tail(heads[k - 1])
+    return trim_tail(heads[-1]) if heads else s[:NAME_MAX].rstrip()
 
 
 DAYS = ('Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa', 'Su')
 
 
 def parse_hours(oh):
-    """An OSM opening_hours string as [weekday open, close, Saturday open, close, Sunday open, close] in minutes after
-    midnight (a close past midnight runs on past 1440; -1, -1 closed), the weekday taken as Wednesday's; or None when the
-    string is beyond this reader (public holidays, months, weeks, comments are ignored or refuse)."""
+    """An OSM opening_hours string as [weekday open, close, Saturday open, close, Sunday open, close, weekdays shut] in
+    minutes after midnight (a close past midnight runs on past 1440; -1, -1 closed), or None when the string is beyond this
+    reader (public holidays, months, weeks, comments are ignored or refuse). A day's two spans are its first opening to its
+    last close. The weekday's span is the one most of Monday to Friday keep (Wednesday's on a tie), and the seventh value
+    has a bit for each weekday the shop is shut, Monday the first (the third review: 'Tu-Su 17:00-24:00' opened on
+    Mondays); a day OSM does not name is shut. The limit that stays: the page keeps one weekday span, so a weekday open on
+    another span than the rest keeps theirs ('Mo-We 11:00-21:00; Th-Fr 11:00-23:00' closes at 21:00 all week)."""
     if not oh:
         return None
     oh = oh.strip()
     if oh in ('24/7', 'Mo-Su 00:00-24:00', '00:00-24:00'):
-        return [0, 1440, 0, 1440, 0, 1440]
+        return [0, 1440, 0, 1440, 0, 1440, 0]
     day = [None] * 7   # (open, close) or 'off'
     for rule in re.split('[;|]', oh):
         rule = rule.strip()
@@ -446,14 +506,24 @@ def parse_hours(oh):
             day[d] = (o, c)
     if all(d is None for d in day):
         return None
-    out = []
-    for d in (2, 5, 6):
+    wk = day[:5]
+    cnt = {}
+    for v in wk:
+        if v is not None and v != 'off':
+            cnt[v] = cnt.get(v, 0) + 1
+    if cnt:
+        best = max(cnt.values())
+        span = wk[2] if cnt.get(wk[2]) == best else next(v for v in wk if cnt.get(v) == best)
+        out, shut = [span[0], span[1]], sum(1 << d for d in range(5) if wk[d] is None or wk[d] == 'off')
+    else:
+        out, shut = [-1, -1], 0
+    for d in (5, 6):
         v = day[d]
         if v is None or v == 'off':
             out += [-1, -1]
         else:
             out += [v[0], v[1]]
-    return out
+    return out + [shut]
 
 
 import fetch_shops
@@ -470,7 +540,7 @@ for r, e in zip(rows, extra):
     nm = clean_name(t, r['name'])
     names.append(nm)
     n_named += bool(nm)
-    fams.append(family(r['kind'], t))
+    fams.append(family(r['kind'], t, r['x'], r['z'], nm))
     hrs = parse_hours(t.get('opening_hours'))
     n_hours_str += bool(t.get('opening_hours'))
     if hrs is None:

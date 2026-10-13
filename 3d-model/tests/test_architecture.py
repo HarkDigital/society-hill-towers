@@ -37,6 +37,7 @@ class Architecture(unittest.TestCase):
 const THREE = require(THREE_PATH);
 const freeOnUpload=()=>{},hash01=n=>{const v=Math.sin(n)*43758.5453;return v-Math.floor(v);};
 const glassTintKey=()=>.42,RING_AO=.78,v2=[],v2pool=[];
+const SF_HOST_ON=false,sfHostNote=()=>{};   // Round 189's storefront wall notes (off: no storefront art here)
 const pushV=(ch,...args)=>ch.push(...args);
 HELPERS
 WIDE
