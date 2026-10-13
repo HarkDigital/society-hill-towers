@@ -345,8 +345,11 @@ class FreedArrays(unittest.TestCase):
         self.assertIn('freeOnUpload(pg);', lamps)
         self.assertIn('freeOnUpload(g);', lamps)
         # nothing reads them back: the street text, the glow and the splats are only shown, hidden or rendered
-        for name in ('stMesh.geometry', 'poleGlow.geometry', 'LAMPMAP.scene.children'):
+        for name in ('stMesh.geometry', 'LAMPMAP.scene.children'):
             self.assertNotIn(name, s)
+        # the realism pass's halos in wet air render the glow's own buffers a second time (rendered, never read): the one use
+        self.assertEqual(s.count('poleGlow.geometry'), 1)
+        self.assertIn('const p = new THREE.Points(poleGlow.geometry, m);', cut(s, '  function wxHaloMesh() {', '\n  }\n'))
 
     def test_a_phone_builds_no_pole_inventory(self):
         lamps = cut(self.src, "  step('Lighting the streetlamps'", "  step('Fitting out the rooftops'")
