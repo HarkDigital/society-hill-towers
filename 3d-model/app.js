@@ -24924,18 +24924,23 @@ float pinOccGate() {
   // flat surface's share: the full share read as daylight on a car's flanks. Its own patch over the lamp map's uniforms
   // (lampMapU), the share written here (review: it was a text replace on lampLightPatch's output, which silently matched
   // nothing once the realistic lamp patch wrote that line another way, and every car took the full share)
+  // (the integration: under REAL the share is of the realistic patch's own response, the pools' LAMP_REAL_K and the 0.85 it
+  // takes of an albedo, which the cars had skipped: at full strength on every face a white car under a lamp stood out of a
+  // dark street like a daytime one. The faces turned up take the pool, the flanks about half of it)
   const VEH_LAMP_SHARE = 0.35;
   function vehLampPatch(sh, worldExpr) {
     if (sh.fragmentShader.indexOf('uniform float uLampOn;') !== -1) return;
     sh.uniforms.uLampMap = lampMapU.uLampMap; sh.uniforms.uLampBox = lampMapU.uLampBox; sh.uniforms.uLampOn = lampMapU.uLampOn; sh.uniforms.uLampFade = lampMapU.uLampFade;
+    if (REAL) sh.uniforms.uLampReal = lampMapU.uLampReal;
     sh.fragmentShader = sh.fragmentShader
-      .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn;\nvoid main() {')
+      .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade' + (REAL ? ', uLampReal' : '') + '; uniform float uLampOn;\nvoid main() {')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
         'if (uLampOn > 0.001) {',
         '  vec3 lwp = ' + worldExpr + ';',
         '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
         '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
         '  float lk = ' + VEH_LAMP_SHARE.toFixed(2) + ' * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
+        REAL ? '  lk *= 0.85 * uLampReal.y * mix(0.5, 1.0, smoothstep(-0.2, 0.8, dot(normal, (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz)));' : '',
         '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
         '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
         '}',

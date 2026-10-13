@@ -44,3 +44,15 @@ class Units(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class VehicleLamps(unittest.TestCase):
+    """The integration (Oct 13): the vehicles took the streetlamps' pools at the old full strength on every face while the
+    realistic patch had taken the city's to LAMP_REAL_K, so a white car under a lamp stood out of a dark street like a
+    daytime one. Under REAL their share is of the realistic response, the faces turned up taking the most."""
+
+    def test_the_cars_take_the_realistic_response(self):
+        s = (ROOT / 'app.js').read_text()
+        f = cut(s, '  function vehLampPatch(sh, worldExpr) {', '\n  }\n')
+        self.assertIn('if (REAL) sh.uniforms.uLampReal = lampMapU.uLampReal;', f)
+        self.assertIn("lk *= 0.85 * uLampReal.y * mix(0.5, 1.0, smoothstep(-0.2, 0.8, dot(normal, (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz)));", f)
