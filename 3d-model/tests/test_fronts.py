@@ -26,14 +26,17 @@ class FrontsData(unittest.TestCase):
         d = self.d
         self.assertFalse(d['placeholder'], 'stand-in fronts never ship')
         self.assertEqual(set(d['sets']), {'federal', 'southrow', 'shop', 'victorian', 'porch', 'airlite', 'newbuild', 'stonetwin', 'siding',
-                                          'univcity', 'chestnut', 'manayunk', 'loft', 'mixeduse', 'rittenhouse'})   # Round 184: six more
+                                          'univcity', 'chestnut', 'manayunk', 'loft', 'mixeduse', 'rittenhouse',   # Round 184: six more
+                                          'shop1'})   # the realism pass: the one-storey shops
+        self.assertLessEqual(len(d['sets']), 16)   # the set rides in a note's low four bits
         self.assertNotIn('runs', d)   # the page finds every house's street wall itself since Round 181
         for name, s in d['sets'].items():
             # Round 184: files under art/fronts/, a phone's half of each beside it
             for k, ext in (('img', 'webp'), ('imgHalf', 'webp'), ('mask', 'png'), ('maskHalf', 'png')):
                 self.assertRegex(s[k], r'^art/fronts/%s(-mask)?(-half)?\.[0-9a-f]{10}\.%s$' % (name, ext))
                 self.assertTrue((ROOT / s[k]).exists(), s[k])
-            self.assertEqual(s['cell'], [384, 768])
+            # the realism pass: a wide set's cells are wide, a near-square set's near square
+            self.assertEqual(s['cell'], [768, 576] if s['aspect'] > 1 else [512, 640] if s['aspect'] >= 0.7 else [384, 768])
             self.assertEqual(len(s['cells']), 16, name)   # sixteen a set since Round 184
             self.assertLessEqual(len(s['cells']), s['cols'] * s['rows'])
             self.assertEqual(s['porch'], int(name in ('porch', 'univcity')), name)
@@ -98,9 +101,10 @@ class PageWiring(unittest.TestCase):
 
     def test_every_tier_notes_its_houses(self):
         s = self.s
-        self.assertIn("frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, b.fa, tCode, area, true, style);", s)
-        self.assertIn("frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style);", s)
-        self.assertIn("if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style);", s)
+        # the realism pass (buildings 5): each hands its house's own wall colour too
+        self.assertIn("frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, b.fa, tCode, area, true, style, color);", s)
+        self.assertIn("frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style, c);", s)
+        self.assertIn("if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style, c);", s)
         self.assertIn("const FRONTS_ON = typeof FRONTS_DATA !== 'undefined' && !!FRONTS_DATA && !!FRONTS_DATA.sets && !TIER2;", s)
 
     def test_laid_near_the_eye_after_every_street_is_indexed(self):
@@ -119,7 +123,14 @@ class PageWiring(unittest.TestCase):
         self.assertIn("if (isTouch && !half) { const cv = document.createElement('canvas'); cv.width = im.width >> 1; cv.height = im.height >> 1;", f)
 
     def test_only_the_glass_glows(self):
-        self.assertRegex(self.s, re.escape("float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb"))
+        # the realism pass (buildings 6): the whole opening the bake found glows, its bright bars dark, never the day
+        # paint's dark texels (the luminance gate flipped pane by pane: white panes salted with black)
+        a = self.s.index('  function frontSetRes(s) {')
+        f = self.s[a:self.s.index('\n  }\n', a)]
+        self.assertNotIn('float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb', f)
+        self.assertIn("totalEmissiveRadiance += frMask.r * (1.0 - 0.85 * frBar) * hl * uNight * lit; }", f)
+        self.assertIn("vec3 lit = roomLight(vec2(0.5, vp), vec2(frMask.g * 255.0, floor(vSeed * 997.0)), vSeed, 0.0) * (0.55 + 0.45 * st);", f)   # the facade's own rooms
+        self.assertIn("frBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - frBlur", f)   # a bar is brighter than the opening round it
         self.assertIn("lampLightPatch(sh, 'vWPos', 'wall');", self.s)
 
     def test_towers_are_clad(self):
@@ -147,8 +158,9 @@ class SetsAndSides(unittest.TestCase):
         a = s.index('  const FR_AREAS = {')
         areas = s[a:s.index('\n  // the set a house', a)]
         js = ("const FR_SETS = ['federal', 'southrow', 'shop', 'victorian', 'porch', 'airlite', 'newbuild', 'stonetwin', 'siding',"
-              " 'univcity', 'chestnut', 'manayunk', 'loft', 'mixeduse', 'rittenhouse'];\n"
-              "const FR_SET_IX = (name) => FR_SETS.indexOf(name), FR_STRIDE = 10;\n" + areas + '\n' + fn(s, 'frontSetOf') + fn(s, 'frontSide') + fn(s, 'frontHonest') + fn(s, 'orientedBox') + body)
+              " 'univcity', 'chestnut', 'manayunk', 'loft', 'mixeduse', 'rittenhouse', 'shop1'];\n"
+              "const FR_SET_IX = (name) => FR_SETS.indexOf(name), FR_STRIDE = 10, REAL = true;\n" + areas + '\n' + fn(s, 'frontSetOf') + fn(s, 'frontSide') + fn(s, 'frontHonest')
+              + fn(s, 'frontFitWord') + fn(s, 'frontFitOf') + fn(s, 'orientedBox') + body)
         r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
@@ -171,6 +183,8 @@ console.log(JSON.stringify({
   loftOC: n(frontSetOf([3, 0, 2, 5], 3, 18, 900, false, 6, -100, -900)), shopOC: n(frontSetOf([3, 0, 2, 2], 3, 9, 200, false, 5, -100, -900)),
   mixCC: n(frontSetOf([3, 0, 3, 4], 3, 13, 300, false, 5, -1200, -600)), shopCC: n(frontSetOf([3, 0, 3, 2], 3, 9, 300, false, 5, -1200, -600)),
   newFactory: n(frontSetOf([5, 0, 6, 3], 4, 12, 600, false, 12)), ritLow: n(frontSetOf([0, 0, 2, 2], 1, 8, 90, false, 9, -2300, -200)),
+  // the realism pass: a one-storey shop takes its own set, and a tall postwar house is no airlite
+  shopLow: n(frontSetOf([3, 0, 3, 2], 3, 5.5, 120, false, 5)), postwarTall: n(frontSetOf([0, 0, 4, 2], 1, 12, 85, false, 8)),
 }));
 ''')
         self.assertEqual(o, {'core': 'federal', 'shop': 'shop', 'frame': 'siding', 'stone': 'stonetwin', 'newer': 'newbuild',
@@ -178,7 +192,7 @@ console.log(JSON.stringify({
                              'factory': 'loft', 'flats': None,
                              'rit': 'rittenhouse', 'uc': 'univcity', 'ucLow': 'porch', 'ch': 'chestnut', 'chBig': 'chestnut',
                              'mk': 'manayunk', 'loftOC': 'loft', 'shopOC': 'shop', 'mixCC': 'mixeduse', 'shopCC': 'shop',
-                             'newFactory': None, 'ritLow': 'southrow'})
+                             'newFactory': None, 'ritLow': 'southrow', 'shopLow': 'shop1', 'postwarTall': 'victorian'})
 
     def test_the_street_side(self):
         # a rowhouse 5 m wide and 14 m deep, its long axis along z, a street along x 9 m north of its front wall and

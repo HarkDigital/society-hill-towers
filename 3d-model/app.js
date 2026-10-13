@@ -6181,7 +6181,7 @@
             parts.push({ geom: g, color: new THREE.Color(hex).multiplyScalar(kG), style: st2, baseY: ty || 0 });
           }, b.poly, ty || 0, flatTop, area, tCode, b.fa, i, color.clone().multiplyScalar(1 / kG), false, b.holes && b.holes.length ? b.holes : null);   // the wall in the tiers' register: its darkened lip comes back to the core's
         }
-        if (wallTop && !spec0) frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, b.fa, tCode, area, true, style);
+        if (wallTop && !spec0) frontNote(b.poly, ty || 0, (ty || 0) + wallTop, i, b.fa, tCode, area, true, style, color);
         if (wallTop && !spec0 && b.h > 35) towerSkinNote(b.poly, ty || 0, (ty || 0) + wallTop, style, null, i, color, !!b.minH, 0);
       }
       registerPoly(b.poly);
@@ -9716,7 +9716,7 @@
         const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5, roofLot(style, fa));
         if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
-        if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style);
+        if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style, c);
         if (MID_SKIN && !mh && !spec && h >= 9 && h < 35 && t !== 8 && t !== 9 && frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)
           midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, style, i + 0.11, c, t, fa);   // Round 185
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
@@ -11368,9 +11368,11 @@
   const FRONTS_ON = typeof FRONTS_DATA !== 'undefined' && !!FRONTS_DATA && !!FRONTS_DATA.sets && !TIER2;
   const FR_SETS = FRONTS_ON ? Object.keys(FRONTS_DATA.sets) : [];
   const FR_STRIDE = 10;   // cx, cz, ux, uz, half along u, half along v, base, wall top, seed, set
-  const FRONTS = { buf: new Float32Array(FR_STRIDE * (FRONTS_ON ? 65536 : 1)), n: 0, side: null, cells: null, r: isTouch ? 240 : 380, cell: 160,
+  const FR_CELLS = FRONTS_ON ? Math.max(1, ...Object.values(FRONTS_DATA.sets).map((q) => q.cells.length)) : 1;   // the most cells a set holds (16)
+  const FRONTS = { buf: new Float32Array(FR_STRIDE * (FRONTS_ON ? 65536 : 1)), fit: new Uint32Array(4 * (FRONTS_ON ? 65536 : 1)), col: new Uint32Array(FRONTS_ON ? 65536 : 1), n: 0, side: null, cells: null, r: isTouch ? 240 : 380, cell: 160,
     cam: new THREE.Vector3(1e9, 0, 0), at: 0, set: [], glob: null, laid: 0, perSet: {}, noStreet: 0, ms: 0, error: null };
   const FR_SET_IX = (name) => FR_SETS.indexOf(name);
+  let STOREFRONT_NEAR = 0, STOREFRONT_BASE = 0;   // the storefronts that give way to a generated shop front near the eye, and those on a generated street floor (the realism pass)
   // Round 184: six more sets, four of them with a place of their own (scene-frame boxes: x0, x1, z0, z1)
   const FR_AREAS = {
     cc: [-3050, -650, -1390, 470],         // Center City, Vine to South, the Schuylkill to 7th Street: the mixed-use blocks
@@ -11394,6 +11396,7 @@
     if (u === 3 || u === 4 || t === 3) {
       if (area >= 700) return -1;
       if (h >= (frIn(FR_AREAS.cc, x, z) ? 11 : 13.5)) return FR_SET_IX('mixeduse');
+      if (REAL && h < 7 && FR_SET_IX('shop1') >= 0) return FR_SET_IX('shop1');   // the realism pass: a one-storey shop wore three storeys squashed
       return h < 16 ? FR_SET_IX('shop') : -1;
     }
     if (h > 18) return -1;
@@ -11406,11 +11409,11 @@
     if (m === 1) return FR_SET_IX('siding');
     if (m === 2) return FR_SET_IX('stonetwin');
     if (e === 6 || e === 7) return FR_SET_IX('newbuild');
-    if (e === 4 || e === 5) return FR_SET_IX('airlite');
+    if ((e === 4 || e === 5) && (!REAL || h <= 11)) return FR_SET_IX('airlite');   // the realism pass: a two-storey type
     if (style === 10) return FR_SET_IX('porch');
     return h >= 9.5 ? FR_SET_IX('victorian') : FR_SET_IX('southrow');
   }
-  function frontNote(poly, base, top, seed, fa, t, area, core, style) {
+  function frontNote(poly, base, top, seed, fa, t, area, core, style, col) {
     if (!FRONTS_ON) return;
     const s = frontSetOf(fa, t, top - base, area, core, style & 31, poly[0][0], poly[0][1]);
     if (s < 0) return;
@@ -11421,20 +11424,52 @@
     // (the box's side stands off the real wall at an angle, or across a recess). A side is honest only when the outline's
     // own edges run along it, within 4 degrees and 35 cm, for 85% of its length; a front takes an honest side or none (the
     // procedural facade, doors and all, stands on the rest)
-    const mask = frontHonest(poly, ob);
+    const mask = frontHonest(poly, ob, _frFit);
     if (!mask) { FRONTS.skewed = (FRONTS.skewed || 0) + 1; return; }
     if (FRONTS.n * FR_STRIDE + FR_STRIDE > FRONTS.buf.length) { const nb = new Float32Array(FRONTS.buf.length * 2); nb.set(FRONTS.buf); FRONTS.buf = nb; }
+    if (FRONTS.n * 4 + 4 > FRONTS.fit.length) { const nf = new Uint32Array(FRONTS.fit.length * 2); nf.set(FRONTS.fit); FRONTS.fit = nf; }
+    if (FRONTS.n + 1 > FRONTS.col.length) { const nc = new Uint32Array(FRONTS.col.length * 2); nc.set(FRONTS.col); FRONTS.col = nc; }
+    FRONTS.col[FRONTS.n] = col ? frontColWord(col, core ? CORE_FACADE_GAIN : FACADE_GAIN) : 0;
     FRONTS.buf.set([ob.cx, ob.cz, ob.ux, ob.uz, ob.w / 2, ob.d / 2, base, top, seed, s + 16 * mask], FRONTS.n * FR_STRIDE);
+    FRONTS.fit.set(_frFit, FRONTS.n * 4);
     FRONTS.n++;
   }
+  // the realism pass (critic gap 0, what was left of Mike's "off kilter" after Round 187): an honest side is the box's,
+  // and the wall under it can stand up to 35 cm inside it, turn up to 4 degrees off it and cover only 85% of it, so a
+  // front laid on the box's side floated proud of its wall, crossed it on the slant or overhung its end. Each honest
+  // side keeps the line its own wall runs on (a least-squares fit through the outline's edges along it, taken out to the
+  // outermost long edge so no part of the house stands through the front), and the span those edges cover: one word a
+  // side, the offset in centimetres, the angle in twentieths of a degree, the span's ends in 255ths (FRONTS.fit, 16 bytes
+  // a house, beside the ten floats)
+  const _frFit = new Uint32Array(4);
+  // the realism pass (buildings 5): the house's own wall colour as it renders (its stored colour at the fabric's gain),
+  // its square root to the byte, one word a house (0: none), so the front whose wall is nearest it is laid
+  function frontColWord(c, gk) {
+    const q = (v) => Math.max(1, Math.min(255, Math.round(Math.sqrt(Math.max(0, Math.min(1, v * gk))) * 255)));
+    return ((q(c.r) << 16) | (q(c.g) << 8) | q(c.b)) >>> 0;
+  }
+  function frontFitWord(off, slope, f0, f1) {
+    const oc = Math.max(-127, Math.min(127, Math.round(off * 100))) + 128;
+    const ac = Math.max(-127, Math.min(127, Math.round(Math.atan(slope) * 180 / Math.PI / 0.05))) + 128;
+    const a0 = Math.max(0, Math.min(254, Math.round(f0 * 255))), a1 = Math.max(a0 + 1, Math.min(255, Math.round(f1 * 255)));
+    return (oc | (ac << 8) | (a0 << 16) | (a1 << 24)) >>> 0;
+  }
+  // a side's fit, or null: [offset out from the box side (m), slope along it, start and end of its span (0 to 1 along
+  // the side from the viewer's left as they face the wall)]
+  function frontFitOf(w) {
+    if (!w) return null;
+    return [((w & 255) - 128) / 100, Math.tan(((w >>> 8 & 255) - 128) * 0.05 * Math.PI / 180), (w >>> 16 & 255) / 255, (w >>> 24) / 255];
+  }
   // the box's sides the outline's own walls run along (bit s for side s: 0 +u, 1 -u, 2 +v, 3 -v)
-  function frontHonest(poly, ob) {
+  function frontHonest(poly, ob, fit) {
     const ux = ob.ux, uz = ob.uz, hw = ob.w / 2, hd = ob.d / 2;
     let mask = 0;
+    if (fit) fit.fill(0);
     for (let s = 0; s < 4; s++) {
       const nx = s === 0 ? ux : s === 1 ? -ux : s === 2 ? -uz : uz, nz = s === 0 ? uz : s === 1 ? -uz : s === 2 ? ux : -ux;
       const h = s < 2 ? hw : hd, len = s < 2 ? 2 * hd : 2 * hw;
-      let cover = 0;
+      const rx = nz, rz = -nx;   // along the side, from the viewer's left to their right as they face it
+      let cover = 0, W = 0, S = 0, SS = 0, D = 0, SD = 0, t0 = 1e9, t1 = -1e9, segs = null;
       for (let i = 0; i < poly.length; i++) {
         const p = poly[i], q = poly[(i + 1) % poly.length];
         const ex = q[0] - p[0], ez = q[1] - p[1], L = Math.hypot(ex, ez);
@@ -11442,8 +11477,25 @@
         const dp = (p[0] - ob.cx) * nx + (p[1] - ob.cz) * nz - h, dq = (q[0] - ob.cx) * nx + (q[1] - ob.cz) * nz - h;
         if (Math.abs(dp) > 0.35 || Math.abs(dq) > 0.35) continue;          // not on its line
         cover += L;
+        if (!fit) continue;
+        // the edge as a run of offset over position along the side, integrated along its length
+        const sp = (p[0] - ob.cx) * rx + (p[1] - ob.cz) * rz, sq = (q[0] - ob.cx) * rx + (q[1] - ob.cz) * rz;
+        W += L; S += L * (sp + sq) / 2; SS += L * (sp * sp + sp * sq + sq * sq) / 3;
+        D += L * (dp + dq) / 2; SD += L * (2 * sp * dp + sp * dq + sq * dp + 2 * sq * dq) / 6;
+        t0 = Math.min(t0, sp, sq); t1 = Math.max(t1, sp, sq);
+        (segs || (segs = [])).push(sp, dp, sq, dq, L);
       }
-      if (cover >= 0.85 * len) mask |= 1 << s;
+      if (cover < 0.85 * len) continue;
+      mask |= 1 << s;
+      if (!fit) continue;
+      const det = W * SS - S * S;
+      let a = det > 1e-6 * W * W ? (W * SD - S * D) / det : 0;
+      a = Math.max(-0.07, Math.min(0.07, a));
+      let off = (D - a * S) / W, out = 0;
+      // out to the outermost edge of a metre or so: a bay or a jog proud of the fitted line would stand through the front
+      for (let j = 0; j < segs.length; j += 5) if (segs[j + 4] >= 0.6) out = Math.max(out, segs[j + 1] - (off + a * segs[j]), segs[j + 3] - (off + a * segs[j + 2]));
+      if (out > 0.03) off += out - 0.02;
+      fit[s] = frontFitWord(Math.max(-0.35, Math.min(0.35, off)), a, (t0 + len / 2) / len, (t1 + len / 2) / len);
     }
     return mask;
   }
@@ -11524,8 +11576,8 @@
     shop: [['#2e6a45', '#ebe8de', 2.6, false], ['#a3302d', '#ece6da', 2.6, false], ['#22324f', '#22324f', 0, false],
       ['#1f1f1f', '#1f1f1f', 0, false], ['#5e2333', '#5e2333', 0, false], ['#b49a6e', '#6b4c33', 2.6, false]],
   };
-  AWNING_KINDS.mixeduse = AWNING_KINDS.loft = AWNING_KINDS.shop;   // Round 184
-  const AWN_WIDE = { shop: 1, mixeduse: 1, loft: 1 };   // a storefront's awning runs the width of the front
+  AWNING_KINDS.mixeduse = AWNING_KINDS.loft = AWNING_KINDS.shop1 = AWNING_KINDS.shop;   // Round 184; the realism pass's one-storey shops
+  const AWN_WIDE = { shop: 1, mixeduse: 1, loft: 1, shop1: 1 };   // a storefront's awning runs the width of the front
   const PORCH_COLS = ['#ece8de', '#e4e0d6', '#3b4a3a', '#6b4a3a', '#d8d2c4', '#2f3a48'];
   // the shared vertex work of every front mesh: the world position and normal, and a dithered fade over the radius's last
   // fifth (the procedural facade stands under it, so the front dissolves into it rather than popping)
@@ -11536,6 +11588,24 @@
     sh.uniforms.uFrR = frR;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <project_vertex>', '#include <project_vertex>\n' + FRONT_FADE_V);
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR; varying vec3 vWPos;').replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + FRONT_FADE_F);
+  }
+  const FR_NEAR = 6, _frNear = new Array(FR_NEAR).fill(0), _frNearD = new Array(FR_NEAR).fill(0);
+  function frontNearest(Q, w) {
+    const r = (w >>> 16) & 255, g = (w >>> 8) & 255, b = w & 255;
+    _frNearD.fill(1e18);
+    for (let i = 0; i < Q.length; i++) {
+      const q = Q[i]; if (!q) continue;
+      const d = (q[0] - r) ** 2 + (q[1] - g) ** 2 + (q[2] - b) ** 2;
+      for (let m = 0; m < FR_NEAR; m++) if (d < _frNearD[m]) { for (let t = FR_NEAR - 1; t > m; t--) { _frNearD[t] = _frNearD[t - 1]; _frNear[t] = _frNear[t - 1]; } _frNearD[m] = d; _frNear[m] = i; break; }
+    }
+    return _frNearD[FR_NEAR - 1] >= 1e18 ? null : _frNear;
+  }
+  // whether a front's upper storeys are remapped (buildings 1): its cell's storeys are known and at least four tenths of
+  // a storey stand between its ground floor and its top band on this wall, at the image's own scale (the shader agrees)
+  function frontRemaps(cm, Himg, Hw) {
+    const r = cm.rows;
+    if (!Himg || !r || r[2] < 1) return false;
+    return Hw - r[0] * Himg - (1 - r[1]) * Himg > 0.4 * (r[1] - r[0]) * Himg / r[2];
   }
   // a set's front mesh and its atlas, made the first time one of its houses is laid
   function frontSetRes(s) {
@@ -11569,30 +11639,96 @@
     g.setAttribute('aFr', aFr);
     const gain = S.gain || 0.88, cw = S.cell[0], ch = S.cell[1];
     const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(gain, gain, gain), roughness: 0.9, metalness: 0 });
+    mat.extensions = { derivatives: true };   // roomLight's fwidth on a WebGL 1 device
+    // the realism pass (buildings 1): each cell's storeys as fractions of its image from the foot, [top of the ground
+    // floor, top of the upper storeys' band, how many upper storeys], or none (the cell stretches to the wall as before)
+    const rowsU = { value: Array.from({ length: FR_CELLS }, (_, k) => { const c = S.cells[k]; return c && c.rows ? new THREE.Vector4(c.rows[0], c.rows[1], c.rows[2], 0) : new THREE.Vector4(0, 1, 0, 0); }) };
+    // the set's atlas in uniforms (its columns and rows, the pad across a cell, whether its mask carries the windows'
+    // heights), so every set shares one program: a set's own program compiled the first time its houses came near, a
+    // stall in flight for each of sixteen (the realism pass)
+    const atlasU = { value: new THREE.Vector4(S.cols, S.rows, S.pad / cw, S.pad / ch) }, maskAU = { value: S.maskA ? 1 : 0 };
+    const gl2 = !!renderer.capabilities.isWebGL2;
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aFr; varying float vSeed; varying vec3 vWNorm; varying float vBase;')
-        .replace('#include <uv_vertex>', '#include <uv_vertex>\n{ float cols = ' + S.cols.toFixed(1) + ', rows = ' + S.rows.toFixed(1) + ', pu = ' + (S.pad / cw).toFixed(5) + ', pv = ' + (S.pad / ch).toFixed(5) + ';\n' +
+      sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform; sh.uniforms.uRows = rowsU; sh.uniforms.uSunW = sunWUniform; sh.uniforms.uFrA = atlasU; sh.uniforms.uFrMA = maskAU;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aFr; uniform vec4 uRows[' + FR_CELLS + ']; uniform vec4 uFrA; uniform vec3 uSunW; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrRows; varying vec3 vFrT, vFrSun;')
+        .replace('#include <uv_vertex>', '#include <uv_vertex>\n{ float cols = uFrA.x, rows = uFrA.y, pu = uFrA.z, pv = uFrA.w;\n' +
           '  float col = mod(aFr.x, cols), row = floor(aFr.x / cols + 1e-3);\n' +
-          '  vUv = vec2((col + pu + position.x * (1.0 - 2.0 * pu)) / cols, 1.0 - (row + 1.0 - pv - position.y * (1.0 - 2.0 * pv)) / rows); }\n' +
+          '  vUv = vec2((col + pu + position.x * (1.0 - 2.0 * pu)) / cols, 1.0 - (row + 1.0 - pv - position.y * (1.0 - 2.0 * pv)) / rows);\n' +
+          // the storey remap's constants for the instance: the image's height at its width (aFr.w, 0 for a plain stretch), its
+          // ground floor, its band over the upper storeys, and how many upper storeys fill the wall from the house's foot
+          '  float frH = length(instanceMatrix[1].xyz), Hw = frH - 0.4, Hi = max(aFr.w, 1e-3);\n' +
+          '  vec4 rw = uRows[int(aFr.x + 0.5)];\n' +
+          '  float gf = rw.x * Hi, tp = (1.0 - rw.y) * Hi, sI = (rw.y - rw.x) * Hi / max(rw.z, 1.0);\n' +
+          '  vFrR = vec4(aFr.w, gf, tp, max(1.0, floor((Hw - gf - tp) / sI + 0.5))); vFrRows = rw; vFrT = vec3(position.y * frH - 0.4, Hw, row);\n' +
+          // the reveals (critic gap 7): the sun in the front's own frame, and how far across the mask a window's 16 cm
+          // reveal throws its shadow, so a pane whose sunward neighbour is wall lies in the jamb's and the head's shade
+          '  vec3 frX = normalize(instanceMatrix[0].xyz), frZ = normalize(instanceMatrix[2].xyz);\n' +
+          '  float sTz = dot(uSunW, frZ), rk = 0.16 / max(sTz, 0.15);\n' +
+          '  vFrSun = vec3(dot(uSunW, frX) * rk * (1.0 - 2.0 * pu) / cols / max(length(instanceMatrix[0].xyz), 0.1), uSunW.y * rk * (1.0 - 2.0 * pv) / rows / (aFr.w > 0.0 ? Hi : max(Hw, 0.1)), step(0.03, sTz) * step(0.0, uSunW.y)); }\n' +
           'vSeed = aFr.y; vBase = aFr.z;')
         .replace('#include <project_vertex>', '#include <project_vertex>\nvWNorm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * vec3(0.0, 0.0, 1.0));');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; varying vec3 vWNorm; varying float vBase; vec4 frMask;')
-        .replace('#include <map_fragment>', 'frMask = texture2D(uMask, vUv);\n#include <map_fragment>')
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uFrMA; uniform vec4 uFrA; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrRows; varying vec3 vFrT, vFrSun; vec4 frMask; float frBar; vec2 frUvS; vec3 frDay;\n' + WINDOW_INTERIOR_GLSL)
+        // the storey remap: the ground floor and the band under the cornice at the image's own scale, the upper storeys
+        // between them repeated (the middle ones) or dropped (from the middle) to fill the wall, each at its own height
+        // within a half storey, never one stretched over the wall; the gradients follow the unbroken height, so a seam
+        // between two storeys takes the mip its neighbours do
+        .replace('#include <map_fragment>', [
+          'vec2 frUv = vUv, frG = vUv;',
+          'if (vFrR.x > 0.0) {',
+          '  float Hi = vFrR.x, gf = vFrR.y, tp = vFrR.z, n = vFrR.w, Hw = vFrT.y, t = clamp(vFrT.x, 0.0, Hw), vi;',
+          '  if (t < gf) vi = t / Hi;',
+          '  else if (t > Hw - tp) vi = 1.0 - (Hw - t) / Hi;',
+          '  else { float sH = (Hw - gf - tp) / n, q = (t - gf) / sH, k = floor(q), nU = vFrRows.z;',
+          '    float kI = nU < 1.5 ? 0.0 : (k > n - 1.5 ? nU - 1.0 : min(k, nU - 2.0));',
+          '    vi = vFrRows.x + (kI + q - k) * (vFrRows.y - vFrRows.x) / nU; }',
+          '  frUv.y = 1.0 - (vFrT.z + 1.0 - uFrA.w - vi * (1.0 - 2.0 * uFrA.w)) / uFrA.y;',
+          '  frG.y = -vFrT.x / Hi * (1.0 - 2.0 * uFrA.w) / uFrA.y;',
+          '}',
+          gl2 ? 'vec2 frGx = dFdx(frG), frGy = dFdy(frG);' : '',
+          gl2 ? 'frMask = textureGrad(uMask, frUv, frGx, frGy); vec4 sampledDiffuseColor = textureGrad(map, frUv, frGx, frGy);' : 'frMask = texture2D(uMask, frUv); vec4 sampledDiffuseColor = texture2D(map, frUv);',
+          gl2 ? 'vec3 frBlur = textureGrad(map, frUv, frGx * 8.0 + vec2(0.004, 0.0), frGy * 8.0 + vec2(0.0, 0.002)).rgb;' : 'vec3 frBlur = texture2D(map, frUv, 3.0).rgb;',
+          // after dark the painted daylight leaves the glass (its sky reflections, lit by the lamps, read as grey cards);
+          // a bright bar inside the opening (a muntin, a sash: brighter than the opening round it, where a broad
+          // reflection is not) stays as it is and stands dark against a lit room
+          'frBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - frBlur, vec3(0.2126, 0.7152, 0.0722)));',
+          // a window a few pixels across has no bars to see, and the test only salts its edge with dark specks
+          'frBar *= 1.0 - smoothstep(25.0, 70.0, distance(vWPos, cameraPosition));',
+          'frDay = sampledDiffuseColor.rgb;',
+          'sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, sampledDiffuseColor.rgb * 0.22, frMask.r * uNight);',
+          'diffuseColor *= sampledDiffuseColor; frUvS = frUv;',
+          // the jambs' and the head's shade on the glass at every hour (critic gap 7): the opening's own mask, blurred, falls
+          // off toward its edges, and the glass darkens there as it does in a reveal
+          gl2 ? 'float frAo = textureGrad(uMask, frUv, frGx * 4.0 + vec2(0.003, 0.0), frGy * 4.0 + vec2(0.0, 0.0015)).r;' : 'float frAo = texture2D(uMask, frUv, 2.0).r;',
+          'diffuseColor.rgb *= mix(1.0, 0.7 + 0.3 * smoothstep(0.45, 0.9, frAo), frMask.r);',
+        ].join('\n'))
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float frRv = texture2D(uMask, frUvS + vFrSun.xy).r; reflectedLight.directDiffuse *= 1.0 - 0.65 * vFrSun.z * frMask.r * (1.0 - frRv); }')
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, frMask.r);')
-        // a lit window: four houses in ten, and in a lit house about two windows in three; a shop's display glass in nine
-        // shops in ten; only the near-neutral dark glass inside the mask glows, never the frames or a painted board
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.6, fract(vSeed * 7.31)); float wr = fract(sin(frMask.g * 255.0 * 12.9898 + vSeed * 78.233) * 43758.5453); float wl = step(0.34, wr);\n' +
-          '  float shopG = step(0.3, frMask.b) * (1.0 - step(0.7, frMask.b)); hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3))); wl = max(wl, shopG);\n' +
-          '  float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + gain.toFixed(2) + ');\n' +
-          '  float cmx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)), cmn = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));\n' +
-          '  glass *= 1.0 - smoothstep(0.38, 0.62, (cmx - cmn) / max(cmx, 1e-4));\n' +
-          '  vec3 warm = mix(mix(vec3(1.0, 0.68, 0.38), vec3(0.95, 0.82, 0.62), fract(wr * 3.7)), vec3(1.0, 0.8, 0.56), shopG);\n' +
-          '  totalEmissiveRadiance += frMask.r * glass * hl * wl * uNight * warm * (0.45 + 0.25 * fract(wr * 9.1)) * (1.0 + 0.2 * shopG); }');
+        // a lit window: three houses in four have someone home, and a shop's display glass lights in nine shops in ten. The
+        // realism pass (buildings 6, night 2): the whole opening the bake found glows, not the dark texels of the day's
+        // paint inside it (which flipped pane by pane: white panes salted with black); behind a house's window the room
+        // the facade's own windows draw (roomLight: about half the rooms lit, a home's lamp and ceiling, its blinds), at
+        // the same brightness, so a front's windows no longer sit at half the lit rooms beside them; the bars across it dark
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.25, fract(vSeed * 7.31));\n' +
+          '  float shopG = step(0.3, frMask.b) * (1.0 - step(0.7, frMask.b)); hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3)));\n' +
+          '  float vp = mix(0.5, clamp((frMask.a - 0.5) * 2.0, 0.0, 1.0), uFrMA);\n' +
+          '  float dl = dot(frDay, vec3(0.2126, 0.7152, 0.0722)), bl = dot(frBlur, vec3(0.2126, 0.7152, 0.0722)), st = clamp(dl / max(bl, 0.015), 0.25, 1.8);\n' +
+          // the painted curtains and blinds stay faintly in the light, brighter than the glass beside them as a backlit
+          // curtain is
+          '  vec3 lit = roomLight(vec2(0.5, vp), vec2(frMask.g * 255.0, floor(vSeed * 997.0)), vSeed, 0.0) * (0.55 + 0.45 * st);\n' +
+          // a shop's display: lit where its painted glass is dark (softened toward its neighbours, so a reflection's noise
+          // cannot flip it texel by texel), brighter under the ceiling, warm or a cooler white, and carrying the painted
+          // display's own pattern (its goods, its mullions and frames, darker or lighter than the glass round them), so it
+          // is never a flat sheet of light; the painted goods and frames off the glass only faintly, from within (the day's
+          // paint at full strength was a grey photograph pasted over the night)
+          '  if (shopG > 0.5) { float sg = 1.0 - smoothstep(0.05, 0.3, mix(dl, bl, 0.35));\n' +
+          '    vec3 sc = mix(vec3(1.0, 0.76, 0.5), vec3(1.0, 0.92, 0.8), step(0.5, fract(vSeed * 5.1)));\n' +
+          '    lit = sc * (sg * (0.25 + 0.35 * smoothstep(0.3, 1.0, vp)) * (0.3 + 0.7 * st) + (1.0 - sg) * 0.06 * frDay); }\n' +
+          '  totalEmissiveRadiance += frMask.r * (1.0 - 0.85 * frBar) * hl * uNight * lit; }');
       frontFade(sh);
       lampLightPatch(sh, 'vWPos', 'wall');
+      wxSurfacePatch(sh);   // the realism pass (critic gap 8): the rain, the snow and the clouds' shadows, as on the walls round it
     };
-    mat.customProgramCacheKey = () => 'house-fronts-' + s;
+    mat.customProgramCacheKey = () => 'house-fronts|wx';
     const m = new THREE.InstancedMesh(g, mat, R.cap);
     m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = false;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -11600,6 +11736,7 @@
     groupCity.add(m);
     R.mesh = m; R.aFr = aFr; R.cells = S.cells; R.S = S;
     R.corCol = S.cells.map((c) => frontStored(c.cornice, gain)); R.stepCol = frontStored(S.step, gain);
+    R.wallQ = S.cells.map((c) => { if (!c.wall) return null; const w = frontStored(c.wall, gain); return [Math.sqrt(w.r) * 255, Math.sqrt(w.g) * 255, Math.sqrt(w.b) * 255]; });
     R.porchCol = PORCH_COLS.map((h) => frontStored(h, gain));
     R.awnKinds = (AWNING_KINDS[FR_SETS[s]] || []).map((kd) => [frontStored(kd[0], gain), frontStored(kd[1], gain), kd[2], kd[3]]);
     return R;
@@ -11608,6 +11745,7 @@
   function frontGlobals() {
     if (FRONTS.glob) return FRONTS.glob;
     const caps = isTouch ? { cor: 1800, stoop: 1400, awnS: 500, awnF: 400, porch: 400 } : { cor: 5000, stoop: 4000, awnS: 1400, awnF: 1200, porch: 1200 };
+    caps.crown = caps.cor;
     const mk = (g, mat, cap, name, shadow) => {
       const m = new THREE.InstancedMesh(g, mat, cap);
       m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = shadow && !isTouch;
@@ -11615,7 +11753,15 @@
       m.setColorAt(0, new THREE.Color(1, 1, 1)); m.instanceColor.setUsage(THREE.DynamicDrawUsage);
       m.name = name; groupCity.add(m); return m;
     };
-    const plain = (key) => { const mt = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0 }); mt.onBeforeCompile = (sh) => frontFade(sh); mt.customProgramCacheKey = () => key; return mt; };
+    const plain = (key) => { const mt = new THREE.MeshStandardMaterial({ roughness: 0.8, metalness: 0 }); mt.onBeforeCompile = (sh) => { frontFade(sh); if (REAL) wxSurfacePatch(sh); }; mt.customProgramCacheKey = () => key + (REAL ? '|wx' : ''); return mt; };
+    // the realism pass (buildings 4): the crown moulding along a front's head, in metres (z out, y up) and 0 to 1 along
+    // x: a fillet, an ovolo and the corona's drip, 22 cm tall and 20 cm proud, closed at both ends
+    const crownG = (() => {
+      const sh = new THREE.Shape([[0, 0], [-0.05, 0], [-0.05, 0.05], [-0.12, 0.10], [-0.18, 0.16], [-0.20, 0.22], [0, 0.22]].map(([x, y]) => new THREE.Vector2(x, y)));
+      const g = new THREE.ExtrudeGeometry(sh, { depth: 1, bevelEnabled: false, steps: 1 });
+      g.rotateY(Math.PI / 2); g.deleteAttribute('uv');
+      return g;
+    })();
     // a unit box, 0 to 1 on every axis: x along the wall, y up, z out
     const box = new THREE.BoxGeometry(1, 1, 1).translate(0.5, 0.5, 0.5);
     // a stoop at a width of 1: the step and the landing, from 0.3 below the ground
@@ -11641,13 +11787,15 @@
         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vAlong; varying vec4 vAwn;')
           .replace('#include <color_fragment>', '#include <color_fragment>\nif (vAwn.w > 0.0) { float sx = fract(vAlong * vAwn.w); diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, smoothstep(0.46, 0.54, sx) - smoothstep(0.96, 1.0, sx)); }');
         frontFade(sh);
+        if (REAL) wxSurfacePatch(sh);
       };
-      mt.customProgramCacheKey = () => key;
+      mt.customProgramCacheKey = () => key + (REAL ? '|wx' : '');
       return mt;
     };
     const G = {
-      cor: mk(box, plain('front-cornice'), caps.cor, 'fronts-cornices', true),
-      stoop: mk(stoopG, plain('front-stoop'), caps.stoop, 'fronts-stoops', false),
+      cor: REAL ? null : mk(box, plain('front-cornice'), caps.cor, 'fronts-cornices', true),
+      crown: REAL ? mk(crownG, plain('front-crown'), caps.crown, 'fronts-crowns', true) : null,
+      stoop: REAL ? null : mk(stoopG, plain('front-stoop'), caps.stoop, 'fronts-stoops', false),
       awnS: mk(awnG(true), awnMat('front-awning-s'), caps.awnS, 'fronts-awnings-scalloped', true),
       awnF: mk(awnG(false), awnMat('front-awning-f'), caps.awnF, 'fronts-awnings-flat', true),
       porch: mk(porchG, plain('front-porch'), caps.porch, 'fronts-porches', true),
@@ -11669,7 +11817,7 @@
   const TOWER_TILE_ALT = { glass: ['glass', 'silver', 'unitized', 'fins', 'greenglass'], glassdark: ['glassdark', 'blackgrid', 'goldglass'],
     precast: ['precast', 'greygrid', 'brutalist'], deco: ['deco', 'officebrick', 'limestone', 'terracotta'], brick: ['brick', 'officebrick', 'darkbrick'],
     stone: ['deco', 'limestone', 'granite', 'marble'], bands: ['glassdark', 'ribbon', 'blueband'] };
-  const TSKIN = { cands: [], meshes: [], laid: {}, ms: 0, error: null };
+  const TSKIN = { cands: [], meshes: [], laid: {}, bases: {}, ms: 0, error: null };
   const TSKIN_ON = FRONTS_ON && !!FRONTS_DATA.tiles && Object.keys(FRONTS_DATA.tiles).length > 0;
   function towerSkinNote(poly, y0, y1, style, spec, seed, col, lifted, t) {
     if (!TSKIN_ON || y1 - y0 < 30 || (style >= 24 && style <= 29)) return;
@@ -11684,7 +11832,52 @@
       : style === 18 ? ['resi', 'glassresi', 'hotel', 'brick'] : style === 19 || style === 12 ? ['brick', 'officebrick', 'darkbrick']
       : ['precast', 'officebrick', 'metalpanel', 'greygrid']);
     if (!kind) return;
-    TSKIN.cands.push({ poly, y0: lifted ? y0 : y0 + 5, y1, kind, seed, col: col.clone() });
+    TSKIN.cands.push({ poly, y0: lifted ? y0 : y0 + 5, y1, kind, seed, col: col.clone(), g0: lifted ? null : y0, spec: !!spec });
+  }
+  // the realism pass (buildings 7): an outline's walls for the cladding, each a run of edges turning less than 25 degrees
+  // from the one before (a curved or faceted wall is one wall): the edge each walk starts at (a corner, so no run is split
+  // across the outline's first vertex), each edge's run, each run's length, and how far along its run each edge starts
+  function skinWalls(P) {
+    const n = P.length, el = new Float64Array(n), dx = new Float64Array(n), dz = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      const a = P[i], b = P[(i + 1) % n], ex = b[0] - a[0], ez = b[1] - a[1], L = Math.hypot(ex, ez);
+      el[i] = L; if (L > 1e-9) { dx[i] = ex / L; dz[i] = ez / L; }
+    }
+    const corner = new Uint8Array(n);
+    let prev = -1;
+    for (let k = n - 1; k >= 0; k--) if (el[k] >= 0.05) { prev = k; break; }
+    for (let i = 0; i < n; i++) {
+      if (el[i] < 0.05) continue;
+      if (prev >= 0 && dx[prev] * dx[i] + dz[prev] * dz[i] < 0.906) corner[i] = 1;   // cos 25 degrees
+      prev = i;
+    }
+    const s0 = corner.indexOf(1), start = s0 < 0 ? 0 : s0;
+    const run = new Int32Array(n), at = new Float64Array(n), len = [];
+    let r = -1;
+    for (let k = 0; k < n; k++) {
+      const i = (start + k) % n;
+      if (k === 0 || corner[i]) { r++; len.push(0); }
+      run[i] = r; at[i] = len[r]; len[r] += el[i];
+    }
+    return { start, run, at, len };
+  }
+  // the realism pass (critic gap 4): the street floor under each wall kind, two generated kinds a wall kind, dealt by the
+  // tower's seed (FRONTS_DATA.bases, bake_fronts.py bake_base): a wall that starts over its own ground stands on one, and
+  // the storefront boxes on it give way (they stood over the generated walls as navy and brown slabs)
+  const SKIN_BASE = { glass: ['lobby1', 'lobby2'], silver: ['lobby2', 'lobby1'], unitized: ['lobby2', 'lobby1'], fins: ['lobby2', 'office1'],
+    greenglass: ['lobby1', 'lobby2'], glassdark: ['lobby1', 'office2'], blackgrid: ['office2', 'lobby1'], goldglass: ['lobby1', 'office2'],
+    blueband: ['lobby1', 'lobby2'], ribbon: ['office1', 'office2'], precast: ['office1', 'office2'], greygrid: ['office1', 'office2'],
+    brutalist: ['office2', 'office1'], metalpanel: ['office1', 'lobby2'], deco: ['stone1', 'stone2'], limestone: ['stone1', 'stone2'],
+    granite: ['stone2', 'stone1'], marble: ['stone1', 'stone2'], terracotta: ['stone1', 'shop2'], officebrick: ['stone2', 'shop1'],
+    brick: ['apt1', 'apt2'], resi: ['apt2', 'apt1'], hotel: ['office1', 'apt2'], glassresi: ['aptmod2', 'lobby2'], darkbrick: ['aptmod1', 'aptmod2'],
+    aptbrick: ['apt1', 'shop1'], gardenapt: ['apt2', 'apt1'], loftbrick: ['loft1', 'shop2'], warehouse: ['loft1', 'loft2'],
+    institution: ['school1', 'school2'], modernapt: ['aptmod1', 'aptmod2'], commercial: ['office1', 'shop1'], paintedbrick: ['shop1', 'shop2'],
+    officemid: ['office1', 'lobby1'], stucco: ['aptmod2', 'apt2'] };
+  const SKIN_BASES = REAL && typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.bases ? FRONTS_DATA.bases : null;
+  function skinBaseOf(c) {
+    if (!SKIN_BASES || c.g0 == null || c.y0 - c.g0 < 2.5) return null;
+    const ok = (SKIN_BASE[c.kind] || []).filter((k) => SKIN_BASES[k]);
+    return ok.length ? ok[Math.floor(hash01(c.seed * 3.93 + 0.21) * ok.length) % ok.length] : null;
   }
   // Round 185 (Mike: make it look photo realistic, facades everywhere): the mid-rise walls, three to ten storeys, that no
   // house front dresses (apartments, lofts, warehouses, schools, offices, shops with flats over them) take a generated
@@ -11697,6 +11890,8 @@
     13: ['modernapt', 'darkbrick', 'stucco'], 4: ['institution', 'limestone'], 7: ['commercial', 'ribbon'], 17: ['institution', 'limestone', 'deco'],
     14: ['institution', 'limestone'], 15: ['officemid', 'ribbon'], 5: ['commercial', 'paintedbrick', 'aptbrick'],
   };
+  // the wall kinds whose rooms are homes (a flat's lamps and blinds after dark), the rest are offices (suites and floors)
+  const SKIN_HOME = new Set(['resi', 'glassresi', 'hotel', 'brick', 'darkbrick', 'aptbrick', 'gardenapt', 'modernapt', 'stucco', 'loftbrick', 'warehouse', 'paintedbrick']);
   function midSkinNote(poly, y0, y1, style, seed, col, t, fa) {
     if (!MID_SKIN || !TSKIN_ON || y1 - y0 < 8) return;
     const st = style & 31;
@@ -11706,14 +11901,48 @@
     const ok = list.filter((k) => FRONTS_DATA.tiles[k]);
     if (!ok.length) return;
     const kind = ok[Math.floor(hash01(seed * 5.17 + 0.3) * ok.length) % ok.length];
-    TSKIN.cands.push({ poly, y0: y0 + 4, y1, kind, seed, col: col.clone(), mid: true });
+    TSKIN.cands.push({ poly, y0: y0 + 4, y1, kind, seed, col: col.clone(), mid: true, g0: y0 });
     TSKIN.mid = (TSKIN.mid || 0) + 1;
   }
   function frontsProbe() {
     return { on: FRONTS_ON, notes: FRONTS.n, sets: FR_SETS, laid: FRONTS.laid, perSet: { ...FRONTS.perSet }, relief: FRONTS.relief ? { ...FRONTS.relief } : null,
       dropped: FRONTS.dropped || 0, keep: FR_KEEP, failed: FRONTS.set.map((r, s) => r && r.failed ? FR_SETS[s] : null).filter(Boolean), skewed: FRONTS.skewed || 0, noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
       r: FRONTS.r, ms: FRONTS.ms, error: FRONTS.error, build: PERF.fronts || null,
-      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, ms: TSKIN.ms, error: TSKIN.error } };
+      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, parapets: TSKIN.parapets || 0, ms: TSKIN.ms, error: TSKIN.error },
+      storefrontsNear: STOREFRONT_NEAR, storefrontsOnBase: STOREFRONT_BASE, bases: { ...TSKIN.bases }, fit: frontFitStats(), fitAt: (x, z, set) => frontFitAt(x, z, set) };
+  }
+  // the realism pass's measure of the fit (critic gap 0): over every honest side, the offset of the wall's line from the
+  // box's side and its angle (median and 95th percentile), and the share whose wall covers less than 98% of the side
+  function frontFitStats() {
+    if (!FRONTS_ON || !FRONTS.n) return null;
+    const off = [], ang = [];
+    let short = 0, sides = 0;
+    for (let k = 0; k < FRONTS.n; k++) for (let s2 = 0; s2 < 4; s2++) {
+      const f = frontFitOf(FRONTS.fit[k * 4 + s2]);
+      if (!f) continue;
+      sides++; off.push(Math.abs(f[0])); ang.push(Math.abs(Math.atan(f[1])) * 180 / Math.PI);
+      if (f[3] - f[2] < 0.98) short++;
+    }
+    const q = (v, p) => { v.sort((a, b) => a - b); return v.length ? +v[Math.min(v.length - 1, Math.floor(p * v.length))].toFixed(3) : 0; };
+    return { sides, off50: q(off, 0.5), off95: q(off, 0.95), ang50: q(ang, 0.5), ang95: q(ang, 0.95), short };
+  }
+  // the nearest note with a street side (of a set, if named), and its laid frame as frontsLay lays it
+  function frontFitAt(x, z, set) {
+    if (!FRONTS.side) return null;
+    const B = FRONTS.buf;
+    let best = -1, bd = 1e18;
+    for (let k = 0; k < FRONTS.n; k++) {
+      const o = k * FR_STRIDE;
+      if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue;
+      const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2;
+      if (d >= bd) continue;
+      let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k);
+      if (s2 < 0) continue;
+      bd = d; best = k;
+    }
+    if (best < 0) return null;
+    const o = best * FR_STRIDE, s2 = FRONTS.side[best];
+    return { k: best, set: FR_SETS[(B[o + 9] | 0) & 15], side: s2, fit: frontFitOf(FRONTS.fit[best * 4 + s2]), cx: B[o], cz: B[o + 1], base: B[o + 6], top: B[o + 7] };
   }
 
 
@@ -11842,7 +12071,7 @@
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5, roofLot(style, fa));
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + 'Form' + rb[1]); colStat(rplan ? tk + 'Pitched' : tk + 'Flat'); if (wideSeam && cz > -5180 && cz < -4480 && cx > -3700 && cx < 2300) { colStat('farBandForm' + rb[1]); colStat(rplan ? 'farBandPitched' : 'farBandFlat'); colStat(capC ? 'farBandCap' : 'farBandNoCap', capC); colStat('farBand', c); } }
       if (wideSeam && !mh && h >= 35 && t !== 8 && t !== 9) towerSkinNote(poly, base, base + h, style, null, i + 0.37, c, false, t);   // Round 182: the far ring's towers too
-      if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style);
+      if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style, c);
       if (MID_SKIN && wideSeam && !mh && h >= 9 && h < 35 && t !== 8 && t !== 9 && frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)
         midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + h, style, i + 0.53, c, t, fa);   // Round 185   // the far ring's houses (Round 181; a phone's stop at the outer districts)
       if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
@@ -12458,36 +12687,106 @@
     for (const o of REBUILD_OCC) own.push([o.bb[0] - 2, o.bb[1] + 2, o.bb[2] - 2, o.bb[3] + 2, o.ring]);   // and so does every rebuilt landmark (Round 161)
     for (const s of REBUILD_SKIP) own.push([s.bb[0] - 2, s.bb[1] + 2, s.bb[2] - 2, s.bb[3] + 2, s.ring]);   // its whole site, not only the outlines it replaced (review)
     const ownsIt = (x, z) => { for (const o2 of own) if (x > o2[0] && x < o2[1] && z > o2[2] && z < o2[3] && pointInPoly(x, z, o2[4])) return true; return false; };
+    // the realism pass (buildings 0): a storefront on a wall a generated shop front dresses near the eye (the shop, the
+    // shop under flats, the loft and the one-storey shop: each paints its own shopfront, door and steps) dissolves where
+    // that front comes in, on the fronts' own dither and radius, and stands beyond it for the procedural facade; the
+    // houses with such a front, bucketed in 40 m cells, and a storefront is theirs when its inner point lies in one's
+    // box and it faces within 25 degrees of one of its honest sides
+    const SHOPPY = new Set(['shop', 'mixeduse', 'loft', 'shop1'].map(FR_SET_IX).filter((k) => k >= 0)), shopCells = new Map();
+    if (FRONTS_ON) for (let k = 0; k < FRONTS.n; k++) {
+      const o = k * FR_STRIDE;
+      if (!SHOPPY.has((FRONTS.buf[o + 9] | 0) & 15)) continue;
+      const key = Math.floor(FRONTS.buf[o] / 40) + ':' + Math.floor(FRONTS.buf[o + 1] / 40);
+      let a = shopCells.get(key); if (!a) shopCells.set(key, a = []); a.push(k);
+    }
+    const underFront = (x, z, nx, nz) => {
+      const px = x - nx * 1.2, pz = z - nz * 1.2, gx = Math.floor(px / 40), gz = Math.floor(pz / 40), B = FRONTS.buf;
+      for (let gx2 = gx - 1; gx2 <= gx + 1; gx2++) for (let gz2 = gz - 1; gz2 <= gz + 1; gz2++) {
+        const a = shopCells.get(gx2 + ':' + gz2); if (!a) continue;
+        for (const k of a) {
+          const o = k * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], dx = px - B[o], dz = pz - B[o + 1];
+          if (Math.abs(dx * ux + dz * uz) > B[o + 4] + 0.5 || Math.abs(-dx * uz + dz * ux) > B[o + 5] + 0.5) continue;
+          const honest = (B[o + 9] | 0) >> 4;
+          for (let s2 = 0; s2 < 4; s2++) {
+            if (!((honest >> s2) & 1)) continue;
+            const sx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, sz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux;
+            if (sx * nx + sz * nz > 0.906) return true;   // cos 25 degrees
+          }
+        }
+      }
+      return false;
+    };
+    // the walls standing on a generated street floor (critic gap 4): their storefronts are not built
+    const baseCells = new Map();
+    if (SKIN_BASES) for (const c of TSKIN.cands) {
+      if (!skinBaseOf(c)) continue;
+      let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
+      for (const q of c.poly) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
+      const rec = [x0 - 0.5, x1 + 0.5, z0 - 0.5, z1 + 0.5, c.poly];
+      for (let gx = Math.floor(x0 / 40); gx <= Math.floor(x1 / 40); gx++) for (let gz = Math.floor(z0 / 40); gz <= Math.floor(z1 / 40); gz++) {
+        const key = gx + ':' + gz; let a = baseCells.get(key); if (!a) baseCells.set(key, a = []); a.push(rec);
+      }
+    }
+    const onBase = (x, z) => { const a = baseCells.get(Math.floor(x / 40) + ':' + Math.floor(z / 40)); if (a) for (const o2 of a) if (x > o2[0] && x < o2[1] && z > o2[2] && z < o2[3] && pointInPoly(x, z, o2[4])) return true; return false; };
+    let nearN = 0, baseN = 0;
     for (let i = 0; i < n; i++) {
       const o = i * 8;
       const x = body[o] * 0.2, z = body[o + 1] * 0.2, ang = body[o + 2] / 1000, w = body[o + 3] / 10, kind = body[o + 4], col = body[o + 5] & 15, fh = body[o + 6] / 10, flags = body[o + 7];
       if (w < 2.5 || fh < 2.5) continue;
       const nx = Math.cos(ang), nz = Math.sin(ang), ry = Math.atan2(-nx, -nz);   // box length along the facade tangent (-nz, nx)
       if (ownsIt(x - nx * 1.2, z - nz * 1.2)) continue;
+      if (baseCells.size && onBase(x - nx * 1.2, z - nz * 1.2)) { baseN++; continue; }
       const gy = siteY(x, z, 'ground');
       const glassH = (flags & 4) ? fh - 0.6 : fh * 0.55;
       const mk = (bw, bh, bd, off, y, tilt) => { const g = new THREE.BoxGeometry(bw, bh, bd); if (tilt) g.rotateX(tilt); g.rotateY(ry); g.translate(x + nx * off, y, z + nz * off); return g; };
+      const near = FRONTS_ON && shopCells.size && underFront(x, z, nx, nz) ? 1 : 0;
+      nearN += near;
       // the frame band (dark) then the glass, both just proud of the wall, so the pattern shader's windows stop at the shop
-      parts.push({ geom: mk(w - 0.2, glassH + 0.5, 0.10, 0.12, gy + 0.25 + (glassH + 0.5) / 2, 0), color: cFrame, style: 3 });
-      glow.push({ geom: mk(w - 0.7, glassH, 0.14, 0.14, gy + 0.45 + glassH / 2, 0), color: cGlass, style: 3, lit: cLit });
-      if (flags & 1) parts.push({ geom: mk(w - 0.5, 0.12, 1.1, 0.62, gy + fh + 0.05, -0.32), color: AWNING[col], style: 3 });
-      if (flags & 2) glow.push({ geom: mk(w - 0.8, 0.7, 0.10, 0.14, gy + fh + 0.85 + ((flags & 1) ? 0.25 : 0), 0), color: SIGN[col], style: 3, lit: SIGN[col] });
+      parts.push({ geom: mk(w - 0.2, glassH + 0.5, 0.10, 0.12, gy + 0.25 + (glassH + 0.5) / 2, 0), color: cFrame, style: 3, near });
+      glow.push({ geom: mk(w - 0.7, glassH, 0.14, 0.14, gy + 0.45 + glassH / 2, 0), color: cGlass, style: 3, lit: cLit, near });
+      if (flags & 1) parts.push({ geom: mk(w - 0.5, 0.12, 1.1, 0.62, gy + fh + 0.05, -0.32), color: AWNING[col], style: 3, near });
+      if (flags & 2) glow.push({ geom: mk(w - 0.8, 0.7, 0.10, 0.14, gy + fh + 0.85 + ((flags & 1) ? 0.25 : 0), 0), color: SIGN[col], style: 3, lit: SIGN[col], near });
       made++;
     }
-    if (parts.length) { const g = mergeColored(parts); freeOnUpload(g); groupCity.add(new THREE.Mesh(g, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05 }))); }
+    // the dissolve's flag rides in the sign of each vertex's red (no stream of its own: on a phone a float a vertex over
+    // every storefront was megabytes of GPU memory, and a byte stream is never uploaded, Round 158), and its hook: the
+    // fronts' dither turned over, so where a front's fragment stands the storefront's is gone and the two never show at once
+    const nearMark = (list, g) => {
+      if (!nearN) return;
+      const col = g.attributes.color.array;
+      let o = 0;
+      list.forEach((p2) => { const c = p2.geom.index ? p2.geom.index.count : p2.geom.attributes.position.count; if (p2.near) for (let v = o; v < o + c; v++) col[v * 3] = -Math.max(col[v * 3], 1e-4); o += c; });
+    };
+    const nearHook = (sh) => {
+      if (!nearN) return;
+      sh.uniforms.uFrR = frR;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFrontNear; varying vec3 vSfW;')
+        .replace('#include <color_vertex>', '#include <color_vertex>\nvFrontNear = 1.0 - step(-1e-5, color.r); vColor = abs(vColor);')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvSfW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR; varying float vFrontNear; varying vec3 vSfW;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vFrontNear > 0.5) { float fd = distance(vSfW, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }');
+    };
+    if (parts.length) {
+      const g = mergeColored(parts); nearMark(parts, g); freeOnUpload(g);
+      const pm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7, metalness: 0.05 });
+      if (nearN) { pm.onBeforeCompile = (sh) => { nearHook(sh); wxSurfacePatch(sh); }; pm.customProgramCacheKey = () => 'storefront-near|wx'; }   // it keeps the weather the end of the build would give it
+      groupCity.add(new THREE.Mesh(g, pm));
+    }
     if (glow.length) {   // glass and signs: their own dark colour by day, lit by their `lit` colour after dark
       const gm = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.25, metalness: 0.15 });
       const lit = glow.map((p2) => ({ geom: p2.geom, color: p2.lit, style: 3 }));
       const g = mergeColored(glow); const gl = mergeColored(lit);
-      g.setAttribute('aLit', gl.getAttribute('color')); freeOnUpload(g); gl.dispose();
+      nearMark(glow, g); g.setAttribute('aLit', gl.getAttribute('color')); freeOnUpload(g); gl.dispose();
       gm.onBeforeCompile = (sh) => {
         sh.uniforms.uNight = nightUniform;
         sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec3 aLit; varying vec3 vLit;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvLit = aLit;');
         sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight; varying vec3 vLit;').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLit * uNight * 2.2;');
+        nearHook(sh);
       };
+      if (nearN) gm.customProgramCacheKey = () => 'storefront-glow-near';
       groupCity.add(new THREE.Mesh(g, gm));
     }
-    STOREFRONT_N = made;
+    STOREFRONT_N = made; STOREFRONT_NEAR = nearN; STOREFRONT_BASE = baseN;
   });
   step('Raising the overpasses', () => {
     if (!OVP.el.length && !OVP.cor.length && !OVP.sk.length) return;
@@ -21511,6 +21810,8 @@ float pinOccGate() {
     }
     FRONTS.cells = new Map([...cells].map(([k, a]) => [k, Int32Array.from(a)]));
     FRONTS.buf = B.slice(0, FRONTS.n * FR_STRIDE);   // the slack goes
+    FRONTS.fit = FRONTS.fit.slice(0, FRONTS.n * 4);
+    FRONTS.col = FRONTS.col.slice(0, FRONTS.n);
     FRONTS.side = new Int8Array(FRONTS.n).fill(-2);
     frontGlobals();
     const per = {};
@@ -21535,6 +21836,7 @@ float pinOccGate() {
       for (const c of TSKIN.cands) { if (!byKind.has(c.kind)) byKind.set(c.kind, []); byKind.get(c.kind).push(c); }
       // every kind's files asked for at once (one at a time cost the build 4.3 s of round trips), each awaited in turn
       const got = new Map([...byKind.keys()].map((kind) => { const T = FRONTS_DATA.tiles[kind]; return [kind, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])]; }));
+      const baseGot = SKIN_BASES ? skinBasesFetch() : null;   // the street floors' files asked for with the tiles'
       for (const [kind, list] of byKind) {
         const T = FRONTS_DATA.tiles[kind];
         const [im, mk] = await got.get(kind);
@@ -21554,17 +21856,47 @@ float pinOccGate() {
           tint.multiplyScalar(clamp(0.7 + Math.sqrt(Math.max(L, 0)) * 0.6, 0.75, 1.15) * (0.94 + hash01(c.seed * 3.1) * 0.12));
           const sd = hash01(c.seed * 7.7);
           let u = hash01(c.seed * 1.3) * T.w;   // each tower starts its pattern somewhere of its own
-          for (let i = 0; i < n; i++) {
+          // the realism pass (buildings 7): every wall starts and ends on a bay line (a whole number of bays a wall, each
+          // within half a bay of the tile's, from a bay of the tower's own), never a window cut at a corner; a wall is a run
+          // of the outline's edges that turn less than 25 degrees (a curved wall's facets share its bays, never one squeezed
+          // into each facet); and the floors are counted down from the roof, which meets the spandrel's line, not a floor
+          // cut through its windows
+          const bayW = T.w / T.nb, u0 = Math.floor(hash01(c.seed * 1.3) * T.nb) / T.nb;
+          const vA = REAL ? (T.spandV != null ? T.spandV : 0.98) / T.nf + 2 - (c.y1 - c.y0) / T.h : 0, vB = REAL ? vA + (c.y1 - c.y0) / T.h : (c.y1 - c.y0) / T.h;
+          const W = REAL ? skinWalls(P) : null;
+          // a parapet over the tall towers' roofs (the realism pass: the walls ran to the roof's edge with no coping): the
+          // spandrel's band a metre on, its inner face and a pale coping, on a computer, over the towers no roof lip reaches
+          // (roofClutter draws one under 60 m) and never on a researched crown
+          const par = REAL && !isTouch && !c.mid && !c.spec && c.y1 - (c.g0 != null ? c.g0 : c.y0) >= 58 ? 1.1 : 0;
+          for (let k = 0; k < n; k++) {
+            const i = W ? (W.start + k) % n : k;
             const a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+            let uA = 0, uB = 0;
+            if (W) { const L = W.len[W.run[i]], kq = Math.max(1, Math.round(L / bayW)) / T.nb / L; uA = u0 + W.at[i] * kq; uB = uA + len * kq; }
             if (len < 0.3) continue;
             const nx = dz / len * sg, nz = -dx / len * sg, off = 0.12, o = pos.length / 3;
             const ax = a[0] + nx * off, az = a[1] + nz * off, bx = b[0] + nx * off, bz = b[1] + nz * off;
             pos.push(ax, c.y0, az, bx, c.y0, bz, bx, c.y1, bz, ax, c.y1, az);
             for (let q = 0; q < 4; q++) { nor.push(nx, 0, nz); col.push(tint.r, tint.g, tint.b); seed.push(sd); }
-            const v1 = (c.y1 - c.y0) / T.h;
-            uv.push(u / T.w, 0, (u + len) / T.w, 0, (u + len) / T.w, v1, u / T.w, v1);
+            if (REAL) uv.push(uA, vA, uB, vA, uB, vB, uA, vB);
+            else {
+              const v1 = (c.y1 - c.y0) / T.h;
+              uv.push(u / T.w, 0, (u + len) / T.w, 0, (u + len) / T.w, v1, u / T.w, v1);
+            }
             idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
             u += len;
+            if (par) {
+              const vS = vB - 0.004, yT = c.y1 + par, ox = nx * 0.2, oz = nz * 0.2, ix2 = -nx * 0.3, iz2 = -nz * 0.3, o2 = pos.length / 3;
+              pos.push(ax, c.y1 - 0.05, az, bx, c.y1 - 0.05, bz, bx, yT, bz, ax, yT, az);   // its outer face, the wall's own plane
+              pos.push(a[0] + ix2, c.y1, a[1] + iz2, b[0] + ix2, c.y1, b[1] + iz2, b[0] + ix2, yT, b[1] + iz2, a[0] + ix2, yT, a[1] + iz2);   // its inner face
+              pos.push(a[0] + ox, yT, a[1] + oz, b[0] + ox, yT, b[1] + oz, b[0] + ix2, yT, b[1] + iz2, a[0] + ix2, yT, a[1] + iz2);   // the coping
+              for (let q = 0; q < 4; q++) { nor.push(nx, 0, nz); col.push(tint.r, tint.g, tint.b); seed.push(sd); }
+              for (let q = 0; q < 4; q++) { nor.push(-nx, 0, -nz); col.push(tint.r * 0.8, tint.g * 0.8, tint.b * 0.8); seed.push(sd); }
+              for (let q = 0; q < 4; q++) { nor.push(0, 1, 0); col.push(tint.r * 1.15, tint.g * 1.15, tint.b * 1.15); seed.push(sd); }
+              uv.push(uA, vS, uB, vS, uB, vS, uA, vS, uA, vS, uB, vS, uB, vS, uA, vS, uA, vS, uB, vS, uB, vS, uA, vS);
+              for (let f = 0; f < 3; f++) idx.push(o2 + f * 4, o2 + f * 4 + 1, o2 + f * 4 + 2, o2 + f * 4, o2 + f * 4 + 2, o2 + f * 4 + 3);
+              TSKIN.parapets = (TSKIN.parapets || 0) + 1;
+            }
           }
           TSKIN.laid[kind] = (TSKIN.laid[kind] || 0) + 1;
         }
@@ -21581,36 +21913,75 @@ float pinOccGate() {
           for (let q = 0; q < ix.length; q += 3) {
             const i0 = ix[q] * 3, i1 = ix[q + 1] * 3, i2 = ix[q + 2] * 3;
             const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2], e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
-            const fx = e1y * e2z - e1z * e2y, fz = e1x * e2y - e1y * e2x, nn = g.attributes.normal.array;
-            if (fx * nn[i0] + fz * nn[i0 + 2] < 0) { const tmp = ix[q + 1]; ix[q + 1] = ix[q + 2]; ix[q + 2] = tmp; }
+            const fx = e1y * e2z - e1z * e2y, fy = e1z * e2x - e1x * e2z, fz = e1x * e2y - e1y * e2x, nn = g.attributes.normal.array;
+            if (fx * nn[i0] + fy * nn[i0 + 1] + fz * nn[i0 + 2] < 0) { const tmp = ix[q + 1]; ix[q + 1] = ix[q + 2]; ix[q + 2] = tmp; }
           } }
         const gain = 0.88;
         const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, color: new THREE.Color(gain, gain, gain), roughness: T.glass ? 0.3 : 0.88, metalness: T.glass ? 0.2 : 0 });
+        const NB = T.nb.toFixed(1), NF = T.nf.toFixed(1), foldA = !!T.folded;
+        // the realism pass: the kind's numbers ride in uniforms, so every kind shares one program (a program a kind, with
+        // the rooms, the weather and the clouds' shadows in it, cost the build 8 s of compiling behind the veil): its bays
+        // and floors, its pier and spandrel, whether its mask was folded, whether its rooms are offices, whether it is glass
+        const skinU = REAL ? { uSkinG: { value: new THREE.Vector4(T.nb, T.nf, foldA && T.pierU != null ? T.pierU : 0, foldA && T.spandV != null ? T.spandV : 0) },
+          uSkinF: { value: new THREE.Vector4(foldA ? 1 : 0, SKIN_HOME.has(kind) ? 0 : 1, T.glass ? 1 : 0, 0) } } : null;
+        if (REAL) mat.extensions = { derivatives: true };   // roomLight's fwidth on a WebGL 1 device
         mat.onBeforeCompile = (sh) => {
           sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; varying float vSeed;')
             .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
+          if (REAL) {
+            sh.uniforms.uSkinG = skinU.uSkinG; sh.uniforms.uSkinF = skinU.uSkinF;
+            sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; uniform vec4 uSkinG, uSkinF; varying float vSeed; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
+              .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>\n' + [
+                // the realism pass (buildings 7, night 2): each pane its own (a hash of its bay and floor), its glass a
+                // shade lighter or darker as real panes catch the sky at their own angles; after dark the day's painted
+                // glass leaves the pane, and a bright bar across it (a mullion, a frame) stands dark against the room
+                '{ vec2 tsP = floor(vUv * uSkinG.xy);',
+                '  tsH = fract(sin(dot(tsP, vec2(12.9898, 78.233)) + vSeed * 431.7) * 43758.5453);',
+                '  tsVp = mix(fract(vUv.y * uSkinG.y), clamp((tsMask.a - 0.5) * 2.0, 0.0, 1.0), uSkinF.x);',
+                '  float win = tsMask.r;',
+                '  tsBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - texture2D(map, vUv, 3.0).rgb, vec3(0.2126, 0.7152, 0.0722)));',
+                '  diffuseColor.rgb *= mix(1.0, 0.88 + 0.2 * tsH, win * (1.0 - tsBar));',
+                '  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3, win * uNight); }',
+              ].join('\n'))
+              .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.14 + 0.08 * fract(tsH * 3.3), tsMask.r);')
+              // after dark, over the whole opening the bake folded (the day paint's dark texels cut the curtains and the
+              // furniture out as black stencils), the room the facade's own windows draw (roomLight: an office's suites
+              // and dark floors, or a flat's lamps and blinds), each room a bay and a floor cut at the tile's own pier and
+              // spandrel so no window straddles two, the bars across it dark
+              // (an office tower at night keeps a third of its suites' lights on, not the half the facade's day-long
+              // occupancy gives: four bays at a time on a floor go dark late)
+              .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ vec2 tsG = vUv * uSkinG.xy - uSkinG.zw;\n' +
+                '  float late = mix(1.0, step(0.38, fract(sin(dot(floor(tsG / vec2(4.0, 1.0)), vec2(17.13, 3.71)) + vSeed * 91.7) * 4375.85)), uSkinF.y);\n' +
+                '  totalEmissiveRadiance += tsMask.r * (1.0 - 0.85 * tsBar) * uNight * late * roomLight(vec2(fract(tsG.x), mix(fract(tsG.y), tsVp, uSkinF.x)), floor(tsG), vSeed * 3.1, uSkinF.y); }')
+              // glass takes the sun as a mirror, not as paint: less of the direct diffuse light, so a cast shadow falls on
+              // the spandrels and a sunlit gold curtain wall is no longer bright paper
+              .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directDiffuse *= mix(1.0 - 0.3 * tsMask.r * (1.0 - tsBar), 0.6, uSkinF.z);');
+            wxSurfacePatch(sh);   // critic gap 8: rain, snow and the clouds' shadows, as on the walls round it
+            return;
+          }
           sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; vec4 tsMask;')
             .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>')
             .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.14, tsMask.r);')
             // a floor lights by suites, not by bays (a bay at a time read as salt and pepper): each floor (the tile's floors
             // counted up the tower) is cut into suites of three to six bays from an offset of its own, and a suite lights
             // about one time in three, warm or cool, at its own level
-            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float fl = floor(vUv.y * ' + T.nf.toFixed(1) + ');\n' +
+            .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float fl = floor(vUv.y * ' + NF + ');\n' +
               '  float fh = fract(sin(fl * 91.17 + vSeed * 317.3) * 43758.5453);\n' +
-              '  float sw = 3.0 + floor(fh * 4.0), bay = vUv.x * ' + T.nb.toFixed(1) + ' + fh * 11.0;\n' +
+              '  float sw = 3.0 + floor(fh * 4.0), bay = vUv.x * ' + NB + ' + fh * 11.0;\n' +
               '  float h = fract(sin(floor(bay / sw) * 12.9898 + fl * 78.233 + vSeed * 431.7) * 43758.5453);\n' +
               '  float glass = 1.0 - smoothstep(0.04, 0.22, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));\n' +
               '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(0.62, fract(h * 5.3)));\n' +
               '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(0.66, h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
         };
-        mat.customProgramCacheKey = () => 'tower-skin-' + kind;
+        mat.customProgramCacheKey = () => REAL ? 'tower-skin|real' : 'tower-skin-' + kind;
         const m = new THREE.Mesh(g, mat);
         m.castShadow = false; m.receiveShadow = true; m.name = 'tower-skin-' + kind;
         m.frustumCulled = false; pendingUpload.push(m);
         groupCity.add(m);
         TSKIN.meshes.push(m);
       }
+      if (SKIN_BASES) await skinBasesLay(tex, aniso, baseGot);
       flushUploads(true);
     } catch (err) {
       TSKIN.error = String((err && err.message) || err);
@@ -21618,11 +21989,84 @@ float pinOccGate() {
     }
     TSKIN.ms = Math.round(performance.now() - t0);
   });
+  // the street floors (critic gap 4): per base kind one mesh, a quad a wall from 30 cm under the ground to where the wall's
+  // generated storeys start, a whole number of the tile's repeats along it, the tile stretched to the floor's height; its
+  // shop glass and lobbies lit after dark, three bays in four
+  function skinBasesFetch() {
+    const byBase = new Map();
+    for (const c of TSKIN.cands) { const b = skinBaseOf(c); if (!b) continue; if (!byBase.has(b)) byBase.set(b, []); byBase.get(b).push(c); }
+    const got = new Map([...byBase.keys()].map((b) => { const T = SKIN_BASES[b]; return [b, Promise.all([artImage(artSrc(T.img, T.imgHalf)), artImage(T.mask)])]; }));
+    return { byBase, got };
+  }
+  async function skinBasesLay(tex, aniso, fetched) {
+    const { byBase, got } = fetched;
+    for (const [b, list] of byBase) {
+      const T = SKIN_BASES[b];
+      const [im, mk] = await got.get(b);
+      if (!im || !mk) { TSKIN.error = 'base ' + b + ' did not load'; continue; }
+      const map = tex(im, !!T.imgHalf); map.encoding = THREE.sRGBEncoding; map.anisotropy = aniso; map.wrapT = THREE.ClampToEdgeWrapping;
+      const mask = tex(mk, !isTouch); mask.wrapT = THREE.ClampToEdgeWrapping;   // a phone halves the mask too
+      const pos = [], nor = [], uv = [], idx = [];
+      for (const c of list) {
+        const P = c.poly, n = P.length, sg = signedArea(P) > 0 ? 1 : -1, H = c.y0 - c.g0, vb = -0.3 / H, W = skinWalls(P);
+        for (let k = 0; k < n; k++) {
+          const i = (W.start + k) % n, a = P[i], q = P[(i + 1) % n], dx = q[0] - a[0], dz = q[1] - a[1], len = Math.hypot(dx, dz);
+          if (len < 0.3) continue;
+          const nx = dz / len * sg, nz = -dx / len * sg, off = 0.12, o = pos.length / 3;
+          const ax = a[0] + nx * off, az = a[1] + nz * off, bx = q[0] + nx * off, bz = q[1] + nz * off;
+          pos.push(ax, c.g0 - 0.3, az, bx, c.g0 - 0.3, bz, bx, c.y0, bz, ax, c.y0, az);
+          for (let k2 = 0; k2 < 4; k2++) nor.push(nx, 0, nz);
+          // a whole number of the floor's repeats along each wall (a run of the outline's edges, as the storeys over it)
+          const L = W.len[W.run[i]], kq = Math.max(1, Math.round(L / T.w)) / L, u0 = Math.floor(hash01(c.seed * 2.7 + W.run[i]) * 4) * 0.25;
+          const uA = u0 + W.at[i] * kq, uB = uA + len * kq;
+          uv.push(uA, vb, uB, vb, uB, 1, uA, 1);
+          idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+        }
+        TSKIN.bases[b] = (TSKIN.bases[b] || 0) + 1;
+      }
+      if (!idx.length) continue;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      { const p = g.attributes.position.array, ix = g.index.array, nn = g.attributes.normal.array;   // each quad wound to its normal
+        for (let q = 0; q < ix.length; q += 3) {
+          const i0 = ix[q] * 3, i1 = ix[q + 1] * 3, i2 = ix[q + 2] * 3;
+          const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2], e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
+          if ((e1y * e2z - e1z * e2y) * nn[i0] + (e1x * e2y - e1y * e2x) * nn[i0 + 2] < 0) { const t = ix[q + 1]; ix[q + 1] = ix[q + 2]; ix[q + 2] = t; }
+        } }
+      const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(0.88, 0.88, 0.88), roughness: 0.82, metalness: 0 });
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; vec4 sbMask; float sbBar;')
+          .replace('#include <map_fragment>', 'sbMask = texture2D(uMask, vUv);\n#include <map_fragment>\n' +
+            'vec3 sbTex = sampledDiffuseColor.rgb, sbBlur = texture2D(map, vUv, 3.0).rgb;\n' +
+            'sbBar = smoothstep(0.05, 0.16, dot(sbTex - sbBlur, vec3(0.2126, 0.7152, 0.0722)));\n' +
+            'diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3, sbMask.r * uNight);')
+          .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.16, sbMask.r);')
+          // lit after dark as the house fronts' shop glass is: where its painted glass is dark (softened toward its
+          // neighbours), brighter under the ceiling, warm or a cooler white, the painted frames and goods only faintly
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float bh = fract(sin(floor(vUv.x * 2.0) * 12.9898 + floor(vUv.x * 0.37) * 4.1) * 43758.5453);\n' +
+            '  float dl = dot(sbTex, vec3(0.2126, 0.7152, 0.0722)), bl = dot(sbBlur, vec3(0.2126, 0.7152, 0.0722));\n' +
+            '  float sg = 1.0 - smoothstep(0.05, 0.3, mix(dl, bl, 0.35)), st = clamp(dl / max(bl, 0.015), 0.25, 1.8);\n' +
+            '  vec3 sc = mix(vec3(1.0, 0.76, 0.5), vec3(1.0, 0.92, 0.8), step(0.6, bh));\n' +
+            '  totalEmissiveRadiance += sbMask.r * (1.0 - 0.85 * sbBar) * step(0.25, bh) * uNight * sc * (sg * (0.22 + 0.3 * smoothstep(0.2, 1.0, vUv.y)) * (0.3 + 0.7 * st) + (1.0 - sg) * 0.06 * sbTex); }');
+        wxSurfacePatch(sh);
+      };
+      mat.customProgramCacheKey = () => 'skin-base|wx';   // one program for every street floor: the shader is the same
+      const m = new THREE.Mesh(g, mat);
+      m.castShadow = false; m.receiveShadow = true; m.name = 'skin-base-' + b;
+      m.frustumCulled = false; pendingUpload.push(m);
+      groupCity.add(m);
+      TSKIN.meshes.push(m);
+    }
+  }
   const _frCol = new THREE.Color();
   function frontStored(hex, gain) { return new THREE.Color(hex).convertSRGBToLinear().multiplyScalar(gain || 0.88); }
   function frontsLay() {
     const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, R = FRONTS.r, C = FRONTS.cell, B = FRONTS.buf, SIDE = FRONTS.side, G = FRONTS.glob;
-    const cnt = new Map(), gc = { cor: 0, stoop: 0, awnS: 0, awnF: 0, porch: 0 };
+    const cnt = new Map(), gc = { cor: 0, crown: 0, stoop: 0, awnS: 0, awnF: 0, porch: 0 };
     const put = (mesh, n, px, py, pz, Xx, Xz, Yy, Zx, Zz) => {
       const a = mesh.instanceMatrix.array, o = n * 16;
       a[o] = Xx; a[o + 1] = 0; a[o + 2] = Xz; a[o + 3] = 0; a[o + 4] = 0; a[o + 5] = Yy; a[o + 6] = 0; a[o + 7] = 0;
@@ -21650,26 +22094,47 @@ float pinOccGate() {
         const n0 = cnt.get(set) || 0;
         if (n0 >= Rs.cap) continue;
         const ux = B[o + 2], uz = B[o + 3], hw = B[o + 4], hd = B[o + 5], top = B[o + 7], seed = B[o + 8];
-        const nx = s === 0 ? ux : s === 1 ? -ux : s === 2 ? -uz : uz, nz = s === 0 ? uz : s === 1 ? -uz : s === 2 ? ux : -ux;
-        const h = s < 2 ? hw : hd, len = s < 2 ? 2 * hd : 2 * hw;
+        let nx = s === 0 ? ux : s === 1 ? -ux : s === 2 ? -uz : uz, nz = s === 0 ? uz : s === 1 ? -uz : s === 2 ? ux : -ux;
+        const h = s < 2 ? hw : hd, len0 = s < 2 ? 2 * hd : 2 * hw;
         // the side from the viewer's left to their right: they face -n, their right is (nz, -nx)
-        const rx = nz, rz = -nx, ax = x0 + nx * h - rx * len / 2, az = z0 + nz * h - rz * len / 2;
-        const S = Rs.S, name = FR_SETS[set], N = S.cells.length, kk = clamp(Math.round(len / S.w), 1, 4), cw = len / kk;
+        let rx = nz, rz = -nx;
+        // the realism pass (critic gap 0): on the wall's own line, turned with it, over the span it covers (FRONTS.fit)
+        const ft = frontFitOf(FRONTS.fit[k * 4 + s]);
+        const off = ft ? ft[0] : 0, ta = ft ? ft[1] : 0, sA = ft ? (ft[2] - 0.5) * len0 : -len0 / 2, sB = ft ? (ft[3] - 0.5) * len0 : len0 / 2;
+        const ax = x0 + nx * (h + off + ta * sA) + rx * sA, az = z0 + nz * (h + off + ta * sA) + rz * sA;
+        if (ta) { const k2 = 1 / Math.sqrt(1 + ta * ta), tx = (rx + nx * ta) * k2, tz = (rz + nz * ta) * k2; nx = (nx - rx * ta) * k2; nz = (nz - rz * ta) * k2; rx = tx; rz = tz; }
+        const len = (sB - sA) * Math.sqrt(1 + ta * ta);
+        if (len < 2.4) continue;
         const y0 = base - 0.4, y1 = top, H = y1 - y0;
+        // a one-storey shop's front (4:3, no storeys to repeat) is cut so each keeps its image's proportions on the wall
+        const S = Rs.S, name = FR_SETS[set], N = S.cells.length, kk = REAL && S.aspect > 1 ? clamp(Math.round(len / ((H - 0.4) * S.aspect)), 1, 12) : clamp(Math.round(len / S.w), 1, REAL ? 12 : 4), cw = len / kk;
+        // the realism pass (buildings 1): the front at its own image's proportions, sized by its width (held within a fifth
+        // of the set's house), its upper storeys repeated or dropped to fill the wall (frontSetRes's shader); 0 stretches it
+        const Himg = REAL && S.aspect ? clamp(cw, 0.8 * S.w, 1.2 * S.w) / S.aspect : 0;
         const first = Math.floor(hash01(seed * 3.71) * N);
+        // the realism pass (buildings 5): the six cells of sixteen whose wall is nearest the house's own colour (its side
+        // walls, its gable and its parapet keep that colour, and the front dissolves into it at the radius), dealt by the
+        // seed: no white front on a brown house, and still a row of six different fronts
+        const hc = REAL ? FRONTS.col[k] : 0, near3 = hc && Rs.wallQ[0] ? frontNearest(Rs.wallQ, hc) : null;
         let n = n0;
         for (let j = 0; j < kk && n < Rs.cap; j++) {
-          const cell = (first + j * 3) % N, cm = S.cells[cell];
+          const cell = near3 ? near3[(first + j) % FR_NEAR] : (first + j * 3) % N, cm = S.cells[cell], hi = frontRemaps(cm, Himg, H - 0.4) ? Himg : 0;
           const px = ax + rx * cw * j, pz = az + rz * cw * j;
           put(Rs.mesh, n, px + nx * 0.05, y0, pz + nz * 0.05, rx * cw, rz * cw, H, nx, nz);
-          Rs.aFr.array[n * 4] = cell; Rs.aFr.array[n * 4 + 1] = hash01(seed * 7.7 + j); Rs.aFr.array[n * 4 + 2] = base;
+          Rs.aFr.array[n * 4] = cell; Rs.aFr.array[n * 4 + 1] = hash01(seed * 7.7 + j); Rs.aFr.array[n * 4 + 2] = base; Rs.aFr.array[n * 4 + 3] = hi;
           n++; laid++;
-          // the front's own cornice, 34 cm proud along its head
-          if (gc.cor < G.cor.instanceMatrix.count) {
+          if (REAL) {
+            // the image carries its own cornice to its top edge: a moulded crown along the head, not a second slab
+            if (gc.crown < G.crown.instanceMatrix.count) {
+              put(G.crown, gc.crown, px + nx * 0.04, y1 - 0.22, pz + nz * 0.04, rx * cw, rz * cw, 1, nx, nz);
+              G.crown.setColorAt(gc.crown, Rs.corCol[cell]); gc.crown++;
+            }
+          } else if (gc.cor < G.cor.instanceMatrix.count) {   // the front's own cornice, 34 cm proud along its head
             put(G.cor, gc.cor, px, y1 - 0.42, pz, rx * cw, rz * cw, 0.48, nx * 0.34, nz * 0.34);
             G.cor.setColorAt(gc.cor, Rs.corCol[cell]); gc.cor++;
           }
-          const gfY = cm.gf ? y1 - cm.gf[2] * H : 0;
+          // the top of the ground floor's openings: at the image's own scale from the house's foot when it is remapped
+          const gfY = !cm.gf ? 0 : hi ? base + (1 - cm.gf[2]) * hi : y1 - cm.gf[2] * H;
           // a porch (the porch set's fronts were made without theirs): its deck at the ground, its roof over the ground floor
           let porch = false;
           if ((S.porch != null ? S.porch : name === 'porch') && cm.gf && hash01(seed * 2.9 + j) < 0.85 && gc.porch < G.porch.instanceMatrix.count) {
@@ -21680,8 +22145,9 @@ float pinOccGate() {
               porch = true;
             }
           }
-          // a stoop under the door
-          if (cm.door && !porch && gc.stoop < G.stoop.instanceMatrix.count) {
+          // a stoop under the door (the realism pass: none, every image paints its own steps, and the doors the bake found
+          // put a foam block beside one front in four)
+          if (!REAL && cm.door && !porch && gc.stoop < G.stoop.instanceMatrix.count) {
             const du = (cm.door[0] + cm.door[2]) / 2 * cw, sw = Math.min(cw * 0.6, Math.max(1.1, (cm.door[2] - cm.door[0]) * cw * 1.5));
             const gy = siteY(px + rx * du + nx * 0.6, pz + rz * du + nz * 0.6, 'ground') || base;
             put(G.stoop, gc.stoop, px + rx * (du - sw / 2), gy, pz + rz * (du - sw / 2), rx * sw, rz * sw, 1, nx, nz);
@@ -21708,7 +22174,7 @@ float pinOccGate() {
       Rs.mesh.count = cnt.get(s) || 0; Rs.mesh.instanceMatrix.needsUpdate = true; Rs.aFr.needsUpdate = true;
       FRONTS.perSet[FR_SETS[s]] = Rs.mesh.count;
     });
-    for (const k of Object.keys(gc)) { const m = G[k]; m.count = gc[k]; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; if (m.aAwn) m.aAwn.needsUpdate = true; }
+    for (const k of Object.keys(gc)) { const m = G[k]; if (!m) continue; m.count = gc[k]; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; if (m.aAwn) m.aAwn.needsUpdate = true; }
     FRONTS.laid = laid; FRONTS.noStreet = noStreet; FRONTS.relief = gc;
     // Round 184: fifteen sets at about 27 MB of atlas each on a computer, so the least recently wanted are let go past
     // FR_KEEP (a flight across the city does not end holding all of them); a set wanted again loads again
