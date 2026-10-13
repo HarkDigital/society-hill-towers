@@ -686,8 +686,10 @@
   // the realism pass (gap 3, Mike judges the look on his iPhone): a phone has no post pipeline, so it kept r149's bare ACES
   // and none of the grade. Its renderer now tone maps through CustomToneMapping, set here before anything compiles: the
   // same ACES with the composite's grade carried into linear light (saturation 0.84, the contrast about mid grey, warm
-  // lights and cool shadows as ratios), one pow a fragment and no extra pass. The raw materials (the dome, the lights) are
-  // untouched, as on the computer. ?real=0 keeps the bare ACES
+  // lights and cool shadows as ratios), one pow a fragment and no extra pass. Unlike the computer's composite, which grades
+  // the whole image, it reaches only what three tone maps: the dome, the cloud deck, the rain's streaks and the
+  // toneMapped:false pins write display colour and stay at their full saturation over a city at 0.84 (grading them means
+  // their own shaders, under uPost 0, which the environment's bake shares). ?real=0 keeps the bare ACES
   if (!POST.on && REAL) {
     const stub = 'vec3 CustomToneMapping( vec3 color ) { return color; }';
     if (THREE.ShaderChunk.tonemapping_pars_fragment.indexOf(stub) >= 0) {
@@ -835,8 +837,9 @@
   }
   const gpuNow = () => (GPUT.cur && GPUT.pend.length ? GPUT.pend[GPUT.pend.length - 1][1] : null);
   function gpuRecord(label, ms) {
-    const m = GPUT.ms[label] || (GPUT.ms[label] = { last: 0, mean: 0, max: 0, n: 0 });
+    const m = GPUT.ms[label] || (GPUT.ms[label] = { last: 0, mean: 0, max: 0, n: 0, ring: [] });
     m.last = ms; m.n++; m.mean += (ms - m.mean) / Math.min(m.n, 60); m.max = Math.max(m.max * 0.995, ms);
+    m.ring.push(+ms.toFixed(2)); if (m.ring.length > 32) m.ring.shift();   // the last 32 one by one: a rare pass's first draw (its programs, its target) apart from the rest
   }
   function gpuCommit() {   // a frame's segments summed (the scene pass is cut in two around a shadow pass)
     let t = 0;
@@ -862,13 +865,18 @@
     }
     if (GPUT.pend.length > 400) { for (const [q] of GPUT.pend.splice(0, 200)) if (q !== GPUT.cur) gl.deleteQuery(q); }
   }
-  const gpuStats = () => { const o = {}; for (const k in GPUT.ms) { const m = GPUT.ms[k]; o[k] = { last: +m.last.toFixed(2), mean: +m.mean.toFixed(2), max: +m.max.toFixed(2), n: m.n }; } return o; };
+  // __dbg.gpu(true) adds each pass's last 32 timings, oldest first
+  const gpuStats = (all) => { const o = {}; for (const k in GPUT.ms) { const m = GPUT.ms[k]; o[k] = { last: +m.last.toFixed(2), mean: +m.mean.toFixed(2), max: +m.max.toFixed(2), n: m.n }; if (all === true) o[k].ring = m.ring.slice(); } return o; };
+  // the CPU's side of each shadow pass too, with its draw calls (shadowCpu / shadowFarCpu, shadowCalls / shadowFarCalls): the
+  // review's open question, a frame that draws the far map over Center City from 600 m stood 24 to 106 ms on the CPU
+  // headless against 5 for the frames around it, and 1 to 2 over South Philly from 90 m
   if (GPUT.on) {   // three's shadow pass runs inside the scene's render call: wrapped, so it is timed on its own
     const sm = renderer.shadowMap, r0 = sm.render;
     sm.render = function (lights, sc, cam) {
       if (!this.enabled || (!this.autoUpdate && !this.needsUpdate) || !lights.length) return r0.call(this, lights, sc, cam);
-      const prev = gpuNow();
-      gpuT(FARSH.pending ? 'shadowFar' : 'shadow'); r0.call(this, lights, sc, cam); gpuT(prev);
+      const prev = gpuNow(), lab = FARSH.pending ? 'shadowFar' : 'shadow', c0 = renderer.info.render.calls, t0 = performance.now();
+      gpuT(lab); r0.call(this, lights, sc, cam); gpuT(prev);
+      gpuRecord(lab + 'Cpu', performance.now() - t0); gpuRecord(lab + 'Calls', renderer.info.render.calls - c0);
     };
   }
   // pUndo in JS for the fog colour: the fog mixes inside the target, so under the post pipeline it
@@ -3385,17 +3393,21 @@
   let shadowsIdle = false;   // nothing receives (moonShadowsOff): no depth pass is worth drawing
   function aimSun(cx, cz, extent) {
     lastAim.cx = cx; lastAim.cz = cz; lastAim.extent = extent;
-    if (shadowsIdle) return;   // nothing receives (moonShadowsOff): the map waits, and is drawn when the receivers return
     const c = sun.shadow.camera;
     const texel = (extent * 2) / SHADOW_RES;
     cx = Math.round(cx / (texel * 8)) * texel * 8;
     cz = Math.round(cz / (texel * 8)) * texel * 8;
+    // the key light follows the sun (or the moon) every frame whatever its map does: this is the only place its direction
+    // is written, so it is written before anything here can return (the review: an idle return above it held a phone's
+    // moonlight at the boot direction all night, and a deck's at the sun of the moment it closed)
+    sun.position.set(cx + sunDir.x * 1200, sunDir.y * 1200, cz + sunDir.z * 1200);
+    sun.target.position.set(cx, 0, cz);
+    // nothing receives (moonShadowsOff): the map waits, shadowAim left as it was so the receivers' return redraws it
+    if (shadowsIdle) return;
     // called every frame from applyLighting: only a moved box or a moved sun
     // costs a projection update and a shadow-map redraw
     if (cx === shadowAim.cx && cz === shadowAim.cz && extent === shadowAim.extent && shadowAim.sun.distanceToSquared(sunDir) < 1e-10) return;
     shadowAim.cx = cx; shadowAim.cz = cz; shadowAim.extent = extent; shadowAim.sun.copy(sunDir);
-    sun.position.set(cx + sunDir.x * 1200, sunDir.y * 1200, cz + sunDir.z * 1200);
-    sun.target.position.set(cx, 0, cz);
     c.left = -extent; c.right = extent; c.top = extent; c.bottom = -extent;
     c.updateProjectionMatrix();
     renderer.shadowMap.needsUpdate = true;
@@ -3411,11 +3423,16 @@
   // blends the two, the outer eighth of the far one fades it out), and the black light's own lighting is skipped. A desktop
   // on the post pipeline only (a phone keeps one light and its own map), ?shadowwide=0 off, never built under Smoother. The
   // far map is drawn only when its box has moved a quarter of its width, its size has stepped or the sun has moved a third
-  // of a degree (every 8th frame at most while only the sun moves, the time-lapse), never in a frame that draws the near
-  // map, and with buildings only: no instanced mesh (the trees, the roof kit, the fronts, the vehicles, which it would
-  // freeze where they stood). shadow.radius is its switch (PCF_SOFT ignores it): 0 until the first far map is drawn and
-  // while Smoother or a closed deck has it off, so switching never changes a program
-  const FARSH = { on: false, can: false, light: null, ext: 0, cx: NaN, cz: NaN, sun: new V3(), drawn: 0, pending: false, last: -1e9, hid: [], fail: '' };
+  // of a degree (every 8th frame at most while only the sun moves, the time-lapse), not in a frame that draws the near
+  // map unless it has waited two (a time-lapse redraws the near map every frame: the far one takes the third and the near
+  // one is drawn the frame after), and with buildings only: no instanced mesh (the trees, the roof kit, the fronts, the
+  // vehicles, which it would freeze where they stood). shadow.radius is its switch (PCF_SOFT ignores it): 0 until the first
+  // far map is drawn and while Smoother or a closed deck has it off, 1 live, 2 live and shading the near box too (FARSH.wide,
+  // high up), so switching never changes a program. Its size (farRes, the review: 4096 was 96 MB of GPU memory on every
+  // computer, an RGBA8 target and r149's 16-bit depth buffer): 2048 under Auto, 24 MB, and 4096 under Sharper; the headless
+  // A/B at 90, 300 and 600 m showed no difference past the near box, where a texel of 1.8 to 3.9 m is a pixel or two
+  const FARSH = { on: false, can: false, light: null, ext: 0, cx: NaN, cz: NaN, sun: new V3(), drawn: 0, pending: false, last: -1e9, hid: [], fail: '', res: 0, wide: false, wideH: 250, waited: 0, owe: false, lastT: -1e9 };
+  const farRes = (pick) => (pick === 'sharper' ? 4096 : 2048);
   FARSH.can = POST.on && REAL && !LITE && !/[?&]shadowwide=0\b/.test(location.search) && gfxPick() !== 'smoother';
   if (FARSH.can) {
     const C = THREE.ShaderChunk, lf = C.lights_fragment_begin;
@@ -3451,12 +3468,12 @@
         '\tvec2 ne = min( nc, 1.0 - nc );',
         '\tfloat inN = clamp( min( ne.x, ne.y ) * 10.0, 0.0, 1.0 );',
         '\tfloat s = inN > 0.0 ? getShadow( directionalShadowMap[ 0 ], nS.shadowMapSize, nS.shadowBias, nS.shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;',
-        '\tif ( inN < 1.0 && fS.shadowRadius > 0.5 ) {',
+        '\tif ( fS.shadowRadius > 0.5 && ( inN < 1.0 || fS.shadowRadius > 1.5 ) ) {',
         '\t\tvec2 fc = vDirectionalShadowCoord[ 1 ].xy / vDirectionalShadowCoord[ 1 ].w;',
         '\t\tvec2 fe = min( fc, 1.0 - fc );',
         '\t\tfloat inF = clamp( min( fe.x, fe.y ) * 8.0, 0.0, 1.0 );',
         '\t\tfloat f = inF > 0.0 ? mix( 1.0, getShadow( directionalShadowMap[ 1 ], fS.shadowMapSize, fS.shadowBias, 1.0, vDirectionalShadowCoord[ 1 ] ), inF ) : 1.0;',
-        '\t\ts = mix( f, s, inN );',
+        '\t\ts = fS.shadowRadius > 1.5 ? min( mix( 1.0, s, inN ), f ) : mix( f, s, inN );',   // high up the outer districts are in the far map only
         '\t}',
         '\treturn s;',
         '}',
@@ -3465,7 +3482,8 @@
       const L = new THREE.DirectionalLight(0x000000, 0);
       L.name = 'far shadows';
       L.castShadow = true;
-      L.shadow.mapSize.set(4096, 4096);
+      FARSH.res = farRes(gfxPick());
+      L.shadow.mapSize.set(FARSH.res, FARSH.res);
       L.shadow.autoUpdate = false;   // drawn only when farShadowPre asks
       L.shadow.normalBias = 2.5;
       L.shadow.radius = 0;
@@ -3482,14 +3500,21 @@
     cam.getWorldDirection(_farV);
     const hl = Math.hypot(_farV.x, _farV.z) || 1, fx = _farV.x / hl, fz = _farV.z / hl;
     const ext = Math.round(clamp(1400 + cam.position.y * 2.6, 1800, 4000) / 400) * 400;
-    const texel = ext * 2 / 4096;
+    const texel = ext * 2 / L.shadow.mapSize.x;
     const cx = Math.round((cam.position.x + fx * ext * 0.5) / (texel * 8)) * texel * 8, cz = Math.round((cam.position.z + fz * ext * 0.5) / (texel * 8)) * texel * 8;
-    const moved = ext !== FARSH.ext || Math.hypot(cx - FARSH.cx, cz - FARSH.cz) > ext * 0.25 || !(L.shadow.radius > 0.5);
+    const live = L.shadow.radius > 0.5;
+    // a box that has moved waits a second since the last draw (the review: every quarter-box move or turn of a flight was a
+    // draw, so a pilot looking round high up drew it every few frames; what it lags is past the near box)
+    const moved = !live || ext !== FARSH.ext || (Math.hypot(cx - FARSH.cx, cz - FARSH.cz) > ext * 0.25 && performance.now() - FARSH.lastT > 1000);
     const sunMoved = FARSH.sun.lengthSq() === 0 || FARSH.sun.angleTo(sunDir) > 0.006;
-    if (!moved && !sunMoved) return false;
-    if (renderer.shadowMap.needsUpdate) return false;           // the near map draws this frame: the far one waits for the next
+    if (!moved && !sunMoved) { FARSH.waited = 0; return false; }
     if (!moved && frameNo - FARSH.last < 8) return false;
-    FARSH.ext = ext; FARSH.cx = cx; FARSH.cz = cz; FARSH.sun.copy(sunDir); FARSH.last = frameNo;
+    // the near map draws this frame: the far one waits, two frames at most (the review: a time-lapse redraws the near map
+    // every frame, so the far shadows stood at the old sun while the near ones swept and the blend band mixed the two); on
+    // the third it takes the frame and the near map, which keeps its own map and matrix meanwhile, is drawn the next
+    if (renderer.shadowMap.needsUpdate) { if (++FARSH.waited < 3) return false; FARSH.owe = true; }
+    FARSH.waited = 0;
+    FARSH.ext = ext; FARSH.cx = cx; FARSH.cz = cz; FARSH.sun.copy(sunDir); FARSH.last = frameNo; FARSH.lastT = performance.now();
     const h = Math.hypot(sunDir.x, sunDir.z), R = ext * Math.SQRT2 + 200;
     L.position.set(cx + sunDir.x * 1000, sunDir.y * 1000, cz + sunDir.z * 1000);
     L.target.position.set(cx, 0, cz);
@@ -3499,11 +3524,13 @@
     c.near = 1000 - R * h - 480 * sunDir.y; c.far = 1000 + R * h + 60;   // the box's corners either way along the sun, the towers' tops toward it
     c.updateProjectionMatrix();
     L.shadow.bias = -1.6 / (c.far - c.near);   // about 1.6 m, the near map's metre over a coarser texel
+    L.shadow.normalBias = Math.max(2.5, 1.4 * texel);   // and the normal offset a texel and a half: Auto's 2048 is 3.9 m a texel from 1,000 m up
     L.shadow.needsUpdate = true;
     renderer.shadowMap.needsUpdate = true;
     sun.shadow.autoUpdate = false;   // the near map keeps what it has this frame
     FARSH.hid.length = 0;
     scene.traverse((o) => { if (o.castShadow && o.isInstancedMesh) { o.castShadow = false; FARSH.hid.push(o); } });
+    if (FARSH.wide && !SHROLE.held) for (const o of SHROLE.list) o.castShadow = true;   // every building, the outer districts' too
     FARSH.pending = true;
     return true;
   }
@@ -3511,39 +3538,85 @@
     FARSH.pending = false;
     for (const o of FARSH.hid) o.castShadow = true;
     FARSH.hid.length = 0;
+    if (FARSH.wide) for (const o of SHROLE.list) o.castShadow = false;
     sun.shadow.autoUpdate = true;
-    FARSH.light.shadow.radius = 1;   // drawn: the far map is live
+    FARSH.light.shadow.radius = FARSH.wide ? 2 : 1;   // drawn: the far map is live
     FARSH.drawn++;
+    if (FARSH.owe) { FARSH.owe = false; renderer.shadowMap.needsUpdate = true; }   // the near map's turn, held for this one
   }
-  if (FARSH.light) GFX.hooks.push((pick) => { FARSH.on = pick !== 'smoother'; if (!FARSH.on) FARSH.light.shadow.radius = 0; else FARSH.ext = 0; });
+  // the far map's size (Sharper's choice, or __dbg.farShadows(true, n)): a new size disposes the old target, three makes the
+  // next at the next draw, and the map is not live till then
+  function farSize(n) {
+    const L = FARSH.light;
+    if (!L || L.shadow.mapSize.x === n) return;
+    FARSH.res = n;
+    L.shadow.mapSize.set(n, n);
+    if (L.shadow.map) { L.shadow.map.dispose(); L.shadow.map = null; }
+    L.shadow.radius = 0; FARSH.ext = 0;
+  }
+  // FARSH.wide (the review: with the outer districts casting, a near-map redraw high up was a box of roofs filling the whole
+  // 4096 map, 7 ms at 600 m against 1 before they cast, paid every 4th frame for the movers and every frame of a time-lapse):
+  // above 250 m (back under 220) the outer districts' buildings leave the near map, and the far map, which holds every
+  // building, shades the near box too, the darker of the two. A computer's casters only (a phone has none); with no far map
+  // (Smoother, ?shadowwide=0, LITE) they cast nothing up there, as before the realism pass. Called by the frame; a switch
+  // redraws the near map
+  function farWide(high) {
+    const want = high && !SHROLE.held && SHROLE.list.length > 0;
+    if (want === FARSH.wide) return;
+    FARSH.wide = want;
+    for (const o of SHROLE.list) o.castShadow = !want && !SHROLE.held;
+    if (FARSH.light && FARSH.light.shadow.radius > 0.5) FARSH.light.shadow.radius = want ? 2 : 1;
+    if (!shadowsIdle) renderer.shadowMap.needsUpdate = true;
+  }
+  if (FARSH.light) GFX.hooks.push((pick) => { FARSH.on = pick !== 'smoother'; farSize(farRes(pick)); if (!FARSH.on) FARSH.light.shadow.radius = 0; else FARSH.ext = 0; });
 
   // ---- who casts and who receives (the realism pass, sky-light 0 and ground-vegetation 0). Outside the core nothing took
   // part: the outer districts' and the far ring's buildings cast and received nothing, and neither did the ground, the parks
   // or the streets around them, nor the tree cards, so a rowhouse threw nothing into its street and Rittenhouse's towers
   // nothing onto the square, and the roof kit's units threw the only shadows on Broad Street's plaza, from roofs that threw
-  // none (vehicles-props 12). Set once, on the first frame after the build, by flags alone: r149's receiveShadow is a
+  // none (vehicles-props 12). Set on the first frame after the build, by flags alone: r149's receiveShadow is a
   // per-object uniform and castShadow only chooses the depth pass's meshes, so no program changes. A computer: the merged
   // buildings (the curtain walls too) cast and receive, every weather-hooked flat (the ground, the parks and areas, the
   // streets, the lots: `userData.wxSurf`, before the tiles copied it) and the tree cards receive. A phone (the critic: geometry
   // bound, measure before any phone casting): no new casters, and only under Sharper do the outer districts' ground, parks
   // and streets receive what already casts there (the buses, the kit, the core's buildings: a phone's trees never cast), so
   // Auto pays no new filter taps until the iPhone's beacons say what they cost. ?real=0 leaves the old roles. A mesh made
-  // while the receivers are off (moonShadowsOff) joins the list it gets them back from
-  const SHROLE = { done: false, cast: 0, recv: 0, cards: 0 };
+  // while the receivers are off (moonShadowsOff) joins the list it gets them back from. The pass is idempotent and runs
+  // again every 900th frame, so what arrives after the build (the season's paving strips with the first closures poll, a
+  // lazily built flat) takes its roles too: a scene walk, well under a millisecond, and flags only
+  const SHROLE = { done: false, cast: 0, recv: 0, cards: 0, runs: 0, list: [], held: false };
   function shadowRoles() {
-    SHROLE.done = true;
-    if (window.__dbg) Object.assign(window.__dbg, { shadowAudit, shadowRoles: () => ({ ...SHROLE }), farShadows: () => ({ on: FARSH.on, can: FARSH.can, fail: FARSH.fail, ext: FARSH.ext, cx: Math.round(FARSH.cx), cz: Math.round(FARSH.cz), drawn: FARSH.drawn, live: !!(FARSH.light && FARSH.light.shadow.radius > 0.5), near: { ...lastAim }, off: moonNoRecv ? [...shadowOffWhy] : [] }), pickAt, gpu: gpuStats, keyLight: () => ({ ...KEYWX }) });
+    if (!SHROLE.done && window.__dbg) Object.assign(window.__dbg, { shadowAudit,
+      // __dbg.shadowRoles(false) takes the casters this pass made out of the depth pass (true puts them back): the A/B for
+      // what the outer districts' casting costs the near map (__dbg.gpu().shadow, __dbg.perf().tris)
+      shadowRoles: (cast) => { if (cast != null) { SHROLE.held = !cast; for (const o of SHROLE.list) o.castShadow = !!cast && !FARSH.wide; renderer.shadowMap.needsUpdate = true; } return { done: SHROLE.done, cast: SHROLE.cast, recv: SHROLE.recv, cards: SHROLE.cards, runs: SHROLE.runs, held: SHROLE.held }; },
+      // __dbg.farShadows(false) switches the far map off as Smoother does (true back on; a second argument sets its size):
+      // the A/B for its lookups, its draws and its resolution
+      farShadows: (on, res) => { if (on != null && FARSH.light) { FARSH.on = !!on; if (res) farSize(res); if (!FARSH.on) FARSH.light.shadow.radius = 0; else FARSH.ext = 0; } return { on: FARSH.on, can: FARSH.can, fail: FARSH.fail, res: FARSH.res, mb: FARSH.light ? Math.round(FARSH.res * FARSH.res * 6 / 1048576) : 0, wide: FARSH.wide, ext: FARSH.ext, cx: Math.round(FARSH.cx), cz: Math.round(FARSH.cz), drawn: FARSH.drawn, live: !!(FARSH.light && FARSH.light.shadow.radius > 0.5), near: { ...lastAim }, off: moonNoRecv ? [...shadowOffWhy] : [] }; },
+      // __dbg.farWideAt(h): the height the outer districts leave the near map at (250; Infinity never), the A/B for FARSH.wide
+      farWideAt: (h) => { if (h != null) FARSH.wideH = +h; return FARSH.wideH; },
+      pickAt, gpu: gpuStats, keyLight: (fill) => { if (fill != null) KEYWX.fill = +fill; return { ...KEYWX }; } });
+    if (SHROLE.done && (!REAL || (isTouch && gfxPick() !== 'sharper'))) return;   // nothing a later pass could add
+    SHROLE.done = true; SHROLE.runs++;
     if (!REAL) return;
     const desk = !isTouch, phoneFlats = isTouch && gfxPick() === 'sharper';
     const W = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };   // the outer districts' box (their ground strips)
     const outer = new Set(outerMeshes);
-    const recv = (o) => { if (o.receiveShadow || (moonNoRecv && moonNoRecv.indexOf(o) >= 0)) return; if (moonNoRecv) moonNoRecv.push(o); else o.receiveShadow = true; SHROLE.recv++; };
+    // a flat pinned off by a getter (Girard College's apron, rebuilds/gc.js: pinned while the ground around it received
+    // nothing, or it would show as a dark patch) receives with that ground now; a pin without the rebuild's noShadow is kept
+    const recv = (o) => {
+      if (o.receiveShadow || (moonNoRecv && moonNoRecv.indexOf(o) >= 0)) return;
+      const pin = Object.getOwnPropertyDescriptor(o, 'receiveShadow');
+      if (pin && pin.get) { if (!o.userData.noShadow || !pin.configurable) return; delete o.receiveShadow; }
+      if (moonNoRecv) moonNoRecv.push(o); else o.receiveShadow = true;
+      SHROLE.recv++;
+    };
     scene.traverse((o) => {
       if (!o.isMesh) return;
       const m = Array.isArray(o.material) ? o.material[0] : o.material;
       if (!m || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
       if (outer.has(o)) {
-        if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow) { o.castShadow = true; SHROLE.cast++; } recv(o); }
+        if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow && !SHROLE.held && SHROLE.list.indexOf(o) < 0) { o.castShadow = !FARSH.wide; SHROLE.cast++; SHROLE.list.push(o); } recv(o); }
         return;
       }
       if (o.userData.treeCard) { if (desk) { recv(o); SHROLE.cards++; } return; }
@@ -3552,6 +3625,15 @@
       const bs = o.geometry && o.geometry.boundingSphere;
       if (phoneFlats && bs && bs.center.x > W.x0 && bs.center.x < W.x1 && bs.center.z > W.z0 && bs.center.z < W.z1) recv(o);
     });
+  }
+  // while nothing receives (shadowsIdle) the near map is no longer drawn, so a mesh that turns its own receiving on meanwhile
+  // (made after dusk, or by its own code) would read the map as the light last left it: the frame sweeps such meshes into
+  // the list the receivers come back from, every 60th frame while idle (a scene walk, flags only; the review)
+  function shadowsIdleSweep() {
+    if (!moonNoRecv) return 0;
+    let n = 0;
+    scene.traverse((o) => { if (o.receiveShadow) { o.receiveShadow = false; moonNoRecv.push(o); n++; } });
+    return n;
   }
   // __dbg.shadowAudit(): the visible lit flats and buildings that neither receive nor cast, so a mesh added later without its
   // flags shows up (the omission above stood unseen since the outer districts came in)
@@ -3564,8 +3646,9 @@
       if (!m || !m.isMeshStandardMaterial) return;
       out.n++;
       const bs = o.geometry && o.geometry.boundingSphere, at = bs ? [Math.round(bs.center.x), Math.round(bs.center.z), Math.round(bs.radius)] : null;
-      if (m.userData.wxSurf && !o.receiveShadow && !(moonNoRecv && moonNoRecv.indexOf(o) >= 0)) out.flats.push({ name: o.name, at });
-      if (outer.has(o) && (m === cityMat || m === outerGlassMat) && !o.castShadow) out.buildings.push({ name: o.name, at });
+      const who = () => ({ name: o.name, at, parent: o.parent ? o.parent.name || o.parent.type : '', key: m.customProgramCacheKey ? String(m.customProgramCacheKey()).slice(0, 48) : '', ud: Object.keys(o.userData || {}), tile: !!o.userData.tileSet });
+      if (m.userData.wxSurf && !o.receiveShadow && !(moonNoRecv && moonNoRecv.indexOf(o) >= 0)) out.flats.push(who());
+      if (outer.has(o) && (m === cityMat || m === outerGlassMat) && !o.castShadow) out.buildings.push(who());
     });
     out.flats = out.flats.slice(0, 40); out.buildings = out.buildings.slice(0, 40);
     return out;
@@ -3635,9 +3718,11 @@
   // the occlusion as the deck closes, and once the key is under 0.04 turns every receiver off (shadowsOff) and stops the
   // depth passes until it is back. Then the camera: a city under cloud photographs bright, soft and flat, not dark, so the
   // exposure rises as the deck takes the sun (up to 1.5 times; the dome, the cloud deck and the fog take their pre-image
-  // through uExposure, so they stay exact on the post pipeline, and a phone's fog colour takes the inverse). Called by
+  // through uExposure, so they stay exact on the post pipeline. A phone's fog needs nothing: r149 mixes it in after the
+  // tone mapping, display colour like the raw dome, which the exposure never touches; dividing it by the exposure put the
+  // overcast haze at two thirds of the sky over it, the review's (113, 118, 116) under (178, 189, 196)). Called by
   // applyLighting at its exposure line; returns the exposure's factor. ?real=0: 1, nothing changed
-  const KEYWX = { k: 1, ec: 1, closed: 0, off: false };
+  const KEYWX = { k: 1, ec: 1, closed: 0, off: false, fill: 1.8, comp: 1 };
   function keyWeather(dayF, deckK) {
     if (!REAL) return 1;
     const closed = smooth(0.85, 0.98, WX.cover);
@@ -3650,9 +3735,17 @@
     // the share of the clear sky's key the weather took, past the first quarter (a fair day's cumulus leaves the approved
     // clear-day exposure alone)
     const lost = Math.max(0, 1 - deckK * k - 0.25) / 0.75;
-    const ec = Math.min(1.5, 1 + 0.5 * dayF * lost + 0.25 * WXFX.gloom * dayF);
-    if (!POST.on) scene.fog.color.multiplyScalar(1 / ec);   // the phone's far haze stays the dome's
-    KEYWX.k = k; KEYWX.ec = ec; KEYWX.closed = closed;
+    // the clear sky's fill (the review: on a clear day the shade read blue-black, Broad Street's shaded asphalt (34, 47, 56)
+    // merged with the sky's own fill against (120, 130, 131) in the sun, the shaded lawns near black: the sky gave a shaded
+    // street about a quarter of a sunlit one's light, which the filmic toe takes to a seventh, where a photograph keeps a
+    // quarter to a third). The sky's share rises KEYWX.fill times with the day and the key (none under a closed deck, which
+    // has its own above), and the exposure gives back what that adds to a sunlit street, so the sunlit levels Round 185
+    // approved stand and the shade alone comes up (__dbg.keyLight(f) sets it)
+    const S = sun.intensity * Math.max(sunDir.y, 0), H = hemi.intensity, fill = 1 + (KEYWX.fill - 1) * dayF * k;
+    hemi.intensity *= fill;
+    const comp = S + H > 0 ? (S + H) / (S + H * fill) : 1;
+    const ec = Math.min(1.5, 1 + 0.5 * dayF * lost + 0.25 * WXFX.gloom * dayF) * comp;
+    KEYWX.k = k; KEYWX.ec = ec; KEYWX.closed = closed; KEYWX.comp = comp;
     return ec;
   }
 
@@ -28189,11 +28282,12 @@ float pinOccGate() {
   const _pz = new THREE.Color(), _ph = new THREE.Color(), _pg = new THREE.Color();   // the frame's sky palette
   let _ephMs = NaN, _ephSun = null, _ephMoon = null;   // solar()/lunar() memo: the clock moves once a minute
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
-  // Round 168 (Mike: moon shadows off after dusk): the meshes a phone stopped receiving on, restored at sunrise; a mesh made after
-  // dusk keeps receiving as before
+  // Round 168 (Mike: moon shadows off after dusk): the meshes a phone stopped receiving on, restored at sunrise
   // The realism pass (weather 2): the same switch for a closed deck, fog or rain on every device (keyWeather, 'deck'), so
   // it keeps its reasons and the receivers come back only when none is left; while they are off the depth passes stop too
-  // (aimSun and the frame's redraws wait, the far map with them), and their return redraws the map
+  // (aimSun turns the light but draws no map, the frame's redraws wait, the far map with them), so a mesh that turns its
+  // own receiving on meanwhile is swept into the list now and again (shadowsIdleSweep), and their return aims the map at
+  // the light as it stands and redraws it
   let moonNoRecv = null;
   const shadowOffWhy = new Set();
   function moonShadowsOff(off, why = 'moon') {
@@ -28201,7 +28295,9 @@ float pinOccGate() {
     off = shadowOffWhy.size > 0;
     if (off && !moonNoRecv) { moonNoRecv = []; scene.traverse((o) => { if (o.receiveShadow) { o.receiveShadow = false; moonNoRecv.push(o); } }); }
     else if (!off && moonNoRecv) { for (const o of moonNoRecv) o.receiveShadow = true; moonNoRecv = null; renderer.shadowMap.needsUpdate = true; }
+    const was = shadowsIdle;
     shadowsIdle = !!moonNoRecv;
+    if (was && !shadowsIdle) { shadowAim.cx = NaN; aimSun(lastAim.cx, lastAim.cz, lastAim.extent); }
   }
   // ---- the realism pass's sky and air (applyLighting calls it under REAL, after the exposure and before the fog colour
   // takes its pre-image): the city's skyglow by night on the dome, under the clouds and in the low air; the rain deck coming
@@ -29764,7 +29860,9 @@ float pinOccGate() {
       const lead = isTouch ? 0 : 0.35;
       const c = sun.target.position;
       shadowFrozen = (isTouch && !onFoot && camera.position.y > 600) || shadowsIdle;   // the realism pass: no depth pass while nothing receives
-      if (!SHROLE.done) shadowRoles();   // the realism pass: who casts and who receives, once the city stands
+      if (!SHROLE.done || frameNo % 900 === 0) shadowRoles();   // the realism pass: who casts and who receives, once the city stands and then now and again
+      else if (shadowsIdle && frameNo % 60 === 30) shadowsIdleSweep();   // and nothing reads a map that is not drawn
+      farWide(!onFoot && camera.position.y > (FARSH.wide ? FARSH.wideH - 30 : FARSH.wideH));   // high up the outer districts' buildings are the far map's alone
       if (!shadowFrozen && (ext !== lastAim.extent || Math.hypot(px - c.x, pz - c.z) > ext * (isTouch ? 0.5 : 0.35))) aimSun(px + tmpV.x * ext * lead, pz + tmpV.z * ext * lead, ext);
     }
 
