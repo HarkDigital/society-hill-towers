@@ -9,7 +9,7 @@ through /v1/images/edits (insides/<id>.png). The glass is the key, found to the 
 mask from it (<id>-mask.png beside the frame: transparent over the panes, an API input that never ships), and the bake
 pastes back ONLY the keyed pixels of the edit (a pixel's feather), so the frame and its mask stay exactly registered
 whatever the edit did elsewhere. A cell whose edit is missing borrows its trade's own edits (plates: each pane's largest
-clean rectangle, scaled to cover each of its panes; a corner store the groceries' and the shops'), else one of the
+clean rectangle, scaled to cover each of its panes; a grocery's corner store the groceries' and the shops'), else one of the
 trade's fallback interiors (interiors/, composited behind the key), and one with none keeps dark glass (the review's
 second set was framed before the API's credit ran out, and its 24 cells all borrow).
 
@@ -199,8 +199,10 @@ def plates(fam):
 def transplant(cid, fam, frame, key):
     """A cell's interior from its trade's own edits (plates): each pane of its glass (the key closed over its bars and
     glazing bars) takes a plate, the one nearest its shape of those not yet used in the cell, scaled to cover it; or None.
-    A corner store takes the groceries' and the shops' plates."""
-    pool = plates('grocery') + plates('retail') if cid in F.CORNER else plates(fam)
+    A grocery's corner store takes the groceries' and the shops' plates; the shop's and the takeout's corner frames their
+    own trade's (the review: a stationer and a pizzeria showed a bodega's produce and deli case, and the takeout's second
+    M was the grocery's to the shelf)."""
+    pool = plates('grocery') + plates('retail') if cid in F.CORNER and fam == 'grocery' else plates(fam)
     if not pool:
         return None
     H, W = key.shape

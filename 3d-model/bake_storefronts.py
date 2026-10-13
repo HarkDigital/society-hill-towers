@@ -868,8 +868,10 @@ for i, (r, e) in enumerate(zip(rows, extra)):
     cx, cz = r['x'] + tx * e['shift'], r['z'] + tz * e['shift']
     sp = e.get('span') if w > 0 else None
     hi, lo = (sp[0], sp[1]) if sp else (None, None)
-    o = 0 if hi is None else max(-120, min(120, int(round(hi * 100))))
-    n_ = 0 if lo is None else max(-120, min(120, int(round(lo * 100))))
+    # never saturated (the review: a clamp at 1.2 m laid five panels on tower hosts 1.3 to 1.5 m in front of their wall,
+    # Insomnia Cookies on Broad Street among them; the faces are found within SPAN_REACH, and the int16 guard below holds)
+    o = 0 if hi is None else int(round(hi * 100))
+    n_ = 0 if lo is None else int(round(lo * 100))
     if w > 0:
         out_cm.append(o); in_cm.append(n_)
     b = buildings_fa[e['bi']]

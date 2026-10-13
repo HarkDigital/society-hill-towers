@@ -8901,7 +8901,7 @@ Not done:
   streams unchanged at 54,536. A computer adds about 57 MB of textures (atlas 44.7, mask 11.2, names 1.4, red only).
 - Checks: a tap on the 606 panel opens its building's card; ?real=0 renders as HEAD's (clouds and tufts aside); ?sfart=0
   shows the old boxes and painted bays under the realistic look; the phone's far view shows no wall through a panel.
-- Not done, to offer Mike: roll-down gates on closed shops (the flag rides in aSfInfo, nothing draws it), names on the
+- Not done, to offer Mike: roll-down gates on closed shops (nothing draws them; the second review took out the unused flag), names on the
   generated house fronts' boards for the 527 records that dissolve under them, blade signs for the 796 on street floors,
   shop bases where OSM shops stand, style 6's double-height bays.
 - The review (realism, phone and correctness reviewers, then the fixes on the same branch):
@@ -8955,7 +8955,9 @@ Not done:
     channel found by a leaf's width (0.5 to 1.15 m, or a pair of 0.25 to 0.8 m) in 106 of 107 cells, none a display
     window. Snow lies on the awnings (held snow, Old City).
   - Measured: computer 1,404 panels (sfBuild 75 ms; the step 310 ms with the upload), phone 1,939 (59 ms; step 96).
-    Samplers: panels 7, awnings 4, fabric 9 to 10 (headless). Phone GPU (GC-normalised gpuhook run, swiftshader, 740x360)
+    Samplers on a phone: panels 7, awnings 4, fabric 9 (headless); on a computer panels 8, awnings 5, fabric 11, and 15 at
+    most anywhere (the ground's, as before the round), by the second review's count (7, 4, 10 and 14 headless, which binds
+    one shadow map fewer). Phone GPU (GC-normalised gpuhook run, swiftshader, 740x360)
     869 / 902 / 919 MB at ready, after the first frames and after the look-around, against the pre-round build's 865 /
     898 / 915: still +4 MB. ?real=0 renders as the pre-round build (mean difference under 1 of 255, the tufts aside); the
     old boxes' step is byte for byte the pre-round one less the new path (its sha is pinned in the tests). Tests: the
@@ -8963,3 +8965,57 @@ Not done:
   - Not done: the curtain-wall hosts' own aluminium cells (the malls' tenants are hidden instead); names on the generated
     shop fronts' boards (676 panels dissolve under them); the iPhone's compile time for the facade program and the RedFormat
     names on a device (the simulator's Safari runs them; TestFlight before a deploy); the three frames the credit stopped.
+- The second review (realism, phone and correctness again), then the fixes on the same branch:
+  - Five panels on tower hosts stood 1.3 to 1.5 m in front of their wall, Insomnia Cookies on Broad Street a white board
+    off the granite base with an open gap behind its end pier (a raycast hit the base 2.52 m behind the record's line).
+    bake_storefronts.py held the measured wall's out and in to 1.2 m, and the page tested the street floors 1.2 m inside
+    the record's line, still in front of the wall. The bake writes what it finds now (a face is found within SPAN_REACH
+    3 m; the int16 guard holds the rest): Insomnia -2.64 m, Girasole -2.75, Talula's Daily -1.47, Talula's Garden -1.42,
+    Del Frisco's -1.61, and no other record changed. The page makes every test (the custom models, the street floors,
+    the house fronts) 1.2 m inside the wall's measured line, so all five are on their towers' generated street floors and
+    skipped like the rest (791 to 796 on a computer; 256 to 260 on a phone, where Girasole's tower has no street floor
+    and its panel now stands on the drawn wall, 6 cm proud, not 1.5 m off it); the oblique renders show the base's own
+    granite and openings where the board stood. The test that pinned the clamp is replaced by one that no laid record
+    sits at it or at the reach, and a node harness that runs sfBuild checks every test point against the sidecar.
+  - Phone, the painted shop floors: every pane and door was beaded with the brick's mortar. trimM was set to 1 - glass on
+    the shopfront, which left the wall's material g(1 - g) of every mask edge, and a phone (no wall art) drew it as dots.
+    The wall's material is kept off the whole shopfront (trimM 1 there); the --touch render of reference view 12 is clean,
+    the computer's unchanged.
+  - The second set's corner stores went to the wrong trades: the shop's and the takeout's corner frames borrowed the
+    groceries' plates, so a stationer and a skate shop showed a bodega's produce and jars and South Side Pizza showed
+    grocery-M-1's deli case to the shelf. Only the groceries' corner cells take the bodega now (interior_of for the edits,
+    transplant for the plates); the shop's take shelves of boxed goods and the takeout's a counter, stools and a cooler.
+    The atlas was re-baked at its size (the mask is the same file). The image API still answered 429 credit exhausted,
+    so the real edits for the 24 borrowed cells and the 3 missing frames wait on credit.
+  - Part A squeezed one S to 0.58 of its width on 2.6 to 3.4 m walls (half-metre doors on Ratchada's corner): it starts
+    at 3.4 m now, the panels' own SPAN_MIN (SF_PARTA_MIN), and shorter walls keep masonry with the style's sashes.
+  - The awnings cast their shadows through three's own depth material, which knew neither the dissolve nor the scallops.
+    They have their own (sfAwningDepthMat) with the colour program's cuts, the dissolve at the camera's position (the
+    shadow pass's cameraPosition is the light's). Rendering only the awnings from the sun in Chinatown: 474 shadow texels
+    against 1,938 for the plain material with the eye there, 1,918 against 1,938 with it 100 km off (the scallops).
+  - Integer words decoded from varyings are rounded first (the open and sign word, the trade and sign kind, the awnings'
+    flags). The house fronts are switched to their shop set only once the build stands (a throw left the old boxes over
+    a switched front). The neighbour's rule reads a 16 m grid, not every panel laid. SF_LATE now writes the late-sign
+    trades into the vertex shader (it was dead, the shader typed its own list); the unused gate bit and hours flag are
+    gone. A cut name drops a trailing connector ('IDK Smash Burgerz &' reads 'IDK Smash Burgerz'). The race's timer is
+    cleared.
+  - The step's long task: the atlas, the mask and sfBuild were one 320 ms task on a computer. A computer now decodes the
+    art into ImageBitmaps off the main thread (flipped as decoded, closed once uploaded; pixel for pixel the same picture)
+    and each upload and sfBuild is a task of its own: the atlas 83 to 116 ms (176 from the <img>), the mask 2, sfBuild 75
+    to 80; the longest task in the step 109 to 139 ms. A phone keeps its <img> (WebKit's bitmap options untested on a
+    device).
+  - Measured: a computer 1,399 panels (1,404 before), a phone 1,935 (1,939); 150 fronts switched (149). Programs 148 on a
+    computer and 121 on a phone, as before (the awnings' depth program takes the default's place); every one linked.
+    Samplers unchanged (headless: panels 7, awnings 4, their depth 0, fabric 10, 14 at most; a phone 7, 4, 9 and 13).
+    Phone GPU (the same gpuhook run against 4aa0999): 869 / 902 / 919 MB for both, live heap 136 MB for both, programs
+    121. ?real=0 renders as 4aa0999's (mean difference 0.2 to 0.33 of 255: the tufts and a live flight pin). Tests: a
+    node harness runs sfBuild over the real records (the test points on the wall line, the faces on it, no neighbour
+    sharing a cell, the front switched only by a build that stands, the trimmed names, Part A's stride), 768 OK.
+  - Declined: drawing the slot's name on a generated front's board or letting the panel win under a front (676 panels
+    still dissolve near the eye, 150 of them over a residential front switched to a shop set: the brief keeps the
+    dissolve, and which should win is Mike's call); a chain's own hours for Insomnia Cookies (neither Philadelphia branch
+    carries opening_hours in OSM, a typed table would be invented data, and the record now stands on a street floor and
+    is not drawn); packing the mask tighter (low on a phone, +0 MB); more uniform room (no uniform was added; the fabric's
+    fragment side stays at about 190 vector slots of WebGL 2's 224). Recorded, not changed: a switched front can bring a
+    shop set the eye would not otherwise load (17 places, about 5 to 7.5 MB more on a phone while there, within the
+    headroom).

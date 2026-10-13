@@ -119,7 +119,8 @@ FAMILIES = [
 ]
 FAM_IX = {f[0]: k for k, f in enumerate(FAMILIES)}
 # the corner stores among the second set (the review: every trade's art was upscale and tidy, and the corner stores along
-# Philadelphia's avenues are neither): what, the material and the interior, in place of the trade's own
+# Philadelphia's avenues are neither): what and the material in place of the trade's own, and for the groceries' the
+# interior too (interior_of)
 CORNER_WHAT = 'Philadelphia corner store'
 CORNER_INSIDE = ('a cluttered Philadelphia corner store: shelves crammed to the ceiling with snacks and plain unbranded '
                  'packaged goods, racks of chip bags in plain unprinted wrappers, glass-door drink coolers, a counter behind a '
@@ -181,8 +182,10 @@ def cells():
 
 
 def interior_of(cid, fam):
-    """What the edit paints into a cell's glass: the trade's interior, or a corner store's."""
-    return CORNER_INSIDE if cid in CORNER else FAMILIES[FAM_IX[fam]][4]
+    """What the edit paints into a cell's glass: the trade's interior, or a corner store's for the groceries' corner cells
+    only (the review: the shop's and the takeout's corner frames, dealt to a stationer, a skate shop, a pizzeria and a
+    chicken counter, showed a bodega's produce and deli case; behind their gate and bars they keep their own trade)."""
+    return CORNER_INSIDE if cid in CORNER and fam == 'grocery' else FAMILIES[FAM_IX[fam]][4]
 
 
 def api_key():

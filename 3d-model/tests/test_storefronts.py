@@ -129,8 +129,33 @@ class Sidecar(unittest.TestCase):
             if w:
                 self.assertLessEqual(abs(self.rec[q]), 330)        # never more than 30 m along its wall, and 3 m more on it
             self.assertTrue(w == 0 or 34 <= w <= 120, w)            # 3.4 to 12 m, or hidden
-            self.assertTrue(-120 <= self.rec[q + 3] <= self.rec[q + 2] <= 120)
+            self.assertLessEqual(self.rec[q + 3], self.rec[q + 2])
             self.assertLessEqual(abs(self.rec[q + 8]), 1500)       # turned at most 8.5 degrees
+
+    def test_the_wall_is_measured_never_saturated(self):
+        # the review: out and in were held to 1.2 m, so five panels on tower hosts whose base the page draws 1.4 to 2.8 m
+        # behind the record's line stood 1.3 to 1.5 m in front of their wall (Insomnia Cookies on Broad Street a white
+        # board off the granite). A face is found within SPAN_REACH of the line and the cm reach it whole, never pinned at
+        # a bound: no laid record sits at the old clamp or at the reach, and those five carry their wall's own line
+        reach = int(round(_bake_const('SPAN_REACH') * 100))
+        names = self.info['names']
+        for i in range(self.n):
+            q = i * self.st
+            if not self.rec[q + 1]:
+                continue
+            o, n_ = self.rec[q + 2], self.rec[q + 3]
+            self.assertTrue(-reach < n_ <= o < reach, (i, names[i], o, n_))
+            self.assertFalse(o == n_ == -120 or o == n_ == 120, (i, names[i], o, n_))
+        want = {'Insomnia Cookies': -250, 'Girasole': -250, "Talula's Daily": -140, "Talula's Garden": -135}
+        seen = {}
+        for i in range(self.n):
+            q = i * self.st
+            if self.rec[q + 1] and names[i] in want:
+                seen.setdefault(names[i], []).append(self.rec[q + 2])
+        for nm, lim in want.items():
+            self.assertTrue(any(o <= lim for o in seen.get(nm, [])), (nm, seen.get(nm)))
+        src = (ROOT / 'bake_storefronts.py').read_text()
+        self.assertNotIn('max(-120, min(120,', src)
 
     def test_every_span_stands_on_its_wall(self):
         # the review: a span bridging a jog stood out as a box up to 2 m deep, and one past its wall's end stood in the air:
@@ -140,6 +165,14 @@ class Sidecar(unittest.TestCase):
             if self.rec[q + 1]:
                 self.assertLessEqual(self.rec[q + 2] - self.rec[q + 3], 31, i)
 
+
+
+def _bake_const(name):
+    """One module constant of bake_storefronts.py (a literal), without running the bake."""
+    for n in ast.parse((ROOT / 'bake_storefronts.py').read_text()).body:
+        if isinstance(n, ast.Assign) and any(getattr(t, 'id', None) == name for t in n.targets):
+            return ast.literal_eval(n.value)
+    raise KeyError(name)
 
 
 def _bake_fn(name, *consts):
@@ -179,7 +212,8 @@ class Hours(unittest.TestCase):
             self.skipTest('node is not installed')
         src = (ROOT / 'app.js').read_text()
         arr = src[src.index('  const SF_VERT = [') + len('  const SF_VERT = '):src.index("].join('\\n');", src.index('  const SF_VERT = ['))] + ']'
-        js = """
+        late = src[src.index('  const SF_LATE = '):src.index('\n', src.index('  const SF_LATE = '))]
+        js = late + """
 const L = %s;
 const g = L.join('\\n');
 const a = g.indexOf('float m = uSfClock.x'), b = g.indexOf('  vSfP = vec4(');

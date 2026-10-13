@@ -8904,6 +8904,7 @@ vec2 wRing(vec2 rc, float tt) {
   // read is textureGrad), never on a phone at tier 2 (the realism pass's other art is off there too); ?sfart=0 and ?real=0
   // keep the paint
   const SF_CROP = 0.5;   // the most of a shopfront's glass cut at its head (a storey shorter than the art's 4.2 m), before any is squashed
+  const SF_PARTA_MIN = 3.4;   // the shortest wall a painted shop floor's shopfront dresses (shorter keeps masonry and the style's sashes)
   const SF_PARTA = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.gen && !/[?&]sfart=0\b/.test(location.search);
   const sfPartU = (() => {
     const U = { uSfArt: { value: null }, uSfMaskA: { value: null }, uSfOn: { value: 0 }, uSfGen: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
@@ -9617,8 +9618,9 @@ vec2 wRing(vec2 rc, float tt) {
           '      float isShop = step(3.07, wallTop) * ground * float(st == 5) * inWall * det;',
           // Round 189: once the art is up a painted shop floor is never painted (the review: the flat grey panes and the striped
           // awning band stood beside the photographs, and after dark the painted pane glowed as a white slab). Its wall is
-          // cut into whole shopfronts of the width class (S, M or L) that fills it with the least stretch, a wall under 3.4 m
-          // taking one S at up to 0.58 of its width, each a generated cell dealt along the wall by a stride of its own (1, 3, 5
+          // cut into whole shopfronts of the width class (S, M or L) that fills it with the least stretch, a wall from 3.4 m
+          // (SF_PARTA_MIN, the panels' own SPAN_MIN: the S at 0.76 of its width or more; at 2.6 m its doors read half a metre
+          // wide, review) taking one S, each a generated cell dealt along the wall by a stride of its own (1, 3, 5
           // or 7 of the class's eight, so no two side by side share one), mirrored by a hash of the unit; one storey from the
           // sidewalk to under the second storey's sills, the bulkhead and the fascia at their own height, the glass band
           // between them cut short at its head by up to SF_CROP (a transom's rows, not the panes squashed) and only then
@@ -9627,7 +9629,7 @@ vec2 wRing(vec2 rc, float tt) {
           ...(SF_PARTA ? [
             '      if (st == 5 && uSfOn > 0.5) {',
             '        isShop = 0.0;',
-            '        if (local && wallTop >= 2.9 && vWallL >= 2.6 && det > 0.001) {',
+            '        if (local && wallTop >= 2.9 && vWallL >= ' + SF_PARTA_MIN.toFixed(2) + ' && det > 0.001) {',
             '          float L = vWallL, bs = 1e9, bc = 0.0, bk = 1.0;',
             '          for (int c = 0; c < 3; c++) { float w = c == 0 ? 4.5 : (c == 1 ? 6.0 : 8.5), k = max(1.0, floor(L / w + 0.5)), sc = abs(log(L / k / w)); if (sc < bs) { bs = sc; bc = float(c); bk = k; } }',
             '          sfUw = L / bk; sfUi = floor(uW / sfUw); sfLx = clamp(uW / sfUw - sfUi, 0.0, 1.0);',
@@ -9707,7 +9709,9 @@ vec2 wRing(vec2 rc, float tt) {
           ...(SF_PARTA ? [
             '      if (sfUse > 0.001) {',
             '        col = mix(col, sfArtRgb * 0.88, sfUse);',
-            '        glass = mix(glass, sfM.r, sfUse); trimM = mix(trimM, 1.0 - sfM.r, sfUse);',
+            // (the wall's material kept off the whole shopfront: as 1 - glass, trimM left g(1 - g) of it along every pane's
+            // edge, which a phone, with no wall art, drew as a dotted line of the brick's mortar round every pane and door)
+            '        glass = mix(glass, sfM.r, sfUse); trimM = mix(trimM, 1.0, sfUse);',
             '        if (sfUse > 0.5) { roomID = vec2(sfUi, 0.0); roomUV = vec2(sfLx, fv / sfHh); roomPane = vec2(sfUw, 0.7 * sfHh); roomOffice = 1.0; roomFrame = 0.0; }',
             '      }',
           ] : []),
@@ -16043,14 +16047,28 @@ vec2 wRing(vec2 rc, float tt) {
     ['#2f6b43', '#e9e8e0', 3.3], ['#8e2a26', '#ebe6dc', 3.3], ['#28406a', '#e8e4da', 3.3], ['#202020', '#e6e2d8', 3.3]];
   let sfArtP = null;
   // the art's two images, asked for at the top of the build (build()) so they arrive while the city is raised
+  // Each is decoded off the main thread before it is handed on (the review: the step's upload was one long task of 320 ms on
+  // a computer, the 4096 by 2048 atlas's 176 of it). A computer takes it as an ImageBitmap, flipped as it is decoded, which
+  // uploads in 109 ms and is let go once it has (sfBitmapTex); a phone keeps the decoded <img> its freeTexOnUpload lets go
+  // (WebKit's createImageBitmap options are not to be trusted untested on a device)
   function sfArtLoad() {
-    if (!sfArtP) { const A = STOREFRONT_ART; sfArtP = Promise.all([artImage(artSrc(A.img, A.imgHalf)), artImage(artSrc(A.mask, A.maskHalf))]); }
+    const dec = (im) => !im ? im : !isTouch && typeof createImageBitmap === 'function'
+      ? createImageBitmap(im, { imageOrientation: 'flipY', premultiplyAlpha: 'none' }).then((b) => b, () => im)
+      : im.decode ? im.decode().then(() => im, () => im) : im;
+    if (!sfArtP) { const A = STOREFRONT_ART; sfArtP = Promise.all([artImage(artSrc(A.img, A.imgHalf)).then(dec), artImage(artSrc(A.mask, A.maskHalf)).then(dec)]); }
     return sfArtP;
+  }
+  function sfBitmapTex(tex) {
+    const b = tex.image;
+    if (typeof ImageBitmap === 'undefined' || !(b instanceof ImageBitmap)) return freeTexOnUpload(tex);
+    tex.flipY = false;   // flipped already (WebGL ignores its unpack flip for a bitmap)
+    tex.onUpdate = () => { tex.onUpdate = null; tex.image = { width: b.width, height: b.height }; b.close(); };
+    return tex;
   }
   function sfTextures(im, mk) {
     const map = new THREE.Texture(im); map.encoding = THREE.sRGBEncoding; map.anisotropy = Math.min(isTouch ? 4 : 8, renderer.capabilities.getMaxAnisotropy() || 1); map.needsUpdate = true;
     const mask = new THREE.Texture(mk); mask.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1); mask.needsUpdate = true;   // linear: its values are numbers, not colours
-    return [freeTexOnUpload(map), freeTexOnUpload(mask)];
+    return [sfBitmapTex(map), sfBitmapTex(mask)];
   }
   // the panel: x 0 to 1 along the viewer's right, y 0 to 1 up, the front at z 0 and its ends and cap going back into the
   // wall to z -1 (the instance sets the depth), every stream Float32 at a stride of 4, 8 or 12 (a phone, Round 158).
@@ -16090,7 +16108,7 @@ vec2 wRing(vec2 rc, float tt) {
     '  float open = 0.0, late = 0.0;',
     '  if (today >= 0.0) { float o = floor(today / 2048.0), c = today - o * 2048.0; open = step(o, m) * step(m, c - 0.5); late = step(o, m) * step(m, 1379.5); }',
     '  if (yest >= 0.0) { float o = floor(yest / 2048.0), c = yest - o * 2048.0; if (c > 1440.0) open = max(open, step(m, c - 1440.5)); }',
-    '  float fam = mod(aSfInfo.x, 16.0), sgn = max(open, late * (fam == 1.0 || fam == 2.0 || fam == 3.0 || fam == 4.0 || fam == 7.0 ? 1.0 : 0.0));',
+    '  float fam = mod(aSfInfo.x, 16.0), sgn = max(open, late * (' + [...SF_LATE].map((f) => 'fam == ' + f + '.0').join(' || ') + ' ? 1.0 : 0.0));',
     '  vSfP = vec4(aSfP.y > 0.5 && aSfP.y < 2.5 ? -position.z * length(instanceMatrix[2].xyz) : aSfP.x, position.y * sfHf - aSfDim.z, sfWm + aSfP.y * 100.0, open + 2.0 * sgn);',
     '  vSfCell = aSfCell;',
     '  vSfRows = vec4(floor(aSfInfo.w / 1000.0) / 1000.0, mod(aSfInfo.w, 1000.0) / 1000.0, aSfBand.y, aSfDim.y);',
@@ -16109,12 +16127,14 @@ vec2 wRing(vec2 rc, float tt) {
       'uniform sampler2D uSfMap, uSfMask, uSfNames; uniform vec4 uSfK; uniform vec2 uSfSlots; uniform float uNight, uFrR, uFrShop;',
       'varying vec4 vSfP, vSfCell, vSfRows, vSfBand, vSfK; varying vec3 vSfW, vWNorm; varying float vBase;',
       // frMask: the name lampLightPatchReal looks for to keep the lamps' wash off the glass (a tenth of it), shared with the fronts
-      'vec4 frMask; vec4 sfArt; vec2 sfUv, sfGx, sfGy, sfDx, sfDy; float sfPart, sfW, sfMirror, sfNear, sfH, sfSign, sfFall, sfOpen, sfSignOn; vec3 sfTxt;',
+      'vec4 frMask; vec4 sfArt; vec2 sfUv, sfGx, sfGy, sfDx, sfDy; float sfPart, sfW, sfMirror, sfNear, sfH, sfSign, sfFall, sfOpen, sfSignOn, sfKx, sfKy; vec3 sfTxt;',
       SF_TXT_GLSL,
     ].join('\n'))
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + [
         'sfPart = floor(vSfP.z / 100.0 + 0.001); sfW = vSfP.z - sfPart * 100.0; sfMirror = step(1.5, vSfK.w); sfNear = vSfK.w - 2.0 * sfMirror;',
-        'sfOpen = mod(vSfP.w, 2.0); sfSignOn = step(1.5, vSfP.w); sfH = vSfRows.w;',
+        // the integer words rounded before they are taken apart (the review: an interpolated 2.0 is not promised to arrive
+        // as 2.0, and a mod of 1.9999999 lights a closed shop's sign at twice an open one's)
+        '{ float ow = floor(vSfP.w + 0.5); sfOpen = mod(ow, 2.0); sfSignOn = step(1.5, ow); } sfH = vSfRows.w; sfKx = floor(vSfK.x + 0.5); sfKy = floor(vSfK.y + 0.5);',
         // the gradients first, in uniform flow: every read below is textureGrad from these
         'sfDx = dFdx(vSfP.xy); sfDy = dFdy(vSfP.xy);',
         'if (sfNear * uFrShop > 0.5) { float fd = distance(vSfW, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));',
@@ -16150,7 +16170,7 @@ vec2 wRing(vec2 rc, float tt) {
           '    sfDiff = mix(sfDiff, mix(a2 * 0.6, a2, m2), frMask.r); } }',
         ] : []),
         // the name on the board: its plate centred in the band at 86% of its width, at the band's aspect up to the slot's 8:1
-        'sfSign = 0.0; sfFall = 0.0; sfTxt = SF_TXT[int(floor(vSfK.x / 16.0 + 0.001))];',
+        'sfSign = 0.0; sfFall = 0.0; sfTxt = SF_TXT[int(floor(sfKx / 16.0 + 0.001))];',
         'if (sfPart < 0.5) { float yb0 = sfH - (1.0 - vSfRows.z) * ' + HM + ', yb1 = sfH - (1.0 - vSfBand.z) * ' + HM + ';',
         '  sfFall = clamp((yb1 - vSfP.y) / max(yb1 - yb0, 0.1), 0.0, 1.0);',
         '  if (vSfBand.w > -0.5) {',
@@ -16171,7 +16191,7 @@ vec2 wRing(vec2 rc, float tt) {
       ].join('\n'))
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
         'if (uNight > 0.001) {',
-        '  float fam = mod(vSfK.x, 16.0), sk = vSfK.y, chan = mod(sk, 4.0), warm = mod(floor(sk / 4.0), 4.0);',
+        '  float chan = mod(sfKy, 4.0), warm = floor(sfKy / 4.0 + 0.001);',
         '  vec3 lc = warm > 0.5 ? vec3(1.0, 0.74, 0.48) : vec3(1.0, 0.93, 0.84);',
         '  float on = mix(fract(vSfK.z * 7.31) < 0.333 ? 0.25 : 0.04, 1.0, sfOpen);',
         '  float al = dot(sfArt.rgb, vec3(0.2126, 0.7152, 0.0722));',
@@ -16203,17 +16223,23 @@ vec2 wRing(vec2 rc, float tt) {
   // the flat and the scalloped (the review: two programs from one shader, and the scalloped unit's eight lobes stretched
   // with the awning to a metre each on a 9 m front): aSfNear carries the near flag and 2 for a scalloped valance, whose
   // lobes are cut here from the metres along it, a whole number of about a third of a metre each
+  // what both awning programs cut, the colour's and the shadow's: the dissolve on the near flag at the eye's distance (eye: the
+  // camera's position, which in the shadow pass is not cameraPosition), and a scalloped valance's lobes (sfAwnCut, the
+  // hem's line)
+  const SF_AWN_V_DECL = 'attribute float aAlong, aSfNear; varying float vAlong, vSfNear, vAwnLen; varying vec3 vSfW, vAwnL;';
+  const SF_AWN_V = 'vAlong = aAlong * length(instanceMatrix[0].xyz); vAwnLen = 2.6 * length(instanceMatrix[0].xyz); vSfNear = aSfNear; vAwnL = position;';
+  const SF_AWN_F_DECL = 'uniform float uFrR, uFrShop; varying float vAlong, vSfNear, vAwnLen; varying vec3 vSfW, vAwnL; float sfAwnCut;';
+  const sfAwnCutGlsl = (eye) => 'float sfNw = floor(vSfNear + 0.5);\nif (mod(sfNw, 2.0) * uFrShop > 0.5) { float fd = distance(vSfW, ' + eye + '), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }\n' +
+    '{ float sc = step(1.5, sfNw), nS = max(2.0, floor(vAwnLen / 0.33 + 0.5));\n' +
+    '  sfAwnCut = mix(-0.9, -0.765 - 0.135 * sin(3.14159265 * fract(vAlong * nS / max(vAwnLen, 0.1))), sc);\n' +
+    '  if (sc > 0.5 && vAwnL.z > 0.86 && vAwnL.y < sfAwnCut) discard; }';
   function sfAwningHook(sh) {
     sh.uniforms.uFrR = frR; sh.uniforms.uFrShop = frShopOn; sh.uniforms.uSunW = sunWUniform;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aAlong, aSfNear; attribute vec4 aAwn; varying float vAlong, vSfNear, vAwnLen; varying vec4 vAwn; varying vec3 vSfW, vAwnL;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlong = aAlong * length(instanceMatrix[0].xyz); vAwnLen = 2.6 * length(instanceMatrix[0].xyz); vAwn = aAwn; vSfNear = aSfNear; vAwnL = position;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + SF_AWN_V_DECL + ' attribute vec4 aAwn; varying vec4 vAwn;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SF_AWN_V + ' vAwn = aAwn;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSfW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR, uFrShop; uniform vec3 uSunW; varying float vAlong, vSfNear, vAwnLen; varying vec4 vAwn; varying vec3 vSfW, vAwnL; float sfAwnCut;')
-      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' +
-        'if (mod(vSfNear, 2.0) * uFrShop > 0.5) { float fd = distance(vSfW, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }\n' +
-        '{ float sc = step(1.5, vSfNear), nS = max(2.0, floor(vAwnLen / 0.33 + 0.5));\n' +
-        '  sfAwnCut = mix(-0.9, -0.765 - 0.135 * sin(3.14159265 * fract(vAlong * nS / max(vAwnLen, 0.1))), sc);\n' +
-        '  if (sc > 0.5 && vAwnL.z > 0.86 && vAwnL.y < sfAwnCut) discard; }')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + SF_AWN_F_DECL + ' uniform vec3 uSunW; varying vec4 vAwn;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + sfAwnCutGlsl('cameraPosition'))
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
         'if (vAwn.w > 0.0) { float sx = fract(vAlong * vAwn.w); diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, smoothstep(0.46, 0.54, sx) - smoothstep(0.96, 1.0, sx)); }',
         '{ float wf = fwidth(vAlong) + fwidth(vAwnL.z);',
@@ -16226,6 +16252,23 @@ vec2 wRing(vec2 rc, float tt) {
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (!gl_FrontFacing) totalEmissiveRadiance += diffuseColor.rgb * 0.45 * max(uSunW.y, 0.0);');
     lampLightPatch(sh, 'vSfW', 'blade');
     wxSurfacePatch(sh);
+  }
+  // the awnings' shadow (the review: three's own depth material knew neither the dissolve nor the scallops, so an awning
+  // gone near the eye kept its shadow and a scalloped valance cast a straight one): the same cuts, at the camera's distance
+  const sfEyeU = { value: camera.position };
+  function sfAwningDepthHook(sh) {
+    sh.uniforms.uFrR = frR; sh.uniforms.uFrShop = frShopOn; sh.uniforms.uSfEye = sfEyeU;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + SF_AWN_V_DECL)
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SF_AWN_V)
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvSfW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + SF_AWN_F_DECL + ' uniform vec3 uSfEye;')
+      .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' + sfAwnCutGlsl('uSfEye'));
+  }
+  function sfAwningDepthMat() {
+    const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, side: THREE.DoubleSide });
+    m.onBeforeCompile = sfAwningDepthHook;
+    m.customProgramCacheKey = () => 'storefront-awnings-depth';
+    return m;
   }
   function sfAwningMat() {
     const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
@@ -16310,7 +16353,19 @@ vec2 wRing(vec2 rc, float tt) {
       return out.length ? out : (byFamCls.get('0:' + cls) || [0]);
     };
     const frCells = FRONTS_ON && REAL && FRONTS.n ? sfFrontCells() : null, frSet = new Set();
-    const taken = [];   // [x, z, nx, nz, cell] of the panels laid, for the neighbour's rule
+    // the house fronts each switches to its shop set, made only once everything is built (the review: a throw after the
+    // switch left the old boxes, built from the step's cells of before it, standing over a shop front)
+    const toShop = new Map();
+    // [x, z, nx, nz, cell] of the panels laid, in 16 m cells, for the neighbour's rule (15 m: the cell and the eight about it)
+    const taken = new Map(), tKey = (x, z) => Math.floor(x / 16) + ':' + Math.floor(z / 16);
+    const worn = (c2, cx, cz, nx, nz) => {
+      const gx = Math.floor(cx / 16), gz = Math.floor(cz / 16);
+      for (let a = gx - 1; a <= gx + 1; a++) for (let b = gz - 1; b <= gz + 1; b++) {
+        const L = taken.get(a + ':' + b); if (!L) continue;
+        for (const q of L) if (q[4] === c2 && (q[0] - cx) ** 2 + (q[1] - cz) ** 2 < 225 && q[2] * nx + q[3] * nz > 0.3) return true;
+      }
+      return false;
+    };
     const recs = [];
     let baseN = 0, nearN = 0, hidden = 0, switched = 0, borrowed = 0;
     for (let i = 0; i < n; i++) {
@@ -16329,19 +16384,22 @@ vec2 wRing(vec2 rc, float tt) {
         if (w <= 0) { hidden++; continue; }
       }
       // the laid middle on the record's own line, then the wall's line through it (the bake's out and in are measured
-      // along the record's normal, at the middle) and the panel's own frame, turned by the lean
-      const cx = x - nz * shift, cz = z + nx * shift;
+      // along the record's normal, at the middle) and the panel's own frame, turned by the lean. Every test is made at the
+      // wall's line, not the record's (the review: a tower's base drawn 1.4 to 2.8 m behind the record's line put the
+      // point 1.2 m inside the line still in front of the wall, so five panels missed their street floor and stood in the
+      // air, Insomnia Cookies on Broad Street among them)
+      const cx = x - nz * shift, cz = z + nx * shift, wx = cx + nx * out, wz = cz + nz * out;
       if (lean) { const k = 1 / Math.sqrt(1 + lean * lean), tx = -nz, tz = nx; nx = (nx - tx * lean) * k; nz = (nz - tz * lean) * k; }
-      if (ownsIt(cx - nx * 1.2, cz - nz * 1.2)) continue;
-      if (baseOn && onBase(cx - nx * 1.2, cz - nz * 1.2)) { baseN++; continue; }
+      if (ownsIt(wx - nx * 1.2, wz - nz * 1.2)) continue;
+      if (baseOn && onBase(wx - nx * 1.2, wz - nz * 1.2)) { baseN++; continue; }
       let near = 0;
       if (frCells) {
         frSet.clear();
         const e = Math.max(0, w / 2 - 0.6);
-        for (const s of [-e, 0, e]) sfFrontsAt(frCells, cx - nz * s, cz + nx * s, nx, nz, frSet);
+        for (const s of [-e, 0, e]) sfFrontsAt(frCells, wx - nz * s, wz + nx * s, nx, nz, frSet);
         for (const k of frSet) {
-          const o2 = k * FR_STRIDE, set = (FRONTS.buf[o2 + 9] | 0) & 15;
-          if (!FR_SHOPPY.has(set)) { const s2 = sfShopSet(k); if (s2 < 0) continue; FRONTS.buf[o2 + 9] += s2 - set; switched++; }
+          const set = (FRONTS.buf[k * FR_STRIDE + 9] | 0) & 15;
+          if (!FR_SHOPPY.has(set) && !toShop.has(k)) { const s2 = sfShopSet(k); if (s2 < 0) continue; toShop.set(k, s2 - set); }
           near = 1;
         }
       }
@@ -16353,9 +16411,9 @@ vec2 wRing(vec2 rc, float tt) {
       let cell = list[start];
       for (let t = 0; t < list.length; t++) {
         const c2 = list[t < n0 ? (start + t) % n0 : t];
-        if (!taken.some((q) => q[4] === c2 && (q[0] - cx) ** 2 + (q[1] - cz) ** 2 < 225 && q[2] * nx + q[3] * nz > 0.3)) { cell = c2; if (t >= n0) borrowed++; break; }
+        if (!worn(c2, cx, cz, nx, nz)) { cell = c2; if (t >= n0) borrowed++; break; }
       }
-      taken.push([cx, cz, nx, nz, cell]);
+      { const key = tKey(cx, cz); let L = taken.get(key); if (!L) taken.set(key, L = []); L.push([cx, cz, nx, nz, cell]); }
       recs.push({ i, cx, cz, nx, nz, w, fh, kind, col, flags, out, inn, fp, fam, hrs, hostH, name, near, cell, cls: cells[cell].cls, mirror: (h >>> 7) & 1, seed: 0.01 + 0.98 * hash01(i * 0.731 + 0.17) });
     }
     if (!recs.length) return false;
@@ -16399,10 +16457,10 @@ vec2 wRing(vec2 rc, float tt) {
       const dark = c.boardL < 0.2, hb = sfHash(r.name + '|t');
       let txt = dark ? (r.fam === 1 || r.fam === 4 || r.fam === 8 ? [0, 2, 1][hb % 3] : [0, 1][hb % 2]) : [3, 4, 5, 6][hb % 4];
       if (r.fam === 7) txt = dark ? 1 : 7;
-      const gate = (r.fam === 7 || r.fam === 12) ? hash01(r.i * 1.37) < 0.6 : r.fam === 0 ? hash01(r.i * 1.37) < 0.33 : false;
-      aInfo.array.set([r.fam + 16 * txt, (SF_CHANNEL.has(r.fam) ? 1 : 0) + 4 * (A.warm && A.warm[r.fam] ? 1 : 0) + 16 * (gate ? 1 : 0), r.near, Math.round(c.rows[0] * 1000) * 1000 + Math.round(c.rows[1] * 1000)], k * 4);
+      aInfo.array.set([r.fam + 16 * txt, (SF_CHANNEL.has(r.fam) ? 1 : 0) + 4 * (A.warm && A.warm[r.fam] ? 1 : 0), r.near, Math.round(c.rows[0] * 1000) * 1000 + Math.round(c.rows[1] * 1000)], k * 4);
+      // (the hours' fourth float is spare: the stream stays a vec4, a stride of 16)
       const hh = r.hrs || SF_DEF_HOURS[r.fam] || SF_DEF_HOURS[0], pack = (a, b) => (a < 0 || b < 0 ? -1 : a * 2048 + Math.min(2047, b));
-      aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), r.hrs ? 0 : 1], k * 4);
+      aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), 0], k * 4);
       const nm = SF_SIGNS && r.name ? names.push(r.name) - 1 : -1;
       list.set([r.cx + r.nx * face, yS + H * 0.7, r.cz + r.nz * face, r.nx, r.nz, r.w, r.near, nm, k], k * 9);
       byFam[A.fams[r.fam]] = (byFam[A.fams[r.fam]] || 0) + 1; byCls[r.cls] = (byCls[r.cls] || 0) + 1;
@@ -16439,10 +16497,14 @@ vec2 wRing(vec2 rc, float tt) {
       aAwn.onUpload(dropUploadedArray); aNear.onUpload(dropUploadedArray); am.instanceMatrix.onUpload(dropUploadedArray); am.instanceColor.onUpload(dropUploadedArray);
       g.setAttribute('aAwn', aAwn); g.setAttribute('aSfNear', aNear); freeOnUpload(g);
       am.frustumCulled = false; am.receiveShadow = true; am.castShadow = !isTouch; am.name = 'storefront-awnings';
+      if (am.castShadow) am.customDepthMaterial = sfAwningDepthMat();
       SF.scalloped = awnWant.filter((a) => a.scallop).length;
     }
-    // into the scene only now, all at once: whatever threw above leaves nothing standing, and the old boxes are built instead
-    // (the review: a throw after the panels were added built the boxes over them)
+    // into the scene only now, all at once, and the house fronts switched: whatever threw above leaves nothing standing and
+    // no front switched, and the old boxes are built instead (the review: a throw after the panels were added built the
+    // boxes over them)
+    for (const [k, d] of toShop) FRONTS.buf[k * FR_STRIDE + 9] += d;
+    switched = toShop.size;
     groupCity.add(mesh);   // never staged in pendingUpload: it draws unculled for good (its geometry's sphere is the unit panel's)
     if (am) { groupCity.add(am); SF.awn.push(am); }
     SF.mesh = mesh; SF.list = list; SF.names = names; SF.aSlot = aSlot; SF.byFam = byFam; SF.byCls = byCls; SF.named = named;
@@ -16485,6 +16547,13 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // one slot's name into the slot canvas: the plate's aspect inside the slot's 8:1, capitals at most 0.62 of its height,
   // condensed to 0.8 if it must, then two lines at the middle space, then trailing words dropped; never stretched
+  // a name cut short at a word keeps no connector dangling at its end (the review: 'IDK Smash Burgerz &', 'Hand & Stone
+  // Massage and')
+  function sfTrimTail(t) {
+    let u = t;
+    for (;;) { const v = u.replace(/(?:\s+(?:&|\+|and|n|of|the|at|on|for|by|with|de|la|y)|\s*[,;:/&+\-])\s*$/i, ''); if (v === u || !v) break; u = v; }
+    return u || t;
+  }
   function sfDrawName(ctx, S, text, fam, asp) {
     const W = S.SW, H = S.SH, pw = Math.min(W, H * asp), x0 = (W - pw) / 2;
     ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, H);
@@ -16507,7 +16576,7 @@ vec2 wRing(vec2 rc, float tt) {
       for (let i = 0; i < t.length; i++) if (t[i] === ' ' && (best < 0 || Math.abs(i - mid) < Math.abs(best - mid))) best = i;
       lines = [t.slice(0, best), t.slice(best + 1)]; f = fit(lines);
     }
-    while (!f && t.indexOf(' ') > 0) { t = t.slice(0, t.lastIndexOf(' ')); lines = [t]; f = fit(lines); }
+    while (!f && t.indexOf(' ') > 0) { t = sfTrimTail(t.slice(0, t.lastIndexOf(' '))); lines = [t]; f = fit(lines); }
     if (!f) { lines = [t]; f = { s: H * 0.4, k: 0.8 }; }
     ctx.save();
     ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -16681,13 +16750,20 @@ vec2 wRing(vec2 rc, float tt) {
     // Round 189: the generated shopfronts (sfBuild) where the realistic look, WebGL 2 and the art allow; the art was asked for
     // at the top of the build, and waits here at most 10 s more. Anything short of that dresses the old boxes below, as ever
     if (SF_ART_ON) {
-      const got = await Promise.race([sfArtLoad(), new Promise((r) => setTimeout(() => r(null), 10000))]);
+      let late = 0;
+      const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), 10000); })]);
+      clearTimeout(late);
       sfArtP = null;   // the review: the promise held both decoded images for the page's life (a phone's freeTexOnUpload lets them go)
       if (!got || !got[0] || !got[1]) { SF.state = got ? 'art failed' : 'art late'; }
       else {
         const [map, mask] = sfTextures(got[0], got[1]);
         SF_U.uSfMap.value = map; SF_U.uSfMask.value = mask;
-        try { renderer.initTexture(map); renderer.initTexture(mask); } catch (e) { }
+        // each upload (and its mips) a task of its own, the panels a third (the review: the three in one took the step
+        // from 108 to 342 ms on a computer, one long task behind the veil)
+        try { renderer.initTexture(map); } catch (e) { }
+        await yieldNow();
+        try { renderer.initTexture(mask); } catch (e) { }
+        await yieldNow();
         let built = false;
         try { built = sfBuild(body, n, ownsIt, onBase, baseCells.size > 0); } catch (e) { SF.error = String(e && e.message || e); console.error('storefronts:', e); }
         if (SF_PARTA) { sfPartU.uSfArt.value = map; sfPartU.uSfMaskA.value = mask; sfPartU.uSfOn.value = 1; SF.partA = true; }   // the painted shop floors take them too
