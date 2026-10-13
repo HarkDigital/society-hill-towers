@@ -319,6 +319,15 @@ files. The rules that keep it standing:
 - Under REAL the water is its own Fresnel against its own sky probe (Round 54's slate-teal stays under ?real=0), and a
   ring on high ground is levelled only through waterRingGate.
 - ?real=0 keeps every one of these looks as it was before the pass.
+- The storefronts (Round 189): the OSM records and the style-5 painted shop floors wear one generated shopfront atlas
+  (storefront_art.json, art/storefronts/), every record's trade, width class, hours and OSM name in storefront_info.json
+  (bake_storefronts.py's sidecar in storefronts.b64's order; hours entries carry 7 values, the 7th the closed weekdays,
+  Monday first); `?sfart=0` keeps the old boxes, `?signs=0` blanks the boards. A phone never decodes the art before its
+  step (sfArtPrefetch keeps only the bytes); a computer takes ImageBitmaps only where SF_BITMAP allows, closed after
+  upload. A panel on a style-5 wall is snapped to the shader's units (sfHostNote, sfPartTop, sfSnapRun port the facade
+  shader's unit and storey rule: change one, change the other). No two panels within SF_NEIGH_R 30 m wear one cell.
+  Names are drawn by the page, never by the art, within 160 m (90 m on a phone), and a panel under a generated house
+  front never shows its name (whether the fronts' boards should carry it is Mike's call).
 
 ## Where things are
 
