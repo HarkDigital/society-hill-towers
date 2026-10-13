@@ -49,7 +49,7 @@ class WetStreets(unittest.TestCase):
         c = cut(self.s, '  const WX_WET_GLSL = {', '\n  };\n')
         self.assertIn("(1.0 - wxSnowW)", c)
         self.assertIn("(1.0 - smoothstep(0.35, 1.2, wxFw))", c)   # a roof seen from the air never speckles
-        self.assertIn("'/*wxLane*/',", c)
+        self.assertIn("'  /*wxLane*/',", c)
         self.assertIn('vLane.z - 1.25', c)                        # the gutters: the road's last metre each side
 
     def test_the_lamp_pool_guard_still_sees_its_own_declaration(self):
@@ -78,14 +78,14 @@ class WetStreets(unittest.TestCase):
         f = cut(s, '  function wxWetPatch(shader) {', '\n  }\n')
         self.assertIn('if (!isTouch) decl += ', f)                   # the rings: a computer only
         self.assertIn("(isTouch ? '' : [", f)
-        self.assertIn('const RAIN_N = REAL && isTouch ? 8000 : 16000;', s)
+        self.assertIn('const RAIN_N = REAL ? (isTouch ? 8000 : 24000) : 16000;', s)
         self.assertIn('const SNOW_N = REAL && !isTouch ? 45000 : 11000;', s)
         # a phone keeps no lamp inventory (Round 158) and reads no light map in the wet patch: only the pools' wet loss
         self.assertIn("    if (!isTouch) {\n      if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap') === -1)", f)
         self.assertIn("].concat(WX_GLINT_N ? [", f)
         self.assertIn("isTouch ? '' : '  if (uWxLampOn > 0.001) { vec2 wu", f)
         self.assertIn('const WX_SHELLS = REAL ? (isTouch ? [[30, 160], [80, 260]] : [[28, 150], [75, 260], [190, 480]]) : [];', s)
-        self.assertIn("uMaxPx: { value: isTouch ? 24 : 44 }", s)
+        self.assertIn("const WXH = { ang: 0.09, warm: 0, gain: 0.4 };", s)   # an angular halo, the same on every screen
 
     def test_no_narrow_vertex_streams(self):
         # WebKit's Metal backend pads a copy of every stream whose stride is not a multiple of 4 (Round 158)
@@ -102,6 +102,60 @@ class WetStreets(unittest.TestCase):
         f = cut(self.s, '  function wxHaloMesh() {', '\n  }\n')
         self.assertIn('blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor', f)
         self.assertIn('new THREE.Points(poleGlow.geometry, m)', f)     # the lamps' own buffers, nothing copied
+
+    def test_the_puddles_cost_nothing_on_a_dry_street(self):
+        # a branch on the uniform: the noise, the derivatives and the gutters only while the street is wet
+        c = cut(self.s, '  const WX_WET_GLSL = {', '\n  };\n')
+        col = c[c.index('    color: ['):c.index('    rough: [')]
+        self.assertIn("'float wxFw = 0.0, wxGreen = 0.0, wxPn = 0.0, wxPud = 0.0;',\n      'if (uWet > 0.001) {',", col)
+        body = col[col.index("'if (uWet > 0.001) {',"):]
+        for k in ('fwidth(', 'wxVN(', '/*wxLane*/', 'diffuseColor.rgb *='):
+            self.assertIn(k, body)
+            self.assertLess(col.index("'if (uWet > 0.001) {',"), col.index(k))
+        self.assertTrue(body.rstrip().endswith("'}',\n    ].join('\\n'),"))
+
+    def test_a_lawn_by_the_surfaces_own_word(self):
+        # a winter's brown lawn fails the colour test: surfTexPatch's isGreen (ground 1, paved 0) wins where it is declared
+        self.assertIn("  const WX_GREEN_COL = 'step(diffuseColor.r * 1.08, diffuseColor.g) * step(diffuseColor.b * 1.15, diffuseColor.g)';", self.s)
+        f = cut(self.s, '  function wxSurfaceLate(shader) {', '\n  }\n')
+        self.assertIn("if (ig !== -1 && wg !== -1 && ig < wg) fs = fs.replace('  wxGreen = ' + WX_GREEN_COL + ';', '  wxGreen = isGreen;');", f)
+
+
+class WetAir(unittest.TestCase):
+    """Lights in wet air, once: the weather's halo and grade (the night pass's own halo, glare growth and grade are gone, they
+    doubled every halo), the halo's lamps out of reach thrown out by the vertex, its depth from the vertex, and its program
+    built on the first frame behind the veil rather than on the first wet night."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.s = (ROOT / 'app.js').read_text()
+
+    def test_one_writer_of_the_grade(self):
+        s = self.s
+        writes = [m for m in ('gradeU.uSat.value =', 'gradeU.uCon.value =') if s.count(m)]
+        self.assertEqual(writes, [])                                      # wxGrade writes through its own handles
+        g = cut(s, '  function wxGrade(F, night) {', '\n  }\n')
+        self.assertIn('s.value = WXG.wS = WXG.sat0 - 0.2 * wxK * WXG.sat0;', g)
+        self.assertEqual(s.count('uBloom.value ='), 0)
+        self.assertEqual(s.count('u.value = WXG.wB = '), 1)
+        self.assertNotIn('LAMP_GRADE0', s)
+        self.assertNotIn('lampHaloU', s)
+
+    def test_the_halo_is_cheap(self):
+        f = cut(self.s, '  function wxHaloMesh() {', '\n  }\n')
+        self.assertIn("vertexShader: VDEPTH_UNDEF + ", f)                 # the depth from the vertex: no gl_FragDepth
+        self.assertIn("fragmentShader: VDEPTH_UNDEF + ", f)
+        self.assertIn("if (stdZ < -gl_Position.w || stdZ > gl_Position.w) gl_Position.z = stdZ;", f)
+        self.assertIn("if (vF < 0.004 || mv.z > -0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; return; }", f)
+        self.assertLess(f.index('if (vF < 0.004'), f.index('#include <logdepthbuf_vertex>'))
+        self.assertIn("m.customProgramCacheKey = () => 'wx-halo';", f)
+
+    def test_the_halo_compiles_behind_the_veil(self):
+        f = cut(self.s, '  function wxFxStep(now, dt) {', '\n  }\n')
+        self.assertIn('if (!wxHalo && poleGlow) { wxHalo = wxHaloMesh(); WXH.warm = 1; }', f)
+        self.assertIn('haloU.uHalo.value = WXH.warm ? 0 : halo;', f)
+        self.assertIn('wxHalo.visible = WXH.warm > 0 || (poleGlow.visible && halo > 0.01);', f)
+        self.assertIn('const halo = lampMapU.uLampOn.value * Math.max(hr, hf, hs);', f)   # the lamps' own switch
 
     def test_the_glints_know_each_lamps_colour(self):
         # beside the computer's own inventory (keepInv): a phone keeps neither (test_memory_cuts' FreedArrays)

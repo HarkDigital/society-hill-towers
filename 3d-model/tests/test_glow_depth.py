@@ -29,7 +29,7 @@ class GlowDepth(unittest.TestCase):
     def node(self, body):
         if not shutil.which('node'):
             raise unittest.SkipTest('Node.js unavailable')
-        script = "const THREE = require('./three.min.js');\nconst poleMat = {};\nconst lampHaloU = { value: null };\n" + self.hook + r'''
+        script = "const THREE = require('./three.min.js');\nconst poleMat = {};\n" + self.hook + r'''
 // a small preprocessor: #define, #undef, #ifdef, #ifndef, #if defined(A) && defined(B), #else, #endif, and #include of
 // three's chunks; returns the live lines
 function live(src, defs) {
@@ -68,7 +68,7 @@ console.log(JSON.stringify({
   vFirst: sh.vertexShader.split('\n')[0], fFirst: sh.fragmentShader.split('\n')[0],
   incl: (L.vertexShader.match(/#include <logdepthbuf_vertex>/g) || []).length,
   size: sh.vertexShader.includes('gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);'),
-  alpha: sh.fragmentShader.includes('diffuseColor.a *= max(smoothstep(0.5, 0.08, lgr * vHk), uLampHalo.x * 0.3 * exp(-lgr * lgr * 24.0));'),
+  alpha: sh.fragmentShader.includes('diffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));'),
   vLog: /gl_Position\.z = log2\( max\( EPSILON, gl_Position\.w \+ 1\.0 \) \) \* logDepthBufFC - 1\.0;/.test(v),
   vUniform: /uniform float logDepthBufFC;/.test(v),
   vClip: /float stdZ = gl_Position\.z;[\s\S]*gl_Position\.z \*= gl_Position\.w;[\s\S]*if \(stdZ < -gl_Position\.w \|\| stdZ > gl_Position\.w\) gl_Position\.z = stdZ;/.test(v),

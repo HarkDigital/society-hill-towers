@@ -23603,7 +23603,6 @@ float pinOccGate() {
   // height by the pole's own), a post-top lantern's glass centred 4.1 m up on its reference post
   const POLE_HEAD = { arm: 1.5, y: 8.81, lantern: 4.1 };
   const lanternSy = (hm) => clamp(hm / POLE_HEAD.lantern, 0.85, 1.5);
-  const lampHaloU = { value: new THREE.Vector2(0, 0) };   // wet air (weather#10): x the halo round every lamp's glow, y its growth
   // the realism round's near meshes (a computer's, REAL): the lanterns and the wood poles beside the cobra heads, the lit
   // lenses and glass, and the glare round each near luminaire
   const POLE_REAL = { lantern: null, wood: null, lens: null, glass: null, glare: null, glareGeo: null, lensOn: { value: 0 }, glareU: { value: new THREE.Vector4(500, 1.6, 0, 1) }, n: [0, 0, 0] };
@@ -23852,16 +23851,9 @@ float pinOccGate() {
       // so the far city reads as a carpet of lights (same trick as headlights)
       shader.vertexShader = shader.vertexShader.replace('gl_PointSize = size;',
         'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);');   // smaller cores (Round 54)
-      // weather#10 (the realism round): in rain, fog or snow every lamp wears a soft halo, the sprite grown round its old
-      // core (the nearer lamps more: a far one's sprite stays a dot or two) and the core kept inside its old radius
-      shader.uniforms.uLampHalo = lampHaloU;
-      shader.vertexShader = shader.vertexShader.replace('#include <common>', '#include <common>\nuniform vec2 uLampHalo; varying float vHk;')
-        .replace('gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);',
-          'gl_PointSize = size * clamp(1400.0 / max(1.0, -mvPosition.z), 1.6, 7.5);\n\tvHk = 1.0 + uLampHalo.y * smoothstep(1.8, 5.0, gl_PointSize / size); gl_PointSize *= vHk;');
-      shader.fragmentShader = shader.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec2 uLampHalo; varying float vHk;')
-        .replace('#include <color_fragment>',
-          '#include <color_fragment>\n\tfloat lgr = length(gl_PointCoord - vec2(0.5));\n' +
-          '\tdiffuseColor.a *= max(smoothstep(0.5, 0.08, lgr * vHk), uLampHalo.x * 0.3 * exp(-lgr * lgr * 24.0));');
+      // (the wet air's halo is a point of its own on these buffers, the weather's wxHaloMesh: the glow keeps one look)
+      shader.fragmentShader = shader.fragmentShader.replace('#include <color_fragment>',
+        '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));');
       // Round 168 (the phones' GPU): the glow's log depth goes in from the vertex, not written by each fragment. A point's
       // varyings are one value over the whole sprite, so the fragment path's gl_FragDepth, log2(1 + w) * FC / 2 from the
       // vertex's own w, is the very depth the vertex path hands the rasterizer (z = (log2(1 + w) * FC - 1) * w): the same
@@ -24642,14 +24634,13 @@ float pinOccGate() {
   }
 
   // the realism round's night pass, every frame the pole blob stands: the near meshes on with the lamps' layer, their
-  // lenses and glare with the photocell; weather#10, wet air: in rain, fog or snow every lamp wears a halo (lampHaloU, the
-  // glow's own sprite) and the glare grows, the bloom widens by night, and by day or night the grade loses some of its
-  // saturation and contrast the way a wet day's photograph does (REAL; from the composite's own values, read once)
-  const LAMP_GRADE0 = { sat: null, con: null, bloom: null };
+  // lenses and glare with the photocell. The lights in wet air (the halo round every lamp, the bloom and the grade) are the
+  // weather's, once (wxFxStep: wxHaloMesh, wxGrade): two passes at them doubled every halo, and the grade's base read here
+  // once could be the weather's own lowered values for the rest of a session that loaded in the rain
   const _v2lamp = new THREE.Vector2();
   function lampNightFx(night, show) {
     if (window.__dbg && !window.__dbg.lampNear) Object.assign(window.__dbg, {   // ?dev=1: the near map and the near meshes, and the realistic response's strength
-      lampNear: () => ({ on: LAMPNEAR.on, half: LAMPNEAR.half, cx: LAMPNEAR.cx, cz: LAMPNEAR.cz, renders: LAMPNEAR.renders, size: LAMPNEAR.size, span: LAMPNEAR.span, k: lampMapU.uLampReal.value.x, realK: LAMP_REAL_K, meshes: POLE_REAL.n, halo: lampHaloU.value.x, ...(PERF.lampsReal || {}) }),
+      lampNear: () => ({ on: LAMPNEAR.on, half: LAMPNEAR.half, cx: LAMPNEAR.cx, cz: LAMPNEAR.cz, renders: LAMPNEAR.renders, size: LAMPNEAR.size, span: LAMPNEAR.span, k: lampMapU.uLampReal.value.x, realK: LAMP_REAL_K, meshes: POLE_REAL.n, halo: haloU.uHalo.value, ...(PERF.lampsReal || {}) }),
       lampReal: (k) => { if (k != null) LAMP_REAL_K = +k; lampMapU.uLampReal.value.y = LAMP_REAL_K; return LAMP_REAL_K; },
       lampAt: (x, z) => {   // the near and far maps' texels under a world point, in each map's own units (store and all)
         const rd = (M, half) => {
@@ -24664,8 +24655,6 @@ float pinOccGate() {
       },
     });
     lampMapU.uLampReal.value.y = LAMP_REAL_K;
-    const F = WXFX, wet = Math.max(F.rain * 0.6, F.fog, F.snow * 0.5), h = show ? night * wet : 0;
-    lampHaloU.value.set(h, (isTouch ? 2 : 4) * h);
     const R = POLE_REAL;
     if (R.lantern) {
       R.lantern.visible = R.wood.visible = R.lens.visible = R.glass.visible = LIGHTS.on;
@@ -24675,16 +24664,9 @@ float pinOccGate() {
         R.glare.material.opacity = night;
         const u = R.glareU.value;
         u.x = 0.5 * renderer.getDrawingBufferSize(_v2lamp).y / Math.tan(camera.fov * DEG / 2);
-        u.y = 1.6 * (1 + 3 * wet); u.w = 1 + 1.5 * F.fog;
+        u.y = 1.6; u.w = 1;
       }
     }
-    if (!REAL) return;
-    const G = LAMP_GRADE0, ub = postComp && postComp.uniforms && postComp.uniforms.uBloom;
-    if (G.sat === null) { G.sat = gradeU.uSat.value; G.con = gradeU.uCon.value; }
-    if (ub && G.bloom === null) G.bloom = ub.value;
-    const wxK = Math.max(F.rain, F.snow * 0.8, F.fog, smooth(0.8, 1.0, WX.cover) * 0.5);
-    gradeU.uSat.value = G.sat - 0.2 * wxK; gradeU.uCon.value = G.con - 0.08 * wxK;
-    if (ub) ub.value = G.bloom + (0.35 * F.rain + 0.6 * F.fog + 0.3 * F.snow) * night;
   }
 
   // ---------------------------------------------------------------- skyline lights (Round 81)
@@ -27240,6 +27222,7 @@ float pinOccGate() {
   // keeps no inventory and draws none (the light map's pools mirrored along the ray washed its wet streets white). On every
   // device the pools lose a third of their light on a wet street. Snow over all of it wins (wxSnowW)
   const WX_GLINT_N = isTouch ? 0 : 16;
+  const WX_GREEN_COL = 'step(diffuseColor.r * 1.08, diffuseColor.g) * step(diffuseColor.b * 1.15, diffuseColor.g)';   // a lawn by its colour, where the surface does not say
   const wxWetU = {
     uWxTime: { value: 0 }, uRainNow: { value: 0 }, uWxSunK: { value: 1 },
     // the sky the film mirrors: the dome's own horizon and zenith as the eye sees them (their pre-images, wxFxStep), and a
@@ -27255,17 +27238,24 @@ float pinOccGate() {
       'float wxHh(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
       'float wxVN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wxHh(i), wxHh(i + vec2(1.0, 0.0)), f.x), mix(wxHh(i + vec2(0.0, 1.0)), wxHh(i + vec2(1.0, 1.0)), f.x), f.y); }',
     ].join('\n'),
-    // after the snow: the puddle mask (rotated octaves, so no lattice shows), then the film's and the water's darkening
+    // after the snow: the puddle mask (rotated octaves, so no lattice shows), then the film's and the water's darkening. A dry
+    // street computes none of it (review: three octaves of noise and the derivatives on every flat's every fragment, phones
+    // too): a branch on the uniform, so the derivatives inside stay defined. A lawn by the surface's own word when it has one
+    // (surfTexPatch's isGreen: the bare ground 1, the paved 0; wxSurfaceLate), else by its colour, which a winter's brown
+    // lawn fails (it took the asphalt's mirror and full puddles)
     color: [
-      'float wxFw = max(fwidth(wxWP.x), fwidth(wxWP.z));',
-      'float wxGreen = step(diffuseColor.r * 1.08, diffuseColor.g) * step(diffuseColor.b * 1.15, diffuseColor.g);',
-      'vec2 wxPq = vec2(wxWP.x * 0.966 + wxWP.z * 0.259, -wxWP.x * 0.259 + wxWP.z * 0.966);',
-      'float wxPn = 0.6 * wxVN(wxPq * 0.33) + 0.3 * wxVN(wxPq.yx * 0.81 + 7.3) + 0.1 * wxVN(wxWP.xz * 2.3 + 3.1);',
-      'float wxPud = smoothstep(0.813 - 0.135 * uWet, 0.828 - 0.135 * uWet, wxPn);',   // 3 per cent of the ground at 0.35, 8 at 0.74, 12 at 1
-      '/*wxLane*/',
-      'wxPud *= wxUpW * (1.0 - wxSnowW) * smoothstep(0.2, 0.6, uWet) * (1.0 - 0.75 * wxGreen) * (1.0 - smoothstep(0.35, 1.2, wxFw));',
-      'float wxRim = (smoothstep(0.78 - 0.135 * uWet, 0.813 - 0.135 * uWet, wxPn) - wxPud) * wxWetW;',   // the soaked band round a puddle
-      'diffuseColor.rgb *= (1.0 - (0.3 + 0.2 * wxDark) * wxWetW) * (1.0 - 0.3 * wxPud) * (1.0 - 0.12 * max(wxRim, 0.0));',
+      'float wxFw = 0.0, wxGreen = 0.0, wxPn = 0.0, wxPud = 0.0;',
+      'if (uWet > 0.001) {',
+      '  wxFw = max(fwidth(wxWP.x), fwidth(wxWP.z));',
+      '  wxGreen = ' + WX_GREEN_COL + ';',
+      '  vec2 wxPq = vec2(wxWP.x * 0.966 + wxWP.z * 0.259, -wxWP.x * 0.259 + wxWP.z * 0.966);',
+      '  wxPn = 0.6 * wxVN(wxPq * 0.33) + 0.3 * wxVN(wxPq.yx * 0.81 + 7.3) + 0.1 * wxVN(wxWP.xz * 2.3 + 3.1);',
+      '  wxPud = smoothstep(0.813 - 0.135 * uWet, 0.828 - 0.135 * uWet, wxPn);',   // 3 per cent of the ground at 0.35, 8 at 0.74, 12 at 1
+      '  /*wxLane*/',
+      '  wxPud *= wxUpW * (1.0 - wxSnowW) * smoothstep(0.2, 0.6, uWet) * (1.0 - 0.75 * wxGreen) * (1.0 - smoothstep(0.35, 1.2, wxFw));',
+      '  float wxRim = (smoothstep(0.78 - 0.135 * uWet, 0.813 - 0.135 * uWet, wxPn) - wxPud) * wxWetW;',   // the soaked band round a puddle
+      '  diffuseColor.rgb *= (1.0 - (0.3 + 0.2 * wxDark) * wxWetW) * (1.0 - 0.3 * wxPud) * (1.0 - 0.12 * max(wxRim, 0.0));',
+      '}',
     ].join('\n'),
     rough: [
       'roughnessFactor = mix(roughnessFactor, mix(0.14, 0.42, wxGreen), smoothstep(0.0, 0.55, wxWetW) * (0.55 + 0.45 * wxDark));',
@@ -27366,11 +27356,17 @@ float pinOccGate() {
   // the gutters, once every hook has run (the road's lane paint declares vLane after the weather's own pass)
   function wxSurfaceLate(shader) {
     if (!REAL) return;
-    if (shader.fragmentShader.indexOf('varying vec4 vLane;') !== -1) shader.fragmentShader = shader.fragmentShader.replace('/*wxLane*/', WX_WET_GLSL.lane);
+    let fs = shader.fragmentShader;
+    if (fs.indexOf('varying vec4 vLane;') !== -1) fs = fs.replace('/*wxLane*/', WX_WET_GLSL.lane);
+    // the surface's own word for a lawn, when surfTexPatch declared it ahead of the weather's lines (it lands right after the
+    // colour include, the weather's after it)
+    const ig = fs.indexOf('float isGreen = '), wg = fs.indexOf('  wxGreen = ' + WX_GREEN_COL + ';');
+    if (ig !== -1 && wg !== -1 && ig < wg) fs = fs.replace('  wxGreen = ' + WX_GREEN_COL + ';', '  wxGreen = isGreen;');
+    shader.fragmentShader = fs;
   }
   // decorrelated per-particle gate so density scales without bunching to one side of the box
   const wxGateGLSL = 'float wxGate(vec3 s){ return fract(sin(dot(s, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }\n';
-  const RAIN_N = REAL && isTouch ? 8000 : 16000;   // short drops need numbers: the eye reads density, not length
+  const RAIN_N = REAL ? (isTouch ? 8000 : 24000) : 16000;   // short drops need numbers: the eye reads density, not length (a computer's half again, review: the day's rain all but vanished)
   const rainU = {
     uBox: { value: new THREE.Vector3(90, 80, 90) },
     uOff: { value: new THREE.Vector3() },
@@ -27544,18 +27540,18 @@ float pinOccGate() {
         '  float near = 1.0 - smoothstep(1.2, 3.0, dist);\n' +
         '  px *= 1.0 + 2.0 * near;\n' +
         '  float a = uAlpha * (1.0 - 0.65 * r * r) * (1.0 - 0.9 * near);\n' +
-        '  if (px < 1.5) { a *= px / 1.5; px = 1.5; }\n' +   // a speck under the floor fades with its size (it stands in for the many not drawn)
+        '  if (px < 1.5) { a *= pow(px / 1.5, 0.7); px = 1.5; }\n' +   // a speck under the floor fades with its size, less than its area (it stands in for the many not drawn)
         '  vec4 c0 = projectionMatrix * mv, c1 = projectionMatrix * (modelViewMatrix * vec4(p - dlt, 1.0));\n' +
         '  vec2 n0 = c0.xy / c0.w, n1 = c1.xy / max(c1.w, 1e-3), s = (n0 - n1) * 0.5 * uRes;\n' +
         '  float L = min(length(s), mix(48.0, 0.8 * px, near));\n' +   // a flake at the lens is a soft disc, not a pill: its trail goes in the blur
         '  vDir = L > 1e-3 ? normalize(s) : vec2(0.0, 1.0); vLen = L; vR = 0.5 * px;\n' +
-        '  a *= px / (px + 0.6 * L);\n' +   // the trail spreads the flake's light along it
+        '  a *= px / (px + 0.3 * L);\n' +   // the trail spreads the flake's light along it (half its length's worth: at 0.6 a blizzard's 40 px streaks kept a twentieth of a flake's alpha and the storm went invisible)
         '  gl_Position = vec4(mix(n0, n1, 0.5) * c0.w, c0.z, c0.w);\n' +
         '  gl_PointSize = 2.0 * px + L + 2.0; vSz = gl_PointSize;\n' +
         '  vec3 E = vec3(0.0);\n' +
         '  if (uLampOn > 0.001) { vec2 lu = vec2((p.x - uLampBox.x) * uLampBox.z, 1.0 - (p.z - uLampBox.y) * uLampBox.z);\n' +
         '    E = texture2D(uLampMap, clamp(lu, 0.0, 1.0)).rgb * (uLampBox.w * uLampOn * (1.0 - smoothstep(7.0, 16.0, p.y - uGroundY))); }\n' +
-        '  vC = pUndo(uCol, uExposure) * 1.15 + E * 0.35;\n' +
+        '  vC = pUndo(uCol, uExposure) * 1.3 + E * 0.35;\n' +   // white crystal under the deck's light: a shade over the horizon it falls through
         '  vA = a * (1.0 + uNightK * min(4.0 - 3.0 * near, dot(E, vec3(0.9, 1.77, 0.33))));\n' +
         '  #include <logdepthbuf_vertex>\n' +
         '}',
@@ -27662,25 +27658,39 @@ float pinOccGate() {
     return mesh;
   });
   // ---- lights in wet air (the realism pass). Rain, fog and snow spread every light into a soft glow: after dark each lamp
-  // carries a halo (a second, wider and fainter point on the glow points' own geometry, so the lamps' shader is untouched),
-  // up to 44 px on a computer and 24 on a phone, 3 m across in the world, gone in the far fog; on the post pipeline the
-  // bloom opens with the weather by night, and the grade loses some saturation and contrast in rain, snow, fog and under a
-  // closed deck, the way a wet day's photographs do (both relative to whatever the grade's own owners set: wxGrade)
+  // carries a halo, a second, wider and fainter point on the glow points' own geometry (the lamps' shader is untouched), the
+  // one wet-air response the lamps have (the night pass's own halo and grown glare doubled it, review). The forward
+  // scatter's halo has an angular size, not a world one: 5.2 degrees across (WXH.ang) for a lamp within 187 m, shrinking past it
+  // as the glow's own core does, so the far carpet does not wash into one sheet; the air between takes its light by the
+  // extinction length (300 m in fog, 450 in snow, 900 in rain) and nothing is drawn past 1.6 km. Its profile is a bright
+  // inner aureole over a broad faint skirt. A lamp too far or too faint to show is thrown out of the clip box by its vertex,
+  // so it costs no fragment, and the depth goes in from the vertex like the glow's own (Round 168: no gl_FragDepth, so the
+  // lamps behind the buildings are rejected before they are shaded). The mesh is made and drawn once on the first frame,
+  // behind the veil, every point thrown out, so its program never compiles in a session's first wet night. On the post
+  // pipeline the bloom opens with the weather by night, and the grade loses some saturation and contrast in rain, snow,
+  // fog and under a closed deck, the way a wet day's photographs do (both relative to whatever the grade's own owners set:
+  // wxGrade)
   let wxHalo = null;
-  const haloU = { uHalo: { value: 0 }, uMaxPx: { value: isTouch ? 24 : 44 }, uRes: rainU.uRes, uPost: postU.uPost };
+  const WXH = { ang: 0.09, warm: 0, gain: 0.4 };   // by eye in fog at 9 pm on South Broad between 0.056 at 0.24 (faint dots) and 0.11 at 0.55 (the far lamps one white band)
+  const haloU = { uHalo: { value: 0 }, uHaloL: { value: 600 }, uHaloAng: { value: WXH.ang }, uHaloK: { value: WXH.gain }, uRes: rainU.uRes, uPost: postU.uPost };
   function wxHaloMesh() {
     const m = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, fog: false, vertexColors: true, uniforms: haloU,
       blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
       blendEquationAlpha: THREE.AddEquation, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,   // the light adds; the target's alpha (the bloom's mask) is left alone
-      vertexShader: 'uniform float uMaxPx; uniform vec2 uRes; varying vec3 vCol; varying float vF;\n#include <common>\n#include <logdepthbuf_pars_vertex>\n' +
-        'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; float d = max(-mv.z, 1.0);\n' +
-        '  gl_PointSize = clamp(3.0 * projectionMatrix[1][1] * 0.5 * uRes.y / d, 5.0, uMaxPx); vCol = color; vF = 1.0 - smoothstep(500.0, 1400.0, d);\n#include <logdepthbuf_vertex>\n}',
-      fragmentShader: 'uniform float uHalo, uPost; varying vec3 vCol; varying float vF;\n#include <common>\n#include <logdepthbuf_pars_fragment>\n' +
-        'void main(){\n#include <logdepthbuf_fragment>\n  float r = length(gl_PointCoord - vec2(0.5)) * 2.0; if (r >= 1.0) discard;\n' +
-        '  float h = exp(-r * r * 4.5) * (1.0 - r * r) * uHalo * vF;\n' +
-        '  gl_FragColor = vec4(vCol * h * (uPost > 0.5 ? 0.16 : 0.22), 1.0);\n}',
+      vertexShader: VDEPTH_UNDEF + 'uniform float uHalo, uHaloL, uHaloAng; uniform vec2 uRes; varying vec3 vCol; varying float vF;\n#include <common>\n#include <logdepthbuf_pars_vertex>\n' +
+        'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); float d = max(-mv.z, 1.0);\n' +
+        '  vF = uHalo * exp(-d / uHaloL) * (1.0 - smoothstep(1000.0, 1600.0, d)); vCol = color;\n' +
+        '  if (vF < 0.004 || mv.z > -0.5) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; return; }\n' +   // out of the clip box: no fragment
+        '  gl_Position = projectionMatrix * mv;\n' +
+        '  gl_PointSize = clamp(uHaloAng * projectionMatrix[1][1] * 0.5 * uRes.y * mix(0.3, 1.0, clamp(187.0 / d, 0.0, 1.0)), 4.0, 128.0);\n' +
+        '  float stdZ = gl_Position.z;\n#include <logdepthbuf_vertex>\n  if (stdZ < -gl_Position.w || stdZ > gl_Position.w) gl_Position.z = stdZ;\n}',
+      fragmentShader: VDEPTH_UNDEF + 'uniform float uHaloK, uPost; varying vec3 vCol; varying float vF;\n#include <common>\n#include <logdepthbuf_pars_fragment>\n' +
+        'void main(){\n#include <logdepthbuf_fragment>\n  vec2 q = gl_PointCoord * 2.0 - 1.0; float r2 = dot(q, q); if (r2 >= 1.0) discard;\n' +
+        '  float h = (0.55 * exp(-r2 * 16.0) + 0.45 * exp(-r2 * 4.0)) * (1.0 - r2) * vF;\n' +
+        '  gl_FragColor = vec4(vCol * h * uHaloK * (uPost > 0.5 ? 1.0 : 1.35), 1.0);\n}',
     });
+    m.customProgramCacheKey = () => 'wx-halo';
     const p = new THREE.Points(poleGlow.geometry, m);   // the glow points' buffers are on the GPU already (freeOnUpload): nothing is copied
     p.frustumCulled = false; p.renderOrder = 12; p.visible = false;
     groupCity.add(p);
@@ -27770,7 +27780,7 @@ float pinOccGate() {
   const _wxRes = new THREE.Vector2();
   // the wet city's dials (__dbg.wxTune): the film's sky against the dome's (the deck over a rain day is a shade brighter
   // than the gradient under it), and the streaks' strength in hundredths of a lamp's glow colour (WXGL.I)
-  const WXT = { sky: 1.2 };
+  const WXT = { sky: 1.2, rainA: 1, snowA: 1 };   // and the rain's and the snow's alpha, as factors
   function wxFxStep(now, dt) {
     if (!REAL) return;
     const F = WXFX, night = nightUniform.value;
@@ -27787,19 +27797,32 @@ float pinOccGate() {
     if (F.rain > 0.02 || F.snow > 0.02) { const cx = camera.position.x, cz = camera.position.z; rainU.uGroundY.value = groundMeshY(cx, cz) ?? siteY(cx, cz, 'ground'); }
     rainU.uRes.value.copy(renderer.getDrawingBufferSize(_wxRes));
     rainU.uNightK.value = lampMapU.uLampOn.value;
-    const halo = night * Math.max(F.rain * 0.6, F.fog, F.snow * 0.5);
-    if (!wxHalo && halo > 0.01 && poleGlow) wxHalo = wxHaloMesh();
-    if (wxHalo) { wxHalo.visible = poleGlow.visible && halo > 0.01; haloU.uHalo.value = halo; }
+    // the halo: the lamps' own switch (the photocell, the layer) times the wet air; made on the first frame and drawn there
+    // once with every point thrown out (WXH.warm), so the program is built behind the veil
+    const hr = F.rain * 0.6, hf = F.fog, hs = F.snow * 0.5, hw = hr + hf + hs;
+    const halo = lampMapU.uLampOn.value * Math.max(hr, hf, hs);
+    if (!wxHalo && poleGlow) { wxHalo = wxHaloMesh(); WXH.warm = 1; }
+    if (wxHalo) {
+      haloU.uHalo.value = WXH.warm ? 0 : halo;
+      haloU.uHaloL.value = hw > 1e-3 ? (hf * 300 + hs * 450 + hr * 900) / hw : 900;
+      haloU.uHaloAng.value = WXH.ang; haloU.uHaloK.value = WXH.gain;
+      wxHalo.visible = WXH.warm > 0 || (poleGlow.visible && halo > 0.01);
+      if (WXH.warm > 0) WXH.warm--;
+    }
     if (window.__dbg && !window.__dbg.wxFx) {
-      window.__dbg.wxFx = () => ({ wet: wxSurfU.uWet.value, rain: F.rain, snow: F.snow, glints: wxWetU.uGlN.value, picked: WXGL.picked, covered: WXGL.covered, lamps: [...WXGL.lamp].filter((i) => i >= 0).length, halo: haloU.uHalo.value, haloOn: !!(wxHalo && wxHalo.visible), bloom: postComp ? postComp.uniforms.uBloom.value : null, sat: gradeU.uSat.value, con: gradeU.uCon.value, shells: wxShells.map((s) => s.visible), sky: wxWetU.uWxSkyH.value.toArray().map((v) => +v.toFixed(3)), skyK: WXT.sky, glintI: WXGL.I });
-      window.__dbg.wxTune = (o) => { if (o && o.sky != null) WXT.sky = +o.sky; if (o && o.glint != null) WXGL.I = +o.glint; return { sky: WXT.sky, glint: WXGL.I }; };
+      window.__dbg.wxFx = () => ({ wet: wxSurfU.uWet.value, rain: F.rain, snow: F.snow, glints: wxWetU.uGlN.value, picked: WXGL.picked, covered: WXGL.covered, lamps: [...WXGL.lamp].filter((i) => i >= 0).length, halo: haloU.uHalo.value, haloL: haloU.uHaloL.value, haloOn: !!(wxHalo && wxHalo.visible), bloom: postComp ? postComp.uniforms.uBloom.value : null, sat: gradeU.uSat.value, con: gradeU.uCon.value, shells: wxShells.map((s) => s.visible), sky: wxWetU.uWxSkyH.value.toArray().map((v) => +v.toFixed(3)), skyK: WXT.sky, glintI: WXGL.I });
+      window.__dbg.wxTune = (o) => { if (o && o.sky != null) WXT.sky = +o.sky; if (o && o.glint != null) WXGL.I = +o.glint; if (o && o.halo != null) WXH.gain = +o.halo; if (o && o.ang != null) WXH.ang = +o.ang; if (o && o.rain != null) WXT.rainA = +o.rain; if (o && o.snow != null) WXT.snowA = +o.snow; return { sky: WXT.sky, glint: WXGL.I, halo: WXH.gain, ang: WXH.ang, rain: WXT.rainA, snow: WXT.snowA }; };
     }
   }
   // the realistic rain's, the snow's and the shells' uniforms, after the old boxes have advected (updateWeatherFX)
   function wxRainStep(F, hi, vis) {
     const sp = rainVel.length();
     rainU.uLen.value = (sp / 30 + 0.05) * (1 + 2 * hi) * (1 - 0.4 * F.hail);
-    rainU.uAlpha.value = (0.22 + 0.12 * F.rain) * vis * (0.25 + 0.75 * F.dayF) * (1 - 0.35 * hi) * (1 + 0.6 * F.hail);   // by night only the drops in a lamp's light show (the lamp term in the shader)
+    // by day 2.4 times the first pass's (review: at street level it all but vanished against the mid and dark walls; by eye
+    // on a row of Queen Village houses at noon, where it shows on the brick and all but goes on the sky), by night as it was:
+    // only the drops in a lamp's light show (the lamp term in the shader)
+    rainU.uAlpha.value = (0.6 + 0.24 * F.rain) * vis * (0.107 + 0.893 * F.dayF) * (1 - 0.35 * hi) * (1 + 0.6 * F.hail) * WXT.rainA;
+    rainU.uWide.value = Math.sqrt(Math.max(1, renderer.getPixelRatio()));   // a streak about two CSS pixels across on any screen
     rainU.uCol.value.copy(skyMat.uniforms.cHorizon.value).lerp(_wxc.setRGB(0.93, 0.95, 0.99), F.hail * 0.6);
   }
   function wxSnowStep(F, hi, vis) {
@@ -27809,7 +27832,9 @@ float pinOccGate() {
     snowU.uCam.value.y += snowU.uBox.value.y * 0.25;
     snowU.uVel.value.copy(snowVel);
     snowU.uSizeK.value = (isTouch ? 1.6 : 1) * (1 + 2 * hi);   // a phone's small screen: the flakes a little larger
-    snowU.uAlpha.value = 0.9 * vis * (0.18 + 0.82 * F.dayF);   // by night a flake outside the lamps' light is all but gone (they read as stars)
+    // by day half again the first pass's (with the trail's and the speck floor's gentler spread, a snowfall reads on the walls),
+    // by night as it was: a flake outside the lamps' light is all but gone (they read as stars)
+    snowU.uAlpha.value = 1.35 * vis * (0.12 + 0.88 * F.dayF) * WXT.snowA;
     snowU.uCol.value.copy(skyMat.uniforms.cHorizon.value);
   }
   function wxShellStep(F, vis, dt) {
