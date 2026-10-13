@@ -19683,9 +19683,10 @@ float pinOccGate() {
       box(w + 0.01, 0.08, d + 0.02, cx, y + h - 0.08, 0, 1, 0.93, 0.72, 1);
       if (!REAL) return;
       // the realism pass: a row of cabin windows on every deck under the bridge (lit by night) and the bridge wings out
-      // to the ship's side, so the house reads as a house and not a white block
+      // to the ship's side, so the house reads as a house and not a white block; thin and a sky-lit grey glass by day (a
+      // near-black row a deck high read as zebra bands, review)
       const rows = Math.max(1, Math.round((h - 0.1) / 0.12));
-      for (let k = 0; k < rows; k++) box(w + 0.006, 0.026, d + 0.006, cx, y + (k + 0.5) * (h - 0.1) / rows, 0, 0.1, 0.11, 0.13, 1);
+      for (let k = 0; k < rows; k++) box(w + 0.006, 0.016, d + 0.006, cx, y + (k + 0.55) * (h - 0.1) / rows, 0, 0.31, 0.34, 0.38, 1);
       if (h >= 0.7) box(Math.min(w, 0.06), 0.04, Math.max(d, 0.94), cx + w * 0.3, y + h - 0.13, 0, 0.82, 0.83, 0.81);   // a deep-sea ship's only
     };
     const funnel = (cx, y, r, g, b) => box(0.06, 0.2, 0.26, cx, y, 0, r, g, b);
@@ -19783,7 +19784,7 @@ float pinOccGate() {
     if (REAL) {   // the containers, the wakes and the night's lights (the realism pass)
       const hulls = shipMeshes[1];
       shipStacks = new THREE.InstancedMesh(shipStackGeom(), shipStackMaterial(), 1);
-      shipStacks.instanceMatrix = hulls.instanceMatrix; shipStacks.frustumCulled = false; shipStacks.castShadow = shipStacks.receiveShadow = !isTouch;
+      shipStacks.instanceMatrix = hulls.instanceMatrix; shipStacks.frustumCulled = false; shipStacks.castShadow = false; shipStacks.receiveShadow = !isTouch;   // casts nothing, like the hulls: no mover redraws the depth pass under REAL, and a still eye kept a sailing ship's stacks frozen on the water astern
       shipStacks.onBeforeRender = () => { shipStacks.count = hulls.count; };
       groupCity.add(shipStacks);
       shipWakeInit();
@@ -20176,7 +20177,7 @@ float pinOccGate() {
       const m = new THREE.InstancedMesh(art || geom, art ? transitArtMaterial(false, kind === 2 ? 0.55 : 0.25) : septaMats.body, cap);
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       m.count = 0; m.frustumCulled = false; m.castShadow = !isTouch && !REAL;
-      if (REAL) vehShadowsFor(m, m.geometry, vehBlobGeom(AMTRAK_LEN[kind], 3.1), false);
+      if (REAL) vehShadowsFor(m, null, vehBlobGeom(AMTRAK_LEN[kind], 3.1), false);   // the contact shade alone: a flattened shadow hung in the air off every bridge
       m.userData.amKind = kind;
       for (let k = 0; k < cap; k++) m.setColorAt(k, _sc.setRGB(1, 1, 1));   // the geometry carries its own scheme
       m.instanceColor.needsUpdate = true;
@@ -20447,7 +20448,7 @@ float pinOccGate() {
     patcoCar = new THREE.InstancedMesh(art || patcoCarGeom(), art ? transitArtMaterial(false, 0.55) : septaMats.body, PATCO_CAR_CAP);
     patcoCar.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     patcoCar.count = 0; patcoCar.frustumCulled = false; patcoCar.castShadow = !isTouch && !REAL;
-    if (REAL) vehShadowsFor(patcoCar, patcoCar.geometry, vehBlobGeom(PATCO_LEN, PATCO_W), false);
+    if (REAL) vehShadowsFor(patcoCar, null, vehBlobGeom(PATCO_LEN, PATCO_W), false);   // the contact shade alone (the bridge: the flattened shadow hung beside the girder)
     patcoCar.userData.patcoCar = true;
     for (let k = 0; k < PATCO_CAR_CAP; k++) patcoCar.setColorAt(k, _sc.setRGB(1, 1, 1));
     patcoCar.instanceColor.needsUpdate = true;
@@ -20583,7 +20584,7 @@ float pinOccGate() {
   function ferryInit() {
     FERRY.mesh = new THREE.InstancedMesh(ferryGeom(), septaMats.body, 1);
     FERRY.mesh.setColorAt(0, _sc.setRGB(1, 1, 1)); FERRY.mesh.instanceColor.needsUpdate = true;
-    FERRY.mesh.frustumCulled = false; FERRY.mesh.castShadow = !isTouch; FERRY.mesh.count = 0; FERRY.mesh.userData.ferry = true;
+    FERRY.mesh.frustumCulled = false; FERRY.mesh.castShadow = !isTouch && !REAL; FERRY.mesh.count = 0; FERRY.mesh.userData.ferry = true;
     groupCity.add(FERRY.mesh);
     FERRY.pin = pinMesh(pinTexture(FERRY_BLUE, '#fdfbf6', glyphFerry), 1, 'ferryPin');
     FERRY.ready = true;
@@ -20742,7 +20743,7 @@ float pinOccGate() {
     { name: 'Pickup', l: 5.5, w: 2.02, h: 1.86, cabin: 2.25, bed: true },
     { name: 'Delivery Van', l: 5.65, w: 2.05, h: 2.48, cabin: 1.65, van: true },
   ];
-  const CAR_OFFW = [4.6, 3.6, 2.7, 2.3, REAL ? 1.6 : 2.0, 1.6];   // REAL: the two-way tertiary lanes move in for the parked cars (PARKED)
+  const CAR_OFFW = [4.6, 3.6, 2.7, 2.3, REAL ? 1.3 : 2.0, 1.6];   // REAL: the two-way tertiary lanes move in for the parked cars (PARKED: a 4.5 m half width parks both kerbs clear of them, the lanes 2.6 m apart)
   const CAR_VIEW = { near: isTouch ? 950 : 1500, far: isTouch ? 1550 : 2400, warm: isTouch ? 2200 : 3300 };
   const CAR_FADE_MS = 1400, CAR_MIN_LIFE = 16000;
   const trafficRuns = [], trafficFleet = [];
@@ -21017,7 +21018,11 @@ float pinOccGate() {
         .replace('#include <common>', '#include <common>\nuniform sampler2D uVMask; uniform float uPaintInv, uNight; varying float vPart; varying vec2 vCarX;')
         .replace('#include <color_fragment>', [
           'vec4 vmk = texture2D(uVMask, vUv);',
-          'float vBody = 1.0 - step(0.5, vPart), vPaintM = vmk.r * vBody, vGlassM = vmk.g * vBody, vLampM = vmk.b * vBody;',
+          // the mask's soft edges and lines leave thin gaps between its paint, glass and lamps: a light texel there is the
+          // white car's own body showing through, and it takes the paint too (on a dark car the gaps drew pale outlines
+          // round every window, arch and panel, brightest under a streetlamp); a dark one (tyre, trim, grille) keeps its own
+          'float vGap = clamp(1.0 - vmk.r - vmk.g - vmk.b, 0.0, 1.0) * smoothstep(0.2, 0.45, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));',
+          'float vBody = 1.0 - step(0.5, vPart), vPaintM = min(1.0, vmk.r + vGap) * vBody, vGlassM = vmk.g * vBody, vLampM = vmk.b * vBody;',
           '#ifdef USE_COLOR',
           'diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * uPaintInv * vColor, vPaintM);',
           '#endif',
@@ -21028,28 +21033,63 @@ float pinOccGate() {
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vPaintM * vCarX.x * 0.55;')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vLampM * vec3(1.0, 0.05, 0.02) * step(0.0, vCarX.y) * (1.3 * uNight + 1.6 * vCarX.y);')
         .replace('#include <lights_physical_fragment>', '#include <lights_physical_fragment>\n#ifdef USE_CLEARCOAT\nmaterial.clearcoat *= vPaintM;\n#endif');
-      lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'blade');   // a parked car under a streetlamp takes its pool,
-      sh.fragmentShader = sh.fragmentShader.replace('float lk = 1.0 *', 'float lk = 0.35 *');   // at a third of a flat surface's share (the full share read as daylight)
+      vehLampPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // a parked car under a streetlamp takes its pool
     };
     mat.customProgramCacheKey = () => 'car-art-v1';
     return mat;
+  }
+  // a vehicle under a streetlamp takes its pool on every face (no up-facing gate, like the tufts) at VEH_LAMP_SHARE of a
+  // flat surface's share: the full share read as daylight on a car's flanks. Its own patch over the lamp map's uniforms
+  // (lampMapU), the share written here (review: it was a text replace on lampLightPatch's output, which silently matched
+  // nothing once the realistic lamp patch wrote that line another way, and every car took the full share)
+  const VEH_LAMP_SHARE = 0.35;
+  function vehLampPatch(sh, worldExpr) {
+    if (sh.fragmentShader.indexOf('uniform float uLampOn;') !== -1) return;
+    sh.uniforms.uLampMap = lampMapU.uLampMap; sh.uniforms.uLampBox = lampMapU.uLampBox; sh.uniforms.uLampOn = lampMapU.uLampOn; sh.uniforms.uLampFade = lampMapU.uLampFade;
+    sh.fragmentShader = sh.fragmentShader
+      .replace('void main() {', 'uniform sampler2D uLampMap; uniform vec4 uLampBox, uLampFade; uniform float uLampOn;\nvoid main() {')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
+        'if (uLampOn > 0.001) {',
+        '  vec3 lwp = ' + worldExpr + ';',
+        '  vec2 luv = vec2((lwp.x - uLampBox.x) * uLampBox.z, 1.0 - (lwp.z - uLampBox.y) * uLampBox.z);',
+        '  float le = min(min(luv.x, 1.0 - luv.x), min(luv.y, 1.0 - luv.y));',
+        '  float lk = ' + VEH_LAMP_SHARE.toFixed(2) + ' * (1.0 - smoothstep(uLampFade.z - uLampFade.w, uLampFade.z, distance(lwp.xz, uLampFade.xy)));',
+        '  if (le > 0.0 && lk > 0.0) { vec3 la = min(diffuseColor.rgb, vec3(0.35)) * texture2D(uLampMap, luv).rgb * (uLampOn * uLampBox.w * lk);',
+        '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
+        '}',
+      ].join('\n'));
   }
   // ---- the vehicles' shadows (finding: they floated, no shadow under any car, bus or train; a phone drew none at all). Two
   // meshes under every ground vehicle, sharing its instance matrices: the sun's own shadow, the body (its far copy)
   // flattened onto the road along the sun (a stencil keeps a car's parts from darkening twice), and a soft contact shade
   // under it whatever the sky. Neither writes depth or enters the shadow map, so a moving fleet no longer redraws the
-  // depth pass every 4th frame, and a phone gets them both
-  const vehShadowU = { uSunW: sunWUniform, uShadowA: { value: 0 }, uBlobA: { value: 0 } };
-  function vehShadowMaterial(fade, blob) {
-    const m = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthWrite: false, fog: false });
+  // depth pass every 4th frame, and a phone gets them both. The sun's shade reads the sun's own shadow map where it lands
+  // (a ShadowMaterial is the one built-in handed the lights' shadow uniforms without lighting anything), so a car in a
+  // building's shade casts no second shadow on the asphalt; both fade with the fog, so a car the fog has taken leaves no
+  // shade on the road; and a train, or a car on a deck or a bridge (aShK, from its run's height over the drawn ground),
+  // keeps only the contact shade, since its flattened shadow would hang in the air past the deck's edge (review)
+  // The shadow map is read only where the street shows it: in the core, whose ground has always received, and outside it
+  // once the outer flats receive too (uShadeOut, read off one of the outer streets' own tiles; never on the old roles), or
+  // a car under a building whose shadow its street never drew would lose its own in plain sun
+  const vehShadowU = { uSunW: sunWUniform, uShadowA: { value: 0 }, uBlobA: { value: 0 }, uShadeOut: { value: 0 },
+    uCoreBox: { value: new THREE.Vector4(CORE_EXT.x0, CORE_EXT.x1, CORE_EXT.z0, CORE_EXT.z1) } };
+  const VEH_SHADE_FOG = '\nfloat shFog = 0.0;\n#ifdef USE_FOG\nshFog = fogFactor;\n#endif\n';
+  function vehShadowMaterial(fade, blob, deck) {
+    const m = blob ? new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, depthWrite: false }) : new THREE.ShadowMaterial({ color: 0x000000, depthWrite: false });
     m.blending = THREE.CustomBlending; m.blendEquation = THREE.AddEquation; m.blendSrc = THREE.SrcAlphaFactor; m.blendDst = THREE.OneMinusSrcAlphaFactor;
     m.blendEquationAlpha = THREE.AddEquation; m.blendSrcAlpha = THREE.ZeroFactor; m.blendDstAlpha = THREE.OneFactor;   // the bloom's mask in the alpha is left as it was
     if (!blob) { m.stencilWrite = true; m.stencilRef = 1; m.stencilFunc = THREE.NotEqualStencilFunc; m.stencilZPass = THREE.ReplaceStencilOp; }
     m.onBeforeCompile = (sh) => {
       if (fade) carFadePatch(sh, false);
       sh.uniforms.uSunW = vehShadowU.uSunW; sh.uniforms.uShadowA = blob ? vehShadowU.uBlobA : vehShadowU.uShadowA;
+      if (!blob) { sh.uniforms.uShadeOut = vehShadowU.uShadeOut; sh.uniforms.uCoreBox = vehShadowU.uCoreBox; }
+      // the shadow material's own shaders carry no log depth: it goes in as every other material has it
+      if (!blob) {
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n#include <logdepthbuf_pars_vertex>').replace('#include <worldpos_vertex>', '#include <logdepthbuf_vertex>\n#include <worldpos_vertex>');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n#include <logdepthbuf_pars_fragment>').replace('void main() {', 'void main() {\n#include <logdepthbuf_fragment>');
+      }
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nuniform vec3 uSunW; varying float vShD;' + (blob ? '\nattribute vec2 aBlob; varying vec2 vBlob;' : ''))
+        .replace('#include <common>', '#include <common>\nuniform vec3 uSunW; varying float vShD;' + (blob ? '\nattribute vec2 aBlob; varying vec2 vBlob;' : '\nvarying vec2 vShXZ;') + (deck ? '\nattribute float aShK;' : ''))
         .replace('#include <project_vertex>', blob ? '#include <project_vertex>\nvBlob = aBlob; vShD = -mvPosition.z;' : [
           '#ifdef USE_INSTANCING',
           'mat4 mS = modelMatrix * instanceMatrix;',
@@ -21062,31 +21102,45 @@ float pinOccGate() {
           'wpS.xyz += upS * 0.035 - LS * (hS / max(dot(LS, upS), 0.3));',
           'vec4 mvPosition = viewMatrix * wpS;',
           'gl_Position = projectionMatrix * mvPosition;',
-          'vShD = -mvPosition.z;',
+          'vShD = -mvPosition.z; vShXZ = wpS.xz;',
         ].join('\n'))
         // a log depth buffer ignores a polygon offset: the flat shade is drawn a hair (0.07% of its distance) toward the eye
         .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9993;\n#endif');
+      // the shadow map is read where the shade lies, as a road facing up reads it (the body's own normals would push the
+      // sample 1.4 m about by the normal bias)
+      if (!blob) sh.vertexShader = sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#ifdef USE_SHADOWMAP\nworldPosition = wpS;\ntransformedNormal = (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz;\n#endif' +
+        (deck ? '\nif (aShK < 0.5) gl_Position = vec4(0.0, 0.0, -2.0, 1.0);' : ''));   // on a deck: no flattened shadow (clipped whole)
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nuniform float uShadowA; varying float vShD;' + (blob ? '\nvarying vec2 vBlob;' : ''))
-        .replace('#include <dithering_fragment>', '#include <dithering_fragment>\n' +
-          (blob ? 'float bk = (1.0 - smoothstep(0.45, 1.0, abs(vBlob.x))) * (1.0 - smoothstep(0.3, 1.0, abs(vBlob.y)));\n' : 'float bk = 1.0;\n') +
-          'gl_FragColor = vec4(0.0, 0.0, 0.0, uShadowA * bk * (1.0 - smoothstep(260.0, 760.0, vShD)));');
+        .replace('#include <common>', '#include <common>\nuniform float uShadowA; varying float vShD;' + (blob ? '\nvarying vec2 vBlob;' : '\nuniform float uShadeOut; uniform vec4 uCoreBox; varying vec2 vShXZ;'));
+      const tail = 'gl_FragColor = vec4(0.0, 0.0, 0.0, uShadowA * bk * (1.0 - shFog) * (1.0 - smoothstep(260.0, 760.0, vShD)));';
+      if (blob) sh.fragmentShader = sh.fragmentShader.replace('#include <dithering_fragment>', '#include <dithering_fragment>\n' +
+        'float bk = (1.0 - smoothstep(0.45, 1.0, abs(vBlob.x))) * (1.0 - smoothstep(0.3, 1.0, abs(vBlob.y)));' + VEH_SHADE_FOG + tail);
+      else sh.fragmentShader = sh.fragmentShader
+        .replace('gl_FragColor = vec4( color, opacity * ( 1.0 - getShadowMask() ) );', [
+          'float shIn = step(uCoreBox.x, vShXZ.x) * step(vShXZ.x, uCoreBox.y) * step(uCoreBox.z, vShXZ.y) * step(vShXZ.y, uCoreBox.w);',
+          'float bk = mix(1.0, getShadowMask(), max(shIn, uShadeOut));',
+          'gl_FragColor = vec4(color, 1.0);',
+        ].join('\n'))
+        .replace('#include <fog_fragment>', '#include <fog_fragment>' + VEH_SHADE_FOG + tail);
     };
-    m.customProgramCacheKey = () => 'veh-shadow|' + (fade ? 1 : 0) + (blob ? 1 : 0);
+    m.customProgramCacheKey = () => 'veh-shadow-v2|' + (fade ? 1 : 0) + (blob ? 1 : 0) + (deck ? 1 : 0);
     return m;
   }
   const VEH_SHADOWS = [];
-  function vehShadowsFor(body, castGeom, blobGeom, fade) {
+  // castGeom null: the contact shade alone (the trains: much of their way is on a bridge or a viaduct, and the depth pass
+  // no longer carries them); shk: the moving traffic's per-car 'cast a flattened shadow' (0 on a deck)
+  function vehShadowsFor(body, castGeom, blobGeom, fade, shk) {
     // a faded car's shades fade with it: each reads the body's own aCarFade (a shade without it read whatever the attribute
     // slot last held, and a car fading in or out left its soft shade standing alone on the road)
     const fa = fade && body.geometry.attributes.aCarFade;
     if (fa) for (const g of [castGeom, blobGeom]) if (g && !g.attributes.aCarFade) g.setAttribute('aCarFade', fa);
+    if (shk && castGeom) castGeom.setAttribute('aShK', shk);
     for (const [g, blob] of [[castGeom, false], [blobGeom, true]]) {
       if (!g) continue;
-      const m = new THREE.InstancedMesh(g, vehShadowMaterial(fade, blob), 1);
-      m.instanceMatrix = body.instanceMatrix; m.count = 0; m.frustumCulled = false; m.renderOrder = blob ? 1 : 2;
-      m.castShadow = m.receiveShadow = false; m.userData.vehShadow = true;
-      m.onBeforeRender = () => { m.count = body.visible ? body.count : 0; };
+      const m = new THREE.InstancedMesh(g, vehShadowMaterial(fade, blob, !blob && !!shk), 1);
+      m.instanceMatrix = body.instanceMatrix; m.count = 0; m.frustumCulled = false; m.renderOrder = blob ? 1 : 2; m.visible = false;
+      m.castShadow = false; m.receiveShadow = !blob;   // r149 hands the shadow map to a mesh that receives (the per-object uniform)
+      m.userData.vehShadow = true; m.userData.body = body;
       body.parent ? body.parent.add(m) : groupCity.add(m);
       VEH_SHADOWS.push(m);
     }
@@ -21097,6 +21151,34 @@ float pinOccGate() {
     const k = clamp(sun.intensity / 1.85, 0, 1), el = sunDir.y;
     vehShadowU.uShadowA.value = 0.6 * k * smooth(0.04, 0.22, el);
     vehShadowU.uBlobA.value = 0.5 - 0.15 * nightUniform.value;
+    vehShadowU.uShadeOut.value = vehOuterReceives() ? 1 : 0;
+  }
+  // one of the outer districts' street tiles (a weather-hooked flat in their box and out of the core), found once they
+  // exist: whether it takes the sun's shadow now
+  const VEH_SHADE_PROBE = { m: null, at: 0 };
+  function vehOuterReceives() {
+    const P = VEH_SHADE_PROBE;
+    if (!P.m) {
+      const now = performance.now();
+      if (now < P.at) return false;
+      P.at = now + 2000;
+      for (const o of groupCity.children) {
+        if (!o.isMesh || !o.userData.occFlat || !o.material || !o.material.userData || !o.material.userData.wxSurf) continue;
+        const bs = o.geometry && o.geometry.boundingSphere;
+        if (bs && bs.center.x > -3700 && bs.center.x < 2300 && bs.center.z > -4480 && bs.center.z < 6400 && !inCore(bs.center.x, bs.center.z)) { P.m = o; break; }
+      }
+      if (!P.m) return false;
+    }
+    return !!P.m.receiveShadow;
+  }
+  // once every vehicle's count is set for the frame: each shade draws its body's instances (the moving traffic's up to the
+  // last one its shades reach, shadeN) and is hidden when it has none, so no empty mesh costs a draw call's state (review:
+  // about forty shades and a dozen parked meshes did at zero instances)
+  function vehShadowSync() {
+    for (const m of VEH_SHADOWS) {
+      const b = m.userData.body, sn = b.userData.shadeN, n = b.visible ? (sn === undefined ? b.count : Math.min(sn, b.count)) : 0;
+      m.count = n; m.visible = n > 0;
+    }
   }
   // ---- the transit fleet's liveries (the realism pass; the finding: "Buses, trolleys, trains and PATCO are untextured
   // boxes"). Each wears its generated side, its ends and a roof strip from its own roof line over a body lofted from the
@@ -21164,8 +21246,7 @@ float pinOccGate() {
         .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(0.55, 0.34, uMetal), 0.07, vGlassM);')
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = uMetal * (1.0 - vGlassM);')
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.86, 0.64) * vGlassM * 0.8 * uNight;');
-      lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'blade');
-      sh.fragmentShader = sh.fragmentShader.replace('float lk = 1.0 *', 'float lk = 0.35 *');
+      vehLampPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
     };
     mat.customProgramCacheKey = () => 'transit-art|' + (septa ? 1 : 0);
     return mat;
@@ -21235,7 +21316,7 @@ float pinOccGate() {
   }
   function carLampEnd() {
     const p = CARLAMP.pts, n = CARLAMP.n;
-    p.geometry.setDrawRange(0, n);
+    p.geometry.setDrawRange(0, n); p.visible = n > 0;
     CARLAMP.u.uFocal.value = (renderer.domElement.height || 800) / (2 * Math.tan(camera.fov * Math.PI / 360));
     VSTAT.lamps = n;
     if (!n) return;
@@ -21297,7 +21378,7 @@ float pinOccGate() {
       // a lamp at a point of an instance's own frame (its matrix in _sm's form)
       putAt(mtx, lx, ly, lz, r, gg, b, m) { _vlV.set(lx, ly, lz).applyMatrix4(mtx); L.put(_vlV.x, _vlV.y, _vlV.z, r, gg, b, m); },
       end() {
-        g.setDrawRange(0, L.n);
+        g.setDrawRange(0, L.n); pts.visible = L.n > 0;   // no lamps, no draw call's state
         mat.uniforms.uFocal.value = (renderer.domElement.height || 800) / (2 * Math.tan(camera.fov * Math.PI / 360));
         if (L.n) { const a = g.attributes; a.position.updateRange.offset = 0; a.position.updateRange.count = L.n * 3; a.position.needsUpdate = true; a.aCol.updateRange.offset = 0; a.aCol.updateRange.count = L.n * 4; a.aCol.needsUpdate = true; a.aDir.updateRange.offset = 0; a.aDir.updateRange.count = L.n * 2; a.aDir.needsUpdate = true; }
         L.n = 0;
@@ -21379,8 +21460,8 @@ float pinOccGate() {
   // ---- the headlights' pools (the realism pass; the findings: "Cars light nothing: no headlight pools on the road"). On a
   // computer at night a small light map ahead of the eye, CARMAP.span metres square, is redrawn every frame from the
   // traffic itself: a cone of low beam on the road ahead of every car and a faint red glow behind it, one instanced quad
-  // per car sharing the fleet's own matrices and fades. The ground surfaces read it beside the streetlamps' map
-  // (carMapPatch, from lampLightPatch), so a moving pool of light runs ahead of each car down the street; the walls do not
+  // per car sharing the fleet's own matrices and fades. The paved surfaces read it beside the streetlamps' map
+  // (carMapPatch, from surfTexPatch), so a moving pool of light runs ahead of each car down the street; the walls do not
   const CARMAP = { on: REAL && !isTouch && !!VART && !/[?&]carpools=0\b/.test(location.search), size: 512, span: 480, rt: null, scene: null, cam: null, renders: 0 };
   const carMapU = { uCarMap: { value: null }, uCarBox: { value: new THREE.Vector4(0, 0, 1 / 480, 0) } };
   function carMapInit() {
@@ -21402,8 +21483,9 @@ float pinOccGate() {
         '  gl_FragColor = vec4(c * k * step(0.5, vF), 1.0); }',
       blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, transparent: true,
     });
-    for (let kind = 0; kind < trafficFleet.length; kind++) {
-      const f = trafficFleet[kind], m = CAR_MODELS[kind], x0 = m.l / 2 + 0.2, x1 = x0 + 36, r0 = -m.l / 2 - 3.5, r1 = -m.l / 2;
+    for (let kind = 0; kind < trafficFleet.length; kind++) for (const f of [trafficFleet[kind], trafficFleet[kind].far]) {   // the near and the far copies
+      if (!f) continue;
+      const m = CAR_MODELS[kind], x0 = m.l / 2 + 0.2, x1 = x0 + 36, r0 = -m.l / 2 - 3.5, r1 = -m.l / 2;
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.Float32BufferAttribute([x0, 0, -9, x1, 0, -9, x1, 0, 9, x0, 0, 9, r0, 0, -2.2, r1, 0, -2.2, r1, 0, 2.2, r0, 0, 2.2], 3));
       g.setAttribute('aPool', new THREE.Float32BufferAttribute([0, -9, 0, 36, -9, 0, 36, 9, 0, 0, 9, 0, -1.75, -2.2, 1, 1.75, -2.2, 1, 1.75, 2.2, 1, -1.75, 2.2, 1], 3));
@@ -21435,10 +21517,14 @@ float pinOccGate() {
     CARMAP.renders++;
   }
   const _cmClear = new THREE.Color();
-  // the ground's share of the pools: up-facing surfaces on surfTexPatch only (mode undefined), the same albedo bound as the
-  // lamps' (a pale surface takes them at 0.35 at most)
-  function carMapPatch(shader, worldExpr, mode) {
-    if (!CARMAP.on || mode || shader.fragmentShader.indexOf('uniform sampler2D uCarMap;') !== -1) return;
+  // the ground's share of the pools: the paved surfaces alone (the lane-painted roads and decks, the lots, a structure's
+  // concrete or steel, whose own patches run before the surface patch that calls this), up-facing, the same albedo bound as
+  // the lamps' (a pale surface takes them at 0.35 at most). Its own call at the end of surfTexPatch (review: called from
+  // the end of lampLightPatch it never ran under the realistic lamps, which return first), and never on a green: a
+  // program has sixteen texture units and the ground's stood at sixteen, so one sampler more and nothing linked
+  const CARMAP_PAVED = /varying vec4 vLane;|uniform sampler2D (uLotTex|uConcWall|uElSteel)\b/;
+  function carMapPatch(shader, worldExpr) {
+    if (!CARMAP.on || !CARMAP_PAVED.test(shader.fragmentShader) || shader.fragmentShader.indexOf('uniform sampler2D uCarMap;') !== -1) return;
     shader.uniforms.uCarMap = carMapU.uCarMap; shader.uniforms.uCarBox = carMapU.uCarBox;
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', 'uniform sampler2D uCarMap; uniform vec4 uCarBox;\nvoid main() {')
@@ -21485,7 +21571,10 @@ float pinOccGate() {
   // the parts, each in its own frame: x the way it faces, y up from its base
   function furnGeoms() {
     const col = (g, c) => { const n = g.attributes.position.count, a = new Float32Array(n * 3); for (let i = 0; i < n; i++) a.set(c, i * 3); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g.index ? g.toNonIndexed() : g; };
-    const merge = (parts) => {
+    const merge = (parts0) => {
+      // every part as plain triangles: the sign posts, plates and faces come straight from three's indexed boxes, planes and
+      // circles, and copied without their index they drew as slivers across the street (a bus stop's post seen close up)
+      const parts = parts0.map((p) => (p.index ? p.toNonIndexed() : p));
       let n = 0; for (const p of parts) n += p.attributes.position.count;
       const P = new Float32Array(n * 3), N = new Float32Array(n * 3), C = new Float32Array(n * 3), U = new Float32Array(n * 2);
       let o = 0;
@@ -21553,7 +21642,7 @@ float pinOccGate() {
     const caps = { pole: isTouch ? 260 : 700, head: isTouch ? 520 : 1400, stop: isTouch ? 160 : 420, bus: isTouch ? 120 : 320, hyd: isTouch ? 160 : 420, bench: isTouch ? 120 : 400, bin: isTouch ? 120 : 400 };
     for (const k of FURN_KINDS) {
       const m = new THREE.InstancedMesh(G[k], k === 'stop' || k === 'bus' ? signMat : propMat, caps[k]);
-      m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.userData.furn = k;
+      m.count = 0; m.visible = false; m.frustumCulled = false; m.receiveShadow = true; m.userData.furn = k;
       groupCity.add(m);
       FURN.meshes[k] = m;
     }
@@ -21707,9 +21796,10 @@ float pinOccGate() {
         }
       }
     }
-    for (const k of FURN_KINDS) { const m = FURN.meshes[k]; m.count = FURN.n[k]; flushInst(m, -1); }
+    for (const k of FURN_KINDS) { const m = FURN.meshes[k]; m.count = FURN.n[k]; m.visible = m.count > 0; flushInst(m, -1); }
     FURN.lx = ex; FURN.ly = ey; FURN.lz = ez;
   }
+  const FURN_LENS_Y = [0.31, 0, -0.31];   // red, amber and green over the head's middle
   function updateFurniture(now) {
     if (!FURN.on) return;
     if (!FURN.ready) { if (!trafficReady || !trafficRuns.length) return; furnInit(); }
@@ -21719,7 +21809,7 @@ float pinOccGate() {
     for (let i = 0; i < H.length; i += 5) {
       const x = H[i], y = H[i + 1], z = H[i + 2], yaw = H[i + 3], grp = Math.floor(H[i + 4]), ph = (H[i + 4] - grp) * 100;
       const c = (t + ph + (grp ? 30 : 0)) % 60, fx = Math.cos(yaw), fz = -Math.sin(yaw);
-      const lens = c < 26 ? 2 : c < 30 ? 1 : 0, ly = [0.31, 0, -0.31][lens];
+      const lens = c < 26 ? 2 : c < 30 ? 1 : 0, ly = FURN_LENS_Y[lens];
       const r = lens === 2 ? 0.1 : 4.5, g = lens === 2 ? 4.2 : lens === 1 ? 2.6 : 0.12, b = lens === 2 ? 2.2 : 0.04;
       L.putFacing(x + fx * 0.33, y + ly, z + fz * 0.33, r * k, g * k, b * k, 0.28, fx, fz);
     }
@@ -21751,13 +21841,30 @@ float pinOccGate() {
       for(const mesh of [body,lights]){mesh.count=0;mesh.frustumCulled=false;mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);groupCity.add(mesh);}
       body.setColorAt(0,new THREE.Color(1,1,1));body.instanceColor.setUsage(THREE.DynamicDrawUsage);
       body.castShadow=!isTouch&&!REAL;body.receiveShadow=true;lights.renderOrder=11;   // REAL: the projected shadow and the contact shade instead (vehShadowsFor)
-      if(REAL){const far=VART?carArtGeom(kind,1):body.geometry;if(far!==body.geometry)far.setAttribute('aCarFade',fade);vehShadowsFor(body,far,vehBlobGeom(CAR_MODELS[kind].l,CAR_MODELS[kind].w),true);}
+      const shk=REAL?new THREE.InstancedBufferAttribute(new Float32Array(TRAFFIC.cap),1).setUsage(THREE.DynamicDrawUsage):null;
+      if(REAL){const far=VART?carArtGeom(kind,1):body.geometry;if(far!==body.geometry)far.setAttribute('aCarFade',fade);vehShadowsFor(body,far,vehBlobGeom(CAR_MODELS[kind].l,CAR_MODELS[kind].w),true,shk);}
       body.customDepthMaterial=new THREE.MeshDepthMaterial({depthPacking:THREE.RGBADepthPacking});
       body.customDepthMaterial.onBeforeCompile=sh=>carFadePatch(sh,false);
       body.customDepthMaterial.customProgramCacheKey=()=> 'car-shadow-v2';
-      trafficFleet.push({body,lights,fade,ext,slots:[],n:0,dirty:-1});
+      trafficFleet.push({body,lights,fade,ext,shk,slots:[],n:0,dirty:-1,far:VART?trafficFarGroup(kind,mat):null});
     }
     if(VART)carLampInit(TRAFFIC.cap);
+  }
+  // the realism pass: past CAR_LOD_D a moving car draws its far copy (180 triangles against the near body's 684, 384 on a
+  // phone; review: every car out to the view's edge drew the full loft), in a mesh of its own with its own fades, finish
+  // and shades, on the same material
+  function trafficFarGroup(kind,mat) {
+    const cap=TRAFFIC.cap,g=carArtGeom(kind,1);
+    const fade=new THREE.InstancedBufferAttribute(new Float32Array(cap),1).setUsage(THREE.DynamicDrawUsage);
+    const ext=new THREE.InstancedBufferAttribute(new Float32Array(cap*2),2).setUsage(THREE.DynamicDrawUsage);
+    const shk=new THREE.InstancedBufferAttribute(new Float32Array(cap),1).setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('aCarFade',fade);g.setAttribute('aCarX',ext);
+    const body=new THREE.InstancedMesh(g,mat,cap);
+    body.count=0;body.visible=false;body.frustumCulled=false;body.instanceMatrix.setUsage(THREE.DynamicDrawUsage);groupCity.add(body);
+    body.setColorAt(0,new THREE.Color(1,1,1));body.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    body.castShadow=false;body.receiveShadow=true;
+    vehShadowsFor(body,g,vehBlobGeom(CAR_MODELS[kind].l,CAR_MODELS[kind].w),true,shk);
+    return {body,fade,ext,shk,slots:[],n:0,dirty:-1};
   }
   // ---- parked cars (Oct 12 realism pass; the finding: "In the real South Philly both curbs are lined bumper to bumper, day
   // and night; this is the single biggest street-level and aerial tell"). Near the eye, both kerbs of every street the
@@ -21767,8 +21874,8 @@ float pinOccGate() {
   // 160 m cells, a re-lay when the eye has moved PARKED.step metres or the hour turns, within PARKED.r of the eye (inside
   // the half-mile rule), the near ring as the full cars and the rest as their far copies, the edge dissolved by the
   // traffic's own screen-door fade. The sports complex's striped stalls fill too, full on a home game's day. A street
-  // must leave the moving cars their lanes: a two-way residential street (7 m drawn) parks nothing unless it is wider,
-  // and the two-way tertiary lanes move in to 1.6 m (CAR_OFFW). Behind REAL; ?parked=0 turns it off
+  // must leave the moving cars their lanes (parkedSides): a two-way residential street (7 m drawn) parks nothing unless
+  // it is wider, and the two-way tertiary lanes move in to 1.3 m (CAR_OFFW). Behind REAL; ?parked=0 turns it off
   // a phone (geometry-bound, Round 166) parks fewer nearer, the lite tier fewer still and the second tier none
   const PARKED = { on: REAL && !TIER2 && !/[?&]parked=0\b/.test(location.search), r: isTouch ? (LITE ? 150 : 200) : 440, near: isTouch ? 55 : 150, cap: isTouch ? (LITE ? 500 : 800) : 5200, cell: 160, step: isTouch ? 24 : 30,
     cells: null, lx: 1e9, lz: 1e9, ly: 1e9, key: '', meshes: [], ready: false, expanded: null, slots: null, slotN: 0 };
@@ -21811,7 +21918,7 @@ float pinOccGate() {
         let ext = null;
         if (VART) { ext = new THREE.InstancedBufferAttribute(new Float32Array(PARKED.cap * 2), 2); g.setAttribute('aCarX', ext); }
         const m = new THREE.InstancedMesh(g, mat, PARKED.cap);
-        m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = false; m.userData.parked = true;
+        m.count = 0; m.visible = false; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = false; m.userData.parked = true;
         m.setColorAt(0, _sc.setRGB(1, 1, 1));
         groupCity.add(m);
         // the sun's shadow from the far copy (a phone's far ring takes the contact shade alone)
@@ -21852,11 +21959,7 @@ float pinOccGate() {
     const r = trafficRuns[ri];
     if (r.closed || !parkedRunOK(r)) return;
     const hw = parkHalfW(r), hy = runHydrants(r, ri);
-    // the sides that park: both on a one-way street or a wide two-way one, one side of a narrow one-way, none of a
-    // two-way residential street the drawn ribbon makes 7 m (its two lanes fill it)
-    let sides;
-    if (r.oneway) sides = hw >= 3.25 ? [1, -1] : hw >= 2.6 ? [hash01(ri * 1.37) < 0.5 ? 1 : -1] : [];
-    else sides = r.cls >= 5 && hw < 4.6 ? [] : r.cls === 4 && hw < 4.4 ? [] : [1, -1];
+    const sides = parkedSides(r, hw);
     if (!sides.length) return;
     const u = hw - 1.12, oc = r.cls >= 5 ? 0 : r.cls === 4 ? 1 : 2, C = PARKED.cell;
     const trim0 = r.conn && r.conn[0] && r.conn[0].length ? (r.cls <= 3 ? 13 : 10) : 3, trim1 = r.conn && r.conn[1] && r.conn[1].length ? (r.cls <= 3 ? 13 : 10) : 3;
@@ -21877,6 +21980,31 @@ float pinOccGate() {
         PARKED.slotN++;
       }
     }
+  }
+  // the kerbs that park, from the moving lanes they must leave clear: a parked car's centre stands 1.12 m in from the kerb
+  // and must be PARK_CLEAR (the widest van's 2.05 m and the kerb's 1.12) clear of the outermost lane's centre, so a side
+  // parks only where the half width is that lane's offset plus 3.17 m (review: a two-way tertiary at 4.5 m with its lanes
+  // at 1.6 m put a passing SUV 0.1 to 0.27 m into the parked row, and the core's narrow arterials parked at any width).
+  // A one-lane one-way street too narrow for both kerbs parks one, chosen by the run's own place, and its moving lane
+  // keeps to the other half (parkedShift); a two-way street parks both kerbs or none
+  const PARK_CLEAR = 1.12 + 2.05;
+  function parkedSides(r, hw) {
+    const outer = r.oneway ? (carLaneCount(r) - 1) * 1.6 : CAR_OFFW[r.cls];
+    if (hw >= outer + PARK_CLEAR) return [1, -1];
+    if (r.oneway && carLaneCount(r) === 1 && hw >= 2.6) return [hash01(r.mx * 0.731 + r.mz * 1.37) < 0.5 ? 1 : -1];
+    return [];
+  }
+  // the moving lane's sideways shift on a one-lane one-way street that parks one kerb: to the middle of what the parked row
+  // leaves, 1.07 m off the centreline away from it, once per run and the same whether or not the eye is near (a car must
+  // not step sideways when the row is laid)
+  function parkedShift(r) {
+    if (r.pkSh !== undefined) return r.pkSh;
+    let sh = 0;
+    if (PARKED.on && r.oneway && r.cls >= 2 && carLaneCount(r) === 1) {
+      const sides = parkedSides(r, parkHalfW(r));
+      if (sides.length === 1 && parkedRunOK(r)) sh = -sides[0] * 1.07;
+    }
+    return (r.pkSh = sh);
   }
   const PARKED_NO_SLOTS = [];
   function parkedCellSlots(key) {
@@ -21930,7 +22058,7 @@ float pinOccGate() {
       }
     }
     for (const p of PARKED.meshes) {
-      p.m.count = p.n;
+      p.m.count = p.n; p.m.visible = p.n > 0;   // an empty mesh costs a draw call's state even at no instances
       if (!p.n) continue;
       flushInst(p.m);
       p.fade.updateRange.offset = 0; p.fade.updateRange.count = p.n; p.fade.needsUpdate = true;
@@ -21942,7 +22070,7 @@ float pinOccGate() {
   function updateParked(now) {
     if (!PARKED.on) return;
     if (!PARKED.ready) { if (!trafficReady) return; parkedInit(); if (!PARKED.ready) { PARKED.on = false; return; } }
-    if (window.__dbg && !window.__dbg.vehicles) window.__dbg.vehicles = () => Object.assign({ art: !!VART, artReady: !!(vartSets.cars && vartSets.cars.ready), shadows: VEH_SHADOWS.length, shadowA: +vehShadowU.uShadowA.value.toFixed(3),
+    if (window.__dbg && !window.__dbg.vehicles) window.__dbg.vehicles = () => Object.assign({ art: !!VART, artReady: !!(vartSets.cars && vartSets.cars.ready), shadows: VEH_SHADOWS.length, shadowA: +vehShadowU.uShadowA.value.toFixed(3), shadeOut: vehShadowU.uShadeOut.value, lod: trafficFleet.map((f) => [f.n, f.far ? f.far.n : 0]),
       furniture: FURN.ready ? Object.assign({ cells: FURN.cells, heads: FURN.heads.length / 5 }, FURN.n) : null, carPools: CARMAP.renders,
       carLamps: CARLAMP.pts ? { drawn: CARLAMP.pts.geometry.drawRange.count, focal: Math.round(CARLAMP.u.uFocal.value), on: +CARLAMP.u.uNight.value.toFixed(3), first: Array.from(CARLAMP.lamp.slice(0, 8)).map((v) => +v.toFixed(2)) } : null }, VSTAT);
     const key = clock.y + '-' + clock.m + '-' + clock.d + ':' + Math.floor(clock.minutes / 60) + ':' + SCORES.games.length;
@@ -22152,7 +22280,7 @@ float pinOccGate() {
     return { frac: (tbl[h0] + (tbl[(h0 + 1) % 24] - tbl[h0]) * f) * (we ? 0.85 : 1), dow };
   }
   function carLaneCount(r) { return r.oneway ? (r.cls <= 1 ? 3 : r.cls <= 3 ? 2 : 1) : 1; }
-  function carOffset(r, lane) { return r.oneway ? (lane-(carLaneCount(r)-1)*.5)*3.2 : CAR_OFFW[r.cls]; }
+  function carOffset(r, lane) { return r.oneway ? (lane-(carLaneCount(r)-1)*.5)*3.2+parkedShift(r) : CAR_OFFW[r.cls]; }
   const _carVP=new THREE.Matrix4(),_carFrustum=new THREE.Frustum(),_carSphere=new THREE.Sphere(),_carProbe=new V3();
   function carRefreshView() {
     camera.updateMatrixWorld();_carVP.multiplyMatrices(camera.projectionMatrix,camera.matrixWorldInverse);_carFrustum.setFromProjectionMatrix(_carVP);
@@ -22373,37 +22501,71 @@ float pinOccGate() {
       car.alpha+=clamp(life-car.alpha,-dt,dt*.85);
     }
   }
+  // the realism pass: past CAR_LOD_D a car is its far copy (trafficFarGroup), and the cars past CAR_SHADE_D, where their
+  // shades have faded out, are written after the rest so the shades stop short of them (shadeN: most of a computer's 3,000
+  // cars are that far, and each drew a 180-triangle shadow and a contact shade at nothing)
+  const CAR_LOD_D=isTouch?110:220,CAR_SHADE_D=760,_carFar=[];
+  // per vertex of a run: 1 where it stands over 1.6 m above the drawn ground (a deck, a bridge, a viaduct), once
+  function trafficRunDeck(r) {
+    if(r.dk)return r.dk;
+    const n=r.xs.length,a=new Uint8Array(n);
+    for(let j=0;j<n;j++){const g=groundMeshLandY(r.xs[j],r.zs[j]);const y=g===null?siteY(r.xs[j],r.zs[j],'road'):g;a[j]=r.ys[j]-y>1.6?1:0;}
+    return (r.dk=a);
+  }
+  function trafficPut(car,r,d,boxLamps) {
+    const f=trafficFleet[car.kind],g=f.far&&d>CAR_LOD_D?f.far:f,i=g.n++;
+    _sp.set(car.px,car.py,car.pz);_sq.setFromAxisAngle(TRAFFIC_UP,car.heading);
+    if(car.pitch){_sqP.setFromAxisAngle(_carZ,car.pitch);_sq.multiply(_sqP);}
+    _ss.set(1,1,1);_sm.compose(_sp,_sq,_ss);
+    g.body.setMatrixAt(i,_sm);if(boxLamps)f.lights.setMatrixAt(i,_sm);
+    const fd=car.alpha*(1-smooth(CAR_VIEW.near,CAR_VIEW.far,d));
+    g.fade.array[i]=fd;
+    if(g.shk&&r){const dk=trafficRunDeck(r),j=Math.min(car.seg||0,dk.length-1);g.shk.array[i]=dk[j]||dk[Math.min(j+1,dk.length-1)]?0:1;}
+    if(g.slots[i]!==car){g.slots[i]=car;_sc.setHex(car.col);if(REAL)_sc.convertSRGBToLinear();g.body.setColorAt(i,_sc);if(g.ext)g.ext.array[i*2]=car.met||0;if(g.dirty<0)g.dirty=i;}
+    if(g.ext){g.ext.array[i*2+1]=car.brk||0;carLampPut(car,fd);}
+  }
+  function trafficFlushGroup(g) {
+    g.body.count=g.n;flushInst(g.body,g.dirty);
+    if(REAL)g.body.visible=g.n>0;   // an empty mesh costs a draw call's state even at no instances
+    if(!g.n)return;
+    g.fade.updateRange.offset=0;g.fade.updateRange.count=g.n;g.fade.needsUpdate=true;
+    if(g.ext){g.ext.updateRange.offset=0;g.ext.updateRange.count=g.n*2;g.ext.needsUpdate=true;}
+    if(g.shk){g.shk.updateRange.offset=0;g.shk.updateRange.count=g.n;g.shk.needsUpdate=true;}
+  }
   function trafficDraw(night) {
     const boxLamps=night>0&&!VART;   // the realism pass lights the cars with CARLAMP's points instead of the lamp boxes
-    for(const f of trafficFleet){f.n=0;f.dirty=-1;f.lights.material.opacity=night;}
-    CARLAMP.n=0;
+    for(const f of trafficFleet){f.n=0;f.dirty=-1;f.lights.material.opacity=night;if(f.far){f.far.n=0;f.far.dirty=-1;}}
+    CARLAMP.n=0;_carFar.length=0;
+    const cp=camera.position;
     for(const r of trafficRuns)for(const car of r.cars) {
-      const f=trafficFleet[car.kind],i=f.n++;
-      _sp.set(car.px,car.py,car.pz);_sq.setFromAxisAngle(TRAFFIC_UP,car.heading);
-      if(car.pitch){_sqP.setFromAxisAngle(_carZ,car.pitch);_sq.multiply(_sqP);}
-      _ss.set(1,1,1);_sm.compose(_sp,_sq,_ss);
-      f.body.setMatrixAt(i,_sm);if(boxLamps)f.lights.setMatrixAt(i,_sm);
-      const fd=car.alpha*(1-smooth(CAR_VIEW.near,CAR_VIEW.far,camera.position.distanceTo(_sp)));
-      f.fade.array[i]=fd;
-      if(f.slots[i]!==car){f.slots[i]=car;_sc.setHex(car.col);if(REAL)_sc.convertSRGBToLinear();f.body.setColorAt(i,_sc);if(f.ext)f.ext.array[i*2]=car.met||0;if(f.dirty<0)f.dirty=i;}
-      if(f.ext){f.ext.array[i*2+1]=car.brk||0;carLampPut(car,fd);}
+      const d=Math.hypot(car.px-cp.x,car.py-cp.y,car.pz-cp.z);
+      if(REAL&&d>CAR_SHADE_D){_carFar.push(car,d);continue;}
+      trafficPut(car,r,d,boxLamps);
+    }
+    if(REAL){
+      for(const f of trafficFleet){f.body.userData.shadeN=f.n;if(f.far)f.far.body.userData.shadeN=f.far.n;}
+      for(let k=0;k<_carFar.length;k+=2)trafficPut(_carFar[k],null,_carFar[k+1],boxLamps);
     }
     let drawn=0;
     for(const f of trafficFleet) {
-      f.body.count=f.n;f.lights.count=boxLamps?f.n:0;flushInst(f.body,f.dirty);if(boxLamps)flushInst(f.lights);
-      if(f.n){f.fade.updateRange.offset=0;f.fade.updateRange.count=f.n;f.fade.needsUpdate=true;}
-      if(f.ext&&f.n){f.ext.updateRange.offset=0;f.ext.updateRange.count=f.n*2;f.ext.needsUpdate=true;}
+      trafficFlushGroup(f);if(f.far)trafficFlushGroup(f.far);
+      f.lights.count=boxLamps?f.n:0;if(boxLamps)flushInst(f.lights);
       for(let i=0;i<f.n;i++)if(f.fade.array[i]>.03)drawn++;
+      if(f.far)for(let i=0;i<f.far.n;i++)if(f.far.fade.array[i]>.03)drawn++;
     }
     if(CARLAMP.pts)carLampEnd();
     TRAFFIC.n=drawn;
   }
   function updateTraffic(now,dt) {
     if(REAL)vehShadowUpdate();
+    trafficStep(now,dt);
+    if(REAL)vehShadowSync();   // last: every vehicle's count is set for the frame by now (the transit, the trains and the ferry update first)
+  }
+  function trafficStep(now,dt) {
     if(!trafficReady)return;
     updateFurniture(now);
     // the parked cars are cars: the Traffic layer takes them with it, and they are laid afresh when it comes back
-    if(!TRAFFIC.on){for(const f of trafficFleet){f.body.count=f.lights.count=0;}TRAFFIC.n=0;if(CARLAMP.pts)CARLAMP.pts.geometry.setDrawRange(0,0);for(const p of PARKED.meshes)p.m.count=0;PARKED.key='';return;}
+    if(!TRAFFIC.on){for(const f of trafficFleet){f.body.count=f.lights.count=0;if(REAL)f.body.visible=false;if(f.far){f.far.body.count=0;f.far.body.visible=false;}}TRAFFIC.n=0;if(CARLAMP.pts){CARLAMP.pts.geometry.setDrawRange(0,0);CARLAMP.pts.visible=false;}for(const p of PARKED.meshes){p.m.count=0;p.m.visible=false;}PARKED.key='';return;}
     updateParked(now);
     carRefreshView();
     const dkey=clock.y+'-'+clock.m+'-'+clock.d,dmin=Math.abs(clock.minutes-trafficLastMin);
@@ -25199,7 +25361,6 @@ float pinOccGate() {
         '    vec3 lo = max(la - 0.5, 0.0); totalEmissiveRadiance += min(la, vec3(0.5)) + lo / (1.0 + lo * 2.0); }',
         '}',
       ].join('\n'));
-    carMapPatch(shader, worldExpr, mode);   // the headlights' pools on the ground (CARMAP, the realism pass)
   }
   function surfTexPatch(shader, opt) {
     const forced = opt === true;
@@ -25275,6 +25436,7 @@ float pinOccGate() {
       ].join('\n'));
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
     lampLightPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // Round 140
+    carMapPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // the realism pass: the headlights' pools on the paved surfaces (CARMAP)
   }
   // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the post-build
   // weather wrap (the hookup at the end of build() keys the wrapped program, gotcha 15)
@@ -27078,6 +27240,7 @@ float pinOccGate() {
     const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + marketTentN * 16777216 + (movers ? 1 << 30 : 0)
       + markerDrawnN * 4294967296 + (closuresReady && barrelMesh ? (barrelMesh.count + coneMesh.count) * 8796093022208 : 0);   // bikes cast too, and a market opening its tents; movers switching off needs one last redraw; the posts, plinths and drums come and go with the half mile (Round 82)
     if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
+    if (REAL && !shadowFrozen && (ROOFKIT.cam.x !== ROOFKIT.shX || ROOFKIT.cam.z !== ROOFKIT.shZ)) { ROOFKIT.shX = ROOFKIT.cam.x; ROOFKIT.shZ = ROOFKIT.cam.z; if (!isTouch && ROOFKIT.meshes.length) renderer.shadowMap.needsUpdate = true; }   // REAL: no mover redraws the depth pass, so the roof kit relaid ahead of a moving eye asks for one itself
     sky.position.copy(camera.position);
     cloudDeck.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);

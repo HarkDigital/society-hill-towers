@@ -189,13 +189,13 @@ const("DELAWARE_DATA", text_of("delaware.json", "null"))   # the tidal Delaware'
 const("BOATHOUSES", text_of("boathouses.json", "null"))
 const("RAIL_AMTRAK", text_of("rail_amtrak.json", "null"))   # Amtrak's tracks through the city (bake_rail.py, Round 80): the live trains ride them
 const("PATCO_DATA", text_of("patco.json", "null"))   # PATCO's track and timetable over the Ben Franklin Bridge (bake_patco.py, Round 141): scheduled trains, not live
+const("VEHICLE_ART", text_of("vehicle_art.json", "null"))   # the vehicles' generated atlases and profiles (bake_vehicle_art.py), the realism pass
+const("STREET_FURN", text_of("street_furniture.json", "null"))   # signals, stop signs, hydrants, benches, bins from OSM (bake_street_furniture.py), the realism pass
 const("I95_DATA", text_of("i95.json", "null"))   # I-95's carriageways for its highway lamps, in the city and past it (bake_i95.py, Round 148)
 const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud models (pack_clouds.py): the cloud field of Round 67
 const("TREE_ART", text_of("tree_art.json", "null"))   # the trees' species images (bake_tree_art.py): side and top cards by season, Oct 12
 const("GROUND_ART", text_of("ground_art.json", "null"))   # the generated lawn, verge and street textures (bake_ground_art.py), Round 183
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
-const("VEHICLE_ART", text_of("vehicle_art.json", "null"))   # the vehicles' generated atlases and profiles (bake_vehicle_art.py), the realism pass
-const("STREET_FURN", text_of("street_furniture.json", "null"))   # signals, stop signs, hydrants, benches, bins from OSM (bake_street_furniture.py), the realism pass
 
 
 def art_paths(o):
@@ -211,7 +211,7 @@ def art_paths(o):
 
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
-for name in ("tree_art.json", "ground_art.json", "fronts.json", "vehicle_art.json"):
+for name in ("tree_art.json", "ground_art.json", "fronts.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):
@@ -221,6 +221,17 @@ missing = [p for p in ART_FILES if not (ROOT / p).exists()]
 if missing:
     sys.exit(f"FATAL: {len(missing)} art file(s) the manifests name are missing, first {missing[0]}")
 ART_BYTES = sum((ROOT / p).stat().st_size for p in ART_FILES)
+# the vehicles' manifest (the realism pass), held to the same two rules
+if (ROOT / "vehicle_art.json").exists():
+    _veh_text = (ROOT / "vehicle_art.json").read_text()
+    if re.search(r'"data:image/', _veh_text):
+        sys.exit("FATAL: vehicle_art.json still inlines data URLs; re-run bake_vehicle_art.py")
+    _veh_art = art_paths(json.loads(_veh_text))
+    _veh_missing = [p for p in _veh_art if not (ROOT / p).exists()]
+    if _veh_missing:
+        sys.exit(f"FATAL: {len(_veh_missing)} art file(s) the manifests name are missing, first {_veh_missing[0]}")
+    ART_FILES += _veh_art
+    ART_BYTES += sum((ROOT / p).stat().st_size for p in _veh_art)
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
 let_blob("POLES_B64", "poles.b64")

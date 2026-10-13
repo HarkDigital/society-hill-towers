@@ -13,7 +13,7 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFESTS = ('fronts.json', 'tree_art.json', 'ground_art.json', 'vehicle_art.json')   # the vehicles' since the realism pass
+MANIFESTS = ('fronts.json', 'tree_art.json', 'ground_art.json')
 
 
 def paths(o):
@@ -24,6 +24,9 @@ def paths(o):
     if isinstance(o, list):
         return [p for v in o for p in paths(v)]
     return []
+
+
+MANIFESTS += ('vehicle_art.json',)   # the vehicles' (the realism pass)
 
 
 class Files(unittest.TestCase):
