@@ -50,7 +50,7 @@ class WallArt(unittest.TestCase):
         # the page inlines it and build.py checks its files
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("WALL_ART", text_of("wall_art.json", "null"))', b)
-        self.assertIn('"wall_art.json"):', b)
+        self.assertIn('"wall_art.json"', b[b.index('for name in ("tree_art.json"'):].split('\n', 1)[0])   # in build.py's file check
 
     def test_the_fetch_never_prints_the_key(self):
         f = (ROOT / 'fetch_wall_art.py').read_text()

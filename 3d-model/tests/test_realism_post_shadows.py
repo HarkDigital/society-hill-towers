@@ -146,7 +146,7 @@ class Weather(unittest.TestCase):
     def setUpClass(cls):
         s = (ROOT / 'app.js').read_text()
         kw = section(s, '  const KEYWX = {', '\n  }\n') + '\n  }\n'
-        ms = section(s, '  let moonNoRecv = null;', '  function applyLighting() {')
+        ms = section(s, '  let moonNoRecv = null;', '\n  }\n') + '\n  }\n'   # moonNoRecv, shadowOffWhy and moonShadowsOff
         cls.script = '''const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const REAL = true, POST = { on: true };
 const sun = { intensity: 0 }, hemi = { intensity: 0 }, gradeU = { uAOK: { value: 1 } }, scene = { fog: { color: { multiplyScalar() {} } }, traverse(f) { for (const o of objs) f(o); } };

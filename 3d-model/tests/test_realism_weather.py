@@ -52,13 +52,14 @@ class WetStreets(unittest.TestCase):
         self.assertIn('vLane.z - 1.25', c)                        # the gutters: the road's last metre each side
 
     def test_the_lamp_pool_guard_still_sees_its_own_declaration(self):
-        # lampLightPatch returns early when the shader already declares 'uniform sampler2D uLampMap;', and the weather
+        # lampLightPatch returns early when the shader already declares 'uniform sampler2D uLampMap' (the realistic patch
+        # declares it beside the near map, so the guard reads the name without its semicolon), and the weather
         # wraps the flats before surfTexPatch runs: a weather declaration under that name would switch the pools off
         f = cut(self.s, '  function wxWetPatch(shader) {', '\n  }\n')
-        self.assertNotIn('uniform sampler2D uLampMap;', f)
-        self.assertNotIn('uniform sampler2D uLampMap;', cut(self.s, '  const WX_WET_GLSL = {', '\n  };\n'))
+        self.assertNotIn('uniform sampler2D uLampMap', f)
+        self.assertNotIn('uniform sampler2D uLampMap', cut(self.s, '  const WX_WET_GLSL = {', '\n  };\n'))
         self.assertIn('uniform sampler2D uWxLampMap;', f)
-        self.assertIn("if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap;') !== -1) return;", self.s)
+        self.assertIn("if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap') !== -1) return;", self.s)
 
     def test_the_gutters_land_after_every_hook(self):
         s = self.s
