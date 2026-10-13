@@ -8,8 +8,10 @@ fetch_storefront_art.py makes each cell in two stages: the shopfront EMPTY, ever
 through /v1/images/edits (insides/<id>.png). The glass is the key, found to the pixel (KEY_*): --masks writes the edit's
 mask from it (<id>-mask.png beside the frame: transparent over the panes, an API input that never ships), and the bake
 pastes back ONLY the keyed pixels of the edit (a pixel's feather), so the frame and its mask stay exactly registered
-whatever the edit did elsewhere. A cell whose edit is missing takes one of the trade's fallback interiors (interiors/,
-composited behind the key), and one with neither keeps dark glass.
+whatever the edit did elsewhere. A cell whose edit is missing borrows its trade's own edits (plates: each pane's largest
+clean rectangle, scaled to cover each of its panes; a corner store the groceries' and the shops'), else one of the
+trade's fallback interiors (interiors/, composited behind the key), and one with none keeps dark glass (the review's
+second set was framed before the API's credit ran out, and its 24 cells all borrow).
 
 Per cell the bake finds the fascia board (the longest run of uniform rows in the top quarter, grown sideways to the pier
 caps), checks it is blank (its luminance spread: lettering raises it), and measures from the foot the bulkhead's top (the
@@ -33,15 +35,17 @@ import fetch_storefront_art as F
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'storefront_art_raw')
 OUT = os.path.join(HERE, 'storefront_art.json')
-PXM = 50            # atlas pixels a metre
+PXM = 44            # atlas pixels a metre (50 until the review's second set: 110 cells at 50 wanted a 4096 by 2712 atlas,
+                    # a third more memory on a phone; at 44 they fit the same 4096 by 2048)
 H_M = 4.2           # every image is one storey, 4.2 m, sidewalk to the top of the fascia
-CELL_H = int(round(H_M * PXM))
+CELL_H = 2 * int(round(H_M * PXM / 2))   # even, so the half-size mask's cells keep their rows
 PAD = 8
 AW, AH = 4096, 2048
 MASK_DIV = 2
 GEN_FAMS = ('retail', 'restaurant', 'cafe', 'grocery', 'bakery', 'boutique', 'salon', 'takeout')
 # the key: a pane's flat chroma green (and the anti-aliased pixels at its frames, which the paste's dilation covers)
 KEY_G, KEY_GAP = 0.5, 0.3
+DOOR_W = (0.5, 1.15, 0.25, 0.8)   # a door leaf's glass in metres: a single leaf's least and most, a pair's leaf's least and most
 SPILL = 0.05   # green over the other channels (and a fifth of the luminance) past which a pixel by the glass is the key's spill (despill)
 # hand corrections, like bake_fronts.DISPLAY_DARK: a cell whose board the finder misreads, as [y0, x0, y1, x1] in
 # fractions of the image from its top-left
@@ -133,7 +137,99 @@ def despill(frame, band, key):
     return out, int(m.sum())
 
 
-def composite(cid, fam, frame, key):
+def largest_rect(m):
+    """The largest axis-aligned rectangle of True in a boolean image (the histogram method): (y0, x0, y1, x1) inclusive,
+    or None."""
+    H, W = m.shape
+    h = np.zeros(W, np.int32)
+    best, bA = None, 0
+    for y in range(H):
+        h = np.where(m[y], h + 1, 0)
+        st = []
+        for x in range(W + 1):
+            hx = h[x] if x < W else 0
+            start = x
+            while st and st[-1][1] >= hx:
+                s0, sh = st.pop()
+                A = sh * (x - s0)
+                if A > bA:
+                    bA, best = A, (y - sh + 1, s0, y, x - 1)
+                start = s0
+            st.append((start, hx))
+    return best
+
+
+_PLATES = {}
+def plates(fam):
+    """The panes of a trade's own interior edits (insides/), each the largest clean rectangle of keyed glass in a pane, as
+    (image, y0, x0, y1, x1) in its pixels: the interiors a cell whose edit is missing borrows (the review's second set was
+    framed before the API's credit ran out, and no edit could be made for it)."""
+    if fam in _PLATES:
+        return _PLATES[fam]
+    out = []
+    for cid, f2, cls, v, _, _ in F.cells():
+        if f2 != fam:
+            continue
+        pi, pf = os.path.join(RAW, 'insides', cid + '.png'), os.path.join(RAW, 'frames', cid + '.png')
+        if not (os.path.exists(pi) and os.path.exists(pf)):
+            continue
+        fr = np.asarray(Image.open(pf).convert('RGB'), np.float32) / 255.0
+        k = erode(key_of(fr), 2)
+        H, W = k.shape
+        sm = np.asarray(Image.fromarray((k * 255).astype(np.uint8)).resize((W // 4, H // 4), Image.BOX)) > 250
+        ins = Image.open(pi).convert('RGB')
+        if ins.size != (W, H):
+            ins = ins.resize((W, H), Image.LANCZOS)
+        for by0, bx0, by1, bx1, cnt in blobs(sm):
+            if cnt < 200:
+                continue
+            sub = np.zeros_like(sm)
+            sub[by0:by1 + 1, bx0:bx1 + 1] = sm[by0:by1 + 1, bx0:bx1 + 1]
+            r = largest_rect(sub[by0:by1 + 1, bx0:bx1 + 1])
+            if not r:
+                continue
+            y0, x0, y1, x1 = r[0] + by0, r[1] + bx0, r[2] + by0, r[3] + bx0
+            if (y1 - y0 + 1) * (x1 - x0 + 1) < 300:
+                continue
+            out.append((ins, (y0 + 1) * 4, (x0 + 1) * 4, y1 * 4 + 3, x1 * 4 + 3, cid))
+    _PLATES[fam] = out
+    return out
+
+
+def transplant(cid, fam, frame, key):
+    """A cell's interior from its trade's own edits (plates): each pane of its glass (the key closed over its bars and
+    glazing bars) takes a plate, the one nearest its shape of those not yet used in the cell, scaled to cover it; or None.
+    A corner store takes the groceries' and the shops' plates."""
+    pool = plates('grocery') + plates('retail') if cid in F.CORNER else plates(fam)
+    if not pool:
+        return None
+    H, W = key.shape
+    closed = erode(dilate(key, 7), 7)
+    sm = np.asarray(Image.fromarray((closed * 255).astype(np.uint8)).resize((W // 4, H // 4), Image.BOX)) > 127
+    src = Image.fromarray((np.clip(frame, 0, 1) * 255).astype(np.uint8))
+    used = []
+    seed = zlib.crc32(cid.encode())
+    for by0, bx0, by1, bx1, cnt in sorted(blobs(sm), key=lambda b: (b[1], b[0])):
+        if cnt < 6:
+            continue
+        y0, x0, y1, x1 = max(0, by0 * 4 - 8), max(0, bx0 * 4 - 8), min(H, by1 * 4 + 12), min(W, bx1 * 4 + 12)   # over the key's edge pixels
+        bw, bh = x1 - x0, y1 - y0
+        asp = bw / max(1, bh)
+        order = sorted(range(len(pool)), key=lambda q: (q in used, abs(math.log(asp / ((pool[q][4] - pool[q][2]) / max(1, pool[q][3] - pool[q][1])))),
+                                                       (q * 2654435761 + seed) % 97))
+        q = order[0]
+        used.append(q)
+        im, py0, px0, py1, px1, _ = pool[q]
+        pw, ph = px1 - px0, py1 - py0
+        sc = max(bw / pw, bh / ph)
+        cw, ch = bw / sc, bh / sc   # the plate's crop at the pane's aspect, centred
+        cx0, cy0 = px0 + (pw - cw) / 2, py0 + (ph - ch) / 2
+        piece = im.crop((int(cx0), int(cy0), int(math.ceil(cx0 + cw)), int(math.ceil(cy0 + ch)))).resize((bw, bh), Image.LANCZOS)
+        src.paste(piece, (x0, y0))
+    return np.asarray(src, np.float32) / 255.0
+
+
+def composite(cid, fam, frame, key, transplant_ok=True):
     """The frame with the shop's interior in its panes: the edit's own pixels under the key (a pixel's feather), else the
     trade's fallback interior behind it, else dark glass. Returns (image, source)."""
     paste = dilate(key, 2)
@@ -148,6 +244,8 @@ def composite(cid, fam, frame, key):
             ins = ins.resize((W, H), Image.LANCZOS)
         src = np.asarray(ins, np.float32) / 255.0
         how = 'inside'
+    elif transplant_ok and (tp := transplant(cid, fam, frame, key)) is not None:
+        src, how = tp, 'plates'
     else:
         ints = sorted(f for f in os.listdir(os.path.join(RAW, 'interiors')) if f.startswith(fam + '-') and f.endswith('.png')) \
             if os.path.isdir(os.path.join(RAW, 'interiors')) else []
@@ -218,20 +316,37 @@ def analyse(cid, fam, cls, frame):
     pl = frame[:, :max(2, int(cols[0]))].reshape(-1, 3)
     pr = frame[:, min(W - 2, int(cols[-1]) + 1):].reshape(-1, 3)
     pierC = np.median(np.concatenate([pl, pr]), 0)
-    # the door: a keyed pane standing lowest and tall for its width
+    # the door: a keyed pane standing lowest and tall for its width (its glass closed over a rail across it), a leaf's
+    # width (DOOR_W: the review found a display window of 1.6 m and strips of 4 to 47 cm taken for doors in a dozen
+    # cells), or a pair of narrower leaves side by side with the same foot and head (a double door's)
     door = None
     small = np.asarray(Image.fromarray((key * 255).astype(np.uint8)).resize((256, max(8, int(round(H * 256 / W)))), Image.NEAREST)) > 127
     hS = small.shape[0]
+    pxm = 256 / F.CLASSES[cls][0]
+    rail = max(1, int(round(0.12 * pxm)))
+    vc = small.copy()
+    for d in range(1, rail + 1):   # a vertical close: a door's rail between its panes
+        vc |= np.roll(small, d, 0) & np.roll(small, -d, 0)
     cands = []
-    for by0, bx0, by1, bx1, cnt in blobs(small):
+    for by0, bx0, by1, bx1, cnt in blobs(vc):
         bh, bw = by1 - by0 + 1, bx1 - bx0 + 1
-        if bh > 0.3 * hS and bw < 0.75 * bh and cnt > 0.5 * bh * bw:
-            cands.append((by1, bh, bx0, bx1))
-    if cands:
-        lowest = max(c[0] for c in cands)
-        dc = [c for c in cands if c[0] >= lowest - 2]
+        if bh > 0.3 * hS and bw < 0.75 * bh and cnt > 0.5 * bh * bw and DOOR_W[2] <= bw / pxm <= max(DOOR_W[1], DOOR_W[3]):
+            cands.append((by1, bh, bx0, bx1, by0))
+    doors = []
+    for c in cands:
+        leaf = lambda q: (q[3] - q[2] + 1) / pxm <= DOOR_W[3]
+        mate = [q for q in cands if q is not c and leaf(c) and leaf(q) and abs(q[0] - c[0]) <= 0.03 * hS and abs(q[4] - c[4]) <= 0.05 * hS
+                and (0 <= q[2] - c[3] <= 0.35 * pxm or 0 <= c[2] - q[3] <= 0.35 * pxm)]
+        x0_, x1_ = c[2], c[3]
+        for q in mate:
+            x0_, x1_ = min(x0_, q[2]), max(x1_, q[3])
+        if (mate and (x1_ - x0_ + 1) / pxm <= 1.9) or DOOR_W[0] <= (c[3] - c[2] + 1) / pxm <= DOOR_W[1]:
+            doors.append((c[0], c[1], x0_, x1_))
+    if doors:
+        lowest = max(c[0] for c in doors)
+        dc = [c for c in doors if c[0] >= lowest - 2]
         c = max(dc, key=lambda q: q[1])
-        if c[0] / hS > 1 - bulkTop - 0.02 or len(dc) == 1:
+        if c[0] / hS > 1 - bulkTop - 0.02 or len({(q[2], q[3]) for q in dc}) == 1:
             door = [round(c[2] / 256, 4), round((c[3] + 1) / 256, 4)]
     if door is None:
         notes.append('no door found')
@@ -262,7 +377,7 @@ def bake(preview):
     order = sorted(made, key=lambda c: (-F.CLASSES[c[2]][0], c[0]))
     place, x, y = {}, 0, 0
     for c in order:
-        cw = int(round(F.CLASSES[c[2]][0] * PXM)) + 2 * PAD
+        cw = 2 * int(round(F.CLASSES[c[2]][0] * PXM / 2)) + 2 * PAD
         if x + cw > AW:
             x, y = 0, y + rowH
         if y + rowH > AH:
@@ -329,13 +444,14 @@ def bake(preview):
                 d.rectangle((A['door'][0] * Ww, (1 - head) * Hh, A['door'][1] * Ww, Hh - 2), outline=(0, 120, 255), width=4)
             vi.save(os.path.join(preview, cid + '.jpg'), quality=82)
             sheet.append((cid, vi))
-    # the painted shop floors' cells: a trade's first of each class
+    # the painted shop floors' cells: of each class, a trade's first or second by turns (the second M and L of the grocery
+    # and the takeout are corner stores), the first where the second is missing
     by = {c['id']: c for c in out_cells}
     gen = {}
     for cls in ('S', 'M', 'L'):
         ids = []
-        for fam in GEN_FAMS:
-            for v in range(3):
+        for k, fam in enumerate(GEN_FAMS):
+            for v in (k % 2, 0, 1, 2):
                 cid = '%s-%s-%d' % (fam, cls, v)
                 if cid in by:
                     ids.append(cid)

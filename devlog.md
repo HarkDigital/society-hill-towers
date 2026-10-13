@@ -8904,3 +8904,62 @@ Not done:
 - Not done, to offer Mike: roll-down gates on closed shops (the flag rides in aSfInfo, nothing draws it), names on the
   generated house fronts' boards for the 527 records that dissolve under them, blade signs for the 796 on street floors,
   shop bases where OSM shops stand, style 6's double-height bays.
+- The review (realism, phone and correctness reviewers, then the fixes on the same branch):
+  - The painted shop floors kept their paint wherever Part A could not fit whole shopfronts (a wall under 3.4 m tall, a
+    short chamfered corner, a wall without its own coordinates): flat grey panes and a striped awning band beside the
+    photographs, and a white slab after dark, in Mike's own reference view. Now no style-5 wall is painted once the art is
+    up: a wall 2.6 m long and 2.9 m tall takes shopfronts (one S down to 0.58 of its width), anything less keeps masonry
+    with the style's sashes. Units along a wall step through the class's eight cells by a stride of 1, 3, 5 or 7, so no
+    two side by side share one, and the wall's hash takes its facing (a corner building's faces of one length had all
+    worn one cell). Part A's cells pack their atlas corner into one float: 25 uniform rows, not 31.
+  - Panels overhung their walls (Greensgrow's pier and awning stood a metre past the corner over a lawn: the bake's 4 m
+    minimum on a 3 to 5 m edge) or bridged jogs as boxes up to 2 m deep (179 records with out minus in of 0.6 m or more;
+    Ratchada a kiosk with a streaked return). The bake now measures every span on the walls the page draws (wide.b64
+    decoded, the core's own rings): sampled every 10 cm, a sample counts where the host's wall is there, in view (nothing
+    in the 45 degree cone 3 m deep in front of it) and flush (at most 30 cm proud anywhere, once the wall's lean against
+    the record's angle is taken out and handed to the page as a turn, at most 8.5 degrees). The best window in the
+    record's room (3 m either side, never past the midpoint to a neighbour on its line) takes the laid width or narrower;
+    under 3.4 m it is hidden. 169 narrowed, 429 slid, 904 turned (most by under a degree), 91 hidden for no wall (Ratchada,
+    Oneal's, Rudi's, Greensgrow among them, and stalls inside the Reading Terminal), 32 in a shop=mall (Liberty Place, the
+    Fashion District: the brick Victorian fronts strung along a curtain-wall tower), out p95 13 cm. A return now wears its
+    end's pier wrapped round the corner by depth in metres. 'Pub On Passyunk Eas' was not a neighbour: wide.b64's 0.2 m grid
+    drew the host's wall 10 cm out at one end and it stood through the panel; measured on the drawn ring it reads whole,
+    and so does SOUTH FELLINI. The sidecar is v2, 9 int16 a record (the turn).
+  - A house front and a panel clashed (BP Shop: a front's awning over the panel's board; Cinemug: a residential front's
+    raised door over the board) because the near flag was tested at the record's own point. Every test (the custom models,
+    the street floors, the fronts) is now at the laid span, the fronts at its ends and middle; a shop front under it
+    dissolves the panel near the eye as before, and any other front under it becomes its shop set (149 did), so the two
+    never stand on one wall. 676 panels dissolve near the eye (527 before).
+  - Identical shopfronts next door (12 adjacent pairs, 32 within 15 m): the M and L classes held one cell a trade. A
+    second set was generated (fetch_storefront_art.py: a second M and L a trade, a third S for the groceries, the
+    grocery's, shop's and takeout's second M and L Philadelphia corner stores with a gate's box over the fascia and bars on
+    the windows, numbered on so no first-set prompt moved). The API's credit ran out after 24 of 27 frames and before any
+    of their edits (bakery-L-1, boutique-L-1, venue-M-1 have no frame and are left out), so those cells borrow interiors
+    from their trade's own edits (bake_storefront_art.py plates and transplant: each pane's largest clean rectangle,
+    scaled to cover each pane, bars and glazing bars kept; contact sheets read clean, no key left). 107 cells; the atlas
+    stays 4096x2048 at 44 px/m (at 50 it wanted 4096x2712, a third more on a phone). The neighbour's rule now works on
+    laid positions and falls back to the trade's next width within a 0.25 log stretch, then its siblings' (7 borrowed):
+    0 panels within 15 m facing the same way wear one cell.
+  - The scalloped valance stretched to lobes a metre wide: the scallops are cut in the shader by the metre (a whole number
+    of about 33 cm), and the flat and scalloped awnings are one mesh and one program (two programs compiled from one
+    shader before; the phone's program count back to the pre-round 121).
+  - Phone: the art promise held both decoded images for the page's life (the half atlas and mask, about 10 MB of bitmap
+    on WebKit): sfArtP is let go after the race, and no storefront image survives a forced GC after Enter (two did). The
+    name cell's canvas is willReadFrequently (the iPhone simulator's copy cost 1 to 2 ms against 2 to 19), the names'
+    mips are rebuilt on the last copy that actually runs, the names' setup is caught on its own, and the panels and the
+    awnings go into the scene only once everything is made. The art is off at tier 2, like the fronts and the furniture.
+  - Look: the glass's band meets a short storey by cutting up to 50 cm off its head (the transom's rows) before it is
+    squashed (median storey 3.75 m against the art's 4.2; the panes had read squat at 0.82); the day's interior gain 0.62
+    to 0.42 and the coating 0.08 to 0.10 (the shop had read as a lit photograph by day); an open shop's room never darker
+    than its ceiling lights (Pub On Passyunk East at 21:30 now reads lit); the parallax held inside its cell; the door
+    channel found by a leaf's width (0.5 to 1.15 m, or a pair of 0.25 to 0.8 m) in 106 of 107 cells, none a display
+    window. Snow lies on the awnings (held snow, Old City).
+  - Measured: computer 1,404 panels (sfBuild 75 ms; the step 310 ms with the upload), phone 1,939 (59 ms; step 96).
+    Samplers: panels 7, awnings 4, fabric 9 to 10 (headless). Phone GPU (GC-normalised gpuhook run, swiftshader, 740x360)
+    869 / 902 / 919 MB at ready, after the first frames and after the look-around, against the pre-round build's 865 /
+    898 / 915: still +4 MB. ?real=0 renders as the pre-round build (mean difference under 1 of 255, the tufts aside); the
+    old boxes' step is byte for byte the pre-round one less the new path (its sha is pinned in the tests). Tests: the
+    sidecar's walls, parse_hours on real OSM strings, and the vertex shader's hours run under node (yesterday's late close).
+  - Not done: the curtain-wall hosts' own aluminium cells (the malls' tenants are hidden instead); names on the generated
+    shop fronts' boards (676 panels dissolve under them); the iPhone's compile time for the facade program and the RedFormat
+    names on a device (the simulator's Safari runs them; TestFlight before a deploy); the three frames the credit stopped.

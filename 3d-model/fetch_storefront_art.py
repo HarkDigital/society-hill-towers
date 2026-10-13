@@ -5,11 +5,18 @@ lidar_cache/storefront_art_raw/<stage>/<id>.png with a sidecar <id>.json (the pr
 usage, and for an edit the mask's sha). bake_storefront_art.py cuts them into the atlas both the OSM storefronts and the
 painted shop floors (style 5) wear.
 
-Two stages, so the glass is found exactly: 'frames' makes each shopfront EMPTY (dark clean glass, nothing behind it, a
-blank fascia), bake_storefront_art.py --masks finds its glass and writes <id>-mask.png beside it (transparent over the
-panes), and 'insides' sends the frame and that mask to /v1/images/edits for the shop's interior seen through the glass.
-The bake pastes back only the masked pixels, so the frame and its mask stay registered to the pixel. 'interiors' is the
-fallback (two interiors a trade, composited behind the mask by the bake) for edits that drift or are refused.
+Two stages, so the glass is found exactly: 'frames' makes each shopfront with every pane of glass a flat chroma-key green
+(#00FF00) and a blank fascia, bake_storefront_art.py --masks finds the key and writes <id>-mask.png beside it (transparent
+over the panes), and 'insides' sends the frame and that mask to /v1/images/edits for the shop's interior seen through the
+glass. The bake pastes back only the keyed pixels, so the frame and its mask stay registered to the pixel. 'interiors' is
+the fallback (two interiors a trade, composited behind the key by the bake) for edits that drift or are refused. (The first
+pilot asked for dark, empty glass instead; dark wood, recess shadows and grey frames are as dark as such panes, so no
+finder could cut them out: six of those frames are kept aside in pilot_dark/.)
+
+The review's second set (the M and L classes held one cell a trade, and twelve next-door pairs wore the same one): a
+second M and L for every trade, and a third S for the corner groceries, dealt AFTER the first set (MORE, S3) so every
+earlier cell keeps its prompt and its image; the second M and L of the grocery, the shop and the takeout are Philadelphia
+corner stores (CORNER: the gate's box over the fascia, the windows behind bars, the shelves packed to the ceiling).
 
 The key is read from OPENAI_API_KEY or ~/.config/philly3d/openai.env (KEY=value lines), never from the repo, and is
 never printed. An image already on disk is kept; pass --force to make it again, or --only <id>[,<id>] to make some.
@@ -43,6 +50,10 @@ CLASSES = {
 # how many cells a class holds per trade (the third XL for the trades the city has most of)
 VARIANTS = {'S': 2, 'M': 1, 'L': 1, 'XL': 2}
 XL3 = ('retail', 'restaurant', 'takeout', 'cafe', 'grocery')
+# the review's second set, numbered on after the first so no earlier cell's prompt moves: one more M and L a trade, one
+# more S for the corner groceries
+MORE = {'M': 1, 'L': 1}
+S3 = ('grocery',)
 
 # the shopfront's construction, cycled per trade so no two neighbouring cells share one
 MATERIALS = {
@@ -66,6 +77,11 @@ MATERIALS = {
     'bronze_tan': 'dark bronze 1970s aluminium storefront framing in a tan brick wall, tan brick piers at both ends',
     'dark_wood': 'a dark stained wooden shopfront with small-paned windows over a panelled wooden base, dark wooden '
                  'pilasters at both ends',
+    'corner_bars': 'dark aluminium frames in a painted brick wall, plain black steel security bars fixed across the display '
+                   'windows, and a plain grey steel box for a roll-down security gate mounted across the top under the '
+                   'fascia, the gate fully rolled up and out of sight',
+    'corner_gate': 'a worn red brick wall with plain dark aluminium frames, a plain grey steel box for a roll-down security '
+                   'gate mounted across the top under the fascia, the gate fully rolled up, scuffed paint on the bulkheads',
 }
 BOARDS = ('black', 'dark green', 'cream', 'deep oxblood red', 'navy blue', 'white', 'charcoal grey', 'deep burgundy',
           'pale grey', 'forest green')
@@ -102,6 +118,14 @@ FAMILIES = [
      'a hardware store: tools hanging on pegboard, shelves of paint cans in plain unlabelled tins, bins of parts'),
 ]
 FAM_IX = {f[0]: k for k, f in enumerate(FAMILIES)}
+# the corner stores among the second set (the review: every trade's art was upscale and tidy, and the corner stores along
+# Philadelphia's avenues are neither): what, the material and the interior, in place of the trade's own
+CORNER_WHAT = 'Philadelphia corner store'
+CORNER_INSIDE = ('a cluttered Philadelphia corner store: shelves crammed to the ceiling with snacks and plain unbranded '
+                 'packaged goods, racks of chip bags in plain unprinted wrappers, glass-door drink coolers, a counter behind a '
+                 'tall clear plexiglass security screen, bright fluorescent ceiling lights')
+CORNER = {'grocery-M-1': 'corner_bars', 'grocery-L-1': 'corner_gate', 'grocery-S-2': 'corner_bars',
+          'retail-M-1': 'corner_gate', 'retail-L-1': 'corner_bars', 'takeout-M-1': 'corner_bars', 'takeout-L-1': 'corner_gate'}
 
 FRAME_SF = ('Architectural front elevation photograph, perfectly orthographic and straight-on, of the ground-floor shopfront '
             'of ONE {what} on a commercial street in {where}, Philadelphia, about {w:g} metres wide and exactly one storey '
@@ -129,24 +153,36 @@ INTERIOR_SF = ('Photograph of the softly lit interior of {interior}, seen straig
 
 
 def cells():
-    """Every cell, as (id, family, class, variant, prompt, size): the trades in order, the classes S, M, L, XL."""
+    """Every cell, as (id, family, class, variant, prompt, size): the trades in order, the classes S, M, L, XL, then the
+    second set (MORE, S3) numbered on from the trade's first, so the first set's prompts are what they were."""
     out = []
     for fk, (fam, what, mats, half, interior) in enumerate(FAMILIES):
         n = 0
+        plan = []
         for cls in ('S', 'M', 'L', 'XL'):
-            w, size, layout = CLASSES[cls]
             nv = VARIANTS[cls] + (1 if cls == 'XL' and fam in XL3 else 0)
-            for v in range(nv):
-                mat = MATERIALS[mats[(n + fk) % len(mats)]]
-                board = BOARDS[(fk * 3 + n * 7) % len(BOARDS)]
-                where = WHERES[(fk + n) % len(WHERES)]
-                if fam in ('restaurant', 'grocery') and cls == 'XL' and v == 1:
-                    where = 'Chinatown'
-                lay = layout.format(side='left' if (n + fk) % 2 == 0 else 'right')
-                prompt = FRAME_SF.format(what=what, where=where, w=w, layout=lay, half=HALF.get(half, ''), material=mat, board=board)
-                out.append(('%s-%s-%d' % (fam, cls, v), fam, cls, v, prompt, size))
-                n += 1
+            plan += [(cls, v) for v in range(nv)]
+        plan += [('S', VARIANTS['S'])] if fam in S3 else []
+        plan += [(cls, VARIANTS[cls] + j) for cls in ('M', 'L') for j in range(MORE.get(cls, 0))]
+        for cls, v in plan:
+            w, size, layout = CLASSES[cls]
+            cid = '%s-%s-%d' % (fam, cls, v)
+            mat = MATERIALS[CORNER[cid]] if cid in CORNER else MATERIALS[mats[(n + fk) % len(mats)]]
+            board = BOARDS[(fk * 3 + n * 7) % len(BOARDS)]
+            where = WHERES[(fk + n) % len(WHERES)]
+            if fam in ('restaurant', 'grocery') and cls == 'XL' and v == 1:
+                where = 'Chinatown'
+            lay = layout.format(side='left' if (n + fk) % 2 == 0 else 'right')
+            prompt = FRAME_SF.format(what=CORNER_WHAT if cid in CORNER else what, where=where, w=w, layout=lay,
+                                     half=HALF.get(half, ''), material=mat, board=board)
+            out.append((cid, fam, cls, v, prompt, size))
+            n += 1
     return out
+
+
+def interior_of(cid, fam):
+    """What the edit paints into a cell's glass: the trade's interior, or a corner store's."""
+    return CORNER_INSIDE if cid in CORNER else FAMILIES[FAM_IX[fam]][4]
 
 
 def api_key():
@@ -230,7 +266,7 @@ def make_inside(key, cid, fam, size, force):
         return cid, 'kept'
     if not os.path.exists(fr) or not os.path.exists(mk):
         return cid, 'no frame or mask yet (run the frames, then bake_storefront_art.py --masks)'
-    prompt = INSIDE_SF.format(interior=FAMILIES[FAM_IX[fam]][4])
+    prompt = INSIDE_SF.format(interior=interior_of(cid, fam))
     fb, mb = open(fr, 'rb').read(), open(mk, 'rb').read()
     fields = {'model': MODEL, 'prompt': prompt, 'size': size, 'quality': QUALITY, 'n': '1', 'input_fidelity': 'high'}
     body, ct = multipart(fields, {'image': (cid + '.png', fb, 'image/png'), 'mask': (cid + '-mask.png', mb, 'image/png')})

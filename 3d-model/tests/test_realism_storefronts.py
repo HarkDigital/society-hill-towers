@@ -7,10 +7,20 @@
 - the names' atlas is red only, never freed on upload (its slots are written after it), and the step's slots stream stays;
 - the sidecar is used only when its count is the blob's;
 - the painted shop floors (style 5) take the same atlas in the facade hook behind SF_PARTA (REAL and WebGL 2) and uSfOn;
-- build.py inlines the sidecar and the manifest and holds the manifest to the art guards."""
+- build.py inlines the sidecar and the manifest and holds the manifest to the art guards.
+
+The review (Round 189's second pass): the old boxes' step is byte for byte what it was before the round, less the new
+path (a sha pins it); the art is off at tier 2; one awning program; the decoded images let go; the names' canvas read
+often and their mips rebuilt on the last copy that runs; the panels into the scene only when everything has been made;
+the parallax held inside its cell; every test made at the laid span; the painted shop floors never painted once the art
+is up."""
+import hashlib
 from pathlib import Path
 import re
 import unittest
+
+# the 'Dressing the storefronts' step as it stood before Round 189 (08350a5), which the step less its new path must still be
+LEGACY_SHA = '300fc5a7cdc04bfd6a13885b4257a92f8ace9eabbc3d290de6457a43c35f9e9c'
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -28,9 +38,9 @@ class Page(unittest.TestCase):
         cls.step = cut(cls.s, "  step('Dressing the storefronts'", "  step('Raising the overpasses'")
 
     def test_the_gates(self):
-        self.assertIn("const SF_ART_ON = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\\b/.test(location.search);", self.block)
+        self.assertIn("const SF_ART_ON = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\\b/.test(location.search);", self.block)
         self.assertIn("const SF_SIGNS = SF_ART_ON && !TIER2 && !/[?&]signs=0\\b/.test(location.search);", self.block)
-        self.assertIn("const SF_PARTA = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined'", self.s)
+        self.assertIn("const SF_PARTA = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined'", self.s)
 
     def test_the_old_boxes_stay_as_they_were(self):
         st = self.step
@@ -45,10 +55,37 @@ class Page(unittest.TestCase):
             self.assertIn(line, legacy)
         # the new path returns only when it built; art late or failed falls through to the boxes
         newp = st[new:old]
-        self.assertIn("await Promise.race([sfArtLoad(), new Promise((r) => setTimeout(() => r(null), 10000))]);", newp)
+        self.assertIn("await Promise.race([sfArtLoad(), new Promise((r) => setTimeout(() => r(null), 10000))]);\n      sfArtP = null;", newp)
         self.assertIn("if (built) { SF.state = 'built'; STOREFRONT_N = SF.n; STOREFRONT_NEAR = SF.near; STOREFRONT_BASE = SF.base; return; }", newp)
         self.assertNotIn('onBeforeCompile', newp)
         self.assertNotIn('aFrontNear', self.block)
+
+    def test_the_old_step_is_byte_for_byte_as_it_was(self):
+        st = cut(self.s, "  step('Dressing the storefronts', async () => {", "  // the realism pass: a photographed face (STREET_ART)")
+        a, b = st.index('    // Round 189: the generated shopfronts (sfBuild)'), st.index('    let nearN = 0, baseN = 0;\n')
+        old = (st[:a] + st[b:]).replace("step('Dressing the storefronts', async () => {", "step('Dressing the storefronts', () => {", 1)
+        self.assertEqual(hashlib.sha256(old.encode()).hexdigest(), LEGACY_SHA)
+
+    def test_the_review(self):
+        b = self.block
+        # one awning program for the flat and the scalloped, the lobes cut by the metre
+        self.assertIn("m.customProgramCacheKey = () => 'storefront-awnings|wx';", b)
+        self.assertIn('nS = max(2.0, floor(vAwnLen / 0.33 + 0.5))', b)
+        self.assertEqual(b.count('new THREE.InstancedMesh('), 2)
+        # the names: a canvas read often, the released slots dropped before the batch, the setup on its own
+        self.assertIn("c.getContext('2d', { willReadFrequently: true })", b)
+        self.assertIn('const todo = S.queue.splice(0, max).filter((s) => S.owner[s] >= 0);', b)
+        self.assertIn('try { sfNamesInit(); } catch (e) {', b)
+        build = cut(self.s, '  function sfBuild(', '  // ---- the names (Round 189)')
+        self.assertLess(build.index('am = new THREE.InstancedMesh('), build.index('groupCity.add(mesh);'))
+        self.assertLess(build.index('groupCity.add(mesh);'), build.index('try { sfNamesInit(); }'))
+        # every test at the laid span: the custom models and the street floors at its middle, the fronts at its ends
+        self.assertIn('if (ownsIt(cx - nx * 1.2, cz - nz * 1.2)) continue;', build)
+        self.assertIn('for (const s of [-e, 0, e]) sfFrontsAt(frCells, cx - nz * s, cz + nx * s, nx, nz, frSet);', build)
+        # the parallax held in its cell, the returns' pier by depth
+        self.assertIn("vec2 uv2 = clamp(sfUv + du, vSfCell.xy + ' + SF_TX + ', vSfCell.xy + vSfCell.zw - ' + SF_TX + ');", b)
+        self.assertIn("-position.z * length(instanceMatrix[2].xyz)", b)
+        self.assertNotIn('mix(0.012, 0.988', b)
 
     def test_the_hooks_live_at_the_top(self):
         for name in ('sfPanelHook', 'sfAwningHook', 'sfPanelMat', 'sfAwningMat', 'sfBuild', 'sfNamesInit', 'sfStep'):
@@ -91,15 +128,20 @@ class Page(unittest.TestCase):
         self.assertIn('sfStep(now);   // Round 189', self.s)
 
     def test_the_sidecar_is_checked(self):
-        f = cut(self.s, '  function sfInfo(', '  function sfBuild(')
+        f = cut(self.s, '  function sfInfo(', '  // the review: a panel and a generated house front on one wall')
         self.assertIn('if (!I || I.n !== n || !I.rec) return null;', f)
-        self.assertIn('return rec.length === n * 8 ?', f)
+        self.assertIn('return rec.length === n * st ?', f)
 
     def test_the_painted_shop_floors(self):
         s = self.s
         self.assertIn("if (SF_PARTA) Object.assign(shader.uniforms, sfPartU);", s)
-        self.assertIn("'      if (st == 5 && uSfOn > 0.5 && local && wallTop >= 3.4 && det > 0.001) {',", s)
-        self.assertIn("SF_PARTA ? '      awnOn *= 1.0 - sfWall;' : '',", s)
+        # once the art is up no painted shop floor is painted: the panes and the awning band go from every style-5 wall,
+        # one too short or too low for a shopfront keeping masonry and the style's sashes (the review)
+        self.assertIn("'      if (st == 5 && uSfOn > 0.5) {',\n            '        isShop = 0.0;',", s)
+        self.assertIn("'        if (local && wallTop >= 2.9 && vWallL >= 2.6 && det > 0.001) {',", s)
+        self.assertIn("SF_PARTA ? '      awnOn *= 1.0 - step(0.5, uSfOn);' : '',", s)
+        # no two units side by side share a cell (a stride of 1, 3, 5 or 7 of the class's eight)
+        self.assertIn("mod(floor(hw * 8.0) + sfUi * (1.0 + 2.0 * floor(fract(hw * 7.13) * 4.0)), 8.0)", s)
         # the paint stands where the art does not: the painted shop and awning strings are as they were
         self.assertIn("'      float shop = rectM(m, vec2(0.0, 1.7), vec2(1.5, 2.5), aa) * isShop;',", s)
         self.assertIn("'      float awnOn = step(3.72, wallTop) * float(st == 5) * inWall * det * step(fv, 4.0);',", s)

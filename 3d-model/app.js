@@ -8898,21 +8898,24 @@ vec2 wRing(vec2 rc, float tt) {
   };
   // Round 189 (Mike: "Do the storefront boxes on Broad Street too"): the painted shop floors (style 5's ground floor) wear
   // the storefronts' generated shopfronts, the same atlas and mask (one Texture each, set when they are up: uSfOn), eight
-  // cells a width class for the trades that suit an anonymous wall (STOREFRONT_ART.gen): each cell's corner and its bulkhead's
-  // and glass head's rows, its fascia's bottom four to a row, the classes' widths and the cells' height in the atlas.
-  // The realistic look on WebGL 2 only (every read is textureGrad); ?sfart=0 and ?real=0 keep the paint
-  const SF_PARTA = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.gen && !/[?&]sfart=0\b/.test(location.search);
+  // cells a width class for the trades that suit an anonymous wall (STOREFRONT_ART.gen): each cell's corner in the atlas's
+  // pixels (x + 4096 y, one float), its bulkhead's top, its glass head and its fascia's bottom (ten more for a trade open
+  // into the evening), the classes' widths and the cells' height in the atlas. The realistic look on WebGL 2 only (every
+  // read is textureGrad), never on a phone at tier 2 (the realism pass's other art is off there too); ?sfart=0 and ?real=0
+  // keep the paint
+  const SF_CROP = 0.5;   // the most of a shopfront's glass cut at its head (a storey shorter than the art's 4.2 m), before any is squashed
+  const SF_PARTA = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.gen && !/[?&]sfart=0\b/.test(location.search);
   const sfPartU = (() => {
     const U = { uSfArt: { value: null }, uSfMaskA: { value: null }, uSfOn: { value: 0 }, uSfGen: { value: Array.from({ length: 24 }, () => new THREE.Vector4()) },
-      uSfGenB: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) }, uSfGenD: { value: new THREE.Vector4(0.05, 0.07, 0.1, 0.1) } };
+      uSfGenD: { value: new THREE.Vector4(0.05, 0.07, 0.1, 0.1) } };
     if (!SF_PARTA) return U;
     const A = STOREFRONT_ART;
     ['S', 'M', 'L'].forEach((cls, ci) => {
       const ids = A.gen[cls] || [];
       for (let j = 0; j < 8; j++) {
         const c = A.cells[ids.length ? ids[j % ids.length] : 0], k = ci * 8 + j;
-        U.uSfGen.value[k].set(c.rect[0], c.rect[1], c.rows[0], c.rows[1]);
-        U.uSfGenB.value[k >> 2].setComponent(k & 3, c.rows[2] + (['restaurant', 'takeout', 'grocery'].includes(A.fams[c.fam]) ? 10 : 0));   // 10 more: a trade open into the evening
+        const px = Math.round(c.rect[0] * A.w), py = Math.round(c.rect[1] * A.h);
+        U.uSfGen.value[k].set(px + 4096 * py, c.rows[0], c.rows[1], c.rows[2] + (['restaurant', 'takeout', 'grocery'].includes(A.fams[c.fam]) ? 10 : 0));
         if (j === 0) U.uSfGenD.value.setComponent(ci, c.rect[2]);
       }
     });
@@ -9086,8 +9089,8 @@ vec2 wRing(vec2 rc, float tt) {
   {
     const facadeHook = (gW, gR, sat, satR) => (shader) => {
       Object.assign(shader.uniforms, roofArtU);   // Round 185: the flat roofs' generated textures
-      Object.assign(shader.uniforms, wallArtU);
-      if (SF_PARTA) Object.assign(shader.uniforms, sfPartU);   // Round 189: the painted shop floors' shopfronts   // the realism pass: the walls' and the pitched roofs' materials, the snow
+      Object.assign(shader.uniforms, wallArtU);   // the realism pass: the walls' and the pitched roofs' materials, the snow
+      if (SF_PARTA) Object.assign(shader.uniforms, sfPartU);   // Round 189: the painted shop floors' shopfronts
       shader.uniforms.uFabSnow = wxSurfU.uSnowAcc; shader.uniforms.uFabWet = wxSurfU.uWet;   // the weather, laid after the gains (see below)
       occBind(shader);   // the rooms by the clock
       shader.uniforms.uSunW = sunWUniform;
@@ -9109,7 +9112,7 @@ vec2 wRing(vec2 rc, float tt) {
           'uniform sampler2D uPitchArt; uniform float uPitchOn, uPitchPad, uPitchPx; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4];',
           'uniform sampler2D uSnowArt; uniform float uSnowOn, uSnowM; uniform vec3 uSnowMean; uniform vec4 uRoofKindK;',
           'uniform float uFabSnow, uFabWet; uniform vec4 uFabK;',
-          SF_PARTA ? 'uniform sampler2D uSfArt, uSfMaskA; uniform float uSfOn; uniform vec4 uSfGen[24], uSfGenB[6], uSfGenD;' : '',
+          SF_PARTA ? 'uniform sampler2D uSfArt, uSfMaskA; uniform float uSfOn; uniform vec4 uSfGen[24], uSfGenD;' : '',
           'float fabSnowW = 0.0; vec3 fabRoomDay = vec3(0.0);',
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;',
           'float shtLit = 0.0; vec3 shtLamp = vec3(1.0, 0.76, 0.46);',
@@ -9359,7 +9362,7 @@ vec2 wRing(vec2 rc, float tt) {
           '      diffuseColor.rgb = mix(col, farAvg0, farW0 * windowArea);',
           FAR_LIT ? '      shtLit = mix(0.05 * windowArea, farV, farOn); shtLamp = mix(shtLamp, farLamp, farOn);' : '      shtLit = 0.05 * windowArea;',
           '    } else {',
-          ...(SF_PARTA ? ['    float sfUse = 0.0, sfWall = 0.0, sfLate = 0.0, sfHs = 0.0; vec3 sfArtRgb = vec3(0.0); vec4 sfM = vec4(0.0); float sfLx = 0.0, sfUi = 0.0, sfUw = 1.0, sfHh = 3.4;'] : []),
+          ...(SF_PARTA ? ['    float sfUse = 0.0, sfLate = 0.0, sfHs = 0.0; vec3 sfArtRgb = vec3(0.0); vec4 sfM = vec4(0.0); float sfLx = 0.0, sfUi = 0.0, sfUw = 1.0, sfHh = 3.4;'] : []),
           '    if (st == 1) {',
           '      float pitch = 4.4;',
           '      float nb = local ? max(1.0, floor(vWallL / pitch)) : 1.0e6;',
@@ -9612,24 +9615,34 @@ vec2 wRing(vec2 rc, float tt) {
           '      float isDoor = step(3.09, wallTop) * ground * doorCol * float(st == 0 || st == 8 || st == 9 || st == 10 || st == 11) * inWall * det * detU;',
           '      float isArch = step(3.02, wallTop) * ground * float(st == 4) * inWall * det;',
           '      float isShop = step(3.07, wallTop) * ground * float(st == 5) * inWall * det;',
-          // Round 189: a painted shop floor's wall is cut into whole shopfronts of the width class (S, M or L) that fills it with
-          // the least stretch (none past 0.75 to 1.33: that wall keeps the paint), each a generated cell picked by a hash of the
-          // unit, the wall and the building, mirrored by another; one storey from the sidewalk to under the second storey's
-          // sills, the bulkhead and the fascia at their own height and the glass band between them to fill it (the panels' remap)
+          // Round 189: once the art is up a painted shop floor is never painted (the review: the flat grey panes and the striped
+          // awning band stood beside the photographs, and after dark the painted pane glowed as a white slab). Its wall is
+          // cut into whole shopfronts of the width class (S, M or L) that fills it with the least stretch, a wall under 3.4 m
+          // taking one S at up to 0.58 of its width, each a generated cell dealt along the wall by a stride of its own (1, 3, 5
+          // or 7 of the class's eight, so no two side by side share one), mirrored by a hash of the unit; one storey from the
+          // sidewalk to under the second storey's sills, the bulkhead and the fascia at their own height, the glass band
+          // between them cut short at its head by up to SF_CROP (a transom's rows, not the panes squashed) and only then
+          // rescaled. A wall too short or too low for one, or one without its own coordinates, keeps plain masonry with the
+          // style's sashes on its ground floor
           ...(SF_PARTA ? [
-            '      if (st == 5 && uSfOn > 0.5 && local && wallTop >= 3.4 && det > 0.001) {',
-            '        float L = vWallL, bs = 1e9, bc = 0.0, bk = 1.0;',
-            '        for (int c = 0; c < 3; c++) { float w = c == 0 ? 4.5 : (c == 1 ? 6.0 : 8.5), k = max(1.0, floor(L / w + 0.5)), sc = abs(log(L / k / w)); if (sc < bs) { bs = sc; bc = float(c); bk = k; } }',
-            '        if (bs < 0.29) {',
-            '          sfWall = 1.0; sfUw = L / bk; sfUi = floor(uW / sfUw); sfLx = clamp(uW / sfUw - sfUi, 0.0, 1.0);',
-            '          float hsh = shtHash(vec2(sfUi + floor(L * 3.7) * 0.37, floor(vBase * 2.3) + 0.5));',
-            '          int ci = int(bc) * 8 + int(min(7.0, floor(hsh * 8.0)));',
-            '          vec4 G = uSfGen[ci]; float bb = uSfGenB[ci / 4][ci - (ci / 4) * 4], mir = step(0.5, fract(hsh * 13.7));',
+            '      if (st == 5 && uSfOn > 0.5) {',
+            '        isShop = 0.0;',
+            '        if (local && wallTop >= 2.9 && vWallL >= 2.6 && det > 0.001) {',
+            '          float L = vWallL, bs = 1e9, bc = 0.0, bk = 1.0;',
+            '          for (int c = 0; c < 3; c++) { float w = c == 0 ? 4.5 : (c == 1 ? 6.0 : 8.5), k = max(1.0, floor(L / w + 0.5)), sc = abs(log(L / k / w)); if (sc < bs) { bs = sc; bc = float(c); bk = k; } }',
+            '          sfUw = L / bk; sfUi = floor(uW / sfUw); sfLx = clamp(uW / sfUw - sfUi, 0.0, 1.0);',
+            // (the wall's hash takes its facing too: a corner building's faces of one length had all worn one cell)
+            '          float sfFace = floor(n.x * 3.0 + 3.5) * 7.0 + floor(n.z * 3.0 + 3.5);',
+            '          float hw = shtHash(vec2(floor(L * 3.7) * 0.37 + 0.5 + sfFace * 1.31, floor(vBase * 2.3) + 0.5)), hsh = shtHash(vec2(sfUi + floor(L * 3.7) * 0.37 + sfFace * 0.71, floor(vBase * 2.3) + 0.5));',
+            '          int ci = int(bc) * 8 + int(mod(floor(hw * 8.0) + sfUi * (1.0 + 2.0 * floor(fract(hw * 7.13) * 4.0)), 8.0));',
+            '          vec4 G = uSfGen[ci]; float bb = G.w, mir = step(0.5, fract(hsh * 13.7));',
             '          sfLate = step(5.0, bb); bb -= 10.0 * sfLate; sfHs = hsh;',
+            '          float gyq = floor(G.x / 4096.0); vec2 g0 = vec2(G.x - gyq * 4096.0, gyq) / vec2(' + (typeof STOREFRONT_ART !== 'undefined' && STOREFRONT_ART ? STOREFRONT_ART.w + '.0, ' + STOREFRONT_ART.h + '.0' : '4096.0, 2048.0') + ');',
             '          sfHh = min(min(facadeFp + 0.7, wallTop - 0.1), 4.2);',
-            '          float y = clamp(fv, 0.0, sfHh), b0 = G.z * 4.2, fc = (1.0 - bb) * 4.2, mid = sfHh - b0 - fc, vv;',
-            '          if (mid < 0.4) vv = y / sfHh; else if (y < b0) vv = y / 4.2; else if (y > sfHh - fc) vv = 1.0 - (sfHh - y) / 4.2; else vv = G.z + (y - b0) / mid * (bb - G.z);',
-            '          vec2 du = vec2(uSfGenD[int(bc)], uSfGenD.w), suv = G.xy + vec2(mix(sfLx, 1.0 - sfLx, mir), vv) * du;',
+            '          float y = clamp(fv, 0.0, sfHh), b0 = G.y * 4.2, fc = (1.0 - bb) * 4.2, mid = sfHh - b0 - fc, vv;',
+            '          if (mid < 0.4) vv = y / sfHh; else if (y < b0) vv = y / 4.2; else if (y > sfHh - fc) vv = 1.0 - (sfHh - y) / 4.2;',
+            '          else { float nat = (bb - G.y) * 4.2, crop = clamp(nat - mid, 0.0, ' + SF_CROP.toFixed(2) + '), yp = (y - b0) / mid * (nat - crop), gh = (G.z - G.y) * 4.2 - crop; vv = G.y + (yp + step(gh, yp) * crop) / 4.2; }',
+            '          vec2 du = vec2(uSfGenD[int(bc)], uSfGenD.w), suv = g0 + vec2(mix(sfLx, 1.0 - sfLx, mir), vv) * du;',
             '          vec2 gk = vec2((1.0 - 2.0 * mir) / sfUw, facadeScale / 4.2) * du;',
             '          sfArtRgb = textureGrad(uSfArt, suv, sfQx * gk, sfQy * gk).rgb; sfM = textureGrad(uSfMaskA, suv, sfQx * gk, sfQy * gk);',
             '          sfUse = step(0.0, fv) * (1.0 - smoothstep(sfHh - aa, sfHh + aa, fv)) * step(0.0, uW) * step(uW, L) * det;',
@@ -9676,7 +9689,7 @@ vec2 wRing(vec2 rc, float tt) {
           '      col = mix(col, vec3(0.18, 0.17, 0.16), shopF * 0.9);',
           '      col = mix(col, gc * 1.3, shop * 0.9);',
           '      float awnOn = step(3.72, wallTop) * float(st == 5) * inWall * det * step(fv, 4.0);',
-          SF_PARTA ? '      awnOn *= 1.0 - sfWall;' : '',
+          SF_PARTA ? '      awnOn *= 1.0 - step(0.5, uSfOn);' : '',
           '      float awn = rectM(m, vec2(0.0, 3.45), vec2(pitch * 0.94, 0.5), aa) * awnOn;',
           '      float ah = shtHash(vec2(cell.x * 0.53, 4.7));',
           '      vec3 awnCol = ah < 0.3 ? vec3(0.55, 0.12, 0.10) : (ah < 0.55 ? vec3(0.10, 0.30, 0.18) : (ah < 0.75 ? vec3(0.10, 0.18, 0.40) : vec3(0.72, 0.66, 0.50)));',
@@ -9835,8 +9848,9 @@ vec2 wRing(vec2 rc, float tt) {
           '    if(uNight > 0.001) interior = roomLight(roomUV,roomID,roomSeed,roomOffice);',
           // Round 189: a painted shop floor's shopfront is lit through its own picture by its trade's hours on the model clock
           // (the restaurants, takeouts and groceries 7:00 to 23:00, the rest 9:00 to 19:30; nine in ten open; a closed one keeps a
-          // display light in one shop in three), as the storefronts' panels are
-          SF_PARTA ? '    if (sfUse > 0.001 && uNight > 0.001) { float sfOpen = (sfLate > 0.5 ? step(420.0, uOcc.w) * step(uOcc.w, 1380.0) : step(540.0, uOcc.w) * step(uOcc.w, 1170.0)) * step(0.1, fract(sfHs * 3.7)); float sfOn = mix(fract(sfHs * 7.31) < 0.333 ? 0.25 : 0.04, 1.0, sfOpen); interior = mix(interior, sfArtRgb * (0.6 + 0.8 * smoothstep(0.05, 0.4, dot(sfArtRgb, vec3(0.2126, 0.7152, 0.0722)))) * mix(vec3(1.0, 0.93, 0.84), vec3(1.0, 0.74, 0.48), sfLate) * sfOn, sfUse); }' : '',
+          // display light in one shop in three), as the storefronts' panels are, an open one's room never darker than its
+          // ceiling's own light (the review: a dark-wood bar barely glowed)
+          SF_PARTA ? '    if (sfUse > 0.001 && uNight > 0.001) { float sfOpen = (sfLate > 0.5 ? step(420.0, uOcc.w) * step(uOcc.w, 1380.0) : step(540.0, uOcc.w) * step(uOcc.w, 1170.0)) * step(0.1, fract(sfHs * 3.7)); float sfOn = mix(fract(sfHs * 7.31) < 0.333 ? 0.25 : 0.04, 1.0, sfOpen); interior = mix(interior, (sfArtRgb * (0.6 + 0.8 * smoothstep(0.05, 0.4, dot(sfArtRgb, vec3(0.2126, 0.7152, 0.0722)))) + 0.08 * sfOpen) * mix(vec3(1.0, 0.93, 0.84), vec3(1.0, 0.74, 0.48), sfLate) * sfOn, sfUse); }' : '',
           '    float resolved = det * smoothstep(0.8,2.4,1.0/max(fwidth(uW)/2.0,fwidth(fv)/facadeFp));',
           // by day the same room lit through its window, an emission behind the glass (glassOpticsPatch darkens the pane's
           // own diffuse to match), its mean where it is too small to draw, less what the glass reflects (a computer's)
@@ -15988,18 +16002,21 @@ vec2 wRing(vec2 rc, float tt) {
   // the name, the trade, the hours, its place on the wall (records sharing a wall laid side by side) and the drawn wall's
   // outermost and innermost point over it. One InstancedMesh, one draw; WebGL 2 only (every read is textureGrad), and
   // ?real=0, ?sfart=0, WebGL 1 or art that does not arrive in time keep the old boxes, built as they always were. The
-  // same atlas dresses the facade shader's painted shop floors (style 5, SF_PARTA in the facade hook)
-  const SF_ART_ON = REAL && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\b/.test(location.search);
+  // same atlas dresses the facade shader's painted shop floors (style 5, SF_PARTA in the facade hook). Never on a phone at
+  // tier 2 (the review: the fronts, the furniture and the parked cars are off there, the phones that died twice)
+  const SF_ART_ON = REAL && !TIER2 && !!renderer.capabilities.isWebGL2 && typeof STOREFRONT_ART !== 'undefined' && !!STOREFRONT_ART && !!STOREFRONT_ART.cells && !/[?&]sfart=0\b/.test(location.search);
   const SF_SIGNS = SF_ART_ON && !TIER2 && !/[?&]signs=0\b/.test(location.search);
   const SF_HM = SF_ART_ON ? STOREFRONT_ART.hM || 4.2 : 4.2;   // every cell is one storey of this many metres, sidewalk to the fascia's top
   const SF = { state: SF_ART_ON ? 'waiting' : 'off', map: null, mask: null, mesh: null, awn: [], n: 0, near: 0, base: 0, hidden: 0, byFam: {}, byCls: {}, named: 0,
     ms: 0, list: null, names: null, slot: null, slotOf: null, at: -1e9, eye: new THREE.Vector3(1e9, 0, 0), drawn: 0, partA: false, error: null, info: false };
   // the panels' uniforms (one object, shared by the panel and awning programs): the mask and the names, the model clock
-  // (minutes, weekday: applyClock's clock, set each frame), the day and night gains, the names' radius, the slot grid
+  // (minutes, weekday: applyClock's clock, set each frame), the day and night gains, the names' radius, the slot grid. The
+  // day's gain on the painted interior is 0.42 (0.62 until the review: by day the shop read as a lit photograph beside the
+  // dark upper sashes; a room seen from the street in daylight is the darker side of its glass)
   const SF_U = {
     uSfMap: { value: null }, uSfMask: { value: null }, uSfNames: { value: null },
     uSfClock: { value: new THREE.Vector2(720, 3) },
-    uSfK: { value: new THREE.Vector4(0.62, 1.0, isTouch ? 90 : 160, 0) },
+    uSfK: { value: new THREE.Vector4(0.42, 1.0, isTouch ? 90 : 160, 0) },
     uSfSlots: { value: new THREE.Vector2(4, isTouch ? 4 : 8) },
   };
   // the trades (the art's FAMILIES): the hours a trade keeps when OSM has none (weekday, Saturday, Sunday: open, close in
@@ -16011,6 +16028,11 @@ vec2 wRing(vec2 rc, float tt) {
   const SF_CHANNEL = new Set([0, 2, 5, 6, 7, 12]);
   const SF_LATE = new Set([1, 2, 3, 4, 7]);
   const SF_KIND_FAM = [0, 1, 3, 4, 5, 6, 7, 9, 10, 11, 12];   // a record's kind to its trade, when there is no sidecar
+  // the review (twelve next-door pairs wore one cell): when a trade's cells at a width are all worn nearby, its cells at the
+  // next width within SF_STRETCH (a log of the stretch), then its siblings' at the width: the shop's the boutique's, the
+  // grocery's and the trade's; the restaurant's the bar's, the cafe's and the venue's; and so on
+  const SF_SIB = [[9, 7, 12], [4, 3, 11], [3, 7, 1], [8, 1, 2], [1, 3], [6, 11], [0, 5, 10], [0, 8, 2], [3, 7], [0, 10], [9, 0], [5, 1], [0, 7]];
+  const SF_STRETCH = 0.25;
   // the letters' colours (sRGB): cream, white, gold for a dark board; near-black, navy, oxblood, forest for a light one; a
   // corner store's red
   const SF_TXT_HEX = ['#efe6d2', '#ffffff', '#c9a24a', '#1c1b1a', '#1f2c48', '#6b2430', '#2f5a3e', '#b3261e'];
@@ -16032,7 +16054,9 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // the panel: x 0 to 1 along the viewer's right, y 0 to 1 up, the front at z 0 and its ends and cap going back into the
   // wall to z -1 (the instance sets the depth), every stream Float32 at a stride of 4, 8 or 12 (a phone, Round 158).
-  // aSfP: the panel's x and its part (0 the front, 1 and 2 the left and right return, 3 the cap)
+  // aSfP: the panel's x and its part (0 the front, 1 and 2 the left and right return, 3 the cap); on a return the shader's
+  // x is the depth in metres instead, so the return wears its end's pier wrapped round the corner at the front's own scale
+  // (the review: it smeared a single column of the pier across its depth)
   function sfPanelGeometry() {
     const P = [], N = [], A = [], I = [];
     const face = (vs, n, part) => { const b = P.length / 3; for (const v of vs) { P.push(v[0], v[1], v[2]); N.push(n[0], n[1], n[2]); A.push(v[0], part); } I.push(b, b + 1, b + 2, b, b + 2, b + 3); };
@@ -16048,10 +16072,11 @@ vec2 wRing(vec2 rc, float tt) {
     return g;
   }
   // the panel's shader. Its cell is the record's trade and width class; the bulkhead and the fascia keep their own height
-  // and only the glass band between them is rescaled to the storey (rows); a return wears its end's pier and the cap the
-  // fascia's top row. The glass (the mask's red) is the painted interior seen behind a pane that mirrors the sky and the
-  // street (glassOpticsPatch), shifted against its frames by a 35 cm depth on a computer; the board (green) carries the
-  // shop's name from the slot atlas; after dark the interior is lit through its own picture while the shop is open (a
+  // and the glass band between them meets the storey by losing up to SF_CROP at its head (the transom's rows: the review
+  // measured a median storey of 3.75 m against the art's 4.2, and the panes squashed to 0.82 read squat), then by rescaling
+  // what is left; a return wears its end's pier and the cap the fascia's top row. The glass (the mask's red) is the painted
+  // interior seen behind a pane that mirrors the sky and the street (glassOpticsPatch), shifted against its frames by a
+  // 35 cm depth on a computer; the board (green) carries the shop's name from the slot atlas; after dark the interior is lit through its own picture while the shop is open (a
   // closed one keeps a display light in one shop in three), the sign by its kind. The dissolve is the fronts' dither
   // turned over on the instance's near flag (nearHook's line), so a panel gives way where a generated shop front comes in
   const SF_VERT_DECL = 'attribute vec2 aSfP; attribute vec4 aSfCell, aSfBand, aSfDim, aSfInfo, aSfHours; attribute float aSfSlot; uniform vec2 uSfClock;\n' +
@@ -16066,7 +16091,7 @@ vec2 wRing(vec2 rc, float tt) {
     '  if (today >= 0.0) { float o = floor(today / 2048.0), c = today - o * 2048.0; open = step(o, m) * step(m, c - 0.5); late = step(o, m) * step(m, 1379.5); }',
     '  if (yest >= 0.0) { float o = floor(yest / 2048.0), c = yest - o * 2048.0; if (c > 1440.0) open = max(open, step(m, c - 1440.5)); }',
     '  float fam = mod(aSfInfo.x, 16.0), sgn = max(open, late * (fam == 1.0 || fam == 2.0 || fam == 3.0 || fam == 4.0 || fam == 7.0 ? 1.0 : 0.0));',
-    '  vSfP = vec4(aSfP.x, position.y * sfHf - aSfDim.z, sfWm + aSfP.y * 100.0, open + 2.0 * sgn);',
+    '  vSfP = vec4(aSfP.y > 0.5 && aSfP.y < 2.5 ? -position.z * length(instanceMatrix[2].xyz) : aSfP.x, position.y * sfHf - aSfDim.z, sfWm + aSfP.y * 100.0, open + 2.0 * sgn);',
     '  vSfCell = aSfCell;',
     '  vSfRows = vec4(floor(aSfInfo.w / 1000.0) / 1000.0, mod(aSfInfo.w, 1000.0) / 1000.0, aSfBand.y, aSfDim.y);',
     '  vSfBand = vec4(aSfBand.x, aSfBand.z, aSfBand.w, aSfSlot);',
@@ -16079,7 +16104,7 @@ vec2 wRing(vec2 rc, float tt) {
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\n' + SF_VERT_DECL)
       .replace('#include <begin_vertex>', '#include <begin_vertex>\n' + SF_VERT)
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSfW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * objectNormal);');
-    const HM = SF_HM.toFixed(3);
+    const HM = SF_HM.toFixed(3), SF_TX = 'vec2(' + (1.5 / (STOREFRONT_ART.w || 4096)).toFixed(6) + ', ' + (1.5 / (STOREFRONT_ART.h || 2048)).toFixed(6) + ')';
     sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + [
       'uniform sampler2D uSfMap, uSfMask, uSfNames; uniform vec4 uSfK; uniform vec2 uSfSlots; uniform float uNight, uFrR, uFrShop;',
       'varying vec4 vSfP, vSfCell, vSfRows, vSfBand, vSfK; varying vec3 vSfW, vWNorm; varying float vBase;',
@@ -16097,16 +16122,17 @@ vec2 wRing(vec2 rc, float tt) {
       ].join('\n'))
       .replace('#include <map_fragment>', [
         '{',
-        '  float u = mix(vSfP.x, 1.0 - vSfP.x, sfMirror);',
-        '  if (sfPart > 0.5 && sfPart < 2.5) u = mix(0.012, 0.988, abs(sfPart - 1.0 - sfMirror));',
+        '  float ret = step(0.5, sfPart) * step(sfPart, 2.5), u = mix(vSfP.x, 1.0 - vSfP.x, sfMirror);',
+        '  if (ret > 0.5) u = clamp(mix(vSfP.x / max(sfW, 0.5), 1.0 - vSfP.x / max(sfW, 0.5), abs(sfPart - 1.0 - sfMirror)), 0.002, 0.998);',
         '  float y = clamp(vSfP.y, 0.0, sfH), bk = vSfRows.x * ' + HM + ', fc = (1.0 - vSfRows.z) * ' + HM + ', mid = sfH - bk - fc, v;',
         '  if (mid < 0.4) v = y / sfH;',
         '  else if (y < bk) v = y / ' + HM + ';',
         '  else if (y > sfH - fc) v = 1.0 - (sfH - y) / ' + HM + ';',
-        '  else v = vSfRows.x + (y - bk) / mid * (vSfRows.z - vSfRows.x);',
+        '  else { float nat = (vSfRows.z - vSfRows.x) * ' + HM + ', crop = clamp(nat - mid, 0.0, ' + SF_CROP.toFixed(2) + '), yp = (y - bk) / mid * (nat - crop), gh = (vSfRows.y - vSfRows.x) * ' + HM + ' - crop;',
+        '    v = vSfRows.x + (yp + step(gh, yp) * crop) / ' + HM + '; }',
         '  if (sfPart > 2.5) v = 0.995;',
         '  sfUv = vSfCell.xy + vec2(u, v) * vSfCell.zw;',
-        '  vec2 gk = vec2(1.0 - 2.0 * sfMirror, 1.0 / ' + HM + ') * vSfCell.zw;',
+        '  vec2 gk = vec2(ret > 0.5 ? 1.0 / max(sfW, 0.5) : 1.0 - 2.0 * sfMirror, 1.0 / ' + HM + ') * vSfCell.zw;',
         '  sfGx = sfDx * gk; sfGy = sfDy * gk;',
         '}',
         'sfArt = textureGrad(uSfMap, sfUv, sfGx, sfGy);',
@@ -16118,7 +16144,9 @@ vec2 wRing(vec2 rc, float tt) {
           '  if (pk > 0.0) { vec3 V = normalize(vSfW - cameraPosition), N = normalize(vWNorm), T = normalize(vec3(N.z, 0.0, -N.x) + 1e-5);',
           '    vec2 off = vec2(dot(V, T), V.y) / max(-dot(V, N), 0.3) * 0.35 * pk;',
           '    vec2 du = vec2(off.x / max(sfW, 0.5) * (1.0 - 2.0 * sfMirror), off.y / ' + HM + ') * vSfCell.zw;',
-          '    vec3 a2 = textureGrad(uSfMap, sfUv + du, sfGx, sfGy).rgb; float m2 = textureGrad(uSfMask, sfUv + du, sfGx, sfGy).r;',
+          // (held inside the cell less a texel and a half: at a grazing look the shift reached past the gutter, review)
+          '    vec2 uv2 = clamp(sfUv + du, vSfCell.xy + ' + SF_TX + ', vSfCell.xy + vSfCell.zw - ' + SF_TX + ');',
+          '    vec3 a2 = textureGrad(uSfMap, uv2, sfGx, sfGy).rgb; float m2 = textureGrad(uSfMask, uv2, sfGx, sfGy).r;',
           '    sfDiff = mix(sfDiff, mix(a2 * 0.6, a2, m2), frMask.r); } }',
         ] : []),
         // the name on the board: its plate centred in the band at 86% of its width, at the band's aspect up to the slot's 8:1
@@ -16147,14 +16175,15 @@ vec2 wRing(vec2 rc, float tt) {
         '  vec3 lc = warm > 0.5 ? vec3(1.0, 0.74, 0.48) : vec3(1.0, 0.93, 0.84);',
         '  float on = mix(fract(vSfK.z * 7.31) < 0.333 ? 0.25 : 0.04, 1.0, sfOpen);',
         '  float al = dot(sfArt.rgb, vec3(0.2126, 0.7152, 0.0722));',
-        // the interior lit through its own picture (the goods, the tables, the shelves), the door's glass at 0.6 of it
-        '  totalEmissiveRadiance += frMask.r * sfArt.rgb * (0.6 + 0.8 * smoothstep(0.05, 0.4, al)) * lc * (1.0 - 0.4 * frMask.b) * uSfK.y * uNight * on;',
+        // the interior lit through its own picture (the goods, the tables, the shelves), the door's glass at 0.6 of it, and
+        // an open shop's room never darker than its ceiling lights make it (the review: a dark-wood pub at 21:30 looked shut)
+        '  totalEmissiveRadiance += frMask.r * (sfArt.rgb * (0.6 + 0.8 * smoothstep(0.05, 0.4, al)) + 0.08 * sfOpen * (0.7 + 0.3 * smoothstep(0.4, 0.9, vSfP.y / max(sfH, 1.0)))) * lc * (1.0 - 0.4 * frMask.b) * uSfK.y * uNight * on;',
         // the sign: channel letters glow through the name; a gooseneck's lamps wash the board from its top, the letters with it
         '  if (chan > 0.5) totalEmissiveRadiance += sfTxt * sfSign * 2.0 * uNight * sfSignOn;',
         '  else totalEmissiveRadiance += diffuseColor.rgb * frMask.g * (0.18 + 0.32 * sfFall) * uNight * sfSignOn;',
         '}',
       ].join('\n'));
-    glassOpticsPatch(sh, { mask: 'frMask.r', roughness: 0.05, coating: 0.08, depth: 0.35, horizon: '0.05', normal: 'vWNorm', uv: 'vec2(vSfP.x * sfW / 1.6, vSfP.y / 2.6)', id: 'vec2(floor(vSfP.x * sfW / 1.6), vSfK.z * 97.0)', seed: 'vSfK.z' });
+    glassOpticsPatch(sh, { mask: 'frMask.r', roughness: 0.05, coating: 0.10, depth: 0.35, horizon: '0.05', normal: 'vWNorm', uv: 'vec2(vSfP.x * sfW / 1.6, vSfP.y / 2.6)', id: 'vec2(floor(vSfP.x * sfW / 1.6), vSfK.z * 97.0)', seed: 'vSfK.z' });
     // the paint and masonry a little smoother than the plaster, the bulkhead's tile or stone smoother still (after the glass's
     // own, which takes the panes)
     sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor *= sfPart < 0.5 && vSfP.y < vSfRows.x * ' + HM + ' && frMask.g < 0.5 ? 0.56 : 0.94;');
@@ -16168,23 +16197,29 @@ vec2 wRing(vec2 rc, float tt) {
     m.customProgramCacheKey = () => rich ? 'storefront-panels|wx' : 'storefront-panels|wx|lite';
     return m;
   }
-  // the awnings: canvas over a frame, the fronts' unit (frontAwning) at a nominal 2.6 m, flat or scalloped; the stripes
-  // as the fronts' (aAwn: the second colour and the stripes a metre), a faint weave and a darker hem on the valance, the
-  // underside in shade with the day's light coming through the cloth, and the panels' dissolve on their near flag
+  // the awnings: canvas over a frame, the fronts' unit (frontAwning) at a nominal 2.6 m; the stripes as the fronts' (aAwn:
+  // the second colour and the stripes a metre), a faint weave and a darker hem on the valance, the underside in shade with
+  // the day's light coming through the cloth, and the panels' dissolve on their near flag. One mesh and one program for
+  // the flat and the scalloped (the review: two programs from one shader, and the scalloped unit's eight lobes stretched
+  // with the awning to a metre each on a 9 m front): aSfNear carries the near flag and 2 for a scalloped valance, whose
+  // lobes are cut here from the metres along it, a whole number of about a third of a metre each
   function sfAwningHook(sh) {
     sh.uniforms.uFrR = frR; sh.uniforms.uFrShop = frShopOn; sh.uniforms.uSunW = sunWUniform;
-    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aAlong, aSfNear; attribute vec4 aAwn; varying float vAlong, vSfNear; varying vec4 vAwn; varying vec3 vSfW, vAwnL;')
-      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlong = aAlong * length(instanceMatrix[0].xyz); vAwn = aAwn; vSfNear = aSfNear; vAwnL = position;')
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aAlong, aSfNear; attribute vec4 aAwn; varying float vAlong, vSfNear, vAwnLen; varying vec4 vAwn; varying vec3 vSfW, vAwnL;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvAlong = aAlong * length(instanceMatrix[0].xyz); vAwnLen = 2.6 * length(instanceMatrix[0].xyz); vAwn = aAwn; vSfNear = aSfNear; vAwnL = position;')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSfW = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;');
-    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR, uFrShop; uniform vec3 uSunW; varying float vAlong, vSfNear; varying vec4 vAwn; varying vec3 vSfW, vAwnL;')
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR, uFrShop; uniform vec3 uSunW; varying float vAlong, vSfNear, vAwnLen; varying vec4 vAwn; varying vec3 vSfW, vAwnL; float sfAwnCut;')
       .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\n' +
-        'if (vSfNear * uFrShop > 0.5) { float fd = distance(vSfW, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }')
+        'if (mod(vSfNear, 2.0) * uFrShop > 0.5) { float fd = distance(vSfW, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }\n' +
+        '{ float sc = step(1.5, vSfNear), nS = max(2.0, floor(vAwnLen / 0.33 + 0.5));\n' +
+        '  sfAwnCut = mix(-0.9, -0.765 - 0.135 * sin(3.14159265 * fract(vAlong * nS / max(vAwnLen, 0.1))), sc);\n' +
+        '  if (sc > 0.5 && vAwnL.z > 0.86 && vAwnL.y < sfAwnCut) discard; }')
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
         'if (vAwn.w > 0.0) { float sx = fract(vAlong * vAwn.w); diffuseColor.rgb = mix(diffuseColor.rgb, vAwn.rgb, smoothstep(0.46, 0.54, sx) - smoothstep(0.96, 1.0, sx)); }',
         '{ float wf = fwidth(vAlong) + fwidth(vAwnL.z);',
         '  float weave = (sin(vAlong * 260.0) * sin(vAwnL.z * 260.0 + vAwnL.y * 260.0)) * (1.0 - smoothstep(0.004, 0.012, wf));',
         '  diffuseColor.rgb *= 1.0 + 0.04 * weave;',
-        '  float hem = step(0.98, vAwnL.z) * (1.0 - smoothstep(0.02, 0.05, vAwnL.y + 0.9));',
+        '  float hem = step(0.98, vAwnL.z) * (1.0 - smoothstep(0.02, 0.05, vAwnL.y - sfAwnCut));',
         '  diffuseColor.rgb *= 1.0 - 0.18 * hem;',
         '  if (!gl_FrontFacing) diffuseColor.rgb *= 0.55; }',
       ].join('\n'))
@@ -16192,71 +16227,136 @@ vec2 wRing(vec2 rc, float tt) {
     lampLightPatch(sh, 'vSfW', 'blade');
     wxSurfacePatch(sh);
   }
-  function sfAwningMat(key) {
+  function sfAwningMat() {
     const m = new THREE.MeshStandardMaterial({ roughness: 0.85, metalness: 0, side: THREE.DoubleSide });
     m.onBeforeCompile = sfAwningHook;
-    m.customProgramCacheKey = () => 'storefront-awnings|wx|' + key;
+    m.customProgramCacheKey = () => 'storefront-awnings|wx';
     return m;
   }
-  function sfAwningGeometry(scallop) {
+  function sfAwningGeometry() {
     const A = { pos: [], nor: [], along: [] };
-    frontAwning(A, 0, 0, 1, 0, 0, 1, 0, 2.6, 0, 1.0, 0.6, 0.3, scallop);
+    frontAwning(A, 0, 0, 1, 0, 0, 1, 0, 2.6, 0, 1.0, 0.6, 0.3, false);
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(A.pos, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(A.nor, 3));
     g.setAttribute('aAlong', new THREE.Float32BufferAttribute(A.along, 1));
     return g;
   }
-  // a string's 32-bit FNV hash (a chain's every branch wears the same front, mirrored the same way)
+  // a string's 32-bit FNV hash: a chain's every branch mirrored the same way (and, its colour byte being a hash of the name,
+  // dealt the same cell, unless a panel within 15 m already wears it: the neighbour's rule in sfBuild comes first)
   function sfHash(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
   function sfInfo(n) {
     const I = typeof STOREFRONT_INFO !== 'undefined' ? STOREFRONT_INFO : null;
     if (!I || I.n !== n || !I.rec) return null;
     const b = atob(I.rec), u8 = new Uint8Array(b.length);
     for (let i = 0; i < b.length; i++) u8[i] = b.charCodeAt(i);
-    const rec = new Int16Array(u8.buffer);
-    return rec.length === n * 8 ? { rec, names: I.names || [], hours: I.hours || [] } : null;
+    const rec = new Int16Array(u8.buffer), st = I.stride || 8;   // 9 since the review: the panel's turn to its wall
+    return rec.length === n * st ? { rec, st, names: I.names || [], hours: I.hours || [] } : null;
   }
-  // the panels and their awnings, from the step's records and its tests (ownsIt, onBase, underFront: the old boxes' own,
-  // passed in so nothing here holds the step's scope); false when there is nothing to build
-  function sfBuild(body, n, ownsIt, onBase, baseOn, nearOf, tex) {
+  // the review: a panel and a generated house front on one wall. Every front, of any set, in 40 m cells (sfBuild's own,
+  // let go when it returns), and the fronts whose street wall holds a point 1.2 m inside a wall facing (nx, nz): its box
+  // with half a metre about it, and its street side (frontSide, kept for 'Fitting the house fronts') within 25 degrees
+  function sfFrontCells() {
+    const cells = new Map(), B = FRONTS.buf;
+    for (let k = 0; k < FRONTS.n; k++) {
+      const key = Math.floor(B[k * FR_STRIDE] / 40) + ':' + Math.floor(B[k * FR_STRIDE + 1] / 40);
+      let a = cells.get(key); if (!a) cells.set(key, a = []); a.push(k);
+    }
+    if (!FRONTS.side || FRONTS.side.length !== FRONTS.n) FRONTS.side = new Int8Array(FRONTS.n).fill(-2);
+    return cells;
+  }
+  function sfFrontsAt(cells, x, z, nx, nz, out) {
+    const px = x - nx * 1.2, pz = z - nz * 1.2, gx = Math.floor(px / 40), gz = Math.floor(pz / 40), B = FRONTS.buf;
+    for (let gx2 = gx - 1; gx2 <= gx + 1; gx2++) for (let gz2 = gz - 1; gz2 <= gz + 1; gz2++) {
+      const a = cells.get(gx2 + ':' + gz2); if (!a) continue;
+      for (const k of a) {
+        const o = k * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], dx = px - B[o], dz = pz - B[o + 1];
+        if (Math.abs(dx * ux + dz * uz) > B[o + 4] + 0.5 || Math.abs(-dx * uz + dz * ux) > B[o + 5] + 0.5) continue;
+        let s2 = FRONTS.side[k];
+        if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k);
+        if (s2 < 0) continue;
+        const sx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, sz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux;
+        if (sx * nx + sz * nz > 0.906) out.add(k);   // cos 25 degrees
+      }
+    }
+  }
+  // the shop set a house front takes when a storefront stands on its street wall (frontSetOf's rule for a shop: the shop
+  // under flats from 11 m in Center City and 13.5 m elsewhere, the one-storey shop under 7 m, the shop between)
+  function sfShopSet(k) {
+    const B = FRONTS.buf, o = k * FR_STRIDE, h = B[o + 7] - B[o + 6];
+    const s = h >= (frIn(FR_AREAS.cc, B[o], B[o + 1]) ? 11 : 13.5) ? FR_SET_IX('mixeduse') : (REAL && h < 7 ? FR_SET_IX('shop1') : FR_SET_IX('shop'));
+    return s >= 0 ? s : FR_SET_IX('shop');
+  }
+  // the panels and their awnings, from the step's records and its tests (ownsIt, onBase: the old boxes' own, passed in so
+  // nothing here holds the step's scope); false when there is nothing to build. Each record is laid where the sidecar puts
+  // it (its shift and width, turned to its wall by its lean) and every test is made there, not at the record's own point
+  // (the review: a 12 m span slid 3 m covered a house front its point missed): the custom models' and the street floors'
+  // ground at its middle, and the house fronts at its ends and middle. A shop front's house dissolves the panel near the
+  // eye (the fronts' own shopfront comes in); any other house front under it becomes its set's shop (its raised door showed
+  // over the board), so the two never stand on one wall
+  function sfBuild(body, n, ownsIt, onBase, baseOn) {
     const t0 = performance.now();
     const A = STOREFRONT_ART, cells = A.cells, info = sfInfo(n);
     SF.info = !!info;
     const byFamCls = new Map();
     cells.forEach((c, k) => { const key = c.fam + ':' + c.cls; let a = byFamCls.get(key); if (!a) byFamCls.set(key, a = []); a.push(k); });
     const clsOf = (w) => { let best = 'S', bs = 1e9; for (const k in A.classes) { const s = Math.abs(Math.log(w / A.classes[k])); if (s < bs) { bs = s; best = k; } } return best; };
-    const taken = [];   // [x, z, cell] of the panels laid, for the neighbour's bump
+    // a record's cells in the order it may wear them: its trade's at its width, its trade's at a width within SF_STRETCH,
+    // its siblings' at its width
+    const choices = (fam, w, cls) => {
+      const out = (byFamCls.get(fam + ':' + cls) || []).slice();
+      for (const k in A.classes) if (k !== cls && Math.abs(Math.log(w / A.classes[k])) <= SF_STRETCH) out.push(...(byFamCls.get(fam + ':' + k) || []));
+      for (const f2 of SF_SIB[fam] || []) out.push(...(byFamCls.get(f2 + ':' + cls) || []));
+      return out.length ? out : (byFamCls.get('0:' + cls) || [0]);
+    };
+    const frCells = FRONTS_ON && REAL && FRONTS.n ? sfFrontCells() : null, frSet = new Set();
+    const taken = [];   // [x, z, nx, nz, cell] of the panels laid, for the neighbour's rule
     const recs = [];
-    let baseN = 0, nearN = 0, hidden = 0;
+    let baseN = 0, nearN = 0, hidden = 0, switched = 0, borrowed = 0;
     for (let i = 0; i < n; i++) {
       const o = i * 8;
       const x = body[o] * 0.2, z = body[o + 1] * 0.2, ang = body[o + 2] / 1000, kind = body[o + 4], col = body[o + 5] & 15, fh = body[o + 6] / 10, flags = body[o + 7];
       let w = body[o + 3] / 10;
       if (w < 2.5 || fh < 2.5) continue;
-      const nx = Math.cos(ang), nz = Math.sin(ang);
-      if (ownsIt(x - nx * 1.2, z - nz * 1.2)) continue;
-      if (baseOn && onBase(x - nx * 1.2, z - nz * 1.2)) { baseN++; continue; }
-      let shift = 0, out = 0, inn = 0, fp = 0, fam = SF_KIND_FAM[kind] ?? 0, hrs = null, hostH = 0, name = '';
+      let nx = Math.cos(ang), nz = Math.sin(ang);
+      let shift = 0, out = 0, inn = 0, fp = 0, fam = SF_KIND_FAM[kind] ?? 0, hrs = null, hostH = 0, name = '', lean = 0;
       if (info) {
-        const r = info.rec, q = i * 8;
+        const r = info.rec, q = i * info.st;
         shift = r[q] / 10; w = r[q + 1] / 10; out = r[q + 2] / 100; inn = r[q + 3] / 100; fp = r[q + 4] / 10; fam = r[q + 5]; hostH = (r[q + 7] >> 2) / 10;
+        if (info.st > 8) lean = r[q + 8] / 10000;
         if (r[q + 6] >= 0) hrs = info.hours[r[q + 6]];
         name = info.names[i] || '';
         if (w <= 0) { hidden++; continue; }
       }
-      const near = nearOf(x, z, nx, nz) ? 1 : 0;
-      nearN += near;
-      const cls = clsOf(w);
-      let list = byFamCls.get(fam + ':' + cls) || byFamCls.get('0:' + cls) || [0];
-      const h = sfHash(name || 'k' + kind + '@' + Math.round(x) + ',' + Math.round(z));
-      let vi = col % list.length, cell = list[vi];
-      for (let t = 0; t < list.length; t++) {   // a neighbour within 15 m on the same street already wears it: the next
-        cell = list[(col + t) % list.length];
-        if (!taken.some((q) => q[2] === cell && (q[0] - x) ** 2 + (q[1] - z) ** 2 < 225)) break;
+      // the laid middle on the record's own line, then the wall's line through it (the bake's out and in are measured
+      // along the record's normal, at the middle) and the panel's own frame, turned by the lean
+      const cx = x - nz * shift, cz = z + nx * shift;
+      if (lean) { const k = 1 / Math.sqrt(1 + lean * lean), tx = -nz, tz = nx; nx = (nx - tx * lean) * k; nz = (nz - tz * lean) * k; }
+      if (ownsIt(cx - nx * 1.2, cz - nz * 1.2)) continue;
+      if (baseOn && onBase(cx - nx * 1.2, cz - nz * 1.2)) { baseN++; continue; }
+      let near = 0;
+      if (frCells) {
+        frSet.clear();
+        const e = Math.max(0, w / 2 - 0.6);
+        for (const s of [-e, 0, e]) sfFrontsAt(frCells, cx - nz * s, cz + nx * s, nx, nz, frSet);
+        for (const k of frSet) {
+          const o2 = k * FR_STRIDE, set = (FRONTS.buf[o2 + 9] | 0) & 15;
+          if (!FR_SHOPPY.has(set)) { const s2 = sfShopSet(k); if (s2 < 0) continue; FRONTS.buf[o2 + 9] += s2 - set; switched++; }
+          near = 1;
+        }
       }
-      taken.push([x, z, cell]);
-      recs.push({ i, x, z, nx, nz, w, fh, kind, col, flags, shift, out, inn, fp, fam, hrs, hostH, name, near, cell, cls, mirror: (h >>> 7) & 1, seed: 0.01 + 0.98 * hash01(i * 0.731 + 0.17) });
+      nearN += near;
+      const cls = clsOf(w), list = choices(fam, w, cls), own = (byFamCls.get(fam + ':' + cls) || []).length;
+      const h = sfHash(name || 'k' + kind + '@' + Math.round(x) + ',' + Math.round(z));
+      // a panel within 15 m facing the same way already wears it: the next of its own, then the borrowed
+      const n0 = Math.max(1, own), start = col % n0;
+      let cell = list[start];
+      for (let t = 0; t < list.length; t++) {
+        const c2 = list[t < n0 ? (start + t) % n0 : t];
+        if (!taken.some((q) => q[4] === c2 && (q[0] - cx) ** 2 + (q[1] - cz) ** 2 < 225 && q[2] * nx + q[3] * nz > 0.3)) { cell = c2; if (t >= n0) borrowed++; break; }
+      }
+      taken.push([cx, cz, nx, nz, cell]);
+      recs.push({ i, cx, cz, nx, nz, w, fh, kind, col, flags, out, inn, fp, fam, hrs, hostH, name, near, cell, cls: cells[cell].cls, mirror: (h >>> 7) & 1, seed: 0.01 + 0.98 * hash01(i * 0.731 + 0.17) });
     }
     if (!recs.length) return false;
     const N = recs.length;
@@ -16268,14 +16368,15 @@ vec2 wRing(vec2 rc, float tt) {
     const awnWant = [];
     const M = mesh.instanceMatrix.array, list = new Float32Array(N * 9), names = [];
     const gy = (px, pz) => groundMeshY(px, pz) ?? siteY(px, pz, 'ground');
+    const byFam = {}, byCls = {};
+    let named = 0;
     recs.forEach((r, k) => {
       const c = cells[r.cell];
-      const tx = -r.nz, tz = r.nx, rx = r.nz, rz = -r.nx;   // the bake's tangent and the viewer's right as they face the wall
-      const cx = r.x + tx * r.shift, cz = r.z + tz * r.shift;
+      const rx = r.nz, rz = -r.nx;   // the viewer's right as they face the wall
       // the sidewalk line: the drawn sidewalk (or ground) 1.5 m out at both ends and the middle, its highest; the foot under its lowest
       let yS = -1e9, yLo = 1e9;
       for (const s of [-0.45, 0, 0.45]) {
-        const px = cx + rx * r.w * s, pz = cz + rz * r.w * s, ox = px + r.nx * 1.5, oz = pz + r.nz * 1.5;
+        const px = r.cx + rx * r.w * s, pz = r.cz + rz * r.w * s, ox = px + r.nx * 1.5, oz = pz + r.nz * 1.5;
         const g0 = gy(px, pz), g1 = gy(ox, oz);
         yS = Math.max(yS, g1 + (sidewalkAt(ox, oz) ? SIDEWALK_UP : 0.02));
         yLo = Math.min(yLo, g0, g1);
@@ -16285,7 +16386,7 @@ vec2 wRing(vec2 rc, float tt) {
       if (r.hostH > 0) H = Math.min(H, r.hostH - 0.15);
       H = Math.max(2.6, H);
       const Hf = yS + H - foot, dRet = Math.max(0.12, r.out - r.inn + 0.10), face = r.out + 0.06;
-      const lx = cx - rx * r.w / 2 + r.nx * face, lz = cz - rz * r.w / 2 + r.nz * face;
+      const lx = r.cx - rx * r.w / 2 + r.nx * face, lz = r.cz - rz * r.w / 2 + r.nz * face;
       const o = k * 16;
       M[o] = rx * r.w; M[o + 1] = 0; M[o + 2] = rz * r.w; M[o + 3] = 0;
       M[o + 4] = 0; M[o + 5] = Hf; M[o + 6] = 0; M[o + 7] = 0;
@@ -16302,10 +16403,10 @@ vec2 wRing(vec2 rc, float tt) {
       aInfo.array.set([r.fam + 16 * txt, (SF_CHANNEL.has(r.fam) ? 1 : 0) + 4 * (A.warm && A.warm[r.fam] ? 1 : 0) + 16 * (gate ? 1 : 0), r.near, Math.round(c.rows[0] * 1000) * 1000 + Math.round(c.rows[1] * 1000)], k * 4);
       const hh = r.hrs || SF_DEF_HOURS[r.fam] || SF_DEF_HOURS[0], pack = (a, b) => (a < 0 || b < 0 ? -1 : a * 2048 + Math.min(2047, b));
       aHours.array.set([pack(hh[0], hh[1]), pack(hh[2], hh[3]), pack(hh[4], hh[5]), r.hrs ? 0 : 1], k * 4);
-      const named = SF_SIGNS && r.name ? names.push(r.name) - 1 : -1;
-      list.set([cx + r.nx * face, yS + H * 0.7, cz + r.nz * face, r.nx, r.nz, r.w, r.near, named, k], k * 9);
-      SF.byFam[A.fams[r.fam]] = (SF.byFam[A.fams[r.fam]] || 0) + 1; SF.byCls[r.cls] = (SF.byCls[r.cls] || 0) + 1;
-      if (r.name) SF.named++;
+      const nm = SF_SIGNS && r.name ? names.push(r.name) - 1 : -1;
+      list.set([r.cx + r.nx * face, yS + H * 0.7, r.cz + r.nz * face, r.nx, r.nz, r.w, r.near, nm, k], k * 9);
+      byFam[A.fams[r.fam]] = (byFam[A.fams[r.fam]] || 0) + 1; byCls[r.cls] = (byCls[r.cls] || 0) + 1;
+      if (r.name) named++;
       // an awning, for the trades that hang one (flags bit 0), three in five of them: under the fascia, over the glass between the piers
       if ((r.flags & 1) && hash01(r.i * 2.17 + 0.3) < 0.6) {
         const p0 = r.mirror ? 1 - c.pier[1] : c.pier[0], p1 = r.mirror ? 1 - c.pier[0] : c.pier[1];
@@ -16318,34 +16419,40 @@ vec2 wRing(vec2 rc, float tt) {
     geo.setAttribute('aSfCell', aCell); geo.setAttribute('aSfBand', aBand); geo.setAttribute('aSfDim', aDim); geo.setAttribute('aSfInfo', aInfo); geo.setAttribute('aSfHours', aHours); geo.setAttribute('aSfSlot', aSlot);
     mesh.instanceMatrix.onUpload(dropUploadedArray);
     mesh.count = N; mesh.frustumCulled = false; mesh.receiveShadow = true; mesh.castShadow = false; mesh.name = 'storefront-panels';
-    groupCity.add(mesh);   // never staged in pendingUpload: it draws unculled for good (its geometry's sphere is the unit panel's)
-    SF.mesh = mesh; SF.list = list; SF.names = names; SF.aSlot = aSlot;
-    SF.cellOf = Int16Array.from(recs, (r) => r.cell); SF.famOf = Uint8Array.from(recs, (r) => r.fam);
-    // the awnings, flat and scalloped, in the colourways by the record's colour byte
-    const pal = SF_AWN.map((q) => [frontStored(q[0]), frontStored(q[1]), q[2]]);
-    for (const scallop of [false, true]) {
-      const want = awnWant.filter((a) => a.scallop === scallop);
-      if (!want.length) continue;
-      const g = sfAwningGeometry(scallop), am = new THREE.InstancedMesh(g, sfAwningMat(scallop ? 's' : 'f'), want.length);
-      const aAwn = new THREE.InstancedBufferAttribute(new Float32Array(want.length * 4), 4), aNear = new THREE.InstancedBufferAttribute(new Float32Array(want.length), 1);
+    // the awnings, flat and scalloped in one mesh, in the colourways by the record's colour byte
+    let am = null;
+    if (awnWant.length) {
+      const pal = SF_AWN.map((q) => [frontStored(q[0]), frontStored(q[1]), q[2]]);
+      const g = sfAwningGeometry();
+      am = new THREE.InstancedMesh(g, sfAwningMat(), awnWant.length);
+      const aAwn = new THREE.InstancedBufferAttribute(new Float32Array(awnWant.length * 4), 4), aNear = new THREE.InstancedBufferAttribute(new Float32Array(awnWant.length), 1);
       const MA = am.instanceMatrix.array;
-      want.forEach((a, k) => {
+      awnWant.forEach((a, k) => {
         const o = k * 16, sx = (a.s1 - a.s0) / 2.6;
         MA[o] = a.rx * sx; MA[o + 1] = 0; MA[o + 2] = a.rz * sx; MA[o + 3] = 0;
         MA[o + 4] = 0; MA[o + 5] = a.drop / 0.6; MA[o + 6] = 0; MA[o + 7] = 0;
         MA[o + 8] = a.nx * a.D; MA[o + 9] = 0; MA[o + 10] = a.nz * a.D; MA[o + 11] = 0;
         MA[o + 12] = a.lx + a.rx * a.s0; MA[o + 13] = a.yA; MA[o + 14] = a.lz + a.rz * a.s0; MA[o + 15] = 1;
         const p = pal[a.col];
-        am.setColorAt(k, p[0]); aAwn.array.set([p[1].r, p[1].g, p[1].b, p[2]], k * 4); aNear.array[k] = a.near;
+        am.setColorAt(k, p[0]); aAwn.array.set([p[1].r, p[1].g, p[1].b, p[2]], k * 4); aNear.array[k] = a.near + (a.scallop ? 2 : 0);
       });
       aAwn.onUpload(dropUploadedArray); aNear.onUpload(dropUploadedArray); am.instanceMatrix.onUpload(dropUploadedArray); am.instanceColor.onUpload(dropUploadedArray);
       g.setAttribute('aAwn', aAwn); g.setAttribute('aSfNear', aNear); freeOnUpload(g);
-      am.frustumCulled = false; am.receiveShadow = true; am.castShadow = !isTouch; am.name = scallop ? 'storefront-awnings-scalloped' : 'storefront-awnings-flat';
-      groupCity.add(am); SF.awn.push(am);
+      am.frustumCulled = false; am.receiveShadow = true; am.castShadow = !isTouch; am.name = 'storefront-awnings';
+      SF.scalloped = awnWant.filter((a) => a.scallop).length;
     }
+    // into the scene only now, all at once: whatever threw above leaves nothing standing, and the old boxes are built instead
+    // (the review: a throw after the panels were added built the boxes over them)
+    groupCity.add(mesh);   // never staged in pendingUpload: it draws unculled for good (its geometry's sphere is the unit panel's)
+    if (am) { groupCity.add(am); SF.awn.push(am); }
+    SF.mesh = mesh; SF.list = list; SF.names = names; SF.aSlot = aSlot; SF.byFam = byFam; SF.byCls = byCls; SF.named = named;
+    SF.cellOf = Int16Array.from(recs, (r) => r.cell); SF.famOf = Uint8Array.from(recs, (r) => r.fam);
     // (the panel's own unit is 16 vertices and stays; its instance streams went at upload above, all but aSfSlot, which the names rewrite)
-    SF.n = N; SF.near = nearN; SF.base = baseN; SF.hidden = hidden; SF.ms = Math.round(performance.now() - t0);
-    if (SF_SIGNS && names.length) sfNamesInit();
+    SF.n = N; SF.near = nearN; SF.base = baseN; SF.hidden = hidden; SF.switched = switched; SF.borrowed = borrowed; SF.ms = Math.round(performance.now() - t0);
+    // the names last, on their own: a canvas a phone under pressure will not give leaves the panels with blank boards
+    if (SF_SIGNS && names.length) {
+      try { sfNamesInit(); } catch (e) { SF.slot = null; SF_U.uSfNames.value = null; SF.error = 'names: ' + String(e && e.message || e); }
+    }
     return true;
   }
   // ---- the names (Round 189): an atlas of slots, white type on black read as coverage (red only: no alpha anywhere, so
@@ -16456,11 +16563,15 @@ vec2 wRing(vec2 rc, float tt) {
   function sfNamesFlush(max) {
     const S = SF.slot;
     if (!S.queue.length) return;
-    if (!S.cell) { const c = document.createElement('canvas'); c.width = S.SW; c.height = S.SH; S.cell = { ctx: c.getContext('2d'), tex: new THREE.Texture(c) }; S.cell.tex.format = THREE.RedFormat; }
+    // the slot's canvas on the CPU (willReadFrequently: an iPhone's copy of a GPU-backed canvas ran 2 to 19 ms a name, of
+    // this one 1 to 2, review), and the atlas's mips rebuilt with the last copy that runs (a slot let go since it was
+    // queued is dropped first: the batch's last being one of those left every name in it showing its slot's last owner)
+    if (!S.cell) { const c = document.createElement('canvas'); c.width = S.SW; c.height = S.SH; S.cell = { ctx: c.getContext('2d', { willReadFrequently: true }), tex: new THREE.Texture(c) }; S.cell.tex.format = THREE.RedFormat; }
     const mips = S.tex.generateMipmaps, A = STOREFRONT_ART, L = SF.list;
-    const todo = S.queue.splice(0, max);
+    const todo = S.queue.splice(0, max).filter((s) => S.owner[s] >= 0);
+    if (!todo.length) return;
     todo.forEach((s, i) => {
-      const k = S.owner[s]; if (k < 0) return;
+      const k = S.owner[s];
       const o = k * 9, cell = A.cells[SF.cellOf ? SF.cellOf[k] : 0];
       const W = L[o + 5], fam = SF.famOf ? SF.famOf[k] : 0;
       const bw = 0.86 * (cell.band[2] - cell.band[0]) * W, bh = 0.78 * (cell.band[3] - cell.rows[2]) * SF_HM;
@@ -16476,6 +16587,16 @@ vec2 wRing(vec2 rc, float tt) {
     SF.drawn += todo.length;
   }
   function sfProbe(near) {
+    if (near === 'repeats') {   // the review's count: panels facing the same way within 15 m wearing one cell, and of those the next-door pairs
+      const L = SF.list, C = SF.cellOf; let within = 0, adjacent = 0;
+      for (let a = 0; a < SF.n; a++) for (let b = a + 1; b < SF.n; b++) {
+        if (C[a] !== C[b]) continue;
+        const oa = a * 9, ob = b * 9, d = Math.hypot(L[oa] - L[ob], L[oa + 2] - L[ob + 2]);
+        if (d >= 15 || L[oa + 3] * L[ob + 3] + L[oa + 4] * L[ob + 4] < 0.3) continue;
+        within++; if (d < (L[oa + 5] + L[ob + 5]) / 2 + 1) adjacent++;
+      }
+      return { within, adjacent };
+    }
     if (near) {   // the panels within near metres of the eye: where they stand, their name, slot and flags
       const L = SF.list, cam = camera.position, out = [];
       for (let k = 0; k < SF.n; k++) { const o = k * 9, d = Math.hypot(cam.x - L[o], cam.y - L[o + 1], cam.z - L[o + 2]); if (d < near) out.push({ k, d: Math.round(d), x: Math.round(L[o]), y: +L[o + 1].toFixed(1), z: Math.round(L[o + 2]), face: +((cam.x - L[o]) * L[o + 3] + (cam.z - L[o + 2]) * L[o + 4]).toFixed(1), w: L[o + 5], near: L[o + 6], name: L[o + 7] >= 0 ? SF.names[L[o + 7]] : null, slot: SF.slotOf ? SF.slotOf[k] : -1, attr: SF.aSlot.array[k], cell: STOREFRONT_ART.cells[SF.cellOf[k]].id }); }
@@ -16484,7 +16605,7 @@ vec2 wRing(vec2 rc, float tt) {
     const S = SF.slot;
     return { on: SF_ART_ON, state: SF.state, error: SF.error, info: SF.info, made: SF.n, near: SF.near, base: SF.base, hidden: SF.hidden, byFam: SF.byFam, byCls: SF.byCls,
       named: SF.named, signs: SF_SIGNS, slots: S ? { n: S.n, held: Array.from(S.owner).filter((k) => k >= 0).length, live: S.live, fonts: S.fonts, subs: S.subs, queue: S.queue.length } : null,
-      awnings: SF.awn.map((m) => m.count), partA: SF.partA, ms: SF.ms, k: SF_U.uSfK.value.toArray() };
+      awnings: SF.awn.map((m) => m.count), scalloped: SF.scalloped || 0, switched: SF.switched || 0, borrowed: SF.borrowed || 0, partA: SF.partA, ms: SF.ms, k: SF_U.uSfK.value.toArray() };
   }
   step('Dressing the storefronts', async () => {
     // Tier 2 of the facade plan: OSM's shops, cafes, bars, banks and the rest, each on the
@@ -16561,13 +16682,14 @@ vec2 wRing(vec2 rc, float tt) {
     // at the top of the build, and waits here at most 10 s more. Anything short of that dresses the old boxes below, as ever
     if (SF_ART_ON) {
       const got = await Promise.race([sfArtLoad(), new Promise((r) => setTimeout(() => r(null), 10000))]);
+      sfArtP = null;   // the review: the promise held both decoded images for the page's life (a phone's freeTexOnUpload lets them go)
       if (!got || !got[0] || !got[1]) { SF.state = got ? 'art failed' : 'art late'; }
       else {
         const [map, mask] = sfTextures(got[0], got[1]);
         SF_U.uSfMap.value = map; SF_U.uSfMask.value = mask;
         try { renderer.initTexture(map); renderer.initTexture(mask); } catch (e) { }
         let built = false;
-        try { built = sfBuild(body, n, ownsIt, onBase, baseCells.size > 0, (x, z, nx, nz) => !!(FRONTS_ON && shopCells.size && underFront(x, z, nx, nz))); } catch (e) { SF.error = String(e && e.message || e); console.error('storefronts:', e); }
+        try { built = sfBuild(body, n, ownsIt, onBase, baseCells.size > 0); } catch (e) { SF.error = String(e && e.message || e); console.error('storefronts:', e); }
         if (SF_PARTA) { sfPartU.uSfArt.value = map; sfPartU.uSfMaskA.value = mask; sfPartU.uSfOn.value = 1; SF.partA = true; }   // the painted shop floors take them too
         if (built) { SF.state = 'built'; STOREFRONT_N = SF.n; STOREFRONT_NEAR = SF.near; STOREFRONT_BASE = SF.base; return; }
         SF.state = 'boxes';

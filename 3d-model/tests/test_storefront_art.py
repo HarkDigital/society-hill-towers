@@ -41,6 +41,21 @@ class Manifest(unittest.TestCase):
             self.assertTrue(0 < c['boardL'] < 1)
             self.assertNotIn('no glass', c.get('notes', []), c['id'])
 
+    def test_the_doors(self):
+        # the review: a 1.6 m display window and strips of 4 to 47 cm were taken for doors; a door is a leaf's glass or a
+        # pair's, in every cell but the roll-up door's
+        doors = [c for c in self.m['cells'] if c['door']]
+        self.assertGreaterEqual(len(doors), len(self.m['cells']) - 2)
+        for c in doors:
+            w = (c['door'][1] - c['door'][0]) * c['nomW']
+            self.assertTrue(0.5 <= w <= 1.9, (c['id'], w))
+
+    def test_the_second_set(self):
+        ids = {c['id'] for c in self.m['cells']}
+        self.assertGreaterEqual(sum(1 for c in self.m['cells'] if c['cls'] in ('M', 'L')), 46)
+        for cid in ('grocery-M-1', 'grocery-S-2', 'retail-L-1', 'takeout-M-1'):   # corner stores
+            self.assertIn(cid, ids)
+
     def test_the_painted_floors_cells(self):
         g = self.m['gen']
         for cls in ('S', 'M', 'L'):
@@ -80,7 +95,10 @@ class Generator(unittest.TestCase):
             w, h = (int(q) for q in size.split('x'))
             self.assertEqual((w % 16, h % 16), (0, 0))
             self.assertLessEqual(max(w / h, h / w), 3.0)
-        self.assertEqual(len(F.cells()), 83)
+        self.assertEqual(len(F.cells()), 110)   # 83, and the review's second M and L a trade and third S for the groceries
+        # the second set is numbered on: every first-set cell keeps its prompt (the images on disk were made from them)
+        first = [c for c in F.cells() if not (c[2] in F.MORE and c[3] >= F.VARIANTS[c[2]]) and not (c[2] == 'S' and c[3] >= F.VARIANTS['S'])]
+        self.assertEqual(len(first), 83)
         self.assertIn('no readable text, labels, menus, logos or signs', F.INSIDE_SF)
 
 

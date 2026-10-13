@@ -54,12 +54,16 @@ family (FAMILIES, the art's trades: the kind and the OSM tags that split it, a t
 from a grocery), its opening hours where OSM has a string this parses (the weekday's, Saturday's and Sunday's span), and
 its place on the wall: records on one wall line are laid side by side (LAYOUT_*: slid apart in the order of their own points
 within the union of their own edges, shrunk to no less than 4 m, the last in fetch order dropped when they still do not
-fit, never moved more than 30 m), and the drawn wall's outermost and innermost point over the span (the unsimplified ring,
-so the panel's ends close onto the wall the page draws), the host's storey height (its OPA storeys) and its height. 8 int16
-a record: shift along the tangent (-nz, nx) in dm, the laid width in dm (0 hidden), out and in in cm, the host's storey
-height in dm (0 unknown), the family, the hours' index (-1 unknown), and the span's end bits (bit 0 its left end at its
-edge's end, bit 1 its right) plus the host's height in dm shifted left by 2. The tags come from fetch_shops.businesses over
-the same cached tiles, checked row for row against shops_raw.json."""
+fit, never moved more than 30 m), then each span measured on the walls the page DRAWS (the core's scene.json rings and
+wide.b64's records decoded, so this reads wide.b64 too): kept where the wall is there, in view and flush, turned to the
+wall's own lean, narrowed or slid within its room, hidden under 3.4 m of such wall or inside a shop=mall (the review: see
+'the span on the wall the page draws' below; --debug i,j prints the profiles); the drawn wall's outermost and innermost
+point over the span, the host's storey height (its OPA storeys) and its height. 9 int16 a record (v 2, 'stride'): shift
+along the tangent (-nz, nx) in dm, the laid width in dm (0 hidden), out and in in cm, the host's storey height in dm (0
+unknown), the family, the hours' index (-1 unknown), the span's end bits (bit 0 its left end at its edge's end, bit 1 its
+right) plus the host's height in dm shifted left by 2, and the panel's turn to its wall (the lean, a slope in
+ten-thousandths). The tags come from fetch_shops.businesses over the same cached tiles, checked row for row against
+shops_raw.json."""
 import base64, hashlib, json, math, os, re, struct, sys, unicodedata
 from collections import Counter
 from shapely.geometry import Polygon, LineString, Point, box as sbox
@@ -452,24 +456,9 @@ def parse_hours(oh):
     return out
 
 
-def ray_hits(pg, px, pz, nx, nz, reach=3.0):
-    """The offsets along n at which the ray from (p + n reach) to (p - n reach) meets the ring (pg's exterior)."""
-    seg = LineString([(px + nx * reach, pz + nz * reach), (px - nx * reach, pz - nz * reach)])
-    try:
-        hit = pg.exterior.intersection(seg)
-    except Exception:
-        return []
-    pts = []
-    for g in getattr(hit, 'geoms', [hit]):
-        if g.is_empty:
-            continue
-        for q in (g.coords if g.geom_type in ('Point', 'LineString') else []):
-            pts.append((q[0] - px) * nx + (q[1] - pz) * nz)
-    return pts
-
-
 import fetch_shops
-biz, _ = fetch_shops.businesses(fetch_shops.load_elements())
+ELEMENTS = fetch_shops.load_elements()
+biz, _ = fetch_shops.businesses(ELEMENTS)
 if len(biz) != len(shops) or any(abs(b['x'] - s['x']) > 1e-6 or abs(b['z'] - s['z']) > 1e-6 or b['kind'] != s['kind'] or b['name'] != (s.get('name') or '')
                                  for b, s in zip(biz, shops)):
     sys.exit(f'ERROR: the cached tiles give {len(biz)} businesses that do not match {IN} row for row; {OUT_INFO} not written')
@@ -594,6 +583,282 @@ for g in groups.values():
         extra[i]['shift'] = sh * (T[0] * extra[i]['t'][0] + T[1] * extra[i]['t'][1])
         extra[i]['w'] = width[i]
 
+# ---- the span on the wall the page draws (the review): the layout above works on the simplified edges, and the drawn
+# wall is the unsimplified ring, with its corners, its jogs, its bends and its neighbours. A span sampled every SPAN_STEP
+# along its wall (each sample's line along the normal: where the host's own ring crosses it, the outermost crossing the
+# face seen from the street) keeps only the samples where the wall is there (no crossing: past a corner the panel stood
+# in the air over a lawn), in view (no footprint, a neighbour's or the host's own bay, inside the 45 degree cone SPAN_PROBE
+# deep in front of it: a neighbour's wall standing 40 cm proud cut a name mid-word from up the street) and flush (the
+# span's face at most SPAN_FLUSH proud of the wall anywhere along it, once the wall's own lean against the record's
+# angle is taken out and handed to the page as a turn, SPAN_SLOPE at most: a panel bridging a deeper jog stood out as a
+# box up to 2 m deep). The best window of such samples, within the record's own room (its laid span and SPAN_SLIDE
+# either side, never past the midpoint of the free wall to a neighbour laid beside it), takes the span at its laid width
+# when it can, else narrowed to the window; under SPAN_MIN it is hidden. And a business inside a mall (shop=mall: Liberty
+# Place, the Fashion District) is no storefront on the street wall: hidden
+SPAN_STEP = 0.1
+SPAN_FLUSH = 0.3
+SPAN_PROBE = 3.0
+SPAN_MIN = 3.4        # the S cell (4.5 m) at three quarters
+SPAN_SLIDE = 3.0
+SPAN_REACH = 3.0      # how far either side of the record's line a crossing counts as its wall
+SPAN_SLOPE = 0.15     # the most the panel is turned to its wall (8.5 degrees)
+import numpy as np
+
+
+def ring_cross(ring, cx, cz, tx, tz, nx, nz, ss):
+    """For each sample position s along the tangent from (cx, cz), the sorted offsets along n at which `ring` crosses the
+    line through (cx, cz) + t s parallel to n."""
+    out = [[] for _ in ss]
+    m = len(ring)
+    for k in range(m):
+        x0, z0 = ring[k]; x1, z1 = ring[(k + 1) % m]
+        t0 = (x0 - cx) * tx + (z0 - cz) * tz; t1 = (x1 - cx) * tx + (z1 - cz) * tz
+        if abs(t1 - t0) < 1e-9:
+            continue
+        u0 = (x0 - cx) * nx + (z0 - cz) * nz; u1 = (x1 - cx) * nx + (z1 - cz) * nz
+        lo, hi = min(t0, t1), max(t0, t1)
+        j0 = max(0, int(np.searchsorted(ss, lo)))
+        for j in range(j0, len(ss)):
+            sv = ss[j]
+            if sv >= hi:
+                break
+            out[j].append(u0 + (sv - t0) / (t1 - t0) * (u1 - u0))
+    for q in out:
+        q.sort()
+    return out
+
+
+# the rings the page draws, which the profile reads (the review's 'Pub On Passyunk Eas': the host as the extract has it lay
+# 3 cm proud of the extract's line and the panel 6 cm proud of that, while the page draws the wall on wide.b64's 0.2 m grid
+# 10 cm out at one end, so the wall stood through the panel's end): the core's own as scene.json has them, and wide.b64's
+# records (the outer districts and the south set after pack_wide.py's simplification, its grid and its coplanar insets),
+# the building parts among them only where they stand on the ground
+def drawn_rings():
+    out = [rings[i] for i in range(len(rings)) if tiers[i] == 'core']
+    raw = base64.b64decode(open('wide.b64').read())
+    nb = struct.unpack('<4i', raw[:16])[1]
+    h = struct.unpack('<%dh' % ((len(raw) - 16) // 2), raw[16:])
+    o = 0
+    for _ in range(nb):
+        L, minH = h[o], h[o + 2] / 5
+        pts = [(h[o + 6 + 2 * k] / 5, h[o + 7 + 2 * k] / 5) for k in range(L)]
+        o += 6 + 2 * L
+        if minH < 3 and len(pts) >= 3:
+            out.append(pts)
+    return out
+
+
+DRAWN = drawn_rings()
+DPOLY = []
+for ring in DRAWN:
+    try:
+        pg = Polygon(ring)
+        DPOLY.append(pg if pg.is_valid else pg.buffer(0))
+    except Exception:
+        DPOLY.append(Polygon())
+DTREE = STRtree(DPOLY)
+_drawnOf = {}
+
+
+def drawn_host(bi):
+    """The drawn rings that are host bi's walls: those mostly inside its footprint (a tower's ground-floor parts, where
+    pack_wide.py drew the parts for the outline) or sharing most of it; an empty list when none is."""
+    if bi in _drawnOf:
+        return _drawnOf[bi]
+    out = []
+    pg = polys[bi]
+    if not pg.is_empty:
+        for j in DTREE.query(pg):
+            j = int(j)
+            q = DPOLY[j]
+            if q.is_empty or q.area <= 0:
+                continue
+            try:
+                inter = pg.intersection(q).area
+                if inter >= 0.6 * q.area or inter / max(1e-6, pg.union(q).area) > 0.3:
+                    out.append(j)
+            except Exception:
+                continue
+    _drawnOf[bi] = out
+    return out
+
+
+def wall_profile(bi, cx, cz, tx, tz, nx, nz, ss):
+    """Per sample: the face's offset along n (None where the host's wall is not there) and whether it is out of view."""
+    ss = np.asarray(ss)
+    dh = drawn_host(bi)
+    hostX = [ring_cross(DRAWN[j] if j is not None else rings[bi], cx, cz, tx, tz, nx, nz, ss) for j in (dh or [None])]
+    face = []
+    for k in range(len(ss)):
+        hs = [u for cr in hostX for u in cr[k] if -SPAN_REACH <= u <= SPAN_REACH]
+        face.append(max(hs) if hs else None)
+    # every footprint's inside along each sample line, as (line, lo, hi): the host's own (its body under the face is
+    # below any sample's cone; a bay or a wing proud of it is not) and the neighbours'
+    x0 = cx + tx * ss[0]; z0 = cz + tz * ss[0]; x1 = cx + tx * ss[-1]; z1 = cz + tz * ss[-1]
+    pad = SPAN_PROBE + SPAN_REACH
+    qb = sbox(min(x0, x1) - pad, min(z0, z1) - pad, max(x0, x1) + pad, max(z0, z1) + pad)
+    occ = []
+    hp = polys[bi]
+    hs = set(dh)
+    for j in [-1 - q for q in range(len(hostX))] + [int(q) for q in DTREE.query(qb) if int(q) not in hs]:
+        if j >= 0:
+            q = DPOLY[j]
+            if q.is_empty:
+                continue
+            try:   # the same ground drawn twice is no neighbour
+                if q.intersection(hp).area > 0.5 * min(q.area, hp.area):
+                    continue
+            except Exception:
+                pass
+        cr = hostX[-1 - j] if j < 0 else ring_cross(DRAWN[j], cx, cz, tx, tz, nx, nz, ss)
+        for m, us in enumerate(cr):
+            for q in range(0, len(us) - 1, 2):
+                occ.append((ss[m], us[q], us[q + 1]))
+    hid = [False] * len(ss)
+    if occ:
+        O = np.asarray(occ)
+        for k in range(len(ss)):
+            if face[k] is None:
+                continue
+            d = np.abs(O[:, 0] - ss[k])
+            lo = face[k] + np.maximum(0.05, d)
+            hi = face[k] + SPAN_PROBE
+            hid[k] = bool(np.any((d <= SPAN_PROBE) & (O[:, 2] > lo) & (O[:, 1] < hi)))
+    return face, hid
+
+
+def best_window(ss, face, hid, c0, w):
+    """The span's centre and width on the samples: the window of wall that is there, in view and flush that takes the
+    most of the laid width, nearest the laid centre, the outer of two equals; or None."""
+    K = len(ss)
+    ok = [face[k] is not None and not hid[k] for k in range(K)]
+    best = None
+    i = 0
+    from collections import deque
+    while i < K:
+        if not ok[i]:
+            i += 1
+            continue
+        j0 = i
+        while i < K and ok[i]:
+            i += 1
+        # every maximal flush window within the run (two pointers over a max and a min deque)
+        mx, mn = deque(), deque()
+        lo = j0
+        for j in range(j0, i):
+            while mx and face[mx[-1]] <= face[j]: mx.pop()
+            mx.append(j)
+            while mn and face[mn[-1]] >= face[j]: mn.pop()
+            mn.append(j)
+            while face[mx[0]] - face[mn[0]] > SPAN_FLUSH:
+                lo += 1
+                if mx[0] < lo: mx.popleft()
+                if mn[0] < lo: mn.popleft()
+            a_, b_ = ss[lo] - SPAN_STEP / 2, ss[j] + SPAN_STEP / 2
+            L = b_ - a_
+            wa = min(w, L)
+            c = min(max(c0, a_ + wa / 2), b_ - wa / 2)
+            lvl = sum(face[q] for q in range(lo, j + 1)) / (j + 1 - lo)
+            key = (round(wa, 2) - 0.5 * abs(c - c0), lvl)
+            if best is None or key > best[0]:
+                best = (key, c, wa)
+    return None if best is None else (best[1], best[2])
+
+
+def lean(ss, face, a, b):
+    """The wall's lean against the record's line over [a, b]: a least-squares slope of its face, with its jogs (a step
+    of more than 3 cm a sample) taken out, held within SPAN_SLOPE; 0 when too little of it is there."""
+    xs, ys = [], []
+    for k in range(len(ss) - 1):
+        if a <= ss[k] <= b and face[k] is not None and face[k + 1] is not None and abs(face[k + 1] - face[k]) < 0.03:
+            xs.append(ss[k]); ys.append(face[k + 1] - face[k])
+    if len(xs) < 10:
+        return 0.0
+    return max(-SPAN_SLOPE, min(SPAN_SLOPE, float(np.median(ys)) / SPAN_STEP))
+
+
+malls = []
+_mc = {el['id']: fetch_shops.to_xz(el['lat'], el['lon']) for el in ELEMENTS if el.get('type') == 'node' and 'lat' in el}
+for el in ELEMENTS:
+    t = el.get('tags') or {}
+    if el.get('type') == 'way' and t.get('shop') == 'mall':
+        ring = [_mc[q] for q in el.get('nodes', []) if q in _mc]
+        if len(ring) >= 4:
+            try:
+                pg = Polygon(ring)
+                malls.append(pg if pg.is_valid else pg.buffer(0))
+            except Exception:
+                pass
+# each kept record's room along its wall: SPAN_SLIDE either side of its laid span, and never past the midpoint of the free
+# wall to the next one laid on its line
+room = {}
+for i, e in enumerate(extra):
+    c0 = e['c'] + e['shift']
+    room[i] = [c0 - e['w'] / 2 - SPAN_SLIDE, c0 + e['w'] / 2 + SPAN_SLIDE]
+for g in groups.values():
+    live = [i for i in g if extra[i]['keep']]
+    if len(live) < 2:
+        continue
+    T = extra[live[0]]['t']
+    pos = sorted(live, key=lambda i: rows[i]['x'] * T[0] + rows[i]['z'] * T[1] + extra[i]['shift'] * (T[0] * extra[i]['t'][0] + T[1] * extra[i]['t'][1]))
+    for a_, b_ in zip(pos, pos[1:]):
+        ea, eb = extra[a_], extra[b_]
+        ca = rows[a_]['x'] * T[0] + rows[a_]['z'] * T[1] + ea['shift'] * (T[0] * ea['t'][0] + T[1] * ea['t'][1])
+        cb = rows[b_]['x'] * T[0] + rows[b_]['z'] * T[1] + eb['shift'] * (T[0] * eb['t'][0] + T[1] * eb['t'][1])
+        mid = ((ca + ea['w'] / 2) + (cb - eb['w'] / 2)) / 2
+        # in each record's own tangent (the group's within 0.05 rad of it)
+        sa = T[0] * ea['t'][0] + T[1] * ea['t'][1]; sb = T[0] * eb['t'][0] + T[1] * eb['t'][1]
+        ma = ea['c'] + ea['shift'] + (mid - ca) * sa; mb = eb['c'] + eb['shift'] + (mid - cb) * sb
+        if sa > 0: room[a_][1] = min(room[a_][1], ma - LAYOUT_GAP / 2)
+        else: room[a_][0] = max(room[a_][0], ma + LAYOUT_GAP / 2)
+        if sb > 0: room[b_][0] = max(room[b_][0], mb + LAYOUT_GAP / 2)
+        else: room[b_][1] = min(room[b_][1], mb - LAYOUT_GAP / 2)
+
+DEBUG = [int(q) for q in (sys.argv[sys.argv.index('--debug') + 1].split(',') if '--debug' in sys.argv else [])]
+n_mall = n_narrow = n_slid = n_gone = n_hidpart = n_turned = 0
+for i, (r, e) in enumerate(zip(rows, extra)):
+    if not e['keep']:
+        continue
+    if any(m.contains(Point(e['px'], e['pz'])) for m in malls):
+        e['keep'] = False; n_mall += 1; continue
+    nx, nz = e['n']; tx, tz = e['t']
+    c0 = e['c'] + e['shift']                       # the laid centre along the tangent (from the origin)
+    a_, b_ = room[i]
+    K = max(2, int(round((b_ - a_) / SPAN_STEP)))
+    ss = [a_ + (k + 0.5) * (b_ - a_) / K - c0 for k in range(K)]   # relative to the laid centre
+    cx, cz = r['x'] + tx * e['shift'], r['z'] + tz * e['shift']
+    face, hid = wall_profile(e['bi'], cx, cz, tx, tz, nx, nz, ss)
+    slope = lean(ss, face, -e['w'] / 2, e['w'] / 2)
+    win = None
+    for it in range(2):   # the lean over the laid span, then over the window it finds
+        flat = [None if f is None else f - slope * sv for f, sv in zip(face, ss)]
+        win = best_window(ss, flat, hid, 0.0, e['w'])
+        if win is None or it:
+            break
+        s2 = lean(ss, face, win[0] - win[1] / 2, win[0] + win[1] / 2)
+        if abs(s2 - slope) < 0.005:
+            break
+        slope = s2
+    if i in DEBUG:
+        print('record', i, names[i] if i < len(names) else '', 'laid w', round(e['w'], 2), 'room', [round(a_ - c0, 2), round(b_ - c0, 2)], 'slope', round(slope, 3))
+        print('  face', ' '.join('--' if f is None else ('%+.2f%s' % (f, '*' if h else '')) for f, h in zip(flat, hid)))
+        print('  window', win)
+    if win is None or win[1] < SPAN_MIN - 1e-6:
+        e['keep'] = False; n_gone += 1; continue
+    dc, wa = win
+    if any(hid[k] for k in range(len(ss)) if abs(ss[k]) < e['w'] / 2):
+        n_hidpart += 1
+    if wa < e['w'] - 0.05:
+        n_narrow += 1
+    if abs(dc) > 0.05:
+        n_slid += 1
+    if abs(slope) > 0.005:
+        n_turned += 1
+    e['shift'] += dc; e['w'] = wa; e['slope'] = slope
+    # the face over the span at its centre's line: the flattened profile's highest and lowest, carried back to the centre
+    sp = [f for f, sv in zip(flat, ss) if f is not None and abs(sv - dc) <= wa / 2]
+    e['span'] = [max(sp) + slope * dc, min(sp) + slope * dc]
+
 # the drawn wall over each span, the host's storeys and height
 out_cm, in_cm = [], []
 rec = []
@@ -601,17 +866,8 @@ for i, (r, e) in enumerate(zip(rows, extra)):
     nx, nz = e['n']; tx, tz = e['t']
     w = e['w'] if e['keep'] else 0.0
     cx, cz = r['x'] + tx * e['shift'], r['z'] + tz * e['shift']
-    pg = polys[e['bi']]
-    hi, lo = None, None
-    if w > 0 and not pg.is_empty and pg.geom_type == 'Polygon':
-        k = max(2, int(w / 0.25))
-        for j in range(k + 1):
-            s_ = -w / 2 + w * j / k
-            hits = ray_hits(pg, cx + tx * s_, cz + tz * s_, nx, nz)
-            if not hits:
-                continue
-            f = max(hits)   # the wall's face seen from the street
-            hi = f if hi is None else max(hi, f); lo = f if lo is None else min(lo, f)
+    sp = e.get('span') if w > 0 else None
+    hi, lo = (sp[0], sp[1]) if sp else (None, None)
     o = 0 if hi is None else max(-120, min(120, int(round(hi * 100))))
     n_ = 0 if lo is None else max(-120, min(120, int(round(lo * 100))))
     if w > 0:
@@ -629,17 +885,22 @@ for i, (r, e) in enumerate(zip(rows, extra)):
     c0 = cx * tx + cz * tz
     ends = (1 if abs((c0 - w / 2) - min(a, bb)) < 0.3 else 0) | (2 if abs(max(a, bb) - (c0 + w / 2)) < 0.3 else 0)
     hdm = max(0, min(8000, int(round(h * 10))))
-    rec += [int(round(e['shift'] * 10)), int(math.floor(w * 10 + 1e-6)), o, n_, fp, fams[i], e['hours'], ends | (hdm << 2)]
+    rec += [int(round(e['shift'] * 10)), int(math.floor(w * 10 + 1e-6)), o, n_, fp, fams[i], e['hours'], ends | (hdm << 2),
+            int(round(e.get('slope', 0.0) * 10000)) if w > 0 else 0]
+REC_STRIDE = 9
 for v in rec:
     if v > 32767 or v < -32768:
         sys.exit(f'ERROR: {OUT_INFO}: a value {v} does not fit an int16; nothing written')
-info = {'v': 1, 'n': n, 'b64sha': hashlib.sha256(b64.encode('ascii')).hexdigest(), 'families': list(FAMILIES), 'names': names,
+info = {'v': 2, 'stride': REC_STRIDE, 'n': n, 'b64sha': hashlib.sha256(b64.encode('ascii')).hexdigest(), 'families': list(FAMILIES), 'names': names,
         'rec': base64.b64encode(struct.pack('<%dh' % len(rec), *rec)).decode('ascii'), 'hours': hours,
         'stats': {'groups': n_groups, 'moved': n_moved, 'shrunk': n_shrunk, 'dropped': n_dropped, 'named': n_named,
+                  'mall': n_mall, 'narrowed': n_narrow, 'slid': n_slid, 'noWall': n_gone, 'hiddenPart': n_hidpart, 'turned': n_turned,
                   'hoursParsed': n_hours, 'hoursStrings': n_hours_str, 'families': dict(Counter(FAMILIES[f] for f in fams))}}
 json.dump(info, open(OUT_INFO, 'w'), separators=(',', ':'), ensure_ascii=False)
 pc = lambda a, q: sorted(a)[min(len(a) - 1, int(q * len(a)))] if a else 0
 print(f'{OUT_INFO}: {os.path.getsize(OUT_INFO):,} bytes; layout: {n_groups} groups, {n_moved} moved, {n_shrunk} shrunk, '
-      f'{n_dropped} dropped; {n_named} named; hours parsed for {n_hours} of {n_hours_str} strings; wall out cm p50/p95 '
+      f'{n_dropped} dropped; on the drawn wall: {n_narrow} narrowed, {n_slid} slid, {n_hidpart} partly hidden by a '
+      f'neighbour before, {n_turned} turned to their wall, {n_gone} hidden (no {SPAN_MIN} m of wall), {n_mall} in a mall; '
+      f'{n_named} named; hours parsed for {n_hours} of {n_hours_str} strings; wall out cm p50/p95 '
       f'{pc(out_cm, 0.5)}/{pc(out_cm, 0.95)}, in p5/p50 {pc(in_cm, 0.05)}/{pc(in_cm, 0.5)}', flush=True)
 print('families: ' + ', '.join(f'{k}:{v}' for k, v in sorted(info['stats']['families'].items())), flush=True)
