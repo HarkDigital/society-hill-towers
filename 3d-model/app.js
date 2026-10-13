@@ -11372,6 +11372,9 @@
   const FRONTS = { buf: new Float32Array(FR_STRIDE * (FRONTS_ON ? 65536 : 1)), fit: new Uint32Array(4 * (FRONTS_ON ? 65536 : 1)), col: new Uint32Array(FRONTS_ON ? 65536 : 1), n: 0, side: null, cells: null, r: isTouch ? 240 : 380, cell: 160,
     cam: new THREE.Vector3(1e9, 0, 0), at: 0, set: [], glob: null, laid: 0, perSet: {}, noStreet: 0, ms: 0, error: null };
   const FR_SET_IX = (name) => FR_SETS.indexOf(name);
+  // the sets that paint their own shopfront (the shop, the shop under flats, the loft, the one-storey shop): a storefront
+  // box on the wall one of them dresses near the eye gives way to it (the realism pass, 'Dressing the storefronts')
+  const FR_SHOPPY = new Set(['shop', 'mixeduse', 'loft', 'shop1'].map(FR_SET_IX).filter((k) => k >= 0));
   let STOREFRONT_NEAR = 0, STOREFRONT_BASE = 0;   // the storefronts that give way to a generated shop front near the eye, and those on a generated street floor (the realism pass)
   // Round 184: six more sets, four of them with a place of their own (scene-frame boxes: x0, x1, z0, z1)
   const FR_AREAS = {
@@ -11584,6 +11587,9 @@
   const FRONT_FADE_V = 'vWPos = (modelMatrix * instanceMatrix * vec4(transformed, 1.0)).xyz;';
   const FRONT_FADE_F = '{ float fd = distance(vWPos, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign > 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }';
   const frR = { value: FRONTS.r };
+  // 0 while a shop set wanted near the eye is still loading (or failed): the storefront boxes on its walls stand, rather
+  // than dissolving where no front is laid yet (the review)
+  const frShopOn = { value: 1 };
   function frontFade(sh) {
     sh.uniforms.uFrR = frR;
     sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <project_vertex>', '#include <project_vertex>\n' + FRONT_FADE_V);
@@ -11639,27 +11645,33 @@
     g.setAttribute('aFr', aFr);
     const gain = S.gain || 0.88, cw = S.cell[0], ch = S.cell[1];
     const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(gain, gain, gain), roughness: 0.9, metalness: 0 });
-    mat.extensions = { derivatives: true };   // roomLight's fwidth on a WebGL 1 device
+    if (REAL) mat.extensions = { derivatives: true };   // roomLight's fwidth on a WebGL 1 device
     // the realism pass (buildings 1): each cell's storeys as fractions of its image from the foot, [top of the ground
     // floor, top of the upper storeys' band, how many upper storeys], or none (the cell stretches to the wall as before)
     const rowsU = { value: Array.from({ length: FR_CELLS }, (_, k) => { const c = S.cells[k]; return c && c.rows ? new THREE.Vector4(c.rows[0], c.rows[1], c.rows[2], 0) : new THREE.Vector4(0, 1, 0, 0); }) };
-    // the set's atlas in uniforms (its columns and rows, the pad across a cell, whether its mask carries the windows'
-    // heights), so every set shares one program: a set's own program compiled the first time its houses came near, a
-    // stall in flight for each of sixteen (the realism pass)
-    const atlasU = { value: new THREE.Vector4(S.cols, S.rows, S.pad / cw, S.pad / ch) }, maskAU = { value: S.maskA ? 1 : 0 };
+    // the set's atlas in uniforms (its columns and rows, the pad across a cell, whether its mask's blue carries the
+    // windows' heights), so every set shares one program: a set's own program compiled the first time its houses came
+    // near, a stall in flight for each of sixteen (the realism pass)
+    const atlasU = { value: new THREE.Vector4(S.cols, S.rows, S.pad / cw, S.pad / ch) }, maskVU = { value: S.maskV ? 1 : 0 };
     const gl2 = !!renderer.capabilities.isWebGL2;
+    // the reveals' sun shadow and the jambs' shade are two more reads of the mask a texel: a computer's (a phone draws a
+    // front a few dozen pixels across, where a 16 cm reveal is under one, and its frame time goes to geometry already)
+    const rich = REAL && !isTouch;
     mat.onBeforeCompile = (sh) => {
-      sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform; sh.uniforms.uRows = rowsU; sh.uniforms.uSunW = sunWUniform; sh.uniforms.uFrA = atlasU; sh.uniforms.uFrMA = maskAU;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aFr; uniform vec4 uRows[' + FR_CELLS + ']; uniform vec4 uFrA; uniform vec3 uSunW; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrRows; varying vec3 vFrT, vFrSun;')
+      sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform; sh.uniforms.uRows = rowsU; sh.uniforms.uSunW = sunWUniform; sh.uniforms.uFrA = atlasU; sh.uniforms.uFrMV = maskVU;
+      // the varyings packed four to a row (the remap's five numbers, its three of the wall, the sun's three): WebGL 1
+      // promises eight rows, and three's own take five of them
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aFr; uniform vec4 uRows[' + FR_CELLS + ']; uniform vec4 uFrA; uniform vec3 uSunW; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrT; varying vec3 vFrSun;')
         .replace('#include <uv_vertex>', '#include <uv_vertex>\n{ float cols = uFrA.x, rows = uFrA.y, pu = uFrA.z, pv = uFrA.w;\n' +
           '  float col = mod(aFr.x, cols), row = floor(aFr.x / cols + 1e-3);\n' +
           '  vUv = vec2((col + pu + position.x * (1.0 - 2.0 * pu)) / cols, 1.0 - (row + 1.0 - pv - position.y * (1.0 - 2.0 * pv)) / rows);\n' +
           // the storey remap's constants for the instance: the image's height at its width (aFr.w, 0 for a plain stretch), its
-          // ground floor, its band over the upper storeys, and how many upper storeys fill the wall from the house's foot
+          // ground floor and its band over the upper storeys (as fractions of the image), how many upper storeys fill the
+          // wall from the house's foot, and how many the image holds
           '  float frH = length(instanceMatrix[1].xyz), Hw = frH - 0.4, Hi = max(aFr.w, 1e-3);\n' +
           '  vec4 rw = uRows[int(aFr.x + 0.5)];\n' +
           '  float gf = rw.x * Hi, tp = (1.0 - rw.y) * Hi, sI = (rw.y - rw.x) * Hi / max(rw.z, 1.0);\n' +
-          '  vFrR = vec4(aFr.w, gf, tp, max(1.0, floor((Hw - gf - tp) / sI + 0.5))); vFrRows = rw; vFrT = vec3(position.y * frH - 0.4, Hw, row);\n' +
+          '  vFrR = vec4(aFr.w, rw.x, rw.y, max(1.0, floor((Hw - gf - tp) / sI + 0.5))); vFrT = vec4(position.y * frH - 0.4, Hw, row, rw.z);\n' +
           // the reveals (critic gap 7): the sun in the front's own frame, and how far across the mask a window's 16 cm
           // reveal throws its shadow, so a pane whose sunward neighbour is wall lies in the jamb's and the head's shade
           '  vec3 frX = normalize(instanceMatrix[0].xyz), frZ = normalize(instanceMatrix[2].xyz);\n' +
@@ -11667,68 +11679,87 @@
           '  vFrSun = vec3(dot(uSunW, frX) * rk * (1.0 - 2.0 * pu) / cols / max(length(instanceMatrix[0].xyz), 0.1), uSunW.y * rk * (1.0 - 2.0 * pv) / rows / (aFr.w > 0.0 ? Hi : max(Hw, 0.1)), step(0.03, sTz) * step(0.0, uSunW.y)); }\n' +
           'vSeed = aFr.y; vBase = aFr.z;')
         .replace('#include <project_vertex>', '#include <project_vertex>\nvWNorm = normalize(mat3(modelMatrix) * mat3(instanceMatrix) * vec3(0.0, 0.0, 1.0));');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uFrMA; uniform vec4 uFrA; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrRows; varying vec3 vFrT, vFrSun; vec4 frMask; float frBar; vec2 frUvS; vec3 frDay;\n' + WINDOW_INTERIOR_GLSL)
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uFrMV; uniform vec4 uFrA; varying float vSeed; varying vec3 vWNorm; varying float vBase; varying vec4 vFrR, vFrT; varying vec3 vFrSun; vec4 frMask; float frBar; vec2 frUvS; vec3 frDay, frBlur;\n' + (REAL ? WINDOW_INTERIOR_GLSL : ''))
         // the storey remap: the ground floor and the band under the cornice at the image's own scale, the upper storeys
         // between them repeated (the middle ones) or dropped (from the middle) to fill the wall, each at its own height
         // within a half storey, never one stretched over the wall; the gradients follow the unbroken height, so a seam
-        // between two storeys takes the mip its neighbours do
+        // between two storeys takes the mip its neighbours do (?real=0 lays every front with no image height, aFr.w 0, and
+        // it stretches as Round 184's did)
         .replace('#include <map_fragment>', [
           'vec2 frUv = vUv, frG = vUv;',
           'if (vFrR.x > 0.0) {',
-          '  float Hi = vFrR.x, gf = vFrR.y, tp = vFrR.z, n = vFrR.w, Hw = vFrT.y, t = clamp(vFrT.x, 0.0, Hw), vi;',
+          '  float Hi = vFrR.x, r0 = vFrR.y, r1 = vFrR.z, n = vFrR.w, nU = vFrT.w, gf = r0 * Hi, tp = (1.0 - r1) * Hi, Hw = vFrT.y, t = clamp(vFrT.x, 0.0, Hw), vi;',
           '  if (t < gf) vi = t / Hi;',
           '  else if (t > Hw - tp) vi = 1.0 - (Hw - t) / Hi;',
-          '  else { float sH = (Hw - gf - tp) / n, q = (t - gf) / sH, k = floor(q), nU = vFrRows.z;',
+          '  else { float sH = (Hw - gf - tp) / n, q = (t - gf) / sH, k = floor(q);',
           '    float kI = nU < 1.5 ? 0.0 : (k > n - 1.5 ? nU - 1.0 : min(k, nU - 2.0));',
-          '    vi = vFrRows.x + (kI + q - k) * (vFrRows.y - vFrRows.x) / nU; }',
+          '    vi = r0 + (kI + q - k) * (r1 - r0) / nU; }',
           '  frUv.y = 1.0 - (vFrT.z + 1.0 - uFrA.w - vi * (1.0 - 2.0 * uFrA.w)) / uFrA.y;',
           '  frG.y = -vFrT.x / Hi * (1.0 - 2.0 * uFrA.w) / uFrA.y;',
           '}',
           gl2 ? 'vec2 frGx = dFdx(frG), frGy = dFdy(frG);' : '',
           gl2 ? 'frMask = textureGrad(uMask, frUv, frGx, frGy); vec4 sampledDiffuseColor = textureGrad(map, frUv, frGx, frGy);' : 'frMask = texture2D(uMask, frUv); vec4 sampledDiffuseColor = texture2D(map, frUv);',
-          gl2 ? 'vec3 frBlur = textureGrad(map, frUv, frGx * 8.0 + vec2(0.004, 0.0), frGy * 8.0 + vec2(0.0, 0.002)).rgb;' : 'vec3 frBlur = texture2D(map, frUv, 3.0).rgb;',
-          // after dark the painted daylight leaves the glass (its sky reflections, lit by the lamps, read as grey cards);
-          // a bright bar inside the opening (a muntin, a sash: brighter than the opening round it, where a broad
-          // reflection is not) stays as it is and stands dark against a lit room
-          'frBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - frBlur, vec3(0.2126, 0.7152, 0.0722)));',
-          // a window a few pixels across has no bars to see, and the test only salts its edge with dark specks
-          'frBar *= 1.0 - smoothstep(25.0, 70.0, distance(vWPos, cameraPosition));',
-          'frDay = sampledDiffuseColor.rgb;',
-          'sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, sampledDiffuseColor.rgb * 0.22, frMask.r * uNight);',
+          ...(REAL ? [
+            gl2 ? 'frBlur = textureGrad(map, frUv, frGx * 8.0 + vec2(0.004, 0.0), frGy * 8.0 + vec2(0.0, 0.002)).rgb;' : 'frBlur = texture2D(map, frUv, 3.0).rgb;',
+            // after dark the painted daylight leaves the glass (its sky reflections, lit by the lamps, read as grey cards);
+            // a bright bar inside the opening (a muntin, a sash: brighter than the opening round it, where a broad
+            // reflection is not) stays as it is and stands dark against a lit room
+            'frBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - frBlur, vec3(0.2126, 0.7152, 0.0722)));',
+            // a window a few pixels across has no bars to see, and the test only salts its edge with dark specks
+            'frBar *= 1.0 - smoothstep(25.0, 70.0, distance(vWPos, cameraPosition));',
+            'frDay = sampledDiffuseColor.rgb;',
+            'sampledDiffuseColor.rgb = mix(sampledDiffuseColor.rgb, sampledDiffuseColor.rgb * 0.22, frMask.r * uNight);',
+          ] : []),
           'diffuseColor *= sampledDiffuseColor; frUvS = frUv;',
           // the jambs' and the head's shade on the glass at every hour (critic gap 7): the opening's own mask, blurred, falls
           // off toward its edges, and the glass darkens there as it does in a reveal
-          gl2 ? 'float frAo = textureGrad(uMask, frUv, frGx * 4.0 + vec2(0.003, 0.0), frGy * 4.0 + vec2(0.0, 0.0015)).r;' : 'float frAo = texture2D(uMask, frUv, 2.0).r;',
-          'diffuseColor.rgb *= mix(1.0, 0.7 + 0.3 * smoothstep(0.45, 0.9, frAo), frMask.r);',
+          ...(rich ? [
+            gl2 ? 'float frAo = textureGrad(uMask, frUv, frGx * 4.0 + vec2(0.003, 0.0), frGy * 4.0 + vec2(0.0, 0.0015)).r;' : 'float frAo = texture2D(uMask, frUv, 2.0).r;',
+            'diffuseColor.rgb *= mix(1.0, 0.7 + 0.3 * smoothstep(0.45, 0.9, frAo), frMask.r);',
+          ] : []),
         ].join('\n'))
-        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float frRv = texture2D(uMask, frUvS + vFrSun.xy).r; reflectedLight.directDiffuse *= 1.0 - 0.65 * vFrSun.z * frMask.r * (1.0 - frRv); }')
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, frMask.r);')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.22, frMask.r);');
+      if (rich) sh.fragmentShader = sh.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float frRv = texture2D(uMask, frUvS + vFrSun.xy).r; reflectedLight.directDiffuse *= 1.0 - 0.65 * vFrSun.z * frMask.r * (1.0 - frRv); }');
+      // the mask's blue (bake_fronts.py): a house window's height inside it, 0 to 64 from the sill to the head, a shop's
+      // display 128 more (its glass alone in red: the frames, the panels and the doors round it are not), the door 255
+      const frDecode = '  float frB = frMask.b * 255.0, shopG = step(96.0, frB) * (1.0 - step(224.0, frB)), vp = mix(0.5, clamp((frB - 128.0 * shopG) / 64.0, 0.0, 1.0), uFrMV);\n';
+      if (REAL) {
         // a lit window: three houses in four have someone home, and a shop's display glass lights in nine shops in ten. The
         // realism pass (buildings 6, night 2): the whole opening the bake found glows, not the dark texels of the day's
         // paint inside it (which flipped pane by pane: white panes salted with black); behind a house's window the room
         // the facade's own windows draw (roomLight: about half the rooms lit, a home's lamp and ceiling, its blinds), at
         // the same brightness, so a front's windows no longer sit at half the lit rooms beside them; the bars across it dark
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.25, fract(vSeed * 7.31));\n' +
-          '  float shopG = step(0.3, frMask.b) * (1.0 - step(0.7, frMask.b)); hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3)));\n' +
-          '  float vp = mix(0.5, clamp((frMask.a - 0.5) * 2.0, 0.0, 1.0), uFrMA);\n' +
+        // (the rooms only after dark: a branch on a uniform, so by day no fragment pays for roomLight)
+        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (uNight > 0.001) { float hl = step(0.25, fract(vSeed * 7.31));\n' + frDecode +
+          '  hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3)));\n' +
           '  float dl = dot(frDay, vec3(0.2126, 0.7152, 0.0722)), bl = dot(frBlur, vec3(0.2126, 0.7152, 0.0722)), st = clamp(dl / max(bl, 0.015), 0.25, 1.8);\n' +
           // the painted curtains and blinds stay faintly in the light, brighter than the glass beside them as a backlit
-          // curtain is
-          '  vec3 lit = roomLight(vec2(0.5, vp), vec2(frMask.g * 255.0, floor(vSeed * 997.0)), vSeed, 0.0) * (0.55 + 0.45 * st);\n' +
-          // a shop's display: lit where its painted glass is dark (softened toward its neighbours, so a reflection's noise
-          // cannot flip it texel by texel), brighter under the ceiling, warm or a cooler white, and carrying the painted
-          // display's own pattern (its goods, its mullions and frames, darker or lighter than the glass round them), so it
-          // is never a flat sheet of light; the painted goods and frames off the glass only faintly, from within (the day's
-          // paint at full strength was a grey photograph pasted over the night)
+          // curtain is; the window's number in green is exact on every browser (the mask is opaque, review)
+          '  vec3 lit = roomLight(vec2(0.5, vp), vec2(floor(frMask.g * 255.0 + 0.5), floor(vSeed * 997.0)), vSeed, 0.0) * (0.55 + 0.45 * st);\n' +
+          // a shop's display: its glass lit (the bake's red is the glass alone), brighter under the ceiling, warm or a cooler
+          // white, carrying the painted display's own pattern (darker or lighter than the glass round it), so it is never a
+          // flat sheet of light; the goods behind the glass (lighter than it) lit by the display's lamps, in their own colours
           '  if (shopG > 0.5) { float sg = 1.0 - smoothstep(0.05, 0.3, mix(dl, bl, 0.35));\n' +
           '    vec3 sc = mix(vec3(1.0, 0.76, 0.5), vec3(1.0, 0.92, 0.8), step(0.5, fract(vSeed * 5.1)));\n' +
-          '    lit = sc * (sg * (0.25 + 0.35 * smoothstep(0.3, 1.0, vp)) * (0.3 + 0.7 * st) + (1.0 - sg) * 0.06 * frDay); }\n' +
+          '    lit = sc * (sg * (0.25 + 0.35 * smoothstep(0.3, 1.0, vp)) * (0.3 + 0.7 * st) + (1.0 - sg) * 0.3 * frDay); }\n' +
           '  totalEmissiveRadiance += frMask.r * (1.0 - 0.85 * frBar) * hl * uNight * lit; }');
+      } else {
+        // ?real=0 (Round 184's fronts): a lit window, four houses in ten, and in a lit house about two windows in three; a
+        // shop's display glass in nine shops in ten; only the near-neutral dark glass inside the mask glows, never the
+        // frames or a painted board (every set's gain is 0.88: the shared program cannot carry a set's own)
+        sh.fragmentShader = sh.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float hl = step(0.6, fract(vSeed * 7.31)); float wr = fract(sin(frMask.g * 255.0 * 12.9898 + vSeed * 78.233) * 43758.5453); float wl = step(0.34, wr);\n' + frDecode +
+          '  hl = max(hl, shopG * step(0.1, fract(vSeed * 3.3))); wl = max(wl, shopG);\n' +
+          '  float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / 0.88);\n' +
+          '  float cmx = max(diffuseColor.r, max(diffuseColor.g, diffuseColor.b)), cmn = min(diffuseColor.r, min(diffuseColor.g, diffuseColor.b));\n' +
+          '  glass *= 1.0 - smoothstep(0.38, 0.62, (cmx - cmn) / max(cmx, 1e-4));\n' +
+          '  vec3 warm = mix(mix(vec3(1.0, 0.68, 0.38), vec3(0.95, 0.82, 0.62), fract(wr * 3.7)), vec3(1.0, 0.8, 0.56), shopG);\n' +
+          '  totalEmissiveRadiance += frMask.r * glass * hl * wl * uNight * warm * (0.45 + 0.25 * fract(wr * 9.1)) * (1.0 + 0.2 * shopG); }');
+      }
       frontFade(sh);
       lampLightPatch(sh, 'vWPos', 'wall');
-      wxSurfacePatch(sh);   // the realism pass (critic gap 8): the rain, the snow and the clouds' shadows, as on the walls round it
+      if (REAL) wxSurfacePatch(sh);   // the realism pass (critic gap 8): the rain, the snow and the clouds' shadows, as on the walls round it
     };
-    mat.customProgramCacheKey = () => 'house-fronts|wx';
+    mat.customProgramCacheKey = () => REAL ? (rich ? 'house-fronts|wx' : 'house-fronts|wx|lite') : 'house-fronts';
     const m = new THREE.InstancedMesh(g, mat, R.cap);
     m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = false;
     m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -11818,6 +11849,21 @@
     precast: ['precast', 'greygrid', 'brutalist'], deco: ['deco', 'officebrick', 'limestone', 'terracotta'], brick: ['brick', 'officebrick', 'darkbrick'],
     stone: ['deco', 'limestone', 'granite', 'marble'], bands: ['glassdark', 'ribbon', 'blueband'] };
   const TSKIN = { cands: [], meshes: [], laid: {}, bases: {}, ms: 0, error: null };
+  // the share of the rooms roomLight lights that stay lit at the model's hour, an office's (x) and a home's (y): the review
+  // found every tower white with speckle at nine at night (roomLight lights about half the rooms whatever the hour, and the
+  // 'late' cut was a constant). Offices empty from five, are at a third of their suites by half past nine and a fifth through
+  // the small hours; homes fill toward seven, hold to half past nine and go dark toward three. [minutes, office, home],
+  // wrapping at midnight
+  const SKIN_LATE = [[0, 0.25, 0.45], [180, 0.2, 0.2], [330, 0.28, 0.28], [390, 0.45, 0.55], [480, 0.9, 0.5], [1020, 1.0, 0.7],
+    [1110, 0.7, 0.85], [1200, 0.45, 0.85], [1290, 0.34, 0.8], [1380, 0.28, 0.6]];
+  const skinLateU = { value: new THREE.Vector2(1, 1) };
+  function skinLateAt(min) {
+    const T = SKIN_LATE, n = T.length;
+    let i = n - 1;
+    for (let k = 0; k < n; k++) if (T[k][0] <= min) i = k;
+    const a = T[i], b = T[(i + 1) % n], span = (b[0] - a[0] + 1440) % 1440 || 1440, f = ((min - a[0] + 1440) % 1440) / span;
+    return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
+  }
   const TSKIN_ON = FRONTS_ON && !!FRONTS_DATA.tiles && Object.keys(FRONTS_DATA.tiles).length > 0;
   function towerSkinNote(poly, y0, y1, style, spec, seed, col, lifted, t) {
     if (!TSKIN_ON || y1 - y0 < 30 || (style >= 24 && style <= 29)) return;
@@ -11908,8 +11954,8 @@
     return { on: FRONTS_ON, notes: FRONTS.n, sets: FR_SETS, laid: FRONTS.laid, perSet: { ...FRONTS.perSet }, relief: FRONTS.relief ? { ...FRONTS.relief } : null,
       dropped: FRONTS.dropped || 0, keep: FR_KEEP, failed: FRONTS.set.map((r, s) => r && r.failed ? FR_SETS[s] : null).filter(Boolean), skewed: FRONTS.skewed || 0, noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
       r: FRONTS.r, ms: FRONTS.ms, error: FRONTS.error, build: PERF.fronts || null,
-      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, parapets: TSKIN.parapets || 0, ms: TSKIN.ms, error: TSKIN.error },
-      storefrontsNear: STOREFRONT_NEAR, storefrontsOnBase: STOREFRONT_BASE, bases: { ...TSKIN.bases }, fit: frontFitStats(), fitAt: (x, z, set) => frontFitAt(x, z, set) };
+      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, parapets: TSKIN.parapets || 0, ms: TSKIN.ms, error: TSKIN.error, late: skinLateU.value.toArray().map((v) => +v.toFixed(3)) },
+      storefrontsNear: STOREFRONT_NEAR, storefrontsOnBase: STOREFRONT_BASE, shopOn: frShopOn.value, bases: { ...TSKIN.bases }, fit: frontFitStats(), fitAt: (x, z, set) => frontFitAt(x, z, set) };
   }
   // the realism pass's measure of the fit (critic gap 0): over every honest side, the offset of the wall's line from the
   // box's side and its angle (median and 95th percentile), and the share whose wall covers less than 98% of the side
@@ -12691,11 +12737,12 @@
     // shop under flats, the loft and the one-storey shop: each paints its own shopfront, door and steps) dissolves where
     // that front comes in, on the fronts' own dither and radius, and stands beyond it for the procedural facade; the
     // houses with such a front, bucketed in 40 m cells, and a storefront is theirs when its inner point lies in one's
-    // box and it faces within 25 degrees of one of its honest sides
-    const SHOPPY = new Set(['shop', 'mixeduse', 'loft', 'shop1'].map(FR_SET_IX).filter((k) => k >= 0)), shopCells = new Map();
-    if (FRONTS_ON) for (let k = 0; k < FRONTS.n; k++) {
+    // box and it faces within 25 degrees of the side the front is laid on (frontSide's street side, found here once and
+    // kept for 'Fitting the house fronts': a corner shop's side-street storefronts dissolved over a bare wall, review)
+    const shopCells = new Map();
+    if (FRONTS_ON && REAL) for (let k = 0; k < FRONTS.n; k++) {
       const o = k * FR_STRIDE;
-      if (!SHOPPY.has((FRONTS.buf[o + 9] | 0) & 15)) continue;
+      if (!FR_SHOPPY.has((FRONTS.buf[o + 9] | 0) & 15)) continue;
       const key = Math.floor(FRONTS.buf[o] / 40) + ':' + Math.floor(FRONTS.buf[o + 1] / 40);
       let a = shopCells.get(key); if (!a) shopCells.set(key, a = []); a.push(k);
     }
@@ -12706,12 +12753,12 @@
         for (const k of a) {
           const o = k * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], dx = px - B[o], dz = pz - B[o + 1];
           if (Math.abs(dx * ux + dz * uz) > B[o + 4] + 0.5 || Math.abs(-dx * uz + dz * ux) > B[o + 5] + 0.5) continue;
-          const honest = (B[o + 9] | 0) >> 4;
-          for (let s2 = 0; s2 < 4; s2++) {
-            if (!((honest >> s2) & 1)) continue;
-            const sx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, sz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux;
-            if (sx * nx + sz * nz > 0.906) return true;   // cos 25 degrees
-          }
+          if (!FRONTS.side || FRONTS.side.length !== FRONTS.n) FRONTS.side = new Int8Array(FRONTS.n).fill(-2);
+          let s2 = FRONTS.side[k];
+          if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k);
+          if (s2 < 0) continue;
+          const sx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, sz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux;
+          if (sx * nx + sz * nz > 0.906) return true;   // cos 25 degrees
         }
       }
       return false;
@@ -12759,12 +12806,12 @@
     };
     const nearHook = (sh) => {
       if (!nearN) return;
-      sh.uniforms.uFrR = frR;
+      sh.uniforms.uFrR = frR; sh.uniforms.uFrShop = frShopOn;
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying float vFrontNear; varying vec3 vSfW;')
         .replace('#include <color_vertex>', '#include <color_vertex>\nvFrontNear = 1.0 - step(-1e-5, color.r); vColor = abs(vColor);')
         .replace('#include <project_vertex>', '#include <project_vertex>\nvSfW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR; varying float vFrontNear; varying vec3 vSfW;')
-        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vFrontNear > 0.5) { float fd = distance(vSfW, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uFrR, uFrShop; varying float vFrontNear; varying vec3 vSfW;')
+        .replace('#include <clipping_planes_fragment>', '#include <clipping_planes_fragment>\nif (vFrontNear * uFrShop > 0.5) { float fd = distance(vSfW, cameraPosition), ign = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))));\n  if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard; }');
     };
     if (parts.length) {
       const g = mergeColored(parts); nearMark(parts, g); freeOnUpload(g);
@@ -21812,7 +21859,7 @@ float pinOccGate() {
     FRONTS.buf = B.slice(0, FRONTS.n * FR_STRIDE);   // the slack goes
     FRONTS.fit = FRONTS.fit.slice(0, FRONTS.n * 4);
     FRONTS.col = FRONTS.col.slice(0, FRONTS.n);
-    FRONTS.side = new Int8Array(FRONTS.n).fill(-2);
+    if (!FRONTS.side || FRONTS.side.length !== FRONTS.n) FRONTS.side = new Int8Array(FRONTS.n).fill(-2);   // the storefronts' step found some
     frontGlobals();
     const per = {};
     for (let i = 0; i < FRONTS.n; i++) { const s = FR_SETS[(FRONTS.buf[i * FR_STRIDE + 9] | 0) & 15]; per[s] = (per[s] || 0) + 1; }
@@ -21866,8 +21913,9 @@ float pinOccGate() {
           const W = REAL ? skinWalls(P) : null;
           // a parapet over the tall towers' roofs (the realism pass: the walls ran to the roof's edge with no coping): the
           // spandrel's band a metre on, its inner face and a pale coping, on a computer, over the towers no roof lip reaches
-          // (roofClutter draws one under 60 m) and never on a researched crown
-          const par = REAL && !isTouch && !c.mid && !c.spec && c.y1 - (c.g0 != null ? c.g0 : c.y0) >= 58 ? 1.1 : 0;
+          // (roofClutter draws one under 60 m, the same height over the ground: a 58 m tower wore both, the lip 5 cm through
+          // the parapet's inner face, review) and never on a researched crown
+          const par = REAL && !isTouch && !c.mid && !c.spec && c.y1 - (c.g0 != null ? c.g0 : c.y0) >= 60 ? 1.1 : 0;
           for (let k = 0; k < n; k++) {
             const i = W ? (W.start + k) % n : k;
             const a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
@@ -21922,7 +21970,7 @@ float pinOccGate() {
         // the realism pass: the kind's numbers ride in uniforms, so every kind shares one program (a program a kind, with
         // the rooms, the weather and the clouds' shadows in it, cost the build 8 s of compiling behind the veil): its bays
         // and floors, its pier and spandrel, whether its mask was folded, whether its rooms are offices, whether it is glass
-        const skinU = REAL ? { uSkinG: { value: new THREE.Vector4(T.nb, T.nf, foldA && T.pierU != null ? T.pierU : 0, foldA && T.spandV != null ? T.spandV : 0) },
+        const skinU = REAL ? { uSkinLate: skinLateU, uSkinG: { value: new THREE.Vector4(T.nb, T.nf, foldA && T.pierU != null ? T.pierU : 0, foldA && T.spandV != null ? T.spandV : 0) },
           uSkinF: { value: new THREE.Vector4(foldA ? 1 : 0, SKIN_HOME.has(kind) ? 0 : 1, T.glass ? 1 : 0, 0) } } : null;
         if (REAL) mat.extensions = { derivatives: true };   // roomLight's fwidth on a WebGL 1 device
         mat.onBeforeCompile = (sh) => {
@@ -21930,8 +21978,8 @@ float pinOccGate() {
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; varying float vSeed;')
             .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
           if (REAL) {
-            sh.uniforms.uSkinG = skinU.uSkinG; sh.uniforms.uSkinF = skinU.uSkinF;
-            sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; uniform vec4 uSkinG, uSkinF; varying float vSeed; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
+            sh.uniforms.uSkinG = skinU.uSkinG; sh.uniforms.uSkinF = skinU.uSkinF; sh.uniforms.uSkinLate = skinU.uSkinLate;
+            sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; uniform vec4 uSkinG, uSkinF; uniform vec2 uSkinLate; varying float vSeed; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
               .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>\n' + [
                 // the realism pass (buildings 7, night 2): each pane its own (a hash of its bay and floor), its glass a
                 // shade lighter or darker as real panes catch the sky at their own angles; after dark the day's painted
@@ -21948,12 +21996,15 @@ float pinOccGate() {
               // after dark, over the whole opening the bake folded (the day paint's dark texels cut the curtains and the
               // furniture out as black stencils), the room the facade's own windows draw (roomLight: an office's suites
               // and dark floors, or a flat's lamps and blinds), each room a bay and a floor cut at the tile's own pier and
-              // spandrel so no window straddles two, the bars across it dark
-              // (an office tower at night keeps a third of its suites' lights on, not the half the facade's day-long
-              // occupancy gives: four bays at a time on a floor go dark late)
-              .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ vec2 tsG = vUv * uSkinG.xy - uSkinG.zw;\n' +
-                '  float late = mix(1.0, step(0.38, fract(sin(dot(floor(tsG / vec2(4.0, 1.0)), vec2(17.13, 3.71)) + vSeed * 91.7) * 4375.85)), uSkinF.y);\n' +
-                '  totalEmissiveRadiance += tsMask.r * (1.0 - 0.85 * tsBar) * uNight * late * roomLight(vec2(fract(tsG.x), mix(fract(tsG.y), tsVp, uSkinF.x)), floor(tsG), vSeed * 3.1, uSkinF.y); }')
+              // spandrel so no window straddles two, the bars across it dark; of the rooms roomLight lights, the share the
+              // model's hour keeps (SKIN_LATE: an office's suites go dark four bays of a floor at a time, a home's room by
+              // room, each at its own hour, so the city empties without a flicker as the clock runs); and a window a few
+              // pixels across at three fifths of its light (the review: the skyline read as white speckle on every tower)
+              .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (uNight > 0.001) { vec2 tsG = vUv * uSkinG.xy - uSkinG.zw;\n' +
+                '  vec2 tsK = mix(floor(tsG), floor(tsG / vec2(4.0, 1.0)), uSkinF.y);\n' +
+                '  float late = step(fract(sin(dot(tsK, vec2(17.13, 3.71)) + vSeed * 91.7) * 4375.85), mix(uSkinLate.y, uSkinLate.x, uSkinF.y));\n' +
+                '  float tsFar = smoothstep(0.12, 0.5, max(fwidth(tsG.x), fwidth(tsG.y)));\n' +
+                '  totalEmissiveRadiance += tsMask.r * (1.0 - 0.85 * tsBar) * uNight * late * mix(0.9, 0.5, tsFar) * roomLight(vec2(fract(tsG.x), mix(fract(tsG.y), tsVp, uSkinF.x)), floor(tsG), vSeed * 3.1, uSkinF.y); }')
               // glass takes the sun as a mirror, not as paint: less of the direct diffuse light, so a cast shadow falls on
               // the spandrels and a sunlit gold curtain wall is no longer bright paper
               .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directDiffuse *= mix(1.0 - 0.3 * tsMask.r * (1.0 - tsBar), 0.6, uSkinF.z);');
@@ -22098,8 +22149,9 @@ float pinOccGate() {
         const h = s < 2 ? hw : hd, len0 = s < 2 ? 2 * hd : 2 * hw;
         // the side from the viewer's left to their right: they face -n, their right is (nz, -nx)
         let rx = nz, rz = -nx;
-        // the realism pass (critic gap 0): on the wall's own line, turned with it, over the span it covers (FRONTS.fit)
-        const ft = frontFitOf(FRONTS.fit[k * 4 + s]);
+        // the realism pass (critic gap 0): on the wall's own line, turned with it, over the span it covers (FRONTS.fit);
+        // ?real=0 keeps Round 187's box side
+        const ft = REAL ? frontFitOf(FRONTS.fit[k * 4 + s]) : null;
         const off = ft ? ft[0] : 0, ta = ft ? ft[1] : 0, sA = ft ? (ft[2] - 0.5) * len0 : -len0 / 2, sB = ft ? (ft[3] - 0.5) * len0 : len0 / 2;
         const ax = x0 + nx * (h + off + ta * sA) + rx * sA, az = z0 + nz * (h + off + ta * sA) + rz * sA;
         if (ta) { const k2 = 1 / Math.sqrt(1 + ta * ta), tx = (rx + nx * ta) * k2, tz = (rz + nz * ta) * k2; nx = (nx - rx * ta) * k2; nz = (nz - rz * ta) * k2; rx = tx; rz = tz; }
@@ -22176,6 +22228,9 @@ float pinOccGate() {
     });
     for (const k of Object.keys(gc)) { const m = G[k]; if (!m) continue; m.count = gc[k]; m.instanceMatrix.needsUpdate = true; m.instanceColor.needsUpdate = true; if (m.aAwn) m.aAwn.needsUpdate = true; }
     FRONTS.laid = laid; FRONTS.noStreet = noStreet; FRONTS.relief = gc;
+    let shopWait = false;
+    for (const s2 of want) if (FR_SHOPPY.has(s2) && !FRONTS.set[s2].ready) shopWait = true;
+    frShopOn.value = shopWait ? 0 : 1;
     // Round 184: fifteen sets at about 27 MB of atlas each on a computer, so the least recently wanted are let go past
     // FR_KEEP (a flight across the city does not end holding all of them); a set wanted again loads again
     const now = performance.now();
@@ -22197,6 +22252,7 @@ float pinOccGate() {
     R.map.dispose(); R.mask.dispose();
   }
   function updateFronts(now) {
+    if (TSKIN.meshes.length) { const L = skinLateAt(clock.minutes); skinLateU.value.set(L[0], L[1]); }   // the towers' lit share at the model's hour
     if (!FRONTS.glob) return;
     if (now < FRONTS.at && camera.position.distanceToSquared(FRONTS.cam) < 900) return;
     FRONTS.at = now + 1500; FRONTS.cam.copy(camera.position);

@@ -34,7 +34,7 @@ class Data(unittest.TestCase):
         import fetch_fronts as F
         for name, s in self.d['sets'].items():
             self.assertIn('aspect', s, name)
-            self.assertEqual(s.get('maskA'), 1, name)   # the mask's alpha is each window's height inside it
+            self.assertEqual(s.get('maskV'), 1, name)   # the mask's blue is each window's height inside it
             if name in F.SIZES:   # made again at its houses' proportions (once all sixteen are made)
                 w, h = (int(v) for v in F.SIZES[name][0].split('x'))
                 if abs(s['aspect'] - 0.6) > 0.02 or name == 'shop1':
@@ -46,6 +46,66 @@ class Data(unittest.TestCase):
                 self.assertTrue(0.06 < r[0] < r[1] <= 0.99 and r[2] >= 1, (name, r))
             for c in s['cells']:
                 self.assertRegex(c.get('wall', ''), r'^#[0-9a-f]{6}$', (name, c['id']))
+
+    def test_the_masks_are_opaque_and_survive_a_premultiplied_decode(self):
+        # the review: an image with alpha under 255 reaches WebGL through a premultiplied decode on WebKit (Safari, iOS,
+        # the app), and every window's number in green moved by one across its rows, so a lit window drew in bands. The
+        # masks are opaque RGB now; a premultiply and unmultiply round trip (as WebKit does it) leaves every byte alone
+        from PIL import Image
+        for name, s in self.d['sets'].items():
+            for f in ('mask', 'maskHalf'):
+                im = Image.open(ROOT / s[f])
+                self.assertEqual(im.mode, 'RGB', (name, f))
+                a = np.asarray(im.convert('RGBA')).astype(np.int64)
+                al = a[..., 3:4]
+                pm = np.round(a[..., :3] * al / 255.0)
+                back = np.where(al > 0, np.round(pm * 255.0 / np.maximum(al, 1)), 0)
+                self.assertTrue((back == a[..., :3]).all(), (name, f))
+
+    def test_the_masks_blue(self):
+        # a house window's blue is its height inside it, 0 at the sill to 64 at the head; a shop's display 128 to 192; the
+        # door 255 with no glass; the head is up (the alpha it replaced ran the other way: the rooms' ceilings at the sill)
+        from PIL import Image
+        for name, s in self.d['sets'].items():
+            a = np.asarray(Image.open(ROOT / s['mask'])).astype(int)
+            r, b = a[..., 0], a[..., 2]
+            self.assertFalse(((r > 127) & (b > 64) & (b < 128)).any(), name)
+            self.assertFalse(((b > 192) & (b < 255)).any(), name)
+            self.assertFalse(((r > 127) & (b == 255)).any(), name)   # the door is never glass
+            ys, xs = np.nonzero((r > 127) & (b <= 64))
+            if not len(ys):
+                continue
+            x = xs[len(xs) // 2]
+            col = np.nonzero((r[:, x] > 127) & (b[:, x] <= 64))[0]
+            run = col[: np.argmax(np.diff(col) > 1) + 1] if (np.diff(col) > 1).any() else col
+            self.assertGreater(b[run[0], x], b[run[-1], x], name)   # the top row of a window is its head
+
+    def test_a_display_lights_its_glass_alone(self):
+        # the review: the display box covered most of each shop's ground floor and the dark green and black cast-iron
+        # fronts glowed bone white after dark, frames, pilasters, panels and doors with the glass. The bake now marks the
+        # glass alone inside the box, and the fronts with none (lacquered panels, a grille) stay dark
+        from PIL import Image
+        import bake_fronts as B
+        lit = box = 0
+        for name in ('shop', 'mixeduse', 'shop1'):
+            s = self.d['sets'][name]
+            a = np.asarray(Image.open(ROOT / s['mask'])).astype(int)
+            inbox = (a[..., 2] >= 128) & (a[..., 2] <= 192)
+            box += int(inbox.sum()); lit += int((inbox & (a[..., 0] > 127)).sum())
+            mW, mH = s['cell'][0] // 2, s['cell'][1] // 2
+            for k, c in enumerate(s['cells']):
+                if c['id'] in B.DISPLAY_DARK.get(name, ()):
+                    cell = a[(k // 4) * mH:(k // 4 + 1) * mH, (k % 4) * mW:(k % 4 + 1) * mW]
+                    self.assertFalse(((cell[..., 2] >= 128) & (cell[..., 2] <= 192) & (cell[..., 0] > 127)).any(), (name, c['id']))
+        self.assertGreater(box, 0)
+        self.assertLess(lit / box, 0.8)    # the frames, the bulkheads and the doors in the box are not lit
+        self.assertGreater(lit / box, 0.3)
+
+    def test_every_set_inside_the_atlas_budget(self):
+        # Round 184's budget, 4 by 4 cells of 384 by 768 (4.7 MP): the review found the one-storey shops at 7.1 MP
+        for name, s in self.d['sets'].items():
+            px = s['cols'] * s['cell'][0] * s['rows'] * s['cell'][1]
+            self.assertLessEqual(px, 1536 * 3072, name)
 
     def test_the_one_storey_shops(self):
         s = self.d['sets'].get('shop1')
@@ -107,6 +167,24 @@ class Bake(unittest.TestCase):
         self.assertFalse(f[:5].any() or f[36:].any() or f[:, :4].any() or f[:, 26:].any())
         g = np.ones((40, 30), bool); g[18:21] = False   # glass but a spandrel band
         self.assertEqual(int(B.fill_openings(g).sum()), int(g.sum()))
+
+    def test_display_glass_leaves_the_frames(self):
+        # a dark green cast-iron front: near-black panes inside a frame, a mullion and a bulkhead the green of the paint;
+        # only the panes are glass, and a shelf of bright goods inside a pane is the pane's
+        import bake_fronts as B
+        a = np.zeros((80, 120, 3)) + np.array([0.10, 0.17, 0.12])
+        a[8:60, 8:56] = 0.035; a[8:60, 64:112] = 0.035
+        a[40:46, 20:40] = 0.6   # goods on a shelf
+        g = B.display_glass(a)
+        self.assertTrue(g[10:58, 10:54].all())
+        self.assertTrue(g[10:58, 66:110].all())
+        self.assertFalse(g[:, 58:62].any())     # the mullion
+        self.assertFalse(g[64:].any())          # the bulkhead
+        self.assertFalse(g[:4].any() or g[:, :4].any())
+        # a front that is all one dark grille: one piece, but a lattice, under a third of its box
+        h = np.zeros((60, 90, 3)) + 0.2
+        h[:, ::6] = 0.03; h[::6, :] = 0.03
+        self.assertLess(B.display_glass(h).mean(), 0.2)
 
     def test_the_fold_makes_one_clean_window_a_bay(self):
         import bake_fronts as B
@@ -193,6 +271,36 @@ console.log(JSON.stringify([frontRemaps(cm, 9, 11), frontRemaps(cm, 9, 4.5), fro
         self.assertEqual(o, [True, False, False, False])
 
 
+@unittest.skipUnless(shutil.which('node'), 'node is not installed')
+class Late(unittest.TestCase):
+    def test_the_towers_empty_with_the_clock(self):
+        s = (ROOT / 'app.js').read_text()
+        a = s.index('  const SKIN_LATE = ')
+        js = s[a:s.index(';\n', a) + 2] + fn(s, 'skinLateAt') + r'''
+console.log(JSON.stringify([0, 180, 360, 1020, 1110, 1140, 1260, 1320, 1439].map((m) => skinLateAt(m).map((v) => +v.toFixed(3)))));
+'''
+        r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        o = dict(zip([0, 180, 360, 1020, 1110, 1140, 1260, 1320, 1439], json.loads(r.stdout)))
+        self.assertEqual(o[1020][0], 1.0)            # five o'clock: every suite roomLight lights
+        self.assertLess(o[1260][0], 0.5)             # nine at night: under half of them
+        self.assertGreaterEqual(o[1140][1], 0.8)     # the homes nearly full at seven
+        self.assertLessEqual(max(o[180]), 0.25)      # three in the morning: the city mostly dark
+        for m in o:
+            self.assertTrue(0.2 <= o[m][0] <= 1 and 0.2 <= o[m][1] <= 1, (m, o[m]))
+        self.assertAlmostEqual(o[1439][0], o[0][0], delta=0.01)   # no jump at midnight
+
+
+class Fetch(unittest.TestCase):
+    def test_only_names_one_thing(self):
+        # the review: --only shop1 made the shop street floor again, not the one-storey shop set
+        import fetch_fronts as F
+        self.assertEqual([j[:2] for j in F.pick_jobs({'base/shop1'})], [('base', 'shop1')])
+        self.assertEqual(len(F.pick_jobs(set(), 'shop1')), 16)
+        with self.assertRaises(SystemExit):
+            F.pick_jobs({'shop1'})
+
+
 class PageWiring(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -200,16 +308,23 @@ class PageWiring(unittest.TestCase):
 
     def test_the_fronts_lie_on_the_fit(self):
         f = fn(self.s, 'frontsLay')
-        self.assertIn('const ft = frontFitOf(FRONTS.fit[k * 4 + s]);', f)
+        self.assertIn('const ft = REAL ? frontFitOf(FRONTS.fit[k * 4 + s]) : null;', f)   # ?real=0 keeps Round 187's box side
         self.assertIn("Rs.aFr.array[n * 4 + 3] = hi;", f)   # the image's height at its width, for the storey remap
         self.assertIn('if (!REAL && cm.door && !porch', f)   # no foam stoops in the realistic look
         self.assertIn("put(G.crown, gc.crown, px + nx * 0.04, y1 - 0.22", f)
 
     def test_the_fronts_take_the_weather_and_the_sun(self):
         f = fn(self.s, 'frontSetRes')
-        self.assertIn('wxSurfacePatch(sh);', f)
+        self.assertIn('if (REAL) wxSurfacePatch(sh);', f)
         # one program for every set (a set's own program compiled in flight the first time its houses came near)
-        self.assertIn("mat.customProgramCacheKey = () => 'house-fronts|wx';", f)
+        self.assertIn("mat.customProgramCacheKey = () => REAL ? (rich ? 'house-fronts|wx' : 'house-fronts|wx|lite') : 'house-fronts';", f)
+        self.assertIn('const rich = REAL && !isTouch;', f)   # the reveal and the jambs: a computer's
+        # the window's number read whole, the height from the blue, the varyings four to a row
+        self.assertIn('vec2(floor(frMask.g * 255.0 + 0.5), floor(vSeed * 997.0))', f)
+        self.assertIn('float frB = frMask.b * 255.0, shopG = step(96.0, frB) * (1.0 - step(224.0, frB))', f)
+        self.assertNotIn('frMask.a', f)
+        self.assertNotIn('vFrRows', f)
+        self.assertIn('varying vec4 vFrR, vFrT; varying vec3 vFrSun;', f)
         self.assertNotIn("' + cols + '", f)
         self.assertIn('textureGrad(map, frUv, frGx, frGy)', f)
         self.assertIn('reflectedLight.directDiffuse *= 1.0 - 0.65 * vFrSun.z * frMask.r * (1.0 - frRv);', f)
@@ -219,7 +334,13 @@ class PageWiring(unittest.TestCase):
         a = s.index("step('Dressing the storefronts'")
         f = s[a:s.index("step('Raising the overpasses'", a)]
         self.assertIn("if (ign <= 1.0 - smoothstep(uFrR * 0.8, uFrR, fd)) discard;", f)   # the fronts' own dither, turned over
-        self.assertIn("new Set(['shop', 'mixeduse', 'loft', 'shop1'].map(FR_SET_IX)", f)
+        self.assertIn("if (!FR_SHOPPY.has((FRONTS.buf[o + 9] | 0) & 15)) continue;", f)
+        self.assertIn('if (FRONTS_ON && REAL) for (let k = 0; k < FRONTS.n; k++) {', f)   # ?real=0 keeps its storefronts
+        # only on the side the front is laid on (a corner shop's side street keeps its storefronts), and only once the
+        # shop set's atlas is in (uFrShop)
+        self.assertIn('if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k);', f)
+        self.assertIn('if (vFrontNear * uFrShop > 0.5) {', f)
+        self.assertIn('frShopOn.value = shopWait ? 0 : 1;', fn(s, 'frontsLay'))
         self.assertIn('if (baseCells.size && onBase(x - nx * 1.2, z - nz * 1.2)) { baseN++; continue; }', f)
         self.assertNotIn('aFrontNear', f)   # the flag rides in the colour's sign: no stream of its own (a phone's memory)
         self.assertIn('vFrontNear = 1.0 - step(-1e-5, color.r); vColor = abs(vColor);', f)
@@ -238,7 +359,14 @@ class PageWiring(unittest.TestCase):
         # old look keeps its own
         self.assertIn("mat.customProgramCacheKey = () => REAL ? 'tower-skin|real' : 'tower-skin-' + kind;", f)
         self.assertIn("mat.customProgramCacheKey = () => 'skin-base|wx';", s)
-        self.assertIn("const par = REAL && !isTouch && !c.mid && !c.spec && c.y1 - (c.g0 != null ? c.g0 : c.y0) >= 58 ? 1.1 : 0;", f)
+        # the parapet starts where roofClutter's lip stops (h < 60 over the ground): never both
+        self.assertIn("const par = REAL && !isTouch && !c.mid && !c.spec && c.y1 - (c.g0 != null ? c.g0 : c.y0) >= 60 ? 1.1 : 0;", f)
+        self.assertIn('h < 60) roofClutter(', s)
+        # the lit share follows the model's hour, and a far window is dimmer
+        self.assertIn('mix(uSkinLate.y, uSkinLate.x, uSkinF.y)', f)
+        self.assertIn('mix(0.9, 0.5, tsFar)', f)
+        self.assertIn("'#include <emissivemap_fragment>\\nif (uNight > 0.001) { vec2 tsG", f)   # no rooms by day
+        self.assertIn('skinLateU.value.set(L[0], L[1]);', fn(s, 'updateFronts'))
 
     def test_the_old_look_stays_behind_the_flag(self):
         s = self.s

@@ -35,8 +35,9 @@ class FrontsData(unittest.TestCase):
             for k, ext in (('img', 'webp'), ('imgHalf', 'webp'), ('mask', 'png'), ('maskHalf', 'png')):
                 self.assertRegex(s[k], r'^art/fronts/%s(-mask)?(-half)?\.[0-9a-f]{10}\.%s$' % (name, ext))
                 self.assertTrue((ROOT / s[k]).exists(), s[k])
-            # the realism pass: a wide set's cells are wide, a near-square set's near square
-            self.assertEqual(s['cell'], [768, 576] if s['aspect'] > 1 else [512, 640] if s['aspect'] >= 0.7 else [384, 768])
+            # the realism pass: a wide set's cells are wide, a near-square set's near square, each set within Round 184's
+            # 4.7 MP (the review: 768 by 576 cells made the one-storey shops 7.1 MP)
+            self.assertEqual(s['cell'], [512, 384] if s['aspect'] > 1 else [480, 600] if s['aspect'] >= 0.7 else [384, 768])
             self.assertEqual(len(s['cells']), 16, name)   # sixteen a set since Round 184
             self.assertLessEqual(len(s['cells']), s['cols'] * s['rows'])
             self.assertEqual(s['porch'], int(name in ('porch', 'univcity')), name)
@@ -127,9 +128,11 @@ class PageWiring(unittest.TestCase):
         # paint's dark texels (the luminance gate flipped pane by pane: white panes salted with black)
         a = self.s.index('  function frontSetRes(s) {')
         f = self.s[a:self.s.index('\n  }\n', a)]
-        self.assertNotIn('float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb', f)
-        self.assertIn("totalEmissiveRadiance += frMask.r * (1.0 - 0.85 * frBar) * hl * uNight * lit; }", f)
-        self.assertIn("vec3 lit = roomLight(vec2(0.5, vp), vec2(frMask.g * 255.0, floor(vSeed * 997.0)), vSeed, 0.0) * (0.55 + 0.45 * st);", f)   # the facade's own rooms
+        real = f[f.index('      if (REAL) {\n'):f.index('      } else {\n')]   # ?real=0 keeps Round 184's gate after it
+        self.assertNotIn('float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb', real)
+        self.assertIn('float glass = 1.0 - smoothstep(0.05, 0.2, dot(diffuseColor.rgb', f)
+        self.assertIn("totalEmissiveRadiance += frMask.r * (1.0 - 0.85 * frBar) * hl * uNight * lit; }", real)
+        self.assertIn("vec3 lit = roomLight(vec2(0.5, vp), vec2(floor(frMask.g * 255.0 + 0.5), floor(vSeed * 997.0)), vSeed, 0.0) * (0.55 + 0.45 * st);", real)   # the facade's own rooms
         self.assertIn("frBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - frBlur", f)   # a bar is brighter than the opening round it
         self.assertIn("lampLightPatch(sh, 'vWPos', 'wall');", self.s)
 

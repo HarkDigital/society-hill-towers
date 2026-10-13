@@ -4,7 +4,8 @@ fronts"): one straight-on elevation per prompt from OpenAI's image API, written 
 with a sidecar <id>.json (the prompt, the model, the size, when). bake_fronts.py cuts them into the atlas.
 
 The key is read from OPENAI_API_KEY or ~/.config/philly3d/openai.env (KEY=value lines), never from the repo, and is
-never printed. A front already on disk is kept; pass --force to make it again, or --only <id>[,<id>] to make some.
+never printed. A front already on disk is kept; pass --force to make it again, or --only <id>[,<id>] to make some (an id
+that is also a set's name is refused: name it <set>/<id>, base/shop1 for the shop street floor).
 FRONTS_MODEL picks the model (default gpt-image-2), FRONTS_QUALITY the quality (default high).
 
 Each prompt asks for ONE house filling the frame: the party walls at the left and right edges, the sidewalk line at
@@ -530,6 +531,22 @@ def make(key, set_, fid, prompt, size, force, root=RAW):
     return fid, 'failed: ' + err
 
 
+def pick_jobs(only, sets=''):
+    """Every image this script makes, as (set, id, prompt, size, root), narrowed to --only's ids and --sets' sets. An id is
+    a file's name inside its set, and one can name two things: the street floor 'shop1' (base/shop1) and the one-storey
+    shop set 'shop1' (o1 to o16), so a bare name that is also a set's is refused (the review: --only shop1 made the street
+    floor again), and set/id names exactly one."""
+    jobs = [(f[0], f[1], FRAME.format(what=f[3], where=f[2]) + (storeys(SIZES[f[0]][1]) if f[0] in SIZES else ''),
+             SIZES[f[0]][0] if f[0] in SIZES else SIZE, RAW5 if f[0] in SIZES else RAW) for f in FRONTS]
+    jobs += [(t[0], t[1], TILE_FRAME.format(what=t[2]), TILE_SIZE, RAW) for t in TILES]
+    jobs += [(b[0], b[1], BASE_FRAME.format(what=b[2], detail=b[3]), BASE_SIZE, RAW5) for b in BASES]
+    clash = sorted(t for t in only if '/' not in t and t in {j[0] for j in jobs})
+    if clash:
+        sys.exit('--only takes ids, and %s is also a set: pass --sets %s for the set, or base/%s for its street floor'
+                 % (clash[0], clash[0], clash[0]))
+    return [j for j in jobs if (not only or j[1] in only or j[0] + '/' + j[1] in only) and (not sets or j[0] in sets.split(','))]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--force', action='store_true')
@@ -537,13 +554,8 @@ def main():
     ap.add_argument('--workers', type=int, default=4)
     ap.add_argument('--sets', default='', help='only these sets (comma separated; tower for the tiles)')
     a = ap.parse_args()
+    jobs = pick_jobs(set(filter(None, a.only.split(','))), a.sets)
     key = api_key()
-    only = set(filter(None, a.only.split(',')))
-    jobs = [(f[0], f[1], FRAME.format(what=f[3], where=f[2]) + (storeys(SIZES[f[0]][1]) if f[0] in SIZES else ''),
-             SIZES[f[0]][0] if f[0] in SIZES else SIZE, RAW5 if f[0] in SIZES else RAW) for f in FRONTS]
-    jobs += [(t[0], t[1], TILE_FRAME.format(what=t[2]), TILE_SIZE, RAW) for t in TILES]
-    jobs += [(b[0], b[1], BASE_FRAME.format(what=b[2], detail=b[3]), BASE_SIZE, RAW5) for b in BASES]
-    jobs = [j for j in jobs if (not only or j[1] in only) and (not a.sets or j[0] in a.sets.split(','))]
     print('%d images, model %s, quality %s' % (len(jobs), MODEL, QUALITY), flush=True)
     with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
         for fid, what in ex.map(lambda j: make(key, j[0], j[1], j[2], j[3], a.force, j[4]), jobs):

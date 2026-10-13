@@ -13,9 +13,13 @@ The realism pass (Oct 12, Mike: "make this look more photo realistic and less ca
 houses' proportions (fetch_fronts.py SIZES, lidar_cache/fronts5_raw/<set>/, taken when all sixteen are there) carries
 its image's width to height ('aspect'), and every cell its storeys ('rows': the top of the ground floor and of the
 upper storeys' band, from the foot, and how many upper storeys), found from its rows of windows, so the page fills a
-taller or shorter wall with whole storeys at the image's own scale instead of stretching the front. The mask's alpha is
-each window's height inside it (0.5 at the sill to 1 at the head, the page's room light), and each cell its wall's mean
-colour ('wall'). The tower tiles' masks are folded over their own repeats into one clean window per bay and floor
+taller or shorter wall with whole storeys at the image's own scale instead of stretching the front. The mask's blue is
+each window's height inside it (0 at the sill to 64 at the head, the page's room light; a shop's display glass 128 to 192,
+the door 255), and each cell its wall's mean colour ('wall'). The mask is opaque RGB: an image with any alpha under 255
+reaches WebGL through a premultiplied decode on WebKit (Safari, iOS, the app), which moved every window's number in green
+by one across its rows (the review: lit windows in bands on the iPhone). A shop's display lights only its glass, the dark
+neutral texels of the opening, not the painted frames, pilasters, panels and doors round it (DISPLAY_DARK: the fronts
+whose ground floor has none). The tower tiles' masks are folded over their own repeats into one clean window per bay and floor
 (the percentile mask of the glass kinds was salt and pepper after dark), with the spandrel's height ('spandV') and the
 pier's place in the bay ('pierU').
 
@@ -31,8 +35,9 @@ RAW5 = os.path.join(HERE, 'lidar_cache', 'fronts5_raw')   # the realism pass's f
 OUT = os.path.join(HERE, 'fronts.json')
 CELL = (384, 768)   # px per front in the atlas, 1:2; the page stretches a cell to the wall it dresses (Round 184: 16 a
 # set, 4 by 4, and a phone's copy at half, 192 by 384)
-CELL_WIDE = (768, 576)   # the realism pass: a set of wide fronts (the one-storey shops, 4:3)
-CELL_SQUARE = (512, 640)   # and of near-square ones (the porch twins, the stone houses: 0.8 to 0.95)
+CELL_WIDE = (512, 384)   # the realism pass: a set of wide fronts (the one-storey shops, 4:3), and of near-square ones
+CELL_SQUARE = (480, 600)   # (the porch twins, the stone houses: 0.8 to 0.95), each inside Round 184's 4.7 MP a set (the
+# review: 768 by 576 made the one-storey shops 7.1 MP, 38 MB of GPU with mips on a computer, at twice the others' density)
 PAD = 8
 MASK_DIV = 2
 COLS = 4
@@ -61,6 +66,9 @@ SETS = {   # w, h: a front's nominal width and wall height (m); step: the stoop'
 }
 # the sets whose fronts were made without their porch: the page builds one (Round 184: a flag, not the name)
 PORCHED = ('porch', 'univcity')
+# the shop fronts whose ground floor is no glass, so their display stays dark after dark (each picked by eye from the
+# glass overlays of every shop front): mixeduse x10's black lacquered lattice doors and panels, shop1 o8's rolled-down grille
+DISPLAY_DARK = {'mixeduse': ('x10',), 'shop1': ('o8',)}
 # the towers' facade tiles (fetch_fronts.py TILES): one bay's width and one floor's height in metres, and whether the wall
 # is mostly glass (its mask is then the darker half of the glass, not dark panes in a light wall)
 TILES = {'glass': (1.6, 4.0, True), 'glassdark': (1.6, 4.0, True), 'precast': (1.6, 3.8, False), 'deco': (1.6, 3.9, False),
@@ -182,6 +190,40 @@ def find_openings(img, fill_min=0.55):
     return wins, door
 
 
+def fill_holes(m, maxfrac):
+    """The components of what is not m inside m's box that touch none of its edges and are small (a shelf of goods, a
+    reflection in a pane), filled."""
+    H, W = m.shape
+    out = m.copy()
+    for y0, x0, y1, x1, cnt in blobs(~m):
+        if y0 == 0 or x0 == 0 or y1 == H - 1 or x1 == W - 1 or cnt > maxfrac * H * W:
+            continue
+        out[y0:y1 + 1, x0:x1 + 1] |= ~m[y0:y1 + 1, x0:x1 + 1]
+    return out
+
+
+def display_glass(a):
+    """A shop's display glass inside its opening's box (a: the box's pixels, H by W by 3, 0 to 1), as a boolean image.
+    find_openings takes the whole dark shopfront for one opening, its frames, pilasters, bulkheads and doors with it, and
+    lit whole a black or dark green cast-iron front glowed bone white (the review). The glass is the darkest of it: near
+    neutral and under 1.8 times the box's 20th percentile (or 0.075), opened so no sliver survives, its small holes (a
+    shelf of goods, a reflection) filled, and only the pieces that are panes kept: a tenth of the box's height at least,
+    and filling a third of their own box (a sign band, a kick plate's shadow and a grille's lattice are not)."""
+    L = lum(a)
+    chroma = a.max(-1) - a.min(-1)
+    m = (L < max(0.075, 1.8 * float(np.percentile(L, 20)))) & (chroma < 0.06 + 0.5 * L)
+    m = dilate(erode(m, 1), 1)
+    m = fill_holes(m, 0.06)
+    H, W = m.shape
+    out = np.zeros_like(m)
+    for y0, x0, y1, x1, cnt in blobs(m):
+        bh, bw = y1 - y0 + 1, x1 - x0 + 1
+        if bh < 0.1 * H or bw < 0.04 * W or cnt < 0.35 * bh * bw:
+            continue
+        out[y0:y1 + 1, x0:x1 + 1] |= m[y0:y1 + 1, x0:x1 + 1]
+    return out
+
+
 def storeys(wins, door):
     """The front's storeys from its rows of openings, as fractions of its height from the foot: [the top of the ground
     floor, the top of the upper storeys' band, how many upper storeys], or None when fewer than two rows were found. A
@@ -282,17 +324,21 @@ def bake_set(set_, fronts, preview):
     rows = math.ceil(n / COLS)
     atlas = Image.new('RGB', (COLS * W, rows * H), (0, 0, 0))
     mW, mH, mP = W // MASK_DIV, H // MASK_DIV, PAD // MASK_DIV
-    # alpha: a window's height inside it from 0.5 at the sill to 1 at its head, and 1 everywhere else (never under a
-    # half, so no browser's premultiplied decode can eat the colour channels)
-    mask = Image.new('RGBA', (COLS * mW, rows * mH), (0, 0, 0, 255))
+    # opaque RGB (see the head of this file): r the glass, g the window's number, b its height inside it (0 to 64 from
+    # the sill to the head) or 128 more on a shop's display, 255 the door
+    mask = Image.new('RGB', (COLS * mW, rows * mH), (0, 0, 0))
     cells = []
     for k, (fid, im) in enumerate(fronts):
         col, row = k % COLS, k // COLS
         atlas.paste(gutter(im.convert('RGB'), W, H, PAD), (col * W, row * H))
         wins, door = find_openings(im)
-        m = Image.new('RGBA', (mW, mH), (0, 0, 0, 255))
+        m = Image.new('RGB', (mW, mH), (0, 0, 0))
         d = ImageDraw.Draw(m)
         iw, ih = mW - 2 * mP, mH - 2 * mP
+        # the front at twice the mask's size, where a display's glass is found (a mullion is a pixel or two)
+        im2 = np.asarray(im.convert('RGB').resize((2 * iw, 2 * ih), Image.BILINEAR), np.float32) / 255.0
+        dark_shop = fid in DISPLAY_DARK.get(set_, ())
+        disps = []
         shop = set_ in ('shop', 'shop1', 'mixeduse')   # the realism pass: the shop under the flats is a shop too
         st = storeys(wins, door)
         # the shop's display glass: an opening in its ground floor (under the storeys' first floor line, the realism pass:
@@ -306,16 +352,33 @@ def bake_set(set_, fronts, preview):
         s_min = min([1 - b[3] for b in wins + ([door] if door else [])] or [0])
         sill_top = 1.0 if set_ == 'shop1' else min(0.15, s_min + max(0.08, 0.4 * gf_top))
         for j, (x0, y0, x1, y1) in enumerate(wins):
-            # b 128 marks a shop's display glass (the lower 40% of a shop front): lit more often and brighter
+            # b 128 and up marks a shop's display (its ground floor's openings): lit more often and brighter, its glass alone
             gx0, gy0, gx1, gy1 = mP + x0 * iw, mP + y0 * ih, mP + x1 * iw - 1, mP + y1 * ih - 1
             ya, yb = int(round(gy0)), int(round(gy1))
             disp = shop and 1 - (y0 + y1) / 2 < gf_top and 1 - y1 < sill_top
+            if disp and dark_shop:
+                continue
             for y in range(ya, yb + 1):
-                vp = (yb - y) / max(1, yb - ya)
-                d.rectangle((gx0, y, gx1, y), fill=(255, (j * 37 + 11) % 256, 128 if disp else 0, int(round(128 + 127 * (1 - vp)))))
+                vp = (yb - y) / max(1, yb - ya)   # 0 at the sill, 1 at the head
+                d.rectangle((gx0, y, gx1, y), fill=(255, (j * 37 + 11) % 256, (128 if disp else 0) + int(round(64 * vp))))
+            if disp:
+                disps.append((x0, y0, x1, y1))
+        # a display lights its glass alone: the box keeps its blue (its height, so a filtered texel at a frame still reads
+        # as the display's) and its glass in red only where display_glass finds it
+        if disps:
+            a = np.array(m)
+            gm = np.zeros((2 * ih, 2 * iw), bool)
+            for x0, y0, x1, y1 in disps:
+                X0, Y0 = int(np.floor(x0 * 2 * iw)), int(np.floor(y0 * 2 * ih))
+                X1, Y1 = max(X0 + 2, int(np.ceil(x1 * 2 * iw))), max(Y0 + 2, int(np.ceil(y1 * 2 * ih)))
+                gm[Y0:Y1, X0:X1] |= display_glass(im2[Y0:Y1, X0:X1])
+            g2 = gm.reshape(ih, 2, iw, 2).mean((1, 3)) >= 0.5
+            sub = a[mP:mP + ih, mP:mP + iw]
+            sub[..., 0] = np.where(sub[..., 2] >= 128, np.where(g2, 255, 0), sub[..., 0])
+            m = Image.fromarray(a)
         if door:
             x0, y0, x1, y1 = door
-            d.rectangle((mP + x0 * iw, mP + y0 * ih, mP + x1 * iw - 1, mP + y1 * ih - 1), fill=(0, 0, 255, 255))
+            ImageDraw.Draw(m).rectangle((mP + x0 * iw, mP + y0 * ih, mP + x1 * iw - 1, mP + y1 * ih - 1), fill=(0, 0, 255))
         mask.paste(m, (col * mW, row * mH))
         # the cornice's colour: the front's top 3% (the page projects a cornice of it along the wall's head)
         top = np.asarray(im.convert('RGB').resize((64, 200), Image.BILINEAR))[:6].reshape(-1, 3)
@@ -349,7 +412,7 @@ def bake_set(set_, fronts, preview):
             'mask': art_files.write(mask, 'fronts', set_ + '-mask', 'PNG', optimize=True),
             'maskHalf': art_files.write(mhalf, 'fronts', set_ + '-mask-half', 'PNG', optimize=True),
             'cols': COLS, 'rows': rows, 'cell': [W, H], 'pad': PAD, 'w': spec['w'], 'h': spec['h'], 'gain': spec['gain'],
-            'step': spec['step'], 'awn': spec.get('awn', 0), 'porch': int(set_ in PORCHED), 'aspect': round(aspect, 4), 'maskA': 1,
+            'step': spec['step'], 'awn': spec.get('awn', 0), 'porch': int(set_ in PORCHED), 'aspect': round(aspect, 4), 'maskV': 1,
             'cells': cells}
 
 

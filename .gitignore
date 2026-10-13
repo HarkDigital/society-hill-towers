@@ -14,7 +14,8 @@
 3d-model/osm_paved_raw.json
 3d-model/wide_tiles/
 3d-model/south_tiles/
-3d-model/lidar_cache/
+# no trailing slash: a worktree's lidar_cache is a symlink to the main checkout's, and a slash matches only a directory
+3d-model/lidar_cache
 .audit/
 *.log
 __pycache__/
