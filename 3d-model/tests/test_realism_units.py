@@ -29,7 +29,8 @@ class Units(unittest.TestCase):
         g = cut(self.s, '  function vegGrassGLSL(forced, paved) {', '\n  }\n')
         self.assertNotIn('texture2D', g.split('\n')[1])   # the paved return comes first and samples nothing
         v = cut(self.s, '  function vegSurfPatch(shader, forced, paved) {', '\n  }\n')
-        self.assertIn("(paved ? '' : 'uniform sampler2D uMacro, uLand, uCanopy, uRiprap; ')", v)
+        self.assertIn("paved ? '' : ['uniform sampler2D uLand;', '#ifndef VEG_NO_MACRO', 'uniform sampler2D uMacro;'", v)   # its pictures in the other arm only
+        self.assertNotIn('sampler2D', v[:v.index("paved ? '' : [")])
 
     def test_the_road_lot_and_deck_patches_run_before_the_surface_patch(self):
         s = self.s

@@ -26856,10 +26856,13 @@ float pinOccGate() {
       'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88) * vec3(1.03, 1.0, 0.74);',
       // the parks from the air: two tilings of a 240 m photograph of parkland (dry rises, damp swales, worn lines), as a
       // ratio to its mean; without it, two warped noises do the same job more plainly
+      '#ifndef VEG_NO_MACRO',
       'if (uMacroOn > 0.5) { vec2 mp1 = vec2(sWP.x * 0.921 + sWP.z * 0.391, -sWP.x * 0.391 + sWP.z * 0.921) / 240.0, mp2 = vec2(sWP.x * 0.755 - sWP.z * 0.656, sWP.x * 0.656 + sWP.z * 0.755) / 610.0 + 0.41;',
       '  vec3 mac = clamp(texture2D(uMacro, mp1).rgb * texture2D(uMacro, mp2).rgb / (uMacroMean * uMacroMean), 0.55, 1.6);',
       '  grass *= mix(vec3(1.0), mac, 0.45); }',
-      'else { vec2 wq = sWP.xz + 25.0 * vec2(stn(sWP.xz * 0.004 + 7.7), stn(sWP.xz * 0.004 + 1.9));',
+      'else',
+      '#endif',
+      '{ vec2 wq = sWP.xz + 25.0 * vec2(stn(sWP.xz * 0.004 + 7.7), stn(sWP.xz * 0.004 + 1.9));',
       '  float dryK = smoothstep(0.45, 0.8, stn(wq * 0.006 + 11.1) * 0.6 + stn(wq * 0.021 + 4.2) * 0.4);',
       '  grass *= mix(vec3(1.0), vec3(1.16, 1.05, 0.78), dryK * 0.7) * mix(0.86, 1.0, smoothstep(0.15, 0.45, stn(wq * 0.0045 + 2.9))); }',
       // winter: the grass goes dormant, a tan green
@@ -26869,7 +26872,7 @@ float pinOccGate() {
       forced ? 'if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9; float urb = smoothstep(0.12, 0.5, vegLM.r);' +
         ' yw = mix(yw * (1.0 - 0.6 * uLandOn * (1.0 - vegCore)), max(yw, 0.6 + 0.4 * stn(sWP.xz * 0.07 + 9.1)), urb);' +
         ' vec3 gY = mix(texture2D(uYard, gUv1 * 0.65).rgb, texture2D(uYard, gUv2 * 1.3).rgb, 0.35) * uYardTone;' +
-        ' if (uAlleyOn > 0.5) gY = mix(gY, texture2D(uAlley, sWP.xz * 0.1 + 0.17).rgb * uAlleyTone, smoothstep(0.45, 0.7, stn(sWP.xz * 0.05 + 2.4)) * urb);' +
+        '\n#ifndef VEG_NO_ALLEY\n if (uAlleyOn > 0.5) gY = mix(gY, texture2D(uAlley, sWP.xz * 0.1 + 0.17).rgb * uAlleyTone, smoothstep(0.45, 0.7, stn(sWP.xz * 0.05 + 2.4)) * urb);\n#endif\n' +
         ' grass = mix(grass, gY * (0.97 + 0.06 * sn1) * ' + (MEADOW_REAL * 0.9).toFixed(3) + ', yw); }' : '',
     ]);
   }
@@ -26883,17 +26886,21 @@ float pinOccGate() {
     return [
       'float vegWet = 0.0;',
       'if (uLandOn > 0.5 && isGreen > 0.5) {',
+      '#ifndef VEG_NO_CANOPY',
       '  float can = smoothstep(0.30, 0.75, vegLM.g + 0.3 * (stn(sWP.xz * 0.006 + 5.5) - 0.5)) * uCanopyOn;',
       '  if (can > 0.001) { vec2 cu1 = sWP.xz / 70.0, cu2 = vec2(sWP.x * 0.809 - sWP.z * 0.588, sWP.x * 0.588 + sWP.z * 0.809) / 170.0 + 0.23;',
       '    vec3 cT = mix(texture2D(uCanopy, cu1).rgb, texture2D(uCanopy, cu2).rgb, smoothstep(0.3, 0.7, stn(sWP.xz * 0.004 + 2.2)));',
       '    cT = mix(cT, uCanopyMean, smoothstep(1.5, 6.0, sfw));',   // a 70 m tile seen edge-on beats into moire: its mean past 1.5 m a pixel
       '    cT = mix(vec3(dot(cT, vec3(0.30, 0.59, 0.11))), cT, 0.8) * (0.85 + 0.3 * stn(sWP.xz * 0.02 + 8.8));',
       '    diffuseColor.rgb = mix(diffuseColor.rgb, cT * uCanopyGain, can); }',
+      '#endif',
       '  float tH = sWP.y - uWaterY, bank = vegLM.b;',
       '  if (bank > 0.001 && tH < 3.6) {',
       '    float wUp = dot(normalize(vNormal), (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);',
       '    float rk = bank * uRiprapOn * (1.0 - smoothstep(1.6, 3.6, tH)) * smoothstep(0.997, 0.975, wUp);',
+      '#ifndef VEG_NO_RIPRAP',
       '    if (rk > 0.001) diffuseColor.rgb = mix(diffuseColor.rgb, texture2D(uRiprap, sWP.xz / 6.0).rgb * 0.8, rk);',
+      '#endif',
       '    float mk = bank * (1.0 - smoothstep(0.25, 1.0, tH));',
       '    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.058, 0.050, 0.038) * (0.8 + 0.4 * stn(sWP.xz * 0.6 + 4.4)) * (0.9 + 0.2 * sn2), mk);',
       '    vegWet = max(bank * tideK(tH), mk);',
@@ -26920,14 +26927,64 @@ float pinOccGate() {
     if (forced) for (const k of ['uAlley', 'uAlleyOn', 'uAlleyTone']) shader.uniforms[k] = vegU[k];
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
-        (paved ? '' : 'uniform sampler2D uMacro, uLand, uCanopy, uRiprap; ') + 'uniform vec3 uMacroMean, uCanopyGain, uCanopyMean; uniform vec4 uLandBox, uLawn, uCore;',
+        // a paved surface takes none of these pictures (surfTexPatch); elsewhere each extra picture sits behind its own
+        // #ifndef, so vegBudget can take it out of a program the other passes have filled
+        'uniform vec3 uMacroMean, uCanopyGain, uCanopyMean; uniform vec4 uLandBox, uLawn, uCore;',
+        paved ? '' : ['uniform sampler2D uLand;', '#ifndef VEG_NO_MACRO', 'uniform sampler2D uMacro;', '#endif',
+          '#ifndef VEG_NO_CANOPY', 'uniform sampler2D uCanopy;', '#endif', '#ifndef VEG_NO_RIPRAP', 'uniform sampler2D uRiprap;', '#endif'].join('\n'),
         'uniform float uMacroOn, uLandOn, uCanopyOn, uRiprapOn, uWaterY;',
-        forced ? 'uniform sampler2D uAlley; uniform float uAlleyOn, uAlleyTone;' : '',
+        forced ? '#ifndef VEG_NO_ALLEY\nuniform sampler2D uAlley;\n#endif\nuniform float uAlleyOn, uAlleyTone;' : '',
         TIDE_GLSL,
         'void main() {',
       ].join('\n'))
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.35, vegWet * 0.8);');
     canopyPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'isGreen');
+  }
+  // The texture budget. A ground program carries a dozen pictures of its own, and every pass chained on it adds its own
+  // (the lamps' near map, a second shadow map, the weather's read of the lamp map, a lot's stall stripes); past the GPU's
+  // fragment limit (renderer.capabilities.maxTextures: 16 on nearly every computer and phone) the program would not link
+  // and the surface would draw nothing. So the ground's patch ends by counting what the program samples (its own
+  // declarations plus three's, from the parameters r149 hands onBeforeCompile) and, while over, takes this pass's extras out
+  // through their #ifndef in the order they are least missed: the riprap (the bank keeps its silt and stain), the parkland
+  // macro (the warped noises stand in), the alley (the yard tile stays), the woods' canopy. ?vegtex=<n> pins the limit
+  const VEG_DROP = [['VEG_NO_RIPRAP', 'uRiprap'], ['VEG_NO_MACRO', 'uMacro'], ['VEG_NO_ALLEY', 'uAlley'], ['VEG_NO_CANOPY', 'uCanopy']];
+  const VEG_TEX = (() => { const m = /[?&]vegtex=(\d+)\b/.exec(location.search); return m ? +m[1] : 0; })();
+  const VEG_BUDGET = { max: 0, seen: {} };
+  // three's own maps: counted by their flags in the parameters, never by the source text (the physical material's source
+  // declares four of them inside #ifdefs that are off: counting those took four units no program spends)
+  const VEG_THREE_MAPS = ['map', 'matcap', 'envMap', 'lightMap', 'aoMap', 'emissiveMap', 'bumpMap', 'normalMap', 'roughnessMap', 'metalnessMap',
+    'alphaMap', 'specularMap', 'gradientMap', 'clearcoatMap', 'clearcoatRoughnessMap', 'clearcoatNormalMap', 'iridescenceMap',
+    'iridescenceThicknessMap', 'sheenColorMap', 'sheenRoughnessMap', 'specularIntensityMap', 'specularColorMap', 'transmissionMap', 'thicknessMap'];
+  function vegSamplers(sh) {
+    const names = new Set(), re = /uniform\s+(?:(?:lowp|mediump|highp)\s+)?sampler(?:2D|Cube|3D|2DArray|2DShadow)\s+([^;]+);/g;
+    let m;
+    while ((m = re.exec(sh.fragmentShader))) {
+      for (const part of m[1].split(',')) {
+        const t = part.trim(), a = /^(\w+)\s*\[\s*(\d+)\s*\]$/.exec(t);
+        if (a) for (let i = 0; i < +a[2]; i++) names.add(a[1] + '[' + i + ']');
+        else if (/^\w+$/.test(t) && VEG_THREE_MAPS.indexOf(t) < 0) names.add(t);
+      }
+    }
+    let n = names.size;
+    for (const k of VEG_THREE_MAPS) if (sh[k]) n++;
+    if (sh.transmission) n++;   // the transmission sampler
+    if (sh.shadowMapEnabled) n += (sh.numDirLightShadows || 0) + (sh.numSpotLightShadows || 0) + (sh.numPointLightShadows || 0);
+    return { n, names };
+  }
+  function vegBudget(shader, key) {
+    if (!REAL) return;
+    const max = VEG_TEX || (renderer.capabilities.maxTextures || 16);
+    const got = vegSamplers(shader), drop = [];
+    let n = got.n;
+    for (const [def, name] of VEG_DROP) {
+      if (n <= max) break;
+      if (!got.names.has(name)) continue;
+      drop.push(name); n--;
+      shader.fragmentShader = '#define ' + def + '\n' + shader.fragmentShader;
+    }
+    VEG_BUDGET.max = max;
+    VEG_BUDGET.seen[key + ' ' + got.n] = { drop, own: [...got.names].join(' ') };   // the programs this pass has built: what each sampled, what went
+    if (n > max) console.warn('the ground program samples ' + n + ' textures, over the ' + max + ' this GPU has');
   }
   // ---- the canopy map (ground-vegetation 7): a top-down picture of every planted tree's crown, re-centred ahead of the
   // eye as the light map is and drawn only when it moves, red the crowns' cover and green the cover of the trees that cast
@@ -27016,6 +27073,7 @@ float pinOccGate() {
       tufts: grassMesh ? grassMesh.count : 0, tuftTint: grassTint.toArray().map((v) => +v.toFixed(3)), trees: TREEART.n,
       woods: { on: WOOD.on, mask: !!WOOD.mask, trees: WOOD.mesh ? WOOD.mesh.count : 0, sows: WOOD.sows, busy: WOOD.busy },
       atlas: TREEART.side ? { side: [TREEART.side.N, TREEART.side.A, TREEART.side.AH], top: [TREEART.top.N, TREEART.top.A, TREEART.top.AH] } : null,
+      budget: { max: VEG_BUDGET.max, seen: Object.assign({}, VEG_BUDGET.seen) },
       seasons: TREEART.key, map: full && CANOPYMAP.rt ? vegMapProbe() : undefined };
   }
   function vegMapProbe() {   // the canopy map's middle 64 texels square, read back: how many hold a crown, the most cover
@@ -27150,6 +27208,7 @@ float pinOccGate() {
     vegSurfPatch(shader, forced, paved);   // the realism pass: its uniforms, the bank's gloss and the canopy map
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
     lampLightPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // Round 140
+    vegBudget(shader, forced ? 'ground' : paved ? 'paved' : 'surface');   // last: within the GPU's texture units, whatever the passes added
   }
   // hooks are assigned at creation, once; `userData.wxSurf` marks the material for the post-build
   // weather wrap (the hookup at the end of build() keys the wrapped program, gotcha 15)

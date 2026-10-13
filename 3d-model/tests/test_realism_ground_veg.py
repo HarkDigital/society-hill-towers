@@ -66,8 +66,8 @@ class Page(unittest.TestCase):
 
     def test_the_wiring(self):
         s = self.s
-        self.assertIn('...vegGrassGLSL(forced),', s)
-        self.assertIn('vegSurfPatch(shader, forced);', fn(s, 'surfTexPatch'))
+        self.assertIn('...vegGrassGLSL(forced, paved),', s)
+        self.assertIn('vegSurfPatch(shader, forced, paved);', fn(s, 'surfTexPatch'))
         self.assertIn('vegUpdate(now);', s)
         self.assertIn("step('Planting the woods', woodInit);", s)
         self.assertIn("const WOOD = { on: REAL && !isTouch && TIER === 0 && TREE_ART_ON,", s)   # never on a phone
@@ -82,6 +82,23 @@ class Page(unittest.TestCase):
         s = self.s
         self.assertEqual(s.count('float tideK(float tH)'), 1)
         self.assertIn('function tidePatch(shader, worldExpr) {', s)
+
+    def test_every_extra_picture_can_go(self):
+        # the texture budget: the ground's patch ends by counting, and each extra picture's declaration and every read of it
+        # sit inside its own #ifndef, or a define would leave a read of an undeclared sampler and the program would not link
+        s = self.s
+        body = fn(s, 'surfTexPatch')
+        self.assertTrue(body.rstrip().endswith("vegBudget(shader, forced ? 'ground' : paved ? 'paved' : 'surface');   // last: within the GPU's texture units, whatever the passes added\n  }"))
+        for define, name in (('VEG_NO_RIPRAP', 'uRiprap'), ('VEG_NO_MACRO', 'uMacro'), ('VEG_NO_ALLEY', 'uAlley'), ('VEG_NO_CANOPY', 'uCanopy')):
+            self.assertIn("['" + define + "', '" + name + "']", s)
+            uses = [i for i in range(len(s)) if s.startswith('texture2D(' + name + ',', i) or s.startswith('uniform sampler2D ' + name + ';', i)]
+            self.assertGreater(len(uses), 1, name)
+            for i in uses:
+                opened, closed = s.rfind('#ifndef ' + define, 0, i), s.rfind('#endif', 0, i)
+                self.assertGreater(opened, closed, name + ' read outside its #ifndef')
+                self.assertLess(i - opened, 1200, name)
+                self.assertNotIn('sampler2D ' + name + ',', s)      # never in a list a define cannot split
+                self.assertNotIn(', ' + name + ';', s)
 
 
 @unittest.skipUnless(shutil.which('node'), 'node is not installed')
@@ -108,6 +125,41 @@ console.log(JSON.stringify({ oct12Plane: at('plane', 10, 12, true), oct20Maple: 
         self.assertEqual(o['dec1Plane'][:2], ['autumn', 'winter'])
         self.assertEqual(o['dec31Oak'][:2], ['winter', 'winter'])   # the oaks hold theirs into December
         self.assertEqual(o['oct30NoTurn'][:2], ['summer', 'autumn'])       # a look without a turning picture goes straight
+
+    def test_the_budget(self):
+        s = (ROOT / 'app.js').read_text()
+        a = s.index('  const VEG_DROP = ')
+        decl = s[a:s.index('\n', s.index('  const VEG_BUDGET = ', a)) + 1]
+        b = s.index('  const VEG_THREE_MAPS = ')
+        decl += s[b:s.index('];', b) + 3]
+        js = ('const REAL = true; let location = { search: "" }; const renderer = { capabilities: { maxTextures: 16 } };\n' +
+              decl.replace('const VEG_TEX', 'let VEG_TEX') + fn(s, 'vegSamplers') + fn(s, 'vegBudget') + r'''
+const own = 'uniform sampler2D uGrass; uniform sampler2D uGrass2;\nuniform sampler2D uAsph, uConc, uBrick; uniform vec3 uStM;\nuniform sampler2D uLand;\n' +
+  '#ifndef VEG_NO_MACRO\nuniform sampler2D uMacro;\n#endif\n#ifndef VEG_NO_CANOPY\nuniform sampler2D uCanopy;\n#endif\n#ifndef VEG_NO_RIPRAP\nuniform sampler2D uRiprap;\n#endif\n' +
+  'uniform sampler2D uCanMap; uniform vec4 uCanBox;\nuniform sampler2D uLampMap, uLampNear; uniform vec4 uLampBox;\n';
+const three = '#ifdef USE_SHEENCOLORMAP\n\tuniform sampler2D sheenColorMap;\n#endif\n#ifdef USE_SPECULARCOLORMAP\n\tuniform sampler2D specularColorMap;\n#endif\n';
+const par = (extra, shadows) => ({ fragmentShader: three + extra + own, envMap: true, shadowMapEnabled: true, numDirLightShadows: shadows, numSpotLightShadows: 0, numPointLightShadows: 0 });
+const out = {};
+let p = par('', 1); vegBudget(p, 'mine'); out.mine = [vegSamplers(p).n, p.fragmentShader.indexOf('#define') < 0];
+p = par('uniform sampler2D uWxLampMap; uniform vec4 uWxLampBox;\nuniform sampler2D uLotTex;\n', 2); vegBudget(p, 'lot');
+out.lot = [vegSamplers(p).n, (p.fragmentShader.match(/#define VEG_NO_\w+/g) || [])];
+p = par('uniform sampler2D uA[4];\n', 2); vegBudget(p, 'many');
+out.many = [vegSamplers(p).n, (p.fragmentShader.match(/#define VEG_NO_\w+/g) || [])];
+VEG_TEX = 11; p = par('', 1); vegBudget(p, 'pinned');
+out.pinned = (p.fragmentShader.match(/#define VEG_NO_\w+/g) || []);
+out.seen = VEG_BUDGET.seen;
+console.log(JSON.stringify(out));
+''')
+        r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        o = json.loads(r.stdout)
+        self.assertEqual(o['mine'], [14, True])                   # ten of its own, the lamps' two, envMap, one shadow: 14, kept whole
+        self.assertEqual(o['lot'][0], 17)                          # the weather's lamp read, a lot's stripes and a second shadow
+        self.assertEqual(o['lot'][1], ['#define VEG_NO_RIPRAP'])   # one over: the riprap goes, the rest stays
+        self.assertEqual(o['many'][1], ['#define VEG_NO_CANOPY', '#define VEG_NO_MACRO', '#define VEG_NO_RIPRAP'])   # an array counts each
+        self.assertEqual(o['pinned'], ['#define VEG_NO_CANOPY', '#define VEG_NO_MACRO', '#define VEG_NO_RIPRAP'])
+        self.assertEqual(o['seen']['lot 17']['drop'], ['uRiprap'])
+        self.assertNotIn('sheenColorMap', o['seen']['lot 17']['own'])
 
     def test_a_computer_draws_the_bake_size(self):
         s = (ROOT / 'app.js').read_text()
