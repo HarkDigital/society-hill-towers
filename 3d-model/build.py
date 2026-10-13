@@ -222,6 +222,7 @@ ART_BYTES = sum((ROOT / p).stat().st_size for p in ART_FILES)
 const("NW_WATER", text_of("nw_water.json", "null"))
 # streetlights (Streets Department pole inventory, fetch_poles.py / pack_poles.py)
 let_blob("POLES_B64", "poles.b64")
+const("POLE_FAMILIES", text_of("pole_families.json", "null"))   # the realism round: each pole's family, 2 bits in poles.b64's order (bake_pole_families.py)
 # the paved ground (fetch_paved.py / pack_paved.py): surface lots, industrial and port yards,
 # rail yards and aprons, laid by the app under the parks and streets so the meadow stops
 # showing where the city is asphalt in life
