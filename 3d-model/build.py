@@ -195,6 +195,7 @@ const("TREE_ART", text_of("tree_art.json", "null"))   # the trees' species image
 const("GROUND_ART", text_of("ground_art.json", "null"))   # the generated lawn, verge and street textures (bake_ground_art.py), Round 183
 const("WALL_ART", text_of("wall_art.json", "null"))   # the walls' and pitched roofs' generated materials and the roofs' snow (bake_wall_art.py), the realism pass
 const("LAND_MASK", text_of("land_mask.json", "null"))   # the ground's land mask: built up, woods, river bank (bake_landmask.py), the realism pass
+const("WATER_ART", text_of("water_art.json", "null"))   # the realism pass's pier deck and white water (bake_water_art.py), Oct 12
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
 
 
@@ -211,7 +212,7 @@ def art_paths(o):
 
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
-for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json"):
+for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):
