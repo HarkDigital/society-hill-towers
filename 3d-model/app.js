@@ -949,6 +949,83 @@
   const scene = new THREE.Scene();
   scene.fog = new THREE.Fog(COLORS.haze, 8000, 40000);
   const fogBase = { near: 8000, far: 40000 };   // clear-air distances: the game's, weather still shrinks them   // clear-air distances; weather shrinks them live (applyLighting)
+  // ---- the aerial perspective (the realism pass, Mike: "make this look more photo realistic and less cartoony ... all
+  // surfaces/water/anything"). THREE.Fog is a smoothstep on view depth from 8 km, so the whole city stood as crisp and as
+  // saturated at 3 km as at 300 m, and a rainy day kept its towers sharp to the horizon. Under REAL the air is a medium:
+  // extinction falls off with height (a 1,200 m scale height over the river's datum), the distance is the true one from
+  // the eye, the air takes the horizon's colour with the twilight's shift away from the sun and the sun's glow toward it,
+  // as the dome's own horizon has them, and a radiation fog is a second layer, 55 m deep over the low ground, that the
+  // towers stand out of. Visibility comes from the weather (realSky, from applyLighting): 45 km in clean air, about 6 in
+  // rain, 1.5 in snow, 320 m in a fog. The chunks are replaced once, here, before any program compiles; the uniforms are shared by
+  // every material (r149's UniformsUtils.clone calls .clone() on a vector or a colour, and these return themselves), and
+  // a material without them reads zeros, so fogAP.w = 0 is THREE.Fog exactly as it was (?real=0, ?ap=0)
+  const AP = { on: REAL && !/[?&]ap=0\b/.test(location.search), clear: 45000, V: 45000 };
+  const apShare = (v) => { v.clone = () => v; return v; };
+  const apU = {
+    fogAP: { value: apShare(new THREE.Vector4(0, 1 / 1200, 0, 0)) },      // the haze: extinction at the datum (1/m), 1/scale height, datum y, on
+    fogAPLow: { value: apShare(new THREE.Vector4(0, 1 / 55, 8, 0)) },     // the ground fog: the same, a layer of its own
+    fogAPSun: { value: apShare(new THREE.Vector4(0, 1, 0, 0)) },          // toward the sun (the key light's own direction is the moon's by night)
+    fogAPGlow: { value: apShare(new THREE.Vector4(0, 0, 0, 1 / 60)) },    // the city's light in the low air by night (rgb), 1/its depth
+    fogAPSunC: { value: apShare(new THREE.Color()) },                     // the air's colour into the sun's glow
+    fogAPAnti: { value: apShare(new THREE.Color()) },                     // and away from it (the twilight's shift)
+  };
+  {
+    const C = THREE.ShaderChunk;
+    C.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogV;\n#endif';
+    C.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogV = mvPosition.xyz;\n#endif';
+    C.fog_pars_fragment = [
+      '#ifdef USE_FOG',
+      '\tuniform vec3 fogColor;',
+      '\tvarying float vFogDepth;',
+      '\tvarying vec3 vFogV;',
+      '\tuniform vec4 fogAP, fogAPLow, fogAPSun, fogAPGlow;',
+      '\tuniform vec3 fogAPSunC, fogAPAnti;',
+      '\t#ifdef FOG_EXP2',
+      '\t\tuniform float fogDensity;',
+      '\t#else',
+      '\t\tuniform float fogNear;',
+      '\t\tuniform float fogFar;',
+      '\t#endif',
+      // one exponential layer's optical depth along the eye's ray: its density at the datum, times the length, times the
+      // mean of exp(-height / H) over the heights the ray passes (below the datum it is the datum's)
+      '\tfloat apLayer( vec4 L, float dy, float d ) {',
+      '\t\tif ( L.x <= 0.0 ) return 0.0;',
+      '\t\tfloat h0 = max( cameraPosition.y - L.z, 0.0 ), h1 = max( cameraPosition.y + dy - L.z, 0.0 ), x = L.y * ( h1 - h0 ), e0 = exp( - L.y * h0 );',
+      '\t\treturn L.x * d * ( abs( x ) > 1e-4 ? ( e0 - exp( - L.y * h1 ) ) / x : e0 );',
+      '\t}',
+      '\tfloat apOD( vec3 v, float d ) { return apLayer( fogAP, v.y, d ) + apLayer( fogAPLow, v.y, d ); }',
+      // the air's colour along a ray: the dome's horizon in that azimuth (the twilight shift away from the sun), then its
+      // glow toward the sun (the dome's own terms, normalised to 1 at the sun), then the city's light low in the air by night
+      '\tvec3 apColor( vec3 v, float d ) {',
+      '\t\tvec3 dir = v / max( d, 1e-3 );',
+      '\t\tfloat sw = dot( normalize( dir.xz + vec2( 1e-5, 0.0 ) ), normalize( fogAPSun.xz + vec2( 1e-5, 0.0 ) ) ) * 0.5 + 0.5;',
+      '\t\tvec3 c = mix( fogColor, fogAPAnti, 1.0 - sw * sw );',
+      '\t\tfloat mu = max( dot( dir, fogAPSun.xyz ), 0.0 ), q = 1.0 - mu, m2 = mu * mu, m4 = m2 * m2, m8 = m4 * m4;',
+      '\t\tc = mix( c, fogAPSunC, ( 0.24 * exp( - 190.0 * q ) + 0.07 * exp( - 18.0 * q ) + 0.10 * m8 * m4 + 0.10 * m8 + 0.05 * m2 ) * 1.7857 );',
+      '\t\treturn c + fogAPGlow.rgb * exp( - max( cameraPosition.y + 0.5 * v.y - fogAPLow.z, 0.0 ) * fogAPGlow.w );',
+      '\t}',
+      '#endif',
+    ].join('\n');
+    C.fog_fragment = [
+      '#ifdef USE_FOG',
+      '\t#ifdef FOG_EXP2',
+      '\t\tfloat fogFactor = 1.0 - exp( - fogDensity * fogDensity * vFogDepth * vFogDepth );',
+      '\t#else',
+      '\t\tfloat fogFactor = smoothstep( fogNear, fogFar, vFogDepth );',
+      '\t#endif',
+      '\tvec3 fogMix = fogColor;',
+      '\tif ( fogAP.w > 0.5 ) {',
+      '\t\tvec3 apV = vFogV * mat3( viewMatrix );',   // view to world: the transpose of the view's rotation
+      '\t\tfloat apD = length( apV );',
+      '\t\tfogFactor = 1.0 - exp( - apOD( apV, apD ) );',
+      '\t\tif ( fogFactor > 0.001 ) fogMix = apColor( apV, apD );',   // the near street skips the colour's work
+      '\t}',
+      '\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogMix, fogFactor );',
+      '#endif',
+    ].join('\n');
+    for (const k of Object.keys(apU)) THREE.UniformsLib.fog[k] = apU[k];
+    for (const k of Object.keys(THREE.ShaderLib)) { const u = THREE.ShaderLib[k].uniforms; if (u && u.fogColor) for (const n of Object.keys(apU)) u[n] = apU[n]; }
+  }
   // custom river spans register their true deck profiles here so the traffic
   // layer can ride the actual roadway instead of a flat guess under the bridge
   const BRIDGE_DECKS = [];
@@ -2964,6 +3041,13 @@
       uMoonE: { value: new THREE.Vector3(1, 0, 0) },     // the disc's right as seen from the ground
       uPost: postU.uPost,
       uExposure: postU.uExposure,
+      // the realism pass (applyLighting sets them; refreshEnv copies them into the probe's dome)
+      uGlow: { value: new THREE.Color(0, 0, 0) },        // the city's skyglow by night, display colour at the horizon
+      uGlowDir: { value: new THREE.Vector3(0, 1, 0) },   // toward Center City (x, z) and how much brighter that way (y)
+      uSkyFog: { value: new THREE.Vector4(0, 0, 0, 0) }, // the weather's veil over the dome: x its optical depth straight up
+      uSkyFogC: { value: new THREE.Color(0, 0, 0) },     // and its colour (display)
+      uBand: { value: 1 },                               // the horizon's cloud band (a rain or snow sky has none)
+      uSatK: { value: 1 },                               // the composite's saturation undone over the open sky (its horizon matches the air's)
     },
     vertexShader:
       'varying vec3 vDir;\n' +
@@ -2971,6 +3055,7 @@
     fragmentShader:
       'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun; uniform float uSunVis, uTwilight;\n' +
       'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
+      'uniform vec3 uGlow, uGlowDir, uSkyFogC; uniform vec4 uSkyFog; uniform float uBand, uSatK;\n' +
       'uniform vec3 uMoon, uMoonU, uMoonV, uMoonN, uMoonE; uniform float uMoonK, uMoonI, uMoonD, uMoonR; uniform float uPost, uExposure;\n' +
       'float mare(vec2 p, vec2 c, vec2 r){ vec2 q = (p - c) / r; return 1.0 - smoothstep(0.5, 1.25, dot(q, q)); }\n' +
       INV_GLSL + '\n' +
@@ -2993,6 +3078,19 @@
       '  float s = clamp(dot(nd, uSun), 0.0, 1.0);\n' +
       '  float sunAng = acos(s);\n' +
       '  float disc = 1.0 - smoothstep(0.0085, 0.0118, sunAng);\n' +
+      (REAL ? [
+        // the realism pass: by day the sky brightens toward the sun and away from it and dims at right angles to it
+        // (Rayleigh's phase, kept off the horizon so the air below meets it), a broad aureole about the sun stronger low
+        // in the sky, and a pale band of haze hugging the horizon
+        '  float sMu = dot(nd, uSun), hp = max(h, 0.0), dayK = clamp(uSun.y * 4.0 + 0.4, 0.0, 1.0);',
+        '  col *= mix(1.0, 0.86 + 0.14 * (1.0 + sMu * sMu), smoothstep(0.0, 0.25, hp) * dayK);',
+        '  col += cSun * uSunVis * (0.10 * pow(max(sMu, 0.0), 8.0) + 0.05 * max(sMu, 0.0) * max(sMu, 0.0)) * clamp(0.2 / (hp * 0.9 + 0.1), 0.25, 1.0);',
+        '  col = mix(col, horizon * 1.08, exp(-hp * 14.0) * 0.25 * dayK);',
+        // the city's skyglow (night#1): warm, strongest on the horizon and toward Center City, faint at the zenith
+        // (the light dome over Center City rides the broad term only, so the horizon still meets the air's colour)
+        '  col += uGlow * (0.8 * exp(-hp * 7.0) + 0.2 * exp(-hp * 1.6) * (1.0 + uGlowDir.y * pow(max(dot(normalize(nd.xz + vec2(1e-4, 0.0)), uGlowDir.xz), 0.0), 3.0)));',
+        '',
+      ].join('\n') : '') +
       '  col += cSun * ((disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24 + exp(-sunAng * sunAng * 9.0) * 0.07) * uSunVis + pow(s, 12.0) * 0.10 * (0.35 + 0.65 * uSunVis));\n' +
       // the Moon (Round 64): a phased disc on the per-fragment normalized direction (nd,
       // never vDir, the coarse dome smears interpolated math, the sun lesson), drawn
@@ -3063,8 +3161,17 @@
       '    cc = mix(cc, vec3(0.74, 0.77, 0.82) * uCloudLight, dens * (0.35 + 0.4 * cov));\n' +
       // World-space banks handle nearby clouds; the dome keeps the distant haze band.
       '    float horiz = smoothstep(0.0, 0.03, h) * (1.0 - smoothstep(0.04, 0.12, h));\n' +
-      '    col = mix(col, cc, m * horiz * (0.86 + 0.1 * cov));\n' +
+      '    col = mix(col, cc, m * horiz * (0.86 + 0.1 * cov) * uBand);\n' +
       '  }\n' +
+      (REAL ? [
+        // the weather's veil (weather#1): rain, snow and fog stand between the eye and the sky as they do between the eye
+        // and the city, thickest along the horizon, so a fog's sky is milk and a rain's a grey lid
+        '  if (uSkyFog.x > 1e-4) col = mix(col, uSkyFogC, 1.0 - exp(-uSkyFog.x / max(h + 0.04, 0.04)));',
+        // the composite greys every colour (gradeU.uSat); the open sky takes back what it lost, the horizon none of it, so
+        // the deep-blue zenith stands and the horizon still meets the air
+        '  { float sL = dot(col, vec3(0.2126, 0.7152, 0.0722)); col = max(mix(vec3(sL), col, mix(1.0, uSatK, smoothstep(0.03, 0.35, h))), 0.0); }',
+        '',
+      ].join('\n') : '') +
       // under the post pipeline the dome hands the composite the exact pre-image of its raw
       // colour, plus an HDR sun disc that only the bloom can see
       // (alpha is the bloom mask under the post pipeline: the dome's pre-image is HDR-bright
@@ -3083,41 +3190,56 @@
   // World-space cloud banks, independent of the flight ceiling. Bases and depths
   // vary continuously within each band; the camera can be below, inside or above
   // a low bank. The upper band has a different scale, pattern and wind speed.
+  // (the realism pass: the low bank marches 80 steps on a computer, each ray's start jittered per pixel)
   const CLOUD_LAYERS = [
-    { base: 780, spread: 940, thickness: 980, scale: 0.0008, seed: 0, wind: 1, steps: isTouch ? 32 : 64, extinction: 0.0035 },
+    { base: 780, spread: 940, thickness: 980, scale: 0.0008, seed: 0, wind: 1, steps: isTouch ? 32 : REAL ? 80 : 64, extinction: 0.0035 },
     { base: 3000, spread: 850, thickness: 1150, scale: 0.00046, seed: 37.7, wind: 0.78, steps: isTouch ? 20 : 36, extinction: 0.0025 },
   ];
   const CLOUD_ALT = 1550; // representative lower-bank height for the ground-shadow projection
   function cloudLayerShader(layer, index) {
     const f = n => Number(n).toFixed(7);
+    // the realism pass (sky-light#6, weather#11): the low bank comes down in rain and snow and closes into one grey
+    // underside (uWxDeck: metres down, the spread of its bases, how much fuller), the samples start a jittered fraction
+    // of a step in (per-pixel noise: the fixed midpoints sliced the sharper clouds into wood grain, and interleaved
+    // gradient noise hatched their thin edges with diagonals), the light through a cloud follows Beer's law with the
+    // powder darkening of a thin edge and a forward glow toward the sun, the city lights the bellies from below by night,
+    // and a strike lights the cloud about it
+    const wx = REAL && index === 0;
     return `
       void traceCloud${index}(vec3 rd, float cone, inout vec3 acc, inout float trans, inout float first, inout float fogDepth) {
-        vec2 span = cloudSpan(cameraPosition.y, rd.y, ${f(layer.base)}, ${f(layer.base + layer.spread + layer.thickness)});
+        float drop = ${wx ? 'uWxDeck.x' : '0.0'};
+        vec2 span = cloudSpan(cameraPosition.y, rd.y, ${f(layer.base)} - drop, ${f(layer.base + layer.spread + layer.thickness)});
         if (span.y <= span.x || trans < 0.025) return;
         float ds = (span.y - span.x) / ${f(layer.steps)};
-        vec4 shape = vec4(${f(layer.base)}, ${f(layer.spread)}, ${f(layer.thickness)}, ${f(layer.seed)});
-        float cov = clamp(uCloud, 0.0, 1.0);
+        vec4 shape = vec4(${f(layer.base)} - drop, ${f(layer.spread)} * ${wx ? 'uWxDeck.y' : '1.0'}, ${f(layer.thickness)}, ${f(layer.seed)});
+        float cov = clamp(uCloud${wx ? ' + uWxDeck.z' : ''}, 0.0, ${wx ? '1.25' : '1.0'});
         float sunUp = clamp(uSun.y * 3.0, 0.0, 1.0);
         float heavy = smoothstep(0.55, 0.95, cov);
-        vec3 shade = mix(vec3(0.52, 0.58, 0.68), vec3(0.70, 0.73, 0.78), heavy * 0.65);
+        vec3 shade = mix(${REAL ? 'vec3(0.56, 0.60, 0.67)' : 'vec3(0.52, 0.58, 0.68)'}, vec3(0.70, 0.73, 0.78), heavy * 0.65);
         vec3 sunlit = mix(vec3(1.0), cSun, 0.22);
         for (int i = 0; i < ${layer.steps}; i++) {
           // Midpoint integration is stable as the camera moves. No screen-space
           // random offsets: those made sparse samples look like noisy pixels.
-          float t = span.x + (float(i) + 0.5) * ds;
+          // (The realism pass's sharper edges banded at fixed midpoints; its 80 steps carry the jitter as a fine grain.)
+          float t = span.x + (float(i) + ${REAL ? 'cJit' : '0.5'}) * ds;
           vec3 p = cameraPosition + rd * t;
           float footprint = max(t * cone, ds * 0.55) * ${f(layer.scale)};
           vec2 sampleCloud = cloudSample(p, shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, footprint, ds * abs(rd.y));
-          float dens = sampleCloud.x;
+          float dens = sampleCloud.x${REAL ? ' * smoothstep(15.0, 90.0, t)' : ''};
           if (dens > 0.002) {
             vec2 towardSun = cloudSample(p + uSun * 160.0 + vec3(0.0, 65.0, 0.0), shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, footprint, ds * abs(rd.y));
-            float lit = clamp(0.30 + (dens - towardSun.x) * 0.85 + sampleCloud.y * 0.22, 0.0, 0.92) * sunUp * (1.0 - heavy * 0.65);
-            float ambient = mix(0.72 + 0.28 * clamp(sampleCloud.y, 0.0, 1.0), 0.90, heavy * 0.65);
+            ${REAL ? `float cOd = towardSun.x * 1.7 + dens * 0.35, cPow = 1.0 - exp(-dens * 3.0);
+            float lit = clamp(exp(-cOd * 1.4) * (0.55 + 0.45 * cPow) * 1.3 + sampleCloud.y * 0.10, 0.0, 1.0) * sunUp * (1.0 - heavy * 0.65);
+            float ambient = mix(0.66 + 0.34 * clamp(sampleCloud.y, 0.0, 1.0), 0.90, heavy * 0.65);` : `float lit = clamp(0.30 + (dens - towardSun.x) * 0.85 + sampleCloud.y * 0.22, 0.0, 0.92) * sunUp * (1.0 - heavy * 0.65);
+            float ambient = mix(0.72 + 0.28 * clamp(sampleCloud.y, 0.0, 1.0), 0.90, heavy * 0.65);`}
             float a = (1.0 - exp(-dens * ds * ${f(layer.extinction)})) * (1.0 - smoothstep(14000.0, 22000.0, t));
             float weight = trans * a;
             if (a > 0.003) first = min(first, t);
-            acc += weight * mix(shade * ambient, sunlit, lit);
+            acc += weight * mix(shade * ambient, sunlit${REAL ? ' * (1.0 + cFwd * (1.0 - cPow))' : ''}, lit);
             fogDepth += weight * max(0.0, -(viewMatrix * vec4(p, 1.0)).z);
+            ${REAL ? `cFogT += weight * t;
+            cGlowAcc += weight * (1.0 - 0.65 * clamp(sampleCloud.y, 0.0, 1.0));
+            if (uBolt.z > 0.001) { vec2 bq = p.xz - uBolt.xy; cFlashAcc += weight * uBolt.z * exp(-dot(bq, bq) / (uBolt.w * uBolt.w)); }` : ''}
             trans *= 1.0 - a;
             if (trans < 0.025) break;
           }
@@ -3132,6 +3254,8 @@
       uCloud: skyMat.uniforms.uCloud, uCloudLight: skyMat.uniforms.uCloudLight, uCloudOff: skyMat.uniforms.uCloudOff,
       uSun: skyMat.uniforms.uSun, cSun: skyMat.uniforms.cSun, uPost: postU.uPost, uExposure: postU.uExposure,
       uCloudProjection: { value: camera.projectionMatrix },
+      // the realism pass (applyLighting): the rain deck, the city's light under the bellies, a strike's light in the cloud
+      uWxDeck: { value: new THREE.Vector3(0, 1, 0) }, uCityGlow: { value: new THREE.Color(0, 0, 0) }, uBolt: { value: new THREE.Vector4(0, 0, 0, 1500) },
     }),
     vertexShader: `
       varying vec3 vW;
@@ -3153,7 +3277,11 @@
       uniform vec2 uCloudOff;
       uniform vec3 uSun, cSun;
       uniform mat4 uCloudProjection;
+      uniform vec3 uWxDeck, uCityGlow; uniform vec4 uBolt;
       varying vec3 vW;
+      // the march's per-pixel state (the realism pass): the start's jitter, the forward glow toward the sun, and what the
+      // layers gather for the main: the distance to the cloud for the air, the city's light, a strike's
+      float cJit = 0.5, cFwd = 0.0, cFogT = 0.0, cGlowAcc = 0.0, cFlashAcc = 0.0;
       #include <common>
       #include <fog_pars_fragment>
       #include <logdepthbuf_pars_fragment>
@@ -3193,11 +3321,16 @@
         float detail = mix(cloudVolumeNoise(vec3(cp.x * 3.0, p.y * 0.003, cp.y * 3.0)), 0.5, smoothstep(0.10, 0.32, footprint));
         float f = cloudNoise(cp, footprint) * 0.82 + detail * 0.18;
         float threshold = 0.60 - cov * 0.40;
-        float erosion = 0.03 + (hf - 0.30) * (hf - 0.30) * 0.65;
+        ${REAL ? `// the realism pass: flat dark bases (little erosion low down, a short fade in) under tops that taper and
+        // billow, and an edge a third as soft, so a cumulus reads as one and not an airbrushed lens
+        float erosion = 0.02 + hf * hf * 0.55;
+        float edge = 0.08 + min(0.12, footprint * 1.5);
+        float density = smoothstep(0.0, edge, f - erosion - threshold - 0.035);
+        density *= smoothstep(0.0, max(0.035, verticalFootprint / thick), hf) * (1.0 - smoothstep(1.0 - max(0.10, verticalFootprint / thick), 1.0, hf));` : `float erosion = 0.03 + (hf - 0.30) * (hf - 0.30) * 0.65;
         float edge = 0.16 + min(0.10, footprint * 1.5);
         float density = smoothstep(0.0, edge, f - erosion - threshold);
         float heightEdge = max(0.16, verticalFootprint / thick);
-        density *= smoothstep(0.0, heightEdge, hf) * (1.0 - smoothstep(1.0 - heightEdge, 1.0, hf));
+        density *= smoothstep(0.0, heightEdge, hf) * (1.0 - smoothstep(1.0 - heightEdge, 1.0, hf));`}
         return vec2(density, hf);
       }
       ${CLOUD_LAYERS.map(cloudLayerShader).join('\n')}
@@ -3205,6 +3338,8 @@
         if (uCloud < 0.003) discard;
         vec3 rd = normalize(vW - cameraPosition);
         float cone = max(length(dFdx(rd)), length(dFdy(rd)));
+        ${REAL ? `cJit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        cFwd = 0.5 * pow(max(dot(rd, uSun), 0.0), 6.0);` : ''}
         vec3 acc = vec3(0.0);
         float trans = 1.0, first = 22000.0, fogDepth = 0.0;
         // The flight ceiling is below the upper bank; these spans are ordered
@@ -3223,6 +3358,7 @@
           gl_FragDepthEXT = hitClip.z / hitClip.w * 0.5 + 0.5;
         #endif
         vec3 col = acc / cover * uCloudLight;
+        ${REAL ? `col += (uCityGlow * cGlowAcc + vec3(0.85, 0.9, 1.0) * cFlashAcc) / cover;` : ''}
         if (uPost > 0.5) col = pUndo(col, uExposure);
         #ifdef USE_FOG
           float fogDistance = fogDepth / cover;
@@ -3231,7 +3367,10 @@
           #else
             float fogFactor = smoothstep(fogNear, fogFar, fogDistance);
           #endif
-          col = mix(col, fogColor, fogFactor);
+          vec3 fogMix = fogColor;
+          // the aerial perspective (the chunk's own functions): the air between the eye and the cloud, by the cloud's distance
+          if (fogAP.w > 0.5) { float fT = cFogT / cover; vec3 fv = rd * fT; fogFactor = 1.0 - exp(-apOD(fv, fT)); fogMix = apColor(fv, fT); }
+          col = mix(col, fogMix, fogFactor);
         #endif
         gl_FragColor = vec4(col, cover * 0.96);
       }
@@ -3353,8 +3492,9 @@
   envScene.add(envGround);
   const envSun = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), new THREE.MeshBasicMaterial({ color: 0xfff2d8, toneMapped: false }));
   envScene.add(envSun);
+  const envBoxMat = new THREE.MeshBasicMaterial({ color: 0x23262c });
   {
-    const bm = new THREE.MeshBasicMaterial({ color: 0x23262c });
+    const bm = envBoxMat;
     for (let k = 0; k < 9; k++) {
       const ang = k * 0.7 + 0.3;
       const bx = new THREE.Mesh(new THREE.BoxGeometry(4 + (k % 3) * 3, 6 + (k * 7) % 18, 4), bm);
@@ -3363,6 +3503,8 @@
     }
   }
   const pmremGen = new THREE.PMREMGenerator(renderer);
+  const _envC = new THREE.Color(), _envH = new THREE.Color();
+  let envLamp = 0;   // the lamps' level as realSky last saw it (lampUniform is declared far below this boot call)
   let envRT = null;
   function refreshEnv() {
     for (const k of ['cZenith', 'cHorizon', 'cGround', 'cSun']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
@@ -3372,12 +3514,29 @@
     envSky.material.uniforms.uCloud.value = skyMat.uniforms.uCloud.value;
     envSky.material.uniforms.uCloudLight.value = skyMat.uniforms.uCloudLight.value;
     envSky.material.uniforms.uCloudOff.value.copy(skyMat.uniforms.uCloudOff.value);
+    // the realism pass: the skyglow, the weather's veil and the horizon band follow into the reflections (the saturation
+    // undo stays the visible dome's: the probe's light is graded with whatever shows it)
+    for (const k of ['uGlow', 'uSkyFogC']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
+    for (const k of ['uGlowDir', 'uSkyFog']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
+    envSky.material.uniforms.uBand.value = skyMat.uniforms.uBand.value;
     // A compact sun glint follows twilight and cloud cover. The old 9-degree
     // white ball made daylight glass look like it had a floodlight painted on it.
     const sunVis=skyMat.uniforms.uSunVis.value;
     envSun.visible=sunVis>.001;
     envSun.material.color.copy(skyMat.uniforms.cSun.value).convertSRGBToLinear().multiplyScalar(8*sunVis*(1-.95*WX.cover));
     envGround.material.color.copy(skyMat.uniforms.cGround.value).convertSRGBToLinear();
+    if (REAL) {
+      // the realism pass (sky-light#4): every matte surface takes this probe as fill, and its lower half was a blue-grey
+      // disc and nine near-black boxes, so a shaded wall saw only sky and the street's warm bounce was missing. The disc is
+      // now the street as the key light and the sky light it (a warm grey albedo, by the legacy lights' units: albedo times
+      // colour times intensity times the cosine), plus the lamps' pools by night, and the boxes the facades across it
+      const a = [0.16, 0.145, 0.125], cosS = Math.max(sunDir.y, 0) * sun.intensity, hi = hemi.intensity, lk = envLamp;
+      const sc = _envC.copy(sun.color), hc = _envH.copy(hemi.color);
+      const irr = (k) => sc[k] * cosS + hc[k] * hi;
+      envGround.material.color.setRGB(a[0] * irr('r') + 0.030 * lk, a[1] * irr('g') + 0.020 * lk, a[2] * irr('b') + 0.010 * lk);
+      const wv = 0.35 * Math.max(sunDir.y, 0.15) * sun.intensity;   // a facade takes about half the sky and a glancing sun
+      envBoxMat.color.setRGB(0.20 * (sc.r * wv + 0.5 * hc.r * hi) + 0.012 * lk, 0.19 * (sc.g * wv + 0.5 * hc.g * hi) + 0.008 * lk, 0.17 * (sc.b * wv + 0.5 * hc.b * hi) + 0.005 * lk);
+    }
     envSun.position.copy(skyMat.uniforms.uSun.value).multiplyScalar(44);
     const rt = pmremGen.fromScene(envScene, 0.012);
     scene.environment = rt.texture;
@@ -23989,10 +24148,14 @@ float pinOccGate() {
         'uniform vec2 uCloudOff, uCloudSlant; uniform float uCloudCov, uCloudSh;',
         'float cshh(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
         'float cshn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(cshh(i), cshh(i + vec2(1.0, 0.0)), f.x), mix(cshh(i + vec2(0.0, 1.0)), cshh(i + vec2(1.0, 1.0)), f.x), f.y); }',
-        'float cloudShade(vec2 wp){ vec2 cp = (wp + uCloudSlant) * 0.0008 + uCloudOff * 0.8; float f = 0.5 * cshn(cp) + 0.25 * cshn(cp * 2.1 + 13.1) + 0.125 * cshn(cp * 4.3 + 41.7) + 0.0625 * cshn(cp * 8.9 + 7.7); float thr = 0.60 - clamp(uCloudCov, 0.0, 1.0) * 0.40; return smoothstep(thr, thr + 0.14, f) * uCloudSh; }',
+        'float cloudShade(vec2 wp){ vec2 cp = (wp + uCloudSlant) * 0.0008 + uCloudOff * 0.8; float f = 0.5 * cshn(cp) + 0.25 * cshn(cp * 2.1 + 13.1) + 0.125 * cshn(cp * 4.3 + 41.7) + 0.0625 * cshn(cp * 8.9 + 7.7); float thr = 0.60 - clamp(uCloudCov, 0.0, 1.0) * 0.40; return ' + (REAL ? 'smoothstep(thr + 0.04, thr + 0.11, f)' : 'smoothstep(thr, thr + 0.14, f)') + ' * uCloudSh; }',
         'void main() {',
-      ].join('\n'))
-      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ndiffuseColor.rgb *= 1.0 - 0.45 * cloudShade((' + worldExpr + ').xz);');
+      ].join('\n'));
+    // the realism pass (sky-light#5): a cloud's shadow is the sun's light taken away, not a stain on the albedo (which
+    // darkened the sky's light too, so a broken sky read as a dull overcast with dirty patches): the direct light under
+    // a cloud goes to a tenth, sharp-edged like the deck's new bases, and the fill stays
+    if (REAL) shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float csK = 1.0 - 0.9 * cloudShade((' + worldExpr + ').xz); reflectedLight.directDiffuse *= csK; reflectedLight.directSpecular *= csK; }');
+    else shader.fragmentShader = shader.fragmentShader.replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ndiffuseColor.rgb *= 1.0 - 0.45 * cloudShade((' + worldExpr + ').xz);');
   }
   function wxSurfacePatch(shader) {
     shader.uniforms.uSnowAcc = wxSurfU.uSnowAcc;
@@ -24142,8 +24305,54 @@ float pinOccGate() {
   const boltGeo = new THREE.BufferGeometry();
   boltGeo.setAttribute('position', new THREE.BufferAttribute(boltPos, 3));
   boltGeo.setDrawRange(0, 0);
-  const boltMat = new THREE.LineBasicMaterial({ color: 0xeaeeff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
-  const boltMesh = new THREE.LineSegments(boltGeo, boltMat);
+  // the realism pass (weather#13): a 1 px line read as a scratch. Under REAL each segment is a ribbon the vertex shader
+  // turns to the eye, BOLT_W across: a white-hot channel of about a seventh of it in an exp-squared glow, added into the
+  // frame with its strength in the alpha so the bloom takes it (the bright pass masks by alpha; the sky's is zero), and
+  // the flash lights the cloud about the strike (the deck's uBolt) more than the whole sky (applyLighting's flashG)
+  const BOLT_RIB = REAL, BOLT_W = 70;
+  const ribPos = BOLT_RIB ? new Float32Array(BOLT_MAX * 12) : null, ribDir = BOLT_RIB ? new Float32Array(BOLT_MAX * 12) : null;
+  const boltMat = !BOLT_RIB ? new THREE.LineBasicMaterial({ color: 0xeaeeff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, fog: false })
+    : new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false,
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+      blendEquationAlpha: THREE.AddEquation, blendSrcAlpha: THREE.OneFactor, blendDstAlpha: THREE.OneFactor,
+      uniforms: { uOp: { value: 0 }, uW: { value: BOLT_W }, uPost: postU.uPost },
+      vertexShader: [
+        'attribute vec3 aDir; attribute vec2 aSide; uniform float uW; varying float vX;',
+        '#include <common>', '#include <logdepthbuf_pars_vertex>',
+        'void main(){',
+        '  vec3 d = normalize(aDir), s = cross(d, normalize(cameraPosition - position));',
+        '  float sl = length(s); s = sl > 1e-4 ? s / sl : vec3(1.0, 0.0, 0.0);',
+        '  vec3 p = position + s * aSide.x * uW * 0.5 + d * (aSide.y * 2.0 - 1.0) * uW * 0.06;',   // the ends overlap a little: no gaps at the kinks
+        '  vX = aSide.x;',
+        '  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);',
+        '  #include <logdepthbuf_vertex>',
+        '}',
+      ].join('\n'),
+      fragmentShader: [
+        'uniform float uOp, uPost; varying float vX;',
+        '#include <common>', '#include <logdepthbuf_pars_fragment>',
+        'void main(){',
+        '  #include <logdepthbuf_fragment>',
+        '  float core = exp(-vX * vX * 60.0), glow = exp(-vX * vX * 5.0) * 0.3, k = (core + glow) * uOp;',
+        '  if (k < 0.003) discard;',
+        '  vec3 c = vec3(0.86, 0.9, 1.0);',
+        '  gl_FragColor = vec4(uPost > 0.5 ? c * (core * 7.0 + glow * 1.6) * uOp : min(c * (core * 1.6 + glow), vec3(1.0)) * uOp, clamp(k, 0.0, 1.0));',
+        '}',
+      ].join('\n'),
+    });
+  if (BOLT_RIB) {
+    const side = new Float32Array(BOLT_MAX * 8), idx = new Uint16Array(BOLT_MAX * 6);
+    for (let k = 0; k < BOLT_MAX; k++) {
+      side.set([-1, 0, 1, 0, -1, 1, 1, 1], k * 8);
+      const v = k * 4; idx.set([v, v + 1, v + 2, v + 1, v + 3, v + 2], k * 6);
+    }
+    boltGeo.setAttribute('position', new THREE.BufferAttribute(ribPos, 3));
+    boltGeo.setAttribute('aDir', new THREE.BufferAttribute(ribDir, 3));
+    boltGeo.setAttribute('aSide', new THREE.BufferAttribute(side, 2));
+    boltGeo.setIndex(new THREE.BufferAttribute(idx, 1));
+  }
+  const boltMesh = BOLT_RIB ? new THREE.Mesh(boltGeo, boltMat) : new THREE.LineSegments(boltGeo, boltMat);
   boltMesh.frustumCulled = false; boltMesh.renderOrder = 60; boltMesh.visible = false;
   scene.add(boltMesh);
   function spawnBolt(now) {   // a synthetic strike, for storm mode without a lightning feed (and __dbg.bolt)
@@ -24164,6 +24373,7 @@ float pinOccGate() {
   }
   function spawnBoltAt(now, px, pz) {
     const dist = Math.hypot(px - camera.position.x, pz - camera.position.z);
+    WXFX.boltX = px; WXFX.boltZ = pz;   // where the cloud lights (the realism pass)
     let py = 950 + Math.random() * 520;
     const drop = py / 11;
     let n = 0;
@@ -24186,8 +24396,19 @@ float pinOccGate() {
       px = nx; py = ny; pz = nz;
     }
     put(px, py, pz, px + (Math.random() - 0.5) * 60, -25, pz + (Math.random() - 0.5) * 60);
+    if (BOLT_RIB) {   // each segment's two ends, twice, each carrying the segment's direction
+      for (let k = 0; k < n; k++) {
+        const o = k * 6, dx = boltPos[o + 3] - boltPos[o], dy = boltPos[o + 4] - boltPos[o + 1], dz = boltPos[o + 5] - boltPos[o + 2];
+        for (let j = 0; j < 4; j++) {
+          const e = j < 2 ? 0 : 3, q = (k * 4 + j) * 3;
+          ribPos[q] = boltPos[o + e]; ribPos[q + 1] = boltPos[o + e + 1]; ribPos[q + 2] = boltPos[o + e + 2];
+          ribDir[q] = dx; ribDir[q + 1] = dy; ribDir[q + 2] = dz;
+        }
+      }
+      boltGeo.attributes.aDir.needsUpdate = true;
+    }
     boltGeo.attributes.position.needsUpdate = true;
-    boltGeo.setDrawRange(0, n * 2);
+    boltGeo.setDrawRange(0, BOLT_RIB ? n * 6 : n * 2);
     WXFX.boltEnd = now + 240;
     WXFX.boltFlash = clamp(1100 / dist, 0.05, 1);   // a strike overhead lights the world; one 40 km out barely flickers the deck
     WXFX.boltSoft = dist > 9000;                     // far off: one soft pulse instead of the triple strobe
@@ -24252,16 +24473,21 @@ float pinOccGate() {
     if (LTN.queue.length && now >= LTN.nextDraw) { spawnStrike(now, LTN.queue.shift()); LTN.nextDraw = now + 2500 + Math.random() * 2500; }   // real strikes, one every 2.5 to 5 s at most
     else if (F.storm && !LTN.live) {   // no lightning feed: the synthetic bolts stand in
       if (!F.nextBolt) F.nextBolt = now + 1200 + Math.random() * F.boltGap[1] * 0.5;
-      if (now >= F.nextBolt) spawnBolt(now);
+      if (now >= F.nextBolt && F.boltHold == null) spawnBolt(now);
     } else F.nextBolt = 0;
-    if (now < F.boltEnd) {
-      const t = (now - (F.boltEnd - 240)) / 240;
+    if (F.boltHoldNew > 0 && --F.boltHoldNew === 0) {   // dev: a held strike, 2.5 km ahead of the eye
+      const d = new V3(); camera.getWorldDirection(d); const h = Math.hypot(d.x, d.z) || 1;
+      spawnBoltAt(now, camera.position.x + d.x / h * 2500, camera.position.z + d.z / h * 2500);
+    }
+    if (now < F.boltEnd || F.boltHold != null) {
+      const t = F.boltHold != null ? F.boltHold : (now - (F.boltEnd - 240)) / 240;
       const fl = F.boltSoft ? 0.8 * Math.exp(-(t - 0.35) * (t - 0.35) * 26) : Math.max(
         Math.exp(-(t - 0.07) * (t - 0.07) * 80),
         0.75 * Math.exp(-(t - 0.45) * (t - 0.45) * 55),
         0.45 * Math.exp(-(t - 0.82) * (t - 0.82) * 45));
       F.flash = fl * F.boltFlash;
       boltMat.opacity = clamp(fl * (F.boltSoft ? 1.2 : 1.7) - 0.25, 0, F.boltSoft ? 0.6 : 1);
+      if (BOLT_RIB) boltMat.uniforms.uOp.value = boltMat.opacity;
       boltMesh.visible = boltMat.opacity > 0.02;
     } else {
       boltMesh.visible = false;
@@ -24269,7 +24495,8 @@ float pinOccGate() {
     }
   }
   const PAL = {
-    night: { z: new THREE.Color(0x060e1b), h: new THREE.Color(0x182633), g: new THREE.Color(0x0b1116) },
+    // (the realism pass: a city's night horizon is not navy; the skyglow below adds its warmth)
+    night: { z: new THREE.Color(REAL ? 0x070d19 : 0x060e1b), h: new THREE.Color(REAL ? 0x1c232c : 0x182633), g: new THREE.Color(0x0b1116) },
     twi: { z: new THREE.Color(0x3d557a), h: new THREE.Color(0xe5af89), g: new THREE.Color(0x45474a) },
     day: { z: new THREE.Color(COLORS.skyZenith), h: new THREE.Color(COLORS.skyHorizon), g: new THREE.Color(COLORS.skyGround) },
   };
@@ -24290,6 +24517,92 @@ float pinOccGate() {
   function moonShadowsOff(off) {
     if (off && !moonNoRecv) { moonNoRecv = []; scene.traverse((o) => { if (o.receiveShadow) { o.receiveShadow = false; moonNoRecv.push(o); } }); }
     else if (!off && moonNoRecv) { for (const o of moonNoRecv) o.receiveShadow = true; moonNoRecv = null; }
+  }
+  // ---- the realism pass's sky and air (applyLighting calls it under REAL, after the exposure and before the fog colour
+  // takes its pre-image): the city's skyglow by night on the dome, under the clouds and in the low air; the rain deck coming
+  // down; a strike's light in its cloud; and, with AP on, the visibility from the weather and the air quality, the air's
+  // colours as the dome's horizon has them, and the weather's veil over the dome itself
+  const _apA = new THREE.Color(), _apS = new THREE.Color(), _apG = new THREE.Color(), _apX = new THREE.Color(), _apY = new THREE.Color(), glowD = new THREE.Color();
+  // dev (?dev=1): the air's state, and a strike held at a phase of its flicker for a capture (__dbg.boltHold(0.08) strikes
+  // 2.5 km ahead and pins it, __dbg.boltHold(null) lets it go)
+  const apProbe = () => ({ on: AP.on, V: Math.round(AP.V), haze: apU.fogAP.value.toArray().map((v) => +v.toPrecision(4)), low: apU.fogAPLow.value.toArray().map((v) => +v.toPrecision(4)),
+    far: Math.round(scene.fog.far), sky: skyMat.uniforms.uSkyFog.value.x, glow: skyMat.uniforms.uGlow.value.toArray(), deck: cloudMat.uniforms.uWxDeck.value.toArray() });
+  function boltHold(t) {
+    if (t == null) { WXFX.boltHold = null; return null; }
+    if (WXFX.boltHold == null) WXFX.boltHoldNew = 3;   // the strike lands two frames on, once a pose set this frame has moved the camera
+    WXFX.boltHold = +t; return WXFX.boltHold;
+  }
+  function realSky(el, dayF, night, twi, ch, cz) {
+    const F = WXFX, cover = WX.cover, U = skyMat.uniforms;
+    envLamp = lampUniform.value;
+    if (window.__dbg && !window.__dbg.ap) Object.assign(window.__dbg, { ap: apProbe, boltHold });
+    // the city's skyglow (night#1, weather#3): warm, a little more under a deck that the streets light from below, less in a
+    // fog that hides it; brighter toward Center City from out in the neighbourhoods
+    const glowK = night * (0.5 + 0.2 * cover) * (1 - 0.5 * F.fog);
+    U.uGlow.value.setRGB(0.16, 0.105, 0.065).multiplyScalar(glowK);
+    const gdx = -1603 - camera.position.x, gdz = -802 - camera.position.z, gd = Math.hypot(gdx, gdz) || 1;   // toward City Hall
+    U.uGlowDir.value.set(gdx / gd, 1.5 * smooth(800, 6000, gd), gdz / gd);
+    cloudMat.uniforms.uCityGlow.value.setRGB(0.42, 0.31, 0.23).multiplyScalar(glowK);
+    // the rain deck (weather#11): down to about 400 m in a downpour, its bases closer together, its underside closed; the
+    // horizon's band of fair-weather cloud goes with the fair weather
+    const rk = Math.max(F.rain, F.snow * 0.8, F.gloom * 0.8);
+    cloudMat.uniforms.uWxDeck.value.set(380 * rk, 1 - 0.7 * rk, 0.15 * rk + 0.08 * F.gloom);
+    U.uBand.value = clamp(1 - Math.max(F.rain, F.snow * 0.9, F.fog, F.gloom * 0.7), 0, 1);
+    U.uSatK.value = POST.on ? 1 / Math.max(0.5, gradeU.uSat.value) : 1;
+    cloudMat.uniforms.uBolt.value.set(F.boltX || 0, F.boltZ || 0, F.flash * 1.6, 1500);
+    if (!AP.on) { U.uSkyFog.value.x = 0; return; }
+    // visibility (sky-light#1, #2, weather#1), metres: 45 km in clean air, the city's PM2.5 scaling it (Round 75), and the
+    // weather's extinction added to the air's (per metre, a visibility being 3.912 over it): rain about 6 km, a downpour
+    // 2, snow 1.5, a blizzard 500 m, a storm's core darker still, the haze over a ground fog 7 km. The night keeps Round 51's
+    // reach (farN: the far windows banded the horizon past it, and the cull line it sets is a phone's night frame), and
+    // Smoother's 9 km view (Round 168) now ends in the air instead of at a wall
+    const Vc0 = AP.clear * (fogBase.far / 40000), Vc = Vc0 * F.haze;
+    const ext = 1 / Vc + F.rain * (1 / 9000 + (1 / 2000 - 1 / 9000) * F.rain * F.rain) + F.snow * (1 / 4000 + (1 / 500 - 1 / 4000) * F.snow * F.snow)
+      + F.gloom / 12000 + F.hail / 3000 + F.fog / 8000;
+    let V = 1 / ext;
+    const Vd = Math.max(V, 400), farN = fogBase.far * F.haze * (1 - 0.6 * night);
+    V = Math.min(V, 1.15 * farN);
+    const gf = gfxPerf().far;
+    if (gf) V = Math.min(V, gf * 0.6);
+    V = Math.max(V, 400);
+    AP.V = V;
+    const H = 1200 - 400 * Math.max(F.rain, F.snow), b = 3.912 / V, ye = camera.position.y;
+    apU.fogAP.value.set(b, 1 / H, 0, 1);
+    const bl = F.fog * 3.912 / 320;   // a radiation fog: 320 m on the street, a layer 55 m deep that the towers stand out of
+    apU.fogAPLow.value.set(bl, 1 / 55, 8, 0);
+    // the distances the rest of the page reads: cullFogged drops a chunk past the 0.5% line along the clearest ray (at the
+    // eye's own height), and THREE.Fog's pair stays meaningful for a material that kept the linear chunk
+    let far = Math.min(5.3 / (b * Math.exp(-Math.max(ye, 0) / H)), 1.25 * farN);   // past 1.25 farN a chunk is 98% air
+    if (gf) far = Math.min(far, gf);
+    scene.fog.far = Math.min(far, 80000); scene.fog.near = scene.fog.far * 0.05;
+    // the air's colours (display until the pre-images): the horizon's as applyLighting left it (the weather's greys, the
+    // smoke's tan) with the city's glow in it as the dome's horizon has it; the twilight's shift away from the sun (the
+    // dome's own term); and toward the sun its glow and aureole, as strong as the dome's and gone under a deck
+    const fogD = scene.fog.color;
+    fogD.add(_apG.copy(U.uGlow.value));
+    fogD.lerp(_apY.setRGB(0.55, 0.58, 0.61).multiplyScalar(0.15 + 0.85 * dayF), 0.35 * F.rain);   // rain's air is a mid grey, a fog's is milk
+    _apX.copy(cz).multiplyScalar(0.65).add(_apY.setRGB(0.12, 0.095, 0.13));
+    _apA.copy(fogD).lerp(_apX, U.uTwilight.value * 0.65);
+    const sv = U.uSunVis.value * (1 - 0.85 * smooth(0.3, 1, cover)) * (1 - 0.8 * F.fog) * (1 - 0.6 * F.gloom);
+    _apS.copy(fogD).add(_apX.copy(U.cSun.value).multiplyScalar(0.56 * sv));
+    // the city's light in the low air by night (night#9): a veil of the lamps' warmth near the ground, thick in fog and rain
+    const murk = Math.max(F.rain, F.snow, F.fog, 0.5 * F.gloom);
+    _apG.setRGB(0.30, 0.22, 0.14).multiplyScalar(lampUniform.value * night * (0.12 + 1.1 * murk));
+    glowD.copy(_apG);
+    if (POST.on) {
+      const e = postU.uExposure.value;
+      pUndoColor(_apA, e); pUndoColor(_apS, e);
+      const base = pUndoColor(_apY.copy(fogD), e);
+      _apG.copy(pUndoColor(_apX.copy(fogD).add(_apG), e)).sub(base);
+    }
+    apU.fogAPAnti.value.copy(_apA); apU.fogAPSunC.value.copy(_apS);
+    apU.fogAPSun.value.set(U.uSun.value.x, U.uSun.value.y, U.uSun.value.z, 0);
+    apU.fogAPGlow.value.set(Math.max(_apG.r, 0), Math.max(_apG.g, 0), Math.max(_apG.b, 0), 1 / 60);
+    // the dome's veil: what the weather and the smoke add over the clear air (by day's measure), up through the haze's
+    // height and the fog's layer from the eye
+    const bx = Math.max(0, 3.912 / Vd - 3.912 / Vc0);
+    U.uSkyFog.value.set(bx * H * Math.exp(-Math.max(ye, 0) / H) + bl * 55 * Math.exp(-Math.max(ye - 8, 0) / 55), 0, 0, 0);
+    U.uSkyFogC.value.copy(fogD).add(_apY.copy(glowD).multiplyScalar(0.6 * Math.exp(-Math.max(ye - 8, 0) / 60)));   // from the street, a fog's sky glows with the lamps
   }
   function applyLighting() {
     const ms = clockUtcMs(clock, clock.minutes);
@@ -24315,10 +24628,14 @@ float pinOccGate() {
     // kept 40 per cent of its light and all of its glint under a full deck that had already
     // erased its disc, so the roofs and the river still threw a moonglade at an overcast sky
     const deckK = 1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover);
+    // the realism pass (sky-light#5): a broken sky is full sun beside sharp cloud shadow (cloudShadowPatch masks the direct
+    // light under each cloud), so the sun itself dims only as the deck closes; the moon keeps Round 88's rule. A radiation
+    // fog takes most of the sun too
+    const sunDeckK = REAL ? (1 - 0.80 * smooth(0.55, 1.0, WX.cover) - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.7 * WXFX.fog) : deckK;
     glintK = (1 - 0.9 * smooth(0.25, 1.0, WX.cover)) * (1 - 0.6 * WXFX.gloom);   // the water's sparkle and the glass reveals: gone under the deck
     if (el > -3) {
       sunDir.copy(sp.dir);
-      sun.intensity = 1.85 * smooth(-3, 15, el) * deckK * (1 - 0.55 * WXFX.gloom);
+      sun.intensity = 1.85 * smooth(-3, 15, el) * sunDeckK * (1 - 0.55 * WXFX.gloom);
       sun.color.copy(_c1.set(0xff9a55)).lerp(_c2.set(COLORS.sun), smooth(-2, 28, el));
       if (WXFX.hazeTint > 0.003) {   // smoke: a dimmer, redder sun
         sun.intensity *= 1 - 0.3 * WXFX.hazeTint;
@@ -24373,7 +24690,7 @@ float pinOccGate() {
     // a broken sky stays blue-gray; past 75% cover the dome goes to a neutral overcast gray
     // (Mike: a 92% day still read as blue)
     const heavy = smooth(0.75, 1.0, WX.cover);
-    cz.lerp(_c2.set(0x93a5b4).lerp(_c3.set(0x8c9399), heavy).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * (0.55 + 0.42 * heavy));
+    cz.lerp(_c2.set(0x93a5b4).lerp(_c3.set(0x8c9399), heavy).multiplyScalar(0.15 + 0.85 * dayF), (REAL ? smooth(0.3, 1.0, WX.cover) : WX.cover) * (0.55 + 0.42 * heavy));   // (the realism pass: a fair-weather sky keeps its blue)
     ch.lerp(_c2.set(0xc4ccd2).lerp(_c3.set(0xb3b8bc), heavy).multiplyScalar(0.15 + 0.85 * dayF), WX.cover * (0.5 + 0.45 * heavy));
     if (WXFX.gloom > 0.003) {   // storm gloom: the whole deck sinks toward charcoal slate
       cz.lerp(_c2.set(0x353d49).multiplyScalar(0.10 + 0.90 * dayF), WXFX.gloom * 0.72);
@@ -24384,13 +24701,19 @@ float pinOccGate() {
       cz.lerp(_c2.set(0xb6bec8).multiplyScalar(0.15 + 0.85 * dayF), snowSky);
       ch.lerp(_c2.set(0xd6dade).multiplyScalar(0.15 + 0.85 * dayF), snowSky * 0.9);
     }
+    if (REAL && night > 0.003) {   // the realism pass (night#1, weather#3): a city's cloud deck by night is a brown lid lit from below, and its horizon a murk
+      cz.lerp(_c2.set(0x2a2522), WX.cover * night * 0.85);
+      ch.lerp(_c2.set(0x3a3029), WX.cover * night * 0.8);
+      ch.lerp(_c2.set(0x3b322c), 0.3 * night);
+    }
     if (WXFX.hazeTint > 0.003) {   // smoke (Round 75): a tan horizon and a milky zenith, the June 2023 sky
       ch.lerp(_c2.set(0xb89a72).multiplyScalar(0.15 + 0.85 * dayF), WXFX.hazeTint * 0.55);
       cz.lerp(ch, WXFX.hazeTint * 0.3);
     }
-    if (WXFX.flash > 0.003) {   // lightning: sky and cloud deck flare blue-white
-      cz.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.55);
-      ch.lerp(_c2.set(0xeef2ff), WXFX.flash * 0.6);
+    const flashG = WXFX.flash * (REAL ? 0.3 : 1);   // the realism pass (weather#13): a strike lights the cloud about it (uBolt), the whole sky a little
+    if (flashG > 0.003) {   // lightning: sky and cloud deck flare blue-white
+      cz.lerp(_c2.set(0xdfe6ff), flashG * 0.55);
+      ch.lerp(_c2.set(0xeef2ff), flashG * 0.6);
     }
     skyMat.uniforms.uTwilight.value = twi * (1 - WX.cover * 0.85);
     skyMat.uniforms.cZenith.value.copy(cz);
@@ -24405,7 +24728,7 @@ float pinOccGate() {
     // a full deck is darker than fair-weather cumulus: dimming it with cover
     // also calms the env-map wash that read as "snow on the ground" on
     // overcast days (the bright white dome was over-lighting every flat)
-    skyMat.uniforms.uCloudLight.value = (0.10 + 0.95 * dayF + twi * 0.25) * (1 - 0.15 * WX.cover) * (1 - 0.55 * WXFX.gloom) + WXFX.flash * 2.2;
+    skyMat.uniforms.uCloudLight.value = (0.10 + 0.95 * dayF + twi * 0.25) * (1 - 0.15 * WX.cover) * (1 - 0.55 * WXFX.gloom) + flashG * 2.2;
     skyMat.uniforms.cSun.value.copy(_c1.set(0xff8a40)).lerp(_c2.set(COLORS.sun), smooth(0, 20, el)).lerp(_c1.set(0xff7a30), WXFX.hazeTint * 0.5);
     scene.fog.color.copy(ch);
     // weather visibility: rain, snow and storm thicken the haze; true fog collapses it
@@ -24424,15 +24747,23 @@ float pinOccGate() {
     scene.fog.far = fogBase.far * WXFX.haze * (1 - 0.6 * night) * (1 - 0.62 * murk) * (1 - WXFX.fog) + 850 * WXFX.fog;
     { const gf = gfxPerf().far; if (gf) { scene.fog.far = Math.min(scene.fog.far, gf); scene.fog.near = Math.min(scene.fog.near, gf * 0.3); } }   // Round 168: Smoother's shorter view (its choice; clear air stays Auto's)
     hemi.color.copy(_c1.set(0x1a2238)).lerp(_c2.set(0xdde7f2), dayF).lerp(_c1.set(0xf0b080), twi * 0.35);
-    if (WXFX.flash > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), WXFX.flash * 0.7);
+    if (flashG > 0.003) hemi.color.lerp(_c2.set(0xdfe6ff), flashG * 0.7);
     hemi.groundColor.copy(_c1.set(0x0c0c10)).lerp(_c2.set(0x9c8e74), dayF);
     // Round 185: a city's night is not black: the lamps' warm light comes back off the pavement and the sky glows over it
     if (REAL) { hemi.color.lerp(_c2.set(0x3a3240), 0.5 * night); hemi.groundColor.lerp(_c2.set(0x3a2814), 0.7 * night); }
-    cloudShU.uCloudSh.value = 0.85 * dayF * (1 - 0.5 * WXFX.gloom);
+    // the realism pass (sky-light#4): the ground's share of the fill is the sunlit street's bounce, so it is as warm as the
+    // sun that lights it and it fades with the sun under a closing deck (a clear noon keeps Round 54's colour exactly)
+    if (REAL && dayF > 0.003) {
+      hemi.groundColor.multiplyScalar(1 - 0.3 * dayF * (1 - sunDeckK * (1 - 0.55 * WXFX.gloom)));
+      hemi.groundColor.lerp(_c2.copy(sun.color).multiply(_c3.set(0x9c8e74)), 0.25 * dayF * (1 - smooth(4, 30, el)));
+      if (night > 0.003) hemi.color.lerp(_c2.set(0x4c3e32), 0.5 * night * WX.cover);
+    } else if (REAL && night > 0.003) hemi.color.lerp(_c2.set(0x4c3e32), 0.5 * night * WX.cover);
+    cloudShU.uCloudSh.value = (REAL ? 1 : 0.85) * dayF * (1 - 0.5 * WXFX.gloom);
     cloudShU.uCloudSlant.value.set(sunDir.x, sunDir.z).multiplyScalar(CLOUD_ALT / Math.max(sunDir.y, 0.25));   // a cloud's shadow lies where its sun ray lands
-    hemi.intensity = (0.12 + 0.42 * dayF + (REAL ? 0.06 * night : 0)) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
+    hemi.intensity = (0.12 + 0.42 * dayF + (REAL ? (0.06 + 0.1 * WX.cover) * night : 0)) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + flashG * 1.6;
     renderer.toneMappingExposure = 0.94 + 0.11 * dayF;
     postU.uExposure.value = renderer.toneMappingExposure;
+    if (REAL) realSky(el, dayF, night, twi, ch, cz);   // the realism pass: the air, the skyglow, the rain deck (before the fog colour's pre-image)
     if (POST.on) pUndoColor(scene.fog.color, postU.uExposure.value);   // the fog mixes in the linear target: its colour goes in as the pre-image
     // the bright pass sees linear light: by day only the sun, the glints and the cloud rims clear
     // it (a sunlit white wall or snow cover sits near 2), by night the lamps and the lit windows do
