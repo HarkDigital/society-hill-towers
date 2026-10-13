@@ -83,7 +83,7 @@ class MidRiseWalls(unittest.TestCase):
         self.assertEqual(s.count('midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + '), 2)   # the outer districts and the far ring
         # never a house that takes a front (its front quad sits 5 cm proud, the cladding 12)
         self.assertEqual(s.count("frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)"), 2)
-        self.assertIn("TSKIN.cands.push({ poly, y0: y0 + 4, y1, kind, seed, col: col.clone(), mid: true });", s)
+        self.assertIn("TSKIN.cands.push({ poly, y0: y0 + 4, y1, kind, seed, col: col.clone(), mid: true, g0: y0 });", s)   # g0: its street floor's foot (the realism pass)
 
 
 if __name__ == '__main__':

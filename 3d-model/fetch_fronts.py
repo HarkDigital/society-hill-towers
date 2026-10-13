@@ -4,21 +4,43 @@ fronts"): one straight-on elevation per prompt from OpenAI's image API, written 
 with a sidecar <id>.json (the prompt, the model, the size, when). bake_fronts.py cuts them into the atlas.
 
 The key is read from OPENAI_API_KEY or ~/.config/philly3d/openai.env (KEY=value lines), never from the repo, and is
-never printed. A front already on disk is kept; pass --force to make it again, or --only <id>[,<id>] to make some.
+never printed. A front already on disk is kept; pass --force to make it again, or --only <id>[,<id>] to make some (an id
+that is also a set's name is refused: name it <set>/<id>, base/shop1 for the shop street floor).
 FRONTS_MODEL picks the model (default gpt-image-2), FRONTS_QUALITY the quality (default high).
 
 Each prompt asks for ONE house filling the frame: the party walls at the left and right edges, the sidewalk line at
 the foot, the top of the cornice at the head, no perspective, no sky, flat overcast light, dark unlit glass. That is
 what lets the page stretch a front across a house's own street wall, and lets the bake find the windows by their
-dark glass."""
+dark glass.
+
+Realism pass (Oct 12, Mike: "make this look more photo realistic and less cartoony"): every set but the South
+Philadelphia rows and the lofts was made at 768 by 1280 whatever its house, so the page stretched a four-storey
+Rittenhouse front to 1.42 times its height. Those sets are made again at their own houses' proportions (SIZES, with the
+storey count spelled out so the floors repeat evenly), into lidar_cache/fronts5_raw/<set>/ beside the first run (which
+stays as it was), and a set of one-storey shops joins them (shop1)."""
 import argparse, base64, concurrent.futures, json, os, sys, time, urllib.request, urllib.error
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'fronts_raw')
+RAW5 = os.path.join(HERE, 'lidar_cache', 'fronts5_raw')   # the realism pass's fronts at their own proportions
 API = 'https://api.openai.com/v1/images/generations'
 MODEL = os.environ.get('FRONTS_MODEL', 'gpt-image-2')
 QUALITY = os.environ.get('FRONTS_QUALITY', 'high')
 SIZE = '768x1280'   # 3:5, both sides multiples of 16 (gpt-image-2 takes any such size between 1:3 and 3:1)
+# the realism pass: each set at its nominal house's width to height (bake_fronts.py SETS w, h), and its storeys, which the
+# prompt spells out so every upper floor is the same height (the page repeats or drops whole storeys to fit a taller or
+# shorter wall, never stretches one). southrow and loft were already at their proportions and are not made again
+SIZES = {'federal': ('720x1360', 'three storeys'), 'victorian': ('688x1408', 'three storeys'), 'newbuild': ('704x1408', 'three storeys'),
+         'shop': ('704x1376', 'three storeys'), 'rittenhouse': ('640x1504', 'four storeys'), 'mixeduse': ('624x1504', 'four storeys'),
+         'univcity': ('736x1296', 'three storeys'), 'airlite': ('832x1248', 'two storeys over a raised basement'),
+         'siding': ('800x1248', 'two storeys'), 'manayunk': ('736x1264', 'two storeys'), 'porch': ('1024x1280', 'two storeys'),
+         'stonetwin': ('1072x1280', 'two storeys'), 'chestnut': ('1216x1280', 'two storeys'), 'shop1': ('1024x768', 'one storey')}
+STOREYS = (' The building is exactly {n} tall under its cornice; every upper storey is the same height and its floor line runs '
+           'level across the whole width.')
+
+
+def storeys(n):
+    return ' The building is exactly one storey tall under its parapet.' if n == 'one storey' else STOREYS.format(n=n)
 
 FRAME = ('Architectural front elevation photograph, perfectly orthographic and straight-on, of ONE {what} in {where}, '
          'Philadelphia. The facade fills the whole frame edge to edge: the left and right edges of the image are the party '
@@ -358,6 +380,23 @@ FRONTS = [
     ('rittenhouse', 'r14', 'Rittenhouse Square', 'four-storey red brick Federal-style townhouse with a fanlight door'),
     ('rittenhouse', 'r15', 'Rittenhouse Square', 'four-storey brick townhouse with a modern glass door and restored windows'),
     ('rittenhouse', 'r16', 'Rittenhouse Square', 'four-storey stone townhouse with ornate iron railings at the stoop'),
+    # the realism pass: one-storey shops (a shop's record under 7 m wore a three-storey front squashed to half its height)
+    ('shop1', 'o1', SP, 'single-storey red brick corner grocery with a wide aluminium display window and a glass door, a plain painted sign band with no lettering, a brick parapet with a metal cap'),
+    ('shop1', 'o2', SP, 'single-storey 1950s buff brick takeout shop with a wide plate-glass window, a stainless steel and glass door and a plain sign band'),
+    ('shop1', 'o3', SP, 'single-storey shop with a stucco front painted cream, a big display window in a red frame, a glass door and a plain sign band'),
+    ('shop1', 'o4', NP, 'single-storey hair salon in a converted garage of grey painted concrete block, a wide black-framed window and a glass door'),
+    ('shop1', 'o5', NE, 'single-storey 1960s laundromat of tan brick with a long aluminium storefront window and a glass door'),
+    ('shop1', 'o6', SP, 'single-storey dry cleaner of red brick with a glass-block panel beside a display window and a glass door, a plain sign band'),
+    ('shop1', 'o7', KS, 'single-storey auto parts store of white painted block, a metal roll-down gate raised over a glass front and a steel door'),
+    ('shop1', 'o8', NP, 'single-storey storefront of brown brick with a display window behind a black security grille and a steel door'),
+    ('shop1', 'o9', KS, 'single-storey corner bar of dark brick with two small glass-block windows and a heavy wooden door'),
+    ('shop1', 'o10', 'Center City', 'single-storey 1920s shop with a limestone front, a recessed glazed entrance and two display windows in bronze frames'),
+    ('shop1', 'o11', NP, 'single-storey takeout restaurant of yellow brick with a wide window and a glass door, a plain sign band'),
+    ('shop1', 'o12', NE, 'single-storey pharmacy of red brick with a long display window and an automatic glass door'),
+    ('shop1', 'o13', FT, 'single-storey cafe with a black-painted wooden storefront, large windows and a glazed door'),
+    ('shop1', 'o14', KS, 'single-storey tyre shop of painted concrete block with a wide roll-up garage door and a small office window'),
+    ('shop1', 'o15', EP, 'single-storey deli with a green-painted wood and glass storefront over a tiled base'),
+    ('shop1', 'o16', 'Chestnut Hill', 'single-storey florist with a timber shopfront painted dark blue and large display windows'),
 ]
 
 # the towers' facade sections (Oct 12, Mike: "regenerate the skyscrapers to look more realistic"): square, four storeys by
@@ -416,6 +455,37 @@ TILES = [
 ]
 
 
+# the realism pass (critic gap 4): the walls' street floor. The tower and mid-rise walls start 4 or 5 m up, and under them
+# stood the procedural ground floor and its storefront boxes; each wall kind now stands on one of these, one storey tall
+# and repeating along the street, two of each kind (lidar_cache/fronts5_raw/base/)
+BASE_SIZE = '1536x1024'
+BASE_FRAME = ('Seamless horizontally tileable facade texture for a 3D city model: a perfectly orthographic, straight-on '
+              'elevation of the street-level ground floor of {what} in Center City Philadelphia, exactly one storey about 4.5 '
+              'metres tall, filling the frame from the sidewalk line at the bottom edge to the floor line of the storey above at '
+              'the top edge, and repeating seamlessly at the left and right edges (what leaves the right edge comes back at the '
+              'left): {detail}. No people, no signs, no lettering, no house numbers, no cars, no trees, no awnings and no '
+              'canopies, no perspective, soft even overcast daylight with no cast shadows, the glass dark and unlit. '
+              'Photorealistic, high detail, natural colours.')
+BASES = [
+    ('base', 'shop1', 'a mixed-use brick building', 'a run of shopfronts, large dark display windows in black metal frames, a recessed glass shop door, slim red brick piers between the bays and a grey granite base course'),
+    ('base', 'shop2', 'a 1920s commercial block', 'cast-iron and wood shopfronts painted dark green with tall display windows over panelled bases and a recessed glazed entrance'),
+    ('base', 'apt1', 'a 1920s red brick apartment building', 'a recessed glass entrance in a carved limestone surround, tall windows with black iron grilles and a limestone water table at the foot'),
+    ('base', 'apt2', 'a 1950s tan brick apartment building', 'a glazed entrance with aluminium doors, wide windows with aluminium frames and a brick planter wall at the foot'),
+    ('base', 'aptmod1', 'a 2020s apartment building', 'a glass lobby entrance, large black-framed windows and dark grey brick and fibre cement panels'),
+    ('base', 'aptmod2', 'a 2010s apartment building', 'floor-to-ceiling glass in slim dark frames between pale stone panels, a glass entrance door'),
+    ('base', 'lobby1', 'a 1980s glass office tower', 'a lobby wall of dark tinted glass in aluminium mullions, a revolving door and polished grey granite piers and base'),
+    ('base', 'lobby2', 'a 2010s glass office tower', 'a tall clear glass lobby wall in slim steel mullions with glass doors and a stone floor line'),
+    ('base', 'office1', 'a 1960s office building', 'aluminium storefront glazing with dark glass, square precast concrete piers, a granite base course and a recessed lobby door'),
+    ('base', 'office2', 'a 1970s office building', 'a colonnade of dark bronze-clad piers with dark glass between them and a plain concrete base'),
+    ('base', 'stone1', 'a 1920s Art Deco office tower', 'a rusticated limestone base with tall arched openings filled with dark glass and bronze doors'),
+    ('base', 'stone2', 'a 1930s stone office building', 'polished red granite piers, dark glass display windows in bronze frames and a recessed entrance'),
+    ('base', 'loft1', 'a converted brick warehouse', 'large multi-pane steel-framed shop windows between heavy red brick piers and a wide loading door'),
+    ('base', 'loft2', 'a converted concrete-frame loft building', 'big glazed openings in black steel frames between painted concrete columns and a glass entrance'),
+    ('base', 'school1', 'a 1930s brick school', 'a limestone base course, tall multi-pane windows and a recessed entrance with double wooden doors in a stone surround'),
+    ('base', 'school2', 'a 1960s brick institutional building', 'a glazed entrance with aluminium doors, a band of windows over a brick base and a concrete sill line'),
+]
+
+
 def api_key():
     k = os.environ.get('OPENAI_API_KEY')
     if k:
@@ -429,8 +499,8 @@ def api_key():
     sys.exit('no OPENAI_API_KEY in the environment or ~/.config/philly3d/openai.env')
 
 
-def make(key, set_, fid, prompt, size, force):
-    out_dir = os.path.join(RAW, set_)
+def make(key, set_, fid, prompt, size, force, root=RAW):
+    out_dir = os.path.join(root, set_)
     os.makedirs(out_dir, exist_ok=True)
     png, meta = os.path.join(out_dir, fid + '.png'), os.path.join(out_dir, fid + '.json')
     if os.path.exists(png) and not force:
@@ -461,20 +531,34 @@ def make(key, set_, fid, prompt, size, force):
     return fid, 'failed: ' + err
 
 
+def pick_jobs(only, sets=''):
+    """Every image this script makes, as (set, id, prompt, size, root), narrowed to --only's ids and --sets' sets. An id is
+    a file's name inside its set, and one can name two things: the street floor 'shop1' (base/shop1) and the one-storey
+    shop set 'shop1' (o1 to o16), so a bare name that is also a set's is refused (the review: --only shop1 made the street
+    floor again), and set/id names exactly one."""
+    jobs = [(f[0], f[1], FRAME.format(what=f[3], where=f[2]) + (storeys(SIZES[f[0]][1]) if f[0] in SIZES else ''),
+             SIZES[f[0]][0] if f[0] in SIZES else SIZE, RAW5 if f[0] in SIZES else RAW) for f in FRONTS]
+    jobs += [(t[0], t[1], TILE_FRAME.format(what=t[2]), TILE_SIZE, RAW) for t in TILES]
+    jobs += [(b[0], b[1], BASE_FRAME.format(what=b[2], detail=b[3]), BASE_SIZE, RAW5) for b in BASES]
+    clash = sorted(t for t in only if '/' not in t and t in {j[0] for j in jobs})
+    if clash:
+        sys.exit('--only takes ids, and %s is also a set: pass --sets %s for the set, or base/%s for its street floor'
+                 % (clash[0], clash[0], clash[0]))
+    return [j for j in jobs if (not only or j[1] in only or j[0] + '/' + j[1] in only) and (not sets or j[0] in sets.split(','))]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--force', action='store_true')
     ap.add_argument('--only', default='')
     ap.add_argument('--workers', type=int, default=4)
+    ap.add_argument('--sets', default='', help='only these sets (comma separated; tower for the tiles)')
     a = ap.parse_args()
+    jobs = pick_jobs(set(filter(None, a.only.split(','))), a.sets)
     key = api_key()
-    only = set(filter(None, a.only.split(',')))
-    jobs = [(f[0], f[1], FRAME.format(what=f[3], where=f[2]), SIZE) for f in FRONTS]
-    jobs += [(t[0], t[1], TILE_FRAME.format(what=t[2]), TILE_SIZE) for t in TILES]
-    jobs = [j for j in jobs if not only or j[1] in only]
     print('%d images, model %s, quality %s' % (len(jobs), MODEL, QUALITY), flush=True)
     with concurrent.futures.ThreadPoolExecutor(a.workers) as ex:
-        for fid, what in ex.map(lambda j: make(key, j[0], j[1], j[2], j[3], a.force), jobs):
+        for fid, what in ex.map(lambda j: make(key, j[0], j[1], j[2], j[3], a.force, j[4]), jobs):
             print(fid, what, flush=True)
 
 
