@@ -23396,6 +23396,7 @@ float pinOccGate() {
       if (REAL) polesRealBuild(maxPtOf());
     }
     poleInv = keepInv ? { X, Z, GY, HM, ROT, FAM, PC, cells, n: nAll } : null;
+    if (keepInv && REAL) wxLampCol(pcol);   // the wet streets' glints read each lamp's own colour (wxGlintStep, a computer's)
     PERF.lampsDeck = { standards: nDeck, underDeck, piers: DECK_LAMPS.filter((q, j) => j % 5 === 4 && q === 7).length, i95: i95Lamps };   // __dbg.PERF.lampsDeck
     if (FAM) { const fc = [0, 0, 0, 0]; for (let i = 0; i < nAll; i++) fc[FAM[i]]++; PERF.lampsReal = { armMs: Math.round(tArm), armRoad, families: fc }; }   // __dbg.PERF.lampsReal
     const el = document.getElementById('lightsCount');
@@ -26588,23 +26589,154 @@ float pinOccGate() {
         'float wxDark = 1.0 - clamp(dot(diffuseColor.rgb, vec3(0.55)), 0.0, 1.0);',
         'float wxWetW = uWet * wxUpW * (1.0 - wxSnowW);',
         'diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.88, 0.90, 0.93), wxSnowW);',
-        'diffuseColor.rgb *= 1.0 - 0.45 * wxWetW;',
+        REAL ? WX_WET_GLSL.color : 'diffuseColor.rgb *= 1.0 - 0.45 * wxWetW;',
       ].join('\n'))
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + [
-        'roughnessFactor = mix(roughnessFactor, 0.18, wxWetW * (0.45 + 0.55 * wxDark));',
+        REAL ? WX_WET_GLSL.rough : 'roughnessFactor = mix(roughnessFactor, 0.18, wxWetW * (0.45 + 0.55 * wxDark));',
         'roughnessFactor = mix(roughnessFactor, 0.92, wxSnowW);',
       ].join('\n'))
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + [
         // the wet-street cheat: a touch of metalness makes the whole sky sheet
         // across the asphalt at any view angle, where dielectric fresnel only
-        // gleams at grazing ones (ACES shoulder swallows plain darkening)
-        'metalnessFactor = mix(metalnessFactor, 0.32, wxWetW * (0.4 + 0.6 * wxDark));',
+        // gleams at grazing ones (ACES shoulder swallows plain darkening).
+        // The realistic look is dielectric (the film, the puddles, the lamps' streaks: wxWetPatch)
+        REAL ? '' : 'metalnessFactor = mix(metalnessFactor, 0.32, wxWetW * (0.4 + 0.6 * wxDark));',
       ].join('\n'));
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
+    if (REAL) wxWetPatch(shader);
+  }
+  // ---- the wet city (the realism pass; ?real=0 keeps the varnish above). A wet street is not darker plastic: it is a
+  // dielectric film that mirrors at grazing angles and goes near black from above, with standing water in its low spots
+  // and along the gutters, rings where the drops land, and at night every lamp drawn out toward the eye in a long streak.
+  // The film: half again darker on asphalt (0.3 on a pale slab), roughness 0.14 once the street is past half wet (a lawn
+  // 0.42, wet grass never mirrors), no metalness. The puddles: three octaves of world-space value noise over a threshold
+  // that falls as the street wets (3 per cent of the ground at 0.35, 8 at the rain preset's 0.74, 12 in a downpour,
+  // measured over the city), the road's last metre each side through lanePatch's vLane (wxSurfaceLate, the gutters),
+  // roughness 0.035, faded by pixel footprint so a roof seen from the air never speckles. What the film reflects: the dome's
+  // probe, but a low reflected ray in a city meets the buildings across the street as often as the sky at its end, so under
+  // 17 degrees up to 55 per cent of the probe (30 in a puddle) gives way to the canyon's own light, about what a facade of
+  // albedo 0.25 sends back from the same irradiance and, by night, from the lamps' pools there (the light map, one tap).
+  // The rings (a computer only): two offset lattices of 0.35 m cells, one drop a cell, a ring that widens and fades, on the
+  // puddles only, while it rains, gone past 5 cm a pixel.
+  // The lamps: on a computer the sixteen nearest lamps the eye can see (wxGlintStep picks them from the poles' inventory,
+  // poleInv, and asks the pins' depth images whether a building stands in front) are point lights to an anisotropic GGX
+  // lobe, stretched 1.9 times toward the eye and 0.7 across, the long streak a wet road throws under every lamp; a phone
+  // reads the light map's pools along the reflected ray (two taps) instead. Snow over all of it wins (wxSnowW)
+  const WX_GLINT_N = isTouch ? 0 : 16;
+  const wxWetU = {
+    uWxTime: { value: 0 }, uRainNow: { value: 0 }, uWxSunK: { value: 1 },
+    uGlP: { value: Array.from({ length: Math.max(1, WX_GLINT_N) }, () => new THREE.Vector4()) },
+    uGlC: { value: Array.from({ length: Math.max(1, WX_GLINT_N) }, () => new THREE.Vector3()) },
+    uGlN: { value: 0 },
+  };
+  const WX_WET_GLSL = {
+    decl: [
+      'uniform float uWxTime, uRainNow, uWxLampOn, uWxSunK;',
+      'float wxHh(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
+      'float wxVN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(wxHh(i), wxHh(i + vec2(1.0, 0.0)), f.x), mix(wxHh(i + vec2(0.0, 1.0)), wxHh(i + vec2(1.0, 1.0)), f.x), f.y); }',
+    ].join('\n'),
+    // after the snow: the puddle mask (rotated octaves, so no lattice shows), then the film's and the water's darkening
+    color: [
+      'float wxFw = max(fwidth(wxWP.x), fwidth(wxWP.z));',
+      'float wxGreen = step(diffuseColor.r * 1.08, diffuseColor.g) * step(diffuseColor.b * 1.15, diffuseColor.g);',
+      'vec2 wxPq = vec2(wxWP.x * 0.966 + wxWP.z * 0.259, -wxWP.x * 0.259 + wxWP.z * 0.966);',
+      'float wxPn = 0.6 * wxVN(wxPq * 0.33) + 0.3 * wxVN(wxPq.yx * 0.81 + 7.3) + 0.1 * wxVN(wxWP.xz * 2.3 + 3.1);',
+      'float wxPud = smoothstep(0.813 - 0.135 * uWet, 0.828 - 0.135 * uWet, wxPn);',   // 3 per cent of the ground at 0.35, 8 at 0.74, 12 at 1
+      '/*wxLane*/',
+      'wxPud *= wxUpW * (1.0 - wxSnowW) * smoothstep(0.2, 0.6, uWet) * (1.0 - 0.75 * wxGreen) * (1.0 - smoothstep(0.35, 1.2, wxFw));',
+      'diffuseColor.rgb *= (1.0 - (0.3 + 0.2 * wxDark) * wxWetW) * (1.0 - 0.08 * wxPud);',
+    ].join('\n'),
+    rough: [
+      'roughnessFactor = mix(roughnessFactor, mix(0.14, 0.42, wxGreen), smoothstep(0.0, 0.55, wxWetW) * (0.55 + 0.45 * wxDark));',
+      'roughnessFactor = mix(roughnessFactor, 0.035, wxPud);',
+    ].join('\n'),
+    // the gutters: on a road with lane paint (vLane: x across, z the half width), its last metre each side, broken along
+    // the kerb by the same noise
+    lane: 'if (vLane.z > 0.5 && vLane.w < 1.5) wxPud = max(wxPud, smoothstep(vLane.z - 1.25, vLane.z - 0.55, abs(vLane.x)) * smoothstep(0.47, 0.6, wxPn) * smoothstep(0.3, 0.7, uWet));',
+  };
+  // the rings: a drop a cell at a random time and place in it; the ring is a slope (a world xz gradient) that widens to
+  // half a cell and fades as it goes
+  const WX_RIPPLE_GLSL = [
+    'vec2 wxRing(vec2 p, float t){ vec2 c = p / 0.35, ci = floor(c), cf = fract(c) - 0.5; float h = wxHh(ci);',
+    '  float rt = fract(t * 1.25 + h); vec2 o = (vec2(fract(h * 13.7), fract(h * 7.3)) - 0.5) * 0.5; vec2 v = cf - o; float d = length(v);',
+    '  float w = d - rt * 0.45; float ring = sin(w * 55.0) * exp(-w * w * 260.0) * (1.0 - rt) * (1.0 - rt);',
+    '  return v / max(d, 1e-3) * ring; }',
+  ].join('\n');
+  function wxWetPatch(shader) {
+    shader.uniforms.uWxTime = wxWetU.uWxTime; shader.uniforms.uRainNow = wxWetU.uRainNow; shader.uniforms.uWxLampOn = lampMapU.uLampOn; shader.uniforms.uWxSunK = wxWetU.uWxSunK;
+    let decl = WX_WET_GLSL.decl;
+    if (!isTouch) decl += '\n' + WX_RIPPLE_GLSL;
+    decl += '\nuniform sampler2D uWxLampMap; uniform vec4 uWxLampBox;';
+    shader.uniforms.uWxLampMap = lampMapU.uLampMap; shader.uniforms.uWxLampBox = lampMapU.uLampBox;
+    if (WX_GLINT_N) {
+      decl += '\nuniform vec4 uGlP[' + WX_GLINT_N + ']; uniform vec3 uGlC[' + WX_GLINT_N + ']; uniform float uGlN;';
+      shader.uniforms.uGlP = wxWetU.uGlP; shader.uniforms.uGlC = wxWetU.uGlC; shader.uniforms.uGlN = wxWetU.uGlN;
+    }
+    // the lamps on the wet ground: a computer's sixteen as anisotropic GGX lights, a phone's pools along the reflected ray
+    const lamps = WX_GLINT_N ? [
+      'if (uGlN > 0.5 && wxWetW > 0.004 && uWxLampOn > 0.001) {',
+      '  vec3 gN = inverseTransformDirection(normal, viewMatrix), gV = normalize(cameraPosition - wxWP);',
+      '  float gnv = max(dot(gN, gV), 0.03); vec2 gT = normalize(gV.xz + vec2(1e-5, 0.0));',
+      '  float ga = clamp(material.roughness, 0.03, 0.6), gax = ga * 1.9, gay = ga * 0.7;',
+      '  vec3 gAcc = vec3(0.0);',
+      '  for (int i = 0; i < ' + WX_GLINT_N + '; i++) {',
+      '    if (float(i) >= uGlN) break;',
+      '    vec4 gp = uGlP[i]; if (gp.w <= 0.0) continue;',
+      '    vec3 gl = gp.xyz - wxWP; float gd2 = max(dot(gl, gl), 1.0); gl *= inversesqrt(gd2);',
+      '    if (dot(gN, gl) <= 0.0) continue;',
+      '    vec3 gH = normalize(gl + gV);',
+      '    float hz = dot(gH, gN), hx = dot(gH.xz, gT), hy = dot(gH.xz, vec2(-gT.y, gT.x));',
+      '    float gk = hx * hx / (gax * gax) + hy * hy / (gay * gay) + hz * hz;',
+      '    float gF = 0.02 + 0.98 * pow(1.0 - clamp(dot(gl, gH), 0.0, 1.0), 5.0);',
+      '    gAcc += uGlC[i] * (gp.w * gF / (PI * gax * gay * gk * gk * 4.0 * gnv * gd2));',
+      '  }',
+      '  totalEmissiveRadiance += min(gAcc, vec3(10.0)) * uWxLampOn * smoothstep(0.0, 0.3, wxWetW + wxPud);',
+      '}',
+    ] : [
+      'if (uWxLampOn > 0.001 && wxWetW > 0.004) {',
+      '  vec2 gd = wxWP.xz - cameraPosition.xz; float ghe = max(cameraPosition.y - wxWP.y, 0.6); vec3 gAcc = vec3(0.0);',
+      '  for (int k = 0; k < 2; k++) { vec2 gL = wxWP.xz + gd * (6.0 + 4.0 * float(k)) / ghe;',
+      '    vec2 gu = vec2((gL.x - uWxLampBox.x) * uWxLampBox.z, 1.0 - (gL.y - uWxLampBox.y) * uWxLampBox.z);',
+      '    if (min(min(gu.x, 1.0 - gu.x), min(gu.y, 1.0 - gu.y)) > 0.0) gAcc = max(gAcc, texture2D(uWxLampMap, gu).rgb); }',
+      '  float gfr = pow(1.0 - clamp(dot(normalize(cameraPosition - wxWP), inverseTransformDirection(normal, viewMatrix)), 0.0, 1.0), 5.0);',
+      '  totalEmissiveRadiance += gAcc * (uWxLampOn * uWxLampBox.w * 0.12 * gfr * mix(1.0, 1.4, wxPud) * smoothstep(0.0, 0.3, wxWetW));',
+      '}',
+    ];
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', decl + '\nvoid main() {')
+      .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n' + (isTouch ? '' : [
+        'if (wxPud > 0.01 && uRainNow > 0.01) {',
+        '  float rF = 1.0 - smoothstep(0.012, 0.05, wxFw);',
+        '  if (rF > 0.0) {',
+        '    vec2 rg = (wxRing(wxWP.xz, uWxTime) + wxRing(wxWP.xz * 1.37 + 5.1, uWxTime * 1.13 + 0.4)) * 0.14 * min(1.0, uRainNow * 1.6) * rF;',
+        '    normal = normalize(mix(normal, mat3(viewMatrix) * normalize(vec3(-rg.x, 1.0, -rg.y)), wxPud));',
+        '  }',
+        '}',
+      ].join('\n')))
+      // a low reflected ray meets the street's far side, not the sky (see the banner)
+      .replace('#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n' + [
+        'if (wxWetW > 0.004) {',
+        '  vec3 wR = reflect(-normalize(cameraPosition - wxWP), inverseTransformDirection(normal, viewMatrix));',
+        '  float wOcc = mix(mix(0.45, 0.85, wxPud), 1.0, smoothstep(0.0, 0.3, wR.y));',   // looking down a street the sky at its end is in the mirror too
+        '  vec3 wCan = (irradiance + iblIrradiance) * 0.035;',
+        '  if (uWxLampOn > 0.001) { vec2 wu = vec2((wxWP.x - uWxLampBox.x) * uWxLampBox.z, 1.0 - (wxWP.z - uWxLampBox.y) * uWxLampBox.z);',
+        '    wCan += texture2D(uWxLampMap, clamp(wu, 0.0, 1.0)).rgb * (uWxLampBox.w * uWxLampOn * ' + (isTouch ? '0.05' : '0.08') + '); }',   // by night the facades across the street stand in the lamps' light too
+        '  radiance = mix(radiance, radiance * wOcc + wCan * (1.0 - wOcc), min(1.0, wxWetW + wxPud));',
+        '}',
+      ].join('\n'))
+      .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n' + [
+        // under a closed deck the sun is no disc: a puddle that mirrored it threw a white spot at noon in the rain
+        'reflectedLight.directSpecular *= mix(1.0, uWxSunK, min(1.0, wxPud + smoothstep(0.0, 0.5, wxWetW)));',
+      ].concat(lamps).join('\n'));
+  }
+  // the gutters, once every hook has run (the road's lane paint declares vLane after the weather's own pass)
+  function wxSurfaceLate(shader) {
+    if (!REAL) return;
+    if (shader.fragmentShader.indexOf('varying vec4 vLane;') !== -1) shader.fragmentShader = shader.fragmentShader.replace('/*wxLane*/', WX_WET_GLSL.lane);
   }
   // decorrelated per-particle gate so density scales without bunching to one side of the box
   const wxGateGLSL = 'float wxGate(vec3 s){ return fract(sin(dot(s, vec3(12.9898, 78.233, 45.164))) * 43758.5453); }\n';
-  const RAIN_N = 16000;   // short drops need numbers: the eye reads density, not length
+  const RAIN_N = REAL && isTouch ? 8000 : 16000;   // short drops need numbers: the eye reads density, not length
   const rainU = {
     uBox: { value: new THREE.Vector3(90, 80, 90) },
     uOff: { value: new THREE.Vector3() },
@@ -26613,9 +26745,75 @@ float pinOccGate() {
     uFrac: { value: 0 }, uLen: { value: 1.7 }, uAlpha: { value: 0.3 },
     uCol: { value: new THREE.Color(0.62, 0.66, 0.74) },
     uPost: postU.uPost, uExposure: postU.uExposure,   // the streaks write display colour: under the post pipeline, its pre-image
+    // the realistic rain's (wxRainStep): the drawing buffer, the streak's half width in pixels, the night, the ground under the eye, the lamps
+    uRes: { value: new THREE.Vector2(1280, 800) }, uWide: { value: 0.9 }, uNightK: { value: 0 }, uGroundY: { value: 0 },
+    uLampMap: lampMapU.uLampMap, uLampBox: lampMapU.uLampBox, uLampOn: lampMapU.uLampOn,
   };
   let rainMesh, snowMesh;
-  {
+  // ---- the realistic rain (the realism pass; ?real=0 keeps the line pairs below). A drop on camera is a faint soft streak,
+  // not a 1 px scratch: each is an instanced quad from the drop's tail to its head in screen space, about two pixels across with
+  // a Gaussian profile, as long as the drop falls in a thirtieth of a second (0.4 m at street level, where the lines were 0.9 to
+  // 2.3 m), drawn in the air's own colour a little brighter (the horizon's: it shows on a dark facade and all but goes on the
+  // sky), at a third of the old alpha. At night the drop takes the light map's pool where it falls through one, so the rain
+  // shows in the lamps' cones and nowhere else; a drop within a metre or two of the eye is out of focus, wider and fainter.
+  // Phones draw 8,000 (the quads are four vertices each, the seed one Float32 vec3 a drop, never a 1- or 3-byte stream)
+  if (REAL) {
+    const g = new THREE.InstancedBufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, 0, 0, 1, 0, 0, -1, 1, 0, 1, 1, 0]), 3));
+    g.setIndex([0, 1, 2, 2, 1, 3]);
+    const seed = new Float32Array(RAIN_N * 3);
+    for (let i = 0; i < seed.length; i++) seed[i] = Math.random();
+    g.setAttribute('aSeed', new THREE.InstancedBufferAttribute(seed, 3));
+    g.instanceCount = RAIN_N;
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false, uniforms: rainU, side: THREE.DoubleSide,   // the quad's frame turns with the streak: either winding
+      vertexShader:
+        'uniform vec3 uBox, uOff, uCam, uVelN, uCol; uniform float uFrac, uLen, uAlpha, uWide, uNightK, uGroundY, uLampOn, uExposure; uniform vec2 uRes;\n' +
+        'uniform sampler2D uLampMap; uniform vec4 uLampBox;\n' +
+        'attribute vec3 aSeed; varying float vA; varying vec2 vQ; varying vec3 vC;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_vertex>\n' +
+        wxGateGLSL + INV_GLSL + '\n' +
+        'void main(){\n' +
+        '  vA = 0.0; vQ = vec2(0.0); vC = vec3(0.0);\n' +
+        '  if (wxGate(aSeed) > uFrac) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }\n' +
+        '  vec3 p = aSeed * 2.0 * uBox + uOff - uCam;\n' +
+        '  p = mod(p, 2.0 * uBox) - uBox;\n' +
+        '  float r = clamp(length(p.xz) / uBox.x, 0.0, 1.0);\n' +
+        '  p += uCam;\n' +
+        '  vec4 mh = modelViewMatrix * vec4(p, 1.0), mt = modelViewMatrix * vec4(p - uVelN * uLen, 1.0);\n' +
+        '  if (mh.z > -0.3 || mt.z > -0.3) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); return; }\n' +
+        '  vec4 ch = projectionMatrix * mh, ct = projectionMatrix * mt;\n' +
+        '  vec2 sh = ch.xy / ch.w * 0.5 * uRes, st = ct.xy / ct.w * 0.5 * uRes;\n' +   // pixels from the centre
+        '  vec2 dv = sh - st; float L = length(dv); vec2 dir = L > 1e-3 ? dv / L : vec2(0.0, 1.0);\n' +
+        '  float dist = -mh.z, near = 1.0 - smoothstep(0.8, 2.5, dist), w = uWide * (1.0 + 2.0 * near);\n' +
+        '  vec2 sp = mix(st, sh, position.y) + dir * (position.y * 2.0 - 1.0) * w + vec2(-dir.y, dir.x) * position.x * w;\n' +
+        '  vec4 c = mix(ct, ch, position.y);\n' +
+        '  gl_Position = vec4(sp / (0.5 * uRes) * c.w, c.z, c.w);\n' +
+        '  vQ = vec2(position.x, position.y * 2.0 - 1.0);\n' +
+        '  vec3 E = vec3(0.0);\n' +
+        '  if (uLampOn > 0.001) { vec2 lu = vec2((p.x - uLampBox.x) * uLampBox.z, 1.0 - (p.z - uLampBox.y) * uLampBox.z);\n' +
+        '    E = texture2D(uLampMap, clamp(lu, 0.0, 1.0)).rgb * (uLampBox.w * uLampOn * (1.0 - smoothstep(7.0, 16.0, p.y - uGroundY))); }\n' +
+        '  vC = pUndo(uCol, uExposure) * 1.2 + E * 0.25;\n' +
+        '  vA = uAlpha * (1.0 - 0.7 * r * r) * (1.0 - 0.7 * near) * smoothstep(0.35, 0.9, dist) * (1.0 + uNightK * min(3.0, dot(E, vec3(0.9, 1.77, 0.33))));\n' +
+        '  #include <logdepthbuf_vertex>\n' +
+        '}',
+      fragmentShader:
+        'uniform float uPost, uExposure; varying float vA; varying vec2 vQ; varying vec3 vC;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_fragment>\n' +
+        ACES_GLSL + '\n' +
+        'void main(){\n' +
+        '  #include <logdepthbuf_fragment>\n' +
+        '  float a = vA * exp(-vQ.x * vQ.x * 2.5) * (1.0 - pow(abs(vQ.y), 4.0)) * (0.55 + 0.45 * (vQ.y * 0.5 + 0.5));\n' +
+        '  if (a < 0.003) discard;\n' +
+        '  gl_FragColor = vec4(uPost > 0.5 ? vC : pToSRGB(pACES(vC, uExposure)), a);\n' +
+        '}',
+    });
+    rainMesh = new THREE.Mesh(g, m);
+    rainMesh.frustumCulled = false; rainMesh.renderOrder = 50; rainMesh.visible = false;
+    scene.add(rainMesh);
+  } else {
     const seed = new Float32Array(RAIN_N * 6), tip = new Float32Array(RAIN_N * 2);
     for (let i = 0; i < RAIN_N; i++) {
       const a = Math.random(), b = Math.random(), c = Math.random(), o = i * 6;
@@ -26659,7 +26857,7 @@ float pinOccGate() {
     rainMesh.frustumCulled = false; rainMesh.renderOrder = 50; rainMesh.visible = false;
     scene.add(rainMesh);
   }
-  const SNOW_N = 11000;
+  const SNOW_N = REAL && !isTouch ? 30000 : 11000;
   const snowU = {
     uBox: { value: new THREE.Vector3(80, 70, 80) },
     uOff: { value: new THREE.Vector3() },
@@ -26667,8 +26865,84 @@ float pinOccGate() {
     uFrac: { value: 0 }, uSize: { value: 0.6 }, uAlpha: { value: 0.8 }, uTime: { value: 0 },
     uCol: { value: new THREE.Color(0.93, 0.95, 0.99) },
     uPost: postU.uPost, uExposure: postU.uExposure,
+    // the realistic snow's (wxSnowStep): the fall, the size scale, the drawing buffer, the night, the ground, the lamps
+    uVel: { value: new THREE.Vector3() }, uSizeK: { value: 1 }, uRes: rainU.uRes, uNightK: rainU.uNightK, uGroundY: rainU.uGroundY,
+    uLampMap: lampMapU.uLampMap, uLampBox: lampMapU.uLampBox, uLampOn: lampMapU.uLampOn,
   };
-  {
+  // ---- the realistic snow (the realism pass; ?real=0 keeps the 13 px discs below). On camera a flake is a speck of one to
+  // four pixels with a short trail, in a spread of sizes, and a few big soft out-of-focus ones near the lens: each flake is 6 to
+  // 24 mm (a second phase from its seed; 1.6 times on a phone's small screen), drawn at its true projected size with a 1.5 px
+  // floor whose alpha goes with the flake's size (a speck stands in for the many the 24 m box cannot hold), blurred along its
+  // own screen motion over a thirtieth of a second inside the
+  // sprite (a capsule, so a blizzard's drive streaks for free), within 3 m of the eye up to 3.5 times wider at a quarter of the
+  // alpha, in the air's own colour (grey against the sky, white against a wall, as a camera sees it), and at night lit by the
+  // light map's pools like the rain. 30,000 on a computer (11,000 on a phone, as before); the far snowfall rides the shells
+  if (REAL) {
+    const seed = new Float32Array(SNOW_N * 3), ph = new Float32Array(SNOW_N);
+    for (let i = 0; i < SNOW_N; i++) { seed[i * 3] = Math.random(); seed[i * 3 + 1] = Math.random(); seed[i * 3 + 2] = Math.random(); ph[i] = Math.random(); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(seed, 3));
+    g.setAttribute('aPh', new THREE.BufferAttribute(ph, 1));
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false, uniforms: snowU,
+      vertexShader:
+        'uniform vec3 uBox, uOff, uCam, uVel, uCol; uniform float uFrac, uAlpha, uTime, uSizeK, uNightK, uGroundY, uLampOn, uExposure; uniform vec2 uRes;\n' +
+        'uniform sampler2D uLampMap; uniform vec4 uLampBox;\n' +
+        'attribute float aPh; varying float vA, vLen, vR, vSz; varying vec2 vDir; varying vec3 vC;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_vertex>\n' +
+        wxGateGLSL + INV_GLSL + '\n' +
+        'vec3 swirl(float t){ float sw = 1.2 + aPh * 2.2; return vec3(sin(t * (0.6 + position.z * 0.7) + aPh * 6.2832) * sw, 0.0, cos(t * (0.45 + position.x * 0.6) + aPh * 4.7) * sw); }\n' +
+        'void main(){\n' +
+        '  vA = 0.0; vLen = 0.0; vR = 1.0; vSz = 1.0; vDir = vec2(0.0, 1.0); vC = vec3(0.0);\n' +
+        '  if (wxGate(position) > uFrac) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; return; }\n' +
+        '  float fk = 0.65 + 0.7 * aPh;\n' +
+        '  vec3 adv = uOff; adv.y *= fk;\n' +
+        '  vec3 p = position * 2.0 * uBox + adv - uCam;\n' +
+        '  p = mod(p, 2.0 * uBox) - uBox;\n' +
+        '  float r = clamp(length(p.xz) / uBox.x, 0.0, 1.0);\n' +
+        '  p += uCam + swirl(uTime);\n' +
+        '  vec3 dlt = uVel * vec3(1.0, fk, 1.0) * 0.033 + swirl(uTime) - swirl(uTime - 0.033);\n' +   // a thirtieth of a second of its path
+        '  vec4 mv = modelViewMatrix * vec4(p, 1.0);\n' +
+        '  if (mv.z > -0.25) { gl_Position = vec4(2.0, 2.0, 2.0, 1.0); gl_PointSize = 1.0; return; }\n' +
+        '  float dist = -mv.z, ph2 = fract(aPh * 7.31 + position.z * 3.7);\n' +
+        '  float px = 0.006 * exp(1.4 * ph2) * uSizeK * projectionMatrix[1][1] * 0.5 * uRes.y / dist;\n' +
+        '  float near = 1.0 - smoothstep(1.2, 3.0, dist);\n' +
+        '  px *= 1.0 + 2.5 * near;\n' +
+        '  float a = uAlpha * (1.0 - 0.65 * r * r) * (1.0 - 0.75 * near);\n' +
+        '  if (px < 1.5) { a *= px / 1.5; px = 1.5; }\n' +   // a speck under the floor fades with its size (it stands in for the many not drawn)
+        '  vec4 c0 = projectionMatrix * mv, c1 = projectionMatrix * (modelViewMatrix * vec4(p - dlt, 1.0));\n' +
+        '  vec2 n0 = c0.xy / c0.w, n1 = c1.xy / max(c1.w, 1e-3), s = (n0 - n1) * 0.5 * uRes;\n' +
+        '  float L = min(length(s), 48.0);\n' +
+        '  vDir = L > 1e-3 ? normalize(s) : vec2(0.0, 1.0); vLen = L; vR = 0.5 * px;\n' +
+        '  a *= px / (px + 0.6 * L);\n' +   // the trail spreads the flake's light along it
+        '  gl_Position = vec4(mix(n0, n1, 0.5) * c0.w, c0.z, c0.w);\n' +
+        '  gl_PointSize = 2.0 * px + L + 2.0; vSz = gl_PointSize;\n' +
+        '  vec3 E = vec3(0.0);\n' +
+        '  if (uLampOn > 0.001) { vec2 lu = vec2((p.x - uLampBox.x) * uLampBox.z, 1.0 - (p.z - uLampBox.y) * uLampBox.z);\n' +
+        '    E = texture2D(uLampMap, clamp(lu, 0.0, 1.0)).rgb * (uLampBox.w * uLampOn * (1.0 - smoothstep(7.0, 16.0, p.y - uGroundY))); }\n' +
+        '  vC = pUndo(uCol, uExposure) * 1.15 + E * 0.35;\n' +
+        '  vA = a * (1.0 + uNightK * min(4.0, dot(E, vec3(0.9, 1.77, 0.33))));\n' +
+        '  #include <logdepthbuf_vertex>\n' +
+        '}',
+      fragmentShader:
+        'uniform float uPost, uExposure; varying float vA, vLen, vR, vSz; varying vec2 vDir; varying vec3 vC;\n' +
+        '#include <common>\n' +
+        '#include <logdepthbuf_pars_fragment>\n' +
+        ACES_GLSL + '\n' +
+        'void main(){\n' +
+        '  #include <logdepthbuf_fragment>\n' +
+        '  vec2 q = (gl_PointCoord - 0.5) * vSz; q.y = -q.y;\n' +
+        '  float al = dot(q, vDir), ac = dot(q, vec2(-vDir.y, vDir.x)), e = max(abs(al) - 0.5 * vLen, 0.0);\n' +
+        '  float a = vA * exp(-(e * e + ac * ac) / max(vR * vR, 0.25) * 2.2);\n' +
+        '  if (a < 0.003) discard;\n' +
+        '  gl_FragColor = vec4(uPost > 0.5 ? vC : pToSRGB(pACES(vC, uExposure)), a);\n' +
+        '}',
+    });
+    snowMesh = new THREE.Points(g, m);
+    snowMesh.frustumCulled = false; snowMesh.renderOrder = 50; snowMesh.visible = false;
+    scene.add(snowMesh);
+  } else {
     const seed = new Float32Array(SNOW_N * 3), ph = new Float32Array(SNOW_N);
     for (let i = 0; i < SNOW_N; i++) { seed[i * 3] = Math.random(); seed[i * 3 + 1] = Math.random(); seed[i * 3 + 2] = Math.random(); ph[i] = Math.random(); }
     const g = new THREE.BufferGeometry();
@@ -26714,6 +26988,196 @@ float pinOccGate() {
     snowMesh = new THREE.Points(g, m);
     snowMesh.frustumCulled = false; snowMesh.renderOrder = 50; snowMesh.visible = false;
     scene.add(snowMesh);
+  }
+  // ---- the far rain and snow (the realism pass). Past the particle boxes (45 m at street level) there was no rain at all,
+  // where a wet day hangs grey curtains over the skyline. Open cylinders round the eye (28, 75 and 190 m on a computer, the
+  // first two on a phone), drawn after the city with the depth test (a building in front hides them) and no depth write, carry
+  // a procedural fall: soft vertical veils sliding down at the rain's speed and leaning with the wind across the line of
+  // sight, or for snow slow soft specks, a few per cent each, in the air's own colour, faded toward the ground, toward their
+  // tops and with altitude (the particles' own vis), so from high up only the fog and the gloom carry the weather. The
+  // pattern is laid in angle and in height over the radius, so every shell reads at one angular grain (no far shimmer)
+  const WX_SHELLS = REAL ? (isTouch ? [[30, 160], [80, 260]] : [[28, 150], [75, 260], [190, 480]]) : [];
+  const shellU = { uCam: { value: new THREE.Vector3() }, uTime: { value: 0 }, uRain: { value: 0 }, uSnow: { value: 0 }, uWind: { value: new THREE.Vector2() },
+    uFall: { value: 9 }, uVis: { value: 0 }, uCol: rainU.uCol, uGroundY: rainU.uGroundY, uPost: postU.uPost, uExposure: postU.uExposure };
+  const wxShells = WX_SHELLS.map(([R, H], k) => {
+    const g = new THREE.CylinderGeometry(R, R, H, 48, 1, true).translate(0, H / 2, 0);
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false, side: THREE.BackSide,
+      uniforms: { ...shellU, uR: { value: R }, uH: { value: H }, uK: { value: k } },
+      vertexShader: 'varying vec3 vW;\n#include <common>\n#include <logdepthbuf_pars_vertex>\n' +
+        'void main(){ vec4 w = modelMatrix * vec4(position, 1.0); vW = w.xyz; gl_Position = projectionMatrix * viewMatrix * w;\n#include <logdepthbuf_vertex>\n}',
+      fragmentShader:
+        'uniform vec3 uCam, uCol; uniform vec2 uWind; uniform float uTime, uRain, uSnow, uFall, uVis, uGroundY, uR, uH, uK, uPost, uExposure; varying vec3 vW;\n' +
+        '#include <common>\n#include <logdepthbuf_pars_fragment>\n' + WX_WET_GLSL.decl.replace(/^uniform[^\n]*\n/, '') + '\n' + ACES_GLSL + '\n' + INV_GLSL + '\n' +
+        'void main(){\n' +
+        '  #include <logdepthbuf_fragment>\n' +
+        '  vec2 d = vW.xz - uCam.xz; float ang = atan(d.y, d.x), hgt = vW.y - uGroundY;\n' +
+        '  float fade = smoothstep(0.0, 14.0, hgt) * (1.0 - smoothstep(uH * 0.5, uH * 0.95, hgt)) * uVis;\n' +
+        '  vec2 ru = vec2(ang * 140.0 + 140.0 * dot(uWind, vec2(-d.y, d.x) / uR) * hgt / uR, (hgt + uTime * uFall) / (0.12 * uR)) + uK * 17.0;\n' +
+        '  float n = 0.65 * wxVN(ru) + 0.35 * wxVN(ru * vec2(2.3, 1.7) + 5.0);\n' +
+        '  vec2 su = vec2(ang * 40.0, (hgt + uTime * 1.3) / (0.025 * uR)) + uK * 9.0;\n' +
+        '  float a = (smoothstep(0.45, 0.85, n) * uRain * 0.07 + (smoothstep(0.3, 0.9, 0.6 * wxVN(su) + 0.4 * wxVN(su * 2.1 + 3.0)) * 0.035 + 0.025) * uSnow) * fade;\n' +
+        '  if (a < 0.002) discard;\n' +
+        '  vec3 c = pUndo(uCol, uExposure);\n' +
+        '  gl_FragColor = vec4(uPost > 0.5 ? c : pToSRGB(pACES(c, uExposure)), a);\n' +
+        '}',
+    });
+    const mesh = new THREE.Mesh(g, m);
+    mesh.frustumCulled = false; mesh.renderOrder = 49 - k; mesh.visible = false;   // the far shell first
+    scene.add(mesh);
+    return mesh;
+  });
+  // ---- lights in wet air (the realism pass). Rain, fog and snow spread every light into a soft glow: after dark each lamp
+  // carries a halo (a second, wider and fainter point on the glow points' own geometry, so the lamps' shader is untouched),
+  // up to 44 px on a computer and 24 on a phone, 3 m across in the world, gone in the far fog; on the post pipeline the
+  // bloom opens with the weather by night, and the grade loses some saturation and contrast in rain, snow, fog and under a
+  // closed deck, the way a wet day's photographs do (both relative to whatever the grade's own owners set: wxGrade)
+  let wxHalo = null;
+  const haloU = { uHalo: { value: 0 }, uMaxPx: { value: isTouch ? 24 : 44 }, uRes: rainU.uRes, uPost: postU.uPost };
+  function wxHaloMesh() {
+    const m = new THREE.ShaderMaterial({
+      transparent: true, depthWrite: false, fog: false, vertexColors: true, uniforms: haloU,
+      blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+      blendEquationAlpha: THREE.AddEquation, blendSrcAlpha: THREE.ZeroFactor, blendDstAlpha: THREE.OneFactor,   // the light adds; the target's alpha (the bloom's mask) is left alone
+      vertexShader: 'uniform float uMaxPx; uniform vec2 uRes; varying vec3 vCol; varying float vF;\n#include <common>\n#include <logdepthbuf_pars_vertex>\n' +
+        'void main(){ vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv; float d = max(-mv.z, 1.0);\n' +
+        '  gl_PointSize = clamp(3.0 * projectionMatrix[1][1] * 0.5 * uRes.y / d, 5.0, uMaxPx); vCol = color; vF = 1.0 - smoothstep(500.0, 1400.0, d);\n#include <logdepthbuf_vertex>\n}',
+      fragmentShader: 'uniform float uHalo, uPost; varying vec3 vCol; varying float vF;\n#include <common>\n#include <logdepthbuf_pars_fragment>\n' +
+        'void main(){\n#include <logdepthbuf_fragment>\n  float r = length(gl_PointCoord - vec2(0.5)) * 2.0; if (r >= 1.0) discard;\n' +
+        '  float h = exp(-r * r * 4.5) * (1.0 - r * r) * uHalo * vF;\n' +
+        '  gl_FragColor = vec4(vCol * h * (uPost > 0.5 ? 0.16 : 0.22), 1.0);\n}',
+    });
+    const p = new THREE.Points(poleGlow.geometry, m);   // the glow points' buffers are on the GPU already (freeOnUpload): nothing is copied
+    p.frustumCulled = false; p.renderOrder = 12; p.visible = false;
+    groupCity.add(p);
+    return p;
+  }
+  const WXG = { bloom0: 0.45, sat0: 1, con0: 1, wB: NaN, wS: NaN, wC: NaN };
+  function wxGrade(F, night) {
+    const wxK = Math.max(F.rain, F.snow * 0.8, F.fog, smooth(0.8, 1.0, WX.cover) * 0.5);
+    if (postComp) {
+      const u = postComp.uniforms.uBloom;
+      if (u.value !== WXG.wB) WXG.bloom0 = u.value;   // someone else set it since: that is the base now
+      u.value = WXG.wB = WXG.bloom0 + (0.35 * F.rain + 0.6 * F.fog + 0.3 * F.snow) * night;
+    }
+    const s = gradeU.uSat, c = gradeU.uCon;
+    if (s.value !== WXG.wS) WXG.sat0 = s.value;
+    if (c.value !== WXG.wC) WXG.con0 = c.value;
+    s.value = WXG.wS = WXG.sat0 - 0.2 * wxK * WXG.sat0;
+    c.value = WXG.wC = WXG.con0 - 0.08 * wxK;
+  }
+  // the lamps' inventory colour for the glints: the glow points' own (light units, under 2.6), in bytes at a hundredth, beside
+  // the inventory a computer keeps for its pole meshes (poleInv; a phone keeps neither)
+  function wxLampCol(pcol) { const c = WXGL.col = new Uint8Array(pcol.length); for (let i = 0; i < pcol.length; i++) c[i] = Math.min(255, Math.round(pcol[i] * 100)); }
+  // the glints' lamps (a computer): every 120 ms or 3 m, the lamps within WXGL.R of the eye, ahead or within 25 m, nearest
+  // first with the ones ahead favoured, the pins' depth images refusing any a building stands in front of, the first sixteen;
+  // a lamp keeps its slot while it stays picked and eases in and out over a quarter second, so none pops
+  const WXGL = { lamp: new Int32Array(Math.max(1, WX_GLINT_N)).fill(-1), fade: new Float32Array(Math.max(1, WX_GLINT_N)), next: 0, R: 230, I: 60,
+    cam: new THREE.Vector3(1e9, 0, 0), dir: new THREE.Vector3(), want: new Set(), held: new Set(), sc: [], ix: [], picked: 0, covered: 0, col: null };
+  function wxGlintStep(now, dt) {
+    const inv = poleInv, N = WX_GLINT_N, G = WXGL;
+    if (!N) return;
+    const on = !!(inv && G.col) && lampMapU.uLampOn.value > 0.001 && wxSurfU.uWet.value > 0.02;
+    if (!on) G.want.clear();
+    else if (now >= G.next || camera.position.distanceToSquared(G.cam) > 9) {
+      G.next = now + 120; G.cam.copy(camera.position);
+      camera.getWorldDirection(G.dir);
+      const hl = Math.hypot(G.dir.x, G.dir.z) || 1, ux = G.dir.x / hl, uz = G.dir.z / hl;
+      const cx = camera.position.x, cz = camera.position.z, R = G.R, sc = G.sc, ix = G.ix;
+      sc.length = 0; ix.length = 0;
+      for (let gx = Math.floor((cx - R) / 400); gx <= Math.floor((cx + R) / 400); gx++) for (let gz = Math.floor((cz - R) / 400); gz <= Math.floor((cz + R) / 400); gz++) {
+        const a = inv.cells.get(gx + ':' + gz);
+        if (!a) continue;
+        for (const i of a) {
+          const dx = inv.X[i] - cx, dz = inv.Z[i] - cz, d2 = dx * dx + dz * dz;
+          if (d2 > R * R) continue;
+          const d = Math.sqrt(d2), c = d > 1e-3 ? (dx * ux + dz * uz) / d : 1;
+          if (c < 0.25 && d > 25) continue;   // behind or well to the side: its streak lies out of view
+          ix.push(ix.length); sc.push(d * (1.6 - 0.6 * c)); sc.push(i);
+        }
+      }
+      ix.sort((p, q) => sc[p * 2] - sc[q * 2]);
+      G.want.clear(); G.covered = 0;
+      for (let k = 0; k < ix.length && G.want.size < N && k < N * 3; k++) {
+        const i = sc[ix[k] * 2 + 1];
+        if (pinOccAnswer(inv.X[i], inv.GY[i] + inv.HM[i], inv.Z[i]) === 0) { G.covered++; continue; }   // a building stands in front
+        G.want.add(i);
+      }
+      G.picked = G.want.size;
+    }
+    const step = dt / 0.25, held = G.held;
+    held.clear();
+    for (let s = 0; s < N; s++) {
+      const i = G.lamp[s];
+      if (i < 0) continue;
+      if (G.want.has(i)) { G.fade[s] = Math.min(1, G.fade[s] + step); held.add(i); }
+      else if ((G.fade[s] -= step) <= 0) { G.fade[s] = 0; G.lamp[s] = -1; }
+    }
+    for (const i of G.want) {
+      if (held.has(i)) continue;
+      let s = G.lamp.indexOf(-1);
+      if (s < 0) { let lo = 2; for (let t = 0; t < N; t++) if (!G.want.has(G.lamp[t]) && G.fade[t] < lo) { lo = G.fade[t]; s = t; } }   // the faintest one leaving
+      if (s < 0) break;
+      G.lamp[s] = i; G.fade[s] = 0; held.add(i);
+    }
+    let n = 0;
+    const U = wxWetU, cx = camera.position.x, cz = camera.position.z;
+    for (let s = 0; s < N; s++) {
+      const i = G.lamp[s], P = U.uGlP.value[s];
+      if (i < 0) { P.w = 0; continue; }
+      const d = Math.hypot(inv.X[i] - cx, inv.Z[i] - cz);
+      P.set(inv.X[i], inv.GY[i] + inv.HM[i], inv.Z[i], G.fade[s] * (1 - smooth(G.R * 0.75, G.R, d)));
+      U.uGlC.value[s].set(G.col[i * 3], G.col[i * 3 + 1], G.col[i * 3 + 2]).multiplyScalar(G.I / 100);
+      n = s + 1;
+    }
+    U.uGlN.value = n;
+  }
+  // the wet city's frame: the glints, the rings' clock, the halos, the grade, the ground under the eye (the realism pass)
+  const _wxRes = new THREE.Vector2();
+  function wxFxStep(now, dt) {
+    if (!REAL) return;
+    const F = WXFX, night = nightUniform.value;
+    wxWetU.uWxTime.value = (wxWetU.uWxTime.value + dt) % 1000;
+    wxWetU.uRainNow.value = reducedMotion ? 0 : F.rain;
+    wxWetU.uWxSunK.value = smooth(0.15, 0.7, glintK);   // the deck's own glint term: a closed deck (0.1) leaves no disc to mirror
+    wxGlintStep(now, dt);
+    wxGrade(F, night);
+    if (F.rain > 0.02 || F.snow > 0.02) { const cx = camera.position.x, cz = camera.position.z; rainU.uGroundY.value = groundMeshY(cx, cz) ?? siteY(cx, cz, 'ground'); }
+    rainU.uRes.value.copy(renderer.getDrawingBufferSize(_wxRes));
+    rainU.uNightK.value = lampMapU.uLampOn.value;
+    const halo = night * Math.max(F.rain * 0.6, F.fog, F.snow * 0.5);
+    if (!wxHalo && halo > 0.01 && poleGlow) wxHalo = wxHaloMesh();
+    if (wxHalo) { wxHalo.visible = poleGlow.visible && halo > 0.01; haloU.uHalo.value = halo; }
+    if (window.__dbg && !window.__dbg.wxFx) window.__dbg.wxFx = () => ({ wet: wxSurfU.uWet.value, rain: F.rain, snow: F.snow, glints: wxWetU.uGlN.value, picked: WXGL.picked, covered: WXGL.covered, lamps: [...WXGL.lamp].filter((i) => i >= 0).length, halo: haloU.uHalo.value, haloOn: !!(wxHalo && wxHalo.visible), bloom: postComp ? postComp.uniforms.uBloom.value : null, sat: gradeU.uSat.value, con: gradeU.uCon.value, shells: wxShells.map((s) => s.visible) });
+  }
+  // the realistic rain's, the snow's and the shells' uniforms, after the old boxes have advected (updateWeatherFX)
+  function wxRainStep(F, hi, vis) {
+    const sp = rainVel.length();
+    rainU.uLen.value = (sp / 30 + 0.05) * (1 + 2 * hi) * (1 - 0.4 * F.hail);
+    rainU.uAlpha.value = (0.22 + 0.12 * F.rain) * vis * (0.4 + 0.6 * F.dayF) * (1 - 0.35 * hi) * (1 + 0.6 * F.hail);
+    rainU.uCol.value.copy(skyMat.uniforms.cHorizon.value).lerp(_wxc.setRGB(0.93, 0.95, 0.99), F.hail * 0.6);
+  }
+  function wxSnowStep(F, hi, vis) {
+    // a tighter box at street level (24 m against 40): a flake past 20 m is under a pixel anyway, and the near ones are what reads
+    snowU.uBox.value.set(24 + 691 * hi, 22 + 373 * hi, 24 + 691 * hi);
+    snowU.uCam.value.copy(camera.position);
+    snowU.uCam.value.y += snowU.uBox.value.y * 0.25;
+    snowU.uVel.value.copy(snowVel);
+    snowU.uSizeK.value = (isTouch ? 1.6 : 1) * (1 + 2 * hi);   // a phone's small screen: the flakes a little larger
+    snowU.uAlpha.value = 0.9 * vis * (0.3 + 0.7 * F.dayF);
+    snowU.uCol.value.copy(skyMat.uniforms.cHorizon.value);
+  }
+  function wxShellStep(F, vis, dt) {
+    const on = WX_SHELLS.length && vis > 0.02 && (F.rain > 0.02 || F.snow > 0.02) && !reducedMotion;
+    for (const s of wxShells) { s.visible = !!on; if (on) s.position.set(camera.position.x, rainU.uGroundY.value - 4, camera.position.z); }
+    if (!on) return;
+    const fall = 8.5 + 4 * F.rain;
+    shellU.uCam.value.copy(camera.position);
+    shellU.uTime.value = (shellU.uTime.value + dt) % 600;
+    shellU.uRain.value = F.rain * (1 - 0.6 * F.hail); shellU.uSnow.value = F.snow;
+    shellU.uWind.value.set(WX.windX * 0.75 / fall, WX.windZ * 0.75 / fall); shellU.uFall.value = fall;
+    shellU.uVis.value = vis;
+    if (!rainMesh.visible) rainU.uCol.value.copy(skyMat.uniforms.cHorizon.value);   // snow alone: the shells still take the air's colour
   }
   // lightning: a jagged polyline rebuilt per strike out beyond the skyline,
   // shown ~240 ms with a triple-flicker flash that applyLighting spreads over
@@ -26850,7 +27314,8 @@ float pinOccGate() {
     const sgTau = F.tSnowGround > F.snowGround ? 40 : (WX.temp != null && WX.temp > 38 ? 180 : 600);
     F.snowGround += (F.tSnowGround - F.snowGround) * (1 - Math.exp(-dt / sgTau));
     wxSurfU.uSnowAcc.value = F.snowGround;
-    wxSurfU.uWet.value = F.wet * (0.45 + 0.55 * F.dayF);
+    wxSurfU.uWet.value = REAL ? F.wet : F.wet * (0.45 + 0.55 * F.dayF);   // the realistic look: a street is as wet by night as by day
+    wxFxStep(now, dt);   // the wet city's glints, rings, halos and grade (the realism pass)
     if (reducedMotion) return;   // sky, fog and surfaces still answer the weather; no particles, no strobe
     const cy = camera.position.y;
     const hi = smooth(120, 1100, cy);         // altitude grows the box and streaks so it still reads
@@ -26873,10 +27338,12 @@ float pinOccGate() {
       rainU.uFrac.value = 0.12 + 0.88 * F.rain;
       rainU.uAlpha.value = (0.9 - 0.35 * hi) * vis * (0.30 + 0.70 * F.dayF) * Math.min(1, 0.5 + F.rain);
       rainU.uCol.value.setRGB(0.62, 0.66, 0.74).lerp(_wxc.setRGB(0.93, 0.95, 0.99), F.hail);
+      if (REAL) wxRainStep(F, hi, vis);
     }
     snowMesh.visible = F.snow > 0.02 && vis > 0.02;
     if (snowMesh.visible) {
-      snowVel.set(WX.windX * 0.4, -(1.5 + 1.3 * F.snow), WX.windZ * 0.4);
+      const sk = REAL ? 0.4 + 0.6 * smooth(0.6, 1.0, F.snow) : 0.4;   // a blizzard is driven by the whole wind
+      snowVel.set(WX.windX * sk, -(1.5 + 1.3 * F.snow), WX.windZ * sk);
       snowOff.addScaledVector(snowVel, dt);
       snowU.uTime.value += dt;
       snowU.uOff.value.copy(snowOff);
@@ -26886,7 +27353,9 @@ float pinOccGate() {
       snowU.uSize.value = 0.8 + 5.2 * hi;
       snowU.uFrac.value = 0.15 + 0.85 * F.snow;
       snowU.uAlpha.value = 0.95 * vis * (0.45 + 0.55 * F.dayF);
+      if (REAL) wxSnowStep(F, hi, vis);
     }
+    wxShellStep(F, vis, dt);
     ltnPoll(now);
     if (LTN.queue.length && now >= LTN.nextDraw) { spawnStrike(now, LTN.queue.shift()); LTN.nextDraw = now + 2500 + Math.random() * 2500; }   // real strikes, one every 2.5 to 5 s at most
     else if (F.storm && !LTN.live) {   // no lightning feed: the synthetic bolts stand in
@@ -28646,7 +29115,7 @@ float pinOccGate() {
           seen.add(m);
           if (m.userData.wxSurf) {
             const prev = m.onBeforeCompile;
-            m.onBeforeCompile = (sh, r) => { wxSurfacePatch(sh); prev(sh, r); };
+            m.onBeforeCompile = (sh, r) => { wxSurfacePatch(sh); prev(sh, r); wxSurfaceLate(sh); };
             m.customProgramCacheKey = () => 'wx|' + prev.toString();
             m.dispose();
             continue;
