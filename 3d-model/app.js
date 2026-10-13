@@ -1725,7 +1725,7 @@
       },false);
     }
     for (const i of [0, pts.length - 1]) {
-      if (!keep[i === 0 ? 0 : keep.length - 1]) continue;
+      if (!keep[i === 0 ? 0 : keep.length - 1] || (lane && lane.square)) continue;   // square: no round end (the realism pass: a paving season's strip ends in a straight cut)
       const cx = pts[i][0], cz = pts[i][1], yc = ys[i] - (lane ? 0.02 : 0);
       const S = 8;
       const ddx = lane ? hd[i * 2] : 0, ddz = lane ? hd[i * 2 + 1] : 0, si = ss[i];
@@ -1876,6 +1876,14 @@
     return 1000 * (cls + 1) + Math.max(-200, Math.min(400, e));
   }
   const STREET_JOINS = (t) => t >= 2 && t <= 5;   // the city streets that take crossings and count as crossed: primary to residential
+  // an outer street's lane class from its packed type and width (the wide set's and the far ring's): divided on the highways,
+  // unmarked on a service way, a lane under 5.5 m or a residential way over 10 m (the runways and taxiways), else two-way.
+  // The realism pass (the audit: a double yellow on every street, though 2,117 of the outer districts' 2,917 residential
+  // ways are tagged one-way and Philadelphia's rowhouse streets carry no centre line, one-way or not): under REAL a
+  // residential way under RES_UNMARKED_W (every one the packers carry is 7 m, the core's too) is unmarked; its kerbs, its
+  // wear and its crossings stay. Decided from the width alone, so nothing is repacked
+  const RES_UNMARKED_W = 9;
+  const laneClsOf = (t, w) => (t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && (w > 10 || (REAL && w < RES_UNMARKED_W)))) ? 2 : 0);
   // the s values a street's polyline must carry as vertices for E to interpolate exactly: each junction, and between two the
   // point where the nearest changes (the right arm of one meets the left arm of the next)
   function junctionCuts(jl) {
@@ -4012,10 +4020,11 @@
   // along it: the same fixed-radius, direction-aligned test as ovpOwned, 3 m for the two
   // packers' simplification tolerances (1.6 m at 0.7 m units against 0.6 m at 0.2 m).
   const WR_CELL = 40;
-  const wideRoadGrid = new Map(), wideRoadSegs = [];
-  function wideRoadAdd(ax, az, bx, bz) {
+  const wideRoadGrid = new Map(), wideRoadSegs = [], wideRoadInfo = [];   // wideRoadInfo: the street's half width and lane class, two a segment (the realism pass)
+  function wideRoadAdd(ax, az, bx, bz, hw = 0, cls = 0) {
     const idx = wideRoadSegs.length;
     wideRoadSegs.push(ax, az, bx, bz);
+    wideRoadInfo.push(hw, cls);
     const minx = Math.floor((Math.min(ax, bx) - 3) / WR_CELL), maxx = Math.floor((Math.max(ax, bx) + 3) / WR_CELL);
     const minz = Math.floor((Math.min(az, bz) - 3) / WR_CELL), maxz = Math.floor((Math.max(az, bz) + 3) / WR_CELL);
     for (let gx = minx; gx <= maxx; gx++) for (let gz = minz; gz <= maxz; gz++) {
@@ -4045,6 +4054,23 @@
       return false;
     };
     return hit(ax, az) && hit(bx, bz) && hit((ax + bx) / 2, (az + bz) / 2);
+  }
+  // the realism pass: the outer street nearest (x, z) within maxD, as [half width, lane class], or null (the paving season's
+  // strips, which otherwise took every street outside the core at roadHalfW's 4.5 m)
+  function wideStreetAt(x, z, maxD) {
+    if (!wideRoadSegs.length) return null;
+    const gx = Math.floor(x / WR_CELL), gz = Math.floor(z / WR_CELL);
+    let bd = maxD * maxD, best = -1;
+    for (let cx = gx - 1; cx <= gx + 1; cx++) for (let cz = gz - 1; cz <= gz + 1; cz++) {
+      const arr = wideRoadGrid.get(cx + ':' + cz);
+      if (arr) for (const s of arr) {
+        const ax = wideRoadSegs[s], az = wideRoadSegs[s + 1], dx = wideRoadSegs[s + 2] - ax, dz = wideRoadSegs[s + 3] - az;
+        const t = clamp(((x - ax) * dx + (z - az) * dz) / (dx * dx + dz * dz || 1e-9), 0, 1);
+        const px = ax + dx * t - x, pz = az + dz * t - z, d2 = px * px + pz * pz;
+        if (d2 < bd) { bd = d2; best = s; }
+      }
+    }
+    return best < 0 || !wideRoadInfo[best / 2] ? null : [wideRoadInfo[best / 2], wideRoadInfo[best / 2 + 1]];
   }
   // does a building footprint straddle a motorway deck or an open cut? (an OSM
   // artifact: nothing real stands across I-95 — Mike's building through the
@@ -5545,7 +5571,7 @@
       const y = foot ? LAYER.footway : setts ? LAYER.road - 0.015 : LAYER.road;   // with a 1 cm jitter (below) the setts sit between the sidewalks' 0.16 to 0.22 and the asphalt's 0.24 to 0.30
       // lane class for the paint: divided (no centre yellow) on the highways and their links,
       // no markings on service and pedestrian ways; the brick parts never carry the attribute
-      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) ? 2 : 0), jl: coreJX && coreJX[cr].length ? coreJX[cr] : null, noX: true };
+      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) || (REAL && /^(residential|unclassified)$/.test(r.t) && r.w < RES_UNMARKED_W) ? 2 : 0), jl: coreJX && coreJX[cr].length ? coreJX[cr] : null, noX: true };
       {
         // Round 127 (Mike: "sidewalks/crosswalks overlapping look pretty bad"): the mapped footways and the
         // generated sidewalks wait until every carriageway is known (below)
@@ -10324,7 +10350,7 @@
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * S, body[k++] * S];
       if (t <= 5) for (let j = 0; j + 1 < pts.length; j++) septaRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);
-      for (let j = 0; j + 1 < pts.length; j++) wideRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1]);   // for the far ring's seam (Round 88)
+      for (let j = 0; j + 1 < pts.length; j++) wideRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, laneClsOf(t, w));   // for the far ring's seam (Round 88), and the paving season's strips (wideStreetAt)
       pts = lotDensify(pts);   // 6 m inside the sports complex's fill sheets, 15 m elsewhere
       wideRoadRecs.push({pts,w,t,i});
     }
@@ -10341,7 +10367,7 @@
         const edges = routeOffsets(pts);
         c.set(roadCol[t] || COLORS.asphalt).multiplyScalar(streetAge(i));
         const hw = w / 2;
-        const cls = t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && w > 10)) ? 2 : 0;   // lane class: divided, two-way, or unmarked
+        const cls = laneClsOf(t, w);   // lane class: divided, two-way, or unmarked
         const thr = TERRAIN.water + 0.6;
         let sAcc = 0;   // distance along the densified polyline (the lane paint's s)
         for (let j = 0; j < pts.length - 1; j++) {
@@ -12199,7 +12225,7 @@
       const edges = routeOffsets(pts);
       c.set(roadCol[t] || COLORS.asphalt).multiplyScalar(streetAge(i + 7919));
       const hw = w / 2;
-      const cls = t <= 1 ? 1 : (t === 6 || w < 5.5 || (t === 5 && w > 10)) ? 2 : 0;   // lane class: divided, two-way, or unmarked; runways (45 m) and taxiways (16 m) ride class 5
+      const cls = laneClsOf(t, w);   // lane class: divided, two-way, or unmarked; runways (45 m) and taxiways (16 m) ride class 5
       const thr = TERRAIN.water + 0.6;
       let sAcc = 0;   // distance along the densified polyline (the lane paint's s)
       for (let j = 0; j < pts.length - 1; j++) {
@@ -22796,9 +22822,10 @@ float pinOccGate() {
     closurePin = pinMesh(pinTexture('#e07a1f', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePin');
     closurePinPart = pinMesh(pinTexture('#d9a441', '#fdfbf6', glyphDrum), CLOSURE_PIN_CAP, 'closurePinPart');
     // the realism pass (the critic: they drew as flat sky-tinted slabs over the lane paint): under REAL both are streets, on the
-    // road material with the lane attribute, so they take the asphalt's grain, the wear and the paint; fresh blacktop a step
-    // darker than the street, the milled surface grooved and unpainted, neither mirroring the sky
-    pavedMesh = new THREE.Mesh(new THREE.BufferGeometry(), REAL ? roadMat({ color: 0x0a0a09, roughness: 0.85, envMapIntensity: 0.3 }, true) : new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.75 }));
+    // road material with the lane attribute, so they take the asphalt's grain, the wear and the paint; fresh blacktop about half
+    // the aged street's albedo (a new course reads near black beside its neighbours, from the air too), the milled surface
+    // grooved and unpainted, neither mirroring the sky nor glaring tan into the sun (as rough as the streets)
+    pavedMesh = new THREE.Mesh(new THREE.BufferGeometry(), REAL ? roadMat({ color: 0x070706, roughness: 1.0, envMapIntensity: 0.3 }, true) : new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.75 }));
     milledMesh = new THREE.Mesh(new THREE.BufferGeometry(), REAL ? roadMat({ color: 0x1b1a18, roughness: 1.0, envMapIntensity: 0.3 }) : new THREE.MeshStandardMaterial({ color: 0x4a4744, roughness: 1.0 }));
     for (const m of [pavedMesh, milledMesh]) { m.frustumCulled = false; m.receiveShadow = true; m.visible = false; groupCity.add(m); }
     closuresReady = true;
@@ -22824,16 +22851,16 @@ float pinOccGate() {
       .catch(miss);
   }
   const closureGeo = (g) => { const out = []; for (const p of g || []) if (p && isFinite(+p[0]) && isFinite(+p[1])) out.push([(+p[0] - SEPTA_GEO.lon0) * SEPTA_GEO.mx, -(+p[1] - SEPTA_GEO.lat0) * SEPTA_GEO.mz]); return out; };
-  function roadHalfW(x, z) {   // the drawn street's half width: the core's road grid knows it, the outer streets are taken at 4.5 m
+  function roadHalfW(x, z, maxD) {   // the drawn street's half width: the core's road grid knows it, the outer streets are taken at 4.5 m (with maxD: null when no core street lies within it)
     const a = roadGrid.get(Math.floor(x / ROAD_CELL) + ':' + Math.floor(z / ROAD_CELL));
-    let best = 4.5, bd = 20 * 20;
+    let best = 4.5, bd = (maxD || 20) ** 2, hit = false;
     if (a) for (const s of a) {
       const ax = roadSegs[s], az = roadSegs[s + 1], dx = roadSegs[s + 2] - ax, dz = roadSegs[s + 3] - az;
       const L2 = dx * dx + dz * dz || 1e-9, t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
       const px = ax + dx * t - x, pz = az + dz * t - z, d2 = px * px + pz * pz;
-      if (d2 < bd) { bd = d2; best = roadSegs[s + 4]; }
+      if (d2 < bd) { bd = d2; best = roadSegs[s + 4]; hit = true; }
     }
-    return clamp(best, 2.5, 14);
+    return maxD && !hit ? null : clamp(best, 2.5, 14);
   }
   function closureY(x, z, ux, uz) {   // the traffic layer's road height (its trench aside): the bridge decks and the overpasses lift it
     let y = Math.max(siteY(x, z, 'road'), bankFloor(x, z)), lift = inCore(x, z) ? LAYER.road + 0.04 : LAYER.road + 2 * 0.055 + 0.05;
@@ -22907,8 +22934,14 @@ float pinOccGate() {
       if (raw.length < 2 || !raw.some((q) => insideLimit(q[0], q[1]))) continue;
       const ln = closureSnapLine(raw);
       if (!ln) continue;
-      const hw = roadHalfW(ln.mx, ln.mz);
-      const pg = ribbon(ln.pts, 2 * hw - (REAL ? 0.6 : 1.0), 0, (x, z) => closureY(x, z) + 0.06, REAL ? { cls: p.k === 'milled' ? 3 : 2 * hw >= 6.5 ? 0 : 2 } : null);
+      let hw = roadHalfW(ln.mx, ln.mz), pcls = 0;
+      if (REAL) {   // the realism pass: the street's own width and markings, so the strip stays off its sidewalks (roadHalfW took every street the core's grid did not know at 4.5 m and laid 8 m)
+        const cw = roadHalfW(ln.mx, ln.mz, 6), ws = cw === null ? wideStreetAt(ln.mx, ln.mz, 12) : null;
+        if (cw !== null) { hw = cw; pcls = 2 * hw >= RES_UNMARKED_W ? 0 : 2; }   // a core street: marked as the core marks it (laneClsOf's width rule)
+        else if (ws) { hw = ws[0]; pcls = ws[1]; }   // an outer street (wideStreetAt)
+        else { hw = 3.5; pcls = 2; }   // beyond them: a rowhouse street's, the commonest
+      }
+      const pg = ribbon(ln.pts, 2 * hw - (REAL ? 0.6 : 1.0), 0, (x, z) => closureY(x, z) + 0.06, REAL ? { cls: p.k === 'milled' ? 3 : pcls, square: true } : null);
       if (REAL) { const la = pg.attributes.aLane.array; for (let q = 2; q < la.length; q += 4) la[q] = hw; }   // the street's own half width, so its lane lines fall where the street's do
       strips[p.k === 'milled' ? 'milled' : 'paved'].push(pg);
       CLOSURES.paving.push({ id: String(p.id || ''), k: p.k, addr: String(p.addr || ''), mx: ln.mx, mz: ln.mz });

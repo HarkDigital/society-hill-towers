@@ -4,10 +4,11 @@ cartoony. This should apply to all surfaces"). Under REAL (?real=0 keeps every s
 - the asphalt re-keyed neutral-warm at about 0.45 of its old linear value, each street a little older or newer;
 - a realistic lane shader (lanePatchReal): road-aligned wear, the lane photographs, utility cuts, manholes, the gutter and
   the kerb, worn amber and white paint, and at the junctions (streetJunctions, carried on aLane.w by laneW) crossings, stop
-  bars and no lane lines through the box;
+  bars and no lane lines through the box; a residential street under 9 m unmarked (laneClsOf, no repack);
 - the outer districts' sidewalks (bake_sidewalks.py, sidewalks.b64), filled to the facades, culled to the half mile on a
   phone and not built in a LITE city;
-- the lots' stalls and oil, the paving season's overlays on the road material, the decks' photographed concrete, the El's
+- the lots' stalls and oil, the paving season's overlays on the road material at the street's own width with square ends
+  (wideStreetAt), the decks' photographed concrete, the El's
   steel, the cobra heads and historic posts, the main line's ties (STREET_ART, bake_street_art.py)."""
 import base64
 import json
@@ -141,6 +142,52 @@ class Wiring(unittest.TestCase):
         self.assertIn('let_blob("SIDEWALKS_B64", "sidewalks.b64")', b)
         self.assertIn('const("STREET_ART", text_of("street_art.json", "null"))', b)
         self.assertIn('ART_FILES += art_paths(json.loads((ROOT / "street_art.json").read_text()))', b)
+
+
+class Markings(unittest.TestCase):
+    """The residential width rule (the audit's double yellow on every street, decided without a repack) and the paving
+    season's strips on the street's own width, with square ends."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.s = (ROOT / 'app.js').read_text()
+
+    def lane_cls(self, real):
+        if not shutil.which('node'):
+            self.skipTest('node unavailable')
+        s = self.s
+        a = s.index('  const RES_UNMARKED_W = ')
+        src = s[a:s.index('\n', s.index('  const laneClsOf = ', a)) + 1]
+        code = 'const REAL = %s;\n' % ('true' if real else 'false') + src + r'''
+const cases = [[0, 30], [1, 12], [2, 13], [3, 11], [4, 9], [5, 7], [5, 6], [5, 9.5], [5, 45], [6, 7], [3, 5]];
+console.log(JSON.stringify(cases.map(([t, w]) => laneClsOf(t, w))));
+'''
+        r = subprocess.run(['node', '-e', code], capture_output=True, text=True)
+        if r.returncode:
+            raise AssertionError(r.stderr)
+        return json.loads(r.stdout)
+
+    def test_the_width_rule(self):
+        #                  mway trunk prim sec tert res7 res6 res9.5 runway serv narrow
+        self.assertEqual(self.lane_cls(True), [1, 1, 0, 0, 0, 2, 2, 0, 2, 2, 2])
+        self.assertEqual(self.lane_cls(False), [1, 1, 0, 0, 0, 0, 0, 0, 2, 2, 2])   # ?real=0: every 7 m street keeps its double yellow
+
+    def test_every_tier_uses_it(self):
+        s = self.s
+        self.assertEqual(s.count('const cls = laneClsOf(t, w);'), 2)   # the outer districts and the far ring
+        self.assertNotIn('(t === 5 && w > 10)) ? 2 : 0', s)
+        self.assertIn("(REAL && /^(residential|unclassified)$/.test(r.t) && r.w < RES_UNMARKED_W) ? 2 : 0)", s)   # the core
+        self.assertIn('wideRoadAdd(pts[j][0], pts[j][1], pts[j + 1][0], pts[j + 1][1], w / 2, laneClsOf(t, w));', s)
+
+    def test_the_paving_strips(self):
+        s = self.s
+        p = cut(s, '    const strips = { paved: [], milled: [] };', '    if (pavedMesh) {')
+        self.assertIn('const cw = roadHalfW(ln.mx, ln.mz, 6), ws = cw === null ? wideStreetAt(ln.mx, ln.mz, 12) : null;', p)
+        self.assertIn("REAL ? { cls: p.k === 'milled' ? 3 : pcls, square: true } : null", p)
+        self.assertIn('return maxD && !hit ? null : clamp(best, 2.5, 14);', fn(s, 'roadHalfW'))   # without maxD, as it always was
+        self.assertIn('|| (lane && lane.square)) continue;', fn(s, 'ribbon'))
+        self.assertIn('return best < 0 || !wideRoadInfo[best / 2] ? null : [wideRoadInfo[best / 2], wideRoadInfo[best / 2 + 1]];', fn(s, 'wideStreetAt'))
+        self.assertIn("REAL ? roadMat({ color: 0x070706, roughness: 1.0, envMapIntensity: 0.3 }, true)", s)
 
 
 class Sidewalks(unittest.TestCase):
