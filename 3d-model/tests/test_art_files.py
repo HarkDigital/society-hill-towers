@@ -13,7 +13,7 @@ import re
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
-MANIFESTS = ('fronts.json', 'tree_art.json', 'ground_art.json', 'wall_art.json')
+MANIFESTS = ('fronts.json', 'tree_art.json', 'ground_art.json', 'wall_art.json', 'land_mask.json')   # the walls and the land mask: the realism pass
 
 
 def paths(o):
@@ -40,7 +40,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 

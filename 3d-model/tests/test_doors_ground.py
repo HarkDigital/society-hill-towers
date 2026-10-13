@@ -28,7 +28,8 @@ class Ground(unittest.TestCase):
         d = json.loads((ROOT / 'ground_art.json').read_text())
         # Round 184: the streets' three beside the lawn and verge, each a file under art/ground/ with a phone's half
         kinds = ('lawn', 'meadow', 'asphalt', 'concrete', 'bricks', 'yard')   # Round 185: the yards
-        self.assertEqual(set(d), set(kinds) | {k + 'Half' for k in kinds} | {'m', 'roofs', 'roofsHalf', 'roofKinds', 'roofMean', 'roofPad'})
+        self.assertEqual(set(d), set(kinds) | {k + 'Half' for k in kinds} | {'m', 'roofs', 'roofsHalf', 'roofKinds', 'roofMean', 'roofPad', 'veg'})
+        d.pop('veg')   # the realism pass's own set (tests/test_realism_ground_veg.py)
         self.assertEqual(d.pop('m'), {'asphalt': 6.0, 'concrete': 1.5, 'bricks': 1.625, 'yard': 10.0, 'roof': 8.0})   # a tile's metres
         # Round 185: the flat roofs' 2 by 2 atlas, its kinds in the shader's order and their linear means (tar darkest, white lightest)
         self.assertEqual(d.pop('roofKinds'), ['tar', 'silver', 'white', 'gravel'])

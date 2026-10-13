@@ -20,9 +20,15 @@ from PIL import Image
 HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'tree_art_raw')
 OUT = os.path.join(HERE, 'tree_art.json')
-SIDE, TOP = 320, 160
+# the realism pass (ground-vegetation 11): stored at 448 and 224 so a computer draws a near tree from a picture as large as
+# it shows (the page caps a phone's cells at the old 128 and 64, from the half copies)
+SIDE, TOP = 448, 224
 QUALITY = 78
-SEASONS = ('summer', 'autumn', 'winter', 'spring')
+# 'turning' (the realism pass): a fifth of the crown coloured, between summer and autumn
+SEASONS = ('summer', 'turning', 'autumn', 'winter', 'spring')
+# peak colour as a photograph shows it, not as the model paints it (ground-vegetation 4): the autumn and bloom images
+# lose a fifth of their saturation and a twentieth of their value
+MUTE = {'autumn': (0.82, 0.95), 'spring': (0.82, 0.95)}
 
 LOOK_OF = [   # (look, species name pattern), on the inventory's common names; Round 184 added ten looks ahead of the
     # broader patterns they used to fall under
@@ -111,10 +117,20 @@ def bleed(a, passes=24):
     return a
 
 
+def mute(a, sat, val):
+    """Saturation toward the pixel's own luminance, then the value down, alpha untouched."""
+    rgb = a[..., :3]
+    lum = (0.2126 * rgb[..., 0] + 0.7152 * rgb[..., 1] + 0.0722 * rgb[..., 2])[..., None]
+    a[..., :3] = np.clip((lum + (rgb - lum) * sat) * val, 0, 1)
+    return a
+
+
 def prep(path, view, season):
     a = np.asarray(Image.open(path).convert('RGBA'), np.float32) / 255.0
     if season == 'winter':
         a = dehaze(a, view)
+    if season in MUTE:
+        a = mute(a, *MUTE[season])
     al = a[..., 3]
     ys, xs = np.nonzero(al > 0.06)
     if not len(xs):

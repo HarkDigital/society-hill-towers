@@ -24,6 +24,11 @@ FRAME_STREET = ('Seamless tileable texture for a 3D city model: a photograph tak
                 'the whole frame evenly. No perspective, no shadows of objects, no paint markings, no objects, no edges or '
                 'borders. Soft even overcast daylight. Natural colours, photorealistic, uniform detail across the whole image '
                 'so it repeats without a visible seam.')
+# the woods from the air (the realism pass): the frame a canopy texture is made in, 80 m of closed forest straight down
+CANOPY = ('Seamless tileable aerial orthophoto taken straight down from 600 metres over dense mixed deciduous forest in '
+          'Fairmount Park, Philadelphia, {season}, about 80 metres across the frame. No ground visible except where the season '
+          'bares it, no paths, no roads, no buildings, no water, no clearings, no text, no vignette; uniform density and '
+          'exposure across the whole image so it repeats without a visible seam. Photorealistic.')
 GROUNDS = [
     ('lawn', 'a mown park lawn in a Philadelphia city park in summer: dense green turf grass with slight variation in '
      'tone, a few clover patches'),
@@ -45,6 +50,38 @@ GROUNDS = [
     ('roof_gravel', 'a ballasted flat roof covered in loose grey and tan river gravel, about eight metres across, uniform', 'roof'),
     ('yard', 'the ground of urban backyards and a vacant lot in Philadelphia, about ten metres across: a patchwork of cracked '
      'grey concrete, bare packed brown dirt, patches of weeds and grass and a little gravel, no fences, no objects'),
+    # the realism pass (Mike: "make this look more photo realistic and less cartoony ... all surfaces/water/anything"): the
+    # ground's broad variation from the air, the woods' canopy by season, the river banks and the yards (tidemud, litter
+    # and snow were made and looked at; bake_ground_art.py does not use them)
+    ('parkmacro', 'Seamless tileable aerial orthophoto taken straight down from 1,500 metres over a 240-metre-wide stretch of '
+     'mown municipal parkland turf in Philadelphia in early October, soft high-overcast light. Only large-scale variation: '
+     'lighter dry straw-tinted patches on the rises, darker greener damp swales, faint pale desire lines of worn grass and '
+     'compacted soil, a subtle irregular mowing pattern. No trees, no tree shadows, no paved paths, no buildings, no people, '
+     'no water, no sports markings, no text, no vignette; uniform exposure edge to edge so it repeats without a visible '
+     'seam. Photorealistic.', 'aerial'),
+    ('canopy_summer', CANOPY.format(season='in midsummer: a closed canopy of individual rounded tree crowns 8 to 18 metres '
+     'across packed edge to edge (oak, tulip poplar, beech, maple), sunlit crown tops with natural soft shadow in the gaps '
+     'between crowns, varied greens from dark to yellow-green'), 'aerial'),
+    ('canopy_autumn', CANOPY.format(season='in late October: a closed canopy of individual rounded tree crowns 8 to 18 metres '
+     'across packed edge to edge, mostly green and olive crowns with scattered yellow, orange, russet and a few red crowns, '
+     'natural slightly muted colour, soft shadow in the gaps between crowns'), 'aerial'),
+    ('canopy_winter', CANOPY.format(season='in winter with every deciduous tree bare: a grey-brown mesh of branches and twigs '
+     'of crowns 8 to 18 metres across, the brown leaf-litter forest floor visible between them, a few dark green conifer '
+     'crowns'), 'aerial'),
+    ('riprap', 'a river bank armoured with riprap on the Schuylkill River in Philadelphia, about six metres across: tightly '
+     'packed angular grey granite and brown sandstone boulders thirty to eighty centimetres across, dark damp gaps between '
+     'them, a thin film of dried grey river silt on the lower stones, a few small tufts of grass in the joints'),
+    ('tidemud', 'the tidal edge of the Delaware River at low tide, about six metres across: smooth wet grey-brown silt and mud '
+     'with scattered pebbles, broken mussel shells and a few strands of dark river weed, glistening wet patches'),
+    ('litter', 'a mown city park lawn in early November, about three metres across, covered unevenly by fallen leaves: maple, '
+     'oak and London plane leaves in brown, tan, yellow and orange lying flat over green grass, thicker in some places than '
+     'others'),
+    ('alley', 'the ground behind Philadelphia rowhouses seen from above, about ten metres across: cracked grey concrete back '
+     'patios of different ages separated by thin seams, a strip of patched asphalt alley, small squares of bare dirt with '
+     'weeds, a few darker stains and drain grates; no fences, no walls, no objects, no people'),
+    ('snow', 'fresh undisturbed snow about five centimetres deep on a flat open city lot in Philadelphia, about six and a half '
+     'metres across: soft white with faint blue-grey wind undulations, tiny ice-crystal glints, a few softened half-filled '
+     'footprints, no grass showing, no objects'),
 ]
 # the roofs' frame (Round 185): a drone's view straight down at a roof surface, nothing standing on it
 FRAME_ROOF = ('Seamless tileable texture for a 3D city model: an aerial photograph taken by a drone looking straight down at '
@@ -71,7 +108,7 @@ def make(key, gid, what, force, kind=None):
     base = os.path.join(RAW, gid)
     if os.path.exists(base + '.png') and not force:
         return gid, 'kept'
-    prompt = (FRAME_STREET if kind == 'street' else FRAME_ROOF if kind == 'roof' else FRAME).format(what=what)
+    prompt = what if kind == 'aerial' else (FRAME_STREET if kind == 'street' else FRAME_ROOF if kind == 'roof' else FRAME).format(what=what)
     body = json.dumps({'model': MODEL, 'prompt': prompt, 'size': SIZE, 'quality': QUALITY, 'n': 1,
                        'output_format': 'png'}).encode()
     err = ''
@@ -107,7 +144,7 @@ def main():
     key = api_key()
     only = set(filter(None, a.only.split(',')))
     jobs = [g for g in GROUNDS if not only or g[0] in only]
-    with concurrent.futures.ThreadPoolExecutor(2) as ex:
+    with concurrent.futures.ThreadPoolExecutor(4) as ex:
         for gid, what in ex.map(lambda g: make(key, g[0], g[1], a.force, g[2] if len(g) > 2 else None), jobs):
             print(gid, what, flush=True)
 

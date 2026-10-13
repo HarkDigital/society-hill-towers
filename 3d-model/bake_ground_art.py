@@ -21,6 +21,18 @@ IDS = ('lawn', 'meadow', 'asphalt', 'concrete', 'bricks', 'yard')   # Round 184:
 ROOFS = ('roof_tar', 'roof_silver', 'roof_white', 'roof_gravel')
 ROOF_CELL, ROOF_PAD, ROOF_M = 1024, 32, 8.0
 N = 1024
+# the realism pass (ground-vegetation and water's bank findings): the ground's own set, kept apart under 'veg' with each
+# image's metres a tile and its linear mean colour (the page takes a texture's detail as a ratio to its mean): the parks'
+# broad variation from the air, the woods' canopy by season, the river banks' riprap and the yards behind the rows (the
+# tidal mud and the leaf fall are drawn in the shader: a phone's ground program has no texture units to spare)
+VEG = {'parkmacro': 240.0, 'canopy_summer': 70.0, 'canopy_autumn': 70.0, 'canopy_winter': 70.0, 'riprap': 6.0,
+       'alley': 10.0}
+
+
+def lin_mean(a):
+    lin = np.clip(a, 0, 255) / 255.0
+    lin = np.where(lin <= 0.04045, lin / 12.92, ((lin + 0.055) / 1.055) ** 2.4)
+    return [round(float(v), 5) for v in lin.reshape(-1, 3).mean(0)]
 
 
 def tileable(a):
@@ -117,6 +129,20 @@ def main():
         out['roofPad'] = ROOF_PAD / ROOF_CELL
         metres['roof'] = ROOF_M
         print('roofs    atlas %d KB, half %d KB, means %s' % (art_files.size(out['roofs']) // 1024, art_files.size(out['roofsHalf']) // 1024, means))
+    veg = {}
+    for gid, mt in VEG.items():
+        p = os.path.join(RAW, gid + '.png')
+        if not os.path.exists(p):
+            print('%-14s missing (run fetch_ground_art.py --only %s): the page goes without it' % (gid, gid))
+            continue
+        a = tileable(np.asarray(Image.open(p).convert('RGB').resize((N, N), Image.LANCZOS), np.float32))
+        im = Image.fromarray(np.clip(a, 0, 255).astype(np.uint8))
+        fn = gid.replace('_', '-')   # a file's name is lower case, digits and hyphens (tests/test_art_files.py)
+        veg[gid] = {'img': art_files.write(im, 'ground', fn, 'WEBP', quality=80, method=6),
+                    'imgHalf': art_files.write(im.resize((N // 2, N // 2), Image.LANCZOS), 'ground', fn + '-half', 'WEBP', quality=80, method=6),
+                    'm': mt, 'mean': lin_mean(a)}
+        print('%-14s %d KB, half %d KB, %g m a tile' % (gid, art_files.size(veg[gid]['img']) // 1024, art_files.size(veg[gid]['imgHalf']) // 1024, mt))
+    out['veg'] = veg
     print('pruned %d old ground files' % art_files.prune('ground'))
     out['m'] = {k: round(v, 3) for k, v in metres.items()}
     with open(OUT + '.tmp', 'w') as f:
