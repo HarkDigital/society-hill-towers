@@ -278,7 +278,7 @@ class Wiring(unittest.TestCase):
         self.assertIn("float lHl = mix(8.0, 16.0 * lnm.a / max(lnl, 1e-5), nw * step(1e-5, lnl));", real)
         # the glass masks those shaders declare, where the patch looks for them
         self.assertIn("'float shtGlass = 0.0;',", self.s)
-        self.assertIn('varying float vBase; vec4 frMask;', self.s)
+        self.assertIn('varying float vBase; varying vec4 vFrR, vFrT; varying vec3 vFrSun; vec4 frMask;', self.s)   # the fronts' own declaration (the realism pass's fronts)
 
     def test_the_near_map_is_mipmapped_and_cleared_to_no_height(self):
         upd = cut(self.s, '  function lampNearUpdate() {', '  function lampLightPatch(')

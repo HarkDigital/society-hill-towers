@@ -271,14 +271,14 @@ class MergeReview(unittest.TestCase):
         script = (
             "const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };\n"
             "const REAL = true, POST = { on: false }, WX = { cover: 0 }, WXFX = { fog: 0, rain: 0, gloom: 0 };\n"
-            "const sun = { intensity: 0 }, hemi = { intensity: 0 }, gradeU = { uAOK: { value: 1 } };\n"
+            "const sun = { intensity: 0 }, hemi = { intensity: 0 }, gradeU = { uAOK: { value: 1 } }, sunDir = { y: 0.8 };\n"   # sunDir: post-shadows' clear-sky fill
             "const scene = { fog: { color: { multiplyScalar() { throw new Error('the fog colour was touched'); } } } };\n"
             "function moonShadowsOff() {}\n" + kw + "\n"
             "const at = (cover, fog, rain) => { WX.cover = cover; WXFX.fog = fog; WXFX.rain = rain;\n"
             "  const sunDeckK = " + deck + ";\n"
             "  sun.intensity = 1.85 * sunDeckK; hemi.intensity = 0.54;\n"
             "  const ec = keyWeather(1, sunDeckK);\n"
-            "  return { sun: +(sun.intensity / 1.85).toFixed(4), ec: +ec.toFixed(3) }; };\n"
+            "  return { sun: +(sun.intensity / 1.85).toFixed(4), ec: +(ec / KEYWX.comp).toFixed(3) }; };\n"   # the weather's share (post-shadows' fill compensation, comp, apart)
             "console.log(JSON.stringify({ clear: at(0.22, 0, 0), mid: at(0.7, 0, 0), over: at(0.92, 0, 0), fog: at(0.7, 1, 0), rain: at(0.95, 0, 1) }));")
         out = self.node(script)
         self.assertEqual(out['clear'], {'sun': 1, 'ec': 1})

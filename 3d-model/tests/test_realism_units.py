@@ -36,7 +36,7 @@ class Units(unittest.TestCase):
         s = self.s
         self.assertIn('m.onBeforeCompile = (sh, r) => { lanePatch(sh, fresh); prev(sh, r); };', s)
         self.assertIn('m.onBeforeCompile = (sh, r) => { lotPatch(sh); surfTexPatch(sh, r); };', s)
-        self.assertIn("ovpMat.onBeforeCompile = (sh, r) => { deckWallPatch(sh, 'concrete'); prevO(sh, r); };", s)
+        self.assertIn("m.onBeforeCompile = (sh, r) => { deckWallPatch(sh, 'concrete'); prev(sh, r); };", s)
 
     def test_one_lamp_sampler(self):
         self.assertNotIn('uWxLampMap', self.s)
