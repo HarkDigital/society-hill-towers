@@ -11320,7 +11320,7 @@
     const api = {
       THREE, K, where: 'app',
       ground: (x, z) => { const y = groundMeshY(x, z); return y == null || !Number.isFinite(y) ? siteY(x, z, 'ground') : y; },
-      night: nightUniform, lamp: lampUniform, lampU: LAMP_RB_U, dayF: () => WXFX.dayF, lawn: GROUND_MEADOW_MAT,
+      night: nightUniform, lamp: lampUniform, lampU: lampMapU, dayF: () => WXFX.dayF, lawn: GROUND_MEADOW_MAT,
       occupy: (ring, top, pad) => {
         REBUILD_OCC.push({ id: 'def', ring, bb: rbBox(ring), pad: pad || 0, top: top || null });
         if (top) { const c = polyCentroid(ring); roofNote(c[0], c[1], top, Math.abs(signedArea(ring))); }
@@ -11328,6 +11328,7 @@
       pinAt: (ring, at) => REBUILD_PINS.push({ ring, bb: rbBox(ring), at }),
       log: dev ? (...a) => console.log('[rebuild]', ...a) : () => {},
     };
+    api.lampU = LAMP_RB_U;   // the realism round: the far map's uniforms with its box at the realistic strength (lampNightFx keeps it; ?real=0 the same box)
     for (const d of REBUILDS) {
       const t0 = performance.now();
       try {

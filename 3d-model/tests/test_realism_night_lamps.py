@@ -258,7 +258,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('U.uLampReal.value.set(N.rt ? hk : 0, LAMP_REAL_K, 0, 0);', near)
         self.assertIn('const lampK = () => (REAL ? LAMP_REAL_K : 1);', s)
         self.assertIn('const LAMP_RB_U = { uLampMap: lampMapU.uLampMap, uLampBox: { value: new THREE.Vector4(0, 0, 1 / 12000, 0) }, uLampOn: lampMapU.uLampOn, uLampFade: lampMapU.uLampFade };', s)
-        self.assertIn('lampU: LAMP_RB_U,', cut(s, "  step('Rebuilding the landmarks'", '      occupy:'))
+        self.assertIn('    api.lampU = LAMP_RB_U;', cut(s, "  step('Rebuilding the landmarks'", '    for (const d of REBUILDS) {'))
         fx = cut(s, '  function lampNightFx(', '  // ---------------------------------------------------------------- skyline lights')
         self.assertIn('LAMP_RB_U.uLampBox.value.copy(lampMapU.uLampBox.value);\n    LAMP_RB_U.uLampBox.value.w *= lampK();', fx)
         # nothing else writes the far map's own box
