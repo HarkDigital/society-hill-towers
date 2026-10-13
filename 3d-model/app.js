@@ -683,6 +683,27 @@
   const REAL = !/[?&]real=0\b/.test(location.search);
   const AO = { on: REAL && POST.on && !/[?&]ao=0\b/.test(location.search), depthRT: null, a: null, b: null, mat: null, blur: null, copied: false, w: 0, h: 0 };
   const gradeU = { uSat: { value: REAL ? 0.84 : 1 }, uCon: { value: REAL ? 1.05 : 1 }, uSplit: { value: REAL ? 1 : 0 }, uAOK: { value: 1.0 }, uAOShow: { value: /[?&]ao=show\b/.test(location.search) ? 1 : 0 } };
+  // the realism pass (gap 3, Mike judges the look on his iPhone): a phone has no post pipeline, so it kept r149's bare ACES
+  // and none of the grade. Its renderer now tone maps through CustomToneMapping, set here before anything compiles: the
+  // same ACES with the composite's grade carried into linear light (saturation 0.84, the contrast about mid grey, warm
+  // lights and cool shadows as ratios), one pow a fragment and no extra pass. The raw materials (the dome, the lights) are
+  // untouched, as on the computer. ?real=0 keeps the bare ACES
+  if (!POST.on && REAL) {
+    const stub = 'vec3 CustomToneMapping( vec3 color ) { return color; }';
+    if (THREE.ShaderChunk.tonemapping_pars_fragment.indexOf(stub) >= 0) {
+      THREE.ShaderChunk.tonemapping_pars_fragment = THREE.ShaderChunk.tonemapping_pars_fragment.replace(stub, [
+        'vec3 CustomToneMapping( vec3 color ) {',
+        '  vec3 c = ACESFilmicToneMapping( color );',
+        '  float L = dot( c, vec3( 0.2126, 0.7152, 0.0722 ) );',
+        '  c = mix( vec3( L ), c, 0.84 );',
+        '  c = pow( max( c, vec3( 0.0 ) ) * ( 1.0 / 0.18 ), vec3( 1.05 ) ) * 0.18;',
+        '  c *= mix( vec3( 0.95, 1.0, 1.14 ), vec3( 1.0 ), smoothstep( 0.0, 0.10, L ) ) * mix( vec3( 1.0 ), vec3( 1.035, 1.012, 0.967 ), smoothstep( 0.17, 1.0, L ) );',
+        '  return saturate( c );',
+        '}',
+      ].join('\n'));
+      renderer.toneMapping = THREE.CustomToneMapping;
+    }
+  }
   const ACES_GLSL = [
     'vec3 pRRT(vec3 v){ vec3 a = v * (v + 0.0245786) - 0.000090537; vec3 b = v * (0.983729 * v + 0.4329510) + 0.238081; return a / b; }',
     'const mat3 pAIn = mat3(vec3(0.59719, 0.07600, 0.02840), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));',
@@ -790,6 +811,66 @@
     }
   `;
   let postRT = null, postA = null, postB = null, postQuad = null, postCam = null, postScene = null, postBright = null, postBlur = null, postComp = null;
+  // the realism pass (sky-light 11, "night lights read as hard dots"): the bloom was one quarter-resolution target blurred
+  // twice by a five-tap kernel, about twelve pixels of halo. BLOOMW adds the wide, low glare a lens gives a lamp: the blurred
+  // quarter image is taken down three more halvings with the 13-tap filter (Jimenez's, no fireflies) and brought back up
+  // with a 9-tap tent, the levels weighted 0.6 (the old tight halo), 0.22, 0.12 and 0.06, so the glow's energy is the old
+  // one, spread wider. Desktop only (the post pipeline is); ?bloomwide=0, ?real=0 and Smoother keep the old halo
+  const BLOOMW = { on: REAL && !/[?&]bloomwide=0\b/.test(location.search), mats: null, d: [], u: [], w: [0.6, 0.22, 0.12, 0.06] };
+  // ---- GPU pass timings (gap 12, "desktop has no frame budget for the new realism passes"): with ?dev on a desktop that has
+  // EXT_disjoint_timer_query_webgl2, the frame's passes are timed one after another (WebGL 2 allows one timer at a time):
+  // the shadow maps (near and far apart, through a wrapper on three's shadow pass), the scene, the occlusion, the bloom and
+  // the composite. Results land a frame or more later; __dbg.gpu() and __dbg.perf().gpu read the running means
+  const GPUT = { ext: null, on: false, cur: null, pend: [], ms: {}, fid: 0, accF: -1, acc: {} };
+  GPUT.ext = POST.on && /[?&]dev\b/.test(location.search) ? renderer.getContext().getExtension('EXT_disjoint_timer_query_webgl2') : null;
+  GPUT.on = !!GPUT.ext;
+  function gpuT(label) {
+    if (!GPUT.on) return;
+    const gl = renderer.getContext();
+    if (GPUT.cur) { gl.endQuery(GPUT.ext.TIME_ELAPSED_EXT); GPUT.cur = null; }
+    if (!label) return;
+    const q = gl.createQuery();
+    gl.beginQuery(GPUT.ext.TIME_ELAPSED_EXT, q);
+    GPUT.cur = q; GPUT.pend.push([q, label, GPUT.fid]);
+  }
+  const gpuNow = () => (GPUT.cur && GPUT.pend.length ? GPUT.pend[GPUT.pend.length - 1][1] : null);
+  function gpuRecord(label, ms) {
+    const m = GPUT.ms[label] || (GPUT.ms[label] = { last: 0, mean: 0, max: 0, n: 0 });
+    m.last = ms; m.n++; m.mean += (ms - m.mean) / Math.min(m.n, 60); m.max = Math.max(m.max * 0.995, ms);
+  }
+  function gpuCommit() {   // a frame's segments summed (the scene pass is cut in two around a shadow pass)
+    let t = 0;
+    for (const k in GPUT.acc) { gpuRecord(k, GPUT.acc[k]); t += GPUT.acc[k]; }
+    if (t > 0) gpuRecord('total', t);
+    GPUT.acc = {};
+  }
+  function gpuPoll() {
+    if (!GPUT.on) return;
+    GPUT.fid++;
+    const gl = renderer.getContext();
+    if (gl.getParameter(GPUT.ext.GPU_DISJOINT_EXT)) {   // the clock jumped: nothing measured meanwhile can be trusted
+      for (const [q] of GPUT.pend) if (q !== GPUT.cur) gl.deleteQuery(q);
+      GPUT.pend = GPUT.pend.filter(([q]) => q === GPUT.cur); GPUT.acc = {}; GPUT.accF = -1;
+      return;
+    }
+    while (GPUT.pend.length && GPUT.pend[0][0] !== GPUT.cur && gl.getQueryParameter(GPUT.pend[0][0], gl.QUERY_RESULT_AVAILABLE)) {
+      const [q, label, fid] = GPUT.pend.shift();
+      const ms = gl.getQueryParameter(q, gl.QUERY_RESULT) / 1e6;
+      gl.deleteQuery(q);
+      if (fid !== GPUT.accF) { gpuCommit(); GPUT.accF = fid; }
+      GPUT.acc[label] = (GPUT.acc[label] || 0) + ms;
+    }
+    if (GPUT.pend.length > 400) { for (const [q] of GPUT.pend.splice(0, 200)) if (q !== GPUT.cur) gl.deleteQuery(q); }
+  }
+  const gpuStats = () => { const o = {}; for (const k in GPUT.ms) { const m = GPUT.ms[k]; o[k] = { last: +m.last.toFixed(2), mean: +m.mean.toFixed(2), max: +m.max.toFixed(2), n: m.n }; } return o; };
+  if (GPUT.on) {   // three's shadow pass runs inside the scene's render call: wrapped, so it is timed on its own
+    const sm = renderer.shadowMap, r0 = sm.render;
+    sm.render = function (lights, sc, cam) {
+      if (!this.enabled || (!this.autoUpdate && !this.needsUpdate) || !lights.length) return r0.call(this, lights, sc, cam);
+      const prev = gpuNow();
+      gpuT(FARSH.pending ? 'shadowFar' : 'shadow'); r0.call(this, lights, sc, cam); gpuT(prev);
+    };
+  }
   // pUndo in JS for the fog colour: the fog mixes inside the target, so under the post pipeline it
   // takes the pre-image of its display colour like the dome, or the far haze comes out of the
   // composite darker than the horizon it is meant to meet (same matrices as INV_GLSL, by column)
@@ -814,16 +895,39 @@
     postComp = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tScene: { value: null }, tBloom: { value: null }, uBloom: { value: 0.45 }, uExposure: postU.uExposure,
         tAO: { value: null }, uAO: { value: 0 }, uAOK: gradeU.uAOK, uSat: gradeU.uSat, uCon: gradeU.uCon, uSplit: gradeU.uSplit, uAOShow: gradeU.uAOShow },
       vertexShader: vs,
-      fragmentShader: 'uniform sampler2D tScene, tBloom, tAO; uniform float uBloom, uExposure, uAO, uAOK, uSat, uCon, uSplit, uAOShow; varying vec2 vUv;\n' + ACES_GLSL + '\nvoid main(){ vec4 source = texture2D(tScene, vUv); float core = smoothstep(0.0, 0.3, source.a - 1.0); vec3 c = source.rgb;\n' +
+      fragmentShader: 'uniform sampler2D tScene, tBloom, tAO; uniform float uBloom, uExposure, uAO, uAOK, uSat, uCon, uSplit, uAOShow; varying vec2 vUv;\n' + (BLOOMW.on ? 'uniform sampler2D tBloomW; uniform float uBloomW, uBloomCore;\n' : '') + ACES_GLSL + '\nvoid main(){ vec4 source = texture2D(tScene, vUv); float core = smoothstep(0.0, 0.3, source.a - 1.0); vec3 c = source.rgb;\n' +
         // Round 185: the occlusion darkens the scene's own light, never a lamp, a lit window or the sun (bright pixels keep theirs)
         '  if (uAO > 0.5) { float ao = texture2D(tAO, vUv).r; float hot = smoothstep(0.9, 2.5, max(c.r, max(c.g, c.b))); c *= mix(mix(1.0, ao, uAOK), 1.0, max(hot, core)); }\n' +
-        '  c += texture2D(tBloom, vUv).rgb * uBloom * (1.0 - core); c = pToSRGB(pACES(c, uExposure));\n' +
+        (BLOOMW.on ? '  c += (texture2D(tBloom, vUv).rgb * uBloomCore + texture2D(tBloomW, vUv).rgb * uBloomW) * uBloom * (1.0 - core); c = pToSRGB(pACES(c, uExposure));\n'
+          : '  c += texture2D(tBloom, vUv).rgb * uBloom * (1.0 - core); c = pToSRGB(pACES(c, uExposure));\n') +
         // the grade, on the display colour: some saturation out, a gentle contrast about the mid tones, warm lights and cool shadows
         '  float L = dot(c, vec3(0.2126, 0.7152, 0.0722)); c = mix(vec3(L), c, uSat); c = clamp((c - 0.42) * uCon + 0.42, 0.0, 1.0);\n' +
         '  c += uSplit * (vec3(0.012, 0.005, -0.010) * smoothstep(0.45, 1.0, L) + vec3(-0.006, 0.0, 0.011) * (1.0 - smoothstep(0.0, 0.35, L)));\n' +
         '  c += (fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453) - 0.5) / 255.0; gl_FragColor = vec4(c, 1.0);\n' +
         '  if (uAOShow > 0.5 && uAO > 0.5) gl_FragColor = vec4(vec3(texture2D(tAO, vUv).r), 1.0); }' });   // ?ao=show: the occlusion alone
     if (AO.on) aoInit(vs);
+    if (BLOOMW.on) {
+      BLOOMW.mats = {
+        // 13 taps (Jimenez 2014): the centre, four at one texel and eight at two, weighted so the box filters overlap
+        down: new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tIn: { value: null }, uTx: { value: new THREE.Vector2() } }, vertexShader: vs,
+          fragmentShader: ['uniform sampler2D tIn; uniform vec2 uTx; varying vec2 vUv;',
+            'vec3 t(vec2 o){ return texture2D(tIn, vUv + o * uTx).rgb; }',
+            'void main(){ vec3 c = t(vec2(0.0)) * 0.125;',
+            '  c += (t(vec2(-2.0, 2.0)) + t(vec2(2.0, 2.0)) + t(vec2(-2.0, -2.0)) + t(vec2(2.0, -2.0))) * 0.03125;',
+            '  c += (t(vec2(0.0, 2.0)) + t(vec2(-2.0, 0.0)) + t(vec2(2.0, 0.0)) + t(vec2(0.0, -2.0))) * 0.0625;',
+            '  c += (t(vec2(-1.0, 1.0)) + t(vec2(1.0, 1.0)) + t(vec2(-1.0, -1.0)) + t(vec2(1.0, -1.0))) * 0.125;',
+            '  gl_FragColor = vec4(c, 1.0); }'].join('\n') }),
+        // the tent: the coarser level spread over its 3 by 3 texels, added to this level's own share
+        up: new THREE.ShaderMaterial({ depthTest: false, depthWrite: false, uniforms: { tLow: { value: null }, tHigh: { value: null }, uTx: { value: new THREE.Vector2() }, uWLow: { value: 1 }, uWHigh: { value: 1 } }, vertexShader: vs,
+          fragmentShader: ['uniform sampler2D tLow, tHigh; uniform vec2 uTx; uniform float uWLow, uWHigh; varying vec2 vUv;',
+            'vec3 t(vec2 o){ return texture2D(tLow, vUv + o * uTx).rgb; }',
+            'void main(){ vec3 c = t(vec2(0.0)) * 4.0;',
+            '  c += (t(vec2(0.0, -1.0)) + t(vec2(-1.0, 0.0)) + t(vec2(1.0, 0.0)) + t(vec2(0.0, 1.0))) * 2.0;',
+            '  c += t(vec2(-1.0, -1.0)) + t(vec2(1.0, -1.0)) + t(vec2(-1.0, 1.0)) + t(vec2(1.0, 1.0));',
+            '  gl_FragColor = vec4(c * (uWLow / 16.0) + texture2D(tHigh, vUv).rgb * uWHigh, 1.0); }'].join('\n') }),
+      };
+      postComp.uniforms.tBloomW = { value: null }; postComp.uniforms.uBloomW = { value: 0 }; postComp.uniforms.uBloomCore = { value: 1 };
+    }
     postQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), postComp);
     postQuad.frustumCulled = false;
     postScene.add(postQuad);
@@ -835,7 +939,7 @@
   // pixels); twelve taps on three turns of a spiral, rotated per pixel, then a depth-aware blur across and down
   function aoInit(vs) {
     AO.mat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false,
-      uniforms: { tDepth: { value: null }, uProj: { value: new THREE.Vector2(1, 1) }, uFar: { value: 26000 }, uNear: { value: 1 }, uLog: { value: window.__useLogDepth ? 1 : 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uK: { value: 3.0 } },
+      uniforms: { tDepth: { value: null }, uProj: { value: new THREE.Vector2(1, 1) }, uFar: { value: 26000 }, uNear: { value: 1 }, uLog: { value: window.__useLogDepth ? 1 : 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uK: { value: 2.0 } },
       vertexShader: vs,
       fragmentShader: [
         'uniform sampler2D tDepth; uniform vec2 uProj, uRes; uniform float uFar, uNear, uLog, uK; varying vec2 vUv;',
@@ -860,9 +964,11 @@
         '    float a = (float(i) + 0.5) / 12.0, ang = a * 18.8495559 + spin;',
         '    vec3 v = posAt(uv0 + vec2(cos(ang), sin(ang)) * (a * rPx) * tx) - P;',
         '    float vv = dot(v, v), f = max(R2 - vv, 0.0);',
-        '    sum += f * f * f * max((dot(v, N) - 0.08 * R - 0.06) / (0.02 * R2 + vv), 0.0);',
+        // the realism pass (gap 2: a near-black band the full height of a wall where it jogs): a tap that stands well out in
+        // front of the receiver, toward the eye, is a nearer wall's face, not a crease, and fades out from 0.6 to 1.2 radii
+        '    sum += f * f * f * max((dot(v, N) - 0.08 * R - 0.06) / (0.02 * R2 + vv), 0.0) * (1.0 - smoothstep(0.6 * R, 1.2 * R, v.z));',
         '  }',
-        '  float ao = max(0.0, 1.0 - sum * uK * 5.0 / (R2 * R2 * R2 * 12.0));',
+        '  float ao = max(0.5, 1.0 - sum * uK * 5.0 / (R2 * R2 * R2 * 12.0));',   // a floor: occlusion shades a corner, it never blacks it out
         '  ao = mix(ao, 1.0, max(smoothstep(2500.0, 6000.0, w), 1.0 - smoothstep(3.0, 10.0, w)));',
         '  gl_FragColor = vec4(ao, w, 0.0, 1.0);',
         '}',
@@ -912,17 +1018,28 @@
     postA = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     postB = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     if (AO.on) aoSize(s.x, s.y);
+    if (BLOOMW.on) {   // the wide bloom's levels: an eighth, a sixteenth and a thirty-second of the frame down, the eighth and sixteenth back up
+      for (const t of BLOOMW.d.concat(BLOOMW.u)) t.dispose();
+      const rt = (k) => new THREE.WebGLRenderTarget(Math.max(8, Math.round(bw / k)), Math.max(8, Math.round(bh / k)), { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+      BLOOMW.d = [rt(2), rt(4), rt(8)];
+      BLOOMW.u = [rt(2), rt(4)];
+    }
   }
   function renderPost(sc, cam) {
     if (!postCam) postInit();
     postSize();
+    gpuPoll();
     renderer.setRenderTarget(postRT);
     AO.copied = false;
+    const farDraw = farShadowPre(cam);   // the far shadow map, when its box or the sun has moved (see FARSH)
+    gpuT('scene');
     renderer.render(sc, cam);
+    if (farDraw) farShadowPost();
     POST.calls = renderer.info.render.calls; POST.tris = renderer.info.render.triangles;
     // Round 185: the occlusion from the depth the pin pass copied (none copied, none applied)
     postComp.uniforms.uAO.value = 0;
     if (AO.on && AO.copied) {
+      gpuT('ao');
       const m = AO.mat.uniforms;
       m.tDepth.value = AO.depthRT.depthTexture; m.uProj.value.set(cam.projectionMatrix.elements[0], cam.projectionMatrix.elements[5]);
       m.uFar.value = cam.far; m.uNear.value = cam.near; m.uRes.value.set(AO.w, AO.h);
@@ -932,6 +1049,7 @@
       AO.blur.uniforms.tIn.value = AO.b.texture; AO.blur.uniforms.uDir.value.set(0, 1 / AO.a.height); renderer.setRenderTarget(AO.a); renderer.render(postScene, postCam);
       postComp.uniforms.tAO.value = AO.a.texture; postComp.uniforms.uAO.value = 1;
     }
+    gpuT('bloom');
     postQuad.material = postBright; postBright.uniforms.tScene.value = postRT.texture;
     postBright.uniforms.uTexel.value.set(1 / POST.w, 1 / POST.h);
     renderer.setRenderTarget(postA); renderer.render(postScene, postCam);
@@ -942,8 +1060,23 @@
       postBlur.uniforms.tIn.value = postB.texture; postBlur.uniforms.uDir.value.set(0, 1 / postA.height);
       renderer.setRenderTarget(postA); renderer.render(postScene, postCam);
     }
+    const wide = BLOOMW.on && BLOOMW.mats && gfxPick() !== 'smoother';
+    if (wide) {   // the wide glare: down from the blurred quarter image three halvings, then back up adding each level's share
+      const D = BLOOMW.d, U = BLOOMW.u, M = BLOOMW.mats, w = BLOOMW.w;
+      postQuad.material = M.down;
+      let src = postA;
+      for (const t of D) { M.down.uniforms.tIn.value = src.texture; M.down.uniforms.uTx.value.set(1 / src.width, 1 / src.height); renderer.setRenderTarget(t); renderer.render(postScene, postCam); src = t; }
+      postQuad.material = M.up;
+      const up = (low, high, out, wl, wh) => { M.up.uniforms.tLow.value = low.texture; M.up.uniforms.tHigh.value = high.texture; M.up.uniforms.uTx.value.set(1 / low.width, 1 / low.height); M.up.uniforms.uWLow.value = wl; M.up.uniforms.uWHigh.value = wh; renderer.setRenderTarget(out); renderer.render(postScene, postCam); };
+      up(D[2], D[1], U[1], w[3], w[2]);   // a sixteenth: its own share and the thirty-second's
+      up(U[1], D[0], U[0], 1, w[1]);      // an eighth: its own share and everything coarser
+      postComp.uniforms.tBloomW.value = U[0].texture;
+    }
+    if (BLOOMW.on && BLOOMW.mats) { postComp.uniforms.uBloomW.value = wide ? 1 : 0; postComp.uniforms.uBloomCore.value = wide ? BLOOMW.w[0] : 1; if (!wide) postComp.uniforms.tBloomW.value = postA.texture; }
+    gpuT('comp');
     postQuad.material = postComp; postComp.uniforms.tScene.value = postRT.texture; postComp.uniforms.tBloom.value = postA.texture;
     renderer.setRenderTarget(null); renderer.render(postScene, postCam);
+    gpuT(null);
   }
 
   const scene = new THREE.Scene();
@@ -2905,8 +3038,10 @@
   scene.add(sun.target);
 
   const shadowAim = { cx: NaN, cz: NaN, extent: NaN, sun: new V3() };   // what the shadow map was last drawn for
+  let shadowsIdle = false;   // nothing receives (moonShadowsOff): no depth pass is worth drawing
   function aimSun(cx, cz, extent) {
     lastAim.cx = cx; lastAim.cz = cz; lastAim.extent = extent;
+    if (shadowsIdle) return;   // nothing receives (moonShadowsOff): the map waits, and is drawn when the receivers return
     const c = sun.shadow.camera;
     const texel = (extent * 2) / SHADOW_RES;
     cx = Math.round(cx / (texel * 8)) * texel * 8;
@@ -2922,6 +3057,260 @@
     renderer.shadowMap.needsUpdate = true;
   }
   aimSun(-1450, -700, 800);
+
+  // ---- the far shadows (the realism pass, sky-light 8: "Shadows end 300 to 900 m from the eye", every aerial view stood
+  // shadowless past the near box). Not three's CSM: it adds three lit lights that every hooked material would have to opt
+  // out of, and a light count that changes later recompiles every program. FARSH is one more directional light, BLACK, whose
+  // only work is its shadow map over a box 3.6 to 8 km across; every lit program reads its matrix, map and coordinate through
+  // three's own light uniforms. lights_fragment_begin is rewritten once, here, before anything compiles: the sun (light 0)
+  // takes its shadow from the near map inside the near box and from the far map beyond it (the outer tenth of the near box
+  // blends the two, the outer eighth of the far one fades it out), and the black light's own lighting is skipped. A desktop
+  // on the post pipeline only (a phone keeps one light and its own map), ?shadowwide=0 off, never built under Smoother. The
+  // far map is drawn only when its box has moved a quarter of its width, its size has stepped or the sun has moved a third
+  // of a degree (every 8th frame at most while only the sun moves, the time-lapse), never in a frame that draws the near
+  // map, and with buildings only: no instanced mesh (the trees, the roof kit, the fronts, the vehicles, which it would
+  // freeze where they stood). shadow.radius is its switch (PCF_SOFT ignores it): 0 until the first far map is drawn and
+  // while Smoother or a closed deck has it off, so switching never changes a program
+  const FARSH = { on: false, can: false, light: null, ext: 0, cx: NaN, cz: NaN, sun: new V3(), drawn: 0, pending: false, last: -1e9, hid: [], fail: '' };
+  FARSH.can = POST.on && REAL && !LITE && !/[?&]shadowwide=0\b/.test(location.search) && gfxPick() !== 'smoother';
+  if (FARSH.can) {
+    const C = THREE.ShaderChunk, lf = C.lights_fragment_begin;
+    const a = lf.indexOf('#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )'), b = a >= 0 ? lf.indexOf('#pragma unroll_loop_end\n#endif', a) : -1;
+    const body = a >= 0 ? lf.slice(lf.indexOf('\t#pragma unroll_loop_start', a), b) : '';
+    if (a < 0 || b < 0 || body.indexOf('for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {') < 0) FARSH.fail = 'lights_fragment_begin';
+    else {
+      C.lights_fragment_begin = lf.slice(0, a) + [
+        '#if ( NUM_DIR_LIGHTS > 0 ) && defined( RE_Direct )',
+        '\tDirectionalLight directionalLight;',
+        '\t#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0',
+        '\tDirectionalLightShadow directionalLightShadow;',
+        '\t#endif',
+        '\tdirectionalLight = directionalLights[ 0 ];',
+        '\tgetDirectionalLightInfo( directionalLight, geometry, directLight );',
+        '\t#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 1',
+        '\tdirectLight.color *= ( directLight.visible && receiveShadow ) ? p3dSunShadow() : 1.0;',
+        '\t#elif defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 0',
+        '\tdirectionalLightShadow = directionalLightShadows[ 0 ];',
+        '\tdirectLight.color *= ( directLight.visible && receiveShadow ) ? getShadow( directionalShadowMap[ 0 ], directionalLightShadow.shadowMapSize, directionalLightShadow.shadowBias, directionalLightShadow.shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;',
+        '\t#endif',
+        '\tRE_Direct( directLight, geometry, material, reflectedLight );',
+        body.replace('for ( int i = 0; i < NUM_DIR_LIGHTS; i ++ ) {', 'for ( int i = 2; i < NUM_DIR_LIGHTS; i ++ ) {') + '#pragma unroll_loop_end',
+        '#endif',
+      ].join('\n') + lf.slice(b + '#pragma unroll_loop_end\n#endif'.length);
+      C.shadowmap_pars_fragment += [
+        '',
+        '#if defined( USE_SHADOWMAP ) && NUM_DIR_LIGHT_SHADOWS > 1',
+        'float p3dSunShadow() {',
+        '\tDirectionalLightShadow nS = directionalLightShadows[ 0 ];',
+        '\tDirectionalLightShadow fS = directionalLightShadows[ 1 ];',
+        '\tvec2 nc = vDirectionalShadowCoord[ 0 ].xy / vDirectionalShadowCoord[ 0 ].w;',
+        '\tvec2 ne = min( nc, 1.0 - nc );',
+        '\tfloat inN = clamp( min( ne.x, ne.y ) * 10.0, 0.0, 1.0 );',
+        '\tfloat s = inN > 0.0 ? getShadow( directionalShadowMap[ 0 ], nS.shadowMapSize, nS.shadowBias, nS.shadowRadius, vDirectionalShadowCoord[ 0 ] ) : 1.0;',
+        '\tif ( inN < 1.0 && fS.shadowRadius > 0.5 ) {',
+        '\t\tvec2 fc = vDirectionalShadowCoord[ 1 ].xy / vDirectionalShadowCoord[ 1 ].w;',
+        '\t\tvec2 fe = min( fc, 1.0 - fc );',
+        '\t\tfloat inF = clamp( min( fe.x, fe.y ) * 8.0, 0.0, 1.0 );',
+        '\t\tfloat f = inF > 0.0 ? mix( 1.0, getShadow( directionalShadowMap[ 1 ], fS.shadowMapSize, fS.shadowBias, 1.0, vDirectionalShadowCoord[ 1 ] ), inF ) : 1.0;',
+        '\t\ts = mix( f, s, inN );',
+        '\t}',
+        '\treturn s;',
+        '}',
+        '#endif',
+      ].join('\n');
+      const L = new THREE.DirectionalLight(0x000000, 0);
+      L.name = 'far shadows';
+      L.castShadow = true;
+      L.shadow.mapSize.set(4096, 4096);
+      L.shadow.autoUpdate = false;   // drawn only when farShadowPre asks
+      L.shadow.normalBias = 2.5;
+      L.shadow.radius = 0;
+      scene.add(L); scene.add(L.target);   // after the sun: three numbers the directional lights in the scene's order
+      FARSH.light = L; FARSH.on = true;
+    }
+  }
+  const _farV = new V3();
+  // called by renderPost before the scene's render: aims the far box and asks for its map when it is due
+  function farShadowPre(cam) {
+    const L = FARSH.light;
+    if (!L) return false;
+    if (!FARSH.on || shadowsIdle) { L.shadow.radius = 0; return false; }   // off (Smoother), or nothing receives (a closed deck)
+    cam.getWorldDirection(_farV);
+    const hl = Math.hypot(_farV.x, _farV.z) || 1, fx = _farV.x / hl, fz = _farV.z / hl;
+    const ext = Math.round(clamp(1400 + cam.position.y * 2.6, 1800, 4000) / 400) * 400;
+    const texel = ext * 2 / 4096;
+    const cx = Math.round((cam.position.x + fx * ext * 0.5) / (texel * 8)) * texel * 8, cz = Math.round((cam.position.z + fz * ext * 0.5) / (texel * 8)) * texel * 8;
+    const moved = ext !== FARSH.ext || Math.hypot(cx - FARSH.cx, cz - FARSH.cz) > ext * 0.25 || !(L.shadow.radius > 0.5);
+    const sunMoved = FARSH.sun.lengthSq() === 0 || FARSH.sun.angleTo(sunDir) > 0.006;
+    if (!moved && !sunMoved) return false;
+    if (renderer.shadowMap.needsUpdate) return false;           // the near map draws this frame: the far one waits for the next
+    if (!moved && frameNo - FARSH.last < 8) return false;
+    FARSH.ext = ext; FARSH.cx = cx; FARSH.cz = cz; FARSH.sun.copy(sunDir); FARSH.last = frameNo;
+    const h = Math.hypot(sunDir.x, sunDir.z), R = ext * Math.SQRT2 + 200;
+    L.position.set(cx + sunDir.x * 1000, sunDir.y * 1000, cz + sunDir.z * 1000);
+    L.target.position.set(cx, 0, cz);
+    L.updateMatrixWorld(); L.target.updateMatrixWorld();
+    const c = L.shadow.camera;
+    c.left = -ext; c.right = ext; c.top = ext; c.bottom = -ext;
+    c.near = 1000 - R * h - 480 * sunDir.y; c.far = 1000 + R * h + 60;   // the box's corners either way along the sun, the towers' tops toward it
+    c.updateProjectionMatrix();
+    L.shadow.bias = -1.6 / (c.far - c.near);   // about 1.6 m, the near map's metre over a coarser texel
+    L.shadow.needsUpdate = true;
+    renderer.shadowMap.needsUpdate = true;
+    sun.shadow.autoUpdate = false;   // the near map keeps what it has this frame
+    FARSH.hid.length = 0;
+    scene.traverse((o) => { if (o.castShadow && o.isInstancedMesh) { o.castShadow = false; FARSH.hid.push(o); } });
+    FARSH.pending = true;
+    return true;
+  }
+  function farShadowPost() {
+    FARSH.pending = false;
+    for (const o of FARSH.hid) o.castShadow = true;
+    FARSH.hid.length = 0;
+    sun.shadow.autoUpdate = true;
+    FARSH.light.shadow.radius = 1;   // drawn: the far map is live
+    FARSH.drawn++;
+  }
+  if (FARSH.light) GFX.hooks.push((pick) => { FARSH.on = pick !== 'smoother'; if (!FARSH.on) FARSH.light.shadow.radius = 0; else FARSH.ext = 0; });
+
+  // ---- who casts and who receives (the realism pass, sky-light 0 and ground-vegetation 0). Outside the core nothing took
+  // part: the outer districts' and the far ring's buildings cast and received nothing, and neither did the ground, the parks
+  // or the streets around them, nor the tree cards, so a rowhouse threw nothing into its street and Rittenhouse's towers
+  // nothing onto the square, and the roof kit's units threw the only shadows on Broad Street's plaza, from roofs that threw
+  // none (vehicles-props 12). Set once, on the first frame after the build, by flags alone: r149's receiveShadow is a
+  // per-object uniform and castShadow only chooses the depth pass's meshes, so no program changes. A computer: the merged
+  // buildings (the curtain walls too) cast and receive, every weather-hooked flat (the ground, the parks and areas, the
+  // streets, the lots: `userData.wxSurf`, before the tiles copied it) and the tree cards receive. A phone (the critic: geometry
+  // bound, measure before any phone casting): no new casters, and only under Sharper do the outer districts' ground, parks
+  // and streets receive what already casts there (the buses, the kit, the core's buildings: a phone's trees never cast), so
+  // Auto pays no new filter taps until the iPhone's beacons say what they cost. ?real=0 leaves the old roles. A mesh made
+  // while the receivers are off (moonShadowsOff) joins the list it gets them back from
+  const SHROLE = { done: false, cast: 0, recv: 0, cards: 0 };
+  function shadowRoles() {
+    SHROLE.done = true;
+    if (window.__dbg) Object.assign(window.__dbg, { shadowAudit, shadowRoles: () => ({ ...SHROLE }), farShadows: () => ({ on: FARSH.on, can: FARSH.can, fail: FARSH.fail, ext: FARSH.ext, cx: Math.round(FARSH.cx), cz: Math.round(FARSH.cz), drawn: FARSH.drawn, live: !!(FARSH.light && FARSH.light.shadow.radius > 0.5), near: { ...lastAim }, off: moonNoRecv ? [...shadowOffWhy] : [] }), pickAt, gpu: gpuStats, keyLight: () => ({ ...KEYWX }) });
+    if (!REAL) return;
+    const desk = !isTouch, phoneFlats = isTouch && gfxPick() === 'sharper';
+    const W = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };   // the outer districts' box (their ground strips)
+    const outer = new Set(outerMeshes);
+    const recv = (o) => { if (o.receiveShadow || (moonNoRecv && moonNoRecv.indexOf(o) >= 0)) return; if (moonNoRecv) moonNoRecv.push(o); else o.receiveShadow = true; SHROLE.recv++; };
+    scene.traverse((o) => {
+      if (!o.isMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!m || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
+      if (outer.has(o)) {
+        if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow) { o.castShadow = true; SHROLE.cast++; } recv(o); }
+        return;
+      }
+      if (o.userData.treeCard) { if (desk) { recv(o); SHROLE.cards++; } return; }
+      if (!m.userData.wxSurf || o.isInstancedMesh) return;
+      if (desk) { recv(o); return; }
+      const bs = o.geometry && o.geometry.boundingSphere;
+      if (phoneFlats && bs && bs.center.x > W.x0 && bs.center.x < W.x1 && bs.center.z > W.z0 && bs.center.z < W.z1) recv(o);
+    });
+  }
+  // __dbg.shadowAudit(): the visible lit flats and buildings that neither receive nor cast, so a mesh added later without its
+  // flags shows up (the omission above stood unseen since the outer districts came in)
+  function shadowAudit() {
+    const out = { flats: [], buildings: [], n: 0 };
+    const outer = new Set(outerMeshes);
+    scene.traverse((o) => {
+      if (!o.isMesh || !o.visible || o.isInstancedMesh) return;
+      const m = Array.isArray(o.material) ? o.material[0] : o.material;
+      if (!m || !m.isMeshStandardMaterial) return;
+      out.n++;
+      const bs = o.geometry && o.geometry.boundingSphere, at = bs ? [Math.round(bs.center.x), Math.round(bs.center.z), Math.round(bs.radius)] : null;
+      if (m.userData.wxSurf && !o.receiveShadow && !(moonNoRecv && moonNoRecv.indexOf(o) >= 0)) out.flats.push({ name: o.name, at });
+      if (outer.has(o) && (m === cityMat || m === outerGlassMat) && !o.castShadow) out.buildings.push({ name: o.name, at });
+    });
+    out.flats = out.flats.slice(0, 40); out.buildings = out.buildings.slice(0, 40);
+    return out;
+  }
+  // __dbg.pickAt(px, py) (gap 5: no probe could name what stands under a pixel; a raycast throws on the freed arrays): a
+  // one-pixel render through camera.setViewOffset with every mesh drawn in one id material (the object's own face culling,
+  // the instance from gl_InstanceID, the view distance), read back as floats. Object hooks are stilled for it (the pins'
+  // depth wipe among them), lines, points and sprites hidden, the shadow pass held. Returns the mesh, its material's kind
+  // and key, the instance and the world point; a vertex shader's own placement (a billboard card) is not reproduced
+  function pickAt(px, py) {
+    const W = window.innerWidth, H = window.innerHeight, list = Array.isArray(px) ? px : [[px, py]];
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, depthBuffer: true, stencilBuffer: true });
+    const objs = [];
+    const mat = new THREE.ShaderMaterial({ uniforms: { uId: { value: 0 } },
+      vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nflat varying float vInst; varying float vVZ;\nvoid main(){\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\nvVZ = -mvPosition.z;\n#ifdef USE_INSTANCING\nvInst = float(gl_InstanceID);\n#else\nvInst = -1.0;\n#endif\n}',
+      fragmentShader: '#include <common>\n#include <logdepthbuf_pars_fragment>\nuniform float uId; flat varying float vInst; varying float vVZ;\nvoid main(){\n#include <logdepthbuf_fragment>\ngl_FragColor = vec4(uId, vInst, vVZ, 1.0); }' });
+    mat.onBeforeRender = (r, sc, c, g, o) => { objs.push(o); const om = Array.isArray(o.material) ? o.material[0] : o.material; mat.side = om ? om.side : THREE.FrontSide; mat.uniforms.uId.value = objs.length; mat.uniformsNeedUpdate = true; };
+    const saved = [], hid = [];
+    scene.traverse((o) => {
+      if (Object.prototype.hasOwnProperty.call(o, 'onBeforeRender')) { saved.push([o, o.onBeforeRender]); o.onBeforeRender = () => {}; }
+      if ((o.isSprite || o.isPoints || o.isLine) && o.visible) { hid.push(o); o.visible = false; }
+    });
+    const up = renderer.shadowMap.autoUpdate, need = renderer.shadowMap.needsUpdate, prevRT = renderer.getRenderTarget(), ov = scene.overrideMaterial;
+    const cc = renderer.getClearColor(new THREE.Color()), ca = renderer.getClearAlpha(), out = [];
+    renderer.shadowMap.autoUpdate = false; renderer.shadowMap.needsUpdate = false;
+    try {
+      scene.overrideMaterial = mat; renderer.setClearColor(0x000000, 0);
+      for (const [x, y] of list) {
+        objs.length = 0;
+        camera.setViewOffset(W, H, x, y, 1, 1);
+        renderer.setRenderTarget(rt); renderer.clear(); renderer.render(scene, camera);
+        const b = new Float32Array(4); renderer.readRenderTargetPixels(rt, 0, 0, 1, 1, b);
+        camera.clearViewOffset();
+        const o = b[0] > 0 ? objs[Math.round(b[0]) - 1] : null;
+        if (!o) { out.push({ px: x, py: y, hit: null }); continue; }
+        const dir = new THREE.Vector3((x + 0.5) / W * 2 - 1, -((y + 0.5) / H * 2 - 1), 0.5).unproject(camera).sub(camera.position).normalize();
+        const p = camera.position.clone().addScaledVector(dir, b[2] / dir.dot(camera.getWorldDirection(new THREE.Vector3())));
+        const m = Array.isArray(o.material) ? o.material[0] : o.material, bs = o.geometry && o.geometry.boundingSphere;
+        let ip = null;
+        if (o.isInstancedMesh && b[1] >= 0 && o.instanceMatrix.array) { const e = o.instanceMatrix.array, k = Math.round(b[1]) * 16; ip = [e[k + 12], e[k + 13], e[k + 14]].map((v) => +v.toFixed(1)); }
+        out.push({ px: x, py: y, name: o.name, type: o.isInstancedMesh ? 'InstancedMesh' : o.type, inst: b[1], instAt: ip, dist: +b[2].toFixed(1), at: [p.x, p.y, p.z].map((v) => +v.toFixed(1)),
+          mat: m && { type: m.type, name: m.name, key: m.customProgramCacheKey ? String(m.customProgramCacheKey()).slice(0, 60) : '', side: m.side, transparent: m.transparent, depthWrite: m.depthWrite, ud: Object.keys(m.userData || {}) },
+          ud: Object.keys(o.userData || {}), outer: outerMeshes.indexOf(o) >= 0, cast: o.castShadow, recv: o.receiveShadow, fc: o.frustumCulled,
+          sphere: bs && [bs.center.x, bs.center.y, bs.center.z, bs.radius].map((v) => Math.round(v)), attrs: o.geometry ? Object.keys(o.geometry.attributes) : [] });
+      }
+    } finally {
+      scene.overrideMaterial = ov; renderer.setRenderTarget(prevRT); renderer.setClearColor(cc, ca); camera.clearViewOffset();
+      renderer.shadowMap.autoUpdate = up; renderer.shadowMap.needsUpdate = need;
+      for (const [o, f] of saved) o.onBeforeRender = f;
+      for (const o of hid) o.visible = true;
+      rt.dispose(); mat.dispose();
+    }
+    return Array.isArray(px) ? out : out[0];
+  }
+  // the tree cards receive (a computer): a card stands in its own crown's shadow in the sun's map, so its lookup is taken
+  // 0.6 of the crown's span toward the sun, out of its own crown; a tree in a tower's shadow then goes dark with the lawn
+  // under it instead of glowing in full sun (called from treeArtPatch, the lit shader only)
+  function cardShadowReach(sh) {
+    sh.uniforms.uSunW = sunWUniform;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform vec3 uSunW;')
+      .replace('#include <shadowmap_vertex>', '#if defined( USE_SHADOWMAP )\nworldPosition.xyz += uSunW * length(instanceMatrix[2].xyz) * 0.6;\n#endif\n#include <shadowmap_vertex>');
+  }
+  // ---- the key light under weather (the realism pass, weather 2 and sky-light 9). Real overcast, rain and fog cast no
+  // shadows: the light is the sky's, and the shading is occlusion. The deck left 17 to 50 per cent of the sun's key (and fog
+  // none of it), so hard sun shadows lay under a 95 per cent rain deck and inside a 400 m fog. keyWeather takes the key away
+  // as the deck closes (from 85 per cent cover), in fog and in rain, gives the lost key back as sky (the hemisphere), leans on
+  // the occlusion as the deck closes, and once the key is under 0.04 turns every receiver off (shadowsOff) and stops the
+  // depth passes until it is back. Then the camera: a city under cloud photographs bright, soft and flat, not dark, so the
+  // exposure rises as the deck takes the sun (up to 1.5 times; the dome, the cloud deck and the fog take their pre-image
+  // through uExposure, so they stay exact on the post pipeline, and a phone's fog colour takes the inverse). Called by
+  // applyLighting at its exposure line; returns the exposure's factor. ?real=0: 1, nothing changed
+  const KEYWX = { k: 1, ec: 1, closed: 0, off: false };
+  function keyWeather(dayF, deckK) {
+    if (!REAL) return 1;
+    const closed = smooth(0.85, 0.98, WX.cover);
+    const k = (1 - closed) * (1 - 0.9 * WXFX.fog) * (1 - 0.8 * Math.min(1, 1.5 * WXFX.rain));
+    sun.intensity *= k;
+    hemi.intensity += 0.3 * dayF * (1 - k);
+    gradeU.uAOK.value = 1 + 0.4 * Math.max(closed, WXFX.fog);
+    const off = KEYWX.off ? sun.intensity < 0.06 || k < 0.15 : sun.intensity < 0.04 || k < 0.12;   // a key under an eighth of the deck's casts nothing readable
+    if (off !== KEYWX.off) { KEYWX.off = off; moonShadowsOff(off, 'deck'); }
+    // the share of the clear sky's key the weather took, past the first quarter (a fair day's cumulus leaves the approved
+    // clear-day exposure alone)
+    const lost = Math.max(0, 1 - deckK * k - 0.25) / 0.75;
+    const ec = Math.min(1.5, 1 + 0.5 * dayF * lost + 0.25 * WXFX.gloom * dayF);
+    if (!POST.on) scene.fog.color.multiplyScalar(1 / ec);   // the phone's far haze stays the dome's
+    KEYWX.k = k; KEYWX.ec = ec; KEYWX.closed = closed;
+    return ec;
+  }
 
   // live-weather state (see applyWx below): cloud fraction, WMO code, rates, world wind m/s
   const WX = { cover: 0.22, ok: false, code: -1, temp: null, precip: 0, snowfall: 0, windX: 2.1, windZ: 0.9,
@@ -13152,10 +13541,14 @@
     // the card is built in world space: project_vertex multiplies by the instance matrix, so the vertex undoes it first
     const lit = !depth;   // the depth shader carries beginnormal_vertex too, but only under USE_DISPLACEMENTMAP
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;\n' + TREE_ART_VERT(S.N, S.A, T.N, T.A, S.C) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
+      // (the realism pass: r149 never uploads viewMatrix to a MeshDepthMaterial, so in the shadow pass tCard read a zero matrix,
+      // built every card of NaNs and no tree ever cast a shadow; the trees' meshes stand untransformed, so their model-view
+      // matrix is the view's)
+      .replace('#include <common>', '#include <common>\n' + (depth ? '#define viewMatrix modelViewMatrix\n' : '') + 'attribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;\n' + TREE_ART_VERT(S.N, S.A, T.N, T.A, S.C) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
       .replace(lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>', 'vec3 tWP, tNrm; tCard(tWP, tNrm);\n' + (lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>'))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (tInv(instanceMatrix) * vec4(tWP, 1.0)).xyz;   // built in world space: the instance matrix undone');
     if (lit) sh.vertexShader = sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * tNrm;');
+    if (lit) cardShadowReach(sh);   // the realism pass: its shadow lookup out of its own crown
     sh.fragmentShader = sh.fragmentShader
       .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;')
       .replace('#include <map_fragment>', '#include <map_fragment>\n{ vec4 a = texture2D(tSide, tUvS), b = texture2D(tTop, tUvT);\n' +
@@ -24286,10 +24679,17 @@ float pinOccGate() {
   const smooth = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
   // Round 168 (Mike: moon shadows off after dusk): the meshes a phone stopped receiving on, restored at sunrise; a mesh made after
   // dusk keeps receiving as before
+  // The realism pass (weather 2): the same switch for a closed deck, fog or rain on every device (keyWeather, 'deck'), so
+  // it keeps its reasons and the receivers come back only when none is left; while they are off the depth passes stop too
+  // (aimSun and the frame's redraws wait, the far map with them), and their return redraws the map
   let moonNoRecv = null;
-  function moonShadowsOff(off) {
+  const shadowOffWhy = new Set();
+  function moonShadowsOff(off, why = 'moon') {
+    if (off) shadowOffWhy.add(why); else shadowOffWhy.delete(why);
+    off = shadowOffWhy.size > 0;
     if (off && !moonNoRecv) { moonNoRecv = []; scene.traverse((o) => { if (o.receiveShadow) { o.receiveShadow = false; moonNoRecv.push(o); } }); }
-    else if (!off && moonNoRecv) { for (const o of moonNoRecv) o.receiveShadow = true; moonNoRecv = null; }
+    else if (!off && moonNoRecv) { for (const o of moonNoRecv) o.receiveShadow = true; moonNoRecv = null; renderer.shadowMap.needsUpdate = true; }
+    shadowsIdle = !!moonNoRecv;
   }
   function applyLighting() {
     const ms = clockUtcMs(clock, clock.minutes);
@@ -24431,12 +24831,13 @@ float pinOccGate() {
     cloudShU.uCloudSh.value = 0.85 * dayF * (1 - 0.5 * WXFX.gloom);
     cloudShU.uCloudSlant.value.set(sunDir.x, sunDir.z).multiplyScalar(CLOUD_ALT / Math.max(sunDir.y, 0.25));   // a cloud's shadow lies where its sun ray lands
     hemi.intensity = (0.12 + 0.42 * dayF + (REAL ? 0.06 * night : 0)) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + WXFX.flash * 1.6;
-    renderer.toneMappingExposure = 0.94 + 0.11 * dayF;
+    renderer.toneMappingExposure = (0.94 + 0.11 * dayF) * keyWeather(dayF, deckK);   // the realism pass: the key under the weather, and the camera's exposure with it
     postU.uExposure.value = renderer.toneMappingExposure;
     if (POST.on) pUndoColor(scene.fog.color, postU.uExposure.value);   // the fog mixes in the linear target: its colour goes in as the pre-image
     // the bright pass sees linear light: by day only the sun, the glints and the cloud rims clear
     // it (a sunlit white wall or snow cover sits near 2), by night the lamps and the lit windows do
-    if (postBright) postBright.uniforms.uThr.value = 1.25 + 1.2 * dayF;
+    // (the realism pass: with the wide glare a lamp and a lit window at night clear it from 1.05, the day's 2.45 unchanged)
+    if (postBright) postBright.uniforms.uThr.value = BLOOMW.on ? 1.05 + 1.4 * dayF : 1.25 + 1.2 * dayF;
     nightUniform.value = night;
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(ST_INK_DAY)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
@@ -25037,7 +25438,7 @@ float pinOccGate() {
     return { readyMs: PERF.ready || null, steps: PERF.steps, failed: PERF.failed, frames: n,
       p50: n ? +a[Math.floor(n * 0.5)].toFixed(1) : null, p95: n ? +a[Math.floor(n * 0.95)].toFixed(1) : null,
       calls: POST.on ? POST.calls : info.render.calls, tris: POST.on ? POST.tris : info.render.triangles, programs: info.programs.length, geometries: info.memory.geometries, textures: info.memory.textures,
-      dpr: DPR.cur, heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null };
+      dpr: DPR.cur, heapMB: performance.memory ? Math.round(performance.memory.usedJSHeapSize / 1048576) : null, gpu: GPUT.on ? gpuStats() : null };
   }
   function perfLine() {
     const p = perfStats();
@@ -25745,7 +26146,8 @@ float pinOccGate() {
       const ext = onFoot ? 300 : Math.round(clamp(320 + camera.position.y * 0.9, 300, 900) / estep) * estep;
       const lead = isTouch ? 0 : 0.35;
       const c = sun.target.position;
-      shadowFrozen = isTouch && !onFoot && camera.position.y > 600;
+      shadowFrozen = (isTouch && !onFoot && camera.position.y > 600) || shadowsIdle;   // the realism pass: no depth pass while nothing receives
+      if (!SHROLE.done) shadowRoles();   // the realism pass: who casts and who receives, once the city stands
       if (!shadowFrozen && (ext !== lastAim.extent || Math.hypot(px - c.x, pz - c.z) > ext * (isTouch ? 0.5 : 0.35))) aimSun(px + tmpV.x * ext * lead, pz + tmpV.z * ext * lead, ext);
     }
 
