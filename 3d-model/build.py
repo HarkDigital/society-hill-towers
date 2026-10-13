@@ -152,6 +152,7 @@ let_blob("CITY_B64", "city.b64")
 let_blob("OUTSKIRTS_B64", "outskirts.b64")
 # the storefronts (bake_storefronts.py): OSM shops on the facade edges that face the street
 let_blob("STOREFRONTS_B64", "storefronts.b64")
+const("STOREFRONT_INFO", text_of("storefront_info.json", "null"))   # each storefront's name, trade, hours and place on its wall, in storefronts.b64's order (bake_storefronts.py), Round 189
 const("CITY_LIMIT", text_of("city_limit.json", "null"))
 # Tier-1 facade pass: sampled roof-color palette (raw sRGB; app divides for the legacy color pipeline)
 const("FACADE_PAL", text_of("facade_palette.json", "null"))
@@ -200,6 +201,7 @@ const("LAND_MASK", text_of("land_mask.json", "null"))   # the ground's land mask
 const("WATER_ART", text_of("water_art.json", "null"))   # the realism pass's pier deck and white water (bake_water_art.py), Oct 12
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
 const("STREET_ART", text_of("street_art.json", "null"))   # the streets' generated textures (bake_street_art.py), the realism pass
+const("STOREFRONT_ART", text_of("storefront_art.json", "null"))   # the storefronts' generated shopfronts (bake_storefront_art.py), Round 189
 
 
 def art_paths(o):
@@ -215,7 +217,7 @@ def art_paths(o):
 
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
-for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json"):
+for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "storefront_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

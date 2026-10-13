@@ -127,52 +127,68 @@ def pip(x, z, poly):
     return inside
 
 
-tiles = []
-for name, S, N, W, E, rows, cols in BOXES:
-    tiles += grid_tiles(name, S, N, W, E, rows, cols)
-elements = fetch_tiles(tiles, tileQuery, CACHE_DIR, pause=5)
-print(f'{len(elements)} elements over {len(tiles)} tiles', flush=True)
+def load_elements():
+    """The OSM elements of every tile (the checkpoints in CACHE_DIR; a missing tile is fetched)."""
+    tiles = []
+    for name, S, N, W, E, rows, cols in BOXES:
+        tiles += grid_tiles(name, S, N, W, E, rows, cols)
+    elements = fetch_tiles(tiles, tileQuery, CACHE_DIR, pause=5)
+    print(f'{len(elements)} elements over {len(tiles)} tiles', flush=True)
+    return elements
 
-coords = {el['id']: to_xz(el['lat'], el['lon']) for el in elements if el.get('type') == 'node' and 'lat' in el}
-rows, way_polys = [], []   # way_polys: (ring, primary tag) for the node-in-way duplicate test
-n_node = n_way = n_level = n_notshop = 0
-for el in elements:
-    t = el.get('tags') or {}
-    if not t: continue
-    k = kind_of(t)
-    if k is None: n_notshop += 1; continue
-    if not ground_floor(t): n_level += 1; continue
-    if el['type'] == 'node':
-        x, z = coords[el['id']]
-        rows.append({'x': round(x, 2), 'z': round(z, 2), 'kind': k, 'name': t.get('name', ''), '_p': primary(t), '_node': True})
-        n_node += 1
-    elif el['type'] == 'way' and el.get('center'):
-        x, z = to_xz(el['center']['lat'], el['center']['lon'])
-        ring = [coords[n] for n in el.get('nodes', []) if n in coords]
-        if len(ring) >= 4 and ring[0] == ring[-1]: way_polys.append((ring[:-1], primary(t)))
-        rows.append({'x': round(x, 2), 'z': round(z, 2), 'kind': k, 'name': t.get('name', ''), '_p': primary(t), '_node': False})
-        n_way += 1
 
-# a node inside a way carrying the same primary tag is the same business mapped twice
-cells = {}
-for ring, p in way_polys:
-    xs = [q[0] for q in ring]; zs = [q[1] for q in ring]
-    for gx in range(int(min(xs) // 100), int(max(xs) // 100) + 1):
-        for gz in range(int(min(zs) // 100), int(max(zs) // 100) + 1):
-            cells.setdefault((gx, gz), []).append((ring, p))
-kept, n_dup = [], 0
-for r in rows:
-    if r['_node']:
-        dup = False
-        for ring, p in cells.get((int(r['x'] // 100), int(r['z'] // 100)), ()):
-            if p == r['_p'] and pip(r['x'], r['z'], ring): dup = True; break
-        if dup: n_dup += 1; continue
-    kept.append({'x': r['x'], 'z': r['z'], 'kind': r['kind'], 'name': r['name']})
+def businesses(elements):
+    """The ground-floor businesses, in the order shops_raw.json holds them: (rows, stats), each row {x, z, kind, name,
+    tags} (bake_storefronts.py reads the tags: the short name, the opening hours, the cuisine)."""
+    coords = {el['id']: to_xz(el['lat'], el['lon']) for el in elements if el.get('type') == 'node' and 'lat' in el}
+    rows, way_polys = [], []   # way_polys: (ring, primary tag) for the node-in-way duplicate test
+    n_node = n_way = n_level = n_notshop = 0
+    for el in elements:
+        t = el.get('tags') or {}
+        if not t: continue
+        k = kind_of(t)
+        if k is None: n_notshop += 1; continue
+        if not ground_floor(t): n_level += 1; continue
+        if el['type'] == 'node':
+            x, z = coords[el['id']]
+            rows.append({'x': round(x, 2), 'z': round(z, 2), 'kind': k, 'name': t.get('name', ''), '_p': primary(t), '_node': True, '_t': t})
+            n_node += 1
+        elif el['type'] == 'way' and el.get('center'):
+            x, z = to_xz(el['center']['lat'], el['center']['lon'])
+            ring = [coords[n] for n in el.get('nodes', []) if n in coords]
+            if len(ring) >= 4 and ring[0] == ring[-1]: way_polys.append((ring[:-1], primary(t)))
+            rows.append({'x': round(x, 2), 'z': round(z, 2), 'kind': k, 'name': t.get('name', ''), '_p': primary(t), '_node': False, '_t': t})
+            n_way += 1
 
-os.makedirs('lidar_cache', exist_ok=True)
-json.dump(kept, open(OUT, 'w'), separators=(',', ':'), ensure_ascii=False)
-kinds = Counter(r['kind'] for r in kept)
-print(f'businesses: {n_node} nodes + {n_way} ways ({n_notshop} tagged elements not a storefront, '
-      f'{n_level} upstairs or below ground, {n_dup} nodes duplicated by a way of the same kind) -> {len(kept)} written', flush=True)
-print('by kind: ' + ', '.join(f'{k}:{kinds[k]}' for k in sorted(kinds)), flush=True)
-print(f'{OUT}: {os.path.getsize(OUT):,} bytes', flush=True)
+    # a node inside a way carrying the same primary tag is the same business mapped twice
+    cells = {}
+    for ring, p in way_polys:
+        xs = [q[0] for q in ring]; zs = [q[1] for q in ring]
+        for gx in range(int(min(xs) // 100), int(max(xs) // 100) + 1):
+            for gz in range(int(min(zs) // 100), int(max(zs) // 100) + 1):
+                cells.setdefault((gx, gz), []).append((ring, p))
+    kept, n_dup = [], 0
+    for r in rows:
+        if r['_node']:
+            dup = False
+            for ring, p in cells.get((int(r['x'] // 100), int(r['z'] // 100)), ()):
+                if p == r['_p'] and pip(r['x'], r['z'], ring): dup = True; break
+            if dup: n_dup += 1; continue
+        kept.append({'x': r['x'], 'z': r['z'], 'kind': r['kind'], 'name': r['name'], 'tags': r['_t']})
+    return kept, (n_node, n_way, n_notshop, n_level, n_dup)
+
+
+def main():
+    kept, (n_node, n_way, n_notshop, n_level, n_dup) = businesses(load_elements())
+    kept = [{'x': r['x'], 'z': r['z'], 'kind': r['kind'], 'name': r['name']} for r in kept]
+    os.makedirs('lidar_cache', exist_ok=True)
+    json.dump(kept, open(OUT, 'w'), separators=(',', ':'), ensure_ascii=False)
+    kinds = Counter(r['kind'] for r in kept)
+    print(f'businesses: {n_node} nodes + {n_way} ways ({n_notshop} tagged elements not a storefront, '
+          f'{n_level} upstairs or below ground, {n_dup} nodes duplicated by a way of the same kind) -> {len(kept)} written', flush=True)
+    print('by kind: ' + ', '.join(f'{k}:{kinds[k]}' for k in sorted(kinds)), flush=True)
+    print(f'{OUT}: {os.path.getsize(OUT):,} bytes', flush=True)
+
+
+if __name__ == '__main__':   # Round 189: bake_storefronts.py imports the tables and businesses() without fetching
+    main()

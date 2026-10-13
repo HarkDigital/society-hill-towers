@@ -162,7 +162,10 @@ before any visual round rather than rediscovering it.
   contrast 1.05, warm lights and cool shadows), a quieter lawn and a warm night bounce on every device; `?real=0` is the old
   palette below; step 2: an unresolved row takes a gable by its kind, `roofLot`, rarely for a row, and every flat roof one of
   four generated surfaces dealt per house by its base, `roofArtU`; step 3: `midSkinNote` clads the 9 to 35 m buildings no front
-  dresses on a computer), and before that leaned toward
+  dresses on a computer; Round 189, Mike: "Do the storefront boxes on Broad Street too": the OSM storefronts and the painted
+  style-5 shop floors wear generated photographic shopfronts, `STOREFRONT_ART` from `bake_storefront_art.py` with the shop's real OSM
+  name drawn by the page on its board and its interior lit by its hours, `storefront_info.json` beside `storefronts.b64`, which is
+  never repacked), and before that leaned toward
   Cities: Skylines 2 (reflective tinted window glass with sun-aware reveals, one glass tint per building carried
   as the `aTint` vertex byte (never a world-position hash), brick, stone, panel and stucco textures in the facade
   shader with every joint in anti-aliased relief, cornice and wall-end shading, limestone trim and mortar, seamed
@@ -281,7 +284,7 @@ readout. `?dpr=N` pins the adaptive pixel ratio. `?wx=<preset>` pins weather
 pins the air at Good. `?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardous>` pins the
 air quality (Round 75: the live PM2.5 scales the clear-air distances and tints a smoke day;
 `__dbg.aqi(n)`, `__dbg.aqiState()`).
-`?real=0` is the Cities: Skylines palette Round 185 replaced (and with it the old 0.8 gable lottery, the flat roofs' generated surfaces, the yards and the mid-rise walls), `?ao=0` the realistic look without its occlusion, `?ao=show` the occlusion alone, `?midskin=0` the mid-rise walls off (`__dbg.real()` holds the uniforms; `roof.uRoofDbg` paints the roof kinds). `?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question). `?vdepth=0` keeps every facade on fragment depth and `?vdepth=<m>` sets the near line on any device (Round 168; `__dbg.vdepth()`); `?gfx=smoother|auto|sharper` pins the Graphics choice without saving it (Round 168).
+`?real=0` is the Cities: Skylines palette Round 185 replaced (and with it the old 0.8 gable lottery, the flat roofs' generated surfaces, the yards and the mid-rise walls), `?ao=0` the realistic look without its occlusion, `?ao=show` the occlusion alone, `?midskin=0` the mid-rise walls off (`__dbg.real()` holds the uniforms; `roof.uRoofDbg` paints the roof kinds). `?sfart=0` keeps the old storefront boxes and the painted shop floors under the realistic look (Round 189), `?signs=0` blanks the storefronts' name boards (`__dbg.sf()`, `__dbg.sf(r)` the panels within r metres). `?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question). `?vdepth=0` keeps every facade on fragment depth and `?vdepth=<m>` sets the near line on any device (Round 168; `__dbg.vdepth()`); `?gfx=smoother|auto|sharper` pins the Graphics choice without saving it (Round 168).
 The realism pass (Round 188) adds: `?ap=0` (no aerial perspective), `?clouds3d=0|1` (the desktop cloud volumes refused or
 forced), `?refl=0` (no planar river mirror), `?shadowwide=0` (no far shadow map), `?bloomwide=0` (the old tight bloom),
 `?walls=plain` / `?pitched=plain` (no generated wall or pitched-roof materials), `?streets=plain` (no generated street

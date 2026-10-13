@@ -8846,3 +8846,61 @@ Not done:
   mostly on fog distance (sky-atmos) and on the far shells; at 0.7 flakes per cubic metre the near box cannot carry it
   alone.
 - screen-space reflections: Out of scope this round, per the task.
+
+## Round 189 — the storefronts' shopfronts (Oct 13)
+
+- Mike: "Do the storefront boxes on Broad Street too." The 2,341 OSM storefronts (storefronts.b64) were still a navy glass
+  slab, a dark frame band, a tilted plank awning and a flat sign box each, and the facade shader's style-5 shop floors
+  still painted coloured bays with flat awning bands: the cartoon the realism pass took out of everything else.
+- The finding that set the scope: the reference view '12-broad-street' stands near 13th and Lombard, 180 m east of Broad,
+  and what it shows is style 5's painted bays (no OSM record within 35 m). South Broad itself has both kinds: record 612
+  (Oriental Chinese Restaurant, 11.8 m) a white slab with a plank awning beside a style-5 building's red, green, blue and
+  white bands; record 606 (Cinemug, 4.7 m) a navy box between two generated house fronts; North Broad's record 1671 a
+  grocery box with a mint awning on an office corner. Both are now dressed from one generated atlas.
+- The art (fetch_storefront_art.py, gpt-image-2 at high quality): 83 cells, thirteen trades (the kind split by OSM tags:
+  takeout from sit-down by amenity=fast_food or cuisine, bakery and specialty food from grocery by shop=) in four width
+  classes at 4.2 m tall (S 4.5 m 1024x960, M 6 m 1280x896, L 8.5 m 1536x768, XL 11 m 1536x592), two S and two or three XL a
+  trade. 172 calls: 6 dark-glass pilots (kept aside), 3 keyed pilots, 80 frames, 83 edits; no re-rolls. Every one read on
+  contact sheets: no lettering, logos, people or perspective; every fascia blank (luminance spread 0.003 to 0.025
+  against the 0.07 bar).
+- Two stages so the glass is exact. The dark-glass pilots defeated a glass finder (dark wood frames, recess shadows and
+  grey frames all as dark as the panes: k-means thresholds, eroded cores and per-blob refinement still took recess walls
+  for glass or dropped a pane). So the frame is made EMPTY with every pane a flat chroma-key green, the key is the mask,
+  and /v1/images/edits paints the interior into it; the edit redraws the whole image (a board's green shifts, mullions
+  inside the dilated mask go), and the bake pastes back only the keyed pixels with a pixel's feather, so frame and mask
+  stay registered. The key's green thrown on recessed entrances' sides and ceilings (plain to see in about fifteen cells,
+  and every pane's anti-aliased edge) is taken out within
+  about 40 px of the glass (green over the other channels by more than 0.05 plus a fifth of the luminance), never off
+  the board, and painted green frames keep their colour.
+- The bake (bake_storefront_art.py): the board (the longest run of uniform rows from the top quarter, grown sideways),
+  the bulkhead's top, the glass head and the board's bottom from the foot, the piers, a door in 81 of 83, the glass 0.16
+  to 0.45 of a cell; a 4096x2048
+  shelf atlas at 50 px/m in nine rows, WebP q85, a phone's half, and the opaque RGB mask (r glass, g board, b door) at
+  half and quarter: art/storefronts/ is 1.56 MB.
+- The sidecar (bake_storefronts.py -> storefront_info.json, 110.6 KB, never a repack): names for 2,282 of 2,341 (short
+  name first, cleaned, 40 characters at a word); the trades; hours parsed from 1,009 of 1,112 OSM opening_hours strings;
+  the layout of records sharing a wall (189 groups, 382 moved, 269 shrunk, 5 dropped; laid on the decoded 0.2 m
+  positions with a 0.2 m gap, and grouped by shared wall as well as by overlap, or a pair slid apart ran into the shop
+  beside it); the drawn wall over each span (out p50/p95 1/27 cm, in p5/p50 -59/-1 cm). storefronts.b64 came out byte for
+  byte (sha256 1c7e5d45 pinned); fetch_shops.py's fetch moved under main() and re-ran in a scratch copy of the tiles to
+  an identical shops_raw.json.
+- The page: one InstancedMesh of panels (1,513 on a computer, 527 of them dissolving under generated shop fronts as the
+  boxes did, 796 on generated street floors skipped, 1 hidden by the layout; 2,054 on a phone) and two of canvas awnings
+  (456 flat, 249 scalloped). Each panel at its laid width, 6 cm proud of the drawn wall's outermost point with returns back
+  past the innermost, from under the lowest ground to its host's storey plus 0.7 m; the bulkhead and fascia native, the
+  glass band rescaled; the interior dimmed under glassOpticsPatch's reflection and shifted 35 cm deep on a computer; the
+  OSM name in the page's own type on the board ("Oriental Chinese Restaurant", "Cinemug", "OH BROTHER" checked
+  legible), channel letters lit for the shops, banks and groceries, a gooseneck wash for the rest; the interior lit through
+  its own picture by the hours on the model clock, a closed shop's display in one in three. The step took 233 ms on a
+  computer (112 before: the atlas's upload) and 83 ms on a phone (125).
+- The painted shop floors (style 5) wear the same atlas in the facade hook (SF_PARTA, behind uSfOn): whole shopfronts of
+  the class that fills the wall with the least stretch, eight cells a class from the trades that suit an anonymous wall,
+  lit after dark by their trade's hours (uOcc.w now carries the model's minute).
+- Samplers: panels 8 on a computer and 7 on a phone, awnings 5 and 4, the fabric 9 to 11 and 7 to 9; every program
+  linked. Phone memory (the GC-normalised gpuhook run): GPU after the look-around 915 to 919 MB, the 1-byte stride-4
+  streams unchanged at 54,536. A computer adds about 57 MB of textures (atlas 44.7, mask 11.2, names 1.4, red only).
+- Checks: a tap on the 606 panel opens its building's card; ?real=0 renders as HEAD's (clouds and tufts aside); ?sfart=0
+  shows the old boxes and painted bays under the realistic look; the phone's far view shows no wall through a panel.
+- Not done, to offer Mike: roll-down gates on closed shops (the flag rides in aSfInfo, nothing draws it), names on the
+  generated house fronts' boards for the 527 records that dissolve under them, blade signs for the 796 on street floors,
+  shop bases where OSM shops stand, style 6's double-height bays.
