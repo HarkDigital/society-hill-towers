@@ -1102,6 +1102,7 @@
   // every material (r149's UniformsUtils.clone calls .clone() on a vector or a colour, and these return themselves), and
   // a material without them reads zeros, so fogAP.w = 0 is THREE.Fog exactly as it was (?real=0, ?ap=0)
   const AP = { on: REAL && !/[?&]ap=0\b/.test(location.search), clear: 45000, V: 45000 };
+  const AP_TOP = 360;   // the tallest roof over the haze's datum (the Comcast Technology Center's 342 m on its ground): the cull's clearest ray
   const apShare = (v) => { v.clone = () => v; return v; };
   const apU = {
     fogAP: { value: apShare(new THREE.Vector4(0, 1 / 1200, 0, 0)) },      // the haze: extinction at the datum (1/m), 1/scale height, datum y, on
@@ -1113,13 +1114,15 @@
   };
   {
     const C = THREE.ShaderChunk;
-    C.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying float vFogDepth;\n\tvarying vec3 vFogV;\n#endif';
-    C.fog_vertex = '#ifdef USE_FOG\n\tvFogDepth = - mvPosition.z;\n\tvFogV = mvPosition.xyz;\n#endif';
+    // (one varying: the view-space position, whose -z is three's own vFogDepth, so a fogged program carries two floats
+    // more than it did and not three; review: the heaviest facade programs on an iPhone)
+    C.fog_pars_vertex = '#ifdef USE_FOG\n\tvarying vec3 vFogV;\n#endif';
+    C.fog_vertex = '#ifdef USE_FOG\n\tvFogV = mvPosition.xyz;\n#endif';
     C.fog_pars_fragment = [
       '#ifdef USE_FOG',
       '\tuniform vec3 fogColor;',
-      '\tvarying float vFogDepth;',
       '\tvarying vec3 vFogV;',
+      '\t#define vFogDepth ( - vFogV.z )',
       '\tuniform vec4 fogAP, fogAPLow, fogAPSun, fogAPGlow;',
       '\tuniform vec3 fogAPSunC, fogAPAnti;',
       '\t#ifdef FOG_EXP2',
@@ -1137,14 +1140,21 @@
       '\t}',
       '\tfloat apOD( vec3 v, float d ) { return apLayer( fogAP, v.y, d ) + apLayer( fogAPLow, v.y, d ); }',
       // the air's colour along a ray: the dome's horizon in that azimuth (the twilight shift away from the sun), then its
-      // glow toward the sun (the dome's own terms, normalised to 1 at the sun), then the city's light low in the air by night
+      // glow toward the sun (the dome's own terms, normalised to 1 at the sun)
       '\tvec3 apColor( vec3 v, float d ) {',
       '\t\tvec3 dir = v / max( d, 1e-3 );',
       '\t\tfloat sw = dot( normalize( dir.xz + vec2( 1e-5, 0.0 ) ), normalize( fogAPSun.xz + vec2( 1e-5, 0.0 ) ) ) * 0.5 + 0.5;',
       '\t\tvec3 c = mix( fogColor, fogAPAnti, 1.0 - sw * sw );',
       '\t\tfloat mu = max( dot( dir, fogAPSun.xyz ), 0.0 ), q = 1.0 - mu, m2 = mu * mu, m4 = m2 * m2, m8 = m4 * m4;',
       '\t\tc = mix( c, fogAPSunC, ( 0.24 * exp( - 190.0 * q ) + 0.07 * exp( - 18.0 * q ) + 0.10 * m8 * m4 + 0.10 * m8 + 0.05 * m2 ) * 1.7857 );',
-      '\t\treturn c + fogAPGlow.rgb * exp( - max( cameraPosition.y + 0.5 * v.y - fogAPLow.z, 0.0 ) * fogAPGlow.w );',
+      '\t\treturn c;',
+      '\t}',
+      // the city's light by night in the low air (night#9): the lamps light the lowest 60 m or so, and whatever of that air
+      // lies along the ray scatters it to the eye, added over the fog (it is light, not a veil): a fog night's street sits
+      // in a glowing brown murk, the sky over it glows, and a clear night's air adds next to nothing
+      '\tvec3 apGlow( vec3 v, float d ) {',
+      '\t\tif ( fogAPGlow.r + fogAPGlow.g <= 0.0 ) return vec3( 0.0 );',
+      '\t\treturn fogAPGlow.rgb * ( 1.0 - exp( - apLayer( vec4( fogAP.x + fogAPLow.x, fogAPGlow.w, fogAPLow.z, 1.0 ), v.y, d ) ) );',
       '\t}',
       '#endif',
     ].join('\n');
@@ -1155,14 +1165,19 @@
       '\t#else',
       '\t\tfloat fogFactor = smoothstep( fogNear, fogFar, vFogDepth );',
       '\t#endif',
-      '\tvec3 fogMix = fogColor;',
+      '\tvec3 fogMix = fogColor, fogAdd = vec3( 0.0 );',
       '\tif ( fogAP.w > 0.5 ) {',
       '\t\tvec3 apV = vFogV * mat3( viewMatrix );',   // view to world: the transpose of the view's rotation
       '\t\tfloat apD = length( apV );',
+      // (and from fogNear to fogFar the old wall closes what the air has left, so nothing pops where cullFogged drops a
+      // chunk: realSky puts the pair at 0.75 and 1 of the cull line, where the air alone leaves 3 to 20 per cent)
       '\t\tfogFactor = 1.0 - exp( - apOD( apV, apD ) );',
-      '\t\tif ( fogFactor > 0.001 ) fogMix = apColor( apV, apD );',   // the near street skips the colour's work
+      '\t\t#ifndef FOG_EXP2',
+      '\t\t\tfogFactor = max( fogFactor, smoothstep( fogNear, fogFar, apD ) );',
+      '\t\t#endif',
+      '\t\tif ( fogFactor > 0.004 ) { fogMix = apColor( apV, apD ); fogAdd = apGlow( apV, apD ); }',   // under 0.4 per cent (the first 45 m of clear air, a fog's first metre) the colour's work is skipped
       '\t}',
-      '\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogMix, fogFactor );',
+      '\tgl_FragColor.rgb = mix( gl_FragColor.rgb, fogMix, fogFactor ) + fogAdd;',
       '#endif',
     ].join('\n');
     for (const k of Object.keys(apU)) THREE.UniformsLib.fog[k] = apU[k];
@@ -3721,7 +3736,8 @@
   // through uExposure, so they stay exact on the post pipeline. A phone's fog needs nothing: r149 mixes it in after the
   // tone mapping, display colour like the raw dome, which the exposure never touches; dividing it by the exposure put the
   // overcast haze at two thirds of the sky over it, the review's (113, 118, 116) under (178, 189, 196)). Called by
-  // applyLighting at its exposure line; returns the exposure's factor. ?real=0: 1, nothing changed
+  // applyLighting at its exposure line with the share of the sun's key the deck left it (sunDeckK: the fog's share is
+  // taken here, once); returns the exposure's factor. ?real=0: 1, nothing changed
   const KEYWX = { k: 1, ec: 1, closed: 0, off: false, fill: 1.8, comp: 1 };
   function keyWeather(dayF, deckK) {
     if (!REAL) return 1;
@@ -3763,6 +3779,7 @@
   // size it was eight pixels on a laptop and nobody saw it (Mike, Sep 15: add the moon);
   // 2.5 read as a moon, 2.0 is Mike's "a bit smaller" (Round 64 coda)
   const MOON_SCALE = 2.0, MOON_R = 0.0091 * MOON_SCALE;
+  const SKY_SAT0 = gradeU.uSat.value;   // the composite's own saturation (0.84 under REAL), which the open sky takes back (realSky)
   const skyMat = new THREE.ShaderMaterial({
     side: THREE.BackSide,
     depthWrite: false,
@@ -3793,10 +3810,13 @@
       // the realism pass (applyLighting sets them; refreshEnv copies them into the probe's dome)
       uGlow: { value: new THREE.Color(0, 0, 0) },        // the city's skyglow by night, display colour at the horizon
       uGlowDir: { value: new THREE.Vector3(0, 1, 0) },   // toward Center City (x, z) and how much brighter that way (y)
-      uSkyFog: { value: new THREE.Vector4(0, 0, 0, 0) }, // the weather's veil over the dome: x its optical depth straight up
+      uSkyFog: { value: new THREE.Vector4(0, 0, 0, 0) }, // the weather's veil over the dome: x its optical depth straight up, y the lamp-lit low air's
       uSkyFogC: { value: new THREE.Color(0, 0, 0) },     // and its colour (display)
+      uSkyGlowC: { value: new THREE.Color(0, 0, 0) },    // the lamps' light in that low air (display), added as the fog chunk's apGlow adds it
       uBand: { value: 1 },                               // the horizon's cloud band (a rain or snow sky has none)
       uSatK: { value: 1 },                               // the composite's saturation undone over the open sky (its horizon matches the air's)
+      uStar: { value: Array.from({ length: 24 }, () => new THREE.Vector4(0, -1, 0, 0)) },   // the brightest stars (realSky): direction, brightness
+      uStarK: { value: 0 },                                                                // and how many of them the night's sky lets through
     },
     vertexShader:
       'varying vec3 vDir;\n' +
@@ -3804,7 +3824,8 @@
     fragmentShader:
       'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun; uniform float uSunVis, uTwilight;\n' +
       'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
-      'uniform vec3 uGlow, uGlowDir, uSkyFogC; uniform vec4 uSkyFog; uniform float uBand, uSatK;\n' +
+      'uniform vec3 uGlow, uGlowDir, uSkyFogC, uSkyGlowC; uniform vec4 uSkyFog; uniform float uBand, uSatK;\n' +
+      'uniform vec4 uStar[24]; uniform float uStarK;\n' +
       'uniform vec3 uMoon, uMoonU, uMoonV, uMoonN, uMoonE; uniform float uMoonK, uMoonI, uMoonD, uMoonR; uniform float uPost, uExposure;\n' +
       'float mare(vec2 p, vec2 c, vec2 r){ vec2 q = (p - c) / r; return 1.0 - smoothstep(0.5, 1.25, dot(q, q)); }\n' +
       INV_GLSL + '\n' +
@@ -3838,6 +3859,14 @@
         // the city's skyglow (night#1): warm, strongest on the horizon and toward Center City, faint at the zenith
         // (the light dome over Center City rides the broad term only, so the horizon still meets the air's colour)
         '  col += uGlow * (0.8 * exp(-hp * 7.0) + 0.2 * exp(-hp * 1.6) * (1.0 + uGlowDir.y * pow(max(dot(normalize(nd.xz + vec2(1e-4, 0.0)), uGlowDir.xz), 0.0), 3.0)));',
+        // the stars a city's sky lets through (night#1): the two dozen brightest where they stand tonight, each a point a
+        // pixel or so across (its angle from the pixel's direction against the pixel's own angular size), dimmer low down
+        // where the glow and the air take them; the deck covers them as it covers the dome
+        '  if (uStarK > 0.002 && h > 0.0) {',
+        '    float spx = max(length(fwidth(nd)), 1e-5), sAcc = 0.0;',
+        '    for (int i = 0; i < 24; i++) { float a2 = 2.0 * (1.0 - dot(nd, uStar[i].xyz)); sAcc += uStar[i].w * exp(-a2 / (spx * spx * 1.5)); }',
+        '    col += vec3(0.94, 0.96, 1.0) * sAcc * uStarK * smoothstep(0.02, 0.25, h);',
+        '  }',
         '',
       ].join('\n') : '') +
       '  col += cSun * ((disc * 1.7 + exp(-sunAng * sunAng * 95.0) * 0.24 + exp(-sunAng * sunAng * 9.0) * 0.07) * uSunVis + pow(s, 12.0) * 0.10 * (0.35 + 0.65 * uSunVis));\n' +
@@ -3908,6 +3937,9 @@
       '    float dens = smoothstep(thr, thr + 0.34, f);\n' +
       '    vec3 cc = mix(vec3(0.60, 0.65, 0.72), vec3(0.985, 0.99, 1.0), lit) * uCloudLight;\n' +
       '    cc = mix(cc, vec3(0.74, 0.77, 0.82) * uCloudLight, dens * (0.35 + 0.4 * cov));\n' +
+      // (the realism pass: by night the far band is lit from below by the city like the deck over it, or it stood as a
+      // dark range of hills between the glowing horizon and the glowing deck)
+      (REAL ? '    cc += uGlow * (1.7 - 0.5 * lit);\n' : '') +
       // World-space banks handle nearby clouds; the dome keeps the distant haze band.
       '    float horiz = smoothstep(0.0, 0.03, h) * (1.0 - smoothstep(0.04, 0.12, h));\n' +
       '    col = mix(col, cc, m * horiz * (0.86 + 0.1 * cov) * uBand);\n' +
@@ -3916,6 +3948,9 @@
         // the weather's veil (weather#1): rain, snow and fog stand between the eye and the sky as they do between the eye
         // and the city, thickest along the horizon, so a fog's sky is milk and a rain's a grey lid
         '  if (uSkyFog.x > 1e-4) col = mix(col, uSkyFogC, 1.0 - exp(-uSkyFog.x / max(h + 0.04, 0.04)));',
+        // and the lamps' light in the low air, by the same law as the city and the deck take it (apGlow), or a fog night's
+        // open sky stood darker than the deck and the city in front of it: a dark band over the horizon, dark holes in the deck
+        '  if (uSkyFog.y > 1e-4) col += uSkyGlowC * (1.0 - exp(-uSkyFog.y / max(h + 0.04, 0.04)));',
         // the composite greys every colour (gradeU.uSat); the open sky takes back what it lost, the horizon none of it, so
         // the deep-blue zenith stands and the horizon still meets the air
         '  { float sL = dot(col, vec3(0.2126, 0.7152, 0.0722)); col = max(mix(vec3(sL), col, mix(1.0, uSatK, smoothstep(0.03, 0.35, h))), 0.0); }',
@@ -3954,34 +3989,60 @@
     // powder darkening of a thin edge and a forward glow toward the sun, the city lights the bellies from below by night,
     // and a strike lights the cloud about it
     const wx = REAL && index === 0;
+    // (the second phase: the volumes' cells, their bases flatter, a cumulus's lifting condensation level being one height
+    // over a district; the high bank's tile scaled with its noise)
+    const v3 = CLOUD3D.on, tile = CLOUD_TILE * CLOUD_LAYERS[0].scale / layer.scale, spreadK = v3 ? (index === 0 ? 0.3 : 0.6) : 1;
     return `
       void traceCloud${index}(vec3 rd, float cone, inout vec3 acc, inout float trans, inout float first, inout float fogDepth) {
         float drop = ${wx ? 'uWxDeck.x' : '0.0'};
-        vec2 span = cloudSpan(cameraPosition.y, rd.y, ${f(layer.base)} - drop, ${f(layer.base + layer.spread + layer.thickness)});
+        vec2 span = cloudSpan(cameraPosition.y, rd.y, ${f(layer.base)} - drop, ${f(layer.base + layer.spread * spreadK + layer.thickness)});
         if (span.y <= span.x || trans < 0.025) return;
         float ds = (span.y - span.x) / ${f(layer.steps)};
-        vec4 shape = vec4(${f(layer.base)} - drop, ${f(layer.spread)} * ${wx ? 'uWxDeck.y' : '1.0'}, ${f(layer.thickness)}, ${f(layer.seed)});
+        vec4 shape = vec4(${f(layer.base)} - drop, ${f(layer.spread * spreadK)} * ${wx ? 'uWxDeck.y' : '1.0'}, ${f(layer.thickness)}, ${f(layer.seed)});
         float cov = clamp(uCloud${wx ? ' + uWxDeck.z' : ''}, 0.0, ${wx ? '1.25' : '1.0'});
         float sunUp = clamp(uSun.y * 3.0, 0.0, 1.0);
         float heavy = smoothstep(0.55, 0.95, cov);
         vec3 shade = mix(${REAL ? 'vec3(0.56, 0.60, 0.67)' : 'vec3(0.52, 0.58, 0.68)'}, vec3(0.70, 0.73, 0.78), heavy * 0.65);
         vec3 sunlit = mix(vec3(1.0), cSun, 0.22);
-        for (int i = 0; i < ${layer.steps}; i++) {
+        ${v3 ? `float t = span.x + cJit * ds, stp = ds, fineRun = 0.0;
+        for (int i = 0; i < ${Math.round(layer.steps * 1.6)}; i++) {
+          if (t >= span.y) break;` : `for (int i = 0; i < ${layer.steps}; i++) {
           // Midpoint integration is stable as the camera moves. No screen-space
           // random offsets: those made sparse samples look like noisy pixels.
           // (The realism pass's sharper edges banded at fixed midpoints; its 80 steps carry the jitter as a fine grain.)
-          float t = span.x + (float(i) + ${REAL ? 'cJit' : '0.5'}) * ds;
+          float t = span.x + (float(i) + ${REAL ? 'cJit' : '0.5'}) * ds;`}
           vec3 p = cameraPosition + rd * t;
+          // (the volumes filter by the coarse step even on a fine stretch, so the walk in thirds reads the field the coarse
+          // step found a face in: a sharper field there missed it or found islands, single-pixel specks along every edge)
           float footprint = max(t * cone, ds * 0.55) * ${f(layer.scale)};
-          vec2 sampleCloud = cloudSample(p, shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, footprint, ds * abs(rd.y));
-          float dens = sampleCloud.x${REAL ? ' * smoothstep(15.0, 90.0, t)' : ''};
+          ${v3 ? `vec4 sampleCloud = cloudSample3(p, shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, footprint, ${f(index)}, ${f(tile)});` : `vec2 sampleCloud = cloudSample(p, shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, footprint, ds * abs(rd.y));`}
+          float dens = sampleCloud.x${REAL ? ' * smoothstep(15.0, 90.0, t)' : ''}${v3 ? ' * (1.0 - 0.5 * smoothstep(4000.0, 15000.0, t))' : ''};${v3 ? `
+          // (and the far deck's density eased to half, so a far fragment smaller than the step stands translucent rather than
+          // flicking whole between pixels in flight; a far cloud's long path still closes it)` : ''}
+          ${v3 ? `// a cell's face found on a coarse step: back up most of the step and walk it in thirds, so the face stands
+          // within a third of a step of where it is (the jittered coarse entry speckled every opaque edge); back to coarse
+          // steps once the ray has been out of cloud for a step and a half
+          if (dens > 0.002 && stp > ds * 0.5) { t = max(span.x, t - ds * 0.7); stp = ds * 0.3; fineRun = 0.0; continue; }
+          if (dens <= 0.002 && stp < ds * 0.5) { fineRun += 1.0; if (fineRun > 5.0) stp = ds; }` : ''}
           if (dens > 0.002) {
-            vec2 towardSun = cloudSample(p + uSun * 160.0 + vec3(0.0, 65.0, 0.0), shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, footprint, ds * abs(rd.y));
+            ${v3 ? `// the sun's light into this sample: three taps up the sun's ray through the cell (the shape only), Beer's law on
+            // their depth with a second, gentler octave for the light scattered on through the cloud (Wrenninge's), so a core
+            // greys and never goes black; the powder's darker skin facing away from the sun; the droplets' forward lobe for
+            // the silver lining (cFwd) and a back lobe for the sunlit face
+            float lod = cloudTap(p + uSun * 30.0, shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, sampleCloud.z, sampleCloud.w, ${f(index)}, ${f(tile)}) * 50.0
+              + cloudTap(p + uSun * 110.0, shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, sampleCloud.z, sampleCloud.w, ${f(index)}, ${f(tile)}) * 110.0
+              + cloudTap(p + uSun * 320.0, shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, sampleCloud.z, sampleCloud.w, ${f(index)}, ${f(tile)}) * 260.0;
+            float odS = lod * ${f(layer.extinction)};
+            float tSun = max(exp(-odS), 0.30 * exp(-odS * 0.2));
+            float cPow = 1.0 - exp(-dens * 4.0), hfC = clamp(sampleCloud.y, 0.0, 1.0);
+            float powd = mix(1.0 - 0.55 * exp(-(odS + dens) * 2.5), 1.0, cMu * 0.5 + 0.5);
+            float lit = clamp(tSun * powd * cBack, 0.0, 1.0) * sunUp * (1.0 - heavy * 0.65);
+            float ambient = mix((0.64 + 0.36 * hfC) * (1.0 - 0.12 * cPow), 0.90, heavy * 0.65);` : `vec2 towardSun = cloudSample(p + uSun * 160.0 + vec3(0.0, 65.0, 0.0), shape, ${f(layer.scale)}, ${f(layer.wind)}, cov, footprint, ds * abs(rd.y));
             ${REAL ? `float cOd = towardSun.x * 1.7 + dens * 0.35, cPow = 1.0 - exp(-dens * 3.0);
             float lit = clamp(exp(-cOd * 1.4) * (0.55 + 0.45 * cPow) * 1.3 + sampleCloud.y * 0.10, 0.0, 1.0) * sunUp * (1.0 - heavy * 0.65);
             float ambient = mix(0.66 + 0.34 * clamp(sampleCloud.y, 0.0, 1.0), 0.90, heavy * 0.65);` : `float lit = clamp(0.30 + (dens - towardSun.x) * 0.85 + sampleCloud.y * 0.22, 0.0, 0.92) * sunUp * (1.0 - heavy * 0.65);
-            float ambient = mix(0.72 + 0.28 * clamp(sampleCloud.y, 0.0, 1.0), 0.90, heavy * 0.65);`}
-            float a = (1.0 - exp(-dens * ds * ${f(layer.extinction)})) * (1.0 - smoothstep(14000.0, 22000.0, t));
+            float ambient = mix(0.72 + 0.28 * clamp(sampleCloud.y, 0.0, 1.0), 0.90, heavy * 0.65);`}`}
+            float a = (1.0 - exp(-dens * ${v3 ? 'stp' : 'ds'} * ${f(layer.extinction)})) * (1.0 - smoothstep(14000.0, 22000.0, t));
             float weight = trans * a;
             if (a > 0.003) first = min(first, t);
             acc += weight * mix(shade * ambient, sunlit${REAL ? ' * (1.0 + cFwd * (1.0 - cPow))' : ''}, lit);
@@ -3992,10 +4053,102 @@
             trans *= 1.0 - a;
             if (trans < 0.025) break;
           }
+          ${v3 ? 't += stp;' : ''}
         }
       }
     `;
   }
+  // ---- the cloud volumes (the realism pass, sky-light#6's second phase; a computer on WebGL2): a 2D noise thresholded
+  // into lumps read as airbrushed lenses and melted wax from every height, however sharp its edge. A cumulus is a
+  // cauliflower: billows on billows over a flat base. So the low bank and the high one now carve their cells out of two
+  // tiling volumes of Perlin-Worley noise (Schneider's Nubis, Hillaire's tileable form), drawn ONCE at boot into 3D render
+  // targets by the GPU itself, slice by slice (no file, no download): the shape (128 cubed: the billowy Perlin-Worley and
+  // three Worley octaves, 2.6 km a tile over the low bank) and the detail that erodes its edges (64 cubed, 420 m a tile:
+  // wisps under the base, billows over the top). The 2D field still says WHERE a cloud stands and how strong it is, so the
+  // ground's cloud shadows (cloudShadowPatch, the same field) stay under their clouds; the cell's strength lifts its top,
+  // which rounds each one into a dome. A phone, WebGL1 and ?clouds3d=0 keep the first phase's march. __dbg.clouds3d()
+  // (the merge review: the march was measured only on this Mac's Metal GPU, and the low bank can run 128 iterations with two
+  // volume fetches and three light taps a dense sample, at full resolution: a weak integrated GPU, a software renderer and
+  // Smoother keep the first phase; ?clouds3d=1 forces the volumes for a measurement, ?clouds3d=0 refuses them)
+  const CLOUD3D_GPU = (() => { try { const gl = renderer.getContext(), x = gl.getExtension('WEBGL_debug_renderer_info'); return x ? String(gl.getParameter(x.UNMASKED_RENDERER_WEBGL) || '') : ''; } catch (e) { return ''; } })();
+  const CLOUD3D_WEAK = /\bU?HD Graphics\b|Iris(?:\((?:TM|R)\))? (?:Plus|Pro)\b|Iris(?:\((?:TM|R)\))? Graphics \d|SwiftShader|llvmpipe|softpipe|Microsoft Basic Render|Mali|Adreno|PowerVR/i.test(CLOUD3D_GPU);
+  const CLOUD3D_Q = /[?&]clouds3d=([01])\b/.exec(location.search);
+  const CLOUD3D = { on: REAL && !isTouch && !!renderer.capabilities.isWebGL2 && (CLOUD3D_Q ? CLOUD3D_Q[1] === '1' : !CLOUD3D_WEAK && GFX.pick !== 'smoother'),
+    shape: null, detail: null, rts: [], ms: 0, why: '', gpu: CLOUD3D_GPU };
+  if (REAL && !isTouch && !CLOUD3D.on) CLOUD3D.why = !renderer.capabilities.isWebGL2 ? 'webgl1' : CLOUD3D_Q ? 'clouds3d=0' : CLOUD3D_WEAK ? 'gpu' : 'smoother';
+  const CLOUD_TILE = 2600, CLOUD_DTILE = 420, CLOUD_GAIN = 5.0;   // the shape's and the detail's tiles over the low bank (m), the density's gain (a cumulus is opaque within 100 m or so)
+  const CLOUD3D_ALT = 1250;   // the volumes' low bank: bases at 780 to 1,062 m, the bodies' middle about 1.25 km (the ground shadows' projection)
+  function cloudVolumesBake() {
+    const t0 = performance.now();
+    const mk = (n) => {
+      const rt = new THREE.WebGL3DRenderTarget(n, n, n);
+      rt.depthBuffer = false;
+      const t = rt.texture;
+      t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType; t.generateMipmaps = false;
+      t.minFilter = t.magFilter = THREE.LinearFilter; t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping;
+      return rt;
+    };
+    const gen = new THREE.ShaderMaterial({
+      depthTest: false, depthWrite: false, side: THREE.DoubleSide,
+      uniforms: { uZ: { value: 0 }, uN: { value: 128 }, uKind: { value: 0 } },
+      vertexShader: 'void main(){ gl_Position = vec4(position.xy, 0.0, 1.0); }',
+      fragmentShader: `
+        uniform float uZ, uN, uKind;
+        vec3 gh(vec3 p) { p = fract(p * vec3(0.1031, 0.1030, 0.0973)); p += dot(p, p.yxz + 33.33); return fract((p.xxy + p.yxx) * p.zyx); }
+        // gradient noise and Worley's cells, both periodic in P cells, so the volume tiles in every axis
+        float gn(vec3 x, float P) {
+          vec3 i = floor(x), f = fract(x), u = f * f * f * (f * (f * 6.0 - 15.0) + 10.0);
+          #define GC(o) dot(gh(mod(i + o, P) + 0.37) * 2.0 - 1.0, f - o)
+          return mix(mix(mix(GC(vec3(0.0, 0.0, 0.0)), GC(vec3(1.0, 0.0, 0.0)), u.x), mix(GC(vec3(0.0, 1.0, 0.0)), GC(vec3(1.0, 1.0, 0.0)), u.x), u.y),
+                     mix(mix(GC(vec3(0.0, 0.0, 1.0)), GC(vec3(1.0, 0.0, 1.0)), u.x), mix(GC(vec3(0.0, 1.0, 1.0)), GC(vec3(1.0, 1.0, 1.0)), u.x), u.y), u.z);
+        }
+        float wor(vec3 x, float P) {
+          vec3 i = floor(x), f = fract(x); float d = 1.0;
+          for (int z = -1; z <= 1; z++) for (int y = -1; y <= 1; y++) for (int k = -1; k <= 1; k++) {
+            vec3 o = vec3(float(k), float(y), float(z)), r = o + gh(mod(i + o, P) + 3.71) - f;
+            d = min(d, dot(r, r));
+          }
+          return clamp(1.0 - d, 0.0, 1.0);
+        }
+        float wfbm(vec3 p, float fr) { return wor(p * fr, fr) * 0.625 + wor(p * fr * 2.0, fr * 2.0) * 0.25 + wor(p * fr * 4.0, fr * 4.0) * 0.125; }
+        void main() {
+          vec3 p = vec3(gl_FragCoord.xy / uN, uZ);
+          if (uKind < 0.5) {
+            float pf = 0.0, amp = 1.0, fr = 4.0;
+            for (int k = 0; k < 5; k++) { pf += amp * gn(p * fr, fr); fr *= 2.0; amp *= 0.5548; }
+            pf = abs(pf);                                        // billowy Perlin
+            float w1 = wfbm(p, 4.0);
+            gl_FragColor = vec4(w1 + pf * (1.0 - w1), w1, wfbm(p, 8.0), wfbm(p, 16.0));   // Perlin-Worley, then Worley at three scales
+          } else {
+            gl_FragColor = vec4(wfbm(p, 2.0), wfbm(p, 4.0), wfbm(p, 8.0), 1.0);
+          }
+        }
+      `,
+    });
+    const quad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), gen);
+    quad.frustumCulled = false;
+    const sc = new THREE.Scene(), cam = new THREE.Camera();
+    sc.add(quad);
+    const shape = mk(128), detail = mk(64), prevRT = renderer.getRenderTarget(), prevAuto = renderer.autoClear;
+    renderer.autoClear = false;
+    try {
+      for (const [rt, n, kind] of [[shape, 128, 0], [detail, 64, 1]]) {
+        gen.uniforms.uN.value = n; gen.uniforms.uKind.value = kind;
+        for (let z = 0; z < n; z++) { gen.uniforms.uZ.value = (z + 0.5) / n; renderer.setRenderTarget(rt, z); renderer.render(sc, cam); }
+      }
+      // a volume that came out empty (an incomplete framebuffer, a lost context) would draw no clouds at all: the first
+      // phase's march stands in
+      const px = new Uint8Array(4);
+      renderer.setRenderTarget(shape, 61);
+      renderer.readRenderTargetPixels(shape, 37, 53, 1, 1, px);
+      if (px[1] === 0 && px[2] === 0 && px[3] === 0) throw new Error('empty volume');
+    } finally {
+      renderer.setRenderTarget(prevRT); renderer.autoClear = prevAuto;
+      gen.dispose(); quad.geometry.dispose();
+    }
+    CLOUD3D.shape = shape.texture; CLOUD3D.detail = detail.texture; CLOUD3D.rts = [shape, detail]; CLOUD3D.ms = Math.round(performance.now() - t0);
+  }
+  if (CLOUD3D.on) { try { cloudVolumesBake(); } catch (e) { CLOUD3D.on = false; CLOUD3D.why = String(e && e.message || e); } }
   const cloudMat = new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.BackSide, fog: true,
     extensions: { derivatives: true, fragDepth: true },
@@ -4005,6 +4158,7 @@
       uCloudProjection: { value: camera.projectionMatrix },
       // the realism pass (applyLighting): the rain deck, the city's light under the bellies, a strike's light in the cloud
       uWxDeck: { value: new THREE.Vector3(0, 1, 0) }, uCityGlow: { value: new THREE.Color(0, 0, 0) }, uBolt: { value: new THREE.Vector4(0, 0, 0, 1500) },
+      ...(CLOUD3D.on ? { tCloudShape: { value: CLOUD3D.shape }, tCloudDetail: { value: CLOUD3D.detail } } : {}),
     }),
     vertexShader: `
       varying vec3 vW;
@@ -4021,7 +4175,12 @@
         gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99999);
       }
     `,
-    fragmentShader: `
+    fragmentShader: cloudFrag(),
+  });
+  // the deck's fragment shader, from CLOUD3D.on as it stands (cloudsPhase1 builds it again without the volumes)
+  function cloudFrag() {
+    return `
+      ${CLOUD3D.on ? 'precision highp sampler3D;\n      uniform sampler3D tCloudShape, tCloudDetail;' : ''}
       uniform float uCloud, uCloudLight, uPost, uExposure;
       uniform vec2 uCloudOff;
       uniform vec3 uSun, cSun;
@@ -4031,6 +4190,7 @@
       // the march's per-pixel state (the realism pass): the start's jitter, the forward glow toward the sun, and what the
       // layers gather for the main: the distance to the cloud for the air, the city's light, a strike's
       float cJit = 0.5, cFwd = 0.0, cFogT = 0.0, cGlowAcc = 0.0, cFlashAcc = 0.0;
+      float cMu = 0.0, cBack = 1.0;   // (the volumes: the angle to the sun, and the back lobe that lights the sunlit face)
       #include <common>
       #include <fog_pars_fragment>
       #include <logdepthbuf_pars_fragment>
@@ -4073,7 +4233,7 @@
         ${REAL ? `// the realism pass: flat dark bases (little erosion low down, a short fade in) under tops that taper and
         // billow, and an edge a third as soft, so a cumulus reads as one and not an airbrushed lens
         float erosion = 0.02 + hf * hf * 0.55;
-        float edge = 0.08 + min(0.12, footprint * 1.5);
+        float edge = ${isTouch ? '0.11' : '0.08'} + min(0.12, footprint * 1.5);
         float density = smoothstep(0.0, edge, f - erosion - threshold - 0.035);
         density *= smoothstep(0.0, max(0.035, verticalFootprint / thick), hf) * (1.0 - smoothstep(1.0 - max(0.10, verticalFootprint / thick), 1.0, hf));` : `float erosion = 0.03 + (hf - 0.30) * (hf - 0.30) * 0.65;
         float edge = 0.16 + min(0.10, footprint * 1.5);
@@ -4082,13 +4242,70 @@
         density *= smoothstep(0.0, heightEdge, hf) * (1.0 - smoothstep(1.0 - heightEdge, 1.0, hf));`}
         return vec2(density, hf);
       }
+      ${CLOUD3D.on ? `
+      // ---- the volumes' density (the second phase): the 2D field gives the cell's strength (wc, from the same threshold the
+      // ground's shadows use), the strength lifts the top of a flat-based body that rounds off over it (cumulus) or of a
+      // flatter sheet (the high bank), the Perlin-Worley shape carves the billows (remapped below the strength, so a weak
+      // cell keeps only its strongest puffs), and the Worley detail eats the edges: wisps under the base, billows above
+      float cRemap(float v, float a, float b) { return clamp((v - a) / max(b - a, 1e-4), 0.0, 1.0); }
+      float cloudWc(float f, float cov) { float thr = 0.60 - cov * 0.40; return smoothstep(thr - 0.03, thr + 0.17, f); }
+      float cloudProf(float hf, float wc, float kind) {
+        float top = kind < 0.5 ? 0.30 + 0.70 * wc : 0.50 + 0.40 * wc;
+        return smoothstep(0.0, kind < 0.5 ? 0.045 : 0.12, hf) * (1.0 - smoothstep(top * (kind < 0.5 ? 0.42 : 0.6), top, hf));
+      }
+      vec3 cloudQ(vec3 p, float wind, float hf, float tile, float seed) {
+        return vec3(p.x + uCloudOff.x * 1000.0 * wind + 150.0 * hf, p.y, p.z + uCloudOff.y * 1000.0 * wind - 100.0 * hf) / tile + vec3(0.0137, 0.0291, 0.0173) * seed;
+      }
+      float cloudBody(vec3 q, float hf, float wc, float kind, float cov, float far) {
+        vec4 n = texture(tCloudShape, q);
+        // (the Perlin-Worley remapped under its Worley octaves sits in 0.69 to 0.92, its 5th to 95th percentiles: spread
+        // to the full range, or the cell is its 2D footprint extruded, the curtains and columns of the first try; and eased
+        // toward its mean where a pixel spans its finest billows, or the far deck broke into popcorn)
+        float s = mix(cRemap(cRemap(n.r, n.g * 0.625 + n.b * 0.25 + n.a * 0.125 - 1.0, 1.0), 0.70, 0.95), 0.55, far);
+        float pr = cloudProf(hf, wc, kind);
+        // (a weak cell kept its strongest puffs at full density: 20 to 40 m islands as opaque as a cumulus's core, hard white
+        // specks off every cloud and along its edges (the merge review); a cell's strength now caps its density too, so the
+        // field's edge is wisps)
+        float d = cRemap(s * pr, 1.0 - 0.75 * wc, 1.0) * smoothstep(0.0, 0.4, wc);
+        // an overcast closes into one sheet: the low bank in rain, any bank past about 85% cover
+        return max(d, smoothstep(0.82, 1.08, cov) * pr * (0.35 + 0.4 * s));
+      }
+      vec4 cloudSample3(vec3 p, vec4 shape, float scale, float wind, float cov, float footprint, float kind, float tile) {
+        vec2 cp = p.xz * scale + uCloudOff * (scale * 1000.0 * wind) + vec2(shape.w);
+        float base = shape.x + shape.y * cdn(cp * 0.43 + vec2(23.7, 61.2));
+        float thick = shape.z * (0.62 + 0.38 * cdn(cp * 0.71 + vec2(7.3, 49.1)));
+        float hf = (p.y - base) / thick;
+        if (hf <= 0.0 || hf >= 1.0) return vec4(0.0, hf, base, thick);
+        float wc = cloudWc(cloudNoise(cp + vec2(0.12, -0.08) * hf, footprint), cov);
+        if (wc <= 0.0) return vec4(0.0, hf, base, thick);
+        vec3 q = cloudQ(p, wind, hf, tile, shape.w);
+        float d = cloudBody(q, hf, wc, kind, cov, 0.7 * smoothstep(60.0, 260.0, footprint / scale));
+        if (d > 0.0) {
+          vec3 dn = texture(tCloudDetail, q * ${(CLOUD_TILE / CLOUD_DTILE).toFixed(5)}).rgb;
+          float df = mix(dn.r * 0.625 + dn.g * 0.25 + dn.b * 0.125, 0.55, smoothstep(30.0, 140.0, footprint / scale));   // past a pixel's reach, its mean
+          d = cRemap(d, mix(1.0 - df, df, clamp(hf * 4.0, 0.0, 1.0)) * 0.30, 1.0);
+        }
+        return vec4(d * ${CLOUD_GAIN.toFixed(3)}, hf, base, thick);
+      }
+      // a light tap: the same body without the detail, the 2D field to two octaves, at the sample's own base and depth
+      float cloudTap(vec3 p, vec4 shape, float scale, float wind, float cov, float base, float thick, float kind, float tile) {
+        float hf = (p.y - base) / thick;
+        if (hf <= 0.0 || hf >= 1.0) return 0.0;
+        vec2 cp = p.xz * scale + uCloudOff * (scale * 1000.0 * wind) + vec2(shape.w) + vec2(0.12, -0.08) * hf;
+        float wc = cloudWc(0.5 * cdn(cp) + 0.25 * cdn(cp * 2.1 + 13.1) + 0.09375, cov);
+        if (wc <= 0.0) return 0.0;
+        return cloudBody(cloudQ(p, wind, hf, tile, shape.w), hf, wc, kind, cov, 0.0) * ${CLOUD_GAIN.toFixed(3)};
+      }` : ''}
       ${CLOUD_LAYERS.map(cloudLayerShader).join('\n')}
       void main() {
         if (uCloud < 0.003) discard;
         vec3 rd = normalize(vW - cameraPosition);
         float cone = max(length(dFdx(rd)), length(dFdy(rd)));
-        ${REAL ? `cJit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+        // (a phone's 32 steps carried the jitter as a salt-and-pepper grain fixed to the screen, a dirty lens in flight (the
+        // merge review): a phone marches from the midpoints as before the realism pass, its edges a little softer instead)
+        ${REAL ? `${isTouch ? '' : 'cJit = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);'}
         cFwd = 0.5 * pow(max(dot(rd, uSun), 0.0), 6.0);` : ''}
+        ${CLOUD3D.on ? 'cMu = dot(rd, uSun); cBack = clamp(0.9 + 0.3 * (0.91 / pow(1.09 + 0.6 * cMu, 1.5) / 0.7996 - 1.0), 0.85, 1.35);' : ''}
         vec3 acc = vec3(0.0);
         float trans = 1.0, first = 22000.0, fogDepth = 0.0;
         // The flight ceiling is below the upper bank; these spans are ordered
@@ -4118,19 +4335,42 @@
           #endif
           vec3 fogMix = fogColor;
           // the aerial perspective (the chunk's own functions): the air between the eye and the cloud, by the cloud's distance
-          if (fogAP.w > 0.5) { float fT = cFogT / cover; vec3 fv = rd * fT; fogFactor = 1.0 - exp(-apOD(fv, fT)); fogMix = apColor(fv, fT); }
-          col = mix(col, fogMix, fogFactor);
+          vec3 fogAdd = vec3(0.0);
+          if (fogAP.w > 0.5) { float fT = cFogT / cover; vec3 fv = rd * fT; fogFactor = 1.0 - exp(-apOD(fv, fT)); fogMix = apColor(fv, fT); fogAdd = apGlow(fv, fT); }
+          col = mix(col, fogMix, fogFactor) + fogAdd;
         #endif
         gl_FragColor = vec4(col, cover * 0.96);
       }
-    `,
-  });
+    `;
+  }
   // An enclosing proxy covers upward AND downward rays, without a visible plane
   // at the old boundary. Density is sampled in world space, so camera motion
   // never carries the clouds along with it.
   const cloudDeck = new THREE.Mesh(new THREE.SphereGeometry(50000, 16, 12), cloudMat);
   cloudDeck.frustumCulled = false; cloudDeck.renderOrder = -5;
   scene.add(cloudDeck);
+  // the volumes' deck gives way to the first phase's march (the merge review): a program that failed to compile or link (an
+  // ANGLE D3D11 compiler meeting a 128-step loop of volume fetches, say) drew no clouds at all, so the deck's first draw
+  // reads its own program's link status and, failing, builds the first phase's shader and frees the volumes
+  function cloudsPhase1(why) {
+    if (!CLOUD3D.on) return;
+    CLOUD3D.on = false; CLOUD3D.why = why;
+    cloudMat.fragmentShader = cloudFrag(); cloudMat.needsUpdate = true;
+    delete cloudMat.uniforms.tCloudShape; delete cloudMat.uniforms.tCloudDetail;
+    for (const rt of CLOUD3D.rts) rt.dispose();
+    CLOUD3D.rts = []; CLOUD3D.shape = CLOUD3D.detail = null;
+    console.warn('clouds: the first phase\'s march (' + why + ')');
+  }
+  if (CLOUD3D.on) {
+    cloudDeck.onAfterRender = function () {
+      const pr = renderer.properties.get(cloudMat).currentProgram;
+      if (!pr) return;
+      this.onAfterRender = THREE.Object3D.prototype.onAfterRender;   // once
+      let ok = true;
+      try { const gl = renderer.getContext(); ok = pr.diagnostics ? pr.diagnostics.runnable !== false : gl.getProgramParameter(pr.program, gl.LINK_STATUS) !== false; } catch (e) { ok = true; }
+      if (!ok) cloudsPhase1('compile');
+    };
+  }
 
   // ---- low-poly cloud field (Round 67, Mike: use the low-poly models in 3d assets/Clouds to
   // illustrate cloud cover, and keep the current setup in case he goes back). The nine cloud
@@ -4265,7 +4505,7 @@
     envSky.material.uniforms.uCloudOff.value.copy(skyMat.uniforms.uCloudOff.value);
     // the realism pass: the skyglow, the weather's veil and the horizon band follow into the reflections (the saturation
     // undo stays the visible dome's: the probe's light is graded with whatever shows it)
-    for (const k of ['uGlow', 'uSkyFogC']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
+    for (const k of ['uGlow', 'uSkyFogC', 'uSkyGlowC']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
     for (const k of ['uGlowDir', 'uSkyFog']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
     envSky.material.uniforms.uBand.value = skyMat.uniforms.uBand.value;
     // A compact sun glint follows twilight and cloud cover. The old 9-degree
@@ -28278,6 +28518,7 @@ float pinOccGate() {
   const _vA = new THREE.Vector3();
   let moonNow = { el: -90, az: 0, k: 0.5, wax: true };
   let lastEnvEl = 999, envGap = 0, envNextT = 0;   // envGap: a floor between PMREM rebakes (the time-lapse sets it)
+  let lastEnvKey = -9;                              // the weather and the night the probe was last baked under (the realism pass)
   const _c1 = new THREE.Color(), _c2 = new THREE.Color(), _c3 = new THREE.Color();
   const _pz = new THREE.Color(), _ph = new THREE.Color(), _pg = new THREE.Color();   // the frame's sky palette
   let _ephMs = NaN, _ephSun = null, _ephMoon = null;   // solar()/lunar() memo: the clock moves once a minute
@@ -28313,10 +28554,39 @@ float pinOccGate() {
     if (WXFX.boltHold == null) WXFX.boltHoldNew = 3;   // the strike lands two frames on, once a pose set this frame has moved the camera
     WXFX.boltHold = +t; return WXFX.boltHold;
   }
+  // the stars (night#1): the two dozen brightest that rise over Philadelphia, J2000 right ascension (hours), declination
+  // (degrees) and visual magnitude; precession since 2000 moves them a third of a degree, under a dot's width at this scale
+  const STARS = [
+    [6.752, -16.716, -1.46], [14.261, 19.182, -0.05], [18.616, 38.784, 0.03], [5.278, 45.998, 0.08], [5.242, -8.202, 0.13],
+    [7.655, 5.225, 0.34], [5.919, 7.407, 0.42], [19.846, 8.868, 0.76], [4.599, 16.509, 0.86], [16.490, -26.432, 0.96],
+    [13.420, -11.161, 0.97], [7.755, 28.026, 1.14], [22.961, -29.622, 1.16], [20.690, 45.280, 1.25], [10.139, 11.967, 1.35],
+    [6.977, -28.972, 1.50], [7.577, 31.889, 1.58], [5.419, 6.350, 1.64], [5.438, 28.608, 1.65], [5.603, -1.202, 1.69],
+    [5.679, -1.943, 1.77], [12.900, 55.960, 1.77], [11.062, 61.751, 1.79], [2.530, 89.264, 1.98],
+  ];
+  let starsMs = NaN;
+  function starsAt(ms) {
+    if (Math.abs(ms - starsMs) < 30000) return;   // a minute of sidereal turn is a quarter of a degree
+    starsMs = ms;
+    const D = ms / 86400000 + 2440587.5 - 2451545.0;
+    const lst = ((18.697374558 + 24.06570982441908 * D + SITE.lon / 15) % 24 + 24) % 24, lat = SITE.lat * DEG;
+    const out = skyMat.uniforms.uStar.value;
+    for (let i = 0; i < STARS.length && i < out.length; i++) {
+      const [ra, de, m] = STARS[i], H = (lst - ra) * 15 * DEG, dec = de * DEG;
+      const E = -Math.cos(dec) * Math.sin(H);
+      const N = Math.sin(dec) * Math.cos(lat) - Math.cos(dec) * Math.cos(H) * Math.sin(lat);
+      const Up = Math.sin(dec) * Math.sin(lat) + Math.cos(dec) * Math.cos(H) * Math.cos(lat);
+      out[i].set(E, Up, -N, Up > 0 ? 0.7 * Math.pow(10, -0.26 * m) : 0);   // Polaris about 0.2 over the sky, Vega 0.7
+    }
+  }
   function realSky(el, dayF, night, twi, ch, cz) {
     const F = WXFX, cover = WX.cover, U = skyMat.uniforms;
     envLamp = lampUniform.value;
-    if (window.__dbg && !window.__dbg.ap) Object.assign(window.__dbg, { ap: apProbe, boltHold });
+    if (window.__dbg && !window.__dbg.ap) Object.assign(window.__dbg, { ap: apProbe, boltHold, cloudsPhase1, clouds3d: () => ({ on: CLOUD3D.on, ms: CLOUD3D.ms, why: CLOUD3D.why, gpu: CLOUD3D.gpu }) });
+    // the stars: only the brightest in a city's sky, gone behind a deck, in fog, rain and smoke, and washed out at dusk and
+    // under a bright moon's sky
+    U.uStarK.value = smooth(0.55, 1, night) * (1 - smooth(0.3, 0.75, cover)) * (1 - Math.max(F.fog, F.rain, F.snow, F.gloom)) * clamp((F.haze - 0.3) / 0.7, 0, 1)
+      * (1 - 0.35 * (moonNow.el > 0 ? moonNow.k : 0));
+    if (U.uStarK.value > 0.002) starsAt(_ephMs);
     // the city's skyglow (night#1, weather#3): warm, a little more under a deck that the streets light from below, less in a
     // fog that hides it; brighter toward Center City from out in the neighbourhoods
     const glowK = night * (0.5 + 0.2 * cover) * (1 - 0.5 * F.fog);
@@ -28329,9 +28599,11 @@ float pinOccGate() {
     const rk = Math.max(F.rain, F.snow * 0.8, F.gloom * 0.8);
     cloudMat.uniforms.uWxDeck.value.set(380 * rk, 1 - 0.7 * rk, 0.15 * rk + 0.08 * F.gloom);
     U.uBand.value = clamp(1 - Math.max(F.rain, F.snow * 0.9, F.fog, F.gloom * 0.7), 0, 1);
-    U.uSatK.value = POST.on ? 1 / Math.max(0.5, gradeU.uSat.value) : 1;
+    // (the grade's own saturation at boot, not the frame's: a wet day's and a lamp-lit night's desaturation, which the weather
+    // and the lamps lay over it, belongs to the sky as much as to the city; and theirs, set after this, came a frame late)
+    U.uSatK.value = POST.on ? 1 / Math.max(0.5, SKY_SAT0) : 1;
     cloudMat.uniforms.uBolt.value.set(F.boltX || 0, F.boltZ || 0, F.flash * 1.6, 1500);
-    if (!AP.on) { U.uSkyFog.value.x = 0; return; }
+    if (!AP.on) { U.uSkyFog.value.x = 0; U.uSkyFog.value.y = 0; return; }
     // visibility (sky-light#1, #2, weather#1), metres: 45 km in clean air, the city's PM2.5 scaling it (Round 75), and the
     // weather's extinction added to the air's (per metre, a visibility being 3.912 over it): rain about 6 km, a downpour
     // 2, snow 1.5, a blizzard 500 m, a storm's core darker still, the haze over a ground fog 7 km. The night keeps Round 51's
@@ -28351,11 +28623,16 @@ float pinOccGate() {
     apU.fogAP.value.set(b, 1 / H, 0, 1);
     const bl = F.fog * 3.912 / 320;   // a radiation fog: 320 m on the street, a layer 55 m deep that the towers stand out of
     apU.fogAPLow.value.set(bl, 1 / 55, 8, 0);
-    // the distances the rest of the page reads: cullFogged drops a chunk past the 0.5% line along the clearest ray (at the
-    // eye's own height), and THREE.Fog's pair stays meaningful for a material that kept the linear chunk
-    let far = Math.min(5.3 / (b * Math.exp(-Math.max(ye, 0) / H)), 1.25 * farN);   // past 1.25 farN a chunk is 98% air
+    // the distances the rest of the page reads: cullFogged drops a chunk past the 0.5% line along the clearest ray a chunk
+    // can be seen by (from the eye to the top of the tallest tower, through the haze AND the ground fog: an eye in a
+    // radiation fog sees nothing past 2 to 3 km but the towers' tops), and never past farN, Round 52's 40 km by day and
+    // Round 51's 16 km by night (a phone's night frame); from 0.75 of that line the fog chunk closes the old wall over
+    // what the air has left (3 per cent at 40 km from the street, a fifth from 1 km up), so a dropped chunk never pops
+    const lm = (h0, h1, s) => (h1 - h0 > 1e-3 ? (Math.exp(-h0 / s) - Math.exp(-h1 / s)) * s / (h1 - h0) : Math.exp(-h0 / s));
+    const he = Math.max(ye, 0), hl = Math.max(ye - 8, 0);
+    let far = Math.min(5.3 / (b * lm(he, Math.max(he, AP_TOP), H) + bl * lm(hl, Math.max(hl, AP_TOP - 8), 55)), farN);
     if (gf) far = Math.min(far, gf);
-    scene.fog.far = Math.min(far, 80000); scene.fog.near = scene.fog.far * 0.05;
+    scene.fog.far = far; scene.fog.near = far * 0.75;
     // the air's colours (display until the pre-images): the horizon's as applyLighting left it (the weather's greys, the
     // smoke's tan) with the city's glow in it as the dome's horizon has it; the twilight's shift away from the sun (the
     // dome's own term); and toward the sun its glow and aureole, as strong as the dome's and gone under a deck
@@ -28382,8 +28659,10 @@ float pinOccGate() {
     // the dome's veil: what the weather and the smoke add over the clear air (by day's measure), up through the haze's
     // height and the fog's layer from the eye
     const bx = Math.max(0, 3.912 / Vd - 3.912 / Vc0);
-    U.uSkyFog.value.set(bx * H * Math.exp(-Math.max(ye, 0) / H) + bl * 55 * Math.exp(-Math.max(ye - 8, 0) / 55), 0, 0, 0);
-    U.uSkyFogC.value.copy(fogD).add(_apY.copy(glowD).multiplyScalar(0.6 * Math.exp(-Math.max(ye - 8, 0) / 60)));   // from the street, a fog's sky glows with the lamps
+    // (and the lamps' light in the low air straight up from the eye: apGlow's layer, 60 m deep over the datum)
+    U.uSkyFog.value.set(bx * H * Math.exp(-Math.max(ye, 0) / H) + bl * 55 * Math.exp(-Math.max(ye - 8, 0) / 55), (b + bl) * 60 * Math.exp(-Math.max(ye - 8, 0) / 60), 0, 0);
+    U.uSkyFogC.value.copy(fogD);
+    U.uSkyGlowC.value.copy(glowD);
   }
   function applyLighting() {
     const ms = clockUtcMs(clock, clock.minutes);
@@ -28410,9 +28689,10 @@ float pinOccGate() {
     // erased its disc, so the roofs and the river still threw a moonglade at an overcast sky
     const deckK = 1 - 0.72 * WX.cover - 0.16 * smooth(0.75, 1.0, WX.cover);
     // the realism pass (sky-light#5): a broken sky is full sun beside sharp cloud shadow (cloudShadowPatch masks the direct
-    // light under each cloud), so the sun itself dims only as the deck closes; the moon keeps Round 88's rule. A radiation
-    // fog takes most of the sun too
-    const sunDeckK = REAL ? (1 - 0.80 * smooth(0.55, 1.0, WX.cover) - 0.16 * smooth(0.75, 1.0, WX.cover)) * (1 - 0.7 * WXFX.fog) : deckK;
+    // light under each cloud), so the sun itself dims only as the deck closes; the moon keeps Round 88's rule. The fog, the
+    // rain and the closed deck's last step are keyWeather's (at the exposure line, with this share passed in, so the camera
+    // lifts for the sun the city actually lost: the merge review found a 0.7 cover lifted 17 per cent for a sun it kept)
+    const sunDeckK = REAL ? 1 - 0.80 * smooth(0.55, 1.0, WX.cover) - 0.16 * smooth(0.75, 1.0, WX.cover) : deckK;
     glintK = (1 - 0.9 * smooth(0.25, 1.0, WX.cover)) * (1 - 0.6 * WXFX.gloom);   // the water's sparkle and the glass reveals: gone under the deck
     if (el > -3) {
       sunDir.copy(sp.dir);
@@ -28535,14 +28815,14 @@ float pinOccGate() {
     // the realism pass (sky-light#4): the ground's share of the fill is the sunlit street's bounce, so it is as warm as the
     // sun that lights it and it fades with the sun under a closing deck (a clear noon keeps Round 54's colour exactly)
     if (REAL && dayF > 0.003) {
-      hemi.groundColor.multiplyScalar(1 - 0.3 * dayF * (1 - sunDeckK * (1 - 0.55 * WXFX.gloom)));
+      hemi.groundColor.multiplyScalar(1 - 0.3 * dayF * (1 - sunDeckK * (1 - 0.9 * WXFX.fog) * (1 - 0.55 * WXFX.gloom)));   // (keyWeather's fog term)
       hemi.groundColor.lerp(_c2.copy(sun.color).multiply(_c3.set(0x9c8e74)), 0.25 * dayF * (1 - smooth(4, 30, el)));
       if (night > 0.003) hemi.color.lerp(_c2.set(0x4c3e32), 0.5 * night * WX.cover);
     } else if (REAL && night > 0.003) hemi.color.lerp(_c2.set(0x4c3e32), 0.5 * night * WX.cover);
     cloudShU.uCloudSh.value = (REAL ? 1 : 0.85) * dayF * (1 - 0.5 * WXFX.gloom);
-    cloudShU.uCloudSlant.value.set(sunDir.x, sunDir.z).multiplyScalar(CLOUD_ALT / Math.max(sunDir.y, 0.25));   // a cloud's shadow lies where its sun ray lands
+    cloudShU.uCloudSlant.value.set(sunDir.x, sunDir.z).multiplyScalar((CLOUD3D.on ? CLOUD3D_ALT : CLOUD_ALT) / Math.max(sunDir.y, 0.25));   // a cloud's shadow lies where its sun ray lands
     hemi.intensity = (0.12 + 0.42 * dayF + (REAL ? (0.06 + 0.1 * WX.cover) * night : 0)) * (1 - 0.18 * WX.cover) * (1 - 0.4 * WXFX.gloom) + flashG * 1.6;
-    renderer.toneMappingExposure = (0.94 + 0.11 * dayF) * keyWeather(dayF, deckK);   // the realism pass: the key under the weather, and the camera's exposure with it
+    renderer.toneMappingExposure = (0.94 + 0.11 * dayF) * keyWeather(dayF, sunDeckK);   // the realism pass: the key under the weather, and the camera's exposure with it
     postU.uExposure.value = renderer.toneMappingExposure;
     if (REAL) realSky(el, dayF, night, twi, ch, cz);   // the realism pass: the air, the skyglow, the rain deck (before the fog colour's pre-image)
     if (POST.on) pUndoColor(scene.fog.color, postU.uExposure.value);   // the fog mixes in the linear target: its colour goes in as the pre-image
@@ -28559,7 +28839,11 @@ float pinOccGate() {
       nbMat.opacity = nbFade * 0.96;
       nbMesh.visible = nbFade > 0.02;
     }
-    if (Math.abs(el - lastEnvEl) > 3 && (!envGap || performance.now() >= envNextT)) { lastEnvEl = el; envNextT = performance.now() + envGap; refreshEnv(); }
+    // (the realism pass, night#1 (g): the probe is every matte surface's fill as well as the glass's sky, so it follows the
+    // weather as it eases in and the night's glow under a closing deck, not only the sun's height and a new report)
+    const envKey = WX.cover + 0.8 * Math.max(WXFX.rain, WXFX.snow, WXFX.fog, WXFX.gloom) + 0.5 * night;
+    if (REAL && Math.abs(envKey - lastEnvKey) > 0.15) lastEnvEl = 999;
+    if (Math.abs(el - lastEnvEl) > 3 && (!envGap || performance.now() >= envNextT)) { lastEnvEl = el; lastEnvKey = envKey; envNextT = performance.now() + envGap; refreshEnv(); }
     if (towerGlassMat) towerGlassMat.emissiveIntensity = night * 0.95;
     if (towerVarMat) towerVarMat.emissiveIntensity = night * 0.95;
     // (core glass night lighting lives in rylandGlassMat's panel shader, via uNight)

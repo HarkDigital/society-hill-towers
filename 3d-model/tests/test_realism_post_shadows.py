@@ -98,7 +98,8 @@ class Switches(unittest.TestCase):
         self.assertIn('const texel = ext * 2 / L.shadow.mapSize.x;', s)
 
     def test_exposure_line(self):
-        self.assertIn('renderer.toneMappingExposure = (0.94 + 0.11 * dayF) * keyWeather(dayF, deckK);', self.s)
+        # (the sky's merge: keyWeather is handed the share of the key the sun was actually given, sunDeckK under REAL)
+        self.assertIn('renderer.toneMappingExposure = (0.94 + 0.11 * dayF) * keyWeather(dayF, sunDeckK);', self.s)
 
 
 @unittest.skipUnless(shutil.which('node'), 'node unavailable')
