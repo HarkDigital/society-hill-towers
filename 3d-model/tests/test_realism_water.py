@@ -10,7 +10,10 @@ cartoony. This should apply to all surfaces/water/anything").
   kept and one under it is clipped by the oblique near plane;
 - the wave slopes are a zero-mean, unit-rms field, longer along the wind, whose third channel holds the squared slope;
 - a pier is found by the water round it, a riverside park is not;
-- the glint is clamped on a phone, and the new geometry streams are 4-byte aligned floats."""
+- the glint is clamped on a phone, and the new geometry streams are 4-byte aligned floats;
+- every river sheet shades alike (no shore term: it drew a seam along the pierhead line where the core's quad meets
+  the outer sheets), and the one calmer reach is the Schuylkill's pool above the Fairmount Dam;
+- a pier's deck is weathered concrete in the legacy linear palette, not the white slab it drew at 0x5c5a54."""
 import json
 from pathlib import Path
 import re
@@ -219,6 +222,53 @@ console.log(JSON.stringify({ tried, inside, kept, clipped, far: REFL.cam.far }))
         self.assertEqual(r['kept'], r['tried'])
         self.assertEqual(r['clipped'], r['tried'])
         self.assertEqual(r['far'], 3500)
+
+
+
+def smoothstep(a, b, x):
+    t = min(1.0, max(0.0, (x - a) / (b - a)))
+    return t * t * (3.0 - 2.0 * t)
+
+
+class Surface(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.s = (ROOT / 'app.js').read_text()
+        cls.real = cut_function(cls.s, 'liquifyReal')
+
+    def test_every_sheet_shades_alike(self):
+        # the core's Delaware quad has no shore alpha and the outer sheets do: any term on it is a seam
+        self.assertNotIn('wsh', self.real)
+        self.assertNotIn('USE_COLOR_ALPHA', self.real)
+        old = cut_function(self.s, 'liquify')
+        self.assertIn('float wsh = vColor.a;', old)   # ?real=0 keeps Round 54's shallows
+
+    def test_the_pool_above_the_dam(self):
+        m = re.search(r'float wPool = (.*);\n', self.real)
+        self.assertIsNotNone(m)
+        expr = m.group(1).replace('vWq.x', 'x').replace('vWq.z', 'z')
+        pool = lambda x, z: eval(expr, {'smoothstep': smoothstep, 'x': x, 'z': z})
+        for x, z in [(-3520, -2626), (-3796, -2682), (-3600, -2420), (-4224, -4437), (-6500, -6800)]:   # Boathouse Row, the pool, East Park
+            self.assertGreater(pool(x, z), 0.99, (x, z))
+        for x, z in [(-3300, -2200), (-3500, -2250), (-3000, -500), (-3500, 3000), (600, -800), (6000, -9000), (-2500, 6500)]:   # the tailwater, the tidal Schuylkill, the Delaware
+            self.assertLess(pool(x, z), 0.01, (x, z))
+        self.assertIn('* (1.0 - 0.7 * wPool);', self.real)
+        self.assertIn('uCoxMunk * 0.45 * (1.0 - 0.7 * wPool)', self.real)
+
+    def test_pier_albedos(self):
+        m = re.search(r'const PIER_DECK = 0x([0-9a-f]{6}), PIER_FASCIA = 0x([0-9a-f]{6}), PILE_COL = 0x([0-9a-f]{6})', self.s)
+        self.assertIsNotNone(m)
+        deck, fascia, pile = [[int(h[i:i + 2], 16) for i in (0, 2, 4)] for h in m.groups()]
+        self.assertLessEqual(max(deck), 0x30)   # 0x5c5a54 drew 220 of 255 in the sun
+        self.assertGreaterEqual(min(deck), 0x18)
+        self.assertLess(max(fascia), min(deck))
+        self.assertLess(max(pile), min(deck))
+
+    def test_delaware_body_is_not_khaki(self):
+        m = re.search(r'const WATER_BODY = \{ del: 0x([0-9a-f]{6})', self.s)
+        r, g, b = [int(m.group(1)[i:i + 2], 16) for i in (0, 2, 4)]
+        self.assertGreaterEqual(b, r)
+        self.assertGreater(g, r)
 
 
 if __name__ == '__main__':

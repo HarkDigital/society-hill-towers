@@ -4111,7 +4111,7 @@
   //   phone's is clamped, it has no post), with point facets sparkling near the eye on a computer
   // - rain rings the surface near the eye, and every moving vessel within 3 km draws a bow wave, foam astern and its
   //   Kelvin arms (waterWakes)
-  const WATER_BODY = { del: 0x0a0b08, sch: 0x070a06, basin: 0x1a211f };   // linear albedos (the legacy pipeline): silt olive, green pool, a fountain's stone floor
+  const WATER_BODY = { del: 0x090b09, sch: 0x070a06, basin: 0x1a211f };   // linear albedos (the legacy pipeline): silt olive-grey (0x0a0b08 read khaki from the air), green pool, a fountain's stone floor
   if (REAL) COLORS.water = WATER_BODY.del;   // every river sheet, slip and OSM ring takes its body from here
   // the wave slopes: a 256 square tile of 32 m from a Phillips spectrum with a 6 m/s wind along +x, through three inverse
   // FFTs (the height and its two slopes; the real part of each, which keeps the spectrum). RG the slopes over 4 rms about
@@ -4257,11 +4257,11 @@ vec2 wRing(vec2 rc, float tt) {
           '  float wsc = ' + scale.toFixed(3) + ', wsp = ' + speed.toFixed(3) + ', wamp = ' + amp.toFixed(3) + ' * uWAmp;\n' + `
   vec2 wd = normalize(uWDir), wp = vec2(-wd.y, wd.x);
   float wdist = length(vViewPosition);
-#ifdef USE_COLOR_ALPHA
-  float wsh = vColor.a;
-#else
-  float wsh = 1.0;
-#endif
+  // no shore term: the core's Delaware is one quad with no shore alpha, the outer sheets carry one, and the pierhead line
+  // read as a bank to the outer sheet (the core's ground there is the bulkhead), so a shore term drew a straight seam along
+  // it. Every river sheet shades alike. The one place the river is calmer is the Schuylkill's pool above the Fairmount Dam
+  // (Boathouse Row's mirror): north of the crest (282 degrees from the gazebo) and west of the Water Works, where no Delaware is
+  float wPool = (1.0 - smoothstep(-60.0, -15.0, vWq.z + 2376.0 + 0.2125 * (vWq.x + 3397.0))) * (1.0 - smoothstep(-3150.0, -2900.0, vWq.x));
   float fpx = max(fwidth(vWq.x), fwidth(vWq.z)) / wsc;
   // wind-gust patches: two slow crossed envelopes, cat's paws and calms
   float wpat = 0.5 + 0.5 * sin(dot(vWq.xz, wd) * 0.011 + uTime * 0.22 * wsp) * sin(dot(vWq.xz, wp) * 0.0075 - uTime * 0.17 * wsp);
@@ -4282,7 +4282,7 @@ vec2 wRing(vec2 rc, float tt) {
   // wind rows: glassy lanes 8 to 40 m apart along the wind, a little calmer than the chop round them
   float wrow = wvn(vec2(dot(vWq.xz, wp) / 14.0, dot(vWq.xz, wd) / 260.0 - uTime * 0.004));
   float slick = smoothstep(0.78, 0.92, wrow) * smoothstep(0.4, 1.0, uWAmp);
-  float wk = wamp * (0.55 + 0.75 * wpat) * (1.0 - 0.6 * slick) * (0.8 + 0.2 * smoothstep(0.0, 0.25, wsh));
+  float wk = wamp * (0.55 + 0.75 * wpat) * (1.0 - 0.6 * slick) * (1.0 - 0.7 * wPool);
   vec2 g = (wd * ws2.x + wp * ws2.y) * wk;
   wVar *= wk * wk;
   // rain: drop rings near the eye (a phone draws one layer), and a rougher, duller mirror
@@ -4326,10 +4326,11 @@ vec2 wRing(vec2 rc, float tt) {
   vec3 wn = normalize(vec3(-g.x, 1.0, -g.y));
   normal = normalize(mix(normal, normalize(mat3(viewMatrix) * wn), 0.92));   // the PBR normal is view-space; wn stays world-space
   diffuseColor.a = opacity;
-  // the body: silt at two scales, a browner shallows (under 6 per cent, so no sheet's cut edge can show), greyer under cloud
-  float turb = wvn(vWq.xz / 620.0 + 3.1) * 0.65 + wvn(vWq.xz / 210.0 - 1.7) * 0.35;
-  diffuseColor.rgb *= mix(vec3(0.86, 0.92, 0.95), vec3(1.12, 1.06, 0.90), turb);
-  diffuseColor.rgb *= mix(vec3(1.06, 1.03, 0.95), vec3(1.0), smoothstep(0.0, 0.5, wsh));
+  // the body: silt at two scales, the pair bent by a third so the clearer channel and the silty water read as plumes from
+  // the air rather than as noise; greyer under cloud
+  vec2 tw = vec2(wvn(vWq.xz / 340.0 + 7.3), wvn(vWq.xz / 340.0 - 4.1)) - 0.5;
+  float turb = wvn(vWq.xz / 620.0 + 3.1 + tw * 1.1) * 0.65 + wvn(vWq.xz / 210.0 - 1.7 + tw * 0.6) * 0.35;
+  diffuseColor.rgb *= mix(vec3(0.84, 0.91, 0.96), vec3(1.14, 1.08, 0.95), smoothstep(0.15, 0.85, turb));
   float wl = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
   diffuseColor.rgb = mix(diffuseColor.rgb, vec3(wl) * vec3(1.02, 1.0, 0.94), 0.45 * uCover);
 ` + (bodyK !== 1 ? '  diffuseColor.rgb *= ' + bodyK.toFixed(3) + ';\n' : '') + `
@@ -4369,7 +4370,7 @@ vec2 wRing(vec2 rc, float tt) {
   // the glitter: Beckmann facets with the wind's variance and the footprint's own, in the sun's (or the moon's) light
   vec3 wL = normalize(uSun), wH = normalize(wL + wview);
   float NoH = max(dot(wn, wH), 1e-3), NoL = max(dot(wn, wL), 0.0);
-  float s2 = clamp(uCoxMunk * 0.45 + wVar, 0.0015, 0.25);
+  float s2 = clamp(uCoxMunk * 0.45 * (1.0 - 0.7 * wPool) + wVar, 0.0015, 0.25);
   float c2 = NoH * NoH, t2 = (1.0 - c2) / c2;
   float Dk = exp(-t2 / s2) / (3.14159 * s2 * c2 * c2);
   float Fh = 0.02 + 0.98 * pow(1.0 - max(dot(wH, wview), 0.0), 5.0);
@@ -4540,7 +4541,9 @@ vec2 wRing(vec2 rc, float tt) {
   // along every water-facing edge; a park on a pier (the Washington Avenue Pier) is its lawn on such a deck. The parts
   // gather here and raisedFlush builds them once a tier's loop is done
   const RAISED = { basins: 0, lakes: 0, piers: 0, piles: 0, jets: 0, water: [], solid: [], deck: [], piles3: [], jets3: [], jetMesh: null };
-  const PIER_DECK = 0x5c5a54, PIER_FASCIA = 0x2c2a26, PILE_COL = 0x221d18, COPING_COL = 0x5d5a54, BANK_COL = 0x2f2b24;
+  // linear albedos (the legacy pipeline, where a hex is used as it stands): the deck weathered concrete about 170 in the sun
+  // (0x5c5a54 drew 220, the white paper slabs again), the fascia and soffit wet and stained under it, the piles creosote
+  const PIER_DECK = 0x24231f, PIER_FASCIA = 0x151411, PILE_COL = 0x14110e, COPING_COL = 0x5d5a54, BANK_COL = 0x2f2b24;
   // the landmark fountains' jets: [x, z, the ring's reach, jets as [dx, dz, height] or a grid]
   const FOUNTAIN_JETS = [
     { x: -2205, z: -1379, r: 30, jets: [[0, 0, 9]].concat(Array.from({ length: 12 }, (_, k) => [Math.cos(k * Math.PI / 6) * 11, Math.sin(k * Math.PI / 6) * 11, 2.5])) },   // Swann Memorial Fountain
