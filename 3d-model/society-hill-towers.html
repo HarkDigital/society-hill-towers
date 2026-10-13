@@ -11394,7 +11394,8 @@ RB.add({
     return g;
   }
   function themeWashGeometry(sheets) {
-    const pos = [], wash = [], slots = [], weights = [];
+    const pos = [], wash = [], slots = [], weights = [], house = [];
+    let anyHouse = false;
     for (const sheet of sheets) {
       const g = sheet.geom.index ? sheet.geom.toNonIndexed() : sheet.geom;
       const p = g.attributes.position;
@@ -11410,6 +11411,7 @@ RB.add({
           pos.push(p.getX(j), p.getY(j), p.getZ(j));
           wash.push((p.getY(j) - y0) / Math.max(y1 - y0, .001), sheet.grad || 0);
           slots.push(sheet.slot); weights.push(sheet.w);
+          if (sheet.house) { house.push(sheet.house.r, sheet.house.g, sheet.house.b); anyHouse = true; } else house.push(-1, -1, -1);
         }
       }
       if (g !== sheet.geom) g.dispose();
@@ -11419,6 +11421,7 @@ RB.add({
     g.setAttribute('color', new THREE.Float32BufferAttribute(new Float32Array(pos.length), 3));
     g.setAttribute('aWash', new THREE.Float32BufferAttribute(wash, 2));
     g.userData.slot = new Float32Array(slots); g.userData.w = new Float32Array(weights);
+    g.userData.house = anyHouse ? new Float32Array(house) : null;   // Round 185: a sheet's own plain-night colour, -1 for the house white
     return g;
   }
   function themeWashPatch(sh) {
@@ -13086,6 +13089,10 @@ RB.add({
   function dropUploadedArray() { this.array = null; }
   const PIER_RINGS = [];   // every pier and paved flat, with its deck height, for the pier lamps (Round 148): { poly, y: fixed top or null, lift over the ground }
   let CUSTOM_HOUSE_AT = null;   // the Custom House's footprint and frame, for its night wash in the skyline lights (Round 145)
+  // Round 185: its rebuilt stages (metres over its ground), shared by the model and its night: the base's limestone ground
+  // floor, brick and top storey, the brick shaft (32 m square), the pale stage (24) and its attic (21), the lantern's head,
+  // its radius and the dome's
+  const CH_DIMS = { base0: 7, base1: 21.5, base2: 26, shaftW: 32, shaft1: 58, stageW: 24, stage1: 67, atticW: 21, attic1: 70, lantern1: 80.5, lanternR: 7.2, domeR: 6.6 };
   step('Restoring the landmarks', () => {
     const walls = [];   // gets the window shader
     const detail = [];  // roofs, spires, columns, trim — plain material
@@ -13387,32 +13394,83 @@ RB.add({
 
     // --- skyline corrections: buildings OSM tags at the 13 m default
     {
-      // US Custom House (1934): limestone base, red-brick shaft, then the white
-      // stepped crown — square stage, two octagonal drums, colonnaded lantern, dome
+      // US Custom House (1934, Ritter & Shay; 17 storeys, about 88 m to the dome). Round 185 (Mike, with his own night photo:
+      // "The us customs house needs a lot of work"): rebuilt from the photo and the GSA and HABS records. The base fills
+      // the block: a limestone ground floor, brick, and a limestone top storey of arched windows under a balustrade; the
+      // tower is a brick shaft with limestone centre panels to a setback balustrade with an eagle at each corner and urns
+      // between; then a pale stage between brick corner piers, an attic and cornice with urns at its corners, the
+      // octagonal lantern (pilasters at its corners, a tall dark latticed arch in each face), its cornice, a dark dome
+      // and an antenna. Its night (in the skyline lights): gold on the base's top storey and on the lantern, light blue
+      // on the pale stage, a red ring at the dome's foot, as the photo; a themed night deals the theme across them
       const b = get('United States Custom House');
       if (b) {
         const m0 = mark();
         const ob = orientedBox(b.poly);
         const ry = ryAlign(obbAxis(ob).ax, obbAxis(ob).az);
-        aw(buildingGeom(b.poly, b.holes, 9, -1.5), '#b8ae97', 2);
-        aw(buildingGeom(b.poly, b.holes, 40, 9), '#54302a', 2);
-        aw(box(33, 9, 33, ob.cx, 40 + 4.5, ob.cz, ry), '#b5ac96', 2);
+        const D = CH_DIMS, cs = Math.cos(ry), sn = Math.sin(ry);
+        const P = (lu, lv) => [ob.cx + lu * cs + lv * sn, ob.cz - lu * sn + lv * cs];   // the tower's own frame (three's rotateY)
+        const LIME = '#b8ae97', LIME_L = '#c9c1ab', BRICK = '#5a3128', DARK = '#1c1a17', DOME = '#141614';   // the detail material lifts a flat far past its stored value: the dome and the arches stored near black
+        const ring = (pts, d) => { const [pcx, pcz] = polyCentroid(pts); return pts.map(([x, z]) => { const dx = x - pcx, dz = z - pcz, l = Math.hypot(dx, dz) || 1; return [x + dx / l * d, z + dz / l * d]; }); };
+        // the base
+        aw(buildingGeom(b.poly, b.holes, D.base0, -1.5), LIME, 4);
+        aw(buildingGeom(b.poly, b.holes, D.base1, D.base0), BRICK, 0);
+        aw(buildingGeom(b.poly, b.holes, D.base2, D.base1), LIME_L, 4);
+        ad(buildingGeom(ring(b.poly, 0.15), [ring(b.poly, -0.45)], D.base2 + 1.15, D.base2), '#c2b8a0');   // the balustrade
+        // the shaft and its limestone centre panels
+        const S = D.shaftW / 2;
+        aw(box(D.shaftW, D.shaft1 - D.base2, D.shaftW, ob.cx, (D.base2 + D.shaft1) / 2, ob.cz, ry), BRICK, 19);
+        for (const [nu, nv] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const [x, z] = P(nu * (S + 0.25), nv * (S + 0.25));
+          aw(box(nu ? 0.5 : 12, D.shaft1 - D.base2 - 2, nu ? 12 : 0.5, x, (D.base2 + D.shaft1) / 2 + 1, z, ry), LIME_L, 17);
+        }
+        // the setback: balustrade, an eagle at each corner, urns between
+        { const sq = (h) => [P(-h, -h), P(h, -h), P(h, h), P(-h, h)];
+          ad(buildingGeom(sq(S + 0.2), [sq(S - 0.6)], D.shaft1 + 1.2, D.shaft1), '#c8bea6'); }
+        const eagle = (lu, lv, face) => {
+          const [x, z] = P(lu, lv), yb = D.shaft1 + 1.2;
+          const parts = [[box(1.0, 1.7, 1.3, 0, 0.85, 0, 0)], [box(0.55, 0.6, 0.6, 0, 2.0, 0.25, 0)], [box(0.25, 0.25, 0.45, 0, 2.0, 0.7, 0)]];
+          for (const sw of [-1, 1]) { const w = new THREE.BoxGeometry(1.5, 1.0, 0.18); w.rotateZ(sw * 0.55); w.translate(sw * 1.05, 1.7, -0.1); parts.push([w]); }
+          for (const [g] of parts) { g.rotateY(ry + face); g.translate(x, yb, z); ad(g, '#d4ccb8'); }
+          const pl = box(1.6, 0.6, 1.6, x, yb - 0.3, z, ry); ad(pl, '#c2b8a0');
+        };
+        eagle(S - 0.6, S - 0.6, Math.PI / 4); eagle(-S + 0.6, S - 0.6, -Math.PI / 4); eagle(S - 0.6, -S + 0.6, 3 * Math.PI / 4); eagle(-S + 0.6, -S + 0.6, -3 * Math.PI / 4);
+        const urn = (lu, lv, y) => {
+          const [x, z] = P(lu, lv);
+          const g1 = new THREE.CylinderGeometry(0.45, 0.55, 0.5, 10); g1.translate(x, y + 0.25, z);
+          const g2 = new THREE.SphereGeometry(0.7, 10, 7); g2.scale(1, 0.9, 1); g2.translate(x, y + 1.05, z);
+          const g3 = new THREE.CylinderGeometry(0.12, 0.35, 0.8, 8); g3.translate(x, y + 1.95, z);
+          for (const g of [g1, g2, g3]) ad(g, '#d4ccb8');
+        };
+        for (const [lu, lv] of [[0, S - 0.4], [0, -S + 0.4], [S - 0.4, 0], [-S + 0.4, 0]]) urn(lu, lv, D.shaft1 + 1.2);
+        // the pale stage between brick corner piers, the attic and its cornice, urns at the corners
+        const U = D.stageW / 2;
+        aw(box(D.stageW, D.stage1 - D.shaft1, D.stageW, ob.cx, (D.shaft1 + D.stage1) / 2, ob.cz, ry), '#cfc7b2', 17);
+        for (const su of [-1, 1]) for (const sv of [-1, 1]) { const [x, z] = P(su * (U - 1.3), sv * (U - 1.3)); ad(box(3.0, D.stage1 - D.shaft1 + 1.2, 3.0, x, (D.shaft1 + D.stage1 + 1.2) / 2, z, ry), '#5e3329'); }
+        ad(box(D.atticW, D.attic1 - D.stage1, D.atticW, ob.cx, (D.stage1 + D.attic1) / 2, ob.cz, ry), '#c9c0aa');
+        ad(box(D.atticW + 1.4, 0.6, D.atticW + 1.4, ob.cx, D.attic1 + 0.3, ob.cz, ry), '#d2c9b3');
+        for (const su of [-1, 1]) for (const sv of [-1, 1]) urn(su * (D.atticW / 2 - 0.6), sv * (D.atticW / 2 - 0.6), D.attic1 + 0.6);
+        // the lantern: an octagon with a pilaster at each corner and a tall dark latticed arch in each face
         const facet = (g) => { const f = g.toNonIndexed(); f.computeVertexNormals(); return f; };
-        const oct1 = new THREE.CylinderGeometry(13.2, 14.4, 13, 8);
-        oct1.rotateY(ry + Math.PI / 8); oct1.translate(ob.cx, 49 + 6.5, ob.cz);
-        ad(facet(oct1), '#b2a993');
-        const oct2 = new THREE.CylinderGeometry(9.2, 10.0, 11, 8);
-        oct2.rotateY(ry + Math.PI / 8); oct2.translate(ob.cx, 62 + 5.5, ob.cz);
-        ad(facet(oct2), '#bab19b');
-        const lan = new THREE.CylinderGeometry(5.6, 6.4, 8.5, 8);
-        lan.translate(ob.cx, 73 + 4.25, ob.cz);
-        ad(facet(lan), '#c0b7a1');
-        const dome = new THREE.CylinderGeometry(1.6, 5.8, 5.5, 8);
-        dome.translate(ob.cx, 81.5 + 2.75, ob.cz);
-        ad(facet(dome), '#a89f8a');
-        const fin = new THREE.CylinderGeometry(0.3, 1.4, 2.8, 6);
-        fin.translate(ob.cx, 87 + 1.4, ob.cz);
-        ad(facet(fin), '#b2a993');
+        const L0 = D.attic1 + 0.6, L1 = D.lantern1, LR = D.lanternR;
+        const lan = new THREE.CylinderGeometry(LR, LR + 0.3, L1 - L0, 8); lan.rotateY(ry + Math.PI / 8); lan.translate(ob.cx, (L0 + L1) / 2, ob.cz);
+        ad(facet(lan), '#cbc2ab');
+        const ap = (LR + 0.15) * Math.cos(Math.PI / 8);
+        for (let k = 0; k < 8; k++) {
+          const ang = ry + k * Math.PI / 4;
+          const fx = Math.sin(ang), fz = Math.cos(ang);   // a face's outward direction (the octagon turned an eighth so a face fronts each axis)
+          const op = new THREE.BoxGeometry(2.3, (L1 - L0) * 0.62, 0.3); op.translate(0, 0, 0); op.rotateY(ang); op.translate(ob.cx + fx * ap, L0 + (L1 - L0) * 0.47, ob.cz + fz * ap);
+          ad(op, DARK);
+          const ang2 = ang + Math.PI / 8, px = Math.sin(ang2) * (LR + 0.2), pz = Math.cos(ang2) * (LR + 0.2);
+          const pil = new THREE.BoxGeometry(0.7, L1 - L0, 0.7); pil.rotateY(ang2); pil.translate(ob.cx + px, (L0 + L1) / 2, ob.cz + pz);
+          ad(pil, '#d6cdb7');
+        }
+        const lc = new THREE.CylinderGeometry(LR + 0.9, LR + 0.6, 0.8, 8); lc.rotateY(ry + Math.PI / 8); lc.translate(ob.cx, L1 + 0.4, ob.cz);
+        ad(facet(lc), '#d2c9b3');
+        // the dome and the antenna
+        const dm = new THREE.SphereGeometry(D.domeR, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2); dm.scale(1, 1.0, 1); dm.translate(ob.cx, L1 + 0.8, ob.cz);
+        ad(dm, DOME);
+        const an = new THREE.CylinderGeometry(0.12, 0.22, 6.5, 6); an.translate(ob.cx, L1 + 0.8 + D.domeR + 3.0, ob.cz); ad(an, '#4a4c4e');
+        const an2 = new THREE.CylinderGeometry(0.08, 0.12, 3.5, 6); an2.translate(ob.cx + 1.4, L1 + 0.8 + D.domeR * 0.8 + 1.6, ob.cz + 0.6); ad(an2, '#4a4c4e');
         liftB(m0, b);
         CUSTOM_HOUSE_AT = { poly: b.poly, ob, ry };
       }
@@ -14956,7 +15014,7 @@ RB.add({
     // deal the night's colours in build order
     const themeParts = [], themeSheets = [], crownPanels = [];
     let themeSlotN = 0;
-    const sheetOf = (geom, slot, w, grad) => themeSheets.push({ geom, slot, w, grad: grad === true ? 1 : (grad || 0) });   // 1: uplight, -1: light spilling down, 0: soft broad wash
+    const sheetOf = (geom, slot, w, grad, house) => themeSheets.push({ geom, slot, w, grad: grad === true ? 1 : (grad || 0), house: house || null });   // 1: uplight, -1: light spilling down, 0: soft broad wash; house: its own plain-night colour (display), else the house white
     const venueSurface = (ring, y) => {
       // The authored field outline is concave near the foul corners. A centroid
       // fan overlaps itself there; triangulate the polygon so each patch draws once.
@@ -16035,20 +16093,25 @@ RB.add({
       // lantern, 49 to 81.5 m) each take an uplight wash on its own consecutive slot, so a two-colour night deals them
       // gold, blue, gold as in the second photo, and a plain night washes all three in their own warm white as in the
       // first; a ring of light at the lantern's head goes with the tower
+      // Round 185 (Mike, with his own night photo): the zones follow the rebuilt stages and light the stone, never the brick
+      // (Round 145's wash ran the whole block to 40 m, and a teal night painted the building teal): gold on the base's top
+      // storey and on the lantern, light blue on the pale stage, a red ring of light at the dome's foot. Those are its own
+      // colours on a plain night; a themed night deals the theme across the three slots
       if (CUSTOM_HOUSE_AT) {
-        const { poly, ob, ry } = CUSTOM_HOUSE_AT, [pcx, pcz] = polyCentroid(poly), base = siteY(pcx, pcz, 'ground');
+        const { poly, ob, ry } = CUSTOM_HOUSE_AT, [pcx, pcz] = polyCentroid(poly), base = siteY(pcx, pcz, 'ground'), D = CH_DIMS;
         const sA = themeSlotN % 4, sB = (themeSlotN + 1) % 4, sC = (themeSlotN + 2) % 4;
         themeSlotN += 3;
+        const GOLD = new THREE.Color(0.9, 0.55, 0.12), BLUE = new THREE.Color(0.2, 0.62, 0.98);   // the photo's warm gold and pale cyan
         const grown = poly.map(([x, z]) => { const dx = x - pcx, dz = z - pcz, l = Math.hypot(dx, dz) || 1; return [x + dx / l * 0.6, z + dz / l * 0.6]; });
-        sheetOf(buildingGeom(grown, null, 40.2, 0.3).translate(0, base, 0), sA, 0.5, true);
-        sheetOf(box(34, 9.2, 34, ob.cx, base + 44.6, ob.cz, ry), sB, 0.62, true);
-        for (const [r0, r1, y0, y1] of [[14.9, 13.7, 49, 62], [10.5, 9.7, 62, 73], [6.9, 6.1, 73, 81.5]]) {
-          const g = new THREE.CylinderGeometry(r1, r0, y1 - y0, 8, 1, true); g.rotateY(ry + Math.PI / 8); g.translate(ob.cx, base + (y0 + y1) / 2, ob.cz);
-          sheetOf(g, sC, 0.55, true);
-        }
-        const ring = new THREE.CylinderGeometry(6.05, 6.05, 0.7, 24, 1, true); ring.translate(ob.cx, base + 81.1, ob.cz);
-        const warm = new THREE.Color(0xfff1d6);
-        themeParts.push({ geom: ring, color: warm.clone().multiplyScalar(0.6), lit: warm, mix: 1, slot: sC, gain: 1.6, style: 3 });
+        sheetOf(buildingGeom(grown, null, D.base2 + 1.4, D.base1 - 0.4).translate(0, base, 0), sA, 0.75, true, GOLD);
+        sheetOf(box(D.stageW + 0.8, D.stage1 - D.shaft1 + 0.4, D.stageW + 0.8, ob.cx, base + (D.shaft1 + D.stage1) / 2, ob.cz, ry), sB, 0.8, true, BLUE);
+        { const L0 = D.attic1 + 0.6, g = new THREE.CylinderGeometry(D.lanternR + 0.5, D.lanternR + 0.8, D.lantern1 - L0 + 0.6, 8, 1, true);
+          g.rotateY(ry + Math.PI / 8); g.translate(ob.cx, base + (L0 + D.lantern1) / 2, ob.cz); sheetOf(g, sA, 0.75, true, GOLD); }
+        // the ring rides the dome 1.4 to 2.3 m over its foot, clear of the lantern's cornice from the street below
+        const rr = Math.sqrt(D.domeR * D.domeR - 1.85 * 1.85) + 0.12;
+        const rg = new THREE.CylinderGeometry(rr - 0.12, rr + 0.12, 0.9, 32, 1, true); rg.translate(ob.cx, base + D.lantern1 + 0.8 + 1.85, ob.cz);
+        const red = new THREE.Color(0xff2a1a);
+        themeParts.push({ geom: rg, color: red.clone().multiplyScalar(0.5), lit: red, mix: 1, slot: sC, gain: 1.8, style: 3 });
       }
       {
         const cx = -1603, cz = -802, base = siteY(cx, cz, 'ground');
@@ -17060,7 +17123,7 @@ RB.add({
       architecturalBloom(themeSheetMat);
       themeSheet = new THREE.Mesh(g, themeSheetMat);
       themeSheet.frustumCulled = false; themeSheet.renderOrder = 10; themeSheet.visible = false;
-      themeSheet.userData.slot = g.userData.slot; themeSheet.userData.w = g.userData.w;
+      themeSheet.userData.slot = g.userData.slot; themeSheet.userData.w = g.userData.w; themeSheet.userData.house = g.userData.house;
       THEME.nSheets = themeSheets.length;
       groupCity.add(themeSheet);
     }
@@ -27747,7 +27810,7 @@ float pinOccGate() {
   const LGAMES = { days: { nfl: {}, mlb: {}, nhl: {}, nba: {} }, fetched: {}, busy: '', fails: 0, retryAt: 0 };
   const LIGHTS_URL = DEV_LOCAL ? '/lights.json' : 'https://philly3d.com/lights.json';
   const _thSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _stSlot = [0, 1, 2, 3].map(() => new THREE.Color()), _thHouse = new THREE.Color(0.55, 0.56, 0.6), _thTmp = new THREE.Color();
-  const _thHouseLin = new THREE.Color(), _thWinLin = new THREE.Color();
+  const _thHouseLin = new THREE.Color(), _thWinLin = new THREE.Color(), _thOwn = new THREE.Color();
   function themeLift(src, out) {   // a palette colour (sRGB) to the emissive the crowns get: linear, 0.45 of it, a dim hue lifted up to 2.2 times
     out.copy(src).convertSRGBToLinear();
     const lum = 0.2126 * out.r + 0.7152 * out.g + 0.0722 * out.b;
@@ -27833,8 +27896,12 @@ float pinOccGate() {
     themeLift(_thTmp.setHex(LIGHT_COLORS.white), _thHouseLin);
     for (let i = 0; i < 5; i++) shtWinU['uWin' + i].value.copy(_thHouseLin).lerp(themeLift(_thTmp.copy(THEME.wcur[i]), _thWinLin), THEME.on);
     if (themeSheet) {
-      const a = themeSheet.geometry.attributes.color, sl = themeSheet.userData.slot, w = themeSheet.userData.w;
-      for (let i = 0; i < sl.length; i++) { const c = slotCol(sl[i]); a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i]; }
+      const a = themeSheet.geometry.attributes.color, sl = themeSheet.userData.slot, w = themeSheet.userData.w, hs = themeSheet.userData.house;
+      for (let i = 0; i < sl.length; i++) {
+        let c = slotCol(sl[i]);
+        if (hs && hs[i * 3] >= 0 && sl[i] < 4) c = _thOwn.setRGB(hs[i * 3], hs[i * 3 + 1], hs[i * 3 + 2]).lerp(THEME.cur[sl[i]], THEME.on);   // its own colour on a plain night
+        a.array[i * 3] = c.r * w[i]; a.array[i * 3 + 1] = c.g * w[i]; a.array[i * 3 + 2] = c.b * w[i];
+      }
       a.needsUpdate = true;
     }
     if (bfbNodes) {

@@ -8164,3 +8164,24 @@ takes the tap). 435 tests.
   construction fibre cement or dark brick, a school limestone or institutional brick, and so on; otherwise brick first).
   A computer only (`MID_SKIN`, `?midskin=0`): 13,350 buildings, about 190 bytes a wall, which a phone keeps for the
   towers and the house fronts. Captured over Center City, Rittenhouse and Washington Square West. 495 tests.
+
+## Round 186 — the Custom House rebuilt (Oct 12)
+
+- Mike, with his own night photo (IMG_0221, Oct 1 at 7:17 pm, a plain night on the lights calendar): "The us customs house
+  needs a lot of work". The model was a base block to 9 m, a brick shaft over the whole block to 40 m, a 33 m box and
+  stepped white octagons to a cone; Round 145's wash ran the whole block to 40 m, so the night's theme (teal tonight, OCD
+  Awareness Week) painted the building teal brick and all. Sources: Wikipedia, GSA, HABS and WHYY (17 storeys, 87 to 91 m,
+  a four-storey base under a fourteen-storey brick and limestone Art Deco tower, an octagonal lantern after the
+  lighthouses of antiquity; Ritter & Shay, 1932 to 1934).
+- Rebuilt in 'Restoring the landmarks' to `CH_DIMS`: the base over the block (limestone ground floor in the civic arched
+  style, brick, a limestone top storey of arched windows under a balustrade, 26 m); a 32 m brick shaft with limestone
+  centre panels to 58 m; a setback balustrade with a stone eagle at each corner and urns between; a 24 m pale stage
+  between brick corner piers to 67 m, a 21 m attic and cornice with urns at its corners; the octagonal lantern to 80.5 m
+  with a pilaster at each corner and a tall dark latticed arch in each face, its cornice, a dark dome (stored near black:
+  the detail material lifts a flat far past its stored value) and an antenna, about 88 m to the dome.
+- Its night (`CUSTOM_HOUSE_AT`): gold on the base's top storey and on the lantern, light blue on the pale stage, a red
+  ring on the dome 1.4 to 2.3 m over its foot (clear of the lantern's cornice from the street), never the brick. A wash
+  sheet can now carry its own plain-night colour (`sheetOf(..., house)`, `themeWashGeometry`'s per-vertex `house`, eased
+  into the theme's colour as THEME.on comes up), so a plain night is the photo's gold, blue and red and a themed night
+  deals the theme across the three slots as before. Captured by day and on the photo's night, from the street at 2nd
+  and Walnut and from 95 m. `tests/test_landmark_lighting.py` follows the zones.

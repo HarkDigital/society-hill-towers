@@ -112,11 +112,18 @@ console.log(JSON.stringify(out));
         s=(ROOT/'app.js').read_text()
         self.assertIn('const slot=themeSlotN++%4,baySlot=themeSlotN%4;',s)
         self.assertIn('for(const p of model.bays)themeParts.push({...p,slot:baySlot});',s)
-        # the Custom House: three consecutive slots, the lower block, the setback's square stage, the tower
+        # the Custom House: three consecutive slots. Round 185 (Mike's night photo): gold on the base's top storey and the
+        # lantern, light blue on the pale stage, a red ring on the dome; its own colours on a plain night, never the brick
         self.assertIn('const sA = themeSlotN % 4, sB = (themeSlotN + 1) % 4, sC = (themeSlotN + 2) % 4;',s)
         self.assertIn('CUSTOM_HOUSE_AT = { poly: b.poly, ob, ry };',s)
-        for part in ('sheetOf(buildingGeom(grown, null, 40.2, 0.3).translate(0, base, 0), sA, 0.5, true);','sheetOf(box(34, 9.2, 34, ob.cx, base + 44.6, ob.cz, ry), sB, 0.62, true);','sheetOf(g, sC, 0.55, true);'):
+        for part in ('sheetOf(buildingGeom(grown, null, D.base2 + 1.4, D.base1 - 0.4).translate(0, base, 0), sA, 0.75, true, GOLD);',
+                     'sheetOf(box(D.stageW + 0.8, D.stage1 - D.shaft1 + 0.4, D.stageW + 0.8, ob.cx, base + (D.shaft1 + D.stage1) / 2, ob.cz, ry), sB, 0.8, true, BLUE);',
+                     'sheetOf(g, sA, 0.75, true, GOLD);',
+                     'themeParts.push({ geom: rg, color: red.clone().multiplyScalar(0.5), lit: red, mix: 1, slot: sC, gain: 1.8, style: 3 });'):
             self.assertIn(part,s)
+        # a sheet's own plain-night colour: carried per vertex and eased into the theme as it comes on
+        self.assertIn('g.userData.house = anyHouse ? new Float32Array(house) : null;',s)
+        self.assertIn('c = _thOwn.setRGB(hs[i * 3], hs[i * 3 + 1], hs[i * 3 + 2]).lerp(THEME.cur[sl[i]], THEME.on);',s)
 
     def test_one_to_four_bands_are_contiguous_and_solid_uses_first_color(self):
         for b in self.result['bands']:
