@@ -316,7 +316,7 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function loadGroundArt() {', '  let tuftTex = null'))
         # Round 185: the roofs' atlas and the yards, uploaded once and never flagged again
         self.assertEqual(cut(s, '  function loadGroundArt() {', '  let tuftTex = null').count('freeTexOnUpload(t);'), 3)
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 14)   # the definition and its thirteen uses
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 16)   # the definition and its fifteen uses (the realism pass: vegTex and the land mask)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

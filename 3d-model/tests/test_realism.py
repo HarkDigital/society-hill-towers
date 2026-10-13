@@ -42,7 +42,9 @@ class Realism(unittest.TestCase):
 
     def test_every_device(self):
         s = self.s
-        self.assertIn("grass, ' + (REAL ? '0.70' : '0.88') + ');'", s)
+        # the realism pass (ground-vegetation 5) took the lawn to its photographed colour; ?real=0 keeps Round 54's 0.88
+        self.assertIn("'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88) * vec3(1.03, 1.0, 0.74);',", s)
+        self.assertIn("'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88);',   // a little of the saturation out (Round 54)", s)
         self.assertIn("if (REAL) { hemi.color.lerp(_c2.set(0x3a3240), 0.5 * night); hemi.groundColor.lerp(_c2.set(0x3a2814), 0.7 * night); }", s)
 
 

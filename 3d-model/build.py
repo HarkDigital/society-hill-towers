@@ -193,6 +193,7 @@ const("I95_DATA", text_of("i95.json", "null"))   # I-95's carriageways for its h
 const("CLOUDS_DATA", text_of("clouds.json", "null"))   # the low-poly cloud models (pack_clouds.py): the cloud field of Round 67
 const("TREE_ART", text_of("tree_art.json", "null"))   # the trees' species images (bake_tree_art.py): side and top cards by season, Oct 12
 const("GROUND_ART", text_of("ground_art.json", "null"))   # the generated lawn, verge and street textures (bake_ground_art.py), Round 183
+const("LAND_MASK", text_of("land_mask.json", "null"))   # the ground's land mask: built up, woods, river bank (bake_landmask.py), the realism pass
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
 
 
@@ -209,7 +210,7 @@ def art_paths(o):
 
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
-for name in ("tree_art.json", "ground_art.json", "fronts.json"):
+for name in ("tree_art.json", "ground_art.json", "fronts.json", "land_mask.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

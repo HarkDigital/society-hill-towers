@@ -86,7 +86,8 @@ console.log(JSON.stringify({
         self.assertEqual(o['julyMaple'][:2], ['summer', 'summer'])
         self.assertEqual(o['janOak'][:2], ['winter', 'winter'])
         a, b, t = o['oct12Maple']
-        self.assertEqual((a, b), ('summer', 'autumn')); self.assertTrue(0.4 < t < 0.8, t)   # red maples turn first
+        # the realism pass: the change is Oct 17 to Nov 14 on average, so on Oct 12 the red maples (8 days early) have just begun
+        self.assertEqual((a, b), ('summer', 'autumn')); self.assertTrue(0.0 < t < 0.2, t)   # red maples turn first
         self.assertEqual(o['oct12Ginkgo'][:2], ['summer', 'summer'])                        # ginkgos last
         self.assertEqual(o['nov1Oak'][:2], ['summer', 'autumn'])
         self.assertEqual(o['apr10Cherry'][:2], ['spring', 'spring'])                         # the cherries in bloom
@@ -122,8 +123,8 @@ class Atlas(unittest.TestCase):
             self.assertGreaterEqual(N, 128 if view == 'side' and not touch else 64, (touch, view))
         # the drawing and the shader read the same columns
         self.assertIn('x = (k % at.C) * at.N, y = Math.floor(k / at.C) * at.N', s)
-        self.assertIn('colS = mod(kS, ${C.toFixed(1)}), rowS = floor(kS / ${C.toFixed(1)} + 1e-3)', s)
-        self.assertIn('TREE_ART_VERT(S.N, S.A, T.N, T.A, S.C)', s)
+        self.assertIn('float col = mod(k, ${C.toFixed(1)}), row = floor(k / ${C.toFixed(1)} + 1e-3);', s)
+        self.assertIn('TREE_ART_VERT(S.N, S.A, S.AH, T.N, T.A, T.AH, S.C)', s)   # the realism pass: a computer's canvas is as tall as its rows
         self.assertNotIn('k % 6', s)
 
 

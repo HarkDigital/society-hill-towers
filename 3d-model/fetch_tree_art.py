@@ -112,6 +112,20 @@ LOOKS = [
 ]
 
 
+# the realism pass: a turning stage between summer and autumn (a city's trees colour a fifth at a time, not all at once), in
+# the hue each look turns
+TURNING = ('in early autumn as the colour is just starting: the crown is still mostly {base}, with about a fifth of the leaves '
+           'turned {hue}, scattered on the outer branches and at the top, the rest {rest}; natural, slightly muted colour')
+TURN_HUE = {
+    'plane': 'yellow-brown', 'redmaple': 'scarlet', 'sugarmaple': 'orange and gold', 'cherry': 'bronze and orange',
+    'pear': 'burgundy and red', 'locust': 'yellow', 'redoak': 'russet', 'pinoak': 'bronze', 'zelkova': 'rusty orange',
+    'ginkgo': 'butter yellow', 'lilac': 'pale yellow', 'redbud': 'yellow', 'crabapple': 'yellow and orange',
+    'linden': 'yellow', 'sweetgum': 'purple and crimson', 'elm': 'yellow', 'broadleaf': 'yellow and orange',
+    'magnolia': 'dull yellow', 'dogwood': 'deep red', 'serviceberry': 'orange and red', 'silvermaple': 'pale yellow',
+    'crimsonking': 'dark bronze', 'sycamore': 'tan and brown', 'riverbirch': 'yellow', 'willow': 'yellow',
+}
+
+
 def api_key():
     k = os.environ.get('OPENAI_API_KEY')
     if k:
@@ -131,6 +145,9 @@ def jobs_for(look):
     seasons = [('summer', SUMMER + (', after flowering, with no flowers or seed heads at all' if spring else ''))]
     if autumn:
         seasons += [('autumn', autumn), ('winter', WINTER)]
+        if lid in TURN_HUE:
+            base, rest = ('deep maroon-purple', 'maroon') if lid == 'crimsonking' else ('summer green', 'green')
+            seasons.append(('turning', TURNING.format(base=base, hue=TURN_HUE[lid], rest=rest)))
     if spring:
         seasons.append(('spring', spring))
     out = []

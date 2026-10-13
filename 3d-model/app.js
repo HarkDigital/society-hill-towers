@@ -13022,14 +13022,20 @@
     sycamore: [6, 8], riverbirch: [-6, -4], willow: [10, 14], spruce: null, holly: null,
     broadleaf: [0, 0],
   };
-  // a look's season on a day of the year: [from, to, share of the change done]; between changes from === to
-  function treeSeasonOf(look, doy) {
+  // a look's season on a day of the year: [from, to, share of the change done]; between changes from === to.
+  // The realism pass (ground-vegetation 4: "autumn comes a month early, all at once, at full peak"): Philadelphia's street
+  // and park trees colour from mid-October and peak in early November, and hold their leaves into late November, so the
+  // mean change runs Oct 17 to Nov 14 and the fall Nov 18 to Dec 12 (Round 184 had Oct 1 to 31 and Nov 5 to 30); a look
+  // with a turning picture (`turning`, a fifth of the crown coloured) goes through it on the way
+  function treeSeasonOf(look, doy, turning) {
     const c = TREE_CAL[look];
     if (!c) return ['summer', 'summer', 0];
     const segs = c[2] === 'bloom' ? [[85, 95, 'winter', 'spring'], [108, 120, 'spring', 'summer']]
       : c[2] === 'june' ? [[100, 125, 'winter', 'summer'], [150, 156, 'summer', 'spring'], [166, 173, 'spring', 'summer']]
       : [[100, 125, 'winter', 'summer']];
-    segs.push([274 + c[0], 304 + c[0], 'summer', 'autumn'], [309 + c[1], 334 + c[1], 'autumn', 'winter']);
+    if (turning) segs.push([290 + c[0], 304 + c[0], 'summer', 'turning'], [304 + c[0], 318 + c[0], 'turning', 'autumn']);
+    else segs.push([290 + c[0], 318 + c[0], 'summer', 'autumn']);
+    segs.push([322 + c[1], 346 + c[1], 'autumn', 'winter']);
     let s = 'winter';
     for (const [d0, d1, a, b] of segs) {
       if (doy < d0) return [s, s, 0];
@@ -13043,15 +13049,29 @@
   // one Round 179 sized for 18 looks (six stored cells a row); since Round 184 the cells take as many columns as a square
   // of them needs (C, the same for both views) and shrink to fit it: 28 looks in rows of six ran past the canvas's foot,
   // and the ten looks there (the broadleaf among them, 81 species) sampled its clamped edge as striped boxes
+  // The realism pass (ground-vegetation 11): a computer on WebGL 2 at the full tier draws the cells at the bake's own size
+  // (448 a side cell, 224 a top) on a canvas as wide as its columns and as tall as its rows (WebGL 2 mips any size), so a
+  // tree at 30 m is no longer a 256 px picture magnified; everything else keeps Round 184's square power-of-two canvas at
+  // the sizes it had (a phone's cells 128 and 64), whatever the bake stores. A is the canvas's width, AH its height.
+  // The canvas keeps its colour premultiplied, and the texture goes up that way (ground-vegetation 2): unpremultiplied,
+  // every clear texel uploaded as black, the mips mixed it into every crown's edge and the alpha boost drew it as a 1 to
+  // 2 px outline; the card's shader divides the coverage back out
   function treeArtAtlas(view) {
-    const N0 = (view === 'side' ? TREE_ART.side : TREE_ART.top) >> (isTouch ? 1 : 0), cells = 2 * TREE_ART.looks.length;
-    let A = 1; while (A < 6 * N0) A *= 2;
-    const C = Math.max(6, Math.ceil(Math.sqrt(cells))), N = Math.min(N0, Math.floor(A / C));
-    if (Math.ceil(cells / C) * N > A) throw new Error('tree atlas: ' + cells + ' cells do not fit ' + A);
-    const cv = document.createElement('canvas'); cv.width = cv.height = A;
+    const stored = view === 'side' ? TREE_ART.side : TREE_ART.top, cells = 2 * TREE_ART.looks.length;
+    const C = Math.max(6, Math.ceil(Math.sqrt(cells)));
+    let N, A, AH;
+    if (!isTouch && renderer.capabilities.isWebGL2 === true && TIER === 0) { N = stored; A = C * N; AH = Math.ceil(cells / C) * N; }
+    else {
+      const N0 = Math.min(stored, view === 'side' ? 320 : 160) >> (isTouch ? 1 : 0);
+      A = 1; while (A < 6 * N0) A *= 2;
+      N = Math.min(N0, Math.floor(A / C)); AH = A;
+    }
+    if (Math.ceil(cells / C) * N > AH) throw new Error('tree atlas: ' + cells + ' cells do not fit ' + AH);
+    const cv = document.createElement('canvas'); cv.width = A; cv.height = AH;
     const tex = new THREE.CanvasTexture(cv);
+    tex.premultiplyAlpha = true;
     tex.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);   // left linear: one shader samples both atlases and decodes them itself
-    return { view, N, A, C, cv, ctx: cv.getContext('2d'), tex };
+    return { view, N, A, AH, C, cv, ctx: cv.getContext('2d'), tex };
   }
   function treeArtImage(look, view, season) {
     const L = TREE_ART.images[look], v = L && L[view];
@@ -13069,7 +13089,7 @@
   async function treeArtSeason(force) {
     if (!TREEART.side || TREEART.busy) return;
     const doy = Math.round((Date.UTC(clock.y, clock.m - 1, clock.d) - Date.UTC(clock.y, 0, 1)) / 864e5) + clock.minutes / 1440;
-    const looks = TREE_ART.looks, want = looks.map((lk) => treeSeasonOf(lk, doy));
+    const looks = TREE_ART.looks, want = looks.map((lk) => treeSeasonOf(lk, doy, !!(TREE_ART.images[lk] && TREE_ART.images[lk].side.turning)));
     TREEART.busy = true;
     try {
       let drew = false;
@@ -13109,14 +13129,25 @@
   // from the side view to the top view. In the shadow pass the eye is the sun: a low sun casts the tree's side, a high
   // one its crown. aLS = (look, seed); uLk[look] = (share of the change done, side fill A, B, -), uLk2[look] = (-, top
   // fill A, B, -). The instance's scale x is the tree's height, z its crown's span
-  const TREE_ART_VERT = (NS, AS, NT, AT, C) => `
+  // The realism pass (ground-vegetation 3 and 4, weather 9): each tree is its own (mirrored or not, a tenth larger or
+  // smaller, wider or narrower, a touch warmer or cooler, all from its seed); the card is lit as a dome (a normal per
+  // corner, so the crown has a sun side, a shade side and a darker underside, where one tilted plane lit every crown
+  // alike) with a darker foot; it sinks 3.5 per cent of its size so the picture's pale root plate stays under the grass;
+  // a tree turns over a stretch of the change of its own, its two pictures dissolving (tTurn), not at one step; and
+  // snow lies on the top edge of every bough and leaf clump, and across the crown from the air
+  const TREE_ART_VERT = (NS, AWS, AHS, NT, AWT, AHT, C) => `
+  vec2 tCell(float k, vec2 cs, float n, float aw, float ah) {
+      float col = mod(k, ${C.toFixed(1)}), row = floor(k / ${C.toFixed(1)} + 1e-3);
+      return vec2((col + cs.x) * n / aw, 1.0 - (row + 1.0 - cs.y) * n / ah);
+  }
   void tCard(out vec3 wpOut, out vec3 nrmOut) {
       vec3 tb = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
       float H = length(instanceMatrix[0].xyz), D = length(instanceMatrix[2].xyz);
-      float lk = aLS.x, seedT = aLS.y;
+      float lk = aLS.x, seedT = abs(aLS.y);                      // a wood field tree's seed is negative
       vec4 L1 = uLk[int(lk + 0.5)], L2 = uLk2[int(lk + 0.5)];
-      float slot = step(seedT, L1.x - 1e-4);
-      float hf = max(0.2, mix(L1.y, L1.z, slot)), df = max(0.3, mix(L2.y, L2.z, slot));
+      float turn = smoothstep(seedT * 0.7, seedT * 0.7 + 0.3, L1.x);
+      float hf = max(0.2, mix(L1.y, L1.z, turn)), df = max(0.3, mix(L2.y, L2.z, turn));
+      float v1 = fract(seedT * 7.31 + 0.17), v2 = fract(seedT * 13.7 + 0.53), v3 = fract(seedT * 3.91 + 0.71);
       // the eye from the view matrix (the depth pass sets no cameraPosition); an orthographic view (the sun's) looks along
       // its own axis
       vec3 vt = viewMatrix[3].xyz;
@@ -13130,37 +13161,49 @@
       vec3 rt = vec3(fh.y, 0.0, -fh.x);
       vec3 upC = normalize(cross(toEye, rt));                    // the eye's up, square to the line of sight
       vec3 up = normalize(mix(vec3(0.0, 1.0, 0.0), upC, lean));
-      float S = mix(H / hf, D / df, tw);                          // the card's size: the tree's height, then its crown's span
+      float S = mix(H / hf, D / df, tw) * (0.92 + 0.16 * v2);    // the card's size: the tree's height, then its crown's span
       float py = 0.5 * lean;                                      // the pivot climbs from the trunk's foot to the card's middle
       vec3 piv = tb + vec3(0.0, S * py, 0.0);
       float ph = tb.x * 0.07 + tb.z * 0.05, yy = position.y + 0.5;
       float sw = (sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25) * 0.012 * yy * yy * S * (1.0 - tw);
-      wpOut = piv + rt * (position.x * S + sw) + up * ((yy - py) * S - 0.03 * (1.0 - lean));   // world space
-      tTw = tw;
-      vec2 cs = vec2(position.x + 0.5, yy);
-      float kS = lk * 2.0 + slot, colS = mod(kS, ${C.toFixed(1)}), rowS = floor(kS / ${C.toFixed(1)} + 1e-3);
-      tUvS = vec2((colS + cs.x) * ${(NS / AS).toFixed(6)}, 1.0 - (rowS + 1.0 - cs.y) * ${(NS / AS).toFixed(6)});
-      tUvT = vec2((colS + cs.x) * ${(NT / AT).toFixed(6)}, 1.0 - (rowS + 1.0 - cs.y) * ${(NT / AT).toFixed(6)});
+      wpOut = piv + rt * (position.x * S * (0.9 + 0.2 * v3) + sw) + up * ((yy - py) * S - 0.035 * S * (1.0 - lean));   // world space
+      tTw = tw; tTurn = turn; tVar = fract(seedT * 23.3 + 0.29); tCsY = yy; tWood = step(aLS.y, 0.0);
+      vec2 cs = vec2(mix(position.x + 0.5, 0.5 - position.x, step(0.5, v1)), yy);
+      tUvS = vec4(tCell(lk * 2.0, cs, ${NS.toFixed(1)}, ${AWS.toFixed(1)}, ${AHS.toFixed(1)}), tCell(lk * 2.0 + 1.0, cs, ${NS.toFixed(1)}, ${AWS.toFixed(1)}, ${AHS.toFixed(1)}));
+      tUvT = vec4(tCell(lk * 2.0, cs, ${NT.toFixed(1)}, ${AWT.toFixed(1)}, ${AHT.toFixed(1)}), tCell(lk * 2.0 + 1.0, cs, ${NT.toFixed(1)}, ${AWT.toFixed(1)}, ${AHT.toFixed(1)}));
       // the alpha firmed as the card shrinks on screen (its mips average the gaps in), by the texels a pixel covers
       float px = S * projectionMatrix[1][1] * 0.5 * uResH / max(1.0, length(eye - mid));
       tBoost = 1.0 + 0.35 * max(0.0, log2(${NS.toFixed(1)} / max(px, 1.0)));
-      nrmOut = normalize(mix(vec3(fh.x * 0.45, 1.0, fh.y * 0.45), vec3(0.0, 1.0, 0.0), tw));
+      vec3 nC = normalize(cross(up, rt)); if (dot(nC, toEye) < 0.0) nC = -nC;
+      vec2 q = vec2(position.x * 2.0, (yy - mix(0.62, 0.5, tw)) * 2.6);
+      nrmOut = normalize(rt * q.x * 0.75 + up * q.y * 0.75 + nC * 0.65 + vec3(0.0, 0.25, 0.0));
   }`;
+  const TREE_VARY = 'varying vec4 tUvS; varying vec4 tUvT; varying float tTw; varying float tBoost; varying float tTurn; varying float tVar; varying float tCsY; varying float tWood;';
   function treeArtPatch(sh, depth) {
     const S = TREEART.side, T = TREEART.top;
     Object.assign(sh.uniforms, { uLk: TREEART.uLk, uLk2: TREEART.uLk2, uTime: waterU.uTime, uResH: TREEART.uResH, tSide: { value: S.tex }, tTop: { value: T.tex } });
     // the card is built in world space: project_vertex multiplies by the instance matrix, so the vertex undoes it first
     const lit = !depth;   // the depth shader carries beginnormal_vertex too, but only under USE_DISPLACEMENTMAP
     sh.vertexShader = sh.vertexShader
-      .replace('#include <common>', '#include <common>\nattribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;\n' + TREE_ART_VERT(S.N, S.A, T.N, T.A, S.C) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
+      .replace('#include <common>', '#include <common>\nattribute vec2 aLS; uniform vec4 uLk[' + TREE_ART.looks.length + ']; uniform vec4 uLk2[' + TREE_ART.looks.length + ']; uniform float uTime; uniform float uResH; ' + TREE_VARY + '\n' + TREE_ART_VERT(S.N, S.A, S.AH, T.N, T.A, T.AH, S.C) + '\nmat4 tInv(mat4 m) { vec3 a = m[0].xyz, b = m[1].xyz, c = m[2].xyz; vec3 t = m[3].xyz; float ia = 1.0 / dot(a, a), ib = 1.0 / dot(b, b), ic = 1.0 / dot(c, c); mat3 r = mat3(vec3(a.x * ia, b.x * ib, c.x * ic), vec3(a.y * ia, b.y * ib, c.y * ic), vec3(a.z * ia, b.z * ib, c.z * ic)); return mat4(vec4(r[0], 0.0), vec4(r[1], 0.0), vec4(r[2], 0.0), vec4(-(r * t), 1.0)); }')
       .replace(lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>', 'vec3 tWP, tNrm; tCard(tWP, tNrm);\n' + (lit ? '#include <beginnormal_vertex>' : '#include <begin_vertex>'))
       .replace('#include <begin_vertex>', '#include <begin_vertex>\ntransformed = (tInv(instanceMatrix) * vec4(tWP, 1.0)).xyz;   // built in world space: the instance matrix undone');
     if (lit) sh.vertexShader = sh.vertexShader.replace('#include <defaultnormal_vertex>', '#include <defaultnormal_vertex>\ntransformedNormal = normalMatrix * tNrm;');
+    if (lit) Object.assign(sh.uniforms, { uSnowAcc: wxSurfU.uSnowAcc, uTexelS: { value: 1.5 / S.AH } });
     sh.fragmentShader = sh.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; varying vec2 tUvS; varying vec2 tUvT; varying float tTw; varying float tBoost;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\n{ vec4 a = texture2D(tSide, tUvS), b = texture2D(tTop, tUvT);\n' +
+      .replace('#include <common>', '#include <common>\nuniform sampler2D tSide; uniform sampler2D tTop; ' + TREE_VARY + (lit ? ' uniform float uSnowAcc; uniform float uTexelS;' : '') + '\n' +
+        'vec4 tPick(sampler2D s, vec4 uv, float k) { if (k <= 0.001) return texture2D(s, uv.xy); if (k >= 0.999) return texture2D(s, uv.zw); return mix(texture2D(s, uv.xy), texture2D(s, uv.zw), k); }')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n{ vec4 a = tPick(tSide, tUvS, tTurn), b = tPick(tTop, tUvT, tTurn);\n' +
         '  vec4 tx = tTw <= 0.0 ? a : tTw >= 1.0 ? b : mix(a, b, tTw);\n' +
-        (depth ? '' : '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2));\n') +
+        '  tx.rgb = min(tx.rgb / max(tx.a, 0.004), vec3(1.0));   // the atlas holds premultiplied colour: the coverage divided back out\n' +
+        (depth ? '' : '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2));\n' +
+          '  diffuseColor.rgb *= mix(vec3(0.88, 0.92, 0.95), vec3(1.07, 1.04, 0.95), tVar) * mix(1.0, mix(0.72, 1.0, smoothstep(0.15, 0.85, tCsY)), 1.0 - tTw);\n' +
+          // a crown seen from the air is a little darker and greyer than its photograph's lit side, and a tree in the woods
+          // stands in its neighbours' shade
+          '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11))), diffuseColor.rgb, 0.88) * mix(1.0, 0.84, tTw) * mix(1.0, 0.56 + 0.36 * tVar, tWood);\n' +
+          '  if (uSnowAcc > 0.01) { float above = tPick(tSide, tUvS + vec4(0.0, uTexelS, 0.0, uTexelS), tTurn).a;\n' +
+          '    float sL = dot(tx.rgb, vec3(0.3, 0.59, 0.11)), sk = uSnowAcc * mix(clamp(1.4 * tx.a * (1.0 - above) + 0.15 * sL, 0.0, 1.0), 0.6 + 0.3 * sL, tTw);\n' +
+          '    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), clamp(sk, 0.0, 1.0)); }\n') +
         '  diffuseColor.a *= clamp(tx.a * tBoost, 0.0, 1.0); }');
   }
   function treeChipColor(g) {
@@ -13592,6 +13635,7 @@
     texU.uGrass.value = paintGrassTex(isTouch ? 512 : 1024);
     texU.uGrass2.value = texU.uGrass.value;
     loadGroundArt();   // Round 183: the generated lawn and verge take its place once they decode
+    loadVegArt();   // the realism pass: the parks' macro, the land mask, the riprap, the yards behind the rows
     tuftTex = paintTuftTex(256);   // (the leaf cards' sprite is painted by the trees step, only while CARDS is above 0: Round 158)
   });
   let TREE_MESHES = [];   // the survey's tree meshes, fitted and culled (Round 167; __dbg.cull)
@@ -13718,10 +13762,11 @@
     // 0.79 + 0.42 * vh about its centre, vh in [0, 1), and the sway adds under 0.07 of the unit shape
     const CROWN_GROW = 1.21, CROWN_SLACK = 0.1;
     const canopySway = (sh) => {   // the leaves move: a slow sway from the wind, per tree, plus a flutter; the crown is lit on top and dark underneath
-      sh.uniforms.uTime = waterU.uTime;
+      sh.uniforms.uTime = waterU.uTime; sh.uniforms.uSnowAcc = wxSurfU.uSnowAcc;
       sh.fragmentShader = sh.fragmentShader
-        .replace('#include <common>', '#include <common>\nvarying float vCY;')
-        .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.40, 0.50, 0.38), vec3(0.86, 0.98, 0.76), tp); }');   // Round 58: a fifth darker and greener top than the card era's (1.12, 1.08, 0.92), the crown is the whole tree now
+        .replace('#include <common>', '#include <common>\nvarying float vCY; uniform float uSnowAcc;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tp = smoothstep(-0.9, 0.9, vCY); diffuseColor.rgb *= mix(vec3(0.40, 0.50, 0.38), vec3(0.86, 0.98, 0.76), tp);' +
+          ' diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), uSnowAcc * smoothstep(-0.2, 0.9, vCY) * 0.85); }');   // Round 58: a fifth darker and greener top than the card era's (1.12, 1.08, 0.92), the crown is the whole tree now; the realism pass: snow on the crown's top (weather 9)
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime; varying float vCY;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCY = position.y;\n{\n  vec4 tw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = tw.x * 0.07 + tw.z * 0.05;\n  float sw = sin(uTime * 1.1 + ph) * 0.6 + sin(uTime * 2.3 + ph * 3.1) * 0.25;\n  float up = clamp(position.y * 0.5 + 0.5, 0.0, 1.0);\n  transformed.x += sw * 0.07 * up; transformed.z += sw * 0.035 * up; transformed.y += sin(uTime * 3.1 + ph * 5.0 + position.x * 2.0) * 0.02 * up;\n}');
@@ -13966,6 +14011,7 @@
       lay(core, !isTouch);
       for (const w of wide) lay(w, !isTouch);
       for (const o of outer) lay(o, false);
+      TREEART.mat = mat; TREEART.dmat = dmat; TREEART.cardG = cardG;   // the wood field's (the realism pass)
       treeArtSeason(true);   // the atlases fill as their images decode, behind the veil
     } else {
       const m = new THREE.Matrix4(), q = new THREE.Quaternion(), cCan = new THREE.Color();
@@ -14092,6 +14138,16 @@
       im.frustumCulled = false; pendingUpload.push(im);
     }
     TREE_MESHES = treeMeshes;
+    // the realism pass: every planted tree's crown for the canopy map (x, z, its radius as drawn, whether it casts a real
+    // shadow here: the core's and the wide box's on a computer, none on a phone); not at tier 2
+    if (REAL && !TIER2) {
+      const cd = new Float32Array(n * 4);
+      for (let i = 0; i < n; i++) {
+        const g = NI[i] >= 0 ? (TREE_NAMES.g[NI[i]] || 0) : 0, st = TREE_STYLE[g] || TREE_STYLE[0];
+        cd[i * 4] = X[i]; cd[i * 4 + 1] = Z[i]; cd[i * 4 + 2] = CR[i] * st[3] * 1.15; cd[i * 4 + 3] = !isTouch && !OUT[i] ? 1 : 0;   // the crown as its picture fills the card
+      }
+      CANOPYMAP.data = cd; CANOPYMAP.n = n;
+    }
     console.log('planted', nInv, 'surveyed trees +', n - nInv, 'curated,',
       buckets.cones.length, 'conifers,', buckets.vases.length, 'vases,', buckets.pyrs.length, 'pyramids');
   });
@@ -14211,7 +14267,14 @@
   // of standing on it) sown on the park and lawn rings within GRASS_R of the camera, re-sown
   // as the camera moves, a few thousand a frame so nothing hitches; they sway in the vertex
   // shader on the water's clock and darken under the cloud field. Desktop 28k, touch 9k.
-  const GRASS_N = isTouch ? 6000 : 28000, GRASS_R = isTouch ? 140 : 160;   // 9,000 on touch until Round 73
+  // The realism pass (ground-vegetation 6: "grass tufts read as yellow confetti on the lawn"): the same tufts packed into a
+  // disc of 45 m (30 on a phone), about 4 a square metre where there was a third of one out to 160 m, so they are a sward
+  // near the eye and nothing far off; each takes the lawn's own colour (the sprite's mean taken out, the lawn's put in)
+  // instead of a tint eased to white; the rim dissolves, dithered, instead of thinning at random; and snow lays them flat
+  const GRASS_N = isTouch ? 6000 : 28000, GRASS_R = REAL ? (isTouch ? 30 : 45) : (isTouch ? 140 : 160);   // 9,000 on touch until Round 73
+  const GRASS_UP = REAL ? 35 : 90, GRASS_RESOW = REAL ? 20 : 70;   // no field from this high; a new sow after this much travel
+  let grassTintAt = 0;   // the lawn's colour over the sprite's, per channel, once both are known (0: not yet)
+  const grassTint = new THREE.Color(1, 1, 1);
   // the bare ground sows too (Round 52): outside the core the meadow beside a park is the same
   // ground cover, so a park in a tuft field beside a bare meadow would still show its boundary.
   // A second source, the disc outside CORE_EXT, at this share of the park density; samples on a
@@ -14249,6 +14312,17 @@
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nuniform float uTime;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\n{\n  vec4 gw = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0);\n  float ph = gw.x * 0.31 + gw.z * 0.23;\n  float sw = sin(uTime * 1.7 + ph) * 0.55 + sin(uTime * 3.1 + ph * 2.7) * 0.3;\n  float up = position.y * position.y;\n  transformed.x += sw * 0.28 * up; transformed.z += sw * 0.12 * up;\n}');
+      if (REAL) {   // the rim's dither and the snow (the realism pass)
+        Object.assign(sh.uniforms, { uSnowAcc: wxSurfU.uSnowAcc, uGrassR: { value: GRASS_R } });
+        sh.vertexShader = sh.vertexShader
+          .replace('#include <common>', '#include <common>\nuniform float uSnowAcc, uGrassR; varying float vGF;')
+          .replace('#include <project_vertex>', '{ vec4 gw2 = instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0); vGF = smoothstep(uGrassR * 0.55, uGrassR, distance(gw2.xz, cameraPosition.xz)); }\ntransformed.y *= 1.0 - smoothstep(0.15, 0.45, uSnowAcc);\n#include <project_vertex>');
+        sh.fragmentShader = sh.fragmentShader
+          .replace('#include <normal_fragment_begin>', THREE.ShaderChunk.normal_fragment_begin.replace('normal = normal * faceDirection;', ''))   // the up normal on both faces: a back face lit from below read as a dark speck
+          .replace('#include <common>', '#include <common>\nvarying float vGF;')
+          .replace('#include <alphatest_fragment>', '#include <alphatest_fragment>\nif (diffuseColor.a < 0.4 + 0.6 * vGF * fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453)) discard;');
+        canopyPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', null);
+      }
       cloudShadowPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
       lampLightPatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'blade');   // Round 140 review: the tufts take the pool the ground under them does
     };
@@ -14263,6 +14337,20 @@
     grassMesh.instanceMatrix.needsUpdate = true;
   }
   const _gm = new THREE.Matrix4(), _gq = new THREE.Quaternion(), _gv = new V3(), _gs = new V3(), _gc = new THREE.Color(), _gWhite = new THREE.Color(1, 1, 1);
+  // the lawn's displayed albedo over the sprite's mean: the lawn's toned linear mean through the meadow's REAL gain, hue and
+  // the broad mottle's mean (0.94), over the tuft sprite's opaque texels' mean
+  function grassTintSet() {
+    const L = vegU.lawnLin, d = tuftTex && tuftTex.image && tuftTex.image.data;
+    if (!L || !d) return;
+    const lin = (v) => { v /= 255; return v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+    let r = 0, g = 0, b = 0, m = 0;
+    for (let i = 0; i < d.length; i += 16) if (d[i + 3] > 128) { r += lin(d[i]); g += lin(d[i + 1]); b += lin(d[i + 2]); m++; }
+    if (!m) return;
+    const k = MEADOW_REAL * 0.94, Y = 0.30 * L[0] + 0.59 * L[1] + 0.11 * L[2];
+    const lawn = [(Y + (L[0] - Y) * 0.88) * 1.03 * k, (Y + (L[1] - Y) * 0.88) * k, (Y + (L[2] - Y) * 0.88) * 0.74 * k];
+    grassTint.setRGB(clamp(lawn[0] / (r / m), 0.2, 1.5), clamp(lawn[1] / (g / m), 0.2, 1.5), clamp(lawn[2] / (b / m), 0.2, 1.5));
+    grassTintAt = performance.now();
+  }
   function grassSow(cx, cz) {
     // the polygons in reach, each weighted by the area of its box inside the circle
     grassQueue = []; grassNear = [];
@@ -14309,8 +14397,8 @@
         // on the drawn ground where a grid is registered (the sheets conform to it), drapeY in the core
         const y = (groundMeshY(x, z) ?? drapeY(x, z, 'ground')) + (pg ? LAYER.park : 0) + 0.02;
         const dd = Math.sqrt(d2), fade = 1 - smooth(GRASS_R * 0.55, GRASS_R, dd);
-        if (Math.random() < smooth(10, 45, camera.position.y - y)) continue;   // seen from height the tufts thin out, the meadow carries the read
-        if (Math.random() > 0.3 + 0.7 * fade) continue;   // toward the rim the field thins rather than shrinks
+        if (Math.random() < (REAL ? smooth(4, 30, camera.position.y - y) : smooth(10, 45, camera.position.y - y))) continue;   // seen from height the tufts thin out, the meadow carries the read
+        if (!REAL && Math.random() > 0.3 + 0.7 * fade) continue;   // toward the rim the field thins rather than shrinks (the realism pass: it dissolves, in the shader)
         // a bare tuft tops out under 0.295, the lowest street lift: the road reject is 4 m from the
         // centreline, so the shoulders of a wide street (and a runway) take bare tufts under the asphalt
         const h = (pg ? 0.16 + Math.random() * 0.2 : 0.12 + Math.random() * 0.14) * (0.8 + 0.2 * fade);
@@ -14318,9 +14406,12 @@
         _gs.set(0.65 + Math.random() * 0.5, h, 0.65 + Math.random() * 0.5);
         _gm.compose(_gv.set(x, y, z), _gq, _gs);
         grassMesh.setMatrixAt(k, _gm);
-        // a tint on the painted tuft: hue drift, normalised on green, eased to white
-        _gc.setHSL(0.24 + (Math.random() - 0.5) * 0.05, 0.5, 0.5);
-        _gc.multiplyScalar(1 / Math.max(0.05, _gc.g)).lerp(_gWhite, 0.6).multiplyScalar(0.9 + Math.random() * 0.35);
+        // a tint on the painted tuft: hue drift, normalised on green, eased to white (the realism pass: the lawn's own colour)
+        if (REAL) { if (!grassTintAt) grassTintSet(); _gc.copy(grassTint).multiplyScalar(0.85 + Math.random() * 0.3); }
+        else {
+          _gc.setHSL(0.24 + (Math.random() - 0.5) * 0.05, 0.5, 0.5);
+          _gc.multiplyScalar(1 / Math.max(0.05, _gc.g)).lerp(_gWhite, 0.6).multiplyScalar(0.9 + Math.random() * 0.35);
+        }
         grassMesh.setColorAt(k, _gc);
         k++; placed++; tries = 0;
       }
@@ -14339,11 +14430,85 @@
     if (!grassMesh) return;
     const p = camera.position;
     // from 90 m up every tuft is rejected anyway: no sow, no field, sow again on the way down
-    if (p.y - drapeY(p.x, p.z, 'ground') > 90) { if (grassMesh.count) grassMesh.count = 0; grassBusy = false; grassAt = null; return; }
-    if (!grassAt || Math.hypot(p.x - grassAt[0], p.z - grassAt[1]) > 70) { if (!grassBusy || Math.hypot(p.x - grassAt[0], p.z - grassAt[1]) > 140) grassSow(p.x, p.z); }
+    if (p.y - drapeY(p.x, p.z, 'ground') > GRASS_UP) { if (grassMesh.count) grassMesh.count = 0; grassBusy = false; grassAt = null; return; }
+    if (!grassAt || Math.hypot(p.x - grassAt[0], p.z - grassAt[1]) > GRASS_RESOW) { if (!grassBusy || Math.hypot(p.x - grassAt[0], p.z - grassAt[1]) > GRASS_RESOW * 2) grassSow(p.x, p.z); }
     grassStep();
   }
   step('Sowing the grass', grassInit);
+  // ---- the wood field (the realism pass, ground-vegetation 9: "the woods are missing: Wissahickon, West Fairmount Park,
+  // Pennypack and the suburbs read as open meadow"). On a computer with the tree pictures, the land mask's woods within
+  // WOOD.R of the eye are planted, one tree a WOOD.STEP square (about 70 m2 of closed canopy each), with the species
+  // pictures of the street trees: oaks, maples, sweetgum and tulip poplar (the sweetgum's look), lindens and the broadleaf,
+  // and sycamores, river birches and silver maples along the rivers. Sown as the grass is, a slice a frame, again after
+  // WOOD.MOVE of travel; a tree's place, look and size are its cell's own hash, so a re-sow plants the same forest. The
+  // ground under it is the canopy texture, which carries the woods past the field and on a phone
+  const WOOD = { on: REAL && !isTouch && TIER === 0 && TREE_ART_ON, N: 36000, R: 1500, STEP: 8.5, MOVE: 400, UP: 1400,
+    mesh: null, mask: null, at: null, busy: false, k: 0, prev: 0, row: 0, ls: null, sows: 0 };
+  function woodAt(x, z) {   // the mask's woods (0 to 1) and bank (0 to 1) at a point, nearest texel
+    const M = WOOD.mask, i = Math.floor((x - M.x0) * M.kx), j = Math.floor((z - M.z0) * M.kz);
+    if (i < 0 || j < 0 || i >= M.w || j >= M.h) return null;
+    const o = (j * M.w + i) * 2;
+    return [M.gb[o] / 255, M.gb[o + 1] / 255];
+  }
+  function woodInit() {
+    if (!WOOD.on || !TREEART.mat) { WOOD.on = false; return; }
+    const g = TREEART.cardG.clone();
+    g.boundingSphere = new THREE.Sphere(new V3(0, 0, 0), 1e6);
+    WOOD.ls = new THREE.InstancedBufferAttribute(new Float32Array(WOOD.N * 2), 2);
+    WOOD.ls.setUsage(THREE.DynamicDrawUsage);
+    g.setAttribute('aLS', WOOD.ls);
+    const im = new THREE.InstancedMesh(g, TREEART.mat, WOOD.N);
+    im.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    im.customDepthMaterial = TREEART.dmat; im.castShadow = true; im.receiveShadow = false;
+    im.frustumCulled = false; im.count = 0; im.userData.treeCard = true;
+    groupCity.add(im);
+    WOOD.mesh = im;
+    const L = TREE_ART.looks, pick = (n) => Math.max(0, L.indexOf(n));
+    WOOD.looks = ['redoak', 'redoak', 'sugarmaple', 'sugarmaple', 'sweetgum', 'linden', 'broadleaf', 'broadleaf', 'pinoak', 'elm'].map(pick);
+    WOOD.wet = ['sycamore', 'riverbirch', 'silvermaple', 'willow'].map(pick);
+  }
+  const _wm = new THREE.Matrix4(), _wq = new THREE.Quaternion(), _wv = new V3(), _ws = new V3();
+  function woodStep() {
+    const W = WOOD, im = W.mesh, S = W.STEP, tEnd = performance.now() + 3;
+    const [cx, cz] = W.at, n = Math.ceil(W.R / S);
+    while (W.row <= 2 * n && W.k < W.N && performance.now() < tEnd) {
+      const gz = Math.floor(cz / S) - n + W.row;
+      for (let ix = -n; ix <= n && W.k < W.N; ix++) {
+        const gx = Math.floor(cx / S) + ix;
+        const h1 = hash01(gx * 12.9898 + gz * 78.233), h2 = hash01(gx * 3.17 + gz * 41.9 + 0.5);
+        const x = (gx + 0.15 + 0.7 * h1) * S, z = (gz + 0.15 + 0.7 * h2) * S;
+        if ((x - cx) * (x - cx) + (z - cz) * (z - cz) > W.R * W.R) continue;
+        const m = woodAt(x, z);
+        if (!m || m[0] < 0.4 || m[1] > 0.8) continue;
+        const h3 = hash01(gx * 7.7 + gz * 1.3 + 0.25);
+        if (h3 > smooth(0.4, 0.8, m[0]) * 0.92) continue;
+        if (inWater(x, z) > -2 || septaSnapRoad(x, z, 7)) continue;
+        const H = 12 + 13 * hash01(gx * 2.3 + gz * 9.1 + 0.7), D = H * (0.55 + 0.2 * h1);
+        _wm.compose(_wv.set(x, siteY(x, z, 'ground'), z), _wq.identity(), _ws.set(H, H, D));
+        im.setMatrixAt(W.k, _wm);
+        const lk = m[1] > 0.25 ? W.wet[Math.floor(h2 * W.wet.length) % W.wet.length] : W.looks[Math.floor(h3 * 997) % W.looks.length];
+        W.ls.array[W.k * 2] = lk; W.ls.array[W.k * 2 + 1] = -0.001 - 0.998 * hash01(gx * 5.1 + gz * 3.7 + 0.9);   // negative: a wood's tree
+        W.k++;
+      }
+      W.row++;
+    }
+    // while a sow runs the last one's trees stand in the slots it has not reached (the same trees: a cell's tree is its hash's)
+    im.count = Math.max(W.k, W.prev);
+    im.instanceMatrix.needsUpdate = true; W.ls.needsUpdate = true;
+    if (W.row > 2 * n || W.k >= W.N) { W.busy = false; W.sows++; im.count = W.prev = W.k; }
+  }
+  function woodUpdate() {
+    const W = WOOD;
+    if (!W.on || !W.mesh || !W.mask) return;
+    const p = camera.position;
+    if (p.y > W.UP) { W.mesh.visible = false; return; }
+    W.mesh.visible = true;
+    if (!W.busy && (!W.at || Math.hypot(p.x - W.at[0], p.z - W.at[1]) > W.MOVE)) {
+      W.at = [p.x, p.z]; W.busy = true; W.row = 0; W.k = 0;
+    }
+    if (W.busy) woodStep();
+  }
+  step('Planting the woods', woodInit);
   step('Lettering the landmarks', () => {
     function addLabel(text, x, y, z, cls) {
       const el = document.createElement('div');
@@ -23583,6 +23748,26 @@ float pinOccGate() {
     uStBrick: { value: new THREE.Vector3(1, 1, 1) }, uStScale: { value: new THREE.Vector3(6, 1.5, 1.6) }, uStreetArt: { value: 0 },
     // Round 185: backyards and vacant lots (concrete, dirt, weeds) through the bare ground's lawn in patches
     uYard: { value: null }, uYardTone: { value: 1 }, uYardOn: { value: 0 } };
+  // ---- the realism pass, the ground and the vegetation (Oct 12, Mike: "please do anything necessary to make this look more
+  // photo realistic and less cartoony. This should apply to all surfaces/water/anything"). GROUND_ART.veg (bake_ground_art.py)
+  // holds the parks' broad variation from the air (parkmacro, a 240 m tile), the woods' canopy by season (70 m), the river
+  // banks' riprap and the yards behind the rows; LAND_MASK (bake_landmask.py) says over the whole terrain how built up a
+  // patch is, whether it is woods and whether it is a river's bank. All of it under REAL (?real=0 keeps the old ground),
+  // the mask and the canopy map not at tier 2
+  const VEG_ART = REAL && typeof GROUND_ART !== 'undefined' && GROUND_ART && GROUND_ART.veg && !/[?&]ground=painted\b/.test(location.search) ? GROUND_ART.veg : null;
+  const VEG_LAND = REAL && !TIER2 && typeof LAND_MASK !== 'undefined' && LAND_MASK && LAND_MASK.img ? LAND_MASK : null;
+  // the meadow's gain under REAL: the lawn photographed (Round 185 had 0.82, a deep olive felt, with 0.7 of its saturation)
+  const MEADOW_REAL = 1.08;
+  const vegU = {
+    uMacro: { value: null }, uMacroMean: { value: new THREE.Vector3(1, 1, 1) }, uMacroOn: { value: 0 },
+    uLand: { value: null }, uLandBox: { value: new THREE.Vector4(0, 0, 1, 1) }, uLandOn: { value: 0 },
+    uCanopy: { value: null }, uCanopyGain: { value: new THREE.Vector3(1, 1, 1) }, uCanopyMean: { value: new THREE.Vector3(0.06, 0.08, 0.02) }, uCanopyOn: { value: 0 },
+    uRiprap: { value: null }, uRiprapOn: { value: 0 }, uWaterY: { value: TERRAIN.water + 0.5 },
+    uAlley: { value: null }, uAlleyOn: { value: 0 }, uAlleyTone: { value: 1 },
+    uLawn: { value: new THREE.Vector4(0, 0, 0, 0) },   // x the lawn's winter dormancy, y the leaf fall lying under the trees
+    uCore: { value: new THREE.Vector4(CORE_EXT.x0, CORE_EXT.x1, CORE_EXT.z0, CORE_EXT.z1) },   // the core's hand-laid ground keeps its own look
+    season: '', lawnLin: null,
+  };
   // Round 183 (Mike: "If you could also update the grass/ground textures that would be great"): GROUND_ART
   // (bake_ground_art.py) holds two generated photographs of the ground, made to tile, a mown lawn and a rougher verge;
   // they take the painted tile's place, each toned to the painted tile's mean (its brightness matched, its colour pulled
@@ -23600,6 +23785,7 @@ float pinOccGate() {
     const painted = texU.uGrass.value && texU.uGrass.value.image;
     if (!painted) return;
     const P = linMean(painted), LP = 0.30 * P[0] + 0.59 * P[1] + 0.11 * P[2];
+    vegU.LP = LP;
     // Round 184: files, and a phone's half (512) from the bake
     Promise.all([artImage(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf)), artImage(artSrc(GROUND_ART.meadow, GROUND_ART.meadowHalf))]).then(([a, b]) => {
       if (!a || !b) return;
@@ -23616,6 +23802,7 @@ float pinOccGate() {
         return LM;
       };
       const LA = tone(a, texU.uGrassTone.value); tone(b, texU.uGrassTone2.value);
+      { const M = linMean(a), T = texU.uGrassTone.value; vegU.lawnLin = [M[0] * T.x, M[1] * T.y, M[2] * T.z]; grassTintAt = 0; }   // the tufts take the lawn's colour (the realism pass)
       texU.uGrass.value = tex(a); texU.uGrass2.value = tex(b);
       texU.uGrassK.value = 1 / Math.max(1e-4, LA);   // the macro copy reads the raw lawn
       texU.uGrassArt.value = 1;
@@ -23638,7 +23825,8 @@ float pinOccGate() {
         const M = linMean(im), LM = 0.30 * M[0] + 0.59 * M[1] + 0.11 * M[2];
         const t = new THREE.Texture(im); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
         t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true; freeTexOnUpload(t);
-        texU.uYard.value = t; texU.uYardTone.value = Math.min(2.5, LP / Math.max(1e-4, LM)); texU.uYardOn.value = 1;
+        // the realism pass: a concrete yard reads lighter than the grass beside it, not toned down to it
+        texU.uYard.value = t; texU.uYardTone.value = Math.min(2.5, (VEG_ART ? 1.4 : 1) * LP / Math.max(1e-4, LM)); texU.uYardOn.value = 1;
       });
     }
     // Round 184: the streets' three, apart from the lawn so neither waits on the other
@@ -23889,6 +24077,309 @@ float pinOccGate() {
         '}',
       ].join('\n'));
   }
+  // ---- the realism pass: the ground's own textures and maps (see vegU). A texture comes up once and its source goes on a
+  // phone (freeTexOnUpload); the woods' canopy is the model date's season's, swapped as the date crosses a change
+  function vegTex(im, srgb, mips) {
+    const t = new THREE.Texture(im);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    if (srgb) t.encoding = THREE.sRGBEncoding;
+    t.generateMipmaps = mips !== false; t.minFilter = mips !== false ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter;
+    t.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true;
+    return freeTexOnUpload(t);
+  }
+  const vegMean = (m) => new THREE.Vector3(m[0], m[1], m[2]);
+  function loadVegArt() {
+    if (VEG_ART && VEG_ART.parkmacro) artImage(artSrc(VEG_ART.parkmacro.img, VEG_ART.parkmacro.imgHalf)).then((im) => {
+      if (!im) return;
+      vegU.uMacro.value = vegTex(im, true); vegU.uMacroMean.value = vegMean(VEG_ART.parkmacro.mean); vegU.uMacroOn.value = 1;
+    });
+    if (VEG_ART && VEG_ART.alley) artImage(artSrc(VEG_ART.alley.img, VEG_ART.alley.imgHalf)).then((im) => {
+      if (!im) return;
+      // toned as the yards are: to the painted lawn's brightness, then lighter by as much (concrete is paler than grass)
+      const M = VEG_ART.alley.mean;
+      vegU.uAlleyTone.value = Math.min(2.5, 1.4 * (vegU.LP || 0.03) / Math.max(1e-4, 0.30 * M[0] + 0.59 * M[1] + 0.11 * M[2]));
+      vegU.uAlley.value = vegTex(im, true); vegU.uAlleyOn.value = 1;
+    });
+    if (!VEG_LAND) return;
+    artImage(artSrc(VEG_LAND.img, VEG_LAND.imgHalf)).then((im) => {
+      if (!im) return;
+      // data, not colour: linear, no mips (it is 20 m a texel already), clamped, read with v down the image (z south)
+      const t = new THREE.Texture(im);
+      const mips = renderer.capabilities.isWebGL2;   // its odd size mips on WebGL 2 only; a far edge of woods beside lawn aliased into streaks
+      t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.flipY = false; t.generateMipmaps = mips;
+      t.minFilter = mips ? THREE.LinearMipmapLinearFilter : THREE.LinearFilter; t.magFilter = THREE.LinearFilter; t.needsUpdate = true;
+      vegU.uLand.value = freeTexOnUpload(t);
+      const B = VEG_LAND.box;
+      vegU.uLandBox.value.set(B[0], B[1], 1 / B[2], 1 / B[3]); vegU.uLandOn.value = 1;
+      if (WOOD.on) {   // the woods and the banks, read back once for the wood field (a computer only)
+        const cv = document.createElement('canvas'); cv.width = im.width; cv.height = im.height;
+        const cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(im, 0, 0);
+        const d = cx.getImageData(0, 0, im.width, im.height).data, n = im.width * im.height, gb = new Uint8Array(n * 2);
+        for (let i = 0; i < n; i++) { gb[i * 2] = d[i * 4 + 1]; gb[i * 2 + 1] = d[i * 4 + 2]; }
+        WOOD.mask = { gb, w: im.width, h: im.height, x0: B[0], z0: B[1], kx: im.width / B[2], kz: im.height / B[3] };
+        cv.width = cv.height = 0;
+      }
+    });
+    if (VEG_ART && VEG_ART.riprap && !isTouch) artImage(artSrc(VEG_ART.riprap.img, VEG_ART.riprap.imgHalf)).then((im) => {   // a computer's: a phone's bank is the silt and the stain
+      if (!im) return;
+      vegU.uRiprap.value = vegTex(im, true); vegU.uRiprapOn.value = 1;
+    });
+  }
+  // the woods' season by the day of the year: bare from early December to leaf-out, coloured from late October
+  const canopySeasonOf = (doy) => doy < 112 || doy >= 333 ? 'winter' : doy >= 296 ? 'autumn' : 'summer';
+  function vegCanopySeason(doy) {
+    if (!VEG_LAND || !VEG_ART) return;
+    const want = canopySeasonOf(doy), rec = VEG_ART['canopy_' + want];
+    if (!rec || vegU.season === want) return;
+    vegU.season = want;
+    artImage(artSrc(rec.img, rec.imgHalf)).then((im) => {
+      if (!im) { if (vegU.season === want) vegU.season = ''; return; }   // not to be had now: the next pass asks again
+      if (vegU.season !== want) return;
+      const old = vegU.uCanopy.value;
+      vegU.uCanopy.value = vegTex(im, true);
+      // a forest from the air is darker than a lawn: the canopy at about three quarters of the lawn's brightness in the
+      // scene's own stored-dark albedo (its photograph's own albedo stood a third over the lawn and read as a crop field)
+      const M = rec.mean, Y = 0.30 * M[0] + 0.59 * M[1] + 0.11 * M[2], lawnY = vegU.lawnLin ? (0.30 * vegU.lawnLin[0] + 0.59 * vegU.lawnLin[1] + 0.11 * vegU.lawnLin[2]) * MEADOW_REAL : 0.06;
+      const k = clamp(0.75 * lawnY / Math.max(1e-4, Y), 0.3, 1.5);
+      vegU.uCanopyGain.value.set(k, k, k); vegU.uCanopyMean.value.set(M[0], M[1], M[2]); vegU.uCanopyOn.value = 1;
+      if (old) old.dispose();
+    });
+  }
+  // the bare ground's and the parks' colour (surfTexPatch's meadow part): the generated lawn picked between its two tilings
+  // by an 11 m noise (their average halved its contrast), photographed colour (the 0.7 saturation and the olive felt
+  // gone), the parks' broad dry and damp variation from the air, the yards behind the rows where the mask says built up,
+  // and the lawn's winter dormancy. ?real=0 is Round 185's meadow, line for line
+  function vegGrassGLSL(forced) {
+    const pre = [
+      'vec2 gUv1 = sWP.xz * 0.1538, gUv2 = vec2(sWP.x * 0.9397 + sWP.z * 0.342, -sWP.x * 0.342 + sWP.z * 0.9397) * 0.0885 + 0.37;',
+    ];
+    const macro = [
+      'vec3 gMac = texture2D(uGrass, vec2(sWP.x * 0.866 - sWP.z * 0.5, sWP.x * 0.5 + sWP.z * 0.866) * 0.02128).rgb;',
+      'float gMacL = dot(gMac, vec3(0.30, 0.59, 0.11)) * uGrassK;',
+      // Broad, low-contrast moisture variation at 83 m and 22 m. Fine grain fades
+      // to its mean before it can shimmer; the lawn stays the same brightness.
+      'float gtn1 = stn(sWP.xz * 0.012);',
+      'float gtn2 = mix(0.5, stn(sWP.xz * 0.045), 1.0 - smoothstep(8.0, 30.0, sfw));',
+      'float gtn3 = mix(0.5, stn(sWP.xz * 0.35), 1.0 - smoothstep(1.0, 4.0, sfw));',
+      'float gt = smoothstep(0.30, 0.70, gtn1 * 0.7 + gtn2 * 0.3);',
+      'vec3 gMul = mix(vec3(0.86, 0.90, 0.83), vec3(1.03, 1.04, 1.0), gt) * (0.97 + 0.06 * gtn3);',
+    ];
+    if (!REAL) return pre.concat([
+      'vec3 gTex = mix(texture2D(uGrass, gUv1).rgb, texture2D(uGrass, gUv2).rgb, 0.5);',
+      // Round 183: the generated lawn, toned, and the rougher verge through it on the 83 m noise (more of it on bare ground)
+      'if (uGrassArt > 0.5) { vec3 gB = mix(texture2D(uGrass2, gUv1).rgb, texture2D(uGrass2, gUv2).rgb, 0.5) * uGrassTone2;',
+      '  float mw = smoothstep(0.38, 0.72, stn(sWP.xz * 0.012 + 3.7) + ' + (forced ? '0.18' : '0.0') + ');',
+      '  gTex = mix(gTex * uGrassTone, gB, mw); }',
+      // Round 185: the bare ground is not all lawn: yards and lots come through it on a 55 m noise, at the painted tile's brightness
+      forced ? 'if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9; vec3 gY = mix(texture2D(uYard, gUv1 * 0.65).rgb, texture2D(uYard, gUv2 * 1.3).rgb, 0.35) * uYardTone; gTex = mix(gTex, gY, yw); }' : '',
+    ], macro, [
+      'vec3 grass = gTex * mix(1.0, gMacL, 0.20) * (0.97 + 0.06 * sn1) * gMul * ' + MEADOW_GAIN.toFixed(2) + ';',
+      'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88);',   // a little of the saturation out (Round 54)
+      'vec3 vegLM = vec3(0.0);',
+    ]);
+    return pre.concat([
+      'float gw = smoothstep(0.35, 0.65, stn(sWP.xz * 0.09 + 1.3));',
+      'vec3 gTex = mix(texture2D(uGrass, gUv1).rgb, texture2D(uGrass, gUv2).rgb, gw);',
+      'if (uGrassArt > 0.5) { vec3 gB = mix(texture2D(uGrass2, gUv1).rgb, texture2D(uGrass2, gUv2).rgb, gw) * uGrassTone2;',
+      '  float mw = smoothstep(0.38, 0.72, stn(sWP.xz * 0.012 + 3.7) + ' + (forced ? '0.18' : '0.0') + ');',
+      '  gTex = mix(gTex * uGrassTone, gB, mw); }',
+      'float vegCore = step(uCore.x, sWP.x) * step(sWP.x, uCore.y) * step(uCore.z, sWP.z) * step(sWP.z, uCore.w);',
+      'vec3 vegLM = vec3(0.0);',
+      'if (uLandOn > 0.5) vegLM = texture2D(uLand, (sWP.xz - uLandBox.xy) * uLandBox.zw).rgb * (1.0 - vegCore);',
+    ], macro, [
+      'vec3 grass = gTex * mix(1.0, gMacL, 0.20) * (0.97 + 0.06 * sn1) * gMul * ' + MEADOW_REAL.toFixed(2) + ';',
+      'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, 0.88) * vec3(1.03, 1.0, 0.74);',
+      // the parks from the air: two tilings of a 240 m photograph of parkland (dry rises, damp swales, worn lines), as a
+      // ratio to its mean; without it, two warped noises do the same job more plainly
+      'if (uMacroOn > 0.5) { vec2 mp1 = vec2(sWP.x * 0.921 + sWP.z * 0.391, -sWP.x * 0.391 + sWP.z * 0.921) / 240.0, mp2 = vec2(sWP.x * 0.755 - sWP.z * 0.656, sWP.x * 0.656 + sWP.z * 0.755) / 610.0 + 0.41;',
+      '  vec3 mac = clamp(texture2D(uMacro, mp1).rgb * texture2D(uMacro, mp2).rgb / (uMacroMean * uMacroMean), 0.55, 1.6);',
+      '  grass *= mix(vec3(1.0), mac, 0.45); }',
+      'else { vec2 wq = sWP.xz + 25.0 * vec2(stn(sWP.xz * 0.004 + 7.7), stn(sWP.xz * 0.004 + 1.9));',
+      '  float dryK = smoothstep(0.45, 0.8, stn(wq * 0.006 + 11.1) * 0.6 + stn(wq * 0.021 + 4.2) * 0.4);',
+      '  grass *= mix(vec3(1.0), vec3(1.16, 1.05, 0.78), dryK * 0.7) * mix(0.86, 1.0, smoothstep(0.15, 0.45, stn(wq * 0.0045 + 2.9))); }',
+      // winter: the grass goes dormant, a tan green
+      'grass = mix(grass, vec3(dot(grass, vec3(0.30, 0.59, 0.11))) * vec3(1.25, 1.05, 0.70) * 0.9, uLawn.x * 0.8);',
+      // Round 185: the bare ground is not all lawn: yards and lots come through it on a 55 m noise; the realism pass gives the
+      // built-up ground (the mask's red) its yards, patios and alleys throughout, and the open ground more of the lawn
+      forced ? 'if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9; float urb = smoothstep(0.12, 0.5, vegLM.r);' +
+        ' yw = mix(yw * (1.0 - 0.6 * uLandOn * (1.0 - vegCore)), max(yw, 0.6 + 0.4 * stn(sWP.xz * 0.07 + 9.1)), urb);' +
+        ' vec3 gY = mix(texture2D(uYard, gUv1 * 0.65).rgb, texture2D(uYard, gUv2 * 1.3).rgb, 0.35) * uYardTone;' +
+        ' if (uAlleyOn > 0.5) gY = mix(gY, texture2D(uAlley, sWP.xz * 0.1 + 0.17).rgb * uAlleyTone, smoothstep(0.45, 0.7, stn(sWP.xz * 0.05 + 2.4)) * urb);' +
+        ' grass = mix(grass, gY * (0.97 + 0.06 * sn1) * ' + (MEADOW_REAL * 0.9).toFixed(3) + ', yw); }' : '',
+    ]);
+  }
+  // after the meadow and the streets are coloured (green surfaces only): the woods' canopy where the mask says woods, and
+  // at the two rivers the bank (ground-vegetation 10 and water 7, one snippet): riprap on the carved slope down to the
+  // water, dark wet silt in the last metre, and the tide's stain (a darker, greener band to 1.9 m over the water, about
+  // the Delaware's range at Philadelphia), wet and glossy; the mask's blue keeps it to the rivers' own banks
+  function vegAfterGLSL() {
+    if (!REAL) return '';
+    return [
+      'float vegWet = 0.0;',
+      'if (uLandOn > 0.5 && isGreen > 0.5) {',
+      '  float can = smoothstep(0.30, 0.75, vegLM.g + 0.3 * (stn(sWP.xz * 0.006 + 5.5) - 0.5)) * uCanopyOn;',
+      '  if (can > 0.001) { vec2 cu1 = sWP.xz / 70.0, cu2 = vec2(sWP.x * 0.809 - sWP.z * 0.588, sWP.x * 0.588 + sWP.z * 0.809) / 170.0 + 0.23;',
+      '    vec3 cT = mix(texture2D(uCanopy, cu1).rgb, texture2D(uCanopy, cu2).rgb, smoothstep(0.3, 0.7, stn(sWP.xz * 0.004 + 2.2)));',
+      '    cT = mix(cT, uCanopyMean, smoothstep(1.5, 6.0, sfw));',   // a 70 m tile seen edge-on beats into moire: its mean past 1.5 m a pixel
+      '    cT = mix(vec3(dot(cT, vec3(0.30, 0.59, 0.11))), cT, 0.8) * (0.85 + 0.3 * stn(sWP.xz * 0.02 + 8.8));',
+      '    diffuseColor.rgb = mix(diffuseColor.rgb, cT * uCanopyGain, can); }',
+      '  float tH = sWP.y - uWaterY, bank = vegLM.b;',
+      '  if (bank > 0.001 && tH < 3.6) {',
+      '    float wUp = dot(normalize(vNormal), (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz);',
+      '    float rk = bank * uRiprapOn * (1.0 - smoothstep(1.6, 3.6, tH)) * smoothstep(0.997, 0.975, wUp);',
+      '    if (rk > 0.001) diffuseColor.rgb = mix(diffuseColor.rgb, texture2D(uRiprap, sWP.xz / 6.0).rgb * 0.8, rk);',
+      '    float mk = bank * (1.0 - smoothstep(0.25, 1.0, tH));',
+      '    diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.058, 0.050, 0.038) * (0.8 + 0.4 * stn(sWP.xz * 0.6 + 4.4)) * (0.9 + 0.2 * sn2), mk);',
+      '    vegWet = max(bank * tideK(tH), mk);',
+      '    diffuseColor.rgb *= tideTint(tH, bank); }',
+      '}',
+    ].join('\n');
+  }
+  // The tide band as a snippet any surface can take (ground-vegetation 10 and water 7: one band, owned here; a pier, a
+  // bulkhead or a bridge pier calls tidePatch with its world position): tideK is the band's weight a height tH over the
+  // water, tideTint the stain it leaves, algae green at the foot
+  const TIDE_GLSL = 'float tideK(float tH) { return (1.0 - smoothstep(0.3, 1.9, tH)) * step(-1.5, tH); }\n' +
+    'vec3 tideTint(float tH, float k) { float algae = 1.0 - smoothstep(0.0, 0.7, tH); return mix(vec3(1.0), mix(vec3(0.62, 0.60, 0.55), vec3(0.48, 0.56, 0.40), algae), tideK(tH) * k); }\n';
+  function tidePatch(shader, worldExpr) {
+    if (shader.fragmentShader.indexOf('float tideK(') !== -1) return;
+    shader.uniforms.uWaterY = vegU.uWaterY;
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform float uWaterY;\n' + TIDE_GLSL + 'void main() {')
+      .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tH = (' + worldExpr + ').y - uWaterY; diffuseColor.rgb *= tideTint(tH, 1.0); }')
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n{ float tH = (' + worldExpr + ').y - uWaterY; roughnessFactor = mix(roughnessFactor, 0.35, tideK(tH) * 0.7); }');
+  }
+  function vegSurfPatch(shader, forced) {
+    if (!REAL) return;
+    for (const k of ['uMacro', 'uMacroMean', 'uMacroOn', 'uLand', 'uLandBox', 'uLandOn', 'uCanopy', 'uCanopyGain', 'uCanopyMean', 'uCanopyOn', 'uRiprap', 'uRiprapOn', 'uWaterY', 'uLawn', 'uCore']) shader.uniforms[k] = vegU[k];
+    if (forced) for (const k of ['uAlley', 'uAlleyOn', 'uAlleyTone']) shader.uniforms[k] = vegU[k];
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', [
+        'uniform sampler2D uMacro, uLand, uCanopy, uRiprap; uniform vec3 uMacroMean, uCanopyGain, uCanopyMean; uniform vec4 uLandBox, uLawn, uCore;',
+        'uniform float uMacroOn, uLandOn, uCanopyOn, uRiprapOn, uWaterY;',
+        forced ? 'uniform sampler2D uAlley; uniform float uAlleyOn, uAlleyTone;' : '',
+        TIDE_GLSL,
+        'void main() {',
+      ].join('\n'))
+      .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.35, vegWet * 0.8);');
+    canopyPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)', 'isGreen');
+  }
+  // ---- the canopy map (ground-vegetation 7): a top-down picture of every planted tree's crown, re-centred ahead of the
+  // eye as the light map is and drawn only when it moves, red the crowns' cover and green the cover of the trees that cast
+  // no real shadow on this device (the outer tier everywhere, every tree on a phone). The flats read it for a soft
+  // darkening under the crowns and for the crowns' cast shadow, marched toward the sun at three heights: from every tree
+  // past the live shadow box (or on a surface that takes no real shadow), and inside it from the trees that cast none.
+  // Under the crowns, in the late autumn, the leaf fall lies on the grass
+  const CANOPYMAP = { size: isTouch ? 1024 : 2048, span: isTouch ? 4000 : 6000, rt: null, scene: null, cam: null, cx: 1e9, cz: 1e9, renders: 0, data: null, n: 0 };
+  const canU = { uCanMap: { value: null }, uCanBox: { value: new THREE.Vector4(0, 0, 1, 0) }, uCanSun: { value: new THREE.Vector4() },
+    uCanFar: { value: new THREE.Vector4(0, 0, 640, isTouch ? 1 : 0) }, uCanShow: { value: /[?&]canopy=show\b/.test(location.search) ? 1 : 0 } };
+  function canopyPatch(shader, worldExpr, green) {
+    if (!REAL || shader.fragmentShader.indexOf('uniform sampler2D uCanMap;') !== -1) return;
+    Object.assign(shader.uniforms, { uCanMap: canU.uCanMap, uCanBox: canU.uCanBox, uCanSun: canU.uCanSun, uCanFar: canU.uCanFar, uCanShow: canU.uCanShow, uLawn: vegU.uLawn });
+    shader.fragmentShader = shader.fragmentShader
+      .replace('void main() {', 'uniform sampler2D uCanMap; uniform vec4 uCanBox, uCanSun, uCanFar; uniform float uCanShow;' + (green ? '' : ' uniform vec4 uLawn;') + '\nvoid main() {')
+      .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
+        'if (uCanBox.w > 0.5) {',
+        '  vec3 cwp = ' + worldExpr + ';',
+        '  vec2 cuv = vec2((cwp.x - uCanBox.x) * uCanBox.z, 1.0 - (cwp.z - uCanBox.y) * uCanBox.z);',
+        '  float ce = min(min(cuv.x, 1.0 - cuv.x), min(cuv.y, 1.0 - cuv.y));',
+        '  if (ce > 0.0) {',
+        '    float cf = smoothstep(0.0, 0.05, ce);',
+        '    vec4 c0 = texture2D(uCanMap, cuv);',
+        '    vec2 so = uCanSun.xy * uCanBox.z * vec2(1.0, -1.0);',
+        isTouch ? '    vec2 cc = max(texture2D(uCanMap, cuv + so * 5.0).rg, texture2D(uCanMap, cuv + so * 10.0).rg);'   // a phone marches two heights, a computer three
+          : '    vec2 cc = max(max(texture2D(uCanMap, cuv + so * 4.0).rg, texture2D(uCanMap, cuv + so * 8.0).rg), texture2D(uCanMap, cuv + so * 12.0).rg);',
+        '    float cFar = uCanFar.w > 0.5 ? 1.0 : smoothstep(uCanFar.z * 0.75, uCanFar.z * 0.95, distance(cwp.xz, uCanFar.xy));',
+        '    float cst = receiveShadow ? mix(cc.g, cc.r, cFar) : cc.r;',
+        '    diffuseColor.rgb *= (1.0 - 0.2 * c0.r * cf) * mix(1.0, 0.5, cst * uCanSun.z * cf);',
+        '    if (uCanShow > 0.5) diffuseColor.rgb = vec3(c0.r, cst, 0.1) * 0.3;',   // ?canopy=show: the map itself, red the crowns and green their shadow
+        green ? '    float lit = c0.r * uLawn.y * ' + green + ' * cf;' : '',
+        green ? '    if (lit > 0.01) { float ln = stn(cwp.xz * 1.7 + 3.1) * 0.6 + stn(cwp.xz * 5.3) * 0.4; diffuseColor.rgb = mix(diffuseColor.rgb, mix(vec3(0.15, 0.075, 0.025), vec3(0.24, 0.15, 0.04), ln), lit * smoothstep(0.2, 0.55, ln + 0.25 * lit)); }' : '',
+        '  }',
+        '}',
+      ].join('\n'));
+  }
+  // the trees step hands it the planted inventory: x, z, the crown's radius as the card draws it, and whether it casts
+  function canopyMapUpdate() {
+    if (!REAL || !CANOPYMAP.n) return;
+    if (!CANOPYMAP.scene) {
+      const g = new THREE.InstancedBufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]), 2));
+      g.setIndex([0, 1, 2, 0, 2, 3]);
+      g.setAttribute('aT', new THREE.InstancedBufferAttribute(CANOPYMAP.data, 4));
+      g.instanceCount = CANOPYMAP.n;
+      const mat = new THREE.RawShaderMaterial({
+        vertexShader: 'precision highp float; uniform mat4 projectionMatrix; uniform mat4 viewMatrix; attribute vec2 position; attribute vec4 aT; varying vec2 vQ; varying float vC;\n' +
+          'void main() { vQ = position; vC = aT.w; gl_Position = projectionMatrix * viewMatrix * vec4(aT.x + position.x * aT.z, 0.0, aT.y + position.y * aT.z, 1.0); }',
+        fragmentShader: 'precision mediump float; varying vec2 vQ; varying float vC;\n' +
+          'void main() { float c = 1.0 - smoothstep(0.45, 0.9, length(vQ)); gl_FragColor = vec4(c, c * (1.0 - vC), 0.0, 1.0); }',
+        blending: THREE.CustomBlending, blendEquation: THREE.MaxEquation, blendSrc: THREE.OneFactor, blendDst: THREE.OneFactor,
+        depthTest: false, depthWrite: false, side: THREE.DoubleSide,   // seen from above with north up, the quad winds clockwise
+      });
+      const m = new THREE.Mesh(g, mat); m.frustumCulled = false;
+      CANOPYMAP.scene = new THREE.Scene(); CANOPYMAP.scene.add(m);
+      const S = CANOPYMAP.span;
+      CANOPYMAP.cam = new THREE.OrthographicCamera(-S / 2, S / 2, S / 2, -S / 2, 1, 4000);
+      CANOPYMAP.cam.up.set(0, 0, -1);
+    }
+    const S = CANOPYMAP.span, step = S / 16;
+    camera.getWorldDirection(_lmDir);
+    const hl = Math.hypot(_lmDir.x, _lmDir.z) || 1, ahead = clamp(camera.position.y * 2, 0, S * 0.25);
+    const cx = Math.round((camera.position.x + _lmDir.x / hl * ahead) / step) * step, cz = Math.round((camera.position.z + _lmDir.z / hl * ahead) / step) * step;
+    if (CANOPYMAP.rt && cx === CANOPYMAP.cx && cz === CANOPYMAP.cz) return;
+    if (!CANOPYMAP.rt) {
+      // no mips: read at a grazing angle a mip spread every crown's cover over the lawn round it, and the whole of
+      // Rittenhouse Square stood in one shade
+      CANOPYMAP.rt = new THREE.WebGLRenderTarget(CANOPYMAP.size, CANOPYMAP.size, { depthBuffer: false, stencilBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+      canU.uCanMap.value = CANOPYMAP.rt.texture;
+    }
+    CANOPYMAP.cam.position.set(cx, 2000, cz); CANOPYMAP.cam.lookAt(cx, 0, cz); CANOPYMAP.cam.updateMatrixWorld();
+    const r = renderer, prevRT = r.getRenderTarget(), prevA = r.getClearAlpha(), prevAuto = r.autoClear;
+    r.getClearColor(_lmCol);
+    r.setRenderTarget(CANOPYMAP.rt); r.setClearColor(0x000000, 1); r.clear(true, false, false);
+    r.autoClear = false; r.render(CANOPYMAP.scene, CANOPYMAP.cam); r.autoClear = prevAuto;
+    r.setRenderTarget(prevRT); r.setClearColor(_lmCol, prevA);
+    CANOPYMAP.cx = cx; CANOPYMAP.cz = cz; CANOPYMAP.renders++;
+    canU.uCanBox.value.set(cx - S / 2, cz - S / 2, 1 / S, 1);
+  }
+  // ?dev=1's __dbg.veg(): what the ground and the trees have loaded and drawn
+  function vegProbe(full) {
+    const on = (u) => +u.value;
+    return { real: REAL, art: !!VEG_ART, land: !!VEG_LAND, macro: on(vegU.uMacroOn), mask: on(vegU.uLandOn), canopy: on(vegU.uCanopyOn), season: vegU.season,
+      riprap: on(vegU.uRiprapOn), alley: on(vegU.uAlleyOn), lawn: vegU.uLawn.value.toArray().map((v) => +v.toFixed(3)),
+      canopyMap: { trees: CANOPYMAP.n, renders: CANOPYMAP.renders, cx: CANOPYMAP.cx, cz: CANOPYMAP.cz, sun: canU.uCanSun.value.toArray().map((v) => +v.toFixed(3)) },
+      tufts: grassMesh ? grassMesh.count : 0, tuftTint: grassTint.toArray().map((v) => +v.toFixed(3)), trees: TREEART.n,
+      woods: { on: WOOD.on, mask: !!WOOD.mask, trees: WOOD.mesh ? WOOD.mesh.count : 0, sows: WOOD.sows, busy: WOOD.busy },
+      atlas: TREEART.side ? { side: [TREEART.side.N, TREEART.side.A, TREEART.side.AH], top: [TREEART.top.N, TREEART.top.A, TREEART.top.AH] } : null,
+      seasons: TREEART.key, map: full && CANOPYMAP.rt ? vegMapProbe() : undefined };
+  }
+  function vegMapProbe() {   // the canopy map's middle 64 texels square, read back: how many hold a crown, the most cover
+    const N = 64, b = new Uint8Array(N * N * 4), h = CANOPYMAP.size / 2 - N / 2;
+    renderer.readRenderTargetPixels(CANOPYMAP.rt, h, h, N, N, b);
+    let n = 0, mr = 0, mg = 0;
+    for (let i = 0; i < N * N; i++) { if (b[i * 4] > 0) n++; mr = Math.max(mr, b[i * 4]); mg = Math.max(mg, b[i * 4 + 1]); }
+    return { lit: n, maxR: mr, maxG: mg, box: canU.uCanBox.value.toArray(), same: canU.uCanMap.value === CANOPYMAP.rt.texture };
+  }
+  // every frame: the lawn's season and the leaf fall from the model's date, the woods' season, the canopy map and its sun
+  let vegDoyAt = -1;
+  function vegUpdate(now) {
+    if (!REAL) return;
+    if (now - vegDoyAt > 2000 || vegDoyAt < 0) {
+      vegDoyAt = now;
+      const doy = Math.round((Date.UTC(clock.y, clock.m - 1, clock.d) - Date.UTC(clock.y, 0, 1)) / 864e5) + clock.minutes / 1440;
+      // dormant from December to March, green again by mid-April; the leaves lie from late October, thickest late November
+      vegU.uLawn.value.x = doy >= 300 ? smooth(334, 364, doy) : 1 - smooth(59, 104, doy);
+      vegU.uLawn.value.y = doy < 200 ? 0 : smooth(300, 326, doy) * (1 - smooth(345, 365, doy));
+      vegCanopySeason(doy);
+    }
+    canopyMapUpdate();
+    woodUpdate();
+    if (CANOPYMAP.rt) {
+      const k = smooth(0.03, 0.2, sunDir.y) * (1 - 0.85 * smooth(0.55, 0.95, WX.cover)) * (1 - WXFX.gloom);
+      const sy = Math.max(sunDir.y, 0.2);
+      canU.uCanSun.value.set(sunDir.x / sy, sunDir.z / sy, k, 0);
+      canU.uCanFar.value.x = lastAim.cx; canU.uCanFar.value.y = lastAim.cz; canU.uCanFar.value.z = lastAim.extent;
+    }
+  }
   function surfTexPatch(shader, opt) {
     const forced = opt === true;
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
@@ -23937,30 +24428,14 @@ float pinOccGate() {
         'float isGreen = ' + (forced ? '1.0;' : 'step(diffuseColor.r * 1.15, diffuseColor.g) * step(diffuseColor.b * 1.25, diffuseColor.g);'),
         'vec3 am = vec3((0.97 + 0.06 * sn1) * (0.98 + 0.04 * sn2) * (1.0 + 0.10 * (sn3 - 0.5)));',
         // the meadow: the painted tile at 6.5 m, a rotated 47 m copy as the macro tone, the
-        // world-space mottle as the block-to-block drift; the flat's own colour is a tint
-        'vec2 gUv1 = sWP.xz * 0.1538, gUv2 = vec2(sWP.x * 0.9397 + sWP.z * 0.342, -sWP.x * 0.342 + sWP.z * 0.9397) * 0.0885 + 0.37;',
-        'vec3 gTex = mix(texture2D(uGrass, gUv1).rgb, texture2D(uGrass, gUv2).rgb, 0.5);',
-        // Round 183: the generated lawn, toned, and the rougher verge through it on the 83 m noise (more of it on bare ground)
-        'if (uGrassArt > 0.5) { vec3 gB = mix(texture2D(uGrass2, gUv1).rgb, texture2D(uGrass2, gUv2).rgb, 0.5) * uGrassTone2;',
-        '  float mw = smoothstep(0.38, 0.72, stn(sWP.xz * 0.012 + 3.7) + ' + (forced ? '0.18' : '0.0') + ');',
-        '  gTex = mix(gTex * uGrassTone, gB, mw); }',
-        // Round 185: the bare ground is not all lawn: yards and lots come through it on a 55 m noise, at the painted tile's brightness
-        forced ? 'if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9; vec3 gY = mix(texture2D(uYard, gUv1 * 0.65).rgb, texture2D(uYard, gUv2 * 1.3).rgb, 0.35) * uYardTone; gTex = mix(gTex, gY, yw); }' : '',
-        'vec3 gMac = texture2D(uGrass, vec2(sWP.x * 0.866 - sWP.z * 0.5, sWP.x * 0.5 + sWP.z * 0.866) * 0.02128).rgb;',
-        'float gMacL = dot(gMac, vec3(0.30, 0.59, 0.11)) * uGrassK;',
-        // Broad, low-contrast moisture variation at 83 m and 22 m. Fine grain fades
-        // to its mean before it can shimmer; the lawn stays the same brightness.
-        'float gtn1 = stn(sWP.xz * 0.012);',
-        'float gtn2 = mix(0.5, stn(sWP.xz * 0.045), 1.0 - smoothstep(8.0, 30.0, sfw));',
-        'float gtn3 = mix(0.5, stn(sWP.xz * 0.35), 1.0 - smoothstep(1.0, 4.0, sfw));',
-        'float gt = smoothstep(0.30, 0.70, gtn1 * 0.7 + gtn2 * 0.3);',
-        'vec3 gMul = mix(vec3(0.86, 0.90, 0.83), vec3(1.03, 1.04, 1.0), gt) * (0.97 + 0.06 * gtn3);',
-        'vec3 grass = gTex * mix(1.0, gMacL, 0.20) * (0.97 + 0.06 * sn1) * gMul * ' + MEADOW_GAIN.toFixed(2) + ';',
-        'grass = mix(vec3(dot(grass, vec3(0.30, 0.59, 0.11))), grass, ' + (REAL ? '0.70' : '0.88') + ');',   // a little of the saturation out (Round 54; Round 185 more)
+        // world-space mottle as the block-to-block drift; the flat's own colour is a tint (vegGrassGLSL: the realism pass)
+        ...vegGrassGLSL(forced),
         'vec3 gTint = clamp(diffuseColor.rgb / vec3(0.141, 0.22, 0.094), 0.3, 1.6);',
         street,
         'diffuseColor.rgb = mix(diffuseColor.rgb * am, grass * gTint, isGreen);',
+        vegAfterGLSL(),
       ].join('\n'));
+    vegSurfPatch(shader, forced);   // the realism pass: its uniforms, the bank's gloss and the canopy map
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
     lampLightPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // Round 140
   }
@@ -24002,7 +24477,7 @@ float pinOccGate() {
       .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
         'float wxUpW = smoothstep(0.55, 0.85, clamp(dot(normalize(vNormal), (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz), 0.0, 1.0));',
         'vec3 wxWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
-        'float wxN = fract(sin(dot(floor(wxWP.xz * 0.9), vec2(127.1, 311.7))) * 43758.5453);',
+        'float wxN = smoothstep(0.25, 0.75, 0.55 * cshn(wxWP.xz * 0.08) + 0.30 * cshn(wxWP.xz * 0.35 + 7.1) + 0.15 * cshn(wxWP.xz * 1.7 + 3.3));',   // the realism pass (weather 8): drifts, not a checkerboard of 1.1 m squares
         'float wxSnowW = uSnowAcc * max(wxUpW, 0.14) * (0.78 + 0.22 * wxN);',
         'float wxDark = 1.0 - clamp(dot(diffuseColor.rgb, vec3(0.55)), 0.0, 1.0);',
         'float wxWetW = uWet * wxUpW * (1.0 - wxSnowW);',
@@ -25786,6 +26261,7 @@ float pinOccGate() {
     updateRoofKit(now);   // Round 150
     updateFronts(now);   // Round 181
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
+    vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
     updateTreePick();
     updateMarkets(now);
@@ -25943,6 +26419,7 @@ float pinOccGate() {
     }
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
+    if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); }   // the realism pass: the ground's and the trees' state
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);
