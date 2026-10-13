@@ -41,15 +41,66 @@ class Page(unittest.TestCase):
         v = s[a:s.index('  }`;', a)]
         self.assertIn('mix(position.x + 0.5, 0.5 - position.x, step(0.5, v1))', v)   # mirrored by its seed
         self.assertIn('* (0.92 + 0.16 * v2)', v)                                     # its size
-        self.assertIn('- 0.035 * S * (1.0 - lean)', v)                               # the root plate under the grass
+        self.assertIn("- ${REAL ? '0.035 * S * (1.0 - lean)'", v)                       # the root plate under the grass
         self.assertIn('float turn = smoothstep(seedT * 0.7, seedT * 0.7 + 0.3, L1.x);', v)   # inside the change, always
         self.assertIn('nrmOut = normalize(rt * q.x * 0.75 + up * q.y * 0.75 + nC * 0.65 + vec3(0.0, 0.25, 0.0));', v)
         self.assertIn("seedT = abs(aLS.y);", v)                                # a wood field tree's seed is negative
+        # the look behind REAL (the review: ?real=0 showed the realism pass's trees): size, width, sink, mirror, the dome
+        self.assertIn("float S = mix(H / hf, D / df, tw)${REAL ? ' * (0.92 + 0.16 * v2)' : ''};", v)
+        self.assertIn("${REAL ? '0.035 * S * (1.0 - lean)' : '0.03 * (1.0 - lean)'}", v)
+        self.assertIn("vec2 cs = ${REAL ? 'vec2(mix(position.x + 0.5, 0.5 - position.x, step(0.5, v1)), yy)' : 'vec2(position.x + 0.5, yy)'};", v)
+        self.assertIn(": 'nrmOut = normalize(mix(vec3(fh.x * 0.45, 1.0, fh.y * 0.45), vec3(0.0, 1.0, 0.0), tw));'}", v)
+        p = fn(s, 'treeArtPatch')
+        self.assertIn("(depth ? '' : '  diffuseColor.rgb *= pow(tx.rgb, vec3(2.2));\\n' + (REAL ?", p)
+        self.assertIn("tx.rgb = min(tx.rgb / max(tx.a, 0.004), vec3(1.0));", p)   # the premultiply fix holds either way
+
+    def test_the_turning_picture_is_scattered(self):
+        s = self.s
+        a = s.index('  const TREE_PICK = REAL ? [')
+        k = s[a:s.index(";\n", s.index("vec4 tPick(sampler2D s, vec4 uv, float k) { if (k <= 0.001)", a)) + 2]
+        self.assertIn('smoothstep(tNa - 0.15, tNa + 0.15, k * 1.3 - 0.15)', k)          # the change comes in leaf clumps
+        self.assertIn('if (mod(tTp, 2.0) > 0.5) a = tGreen(a); if (tTp > 1.5) b = tGreen(b);', k)
+        self.assertIn("TREEART.uLk.value[li].w = (st[0] === 'turning' ? 1 : 0) + (st[1] === 'turning' ? 2 : 0);", s)
+
+    def test_the_atlas_goes_up_by_the_cell(self):
+        s = self.s
+        a = fn(s, 'treeArtAtlas')
+        self.assertIn('tex.onUpdate = () => { if (at.live) return; at.live = true; at.cv.width = at.cv.height = 1; at.ctx = null; };', a)
+        f = fn(s, 'atlasFlush')
+        self.assertIn('renderer.copyTextureToTexture(_atPos.set(x, at.AH - y - at.N), c.tex, at.tex);', f)
+        self.assertIn('at.tex.generateMipmaps = mips && i === at.pend.length - 1;', f)   # the mips once a flush
+        self.assertIn('if (!at.live) at.tex.needsUpdate = true;', f)                      # never the freed canvas again
+        a = s.index('  async function treeArtSeason(force) {')
+        self.assertNotIn('tex.needsUpdate = true', s[a:s.index('\n  }\n', a)])
+
+    def test_the_wood_field(self):
+        s = self.s
+        w = fn(s, 'woodAt')
+        self.assertIn("M.gb[(j * M.w + i) * 2] === 0) return null;", w)   # its own texel: water or a railway
+        st = fn(s, 'woodStep')
+        self.assertIn('const g = m[0] + 0.3 * (woodNoise(x, z) - 0.5);', st)
+        self.assertEqual(st.count('needsUpdate = true'), 2)                # the matrices and aLS, once, at the sow's end
+        end = st[st.index('if (W.row > 2 * n || W.k >= W.N) {'):]
+        self.assertIn('im.instanceMatrix.needsUpdate = true; W.ls.needsUpdate = true;', end)
+        self.assertIn("!/[?&]woods=0\\b/.test(location.search)", s)
+
+    def test_a_phone_carries_less(self):
+        s = self.s
+        self.assertIn("if (isTouch) shader.fragmentShader = '#define VEG_NO_RIPRAP\\n' + shader.fragmentShader;", fn(s, 'vegSurfPatch'))
+        self.assertIn("names.delete(name);", fn(s, 'vegSamplers'))
+        self.assertIn("new THREE.InstancedBufferAttribute(CANOPYMAP.data, 4).onUpload(dropUploadedArray)", s)
+        self.assertIn("CANOPYMAP.data = null;", fn(s, 'canopyMapUpdate'))
+        v = fn(s, 'loadVegArt')
+        self.assertIn("VEG_ART.parkmacro && !TIER2", v)
+        self.assertIn("VEG_ART.alley && !TIER2", v)
 
     def test_snow_on_the_trees_and_the_ground(self):
         s = self.s
         self.assertIn("uSnowAcc: wxSurfU.uSnowAcc, uTexelS: { value: 1.5 / S.AH }", s)
-        self.assertNotIn("floor(wxWP.xz * 0.9)", s)                                  # the 1.1 m checkerboard
+        # the drifts under REAL; ?real=0 keeps Round 185's 1.1 m hash (the review: every look change behind the flag)
+        self.assertIn("REAL ? 'float wxN = smoothstep(0.25, 0.75, 0.55 * cshn(wxWP.xz * 0.08)", s)
+        self.assertIn(": 'float wxN = fract(sin(dot(floor(wxWP.xz * 0.9), vec2(127.1, 311.7))) * 43758.5453);',", s)
+        self.assertIn("(REAL ? ' diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.80, 0.83, 0.87), uSnowAcc * smoothstep(-0.2, 0.9, vCY) * 0.85);' : '')", s)
         self.assertIn("transformed.y *= 1.0 - smoothstep(0.15, 0.45, uSnowAcc);", s)  # the tufts lie down
 
     def test_the_tufts(self):
@@ -70,7 +121,7 @@ class Page(unittest.TestCase):
         self.assertIn('vegSurfPatch(shader, forced, paved);', fn(s, 'surfTexPatch'))
         self.assertIn('vegUpdate(now);', s)
         self.assertIn("step('Planting the woods', woodInit);", s)
-        self.assertIn("const WOOD = { on: REAL && !isTouch && TIER === 0 && TREE_ART_ON,", s)   # never on a phone
+        self.assertIn("const WOOD = { on: REAL && !isTouch && TIER === 0 && TREE_ART_ON && ", s)   # never on a phone
         self.assertIn("const VEG_LAND = REAL && !TIER2 && typeof LAND_MASK !== 'undefined'", s)
         # the canopy map's quads seen from above wind clockwise: drawn both sides or none draws
         self.assertIn('depthTest: false, depthWrite: false, side: THREE.DoubleSide,', fn(s, 'canopyMapUpdate'))
@@ -82,6 +133,24 @@ class Page(unittest.TestCase):
         s = self.s
         self.assertEqual(s.count('float tideK(float tH)'), 1)
         self.assertIn('function tidePatch(shader, worldExpr) {', s)
+        self.assertIn("im.material.onBeforeCompile = (sh) => tidePatch(sh, 'cameraPosition - vViewPosition * mat3(viewMatrix)');", s)   # the piers' piles
+
+    def test_every_extra_picture_can_go(self):
+        # the texture budget: the ground's patch ends by counting, and each extra picture's declaration and every read of it
+        # sit inside its own #ifndef, or a define would leave a read of an undeclared sampler and the program would not link
+        s = self.s
+        body = fn(s, 'surfTexPatch')
+        self.assertTrue(body.rstrip().endswith("vegBudget(shader, forced ? 'ground' : paved ? 'paved' : 'surface');   // last: within the GPU's texture units, whatever the passes added\n  }"))
+        for define, name in (('VEG_NO_RIPRAP', 'uRiprap'), ('VEG_NO_MACRO', 'uMacro'), ('VEG_NO_ALLEY', 'uAlley'), ('VEG_NO_CANOPY', 'uCanopy')):
+            self.assertIn("['" + define + "', '" + name + "']", s)
+            uses = [i for i in range(len(s)) if s.startswith('texture2D(' + name + ',', i) or s.startswith('uniform sampler2D ' + name + ';', i)]
+            self.assertGreater(len(uses), 1, name)
+            for i in uses:
+                opened, closed = s.rfind('#ifndef ' + define, 0, i), s.rfind('#endif', 0, i)
+                self.assertGreater(opened, closed, name + ' read outside its #ifndef')
+                self.assertLess(i - opened, 1200, name)
+                self.assertNotIn('sampler2D ' + name + ',', s)      # never in a list a define cannot split
+                self.assertNotIn(', ' + name + ';', s)
 
 
 @unittest.skipUnless(shutil.which('node'), 'node is not installed')
@@ -108,6 +177,41 @@ console.log(JSON.stringify({ oct12Plane: at('plane', 10, 12, true), oct20Maple: 
         self.assertEqual(o['dec1Plane'][:2], ['autumn', 'winter'])
         self.assertEqual(o['dec31Oak'][:2], ['winter', 'winter'])   # the oaks hold theirs into December
         self.assertEqual(o['oct30NoTurn'][:2], ['summer', 'autumn'])       # a look without a turning picture goes straight
+
+    def test_the_budget(self):
+        s = (ROOT / 'app.js').read_text()
+        a = s.index('  const VEG_DROP = ')
+        decl = s[a:s.index('\n', s.index('  const VEG_BUDGET = ', a)) + 1]
+        b = s.index('  const VEG_THREE_MAPS = ')
+        decl += s[b:s.index('];', b) + 3]
+        js = ('const REAL = true; let location = { search: "" }; const renderer = { capabilities: { maxTextures: 16 } };\n' +
+              decl.replace('const VEG_TEX', 'let VEG_TEX') + fn(s, 'vegSamplers') + fn(s, 'vegBudget') + r'''
+const own = 'uniform sampler2D uGrass; uniform sampler2D uGrass2;\nuniform sampler2D uAsph, uConc, uBrick; uniform vec3 uStM;\nuniform sampler2D uLand;\n' +
+  '#ifndef VEG_NO_MACRO\nuniform sampler2D uMacro;\n#endif\n#ifndef VEG_NO_CANOPY\nuniform sampler2D uCanopy;\n#endif\n#ifndef VEG_NO_RIPRAP\nuniform sampler2D uRiprap;\n#endif\n' +
+  'uniform sampler2D uCanMap; uniform vec4 uCanBox;\nuniform sampler2D uLampMap, uLampNear; uniform vec4 uLampBox;\n';
+const three = '#ifdef USE_SHEENCOLORMAP\n\tuniform sampler2D sheenColorMap;\n#endif\n#ifdef USE_SPECULARCOLORMAP\n\tuniform sampler2D specularColorMap;\n#endif\n';
+const par = (extra, shadows) => ({ fragmentShader: three + extra + own, envMap: true, shadowMapEnabled: true, numDirLightShadows: shadows, numSpotLightShadows: 0, numPointLightShadows: 0 });
+const out = {};
+let p = par('', 1); vegBudget(p, 'mine'); out.mine = [vegSamplers(p).n, p.fragmentShader.indexOf('#define') < 0];
+p = par('uniform sampler2D uWxLampMap; uniform vec4 uWxLampBox;\nuniform sampler2D uLotTex;\n', 2); vegBudget(p, 'lot');
+out.lot = [vegSamplers(p).n, (p.fragmentShader.match(/#define VEG_NO_\w+/g) || [])];
+p = par('uniform sampler2D uA[4];\n', 2); vegBudget(p, 'many');
+out.many = [vegSamplers(p).n, (p.fragmentShader.match(/#define VEG_NO_\w+/g) || [])];
+VEG_TEX = 11; p = par('', 1); vegBudget(p, 'pinned');
+out.pinned = (p.fragmentShader.match(/#define VEG_NO_\w+/g) || []);
+out.seen = VEG_BUDGET.seen;
+console.log(JSON.stringify(out));
+''')
+        r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        o = json.loads(r.stdout)
+        self.assertEqual(o['mine'], [14, True])                   # ten of its own, the lamps' two, envMap, one shadow: 14, kept whole
+        self.assertEqual(o['lot'][0], 16)                          # 17 (the weather's lamp read, a lot's stripes, a second shadow), counted again after the drop
+        self.assertEqual(o['lot'][1], ['#define VEG_NO_RIPRAP'])   # one over: the riprap goes, the rest stays
+        self.assertEqual(o['many'][1], ['#define VEG_NO_CANOPY', '#define VEG_NO_MACRO', '#define VEG_NO_RIPRAP'])   # an array counts each
+        self.assertEqual(o['pinned'], ['#define VEG_NO_CANOPY', '#define VEG_NO_MACRO', '#define VEG_NO_RIPRAP'])
+        self.assertEqual(o['seen']['lot 17']['drop'], ['uRiprap'])
+        self.assertNotIn('sheenColorMap', o['seen']['lot 17']['own'])
 
     def test_a_computer_draws_the_bake_size(self):
         s = (ROOT / 'app.js').read_text()
@@ -174,6 +278,48 @@ class Data(unittest.TestCase):
         self.assertGreater(px(-5600, -11600)[1], 0.5)    # the Wissahickon gorge is woods
         self.assertGreater(px(-5450, 1500)[2], 0.9)      # the Schuylkill at Bartram's is a river's bank
         self.assertLess(px(-1300, -300)[2], 0.1)
+
+    def test_no_woods_on_water_or_a_railway(self):
+        # the review: about 10 km2 of water and the Amtrak corridor took woods (East Park Reservoir, the Wissahickon's
+        # channel, Darby Creek, FDR Park's lakes). Every texel a water ring or an open track touches is exactly 0, and the
+        # wood field plants nothing on a zero texel
+        import sys
+        import numpy as np
+        from PIL import Image, ImageDraw
+        sys.path.insert(0, str(ROOT))
+        import bake_landmask as B
+        m = json.loads((ROOT / 'land_mask.json').read_text())
+        G = np.asarray(Image.open(ROOT / m['img']).convert('RGB'))[:, :, 1]
+        x0, z0, px = m['box'][0], m['box'][1], m['px']
+        rings = [r for name, unit in B.BLOBS for k, r in B.read_blob(name, unit)[2] if k == 1]
+        rings += [list(zip(f[0::2], f[1::2])) for f in json.loads((ROOT / 'nw_water.json').read_text())['polys']]
+        S, X0, X1, Z0, Z1 = 5.0, -12000, 1500, -21700, 9700
+        c = Image.new('L', (int((X1 - X0) / S), int((Z1 - Z0) / S)), 0)
+        d = ImageDraw.Draw(c)
+        for r in rings:
+            if len(r) >= 3:
+                d.polygon([((x - X0) / S, (z - Z0) / S) for x, z in r], fill=255)
+        jj, ii = np.nonzero(np.asarray(c) > 127)
+        xs, zs = X0 + (ii + 0.5) * S, Z0 + (jj + 0.5) * S
+        g = G[((zs - z0) / px).astype(int), ((xs - x0) / px).astype(int)]
+        self.assertGreater(len(g), 500000)                     # 12 km2 and more of water west of the Delaware's bank
+        self.assertEqual(int((g > 0).sum()), 0)
+        for x, z in ((-4234, -4477), (-3000, 4500)):          # East Park Reservoir's ring, FDR Park's lakes
+            self.assertEqual(int(G[int((z - z0) / px), int((x - x0) / px)]), 0)
+        rail = json.loads((ROOT / 'rail_amtrak.json').read_text())
+        bad = 0
+        for l in rail['lines']:
+            if l.get('t'):
+                continue
+            p = np.array(l['p'], float)[:, :2]
+            for a, b in zip(p[:-1], p[1:]):
+                n = max(1, int(np.hypot(*(b - a)) / 8.5))
+                for t in np.arange(n) / n:
+                    q = a + (b - a) * t
+                    i, j = int((q[0] - x0) / px), int((q[1] - z0) / px)
+                    if 0 <= i < G.shape[1] and 0 <= j < G.shape[0]:   # the corridor runs past the mask's box
+                        bad += int(G[j, i] > 0)
+        self.assertEqual(bad, 0)
 
 
 if __name__ == '__main__':
