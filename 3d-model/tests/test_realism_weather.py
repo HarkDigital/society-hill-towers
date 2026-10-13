@@ -52,14 +52,17 @@ class WetStreets(unittest.TestCase):
         self.assertIn('vLane.z - 1.25', c)                        # the gutters: the road's last metre each side
 
     def test_the_lamp_pool_guard_still_sees_its_own_declaration(self):
-        # lampLightPatch returns early when the shader already declares 'uniform sampler2D uLampMap' (the realistic patch
-        # declares it beside the near map, so the guard reads the name without its semicolon), and the weather
-        # wraps the flats before surfTexPatch runs: a weather declaration under that name would switch the pools off
+        # lampLightPatch returns early once a lamp patch has run (its declarations end 'uniform float uLampOn;'), and the
+        # weather wraps the flats before surfTexPatch runs: the weather's own declarations name the lamp map only through
+        # LAMP_WX_DECL, which the lamp patch then leaves out of its own
         f = cut(self.s, '  function wxWetPatch(shader) {', '\n  }\n')
-        self.assertNotIn('uniform sampler2D uLampMap', f)
         self.assertNotIn('uniform sampler2D uLampMap', cut(self.s, '  const WX_WET_GLSL = {', '\n  };\n'))
-        self.assertIn('uniform sampler2D uWxLampMap;', f)
-        self.assertIn("if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap') !== -1) return;", self.s)
+        # the lamps on the wet street read the lamp patch's own sampler (a second name for the same texture spent a unit of
+        # sixteen): the wet patch declares it, and the lamp patch, keyed on its own uLampOn, declares only the rest
+        self.assertIn("if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap') === -1) decl += '\\n' + LAMP_WX_DECL;", f)
+        self.assertNotIn('uWxLampMap', self.s)
+        self.assertIn("if (shader.fragmentShader.indexOf('uniform float uLampOn;') !== -1) return;", self.s)
+        self.assertIn("(fs.indexOf(LAMP_WX_DECL) !== -1 ? 'uniform sampler2D uLampNear;", self.s)
 
     def test_the_gutters_land_after_every_hook(self):
         s = self.s

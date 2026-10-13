@@ -26716,7 +26716,7 @@ float pinOccGate() {
   // mode: 'wall' the facade shader (vertical faces, the first storeys), 'blade' the grass tufts (no gate), else the
   // ground: faces turned up only, so a pier, a soffit, a pit wall or a party-wall skin never takes a pool from below
   function lampLightPatch(shader, worldExpr, mode) {
-    if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap') !== -1) return;   // once (the realistic patch declares it with the near map)
+    if (shader.fragmentShader.indexOf('uniform float uLampOn;') !== -1) return;   // once (both lamp patches end their declarations so; the wet streets' patch may already have declared the map, LAMP_WX_DECL)
     shader.uniforms.uLampMap = lampMapU.uLampMap; shader.uniforms.uLampBox = lampMapU.uLampBox; shader.uniforms.uLampOn = lampMapU.uLampOn; shader.uniforms.uLampFade = lampMapU.uLampFade;
     if (REAL) { lampLightPatchReal(shader, worldExpr, mode); return; }
     // Round 146 (Mike: the street lights should "light up more than just the bottom of buildings", then "we don't need the
@@ -26813,7 +26813,8 @@ float pinOccGate() {
   // by an 11 m noise (their average halved its contrast), photographed colour (the 0.7 saturation and the olive felt
   // gone), the parks' broad dry and damp variation from the air, the yards behind the rows where the mask says built up,
   // and the lawn's winter dormancy. ?real=0 is Round 185's meadow, line for line
-  function vegGrassGLSL(forced) {
+  function vegGrassGLSL(forced, paved) {
+    if (paved) return ['vec3 grass = vec3(0.0), vegLM = vec3(0.0);'];   // a paved surface is never green (surfTexPatch)
     const pre = [
       'vec2 gUv1 = sWP.xz * 0.1538, gUv2 = vec2(sWP.x * 0.9397 + sWP.z * 0.342, -sWP.x * 0.342 + sWP.z * 0.9397) * 0.0885 + 0.37;',
     ];
@@ -26876,8 +26877,9 @@ float pinOccGate() {
   // at the two rivers the bank (ground-vegetation 10 and water 7, one snippet): riprap on the carved slope down to the
   // water, dark wet silt in the last metre, and the tide's stain (a darker, greener band to 1.9 m over the water, about
   // the Delaware's range at Philadelphia), wet and glossy; the mask's blue keeps it to the rivers' own banks
-  function vegAfterGLSL() {
+  function vegAfterGLSL(paved) {
     if (!REAL) return '';
+    if (paved) return 'float vegWet = 0.0;';
     return [
       'float vegWet = 0.0;',
       'if (uLandOn > 0.5 && isGreen > 0.5) {',
@@ -26912,13 +26914,13 @@ float pinOccGate() {
       .replace('#include <color_fragment>', '#include <color_fragment>\n{ float tH = (' + worldExpr + ').y - uWaterY; diffuseColor.rgb *= tideTint(tH, 1.0); }')
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n{ float tH = (' + worldExpr + ').y - uWaterY; roughnessFactor = mix(roughnessFactor, 0.35, tideK(tH) * 0.7); }');
   }
-  function vegSurfPatch(shader, forced) {
+  function vegSurfPatch(shader, forced, paved) {
     if (!REAL) return;
     for (const k of ['uMacro', 'uMacroMean', 'uMacroOn', 'uLand', 'uLandBox', 'uLandOn', 'uCanopy', 'uCanopyGain', 'uCanopyMean', 'uCanopyOn', 'uRiprap', 'uRiprapOn', 'uWaterY', 'uLawn', 'uCore']) shader.uniforms[k] = vegU[k];
     if (forced) for (const k of ['uAlley', 'uAlleyOn', 'uAlleyTone']) shader.uniforms[k] = vegU[k];
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
-        'uniform sampler2D uMacro, uLand, uCanopy, uRiprap; uniform vec3 uMacroMean, uCanopyGain, uCanopyMean; uniform vec4 uLandBox, uLawn, uCore;',
+        (paved ? '' : 'uniform sampler2D uMacro, uLand, uCanopy, uRiprap; ') + 'uniform vec3 uMacroMean, uCanopyGain, uCanopyMean; uniform vec4 uLandBox, uLawn, uCore;',
         'uniform float uMacroOn, uLandOn, uCanopyOn, uRiprapOn, uWaterY;',
         forced ? 'uniform sampler2D uAlley; uniform float uAlleyOn, uAlleyTone;' : '',
         TIDE_GLSL,
@@ -27065,7 +27067,7 @@ float pinOccGate() {
       '    float lk = 0.45 * mix(0.3, 1.0, 1.0 - smoothstep(0.35, 0.7, abs(vWNorm.y))) * ((1.0 - smoothstep(0.55, 1.05, lyr)) + 0.12 * (1.0 - smoothstep(1.0, 2.4, lyr))) * (1.0 - 0.9 * clamp(' + glass + ', 0.0, 1.0));',
     ].join('\n') : '    float lk = ' + (mode === 'blade' ? '1.0' : mode === 'crown' ? '0.12' : 'smoothstep(0.35, 0.7, inverseTransformDirection(normal, viewMatrix).y)') + ';';
     shader.fragmentShader = shader.fragmentShader
-      .replace('void main() {', 'uniform sampler2D uLampMap, uLampNear; uniform vec4 uLampBox, uLampFade, uLampNearBox, uLampNearFade, uLampReal; uniform float uLampOn;\nvoid main() {')
+      .replace('void main() {', (fs.indexOf(LAMP_WX_DECL) !== -1 ? 'uniform sampler2D uLampNear; uniform vec4 uLampFade, uLampNearBox, uLampNearFade, uLampReal;' : 'uniform sampler2D uLampMap, uLampNear; uniform vec4 uLampBox, uLampFade, uLampNearBox, uLampNearFade, uLampReal;') + ' uniform float uLampOn;\nvoid main() {')
       .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
         'if (uLampOn > 0.001) {',
         '  vec3 lwp = ' + worldExpr + ';',
@@ -27088,6 +27090,10 @@ float pinOccGate() {
   }
   function surfTexPatch(shader, opt) {
     const forced = opt === true, walk = opt === 'walk';   // walk (the realism pass, walkMat): a sidewalk, concrete unless it is brick, whatever its brightness
+    // the realism pass: a paved surface (the lane-painted roads and decks, the lots, a structure's concrete or steel; their
+    // own patches run first) takes no grass and no vegetation maps. A program has sixteen texture units, the sixteenth
+    // sampler failed every road, lot and deck, and none of them is ever green
+    const paved = REAL && !forced && /varying vec4 vLane;|uniform sampler2D (uLotTex|uConcWall|uElSteel)\b/.test(shader.fragmentShader);
     shader.uniforms.uGrass = texU.uGrass; shader.uniforms.uGrassK = texU.uGrassK;
     shader.uniforms.uGrass2 = texU.uGrass2; shader.uniforms.uGrassTone = texU.uGrassTone; shader.uniforms.uGrassTone2 = texU.uGrassTone2; shader.uniforms.uGrassArt = texU.uGrassArt;
     if (!forced) for (const k of ['uAsph', 'uConc', 'uBrick', 'uStM', 'uStBrick', 'uStScale', 'uStreetArt']) shader.uniforms[k] = texU[k];
@@ -27116,7 +27122,7 @@ float pinOccGate() {
     ].join('\n');
     shader.fragmentShader = shader.fragmentShader
       .replace('void main() {', [
-        'uniform sampler2D uGrass; uniform float uGrassK; uniform sampler2D uGrass2; uniform vec3 uGrassTone; uniform vec3 uGrassTone2; uniform float uGrassArt;',
+        paved ? 'uniform float uGrassK; uniform vec3 uGrassTone; uniform vec3 uGrassTone2; uniform float uGrassArt;' : 'uniform sampler2D uGrass; uniform float uGrassK; uniform sampler2D uGrass2; uniform vec3 uGrassTone; uniform vec3 uGrassTone2; uniform float uGrassArt;',
         forced ? 'uniform sampler2D uYard; uniform float uYardTone, uYardOn;' : 'uniform sampler2D uAsph, uConc, uBrick; uniform vec3 uStM, uStBrick, uStScale; uniform float uStreetArt;',
         'float sth(vec2 p){ vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }',
         'float stn(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
@@ -27131,17 +27137,17 @@ float pinOccGate() {
         // mean brightness fall with the pixel footprint, a dark front that moved with the camera
         'float sn2 = mix(0.5, stn(sWP.xz * 0.5), 1.0 - smoothstep(1.0, 4.0, sfw));',
         'float sn3 = mix(0.5, stn(sWP.xz * 4.0), 1.0 - smoothstep(0.08, 0.4, sfw));',
-        'float isGreen = ' + (forced ? '1.0;' : 'step(diffuseColor.r * 1.15, diffuseColor.g) * step(diffuseColor.b * 1.25, diffuseColor.g);'),
+        'float isGreen = ' + (forced ? '1.0;' : paved ? '0.0;' : 'step(diffuseColor.r * 1.15, diffuseColor.g) * step(diffuseColor.b * 1.25, diffuseColor.g);'),
         'vec3 am = vec3((0.97 + 0.06 * sn1) * (0.98 + 0.04 * sn2) * (1.0 + 0.10 * (sn3 - 0.5)));',
         // the meadow: the painted tile at 6.5 m, a rotated 47 m copy as the macro tone, the
         // world-space mottle as the block-to-block drift; the flat's own colour is a tint (vegGrassGLSL: the realism pass)
-        ...vegGrassGLSL(forced),
+        ...vegGrassGLSL(forced, paved),
         'vec3 gTint = clamp(diffuseColor.rgb / vec3(0.141, 0.22, 0.094), 0.3, 1.6);',
         street,
         'diffuseColor.rgb = mix(diffuseColor.rgb * am, grass * gTint, isGreen);',
-        vegAfterGLSL(),
+        vegAfterGLSL(paved),
       ].join('\n'));
-    vegSurfPatch(shader, forced);   // the realism pass: its uniforms, the bank's gloss and the canopy map
+    vegSurfPatch(shader, forced, paved);   // the realism pass: its uniforms, the bank's gloss and the canopy map
     cloudShadowPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');
     lampLightPatch(shader, 'cameraPosition - vViewPosition * mat3(viewMatrix)');   // Round 140
   }
@@ -27267,12 +27273,16 @@ float pinOccGate() {
     '  float w = d - rt * 0.45; float ring = sin(w * 55.0) * exp(-w * w * 260.0) * (1.0 - rt) * (1.0 - rt);',
     '  return v / max(d, 1e-3) * ring; }',
   ].join('\n');
+  const LAMP_WX_DECL = 'uniform sampler2D uLampMap; uniform vec4 uLampBox;';
   function wxWetPatch(shader) {
     shader.uniforms.uWxTime = wxWetU.uWxTime; shader.uniforms.uRainNow = wxWetU.uRainNow; shader.uniforms.uWxLampOn = lampMapU.uLampOn; shader.uniforms.uWxSunK = wxWetU.uWxSunK;
     let decl = WX_WET_GLSL.decl;
     if (!isTouch) decl += '\n' + WX_RIPPLE_GLSL;
-    decl += '\nuniform sampler2D uWxLampMap; uniform vec4 uWxLampBox;';
-    shader.uniforms.uWxLampMap = lampMapU.uLampMap; shader.uniforms.uWxLampBox = lampMapU.uLampBox;
+    // the lamp map under the lamp patch's own names, not a second sampler on the same texture: a program has sixteen texture
+    // units and the ground stood at exactly sixteen. Declared here (its functions come before the lamp patch's declarations),
+    // and the lamp patch then declares only the rest
+    if (shader.fragmentShader.indexOf('uniform sampler2D uLampMap') === -1) decl += '\n' + LAMP_WX_DECL;   // unless a lamp patch ran first
+    shader.uniforms.uLampMap = lampMapU.uLampMap; shader.uniforms.uLampBox = lampMapU.uLampBox;
     if (WX_GLINT_N) {
       decl += '\nuniform vec4 uGlP[' + WX_GLINT_N + ']; uniform vec3 uGlC[' + WX_GLINT_N + ']; uniform float uGlN;';
       shader.uniforms.uGlP = wxWetU.uGlP; shader.uniforms.uGlC = wxWetU.uGlC; shader.uniforms.uGlN = wxWetU.uGlN;
@@ -27301,10 +27311,10 @@ float pinOccGate() {
       'if (uWxLampOn > 0.001 && wxWetW > 0.004) {',
       '  vec2 gd = wxWP.xz - cameraPosition.xz; float ghe = max(cameraPosition.y - wxWP.y, 0.6); vec3 gAcc = vec3(0.0);',
       '  for (int k = 0; k < 2; k++) { vec2 gL = wxWP.xz + gd * (6.0 + 4.0 * float(k)) / ghe;',
-      '    vec2 gu = vec2((gL.x - uWxLampBox.x) * uWxLampBox.z, 1.0 - (gL.y - uWxLampBox.y) * uWxLampBox.z);',
-      '    if (min(min(gu.x, 1.0 - gu.x), min(gu.y, 1.0 - gu.y)) > 0.0) gAcc = max(gAcc, texture2D(uWxLampMap, gu).rgb); }',
+      '    vec2 gu = vec2((gL.x - uLampBox.x) * uLampBox.z, 1.0 - (gL.y - uLampBox.y) * uLampBox.z);',
+      '    if (min(min(gu.x, 1.0 - gu.x), min(gu.y, 1.0 - gu.y)) > 0.0) gAcc = max(gAcc, texture2D(uLampMap, gu).rgb); }',
       '  float gfr = pow(1.0 - clamp(dot(normalize(cameraPosition - wxWP), inverseTransformDirection(normal, viewMatrix)), 0.0, 1.0), 5.0);',
-      '  totalEmissiveRadiance += gAcc * (uWxLampOn * uWxLampBox.w * 0.12 * gfr * mix(1.0, 1.4, wxPud) * smoothstep(0.0, 0.3, wxWetW));',
+      '  totalEmissiveRadiance += gAcc * (uWxLampOn * uLampBox.w * 0.12 * gfr * mix(1.0, 1.4, wxPud) * smoothstep(0.0, 0.3, wxWetW));',
       '}',
     ];
     shader.fragmentShader = shader.fragmentShader
@@ -27324,8 +27334,8 @@ float pinOccGate() {
         '  vec3 wR = reflect(-normalize(cameraPosition - wxWP), inverseTransformDirection(normal, viewMatrix));',
         '  float wOcc = mix(mix(0.45, 0.85, wxPud), 1.0, smoothstep(0.0, 0.3, wR.y));',   // looking down a street the sky at its end is in the mirror too
         '  vec3 wCan = (irradiance + iblIrradiance) * 0.035;',
-        '  if (uWxLampOn > 0.001) { vec2 wu = vec2((wxWP.x - uWxLampBox.x) * uWxLampBox.z, 1.0 - (wxWP.z - uWxLampBox.y) * uWxLampBox.z);',
-        '    wCan += texture2D(uWxLampMap, clamp(wu, 0.0, 1.0)).rgb * (uWxLampBox.w * uWxLampOn * ' + (isTouch ? '0.05' : '0.08') + '); }',   // by night the facades across the street stand in the lamps' light too
+        '  if (uWxLampOn > 0.001) { vec2 wu = vec2((wxWP.x - uLampBox.x) * uLampBox.z, 1.0 - (wxWP.z - uLampBox.y) * uLampBox.z);',
+        '    wCan += texture2D(uLampMap, clamp(wu, 0.0, 1.0)).rgb * (uLampBox.w * uWxLampOn * ' + (isTouch ? '0.05' : '0.08') + '); }',   // by night the facades across the street stand in the lamps' light too
         '  radiance = mix(radiance, radiance * wOcc + wCan * (1.0 - wOcc), min(1.0, wxWetW + wxPud));',
         '}',
       ].join('\n'))
