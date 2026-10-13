@@ -1715,7 +1715,7 @@
     }
     if (far && (area < 600 || h < 8)) return;
     const darkHex = wallC.clone().multiplyScalar(0.7).getHex();
-    if (!far && area > 400 && poly.length <= 24) add(poly, top - 0.05, top + 0.45, darkHex, 3, [insetRing(poly, 0.35)]);   // the parapet lip
+    if (!far && area > 400 && poly.length <= 24) add(poly, top - 0.05, top + 0.45, darkHex, ST_COPING, [insetRing(poly, 0.35)]);   // the parapet lip
     const nH = Math.min(far ? 3 : 4, Math.floor(area / 450) + (r1 < 0.5 ? 1 : 0));
     for (let k = 0; k < nH; k++) {
       const u = ((k + 0.5) / nH - 0.5) * ax.hl * 1.3 + (hash01(seed * 1.7 + k) - 0.5) * 3, v = (hash01(seed * 2.9 + k) - 0.5) * ax.hs * 0.9;
@@ -1734,6 +1734,10 @@
   // takes a roof (the core's rules: convex, near-rectangular, elongated, covering the
   // footprint): the walls stop at the eave and quadGable / hipGeom sit on top, pushed
   // straight into the chunk. Anything else stays a flat extrusion
+  // the realism pass: two words on style 3 (the flat fills) the facade hook reads. A parapet's lip with both variant bits
+  // is a coping (stone, terra cotta or aluminium on its top, never the roof's gravel: gap#6); a gable end with the second
+  // is the house's wall carried to the ridge, so it takes the wall's material (buildings#12). Nothing else writes either
+  const ST_COPING = REAL ? 3 + 96 : 3, ST_GABLE = REAL ? 3 + 64 : 3;
   function roofBits(roofW, packed) {
     if (roofW == null || roofW === -1) return [-1, 0, 0];
     if (!packed) return [roofW, 0, 0];
@@ -1783,14 +1787,29 @@
     if (st === 8 || st === 9 || st === 11 || st === 13) return 0.04;   // the postwar, Victorian, siding and new rows
     return 0.3;
   }
+  // the realism pass (buildings#11, Chestnut Hill's stone houses standing as flat boxes): the districts of detached and
+  // twin houses, where a house the passes never resolved is pitched far more often than not. Germantown and Mount Airy
+  // join the fronts' Chestnut Hill, University City and Manayunk
+  const PITCHED_AREAS = [[-7700, -3860, -16000, -12670], [-6500, -3300, -1900, 900], [-8150, -5160, -10010, -8240], [-5600, -1300, -13800, -9300]];
   function roofPlan(poly, area, h, t, form, rise, seed, lot = 0.8) {
     if (form === 4 || form === 3 || h < 3.5) return null;
-    let f = form;
+    let f = form, q = null;
     if (f === 0) {   // the lottery: small houses the passes never resolved, at rowhouse height
-      if (!(t === 1 || t === 0) || area >= 280 || h >= 12.5 || hash01(seed) >= lot) return null;
+      // the realism pass: a detached kind (roofLot's stone, porch twin and frame houses, never a brick row: Round 185 cut
+      // the rows' gables) takes a hip where its plan is too square for a gable (the square houses stayed boxes), and in
+      // the pitched districts the lottery reaches the larger houses
+      const detached = REAL && lot >= 0.5;
+      const px = poly[0][0], pz = poly[0][1];
+      const big = detached && PITCHED_AREAS.some((b) => px > b[0] && px < b[1] && pz > b[2] && pz < b[3]);
+      if (!(t === 1 || t === 0) || area >= (big ? 450 : 280) || h >= (big ? 14 : 12.5) || hash01(seed) >= lot) return null;
       f = 1;
+      if (detached) {
+        const q1 = roofQuad(poly, area, 1);
+        if (q1 && q1.long / q1.span >= 1.3) q = q1;
+        else { q = roofQuad(poly, area, 2); f = 2; if (!q) { q = q1; f = 1; } }
+      }
     }
-    const q = roofQuad(poly, area, f);
+    if (!q) q = roofQuad(poly, area, f);
     if (!q) return null;
     const r = rise > 0.8 ? Math.min(rise, h * 0.7) : clamp(q.span * 0.33, 1.5, 4.0);
     if (r > h * 0.7) return null;
@@ -1812,7 +1831,7 @@
     if (plan.form === 2) { const ob = orientedBox(plan.quad); if (ob) { pushGeom(ch, hipGeom(ob, eaveY, ridgeY, 0.3), rc.r, rc.g, rc.b, 3, base); return; } }
     const g = quadGable(plan.quad, eaveY, ridgeY, null);
     pushGeom(ch, g.slopes, rc.r, rc.g, rc.b, 3, base);
-    pushGeom(ch, g.ends, wallC.r, wallC.g, wallC.b, 3, base);
+    pushGeom(ch, g.ends, wallC.r, wallC.g, wallC.b, ST_GABLE, base);
   }
   const _roofTmp = new THREE.Color();
 
@@ -6782,7 +6801,7 @@
   const FAR_LIT_GLSL = `
     float farCell(vec2 q, vec2 L, float seed) {
       vec2 key = floor(q / exp2(L)) + vec2(seed * 113.7 + L.x * 17.0 + L.y * 5.1, seed * 39.1 - L.y * 5.3 + L.x * 2.9);
-      return step(.65, roomHash(key)) * (.82 + 1.1 * roomHash(key + 29.1));
+      return step(1.0 - .35 * (uOcc.x + uOcc.y) / 1.02, roomHash(key)) * (.82 + 1.1 * roomHash(key + 29.1));
     }
     float farLitCells(vec2 q, vec2 fpx, float seed) {
       vec2 Lf = max(log2(max(2.0 * fpx, vec2(1.0e-6))), 0.0), L0 = floor(Lf), t = Lf - L0;
@@ -6829,10 +6848,56 @@
   const CORE_FACADE_GAIN = 0.52, CORE_ROOF_GAIN = ROOF_GAIN, CORE_ROOF_SAT = 1.2;
   // Shared, facade-local room illumination. No extra lights, textures, draw calls,
   // or time-dependent randomness: occupancy belongs to rooms / office suites.
+  // The realism pass (Mike: "make this look more photo realistic"), three things, all under REAL:
+  // the rooms follow the clock (occU, set by occUpdate from the model's local time: homes fill through the evening and
+  // empty after midnight, offices empty after six, a few cleaners' floors stay lit to half past eleven; a room goes dark
+  // when the share falls past its own hash, so the same rooms go out in the same order every night, no flicker); their
+  // lamps span a log-skewed range at 2700 to 5000 K instead of half the suites pale blue; and a host that knows the eye's
+  // ray in the pane's frame (roomRay, roomPar 1) sees a room behind the glass, a box with a back wall, side walls, a
+  // floor and a ceiling (interior mapping, van Dongen 2008), lit by the lamp at night and by the window by day (roomDay).
+  // A host that sets neither draws exactly what it did. A host that binds the clock (occBind) defines ROOM_OCC; one that
+  // does not keeps the old shares (0.48 of the homes, 0.54 of the suites)
+  const occU = { uOcc: { value: new THREE.Vector4(0.48, 0.54, 0, 0) } };
+  function occBind(shader) {
+    shader.uniforms.uOcc = occU.uOcc;
+    shader.fragmentShader = '#define ROOM_OCC\n' + shader.fragmentShader;
+  }
+  // the shares by the clock: [minute of the day, share], piecewise linear and wrapping at midnight
+  const OCC_HOME = [[0, 0.26], [30, 0.20], [120, 0.10], [270, 0.06], [390, 0.22], [480, 0.10], [1020, 0.35], [1170, 0.55], [1290, 0.55], [1380, 0.38], [1440, 0.26]];
+  const OCC_WORK = [[0, 0.13], [120, 0.10], [360, 0.25], [480, 0.70], [1050, 0.80], [1140, 0.50], [1260, 0.30], [1380, 0.16], [1440, 0.13]];
+  function occAt(tab, m) {
+    for (let i = 1; i < tab.length; i++) if (m <= tab[i][0]) { const a = tab[i - 1], b = tab[i]; return a[1] + (b[1] - a[1]) * (m - a[0]) / Math.max(1, b[0] - a[0]); }
+    return tab[tab.length - 1][1];
+  }
+  function occUpdate() {
+    if (!REAL) return;
+    const m = ((clock.minutes % 1440) + 1440) % 1440;
+    const wd = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay(), weekend = wd === 0 || wd === 6;
+    occU.uOcc.value.set(occAt(OCC_HOME, m), occAt(OCC_WORK, m) * (weekend ? 0.6 : 1), !weekend && m >= 1200 && m <= 1410 ? 1 : 0, 0);
+  }
   const WINDOW_INTERIOR_GLSL = `
+    #ifdef ROOM_OCC
+    uniform vec4 uOcc;
+    #else
+    const vec4 uOcc = vec4(0.48, 0.54, 0.0, 0.0);
+    #endif
+    vec3 roomRay = vec3(0.0, 0.0, 1.0); float roomPar = 0.0;
     float roomHash(vec2 p) {
       vec3 q=fract(vec3(p.xyx)*.1031); q+=dot(q,q.yzx+33.33);
       return fract((q.x+q.y)*q.z);
+    }
+    // the room behind a pane: the pane spans [-0.5, 0.5] each way in its own units (its width across, its height up),
+    // the room A.x pane widths either side of its centre, its floor A.y and its ceiling A.z pane heights beyond the
+    // pane's foot and head, A.w pane widths deep. The eye's ray d leaves the box through one face: the back wall (0),
+    // the floor (1), the ceiling (2) or a side wall (3); returns the exit point and the face
+    vec4 roomBox(vec2 uv, vec3 d, vec4 A) {
+      vec3 p = vec3(uv - 0.5, 0.0);
+      d = sign(d) * max(abs(d), vec3(1.0e-4));
+      vec3 lo = vec3(-A.x, -0.5 - A.y, 0.0), hi = vec3(A.x, 0.5 + A.z, A.w);
+      vec3 tf = max((lo - p) / d, (hi - p) / d);
+      float t = min(min(tf.x, tf.y), tf.z);
+      float face = t >= tf.z ? 0.0 : (t >= tf.y ? (d.y > 0.0 ? 2.0 : 1.0) : 3.0);
+      return vec4(p + d * t, face);
     }
     vec3 roomLight(vec2 uv, vec2 id, float seed, float office) {
       vec2 key=id+vec2(seed*113.7,seed*39.1);
@@ -6842,37 +6907,102 @@
       float suiteSize=2.0+floor(roomHash(vec2(seed,4.1))*2.0);
       vec2 suite=vec2(floor((id.x+floor(roomHash(vec2(id.y,seed))*3.0))/suiteSize),id.y);
       float zone=roomHash(suite+vec2(seed*71.3,seed*13.9));
-      float floorOn=step(.12,roomHash(vec2(id.y+seed*21.0,seed+5.7)));
-      float on=mix(step(.52,r),step(.46,zone)*floorOn,office);
+      float floorHash=roomHash(vec2(id.y+seed*21.0,seed+5.7));
+      float floorOn=step(.12,floorHash);
+      float on=mix(step(1.0-uOcc.x,r),max(step(1.0-uOcc.y,zone)*floorOn,uOcc.z*step(floorHash,.08)),office);
+      ${REAL ? `
+      // a lamp's brightness skewed toward the dim (a reading lamp, a hallway left on) with the odd bright room, and its
+      // colour from the lamps people buy: 2700 K for most homes, 3000 and 4000 K for some; 3500 to 4000 K in offices,
+      // 5000 K rarely; one living room in fourteen is a television's blue flicker-free glow
+      float brightness=mix(.18+1.05*r2*r2,.35+.75*zone,office);
+      vec3 home=r3<.55?vec3(1.0,.60,.32):(r3<.85?vec3(1.0,.70,.45):vec3(1.0,.86,.70));
+      float rw=roomHash(suite+seed+8.2);
+      vec3 work=rw<.60?vec3(1.0,.84,.66):(rw<.95?vec3(1.0,.90,.78):vec3(.92,.95,1.0));
+      float tv=step(.93,r3)*(1.0-office);
+      home=mix(home,vec3(.55,.65,1.0),tv); brightness=mix(brightness,.30,tv);` : `
       float brightness=mix(.40+.70*r2,.45+.27*zone+.35*r2,office);
       vec3 home=mix(vec3(1.0,.58,.28),vec3(1.0,.83,.59),r3);
       vec3 work=mix(vec3(1.0,.85,.65),vec3(.76,.88,1.0),smoothstep(.30,.88,roomHash(suite+seed+8.2)));
+      float tv=0.0;`}
       vec3 tint=mix(home,work,office);
       // Resolve room detail only while it spans several pixels. At distance the
       // profile converges to its mean, rather than flashing thin blinds / lamps.
       float footprint=max(fwidth(uv.x),fwidth(uv.y));
       float detail=1.0-smoothstep(.08,.30,footprint);
       vec2 p=clamp(uv,0.0,1.0);
-      vec2 lamp=(p-vec2(.24+.52*r2,.40+.18*r3))*vec2(2.5,2.2);
+      // the room behind the pane, where the host gave the ray: the back wall takes the lamp's pool and the ceiling's
+      // band as the flat pane did, the ceiling its fixture, the floor the pool's spill, the side walls a falloff to the back
+      vec2 q=p; float faceK=1.0;
+      if(roomPar>.5&&detail>.001){
+        vec4 A=mix(vec4(2.0,.55,.12,3.4),vec4(2.6,.30,.10,3.0),office);
+        vec4 h=roomBox(p,normalize(roomRay),A);
+        if(h.w<.5) q=vec2(h.x/(2.0*A.x)+.5,(h.y+.5+A.y)/(1.0+A.y+A.z));
+        else {
+          vec2 fix=vec2((r2-.5)*A.x,A.w*.45);
+          if(h.w<1.5){ vec2 fd=(h.xz-fix)/vec2(A.x,A.w); faceK=.30+.25*exp(-dot(fd,fd)*5.0); q=vec2(.5,.04); }
+          else if(h.w<2.5){ vec2 fd=(h.xz-fix)/vec2(A.x,A.w); faceK=mix(.42+.55*exp(-dot(fd,fd)*9.0),.55+.25*step(.5,fract(h.z*1.7+.25)),office); q=vec2(.5,.96); }
+          else { faceK=.62*(1.0-.45*h.z/A.w)*(.75+.25*clamp((h.y+.5+A.y)/(1.0+A.y+A.z),0.0,1.0)); q=vec2(clamp(.5+sign(h.x)*.48,0.0,1.0),clamp((h.y+.5+A.y)/(1.0+A.y+A.z),0.0,1.0)); }
+        }
+      }
+      vec2 lamp=(q-vec2(.24+.52*r2,.40+.18*r3))*vec2(2.5,2.2);
       float pool=exp(-dot(lamp,lamp)*1.6);
-      float ceilingY=(p.y-.83)*4.3;
+      float ceilingY=(q.y-.83)*4.3;
       float ceiling=exp(-ceilingY*ceilingY);
       float homeWash=.22+.68*pool+.20*ceiling;
-      float officeWash=.26+.30*smoothstep(.03,.85,p.y)+.40*ceiling;
+      float officeWash=.26+.30*smoothstep(.03,.85,q.y)+.40*ceiling;
       float edge=min(min(p.x,1.0-p.x),min(p.y,1.0-p.y));
       float recess=.48+.52*smoothstep(0.0,.14,edge);
-      float wash=mix(homeWash,officeWash,office)*recess;
+      float wash=mix(homeWash,officeWash,office)*recess*faceK;
+      wash=mix(wash,.42+.18*sin(r*40.0),tv);
       // Partly lowered blinds and drawn curtains soften the view into some rooms.
       float blind=step(.58,r2)*smoothstep(.30+.38*r3,.35+.38*r3,p.y);
       float slats=.5+.5*cos(p.y*75.4);
       wash*=1.0-blind*(.28+.10*slats*detail);
       float curtain=step(.65,r3)*(1.0-office)*(1.0-smoothstep(.08+.15*r,.14+.15*r,min(p.x,1.0-p.x)));
       wash*=1.0-curtain*.38;
-      float desk=(1.0-smoothstep(.12,.24,p.y))*(1.0-smoothstep(.13,.23,abs(p.x-(.25+.5*r3))));
+      float desk=(1.0-smoothstep(.12,.24,q.y))*(1.0-smoothstep(.13,.23,abs(q.x-(.25+.5*r3))));
       wash*=1.0-desk*.45;
       float profile=mix(.51,wash,detail);
       // Unoccupied rooms retain the reflected glass, without an emissive fill.
       return tint*brightness*profile*on*1.22;
+    }
+    // the same room by day, lit through its own window: a painted back wall, side walls a step darker, a pale ceiling
+    // and a dark floor, all falling off away from the glass, curtains and blinds over the front; an albedo the host
+    // scales by the daylight. Its mean is about 0.3; at a distance the host takes that mean
+    vec3 roomDay(vec2 uv, vec2 id, float seed, float office) {
+      vec2 key=id+vec2(seed*113.7,seed*39.1);
+      float r=roomHash(key+3.7), r2=roomHash(key+17.3), r3=roomHash(key+61.7);
+      vec4 A=mix(vec4(2.0,.55,.12,3.4),vec4(2.6,.30,.10,3.0),office);
+      vec2 p=clamp(uv,0.0,1.0);
+      vec4 h=roomBox(p,normalize(roomRay),A);
+      vec3 paint=r<.35?vec3(.78,.75,.68):(r<.55?vec3(.72,.66,.56):(r<.72?vec3(.62,.66,.68):(r<.86?vec3(.60,.64,.52):vec3(.80,.62,.48))));
+      paint=mix(paint,vec3(.74,.74,.72),office);
+      vec3 col=paint;
+      float depth=h.z/A.w;
+      if(h.w>.5&&h.w<1.5) col=mix(vec3(.30,.20,.13),vec3(.36,.36,.38),office)*(.8+.4*r2);
+      else if(h.w>1.5&&h.w<2.5) col=vec3(.82,.81,.78);
+      else if(h.w>2.5) {
+        col=paint*.82;
+        // a side wall: a doorway part way back on one side, a dresser or a cabinet low against it
+        float by=(h.y+.5+A.y)/(1.0+A.y+A.z), dz=h.z/A.w;
+        col*=1.0-.6*step(abs(dz-(.35+.4*r3)),.12)*step(by,.78)*step(0.0,h.x*(r2-.5));
+        col*=1.0-.45*(1.0-smoothstep(.26,.30,by))*step(.25,fract(r*7.3))*step(abs(dz-.7),.2);
+      }
+      // furniture against the back wall: a dark band at the floor, a picture or a shelf in some rooms
+      if(h.w<.5){
+        float by=(h.y+.5+A.y)/(1.0+A.y+A.z);
+        col*=1.0-.55*(1.0-smoothstep(.16,.20,by))*step(.3,r3);
+        vec2 pic=vec2(h.x/(2.0*A.x)+.5-(.3+.4*r2),by-.62);
+        col=mix(col,vec3(.25,.22,.2)+.3*r3,step(.6,r2)*(1.0-step(.09,abs(pic.x)))*(1.0-step(.07,abs(pic.y))));
+      }
+      float light=(1.0-.70*depth)*(h.w>1.5&&h.w<2.5?.55:1.0);
+      vec3 room=col*light;
+      // the front layer: a blind part way down, curtains at the sides
+      float blind=step(.62,r2)*smoothstep(.55+.3*r3,.6+.3*r3,p.y);
+      room=mix(room,mix(vec3(.85,.83,.78),vec3(.6,.6,.6),office),blind*.85);
+      float curtain=step(.6,r3)*(1.0-office)*(1.0-smoothstep(.10+.12*r,.16+.12*r,min(p.x,1.0-p.x)));
+      room=mix(room,vec3(.72,.66,.58)*(.7+.4*r),curtain*.9);
+      return room;
     }
   `;
 
@@ -6908,9 +7038,21 @@
       .replace('#include <lights_physical_fragment>',`#include <lights_physical_fragment>
         material.specularColor=mix(material.specularColor,vec3(${coat})*vec3(.96,1.0,1.04),opticalGlass);
         material.diffuseColor*=1.0-opticalGlass*${depth};`);
+    // the realism pass (buildings#9 and #13): the environment the glass reflects is the sky's alone (refreshEnv: a dome,
+    // a ground disc, nine boxes), so a window at the street mirrored open sky where the real one mirrors the wall across
+    // the street. Below the horizon a pane would see from its height (opt.horizon, a sine of the elevation: the street's
+    // far wall from the lower floors, nothing over the roofs) the reflection is a city's: the sky's own light at about
+    // the share a facade gives back. A shader term, so scene.environment and every program's key stay as they are
+    if (REAL) shader.fragmentShader = shader.fragmentShader.replace('#include <lights_fragment_maps>', `#include <lights_fragment_maps>
+      #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
+      { vec3 rWo = inverseTransformDirection(reflect(-geometry.viewDir, geometry.normal), viewMatrix);
+        float hzo = ${opt.horizon || '0.12'};
+        radiance = mix(radiance, radiance * mix(vec3(0.30, 0.29, 0.28), vec3(1.0), smoothstep(hzo - 0.30, hzo + 0.02, rWo.y)), opticalGlass); }
+      #endif`);
   }
 
   function apartmentWindowHook(shader) {
+    occBind(shader);
     shader.vertexShader=shader.vertexShader
       .replace('#include <common>', '#include <common>\nattribute vec4 aInterior; varying vec4 vInterior; varying vec3 vInteriorNormal;')
       .replace('#include <begin_vertex>', '#include <begin_vertex>\nvInterior=aInterior; vInteriorNormal=normal;');
@@ -6956,6 +7098,56 @@
     return g;
   }
 
+  // the realism pass (Mike: "make this look more photo realistic and less cartoony ... all surfaces"): the walls' and the
+  // pitched roofs' materials as generated photographs (bake_wall_art.py: brick red, dark and painted, render, limestone,
+  // Formstone, marble, granite and concrete in a 3 by 3 atlas; architectural shingle, slate, standing-seam metal and
+  // three-tab in a 2 by 2; each cut on its own courses so it repeats with no seam), and a fresh snow for the flat roofs.
+  // A wall takes only the texture's grain, the texel over its kind's mean, so its calibrated colour stays the mean; the
+  // walls' atlas is a computer's (?walls=plain keeps the drawn joints), the pitched roofs' everyone's at their size.
+  // loadWallArt fills these and turns each on; uRoofKindK spreads the four flat roofs' albedos (buildings#2: a white
+  // membrane is a white roof from any height, a tar roof a black one)
+  const wallArtU = {
+    uWallArt: { value: null }, uWallOn: { value: 0 }, uWallPad: { value: 0.05 }, uWallGrid: { value: 3 }, uWallPx: { value: 576 }, uPitchPx: { value: 960 },
+    uWallMean: { value: Array.from({ length: 9 }, () => new THREE.Vector3(0.3, 0.3, 0.3)) },
+    uWallM: { value: Array.from({ length: 9 }, () => new THREE.Vector2(2, 2)) },
+    uPitchArt: { value: null }, uPitchOn: { value: 0 }, uPitchPad: { value: 0.03125 },
+    uPitchMean: { value: Array.from({ length: 4 }, () => new THREE.Vector3(0.1, 0.1, 0.1)) },
+    uPitchM: { value: Array.from({ length: 4 }, () => new THREE.Vector2(2, 2)) },
+    uSnowArt: { value: null }, uSnowOn: { value: 0 }, uSnowM: { value: 8 }, uSnowMean: { value: new THREE.Vector3(0.7, 0.72, 0.75) },
+    uRoofKindK: { value: REAL ? new THREE.Vector4(0.8, 1.35, 1.9, 1.05) : new THREE.Vector4(1, 1, 1, 1) },
+    // tuning, from __dbg.facade(): the day rooms' gain, a view of them alone (1), the weathering's strength, the walls' art
+    uFabK: { value: new THREE.Vector4(1, 0, 1, 1) },
+  };
+  // the walls' art in GLSL (the facade hook's and the landmarks'): an atlas texel, and a wall's material as detail on its colour
+  const FAB_ART_FN = [
+    // a texel of cell k of a g by g atlas (row 0 at the image's top), each cell padded a share pad of its side with its
+    // own wrapped edge, at tile coordinate t; the gradient is the tile's own, so the mip follows the pixel
+    'vec3 fabAtlas(sampler2D tex, float k, float g, float pad, vec2 t){',
+    '  float cs = 1.0 / g; vec2 o = vec2(mod(k, g), g - 1.0 - floor(k / g)) * cs; float sc = cs * (1.0 - 2.0 * pad);',
+    '  vec2 uv = o + cs * pad + fract(t) * sc;',
+    '#if __VERSION__ >= 300',
+    '  return textureGrad(tex, uv, dFdx(t) * sc, dFdy(t) * sc).rgb;',
+    '#else',
+    '  return texture2D(tex, uv).rgb;',
+    '#endif',
+    '}',
+    // a wall's generated material as detail only: the texel over its kind's mean (half its colour, half its luminance,
+    // chroma of the way), faded out before the mips reach a neighbouring cell, so the wall keeps its own colour
+    'vec3 fabWallArt(vec3 col, float kind, vec2 wp, float seed, float k, float chroma){',
+    '  vec2 M = uWallM[0]; vec3 mean = uWallMean[0];',
+    '  for (int i = 1; i < 9; i++) { if (float(i) == kind) { M = uWallM[i]; mean = uWallMean[i]; } }',
+    '  vec2 t = wp / M + vec2(seed * 7.13, seed * 3.71);',
+    '  float fp = max(max(abs(dFdx(t.x)), abs(dFdy(t.x))), max(abs(dFdx(t.y)), abs(dFdy(t.y)))) * uWallPx;',
+    '  k *= 1.0 - smoothstep(20.0, 60.0, fp);',
+    '  if (k < 0.002) return col;',
+    '  vec3 T = fabAtlas(uWallArt, kind, uWallGrid, uWallPad, t);',
+    '  vec3 r = T / max(mean, vec3(1.0e-3));',
+    '  float lr = dot(T, vec3(0.2126, 0.7152, 0.0722)) / max(dot(mean, vec3(0.2126, 0.7152, 0.0722)), 1.0e-3);',
+    '  return mix(col, col * clamp(mix(vec3(lr), r, chroma), 0.0, 3.0), k);',
+    '}',
+  ];
+  // the rooms behind the glass by day (buildings#9): about thirty operations a pane pixel near the eye, a computer's
+  const FAB_DAYROOM = REAL && !isTouch;
   // the facade and curtain-wall shaders read style, floor height and tint through aSFT (Round 158): bytes from the
   // chunks (fourth slot 1.0: the byte recovered from its normalized value and read signed, as the Int8 arrays were), raw
   // floats from mergeColored (fourth slot 0); the old names stay as macros so the shaders' bodies are unchanged
@@ -7081,6 +7273,9 @@
   {
     const facadeHook = (gW, gR, sat, satR) => (shader) => {
       Object.assign(shader.uniforms, roofArtU);   // Round 185: the flat roofs' generated textures
+      Object.assign(shader.uniforms, wallArtU);   // the realism pass: the walls' and the pitched roofs' materials, the snow
+      shader.uniforms.uFabSnow = wxSurfU.uSnowAcc; shader.uniforms.uFabWet = wxSurfU.uWet;   // the weather, laid after the gains (see below)
+      occBind(shader);   // the rooms by the clock
       shader.uniforms.uSunW = sunWUniform;
       shader.uniforms.uNight = nightUniform;
       shader.uniforms.uDetFar = detFarUniform;
@@ -7096,6 +7291,11 @@
           'uniform float uNight;',
           'uniform float uDetFar;',
           'uniform sampler2D uRoofArt; uniform float uRoofOn, uRoofM, uRoofPad, uRoofOwn, uRoofDbg; uniform vec3 uRoofMean[4];',
+          'uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9];',
+          'uniform sampler2D uPitchArt; uniform float uPitchOn, uPitchPad, uPitchPx; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4];',
+          'uniform sampler2D uSnowArt; uniform float uSnowOn, uSnowM; uniform vec3 uSnowMean; uniform vec4 uRoofKindK;',
+          'uniform float uFabSnow, uFabWet; uniform vec4 uFabK;',
+          'float fabSnowW = 0.0; vec3 fabRoomDay = vec3(0.0);',
           'varying vec3 vWPos; varying vec3 vWNorm; varying float vStyle; varying float vFloorH; varying float vWallU; varying float vWallL; varying float vWallH; varying float vBase; varying float vTint;',
           'float shtLit = 0.0; vec3 shtLamp = vec3(1.0, 0.76, 0.46);',
           'float shtGlass = 0.0;',
@@ -7120,10 +7320,34 @@
           // light; d is the signed distance above the joint's centre line, w its half width, anti-aliased
           'float jointRelief(float d, float w, float aa){ return (1.0 - smoothstep(0.0, w + aa, abs(d))) * (d > 0.0 ? 1.0 : -1.0); }',
           'float archM(vec2 m, vec2 c, float w, float h, float aa){ float r = w * 0.5; float dR = max(abs(m.x - c.x) - r, max(c.y - m.y, m.y - (c.y + h - r))); float dC = max(length(vec2(m.x - c.x, m.y - (c.y + h - r))) - r, (c.y + h - r) - m.y); return 1.0 - smoothstep(-aa, aa, min(dR, dC)); }',
+          ...FAB_ART_FN,
+          // which of the atlas's walls a wall is: brick red, dark or painted, render, limestone, Formstone, marble, granite,
+          // concrete (0 to 8) from its style, its colour (the stored colour, before the gain) and a seed of the building;
+          // -1 keeps the drawn texture (the siding's laps, a curtain wall)
+          'float fabWallKind(int st, vec3 c, float brickish, float sd){',
+          '  float L = dot(c, vec3(0.2126, 0.7152, 0.0722)), ratio = c.r / max(c.g, 1.0e-3);',
+          '  float sat = (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b))) / max(max(c.r, max(c.g, c.b)), 1.0e-3);',
+          '  float brick = (L < 0.12 || ratio < 1.55) ? 1.0 : 0.0;',
+          '  if (st == 4 || st == 17) return sat < 0.12 && L < 0.45 ? 7.0 : 4.0;',
+          '  if (st == 14) return sat < 0.14 ? (L > 0.5 ? 6.0 : 7.0) : 4.0;',
+          '  if (st == 19) return brickish > 0.5 ? brick : 4.0;',
+          '  if (st == 2 || st == 6 || st == 7 || st == 12 || st == 15 || st == 16 || st == 18) return brickish > 0.5 ? brick : 8.0;',
+          '  if (st == 11) return sd < 0.3 ? 5.0 : (sd < 0.45 ? 2.0 : -1.0);',
+          '  if (st == 13) return brickish > 0.5 ? brick : 3.0;',
+          '  if (brickish > 0.5) return brick;',
+          '  return L > 0.30 && sd < 0.6 ? 2.0 : 3.0;',
+          '}',
         ].join('\n'))
         .replace('#include <color_fragment>', [
           '#include <color_fragment>',
           '{',
+          // the realism pass (weather#0, Mike's snow day: every flat roof black tar while the street between them was white):
+          // the weather's colour (wxSurfacePatch, chained on after the build) inserts itself right after the chunk above,
+          // ahead of this block, so the gains below took its snow of 0.88 to 0.15 and the roof art painted over three
+          // quarters of what was left, and the rain's darkening went the same way. The block starts again from the vertex
+          // colour (the material has no map) and lays the snow and the wet itself at its end, after the gains and the art
+          '  diffuseColor = vec4(diffuse, opacity);',
+          '#include <color_fragment>',
           '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, ' + sat.toFixed(2) + ');',
           '  vec3 n = normalize(vWNorm);',
           '  diffuseColor.rgb *= mix(' + gW.toFixed(2) + ', ' + gR.toFixed(2) + ', step(0.7, n.y));',
@@ -7134,7 +7358,41 @@
           '  float vDark = mod(variantF, 2.0);',
           '  float vTall = step(1.5, variantF);',
           '  float v = vWPos.y - vBase;',
-          '  if (n.y > 0.7) {',
+          // a parapet's coping (style 3, both variant bits: roofClutter's lip, gap#6) is stone, terra cotta or aluminium,
+          // never the roof's gravel
+          '  bool coping = st == 3 && variantF > 2.5;',
+          // the realism pass (buildings#12): a pitched roof is shingle, slate, standing-seam metal or three-tab from the
+          // generated 2 by 2 atlas, laid along its eave and up its slope (the flat roofs' art lay on the street grid on
+          // every slope under 45 degrees, and anything steeper was a flat fill). The kind: slate on a blue-grey roof and on
+          // most of Chestnut Hill's and University City's, metal on a saturated one, shingle on a dark one, three-tab else
+          '  if (st == 3 && !coping && n.y > 0.35 && n.y < 0.985 && uPitchOn > 0.5) {',
+          '    vec2 dn = normalize(n.xz + vec2(1.0e-5, 0.0));',
+          '    vec2 pw = vec2(dot(vWPos.xz, vec2(-dn.y, dn.x)), vWPos.y / sqrt(max(1.0 - n.y * n.y, 0.02)));',
+          '    float pGn = mix(' + gW.toFixed(3) + ', ' + gR.toFixed(3) + ', step(0.7, n.y));',
+          '    vec3 pc = diffuseColor.rgb / pGn;',
+          '    float pL = dot(pc, vec3(0.2126, 0.7152, 0.0722)), pMx = max(pc.r, max(pc.g, pc.b));',
+          '    float pSat = (pMx - min(pc.r, min(pc.g, pc.b))) / max(pMx, 1.0e-3);',
+          '    float psd = fract(sin(vBase * 371.3 + vTint * 91.7) * 43758.5453);',
+          '    bool slateD = (vWPos.x > -7700.0 && vWPos.x < -3860.0 && vWPos.z > -16000.0 && vWPos.z < -12670.0) || (vWPos.x > -6500.0 && vWPos.x < -3300.0 && vWPos.z > -1900.0 && vWPos.z < 900.0);',
+          '    float pk = (pc.b > pc.r * 1.02 && pL > 0.06) ? 1.0 : ((pSat > 0.45 && pL > 0.05) ? 2.0 : (pL < 0.13 ? 0.0 : 3.0));',
+          '    if (slateD && psd < 0.55 && pk != 2.0) pk = 1.0;',
+          '    if (psd > 0.9 && pk != 2.0) pk = psd > 0.95 ? 0.0 : 3.0;',
+          '    vec2 pM = pk < 0.5 ? uPitchM[0] : (pk < 1.5 ? uPitchM[1] : (pk < 2.5 ? uPitchM[2] : uPitchM[3]));',
+          '    vec3 pMean = pk < 0.5 ? uPitchMean[0] : (pk < 1.5 ? uPitchMean[1] : (pk < 2.5 ? uPitchMean[2] : uPitchMean[3]));',
+          '    vec2 pt = pw / pM + psd * 13.0;',
+          '    float pfp = max(max(abs(dFdx(pt.x)), abs(dFdy(pt.x))), max(abs(dFdx(pt.y)), abs(dFdy(pt.y)))) * uPitchPx;',
+          '    float pOwn = pk > 1.5 && pk < 2.5 ? 0.15 : 0.45, pG = pGn * 0.9;',
+          '    vec3 pFar = mix(diffuseColor.rgb, pMean * pG, pOwn);',
+          '    if (pfp < 90.0) {',
+          '      vec3 pT = fabAtlas(uPitchArt, pk, 2.0, uPitchPad, pt);',
+          '      vec3 pCol = mix(diffuseColor.rgb * pT / max(pMean, vec3(1.0e-3)), pT * pG, pOwn);',
+          '      diffuseColor.rgb = mix(pFar, pCol, 1.0 - smoothstep(30.0, 90.0, pfp));',
+          '    } else diffuseColor.rgb = pFar;',
+          '    diffuseColor.rgb *= 0.9 + 0.2 * fract(psd * 5.31);',
+          '  } else if (coping) {',
+          '    float cps = fract(sin(vBase * 13.1 + vTint * 7.7) * 43758.5453);',
+          '    diffuseColor.rgb = (cps < 0.5 ? vec3(0.62, 0.58, 0.51) : (cps < 0.8 ? vec3(0.50, 0.25, 0.16) : vec3(0.60, 0.61, 0.63))) * ' + gW.toFixed(3) + ';',
+          '  } else if (n.y > 0.7) {',
           '    float rdet = clamp(1.0 - (fwidth(vWPos.x) * uDetFar - 0.1) / 0.6, 0.0, 1.0);',
           '    float rn = shtVN(vWPos.xz * 0.9) * 0.6 + shtVN(vWPos.xz * 5.0) * 0.4;',
           '    diffuseColor.rgb *= 1.0 + rdet * 0.22 * (rn - 0.5);',
@@ -7157,7 +7415,8 @@
           '      float rL = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)) / ' + gR.toFixed(3) + ';',
           '      float rk = rsd < 0.36 ? 1.0 : (rsd < 0.66 ? 0.0 : (rsd < 0.86 ? 2.0 : 3.0));',   // silver, tar, white, gravel
           '      if (rL < 0.14 && rsd > 0.5) rk = 0.0; if (rL > 0.55 && rsd < 0.5) rk = 2.0;',   // a sampled black or white roof keeps it
-          '      vec2 rG = vec2(dot(vWPos.xz, vec2(0.986, 0.167)), dot(vWPos.xz, vec2(-0.167, 0.986))) / uRoofM + rsd * 17.0;',
+          // (the realism pass: the gravel at a third of the others' scale, its stones 3 to 8 cm, not the cobbles 8 m made them)
+          '      vec2 rG = vec2(dot(vWPos.xz, vec2(0.986, 0.167)), dot(vWPos.xz, vec2(-0.167, 0.986))) / (uRoofM * ' + (REAL ? '(rk > 2.5 ? 0.35 : 1.0)' : '1.0') + ') + rsd * 17.0;',
           '      float rSc = 0.5 * (1.0 - 2.0 * uRoofPad);',
           '      vec2 rUV = vec2(mod(rk, 2.0) * 0.5, 0.5 - floor(rk / 2.0) * 0.5) + 0.5 * uRoofPad + fract(rG) * rSc;',
           '#if __VERSION__ >= 300',
@@ -7167,8 +7426,13 @@
           '#endif',
           '      vec3 rMean = rk < 0.5 ? uRoofMean[0] : (rk < 1.5 ? uRoofMean[1] : (rk < 2.5 ? uRoofMean[2] : uRoofMean[3]));',
           '      float rLm = max(dot(rMean, vec3(0.2126, 0.7152, 0.0722)), 1e-3), rLd = dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722));',
-          '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * ' + (gR * 0.9).toFixed(3) + ', uRoofOwn);',
-          '      diffuseColor.rgb = mix(diffuseColor.rgb, rCol, 1.0 - smoothstep(0.25, 1.4, rfw));',
+          // the realism pass (buildings#2: past about 150 m every flat roof went back to one grey): the far roof is the near
+          // roof's own mean, its kind's colour at the same share, so a house keeps its kind at any distance; each kind's
+          // albedo spread by uRoofKindK (the means had come out 0.013 to 0.109, a narrow grey band), and a tone a house
+          '      float rKk = rk < 0.5 ? uRoofKindK.x : (rk < 1.5 ? uRoofKindK.y : (rk < 2.5 ? uRoofKindK.z : uRoofKindK.w));',
+          '      vec3 rCol = mix(diffuseColor.rgb * rT / max(rMean, vec3(1e-3)), rT * ' + (gR * 0.9).toFixed(3) + ' * rKk, uRoofOwn);',
+          '      vec3 rFar = mix(diffuseColor.rgb, rMean * ' + (gR * 0.9).toFixed(3) + ' * rKk, uRoofOwn);',
+          '      diffuseColor.rgb = mix(rFar, rCol, 1.0 - smoothstep(0.25, 1.4, rfw)) * (0.86 + 0.28 * fract(rsd * 7.13));',
           '      if (uRoofDbg > 0.5) diffuseColor.rgb = rk < 0.5 ? vec3(0.3, 0.0, 0.0) : (rk < 1.5 ? vec3(0.0, 0.3, 0.0) : (rk < 2.5 ? vec3(0.0, 0.0, 0.3) : vec3(0.3, 0.3, 0.0)));',
           '    }',
           '  }',
@@ -7245,6 +7509,11 @@
           '    vec3 col = diffuseColor.rgb;',
           '    float lit = 0.0, glass = 0.0;',
           '    vec2 roomUV = vec2(0.5), roomID = vec2(0.0); float roomFrame = 0.0;',
+          // the realism pass: trimM gathers the painted joinery and stone (frames, lintels, sills, shutters, doors, steps,
+          // awnings, cornices), which the wall's material below must not run over; roomPane is the pane's own size in
+          // metres, which the room behind it is measured in; wsd a seed of the building
+          '    float trimM = 0.0; vec2 roomPane = vec2(1.0, 1.7);',
+          '    float wsd = fract(sin(vTint * 91.3 + vBase * 17.1) * 43758.5453);',
           '    float roomOffice = float(st == 2 || st == 7 || st == 14 || st == 15 || st == 16);',
           // Round 157, phones: the room blocks that stand in for windows too small to draw (FAR_LIT_GLSL); the
           // rooms' mean over a facade is its glass share (half a tower's, a fifth of a house's) times 0.47
@@ -7290,12 +7559,14 @@
           '      float wmL = rectM(m, vec2(0.0, 1.95), vec2(1.2, 1.9), aa) * okL;',
           '      col = mix(col, stoneCol, (fmL - wmL) * 0.8);',
           '      col = mix(col, frameCol, (fmU - wmU) * 0.85);',
+          '      trimM = max(fmL - wmL, fmU - wmU);',
           '      glass = max(wmU, wmL);',
           '      col = mix(col, gc, glass * 0.92);',
           '      float tr = glass * max(1.0 - smoothstep(0.03, 0.03 + aa, abs(m.x)), max(1.0 - smoothstep(0.025, 0.025 + aa, abs(m.y - 6.6)), 1.0 - smoothstep(0.025, 0.025 + aa, abs(m.y - 2.0))));',
           '      col = mix(col, frameCol, tr * 0.8);',
           '      roomID=vec2(cu,floor(v/9.2));',
           '      roomUV = m.y > 4.0 ? vec2(m.x/1.4+.5,(m.y-5.0)/3.6) : vec2(m.x/1.2+.5,(m.y-1.0)/1.9);',
+          '      roomPane = m.y > 4.0 ? vec2(1.4, 3.6) : vec2(1.2, 1.9);',
           '      roomFrame=tr;',
           '    } else if (st == 2 || st == 6) {',
           '      float pitch = (st == 6) ? 3.6 : 3.0;',
@@ -7313,7 +7584,7 @@
           '        vec2 mg = vec2(u - (floor(u / 5.4) + 0.5) * 5.4, fv);',
           '        float sf = rectM(mg, vec2(0.0, 3.3), vec2(4.7, 5.3), aa) * inWall * det;',
           '        float sg = rectM(mg, vec2(0.0, 3.3), vec2(4.3, 4.9), aa) * inWall * det;',
-          '        col = mix(col, vec3(0.12, 0.11, 0.10), sf * 0.9);',
+          '        col = mix(col, vec3(0.12, 0.11, 0.10), sf * 0.9); trimM = sf;',
           '        col = mix(col, vec3(0.22, 0.25, 0.28), sg * 0.9);',
           '        wm = 0.0; glass = sg;',
           '      }',
@@ -7322,9 +7593,9 @@
           '      col = mix(col, gc * 0.6, wm * (1.0 - smoothstep(0.03, 0.03 + aa, abs(m.x))) * 0.8);',
           '      col *= 1.0 - 0.10 * det * rectM(m, vec2(0.0, 0.38), vec2(pitch, 0.44), aa);',
           '      glass = max(glass, wm);',
-          '      roomID=cell; roomUV=vec2(m.x/(pitch*.74)+.5,(m.y-.575)/1.95);',
+          '      roomID=cell; roomUV=vec2(m.x/(pitch*.74)+.5,(m.y-.575)/1.95); roomPane=vec2(pitch*.74,1.95);',
           '      roomFrame=wm*(1.0-smoothstep(.03,.03+aa,abs(m.x)));',
-          '      if(st == 6 && fv < 6.3 && wallTop >= 5.97) { roomID=vec2(floor(u/5.4),0.0); roomUV=vec2((u-(roomID.x+.5)*5.4)/4.3+.5,(fv-.85)/4.9); roomOffice=1.0; }',
+          '      if(st == 6 && fv < 6.3 && wallTop >= 5.97) { roomID=vec2(floor(u/5.4),0.0); roomUV=vec2((u-(roomID.x+.5)*5.4)/4.3+.5,(fv-.85)/4.9); roomOffice=1.0; roomPane=vec2(4.3,4.9); }',
           '    } else if (st == 7) {',
           '      float fp = facadeFp;',
           '      float nb = local ? max(1.0, floor(vWallL / 3.4)) : 1.0e6;',
@@ -7338,7 +7609,7 @@
           '      vec3 gc7 = vec3(0.10, 0.12, 0.14) + vec3(0.10, 0.09, 0.07) * lit;',
           '      col = mix(col, gc7, gBand * 0.9);',
           '      glass = gBand;',
-          '      roomID=vec2(floor(u7/3.4),row); roomUV=vec2(fract(u7/3.4),(bandV-.55)/1.8);',
+          '      roomID=vec2(floor(u7/3.4),row); roomUV=vec2(fract(u7/3.4),(bandV-.55)/1.8); roomPane=vec2(3.4,1.8);',
           '    } else if (st == 14) {',
           // stone piers: granite or limestone verticals every 3.6 m with dark glass strips between
           // them, a stone spandrel at every floor line (BNY Mellon, the Commerce Squares, PSFS)
@@ -7358,7 +7629,7 @@
           '      col = mix(col, diffuseColor.rgb * 0.82, spand * strip * 0.9);',
           '      col *= 1.0 - 0.12 * det * (1.0 - strip) * (1.0 - smoothstep(0.08, 0.08 + aa, abs(abs(m.x) - (pitch - 1.35) * 0.5 - 0.1)));',
           '      glass = win;',
-          '      roomID=cell; roomUV=vec2(m.x/(pitch-1.35)+.5,(m.y-.84)/(fp-.84));',
+          '      roomID=cell; roomUV=vec2(m.x/(pitch-1.35)+.5,(m.y-.84)/(fp-.84)); roomPane=vec2(pitch-1.35,fp-.84);',
           '    } else if (st == 15) {',
           // horizontal bands: a ribbon of glass and an opaque spandrel band at every floor,
           // near-continuous, the mullions barely there (PNC, Eleven Penn Center, the Liberty
@@ -7374,7 +7645,7 @@
           '      col = mix(col, gc * 0.55, gBand * mull * 0.8);',
           '      col = mix(col, diffuseColor.rgb * 1.08, (1.0 - gBand) * ok * 0.5);',
           '      glass = gBand;',
-          '      roomID=vec2(floor(uW/3.1),row); roomUV=vec2(fract(uW/3.1),(bandV-fp*.34)/(fp*.56)); roomFrame=mull;',
+          '      roomID=vec2(floor(uW/3.1),row); roomUV=vec2(fract(uW/3.1),(bandV-fp*.34)/(fp*.56)); roomFrame=mull; roomPane=vec2(3.1,fp*.56);',
           '    } else if (st == 16) {',
           // precast concrete grid: a waffle of deep square windows, the frame the wall colour,
           // a shadow line under every head (Five and Six Penn Center, Centre Square, PECO)
@@ -7393,7 +7664,7 @@
           '      col *= 1.0 - revealShade(m, vec2(0.0, fp * 0.5 + 0.1), vec2(pitch - 1.0, fp - 1.15), win, sunT, sunE, sunN);',
           '      col *= 1.0 - 0.28 * shade;',
           '      glass = win;',
-          '      roomID=cell; roomUV=vec2(m.x/(pitch-1.0)+.5,(m.y-.675)/(fp-1.15));',
+          '      roomID=cell; roomUV=vec2(m.x/(pitch-1.0)+.5,(m.y-.675)/(fp-1.15)); roomPane=vec2(pitch-1.0,fp-1.15);',
           '    } else if (st == 17) {',
           // pre-war stone: paired narrow sashes between light piers, a darker spandrel at every
           // floor, a shadow band every eight floors where the setbacks read (One South Broad,
@@ -7416,7 +7687,7 @@
           '      col *= 1.0 - 0.14 * spand - 0.10 * det * step(7.5, mod(cell.y, 8.0)) * (1.0 - win);',
           '      glass = win;',
           '      roomID=vec2(cell.x*2.0+step(0.0,m.x),cell.y);',
-          '      roomUV=vec2((m.x-(m.x<0.0?-1.0:1.0))/1.25+.5,(m.y-.75)/2.3);',
+          '      roomUV=vec2((m.x-(m.x<0.0?-1.0:1.0))/1.25+.5,(m.y-.75)/2.3); roomPane=vec2(1.25,2.3);',
           '      roomFrame=win*(1.0-smoothstep(.03,.03+aa,abs(m.y-1.9)));',
           '    } else if (st == 19) {',
           '      float pitch = 3.15, fp = facadeFp;',
@@ -7430,11 +7701,11 @@
           '      float casing = rectM(m,vec2(0.0,1.65),vec2(1.91,1.95),aa)*ok-win;',
           '      float sill = rectM(m,vec2(0.0,0.70),vec2(2.0,0.16),aa)*ok;',
           '      lit = 0.45 + 0.55*shtHash(cell+vTint*31.0);',
-          '      col = mix(col, mix(diffuseColor.rgb,stoneCol,0.35), max(casing,sill)*0.8);',
+          '      col = mix(col, mix(diffuseColor.rgb,stoneCol,0.35), max(casing,sill)*0.8); trimM = max(casing, sill);',
           '      col = mix(col,vec3(0.075,0.095,0.115),win);',
           '      col *= 1.0-revealShade(m,vec2(0.0,1.65),vec2(1.72,1.75),win,sunT,sunE,sunN);',
           '      glass = win;',
-          '      roomID=cell; roomUV=vec2(m.x/1.72+.5,(m.y-.775)/1.75);',
+          '      roomID=cell; roomUV=vec2(m.x/1.72+.5,(m.y-.775)/1.75); roomPane=vec2(1.72,1.75);',
           '    } else if (st == 18) {',
           // residential slab: a window band and a balcony slab line at every floor
           '      float fp = facadeFp;',
@@ -7449,7 +7720,7 @@
           '      col = mix(col, diffuseColor.rgb * 0.75, gBand * post * 0.8);',
           '      col = mix(col, vec3(0.86, 0.85, 0.82), slab * 0.85);',
           '      glass = gBand;',
-          '      roomID=vec2(floor(uW/3.3),row); roomUV=vec2(fract(uW/3.3),(bandV-fp*.35)/(fp*.5)); roomFrame=post;',
+          '      roomID=vec2(floor(uW/3.3),row); roomUV=vec2(fract(uW/3.3),(bandV-fp*.35)/(fp*.5)); roomFrame=post; roomPane=vec2(3.3,fp*.5); trimM = slab;',
           '    } else if (st == 12) {',
           // industrial loft: big multi-pane sashes on a 4.2 m bay, loading doors on the ground
           '      float pitch = 4.2, fp = facadeFp;',
@@ -7474,7 +7745,7 @@
           '      col = mix(col, vec3(0.16, 0.15, 0.14), door * 0.9);',
           '      col *= 1.0 - 0.10 * det * rectM(m, vec2(0.0, fp - 0.25), vec2(pitch, 0.3), aa) * inWall;',
           '      glass = win;',
-          '      roomID=cell; roomUV=wl; roomFrame=mun;',
+          '      roomID=cell; roomUV=wl; roomFrame=mun; roomPane=vec2(2.9,2.5); trimM = max(frame, door);',
           '    } else if (st == 13) {',
           // new construction: wide dark-framed windows, no lintels, a floor line in shadow
           '      float pitch = 2.6, fp = facadeFp;',
@@ -7497,7 +7768,7 @@
           '      col = mix(col, vec3(0.12, 0.12, 0.13), door * 0.9);',
           '      col *= 1.0 - 0.12 * det * rectM(m, vec2(0.0, fp - 0.2), vec2(pitch, 0.28), aa) * inWall;',
           '      glass = win;',
-          '      roomID=cell; roomUV=vec2(m.x/1.7+.5,(m.y-.75)/2.0);',
+          '      roomID=cell; roomUV=vec2(m.x/1.7+.5,(m.y-.75)/2.0); roomPane=vec2(1.7,2.0); trimM = max(frame, door);',
           '      roomFrame=win*(1.0-smoothstep(.02,.02+aa,abs(m.x)));',
           '    } else {',
           '      float pitch = (st == 4) ? 3.0 : (st == 8 ? 2.35 : (st == 9 ? 2.25 : (st == 10 ? 3.3 : (st == 11 ? 2.05 : 1.9))));',
@@ -7540,6 +7811,9 @@
           '      col *= 1.0 - revealShade(m, vec2(0.0, sill + wh * 0.5), vec2(ww, wh), win, sunT, sunE, sunN);',
           '      col = mix(col, frameCol, mun * 0.85);',
           '      col = mix(col, shCol, shut * shOn * 0.9);',
+          // the realism pass (buildings#10): a stain run under each sill, darkest at the sill, in streaks across it
+          ...(REAL ? ["      float drip = rectM(m, vec2(0.0, sill - 0.5), vec2(ww * 0.9, 0.9), aa) * sashOn * smoothstep(0.15, 0.9, shtVN(vec2(m.x * 9.0 + cell.x * 3.1, cell.y))) * smoothstep(sill - 0.95, sill - 0.1, m.y);",
+            '      col *= 1.0 - 0.12 * drip;'] : []),
           '      float door = rectM(m, vec2(0.0, 1.45), vec2(1.0, 2.2), aa) * isDoor;',
           '      float dframe = (rectM(m, vec2(0.0, 1.5), vec2(1.26, 2.3), aa) - door) * isDoor;',
           '      float fan = (1.0 - smoothstep(0.52, 0.52 + aa, length(vec2(m.x, m.y - 2.55)))) * step(2.55, m.y) * isDoor;',
@@ -7562,26 +7836,31 @@
           '      float awn = rectM(m, vec2(0.0, 3.45), vec2(pitch * 0.94, 0.5), aa) * awnOn;',
           '      float ah = shtHash(vec2(cell.x * 0.53, 4.7));',
           '      vec3 awnCol = ah < 0.3 ? vec3(0.55, 0.12, 0.10) : (ah < 0.55 ? vec3(0.10, 0.30, 0.18) : (ah < 0.75 ? vec3(0.10, 0.18, 0.40) : vec3(0.72, 0.66, 0.50)));',
+          // the realism pass (buildings#3): canvas, not a strip of coloured brick: stripes on half of them, the valance's
+          // shade under the slope, the slope lit from above
+          ...(REAL ? ['      float awnS = step(0.5, fract(m.x / 0.32)) * step(0.45, fract(ah * 7.3)) * colK;',
+            '      awnCol = mix(awnCol, vec3(0.80, 0.78, 0.72), awnS * 0.85) * (0.78 + 0.32 * smoothstep(3.2, 3.7, m.y));'] : []),
           '      col = mix(col, awnCol, awn * 0.95);',
+          '      trimM = clamp(max(max(frame, max(lintel, sillM)), max(max(shut * shOn, max(door, dframe)), max(max(stepM, archF), max(max(shopF, shop), max(awn, fan))))), 0.0, 1.0);',
           '      glass = max(win, max(fanIn, max(arch, shop)));',
-          '      roomID=cell; roomUV=wl; roomFrame=mun;',
-          '      if (isShop > 0.5) { roomUV=vec2(m.x/1.5+.5,(m.y-.45)/2.5); roomOffice=1.0; }',
-          '      if (isArch > 0.5) roomUV=vec2(m.x/1.6+.5,(m.y-.15)/2.7);',
-          '      if (isDoor > 0.5) roomUV=vec2(m.x/.84+.5,(m.y-2.55)/.42);',
+          '      roomID=cell; roomUV=wl; roomFrame=mun; roomPane=vec2(ww, wh);',
+          '      if (isShop > 0.5) { roomUV=vec2(m.x/1.5+.5,(m.y-.45)/2.5); roomOffice=1.0; roomPane=vec2(1.5,2.5); }',
+          '      if (isArch > 0.5) { roomUV=vec2(m.x/1.6+.5,(m.y-.15)/2.7); roomPane=vec2(1.6,2.7); }',
+          '      if (isDoor > 0.5) { roomUV=vec2(m.x/.84+.5,(m.y-2.55)/.42); roomPane=vec2(.84,.42); }',
           '      if (st == 9 || st == 11) {',
           '        float corn = (1.0 - smoothstep(0.0, aa, abs(v - (vWallH - 0.67)) - 0.42)) * float(local) * inWall * det;',
           '        float dent = float(st == 9) * corn * step(0.5, fract(u / 0.6)) * (1.0 - smoothstep(0.0, aa, abs(v - (vWallH - 1.15)) - 0.16));',
-          '        col = mix(col, trimCol, max(corn, dent) * 0.9);',
+          '        col = mix(col, trimCol, max(corn, dent) * 0.9); trimM = max(trimM, max(corn, dent));',
           '      }',
           '      if (st == 11) {',
           '        float lap = 1.0 - smoothstep(0.03, 0.03 + aa, abs(fract(v / 0.26 + 0.5) - 0.5) * 0.26);',
-          '        col *= 1.0 - 0.13 * det * lap * (1.0 - max(win, frame));',
+          '        col *= 1.0 - 0.13 * det * lap * (1.0 - max(win, frame)) * (uWallOn > 0.5 && wsd < 0.45 ? 0.0 : 1.0);',
           '      }',
           '      if (st == 10) {',
           '        float post = 1.0 - smoothstep(0.14, 0.14 + aa, abs(fract(uW / 3.3 + 0.5) - 0.5) * 3.3);',
           '        float roofL = step(3.39, wallTop) * (1.0 - smoothstep(0.0, aa, abs(fv - 3.15) - 0.22)) * inWall * det;',
           '        col = mix(col, col * 0.55, porch * (1.0 - post) * 0.9);',
-          '        col = mix(col, trimCol, max(porch * post, roofL) * 0.9);',
+          '        col = mix(col, trimCol, max(porch * post, roofL) * 0.9); trimM = max(trimM, max(porch * post, roofL));',
           '        float pw = rectM(m, vec2(0.0, 1.6), vec2(1.1, 1.6), aa) * porch * (1.0 - post) * step(0.5, mod(cell.x, 2.0));',
           '        col = mix(col, gc, pw * 0.85);',
           '        glass = max(glass, pw);',
@@ -7614,19 +7893,30 @@
           '      float cap = rectM(vec2(0.0,eave),vec2(0.0,0.22),vec2(9999.0,0.20),aa) * det;',
           '      float frieze = rectM(vec2(0.0,eave),vec2(0.0,0.52),vec2(9999.0,0.30),aa) * det;',
           '      float historic = float(st == 0 || st == 9 || st == 4 || st == 17 || st == 19);',
-          '      col = mix(col, mix(diffuseColor.rgb * 1.15, trimCol, historic * 0.38), cap * (1.0-glass));',
+          '      col = mix(col, mix(diffuseColor.rgb * 1.15, trimCol, historic * 0.38), cap * (1.0-glass)); trimM = max(trimM, cap * historic);',
           '      col *= 1.0 - frieze * (0.10 + 0.10 * historic) * (1.0-glass);',
           '      float baseBand = (1.0-smoothstep(0.6,0.85,v)) * det * (1.0-glass);',
           '      col = mix(col, diffuseColor.rgb * 0.60, baseBand * 0.55);',
           '    }',
           '    {',
-          '      float wallM = 1.0 - glass;',
+          // the realism pass (buildings#3): the wall's material stops at the joinery and the stone (trimM)
+          '      float wallM = (1.0 - glass) * (1.0 - ' + (REAL ? 'trimM' : '0.0') + ');',
           '      float detT = clamp(1.0 - (fwidth(v) * uDetFar - 0.016) / 0.05, 0.0, 1.0);',
           '      float relK = 0.35 + 0.65 * sunE;',
           '      col *= 0.95 + 0.10 * shtVN(vec2(uW, v) * 0.25) * det;',
           '      bool stone = (st == 14 || st == 17 || st == 4);',
           '      bool panel = (st == 2 || st == 6 || st == 16 || st == 18 || st == 15 || st == 13 || st == 7);',
-          '      if (detT > 0.001 && wallM > 0.01) {',
+          // the realism pass (buildings#8): the wall's generated material where the atlas is in (a computer), as detail on
+          // its own colour; the panels keep their drawn seams over it, the siding its laps
+          '      float wk = uWallOn > 0.5 ? fabWallKind(st, diffuseColor.rgb / ' + gW.toFixed(3) + ', brickish, wsd) : -1.0;',
+          '      if (wk > -0.5 && wallM > 0.01) {',
+          '        col = fabWallArt(col, wk, vec2(uW, v), vTint * 3.1 + vBase * 0.013, wallM * (wk > 7.5 ? 0.7 : 1.0) * uFabK.w, wk < 2.5 ? 0.75 : 0.45);',
+          '        if (panel && detT > 0.001) {',
+          '          float seam = max(1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(v / 3.3 + 0.5) - 0.5) * 3.3), 1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(uW / 3.0 + 0.5) - 0.5) * 3.0));',
+          '          col *= 1.0 - 0.14 * seam * detT * wallM;',
+          '          col *= 1.0 - 0.06 * relK * detT * wallM * jointRelief((fract(v / 3.3 + 0.5) - 0.5) * 3.3, 0.03, aa);',
+          '        }',
+          '      } else if (detT > 0.001 && wallM > 0.01) {',
           '        if (stone) {',
           '          float sc = floor(v / 0.55); float su = uW + mod(sc, 2.0) * 0.6;',
           '          float smh = 1.0 - smoothstep(0.01, 0.01 + aa, abs(fract(v / 0.55 + 0.5) - 0.5) * 0.55);',
@@ -7653,6 +7943,20 @@
           '        }',
           '      }',
           '    }',
+          // the realism pass (buildings#10): weather on the wall, rain runs from the coping down, splash and soot at the foot,
+          // broad blotches; scaled by its own mean so the wall's average holds as the detail fades with distance
+          ...(REAL ? [
+            '    {',
+            '      float sx = uW * 2.7 + vTint * 31.0;',
+            '      float stk = shtVN(vec2(sx, v * 0.11)) * (0.6 + 0.4 * shtVN(vec2(sx * 3.3, v * 0.5)));',
+            '      float topK = local ? 1.0 - smoothstep(0.0, 5.0, vWallH - v) : 0.0;',
+            '      float dirt = (0.35 + 0.65 * topK) * smoothstep(0.30, 0.75, stk);',
+            '      float splash = 1.0 - smoothstep(0.15, 0.9 + 0.7 * shtVN(vec2(uW * 0.9, 7.0)), v);',
+            '      float blot = shtVN(vec2(uW, v) * 0.12 + vTint * 13.0);',
+            '      float gk = det * (1.0 - glass) * (tower ? 0.4 : 1.0) * uFabK.z;',
+            '      col *= (1.0 - 0.20 * dirt * gk) * (1.0 - 0.16 * splash * gk) * mix(1.0, 0.93 + 0.14 * blot, gk) * mix(1.0, 1.04, gk);',
+            '    }',
+          ] : []),
           '    // far away the pattern averages to the true facade mix — curtain-wall',
           '    // styles are ~half glass, so they must converge to a visibly darker',
           '    // average instead of washing back to the pale wall color',
@@ -7663,8 +7967,26 @@
           // The old flat fill also lit sash bars; keep those opaque around the room.
           '    float roomSeed = vTint*7.1 + vWallL*.017 + vWallH*.013 + vBase*.031;',
           '    vec3 interior = vec3(0.0);',
+          // the realism pass (night#7, buildings#9): the eye's ray in the pane's frame (across with the pane's own u, which
+          // runs either way along a wall by its ring's winding, so its sign is read from the derivatives; up; into the wall),
+          // in pane widths and heights, so roomLight and roomDay draw the room behind the glass
+          ...(REAL ? [
+            '    vec3 rV = normalize(vWPos - cameraPosition);',
+            '    float uSg = (dFdx(uW) * dot(dFdx(vWPos.xz), perpW) + dFdy(uW) * dot(dFdy(vWPos.xz), perpW)) >= 0.0 ? 1.0 : -1.0;',
+            '    roomRay = vec3(dot(rV.xz, perpW) * uSg / roomPane.x, rV.y / roomPane.y, max(-dot(rV, n), 0.02) / roomPane.x); roomPar = 1.0;',
+          ] : []),
           '    if(uNight > 0.001) interior = roomLight(roomUV,roomID,roomSeed,roomOffice);',
           '    float resolved = det * smoothstep(0.8,2.4,1.0/max(fwidth(uW)/2.0,fwidth(fv)/facadeFp));',
+          // by day the same room lit through its window, an emission behind the glass (glassOpticsPatch darkens the pane's
+          // own diffuse to match), its mean where it is too small to draw, less what the glass reflects (a computer's)
+          ...(FAB_DAYROOM ? [
+            '    if (uNight < 0.999 && shtGlass > 0.001) {',
+            '      vec3 rd = resolved > 0.01 ? mix(vec3(0.30), roomDay(roomUV, roomID, roomSeed, roomOffice), resolved) : vec3(0.30);',
+            '      float cosV = clamp(-dot(rV, n), 0.0, 1.0), fr = 0.04 + 0.96 * pow(1.0 - cosV, 5.0);',
+            '      fabRoomDay = rd * (0.06 + 0.13 * sunE) * shtGlass * (1.0 - fr) * uFabK.x;',
+            '      if (uFabK.y > 0.5) { fabRoomDay = rd * shtGlass * 0.3; col = vec3(0.0); }',
+            '    }',
+          ] : []),
           // Round 159 (Mike, two night screenshots: "The skyscrapers are too lightly colored at distance"): the light itself is
           // blended between the far glow and the rooms, not its colour and its amount separately. Their product lit every dark
           // room part way through the fade: at resolved 0.5 an unlit window gave (0.035 + 0.965 / 2) x 0.82 / 2 = 0.21 where the
@@ -7675,6 +7997,32 @@
           '    diffuseColor.rgb = col;',
           '    }',
           '  }',
+          // the realism pass (buildings#12): a gable end (style 3 with the second variant bit, raisePitched) is the house's
+          // own wall carried up to the ridge, so it takes the wall's material, with no windows
+          '  else if (abs(n.y) < 0.35 && st == 3 && variantF > 1.5 && variantF < 2.5 && uWallOn > 0.5) {',
+          '    vec2 dirB = normalize(n.xz + vec2(1.0e-5, 0.0));',
+          '    float bsd = fract(sin(vTint * 91.3 + vBase * 17.1) * 43758.5453);',
+          '    float bk = fabWallKind(0, diffuseColor.rgb / ' + gW.toFixed(3) + ', step(diffuseColor.g * 1.12, diffuseColor.r), bsd);',
+          '    if (bk > -0.5) diffuseColor.rgb = fabWallArt(diffuseColor.rgb, bk, vec2(dot(vWPos.xz, vec2(-dirB.y, dirB.x)), v), vTint * 3.1 + vBase * 0.013, 1.0, bk < 2.5 ? 0.75 : 0.45);',
+          '  }',
+          // the weather (weather#0, see the block's start): snow on whatever faces up, from a light dusting where it is
+          // patchy to full cover, at the ground's own white; near a flat roof it takes the generated snow's drifts; the wet
+          // darkens what faces up. Walls take neither (a wall's brick went grey under the old floor of 0.14)
+          '  {',
+          '    float fUp = smoothstep(0.55, 0.85, n.y);',
+          '    float fN = shtVN(vWPos.xz * 0.31) * 0.6 + shtVN(vWPos.xz * 1.7 + 5.3) * 0.4;',
+          '    fabSnowW = uFabSnow * fUp * (0.80 + 0.20 * fN);',
+          '    if (fabSnowW > 0.001) {',
+          '      vec3 snowC = vec3(0.84, 0.86, 0.90);',
+          '      if (uSnowOn > 0.5) {',
+          '        vec2 sg = vWPos.xz / uSnowM;',
+          '        float sfp = max(fwidth(sg.x), fwidth(sg.y)) * 1024.0;',
+          '        if (sfp < 64.0) snowC *= mix(vec3(1.0), clamp(texture2D(uSnowArt, sg).rgb / max(uSnowMean, vec3(1.0e-3)), 0.6, 1.3), 1.0 - smoothstep(16.0, 64.0, sfp));',
+          '      }',
+          '      diffuseColor.rgb = mix(diffuseColor.rgb, snowC, fabSnowW);',
+          '    }',
+          '    diffuseColor.rgb *= 1.0 - 0.45 * uFabWet * fUp * (1.0 - fabSnowW);',
+          '  }',
           '}',
         ].join('\n'))
         // lit windows dim with distance (aerial perspective by night): the far ring's mass
@@ -7682,8 +8030,12 @@
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += shtLamp * shtLit * uNight * 0.95 * (1.0 - 0.45 * smoothstep(1500.0, 7000.0, length(vViewPosition)));' +
           // Round 150 (Mike: "the tops of the buildings look too dark. Can we light them just a bit at night?"): the city's
           // own glow on the roofs, a share of each roof's colour after dark on every face turned up, whatever its height
-          '\ntotalEmissiveRadiance += diffuseColor.rgb * uNight * ' + ROOF_NIGHT.toFixed(3) + ' * smoothstep(0.35, 0.75, vWNorm.y);')
-      glassOpticsPatch(shader,{mask:'shtGlass',normal:'vWNorm',uv:'shtPaneUV',id:'shtPaneID',seed:'vTint*7.1',coating:.085,roughness:.115,depth:.48});
+          // (the realism pass: a white membrane or a snowy roof takes it at most at a dark roof's colour, or the bright
+          // kinds would glow; and by day the room behind the glass, fabRoomDay)
+          (REAL ? '\ntotalEmissiveRadiance += min(diffuseColor.rgb, vec3(0.06)) * uNight * ' + ROOF_NIGHT.toFixed(3) + ' * smoothstep(0.35, 0.75, vWNorm.y) * (1.0 + 0.6 * fabSnowW);\ntotalEmissiveRadiance += fabRoomDay * (1.0 - uNight);'
+            : '\ntotalEmissiveRadiance += diffuseColor.rgb * uNight * ' + ROOF_NIGHT.toFixed(3) + ' * smoothstep(0.35, 0.75, vWNorm.y);'))
+      glassOpticsPatch(shader,{mask:'shtGlass',normal:'vWNorm',uv:'shtPaneUV',id:'shtPaneID',seed:'vTint*7.1',coating:.085,roughness:.115,depth:FAB_DAYROOM ? .85 : .48,
+        horizon:'clamp((24.0 - (vWPos.y - vBase)) / 55.0, 0.0, 0.42)'});
       lampLightPatch(shader, 'vWPos', 'wall');   // Round 140: the street lamps wash the lower storeys
     };
     cityMat.onBeforeCompile = facadeHook(FACADE_GAIN, ROOF_GAIN, 1.2);
@@ -7692,6 +8044,104 @@
     if (VDEPTH_WANT) vdepthTwin(coreMat);   // Round 168: beside its original in the draw order
     coreMat.onBeforeCompile = facadeHook(CORE_FACADE_GAIN, CORE_ROOF_GAIN, 1.0, CORE_ROOF_SAT);
     coreMat.customProgramCacheKey = () => 'fabric-core';
+  }
+  // the realism pass: the walls' and the pitched roofs' atlases as they decode (wallArtU), the snow the first time it lies
+  function wallArtTex(im, aniso) {
+    const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.minFilter = THREE.LinearMipmapLinearFilter;
+    t.anisotropy = Math.min(aniso, renderer.capabilities.getMaxAnisotropy()); t.needsUpdate = true;
+    return freeTexOnUpload(t);
+  }
+  const WALL_ART_ON = REAL && typeof WALL_ART !== 'undefined' && !!WALL_ART;
+  function loadWallArt() {
+    if (!WALL_ART_ON) return;
+    const W = WALL_ART, U = wallArtU;
+    if (W.walls && !isTouch && !/[?&]walls=plain\b/.test(location.search)) {
+      artImage(artSrc(W.walls, W.wallsHalf)).then((im) => {
+        if (!im) return;
+        const g = W.wallsGrid || 3, pad = W.wallsPad || 0.05;
+        U.uWallArt.value = wallArtTex(im, 4); U.uWallPad.value = pad; U.uWallGrid.value = g; U.uWallPx.value = im.width / g * (1 - 2 * pad);
+        (W.wallsMean || []).forEach((m, k) => { if (U.uWallMean.value[k]) U.uWallMean.value[k].set(m[0], m[1], m[2]); });
+        (W.wallsM || []).forEach((m, k) => { if (U.uWallM.value[k]) U.uWallM.value[k].set(m[0], m[1]); });
+        U.uWallOn.value = 1;
+      });
+    }
+    if (W.pitched && !/[?&]pitched=plain\b/.test(location.search)) {
+      artImage(artSrc(W.pitched, W.pitchedHalf)).then((im) => {
+        if (!im) return;
+        const g = W.pitchedGrid || 2, pad = W.pitchedPad || 0.03125;
+        U.uPitchArt.value = wallArtTex(im, 8); U.uPitchPad.value = pad; U.uPitchPx.value = im.width / g * (1 - 2 * pad);
+        (W.pitchedMean || []).forEach((m, k) => { if (U.uPitchMean.value[k]) U.uPitchMean.value[k].set(m[0], m[1], m[2]); });
+        (W.pitchedM || []).forEach((m, k) => { if (U.uPitchM.value[k]) U.uPitchM.value[k].set(m[0], m[1]); });
+        U.uPitchOn.value = 1;
+      });
+    }
+  }
+  step('Dressing the walls', loadWallArt);
+  // the realism pass (buildings#14, the rebuilds read as models beside the photographed fronts): a landmark rebuild's stone
+  // and brick take the walls' generated materials as detail, laid on the world's three planes by the face's normal, the
+  // kind by the material's own colour (K.mat stores the photo's colour): brick, limestone and brownstone, marble, granite,
+  // render, concrete, or none (glass, metal, slate, copper, paint). The kind is a uniform, so every rebuild material
+  // shares one program; it keeps the weather (userData.wxSurf)
+  const RB_ART_GLSL = ['uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9]; uniform float uRbKind;',
+    'varying vec3 vRbW; varying vec3 vRbN;', ...FAB_ART_FN].join('\n');
+  const _rbC = new THREE.Color(), rbDone = new WeakSet();
+  function landmarkKind(m) {
+    _rbC.copy(m.color).multiplyScalar(1 / 0.88).convertLinearToSRGB();
+    const r = Math.min(1, _rbC.r), g = Math.min(1, _rbC.g), b = Math.min(1, _rbC.b);
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), L = 0.2126 * r + 0.7152 * g + 0.0722 * b, sat = mx > 0 ? (mx - mn) / mx : 0;
+    if (L > 0.8 && sat < 0.09) return 6;                                  // marble (and the white trim with it, at less)
+    if (r > g * 1.45 && r > b * 1.45 && L < 0.56) return L < 0.32 ? 1 : 0;   // brick, terra cotta
+    if (sat < 0.10 && L > 0.45 && L <= 0.8) return L < 0.67 ? 7 : 8;      // granite, concrete
+    if (L > 0.8 && sat < 0.3) return 3;                                   // render
+    if (sat >= 0.09 && sat < 0.45 && L > 0.3 && r >= g && g >= b) return 4;   // limestone, Kasota, brownstone, schist
+    return -1;
+  }
+  function landmarkDetail(m) {
+    if (!REAL || !m || rbDone.has(m)) return;
+    rbDone.add(m);
+    if (!m.isMeshStandardMaterial || m.map || m.transparent || m.metalness >= 0.3) return;
+    const kind = landmarkKind(m);
+    if (kind < 0) return;
+    const kU = { value: kind };
+    // a material with a hook of its own (a rebuild's lamp wash) keeps it, ahead of this one, under its own key; the weather
+    // passes it by as before (its re-hook keys a wrapped hook by the wrapper's source, which would merge different hooks)
+    const own = Object.prototype.hasOwnProperty.call(m, 'onBeforeCompile') ? m.onBeforeCompile : null;
+    const ownKey = own ? m.customProgramCacheKey() : null;
+    m.onBeforeCompile = (sh, r) => {
+      if (own) own.call(m, sh, r);
+      Object.assign(sh.uniforms, wallArtU); sh.uniforms.uRbKind = kU;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vRbW; varying vec3 vRbN;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRbW = (modelMatrix * vec4(transformed, 1.0)).xyz; vRbN = normalize(mat3(modelMatrix) * objectNormal);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + RB_ART_GLSL)
+        .replace('#include <color_fragment>', ['#include <color_fragment>',
+          'if (uWallOn > 0.5) {',
+          '  vec3 an = abs(normalize(vRbN)); an *= an; an /= max(an.x + an.y + an.z, 1.0e-4);',
+          '  float ch = uRbKind < 1.5 ? 0.6 : 0.4, k = uRbKind > 5.5 && uRbKind < 6.5 ? 0.6 : 0.85;',
+          '  vec3 c0 = diffuseColor.rgb, acc = vec3(0.0);',
+          '  if (an.x > 0.01) acc += an.x * fabWallArt(c0, uRbKind, vRbW.zy, 0.0, k, ch);',
+          '  if (an.z > 0.01) acc += an.z * fabWallArt(c0, uRbKind, vRbW.xy, 0.0, k, ch);',
+          '  if (an.y > 0.01) acc += an.y * fabWallArt(c0, uRbKind, vRbW.xz, 0.0, k * 0.6, ch);',
+          '  diffuseColor.rgb = acc + c0 * max(0.0, 1.0 - (an.x > 0.01 ? an.x : 0.0) - (an.z > 0.01 ? an.z : 0.0) - (an.y > 0.01 ? an.y : 0.0));',
+          '}'].join('\n'));
+    };
+    if (own) { m.customProgramCacheKey = () => ownKey + '|rbdetail'; return; }
+    m.customProgramCacheKey = () => 'rbdetail';
+    m.userData.wxSurf = true;   // the weather chains on ahead of it (see the weather's re-hook)
+  }
+  let snowArtAsked = false;
+  // once a frame from applyLighting: the rooms' shares by the clock, and the roofs' snow the first time any lies
+  function facadeFrame() {
+    occUpdate();
+    if (!snowArtAsked && WALL_ART_ON && WALL_ART.snow && wxSurfU.uSnowAcc.value > 0.02) {
+      snowArtAsked = true;
+      artImage(artSrc(WALL_ART.snow, WALL_ART.snowHalf)).then((im) => {
+        if (!im) return;
+        const t = wallArtTex(im, 4); t.wrapS = t.wrapT = THREE.RepeatWrapping;
+        const U = wallArtU; U.uSnowArt.value = t; U.uSnowM.value = WALL_ART.snowM || 8;
+        if (WALL_ART.snowMean) U.uSnowMean.value.set(WALL_ART.snowMean[0], WALL_ART.snowMean[1], WALL_ART.snowMean[2]);
+        U.uSnowOn.value = 1;
+      });
+    }
   }
 
   // ------------------------------------------------ landmark spires
@@ -8884,6 +9334,7 @@
       // emissive used to wash the bars to one dead tone.
       rylandGlassMat.onBeforeCompile = (shader) => {
         shader.uniforms.uNight = nightUniform;
+        occBind(shader);
         shader.vertexShader = shader.vertexShader
           .replace('#include <common>', '#include <common>\nattribute float aBase;\nvarying float vRyB;\nvarying vec3 vRyW; varying vec3 vRyN;')
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvRyB = aBase; vRyN=normalize(mat3(modelMatrix)*objectNormal);\nvRyW = (modelMatrix * vec4(transformed, 1.0)).xyz;');
@@ -9700,8 +10151,9 @@
       try { tris = THREE.ShapeUtils.triangulateShape(v2, hv); } catch (e) { return; }
       const capStart = ch.n;
       const cr = capColor ? capColor.r : r * 0.72, cg = capColor ? capColor.g : g * 0.72, cb = capColor ? capColor.b : b * 0.72;
-      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, 3, base);
-      for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, cr, cg, cb, 3, base);
+      const capSt = st >= 96 && (st & 31) === 3 ? st : 3;   // the realism pass: a coping's top is a coping (ST_COPING)
+      for (let i = 0; i < n; i++) pushV(ch, poly[i][0], y1, poly[i][1], 0, 1, 0, cr, cg, cb, capSt, base);
+      for (const hl of (holes || [])) for (const q of hl) pushV(ch, q[0], y1, q[1], 0, 1, 0, cr, cg, cb, capSt, base);
       // earcut emits CCW triangles in the shape plane regardless of ring winding,
       // and CCW in (x,-z) maps to up-facing — never flip by ring orientation
       for (const t of tris) ch.idx.push(capStart + t[0], capStart + t[1], capStart + t[2]);
@@ -11212,6 +11664,7 @@
         outerGlassMat.onBeforeCompile = (sh) => {
           sh.uniforms.uDetFar = detFarUniform;
           sh.uniforms.uNight = nightUniform;
+          occBind(sh);   // the realism pass: the rooms by the clock
           sh.vertexShader = sh.vertexShader
             .replace('#include <common>', `#include <common>
               ${SFT_GLSL}
@@ -11884,6 +12337,7 @@
         obj.traverse((o) => {
           if (!o.isMesh) return;
           o.castShadow = !o.userData.noShadow; o.receiveShadow = true; meshes++;
+          for (const mm of Array.isArray(o.material) ? o.material : [o.material]) landmarkDetail(mm);   // the realism pass
           const g = o.geometry; tris += (g.index ? g.index.count : g.attributes.position.count) / 3;
           if (isTouch) freeOnUpload(g);   // a phone keeps no copy of what the GPU holds (Round 158)
           o.frustumCulled = false; pendingUpload.push(o);   // drawn unculled once behind the veil so it uploads (and frees) now, as addChunkMesh's are
@@ -22035,14 +22489,60 @@ float pinOccGate() {
       // a satellite dish on a short mast, facing +z tilted up (the placement turns it south-south-west)
       { cap: isTouch ? 1200 : 4000, parts: [part(cyl(0.03, 0.03, 0.45, 0.225, 5), 0x17181a), part(new THREE.CylinderGeometry(0.3, 0.02, 0.1, 12).rotateX(0.8).translate(0, 0.55, 0.05), 0x3a3c3c)] },
     ];
-    for (const kd of kinds) {
+    // the realism pass (vehicles-props#8, the condensers read as white dice): a condenser stands on a black rubber pad,
+    // and two kinds more: a rowhouse's roof deck (aged cedar on sleepers, a black railing of balusters on three sides and
+    // the stair hatch), the sight that defines a Philadelphia row from the air, and a small solar array tilted south.
+    // Their grilles, louvers, fan guards, seams and planks are drawn in the material from each part's own position
+    // (kitDetail), no texture
+    if (REAL) {
+      kinds[0].parts.push(part(new THREE.BoxGeometry(0.95, 0.05, 0.95).translate(0, 0.0, 0), 0x050505));
+      const deck = [part(new THREE.BoxGeometry(3.4, 0.38, 4.3).translate(0, 0.19, 0), 0x0b0a09), part(new THREE.BoxGeometry(3.6, 0.1, 4.5).translate(0, 0.43, 0), 0x2a1d12)];
+      for (const sx of [-1, 1]) {   // the long sides' rails, posts and baluster panels
+        deck.push(part(new THREE.BoxGeometry(3.6, 0.05, 0.06).translate(0, 1.5, sx * 2.22), 0x0a0a0a));
+        deck.push(part(new THREE.BoxGeometry(3.56, 0.92, 0.012).translate(0, 1.0, sx * 2.22), 0x0a0a0a));
+        for (const px of [-1.77, 0, 1.77]) deck.push(part(new THREE.BoxGeometry(0.06, 1.04, 0.06).translate(px, 1.0, sx * 2.22), 0x0a0a0a));
+      }
+      deck.push(part(new THREE.BoxGeometry(0.06, 0.05, 4.5).translate(1.77, 1.5, 0), 0x0a0a0a));
+      deck.push(part(new THREE.BoxGeometry(0.012, 0.92, 4.38).translate(1.77, 1.0, 0), 0x0a0a0a));
+      deck.push(part(new THREE.BoxGeometry(1.1, 0.55, 1.3).translate(-1.15, 0.75, -1.4), 0x161616));   // the stair hatch
+      kinds.push({ cap: isTouch ? 600 : 2500, parts: deck });
+      const sol = [part(new THREE.BoxGeometry(3.3, 0.05, 2.1).rotateX(0.1745).translate(0, 0.5, 0), 0x070b16)];   // its face tilted to +z, south as laid
+      for (const lx of [-1.5, 1.5]) for (const lz of [-0.9, 0.9]) sol.push(part(new THREE.BoxGeometry(0.05, 0.5 - lz * 0.17, 0.05).translate(lx, (0.5 - lz * 0.17) / 2, lz), 0x2c2d2f));
+      kinds.push({ cap: isTouch ? 300 : 1200, parts: sol });
+    }
+    const kitDetail = (k) => REAL ? [
+      '{ vec3 kp = vKL, kn = normalize(vKN); float kfw = max(fwidth(kp.y), max(fwidth(kp.x), fwidth(kp.z))); float kd = 1.0 - smoothstep(0.012, 0.05, kfw);',
+      k === 0 ? [
+        // the cabinet's louvered sides between solid corners, the guard's rings and spokes over the dark fan
+        '  if (abs(kn.y) < 0.5 && kp.y > 0.08 && kp.y < 0.7) { float corner = step(0.36, abs(kn.x) > 0.5 ? abs(kp.z) : abs(kp.x)); float lv = 0.70 + 0.30 * smoothstep(0.28, 0.42, abs(fract(kp.y * 22.0) - 0.5)); diffuseColor.rgb *= mix(1.0, mix(lv, 1.0, corner), kd); }',
+        '  if (kn.y > 0.5 && kp.y > 0.76) { float rr = length(kp.xz); float a = atan(kp.z, kp.x); float wire = max(1.0 - smoothstep(0.08, 0.2, abs(fract(rr * 28.0) - 0.5) * 2.0), 1.0 - smoothstep(0.02, 0.05, abs(fract(a * 1.2732) - 0.5) * rr)); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.14, 0.13), wire * step(rr, 0.34) * kd * 0.85); }',
+        '  diffuseColor.rgb *= mix(vec3(1.0), vec3(1.04, 1.0, 0.92), step(0.06, kp.y));',
+      ].join('\n') : '',
+      k === 1 ? [
+        '  if (abs(kn.y) < 0.5) { float along = abs(kn.x) > 0.5 ? kp.z : kp.x; float seam = 1.0 - smoothstep(0.01, 0.03, abs(fract(along / 0.6 + 0.5) - 0.5) * 0.6); float hood = step(1.2, kp.x) * (0.72 + 0.28 * smoothstep(0.28, 0.42, abs(fract(kp.y * 18.0) - 0.5))); diffuseColor.rgb *= mix(1.0, (1.0 - 0.35 * seam) * mix(1.0, hood, step(1.2, kp.x)), kd); }',
+        '  if (kn.y > 0.5 && kp.y > 1.11) { vec2 c0 = kp.xz - vec2(-0.55, 0.0), c1 = kp.xz - vec2(0.45, 0.0); vec2 cc = length(c0) < length(c1) ? c0 : c1; float rr = length(cc); float wire = 1.0 - smoothstep(0.08, 0.2, abs(fract(rr * 28.0) - 0.5) * 2.0); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.14, 0.14, 0.13), wire * step(rr, 0.36) * kd * 0.85); }',
+      ].join('\n') : '',
+      k === 2 ? '  if (kn.y > 0.5 && kp.y > 0.3) diffuseColor.rgb *= mix(1.0, 1.0 + 0.6 * step(0.42, max(abs(kp.x), abs(kp.z))), kd);' : '',
+      k === 5 ? [
+        // planks across the deck, each its own tone, the gaps dark; the baluster panels cut to bars
+        '  if (kn.y > 0.5 && kp.y > 0.45 && kp.y < 0.5) { float pl = floor(kp.x / 0.14); float gap = smoothstep(0.80, 0.92, abs(fract(kp.x / 0.14) - 0.5) * 2.0); diffuseColor.rgb *= (0.82 + 0.3 * fract(sin(pl * 12.9898) * 43758.5453)) * mix(1.0, 0.45, gap * kd); }',
+        '  if (kp.y > 0.56 && kp.y < 1.45 && abs(kn.y) < 0.5 && ((abs(abs(kp.z) - 2.22) < 0.01 && abs(kn.z) > 0.5) || (abs(kp.x - 1.77) < 0.01 && abs(kn.x) > 0.5))) { float along = abs(kn.z) > 0.5 ? kp.x : kp.z; if (fract(along / 0.12) > 0.3) discard; }',
+      ].join('\n') : '',
+      k === 6 ? '  if (kn.y > 0.5) { vec2 g = vec2(kp.x / 1.1, kp.z / 1.0); float fr = max(1.0 - smoothstep(0.02, 0.05, abs(fract(g.x) - 0.5) * 2.0 - 0.94), 1.0 - smoothstep(0.02, 0.05, abs(fract(g.y) - 0.5) * 2.0 - 0.94)); float cell = 1.0 - smoothstep(0.0, 0.04, abs(fract(kp.x / 0.157) - 0.5) * 2.0 - 0.94); diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 + 0.25 * cell * kd), vec3(0.22, 0.22, 0.23), fr * kd); }' : '',
+      '}',
+    ].join('\n') : '';
+    for (const [ki, kd] of kinds.entries()) {
       const g = mergeColored(kd.parts);
-      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0.1 });
+      const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: ki === 6 ? 0.35 : 0.75, metalness: 0.1 });
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uNight = nightUniform;
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;')
+        if (REAL) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vKL; varying vec3 vKN;')
+          .replace('#include <begin_vertex>', '#include <begin_vertex>\nvKL = position; vKN = normal;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;' + (REAL ? '\nvarying vec3 vKL; varying vec3 vKN;' : ''))
+          .replace('#include <color_fragment>', '#include <color_fragment>\n' + kitDetail(ki))
           .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * uNight * ' + ROOF_NIGHT.toFixed(3) + ';');
       };
+      mat.customProgramCacheKey = () => 'roofkit-' + ki + (REAL ? '-real' : '');
       const m = new THREE.InstancedMesh(g, mat, kd.cap);
       m.count = 0; m.frustumCulled = false; m.receiveShadow = true; m.castShadow = !isTouch;
       m.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -22139,10 +22639,10 @@ float pinOccGate() {
         const gain = 0.88;
         const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, color: new THREE.Color(gain, gain, gain), roughness: T.glass ? 0.3 : 0.88, metalness: T.glass ? 0.2 : 0 });
         mat.onBeforeCompile = (sh) => {
-          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
+          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform; sh.uniforms.uOcc = occU.uOcc;   // the realism pass: the suites by the clock (night#6)
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; varying float vSeed;')
             .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; vec4 tsMask;')
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; uniform vec4 uOcc; varying float vSeed; vec4 tsMask;')
             .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>')
             .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.14, tsMask.r);')
             // a floor lights by suites, not by bays (a bay at a time read as salt and pepper): each floor (the tile's floors
@@ -22153,8 +22653,9 @@ float pinOccGate() {
               '  float sw = 3.0 + floor(fh * 4.0), bay = vUv.x * ' + T.nb.toFixed(1) + ' + fh * 11.0;\n' +
               '  float h = fract(sin(floor(bay / sw) * 12.9898 + fl * 78.233 + vSeed * 431.7) * 43758.5453);\n' +
               '  float glass = 1.0 - smoothstep(0.04, 0.22, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));\n' +
-              '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(0.62, fract(h * 5.3)));\n' +
-              '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(0.66, h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
+              '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(' + (REAL ? '0.9' : '0.62') + ', fract(h * 5.3)));\n' +
+              // the realism pass: a third of the suites at the evening's office share (0.54), fewer as the night goes on
+              '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(' + (REAL ? '1.0 - 0.34 * uOcc.y / 0.54' : '0.66') + ', h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
         };
         mat.customProgramCacheKey = () => 'tower-skin-' + kind;
         const m = new THREE.Mesh(g, mat);
@@ -22290,9 +22791,12 @@ float pinOccGate() {
     frontsLay();
     FRONTS.ms = Math.round((performance.now() - t0) * 10) / 10;
   }
+  // the realism pass: where the roof decks crowd (South Philadelphia, Graduate Hospital, Fishtown, Northern Liberties)
+  const DECK_AREAS = [[-4200, 600, 400, 4200], [-3600, -1500, 150, 900], [-200, 2400, -4200, -1500]];
+  const deckArea = (x, z) => DECK_AREAS.some((b) => x > b[0] && x < b[1] && z > b[2] && z < b[3]);
   function roofKitLay() {
     const cx = camera.position.x, cz = camera.position.z, R = ROOFKIT.r, C = ROOFKIT.cell, M = ROOFKIT.meshes, B = ROOF_KIT.buf;
-    const cnt = [0, 0, 0, 0, 0], caps = M.map((m) => m.instanceMatrix.count);
+    const cnt = M.map(() => 0), caps = M.map((m) => m.instanceMatrix.count);
     const put = (kind, x, y, z, rot, s = 1) => {
       const n = cnt[kind]; if (n >= caps[kind]) return;
       const e = M[kind].instanceMatrix.array, o = n * 16, c = Math.cos(rot) * s, sn = Math.sin(rot) * s;
@@ -22320,6 +22824,14 @@ float pinOccGate() {
         const item = (kind, u, v, r) => { if (!full && !roofKitOn(mlo, mhi, u, v, hl, hs)) { ROOFKIT.off++; return; } const [x, z] = at(u, v); put(kind, x, y, z, r); };
         const house = (u0, W, D, k) => {   // one house: its centre along the axis, its width along it and its depth across it
           const side = H(k + 1) < 0.5 ? -1 : 1;
+          // the realism pass: a deck on one rowhouse in eight in the deck neighbourhoods (one in twenty-five elsewhere), across
+          // the house at the side away from its condenser, wholly on the roof or not at all; a solar array on one in twenty
+          if (M.length > 6 && W >= 4.2 && D >= 6) {
+            const hd = H(k + 13), dv = -side * Math.min(D * 0.5 - 2.4, D * 0.2), dRot = rot + (H(k + 14) < 0.5 ? 0 : Math.PI);
+            const deckOk = () => [[-1.8, -2.25], [1.8, -2.25], [1.8, 2.25], [-1.8, 2.25]].every(([a, b]) => full || roofKitOn(mlo, mhi, u0 + a, dv + b, hl, hs));
+            if (hd < (deckArea(x0, z0) ? 0.125 : 0.04) && deckOk()) { const [x, z] = at(u0, dv); put(5, x, y, z, dRot); return; }
+            if (hd > 0.95 && deckOk()) { const [x, z] = at(u0, dv); put(6, x, y, z, Math.cos(rot) < 0 ? rot + Math.PI : rot); }
+          }
           if (H(k + 2) < 0.7) item(0, u0 + (H(k + 3) - 0.5) * W * 0.45, side * D * 0.28, rot + (H(k + 4) < 0.5 ? 0 : Math.PI / 2));
           if (H(k + 5) < 0.55) item(2, u0 + (H(k + 6) - 0.5) * W * 0.35, -side * D * 0.08, rot);
           const nv = H(k + 7) < 0.4 ? 2 : 1;
@@ -22331,6 +22843,16 @@ float pinOccGate() {
           for (let k = 0; k < n; k++) house(-hl + (k + 0.5) * W, W, 2 * hs, k * 17);
         } else if (hl * hs * 4 < 220) {   // a single house: its depth runs along the long axis
           const k = 0, side = H(1) < 0.5 ? -1 : 1;
+          if (M.length > 6 && 2 * hs >= 4.2 && 2 * hl >= 8) {   // the realism pass: its deck at one end, across the house
+            const hd = H(13), du = side * (hl - 2.9), dRot = rot + Math.PI / 2 + (H(14) < 0.5 ? 0 : Math.PI);
+            const deckOk = () => [[-2.25, -1.8], [2.25, -1.8], [2.25, 1.8], [-2.25, 1.8]].every(([a, b]) => full || roofKitOn(mlo, mhi, du + a, b, hl, hs));
+            if (hd < (deckArea(x0, z0) ? 0.125 : 0.04) && deckOk()) {
+              const [x, z] = at(du, 0); put(5, x, y, z, dRot);
+              item(3, -side * hl * 0.5, (H(8) < 0.5 ? -1 : 1) * hs * 0.6, rot);
+              continue;
+            }
+            if (hd > 0.95 && deckOk()) { const [x, z] = at(du, 0); put(6, x, y, z, Math.cos(rot + Math.PI / 2) < 0 ? rot - Math.PI / 2 : rot + Math.PI / 2); }
+          }
           if (H(2) < 0.7) item(0, side * hl * 0.45, (H(3) - 0.5) * hs * 0.8, rot);
           if (H(5) < 0.55) item(2, -side * hl * 0.1, (H(6) - 0.5) * hs * 0.6, rot);
           item(3, (H(7) - 0.5) * hl, (H(8) < 0.5 ? -1 : 1) * hs * 0.75, rot);
@@ -22441,7 +22963,7 @@ float pinOccGate() {
     // layer and outlive a missing pole blob
     if (towerGlow) {
       towerGlow.visible = night > 0.01;
-      if (towerGlow.visible) towerMat.opacity = night;
+      if (towerGlow.visible) towerMat.opacity = night * (REAL ? Math.min(1, occU.uOcc.value.y / 0.55) : 1);   // the realism pass: the offices empty as the night goes on
       if (floodPts) { floodPts.visible = night > 0.01; floodMat.opacity = night * 0.62; }
     }
     if(themeCrown){themeCrown.visible=night>.01;themeCrownMat.opacity=night;}
@@ -25170,6 +25692,7 @@ float pinOccGate() {
     // (the realism pass: with the wide glare a lamp and a lit window at night clear it from 1.05, the day's 2.45 unchanged)
     if (postBright) postBright.uniforms.uThr.value = BLOOMW.on ? 1.05 + 1.4 * dayF : 1.25 + 1.2 * dayF;
     nightUniform.value = night;
+    facadeFrame();   // the realism pass: the lit rooms by the clock, the roofs' snow (the facade hook)
     // (bus night glow lives in bodyMat's aGlow shader term, driven by uNight)
     if (stMat) stMat.color.copy(_c1.set(ST_INK_DAY)).lerp(_c2.set(0xa8a296), night);  // street text: dark on day roads, pale at night
     if (nbMat) {
@@ -26676,6 +27199,7 @@ float pinOccGate() {
     }
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
+    if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);
