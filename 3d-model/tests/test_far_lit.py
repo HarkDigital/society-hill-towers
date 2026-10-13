@@ -73,9 +73,14 @@ class FarLit(unittest.TestCase):
         self.assertIn('muP*2.0*${FAR_K.toFixed(2)}/aaU', self.src)
 
     def test_blocks_keep_the_rooms_mean(self):
-        m = re.search(r'step\(\.(\d+), roomHash\(key\)\) \* \(\.(\d+) \+ ([\d.]+) \* roomHash\(key \+ ([\d.]+)\)\)', self.glsl)
+        # the realism pass (night#6): the blocks' share follows the rooms' clock (uOcc, homes and offices); at the old shares
+        # (0.48 and 0.54, the defaults without the clock) the cut is the old 0.65
+        m = re.search(r'step\(1\.0 - \.(\d+) \* \(uOcc\.x \+ uOcc\.y\) / ([\d.]+), roomHash\(key\)\) \* \(\.(\d+) \+ ([\d.]+) \* roomHash\(key \+ ([\d.]+)\)\)', self.glsl)
         self.assertIsNotNone(m)
-        cut, base, span, off = float('.' + m.group(1)), float('.' + m.group(2)), float(m.group(3)), float(m.group(4))
+        share, norm = float('.' + m.group(1)), float(m.group(2))
+        cut = 1 - share * (0.48 + 0.54) / norm
+        self.assertAlmostEqual(cut, 0.65, places=6)
+        base, span, off = float('.' + m.group(3)), float(m.group(4)), float(m.group(5))
         # roomLight lights a room at odds of about 0.48 with a mean brightness factor of 1: the blocks' expectation
         self.assertAlmostEqual((1 - cut) * (base + span / 2), 0.48, delta=0.01)
         # and the hash delivers it over real keys, at level 0 and at a coarse level

@@ -42,8 +42,12 @@ class RoofKit(unittest.TestCase):
         self.assertIn('    updateRoofKit(now);   // Round 150\n', s)
         # a scale must default, or four of the five kinds get NaN matrices and vanish (the first build did)
         self.assertIn('const put = (kind, x, y, z, rot, s = 1) => {', s)
-        kinds = s[s.index('    const kinds = [\n'):s.index('    for (const kd of kinds) {')]
+        kinds = s[s.index('    const kinds = [\n'):s.index('    ];\n', s.index('    const kinds = [\n'))]
         self.assertEqual(len(re.findall(r'\{ cap: isTouch \?', kinds)), 5)
+        # the realism pass: the roof decks and the solar arrays come after the five, under REAL, so put()'s kinds 0 to 4 hold
+        more = s[s.index('    const kinds = [\n'):s.index('    for (const [ki, kd] of kinds.entries()) {')]
+        self.assertEqual(more.count('kinds.push({ cap: isTouch ?'), 2)
+        self.assertIn('    if (REAL) {\n      kinds[0].parts.push(', more)
 
 
 def fn(src, name):
