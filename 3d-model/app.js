@@ -3177,29 +3177,46 @@
   // part: the outer districts' and the far ring's buildings cast and received nothing, and neither did the ground, the parks
   // or the streets around them, nor the tree cards, so a rowhouse threw nothing into its street and Rittenhouse's towers
   // nothing onto the square, and the roof kit's units threw the only shadows on Broad Street's plaza, from roofs that threw
-  // none (vehicles-props 12). Set once, on the first frame after the build, by flags alone: r149's receiveShadow is a
+  // none (vehicles-props 12). Set on the first frame after the build, by flags alone: r149's receiveShadow is a
   // per-object uniform and castShadow only chooses the depth pass's meshes, so no program changes. A computer: the merged
   // buildings (the curtain walls too) cast and receive, every weather-hooked flat (the ground, the parks and areas, the
   // streets, the lots: `userData.wxSurf`, before the tiles copied it) and the tree cards receive. A phone (the critic: geometry
   // bound, measure before any phone casting): no new casters, and only under Sharper do the outer districts' ground, parks
   // and streets receive what already casts there (the buses, the kit, the core's buildings: a phone's trees never cast), so
   // Auto pays no new filter taps until the iPhone's beacons say what they cost. ?real=0 leaves the old roles. A mesh made
-  // while the receivers are off (moonShadowsOff) joins the list it gets them back from
-  const SHROLE = { done: false, cast: 0, recv: 0, cards: 0 };
+  // while the receivers are off (moonShadowsOff) joins the list it gets them back from. The pass is idempotent and runs
+  // again every 900th frame, so what arrives after the build (the season's paving strips with the first closures poll, a
+  // lazily built flat) takes its roles too: a scene walk, well under a millisecond, and flags only
+  const SHROLE = { done: false, cast: 0, recv: 0, cards: 0, runs: 0, list: [], held: false };
   function shadowRoles() {
-    SHROLE.done = true;
-    if (window.__dbg) Object.assign(window.__dbg, { shadowAudit, shadowRoles: () => ({ ...SHROLE }), farShadows: () => ({ on: FARSH.on, can: FARSH.can, fail: FARSH.fail, ext: FARSH.ext, cx: Math.round(FARSH.cx), cz: Math.round(FARSH.cz), drawn: FARSH.drawn, live: !!(FARSH.light && FARSH.light.shadow.radius > 0.5), near: { ...lastAim }, off: moonNoRecv ? [...shadowOffWhy] : [] }), pickAt, gpu: gpuStats, keyLight: () => ({ ...KEYWX }) });
+    if (!SHROLE.done && window.__dbg) Object.assign(window.__dbg, { shadowAudit,
+      // __dbg.shadowRoles(false) takes the casters this pass made out of the depth pass (true puts them back): the A/B for
+      // what the outer districts' casting costs the near map (__dbg.gpu().shadow, __dbg.perf().tris)
+      shadowRoles: (cast) => { if (cast != null) { SHROLE.held = !cast; for (const o of SHROLE.list) o.castShadow = !!cast; renderer.shadowMap.needsUpdate = true; } return { done: SHROLE.done, cast: SHROLE.cast, recv: SHROLE.recv, cards: SHROLE.cards, runs: SHROLE.runs, held: SHROLE.held }; },
+      // __dbg.farShadows(false) switches the far map off as Smoother does (true back on): the A/B for its lookups and draws
+      farShadows: (on) => { if (on != null && FARSH.light) { FARSH.on = !!on; if (!FARSH.on) FARSH.light.shadow.radius = 0; else FARSH.ext = 0; } return { on: FARSH.on, can: FARSH.can, fail: FARSH.fail, ext: FARSH.ext, cx: Math.round(FARSH.cx), cz: Math.round(FARSH.cz), drawn: FARSH.drawn, live: !!(FARSH.light && FARSH.light.shadow.radius > 0.5), near: { ...lastAim }, off: moonNoRecv ? [...shadowOffWhy] : [] }; },
+      pickAt, gpu: gpuStats, keyLight: () => ({ ...KEYWX }) });
+    if (SHROLE.done && (!REAL || (isTouch && gfxPick() !== 'sharper'))) return;   // nothing a later pass could add
+    SHROLE.done = true; SHROLE.runs++;
     if (!REAL) return;
     const desk = !isTouch, phoneFlats = isTouch && gfxPick() === 'sharper';
     const W = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };   // the outer districts' box (their ground strips)
     const outer = new Set(outerMeshes);
-    const recv = (o) => { if (o.receiveShadow || (moonNoRecv && moonNoRecv.indexOf(o) >= 0)) return; if (moonNoRecv) moonNoRecv.push(o); else o.receiveShadow = true; SHROLE.recv++; };
+    // a flat pinned off by a getter (Girard College's apron, rebuilds/gc.js: pinned while the ground around it received
+    // nothing, or it would show as a dark patch) receives with that ground now; a pin without the rebuild's noShadow is kept
+    const recv = (o) => {
+      if (o.receiveShadow || (moonNoRecv && moonNoRecv.indexOf(o) >= 0)) return;
+      const pin = Object.getOwnPropertyDescriptor(o, 'receiveShadow');
+      if (pin && pin.get) { if (!o.userData.noShadow || !pin.configurable) return; delete o.receiveShadow; }
+      if (moonNoRecv) moonNoRecv.push(o); else o.receiveShadow = true;
+      SHROLE.recv++;
+    };
     scene.traverse((o) => {
       if (!o.isMesh) return;
       const m = Array.isArray(o.material) ? o.material[0] : o.material;
       if (!m || !(m.isMeshStandardMaterial || m.isMeshLambertMaterial || m.isMeshPhongMaterial)) return;
       if (outer.has(o)) {
-        if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow) { o.castShadow = true; SHROLE.cast++; } recv(o); }
+        if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow && !SHROLE.held && SHROLE.list.indexOf(o) < 0) { o.castShadow = true; SHROLE.cast++; SHROLE.list.push(o); } recv(o); }
         return;
       }
       if (o.userData.treeCard) { if (desk) { recv(o); SHROLE.cards++; } return; }
@@ -3209,6 +3226,11 @@
       if (phoneFlats && bs && bs.center.x > W.x0 && bs.center.x < W.x1 && bs.center.z > W.z0 && bs.center.z < W.z1) recv(o);
     });
   }
+  // the movers' redraw of the near map on a computer (frame): every 4th frame, as it was, while the eye is under 250 m, and
+  // every 8th above it. With the outer districts casting, the box high up is roofs from edge to edge and a redraw fills the
+  // whole 4096 map (headless on this Mac at 600 m: 8.0 ms a redraw against 0.95 before they cast; at 90 m 1.7 against 1.0),
+  // and from up there a car's shadow is a pixel or two that an eighth of a second's lag cannot show. ?real=0: every 4th
+  const moverShadowEvery = () => (REAL && camera.position.y > 250 ? 8 : 4);
   // __dbg.shadowAudit(): the visible lit flats and buildings that neither receive nor cast, so a mesh added later without its
   // flags shows up (the omission above stood unseen since the outer districts came in)
   function shadowAudit() {
@@ -3220,8 +3242,9 @@
       if (!m || !m.isMeshStandardMaterial) return;
       out.n++;
       const bs = o.geometry && o.geometry.boundingSphere, at = bs ? [Math.round(bs.center.x), Math.round(bs.center.z), Math.round(bs.radius)] : null;
-      if (m.userData.wxSurf && !o.receiveShadow && !(moonNoRecv && moonNoRecv.indexOf(o) >= 0)) out.flats.push({ name: o.name, at });
-      if (outer.has(o) && (m === cityMat || m === outerGlassMat) && !o.castShadow) out.buildings.push({ name: o.name, at });
+      const who = () => ({ name: o.name, at, parent: o.parent ? o.parent.name || o.parent.type : '', key: m.customProgramCacheKey ? String(m.customProgramCacheKey()).slice(0, 48) : '', ud: Object.keys(o.userData || {}), tile: !!o.userData.tileSet });
+      if (m.userData.wxSurf && !o.receiveShadow && !(moonNoRecv && moonNoRecv.indexOf(o) >= 0)) out.flats.push(who());
+      if (outer.has(o) && (m === cityMat || m === outerGlassMat) && !o.castShadow) out.buildings.push(who());
     });
     out.flats = out.flats.slice(0, 40); out.buildings = out.buildings.slice(0, 40);
     return out;
@@ -26147,7 +26170,7 @@ float pinOccGate() {
       const lead = isTouch ? 0 : 0.35;
       const c = sun.target.position;
       shadowFrozen = (isTouch && !onFoot && camera.position.y > 600) || shadowsIdle;   // the realism pass: no depth pass while nothing receives
-      if (!SHROLE.done) shadowRoles();   // the realism pass: who casts and who receives, once the city stands
+      if (!SHROLE.done || frameNo % 900 === 0) shadowRoles();   // the realism pass: who casts and who receives, once the city stands and then now and again
       if (!shadowFrozen && (ext !== lastAim.extent || Math.hypot(px - c.x, pz - c.z) > ext * (isTouch ? 0.5 : 0.35))) aimSun(px + tmpV.x * ext * lead, pz + tmpV.z * ext * lead, ext);
     }
 
@@ -26167,7 +26190,7 @@ float pinOccGate() {
     const movers = (septaReady && SEPTA.on && septaSolid && septaSolid.count > 0) || (!isTouch && TRAFFIC.on && TRAFFIC.n > 0) || (amtrakReady && AMTRAK.on && amtrakCoach.count > 0) || (patcoReady && AMTRAK.on && patcoCar.count > 0);
     const casterSig = (indegoReady && indegoSolid ? indegoSolid.count + (indegoBike ? indegoBike.count * 4096 : 0) : 0) + marketTentN * 16777216 + (movers ? 1 << 30 : 0)
       + markerDrawnN * 4294967296 + (closuresReady && barrelMesh ? (barrelMesh.count + coneMesh.count) * 8796093022208 : 0);   // bikes cast too, and a market opening its tents; movers switching off needs one last redraw; the posts, plinths and drums come and go with the half mile (Round 82)
-    if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : 4) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
+    if (!shadowFrozen && ((movers && frameNo % (isTouch ? 12 : moverShadowEvery()) === 0) || casterSig !== lastCasterSig)) { lastCasterSig = casterSig; renderer.shadowMap.needsUpdate = true; }   // a phone redraws the depth pass for the buses every 12th frame (Round 72), and not at all while frozen high up (Round 74)
     sky.position.copy(camera.position);
     cloudDeck.position.copy(camera.position);
     skyMat.uniforms.uCloudOff.value.addScaledVector(wxWind, dt);

@@ -39,10 +39,10 @@ class Switches(unittest.TestCase):
 
     def test_roles_once_the_city_stands(self):
         s = self.s
-        self.assertIn('if (!SHROLE.done) shadowRoles();', s)
+        self.assertIn('if (!SHROLE.done || frameNo % 900 === 0) shadowRoles();', s)   # and again now and then, for late meshes
         f = section(s, '  function shadowRoles() {', '\n  }\n')
         self.assertIn('if (!REAL) return;', f)
-        self.assertIn("if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow) { o.castShadow = true; SHROLE.cast++; } recv(o); }", f)
+        self.assertIn("if (desk && (m === cityMat || m === outerGlassMat)) { if (!o.castShadow && !SHROLE.held && SHROLE.list.indexOf(o) < 0) { o.castShadow = true; SHROLE.cast++; SHROLE.list.push(o); } recv(o); }", f)
         self.assertIn('if (!m.userData.wxSurf || o.isInstancedMesh) return;', f)
         self.assertIn("phoneFlats = isTouch && gfxPick() === 'sharper'", f)   # a phone pays new filter taps only by choice
         # never a recompile: flags only, never a light's castShadow
@@ -77,6 +77,11 @@ class Switches(unittest.TestCase):
         self.assertIn("uK: { value: 2.0 } }", s)
         self.assertIn("'  float ao = max(0.5, 1.0 - sum * uK * 5.0 / (R2 * R2 * R2 * 12.0));'", s)
         self.assertIn('* (1.0 - smoothstep(0.6 * R, 1.2 * R, v.z));', s)
+
+    def test_the_movers_redraw_less_often_high_up(self):
+        s = self.s
+        self.assertIn('const moverShadowEvery = () => (REAL && camera.position.y > 250 ? 8 : 4);', s)
+        self.assertIn('frameNo % (isTouch ? 12 : moverShadowEvery()) === 0', s)   # a phone's 12 unchanged
 
     def test_exposure_line(self):
         self.assertIn('renderer.toneMappingExposure = (0.94 + 0.11 * dayF) * keyWeather(dayF, deckK);', self.s)
@@ -196,6 +201,80 @@ console.log(JSON.stringify(out));''' % (ms, kw)
         self.assertEqual(self.r['allBack']['recv'], [True, True, False])
         self.assertFalse(self.r['allBack']['idle'])
         self.assertTrue(self.r['allBack']['redraw'])
+
+
+@unittest.skipUnless(shutil.which('node'), 'node unavailable')
+class Roles(unittest.TestCase):
+    """shadowRoles run under node against a stub scene: the roles once, again for a mesh that arrives later (the closures'
+    paving strips come with the first poll), never twice for one mesh, the casters held off by __dbg.shadowRoles(false)
+    staying off through a later pass, a flat made at night joining the list the receivers come back from, and a phone
+    gaining no casters."""
+
+    @classmethod
+    def setUpClass(cls):
+        s = (ROOT / 'app.js').read_text()
+        body = section(s, '  const SHROLE = {', '\n  }\n') + '\n  }\n'
+        cls.script = '''const REAL = true; const gfxPick = () => 'auto';
+const window = { __dbg: {} };
+const renderer = { shadowMap: { needsUpdate: false } };
+const FARSH = { light: null, on: false, can: false, fail: '', ext: 0, cx: 0, cz: 0, drawn: 0 };
+const lastAim = {}; let moonNoRecv = null; const shadowOffWhy = new Set();
+const shadowAudit = () => 0, pickAt = () => 0, gpuStats = () => 0, KEYWX = {};
+const std = (ud) => ({ isMeshStandardMaterial: true, userData: ud || {} });
+const cityMat = std(), outerGlassMat = std(), flatMat = std({ wxSurf: true }), otherMat = std();
+const mk = (mat, ud) => ({ isMesh: true, material: mat, castShadow: false, receiveShadow: false, userData: ud || {}, geometry: { boundingSphere: { center: { x: 0, z: 0 } } } });
+const run = (touch) => {
+  const isTouch = touch;
+  const a = mk(cityMat), b = mk(outerGlassMat), f = mk(flatMat), o = mk(otherMat), card = mk(otherMat, { treeCard: true }), inst = Object.assign(mk(flatMat), { isInstancedMesh: true });
+  const pin = (ud) => { const x = mk(flatMat, ud); Object.defineProperty(x, 'receiveShadow', { get() { return false; }, set() {}, configurable: true }); return x; };
+  const apron = pin({ noShadow: true }), pinned = pin();   // Girard College's apron (rebuilds/gc.js), and a pin that is not a rebuild's
+  const outerMeshes = [a, b], objs = [a, b, f, o, card, inst, apron, pinned];
+  const scene = { traverse(fn) { for (const x of objs) fn(x); } };
+  %s
+  const flags = (xs) => xs.map((x) => [x.castShadow, x.receiveShadow]);
+  const out = {};
+  shadowRoles(); out.first = { roles: window.__dbg.shadowRoles(), flags: flags(objs) };
+  shadowRoles(); out.again = window.__dbg.shadowRoles();
+  const late = mk(flatMat); objs.push(late);
+  shadowRoles(); out.late = { roles: window.__dbg.shadowRoles(), flag: [late.castShadow, late.receiveShadow] };
+  window.__dbg.shadowRoles(false); shadowRoles(); out.held = { flags: flags([a, b]), redraw: renderer.shadowMap.needsUpdate };
+  window.__dbg.shadowRoles(true); out.back = flags([a, b]);
+  moonNoRecv = []; const night = mk(flatMat); objs.push(night); shadowRoles();
+  out.night = { recv: night.receiveShadow, listed: moonNoRecv.indexOf(night) >= 0 };
+  moonNoRecv = null;
+  return out;
+};
+console.log(JSON.stringify({ desk: run(false), phone: run(true) }));''' % body
+        cls.r = node(cls.script)
+
+    def test_a_computer(self):
+        d = self.r['desk']
+        # the outer buildings cast and receive, the flat and the card receive, the plain mesh and the instanced flat are left
+        self.assertEqual(d['first']['flags'], [[True, True], [True, True], [False, True], [False, False], [False, True], [False, False], [False, True], [False, False]])
+        # the apron's getter pin gives way (the ground around it receives now); a pin that is no rebuild's stays, uncounted
+        self.assertEqual(d['first']['roles']['recv'], 5)
+        self.assertEqual(d['first']['roles']['cast'], 2)
+        self.assertEqual(d['again']['cast'], 2)       # idempotent
+        self.assertEqual(d['again']['recv'], d['first']['roles']['recv'])
+        self.assertEqual(d['late']['flag'], [False, True])   # a later flat takes its role on the next pass
+        self.assertEqual(d['late']['roles']['runs'], 3)
+
+    def test_held_casters_stay_off(self):
+        d = self.r['desk']
+        self.assertEqual(d['held']['flags'], [[False, True], [False, True]])
+        self.assertTrue(d['held']['redraw'])
+        self.assertEqual(d['back'], [[True, True], [True, True]])
+
+    def test_a_flat_made_at_night(self):
+        n = self.r['desk']['night']
+        self.assertFalse(n['recv'])
+        self.assertTrue(n['listed'])
+
+    def test_a_phone_gains_no_casters(self):
+        p = self.r['phone']
+        self.assertEqual(p['first']['roles']['cast'], 0)
+        self.assertTrue(all(not c for c, r in p['first']['flags']))
+        self.assertEqual(p['first']['flags'][2], [False, False])   # Auto: no new receivers either
 
 
 @unittest.skipUnless(shutil.which('node'), 'node unavailable')
