@@ -56,6 +56,14 @@ RB.add({
     const mBrick = K.mat('#7a5044').clone();               // the brick-paved terrace along the eastern front
     const mGlass = K.glass().clone();                      // dark glazing; uv-flagged glow, or matte iron / timber
     const mFoam = K.mat('#dde7e5', { rough: 0.9 }).clone();   // white water over the dam
+    // the realism pass (Oct 12): the dam falls. The app hands its water clock and the generated white water (api.time, api.foam:
+    // { tex, on, m }; foam's `on` stays 0 until the image has loaded, and the streaks run on noise till then); without api.foam
+    // (?real=0, the design harness) the dam keeps its one foam quad
+    const TIME = api.time || { value: 0 };
+    const FOAM = api.foam || null;
+    const mLip = K.mat('#26302a', { rough: 0.1 }).clone();   // the glassy tongue drawn down over the crest
+    const mApron = K.mat('#e2ebe8', { rough: 0.55 }).clone();   // the foam drifting off below it
+    mApron.transparent = true; mApron.depthWrite = false;
 
     // ---- levels
     const W = app ? -7.34 : 0;                             // the drawn Schuylkill sheet (the viewer's plane is the waterline)
@@ -541,7 +549,27 @@ RB.add({
       const s0 = [G[0] + 3 * d[0] + 2 * nd[0], G[1] + 3 * d[1] + 2 * nd[1]], s1 = [s0[0] + L * d[0], s0[1] + L * d[1]];
       B.add(mStoneDk, K.edgeBox(s0, s1, W - 2.0, 2.45, 2.6, 0, 0));
       const q = (a, t, y) => [a[0] + nd[0] * t, y, a[1] + nd[1] * t];
-      B.add(mFoam, K.quad(q(s0, 1.25, W + 0.45), q(s1, 1.25, W + 0.45), q(s1, 6.5, W - 0.12), q(s0, 6.5, W - 0.12), [s0[0] + nd[0] * 4, W - 3, s0[1] + nd[1] * 4]));
+      if (app && FOAM) {
+        // the lip: a glassy tongue over the last 2.5 m upstream of the crest, a hair over the pool
+        B.add(mLip, K.quad(q(s0, -3.8, W + 0.56), q(s1, -3.8, W + 0.56), q(s1, -1.2, W + 0.56), q(s0, -1.2, W + 0.56), [s0[0], W - 3, s0[1]]));
+        // the face: the nappe curving off the crest to the tailwater over 4 m, 30 segments along, uv in metres (along, down)
+        // the apron: 30 m of foam on the tailwater, fading downstream
+        const strip = (rows, segs) => {
+          const pos = [], uv = [], idx = [];
+          for (let i = 0; i <= segs; i++) for (const [t, y] of rows) { const a = [s0[0] + d[0] * L * i / segs, s0[1] + d[1] * L * i / segs]; const p = q(a, t, y); pos.push(p[0], p[1], p[2]); uv.push(L * i / segs, t - rows[0][0]); }
+          const R = rows.length;
+          for (let i = 0; i < segs; i++) for (let r = 0; r + 1 < R; r++) { const a = i * R + r, b = (i + 1) * R + r; idx.push(a, a + 1, b, b, a + 1, b + 1); }
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+          g.setIndex(idx); g.computeVertexNormals();
+          if (g.attributes.normal.getY(0) < 0) { const ix = g.index.array; for (let k = 0; k < ix.length; k += 3) { const tt = ix[k + 1]; ix[k + 1] = ix[k + 2]; ix[k + 2] = tt; } g.computeVertexNormals(); }
+          return g;
+        };
+        B.addMesh(new THREE.Mesh(strip([[1.3, W + 0.5], [2.0, W + 0.44], [3.0, W + 0.28], [4.2, W + 0.1], [5.5, W + 0.03]], 30), mFoam));
+        const apron = new THREE.Mesh(strip([[5.5, W + 0.04], [12, W + 0.04], [22, W + 0.04], [35.5, W + 0.04]], 30), mApron);
+        apron.renderOrder = 2; apron.userData.noShadow = true;
+        B.addMesh(apron);
+      } else B.add(mFoam, K.quad(q(s0, 1.25, W + 0.45), q(s1, 1.25, W + 0.45), q(s1, 6.5, W - 0.12), q(s0, 6.5, W - 0.12), [s0[0] + nd[0] * 4, W - 3, s0[1] + nd[1] * 4]));
     }
 
     // =====================================================================================================
@@ -580,12 +608,36 @@ RB.add({
         .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uGlowCol * vWwF.x * uLamp;');
     };
     mGlass.customProgramCacheKey = () => 'ww-glass-2';
-    mFoam.onBeforeCompile = (sh) => {
-      sh.uniforms.uLamp = LAMP;
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp;')
-        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.65 * uLamp;');
+    // the white water: streaks tumbling down the face (uv: metres along the crest, metres down), the generated foam when the
+    // app has it, value noise otherwise; on the apron the same streaks drift downstream and thin out over 30 m
+    const FOAM_GLSL = 'uniform float uLamp, uTimeF, uFoamOn, uFoamM;\nuniform sampler2D tFoamF;\nvarying vec2 vFoamUv;\n' +
+      'float fh(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }\n' +
+      'float fn(vec2 p) { vec2 i = floor(p), f = fract(p); vec2 u = f * f * (3.0 - 2.0 * f); return mix(mix(fh(i), fh(i + vec2(1.0, 0.0)), u.x), mix(fh(i + vec2(0.0, 1.0)), fh(i + vec2(1.0, 1.0)), u.x), u.y); }\n' +
+      'float foamAt(vec2 uv, float flow) {\n' +
+      '  float n = fn(vec2(uv.x * 0.7, uv.y * 0.18 - uTimeF * flow)) * 0.6 + fn(vec2(uv.x * 2.3, uv.y * 0.5 - uTimeF * flow * 1.7)) * 0.4;\n' +
+      '  if (uFoamOn > 0.5) n = 0.35 * n + 0.65 * smoothstep(0.08, 0.5, dot(texture2D(tFoamF, vec2(uv.x, uv.y - uTimeF * flow * 2.0) / uFoamM).rgb, vec3(0.3, 0.59, 0.11)));\n' +
+      '  return n;\n}\n';
+    const foamPatch = (m, apron) => {
+      m.onBeforeCompile = (sh) => {
+        Object.assign(sh.uniforms, { uLamp: LAMP, uTimeF: TIME, uFoamOn: FOAM.on, uFoamM: FOAM.m, tFoamF: FOAM.tex });
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vFoamUv;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvFoamUv = uv;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + FOAM_GLSL)
+          .replace('#include <color_fragment>', '#include <color_fragment>\n' + (apron
+            ? '{ float a = foamAt(vFoamUv, 0.9); float t = vFoamUv.y / 30.0; diffuseColor.a *= smoothstep(0.32, 0.78, a + 0.45 * (1.0 - t)) * (1.0 - smoothstep(0.1, 1.0, t)) * 0.95; }\n'
+            : '{ float a = foamAt(vFoamUv, 1.7); diffuseColor.rgb = mix(vec3(0.05, 0.065, 0.05), diffuseColor.rgb, smoothstep(0.3, 0.65, a + 0.25 * smoothstep(0.0, 2.5, vFoamUv.y))); }\n') +
+            'diffuseColor.rgb *= 1.0 - 0.65 * uLamp;');
+      };
+      m.customProgramCacheKey = () => apron ? 'ww-apron-1' : 'ww-foam-3';
     };
-    mFoam.customProgramCacheKey = () => 'ww-foam-2';
+    if (app && FOAM) { foamPatch(mFoam, false); foamPatch(mApron, true); }
+    else {
+      mFoam.onBeforeCompile = (sh) => {
+        sh.uniforms.uLamp = LAMP;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp;')
+          .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.65 * uLamp;');
+      };
+      mFoam.customProgramCacheKey = () => 'ww-foam-2';
+    }
 
     const grp = B.done();
     grp.traverse((o) => { if (o.isMesh && o.material === mFoam) o.userData.noShadow = true; });
