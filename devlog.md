@@ -8199,3 +8199,650 @@ takes the tap). 435 tests.
   degrees three, a house with a 1.2 m recess across its front three). Also a headless renderer for the capture skill
   (`scripts/render.mjs`: serves a folder on a free port, its own headless Chrome on the Mac's GPU, three renders at a time),
   so parallel work can capture without the Browser pane.
+
+## Round 188 — the realism pass: ten workstreams (Oct 12 to 13)
+
+- Mike: "Some of the new building fronts are obviously off kilter when applied to the buildings. Can we shape that up
+  and please do anything necessary to make this look more photo realistic and less cartoony. This should apply to all
+  surfaces/water/anything you can improve to look more real. Use all of the Open AI credits if you must." Round 187
+  turned the askew fronts away; this round fits every front to its own wall line and takes the rest of the model with
+  it.
+- How it ran: an audit of 20 reference views by eight auditors and a critic (102 findings), then ten workstreams, each
+  in its own git worktree on its own branch (realism/<area>), each implemented, adversarially reviewed (every verdict
+  "fix") and fixed, then merged on realism/integrate. The first run stopped on the weekly usage limit with three
+  workstreams unfinished and was resumed. About 300 new generated images (gpt-image-2 and gpt-image-1.5): 224 house
+  fronts in 14 sets at their houses' own proportions plus a one-storey shop set, 16 street floors, 14 wall and roof
+  materials, 7 street textures, 2 water textures, 39 vehicle views, and the ground's canopies, alleys and park macro.
+- The integration's own findings. (1) Sixteen texture units: every branch added maps to the one ground program, and
+  merged, the roads, the lots and the elevated decks (one sampler more each) failed to link and drew nothing, I-95
+  included. The wet streets now read the lamp map under the lamp patch's own name (LAMP_WX_DECL, declared by the
+  weather when it runs first; the lamp patch keys its once-guard on its own `uniform float uLampOn;`), a paved surface
+  (a lane-painted road or deck, a lot, a structure's concrete or steel) takes no grass and no vegetation maps
+  (surfTexPatch's `paved`), and the ground's review added vegBudget, which drops the pass's extra pictures by #define
+  while a program would sample more than the GPU has; the headlight pools (carMapPatch) go in before it. Measured on
+  the merged build: 232 programs on a computer and 135 on a phone, none failed, at most 15 and 13 units. (2) The
+  vehicles took the streetlamps' pools at the old full strength on every face while the realistic patch had taken the
+  city's to LAMP_REAL_K: a white car under a lamp stood out of a dark street like a daytime one. vehLampPatch now
+  takes 0.85 of uLampReal.y, the faces turned up the most. (3) keyWeather merged post-shadows' clear-sky fill and
+  exposure compensation with sky-atmos's sunDeckK (the deck's share only; fog and rain counted once inside). (4) The
+  lamp posts: the streets branch's pedestrian post gave way to night-lamps' families (cobra heads, the Franklin
+  lanterns, the wood poles). (5) The worktrees' lidar_cache symlink had been committed by a merge and is out again
+  (.gitignore now names it without the slash).
+- The render tool (`.claude/skills/philly3d-capture/scripts/render.mjs`) now prints the page's first 40 console
+  warnings and errors (a shader that fails to link says so only there) and takes `--eval <file.js>`, an expression run
+  after the last pose; a sampler probe over `renderer.info.programs` found the failing programs.
+- Before and after: the 20 reference views on a computer and eight as a phone, against the deployed build. The white
+  band along the night horizon on a phone was already in the deployed build.
+
+### House fronts and tower skins (realism/fronts-skins)
+
+Realism pass, fronts and skins (Oct 12 to 13, Mike: "make this look more photo realistic and less cartoony", use the
+OpenAI credits). What was left of "off kilter" after Round 187 was the box: a front lay on the oriented box's side, so
+a wall 30 cm inside it carried a paper front floating proud, a wall 4 degrees off it was crossed on the slant, and a
+side the wall covered 85% of was overhung. frontHonest now fits each honest side's own line through the outline's
+edges (offset, angle, span; one word a side in FRONTS.fit) and frontsLay lays the front there: offset median 0 and
+95th percentile 14 cm, angle 95th percentile 1.9 degrees. The fronts had been stretched 1.2 to 1.55 times their
+images' height, because every set was made at 768 by 1280 whatever its house. Fourteen sets were made again at their
+houses' proportions with their storeys spelled out, and a one-storey shop set joins them. The bake reads each cell's
+storeys from its rows of windows, and the shader keeps the ground floor and cornice band at the image's scale and
+repeats or drops whole storeys between. A front now takes the cell nearest its house's own colour. It wears a 22 cm
+moulded crown, not the second cornice slab, and no foam stoops. Its reveals shade by the sun, and it takes the rain,
+snow and cloud shadows the walls round it take. The storefront boxes dissolve on the fronts' own dither under a
+generated shop front, signalled through the sign of their vertex red so no new stream is uploaded. Their glass was
+getting lit as display and painted over the shop's own door. After dark the luminance gate is gone: a front's window
+is the facade's own roomLight over the whole opening the bake found. A shop's display lights where its painted glass
+is dark and keeps its own pattern; the first try lit it as a white sheet, then as a grey photograph, and the fix was
+the display's own relative luminance. The tower and mid-rise skins start and end on bay lines along whole walls (a
+curved wall's facets are one wall) and meet the roof on a spandrel, with a parapet over the tall plain towers. Their
+masks are filled to each window's box, with five tiles found by their wall's colour, and lit as roomLight rooms cut at
+each tile's own pier and spandrel. The night towers had been showing curtain-shaped cut-outs and black stencils; they
+now show lit rooms. Sixteen generated street floors now stand under the walls that start 4 or 5 m up. One measured
+cost: the weather, the clouds and the rooms in a program per skin kind took Cladding the towers from 1.5 s to 10 s of
+compiling behind the veil. Every kind now shares one program through uniforms (1.3 to 1.5 s), and the sixteen front
+sets share one too, so no set compiles in flight.
+
+Realism pass, fronts and skins, the review (Oct 13). The masks had carried each window's height in alpha, and an image
+with any alpha under 255 reaches WebGL on WebKit through a premultiplied decode. That moved every window's number in
+green by one across its rows, so on the iPhone each lit window would have drawn as bands of different rooms; headless
+Chrome decodes straight, which is why no render showed it. The masks are opaque RGB now and the height rides in blue,
+which also turned the rooms right way up: the old alpha had the ceiling glow at the sill. The shop displays had been
+lit across the whole box find_openings returns, which on a dark front is the whole ground floor, so a black or green
+cast-iron front glowed bone white with its frames, pilasters and doors. The bake now finds the glass inside the box
+(near neutral, darker than the box's own dark, in pane-shaped pieces) and lights that alone. A third of a Center City
+shop's display box is glass; the lacquered Chinatown front and the grille are left dark. The storefront boxes now give
+way only on the side a front is actually laid on, and only once its atlas has arrived. ?real=0 shows Round 184's
+fronts again. The skyline's speckle came from roomLight lighting half the rooms at every hour behind a constant cut.
+The towers' share now follows the model clock (offices at two fifths by nine, a fifth by three; homes fill toward
+seven and empty toward three), and a window a few pixels across gives half its light. The wide and near-square sets
+came back inside Round 184's 4.7 MP budget. Measured on the phone path: the fronts, skins and street floors cost 1 to
+3 ms of a 24 to 28 ms frame, and the heap settles at 307 MB after GC against main's 301.
+
+Not done:
+- real iPhone check: No device is reachable from here. The fix removes the cause (masks are opaque, so WebKit does no
+  premultiplied decode), and a test simulates the round trip on every mask. Mike should still look at a lit block on
+  the phone after the deploy.
+- merge integration check: These programs depend on roomLight(vec2, vec2, float, float) in WINDOW_INTERIOR_GLSL, on
+  wxSurfacePatch's replace points, and on the 'Dressing the storefronts' step. That can only be checked after the
+  branches are merged: rebuild, then read renderer.info.programs diagnostics. This branch's diagnostics are clean on
+  desktop, touch and ?real=0.
+- buildings#7 (penthouses), buildings#0 step 6, gap#7 (b) parallax: Unchanged from the first report: the researched
+  crowns are Mike's call, the procedural storefront atlas is optional, and the shader budget went to the night rooms.
+- five light-glass tiles: Unchanged: aptbrick, commercial, institution, warehouse and resi still light only part of
+  each window.
+- shop fronts the bake finds no display for: find_openings is unchanged, and some one-storey and mixed-use fronts have
+  display panes it does not find (for example under a roll shutter). Those stay dark after dark, as before.
+
+### Shadows, exposure and the post pipeline (realism/post-shadows)
+
+- Mike: "please do anything necessary to make this look more photo realistic and less cartoony". Shadows were the
+  biggest gap. Outside the core nothing took part: the outer districts', the far ring's and the towns' buildings cast
+  and received nothing, and neither did the ground, parks, streets or lots around them, so a rowhouse threw nothing
+  into its street and Rittenhouse's towers nothing onto the square. `shadowRoles` fixes this with flags alone (r149's
+  receiveShadow is a per-object uniform, so no program changes): on a computer the merged buildings cast and receive,
+  and every weather-hooked flat and the tree cards receive. It runs on the first frame and again every 900th, so the
+  closures' paving strips get their roles too. A phone gains no casters until the iPhone's beacons say what they cost.
+  The tree cards had never cast: r149 never uploads viewMatrix to a MeshDepthMaterial, so `tCard` built every card
+  from a zero matrix; the depth variant now reads modelViewMatrix. A card's lookup now stands 0.6 of its crown toward
+  the sun, out of its own shadow. Girard College's apron gave up its getter pin, so Founder's Hall's shadow runs
+  across it.
+- `FARSH`: past the near box, a black second directional light whose 4096 map covers 3.6 to 8 km. It is not CSM:
+  `lights_fragment_begin` is rewritten once before anything compiles, the sun reads the near map and then the far one,
+  and the black light is never lit. Buildings only, drawn on a quarter-box move or a third of a degree of sun.
+  ?shadowwide=0 and Smoother turn it off. `keyWeather`: real overcast, rain and fog cast no shadows, so the key fades
+  as the deck closes, in fog and in rain, and comes back as sky. The occlusion is leaned on harder, every receiver
+  goes off under 0.04 (moonShadowsOff now keeps reasons) and the depth passes idle. The camera exposes the grey day up
+  to 1.5 times. The occlusion's black creases fade for taps toward the eye, with a 0.5 floor. `BLOOMW` adds three wide
+  levels for a lamp's glare (?bloomwide=0). A phone tone maps through CustomToneMapping with the grade in linear
+  light.
+- Measured headless on this Mac: the outer casters cost the near map 0.7 ms per redraw at 90 m and 7 ms at 600 m (a
+  box full of roofs fills the whole map), so the movers' redraw runs every 8th frame above 250 m. The far map's
+  lookups are within the noise, and the busiest program binds 9 of 16 texture units. Probes: `__dbg.gpu()`,
+  `__dbg.pickAt()` (it named ref 16's "grey box": a rooftop condenser on the roof of the building the pose's eye
+  stands inside), `__dbg.shadowAudit()`, `__dbg.shadowRoles(false)`, `__dbg.farShadows(false)` and `__dbg.keyLight()`.
+  `tests/test_realism_post_shadows.py` and `tests/shadows_gpu.html`.
+
+- Mike: "please do anything necessary to make this look more photo realistic and less cartoony". Shadows were the
+  biggest gap. Outside the core nothing took part: the outer districts', the far ring's and the towns' buildings cast
+  and received nothing, and neither did the ground, parks, streets or lots around them. `shadowRoles` fixes this with
+  flags alone (r149's receiveShadow is a per-object uniform). On a computer the merged buildings cast and receive (505
+  casters), and every weather-hooked flat and the tree cards receive. It runs on the first frame and again every
+  900th. A phone gains no casters until the iPhone's beacons say what they cost. The tree cards had never cast: r149
+  never uploads viewMatrix to a MeshDepthMaterial, so the depth variant now reads modelViewMatrix. That fix is not
+  gated by REAL, so under ?real=0 the cards cast too. A card's lookup stands 0.6 of its crown toward the sun. Girard
+  College's apron gave up its getter pin.
+- `FARSH`: past the near box, a black second directional light carries a far map 3.6 to 8 km across.
+  `lights_fragment_begin` is rewritten once before anything compiles: the sun reads the near map, then the far one,
+  and the black light is never lit. The far map holds buildings only. It is 2048 under Auto (24 MB of GPU memory) and
+  4096 under Sharper (96 MB, an RGBA8 target plus r149's 16-bit depth). The headless A/B at 90, 300 and 600 m showed
+  no difference between the sizes. Its normal offset is a texel and a half. It is drawn on a quarter-box move (at most
+  once a second while moving) or on a third of a degree of sun. In a time-lapse, where the near map is redrawn every
+  frame, it waits two frames and takes the third, and the near map is drawn the next frame (6 far draws in 48 frames,
+  against none). Above 250 m (back under 220) the outer districts leave the near map: `FARSH.wide`, shadow.radius 2,
+  makes the far map shade the near box too, the darker of the two. With no far map (Smoother, ?shadowwide=0) they cast
+  nothing up there.
+- The measurements, headless on this Mac with other renders sharing the GPU, so the timer samples are bimodal (about 1
+  ms, or 25 to 45 ms). The earlier figures (near map 8 ms at 600 m, far draws 2 to 6 ms with means near 20) were
+  medians and means under that contention. The minimums: the near map at 600 m costs about 1 ms with or without the
+  outer casters, and a far draw 0.9 to 1.1 ms at 600 m and 0.9 ms at 90 m. The first draws were not the outliers.
+  Still open: the frames around a far draw over Center City from 600 m reached 24 to 106 ms on the CPU, against 5 for
+  a plain frame. Over South Philly from 90 m they cost 1 to 2 ms more. `__dbg.gpu(true)` now keeps 32 samples a pass,
+  with the shadow passes' CPU time and draw calls (`shadowFarCpu`, `shadowFarCalls`). Measure this on the Mac itself.
+- `keyWeather`: real overcast, rain and fog cast no shadows, so the key fades as the deck closes, in fog and in rain,
+  and comes back as sky. The occlusion is leaned on harder and every receiver goes off under 0.04 (moonShadowsOff
+  keeps reasons). While idle the depth passes stop, but the light keeps turning. The review found a phone's moonlight
+  held at the boot direction all night, because aimSun returned before writing it. A mesh that turns its own receiving
+  on meanwhile is swept into the list every 60th frame. The camera exposes a grey day up to 1.5 times. A phone's fog
+  takes no inverse any more: r149 mixes it in after the tone mapping, and the division had put the overcast haze at
+  two thirds of the sky. On a clear day the sky's share of the light rises 1.8 times, and the exposure gives back what
+  that adds to a sunlit street, so sunlit levels stand and the shade comes up. Merged with the sky's own fill, Broad
+  Street's shaded asphalt goes from (34, 47, 56) to (44, 54, 60), and Rittenhouse's lawns under the trees are no
+  longer black. The occlusion's black creases fade for taps toward the eye, with a 0.5 floor. `BLOOMW` adds three wide
+  levels of glare. A phone tone maps through CustomToneMapping with the grade in linear light. The dome, the clouds
+  and the pins are not graded on a phone.
+
+Not done:
+- review SHOULD: phone grade on the dome, clouds and pins: The comment is corrected instead. Grading them on a phone
+  means editing their own shaders under uPost 0 (sky-atmos's region). The environment bake also renders the dome with
+  uPost 0, so a grade there would change the IBL on every device.
+- review SHOULD: the far map's CPU cost per draw: Measured but not explained. Over Center City from 600 m, the frame
+  around a far draw reached 24 to 106 ms on the CPU, headless; from 90 m over South Philly it was 1 to 2 ms over a
+  plain frame. The render budget (five runs) was used up. The wrapper now records shadowFarCpu and shadowFarCalls, and
+  the one-second floor caps how often a flight pays it. Measure on Mike's Mac before merging.
+- gap#2 (step 3): As before: weighting the AO toward indirect light needs the direct share written into the facade
+  hook, surfTexPatch and the fronts, which are other workstreams' regions.
+- gap#12 (Auto gate on p95 under 14 ms): As before: desktop frames are vsync-paced, so the gate would switch the
+  passes off everywhere.
+- sky-light#8 (b, c), critic objection 0/1 height-map shadows: As before: CSM was rejected, and a height-map lookup
+  would need taps in other workstreams' shaders.
+- weather#2 (part 3), vehicles-props#12 (fronts customDepthMaterial): As before: done by sky-atmos, and the ghosts
+  were the roof kit.
+
+### Sky, air and clouds (realism/sky-atmos)
+
+Realism pass, sky and air, second try. The first commit made the air a medium: exponential height fog on true
+distance, visibility from the weather, skyglow, a rain deck that drops, and a lightning ribbon. Its clouds still read
+as airbrushed lenses and melted wax, so this commit rebuilds the cumulus. On a computer with WebGL2, the GPU draws two
+tiling noise volumes once at boot into 3D render targets, slice by slice: a 128-cubed Perlin-Worley shape at 2.6 km
+per tile and a 64-cubed Worley detail at 420 m. That takes 50 to 205 ms on the headless Metal GPU, with no files. The
+2D field the ground's shadows already read still decides where a cell stands, so every shadow lies under its cloud.
+The cell's strength lifts the top of a flat-based body that rounds over it, the shape carves the billows, and the
+detail erodes the edges: wisps under the base, billows above. The first render was a field of extruded columns and
+curtains. Measured in numpy, the remapped Perlin-Worley sits between 0.69 and 0.92 (5th to 95th percentile), too
+narrow to carve anything, so it is spread to the full range. Coverage was fitted to the shadows' share: 9% of a slice
+at 22% cover, 23% at 45%. Three taps up the sun's ray, using Beer's law plus a gentler multiple-scattering octave,
+keep cores grey rather than black. The jittered coarse entry speckled every opaque edge, so the march now backs up 0.7
+of a step at each cloud face and walks it in thirds. Far billows ease to their mean, or the distant deck broke into
+popcorn. Phones and WebGL1 keep the first phase; their generated GLSL is identical to the last commit's. Stars: the 24
+brightest at their real places by sidereal time; Polaris rendered at x 647 where the math put it. They vanish under a
+deck, in fog, rain or smoke. At night the lamps' light in the low air is now added light under one law for the city,
+the deck and the dome. A fog night had shown a dark band over the horizon and dark holes in the deck, because the open
+dome took 0.6 of the glow while the deck took all of it. The dome's far cloud band is lit from below at night, and the
+env probe re-bakes as the weather eases in. The white band of lit windows on a phone's night horizon predates this
+pass (main shows it too).
+
+Realism pass, sky and air, the merge review. The sky branch and the weather's key light met in applyLighting, and
+three things there were wrong without either side conflicting in text. First, the sun was dimmed for fog twice, once
+in the sky's deck share and again in keyWeather, so a fog morning's sun was 0.3 of a tenth of itself. Second, the
+camera's lift was computed from the old deck share rather than from the sun the city actually lost, so a 0.7 cover day
+kept 0.79 of its sun and was still exposed 17 per cent brighter. Third, keyWeather divided a phone's fog colour by
+that lift, as if the haze were exposed with the city. It is not: r149 mixes the fog after the tone map and the
+encoding, in display colour. The compiled phone program puts the tone map at offset 9882 and the fog at 10329. So the
+phone's far haze and its dome were both up to 1.5 times darker than the computer's in fog and rain. Now the deck's
+share goes to keyWeather, keyWeather takes fog and rain once, and nothing scales the fog colour. A phone's fog morning
+is the same milk as a computer's. The cull line is back where Rounds 51 and 52 put it: 40 km by day and 16 km by
+night, where the new air had pushed it to 50 and 20. A street-level eye in radiation fog now culls at 2.2 km instead
+of 9.2, because the ground-fog layer is counted along the clearest ray to a 360 m roof. The old wall closes the last
+quarter so a dropped chunk never pops. In the clouds, a weak cell had kept its strongest puffs at full density, which
+left hard white islands off every cumulus. A cell's strength now caps its density, the far deck eases to half density,
+and the walk in thirds reads the field at the coarse step's filtering. The specks and jagged edges are gone and the
+cloud forms are the same. A phone's 32 steps carried the per-pixel jitter as salt-and-pepper fixed to the screen, so a
+phone marches from the midpoints again. The volumes now stand down on a weak integrated GPU and under Smoother
+(?clouds3d=1 forces them). They also give way to the first phase if their program fails to link, which was checked
+live by forcing the switch mid-session. Their shadows project from the volumes' own 1,250 m.
+
+Not done:
+- review SHOULD (measure desktop cost on Intel/AMD at 1440p; half-resolution deck): No Intel or AMD GPU is reachable
+  from here; renders only run on this Mac's headless Metal. Instead the volumes are gated off for weak GPUs and
+  Smoother, with ?clouds3d=1 to force them for the measurement. A half-resolution deck with depth-aware upsampling is
+  a larger change to the render path; it is left for the next round if the measurement asks for it.
+- review SHOULD (vFogV on a real iPhone): No device here. The cost is reduced (vFogDepth is now derived from vFogV, so
+  +2 floats rather than +3), and the phone path compiled and rendered under --touch with 0 bad programs. Still to be
+  checked on a real iPhone before shipping.
+- night#9 (desktop lamp-map in-scatter), weather#11 (scud, rain shafts), sky-light#4 (a)/(b), night#1 (f), sky-light#6
+  (AI coverage map, temporal reprojection): Unchanged from the previous report: they belong to other workstreams, or
+  no generated texture was the right answer. No OpenAI credits were used.
+
+### Walls and pitched roofs (realism/facade-shader)
+
+The realism pass, facade shader (Mike: "please do anything necessary to make this look more photo realistic and less
+cartoony"). The walls and pitched roofs are now generated photographs rather than analytic patterns. fetch_wall_art.py
+made nine walls and four roofs with gpt-image-2, and bake_wall_art.py cut each coursed one on its own joints so it
+tiles with no seam. A wall takes only the texture's grain over its kind's mean, so the calibrated colours and the York
+Street bands do not move. The joinery, stone and awnings stay out of it (trimM), and rain runs, splash and sill stains
+weather it. A flat roof keeps its dealt kind at any height. The far roof had been going back to one grey past about
+150 m; the kinds now spread from tar 0.8 to white membrane 1.9. Snow and wet land after the gains: the s02 snow pose
+had every roof black tar and the street white, and now the roofs are the whitest thing in the aerial. The rooms follow
+the model clock: homes peak at 0.55 at 21:00 and fall to 0.06 by 04:30, offices run 0.80 at 17:30 down to 0.10, and
+lamps are 2700 to 5000 K instead of half the suites pale blue. A computer sees a room behind the glass by day and by
+night (interior mapping), and glass that looks below its horizon reflects the city's share instead of open sky. The
+second commit is about the roofs from the air and the street. The packed tiers' eaves overhang their walls 0.3 m along
+their own plane. The hips' eaves had stood 0.3 m out at the wall's height, a slit of sky under every one from the
+street. A computer boxes every eave in with a fascia and a soffit: 167,878 quads over 33,386 gables and 4,269 hips,
+about 26 MB. Rows read as rows from the air, with a brick party-wall coping under a coated cap on both sides of every
+rowhouse and across strips of rows within ROOFKIT.r. In the pitched districts, a detached L is roofed as a main hip
+with a cross wing run into it to its ridge, so they meet in valleys. The cross wing sits 3 cm low where a face of each
+is one plane. That is 13 houses, because roofL takes only footprints within half a metre of an ideal L (14,171
+candidates sampled offline, 449 honest Ls, most of them not detached lottery winners). ?real=0 keeps the old look
+throughout. __dbg.facade() reports the wall art, the rooms' shares and the pitched counts.
+
+The realism pass, facade shader (Mike: "please do anything necessary to make this look more photo realistic and less
+cartoony"). The walls and pitched roofs are now generated photographs rather than analytic patterns. fetch_wall_art.py
+made nine walls and four roofs with gpt-image-2, and bake_wall_art.py cut each coursed one on its own joints so it
+tiles with no seam. A wall takes only the texture's grain over its kind's mean, so the calibrated colours and the York
+Street bands do not move. The joinery, stone and awnings stay out of it (trimM), and rain runs, splash and sill stains
+weather it. A flat roof keeps its dealt kind at any height, the kinds spread from tar at 0.8 to white membrane at 1.9.
+Snow and wet now land after the gains: the s02 snow pose had every roof black tar under a white street, and now the
+roofs are the whitest thing in the aerial. The rooms follow the model clock: homes peak at 0.55 at 21:00 and fall to
+0.06 by 04:30, offices go from 0.80 at 17:30 down to 0.10, and lamps run 2700 to 5000 K. A computer sees a room behind
+the glass by day and by night. Glass that looks below its horizon reflects the city instead of open sky. The second
+commit added eaves, L roofs and party-wall copings. The review's round then fixed what that commit had overreached.
+The towers' skins went back to fronts-skins' own material, which takes the clock through one occBind line at the
+merge. The walls' art became a computer's whole (WALL_ART_DEV): the phone program carries no wall kind, detail or
+gable-end branch, and no phone rebuild is re-hooked (136 programs on the phone path, none bad). Its gradients are now
+taken before the branch that the glass's edge splits within a pixel quad. The snow block runs only when it snows or
+rains, and the weathering only where the detail stands. ?real=0 is the old look again under weather; the difference
+image against main shows only snowflakes. The copings had been laying party walls every 5.4 m across apartment slabs,
+garages and schools, because a roof note knew only its box. Each note now carries a row flag: a row or a corner store,
+by the OPA word or the type, no more than 14 m up. The kit takes the snow itself (its own hook keeps the weather's re-
+hook off it), so a coping is a white cap on a brick wall, not a brown line across a white roof. The eave boxes are the
+outer districts' only: 41,984 quads where there were 167,878. Everywhere else a roof sits flush on its walls, since an
+overhang with no soffit under it is a slit of sky from the street (a roof is one-sided), which every hip in the far
+ring showed. occUpdate no longer makes a Date every frame. __dbg.facade() reports the wall art, the rooms' shares and
+the pitched counts.
+
+Not done:
+- night#6 tower skins in this branch: The tower-skin material belongs to fronts-skins, which rewrote it with a REAL
+  branch. The share goes to the merger as one `occBind(sh);` line in that branch, after `sh.uniforms.uSkinG =
+  skinU.uSkinG; sh.uniforms.uSkinF = skinU.uSkinF;`.
+- buildings#13 (city cube probe): A probe of a new size recompiles every lit program. Only the horizon occlusion term
+  shipped.
+- buildings#11 parts 4 and 5: The LiDAR ridge azimuth would need wide.b64 and city.b64 repacked, which is forbidden.
+  Rows never take gables since Round 185. T and U plans stay flat.
+- night#7 (fronts' pane rects, tower-skin interiors): These belong to fronts-skins.
+- eave boxes in the far ring: Cut at the review's request (167,878 to 41,984 quads). The far ring and the towns get
+  flush roofs instead.
+- build.py / test manifest-line conflicts with streets, water and vehicles: These are the same tuple and count lines
+  every art branch adds. Integrate has already resolved streets and water, and my branch merges clean into integrate.
+  The vehicles conflict needs the same one-line resolution when vehicles is merged.
+
+### Ground and vegetation (realism/ground-veg)
+
+Realism pass, the ground and the vegetation (Oct 12 and 13). Mike asked for the whole model "more photo realistic and
+less cartoony", and the ground was most of the cartoon. From the air every tree wore a black outline: the canvas atlas
+premultiplied its clear texels to black and the mips bled it into every crown, so the atlas now stays premultiplied
+and the shader divides the coverage back out. Each card is lit as a dome, and each tree is its own picture: mirrored,
+sized and tinted by its seed, with its root plate under the grass. A computer draws the cells at 448 and 224. Autumn
+came a month early and all at once, so the turn now averages Oct 17 to Nov 14. Each tree turns over its own stretch
+through a new turning picture (fifty gpt-image-1.5 images, a fifth of the crown coloured), and the bake mutes the peak
+colours. Under REAL the lawn keeps its photographed colour and its two tilings' contrast, with a generated 240 m
+parkland macro and winter dormancy. A land mask baked from the build's own blobs, parkland and river outlines
+(bake_landmask.py) tells the bare ground what it is: yards, patios and alleys behind the rows; a generated forest
+canopy by season in the woods, with a wood field of species cards within 1.5 km on a computer; and at the two rivers'
+banks riprap, wet silt and the tide's stain, through one TIDE snippet any surface can take. A canopy map of all
+106,808 crowns, built like the lamp map, gives shade under them, their cast shadow past the live box and on phones,
+and the November leaf fall. Tufts are packed into 45 m in the lawn's own colour. Snow lies in drifts, flattens the
+grass and whitens the boughs. On the retry, a guard went in. The other passes each add a sampler to the ground's
+programs, and a lot would have sampled 17 textures against the 16 nearly every GPU allows. surfTexPatch now ends by
+counting what a program samples and, while it is over, drops this pass's extras through their #ifndefs: the riprap
+first, then the macro, the alley, the canopy. The count missed by four at first: the physical material's source
+declares four maps inside #ifdefs that are off. ?vegtex pins the limit, and __dbg.veg().budget lists every program.
+
+The realism pass, ground and vegetation, the review's round (Oct 13). The branch now sits on the integration branch.
+The paved surfaces' arm in vegSurfPatch declares no pictures, and the other arm keeps each one behind its own #ifndef,
+so the texture guard can still take them out. The reviewer found the woods standing in the water: about 10 km2 of
+reservoirs, lakes and creeks, plus the Amtrak corridor, could take wood trees. The land mask now draws every water
+ring and every open track at 5 m and zeroes any 20 m texel they touch, and the wood field plants nothing on a zero.
+Checked at 2.5 m against the rings and every 8.5 m along the tracks, nothing is left. (The reviewer's East Park
+Reservoir point is the parkland beside it; the reservoir's own ring is 500 m west and was always clear.) The far
+south-west rectangle was every Delaware County park wooded whole, because the tree survey stops at the city line and
+every park past it read as treeless. The park rule stops there now, and stand edges are broken by noise in the mask
+and again in the field. The woods are darker, greyer and a deeper green than a street tree. A sow goes up to the GPU
+once instead of every frame. Under the frame noise of three headless Chromes, the field's cost could not be told from
+zero: one draw call and 36,000 triangles. ?real=0 shows Round 185's trees again: every look change sits behind REAL,
+while the premultiplied atlas and the later calendar stay for everyone. The turning picture's orange cap now comes in
+clumps, half of them back to the crown's own olive, and a tree changes clump by clump. The atlas canvas is only the
+first fill. Once uploaded its backing store goes (56 MB on a computer), and a season's change sends up only the cells
+it redrew. On a phone the riprap is out of every program and the canopy map's instance data is let go. GC-normalised
+and against the WebGL hook, a phone stands at 146 MB of live heap and 904 MB of GPU after the look round, the same as
+the integration branch. Main was 122 and 855; that gap is the whole merged pass, every workstream. The piers' piles
+take the tide band, and the land mask bake joins the pipeline.
+
+Not done:
+- ground-vegetation#2 (e) art regeneration: Still not regenerated. The dome normal and per-tree variation cover the
+  lit side. No AI images were made this run.
+- ground-vegetation#10 variants: Still one picture per look and season, varied per tree by mirror, size, width and
+  tint.
+- desktop atlas size: The 448/224 cells were kept at TIER 0 (about 75 MB of GPU with mips). The review's other two
+  costs are fixed: the canvas backing store is freed and season changes no longer re-upload the whole canvas. Cells of
+  384/192 would save about 20 MB if Mike wants that trade.
+- wood field GPU cost on real hardware: Headless GPU timers were dominated by three Chromes sharing the GPU, so on and
+  off were indistinguishable. Geometry is measured (+1 call, +35.7k triangles). A clean frame-time A/B needs a visible
+  pane or a real machine, using ?woods=0 or __dbg.woods(on).
+- canopy map RG format on phones: Halving the phone's 4 MB canopy target to RG8 was considered but not done: it is a
+  render-target format change I could not verify on a real phone.
+
+### Streets (realism/streets)
+
+Realism pass, the streets (Oct 12 to 13). Mike asked for "photo realistic and less cartoony" on every surface, and the
+streets were the most cartoonish thing in an aerial frame: the Skylines grey ribbon calibrated to show near 200,
+brighter than the roofs, the core's charcoal running navy under the sky's fill, a double yellow on every 7 m rowhouse
+street, and lawn from the kerb to the front steps. Under REAL (?real=0 keeps all of it) the asphalt is re-keyed
+neutral-warm at about 0.45 of its old linear value. Each street is a little older or newer than the next, so an aerial
+reads block by block as fresh blacktop and faded grey (sRGB 92 on Pine in sun, 115 to 125 on a South Philly street). A
+new lane shader works on the street's own axes: oil down each lane, the wheel paths, three generated lane photographs
+laid lane by lane, utility cuts, manholes, the gutter and a kerb, and paint 12 cm wide in worn amber. The junctions
+are found once per tier (15,171 arms in the outer districts, 41,786 in the far ring) and ride aLane.w as a reach that
+interpolates exactly, so every crossing gets continental bars or two lines, a stop bar over its inbound half and no
+lane lines through the box. A residential way under 9 m is unmarked (2,117 of 2,917 are one-way, and the rest carry no
+centre line in life either), decided from the width so nothing was repacked. bake_sidewalks.py paves 5 km2 of the
+outer districts from the kerbs to the facades: brick in the historic districts, 397k triangles on a computer, the half
+mile on a phone (+1% in view), none in a LITE city. The lots lay stall rows and oil on their own frame. The decks and
+the El take generated concrete and riveted steel. The cobra heads are galvanized, and every lamp under 5 m is a black
+lantern post. The main line shows its ties. The paving season's strips are now streets themselves: on the street's own
+width rather than 8 m over the sidewalks, cut square, the fresh course near black. Rendered against the current build
+at sixteen poses plus a phone set. The shaded core streets now read near black (about 35), which belongs to the fill
+light, not the asphalt.
+
+Realism pass, the streets, the review round (Oct 13). The reviewer found the stop bars on the outbound half of every
+two-way street: u = offset·(-dz, dx) is the right of travel in this frame, not the left. The bar now covers u ≥ 0 when
+the junction lies ahead, and a top-down render at Washington and Broad puts both bars on the east halves, south of the
+box. PHL's runways and taxiways ride pack_city's class 5 at 45 m and 16 m. They had been paired by the junction search
+and given continental bars, full-width stop bars, kerbs and manholes; isAirfield now keeps them out of the search and
+gives them a class of their own, plain asphalt. The lots' stall phases were taken on an angle the shader could not
+rebuild, so the rows started anywhere; they are now quantized first and anchored on the lot's own edge, which a test
+checks to the centimetre. The sidewalks were the real work. The first cut staged 3.6 M boxed entries and uploaded all
+395 tiles on a phone, which only ever drew the twenty-five near it. The rings now stay in their Int16 form and are
+laid straight into typed arrays: a computer lays them at load in 57 squares of 1,200 m (24 draw calls at the s09
+aerial, where the 400 m tiles would have added 113), and a phone lays the 200 m squares within the half mile as it
+flies, nearest first, about 3 ms a frame, dropping each one 200 m behind the circle. Each ring fades out at its own
+distance over the last 220 m, so a phone's aerial shows no ring of squares. The tuft field had kept 266,000 sidewalk
+points alive through noSow; it now tests the rings in place. Measured GC-normalised on the headless phone path, the
+branch stood 14 MB of live heap over HEAD at ready (132 against 118) and 6 MB of GPU (824 against 818), with no padded
+copies. Reading the code afterwards traced the 14 MB to the decks' material hook, written inline in 'Raising the
+overpasses', which kept that whole step's scope and its part geometries alive for the session: Round 158's leak again.
+It, the El's hook and the lot sheets' hook are now module-level functions, and a test keeps them out of their steps.
+That fix was not re-measured. The phone's PACE fields saturate at 999 ms under SwiftShader in both builds, so the lane
+shader's fine detail could not be costed there; it is now a computer's only, with PERF.laneDetail for an A/B on a real
+device.
+
+Not done:
+- streets#4 (oneway/lanes bits): Needs a repack of wide.b64 and city.b64, which the task and CLAUDE.md forbid. Broad
+  Street's two carriageways still each draw as a two-way street with their own double yellow, and the stop bars follow
+  that.
+- streets#9 (parapet profile, El girder geometry): Only the material side was done; the deck and El geometry and their
+  triangle counts are unchanged.
+- streets#13 (emissive lens): Not done; the night glow still comes from the pole glow sprites and LAMPMAP.
+- gap#1 (dithered side feather): Not done; a hard edge matches real milling and paving cuts.
+- re-measuring the phone heap after the hook fix: The five-run budget was spent: desk-new, desk-head, touch-new,
+  touch-head and desk-verify. The +14 MB is attributed to the decks' inline hook by reading the code, and the fix is
+  not verified by a run.
+- PHL's white aprons: Pre-existing and identical in HEAD: COLORS.paving through ringAreaParts renders near white. It
+  was not in the review and was left alone.
+- streets#1, #6, #10, #12: Not my ids. #1 is the owner's lettering and is untouched.
+
+### Water (realism/water)
+
+- Mike: "please do anything necessary to make this look more photo realistic and less cartoony. This should apply to
+  all surfaces/water/anything". Every change is REAL-gated; ?real=0 keeps Round 54's slate-teal water, which this
+  supersedes, so show it to him with the other look reversals as one set.
+- The water's shading is now the physics. `liquifyReal` uses Schlick Fresnel against the water's own sky-only probe
+  (`waterEnvBake`: the glass's generator and 256 cube with the sun disc and placeholder boxes hidden, the water
+  materials' own envMap, re-baked at the end of refreshEnv), undone through the tone curve as the dome is. The body is
+  an olive-grey estuary, a greener Schuylkill, lit by the scene's lights and the shadow map under 1 - F, so the
+  bridges shade the river.
+- The waves are a tileable FFT slope field from a Phillips spectrum made at load (`makeWaveSlopes`), with the variance
+  a footprint loses widening the glitter. The glitter is a Beckmann lobe sized by Cox and Munk's wind law, HDR with
+  point facets on a computer and clamped to 3 on a phone.
+- On a computer the city stands in the rivers through a half-size planar mirror (`reflRender`, layer 5 via
+  `reflSweep`, its own counts apart from POST's, ?refl=0), and at night the lamps stretch into pillars. Ships and the
+  ferry draw bow waves, foam and Kelvin arms; rain rings the water near the eye; cloud greys it.
+- Water on high ground is built where it stands: Swann's basin with its jets, the Eakins Oval pools, Dilworth flush,
+  and the reservoirs at their own level with a bank wall. Piers over the water are decks at the bulkhead on creosote
+  piles, and the Washington Avenue Pier is a lawn on such a deck. The Fairmount Dam's water now falls.
+- Coda, measured from the air: the first decks drew 220 of 255 because a hex is a linear albedo here (0x5c5a54), the
+  white slabs again. At 0x24231f they draw 165, with the fascia and piles darker. The core's Delaware is one quad with
+  no shore alpha while the outer sheets carry one, so the shallows term drew a straight seam along the pierhead line;
+  liquifyReal no longer has a shore term.
+- The Schuylkill above the dam's crest is a calm pool (`wPool`), so Boathouse Row mirrors by day and its outlines
+  stand in the water at night. The Delaware went from khaki (70, 76, 61) to olive-grey (67, 77, 66) from 380 m. Tests:
+  `tests/test_realism_water.py` (21 checks, including the pool expression evaluated at Boathouse Row, the tailwater
+  and the Delaware).
+
+- Mike: "please do anything necessary to make this look more photo realistic and less cartoony. This should apply to
+  all surfaces/water/anything". Every change is REAL-gated. ?real=0 keeps Round 54's slate-teal water, which this
+  supersedes, so show it to him with the other look reversals as one set.
+- The water's shading is now the physics. `liquifyReal` uses Schlick Fresnel against the water's own sky-only probe
+  (`waterEnvBake`: the sun disc and the placeholder boxes hidden, the water materials' own envMap, re-baked at the end
+  of refreshEnv; a phone's is a 128 cube from its own generator). The body is an olive-grey estuary and the Schuylkill
+  a greener one, lit by the scene's lights and, on a computer, the shadow map, under 1 - F.
+- The waves are a tileable FFT slope field from a Phillips spectrum, made at load (`makeWaveSlopes`). The glitter is a
+  Beckmann lobe sized by Cox and Munk's wind law: HDR on a computer, clamped to 3 on a phone.
+- On a computer the city stands in the rivers through a half-size planar mirror (`reflRender`, ?refl=0 turns it off),
+  and at night the lamps stretch into pillars. Ships and the ferry draw bow waves, foam and Kelvin arms; rain rings
+  the water near the eye; cloud greys it.
+- Piers over the water are decks at the bulkhead on creosote piles, and the Washington Avenue Pier is a lawn on such a
+  deck. The Fairmount Dam's water now falls. The Schuylkill above the crest is a calm pool (`wPool`), so Boathouse Row
+  mirrors by day.
+- Coda, the review (Oct 13). First: water on high ground had levelled every ring. Mill Run, Cobbs Creek and the NW
+  streams, ribbons falling 15 to 60 m, stood across their neighbourhoods as raised channels and granite walls.
+  `waterRingGate` now builds a ring only when it is compact (4 pi A / P^2 of at least 0.2; creeks are 0.01 to 0.05),
+  its own ground lies within 1.5 m for a basin and 6 m for a lake, a lake's level would stand at most 2.5 m over its
+  lowest shore, and it is outside the NW patch, whose packed rings NW_WATER replaces. Coping goes on fountains and the
+  outer districts' small rings only, and `bankWall` stops at the ground beside it. Everything else is buried as on
+  main. That includes East Park's and Belmont's reservoirs, which read 7.8 and 11.4 m of relief on the 150 m DEM.
+  Built: 29 basins, 19 ponds and 26 lakes.
+- Second: the mirror's 3.5 km reach did nothing, because the oblique near plane leaves the projection with no far
+  plane. 1.8, 2.5 and 3.5 km all drew the same 4.85 M triangles at Penn's Landing. `reflReach` now leaves out of the
+  pass any mesh wholly past the reach: Penn's Landing went to 2.68 M triangles and Boathouse Row from 6.08 M to 1.85
+  M, which is 22 to 60 percent of the scene pass instead of 66 to 85, with the same picture. The mirror is also
+  cropped to the water's box on the screen, skipped when no water is within reach, and redrawn every 4th frame for a
+  still eye.
+- Tests: `tests/test_realism_water.py` (24 checks).
+
+Not done:
+- review-should-mirror-p95: I could not measure p50/p95 against ?refl=0 on a weaker Mac: only this machine's headless
+  Chrome was available. I measured triangle and call counts per pose instead (in implemented).
+- review-should-docs-check: I was told not to edit handoff.md. docs_check.py still exits 1 until the three handoffRows
+  below are added at merge. The unit suite passes.
+- review-should-phone-shader-measure: I could not measure frame time on a real iPhone against PACE. The only trim made
+  is dropping the river's shadow lookup on touch. The two wave taps, env tap, five noises, Beckmann term and 4-wake
+  loop are unchanged and unmeasured on a device.
+- water#9: (unchanged) The baked shore SDF was not built; the seam is fixed without it.
+- night#3: (unchanged) No phone fallback for light pillars, and no SSR.
+
+### Vehicles and street furniture (realism/vehicles)
+
+The realism pass, vehicles. Mike asked for photorealism everywhere, and the streets were the biggest tell: a South
+Philly block with no car at either kerb, cars that floated, and a pastel fleet. The traffic now drives the six kinds
+lofted from generated side, plan, front and rear views, painted from a real street's mix (white, black and greys
+first, in sRGB taken to linear). The buses, trolleys, Amtrak and PATCO wear generated liveries. Near the eye, parked
+cars line both kerbs of every street with room for them, each slot's car fixed by its hash, clear of junctions, bus
+stops and the hydrants, and gone with the Traffic layer. OpenStreetMap's signals, stop signs, benches and bins stand
+at the corners, signal poles 1.6 m behind both kerbs at each street's own width (one width along the bisector stood
+Broad Street's poles in the carriageway), with hydrants where the map has none. Every ground vehicle's sun shadow is
+projected flat onto the road under a stencil, with a contact shade beneath, so no mover redraws the depth pass. Lamps
+are points that read from the front or the back, and a sprite at its floor is now drawn flat: at two pixels every
+pixel centre sat out on the falloff, which is why no aircraft ever showed its navigation lights. The aircraft
+themselves had drawn black for as long as the flights layer has existed: r149 picks a shared material's program by
+instancing, never by instance colour, so the planes read the ships' missing instanceColor as zero. Ships got a lofted
+hull in true colours, deck-house windows, container stacks and a wake.
+
+The realism pass, vehicles, the review before the merge. The headlight pools were wired into the end of
+lampLightPatch, and under the realistic lamps that function returns before reaching that line, so the 512 map was
+drawn every night for nothing. Moving the call into the realistic patch would have added a seventeenth sampler to the
+green surfaces, whose programs already used all sixteen texture units, and the roads would have stopped linking. The
+pools now come from the end of surfTexPatch and only on the paved surfaces (the lane-painted roads, lots and decks),
+which the integration had already relieved of six samplers; on a trial merge every program links and the pool shows on
+the road ahead of a van. The vehicles' third of a lamp's light had been a text replace on another patch's GLSL, and
+the realistic patch writes that line differently, so the vehicles now have their own patch with the share written in
+it. With no mover redrawing the depth pass, a sailing ship's container stacks and the ferry left their shadows on the
+water astern for up to a minute; they cast nothing now, and the roof kit asks for its own redraw when it relays. A
+parked row now has to clear the outermost moving lane by a van's width: the tertiary lanes move in to 1.3 m, and a
+narrow one-way parks one kerb with its lane moved to the other half. The sun's shade on the road reads the shadow map
+where it lands, but only where the street itself draws building shadows (the core, and the outer streets once they
+receive), because a street that never draws its building's shadow would otherwise show a car with no shadow in plain
+sun. Both shades fade with the fog. Trains, and cars on decks and bridges, keep only the contact shade. Cars past 220
+m draw their 180-triangle copy and cars past 760 m draw no shades. At the same phone poses as main, triangles are
+flat, about 33 to 56 more draw calls, and no frame got slower. The review renders turned up two defects of our own:
+stop-sign and bus-stop posts merged from three's indexed boxes without their index, which drew slivers across the
+street, and pale outlines on dark cars where the paint mask leaves thin gaps.
+
+Not done:
+- vehicles-props#11: People: still not attempted. The effort went to the review's fixes, two new defects the review
+  renders turned up (bus-stop slivers, pale outlines on dark cars), and the merge verification.
+- vehicles-props#7 (lanes from OSM): Still skipped. Lanes per direction need traffic.b64 repacked, which shifts every
+  run's lanes, and there were no renders left to verify that.
+- review SHOULD (15 MB of phone textures): Measured and reported, not cut. A quarter-size phone atlas would visibly
+  blur close cars at phone resolution, and the masks need all three channels and their mips.
+
+### Night lamps (realism/night-lamps)
+
+Realism round, night-lamps. The lamps now light pools, not a wash. At 5.9 m a texel, Round 140's light map could not
+hold a pool: poles 30 to 40 m apart merged into one plateau, and Round 146's cap at 0.5 brought every lit street to
+the same grey, so a street at night read like an overcast day. A near map (LAMPNEAR: 1024 px half float over 640 m on
+a computer, 512 px over 400 m on a phone, half float wherever the device can draw into it) is drawn from the same
+splats around where the eye meets the ground. Each splat has a pool's own shape: a cosine-cubed core from the head's
+own height, cut off past 1.8 heads' heights the way a full cut-off head stops at about 60 degrees, plus a 0.10
+shoulder. Each lamp is scaled to put on the ground exactly the light its far splat puts there, so the far carpet and a
+street's average are unchanged. Surfaces take the light as irradiance times their own colour at LAMP_REAL_K 0.5. Both
+maps' gains carry that factor, so the two rebuilds that read the far map with their own patch (Eastern State and the
+Reading Terminal) are lit the same as the street outside. A wall reads the ground 2.5 m in front of itself and is lit
+up to the height of the heads, and its glass takes a tenth. Measured from 70 m over South Philly: 21 to 26 luma
+between two pools against 165 to 170 under a head. The first cut, with no cut-off, left 38 to 57 between them, and the
+old wash 116. Two things were wrong in the first captures and corrected before commit. The glare at 1.6 m hung an orb
+two or three lanterns wide round every near lamp on a clear night; it is now 0.8 m in clear air and grows to 3.2 m
+only in rain, snow or fog. The 8-bit phone near map rounded each colour channel separately, which showed as purple and
+green blotches on a pale pavement. Each glow sits at its head, and every arm reaches over the nearest street. The
+survey's families (pole_families.json) give Head House and Society Hill their Franklin lanterns and the rowhouse
+streets their wood poles. Wet air adds halos to every lamp and takes some saturation and contrast out of the grade,
+added to whatever base grade is set. One thing remains: South Philly's streets are pale (the surface patch reads them
+as concrete by colour) and their poles are dense, so at street level they still read brighter and more even than real
+asphalt. ?real=0 brings back Round 146's wash; __dbg.lampReal(k) tunes the strength.
+
+Realism round, night-lamps. The lamps now light pools, not a wash. At 5.9 m a texel, Round 140's light map could not
+hold a pool: poles 30 to 40 m apart merged into one plateau, and a street at night read like an overcast day. A near
+map (LAMPNEAR: 1024 px half float over 640 m on a computer, 256 px over 400 m on a phone) is drawn from the same
+splats around where the eye meets the ground. Each pool is a cosine-cubed core from the head's own height, cut off
+past 1.8 heads' heights the way a full cut-off head stops at about 60 degrees, plus a 0.10 shoulder. Each lamp puts on
+the ground exactly the light its far splat puts there, so the far carpet and a street's average are unchanged.
+Surfaces take the light as irradiance times their own colour at LAMP_REAL_K 0.5, through uLampReal.y. A wall reads the
+ground 2.5 m in front of itself and is lit up to the height of the heads, and its glass takes a tenth. Measured from
+70 m over South Philly: 21 to 26 luma between two pools against 165 to 170 under a head (the old wash: 116). Each glow
+sits at its head, every arm reaches over the nearest street, and the survey's families (pole_families.json) give Head
+House and Society Hill their Franklin lanterns and the rowhouse streets their wood poles. The review found four things
+and they are fixed. First, this branch and realism/weather both wrote the composite's saturation, contrast and bloom,
+each taking the other's output as its base, and the grade ran away within frames. The wet air's grade, bloom and halos
+are now weather's alone, and the glare is a lens's in every weather. Second, this branch had put LAMP_REAL_K into the
+far map's shared gain, which also halved weather's wet-street glints and lamp-lit rain. uLampBox.w is LAMP_GAIN over
+the store again, and the two rebuilds that read the far map get the factor from a box of their own (LAMP_RB_U). Third,
+in fog the fog chunk's mix painted a grey ball the size of the sprite round every near lamp. The glare's shape now
+rides its alpha and fades to nothing inside the sprite, and fog dims it rather than tinting it grey. Fourth, ?real=0
+had moved the glow and arms too; it is back to the shaft top and the old hashed arms, matching main. A phone's near
+map is now a quarter of the memory and is held while the eye only turns, and the 8-bit fallback rounds each splat by
+its own remainder so a dark gap keeps its mean. One thing remains: South Philly's streets are pale and densely poled,
+so at street level they still read brighter and more even than real asphalt. ?real=0 brings back Round 146's wash;
+__dbg.lampReal(k) tunes the strength.
+
+Not done:
+- weather#10: Removed from this branch at the reviewer's instruction: realism/weather owns it. That branch's wxGrade
+  owns the grade and bloom; this branch had written the same three uniforms with the same constants, and the two hooks
+  ran the grade away. wxHaloMesh owns the wet-air halo; this branch's lampHaloU glow halo and its wet-air glare growth
+  stacked three halos on each lamp in fog. lampNightFx now writes no post uniform, lampHaloU and LAMP_GRADE0 are gone,
+  the glow sprite is Round 54's again, and the glare no longer changes with weather. A trial merge onto
+  realism/integrate (git merge-tree, clean) has wxGrade as the only writer of uSat, uCon and uBloom. Rendered in fog
+  and rain, the grade holds.
+- night#5 (step 6, bloom mip chain): The bloom chain lives in the shared post composite (renderPost/postComp), which
+  post-shadows and sky-atmos edit; not touched here.
+- streets#10 (Type II stretch along the street): In simulation, stretching each pool along the street refilled the
+  gaps between neighbouring heads, the opposite of what the finding asks for.
+- night#0 (step 3, HPS share packed in G): The near map stores each lamp's own RGB, so sodium and LED colours already
+  mix per lamp.
+- night#5 (phones: lanterns, lenses, glare, arm rotation): POLE_MESH_CAP is 0 on phones and they build no ROT (Round
+  158 memory cut), so their glow and pools stay at the shaft top. Phones do get the near map and the cut-off pools.
+
+### Weather (realism/weather)
+
+Realism, weather (two commits on realism/weather). The first pass made the wet street a dielectric film, but the
+renders showed three faults: puddles read as dark stains by day, a white sun spot sat in the rain at noon, and on a
+phone the wet street went white at night. The cause of the first two was the probe. It is dimmer than the dome it is
+drawn from and it carries the sun's disc. So the film now reflects the dome's own gradient, taken back through
+pUndoColor to the light the composite makes of it, scaled by 1.2 for the deck. The canyon term still stands in for the
+buildings across a street. Puddles are a third darker inside a soaked rim: dark from above and bright sky mirrors
+toward the horizon, which is how a wet street photographs. The lamps' first streaks were GGX, and the lobe's long
+tails laid a broad white column under every lamp at any gain. The lobe is now a narrow anisotropic Gaussian (the
+film's roughness along the line of sight, a fifth of it across), broken into glitter by the asphalt grain. The gain
+was set by eye on South Broad at 9 pm: 60 is faint, 200 burns white, and 90 was kept. A pool on a wet street loses a
+third of its light, since water fills the pores. The phone never keeps a lamp inventory (Round 158), and mirroring the
+light map's pools along the ray is what washed its street white, so a phone now draws no streaks and its wet street
+simply goes darker. Snow had a pill problem: a flake at the lens drew its whole thirtieth-of-a-second trail at three
+and a half times its width. A near flake is now a faint soft disc, the trail is a sixtieth of a second, and there are
+45,000 flakes on a computer, so the snowfall reads against a dark wall. Both dials are on __dbg.wxTune({ sky, glint
+}).
+
+Realism, weather, the review round. The branch had grown a second name for the lamp map, and once every workstream
+merged, the ground programs passed sixteen texture units and every road failed to link. So the branch now sits on the
+integration branch and takes its LAMP_WX_DECL. The wet streets read the lamp patch's own uLampMap on a computer, and a
+phone's lamp patch declares it as it always did. The lights in wet air had been built twice, once in the night pass (a
+grown glow sprite, grown glare and a grade read once) and once in the weather (a halo point and a relative grade).
+Every lamp wore two halos, and since the weather ran first, a page loaded in the rain kept its lowered saturation for
+the whole session. The weather keeps the only copy. wxGrade is the grade's one weather writer, always relative to its
+owners' base, and the halo became the cheap one. It has an angular size, as forward scatter does: 5.2 degrees across
+within 187 m, shrinking past that as the core does. It fades by the weather's extinction length (300 m in fog, 450 in
+snow, 900 in rain), throws an unseen lamp out of the clip box in its vertex shader, and takes its depth from the
+vertex like the glow itself. It is drawn once, empty, on the first frame, so its program compiles behind the veil. Its
+strength was set by eye in fog on South Broad at 9 pm: at 0.056 and 0.24 the lamps were dots, at 0.11 and 0.55 the far
+lamps ran into one white band, and 0.09 and 0.4 lies between. A dry street now pays nothing for the puddles, which sit
+in a branch on the wetness uniform, and a lawn is the surface's own word (surfTexPatch's isGreen), so a brown winter
+lawn no longer mirrors like asphalt. By day the rain had all but vanished at street level. It is now 24,000 streaks on
+a computer at 2.4 times the alpha, about two pixels across on any screen, which shows on brick and all but goes
+against the sky. The snow gives up half as much of its light to its trail and is a shade whiter. Both keep their night
+alpha, because at night only the lamp-lit ones should show. Main's snow frames were re-rendered with the preset
+snapped: they show its discs and the checkerboard, which are gone here.
+
+Not done:
+- perf at the final values: I was limited to five render runs and spent them on before and after, computer and phone.
+  Per-frame times (readPixels-synced, 48 frames) were taken with the halo at its earlier 0.056/0.24 and 16,000 drops,
+  not at the final 0.09/0.4 and 24,000. The first three runs also ran at the same time and fought over the GPU, so the
+  absolute numbers are noise. Results, p50/p95 ms. Computer, main: rain night 57/69, dry night 111/240, blizzard
+  126/228, dry day 153/264. Computer, branch: rain night 135/191, dry night 146/231, blizzard 108/152, dry day
+  124/174. Phone path, main (contended): rain night 70/116, dry night 74/132, blizzard 64/147, dry day 37/87. Phone
+  path, branch (mostly alone): rain night 21.8/34.9, dry night 19.3/32.4, blizzard 35.1/49.0, dry day 43.0/62.5. The
+  only trustworthy figure is the within-build delta on the phone path: rain at night costs about 2.5 ms p50 (13%) over
+  the same dry night. On the computer the rain night was not slower than the dry night, within noise. __dbg.perf()'s
+  own p50/p95 stay empty under the headless renderer, because frameOnce frames are not recorded.
+- phone at the final dials: The phone after-run used the earlier halo and alpha. The final values are uniform
+  constants on the same code path and were checked on the computer only.
+- blizzard veil: The blizzard is denser than before but still sparse at street level. The heavy white veil depends
+  mostly on fog distance (sky-atmos) and on the far shells; at 0.7 flakes per cubic metre the near box cannot carry it
+  alone.
+- screen-space reflections: Out of scope this round, per the task.

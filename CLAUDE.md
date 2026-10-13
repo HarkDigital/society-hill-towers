@@ -5,8 +5,8 @@ Philadelphia: a detailed Society Hill core, the wide Center City / South Philly 
 ring covering the whole city, on USGS terrain, with live SEPTA / Indego / flights / ships,
 typical traffic, a solar clock and live weather. Live at https://philly3d.com/ (the VPS, and the
 only home since Mike retired the GitHub Pages copy on Sep 17, 2026). Everything is in `3d-model/`;
-`app.js` (~22,800 lines, one IIFE) is the application and `rebuilds/` the seven landmark rebuilds (Round 161),
-`build.py` inlines them with the data into `society-hill-towers.html` (29.56 MB raw / 12.62 MB gzip; the generated art, 18 MB, is files under `art/` since Round 184). The old claude.ai
+`app.js` (~33,200 lines, one IIFE) is the application and `rebuilds/` the seven landmark rebuilds (Round 161),
+`build.py` inlines them with the data into `society-hill-towers.html` (30.44 MB raw / 13.05 MB gzip; the generated art, 35 MB, is files under `art/` since Round 184). The old claude.ai
 artifact copy is retired (over the 16 MB cap); never republish there.
 
 ## Coordinate frame
@@ -282,6 +282,40 @@ pins the air at Good. `?aqi=<n|good|moderate|usg|unhealthy|veryunhealthy|hazardo
 air quality (Round 75: the live PM2.5 scales the clear-air distances and tints a smoke day;
 `__dbg.aqi(n)`, `__dbg.aqiState()`).
 `?real=0` is the Cities: Skylines palette Round 185 replaced (and with it the old 0.8 gable lottery, the flat roofs' generated surfaces, the yards and the mid-rise walls), `?ao=0` the realistic look without its occlusion, `?ao=show` the occlusion alone, `?midskin=0` the mid-rise walls off (`__dbg.real()` holds the uniforms; `roof.uRoofDbg` paints the roof kinds). `?logdepth=0` is the depth-buffer escape hatch. `?tiles=0` draws the Round 167 tiled flats whole (the A/B for a seam or a draw-call question). `?vdepth=0` keeps every facade on fragment depth and `?vdepth=<m>` sets the near line on any device (Round 168; `__dbg.vdepth()`); `?gfx=smoother|auto|sharper` pins the Graphics choice without saving it (Round 168).
+The realism pass (Round 188) adds: `?ap=0` (no aerial perspective), `?clouds3d=0|1` (the desktop cloud volumes refused or
+forced), `?refl=0` (no planar river mirror), `?shadowwide=0` (no far shadow map), `?bloomwide=0` (the old tight bloom),
+`?walls=plain` / `?pitched=plain` (no generated wall or pitched-roof materials), `?streets=plain` (no generated street
+textures), `?vart=0` (the old box vehicles), `?parked=0`, `?furniture=0`, `?carpools=0`, `?woods=0`, `?vegtex=<n>` (pins the
+texture-unit limit) and `?canopy=show`; probes `__dbg.gpu()`, `pickAt(px, py)`, `keyLight(f)`, `clouds3d()`, `facade()`,
+`fronts()`, `veg()`, `water()`, `vehicles()`, `lampNear()`, `lampReal(k)`, `lampAt(x, z)`, and after the first frame
+`wxTune({...})` and `wxFx()`.
+
+## The realism pass (Round 188)
+
+Ten workstreams (fronts and skins, post and shadows, sky and air, the facade shader, ground and vegetation, streets,
+water, vehicles, night lamps, weather) merged on Oct 13; devlog Round 188 has each one's decisions and handoff.md its
+files. The rules that keep it standing:
+- A WebGL program has sixteen texture units, on an iPhone too, and the ground's program sits at fifteen. A sampler over
+  the limit fails the link and the surface draws nothing (Round 188's merge lost every road, lot and deck that way). A
+  paved surface (surfTexPatch's `paved`) takes no grass or vegetation maps; vegBudget, last in surfTexPatch, drops the
+  pass's extra pictures by #define while a ground program would sample more than the GPU has; never declare a new ground
+  sampler in a comma list or read it outside its #ifndef; never give an existing texture a second sampler name (the wet
+  streets read the lamp map through LAMP_WX_DECL). Check every merge for link failures: the capture skill's `render.mjs`
+  prints the page's console errors.
+- The lamps: one gain (`uLampBox.w`) every far-map reader shares; the realistic strength goes in only through
+  `uLampReal.y` (LAMP_REAL_K), and anything lit by the pools (vehLampPatch included) takes it. Lights in wet air (halos,
+  the wet grade and bloom) are the weather's alone (wxHaloMesh, wxGrade).
+- keyWeather is handed `sunDeckK` (the deck's share only) and owns the fog and rain terms and the clear sky's fill; read
+  `hemi.intensity` after it. A phone's fog colour is display colour: never give it an exposure pre-image.
+- The sun stays directionalLights[0] and the far map's black light index 1, both there before the first compile; never
+  add a directional light later. Nothing that moves casts into the depth pass under REAL.
+- A house front lies on its wall's own fitted line (FRONTS.fit) at its image's proportions; the fronts, skins and street
+  floors compile one program each, every set's numbers in uniforms; their masks are opaque RGB, never RGBA.
+- The land mask (bake_landmask.py) must be re-baked after any repack of the tiers, the trees, the water or the rail; its
+  woods channel is exactly 0 on water and open track.
+- Under REAL the water is its own Fresnel against its own sky probe (Round 54's slate-teal stays under ?real=0), and a
+  ring on high ground is levelled only through waterRingGate.
+- ?real=0 keeps every one of these looks as it was before the pass.
 
 ## Where things are
 
