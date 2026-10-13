@@ -44,9 +44,10 @@ class RoofKit(unittest.TestCase):
         self.assertIn('const put = (kind, x, y, z, rot, s = 1) => {', s)
         kinds = s[s.index('    const kinds = [\n'):s.index('    ];\n', s.index('    const kinds = [\n'))]
         self.assertEqual(len(re.findall(r'\{ cap: isTouch \?', kinds)), 5)
-        # the realism pass: the roof decks and the solar arrays come after the five, under REAL, so put()'s kinds 0 to 4 hold
+        # the realism pass: the roof decks, the solar arrays and the party walls' copings come after the five, under REAL,
+        # so put()'s kinds 0 to 4 hold (and the lay finds the decks at 5 and 6, the copings at 7)
         more = s[s.index('    const kinds = [\n'):s.index('    for (const [ki, kd] of kinds.entries()) {')]
-        self.assertEqual(more.count('kinds.push({ cap: isTouch ?'), 2)
+        self.assertEqual(more.count('kinds.push({ cap: isTouch ?'), 3)
         self.assertIn('    if (REAL) {\n      kinds[0].parts.push(', more)
 
 

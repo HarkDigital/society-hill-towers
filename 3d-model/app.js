@@ -1244,7 +1244,9 @@
   // gable built on the footprint quad itself: eaves are the longer opposite-edge
   // pair, the ridge joins the other pair's midpoints — the roof meets the wall
   // at every vertex, no floating overhangs on skewed footprints
-  function quadGable(quad, eaveH, ridgeH, ridgeRad) {
+  // ovh (the realism pass, the packed tiers' raisePitched only): each eave carried that far out past its wall along the
+  // slope's own plane, so the plane still meets the wall's top; eaveOut gives each eave's outward normal and pitch
+  function quadGable(quad, eaveH, ridgeH, ridgeRad, ovh = 0) {
     const E = [0, 1, 2, 3].map(i => {
       const p = quad[i], q = quad[(i + 1) % 4];
       return { a: p, b: q, len: Math.hypot(q[0] - p[0], q[1] - p[1]) };
@@ -1266,13 +1268,22 @@
     const r1 = [(ge[1].a[0] + ge[1].b[0]) / 2, (ge[1].a[1] + ge[1].b[1]) / 2];
     const cx = (quad[0][0] + quad[1][0] + quad[2][0] + quad[3][0]) / 4;
     const cz = (quad[0][1] + quad[1][1] + quad[2][1] + quad[3][1]) / 4;
-    const slopes = [], ends = [], endU = [];
+    const slopes = [], ends = [], endU = [], eaveOut = [];
     const pushTri = (arr, A, B, C) => arr.push(A[0], A[1], A[2], B[0], B[1], B[2], C[0], C[1], C[2]);
     const V = (p, y) => [p[0], y, p[1]];
     const slopeQuad = (ea, ridgeNear, ridgeFar) => {
       // ea runs a->b; the ridge end near ea.b is ridgeNear
       let A = V(ea.a, eaveH), B = V(ea.b, eaveH), R0 = V(ridgeNear, ridgeH), R1 = V(ridgeFar, ridgeH);
-      const ny = (B[0] - A[0]) * (R0[2] - A[2]) - (B[2] - A[2]) * (R0[0] - A[0]);
+      if (ovh > 0) {
+        const el = ea.len || 1;
+        let nx = -(ea.b[1] - ea.a[1]) / el, nz = (ea.b[0] - ea.a[0]) / el;
+        const d = nx * ((ea.a[0] + ea.b[0] - r0[0] - r1[0]) / 2) + nz * ((ea.a[1] + ea.b[1] - r0[1] - r1[1]) / 2);
+        if (d < 0) { nx = -nx; nz = -nz; }
+        const s = (ridgeH - eaveH) / Math.max(Math.abs(d), 0.5), dy = ovh * s;
+        A = [A[0] + nx * ovh, eaveH - dy, A[2] + nz * ovh]; B = [B[0] + nx * ovh, eaveH - dy, B[2] + nz * ovh];
+        eaveOut.push({ a: ea.a, b: ea.b, nx, nz, s });
+      }
+      const ny =(B[0] - A[0]) * (R0[2] - A[2]) - (B[2] - A[2]) * (R0[0] - A[0]);
       if (ny > 0) { const tmp = A; A = B; B = tmp; const t2 = R0; R0 = R1; R1 = t2; }
       pushTri(slopes, A, B, R0); pushTri(slopes, A, R0, R1);
     };
@@ -1309,7 +1320,7 @@
       }
       return g;
     };
-    return { slopes: mk(slopes), ends: mk(ends, true, (ge[0].len + ge[1].len) / 2), eaves: ev, ridge: [r0, r1] };
+    return { slopes: mk(slopes), ends: mk(ends, true, (ge[0].len + ge[1].len) / 2), eaves: ev, ridge: [r0, r1], eaveOut };
   }
 
   // hip roof on the footprint quad: like quadGable but the ridge is inset from both
@@ -1565,6 +1576,55 @@
     if (Math.abs(aQ - area) <= area * 0.25 && span > 3.2 && span < 17 && long / span >= elMin && long / span < 5) return { sp, span, long };
     return null;
   }
+  // the realism pass (buildings#11): an honest L, six corners square to its box with one reflex corner, cut at that corner
+  // into a main wing and a cross wing no wider than it (whichever cut gives the bigger main wing). Returns the main wing as
+  // an oriented box for hipGeom and the cross wing as wingGeom reads it, or null
+  function roofL(poly, area) {
+    if (area > 450 || area < 70 || poly.length > 16) return null;
+    const sp = simplifyRing(poly, 0.6);
+    if (sp.length !== 6) return null;
+    const ob = orientedBox(sp);
+    if (!ob) return null;
+    const ux = ob.ux, uz = ob.uz, W = (u, v) => [ux * u - uz * v, uz * u + ux * v];
+    const L = sp.map((p) => [p[0] * ux + p[1] * uz, -p[0] * uz + p[1] * ux]);
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity;
+    for (const a of L) { u0 = Math.min(u0, a[0]); u1 = Math.max(u1, a[0]); v0 = Math.min(v0, a[1]); v1 = Math.max(v1, a[1]); }
+    const tol = 0.6, inner = L.filter((p) => p[0] - u0 > tol && u1 - p[0] > tol && p[1] - v0 > tol && v1 - p[1] > tol);
+    if (inner.length !== 1) return null;
+    const [ur, vr] = inner[0];
+    // the notch is the box's corner no corner of the footprint stands at
+    const near = (c, d) => L.some((p) => Math.hypot(p[0] - c[0], p[1] - c[1]) < d);
+    const out = [[u0, v0], [u1, v0], [u1, v1], [u0, v1]].filter((c) => !near(c, 0.8));
+    if (out.length !== 1) return null;
+    const [uc, vc] = out[0], uf = uc === u1 ? u0 : u1, vf = vc === v1 ? v0 : v1;
+    // and the footprint is that L to half a metre at every corner, so the roof's eaves stand over its walls
+    const ideal = [[uf, vf], [uc, vf], [uc, vr], [ur, vr], [ur, vc], [uf, vc]];
+    if (!ideal.every((c) => near(c, 0.5))) return null;
+    const cands = [
+      // the cut along v = vr: the main wing the full length in u on the far side, the cross wing toward vc
+      { A: [u0, u1, Math.min(vf, vr), Math.max(vf, vr)], span: Math.abs(ur - uf), Lb: Math.abs(vc - vr), e: Math.abs(vr - vf) / 2,
+        o: [(uf + ur) / 2, vc], d: [0, Math.sign(vf - vc)], f: [uf, vc] },
+      // the cut along u = ur: the main wing the full length in v on the far side, the cross wing toward uc
+      { A: [Math.min(uf, ur), Math.max(uf, ur), v0, v1], span: Math.abs(vr - vf), Lb: Math.abs(uc - ur), e: Math.abs(ur - uf) / 2,
+        o: [uc, (vf + vr) / 2], d: [Math.sign(uf - uc), 0], f: [uc, vf] },
+    ];
+    let best = null;
+    for (const c of cands) {
+      const w = c.A[1] - c.A[0], d = c.A[3] - c.A[2], sA = Math.min(w, d);
+      if (sA < 4 || sA > 17 || Math.max(w, d) / sA > 5 || c.span < 3.2 || c.span > sA * 1.02 || c.Lb < 1.5) continue;
+      if (c.e < c.span / 2) continue;   // the cross wing's ridge must die into the main roof, not stand out past it
+      if (!best || w * d > best.w * best.d) best = { c, w, d, sA };
+    }
+    if (!best) return null;
+    const c = best.c, ac = W((c.A[0] + c.A[1]) / 2, (c.A[2] + c.A[3]) / 2), bo = W(c.o[0], c.o[1]), bd = W(c.d[0], c.d[1]);
+    // the cross wing's side that runs on in line with the main wing's (its lateral way is (d.v, -d.u) in the box's frame)
+    const flush = Math.sign((c.f[0] - c.o[0]) * c.d[1] - (c.f[1] - c.o[1]) * c.d[0]) || 1;
+    return {
+      sA: best.sA,
+      A: { cx: ac[0], cz: ac[1], ux, uz, w: best.w, d: best.d },
+      B: { ox: bo[0], oz: bo[1], dx: bd[0], dz: bd[1], Lb: c.Lb, e: c.e, hs: c.span / 2, flush },
+    };
+  }
   // Round 185 (Mike: it looks like a kid's game): the lottery's share by the house's own kind. Philadelphia's rows are
   // flat-roofed (a slight fall to the back, invisible from the street), and four in five of them gabled were a Monopoly
   // board from the air: the gable goes to the porch twins, the stone and the timber houses, rarely to a row
@@ -1600,6 +1660,14 @@
       }
     }
     if (!q) q = roofQuad(poly, area, f);
+    // the realism pass: a detached kind's L, in the pitched districts only (never a row's: the critic, after Round 185)
+    if (!q && REAL && lot >= 0.5 && (form === 0 || form === 1 || form === 2) && PITCHED_AREAS.some((b) => poly[0][0] > b[0] && poly[0][0] < b[1] && poly[0][1] > b[2] && poly[0][1] < b[3])) {
+      const L = roofL(poly, area);
+      if (L) {
+        const r = rise > 0.8 ? Math.min(rise, h * 0.7) : clamp(L.sA * 0.33, 1.5, 4.0);
+        return r > h * 0.7 ? null : { quad: null, form: 5, rise: r, L };
+      }
+    }
     if (!q) return null;
     const r = rise > 0.8 ? Math.min(rise, h * 0.7) : clamp(q.span * 0.33, 1.5, 4.0);
     if (r > h * 0.7) return null;
@@ -1613,15 +1681,104 @@
       ch.idx.push(i0, i0 + 1, i0 + 2);
     }
   }
+  // the realism pass (buildings#12, the packed tiers' roofs sat flush on their walls with nothing under the edge): a
+  // pitched roof overhangs its walls by EAVE_OVH along its own plane, so the plane still meets the wall's top (a hip's
+  // eave stood 0.3 m out at the wall's height, a slit of sky under every one seen from the street), and on a computer
+  // each eave is boxed in, a fascia board along its edge (white aluminium on most, dark on the rest) and the soffit back
+  // to the wall: the line of shade under the eaves that says a roof from any distance. Four quads a gable, eight a hip
+  // (168,536 quads over 33,386 gables, 4,269 hips and 60 Ls, about 26 MB of a computer's vertex and index buffers)
+  const EAVE_OVH = 0.3, EAVE_FASCIA = 0.2, EAVE_BOX = REAL && !isTouch;
+  function eaveBox(ch, ax, az, bx, bz, nx, nz, eaveY, s, c, base, what = 3) {   // what: 1 the fascia, 2 the soffit
+    const o = EAVE_OVH, yE = eaveY - o * s, y0 = yE - EAVE_FASCIA, y1 = yE + 0.03;
+    const quad = (P, n) => {   // four corners, wound to face n
+      PITCH_N.boards++;
+      const ux = P[1][0] - P[0][0], uy = P[1][1] - P[0][1], uz = P[1][2] - P[0][2], vx = P[2][0] - P[0][0], vy = P[2][1] - P[0][1], vz = P[2][2] - P[0][2];
+      if ((uy * vz - uz * vy) * n[0] + (uz * vx - ux * vz) * n[1] + (ux * vy - uy * vx) * n[2] < 0) P = [P[0], P[3], P[2], P[1]];
+      const i0 = ch.n;
+      for (const p of P) ch.push(p[0], p[1], p[2], n[0], n[1], n[2], c.r, c.g, c.b, 3, base, 0);
+      ch.idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+    };
+    const oax = ax + nx * o, oaz = az + nz * o, obx = bx + nx * o, obz = bz + nz * o;
+    if (what & 1) quad([[oax, y0, oaz], [obx, y0, obz], [obx, y1, obz], [oax, y1, oaz]], [nx, 0, nz]);
+    if (what & 2) quad([[ax, y0, az], [bx, y0, bz], [obx, y0, obz], [oax, y0, oaz]], [0, -1, 0]);
+  }
+  const _eaveC = new THREE.Color();
+  // __dbg.facade().pitched: the packed tiers' pitched roofs by form, the eaves' quads, and one roof in forty of each form
+  // (its first corner and eave) to fly to
+  const PITCH_N = { gable: 0, hip: 0, L: 0, boards: 0, at: { gable: [], hip: [], L: [] } };
+  // a hip's boards: the long sides' run on past the corners to meet the ends'; the ends' soffits stop at the long sides'
+  function hipBoards(ch, ob, eaveY, s, c, base) {
+    let ax = ob.ux, az = ob.uz;
+    if (ob.d > ob.w) { ax = -ob.uz; az = ob.ux; }
+    const px = az, pz = -ax, o = EAVE_OVH, hl0 = Math.max(ob.w, ob.d) / 2, hs0 = Math.min(ob.w, ob.d) / 2;
+    const P = (u, v) => [ob.cx + ax * u + px * v, ob.cz + az * u + pz * v];
+    for (const sg of [-1, 1]) {
+      const a = P(-hl0 - o, sg * hs0), b = P(hl0 + o, sg * hs0);
+      eaveBox(ch, a[0], a[1], b[0], b[1], px * sg, pz * sg, eaveY, s, c, base);
+      const c0 = P(sg * hl0, -hs0), c1 = P(sg * hl0, hs0), e0 = P(sg * hl0, -hs0 - o), e1 = P(sg * hl0, hs0 + o);
+      eaveBox(ch, e0[0], e0[1], e1[0], e1[1], ax * sg, az * sg, eaveY, s, c, base, 1);
+      eaveBox(ch, c0[0], c0[1], c1[0], c1[1], ax * sg, az * sg, eaveY, s, c, base, 2);
+    }
+  }
+  // the realism pass (buildings#11, the pitched districts' L-shaped houses stood as flat boxes): an L's roof is the main
+  // wing's hip and the cross wing's, the cross wing's run on into the main one to its ridge so that its slopes meet the
+  // main slope in two valleys and its ridge dies into it, as a real cross-gable's does; every face at one pitch. B is the
+  // cross wing: its outer wall's centre (ox, oz), the unit way into the main wing (dx, dz), its length to the junction
+  // Lb, its run on into the main wing e, its half span hs. Its inner end lies under the main roof and is left open
+  function wingGeom(B, yE, ridgeB, o) {
+    const px = B.dz, pz = -B.dx, hs = B.hs + o, u1 = B.Lb + B.e;
+    const P = (u, v, y) => [B.ox + B.dx * u + px * v, y, B.oz + B.dz * u + pz * v];
+    const E0 = P(-o, -hs, yE), E1 = P(-o, hs, yE), F0 = P(u1, -hs, yE), F1 = P(u1, hs, yE), Ra = P(B.hs, 0, ridgeB), Rb = P(u1, 0, ridgeB);
+    const pos = [];
+    const tri = (a, b, c) => {   // every face of a roof faces up
+      const ny = (b[2] - a[2]) * (c[0] - a[0]) - (b[0] - a[0]) * (c[2] - a[2]);
+      if (ny < 0) { const t = b; b = c; c = t; }
+      pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+    };
+    tri(E0, F0, Rb); tri(E0, Rb, Ra); tri(E1, Ra, Rb); tri(E1, Rb, F1); tri(E0, Ra, E1);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.computeVertexNormals();
+    return g;
+  }
   // walls to the eave, then the roof; the roof takes the sampled roof colour or a darker wall
   function raisePitched(ch, poly, base, h, plan, wallC, wallStyle, fh, capC, appendFn) {
     const eaveY = base + h - plan.rise, ridgeY = base + h;
     appendFn(ch, poly, base - 1.0, eaveY, wallC, wallStyle, base, null, fh, null, true);
     const rc = capC || _roofTmp.copy(wallC).multiplyScalar(0.72);
-    if (plan.form === 2) { const ob = orientedBox(plan.quad); if (ob) { pushGeom(ch, hipGeom(ob, eaveY, ridgeY, 0.3), rc.r, rc.g, rc.b, 3, base); return; } }
-    const g = quadGable(plan.quad, eaveY, ridgeY, null);
+    const tc = EAVE_BOX ? (hash01(poly[0][0] * 0.37 + poly[0][1] * 0.91) < 0.65 ? _eaveC.setRGB(0.92, 0.9, 0.85) : _eaveC.setRGB(0.3, 0.26, 0.22)) : null;
+    { const k = plan.form === 5 ? 'L' : (plan.form === 2 ? 'hip' : 'gable'); if (PITCH_N[k]++ % 40 === 0 && PITCH_N.at[k].length < 200) PITCH_N.at[k].push([Math.round(poly[0][0]), Math.round(poly[0][1]), Math.round(eaveY)]); }
+    if (plan.form === 5) {   // an L (roofL, under REAL only)
+      // the cross wing 3 cm under the main one: where its side runs on in line with a main wing's face the two are one
+      // plane, and the main wing's must win; its boards on that side stop short of the main wing's
+      const A = plan.L.A, B = plan.L.B, o = EAVE_OVH, s = plan.rise / Math.max(Math.min(A.w, A.d) / 2, 0.5), yE = eaveY - o * s, eB = eaveY - 0.03;
+      pushGeom(ch, hipGeom(A, yE, ridgeY, o), rc.r, rc.g, rc.b, 3, base);
+      pushGeom(ch, wingGeom(B, yE - 0.03, eB + s * B.hs, o), rc.r, rc.g, rc.b, 3, base);
+      if (EAVE_BOX) {
+        hipBoards(ch, A, eaveY, s, tc, base);
+        const px = B.dz, pz = -B.dx, P = (u, v) => [B.ox + B.dx * u + px * v, B.oz + B.dz * u + pz * v];
+        for (const sg of [-1, 1]) { const a = P(-o, sg * B.hs), b = P(sg === B.flush ? B.Lb - o : B.Lb, sg * B.hs); eaveBox(ch, a[0], a[1], b[0], b[1], px * sg, pz * sg, eB, s, tc, base); }
+        const e0 = P(0, -B.hs - o), e1 = P(0, B.hs + o), c0 = P(0, -B.hs), c1 = P(0, B.hs);
+        eaveBox(ch, e0[0], e0[1], e1[0], e1[1], -B.dx, -B.dz, eB, s, tc, base, 1);
+        eaveBox(ch, c0[0], c0[1], c1[0], c1[1], -B.dx, -B.dz, eB, s, tc, base, 2);
+      }
+      return;
+    }
+    if (plan.form === 2) {
+      const ob = orientedBox(plan.quad);
+      if (ob) {
+        // the hip's plane through the wall's top: its eave dropped by the overhang's share of the rise
+        const s = plan.rise / Math.max(Math.min(ob.w, ob.d) / 2, 0.5);
+        pushGeom(ch, hipGeom(ob, eaveY - (REAL ? EAVE_OVH * s : 0), ridgeY, 0.3), rc.r, rc.g, rc.b, 3, base);
+        if (EAVE_BOX) hipBoards(ch, ob, eaveY, s, tc, base);
+        return;
+      }
+    }
+    // (a phone's gable keeps its eave on the wall: with no soffit under it, a steep look up would find the sky through it)
+    const g = quadGable(plan.quad, eaveY, ridgeY, null, EAVE_BOX ? EAVE_OVH : 0);
     pushGeom(ch, g.slopes, rc.r, rc.g, rc.b, 3, base);
     pushGeom(ch, g.ends, wallC.r, wallC.g, wallC.b, ST_GABLE, base);
+    if (EAVE_BOX) for (const e of g.eaveOut) eaveBox(ch, e.a[0], e.a[1], e.b[0], e.b[1], e.nx, e.nz, eaveY, e.s, tc, base);
   }
   const _roofTmp = new THREE.Color();
 
@@ -21957,6 +22114,11 @@ float pinOccGate() {
       const sol = [part(new THREE.BoxGeometry(3.3, 0.05, 2.1).rotateX(0.1745).translate(0, 0.5, 0), 0x070b16)];   // its face tilted to +z, south as laid
       for (const lx of [-1.5, 1.5]) for (const lz of [-0.9, 0.9]) sol.push(part(new THREE.BoxGeometry(0.05, 0.5 - lz * 0.17, 0.05).translate(lx, (0.5 - lz * 0.17) / 2, lz), 0x2c2d2f));
       kinds.push({ cap: isTouch ? 300 : 1200, parts: sol });
+      // gap#6 (the rows joined as one plane from the air): a party wall's coping, brick standing 0.27 m proud of the roof
+      // under a coated cap, a metre long and stretched to the wall it runs along (putL); a computer's carries the cap
+      const cope = [part(new THREE.BoxGeometry(1, 0.32, 0.22).translate(0, 0.11, 0), 0x381c14)];
+      if (!isTouch) cope.push(part(new THREE.BoxGeometry(1, 0.05, 0.26).translate(0, 0.295, 0), 0x353533));
+      kinds.push({ cap: isTouch ? 3000 : 14000, parts: cope });
     }
     const kitDetail = (k) => REAL ? [
       '{ vec3 kp = vKL, kn = normalize(vKN); float kfw = max(fwidth(kp.y), max(fwidth(kp.x), fwidth(kp.z))); float kd = 1.0 - smoothstep(0.012, 0.05, kfw);',
@@ -22252,6 +22414,15 @@ float pinOccGate() {
       e[o + 8] = sn; e[o + 9] = 0; e[o + 10] = c; e[o + 11] = 0; e[o + 12] = x; e[o + 13] = y; e[o + 14] = z; e[o + 15] = 1;
       cnt[kind] = n + 1;
     };
+    // a part a metre long along its own x, stretched to len (the copings)
+    const putL = (kind, x, y, z, rot, len) => {
+      const n = cnt[kind]; if (n >= caps[kind]) return;
+      const e = M[kind].instanceMatrix.array, o = n * 16, c = Math.cos(rot), sn = Math.sin(rot);
+      e[o] = c * len; e[o + 1] = 0; e[o + 2] = -sn * len; e[o + 3] = 0; e[o + 4] = 0; e[o + 5] = 1; e[o + 6] = 0; e[o + 7] = 0;
+      e[o + 8] = sn; e[o + 9] = 0; e[o + 10] = c; e[o + 11] = 0; e[o + 12] = x; e[o + 13] = y; e[o + 14] = z; e[o + 15] = 1;
+      cnt[kind] = n + 1;
+    };
+    const COPE = M.length > 7 ? 7 : -1;
     if (camera.position.y < 1500) {
       const list = [], gx0 = Math.floor(cx / C), gz0 = Math.floor(cz / C), cr = Math.ceil(R / C);
       for (let gx = gx0 - cr; gx <= gx0 + cr; gx++) for (let gz = gz0 - cr; gz <= gz0 + cr; gz++) {
@@ -22286,11 +22457,22 @@ float pinOccGate() {
           for (let j = 0; j < nv; j++) item(3, u0 + (j ? -1 : 1) * W * 0.38, (H(k + 8 + j) - 0.5) * D * 0.7, rot);
           if (H(k + 11) < 0.22) { const du = u0 + (H(k + 12) - 0.5) * W * 0.5, dv = side * D * 0.38; if (full || roofKitOn(mlo, mhi, du, dv, hl, hs)) { const [x, z] = at(du, dv); put(4, x, y, z, -0.35, 1); } }
         };
+        // the realism pass (gap#6): a party wall's coping, laid where the whole of it stands on the roof
+        const cope = (u, v, along, len) => {
+          if (COPE < 0) return;
+          const ok = [-0.4, 0, 0.4].every((t) => full || (along ? roofKitOn(mlo, mhi, u + t * len, v, hl, hs) : roofKitOn(mlo, mhi, u, v + t * len, hl, hs)));
+          if (!ok) return;
+          const [x, z] = at(u, v); putL(COPE, x, y, z, along ? rot : rot + Math.PI / 2, len);
+        };
         if (2 * hl > 14 && hs >= 3 && hs <= 9) {   // a strip of rowhouses
           const n = Math.max(1, Math.round(2 * hl / 5.4)), W = 2 * hl / n;
+          // its party walls across it, and its two end walls just inside its ends (a row's depth, never a deeper block's)
+          if (hs <= 7.5) for (let k = 0; k <= n; k++) cope(k === 0 ? -hl + 0.12 : (k === n ? hl - 0.12 : -hl + k * W), 0, false, 2 * hs);
           for (let k = 0; k < n; k++) house(-hl + (k + 0.5) * W, W, 2 * hs, k * 17);
         } else if (hl * hs * 4 < 220) {   // a single house: its depth runs along the long axis
           const k = 0, side = H(1) < 0.5 ? -1 : 1;
+          // a rowhouse's two party walls along its sides, each just inside its own edge (the neighbour lays its own beside it)
+          if (hs <= 3.8 && hl >= 1.3 * hs) for (const sg of [-1, 1]) cope(0, sg * (hs - 0.12), true, 2 * hl);
           if (M.length > 6 && 2 * hs >= 4.2 && 2 * hl >= 8) {   // the realism pass: its deck at one end, across the house
             const hd = H(13), du = side * (hl - 2.9), dRot = rot + Math.PI / 2 + (H(14) < 0.5 ? 0 : Math.PI);
             const deckOk = () => [[-2.25, -1.8], [2.25, -1.8], [2.25, 1.8], [-2.25, 1.8]].every(([a, b]) => full || roofKitOn(mlo, mhi, du + a, b, hl, hs));
@@ -26466,7 +26648,7 @@ float pinOccGate() {
     }
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
-    if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
+    if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM, pitched: PITCH_N });   // the realism pass: the walls' art and the rooms' clock
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);

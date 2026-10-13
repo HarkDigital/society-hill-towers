@@ -13,6 +13,9 @@ realistic and less cartoony. This should apply to all surfaces"):
   darkening the glass below the horizon a pane sees
 - copings and gable ends carry words of their own on style 3; square detached houses take hips in the pitched districts
 - the rooftop hardware's grilles and fan guards, roof decks and solar arrays; the landmark rebuilds' stone and brick
+- the packed tiers' pitched roofs overhang their walls along their own plane, boxed in on a computer (a fascia and a
+  soffit under every eave); the pitched districts' detached Ls take a main hip and a cross wing that dies into it;
+  the rows' party walls carry copings from the air
 """
 import json
 import math
@@ -241,6 +244,92 @@ class RoofKitAndLandmarks(unittest.TestCase):
         self.assertIn("if (own) { m.customProgramCacheKey = () => ownKey + '|rbdetail'; return; }", f)
         self.assertIn('m.userData.wxSurf = true;', f)
         self.assertIn('landmarkDetail(mm);', SRC[SRC.index("  step('Rebuilding the landmarks'"):])
+
+
+
+@unittest.skipUnless(shutil.which('node'), 'node is not installed')
+class Eaves(unittest.TestCase):
+    """buildings#12 and #11: the overhang keeps the roof's plane on the wall's top; an L takes a main hip and a cross wing."""
+
+    def run_js(self, body):
+        names = ['signedArea', 'pointInPoly', 'orientedBox', 'simplifyRing', 'roofQuad', 'roofL', 'roofPlan', 'hipGeom', 'quadGable', 'wingGeom']
+        a = SRC.index('  const PITCHED_AREAS = ')
+        js = ('const THREE = require(%s); const REAL = true; const clamp = (v, a, b) => Math.max(a, Math.min(b, v)); const hash01 = () => 0.01;\n'
+              % json.dumps(str(ROOT / 'three.min.js')) + SRC[a:SRC.index('\n', a) + 1] + '\n'.join(fn(n) for n in names) + body)
+        r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return json.loads(r.stdout)
+
+    def test_the_gable_overhangs_along_its_own_plane(self):
+        out = self.run_js(r"""
+const q = [[0, 0], [12, 0], [12, 8], [0, 8]];
+const flat = quadGable(q, 6, 9, null), g = quadGable(q, 6, 9, null, 0.3);
+const ys = (geo) => Array.from(geo.slopes.attributes.position.array).filter((v, i) => i % 3 === 1);
+const xz = (geo) => Array.from(geo.slopes.attributes.position.array).filter((v, i) => i % 3 !== 1);
+console.log(JSON.stringify({ minFlat: Math.min(...ys(flat)), min: Math.min(...ys(g)), maxZ: Math.max(...xz(g)), minZ: Math.min(...xz(g)), out: g.eaveOut.map((e) => [e.nx, e.nz, e.s]), flatOut: flat.eaveOut.length }));
+""")
+        self.assertEqual(out['minFlat'], 6)
+        self.assertEqual(out['flatOut'], 0)                     # no overhang asked, none made (the core's gables)
+        self.assertAlmostEqual(out['min'], 6 - 0.3 * 3 / 4, places=5)   # 0.3 m out, down the slope's own 3 in 4
+        self.assertAlmostEqual(out['minZ'], -0.3, places=5)
+        self.assertAlmostEqual(out['maxZ'], 12, places=5)       # the eaves move out; the gable ends stay on their walls
+        self.assertEqual(sorted(tuple(o[:2]) for o in out['out']), [(0, -1), (0, 1)])
+
+    def test_an_l_takes_a_main_hip_and_a_cross_wing(self):
+        out = self.run_js(r"""
+const rot = (pts, a, cx, cz) => pts.map(([x, z]) => [cx + x * Math.cos(a) - z * Math.sin(a), cz + x * Math.sin(a) + z * Math.cos(a)]);
+const L0 = [[0, 0], [14, 0], [14, 8], [6, 8], [6, 13], [0, 13]], res = [];
+for (const a of [0, 0.4, 1.3, 2.7]) for (const rev of [false, true]) {
+  let p = rot(L0, a, -6000, -14000); if (rev) p = p.slice().reverse();
+  const plan = roofPlan(p, Math.abs(signedArea(p)), 9, 1, 0, 0, 1.5, 0.75);
+  if (!plan || plan.form !== 5) { res.push(null); continue; }
+  const A = plan.L.A, B = plan.L.B, g = wingGeom(B, 5.6, 7.5, 0.3), n = g.attributes.normal.array;
+  let up = true; for (let i = 1; i < n.length; i += 3) if (n[i] < 0.5) up = false;
+  // the wing's outer wall on the footprint's edge: a step in is inside it, a step out is not
+  res.push({ A: [Math.min(A.w, A.d), Math.max(A.w, A.d)].map((v) => +v.toFixed(2)), hs: +B.hs.toFixed(2), Lb: +B.Lb.toFixed(2), e: +B.e.toFixed(2), up,
+    inside: pointInPoly(B.ox + B.dx * 0.5, B.oz + B.dz * 0.5, p), outside: !pointInPoly(B.ox - B.dx * 0.5, B.oz - B.dz * 0.5, p),
+    flush: pointInPoly(B.ox + B.dx * (B.Lb + 0.5) + B.dz * B.flush * (B.hs - 0.3), B.oz + B.dz * (B.Lb + 0.5) - B.dx * B.flush * (B.hs - 0.3), p) });
+}
+// a rectangle is roofQuad's; an L away from the pitched districts, or a row's kind, stays flat
+const away = rot(L0, 0, 1000, 1000), U = [[0, 0], [14, 0], [14, 9], [10, 9], [10, 4], [4, 4], [4, 9], [0, 9]].map(([x, z]) => [x - 6000, z - 14000]);
+console.log(JSON.stringify({ res, away: roofPlan(away, Math.abs(signedArea(away)), 9, 1, 0, 0, 1.5, 0.75),
+  row: roofPlan(rot(L0, 0, -6000, -14000), 142, 9, 1, 0, 0, 1.5, 0.2), U: roofL(U, Math.abs(signedArea(U))) }));
+""")
+        for r in out['res']:
+            self.assertIsNotNone(r)
+            self.assertEqual(r['A'], [8, 14])                   # the main wing the full length
+            self.assertEqual((r['hs'], r['Lb'], r['e']), (3, 5, 4))   # the cross wing 6 wide, 5 out, run on to the main ridge
+            self.assertTrue(r['up'] and r['inside'] and r['outside'] and r['flush'], r)
+        self.assertIsNone(out['away'])
+        self.assertIsNone(out['row'])
+        self.assertIsNone(out['U'])
+
+    def test_the_boards_are_a_computers(self):
+        self.assertIn('const EAVE_OVH = 0.3, EAVE_FASCIA = 0.2, EAVE_BOX = REAL && !isTouch;', SRC)
+        f = fn('raisePitched')
+        # a phone's gable keeps its eave on the wall; a hip's plane meets the wall's top on every device under REAL
+        self.assertIn('quadGable(plan.quad, eaveY, ridgeY, null, EAVE_BOX ? EAVE_OVH : 0)', f)
+        self.assertIn('hipGeom(ob, eaveY - (REAL ? EAVE_OVH * s : 0), ridgeY, 0.3)', f)
+        self.assertEqual(f.count('if (EAVE_BOX)'), 3)
+        # the cross wing stands 3 cm under the main one, where a face of each is one plane
+        self.assertIn('wingGeom(B, yE - 0.03, eB + s * B.hs, o)', f)
+        # every board quad is two triangles on four vertices, the chunks' own stride
+        self.assertIn('ch.idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);', fn('eaveBox'))
+
+
+class Copings(unittest.TestCase):
+    def test_the_party_walls(self):
+        lay = fn('roofKitLay')
+        self.assertIn('const COPE = M.length > 7 ? 7 : -1;', lay)
+        # a coping is a metre long and stretched along its own x only
+        self.assertIn("e[o] = c * len; e[o + 1] = 0; e[o + 2] = -sn * len;", lay)
+        self.assertIn("e[o + 8] = sn; e[o + 9] = 0; e[o + 10] = c;", lay)
+        # wholly on the roof, a row's depth, a rowhouse's width
+        self.assertIn('roofKitOn(mlo, mhi, u + t * len, v, hl, hs)', lay)
+        self.assertIn('if (hs <= 7.5) for (let k = 0; k <= n; k++) cope(', lay)
+        self.assertIn('if (hs <= 3.8 && hl >= 1.3 * hs) for (const sg of [-1, 1]) cope(0, sg * (hs - 0.12), true, 2 * hl);', lay)
+        # the deck's early continue comes after the copings, so a house with a deck keeps its party walls
+        self.assertLess(lay.index('cope(0, sg * (hs - 0.12)'), lay.index('            if (hd < (deckArea(x0, z0) ? 0.125 : 0.04) && deckOk()) {\n              const [x, z] = at(du, 0);'))
 
 
 if __name__ == '__main__':
