@@ -7530,14 +7530,17 @@
       const L0 = Math.hypot(sp1[0] - sp0[0], sp1[1] - sp0[1]), ux = (sp1[0] - sp0[0]) / L0, uz = (sp1[1] - sp0[1]) / L0;
       const ry = ryAlign(ux, uz), yG = siteY(cx, cz, 'ground');
       const BRONZE = '#050403', BRONZE_L = '#080605', GRANITE = '#0b0c0d', GRANITE_T = '#111213', PAVE = '#3b3a37';
+      // Round 184 coda (Mike, with a night screenshot: "The irish famine memorial needs to be lit at night"): the bronze
+      // and the granite go to their own mesh, lit after dark by warm ground floods round the plinth (memMat below)
+      const memParts = [], md = (geom, hex) => memParts.push({ geom, color: new THREE.Color(hex), style: 3 });
       const place = (g, u, y, v, rot, leanX, leanZ) => {
         if (leanZ) g.rotateZ(leanZ); if (leanX) g.rotateX(leanX); if (rot) g.rotateY(rot);
         g.translate(u, y, v); g.rotateY(ry); g.translate(cx, yG, cz); return g;
       };
       const H0 = 0.95;   // the plinth's top above the plaza
       { const b = new THREE.CylinderGeometry(1, 1, 0.12, 40); b.scale(11.5, 1, 8.2); ad(place(b, 0, 0.02, 0), PAVE); }   // the paved apron the photos show, not lawn
-      { const b = new THREE.CylinderGeometry(1, 1, H0 + 0.4, 32); b.scale(7.2, 1, 4.3); ad(place(b, 0, (H0 - 0.4) / 2, 0), GRANITE); }
-      { const b = new THREE.CylinderGeometry(1, 1, 0.08, 32); b.scale(7.35, 1, 4.45); ad(place(b, 0, H0, 0), GRANITE_T); }
+      { const b = new THREE.CylinderGeometry(1, 1, H0 + 0.4, 32); b.scale(7.2, 1, 4.3); md(place(b, 0, (H0 - 0.4) / 2, 0), GRANITE); }
+      { const b = new THREE.CylinderGeometry(1, 1, 0.08, 32); b.scale(7.35, 1, 4.45); md(place(b, 0, H0, 0), GRANITE_T); }
       // the rock: lumpy low-poly masses, jittered by position so shared corners stay shared
       const lump = (su, sy, sv, u, y, v, seed) => {
         const g = new THREE.IcosahedronGeometry(1, 1);
@@ -7548,7 +7551,7 @@
           p.setXYZ(k, x * su * f, Math.max(-0.35, yy) * sy * f, z * sv * f);
         }
         g.computeVertexNormals();
-        ad(place(g, u, y, v), BRONZE);
+        md(place(g, u, y, v), BRONZE);
       };
       lump(5.4, 1.0, 2.3, -0.6, H0 + 0.25, 0.1, 1);
       lump(2.3, 1.9, 1.9, 3.3, H0 + 0.35, -0.2, 2);      // the prow, the ship's rise at the east end
@@ -7562,8 +7565,8 @@
         parts.push([new THREE.IcosahedronGeometry(0.13 * k, 0), 1.58 * k]);
         if (hat === 1) { parts.push([new THREE.CylinderGeometry(0.2 * k, 0.2 * k, 0.03 * k, 8), 1.69 * k]); parts.push([new THREE.CylinderGeometry(0.1 * k, 0.11 * k, 0.16 * k, 8), 1.78 * k]); }
         else if (hat === 2) parts.push([new THREE.ConeGeometry(0.19 * k, 0.34 * k, 7), 1.62 * k]);   // a shawl drawn over the head
-        for (const [g, y] of parts) { g.translate(0, y, 0); ad(place(g, u, yb, v, facing, lean, lean * 0.4), col); }
-        if (pack) { const g = new THREE.BoxGeometry(0.34 * k, 0.4 * k, 0.26 * k); g.translate(0, 1.15 * k, -0.24 * k); ad(place(g, u, yb, v, facing, lean, 0), col); }
+        for (const [g, y] of parts) { g.translate(0, y, 0); md(place(g, u, yb, v, facing, lean, lean * 0.4), col); }
+        if (pack) { const g = new THREE.BoxGeometry(0.34 * k, 0.4 * k, 0.26 * k); g.translate(0, 1.15 * k, -0.24 * k); md(place(g, u, yb, v, facing, lean, 0), col); }
       };
       const FIG = [   // u, v, height, facing, lean, hat, pack; standing on the rock unless on the rim (r)
         [-3.4, 0.4, 1.0, 0.4, 0.1, 2, 0], [-2.7, -0.6, 1.1, -0.3, 0.25, 2, 0], [-1.9, 0.5, 1.75, 1.2, 0.05, 2, 1],
@@ -7581,16 +7584,41 @@
         const g2 = new THREE.BoxGeometry(0.95, 0.22, 0.18); g2.translate(0, h - 0.62, 0);
         const g3 = new THREE.TorusGeometry(0.33, 0.055, 5, 14); g3.translate(0, h - 0.62, 0);
         const g4 = new THREE.BoxGeometry(0.62, 0.34, 0.44); g4.translate(0, 0.17, 0);
-        for (const g of [g1, g2, g3, g4]) ad(place(g, u, H0, v, Math.PI / 2, 0, 0), BRONZE_L);
+        for (const g of [g1, g2, g3, g4]) md(place(g, u, H0, v, Math.PI / 2, 0, 0), BRONZE_L);
       };
       cross(-5.9, -0.9, 2.9); cross(-4.9, 1.5, 2.3);
       for (const [u, v, w, h] of [[-6.4, 0.6, 0.7, 1.2], [-5.2, -2.2, 0.6, 0.95], [-3.9, 2.4, 0.55, 0.85]]) {
-        const g = new THREE.BoxGeometry(0.2, h, w); g.translate(0, h / 2, 0); ad(place(g, u, H0, v, 0.15, 0, 0), BRONZE_L);
+        const g = new THREE.BoxGeometry(0.2, h, w); g.translate(0, h / 2, 0); md(place(g, u, H0, v, 0.15, 0, 0), BRONZE_L);
       }
       // keep the trees and the grass tufts off the plinth, and let nobody walk through it
       const oval = (ru, rv) => { const o = []; for (let k = 0; k < 20; k++) { const a = k / 20 * Math.PI * 2, lu = Math.cos(a) * ru, lv = Math.sin(a) * rv; o.push([cx + ux * lu - uz * lv, cz + uz * lu + ux * lv]); } return o; };
       const ring = oval(7.4, 4.5);
       registerPoly(ring); noSow(oval(11.7, 8.4));   // no tufts through the paved apron either
+      // the floods: warm uplights in the apron aimed in at the plinth, on the lamps' photocell. A face takes light as it
+      // turns out toward the ring of floods and as it is low (they sit at the plaza and throw up 4 to 6 m), as a share of
+      // its own colour (the bronze and granite are stored very dark, so the gain is large), with a little warm sheen
+      const memMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, side: THREE.DoubleSide });
+      const memC = new THREE.Vector3(cx, yG, cz);
+      memMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uLamp = lampUniform; sh.uniforms.uMemC = { value: memC };
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vMemWP;')
+          .replace('#include <project_vertex>', '#include <project_vertex>\nvMemWP = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp; uniform vec3 uMemC; varying vec3 vMemWP;')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
+            'if (uLamp > 0.001) {',
+            '  vec3 mWN = normalize(inverseTransformDirection(normal, viewMatrix));',
+            '  vec3 mD = vMemWP - uMemC; vec2 mR = normalize(mD.xz + vec2(1e-4));',
+            '  float mFace = clamp(dot(mWN.xz, mR) * 0.9 + 0.06 - 0.3 * mWN.y, 0.0, 1.0); mFace *= mFace;',
+            '  float mFall = exp(-max(mD.y - 0.4, 0.0) * 0.5);',
+            '  vec3 mFlood = vec3(1.0, 0.78, 0.5) * mFace * mFall * 9.0;',
+            '  totalEmissiveRadiance += uLamp * (diffuseColor.rgb * mFlood + vec3(0.018, 0.012, 0.006) * mFace * mFall);',
+            '}',
+          ].join('\n'));
+      };
+      memMat.customProgramCacheKey = () => 'famine-memorial';
+      const memMesh = new THREE.Mesh(mergeColored(memParts), memMat);
+      memMesh.name = 'famine-memorial'; memMesh.castShadow = memMesh.receiveShadow = true;
+      groupCity.add(memMesh);
       for (let k = 0; k < ring.length; k++) { const p0 = ring[k], p1 = ring[(k + 1) % ring.length]; addColSeg(p0[0], p0[1], p1[0], p1[1]); }
     }
     // Glory Beer Bar & Kitchen, 126 Chestnut (mid-block, Front-2nd): one deep

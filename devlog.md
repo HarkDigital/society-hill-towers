@@ -8091,3 +8091,10 @@ takes the tap). 435 tests.
   name lifted more than 1.5 m off its own street anywhere (`warped`, `warpedAt`): 68 of 3,773 before, 25 after (14 deck
   names at a deck's end, 11 older ground cases: the Vine Street cut, 30th Street, the I-76 ramps at Packer Avenue).
   `tests/test_street_labels.py` adds a deck alongside a street over the label's edge (fails on the old code).
+- Round 184 coda, the Irish Famine Memorial (Mike, with a night screenshot: "The irish famine memorial needs to be lit at
+  night"): its bronze and granite are stored near black for the detail material's daylight lift, and nothing lit them,
+  so after dark they stood as a black cut-out. They go to their own mesh (`famine-memorial`; the paved apron stays in
+  the shared detail mesh) whose material adds, on the lamps' photocell (`lampUniform`), warm ground floods round the
+  plinth: a face takes light as the square of how far it turns out toward the ring of floods, falling off with height
+  over the plaza (e to the -0.5 a metre), as nine times its own colour, with a faint warm sheen. Daylight unchanged.
+  Captured at 9 pm close and from the corner, and at 1 pm.
