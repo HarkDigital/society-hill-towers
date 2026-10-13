@@ -16,6 +16,10 @@ realistic and less cartoony. This should apply to all surfaces"):
 - the packed tiers' pitched roofs overhang their walls along their own plane, boxed in on a computer (a fascia and a
   soffit under every eave); the pitched districts' detached Ls take a main hip and a cross wing that dies into it;
   the rows' party walls carry copings from the air
+- the review's round: the walls' art is a computer's whole (no phone program carries it, no phone rebuild is re-hooked),
+  its gradients are taken where the control flow is uniform, the snow and the weathering run only where they can show,
+  ?real=0 keeps the weather's old colour, the copings stand on houses' roofs only and take the snow, the eaves are boxed
+  in the outer districts only, the towers' skins are left to their own workstream
 """
 import json
 import math
@@ -65,7 +69,8 @@ class WallArt(unittest.TestCase):
         f = fn('loadWallArt')
         self.assertIn('artImage(artSrc(W.walls, W.wallsHalf))', f)
         self.assertIn('artImage(artSrc(W.pitched, W.pitchedHalf))', f)
-        self.assertIn('!isTouch', f)   # the walls' atlas is a computer's
+        self.assertIn('if (WALL_ART_DEV) {', f)   # the walls' atlas is a computer's
+        self.assertIn("const WALL_ART_DEV = REAL && !isTouch && typeof WALL_ART !== 'undefined' && !!WALL_ART && !!WALL_ART.walls && ", SRC)
         self.assertIn("step('Dressing the walls', loadWallArt);", SRC)
         self.assertIn('const WALL_ART_ON = REAL && ', SRC)
         # the snow only the first time it lies, from the frame hook applyLighting calls
@@ -144,25 +149,65 @@ console.log(JSON.stringify({ eve: at(2026, 10, 12, 1260), late: at(2026, 10, 12,
         self.assertIn('float on=mix(step(1.0-uOcc.x,r),max(step(1.0-uOcc.y,zone)*floorOn,uOcc.z*step(floorHash,.08)),office);', SRC)
         # every room host binds it: the fabric, the apartments, the Ryland, the curtain wall
         self.assertEqual(SRC.count('occBind(shader);') + SRC.count('occBind(sh);'), 4)
-        # the towers' skins and their far glow follow the offices
-        self.assertIn("step(' + (REAL ? '1.0 - 0.34 * uOcc.y / 0.54' : '0.66') + ', h)", SRC)
+        # the towers' far glow follows the offices; their skins are the fronts-skins workstream's material, which takes
+        # the clock by its own occBind (this branch leaves it as it was)
         self.assertIn('towerMat.opacity = night * (REAL ? Math.min(1, occU.uOcc.value.y / 0.55) : 1);', SRC)
+        a = SRC.index("  step('Cladding the towers'")
+        self.assertNotIn('uOcc', SRC[a:SRC.index("mat.customProgramCacheKey = () => 'tower-skin-' + kind;", a)])
+        # the weekday is worked out only when the model's date moves, not every frame
+        u = fn('occUpdate')
+        self.assertIn('if (clock.y !== occDay.y || clock.m !== occDay.m || clock.d !== occDay.d) {', u)
+        self.assertEqual(u.count('new Date('), 1)
 
 
 class Shader(unittest.TestCase):
     def test_the_weather_comes_after_the_gains(self):
         a = SRC.index("        .replace('#include <color_fragment>', [\n          '#include <color_fragment>',\n          '{',")
         block = SRC[a:SRC.index('].join', a)]
-        # the block starts again from the vertex colour (the weather's own colour lands ahead of it)
-        self.assertLess(block.index("'  diffuseColor = vec4(diffuse, opacity);',"), block.index("'#include <color_fragment>',", block.index('diffuse, opacity')))
-        # and lays the snow and the wet at its end, after the roofs' art; walls take neither
+        # the block starts again from the vertex colour (the weather's own colour lands ahead of it), under REAL only:
+        # ?real=0 keeps the weather's colour under the gains, as it was
+        self.assertIn("...(REAL ? ['  diffuseColor = vec4(diffuse, opacity);', '#include <color_fragment>'] : []),", block)
+        # and lays the snow and the wet at its end, after the roofs' art; walls take neither; on a dry day none of it runs
         snow = block.index("'    fabSnowW = uFabSnow * fUp * (0.80 + 0.20 * fN);',")
+        gate = block.index("'  if (uFabSnow + uFabWet > 0.001) {',")
+        self.assertLess(gate, snow)
+        self.assertEqual(block[block.rindex('...(REAL ? [', 0, gate):gate].count('\n'), 1)
         self.assertGreater(snow, block.index("'      diffuseColor.rgb = mix(rFar, rCol, 1.0 - smoothstep(0.25, 1.4, rfw)) * (0.86 + 0.28 * fract(rsd * 7.13));',"))
         self.assertIn("'    float fUp = smoothstep(0.55, 0.85, n.y);',", block)
         self.assertIn('shader.uniforms.uFabSnow = wxSurfU.uSnowAcc; shader.uniforms.uFabWet = wxSurfU.uWet;', SRC)
         # the bright kinds and the snow never glow past a dark roof's colour at night
         self.assertIn("min(diffuseColor.rgb, vec3(0.06)) * uNight * ' + ROOF_NIGHT.toFixed(3)", SRC)
+        # the snow's screen gradient is taken under the uniform gate, not under the per-pixel fabSnowW
+        self.assertLess(block.index("'    float sfp = max(fwidth(sg.x), fwidth(sg.y)) * 1024.0;',"), block.index("'    if (fabSnowW > 0.001) {',"))
 
+    def test_the_weathering_runs_only_where_it_shows(self):
+        a = SRC.index("        .replace('#include <color_fragment>', [\n          '#include <color_fragment>',\n          '{',")
+        block = SRC[a:SRC.index('].join', a)]
+        gk = block.index("'      float gk = det * (1.0 - glass) * (tower ? 0.4 : 1.0) * uFabK.z;',")
+        self.assertLess(gk, block.index("'      if (gk > 0.001) {',"))
+        self.assertLess(block.index("'      if (gk > 0.001) {',"), block.index("float stk = shtVN(vec2(sx, v * 0.11))"))
+        self.assertIn('if (det > 0.001) { float drip = rectM(', block)
+
+    def test_the_walls_art_is_a_computers_whole(self):
+        a = SRC.index("        .replace('#include <color_fragment>', [\n          '#include <color_fragment>',\n          '{',")
+        block = SRC[a:SRC.index('].join', a)]
+        common = SRC[SRC.index("        .replace('#include <common>', [\n          '#include <common>',\n          WINDOW_INTERIOR_GLSL,"):a]
+        # the atlas lookup every device's pitched roofs use; the walls' kind and detail a computer's only
+        self.assertIn('...FAB_ATLAS_FN,', common)
+        self.assertIn("...(WALL_ART_DEV ? [...FAB_WALL_FN,\n          'float fabWallKind(", common)
+        self.assertIn("...(WALL_ART_DEV ? [\n            '      float wk = uWallOn > 0.5 ? fabWallKind(", block)
+        self.assertIn("] : ['      if (detT > 0.001 && wallM > 0.01) {']),", block)
+        self.assertIn("...(WALL_ART_DEV ? [\n            '  else if (abs(n.y) < 0.35 && st == 3 && variantF > 1.5", block)
+        # the tile coordinate's gradients ahead of the branch the glass's edge splits; none taken inside fabWallArt
+        self.assertLess(block.index('wTx = dFdx(wT), wTy = dFdy(wT);'), block.index("'      if (wk > -0.5 && wallM > 0.01) {',"))
+        fa = SRC[SRC.index("'vec3 fabWallArt("):SRC.index("  // the rooms behind the glass by day")]
+        self.assertNotIn('dFdx', fa)
+        self.assertNotIn('dFdy', fa)
+        # the landmarks: no phone re-hook, no flat-shaded material, the three planes' gradients before their branches
+        f = fn('landmarkDetail')
+        self.assertIn('if (!WALL_ART_DEV || !m || rbDone.has(m)) return;', f)
+        self.assertIn('|| m.flatShading) return;', f)
+        self.assertLess(f.index('tYx = dFdx(tY)'), f.index('if (an.x > 0.01)'))
     def test_the_roof_kinds_hold_at_any_distance(self):
         self.assertIn("'      vec3 rFar = mix(diffuseColor.rgb, rMean * ' + (gR * 0.9).toFixed(3) + ' * rKk, uRoofOwn);',", SRC)
         self.assertIn('uRoofKindK: { value: REAL ? new THREE.Vector4(0.8, 1.35, 1.9, 1.05) : new THREE.Vector4(1, 1, 1, 1) },', SRC)
@@ -275,6 +320,22 @@ console.log(JSON.stringify({ minFlat: Math.min(...ys(flat)), min: Math.min(...ys
         self.assertAlmostEqual(out['maxZ'], 12, places=5)       # the eaves move out; the gable ends stay on their walls
         self.assertEqual(sorted(tuple(o[:2]) for o in out['out']), [(0, -1), (0, 1)])
 
+    def test_an_unboxed_hip_sits_flush(self):
+        # with no soffit under it an overhang is a slit of sky from the street, so an unboxed hip has none: its eave
+        # corners on the footprint's own corners at the wall's top (0 is an overhang of nothing, not the old default)
+        out = self.run_js(r"""
+const ob = orientedBox([[0, 0], [12, 0], [12, 10], [0, 10]]);
+const pts = (g) => { const a = g.attributes.position.array, o = []; for (let i = 0; i < a.length; i += 3) o.push([a[i], a[i + 1], a[i + 2]]); return o; };
+const lo = (g) => pts(g).filter((p) => p[1] < 6.5);
+const flat = lo(hipGeom(ob, 6, 9, 0)), old = lo(hipGeom(ob, 6, 9));
+console.log(JSON.stringify({ x: [Math.min(...flat.map((p) => p[0])), Math.max(...flat.map((p) => p[0]))], z: [Math.min(...flat.map((p) => p[2])), Math.max(...flat.map((p) => p[2]))],
+  y: [...new Set(flat.map((p) => p[1]))], oldX: [Math.min(...old.map((p) => p[0])), Math.max(...old.map((p) => p[0]))] }));
+""")
+        self.assertEqual([round(v, 4) for v in out['x']], [0, 12])
+        self.assertEqual([round(v, 4) for v in out['z']], [0, 10])
+        self.assertEqual(out['y'], [6])
+        self.assertEqual([round(v, 4) for v in out['oldX']], [-0.3, 12.3])   # no overhang named: the old 0.3
+
     def test_an_l_takes_a_main_hip_and_a_cross_wing(self):
         out = self.run_js(r"""
 const rot = (pts, a, cx, cz) => pts.map(([x, z]) => [cx + x * Math.cos(a) - z * Math.sin(a), cz + x * Math.sin(a) + z * Math.cos(a)]);
@@ -306,11 +367,17 @@ console.log(JSON.stringify({ res, away: roofPlan(away, Math.abs(signedArea(away)
 
     def test_the_boards_are_a_computers(self):
         self.assertIn('const EAVE_OVH = 0.3, EAVE_FASCIA = 0.2, EAVE_BOX = REAL && !isTouch;', SRC)
+        self.assertIn('const EAVE_TIER = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };', SRC)
         f = fn('raisePitched')
-        # a phone's gable keeps its eave on the wall; a hip's plane meets the wall's top on every device under REAL
-        self.assertIn('quadGable(plan.quad, eaveY, ridgeY, null, EAVE_BOX ? EAVE_OVH : 0)', f)
-        self.assertIn('hipGeom(ob, eaveY - (REAL ? EAVE_OVH * s : 0), ridgeY, 0.3)', f)
-        self.assertEqual(f.count('if (EAVE_BOX)'), 3)
+        # the outer districts' only (the far ring's and the towns' were most of 26 MB under a pixel); there and on a phone
+        # every roof keeps its eave on the wall with no overhang (no soffit, so no slit of sky from the street); with a box
+        # a hip's plane meets the wall's top 0.3 m out; ?real=0 keeps the old hip, its overhang at the wall's height
+        self.assertIn('const box = EAVE_BOX && poly[0][0] > EAVE_TIER.x0 && poly[0][0] < EAVE_TIER.x1 && poly[0][1] > EAVE_TIER.z0 && poly[0][1] < EAVE_TIER.z1;', f)
+        self.assertIn('quadGable(plan.quad, eaveY, ridgeY, null, box ? EAVE_OVH : 0)', f)
+        self.assertIn('hipGeom(ob, eaveY - (box ? EAVE_OVH * s : 0), ridgeY, box || !REAL ? 0.3 : 0)', f)
+        self.assertIn('const A = plan.L.A, B = plan.L.B, o = box ? EAVE_OVH : 0,', f)
+        self.assertEqual(f.count('if (box)'), 3)
+        self.assertNotIn('if (EAVE_BOX)', f)
         # the cross wing stands 3 cm under the main one, where a face of each is one plane
         self.assertIn('wingGeom(B, yE - 0.03, eB + s * B.hs, o)', f)
         # every board quad is two triangles on four vertices, the chunks' own stride
@@ -330,6 +397,31 @@ class Copings(unittest.TestCase):
         self.assertIn('if (hs <= 3.8 && hl >= 1.3 * hs) for (const sg of [-1, 1]) cope(0, sg * (hs - 0.12), true, 2 * hl);', lay)
         # the deck's early continue comes after the copings, so a house with a deck keeps its party walls
         self.assertLess(lay.index('cope(0, sg * (hs - 0.12)'), lay.index('            if (hd < (deckArea(x0, z0) ? 0.125 : 0.04) && deckOk()) {\n              const [x, z] = at(du, 0);'))
+
+    def test_on_houses_roofs_only(self):
+        # the note carries a row flag (a row or a corner store, by the OPA word or the type, no more than 14 m up), and the
+        # lay lays a coping only on a flagged roof: an apartment slab, a garage or a school one house deep takes none
+        self.assertIn('const ROOF_KIT_STRIDE = 11, RK_NU = 8, RK_NV = 6;', SRC)
+        self.assertIn('ROOF_KIT.buf.set([ob.cx, ob.cz, top, ax.ax, ax.az, ax.hl, ax.hs, seed, lo, hi, row], ROOF_KIT.n * S);', SRC)
+        self.assertIn('roofKitNote(ob, ax, base + h, area, seed, poly, holes, REAL && h <= 14 && (fa ? fa[0] === 0 || fa[0] === 3 : t <= 1) ? 1 : 0);', fn('roofClutter'))
+        lay = fn('roofKitLay')
+        self.assertIn('row = B[o + 10] > 0.5;', lay)
+        self.assertIn('if (COPE < 0 || !row) return;', lay)
+
+    def test_the_kit_takes_the_snow(self):
+        # the kit's own hook keeps the weather's re-hook off it: its own snow on what faces up, and a snowy face glows no
+        # more than a snowy roof after dark (a dry one as before)
+        self.assertIn('if (REAL) sh.uniforms.uKitSnow = wxSurfU.uSnowAcc;', SRC)
+        self.assertIn("kitGlow = mix(diffuseColor.rgb, vec3(0.06), ks) * (1.0 + 0.6 * ks); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.86, 0.90), ks);", SRC)
+        self.assertIn("(REAL ? 'kitGlow' : 'diffuseColor.rgb')", SRC)
+
+
+class Merge(unittest.TestCase):
+    def test_the_debug_hook(self):
+        # the facade's probe line is the first commit's, which the other branches carry beside their own lines; the pitched
+        # counts join it from a line of their own after the first frame is asked for
+        self.assertIn("if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });", SRC)
+        self.assertIn('window.__dbg.facade = () => Object.assign(f0(), { pitched: PITCH_N }); }', SRC)
 
 
 if __name__ == '__main__':

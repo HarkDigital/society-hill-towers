@@ -33,7 +33,7 @@ class RoofKit(unittest.TestCase):
     def test_every_flat_roof_is_noted_before_the_touch_return(self):
         s = self.s
         body = s[s.index('  function roofClutter('):s.index('  // ---- pitched roofs for the packed tiers')]
-        self.assertLess(body.index('roofKitNote(ob, ax, base + h, area, seed, poly, holes);'), body.index('if (isTouch || h < 5) return;'))
+        self.assertLess(body.index('roofKitNote(ob, ax, base + h, area, seed, poly, holes, '), body.index('if (isTouch || h < 5) return;'))
 
     def test_the_step_and_the_refill(self):
         s = self.s
@@ -73,7 +73,7 @@ class OnTheRoof(unittest.TestCase):
 
     def test_notes_carry_the_footprint(self):
         s = self.s
-        self.assertIn('roofKitNote(ob, ax, base + h, area, seed, poly, holes);', s)
+        self.assertIn('roofKitNote(ob, ax, base + h, area, seed, poly, holes, ', s)
         self.assertIn("Math.floor(B[i * ROOF_KIT_STRIDE] / ROOFKIT.cell)", s)
         self.assertNotIn('B[i * 8]', s)
         # the baked boxes are tested against the footprint too

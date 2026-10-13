@@ -1412,7 +1412,8 @@
     let ax = ob.ux, az = ob.uz;
     if (ob.d > ob.w) { ax = -ob.uz; az = ob.ux; }
     const px = az, pz = -ax; // right-handed with y-up regardless of source winding
-    const hl = long / 2 + (overhang || 0.3), hs = span / 2 + (overhang || 0.3);
+    const ov = overhang == null ? 0.3 : overhang;   // (0 is a roof flush with its walls: the realism pass's unboxed eaves)
+    const hl = long / 2 + ov, hs = span / 2 + ov;
     const hr = Math.max(0.5, hl - hs); // ridge half-length
     const P = (u, v, y) => [ob.cx + ax * u + px * v, y, ob.cz + az * u + pz * v];
     const A = P(-hl, -hs, eaveH), B = P(hl, -hs, eaveH), C = P(hl, hs, eaveH), D = P(-hl, hs, eaveH);
@@ -1456,8 +1457,11 @@
   // Each note now carries an occupancy mask of its box, 8 cells along the long axis by 6 across, in the lay's own frame
   // (the perpendicular (-uz, ux)); a cell is on the roof only when its centre and the corners of its middle half are all
   // inside the footprint and outside its holes (its whole corners dropped the edge cells of every row a few centimetres
-  // out of square: 91% of roofs partial and 18% of the units gone). 48 bits in two floats (24 bits each, exact in a float32): 10 a note
-  const ROOF_KIT_STRIDE = 10, RK_NU = 8, RK_NV = 6;
+  // out of square: 91% of roofs partial and 18% of the units gone). 48 bits in two floats (24 bits each, exact in a float32).
+  // The realism pass: an eleventh, 1 on a house's roof (a row or a corner store under its flats, by the OPA word or the
+  // building's type, no more than 14 m up), the only roofs that take party-wall copings (an apartment slab, a garage or a
+  // school one house deep is not a row of houses)
+  const ROOF_KIT_STRIDE = 11, RK_NU = 8, RK_NV = 6;
   const ROOF_KIT = { buf: new Float32Array(ROOF_KIT_STRIDE * 65536), n: 0, partial: 0, empty: 0, hist: new Uint32Array(7) };   // hist: roofs by cells on, in eighths of 48
   function roofKitMask(ob, ax, poly, holes) {
     const ux = ax.ax, uz = ax.az, px = -uz, pz = ux, hl = ax.hl, hs = ax.hs;
@@ -1478,7 +1482,7 @@
     }
     return [lo, hi];
   }
-  function roofKitNote(ob, ax, top, area, seed, poly, holes) {
+  function roofKitNote(ob, ax, top, area, seed, poly, holes, row = 0) {
     if (area < 25 || area > 40000) return;
     const S = ROOF_KIT_STRIDE;
     if (ROOF_KIT.n * S + S > ROOF_KIT.buf.length) { const nb = new Float32Array(ROOF_KIT.buf.length * 2); nb.set(ROOF_KIT.buf); ROOF_KIT.buf = nb; }
@@ -1486,7 +1490,7 @@
     if (lo === 0 && hi === 0) { ROOF_KIT.empty++; return; }   // nowhere on it a unit could stand
     { let c = 0; for (let k = 0; k < 24; k++) c += (Math.floor(lo / 2 ** k) % 2) + (Math.floor(hi / 2 ** k) % 2); ROOF_KIT.hist[Math.min(6, Math.floor(c / 8))]++; }
     if (lo !== 0xffffff || hi !== 0xffffff) ROOF_KIT.partial++;
-    ROOF_KIT.buf.set([ob.cx, ob.cz, top, ax.ax, ax.az, ax.hl, ax.hs, seed, lo, hi], ROOF_KIT.n * S);
+    ROOF_KIT.buf.set([ob.cx, ob.cz, top, ax.ax, ax.az, ax.hl, ax.hs, seed, lo, hi, row], ROOF_KIT.n * S);
     ROOF_KIT.n++;
   }
   // a point in the lay's frame (u along the long axis, v across) on a note's mask
@@ -1500,7 +1504,7 @@
     if (h < 3) return;
     const ob = orientedBox(poly), ax = obbAxis(ob);
     if (ax.hs < 2.2) return;
-    roofKitNote(ob, ax, base + h, area, seed, poly, holes);
+    roofKitNote(ob, ax, base + h, area, seed, poly, holes, REAL && h <= 14 && (fa ? fa[0] === 0 || fa[0] === 3 : t <= 1) ? 1 : 0);
     // the baked boxes below stand only where their whole footprint is on the roof (the same fault as the lay's)
     const onRoof = (pts) => pts.every((q) => pointInPoly(q[0], q[1], poly) && !(holes && holes.some((hr) => hr && hr.length > 2 && pointInPoly(q[0], q[1], hr))));
     const add0 = add;
@@ -1685,9 +1689,13 @@
   // pitched roof overhangs its walls by EAVE_OVH along its own plane, so the plane still meets the wall's top (a hip's
   // eave stood 0.3 m out at the wall's height, a slit of sky under every one seen from the street), and on a computer
   // each eave is boxed in, a fascia board along its edge (white aluminium on most, dark on the rest) and the soffit back
-  // to the wall: the line of shade under the eaves that says a roof from any distance. Four quads a gable, eight a hip
-  // (168,536 quads over 33,386 gables, 4,269 hips and 60 Ls, about 26 MB of a computer's vertex and index buffers)
+  // to the wall: the line of shade under the eaves that says a roof near the eye. Four quads a gable, eight a hip. The
+  // outer districts' only (the review: across the far ring and the towns too they were 167,878 quads, about 26 MB of a
+  // computer's vertex and index buffers, most of them under a pixel from wherever the eye stands). Where there is no box
+  // (the far ring, the towns, a phone) a roof sits on its walls with no overhang at all: an overhang with no soffit under
+  // it is a slit of sky from the street (a roof is one-sided), which every hip showed before
   const EAVE_OVH = 0.3, EAVE_FASCIA = 0.2, EAVE_BOX = REAL && !isTouch;
+  const EAVE_TIER = { x0: -3700, x1: 2300, z0: -4480, z1: 6400 };   // the outer districts' box (pack_wide.py's WIDE)
   function eaveBox(ch, ax, az, bx, bz, nx, nz, eaveY, s, c, base, what = 3) {   // what: 1 the fascia, 2 the soffit
     const o = EAVE_OVH, yE = eaveY - o * s, y0 = yE - EAVE_FASCIA, y1 = yE + 0.03;
     const quad = (P, n) => {   // four corners, wound to face n
@@ -1746,15 +1754,16 @@
     const eaveY = base + h - plan.rise, ridgeY = base + h;
     appendFn(ch, poly, base - 1.0, eaveY, wallC, wallStyle, base, null, fh, null, true);
     const rc = capC || _roofTmp.copy(wallC).multiplyScalar(0.72);
-    const tc = EAVE_BOX ? (hash01(poly[0][0] * 0.37 + poly[0][1] * 0.91) < 0.65 ? _eaveC.setRGB(0.92, 0.9, 0.85) : _eaveC.setRGB(0.3, 0.26, 0.22)) : null;
+    const box = EAVE_BOX && poly[0][0] > EAVE_TIER.x0 && poly[0][0] < EAVE_TIER.x1 && poly[0][1] > EAVE_TIER.z0 && poly[0][1] < EAVE_TIER.z1;
+    const tc = box ? (hash01(poly[0][0] * 0.37 + poly[0][1] * 0.91) < 0.65 ? _eaveC.setRGB(0.92, 0.9, 0.85) : _eaveC.setRGB(0.3, 0.26, 0.22)) : null;
     { const k = plan.form === 5 ? 'L' : (plan.form === 2 ? 'hip' : 'gable'); if (PITCH_N[k]++ % 40 === 0 && PITCH_N.at[k].length < 200) PITCH_N.at[k].push([Math.round(poly[0][0]), Math.round(poly[0][1]), Math.round(eaveY)]); }
     if (plan.form === 5) {   // an L (roofL, under REAL only)
       // the cross wing 3 cm under the main one: where its side runs on in line with a main wing's face the two are one
       // plane, and the main wing's must win; its boards on that side stop short of the main wing's
-      const A = plan.L.A, B = plan.L.B, o = EAVE_OVH, s = plan.rise / Math.max(Math.min(A.w, A.d) / 2, 0.5), yE = eaveY - o * s, eB = eaveY - 0.03;
+      const A = plan.L.A, B = plan.L.B, o = box ? EAVE_OVH : 0, s = plan.rise / Math.max(Math.min(A.w, A.d) / 2, 0.5), yE = eaveY - o * s, eB = eaveY - 0.03;
       pushGeom(ch, hipGeom(A, yE, ridgeY, o), rc.r, rc.g, rc.b, 3, base);
       pushGeom(ch, wingGeom(B, yE - 0.03, eB + s * B.hs, o), rc.r, rc.g, rc.b, 3, base);
-      if (EAVE_BOX) {
+      if (box) {
         hipBoards(ch, A, eaveY, s, tc, base);
         const px = B.dz, pz = -B.dx, P = (u, v) => [B.ox + B.dx * u + px * v, B.oz + B.dz * u + pz * v];
         for (const sg of [-1, 1]) { const a = P(-o, sg * B.hs), b = P(sg === B.flush ? B.Lb - o : B.Lb, sg * B.hs); eaveBox(ch, a[0], a[1], b[0], b[1], px * sg, pz * sg, eB, s, tc, base); }
@@ -1767,18 +1776,19 @@
     if (plan.form === 2) {
       const ob = orientedBox(plan.quad);
       if (ob) {
-        // the hip's plane through the wall's top: its eave dropped by the overhang's share of the rise
+        // the hip's plane through the wall's top: its eave dropped by the overhang's share of the rise (?real=0: the old
+        // overhang at the wall's height)
         const s = plan.rise / Math.max(Math.min(ob.w, ob.d) / 2, 0.5);
-        pushGeom(ch, hipGeom(ob, eaveY - (REAL ? EAVE_OVH * s : 0), ridgeY, 0.3), rc.r, rc.g, rc.b, 3, base);
-        if (EAVE_BOX) hipBoards(ch, ob, eaveY, s, tc, base);
+        pushGeom(ch, hipGeom(ob, eaveY - (box ? EAVE_OVH * s : 0), ridgeY, box || !REAL ? 0.3 : 0), rc.r, rc.g, rc.b, 3, base);
+        if (box) hipBoards(ch, ob, eaveY, s, tc, base);
         return;
       }
     }
-    // (a phone's gable keeps its eave on the wall: with no soffit under it, a steep look up would find the sky through it)
-    const g = quadGable(plan.quad, eaveY, ridgeY, null, EAVE_BOX ? EAVE_OVH : 0);
+    // (with no box a gable keeps its eave on the wall: with no soffit under it, a look up would find the sky through it)
+    const g = quadGable(plan.quad, eaveY, ridgeY, null, box ? EAVE_OVH : 0);
     pushGeom(ch, g.slopes, rc.r, rc.g, rc.b, 3, base);
     pushGeom(ch, g.ends, wallC.r, wallC.g, wallC.b, ST_GABLE, base);
-    if (EAVE_BOX) for (const e of g.eaveOut) eaveBox(ch, e.a[0], e.a[1], e.b[0], e.b[1], e.nx, e.nz, eaveY, e.s, tc, base);
+    if (box) for (const e of g.eaveOut) eaveBox(ch, e.a[0], e.a[1], e.b[0], e.b[1], e.nx, e.nz, eaveY, e.s, tc, base);
   }
   const _roofTmp = new THREE.Color();
 
@@ -6478,10 +6488,12 @@
     for (let i = 1; i < tab.length; i++) if (m <= tab[i][0]) { const a = tab[i - 1], b = tab[i]; return a[1] + (b[1] - a[1]) * (m - a[0]) / Math.max(1, b[0] - a[0]); }
     return tab[tab.length - 1][1];
   }
+  const occDay = { y: -1, m: -1, d: -1, wd: 0 };   // the model date's weekday, worked out again only when the date moves
   function occUpdate() {
     if (!REAL) return;
     const m = ((clock.minutes % 1440) + 1440) % 1440;
-    const wd = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay(), weekend = wd === 0 || wd === 6;
+    if (clock.y !== occDay.y || clock.m !== occDay.m || clock.d !== occDay.d) { occDay.y = clock.y; occDay.m = clock.m; occDay.d = clock.d; occDay.wd = new Date(Date.UTC(clock.y, clock.m - 1, clock.d)).getUTCDay(); }
+    const wd = occDay.wd, weekend = wd === 0 || wd === 6;
     occU.uOcc.value.set(occAt(OCC_HOME, m), occAt(OCC_WORK, m) * (weekend ? 0.6 : 1), !weekend && m >= 1200 && m <= 1410 ? 1 : 0, 0);
   }
   const WINDOW_INTERIOR_GLSL = `
@@ -6728,28 +6740,40 @@
     uFabK: { value: new THREE.Vector4(1, 0, 1, 1) },
   };
   // the walls' art in GLSL (the facade hook's and the landmarks'): an atlas texel, and a wall's material as detail on its colour
-  const FAB_ART_FN = [
+  const FAB_ATLAS_FN = [
     // a texel of cell k of a g by g atlas (row 0 at the image's top), each cell padded a share pad of its side with its
-    // own wrapped edge, at tile coordinate t; the gradient is the tile's own, so the mip follows the pixel
-    'vec3 fabAtlas(sampler2D tex, float k, float g, float pad, vec2 t){',
+    // own wrapped edge, at tile coordinate t with its screen gradients tx, ty (taken by the caller where its control flow
+    // is uniform: a derivative inside a branch that splits a pixel quad, at a window's frame, is undefined)
+    'vec3 fabAtlasG(sampler2D tex, float k, float g, float pad, vec2 t, vec2 tx, vec2 ty){',
     '  float cs = 1.0 / g; vec2 o = vec2(mod(k, g), g - 1.0 - floor(k / g)) * cs; float sc = cs * (1.0 - 2.0 * pad);',
     '  vec2 uv = o + cs * pad + fract(t) * sc;',
     '#if __VERSION__ >= 300',
-    '  return textureGrad(tex, uv, dFdx(t) * sc, dFdy(t) * sc).rgb;',
+    '  return textureGrad(tex, uv, tx * sc, ty * sc).rgb;',
     '#else',
     '  return texture2D(tex, uv).rgb;',
     '#endif',
     '}',
+  ];
+  // the walls' atlas is a computer's (loadWallArt sets uWallOn nowhere else), so a phone's programs and the landmarks'
+  // hooks carry none of it: the kind, the detail, the gable ends (the review: dead code and extra programs on phones)
+  const WALL_ART_DEV = REAL && !isTouch && typeof WALL_ART !== 'undefined' && !!WALL_ART && !!WALL_ART.walls && !/[?&]walls=plain\b/.test(location.search);
+  const FAB_WALL_FN = [
+    // a wall point wp's tile coordinate in kind's material, offset by a seed of the building
+    'vec2 fabWallT(float kind, vec2 wp, float seed){',
+    '  vec2 M = uWallM[0];',
+    '  for (int i = 1; i < 9; i++) { if (float(i) == kind) M = uWallM[i]; }',
+    '  return wp / M + vec2(seed * 7.13, seed * 3.71);',
+    '}',
     // a wall's generated material as detail only: the texel over its kind's mean (half its colour, half its luminance,
-    // chroma of the way), faded out before the mips reach a neighbouring cell, so the wall keeps its own colour
-    'vec3 fabWallArt(vec3 col, float kind, vec2 wp, float seed, float k, float chroma){',
-    '  vec2 M = uWallM[0]; vec3 mean = uWallMean[0];',
-    '  for (int i = 1; i < 9; i++) { if (float(i) == kind) { M = uWallM[i]; mean = uWallMean[i]; } }',
-    '  vec2 t = wp / M + vec2(seed * 7.13, seed * 3.71);',
-    '  float fp = max(max(abs(dFdx(t.x)), abs(dFdy(t.x))), max(abs(dFdx(t.y)), abs(dFdy(t.y)))) * uWallPx;',
+    // chroma of the way), faded out before the mips reach a neighbouring cell, so the wall keeps its own colour; t from
+    // fabWallT and its gradients from the caller
+    'vec3 fabWallArt(vec3 col, float kind, vec2 t, vec2 tx, vec2 ty, float k, float chroma){',
+    '  vec3 mean = uWallMean[0];',
+    '  for (int i = 1; i < 9; i++) { if (float(i) == kind) mean = uWallMean[i]; }',
+    '  float fp = max(max(abs(tx.x), abs(ty.x)), max(abs(tx.y), abs(ty.y))) * uWallPx;',
     '  k *= 1.0 - smoothstep(20.0, 60.0, fp);',
     '  if (k < 0.002) return col;',
-    '  vec3 T = fabAtlas(uWallArt, kind, uWallGrid, uWallPad, t);',
+    '  vec3 T = fabAtlasG(uWallArt, kind, uWallGrid, uWallPad, t, tx, ty);',
     '  vec3 r = T / max(mean, vec3(1.0e-3));',
     '  float lr = dot(T, vec3(0.2126, 0.7152, 0.0722)) / max(dot(mean, vec3(0.2126, 0.7152, 0.0722)), 1.0e-3);',
     '  return mix(col, col * clamp(mix(vec3(lr), r, chroma), 0.0, 3.0), k);',
@@ -6929,10 +6953,11 @@
           // light; d is the signed distance above the joint's centre line, w its half width, anti-aliased
           'float jointRelief(float d, float w, float aa){ return (1.0 - smoothstep(0.0, w + aa, abs(d))) * (d > 0.0 ? 1.0 : -1.0); }',
           'float archM(vec2 m, vec2 c, float w, float h, float aa){ float r = w * 0.5; float dR = max(abs(m.x - c.x) - r, max(c.y - m.y, m.y - (c.y + h - r))); float dC = max(length(vec2(m.x - c.x, m.y - (c.y + h - r))) - r, (c.y + h - r) - m.y); return 1.0 - smoothstep(-aa, aa, min(dR, dC)); }',
-          ...FAB_ART_FN,
+          ...FAB_ATLAS_FN,
           // which of the atlas's walls a wall is: brick red, dark or painted, render, limestone, Formstone, marble, granite,
           // concrete (0 to 8) from its style, its colour (the stored colour, before the gain) and a seed of the building;
-          // -1 keeps the drawn texture (the siding's laps, a curtain wall)
+          // -1 keeps the drawn texture (the siding's laps, a curtain wall). A computer's only (WALL_ART_DEV)
+          ...(WALL_ART_DEV ? [...FAB_WALL_FN,
           'float fabWallKind(int st, vec3 c, float brickish, float sd){',
           '  float L = dot(c, vec3(0.2126, 0.7152, 0.0722)), ratio = c.r / max(c.g, 1.0e-3);',
           '  float sat = (max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b))) / max(max(c.r, max(c.g, c.b)), 1.0e-3);',
@@ -6945,7 +6970,7 @@
           '  if (st == 13) return brickish > 0.5 ? brick : 3.0;',
           '  if (brickish > 0.5) return brick;',
           '  return L > 0.30 && sd < 0.6 ? 2.0 : 3.0;',
-          '}',
+          '}'] : []),
         ].join('\n'))
         .replace('#include <color_fragment>', [
           '#include <color_fragment>',
@@ -6954,9 +6979,9 @@
           // the weather's colour (wxSurfacePatch, chained on after the build) inserts itself right after the chunk above,
           // ahead of this block, so the gains below took its snow of 0.88 to 0.15 and the roof art painted over three
           // quarters of what was left, and the rain's darkening went the same way. The block starts again from the vertex
-          // colour (the material has no map) and lays the snow and the wet itself at its end, after the gains and the art
-          '  diffuseColor = vec4(diffuse, opacity);',
-          '#include <color_fragment>',
+          // colour (the material has no map) and lays the snow and the wet itself at its end, after the gains and the art.
+          // ?real=0 keeps the weather's own colour under the gains, as it was
+          ...(REAL ? ['  diffuseColor = vec4(diffuse, opacity);', '#include <color_fragment>'] : []),
           '  diffuseColor.rgb = mix(vec3(dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722))), diffuseColor.rgb, ' + sat.toFixed(2) + ');',
           '  vec3 n = normalize(vWNorm);',
           '  diffuseColor.rgb *= mix(' + gW.toFixed(2) + ', ' + gR.toFixed(2) + ', step(0.7, n.y));',
@@ -6988,12 +7013,12 @@
           '    if (psd > 0.9 && pk != 2.0) pk = psd > 0.95 ? 0.0 : 3.0;',
           '    vec2 pM = pk < 0.5 ? uPitchM[0] : (pk < 1.5 ? uPitchM[1] : (pk < 2.5 ? uPitchM[2] : uPitchM[3]));',
           '    vec3 pMean = pk < 0.5 ? uPitchMean[0] : (pk < 1.5 ? uPitchMean[1] : (pk < 2.5 ? uPitchMean[2] : uPitchMean[3]));',
-          '    vec2 pt = pw / pM + psd * 13.0;',
-          '    float pfp = max(max(abs(dFdx(pt.x)), abs(dFdy(pt.x))), max(abs(dFdx(pt.y)), abs(dFdy(pt.y)))) * uPitchPx;',
+          '    vec2 pt = pw / pM + psd * 13.0, ptx = dFdx(pt), pty = dFdy(pt);',
+          '    float pfp = max(max(abs(ptx.x), abs(pty.x)), max(abs(ptx.y), abs(pty.y))) * uPitchPx;',
           '    float pOwn = pk > 1.5 && pk < 2.5 ? 0.15 : 0.45, pG = pGn * 0.9;',
           '    vec3 pFar = mix(diffuseColor.rgb, pMean * pG, pOwn);',
           '    if (pfp < 90.0) {',
-          '      vec3 pT = fabAtlas(uPitchArt, pk, 2.0, uPitchPad, pt);',
+          '      vec3 pT = fabAtlasG(uPitchArt, pk, 2.0, uPitchPad, pt, ptx, pty);',
           '      vec3 pCol = mix(diffuseColor.rgb * pT / max(pMean, vec3(1.0e-3)), pT * pG, pOwn);',
           '      diffuseColor.rgb = mix(pFar, pCol, 1.0 - smoothstep(30.0, 90.0, pfp));',
           '    } else diffuseColor.rgb = pFar;',
@@ -7421,8 +7446,9 @@
           '      col = mix(col, frameCol, mun * 0.85);',
           '      col = mix(col, shCol, shut * shOn * 0.9);',
           // the realism pass (buildings#10): a stain run under each sill, darkest at the sill, in streaks across it
-          ...(REAL ? ["      float drip = rectM(m, vec2(0.0, sill - 0.5), vec2(ww * 0.9, 0.9), aa) * sashOn * smoothstep(0.15, 0.9, shtVN(vec2(m.x * 9.0 + cell.x * 3.1, cell.y))) * smoothstep(sill - 0.95, sill - 0.1, m.y);",
-            '      col *= 1.0 - 0.12 * drip;'] : []),
+          // (with the detail: none where it has faded, and its noise not run there)
+          ...(REAL ? ["      if (det > 0.001) { float drip = rectM(m, vec2(0.0, sill - 0.5), vec2(ww * 0.9, 0.9), aa) * sashOn * smoothstep(0.15, 0.9, shtVN(vec2(m.x * 9.0 + cell.x * 3.1, cell.y))) * smoothstep(sill - 0.95, sill - 0.1, m.y);",
+            '        col *= 1.0 - 0.12 * drip * det; }'] : []),
           '      float door = rectM(m, vec2(0.0, 1.45), vec2(1.0, 2.2), aa) * isDoor;',
           '      float dframe = (rectM(m, vec2(0.0, 1.5), vec2(1.26, 2.3), aa) - door) * isDoor;',
           '      float fan = (1.0 - smoothstep(0.52, 0.52 + aa, length(vec2(m.x, m.y - 2.55)))) * step(2.55, m.y) * isDoor;',
@@ -7517,15 +7543,19 @@
           '      bool panel = (st == 2 || st == 6 || st == 16 || st == 18 || st == 15 || st == 13 || st == 7);',
           // the realism pass (buildings#8): the wall's generated material where the atlas is in (a computer), as detail on
           // its own colour; the panels keep their drawn seams over it, the siding its laps
-          '      float wk = uWallOn > 0.5 ? fabWallKind(st, diffuseColor.rgb / ' + gW.toFixed(3) + ', brickish, wsd) : -1.0;',
-          '      if (wk > -0.5 && wallM > 0.01) {',
-          '        col = fabWallArt(col, wk, vec2(uW, v), vTint * 3.1 + vBase * 0.013, wallM * (wk > 7.5 ? 0.7 : 1.0) * uFabK.w, wk < 2.5 ? 0.75 : 0.45);',
-          '        if (panel && detT > 0.001) {',
-          '          float seam = max(1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(v / 3.3 + 0.5) - 0.5) * 3.3), 1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(uW / 3.0 + 0.5) - 0.5) * 3.0));',
-          '          col *= 1.0 - 0.14 * seam * detT * wallM;',
-          '          col *= 1.0 - 0.06 * relK * detT * wallM * jointRelief((fract(v / 3.3 + 0.5) - 0.5) * 3.3, 0.03, aa);',
-          '        }',
-          '      } else if (detT > 0.001 && wallM > 0.01) {',
+          // (its tile coordinate and gradients ahead of the branch, which the glass's edge splits within a pixel quad)
+          ...(WALL_ART_DEV ? [
+            '      float wk = uWallOn > 0.5 ? fabWallKind(st, diffuseColor.rgb / ' + gW.toFixed(3) + ', brickish, wsd) : -1.0;',
+            '      vec2 wT = fabWallT(wk, vec2(uW, v), vTint * 3.1 + vBase * 0.013), wTx = dFdx(wT), wTy = dFdy(wT);',
+            '      if (wk > -0.5 && wallM > 0.01) {',
+            '        col = fabWallArt(col, wk, wT, wTx, wTy, wallM * (wk > 7.5 ? 0.7 : 1.0) * uFabK.w, wk < 2.5 ? 0.75 : 0.45);',
+            '        if (panel && detT > 0.001) {',
+            '          float seam = max(1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(v / 3.3 + 0.5) - 0.5) * 3.3), 1.0 - smoothstep(0.012, 0.012 + aa, abs(fract(uW / 3.0 + 0.5) - 0.5) * 3.0));',
+            '          col *= 1.0 - 0.14 * seam * detT * wallM;',
+            '          col *= 1.0 - 0.06 * relK * detT * wallM * jointRelief((fract(v / 3.3 + 0.5) - 0.5) * 3.3, 0.03, aa);',
+            '        }',
+            '      } else if (detT > 0.001 && wallM > 0.01) {',
+          ] : ['      if (detT > 0.001 && wallM > 0.01) {']),
           '        if (stone) {',
           '          float sc = floor(v / 0.55); float su = uW + mod(sc, 2.0) * 0.6;',
           '          float smh = 1.0 - smoothstep(0.01, 0.01 + aa, abs(fract(v / 0.55 + 0.5) - 0.5) * 0.55);',
@@ -7556,14 +7586,16 @@
           // broad blotches; scaled by its own mean so the wall's average holds as the detail fades with distance
           ...(REAL ? [
             '    {',
-            '      float sx = uW * 2.7 + vTint * 31.0;',
-            '      float stk = shtVN(vec2(sx, v * 0.11)) * (0.6 + 0.4 * shtVN(vec2(sx * 3.3, v * 0.5)));',
-            '      float topK = local ? 1.0 - smoothstep(0.0, 5.0, vWallH - v) : 0.0;',
-            '      float dirt = (0.35 + 0.65 * topK) * smoothstep(0.30, 0.75, stk);',
-            '      float splash = 1.0 - smoothstep(0.15, 0.9 + 0.7 * shtVN(vec2(uW * 0.9, 7.0)), v);',
-            '      float blot = shtVN(vec2(uW, v) * 0.12 + vTint * 13.0);',
             '      float gk = det * (1.0 - glass) * (tower ? 0.4 : 1.0) * uFabK.z;',
-            '      col *= (1.0 - 0.20 * dirt * gk) * (1.0 - 0.16 * splash * gk) * mix(1.0, 0.93 + 0.14 * blot, gk) * mix(1.0, 1.04, gk);',
+            '      if (gk > 0.001) {',   // (its four noises only where the detail stands: a phone's far fabric, the glass)
+            '        float sx = uW * 2.7 + vTint * 31.0;',
+            '        float stk = shtVN(vec2(sx, v * 0.11)) * (0.6 + 0.4 * shtVN(vec2(sx * 3.3, v * 0.5)));',
+            '        float topK = local ? 1.0 - smoothstep(0.0, 5.0, vWallH - v) : 0.0;',
+            '        float dirt = (0.35 + 0.65 * topK) * smoothstep(0.30, 0.75, stk);',
+            '        float splash = 1.0 - smoothstep(0.15, 0.9 + 0.7 * shtVN(vec2(uW * 0.9, 7.0)), v);',
+            '        float blot = shtVN(vec2(uW, v) * 0.12 + vTint * 13.0);',
+            '        col *= (1.0 - 0.20 * dirt * gk) * (1.0 - 0.16 * splash * gk) * mix(1.0, 0.93 + 0.14 * blot, gk) * mix(1.0, 1.04, gk);',
+            '      }',
             '    }',
           ] : []),
           '    // far away the pattern averages to the true facade mix — curtain-wall',
@@ -7608,30 +7640,34 @@
           '  }',
           // the realism pass (buildings#12): a gable end (style 3 with the second variant bit, raisePitched) is the house's
           // own wall carried up to the ridge, so it takes the wall's material, with no windows
-          '  else if (abs(n.y) < 0.35 && st == 3 && variantF > 1.5 && variantF < 2.5 && uWallOn > 0.5) {',
-          '    vec2 dirB = normalize(n.xz + vec2(1.0e-5, 0.0));',
-          '    float bsd = fract(sin(vTint * 91.3 + vBase * 17.1) * 43758.5453);',
-          '    float bk = fabWallKind(0, diffuseColor.rgb / ' + gW.toFixed(3) + ', step(diffuseColor.g * 1.12, diffuseColor.r), bsd);',
-          '    if (bk > -0.5) diffuseColor.rgb = fabWallArt(diffuseColor.rgb, bk, vec2(dot(vWPos.xz, vec2(-dirB.y, dirB.x)), v), vTint * 3.1 + vBase * 0.013, 1.0, bk < 2.5 ? 0.75 : 0.45);',
-          '  }',
+          ...(WALL_ART_DEV ? [
+            '  else if (abs(n.y) < 0.35 && st == 3 && variantF > 1.5 && variantF < 2.5 && uWallOn > 0.5) {',
+            '    vec2 dirB = normalize(n.xz + vec2(1.0e-5, 0.0));',
+            '    float bsd = fract(sin(vTint * 91.3 + vBase * 17.1) * 43758.5453);',
+            '    float bk = fabWallKind(0, diffuseColor.rgb / ' + gW.toFixed(3) + ', step(diffuseColor.g * 1.12, diffuseColor.r), bsd);',
+            '    vec2 bT = fabWallT(bk, vec2(dot(vWPos.xz, vec2(-dirB.y, dirB.x)), v), vTint * 3.1 + vBase * 0.013), bTx = dFdx(bT), bTy = dFdy(bT);',
+            '    if (bk > -0.5) diffuseColor.rgb = fabWallArt(diffuseColor.rgb, bk, bT, bTx, bTy, 1.0, bk < 2.5 ? 0.75 : 0.45);',
+            '  }',
+          ] : []),
           // the weather (weather#0, see the block's start): snow on whatever faces up, from a light dusting where it is
           // patchy to full cover, at the ground's own white; near a flat roof it takes the generated snow's drifts; the wet
-          // darkens what faces up. Walls take neither (a wall's brick went grey under the old floor of 0.14)
-          '  {',
-          '    float fUp = smoothstep(0.55, 0.85, n.y);',
-          '    float fN = shtVN(vWPos.xz * 0.31) * 0.6 + shtVN(vWPos.xz * 1.7 + 5.3) * 0.4;',
-          '    fabSnowW = uFabSnow * fUp * (0.80 + 0.20 * fN);',
-          '    if (fabSnowW > 0.001) {',
-          '      vec3 snowC = vec3(0.84, 0.86, 0.90);',
-          '      if (uSnowOn > 0.5) {',
-          '        vec2 sg = vWPos.xz / uSnowM;',
-          '        float sfp = max(fwidth(sg.x), fwidth(sg.y)) * 1024.0;',
-          '        if (sfp < 64.0) snowC *= mix(vec3(1.0), clamp(texture2D(uSnowArt, sg).rgb / max(uSnowMean, vec3(1.0e-3)), 0.6, 1.3), 1.0 - smoothstep(16.0, 64.0, sfp));',
-          '      }',
-          '      diffuseColor.rgb = mix(diffuseColor.rgb, snowC, fabSnowW);',
-          '    }',
-          '    diffuseColor.rgb *= 1.0 - 0.45 * uFabWet * fUp * (1.0 - fabSnowW);',
-          '  }',
+          // darkens what faces up. Walls take neither (a wall's brick went grey under the old floor of 0.14). On a dry day
+          // nothing of it runs (both uniforms are 0), and ?real=0 has none of it
+          ...(REAL ? [
+            '  if (uFabSnow + uFabWet > 0.001) {',
+            '    float fUp = smoothstep(0.55, 0.85, n.y);',
+            '    vec2 sg = vWPos.xz / uSnowM;',
+            '    float sfp = max(fwidth(sg.x), fwidth(sg.y)) * 1024.0;',
+            '    float fN = shtVN(vWPos.xz * 0.31) * 0.6 + shtVN(vWPos.xz * 1.7 + 5.3) * 0.4;',
+            '    fabSnowW = uFabSnow * fUp * (0.80 + 0.20 * fN);',
+            '    if (fabSnowW > 0.001) {',
+            '      vec3 snowC = vec3(0.84, 0.86, 0.90);',
+            '      if (uSnowOn > 0.5 && sfp < 64.0) snowC *= mix(vec3(1.0), clamp(texture2D(uSnowArt, sg).rgb / max(uSnowMean, vec3(1.0e-3)), 0.6, 1.3), 1.0 - smoothstep(16.0, 64.0, sfp));',
+            '      diffuseColor.rgb = mix(diffuseColor.rgb, snowC, fabSnowW);',
+            '    }',
+            '    diffuseColor.rgb *= 1.0 - 0.45 * uFabWet * fUp * (1.0 - fabSnowW);',
+            '  }',
+          ] : []),
           '}',
         ].join('\n'))
         // lit windows dim with distance (aerial perspective by night): the far ring's mass
@@ -7664,7 +7700,7 @@
   function loadWallArt() {
     if (!WALL_ART_ON) return;
     const W = WALL_ART, U = wallArtU;
-    if (W.walls && !isTouch && !/[?&]walls=plain\b/.test(location.search)) {
+    if (WALL_ART_DEV) {
       artImage(artSrc(W.walls, W.wallsHalf)).then((im) => {
         if (!im) return;
         const g = W.wallsGrid || 3, pad = W.wallsPad || 0.05;
@@ -7692,7 +7728,7 @@
   // render, concrete, or none (glass, metal, slate, copper, paint). The kind is a uniform, so every rebuild material
   // shares one program; it keeps the weather (userData.wxSurf)
   const RB_ART_GLSL = ['uniform sampler2D uWallArt; uniform float uWallOn, uWallPad, uWallGrid, uWallPx; uniform vec3 uWallMean[9]; uniform vec2 uWallM[9]; uniform float uRbKind;',
-    'varying vec3 vRbW; varying vec3 vRbN;', ...FAB_ART_FN].join('\n');
+    'varying vec3 vRbW; varying vec3 vRbN;', ...FAB_ATLAS_FN, ...FAB_WALL_FN].join('\n');
   const _rbC = new THREE.Color(), rbDone = new WeakSet();
   function landmarkKind(m) {
     _rbC.copy(m.color).multiplyScalar(1 / 0.88).convertLinearToSRGB();
@@ -7706,9 +7742,11 @@
     return -1;
   }
   function landmarkDetail(m) {
-    if (!REAL || !m || rbDone.has(m)) return;
+    if (!WALL_ART_DEV || !m || rbDone.has(m)) return;   // a phone has no walls' atlas: its rebuilds keep their own programs
     rbDone.add(m);
-    if (!m.isMeshStandardMaterial || m.map || m.transparent || m.metalness >= 0.3) return;
+    // (and never a flat-shaded one: it carries the weather's flag, and the weather's re-hook reads vNormal, which a
+    // flat-shaded program does not declare)
+    if (!m.isMeshStandardMaterial || m.map || m.transparent || m.metalness >= 0.3 || m.flatShading) return;
     const kind = landmarkKind(m);
     if (kind < 0) return;
     const kU = { value: kind };
@@ -7727,9 +7765,11 @@
           '  vec3 an = abs(normalize(vRbN)); an *= an; an /= max(an.x + an.y + an.z, 1.0e-4);',
           '  float ch = uRbKind < 1.5 ? 0.6 : 0.4, k = uRbKind > 5.5 && uRbKind < 6.5 ? 0.6 : 0.85;',
           '  vec3 c0 = diffuseColor.rgb, acc = vec3(0.0);',
-          '  if (an.x > 0.01) acc += an.x * fabWallArt(c0, uRbKind, vRbW.zy, 0.0, k, ch);',
-          '  if (an.z > 0.01) acc += an.z * fabWallArt(c0, uRbKind, vRbW.xy, 0.0, k, ch);',
-          '  if (an.y > 0.01) acc += an.y * fabWallArt(c0, uRbKind, vRbW.xz, 0.0, k * 0.6, ch);',
+          '  vec2 tX = fabWallT(uRbKind, vRbW.zy, 0.0), tZ = fabWallT(uRbKind, vRbW.xy, 0.0), tY = fabWallT(uRbKind, vRbW.xz, 0.0);',
+          '  vec2 tXx = dFdx(tX), tXy = dFdy(tX), tZx = dFdx(tZ), tZy = dFdy(tZ), tYx = dFdx(tY), tYy = dFdy(tY);',
+          '  if (an.x > 0.01) acc += an.x * fabWallArt(c0, uRbKind, tX, tXx, tXy, k, ch);',
+          '  if (an.z > 0.01) acc += an.z * fabWallArt(c0, uRbKind, tZ, tZx, tZy, k, ch);',
+          '  if (an.y > 0.01) acc += an.y * fabWallArt(c0, uRbKind, tY, tYx, tYy, k * 0.6, ch);',
           '  diffuseColor.rgb = acc + c0 * max(0.0, 1.0 - (an.x > 0.01 ? an.x : 0.0) - (an.z > 0.01 ? an.z : 0.0) - (an.y > 0.01 ? an.y : 0.0));',
           '}'].join('\n'));
     };
@@ -22141,16 +22181,21 @@ float pinOccGate() {
       k === 6 ? '  if (kn.y > 0.5) { vec2 g = vec2(kp.x / 1.1, kp.z / 1.0); float fr = max(1.0 - smoothstep(0.02, 0.05, abs(fract(g.x) - 0.5) * 2.0 - 0.94), 1.0 - smoothstep(0.02, 0.05, abs(fract(g.y) - 0.5) * 2.0 - 0.94)); float cell = 1.0 - smoothstep(0.0, 0.04, abs(fract(kp.x / 0.157) - 0.5) * 2.0 - 0.94); diffuseColor.rgb = mix(diffuseColor.rgb * (1.0 + 0.25 * cell * kd), vec3(0.22, 0.22, 0.23), fr * kd); }' : '',
       '}',
     ].join('\n') : '';
+    // the realism pass (the review: in snow every coping drew a brown line across the white roofs, since the kit's own
+    // hook keeps the weather's re-hook off it): snow on whatever of the kit faces up, at the snowy roofs' own white, and
+    // after dark a snowy face glows no more than a snowy roof (a dry one as it always did)
+    const KIT_SNOW = '{ float ks = uKitSnow * smoothstep(0.55, 0.85, normalize(vKN).y); kitGlow = mix(diffuseColor.rgb, vec3(0.06), ks) * (1.0 + 0.6 * ks); diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.84, 0.86, 0.90), ks); }';
     for (const [ki, kd] of kinds.entries()) {
       const g = mergeColored(kd.parts);
       const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: ki === 6 ? 0.35 : 0.75, metalness: 0.1 });
       mat.onBeforeCompile = (sh) => {
         sh.uniforms.uNight = nightUniform;
+        if (REAL) sh.uniforms.uKitSnow = wxSurfU.uSnowAcc;
         if (REAL) sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vKL; varying vec3 vKN;')
           .replace('#include <begin_vertex>', '#include <begin_vertex>\nvKL = position; vKN = normal;');
-        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;' + (REAL ? '\nvarying vec3 vKL; varying vec3 vKN;' : ''))
-          .replace('#include <color_fragment>', '#include <color_fragment>\n' + kitDetail(ki))
-          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * uNight * ' + ROOF_NIGHT.toFixed(3) + ';');
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNight;' + (REAL ? '\nvarying vec3 vKL; varying vec3 vKN; uniform float uKitSnow; vec3 kitGlow = vec3(0.0);' : ''))
+          .replace('#include <color_fragment>', '#include <color_fragment>\n' + kitDetail(ki) + (REAL ? '\n' + KIT_SNOW : ''))
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += ' + (REAL ? 'kitGlow' : 'diffuseColor.rgb') + ' * uNight * ' + ROOF_NIGHT.toFixed(3) + ';');
       };
       mat.customProgramCacheKey = () => 'roofkit-' + ki + (REAL ? '-real' : '');
       const m = new THREE.InstancedMesh(g, mat, kd.cap);
@@ -22249,10 +22294,10 @@ float pinOccGate() {
         const gain = 0.88;
         const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, color: new THREE.Color(gain, gain, gain), roughness: T.glass ? 0.3 : 0.88, metalness: T.glass ? 0.2 : 0 });
         mat.onBeforeCompile = (sh) => {
-          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform; sh.uniforms.uOcc = occU.uOcc;   // the realism pass: the suites by the clock (night#6)
+          sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform;
           sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed; varying float vSeed;')
             .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed;');
-          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; uniform vec4 uOcc; varying float vSeed; vec4 tsMask;')
+          sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight; varying float vSeed; vec4 tsMask;')
             .replace('#include <map_fragment>', 'tsMask = texture2D(uMask, vUv);\n#include <map_fragment>')
             .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.14, tsMask.r);')
             // a floor lights by suites, not by bays (a bay at a time read as salt and pepper): each floor (the tile's floors
@@ -22263,9 +22308,8 @@ float pinOccGate() {
               '  float sw = 3.0 + floor(fh * 4.0), bay = vUv.x * ' + T.nb.toFixed(1) + ' + fh * 11.0;\n' +
               '  float h = fract(sin(floor(bay / sw) * 12.9898 + fl * 78.233 + vSeed * 431.7) * 43758.5453);\n' +
               '  float glass = 1.0 - smoothstep(0.04, 0.22, dot(diffuseColor.rgb, vec3(0.2126, 0.7152, 0.0722)));\n' +
-              '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(' + (REAL ? '0.9' : '0.62') + ', fract(h * 5.3)));\n' +
-              // the realism pass: a third of the suites at the evening's office share (0.54), fewer as the night goes on
-              '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(' + (REAL ? '1.0 - 0.34 * uOcc.y / 0.54' : '0.66') + ', h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
+              '  vec3 lc = mix(vec3(1.0, 0.8, 0.56), vec3(0.84, 0.9, 1.0), step(0.62, fract(h * 5.3)));\n' +
+              '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(0.66, h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
         };
         mat.customProgramCacheKey = () => 'tower-skin-' + kind;
         const m = new THREE.Mesh(g, mat);
@@ -22434,7 +22478,7 @@ float pinOccGate() {
       for (const [, a] of list) for (let q = 0; q < a.length; q++) {
         const o = a[q] * ROOF_KIT_STRIDE, x0 = B[o], z0 = B[o + 1];
         if ((x0 - cx) ** 2 + (z0 - cz) ** 2 > R * R) continue;
-        const y = B[o + 2], ux = B[o + 3], uz = B[o + 4], hl = B[o + 5], hs = B[o + 6], seed = B[o + 7], mlo = B[o + 8], mhi = B[o + 9];
+        const y = B[o + 2], ux = B[o + 3], uz = B[o + 4], hl = B[o + 5], hs = B[o + 6], seed = B[o + 7], mlo = B[o + 8], mhi = B[o + 9], row = B[o + 10] > 0.5;
         const px = -uz, pz = ux, rot = Math.atan2(-uz, ux);
         const at = (u, v) => [x0 + ux * u + px * v, z0 + uz * u + pz * v];
         const H = (k) => hash01(seed * 1.37 + k * 0.731);
@@ -22459,7 +22503,7 @@ float pinOccGate() {
         };
         // the realism pass (gap#6): a party wall's coping, laid where the whole of it stands on the roof
         const cope = (u, v, along, len) => {
-          if (COPE < 0) return;
+          if (COPE < 0 || !row) return;   // a house's roof only (the note's row flag)
           const ok = [-0.4, 0, 0.4].every((t) => full || (along ? roofKitOn(mlo, mhi, u + t * len, v, hl, hs) : roofKitOn(mlo, mhi, u, v + t * len, hl, hs)));
           if (!ok) return;
           const [x, z] = at(u, v); putL(COPE, x, y, z, along ? rot : rot + Math.PI / 2, len);
@@ -26648,9 +26692,10 @@ float pinOccGate() {
     }
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
-    if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM, pitched: PITCH_N });   // the realism pass: the walls' art and the rooms' clock
+    if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (hashView.p) applyHashView(hashView.p);
     prefsReady = true;   // the init syncs inside the build steps must not write the blob
     requestAnimationFrame(frame);
+    if (window.__dbg && window.__dbg.facade) { const f0 = window.__dbg.facade; window.__dbg.facade = () => Object.assign(f0(), { pitched: PITCH_N }); }   // the realism pass: the packed tiers' pitched roofs beside the facade's state
   });
 })();
