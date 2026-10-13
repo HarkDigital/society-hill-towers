@@ -9,7 +9,13 @@ clones uniforms per material; these vectors return themselves), and a material w
 THREE.Fog exactly (?real=0, ?ap=0). Checked here: the chunks go in before anything that compiles or clones the fog's
 uniforms, the custom shaders still pair the fog's vertex and fragment chunks, the shared uniforms survive r149's clone, the
 preprocessed chunks keep three's linear branch, the visibility the weather gives, the probe's boot call, the cloud shadow
-as a direct-light mask, the lightning ribbon's streams and the switches back to the old look."""
+as a direct-light mask, the lightning ribbon's streams and the switches back to the old look.
+
+The second try adds the cloud volumes (a computer on WebGL2: Perlin-Worley shape and Worley detail drawn once at boot
+into 3D render targets, the cells carved on the same 2D field as the ground's shadows, three light taps up the sun's
+ray), the stars a city's sky lets through (the two dozen brightest at their real places, checked here against Polaris
+and Vega), the city's glow scattered along the low air as light added over the veil, the dome's far band lit from below
+by night, and the probe rebaked as the weather eases in."""
 import json
 from pathlib import Path
 import re
@@ -83,11 +89,15 @@ console.log(JSON.stringify({ frag: C.fog_fragment, pars: C.fog_pars_fragment, ve
         self.assertTrue(out['balanced'])
         self.assertIn('float fogFactor = smoothstep( fogNear, fogFar, vFogDepth );', out['frag'])   # three's own, the fallback
         self.assertIn('if ( fogAP.w > 0.5 ) {', out['frag'])
-        self.assertIn('gl_FragColor.rgb = mix( gl_FragColor.rgb, fogMix, fogFactor );', out['frag'])
+        # the city's glow by night is light scattered along the low air, added over the veil (fogAdd is zero by day and
+        # with AP off, so three's own mix stands)
+        self.assertIn('gl_FragColor.rgb = mix( gl_FragColor.rgb, fogMix, fogFactor ) + fogAdd;', out['frag'])
+        self.assertIn('vec3 fogMix = fogColor, fogAdd = vec3( 0.0 );', out['frag'])
         self.assertIn('vFogDepth = - mvPosition.z;', out['vert'])
         self.assertIn('vFogV = mvPosition.xyz;', out['vert'])
         self.assertIn('varying vec3 vFogV;', out['pv'])
-        for f in ('float apLayer( vec4 L, float dy, float d )', 'float apOD( vec3 v, float d )', 'vec3 apColor( vec3 v, float d )'):
+        for f in ('float apLayer( vec4 L, float dy, float d )', 'float apOD( vec3 v, float d )', 'vec3 apColor( vec3 v, float d )',
+                  'vec3 apGlow( vec3 v, float d )'):
             self.assertIn(f, out['pars'])
         # the sun's lobe is normalised to one at the sun: its five weights over 0.56
         self.assertIn('* 1.7857 );', out['pars'])
@@ -154,6 +164,75 @@ console.log(JSON.stringify(o));''' % ext.replace('\n', ' '))
         # the clear day's sun and hemisphere stand (Round 54): the bounce changes only away from a clear sky
         self.assertIn('sun.intensity = 1.85 * smooth(-3, 15, el) * sunDeckK * (1 - 0.55 * WXFX.gloom);', s)
         self.assertIn('hemi.groundColor.multiplyScalar(1 - 0.3 * dayF * (1 - sunDeckK * (1 - 0.55 * WXFX.gloom)));', s)
+
+    def test_the_cloud_volumes(self):
+        s = self.src
+        # a computer on WebGL2 only, one switch off; a phone and WebGL1 keep the first phase's march
+        self.assertIn("const CLOUD3D = { on: REAL && !isTouch && !!renderer.capabilities.isWebGL2 && !/[?&]clouds3d=0\\b/.test(location.search),", s)
+        f = body(s, '  function cloudVolumesBake() {')
+        self.assertIn('const shape = mk(128), detail = mk(64)', f)
+        self.assertIn('new THREE.WebGL3DRenderTarget(n, n, n)', f)
+        self.assertIn('t.wrapS = t.wrapT = t.wrapR = THREE.RepeatWrapping;', f)
+        self.assertIn('renderer.setRenderTarget(rt, z); renderer.render(sc, cam);', f)
+        self.assertIn('renderer.setRenderTarget(prevRT); renderer.autoClear = prevAuto;', f)   # in a finally
+        # a failed bake falls back before the deck's shader is written, and the deck reads the flag
+        self.assertIn('if (CLOUD3D.on) { try { cloudVolumesBake(); } catch (e) { CLOUD3D.on = false;', s)
+        self.assertLess(s.index('if (CLOUD3D.on) { try { cloudVolumesBake(); }'), s.index('  const cloudMat = new THREE.ShaderMaterial({'))
+        self.assertIn("${CLOUD3D.on ? 'precision highp sampler3D;", s)          # GLSL ES 3.00 has no default for it
+        self.assertIn('...(CLOUD3D.on ? { tCloudShape: { value: CLOUD3D.shape }, tCloudDetail: { value: CLOUD3D.detail } } : {}),', s)
+        # the volumes' cells sit on the same 2D field and threshold as the ground's shadows
+        self.assertIn('float cloudWc(float f, float cov) { float thr = 0.60 - cov * 0.40;', s)
+        self.assertIn('float thr = 0.60 - clamp(uCloudCov, 0.0, 1.0) * 0.40;', s)
+        # the Perlin-Worley spread to the full range (its 5th to 95th percentiles), or the cells extrude their footprint
+        self.assertIn('0.70, 0.95), 0.55, far);', s)
+        self.assertIn('0.7 * smoothstep(60.0, 260.0, footprint / scale)', s)     # and eased to its mean past a pixel's reach
+        # the march's light: three taps up the sun's ray, Beer's law with the multiple-scattering octave
+        self.assertIn('float tSun = max(exp(-odS), 0.30 * exp(-odS * 0.2));', s)
+        self.assertEqual(s.count('cloudTap(p + uSun * '), 3)
+
+    def test_the_generator_and_deck_templates_balance(self):
+        # the GLSL lives in JS template literals: a dropped brace or bracket would fail only at the GPU
+        s = self.src
+        a = s.index('      fragmentShader: `\n        uniform float uZ, uN, uKind;')
+        gen = s[a:s.index('      `,\n    });', a)]
+        b = s.index("      // ---- the volumes' density (the second phase)")
+        deck = s[b:s.index("` : ''}\n      ${CLOUD_LAYERS.map(cloudLayerShader).join('\\n')}", b)]   # the GLSL, without the template's own close
+        for t in (gen, deck):
+            for o, c in ('()', '{}', '[]'):
+                self.assertEqual(t.count(o), t.count(c), (o, t[:80]))
+
+    def test_the_stars_stand_where_they_are(self):
+        s = self.src
+        a = s.index('  const STARS = [')
+        table = s[a:s.index('  ];\n', a) + 5]
+        f = body(s, '  function starsAt(ms) {')
+        js = ('const DEG = Math.PI / 180, SITE = { lat: 39.9455, lon: -75.1447 };\n'
+              'const skyMat = { uniforms: { uStar: { value: Array.from({ length: 24 }, () => ({ set(x, y, z, w) { this.x = x; this.y = y; this.z = z; this.w = w; } })) } } };\n'
+              + table + '\nlet starsMs = NaN;\n' + f +
+              '\nconst alt = (v) => Math.asin(v.y) / DEG, az = (v) => (Math.atan2(v.x, -v.z) / DEG + 360) % 360;\n'
+              'starsAt(Date.UTC(2026, 9, 13, 2, 30));\n'   # 22:30 EDT on October 12
+              'const u = skyMat.uniforms.uStar.value;\n'
+              'console.log(JSON.stringify({ n: STARS.length, polaris: [alt(u[23]), az(u[23])], vega: [alt(u[2]), az(u[2])], sirius: u[0].w, polarisW: u[23].w }));')
+        out = self.node(js)
+        self.assertEqual(out['n'], 24)                                    # the dome's uStar[24]
+        self.assertIn('uniform vec4 uStar[24];', s)
+        self.assertAlmostEqual(out['polaris'][0], 39.95, delta=1.0)       # Polaris stands at the latitude, due north
+        self.assertTrue(out['polaris'][1] < 3 or out['polaris'][1] > 357, out['polaris'])
+        self.assertAlmostEqual(out['vega'][0], 41.1, delta=1.5)           # in the west after dark in October
+        self.assertAlmostEqual(out['vega'][1], 290.7, delta=2.0)
+        self.assertEqual(out['sirius'], 0)                                # under the horizon then: no light
+        self.assertGreater(out['polarisW'], 0.1)
+
+    def test_the_nights_glow_and_the_probe_follow_the_weather(self):
+        s = self.src
+        # the glow in the low air is light, added over the deck's veil as over the city's
+        self.assertIn('col = mix(col, fogMix, fogFactor) + fogAdd;', s)
+        # the dome's far cloud band is lit from below by night like the deck
+        self.assertIn("(REAL ? '    cc += uGlow * (1.7 - 0.5 * lit);\\n' : '')", s)
+        # the probe rebakes as the weather eases in and the night closes, not only with the sun
+        f = body(s, '  function applyLighting() {')
+        self.assertIn('if (REAL && Math.abs(envKey - lastEnvKey) > 0.15) lastEnvEl = 999;', f)
+        self.assertIn('lastEnvKey = envKey;', f)
 
 
 if __name__ == '__main__':
