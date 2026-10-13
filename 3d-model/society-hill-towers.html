@@ -8534,8 +8534,13 @@ RB.add({
     const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(out,3));g.computeVertexNormals();
     return g;
   }
-  function streetSurfaceY(f,x,z) {
-    let y=-Infinity;const p=streetLocal(f,x,z);
+  // Round 184 coda (Mike: the street text climbing an I-95 deck at Front and Laurel): a remembered surface more than
+  // STREET_OVER_MAX above the label's own pavement is something passing over it (a deck running alongside, a ramp), never
+  // its pavement, so it neither sets nor lifts the lettering. Its own pavement is the LOWEST remembered surface under the
+  // label's centreline at that point along it (a deck beside or over a street never lies under it alone), else its height
+  const STREET_OVER_MAX = 3.0;
+  function streetSurfaceY(f,x,z,maxY=Infinity,lowest=false) {
+    let y=lowest?Infinity:-Infinity;const p=streetLocal(f,x,z);
     for(const surface of f.surfaces){
       const b=surface.bounds;if(p[0]<b[0]-1e-7 || p[0]>b[1]+1e-7 || p[1]<b[2]-1e-7 || p[1]>b[3]+1e-7)continue;
       const ring=surface.poly,sign=Math.sign(signedArea(ring));let inside=true;
@@ -8543,26 +8548,32 @@ RB.add({
         const a=ring[i],b=ring[(i+1)%ring.length];
         if(sign*((b[0]-a[0])*(p[1]-a[1])-(b[1]-a[1])*(p[0]-a[0])) < -1e-7){inside=false;break;}
       }
-      if(inside)y=Math.max(y,surface.height(...p));
+      if(inside){const h=surface.height(...p);if(h<=maxY)y=lowest?Math.min(y,h):Math.max(y,h);}
     }
-    return y;
+    return lowest&&y===Infinity?-Infinity:y;
   }
   function streetSurfaceLift(f,tri,clearance) { // local [along,across,y]
     const bounds=streetBounds(tri),grade=triangleGrade(...tri);let lift=0;
     for(const surface of f.surfaces){
       if(!streetOverlap(bounds,surface.bounds))continue;
-      for(const p of streetIntersection(surface.poly,tri))
-        lift=Math.max(lift,surface.height(...p)+clearance-grade(...p));
+      for(const p of streetIntersection(surface.poly,tri)){
+        const h=surface.height(...p);
+        if(h<=grade(...p)+STREET_OVER_MAX)lift=Math.max(lift,h+clearance-grade(...p));
+      }
     }
     return lift;
   }
   function streetLabelGeometry(f,hw,hh,height) {
     const cols=Math.max(2,Math.ceil(hw*2/4)),rows=Math.max(1,Math.ceil(hh*2/4));
     const vertices=[],uv=[],index=[];
-    for(let c=0;c<=cols;c++)for(let r=0;r<=rows;r++){
-      const along=(c/cols*2-1)*hw,across=(r/rows*2-1)*hh;
-      const x=Math.fround(f.x+f.dx*along+f.dz*across),z=Math.fround(f.z+f.dz*along-f.dx*across);
-      vertices.push([x,z,Math.max(height(x,z),streetSurfaceY(f,x,z)+STREET_TEXT_CLEARANCE+0.005,roadGroundEdgeY(x,z)+STREET_TEXT_CLEARANCE+0.005)]);uv.push(c/cols,r/rows);
+    for(let c=0;c<=cols;c++){
+      const along=(c/cols*2-1)*hw,mx=f.x+f.dx*along,mz=f.z+f.dz*along,mid=streetSurfaceY(f,mx,mz,Infinity,true);
+      for(let r=0;r<=rows;r++){
+        const across=(r/rows*2-1)*hh;
+        const x=Math.fround(f.x+f.dx*along+f.dz*across),z=Math.fround(f.z+f.dz*along-f.dx*across);
+        const own=height(x,z),lim=Math.max(own,mid)+STREET_OVER_MAX;
+        vertices.push([x,z,Math.max(own,streetSurfaceY(f,x,z,lim)+STREET_TEXT_CLEARANCE+0.005,roadGroundEdgeY(x,z)+STREET_TEXT_CLEARANCE+0.005)]);uv.push(c/cols,r/rows);
+      }
     }
     for(let c=0;c<cols;c++)for(let r=0;r<rows;r++){
       const a=c*(rows+1)+r,b=a+rows+1;
@@ -9602,10 +9613,12 @@ RB.add({
   // traffic bake's own sampling), so the nearest aligned segment within that radius is the deck,
   // and a street farther than that from every chain is on the ground, whatever stands over it
   const OVP_OWN_R = 4.0;
-  function ovpDeckY(x, z, ux, uz) {
+  // wide (Round 184 coda, a street name already judged to be on its deck): any point on an aligned deck's own width counts,
+  // not only the 4 m about its chain a vehicle keeps to (an expressway's name is laid on its carriageway, off the deck's middle)
+  function ovpDeckY(x, z, ux, uz, wide) {
     const arr = ovpGrid.get(Math.floor(x / OVP_CELL) + ':' + Math.floor(z / OVP_CELL));
     if (!arr) return null;
-    let best = null, bestD = OVP_OWN_R * OVP_OWN_R;
+    let best = null, bestD = wide ? Infinity : OVP_OWN_R * OVP_OWN_R;
     for (const s of arr) {
       if (ovpSegs[s + 7] < 0) continue;            // sunken carriageways never lift
       const sax = ovpSegs[s], saz = ovpSegs[s + 1], sbx = ovpSegs[s + 2], sbz = ovpSegs[s + 3];
@@ -9616,6 +9629,7 @@ RB.add({
       t = clamp(t, 0, 1);
       const px = sax + dx * t - x, pz = saz + dz * t - z;
       const d2 = px * px + pz * pz;
+      if (wide && d2 > (ovpSegs[s + 6] + 0.3) * (ovpSegs[s + 6] + 0.3)) continue;
       if (d2 >= bestD) continue;
       bestD = d2;
       best = ovpSegs[s + 4] + (ovpSegs[s + 5] - ovpSegs[s + 4]) * t;
@@ -22319,7 +22333,7 @@ float pinOccGate() {
     }
     const L2 = ST_LABELS.l;
     const pos = [], uv = [], idx = [];
-    const stats={placements:L2.length/5,drawn:0,buried:0,missingAtlas:0,triangles:0};
+    const stats={placements:L2.length/5,drawn:0,buried:0,missingAtlas:0,triangles:0,warped:0,onDeck:0,warpedAt:[]};
     for (let i = 0; i + 4 < L2.length; i += 5) {
       const r=rects[L2[i]],f=streetFootprints[i/5];
       if(!r){stats.missingAtlas++;continue;}
@@ -22331,16 +22345,24 @@ float pinOccGate() {
         const eo=Math.min(o-TERRAIN.trenchW,TERRAIN.trenchE-o)/14,ez=Math.min(z-(CORE_EXT.z0+4),(CORE_EXT.z1-4)-z)/60,t=clamp(Math.min(eo,ez),0,1),ts=t*t*(3-2*t);
         return lerp(siteY(x,z,'road'),TERRAIN.trenchFloor+0.55,ts);};
       if(inCutName&&coreCut(f.x,f.z)!==null&&capAt(f.x,f.z)){stats.buried++;continue;}
+      const th=STREET_TEXT_HEIGHT[L2[i+4]],hw=th*r[2]/FS/2,hh=th*RH/FS/2;
+      // Round 184 coda: whether the label's street is a deck is decided once, along its length (five of nine points within
+      // OVP_OWN_R of an aligned deck), not vertex by vertex: a street running beside a deck took the deck's height at every
+      // vertex near its chain and its letters climbed the deck's side
+      let deckN=0;
+      for(let s9=-4;s9<=4;s9++){const t=s9/4*hw;if(ovpDeckY(f.x+f.dx*t,f.z+f.dz*t,f.dx,f.dz)!==null)deckN++;}
+      const onDeck=deckN>=5;
       const roadHeight=(x,z)=>{
-        let y=siteY(x,z,'road');const deck=ovpDeckY(x,z,f.dx,f.dz);
+        let y=siteY(x,z,'road');const deck=onDeck?ovpDeckY(x,z,f.dx,f.dz,true):null;
         if(deck!==null)y=deck;
         else if(inCutName){const cc=coreCut(x,z);if(cc!==null)y=cc;else{const cut=vineCut(x,z,-2);if(cut!==null)y=cut+0.45;}}
         return y;
       };
       // Labels inside covered tunnels remain hidden; their roofs are not pavement.
       if(siteY(f.x,f.z,'ground')-roadHeight(f.x,f.z)>2.5 && vineCut(f.x,f.z,-2)===null){stats.buried++;continue;}
-      const th=STREET_TEXT_HEIGHT[L2[i+4]],hw=th*r[2]/FS/2,hh=th*RH/FS/2;
       const mesh=streetLabelGeometry(f,hw,hh,(x,z)=>roadHeight(x,z)+0.38);
+      // a label lifted more than 1.5 m off its own street anywhere is warped (Round 184 coda: counted, __dbg.PERF.streetLabels)
+      {let w=0;for(const p of mesh.vertices)w=Math.max(w,p[2]-(roadHeight(p[0],p[1])+0.38));if(w>1.5){stats.warped++;if(stats.warpedAt.length<80)stats.warpedAt.push([ST_LABELS.names[L2[i]],Math.round(f.x),Math.round(f.z),+w.toFixed(1),onDeck?1:0]);}if(onDeck)stats.onDeck++;}
       const first=pos.length/3,u0=r[0]/AW,u1=(r[0]+r[2])/AW,v1=1-r[1]/AH,v0=1-(r[1]+r[3])/AH;
       for(let k=0;k<mesh.vertices.length;k++){
         const p=mesh.vertices[k];pos.push(p[0],p[2],p[1]);

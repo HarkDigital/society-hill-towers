@@ -56,6 +56,11 @@ results.crest=inspect(streetLabelGeometry(f,60,4,()=>.38),(x,z)=>crest(x)+.2*z);
 f=reset();grid(()=>0);plate(-70,70,-8,8,()=>15,1,0);plate(-4,4,-8,8,()=>40,0,1);
 results.deck=inspect(streetLabelGeometry(f,60,4,()=>.38),()=>15);
 results.deck.maxHeight=Math.max(...streetLabelGeometry(f,60,4,()=>.38).vertices.map(p=>p[2]));
+// Round 184 coda: a deck running alongside, over the label's edge (North Front Street beside I-95 at Laurel Street):
+// the street's own pavement under its centreline sets the level, and the deck 9 m up is passing over, never pavement
+f=reset();grid(()=>0);plate(-70,70,-3,3,()=>0,1,0);plate(-70,70,1,12,()=>9,1,0);
+results.beside=inspect(streetLabelGeometry(f,60,4,()=>.38),()=>0);
+results.beside.maxHeight=Math.max(...streetLabelGeometry(f,60,4,()=>.38).vertices.map(p=>p[2]));
 // Ground can peak between vertices independently of the recorded pavement.
 f=reset();const ridge=(x,z)=>Math.max(0,8-Math.abs(x-10))+.3*z;grid(ridge);
 results.ground=inspect(streetLabelGeometry(f,60,4,()=>.38),ridge);
@@ -77,6 +82,10 @@ console.log(JSON.stringify(results));
     def test_elevated_road_and_crossing_bridge_keep_distinct_levels(self):
         self.assertGreaterEqual(self.results['deck']['min'], .179)
         self.assertLess(self.results['deck']['maxHeight'], 16)
+
+    def test_a_deck_alongside_is_not_pavement(self):
+        self.assertGreaterEqual(self.results['beside']['min'], .179)
+        self.assertLess(self.results['beside']['maxHeight'], 1.5)
 
     def test_ground_triangle_interiors_stay_below_names(self):
         self.assertGreaterEqual(self.results['ground']['min'], .179)

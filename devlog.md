@@ -8080,3 +8080,14 @@ takes the tap). 435 tests.
   throws if the cells do not fit. `tests/test_tree_art.py` lays out the atlas under node for a computer and a phone and
   checks the last look's cells lie on the canvas. Washington Square by day from 45 m and 18 m and the South Philadelphia
   street: every tree a picture. 485 tests.
+- Round 184 coda, the street names (Mike, with a screenshot at Front and Laurel Streets under I-95: "The street text is
+  messed up at this view"): a name takes the highest remembered pavement under each of its vertices, and a deck running
+  ALONGSIDE a street passes the crossing-bridge test (aligned within 0.75), so North Front Street's letters stood up the
+  side of the I-95 deck, and the label's own height took the deck wherever a vertex came within 4 m of an aligned chain.
+  Now a surface more than `STREET_OVER_MAX` 3 m over the label's own pavement (the LOWEST remembered surface under its
+  centreline at that point along it, else its height) is passing over and neither sets nor lifts it, and whether a name
+  is on a deck is decided once along its length (five of nine points within 4 m of an aligned chain; `onDeck`), a deck
+  name then taking the deck anywhere on the deck's own width (`ovpDeckY(..., wide)`). `__dbg.PERF.streetLabels` counts a
+  name lifted more than 1.5 m off its own street anywhere (`warped`, `warpedAt`): 68 of 3,773 before, 25 after (14 deck
+  names at a deck's end, 11 older ground cases: the Vine Street cut, 30th Street, the I-76 ramps at Packer Avenue).
+  `tests/test_street_labels.py` adds a deck alongside a street over the label's edge (fails on the old code).
