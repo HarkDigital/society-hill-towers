@@ -12,6 +12,7 @@ const clock={y:2026,m:9,d:18,minutes:750};
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
 const smooth=(a,b,v)=>{let t=clamp((v-a)/(b-a),0,1);return t*t*(3-2*t);};
 const hash01=n=>{let s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);};
+const REAL=true,LITE=false,TIER2=false,location={search:''},sunWUniform={value:new V3(0,1,0)},CORE_EXT={x0:-640,x1:770,z0:-520,z1:850};   // the realism pass: the section reads the look's flag (no VEHICLE_ART here: the box cars) and the core's box (the shades)
 `;
 const create=new Function('THREE',setup+helpers+traffic+`return {TRAFFIC,CAR_MODELS,CARC,runs:trafficRuns,camera,clock,carGeom,carLightGeom,carRefreshView,carSpawn,carSample,carTransfer,carEntryGap,trafficPrepareGraph,trafficReconcile,trafficAdvance,carSpotRank,carOffset,carFeed,get count(){return trafficCars}};`);
 const run=(pts,oneway=true,aadt=80000)=>{let len=0,cum=[0];for(let i=1;i<pts.length;i++){len+=Math.hypot(pts[i][0]-pts[i-1][0],pts[i][2]-pts[i-1][2]);cum.push(len);}return {xs:Float32Array.from(pts.map(p=>p[0])),ys:Float32Array.from(pts.map(p=>p[1])),zs:Float32Array.from(pts.map(p=>p[2])),cum:Float32Array.from(cum),len,cls:2,oneway,aadt,mx:(pts[0][0]+pts.at(-1)[0])/2,mz:(pts[0][2]+pts.at(-1)[2])/2,cars:[],conn:[[],[]],want:0};};

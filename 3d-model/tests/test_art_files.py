@@ -26,6 +26,9 @@ def paths(o):
     return []
 
 
+MANIFESTS += ('vehicle_art.json',)   # the vehicles' (the realism pass)
+
+
 class Files(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -40,7 +43,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 

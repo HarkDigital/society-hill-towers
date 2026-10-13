@@ -1,0 +1,94 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vehicle Lamp Checks</title>
+<style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}pre{white-space:pre-wrap}</style>
+<h1>Vehicle Lamp Checks</h1>
+<p>The realism pass: the cars' head and tail lamps (CARLAMP) and the lamps that shine every way (vLampPoints: the aircraft's navigation lights, the ships' lights, the traffic signals' lenses), the production shaders cut from app.js, compiled with the page's log depth and drawn on a real GPU. A lamp far enough off to fall under the sprite's floor must still leave its light (at the floor's two or three pixels every pixel centre sat out on the falloff, and no aircraft ever showed its navigation lights); a head lamp shows from in front and not from behind, a tail by night and on the brake by day; a signal's lens a mile off by day leaves nothing.</p>
+<pre id="result">Running…</pre>
+<script src="../three.min.js"></script>
+<script>
+(async () => {
+  const out = document.getElementById('result');
+  const lines = [], check = (ok, m) => { lines.push((ok ? 'ok   ' : 'FAIL ') + m); if (!ok) throw Error(m); };
+  try {
+    const src = await (await fetch('../app.js', { cache: 'no-store' })).text();
+    const cut = (a, b) => { const i = src.indexOf(a); if (i < 0) throw Error('missing ' + a); return src.slice(i, src.indexOf(b, i)); };
+    const helpers = cut('  function septaMerge(', '  function septaVehGeom(');
+    const traffic = cut('  // ---------------------------------------------------------------- traffic', '  // ---------------------------------------------------------------- streetlights');
+    const S = 256;
+    const renderer = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true });
+    renderer.setPixelRatio(1); renderer.setSize(S, S);
+    const setup = `
+const V3=THREE.Vector3,document={getElementById:()=>null,createElement:()=>({width:0,height:0,getContext:()=>new Proxy({},{get:(t,k)=>k==='measureText'?()=>({width:10}):()=>{} ,set:()=>true})})},step=()=>{},syncLayerBtn=()=>{},postRaw=m=>m;
+const camera=new THREE.PerspectiveCamera(58,1,.75,26000),groupCity=new THREE.Group();
+const clock={y:2026,m:10,d:12,minutes:870};
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v)),lerp=(a,b,t)=>a+(b-a)*t;
+const smooth=(a,b,v)=>{let t=clamp((v-a)/(b-a),0,1);return t*t*(3-2*t);};
+const hash01=n=>{let s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);};
+const REAL=true,LITE=false,TIER2=false,location={search:''},sunWUniform={value:new V3(0,1,0)},nightUniform={value:0},lampUniform={value:0},POST={on:false};
+const isTouch=false,NEAR_R=804.67,SCORES={games:[]},SEPTA_STOPS=undefined;
+const inCore=()=>false,roadHalfW=()=>4.5,groundMeshLandY=()=>0,groundMeshY=()=>0,siteY=()=>0;
+const _sp=new V3(),_sq=new THREE.Quaternion(),_ss=new V3(),_sm=new THREE.Matrix4(),_sc=new THREE.Color();
+const flushInst=()=>{},anisoOf=n=>n,freeTexOnUpload=t=>t,artImage=()=>new Promise(()=>{}),artSrc=(a,b)=>a,lampLightPatch=()=>{};
+`;
+    const api = new Function('THREE', 'VEHICLE_ART', 'STREET_FURN', 'renderer', setup + helpers + traffic +
+      'return { carLampInit, carLampPut, carLampEnd, CARLAMP, vLampPoints, groupCity, camera, nightUniform, lampUniform };')(THREE, null, null, renderer);
+    const scene = new THREE.Scene(); scene.add(api.groupCity);
+    const cam = api.camera; cam.position.set(0, 1, 0); cam.lookAt(0, 1, -100); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+    const tgt = new THREE.WebGLRenderTarget(S, S), px = new Uint8Array(S * S * 4);
+    const shot = () => {
+      renderer.setRenderTarget(tgt); renderer.setClearColor(0x000000, 1); renderer.clear(); renderer.render(scene, cam);
+      renderer.readRenderTargetPixels(tgt, 0, 0, S, S, px); renderer.setRenderTarget(null);
+      let r = 0, g = 0; for (let i = 0; i < px.length; i += 4) { r = Math.max(r, px[i]); g = Math.max(g, px[i + 1]); }
+      return { r, g };
+    };
+    const programsOk = () => renderer.info.programs.every((p) => !p.diagnostics || p.diagnostics.runnable);
+    // the cars' lamps: one car straight down the view, 100 m off (its lamps a fraction of a pixel there)
+    api.carLampInit(4);
+    const lamps = (heading, brk, night, d) => {
+      api.lampUniform.value = night;
+      api.CARLAMP.n = 0;
+      api.carLampPut({ kind: 1, heading, px: 0, py: 0, pz: -d, brk }, 1);
+      api.carLampEnd();
+      return shot();
+    };
+    const toward = -Math.PI / 2, away = Math.PI / 2;
+    let s = lamps(toward, 0, 1, 100);
+    check(programsOk(), 'the car lamps\' shaders compile with the log depth');
+    check(s.r > 150 && s.g > 120, 'a head lamp 100 m off at night, under the floor, still shows (' + s.r + ', ' + s.g + ')');
+    s = lamps(away, 0, 1, 100);
+    check(s.r > 60 && s.g < s.r * 0.5, 'from behind at night: the tails, red, and no head (' + s.r + ', ' + s.g + ')');
+    s = lamps(away, 0, 0, 20);
+    check(s.r < 8, 'from behind by day, no brake: nothing (' + s.r + ')');
+    s = lamps(away, 1, 0, 20);
+    check(s.r > 120 && s.g < s.r * 0.5, 'from behind by day on the brake, 20 m off: the tails (' + s.r + ', ' + s.g + ')');
+    s = lamps(away, 1, 0, 1500);
+    check(s.r < 30, 'by day on the brake a mile off: its own light only, no red dot (' + s.r + ')');
+    api.CARLAMP.pts.visible = false;
+    // the every-way lamps: an aircraft's red navigation light 250 m off, 0.4 m across (a tenth of a pixel)
+    const nav = api.vLampPoints(4);
+    api.nightUniform.value = 1;
+    nav.put(0, 1, -250, 3.5, 0.12, 0.06, 0.4); nav.end();
+    s = shot();
+    check(programsOk(), 'the every-way lamps\' shaders compile');
+    check(s.r > 150, 'a navigation light 250 m off, under the floor, shows (' + s.r + ')');
+    nav.end(); nav.pts.visible = false;
+    // a traffic signal's lens (a small set): by day 400 m off it leaves nothing, by night 60 m off it shows
+    const sig = api.vLampPoints(4, true);
+    api.nightUniform.value = 0;
+    sig.putFacing(0, 1, -400, 4.5 * 0.55, 0.12 * 0.55, 0.04 * 0.55, 0.28, 0, 1); sig.end();
+    s = shot();
+    check(s.r < 20, 'a red lens 400 m off by day: nothing (' + s.r + ')');
+    api.nightUniform.value = 1;
+    sig.putFacing(0, 1, -60, 4.5, 0.12, 0.04, 0.28, 0, 1); sig.end();
+    s = shot();
+    check(s.r > 100, 'a red lens 60 m off by night, facing the eye: it shows (' + s.r + ')');
+    sig.putFacing(0, 1, -60, 4.5, 0.12, 0.04, 0.28, 0, -1); sig.end();
+    s = shot();
+    check(s.r < 8, 'the same lens facing away: nothing (' + s.r + ')');
+    out.textContent = lines.join('\n') + '\n\nALL PASS';
+  } catch (e) {
+    out.textContent = lines.join('\n') + '\n\n' + (e && e.stack || e);
+  }
+})();
+</script>
