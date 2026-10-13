@@ -1,0 +1,103 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Shadow Checks</title>
+<style>body{background:#141a20;color:#e8e6df;font:14px/1.5 monospace;padding:20px}pre{white-space:pre-wrap}</style>
+<h1>Shadow Checks</h1>
+<p>The realism pass: the far shadow map (FARSH's rewrite of r149's light loop, cut from app.js) on a real GPU. A ground
+receives two boxes' shadows, one inside the near box and one beyond it, from the sun and a black second light: the near
+shadow from the near map, the far one from the far map while its switch (shadow.radius) is on and none while it is off,
+and the black light adds no light. Then a tree card (TREE_ART_VERT and treeArtPatch, cut from app.js) is drawn into a
+sun's map, and the map must hold it at the crown.</p>
+<pre id="result">Running…</pre>
+<script src="../three.min.js"></script>
+<script>
+(async () => {
+  const out = document.getElementById('result');
+  const lines = [], res = {}, check = (ok, m) => { lines.push((ok ? 'ok   ' : 'FAIL ') + m); res[m] = ok; };
+  try {
+    const src = await (await fetch('../app.js', { cache: 'no-store' })).text();
+    const cut = (a, b) => { const i = src.indexOf(a); return src.slice(i, src.indexOf(b, i)); };
+    const unpack = (b) => (b[0] / 16777216 + b[1] / 65536 + b[2] / 256 + b[3]) / 256;
+    const mapAt = (r, light, p) => {
+      const v = new THREE.Vector4(p.x, p.y, p.z, 1).applyMatrix4(light.shadow.matrix);
+      const W = light.shadow.map.width, b = new Uint8Array(4);
+      r.readRenderTargetPixels(light.shadow.map, Math.floor(v.x / v.w * W), Math.floor(v.y / v.w * W), 1, 1, b);
+      return { map: unpack(b), z: v.z / v.w };
+    };
+    // ---- a tree card in a sun's map
+    {
+      const r = new THREE.WebGLRenderer({ antialias: false, logarithmicDepthBuffer: true }); r.setSize(256, 256);
+      r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+      const cv = document.createElement('canvas'); cv.width = cv.height = 1536;
+      const cx = cv.getContext('2d'); cx.fillStyle = '#3a6a2a'; cx.fillRect(0, 0, 1536, 1536);
+      const tex = new THREE.CanvasTexture(cv);
+      const TREE_ART = { looks: ['broadleaf'] }, waterU = { uTime: { value: 0 } };
+      const TREEART = { side: { tex, N: 256, A: 1536, C: 6 }, top: { tex, N: 256, A: 1536, C: 6 }, uLk: { value: [new THREE.Vector4(0, 1, 1, 0)] }, uLk2: { value: [new THREE.Vector4(0, 1, 1, 0)] }, uResH: { value: 600 } };
+      const cardShadowReach = () => {};
+      eval(cut('  const TREE_ART_VERT = ', '  function treeChipColor(').replace('const TREE_ART_VERT', 'var TREE_ART_VERT'));
+      const scene = new THREE.Scene();
+      const sun = new THREE.DirectionalLight(0xffffff, 1); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+      const c = sun.shadow.camera; c.left = c.bottom = -40; c.right = c.top = 40; c.near = 1; c.far = 400;
+      sun.position.set(-60, 120, 40); sun.target.position.set(0, 0, 0); scene.add(sun, sun.target);
+      const g = new THREE.PlaneGeometry(1, 1); g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0.9, 0), 1.4);
+      const mat = new THREE.MeshStandardMaterial({ alphaTest: 0.5, side: THREE.DoubleSide });
+      mat.onBeforeCompile = (sh) => treeArtPatch(sh, false);
+      const dmat = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking, alphaTest: 0.5, side: THREE.DoubleSide });
+      dmat.onBeforeCompile = (sh) => treeArtPatch(sh, true);
+      g.setAttribute('aLS', new THREE.InstancedBufferAttribute(new Float32Array([0, 0.5]), 2));
+      const im = new THREE.InstancedMesh(g, mat, 1);
+      im.setMatrixAt(0, new THREE.Matrix4().compose(new THREE.Vector3(0, 0, 0), new THREE.Quaternion(), new THREE.Vector3(10, 10, 8)));
+      im.customDepthMaterial = dmat; im.castShadow = true;
+      scene.add(im);
+      const box = new THREE.Mesh(new THREE.BoxGeometry(4, 4, 4), new THREE.MeshStandardMaterial()); box.position.set(20, 2, 0); box.castShadow = true; scene.add(box);
+      const cam = new THREE.PerspectiveCamera(50, 1, 1, 1000); cam.position.set(0, 20, 60); cam.lookAt(0, 5, 0);
+      r.render(scene, cam);
+      const crown = mapAt(r, sun, new THREE.Vector3(0, 6, 0)), boxTop = mapAt(r, sun, new THREE.Vector3(20, 4, 0)), bare = mapAt(r, sun, new THREE.Vector3(-15, 0, 12));
+      res.card = { crown, boxTop, bare };
+      check(boxTop.map < 0.99, 'a box stands in the sun\'s map');
+      check(bare.map > 0.99, 'bare ground is clear in it');
+      check(crown.map < 0.99, 'a tree card stands in the sun\'s map at its crown');
+      r.dispose();
+    }
+    // ---- the far map: FARSH's rewrite, then two boxes and a ground
+    {
+      const THREEc = THREE.ShaderChunk, keepLF = THREEc.lights_fragment_begin, keepSP = THREEc.shadowmap_pars_fragment;
+      const FARSH = { fail: '' };
+      eval('{' + cut('    const C = THREE.ShaderChunk, lf = C.lights_fragment_begin;', '      const L = new THREE.DirectionalLight(0x000000, 0);') + '}}');
+      check(FARSH.fail === '', 'the light loop rewrites');
+      const r = new THREE.WebGLRenderer({ antialias: false }); r.setSize(200, 200);
+      r.shadowMap.enabled = true; r.shadowMap.type = THREE.PCFSoftShadowMap;
+      const scene = new THREE.Scene();
+      const sunDir = new THREE.Vector3(-1, 1, 0.3).normalize();
+      const sun = new THREE.DirectionalLight(0xffffff, 0.9); sun.castShadow = true; sun.shadow.mapSize.set(1024, 1024);
+      let c = sun.shadow.camera; c.left = c.bottom = -60; c.right = c.top = 60; c.near = 1; c.far = 600;
+      sun.position.copy(sunDir).multiplyScalar(300); scene.add(sun, sun.target);
+      const far = new THREE.DirectionalLight(0x000000, 0); far.castShadow = true; far.shadow.mapSize.set(1024, 1024); far.shadow.radius = 1;
+      c = far.shadow.camera; c.left = c.bottom = -400; c.right = c.top = 400; c.near = 1; c.far = 900;
+      far.position.copy(sunDir).multiplyScalar(300); scene.add(far, far.target);
+      scene.add(new THREE.HemisphereLight(0xffffff, 0x444444, 0.3));
+      const ground = new THREE.Mesh(new THREE.PlaneGeometry(1000, 1000).rotateX(-Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x777777, roughness: 1 }));
+      ground.receiveShadow = true; scene.add(ground);
+      for (const x of [0, 200]) { const b = new THREE.Mesh(new THREE.BoxGeometry(4, 40, 4), new THREE.MeshStandardMaterial({ color: 0x888888 })); b.position.set(x, 20, 0); b.castShadow = true; scene.add(b); }
+      const cam = new THREE.OrthographicCamera(-300, 300, 300, -300, 1, 1000); cam.position.set(100, 500, 0); cam.up.set(0, 0, -1); cam.lookAt(100, 0, 0);
+      const px = (x, z) => { const v = new THREE.Vector3(x, 0, z).project(cam); const b = new Uint8Array(4); r.getContext().readPixels(Math.floor((v.x * 0.5 + 0.5) * 200), Math.floor((v.y * 0.5 + 0.5) * 200), 1, 1, r.getContext().RGBA, r.getContext().UNSIGNED_BYTE, b); return b[0]; };
+      // where each box's shadow lands: the box at 20 m up, cast away from the sun, well clear of its own footprint
+      const sh = (x) => [x - sunDir.x * 20 / sunDir.y, -sunDir.z * 20 / sunDir.y];
+      r.render(scene, cam);
+      const nearSh = px(...sh(0)), farSh = px(...sh(200)), litN = px(-40, 40), litF = px(160, 40);
+      far.shadow.radius = 0; r.render(scene, cam);
+      const farOff = px(...sh(200)), nearOff = px(...sh(0));
+      res.cascade = { nearSh, farSh, litN, litF, farOff, nearOff };
+      check(nearSh < litN * 0.7, 'the near box\'s shadow from the near map');
+      check(farSh < litF * 0.7, 'a shadow past the near box from the far map');
+      check(farOff > litF * 0.9, 'no far shadow while the switch is off');
+      check(nearOff < litN * 0.7, 'the near shadow stands with the far map off');
+      check(Math.abs(litN - litF) <= 3, 'the black light lights nothing');
+      THREEc.lights_fragment_begin = keepLF; THREEc.shadowmap_pars_fragment = keepSP;
+      r.dispose();
+    }
+  } catch (e) { lines.push('FAIL ' + (e && e.stack || e)); res.error = String(e && e.message || e); }
+  out.textContent = lines.join('\n');
+  window.__result = res; window.__done = true;
+})();
+</script>

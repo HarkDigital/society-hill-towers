@@ -117,7 +117,7 @@ class MikesTwoCalls(unittest.TestCase):
         # review: through receiveShadow (r149's per-object uniform), never castShadow, which recompiled every lit program
         self.assertIn('    if (isTouch) moonShadowsOff(el <= -3);', self.src)
         self.assertNotIn('sun.castShadow = cast', self.src)
-        f = self.src[self.src.index('  function moonShadowsOff(off) {'):]
+        f = self.src[self.src.index('  function moonShadowsOff(off, why = \'moon\') {'):]   # the realism pass: a reason per caller (the deck's too)
         f = f[:f.index('\n  }\n')]
         self.assertIn('o.receiveShadow = false; moonNoRecv.push(o);', f)
         self.assertIn('for (const o of moonNoRecv) o.receiveShadow = true;', f)
