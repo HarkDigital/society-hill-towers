@@ -66,8 +66,8 @@ class Page(unittest.TestCase):
 
     def test_the_wiring(self):
         s = self.s
-        self.assertIn('...vegGrassGLSL(forced),', s)
-        self.assertIn('vegSurfPatch(shader, forced);', fn(s, 'surfTexPatch'))
+        self.assertIn('...vegGrassGLSL(forced, paved),', s)   # the integration's paved flag (sixteen texture units)
+        self.assertIn('vegSurfPatch(shader, forced, paved);', fn(s, 'surfTexPatch'))
         self.assertIn('vegUpdate(now);', s)
         self.assertIn("step('Planting the woods', woodInit);", s)
         self.assertIn("const WOOD = { on: REAL && !isTouch && TIER === 0 && TREE_ART_ON,", s)   # never on a phone

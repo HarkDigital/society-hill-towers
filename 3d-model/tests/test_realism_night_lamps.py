@@ -232,12 +232,14 @@ class Wiring(unittest.TestCase):
         self.assertLess(far.index('if (LAMPNEAR.on) lampNearUpdate();'), far.index('if (LAMPMAP.rt && cx === LAMPMAP.cx && cz === LAMPMAP.cz) return;'))
 
     def test_wet_air(self):
+        # the lights in wet air are the weather's alone (wxHaloMesh, wxGrade): the night pass's own halo, its grown glare and
+        # its grade doubled every halo and, reading the grade's base once, kept a rainy load's lowered grade for the session
         fx = cut(self.s, '  function lampNightFx(', '  // ---------------------------------------------------------------- skyline lights')
-        self.assertIn('lampHaloU.value.set(h, (isTouch ? 2 : 4) * h);', fx)
-        self.assertIn('gradeU.uSat.value = G.sat - 0.2 * wxK; gradeU.uCon.value = G.con - 0.08 * wxK;', fx)
-        self.assertIn('if (!REAL) return;', fx)
-        # the glow keeps its core inside its old radius and grows a halo round it
-        self.assertIn("diffuseColor.a *= max(smoothstep(0.5, 0.08, lgr * vHk), uLampHalo.x * 0.3 * exp(-lgr * lgr * 24.0));", self.s)
+        for k in ('lampHaloU', 'gradeU', 'uBloom', 'WXFX'):
+            self.assertNotIn(k, fx)
+        self.assertIn('u.y = 1.6; u.w = 1;', fx)
+        self.assertNotIn('uLampHalo', self.s)
+        self.assertIn("'#include <color_fragment>\\n\\tdiffuseColor.a *= smoothstep(0.5, 0.08, length(gl_PointCoord - vec2(0.5)));'", self.s)
 
     def test_no_dash_in_user_strings(self):
         block = cut(self.s, '  const LAMPNEAR = {', '  const LOT_CENTER')
