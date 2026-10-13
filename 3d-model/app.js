@@ -9659,6 +9659,8 @@
         if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
         if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style);
+        if (MID_SKIN && !mh && !spec && h >= 9 && h < 35 && t !== 8 && t !== 9 && frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)
+          midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, style, i + 0.11, c, t, fa);   // Round 185
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
         else {
           appendBuilding(chk, poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, fh, capC, mh === 0);
@@ -11592,11 +11594,34 @@
     if (!kind) return;
     TSKIN.cands.push({ poly, y0: lifted ? y0 : y0 + 5, y1, kind, seed, col: col.clone() });
   }
+  // Round 185 (Mike: make it look photo realistic, facades everywhere): the mid-rise walls, three to ten storeys, that no
+  // house front dresses (apartments, lofts, warehouses, schools, offices, shops with flats over them) take a generated
+  // wall too, dealt by their facade style among the kinds that read as it; from 4 m up (the shopfront or lobby keeps the
+  // procedural ground floor). A computer only: a phone keeps its memory for the towers and the house fronts
+  const MID_SKIN = REAL && !isTouch && !/[?&]midskin=0\b/.test(location.search);
+  const MID_KINDS = {
+    12: ['loftbrick', 'warehouse', 'loftbrick'], 6: ['loftbrick', 'aptbrick', 'commercial'], 2: ['officemid', 'glass', 'unitized'],
+    16: ['officemid', 'precast', 'greygrid'], 18: ['gardenapt', 'aptbrick', 'stucco', 'modernapt'], 19: ['aptbrick', 'gardenapt', 'darkbrick'],
+    13: ['modernapt', 'darkbrick', 'stucco'], 4: ['institution', 'limestone'], 7: ['commercial', 'ribbon'], 17: ['institution', 'limestone', 'deco'],
+    14: ['institution', 'limestone'], 15: ['officemid', 'ribbon'], 5: ['commercial', 'paintedbrick', 'aptbrick'],
+  };
+  function midSkinNote(poly, y0, y1, style, seed, col, t, fa) {
+    if (!MID_SKIN || !TSKIN_ON || y1 - y0 < 8) return;
+    const st = style & 31;
+    if (st === 1 || st === 3 || st >= 20) return;   // a church, a blank wall, a researched curtain wall keep theirs
+    let list = MID_KINDS[st];
+    if (!list) list = (t === 4 || (fa && fa[0] === 5)) ? MID_KINDS[12] : ['aptbrick', 'aptbrick', 'paintedbrick', 'gardenapt', 'stucco'];   // brick first: Philadelphia is a brick city
+    const ok = list.filter((k) => FRONTS_DATA.tiles[k]);
+    if (!ok.length) return;
+    const kind = ok[Math.floor(hash01(seed * 5.17 + 0.3) * ok.length) % ok.length];
+    TSKIN.cands.push({ poly, y0: y0 + 4, y1, kind, seed, col: col.clone(), mid: true });
+    TSKIN.mid = (TSKIN.mid || 0) + 1;
+  }
   function frontsProbe() {
     return { on: FRONTS_ON, notes: FRONTS.n, sets: FR_SETS, laid: FRONTS.laid, perSet: { ...FRONTS.perSet }, relief: FRONTS.relief ? { ...FRONTS.relief } : null,
       dropped: FRONTS.dropped || 0, keep: FR_KEEP, failed: FRONTS.set.map((r, s) => r && r.failed ? FR_SETS[s] : null).filter(Boolean), noStreet: FRONTS.noStreet, sidesKnown: FRONTS.side ? FRONTS.side.reduce((a, v) => a + (v >= -1 ? 1 : 0), 0) : 0, loaded: FRONTS.set.map((r, s) => r && r.ready ? FR_SETS[s] : null).filter(Boolean),
       r: FRONTS.r, ms: FRONTS.ms, error: FRONTS.error, build: PERF.fronts || null,
-      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, ms: TSKIN.ms, error: TSKIN.error } };
+      towers: { on: TSKIN_ON, cands: TSKIN.cands.length, mid: TSKIN.mid || 0, laid: { ...TSKIN.laid }, meshes: TSKIN.meshes.length, ms: TSKIN.ms, error: TSKIN.error } };
   }
 
 
@@ -11725,7 +11750,9 @@
       const rplan = mh > 0 ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5, roofLot(style, fa));
       if (h <= 45 && t <= 6) { const tk = wideSeam ? 'far' : 'town'; colStat(tk + 'Form' + rb[1]); colStat(rplan ? tk + 'Pitched' : tk + 'Flat'); if (wideSeam && cz > -5180 && cz < -4480 && cx > -3700 && cx < 2300) { colStat('farBandForm' + rb[1]); colStat(rplan ? 'farBandPitched' : 'farBandFlat'); colStat(capC ? 'farBandCap' : 'farBandNoCap', capC); colStat('farBand', c); } }
       if (wideSeam && !mh && h >= 35 && t !== 8 && t !== 9) towerSkinNote(poly, base, base + h, style, null, i + 0.37, c, false, t);   // Round 182: the far ring's towers too
-      if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style);   // the far ring's houses (Round 181; a phone's stop at the outer districts)
+      if (wideSeam && !isTouch && !mh) frontNote(poly, base, rplan ? base + h - rplan.rise : base + h, i + 0.37, fa, t, Math.abs(signedArea(poly)), false, style);
+      if (MID_SKIN && wideSeam && !mh && h >= 9 && h < 35 && t !== 8 && t !== 9 && frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)
+        midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + h, style, i + 0.53, c, t, fa);   // Round 185   // the far ring's houses (Round 181; a phone's stop at the outer districts)
       if (rplan) raisePitched(getChunk(cx, cz), poly, base, h, rplan, c, style, fh, capC, (ch2, p2, y0, y1, col, st2, b2, holes, fh2, cap2, ao2) => appendB(ch2, p2, y0, y1, col, st2, b2, fh2, cap2, ao2));
       else {
         appendB(getChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + h, c, style, base, fh, capC, mh === 0);

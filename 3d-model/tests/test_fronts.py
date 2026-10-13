@@ -48,7 +48,10 @@ class TowerTiles(unittest.TestCase):
         d = json.loads((ROOT / 'fronts.json').read_text())
         self.assertEqual(set(d['tiles']), {'glass', 'glassdark', 'precast', 'deco', 'brick', 'resi', 'silver', 'blackgrid', 'officebrick', 'glassresi',
                                            'goldglass', 'greenglass', 'ribbon', 'brutalist', 'limestone', 'marble', 'terracotta', 'blueband',
-                                           'unitized', 'hotel', 'granite', 'fins', 'darkbrick', 'metalpanel', 'greygrid'})   # 25 since Round 184
+                                           'unitized', 'hotel', 'granite', 'fins', 'darkbrick', 'metalpanel', 'greygrid',
+                                           # Round 185: the mid-rise walls
+                                           'aptbrick', 'gardenapt', 'loftbrick', 'warehouse', 'institution', 'modernapt', 'commercial',
+                                           'paintedbrick', 'officemid', 'stucco'})   # 25 since Round 184, 35 since Round 185
         for k, t in d['tiles'].items():
             for f in ('img', 'imgHalf', 'mask'):
                 self.assertRegex(t[f], r'^art/tiles/%s(-mask)?(-half)?\.[0-9a-f]{10}\.(webp|png)$' % k)

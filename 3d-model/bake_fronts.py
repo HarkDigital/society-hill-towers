@@ -55,7 +55,11 @@ TILES = {'glass': (1.6, 4.0, True), 'glassdark': (1.6, 4.0, True), 'precast': (1
          'goldglass': (1.6, 4.0, True), 'greenglass': (1.6, 4.0, True), 'ribbon': (1.6, 3.8, False), 'brutalist': (1.6, 3.8, False),
          'limestone': (1.6, 3.9, False), 'marble': (1.6, 3.8, False), 'terracotta': (1.6, 3.9, False), 'blueband': (1.6, 4.0, True),
          'unitized': (1.6, 4.0, True), 'hotel': (1.6, 2.9, False), 'granite': (1.6, 3.9, False), 'fins': (1.6, 4.0, True),
-         'darkbrick': (1.6, 3.0, False), 'metalpanel': (1.6, 3.6, False), 'greygrid': (1.6, 3.8, False)}
+         'darkbrick': (1.6, 3.0, False), 'metalpanel': (1.6, 3.6, False), 'greygrid': (1.6, 3.8, False),
+         # Round 185: the mid-rise walls
+         'aptbrick': (1.6, 3.1, False), 'gardenapt': (1.6, 2.9, False), 'loftbrick': (1.6, 4.2, False), 'warehouse': (1.6, 4.5, False),
+         'institution': (1.6, 4.2, False), 'modernapt': (1.6, 3.1, False), 'commercial': (1.6, 3.6, False),
+         'paintedbrick': (1.6, 3.2, False), 'officemid': (1.6, 3.7, False), 'stucco': (1.6, 2.9, False)}
 TILE = 1024        # the tower tiles are cropped at this, then written at 640 and a phone's 320 (Round 184: 25 kinds)
 TILE_OUT = 640
 

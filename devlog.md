@@ -8148,3 +8148,19 @@ takes the tap). 435 tests.
 - The bare ground: a generated yard and vacant-lot surface (cracked concrete, packed dirt, weeds) comes through the lawn
   on a 55 m noise at the painted tile's brightness (`uYard`), so the alleys and yards between rows stop reading as lawn.
 - Before and after over South Philadelphia from 90 m, over the Delaware from 230 m and in Old City. 494 tests.
+
+## Round 185, step 3 — the mid-rise walls (Oct 12)
+
+- Mike chose facades everywhere, and said there were credits for more. Between the house fronts (near the eye) and the
+  tower cladding (35 m and up) stood every apartment block, loft, warehouse, school, office and shop with flats over it
+  of three to ten storeys, all on the procedural window grid. Ten more generated wall tiles from `gpt-image-2`
+  (`aptbrick`, a 1920s red brick apartment; `gardenapt`, 1960s tan brick; `loftbrick`; `warehouse`, concrete frame and
+  brick infill; `institution`, a 1930s school; `modernapt`, fibre-cement panels; `commercial`, 1950s buff brick with
+  ribbon windows; `paintedbrick`; `officemid`, 1980s precast with window bands; `stucco`), baked as the towers' are
+  (`bake_tile`, 35 kinds now). `midSkinNote` hands 'Cladding the towers' every building of 9 to 35 m in the outer
+  districts and the far ring that no house front dresses (`frontSetOf` < 0: the front quad sits 5 cm proud and the
+  cladding 12, so they never meet), from 4 m up (the shopfront or lobby keeps the ground floor), its kind dealt by its
+  facade style (`MID_KINDS`: a loft a loft or a warehouse, a residential slab garden apartments, brick or stucco, new
+  construction fibre cement or dark brick, a school limestone or institutional brick, and so on; otherwise brick first).
+  A computer only (`MID_SKIN`, `?midskin=0`): 13,350 buildings, about 190 bytes a wall, which a phone keeps for the
+  towers and the house fronts. Captured over Center City, Rittenhouse and Washington Square West. 495 tests.

@@ -72,5 +72,17 @@ class RoofsAndYards(unittest.TestCase):
         self.assertIn("if (uYardOn > 0.5) { float yw = smoothstep(0.40, 0.66, stn(sWP.xz * 0.018 + 5.3)) * 0.9;", self.s)
 
 
+class MidRiseWalls(unittest.TestCase):
+    """Round 185, step 3: the mid-rise walls no house front dresses take a generated wall on a computer."""
+
+    def test_the_wiring(self):
+        s = (ROOT / 'app.js').read_text()
+        self.assertIn("const MID_SKIN = REAL && !isTouch && !/[?&]midskin=0\\b/.test(location.search);", s)
+        self.assertEqual(s.count('midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + '), 2)   # the outer districts and the far ring
+        # never a house that takes a front (its front quad sits 5 cm proud, the cladding 12)
+        self.assertEqual(s.count("frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)"), 2)
+        self.assertIn("TSKIN.cands.push({ poly, y0: y0 + 4, y1, kind, seed, col: col.clone(), mid: true });", s)
+
+
 if __name__ == '__main__':
     unittest.main()

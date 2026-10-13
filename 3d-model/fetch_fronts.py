@@ -402,6 +402,17 @@ TILES = [
     ('tower', 'darkbrick', 'a 2020s residential tower of dark brown brick with large black-framed windows'),
     ('tower', 'metalpanel', 'a 2000s tower with silver metal panels and square windows'),
     ('tower', 'greygrid', 'a 1970s office tower with a grid of grey precast panels and bronze-tinted windows'),
+    # Round 185 (Mike: make it look photo realistic, facades everywhere): the mid-rise buildings' walls, three to ten storeys
+    ('tower', 'aptbrick', 'a 1920s six-storey red brick apartment building with pairs of white double-hung windows and limestone sills'),
+    ('tower', 'gardenapt', 'a 1960s apartment building of tan brick with aluminium sliding windows'),
+    ('tower', 'loftbrick', 'a 1910s red brick industrial loft with large multi-pane steel windows between brick piers'),
+    ('tower', 'warehouse', 'a concrete-frame warehouse with red brick infill panels and wide steel windows'),
+    ('tower', 'institution', 'a 1930s brick school building with tall multi-pane windows and limestone bands between floors'),
+    ('tower', 'modernapt', 'a 2020s mid-rise apartment building clad in grey and wood-tone fibre-cement panels with large black-framed windows'),
+    ('tower', 'commercial', 'a 1950s commercial building of buff brick with long horizontal metal-framed windows'),
+    ('tower', 'paintedbrick', 'a building of white-painted brick with black-framed double-hung windows'),
+    ('tower', 'officemid', 'a 1980s mid-rise office building of tan precast concrete with continuous bands of dark windows'),
+    ('tower', 'stucco', 'a 1990s apartment building with cream stucco walls and white-framed windows'),
 ]
 
 
