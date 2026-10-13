@@ -8185,3 +8185,17 @@ takes the tap). 435 tests.
   into the theme's colour as THEME.on comes up), so a plain night is the photo's gold, blue and red and a themed night
   deals the theme across the three slots as before. Captured by day and on the photo's night, from the street at 2nd
   and Walnut and from 95 m. `tests/test_landmark_lighting.py` follows the zones.
+
+## Round 187 — no front off its wall (Oct 12)
+
+- Mike: "Some of the new building fronts are obviously off kilter when applied to the buildings." A front lies on a side
+  of the house's fitted (minimum-area) box, and `frontNote` took any outline whose box was up to 1.8 times its area, so a
+  trapezoid on a diagonal street (East Passyunk, Ridge, Germantown Avenue), a wedge at a fork or a house with a recessed
+  front put its front on a box side that is not its wall: standing off it at an angle or bridging a recess. Now
+  `frontHonest` marks the box sides the outline's own edges run along (within 4 degrees and 35 cm, over 85% of the side),
+  packed over the set index in the note's tenth float (`set + 16 * mask`, read as `& 15` and `>> 4`), and `frontSide`
+  takes only an honest side; a house with none keeps the procedural facade, doors and all. 16,221 of 257,158 houses
+  turned away citywide, 240,937 noted. `tests/test_fronts.py` (a rectangle four sides, a trapezoid with its end leaning 10
+  degrees three, a house with a 1.2 m recess across its front three). Also a headless renderer for the capture skill
+  (`scripts/render.mjs`: serves a folder on a free port, its own headless Chrome on the Mac's GPU, three renders at a time),
+  so parallel work can capture without the Browser pane.

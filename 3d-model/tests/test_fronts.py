@@ -148,7 +148,7 @@ class SetsAndSides(unittest.TestCase):
         areas = s[a:s.index('\n  // the set a house', a)]
         js = ("const FR_SETS = ['federal', 'southrow', 'shop', 'victorian', 'porch', 'airlite', 'newbuild', 'stonetwin', 'siding',"
               " 'univcity', 'chestnut', 'manayunk', 'loft', 'mixeduse', 'rittenhouse'];\n"
-              "const FR_SET_IX = (name) => FR_SETS.indexOf(name), FR_STRIDE = 10;\n" + areas + '\n' + fn(s, 'frontSetOf') + fn(s, 'frontSide') + body)
+              "const FR_SET_IX = (name) => FR_SETS.indexOf(name), FR_STRIDE = 10;\n" + areas + '\n' + fn(s, 'frontSetOf') + fn(s, 'frontSide') + fn(s, 'frontHonest') + fn(s, 'orientedBox') + body)
         r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
         self.assertEqual(r.returncode, 0, r.stderr)
         return json.loads(r.stdout)
@@ -184,7 +184,7 @@ console.log(JSON.stringify({
         # a rowhouse 5 m wide and 14 m deep, its long axis along z, a street along x 9 m north of its front wall and
         # another along z 7 m east of its side wall: the front faces the north street, though the side street is nearer
         o = self.run_js(r'''
-const FRONTS = { buf: new Float32Array([0, 0, 0, 1, 7, 2.5, 0, 9, 0.5, 1]) };   // cx, cz, u (0, 1): the box's +u side faces south
+const FRONTS = { buf: new Float32Array([0, 0, 0, 1, 7, 2.5, 0, 9, 0.5, 1 + 16 * 15]) };   // cx, cz, u (0, 1): the box's +u side faces south; every side honest (Round 187)
 let roads = [];
 function septaSnapRoad(x, z, maxD) {
   let best = null, bd = maxD;
@@ -201,6 +201,23 @@ const c = frontSide(0);
 console.log(JSON.stringify([a, b, c]));
 ''')
         self.assertEqual(o, [1, 1, -1])   # 1: the -u side (north); -1 with no street at all
+
+    def test_a_front_takes_only_an_honest_side(self):
+        # Round 187 (Mike: fronts "obviously off kilter"): a side of the fitted box is honest only where the outline's own
+        # wall runs along it. A rectangle: all four; a trapezoid whose street wall leans 10 degrees: not that side; a house
+        # with a 1.2 m recess across most of its front: not that side either
+        o = self.run_js(r'''
+const sides = (poly) => { const ob = orientedBox(poly); return frontHonest(poly, ob); };
+const rect = [[0, 0], [5, 0], [5, 14], [0, 14]];
+const t = Math.tan(10 * Math.PI / 180);
+const trap = [[0, 0], [5, 5 * t], [5, 14], [0, 14]];
+const jog = [[0, 0], [1, 0], [1, 1.2], [4, 1.2], [4, 0], [5, 0], [5, 14], [0, 14]];
+// and the street side follows it: the rectangle's +u... the trapezoid's leaning end is never chosen
+console.log(JSON.stringify({ rect: sides(rect), trapBits: sides(trap), jogBits: sides(jog) }));
+''')
+        self.assertEqual(o['rect'], 15)
+        self.assertEqual(bin(o['trapBits']).count('1'), 3)   # the leaning end is out, the other three stand
+        self.assertEqual(bin(o['jogBits']).count('1'), 3)    # the recessed front is out
 
 
 if __name__ == '__main__':
