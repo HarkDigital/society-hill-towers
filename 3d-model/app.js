@@ -4171,17 +4171,26 @@
     tex.needsUpdate = true;
     return tex;
   }
-  // the water's own sky probe, re-baked at the end of every refreshEnv: the glass's probe scene with everything but the
-  // dome and the ground hidden (the sun's disc, the placeholder boxes: the water's glint and the planar pass are their own),
-  // no blur. Its state lives on the function: refreshEnv first runs before this section has executed
+  // the water's own sky probe, re-baked at the end of every refreshEnv: the glass's probe scene with the sun's disc and the
+  // placeholder boxes hidden (the water's glint and the planar pass are their own), anything else in it kept (a cloud or
+  // an atmosphere added there is the water's sky too), no blur. A phone's is a 128 cube from its own generator (Round 158:
+  // memory is a phone's limit; the glass's 256 cube makes a 768 by 1024 half-float target, 6.3 MB, and the water's was a
+  // second one; this is 384 by 512, 1.6 MB, and its ping-pong target as much): r149's fromScene fixes 256, so that
+  // generator's _setSize is its own. Its state lives on the function: refreshEnv first runs before this section has executed
+  function waterPmrem() {
+    const S = waterEnvBake;
+    if (!isTouch) return pmremGen;
+    if (!S.gen) { S.gen = new THREE.PMREMGenerator(renderer); S.gen._setSize = function () { this._lodMax = 7; this._cubeSize = 128; }; }
+    return S.gen;
+  }
   function waterEnvBake() {
     const S = waterEnvBake;
     if (!REAL) return;
     if (!S.mats) S.mats = [];
     const hid = [];
-    for (const o of envScene.children) if (o !== envSky && o !== envGround && o.visible) { o.visible = false; hid.push(o); }
+    for (const o of envScene.children) if ((o === envSun || (o.geometry && o.geometry.type === 'BoxGeometry')) && o.visible) { o.visible = false; hid.push(o); }
     let rt = null;
-    try { rt = pmremGen.fromScene(envScene, 0); } finally { for (const o of hid) o.visible = true; }
+    try { rt = waterPmrem().fromScene(envScene, 0); } finally { for (const o of hid) o.visible = true; }
     if (S.rt) S.rt.dispose();
     S.rt = rt;
     for (const m of S.mats) m.envMap = rt.texture;
@@ -4197,6 +4206,7 @@
     uWake: { value: Array.from({ length: WAKE_N }, () => new THREE.Vector4()) },   // x, z, heading (rad, compass), speed m/s
     uWakeS: { value: Array.from({ length: WAKE_N }, () => new THREE.Vector2(1, 1)) },   // length, beam
     tRefl: { value: null }, uReflMat: { value: new THREE.Matrix4() }, uReflOn: { value: 0 }, uReflY: { value: -7.34 }, uReflTexel: { value: new THREE.Vector2(1 / 640, 1 / 400) },
+    uReflCrop: { value: new THREE.Vector2(1, 1) },   // the mirror's image is cropped to the water's box on the screen: full-frame offsets scale by this
   });
   // the planar mirror (desktop post pipeline only): the city drawn from the eye mirrored in the river's plane, at half the
   // frame's size, into its own target, before the scene pass. Its own pass with its own counts (REFL.calls, REFL.tris): the
@@ -4204,7 +4214,10 @@
   // but the water, the flats on the ground, the pins, the labels, the sky and the weather; pinDepthClear (and so the AO's
   // depth copy) never draws in it. ?refl=0 turns it off; __dbg.water() reports it
   const REFL = { on: REAL && POST.on && !/[?&]refl=0\b/.test(location.search), rt: null, cam: new THREE.PerspectiveCamera(), w: 0, h: 0, need: false, seen: -1e9,
-    calls: 0, tris: 0, ms: 0, n: 0, sweepAt: 0, layered: 0, layer: 5, odd: false, at: new THREE.Vector3(1e9, 0, 0), atQ: new THREE.Quaternion() };
+    calls: 0, tris: 0, ms: 0, n: 0, sweepAt: 0, layered: 0, layer: 5, odd: false, at: new THREE.Vector3(1e9, 0, 0), atQ: new THREE.Quaternion(),
+    // the crop (reflBox: box in the mirror's NDC, cx and cy its scale), the reach (reflReach: list the sweep's meshes, cut
+    // those sitting a pass out; far overrides REFL_FAR when set), a still eye's count; noCrop and noReach are __dbg's A-B
+    box: null, boxM: [-1, 1, -1, 1], noCrop: false, cx: 1, cy: 1, idle: 0, far: 0, still: 0, list: [], cut: [], noReach: false, nCut: 0 };
   const REFL_FAR = 3500;
   const _rfA = new THREE.Vector3(), _rfN = new THREE.Vector3(0, 1, 0), _rfP = new THREE.Plane(), _rfV = new THREE.Vector4(), _rfQ = new THREE.Vector4(), _rfC = new THREE.Color(), _rfS = new THREE.Vector2();
   // the body's shading: kind 'river' (the rivers, their slips and rings, ponds and reservoirs), 'basin' (fountains), 'pool'
@@ -4218,7 +4231,7 @@
     const bodyK = opt.bodyK || 1;
     mat.onBeforeCompile = (sh) => {
       for (const k of ['uTime', 'uWAmp', 'uWDir', 'uSun', 'uGlint', 'uWaterHorizon', 'uWaterZenith', 'tWave', 'uExpo', 'uWEnvK', 'uSunRad', 'uCoxMunk', 'uRain', 'uHail', 'uCover', 'uWake', 'uWakeS']) sh.uniforms[k] = waterU[k];
-      if (refl) for (const k of ['tRefl', 'uReflMat', 'uReflOn', 'uReflY', 'uReflTexel']) sh.uniforms[k] = waterU[k];
+      if (refl) for (const k of ['tRefl', 'uReflMat', 'uReflOn', 'uReflY', 'uReflTexel', 'uReflCrop']) sh.uniforms[k] = waterU[k];
       if (wake) for (const k of ['tFoam', 'uFoamOn', 'uFoamM']) sh.uniforms[k] = waterArtU[k];
       sh.vertexShader = sh.vertexShader
         .replace('#include <common>', '#include <common>\nvarying vec3 vWq;')
@@ -4237,7 +4250,7 @@ uniform vec2 uWakeS[W_NWAKE];
 uniform sampler2D tFoam; uniform float uFoamOn, uFoamM;
 #endif
 #ifdef W_REFL
-uniform sampler2D tRefl; uniform mat4 uReflMat; uniform float uReflOn, uReflY; uniform vec2 uReflTexel;
+uniform sampler2D tRefl; uniform mat4 uReflMat; uniform float uReflOn, uReflY; uniform vec2 uReflTexel, uReflCrop;
 #endif
 float wF = 0.0;
 vec3 wEmit = vec3(0.0);
@@ -4358,7 +4371,7 @@ vec2 wRing(vec2 rc, float tt) {
       vec2 ruv = rc.xy / rc.w;
       // the streak: the texture's anisotropic filter told the footprint is st tall and a texel wide, so the hardware
       // averages down the image and keeps it sharp across (a light stays a thin pillar), three taps for the longest
-      float st = clamp(1.5 * sqrt(wVar), 0.001, 0.05);
+      float st = clamp(1.5 * sqrt(wVar), 0.001, 0.05) * uReflCrop.y;   // a share of the frame's height, in the cropped image's
       vec2 gx = vec2(uReflTexel.x, 0.0), gy = vec2(0.0, max(st * 0.7, uReflTexel.y));
       vec4 R = textureGrad(tRefl, ruv, gx, gy) * 0.5 + (textureGrad(tRefl, ruv + vec2(0.0, st * 0.6), gx, gy) + textureGrad(tRefl, ruv - vec2(0.0, st * 0.6), gx, gy)) * 0.25;
       R *= smoothstep(0.0, 0.03, min(min(ruv.x, 1.0 - ruv.x), min(ruv.y, 1.0 - ruv.y)));
@@ -4396,10 +4409,11 @@ vec2 wRing(vec2 rc, float tt) {
   // from under the plane), the pins and labels, the sky and the weather, the grass; swept again every 90 frames for the
   // meshes later steps and the near-eye reconcilers add
   function reflSweep() {
-    const L = REFL.layer;
+    const L = REFL.layer, list = REFL.list;
     let n = 0;
+    list.length = 0;   // what the mirror may draw, for the reach (reflReach): rebuilt each sweep, so a removed mesh drops out
     scene.traverse((o) => {
-      if (o.userData.reflK !== undefined) { if (o.userData.reflK) n++; return; }
+      if (o.userData.reflK !== undefined) { if (o.userData.reflK) { n++; list.push(o); } return; }
       let ok = (o.isMesh || o.isPoints) && !o.isSprite && !o.isLine && o !== sky && o !== cloudDeck && o !== grassMesh && o !== stMesh;
       if (ok) {
         const ms = Array.isArray(o.material) ? o.material : [o.material];
@@ -4407,7 +4421,7 @@ vec2 wRing(vec2 rc, float tt) {
           && !ms.some((m) => !m || (m.userData && (m.userData.water || m.userData.wxSurf)) || (m.depthTest === false && !o.isPoints));   // wxSurf: surfMat's flats (a two-sided promenade showed its lamp-lit top from under the water)
       }
       o.userData.reflK = ok ? 1 : 0;
-      if (ok) { o.layers.enable(L); n++; }
+      if (ok) { o.layers.enable(L); n++; list.push(o); }
     });
     REFL.layered = n;
     sun.layers.enable(L); hemi.layers.enable(L);   // r149 draws only the lights the camera's layers see
@@ -4430,6 +4444,121 @@ vec2 wRing(vec2 rc, float tt) {
     if (hits >= 2) REFL.seen = frameNo;
     REFL.need = frameNo - REFL.seen < 30;
   }
+  // the reach: the oblique near plane leaves the mirror's projection no far plane worth the name, so three's frustum test
+  // let it draw the city to the horizon (the reach did nothing: 1.8, 2.5 and 3.5 km drew the same 4.85 M triangles at
+  // Penn's Landing). A mesh whose bounding sphere stands wholly past the reach from the mirrored eye (the length of the path
+  // eye, water, mesh) sits this pass out; its layer comes back as the pass ends. Measured: Penn's Landing 4.85 M triangles
+  // and 264 calls to 2.68 M and 132, Boathouse Row 6.08 M to 1.85 M, the Delaware at night 5.90 M to 3.11 M
+  const _rrS = new THREE.Sphere();
+  function reflReach(eye, reach) {
+    const L = REFL.layer, cut = REFL.cut;
+    for (const o of REFL.list) {
+      const bs = o.geometry && o.geometry.boundingSphere;
+      if (!bs || !o.layers.isEnabled(L)) continue;
+      _rrS.copy(bs).applyMatrix4(o.matrixWorld);
+      if (_rrS.center.distanceTo(eye) - _rrS.radius > reach) { o.layers.disable(L); cut.push(o); }
+    }
+    REFL.nCut = cut.length;
+  }
+  // what the mirror can show (the review, Oct 13: it drew 80 to 85 per cent of the scene pass every other frame in most
+  // Center City views). Only what stands over the water on the screen can reflect in it, so the mirror's frustum is cropped
+  // to the box the water within its reach makes on the screen, and three's frustum test drops the rest of the city: the
+  // ground between the eye and the river, the blocks to either side. No water within reach in view, no mirror at all (the
+  // gate looks to 6 km, and water past the reach mirrors nothing the far plane keeps). The water: the rivers by 100 m cell
+  // over the far ring's box, built on first use from the Delaware's outline (scanned row by row, its edges' own cells added)
+  // and the Schuylkill's raster, grown 200 m for the slips and the shore the outline misses, and the ponds and reservoirs
+  // waterRing levels as they come (reflLakes)
+  const REFL_CELL = 100, reflLakes = [];
+  let reflWater = null;
+  function reflWaterBuild() {
+    const C = REFL_CELL, x0 = RING_W.x0, z0 = RING_W.z0, nx = Math.ceil((RING_W.x1 - x0) / C), nz = Math.ceil((RING_W.z1 - z0) / C);
+    const m = new Uint8Array(nx * nz);
+    const set = (i, j) => { if (i >= 0 && j >= 0 && i < nx && j < nz) m[j * nx + i] = 1; };
+    if (DEL_POLYS) {
+      const rows = Array.from({ length: nz }, () => []);
+      const scan = (r) => {
+        for (let k = 0, n = r.length; k < n; k++) {
+          const a = r[k], b = r[(k + 1) % n];
+          const L = Math.hypot(b[0] - a[0], b[1] - a[1]), st = Math.max(1, Math.ceil(L / (C / 2)));
+          for (let t = 0; t <= st; t++) set(Math.floor((a[0] + (b[0] - a[0]) * t / st - x0) / C), Math.floor((a[1] + (b[1] - a[1]) * t / st - z0) / C));
+          if (a[1] === b[1]) continue;
+          const lo = Math.min(a[1], b[1]), hi = Math.max(a[1], b[1]);   // the rows whose middle is in [lo, hi): each crossing once
+          for (let j = Math.max(0, Math.ceil((lo - z0) / C - 0.5)); j <= Math.min(nz - 1, Math.ceil((hi - z0) / C - 0.5) - 1); j++) {
+            const z = z0 + (j + 0.5) * C;
+            rows[j].push(a[0] + (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]));
+          }
+        }
+      };
+      for (const pg of DEL_POLYS) { scan(pg.ring); for (const h of pg.holes || []) scan(h); }
+      for (let j = 0; j < nz; j++) {
+        const xs = rows[j].sort((p, q) => p - q);
+        for (let k = 0; k + 1 < xs.length; k += 2) for (let i = Math.floor((xs[k] - x0) / C); i <= Math.floor((xs[k + 1] - x0) / C); i++) set(i, j);
+      }
+    }
+    if (schRaster) for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+      if (m[j * nx + i]) continue;
+      const x = x0 + i * C, z = z0 + j * C;
+      if (schRaster(x + C / 2, z + C / 2) || schRaster(x + C / 4, z + C / 4) || schRaster(x + 3 * C / 4, z + C / 4) || schRaster(x + C / 4, z + 3 * C / 4) || schRaster(x + 3 * C / 4, z + 3 * C / 4)) m[j * nx + i] = 1;
+    }
+    // grown two cells each way (a separable max)
+    const g = new Uint8Array(nx * nz), out = new Uint8Array(nx * nz);
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { let v = 0; for (let d = -2; d <= 2 && !v; d++) { const ii = i + d; if (ii >= 0 && ii < nx) v = m[j * nx + ii]; } g[j * nx + i] = v; }
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) { let v = 0; for (let d = -2; d <= 2 && !v; d++) { const jj = j + d; if (jj >= 0 && jj < nz) v = g[jj * nx + i]; } out[j * nx + i] = v; }
+    return { m: out, nx, nz, x0, z0, lakes: 0 };
+  }
+  // the clip-space polygon of a cell, clipped by the near plane and the four sides (Sutherland and Hodgman), in two buffers
+  const _rbA = new Float64Array(48), _rbB = new Float64Array(48);
+  function reflClip(src, n, dst, a, b, c, d) {   // keeps a*x + b*y + c*w + d >= 0
+    let k = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, x0 = src[i * 3], y0 = src[i * 3 + 1], w0 = src[i * 3 + 2], x1 = src[j * 3], y1 = src[j * 3 + 1], w1 = src[j * 3 + 2];
+      const f0 = a * x0 + b * y0 + c * w0 + d, f1 = a * x1 + b * y1 + c * w1 + d;
+      if (f0 >= 0) { dst[k * 3] = x0; dst[k * 3 + 1] = y0; dst[k * 3 + 2] = w0; k++; }
+      if ((f0 >= 0) !== (f1 >= 0)) { const t = f0 / (f0 - f1); dst[k * 3] = x0 + (x1 - x0) * t; dst[k * 3 + 1] = y0 + (y1 - y0) * t; dst[k * 3 + 2] = w0 + (w1 - w0) * t; k++; }
+    }
+    return k;
+  }
+  // the screen box (NDC) of the water within the mirror's reach, grown for the ripples' reach into the image; false: none
+  const _rbM = new THREE.Matrix4(), REFL_BOX = [0, 0, 0, 0];
+  function reflBox(cam) {
+    if (!reflWater) reflWater = reflWaterBuild();
+    const W = reflWater, C = REFL_CELL;
+    for (; W.lakes < reflLakes.length; W.lakes++) {   // the levelled ponds and reservoirs, a cell round each
+      const bb = reflLakes[W.lakes];
+      for (let j = Math.floor((bb[2] - W.z0) / C) - 1; j <= Math.floor((bb[3] - W.z0) / C) + 1; j++)
+        for (let i = Math.floor((bb[0] - W.x0) / C) - 1; i <= Math.floor((bb[1] - W.x0) / C) + 1; i++) if (i >= 0 && j >= 0 && i < W.nx && j < W.nz) W.m[j * W.nx + i] = 1;
+    }
+    const e = _rbM.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse).elements, y = TERRAIN.water;
+    const ex = cam.position.x, ez = cam.position.z, R = (REFL.far || REFL_FAR) + C;
+    let bx0 = Infinity, bx1 = -Infinity, by0 = Infinity, by1 = -Infinity;
+    const i0 = Math.max(0, Math.floor((ex - R - W.x0) / C)), i1 = Math.min(W.nx - 1, Math.floor((ex + R - W.x0) / C));
+    const j0 = Math.max(0, Math.floor((ez - R - W.z0) / C)), j1 = Math.min(W.nz - 1, Math.floor((ez + R - W.z0) / C));
+    for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+      if (!W.m[j * W.nx + i]) continue;
+      const cx = W.x0 + (i + 0.5) * C, cz = W.z0 + (j + 0.5) * C;
+      if (Math.hypot(cx - ex, cz - ez) > R) continue;
+      for (let k = 0; k < 4; k++) {
+        const wx = cx + ((k === 1 || k === 2) ? C / 2 : -C / 2), wz = cz + (k >= 2 ? C / 2 : -C / 2);
+        _rbA[k * 3] = e[0] * wx + e[4] * y + e[8] * wz + e[12];
+        _rbA[k * 3 + 1] = e[1] * wx + e[5] * y + e[9] * wz + e[13];
+        _rbA[k * 3 + 2] = e[3] * wx + e[7] * y + e[11] * wz + e[15];
+      }
+      let n = reflClip(_rbA, 4, _rbB, 0, 0, 1, -0.05);
+      if (n) n = reflClip(_rbB, n, _rbA, 1, 0, 1, 0);
+      if (n) n = reflClip(_rbA, n, _rbB, -1, 0, 1, 0);
+      if (n) n = reflClip(_rbB, n, _rbA, 0, 1, 1, 0);
+      if (n) n = reflClip(_rbA, n, _rbB, 0, -1, 1, 0);
+      for (let k = 0; k < n; k++) {
+        const u = _rbB[k * 3] / _rbB[k * 3 + 2], v = _rbB[k * 3 + 1] / _rbB[k * 3 + 2];
+        if (u < bx0) bx0 = u; if (u > bx1) bx1 = u; if (v < by0) by0 = v; if (v > by1) by1 = v;
+      }
+    }
+    if (!(bx1 > bx0)) return false;
+    // grown for the ripples (a tilted facet reads the image a little off its own point, most toward the far shore) and a
+    // frame-old image's lag
+    REFL_BOX[0] = Math.max(-1, bx0 - 0.1); REFL_BOX[1] = Math.min(1, bx1 + 0.1); REFL_BOX[2] = Math.max(-1, by0 - 0.1); REFL_BOX[3] = Math.min(1, by1 + 0.18);
+    return true;
+  }
   // the mirrored eye (three r149's Reflector, with the plane y = TERRAIN.water): the eye, its target and its up reflected,
   // the texture matrix taken before the oblique near plane replaces the projection's z row (Lengyel), so nothing under the
   // water draws; the log depth reads w, which the oblique plane leaves alone. Called by renderPost before the scene pass
@@ -4441,8 +4570,16 @@ vec2 wRing(vec2 rc, float tt) {
     // frame-old mirror only lags one frame's motion; a jump of the eye (8 m, 3 degrees) redraws at once
     REFL.odd = !REFL.odd;
     if (REFL.odd && waterU.uReflOn.value > 0.5 && cam.position.distanceTo(REFL.at) < 8 && Math.abs(cam.quaternion.dot(REFL.atQ)) > 0.99966) return;
-    REFL.at.copy(cam.position); REFL.atQ.copy(cam.quaternion);
+    // an eye that has not moved since the last image redraws every 4th frame (the ships, the cars and the wakes in it at 15
+    // a second): a viewer reading the scene pays half the mirror
+    if (waterU.uReflOn.value > 0.5 && cam.position.equals(REFL.at) && cam.quaternion.equals(REFL.atQ)) { if ((++REFL.still & 1) === 1) return; } else REFL.still = 0;
     const t0 = performance.now();
+    cam.updateMatrixWorld();
+    if (!reflBox(cam)) { waterU.uReflOn.value = 0; REFL.box = null; REFL.idle++; return; }   // no water within reach in view
+    REFL.at.copy(cam.position); REFL.atQ.copy(cam.quaternion);
+    // the mirror's own NDC: a point on the water lands at (-x, y) of the eye's (the mirrored eye's right is the eye's left)
+    REFL.box = REFL.noCrop ? null : REFL.boxM;
+    if (REFL.box) { REFL.box[0] = -REFL_BOX[1]; REFL.box[1] = -REFL_BOX[0]; REFL.box[2] = REFL_BOX[2]; REFL.box[3] = REFL_BOX[3]; }
     if (frameNo >= REFL.sweepAt) { REFL.sweepAt = frameNo + 90; reflSweep(); }
     const s = renderer.getDrawingBufferSize(_rfS);
     const w = Math.max(64, Math.min(960, Math.round(s.x / 2))), h = Math.max(64, Math.round(s.y * w / Math.max(1, s.x)));
@@ -4461,9 +4598,18 @@ vec2 wRing(vec2 rc, float tt) {
     C.up.set(0, 1, 0).applyQuaternion(cam.quaternion); C.up.y = -C.up.y;
     C.lookAt(_rfA);
     // the mirror's reach: 3.5 km (past it the far city is a sliver in the haze at the horizon, and the sky probe stands in)
-    C.fov = cam.fov; C.aspect = cam.aspect; C.zoom = cam.zoom; C.near = cam.near; C.far = Math.min(cam.far, REFL_FAR);
+    C.fov = cam.fov; C.aspect = cam.aspect; C.zoom = cam.zoom; C.near = cam.near; C.far = Math.min(cam.far, REFL.far || REFL_FAR);
     C.updateMatrixWorld();
     C.updateProjectionMatrix();
+    // the crop: the box's rows of the projection scaled to fill the image (three culls by the cropped frustum)
+    let sx = 1, sy = 1;
+    if (REFL.box && (REFL.box[1] - REFL.box[0]) * (REFL.box[3] - REFL.box[2]) < 3.6) {
+      const b = REFL.box, pe = C.projectionMatrix.elements;
+      sx = 2 / (b[1] - b[0]); sy = 2 / (b[3] - b[2]);
+      const tx = -(b[1] + b[0]) / (b[1] - b[0]), ty = -(b[3] + b[2]) / (b[3] - b[2]);
+      for (const k of [0, 4, 8, 12]) { pe[k] = sx * pe[k] + tx * pe[k + 3]; pe[k + 1] = sy * pe[k + 1] + ty * pe[k + 3]; }
+    }
+    REFL.cx = sx; REFL.cy = sy;
     waterU.uReflMat.value.set(0.5, 0, 0, 0.5, 0, 0.5, 0, 0.5, 0, 0, 0.5, 0.5, 0, 0, 0, 1).multiply(C.projectionMatrix).multiply(C.matrixWorldInverse);
     _rfP.setFromNormalAndCoplanarPoint(_rfN, _rfA.set(0, W0, 0)).applyMatrix4(C.matrixWorldInverse);
     _rfV.set(_rfP.normal.x, _rfP.normal.y, _rfP.normal.z, _rfP.constant);
@@ -4472,15 +4618,19 @@ vec2 wRing(vec2 rc, float tt) {
     _rfV.multiplyScalar(2 / _rfV.dot(_rfQ));
     e[2] = _rfV.x; e[6] = _rfV.y; e[10] = _rfV.z + 1 - 0.003; e[14] = _rfV.w;
     C.projectionMatrixInverse.copy(C.projectionMatrix).invert();
+    waterU.uReflCrop.value.set(REFL.cx, REFL.cy);
     C.layers.set(REFL.layer);
     const r = renderer, prevRT = r.getRenderTarget(), prevUp = r.shadowMap.autoUpdate, prevNeed = r.shadowMap.needsUpdate, prevBg = sc.background, prevA = r.getClearAlpha();
     r.getClearColor(_rfC);
     r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false; sc.background = null;   // the scene pass draws the shadow map, never this one
     try {
+      if (!REFL.noReach) reflReach(C.position, REFL.far || REFL_FAR); else REFL.nCut = 0;
       r.setRenderTarget(REFL.rt); r.setClearColor(0x000000, 0); r.clear(true, true, true);
       r.render(sc, C);
       REFL.calls = r.info.render.calls; REFL.tris = r.info.render.triangles;
     } finally {
+      for (const o of REFL.cut) o.layers.enable(REFL.layer);
+      REFL.cut.length = 0;
       r.setRenderTarget(prevRT); r.setClearColor(_rfC, prevA);
       r.shadowMap.autoUpdate = prevUp; r.shadowMap.needsUpdate = prevNeed; sc.background = prevBg;
     }
@@ -4489,21 +4639,29 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // the vessels that wake: moving (over a knot), not moored, within 3 km of the eye, the nearest eight (four on a phone);
   // the hull's own heading, as updateShips poses it, and the RiverLink ferry by its eased heading
-  const _wakeC = [];
+  // the candidates are pooled records, refilled in place (no allocation a frame)
+  const _wakeC = [], _wakeP = [], _wakeBy = (a, b) => a.d - b.d;
+  let _wakeN = 0;
+  function wakeTake(d, x, z, h, s, L, W) {
+    const r = _wakeP[_wakeN] || (_wakeP[_wakeN] = { d: 0, x: 0, z: 0, h: 0, s: 0, L: 0, W: 0 });
+    r.d = d; r.x = x; r.z = z; r.h = h; r.s = s; r.L = L; r.W = W;
+    _wakeC[_wakeN++] = r;
+  }
   function waterWakes() {
     const A = waterU.uWake.value, B = waterU.uWakeS.value, ex = camera.position.x, ez = camera.position.z;
-    _wakeC.length = 0;
+    _wakeN = 0;
     if (SHIPS.on) for (const v of shipMap.values()) {
       if (v.dx === undefined || v.moored || !(v.sog > 1) || v.mmsi === FERRY_MMSI) continue;
       const d = Math.hypot(v.dx - ex, v.dz - ez);
-      if (d < 3000) _wakeC.push({ d, x: v.dx, z: v.dz, h: ((v.hdg != null && v.hdg < 360) ? v.hdg : v.cog) * DEG, s: v.sog * 0.5144, L: v.len || 30, W: v.beam || 8 });
+      if (d < 3000) wakeTake(d, v.dx, v.dz, ((v.hdg != null && v.hdg < 360) ? v.hdg : v.cog) * DEG, v.sog * 0.5144, v.len || 30, v.beam || 8);
     }
     const F = FERRY.rec;
     if (SHIPS.on && FERRY.ready && FERRY.mesh && FERRY.mesh.count && F.v && F.v.sog > 1 && FERRY.ha !== undefined) {
       const d = Math.hypot(F.x - ex, F.z - ez);
-      if (d < 3000) _wakeC.push({ d, x: F.x, z: F.z, h: Math.atan2(Math.cos(FERRY.ha), -Math.sin(FERRY.ha)), s: F.v.sog * 0.5144, L: 24, W: 9 });
+      if (d < 3000) wakeTake(d, F.x, F.z, Math.atan2(Math.cos(FERRY.ha), -Math.sin(FERRY.ha)), F.v.sog * 0.5144, 24, 9);
     }
-    _wakeC.sort((a, b) => a.d - b.d);
+    _wakeC.length = _wakeN;
+    _wakeC.sort(_wakeBy);
     for (let i = 0; i < A.length; i++) {
       const c = _wakeC[i];
       if (c) { A[i].set(c.x, c.z, c.h, c.s); B[i].set(c.L, c.W); } else A[i].w = 0;
@@ -4520,12 +4678,14 @@ vec2 wRing(vec2 rc, float tt) {
     if ((frameNo & 1) === 0) waterWakes();
     if (!waterFrame.dbg && window.__dbg) {
       waterFrame.dbg = true;
-      window.__dbg.waterInt = { REFL, reflSweep, waterU, RAISED };
-      window.__dbg.water = () => ({ refl: { on: REFL.on, need: REFL.need, w: REFL.w, h: REFL.h, calls: REFL.calls, tris: REFL.tris, ms: +REFL.ms.toFixed(2), frames: REFL.n, layered: REFL.layered },
+      window.__dbg.waterInt = { REFL, reflSweep, waterU, RAISED, reflBox, REFL_BOX };
+      window.__dbg.water = () => ({ refl: { on: REFL.on, need: REFL.need, w: REFL.w, h: REFL.h, calls: REFL.calls, tris: REFL.tris, ms: +REFL.ms.toFixed(2), frames: REFL.n, idle: REFL.idle, layered: REFL.layered,
+          box: REFL.box ? REFL.box.map((v) => +v.toFixed(3)) : null, crop: [+REFL.cx.toFixed(2), +REFL.cy.toFixed(2)], cut: REFL.nCut, list: REFL.list.length },
         wakes: waterU.uWake.value.filter((v) => v.w > 0.5).length, rain: waterU.uRain.value, cover: waterU.uCover.value, coxMunk: +waterU.uCoxMunk.value.toFixed(4),
-        envK: waterU.uWEnvK.value, mats: (waterEnvBake.mats || []).length, basins: RAISED.basins, lakes: RAISED.lakes, piers: RAISED.piers, piles: RAISED.piles, jets: RAISED.jets });
+        envK: waterU.uWEnvK.value, mats: (waterEnvBake.mats || []).length, probe: waterEnvBake.rt ? [waterEnvBake.rt.width, waterEnvBake.rt.height] : null,
+        basins: RAISED.basins, ponds: RAISED.ponds, lakes: RAISED.lakes, kept: RAISED.kept, piers: RAISED.piers, piles: RAISED.piles, jets: RAISED.jets, rings: RAISED.log });
     }
-    if ((frameNo % 300) === 2) waterShadowSweep();
+    if (!isTouch && (frameNo % 300) === 2) waterShadowSweep();   // a phone's river skips the shadow lookup (its frame is the budget)
     if (RAISED.jetMesh && (frameNo % 60) === 0) RAISED.jetMesh.visible = clock.m >= 5 && clock.m <= 10;   // the fountains run May to October, by the model's date
   }
   // the river sheets (riverMat, groupCity's own children): the realism pass lets the bridges and towers shade them
@@ -4533,14 +4693,18 @@ vec2 wRing(vec2 rc, float tt) {
 
   // ---- water on high ground and the piers (realism, water#4, water#6, critic gap 11). The packed tiers' water rings all went
   // to the river path, flat at the tidal level: right for the rivers, but Swann's basin in Logan Circle, the Eakins Oval's
-  // pools, Dilworth's fountain and the hilltop reservoirs (East Park, Queen Lane, Belmont) lay 7 to 60 m under the ground.
-  // waterRing builds a ring on high ground itself: a basin under 8,000 m2 stands level on its highest ground with a granite
-  // coping (Dilworth's is flush), a lake or reservoir at the 85th percentile of its own ground (the DEM over a reservoir is
-  // its water) with a dark bank wall round it so no edge floats. The outer districts' piers (man_made=pier) over the water
-  // are decks on piles at the bulkhead's height, the generated concrete on top, a dark fascia, a soffit and creosote piles
+  // pools, Dilworth's fountain and the hilltop reservoirs (East Park, Queen Lane, Belmont) lay 7 to 60 m under the ground
+  // (Queen Lane is NW_WATER's, draped on dem_nw; East Park's and Belmont's read 7.8 and 11.4 m of relief on the 150 m DEM
+  // and stay under it, below). waterRing builds a ring on high ground itself where a level sheet is right (waterRingGate):
+  // a fountain's basin, or a small ring in the outer districts, stands level on its highest ground with a granite coping
+  // (Dilworth's is flush); a pond, lake or reservoir lies at the 85th percentile of its own ground (the DEM over a reservoir
+  // is its water) with a dark bank wall down to the ground beside it wherever that is lower, so no edge floats. Everything
+  // else (a creek, a pond on a slope, the NW patch) keeps the river path. The outer districts' piers (man_made=pier) over
+  // the water are decks on piles at the bulkhead's height, the generated concrete on top, a dark fascia, a soffit and creosote piles
   // along every water-facing edge; a park on a pier (the Washington Avenue Pier) is its lawn on such a deck. The parts
   // gather here and raisedFlush builds them once a tier's loop is done
-  const RAISED = { basins: 0, lakes: 0, piers: 0, piles: 0, jets: 0, water: [], solid: [], deck: [], piles3: [], jets3: [], jetMesh: null };
+  const RAISED = { basins: 0, ponds: 0, lakes: 0, kept: 0, piers: 0, piles: 0, jets: 0, water: [], solid: [], deck: [], piles3: [], jets3: [], jetMesh: null,
+    log: /[?&]dev\b/.test(location.search) ? [] : null };   // ?dev=1: every ring on high ground, its measures and the verdict (__dbg.water().rings)
   // linear albedos (the legacy pipeline, where a hex is used as it stands): the deck weathered concrete about 170 in the sun
   // (0x5c5a54 drew 220, the white paper slabs again), the fascia and soffit wet and stained under it, the piles creosote
   const PIER_DECK = 0x24231f, PIER_FASCIA = 0x151411, PILE_COL = 0x14110e, COPING_COL = 0x5d5a54, BANK_COL = 0x2f2b24;
@@ -4583,20 +4747,98 @@ vec2 wRing(vec2 rc, float tt) {
     for (let i = 1; i < nr.length; i += 3) nr[i] = -Math.abs(nr[i]);
     return g;
   }
-  // true when it built the ring itself (the caller then skips the river path)
-  function waterRing(poly, parts) {
-    if (!REAL) return false;
-    let gMin = Infinity, gMax = -Infinity;
-    for (const q of poly) { const g = siteY(q[0], q[1], 'ground'); if (g < gMin) gMin = g; if (g > gMax) gMax = g; }
+  // the gate (the review, Oct 13: every ring on high ground was levelled, and Mill Run, Cobbs Creek and the NW streams, ribbons
+  // falling 15 to 60 m, stood across their neighbourhoods as raised channels and granite walls). A level sheet is right only
+  // for water that IS level: the ring must be compact (4 pi A / P^2 at least WR_COMPACT: a fountain or a reservoir is 0.5 to
+  // 1, a creek ribbon 0.01 to 0.05), its own ground level (its outline every 10 m and its inside every 20 m within 1.5 m for a
+  // basin, 6 m for a lake or reservoir, whose embankment the 150 m DEM blurs into its water), outside the NW patch (the packed
+  // rings there stay buried on purpose: NW_WATER drapes the real ones on dem_nw) and off the rivers. Anything else takes the
+  // river path, flat at the tidal level and buried wherever the ground stands over it, as before the realism pass.
+  // Returns null (waterRingGate.why says why) or what the ring is built from
+  const WR_COMPACT = 0.2, WR_BASIN_RELIEF = 1.5, WR_LAKE_RELIEF = 6, WR_BASIN_AREA = 8000, WR_WALL = 2.5;
+  function waterRingGate(poly, wide) {
+    const no = (why) => { waterRingGate.why = why; return null; };
+    const n = poly.length;
+    if (n < 3) return no('degenerate');
+    // the river path's own rings first (most of them), on the vertices alone as before
+    let gMin = Infinity;
+    for (const q of poly) gMin = Math.min(gMin, siteY(q[0], q[1], 'ground'));
+    if (!(gMin > TERRAIN.water + 1.5)) return no('low');
+    const bb = bboxOf(poly);
+    if (!wide && hitsP(bb)) return no('nw');
     const c = polyCentroid(poly);
-    if (!(gMin > TERRAIN.water + 1.5) || (schRaster && schRaster(c[0], c[1])) || delawareAt(c[0], c[1])) return false;
+    if ((schRaster && schRaster(c[0], c[1])) || delawareAt(c[0], c[1])) return no('river');
     const pa = Math.abs(signedArea(poly));
-    if (pa < 8000) {
-      const J = FOUNTAIN_JETS.find((f) => Math.hypot(f.x - c[0], f.z - c[1]) < f.r);
+    let per = 0;
+    for (let i = 0; i < n; i++) { const a = poly[i], b = poly[(i + 1) % n]; per += Math.hypot(b[0] - a[0], b[1] - a[1]); }
+    const compact = per > 0 ? 4 * Math.PI * pa / (per * per) : 0;
+    if (compact < WR_COMPACT) return no('ribbon');
+    let gMax = -Infinity;
+    for (let i = 0; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n], k = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / 10));
+      for (let s = 0; s < k; s++) { const g = siteY(a[0] + (b[0] - a[0]) * s / k, a[1] + (b[1] - a[1]) * s / k, 'ground'); if (g < gMin) gMin = g; if (g > gMax) gMax = g; }
+    }
+    if (!(gMin > TERRAIN.water + 1.5)) return no('low');
+    const ys = [];
+    for (let x = bb[0] + 10; x < bb[1]; x += 20) for (let z = bb[2] + 10; z < bb[3]; z += 20) if (pointInPoly(x, z, poly)) ys.push(siteY(x, z, 'ground'));
+    let lo = gMin, hi = gMax;
+    for (const g of ys) { if (g < lo) lo = g; if (g > hi) hi = g; }
+    const relief = hi - lo, basin = pa < WR_BASIN_AREA;
+    waterRingGate.relief = +relief.toFixed(1);
+    if (relief > (basin ? WR_BASIN_RELIEF : WR_LAKE_RELIEF)) return no('slope');
+    const J = basin ? FOUNTAIN_JETS.find((f) => Math.hypot(f.x - c[0], f.z - c[1]) < f.r) || null : null;
+    ys.sort((a, b) => a - b);
+    const y = (ys.length ? ys[Math.min(ys.length - 1, Math.floor(ys.length * 0.85))] : (gMin + gMax) / 2) + 0.35;
+    // the coping is a fountain's or the outer districts' (their small rings are the city's basins and pools); a pond out
+    // in the far ring or the towns is a pond, and a pond or a lake whose level would stand more than WR_WALL over the ground
+    // at its lowest shore is a tank, not a lake (East Park's reservoir read 3.6 m along 41 per cent of its shore, Belmont's
+    // 8.8 m: both keep the river path, as before the realism pass)
+    const coping = basin && (!!J || !!wide);
+    if (!coping && y - gMin > WR_WALL) return no('wall');
+    waterRingGate.why = '';
+    return { pa, c, J, gMin, gMax, relief, compact, y, basin, coping };
+  }
+  // a bank wall round a ring: from top down to the ground beside each point wherever that is lower (0.5 m into it), every
+  // 10 m along, facing out; nothing where the ground stands over the water (it hides the sheet's edge itself)
+  function bankWall(poly, top) {
+    const n = poly.length, sg = signedArea(poly) > 0 ? 1 : -1, pos = [], nor = [];
+    const gAt = (x, z) => siteY(x, z, 'ground');
+    for (let i = 0; i < n; i++) {
+      const a = poly[i], b = poly[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+      if (L < 0.05) continue;
+      const nx = dz / L * sg, nz = -dx / L * sg, k = Math.max(1, Math.ceil(L / 10));
+      let x0 = a[0], z0 = a[1], g0 = gAt(x0, z0);
+      for (let s = 1; s <= k; s++) {
+        const x1 = a[0] + dx * s / k, z1 = a[1] + dz * s / k, g1 = gAt(x1, z1);
+        if (Math.min(g0, g1) < top) {
+          const b0 = Math.min(top, g0) - 0.5, b1 = Math.min(top, g1) - 0.5;
+          // two triangles facing (nx, nz): (x0 b0) (x1 top) (x1 b1), (x0 b0) (x0 top) (x1 top) when the ring runs one way
+          const q = [[x0, b0, z0], [x1, top, z1], [x1, b1, z1], [x0, b0, z0], [x0, top, z0], [x1, top, z1]];
+          const ux = q[1][0] - q[0][0], uy = q[1][1] - q[0][1], uz = q[1][2] - q[0][2], vx = q[2][0] - q[0][0], vy = q[2][1] - q[0][1], vz = q[2][2] - q[0][2];
+          if ((uy * vz - uz * vy) * nx + (ux * vy - uy * vx) * nz < 0) { let t = q[1]; q[1] = q[2]; q[2] = t; t = q[4]; q[4] = q[5]; q[5] = t; }
+          for (const v of q) { pos.push(v[0], v[1], v[2]); nor.push(nx, 0, nz); }
+        }
+        x0 = x1; z0 = z1; g0 = g1;
+      }
+    }
+    if (!pos.length) return null;
+    const w = new THREE.BufferGeometry();
+    w.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); w.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
+    return w;
+  }
+  // true when it built the ring itself (the caller then skips the river path); wide: the outer districts' loop
+  function waterRing(poly, parts, wide) {
+    if (!REAL) return false;
+    const G = waterRingGate(poly, wide);
+    const off = !G && (waterRingGate.why === 'low' || waterRingGate.why === 'river');   // the river path's own
+    if (RAISED.log && !off) { const c = polyCentroid(poly); RAISED.log.push(G ? [Math.round(c[0]), Math.round(c[1]), Math.round(G.pa), +G.compact.toFixed(3), +G.relief.toFixed(1), G.coping || G.J ? 'basin' : G.basin ? 'pond' : 'lake'] : [Math.round(c[0]), Math.round(c[1]), Math.round(Math.abs(signedArea(poly))), waterRingGate.why, waterRingGate.relief]); }
+    if (!G) { if (!off) RAISED.kept++; return false; }
+    const { c, J } = G;
+    if (G.coping || J) {
       const flush = !!(J && J.flush);
-      const rim = gMax + (flush ? 0.05 : 0.45), top = flush ? rim : rim - 0.12;
+      const rim = G.gMax + (flush ? 0.05 : 0.45), top = flush ? rim : rim - 0.12;
       RAISED.water.push({ geom: flatPoly(poly, null, top, true), color: new THREE.Color(WATER_BODY.basin) });
-      if (!flush) RAISED.solid.push({ geom: buildingGeom(ringOffset(poly, 0.45), [poly], rim, gMin - 0.3), color: new THREE.Color(COPING_COL) });
+      if (!flush) RAISED.solid.push({ geom: buildingGeom(ringOffset(poly, 0.45), [poly], rim, G.gMin - 0.3), color: new THREE.Color(COPING_COL) });
       RAISED.basins++;
       if (J && !J.done) {
         J.done = true;
@@ -4607,28 +4849,54 @@ vec2 wRing(vec2 rc, float tt) {
       }
       return true;
     }
-    // a lake or a reservoir: its own ground sampled every 20 m inside, the 85th percentile
-    const bb = bboxOf(poly), ys = [];
-    for (let x = bb[0] + 10; x < bb[1]; x += 20) for (let z = bb[2] + 10; z < bb[3]; z += 20) if (pointInPoly(x, z, poly)) ys.push(siteY(x, z, 'ground'));
-    if (!ys.length) ys.push(gMin);
-    ys.sort((a, b) => a - b);
-    const y = ys[Math.min(ys.length - 1, Math.floor(ys.length * 0.85))] + 0.35;
-    parts.push({ geom: flatShorePoly(poly, null, y, 1), color: new THREE.Color(COLORS.water), style: 3 });
-    RAISED.solid.push({ geom: ringWall(poly, y - 0.05, Math.min(gMin, y) - 3), color: new THREE.Color(BANK_COL) });
-    RAISED.lakes++;
+    // a pond, lake or reservoir at its own level, its bank wall stopping at the ground
+    parts.push({ geom: flatShorePoly(poly, null, G.y, 1), color: new THREE.Color(COLORS.water), style: 3 });
+    const wall = bankWall(poly, G.y - 0.05);
+    if (wall) RAISED.solid.push({ geom: wall, color: new THREE.Color(BANK_COL) });
+    if (G.basin) RAISED.ponds++; else RAISED.lakes++;
+    reflLakes.push(bboxOf(poly));   // the mirror's water (reflBox)
     return true;
+  }
+  // the Delaware's outline (its rings and its islands' holes) by 200 m cell, built on first use: does a box padded by pad
+  // touch any cell an outline edge's own box covers? (true when there is no outline: the caller then tests every point)
+  let delCells = null;
+  function delOutlineNear(bb, pad) {
+    if (!DEL_POLYS) return true;
+    const C = 200, key = (i, j) => i * 100003 + j;
+    if (!delCells) {
+      delCells = new Set();
+      const mark = (ring) => {
+        for (let k = 0, m = ring.length; k < m; k++) {
+          const a = ring[k], b = ring[(k + 1) % m];
+          for (let i = Math.floor(Math.min(a[0], b[0]) / C); i <= Math.floor(Math.max(a[0], b[0]) / C); i++)
+            for (let j = Math.floor(Math.min(a[1], b[1]) / C); j <= Math.floor(Math.max(a[1], b[1]) / C); j++) delCells.add(key(i, j));
+        }
+      };
+      for (const pg of DEL_POLYS) { mark(pg.ring); for (const h of pg.holes || []) mark(h); }
+    }
+    for (let i = Math.floor((bb[0] - pad) / C); i <= Math.floor((bb[1] + pad) / C); i++)
+      for (let j = Math.floor((bb[2] - pad) / C); j <= Math.floor((bb[3] + pad) / C); j++) if (delCells.has(key(i, j))) return true;
+    return false;
   }
   // is a pier's ring over the water? The river's outline leaves a pier out (it is land to the river) and runs along the
   // pierhead line past the slips, so the test is what surrounds it: for a tagged pier 40 per cent of its perimeter has the
   // river's outline or low ground (the DEM under 1.5 m over the water: the slips) 6 m out, and its own middle is low.
   // delOnly, for a park on a pier: 60 per cent, the Delaware's outline alone (the Schuylkill's parks run into its drawn
-  // water, and a riverside park has one wet side, a pier three)
+  // water, and a riverside park has one wet side, a pier three). A ring whose box (padded past the 6 m probes) holds no cell
+  // of the Delaware's outline lies wholly in or out of the river, so one delawareAt answers for every probe: the wide tier's
+  // 972 parks took 22,439 point-in-polygon tests on the river's 3,685-vertex ring (227 ms in node, the review, Oct 13)
   function pierWet(poly, delOnly) {
     if (!REAL) return false;
     const n = poly.length;
     const c0 = polyCentroid(poly);
     if (!delOnly && siteY(c0[0], c0[1], 'ground') > TERRAIN.water + 3) return false;
-    const slip = (x, z) => delawareAt(x, z) || !!(schRaster && schRaster(x, z)) || siteY(x, z, 'ground') < TERRAIN.water + 1.5;
+    let delAt = delawareAt;
+    if (!delOutlineNear(bboxOf(poly), 12)) {
+      const v = delawareAt(c0[0], c0[1]);
+      if (delOnly && !v) return false;
+      delAt = () => v;
+    }
+    const slip = (x, z) => delAt(x, z) || !!(schRaster && schRaster(x, z)) || siteY(x, z, 'ground') < TERRAIN.water + 1.5;
     let wet = 0, all = 0;
     for (let e = 0; e < n; e++) {
       const a = poly[e], b = poly[(e + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
@@ -4640,7 +4908,7 @@ vec2 wRing(vec2 rc, float tt) {
       for (let i = 0; i < k; i++) {
         const t = (i + 0.5) / k, x = a[0] + dx * t + nx * 6, z = a[1] + dz * t + nz * 6;
         all += L / k;
-        if (delOnly ? delawareAt(x, z) : slip(x, z)) wet += L / k;
+        if (delOnly ? delAt(x, z) : slip(x, z)) wet += L / k;
       }
     }
     return all > 0 && wet / all >= (delOnly ? 0.6 : 0.4);
@@ -11344,7 +11612,7 @@ vec2 wRing(vec2 rc, float tt) {
           const pa = Math.abs(signedArea(poly));
           parkPolys.push({ poly, pa, i });
         }
-        else if (kind === 1) { noSow(poly); if (waterRing(poly, waterAreaParts)) continue; const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }   // realism, water: a ring on high ground is a basin or a reservoir (waterRing)
+        else if (kind === 1) { noSow(poly); if (waterRing(poly, waterAreaParts, true)) continue; const wcc = polyCentroid(poly); if (!(schRaster && schRaster(wcc[0], wcc[1]))) waterAreaParts.push({ geom: flatShorePoly(poly, null, TERRAIN.water + 0.55, Math.abs(signedArea(poly)) > 20000 ? 2 : 1), color: new THREE.Color(COLORS.water), style: 3 }); }   // realism, water: a level ring on high ground is a basin, a pond or a reservoir (waterRing)
         else { noSow(poly); if (pierWet(poly)) { pierDeck(poly); continue; } areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 }); PIER_RINGS.push({ poly, y: null, lift: 1.2 }); }   // realism, water: a pier over the water is a deck on piles (pierDeck)
       } catch (e) { /* degenerate polygon */ }
     }
