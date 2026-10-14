@@ -10142,6 +10142,1321 @@ vec2 wRing(vec2 rc, float tt) {
   // floor, brick and top storey, the brick shaft (32 m square), the pale stage (24) and its attic (21), the lantern's head,
   // its radius and the dome's
   const CH_DIMS = { base0: 7, base1: 21.5, base2: 26, shaftW: 32, shaft1: 58, stageW: 24, stage1: 67, atticW: 21, attic1: 70, lantern1: 80.5, lanternR: 7.2, domeR: 6.6 };
+  // ---- City Hall rebuilt (Round 190, Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"; he
+  // wants photographic realism and a fast city). The Round 81 block stood 18.5 m too far south (its south wing in South
+  // Penn Square's roadway, lawn where the north wing stands), its wings and pavilions were boxes under white pyramids and
+  // its dome a pointed stack of frustums. Rebuilt under the realistic look to the building as measured: NOAA's 2022 QL1
+  // LiDAR (41 points a square metre), OSM relation 4720912 and Frederick Turner's 1909 booklet. Everything is laid in the
+  // building's own frame: B0 a point of Penn Square, U east along the street grid's fl.n, V south along fl.d, y metres
+  // over its ground (one datum: the 0.7 m fall to the north shows as the plinth's reveal). The facades are generated
+  // photographs (fetch_cityhall_art.py, bake_cityhall_art.py: one atlas, CITYHALL_ART) laid on the walls cell by cell,
+  // and whatever stands proud of a wall (the cornices, the dormers, the pedestals) wears the same picture projected
+  // straight on from its wall, so the relief and the painting agree. One mesh near (the stone, the tower, the roofs, the
+  // portals: one program), one far (the same program: its parts as boxes and two-step mansards, the atlas once it is
+  // up, the cells' mean colours before), the dials apart (their canvas, the hands set to the model's clock); Penn, the
+  // eagles and the four groups at the dome's foot ride the night's themed parts in their bronze. ?real=0 keeps Round 81's
+  // block as it was
+  const CITY_HALL = {
+    B0: [-1608.65, -764.51],
+    // the storeys over the ground: the water table, the basement (granite), the principal storey and the main cornice
+    st: { water: 1.5, base: 5.57, princ: 15.78, main: 26.63 },
+    // the outer fronts' faces (V for the north and south fronts, |U| for the east and west) and their spans
+    N: { curtain: -62.9, flank: -68.9, corner: -67.0, centre: -75.0, bay: -76.7 },
+    S: { curtain: 63.1, flank: 65.5, corner: 67.8, centre: 70.1, bay: 72.1 },
+    E: { curtain: 63.2, flank: 65.6, corner: 67.6, centre: 70.4, bay: 72.0 },
+    spanNS: { centre: 13.5, bay: 6, flank: 30, curtain: 50, corner: 67.6 },        // |U| where each part ends
+    spanEW: { centre: [-13.7, 13.3], bay: [-6.5, 5.5], flank: [-30.5, 29], curtain: [-50.5, 50.5] },
+    cornerV: [-67.0, 67.8],
+    court: [[-34.5, -40.9], [34.5, -40.9], [34.5, 20.8], [7, 20.8], [7, 33], [-7, 33], [-7, 20.8], [-34.5, 20.8]],   // the courtyard, its south forecourt in it
+    courtTop: 31.5,
+    wells: [[24.5, 46.2, 28.6, 45.3], [-46.2, -24.5, 28.6, 45.3]],   // the south wing's two light wells, floored at 5 m
+    turrets: [[33.5, -13.7, 41, 48.5], [-33.5, -13.7, 41, 48.5], [33.5, 11.3, 41, 48.5], [-33.5, 11.3, 41, 48.5], [9.5, 18.8, 40.5, 47.6], [-9.5, 18.8, 40.5, 47.6]],
+    stairs: [[44.7, -42.7, 43.5], [44.7, 45.5, 44.0], [-44.7, 45.5, 44.2], [-44.7, -42.7, 40.5]],
+    apse: { c: [0, -26.0], r: 6.3, top: 24.5 },
+    roofs: { curtainDeck: 36.0, curb: 32.8, flankDeck: 39.4, centreBody: 49.0, crown: [57.0, 59.6, 61.8, 73.5], cornerCurb: 45.4, cornerCap: 48.8, cornerPole: 58.4 },
+    centreTop: 39.28, cornerTop: 38.13,
+    tower: { c: [0, -37.2], base: [-50.9, -26.0, 13.5, 26.6], batter: [26.6, 40, 11.3], shaft: [40, 64.5, 11.3], bal1: [64.5, 66, 12.7, 10], mid: [66, 87.5, 10.5],
+      bal2: [87.5, 90.2, 12.5], belv: [90.2, 102.8, 10.5], clock: [102.8, 123.4, 10, 117, 2.5],
+      dome: [[123.4, 8.6], [127, 8.5], [130, 8.2], [133, 7.6], [136, 6.8], [139, 5.8], [142, 4.6]],
+      drum: [142, 149.5, 4.2, 5.4], gallery: [149.5, 150.5, 5.5], cupola: [150.5, 155.6, 3.0, 1.2], penn: [155.6, 167.0] },
+    // OSM's outer ring (scene metres): what the outer districts' loop leaves to this model (grown 2 m)
+    ring: [[-1541.9, -754.0], [-1543.9, -741.6], [-1549.1, -742.4], [-1551.3, -728.9], [-1553.2, -729.2], [-1557.0, -705.7], [-1553.2, -705.1], [-1555.7, -689.8], [-1568.9, -691.9], [-1568.0, -697.4], [-1591.7, -701.2], [-1592.0, -699.0], [-1605.4, -701.1], [-1606.4, -695.4], [-1620.9, -697.7], [-1633.2, -699.7], [-1632.2, -705.8], [-1645.8, -708.0], [-1645.5, -709.8], [-1662.4, -712.5], [-1668.6, -713.6], [-1669.2, -710.0], [-1680.8, -711.9], [-1680.5, -713.7], [-1678.9, -723.9], [-1676.7, -723.5], [-1672.5, -749.3], [-1674.4, -749.6], [-1671.9, -764.2], [-1675.5, -764.8], [-1674.4, -771.1], [-1676.2, -771.4], [-1675.5, -775.6], [-1674.4, -781.9], [-1672.9, -781.6], [-1672.0, -786.8], [-1668.2, -786.1], [-1665.6, -801.6], [-1664.1, -801.9], [-1660.8, -824.3], [-1665.6, -825.0], [-1663.1, -841.9], [-1649.6, -839.8], [-1650.2, -835.9], [-1650.7, -833.1], [-1642.9, -831.9], [-1624.6, -829.2], [-1623.9, -834.0], [-1609.3, -831.8], [-1608.5, -836.9], [-1602.4, -836.0], [-1602.1, -837.9], [-1598.1, -837.2], [-1597.2, -837.1], [-1596.7, -837.0], [-1591.6, -836.3], [-1591.9, -834.4], [-1586.3, -833.5], [-1587.1, -828.3], [-1571.6, -825.9], [-1572.4, -820.7], [-1546.4, -816.7], [-1546.0, -819.1], [-1545.6, -821.6], [-1533.8, -819.8], [-1536.1, -805.3], [-1540.8, -806.1], [-1544.6, -782.3], [-1542.6, -782.0], [-1544.9, -767.6], [-1539.9, -766.9]],
+  };
+  // the night's plain-night wash, the photographs' warm amber (Round 109); the 2024 LED system's default is a static
+  // white, about 0xf3ead9 (3500 K): one constant, Mike's call
+  const CH_HOUSE = new THREE.Color(0.38, 0.32, 0.23);
+  const CH_ON = REAL && typeof CITYHALL_ART !== 'undefined' && !!CITYHALL_ART && !!CITYHALL_ART.cells;
+  // the near level within this of the building's box (a phone's 420 m), the far one beyond, 40 m of hysteresis; a phone asks
+  // for the art within CH_ART_R, and at tier 2 draws the far level alone and never loads it
+  const CH_NEAR_R = isTouch ? 420 : 650, CH_HYST = 40, CH_ART_R = 1000;
+  const CH = { built: false, lod: 'both', near: null, far: null, dial: null, floor: null, mat: null, art: 'none', artOn: { value: 0 },
+    tris: {}, tops: {}, cells: [], bbox: null, minute: -1, hands: null, late: { value: new THREE.Vector2(1, 1) }, err: null };
+  // the building frame to the scene: the world point of (U, y, V) and the world direction of (nu, ny, nv)
+  function chWorld(U, y, V, Y0) { const B = CITY_HALL.B0; return [B[0] + fl.nx * U + fl.dx * V, Y0 + y, B[1] + fl.nz * U + fl.dz * V]; }
+  // the geometry under construction, in the building frame: positions, normals, uv (a cell's own 0 to 1, or metres on an
+  // untextured part), aK (the cell's number, or minus the material's kind; the face's seed for the night's rooms) and the
+  // colour (sRGB bytes: the cell's mean, or the material's own)
+  function chBuf() {
+    const b = { P: [], N: [], T: [], K: [], C: [], I: [], nv: 0 };
+    b.v = (p, n, uv, k, seed, col) => { b.P.push(p[0], p[1], p[2]); b.N.push(n[0], n[1], n[2]); b.T.push(uv[0], uv[1]); b.K.push(k, seed); b.C.push(col[0], col[1], col[2], 255); return b.nv++; };
+    // a triangle wound to face `want` (its normal): any helper may hand its corners in either order
+    b.tri = (a, c, d, want) => {
+      const P = b.P, ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2];
+      const ux = P[c * 3] - ax, uy = P[c * 3 + 1] - ay, uz = P[c * 3 + 2] - az, vx = P[d * 3] - ax, vy = P[d * 3 + 1] - ay, vz = P[d * 3 + 2] - az;
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      if (nx * want[0] + ny * want[1] + nz * want[2] < 0) b.I.push(a, d, c); else b.I.push(a, c, d);
+    };
+    b.quad = (a, c, d, e, want) => { b.tri(a, c, d, want); b.tri(a, d, e, want); };
+    return b;
+  }
+  // the buffer to a BufferGeometry in the scene's frame (indexed, every stream a multiple of 4 bytes: the colour as four
+  // normalized bytes, never three, Round 158)
+  function chGeometry(b, Y0) {
+    const n = b.nv, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), B = CITY_HALL.B0;
+    for (let i = 0; i < n; i++) {
+      const U = b.P[i * 3], y = b.P[i * 3 + 1], V = b.P[i * 3 + 2];
+      pos[i * 3] = B[0] + fl.nx * U + fl.dx * V; pos[i * 3 + 1] = Y0 + y; pos[i * 3 + 2] = B[1] + fl.nz * U + fl.dz * V;
+      const nu = b.N[i * 3], ny = b.N[i * 3 + 1], nv = b.N[i * 3 + 2];
+      let x = fl.nx * nu + fl.dx * nv, z = fl.nz * nu + fl.dz * nv; const l = Math.hypot(x, ny, z) || 1;
+      nor[i * 3] = x / l; nor[i * 3 + 1] = ny / l; nor[i * 3 + 2] = z / l;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(b.T), 2));
+    g.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(b.K), 2));
+    g.setAttribute('aCol', new THREE.BufferAttribute(new Uint8Array(b.C), 4, true));
+    g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(b.I, 1) : new THREE.Uint16BufferAttribute(b.I, 1));
+    g.computeBoundingSphere();
+    return g;
+  }
+  // the untextured materials (aK.x = -kind): their sRGB colours and roughness live in the shader by kind
+  const CHK = { slate: 1, crest: 2, deck: 3, copper: 4, vault: 5, dial: 6, pave: 7, dark: 8, paint: 9, marble: 10, flag: 11 };
+  const CH_KCOL = { 1: [0x4e, 0x58, 0x64], 2: [0xe4, 0xe1, 0xd8], 3: [0x3b, 0x3e, 0x43], 4: [0x5f, 0x9a, 0x86], 5: [0x5d, 0x5f, 0x5c], 6: [0x5a, 0x90, 0x8a],
+    7: [0x7f, 0x7c, 0x76], 8: [0x4a, 0x47, 0x43], 9: [0xc8, 0xcc, 0xd1], 10: [0xc9, 0xc4, 0xb8], 11: [0xb2, 0x22, 0x34] };
+  // the model, near (far false) or far: every part as one buffer (b), from the atlas manifest A
+  function chModel(A, far) {
+    const b = chBuf(), C = CITY_HALL, S = C.st, cellIx = {}, mean = {};
+    Object.keys(A.cells).sort().forEach((id, i) => { cellIx[id] = i; mean[id] = (A.mean[id] || [0.78, 0.76, 0.72]).map((v) => Math.round(v * 255)); });
+    const wrapCell = { curtain: 1, flank: 1, court: 1, turret: 1, ashlar: 1, balus: 1 };
+    const M = (id) => A.m[id] || [16, 16];
+    let seedN = 0;
+    const tops = {};
+    const top = (k, y) => { tops[k] = Math.max(tops[k] || 0, Math.round(y * 100) / 100); };
+    // a face: from plan point A to B (U, V), the outside to the right of A to B (so A stands at the viewer's left), y0 to y1,
+    // in cell `cell` from u0 to u1 across and v0 to v1 up
+    const face = (A0, B0, y0, y1, cell, u0, u1, v0, v1) => {
+      const du = B0[0] - A0[0], dv = B0[1] - A0[1], len = Math.hypot(du, dv) || 1e-6, tx = du / len, tz = dv / len;
+      return { A: A0, B: B0, len, tx, tz, nx: -tz, nz: tx, y0, y1, cell, u0: u0 == null ? 0 : u0, u1: u1 == null ? 1 : u1, v0: v0 == null ? 0 : v0, v1: v1 == null ? 1 : v1, seed: (seedN++ * 0.6180339) % 1 };
+    };
+    const at = (F, s, y, d) => [F.A[0] + F.tx * s + F.nx * d, y, F.A[1] + F.tz * s + F.nz * d];
+    // a point's place in its face's cell, projected straight on from the face (relief wears its wall's picture)
+    const uvOf = (F, p) => {
+      const s = ((p[0] - F.A[0]) * F.tx + (p[2] - F.A[1]) * F.tz) / F.len;
+      let u = F.u0 + (F.u1 - F.u0) * s, v = F.v0 + (F.v1 - F.v0) * (p[1] - F.y0) / ((F.y1 - F.y0) || 1);
+      if (!wrapCell[F.cell]) { u = clamp(u, 0.0005, 0.9995); v = clamp(v, 0.0005, 0.9995); }
+      return [u, v];
+    };
+    const kOf = (cell) => (typeof cell === 'number' ? -cell : cellIx[cell]);
+    const colOf = (cell) => (typeof cell === 'number' ? CH_KCOL[cell] : mean[cell] || [200, 196, 188]);
+    // a vertex on face F (textured by projection) or of an untextured kind with metre uv
+    const vF = (F, p, n) => b.v(p, n, uvOf(F, p), kOf(F.cell), F.seed, colOf(F.cell));
+    const vK = (kind, p, n, uv, seed, shade) => b.v(p, n, uv, -kind, seed || 0, shade == null ? CH_KCOL[kind] : CH_KCOL[kind].map((c) => Math.round(c * shade)));
+    const nF = (F) => [F.nx, 0, F.nz];
+    // the face's own wall, whole, or with an arched opening (hole: [s0, s1, spring, crown] metres along and up)
+    const wall = (F, hole) => {
+      const n = nF(F);
+      if (!hole) {
+        const a = vF(F, at(F, 0, F.y0, 0), n), c = vF(F, at(F, F.len, F.y0, 0), n), d = vF(F, at(F, F.len, F.y1, 0), n), e = vF(F, at(F, 0, F.y1, 0), n);
+        b.quad(a, c, d, e, n);
+        return;
+      }
+      const [s0, s1, sp, cr] = hole, r = (s1 - s0) / 2, sc = (s0 + s1) / 2, seg = far ? 4 : 10;
+      const outer = [[0, F.y0], [F.len, F.y0], [F.len, F.y1], [0, F.y1]];
+      const h = [[s0, F.y0]];
+      for (let i = 0; i <= seg; i++) { const t = Math.PI * (1 - i / seg); h.push([sc + Math.cos(t) * r, sp + Math.sin(t) * (cr - sp)]); }
+      h.push([s1, F.y0]);
+      // the outline with the opening cut from its foot: one ring, triangulated in the face's plane
+      const ring = [[0, F.y0], [s0, F.y0], ...h.slice(1, -1), [s1, F.y0], [F.len, F.y0], [F.len, F.y1], [0, F.y1]];
+      const tris = THREE.ShapeUtils.triangulateShape(ring.map((q) => new THREE.Vector2(q[0], q[1])), []);
+      const ix = ring.map((q) => vF(F, at(F, q[0], q[1], 0), n));
+      for (const t of tris) b.tri(ix[t[0]], ix[t[1]], ix[t[2]], n);
+      void outer;
+    };
+    // a box standing proud of face F: s0 to s1 along, y0 to y1 up, d0 to d1 out; every side wears F's picture projected
+    const proud = (F, s0, s1, y0, y1, d0, d1, cell) => {
+      const G = cell ? { ...F, cell } : F;
+      const P = (s, y, d) => at(F, s, y, d), n = nF(F), t = [F.tx, 0, F.tz], up = [0, 1, 0];
+      const q = (p0, p1, p2, p3, nn) => { const a = vF(G, p0, nn), c = vF(G, p1, nn), d = vF(G, p2, nn), e = vF(G, p3, nn); b.quad(a, c, d, e, nn); };
+      q(P(s0, y0, d1), P(s1, y0, d1), P(s1, y1, d1), P(s0, y1, d1), n);                                // front
+      q(P(s0, y1, d0), P(s1, y1, d0), P(s1, y1, d1), P(s0, y1, d1), up);                               // top
+      q(P(s0, y0, d0), P(s0, y0, d1), P(s1, y0, d1), P(s1, y0, d0), [0, -1, 0]);                       // soffit
+      q(P(s0, y0, d0), P(s0, y0, d1), P(s0, y1, d1), P(s0, y1, d0), [-t[0], 0, -t[2]]);               // ends
+      q(P(s1, y0, d0), P(s1, y0, d1), P(s1, y1, d1), P(s1, y1, d0), t);
+    };
+    // a moulding along face F from s0 to s1, its profile [[out, up], ...] from yb (each pair of points a strip); the
+    // picture projected from the face, so the painted cornice lies on the built one
+    const moulding = (F, s0, s1, yb, prof) => {
+      const t = [F.tx, 0, F.tz];
+      for (let i = 0; i + 1 < prof.length; i++) {
+        const [o0, h0] = prof[i], [o1, h1] = prof[i + 1];
+        const nn = [F.nx * (h1 - h0), -(o1 - o0), F.nz * (h1 - h0)], l = Math.hypot(nn[0], nn[1], nn[2]) || 1;
+        const n = [nn[0] / l, nn[1] / l, nn[2] / l];
+        const a = vF(F, at(F, s0, yb + h0, o0), n), c = vF(F, at(F, s1, yb + h0, o0), n), d = vF(F, at(F, s1, yb + h1, o1), n), e = vF(F, at(F, s0, yb + h1, o1), n);
+        b.quad(a, c, d, e, n);
+      }
+      // the ends, the profile's own outline closed back to the wall
+      const ring = prof.map(([o, h]) => [o, h]);
+      const last = ring[ring.length - 1];
+      if (last[0] > 1e-3) ring.push([0, last[1]]);
+      if (ring[0][0] > 1e-3) ring.unshift([0, ring[0][1]]);
+      let tris;
+      try { tris = THREE.ShapeUtils.triangulateShape(ring.map((q) => new THREE.Vector2(q[0], q[1])), []); } catch (e) { tris = []; }
+      for (const [s, sg] of [[s0, -1], [s1, 1]]) {
+        const n = [t[0] * sg, 0, t[2] * sg], ix = ring.map(([o, h]) => vF(F, at(F, s, yb + h, o), n));
+        for (const tr of tris) b.tri(ix[tr[0]], ix[tr[1]], ix[tr[2]], n);
+      }
+    };
+    // a free-standing column measured on its wall's picture (bake_cityhall_art.py's COLS): a half-round shaft centred on
+    // the wall s metres along F (so it covers the painted one from any side), its capital and base as boxes, all wearing
+    // the picture projected from the wall
+    const column = (F, s, ct, st, sf, r) => {
+      if (far) return;
+      const seg = isTouch ? 6 : 10, ring = [];
+      for (let i = 0; i <= seg; i++) {
+        const a = Math.PI * i / seg, ca = Math.cos(a), sa = Math.sin(a);
+        const nn = [F.tx * ca + F.nx * sa, 0, F.tz * ca + F.nz * sa];
+        ring.push([vF(F, at(F, s + ca * r, sf, sa * r), nn), vF(F, at(F, s + ca * r, st, sa * r), nn), nn]);
+      }
+      for (let i = 0; i < seg; i++) { const n0 = ring[i][2], n1 = ring[i + 1][2]; b.quad(ring[i][0], ring[i + 1][0], ring[i + 1][1], ring[i][1], [n0[0] + n1[0], 0, n0[2] + n1[2]]); }
+      proud(F, s - r * 1.3, s + r * 1.3, st, ct, 0, r * 1.25);
+      proud(F, s - r * 1.2, s + r * 1.2, sf - 0.45, sf, 0, r * 1.2);
+    };
+    // a cell's measured columns on face F, wherever the cell's repeats put them along it
+    const colsOn = (F, id) => {
+      const cols = A.meta[id] && A.meta[id].cols, W0 = M(id)[0];
+      if (!cols || far) return;
+      for (let k = Math.floor(F.u0); k <= Math.ceil(F.u1); k++) for (const [x0, ct, st, sf, r] of cols) {
+        const u = k + x0 / W0, s = (u - F.u0) / (F.u1 - F.u0) * F.len;
+        if (s > r * 1.4 && s < F.len - r * 1.4) column(F, s, ct, st, sf, r);
+      }
+    };
+    // the cornices' profiles: [[out, up], ...]
+    const PROF = {
+      base: [[0, 0], [0.35, 0.18], [0.35, 0.5], [0, 0.5]],
+      string: [[0, 0], [0.2, 0.1], [0.45, 0.35], [0.45, 0.6], [0, 0.6]],
+      main: [[0, 0], [0.15, 0.35], [0.9, 0.75], [1.1, 1.05], [0.9, 1.4], [0, 1.4]],
+      attic: [[0, 0], [0.2, 0.25], [0.6, 0.55], [0.6, 0.8], [0, 0.8]],
+      top: [[0, 0], [0.2, 0.3], [1.0, 0.7], [1.2, 1.0], [1.0, 1.3], [0, 1.3]],
+      water: [[0, 0], [0.25, 0], [0.25, 1.3], [0.05, 1.5], [0, 1.5]],
+    };
+    // a cornice on face F, run past both ends by its own depth (a corner's two runs meet; a run into a neighbour's wall is hidden)
+    const cornice = (F, y, prof, ext) => {
+      if (far && prof !== PROF.main && prof !== PROF.top) return;
+      const out = Math.max(...prof.map((q) => q[0])), hh = Math.max(...prof.map((q) => q[1]));
+      const e = ext == null ? out - 0.02 : ext;
+      moulding(F, -e, F.len + e, y - (prof === PROF.water ? 0 : hh), prof);
+    };
+    // a hipped roof over a plan rectangle [u0, u1, v0, v1], its profile [[inset, y], ...] on the sides named in `sides`
+    // ('n', 's', 'e', 'w'), a side not named rising straight; untextured (kind) with the eave's metres for uv; a flat top
+    // at the last level unless noTop
+    const hipRoof = (R, prof, sides, kind, noTop, curbKind) => {
+      const lv = prof.map(([ins, y]) => {
+        const i = (s) => (sides.indexOf(s) >= 0 ? ins : 0);
+        return { y, ring: [[R[1] - i('e'), R[2] + i('n')], [R[0] + i('w'), R[2] + i('n')], [R[0] + i('w'), R[3] - i('s')], [R[1] - i('e'), R[3] - i('s')]] };
+      });
+      for (let k = 0; k + 1 < lv.length; k++) {
+        const L0 = lv[k], L1 = lv[k + 1];
+        const kk = curbKind && k === curbKind[0] ? curbKind[1] : kind;
+        for (let i = 0; i < 4; i++) {
+          const j = (i + 1) % 4, p0 = [L0.ring[i][0], L0.y, L0.ring[i][1]], p1 = [L0.ring[j][0], L0.y, L0.ring[j][1]], p2 = [L1.ring[j][0], L1.y, L1.ring[j][1]], p3 = [L1.ring[i][0], L1.y, L1.ring[i][1]];
+          if (Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) < 1e-3 && Math.hypot(p2[0] - p3[0], p2[2] - p3[2]) < 1e-3) continue;
+          const ex = p1[0] - p0[0], ez = p1[2] - p0[2], el = Math.hypot(ex, ez) || 1;
+          // the outward normal: the side's outside, tilted by the slope
+          const ox = -ez / el, oz = ex / el;   // the side's outside: the loops run with it on the right
+          const dIn = (p3[0] - p0[0]) * ox + (p3[2] - p0[2]) * oz, dy = p3[1] - p0[1];
+          let nn = [ox * dy, -dIn, oz * dy]; const nl = Math.hypot(nn[0], nn[1], nn[2]);
+          nn = nl > 1e-6 ? [nn[0] / nl, nn[1] / nl, nn[2] / nl] : [ox, 0, oz];
+          if (nn[0] * ox + nn[2] * oz < -1e-6) nn = [-nn[0], -nn[1], -nn[2]];
+          const sl = Math.hypot(dIn, dy);
+          const proj = (p) => ((p[0] - p0[0]) * ex + (p[2] - p0[2]) * ez) / el;
+          const a = vK(kk, p0, nn, [0, 0]), c = vK(kk, p1, nn, [el, 0]), d = vK(kk, p2, nn, [proj(p2), sl]), e = vK(kk, p3, nn, [proj(p3), sl]);
+          b.quad(a, c, d, e, nn);
+        }
+      }
+      const L = lv[lv.length - 1];
+      if (!noTop) { const up = [0, 1, 0], ix = L.ring.map((q) => vK(CHK.deck, [q[0], L.y, q[1]], up, [q[0], q[1]])); b.quad(ix[0], ix[1], ix[2], ix[3], up); }
+      return L;
+    };
+    // a dormer on a sloping roof: its front on face F (s0 to s1, y0 to y1), its cheeks and its top in slate back `depth`
+    const dormer = (F, s0, s1, y0, y1, d, depth, cell, u0, u1) => {
+      if (far) return;
+      const pA = at(F, s0, 0, d), pB = at(F, s1, 0, d);
+      const G = face([pA[0], pA[2]], [pB[0], pB[2]], y0, y1, cell, u0 == null ? 0 : u0, u1 == null ? 1 : u1, 0, 1);
+      wall(G);
+      const P = (s, y, dd) => at(F, s, y, dd), t = [F.tx, 0, F.tz];
+      const sl = CHK.slate;
+      const q = (p0, p1, p2, p3, nn, k) => { const a = vK(k, p0, nn, [0, 0]), c = vK(k, p1, nn, [1, 0]), dd = vK(k, p2, nn, [1, 1]), e = vK(k, p3, nn, [0, 1]); b.quad(a, c, dd, e, nn); };
+      q(P(s0, y0, d - depth), P(s0, y0, d), P(s0, y1, d), P(s0, y1, d - depth), [-t[0], 0, -t[2]], sl);
+      q(P(s1, y0, d - depth), P(s1, y0, d), P(s1, y1, d), P(s1, y1, d - depth), t, sl);
+      q(P(s0, y1, d - depth), P(s1, y1, d - depth), P(s1, y1, d), P(s0, y1, d), [0, 1, 0], sl);
+    };
+    // a cylinder (columns, turrets, drums): centre (U, V), y0 to y1, radii r0 and r1, segs sides; textured round from u0
+    // by `wraps` cells (or untextured kind), its caps if asked
+    const cyl = (cu, cv, y0, y1, r0, r1, segs, cell, wraps, v0, v1, capTop, a0) => {
+      const ring = [];
+      for (let i = 0; i <= segs; i++) {
+        const a = (a0 || 0) + i / segs * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+        const slope = (r0 - r1) / ((y1 - y0) || 1), nl = Math.hypot(1, slope);
+        const n = [ca / nl, slope / nl, sa / nl];
+        const u = i / segs * (wraps || 1);
+        const vv0 = v0 == null ? 0 : v0, vv1 = v1 == null ? 1 : v1;
+        if (typeof cell === 'number') {
+          ring.push([vK(cell, [cu + ca * r0, y0, cv + sa * r0], n, [u * 2 * Math.PI * r0 / (wraps || 1), 0]), vK(cell, [cu + ca * r1, y1, cv + sa * r1], n, [u * 2 * Math.PI * r0 / (wraps || 1), y1 - y0])]);
+        } else {
+          ring.push([b.v([cu + ca * r0, y0, cv + sa * r0], n, [u, vv0], cellIx[cell], 0.37, mean[cell]), b.v([cu + ca * r1, y1, cv + sa * r1], n, [u, vv1], cellIx[cell], 0.37, mean[cell])]);
+        }
+      }
+      for (let i = 0; i < segs; i++) {
+        const am = (a0 || 0) + (i + 0.5) / segs * Math.PI * 2, n = [Math.cos(am), 0, Math.sin(am)];
+        b.quad(ring[i][0], ring[i + 1][0], ring[i + 1][1], ring[i][1], n);
+      }
+      if (capTop) {
+        const up = [0, 1, 0], k = typeof capTop === 'number' ? capTop : CHK.deck, ctr = vK(k, [cu, y1, cv], up, [0, 0]);
+        const rim = [];
+        for (let i = 0; i < segs; i++) { const a = (a0 || 0) + i / segs * Math.PI * 2; rim.push(vK(k, [cu + Math.cos(a) * r1, y1, cv + Math.sin(a) * r1], up, [Math.cos(a) * r1, Math.sin(a) * r1])); }
+        for (let i = 0; i < segs; i++) b.tri(ctr, rim[i], rim[(i + 1) % segs], up);
+      }
+    };
+    // a pyramid or cone of an untextured kind from a square (half-widths hu, hv) at y0 to a point or a smaller square at y1
+    const pyramid = (cu, cv, hu, hv, y0, y1, tu, tv, kind) => {
+      const R0 = [[cu + hu, cv - hv], [cu - hu, cv - hv], [cu - hu, cv + hv], [cu + hu, cv + hv]], R1 = [[cu + tu, cv - tv], [cu - tu, cv - tv], [cu - tu, cv + tv], [cu + tu, cv + tv]];
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4, p0 = [R0[i][0], y0, R0[i][1]], p1 = [R0[j][0], y0, R0[j][1]], p2 = [R1[j][0], y1, R1[j][1]], p3 = [R1[i][0], y1, R1[i][1]];
+        const ex = p1[0] - p0[0], ez = p1[2] - p0[2], el = Math.hypot(ex, ez) || 1, ox = -ez / el, oz = ex / el;
+        const mx = (p2[0] + p3[0]) / 2 - (p0[0] + p1[0]) / 2, mz = (p2[2] + p3[2]) / 2 - (p0[2] + p1[2]) / 2, dIn = -(mx * ox + mz * oz), dy = y1 - y0;
+        const nl = Math.hypot(dy, dIn) || 1, n = [ox * dy / nl, dIn / nl, oz * dy / nl];
+        const sl = Math.hypot(dIn, dy);
+        if (tu < 1e-3 && tv < 1e-3) { const a = vK(kind, p0, n, [0, 0]), c = vK(kind, p1, n, [el, 0]), d = vK(kind, p2, n, [el / 2, sl]); b.tri(a, c, d, n); }
+        else { const a = vK(kind, p0, n, [0, 0]), c = vK(kind, p1, n, [el, 0]), d = vK(kind, p2, n, [el, sl]), e = vK(kind, p3, n, [0, sl]); b.quad(a, c, d, e, n); }
+      }
+      if (tu > 1e-3) { const up = [0, 1, 0], ix = R1.map((q) => vK(CHK.deck, [q[0], y1, q[1]], up, [q[0], q[1]])); b.quad(ix[0], ix[1], ix[2], ix[3], up); }
+    };
+    // the four walls of a plan rectangle [u0, u1, v0, v1] from y0 to y1, each in its cell (f(side) gives [cell, u0, u1,
+    // v0, v1] or null to leave it off)
+    const rectFaces = (R, y0, y1, f) => {
+      const NE = [R[1], R[2]], NW = [R[0], R[2]], SW = [R[0], R[3]], SE = [R[1], R[3]];
+      const out = {};
+      for (const [s, A0, B0] of [['n', NE, NW], ['w', NW, SW], ['s', SW, SE], ['e', SE, NE]]) {
+        const c = f(s, Math.hypot(B0[0] - A0[0], B0[1] - A0[1]));
+        if (!c) continue;
+        out[s] = face(A0, B0, y0, y1, c[0], c[1], c[2], c[3] == null ? 0 : c[3], c[4] == null ? 1 : c[4]);
+      }
+      return out;
+    };
+    const stoneCornices = (F, lines) => { for (const [y, p] of lines) cornice(F, y, p); };
+    // an iron cresting round a plan rectangle from y0 to y1: an open band (the balustrade's picture, the sky cut between
+    // its bars) facing out and in; the far level's solid band of the painted iron's colour
+    const cresting = (R, y0, y1) => {
+      const NE = [R[1], R[2]], NW = [R[0], R[2]], SW = [R[0], R[3]], SE = [R[1], R[3]], bw = M('balus')[0];
+      for (const [A0, B0] of [[NE, NW], [NW, SW], [SW, SE], [SE, NE]]) {
+        const L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+        if (far) { const F = face(A0, B0, y0, y1, CHK.crest); const n = nF(F); const a = vK(CHK.crest, at(F, 0, y0, 0), n, [0, 0]), c = vK(CHK.crest, at(F, L, y0, 0), n, [L, 0]), d = vK(CHK.crest, at(F, L, y1, 0), n, [L, 1]), e = vK(CHK.crest, at(F, 0, y1, 0), n, [0, 1]); b.quad(a, c, d, e, n); continue; }
+        for (const [P0, P1] of [[A0, B0], [B0, A0]]) wall(face(P0, P1, y0, y1, 'balus', 0, Math.max(1, Math.round(L / bw))));
+      }
+    };
+
+    // ---------------- the wings: one ring round the courtyard (the curtains' walls, the courtyard's, the mansards, the deck)
+    const OUT = [-63.2, 63.2, -62.9, 63.1];   // the curtains' line all round
+    const wingLines = [[S.water, PROF.water], [S.base, PROF.base], [S.princ, PROF.string], [S.main, PROF.main]];
+    const curW = M('curtain')[0];
+    // the curtains: the exposed runs of the wings' outer wall between the pavilions and flanks
+    const curtainRuns = [
+      [[50, C.N.curtain], [30, C.N.curtain]], [[-30, C.N.curtain], [-50, C.N.curtain]],
+      [[-50, C.S.curtain], [-30, C.S.curtain]], [[30, C.S.curtain], [50, C.S.curtain]],
+      [[C.E.curtain, 50.5], [C.E.curtain, 29]], [[C.E.curtain, -30.5], [C.E.curtain, -50.5]],
+      [[-C.E.curtain, -50.5], [-C.E.curtain, -30.5]], [[-C.E.curtain, 29], [-C.E.curtain, 50.5]],
+    ];
+    for (const [A0, B0] of curtainRuns) {
+      const L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+      const F = face(A0, B0, 0, S.main, 'curtain', 0.5 - L / curW / 2, 0.5 + L / curW / 2);
+      wall(F); stoneCornices(F, wingLines);
+      // a dormer over each bay of the mansard (4 bays a 16 m cell)
+      const bay = curW / 4, nb = Math.round(L / bay);
+      for (let i = 0; i < nb; i++) { const sc = L / 2 + (i - (nb - 1) / 2) * bay; dormer(F, sc - 1.2, sc + 1.2, 27.0, 31.4, -0.75, 1.3, 'dormer_w'); }
+    }
+    // the outer mansard all round the wings (hidden where a pavilion or flank stands in front), the deck, the courtyard's
+    // mansard; the deck has the courtyard and the light wells cut from it
+    {
+      const R = OUT, ins = [[0.6, S.main], [2.0, C.roofs.curb], [2.0, C.roofs.curb + 0.5], [5.5, C.roofs.curtainDeck]];
+      hipRoof(R, ins, 'nsew', CHK.slate, true, [1, CHK.crest]);
+      const deckOut = [[R[1] - 5.5, R[2] + 5.5], [R[0] + 5.5, R[2] + 5.5], [R[0] + 5.5, R[3] - 5.5], [R[1] - 5.5, R[3] - 5.5]];
+      // the courtyard's ring grown by the inner mansard's 2.5 m (its edges are all on the frame's axes)
+      const grow = (ring, d) => ring.map((p, i) => {
+        const a = ring[(i + ring.length - 1) % ring.length], c = ring[(i + 1) % ring.length];
+        const n1 = [-(p[1] - a[1]), p[0] - a[0]], n2 = [-(c[1] - p[1]), c[0] - p[0]];
+        const l1 = Math.hypot(n1[0], n1[1]) || 1, l2 = Math.hypot(n2[0], n2[1]) || 1;
+        const m = [n1[0] / l1 + n2[0] / l2, n1[1] / l1 + n2[1] / l2], dot = (n1[0] * n2[0] + n1[1] * n2[1]) / l1 / l2;
+        return [p[0] - m[0] * d / (1 + dot), p[1] - m[1] * d / (1 + dot)];
+      });
+      const courtIn = grow(C.court, 2.5);
+      const holes = [courtIn, ...C.wells.map((w) => [[w[1], w[2]], [w[0], w[2]], [w[0], w[3]], [w[1], w[3]]])];
+      const up = [0, 1, 0], y = C.roofs.curtainDeck;
+      const tris = THREE.ShapeUtils.triangulateShape(deckOut.map((q) => new THREE.Vector2(q[0], q[1])), holes.map((h) => h.map((q) => new THREE.Vector2(q[0], q[1]))));
+      const all = deckOut.concat(...holes), ix = all.map((q) => vK(CHK.deck, [q[0], y, q[1]], up, [q[0], q[1]]));
+      for (const t of tris) b.tri(ix[t[0]], ix[t[1]], ix[t[2]], up);
+      // the courtyard's walls (the court cell, 16 m a tile) and its own mansard to the deck
+      const ring = C.court, cw = M('court')[0];
+      for (let i = 0; i < ring.length; i++) {
+        const A0 = ring[i], B0 = ring[(i + 1) % ring.length], L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+        const F = face(A0, B0, 0, C.courtTop, 'court', 0, L / cw);
+        wall(F, i === 0 ? null : chPortalHole(F, A0, B0));
+        cornice(F, C.courtTop, PROF.attic);
+        cornice(F, S.base, PROF.base);
+        // the mansard: from the wall's head 0.5 in to 2.5 in at 35.5, then up to the deck; a dormer every 4 m
+        const G = face(courtIn[i], courtIn[(i + 1) % ring.length], 0, 1, CHK.slate);
+        const p0 = at(F, 0, C.courtTop, -0.5), p1 = at(F, L, C.courtTop, -0.5);
+        const q0 = [courtIn[i][0], 35.5, courtIn[i][1]], q1 = [courtIn[(i + 1) % ring.length][0], 35.5, courtIn[(i + 1) % ring.length][1]];
+        const nn = (() => { const dy = 4.0, dIn = 2.0, l = Math.hypot(dy, dIn); return [F.nx * dy / l, dIn / l, F.nz * dy / l]; })();
+        const a = vK(CHK.slate, p0, nn, [0, 0]), c = vK(CHK.slate, p1, nn, [L, 0]), d = vK(CHK.slate, q1, nn, [L, 4.5]), e = vK(CHK.slate, q0, nn, [0, 4.5]);
+        b.quad(a, c, d, e, nn);
+        const r0 = vK(CHK.crest, q0, nF(F), [0, 0]), r1 = vK(CHK.crest, q1, nF(F), [L, 0]), r2 = vK(CHK.crest, [q1[0], 36.0, q1[2]], nF(F), [L, 0.5]), r3 = vK(CHK.crest, [q0[0], 36.0, q0[2]], nF(F), [0, 0.5]);
+        b.quad(r0, r1, r2, r3, nF(F));
+        void G;
+        if (L > 6) for (let s = 3; s < L - 2; s += 4) dormer(F, s - 0.8, s + 0.8, 31.9, 34.8, -0.75, 1.4, 'dormer_w');
+      }
+      // the light wells: their walls from the deck down to their floors at 5 m (the court cell), and the floors
+      for (const w of C.wells) {
+        const ring2 = [[w[0], w[2]], [w[1], w[2]], [w[1], w[3]], [w[0], w[3]]];   // walked with the well on the right
+        for (let i = 0; i < 4; i++) {
+          const A0 = ring2[i], B0 = ring2[(i + 1) % 4], L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+          wall(face(A0, B0, 5, 36, 'court', 0, L / cw, 0.16, 1));
+        }
+        if (!far) { const up2 = [0, 1, 0], ix2 = ring2.map((q) => vK(CHK.deck, [q[0], 5, q[1]], up2, [q[0], q[1]])); b.quad(ix2[0], ix2[1], ix2[2], ix2[3], up2); }
+      }
+    }
+    // ---------------- the corner pavilions: every face in the corner cell to the attic's cornice, the concave mansard, the
+    // cap stage and its pyramid, a flagpole
+    for (const [su, sv] of [[1, -1], [-1, -1], [1, 1], [-1, 1]]) {
+      const R = [su > 0 ? 50 : -C.E.corner, su > 0 ? C.E.corner : -50, sv < 0 ? C.N.corner : 50.5, sv < 0 ? -50.5 : C.S.corner];
+      const Fs = rectFaces(R, 0, C.cornerTop, () => ['corner', 0, 1]);
+      for (const k in Fs) {
+        const F = Fs[k];
+        wall(F); stoneCornices(F, [[S.water, PROF.water], [S.base, PROF.base], [S.princ, PROF.string], [S.main, PROF.string], [C.cornerTop, PROF.top]]);
+        // the outer faces' great dormer on the mansard
+        const outer = (k === 'n' && sv < 0) || (k === 's' && sv > 0) || (k === 'e' && su > 0) || (k === 'w' && su < 0);
+        if (outer) dormer(F, F.len / 2 - 1.8, F.len / 2 + 1.8, 38.4, 45.6, -0.55, 2.0, 'dormer_c');
+        if (outer) for (const [x0, ct, st, sf, r] of (A.meta.corner && A.meta.corner.cols) || []) column(F, x0 / M('corner')[0] * F.len, ct, st, sf, r);
+      }
+      const cr = C.roofs, prof = [[0.4, C.cornerTop + 0.3], [1.2, 41], [2.25, cr.cornerCurb], [2.25, cr.cornerCurb + 0.6]];
+      hipRoof(R, prof, 'nsew', CHK.slate, false, [2, CHK.crest]);
+      const cu = (R[0] + R[1]) / 2, cv = (R[2] + R[3]) / 2;
+      // the cap stage: a 7.5 m square of slate walls to 47.0, its pyramid to 48.8, a flagpole to 58.4
+      const capR = [cu - 3.75, cu + 3.75, cv - 3.75, cv + 3.75];
+      hipRoof(capR, [[0, cr.cornerCurb], [0, 47.0], [0.2, 47.0], [0.2, 47.3]], 'nsew', CHK.slate, true, [1, CHK.crest]);
+      cresting([R[0] + 2.25, R[1] - 2.25, R[2] + 2.25, R[3] - 2.25], cr.cornerCurb + 0.6, cr.cornerCurb + 1.5);
+      pyramid(cu, cv, 3.55, 3.55, 47.3, cr.cornerCap, 0.25, 0.25, CHK.slate);
+      if (!far) cyl(cu, cv, cr.cornerCap, cr.cornerPole, 0.13, 0.08, 6, CHK.paint, 1);
+      top('cornerCap', cr.cornerCap); top('cornerPole', cr.cornerPole);
+    }
+    // ---------------- the flanks: three bays each side of every centre pavilion, the bell mansard over the front and both
+    // ends, its deck at 39.4; three dormers at the foot and three oculi above
+    const flankW = M('flank')[0];
+    const flankBlocks = [
+      { R: [13.5, 30, C.N.flank, -56.0], out: 'n' }, { R: [-30, -13.5, C.N.flank, -56.0], out: 'n' },
+      { R: [13.5, 30, 54.0, C.S.flank], out: 's' }, { R: [-30, -13.5, 54.0, C.S.flank], out: 's' },
+      { R: [54.0, C.E.flank, 13.3, 29], out: 'e' }, { R: [54.0, C.E.flank, -30.5, -13.7], out: 'e' },
+      { R: [-C.E.flank, -54.0, 13.3, 29], out: 'w' }, { R: [-C.E.flank, -54.0, -30.5, -13.7], out: 'w' },
+    ];
+    for (const fb of flankBlocks) {
+      const Fs = rectFaces(fb.R, 0, S.main, (s, L) => (s === fb.out ? ['flank', 0.5 - L / flankW / 2, 0.5 + L / flankW / 2] : ['flank', 0, L / flankW]));
+      const back = { n: 's', s: 'n', e: 'w', w: 'e' }[fb.out];
+      for (const k in Fs) {
+        if (k === back) continue;
+        const F = Fs[k];
+        wall(F); stoneCornices(F, wingLines);
+        if (k === fb.out) {
+          colsOn(F, 'flank');
+          for (let i = 0; i < 3; i++) {
+            const sc = F.len * (i + 0.5) / 3;
+            dormer(F, sc - 1.2, sc + 1.2, 27.0, 31.4, -0.85, 1.3, 'dormer_w');
+            dormer(F, sc - 1.0, sc + 1.0, 33.0, 35.4, -2.55, 1.2, 'oculus');
+          }
+        }
+      }
+      const sides = 'nsew'.replace(back, '');
+      hipRoof(fb.R, [[0.5, S.main], [1.0, 29.5], [1.9, 32.5], [3.2, 35.3], [4.8, 37.6], [6.5, C.roofs.flankDeck], [6.5, C.roofs.flankDeck + 0.4]], sides, CHK.slate, false, [5, CHK.crest]);
+      top('flankDeck', C.roofs.flankDeck);
+    }
+    // ---------------- the centre pavilions: the centre cell's front (its middle bay standing forward with the portal), the
+    // returns, the shoulders to the body roof at 49, the crown, its cresting, finial and flagpole, the aedicule and oculi
+    const cw0 = M('centre')[0], arch = (A.meta.centre && A.meta.centre.arch) || [10.99, 16.01, 6.4, 9.14];
+    const cpav = [
+      { side: 'n', front: C.N.centre, bay: C.N.bay, depth: -50.9, pole: true },
+      { side: 's', front: C.S.centre, bay: C.S.bay, depth: 40.0 },
+      { side: 'e', front: C.E.centre, bay: C.E.bay, depth: 40.0, span: C.spanEW.centre, bspan: C.spanEW.bay },
+      { side: 'w', front: -C.E.centre, bay: -C.E.bay, depth: -40.0, span: C.spanEW.centre, bspan: C.spanEW.bay },
+    ];
+    // (U, V) of a point s metres across the pavilion's front from its left end (as seen from outside) and d out of its
+    // body's line, for each side
+    for (const cp of cpav) {
+      const sg = cp.side === 'n' || cp.side === 'w' ? -1 : 1;
+      const ns = cp.side === 'n' || cp.side === 's';
+      const span = cp.span || [-C.spanNS.centre, C.spanNS.centre], bsp = cp.bspan || [-C.spanNS.bay, C.spanNS.bay];
+      // the plan rectangle of the body (front to depth)
+      const R = ns ? [span[0], span[1], Math.min(cp.front, cp.depth), Math.max(cp.front, cp.depth)] : [Math.min(cp.front, cp.depth), Math.max(cp.front, cp.depth), span[0], span[1]];
+      // the left and right ends as seen from outside: north front seen from the north has east on the left
+      const L0 = ns ? (cp.side === 'n' ? span[1] : span[0]) : (cp.side === 'e' ? span[1] : span[0]);
+      const L1 = ns ? (cp.side === 'n' ? span[0] : span[1]) : (cp.side === 'e' ? span[0] : span[1]);
+      const B0L = ns ? (cp.side === 'n' ? bsp[1] : bsp[0]) : (cp.side === 'e' ? bsp[1] : bsp[0]);
+      const B1L = ns ? (cp.side === 'n' ? bsp[0] : bsp[1]) : (cp.side === 'e' ? bsp[0] : bsp[1]);
+      const P2 = (a, line) => (ns ? [a, line] : [line, a]);
+      const width = Math.abs(L1 - L0), uAt = (a) => Math.abs(a - L0) / width;
+      const H = C.centreTop;
+      // the front in three planes: the side bays on the body's line, the middle bay forward on its own with the portal
+      const Fl = face(P2(L0, cp.front), P2(B0L, cp.front), 0, H, 'centre', 0, uAt(B0L));
+      const Fm = face(P2(B0L, cp.bay), P2(B1L, cp.bay), 0, H, 'centre', uAt(B0L), uAt(B1L));
+      const Fr = face(P2(B1L, cp.front), P2(L1, cp.front), 0, H, 'centre', uAt(B1L), 1);
+      wall(Fl); wall(Fr);
+      // the arch measured on the picture, across the whole front, taken into the middle bay's own metres
+      const aS0 = arch[0] / cw0 * width - Math.abs(B0L - L0), aS1 = arch[1] / cw0 * width - Math.abs(B0L - L0);
+      wall(Fm, [aS0, aS1, arch[2], arch[3]]);
+      // the middle bay's two returns back to the body's line
+      wall(face(P2(B0L, cp.front), P2(B0L, cp.bay), 0, H, 'centre', uAt(B0L) - Math.abs(cp.bay - cp.front) / cw0, uAt(B0L)));
+      wall(face(P2(B1L, cp.bay), P2(B1L, cp.front), 0, H, 'centre', uAt(B1L), uAt(B1L) + Math.abs(cp.bay - cp.front) / cw0));
+      // the pavilion's sides back from its front to the flanks' line, in its own outer bay
+      const flankLine = ns ? (cp.side === 'n' ? C.N.flank : C.S.flank) : (cp.side === 'e' ? C.E.flank : -C.E.flank);
+      const ret = Math.abs(cp.front - flankLine) + 0.5;
+      const back = cp.front - sg * ret;
+      wall(face(P2(L1, cp.front), P2(L1, back), 0, H, 'centre', 1 - ret / cw0, 1));
+      wall(face(P2(L0, back), P2(L0, cp.front), 0, H, 'centre', 0, ret / cw0));
+      // the cornices at the picture's own lines (its storeys stand taller than the wings', as on the building)
+      const lines = [[S.water, PROF.water], [9.6, PROF.string], [23.0, PROF.string], [H, PROF.top]];
+      for (const F of [Fl, Fm, Fr]) stoneCornices(F, lines);
+      stoneCornices(face(P2(L1, cp.front), P2(L1, back), 0, H, 'centre', 1 - ret / cw0, 1), lines);
+      stoneCornices(face(P2(L0, back), P2(L0, cp.front), 0, H, 'centre', 0, ret / cw0), lines);
+      // the columns measured on the picture, each on the plane it stands on
+      { const bs = Math.abs(B0L - L0), be = Math.abs(B1L - L0);
+        for (const [x0, ct, st, sf, r] of (A.meta.centre && A.meta.centre.cols) || []) {
+          const x = x0 / cw0 * width;
+          if (x < bs) column(Fl, x, ct, st, sf, r); else if (x < be) column(Fm, x - bs, ct, st, sf, r); else column(Fr, x - be, ct, st, sf, r);
+        } }
+      // the portal's passage to the courtyard: its walls, the cast-iron barrel vault, the floor
+      chPortal(b, vK, cp, Fm, aS0, aS1, arch, far);
+      // the body's sides from the flanks' line back, and its back, over the wings' roofs (the court cell's head: plain
+      // storeys and a cornice)
+      { const cwc = M('court')[0], bs = Math.min(cp.front, cp.depth), bd = Math.max(cp.front, cp.depth);
+        const backS = sg < 0 ? back : back, near = Math.min(backS, cp.depth), farV = Math.max(backS, cp.depth);
+        const sidesR = ns ? [[[span[1], farV], [span[1], near]], [[span[0], near], [span[0], farV]]] : [[[near, span[0]], [farV, span[0]]], [[farV, span[1]], [near, span[1]]]];
+        void bs; void bd;
+        for (const [A0, B0] of sidesR) {
+          // walked with the outside on the right: flip a run whose right-hand side faces the body
+          const mx = (A0[0] + B0[0]) / 2, mz = (A0[1] + B0[1]) / 2, du = B0[0] - A0[0], dv = B0[1] - A0[1];
+          const cxB = (R[0] + R[1]) / 2, czB = (R[2] + R[3]) / 2, outward = (-dv) * (mx - cxB) + du * (mz - czB) > 0;
+          const [P0, P1] = outward ? [A0, B0] : [B0, A0], L = Math.hypot(du, dv);
+          const F = face(P0, P1, S.main - 0.5, H, 'court', 0, L / cwc, 0.78, 1);
+          wall(F); cornice(F, H, PROF.attic);
+        }
+        const bk = ns ? [[span[0], cp.depth], [span[1], cp.depth]] : [[cp.depth, span[1]], [cp.depth, span[0]]];
+        const bx = (bk[0][0] + bk[1][0]) / 2, bz = (bk[0][1] + bk[1][1]) / 2, du = bk[1][0] - bk[0][0], dv = bk[1][1] - bk[0][1];
+        const out2 = (-dv) * (bx - (R[0] + R[1]) / 2) + du * (bz - (R[2] + R[3]) / 2) > 0;
+        const [Q0, Q1] = out2 ? bk : [bk[1], bk[0]];
+        if (cp.side !== 'n') { const F = face(Q0, Q1, S.main - 0.5, H, 'court', 0, width / cwc, 0.78, 1); wall(F); cornice(F, H, PROF.attic); }
+      }
+      // the roof: the shoulders on the front and both sides to the body roof at 49, which runs back over the wing
+      const sides = { n: 'nwe', s: 'swe', e: 'ens', w: 'wns' }[cp.side];
+      hipRoof(R, [[0.6, H + 0.2], [1.5, 43.5], [2.4, 46.4], [3.0, 48.0], [3.5, C.roofs.centreBody]], sides, CHK.slate, false);
+      // the crown: a truncated pyramid 12.5 by 12 centred 6 m behind the front, its cresting, the finial, a flagpole
+      const cx = ns ? 0 : cp.front - sg * 6.0, cz = ns ? cp.front - sg * 6.0 : (span[0] + span[1]) / 2;
+      const hu = ns ? 6.25 : 6.0, hv = ns ? 6.0 : 6.25, tu = ns ? 4.75 : 4.5, tv = ns ? 4.5 : 4.75;
+      pyramid(cx, cz, hu, hv, C.roofs.centreBody, C.roofs.crown[0], tu, tv, CHK.slate);
+      cresting([cx - tu, cx + tu, cz - tv, cz + tv], C.roofs.crown[0], C.roofs.crown[1]);
+      pyramid(cx, cz, tu * 0.55, tv * 0.55, C.roofs.crown[1], C.roofs.crown[2], 0, 0, CHK.slate);
+      if (!far) cyl(cx, cz, C.roofs.crown[2], C.roofs.crown[3], 0.14, 0.09, 6, CHK.paint, 1);
+      top('centreCrown', C.roofs.crown[2]); top('centreBody', C.roofs.centreBody); top('crownDeck', C.roofs.crown[0]);
+      // the aedicule before the crown and the two oculi on the shoulders
+      const mid = width / 2;
+      const Fa = face(P2(L0, cp.front), P2(L1, cp.front), H, 49.6, 'aedicule');
+      dormer(Fa, mid - 4.0, mid + 4.0, H, 49.6, -0.3, 3.4, 'aedicule');
+      dormer(Fa, mid - 8.5 - 1.0, mid - 8.5 + 1.0, 42.3, 44.7, -1.6, 1.2, 'oculus');
+      dormer(Fa, mid + 8.5 - 1.0, mid + 8.5 + 1.0, 42.3, 44.7, -1.6, 1.2, 'oculus');
+      if (cp.pole) {
+        top('flagN', C.roofs.crown[3]);
+        // the national flag on the north pavilion's pole (Round 190: the only flag the photographs show on the building),
+        // 3.7 by 2.0 m, flying east with a little wave; its stripes and canton are drawn by the shader (kind flag)
+        if (!far) {
+          const y1 = C.roofs.crown[3] - 0.4, y0 = y1 - 2.0, n = 4;
+          for (const sg of [1, -1]) {
+            const col = [];
+            for (let i = 0; i <= n; i++) {
+              const t = i / n, x = cx + 0.12 + 3.7 * t, z = cz + 0.25 * Math.sin(t * Math.PI * 1.5) * t, nz = sg;
+              col.push([vK(CHK.flag, [x, y0, z], [0, 0, nz], [t, 0]), vK(CHK.flag, [x, y1, z], [0, 0, nz], [t, 1])]);
+            }
+            for (let i = 0; i < n; i++) b.quad(col[i][0], col[i + 1][0], col[i + 1][1], col[i][1], [0, 0, sg]);
+          }
+        }
+      }
+    }
+    // ---------------- the courtyard: the six round stair turrets, the apse at the tower's foot, the stair blocks on the roof
+    {
+      const segs = far ? 8 : 16, cw2 = M('court')[0];
+      for (const [tu, tv, wtop, ctop] of C.turrets) {
+        const circ = 2 * Math.PI * 2.7;
+        cyl(tu, tv, 0, C.courtTop, 2.7, 2.7, segs, 'court', circ / cw2, 0, 1, false);
+        cyl(tu, tv, C.courtTop, wtop, 2.7, 2.7, segs, 'turret', far ? 1 : 2, 0, 1, false);
+        if (!far) cyl(tu, tv, wtop - 0.6, wtop, 3.05, 3.05, segs, CHK.crest, 1, null, null, CHK.deck);
+        cyl(tu, tv, wtop, ctop, far ? 2.7 : 3.0, 0.15, segs, CHK.slate, 1);
+        if (!far) cyl(tu, tv, ctop, ctop + 1.8, 0.12, 0.05, 6, CHK.paint, 1);
+        top('turret', ctop);
+      }
+      // the apse: a half cylinder at the tower's foot into the courtyard, its roof flat behind a balustrade
+      const ap = C.apse, n2 = far ? 6 : 12, rim = [];
+      for (let i = 0; i <= n2; i++) {
+        const a = Math.PI * i / n2, x = ap.c[0] + Math.cos(a) * ap.r, z = ap.c[1] + Math.sin(a) * ap.r, n = [Math.cos(a), 0, Math.sin(a)], u = 1 - i / n2;
+        rim.push([x, z, n, u]);
+      }
+      for (let i = 0; i < n2; i++) {
+        const [x0, z0, n0, u0] = rim[i], [x1, z1, n1, u1] = rim[i + 1];
+        const nm = [(n0[0] + n1[0]) / 2, 0, (n0[2] + n1[2]) / 2];
+        // the two middle segments are cut to the north portal's height (its passage comes out here)
+        const door = !far && (i === n2 / 2 - 1 || i === n2 / 2) ? 9.0 : 0;
+        const a = b.v([x0, door, z0], n0, [u0, door / ap.top], cellIx.apse, 0.71, mean.apse), c = b.v([x1, door, z1], n1, [u1, door / ap.top], cellIx.apse, 0.71, mean.apse);
+        const d = b.v([x1, ap.top, z1], n1, [u1, 0.9995], cellIx.apse, 0.71, mean.apse), e = b.v([x0, ap.top, z0], n0, [u0, 0.9995], cellIx.apse, 0.71, mean.apse);
+        b.quad(a, c, d, e, nm);
+      }
+      { const up = [0, 1, 0], ctr = vK(CHK.deck, [ap.c[0], ap.top - 0.4, ap.c[1]], up, [0, 0]); const ix = rim.map(([x, z]) => vK(CHK.deck, [x, ap.top - 0.4, z], up, [x, z])); for (let i = 0; i < n2; i++) b.tri(ctr, ix[i], ix[i + 1], up); }
+      top('apse', ap.top);
+      for (const [su, sv, t0] of C.stairs) {
+        const R = [su - 3, su + 3, sv - 3, sv + 3];
+        const Fs = rectFaces(R, 30, t0 - 2.2, (s, L) => ['court', 0, L / cw2, (30 - 0) / C.courtTop * 0 + 0.55, 0.95]);
+        for (const k in Fs) wall(Fs[k]);
+        pyramid(su, sv, 3.2, 3.2, t0 - 2.2, t0, 0, 0, CHK.slate);
+      }
+    }
+    // ---------------- the tower
+    chTower(b, { face, wall, at, proud, moulding, cornice, cyl, pyramid, rectFaces, vK, vF, PROF, cellIx, mean, M, A, far, top });
+    return { b, tops };
+  }
+  // the hole a courtyard wall leaves for a portal's passage (east, west and the forecourt's back), or null
+  function chPortalHole(F, A0, B0) {
+    const C = CITY_HALL, arch = (CITYHALL_ART.meta.centre && CITYHALL_ART.meta.centre.arch) || [10.99, 16.01, 6.4, 9.14];
+    const w = arch[1] - arch[0];
+    // the east and west walls of the courtyard at |U| 34.5 take the portal at the pavilion's middle; the forecourt's back
+    // (V 33) the south portal
+    let mid = null;
+    if (Math.abs(A0[0] - B0[0]) < 1e-3 && Math.abs(Math.abs(A0[0]) - 34.5) < 0.1) mid = (C.spanEW.bay[0] + C.spanEW.bay[1]) / 2;
+    else if (Math.abs(A0[1] - B0[1]) < 1e-3 && Math.abs(A0[1] - 33) < 0.1) mid = 0;
+    if (mid == null) return null;
+    const along = Math.abs(A0[0] - B0[0]) < 1e-3 ? (mid - A0[1]) * Math.sign(B0[1] - A0[1]) : (mid - A0[0]) * Math.sign(B0[0] - A0[0]);
+    if (along < w / 2 || along > F.len - w / 2) return null;
+    return [along - w / 2, along + w / 2, arch[2], arch[3]];
+  }
+  // a portal's passage from the middle bay's arch through to the courtyard: two walls, the barrel vault, the floor
+  function chPortal(b, vK, cp, Fm, s0, s1, arch, far) {
+    if (far) return;
+    const C = CITY_HALL, r = (s1 - s0) / 2, spring = arch[2];
+    const sideN = { n: [0, 1], s: [0, -1], e: [-1, 0], w: [1, 0] }[cp.side];   // inward
+    // where the passage ends: the north under the tower to the apse's door, the south at the forecourt, east and west at
+    // the courtyard's walls
+    const endAt = { n: -19.7, s: 33.0, e: 34.5, w: -34.5 }[cp.side];
+    const p0 = [Fm.A[0] + Fm.tx * (s0 + r), Fm.A[1] + Fm.tz * (s0 + r)];   // the arch's foot centre on the front
+    const len = Math.abs((cp.side === 'n' || cp.side === 's' ? p0[1] : p0[0]) - endAt) + 0.05;
+    const ax = sideN[0], az = sideN[1], px = Fm.tx, pz = Fm.tz;   // inward, and across (the front's own direction)
+    const P = (s, y, d) => [p0[0] + px * s + ax * d, y, p0[1] + pz * s + az * d];
+    const seg = 10;
+    // the passage in three lengths, its middle darker than its mouths (the daylight reaches a few metres in)
+    const L = [-0.05, Math.min(3.5, len / 3), Math.max(len - 3.5, len * 2 / 3), len], SH = [1, 0.45, 0.45, 1];
+    for (let k = 0; k < 3; k++) {
+      const d0 = L[k], d1 = L[k + 1], h0 = SH[k], h1 = SH[k + 1];
+      // the walls, dark stone
+      for (const sg of [-1, 1]) {
+        const n = [-px * sg, 0, -pz * sg];
+        const a = vK(CHK.dark, P(sg * r, 0, d0), n, [d0, 0], 0, h0), c = vK(CHK.dark, P(sg * r, 0, d1), n, [d1, 0], 0, h1), d = vK(CHK.dark, P(sg * r, spring, d1), n, [d1, spring], 0, h1), e = vK(CHK.dark, P(sg * r, spring, d0), n, [d0, spring], 0, h0);
+        b.quad(a, c, d, e, n);
+      }
+      // the vault: the cast-iron ceiling, warm under its lanterns at night
+      for (let i = 0; i < seg; i++) {
+        const t0 = Math.PI * i / seg, t1 = Math.PI * (i + 1) / seg;
+        const c0 = [Math.cos(t0), Math.sin(t0)], c1 = [Math.cos(t1), Math.sin(t1)];
+        const n = [-px * (c0[0] + c1[0]) / 2, -(c0[1] + c1[1]) / 2, -pz * (c0[0] + c1[0]) / 2];
+        const y0 = spring + c0[1] * (arch[3] - spring), y1 = spring + c1[1] * (arch[3] - spring);
+        const a = vK(CHK.vault, P(c0[0] * r, y0, d0), n, [t0 * r, d0], 0, h0), c = vK(CHK.vault, P(c1[0] * r, y1, d0), n, [t1 * r, d0], 0, h0);
+        const d = vK(CHK.vault, P(c1[0] * r, y1, d1), n, [t1 * r, d1], 0, h1), e = vK(CHK.vault, P(c0[0] * r, y0, d1), n, [t0 * r, d1], 0, h1);
+        b.quad(a, c, d, e, n);
+      }
+      const up = [0, 1, 0];
+      const a = vK(CHK.pave, P(-r, 0.02, d0), up, [0, d0], 0, h0), c = vK(CHK.pave, P(r, 0.02, d0), up, [2 * r, d0], 0, h0), d = vK(CHK.pave, P(r, 0.02, d1), up, [2 * r, d1], 0, h1), e = vK(CHK.pave, P(-r, 0.02, d1), up, [0, d1], 0, h1);
+      b.quad(a, c, d, e, up);
+    }
+  }
+  // the tower: the base in the courtyard, the batter, the shaft, the first balcony, the stage of the tall window, the
+  // upper balcony, the belvedere, the clock stage (painted metal from 102.8 m), the dome, the lantern, the gallery, the
+  // cupola; Penn rides the themed parts
+  function chTower(b, H) {
+    const { face, wall, at, proud, cornice, cyl, pyramid, rectFaces, vK, PROF, cellIx, mean, M, A, far, top } = H;
+    const T = CITY_HALL.tower, [cu, cv] = T.c;
+    const sq = (h, c2) => [cu - h, cu + h, (c2 == null ? cv : c2) - h, (c2 == null ? cv : c2) + h];
+    // the base's faces in the courtyard (the court cell to 26.6) and its top under the batter
+    {
+      const Bz = T.base, R = [cu - Bz[2], cu + Bz[2], Bz[0], Bz[1]];
+      const Fs = rectFaces(R, 0, Bz[3], (s, L) => (s === 'n' ? null : ['court', 0, L / M('court')[0], 0, Bz[3] / CITY_HALL.courtTop]));
+      for (const k in Fs) { wall(Fs[k], k === 's' ? null : null); cornice(Fs[k], CITY_HALL.st.base, PROF.base); cornice(Fs[k], Bz[3], PROF.string); }
+    }
+    // the batter: the base's plan narrowing to the shaft's square by 40 m, wearing the low stage's foot
+    {
+      const Bz = T.base, b0 = [cu - Bz[2], cu + Bz[2], Bz[0], Bz[1]], b1 = sq(T.batter[2]);
+      const y0 = T.batter[0], y1 = T.batter[1];
+      const c0 = [[b0[1], b0[2]], [b0[0], b0[2]], [b0[0], b0[3]], [b0[1], b0[3]]], c1 = [[b1[1], b1[2]], [b1[0], b1[2]], [b1[0], b1[3]], [b1[1], b1[3]]];
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        const p0 = [c0[i][0], y0, c0[i][1]], p1 = [c0[j][0], y0, c0[j][1]], p2 = [c1[j][0], y1, c1[j][1]], p3 = [c1[i][0], y1, c1[i][1]];
+        const ex = p1[0] - p0[0], ez = p1[2] - p0[2], el = Math.hypot(ex, ez), ox = -ez / el, oz = ex / el;
+        const dIn = -(((p2[0] + p3[0]) - (p0[0] + p1[0])) / 2 * ox + ((p2[2] + p3[2]) - (p0[2] + p1[2])) / 2 * oz), dy = y1 - y0, nl = Math.hypot(dy, dIn);
+        const n = [ox * dy / nl, dIn / nl, oz * dy / nl];
+        const k = cellIx.tower_low, mc = mean.tower_low, sd = 0.11 * (i + 1);
+        const a = b.v(p0, n, [0.0005, 0.0005], k, sd, mc), c = b.v(p1, n, [0.9995, 0.0005], k, sd, mc), d = b.v(p2, n, [0.9995, 0.42], k, sd, mc), e = b.v(p3, n, [0.0005, 0.42], k, sd, mc);
+        b.quad(a, c, d, e, n);
+      }
+    }
+    // the square stages: each face in its cell
+    const stage = (h, y0, y1, cell, u0, u1, v0, v1) => {
+      const Fs = rectFaces(sq(h), y0, y1, () => [cell, u0 == null ? 0 : u0, u1 == null ? 1 : u1, v0, v1]);
+      for (const k in Fs) wall(Fs[k]);
+      return Fs;
+    };
+    const sh = stage(T.shaft[2], T.shaft[0], T.shaft[1], 'tower_low');
+    for (const k in sh) {
+      const F = sh[k];
+      // the rusticated corner piers stand 0.4 proud, the first balcony on its brackets in the middle 10 m
+      if (!far) { proud(F, 0, 2.2, T.shaft[0], T.shaft[1], 0, 0.4); proud(F, F.len - 2.2, F.len, T.shaft[0], T.shaft[1], 0, 0.4); }
+      const m = F.len / 2, bw = T.bal1[3] / 2, bo = T.bal1[2] - T.shaft[2];
+      proud(F, m - bw, m + bw, T.bal1[0], T.bal1[0] + 0.45, 0, bo);
+      if (!far) {
+        for (const s of [m - bw + 0.6, m, m + bw - 0.6]) proud(F, s - 0.35, s + 0.35, T.bal1[0] - 2.2, T.bal1[0], 0, bo - 0.2);
+        chBalus(b, H, F, m - bw, m + bw, T.bal1[0] + 0.45, bo - 0.1);
+      }
+    }
+    const mid = stage(T.mid[2], T.mid[0], T.mid[1], 'tower_mid');
+    for (const k in mid) { cornice(mid[k], T.mid[1], PROF.string); }
+    // the upper balcony: a slab all round on the stage's cornice, its balustrade at the edge
+    {
+      const Fs = rectFaces(sq(T.bal2[2]), T.bal2[0], T.bal2[0] + 0.5, () => ['ashlar', 0, 1, 0, 0.2]);
+      for (const k in Fs) wall(Fs[k]);
+      const up = [0, 1, 0], R = sq(T.bal2[2]);
+      const ix = [[R[1], R[2]], [R[0], R[2]], [R[0], R[3]], [R[1], R[3]]].map((q) => vK(CHK.marble, [q[0], T.bal2[0] + 0.5, q[1]], up, [q[0], q[1]]));
+      b.quad(ix[0], ix[1], ix[2], ix[3], up);
+      if (!far) for (const k in Fs) chBalus(b, H, Fs[k], 0, Fs[k].len, T.bal2[0] + 0.5, -0.25);
+    }
+    // the belvedere: the cell, its clustered corner columns, the granite cap
+    const bel = stage(T.belv[2], T.belv[0], T.belv[1], 'belvedere');
+    for (const k in bel) {
+      const F = bel[k];
+      if (!far) for (const s of [0.55, 1.45, 2.35, F.len - 2.35, F.len - 1.45, F.len - 0.55]) {
+        const p = at(F, s, 0, 0.5);
+        cyl(p[0], p[2], T.belv[0] + 0.6, T.belv[1] - 1.6, 0.36, 0.32, 8, 'belvedere', 0.02, 0.06, 0.82, false);
+        proud(F, s - 0.45, s + 0.45, T.belv[1] - 1.6, T.belv[1] - 1.0, 0.1, 1.0);
+        proud(F, s - 0.45, s + 0.45, T.belv[0], T.belv[0] + 0.6, 0.1, 1.0);
+      }
+      cornice(F, T.belv[1], PROF.top);
+    }
+    top('masonry', T.belv[1]);
+    // the clock stage: painted metal, square to 117 m and chamfered above, the cell's face (its dial in the picture; the
+    // page's dials stand on it, chDials) with its arched pediment over the dial, the corner columns
+    {
+      const [y0, y1, h, yc, ch] = T.clock;
+      const Fs = rectFaces(sq(h), y0, yc, () => ['clock', 0, 1, 0, (yc - y0) / (y1 - y0)]);
+      for (const k in Fs) {
+        const F = Fs[k];
+        wall(F);
+        if (!far) for (const s of [0.6, 1.7, F.len - 1.7, F.len - 0.6]) {
+          const p = at(F, s, 0, 0.45);
+          cyl(p[0], p[2], y0 + 1.9, yc - 1.9, 0.42, 0.38, 8, 'clock', 0.03, 0.1, 0.64, false);
+        }
+      }
+      // above 117 m: an octagon, its cardinal faces carrying the pediment (the cell's head, squeezed into them), its
+      // diagonals plain plates
+      const oc = [];
+      for (let i = 0; i < 8; i++) {
+        const q = [[h, -h + ch], [h, h - ch], [h - ch, h], [-h + ch, h], [-h, h - ch], [-h, -h + ch], [-h + ch, -h], [h - ch, -h]][i];
+        oc.push([cu + q[0], cv + q[1]]);
+      }
+      // walk with the outside on the right: the ring above runs east side north to south; reverse it
+      for (let i = 0; i < 8; i++) {
+        const A0 = oc[(i + 1) % 8], B0 = oc[i];
+        const card = i % 2 === 0;
+        const F = face(B0, A0, yc, y1, 'clock', card ? 0 : 0.0, card ? 1 : 0.06, (yc - y0) / (y1 - y0), 1);
+        wall(F);
+      }
+      const up = [0, 1, 0], ix = oc.map((q) => vK(CHK.paint, [q[0], y1, q[1]], up, [q[0], q[1]]));
+      for (let i = 1; i < 7; i++) b.tri(ix[0], ix[i], ix[i + 1], up);
+      top('clockStage', y1);
+    }
+    // the dome: an octagonal lathe on the measured profile (half-widths across the flats), each face the dome cell, its
+    // eight ribs, four oculus dormers on the cardinal faces
+    {
+      const prof = T.dome, n8 = 8, k = cellIx.dome, mc = mean.dome;
+      const cosH = Math.cos(Math.PI / 8);
+      let sAcc = 0;
+      const slant = [0];
+      for (let i = 1; i < prof.length; i++) { sAcc += Math.hypot(prof[i][0] - prof[i - 1][0], prof[i][1] - prof[i - 1][1]); slant.push(sAcc); }
+      const rings = far ? [0, 2, 4, 6] : prof.map((_, i) => i);
+      for (let f = 0; f < n8; f++) {
+        const a0 = (f - 0.5) / n8 * Math.PI * 2 - Math.PI / 2, a1 = (f + 0.5) / n8 * Math.PI * 2 - Math.PI / 2, am = (a0 + a1) / 2;
+        for (let ri = 0; ri + 1 < rings.length; ri++) {
+          const i0 = rings[ri], i1 = rings[ri + 1];
+          const [y0, h0] = prof[i0], [y1, h1] = prof[i1], R0 = h0 / cosH, R1 = h1 / cosH;
+          const dIn = h0 - h1, dy = y1 - y0, nl = Math.hypot(dy, dIn), n = [Math.cos(am) * dy / nl, dIn / nl, Math.sin(am) * dy / nl];
+          const v0 = slant[i0] / sAcc, v1 = slant[i1] / sAcc, sd = 0.13 * f;
+          const p = (a, R, y) => [cu + Math.cos(a) * R, y, cv + Math.sin(a) * R];
+          const a = b.v(p(a1, R0, y0), n, [0.0005, Math.max(0.0005, v0)], k, sd, mc), c = b.v(p(a0, R0, y0), n, [0.9995, Math.max(0.0005, v0)], k, sd, mc);
+          const d = b.v(p(a0, R1, y1), n, [0.9995, Math.min(0.9995, v1)], k, sd, mc), e = b.v(p(a1, R1, y1), n, [0.0005, Math.min(0.9995, v1)], k, sd, mc);
+          b.quad(a, c, d, e, n);
+        }
+        // a rib up the corner between this face and the next
+        if (!far) {
+          const ar = a1, cs = Math.cos(ar), sn = Math.sin(ar);
+          for (let i = 0; i + 1 < prof.length; i++) {
+            const R0 = prof[i][1] / cosH + 0.25, R1 = prof[i + 1][1] / cosH + 0.25, y0 = prof[i][0], y1 = prof[i + 1][0];
+            const tx = -sn * 0.22, tz = cs * 0.22, n = [cs, (R0 - R1) / (y1 - y0), sn];
+            const a = vK(CHK.paint, [cu + cs * R0 - tx, y0, cv + sn * R0 - tz], n, [0, y0]), c = vK(CHK.paint, [cu + cs * R0 + tx, y0, cv + sn * R0 + tz], n, [0.4, y0]);
+            const d = vK(CHK.paint, [cu + cs * R1 + tx, y1, cv + sn * R1 + tz], n, [0.4, y1]), e = vK(CHK.paint, [cu + cs * R1 - tx, y1, cv + sn * R1 - tz], n, [0, y1]);
+            b.quad(a, c, d, e, n);
+          }
+        }
+      }
+      top('dome', prof[prof.length - 1][0]);
+    }
+    // the lantern's drum with its eight ribs, the gallery, the ribbed cupola
+    {
+      const [d0, d1, dr, rr] = T.drum, segs = far ? 8 : 16;
+      cyl(cu, cv, d0, d1, dr, dr, segs, 'dome', 8, 0.05, 0.45, false, Math.PI / 16);
+      if (!far) for (let i = 0; i < 8; i++) {
+        const a = i / 8 * Math.PI * 2, x = cu + Math.cos(a) * (dr + 0.6), z = cv + Math.sin(a) * (dr + 0.6);
+        cyl(x, z, d0, d1 + 0.3, 0.55, 0.45, 6, CHK.paint, 1);
+      }
+      const [g0, g1, gr] = T.gallery;
+      cyl(cu, cv, g0, g1, gr, gr, segs, CHK.paint, 1, null, null, CHK.paint);
+      if (!far) cyl(cu, cv, g1, g1 + 1.0, gr - 0.1, gr - 0.1, segs, 'balus', 10, 0.0005, 0.9995, false);
+      const [c0, c1, r0, r1] = T.cupola;
+      cyl(cu, cv, c0, c0 + 1.2, r0, r0, segs, CHK.paint, 1);
+      cyl(cu, cv, c0 + 1.2, c1, r0, r1, segs, 'dome', 8, 0.5, 0.95, false);
+      cyl(cu, cv, c1 - 0.05, c1, r1, r1, segs, CHK.paint, 1, null, null, CHK.paint);
+      top('cupola', c1);
+    }
+  }
+  // a balustrade along face F from s0 to s1 at y, d out: a board both sides wearing the balustrade's picture (the sky
+  // between the balusters is cut by the shader)
+  function chBalus(b, H, F, s0, s1, y, d) {
+    const { at, cellIx, mean } = H, k = cellIx.balus, mc = mean.balus, hh = 1.1, L = s1 - s0, wrap = L / (H.M('balus')[0] || 3.3);
+    for (const sg of [1, -1]) {
+      const n = [F.nx * sg, 0, F.nz * sg];
+      const a = b.v(at(F, s0, y, d), n, [0, 0.0005], k, 0.5, mc), c = b.v(at(F, s1, y, d), n, [wrap, 0.0005], k, 0.5, mc);
+      const dd = b.v(at(F, s1, y + hh, d), n, [wrap, 0.9995], k, 0.5, mc), e = b.v(at(F, s0, y + hh, d), n, [0, 0.9995], k, 0.5, mc);
+      b.quad(a, c, dd, e, n);
+    }
+  }
+  // the night's flood on the rebuilt block (Round 109's soft pools, moved onto the measured plan): Gaussian pools at the
+  // corner pavilions and the four centre pavilions, and a column of light up the tower from its roofs to Penn's feet,
+  // their soft union times the stone's own colour and never on the glass; the house colour on a plain night, the theme's
+  // on a themed one, the tower at full strength and the block at 0.8 of it. cityHallFloodPatch stays as it was for ?real=0
+  function cityHallFloodPatchReal(sh, uniforms) {
+    Object.assign(sh.uniforms, uniforms);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uHallColor, uHallCenter, uHallHouse;
+        uniform vec4 uHallAxes;
+        uniform float uHallOn;
+        float hallBeamR(vec2 q) { return exp(-.5 * dot(q, q)); }
+        float hallFloodR(vec2 hp, float hy, out float tw) {
+          float spread = 1.0 + .10 * smoothstep(0.0, 32.0, hy);
+          float corner = hallBeamR((abs(hp) - vec2(58.7, 59.0)) / (vec2(18.0) * spread));
+          float cn = hallBeamR((hp - vec2(0.0, -71.0)) / (vec2(21.0, 16.0) * spread));
+          float cs = hallBeamR((hp - vec2(0.0, 66.0)) / (vec2(21.0, 16.0) * spread));
+          float cew = hallBeamR(vec2(abs(hp.x) - 66.0, hp.y + 0.2) / (vec2(16.0, 21.0) * spread));
+          tw = hallBeamR((hp - vec2(0.0, -37.2)) / vec2(14.0)) * smoothstep(24.0, 42.0, hy) * (1.0 - smoothstep(150.0, 158.0, hy));
+          float wash = 1.0 - (1.0 - .90 * corner) * (1.0 - .85 * max(max(cn, cs), cew)) * (1.0 - tw);
+          float rise = .80 + .20 * exp(-max(hy, 0.0) / 32.0);
+          return (.045 + 1.04 * wash) * rise;
+        }
+      `)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { vec2 hq = vWPos.xz - uHallCenter.xz;
+          vec2 hp = vec2(dot(hq, uHallAxes.xy), dot(hq, uHallAxes.zw));
+          float tw;
+          float flood = hallFloodR(hp, vWPos.y - uHallCenter.y, tw) * (1.0 - abs(vWNorm.y)) * (1.0 - frMask.r);
+          vec3 hc = mix(uHallHouse, uHallColor, uHallOn);
+          totalEmissiveRadiance += hc * diffuseColor.rgb * flood * uNight * 1.7 * mix(0.8, 1.0, tw); }
+      `);
+  }
+  // the material both levels share (one program): the atlas laid by the cells' rects, the mask's glass and rooms, the
+  // untextured kinds (slate with the pitched roofs' generated slate, the cresting, the decks, the copper, the vaults),
+  // the lamps, the weather, the flood
+  function chMaterial(chSlot, Y0) {
+    const A = CITYHALL_ART, blank = document.createElement('canvas'); blank.width = blank.height = 1;
+    const map = new THREE.Texture(blank), mask = new THREE.Texture(blank);
+    map.encoding = THREE.sRGBEncoding; map.anisotropy = anisoOf(8);
+    const ids = Object.keys(A.cells).sort(), nC = ids.length;
+    const cells = ids.map((id) => { const c = A.cells[id]; return new THREE.Vector4(c[0], c[1], c[2] - c[0], c[3] - c[1]); });
+    // a cell's roughness: the tower's painted metal is smoother than the stone
+    const rough = ids.map((id) => (id === 'clock' || id === 'dome' ? 0.55 : 0.78));
+    CH.map = map; CH.mask = mask; CH.cells = ids;
+    const mat = new THREE.MeshStandardMaterial({ map, roughness: 0.78, metalness: 0 });
+    mat.extensions = { derivatives: true };
+    const gl2 = !!renderer.capabilities.isWebGL2;
+    const B = CITY_HALL.B0;
+    const U = { uMask: { value: mask }, uChCells: { value: cells }, uChRough: { value: rough }, uArtOn: CH.artOn, uNight: nightUniform, uChLamp: lampUniform, uChLate: CH.late,
+      uPitchArt: wallArtU.uPitchArt, uPitchOn: wallArtU.uPitchOn, uPitchPad: wallArtU.uPitchPad, uPitchMean: wallArtU.uPitchMean, uPitchM: wallArtU.uPitchM };
+    const flood = { uHallColor: themeU['uTheme' + chSlot], uHallOn: themeU.uThemeOn, uHallCenter: { value: new THREE.Vector3(B[0], Y0, B[1]) },
+      uHallAxes: { value: new THREE.Vector4(fl.nx, fl.nz, fl.dx, fl.dz) }, uHallHouse: { value: CH_HOUSE } };
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute vec2 aK; attribute vec4 aCol; uniform vec4 uChCells[${nC}]; uniform float uChRough[${nC}];
+varying vec4 vChCell; varying vec3 vChK; varying vec2 vChUv; varying vec3 vChCol; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;`)
+        .replace('#include <uv_vertex>', `#include <uv_vertex>
+vChUv = uv; vChCol = pow(aCol.rgb, vec3(2.2));
+int chI = int(max(aK.x, 0.0) + 0.5);
+vChCell = aK.x > -0.5 ? uChCells[chI] : vec4(0.0);
+vChK = vec3(aK, aK.x > -0.5 ? uChRough[chI] : 0.0);`)
+        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = ${Y0.toFixed(2)};`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform sampler2D uMask, uPitchArt; uniform float uArtOn, uNight, uChLamp, uPitchOn, uPitchPad; uniform vec2 uChLate; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4];
+varying vec4 vChCell; varying vec3 vChK; varying vec2 vChUv; varying vec3 vChCol; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;
+vec4 frMask; float chKind;
+${FAB_ATLAS_FN.join('\n')}`)
+        .replace('#include <map_fragment>', [
+          // the cell's texel: its tile coordinate wrapped, the gradients from the unwrapped one (a seam takes its neighbours' mip)
+          'vec2 chT = vChUv - floor(vChUv), chA = vChCell.xy + chT * vChCell.zw;',
+          'vec2 chGx = dFdx(vChUv) * vChCell.zw, chGy = dFdy(vChUv) * vChCell.zw;',
+          'float chTex = step(-0.5, vChK.x) * uArtOn; chKind = -vChK.x;',
+          gl2 ? 'vec4 chC = textureGrad(map, chA, chGx, chGy); frMask = textureGrad(uMask, chA, chGx, chGy) * chTex;' : 'vec4 chC = texture2D(map, chA); frMask = texture2D(uMask, chA) * chTex;',
+          // the sky between the balusters
+          'if (frMask.b > 0.16 && frMask.b < 0.33 && frMask.r < 0.5) discard;',
+          'vec3 chAlb = mix(vChCol, chC.rgb, chTex);',
+          // the reveals' shade on the glass (a computer's, as the house fronts' frAo): the window's own mask, blurred, falls off
+          // toward its jambs and head, and the pane darkens there as it does set back in the stone
+          ...(gl2 && !isTouch ? ['float chAo = textureGrad(uMask, chA, chGx * 4.0 + vec2(0.0025, 0.0), chGy * 4.0 + vec2(0.0, 0.0025)).r;',
+            'chAlb *= mix(1.0, 0.6 + 0.4 * smoothstep(0.45, 0.9, chAo), frMask.r * chTex);'] : []),
+          // the slate: the pitched roofs' generated slate along the slope (u along the eave, v up the slope, in metres),
+          // as detail over the stored colour, with a course line every 0.3 m that fades before it aliases
+          'vec2 slT = vChUv / uPitchM[1], slX = dFdx(slT), slY = dFdy(slT);',
+          'if (chKind > 0.5 && chKind < 1.5) {',
+          '  if (uPitchOn > 0.5) { vec3 sT = fabAtlasG(uPitchArt, 1.0, 2.0, uPitchPad, slT, slX, slY); float sl = dot(sT, vec3(0.2126, 0.7152, 0.0722)) / max(dot(uPitchMean[1], vec3(0.2126, 0.7152, 0.0722)), 1e-3); chAlb *= clamp(sl, 0.4, 1.8); }',
+          '  float cf = fract(vChUv.y / 0.3), cw = max(fwidth(vChUv.y / 0.3), 1e-4); chAlb *= 1.0 - 0.25 * (1.0 - smoothstep(0.0, 1.5 * cw, cf)) * (1.0 - smoothstep(0.3, 0.6, cw));',
+          '}',
+          // the cast-iron cresting: its bars against the sky's light behind, a soft rhythm at 0.35 m
+          'if (chKind > 1.5 && chKind < 2.5) { float bw = max(fwidth(vChUv.x / 0.35), 1e-4); chAlb *= 1.0 - 0.35 * (1.0 - smoothstep(0.3, 0.6, bw)) * smoothstep(0.35, 0.5, abs(fract(vChUv.x / 0.35) - 0.5)); }',
+          // the flag: thirteen stripes, the canton's blue over the top seven with its stars as a soft dotted grid
+          'if (chKind > 10.5) { float fs = step(0.5, fract(vChUv.y * 6.5)); chAlb = mix(vec3(0.445, 0.016, 0.034), vec3(0.85, 0.85, 0.83), fs);',
+          '  if (vChUv.x < 0.4 && vChUv.y > 0.4615) { vec2 st = fract(vec2(vChUv.x * 15.0, (vChUv.y - 0.4615) * 18.0)); float sd = 1.0 - smoothstep(0.18, 0.32, length(st - 0.5)); chAlb = mix(vec3(0.045, 0.043, 0.155), vec3(0.85, 0.85, 0.83), sd * 0.8); } }',
+          'diffuseColor.rgb *= chAlb;',
+        ].join('\n'))
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = chTex > 0.5 ? mix(vChK.z, 0.22, frMask.r) : (chKind < 1.5 ? 0.62 : chKind < 2.5 ? 0.45 : chKind < 3.5 ? 0.85 : chKind < 4.5 ? 0.5 : chKind < 5.5 ? 0.55 : chKind < 6.5 ? 0.3 : chKind < 7.5 ? 0.85 : chKind < 8.5 ? 0.9 : chKind < 9.5 ? 0.55 : chKind < 10.5 ? 0.75 : 0.9);')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+if (uNight > 0.001) {
+  // the night's rooms: a lit office by its window's number and its face's seed, the share the hour keeps lit
+  float chWin = frMask.r * (1.0 - step(0.6, frMask.b));
+  float wid = floor(frMask.g * 255.0 + 0.5);
+  float h1 = fract(sin(wid * 12.9898 + vChK.y * 78.233) * 43758.5453), h2 = fract(h1 * 7.13 + 0.31);
+  float lit = step(h1, 0.42 * uChLate.x);
+  vec3 room = mix(vec3(1.0, 0.70, 0.40), vec3(1.0, 0.86, 0.66), h2) * (0.30 + 0.35 * h2);
+  totalEmissiveRadiance += chWin * lit * room * uNight;
+  // the portals' cast-iron vaults under their lanterns
+  totalEmissiveRadiance += step(4.5, chKind) * step(chKind, 5.5) * vec3(1.0, 0.81, 0.58) * 0.6 * uNight;
+}
+// the dials' glass in the picture (the far level's: the near level's dials are their own mesh) glow a warm yellow on the
+// lamps' photocell, never themed
+totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) * 0.75 * uChLamp;`);
+      lampLightPatch(sh, 'vWPos', 'wall');
+      cityHallFloodPatchReal(sh, flood);   // the weather chains on ahead of it after the build (userData.wxSurf, the weather's re-hook)
+    };
+    mat.customProgramCacheKey = () => 'city-hall-real' + (gl2 ? '2' : '1');
+    architecturalBloom(mat, 0.18);
+    mat.userData.wxSurf = true;
+    return mat;
+  }
+  // the dials: a canvas a dial (the teal glass of 98 panes, the gilt chapter ring and Roman numerals, the white outer ring,
+  // a gilt patch the hands' uv point at) and its glow (the glass, the numerals and hands dark); drawn by the page, never by
+  // the image model
+  function chDialCanvases() {
+    const S = isTouch ? 256 : 512, cv = document.createElement('canvas'), gv = document.createElement('canvas');
+    cv.width = cv.height = gv.width = gv.height = S;
+    const c = cv.getContext('2d'), g = gv.getContext('2d'), R = S / 2 - 2, O = S / 2;
+    c.fillStyle = '#c9c4b8'; c.fillRect(0, 0, S, S); g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+    // the white moulded ring, the glass inside it
+    c.fillStyle = '#e8e4da'; c.beginPath(); c.arc(O, O, R, 0, Math.PI * 2); c.fill();
+    const gr = c.createRadialGradient(O, O * 0.8, R * 0.1, O, O, R * 0.92);
+    gr.addColorStop(0, '#6aa29b'); gr.addColorStop(1, '#4c7f7a');
+    c.fillStyle = gr; c.beginPath(); c.arc(O, O, R * 0.92, 0, Math.PI * 2); c.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(O, O, R * 0.92, 0, Math.PI * 2); g.fill();
+    // the glass's bars
+    for (const k of [c, g]) { k.strokeStyle = k === c ? 'rgba(30,45,45,0.55)' : '#222'; k.lineWidth = Math.max(1, S / 340); }
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; for (const k of [c, g]) { k.beginPath(); k.moveTo(O + Math.cos(a) * R * 0.18, O + Math.sin(a) * R * 0.18); k.lineTo(O + Math.cos(a) * R * 0.62, O + Math.sin(a) * R * 0.62); k.stroke(); } }
+    for (const rr of [0.18, 0.4, 0.62]) for (const k of [c, g]) { k.beginPath(); k.arc(O, O, R * rr, 0, Math.PI * 2); k.stroke(); }
+    // the chapter ring: gilt circles, 60 minute marks, the numerals
+    const gilt = '#d5c198';
+    c.strokeStyle = gilt; c.lineWidth = Math.max(1.5, S / 200);
+    for (const rr of [0.66, 0.9]) { c.beginPath(); c.arc(O, O, R * rr, 0, Math.PI * 2); c.stroke(); }
+    g.strokeStyle = '#000'; g.lineWidth = c.lineWidth;
+    for (const rr of [0.66, 0.9]) { g.beginPath(); g.arc(O, O, R * rr, 0, Math.PI * 2); g.stroke(); }
+    for (let i = 0; i < 60; i++) {
+      const a = i / 60 * Math.PI * 2, r0 = R * (i % 5 ? 0.86 : 0.83);
+      for (const [k, col] of [[c, gilt], [g, '#000']]) { k.strokeStyle = col; k.beginPath(); k.moveTo(O + Math.sin(a) * r0, O - Math.cos(a) * r0); k.lineTo(O + Math.sin(a) * R * 0.9, O - Math.cos(a) * R * 0.9); k.stroke(); }
+    }
+    const NUM = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+    for (const [k, col] of [[c, gilt], [g, '#000']]) {
+      k.fillStyle = col; k.textAlign = 'center'; k.textBaseline = 'middle'; k.font = '600 ' + Math.round(S * 0.07) + 'px Georgia, serif';
+      NUM.forEach((t, i) => { const a = i / 12 * Math.PI * 2; k.save(); k.translate(O + Math.sin(a) * R * 0.745, O - Math.cos(a) * R * 0.745); k.rotate(a); k.fillText(t, 0, 0); k.restore(); });
+    }
+    // the hands' patch, in a corner outside the dial
+    c.fillStyle = '#b39a62'; c.fillRect(2, 2, 10, 10); g.fillStyle = '#000'; g.fillRect(0, 0, 14, 14);
+    return { cv, gv, hand: [7 / S, 1 - 7 / S] };
+  }
+  // the four dials and their hands (rewritten once a model minute: CH.hands), standing 0.12 m off the clock stage's faces
+  function chDials(Y0) {
+    const A = CITYHALL_ART, T = CITY_HALL.tower, d = (A.meta.clock && A.meta.clock.dial) || [10, 7.2, 3.9, 3.9];
+    const r = Math.max(d[2], d[3]) + 0.06, yc = T.clock[0] + d[1], h = T.clock[2], [cu, cv] = T.c;
+    const { cv: dc, gv, hand } = chDialCanvases();
+    const P = [], N = [], UV = [], I = [], dials = [];
+    const W = (U, y, V) => chWorld(U, y, V, Y0);
+    const nOut = [[0, -1], [1, 0], [0, 1], [-1, 0]];   // north, east, south, west
+    for (const [nu, nv] of nOut) {
+      // the face's right as seen from outside (the dial's 3 o'clock) and its centre in the picture's place across
+      const ru = -nv, rv = nu, off = d[0] - 10;
+      const c0 = [cu + nu * (h + 0.12) + ru * off, cv + nv * (h + 0.12) + rv * off];
+      const wn = [fl.nx * nu + fl.dx * nv, 0, fl.nz * nu + fl.dz * nv];
+      const base = P.length / 3, seg = 32;
+      P.push(...W(c0[0], yc, c0[1])); N.push(...wn); UV.push(0.5, 0.5);
+      for (let i = 0; i <= seg; i++) {
+        const a = i / seg * Math.PI * 2, x = Math.sin(a), y = Math.cos(a);
+        P.push(...W(c0[0] + ru * x * r, yc + y * r, c0[1] + rv * x * r)); N.push(...wn); UV.push(0.5 + x * 0.5 * (1 - 4 / 512), 0.5 + y * 0.5 * (1 - 4 / 512));
+      }
+      for (let i = 0; i < seg; i++) I.push(base, base + 1 + i, base + 2 + i);
+      dials.push({ c0, ru, rv, nu, nv, wn });
+    }
+    // the hands: two quads a dial, laid by chHands
+    const hb = P.length / 3;
+    for (let k = 0; k < dials.length * 2; k++) {
+      for (let j = 0; j < 4; j++) { P.push(0, 0, 0); N.push(...dials[k >> 1].wn); UV.push(hand[0], hand[1]); }
+      const q = hb + k * 4; I.push(q, q + 1, q + 2, q, q + 2, q + 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(N), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(UV), 2));
+    g.setIndex(I);
+    // the discs face out: wind every triangle to its own normal
+    const p = g.attributes.position.array, ix = g.index.array;
+    for (let t = 0; t < ix.length; t += 3) {
+      const a = ix[t] * 3, b2 = ix[t + 1] * 3, c2 = ix[t + 2] * 3, nn = [N[a], N[a + 1], N[a + 2]];
+      const ux = p[b2] - p[a], uy = p[b2 + 1] - p[a + 1], uz = p[b2 + 2] - p[a + 2], vx = p[c2] - p[a], vy = p[c2 + 1] - p[a + 1], vz = p[c2 + 2] - p[a + 2];
+      const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+      if (cx * nn[0] + cy * nn[1] + cz * nn[2] < 0 && t < hb * 0 + ix.length) { const s = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = s; }
+    }
+    g.computeBoundingSphere();
+    const map = freeTexOnUpload(new THREE.CanvasTexture(dc)), glow = freeTexOnUpload(new THREE.CanvasTexture(gv));
+    map.encoding = THREE.sRGBEncoding; map.anisotropy = anisoOf(8);
+    // lit, the glass is the photographs' saturated yellow (a camera clips it to 0xfcf94e): a deep amber-yellow emission over
+    // a dial whose own teal goes dark, so the tone curve keeps it yellow rather than cream
+    const mat = new THREE.MeshStandardMaterial({ map, emissiveMap: glow, emissive: new THREE.Color(1.0, 0.5, 0.03), roughness: 0.3, metalness: 0, side: THREE.DoubleSide });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uChLamp = lampUniform;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uChLamp;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.85 * uChLamp;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= 0.75 * uChLamp;');
+    };
+    mat.customProgramCacheKey = () => 'city-hall-dials';
+    architecturalBloom(mat, 0.5);
+    const m = new THREE.Mesh(g, mat);
+    m.matrixAutoUpdate = false; m.castShadow = false; m.receiveShadow = true; m.userData.noPack = true;
+    CH.hands = { g, hb, dials, r, yc, Y0 };
+    return m;
+  }
+  // the hands to the model's clock: the minute hand 0.86 of the dial, the hour hand 0.62, both from a short tail
+  function chHands(minutes) {
+    const H = CH.hands; if (!H) return;
+    const p = H.g.attributes.position.array, mA = (minutes % 60) / 60 * Math.PI * 2, hA = ((minutes / 60) % 12) / 12 * Math.PI * 2;
+    H.dials.forEach((D, k) => {
+      for (const [j, a, len, w, out] of [[0, hA, 0.62, 0.45, 0.08], [1, mA, 0.86, 0.32, 0.14]]) {
+        const s = Math.sin(a), c = Math.cos(a);   // along the hand: right s, up c
+        const q = (H.hb + (k * 2 + j) * 4) * 3;
+        const pts = [[-w / 2, -0.12 * H.r], [w / 2, -0.12 * H.r], [w * 0.15, len * H.r], [-w * 0.15, len * H.r]];
+        pts.forEach(([x, y], i) => {
+          const ru = x * c + y * s, up = -x * s + y * c;   // the hand's frame turned clockwise by a, as seen from outside
+          const U = D.c0[0] + D.ru * ru + D.nu * out, V = D.c0[1] + D.rv * ru + D.nv * out;
+          const w2 = chWorld(U, H.yc + up, V, H.Y0);
+          p[q + i * 3] = w2[0]; p[q + i * 3 + 1] = w2[1]; p[q + i * 3 + 2] = w2[2];
+        });
+      }
+    });
+    H.g.attributes.position.needsUpdate = true;
+  }
+  // the bronzes on the night's themed parts (one mesh, merged in the step): Calder's William Penn (Round 84's figure from
+  // the postcard, taken to the statue's 37 ft between 155.6 and 167.0 m: the right arm out over the city, the charter
+  // in the left hand against the hip on a tree stump behind the left leg, as Williampennfront.jpg and Williampennleftside
+  // show), the four eagles over the dials and the four groups at the dome's foot
+  function chBronze(themeParts, chSlot, Y0) {
+    const T = CITY_HALL.tower, [tcu, tcv] = T.c;
+    const W = chWorld(tcu, 0, tcv, Y0), cx = W[0], cz = W[2];
+    // stored darker than Round 84's 0x221a10 (which rendered about 0x554e3e in the realistic look's sun, against the photographs'
+    // 0x3a3228): the themed mesh's pipeline lifts them
+    const cBronze = new THREE.Color(0x150f09), cBronzeD = new THREE.Color(0x0e0b06);
+    const pennFlood = new THREE.Color(0.5, 0.42, 0.3).multiplyScalar(0.35);
+    const parts = [];
+    let flood = pennFlood;   // Penn's warm floods; the eagles and the groups at the dome's foot stand in less of them (dark silhouettes, as the night photographs show)
+    const put = (g, x, y, z, col) => { g.translate(x, y, z); parts.push({ geom: g, color: col || cBronze, lit: flood, mix: 0.25, slot: chSlot, style: 3 }); };
+    // Penn: built at Round 84's proportions about his feet, then taken to the statue's height (11.4 m to the hat's top)
+    {
+      const y0 = Y0 + T.penn[0], sc = (T.penn[1] - T.penn[0]) / 13.0;
+      const s2 = Math.SQRT1_2, nex = (fl.nx - fl.dx) * s2, nez = (fl.nz - fl.dz) * s2;   // the way he faces: north-east on the grid
+      const rx = -nez, rz = nex;   // his right hand's side (south-east)
+      const pp = [];
+      const at = (g, a, y, b, col) => { g.translate(a, y, b); pp.push([g, col]); };
+      at(new THREE.CylinderGeometry(1.7, 1.85, 0.9, 12), 0, -0.45, 0, cBronzeD);
+      at(new THREE.CylinderGeometry(1.5, 1.7, 0.35, 12), 0, 0.17, 0);
+      for (const sgn of [-1, 1]) {
+        at(new THREE.BoxGeometry(0.42, 0.22, 0.95).rotateY(Math.atan2(-nez, nex)), rx * sgn * 0.42 + nex * 0.15, 0.46, rz * sgn * 0.42 + nez * 0.15, cBronzeD);
+        at(new THREE.CylinderGeometry(0.30, 0.36, 1.8, 7), rx * sgn * 0.42, 1.45, rz * sgn * 0.42);
+        at(new THREE.CylinderGeometry(0.44, 0.40, 1.5, 7), rx * sgn * 0.44, 3.05, rz * sgn * 0.44);
+      }
+      at(new THREE.CylinderGeometry(1.05, 1.75, 4.4, 12), 0, 5.6, 0);
+      at(new THREE.CylinderGeometry(1.14, 1.16, 0.28, 12), 0, 6.2, 0, cBronzeD);
+      at(new THREE.BoxGeometry(0.16, 3.8, 0.5).rotateY(Math.atan2(-nez, nex)), nex * 1.06, 5.7, nez * 1.06, cBronzeD);
+      at(new THREE.CylinderGeometry(1.3, 1.08, 2.4, 12), 0, 8.9, 0);
+      at(new THREE.BoxGeometry(2.9, 0.62, 1.25).rotateY(Math.atan2(-rz, rx)), 0, 10.0, 0);
+      at(new THREE.CylinderGeometry(0.44, 0.5, 0.6, 7), 0, 10.55, 0);
+      at(new THREE.BoxGeometry(0.55, 0.9, 0.22).rotateY(Math.atan2(-nez, nex)), nex * 0.62, 9.9, nez * 0.62);
+      at(new THREE.SphereGeometry(0.74, 9, 7), -nex * 0.12, 11.0, -nez * 0.12, cBronzeD);
+      at(new THREE.SphereGeometry(0.62, 9, 7), nex * 0.1, 11.15, nez * 0.1);
+      at(new THREE.CylinderGeometry(1.3, 1.3, 0.14, 12), 0, 11.62, 0, cBronzeD);
+      at(new THREE.CylinderGeometry(0.72, 0.66, 0.66, 9), 0, 12.0, 0);
+      at(new THREE.SphereGeometry(0.7, 9, 6, 0, Math.PI * 2, 0, Math.PI / 2), 0, 12.3, 0);
+      {   // the right arm, out over the city and a little down, the hand open
+        const arm = new THREE.CylinderGeometry(0.26, 0.32, 2.6, 7);
+        arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(nex + rx * 0.35, -0.36, nez + rz * 0.35).normalize()));
+        at(arm, nex * 1.45 + rx * 1.15, 9.05, nez * 1.45 + rz * 1.15);
+        at(new THREE.CylinderGeometry(0.44, 0.38, 0.5, 8), nex * 2.5 + rx * 1.45, 8.5, nez * 2.5 + rz * 1.45, cBronzeD);
+        at(new THREE.BoxGeometry(0.5, 0.16, 0.62).rotateY(Math.atan2(-nez, nex)), nex * 2.9 + rx * 1.6, 8.25, nez * 2.9 + rz * 1.6);
+      }
+      {   // the left arm down along the coat, the charter's broad scroll held against the hip, a tree stump behind the leg
+        const arm = new THREE.CylinderGeometry(0.26, 0.3, 2.5, 7);
+        arm.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), new V3(nex * 0.18, 1, nez * 0.18).normalize()));
+        at(arm, -rx * 1.15, 8.4, -rz * 1.15);
+        at(new THREE.CylinderGeometry(0.42, 0.36, 0.5, 8), -rx * 1.15 + nex * 0.3, 7.0, -rz * 1.15 + nez * 0.3, cBronzeD);
+        at(new THREE.BoxGeometry(0.9, 2.4, 0.42).rotateY(Math.atan2(-rz, rx)), -rx * 1.25 + nex * 0.55, 6.4, -rz * 1.25 + nez * 0.55);
+        at(new THREE.CylinderGeometry(0.5, 0.6, 5.4, 8), -rx * 0.75 - nex * 0.85, 2.7, -rz * 0.75 - nez * 0.85, cBronzeD);
+      }
+      for (const [g, col] of pp) { g.scale(sc, sc, sc); put(g, cx, y0, cz, col); }
+    }
+    flood = pennFlood.clone().multiplyScalar(0.3);
+    // the eagles: 3 tons, 12 ft across the wings, perched over each dial at the dome's foot
+    const eagle = (U, V, ou, ov) => {
+      const w = chWorld(U, T.clock[1], V, Y0), fx = fl.nx * ou + fl.dx * ov, fz = fl.nz * ou + fl.dz * ov, sx = -fz, sz = fx, yaw = Math.atan2(-fz, fx);
+      put(new THREE.SphereGeometry(0.55, 8, 6).scale(1.5, 0.9, 0.8).rotateY(yaw), w[0], w[1] + 1.0, w[2]);
+      put(new THREE.SphereGeometry(0.3, 7, 5), w[0] + fx * 0.75, w[1] + 1.55, w[2] + fz * 0.75);
+      put(new THREE.ConeGeometry(0.12, 0.35, 5).rotateZ(-Math.PI / 2).rotateY(yaw), w[0] + fx * 1.05, w[1] + 1.5, w[2] + fz * 1.05);
+      for (const s of [-1, 1]) {
+        const wing = new THREE.BoxGeometry(0.75, 0.08, 1.75).translate(0, 0, s * 0.95).rotateX(-s * 0.5).rotateY(yaw);
+        put(wing, w[0] - fx * 0.1, w[1] + 1.25, w[2] - fz * 0.1);
+      }
+      put(new THREE.BoxGeometry(0.7, 0.08, 0.5).rotateY(yaw), w[0] - fx * 0.9, w[1] + 0.75, w[2] - fz * 0.9);
+      void sx; void sz;
+    };
+    const h = T.clock[2];
+    eagle(tcu, tcv - h + 1.2, 0, -1); eagle(tcu + h - 1.2, tcv, 1, 0); eagle(tcu, tcv + h - 1.2, 0, 1); eagle(tcu - h + 1.2, tcv, -1, 0);
+    // the groups on the diagonal corners: three standing figures on a plinth, about 4.5 m
+    for (const [du, dv] of [[1, -1], [1, 1], [-1, 1], [-1, -1]]) {
+      const U = tcu + du * 8.2, V = tcv + dv * 8.2, w = chWorld(U, T.clock[1], V, Y0);
+      put(new THREE.BoxGeometry(2.6, 0.5, 2.6).rotateY(Math.atan2(-fl.nz, fl.nx)), w[0], w[1] + 0.25, w[2], cBronzeD);
+      // three draped figures: the robe falling to the plinth, the shoulders, the head, one with an arm raised
+      for (let k = 0; k < 3; k++) {
+        const a = k / 3 * Math.PI * 2 + du * 0.7 + dv * 0.3, ox = Math.cos(a) * 0.72, oz = Math.sin(a) * 0.72, hh = k === 0 ? 3.5 : 3.0, y = w[1] + 0.5;
+        put(new THREE.CylinderGeometry(0.34, 0.55, hh * 0.62, 8), w[0] + ox, y + hh * 0.31, w[2] + oz, k === 1 ? cBronzeD : cBronze);
+        put(new THREE.CylinderGeometry(0.4, 0.3, hh * 0.3, 8), w[0] + ox, y + hh * 0.77, w[2] + oz);
+        put(new THREE.SphereGeometry(0.25, 7, 5), w[0] + ox, y + hh + 0.12, w[2] + oz);
+        if (k === 0) { const arm = new THREE.CylinderGeometry(0.1, 0.12, 1.3, 5); arm.rotateZ(0.5 * du); put(arm, w[0] + ox + 0.3 * du, y + hh + 0.3, w[2] + oz); }
+      }
+    }
+    for (const p of parts) themeParts.push(p);
+    return parts.length;
+  }
+  // the courtyard's floor (the red pavers, the darker cross of walks between the portals, the painted compass, no letters)
+  // and the granite apron round the building to Penn Square's curbs, on the drawn ground: one mesh, a canvas
+  // the courtyard's and the apron's rings on the drawn ground (the courtyard first), made once for both levels
+  function chDrapes() {
+    if (CH.drapes) return CH.drapes;
+    const C = CITY_HALL, W = (U, V) => { const p = chWorld(U, 0, V, 0); return [p[0], p[2]]; };
+    const court = C.court.map(([U, V]) => W(U, V));
+    const bands = [[-72, 76, -97.7, -40.9], [-72, 76, 33, 79.3], [-72, -7, 20.8, 33], [7, 76, 20.8, 33], [-72, -34.5, -40.9, 20.8], [34.5, 76, -40.9, 20.8]]
+      .map(([u0, u1, v0, v1]) => [W(u0, v0), W(u1, v0), W(u1, v1), W(u0, v1)]);
+    const out = [];
+    [court, ...bands].forEach((ring, i) => { try { const g = conformDrape(ring, LAYER.plaza + 0.03, 10); g.userData.court = i === 0; out.push(g); } catch (e) { /* off the grids */ } noSow(ring); });
+    return (CH.drapes = out);
+  }
+  // the far level's floor: the same drapes in two plain colours, the courtyard's pavers and the apron's granite
+  function chFloorFar(b, Y0) {
+    const B = CITY_HALL.B0;
+    for (const g of chDrapes()) {
+      const p = g.attributes.position.array, k = CHK.pave, col = g.userData.court ? [0x8e, 0x4a, 0x3a] : [0x9b, 0x96, 0x8d], up = [0, 1, 0];
+      for (let i = 0; i < p.length / 9; i++) {
+        const ix = [0, 1, 2].map((j) => {
+          const o = (i * 3 + j) * 3, dx = p[o] - B[0], dz = p[o + 2] - B[1], U = dx * fl.nx + dz * fl.nz, V = dx * fl.dx + dz * fl.dz;
+          return b.v([U, p[o + 1] - Y0, V], up, [U, V], -k, 0, col);
+        });
+        b.tri(ix[0], ix[1], ix[2], up);
+      }
+    }
+  }
+  function chFloor(Y0) {
+    const C = CITY_HALL, S = isTouch ? 512 : 1024;
+    const box = [-80, 80, -100, 82];   // the canvas's reach in the frame: U, then V
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const k = cv.getContext('2d'), px = (U) => (U - box[0]) / (box[1] - box[0]) * S, pz = (V) => (V - box[2]) / (box[3] - box[2]) * S;
+    k.fillStyle = '#9b968d'; k.fillRect(0, 0, S, S);
+    // the apron's granite: a faint mottling of its slabs (each 1.5 by 3 m a shade apart), the joints only a hint
+    for (let U = box[0], i = 0; U < box[1]; U += 3, i++) for (let V = box[2], j = 0; V < box[3]; V += 1.5, j++) {
+      const t = hash01(i * 31.7 + j * 7.3) - 0.5; k.fillStyle = 'rgba(' + (t > 0 ? '255,250,240' : '40,38,34') + ',' + (Math.abs(t) * 0.12).toFixed(3) + ')';
+      k.fillRect(px(U) + 0.5, pz(V) + 0.5, px(U + 3) - px(U) - 1, pz(V + 1.5) - pz(V) - 1);
+    }
+    // the courtyard: pavers with their own variation, the cross of walks, the compass
+    k.save(); k.beginPath(); C.court.forEach(([U, V], i) => (i ? k.lineTo(px(U), pz(V)) : k.moveTo(px(U), pz(V)))); k.closePath(); k.clip();
+    k.fillStyle = '#8e4a3a'; k.fillRect(0, 0, S, S);
+    for (let i = 0; i < S * 6; i++) { const x = hash01(i * 3.1) * S, y = hash01(i * 7.7 + 1) * S, l = hash01(i * 1.3 + 2); k.fillStyle = 'rgba(' + (l > 0.5 ? '160,90,70' : '90,45,35') + ',0.18)'; k.fillRect(x, y, 2, 1); }
+    k.fillStyle = '#6e3a2e';
+    k.fillRect(px(-5), pz(-41), px(5) - px(-5), pz(34) - pz(-41));
+    k.fillRect(px(-35), pz(-4), px(35) - px(-35), pz(2) - pz(-4));
+    const ox = px(0), oy = pz(3.3), R = (px(8.75) - px(0));
+    k.fillStyle = '#ece8df'; k.beginPath(); k.arc(ox, oy, R, 0, Math.PI * 2); k.fill();
+    for (let i = 0; i < 48; i++) { k.fillStyle = i % 2 ? '#1c1c1c' : '#ece8df'; k.beginPath(); k.moveTo(ox, oy); k.arc(ox, oy, R, i / 48 * Math.PI * 2, (i + 1) / 48 * Math.PI * 2); k.fill(); }
+    k.fillStyle = '#2b5d8f'; k.beginPath(); k.arc(ox, oy, R * 0.86, 0, Math.PI * 2); k.fill();
+    for (let i = 0; i < 16; i++) {
+      const a = i / 16 * Math.PI * 2 - Math.PI / 2, big = i % 4 === 0, mid = i % 2 === 0, L = R * (big ? 0.84 : mid ? 0.62 : 0.45), wd = R * (big ? 0.12 : 0.08);
+      for (const [side, col] of [[1, big ? '#e3b54a' : '#3f86c9'], [-1, big ? '#ece8df' : '#2b5d8f']]) {
+        k.fillStyle = col; k.beginPath(); k.moveTo(ox, oy); k.lineTo(ox + Math.cos(a) * L, oy + Math.sin(a) * L);
+        k.lineTo(ox + Math.cos(a + side * Math.PI / 2) * wd, oy + Math.sin(a + side * Math.PI / 2) * wd); k.closePath(); k.fill();
+      }
+    }
+    k.restore();
+    const tex = freeTexOnUpload(new THREE.CanvasTexture(cv)); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = anisoOf(8);
+    const geoms = chDrapes();
+    let n = 0; for (const g of geoms) n += g.attributes.position.count;
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), B = C.B0;
+    let o = 0;
+    for (const g of geoms) {
+      const p = g.attributes.position.array, q = g.attributes.normal.array;
+      pos.set(p, o * 3); nor.set(q, o * 3);
+      for (let i = 0; i < p.length / 3; i++) {
+        const dx = p[i * 3] - B[0], dz = p[i * 3 + 2] - B[1], U = dx * fl.nx + dz * fl.nz, V = dx * fl.dx + dz * fl.dz;
+        uv[(o + i) * 2] = (U - box[0]) / (box[1] - box[0]); uv[(o + i) * 2 + 1] = 1 - (V - box[2]) / (box[3] - box[2]);
+      }
+      o += p.length / 3;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    freeOnUpload(g);
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0 });
+    mat.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;');
+      lampLightPatch(sh, 'vWPos', 'ground');
+    };
+    mat.customProgramCacheKey = () => 'city-hall-floor';
+    mat.userData.wxSurf = true;
+    return { g, mat, tris: n / 3 };
+  }
+  // the build (in 'Raising the outer districts', at Round 81's place in the build order, its themed slot taken there)
+  function buildCityHallReal(ctx) {
+    const { chSlot, themeParts } = ctx, A = CITYHALL_ART, C = CITY_HALL, B = C.B0;
+    const gy = groundMeshY(B[0], B[1]), Y0 = gy == null || !Number.isFinite(gy) ? siteY(B[0], B[1], 'ground') : gy;
+    CH.Y0 = Y0;
+    const mat = chMaterial(chSlot, Y0);
+    CH.mat = mat;
+    // staged as a chunk is (drawn unculled once behind the veil, so it uploads and lets its arrays go), but never one of
+    // outerMeshes: cullFogged sets those visible by the fog every few frames, and the level is cityHallStep's
+    const mk = (b) => {
+      const g = chGeometry(b, Y0); freeOnUpload(g);
+      const m = new THREE.Mesh(g, mat); m.matrixAutoUpdate = false; m.frustumCulled = false; m.castShadow = m.receiveShadow = true; m.name = 'city-hall';
+      groupCity.add(m); pendingUpload.push(m);
+      return m;
+    };
+    const far = chModel(A, true);
+    chFloorFar(far.b, Y0);
+    CH.far = mk(far.b); CH.tris.far = far.b.I.length / 3;
+    if (!TIER2) {
+      const near = chModel(A, false);
+      CH.near = mk(near.b); CH.tris.near = near.b.I.length / 3;
+      CH.tops = near.tops;
+      CH.dial = chDials(Y0); CH.dial.updateMatrixWorld(); groupCity.add(CH.dial);
+      chHands(clock.minutes);
+      const f = chFloor(Y0);
+      CH.floor = new THREE.Mesh(f.g, f.mat); CH.floor.matrixAutoUpdate = false; CH.floor.frustumCulled = false; CH.floor.receiveShadow = true; groupCity.add(CH.floor); pendingUpload.push(CH.floor); CH.tris.floor = f.tris;
+    } else CH.tops = far.tops;
+    CH.drapes = null;   // the drapes' arrays, copied into both levels
+    CH.tops.penn = C.tower.penn[1];
+    CH.bronze = chBronze(themeParts, chSlot, Y0);
+    // the ground it owns: the four wings (no tree, packed pole or storefront there; the courtyard's trees stay), the roof grid
+    const W = (U, V) => { const p = chWorld(U, 0, V, 0); return [p[0], p[2]]; };
+    for (const [u0, u1, v0, v1, t] of [[-68, 68, -77.5, -40.9, 49], [-68, 68, 20.8, 72.5, 49], [34.5, 72.5, -40.9, 20.8, 49], [-72.5, -34.5, -40.9, 20.8, 49]]) {
+      const ring = [W(u0, v0), W(u1, v0), W(u1, v1), W(u0, v1)];
+      REBUILD_OCC.push({ id: 'cityhall', ring, bb: rbBox(ring), pad: 0, top: Y0 + t });
+    }
+    for (const [U, V, t, a] of [[0, -60, 61.8, 900], [0, 55, 61.8, 900], [55, 0, 61.8, 900], [-55, 0, 61.8, 900], [58, -58, 48.8, 300], [-58, -58, 48.8, 300], [58, 58, 48.8, 300], [-58, 58, 48.8, 300], [0, -37.2, 167, 600]]) {
+      const p = W(U, V); roofNote(p[0], p[1], Y0 + t, a);
+    }
+    if (!isTouch) chLoadArt();
+    CH.built = true;
+  }
+  // the atlas and its mask: a computer's at the build, a phone's once the eye comes within CH_ART_R (never at tier 2)
+  function chLoadArt() {
+    if (CH.art !== 'none' || TIER2) return;
+    CH.art = 'loading';
+    const A = CITYHALL_ART;
+    Promise.all([artImage(artSrc(A.img, A.imgHalf)), artImage(artSrc(A.mask, A.maskHalf))]).then(([im, mk]) => {
+      if (!im || !mk) { CH.art = 'failed'; return; }
+      CH.map.image = im; CH.map.needsUpdate = true; freeTexOnUpload(CH.map);
+      CH.mask.image = mk; CH.mask.needsUpdate = true; freeTexOnUpload(CH.mask);
+      CH.bytes = im.width * im.height * 4 * 4 / 3 + mk.width * mk.height * 4 * 4 / 3;
+      CH.artOn.value = 1; CH.art = 'ready';
+    });
+  }
+  // the frame's part: the level by the eye's distance from the building's box (with hysteresis), the art on a phone's
+  // approach, the hands once a model minute, the lit share by the model's hour
+  const _chE = { u: 0, v: 0, y: 0 };
+  function cityHallStep() {
+    if (!CH.built) return;
+    const B = CITY_HALL.B0, p = camera.position, dx = p.x - B[0], dz = p.z - B[1];
+    const U = dx * fl.nx + dz * fl.nz, V = dx * fl.dx + dz * fl.dz, y = p.y - CH.Y0;
+    const du = Math.max(0, -73 - U, U - 77), dv = Math.max(0, -78 - V, V - 74), dy = Math.max(0, y - 167);
+    const d = Math.hypot(du, dv, dy);
+    CH.dist = d;
+    if (isTouch && d < CH_ART_R) chLoadArt();
+    let lod = CH.lod;
+    if (CH.force) lod = CH.near ? CH.force : 'far';
+    else if (!CH.near) lod = 'far';
+    else if (lod === 'both') lod = d < CH_NEAR_R ? 'near' : 'far';
+    else if (lod === 'near' && d > CH_NEAR_R + CH_HYST) lod = 'far';
+    else if (lod === 'far' && d < CH_NEAR_R) lod = 'near';
+    CH.lod = lod;
+    if (CH.near) CH.near.visible = lod === 'near' && !CH.off;
+    if (CH.dial) CH.dial.visible = lod === 'near' && !CH.off;
+    if (CH.far) CH.far.visible = lod === 'far' && !CH.off;
+    if (CH.floor) CH.floor.visible = lod === 'near' && !CH.off;
+    const m = clock.minutes | 0;
+    if (m !== CH.minute) { CH.minute = m; if (CH.dial) chHands(m); const L = skinLateAt(m); CH.late.value.set(L[0], L[1]); }
+  }
+  // ?dev: __dbg.cityHall() - the level, the triangles a mesh, the art, the tops measured against the table
+  function cityHallProbe(what) {
+    if (what === 'off' || what === 'on') CH.off = what === 'off';   // the A/B for its draws: everything of its own hidden (the bronzes ride the themed mesh)
+    if (what === 'near' || what === 'far' || what === 'auto') CH.force = what === 'auto' ? null : what;
+    const info = (m) => (m ? { visible: m.visible, tris: m.geometry.index ? m.geometry.index.count / 3 : m.geometry.attributes.position.count / 3 } : null);
+    return { on: CH_ON, built: CH.built, lod: CH.lod, dist: CH.dist == null ? null : Math.round(CH.dist), near: info(CH.near), far: info(CH.far), dial: info(CH.dial), floor: info(CH.floor),
+      tris: { ...CH.tris }, bronzeParts: CH.bronze || 0, art: CH.art, artOn: CH.artOn.value, texMB: CH.bytes ? +(CH.bytes / 1048576).toFixed(1) : 0, cells: CH.cells.length,
+      tops: { ...CH.tops }, Y0: CH.Y0, skipped: CH.skipped || 0, late: CH.late.value.toArray().map((v) => +v.toFixed(3)), err: CH.err,
+      lodR: { near: CH_NEAR_R, hyst: CH_HYST, art: CH_ART_R } };
+  }
   step('Restoring the landmarks', () => {
     const walls = [];   // gets the window shader
     const detail = [];  // roofs, spires, columns, trim — plain material
@@ -12416,6 +13731,7 @@ vec2 wRing(vec2 rc, float tt) {
       }
       if (boathouseAt(cx,cz)) continue;
       if (BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) continue;
+      if (CH_ON && cx > -1690 && cx < -1520 && cz > -850 && cz < -680 && rbDist(cx, cz, CITY_HALL.ring) <= 2) { if (h <= 45 && t <= 6) wideColK++; CH.skipped = (CH.skipped || 0) + 1; continue; }   // Round 190: City Hall's own ground (OSM's outline grown 2 m)
       if (ovpStraddle(poly, cx, cz)) continue;   // nothing real stands across a motorway deck
       if (Math.hypot(cx - 996, cz - 663) < 80) {
         // the USS New Jersey berth: capture the 270 m hull outline for the custom
@@ -13172,7 +14488,7 @@ vec2 wRing(vec2 rc, float tt) {
         const red = new THREE.Color(0xff2a1a);
         themeParts.push({ geom: rg, color: red.clone().multiplyScalar(0.5), lit: red, mix: 1, slot: sC, gain: 1.8, style: 3 });
       }
-      {
+      cityHall: {
         const cx = -1603, cz = -802, base = siteY(cx, cz, 'ground');
         const bx = cx + fl.dx * 55, bz = cz + fl.dz * 55;    // block center: tower on the north face
         const cStone = new THREE.Color(0xb3aa99);
@@ -13182,6 +14498,10 @@ vec2 wRing(vec2 rc, float tt) {
         const cDome = new THREE.Color(0xbfc9d3);
         const cPenn = new THREE.Color(0x4c4536);             // weathered bronze, warm dark
         const chSlot = themeSlotN++ % 4;                     // Round 81: the tower is floodlit in the night's colour
+        if (CH_ON) {   // Round 190: rebuilt to the measured building under the realistic look (buildCityHallReal); the slot is taken here as before
+          try { buildCityHallReal({ chSlot, themeParts }); } catch (e) { CH.err = String(e && e.stack || e); console.error('city hall', e); }
+          break cityHall;
+        }
         const floodlit = (geom, col, k, mix) => themeParts.push({ geom, color: col, lit: col.clone().multiplyScalar(k), mix, slot: chSlot, style: 3 });
         const hallWalls=new VBuf(4096);
         const hallChunk=()=>hallWalls;
@@ -34006,6 +35326,7 @@ float pinOccGate() {
     updateLights(now);
     updateRoofKit(now);   // Round 150
     updateFronts(now);   // Round 181
+    cityHallStep();   // Round 190: its level, its art on a phone's approach, the dials' hands
     sfStep(now);   // Round 189: the storefronts' clock and names
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
@@ -34126,7 +35447,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), cityHall: cityHallProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

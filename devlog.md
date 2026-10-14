@@ -9121,3 +9121,99 @@ Not done:
     18k triangles in a mirror; tiles would add draw calls to every main pass); the names question above (Mike's); the
     core's walls in the host notes (fronts there). Still waiting on API credit: the 24 borrowed second-set interiors and the
     3 missing frames.
+
+## Round 190 — City Hall rebuilt (Oct 13)
+
+- Mike: "I added more api credits with open AI. I want City hall and Glory Beer Bar and Kitchen to be totally revamped", and
+  of the city as a whole, that it "looks better, but it isn't where I want it to be". City Hall was Round 81's block: a
+  148 by 143 m box to 27 m with a 64 by 59 courtyard, white pyramids for every mansard, a tower of three shafts and a white
+  clock box under a stack of pointed frustums, Penn on top. Measured against the building it stood 18.5 m too far south
+  (its south wing in South Penn Square's roadway, lawn where the north wing and pavilion stand), its two plan dimensions
+  were swapped, its centre pavilions were 41 m against 61.8, its dials white day and night, and its slate read white (the
+  shared trim material's metalness of 0.3 lifted 0x51565b by its reflections).
+- Sources (the research pass, all in the scratchpad's landmarks/cityhall/refs, never shipped and never sent to the image
+  API): NOAA's 2022 QL1 LiDAR at full density over a 220 m box (1.99 M points, 41 a square metre: the roof and cornice
+  lines, the tower's slices, the courtyard's walks from the intensity), OSM relation 4720912, Frederick Turner's 1909
+  "Illustrated description" (the storey heights, the dial's 26 ft, the statue's 37 ft), HABS PA-1530 (the north front's
+  bays, the tower's section), Structure magazine (granite to the basement, Lee marble to 337 ft, slate mansards with
+  cast-iron cresting), the Inquirer's account of the two-tone tower (the cast-iron skin replaced with coated plates in
+  1984 to 1990, painted light grey), the 2024 LED system (static white by default, colours for occasions, the dials
+  yellow on every night), and some fifty photographs on Commons.
+- The model (app.js, `CITY_HALL`, `buildCityHallReal` at Round 81's place in 'Raising the outer districts', so the one
+  themed slot it takes is taken where it always was): in the building's own frame (B0 on Penn Square, U along the grid's
+  fl.n, V along fl.d, one datum, the ground's 0.7 m fall to the north showing as the plinth's reveal). The plan is the
+  LiDAR's: 144 by 148.8 m, each front corner pavilion, curtain of four bays, flank of three, the centre pavilion of 27 m
+  (the north one standing furthest out, the tower behind it), the 69 by 61.7 m courtyard off-centre to the north with its
+  south forecourt, the six round stair turrets, the apse at the tower's foot, the south wing's two light wells, the
+  stair blocks on the roof. Heights: the basement 5.57, the principal storey 15.78, the main cornice 26.63; the curtains'
+  mansard to its curb at 32.8 and the deck at 36; the flanks' bell mansard to 39.4; the centre pavilions' attic cornice
+  at 39.28, their shoulders to the body roof at 49, the crown to 57, its iron cresting to 59.6, the finial to 61.8 and the
+  pole to 73.5; the corner pavilions' cornice at 38.13, their mansard's curb at 45.4 and the cap at 48.8. The tower: the
+  base in the courtyard to 26.6, the batter to 40, the shaft with its rusticated piers to 64.5, the first balcony on its
+  brackets, the stage of the tall arched window to 87.5, the upper balcony all round, the belvedere with its clustered
+  columns to the marble's end at 102.8, the painted clock stage to 123.4 (square to 117, an octagon above), the octagonal
+  dome on the measured profile to 142, the lantern's drum with its eight ribs, the gallery, the cupola to 155.6 and Penn
+  to 167.0.
+- The facades are photographs (fetch_cityhall_art.py, gpt-image-2 at high quality, 19 calls: 18 kept and the first
+  clock, whose dial stood in the top half of the face, set aside): straight-on elevations of a wing section of four bays,
+  the three bays beside a centre pavilion, a centre pavilion's front, a corner pavilion's face, the courtyard's wall, the
+  tower's three masonry stages, the clock stage, a face of the dome, the three dormers and the oculus, a turret's head, the
+  apse, a balustrade and plain ashlar, every pane a flat chroma-key green, the centre's great arch a flat magenta, the dial
+  a flat green disc with no numerals. Each read before the next batch: orthographic, keyed clean, no lettering, the
+  marble warm white. bake_cityhall_art.py keys the glass and its spill, fills the panes with dark glass and a sash's
+  meeting rail, calibrates each picture's stone to the photographs' marble (0xc9c4b8) and the tower's paint, takes each
+  picture's storeys to the building's (so the painted string courses meet the cornices built at 5.57, 15.78 and 26.63),
+  measures the arch (5.0 m wide, its crown at 8.6) and the dial (its centre at 109.6 m, 7.5 m across), and carries the
+  free-standing columns measured by hand on the centre, corner and flank pictures; one 2048 atlas at 26 px/m and a mask
+  at half (r glass, g the window's number, b the dial, a void, the balustrade's sky), a phone's halves: art/cityhall/ is
+  832 KB (a computer downloads 660 KB, a phone 172 KB).
+- Whatever stands proud of a wall wears the wall's own picture projected straight on (`proud`, `moulding`, `column`): the
+  cornices as extruded profiles (the main cornice 1.1 m out, 1.4 m tall), the columns as half-round shafts with capitals
+  and bases on the painted ones (12 on each centre pavilion, 8 on each outer face of a corner pavilion, 2 on each flank),
+  the balconies and their brackets; so the relief and the painting agree from any side. The portals are real openings
+  with their passages to the courtyard (the cast-iron vault grey, darker toward the middle, warm under its lanterns at
+  night; the north one under the tower to the apse's door). The slate takes the pitched roofs' generated slate along its
+  slope with its courses; the cresting is the balustrade's picture cut against the sky. The courtyard is its red pavers,
+  the darker cross of walks between the portals and the painted compass (no letters), the apron round the building
+  granite, both one canvas on the drawn ground.
+- The tower's paint is a shade greyer and cooler than the marble (the two-tone tower). The dials are their own mesh: a
+  canvas a dial drawn by the page (the teal glass of its panes, the gilt chapter ring, sixty marks and the Roman
+  numerals, the white moulded ring), their hands set to the model's clock once a minute, and after dark a deep yellow on
+  the lamps' photocell, never themed (the photographs' yellow dial on a red tower). Penn is Round 84's postcard figure
+  with its arms mirrored (the photographs show the RIGHT arm out over the city and the charter in the LEFT hand against
+  the hip, on a tree stump behind the left leg: Williampennfront.jpg and Williampennleftside.jpg), at the statue's own
+  11.4 m between 155.6 and 167.0, his bronze stored darker (Round 84's rendered about 0x554e3e in the realistic look's sun
+  against the photographs' 0x3a3228). The four eagles stand over the dials and four three-figure groups on the diagonal
+  corners at the dome's foot, all on the themed mesh, the eagles and groups taking less of the floods than Penn. The US
+  flag flies on the north pavilion's pole (the shader's stripes and canton, no texture).
+- The night: `cityHallFloodPatchReal` is Round 109's soft pools moved onto the measured plan (the corner pavilions, the
+  four centre pavilions and a column up the tower from its roofs to Penn's feet), never on the glass, the tower at full
+  strength and the block at 0.8; the plain-night colour is still Round 109's amber (`CH_HOUSE`; the 2024 system's default
+  is a static white, about 0xf3ead9, one constant if Mike wants it), a themed night washes it in the theme's colour as
+  before. A share of the windows' rooms is lit by the hour (0.42 of the towers' office share, `skinLateAt`: about one in
+  seven at half past nine).
+- Cost: one program for both levels ('city-hall-real'), two small ones (the dials, the floor). Near (within 650 m, 420 on a
+  phone, 40 m of hysteresis): 15,929 triangles (14,905 on a phone: six-sided columns), the dials 144, the floor 258; 3
+  colour-pass draws and 1 shadow-pass draw more than with it hidden (the A/B at d_mid_nw on a computer and at p_d_mid_nw
+  on a phone). Far: 3,401 triangles in 1 draw, 1 in the shadow pass. Budgets 60k / 30k near, 6k far, 7 calls: met. The
+  bronzes are 95 parts on the shared themed mesh (Round 81's City Hall shares were about 2.9k triangles). Textures: a
+  computer 26.7 MB for the atlas and mask with their mips (the dials' and the floor's canvases about 8 MB more); a phone
+  6.7 MB and nothing until it comes within 1 km; tier 2 never loads the art and draws the far level from the cells' mean
+  colours. Every stream a multiple of 4 bytes (the colour four normalized bytes).
+- Integration: the outer districts' loop leaves OSM's outline grown 2 m to the model (`CITY_HALL.ring`; the old 24 m skip
+  circle stays for ?real=0), the wings hold `REBUILD_OCC` (no tree, pole or storefront; the courtyard's trees stay), the
+  roof grid has the crowns, the caps and the tower, the courtyard and apron are kept off the tufts. The viewpoint, the orbit
+  target, the skyglow point, the locate fallback, the label, PATCO's stop and the pins (the shell hides them) are as
+  they were: the tower's axis is (-1602.44, -801.19), within a metre of the old (-1603, -802).
+- ?real=0 renders as the pre-round build at d_mid_nw, n_plain_mid_nw and d_nbroad_street (the differences are the live
+  flights' pins and the traffic); `cityHallFloodPatch` is byte for byte the old (tests/city_hall_gpu.html cuts it). Every
+  program linked in every render (no console errors). Renders: before/ and after/ in the scratchpad's landmarks/cityhall,
+  27 computer views (day, dusk, a plain night, the calendar's teal, an Eagles night) and the 3 phone views, with pairs.
+- Tests: tests/test_landmark_cityhall.py (the table, the one slot, the gate, the old block and its flood patch pinned, the
+  manifest's cells and what the page builds to them, the level's constants, and chModel run under Node: both levels'
+  budgets, sound indices and normals, the tops within half a metre); test_art_files and test_memory_cuts follow the new
+  art and canvases. 787 tests, OK with the one expected failure.
+- Not done, to offer Mike: Dilworth Park is still lawn (the real one is mostly a granite plaza with the fountain and the
+  cafe); the plain night's amber against the LED system's white; the courtyard's lanterns and the ornamental gates of
+  2015; the figure groups and eagles are simple forms; the cresting and the balustrades cast solid shadows (three's own
+  depth material knows nothing of the cut); Penn's figure is still Round 84's primitives.
