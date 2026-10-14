@@ -7012,8 +7012,14 @@ RB.add({
   // check before anything is built on it (if it does not, that canvas is swapped for a fresh one and the page builds on
   // log depth). Without it the page keeps r149's logarithmic depth buffer, the depth every build before Round 192 drew
   // with. ?zbuf=log forces log depth, ?zbuf=rev is the default spelled out, and ?logdepth=0 is still plain 24-bit depth
-  // (the old escape hatch, which z-fights on the tower skins from the air). ZPROBE holds the answers for the zc beacon
-  const ZPROBE = { mode: '', forced: false, e: '-', f: '-', real: '', why: '' };
+  // (the old escape hatch, which z-fights on the tower skins from the air). ZPROBE holds the answers for the zc beacon.
+  // The review added three more answers: the extension must also be seen to work (zrevClipWorks: a point under the new clip
+  // volume's near plane is clipped), a load whose float depth failed at full size leaves a crumb that keeps log depth for a
+  // fortnight (zrevFail, ZBUF_KEY), and an Android phone keeps log depth until one has been measured (its tilers resolve an
+  // antialiased canvas for nothing, where the phone path's own 4x target and its blit are real memory and bandwidth); both
+  // still run the probe, so their beacons say what the device would have taken, and ?zbuf=rev overrides both
+  const ZPROBE = { mode: '', forced: false, e: '-', f: '-', k: '-', real: '', why: '', crumb: false, android: false };
+  const ZBUF_KEY = 'philly3d.zbuf', ZBUF_TTL = 14 * 86400000;
   // a context's answer: the extension, and the multisampled float depth framebuffer complete over each colour format the
   // frame will use. Raw GL on a context three may already hold: everything bound is put back to nothing, as three left it
   function zrevCheck(g, post, out) {
@@ -7041,12 +7047,56 @@ RB.add({
       return ok;
     } catch (e) { out.why = 'check: ' + String(e && e.message || e).slice(0, 40); return false; }
   }
+  // the extension seen to work, on the throwaway context only (raw GL there leaves three's state cache alone): one point drawn
+  // into a 1 by 1 target at z = -0.5 w and at +0.5 w under ZERO_TO_ONE, and at -0.5 w under NEGATIVE_ONE_TO_ONE again; only
+  // the first may be clipped. A driver that lists EXT_clip_control and still clips by the old volume, or cannot switch back,
+  // would draw every frame wrong with nothing to fall back on (iOS 18 WebKit, Firefox and ANGLE on D3D11 are untested)
+  function zrevClipWorks(g, out) {
+    try {
+      const X = g && g.getExtension('EXT_clip_control');
+      if (!X) return false;
+      const sh = (t, src) => { const o = g.createShader(t); g.shaderSource(o, src); g.compileShader(o); return o; };
+      const vs = sh(g.VERTEX_SHADER, '#version 300 es\nin float a;\nuniform float z;\nvoid main() { gl_Position = vec4(0.0, 0.0, z + a, 1.0); gl_PointSize = 1.0; }');
+      const fs = sh(g.FRAGMENT_SHADER, '#version 300 es\nprecision mediump float;\nout vec4 c;\nvoid main() { c = vec4(1.0); }');
+      const p = g.createProgram();
+      g.attachShader(p, vs); g.attachShader(p, fs); g.bindAttribLocation(p, 0, 'a'); g.linkProgram(p);
+      let ok = !!g.getProgramParameter(p, g.LINK_STATUS);
+      const fb = g.createFramebuffer(), rb = g.createRenderbuffer(), vb = g.createBuffer(), px = new Uint8Array(4);
+      if (ok) {
+        g.bindBuffer(g.ARRAY_BUFFER, vb); g.bufferData(g.ARRAY_BUFFER, new Float32Array([0]), g.STATIC_DRAW);
+        g.enableVertexAttribArray(0); g.vertexAttribPointer(0, 1, g.FLOAT, false, 4, 0);
+        g.bindRenderbuffer(g.RENDERBUFFER, rb); g.renderbufferStorage(g.RENDERBUFFER, g.RGBA8, 1, 1);
+        g.bindFramebuffer(g.FRAMEBUFFER, fb); g.framebufferRenderbuffer(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.RENDERBUFFER, rb);
+        g.viewport(0, 0, 1, 1); g.disable(g.DEPTH_TEST); g.useProgram(p);
+        const zl = g.getUniformLocation(p, 'z');
+        const lit = (depth, z) => {
+          X.clipControlEXT(X.LOWER_LEFT_EXT, depth);
+          g.clearColor(0, 0, 0, 0); g.clear(g.COLOR_BUFFER_BIT);
+          g.uniform1f(zl, z); g.drawArrays(g.POINTS, 0, 1);
+          g.readPixels(0, 0, 1, 1, g.RGBA, g.UNSIGNED_BYTE, px);
+          return px[0] > 127;
+        };
+        ok = !lit(X.ZERO_TO_ONE_EXT, -0.5) && lit(X.ZERO_TO_ONE_EXT, 0.5) && lit(X.NEGATIVE_ONE_TO_ONE_EXT, -0.5);
+        X.clipControlEXT(X.LOWER_LEFT_EXT, X.NEGATIVE_ONE_TO_ONE_EXT);
+      }
+      g.bindFramebuffer(g.FRAMEBUFFER, null); g.bindRenderbuffer(g.RENDERBUFFER, null); g.bindBuffer(g.ARRAY_BUFFER, null); g.useProgram(null);
+      g.deleteFramebuffer(fb); g.deleteRenderbuffer(rb); g.deleteBuffer(vb); g.deleteProgram(p); g.deleteShader(vs); g.deleteShader(fs);
+      for (let k = 0; k < 8 && g.getError() !== g.NO_ERROR; k++) ok = false;
+      out.k = ok ? 1 : 0;
+      return ok;
+    } catch (e) { out.k = 0; out.why = 'clip: ' + String(e && e.message || e).slice(0, 40); return false; }
+  }
   try {
     const qsDepth = /[?&]logdepth=(\d)/.exec(location.search), qsZ = /[?&]zbuf=(rev|log)\b/.exec(location.search);
     // log depth (r149's, from Aug 24 to Round 191 everywhere): standard depth over a 26 km far plane quantizes the few-cm flat
     // separations into heavy z-fight shimmer, which is why ?logdepth=0 stays an escape hatch only
     let mode = qsZ && qsZ[1] === 'log' ? 'log' : qsDepth ? (qsDepth[1] === '1' ? 'log' : 'std') : 'rev';
     ZPROBE.forced = !!(qsDepth || (qsZ && qsZ[1] === 'log'));
+    const wantRev = !!(qsZ && qsZ[1] === 'rev');   // the default spelled out: it overrides the crumb and the Android hold
+    let crumb = null;
+    try { crumb = JSON.parse(localStorage.getItem(ZBUF_KEY) || 'null'); } catch (e) { crumb = null; }
+    if (crumb && !(Date.now() - (+crumb.t || 0) < ZBUF_TTL)) { crumb = null; try { localStorage.removeItem(ZBUF_KEY); } catch (e) { /* nothing saved */ } }
+    const android = isTouch && /Android/i.test(navigator.userAgent || '');
     const bloomOff = /[?&]bloom=0/.test(location.search);
     // one throwaway context answers both questions, before the real one exists
     const g2 = (!isTouch && !bloomOff) || mode === 'rev' ? (() => { try { return document.createElement('canvas').getContext('webgl2'); } catch (e) { return null; } })() : null;
@@ -7054,6 +7104,9 @@ RB.add({
     // browser's multisampled backbuffer when the pipeline will own the frame (POST.on repeats the test on the real context)
     const postCapable = !isTouch && !bloomOff && (() => { try { return !!g2 && !!g2.getExtension('EXT_color_buffer_float'); } catch (e) { return false; } })();
     if (mode === 'rev' && !zrevCheck(g2, postCapable, ZPROBE)) { mode = 'log'; ZPROBE.why = ZPROBE.why || (ZPROBE.e === 1 ? 'no 4x DEPTH32F_STENCIL8' : g2 ? 'no EXT_clip_control' : 'no WebGL 2'); }
+    else if (mode === 'rev' && !zrevClipWorks(g2, ZPROBE)) { mode = 'log'; ZPROBE.why = ZPROBE.why || 'EXT_clip_control does not clip'; }
+    if (mode === 'rev' && !wantRev && crumb) { mode = 'log'; ZPROBE.crumb = true; ZPROBE.why = 'crumb: ' + String(crumb.why || '').slice(0, 40); }
+    if (mode === 'rev' && !wantRev && android) { mode = 'log'; ZPROBE.android = true; ZPROBE.why = 'an Android phone (unmeasured)'; }
     try { const lose = g2 && g2.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (e) { /* gone either way */ }
     const make = (m) => {
       window.__useLogDepth = m === 'log';
@@ -7100,11 +7153,12 @@ RB.add({
   // (zrevFB, zrevPresent, with the two-step blit kept: the direct one works only because r149's context is alpha:true),
   // and the small targets (the pins' capture, the taps) take a float depth texture (zrevDT). A renderer.clear() made
   // outside a reversed render clears to 1, the NEAR plane here, so a reversed render that does not clear for itself clears
-  // the depth again to 0 first if the last thing done to its target was such a clear (zrevRender: ZREV.cleared; r149's
-  // PMREM never clears at all and gets the same). Nothing in the page may write gl_FragDepth for a perspective camera but
-  // the cloud deck (cloudFrag), which writes the reversed value itself
+  // the depth again to 0 first if its target was cleared that way since a reversed render last drew there (zrevRender: a
+  // WeakSet of such targets, ZREV.clr; r149's PMREM never clears at all and gets the same). Nothing in the page may write
+  // gl_FragDepth for a perspective camera but the cloud deck (cloudFrag), which writes the reversed value itself, and the
+  // river mirror's point sprites (MIRZ), which write the depth of their own pixel on the sprite's plane
   const ZREV = { on: false, why: ZPROBE.why, ext: null, active: false, sub: false, clip: null, frus: false, fb: null, rbC: null, rbD: null, w: 0, h: 0, samples: 0,
-    status: 0, renders: 0, noClear: 0, guard: 0, cleared: null, presents: 0, blit: '', blitErr: 0, rfb: null, rrb: null, cloud: '', rects: 0,
+    status: 0, renders: 0, noClear: 0, guard: 0, clr: null, presents: 0, blit: '', blitErr: 0, rfb: null, rrb: null, cloud: '', rects: 0,
     cloudOld: /[?&]cloudz=old\b/.test(location.search) };
   if (window.__zrevWant) {
     ZREV.ext = renderer.getContext().getExtension('EXT_clip_control');
@@ -7138,17 +7192,20 @@ RB.add({
       : a.material.id !== b.material.id ? a.material.id - b.material.id : a.z !== b.z ? (ZREV.active ? b.z - a.z : a.z - b.z) : a.id - b.id));
     R.setTransparentSort((a, b) => (a.groupOrder !== b.groupOrder ? a.groupOrder - b.groupOrder : a.renderOrder !== b.renderOrder ? a.renderOrder - b.renderOrder
       : a.z !== b.z ? (ZREV.active ? a.z - b.z : b.z - a.z) : a.id - b.id));
-    // every clear outside a reversed render is a standard one (to 1): the target it was made on is remembered until the next
-    // render, so a reversed render that does not clear its own depth can put 0 there first (the guard)
-    const clear0 = R.clear, NUL = {};
+    // every clear outside a reversed render is a standard one (to 1): each target it was made on is remembered until a
+    // reversed render draws there, so one that does not clear its own depth puts 0 there first (the guard). Per target and
+    // kept through every other render (the review: one slot, reset by any render, let a clear on T, then an orthographic
+    // render on T or a reversed one on U, hand T's next reversed render a depth at the near plane, where it drew nothing)
+    const clear0 = R.clear, NUL = {}, CLR = new WeakSet();
+    ZREV.clr = CLR;
     R.clear = function (color = true, depth = true, stencil = true) {
-      if (depth && !ZREV.active) ZREV.cleared = this.getRenderTarget() || NUL;
+      if (depth && !ZREV.active) CLR.add(this.getRenderTarget() || NUL);
       return clear0.call(this, color, depth, stencil);
     };
     const _zs = [0, 0, 0, 0], _zInv = new THREE.Matrix4();   // (doubles: a Float32Array rounded three's own row on every render)
     const render0 = R.render;
     R.render = function zrevRender(sc, cam) {
-      if (!cam || !cam.isPerspectiveCamera || ZREV.active) { if (!ZREV.active) ZREV.cleared = null; return render0.call(this, sc, cam); }
+      if (!cam || !cam.isPerspectiveCamera || ZREV.active) return render0.call(this, sc, cam);
       const P = cam.projectionMatrix, e = P.elements;
       _zs[0] = e[2]; _zs[1] = e[6]; _zs[2] = e[10]; _zs[3] = e[14]; _zInv.copy(cam.projectionMatrixInverse);
       const row = cam.userData.zrevRow;   // a camera's own reversed z row (the mirror's oblique near plane, reflRender)
@@ -7161,8 +7218,8 @@ RB.add({
       enter(); ZREV.frus = true; ZREV.renders++;
       // the guard: a render that keeps the depth it finds, on a target whose depth was last cleared to 1 (the near plane) or
       // never cleared at all (r149's PMREM leans on a fresh buffer's 1.0), clears it to 0 (the far plane) first
-      if (!own && (ZREV.pmrem || ZREV.cleared === tgt)) { D.setMask(true); this.clearDepth(); ZREV.guard++; }
-      ZREV.cleared = null;
+      if (!own && (ZREV.pmrem || CLR.has(tgt))) { D.setMask(true); this.clearDepth(); ZREV.guard++; }
+      CLR.delete(tgt);   // its depth is a reversed render's from here
       try { return render0.call(this, sc, cam); }
       finally { leave(); e[2] = _zs[0]; e[6] = _zs[1]; e[10] = _zs[2]; e[14] = _zs[3]; cam.projectionMatrixInverse.copy(_zInv); }
     };
@@ -7197,22 +7254,23 @@ RB.add({
       gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rbD); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, ZREV.samples, gl.DEPTH32F_STENCIL8, w, h);
       if (ZREV.rrb) { gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rrb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h); }
       gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+      const pd = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
+      gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);
       if (first) {
-        const pd = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
-        gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);
         gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, ZREV.rbC);
         gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, ZREV.rbD);
-        ZREV.status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
-        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
       }
+      ZREV.status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);   // at every size: the full-size target is what can fail (the review)
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
       ZREV.w = w; ZREV.h = h;
+      if (ZREV.status !== gl.FRAMEBUFFER_COMPLETE) zrevFail('sub', ZREV.status, true);
     };
   }
   // the frame drawn into ZREV.fb onto the canvas: one resolving blit (or, where the canvas's format refuses a multisampled
   // source, a resolve into a plain RGBA8 renderbuffer first: an alpha:false canvas does, measured in WebKit), then the
   // target's contents are let go (a tiled GPU stores none)
   function zrevPresent() {
-    if (!ZREV.sub || !ZREV.fb) return;
+    if (!ZREV.sub || !ZREV.fb || ZREV.blit === 'failed') return;
     const gl = renderer.getContext(), w = ZREV.w, h = ZREV.h, sc = gl.isEnabled(gl.SCISSOR_TEST);
     if (sc) gl.disable(gl.SCISSOR_TEST);
     if (!ZREV.blit) gl.getError();   // the first present checks its own blit
@@ -7227,6 +7285,13 @@ RB.add({
     gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     if (!ZREV.blit) {
       const err = gl.getError();
+      if (err !== gl.NO_ERROR && ZREV.rfb) {   // the two-step failed too (the review: it was recorded as working unchecked)
+        ZREV.blitErr2 = err; ZREV.blit = 'failed';
+        gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);
+        if (sc) gl.enable(gl.SCISSOR_TEST);
+        zrevFail('blit', err, true);
+        return;
+      }
       if (err !== gl.NO_ERROR && !ZREV.rfb) {   // the canvas is not the target's format: resolve first, then copy
         ZREV.blitErr = err;
         ZREV.rfb = gl.createFramebuffer(); ZREV.rrb = gl.createRenderbuffer();
@@ -7266,13 +7331,37 @@ RB.add({
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
     return status;
   }
-  // the zc beacon field (Round 192): the depth mode (rev, log or std, with a q when a flag forced it), the throwaway context's
-  // answers (EXT_clip_control, then the 4x DEPTH32F_STENCIL8 framebuffer complete: 1 or 0, - when not asked), an x when the
-  // real context refused what the throwaway one granted, and the blit that put the frame on the canvas (d direct, t two-step,
-  // p the post pipeline's own resolve, - none yet), with a 0 after it when a target's float depth came back incomplete
+  // Round 192 (the review): a float depth target that comes back incomplete at full size (the probe tried 16 by 16), or a
+  // present whose blits both fail, must not leave the session black. The first such answer leaves a crumb (ZBUF_KEY: when and
+  // what) that keeps every load for a fortnight on log depth, as a death keeps a phone's tier, and sends a 'zbuf' beacon;
+  // where the frame itself is lost (the post pipeline's scene target, the phone's own target or its blit) the page reloads
+  // once onto log depth (sessionStorage: a second failure in the same tab does not reload again), and a lost mirror or
+  // occlusion copy only switches that pass off for this session
+  function zrevFail(what, code, fatal) {
+    if (!ZREV.fail) {   // the first answer is the crumb's and the beacon's
+      ZREV.fail = what + ' ' + code;
+      try { localStorage.setItem(ZBUF_KEY, JSON.stringify({ t: Date.now(), why: ZREV.fail })); } catch (e) { /* private mode: no crumb */ }
+      console.warn('zbuf: ' + ZREV.fail);
+      beacon('zbuf', { zf: what, zs: code });
+    }
+    if (!fatal || ZREV.reloading) return;   // a lost frame reloads even after a lost pass
+    ZREV.reloading = true;
+    let again = true;
+    try { again = !!sessionStorage.getItem('philly3d.zbufre'); sessionStorage.setItem('philly3d.zbufre', '1'); } catch (e) { again = true; }
+    if (!again) setTimeout(() => location.reload(), 0);
+  }
+  // the zc beacon field (Round 192): the depth mode (rev, log or std; then q when a flag forced it, c when a crumb kept log
+  // depth, a when an Android phone did), the throwaway context's answers (EXT_clip_control, the 4x DEPTH32F_STENCIL8
+  // framebuffer complete, the clip volume seen to clip: 1 or 0, - when not asked), an x when the real context refused what
+  // the throwaway one granted, and the blit that put the frame on the canvas (d direct, t two-step, x both failed, p the post
+  // pipeline's own resolve, - none yet), with a 0 after it when a float depth target (the scene's, the phone's, the mirror's,
+  // the occlusion's copy) came back incomplete or a blit failed
   function zcField() {
-    const blit = ZREV.blit === 'direct' ? 'd' : ZREV.blit === 'two-step' ? 't' : ZREV.on && !ZREV.sub && POST.on ? 'p' : '-';
-    return ZPROBE.mode + (ZPROBE.forced ? 'q' : '') + '.' + ZPROBE.e + ZPROBE.f + ZPROBE.real + '.' + blit + (ZREV.on && ZREV.status && ZREV.status !== 36053 ? '0' : '');
+    const blit = ZREV.blit === 'direct' ? 'd' : ZREV.blit === 'two-step' ? 't' : ZREV.blit === 'failed' ? 'x' : ZREV.on && !ZREV.sub && POST.on ? 'p' : '-';
+    let mirror = 0;
+    try { mirror = REFL.zst || 0; } catch (e) { mirror = 0; }   // (a beacon before the mirror's line has run)
+    const bad = !!ZREV.fail || (ZREV.on && [ZREV.status, ZREV.aoStatus, mirror].some((st) => st && st !== 36053));
+    return ZPROBE.mode + (ZPROBE.forced ? 'q' : '') + (ZPROBE.crumb ? 'c' : '') + (ZPROBE.android ? 'a' : '') + '.' + ZPROBE.e + ZPROBE.f + ZPROBE.k + ZPROBE.real + '.' + blit + (bad ? '0' : '');
   }
   // Round 149 raised touch to a 2.0 cap and a 1.0 floor for sharpness (Mike chose it); Round 153 (Mike: "The app is again not
   // working on mobile") puts back Round 74's 1.25 and 0.72: at 2.0 a phone drew 2.6 times the pixels of every frame, with
@@ -7883,6 +7972,7 @@ RB.add({
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.TEXTURE_2D, g, 0);
     ZREV.aoStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
     gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
+    if (ZREV.aoStatus !== gl.FRAMEBUFFER_COMPLETE) { zrevFail('ao', ZREV.aoStatus, false); AO.on = false; }   // no occlusion this session (the review)
     if (!AO.zt) AO.zt = new THREE.Texture();
     const tp = renderer.properties.get(AO.zt); tp.__webglTexture = g; tp.__webglInit = true;
     AO.zg = g; AO.zfb = fb;
@@ -7906,6 +7996,7 @@ RB.add({
     // with stencil DEPTH24_STENCIL8, the 24 bits the canvas had (the layered flats need them)
     postRT = new THREE.WebGLRenderTarget(s.x, s.y, { type: THREE.HalfFloatType, samples: 4, depthBuffer: true, stencilBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     if (ZREV.on) ZREV.status = zrevFloatDepth(postRT);   // Round 192: the samples' depth DEPTH32F_STENCIL8
+    if (ZREV.on && ZREV.status && ZREV.status !== 36053) zrevFail('post', ZREV.status, true);
     const bw = Math.max(64, Math.round(s.x / 4)), bh = Math.max(64, Math.round(s.y / 4));
     postA = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     postB = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
@@ -12942,6 +13033,84 @@ vec2 wRing(vec2 rc, float tt) {
     REFL_BOX[0] = Math.max(-1, bx0 - 0.1); REFL_BOX[1] = Math.min(1, bx1 + 0.1); REFL_BOX[2] = Math.max(-1, by0 - 0.1); REFL_BOX[3] = Math.min(1, by1 + 0.18);
     return true;
   }
+  // ---- the mirror's point sprites under reversed Z (Round 192, the review's must-fix). The mirror draws with its oblique row
+  // (zrevRow), whose depth is 1 - k h / d (h a point's height over the water, d its view depth): it falls along every ray
+  // from the mirrored eye, so every surface sorts true, but it is not a distance. A point sprite carries its centre's one
+  // depth over every pixel it covers, and the upper pixels of a far lamp's glow stood nearer than the walls and the ground in
+  // front of them and drew through them: at dusk and at night the far shore's lamps made a broad amber band across the river
+  // where log depth (a distance) showed thin streaks (the review: the glow alone put 9,632 into the mirror at Boathouse Row
+  // against 4,602). So in the mirror's pass every Points object draws a twin of its material whose fragments write the depth
+  // of their own pixel on the sprite's plane, the plane square to the view at the centre's depth, which is the sprite a
+  // distance depth draws: over such a plane the oblique depth is linear in the window's pixels and its slope (MIRZ.u.xy,
+  // from the row and the projection's scale) is one for every sprite. And as under log depth, whose mirror reads its far
+  // plane (the reach, 3.5 km of view depth) where the reversed row's tilted far surface lets a low far lamp through: a glow
+  // that took its log depth from the vertex (the streetlamps', the wet air's halo: USE_LOGDEPTHBUF_EXT undefined) was clipped
+  // past it, and is here (MIRZ_CLIP), and any other point past it sat on the far plane, behind whatever the mirror drew
+  // there (the review's next probe: with the twins alone the far shore of the Delaware still put 35% more light into the
+  // mirror, all of it lamps over 3.5 km away). The scene pass draws the originals, which keep their early depth test; under
+  // log depth there are no twins (its mirror's depth is the distance)
+  const MIRZ = { u: { value: new THREE.Vector4(0, 0, 1, 1) }, far: { value: 3500 }, twins: new WeakMap(), swap: [], made: 0, n: 0,
+    off: /[?&]mirz=0\b/.test(location.search) };   // ?mirz=0, or __dbg.mirz(false): the originals in the mirror (the A/B)
+  const MIRZ_MAIN = /void\s+main\s*\(\s*(?:void\s*)?\)\s*\{/;
+  function mirzGLSL(vs, fs, clip) {
+    const decl = 'uniform vec4 uMirZ;\nuniform float uMirF;\nvarying vec2 vMirC;\nvarying float vMirB;\n';
+    vs = vs.replace(MIRZ_MAIN, (m) => decl + m);
+    const end = vs.lastIndexOf('}');   // main is the last function: its closing brace
+    vs = vs.slice(0, end) + '\n  vMirC = (gl_Position.xy / gl_Position.w * 0.5 + 0.5) * uMirZ.zw; vMirB = step(uMirF, gl_Position.w);\n' +
+      (clip ? '  if (vMirB > 0.5) gl_Position = vec4(2.0, 2.0, 2.0, 1.0);\n' : '') + vs.slice(end);
+    fs = fs.replace(MIRZ_MAIN, (m) => decl + m + '\n  gl_FragDepth = vMirB > 0.5 ? 0.0 : clamp(gl_FragCoord.z + dot(uMirZ.xy, gl_FragCoord.xy - vMirC), 0.0, 1.0);');
+    return [vs, fs];
+  }
+  const MIRZ_CLIP = (src) => /#undef USE_LOGDEPTHBUF_EXT/.test(src);   // a program that took log depth from the vertex
+  // a Points material's mirror twin, made once: a ShaderMaterial's on the same uniforms, a built-in one's (PointsMaterial)
+  // through the original's own compile hook (postRaw's, the glows' sizes and fades) with the patch after it
+  function mirzTwin(m) {
+    if (MIRZ.twins.has(m)) return MIRZ.twins.get(m);   // (null: one that could not be made draws its original)
+    let t = null;
+    if (m.isShaderMaterial) {
+      if (!MIRZ_MAIN.test(m.vertexShader) || !MIRZ_MAIN.test(m.fragmentShader)) { MIRZ.twins.set(m, null); return null; }
+      const [vs, fs] = mirzGLSL(m.vertexShader, m.fragmentShader, MIRZ_CLIP(m.vertexShader));
+      t = new THREE.ShaderMaterial({ uniforms: Object.assign({}, m.uniforms, { uMirZ: MIRZ.u, uMirF: MIRZ.far }), vertexShader: vs, fragmentShader: fs, defines: Object.assign({}, m.defines) });
+      for (const k of ['transparent', 'blending', 'blendSrc', 'blendDst', 'blendEquation', 'blendSrcAlpha', 'blendDstAlpha', 'blendEquationAlpha', 'premultipliedAlpha',
+        'depthTest', 'depthWrite', 'depthFunc', 'side', 'vertexColors', 'fog', 'lights', 'toneMapped', 'colorWrite', 'alphaTest', 'glslVersion']) t[k] = m[k];
+      t.extensions = Object.assign({}, m.extensions);
+    } else {
+      t = new m.constructor();
+      t.copy(m);
+      const hook = m.onBeforeCompile;
+      t.onBeforeCompile = (sh, r) => { hook.call(m, sh, r); sh.uniforms.uMirZ = MIRZ.u; sh.uniforms.uMirF = MIRZ.far; [sh.vertexShader, sh.fragmentShader] = mirzGLSL(sh.vertexShader, sh.fragmentShader, MIRZ_CLIP(sh.vertexShader)); };
+      t.customProgramCacheKey = () => m.customProgramCacheKey() + '|mirz';
+    }
+    t.name = (m.name || '') + '|mirz';
+    MIRZ.twins.set(m, t);
+    MIRZ.made++;
+    return t;
+  }
+  // before the mirror's render: the slope for this row and image, and every Points object in the pass on its twin, kept in
+  // step with what the frame set on the original (a glow's fade and size)
+  function mirzSwap(C) {
+    const row = C.userData.zrevRow, e = C.projectionMatrix.elements;
+    if (!row) return;
+    MIRZ.u.value.set(2 * row[0] / (e[0] * REFL.w), 2 * row[1] / (e[5] * REFL.h), REFL.w, REFL.h); MIRZ.far.value = C.far;
+    const L = REFL.layer;
+    for (const o of REFL.list) {
+      const m = o.material;
+      if (!o.isPoints || !o.visible || !o.layers.isEnabled(L) || !m || Array.isArray(m) || m.depthTest === false) continue;
+      let t = null;
+      try { t = mirzTwin(m); } catch (e) { MIRZ.twins.set(m, null); }
+      if (!t) continue;
+      t.opacity = m.opacity; t.visible = m.visible;
+      if (m.isPointsMaterial) { t.size = m.size; t.color.copy(m.color); t.map = m.map; t.alphaMap = m.alphaMap; }
+      o.material = t;
+      MIRZ.swap.push(o, m);
+    }
+    MIRZ.n = MIRZ.swap.length / 2;
+  }
+  function mirzBack() {
+    const s = MIRZ.swap;
+    for (let i = 0; i < s.length; i += 2) s[i].material = s[i + 1];
+    s.length = 0;
+  }
   // the mirrored eye (three r149's Reflector, with the plane y = TERRAIN.water): the eye, its target and its up reflected,
   // the texture matrix taken before the oblique near plane replaces the projection's z row (Lengyel), so nothing under the
   // water draws; the log depth reads w, which the oblique plane leaves alone. Called by renderPost before the scene pass
@@ -12976,6 +13145,7 @@ vec2 wRing(vec2 rc, float tt) {
       // (after the anisotropy: three sets a target texture's parameters once, when it makes the framebuffers, and
       // zrevFloatDepth makes them; the other way round the mirror lost its anisotropic filter and its streaks blurred)
       if (ZREV.on) REFL.zst = zrevFloatDepth(REFL.rt);
+      if (ZREV.on && REFL.zst && REFL.zst !== 36053) { zrevFail('refl', REFL.zst, false); REFL.on = false; waterU.uReflOn.value = 0; return; }   // no mirror this session (the review)
       REFL.w = w; REFL.h = h;
       waterU.uReflTexel.value.set(1 / w, 1 / h);
     }
@@ -13028,10 +13198,12 @@ vec2 wRing(vec2 rc, float tt) {
     r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false; sc.background = null;   // the scene pass draws the shadow map, never this one
     try {
       if (!REFL.noReach) reflReach(C.position, REFL.far || REFL_FAR); else REFL.nCut = 0;
+      if (ZREV.on && !MIRZ.off) mirzSwap(C);   // the sprites' twins (MIRZ; __dbg.mirz(false) draws the originals, the A/B)
       r.setRenderTarget(REFL.rt); r.setClearColor(0x000000, 0); r.clear(true, true, true);
       r.render(sc, C);
       REFL.calls = r.info.render.calls; REFL.tris = r.info.render.triangles;
     } finally {
+      mirzBack();
       for (const o of REFL.cut) o.layers.enable(REFL.layer);
       REFL.cut.length = 0;
       r.setRenderTarget(prevRT); r.setClearColor(_rfC, prevA);
@@ -13081,7 +13253,8 @@ vec2 wRing(vec2 rc, float tt) {
     if ((frameNo & 1) === 0) waterWakes();
     if (!waterFrame.dbg && window.__dbg) {
       waterFrame.dbg = true;
-      window.__dbg.waterInt = { REFL, reflSweep, waterU, RAISED, reflBox, REFL_BOX };
+      window.__dbg.waterInt = { REFL, reflSweep, waterU, RAISED, reflBox, REFL_BOX, MIRZ };
+      window.__dbg.mirz = (on) => { if (on !== undefined) MIRZ.off = !on; return { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n, slope: MIRZ.u.value.toArray() }; };   // Round 192: the mirror's sprite twins (false: the originals, the A/B)
       window.__dbg.water = () => ({ refl: { on: REFL.on, need: REFL.need, w: REFL.w, h: REFL.h, calls: REFL.calls, tris: REFL.tris, ms: +REFL.ms.toFixed(2), frames: REFL.n, idle: REFL.idle, layered: REFL.layered,
           box: REFL.box ? REFL.box.map((v) => +v.toFixed(3)) : null, crop: [+REFL.cx.toFixed(2), +REFL.cy.toFixed(2)], cut: REFL.nCut, list: REFL.list.length },
         wakes: waterU.uWake.value.filter((v) => v.w > 0.5).length, rain: waterU.uRain.value, cover: waterU.uCover.value, coxMunk: +waterU.uCoxMunk.value.toFixed(4),
@@ -18992,9 +19165,11 @@ vec2 wRing(vec2 rc, float tt) {
   // tar, the copper, the coffered vaults, the granite setts, the beaded trim, the glazing), the lamps, the weather, the
   // flood. The sky between the balusters is cut out on the balustrade's own cell (fix1: on any cell the mask's filtered
   // void and dial edges holed the walls round the portals); fix2 folds the cut-outs' own program back into this one, since
-  // under the log depth buffer every program writes gl_FragDepth and none keeps an early depth test to lose (chCutDepth
-  // still cuts their shadow). The weather is patched in here (fix1: as userData.wxSurf it was taken for a flat on the
-  // ground and kept out of the river's mirror). Fix2, the review's realism: the block's lower storeys weathered darker than
+  // under the log depth buffer every program wrote gl_FragDepth and none kept an early depth test to lose (chCutDepth
+  // still cuts their shadow). Round 192 made reversed Z the default, where every other program keeps its early test and
+  // this one's discard costs it some of its own (on Apple's GPUs a program that can discard is not deferred): splitting the
+  // cut back out, as fix1 had it, is the open question for a City Hall close-up, not measured. The weather is patched in
+  // here (fix1: as userData.wxSurf it was taken for a flat on the ground and kept out of the river's mirror). Fix2, the review's realism: the block's lower storeys weathered darker than
   // its upper and the tower cleaner (by the height over the datum), the marble darker in the rain, every pane's sash
   // and glazing bars and at night a room behind it (its lamp-lit ceiling over a darker floor, a blind part way down in some),
   // the passages' joints and base course drawn in and their own lanterns at night, the gallery's and the skylights' glazing
@@ -19623,8 +19798,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       glassHouses(near.b);
       // fix2 (the review): one program for all of it, the balustrades' and the cresting's cut gated on their own cell, and
       // their shadow cut by chCutDepth. Fix1 gave them a program of their own so the rest kept its early depth test, but
-      // under the log depth buffer, on unless ?logdepth=0, every program writes gl_FragDepth and has none to keep: the
-      // split cost a colour draw, a shadow draw and a program for nothing
+      // under the log depth buffer every program wrote gl_FragDepth and had none to keep: the split cost a colour draw, a
+      // shadow draw and a program for nothing. Since Round 192 the default is reversed Z, where the rest would keep it
+      // (see chMaterial's note: the split is not measured)
       CH.near = mk(near.b); CH.tris.near = near.b.I.length / 3; CH.near.customDepthMaterial = chCutDepth();
       CH.near.userData.occStandIn = CH.far;   // the pins' depth image takes the far level in its place (fix3: a sixth of the triangles)
       CH.tops = near.tops;
@@ -42446,6 +42622,10 @@ float pinOccGate() {
   const boltMesh = BOLT_RIB ? new THREE.Mesh(boltGeo, boltMat) : new THREE.LineSegments(boltGeo, boltMat);
   boltMesh.frustumCulled = false; boltMesh.renderOrder = 60; boltMesh.visible = false;
   scene.add(boltMesh);
+  // Round 192 (the review): a storm's synthetic bolts fall at random moments, so two captures of one storm differ by a flash
+  // (3 to 4 levels over the whole frame) and its parity could not be settled; ?bolts=0, or __dbg.bolts(false), stands them
+  // down as a live lightning feed does (a held strike, __dbg.boltHold, still works)
+  const BOLTS_OFF = { on: /[?&]bolts=0\b/.test(location.search) };
   function spawnBolt(now) {   // a synthetic strike, for storm mode without a lightning feed (and __dbg.bolt)
     const az = Math.random() * Math.PI * 2, dist = 1300 + Math.random() * 2800;
     spawnBoltAt(now, camera.position.x + Math.sin(az) * dist, camera.position.z + Math.cos(az) * dist);
@@ -42567,7 +42747,7 @@ float pinOccGate() {
     wxShellStep(F, vis, dt);
     ltnPoll(now);
     if (LTN.queue.length && now >= LTN.nextDraw) { spawnStrike(now, LTN.queue.shift()); LTN.nextDraw = now + 2500 + Math.random() * 2500; }   // real strikes, one every 2.5 to 5 s at most
-    else if (F.storm && !LTN.live) {   // no lightning feed: the synthetic bolts stand in
+    else if (F.storm && !LTN.live && !BOLTS_OFF.on) {   // no lightning feed: the synthetic bolts stand in (?bolts=0: none, for a storm's parity captures)
       if (!F.nextBolt) F.nextBolt = now + 1200 + Math.random() * F.boltGap[1] * 0.5;
       if (now >= F.nextBolt && F.boltHold == null) spawnBolt(now);
     } else F.nextBolt = 0;
@@ -43743,7 +43923,7 @@ float pinOccGate() {
   function pinOccCam(reach = camera.far) {   // the capture's own camera: the eye's, PIN_OCC.wide times the screen each way, as far as `reach`
     camera.updateMatrixWorld();
     const c = PIN_OCC.cam, n = camera.near, f = Math.min(camera.far, Math.max(n + 1, reach));
-    c.matrixAutoUpdate = false; c.matrixWorldAutoUpdate = false; c.near = n; c.far = f;   // the log depth buffer reads far
+    c.matrixAutoUpdate = false; c.matrixWorldAutoUpdate = false; c.near = n; c.far = f;   // the depth's own row is made from them: log depth's FC, or zrevRender's reversed row
     c.matrix.copy(camera.matrixWorld); c.matrixWorld.copy(camera.matrixWorld); c.matrixWorldInverse.copy(camera.matrixWorldInverse);
     const e = c.projectionMatrix.copy(camera.projectionMatrix).elements;
     e[0] /= PIN_OCC.wide; e[5] /= PIN_OCC.wide;
@@ -44443,15 +44623,15 @@ float pinOccGate() {
       wx: (n) => applyWx({ current: WX_PRESETS[n] || { weather_code: +n || 0, cloud_cover: 90, precipitation: 2, temperature_2m: 60 } }), aqi: (n) => applyAqi(n == null ? null : aqiPreset(n)), aqiState: () => AQI, fetchAqi, lights: lightsPin, lightsSettle, lightsState, lightsThemeAt, fetchLightsCal, rail: () => RAIL_STATS, railSnap, elTracks: () => EL_STATS,
       near: (m) => { if (m > 0) { NEAR_R = +m; closureReconAt = 0; markerReconAt = 0; indegoReconAt = 0; marketReconAt = 0; } return NEAR_R; },
       nearState: () => ({ r: NEAR_R, septa: septaSolid ? septaSolid.count : 0, badges: septaBadge ? septaBadge.count : 0, docks: indegoSolid ? indegoSolid.count : 0, bikes: indegoBike ? indegoBike.count : 0, trains: amtrakCoach ? amtrakLoco.count + amtrakAcela.count + amtrakCoach.count : 0, trainPins: amtrakPin ? amtrakPin.count : 0, drums: barrelMesh ? barrelMesh.count : 0, cones: coneMesh ? coneMesh.count : 0, closurePins: closurePin ? closurePin.count + closurePinPart.count : 0, blocks: CLOSURES.drawn.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), plinths: artMeshes.reduce((a, m) => a + m.count, 0), markerPins: markerPin ? markerPin.count : 0, artPins: artPin ? artPin.count : 0, tents: marketTentN, openMarkets: marketOpenList.length }),
-      bolt: () => spawnBolt(performance.now()), ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), trafficChurn: (reset) => { const o = Object.assign({}, CARC, { ageMean: CARC.ageN ? Math.round(CARC.ageSum / CARC.ageN) : 0 }); if (reset) { CARC.born = CARC.bornSeen = CARC.dieRetire = CARC.dieEnd = CARC.dieSeen = CARC.ageSum = CARC.ageN = 0; CARC.ageMin = 1e9; CARC.transfers = CARC.blockedBirths = 0; } return o; }, traffic: () => ({ runs: trafficRuns.length, active: trafficCars, cap: TRAFFIC.cap, drawn: TRAFFIC.n, models: trafficFleet.map((f,i)=>({name:CAR_MODELS[i].name,n:f.n})), scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover, layers: CLOUD_LAYERS.map(l => ({ min: l.base, max: l.base + l.spread + l.thickness, steps: l.steps })) }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
+      bolt: () => spawnBolt(performance.now()), bolts: (on) => { if (on !== undefined) BOLTS_OFF.on = !on; return !BOLTS_OFF.on; }, ships: () => ({ n: shipMap.size, ok: SHIPS.ok, sock: !!SHIPS.sock, list: [...shipMap.values()].map((v) => ({ name: v.name || v.mmsi, tn: v.tn, tc: v.tc, kind: SHIP_KIND(v.tc || 0, v.len), x: Math.round(v.dx || v.fx || 0), z: Math.round(v.dz || v.fz || 0), sog: v.sog, len: v.len })) }), flights: () => ({ n: flightMap.size, ok: FLIGHTS.ok, fails: FLIGHTS.fails, host: FLIGHTS.host }), indego: () => ({ n: indegoSt.size, drawn: indegoLive.length, ok: INDEGO.ok, fails: INDEGO.fails }), trafficChurn: (reset) => { const o = Object.assign({}, CARC, { ageMean: CARC.ageN ? Math.round(CARC.ageSum / CARC.ageN) : 0 }); if (reset) { CARC.born = CARC.bornSeen = CARC.dieRetire = CARC.dieEnd = CARC.dieSeen = CARC.ageSum = CARC.ageN = 0; CARC.ageMin = 1e9; CARC.transfers = CARC.blockedBirths = 0; } return o; }, traffic: () => ({ runs: trafficRuns.length, active: trafficCars, cap: TRAFFIC.cap, drawn: TRAFFIC.n, models: trafficFleet.map((f,i)=>({name:CAR_MODELS[i].name,n:f.n})), scale: +TRAFFIC.scale.toFixed(3), km: Math.round(trafficRuns.reduce((a, r) => a + r.len, 0) / 1000) }), post: POST, postMats: () => ({ bright: postBright, blur: postBlur, comp: postComp }), postU, envSky, refreshEnv, cloudDeck, clouds: () => ({ lowpoly: CLOUD_LOWPOLY, n: CLOUD_FIELD.n, key: CLOUD_FIELD.key, cap: CLOUD_FIELD.cap, cover: WX.cover, layers: CLOUD_LAYERS.map(l => ({ min: l.base, max: l.base + l.spread + l.thickness, steps: l.steps })) }), skyMat, sunLight: sun, hemi, frameOnce: () => frame(performance.now(), true), goWalk: (x, z, yaw) => { setMode(MODE.WALK); walk.pos.set(x, 1.7, z); walk.yaw = yaw; walk.pitch = 0.12; }, goFly: (x, y, z, yaw, pitch) => { setMode(MODE.FLY); fly.pos.set(x, y, z); walk.yaw = yaw; walk.pitch = pitch || 0; } };
     }
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
-    if (window.__dbg) window.__dbg.zbuf = () => ({ mode: ZPROBE.mode, forced: ZPROBE.forced, probe: [ZPROBE.e, ZPROBE.f], real: ZPROBE.real, zc: zcField(), on: ZREV.on, why: ZREV.why,
+    if (window.__dbg) window.__dbg.zbuf = () => ({ mode: ZPROBE.mode, forced: ZPROBE.forced, probe: [ZPROBE.e, ZPROBE.f, ZPROBE.k], crumb: ZPROBE.crumb, android: ZPROBE.android, fail: ZREV.fail || '', real: ZPROBE.real, zc: zcField(), on: ZREV.on, why: ZREV.why,
       logDepth: !!window.__useLogDepth, near: camera.near, sub: ZREV.sub, samples: ZREV.samples, size: [ZREV.w, ZREV.h], status: ZREV.status, aoStatus: ZREV.aoStatus,
       mirrorStatus: REFL.zst || 0, renders: ZREV.renders, noClear: ZREV.noClear, guard: ZREV.guard, presents: ZREV.presents, blit: ZREV.blit, blitErr: ZREV.blitErr,
       cloud: { old: CLOUDZ.old, mode: CLOUDZ.mode, rects: CLOUDZ.n, merged: CLOUDZ.merged, warm: CLOUDZ.warm, box: CLOUDZ.box.toArray(), zVisible: !!(cloudDeckZ && cloudDeckZ.visible), list: CLOUDZ.rects.slice(0, CLOUDZ.n).map((v) => v.toArray()) },
-      mirrorRow: REFL.cam.userData.zrevRow || null });   // Round 192: the depth mode, its probe and the deck's programs
+      mirrorRow: REFL.cam.userData.zrevRow || null, mirz: { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n } });   // Round 192: the depth mode, its probe and the deck's programs
     if (window.__dbg) window.__dbg.cloudRects = (on) => { if (on !== undefined) CLOUDZ.off = !on; return { off: !!CLOUDZ.off, n: CLOUDZ.n }; };
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state

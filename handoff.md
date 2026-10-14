@@ -81,7 +81,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 | `tests/test_street_labels.py` | Runs actual street-label geometry under Node: full-width pavement clearance on slopes, interior crests, custom deck heights, crossing-bridge separation, terrain ridges, complete atlas UVs and upward faces. Round 98 also audited all 3,774 baked placements against road/ground triangles. |
 | `tests/test_pins.py` | Runs production pin rendering/picking helpers under Node: shared scene-depth policy for every family, rejection of blocked pin hits, transparent-corner rejection, Indego atlas tiles, and overlap ordering among unobstructed pins; since Round 169 a pin the gate hides never takes the tap. |
 | `tests/test_pin_fade.py` | Round 169: the pins' state and cadence under Node against scripted images: hidden until an image drawn after the pin came into view clears it, a covered answer hides at once, showing keeps the guard and the fade in, no blink at an edge, an image every 2nd drawn frame on a phone while moving (every frame on a computer) and one the frame the eye stops, near images between complete ones with a far tip in view, a pin the reconcile only moved to another slot keeping its state. |
-| `tests/test_zbuf.py` | Round 192: reversed-Z depth. The default (reversed where a throwaway context has `EXT_clip_control` and a complete 4x `DEPTH32F_STENCIL8` framebuffer, the real context checked again), `zrevCheck` against fake contexts, `zrevInstall` run under Node on a stand-in renderer over the vendored three (the projection swapped only inside render, clear 0, GEQUAL/GREATER, the shadow pass standard, the frustum's far plane, the sorts, the clear-to-near guard), the AO's decode, the mirror's reversed oblique row with and without the river in view, the cloud deck's programs and the aircraft's rectangles (`cloudRects`, `cloudRectsFit`), the page's only `gl_FragDepth` writes and every `gl_Position.z` it sets, and `zc` on every beacon. |
+| `tests/test_zbuf.py` | Round 192: reversed-Z depth. The default (reversed where a throwaway context has `EXT_clip_control` and a complete 4x `DEPTH32F_STENCIL8` framebuffer, the real context checked again), `zrevCheck` against fake contexts, `zrevInstall` run under Node on a stand-in renderer over the vendored three (the projection swapped only inside render, clear 0, GEQUAL/GREATER, the shadow pass standard, the frustum's far plane, the sorts, the clear-to-near guard), the AO's decode, the mirror's reversed oblique row with and without the river in view, the mirror's point-sprite twins' depth (`MIRZ`: the oblique depth of each pixel on the sprite's plane, what stands in front on its ray hides it), the cloud deck's programs and the aircraft's rectangles (`cloudRects`, `cloudRectsFit`), the page's only `gl_FragDepth` writes and every `gl_Position.z` it sets, the depth-mode choice under Node (the clip test, the crumb, the Android hold, `?zbuf=rev` over both), `zrevFail`'s crumb and single reload, the per-target clear guard, and `zc` on every beacon. |
 | `tests/test_pin_gate.py` | Round 169: the CPU's answers under Node against synthetic images (one image, two, reach, arrival, the placards' answer under motion), a tap asking the gate's own images (`pinGateShows`), and the text of the vertex gate. |
 | `tests/environment_gpu.html` | Round 106: production grass, pavement, weather, water and sky GPU checks in four depth/detail configurations; stable filtering, lane paint, wet/snow layering, sky-colour reflections, night brightness and independent river/fountain ripple scales. |
 | `tests/test_traffic.py` / `tests/traffic_checks.js` | Rounds 107/112: production traffic lifecycle and geometry under Node, upstream inflow to empty visible streets, citywide baked coverage and short connectors; population caps, camera/clock changes, visible-car preservation, T-junction connectivity, separated overpasses, route transfers, following gaps, birth spacing and one-way dead ends. |
@@ -281,6 +281,10 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # pipeline 
     `?logdepth=0` is still plain 24-bit depth (z-fights on the tower skins), `?cloudz=old` keeps the cloud deck writing its
     depth everywhere; `__dbg.zbuf()` reports the mode, the probe, the blit, the guard and the deck's programs, and
     `__dbg.cloudRects(false)` turns the aircraft's rectangles off (the spike's planes drawn over the clouds, for an A/B).
+    `?zbuf=rev` overrides the two holds (the crumb a failed float target leaves, `philly3d.zbuf`, a fortnight; an Android
+    phone, unmeasured); `?mirz=0` or `__dbg.mirz(false)` draws the river mirror's point sprites without their twins (the
+    review's must-fix, for an A/B); `?bolts=0` or `__dbg.bolts(false)` stands a storm's synthetic bolts down, so two storm
+    captures can be compared.
 - **Deploy:** `./deploy_philly3d.sh` ships philly3d.com; `git push` ships GitHub Pages. To
   check Pages is live, grep the *whole* page or its tail: app.js sits after ~20 MB of data,
   so a first-120 KB range check always reports stale.
@@ -805,12 +809,18 @@ More rules the log paid for (details in `devlog.md`):
   writes) and never set `gl_Position.z` without both conventions (`ZREV.on ? ... : ...`, as the sky dome, the deck's
   clamp, the wakes' and the vehicle shadows' hair toward the eye do); (2) a perspective render target that holds depth
   must be float or the gain is gone (`zrevFloatDepth` re-specifies a target's renderbuffer as `DEPTH32F_STENCIL8` /
-  `DEPTH_COMPONENT32F` after three makes it; `zrevDT` hands a small target a float depth texture); (3) a
-  `renderer.clear()` outside a render clears to 1, which is the near plane here: a render that does not clear its own
-  depth is guarded (`ZREV.cleared`), but a new pass that draws a perspective camera with `autoClear` off should clear
-  inside its own render; (4) the shadow pass and every orthographic camera keep the standard convention (the clip
-  control is switched back for them). A program that `discard`s keeps its early depth test only partly on Apple's GPUs:
-  City Hall's balustrade cut (one program since fix2) is the one large case left.
+  `DEPTH_COMPONENT32F` after three makes it; `zrevDT` hands a small target a float depth texture), and check what it
+  returns at full size (`zrevFail`: a crumb that keeps log depth a fortnight, and one reload where the frame itself is
+  lost); (3) a `renderer.clear()` outside a render clears to 1, which is the near plane here: a render that does not clear
+  its own depth is guarded per target (`ZREV.clr`, a WeakSet kept until a reversed render draws there), but a new pass
+  that draws a perspective camera with `autoClear` off should clear inside its own render; (4) the shadow pass and every
+  orthographic camera keep the standard convention (the clip control is switched back for them); (5) the river mirror's
+  oblique row is not a distance (depth 1 - k h / d): anything whose fragments share one depth (a point sprite, a quad
+  pinned to its anchor's depth) is wrong against it, so the mirror's pass swaps every Points object onto a twin
+  (`MIRZ`, `mirzTwin`) that writes the depth of its own pixel on the sprite's plane, and clips the vertex-depth glows past
+  the mirror's far plane as log depth did; a new kind of sprite or billboard in the mirror needs the same. A program that
+  `discard`s keeps its early depth test only partly on Apple's GPUs: City Hall's balustrade cut (one program since fix2)
+  is the one large case left.
 - The cloud deck (Round 192): under the low bank's lowest base minus 25 m it draws `cloudMatNoZ`, which writes no depth and
   sits on the far plane, in both depth modes; every aircraft over the base on the screen gets a rectangle (`cloudRects`,
   sixteen at most) that the twin leaves to `cloudDeckZ`, the depth-writing program cut to them and scissored to their

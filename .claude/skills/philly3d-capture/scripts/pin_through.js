@@ -29,7 +29,10 @@
   let sky = null; scene.traverse((o) => { if (o.material === d.skyMat) sky = o; });
   const tcam = new THREE.PerspectiveCamera(); tcam.matrixAutoUpdate = false; tcam.matrixWorldAutoUpdate = false;
   const rts = new Map();
-  const rtFor = (W, H) => { const k = W + 'x' + H; if (!rts.has(k)) rts.set(k, { rt: new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false }), buf: new Uint8Array(W * H * 4) }); return rts.get(k); };
+  // a float depth (Round 192, the review): r149's default depth-only target is 16-bit, which under reversed Z (the default
+  // since Round 192) loses about 20 m of depth at 1 km, enough to call a covered tip clear; the page's own capture takes a
+  // float depth texture too (zrevDT). It is as good under log depth, so both arms of a before/after use it
+  const rtFor = (W, H) => { const k = W + 'x' + H; if (!rts.has(k)) rts.set(k, { rt: new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false, depthTexture: new THREE.DepthTexture(W, H, THREE.FloatType) }), buf: new Uint8Array(W * H * 4) }); return rts.get(k); };
   function capture(view, proj, W, H, noFlats) {   // view = world to camera, proj as the page's capture camera
     tcam.near = camera.near; tcam.far = camera.far;
     tcam.matrixWorldInverse.copy(view); tcam.matrixWorld.copy(view).invert(); tcam.matrix.copy(tcam.matrixWorld);

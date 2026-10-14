@@ -16,7 +16,12 @@ faster from the air and 2.3 to 4.3 at street level, in Chrome and in WebKit, wit
   row (still clipping) when the river is not in its view;
 - the cloud deck's twin writes no depth and draws in both depth modes, leaving the aircraft's rectangles to the
   depth-writing program; the rectangles cover every plane and fit in sixteen;
-- nothing else in the page writes gl_FragDepth, and every gl_Position.z the page sets is one this file knows;
+- nothing else in the page writes gl_FragDepth but the river mirror's point sprites, whose twins write the depth of their
+  own pixel on the sprite's plane (the review's must-fix: under the oblique row a sprite's one depth let the far shore's
+  lamps through the walls in front of them), and every gl_Position.z the page sets is one this file knows;
+- the guard is per target and survives other renders; the extension must be seen to clip; a crumb or an Android phone keeps
+  log depth (?zbuf=rev overrides both); a float depth target that fails at full size leaves the crumb, and the frame's own
+  reloads once;
 - every beacon carries zc."""
 import json
 from pathlib import Path
@@ -64,6 +69,7 @@ class Wiring(unittest.TestCase):
         self.assertIn("qsZ = /[?&]zbuf=(rev|log)\\b/.exec(location.search)", s)
         # one throwaway context answers both the post pipeline's question and the depth's
         self.assertIn("if (mode === 'rev' && !zrevCheck(g2, postCapable, ZPROBE)) { mode = 'log';", s)
+        self.assertIn("else if (mode === 'rev' && !zrevClipWorks(g2, ZPROBE)) { mode = 'log';", s)
         # the real context passes the same check, or a fresh canvas builds on log depth
         i = s.index("    if (mode === 'rev') {\n      const real = { e: '-', f: '-', why: '' };")
         body = s[i:s.index('    ZPROBE.mode = mode;', i)]
@@ -141,8 +147,8 @@ class Wiring(unittest.TestCase):
         for t in srcs:
             for m in re.finditer(r'gl_FragDepth(?:EXT)?\s*=', t):
                 writes.append(t[max(0, t.rfind('\n', 0, m.start())):t.find('\n', m.end())].strip())
-        self.assertEqual(len(writes), 2, writes)
-        self.assertTrue(all('logDepthBufFC' in w or 'hitClip' in w for w in writes), writes)
+        self.assertEqual(len(writes), 3, writes)
+        self.assertTrue(all('logDepthBufFC' in w or 'hitClip' in w or 'uMirZ' in w for w in writes), writes)
         allowed = ('gl_Position.z = 0.0;', 'gl_Position.z = gl_Position.w;', 'gl_Position.z = max(gl_Position.z, 0.0);',
                    'gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99999);', 'gl_Position.z = log2(max(EPSILON, pinA.w + 1.0)) * logDepthBufFC - 1.0;',
                    'gl_Position.z *= gl_Position.w;', 'gl_Position.z = pinA.z / pinA.w * gl_Position.w;', 'gl_Position.z = stdZ;',
@@ -164,7 +170,40 @@ class Wiring(unittest.TestCase):
         b = cut_function(s, 'beacon')
         self.assertIn("zc: safe(() => zcField(), '')", b)
         z = cut_function(s, 'zcField')
-        self.assertIn("ZPROBE.mode + (ZPROBE.forced ? 'q' : '') + '.' + ZPROBE.e + ZPROBE.f + ZPROBE.real + '.' + blit", z)
+        self.assertIn("ZPROBE.mode + (ZPROBE.forced ? 'q' : '') + (ZPROBE.crumb ? 'c' : '') + (ZPROBE.android ? 'a' : '') + '.' + ZPROBE.e + ZPROBE.f + ZPROBE.k + ZPROBE.real + '.' + blit + (bad ? '0' : '')", z)
+        # the trailing 0 covers every float depth target, the mirror's and the occlusion copy's too, and a failed blit
+        self.assertIn('[ZREV.status, ZREV.aoStatus, mirror].some(', z)
+        self.assertIn('!!ZREV.fail', z)
+        self.assertIn("ZREV.blit === 'failed' ? 'x'", z)
+
+    def test_a_failed_float_depth_target_falls_back(self):
+        s = self.s
+        f = cut_function(s, 'zrevFail')
+        self.assertIn("localStorage.setItem(ZBUF_KEY, JSON.stringify({ t: Date.now(), why: ZREV.fail }))", f)
+        self.assertIn("beacon('zbuf', { zf: what, zs: code });", f)
+        self.assertIn("sessionStorage.getItem('philly3d.zbufre')", f)
+        # every float depth target is checked where it is made, at full size
+        self.assertIn("if (ZREV.on && ZREV.status && ZREV.status !== 36053) zrevFail('post', ZREV.status, true);", s)
+        self.assertIn("if (ZREV.status !== gl.FRAMEBUFFER_COMPLETE) zrevFail('sub', ZREV.status, true);", s)
+        self.assertIn("zrevFail('refl', REFL.zst, false); REFL.on = false;", s)
+        self.assertIn("zrevFail('ao', ZREV.aoStatus, false); AO.on = false;", s)
+        p = cut_function(s, 'zrevPresent')
+        self.assertIn("if (err !== gl.NO_ERROR && ZREV.rfb) {", p)
+        self.assertIn("zrevFail('blit', err, true);", p)
+
+    def test_the_mirror_sprites_twins(self):
+        s = self.s
+        self.assertIn("if (ZREV.on && !MIRZ.off) mirzSwap(C);", s)
+        refl = cut_function(s, 'reflRender')
+        self.assertLess(refl.index('mirzSwap(C)'), refl.index('r.render(sc, C);'))
+        self.assertLess(refl.index('r.render(sc, C);'), refl.index('mirzBack();'))
+        self.assertIn('finally {\n      mirzBack();', refl)
+        sw = cut_function(s, 'mirzSwap')
+        self.assertIn('MIRZ.u.value.set(2 * row[0] / (e[0] * REFL.w), 2 * row[1] / (e[5] * REFL.h), REFL.w, REFL.h); MIRZ.far.value = C.far;', sw)
+        self.assertIn('if (!o.isPoints ||', sw)
+        t = cut_function(s, 'mirzTwin')
+        self.assertIn("customProgramCacheKey = () => m.customProgramCacheKey() + '|mirz'", t)
+        self.assertIn('uniforms: Object.assign({}, m.uniforms, { uMirZ: MIRZ.u, uMirF: MIRZ.far })', t)
 
 
 @unittest.skipUnless(NODE, 'Node.js unavailable')
@@ -252,6 +291,60 @@ console.log(JSON.stringify({ row: !!row, tried, kept, clipped, onWater, mono, un
         self.assertGreater(r['under'], 20)
         self.assertEqual(r['underClipped'], r['under'])
 
+    def test_mirror_sprite_depth(self):
+        # the twins' depth (MIRZ): the centre's depth plus the slope times the pixel offset is the oblique row's depth of the
+        # point on the sprite's plane under that pixel (the window's y up, the crop in the projection's scale and offset), and
+        # against it a point on the same pixel's ray nearer than the plane is nearer (it hides the sprite) and one past it is
+        # farther; the bare centre depth (the spike's sprite) let points in front of it lose
+        s = self.s
+        refl = cut_function(s, 'reflRender')
+        body = refl[refl.index('    const C = REFL.cam;'):refl.index('    C.projectionMatrixInverse.copy(C.projectionMatrix).invert();')]
+        sw = cut_function(s, 'mirzSwap')
+        slope = re.search(r'MIRZ\.u\.value\.set\(([^;]+)\);', sw).group(1)
+        js = """
+const THREE = require('./three.min.js');
+const W0 = -7.34, REFL_FAR = 3500, ZREV = { on: true };
+const REFL = { cam: new THREE.PerspectiveCamera(), box: [-0.55, 0.7, -0.6, 0.35], w: 640, h: 400 };
+const MIRZ = { u: { value: new THREE.Vector4() } };
+const waterU = { uReflMat: { value: new THREE.Matrix4() } };
+const _rfA = new THREE.Vector3(), _rfN = new THREE.Vector3(0, 1, 0), _rfP = new THREE.Plane(), _rfV = new THREE.Vector4(), _rfQ = new THREE.Vector4();
+const cam = new THREE.PerspectiveCamera(60, 1.6, 0.75, 26000);
+cam.position.set(100, W0 + 5, -40); cam.lookAt(900, W0 + 2, -300); cam.updateMatrixWorld(); cam.updateProjectionMatrix();
+""" + body + """
+const row = C.userData.zrevRow;
+{ const e = C.projectionMatrix.elements; MIRZ.u.value.set(""" + slope + """); }
+const S = MIRZ.u.value, Wd = REFL.w, Hd = REFL.h;
+const depthOf = (v) => (row[0] * v.x + row[1] * v.y + row[2] * v.z + row[3]) / (-v.z);
+const ndcOf = (v) => [(e[0] * v.x + e[8] * v.z + e[12]) / (-v.z), (e[5] * v.y + e[9] * v.z + e[13]) / (-v.z)];
+const heightOf = (v) => v.clone().applyMatrix4(C.matrixWorld).y - W0;
+let n = 0, worst = 0, nearer = 0, farther = 0, tried = 0, bare = 0, btried = 0;
+let seed = 7; const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+for (let k = 0; k < 400; k++) {
+  const d = 60 + rnd() * 2500, nx = rnd() * 1.6 - 0.8, ny = rnd() * 1.6 - 0.8;
+  const c = new THREE.Vector3(d * (nx + e[8]) / e[0], d * (ny + e[9]) / e[5], -d);   // a sprite centre at that NDC and depth
+  if (heightOf(c) < 3) continue;
+  const dc = depthOf(c), [cx, cy] = ndcOf(c), wx = (cx * 0.5 + 0.5) * Wd, wy = (cy * 0.5 + 0.5) * Hd;
+  for (const [dx, dy] of [[0, 0], [9, 0], [-9, 4], [3, 12], [0, -12], [11, -7]]) {
+    const fx = cx + 2 * dx / Wd, fy = cy + 2 * dy / Hd;   // the fragment's NDC
+    const p = new THREE.Vector3(d * (fx + e[8]) / e[0], d * (fy + e[9]) / e[5], -d);   // its point on the sprite's plane
+    const twin = dc + S.x * dx + S.y * dy, exact = depthOf(p);
+    worst = Math.max(worst, Math.abs(twin - exact)); n++;
+    if (heightOf(p) < 0.5) continue;
+    for (const f of [0.6, 0.9, 0.98]) { const q = p.clone().multiplyScalar(f); if (heightOf(q) < 0.1) continue; tried++; if (depthOf(q) > twin) nearer++; if (depthOf(q) > dc) bare++; }
+    for (const f of [1.02, 1.3]) { const q = p.clone().multiplyScalar(f); btried++; if (depthOf(q) < twin) farther++; }
+  }
+}
+console.log(JSON.stringify({ n, worst, tried, nearer, farther, btried, bare, slope: [S.x, S.y] }));
+"""
+        r = run_node(js)
+        self.assertGreater(r['n'], 1000)
+        self.assertLess(r['worst'], 1e-6)
+        self.assertGreater(r['tried'], 500)
+        self.assertEqual(r['nearer'], r['tried'])        # whatever stands in front on the pixel's ray hides the sprite there
+        self.assertGreater(r['btried'], 500)
+        self.assertEqual(r['farther'], r['btried'])      # and what stands past the sprite's plane does not
+        self.assertLess(r['bare'], r['tried'])           # the centre's bare depth: some in front lost to it (the must-fix)
+
     def test_probe(self):
         # zrevCheck against a fake context: the extension, the framebuffer's status over each colour format, a GL error, a throw
         f = cut_function(self.s, 'zrevCheck')
@@ -293,6 +386,105 @@ console.log(JSON.stringify(out));
         self.assertFalse(r['throws']['ok'])
         self.assertTrue(r['throws']['why'].startswith('check: '))
         self.assertFalse(r['nogl'])
+
+    def test_mode(self):
+        # the depth-mode block under Node with fake contexts: the default, the flags, the clip test, the crumb, an Android phone
+        s = self.s
+        i = s.index('  const ZPROBE = {')
+        j = s.index("    if (ZPROBE.why) console.warn('zbuf: log depth (' + ZPROBE.why + ')');", i)
+        block = s[i:j] + "  } catch (e) { threw = String(e && e.message || e); }\n"
+        js = """
+function fakeGL(c) {
+  const g = { FRAMEBUFFER: 1, RENDERBUFFER: 2, RGBA8: 3, RGBA16F: 4, DEPTH32F_STENCIL8: 5, COLOR_ATTACHMENT0: 6, DEPTH_STENCIL_ATTACHMENT: 7, FRAMEBUFFER_COMPLETE: 36053,
+    NO_ERROR: 0, MAX_SAMPLES: 8, VERTEX_SHADER: 9, FRAGMENT_SHADER: 10, LINK_STATUS: 11, ARRAY_BUFFER: 12, STATIC_DRAW: 13, FLOAT: 14, DEPTH_TEST: 15,
+    COLOR_BUFFER_BIT: 16, POINTS: 17, RGBA: 18, UNSIGNED_BYTE: 19, depth: 3, z: 0, lit: false,
+    getExtension(n) {
+      if (n === 'EXT_clip_control') return c.ext ? { LOWER_LEFT_EXT: 1, ZERO_TO_ONE_EXT: 2, NEGATIVE_ONE_TO_ONE_EXT: 3, clipControlEXT: (o, d) => { g.depth = c.clip === 'stuck' ? 3 : d; } } : null;
+      if (n === 'EXT_color_buffer_float') return {};
+      if (n === 'WEBGL_lose_context') return { loseContext() {} };
+      return null; },
+    getParameter: () => 4, getError: () => 0, createFramebuffer: () => ({}), createRenderbuffer: () => ({}), createBuffer: () => ({}), createProgram: () => ({}),
+    createShader: () => ({}), shaderSource() {}, compileShader() {}, attachShader() {}, bindAttribLocation() {}, linkProgram() {}, getProgramParameter: () => true,
+    bindFramebuffer() {}, bindRenderbuffer() {}, bindBuffer() {}, bufferData() {}, enableVertexAttribArray() {}, vertexAttribPointer() {},
+    renderbufferStorageMultisample() {}, renderbufferStorage() {}, framebufferRenderbuffer() {}, checkFramebufferStatus: () => (c.fb === false ? 36054 : 36053),
+    viewport() {}, disable() {}, useProgram() {}, getUniformLocation: () => ({}), clearColor() {}, clear() { g.lit = false; }, uniform1f(l, z) { g.z = z; },
+    drawArrays() { g.lit = g.depth === 2 ? g.z >= 0 && g.z <= 1 : g.z >= -1 && g.z <= 1; }, readPixels(x, y, w, h, f, t, px) { px[0] = g.lit ? 255 : 0; },
+    deleteFramebuffer() {}, deleteRenderbuffer() {}, deleteBuffer() {}, deleteProgram() {}, deleteShader() {} };
+  return g;
+}
+function load(o) {
+  const LS = o.ls || new Map(), made = [];
+  const location = { search: o.search || '' }, navigator = { userAgent: o.ua || 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)' };
+  const isTouch = !!o.touch, window = {}, veil = { style: {} }, console = { warn() {} };
+  const localStorage = { getItem: (k) => (LS.has(k) ? LS.get(k) : null), setItem: (k, v) => LS.set(k, String(v)), removeItem: (k) => LS.delete(k) };
+  const document = { createElement: () => ({ getContext: () => (o.g2 === null ? null : fakeGL(o.g2 || o.gl)) }), getElementById: () => ({ style: {} }) };
+  let canvas = { cloneNode() { return { replaceWith() {} }; }, replaceWith() {} };
+  const THREE = { WebGLRenderer: function (opts) { made.push(opts); this.getContext = () => fakeGL(o.real || o.gl); this.capabilities = { isWebGL2: true }; this.dispose = () => {}; this.forceContextLoss = () => {}; } };
+  let renderer, threw = null;
+  BLOCK
+  return { mode: ZPROBE.mode, why: ZPROBE.why, e: ZPROBE.e, f: ZPROBE.f, k: ZPROBE.k, crumb: ZPROBE.crumb, android: ZPROBE.android, forced: ZPROBE.forced, sub: !!window.__zrevSub, logDepth: !!window.__useLogDepth, renderers: made.length, threw, kept: LS.has('philly3d.zbuf') };
+}
+const good = { ext: 1, fb: true, clip: 'good' }, iphone = 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_7 like Mac OS X)', pixel = 'Mozilla/5.0 (Linux; Android 15; Pixel 8) AppleWebKit/537.36 Chrome/141.0 Mobile Safari/537.36';
+const out = {};
+out.desk = load({ gl: good });
+out.phone = load({ gl: good, touch: true, ua: iphone });
+out.forcedLog = load({ gl: good, search: '?zbuf=log' });
+out.noExt = load({ gl: { ext: 0 } });
+out.noFb = load({ gl: { ext: 1, fb: false } });
+out.stuck = load({ gl: { ext: 1, fb: true, clip: 'stuck' } });   // lists the extension, still clips by -1..1
+out.noGl2 = load({ gl: good, g2: null, touch: true, ua: iphone });
+const fresh = () => new Map([['philly3d.zbuf', JSON.stringify({ t: Date.now() - 86400000, why: 'post 36054' })]]);
+out.crumb = load({ gl: good, ls: fresh() });
+out.crumbRev = load({ gl: good, ls: fresh(), search: '?zbuf=rev' });
+out.stale = load({ gl: good, ls: new Map([['philly3d.zbuf', JSON.stringify({ t: Date.now() - 15 * 86400000, why: 'post 36054' })]]) });
+out.android = load({ gl: good, touch: true, ua: pixel });
+out.androidRev = load({ gl: good, touch: true, ua: pixel, search: '?zbuf=rev' });
+out.androidTablet = load({ gl: good, touch: false, ua: pixel });
+out.realRefuses = load({ g2: good, real: { ext: 1, fb: false }, touch: true, ua: iphone });
+console.log(JSON.stringify(out));
+""".replace('BLOCK', block)
+        r = run_node(js)
+        self.assertEqual((r['desk']['mode'], r['desk']['e'], r['desk']['f'], r['desk']['k'], r['desk']['sub']), ('rev', 1, 1, 1, False))
+        self.assertEqual((r['phone']['mode'], r['phone']['sub'], r['phone']['android']), ('rev', True, False))
+        self.assertEqual((r['forcedLog']['mode'], r['forcedLog']['forced'], r['forcedLog']['logDepth']), ('log', True, True))
+        self.assertEqual((r['noExt']['mode'], r['noExt']['e']), ('log', 0))
+        self.assertEqual((r['noFb']['mode'], r['noFb']['f']), ('log', 0))
+        self.assertEqual((r['stuck']['mode'], r['stuck']['k']), ('log', 0))          # the clip test refuses a driver that does not clip
+        self.assertIn('does not clip', r['stuck']['why'])
+        self.assertEqual(r['noGl2']['mode'], 'log')
+        self.assertEqual((r['crumb']['mode'], r['crumb']['crumb'], r['crumb']['k']), ('log', True, 1))   # the probe still ran
+        self.assertIn('post 36054', r['crumb']['why'])
+        self.assertEqual(r['crumbRev']['mode'], 'rev')                                  # ?zbuf=rev overrides the crumb
+        self.assertEqual((r['stale']['mode'], r['stale']['kept']), ('rev', False))     # a fortnight on, the crumb goes
+        self.assertEqual((r['android']['mode'], r['android']['android'], r['android']['e'], r['android']['f'], r['android']['k']), ('log', True, 1, 1, 1))
+        self.assertEqual(r['androidRev']['mode'], 'rev')
+        self.assertEqual(r['androidTablet']['mode'], 'rev')                             # no touch: the post pipeline's path, not the hold's
+        self.assertEqual((r['realRefuses']['mode'], r['realRefuses']['renderers']), ('log', 2))
+        for k, v in r.items():
+            self.assertIsNone(v['threw'], k)
+
+    def test_fail(self):
+        # zrevFail: the first failure leaves the crumb and a beacon; the frame's own reloads once a tab, a pass's does not
+        f = cut_function(self.s, 'zrevFail')
+        js = """
+const ZBUF_KEY = 'philly3d.zbuf';
+function run(seq, sessHas) {
+  const LS = new Map(), SS = new Map(sessHas ? [['philly3d.zbufre', '1']] : []), beacons = [];
+  let reloads = 0;
+  const ZREV = {}, localStorage = { setItem: (k, v) => LS.set(k, v) }, sessionStorage = { getItem: (k) => (SS.has(k) ? SS.get(k) : null), setItem: (k, v) => SS.set(k, v) };
+  const location = { reload: () => reloads++ }, setTimeout = (fn) => fn(), console = { warn() {} }, beacon = (st, q) => beacons.push([st, q]);
+  """ + f + """
+  for (const [w, c, fatal] of seq) zrevFail(w, c, fatal);
+  return { crumb: LS.has(ZBUF_KEY) ? JSON.parse(LS.get(ZBUF_KEY)).why : null, beacons, reloads, fail: ZREV.fail };
+}
+console.log(JSON.stringify({ post: run([['post', 36054, true]]), again: run([['post', 36054, true]], true), refl: run([['refl', 36054, false]]),
+  twice: run([['ao', 36061, false], ['blit', 1282, true]]) }));
+"""
+        r = run_node(js)
+        self.assertEqual((r['post']['crumb'], r['post']['reloads'], r['post']['beacons']), ('post 36054', 1, [['zbuf', {'zf': 'post', 'zs': 36054}]]))
+        self.assertEqual((r['again']['crumb'], r['again']['reloads']), ('post 36054', 0))   # a second failure in the tab: no loop
+        self.assertEqual((r['refl']['crumb'], r['refl']['reloads']), ('refl 36054', 0))
+        self.assertEqual((r['twice']['fail'], r['twice']['reloads'], len(r['twice']['beacons'])), ('ao 36061', 1, 1))   # the first answer is the crumb's, a lost frame still reloads
 
     def test_install(self):
         # zrevInstall on a stand-in renderer over the real three: the projection only inside render, the clear value, the depth
@@ -338,7 +530,9 @@ cleared = []; target = T; R.clear(); R.autoClear = false; R.render({}, cam); out
 cleared = []; R.render({}, cam); out.guard2 = cleared.slice();   // nothing cleared since: its depth is its own
 cleared = []; R.autoClear = true; R.clear(); R.render({}, cam); out.guard3 = cleared.slice();   // a render that clears for itself
 cleared = []; R.autoClear = false; R.clear(); target = U; R.render({}, cam); out.guard4 = cleared.slice();   // another target's clear
-cleared = []; target = T; R.clear(); R.render({}, new THREE.OrthographicCamera()); R.render({}, cam); out.guard5 = cleared.slice();   // an orthographic render took it
+cleared = []; target = T; R.clear(); R.render({}, new THREE.OrthographicCamera()); R.render({}, cam); out.guard5 = cleared.slice();   // an orthographic render between: still guarded (the review)
+cleared = []; target = T; R.clear(); target = U; R.autoClear = true; R.render({}, cam); R.autoClear = false; target = T; R.render({}, cam); out.guard7 = cleared.slice();   // a reversed render of another target between
+cleared = []; target = T; R.render({}, cam); out.guard8 = cleared.slice();   // T's depth is a reversed render's now: no guard
 cleared = []; ZREV.pmrem = true; R.render({}, cam); ZREV.pmrem = false; out.guard6 = cleared.slice();   // r149's PMREM never clears
 R.autoClear = true;
 // the sorts: near first (opaque) and far first (transparent) while reversed, three's own otherwise
@@ -372,7 +566,11 @@ console.log(JSON.stringify(out));
         self.assertEqual(r['guard2'], [])
         self.assertEqual(len(r['guard3']), 1)
         self.assertEqual(len(r['guard4']), 1)
-        self.assertEqual(len(r['guard5']), 1)
+        self.assertEqual(len(r['guard5']), 2)                             # the page's clear, then the guard's after the orthographic render
+        self.assertEqual(r['guard5'][1], {'value': 0, 'mask': True, 'target': 'T', 'active': True})
+        self.assertEqual([c['target'] for c in r['guard7']], ['T', 'T'])   # T's clear, then the guard's on T (the stand-in's render does not clear U for itself)
+        self.assertEqual(r['guard7'][1]['value'], 0)
+        self.assertEqual(r['guard8'], [])
         self.assertEqual(r['guard6'], [{'value': 0, 'mask': True, 'target': 'T', 'active': True}])
         self.assertTrue(r['opaqueRev'] and r['transRev'] and r['opaqueStd'])
         self.assertTrue(r['outsideFar'])
