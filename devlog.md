@@ -9881,12 +9881,13 @@ Not done:
   test and, on Apple's tile GPUs, hidden-surface removal, so the 7 to 17 layers each pixel rasterizes are all shaded in
   full. Phase 1 of its plan ships here: reversed-Z float depth through `EXT_clip_control`, the default wherever it can be
   had, rebased from perf spike 1 (branch perf/perf-spike1, d144d3f and 83744ca) onto Round 191's main and finished.
-- Nothing changes on the screen: the parity renders below match the old build within the run-to-run noise except a
-  fine, even speckle of 1 to 4 levels on far edges (the four samples of a multisampled pixel each keep their own depth
-  now, where the log buffer handed them the fragment's one), and the frames are 1.1 to 6 times faster (nothing is
-  gained where nothing is hidden: a view of the sky alone). That held after the review, below: its first build's river
-  mirror drew the far shore's lamps through the walls in front of them at dusk and at night, a parity set without a
-  night mirror pose had missed it, and a phone's far mid-rises now draw as a computer's do.
+- The picture is the old one, with four differences the parity renders below name: a fine, even speckle of 1 to 4
+  levels on far edges, and three places where the same cause (the four samples of a multisampled pixel each keep their
+  own depth now, where the log buffer handed them the fragment's one) changes a fine pattern stably, all three
+  corrected by the second review (Parity); and a phone's far mid-rises, which now draw as a computer's do, a decision
+  for Mike before this deploys (The depth mode). The frames are 1.1 to 6 times faster (nothing is gained where nothing
+  is hidden: a view of the sky alone). The first review found the river mirror drawing the far shore's lamps through the
+  walls in front of them at dusk and at night, which a parity set without a night mirror pose had missed; fixed below.
 
 ### The depth mode
 - A throwaway WebGL 2 context must report `EXT_clip_control` AND a complete 4x multisampled `DEPTH32F_STENCIL8`
@@ -9915,7 +9916,13 @@ Not done:
   `fwidth` of the wall's own coordinate, not the depth, so it is not the fade; the twins' programs are the originals plus
   one `#undef`, and what differs is how the depth resolves: the twins give each of a pixel's samples its own depth while
   what lies on a far wall keeps the fragment's one, which decides the coplanar ties there. So the phone's far facades now
-  look as the computer's and as the phone's did before Round 168; a decision for Mike, not a slip.
+  look as the computer's and as the phone's did before Round 168. This is the one known visible change from main on a
+  phone, and it must not ship as a default nobody chose: before the deploy Mike sees the side by side (scratchpad
+  perf/phase1/fix2/work/vdepth-decision-phone-ov745.png: main, main with `?vdepth=0`, this build, this build under
+  `?zbuf=log`, Chrome's phone path at 745 m under an overcast) and his answer goes here. The second review measured it at
+  night too: at hz-600-n 0.92% of the pixels over 24 levels against a noise of 0.004%, the mean brightness the same
+  (77.80 against 77.82) and the lit share 1.4% lower. Mike's answer: not yet given (pending at the second review's
+  fixes).
 
 ### The spike's loose ends
 - Planes over the clouds: the spike's depth-free deck let an airliner above the cloud base draw in front of the cloud it
@@ -9968,6 +9975,15 @@ Not done:
   this build's Retina timings (35.5 + 12.3 r squared ms, one frame in eight at 3.6 times, 263 ms; the review's run), the
   controller stepped 1.75 to 1.488 after 23 s and then refused 1.264 because that step bought under 12% (`DPR_GAIN`): it
   settles where the gain stops, 1.26 to 1.49 on those timings, not at the floor.
+- For Mike (the second review): the controller now works, so a Mac that is strongly held back by its pixels walks all the
+  way to the 0.9 floor; in the reviewer's in-page model (15 + 27.6 r squared ms, a 350 ms frame every 12th) that took
+  about 80 s. That is by design, and the softer image would be the sign. With reversed Z his Mac is far less held back by
+  its pixels (Retina from the air 68 to 80 ms, at street level 20 to 37), so expect it to settle at 1.49 to 1.26.
+- The same rule runs on a paced phone, which the task did not ask about: a phone's first flight compiles programs in
+  clusters of about a second. `tests/test_dpr_controller.py` now flies a geometry-bound phone paced at 30 through
+  clusters of four 280 ms frames (five of them, and a dense half minute of one every 2.5 s): no step down is tried, under
+  the new rule or the old; a phone held back by its pixels, which needs the step anyway, takes it during the hitches
+  (4.9 s) where the old rule waited until they were over (32 s).
 
 ### The beacon
 - Every beacon carries `zc`: the mode (`rev`, `log` or `std`; then `q` when a flag forced it, `c` when a crumb kept log
@@ -9997,7 +10013,8 @@ Not done:
   13.7 (0.37), storm 31.6 / 21.9 (0.69), flight 41.8 / 22.1 (0.53).
 - Real WebKit (a WKWebView on macOS 26, the engine of Safari and of the iOS app; the check's harness, A and B
   interleaved): `EXT_clip_control` and the framebuffer granted, `rev.11.p` on the computer and `rev.11.d` (the direct blit)
-  on the phone path, no console errors. Retina, minimum ms A / B: aerial 145 / 81 (0.56), sp90 151 / 86 (0.57), Broad
+  on the phone path (two digits: these runs came before the clip test, whose third digit makes them `rev.111.p` and
+  `rev.111.d`), no console errors. Retina, minimum ms A / B: aerial 145 / 81 (0.56), sp90 151 / 86 (0.57), Broad
   196 / 43 (0.22), Sansom 195 / 34 (0.17), Spruce 159 / 63 (0.40), waterfront 94 / 71 (0.76), night aerial 150 / 89
   (0.59), rain 157 / 90 (0.57), storm 125 / 74 (0.59), the Schuylkill 117 / 74 (0.63), City Hall 161 / 42 (0.26) and at
   night 210 / 47 (0.22), Glory 186 / 39 (0.21) and at night 188 / 39 (0.21), pins in Old City 149 / 73 (0.49), an
@@ -10005,13 +10022,12 @@ Not done:
   Sansom 28 / 16, night aerial 33 / 25, rain 29 / 20, storm 31 / 24, City Hall 29 / 14, Glory 31 / 13 and at night 35 /
   15, pins 38 / 20, the overcast sky 22 / 14.
 - The sky alone (looking up into the deck from 10 m, Chrome Retina): 166 / 162 overcast, 84 / 89 clear, within this
-  machine's noise either way; nothing is hidden there for the early test to save. The review measured it at 1 MP too and
-  it may cost a little there: looking up into an overcast from 10 m with the test aircraft held, block medians A 65.2,
-  B 76.8 and B with `?cloudz=old` 75.8 ms (so neither the rectangles nor the depth-free twin); a plane in a clear sky 30.9
-  / 32.8 / 34.3; the overcast with no aircraft in view 74.0 / 61.2 / 80.8. Inside this machine's contention noise, and
-  Retina, the Chrome phone path and both WebKit paths are faster there (0.40 to 0.87 of A): a line here, not a fix.
+  machine's noise either way; nothing is hidden there for the early test to save. The first review's 1 MP run had B
+  slower there (block medians 65.2 against 76.8 ms); the second review's interleaved run does not reproduce it: the
+  overcast with the test aircraft held at 1 MP, minimum 40.0 / 38.9 ms and median 44.6 / 42.8 (0.97), at Retina 0.95,
+  WebKit's phone path 0.56. Reversed Z costs nothing measurable where it saves nothing.
 - Phone memory (the capture skill's measure.mjs: phone emulation on SwiftShader, which grants the extension too,
-  `rev.11.d`): GPU by the hook 873 / 906 / 930 MB at ready, after the first frames and after the look round, against
+  `rev.11.d` before the clip test, `rev.111.d` after): GPU by the hook 873 / 906 / 930 MB at ready, after the first frames and after the look round, against
   886 / 919 / 943 (+13 MB); live heap 126 / 137 / 138 MB in both, peak 279 MB in both. The hook counts every
   renderbuffer at 4 bytes a sample and never the canvas: the +13 MB is the phone's own 4x RGBA8 and 4x float depth
   target, which takes the place of the canvas's 4x backbuffer and its depth that the hook never saw; counted honestly
@@ -10032,13 +10048,25 @@ Not done:
   depth's `?logdepth=0` differs from A by more than B does at the same poses (aerial 3.7 against 3.0), which puts the
   speckle on the per-sample depth and not on reversed Z. L against A is the noise everywhere (the log fallback with the
   depth-free deck draws the old picture).
+- That paragraph understated it (the second review). With each sample keeping its own depth, three fine patterns change,
+  stably, where the noise run shows nothing: at lots-sports-300 the stadium bowl's front rows, main's dark checker, become
+  lighter stripes (p99 16, 0.36% of the pixels over 24 levels, the noise 0.000%, the same numbers in WebKit); at
+  rowroofs-250 the rowhouse parapet lines change (p99 17 against 0); and far lit windows speckle at night (hz-600-n 0.45%,
+  hz-2000-dusk 0.64%, against 0.00%). None of it is z-fighting: in the shifted-frame flicker test the stadium's pixels
+  flip 0.167% from frame to frame in B against 0.189% in A, and B is equal or lower at all eight flicker poses. Crops:
+  scratchpad perf/phase1/fix2/work/fl-lots-strip.png (the flicker strip at the stadium) and work/crop-lots2.png (A, B
+  and the difference at the bowl).
 - One-pixel seams resolve differently in places: at Glory across the street at night a single row on the cornice under
   the sign is the band's lighter face under reversed Z where the log buffer drew the darker one.
 - The phone path, 15 poses: the same picture.
 - The storm at 360 m once came out brighter in B and in L: a synthetic lightning flash (random by design), gone on a rerun;
   settled with the bolts stood down in the review's fixes below.
 - This set had no mirror at dusk or at night, which is how the mirror's lamps (the review's must-fix, below) went unseen:
-  the night water poses (`poses-nw`, ten) belong in it, and the review's fixes give their figures.
+  the night water poses (`poses-nw`, ten) belong in it, and the review's fixes give their figures. The second review
+  added two as regressions for the mirror's sprite twins: the held helicopter's navigation lights reflected in the
+  Delaware (`mx-heli-n`: with `?mirz=0` 2.77% of the pixels over 24 levels from main, against 0.17% for the twins and a
+  noise of 0.10%, a sprite kind, the flight lamps' Points, the first set did not exercise) and a 0.35 m graze at
+  Boathouse Row (`mx-low-n`). The list is twelve poses now (scratchpad perf/phase1/fix2/work/poses-nw.json).
 - WebKit, 16 computer poses at 3024 by 1954 and 12 on the phone path (lossless PNGs): B against A mean 0.0 to 1.7 on
   the computer, 0.3 to 2.8 on the phone (traffic and pins coming and going), the same picture. The marker pins in Old
   City were missing from the second arm of the computer run; rerun with B first and `?zbuf=log` second they show in B
@@ -10056,17 +10084,21 @@ Not done:
   treatment; today the tallest thing in the city stands at about 357 m.
 - iOS: untested on a phone (no device here). The `zc` beacon will answer from Mike's iPhone, and the clip test now
   refuses an implementation that lists the extension and does not clip by it.
-- Android: held on log depth (the review). The phone path draws into its own 4x RGBA8 and 4x float depth target and blits
-  it; on the Mac that took the place of the canvas's own multisampled backbuffer, which was real memory too, but Chrome on
-  an Android tiler resolves an antialiased canvas for nothing (implicit-resolve multisampling), where these buffers would
-  add about 48 bytes a pixel and a resolve pass. Until one device is measured an Android phone keeps the old path and its
-  beacon says what it could have had (`loga.111.-`); `?zbuf=rev` tries it.
+- Android: held on log depth (the review), which departs from the task's "reversed wherever the probe passes" and is
+  Mike's decision, not a finished one. The reason: the phone path draws into its own 4x RGBA8 and 4x float depth target
+  and blits it; on the Mac that took the place of the canvas's own multisampled backbuffer, which was real memory too,
+  but Chrome on an Android tiler resolves an antialiased canvas for nothing (implicit-resolve multisampling), where these
+  buffers would add about 48 bytes a pixel and a resolve pass. Until one device is measured an Android phone keeps the
+  old path and its beacon says what it could have had (`loga.111.-`: how many Android phones could take reversed Z);
+  `?zbuf=rev` tries it. One measured device (its memory and its frame, `?zbuf=rev` against the default) lifts or keeps
+  the hold.
 - Windows (D3D11): `DEPTH32F_STENCIL8` is 8 bytes a sample there against `DEPTH24_STENCIL8`'s 4 (on Apple's GPUs the 24-bit
   format is already stored as the float one, so nothing changes): about 40 MB more at 1080p and 165 MB at a 4K screen at
   1.5, over the post target, the occlusion copy and the mirror. Untested: watch the desktop beacons from Windows.
 - Not this round's, and the same in main: the first frames after Enter compile 37 to 49 programs (0.7 to 1.6 s), the 17th
-  frame of a first flight 57 more (about 1 s) and the first night 15 more (the mirror's sprite twins add nine to the
-  first night that shows the river); every jump waits 3 to 240 ms on the pins' synchronous read. Phase 2 material.
+  frame of a first flight 57 more (about 1 s) and the first night 15 more (the mirror's sprite twins, which added five
+  there and nine at Boathouse Row, are built behind the veil since the second review); every jump waits 3 to 240 ms on
+  the pins' synchronous read. Phase 2 material.
 - Phases 2 to 5 of the plan (visibility, the frame budget, the far picture, the near-first load).
 
 ### Renders and data
@@ -10158,3 +10190,82 @@ Landing at 40 m, and the Delaware at dusk and by day). Those poses are in the ro
 - Renders and data: scratchpad perf/phase1/fix1: work/cmp-nw/sheet-*.jpg and work/nw-crops-fix.png (the night water,
   A, B, |B-A| x4, |A2-A| x4), work/cmp-gen, work/cmp-stm and work/cmp-ph (the general, storm and phone sets),
   work/pin-through.txt, timing/nwt-*.json, tools/memory/meas-*192f.json, raw/wknw2.json and raw/wkph.json (WebKit).
+
+### Round 192, the second review's fixes (Oct 14)
+
+A second independent review (correctness, parity, performance) of the two commits above found one thing that had to be
+fixed before this ships and a list of smaller ones. The corrections to the entry above (the parity paragraph, the sky
+alone, the controller and the Android hold as Mike's to know and decide, the old two-digit `zc` figures) are made in
+place; this is what changed in the code, and what was measured.
+
+- A lost context was read as a float-depth failure (the must-fix). On a lost context `checkFramebufferStatus` answers
+  36061 and `getError` CONTEXT_LOST_WEBGL, and any frame that changes the drawing buffer's size between the loss and the
+  webglcontextlost handler (a resolution trial undone on the first frame back from the background, a step, `fitView`)
+  ran the checks: the reviewer's repro (`forceContextLoss`, the ratio times 0.9, one frame) wrote the fortnight's crumb
+  (`post 36061` on a computer, `sub 36061` on the phone path), a false `zbuf` beacon, `zc` with its trailing 0, and set
+  off a zbuf reload that could beat the handler's own recovery and skip its `bootMark('ctxlost')` and lite bookkeeping.
+  iOS takes the GPU back from a page in the background routinely, so Mike's iPhone was the likely victim: every load for
+  a fortnight on log depth. Now nothing is judged on a lost context (`zrevLost`): `zrevFail` does nothing there, and the
+  scene target's, the phone target's, the mirror's and the occlusion copy's checks and the blit's return before they
+  record a status, so `zc` carries no 0. The same repro on this build: no crumb, no reload scheduled, no warning, `zc`
+  `rev.111.p` and `rev.111.d`. `tests/test_zbuf.py` runs `zrevFail` on a lost context (no crumb, no beacon, no reload,
+  no sessionStorage mark) and holds every check's guard in place.
+- The phone's blit is checked at once. Its first present was the first frame's, and the frame loop starts after the
+  whole build (the build's renders into the phone's own target are never shown), so a canvas that took neither blit
+  reloaded onto log depth only after a full phone build. The new target is now presented once at once, during the
+  build's first render behind the veil (an empty frame: WebGL zeroes a new renderbuffer), `zrevPresent(true)`. With the
+  review's injected blit failure the reload came 2.8 s into the load, at 'Raising the Outer Districts, 33%', against
+  20.6 s, after Enter, on the commit before; the second load came up on log depth through the crumb (`logc.111.-`) both
+  times. A normal phone load: the check at 2.25 s, `ready` at 19.3 s, the direct blit, `rev.111.d`.
+- The mirror's sprite twins are built behind the veil. They compiled in flight: the review's hitch run counted 20
+  programs on the first night frame that showed the river against main's 15 (25 against 20 across the night), and the
+  wet air's halo's twin on a rainy night's second frame (350 ms against the build's steady 150). On the second frame
+  (the halo is made on the first) `mirzWarm` draws every Points object the mirror may draw through its twin into a 4 by 4
+  scratch target, with the mirror's own lights and settings, the points alone on layer 30, each forced visible and
+  unculled for the one draw and everything put back: ten points, eight programs, 24 to 28 ms. The same hitch run on this
+  build: the first night frame compiles 15 (main 15) in 152 ms (main 278), the night 20 (main 20), the rain 3 (main 3),
+  and `MIRZ.made` stays at the warm's count through the night water poses.
+- `zc`'s `p` read `ZREV.sub`, the throwaway context's float answer, where the real context's post pipeline is what draws:
+  it is now the blit that ran, else `p` whenever the real context's post pipeline is on (cosmetic: where the two disagree
+  the composite draws to the canvas itself).
+- The 250 ms rule on a paced phone (it was asked for the Mac, and runs everywhere): kept, with the test the review asked
+  for (The Mac's resolution controller, above): first-flight compile clusters move nothing on a phone held back by
+  geometry.
+- Parity method, in the handoff and the capture skill's new 7d: traffic, ships and flights off in parity poses (the
+  traffic's reconcile runs on real time, so a faster build spawns cars elsewhere; ships still arrive over the WebSocket
+  when `ais.json` is blocked; live aircraft and their pins were every top difference block of this round's general
+  set), storms with `?bolts=0`, a cloud-switch pose held relative to the current drop (presets ease, tau 1.8 s), and a
+  second main run taken in the same session (this round's phone set caught a main run whose live weather landed
+  differently: a mean of 21 to 33 levels at night, main against main).
+- Not taken: gating the 250 ms rule to `!PACE.on` (the test shows no need); the VDEPTH look and the Android hold, which
+  are Mike's (The depth mode, Not done); a Windows measurement (no machine here).
+- Parity, this build against main (twelve night water poses with traffic, ships and flights off but for the held
+  helicopter, four arms): 0.012% to 0.171% of the pixels over 24 levels against a noise of 0.000% to 0.083%, the
+  helicopter's lights in the Delaware 0.038% (noise 0.000; the review's 0.17%), Boathouse Row at 0.35 m 0.083%; the
+  second B matches the first exactly, and the top blocks are the PATCO train's pin (its timetable runs on real time). The
+  general set (24 poses): at the noise or within its pattern but for live flights. The phone path: the far mid-rises as
+  before (745 m overcast 1.19%, Liberty 0.65%, the CTC 0.72%), the rest 0.07% to 0.36%. `?real=0` and the log fallback
+  are untouched by this round's code (the warm needs the mirror, which needs the realistic look and reversed Z).
+- Timing, interleaved A (main) and B (this build) blocks in one headless Chrome on Metal, minimum ms and B over A:
+  Retina aerial 106 / 60 (0.56), sp90 122 / 56 (0.46), Broad 173 / 33 (0.19), Sansom 186 / 26 (0.14), Spruce 170 / 48
+  (0.28), waterfront 65 / 46 (0.71), night aerial 113 / 63 (0.56), rain 123 / 56 (0.46), storm 97 / 59 (0.61), City Hall
+  0.11 to 0.15, Glory 0.19 to 0.28, overcast sp90 0.50, the flight 0.40, the Delaware graze 0.53, Boathouse Row 0.46, the
+  overcast sky 147 / 143 (0.98); 1 MP 0.27 to 0.83 (the overcast sky 0.99); the phone path 0.44 to 0.84. WebKit (the
+  check's WKWebView, A and B interleaved): Retina 0.09 to 0.57 (aerial 115 / 65, Sansom 205 / 27, City Hall's market
+  front 222 / 19), the phone path 0.41 to 0.84; `rev.111.p` with the warm's ten points and eight programs (34 ms), and
+  `rev.111.d` with the direct blit checked 2.5 s into the load; no console messages. Draw calls and triangles match pose
+  for pose, but where a run's earlier poses leave the two tabs in different states, as the review saw (Spruce at Retina
+  507 calls and 7.88 M triangles in A against 672 and 10.42 M in B; the waterfront at 1 MP 538 against 425).
+- Phone memory (measure.mjs, A B A B): GPU by the hook 873 / 906 / 930 MB in main and 886 / 919 / 943 here, live heap 126
+  / 137 / 138 and 126 / 136 / 138, the padded-copy audit the same in both; peak live 279 and 279 in main, 278 and 298
+  here, the 298 at 7 s ('Laying Out the Ground', before anything this round touches has run; 86 to 96 there in the
+  other three runs), so noise.
+- Tests: `tests/test_zbuf.py` 18 (a lost context leaves nothing; every check's guard; the phone target's at-once check
+  and its place after the status; the warm's wiring, its layer and its restore; `zc`'s `p`), `tests/test_dpr_controller.py`
+  21 (the paced phone through first-flight hitches, under the new rule and the old); the suite 856.
+- Renders and data: scratchpad perf/phase1/fix2: work/cmp-nw (the twelve night water poses, A, B, a second B, a second
+  A), work/cmp-gen and work/gen-tops.png (the general set, its top blocks all live flights), work/cmp-ph (the phone path),
+  raw/cl-desk.json and raw/cl-phone.json (the context loss), raw/p-blitfail-after.json and raw/p-blitfail-prev.json (the
+  blit), out/hitch-retina.json (the compiles), timing/ (Chrome Retina, 1 MP, the phone path and WebKit), mem/meas-f2*.json
+  (phone memory), work/vdepth-decision-phone-ov745.png (for Mike), work/fl-lots-strip.png and work/crop-lots2.png (the
+  stadium's bowl, from the review).

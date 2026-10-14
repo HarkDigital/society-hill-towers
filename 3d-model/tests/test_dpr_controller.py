@@ -60,8 +60,8 @@ class DprController(unittest.TestCase):
         h = src.index('    if (!once && !DPR.pinned && DPR.live && (document.hidden || DPR.away || rawMs >= DPR_AWAY)) { if (!document.hidden) DPR.away = false; dprGap(now); }')   # Round 168: a paced phone judges only its active frames
         cls.hook = 'const paceJudge = true;\n' + src[h:src.index('    if (introSpin && !interacted)', h)]
 
-    def sim(self, model, seconds=600, touch=True, start=0, q=0, jitter=0.0, gaps=(), seed=7, hook=None):
-        script = HARNESS
+    def sim(self, model, seconds=600, touch=True, start=0, q=0, jitter=0.0, gaps=(), seed=7, hook=None, pre=''):
+        script = HARNESS.replace('DPR.live = true;', 'DPR.live = true;\n' + pre)   # (as test_pace.py's prelude)
         for k, v in {'@@TOUCH@@': 'true' if touch else 'false', '@@LITERAL@@': self.literal, '@@BLOCK@@': self.block, '@@HOOK@@': hook or self.hook,
                      '@@SEED@@': str(seed), '@@START@@': str(start), '@@SECONDS@@': str(seconds), '@@MODEL@@': model,
                      '@@Q@@': str(q), '@@JITTER@@': str(jitter), '@@GAPS@@': json.dumps([list(g) for g in gaps])}.items():
@@ -192,6 +192,27 @@ class DprController(unittest.TestCase):
         o = self.sim('(t % 10000) < 400 ? 400 : 12', seconds=300, touch=False, jitter=0.03)
         self.assertEqual(o['end'], 1.75)
         self.assertEqual(o['changes'], 0)
+
+    # the second review: the 250 ms rule is the Mac's fix, but frame() runs it on a paced phone too, whose first flight
+    # compiles programs in clusters of about a second (four frames of 250 to 330 ms). A geometry-bound phone paced at 30
+    # (dprPace: 'slow' is 43 ms) must not step down for them, under the new rule or the old; and a fill-bound one, which
+    # needs the step anyway, takes it during the hitches where the old rule waited until they were over
+    PACED_HITCH_CLUSTERS = ('(t > 3000 && t < 4300) || (t > 8000 && t < 9300) || (t > 15000 && t < 16300) || (t > 25000 && t < 26300) '
+                            '|| (t > 40000 && t < 41300) ? 280 : @@')
+    PACED_HITCH_DENSE = '(t < 30000 && (t % 2500) < 1100) ? 280 : @@'
+
+    def test_a_paced_phone_through_first_flight_hitches(self):
+        i = self.hook.index('    if (!once && !DPR.pinned')
+        old = self.hook[:i] + self.OLD_HOOK_LINE + self.hook[self.hook.index('\n', i):]
+        for shape in (self.PACED_HITCH_CLUSTERS, self.PACED_HITCH_DENSE):
+            for hook in (None, old):
+                o = self.sim(shape.replace('@@', '29'), seconds=180, q=33.333, jitter=0.03, hook=hook, pre='dprPace(30);')
+                self.assertEqual((o['end'], o['changes'], o['trials'][0]), (1.25, 0, 0), (shape, hook is None, o['trace']))
+        new = self.sim(self.PACED_HITCH_DENSE.replace('@@', '8 + 22 * r * r'), seconds=180, q=33.333, jitter=0.03, pre='dprPace(30);')
+        was = self.sim(self.PACED_HITCH_DENSE.replace('@@', '8 + 22 * r * r'), seconds=180, q=33.333, jitter=0.03, hook=old, pre='dprPace(30);')
+        self.assertEqual((new['end'], was['end']), (1.0, 1.0))
+        self.assertLess(new['trace'][0][0], 30000)            # stepped during the hitches
+        self.assertGreater(was['trace'][0][0], 30000)         # the old rule: only once they were over
 
     def test_low_power_mode_stays_sharp(self):
         # iOS's Low Power Mode paces the page at 30 Hz: no rung can buy anything, so it keeps the cap

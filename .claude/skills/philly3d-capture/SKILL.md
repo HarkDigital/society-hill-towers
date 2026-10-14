@@ -192,6 +192,35 @@ The tools in `scripts/memory/` (Node 18+, Google Chrome installed; they launch t
 Compare against a build from git that is known to work on the phone (`git show <sha>:3d-model/society-hill-towers.html`):
 Round 158's reference is Sep 17's e90c765, 981 MB of GPU plus copies after the first frames, 162 MB peak live heap.
 
+### 7d. Parity sets: main against a new build, pixel for pixel (Round 192)
+
+When the acceptance test is "the page looks the same" (a depth change, a renderer change), render every pose in four
+arms from one session: A (main), B (the build), a second B and a second A (the noise), as lossless PNGs, and report the
+share of pixels over 24 levels from A next to the second A's. What made the noise lie in Round 192's reviews:
+
+- **Traffic.** `trafficReconcile` runs every 1,000 ms of REAL time, not per frame, so a build whose frames are faster
+  spawns its cars somewhere else even where main matches itself exactly. Click `btnTraffic` off in every pose's `js`
+  (or expect cars in the diff).
+- **Ships.** Blocking `ais.json` through Chrome's `setBlockedURLs` is not enough: ships still arrive over the aisstream
+  WebSocket. Click `btnShips` off in the pose instead.
+- **Flights.** Live aircraft and their pins come and go between runs (every top difference block of Round 192's second
+  general set was one): click `btnFlights` off unless the pose is about an aircraft, and then hold a test aircraft
+  (`__dbg.flightTest()` before every frame).
+- **Storms.** The synthetic bolts fall at random moments: `?bolts=0` (or `__dbg.bolts(false)`) stands them down, and main
+  needs the same patch for the comparison.
+- **Weather eases.** A preset eases in per frame (tau 1.8 s at dt 0.05), so the cloud deck's base keeps moving for a
+  couple of seconds after `__dbg.wx(...)`. A pose that tests the cloud switch must hold the eye relative to the current
+  drop each frame, not at a fixed height.
+- **Live feeds between runs.** The air quality, the weather and the NWS alerts land when they land: a second main run that
+  caught a different answer differs from the first over the whole sheet (Round 192's second fix: means of 20 to 33 levels
+  at night on the phone path, main against main). Read B against A as well as the noise, and rerun the noise when it is
+  that loud.
+- **Night water.** Keep a night mirror in every depth parity set (`poses-nw`: the Delaware from 5 m under the Ben Franklin
+  Bridge on an Eagles night and on a plain one, Boathouse Row from the water and from 30 m, the held helicopter's lights
+  over the Delaware, and a 0.35 m graze at Boathouse Row). The first Round 192 set had none and missed the mirror's lamps.
+- Pins and placards move between runs (the PATCO train by its timetable, a flight): crop the top blocks and look before
+  calling a difference the change's.
+
 ### 8. Syntax-check after every app.js edit
 
 ```bash

@@ -89,15 +89,15 @@ class Wiring(unittest.TestCase):
 
     def test_float_depth_everywhere_reversed_draws(self):
         s = self.s
-        self.assertIn('if (ZREV.on) ZREV.status = zrevFloatDepth(postRT);', s)
-        self.assertIn('if (ZREV.on) REFL.zst = zrevFloatDepth(REFL.rt);', s)
+        self.assertIn('ZREV.status = zrevFloatDepth(postRT);', s)
+        self.assertIn('REFL.zst = zrevFloatDepth(REFL.rt);', s)
         refl = s[s.index('      REFL.rt = new THREE.WebGLRenderTarget('):]
         refl = refl[:refl.index('\n', refl.index('\n') + 1)]
         self.assertIn('stencilBuffer: true', refl)        # the vehicle shadows' stencil in the mirror too
         self.assertNotIn('depthTexture', refl)
         # the mirror's anisotropy is set before zrevFloatDepth makes its framebuffers (three sets a target texture's parameters
         # only then: the other way round its streaks lost the anisotropic filter and blurred, found in the parity renders)
-        self.assertLess(s.index('REFL.rt.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();'), s.index('if (ZREV.on) REFL.zst = zrevFloatDepth(REFL.rt);'))
+        self.assertLess(s.index('REFL.rt.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();'), s.index('REFL.zst = zrevFloatDepth(REFL.rt);'))
         f = cut_function(s, 'zrevFloatDepth')
         self.assertIn('const fmt = rt.stencilBuffer ? gl.DEPTH32F_STENCIL8 : gl.DEPTH_COMPONENT32F;', f)
         self.assertIn('if (ms) p.__ignoreDepthValues = true;', f)
@@ -175,6 +175,9 @@ class Wiring(unittest.TestCase):
         self.assertIn('[ZREV.status, ZREV.aoStatus, mirror].some(', z)
         self.assertIn('!!ZREV.fail', z)
         self.assertIn("ZREV.blit === 'failed' ? 'x'", z)
+        # the second review: 'p' is the real context's post pipeline whatever ZREV.sub says (the throwaway context's answer)
+        self.assertIn(": ZREV.on && POST.on ? 'p' : '-';", z)
+        self.assertNotIn('!ZREV.sub && POST.on', z)
 
     def test_a_failed_float_depth_target_falls_back(self):
         s = self.s
@@ -183,13 +186,42 @@ class Wiring(unittest.TestCase):
         self.assertIn("beacon('zbuf', { zf: what, zs: code });", f)
         self.assertIn("sessionStorage.getItem('philly3d.zbufre')", f)
         # every float depth target is checked where it is made, at full size
-        self.assertIn("if (ZREV.on && ZREV.status && ZREV.status !== 36053) zrevFail('post', ZREV.status, true);", s)
-        self.assertIn("if (ZREV.status !== gl.FRAMEBUFFER_COMPLETE) zrevFail('sub', ZREV.status, true);", s)
+        self.assertIn("if (ZREV.status && ZREV.status !== 36053) zrevFail('post', ZREV.status, true);", s)
+        self.assertIn("if (ZREV.status !== gl.FRAMEBUFFER_COMPLETE) { zrevFail('sub', ZREV.status, true); return; }", s)
         self.assertIn("zrevFail('refl', REFL.zst, false); REFL.on = false;", s)
         self.assertIn("zrevFail('ao', ZREV.aoStatus, false); AO.on = false;", s)
         p = cut_function(s, 'zrevPresent')
         self.assertIn("if (err !== gl.NO_ERROR && ZREV.rfb) {", p)
         self.assertIn("zrevFail('blit', err, true);", p)
+        # the second review: the phone's new target is presented once at once, during the build's first render, so a canvas
+        # that takes neither blit reloads in seconds, not after the whole build
+        fb = s[s.index('    ZREV.fbInit = function zrevFB() {'):]
+        fb = fb[:fb.index('\n    };\n')]
+        self.assertIn("if (first && !ZREV.blit) {\n        zrevPresent(true);", fb)
+        self.assertLess(fb.index("zrevFail('sub', ZREV.status, true); return; }"), fb.index('zrevPresent(true)'))
+        self.assertLess(fb.index('ZREV.w = w; ZREV.h = h;'), fb.index('zrevPresent(true)'))
+        self.assertIn('if (test) ZREV.tested = performance.now(); else ZREV.presents++;', p)
+        self.assertIn('return zrevPresent(test);', p)
+        self.assertIn("if (ZREV.sub && this.getRenderTarget() === null && ZREV.fbInit) { ZREV.fbInit(); this.setRenderTarget(null); }", s)
+
+    def test_a_lost_context_is_no_failure(self):
+        # the second review's must-fix: on a lost context every check answers with a failure (36061, CONTEXT_LOST_WEBGL); a
+        # frame that resizes between the loss and the handler wrote the fortnight's crumb and set off a zbuf reload. Every
+        # check returns before it records a status, and zrevFail does nothing there
+        s = self.s
+        self.assertIn('function zrevLost() { try { return renderer.getContext().isContextLost(); } catch (e) { return false; } }', s)
+        self.assertTrue(cut_function(s, 'zrevFail').split('\n')[1].strip().startswith('if (zrevLost()) return;'))
+        self.assertTrue(cut_function(s, 'zrevFloatDepth').split('\n')[1].strip().startswith('if (zrevLost()) return 0;'))
+        self.assertTrue(cut_function(s, 'zrevAoDepth').split('\n')[1].strip().startswith('if (zrevLost()) return;'))
+        p = cut_function(s, 'zrevPresent')
+        self.assertLess(p.index('if (zrevLost()) return;'), p.index('gl.getError()'))
+        self.assertIn('if (err !== gl.NO_ERROR && zrevLost()) return;', p)
+        self.assertLess(p.index('if (err !== gl.NO_ERROR && zrevLost()) return;'), p.index("ZREV.blit = 'failed'"))
+        fb = s[s.index('    ZREV.fbInit = function zrevFB() {'):]
+        fb = fb[:fb.index('\n    };\n')]
+        self.assertLess(fb.index('if (zrevLost()) return;'), fb.index('ZREV.status = gl.checkFramebufferStatus'))
+        self.assertIn("if (ZREV.on && !zrevLost()) {   // Round 192: the samples' depth DEPTH32F_STENCIL8", s)
+        self.assertIn("if (ZREV.on && !zrevLost()) {   // (the second review: nothing recorded on a lost context)\n        REFL.zst = zrevFloatDepth(REFL.rt);", s)
 
     def test_the_mirror_sprites_twins(self):
         s = self.s
@@ -204,6 +236,22 @@ class Wiring(unittest.TestCase):
         t = cut_function(s, 'mirzTwin')
         self.assertIn("customProgramCacheKey = () => m.customProgramCacheKey() + '|mirz'", t)
         self.assertIn('uniforms: Object.assign({}, m.uniforms, { uMirZ: MIRZ.u, uMirF: MIRZ.far })', t)
+        # the second review: the twins are built behind the veil, on the second frame, through the mirror's own lights and
+        # settings into a scratch target, and everything forced for that draw is put back
+        self.assertIn("if (!MIRZ.warmed && frameNo >= 2) mirzWarm();", cut_function(s, 'waterFrame'))
+        w = cut_function(s, 'mirzWarm')
+        self.assertIn('MIRZ.warmed = true;\n    if (!ZREV.on || MIRZ.off || !REFL.on || zrevLost()) return;', w)
+        self.assertIn('reflSweep();', w)
+        self.assertIn('if (o.isLight && o.layers.isEnabled(L) && !o.layers.isEnabled(W)) { o.layers.enable(W);', w)
+        self.assertIn('C.layers.set(W);', w)
+        self.assertIn('r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false; scene.background = null;', w)
+        self.assertIn('zrevFloatDepth(rt);', w)
+        self.assertIn('for (let i = undo.length - 1; i >= 0; i--) undo[i]();', w)
+        self.assertIn('C.layers.mask = prevMask;', w)
+        self.assertIn('rt.dispose();', w)
+        self.assertIn('mirzSync(t, m);', w)
+        self.assertIn('mirzSync(t, m);', sw)
+        self.assertEqual(len(re.findall(r'layers\.(?:set|enable)\(30\)|MIRZ_WARM_LAYER = 30', s)), 1)   # the warm's layer is its own
 
 
 @unittest.skipUnless(NODE, 'Node.js unavailable')
@@ -466,21 +514,27 @@ console.log(JSON.stringify(out));
     def test_fail(self):
         # zrevFail: the first failure leaves the crumb and a beacon; the frame's own reloads once a tab, a pass's does not
         f = cut_function(self.s, 'zrevFail')
+        lost = cut_function(self.s, 'zrevLost') + '\n'
         js = """
 const ZBUF_KEY = 'philly3d.zbuf';
-function run(seq, sessHas) {
+function run(seq, sessHas, lost) {
   const LS = new Map(), SS = new Map(sessHas ? [['philly3d.zbufre', '1']] : []), beacons = [];
   let reloads = 0;
   const ZREV = {}, localStorage = { setItem: (k, v) => LS.set(k, v) }, sessionStorage = { getItem: (k) => (SS.has(k) ? SS.get(k) : null), setItem: (k, v) => SS.set(k, v) };
   const location = { reload: () => reloads++ }, setTimeout = (fn) => fn(), console = { warn() {} }, beacon = (st, q) => beacons.push([st, q]);
-  """ + f + """
+  const renderer = { getContext: () => ({ isContextLost: () => !!lost }) };
+  """ + lost + f + """
   for (const [w, c, fatal] of seq) zrevFail(w, c, fatal);
-  return { crumb: LS.has(ZBUF_KEY) ? JSON.parse(LS.get(ZBUF_KEY)).why : null, beacons, reloads, fail: ZREV.fail };
+  return { crumb: LS.has(ZBUF_KEY) ? JSON.parse(LS.get(ZBUF_KEY)).why : null, beacons, reloads, fail: ZREV.fail || null, sess: SS.has('philly3d.zbufre') };
 }
 console.log(JSON.stringify({ post: run([['post', 36054, true]]), again: run([['post', 36054, true]], true), refl: run([['refl', 36054, false]]),
-  twice: run([['ao', 36061, false], ['blit', 1282, true]]) }));
+  twice: run([['ao', 36061, false], ['blit', 1282, true]]),
+  lost: run([['post', 36061, true], ['sub', 36061, true], ['ao', 36061, false], ['refl', 36061, false], ['blit', 37442, true]], false, true) }));
 """
         r = run_node(js)
+        # the second review's must-fix: on a lost context no crumb, no beacon, no reload and no sessionStorage mark (the
+        # webglcontextlost handler's recovery is the only one)
+        self.assertEqual((r['lost']['crumb'], r['lost']['beacons'], r['lost']['reloads'], r['lost']['fail'], r['lost']['sess']), (None, [], 0, None, False))
         self.assertEqual((r['post']['crumb'], r['post']['reloads'], r['post']['beacons']), ('post 36054', 1, [['zbuf', {'zf': 'post', 'zs': 36054}]]))
         self.assertEqual((r['again']['crumb'], r['again']['reloads']), ('post 36054', 0))   # a second failure in the tab: no loop
         self.assertEqual((r['refl']['crumb'], r['refl']['reloads']), ('refl 36054', 0))

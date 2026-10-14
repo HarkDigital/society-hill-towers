@@ -7247,6 +7247,7 @@ RB.add({
     ZREV.fbInit = function zrevFB() {
       const s = renderer.getDrawingBufferSize(_zv2), w = s.x, h = s.y;
       if (ZREV.fb && w === ZREV.w && h === ZREV.h) return;
+      if (zrevLost()) return;   // the second review: a lost context's 36061 is not a float-depth failure (zrevLost)
       const first = !ZREV.fb;
       if (first) { ZREV.fb = gl.createFramebuffer(); ZREV.rbC = gl.createRenderbuffer(); ZREV.rbD = gl.createRenderbuffer(); }
       ZREV.samples = Math.min(4, renderer.capabilities.maxSamples || 4);
@@ -7263,14 +7264,23 @@ RB.add({
       ZREV.status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);   // at every size: the full-size target is what can fail (the review)
       gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
       ZREV.w = w; ZREV.h = h;
-      if (ZREV.status !== gl.FRAMEBUFFER_COMPLETE) zrevFail('sub', ZREV.status, true);
+      if (ZREV.status !== gl.FRAMEBUFFER_COMPLETE) { zrevFail('sub', ZREV.status, true); return; }
+      // the second review: the first present used to be the first frame's, after the whole build (the build's renders into
+      // this target are never shown), so a canvas that took neither blit reloaded onto log depth only after it. The new
+      // target is presented once at once instead, during the build's first render behind the veil (an empty frame: WebGL
+      // zeroes a new renderbuffer), and a failure costs seconds
+      if (first && !ZREV.blit) {
+        zrevPresent(true);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);   // as three's cache has them
+      }
     };
   }
   // the frame drawn into ZREV.fb onto the canvas: one resolving blit (or, where the canvas's format refuses a multisampled
   // source, a resolve into a plain RGBA8 renderbuffer first: an alpha:false canvas does, measured in WebKit), then the
-  // target's contents are let go (a tiled GPU stores none)
-  function zrevPresent() {
+  // target's contents are let go (a tiled GPU stores none). test: the new target's own check (zrevFB), not a frame
+  function zrevPresent(test) {
     if (!ZREV.sub || !ZREV.fb || ZREV.blit === 'failed') return;
+    if (zrevLost()) return;   // the second review: a lost context's CONTEXT_LOST_WEBGL is no verdict on the blit
     const gl = renderer.getContext(), w = ZREV.w, h = ZREV.h, sc = gl.isEnabled(gl.SCISSOR_TEST);
     if (sc) gl.disable(gl.SCISSOR_TEST);
     if (!ZREV.blit) gl.getError();   // the first present checks its own blit
@@ -7285,6 +7295,7 @@ RB.add({
     gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
     if (!ZREV.blit) {
       const err = gl.getError();
+      if (err !== gl.NO_ERROR && zrevLost()) return;   // lost on the way: the handler's (webglcontextlost)
       if (err !== gl.NO_ERROR && ZREV.rfb) {   // the two-step failed too (the review: it was recorded as working unchecked)
         ZREV.blitErr2 = err; ZREV.blit = 'failed';
         gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);
@@ -7299,7 +7310,7 @@ RB.add({
         gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.rfb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, ZREV.rrb);
         gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);
         if (sc) gl.enable(gl.SCISSOR_TEST);
-        return zrevPresent();
+        return zrevPresent(test);
       }
       ZREV.blit = ZREV.rfb ? 'two-step' : 'direct';
     }
@@ -7307,7 +7318,7 @@ RB.add({
     gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, [gl.COLOR_ATTACHMENT0]);
     gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);   // three's cache has it bound for the canvas
     if (sc) gl.enable(gl.SCISSOR_TEST);
-    ZREV.presents++;
+    if (test) ZREV.tested = performance.now(); else ZREV.presents++;
   }
   // a render target's depth renderbuffer made float: DEPTH32F_STENCIL8 in place of r149's DEPTH24_STENCIL8 (the stencil is
   // the vehicle shadows'), or DEPTH_COMPONENT32F in place of its DEPTH_COMPONENT16; the multisampled one of the post
@@ -7315,6 +7326,7 @@ RB.add({
   // Returns the framebuffer's status (0 when there is nothing to change). It makes the target's framebuffers, and three sets
   // the target texture's parameters (filters, anisotropy) only then: set them all before the call
   function zrevFloatDepth(rt) {
+    if (zrevLost()) return 0;   // (the second review: a lost context's status is no answer)
     const prev = renderer.getRenderTarget();
     renderer.setRenderTarget(rt); renderer.setRenderTarget(prev);   // three makes the framebuffers now
     const gl = renderer.getContext(), p = renderer.properties.get(rt), ms = !!p.__webglDepthRenderbuffer, rb = ms ? p.__webglDepthRenderbuffer : p.__webglDepthbuffer;
@@ -7337,7 +7349,15 @@ RB.add({
   // where the frame itself is lost (the post pipeline's scene target, the phone's own target or its blit) the page reloads
   // once onto log depth (sessionStorage: a second failure in the same tab does not reload again), and a lost mirror or
   // occlusion copy only switches that pass off for this session
+  // The second review: a LOST context answers every one of these checks with a failure (checkFramebufferStatus 36061,
+  // getError CONTEXT_LOST_WEBGL), and any frame that resizes the drawing buffer between the loss and the webglcontextlost
+  // handler (a resolution trial undone on the first frame back from the background, a step, fitView) ran them: the page
+  // wrote a fortnight's log-depth crumb with a false 'zbuf' beacon and set off a reload that could beat the handler's own
+  // recovery (iOS takes the GPU back from a page in the background routinely). Nothing is judged on a lost context: every
+  // check returns before it records a status (zrevLost), and zrevFail itself does nothing there
+  function zrevLost() { try { return renderer.getContext().isContextLost(); } catch (e) { return false; } }
   function zrevFail(what, code, fatal) {
+    if (zrevLost()) return;   // the context-loss handler's (webglcontextlost), never a float-depth failure
     if (!ZREV.fail) {   // the first answer is the crumb's and the beacon's
       ZREV.fail = what + ' ' + code;
       try { localStorage.setItem(ZBUF_KEY, JSON.stringify({ t: Date.now(), why: ZREV.fail })); } catch (e) { /* private mode: no crumb */ }
@@ -7356,8 +7376,10 @@ RB.add({
   // the throwaway one granted, and the blit that put the frame on the canvas (d direct, t two-step, x both failed, p the post
   // pipeline's own resolve, - none yet), with a 0 after it when a float depth target (the scene's, the phone's, the mirror's,
   // the occlusion's copy) came back incomplete or a blit failed
+  // (the second review: 'p' read the throwaway context's float answer through ZREV.sub; now the blit that ran, else the real
+  // context's post pipeline: where the two disagree, the composite draws to the canvas itself and no blit ever runs)
   function zcField() {
-    const blit = ZREV.blit === 'direct' ? 'd' : ZREV.blit === 'two-step' ? 't' : ZREV.blit === 'failed' ? 'x' : ZREV.on && !ZREV.sub && POST.on ? 'p' : '-';
+    const blit = ZREV.blit === 'direct' ? 'd' : ZREV.blit === 'two-step' ? 't' : ZREV.blit === 'failed' ? 'x' : ZREV.on && POST.on ? 'p' : '-';
     let mirror = 0;
     try { mirror = REFL.zst || 0; } catch (e) { mirror = 0; }   // (a beacon before the mirror's line has run)
     const bad = !!ZREV.fail || (ZREV.on && [ZREV.status, ZREV.aoStatus, mirror].some((st) => st && st !== 36053));
@@ -7960,6 +7982,7 @@ RB.add({
   // AO's copy is a raw texture of that format in a framebuffer of its own (the blit's formats must match), handed to three
   // as a Texture it never uploads (version 0: three binds the handle it is given)
   function zrevAoDepth(w, h) {
+    if (zrevLost()) return;   // (the second review: nothing made or judged on a lost context)
     const gl = renderer.getContext(), st = renderer.state;
     if (AO.zfb) { gl.deleteFramebuffer(AO.zfb); gl.deleteTexture(AO.zg); }
     const g = gl.createTexture();
@@ -7995,8 +8018,10 @@ RB.add({
     // stencilBuffer on: r149 gives a depth-only target a 16-bit depth renderbuffer, and depth
     // with stencil DEPTH24_STENCIL8, the 24 bits the canvas had (the layered flats need them)
     postRT = new THREE.WebGLRenderTarget(s.x, s.y, { type: THREE.HalfFloatType, samples: 4, depthBuffer: true, stencilBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
-    if (ZREV.on) ZREV.status = zrevFloatDepth(postRT);   // Round 192: the samples' depth DEPTH32F_STENCIL8
-    if (ZREV.on && ZREV.status && ZREV.status !== 36053) zrevFail('post', ZREV.status, true);
+    if (ZREV.on && !zrevLost()) {   // Round 192: the samples' depth DEPTH32F_STENCIL8 (nothing recorded on a lost context)
+      ZREV.status = zrevFloatDepth(postRT);
+      if (ZREV.status && ZREV.status !== 36053) zrevFail('post', ZREV.status, true);
+    }
     const bw = Math.max(64, Math.round(s.x / 4)), bh = Math.max(64, Math.round(s.y / 4));
     postA = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     postB = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
@@ -13099,17 +13124,71 @@ vec2 wRing(vec2 rc, float tt) {
       let t = null;
       try { t = mirzTwin(m); } catch (e) { MIRZ.twins.set(m, null); }
       if (!t) continue;
-      t.opacity = m.opacity; t.visible = m.visible;
-      if (m.isPointsMaterial) { t.size = m.size; t.color.copy(m.color); t.map = m.map; t.alphaMap = m.alphaMap; }
+      mirzSync(t, m);
       o.material = t;
       MIRZ.swap.push(o, m);
     }
     MIRZ.n = MIRZ.swap.length / 2;
   }
+  function mirzSync(t, m) {
+    t.opacity = m.opacity; t.visible = m.visible;
+    if (m.isPointsMaterial) { t.size = m.size; t.color.copy(m.color); t.map = m.map; t.alphaMap = m.alphaMap; }
+  }
   function mirzBack() {
     const s = MIRZ.swap;
     for (let i = 0; i < s.length; i += 2) s[i].material = s[i + 1];
     s.length = 0;
+  }
+  // the second review: the twins compiled in flight, on the first night frame that showed the river (the hitch run: 20
+  // programs that frame against main's 15; nine twins at Boathouse Row) and, for the wet air's halo, on a rainy night's
+  // second frame (350 ms against the build's steady 150). So once, behind the veil, on the second frame (the halo is made
+  // on the first), every Points object the mirror may draw is drawn through its twin into a scratch target, as the cloud
+  // deck's three programs are (CLOUDZ.warm): the mirror's own lights and the points alone on a layer of their own
+  // (MIRZ_WARM_LAYER), each point forced visible and unculled for the one draw, the mirror's settings (no shadow pass, no
+  // background), and everything put back. A program's key is the mirror's own (lights, fog, a target's encoding), so the
+  // night finds them built; the vehicles' and aircraft's lamp sets share one source and so one program
+  const MIRZ_WARM_LAYER = 30;   // (the page uses 0 and the mirror's 5)
+  function mirzWarm() {
+    MIRZ.warmed = true;
+    if (!ZREV.on || MIRZ.off || !REFL.on || zrevLost()) return;
+    const t0 = performance.now(), r = renderer, C = REFL.cam, L = REFL.layer, W = MIRZ_WARM_LAYER, undo = [];
+    const p0 = r.info.programs ? r.info.programs.length : 0;
+    reflSweep();   // the list as the mirror will see it
+    const rt = new THREE.WebGLRenderTarget(4, 4, { type: THREE.HalfFloatType, depthBuffer: true, stencilBuffer: true });
+    const prevRT = r.getRenderTarget(), prevUp = r.shadowMap.autoUpdate, prevNeed = r.shadowMap.needsUpdate, prevBg = scene.background, prevMask = C.layers.mask, prevA = r.getClearAlpha();
+    r.getClearColor(_rfC);
+    try {
+      zrevFloatDepth(rt);
+      scene.traverse((o) => { if (o.isLight && o.layers.isEnabled(L) && !o.layers.isEnabled(W)) { o.layers.enable(W); undo.push(() => o.layers.disable(W)); } });
+      let n = 0;
+      for (const o of REFL.list) {
+        const m = o.material;
+        if (!o.isPoints || !m || Array.isArray(m) || m.depthTest === false) continue;
+        let t = null;
+        try { t = mirzTwin(m); } catch (e) { MIRZ.twins.set(m, null); }
+        if (!t) continue;
+        mirzSync(t, m);
+        const cull = o.frustumCulled, tv = t.visible;
+        o.material = t; t.visible = true; o.frustumCulled = false; o.layers.enable(W);
+        undo.push(() => { o.material = m; o.frustumCulled = cull; o.layers.disable(W); t.visible = tv; });
+        for (let q = o; q; q = q.parent) if (!q.visible) { const qq = q; qq.visible = true; undo.push(() => { qq.visible = false; }); }
+        n++;
+      }
+      if (n) {
+        C.layers.set(W);
+        r.shadowMap.autoUpdate = false; r.shadowMap.needsUpdate = false; scene.background = null;
+        r.setRenderTarget(rt); r.setClearColor(0x000000, 0); r.clear(true, true, true);
+        r.render(scene, C);
+      }
+      MIRZ.warmN = n;
+    } finally {
+      for (let i = undo.length - 1; i >= 0; i--) undo[i]();
+      C.layers.mask = prevMask;
+      r.setRenderTarget(prevRT); r.setClearColor(_rfC, prevA);
+      r.shadowMap.autoUpdate = prevUp; r.shadowMap.needsUpdate = prevNeed; scene.background = prevBg;
+      rt.dispose();
+    }
+    MIRZ.warmP = (r.info.programs ? r.info.programs.length : 0) - p0; MIRZ.warmMs = Math.round(performance.now() - t0);
   }
   // the mirrored eye (three r149's Reflector, with the plane y = TERRAIN.water): the eye, its target and its up reflected,
   // the texture matrix taken before the oblique near plane replaces the projection's z row (Lengyel), so nothing under the
@@ -13144,8 +13223,10 @@ vec2 wRing(vec2 rc, float tt) {
       REFL.rt.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();   // the streak rides the anisotropic filter
       // (after the anisotropy: three sets a target texture's parameters once, when it makes the framebuffers, and
       // zrevFloatDepth makes them; the other way round the mirror lost its anisotropic filter and its streaks blurred)
-      if (ZREV.on) REFL.zst = zrevFloatDepth(REFL.rt);
-      if (ZREV.on && REFL.zst && REFL.zst !== 36053) { zrevFail('refl', REFL.zst, false); REFL.on = false; waterU.uReflOn.value = 0; return; }   // no mirror this session (the review)
+      if (ZREV.on && !zrevLost()) {   // (the second review: nothing recorded on a lost context)
+        REFL.zst = zrevFloatDepth(REFL.rt);
+        if (REFL.zst && REFL.zst !== 36053) { zrevFail('refl', REFL.zst, false); REFL.on = false; waterU.uReflOn.value = 0; return; }   // no mirror this session (the review)
+      }
       REFL.w = w; REFL.h = h;
       waterU.uReflTexel.value.set(1 / w, 1 / h);
     }
@@ -13250,11 +13331,12 @@ vec2 wRing(vec2 rc, float tt) {
     waterU.uSunRad.value.set(sun.color.r, sun.color.g, sun.color.b).multiplyScalar(sun.intensity * Math.PI);
     waterU.uCoxMunk.value = 0.003 + 0.00512 * Math.min(Math.hypot(WX.windX || 0, WX.windZ || 0) || 2.2, 15);
     if (REFL.on && (frameNo & 7) === 0) reflGate();
+    if (!MIRZ.warmed && frameNo >= 2) mirzWarm();   // the mirror's sprite twins, built behind the veil (the second review)
     if ((frameNo & 1) === 0) waterWakes();
     if (!waterFrame.dbg && window.__dbg) {
       waterFrame.dbg = true;
       window.__dbg.waterInt = { REFL, reflSweep, waterU, RAISED, reflBox, REFL_BOX, MIRZ };
-      window.__dbg.mirz = (on) => { if (on !== undefined) MIRZ.off = !on; return { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n, slope: MIRZ.u.value.toArray() }; };   // Round 192: the mirror's sprite twins (false: the originals, the A/B)
+      window.__dbg.mirz = (on) => { if (on !== undefined) MIRZ.off = !on; return { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n, slope: MIRZ.u.value.toArray(), warm: { done: !!MIRZ.warmed, n: MIRZ.warmN || 0, programs: MIRZ.warmP || 0, ms: MIRZ.warmMs || 0 } }; };   // Round 192: the mirror's sprite twins (false: the originals, the A/B)
       window.__dbg.water = () => ({ refl: { on: REFL.on, need: REFL.need, w: REFL.w, h: REFL.h, calls: REFL.calls, tris: REFL.tris, ms: +REFL.ms.toFixed(2), frames: REFL.n, idle: REFL.idle, layered: REFL.layered,
           box: REFL.box ? REFL.box.map((v) => +v.toFixed(3)) : null, crop: [+REFL.cx.toFixed(2), +REFL.cy.toFixed(2)], cut: REFL.nCut, list: REFL.list.length },
         wakes: waterU.uWake.value.filter((v) => v.w > 0.5).length, rain: waterU.uRain.value, cover: waterU.uCover.value, coxMunk: +waterU.uCoxMunk.value.toFixed(4),
@@ -44628,10 +44710,10 @@ float pinOccGate() {
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
     if (window.__dbg) window.__dbg.zbuf = () => ({ mode: ZPROBE.mode, forced: ZPROBE.forced, probe: [ZPROBE.e, ZPROBE.f, ZPROBE.k], crumb: ZPROBE.crumb, android: ZPROBE.android, fail: ZREV.fail || '', real: ZPROBE.real, zc: zcField(), on: ZREV.on, why: ZREV.why,
-      logDepth: !!window.__useLogDepth, near: camera.near, sub: ZREV.sub, samples: ZREV.samples, size: [ZREV.w, ZREV.h], status: ZREV.status, aoStatus: ZREV.aoStatus,
+      logDepth: !!window.__useLogDepth, near: camera.near, sub: ZREV.sub, samples: ZREV.samples, size: [ZREV.w, ZREV.h], status: ZREV.status, aoStatus: ZREV.aoStatus, tested: ZREV.tested || 0,
       mirrorStatus: REFL.zst || 0, renders: ZREV.renders, noClear: ZREV.noClear, guard: ZREV.guard, presents: ZREV.presents, blit: ZREV.blit, blitErr: ZREV.blitErr,
       cloud: { old: CLOUDZ.old, mode: CLOUDZ.mode, rects: CLOUDZ.n, merged: CLOUDZ.merged, warm: CLOUDZ.warm, box: CLOUDZ.box.toArray(), zVisible: !!(cloudDeckZ && cloudDeckZ.visible), list: CLOUDZ.rects.slice(0, CLOUDZ.n).map((v) => v.toArray()) },
-      mirrorRow: REFL.cam.userData.zrevRow || null, mirz: { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n } });   // Round 192: the depth mode, its probe and the deck's programs
+      mirrorRow: REFL.cam.userData.zrevRow || null, mirz: { off: !!MIRZ.off, made: MIRZ.made, n: MIRZ.n, warmN: MIRZ.warmN || 0, warmP: MIRZ.warmP || 0, warmMs: MIRZ.warmMs || 0 } });   // Round 192: the depth mode, its probe and the deck's programs
     if (window.__dbg) window.__dbg.cloudRects = (on) => { if (on !== undefined) CLOUDZ.off = !on; return { off: !!CLOUDZ.off, n: CLOUDZ.n }; };
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
