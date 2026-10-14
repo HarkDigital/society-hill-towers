@@ -138,7 +138,10 @@ class PageWiring(unittest.TestCase):
 
     def test_towers_are_clad(self):
         s = self.s
-        self.assertIn("if (h >= 35 && t !== 8 && t !== 9) towerSkinNote(poly, mh > 0 ? base + mh : base, base + hTop, style, spec, i, c, mh > 0, t);", s)
+        # Round 191: every tower 35 m and up is still clad, but a glass one (researched, or whose kind is glass) wears its
+        # curtain-wall system on its own walls instead of a skin over them (tests/test_glass_towers.py)
+        self.assertIn("if (h >= 35 && t !== 8 && t !== 9) {", s)
+        self.assertIn("if (gRoute < 0) towerSkinNote(poly, mh > 0 ? base + mh : base, base + hTop, style, spec, i, c, mh > 0, t);", s)
         self.assertIn("if (wideSeam && !mh && h >= 35 && t !== 8 && t !== 9) towerSkinNote(", s)
         self.assertIn("if (!TSKIN_ON || y1 - y0 < 30 || (style >= 24 && style <= 29)) return;", s)   # the researched curtain walls keep theirs
         self.assertLess(s.index("step('Fitting the house fronts'"), s.index("step('Cladding the towers'"))   # after the far ring

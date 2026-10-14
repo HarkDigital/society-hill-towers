@@ -9140,3 +9140,101 @@ Not done:
   rule all the way in: distance / 135 under each pin's cap, a pin growing smaller in the world as the eye comes on and never
   on the screen. Rendered at the Langstroth marker: the badge at 10 m stands the size of the markers seen from 800 m.
   `tests/test_pin_scale.py` asserts the half-mile size at every distance, computer and phone alike.
+
+## Round 191 — the glass towers (Oct 14)
+
+- Mike: "Can we also update the glass textures of the skyscrapers that are glass?" (after the storefronts: "it looks better,
+  but it isn't where I want it to be"), with the frame rate under review in another workflow, so the new glass may not cost
+  more GPU time than the glass it replaces. Built on `look/glass` from the round's survey and spec (renders of today, the
+  references, today's measured cost).
+- What was there: the researched glass towers drew a procedural curtain wall (`outerGlassMat`: a world-space grid of bright
+  lines over a vertex colour) and most of them, under a Round 188 skin of a generated tile 12 cm in front whose glass was a
+  photograph with the sky painted in; an unresearched tower whose tile was glass drew the fabric's whole facade under its
+  skin. Every glass surface reflected refreshEnv's sky probe (a dome, a disc and nine boxes): no tower, street or river ever
+  showed in a curtain wall. By day the walls read as graph paper on blue plastic, the skins as wallpaper; at night a QR-code
+  speckle of white blocks on every tower with pure black between them.
+- One draw per glass wall. Under `GLASS_ON` (REAL, WebGL 2, no `?glass=0`, 512 fragment uniform vectors) a researched glass
+  wall lays no skin, and an unresearched tower whose cladding kind is one of the ten glass kinds (`skinKindOf`, the same draw
+  factored out of `towerSkinNote`) puts its walls on the curtain-wall material as style 30 with its kind's system and its
+  roof on the fabric chunk (`appendBuilding`'s new `capCh`: the roof art, snow, night glow and kit stay); on a computer so do
+  the mid-rises the cladding would have dressed in glass or unitized panels (`midSkinKindOf`). Routed at load: 78 researched
+  glass footprints, 197 generic towers, 234 mid-rises (a computer's), 51 OSM glass parts; 67 skins not laid. A pitched roof
+  keeps the fabric and its skin; the far ring keeps its skins.
+- Sixteen curtain-wall systems (`glass_systems.json`, each with its sources): bay, floor, module, F0, transmittance, coating,
+  pane bow and roller wave, spandrel, frame (colour, metalness, roughness, whether the authored colour tints a one-material
+  frame), rooms, an upper datum, low-iron corners, a lobby; F0 and transmittance from Vitro's data (modern low-e 0.07 to 0.12,
+  the 1980s reflective coatings and Cira's silver 0.20 to 0.35). Every towers.json glass tower has its system and glass colour
+  (in the towers' register, hex x 0.66); FMC's floor is its LED rings' 4.0, Comcast's its crown's 4.15, the CTC's its units'
+  4.42. The system rides the aSFT floor byte as `-(sys + 1)` (`glassFh`): no new stream.
+- The art (gpt-image-2, quality high, four at a time, every image read): sixteen straight-on elevations, one a system, the
+  vision glass a flat chroma-key green and the spandrel or railing glass a flat magenta (all sixteen keyed cleanly the first
+  time). `bake_glass_art.py` finds each one's repeat, aligns every repeat to their mean and folds them into one module (the
+  model never draws two bays alike: a global period alone blurred every mullion by its drift), fills the keyed pixels from
+  the frame round them, and packs ONE 2048 x 1024 atlas at 64 px/m with wrapped gutters: r the vision glass, g the spandrel
+  glass, b the frame's detail as its luminance over twice the frame's mean (the shader multiplies the system's frame colour by
+  twice it). The first cut carried an albedo atlas beside the mask; a fragment's second fetch was a cost the old procedural
+  wall never paid, so it went. Eight rooms through `/v1/images/edits` on a one-point template: the model kept the view but not
+  the back wall's size (an open office three widths deep, a bedroom one), so each back wall was read by eye off a grid (`BACK`)
+  and the page projects through each cell's own scale and vanishing point. 510 KB of art (a phone loads 103 KB of it).
+- The shader (`glassSysHook`, one program and the phone's vertex-depth twin): each wall a whole number of bays from a mullion,
+  floors from the base, the lobby the clear system's tall panes, a short top floor a parapet; the frame from the atlas through
+  textureGrad on the module's continuous coordinates (isotropic; its footprint held inside the gutter, the measured mean taken
+  over as the hold bites, the means alone under three pixels a pane: no tiling, no shimmer); a pixel's frame and glass summed
+  by area with metalness 0; each pane bowed its own way, a hair off true, a tempered pane's roller wave, the jagged system's
+  facets, the vent sashes, folded into roughness as they shrink; the glass's F0 tinted by its coating, each pane a few percent
+  its own; behind the vision glass a room, at night by the clock (offices in runs along each floor, homes and hotels room by
+  room, a crown's plant rooms barely, the lobby always) with interior mapping into the room atlas within reach on a computer
+  (lit rooms only), the cell's mean with a ceiling's brightness further out, blinds on three rooms in ten and curtains in a
+  third of the homes, past two pixels a room the runs' true share under the pixel (`gRunCover`) and, for homes and hotels,
+  blocks at half contrast round the share (`gFarBlocks`), past two pixels a floor bands of floors; the light blended finished
+  (Round 159); by day the kind's mean room lit through its window at the fabric's numbers. A room's choices are fractions of
+  one hash a room and an office floor's of one hash a floor. Nothing in it draws the theme.
+- The city in the glass (`CITYENV`): a PMREM of a proxy built in 'Mirroring the city' (1,359 towers from 25 m, the Liberty
+  Places, City Hall and the three towers as extruded footprints, the low city as a box a roof cell within 5 km, 3 on a phone,
+  an 8 km ground disc with the street grid), lit as the main lights are, its floors lit by the clock's shares after dark, the
+  themed crowns in the night's colour, the street lamps' lines, hazed into the horizon. Two fixed centres on a computer
+  (Center City, University City: each fragment reads the nearer), one on a phone at 128, each centre without the towers within
+  160 m (a tower that close filled half a cube face where the parallax looks a kilometre out); baked behind the veil and
+  whenever refreshEnv bakes the sky's, a centre a frame, at most every 1.5 s on a computer and 10 s on a phone, a phone only
+  when still. Bound as the glass's own envMap, never `scene.environment`; the reflection ray is carried to the probe's sphere
+  and the ground before the fetch (`glassParallax`). The skins that stay (masonry, stone, the far ring's) take probe A for
+  their windows, F0 0.08 on their glass and the painted glass at three tenths, with no new sampler.
+- Found on the way: the second probe's sampler kept the disposed target after the first refresh (University City's glass
+  black: re-pointed after every bake); a blended metalness turned every far wall to grey paint; the night rooms first came out
+  19% over the old mean at the low flight and twice it at a distance (now 0.8 before the glass, a far room dimmed as the
+  fabric's windows are). The GPU check pages `glass_optics_gpu.html`, `window_interiors_gpu.html` and `buildings_gpu.html` were
+  already failing at HEAD (`REAL is not defined` since the realism pass); `tests/glass_systems_gpu.html` is the new glass's,
+  passing in both depth modes.
+- Measured on this Mac (M2 Max, headless Chrome on Metal, other workflows rendering at the same time, so every number moves
+  about 30% run to run): the round's harness (the glass layer alone at three times the drawing buffer each way, less the same
+  draw flat, the minimum of 8 blocks), before.html and after.html alternated three times, medians of the three, ms at 9x
+  pixels. Computer: street-comcast-day 3.73 -> 4.06, mid-market-day 13.30 -> 10.59, lowflight-day 5.90 -> 5.07,
+  schuylkill-skyline-day 3.67 -> 2.37, lowflight-night 6.38 -> 6.04, street-comcast-night 5.12 -> 6.85. Phone path (740 x
+  360 at 1.25): 1.37 -> 1.93, 6.51 -> 5.15, 1.72 -> 1.26, 0.94 -> 0.97, 2.68 -> 1.91, 2.52 -> 2.62. The glass-alone figure
+  counts a routed tower's whole wall after and only its skin before (the fabric wall under the skin goes uncounted), so the
+  scene pass is the fair one: at 1x, the minima 22.1 -> 20.6, 30.7 -> 34.2, 32.1 -> 31.1, 40.0 -> 41.5, 35.8 -> 36.7, 21.5 ->
+  19.9 on the computer and 5.7 -> 5.8, 11.6 -> 11.9, 17.0 -> 15.6, 22.4 -> 23.9, 18.4 -> 16.6, 5.6 -> 5.8 on the phone path:
+  inside the noise everywhere. Over the spec's budget, said plainly: the street views' glass alone (the computer's night +34%,
+  the phone's day +41%, 0.06 ms at 1x); the interiors' reach went from 20 to 40 pixels a pane after that run. The first cut
+  stood at +50% (day) and +66% (night) at the street; what brought it down: one fetch (no albedo atlas), isotropic sampling,
+  by day the room's mean only, interiors for lit rooms, one hash a room and a floor, no pane hash past three pixels.
+- The probe: 2.3 to 2.6 ms a centre a bake on the computer (two centres on successive frames), the proxy 71 ms to build and
+  123,560 triangles over both centres' geometry; the phone path's last bake took 21 ms in emulation, its first 95 (the 128
+  programs' compile, behind the veil): a real phone must say. Memory: the computer's frame atlas 11.2 MB, rooms 9.4, two
+  probes 12.6, against only the fins tile (2.7 MB) no longer uploaded (the far ring and the masonry towers still wear the
+  other nine glass kinds): +30.5 MB; the phone's half atlas 2.8 and its probe 1.6, less about 1.1 of fins: +3.3 MB. Samplers:
+  the curtain wall 6 of 16 on the computer (the atlas, the rooms, two probes, two shadow maps), 3 on the phone path; the
+  skins unchanged (6 and 4). No link failures; the console holds only the two "Unable to serialize Texture" warnings HEAD
+  has too.
+- The night glass's mean over a mask of its own pixels (the build before the far homes' last dimming): lowflight-night
+  0.0432 -> 0.0409 (inside the spec's 10%), mid-market-night -18%; the far views brighter, south-night +54% and the
+  skyline from the river +69%, because the dark rooms now mirror the lit city instead of drawing black and the far mean is
+  the rooms' true share. Flicker, three PNGs 0.5 m apart, pixels changing by more than 60: lowflight-day 177,396 -> 146,090,
+  south-day 148,357 -> 146,967, lowflight-night 90,591 -> 74,311. The skyline lights (`lights('eagles')` at BNY from the
+  west, the Liberty Places, the Logans, City Hall and the low flight): outside the glass's mask dilated 6 px a mean
+  difference of 2.5 to 5.4 of 765, every crown, LED line, neon chevron and wash where it was.
+- Renders (before, after, pairs; computer and phone, day, dusk and night) in the session's `scratchpad/glass/`.
+- Open for Mike: the 1818 Market and Laurel reassignments; the University City probe (6.3 MB on a computer); IBX's F0 (the band
+  system's 0.16, a seventeenth system would give it 0.20) and PNC's light grey spandrels; a real iPhone's check of the probe's
+  bake (21 ms for the phone path's last bake in emulation, 2.3 to 2.6 on the computer) and of the glass's cost. Not done from the spec: the frame's bevel normal and relief shading on
+  the glass, the fins' sun-aware reveal, the shadow box's parallax edge, blinds by day.

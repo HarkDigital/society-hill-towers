@@ -202,6 +202,7 @@ const("WATER_ART", text_of("water_art.json", "null"))   # the realism pass's pie
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
 const("STREET_ART", text_of("street_art.json", "null"))   # the streets' generated textures (bake_street_art.py), the realism pass
 const("STOREFRONT_ART", text_of("storefront_art.json", "null"))   # the storefronts' generated shopfronts (bake_storefront_art.py), Round 189
+const("GLASS_ART", text_of("glass_art.json", "null"))   # the glass towers' curtain-wall systems, frame and room atlases (bake_glass_art.py over glass_systems.json), Round 191
 
 
 def art_paths(o):
@@ -217,7 +218,7 @@ def art_paths(o):
 
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
-for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "storefront_art.json"):
+for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "storefront_art.json", "glass_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

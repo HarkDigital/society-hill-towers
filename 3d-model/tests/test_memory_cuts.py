@@ -318,7 +318,8 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertEqual(cut(s, '  function loadGroundArt() {', '  let tuftTex = null').count('freeTexOnUpload(t);'), 3)
         # the realism pass: the walls', pitched roofs' and snow's atlases, uploaded once (wallArtTex)
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function wallArtTex(im, aniso) {', '  const WALL_ART_ON'))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 23)   # the definition and its twenty-two uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself)
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function glassArtTex(im, srgb, aniso) {', "  step('Glazing the towers'"))   # Round 191: the glass atlases and rooms
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 24)   # the definition and its twenty-three uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself; Round 191: glassArtTex)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

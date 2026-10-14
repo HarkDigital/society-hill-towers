@@ -99,6 +99,28 @@ class FarLit(unittest.TestCase):
     def test_blocks_are_at_least_two_pixels(self):
         self.assertIn('max(log2(max(2.0 * fpx, vec2(1.0e-6))), 0.0)', self.glsl)
 
+    def test_the_glass_towers_far_rooms(self):
+        """Round 191: the curtain wall's far rooms (GLASS_SYS_PARS / GLASS_SYS_MAIN) on every device, never FAR_LIT's blocks:
+        an office floor's lit run is its true share under the pixel (gRunCover, the run [0, L) of period n over [a, b]), the
+        floors under two pixels are bands lit at the floor runs' mean (0.675 of a floor's rooms, 12% of them dark: 0.594), and
+        the light is blended finished (the room's colour times the lit share, never the two blended apart, Round 159)."""
+        pars = re.search(r'const GLASS_SYS_PARS = `(.*?)`;', self.src, re.S).group(1)
+        main = re.search(r'const GLASS_SYS_MAIN = `(.*?)`;', self.src, re.S).group(1)
+        self.assertNotIn('farLitCells', pars + main)
+        self.assertIn('max(log2(max(2.0 * fpx, vec2(1.0e-6))), 0.0)', pars)   # the glass's own blocks: two pixels at least
+        def cover(a, b, L, n):
+            ia = math.floor(a / n) * L + min(a - math.floor(a / n) * n, L)
+            ib = math.floor(b / n) * L + min(b - math.floor(b / n) * n, L)
+            return min(max((ib - ia) / max(b - a, 1e-4), 0), 1)
+        # over a whole period the cover is the run's share; over many periods it converges to it
+        for L, n in ((3, 10), (7, 9), (1, 4)):
+            self.assertAlmostEqual(cover(0.0, float(n), L, n), L / n, places=6)
+            self.assertAlmostEqual(cover(0.37, 0.37 + 50 * n, L, n), L / n, places=3)
+        # the run's mean length is mix(0.35, 1.0, u) for a uniform u: 0.675, and 12% of its rooms dark
+        self.assertAlmostEqual((0.35 + 1.0) / 2 * 0.88, 0.594, places=3)
+        self.assertIn('* 0.594 + uOcc.z * 0.08', main)
+        self.assertIn('gRoomN = nightC * lit * uGlassK.x;', main)
+
 
 if __name__ == '__main__':
     unittest.main()
