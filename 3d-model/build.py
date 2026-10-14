@@ -203,6 +203,7 @@ const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlas
 const("STREET_ART", text_of("street_art.json", "null"))   # the streets' generated textures (bake_street_art.py), the realism pass
 const("STOREFRONT_ART", text_of("storefront_art.json", "null"))   # the storefronts' generated shopfronts (bake_storefront_art.py), Round 189
 const("CITYHALL_ART", text_of("cityhall_art.json", "null"))   # City Hall's generated facades (bake_cityhall_art.py), Round 191
+const("GLORY_ART", text_of("glory_art.json", "null"))   # Glory Beer Bar & Kitchen's elevations, swatches and rooms (bake_glory_art.py), Round 191
 
 
 def art_paths(o):
@@ -219,7 +220,7 @@ def art_paths(o):
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
 for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
-             "storefront_art.json"):
+             "glory_art.json", "storefront_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

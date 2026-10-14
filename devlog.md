@@ -9495,3 +9495,380 @@ Not done:
   (a computer 715 KB, a phone 196 KB); the textures as they were, 26.7 MB on a computer and 6.7 on a phone, and a phone's
   floor and compass, 2.8 MB, only once it has come near. ?real=0 renders as HEAD did but for the traffic and the tufts
   (0.05 to 0.2 per cent of the pixels). Tests: 807, OK with the one expected failure.
+
+
+## Round 191, Glory Beer Bar & Kitchen on its own lot (Oct 14)
+
+- Mike: "I added more api credits with open AI. I want City hall and Glory Beer Bar and Kitchen to be totally revamped."
+  Glory is 126 Chestnut Street, Old City, the south side between Front and 2nd. Round 10b's builder pro-rated house
+  numbers along the block and put it on 120 (scene 2806, 4.9 m wide, four storeys, LiDAR 14.6 m): a white column of
+  five piers with a tiny Futura GLORY board, two lots east. The OPA address point for 126 (101.01, -284.81) lies in 2541,
+  and the Historical Commission's 2003 inventory (5 storeys, 4 bays, 1853, granite storefront pilasters, engaged granite
+  columns with pointed-arch surrounds, 1/1 windows above, a corbelled brick cornice), Sanborn's 1916 plate (about 27.5 ft,
+  60 ft, back to Ionic St) and the LiDAR (19.5 m, 23.7 m at the bulkhead) all agree. Under the realistic look 2541 is held
+  back (REALISM_NEAR, key 'glory126', never 'glory', so the old builder cannot run on it) and rebuilds/glory.js builds the
+  building on it; 120 goes back to the generic fabric, whose shuttered four storeys are the real 120's. ?real=0 and the
+  new ?glory=0 keep the old builder on 120 exactly (rendered against before/: identical but for the clouds).
+- The art (fetch_glory_art.py, gpt-image-2, high, opaque): 11 calls. Frames: two lower elevations (the granite ground
+  floor and second storey, 8.6 by 9.3 m at 1536x1664, every pane chroma-key green) and two upper (the brick storeys);
+  lower-b kept for its pointed arches (the inventory's "pointed-arch granite window surrounds"; lower-a's were round), upper-b
+  for its storeys (its sills 0.64, 3.43 and 6.28 m over the granite cornice against the research's 0.65, 3.45, 6.25;
+  upper-a's bottom row stood at 0.13). One glass edit into the upper key (blinds, curtains, the street reflected, every
+  window different). Rooms: two of the bar (1536x784) and two of the room upstairs (1536x608) in one-point perspective;
+  ground-empty-b (the bar down the right, the brick by the doors, the ducts and string lights, the cast-iron columns) and
+  upper-empty-a (the mantel on the right, the globe cluster, the wainscot) kept; then one crowd edit of each over its
+  floor (people at the bar and the high-tops; people at board games upstairs). Every image looked at: no lettering, no
+  logos, a pure key.
+- The bake (bake_glory_art.py): the key 0.199 of the lower and 0.190 of the upper (the plan's 0.25 to 0.45 for the lower
+  was a guess: the bake now refuses outside 0.15 to 0.45). Measured from the key: the doors 0.44 to 4.04 m, four bays,
+  the arcade's sill course 4.92, spring 7.77 and crown 8.32, the column pairs a quarter of each gap either side of its
+  middle (r 0.11), twelve windows 1.07 by 1.83 m set to their stacks' and storeys' medians; no warnings. Two measuring
+  fixes found on the overlays: the key's green is bright, so it counts as the opening (dark) for the doors and as the
+  window (pale) for the sashes, and a door's lighter panel moulding no longer stops the growth (four lines in a row
+  past the limit do). The brick came out at #a86444, more saturated than the street's orange red, and read as paint
+  beside the block's procedural walls: its saturation goes down 22% (BRICK_DESAT). The atlas 2048x1280 (both
+  elevations at 117 px/m, seven swatches), the mask at half, the rooms 1024x1224 (open full width, shut at half) and
+  their mask. A computer downloads 847 KB, a phone 226 KB.
+- The model: 3,950 triangles near (budget 6,000), 62 far, 24 for the signs; built in 8 to 9 ms. One draw for the
+  facade, one for the signs. The fronts are holed (a grid between the openings' edges; an arch's head leaves two
+  spandrel fans) and every opening is set back on its own pixels (doors 0.25, casements 0.20, sashes 0.12), so straight
+  on it is the photograph and obliquely it has depth; the piers, their capitals, the sill course, eight engaged half
+  columns, the granite cornice's profile (fascia, cyma, corona, wash) and the corbelled brick cornice are real; the
+  shell's party walls stand 5 cm inside the lot lines; the rear range is four storeys to Ionic St with the stucco
+  penthouse, the stair bulkhead to 23 m and two skylights. The stoop is 1.7 m deep with three steps from the entrance
+  bay, black railings with a crossed scroll band, the Juliet railing in the east bay, two caged lanterns on the piers
+  either side of the door, the blade sign on its bracket off the pier east of the door, the board over the door tilted
+  out 8 degrees, the bronze 126 plaque, the menu case, the faded blue sign box high on the east edge, and two bistro
+  tables and six galvanized chairs that the vertex shader (and the shadow pass's own depth material) folds away while
+  the bar is shut.
+- The page (api.glory): one facade material (atlas, mask, rooms, rooms' mask, the signs' canvas for the mural) with a
+  swatch tiled in metres on each face's own plane; the bar's glass is interior mapping (the eye's ray through the pane
+  into a room box, the hit's fractions scaled toward the plate's vanishing point by e / (e + z) per axis, from each
+  plate's back wall measured by hand), open or shut plates mixed by the model clock's hours (Mon to Wed 4 PM to 2 AM,
+  Thu to Sun 12 PM to 2 AM; upstairs from 5 PM), the mural painted on the bar's brick by the doors, the bulbs twinkling
+  after dark, a shut room dark but for a red exit sign; the flats' windows take roomLight after dark; the lanterns glow
+  with the photocell and light the piers, signs and stoop within 3.5 m, and go into the light map as two 7 m warm pools.
+  GLORY is drawn by the page in vector slab-serif glyphs (painted and cut shapes, so no two windings meet), the trade
+  line in a typewriter face, never by the image model.
+- Four faults the renders found: (1) the facade drew the placeholder's grey: a texture uploaded behind the veil as a
+  one-texel WebGL 2 immutable store takes no image of another size, so gloryLoad lets it go first; (2) everything was
+  mirrored: the photographs look south, so their left is the EAST end, and the def now mirrors every measure into its
+  frame (the entrance is the second bay from the west, the blade sign east of it, as on the street); (3) every box's
+  sides were granite (the swatch's name, not its index, went into the bytes); (4) a striped band under the granite
+  cornice: a face reaching 9.3 m took its top corners from the upper elevation, interpolating its uv across the atlas
+  through the swatches; a face now takes its elevation from its own middle. And a swatch's gradients are held to its
+  8-texel gutter, or a soffit seen edge on read a mip coarse enough to take its neighbours in.
+- The street: Chestnut between 2nd and Front is drawn 9 m wide with 3.7 m walks to the building line (it was 13 m with
+  1.2 m of walk, and the stoop and steps would have stood in the lane); the realistic look's alone. The neighbours that
+  the new front showed up: 128-130 takes the sash and the painted shop floor in its own dark red, 122-124 the painted
+  shop floor (both dressed by Round 189's shopfronts).
+- Search: "glory" finds Glory Beer Bar & Kitchen (a new kind, bar, ranked 2 so the three Glory churches do not come
+  first) and glides to the far sidewalk looking at its front with the mark at the door and its card open. A tap on the
+  building opens the same card (Open or Closed by the model clock, today's hours, what it is, the address, built 1853),
+  then the city's register, district and permit rows; Website and Property Record.
+- Measured (headless, this Mac's GPU, before against after at the same poses and clock): a computer at the street-across
+  pose 511 calls and 7.18 M triangles against 509 and 7.18 M (+2 calls, +2.8 k); a phone, counted per object over four
+  frames, 466 against 462 (Glory's 2, and one car of traffic more), 4.50 M triangles against 4.51 M. Programs: five on a
+  computer (the facade and the signs, each in its one- and two-shadow-map variants, and the shadow pass's fold), three on
+  a phone (the review's count; this entry first said three). A phone (measure.mjs, GC-normalised): 875 MB GPU at ready against 869,
+  936 after the look against 930, no padded copies, a live heap of 124 MB at ready either way, peak 282 against 281.
+- Not done: the stair-side railings' scrolls, single dentils (the corbel's dentil course is a slab carrying the photo's),
+  the neighbours' awnings (122-124's green "124 Offices", 128-130's burgundy) and 122-124's black strip; VDEPTH for the
+  facade on a phone. For Mike: Yelp also lists an "Oberon" at 126 Chestnut (Dec 2025): a name for the room upstairs, or
+  a new tenant?
+
+## Round 191, the review's fixes to Glory (Oct 14)
+
+- The review (renders at the builder's poses, day, night and phone, against the Bright MLS street view, Wanderlog's
+  close-up and gloryphilly's own photos) found eight things that must change and a dozen that should. All but four are
+  done; the branch is rebased onto main's Round 190 (the pins) and every "Round 190" of Glory's is now 191.
+- The second storey was a church front: lower-b's four steep pointed lancets under moulded hood arches on thin ringed
+  colonnettes, though LOWER had asked for "shallow pointed four-centred" arches. The real storey is a flat granite lintel
+  on plump coupled Tuscan columns whose soffit dips between the capitals in a very low arch, two black steel casements a
+  bay, no hoods, no tracery. `LOWER2` says so in metres (a 35 cm rise over the 1.5 m bay, springing at 7.9, the middle
+  at 8.25; six columns in three coupled pairs; the doors glazed to a 30 cm kick rail; a warm buff granite). Four calls:
+  lower-c and lower-d stood single columns, lower-f's were slender, lower-e has the pairs, the low arches, two casements
+  meeting at a mullion and the short kick rails, and is CHOSEN. Fifteen calls in all now (6,194 + 2,722 input and
+  67,995 + 38,928 output tokens).
+  - The bake's spring is now the top of the frame's own stile 4% in from each side (the old rule, the highest row dark
+    across nine tenths of the opening, fell 0.6 m down a low arch whose grown box took in a sliver of stone), and a frame
+    whose rise is over `ARCH_RISE_MAX` 0.5 m is refused: lower-b measures 0.58 and is; lower-e 0.04 (its frame's head is
+    nearly flat, flatter than the real soffit's 0.3 to 0.5 m: an under-rise, not a lancet). Spring 8.149, crown 8.185,
+    the sill course 4.79, the columns at 2.30, 2.60, 4.17, 4.45, 6.01, 6.30 (r 0.139), the cornice 8.78 to 9.3 by hand.
+  - glory.js: a head is now the segment of a circle through both springs and the crown (eight pieces), and the columns
+    stand on a round torus and a square plinth under a round echinus and a square abacus whose top is the springing.
+- The granite drew a ladder up every pier side, jamb and reveal: the swatch, cut from the band over the doors, held a stone
+  joint and its shadow, and tiled at 0.45 m it put a dark wedge every 0.45 m. `granite_swatch` quilts four jointless
+  patches of the piers' faces (a window is jointless when no row or column mean departs from its own; the old swatch's
+  worst row departed 0.213, the new one's 0.008, `test_the_granite_swatch_has_no_joint` holds it under 0.05), each with
+  its low frequencies flattened to the stone's mean, at 0.68 m a tile.
+- A pale dashed outline ran round every door and transom pane within about 6 m: the key's anti-aliased rim, filled from
+  every pixel round it, came out a light lavender, and the half-size glass mask stopped short of it. `fill_dark` fills the
+  key and its 2 px rim from the dark frame only, and the mask's glass is grown two full-size pixels before the box resize.
+- The bar's lit glass went black from about 100 m, and across the street the panes flipped between the two rooms as a
+  mosaic of streaks: the shader told the bar's glass (b 196 to 222), the room upstairs (208 up) and the flats (66 down) by
+  the mask's codes, which a mip averages with the frames' zeros (0.97 of the code at mip 0, 0.32 at mip 3, 0 at mip 5).
+  Now by position in the facade's frame: the bar's glass under the granite cornice (9.3 m) times the mask's filtered cover,
+  the room upstairs from 4.6 m, the flats above 9.3; the flats' window number and height inside the window are read at the
+  mask's full size (`GLMASK0`: textureGrad with zero gradients; `GL_`-named macros are reserved and failed the link the
+  first time). Rendered with a narrowed lens from 100 and 190 m by night against the page before: the four casements and
+  the doors lit where they were black (fix1/pairs/z-night-aerial-190.jpg), and the arcade from across the street reads as
+  the room with its string lights. A ray from the walk looking up into the arcade reads the near ceiling from 1.2 m in and
+  darker (`glCeil`), not the plate's stretched top row.
+- The trade line ran under the sign's border at both ends: it is measured first and fitted to 0.82 of the panel (Chrome
+  headless, with and without American Typewriter: both inside the border). GLORY's glyphs are heavier and tighter (stems
+  0.32 of the cap, counters smaller, a gap of 3 where it was 7), the trade in a lighter weight, as on the real board.
+- The cafe read as concrete slabs: the chairs are galvanized steel now (a metal, 0.7, roughness 0.4, albedo 0.34), with
+  thin splayed legs, two raked uprights and two slats curved round the seat, open below; the tables black steel tops on a
+  pedestal and a cross foot. The lanterns' wash on them takes their (1 - metalness) share.
+- The card never had the city's rows: the tap and the search asked for the parcel at the front or on the walk, about 4 m
+  north of the PWD lot in Old City. A business the page knows carries its own point inside the lot (`ref.parcel`, the OPA
+  point for 126) and the card asks there. A tap's point is already 1.5 m into the building hit, so `gloryAt` takes no pad
+  (a metre's pad gave a tap on 128's party wall Glory's card).
+- Should-fixes done:
+  - The granite is warm: `STONE_TINT` (1.0, 0.965, 0.985) in the bake; rendered by day at hue 30 to 34 and HSV saturation
+    0.10 to 0.15 against the photograph's 30 and 0.12 (gloryphilly IMG6), where it was 0.04 and read as marble.
+  - The old sign box is pale faded-blue painted sheet metal peeling to primer with thin rust runs (`peel_swatch`, every
+    field periodic so it tiles without a cross-fade cutting the blotches), in a black strut frame: a top and a bottom arm,
+    a raking brace and a stile down its outer end, two wall plates.
+  - The lanterns are caged jars on gooseneck arms: a black cap, a clear globe drawn opaque with its bulb drawn on it where
+    the eye's ray passes the lantern's centre (a pale filament by day; after dark a hot core and a warm halo), four wires
+    and a belly ring.
+  - The door heads, jambs and sills of every opening and every swatch box's underside take a shade (aGl's fourth byte,
+    `SH`: a head 0.59, a jamb 0.35, an underside 0.31, a sill 0.12): the light granite heads read as planks over the doors.
+  - The railings carry a band of rings, a ring a picket pair, for the cast band; the Juliet railing is a balconet bowed
+    0.34 m out with the same band.
+  - The signs are faces of the near mesh (aGl mode 4 samples the canvas the facade already held for the mural), so the
+    near level is one draw and the signs come and go with it at 200 and 170 m. Measured with traffic and the pins off at
+    the street-across pose: 377 calls against 378, 5.62 M triangles against 5.61 M; the oblique and sidewalk poses the
+    same, a call fewer each. Programs: three on a computer (the facade in its one- and two-shadow-map variants, the fold),
+    two on a phone. The near mesh is 5,412 triangles (the rings, the lanterns and the chairs' slats), 62 far, 5,474 in
+    all against the 6,000 budget, built in 10 ms.
+  - `?glory=0` skips the def by its own id; `real: true` means the realistic look's alone again (a City Hall def marked
+    real would have gone with `?glory=0`). Rendered: under `?glory=0` every other rebuild builds and Glory does not.
+  - A phone fetches Glory's four images as bytes at the step and decodes them the first time the eye comes within
+    `GLORY_DECODE_R` 600 m after Enter (the swatches' means stand in): probed headless, still pending after Enter over
+    City Hall, decoded at the first pose on Chestnut. A session that never comes to Old City never holds the 7.2 MB.
+  - On a phone Glory's brick keeps `GLORY_PHONE_SAT` 0.62 of its saturation: the fabric there has no walls' atlas and
+    its neighbours rendered at 0.12 to 0.14 against Glory's 0.34 (the photographs' 0.32); now 0.22.
+  - The narrowed block of Chestnut is one-way (OSM's oneway, which traffic.b64 carries) with one lane between the parked
+    cars: no lane paint. The core's scene roads carry no oneway tag, so every other one-way core street of two lanes'
+    width still gets a double yellow; that wants the tag carried into scene.json, outside Glory.
+- Declined, and why:
+  - The far mesh into the core's merged chunk: the chunk's material cannot sample Glory's atlas, so past 200 m Glory would
+    wear generic windows; the far mesh is 62 triangles, frustum-culled, one draw only where Glory is in view.
+  - VDEPTH for the facade on a phone: the near mesh is hidden past 200 m and its line would be 300; the far mesh would
+    cross at 300 m, where it is 62 triangles over a few hundred pixels. A twin is one more program to compile on every
+    phone for no measurable time.
+  - The neighbours (noted, as the brief asked): 122-124 is a generic box with white six-light sashes and a deli front; the
+    real one is a Neoclassical front of about 1925 with tripartite windows, brick roundels and a wide cornice, the green
+    "124 Offices" awning and a black-painted brick strip against Glory's east wall. Its awning comes from Round 189's
+    shopfront cells; a front of its own wants a rebuild of its own.
+- Pre-existing, for the record: a green ground strip shows between the kerb and the generated sidewalk on core streets
+  (in the `?glory=0` render too); the OSM footprints on this block stand about 4 m north of the PWD parcels, so the
+  neighbours' cards say "No property record here".
+- Renders: fix1/r3 (computer), fix1/p2 (phone), fix1/z-old and z-new (the page before against after at narrowed
+  lenses), fix1/pairs (before against after: the review's own renders where the pose is theirs).
+
+## Round 191, the second review's fixes to Glory (Oct 14)
+
+- The second review rendered the first fixes by day, by night, in rain and on a phone, tapped every part of the front
+  from both sidewalks and across the street, and measured the LOD switch and the art's memory. Two must-fixes and nine
+  should-fixes; all are done but the neighbours (noted) and the Oberon question (Mike's).
+
+### The muntins
+- The pale-rim fix had taken them. The mask's glass was grown two full-size pixels before its box resize, from both
+  sides of every 5 to 6 px muntin, so a door's or a casement's bars came out one texel at 85 or 170 (a third or two thirds
+  glass) and 1.7 cm wide: by day the French doors and the steel casements drew as single dark sheets, at night as
+  unbroken glowing panes. The dense black grid of small lites is the defining texture of both storeys (the Bright MLS
+  view; gloryphilly IMG4 and IMG6): 2 by 6 a door leaf, 2 by 8 a casement.
+- The bake now finds the bars between the panes of one opening (`pane_bars`: what closing the key by 4 px fills; a
+  casement's mullion, a door's meeting stiles and the transom bar are wider and stay frame), grows the glass only toward
+  the outer frame, and holds every bar at 0 two texels wide at the mask's size (`bar_texels`: the texels a bar covers
+  more than half of, and its fuller neighbour where that leaves one): 3.4 cm, 95% of the bars exactly two texels, the
+  rest at the ends where a bar meets the frame. A phone's quarter mask, nearest, keeps one.
+- The shader sharpens the glass's cover where the mask is magnified (a texel spread over many pixels within a few
+  metres) and leaves it filtered once a pixel spans a texel, so a far pane averages its glass and bars.
+- Checked by night close up (2 and 3 m) and across the street: the bars silhouette black against the lit rooms; by day
+  they read as a grid of lites. From 50 m up a casement is a few pixels and its glass and bars average into a glow. No
+  pale rim came back: the atlas already fills the bars with the dark frame (`fill_dark`).
+
+### The tap
+- From the sidewalk the blade sign, the lanterns and the old sign box opened the generic card (and, once the city
+  answered, "No property record here"): the point 1.5 m along a ray running along the street is still over the walk.
+- `ref.apron` is the walk in front of the lot's own frontage, 2.4 m out; a tap whose hit stands there names Glory
+  (`gloryApron`). The lot itself is now tested 0.3 m past the hit, not 1.5 m: probing showed an oblique tap on 128's
+  front from the west sidewalk naming Glory through the long push. Probed from the west and east sidewalks and across
+  the street: the blade, its far end, both lanterns, the sign box, a pier and the brick name Glory, 128's and 124's fronts
+  open their own cards, and the west sidewalk's blade card fills with the register and district rows.
+
+### The rest
+- The old sign box: grey-sage paint (164, 168, 153) gone to primer in small ragged flakes, a mottle of grime, thin rust
+  runs in the swatch; in the shader, by the box's own frame (`uGlBox`), grime toward its edges, rust run down from its
+  top and creeping up from its foot, matte (roughness 0.8), and only 0.12 of the street lamps' wash. Its foot is a
+  rounded cap of rusted sheet (a new eighth swatch, `rust_swatch`). It no longer reads as sky-blue glass by day or glows
+  teal at night.
+- The granite: a salt and pepper grain on each face's own plane (3 mm grains over a 1 cm mottle, each faded out before
+  a pixel spans it: seen at 2 to 3 m), and the weather by place on the front, never by tile: streaks under the capitals,
+  the sill course and the cornice (`frame.drips`), a footing darker to the walk, a few old anchor holes with a rust run on
+  the piers. The jointless swatch test stands.
+- The undersides and heads: an underside darkens toward the wall it leaves, a door head and its jambs toward the door
+  at the back of the recess; measured on the review's pose the head soffit went from 114 to 97 against the face's 188,
+  now a gradient rather than a plank. The capitals' boxes stand on the painted capitals (3.94 to 4.08 m, measured by
+  hand: `CAPITAL`), the end two short of the party walls by the painted 0.15 and 0.2 m, so no cap's underside runs out
+  past its painted end.
+- The cast lace: the stoop band's six-piece rings rendered as hexagons and the balconet read as a birdcage. Both are now
+  one strip a run cut in the shader (aGl mode 5, `GLORY_LACE_GLSL`, `discard`, the part-covered pixels dithered by
+  their share, the shadow pass cut at the same line): quatrefoils a picket pair, a lily between, a ring round each post;
+  the balconet flat-fronted with a 0.12 m belly and a band of S scrolls. The near mesh went from 5,412 to 4,198 triangles.
+- The cafe chairs at night: the street lamps' wash lands right after the emissive include, so the facade hands it a
+  face's share of its colour there (`glLampK`: a metal's 1 - metalness, the old box 0.12) and restores it for the lights.
+  The chairs read mid grey at night, not white plastic.
+- The bar at night: the room's night term from 1.6 to 2.6, and a warm glow that comes in with the distance (`GLORY_FAR`,
+  8 to 70 m, 0.75), since from above the plate shows the room's dark floor. Measured with the default lens (58 degrees,
+  each opening's mean luma over its glass box, bars included, against the flats' windows; the review's own renders for
+  before): across the street the arcade 39 to 99 became 53 to 106 and the doors 46 to 72 became 57 to 81, against the
+  flats' brightest 90 and lit mean 72; at 50 m 122 to 128 against 140 and 113; at 100 m 141 to 157 against 127; at
+  190 m 34 to 46 became 146 to 151 against 145 and 91. The open bar is now the brightest glass on the front from 100 m.
+- The art's memory: a computer decoded Glory's four images at the step in every session (about 28.6 MB of GPU with the
+  mips). Every device now fetches the bytes at the step and decodes them the first time the eye comes within 600 m after
+  Enter. A phone, once decoded, holds about 7.2 MB and never releases it after the eye leaves Old City: noted in
+  handoff with the numbers, acceptable under the deferral.
+- The LOD switch: the far level's stoop carries its railings as the lace's whole-railing kind, one strip a run (78
+  triangles far, up from 62). Same pose at 195 m, near against far: 51 pixels differ by more than 24 levels in Glory's
+  window by night, 87 by day, about what the review found; the slab no longer goes bare.
+
+### Budgets
+- Glory: near 4,198 triangles (5,412 before), far 78 (62), 4,276 in all against 6,000; one draw at either level; two or
+  three Glory programs in a headless run as the shadow variants compile (the facade in one and two shadow maps, the
+  fold), two on the phone; no link failures, only the old 'Unable to serialize Texture' warnings. The frame's totals at the review's five perf poses moved by run-to-run scene noise
+  (377 to 380 calls across the street), not by Glory, which draws the same one call.
+- Streams unchanged: aGl four normalized bytes, every stream a multiple of four bytes.
+
+### Noted, not changed
+- The neighbours: 122-124 lacks the full-height black-painted brick strip against Glory's east edge in the Bright MLS
+  view, its "124 Offices" green awning and its Neoclassical front; both neighbours' white six-over-six generic sashes look
+  plainer beside Glory's photographic front. Grass tufts grow from the paving at the stoop's foot (the same under
+  `?glory=0`). In rain neither Glory's granite nor its neighbours darken or shine wet; that is city-wide.
+- For Mike: Yelp lists an "Oberon" at 126 Chestnut.
+- The balconet's scrolls at a grazing angle from directly below dither to a fine perforated look; that is the lace's
+  honest coverage with no multisampled alpha.
+- Renders: landmarks/glory/fix2/r3 and r4 (computer), p1 (phone), g0 (`?glory=0`), pairs (the review's renders on the
+  left), lod_n_195.png and lod_d_195.png (near against far at one pose).
+
+## Round 191, the third review's fixes to Glory (Oct 14)
+
+- The third review looked at Glory from 0.6 m to 300 m by day, at dusk and at night, on a computer and on a phone, on the
+  recovery tier, through the search's landing and a frame-time trace. Five must-fixes and eleven should-fixes. All are
+  done but two, said below; no new images were asked of OpenAI (fifteen calls in all stands).
+
+### The stone
+- The second review's grain, hashed square cells of 3 mm stepped to dark and light specks over a 1 cm mottle, read as
+  digital dither up close: diagonal rows of cells (the sin hash's lattice), sandpaper at 1.4 m. The photographs' stone is
+  smooth and pale, its only marks close up the stains, the drips and the old anchor holes.
+- Now smooth value noise (a sin-free hash, `glH2`, eased between its cells, `glVN`) in three turned octaves of 4 mm,
+  1.2 cm and 4.5 cm, about 5% all told, each faded out by the pixel's footprint before it spans the octave's cells. The
+  drips, the footing and the anchor holes are unchanged.
+
+### The muntins
+- Within 2 m the bars followed the generated image's hand-drawn ones: a door leaf's vertical bar jogging a texel between
+  lites, bulging at every crossing, and every lite a rounded rectangle, the 0.5 contour of the filtered mask sharpened.
+- The bake (`regular_lites`): every sash (the key closed over its muntins) has its lites in columns and rows; a column's
+  sides and a row's head and foot are their lites' medians, the sash grows two source pixels toward its outer frame, and
+  every muntin is a straight bar two texels wide on the texel boundary nearest its middle. The lower elevation's mask now
+  holds only 0 and 255, and all 232 lites (eight leaves of twelve, eight transoms, eight casements of sixteen) are filled
+  rectangles. The same bars are painted into the atlas in the frame's own colour (`paint_bars`, the median of the image's
+  bars as filled from the dark frame: the raw image's carry the key's green rim, which the first try painted).
+- The shader reads the mask texel by texel where it is magnified, its edges eased over a pixel (`textureGrad` at the
+  texel-snapped coordinate, with the true gradients, on WebGL 2), and filtered as before where a pixel spans a texel.
+  At 0.9 m and 1.4 m the bars are straight and the corners square (r1/d04, r1/d03, r1/n02).
+
+### The seams
+- `noise_swatch` built its blotches from cells resized without wrapping and never made them tile, so every concrete tile
+  (1.5 m) and roof tile (3 m) ended at a hard edge: a seam down the stoop's deck and through every tread and riser, and
+  every 1.5 m along its fascia. Every field is now `periodic` (the cells tiled three by three before the resize, the
+  middle kept); without the grain a tile's wrap is no harder than any step inside it (tested). The concrete is a fine
+  aggregate's grain over a faint mottle at 7%, not 8 cm clouds at 14%. No seam shows on the stoop, the steps or the fascia
+  (r1/e01, r1/e04).
+
+### The bar at night, from the street
+- From the sidewalks and walking up Chestnut the deep reveals hide the lit glass, which is right, but nothing warm came
+  out: the stoop, the steps and the jambs took only the street lamps and the two lanterns, and the open bar looked shut
+  beside 128's glowing shop.
+- In the facade shader, by position, no new geometry: each lit opening is a warm panel (2700 K) at its glass, its light
+  from the nearest point of the glass's middle half (so a jamb sees across it, a head and the stoop up and down into it),
+  N dot L, falling off as 1 / (1 + 1.2 d squared) to nothing at 3.2 m from the glass, and none behind its plane
+  (`glSpill`). The four doors take the bar's hours, the four arches the room upstairs'. It lights the jambs, the heads,
+  the stoop's deck, the steps, the railings and the chairs; the deck in front of the bar now glows from either sidewalk
+  (r2/n03, r2/n04, r2/k02).
+- The bar's own door leaf stands open while it is open in fair weather (no rain, snow or hail falling, over 50 F where
+  the live weather says): the east leaf of the entrance, as in the Bright MLS view and gloryphilly IMG6, swung out 92
+  degrees on its outer stile, both faces from its own pixels in the elevation (aGl mode 6: dark glossy glass, no room
+  behind it), folded away in both passes when shut (`uGlDoor`). Its doorway on the recessed face is all glass, the room
+  interior-mapped through it, rough rather than glazed. The bake measures the leaves from the regular sashes
+  (`door_leaves`: the stile 0.1 m outside the glass, the head 0.11 m under the transoms' glass). The entrance was the
+  darkest bay by day; now the bar shows through it (r2/d01, r1/d03).
+
+### The search
+- The search's mark stood at the door, a 5.2 m pin for 20 s: in the very view the search lands on, it covered the GLORY
+  board, the entrance and the middle bays, and from 200 m it sat on the front as a cream disc. It stands over the parapet
+  now, 20 m up, above the landing frame's top (about 15.5 m at 13 m) and still marking the place on the way in
+  (r2/glide-landed-day, -night).
+- '126 chestnut' fell through to the address lookup, which landed without the card. The index carries the address under
+  the bar's own name: '126 chestnut', '126 Chestnut St' and '126 chestnut street' all find Glory.
+
+### The rest
+- The east return: 124's front stands back 1.1 to 1.3 m from the lot line, so Glory's own east party wall shows full
+  height from the east, drawn as red brick. It is painted black over the storefront (from 4.1 m), the brick's relief
+  through the paint, red brick only beside the granite base, as the Bright MLS view from that sidewalk shows (r1/e08).
+- A tap under 2 m opened nothing: the generic ground rule ran before Glory's tests. They are asked first now, for any hit
+  over the walk's own level (10 cm). Probed from the west sidewalk, across the street, the east sidewalk and 12 m up:
+  the door at 1.2 and 1.6 m, the open leaf, a stoop railing, a chair, the stoop's deck and a step name Glory; the walk
+  itself and 128's and 124's ground floors open nothing.
+- The lanterns: the globe's normals are the round jar's at every corner (`quadN`, the same triangles), so it shades
+  round; the glow is an amber filament (about 2700 K) and lower, so the tone curve keeps its colour.
+- The stoop's band: its 1.3 cm lines and 6 cm quatrefoils read as a thin chain of rings. Now a cast fleuron a picket,
+  as gloryphilly IMG6 shows: a pointed arch from scrolled feet that meet the next one's, a spade over its point and a drop
+  inside, strokes of about 2 cm, the motif filling the band, and a heavy ring round each post (prototyped as a numpy port
+  first; r1/e03).
+- The chairs: at 0.7 metalness the sky mirrored in the seats as light blue plastic. Galvanized steel is a dull metal now
+  (0.25 metalness, 0.58 roughness, a mid grey); the backs have three slats curved round the seat, and the seat a
+  turned-down edge. The tables' tops have an apron and a satin black.
+- The old sign box: its enamel is the photograph's pale worn white-grey (190, 192, 186), chipped to rust.
+- The block: the meadow showed in a strip before 122 and 124's set-back front. The narrowed block of Chestnut lays its
+  walks 5 m wide, on under the fronts (unseen where a front is on the line), and the block's walk is handed to the app
+  as paving (`G.paved`, `REBUILD_PAVED`), where no grass tuft is sown whatever ring sowed it: the tufts at the stoop's foot
+  are gone too (none on the block's walk, probed).
+- The GLORY board after dark: lit from below by the lanterns' warm wash, and its canvas read a little sharper (a -0.6
+  mip bias), so across the street at night the L keeps its foot and the trade's line stays.
+- The room upstairs across the street at night showed big dark diagonals over every casement: from the street below
+  it is mostly its ceiling, which the plate holds only as its top rows run to the vanishing point. The ceiling is drawn
+  in the shader as IMG4 shows it: slate-grey paint, the spiral duct down the middle, strings of bulbs across the room.
+  The outer two casements still show the side walls' cream, as a room seen from below would.
+- The recovery tier: tier 2 decoded all of Glory's art. It decodes only within 200 m (the near level's reach) and never
+  loads the rooms; the open bar's glass glows a plain warm after dark (also before the art lands anywhere). Probed with
+  `?lite=2` on the phone: art loaded, rooms 0, the rooms' textures the 1 by 1 placeholders (about 2.1 MB of the phone's
+  7.2 not held).
+- The uploads: a decoded image waits in `GLORY.upq` and `gloryStep` sends one a frame (`gloryUpload`, through
+  `renderer.initTexture`). The four now land in four frames (frames 2 to 5 of a session that starts beside Glory). On the
+  review's own trace (a flight in from 900 m at 5 m a frame, headless), the landing frame went from 134 to 115 ms and the
+  next from 69 to 18; the atlas with its mips is still one upload of about 100 ms headless on its own, and the 60 fps
+  work should time it on a device.
+
+### Budgets
+- Glory: near 4,686 triangles (4,198 before: the open leaf 8, the chairs' slats and edges and the tables' aprons the
+  rest), far 78; 4,764 in all against 6,000; one draw at either level. Two Glory programs on the phone, no link failures
+  on the computer, the phone or tier 2, only the old 'Unable to serialize Texture' warnings.
+- The phone at the review's six perf poses: Glory one call of 4,686 triangles near, one of 78 far (300 m).
+- Streams unchanged: aGl four normalized bytes, every stream a multiple of four bytes. No new sampler.
+
+### Not done
+- The bar's glass by day from across the street: the upper middle casements still read as dark sheets (the room
+  upstairs shut by day, its glass as dark as its bars at 15 m). Unchanged from the reviews' renders.
+- At 0.6 m beside a pier (the review's e02 pose) a sliver of Glory's empty interior and the ground under it shows past
+  the pier's corner. It was there before this round and it is not a hole: the page's camera clips at 0.75 m (its near
+  plane under the log depth buffer), and the jamb there lies 0.6 to 0.85 m ahead of the eye.
+
+### Renders
+- landmarks/glory/fix3: r1 and r2 (computer), phone (six poses and three of the integration review's), lite2 (tier 2),
+  hitch (the trace), g0 and r0 (`?glory=0`, `?real=0`), look/ (crops, pairs, the band prototype).
