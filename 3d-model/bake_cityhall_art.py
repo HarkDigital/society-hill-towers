@@ -7,7 +7,8 @@ fetch_cityhall_art.py makes one straight-on elevation a cell (lidar_cache/cityha
 four bays, the three bays beside a centre pavilion, a centre pavilion's front, a corner pavilion's face, the courtyard's
 wall (fix2: the plain north face's, the east, west and south faces' with their great arched windows, and the bay over each
 passage's courtyard end), the tower's stages, the clock stage, a face of the dome, the dormers, a turret's top stage, the
-apse, a balustrade, a patch of plain ashlar and the tower's channel-jointed courses. Every pane is a flat chroma-key green,
+apse, a balustrade, a patch of plain ashlar and the tower's channel-jointed courses; fix3: a face of the centre crowns'
+cornice box with its pediment, the base course's granite and a bay of a passage's wall. Every pane is a flat chroma-key green,
 and every opening the page cuts (the centre pavilion's great arch, the bay's small arch, the apse's door) a flat magenta.
 
 Per cell the bake:
@@ -16,6 +17,8 @@ Per cell the bake:
   glass, lighter toward its head, inside a dark sash frame with a meeting rail across a tall sash and a muntin down a wide
   one (fix2); the clock's dial (the largest key in the clock cell) is filled with the dial's teal and a gilt ring, every
   magenta opening with the passage's shade (the near level cuts the opening there; the far level has no passage, fix1);
+- tones every block of the tower's channel-jointed courses its own and cuts in the head joints the picture left out
+  (courses, fix3), and fills the crown box's keyed sky with its stone, measuring the pediment the page builds;
 - blurs out any carving the image model drew as lettering (SOFTEN), calibrates the picture's median stone to the
   photographs' weathered marble (MARBLE), the tower's cleaner masonry (TOWER_STONE) or its painted metal (METAL), and
   takes every recess of the stone darker (SOOT, fix2);
@@ -27,7 +30,8 @@ Per cell the bake:
 
 The mask is opaque RGB at MASK_DIV of the atlas (bake_fronts.py's convention: an image with alpha reaches WebGL through a
 premultiplied decode on WebKit): r the glass, g the window's number (1 to 255, for the night's rooms), b on the glass the
-height within its pane (2 at its foot to 117 at its head, fix2), b 200 the dial's glass, 120 a dark void and 60 the sky
+height within its pane (2 at its foot to 117 at its head, fix2; fix3: both kept on the sash's bars, which are not glass, and
+run a few pixels out over the stone, so a filtered number is never another window's), b 200 the dial's glass, 120 a dark void and 60 the sky
 between the balusters (cut out). The manifest names the files and carries every cell's rect in texture uv (v up, as the page
 samples a flipped image), its size in metres, its mean colour (the far level's vertex colours), and what the page builds
 to the picture: the portal's arch on the centre pavilion, the small arch on the courtyard's bay and the apse's door
@@ -53,6 +57,8 @@ TOWER_STONE = (190, 186, 176)   # the tower's masonry to 102.8 m: cleaner than t
                                 # warmer than the painted iron above it (fix1: S Broad Street at dusk reads the belvedere (149, 152,
                                 # 143) under the clock stage's (154, 165, 169) and the dome's (155, 168, 176): the two-tone tower)
 SOOT = 0.55                # fix2: the recesses' soot, how far a pixel darker than its surroundings is taken darker still
+GRANITE = (134, 130, 123)   # fix3: the base course's granite, the painted basements' own grey (the cells read (130 to 156, 123 to
+                            # 151, 111 to 141) in their bottom metres), a shade cooler: the water table, the faces' feet, pedestals
 METAL = (188, 192, 198)    # the tower's paint from the clock stage up (0xc8ccd1 in the photographs' sun; a shade under it here,
                            # where the sun and the sky's specular add their own)
 GLASS_TOP, GLASS_FOOT = (58, 70, 80), (20, 27, 33)   # a pane's sky reflection at its head, its dark foot
@@ -94,6 +100,11 @@ LATE = {
     'rustic': ('ch_rustic', (4.65, 3.56), (0, 183, 1024, 967), [(0, 3.56), (784, 0)], 'tower', 'xy', 1.0),   # fix2: four of the tower's courses, for the batter
     'ashlar': ('ch_ashlar', (4.0, 4.0), None, [(0, 4.0), (1024, 0)], 'stone', 'xy', 1.0),
     'balus': ('ch_balustrade', (3.3, 1.1), None, [(0, 1.1), (512, 0)], 'stone', True, 1.4),
+    # fix3: the centre crowns' cornice box (its face from the mansard's head at 53.6 m to its pediment's apex; the cornice's
+    # top at 3.4 m, 57.0), the base course's granite (five 0.75 m courses), and a passage's wall to the vault's springing
+    'crown': ('ch_crown', (8.6, 5.06), (32, 140, 1504, 758), [(0, 5.06), (203, 3.4), (618, 0)], 'stone', False, 1.0),
+    'granite': ('ch_granite', (4.2, 3.75), (110, 157, 1019, 967), [(0, 3.75), (810, 0)], 'granite', 'xy', 1.0),
+    'vest': ('ch_vest', (6.2, 6.6), (56, 0, 950, 952), [(0, 6.6), (952, 0)], 'stone', True, 0.75),
 }
 
 
@@ -183,6 +194,84 @@ def soften(cid, a):
     return a
 
 
+def courses(cid, a, glass, wm, hm, wrap):
+    """fix3 (the review: the tower's batter and shaft read as siding under an overcast, level lines and nothing else): each
+    course of the channel-jointed marble found by its joint's dark line, its blocks by their head joints (the picture's own
+    where it drew them, staggered ones of 1.2 to 2.2 m where it did not), each block a tone of its own and every head joint cut
+    in as a dark line with a lit edge; nothing within 0.9 m of a window (its surround) and no band that is not a course (the
+    string course, the cornice's frieze)"""
+    H, W = a.shape[:2]
+    ppm_x, ppm_y = W / wm, H / hm
+    L = lum(a)
+    hp = L - box_blur(L, max(3, int(0.25 * ppm_y)))
+    keep = ~dilate(glass, max(2, int(0.9 * ppm_x)))
+    rowd = np.array([hp[y][keep[y]].mean() if keep[y].sum() > W * 0.3 else 0.0 for y in range(H)])
+    thr = rowd.mean() - 1.2 * rowd.std()
+    sep = int(0.4 * ppm_y)
+    joints = []
+    for y in np.argsort(rowd):
+        if rowd[y] > thr:
+            break
+        if all(abs(y - j) >= sep for j in joints):
+            joints.append(int(y))
+    joints.sort()
+    if wrap == 'xy' and joints:
+        joints = [joints[-1] - H] + joints + [joints[0] + H]
+    rng = np.random.RandomState(7 if cid == 'rustic' else 11)
+    out = a.copy()
+    lastHeads = []
+    n = 0
+    for j0, j1 in zip(joints, joints[1:]):
+        hgt = (j1 - j0) / ppm_y
+        if not (0.4 <= hgt <= 1.25):
+            lastHeads = []
+            continue
+        ya, yb = j0 + 2, j1 - 1
+        ys = np.arange(ya, yb) % H
+        band = hp[ys]
+        inner = band[int(len(ys) * 0.25):max(int(len(ys) * 0.75), int(len(ys) * 0.25) + 1)]
+        coln = inner.mean(0)
+        found = []
+        cthr = coln.mean() - 2.2 * coln.std()
+        for x in np.argsort(coln):
+            if coln[x] > cthr:
+                break
+            if all(min(abs(x - f), W - abs(x - f)) >= int(0.6 * ppm_x) for f in found):
+                found.append(int(x))
+        heads = sorted(found)
+        made = []
+        if len(heads) < max(2, int(wm / 3.0)):
+            # none drawn: staggered from the course under it
+            x = (lastHeads[0] + int(rng.uniform(0.5, 0.9) * ppm_x)) if lastHeads else int(rng.uniform(0, 1.5) * ppm_x)
+            heads = []
+            while x < W + 2.2 * ppm_x:
+                heads.append(x % W if wrap else x)
+                x += int(rng.uniform(1.2, 2.2) * ppm_x)
+            heads = sorted(h for h in heads if 0 <= h < W)
+            made = heads
+        lastHeads = heads
+        cuts = ([0] if not wrap else []) + heads + ([W] if not wrap else [])
+        if wrap and heads:
+            cuts = heads + [heads[0] + W]
+        for x0, x1 in zip(cuts, cuts[1:]):
+            t = float(np.clip(1 + 0.035 * rng.randn(), 0.92, 1.08))
+            xs = np.arange(x0, x1) % W
+            reg = np.ix_(ys, xs)
+            k = keep[reg]
+            blk = out[reg]
+            blk[k] *= t
+            out[reg] = blk
+        for x in made:   # a head joint where the picture drew none: a dark line, its lit edge beside it
+            for dx, f in ((0, 0.62), (1, 0.7), (2, 1.05)):
+                xx = (x + dx) % W
+                m = keep[ys, xx]
+                col = out[ys, xx]
+                col[m] *= f
+                out[ys, xx] = col
+        n += 1
+    return np.clip(out, 0, 255), n
+
+
 def keys(a):
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     mx = np.maximum(r, b)
@@ -215,7 +304,7 @@ def prep(cid, spec):
     # the stone's calibration: the median of everything that is not a key to the photographs' colour, per channel
     rest = ~(green | magenta)
     med = np.median(a[rest], axis=0)
-    tgt = np.array(METAL if kind == 'metal' else TOWER_STONE if kind == 'tower' else MARBLE, np.float32)
+    tgt = np.array(METAL if kind == 'metal' else TOWER_STONE if kind == 'tower' else GRANITE if kind == 'granite' else MARBLE, np.float32)
     a = np.clip(a * (tgt / np.maximum(med, 1.0)), 0, 255)
     a = soften(cid, a)
     # fix2, the soot: a pixel darker than the stone round it (a joint, a reveal, the underside of a cornice, the deep of a
@@ -226,9 +315,26 @@ def prep(cid, spec):
         Lb = box_blur(L, max(2, int(round(0.35 * W / wm))))
         f = np.clip(L / np.maximum(Lb, 1.0), 0.35, 1.0) ** SOOT
         a = a * f[..., None]
+    if cid in ('rustic', 'tower_low'):
+        a, nc = courses(cid, a, green, wm, hm, wrap)
+        print('  %s: %d courses toned' % (cid, nc), flush=True)
     lab, boxes = label(green)
     mask = np.zeros((H, W, 3), np.uint8)
     meta = {}
+    if cid == 'crown' and magenta.any():
+        # fix3: the crown box's picture has the sky over its cornice beside the pediment keyed magenta; the page builds the
+        # pediment to it and draws nothing there. Measured: the cornice's top (the lowest keyed row), and the pediment's span
+        # just over it and its apex (source rows, remapped below)
+        rows_k = np.nonzero(magenta.sum(1) > 0.3 * W)[0]   # (a sliver at the box's edges runs further down, and dilate's roll
+        rows_k = rows_k[rows_k < 0.8 * H]                  # wraps the top row's key round to the bottom)
+        base = int(rows_k.max()) + 1
+        r2 = max(0, base - 4)
+        solid = np.nonzero(~magenta[r2])[0]
+        mid = solid[(solid > W * 0.2) & (solid < W * 0.8)]
+        apex = int(np.nonzero((~magenta[:, W // 2 - 3:W // 2 + 4]).all(1))[0].min())
+        meta['ped'] = [float(mid.min()) / W, float(mid.max() + 1) / W, base, apex]
+        a[magenta] = np.median(a[~magenta], axis=0)
+        magenta = np.zeros_like(magenta)
     dial = void = 0
     if boxes:
         big = 1 + int(np.argmax([bx[4] for bx in boxes]))
@@ -289,7 +395,24 @@ def prep(cid, spec):
         reg = a[by0:by1, bx0:bx1]
         reg[bars] = FRAME
         mreg = mask[by0:by1, bx0:bx1]
-        mreg[bars] = 0
+        mreg[bars, 0] = 0   # (fix3: not glass, but its window's number and height kept: filtered, a bar's 0 in the number read
+                            # as some other window's, and the night drew every sash a dotted line of lit and unlit rooms)
+    # fix3: the window's number and height run a few pixels out over the stone round it (the glass's red stays 0 there), so the
+    # filtered number at a pane's edge is its own
+    if win:
+        for _ in range(3):
+            z = (mask[..., 1] == 0) & (mask[..., 2] < 2)
+            for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                src = np.roll(np.roll(mask, dy, 0), dx, 1)
+                take = z & (src[..., 1] > 0) & (src[..., 2] < 118)
+                mask[take, 1] = src[take, 1]; mask[take, 2] = src[take, 2]
+                z &= ~take
+    # fix3: the lowest pane's foot in the bottom 5.6 m (the water table stands under it, and its picture's window is never
+    # painted on the projecting band: the flanks' basement arches come down to 0.81 m)
+    if kind == 'stone' and cid in ('curtain', 'flank', 'centre', 'corner', 'court', 'court_main'):
+        feet = [b[2] + 1 for b in boxes if b[4] >= 12 and (H - (b[2] + 1)) < H * 0.25]
+        if feet:
+            meta['sill'] = max(feet)   # a source row, the lowest foot (remapped below)
     if magenta.any():
         a[magenta] = PORTAL   # the far level draws no passage: the arch reads dark there (the near level cuts it open)
         mask[magenta] = (0, 0, 120)
@@ -444,6 +567,11 @@ def main():
         if 'arch' in meta:
             u0, u1, ycrown, yspring, yfoot = meta['arch']
             meta['arch'] = [round(u0 * wm, 3), round(u1 * wm, 3), round(row_to_m(rows, yspring), 3), round(row_to_m(rows, ycrown), 3)]
+        if 'ped' in meta:   # [s0, s1] metres across, the cornice's top and the apex in metres
+            p0, p1, rb, ra = meta['ped']
+            meta['ped'] = [round(p0 * wm, 3), round(p1 * wm, 3), round(row_to_m(rows, rb), 3), round(row_to_m(rows, ra), 3)]
+        if 'sill' in meta:
+            meta['sill'] = round(row_to_m(rows, meta['sill']), 3)
         if 'dial' in meta:
             cu, cv, ru, rv = meta['dial']
             Hs = rows[-1][0]

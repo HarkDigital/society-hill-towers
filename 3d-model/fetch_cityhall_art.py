@@ -211,6 +211,21 @@ IMAGES = [
      'narrow window either side of it. Above that a tall window of three lights divided by two free-standing Ionic columns '
      'carrying a plain entablature. At the top a large round-arched window with a stone mullion, a transom and a radial '
      'fanlight in a moulded arched surround, under a moulded cornice. Level string courses between the storeys.'),
+    # fix3 (the review: the centre pavilions' crown boxes, dead centre under the tower in both axial views, were plain ashlar
+    # with tiny brackets, where N Broad Street's photograph shows a heavy bracket frieze, dentils and a pediment with a mask on
+    # each face: Mansard_-_Philadelphia_PA_-_Philadelphia_City_Hall_1_.jpg). The page builds the pediment to the picture; the
+    # flat magenta beside it is never drawn
+    ('ch_crown', '1536x896', 'stone', 'one face of the square cornice box at the head of the tall slate crown over a central '
+     'entrance pavilion', 'box face', 'the bottom edge is the head of the slate mansard the box stands on, the top edge is the '
+     'apex of the small pediment in its middle, and the left and right edges are the outer corners of the box',
+     'A short square box of white marble. Across its foot, about a quarter of the height, a plain moulded base with sunk '
+     'panels. Above it a deep frieze of large carved console brackets, eleven of them evenly spaced across the whole width, '
+     'each a heavy scrolled bracket with an acanthus leaf, sunk panels between them, carrying a row of fine dentils and a deep '
+     'projecting moulded cornice whose top edge is at about two thirds of the image height. In the exact middle, standing on '
+     'the cornice, a small triangular pediment two fifths of the image width wide at its base, its raking cornices moulded '
+     'and dentilled, with a carved classical mask between garlands filling its tympanum; its apex touches the top edge. '
+     'Everything above the cornice except the pediment is one flat uniform pure magenta (#FF00FF) with nothing in it; nothing '
+     'else is that magenta.'),
     ('ch_balustrade', '1536x512', 'stone', 'a straight run of the white marble balustrade along the tower\'s balconies',
      'balustrade', 'the bottom edge is the floor the balustrade stands on, the top edge is the top of its handrail, and the '
      'left and right edges are cut through the middle of two balusters so the run repeats seamlessly side by side',
@@ -226,7 +241,28 @@ TILES = [
      'metres across: long blocks in level courses, exactly seven courses from the top of the image to the bottom, every '
      'horizontal joint a deep sunk V-shaped channel casting a thin dark shadow line, thin vertical joints staggered between '
      'the courses, warm white marble with faint grey veining and soft grey weathering'),
+    # fix3 (the review: the water table and the faces' feet wore the wall's picture, its windows painted on a projecting band
+    # and its bottom row stretched into streaks on the plinth): the granite of the base course, for them and the pedestals
+    ('ch_granite', '1024x1024', 'the light grey granite of the base course of Philadelphia City Hall, about 3 metres across: '
+     'large dressed blocks about 0.75 metres high and 1.5 metres long in level courses with staggered vertical joints, '
+     'speckled light grey granite with small black and white flecks, thin dark joints, faint soiling and weathering'),
 ]
+# fix3 (the review: the passages read as a regular grey tile tunnel; the vestibules have rusticated marble walls over a
+# granite dado, Philadelphia_-_Philadelphia_City_Hall_-_20231007134150.jpg): one bay of a passage's wall that repeats along
+# it, from the floor to the vault's springing (the red granite columns and their lanterns are the page's)
+WALLS = [
+    ('ch_vest', '1024x1120', 'one bay of the side wall of the vaulted entrance passage through Philadelphia City Hall, seen '
+     'straight on from across the passage, the bottom edge the paved floor, the top edge the springing line of the barrel '
+     'vault, the left and right edges cut anywhere so the bay repeats seamlessly side by side',
+     'Large smooth pale marble blocks, each about 1.8 metres long and 0.6 metres high, laid in level courses with staggered '
+     'joints, every joint a deep chamfered V-shaped channel so each block stands out as a bevelled panel. At the foot a dado '
+     'of dark speckled grey granite about one sixth of the height tall, a row of square panels each cut as a low raised '
+     'four-sided diamond point, capped by a plain moulded granite rail. At the very top a simple moulded marble impost '
+     'course. Even, dim, warm interior light with no hot spots and no cast shadows. No doors, no windows, no columns, no '
+     'lamps, no signs, no lettering, no people.'),
+]
+FRAME_WALL = ('Seamless tileable texture for a 3D model: a perfectly orthographic, straight-on photograph of {what}. {body} '
+              'Photorealistic, natural colours, uniform detail so it repeats without a visible seam.')
 
 
 def prompt_of(img):
@@ -239,6 +275,7 @@ def prompt_of(img):
 def jobs():
     out = [(i[0], i[1], prompt_of(i)) for i in IMAGES]
     out += [(t[0], t[1], FRAME_TILE.format(what=t[2])) for t in TILES]
+    out += [(w[0], w[1], FRAME_WALL.format(what=w[2], body=w[3])) for w in WALLS]
     return out
 
 

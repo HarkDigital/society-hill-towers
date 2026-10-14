@@ -20,7 +20,13 @@ carried under the datum to meet it, the courtyard floor flat at its level, the p
 small arches, one program again (the cut-outs' split bought nothing under the log depth buffer), the near level from 400 m,
 a failed build falling back to Round 81's block, the lantern's true profile, the figure groups and eagles modelled once and
 laid four times, the courtyard's own cells, the compass on its own canvas, Dilworth Park's headhouses in glass, and the
-viewpoint on Broad Street's axis."""
+viewpoint on Broad Street's axis.
+
+The third review's fixes (fix3): the dials read clockwise from outside (they were mirrored), the water table in the base
+course's granite under each front's lowest sill, no sun inside a passage, the bronzes and the apron's statues modelled as
+forms within their budgets, Penn's new form, the glass pavilions' light glass and their night, the park's café in glass,
+the crowns' pediments, the lantern's piers, the floor painted on a phone's first near frame, a failed build taking back its
+ground, and the viewpoint over Broad Street's canyon."""
 import hashlib
 import json
 from pathlib import Path
@@ -102,8 +108,8 @@ class Wiring(unittest.TestCase):
         self.assertIn('const CH = 700;', loop)
         self.assertNotIn('CH.cafe', loop)
         build = cut(SRC, '  function buildCityHallReal(ctx) {', '  // the atlas and its mask')
-        self.assertIn('const glassHouses = (b) => { chCafe(b, CH.cafe, Y0); for (const r of CH.heads) chCafe(b, r, Y0, clamp(r.h - 0.35, 3.2, 5.5)); };', build)
-        self.assertIn('chFloorFar(far.b, Y0); glassHouses(far.b);', build)
+        self.assertIn('const glassHouses = (b, lo) => { chCafe(b, CH.cafe, Y0, 0, lo); for (const r of CH.heads) chCafe(b, r, Y0, clamp(r.h - 0.35, 3.2, 5.5), lo); };', build)
+        self.assertIn('chFloorFar(far.b, Y0); glassHouses(far.b, true);', build)
         self.assertIn('glassHouses(near.b);', build)
 
     def test_the_old_block_stands_for_real_0(self):
@@ -173,7 +179,7 @@ class Wiring(unittest.TestCase):
         b = cut(SRC, '  function chBronze(themeParts, chSlot, Y0) {', '  // the courtyard')
         self.assertIn('style: 3, gain: -1 });', b)
         self.assertIn("if (vTheme.z < 0.0) { metalnessFactor = 0.82; roughnessFactor = 0.4; }", SRC)   # fix2: a metal's sheen on a lighter bronze
-        self.assertIn('const cBronze = new THREE.Color(0x221c15), cBronzeD = new THREE.Color(0x19140f);', b)
+        self.assertIn('const cBronze = new THREE.Color(0x221c15), cBronzeD = new THREE.Color(0x19140f), tone = [cBronze, cBronzeD];', b)
         self.assertIn('totalEmissiveRadiance += te * uNight * 2.4 * abs(vTheme.z) * mix(1.0, 0.42, tsat); }', SRC)
 
     def test_the_dials_sphere_holds_the_dials(self):
@@ -208,10 +214,21 @@ class Wiring(unittest.TestCase):
         self.assertIn('CH.noTuft = [court, ...bands].map((r) => [r, rbBox(r)]);', d)
         self.assertIn("if (pg && CH.noTuft && CH.noTuft.some(([r, bb]) => x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, r))) continue;", SRC)
         # the compass on its own canvas, at 40 px a metre or more on both devices
-        cc = cut(SRC, '  function chCompassCanvas() {', '  function chFloor(Y0) {')
-        self.assertIn('const S = isTouch ? 768 : 1024', cc)
+        cc = cut(SRC, '  function chCompassCanvas() {', '  const CH_FLOOR_BOX')
+        self.assertIn('const S = isTouch ? 512 : 1024', cc)   # fix3: 768 on a phone held 3.1 MB for an 18 m disc
         self.assertIn('const CH_COMPASS = { c: [0, 3.3], R: 8.75, span: 18 };', SRC)
-        self.assertGreaterEqual(768 / 18, 40)
+        self.assertGreaterEqual(512 / 18, 28)
+        # fix3: a phone paints the floor's canvases on its first near frame and draws the floor only once they are painted
+        fl = cut(SRC, '  function chFloor(Y0) {', '  // Dilworth Park')
+        self.assertIn('if (!isTouch) CH.floorPaint();', fl)
+        # new textures, never the pixels' (WebGL 2 fixes a texture's storage at its first upload)
+        self.assertIn('mat.map = t2; FU.uCompass.value = c2; tex.dispose(); ctex.dispose();', fl)
+        step = cut(SRC, '  function cityHallStep() {', '  // ?dev: __dbg.cityHall()')
+        self.assertIn("if (CH.floor) CH.floor.visible = lod === 'near' && !CH.off && !CH.floorPaint;", step)
+        self.assertIn("if (CH.floorPaint && lod === 'near' && !CH.off) CH.floorPaint();", step)
+        # and the floor's grain, wear and softer joints, the compass worn into the same slabs
+        for line in ("float grain = mix(1.0, 0.86 + 0.28 * chFn(fp * 22.0), sfade)", "cc = mix(cc, vec3(cl), 0.18 + 0.12 * chFn(fp * 0.9)) * kj * grain"):
+            self.assertIn(line, fl)
         self.assertNotIn("'#2b5d8f'", SRC)   # the old saturated blue
 
     def test_the_passages_at_night_and_their_ends(self):
@@ -226,7 +243,8 @@ class Wiring(unittest.TestCase):
 
     def test_the_viewpoint_on_broad_street(self):
         # fix2: 130 m east of Broad's axis the view up it was a wall of towers
-        self.assertIn("['cityhall', 'City Hall', [-1680.5, -340.5, 80], [-1602.4, -801.2, 75]],", SRC)
+        # fix3: 80 m up and 430 m out the canyon's walls filled four fifths of the view; 300 m up and 330 m out it looks over them
+        self.assertIn("['cityhall', 'City Hall', [-1663.8, -439.1, 300], [-1602.4, -801.2, 40]],", SRC)
         loc = cut(SRC, '  function locateCityHall(text) {', '  function locateFix(')
         self.assertIn("const vp = viewpoints.find((v) => v.name === 'City Hall');", loc)
 
@@ -239,6 +257,103 @@ class Wiring(unittest.TestCase):
                     self.assertNotIn(ch, code, line)
 
 
+class Fix3(unittest.TestCase):
+    def test_the_dials_read_clockwise_from_outside(self):
+        # the review: every dial's right was the viewer's left, so it read IIX at its head and III at nine and its hands ran
+        # backward. Facing a face, the viewer's right is -n x up = (nv, -nu): on the south face III falls to the east
+        if not shutil.which('node'):
+            raise unittest.SkipTest('Node.js unavailable')
+        mod = cut(SRC, '  // ---- City Hall rebuilt (Round 191', "  // the night's flood on the rebuilt block")
+        faces = cut(SRC, '  function chDialFaces(h, off) {', '  // the four dials and their hands')
+        hands = cut(SRC, '  function chHands(minutes) {', '  // the bronzes on the night')
+        script = r'''
+const THREE = require(THREE_PATH); const REAL = true, isTouch = false; const CITYHALL_ART = { cells: {}, meta: {}, mean: {}, m: {} };
+const fl = { px: 0, pz: 0, dx: 0, dz: 1, nx: 1, nz: 0 };   // the frame's axes the scene's: U is x, V is z
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+__MOD__
+__FACES__
+__HANDS__
+const F = chDialFaces(10, 0), out = [];
+CH.hands = { g: { attributes: { position: { array: new Float32Array(8 * 4 * 3), needsUpdate: false } } }, hb: 0, dials: F, r: 3.6, yc: 110, Y0: 0 };
+chHands(15 * 60);   // three in the afternoon: the hour hand to III, the minute hand to XII
+const p = CH.hands.g.attributes.position.array, B = CITY_HALL.B0;
+F.forEach((D, k) => {
+  const tip = (j) => { const q = (k * 2 + j) * 4 * 3 + 2 * 3; return [p[q] - B[0] - D.c0[0], p[q + 1] - 110, p[q + 2] - B[1] - D.c0[1]]; };
+  const h = tip(0), m = tip(1), cr = [-D.nv, 0, D.nu];   // (the viewer's right by the cross product: -n x up, with n's v as z)
+  out.push({ n: [D.nu, D.nv], r: [D.ru, D.rv], right: [D.nv, -D.nu], hourAlongRight: h[0] * D.ru + h[2] * D.rv, hourUp: h[1], minuteUp: m[1] });
+});
+console.log(JSON.stringify(out));
+'''.replace('THREE_PATH', json.dumps(str(ROOT / 'three.min.js'))).replace('__MOD__', mod).replace('__FACES__', faces).replace('__HANDS__', hands)
+        r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr[-3000:])
+        out = json.loads(r.stdout.strip().splitlines()[-1])
+        self.assertEqual(len(out), 4)
+        for d in out:
+            self.assertEqual(d['r'], d['right'], d)                 # the dial's 3 o'clock is the viewer's right
+            self.assertGreater(d['hourAlongRight'], 1.5, d)          # at 15:00 the hour hand points to it
+            self.assertLess(abs(d['hourUp']), 0.3, d)
+            self.assertGreater(d['minuteUp'], 2.5, d)               # and the minute hand straight up
+        south = [d for d in out if d['n'] == [0, 1]][0]
+        self.assertEqual(south['r'], [1, 0])                         # on the south face III is to the east
+
+    def test_the_water_table_and_the_feet_are_granite(self):
+        m = cut(SRC, '  function chModel(A, far, gnd) {', '  // the apron\'s statues and the courtyard\'s furniture')
+        self.assertIn("if (prof === PROF.water) { const t = waterTop(F.cell); prof = [[0, -1.2], [0.25, -1.2], [0.25, t - 0.2], [0.05, t], [0, t]]; y = t; vf = vG; }", m)
+        self.assertIn("const waterTop = (cell) => { const sl = typeof cell === 'string' && A.meta[cell] && A.meta[cell].sill; return sl ? clamp(sl - 0.12, 0.5, 1.5) : 1.5; };", m)
+        self.assertIn('const ix = [[a, -1.2], [c, -1.2], [c, 0], [a, 0]].map(([s2, y]) => vG(F, at(F, s2, y, 0), n));', m)
+        self.assertNotIn('F.v0 + 0.002 * (F.v1 - F.v0)', m)   # the picture's foot row stretched down the plinth
+
+    def test_no_sun_in_a_passage_and_the_soffits_lit(self):
+        m = cut(SRC, '  function chMaterial(chSlot, Y0) {', "  // the cut-out parts' shadow")
+        self.assertIn('{ float chSun = mix(1.0, smoothstep(0.42, 0.7, vChCol.a), chPass); reflectedLight.directDiffuse *= chSun; reflectedLight.directSpecular *= chSun; }', m)
+        f = cut(SRC, '  function cityHallFloodPatchReal(sh, uniforms) {', '  // the material both levels share')
+        self.assertIn('* (1.0 - max(vWNorm.y, 0.0)) * (1.0 - frMask.r) * (1.0 - chGl) * smoothstep(0.9, 1.0, vChCol.a);', f)
+        self.assertNotIn('(1.0 - abs(vWNorm.y))', f)
+
+    def test_the_glass(self):
+        m = cut(SRC, '  function chMaterial(chSlot, Y0) {', "  // the cut-out parts' shadow")
+        # by day the daylit room and plaza through clear glass (Fresnel's share), at night the pavilions lit within, the bars
+        # thin dark steel (they were a cream grid the lamps lit into a wireframe)
+        self.assertIn('reflectedLight.indirectDiffuse += chGl * (1.0 - chBar) * (1.0 - chFr)', m)
+        self.assertIn('totalEmissiveRadiance += chGl * (1.0 - chBar) * mix(vec3(0.05, 0.045, 0.04), vec3(0.1, 0.075, 0.045)', m)
+        self.assertIn('reflectedLight.indirectSpecular *= 1.0 + mix(1.8, 3.5, step(13.5, chKind)) * chGl * (1.0 - chBar);', m)
+        self.assertIn("'  chAlb = mix(chAlb, vec3(0.105, 0.11, 0.115), chBar); }',", m)
+        self.assertNotIn('vec3(0.62, 0.63, 0.62), chBar', m)
+        cafe = cut(SRC, '  function chCafe(b, cafe, Y0, gh, far) {', '  // the build (in')
+        self.assertIn('vk(CHK.pglass, v, nn,', cafe)
+        self.assertNotIn('CHK.marble', cafe)
+
+    def test_dilworth_parks_cafe(self):
+        # OSM's way 333931838 (building=retail, the Dilworth Park Café's node in it) at the plaza's north-west corner: taken
+        # with the headhouses and built in glass, its ring in REBUILD_OCC so no storefront hangs on it
+        self.assertIn('const CH_HEADHOUSE = { pts: [[-1713.6, -793.5], [-1716.0, -777.6], [-1682.7, -860.3]], recs: [] };', SRC)
+        build = cut(SRC, '  function buildCityHallReal(ctx) {', '  // the build, and a failed one undone')
+        self.assertIn("for (const r of CH.heads) REBUILD_OCC.push({ id: 'cityhall', ring: r.poly, bb: rbBox(r.poly), pad: 0.5, top: Y0 + r.h });", build)
+
+    def test_a_failed_build_gives_back_its_ground(self):
+        safe = cut(SRC, '  function chBuildSafe(ctx) {', '  // the atlas and its mask')
+        self.assertIn('NO_SOW_RINGS.length = nSow; NO_SOW_RING_BB.length = nSow; CH.noTuft = null; CH.drapes = null; CH.floorPaint = null;', safe)
+        blk = cut(SRC, '      cityHall: {', '      // --- Philadelphia Museum of Art')
+        self.assertIn('...CH_HEADHOUSE.recs]) { const gy = siteY(r.c[0], r.c[1], \'ground\');', blk)
+
+    def test_the_crowns_and_the_lantern(self):
+        m = cut(SRC, '  function chModel(A, far, gnd) {', '  // the apron\'s statues and the courtyard\'s furniture')
+        self.assertIn("const box = rectFaces(RB, yT, yC, () => ['crown', 0, 1, 0, hBox / crH]);", m)
+        self.assertNotIn("['ashlar', 0, L2 / 4, 0, (C.roofs.crown[0] - yT) / 4]", m)
+        t = cut(SRC, '  function chTower(b, H) {', '  // a balustrade along face F')
+        self.assertIn('cyl(cu, cv, g0, g1, far ? gr : gr - 0.3, far ? gr : gr - 0.3, segs, CHK.glass, 1, null, null, false);', t)
+        self.assertIn('const nPi = 12, pw = 0.26;', t)
+        self.assertIn('const pu = cu + du * CH_PED.d, pv = cv + dv * CH_PED.d', t)
+        self.assertIn('const CH_PED = { d: 7.78, h: 1.5, r: 1.1 };', SRC)
+
+    def test_the_bake_keeps_a_windows_number_on_its_bars(self):
+        bake = (ROOT / 'bake_cityhall_art.py').read_text()
+        # fix3 (the review: the basement's sashes a dotted line at night): a bar is not glass, but keeps its window's number
+        self.assertIn('mreg[bars, 0] = 0', bake)
+        self.assertNotIn('mreg[bars] = 0', bake)
+        self.assertIn("if cid in ('rustic', 'tower_low'):", bake)
+
+
 class Manifest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -247,7 +362,8 @@ class Manifest(unittest.TestCase):
     def test_the_cells(self):
         cells = self.m['cells']
         want = {'aedicule', 'apse', 'ashlar', 'balus', 'belvedere', 'centre', 'clock', 'corner', 'court', 'court_bay', 'court_main', 'curtain',
-                'dome', 'dormer_c', 'dormer_w', 'flank', 'oculus', 'rustic', 'tower_low', 'tower_mid', 'turret'}   # fix2: the courtyard's own two, the tower's courses
+                'dome', 'dormer_c', 'dormer_w', 'flank', 'oculus', 'rustic', 'tower_low', 'tower_mid', 'turret',   # fix2: the courtyard's own two, the tower's courses
+                'crown', 'granite', 'vest'}   # fix3: the crowns' cornice box, the base course's granite, the passages' walls
         self.assertEqual(set(cells), want)
         rects = list(cells.values())
         for r in rects:
@@ -282,6 +398,14 @@ class Manifest(unittest.TestCase):
         self.assertTrue(1.5 < d1 - d0 < 3.3 and 3.5 < dc < 6.0, (d0, d1, dc))
         # the belvedere's arch is glazed now: no void left in it (the review: a black hole twice the photographs' width)
         self.assertNotIn('belvedere', meta)
+        # fix3: the crown box's pediment, measured on its picture (centred, two fifths of the face, 1.56 m over the cornice at 3.4)
+        p0, p1, pb, pa = meta['crown']['ped']
+        self.assertAlmostEqual((p0 + p1) / 2, 4.3, delta=0.2)
+        self.assertTrue(2.6 < p1 - p0 < 4.2 and abs(pb - 3.4) < 0.1 and 1.2 < pa - pb < 2.0, meta['crown'])
+        # and every outer front's lowest sill, the water table's head under it: the flanks' basement arches come down to 0.74
+        # m, the corner pavilions' to 0.94, the wings' to 1.65
+        for c, lo, hi in (('flank', 0.6, 0.9), ('corner', 0.8, 1.1), ('curtain', 1.5, 1.8), ('centre', 3.0, 3.6)):
+            self.assertTrue(lo < meta[c]['sill'] < hi, (c, meta[c]))
 
     def test_the_files_and_the_phone_copies(self):
         for k in ('img', 'imgHalf', 'mask', 'maskHalf'):
@@ -414,12 +538,21 @@ for (const far of [false, true]) {
   let glass = 0, paveLo = 1e9, paveHi = -1e9, cmU = 0;
   for (let i = 0; i < b.nv; i++) {
     const U = b.P[i * 3], y = b.P[i * 3 + 1], V = b.P[i * 3 + 2];
-    if (kindAt(i) === -13 && y > 146.5 && y < 149.6 && Math.abs(Math.hypot(U, V + 37.2) - 4.85) < 0.1) glass++;
+    if (kindAt(i) === -13 && y > 146.5 && y < 149.6 && Math.abs(Math.hypot(U, V + 37.2) - (far ? 4.85 : 4.55)) < 0.1) glass++;   // (fix3: set back 0.3 m behind its piers)
     if (kindAt(i) === -7 && Math.abs(U) < 75 && Math.abs(V) < 80) { paveLo = Math.min(paveLo, y); paveHi = Math.max(paveHi, y); }
     if (kindAt(i) === ids.indexOf('court_main')) cmU = Math.max(cmU, b.T[i * 2]);
   }
+  // fix3: the granite's highest point on the north flanks' fronts (the water table, under their 0.74 m sills), the far level's
+  // portal recesses (the vault's kind), the near level's red granite columns and lamps
+  let wtFlank = -1e9, farVault = 0, rgran = 0, lamps = 0, bronze = 0;
+  for (let i = 0; i < b.nv; i++) {
+    const U = b.P[i * 3], y = b.P[i * 3 + 1], V = b.P[i * 3 + 2], k = kindAt(i);
+    if (k === ids.indexOf('granite') && Math.abs(U) > 13.8 && Math.abs(U) < 30.5 && V < -68.8 && V > -69.3 && y > -0.5) wtFlank = Math.max(wtFlank, y);
+    if (k === -5) farVault++;
+    if (k === -16) rgran++; if (k === -18) lamps++; if (k === -15) bronze++;
+  }
   const g = chGeometry(b, 2.45);
-  out[far ? 'far' : 'near'] = { tris: b.I.length / 3, verts: b.nv, bad, nanP, nanN, short, ymax, ymin, tops, see, tower, soff, glass, paveLo, paveHi, cmU,
+  out[far ? 'far' : 'near'] = { tris: b.I.length / 3, verts: b.nv, bad, nanP, nanN, short, ymax, ymin, tops, see, tower, soff, glass, paveLo, paveHi, cmU, wtFlank, farVault, rgran, lamps, bronze,
     balus: b.K.filter((k, i) => i % 2 === 0 && k === b.balusK).length,
     attrs: Object.fromEntries(Object.entries(g.attributes).map(([k, a]) => [k, [a.array.constructor.name, a.itemSize, a.array.BYTES_PER_ELEMENT * a.itemSize]])) };
 }
@@ -472,6 +605,14 @@ console.log(JSON.stringify(out));
         self.assertGreaterEqual(n['paveLo'], -0.01)
         self.assertLessEqual(n['paveHi'], 0.35)
         self.assertGreater(n['cmU'], 2.0)
+        # fix3: the water table in granite under the north flanks' 0.74 m sills (it ran to 1.5 m across their arched windows);
+        # the far level's four portals a recess of the passage's tone (they were the picture's black arches); the passages'
+        # red granite columns and their lanterns and the apron's bronzes in the near level
+        self.assertTrue(0.5 < n['wtFlank'] < 0.66, n['wtFlank'])
+        self.assertGreaterEqual(out['far']['farVault'], 4 * 7)
+        self.assertGreater(n['rgran'], 100)
+        self.assertGreater(n['lamps'], 40)
+        self.assertGreater(n['bronze'], 2000)
 
     def test_a_computer(self):
         out = self.run_model(False)
@@ -483,6 +624,33 @@ console.log(JSON.stringify(out));
 
 
 class Bronzes(unittest.TestCase):
+    def test_the_forms(self):
+        # the eagles 3.7 m across their raised wings (12 ft), on the stone; Penn 10.98 m to his hat's crown before he is taken to
+        # the statue's 11.4; a group within its pedestal; no form with a broken normal
+        if not shutil.which('node'):
+            raise unittest.SkipTest('Node.js unavailable')
+        mod = cut(SRC, '  // ---- City Hall rebuilt (Round 191', "  // the night's flood on the rebuilt block")
+        script = r'''
+const THREE = require(THREE_PATH); const REAL = true, isTouch = false; const CITYHALL_ART = { cells: {}, meta: {}, mean: {}, m: {} };
+const fl = { px: 140, pz: 0, dx: -0.167, dz: 0.986, nx: 0.986, nz: 0.167 };
+function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+__MOD__
+const box = (L) => { const b = [1e9, 1e9, 1e9, -1e9, -1e9, -1e9]; let bad = 0; for (const [g] of L) { const p = g.attributes.position.array, n = g.attributes.normal.array; for (let i = 0; i < p.length; i += 3) { for (let k = 0; k < 3; k++) { b[k] = Math.min(b[k], p[i + k]); b[k + 3] = Math.max(b[k + 3], p[i + k]); } if (!(Math.abs(Math.hypot(n[i], n[i + 1], n[i + 2]) - 1) < 0.01)) bad++; } } return { b, bad }; };
+console.log(JSON.stringify({ eagle: box(chEagleForm(false)), penn: box(chPennForm(false)), group: box(chGroupForm(false)) }));
+'''.replace('THREE_PATH', json.dumps(str(ROOT / 'three.min.js'))).replace('__MOD__', mod)
+        r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=120)
+        self.assertEqual(r.returncode, 0, r.stderr[-3000:])
+        o = json.loads(r.stdout.strip().splitlines()[-1])
+        e = o['eagle']['b']
+        self.assertAlmostEqual(e[5] - e[2], 3.7, delta=0.15)   # the span
+        self.assertGreater(e[4], 2.3)                           # the wings raised over the head
+        self.assertGreater(e[1], -0.05)                         # nothing under the stone
+        self.assertAlmostEqual(o['penn']['b'][4], 10.98, delta=0.02)
+        g = o['group']['b']
+        self.assertLess(max(abs(g[0]), abs(g[3]), abs(g[2]), abs(g[5])), 1.35)
+        for k in ('eagle', 'penn', 'group'):
+            self.assertEqual(o[k]['bad'], 0, k)
+
     def test_the_groups_and_eagles(self):
         # fix2: one group of draped figures (about 800 triangles) and one eagle with fanned, notched wings (about 110) modelled
         # once and laid four times each at the dome's foot, in the themed mesh's own draw; the boxes and balls they were
@@ -514,7 +682,10 @@ console.log(JSON.stringify({ parts: parts.length, all, low, mirror }));
         self.assertEqual(r.returncode, 0, r.stderr[-3000:])
         o = json.loads(r.stdout.strip().splitlines()[-1])
         self.assertEqual(o['mirror'], 0)   # every part bronze (the themed mesh's metal)
-        self.assertTrue(4 * (600 + 90) <= o['low'] <= 4 * (1000 + 200), o)   # the groups and the eagles at the dome's foot
+        # fix3 (the review: pawns with ball heads, bat-winged balls, a peg doll): each group of figures 2 to 3k triangles, each
+        # eagle about 700, Penn 3 to 5k, all on the themed mesh's one draw
+        self.assertTrue(4 * (2000 + 500) <= o['low'] <= 4 * (3000 + 900), o)
+        self.assertTrue(3000 <= o['all'] - o['low'] <= 5000, o)
 
 
 if __name__ == '__main__':

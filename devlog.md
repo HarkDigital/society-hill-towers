@@ -9397,3 +9397,101 @@ Not done:
   again, the old ones kept in the raw cache's aside/ as _v1; the courtyard's two cells and the courses new), 21 cells at
   25.1 px/m in the one 2048 atlas; art/cityhall/ 886 KB (a computer 699 KB, a phone 187 KB); textures 26.7 MB on a computer
   and 6.7 on a phone, as they were. ?real=0 renders as before but for the traffic and the tufts.
+## Round 191, the third review's fixes (Oct 14)
+
+- A third pair of reviews (the realism and the integration critics) on the rebuild: the plan, the ground and the
+  pictures stood, but the clocks ran backward, the water table wore the windows, the sun leaked into a passage, the
+  bronzes and Penn were still stacked primitives, a deli stood on Dilworth Park and its glass houses were black slabs.
+  Every must-fix is in, and the should-fixes but the ones named at the foot.
+- The dials. `chDials` laid every face's 3 o'clock along (-nv, nu), which is the viewer's LEFT: every dial read IIX at
+  its head with III at nine, and its hands ran counter-clockwise (at 14:00 the hour hand stood at ten). Facing a face, the
+  viewer looks along -n with y up, so his right is -n x y = (nv, -nu); `chDialFaces` gives each face's frame and the
+  canvas and the hands share it. A Node test turns the hands to 15:00 on every face: the hour hand to the viewer's right,
+  the minute hand up, III to the east on the south face. Against the 2025 photograph the numerals now fill the chapter band
+  (0.635 to 0.915 of the radius, tall and condensed on their radii; they were half its size in a ring of sixty minute marks
+  the face does not have), and the glass's twelve radial bars and three rings are drawn only on the glow (lit from behind
+  at night), never by day.
+- The water table and the feet. The band wore the wall's picture projected straight on, so where the basement's arches
+  come down below 1.5 m (the flanks' to 0.74 m, the corner pavilions' to 0.94) their lower panes were painted on a
+  projecting stone band and cut off at its head, at eye level on every walk past; the 1.2 m `foot` under the datum
+  stretched the picture's bottom row into streaks on the plinth. Both are now the base course's own granite (a new tile,
+  `ch_granite`, calibrated to the painted basements' grey), by the metre along the face (`vG`), and the band's head stands
+  0.12 m under the face's lowest sill as the bake measures it (`sill` in the manifest, `waterTop`: 0.62 on the flanks, 0.82
+  on the corner pavilions, 1.5 on the wings and the centre pavilions).
+- The passages. A jagged sunlit strip ran the length of the north passage at the foot of one wall at 14:00 with the sun
+  south-south-west: shadow-map leakage at the wall and floor. A passage's direct light now goes with the shade its part
+  carries (`chSun`: whole at the mouth's 0.72, gone by 3 m in). Their walls are a new picture of the vestibules' own
+  rusticated marble over a granite dado of diamond-cut panels (`ch_vest`, 20231007134150), a pair of engaged polished red
+  granite columns on grey granite bases with marble capitals every 6 m (9 on a phone), a rib over each pair across the
+  vault (a computer's), a lantern of lit glass hung on a rod from the crown between pairs, and the floor a border of small
+  tesserae along the walls round a field of two-toned slabs on the diagonal (the floor's width rides its seed). At night
+  their own lanterns' light is a little dimmer on the lighter marble.
+- The bronzes and Penn, now forms (`CHS`: shells of rings with a ripple of folds round them, tubes along a path, blobs,
+  lathes; smooth normals, laid in a figure's own frame). The groups (`chGroupForm`, 2.4k triangles, 1.2k on a phone): a
+  man with a staff raised, his robe and mantle in deep folds, his hair and feathers; a woman in a shawl drawn over her
+  head, a child on her hip; a dog at their feet; on the tower's own white drums on the octagon's chamfered corners
+  (`CH_PED`), where they stood on black bronze boxes. The eagles (`chEagleForm`, 0.7k): an upright body on its talons on
+  the stone over each dial, the head turned and the beak hooked, the wings 0.1 m thick and fingered, facing front, raised
+  46 degrees to a span of 3.7 m (12 ft; they were 2 m bat wings on a post). Penn (`chPennForm`, 3.3k, 2.0k on a phone), at
+  the pose Mike approved from the postcard: the broad-brimmed, low-crowned Quaker hat over long hair; the coat flaring to
+  the knee in folded skirts, open over a waistcoat; tapered sleeves to big turned-back cuffs; the right hand open and palm
+  down over the city; the charter rolled in the left fist with its loose end hanging; breeches, stockings, buckled shoes;
+  the stump behind the left leg. All on the themed mesh's one draw, 15.7k triangles on a computer and 9.0k on a phone.
+- Dilworth Park. The one-storey box at the plaza's north-west corner that the storefront pass dressed as a deli (red
+  awnings, 'Dilworth Park Café' and 'Dilworth Park Farmer's Market') is OSM's way 333931838, building=retail, with the
+  Dilworth Park Café's node in it: the park's café is that north pavilion of glass (OSM's south-west building, the one
+  `CH_CAFE` takes, is a kiosk). It is the third `CH_HEADHOUSE`, skipped in the outer districts' loop and built in glass, its
+  ring in `REBUILD_OCC` so no storefront panel hangs on it. The glass houses were opaque near-black panes behind a stark
+  cream grid that the lamps lit into a wireframe at night, cream even on a red night. The pavilions' glass is its own kind
+  now (14): by day the daylit room and plaza through it by Fresnel's share, darker at the stairs' foot, and a stronger sky
+  reflection; at night their interiors lit, ceilings brighter than floors; slim dark steel mullions every 3 m; a thin pale
+  roof slab standing out 0.45 m; never the facade's flood. The lantern's gallery and the skylights keep their bars, dark
+  steel now.
+- The crowns, the lantern and the night. The centre pavilions' cornice boxes, dead centre under the tower in both axial
+  views, wear a new picture (`ch_crown`: a frieze of eleven carved consoles, dentils and a deep cornice), the consoles built
+  proud where the picture has them (a computer's), and a pediment with its masked tympanum built on each face's cornice to
+  the picture's measure (`ped`), the cresting stopped either side of it. The lantern's ring wall has two moulded courses
+  and sixteen consoles under the gallery's floor; the gallery has twelve piers with its glass set 0.3 m back between them
+  (it was one black glazed band with a white grid, an airport's control tower). The night's flood takes `1 - max(ny, 0)`,
+  so an uplight lights a soffit: every string course and cornice underside drew a hard dark stripe. The bake keeps a
+  window's number and height on its sash bars and runs them a few pixels over the stone round it: filtered, a bar's 0
+  read as another window's, and the night drew every basement sash a dotted line of lit and unlit rooms.
+- The courses, the floor, the apron and the courtyard. The tower's batter and shaft read as siding under an overcast:
+  the bake now tones each block of the channel-jointed courses its own (sd 3.5 per cent) and cuts in the staggered head
+  joints the picture left out (in the picture rather than the shader, where they cost nothing and line up with its
+  courses). The floor's slabs keep their own tones out to where they are two pixels across, their joints a softer grey
+  fading before they alias, the granite's speckle and the wear of the traffic in broad patches; the compass is painted
+  on the same slabs, through their joints and grain, a little dulled. On the apron, the generals McClellan and Reynolds
+  on horseback flank the north portal and Wanamaker, Bullitt and McKinley stand on their pedestals (OSM's nodes; the
+  forms in a metallic bronze, the pedestals in the base course's granite, in the near level), with bollards along the
+  north curb; in the courtyard, eight black lamp posts by the passages' ends and the apse, a lantern on each turret, the
+  iron railings round the areaways either side of the passages' ends (a computer's), and at night the lamps' pools on
+  its floor.
+- Integration. A phone paints the floor's two canvases on its first near frame (they were uploaded at the build on every
+  phone, 4.5 MB whether or not it came near City Hall), the compass at 512 px (28 px a metre). The pins' depth image and the
+  building tap draw the far level in the near one's place (`userData.occStandIn` in `occRender`): it is drawn every frame
+  in flight. The far level's four portals are a recess of the passage's tone, where they were the picture's black arches
+  and flipped at a phone's switch. A failed build also gives back the ground its drapes took from the tuft sow and lets
+  Dilworth Park's pavilions stand as boxes. The 'City Hall' viewpoint, the locate fallback: 300 m up on Broad Street's
+  axis 330 m out, over the canyon's towers, the whole block and tower in view (80 m up and 430 m out the canyon's walls
+  filled four fifths of the frame).
+- Not done, and why: the sun's shadow keeps the near level (the far level's would take every cornice's shadow off the
+  walls); trees and tables on the apron and in the courtyard (the city's tree survey keeps its own there, and the tables
+  are moved about); McKinley's allegorical group (his figure alone on a tall pedestal) and the Catto memorial; the weedy
+  vacant-lot ground across South Penn Square and Broad (main's, out of City Hall's scope). Mike's two decisions stand
+  open: Penn's right arm out as the photographs show it, and the plain night's amber against the LED system's white.
+- Cost. The near level 39,284 triangles on a computer and 29,648 on a phone (its budgets 60k and 30k: a phone keeps the
+  painted consoles on the crowns, its column pairs 9 m apart, no ribs, railings or bollards), the far 5,873 with its floor
+  and the three glass houses (5,572 for the model alone, against the test's 6,000: the far level's turrets are six-sided
+  now, and its pedestals plain drums), the dials 144, the floor 252. The bronzes on the themed mesh 15.7k on a computer
+  and 9.0k on a phone, no draw of their own. On a phone, measured with City Hall hidden and shown at six places (still:
+  the lowest of 8 frames with the shadow forced; moving: the highest with the eye stepping 0.6 m a frame): the near
+  level +4 draws and +62k to +67k triangles still, +7 and +68k to +74k moving; the far level +2 and +15k to +21k still,
+  +3 and +21k to +27k moving. On a computer the far shadow map's own cadence swings that A/B by 50k either way, so by count:
+  still the near level's colour and shadow passes and the dials and floor, +4 draws and 79k; moving the pins' depth image
+  adds the far level's 5.9k in the near's place (it drew the near level's 39k). Programs as before: city-hall-real, its cut
+  depth, the dials, the floor; no link failures. Art: three gpt-image-2 calls at high (the crown box, 1536 by 896; the
+  granite, 1024; the passage's wall, 1024 by 1120); 24 cells at 25.2 px a metre in the one 2048 atlas; art/cityhall/ 911 KB
+  (a computer 715 KB, a phone 196 KB); the textures as they were, 26.7 MB on a computer and 6.7 on a phone, and a phone's
+  floor and compass, 2.8 MB, only once it has come near. ?real=0 renders as HEAD did but for the traffic and the tufts
+  (0.05 to 0.2 per cent of the pixels). Tests: 807, OK with the one expected failure.

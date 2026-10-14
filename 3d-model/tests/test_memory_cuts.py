@@ -321,8 +321,9 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         # Round 191: City Hall's atlas and mask (chLoadArt), its dials' two canvases, its courtyard's floor and its compass (fix2)
         self.assertIn('CH.map.image = im; CH.map.needsUpdate = true; freeTexOnUpload(CH.map);', cut(s, '  function chLoadArt() {', '  const _chE'))
         self.assertIn('freeTexOnUpload(new THREE.CanvasTexture(dc)), glow = freeTexOnUpload(new THREE.CanvasTexture(gv));', cut(s, '  function chDials(Y0) {', '  function chHands('))
-        self.assertIn('const tex = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, '  function chFloor(Y0) {', '  function buildCityHallReal('))
-        self.assertIn('const ctex = freeTexOnUpload(new THREE.CanvasTexture(chCompassCanvas()));', cut(s, '  function chFloor(Y0) {', '  function buildCityHallReal('))
+        # fix3: a phone paints the floor's two canvases on its first near frame, each freed at its upload
+        self.assertIn('const t2 = new THREE.CanvasTexture(chFloorCanvas()); t2.encoding = THREE.sRGBEncoding; t2.anisotropy = anisoOf(8); freeTexOnUpload(t2);', cut(s, '  function chFloor(Y0) {', '  function buildCityHallReal('))
+        self.assertIn('const c2 = new THREE.CanvasTexture(chCompassCanvas()); c2.anisotropy = anisoOf(8); freeTexOnUpload(c2);', cut(s, '  function chFloor(Y0) {', '  function buildCityHallReal('))
         self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 29)   # the definition and its twenty-eight uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself; Round 191: City Hall's six)
 
     def test_venue_screens_share_textures(self):
