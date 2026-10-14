@@ -20,10 +20,10 @@ except ImportError:
 
 ROOT = Path(__file__).resolve().parents[1]
 RB_DIR = ROOT / 'rebuilds'
-IDS = ['dl', 'esp', 'gc', 'rtm', 'shot', 't30', 'ww']
+IDS = ['dl', 'esp', 'gc', 'glory', 'rtm', 'shot', 't30', 'ww']
 # the generic packed records each skip removes (the Sep 25 study's final run, inscene.log.json)
-SKIPPED = {'t30': 2, 'ww': 10, 'esp': 11, 'dl': 1, 'gc': 1, 'rtm': 4, 'shot': 0}
-BUDGET = {'shot': 12000}                # a big building stays under 40k triangles, a small one under 12k
+SKIPPED = {'t30': 2, 'ww': 10, 'esp': 11, 'dl': 1, 'gc': 1, 'rtm': 4, 'shot': 0, 'glory': 0}   # Glory's core footprint is held back by REALISM_NEAR
+BUDGET = {'shot': 12000, 'glory': 6000}   # a big building stays under 40k triangles, a small one under 12k; Glory's near level 6k (Round 190)
 REACH = {'ww': 450}                     # metres from the centre; the Water Works carries the Fairmount Dam's crest across the river
 
 

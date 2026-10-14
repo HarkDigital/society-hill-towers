@@ -9134,3 +9134,82 @@ Not done:
   which keeps more to tap. Measured on the Langstroth marker at 1280 by 800: 120 m, about 70 px tall before and 16 after;
   10 m, a 10 m billboard before and a 13 px badge on top of the post after. `tests/test_pin_scale.py` runs the rule under
   node (the far size, the knee, the near fraction, never larger closer in, the caps).
+
+## Round 191, Glory Beer Bar & Kitchen on its own lot (Oct 14)
+
+- Mike: "I added more api credits with open AI. I want City hall and Glory Beer Bar and Kitchen to be totally revamped."
+  Glory is 126 Chestnut Street, Old City, the south side between Front and 2nd. Round 10b's builder pro-rated house
+  numbers along the block and put it on 120 (scene 2806, 4.9 m wide, four storeys, LiDAR 14.6 m): a white column of
+  five piers with a tiny Futura GLORY board, two lots east. The OPA address point for 126 (101.01, -284.81) lies in 2541,
+  and the Historical Commission's 2003 inventory (5 storeys, 4 bays, 1853, granite storefront pilasters, engaged granite
+  columns with pointed-arch surrounds, 1/1 windows above, a corbelled brick cornice), Sanborn's 1916 plate (about 27.5 ft,
+  60 ft, back to Ionic St) and the LiDAR (19.5 m, 23.7 m at the bulkhead) all agree. Under the realistic look 2541 is held
+  back (REALISM_NEAR, key 'glory126', never 'glory', so the old builder cannot run on it) and rebuilds/glory.js builds the
+  building on it; 120 goes back to the generic fabric, whose shuttered four storeys are the real 120's. ?real=0 and the
+  new ?glory=0 keep the old builder on 120 exactly (rendered against before/: identical but for the clouds).
+- The art (fetch_glory_art.py, gpt-image-2, high, opaque): 11 calls. Frames: two lower elevations (the granite ground
+  floor and second storey, 8.6 by 9.3 m at 1536x1664, every pane chroma-key green) and two upper (the brick storeys);
+  lower-b kept for its pointed arches (the inventory's "pointed-arch granite window surrounds"; lower-a's were round), upper-b
+  for its storeys (its sills 0.64, 3.43 and 6.28 m over the granite cornice against the research's 0.65, 3.45, 6.25;
+  upper-a's bottom row stood at 0.13). One glass edit into the upper key (blinds, curtains, the street reflected, every
+  window different). Rooms: two of the bar (1536x784) and two of the room upstairs (1536x608) in one-point perspective;
+  ground-empty-b (the bar down the right, the brick by the doors, the ducts and string lights, the cast-iron columns) and
+  upper-empty-a (the mantel on the right, the globe cluster, the wainscot) kept; then one crowd edit of each over its
+  floor (people at the bar and the high-tops; people at board games upstairs). Every image looked at: no lettering, no
+  logos, a pure key.
+- The bake (bake_glory_art.py): the key 0.199 of the lower and 0.190 of the upper (the plan's 0.25 to 0.45 for the lower
+  was a guess: the bake now refuses outside 0.15 to 0.45). Measured from the key: the doors 0.44 to 4.04 m, four bays,
+  the arcade's sill course 4.92, spring 7.77 and crown 8.32, the column pairs a quarter of each gap either side of its
+  middle (r 0.11), twelve windows 1.07 by 1.83 m set to their stacks' and storeys' medians; no warnings. Two measuring
+  fixes found on the overlays: the key's green is bright, so it counts as the opening (dark) for the doors and as the
+  window (pale) for the sashes, and a door's lighter panel moulding no longer stops the growth (four lines in a row
+  past the limit do). The brick came out at #a86444, more saturated than the street's orange red, and read as paint
+  beside the block's procedural walls: its saturation goes down 22% (BRICK_DESAT). The atlas 2048x1280 (both
+  elevations at 117 px/m, seven swatches), the mask at half, the rooms 1024x1224 (open full width, shut at half) and
+  their mask. A computer downloads 847 KB, a phone 226 KB.
+- The model: 3,950 triangles near (budget 6,000), 62 far, 24 for the signs; built in 8 to 9 ms. One draw for the
+  facade, one for the signs. The fronts are holed (a grid between the openings' edges; an arch's head leaves two
+  spandrel fans) and every opening is set back on its own pixels (doors 0.25, casements 0.20, sashes 0.12), so straight
+  on it is the photograph and obliquely it has depth; the piers, their capitals, the sill course, eight engaged half
+  columns, the granite cornice's profile (fascia, cyma, corona, wash) and the corbelled brick cornice are real; the
+  shell's party walls stand 5 cm inside the lot lines; the rear range is four storeys to Ionic St with the stucco
+  penthouse, the stair bulkhead to 23 m and two skylights. The stoop is 1.7 m deep with three steps from the entrance
+  bay, black railings with a crossed scroll band, the Juliet railing in the east bay, two caged lanterns on the piers
+  either side of the door, the blade sign on its bracket off the pier east of the door, the board over the door tilted
+  out 8 degrees, the bronze 126 plaque, the menu case, the faded blue sign box high on the east edge, and two bistro
+  tables and six galvanized chairs that the vertex shader (and the shadow pass's own depth material) folds away while
+  the bar is shut.
+- The page (api.glory): one facade material (atlas, mask, rooms, rooms' mask, the signs' canvas for the mural) with a
+  swatch tiled in metres on each face's own plane; the bar's glass is interior mapping (the eye's ray through the pane
+  into a room box, the hit's fractions scaled toward the plate's vanishing point by e / (e + z) per axis, from each
+  plate's back wall measured by hand), open or shut plates mixed by the model clock's hours (Mon to Wed 4 PM to 2 AM,
+  Thu to Sun 12 PM to 2 AM; upstairs from 5 PM), the mural painted on the bar's brick by the doors, the bulbs twinkling
+  after dark, a shut room dark but for a red exit sign; the flats' windows take roomLight after dark; the lanterns glow
+  with the photocell and light the piers, signs and stoop within 3.5 m, and go into the light map as two 7 m warm pools.
+  GLORY is drawn by the page in vector slab-serif glyphs (painted and cut shapes, so no two windings meet), the trade
+  line in a typewriter face, never by the image model.
+- Four faults the renders found: (1) the facade drew the placeholder's grey: a texture uploaded behind the veil as a
+  one-texel WebGL 2 immutable store takes no image of another size, so gloryLoad lets it go first; (2) everything was
+  mirrored: the photographs look south, so their left is the EAST end, and the def now mirrors every measure into its
+  frame (the entrance is the second bay from the west, the blade sign east of it, as on the street); (3) every box's
+  sides were granite (the swatch's name, not its index, went into the bytes); (4) a striped band under the granite
+  cornice: a face reaching 9.3 m took its top corners from the upper elevation, interpolating its uv across the atlas
+  through the swatches; a face now takes its elevation from its own middle. And a swatch's gradients are held to its
+  8-texel gutter, or a soffit seen edge on read a mip coarse enough to take its neighbours in.
+- The street: Chestnut between 2nd and Front is drawn 9 m wide with 3.7 m walks to the building line (it was 13 m with
+  1.2 m of walk, and the stoop and steps would have stood in the lane); the realistic look's alone. The neighbours that
+  the new front showed up: 128-130 takes the sash and the painted shop floor in its own dark red, 122-124 the painted
+  shop floor (both dressed by Round 189's shopfronts).
+- Search: "glory" finds Glory Beer Bar & Kitchen (a new kind, bar, ranked 2 so the three Glory churches do not come
+  first) and glides to the far sidewalk looking at its front with the mark at the door and its card open. A tap on the
+  building opens the same card (Open or Closed by the model clock, today's hours, what it is, the address, built 1853),
+  then the city's register, district and permit rows; Website and Property Record.
+- Measured (headless, this Mac's GPU, before against after at the same poses and clock): a computer at the street-across
+  pose 511 calls and 7.18 M triangles against 509 and 7.18 M (+2 calls, +2.8 k); a phone, counted per object over four
+  frames, 466 against 462 (Glory's 2, and one car of traffic more), 4.50 M triangles against 4.51 M. Programs: three
+  (the facade, the signs, the shadow pass's fold). A phone (measure.mjs, GC-normalised): 875 MB GPU at ready against 869,
+  936 after the look against 930, no padded copies, a live heap of 124 MB at ready either way, peak 282 against 281.
+- Not done: the stair-side railings' scrolls, single dentils (the corbel's dentil course is a slab carrying the photo's),
+  the neighbours' awnings (122-124's green "124 Offices", 128-130's burgundy) and 122-124's black strip; VDEPTH for the
+  facade on a phone. For Mike: Yelp also lists an "Oberon" at 126 Chestnut (Dec 2025): a name for the room upstairs, or
+  a new tenant?
