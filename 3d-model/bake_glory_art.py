@@ -16,10 +16,11 @@ upper one again with real glass painted into the key (glass/upper.png), and the 
             mip), tints the granite toward the street's warm buff (STONE_TINT), pastes the
             glass edit back inside the upper key only, and lays the facade atlas (the lower elevation left, the upper
             right, both at the same pixels a metre, and a row of tileable swatches under them: granite (jointless patches
-            of the piers' faces, granite_swatch), brick, concrete, iron, the old sign box's peeling blue paint
-            (peel_swatch), the lanterns' glow and the roof), its mask at half size (an opaque RGB
-            PNG, never RGBA: bake_fronts.py), the interior atlas (the open rooms at 1024 wide, the closed at 512) and its
-            mask, and every half copy.
+            of the piers' faces, granite_swatch), brick, concrete, iron, the old sign box's grey-sage paint gone to primer
+            (peel_swatch), the lanterns' glow, the roof and the rust of the box's cap (rust_swatch)), its mask at half size
+            (an opaque RGB PNG, never RGBA: bake_fronts.py; the muntins held at 0 two texels wide, pane_bars and
+            bar_texels), the interior atlas (the open rooms at 1024 wide, the closed at 512) and its mask, and every half
+            copy.
 The mask: r the glass; g a number per pane (lower) or per window (upper: both sashes); b the upper windows' height inside
 the window, 0 at the sill to 64 at the head (the house fronts' convention, so roomLight reads it as theirs), 200 the bar's
 glass on the ground floor, 216 the second storey's, 240 the glow swatch. The interior mask: r the bulbs, the string lights,
@@ -56,11 +57,11 @@ BACK = {'ground-empty-b': [0.4577, 0.4362, 0.5306, 0.5383], 'upper-empty-a': [0.
 NOMINAL = {
     'bays': [[0.45, 2.0], [2.5, 4.05], [4.55, 6.1], [6.6, 8.15]], 'doorTop': 4.0, 'doorFoot': 0.45,
     'arcade': [[0.5, 1.95], [2.6, 3.95], [4.65, 6.0], [6.7, 8.1]], 'spring': 7.6, 'crown': 8.25, 'sill2': 5.25,
-    'cols': [2.08, 2.42, 4.13, 4.47, 6.18, 6.52], 'colR': 0.15, 'cornice': [8.6, 9.3],
+    'cols': [2.08, 2.42, 4.13, 4.47, 6.18, 6.52], 'colR': 0.15, 'cornice': [8.6, 9.3], 'capital': {'y': [3.9, 4.1], 'ends': [0.0, 0.0], 'out': 0.05},
     'win': [[u0, u0 + 1.0, y0, y0 + 1.75] for y0 in (0.65, 3.45, 6.25) for u0 in (0.75, 2.8, 4.8, 6.85)],
 }
-SWATCHES = ['granite', 'brick', 'concrete', 'iron', 'rustblue', 'glow', 'roof']
-SW_M = {'granite': 1.2, 'brick': 1.0, 'concrete': 1.5, 'iron': 1.0, 'rustblue': 1.0, 'glow': 1.0, 'roof': 3.0}   # metres a tile
+SWATCHES = ['granite', 'brick', 'concrete', 'iron', 'rustblue', 'glow', 'roof', 'rust']
+SW_M = {'granite': 1.2, 'brick': 1.0, 'concrete': 1.5, 'iron': 1.0, 'rustblue': 0.8, 'glow': 1.0, 'roof': 3.0, 'rust': 0.5}   # metres a tile
 
 
 def load(p):
@@ -216,28 +217,49 @@ def granite_swatch(lo, k, meas):
 
 
 def peel_swatch(seed):
-    """The old projecting sign box's face (refs, wanderlog: a pale, faded-blue painted sheet-metal box): the faded blue,
-    blotches where the paint has peeled to a white primer, and rust run down from its seams (the old 'rustblue' was streaky
-    noise and read as stone). Every field is periodic, so the swatch tiles without a cross-fade cutting the blotches."""
+    """The old projecting sign box's face (refs, the Bright MLS street view: a weathered grey-sage painted sheet-metal box in
+    shade, its paint gone to primer in small ragged flakes, brown rust run down its face): the grey-sage, the flakes, a
+    mottle of grime, and thin rust runs. Every field is periodic, so the swatch tiles without a cross-fade cutting the
+    flakes. Round 191's second review: the first swatch's pale sky blue and its big cloud-shaped peels read as a glossy
+    glass slab; the grime at its edges and the rust from its top are the shader's, by the box's own frame (uGlBox)."""
     rs = np.random.RandomState(seed)
     n = SW
     def smooth(cells, blur, shape=None):   # periodic value noise: the cells tiled three by three, upsampled, the middle kept
         z = rs.rand(*(shape or (cells, cells)))
         big = np.tile(z, (3, 3))
-        h, w = big.shape
         im = Image.fromarray((big * 255).astype(np.uint8)).resize((3 * n, 3 * n), Image.BICUBIC).filter(ImageFilter.GaussianBlur(blur))
         z = np.asarray(im, np.float32)[n:2 * n, n:2 * n] / 255
         return (z - z.min()) / max(z.max() - z.min(), 1e-3)
-    base = np.array([138, 168, 188], np.float32) / 255
-    lo_n, mid = smooth(4, 6), smooth(12, 3)
-    out = base[None, None, :] * (0.9 + 0.18 * lo_n[..., None]) * (0.96 + 0.08 * mid[..., None])
-    peel = (lo_n * 0.6 + mid * 0.4) > 0.68
-    out = np.where(peel[..., None], np.array([226, 226, 216], np.float32) / 255 * (0.92 + 0.08 * mid[..., None]), out)
-    edge = np.roll(peel, 1, 0) | np.roll(peel, -1, 0) | np.roll(peel, 1, 1) | np.roll(peel, -1, 1)
-    out = np.where((edge & ~peel)[..., None], out * 0.8, out)
-    cols = np.clip((smooth(0, 0.6, (1, 23)) - 0.8) / 0.2, 0, 1)   # a few thin runs, strongest under a seam
-    runs = cols * (0.3 + 0.7 * smooth(0, 4, (3, 1)))
-    out = out * (1 - runs[..., None] * 0.6) + np.array([120, 70, 42], np.float32) / 255 * runs[..., None] * 0.6
+    base = np.array([164, 168, 153], np.float32) / 255
+    lo_n, mid, fine = smooth(5, 5), smooth(14, 2), smooth(38, 0.6)
+    out = base[None, None, :] * (0.86 + 0.2 * lo_n[..., None]) * (0.95 + 0.1 * mid[..., None])
+    # the flakes: small and ragged (a mid field cut by a fine one), the primer a dull warm white
+    flake = (mid * 0.55 + fine * 0.45 + lo_n * 0.2) > 0.78
+    out = np.where(flake[..., None], np.array([198, 195, 182], np.float32) / 255 * (0.9 + 0.1 * fine[..., None]), out)
+    lip = (np.roll(flake, 1, 0) | np.roll(flake, 1, 1)) & ~flake   # the paint's broken edge, shaded under and beside a flake
+    out = np.where(lip[..., None], out * 0.84, out)
+    # grime: a darker mottle settled in the low field
+    out = out * (1 - 0.18 * np.clip(0.6 - lo_n, 0, 1)[..., None])
+    cols = np.clip((smooth(0, 0.6, (1, 29)) - 0.78) / 0.22, 0, 1)   # a few thin runs
+    runs = cols * (0.25 + 0.75 * smooth(0, 4, (3, 1)))
+    out = out * (1 - runs[..., None] * 0.55) + np.array([104, 66, 42], np.float32) / 255 * runs[..., None] * 0.55
+    return to_img(out)
+
+
+def rust_swatch(seed):
+    """The old sign box's bottom cap (refs, the Bright MLS view: a dark rusty curved sheet): dark rusted steel, a mottle of
+    brown and a few orange flecks, periodic."""
+    rs = np.random.RandomState(seed)
+    n = SW
+    def smooth(cells, blur):
+        big = np.tile(rs.rand(cells, cells), (3, 3))
+        im = Image.fromarray((big * 255).astype(np.uint8)).resize((3 * n, 3 * n), Image.BICUBIC).filter(ImageFilter.GaussianBlur(blur))
+        z = np.asarray(im, np.float32)[n:2 * n, n:2 * n] / 255
+        return (z - z.min()) / max(z.max() - z.min(), 1e-3)
+    a, b = smooth(6, 4), smooth(24, 1)
+    dark, brown, orange = (np.array(c, np.float32) / 255 for c in ((40, 29, 24), (84, 52, 34), (124, 70, 38)))
+    out = dark + (brown - dark) * (a * 0.8 + b * 0.2)[..., None]
+    out = np.where(((a * 0.5 + b * 0.5) > 0.84)[..., None], orange * (0.8 + 0.2 * b[..., None]), out)
     return to_img(out)
 
 
@@ -469,6 +491,28 @@ def blob_px(a):
     return out
 
 
+def pane_bars(k, r=4):
+    """The bars between the panes of one opening (the doors' and the casements' muntins, 5 to 6 pixels of the 179 a metre):
+    what closing the key by r pixels fills that is not key. A gap wider than 2r (a mullion between two casements, a door's
+    meeting stiles, the transom bar) stays frame."""
+    return erode(dilate(k, r), r) & ~k
+
+
+def bar_texels(bars, shape):
+    """The mask texels a bar holds at 0: each texel the bar covers more than half of, and where that leaves a bar one texel
+    wide across it, the neighbour it covers more of, so every bar is two texels (3.4 cm at the mask's 1.7) whatever its
+    phase on the grid."""
+    cov = np.asarray(Image.fromarray((bars * 255).astype(np.uint8)).resize((shape[1], shape[0]), Image.BOX), np.float32) / 255
+    core = cov > 0.5
+    out = core.copy()
+    for ax in (0, 1):
+        lo_, hi_ = np.roll(cov, 1, ax), np.roll(cov, -1, ax)        # the neighbour before and after along ax
+        one = core & ~np.roll(core, 1, ax) & ~np.roll(core, -1, ax)
+        out |= np.roll(one & (lo_ >= hi_) & (lo_ > 0.05), -1, ax)   # the one before
+        out |= np.roll(one & (hi_ > lo_) & (hi_ > 0.05), 1, ax)     # the one after
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--masks', action='store_true')
@@ -497,6 +541,7 @@ def main():
     if rise > ARCH_RISE_MAX:
         sys.exit('ERROR: %s\'s arches rise %.2f m over their springing (the real storey\'s low arch is 0.3 to 0.5 m; at most %.2f)' % (F.CHOSEN['lower'], rise, ARCH_RISE_MAX))
     meas['cornice'] = CORNICE.get(F.CHOSEN['lower'], NOMINAL['cornice'])
+    meas['capital'] = CAPITAL.get(F.CHOSEN['lower'], NOMINAL['capital'])
     # the glass: the edit pasted back inside the key only, else dark glass
     gp = os.path.join(RAW, 'glass', 'upper.png')
     upf = fill_key(up, dilate(kup, 2))
@@ -535,6 +580,7 @@ def main():
     sw_imgs['rustblue'] = peel_swatch(3)
     sw_imgs['glow'] = noise_swatch((255, 207, 138), 0.03, 4)
     sw_imgs['roof'] = noise_swatch((76, 74, 71), 0.14, 5)
+    sw_imgs['rust'] = rust_swatch(6)
     swatches = {}
     for i, name in enumerate(SWATCHES):
         x = PAD + i * (SW + 2 * PAD)
@@ -563,11 +609,18 @@ def main():
                 t = np.clip((ys - w[2]) / max(w[3] - w[2], 0.1), 0, 1)
                 b[y0:y1, x0:x1] = (t[:, None] * 64 + 0.5).astype(np.uint8)
         img = Image.fromarray(np.stack([r, g, b], -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.NEAREST)
-        # r eased at the edges (a box resize of the glass alone, grown two full-size pixels so it covers the pane's rim: at
-        # one, the rim drew the facade's own colour as a pale line round every pane, Round 191's review), g and b nearest
-        rr = to_img(np.repeat(dilate(k, 2)[..., None].astype(np.float32), 3, -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.BOX)
+        # r: the glass's cover, eased at its edges by a box resize. The glass is grown two full-size pixels toward the outer
+        # frame only, so it covers the pane's rim (at none, the rim drew the facade's own colour as a pale line round every
+        # pane, Round 191's review), and never into a bar between two panes of one opening (pane_bars), which stays at 0 two
+        # texels wide at the mask's size (bar_texels): grown into from both sides, the muntins were one texel at a third or two
+        # thirds of the glass, and the French doors and the casements drew as single dark sheets by day and unbroken glowing
+        # panes at night (Round 191's second review)
+        bars = pane_bars(k)
+        rr = to_img(np.repeat((dilate(k, 2) & ~bars)[..., None].astype(np.float32), 3, -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.BOX)
+        rr = np.asarray(rr)[..., 0].copy()
+        rr[bar_texels(bars, (EH // MASK_DIV, EW // MASK_DIV))] = 0
         arr = np.asarray(img).copy()
-        arr[..., 0] = np.asarray(rr)[..., 0]
+        arr[..., 0] = rr
         y = ye // MASK_DIV
         mk[y:y + EH // MASK_DIV, x // MASK_DIV:x // MASK_DIV + EW // MASK_DIV] = arr
     mask_elev(klo, xl, 'lower', None)
@@ -638,7 +691,7 @@ def main():
     gone = art_files.prune('glory')
     man = {
         'v': 1, **files, 'w': AW, 'h': AH, 'pxm': round(EW / W_M, 3),
-        'lower': {'rect': uv_rect(xl, ye, EW, EH, AW, AH), **{k: meas[k] for k in ('bays', 'doorTop', 'doorFoot', 'arcade', 'spring', 'crown', 'sill2', 'cols', 'colR', 'cornice')}},
+        'lower': {'rect': uv_rect(xl, ye, EW, EH, AW, AH), **{k: meas[k] for k in ('bays', 'doorTop', 'doorFoot', 'arcade', 'spring', 'crown', 'sill2', 'cols', 'colR', 'cornice', 'capital')}},
         'upper': {'rect': uv_rect(xu, ye, EW, EH, AW, AH), 'win': meas['win'], 'glass': glass_src},
         'swatches': swatches,
         'interior': interior,
@@ -665,6 +718,11 @@ def main():
 # the granite cornice over the second storey [y0, y1] in metres over the sidewalk, measured once by hand on the chosen
 # lower elevation (the corona's foot to the image's top)
 CORNICE = {'lower-b': [8.6, 9.3], 'lower-e': [8.78, 9.3]}
+# the piers' painted capitals, measured once by hand on the chosen lower elevation (Round 191's second review: the cap boxes
+# ran 0.1 m under them and out to the party walls, their undersides a pale slab past the painted end): y their foot (the
+# shadow line under the cyma) and top, ends the end capitals' margins from the image's left (east) and right (west) edges,
+# out how far an inner capital runs past its pier either side
+CAPITAL = {'lower-e': {'y': [3.94, 4.08], 'ends': [0.2, 0.15], 'out': 0.05}}
 
 if __name__ == '__main__':
     main()

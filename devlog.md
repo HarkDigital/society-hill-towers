@@ -9307,3 +9307,89 @@ Not done:
   neighbours' cards say "No property record here".
 - Renders: fix1/r3 (computer), fix1/p2 (phone), fix1/z-old and z-new (the page before against after at narrowed
   lenses), fix1/pairs (before against after: the review's own renders where the pose is theirs).
+
+## Round 191, the second review's fixes to Glory (Oct 14)
+
+- The second review rendered the first fixes by day, by night, in rain and on a phone, tapped every part of the front
+  from both sidewalks and across the street, and measured the LOD switch and the art's memory. Two must-fixes and nine
+  should-fixes; all are done but the neighbours (noted) and the Oberon question (Mike's).
+
+### The muntins
+- The pale-rim fix had taken them. The mask's glass was grown two full-size pixels before its box resize, from both
+  sides of every 5 to 6 px muntin, so a door's or a casement's bars came out one texel at 85 or 170 (a third or two thirds
+  glass) and 1.7 cm wide: by day the French doors and the steel casements drew as single dark sheets, at night as
+  unbroken glowing panes. The dense black grid of small lites is the defining texture of both storeys (the Bright MLS
+  view; gloryphilly IMG4 and IMG6): 2 by 6 a door leaf, 2 by 8 a casement.
+- The bake now finds the bars between the panes of one opening (`pane_bars`: what closing the key by 4 px fills; a
+  casement's mullion, a door's meeting stiles and the transom bar are wider and stay frame), grows the glass only toward
+  the outer frame, and holds every bar at 0 two texels wide at the mask's size (`bar_texels`: the texels a bar covers
+  more than half of, and its fuller neighbour where that leaves one): 3.4 cm, 95% of the bars exactly two texels, the
+  rest at the ends where a bar meets the frame. A phone's quarter mask, nearest, keeps one.
+- The shader sharpens the glass's cover where the mask is magnified (a texel spread over many pixels within a few
+  metres) and leaves it filtered once a pixel spans a texel, so a far pane averages its glass and bars.
+- Checked by night close up (2 and 3 m) and across the street: the bars silhouette black against the lit rooms; by day
+  they read as a grid of lites. From 50 m up a casement is a few pixels and its glass and bars average into a glow. No
+  pale rim came back: the atlas already fills the bars with the dark frame (`fill_dark`).
+
+### The tap
+- From the sidewalk the blade sign, the lanterns and the old sign box opened the generic card (and, once the city
+  answered, "No property record here"): the point 1.5 m along a ray running along the street is still over the walk.
+- `ref.apron` is the walk in front of the lot's own frontage, 2.4 m out; a tap whose hit stands there names Glory
+  (`gloryApron`). The lot itself is now tested 0.3 m past the hit, not 1.5 m: probing showed an oblique tap on 128's
+  front from the west sidewalk naming Glory through the long push. Probed from the west and east sidewalks and across
+  the street: the blade, its far end, both lanterns, the sign box, a pier and the brick name Glory, 128's and 124's fronts
+  open their own cards, and the west sidewalk's blade card fills with the register and district rows.
+
+### The rest
+- The old sign box: grey-sage paint (164, 168, 153) gone to primer in small ragged flakes, a mottle of grime, thin rust
+  runs in the swatch; in the shader, by the box's own frame (`uGlBox`), grime toward its edges, rust run down from its
+  top and creeping up from its foot, matte (roughness 0.8), and only 0.12 of the street lamps' wash. Its foot is a
+  rounded cap of rusted sheet (a new eighth swatch, `rust_swatch`). It no longer reads as sky-blue glass by day or glows
+  teal at night.
+- The granite: a salt and pepper grain on each face's own plane (3 mm grains over a 1 cm mottle, each faded out before
+  a pixel spans it: seen at 2 to 3 m), and the weather by place on the front, never by tile: streaks under the capitals,
+  the sill course and the cornice (`frame.drips`), a footing darker to the walk, a few old anchor holes with a rust run on
+  the piers. The jointless swatch test stands.
+- The undersides and heads: an underside darkens toward the wall it leaves, a door head and its jambs toward the door
+  at the back of the recess; measured on the review's pose the head soffit went from 114 to 97 against the face's 188,
+  now a gradient rather than a plank. The capitals' boxes stand on the painted capitals (3.94 to 4.08 m, measured by
+  hand: `CAPITAL`), the end two short of the party walls by the painted 0.15 and 0.2 m, so no cap's underside runs out
+  past its painted end.
+- The cast lace: the stoop band's six-piece rings rendered as hexagons and the balconet read as a birdcage. Both are now
+  one strip a run cut in the shader (aGl mode 5, `GLORY_LACE_GLSL`, `discard`, the part-covered pixels dithered by
+  their share, the shadow pass cut at the same line): quatrefoils a picket pair, a lily between, a ring round each post;
+  the balconet flat-fronted with a 0.12 m belly and a band of S scrolls. The near mesh went from 5,412 to 4,198 triangles.
+- The cafe chairs at night: the street lamps' wash lands right after the emissive include, so the facade hands it a
+  face's share of its colour there (`glLampK`: a metal's 1 - metalness, the old box 0.12) and restores it for the lights.
+  The chairs read mid grey at night, not white plastic.
+- The bar at night: the room's night term from 1.6 to 2.6, and a warm glow that comes in with the distance (`GLORY_FAR`,
+  8 to 70 m, 0.75), since from above the plate shows the room's dark floor. Measured with the default lens (58 degrees,
+  each opening's mean luma over its glass box, bars included, against the flats' windows; the review's own renders for
+  before): across the street the arcade 39 to 99 became 53 to 106 and the doors 46 to 72 became 57 to 81, against the
+  flats' brightest 90 and lit mean 72; at 50 m 122 to 128 against 140 and 113; at 100 m 141 to 157 against 127; at
+  190 m 34 to 46 became 146 to 151 against 145 and 91. The open bar is now the brightest glass on the front from 100 m.
+- The art's memory: a computer decoded Glory's four images at the step in every session (about 28.6 MB of GPU with the
+  mips). Every device now fetches the bytes at the step and decodes them the first time the eye comes within 600 m after
+  Enter. A phone, once decoded, holds about 7.2 MB and never releases it after the eye leaves Old City: noted in
+  handoff with the numbers, acceptable under the deferral.
+- The LOD switch: the far level's stoop carries its railings as the lace's whole-railing kind, one strip a run (78
+  triangles far, up from 62). Same pose at 195 m, near against far: 51 pixels differ by more than 24 levels in Glory's
+  window by night, 87 by day, about what the review found; the slab no longer goes bare.
+
+### Budgets
+- Glory: near 4,198 triangles (5,412 before), far 78 (62), 4,276 in all against 6,000; one draw at either level; two or
+  three Glory programs in a headless run as the shadow variants compile (the facade in one and two shadow maps, the
+  fold), two on the phone; no link failures, only the old 'Unable to serialize Texture' warnings. The frame's totals at the review's five perf poses moved by run-to-run scene noise
+  (377 to 380 calls across the street), not by Glory, which draws the same one call.
+- Streams unchanged: aGl four normalized bytes, every stream a multiple of four bytes.
+
+### Noted, not changed
+- The neighbours: 122-124 lacks the full-height black-painted brick strip against Glory's east edge in the Bright MLS
+  view, its "124 Offices" green awning and its Neoclassical front; both neighbours' white six-over-six generic sashes look
+  plainer beside Glory's photographic front. Grass tufts grow from the paving at the stoop's foot (the same under
+  `?glory=0`). In rain neither Glory's granite nor its neighbours darken or shine wet; that is city-wide.
+- For Mike: Yelp lists an "Oberon" at 126 Chestnut.
+- The balconet's scrolls at a grazing angle from directly below dither to a fine perforated look; that is the lace's
+  honest coverage with no multisampled alpha.
+- Renders: landmarks/glory/fix2/r3 and r4 (computer), p1 (phone), g0 (`?glory=0`), pairs (the review's renders on the
+  left), lod_n_195.png and lod_d_195.png (near against far at one pose).

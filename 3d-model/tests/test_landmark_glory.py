@@ -11,7 +11,11 @@
   card's lines, the frame step, and no em dash or middot in anything a person reads;
 - Round 191's review: the second storey's low arch (the chosen frame's key-measured rise at most 0.5 m), a jointless granite
   swatch at its real coursing, the bar's glass and the rooms told apart by position (not by the mask's mipped codes), the
-  signs on the near mesh, the trade fitted inside the sign's border, a phone's art decoded only near Glory after Enter."""
+  signs on the near mesh, the trade fitted inside the sign's border, a phone's art decoded only near Glory after Enter;
+- its second review: the muntins kept at 0 in the mask two texels wide (pane_bars, bar_texels), a tap on the sign from the
+  sidewalk naming Glory (the apron over the walk in front of its own frontage, never 128's), the cast lace cut in the shader
+  (and in its shadow), the capitals' boxes on the painted ones, the lamps' wash a metal's share, the stone's grain and
+  weather, and the art decoded near Glory on a computer too."""
 import json
 from pathlib import Path
 import re
@@ -77,6 +81,9 @@ for (const withArt of [false, true]) {
     }
     const p = g.attributes.position.array;
     for (let i = 0; i < p.length; i++) if (!Number.isFinite(p[i])) { m.finite = false; break; }
+    m.modes = {};
+    const gl = g.attributes.aGl.array;
+    for (let i = 0; i < gl.length; i += 4) { const k = gl[i] + ':' + gl[i + 1]; m.modes[k] = (m.modes[k] || 0) + 1; }
     g.computeBoundingBox();
     m.box = [g.boundingBox.min.x, g.boundingBox.min.y, g.boundingBox.min.z, g.boundingBox.max.x, g.boundingBox.max.y, g.boundingBox.max.z];
     r.meshes[o.name] = m;
@@ -142,7 +149,12 @@ class Gating(unittest.TestCase):
         self.assertIn("if (e.kind === 'bar' && e.ref) { gloryGoTo(e.ref);", a)
         # no pad (Round 191's review: a metre's pad round a point already 1.5 m into the building hit gave a tap on 128's party
         # wall Glory's card), and the card asks for the parcel at the business's own point inside its lot
-        self.assertIn("bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(x, z, 0) ? GLORY.ref : null);", a)
+        # its second review: the lot tested 0.3 m past the hit (the parcel's point 1.5 m along an oblique ray from the sidewalk
+        # gave a tap on 128's front Glory's card), and the hit itself on the walk in front of its own frontage (the blade sign,
+        # the lanterns, the old sign box, tapped from the sidewalk, opened the generic card)
+        self.assertIn("const gx = p[0] + dir.x * 0.3, gz = p[2] + dir.z * 0.3;", a)
+        self.assertIn("bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(gx, gz, 0) || gloryApron(p[0], p[2]) ? GLORY.ref : null);", a)
+        self.assertIn("return !!(r && r.apron && pointInPoly(x, z, r.apron));", a)
         self.assertIn("if (biz && biz.parcel) { x = biz.parcel[0]; z = biz.parcel[1]; }", a)
         self.assertIn("if (st.biz) { gloryCard(st); return; }", a)
         self.assertIn("const GLORY_OPENS = [720, 960, 960, 960, 720, 720, 720], GLORY_SHUT = 120;", a)
@@ -192,6 +204,34 @@ class Gating(unittest.TestCase):
         self.assertIn('const gap = 3, total =', cv)
         # the narrowed one-way block of Chestnut carries no centre line
         self.assertIn('cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (r.glWalk ||', a)
+
+    def test_the_second_reviews_shader_fixes(self):
+        a = self.app
+        mat = a[a.index('  function gloryFacadeMat(fr) {'):a.index('  function gloryHoursStep() {')]
+        # the glass's cover sharpened only where the mask is magnified (a far pane still averages its glass and bars)
+        self.assertIn("frMask.r = mix(clamp((frMask.r - 0.5) / max(glRw * 1.5, 1e-3) + 0.5, 0.0, 1.0), frMask.r, smoothstep(0.15, 0.4, glRw));", mat)
+        # the lace: cut by its signed distance and dithered by its share in the facade, cut at its line in the shadow pass
+        self.assertIn("'else if (glMode > 4.5) {',", mat)
+        self.assertIn("discard;", mat)
+        self.assertIn("if (vGlMK.x > 4.5 && glLace(vGlUv, floor(vGlMK.y + 0.5)) > 0.0) discard;", mat)
+        self.assertIn('const GLORY_LACE_GLSL = [', a)
+        # the street lamps' wash takes a face's share of its colour: a metal's (1 - metalness), the old sign box a little
+        self.assertIn("'vec3 glDcKeep = diffuseColor.rgb; diffuseColor.rgb *= glLampK;', '#include <emissivemap_fragment>', 'diffuseColor.rgb = glDcKeep;',", mat)
+        self.assertIn('glLampK = 1.0 - glMet;', mat)
+        self.assertIn('glRgh = 0.8; glLampK = 0.12;', mat)
+        # the stone's grain on its own plane, faded before a pixel spans a grain, and its weather by its place on the front
+        self.assertIn('glH(floor(glPl / 0.003))', mat)
+        self.assertIn('(1.0 - smoothstep(0.0015, 0.004, glPx))', mat)
+        self.assertIn("'  vec2 glFw = fwidth(glPl); float glPx = max(glFw.x, glFw.y);',", mat)   # a derivative in uniform flow
+        self.assertIn('if (fr.drips && fr.drips.length === 3) gloryU.uGlDrip.value.set(fr.drips[0], fr.drips[1], fr.drips[2], 1);', mat)
+        self.assertIn('if (fr.signbox && fr.signbox.length === 4) gloryU.uGlBox.value.fromArray(fr.signbox);', mat)
+        # the bar's glow from afar after dark
+        self.assertIn("smoothstep(uGlFar.x, uGlFar.y, distance(cameraPosition, vGlP)) * uGlFar.z", mat)
+        # one more swatch, the old sign box's rust cap: the shader's array is the bake's list
+        import bake_glory_art as B
+        self.assertIn('const GLORY_SW = %d;' % len(B.SWATCHES), a)
+        g = (ROOT / 'rebuilds' / 'glory.js').read_text()
+        self.assertIn('const SW = { ' + ', '.join('%s: %d' % (k, i) for i, k in enumerate(B.SWATCHES)) + ' };', g)
 
     def test_the_old_look_is_untouched(self):
         a = self.app
@@ -255,6 +295,32 @@ class Def(unittest.TestCase):
         self.assertAlmostEqual(f['vz'], 0.98504, places=3)
         self.assertEqual(len(f['lanterns']), 2)
         self.assertEqual(self.r['stub']['calls']['occupy'], 1)
+        # the apron: the walk in front of the lot's own frontage, 2.4 m out. The blade sign (u 4.29, v -1.2) is on it, 128's
+        # front (u -0.5, v 0.5) is neither on it nor on the lot
+        ap = c['ref']['apron']
+        self.assertEqual(len(ap), 4)
+        P = lambda u, v: (LOT[2][0] + u * f['ux'] + v * f['vx'], LOT[2][1] + u * f['uz'] + v * f['vz'])
+        self.assertTrue(inside(*P(4.29, -1.2), ap))
+        self.assertTrue(inside(*P(2.4, -0.39), ap))      # a lantern
+        self.assertTrue(inside(*P(8.1, -0.9), ap))       # the old sign box
+        self.assertFalse(inside(*P(-0.5, 0.5), ap))
+        self.assertFalse(inside(*P(-0.5, 0.5), LOT))
+        self.assertFalse(inside(*P(-0.5, -1.2), ap))     # the walk in front of 128
+        self.assertFalse(inside(*P(9.1, -1.2), ap))      # and of 124
+        self.assertEqual(f['drips'], sorted(f['drips']))
+        self.assertEqual(len(f['signbox']), 4)
+
+    def test_the_lace_and_the_cap(self):
+        m = self.r['art']['meshes']
+        near, far = m['glory-near']['modes'], m['glory-far']['modes']
+        # the cast lace: the stoop's band (kind 0) and the balconet's scrolls (1) near, the whole railing (2) far; the rings
+        # are gone (their six pieces were plain hexagons), and the band costs a strip a run
+        self.assertGreater(near.get('5:0', 0), 0)
+        self.assertGreater(near.get('5:1', 0), 0)
+        self.assertGreater(far.get('5:2', 0), 0)
+        self.assertLessEqual(near.get('5:0', 0), 64)
+        self.assertEqual(far.get('5:2', 0), 32)   # four runs, two faces of two triangles
+        self.assertGreater(near.get('1:7', 0), 0)  # the old sign box's rust cap
 
 
 class Art(unittest.TestCase):
@@ -293,12 +359,72 @@ class Art(unittest.TestCase):
         for k, p in P.items():
             x0, y0, x1, y1 = p['back']
             self.assertTrue(0 < x0 < x1 < 1 and 0 < y0 < y1 < 1, k)
-        self.assertEqual(len(self.m['swatches']), 7)
+        self.assertEqual(len(self.m['swatches']), 8)
         # Round 191's review: the second storey's arches are the real low ones (lower-b's lancets rose 0.58 m), and the
         # granite swatch tiles at its own coursing, not the 0.45 m ladder
         self.assertEqual(self.m['gen']['chosen']['lower'], 'lower-e')
         self.assertLessEqual(L['crown'] - L['spring'], 0.5)
         self.assertGreaterEqual(self.m['swatches']['granite']['m'], 0.6)
+
+    def test_the_capitals(self):
+        # the painted capitals, measured by hand on the chosen frame: the cap boxes stand on them (Round 191's second review)
+        cap = self.m['lower']['capital']
+        self.assertLess(cap['y'][0], self.m['lower']['doorTop'])
+        self.assertLess(self.m['lower']['doorTop'], cap['y'][1])
+        self.assertLess(cap['y'][1] - cap['y'][0], 0.25)
+        for e in cap['ends']:
+            self.assertTrue(0.05 <= e <= 0.3, e)
+
+    def test_the_muntins_stay_in_the_mask(self):
+        # Round 191's second review: the glass grown into the muntins from both sides left each one a texel at a third or
+        # two thirds of the glass, so the French doors and the casements drew as single sheets. Every bar between two panes
+        # of one opening is 0 two texels wide: down a door leaf (the review's column x 180, rows 350 to 480) and down a
+        # casement (x 75, rows 90 to 240) every bar between two panes is a run of zeros at least two texels long
+        try:
+            from PIL import Image
+            import numpy as np
+        except ImportError:
+            raise unittest.SkipTest('PIL or numpy unavailable')
+        with Image.open(ROOT / self.m['mask']) as im:
+            r = np.asarray(im.convert('RGB'))[..., 0]
+        for x, y0, y1, least in ((180, 350, 480, 5), (75, 90, 240, 6)):
+            col = r[y0:y1, x]
+            runs, i = [], 0
+            while i < len(col):
+                if col[i] == 0 and i > 0 and col[i - 1] >= 128:
+                    j = i
+                    while j < len(col) and col[j] == 0:
+                        j += 1
+                    if j < len(col) and col[j] >= 85:
+                        runs.append(j - i)
+                    i = j
+                else:
+                    i += 1
+            self.assertGreaterEqual(len(runs), least, (x, runs))
+            self.assertTrue(all(n >= 2 for n in runs), (x, runs))
+
+    def test_the_bar_helpers(self):
+        # a synthetic key at the bake's scale (three pixels a mask texel): two by two panes 45 px a side with a 5 or 6 px
+        # muntin between them at every phase on the grid (the chosen frame's are 5 to 6), and a 40 px mullion to a second
+        # window: the muntins are bars, the mullion is not, and at the mask's size every bar is two texels
+        try:
+            import numpy as np
+        except ImportError:
+            raise unittest.SkipTest('numpy unavailable')
+        import bake_glory_art as B
+        for gap in (5, 6):
+            for x0 in (15, 16, 17):
+                k = np.zeros((180, 300), bool)
+                xa = x0 + 45 + gap
+                for xs in (x0, xa, xa + 45 + 40):
+                    for ys in (21, 21 + 45 + gap):
+                        k[ys:ys + 45, xs:xs + 45] = True
+                bars = B.pane_bars(k)
+                self.assertTrue(bars[40, x0 + 45 + gap // 2] and bars[21 + 45 + gap // 2, x0 + 20], (gap, x0))   # both muntins
+                self.assertFalse(bars[40, xa + 45 + 20], (gap, x0))                                            # the mullion
+                t = B.bar_texels(bars, (60, 100))
+                self.assertEqual(int(t[13, (x0 + 40) // 3:(xa + 5) // 3 + 1].sum()), 2, (gap, x0))              # across the vertical
+                self.assertEqual(int(t[(21 + 40) // 3:(21 + 45 + gap + 5) // 3 + 1, (x0 + 20) // 3].sum()), 2, (gap, x0))   # down the horizontal
 
     def test_the_granite_swatch_has_no_joint(self):
         try:

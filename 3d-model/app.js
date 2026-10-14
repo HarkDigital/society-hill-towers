@@ -14245,16 +14245,16 @@ vec2 wRing(vec2 rc, float tt) {
   // windows above take the house fronts' rooms at night (roomLight); the two lanterns glow with the street lamps' photocell
   // and light the piers, the signs and the stoop round them; and the signs are faces of the near mesh that sample a canvas
   // the page letters, GLORY in vector glyphs (a slab serif, so every device draws the same), never the image model.
-  // gloryStep, once a frame: the near mesh within 170 m (the far one past 200), the hours once a model minute, and on a
-  // phone the art's decode the first time the eye comes within GLORY_DECODE_R after Enter
+  // gloryStep, once a frame: the near mesh within 170 m (the far one past 200), the hours once a model minute, and the
+  // art's decode the first time the eye comes within GLORY_DECODE_R after Enter
   const GLORY = {
     on: GLORY_ON && typeof GLORY_ART !== 'undefined' && !!GLORY_ART, art: typeof GLORY_ART !== 'undefined' ? GLORY_ART : null,
     near: null, far: null, c: new THREE.Vector3(), lod: 'near', lamps: [], ref: null, mat: null,
     signTex: null, minute: -1, open: false, artLoaded: 0, roomsLoaded: 0, tris: 0, draws: 0, pend: null,
   };
-  const GLORY_DECODE_R = 600;   // a phone decodes Glory's art the first time the eye comes this close after Enter
+  const GLORY_DECODE_R = 600;   // every device decodes Glory's art the first time the eye comes this close after Enter
   const GLORY_PHONE_SAT = 0.62;   // a phone's share of Glory's brick saturation (the facade shader: its fabric's brick is paler)
-  const GLORY_SW = 7;
+  const GLORY_SW = 8;
   const gloryU = {
     uGlMask: { value: null }, uGlInt: { value: null }, uGlIntM: { value: null }, uGlSign: { value: null },
     uGlF: { value: new THREE.Vector4(0, 0, 1, 0) }, uGlY0: { value: 0 }, uGlOpen: { value: new THREE.Vector4(1, 1, 1, 0) },
@@ -14263,8 +14263,46 @@ vec2 wRing(vec2 rc, float tt) {
     uGlRm: { value: [new THREE.Vector4(0.3, 8.3, 0.5, 4.6), new THREE.Vector4(0.3, 8.3, 5.3, 8.5)] }, uGlD: { value: 22 },
     uGlLant: { value: [new THREE.Vector3(0, -1e4, 0), new THREE.Vector3(0, -1e4, 0)] }, uGlArt: { value: 0 }, uGlInOn: { value: 0 },
     // the rooms' light: by day (times the open sky), after dark, the bulbs' extra, and a shut room's
-    uGlK: { value: new THREE.Vector4(0.9, 1.6, 0.8, 0.03) },
+    uGlK: { value: new THREE.Vector4(0.9, 2.6, 0.8, 0.03) },
+    // the open bar's glow seen from afar after dark (GLORY_FAR): from x to y metres it comes in, z its strength
+    uGlFar: { value: new THREE.Vector4(8, 70, 0.75, 0) },
+    // the old sign box's extent [v0, v1, y0, y1] in the facade's frame, and the stone's drip lines (the capitals' foot, the
+    // sill course's, the cornice's) in metres over the walk
+    uGlBox: { value: new THREE.Vector4(0, 0, -99, -99) }, uGlDrip: { value: new THREE.Vector4(-99, -99, -99, 0) },
   };
+  // the cast iron's lace (aGl mode 5), cut by discard (Round 191's second review: the stoop band's six-piece rings rendered as
+  // plain hexagons and the balconet's bars as a birdcage): st the strip's own coordinates, its run in pickets (kinds 0 and 2)
+  // or metres (kind 1) and its height in metres; kind 0 the stoop's band (refs, gloryphilly IMG6: a quatrefoil a picket pair,
+  // a lily where two meet, a ring round each post), 1 the balconet's scrolls (the Bright MLS view), 2 a whole railing, its
+  // pickets, rails and band (the far level's). The signed distance to the iron in metres, negative inside; the facade and
+  // its depth pass share it, so the shadows are the lace's
+  const GLORY_LACE_GLSL = [
+    'float glSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }',
+    'float glBand(vec2 st) {',
+    '  float c = st.x * 0.5; vec2 p = vec2((fract(c) - 0.5) * 0.24, st.y - 0.1);',
+    '  float q = min(min(length(p - vec2(0.03, 0.0)), length(p + vec2(0.03, 0.0))), min(length(p - vec2(0.0, 0.03)), length(p + vec2(0.0, 0.03)))) - 0.034;',
+    '  float d = min(abs(q) - 0.0065, length(p) - 0.012);',
+    '  float kb = floor(c + 0.5) * 2.0; vec2 e = vec2((c - floor(c + 0.5)) * 0.24, st.y - 0.1), el = vec2(abs(e.x), e.y);',
+    '  float lily = min(glSeg(e, vec2(0.0, -0.09), vec2(0.0, 0.035)) - 0.0055, abs(length((e - vec2(0.0, 0.06)) / vec2(0.55, 1.0)) - 0.022) - 0.005);',
+    '  lily = min(lily, max(abs(length(el - vec2(0.026, 0.005)) - 0.022) - 0.005, -(el.y + 0.012)));',
+    '  d = min(d, mod(kb, 10.0) < 0.5 ? abs(length(e) - 0.045) - 0.007 : lily);',
+    '  return min(d, min(st.y - 0.008, 0.192 - st.y)); }',
+    'float glLace(vec2 st, float kind) {',
+    '  if (kind < 0.5) return glBand(st);',
+    '  if (kind < 1.5) {',
+    '    vec2 p = vec2((fract(st.x / 0.15) - 0.5) * 0.15, (fract(st.y / 0.2) - 0.5) * 0.2); p.x *= mod(floor(st.x / 0.15), 2.0) < 0.5 ? 1.0 : -1.0;',
+    '    float d = max(abs(length(p - vec2(0.0, 0.048)) - 0.048) - 0.005, p.x);',
+    '    d = min(d, max(abs(length(p + vec2(0.0, 0.048)) - 0.048) - 0.005, -p.x));',
+    '    d = min(d, min(abs(length(p - vec2(0.0, 0.08)) - 0.014), abs(length(p + vec2(0.0, 0.08)) - 0.014)) - 0.0045);',
+    '    return min(d, 0.0705 - abs(p.x)); }',
+    '  float k = floor(st.x + 0.5), post = mod(k, 10.0) < 0.5 ? 1.0 : 0.0;',
+    '  float d = abs(st.x - k) * 0.12 - mix(0.008, 0.0225, post); d = max(d, mix(st.y - 0.8, -1.0, post));',
+    '  d = min(d, min(min(abs(st.y - 0.02) - 0.015, abs(st.y - 0.8) - 0.011), 0.9775 - st.y));',
+    '  return st.y > 0.8 ? min(d, glBand(vec2(st.x, st.y - 0.8))) : d; }',
+  ].join('\n');
+  // the lace's pixels between two ranks of the iron are kept in proportion by a dither (interleaved gradient noise), so a
+  // thin bar at a distance thins rather than shimmers
+  const GLORY_DITHER = 'fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))))';
   // the hours (Google's, Oct 2026), minutes after midnight by weekday from Sunday: Monday to Wednesday 4 PM to 2 AM, Thursday
   // to Sunday 12 PM to 2 AM; every night runs to 2 AM, so the first two hours of a day are the night before's
   const GLORY_OPENS = [720, 960, 960, 960, 720, 720, 720], GLORY_SHUT = 120;
@@ -14389,12 +14427,15 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // the facade's one material (the near and far meshes share it). Its vertex attribute aGl says how a face is coloured: 0 its
   // elevation's pixels at its uv; 1 a swatch tiled in metres on the face's own plane (aGl.y which), 2 a lantern's glass, 3 a
-  // cafe table or chair (a swatch, folded away while the bar is shut)
+  // cafe table or chair (folded away while the bar is shut), 4 a sign on the page-lettered canvas, 5 the cast lace
+  // (GLORY_LACE_GLSL, aGl.y its kind)
   function gloryFacadeMat(fr) {
     if (GLORY.mat) return GLORY.mat;
     const A = GLORY.art, gl2 = !!renderer.capabilities.isWebGL2, rich = !isTouch;
     gloryU.uGlF.value.set(fr.ax, fr.az, fr.ux, fr.uz); gloryU.uGlY0.value = fr.y0;
     for (let i = 0; i < 2; i++) if (fr.lanterns[i]) gloryU.uGlLant.value[i].set(fr.lanterns[i][0], fr.lanterns[i][1], fr.lanterns[i][2]);
+    if (fr.signbox && fr.signbox.length === 4) gloryU.uGlBox.value.fromArray(fr.signbox);
+    if (fr.drips && fr.drips.length === 3) gloryU.uGlDrip.value.set(fr.drips[0], fr.drips[1], fr.drips[2], 1);
     const map = gloryBlank(true, '#8f8a80'), mask = gloryBlank(false, '#000'), rooms = gloryBlank(true, '#1a1410'), roomsM = gloryBlank(false, '#000');
     map.anisotropy = anisoOf(8); mask.anisotropy = anisoOf(4);
     gloryU.uGlMask.value = mask; gloryU.uGlInt.value = rooms; gloryU.uGlIntM.value = roomsM;
@@ -14410,10 +14451,11 @@ vec2 wRing(vec2 rc, float tt) {
         ['ground', 'upperroom'].forEach((k, i) => { const p = P[k + '-open']; if (p) { gloryU.uGlBk.value[i].fromArray(p.back); gloryU.uGlRm.value[i].fromArray(p.room); } });
         gloryU.uGlD.value = I.depth || 22;
       }
-      // a computer decodes the four images now; a phone fetches their bytes now and makes the images in gloryStep, the first
-      // time the eye comes within GLORY_DECODE_R after Enter (until then the swatches' means, uGlArt, stand in, and a
-      // session that never comes to Old City never holds them)
-      const pre = isTouch ? [gloryBytes(artSrc(A.img, A.imgHalf)), gloryBytes(artSrc(A.mask, A.maskHalf))].concat(I ? [gloryBytes(artSrc(I.img, I.imgHalf)), gloryBytes(artSrc(I.mask, I.maskHalf))] : []) : [];
+      // every device fetches the four images' bytes now and makes the images in gloryStep, the first time the eye comes within
+      // GLORY_DECODE_R after Enter (until then the swatches' means, uGlArt, stand in, and a session that never comes to Old
+      // City never holds them: about 29 MB of a computer's GPU with their mips, 7 MB of a phone's; Round 191's second review
+      // found a computer's decoded at the step in every session)
+      const pre = [gloryBytes(artSrc(A.img, A.imgHalf)), gloryBytes(artSrc(A.mask, A.maskHalf))].concat(I ? [gloryBytes(artSrc(I.img, I.imgHalf)), gloryBytes(artSrc(I.mask, I.maskHalf))] : []);
       const go = () => {
         let loaded = 0, r = 0;
         const both = () => { if (++loaded === 2) { gloryU.uGlArt.value = 1; GLORY.artLoaded = 1; } };
@@ -14421,7 +14463,7 @@ vec2 wRing(vec2 rc, float tt) {
         const both2 = () => { if (++r === 2) { gloryU.uGlInOn.value = 1; GLORY.roomsLoaded = 1; } };
         if (I) { gloryLoad(rooms, I.img, I.imgHalf, both2, pre[2]); gloryLoad(roomsM, I.mask, I.maskHalf, both2, pre[3]); }
       };
-      if (isTouch) GLORY.pend = go; else go();
+      GLORY.pend = go;
     }
     const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(0.88, 0.88, 0.88), roughness: 0.85, metalness: 0 });
     mat.extensions = { derivatives: true };
@@ -14437,23 +14479,29 @@ vec2 wRing(vec2 rc, float tt) {
           'if (abs(vGl.x - 3.0) < 0.5 && uGlOpen.z < 0.5) transformed = vec3(0.0);'].join('\n'))
         .replace('#include <project_vertex>', '#include <project_vertex>\nvGlP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = uGlY0;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + [
-        'uniform sampler2D uGlMask, uGlInt, uGlIntM, uGlSign; uniform vec4 uGlF, uGlOpen, uGlPl[4], uGlBk[2], uGlRm[2], uGlK;',
+        'uniform sampler2D uGlMask, uGlInt, uGlIntM, uGlSign; uniform vec4 uGlF, uGlOpen, uGlPl[4], uGlBk[2], uGlRm[2], uGlK, uGlFar, uGlBox, uGlDrip;',
         'uniform float uGlY0, uGlD, uGlArt, uGlInOn, uNight, uLamp; uniform vec3 uGlLant[2];',
         'varying vec4 vGl; varying vec4 vGlR; varying vec3 vGlP; varying vec3 vWNorm; varying float vBase;',
-        // frMask: the name lampLightPatchReal looks for to keep the street lamps' wash off the glass
-        'vec4 frMask; float glMode, glBar, glUp, glMet, glRgh, glBl; vec3 glDay, glPf;',
+        // frMask: the name lampLightPatchReal looks for to keep the street lamps' wash off the glass; glLampK a face's share
+        // of the street lamps' wash (a metal's diffuse is its (1 - metalness) share, the old sign box high on the wall a
+        // little); glPl a face's own plane in metres, for the stone's grain
+        'vec4 frMask; float glMode, glBar, glUp, glMet, glRgh, glBl, glLampK; vec3 glDay, glPf; vec2 glPl;',
+        GLORY_LACE_GLSL,
+        'float glH(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }',
+        'float glN1(float x) { float i = floor(x), f = fract(x); return mix(glH(vec2(i, 7.0)), glH(vec2(i + 1.0, 7.0)), f * f * (3.0 - 2.0 * f)); }',
         // the mask's numbers (g a window's number, b the height inside it) read at its full size: a mip averages them with
         // the frames' zeros round them, and they are numbers, not colours (r, the glass's cover, is read filtered)
         gl2 ? '#define GLMASK0(p) textureGrad(uGlMask, p, vec2(0.0), vec2(0.0))' : '#define GLMASK0(p) texture2D(uGlMask, p, -16.0)',
         REAL ? WINDOW_INTERIOR_GLSL : ''].join('\n'))
         .replace('#include <map_fragment>', [
-          'glMode = floor(vGl.x + 0.5); frMask = vec4(0.0); vec4 glTex; glMet = 0.0; glRgh = -1.0;',
+          'glMode = floor(vGl.x + 0.5); frMask = vec4(0.0); vec4 glTex; glMet = 0.0; glRgh = -1.0; glLampK = 1.0; vec2 glUvW = fwidth(vUv);',
           // the face's place in the facade's frame (u east, y up over the walk, z into the lot). What a pane is, the bar's
           // glass below the granite cornice (EH, 9.3 m) and the flats' above, and which of the bar's rooms (the second
           // storey's from 4.6 m) is decided here by position, never by the mask's codes, which a mip averages with the frames'
           // zeros: Round 191's review found the bar's lit glass black from about 100 m, and across the street the panes
           // flipping between the two rooms as a mosaic of streaks
           'vec2 glD0 = vGlP.xz - uGlF.xy; glPf = vec3(dot(glD0, uGlF.zw), vGlP.y - uGlY0, dot(glD0, vec2(-uGlF.w, uGlF.z)));',
+          'glPl = glPf.xy;',
           'if (glMode < 0.5) { glTex = texture2D(map, vUv); frMask = texture2D(uGlMask, vUv); frMask.gb = GLMASK0(vUv).gb; }',
           // a lantern: its clear glass (dark and glossy by day, the street in it) and its bulb, a pale filament by day
           // (the globe is drawn opaque, so the bulb inside is drawn on it: the eye's ray through this point passes the bulb,
@@ -14463,30 +14511,73 @@ vec2 wRing(vec2 rc, float tt) {
           '  for (int i = 0; i < 2; i++) { vec3 glQ = uGlLant[i] - vGlP; glBl = min(glBl, length(glQ - glRd * dot(glQ, glRd))); }',
           '  float glBulb = exp(-glBl * glBl / (0.022 * 0.022));',
           '  glTex = vec4(vGl.y > 0.5 ? vec3(0.8, 0.74, 0.62) : mix(vec3(0.06, 0.06, 0.055), vec3(0.78, 0.72, 0.6), glBulb), 1.0); glRgh = vGl.y > 0.5 ? 0.4 : 0.04; frMask = vec4(0.0, 0.0, 240.0 / 255.0, 0.0); }',
+          // the cast lace (GLORY_LACE_GLSL): the iron kept, the rest cut away, the pixels a bar part covers dithered by its share
+          'else if (glMode > 4.5) {',
+          '  float glK = floor(vGl.y + 0.5), glLd = glLace(vUv, glK), glLw = max(length(glUvW * vec2(glK > 0.5 && glK < 1.5 ? 1.0 : 0.12, 1.0)), 1e-5);',
+          '  if (clamp(0.5 - glLd / glLw, 0.0, 1.0) <= ' + GLORY_DITHER + ') discard;',
+          '  glTex = vec4(vec3(0.02), 1.0); glRgh = 0.5; }',
           // the signs: the canvas the page letters (the blade, the board, the plaque, the menu)
           'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv); glRgh = 0.6; }',
           // the cafe (Round 191's review: concrete boards read as slabs): the tables black painted steel, the chairs
           // galvanized steel, a metal under the sky's own light
-          'else if (glMode > 2.5) { bool glCh = vGl.y > 0.5; glTex = vec4(glCh ? vec3(0.34, 0.35, 0.36) : vec3(0.022), 1.0); glMet = glCh ? 0.7 : 0.0; glRgh = glCh ? 0.4 : 0.45; }',
+          'else if (glMode > 2.5) { bool glCh = vGl.y > 0.5; glTex = vec4(glCh ? vec3(0.34, 0.35, 0.36) : vec3(0.022), 1.0); glMet = glCh ? 0.7 : 0.0; glRgh = glCh ? 0.4 : 0.45; glLampK = 1.0 - glMet; }',
           'else {',
           // a swatch tiled in metres on the face's own plane in the facade's frame (the front, a side or a top), with the
           // unwrapped coordinate's gradients so the tile's wrap is no mip seam
           '  vec3 glN = abs(vec3(dot(vWNorm.xz, uGlF.zw), vWNorm.y, dot(vWNorm.xz, vec2(-uGlF.w, uGlF.z))));',
           '  vec2 glT = (glN.y > max(glN.x, glN.z) ? glPf.xz : (glN.x > glN.z ? glPf.zy : glPf.xy)) / max(vGl.z, 0.05);',
-          '  vec2 glS = vGlR.xy + vGlR.zw * fract(glT);',
+          '  vec2 glS = vGlR.xy + vGlR.zw * fract(glT); glPl = glT * max(vGl.z, 0.05);',
           // the gradients held to the swatch's gutter (8 texels: the third mip), or a face seen edge on (a cornice's soffit from
           // the walk) reads a mip so coarse that the neighbouring swatches bleed into it as a dark and orange smear
           gl2 ? '  vec2 glGx = dFdx(glT) * vGlR.zw, glGy = dFdy(glT) * vGlR.zw; float glGm = 8.0 / 2048.0;\n  glGx *= min(1.0, glGm / max(length(glGx), 1e-7)); glGy *= min(1.0, glGm / max(length(glGy), 1e-7));\n  glTex = textureGrad(map, glS, glGx, glGy);' : '  glTex = texture2D(map, glS);',
           '}',
           // before the art lands: the photographed colours (granite, brick), stored as the swatches' means
-          'if (uGlArt < 0.5 && glMode < 1.5) { float glSw = floor(vGl.y + 0.5); glTex = vec4(glMode < 0.5 ? (glPf.y < 9.3 ? vec3(0.32, 0.28, 0.24) : vec3(0.34, 0.16, 0.10)) : (glSw < 0.5 ? vec3(0.69, 0.60, 0.50) : glSw < 1.5 ? vec3(0.39, 0.18, 0.11) : glSw > 2.5 && glSw < 3.5 ? vec3(0.02) : glSw > 3.5 && glSw < 4.5 ? vec3(0.27, 0.37, 0.45) : glSw > 4.5 && glSw < 5.5 ? vec3(0.99, 0.62, 0.26) : vec3(0.18, 0.17, 0.15)), 1.0); }',
+          'if (uGlArt < 0.5 && glMode < 1.5) { float glSw = floor(vGl.y + 0.5); glTex = vec4(glMode < 0.5 ? (glPf.y < 9.3 ? vec3(0.32, 0.28, 0.24) : vec3(0.34, 0.16, 0.10)) : (glSw < 0.5 ? vec3(0.69, 0.60, 0.50) : glSw < 1.5 ? vec3(0.39, 0.18, 0.11) : glSw > 2.5 && glSw < 3.5 ? vec3(0.02) : glSw > 3.5 && glSw < 4.5 ? vec3(0.27, 0.37, 0.45) : glSw > 4.5 && glSw < 5.5 ? vec3(0.99, 0.62, 0.26) : glSw > 6.5 ? vec3(0.07, 0.04, 0.025) : vec3(0.18, 0.17, 0.15)), 1.0); }',
           'glTex.rgb *= 1.0 - vGl.w / 255.0;',   // a recess's or an underside's shade (aGl's fourth byte)
+          // Round 191's second review: the granite read as clean cream plaster, and the caps' undersides and the doors' heads
+          // as flat pale planks. The stone (the lower elevation's pale pixels, every granite swatch face) takes a salt and
+          // pepper grain on its own plane, 3 mm grains over a 1 cm mottle, each faded out before a pixel spans it; then the
+          // weather by its place on the front, never by a tile: streaks run down under the capitals, the sill course and the
+          // cornice, the footing darkens to the walk, and a few old anchor holes stand on the piers; then an underside
+          // darkens toward the wall it leaves, a head and a jamb toward the door at the back of its recess
+          '{ float glSw = floor(vGl.y + 0.5), glStone = glMode < 0.5 ? step(glPf.y, 9.3) * smoothstep(0.1, 0.24, dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))) : (glMode < 1.5 && glSw < 0.5 ? 1.0 : 0.0);',
+          '  vec2 glFw = fwidth(glPl); float glPx = max(glFw.x, glFw.y);',   // out of the branch: a derivative in uniform flow
+          '  if (glStone > 0.0 && uGlArt > 0.5) {',
+          '    float glG = glH(floor(glPl / 0.003)), glM = glH(floor(glPl / 0.011) + 17.0);',
+          '    float glGr = ((step(0.87, glG) * -0.5 + step(glG, 0.1) * 0.22) * (1.0 - smoothstep(0.0015, 0.004, glPx)) + (glM - 0.5) * 0.14 * (1.0 - smoothstep(0.005, 0.016, glPx)));',
+          '    float glVert = 1.0 - smoothstep(0.5, 0.8, abs(vWNorm.y)), glU = glPl.x, glY = glPf.y, glDr = 0.0;',
+          '    for (int i = 0; i < 3; i++) { float glTop = i == 0 ? uGlDrip.x : (i == 1 ? uGlDrip.y : uGlDrip.z), glDy = glTop - glY;',
+          '      float glS = glN1(glU * 38.0 + float(i) * 13.1) * glN1(glU * 9.0 + float(i) * 5.3);',
+          '      glDr += step(0.0, glDy) * glS * glS * exp(-glDy / (0.25 + 0.9 * glN1(glU * 6.0 + float(i)))); }',
+          '    float glFoot = 1.0 - smoothstep(0.0, 0.45 + 0.25 * glN1(glU * 3.1), glY);',
+          '    vec2 glAc = vec2(floor(glU / 0.7), floor((glY - 1.2) / 0.5)), glAp = vec2(fract(glU / 0.7) * 0.7, fract((glY - 1.2) / 0.5) * 0.5) - (0.15 + 0.4 * vec2(glH(glAc + 3.0), glH(glAc + 9.0) * 0.5));',
+          '    float glHole = step(glH(glAc + 31.0), 0.2) * step(1.2, glY) * step(glY, 3.6) * (1.0 - smoothstep(0.008, 0.014, length(glAp)));',
+          '    float glRun = step(glH(glAc + 31.0), 0.2) * step(abs(glAp.x), 0.006) * step(glAp.y, 0.0) * exp(glAp.y / 0.06);',
+          '    glTex.rgb *= (1.0 + glGr * glStone) * (1.0 - glStone * glVert * (min(glDr, 1.0) * 0.42 + glFoot * 0.3 + glRun * 0.35));',
+          '    glTex.rgb *= 1.0 - (glMode < 0.5 ? glStone : 0.0) * glHole * 0.7; }',
+          '  if (glMode > 0.5 && glMode < 1.5 && glSw < 0.5) {',
+          '    float glDn = smoothstep(0.5, 0.8, -vWNorm.y), glSide = 1.0 - smoothstep(0.3, 0.6, abs(vWNorm.y)), glIn = smoothstep(0.0, 0.25, glPf.z);',
+          '    glTex.rgb *= mix(1.0, glPf.z < 0.0 ? mix(0.55, 1.0, smoothstep(0.0, 0.16, -glPf.z)) : mix(0.85, 0.42, glIn), glDn) * mix(1.0, mix(1.0, 0.7, glIn), glSide * step(0.0, glPf.z)); } }',
+          // the old sign box (the rustblue swatch, its rust cap the rust swatch): grime toward its edges, rust run down its face
+          // from its top and creeping up from its cap, matte, and only a little of the street lamps' wash (Round 191's second
+          // review: it read as a glossy sky blue glass slab by day and glowed teal at night)
+          '{ float glSw = floor(vGl.y + 0.5); if (glMode > 0.5 && glMode < 1.5 && (abs(glSw - 4.0) < 0.5 || glSw > 6.5)) {',
+          '  glRgh = 0.8; glLampK = 0.12;',
+          '  if (glSw < 6.5) {',
+          '    float glV = glPf.z, glE = min(min(glV - uGlBox.x, uGlBox.y - glV), min(glPf.y - uGlBox.z, uGlBox.w - glPf.y));',
+          '    float glRs = smoothstep(0.45, 0.85, glN1(glPl.x * 31.0)) * (0.45 + 0.55 * glN1(glPl.x * 7.0 + 3.0)) * exp(-(uGlBox.w - glPf.y) / (0.5 + 1.2 * glN1(glPl.x * 5.0))) + 0.8 * (1.0 - smoothstep(0.0, 0.18, glPf.y - uGlBox.z - 0.1));',
+          '    glTex.rgb *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.1, glE));',
+          '    glTex.rgb = mix(glTex.rgb, vec3(0.12, 0.05, 0.022), clamp(glRs, 0.0, 1.0) * 0.75); } } }',
           // a phone's brick (Round 191's review): its fabric has no walls' atlas and its neighbours' brick renders at about
           // 0.13 saturation, against the photographs' 0.32 that Glory's carries, which read as pasted in; on a phone the
           // brick (the upper elevation, the brick swatch) keeps GLORY_PHONE_SAT of its saturation, about 0.22 as rendered
           isTouch ? '{ float glBr = (glMode < 0.5 && glPf.y >= 9.3) || (glMode > 0.5 && glMode < 1.5 && abs(vGl.y - 1.0) < 0.5) ? 1.0 : 0.0; glTex.rgb = mix(glTex.rgb, mix(vec3(dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))), glTex.rgb, ' + GLORY_PHONE_SAT.toFixed(2) + '), glBr); }' : '',
           'glDay = glTex.rgb;',
           'float glB = frMask.b * 255.0, glLow = step(glPf.y, 9.3);',
+          // the glass's cover sharpened where the mask is magnified (a texel is 1.7 cm: close up its eased edge spread over many
+          // pixels and the muntins went soft), left as filtered once a pixel spans a texel or more, so a far pane still
+          // averages its glass and its bars
+          '{ float glRw = fwidth(frMask.r); frMask.r = mix(clamp((frMask.r - 0.5) / max(glRw * 1.5, 1e-3) + 0.5, 0.0, 1.0), frMask.r, smoothstep(0.15, 0.4, glRw)); }',
           'glBar = frMask.r * glLow * (1.0 - step(0.5, glMode));',
           'glUp = frMask.r * (1.0 - glLow) * (1.0 - step(0.5, glMode));',
           // the bar's glass is clear: its own albedo goes to dark glass (the room behind it is added as light); after dark the
@@ -14503,7 +14594,9 @@ vec2 wRing(vec2 rc, float tt) {
           '  for (int i = 0; i < 2; i++) { vec3 glL = uGlLant[i] - vGlP; float dl = length(glL);',
           '    glW += (0.25 + 0.75 * max(dot(vWNorm, glL / max(dl, 1e-3)), 0.0)) / (1.0 + 2.0 * dl * dl) * (1.0 - smoothstep(2.0, 3.5, dl)); }',
           '  reflectedLight.directDiffuse += diffuseColor.rgb * (1.0 - glMet) * vec3(1.0, 0.62, 0.32) * 0.7 * glW * uLamp; }'].join('\n'))   // a metal's diffuse is its (1 - metalness) share
-        .replace('#include <emissivemap_fragment>', ['#include <emissivemap_fragment>',
+        // the street lamps' wash (lampLightPatch, which lands right after this include) takes a face's glLampK share of its
+        // colour: the galvanized chairs read as white plastic under it (Round 191's second review), the old sign box glowed
+        .replace('#include <emissivemap_fragment>', ['vec3 glDcKeep = diffuseColor.rgb; diffuseColor.rgb *= glLampK;', '#include <emissivemap_fragment>', 'diffuseColor.rgb = glDcKeep;',
           // a lantern after dark: the bulb hot, the globe's glass glowing round it, brightest where it faces the eye (the
           // bulb seen through it)
           'if (glMode > 1.5 && glMode < 2.5)',
@@ -14541,6 +14634,10 @@ vec2 wRing(vec2 rc, float tt) {
           // after dark the bulbs twinkle a little (a string's lamps, the globes), and the back bar's shelves glow warmer
           '  em += op * uNight * (mI.r * uGlK.z * (0.9 + 0.1 * sin(uGlOpen.w * 1.9 + im.x * 41.0 + im.y * 17.0)) + mI.g * 0.15) * vec3(1.0, 0.78, 0.5);',
           '  em += (1.0 - op) * uNight * vec3(0.9, 0.05, 0.03) * step(abs(im.x - 0.5), 0.004) * step(abs(im.y - bk.w + 0.012), 0.003);',   // a shut room's exit sign
+          // GLORY_FAR: from afar the plate's mips average its dim walls with its few bright bulbs, and the open bar went to the
+          // darkest glass on the front after dark, under the flats' lit rooms (Round 191's second review: 25 to 40 against
+          // 150 to 170 from 190 m); a warm glow comes in with the distance
+          '  em += op * uNight * smoothstep(uGlFar.x, uGlFar.y, distance(cameraPosition, vGlP)) * uGlFar.z * vec3(1.0, 0.7, 0.4);',
           '  totalEmissiveRadiance += glBar * em;',
           '}',
           REAL ? [
@@ -14558,8 +14655,10 @@ vec2 wRing(vec2 rc, float tt) {
     const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     depth.onBeforeCompile = (sh) => {
       sh.uniforms.uGlOpen = gloryU.uGlOpen;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nif (abs(aGl.x * 255.0 - 3.0) < 0.5 && uGlOpen.z < 0.5) transformed = vec3(0.0);');
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen; varying vec2 vGlUv; varying vec2 vGlMK;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlUv = uv; vGlMK = aGl.xy * 255.0;\nif (abs(aGl.x * 255.0 - 3.0) < 0.5 && uGlOpen.z < 0.5) transformed = vec3(0.0);');
+      // and the lace's shadow is the lace's (cut at its line: a shadow map has no use for the dither)
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying vec2 vGlUv; varying vec2 vGlMK;\n' + GLORY_LACE_GLSL + '\nvoid main() {\nif (vGlMK.x > 4.5 && glLace(vGlUv, floor(vGlMK.y + 0.5)) > 0.0) discard;');
     };
     depth.customProgramCacheKey = () => 'glory-depth';
     GLORY.depth = depth;
@@ -14620,6 +14719,12 @@ vec2 wRing(vec2 rc, float tt) {
     const r = GLORY.ref;
     if (!r) return false;
     return rbDist(x, z, r.lot) <= (pad || 0);
+  }
+  // the walk in front of its own frontage, 2.4 m out (ref.apron, rebuilds/glory.js): a tap whose HIT point stands there is on
+  // Glory's signs, lanterns, old sign box, stoop or railings
+  function gloryApron(x, z) {
+    const r = GLORY.ref;
+    return !!(r && r.apron && pointInPoly(x, z, r.apron));
   }
 
   // ---- the landmark rebuilds (Round 161; see REBUILDS). Right after the outer districts, whose loop skipped the
@@ -21099,7 +21204,11 @@ vec2 wRing(vec2 rc, float tt) {
     if (bfbNear(p[0], p[2], 25) || wwbNear(p[0], p[2], 25)) return false;
     { const dk = ovpDeckY(p[0], p[2]); if (dk !== null && Math.abs(dk - p[1]) < 4) return false; }
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
-    bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(x, z, 0) ? GLORY.ref : null);   // Round 191: on Glory's lot (no pad: the point is already 1.5 m into the building hit, and a metre's pad gave a tap on 128's party wall Glory's card), its own card
+    // Round 191: Glory's own card for a hit 0.3 m short of its lot (no pad: a metre's pad gave a tap on 128's party wall
+    // Glory's card, and so did the parcel's point 1.5 m along an oblique ray from the sidewalk, Round 191's second review), or
+    // for the hit itself on the walk in front of its frontage (its blade sign, a lantern, the old sign box, the cornices)
+    const gx = p[0] + dir.x * 0.3, gz = p[2] + dir.z * 0.3;
+    bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(gx, gz, 0) || gloryApron(p[0], p[2]) ? GLORY.ref : null);
     return true;
   }
   // a building's card at (ax, ay, az), filled from the parcel under (x, z); biz a business the page knows there (Glory),
