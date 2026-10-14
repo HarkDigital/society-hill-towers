@@ -30,6 +30,7 @@ MANIFESTS += ('vehicle_art.json',)   # the vehicles' (the realism pass)
 MANIFESTS += ('storefront_art.json',)   # the storefronts' shopfronts (Round 189)
 MANIFESTS += ('cityhall_art.json',)   # City Hall's facades (Round 191)
 MANIFESTS += ('glory_art.json',)   # Glory Beer Bar & Kitchen's elevations, swatches and rooms (Round 191)
+MANIFESTS += ('glass_art.json',)   # the glass towers' frame and room atlases (Round 192)
 
 
 class Files(unittest.TestCase):
@@ -46,7 +47,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 
@@ -58,6 +59,8 @@ class Files(unittest.TestCase):
         named = set(self.named)
         for p in named:
             if '-half' in p or '-mask' in p:
+                continue
+            if p.startswith('art/glass/rooms.'):   # Round 192's review: the glass's room pictures are a computer's (a phone never draws them)
                 continue
             kind, name = p.split('/')[1], p.split('/')[2].split('.')[0]
             self.assertTrue(any(q.startswith('art/%s/%s-half.' % (kind, name)) for q in named), p)

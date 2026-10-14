@@ -190,7 +190,7 @@ class Page(unittest.TestCase):
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("STOREFRONT_INFO", text_of("storefront_info.json", "null"))', b)
         self.assertIn('const("STOREFRONT_ART", text_of("storefront_art.json", "null"))', b)
-        self.assertRegex(b, r'for name in \([^)]*"storefront_art\.json"\):')
+        self.assertRegex(b, r'for name in \([^)]*"storefront_art\.json"[^)]*\):')
 
     def test_no_dash_in_what_shows(self):
         b = self.block

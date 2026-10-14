@@ -337,7 +337,9 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertNotIn('else go();', mat)
         self.assertNotIn('const pre = isTouch ?', mat)
         self.assertIn('if (GLORY.pend && PERF.enterT && d < GLORY_DECODE_R)', cut(s, '  function gloryStep(now) {', '  function gloryApi() {'))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 31)   # the definition and its uses (the realism pass's twenty-one, City Hall's seven, Glory's three: Round 191)
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function glassArtTex(im, srgb, aniso) {', '  function glassRoomsLoad() {'))   # Round 192: the glass's rooms
+        self.assertIn('glassU.uGlassArr.value = freeTexOnUpload(t);', cut(s, "  step('Glazing the towers'", '  // the street floors (critic gap 4)'))   # and its frames' texture array
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 33)   # the definition and its uses (the realism pass's twenty-one, City Hall's seven, Glory's three: Round 191; glassArtTex and the frames: Round 192)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

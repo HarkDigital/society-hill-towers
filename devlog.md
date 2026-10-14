@@ -10286,3 +10286,545 @@ place; this is what changed in the code, and what was measured.
   `zrevFail` with storage blocked reloads once onto `?zbuf=log` in the address instead of leaving a lost frame black.
 - The Android hold stands (log depth on an Android phone until one is measured).
 
+## Round 193 — the glass towers (Oct 14)
+
+- Mike: "Can we also update the glass textures of the skyscrapers that are glass?" (after the storefronts: "it looks better,
+  but it isn't where I want it to be"), with the frame rate under review in another workflow, so the new glass may not cost
+  more GPU time than the glass it replaces. Built on `look/glass` from the round's survey and spec (renders of today, the
+  references, today's measured cost).
+- What was there: the researched glass towers drew a procedural curtain wall (`outerGlassMat`: a world-space grid of bright
+  lines over a vertex colour) and most of them, under a Round 188 skin of a generated tile 12 cm in front whose glass was a
+  photograph with the sky painted in; an unresearched tower whose tile was glass drew the fabric's whole facade under its
+  skin. Every glass surface reflected refreshEnv's sky probe (a dome, a disc and nine boxes): no tower, street or river ever
+  showed in a curtain wall. By day the walls read as graph paper on blue plastic, the skins as wallpaper; at night a QR-code
+  speckle of white blocks on every tower with pure black between them.
+- One draw per glass wall. Under `GLASS_ON` (REAL, WebGL 2, no `?glass=0`, 512 fragment uniform vectors) a researched glass
+  wall lays no skin, and an unresearched tower whose cladding kind is one of the ten glass kinds (`skinKindOf`, the same draw
+  factored out of `towerSkinNote`) puts its walls on the curtain-wall material as style 30 with its kind's system and its
+  roof on the fabric chunk (`appendBuilding`'s new `capCh`: the roof art, snow, night glow and kit stay); on a computer so do
+  the mid-rises the cladding would have dressed in glass or unitized panels (`midSkinKindOf`). Routed at load: 78 researched
+  glass footprints, 197 generic towers, 234 mid-rises (a computer's), 51 OSM glass parts; 67 skins not laid. A pitched roof
+  keeps the fabric and its skin; the far ring keeps its skins.
+- Sixteen curtain-wall systems (`glass_systems.json`, each with its sources): bay, floor, module, F0, transmittance, coating,
+  pane bow and roller wave, spandrel, frame (colour, metalness, roughness, whether the authored colour tints a one-material
+  frame), rooms, an upper datum, low-iron corners, a lobby; F0 and transmittance from Vitro's data (modern low-e 0.07 to 0.12,
+  the 1980s reflective coatings and Cira's silver 0.20 to 0.35). Every towers.json glass tower has its system and glass colour
+  (in the towers' register, hex x 0.66); FMC's floor is its LED rings' 4.0, Comcast's its crown's 4.15, the CTC's its units'
+  4.42. The system rides the aSFT floor byte as `-(sys + 1)` (`glassFh`): no new stream.
+- The art (gpt-image-2, quality high, four at a time, every image read): sixteen straight-on elevations, one a system, the
+  vision glass a flat chroma-key green and the spandrel or railing glass a flat magenta (all sixteen keyed cleanly the first
+  time). `bake_glass_art.py` finds each one's repeat, aligns every repeat to their mean and folds them into one module (the
+  model never draws two bays alike: a global period alone blurred every mullion by its drift), fills the keyed pixels from
+  the frame round them, and packs ONE 2048 x 1024 atlas at 64 px/m with wrapped gutters: r the vision glass, g the spandrel
+  glass, b the frame's detail as its luminance over twice the frame's mean (the shader multiplies the system's frame colour by
+  twice it). The first cut carried an albedo atlas beside the mask; a fragment's second fetch was a cost the old procedural
+  wall never paid, so it went. Eight rooms through `/v1/images/edits` on a one-point template: the model kept the view but not
+  the back wall's size (an open office three widths deep, a bedroom one), so each back wall was read by eye off a grid (`BACK`)
+  and the page projects through each cell's own scale and vanishing point. 510 KB of art (a phone loads 103 KB of it).
+- The shader (`glassSysHook`, one program and the phone's vertex-depth twin): each wall a whole number of bays from a mullion,
+  floors from the base, the lobby the clear system's tall panes, a short top floor a parapet; the frame from the atlas through
+  textureGrad on the module's continuous coordinates (isotropic; its footprint held inside the gutter, the measured mean taken
+  over as the hold bites, the means alone under three pixels a pane: no tiling, no shimmer); a pixel's frame and glass summed
+  by area with metalness 0; each pane bowed its own way, a hair off true, a tempered pane's roller wave, the jagged system's
+  facets, the vent sashes, folded into roughness as they shrink; the glass's F0 tinted by its coating, each pane a few percent
+  its own; behind the vision glass a room, at night by the clock (offices in runs along each floor, homes and hotels room by
+  room, a crown's plant rooms barely, the lobby always) with interior mapping into the room atlas within reach on a computer
+  (lit rooms only), the cell's mean with a ceiling's brightness further out, blinds on three rooms in ten and curtains in a
+  third of the homes, past two pixels a room the runs' true share under the pixel (`gRunCover`) and, for homes and hotels,
+  blocks at half contrast round the share (`gFarBlocks`), past two pixels a floor bands of floors; the light blended finished
+  (Round 159); by day the kind's mean room lit through its window at the fabric's numbers. A room's choices are fractions of
+  one hash a room and an office floor's of one hash a floor. Nothing in it draws the theme.
+- The city in the glass (`CITYENV`): a PMREM of a proxy built in 'Mirroring the city' (1,359 towers from 25 m, the Liberty
+  Places, City Hall and the three towers as extruded footprints, the low city as a box a roof cell within 5 km, 3 on a phone,
+  an 8 km ground disc with the street grid), lit as the main lights are, its floors lit by the clock's shares after dark, the
+  themed crowns in the night's colour, the street lamps' lines, hazed into the horizon. Two fixed centres on a computer
+  (Center City, University City: each fragment reads the nearer), one on a phone at 128, each centre without the towers within
+  160 m (a tower that close filled half a cube face where the parallax looks a kilometre out); baked behind the veil and
+  whenever refreshEnv bakes the sky's, a centre a frame, at most every 1.5 s on a computer and 10 s on a phone, a phone only
+  when still. Bound as the glass's own envMap, never `scene.environment`; the reflection ray is carried to the probe's sphere
+  and the ground before the fetch (`glassParallax`). The skins that stay (masonry, stone, the far ring's) take probe A for
+  their windows, F0 0.08 on their glass and the painted glass at three tenths, with no new sampler.
+- Found on the way: the second probe's sampler kept the disposed target after the first refresh (University City's glass
+  black: re-pointed after every bake); a blended metalness turned every far wall to grey paint; the night rooms first came out
+  19% over the old mean at the low flight and twice it at a distance (now 0.8 before the glass, a far room dimmed as the
+  fabric's windows are). The GPU check pages `glass_optics_gpu.html`, `window_interiors_gpu.html` and `buildings_gpu.html` were
+  already failing at HEAD (`REAL is not defined` since the realism pass); `tests/glass_systems_gpu.html` is the new glass's,
+  passing in both depth modes.
+- Measured on this Mac (M2 Max, headless Chrome on Metal, other workflows rendering at the same time, so every number moves
+  about 30% run to run): the round's harness (the glass layer alone at three times the drawing buffer each way, less the same
+  draw flat, the minimum of 8 blocks), before.html and after.html alternated three times, medians of the three, ms at 9x
+  pixels. Computer: street-comcast-day 3.73 -> 4.06, mid-market-day 13.30 -> 10.59, lowflight-day 5.90 -> 5.07,
+  schuylkill-skyline-day 3.67 -> 2.37, lowflight-night 6.38 -> 6.04, street-comcast-night 5.12 -> 6.85. Phone path (740 x
+  360 at 1.25): 1.37 -> 1.93, 6.51 -> 5.15, 1.72 -> 1.26, 0.94 -> 0.97, 2.68 -> 1.91, 2.52 -> 2.62. The glass-alone figure
+  counts a routed tower's whole wall after and only its skin before (the fabric wall under the skin goes uncounted), so the
+  scene pass is the fair one: at 1x, the minima 22.1 -> 20.6, 30.7 -> 34.2, 32.1 -> 31.1, 40.0 -> 41.5, 35.8 -> 36.7, 21.5 ->
+  19.9 on the computer and 5.7 -> 5.8, 11.6 -> 11.9, 17.0 -> 15.6, 22.4 -> 23.9, 18.4 -> 16.6, 5.6 -> 5.8 on the phone path:
+  inside the noise everywhere. Over the spec's budget, said plainly: the street views' glass alone (the computer's night +34%,
+  the phone's day +41%, 0.06 ms at 1x); the interiors' reach went from 20 to 40 pixels a pane after that run. The first cut
+  stood at +50% (day) and +66% (night) at the street; what brought it down: one fetch (no albedo atlas), isotropic sampling,
+  by day the room's mean only, interiors for lit rooms, one hash a room and a floor, no pane hash past three pixels.
+- The probe: 2.3 to 2.6 ms a centre a bake on the computer (two centres on successive frames), the proxy 71 ms to build and
+  123,560 triangles over both centres' geometry; the phone path's last bake was reported here as 21 ms, which the
+  integration review corrected: 2.3 to 2.6 ms CPU and 0.74 to 1.0 ms GPU a bake on the phone path (the 21 ms included the
+  probe program's first compile). Memory: the computer's frame atlas 11.2 MB, rooms 9.4, two
+  probes 12.6, against only the fins tile (2.7 MB) no longer uploaded (the far ring and the masonry towers still wear the
+  other nine glass kinds): +30.5 MB; the phone's half atlas 2.8 and its probe 1.6, less about 1.1 of fins: +3.3 MB. Samplers:
+  the curtain wall 6 of 16 on the computer (the atlas, the rooms, two probes, two shadow maps), 3 on the phone path; the
+  skins unchanged (6 and 4). No link failures; the console holds only the two "Unable to serialize Texture" warnings HEAD
+  has too.
+- The night glass's mean over a mask of its own pixels, as first reported here (lowflight-night -5%, mid-market-night
+  -18%, south-night +54%, the skyline from the river +69%), was wrong in sign for the near views: the integration review
+  measured the committed build at clock 1290 over its own glass mask, sRGB luminance before -> after, lowflight-night 32.2
+  -> 40.1 (+25%), mid-market-night 25.7 -> 39.8 (+55%), south-night 29.4 -> 44.6 (+52%), schuylkill-skyline-night 31.4 ->
+  45.2 (+44%), skyline-se-night 36.5 -> 40.9 (+12%), and by day the same mask 21 to 23% darker. The review's fixes below
+  carry the current numbers. Flicker, three PNGs 0.5 m apart, pixels changing by more than 60: lowflight-day 177,396 -> 146,090,
+  south-day 148,357 -> 146,967, lowflight-night 90,591 -> 74,311. The skyline lights (`lights('eagles')` at BNY from the
+  west, the Liberty Places, the Logans, City Hall and the low flight): outside the glass's mask dilated 6 px a mean
+  difference of 2.5 to 5.4 of 765, every crown, LED line, neon chevron and wash where it was.
+- Renders (before, after, pairs; computer and phone, day, dusk and night) in the session's `scratchpad/glass/`.
+- Open for Mike: the 1818 Market and Laurel reassignments; the University City probe (6.3 MB on a computer); IBX's F0 (the band
+  system's 0.16, a seventeenth system would give it 0.20) and PNC's light grey spandrels; a real iPhone's check of the probe's
+  bake (2.3 to 2.6 ms CPU and 0.74 to 1.0 ms GPU on the phone path, the integration review's measure; the 21 ms first
+  given here included a compile) and of the glass's cost. Not done from the spec: the frame's bevel normal and relief
+  shading on the glass, the fins' sun-aware reveal, the shadow box's parallax edge, blinds by day.
+
+### Round 192, the review's fixes (Oct 14)
+
+- Merged main first (Rounds 190 and 191: the pins' scale, City Hall and Glory rebuilt): the round renumbered 192 (191 is
+  main's), `GLASS_ART` beside `CITYHALL_ART` and `GLORY_ART`, the art check's regex taking `glass`, and City Hall in the
+  city probe's proxy moved onto the rebuilt block (18.5 m north, 144 by 149 m, the tower's base 27 m square to Penn's
+  167).
+- The main regression (must-fix 1): every glass tower was one flat colour past a block or two. The frame atlas held each
+  cell's footprint inside its 8 px gutter, faded the whole frame to its mean as that hold bit (a module under 16 px) and
+  cut to the mean under three pixels a pane on the pane's narrow side, so the floor lines went with the mullions while a
+  floor was still 10 px tall; the procedural fallback did the same. The frames are now one strip of sixteen 256 px square
+  tiles, a system a tile, each the bake's folded module resampled periodically (Lanczos over a 3 by 3 tiling), uploaded as
+  a `DataArrayTexture` with REPEAT, a full chain of mips and 4x anisotropy, sampled on the module's continuous
+  coordinates: the hardware filters each axis by its own footprint and a wall goes to its measured mean only as each
+  feature drops under a pixel. The procedural frame (tier 2, `?glassart=0`, before the art lands) is the exact box filter
+  of the vision band and the mullions per axis (`gBand`, the integral of a periodic interval over the pixel's footprint;
+  tested against brute force). No isotropic footprint is left in the glass. The strip is 5.6 MB of GPU memory with its
+  mips against the atlas's 11.2 (a phone's half strip 1.4 against 2.8), and 252 KB to download.
+- Colour (must-fix 2): the first cut took every frame, spandrel back and proxy colour from sRGB to linear, but this scene
+  runs the legacy pipeline (handoff gotcha 11: a hex is its own working value), so frames, shadow boxes and the whole
+  mirrored city were drawn at about half the brightness of every other wall; the proxy's haze also took the dome's horizon
+  to linear, a dark band where the sky should meet the city. Fixed at the root (`glassCol`, `lin2s` for the bake's linear
+  means) rather than compensated. The proxy is lit as the scene is (the key, the hemisphere and the sky's own fill, which
+  every facade takes through its probe at 0.9), its walls carry their storeys' windows (a band a floor, box filtered), the
+  air between the centre and each wall takes the scene's own extinction toward the dome's horizon. The frames' diffuse
+  fill is now the sky probe's (its dome over its street and boxes, two uniforms, no fetch), never the city probe's lit
+  windows. Painted mullions and caps are paint (PVDF), so the systems' frame metalness went from 0.6 to 0.85 down to 0.25
+  to 0.45; Comcast's flush joints are dark silicone and its shadow boxes' pans a lit mid grey (through the glass: 0.2 +
+  0.7 of its transmittance, not 0.4 of a dark pan); Liberty's frame is painted to its glass's blue grey, its coating takes
+  0.95 of its blue (F0 0.21); the CTC's caps a lighter grey; the residential wall's slab covers a weathered light grey
+  rather than the art's white.
+- A calibration test (`glass_calibrate.py` writes `tests/glass_calibration.json`, `tests/test_glass_calibration.py` checks
+  it): each researched tower's glass over the mask at the standard noon poses against its reference swatch, CIE76 delta E
+  at most 15, with a fingerprint of the glass's GLSL and systems so an unmeasured change fails. Measured on the final
+  build (sRGB means over the tower's glass, delta E): Comcast 125,137,143 (skyline from the south-west, 10.1) and
+  124,132,134 (the low flight, 12.9) against #8FA3AE; the CTC 140,148,151 (12.5) and 141,149,153 (from the south, 12.0)
+  against #A9B6BA; One Liberty 127,145,157 (14.2) and 116,132,144 (12.6), Two Liberty 123,143,155 (12.9) and 110,128,140
+  (11.6) against #5D7F9E; Cira 139,155,163 (10.2) against #A7B5C0; The Laurel 154,156,155 (8.0) and 152,150,145 (5.0)
+  against #8E8A82. The first cut stood at Comcast 74,85,91 (dE about 35) and One Liberty 133,147,155 (20.5, B - R 14) on
+  the same measure; One Liberty is now B - R 29. Over the whole glass mask by day, main -> the first cut -> now: the
+  skyline 143,157,161 -> 110,120,126 -> 140,148,151; the low flight 141,153,155 -> 109,116,118 -> 139,144,145; the street
+  at Comcast 101,119,129 -> 69,87,101 -> 91,106,117; from the south 123,137,140 -> 98,106,110 -> 128,134,136; the
+  Schuylkill's west bank 105,113,114 -> 75,83,88 -> 106,113,116; mid-Market 126,136,137 -> 92,102,107 -> 116,124,127.
+- The night far field (must-fix 3): no lit shape larger than a floor's run under two pixels a room. The glass's own blocks
+  of rooms (`gFarBlocks`, 2^L rooms by 2^M floors) are gone: an office floor past half a pixel is the mean of three taps
+  across the pixel's footprint, each its own floor's run (its true share along the wall, `gRunCover`) at its suite's
+  level, so the strips stay a floor high until a floor is under a pixel and then give way to the share; a home's specks
+  are the rooms at the pixel's four corners at each lamp's own level (the skew toward the dim: a far wall is a scatter of
+  dim and bright specks, never a beige field), then the share; the far glow 0.08 a lit room's luminance on a computer,
+  0.10 on a phone. A lobby is a band at 2.5 times it.
+- Dusk (must-fix 4): the rooms' light is by the ambient light (`glassRoomLevel`: full from three degrees under the
+  horizon, rising through the five degrees over it with the overcast advance), not the night term, which at 18:25 on Oct
+  14 is 0.01; who is lit is the clock's occupancy, and the falling reflection reveals them.
+- The probe (must-fix 5 and the integration review): it bakes on the frame refreshEnv asks (a three-degree sun step, a new
+  clock, the weather's key), right after applyLighting and on every device, with no gap, no stillness rule and no bake in
+  the build before the clock's lighting; between bakes it is scaled by the sky's light over its light at the bake
+  (`uCityEnvK`, never over 1). Checked headless on the phone path: renders 1, 2, 3 across day, night and day poses; a
+  `#t=...,1290` link's first frame baked at night (level 1, dark glass). A bake costs 2.6 to 4 ms on the phone path and
+  2.6 ms a centre on the computer after the first (the first, with its compile, 12 to 21 ms behind the veil), not the 21
+  ms the first report gave. The skins keep the sky probe for their walls' fill; a computer's skins read the city probe
+  only for their windows' radiance within its sphere (`uCityEnvA`, one sampler more: 7 of 16), their painted glass at 0.6
+  there and the Round 188 glass beyond it; a phone's skins are Round 188's exactly. The probe is off on the recovery tier,
+  its proxy arrays are dropped on upload, and it holds no sun sprite: the glint is the key light's, sharp and broken pane
+  by pane.
+- The mirrored city (must-fix 6): the low city's boxes stand at their roof cell's height (to 40 m), 60 m wide, brick,
+  stone and stucco at a block's mean with darker roofs and their storeys' windows, none within 350 m of a centre; a ray
+  whose hit lies within about 80 m, and a low wall's level ray (the street's far side is tens of metres off, where the
+  sphere puts a city a kilometre out), reads the probe blurred toward its mean. A fragment outside the sphere reads its
+  ray as it is (the integration review's port: a sky ray 37 degrees up fetched the ground).
+- The glint (must-fix 7): the folded roughness is capped at 0.095 (it reached 0.24 on a phone's small panes), each pane
+  keeps its own tilt (8 to 22 mrad, wider where its bow is no longer drawn; the second review corrected the 4 mrad this
+  line first said) and tint to about two pixels a pane on every device, and the probe's sun sprite is gone
+  (blurred by the probe's mips it was a second, soft sun several degrees across).
+- The Laurel and 1919 Market are residential towers and now wear the residential wall (homes lit room by room); the other
+  towers on the unitized office system are offices or labs (3025 JFK is labs over flats: left on it).
+- The review's other points: Comcast's low-iron corners are a paler, clearer band in the glass's own colour, their share
+  under the pixel (no bright one-pixel line); 1818 Market's precast ribbons carry the concrete's grain and the dirt its
+  sills wash down (near the eye, under 6 cm a pixel); the panes' own tint and tilt stay to about two pixels a pane; the
+  rooms' pictures are decoded on the first dusk (a computer's 9.4 MB not held through a daylit session) and the unused
+  half copy is no longer baked; a lit room's picture is sampled at the projection's own footprint with 2x anisotropy and
+  only lit rooms pay the fetch.
+- Declined or left: the frame's bevel normal, the fins' sun-aware reveal and the shadow box's parallax edge (unchanged
+  from the first report); the University City probe (6.3 MB) stays for Mike's call.
+- Cost, re-measured as the first report did (the glass layer alone at three times the drawing buffer each way, less the
+  same draw flat, the minimum of 8 blocks; main's page and this one alternated three times, medians of the three; another
+  workflow rendered on the GPU through some of it, so about 30% is noise): computer, ms at 9x, street-comcast-day 4.53 ->
+  4.97 (+10%), mid-market-day 14.14 -> 11.93 (-16%), lowflight-day 5.72 -> 5.14 (-10%), schuylkill-skyline-day 2.66 ->
+  3.27 (+23%), lowflight-night 6.56 -> 6.91 (+5%), street-comcast-night 5.45 -> 7.02 (+29%, about 0.17 ms at 1x: the near
+  rooms' pictures; only a lit room fetches one now); the phone path 2.11 -> 1.65, 5.92 -> 3.42, 2.39 -> 1.60, 0.84 ->
+  0.80, 2.12 -> 2.29, 2.60 -> 2.79. The scene pass at 1x, the fair comparison (it counts the fabric walls the routing took
+  away), medians: 33.0 -> 28.9, 38.0 -> 36.8, 42.1 -> 44.6, 51.9 -> 55.7, 46.1 -> 49.0, 32.2 -> 30.4 on the computer and
+  10.6 -> 8.2, 15.3 -> 17.3, 20.4 -> 24.8, 24.4 -> 25.5, 21.0 -> 23.6, 7.6 -> 8.8 on the phone path, inside the run-to-run
+  noise. The frames' anisotropy is 4 (8 measured no different within the noise), the rooms' 2. Probe: 3.0 ms a centre a
+  bake on the computer (3.9 averaged with the first, which compiles), 2.8 on the phone path (3.2 averaged); 123,100
+  triangles over the computer's two centres, 37,025 on the phone, freed from the heap once uploaded. Memory: the frames'
+  array 5.6 MB with its mips on a computer (the atlas was 11.2), 1.4 on a phone (2.8); the rooms' 9.4 MB only after the
+  first dusk; the probes as before (12.6 and 1.6). Samplers: the curtain wall 6 of 16 on a computer (the frames, the
+  rooms, two probes, two shadow maps), 3 on a phone; a computer's skins 7 (the probe for their windows), a phone's 4 as
+  before. No link failures; no console errors on any run of the final build.
+- Night and dusk over the glass's own mask, sRGB luminance, main's page -> this build, clock 1290 (dusk 1105 and 1112):
+  the skyline from the south-west 33.6 -> 35.7 (+6%), from the Schuylkill 30.6 -> 37.8 (+24%), the low flight 31.8 -> 39.9
+  (+26%), from the south 28.7 -> 38.4 (+34%), mid-Market among the towers 25.6 -> 43.8 (+71%), the Laurel from Rittenhouse
+  28.1 -> 38.9 (+38%), the street at Comcast 54.2 -> 34.7 (-36%: main drew Comcast and the CTC under lit skins); dusk the
+  skyline 45.4 -> 66.6 (+47%), the river 48.8 -> 67.9 (+39%), the low flight 44.5 -> 75.0 (+69%). The far skyline is
+  inside the spec; nearer, the excess is the lit rooms of glass walls (two thirds of a curtain wall is vision glass
+  against a third of a masonry front's windows, and the routed generic towers were masonry skins in main) and the glass's
+  reflection of a lit city, not a slab: no lit shape is larger than a floor's run under two pixels a room. Homes' lamps
+  are a third of an office's (the pale beige residential towers of the first pass). Flicker (three PNGs 0.5 m apart,
+  pixels changing by more than 60, main -> this build, now that the patterns are back): lowflight-day 153,603 -> 188,302,
+  south-day 130,594 -> 142,392, comcast-200m 304,615 -> 291,121, lowflight-night 95,710 -> 102,665, skyline-sw-night
+  48,583 -> 47,686.
+- The skyline lights on an Eagles night (`?lights=eagles`, the integration review's six poses): every crown, LED line, the
+  Liberty neon, City Hall's wash and the CTC's blade where they were; what differs is the glass's own windows. `?real=0`
+  against main's `?real=0`: identical glass, the only differing pixels the live flights' pins and the traffic.
+- Renders: the session's `scratchpad/glass/fix1/final/` (the judged set and the reviews' views, computer and phone, before
+  and after pairs in `pairs/`, the night sheet, the theme sheet, the flicker PNGs), the calibration's shots in
+  `cal-final/`.
+- Open for Mike: 1818 Market as white concrete ribbons and The Laurel as warm grey glass (the research's reassignments,
+  kept); the night glass brighter than main nearer than the far skyline (a lit glass office is more lit glass than a
+  masonry front; the numbers above), and the dusk lamps coming up ahead of the night term; the University City probe;
+  IBX's F0 and PNC's spandrels; a real iPhone's check of the bake and the glass's cost.
+
+### Round 192, the second review's fixes (Oct 14)
+
+- The Liberty crowns (must-fix 1). `crown()` pushed every gable prism on the clear lantern system (`glassFh(5)`: #E8EAEA
+  frames over a quarter of the module, 0.75 transmittance onto beige plant rooms), so both crowns read as a white lattice
+  over tan where main and the photographs have blue glass with white edge trim. The prisms now take their tower's own
+  system (`lFh`, `tFh`) and glass colour; a glazed crown (style 29, every tower's) is drawn in slim procedural mullions and
+  transoms (the procedural frame's 7 cm mullion a bay, 16 cm of transom a floor), never its wall's tile (Liberty's
+  granite bands and caps, the lantern's white frames), with plant behind it whatever its tower's rooms. The rows of dark
+  dashes on the chevrons were the sloped glass carrying the wall's frame tile in its specular (its frame's F0 was never
+  reset) and each pane's tint and roughness; sloped glass is now one sheet of its system's glass (no frame, no pane's
+  tilt, tint or roughness), with twice a wall's grime and its coating's tint at 0.8 (it mirrors the sky above it).
+  `glass_calibrate.py` measures the crown (`REGION`: One Liberty's box cut to 205 to 268 m, its colour picked at the
+  crown's projected middle; the first try picked Comcast behind it from the box's top third) from the south at 130 m and
+  from the south-west skyline.
+- Comcast's graph paper (must-fix 2). (a) The frame and spandrel colours went in at their hex as an albedo, nearly four
+  times the fabric's (a wall of hex X is drawn at X times FACADE_GAIN 0.27): Comcast's dark silicone (#3E4447) drew pale
+  grey in the sun. Frame means and spandrel backs now go in at `GLASS_PAINT` (the fabric's 0.27, a literal beside
+  FACADE_GAIN, which is declared later; the test holds them equal), the body's own spandrel at 0.41 (0.27 over the body's
+  0.66), and a cap at the fabric's roof gain (0.236: ROOF_GAIN over the 0.72 a routed cap keeps its colour at). (b) The
+  generated Comcast elevation had about 148 mm a vertical joint and 266 mm of opaque frame a floor: the bake now thins a
+  system's joints to `frame.slim` (`slim`, the glass grown into the frame cyclically, each axis by its own radius; the
+  cell records before and after): Comcast 148 -> 78 mm and 266 -> 141 mm, the generic unitized wall 133 -> 78 and 234 ->
+  156; Comcast's frame share 16% -> 8%. (c) The shadow box is glass over a dark pan: the pan lit through the glass in and
+  out of it and shaded by its own box (0.6 x transmittance squared, 0.12 for Comcast, against 0.2 + 0.7 x transmittance,
+  0.52), its glass reflecting as the vision glass does. A pose 100 m off Comcast's south face at noon joins the
+  calibration with a bound on the frames against the glass (`CONTRAST`: the 90th over the 10th percentile of the face's
+  luminance at most 2): 1.63 now (the first cut 3.3).
+- The homes' noise and shimmer (must-fix 3). An apartment is a unit of bays switched by one hash (homes 2 or 4 bays,
+  3 or 6 m, by the wall's seed; a hotel room 2 or 3), its living room at its lamp, a second room at half in 55 units of 100
+  and dark in the rest, blinds or curtains drawn across about two lit units in five (the glow through them 0.3). The far
+  light is the units under the pixel's footprint box filtered (`gHomeBox`: each unit by its share of the pixel, exact
+  while the footprint is under a unit each way and tested against brute force, continuous as the eye moves), the share's
+  mean past two units a pixel; the near light is the rooms either side of the footprint along the wall, each by its share;
+  the far light is evaluated only where the near does not cover it and the near only where it is seen. A home's lamp level
+  is its own at every distance (under two pixels a room it had an office's). Flicker over the glass mask (three frames
+  0.5 m apart, pixels changing by more than 40 in a channel and those swinging both ways, main -> the first fix -> now):
+  The Laurel from 600 m at 21:30 32,609 / 3,735 -> 38,843 / 2,159 -> 21,480 / 1,307; the Arthaus from 500 m 8,112 / 495 ->
+  9,491 / 322 -> 5,216 / 258; Comcast from 560 m at noon 40,520 / 6,613 -> 44,757 / 13,387 -> 19,558 / 3,310.
+- The fill (must-fix 4). The probe holds the dome decoded (envSky draws `pFromSRGB(col)`), and the first fix built the
+  frames' fill and the proxy's fill and haze from the dome's raw display uniforms. Now: `SKYIRR`, after each sky bake the
+  probe read at roughness 1 along +x, -x, +y, -y, +z and -z (exactly what a wall's `getIBLIrradiance` reads there) into a
+  6 x 1 half-float target, and the glass's fill an ambient cube of its six texels (`gIrrCube`: three `texelFetch`, no
+  readback) at the fabric's 0.9 for frames and caps alike. Measured with the review's probe (a white Lambert plane lit only
+  by `scene.environment`, read from a float target) against the texels read back: the ratio is 1.000 up and side at 780,
+  1080 and 1290, on the computer and on the phone path. (The review's phone ratios, 13 to 110 at night, came from a plane
+  drawn through the phone's tone curve: three tone maps every material into a render target there; with `toneMapped`
+  false the phone's plane reads the probe exactly.) The proxy reads the sky probe itself for its fill
+  (`textureCubeUV(envMap, n, 1.0)`, the sky probe's layout from `cubeUVDefines`), hazes with the city's own aerial
+  perspective (fog_pars_fragment's layers and colour toward and away from the sun, `scene.fog.color`), and its colours are
+  in the scene's register (walls at 0.27, glass towers' bodies at 0.41, the low city at 0.32, the ground at the city's
+  mean from above, the street lamps' pools after dark). Measured against the city itself from one camera (the scene and
+  the proxy rendered into float targets, the lower half's mean, `probe/proxy_eval.js`): from 700 m over South Philadelphia
+  at noon the proxy reads 0.94 to 1.03 of the city (it was 0.84 with the register and the raw fill, and about three times
+  over before), level from the probe's centre 0.87, the far skyline 0.88, level at night 1.05, from above at night 0.62
+  (the city's orange pools are brighter than the proxy's street lamps). The pale glass roofs at night are gone (the low
+  flight, BNY Mellon from the west, 1818 Market's ribbons dark at 21:30 on both devices).
+- One glass program on a phone (must-fix 5). The phone's materials compiled against the 256 sky probe and again at the
+  first bake against the 128 city probe, and r149 kept both. `glassSysMat` now binds an empty bake from the city probe's
+  own generator before the first compile (disposed at the first real bake, the same size), and the phone's probe shares
+  the water's 128 generator (`waterPmrem`: one ping-pong target for both). Headless: 2 glass programs on the phone path
+  (the material and its vertex-depth twin), 1 on the computer; no link failures.
+- The rooms at dusk (should-fix): the rooms come on with the street lamps' photocell (from 1.5 degrees over the horizon,
+  full 4.5 under it, with the windows' overcast advance), so at 18:08 (the sun 2.5 degrees up) no room is lit and at 18:25
+  a tenth are; the office suites' levels run 0.475 to 0.975 of the mean (from 0.35 to 1.1 neighbouring suites read as
+  blocks). The west faces' sunset: the city probe's western horizon at 18:08 holds the University City towers lit by the
+  low sun and the air's glow toward it (`probe/eq.png`; the band from the horizon to 10 degrees up averages 0.136 against
+  the sky probe's 0.166 all round), so the west faces mirror a dim warm city under a blue sky; the brilliant orange of the
+  photographs is the low sun's own glint, which the key light gives pane by pane where the geometry sends it, and the
+  dome's own glow round the sun, which is the sky's and not touched here.
+- From above, the CTC reads grey, not tan: the proxy's ground was a warm 0.3 albedo, three to four times the city's.
+- The sun inside and the grime (the second review's darker register exposed them). With the frames at their real register
+  and the mirrored city at the city's brightness, a curtain wall facing the sun drew as dark as one in shade. Two real
+  terms: the rooms the sun shines into (the floor by the window, the ceiling's bounce, blinds lit through the glass),
+  seen back out through it, `gSunInK` = 0.40 x transmittance squared in the glass's tint, added to the key light's own
+  diffuse (`RE_Direct_Glass`, so a neighbour's shadow darkens it); and the glass's film of the city's grime, a diffuse
+  albedo of 0.016 (twice that on a slope). The daylit room behind the reflection takes the glass's tint (in and back out
+  through it: untinted, it turned every shaded tinted wall brown).
+- The optics within their references: Comcast F0 0.11 -> 0.14 and its coating 0.45 -> 0.6 (Enclos: "lightly tinted and
+  reflective"); Liberty F0 0.21 -> 0.28 and coating 0.95 -> 0.8 (the references give 25 to 35 per cent; at 0.95 the
+  chevrons went navy), Liberty's frame #283542 -> #6E849B (its silver caps and blue-grey granite at their mean; the first
+  review's dark blue had darkened a frame drawn at nearly four times its register).
+- The calibration, the final build (sRGB means over each tower's glass, CIE76 delta E against its swatch, tolerance 15):
+  Comcast 127,138,143 from the
+  south-west skyline (10.1), 127,135,136 from the low flight (12.3) and 123,130,129 a hundred metres off its south face
+  (14.4, the frames against the glass p90/p10 1.63, bound 2) against #8FA3AE; the CTC 155,161,160 (8.5) and 156,162,161
+  (7.9) against #A9B6BA; One Liberty 106,124,136 (11.6) and 92,107,117 (14.8), Two Liberty 103,123,136 (11.0) and
+  88,105,116 (14.7) against #5D7F9E; Cira 126,144,154 (14.3) against #A7B5C0; The Laurel 115,118,117 (9.5) and 137,134,125
+  (1.7) against #8E8A82; One Liberty's crown 92,107,118 from the south (14.5) and 105,127,142 from the skyline (10.0).
+  Every Liberty measure is B - R 25 or more; Comcast's means are all over 125. From the review's own pose north-east of
+  the crown (its faces away from the sun) the crown is 71,90,106 against main's painted 96,118,130 through the same mask
+  (delta E 17.1 against 12.0): a sunless face of blue glass mirrors the city's shaded side; it is blue, not the lattice.
+- Declined, and why: the street canyon's near layer (a second probe level of the towers within 160 m, or a facade mean
+  for level rays): no fragment knows whether a neighbour stands across its street or open air, so a mean blended into
+  every level reflection would lighten the open views as much as the canyons, and a near probe level is a third cube on
+  a computer (6.3 MB and a bake) for the street views alone; it stays open for Mike. CLAUDE.md: the rules this round
+  needs are drafted below but not written into CLAUDE.md, whose changes a workflow cannot authorise; Mike, or the session
+  he asks to merge this, adds them.
+- Cost. GPU timing as the first report measured it (the glass layer alone at three times the drawing buffer each way,
+  less the same draw flat, the minimum of 8 blocks; main's page and this one alternated three times, medians), with no
+  other workflow on the GPU through the computer's runs: the scene pass at 1x, the frame's own cost (it counts the
+  fabric walls the routing took away), medians main -> now on the computer: street-comcast-day 21.72 -> 21.05 ms,
+  mid-market-day 23.13 -> 22.98, lowflight-day 30.62 -> 30.93, schuylkill-skyline-day 39.20 -> 40.05, lowflight-night
+  34.27 -> 34.72, street-comcast-night 20.88 -> 20.68 (every pose within 3%); on the phone path (740x360 at 1.25) 5.17 ->
+  5.22, 10.15 -> 10.60, 14.43 -> 14.63, 20.32 -> 19.60, 15.55 -> 15.18, 5.82 -> 5.65 (within 4%). The glass's shading
+  alone, ms at 9x: computer 3.35 -> 4.70 (+40%), 18.35 -> 12.76 (-30%), 6.45 -> 6.99 (+8%), 2.84 -> 3.17 (+11%), 9.49 ->
+  9.95 (+5%), 5.03 -> 7.58 (+51%); phone 1.27 -> 1.79 (+41%), 6.73 -> 5.08, 2.12 -> 1.15, 0.92 -> 0.67, 3.56 -> 4.38
+  (+23%), 2.12 -> 2.58 (+22%). The close street views' excess (about 0.15 to 0.3 ms at 1x on the computer, 0.06 on the
+  phone path) is the first cut's (the frames' fetch, the probe's parallax and the rooms' pictures), not this round's: the
+  first fix's page measured in the same session, the same way, stood at 5.86 and 8.68 there against this build's 4.68
+  and 8.15, and over it at every pose (lowflight-night 12.81 against 9.46). The far rooms are evaluated only where seen
+  (`gHomeBox` past the rooms, the near rooms before them). No real iPhone was at hand: its check (the bake, the first
+  frame's compile, the frame time) stays open.
+- The probe: one bake a centre on each clock change that moves the sun (none for a minute's step); after the first
+  (8 to 11 ms with the proxy's compile) 2.1 to 2.6 ms of CPU a bake on the computer and 2.1 to 2.5 on the phone path; the
+  review's 13.7 ms average counted the first bake's compile among five. Memory, corrected: a probe target carries a depth
+  renderbuffer as well (r149's fromScene sets `depthBuffer`), so a computer's two 256 probes are 2 x (6.3 + 3.1) = 18.9 MB
+  (the reports said 12.6), and a phone's 128 probe 1.6 + 0.8 = 2.4 MB with no ping-pong target of its own now (it shares
+  the water's: the first fix kept a second 1.6 MB one); SKYIRR's target is 48 bytes. Measured the way an iPhone counts it (the capture skill's WebGL hook on the
+  phone path, swiftshader, after a forced GC), main -> now: 873 -> 874 MB of GPU at ready, 906 -> 909 after the first frames,
+  930 -> 933 after the look round (the first fix measured 911 and 935), live heap 137 -> 138 MB, the load's peak 279 -> 285;
+  2 glass programs (the first fix 3). Corrected by the third review, which measured this build the same way at 873 -> 874,
+  906 -> 911 and 930 -> 935: +5 MB, not +3 (the frames 1.4 MB, the 128 probe 2.4 MB, the proxy's geometry the rest), still
+  acceptable; this round's own measure is in its section below.
+- Build time: 'Cladding the towers' 1,490 -> 1,649 ms and ready 24.8 -> 25.9 s on the computer, 698 -> 637 ms and
+  19.8 -> 19.7 s on the phone path (single runs each, main -> now); 'Mirroring the city' 75 and 35 ms, 'Glazing the towers'
+  4 and 2. The review's phone growth (1,189 -> 2,474 ms) was the second glass program's compile, gone with must-fix 5.
+- Night and dusk over the glass's own mask (sRGB luminance, main -> now, the crowns' lights off): the skyline from the
+  south-west 34.2 -> 25.4 (-26%), from the Schuylkill 31.4 -> 27.5 (-13%), the low flight 32.2 -> 22.0 (-32%), from the
+  south 29.4 -> 27.8 (-5%), mid-Market among the towers 25.7 -> 24.0 (-6%), The Laurel from Rittenhouse 29.0 -> 21.3
+  (-27%), the street at Comcast 53.9 -> 31.6 (-41%: main drew Comcast and the CTC under lit skins); dusk the skyline 45.9
+  -> 38.2 (-17%), the river 48.6 -> 44.7 (-8%), the low flight 43.7 -> 34.4 (-21%). The first fix stood 6 to 71% over
+  main; the excess was the raw fill (frames, ribbons and caps lit like dusk at night) and the homes' rooms a bay each,
+  and with both gone the glass is darker than main's at night: main's curtain wall lit about half its windows white at
+  every distance, this one lights the clock's share (a quarter of the offices at 21:30, the homes' units with a third of
+  them behind blinds). A brighter far glow does not move it (0.08 -> 0.14: the skyline -26% -> -23%, the low flight -32% ->
+  -31%): the near rooms carry the mean, and lighting them more is a look, so it is Mike's call.
+- The skyline lights on an Eagles night and `?real=0`: on `?lights=eagles` every crown, LED line, the Liberty neon (on
+  the crowns' new glass), City Hall's wash and the CTC's blade where main has them (`final/theme-sheet.jpg`); `?real=0` against main's `?real=0` at three poses, the only
+  pixels differing by more than 12 levels (579 to 2,684 of 1,024,000) are the live flights' pins and the traffic
+  (`final/real0-diff.jpg`).
+- Renders: the session's `scratchpad/glass/fix2/` (`final/pairs` main, the first fix and now for the computer's views,
+  `final/pairs-p` the phone's, `night-*`, `flk-*`, the calibration's shots in `cal-final/`, the probe panoramas in
+  `probe/eq.png`, the proxy against the city in `probe/proxy-now3.png`).
+- Tests: `tests/test_glass_towers.py` takes a `SecondReview` class (the crowns' system and slopes, the paint's register and
+  the caps', Comcast's joints within a pixel of `frame.slim`, the fill and the sun inside, the homes' units and the box
+  filter against brute force and its continuity) and its probe, dusk and sampler checks follow this round (the glass 7 of
+  16 samplers on a computer with `uGlassIrr`, 4 on a phone); `tests/test_far_lit.py` the homes' far light;
+  `tests/test_glass_calibration.py` the contrast bound and the crown. 868 tests, OK with the one expected failure;
+  `tests/glass_systems_gpu.html` PASS in both depth modes (its sandbox now takes the SKYIRR block).
+- The rules drafted for CLAUDE.md (a section 'The glass towers (Round 192)' before 'Where things are'):
+  - A curtain-wall system rides the aSFT floor byte as `-(sys + 1)` (`glassFh`; style 30 is the generic curtain wall). Under
+    `GLASS_ON` a glass wall never carries a skin. A glazed crown (style 29) wears its own tower's system in slim procedural
+    frames with plant behind it; sloped glass takes no pane's tilt, tint or frame.
+  - The frames are a texture array (a periodic tile per system, REPEAT, mips): never clamp the footprint or cut a wall to its
+    mean. The procedural frame is box filtered per axis (`gBand`). A generated elevation's joints are thinned in the bake
+    (`frame.slim`), never in the shader.
+  - Glass colours are the scene's working values: never `convertSRGBToLinear`. Frame colours and spandrel backs are the colour a
+    surface shows in the sun, drawn at the fabric's register (`GLASS_PAINT` = FACADE_GAIN); a cap at the roof's.
+  - Every sky-derived term is the probe's decoded radiance, never the dome's raw uniforms (`cHorizon` and `cZenith` are display
+    colours): the frames' and caps' fill is `SKYIRR` (the sky probe at roughness 1 along six axes, a 6 x 1 half-float target
+    baked after each refreshEnv) at the fabric's 0.9; the proxy reads the sky probe for its fill and hazes with the city's own
+    aerial perspective (`apU`, `scene.fog.color`), its colours in the scene's register.
+  - The city probe (`CITYENV`) is the glass's own envMap, never `scene.environment`. It bakes on the frame refreshEnv asks, right
+    after applyLighting, on every device, and holds no sun sprite. A phone's glass materials take a probe of its own size before
+    their first compile (one program and its twin), and the phone's probe shares the water's 128 generator (`waterPmrem`).
+  - A home is lit by its apartment (a unit of bays) and its far light is the units under the pixel box filtered (`gHomeBox`);
+    offices are strips a floor high; never blocks of rooms, never point taps. The rooms come on with the lamps' photocell.
+  - After any change to the glass's shaders, `glass_systems.json` or the proxy, run `python3 build.py && python3
+    glass_calibrate.py`: `tests/test_glass_calibration.py` (each researched tower within delta E 15 of its swatch, Comcast's
+    frames against its glass at 100 m under 2) fails otherwise, and so does deploy_philly3d.sh's test gate.
+  - Escape hatches: `?glass=0` (the old paths exactly; `?real=0` too), `?glassart=0`, `?glassrooms=0`, `?cityenv=0|show`. Probe:
+    `__dbg.glass()` (`u.uGlassK.z`: 3 the reflection alone, 4 the direct light alone, 5 each system a colour, 6 the glass as a
+    mask; `u.uGlassL.z` the sun inside's share, `.w` the grime).
+
+### Round 192, the third review's fixes (Oct 14)
+
+- The sun inside (must-fix 1). The second fix's sun inside was a Lambert term on the pane (0.4 of the transmittance squared
+  in the glass's hue), which no view changes: the CTC's south face at 100 m read 139,139,132 as drawn against 15,20,26 for
+  its reflection alone, a beige panel with a grid, and Comcast's east face at 08:00 the tone of the masonry beside it. It is
+  gone. The sunlit room is now drawn inside the room (`RE_Direct_Glass`): the floor by the window, lit by the sun through the
+  vision glass at a carpet's or a slab's albedo (`uGlassL.z` 0.2) and seen back out through it only on the share of the
+  pane where the eye's ray into the room lands on the patch the sun lights (the tangent of the ray's profile angle over the
+  sun's: nothing from level or below, all of it from high over a face the sun shines steeply into), and the ceiling's
+  bounce off that patch (a fifth of it), which every view sees. The daylit room (in the glass's hue alone: no beige from the
+  rooms' cells) and that bounce together are held under a quarter of what the pane reflects at normal view (`gCapRef`, the
+  sky's radiance along the normal from the fill's ambient cube); a neighbour's shadow takes both (the key light as it
+  reaches the fragment).
+- The calibration through the reflection (must-fixes 1 and 2). At the systems' own F0s (0.09 to 0.32) a glass reflected a
+  tenth of the sky the probe holds (a mirror at the CTC's mid-level pose reads 160 to 199 over its upper face), and the
+  swatches, which are photographs of glass mirroring a sky far brighter than the city under it, were out of reach without
+  a diffuse floor. By day the reflectance is now the tower's photographed glass in linear light (its body, which is its
+  swatch, over 0.66 to the 2.2) at `uGlassW.z` 2.0, its hue deepened to the 1.6 (`uGlassW.w`: a coated pane's colour is
+  deepest at normal view, and Schlick's grazing white and the haze take it back), the system's F0 kept only as the share
+  its low-iron corners, clear crown and lobby keep of the wall's; `coatSat` is 1 on every system (the body is the glass).
+  The hue is taken to linear light before it tints anything (as a working value a blue #4E78A2 is 2.1 times as blue as
+  red, as displayed 4.8). Four bodies now carry their calibration swatches (Cira #A7B5C0, Evo #4B5762, both Liberty Places
+  #5D7F9E). After dark, as the rooms come on (`uGlassL.x`), the glass goes to its measured reflectance (as a near mirror of
+  a lit city it stood up to two thirds over main's means among the towers at 21:30).
+- The calibration (must-fix 2, should-fix 5). `glass_calibrate.py` now measures 28 towers (every researched glass tower
+  with a reference colour at 100 m and up, the review's readings of the refs) at 21 poses: the review's eight, the CTC's
+  south face at mid-level and its shaded north face from Market's north side, Comcast at 100 m off its south face, at 90 m
+  across Market and on its shaded north-east face at 150 m, four at 60 m, five aimed at the lower towers, and One Liberty's
+  crown. A tower is told from its neighbours by a code of its own (views 7 and 8: its body's bytes hashed, three bits a
+  view, each channel full or dark, written after the fog so it survives the tone curve; the system colour, picked as the
+  commonest in the box's top third, had measured One Liberty's glass for PNC and Two Penn) and its colour is its glass's
+  alone (view 9, no frames). It is judged only where it stands in the open (400 pixels of its own glass, two fifths of its
+  height, the eye no more than 20 m over its top: a wall reflects a ray on as far down as it came in, so from above a
+  curtain wall mirrors the city under it and reads darker than its street photographs). The bounds: delta E 15 and b*
+  within 6 (`HUE_B`) on each tower's median over its judged poses, every pose the review named for Comcast and the CTC
+  within both individually. Results, median delta E and b* gap: Comcast 7.4 / -1.2 over 8 poses (100 m off its south face
+  133,160,172, delta E 2.7; its shaded north-east face 117,144,159, 8.3; at 90 m 113,131,142, 12.0; the frames against
+  the glass p90/p10 1.64), the CTC 7.2 / -2.1 over 12 (its south face at mid-level 151,172,178, 5.3; its shaded north face
+  156,177,185, 4.1; the review had 30.4 and 19.4 there), One Liberty 7.0 / +0.9, Two Liberty 4.5 / +1.2, Cira 5.5 / +0.6,
+  FMC 5.3 / +3.8, Evo 12.4 / -3.4, the Ritz 6.9 / +3.7 (its north face 98,131,154), 2116 Chestnut 7.4 / -5.9, IBX 14.4 /
+  +0.1, Arthaus 4.2 / +2.7, PNC 8.5 / -2.8 (68,82,93 from Rittenhouse: dark glass, where it drew 129,149,163), 2000 Market
+  5.2 / -3.7, 10 Rittenhouse 13.9 / +4.2, 1706 2.5 / -0.8, Ten Penn 10.7 / 0.0, 1650 Arch 9.1 / -3.0, 3025 JFK 4.3 / -2.1,
+  The Alexander 14.1 / +1.5, CHOP 11.5 / +4.8, One Liberty's crown 6.5 / +1.1. Open, each held at its recorded gap by the
+  test and said in `OPEN` for Mike: the W 10.9 / +10.5 (blue now, b* -13 to -19 against the review's -2 to -8, short of its
+  photographed -27), Murano 13.8 / +13.4 (five of its seven poses see south faces mirroring the white sky round the sun at
+  noon; its north faces keep its blue), The Laurel 9.5 / -6.9 (a warm glass mirroring a blue sky, one point past the
+  bound), Eleven Penn 16.1 / +4.7 (its west face from 60 m mirrors the dark low city), the Honickman 16.9 / -0.3 (one pose,
+  its south face toward the sun), Riverwalk 17.3 / +1.0 (seen among the towers it mirrors), 1818 Market 20.4 / -1.7 (its
+  dark ribbons mirror the sky at the slant most poses see them) and Two Penn (no pose sees two fifths of it). From the
+  low flight at 1.2 km the towers are blue, silver and grey again where the review measured one grey (`sheet-look3.jpg`).
+- The glass at night (must-fix 3). The lit room's displayed light no longer falls with the transmittance itself, as a
+  fabric's window never did: through a pane of 0.5 it is the fabric's lit window (`uGlassW.y` 0.6), through 0.22 about
+  three quarters of it (`pow(gVLT / 0.5, 0.35)`: a lit office is far over the night's exposure behind any glass), and only
+  what the pane reflects past normal view is taken from it. The offices' lit share is the fabric's (a floor on at 1.2 times
+  the clock's share, its run 0.775 of it on average: it was 0.7 of the fabric's), and the far glow is about a near room's
+  own light (`GLASS_FAR_LUM` 0.4, a phone's 0.5; at 0.08 the towers went dark as their rooms gave way to it). The brightest
+  lit glass against the fabric's lit windows in the same frame (p99 of each, sRGB luminance): 191 against 190 at the
+  review's Ritz dusk pose from 470 m (the review had 130,115,105 against 193,186,178 at the 95th), 183 against 203 for
+  One Liberty and 1600 Market at 21:30. Night and dusk over the glass's own mask (sRGB luminance, main -> now, the crowns'
+  lights off): the skyline from the south-west 36.9 -> 33.5 (-9%), from the Schuylkill 34.0 -> 38.0 (+12%), the low flight
+  32.9 -> 31.0 (-6%), from the south 34.6 -> 33.6 (-3%), the street at Rittenhouse 29.0 -> 25.3 (-13%), the street at Comcast
+  55.6 -> 46.6 (-16%), mid-Market among the towers 25.6 -> 39.8 (+55%: the offices lit at the clock's share in floor strips,
+  where main lit about a sixth); dusk 47.9 -> 49.3 (+3%), 51.8 -> 60.8 (+17%), 44.6 -> 48.5 (+9%) (`night-final2.txt`). The second fix stood at
+  -5% to -41% (night) and -8% to -21% (dusk). Five of the ten are within the review's tenth of main and five are not, two
+  under and three over, so no one level moves them together: the street views are under because main's curtain wall lit
+  about half its windows a cool white there and these are the clock's share, the homes' units warm and a third behind
+  blinds (`pair3-street-*.jpg`), and the river's and mid-Market's are over because they see the offices' strips at the
+  fabric's share where main lit a sixth. Left for Mike as a look, with the levels above. The skyline's lights are as they were (`chk-*` at 21:30 with the night's white).
+- The curtain wall on evidence only (must-fix 4). An unresearched tower or mid-rise no longer goes onto the curtain wall by
+  the cladding's lottery (197 towers and 234 mid-rises, the limestone former Main Post Office at 2970 Market among them):
+  a wall is glass only when the research names it (`glass_systems.json`'s towers, the towers.json glass facades) or flags
+  its part as glass (t 10, `pack_wide.py`'s, which keeps its cladding kind's system); every other wall keeps main's skin,
+  main's mid-rise skin line restored exactly and `appendBuilding`'s cap-chunk argument gone with it. The post office from
+  the river: main 115,113,107, the second fix 83,92,97, now 111,110,106. Draw calls (should-fix 6), the scene's own count:
+  the low flight by day 634 (main) / 665 (the second fix) / 633 (now) on the computer and 601 / 622 / 601 on the phone path,
+  every pose within a few calls of main's.
+- The rain (should-fix 1): the key light's lobe on the glass widens as the deck closes (`uGlassW.x`, applyLighting's
+  `glintK`: the roughness eases to 0.5), so a rain sky leaves no sparkle cluster on Comcast (`chk-*/rain-street-comcast`,
+  both devices).
+- Cira's cap at night (should-fix 2): measured, it is not the grime. The pale band over Cira's top from the review's pose is
+  its top storeys' steep facets (the shader counts them as wall), and over the glass mask its light is its reflection alone
+  (view 3 equals the full render there, 57 to 71): seen from above they mirror the lit city below at Cira's reference F0,
+  not the sky, so a reflection darker than the sky behind it would be a mirror darker than what it mirrors. The sloped
+  glass's doubled grime is halved (a true slope, the Liberty chevrons, takes a wall's). Declined beyond that.
+- The proxy's walls (should-fix 3): piers or mullion pairs every 9 m along each wall and the window bays between them (box
+  filtered: a far wall is its mean), each 40 m cell's wall a turn lighter or darker (its mean kept), its glass mirroring
+  more sky the higher it stands; the near towers in Comcast's face read as walls with storeys, not cut-out shapes.
+- Golden hour (should-fix 4): declined. The probe's western band is the city's own air (the proxy hazes with the scene's
+  aerial perspective and reads 0.87 to 1.05 of the city); brightening it in the probe alone would make the west faces
+  mirror a city brighter than the one they stand in. The glow the photographs show is the dome's and the air's, the sky
+  and air workstream's.
+- The time slider (should-fix 7): the city's bakes are at least 0.4 s apart (`CITYENV_GAP`): a request inside the gap waits
+  for it, so a still clock's bake lands on the frame refreshEnv asks (its last was minutes ago), a dragged clock's at most
+  every 0.4 s, and one more follows as it settles. Across the review's 70-frame scrub from noon to night and back (three scrubs a run, two runs each
+  alternated with main on the phone path): the city baked 6 to 8 times a scrub (the second fix 44), the CPU summed 930 to
+  1,064 ms against main's 822 to 967 (the second fix 1,070 to 1,246), its 90th percentile 16.8 to 18.3 ms against main's
+  14.4 to 16.9 (19.1 to 21.8); on a computer 17 renders a scrub, both centres (56).
+- The lights in the mirror (should-fix 8): `updateLightsTheme` asks for one bake as the theme settles after a retarget, so
+  a theme landing the same day reaches the reflections with the crowns.
+- The frames' fetch (should-fix 9): asked for as 'Cladding the towers' starts (`glassFramesFetch`), awaited in 'Glazing the
+  towers', so it rides the cladding's round trips and artImage's retry overlaps the cladding.
+- The memory figure (should-fix 10): the second review's section is corrected in place (+5 MB, not +3). This round, the same hook (the phone path, swiftshader, a forced GC), main -> now: 873 -> 875 MB of
+  GPU at ready, 906 -> 911 after the first frames, 930 -> 935 after the look (+5 MB: the routing taken back neither costs
+  nor saves), live heap 126 -> 126, 137 -> 138 and 138 -> 138 MB, the load's peak 281 -> 282; one glass program.
+- Budgets. The scene pass (GPU, the minimum of 12 blocks, two runs alternated with main and the second fix, ms at
+  1x): on the computer street-comcast-day 13.90 -> 14.23 (+2%), mid-market-day 20.51 -> 20.23, lowflight-day 23.85 ->
+  24.22 (+2%), river-cira-day 16.40 -> 16.43, ctc-crown-day 18.37 -> 18.02, street-comcast-night 14.09 -> 14.36 (+2%; at 2x
+  each way 46.33 -> 47.64, +3%), mid-market-night 22.93 -> 21.42, lowflight-night 24.08 -> 24.22; on the phone path
+  (740 x 360 at 1.25) 3.36 -> 3.37, 7.40 -> 6.56, 9.70 -> 9.70, 4.75 -> 4.67, 6.67 -> 6.78, 3.56 -> 3.67 (+3%), 8.16 ->
+  7.66, 9.86 -> 9.89: every pose within 3% of main or under it. The glass layer alone at 9x (the first report's measure, the
+  minimum of two runs), main -> now: computer street-comcast-day 2.83 -> 5.31, street-comcast-night 3.87 -> 6.48,
+  lowflight-day 4.02 -> 5.32, lowflight-night 5.03 -> 6.19, mid-market-day 12.18 -> 12.06, the Schuylkill skyline 1.85 ->
+  2.94; phone path 1.20 -> 1.57, 1.76 -> 2.11, 1.17 -> 1.23, 1.61 -> 1.60, 4.62 -> 3.75, 0.62 -> 0.68. So the closest
+  street views carry 0.25 to 0.3 ms more glass at 1x on a computer than main's (the second fix measured 0.15 to 0.3 the
+  same way; this round's floor patch and cap are arithmetic, and the fill's ambient cube is now fetched once where the cap
+  would have fetched it twice: the street at night 6.97 -> 6.48), the whole frame there 15.72 -> 16.10 (+2%) by day and
+  15.75 -> 16.33 (+4%) at night, 4.58 -> 4.80 and 4.72 -> 4.78 on the phone path. Whole frames (one run each): the phone
+  path's CPU medians 4.0 to 6.1 ms, main's 4.6 to 6.5, the second fix's 3.7 to 5.8 (within the runs' noise); a bake 2.2 to
+  2.5 ms of CPU. Samplers unchanged (the glass 7 of 16 on a computer, 4 on a phone), one glass program on the phone path,
+  no link failure and no console error in any run. Build: 'Glazing the towers' 2 -> 0 ms (its fetch rides the cladding's),
+  'Cladding the towers' 1,359 -> 1,368 ms on the computer and 580 -> 590 on the phone path, ready 24.1 s (main), 25.5 (the
+  second fix), 24.3 (now) on the computer and 19.1, 18.9, 19.0 on the phone path (single runs).
+- Tests: `tests/test_glass_towers.py` takes a `ThirdReview` class (the sun inside from above and its cap, the daylit room's
+  tint, the reflectance and hue, the night's level and share, the curtain wall on evidence, the glint under a deck, the
+  probe's gap and the lights' bake, the frames' fetch, the proxy's rhythm, the calibration views and the chunk's colour
+  bytes the codes assume); `tests/test_glass_calibration.py` is rewritten for the judged poses, the medians, the hue bound,
+  the open towers and the named poses. The full suite: 883 tests, OK with the one expected failure; `docs_check.py` ok. `tests/glass_systems_gpu.html` PASS in both depth modes
+  (its Fresnel check now at a low-e reflectance, `uGlassW.z` 0.3, and a check that the day reflectance follows the body).
+- Renders: the session's `scratchpad/glass/fix3/` (`sheet-look1` and `sheet-look3` main, the second fix and now by day,
+  `sheet-chk1` to `sheet-chk3` the rain, Comcast across the street, Cira, the post office, golden hour, Evo, Murano and
+  Liberty from the street, Ritz at dusk, `sheet-ph1` and `sheet-ph2` the phone path, `sheet-night1` main against now at
+  21:30, `cal-final2/` the calibration's shots, `night-final2/` the night means, `crop-*` the close-ups, `verify4-sheet.jpg`
+  and `verify4-sheet2.jpg` main against the committed build: the CTC at mid-level, Comcast at 08:00, the core from 1.2 km,
+  the post office from the river, the rain at Comcast's foot, the Liberty Places at 21:30 and the Ritz at dusk).
+- The rules drafted for CLAUDE.md in the second review's section, as this round leaves them (still Mike's to put in):
+  a wall goes onto the curtain wall only on evidence (the research's towers and glass facades, or a part flagged glass,
+  t 10), never by the cladding's lottery; no light inside the glass that every view sees may be a Lambert term on the
+  pane (the sun inside is the floor patch the eye's ray reaches from above, the daylit room and the ceiling's bounce
+  under `gCapRef`); by day the reflectance is the tower's photographed glass in linear light (`uGlassW.z`, its hue to
+  `uGlassW.w`), the references' F0 after dark; a body's hue goes to linear light before it tints a reflection; a lit
+  room's displayed light falls with the transmittance only to the 0.35 and the offices' lit share is the fabric's; the
+  city bakes never within `CITYENV_GAP` of each other and once more when the skyline lights settle; the glass's glint
+  widens as the deck closes (`uGlassW.x` is glintK); `glass_calibrate.py --judge` when the poses or the routing change,
+  each tower judged where it stands in the open, its median within delta E 15 and b* 6, `OPEN` for the ones left to
+  Mike; the debug views 7 and 8 are each tower's code and 9 the glass alone as a mask.
