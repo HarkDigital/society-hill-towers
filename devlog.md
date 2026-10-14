@@ -9122,6 +9122,25 @@ Not done:
     core's walls in the host notes (fronts there). Still waiting on API credit: the 24 borrowed second-set interiors and the
     3 missing frames.
 
+## Round 190 — the pins grow smaller as you come on (Oct 14)
+
+- Mike, with a screenshot of the Langstroth marker's pin filling half the view from the sidewalk on Front Street: "Pins need
+  to scale down in size as you get closer to them." Every pin (SEPTA, Indego, the aircraft, ships, Amtrak, the ferry, PATCO,
+  the closures, the markers and the art, the bus stops and stations, the libraries and rec centres) took the aircraft badge's
+  rule (Round 44 gave it to the SEPTA and Indego badges), distance / 135 held at 2.2 at least: past 300 m a pin keeps its size on the screen, and from 300 m in
+  it stood at its full 10 by 12.6 m and grew on the screen as the eye came on, fifteen times its far size at 20 m.
+- `pinScaleAt(d, cap)`, the one rule for all eleven: the far size on the screen to `PIN_NEAR_D` 300 m (unchanged there, no
+  jump at the knee), easing down to `PIN_NEAR_K` of it at `PIN_NEAR_D0` 30 m and closer: 0.6 on a computer, 0.75 on a phone,
+  which keeps more to tap. Measured on the Langstroth marker at 1280 by 800: 120 m, about 70 px tall before and 16 after;
+  10 m, a 10 m billboard before and a 13 px badge on top of the post after. `tests/test_pin_scale.py` runs the rule under
+  node (the far size, the knee, the near fraction, never larger closer in, the caps).
+- Coda, the same day. Mike: "The pins now get way too small when you get very close to them. Their minimum size should be
+  how they look at a half mile away." The first cut eased a pin to 0.6 of its far size inside 30 m (a 13 px badge at 10 m).
+  Past 300 m a pin already held one size on the screen, the size it has at half a mile (NEAR_R), so `pinScaleAt` is now that
+  rule all the way in: distance / 135 under each pin's cap, a pin growing smaller in the world as the eye comes on and never
+  on the screen. Rendered at the Langstroth marker: the badge at 10 m stands the size of the markers seen from 800 m.
+  `tests/test_pin_scale.py` asserts the half-mile size at every distance, computer and phone alike.
+
 ## Round 191 — City Hall rebuilt (Oct 13)
 
 - Mike: "I added more api credits with open AI. I want City hall and Glory Beer Bar and Kitchen to be totally revamped", and

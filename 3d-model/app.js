@@ -23328,6 +23328,14 @@ float pinOccGate() {
     const t = Math.min(1, (now - e[0]) / PIN_RISE), u = 1 - t;
     return 1 - u * u * u;
   }
+  // Round 190 (Mike, with a screenshot of a historical marker's pin filling half the view from the sidewalk: "Pins need to
+  // scale down in size as you get closer to them"). Every pin took the aircraft badge's rule, distance / 135 held at 2.2 at
+  // least: past 300 m a pin keeps its size on the screen, and from 300 m in it stood at its full 10 by 12.6 m and grew on the
+  // screen as the eye came on, fifteen times its far size at 20 m. The first cut eased it down to 0.6 of its far size close
+  // in, and Mike: "The pins now get way too small when you get very close to them. Their minimum size should be how they look
+  // at a half mile away." So a pin holds its half-mile size on the screen (distance / 135, the size it has at NEAR_R) all the
+  // way in, growing smaller in the world as the eye comes on and never on the screen; the caps still let the far ones go
+  function pinScaleAt(d, cap) { return Math.min(Math.max(d, 1) / 135, cap); }
   function pinSweep(now) { if (now < pinSweepAt) return; pinSweepAt = now + 5000; for (const [k, e] of pinBorn) if (now - e[1] > 30000) pinBorn.delete(k); }
   const glyphDrum = (g) => {   // a drum: the pale barrel with two dark bands on a base
     g.fillStyle = '#fdfbf6';
@@ -23442,7 +23450,7 @@ float pinOccGate() {
       if (bi < 1024) {
         const py0 = v.gy + spec.h + 0.6;
         _sp.set(v.dx, py0, v.dz);
-        const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14) * pinRise(v, now);
+        const s = pinScaleAt(camera.position.distanceTo(_sp), 14) * pinRise(v, now);
         _sp.y += Math.sin(now * 0.003 + v.bobP) * 0.5 * Math.min(s, 2);
         _ss.set(s, s, s);
         _sm.compose(_sp, _sqB, _ss);
@@ -25775,7 +25783,7 @@ float pinOccGate() {
     for (let i = 0; i < indegoLive.length; i++) {
       const st = indegoLive[i];
       _sp.set(st.x, st.y + 3.1, st.z);
-      const s = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14);
+      const s = pinScaleAt(camera.position.distanceTo(_sp), 14);
       _ss.set(s, s, s);
       _sm.compose(_sp, _iqB, _ss);
       indegoBadge.setMatrixAt(i, _sm);
@@ -26335,7 +26343,7 @@ float pinOccGate() {
       // traffic reads from across the model (the SEPTA bus-badge recipe);
       // helicopters fly the rotor silhouette, fixed wing the airplane glyph
       _sp.set(p.dx, p.dy + p.len * 0.14 + 1.5, p.dz);
-      const ps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
+      const ps = pinScaleAt(camera.position.distanceTo(_sp), 190);
       _ss.set(ps, ps, ps);
       _sm.compose(_sp, _sqB, _ss);
       if (p.heli) flightPinH.setMatrixAt(iH++, _sm);
@@ -26959,7 +26967,7 @@ float pinOccGate() {
       }
       // the anchor pin floats above the masthead, holding size like the aircraft badges
       _sp.set(v.dx, TERRAIN.water + hgt + 2, v.dz);
-      const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190);
+      const aps = pinScaleAt(camera.position.distanceTo(_sp), 190);
       _ss.set(aps, aps, aps);
       _sm.compose(_sp, _aqB, _ss);
       shipAnchor.setMatrixAt(i, _sm);
@@ -27294,7 +27302,7 @@ float pinOccGate() {
       }
       if (np < AMTRAK_CAP && !((p.hfl & 1) && !(p.hfl & 4)) && insideLimit(p.hx, p.hz) && nearCam(p.hx, p.hy, p.hz)) {   // the badge over the head car, holding size like the aircraft pins; within the half mile (Round 82)
         _sp.set(p.hx, ((p.hfl & 4) ? Math.max(p.hy, siteY(p.hx, p.hz, 'ground')) : p.hy) + 6, p.hz);   // a train at the platforms carries its pin over the concourse, never under it (Round 85)
-        const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190) * pinRise(p, now);
+        const aps = pinScaleAt(camera.position.distanceTo(_sp), 190) * pinRise(p, now);
         _ss.set(aps, aps, aps);
         _sm.compose(_sp, _aqB, _ss);
         amtrakPin.setMatrixAt(np, _sm);
@@ -27558,7 +27566,7 @@ float pinOccGate() {
     FERRY.mesh.setMatrixAt(0, _sm); FERRY.mesh.count = 1; FERRY.mesh.instanceMatrix.needsUpdate = true;
     _aqB.copy(camera.quaternion);
     _sp.set(x, p.y + 12, z);
-    const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190) * pinRise(p, now);
+    const aps = pinScaleAt(camera.position.distanceTo(_sp), 190) * pinRise(p, now);
     _ss.set(aps, aps, aps); _sm.compose(_sp, _aqB, _ss);
     FERRY.pin.setMatrixAt(0, _sm); FERRY.pin.count = 1; FERRY.pin.instanceMatrix.needsUpdate = true;
     if (pickedTrain === p) {
@@ -27602,7 +27610,7 @@ float pinOccGate() {
         const ta = ((p.hx - BFB_A[0]) * ux + (p.hz - BFB_A[1]) * uz) / L;
         p.pinY = Math.max(p.hy + 6, ta >= 0 && ta <= 1 ? bfbDeckY(ta) + 12 : -1e9);
         _sp.set(p.hx, p.pinY, p.hz);
-        const aps = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 190) * pinRise(p, now);
+        const aps = pinScaleAt(camera.position.distanceTo(_sp), 190) * pinRise(p, now);
         _ss.set(aps, aps, aps); _sm.compose(_sp, _aqB, _ss);
         patcoPin.setMatrixAt(np, _sm); patcoPinPick[np] = p; np++;
       }
@@ -31314,7 +31322,7 @@ float pinOccGate() {
     for (const rec of CLOSURES.drawn) {
       if (rec.o < 3 || nf >= CLOSURE_PIN_CAP) continue;
       _sp.set(rec.mx, rec.my + 2.2, rec.mz);
-      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14) * pinRise(rec, now);
+      const sc = pinScaleAt(camera.position.distanceTo(_sp), 14) * pinRise(rec, now);
       _ss.set(sc, sc, sc);
       _sm.compose(_sp, _kqB, _ss);
       closurePin.setMatrixAt(nf, _sm); closurePinPick[nf++] = rec;
@@ -31681,7 +31689,7 @@ float pinOccGate() {
     let nm = 0, na = 0;
     for (const { rec, isM } of markersNear) {
       _sp.set(rec.x, rec.gy + (isM ? 3.2 : 2.9), rec.z);
-      const sc = clamp(camera.position.distanceTo(_sp) / 135, 2.2, 14) * pinRise(rec, now);
+      const sc = pinScaleAt(camera.position.distanceTo(_sp), 14) * pinRise(rec, now);
       _ss.set(sc, sc, sc);
       _sm.compose(_sp, _kqB, _ss);
       if (isM) { markerPin.setMatrixAt(nm, _sm); markerPinPick[nm++] = rec; } else { artPin.setMatrixAt(na, _sm); artPinPick[na++] = rec; }
@@ -31788,7 +31796,7 @@ float pinOccGate() {
     let nb = 0, nr = 0;
     for (const rec of STOPS.near) {
       _tp.set(rec.x, rec.gy + (rec.kind === 'bus' ? 2.8 : 4.5), rec.z);
-      const sc = clamp(camera.position.distanceTo(_tp) / 135, 2.2, 14) * pinRise(rec, now) * (rec.kind === 'bus' ? 0.85 : 1.15);
+      const sc = pinScaleAt(camera.position.distanceTo(_tp), 14) * pinRise(rec, now) * (rec.kind === 'bus' ? 0.85 : 1.15);
       _ts.set(sc, sc, sc); _tm.compose(_tp, _tq, _ts);
       if (rec.kind === 'bus') { if (nb < 900) { busStopPin.setMatrixAt(nb, _tm); busStopPick[nb++] = rec; } }
       else if (nr < 80) { railStationPin.setMatrixAt(nr, _tm); railStationPick[nr++] = rec; }
@@ -31943,7 +31951,7 @@ float pinOccGate() {
     let nl = 0, nr = 0;
     for (const rec of CIVIC_S.near) {
       _tp.set(rec.x, rec.gy + 3.4, rec.z);
-      const sc = clamp(camera.position.distanceTo(_tp) / 135, 2.2, 14) * pinRise(rec, now);
+      const sc = pinScaleAt(camera.position.distanceTo(_tp), 14) * pinRise(rec, now);
       _ts.set(sc, sc, sc); _tm.compose(_tp, _tq, _ts);
       if (rec.kind === 'lib') { if (nl < 40) { libPin.setMatrixAt(nl, _tm); libPick[nl++] = rec; } }
       else if (nr < 80) { recPin.setMatrixAt(nr, _tm); recPick[nr++] = rec; }
