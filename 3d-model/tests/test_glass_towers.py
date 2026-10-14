@@ -250,8 +250,19 @@ class Wiring(unittest.TestCase):
         self.assertIn('if (only !== 1) for (const m of CITYENV.mats) m.envMap = CITYENV.rts[0].texture;', s)
         a = s.index('  function cityEnvBake(only) {'); b = s.index('  function cityEnvTick() {')
         self.assertNotIn('scene.environment', s[a:b], 'the city probe must never become scene.environment (every program would change)')
-        self.assertIn("if (!isTouch) return pmremGen;", s[s.index('  function cityEnvGen() {'):])
-        self.assertIn("CITYENV.gen._setSize = function () { this._lodMax = 7; this._cubeSize = 128; };", s)
+        # a phone's probe is a 128 cube from the water's own generator (the second review: a second generator kept its own
+        # 1.6 MB ping-pong target); a computer's shares refreshEnv's 256
+        self.assertIn("return isTouch ? waterPmrem() : pmremGen;", s[s.index('  function cityEnvGen() {'):])
+        self.assertIn("S.gen._setSize = function () { this._lodMax = 7; this._cubeSize = 128; };", s)
+        self.assertNotIn('CITYENV.gen', s)
+        # one program (and its vertex-depth twin) on a phone: the materials take a probe of the probe's own size before
+        # their first compile, replaced at the same size by the first bake (r149 keys a program on its envMap's size, and
+        # kept both the sky probe's and the city probe's)
+        gm = s[s.index('  function glassSysMat(mat) {'):s.index('  // the glass\'s environment (CITYENV)')]
+        self.assertIn("if (cityEnvGen() !== pmremGen && !CITYENV.rts[0]) {", gm)
+        self.assertIn("CITYENV.rts[0] = cityEnvGen().fromScene(new THREE.Scene(), 0, 0.1, 100);", gm)
+        self.assertIn("if (CITYENV.rts[0]) for (const m of CITYENV.mats) m.envMap = CITYENV.rts[0].texture;", gm)
+        self.assertIn("if (CITYENV.rts[k]) CITYENV.rts[k].dispose();", s[a:b])
         # the proxy's streams: Float32 x 3 and Uint8 x 4, both 4-aligned, freed once uploaded
         self.assertIn("g.setAttribute('aP', new THREE.BufferAttribute(new Uint8Array(T.col.concat(S.col)), 4, true));", s)
         self.assertIn('for (const a of Object.values(g.attributes)) a.onUpload(dropUploadedArray);', s)
@@ -341,23 +352,49 @@ class Wiring(unittest.TestCase):
         """Must-fix 4: the rooms' light by the ambient light, ahead of the night term through the dusk (glassRoomLevel), the
         pictures loaded on the first dusk, a computer's only."""
         s = self.src
-        self.assertIn('return Math.max(night, 1 - smooth(-3, 5, elAmb));', s)
+        self.assertIn('return Math.max(night, 1 - smooth(-4.5, 1.5, elAmb));', s)
+        self.assertIn('lampUniform.value = 1 - smooth(-3, 1.5, elAmb);', s)   # the lamps' photocell starts where the rooms do
         self.assertIn('glassU.uGlassL.value.x = glassRoomLevel(elAmb, night);', s)
         self.assertIn('if (GLASS_ROOMS && !GLASS.rooms.asked && glassU.uGlassL.value.x > 0.001) glassRoomsLoad();', s)
         hook = s[s.index('  function glassSysHook(sh) {'):s.index('  function glassSamplers(mat) {')]
         self.assertIn('totalEmissiveRadiance = (gRoomN * uGlassL.x + gRoomD * (1.0 - uGlassL.x)) * gVLT * (1.0 - Fr) * gVis;', hook)
-        # at 18:25 on Oct 14 (the sun about 0.3 degrees up) the night term is near 0 and the rooms' level is not
+        # the second review: at 18:08 on Oct 14 (the sun 2.5 degrees up, a daylit sky) no room is lit; at 18:25 (0.3 degrees
+        # up) they are coming on with the lamps, ahead of the night term; full 4.5 degrees under the horizon
         sm = lambda a, b, x: (lambda t: t * t * (3 - 2 * t))(min(max((x - a) / (b - a), 0), 1))
-        night = 1 - sm(-9, 1, 0.3)
-        self.assertLess(night, 0.05)
-        self.assertGreater(max(night, 1 - sm(-3, 5, 0.3)), 0.5)
+        level = lambda el: max(1 - sm(-9, 1, el), 1 - sm(-4.5, 1.5, el))
+        self.assertLess(1 - sm(-9, 1, 0.3), 0.05)
+        self.assertLess(level(2.5), 0.01)
+        self.assertGreater(level(0.3), 0.08)
+        self.assertGreater(level(-4.5), 0.999)
 
     def test_frames_take_the_sky_fill(self):
-        """The review's grey ribbons at night: the frames' diffuse fill is the sky probe's (its dome over its street), never
-        the city probe's lit windows and lamps; the skins keep the sky probe for their walls."""
-        env = re.search(r'const GLASS_ENV_PARS = `(.*?)`;', self.src, re.S).group(1)
-        self.assertIn('return PI * mix(uGlassIrrG, uGlassIrrS, 0.5 + 0.5 * worldNormal.y) * envMapIntensity;', env)
+        """The review's grey ribbons at night: the frames' diffuse fill is the sky probe's, never the city probe's lit windows
+        and lamps; the second review: the probe's own radiance (SKYIRR: the probe read at roughness 1 along six axes into a
+        6 x 1 half-float target after each bake, an ambient cube), never the dome's raw display colours (two to five times
+        the probe by day, sixteen at night), at the fabric's 0.9; the proxy reads the probe itself and hazes toward the
+        city's own air; the skins keep the sky probe for their walls."""
         s = self.src
+        env = re.search(r'const GLASS_ENV_PARS = `(.*?)`;', s, re.S).group(1)
+        self.assertIn('return PI * gIrrCube(worldNormal) * 0.9;', env)
+        self.assertIn('return PI * envMapColor.rgb * 0.9;', env)
+        self.assertNotIn('uGlassIrrS', s)
+        self.assertNotIn('uGlassIrrG', s)
+        self.assertIn('uniform highp sampler2D uGlassIrr;', env)
+        self.assertIn('n2.x * texelFetch(uGlassIrr, ivec2(n.x < 0.0 ? 1 : 0, 0), 0).rgb', env)
+        sk = s[s.index('  function skyIrrBake(tex) {'):s.index('  function refreshEnv() {')]
+        self.assertIn('new THREE.WebGLRenderTarget(6, 1, { type: THREE.HalfFloatType', sk)
+        self.assertIn('gl_FragColor = vec4(textureCubeUV(envMap, d, 1.0).rgb, 1.0);', sk)
+        self.assertIn('renderer.setRenderTarget(prev);', sk)
+        self.assertIn('    skyIrrBake(rt.texture);', s[s.index('  function refreshEnv() {'):])
+        # three's own cube-UV layout for a target of image height h
+        h = 1024; mip = int(__import__('math').log2(h)) - 2
+        self.assertEqual((mip, 1 / (3 * max(2 ** mip, 112))), (8, 1 / 768))
+        self.assertIn("const cubeUVDefines = (h) => { const mip = Math.log2(h) - 2; return { ENVMAP_TYPE_CUBE_UV: '', CUBEUV_TEXEL_WIDTH: 1 / (3 * Math.max(Math.pow(2, mip), 112)), CUBEUV_TEXEL_HEIGHT: 1 / h, CUBEUV_MAX_MIP: mip + '.0' }; };", s)
+        f = re.search(r'const CITYENV_GLSL_F = `(.*?)`;', s, re.S).group(1)
+        self.assertIn('0.9 * textureCubeUV(envMap, n, 1.0).rgb', f)
+        self.assertNotIn('uFill', f)
+        self.assertIn('if (scene.fog) U.uAir.value.copy(scene.fog.color);', s)
+        self.assertIn("U.uHorizon.value.copy(skyMat.uniforms.cHorizon.value).convertSRGBToLinear();", s)
         self.assertIn('const SKIN_GLASS = CITYENV.on && REAL && !isTouch;', s)
         skin = s[s.index('  const SKIN_ENV_PARS = `'):s.index('  // the towers\' cladding runs after the far ring')]
         self.assertIn('vec4 envMapColor = textureCubeUV( envMap, worldNormal, 1.0 );', skin)
@@ -369,11 +406,11 @@ class Wiring(unittest.TestCase):
         s = self.src
         pars = re.search(r'const GLASS_SYS_PARS = `(.*?)`;', s, re.S).group(1)
         env = re.search(r'const GLASS_ENV_PARS = `(.*?)`;', s, re.S).group(1)
-        own = re.findall(r'uniform (?:mediump )?sampler2D(?:Array)? ([\w, ]+);', pars + env)
+        own = re.findall(r'uniform (?:(?:mediump|highp) )?sampler2D(?:Array)? ([\w, ]+);', pars + env)
         names = [n.strip() for grp in own for n in grp.split(',')]
-        self.assertEqual(['uGlassArr', 'uRooms', 'uCityEnvB'], names)
-        # with envMap and the two shadow maps: 6 on a computer of 16, 4 on a phone (no rooms, no second probe)
-        self.assertLessEqual(len(names) + 1 + 2, 6)
+        self.assertEqual(['uGlassArr', 'uRooms', 'uCityEnvB', 'uGlassIrr'], names)
+        # with envMap and the two shadow maps: 7 on a computer of 16, 4 on a phone (no rooms, no second probe, one shadow map)
+        self.assertLessEqual(len(names) + 1 + 2, 7)
 
     def test_far_rooms_arithmetic(self):
         """gRunCover is the lit run's true share of the rooms under a pixel; the far blocks keep the share."""
@@ -412,6 +449,123 @@ class Wiring(unittest.TestCase):
         self.assertIn('artImage(artSrc(A.frames, A.framesHalf))', s)
         self.assertIn('glassU.uGlassArr.value = freeTexOnUpload(t);', s)
         self.assertIn("const GLASS_ART = ", (ROOT / 'build.py').read_text().replace('const("GLASS_ART", text_of("glass_art.json", "null"))', 'const GLASS_ART = '))
+
+
+class SecondReview(unittest.TestCase):
+    """Round 192's second review: the Liberty crowns' glass, the paint's register and Comcast's joints, the homes lit by
+    their apartments, the fill from the probe, the sun inside and the grime."""
+    @classmethod
+    def setUpClass(cls):
+        cls.src = (ROOT / 'app.js').read_text()
+        cls.main = re.search(r'const GLASS_SYS_MAIN = `(.*?)`;', cls.src, re.S).group(1)
+        cls.pars = re.search(r'const GLASS_SYS_PARS = `(.*?)`;', cls.src, re.S).group(1)
+        cls.S = json.loads((ROOT / 'glass_systems.json').read_text())
+        cls.A = json.loads((ROOT / 'glass_art.json').read_text())
+
+    def test_the_liberty_crowns_wear_their_towers_glass(self):
+        s = self.src
+        self.assertIn('const crown = (cx, cz, base, tiers, gc, wc, slot, fh) => {', s)
+        self.assertIn("const cFh = GLASS_ON ? (fh !== undefined ? fh : glassFh(5)) : 0;", s)
+        self.assertIn('crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite, olSlot, lFh);', s)
+        self.assertIn('crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite, tlSlot, tFh);', s)
+        # a glazed crown is plant whatever its tower's rooms, in slim procedural frames, never the wall's tile
+        self.assertIn('if (floor(vGSt + 0.5) == 29.0) roomKind = 3.0;', self.main)
+        self.assertIn('float crownG = step(28.5, vGSt) * step(vGSt, 29.5);', self.main)
+        self.assertIn('if (uGlassOn > 0.5 && B.x > 0.5 && crownG < 0.5) {', self.main)
+        # sloped glass: no frame's metal, no pane's tilt, tint or roughness
+        sl = self.main[self.main.index('if (slopeG > 0.5) {'):]
+        sl = sl[:sl.index('}')]
+        for k in ('gFrSpec = vec3(0.0)', 'gSlope = vec2(0.0)', 'gGlassR = min(sqrt(sqrt(a0 * a0 + aL * aL)), 0.095);'):
+            self.assertIn(k, sl)
+        self.assertNotIn('pq', sl)
+
+    def test_paint_in_the_fabrics_register(self):
+        s = self.src
+        self.assertIn('const GLASS_PAINT = 0.27;', s)
+        self.assertIn('const FACADE_GAIN = 0.27, ROOF_GAIN = 0.17;', s)   # the literal is FACADE_GAIN (declared later)
+        pack = s[s.index('  function glassSysPack() {'):s.index('  if (GLASS_ON) glassSysPack();')]
+        self.assertIn("_glc.copy(glassCol(sp.back)).multiplyScalar(GLASS_PAINT)", pack)
+        self.assertIn('fm[0] * gain[0] * P', pack)
+        self.assertIn('fc.r * P', pack)
+        # the shadow box: a pan lit through the glass twice and shaded by its box; the body's spandrel in the paint's register
+        self.assertIn('vec3 spBack = E.r < -0.5 ? body * 0.41 : E.rgb;', self.main)
+        self.assertIn('float spK = D.y < 0.5 ? 0.6 * gVLT * gVLT : (D.y < 1.5 ? 0.65 : 0.85);', self.main)
+        self.assertAlmostEqual(0.27 / 0.66, 0.41, places=2)
+        # a cap at the fabric's roof gain over the 0.72 a routed cap keeps its colour at
+        self.assertIn('diffuseColor.rgb = body * 0.236;', self.main)
+        self.assertAlmostEqual(0.17 / 0.72, 0.236, places=3)
+
+    def test_comcasts_joints_are_slim(self):
+        sysd = {x['id']: x for x in self.S['systems']}
+        self.assertEqual(sysd[0]['frame']['slim'], {'v': 0.07, 'h': 0.14})
+        cells = {c['sys']: c for c in self.A['cells']}
+        for sid in (0, 14):
+            sl = cells[sid]['slim']
+            self.assertLessEqual(sl['v'][1], sysd[sid]['frame']['slim']['v'] + 0.015, sid)   # within a pixel of the want
+            self.assertLessEqual(sl['h'][1], sysd[sid]['frame']['slim']['h'] + 0.02, sid)
+            self.assertGreater(sl['v'][0], sl['v'][1])
+        self.assertLess(1 - cells[0]['coverage'] - cells[0]['secondary'], 0.10)   # the generated elevation's frame was 16%
+        for c in self.A['cells']:
+            if c['sys'] not in (0, 14):
+                self.assertNotIn('slim', c)
+
+    def test_the_fill_and_the_sun_inside(self):
+        s = self.src
+        self.assertIn('gSunInK = uGlassL.z * gVLT * gVLT * gVis * hue;', self.main)
+        self.assertIn('reflectedLight.directDiffuse += saturate(dot(geometry.normal, directLight.direction)) * directLight.color * BRDF_Lambert(gSunInK);', s)
+        self.assertIn('#define RE_Direct RE_Direct_Glass', s)
+        self.assertIn('+ vec3(uGlassL.w) * gGlass;', self.main)
+        self.assertIn('uGlassL: { value: new THREE.Vector4(0, GLASS_FAR_LUM, 0.40, 0.016) },', s)
+        # the daylit room in the glass's tint
+        self.assertIn('gRoomD = cM.rgb / max(gLum(cM.rgb), 1.0e-3) * hue * 0.3', self.main)
+
+    def test_homes_are_lit_by_their_apartments(self):
+        """A home's unit of 2 or 4 bays (a hotel room 2 or 3) switches as one, its second room at half or dark, blinds drawn in
+        about two in five; the far light is the units under the pixel box filtered (exact under a unit a pixel each way, never
+        the four corner taps that shimmered), the share's mean past two."""
+        self.assertNotIn('gHomeFar', self.src)
+        self.assertIn('float gHomeBox(vec2 q, vec2 w, float sR, float share, float nRm) {', self.pars)
+        self.assertIn("float nU = kd < 0.5 ? 6.0 : (kd < 1.5 ? 2.0 + 2.0 * step(0.35, fract(wallSeed * 3.71)) : (kd < 2.5 ? 2.0 + step(0.6, fract(wallSeed * 3.71)) : 2.0));", self.main)
+        self.assertIn('if (nk < 0.999) litFar = gHomeBox(vec2(uB / nU, yF), vec2(fx / nU, fy), sR, share, nRm);', self.main)
+        self.assertIn('nk = smoothstep(0.8, 2.5, min(rpx, fpx));', self.main)
+        self.assertIn('float nearK = smoothstep(0.8, 2.5, kd < 0.5 ? min(rpx, 2.0 * fpx) : min(rpx, fpx));', self.main)   # the same
+        # the box filter of a field constant on unit cells: exact against brute force while the footprint is under a cell
+        import random
+        rnd = random.Random(7)
+        val = {}
+        U = lambda i, j: val.setdefault((i, j), rnd.random())
+        def box(qx, qy, wx, wy):
+            ax, ay = qx - wx / 2, qy - wy / 2
+            cx, cy = math.floor(ax), math.floor(ay)
+            kx = min(max((cx + 1 - ax) / wx, 0), 1); ky = min(max((cy + 1 - ay) / wy, 0), 1)
+            return kx * ky * U(cx, cy) + (1 - kx) * ky * U(cx + 1, cy) + kx * (1 - ky) * U(cx, cy + 1) + (1 - kx) * (1 - ky) * U(cx + 1, cy + 1)
+        def brute(qx, qy, wx, wy, n=200):
+            t = 0.0
+            for i in range(n):
+                for j in range(n):
+                    x = qx - wx / 2 + (i + 0.5) / n * wx; y = qy - wy / 2 + (j + 0.5) / n * wy
+                    t += U(math.floor(x), math.floor(y))
+            return t / n / n
+        for _ in range(12):
+            qx, qy, wx, wy = rnd.uniform(0, 9), rnd.uniform(0, 9), rnd.uniform(0.05, 0.99), rnd.uniform(0.05, 0.99)
+            self.assertAlmostEqual(box(qx, qy, wx, wy), brute(qx, qy, wx, wy), delta=0.02)
+        # continuous as the eye moves: a 1/100 of a pixel step never jumps (the corner taps jumped a whole lamp)
+        prev = box(3.0, 4.2, 0.6, 0.4)
+        for k in range(1, 300):
+            v = box(3.0 + k * 0.006, 4.2, 0.6, 0.4)
+            self.assertLess(abs(v - prev), 0.02)
+            prev = v
+        # the mean the far light gives way to: share, the lamps (0.731 x 0.45), the blinds (0.62 open, 0.38 at 0.3), the rooms
+        self.assertAlmostEqual(0.62 + 0.38 * 0.3, 0.734, places=3)
+        self.assertAlmostEqual((1 + 0.55 * 0.5) / 2, 0.6375, places=4)
+        self.assertIn('float mean = share * 0.731 * 0.45 * 0.734 * (nRm > 1.5 ? 0.6375 : 1.0);', self.pars)
+        # the near light: the rooms either side of the footprint, each by its share; a unit's lamp and blinds (hL)
+        self.assertIn('lit = kx * gHomeRoom(r0, rid.y, sR, share, nRm) + (1.0 - kx) * gHomeRoom(r0 + 1.0, rid.y, sR, share, nRm);', self.main)
+        self.assertIn('float drawnU = kd > 0.5 && kd < 2.5 ? step(0.62, fract(hL * 23.93)) : 0.0;', self.main)
+        self.assertIn('* mix(1.0, 0.3, drawnU);', self.main)
+        # the office suites' levels from 0.475 to 0.975 (their mean the old 0.725)
+        self.assertNotIn('0.35 + 0.75 * fract(', self.main)
+        self.assertAlmostEqual(0.475 + 0.25, 0.725, places=6)
 
 
 if __name__ == '__main__':

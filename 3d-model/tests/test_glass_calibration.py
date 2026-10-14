@@ -3,7 +3,11 @@ researched tower's glass, measured by glass_calibrate.py over the glass mask at 
 stated CIE76 delta E of its reference swatch (Comcast a light silver blue, the CTC a pale neutral, the Liberty Places a mid
 blue, Cira a bright silver, The Laurel a greige), and the measure was taken on the glass the page draws now: its shaders'
 and systems' fingerprint matches, so a change to the glass that is not re-measured (python3 glass_calibrate.py after a
-build) fails here."""
+build) fails here.
+
+Round 192's second review: Comcast a hundred metres off its south face at noon keeps its swatch and its frames do not stand
+out of its glass (the 90th over the 10th percentile of the face's luminance under CONTRAST's bound: the first cut's white
+joints measured 3.3), and One Liberty's crown (REGION) reads as the tower's blue glass, not a white lattice."""
 import importlib.util
 import json
 from pathlib import Path
@@ -49,6 +53,26 @@ class Calibration(unittest.TestCase):
             self.assertGreater(m['mean'][2] - m['mean'][0], 20, pose)
         for pose, m in M['Comcast Center'].items():
             self.assertGreater(sum(m['mean']) / 3, 105, pose)
+
+    def test_the_frames_do_not_stand_out_of_the_glass(self):
+        self.assertTrue(self.G.CONTRAST, 'a pose bounds the frames against the glass')
+        self.assertEqual(self.C['contrast'], [{'tower': k[0], 'pose': k[1], 'max': v} for k, v in self.G.CONTRAST.items()])
+        for (name, pose), mx in self.G.CONTRAST.items():
+            self.assertLessEqual(mx, 2.0, (name, pose))
+            self.assertIn(pose, self.G.SWATCHES[name][1], (name, pose))
+            m = self.C['measured'][name][pose]
+            self.assertLessEqual(m['contrast'], mx, '%s at %s: p90 %.1f over p10 %.1f' % (name, pose, m['p90'], m['p10']))
+
+    def test_the_liberty_crown_is_measured_as_part_of_its_tower(self):
+        name = 'One Liberty Place (crown)'
+        self.assertIn(name, self.G.SWATCHES)
+        tower, y0, y1 = self.G.REGION[name]
+        self.assertEqual(tower, 'One Liberty Place')
+        self.assertLess(y0, 212 + 15)   # the lowest tier's eaves, over the tower's ground
+        self.assertGreater(y1, 251)     # the top tier's ridge
+        m = self.C['measured'][name]
+        for pose in self.G.SWATCHES[name][1]:
+            self.assertGreater(m[pose]['mean'][2] - m[pose]['mean'][0], 20, pose)   # blue, not the white lattice over tan
 
     def test_delta_e_is_cie76(self):
         self.assertAlmostEqual(self.G.delta_e([255, 255, 255], [255, 255, 255]), 0.0, places=6)

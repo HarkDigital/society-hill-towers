@@ -13,10 +13,11 @@
  for(const logarithmicDepthBuffer of [false,true]){
   const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});r.setSize(128,128);r.outputEncoding=THREE.LinearEncoding;r.setClearColor(0);
   const nightUniform={value:0},sunWUniform={value:new THREE.Vector3(0,1,0)};
-  const G=new Function('THREE','GLASS_ART','REAL','renderer','isTouch','TIER2','location','clamp','hash01','nightUniform','sunWUniform','VDEPTH',
+  const G=new Function('THREE','GLASS_ART','REAL','renderer','isTouch','TIER2','location','clamp','hash01','nightUniform','sunWUniform','VDEPTH','pmremGen','waterPmrem',
    cut('  const SFT_GLSL = [','  // Round 168 (the phones')+cut('  const occU = {','  // the shares by the clock')+
+   cut('  let envRT = null;','  function refreshEnv() {')+
    cut('  // ---- the glass towers (Round 192','  // five windows of the South Tower')+
-   'return {glassSysMat,glassU,CITYENV,GLASS_ON,GLASS_ART_ON,occU,glassFh};')(THREE,art,true,r,false,false,{search:''},(v,a,b)=>v<a?a:v>b?b:v,(n)=>{const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);},nightUniform,sunWUniform,{twins:new Map()});
+   'return {glassSysMat,glassU,CITYENV,GLASS_ON,GLASS_ART_ON,occU,glassFh,SKYIRR};')(THREE,art,true,r,false,false,{search:''},(v,a,b)=>v<a?a:v>b?b:v,(n)=>{const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);},nightUniform,sunWUniform,{twins:new Map()},{},()=>null);
   check(G.GLASS_ON&&G.GLASS_ART_ON,'the glass did not switch on');
   const pm=new THREE.PMREMGenerator(r);
   const envOf=(top,bottom)=>{const sc=new THREE.Scene(),m=new THREE.ShaderMaterial({side:THREE.BackSide,uniforms:{a:{value:new THREE.Color(...top)},b:{value:new THREE.Color(...bottom)}},
@@ -36,7 +37,7 @@
   const lum=(c)=>.2126*c[0]+.7152*c[1]+.0722*c[2];
   // the procedural frame first (no atlas: a tier-2 phone, ?glassart=0); the day rooms off while the reflection is judged
   G.glassU.uGlassOn.value=0;G.glassU.uGlassK.value.y=0;
-  G.CITYENV.u.uGlassIrrS.value.setRGB(0,0,0);G.CITYENV.u.uGlassIrrG.value.setRGB(0,0,0);   // the frames' sky fill off while the glass's reflection is judged
+  G.CITYENV.u.uGlassIrr.value=null;   // the frames' sky fill off (SKYIRR's texels: no sky probe here) while the glass's reflection is judged
   const face=center(render([0,20,40],[0,20,0])),grazing=center(render([25,20,4],[-20,20,0]));
   check(lum(grazing)>lum(face)*1.6,'no Fresnel gain at grazing '+JSON.stringify({face,grazing}));
   check(face[2]>face[0]*1.5,'the glass does not reflect its own probe (blue) '+face);

@@ -32,6 +32,11 @@ chain of mips, so the hardware filters each axis by its own footprint all the wa
 or two out). A phone takes the half strip. The rooms are one 1536 x 1152 atlas (cells 384 x 576), a computer's only (a
 phone never draws them, so no half copy).
 
+Round 192's second review: a system whose frame names `slim` has its joints thinned to those sightlines (`slim`: the glass
+grown into the frame cyclically, each axis by its own radius; the generated Comcast elevation's joints were about 150 mm a
+vertical joint and 276 mm of opaque frame a floor, twice a flush unitized wall's, and read as white graph paper), the cell
+recording what was measured before and after.
+
 Usage: python3 bake_glass_art.py [--preview DIR] [--template OUT.png]"""
 import argparse, json, math, os, sys
 import numpy as np
@@ -265,18 +270,31 @@ def bake_frame(sysd, fr):
         leak = float(((g2 > 0.02) | (m2 > 0.02))[fr_px].mean())
         if leak > 0.02:
             return None, None, 'key leaks into the frame (%.3f)' % leak
+    slimmed = None
+    if sysd['frame'].get('slim'):
+        vg, sg, slimmed = slim(vg, sg, s, sysd, sysd['frame']['slim'])
+        gl = np.clip(vg + sg, 0, 1)
     alb = push_pull(rgb, np.clip(fw * 4 - 0.2, 0, 1))   # where a quarter of the repeats or more saw frame, its own colour
     # the vision band's sill and head in the module's lowest floor (rows run down: the floor's foot is the last row)
     fh = oh / nfM
     low = vg[int(round(oh - fh)):, :].mean(1)[::-1]   # from the floor line up
     on = np.where(low > 0.5 * max(low.max(), 1e-6))[0]
     sill, head = (float(on[0]) / fh, float(on[-1] + 1) / fh) if len(on) else (0.0, 1.0)
+    if slimmed and len(on):
+        # the vision run that starts at the sill, not the module's last glass row: a slimmed wall's vision grows across the
+        # module's edge into the stack joint over the spandrel, cyclically
+        i1 = int(on[0])
+        while i1 + 1 < len(low) and low[i1 + 1] > 0.5 * low.max():
+            i1 += 1
+        head = float(i1 + 1) / fh
     frame_w = (1 - gl)
     fmean = (lin(alb) * frame_w[..., None]).sum((0, 1)) / max(frame_w.sum(), 1e-6)
     info = {'sys': sid, 'pw': round(pw, 2), 'ph': round(ph, 2), 'reps': len(reps), 'disagree': round(float(dis), 4),
             'size': [ow, oh], 'pxm': round(s, 2), 'sill': round(sill, 4), 'head': round(head, 4),
             'coverage': round(float(vg.mean()), 4), 'secondary': round(float(sg.mean()), 4),
             'frameMean': [round(float(v), 4) for v in fmean]}
+    if slimmed:
+        info['slim'] = slimmed
     # the frame's detail as its luminance over twice the frame's mean (the page multiplies the system's frame colour by twice
     # it): one fetch a fragment, where an albedo atlas beside the mask was a second the old procedural wall never paid
     L = (lin(np.clip(alb, 0, 1)) * [0.2126, 0.7152, 0.0722]).sum(-1)
@@ -284,6 +302,46 @@ def bake_frame(sysd, fr):
     A = (np.clip(alb, 0, 1) * 255 + 0.5).astype(np.uint8)
     M = (np.stack([vg, sg, detail], -1) * 255 + 0.5).astype(np.uint8)
     return A, M, info
+
+
+def joints(vg, sg, s, sysd):
+    """A module's joint sightlines in metres: the vertical joints' width a bay (columns without glass across the vision
+    band's rows) and the opaque rows a floor, with the number of opaque bands a floor."""
+    gl = np.clip(vg + sg, 0, 1)
+    rv = vg.mean(1)
+    vis = rv > 0.5 * rv.max()
+    vj = float((gl[vis].mean(0) < 0.5).sum()) / s / sysd['nbM']
+    op = gl.mean(1) < 0.5
+    return vj, float(op.sum()) / s / sysd['nfM'], max(1, len(runs(op)) // sysd['nfM'])
+
+
+def slim(vg, sg, s, sysd, want):
+    """Round 192's second review (Comcast at mid range read as white graph paper on dark glass: the generated elevation's
+    joints were about 150 mm a vertical joint and 276 mm of opaque frame a floor, twice a flush unitized wall's): the glass
+    grown into the frame, cyclically, each axis by its own radius, until the vertical joints are want['v'] metres and the
+    opaque rows want['h'] metres a floor (shared among the floor's opaque bands, each thinned from both sides). A pixel two
+    kinds of glass grow into is shared between them. Returns the masks and what was measured and done."""
+    vj, hj, nb = joints(vg, sg, s, sysd)
+    rx = max(0.0, (vj - want['v']) / 2) * s
+    ry = max(0.0, (hj - want['h']) / (2 * nb)) * s
+
+    def grow(m, r, axis, k=4):
+        if r <= 0:
+            return m
+        up = np.repeat(m, k, axis=axis)
+        out = up.copy()
+        for d in range(1, int(round(r * k)) + 1):
+            out = np.maximum(out, np.maximum(np.roll(up, d, axis=axis), np.roll(up, -d, axis=axis)))
+        H, W = m.shape
+        return out.reshape(H, W, k).mean(2) if axis == 1 else out.reshape(H, k, W).mean(1)
+
+    v2 = grow(grow(vg, rx, 1), ry, 0)
+    s2 = grow(grow(sg, rx, 1), ry, 0)
+    tot = v2 + s2
+    k = np.where(tot > 1, 1 / np.maximum(tot, 1e-6), 1.0)
+    v2, s2 = v2 * k, s2 * k
+    vj2, hj2, _ = joints(v2, s2, s, sysd)
+    return v2, s2, {'v': [round(vj, 4), round(vj2, 4)], 'h': [round(hj, 4), round(hj2, 4)], 'bands': nb, 'px': [round(rx, 2), round(ry, 2)]}
 
 
 def tile(arr, T):

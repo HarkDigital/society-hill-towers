@@ -4699,6 +4699,42 @@
   let envLamp = 0;   // the lamps' level as realSky last saw it (lampUniform is declared far below this boot call)
   let envRT = null;
   let cityEnvReady = false;   // Round 192: set once the city's probe (CITYENV, declared with the glass below) is built
+  // three's defines for reading a PMREM target of image height h with textureCubeUV from a program of one's own
+  const cubeUVDefines = (h) => { const mip = Math.log2(h) - 2; return { ENVMAP_TYPE_CUBE_UV: '', CUBEUV_TEXEL_WIDTH: 1 / (3 * Math.max(Math.pow(2, mip), 112)), CUBEUV_TEXEL_HEIGHT: 1 / h, CUBEUV_MAX_MIP: mip + '.0' }; };
+  // Round 192's second review: the sky probe's own fill, six ways (an ambient cube: the probe's radiance at roughness 1 along
+  // +x, -x, +y, -y, +z and -z, what a wall's getIBLIrradiance reads there), drawn from each new probe into a 6 by 1
+  // half-float target at the end of refreshEnv's bake. The glass's frames and caps take their fill from these six texels
+  // (GLASS_ENV_PARS: gIrrCube); the first cut built it from the dome's raw display-space uniforms, which the probe holds
+  // decoded, and lit the frames two to five times the probe's fill by day and sixteen times at night. No readback: the
+  // glass's program reads the texels. On only with the glass (glassSysMat sets it)
+  const SKYIRR = { on: false, rt: null, mesh: null, scene: null, cam: null, n: 0 };
+  function skyIrrBake(tex) {
+    if (!SKYIRR.on || !tex) return;
+    if (!SKYIRR.rt) {
+      SKYIRR.rt = new THREE.WebGLRenderTarget(6, 1, { type: THREE.HalfFloatType, format: THREE.RGBAFormat, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, depthBuffer: false, generateMipmaps: false });
+      const mat = new THREE.ShaderMaterial({ defines: cubeUVDefines(tex.image.height), uniforms: { envMap: { value: tex } }, depthTest: false, depthWrite: false,
+        vertexShader: 'void main() { gl_Position = vec4(position.xy, 0.0, 1.0); }',
+        fragmentShader: `
+          uniform sampler2D envMap;
+          #include <common>
+          #include <cube_uv_reflection_fragment>
+          void main() {
+            float k = floor(gl_FragCoord.x);
+            vec3 d = k < 0.5 ? vec3(1.0, 0.0, 0.0) : k < 1.5 ? vec3(-1.0, 0.0, 0.0) : k < 2.5 ? vec3(0.0, 1.0, 0.0) : k < 3.5 ? vec3(0.0, -1.0, 0.0) : k < 4.5 ? vec3(0.0, 0.0, 1.0) : vec3(0.0, 0.0, -1.0);
+            gl_FragColor = vec4(textureCubeUV(envMap, d, 1.0).rgb, 1.0);
+          }` });
+      SKYIRR.mesh = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), mat);
+      SKYIRR.mesh.frustumCulled = false;
+      SKYIRR.scene = new THREE.Scene(); SKYIRR.scene.add(SKYIRR.mesh);
+      SKYIRR.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    }
+    SKYIRR.mesh.material.uniforms.envMap.value = tex;
+    const prev = renderer.getRenderTarget();
+    renderer.setRenderTarget(SKYIRR.rt);
+    renderer.render(SKYIRR.scene, SKYIRR.cam);
+    renderer.setRenderTarget(prev);
+    SKYIRR.n++;
+  }
   function refreshEnv() {
     for (const k of ['cZenith', 'cHorizon', 'cGround', 'cSun']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
     envSky.material.uniforms.uSunVis.value = skyMat.uniforms.uSunVis.value;
@@ -4735,6 +4771,7 @@
     scene.environment = rt.texture;
     if (envRT) envRT.dispose();
     envRT = rt;
+    skyIrrBake(rt.texture);   // Round 192: the glass's fill, from the probe just made
     if (cityEnvReady) CITYENV.pending = true;   // Round 192: the city's probe follows on a frame of its own (cityEnvTick)
     waterEnvBake();   // realism, water: the water's own sky-only probe from the same generator (living water)
   }
@@ -8682,14 +8719,20 @@ vec2 wRing(vec2 rc, float tt) {
     // tuning: x the lit rooms' gain, y the day rooms', z a view of one term alone (1 the frame, 2 the rooms, 3 the probe), w the panes' bow
     uGlassK: { value: new THREE.Vector4(1, 1.5, /[?&]cityenv=show\b/.test(location.search) ? 3 : 0, 1) },
     // the rooms' light: x its level by the ambient light (1 after dark, rising through the dusk well before the night does:
-    // glassRoomLevel), y the far glow's luminance
-    uGlassL: { value: new THREE.Vector4(0, GLASS_FAR_LUM, 0, 0) },
+    // glassRoomLevel), y the far glow's luminance, z the sun inside's share (gSunInK: what of a sunlit room seen through the
+    // glass is in the sun, its reflectance with it), w the glass's film of grime (its diffuse albedo)
+    uGlassL: { value: new THREE.Vector4(0, GLASS_FAR_LUM, 0.40, 0.016) },
   };
   const _glc = new THREE.Color(), _glh = { h: 0, s: 0, l: 0 }, _glCap = new THREE.Color(), _glBody = new THREE.Color();
   // a hex as the scene's working value (handoff gotcha 11: the legacy pipeline takes no sRGB to linear on input; the first
   // cut converted every frame, spandrel and proxy colour, which drew them at about half the city's brightness)
   const glassCol = (hex) => new THREE.Color(hex);
   const lin2s = (v) => (v <= 0.0031308 ? v * 12.92 : 1.055 * Math.pow(v, 1 / 2.4) - 0.055);
+  // the frames' and the spandrels' paint in the fabric's register: a hex is the colour a surface shows in the sun, and the
+  // fabric draws a wall of that hex at FACADE_GAIN (0.27, declared further down: a literal here, tests/test_glass_towers.py
+  // holds them equal). The second review: at their hex as an albedo, nearly four times a wall's, Comcast's dark silicone
+  // joints drew pale grey in the sun and the walls read as white graph paper
+  const GLASS_PAINT = 0.27;
   // the systems into uGS, ten vec4 each: A bay, floor, module bays, module floors; B whether the frames are drawn from the
   // art (1) or procedurally (0), the procedural mullion's half width (bays); C F0, transmittance, bow, roller wave; D
   // coating, spandrel kind, rooms, facet; E the spandrel's back (r -1 for the body's own colour), the frame's metalness; F
@@ -8707,14 +8750,15 @@ vec2 wRing(vec2 rc, float tt) {
       V[o + 1].set(cell ? 1 : 0, 0.035 / s.bay, 0, 0);
       V[o + 2].set(s.F0, s.VLT, s.pillow, s.roller);
       V[o + 3].set(s.coatSat, sp.kind, GLASS_KIND[s.rooms], s.facet || 0);
-      if (sp.back === 'body') V[o + 4].set(-1, 0, 0, fr.metal); else { _glc.copy(glassCol(sp.back)); V[o + 4].set(_glc.r, _glc.g, _glc.b, fr.metal); }
+      if (sp.back === 'body') V[o + 4].set(-1, 0, 0, fr.metal); else { _glc.copy(glassCol(sp.back)).multiplyScalar(GLASS_PAINT); V[o + 4].set(_glc.r, _glc.g, _glc.b, fr.metal); }
       if (up) V[o + 5].set(up.datum, up.F0, up.VLT, GLASS_KIND[up.rooms]); else V[o + 5].set(0, s.F0, s.VLT, GLASS_KIND[s.rooms]);
       // the frame's mean and the glass's share: the bake's measures, else the authored frame colour and a band of vision
       // glass under the spandrel (the procedural frame's own proportions)
       const fc = glassCol(fr.colour), visDef = sp.kind === 3 ? 0.62 : 0.72;
       const fm = cell ? cell.frameMean.map(lin2s) : null;
       const gain = cell && fr.tint ? [0, 1, 2].map((q) => clamp([fc.r, fc.g, fc.b][q] / Math.max(fm[q], 1e-3), 0.25, 4)) : [1, 1, 1];
-      if (cell) V[o + 6].set(fm[0] * gain[0], fm[1] * gain[1], fm[2] * gain[2], cell.coverage); else V[o + 6].set(fc.r, fc.g, fc.b, visDef * (1 - 0.07 / s.bay));
+      const P = GLASS_PAINT;
+      if (cell) V[o + 6].set(fm[0] * gain[0] * P, fm[1] * gain[1] * P, fm[2] * gain[2] * P, cell.coverage); else V[o + 6].set(fc.r * P, fc.g * P, fc.b * P, visDef * (1 - 0.07 / s.bay));
       V[o + 9].set(gain[0], gain[1], gain[2], 0);
       V[o + 7].set(cell ? cell.sill : 0.02, cell ? cell.head : visDef, fr.rough, Math.max(5.5, 1.4 * s.floor, s.lobbyH || 0) * (s.lobbyH === 0 ? 0 : 1));
       V[o + 8].set(s.corner || 0, sp.depth || 0, cell ? cell.secondary : (sp.kind < 2.5 ? (1 - visDef) * 0.93 : 0), up ? up.coatSat : s.coatSat);
@@ -8754,10 +8798,12 @@ vec2 wRing(vec2 rc, float tt) {
   // the rooms' light by the ambient light (uGlassL.x, from applyLighting): a lit office is the same lamps at noon and at
   // nine, and what changes is how much of the reflection is left over it, so by day the room is the faint daylit one, and
   // through the dusk the lamps come up well ahead of the night term (the review: at 18:25 on Oct 14 the glass towers stood
-  // dark among the masonry's lit windows), full from three degrees under the horizon (the overcast advance as the
-  // windows', Round 88)
+  // dark among the masonry's lit windows), rising as the street lamps' photocell does (lampUniform, from 1.5 degrees over
+  // the horizon) and full 4.5 degrees under it, with the overcast advance as the windows', Round 88 (the second review: a
+  // ramp from five degrees up lit the offices' rooms as a camouflage of blocks under a daylit sky at 18:08, the sun 2.5
+  // degrees up)
   function glassRoomLevel(elAmb, night) {
-    return Math.max(night, 1 - smooth(-3, 5, elAmb));
+    return Math.max(night, 1 - smooth(-4.5, 1.5, elAmb));
   }
   // ---- the city's reflection (Round 192, CITYENV). The glass reflected only refreshEnv's probe (a sky dome, a disc and nine
   // boxes), so no tower, street or river ever showed in a curtain wall and the skyline read as blue plastic. This is a PMREM
@@ -8778,7 +8824,7 @@ vec2 wRing(vec2 rc, float tt) {
   // before the fetch (GLASS_ENV_PARS), so the reflections do not swim as the eye moves; a ray whose hit lies within tens of
   // metres reads a blurred mean (the sphere's parallax is wrong there). Off on the recovery tier (TIER2)
   const CITYENV = { on: GLASS_ON && !TIER2 && !/[?&]cityenv=0\b/.test(location.search), show: GLASS_ON && /[?&]cityenv=show\b/.test(location.search),
-    two: false, u: { uCityEnvB: { value: null }, uCityEnvC: { value: [new THREE.Vector4(0, 0, 0, 1500), new THREE.Vector4(0, 0, 0, 1200)] }, uCityEnvG: { value: new THREE.Vector2() }, uCityEnvN: { value: 0 }, uCityEnvK: { value: 1 }, uGlassIrrS: { value: new THREE.Color(0.4, 0.45, 0.5) }, uGlassIrrG: { value: new THREE.Color(0.15, 0.14, 0.13) } },
+    two: false, u: { uCityEnvB: { value: null }, uCityEnvC: { value: [new THREE.Vector4(0, 0, 0, 1500), new THREE.Vector4(0, 0, 0, 1200)] }, uCityEnvG: { value: new THREE.Vector2() }, uCityEnvN: { value: 0 }, uCityEnvK: { value: 1 }, uGlassIrr: { value: null } },
     mats: [], recs: [], centres: [], rts: [null, null], scene: null, group: null, mesh: null, mat: null, gen: null, geoms: [],
     renders: 0, ms: 0, msLast: 0, tris: 0, at: -1e9, pending: false, next: -1, built: false, buildMs: 0, lumAt: 0, error: null };
   CITYENV.two = CITYENV.on && !isTouch;
@@ -8796,11 +8842,15 @@ vec2 wRing(vec2 rc, float tt) {
       #include <logdepthbuf_vertex>
     }`;
   const CITYENV_GLSL_F = `
-    uniform vec3 uSunDir, uSunCol, uSkyCol, uGndCol, uHorizon, uFill, uTheme, uLampC, uCentre;
-    uniform float uNight, uLamp, uOccO, uOccH, uExt;
+    uniform vec3 uSunDir, uSunCol, uSkyCol, uGndCol, uHorizon, uAir, uTheme, uLampC, uCentre;
+    uniform float uNight, uLamp, uOccO, uOccH;
     uniform vec2 uFl;
+    uniform sampler2D envMap;   // the sky's probe (refreshEnv's): the fill every facade takes, read as a facade reads it
+    uniform vec4 fogAP, fogAPLow, fogAPSun;   // the city's aerial perspective (apU), as fog_pars_fragment reads it
+    uniform vec3 fogAPSunC, fogAPAnti;
     varying vec3 vW; varying vec4 vP;
     #include <common>
+    #include <cube_uv_reflection_fragment>
     #include <logdepthbuf_pars_fragment>
     float ch(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     // the share of a periodic band [a, b] (period 1) over [x - w / 2, x + w / 2]: a box filter, exact
@@ -8809,15 +8859,33 @@ vec2 wRing(vec2 rc, float tt) {
       float x0 = x - 0.5 * w, x1 = x + 0.5 * w, L = b - a;
       return clamp(((floor(x1) * L + clamp(fract(x1), a, b)) - (floor(x0) * L + clamp(fract(x0), a, b))) / w, 0.0, 1.0);
     }
+    // the city's air along a ray from the centre (fog_pars_fragment's apLayer and apColor, from the centre's height): its
+    // optical depth through the haze and the ground fog, and its colour, the fog's toward the anti-sun and the sun's glow
+    float apLayerC(vec4 L, float dy, float d) {
+      if (L.x <= 0.0) return 0.0;
+      float h0 = max(uCentre.y - L.z, 0.0), h1 = max(uCentre.y + dy - L.z, 0.0), x = L.y * (h1 - h0), e0 = exp(-L.y * h0);
+      return L.x * d * (abs(x) > 1e-4 ? (e0 - exp(-L.y * h1)) / x : e0);
+    }
+    vec3 apColorC(vec3 dir) {
+      float sw = dot(normalize(dir.xz + vec2(1e-5, 0.0)), normalize(fogAPSun.xz + vec2(1e-5, 0.0))) * 0.5 + 0.5;
+      vec3 c = mix(uAir, fogAPAnti, 1.0 - sw * sw);
+      float mu = max(dot(dir, fogAPSun.xyz), 0.0), q = 1.0 - mu, m2 = mu * mu, m4 = m2 * m2, m8 = m4 * m4;
+      return mix(c, fogAPSunC, (0.24 * exp(-190.0 * q) + 0.07 * exp(-18.0 * q) + 0.10 * m8 * m4 + 0.10 * m8 + 0.05 * m2) * 1.7857);
+    }
     void main() {
       #include <logdepthbuf_fragment>
       vec3 n = normalize(cross(dFdx(vW), dFdy(vW)));
       vec3 dw = fwidth(vW);   // the footprint, outside every branch
       if (dot(n, uCentre - vW) < 0.0) n = -n;   // the face the centre sees
       float kind = floor(vP.w * 4.0 + 0.5);
-      vec3 alb = vP.rgb;
-      // the scene's light in its own units: the key, the hemisphere and the sky's fill (a facade's scene.environment)
-      vec3 irr = uSunCol * max(dot(n, uSunDir), 0.0) + mix(uGndCol, uSkyCol, 0.5 + 0.5 * n.y) + uFill * (0.6 + 0.4 * n.y);
+      // the colours in the scene's own register (Round 192's second review: the proxy drew the records' colours as albedos,
+      // three to four times the city's, and its ground a warm grey from above): a wall's colour at the fabric's gain
+      // (FACADE_GAIN 0.27), a glass tower's body (its hex at 0.66) at the same
+      vec3 alb = vP.rgb * (kind > 0.5 && kind < 1.5 ? 0.41 : (kind > 2.5 ? 0.32 : 0.27));
+      // the scene's light in its own units: the key, the hemisphere and the sky probe's own fill along the normal, at the
+      // fabric's 0.9 (the first cut took the dome's raw display colours, which the probe holds decoded: the mirrored city
+      // over-lit by day and lit like dusk at night)
+      vec3 irr = uSunCol * max(dot(n, uSunDir), 0.0) + mix(uGndCol, uSkyCol, 0.5 + 0.5 * n.y) + 0.9 * textureCubeUV(envMap, n, 1.0).rgb;
       vec3 col;
       float wall = 1.0 - step(0.5, abs(n.y));
       if (kind > 3.5) {
@@ -8825,11 +8893,14 @@ vec2 wRing(vec2 rc, float tt) {
         vec2 g = vec2(dot(vW.xz, uFl), dot(vW.xz, vec2(-uFl.y, uFl.x)));
         vec2 gw = vec2(length(dw.xz)) / vec2(122.0, 90.0);
         float st = 1.0 - (1.0 - band(g.x / 122.0, gw.x, 0.0, 0.12)) * (1.0 - band(g.y / 90.0, gw.y, 0.0, 0.16));
-        // a block's mean from above: roofs (pale membranes, silver coating, gravel, tar), yards and trees; the streets darker
-        alb = mix(vec3(0.30, 0.29, 0.27) * (0.75 + 0.5 * ch(floor(g / vec2(122.0, 90.0)))), vec3(0.11, 0.11, 0.115), st);
+        // a block's mean from above, as the city draws it: roofs (membranes, coatings, gravel and tar at the fabric's roof
+        // gain), yards and trees, a neutral to green grey; the streets darker (the review: a warm 0.3 read tan from above)
+        alb = mix(vec3(0.100, 0.094, 0.077) * (0.75 + 0.5 * ch(floor(g / vec2(122.0, 90.0)))), vec3(0.044, 0.042, 0.040), st);
         col = alb * irr;
+        // after dark the lamps' pools (LAMPMAP's, from above an orange street grid over dim blocks: the second review's
+        // measure of the city from 700 m at 21:30 against this proxy, 0.085 against 0.023)
         float lampLine = 1.0 - (1.0 - band(g.x / 122.0 - 0.04, gw.x, 0.0, 0.04)) * (1.0 - band(g.y / 90.0 - 0.06, gw.y, 0.0, 0.04));
-        col += uLampC * uLamp * lampLine * 0.20;
+        col += uLampC * uLamp * (0.06 + 0.65 * st + 0.20 * lampLine);
       } else if (wall > 0.5) {
         // a wall: its storeys' windows (a band a floor, box filtered: a far wall is its mean), the glass mirroring the
         // horizon's sky over the room, the rest its own colour lit; a glass tower is mostly glass, the low city's brick a
@@ -8851,10 +8922,13 @@ vec2 wRing(vec2 rc, float tt) {
         // a roof: darker than the walls (membranes, tar and gravel under the city's dust)
         col = alb * 0.55 * irr;
       }
-      if (kind > 1.5 && kind < 2.5) col += uTheme * uNight * 1.0;
-      // the air between the centre and the wall, at the scene's extinction, toward the dome's horizon; the disc's rim
-      float d = length(vW - uCentre);
-      col = mix(col, uHorizon, max(1.0 - exp(-uExt * d), smoothstep(5000.0, 8000.0, d)));
+      if (kind > 1.5 && kind < 2.5) col += uTheme * uNight * 0.4;   // a crown's lit lines and bands, their mean over it
+      // the air between the centre and the wall as the city's own aerial perspective has it (its depth through the layers,
+      // its colour toward and away from the sun); the disc's rim
+      vec3 v = vW - uCentre;
+      float d = length(v);
+      float od = fogAP.w > 0.5 ? apLayerC(fogAP, v.y, d) + apLayerC(fogAPLow, v.y, d) : 0.0;
+      col = mix(col, fogAP.w > 0.5 ? apColorC(v / max(d, 1e-3)) : uAir, max(1.0 - exp(-od), smoothstep(5000.0, 8000.0, d)));
       gl_FragColor = vec4(max(col, vec3(0.0)), 1.0);
     }`;
   // the proxy's geometry, once ('Mirroring the city'): positions in world metres (Float32 x 3) and aP (Uint8 x 4, normalized:
@@ -8931,7 +9005,7 @@ vec2 wRing(vec2 rc, float tt) {
       for (const q of lowCells) {
         if (Math.hypot(q.x - c.x, q.z - c.z) < 350) continue;
         const s = 30, h = q.hsh;
-        prism(T.put, [[q.x - s, q.z - s], [q.x + s, q.z - s], [q.x + s, q.z + s], [q.x - s, q.z + s]], q.gy, q.gy + q.hh, 0.37 + 0.12 * h, 0.35 + 0.10 * h, 0.33 + 0.09 * h, 3, 3);   // brick, stone and stucco under the city's grime, a block's mean
+        prism(T.put, [[q.x - s, q.z - s], [q.x + s, q.z - s], [q.x + s, q.z + s], [q.x - s, q.z + s]], q.gy, q.gy + q.hh, 0.41 + 0.12 * h, 0.35 + 0.10 * h, 0.30 + 0.09 * h, 3, 3);   // brick, stone and stucco under the city's grime, a block's mean
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(T.pos.concat(S.pos)), 3));
@@ -8942,9 +9016,11 @@ vec2 wRing(vec2 rc, float tt) {
     });
     CITYENV.low = lowCells.length;
     const mat = new THREE.ShaderMaterial({ vertexShader: CITYENV_GLSL_V, fragmentShader: CITYENV_GLSL_F, side: THREE.DoubleSide, extensions: { derivatives: true },
+      defines: cubeUVDefines(envRT.texture.image.height),   // the sky probe's layout (its size is fixed)
       uniforms: { uSunDir: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color() }, uSkyCol: { value: new THREE.Color() }, uGndCol: { value: new THREE.Color() },
-        uHorizon: { value: new THREE.Color() }, uFill: { value: new THREE.Color() }, uTheme: { value: new THREE.Color() }, uLampC: { value: new THREE.Color(1.0, 0.72, 0.42) }, uCentre: { value: new THREE.Vector3() },
-        uNight: { value: 0 }, uLamp: { value: 0 }, uOccO: { value: 0.5 }, uOccH: { value: 0.5 }, uExt: { value: 0 }, uFl: { value: new THREE.Vector2(1, 0) } } });
+        uHorizon: { value: new THREE.Color() }, uAir: { value: new THREE.Color() }, envMap: { value: envRT.texture }, uTheme: { value: new THREE.Color() }, uLampC: { value: new THREE.Color(1.0, 0.72, 0.42) }, uCentre: { value: new THREE.Vector3() },
+        uNight: { value: 0 }, uLamp: { value: 0 }, uOccO: { value: 0.5 }, uOccH: { value: 0.5 }, uFl: { value: new THREE.Vector2(1, 0) },
+        fogAP: apU.fogAP, fogAPLow: apU.fogAPLow, fogAPSun: apU.fogAPSun, fogAPSunC: apU.fogAPSunC, fogAPAnti: apU.fogAPAnti } });
     const mesh = new THREE.Mesh(CITYENV.geoms[0], mat);
     mesh.frustumCulled = false;
     const group = new THREE.Group(); group.add(mesh); group.scale.setScalar(0.01);
@@ -8958,18 +9034,18 @@ vec2 wRing(vec2 rc, float tt) {
     const t = L2 > 0 ? clamp(((px - ax) * dx + (pz - az) * dz) / L2, 0, 1) : 0;
     return Math.hypot(px - ax - dx * t, pz - az - dz * t);
   }
-  // a phone's generator makes a 128 cube (Round 158's waterPmrem: its _setSize is its own); a computer shares refreshEnv's 256
+  // a phone's probe is a 128 cube from the water's own generator (Round 158's waterPmrem: the same size, so one ping-pong
+  // target serves both; the second review found the glass's own generator keeping a second 1.6 MB one); a computer shares
+  // refreshEnv's 256
   function cityEnvGen() {
-    if (!isTouch) return pmremGen;
-    if (!CITYENV.gen) { CITYENV.gen = new THREE.PMREMGenerator(renderer); CITYENV.gen._setSize = function () { this._lodMax = 7; this._cubeSize = 128; }; }
-    return CITYENV.gen;
+    return isTouch ? waterPmrem() : pmremGen;
   }
-  // the sky's light, for the probe's scale between bakes (the horizon and the zenith as the dome draws them)
+  // the sky's light, for the probe's scale between bakes (the horizon and the zenith as the probe holds them, decoded)
+  const s2l = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
   const cityEnvLum = () => {
     const h = skyMat.uniforms.cHorizon.value, z = skyMat.uniforms.cZenith.value;
-    return 0.6 * (0.2126 * h.r + 0.7152 * h.g + 0.0722 * h.b) + 0.4 * (0.2126 * z.r + 0.7152 * z.g + 0.0722 * z.b) + 0.004;
+    return 0.6 * (0.2126 * s2l(h.r) + 0.7152 * s2l(h.g) + 0.0722 * s2l(h.b)) + 0.4 * (0.2126 * s2l(z.r) + 0.7152 * s2l(z.g) + 0.0722 * s2l(z.b)) + 0.0005;
   };
-  const _ceA = new THREE.Color(), _ceB = new THREE.Color();
   // one bake: the proxy's lights from the main ones, the sky's dome lent from refreshEnv's scene (scaled out past the ground
   // disc, drawn first: the dome writes no depth), each centre's cube, the glass materials pointed at the new targets. The
   // sky probe's sun sprite stays out: the glass takes the sun's glint from the key light itself, sharp and broken pane by
@@ -8982,15 +9058,13 @@ vec2 wRing(vec2 rc, float tt) {
     U.uSunCol.value.copy(sun.color).multiplyScalar(sun.intensity * (sunDir.y > 0 ? 1 : 0));
     U.uSkyCol.value.copy(hemi.color).multiplyScalar(hemi.intensity);
     U.uGndCol.value.copy(hemi.groundColor).multiplyScalar(hemi.intensity);
-    U.uHorizon.value.copy(skyMat.uniforms.cHorizon.value);   // as the dome draws it (the first cut took it to linear: a dark band)
-    // the sky's fill a facade takes from the sky's own probe (cityMat's envMapIntensity 0.9): the dome's mean, its horizon
-    // and its zenith
-    U.uFill.value.copy(skyMat.uniforms.cHorizon.value).lerp(_ceA.copy(skyMat.uniforms.cZenith.value), 0.4).multiplyScalar(0.9);
-    U.uExt.value = AP.on ? apU.fogAP.value.x : 0;
-    // the sky probe's fill for the glass's frames (GLASS_ENV_PARS): its dome's mean over its street and boxes, as refreshEnv
-    // just drew them
-    CITYENV.u.uGlassIrrS.value.copy(skyMat.uniforms.cHorizon.value).lerp(_ceA.copy(skyMat.uniforms.cZenith.value), 0.35);
-    CITYENV.u.uGlassIrrG.value.copy(envGround.material.color).lerp(_ceB.copy(envBoxMat.color), 0.4);
+    // the dome's horizon as the probe holds it (envSky decodes the dome's display colours, pFromSRGB: the second review found
+    // the haze blending toward the raw colour beside the decoded dome in the same cube); the fill is the sky probe's own
+    U.uHorizon.value.copy(skyMat.uniforms.cHorizon.value).convertSRGBToLinear();
+    // the air between the centre and a wall is the city's own (the scene's fog colour, as the aerial perspective draws it on
+    // either device: a computer's its linear pre-image, a phone's its display colour), so the mirrored city hazes as the city does
+    if (scene.fog) U.uAir.value.copy(scene.fog.color); else U.uAir.value.copy(U.uHorizon.value);
+    U.envMap.value = envRT.texture;
     U.uNight.value = nightUniform.value; U.uLamp.value = lampUniform.value;
     U.uOccO.value = occU.uOcc.value.y; U.uOccH.value = occU.uOcc.value.x;
     U.uFl.value.set(fl.dx, fl.dz).normalize();
@@ -9058,7 +9132,7 @@ vec2 wRing(vec2 rc, float tt) {
     uniform vec3 uSunW;
     varying vec3 vGWp, vGNm, vGF; varying float vGSt, vGBs, vGT, vGSy;
     float gDbgSys = 0.0, gWall = 0.0, gVis = 0.0, gSec = 0.0, gGlass = 0.0, gF0 = 0.04, gVLT = 0.0, gRoughF = 0.5, gMetal = 0.0, gGlassR = 0.0525;
-    vec3 gSpec = vec3(0.04), gFrSpec = vec3(0.04), gRoomN = vec3(0.0), gRoomD = vec3(0.0), gTanW = vec3(1.0, 0.0, 0.0);
+    vec3 gSpec = vec3(0.04), gFrSpec = vec3(0.04), gRoomN = vec3(0.0), gRoomD = vec3(0.0), gTanW = vec3(1.0, 0.0, 0.0), gSunInK = vec3(0.0);
     vec2 gSlope = vec2(0.0);
     float gh(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
     float gLum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }
@@ -9074,10 +9148,34 @@ vec2 wRing(vec2 rc, float tt) {
     }
     // the share of [-inf, c] over [d - w / 2, d + w / 2]
     float gEdge(float d, float w, float c) { return clamp((c - d) / max(w, 1.0e-4) + 0.5, 0.0, 1.0); }
-    // a home's or a hotel room's lamp at a distance: lit by its own hash at the share, at its lamp's level (skewed toward the
-    // dim, the odd room bright: the specks a far wall shows), as the near room's lamp draws it; a home's lamps light a room
-    // at about a third of an office's ceiling (100 to 150 lux against 500: the review's pale beige residential towers)
-    float gHomeFar(vec2 rid, float seedR, float share) { float h = gh(rid + seedR), r2 = fract(h * 29.31); return step(1.0 - share, h) * (0.18 + 1.05 * r2 * r2) / 0.725 * 0.45; }
+    // a home's light (Round 192's second review: a room a bay or two wide, each lit by its own hash, read as a fine beige and
+    // black noise at dusk and night and shimmered under two pixels a room): an apartment is a unit of nU bays (homes 2 or 4,
+    // 3 or 6 m; a hotel room 2 or 3) whose rooms switch together, one hash a unit at the share, the living room at its lamp
+    // (skewed toward the dim, the odd one bright; a home's lamps about a third of an office's ceiling, 100 to 150 lux
+    // against 500), a second room at half or dark; blinds or curtains drawn in about two lit units in five, the glow through
+    // them three tenths. gHomeUnit is a unit's mean (its rooms averaged), gHomeRoom a room's light by its index along the wall
+    float gHomeUnit(vec2 uid, float sR, float share, float nRm) {
+      float h = gh(uid + sR), r2 = fract(h * 29.31);
+      float bed = nRm > 1.5 ? 0.5 * step(fract(h * 53.17), 0.55) : 0.0;
+      return step(1.0 - share, h) * (0.18 + 1.05 * r2 * r2) / 0.725 * 0.45 * mix(1.0, 0.3, step(0.62, fract(h * 23.93))) * (1.0 + bed) / nRm;
+    }
+    float gHomeRoom(float r, float f, float sR, float share, float nRm) {
+      float u = floor(r / nRm), h = gh(vec2(u, f) + sR);
+      return step(1.0 - share, h) * (r - u * nRm < 0.5 ? 1.0 : 0.5 * step(fract(h * 53.17), 0.55));
+    }
+    // the units under a pixel's footprint q -+ w / 2 (units along the wall, floors up), each by its share of the pixel: the
+    // exact box filter while the footprint is under a unit each way (no binary corner taps: a lit unit's edge slides
+    // across a pixel, it never jumps), the share's mean past two units a pixel
+    float gHomeBox(vec2 q, vec2 w, float sR, float share, float nRm) {
+      vec2 a = q - 0.5 * w, c0 = floor(a);
+      vec2 k = clamp((c0 + 1.0 - a) / max(w, vec2(1.0e-4)), 0.0, 1.0);
+      float v = k.x * k.y * gHomeUnit(c0, sR, share, nRm) + (1.0 - k.x) * k.y * gHomeUnit(c0 + vec2(1.0, 0.0), sR, share, nRm)
+        + k.x * (1.0 - k.y) * gHomeUnit(c0 + vec2(0.0, 1.0), sR, share, nRm) + (1.0 - k.x) * (1.0 - k.y) * gHomeUnit(c0 + 1.0, sR, share, nRm);
+      // the mean: the share, the lamps' mean level (0.731 a lit office's, a home's at 0.45), the drawn blinds' (0.734) and
+      // the rooms' (a second room at half in 55 of 100 units)
+      float mean = share * 0.731 * 0.45 * 0.734 * (nRm > 1.5 ? 0.6375 : 1.0);
+      return mix(v, mean, smoothstep(1.0, 2.5, max(w.x, w.y)));
+    }
     // the share of [a, b] (rooms) a periodic run [0, L) of period n covers: a lit run of rooms seen under one pixel
     float gRunCover(float a, float b, float L, float n) {
       float ia = floor(a / n) * L + min(a - floor(a / n) * n, L);
@@ -9117,6 +9215,7 @@ vec2 wRing(vec2 rc, float tt) {
       float upr = step(0.5, F.x) * step(F.x, yG);
       gF0 = mix(C.x, F.y, upr); gVLT = mix(C.y, F.z, upr);
       float roomKind = lobby > 0.5 ? 4.0 : mix(D.z, F.w, upr), coat = mix(D.x, I.w, upr);
+      if (floor(vGSt + 0.5) == 29.0) roomKind = 3.0;   // a glazed crown (style 29) is plant in any tower's glass
       if (I.x > 0.0 && facade) {
         // clear low-iron glass within I.x metres of a wall's end: a paler, clearer band in the glass's own colour (its share
         // under the pixel, so no bright one-pixel line at a distance)
@@ -9126,11 +9225,16 @@ vec2 wRing(vec2 rc, float tt) {
       }
       float topF = floor(Hw / flH), parapet = (facade && lobby < 0.5 && Hw - topF * flH < 0.6 * flH && yF > topF) ? 1.0 : 0.0;
       float vs = Hh.x, vh = Hh.y;
+      // a glazed crown (style 29) is the system's glass in slim mullions and transoms, never its wall's tile (the second
+      // review: the Liberty crowns under the shaft's granite bands and caps, the lanterns under the clear system's white
+      // frames over a quarter of the module, read as a lattice)
+      float crownG = step(28.5, vGSt) * step(vGSt, 29.5);
+      if (crownG > 0.5) { vs = 0.02; vh = 0.98; }
       // the frame: the system's tile of the frames (a texture array with REPEAT and its mips, so the hardware box filters
       // each axis to the module's mean as that axis drops under a pixel), else the procedural vision band and mullions
       vec3 alb = Gm.rgb; float mR = Gm.a, mG = I.z;
       #ifdef GLASS_ARR
-      if (uGlassOn > 0.5 && B.x > 0.5) {
+      if (uGlassOn > 0.5 && B.x > 0.5 && crownG < 0.5) {
         // one fetch: the vision glass, the secondary glass, and the frame's detail over twice its mean on the system's colour
         vec3 msk = texture(uGlassArr, vec3(uB / A.z, yF / A.w, sy)).rgb;
         mR = msk.r; mG = msk.g; alb = Gm.rgb * (2.0 * msk.b);
@@ -9138,7 +9242,7 @@ vec2 wRing(vec2 rc, float tt) {
       #endif
       {
         float visV = gBand(yF, fy, vs, vh), glU = gBand(uB, fx, B.y, 1.0 - B.y);
-        mR = visV * glU; mG = (1.0 - visV) * glU * step(D.y, 2.5);
+        mR = visV * glU; mG = (1.0 - visV) * glU * step(D.y, 2.5) * (1.0 - crownG);
       }
       if (parapet > 0.5) { mR = 0.0; mG = step(D.y, 2.5); alb = Gm.rgb; }
       gVis = mR * gWall; gSec = mG * gWall; gGlass = clamp(mR + mG, 0.0, 1.0) * gWall;
@@ -9156,13 +9260,15 @@ vec2 wRing(vec2 rc, float tt) {
           alb *= 1.0 + gk * (grain - 0.12 * streak);
         }
       }
-      // the spandrel's back seen through its glass: a shadow box's metal pan lit through the glass (in and out of it), a
-      // back-painted pane's colour, a frit's grey
-      vec3 spBack = E.r < -0.5 ? body * 0.55 : E.rgb;
-      float spK = D.y < 0.5 ? 0.2 + 0.7 * gVLT : (D.y < 1.5 ? 0.65 : 0.85);
+      // the spandrel's back seen through its glass: a shadow box's pan, lit through the glass in and out of it and shaded by
+      // its own box (the second review: lit at 0.2 + 0.7 of the transmittance it was paint, not glass over a dark pan), a
+      // back-painted pane's colour, a frit's grey; the body's (its hex at 0.66) in the paint's register
+      vec3 spBack = E.r < -0.5 ? body * 0.41 : E.rgb;
+      float spK = D.y < 0.5 ? 0.6 * gVLT * gVLT : (D.y < 1.5 ? 0.65 : 0.85);
       // a pixel is a share of frame and a share of glass: their materials summed by area (the frame's metal its own: its
       // diffuse less its metalness, its F0 its colour), so a far wall is the right mean of both and no pane of glass is paint
-      diffuseColor.rgb = alb * frameW * (1.0 - E.w) + spBack * spK * gSec;
+      // and the glass's own film of the city's grime, a hundredth of the light (it takes the sun and its shadows as a wall does)
+      diffuseColor.rgb = alb * frameW * (1.0 - E.w) + spBack * spK * gSec + vec3(uGlassL.w) * gGlass;
       gMetal = E.w;
       gFrSpec = frameW * mix(vec3(0.04), alb, E.w);
       gRoughF = Hh.z;
@@ -9210,18 +9316,23 @@ vec2 wRing(vec2 rc, float tt) {
       if (gVis > 0.001) {
         vec4 cM = uRoomC[int(uRoomK[int(kd)].x)];
         // the room by daylight, faint behind the reflection (its kind's mean lit by the window)
-        gRoomD = cM.rgb / max(gLum(cM.rgb), 1.0e-3) * 0.3 * (0.06 + 0.13 * max(uSunW.y, 0.0)) * (0.78 + 0.44 * puv.y) * uGlassK.y;
+        // (in the glass's tint: daylight goes in and comes back out through it; the second review's untinted beige rooms
+        // turned every shaded tinted wall brown)
+        gRoomD = cM.rgb / max(gLum(cM.rgb), 1.0e-3) * hue * 0.3 * (0.06 + 0.13 * max(uSunW.y, 0.0)) * (0.78 + 0.44 * puv.y) * uGlassK.y;
         if (uGlassL.x > 0.001) {
           vec4 RK = uRoomK[int(kd)];
           float wallSeed = seed + L * 0.017 + Hw * 0.013;
-          float roomB = kd < 0.5 ? 2.0 : (kd < 1.5 ? 1.0 + step(0.5, fract(wallSeed * 7.13)) : (kd < 2.5 ? 1.0 : 2.0));
+          // bays a unit (an apartment or a hotel room) and a room: homes 2 or 4 bays a unit in rooms of 2, a hotel room one
+          // room of 2 or 3 bays, an office's suite rooms of 2 (its suites are three rooms), the plant 2
+          float nU = kd < 0.5 ? 6.0 : (kd < 1.5 ? 2.0 + 2.0 * step(0.35, fract(wallSeed * 3.71)) : (kd < 2.5 ? 2.0 + step(0.6, fract(wallSeed * 3.71)) : 2.0));
+          float roomB = kd < 1.5 ? 2.0 : (kd < 2.5 ? nU : 2.0);
           if (roomKind > 3.5) roomB = 2.0;
           vec2 rq = vec2(uB / roomB, yF);
           vec2 rid = floor(rq);
           float ruvx = fract(rq.x);
           float nR = facade ? max(1.0, floor(nB / roomB)) : 64.0;
           float rpx = roomB / fx, fpx = 1.0 / fy;   // pixels a room along the wall, pixels a floor
-          float hR = gh(rid + wallSeed * 5.3);
+          float hR = gh(rid + wallSeed * 5.3), hL = hR;   // the room's hash (its picture), its lamp's (a home's: its unit's)
           float lit, share, litFar = 0.0;
           if (kd < 0.5) {
             // an office floor: on or off, one run of lit rooms along it (its true share under the pixel past two pixels a
@@ -9236,29 +9347,30 @@ vec2 wRing(vec2 rc, float tt) {
               if (rpx < 2.0) { float a = rq.x - 0.5 * fx / roomB - r0; inRun = gRunCover(a, a + fx / roomB, rL, nR) * 0.88; }
               else inRun = step(mod(rid.x - r0, nR), rL - 0.5) * step(0.12, hR);
               lit = max(step(hF, uOcc.y * 0.9 + 0.05) * inRun, uOcc.z * step(fract(hF * 53.17), 0.08));
-              litFar = lit * (0.35 + 0.75 * fract(gh(vec2(floor(rid.x / 3.0), rid.y) + wallSeed * 8.2) * 7.71)) / 0.725;
+              litFar = lit * (0.475 + 0.5 * fract(gh(vec2(floor(rid.x / 3.0), rid.y) + wallSeed * 8.2) * 7.71)) / 0.725;
             } else {
               float m = 0.0;
               for (int t = -1; t <= 1; t++) {
                 float f = floor(yF + float(t) * fy / 3.0), hF = gh(vec2(f, wallSeed * 3.1));
                 float r0 = floor(fract(hF * 17.31) * nR), rL = max(1.0, floor(mix(0.35, 1.0, fract(hF * 31.73)) * nR + 0.5));
                 float a = rq.x - 0.5 * fx / roomB - r0;
-                m += max(step(hF, uOcc.y * 0.9 + 0.05) * gRunCover(a, a + max(fx / roomB, 1.0e-3), rL, nR) * 0.88, uOcc.z * step(fract(hF * 53.17), 0.08)) * (0.35 + 0.75 * fract(hF * 7.71)) / 0.725;
+                m += max(step(hF, uOcc.y * 0.9 + 0.05) * gRunCover(a, a + max(fx / roomB, 1.0e-3), rL, nR) * 0.88, uOcc.z * step(fract(hF * 53.17), 0.08)) * (0.475 + 0.5 * fract(hF * 7.71)) / 0.725;
               }
               litFar = mix(m / 3.0, share, smoothstep(2.0, 4.0, fy));
               lit = litFar;
             }
           } else if (kd < 2.5) {
-            // a home or a hotel room: lit by its own hash at the share; under two pixels a room the rooms at the pixel's four
-            // corners (specks, never a block of rooms), and past three rooms a pixel the share
+            // a home or a hotel room: lit by its unit (gHomeUnit), the far light the units under the pixel box filtered, the
+            // near light the rooms either side of the pixel's footprint along the wall, each by its share of it
             share = kd < 1.5 ? uOcc.x : 0.6 * uOcc.x + 0.15;
-            lit = step(1.0 - share, hR);
-            if (min(rpx, fpx) < 2.0) {
-              vec2 dq = 0.25 * vec2(fx / roomB, fy);
-              float sR = wallSeed * 5.3;
-              litFar = 0.25 * (gHomeFar(floor(rq + dq), sR, share) + gHomeFar(floor(rq - dq), sR, share) + gHomeFar(floor(rq + vec2(dq.x, -dq.y)), sR, share) + gHomeFar(floor(rq + vec2(-dq.x, dq.y)), sR, share));
-              litFar = mix(litFar, share * 0.731 * 0.45, smoothstep(1.5, 3.0, max(fx / roomB, fy)));   // 0.731: the lamps' mean level
-            } else litFar = lit * (0.18 + 1.05 * fract(hR * 29.31) * fract(hR * 29.31)) / 0.725 * 0.45;
+            float sR = wallSeed * 5.3 + 17.0, nRm = nU / roomB, nk = smoothstep(0.8, 2.5, min(rpx, fpx));   // nearK's, below
+            litFar = 0.0; lit = 0.0;   // each only where it is seen (the far light past the rooms, the near one before them)
+            if (nk < 0.999) litFar = gHomeBox(vec2(uB / nU, yF), vec2(fx / nU, fy), sR, share, nRm);
+            if (nk > 0.001) {
+              float ra = rq.x - 0.5 * fx / roomB, r0 = floor(ra), kx = clamp((r0 + 1.0 - ra) / max(fx / roomB, 1.0e-4), 0.0, 1.0);
+              lit = kx * gHomeRoom(r0, rid.y, sR, share, nRm) + (1.0 - kx) * gHomeRoom(r0 + 1.0, rid.y, sR, share, nRm);
+            }
+            hL = gh(vec2(floor(uB / nU), rid.y) + sR);   // the unit's: its lamp, its blinds and curtains (the picture keeps the room's)
           } else { share = 0.035; lit = 0.035; litFar = 0.035; }
           if (roomKind > 3.5) { lit = 1.0; share = 1.0; litFar = 1.0; }
           // the room's picture: a cell of its kind, mirrored on half the rooms, seen by interior mapping near the eye (the
@@ -9299,28 +9411,32 @@ vec2 wRing(vec2 rc, float tt) {
             // pixels; curtains drawn at the sides in a third of the homes (a hotel's always half drawn); the lamp's pool
             float blind = 0.0, slat = 0.5;
             if (fy < 0.6) {
-              float bh = fract(hR * 19.71);
+              float bh = fract(hL * 19.71);
               blind = step(0.7, bh) * step(1.0 - (0.1 + 0.55 * fract(bh * 37.3)), puv.y) * (1.0 - smoothstep(0.35, 0.6, fy));
               slat = mix(0.5 + 0.5 * cos(6.2831853 * puv.y * max(vh - vs, 0.1) * flH / 0.025), 0.5, smoothstep(0.02, 0.05, fy * flH));
             }
-            // the lamp: an office's suite of three rooms one switch, 3500 to 4000 K (5000 rarely) at the suite's level; a home
+            // the lamp: an office's suite of three rooms one switch, 3500 to 4000 K (5000 rarely) at the suite's level (0.475 to
+            // 0.975 of the mean, the second review: from 0.35 to 1.1 neighbouring suites read as a camouflage of blocks); a home
             // 2700 K mostly, 3000 and 4000 K some, at the homes' skew toward the dim, a television's blue in one in fourteen;
             // over an office's mean (0.725), so a lit office keeps its picture's mean and a home is about three quarters of it
             vec3 lamp = vec3(1.0, 0.95, 0.88);
             if (roomKind > 3.5) lamp = vec3(1.0, 0.82, 0.6) * 1.3;
             else if (rpx >= 2.0 && kd < 0.5) {
               float hS = gh(vec2(floor(rid.x / 3.0), rid.y) + wallSeed * 8.2);
-              lamp = (hS < 0.6 ? vec3(1.0, 0.92, 0.84) : (hS < 0.95 ? vec3(1.0, 0.97, 0.92) : vec3(0.93, 0.97, 1.05))) * (0.35 + 0.75 * fract(hS * 7.71)) / 0.725;
-            } else if (rpx >= 2.0) {
-              float r2 = fract(hR * 29.31), r3 = fract(hR * 41.93);
+              lamp = (hS < 0.6 ? vec3(1.0, 0.92, 0.84) : (hS < 0.95 ? vec3(1.0, 0.97, 0.92) : vec3(0.93, 0.97, 1.05))) * (0.475 + 0.5 * fract(hS * 7.71)) / 0.725;
+            } else if (kd > 0.5 && kd < 2.5) {
+              // a home's lamp at every distance (its level is the far light's: under two pixels a room it had an office's)
+              float r2 = fract(hL * 29.31), r3 = fract(hL * 41.93);
               lamp = (r3 < 0.55 ? vec3(1.06, 0.92, 0.78) : (r3 < 0.85 ? vec3(1.04, 0.96, 0.86) : vec3(0.98, 1.0, 1.02))) * (0.18 + 1.05 * r2 * r2) / 0.725 * 0.45;
               if (kd < 1.5 && r3 > 0.93) lamp = vec3(0.55, 0.68, 1.1) * 0.42;
             }
-            float curt = kd > 0.5 && kd < 2.5 ? (step(0.66, fract(hR * 23.93)) + (kd > 1.5 ? 0.5 : 0.0)) * (1.0 - smoothstep(0.15, 0.32, min(ruvx, 1.0 - ruvx))) : 0.0;
+            // a home's blinds or curtains drawn across the unit (gHomeUnit's), else curtains at the sides in some
+            float drawnU = kd > 0.5 && kd < 2.5 ? step(0.62, fract(hL * 23.93)) : 0.0;
+            float curt = kd > 0.5 && kd < 2.5 ? (step(0.4, fract(hL * 23.93)) * (1.0 - drawnU) + (kd > 1.5 ? 0.5 : 0.0)) * (1.0 - smoothstep(0.15, 0.32, min(ruvx, 1.0 - ruvx))) : 0.0;
             curt = mix(curt, kd < 0.5 ? 0.0 : (kd > 1.5 ? 0.45 : 0.12), smoothstep(0.35, 0.6, fx / roomB));
             float pool = mix(0.8 + 0.4 * (1.0 - abs(2.0 * ruvx - 1.0)), 1.0, smoothstep(0.2, 0.5, fx / roomB));
             // 0.8 before the glass is a lit office at the old roomLight's mean through a typical pane
-            nearC = img / lumLit * 0.8 * lamp * pool * (1.0 - blind * (0.5 + 0.1 * slat)) * (1.0 - 0.6 * min(curt, 1.0));
+            nearC = img / lumLit * 0.8 * lamp * pool * (1.0 - blind * (0.5 + 0.1 * slat)) * (1.0 - 0.6 * min(curt, 1.0)) * mix(1.0, 0.3, drawnU);
           }
           // past about two pixels a room (a floor's pixel for the offices' runs) the light is the far glow's, at the far
           // windows' level and never a pale lit slab (Round 159): the light blended, never its colour and amount apart
@@ -9329,13 +9445,26 @@ vec2 wRing(vec2 rc, float tt) {
           if (roomKind > 3.5) farC = vec3(1.0, 0.82, 0.6) / 0.8618 * 2.5 * uGlassL.y;   // a lobby: lit whole, a bright band at the foot
           gRoomN = mix(farC * litFar, nearC * lit, nearK) * uGlassK.x;
         }
+        // the sun inside: the floor by the window, the ceiling's bounce and the blinds lit by the sun through the glass and
+        // seen back out through it (the transmittance twice; about three tenths of what is seen is sunlit), so a curtain
+        // wall facing the sun is paler than one in its shade, and goes dark under a neighbour's shadow (RE_Direct_Glass:
+        // the key light as it reaches this fragment, shadowed), in the glass's own tint (through it twice)
+        gSunInK = uGlassL.z * gVLT * gVLT * gVis * hue;
       }
       // a roof is a roof (the caps are the curtain wall's own chunk's, their colour the vertex's); a crown's or Cira's sloped
       // glass is glass all over
       float slopeG = (1.0 - gWall) * step(abs(nn.y), 0.95) * step(27.5, vGSt) * step(vGSt, 29.5);
       if (gWall < 0.5) {
-        if (slopeG > 0.5) { gVis = 1.0; gGlass = 1.0; gSec = 0.0; diffuseColor.rgb = vec3(0.0); gMetal = 0.0; }
-        else { gVis = 0.0; gSec = 0.0; gGlass = 0.0; diffuseColor.rgb = body; gMetal = 0.0; gFrSpec = vec3(0.04); gRoughF = 0.85; gRoomN = vec3(0.0); gRoomD = vec3(0.0); gSlope = vec2(0.0); }
+        // sloped glass is one clear sheet of the system's glass: no frame's metal in its specular, no pane's tilt, tint or
+        // roughness (its pane grid was the wall's, laid on a slope as rows of dashes: the second review's Liberty crowns)
+        // (a slope holds twice a wall's grime, and mirrors the sky above it, whose blue its coating takes a little less than
+        // a wall's: under the whole coating the Liberty crowns' chevrons read navy where the photographs show them pale)
+        if (slopeG > 0.5) { gVis = 1.0; gGlass = 1.0; gSec = 0.0; diffuseColor.rgb = vec3(2.0 * uGlassL.w); gMetal = 0.0; gFrSpec = vec3(0.0); gSlope = vec2(0.0);
+          gSpec = min(gF0 * mix(vec3(1.0), hue, 0.8 * coat), vec3(1.0)); gGlassR = min(sqrt(sqrt(a0 * a0 + aL * aL)), 0.095); gRoomN = vec3(0.0); gRoomD = vec3(0.0); }
+        // a cap: its colour at the fabric's roof gain (ROOF_GAIN 0.17 over the 0.72 the routed caps keep their colour at; a
+        // researched tower's cap is its body at 0.66, the same register), lit by the fabric's fill (the second review: the
+        // caps at their colour as an albedo, four times a roof's, glowed pale over the city at night)
+        else { gVis = 0.0; gSec = 0.0; gGlass = 0.0; diffuseColor.rgb = body * 0.236; gMetal = 0.0; gFrSpec = vec3(0.04); gRoughF = 0.85; gRoomN = vec3(0.0); gRoomD = vec3(0.0); gSlope = vec2(0.0); }
       }
       if (uGlassK.z > 0.5 && uGlassK.z < 1.5) { gVis = 0.0; gSec = 0.0; gGlass = 0.0; diffuseColor.rgb = alb; gFrSpec = vec3(0.04); }
     }
@@ -9367,6 +9496,13 @@ vec2 wRing(vec2 rc, float tt) {
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(gGlassR, gRoughF, smoothstep(0.5, 1.0, 1.0 - gGlass));')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = 0.0;')
       .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nif (gGlass > 0.001) normal = normalize(normal + mat3(viewMatrix) * (gTanW * gSlope.x + vec3(0.0, gSlope.y, 0.0)));')
+      .replace('#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>
+        void RE_Direct_Glass(const in IncidentLight directLight, const in GeometricContext geometry, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
+          RE_Direct_Physical(directLight, geometry, material, reflectedLight);
+          reflectedLight.directDiffuse += saturate(dot(geometry.normal, directLight.direction)) * directLight.color * BRDF_Lambert(gSunInK);
+        }
+        #undef RE_Direct
+        #define RE_Direct RE_Direct_Glass`)
       .replace('#include <lights_physical_fragment>', `#include <lights_physical_fragment>
         material.specularColor = gFrSpec + gSpec * gGlass;`)
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
@@ -9396,7 +9532,7 @@ vec2 wRing(vec2 rc, float tt) {
       probe: { on: CITYENV.on, two: CITYENV.two, centres: CITYENV.centres, renders: CITYENV.renders, ms: CITYENV.renders ? +(CITYENV.ms / CITYENV.renders).toFixed(2) : 0,
         msLast: +CITYENV.msLast.toFixed(2), tris: CITYENV.tris, low: CITYENV.low, recs: CITYENV.recs.length, age: Math.round(performance.now() - CITYENV.at), buildMs: CITYENV.buildMs,
         k: +CITYENV.u.uCityEnvK.value.toFixed(3), size: CITYENV.rts[0] ? [CITYENV.rts[0].width, CITYENV.rts[0].height] : null, error: CITYENV.error },
-      samplers: { outer: glassSamplers(outerGlassMat), skin: glassSamplers(skin) }, u: glassU, cityU: CITYENV.u, bake: cityEnvBake, cityEnv: CITYENV };
+      samplers: { outer: glassSamplers(outerGlassMat), skin: glassSamplers(skin) }, u: glassU, cityU: CITYENV.u, bake: cityEnvBake, cityEnv: CITYENV, skyIrr: SKYIRR };
   }
   function glassSysMat(mat) {
     mat.onBeforeCompile = glassSysHook;
@@ -9405,6 +9541,20 @@ vec2 wRing(vec2 rc, float tt) {
     CITYENV.mats.push(mat);
     const tw = VDEPTH.twins && VDEPTH.twins.get(mat);
     if (tw) CITYENV.mats.push(tw);
+    if (CITYENV.on) {
+      // the frames' fill (SKYIRR), from the sky probe already made
+      SKYIRR.on = true;
+      if (!SKYIRR.rt && envRT) skyIrrBake(envRT.texture);
+      CITYENV.u.uGlassIrr.value = SKYIRR.rt ? SKYIRR.rt.texture : null;
+      // a phone's probe is a 128 cube and the sky's a 256: a program is keyed on its envMap's size, so a material that first
+      // compiled against scene.environment compiled again at the first bake and r149 kept both (the second review: three
+      // glass programs on a phone, 450 to 550 ms each). Its own size from the start: an empty bake from the same generator,
+      // bound until the first real bake replaces it (rts[0], disposed there)
+      if (cityEnvGen() !== pmremGen && !CITYENV.rts[0]) {
+        try { CITYENV.rts[0] = cityEnvGen().fromScene(new THREE.Scene(), 0, 0.1, 100); } catch (e) { CITYENV.error = String((e && e.message) || e); }
+      }
+      if (CITYENV.rts[0]) for (const m of CITYENV.mats) m.envMap = CITYENV.rts[0].texture;
+    }
   }
   // the glass's environment (CITYENV): the probe of the city, its reflection ray carried to the probe's own sphere and the
   // ground (a box projection's two-surface cousin, a dozen operations and no fetch), the nearer probe of two on a computer;
@@ -9438,7 +9588,14 @@ vec2 wRing(vec2 rc, float tt) {
         gNear = max(gNear, 0.6 * (1.0 - smoothstep(12.0, 30.0, gPW.y - G)) * (1.0 - smoothstep(0.12, 0.35, r.y)));
         return normalize(p + r * t);
       }
-      uniform vec3 uGlassIrrS, uGlassIrrG;
+      // the sky probe's fill along a normal (SKYIRR's ambient cube: its six axes' radiance at roughness 1, each weighted by the
+      // square of the normal's part along it, exact along the axes)
+      uniform highp sampler2D uGlassIrr;
+      vec3 gIrrCube(vec3 n) {
+        vec3 n2 = n * n;
+        return n2.x * texelFetch(uGlassIrr, ivec2(n.x < 0.0 ? 1 : 0, 0), 0).rgb + n2.y * texelFetch(uGlassIrr, ivec2(n.y < 0.0 ? 3 : 2, 0), 0).rgb
+          + n2.z * texelFetch(uGlassIrr, ivec2(n.z < 0.0 ? 5 : 4, 0), 0).rgb;
+      }
       vec4 glassEnv(vec3 dir, float rough) {
         #ifdef CITY_ENV_B
         if (gProbe > 0.5 && uCityEnvN > 1.5) return textureCubeUV(uCityEnvB, dir, rough) * uCityEnvK;
@@ -9449,14 +9606,14 @@ vec2 wRing(vec2 rc, float tt) {
       vec3 getIBLIrradiance( const in vec3 normal ) {
         #if defined( ENVMAP_TYPE_CUBE_UV )
           vec3 worldNormal = inverseTransformDirection( normal, viewMatrix );
+          // the fill a frame or a cap takes is the one every wall round it takes, the sky's probe at the fabric's 0.9 (cityMat's
+          // envMapIntensity; the glass's own 1.10 is its reflection's), never the city probe's: its lit windows and lamps lit
+          // the frames like day after dark (the first review's grey ribbons at night)
           #ifdef CITY_ENV
-          // the fill a frame takes is the one every wall round it takes from the sky's probe (its dome over its street and
-          // boxes, cityEnvBake), never the city probe's: its lit windows and lamps lit the frames like day after dark (the
-          // review's grey ribbons at night), and it is one fetch less
-          return PI * mix(uGlassIrrG, uGlassIrrS, 0.5 + 0.5 * worldNormal.y) * envMapIntensity;
+          return PI * gIrrCube(worldNormal) * 0.9;
           #else
           vec4 envMapColor = textureCubeUV( envMap, worldNormal, 1.0 );
-          return PI * envMapColor.rgb * envMapIntensity;
+          return PI * envMapColor.rgb * 0.9;
           #endif
         #else
           return vec3( 0.0 );
@@ -16525,14 +16682,18 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         g.translate((a[0] + b[0]) / 2, (a[1] + b[1]) / 2, (a[2] + b[2]) / 2);
         themeParts.push({ geom: g, color: col, lit: col.clone().multiplyScalar(0.5), mix: mix === undefined ? 1 : mix, slot, style: 3 });
       };
-      const crown = (cx, cz, base, tiers, gc, wc, slot) => {
+      const crown = (cx, cz, base, tiers, gc, wc, slot, fh) => {
         // Round 84 (Mike, with the photo): the neon runs along the sloping edges of every gable end, so
         // each face of each tier carries an inverted V and the tiers nest into the chevrons; the eave
         // band and the ridge caps stay as unlit white trim
+        // Round 192's second review: the crown's glass is the tower's own (fh: its system, the same blue glass in the same
+        // frames, as the photographs show it), never the clear lantern system, whose white frames over beige plant rooms
+        // turned both crowns into a white lattice; its rooms are the plant's (style 29, GLASS_SYS_MAIN)
         const P = (u, v, y) => [cx + fl.nx * u + fl.dx * v, y, cz + fl.nz * u + fl.dz * v];
+        const cFh = GLASS_ON ? (fh !== undefined ? fh : glassFh(5)) : 0;
         for (const [w, wallTop, apex] of tiers) {
-          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, false), color: gc, style: 29, baseY: base, flh: GLASS_ON ? glassFh(5) : 0 });
-          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 29, baseY: base, flh: GLASS_ON ? glassFh(5) : 0 });
+          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, false), color: gc, style: 29, baseY: base, flh: cFh });
+          lmGlass.push({ geom: gPrism(cx, cz, w, w, base + wallTop, base + apex, true), color: gc, style: 29, baseY: base, flh: cFh });
           lmTrim.push({ geom: box(w + 0.25, 0.28, w + 0.25, cx, base + wallTop + 0.08, cz, ryG), color: wc, style: 3 });
           for (const ns of [0, 1]) {
             const rg = box(w, 0.35, 0.35, 0, 0, 0, 0);
@@ -16568,7 +16729,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           appendBuilding(getGlassChunk(cx, cz), libertyPlan(cx, cz, w, w), base + 180, base + top, c, 21, base, null, lFh);
         }
         const olSlot = themeSlotN++ % 4;
-        crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite, olSlot);
+        if (GLASS_ON) glassTowerBody({ name: 'One Liberty Place' }, gcCrown);
+        crown(cx, cz, base, [[48.5, 212, 226], [36, 223, 237], [26, 233, 244], [17, 242, 251]], gcCrown, cWhite, olSlot, lFh);
         // the spire is lit white every night (the photo: white through a green theme) with the red beacon on top
         const spireLit = (geom) => themeParts.push({ geom, color: cSilver, lit: cSilver.clone().multiplyScalar(0.55), mix: 0, slot: olSlot, style: 3 });
         spireLit(pyr4(cx, cz, 8, base + 251, base + 258, 1.0));
@@ -16593,7 +16755,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           appendBuilding(getGlassChunk(cx,cz),sqPoly(px,pz,du?1.25:14,du?14:1.25),base+12,base+149,c,26,base,null,tFh);
         }
         const tlSlot = themeSlotN++ % 4;
-        crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite, tlSlot);
+        if (GLASS_ON) glassTowerBody({ name: 'Two Liberty Place' }, gcCrown);
+        crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite, tlSlot, tFh);
         themeParts.push({ geom: pyr4(cx, cz, 5, base + 253, base + 258, 0.4), color: cWhite, lit: cWhite.clone().multiplyScalar(0.55), mix: 0, slot: tlSlot, style: 3 });   // the finial lit white
       }
       // --- City Hall: the full Second Empire block (its outline was dropped at pack
