@@ -681,7 +681,7 @@
   // ?real=0 the Cities: Skylines palette it replaces. On the post pipeline it adds ambient occlusion from the city's own
   // depth (AO) and a filmic grade in the composite; on every device a quieter lawn and a city's warm bounce by night
   const REAL = !/[?&]real=0\b/.test(location.search);
-  // Round 190 (Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"): Glory's own building on its
+  // Round 191 (Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"): Glory's own building on its
   // own lot (rebuilds/glory.js), the realistic look's alone; ?glory=0 keeps the old builder on 120 Chestnut (the A/B)
   const GLORY_ON = REAL && !/[?&]glory=0\b/.test(location.search);
   const AO = { on: REAL && POST.on && !/[?&]ao=0\b/.test(location.search), depthRT: null, a: null, b: null, mat: null, blur: null, copied: false, w: 0, h: 0 };
@@ -7615,7 +7615,7 @@ vec2 wRing(vec2 rc, float tt) {
     for (const r of D.roads) {
       if (r.pts.length < 2) continue;
       if (/Delancey|Cypress|American|Philip|Stamper|Addison|Panama|Peter's Way|Naudain|Kenilworth/i.test(r.name || '')) r.w = Math.min(r.w, 6);
-      // Round 190: Chestnut Street between 2nd and Front is a 9 m roadway between sidewalks of about 3.4 m (the facades stand
+      // Round 191: Chestnut Street between 2nd and Front is a 9 m roadway between sidewalks of about 3.4 m (the facades stand
       // 15.9 m apart); drawn 13 m it left 1.2 m of walk, and Glory's stoop and steps (2.3 m out from its front) stood in the lane
       if (GLORY_ON && r.name === 'Chestnut Street' && r.pts.every((q) => q[0] > 50 && q[0] < 200 && q[1] > -330 && q[1] < -290)) { r.w = Math.min(r.w, 9); r.glWalk = true; }
       const openRuns = /motorway/.test(r.t) || /columbus boulevard|front street/i.test(r.name || '')
@@ -7634,7 +7634,9 @@ vec2 wRing(vec2 rc, float tt) {
       const y = foot ? LAYER.footway : setts ? LAYER.road - 0.015 : LAYER.road;   // with a 1 cm jitter (below) the setts sit between the sidewalks' 0.16 to 0.22 and the asphalt's 0.24 to 0.30
       // lane class for the paint: divided (no centre yellow) on the highways and their links,
       // no markings on service and pedestrian ways; the brick parts never carry the attribute
-      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) || (REAL && /^(residential|unclassified)$/.test(r.t) && r.w < RES_UNMARKED_W) ? 2 : 0), jl: coreJX && coreJX[cr].length ? coreJX[cr] : null, noX: true };
+      // Round 191's review: the narrowed block of Chestnut by Glory is one-way (OSM's oneway, which traffic.b64 carries; the
+      // core's scene roads carry no such tag) with one lane between the parked cars, so no double yellow down its middle
+      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (r.glWalk || /footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) || (REAL && /^(residential|unclassified)$/.test(r.t) && r.w < RES_UNMARKED_W) ? 2 : 0), jl: coreJX && coreJX[cr].length ? coreJX[cr] : null, noX: true };
       {
         // Round 127 (Mike: "sidewalks/crosswalks overlapping look pretty bad"): the mapped footways and the
         // generated sidewalks wait until every carriageway is known (below)
@@ -7649,7 +7651,7 @@ vec2 wRing(vec2 rc, float tt) {
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
         if (walks) {
           const walkCol = /residential|tertiary|living_street/.test(r.t) ? cBrickWalk : cConcWalk;
-          // Round 190: the narrowed block of Chestnut keeps its walks to the building line (3.7 m, not 3, from its new kerb)
+          // Round 191: the narrowed block of Chestnut keeps its walks to the building line (3.7 m, not 3, from its new kerb)
           const wide = r.glWalk ? 3.7 : 3.0, off = r.w / 2 + 0.05 + wide / 2;
           for (const s of [-1, 1]) walkJobs.push({ line: offsetPolyline(run, off * s), col: walkCol, w: wide });
         }
@@ -8324,11 +8326,11 @@ vec2 wRing(vec2 rc, float tt) {
       // (numbers ascend westward from Front): the deep narrow lot whose front
       // hits the address line, area-weighted centroid (115.1, -283.8)
       ...(GLORY_ON ? [] : [{ x: 115.1, z: -283.8, r: 5, minArea: 100, spec: { mode: 'custom', key: 'glory' } }]),
-      // Round 190: that lot is 120 Chestnut (scene 2806, 4.9 m wide, four storeys), two east of Glory's; the OPA point for 126
+      // Round 191: that lot is 120 Chestnut (scene 2806, 4.9 m wide, four storeys), two east of Glory's; the OPA point for 126
       // lies in 2541, which the Historical Commission's inventory, Sanborn's 1916 plate and the LiDAR all agree is 126 (five
       // storeys, four bays, 8.6 m). Under the realistic look 2541 is held back for rebuilds/glory.js and 120 goes back to the
       // generic fabric, whose shuttered four storeys are the real 120's; the key is not 'glory', so the old builder never
-      // runs on it. Its neighbours, which the new front showed up (Round 190's renders): 128-130 Chestnut (2716, the
+      // runs on it. Its neighbours, which the new front showed up (Round 191's renders): 128-130 Chestnut (2716, the
       // Flemish-bond Greek Revival of 1851, 8/8 sash over a six-bay shop front) takes the sash and the painted shop floor
       // in its own dark red brick, and 122-124 (2540, the Neoclassical front of about 1925 over a four-bay shop front) the
       // painted shop floor
@@ -14232,7 +14234,7 @@ vec2 wRing(vec2 rc, float tt) {
     }
   });
 
-  // ---- Glory Beer Bar & Kitchen (Round 190, Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped").
+  // ---- Glory Beer Bar & Kitchen (Round 191, Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped").
   // rebuilds/glory.js models 126 Chestnut Street on its own lot (the core's footprint 2541, held back by REALISM_NEAR) and
   // draws through the api this section hands it (api.glory): one facade material for its near and far meshes, whose map is
   // the atlas of its two generated elevations and its swatches (GLORY_ART, bake_glory_art.py) and whose mask says what is
@@ -14241,14 +14243,17 @@ vec2 wRing(vec2 rc, float tt) {
   // wall is looked up on a generated one-point photograph of that room (the bar on the ground floor, the board-game room
   // upstairs, each with people while it is open and empty while it is shut, by the model clock's opening hours); the flats'
   // windows above take the house fronts' rooms at night (roomLight); the two lanterns glow with the street lamps' photocell
-  // and light the piers, the signs and the stoop round them; and the signs' own material is a canvas the page letters,
-  // GLORY in vector glyphs (a slab serif, so every device draws the same), never the image model. gloryStep, once a frame:
-  // the near mesh within 170 m (the far one past 200), the signs within 140, the hours once a model minute
+  // and light the piers, the signs and the stoop round them; and the signs are faces of the near mesh that sample a canvas
+  // the page letters, GLORY in vector glyphs (a slab serif, so every device draws the same), never the image model.
+  // gloryStep, once a frame: the near mesh within 170 m (the far one past 200), the hours once a model minute, and on a
+  // phone the art's decode the first time the eye comes within GLORY_DECODE_R after Enter
   const GLORY = {
     on: GLORY_ON && typeof GLORY_ART !== 'undefined' && !!GLORY_ART, art: typeof GLORY_ART !== 'undefined' ? GLORY_ART : null,
-    near: null, far: null, signs: null, c: new THREE.Vector3(), lod: 'near', lamps: [], ref: null, mat: null, signMat: null,
-    signTex: null, minute: -1, open: false, artLoaded: 0, roomsLoaded: 0, tris: 0, draws: 0,
+    near: null, far: null, c: new THREE.Vector3(), lod: 'near', lamps: [], ref: null, mat: null,
+    signTex: null, minute: -1, open: false, artLoaded: 0, roomsLoaded: 0, tris: 0, draws: 0, pend: null,
   };
+  const GLORY_DECODE_R = 600;   // a phone decodes Glory's art the first time the eye comes this close after Enter
+  const GLORY_PHONE_SAT = 0.62;   // a phone's share of Glory's brick saturation (the facade shader: its fabric's brick is paler)
   const GLORY_SW = 7;
   const gloryU = {
     uGlMask: { value: null }, uGlInt: { value: null }, uGlIntM: { value: null }, uGlSign: { value: null },
@@ -14284,18 +14289,20 @@ vec2 wRing(vec2 rc, float tt) {
     // (a counter, the G's mouth), so no two shapes' windings ever meet; advance widths after. A heavy bracketed slab serif of
     // the Rockwell and Clarendon family the sign is cut in (the research: earlier rounds' geometric sans was wrong)
     const R_ = (x, y, w, h) => ['r', x, y, w, h], E_ = (cx, cy, rx, ry) => ['e', cx, cy, rx, ry], P_ = (...pts) => ['p', pts];
-    const ga = -70 * Math.PI / 180, gb = -15 * Math.PI / 180;
+    // Round 191's review: the real letters are a heavier, more compact slab, stems about 0.3 of the cap height, small
+    // counters, almost no space between them (the first glyphs had stems of 0.25, wide counters and a gap of 7)
+    const ga = -62 * Math.PI / 180, gb = -8 * Math.PI / 180;
     const glyphs = [
-      [92, [['+', E_(46, 50, 46, 50)], ['-', E_(46, 50, 22, 30)], ['-', P_([46, 50], [46 + 90 * Math.cos(ga), 50 + 90 * Math.sin(ga)], [46 + 90 * Math.cos(gb), 50 + 90 * Math.sin(gb)])],
-        ['+', R_(50, 48, 42, 14)], ['+', R_(76, 48, 16, 42)], ['+', R_(58, 2, 12, 27)]]],
-      [74, [['+', R_(9, 0, 25, 100)], ['+', R_(0, 0, 44, 11)], ['+', R_(0, 89, 74, 11)], ['+', R_(64, 68, 10, 32)]]],
-      [96, [['+', E_(48, 50, 48, 50)], ['-', E_(48, 50, 23, 31)]]],
-      [92, [['+', R_(9, 0, 25, 100)], ['+', R_(0, 0, 52, 11)], ['+', R_(0, 89, 46, 11)], ['+', E_(52, 28, 28, 28)], ['+', R_(34, 0, 18, 56)],
-        ['-', R_(34, 12, 16, 32)], ['-', E_(50, 28, 10, 16)], ['+', P_([44, 50], [66, 50], [84, 89], [60, 89])], ['+', R_(56, 89, 36, 11)]]],
-      [96, [['+', P_([4, 0], [31, 0], [60, 52], [36, 56])], ['+', P_([65, 0], [92, 0], [60, 56], [38, 52])], ['+', R_(36, 50, 25, 50)],
-        ['+', R_(0, 0, 38, 11)], ['+', R_(58, 0, 38, 11)], ['+', R_(24, 89, 50, 11)]]],
+      [92, [['+', E_(46, 50, 46, 50)], ['-', E_(47, 50, 15, 25)], ['-', P_([47, 50], [47 + 95 * Math.cos(ga), 50 + 95 * Math.sin(ga)], [47 + 95 * Math.cos(gb), 50 + 95 * Math.sin(gb)])],
+        ['+', R_(50, 50, 42, 15)], ['+', R_(74, 50, 18, 40)], ['+', R_(61, 3, 15, 27)]]],
+      [76, [['+', R_(8, 0, 32, 100)], ['+', R_(0, 0, 48, 11)], ['+', R_(0, 89, 76, 11)], ['+', R_(64, 64, 12, 36)]]],
+      [96, [['+', E_(48, 50, 48, 50)], ['-', E_(48, 50, 16, 27)]]],
+      [94, [['+', R_(8, 0, 32, 100)], ['+', R_(0, 0, 56, 11)], ['+', R_(0, 89, 50, 11)], ['+', E_(55, 28, 29, 28)], ['+', R_(40, 0, 15, 56)],
+        ['-', R_(40, 15, 10, 26)], ['-', E_(51, 28, 9, 13)], ['+', P_([44, 50], [68, 50], [90, 89], [62, 89])], ['+', R_(58, 89, 36, 11)]]],
+      [98, [['+', P_([2, 0], [36, 0], [64, 54], [36, 60])], ['+', P_([62, 0], [96, 0], [62, 60], [36, 54])], ['+', R_(33, 52, 32, 48)],
+        ['+', R_(0, 0, 42, 11)], ['+', R_(56, 0, 42, 11)], ['+', R_(20, 89, 58, 11)]]],
     ];
-    const gap = 7, total = glyphs.reduce((a, q) => a + q[0], 0) + gap * (glyphs.length - 1);
+    const gap = 3, total = glyphs.reduce((a, q) => a + q[0], 0) + gap * (glyphs.length - 1);
     // the word on a canvas of its own (its cuts must not reach what lies under it), in its colour, then laid where it goes
     const word = (col, sx, sy) => {
       const w = Math.ceil(total * sx) + 4, h = Math.ceil(100 * sy) + 4, wc = document.createElement('canvas');
@@ -14320,9 +14327,12 @@ vec2 wRing(vec2 rc, float tt) {
     const wP = word('#c62f4b', sxP, syP);
     c.drawImage(wP.c, (512 - wP.w) / 2, 0.42 * 256 - wP.h / 2, wP.w, wP.h);
     c.fillStyle = '#3a3a3a'; c.textBaseline = 'alphabetic';
-    const sub = 'BEER BAR & KITCHEN', fs = Math.round(0.11 * 256 / 0.68);
-    c.font = '700 ' + fs + 'px "American Typewriter", "Courier New", Courier, monospace';
-    const track = 0.06 * fs, wsub = [...sub].reduce((a, ch) => a + c.measureText(ch).width + track, -track);
+    // the trade, measured first and fitted to 0.82 of the panel (Round 191's review: at 41 px its B and its N ran under the
+    // border; Courier New, the fallback where there is no American Typewriter, is wider still)
+    const sub = 'BEER BAR & KITCHEN', subW = (f) => { c.font = '500 ' + f + 'px "American Typewriter", "Courier New", Courier, monospace'; return [...sub].reduce((a, ch) => a + c.measureText(ch).width + 0.06 * f, -0.06 * f); };
+    let fs = Math.round(0.11 * 256 / 0.68), wsub = subW(fs);
+    if (wsub > 0.82 * 512) { fs = Math.floor(fs * 0.82 * 512 / wsub); wsub = subW(fs); }
+    const track = 0.06 * fs;
     let tx = (512 - wsub) / 2;
     for (const ch of sub) { c.fillText(ch, tx, 0.76 * 256 + 0.11 * 256 / 2); tx += c.measureText(ch).width + track; }
     // the plaque
@@ -14353,14 +14363,24 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // an image into a placeholder texture, once it is decoded; a phone keeps no copy of what the GPU holds (Round 158). The
   // placeholder went up behind the veil as WebGL 2 immutable storage of one texel, so the texture is let go first and the
-  // image allocates its own (an upload into the old storage fails and leaves the placeholder's grey)
-  function gloryLoad(tex, full, half, then) {
-    artImage(artSrc(full, half)).then((im) => {
+  // image allocates its own (an upload into the old storage fails and leaves the placeholder's grey). pre, a phone's: the
+  // file's bytes fetched at the step (gloryBytes), made into the image only now (Round 191's review: decoded at the step,
+  // about 5 MB of half art was held through the far ring's build, the window Round 189 keeps a phone's art out of)
+  function gloryLoad(tex, full, half, then, pre) {
+    const src = artSrc(full, half);
+    Promise.resolve(pre).then((blob) => {
+      const url = blob ? URL.createObjectURL(blob) : null;
+      return artImage(url || src).then((im) => (im || !url ? im : artImage(src))).then((im) => {
+        const done = () => { if (url) URL.revokeObjectURL(url); return im; };
+        return im && im.decode ? im.decode().then(done, done) : done();
+      });
+    }).then((im) => {
       if (!im) return;
       tex.dispose(); tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);
       if (then) then();
     });
   }
+  const gloryBytes = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));
   function gloryBlank(srgb, rgb) {
     const cv = document.createElement('canvas'); cv.width = cv.height = 1;
     const c = cv.getContext('2d'); c.fillStyle = rgb; c.fillRect(0, 0, 1, 1);
@@ -14378,21 +14398,30 @@ vec2 wRing(vec2 rc, float tt) {
     const map = gloryBlank(true, '#8f8a80'), mask = gloryBlank(false, '#000'), rooms = gloryBlank(true, '#1a1410'), roomsM = gloryBlank(false, '#000');
     map.anisotropy = anisoOf(8); mask.anisotropy = anisoOf(4);
     gloryU.uGlMask.value = mask; gloryU.uGlInt.value = rooms; gloryU.uGlIntM.value = roomsM;
+    // the signs' canvas (the blade, the board, the plaque, the menu and the mural): faces of the near mesh since Round 191
+    gloryU.uGlSign.value = GLORY.signTex || (GLORY.signTex = gloryCanvas());
+    freeTexOnUpload(GLORY.signTex);
     if (A) {
       for (const k in A.swatches) { const s = A.swatches[k]; if (s.i < GLORY_SW) { gloryU.uGlSw.value[s.i].fromArray(s.rect); gloryU.uGlSwM.value[s.i] = s.m; } }
-      let loaded = 0;
-      const both = () => { if (++loaded === 2) { gloryU.uGlArt.value = 1; GLORY.artLoaded = 1; } };
-      gloryLoad(map, A.img, A.imgHalf, both); gloryLoad(mask, A.mask, A.maskHalf, both);
-      const I = A.interior;
-      if (I && I.plates) {
+      const I = A.interior && A.interior.plates ? A.interior : null;
+      if (I) {
         const P = I.plates, order = ['ground-open', 'upperroom-open', 'ground-closed', 'upperroom-closed'];
         order.forEach((k, i) => { const p = P[k] || P[k.replace('-closed', '-open')]; if (p) gloryU.uGlPl.value[i].fromArray(p.rect); });
         ['ground', 'upperroom'].forEach((k, i) => { const p = P[k + '-open']; if (p) { gloryU.uGlBk.value[i].fromArray(p.back); gloryU.uGlRm.value[i].fromArray(p.room); } });
         gloryU.uGlD.value = I.depth || 22;
-        let r = 0;
-        const both2 = () => { if (++r === 2) { gloryU.uGlInOn.value = 1; GLORY.roomsLoaded = 1; } };
-        gloryLoad(rooms, I.img, I.imgHalf, both2); gloryLoad(roomsM, I.mask, I.maskHalf, both2);
       }
+      // a computer decodes the four images now; a phone fetches their bytes now and makes the images in gloryStep, the first
+      // time the eye comes within GLORY_DECODE_R after Enter (until then the swatches' means, uGlArt, stand in, and a
+      // session that never comes to Old City never holds them)
+      const pre = isTouch ? [gloryBytes(artSrc(A.img, A.imgHalf)), gloryBytes(artSrc(A.mask, A.maskHalf))].concat(I ? [gloryBytes(artSrc(I.img, I.imgHalf)), gloryBytes(artSrc(I.mask, I.maskHalf))] : []) : [];
+      const go = () => {
+        let loaded = 0, r = 0;
+        const both = () => { if (++loaded === 2) { gloryU.uGlArt.value = 1; GLORY.artLoaded = 1; } };
+        gloryLoad(map, A.img, A.imgHalf, both, pre[0]); gloryLoad(mask, A.mask, A.maskHalf, both, pre[1]);
+        const both2 = () => { if (++r === 2) { gloryU.uGlInOn.value = 1; GLORY.roomsLoaded = 1; } };
+        if (I) { gloryLoad(rooms, I.img, I.imgHalf, both2, pre[2]); gloryLoad(roomsM, I.mask, I.maskHalf, both2, pre[3]); }
+      };
+      if (isTouch) GLORY.pend = go; else go();
     }
     const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(0.88, 0.88, 0.88), roughness: 0.85, metalness: 0 });
     mat.extensions = { derivatives: true };
@@ -14412,67 +14441,96 @@ vec2 wRing(vec2 rc, float tt) {
         'uniform float uGlY0, uGlD, uGlArt, uGlInOn, uNight, uLamp; uniform vec3 uGlLant[2];',
         'varying vec4 vGl; varying vec4 vGlR; varying vec3 vGlP; varying vec3 vWNorm; varying float vBase;',
         // frMask: the name lampLightPatchReal looks for to keep the street lamps' wash off the glass
-        'vec4 frMask; float glMode, glBar, glUp; vec3 glDay;',
+        'vec4 frMask; float glMode, glBar, glUp, glMet, glRgh, glBl; vec3 glDay, glPf;',
+        // the mask's numbers (g a window's number, b the height inside it) read at its full size: a mip averages them with
+        // the frames' zeros round them, and they are numbers, not colours (r, the glass's cover, is read filtered)
+        gl2 ? '#define GLMASK0(p) textureGrad(uGlMask, p, vec2(0.0), vec2(0.0))' : '#define GLMASK0(p) texture2D(uGlMask, p, -16.0)',
         REAL ? WINDOW_INTERIOR_GLSL : ''].join('\n'))
         .replace('#include <map_fragment>', [
-          'glMode = floor(vGl.x + 0.5); frMask = vec4(0.0); vec4 glTex;',
-          'if (glMode < 0.5) { glTex = texture2D(map, vUv); frMask = texture2D(uGlMask, vUv); }',
-          // a lantern's glass: clear and dark by day (a bulb behind it), its warm glass once the photocell has it on
-          'else if (glMode < 2.5 && glMode > 1.5) { glTex = vec4(mix(vec3(0.16, 0.15, 0.13), texture2D(map, vGlR.xy + vGlR.zw * 0.5).rgb * 0.6, uLamp), 1.0); frMask = vec4(0.0, 0.0, 240.0 / 255.0, 0.0); }',
+          'glMode = floor(vGl.x + 0.5); frMask = vec4(0.0); vec4 glTex; glMet = 0.0; glRgh = -1.0;',
+          // the face's place in the facade's frame (u east, y up over the walk, z into the lot). What a pane is, the bar's
+          // glass below the granite cornice (EH, 9.3 m) and the flats' above, and which of the bar's rooms (the second
+          // storey's from 4.6 m) is decided here by position, never by the mask's codes, which a mip averages with the frames'
+          // zeros: Round 191's review found the bar's lit glass black from about 100 m, and across the street the panes
+          // flipping between the two rooms as a mosaic of streaks
+          'vec2 glD0 = vGlP.xz - uGlF.xy; glPf = vec3(dot(glD0, uGlF.zw), vGlP.y - uGlY0, dot(glD0, vec2(-uGlF.w, uGlF.z)));',
+          'if (glMode < 0.5) { glTex = texture2D(map, vUv); frMask = texture2D(uGlMask, vUv); frMask.gb = GLMASK0(vUv).gb; }',
+          // a lantern: its clear glass (dark and glossy by day, the street in it) and its bulb, a pale filament by day
+          // (the globe is drawn opaque, so the bulb inside is drawn on it: the eye's ray through this point passes the bulb,
+          // the lantern's own centre uGlLant, at glBl; Round 191's review: an opaque box by day, a flat white panel at night)
+          'else if (glMode < 2.5 && glMode > 1.5) {',
+          '  vec3 glRd = normalize(vGlP - cameraPosition); glBl = 1e3;',
+          '  for (int i = 0; i < 2; i++) { vec3 glQ = uGlLant[i] - vGlP; glBl = min(glBl, length(glQ - glRd * dot(glQ, glRd))); }',
+          '  float glBulb = exp(-glBl * glBl / (0.022 * 0.022));',
+          '  glTex = vec4(vGl.y > 0.5 ? vec3(0.8, 0.74, 0.62) : mix(vec3(0.06, 0.06, 0.055), vec3(0.78, 0.72, 0.6), glBulb), 1.0); glRgh = vGl.y > 0.5 ? 0.4 : 0.04; frMask = vec4(0.0, 0.0, 240.0 / 255.0, 0.0); }',
+          // the signs: the canvas the page letters (the blade, the board, the plaque, the menu)
+          'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv); glRgh = 0.6; }',
+          // the cafe (Round 191's review: concrete boards read as slabs): the tables black painted steel, the chairs
+          // galvanized steel, a metal under the sky's own light
+          'else if (glMode > 2.5) { bool glCh = vGl.y > 0.5; glTex = vec4(glCh ? vec3(0.34, 0.35, 0.36) : vec3(0.022), 1.0); glMet = glCh ? 0.7 : 0.0; glRgh = glCh ? 0.4 : 0.45; }',
           'else {',
           // a swatch tiled in metres on the face's own plane in the facade's frame (the front, a side or a top), with the
           // unwrapped coordinate's gradients so the tile's wrap is no mip seam
-          '  vec2 glD = vGlP.xz - uGlF.xy, glV = vec2(-uGlF.w, uGlF.z);',
-          '  vec3 glL = vec3(dot(glD, uGlF.zw), vGlP.y - uGlY0, dot(glD, glV));',
-          '  vec3 glN = abs(vec3(dot(vWNorm.xz, uGlF.zw), vWNorm.y, dot(vWNorm.xz, glV)));',
-          '  vec2 glT = (glN.y > max(glN.x, glN.z) ? glL.xz : (glN.x > glN.z ? glL.zy : glL.xy)) / max(vGl.z, 0.05);',
+          '  vec3 glN = abs(vec3(dot(vWNorm.xz, uGlF.zw), vWNorm.y, dot(vWNorm.xz, vec2(-uGlF.w, uGlF.z))));',
+          '  vec2 glT = (glN.y > max(glN.x, glN.z) ? glPf.xz : (glN.x > glN.z ? glPf.zy : glPf.xy)) / max(vGl.z, 0.05);',
           '  vec2 glS = vGlR.xy + vGlR.zw * fract(glT);',
           // the gradients held to the swatch's gutter (8 texels: the third mip), or a face seen edge on (a cornice's soffit from
           // the walk) reads a mip so coarse that the neighbouring swatches bleed into it as a dark and orange smear
           gl2 ? '  vec2 glGx = dFdx(glT) * vGlR.zw, glGy = dFdy(glT) * vGlR.zw; float glGm = 8.0 / 2048.0;\n  glGx *= min(1.0, glGm / max(length(glGx), 1e-7)); glGy *= min(1.0, glGm / max(length(glGy), 1e-7));\n  glTex = textureGrad(map, glS, glGx, glGy);' : '  glTex = texture2D(map, glS);',
-          '  float glSw = floor(vGl.y + 0.5);',
-          '  if (glMode > 2.5 && glSw > 1.5 && glSw < 2.5) glTex.rgb = min(glTex.rgb * 1.15, vec3(1.0));',   // the chairs' galvanized steel
           '}',
           // before the art lands: the photographed colours (granite, brick), stored as the swatches' means
-          'if (uGlArt < 0.5) { float glSw = floor(vGl.y + 0.5); glTex = vec4(glMode < 0.5 ? (vGlP.y - uGlY0 < 9.3 ? vec3(0.39, 0.37, 0.33) : vec3(0.52, 0.24, 0.15)) : (glSw < 0.5 ? vec3(0.39, 0.37, 0.33) : glSw < 1.5 ? vec3(0.52, 0.24, 0.15) : glSw > 2.5 && glSw < 3.5 ? vec3(0.02) : glSw > 3.5 && glSw < 4.5 ? vec3(0.09, 0.15, 0.21) : glSw > 4.5 && glSw < 5.5 ? vec3(1.0, 0.62, 0.25) : vec3(0.18, 0.17, 0.15)), 1.0); }',
+          'if (uGlArt < 0.5 && glMode < 1.5) { float glSw = floor(vGl.y + 0.5); glTex = vec4(glMode < 0.5 ? (glPf.y < 9.3 ? vec3(0.32, 0.28, 0.24) : vec3(0.34, 0.16, 0.10)) : (glSw < 0.5 ? vec3(0.69, 0.60, 0.50) : glSw < 1.5 ? vec3(0.39, 0.18, 0.11) : glSw > 2.5 && glSw < 3.5 ? vec3(0.02) : glSw > 3.5 && glSw < 4.5 ? vec3(0.27, 0.37, 0.45) : glSw > 4.5 && glSw < 5.5 ? vec3(0.99, 0.62, 0.26) : vec3(0.18, 0.17, 0.15)), 1.0); }',
+          'glTex.rgb *= 1.0 - vGl.w / 255.0;',   // a recess's or an underside's shade (aGl's fourth byte)
+          // a phone's brick (Round 191's review): its fabric has no walls' atlas and its neighbours' brick renders at about
+          // 0.13 saturation, against the photographs' 0.32 that Glory's carries, which read as pasted in; on a phone the
+          // brick (the upper elevation, the brick swatch) keeps GLORY_PHONE_SAT of its saturation, about 0.22 as rendered
+          isTouch ? '{ float glBr = (glMode < 0.5 && glPf.y >= 9.3) || (glMode > 0.5 && glMode < 1.5 && abs(vGl.y - 1.0) < 0.5) ? 1.0 : 0.0; glTex.rgb = mix(glTex.rgb, mix(vec3(dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))), glTex.rgb, ' + GLORY_PHONE_SAT.toFixed(2) + '), glBr); }' : '',
           'glDay = glTex.rgb;',
-          'float glB = frMask.b * 255.0;',
-          'glBar = frMask.r * step(196.0, glB) * step(glB, 222.0);',
-          'glUp = frMask.r * step(glB, 66.0) * (1.0 - step(0.5, glMode));',
+          'float glB = frMask.b * 255.0, glLow = step(glPf.y, 9.3);',
+          'glBar = frMask.r * glLow * (1.0 - step(0.5, glMode));',
+          'glUp = frMask.r * (1.0 - glLow) * (1.0 - step(0.5, glMode));',
           // the bar's glass is clear: its own albedo goes to dark glass (the room behind it is added as light); after dark the
           // flats' painted daylight leaves their glass as the house fronts' does
           'glTex.rgb = mix(glTex.rgb, vec3(0.03), glBar);',
           REAL ? 'glTex.rgb = mix(glTex.rgb, glTex.rgb * 0.22, glUp * uNight);' : '',
           'diffuseColor *= glTex;',
         ].join('\n'))
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.22, glUp), 0.06, glBar);')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.22, glUp), 0.06, glBar); if (glRgh >= 0.0) roughnessFactor = glRgh;')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = max(metalnessFactor, glMet);')
         // the lanterns' light on what stands round them: the piers, the signs' bracket, the stoop and the walk, within 4 m
         .replace('#include <lights_fragment_end>', ['#include <lights_fragment_end>',
           'if (uLamp > 0.001) { float glW = 0.0;',
           '  for (int i = 0; i < 2; i++) { vec3 glL = uGlLant[i] - vGlP; float dl = length(glL);',
           '    glW += (0.25 + 0.75 * max(dot(vWNorm, glL / max(dl, 1e-3)), 0.0)) / (1.0 + 2.0 * dl * dl) * (1.0 - smoothstep(2.0, 3.5, dl)); }',
-          '  reflectedLight.directDiffuse += diffuseColor.rgb * vec3(1.0, 0.62, 0.32) * 0.7 * glW * uLamp; }'].join('\n'))
+          '  reflectedLight.directDiffuse += diffuseColor.rgb * (1.0 - glMet) * vec3(1.0, 0.62, 0.32) * 0.7 * glW * uLamp; }'].join('\n'))   // a metal's diffuse is its (1 - metalness) share
         .replace('#include <emissivemap_fragment>', ['#include <emissivemap_fragment>',
-          'if (glMode > 1.5 && glMode < 2.5) totalEmissiveRadiance += vec3(1.0, 0.70, 0.42) * 2.2 * uLamp;',
+          // a lantern after dark: the bulb hot, the globe's glass glowing round it, brightest where it faces the eye (the
+          // bulb seen through it)
+          'if (glMode > 1.5 && glMode < 2.5)',
+          '  totalEmissiveRadiance += vec3(1.0, 0.70, 0.42) * (vGl.y > 0.5 ? 7.0 : 0.06 + 6.0 * exp(-glBl * glBl / (0.02 * 0.02)) + 0.9 * exp(-glBl * glBl / (0.06 * 0.06))) * uLamp;',
           // the rooms behind the bar's glass (interior mapping): the eye's ray in the facade's frame (u east, y up, z into the
           // lot) runs from the pane into the room's box and leaves it through a side wall, the floor, the ceiling or the back
           // wall; that point, in the room's front opening's fractions (s from the viewer's right, the west wall, where the bar
           // runs) and its depth, is the one-point photograph's pixel: each axis scaled toward the vanishing point by e / (e + z)
           'if (glBar > 0.01 && uGlInOn > 0.5) {',
-          '  float up = step(208.0, glB);',
+          '  float up = step(4.6, glPf.y);',
           '  vec4 rm = mix(uGlRm[0], uGlRm[1], up), bk = mix(uGlBk[0], uGlBk[1], up), pO = mix(uGlPl[0], uGlPl[1], up), pC = mix(uGlPl[2], uGlPl[3], up);',
-          '  vec2 glV = vec2(-uGlF.w, uGlF.z), dp = vGlP.xz - uGlF.xy, dcam = cameraPosition.xz - uGlF.xy;',
-          '  vec3 P = vec3(dot(dp, uGlF.zw), vGlP.y - uGlY0, dot(dp, glV)), Cm = vec3(dot(dcam, uGlF.zw), cameraPosition.y - uGlY0, dot(dcam, glV));',
+          '  vec2 dcam = cameraPosition.xz - uGlF.xy;',
+          '  vec3 P = glPf, Cm = vec3(dot(dcam, uGlF.zw), cameraPosition.y - uGlY0, dot(dcam, vec2(-uGlF.w, uGlF.z)));',
           '  vec3 d = normalize(P - Cm); d.z = max(d.z, 1.0e-3);',
           '  float tx = d.x > 1e-4 ? (rm.y - P.x) / d.x : (d.x < -1e-4 ? (rm.x - P.x) / d.x : 1e5);',
           '  float ty = d.y > 1e-4 ? (rm.w - P.y) / d.y : (d.y < -1e-4 ? (rm.z - P.y) / d.y : 1e5);',
           '  float tz = uGlD / d.z, t = max(min(min(tx, ty), tz), 0.0), hz = d.z * t;',
+          // the ceiling near the front: a plate holds it only as its top rows stretched, so a ray from the walk looking up
+          // into the arcade (a few centimetres in) reads it from 1.2 m in, and darker (the review: a smear of streaks)
+          '  float glCeil = (d.y > 1e-4 && ty <= min(tx, tz)) ? 1.0 : 0.0, hzs = mix(hz, max(hz, 1.2), glCeil);',
           '  vec3 H = P + d * t;',
           '  vec2 sr = clamp(vec2((rm.y - H.x) / (rm.y - rm.x), (H.y - rm.z) / (rm.w - rm.z)), 0.0, 1.0);',
           '  vec2 sB = bk.zw - bk.xy, vp = bk.xy / (1.0 - sB), e = sB * uGlD / (1.0 - sB);',
-          '  vec2 im = clamp(vp + (sr - vp) * e / (e + hz), 0.003, 0.997);',
+          '  vec2 im = clamp(vp + (sr - vp) * e / (e + hzs), 0.003, 0.997);',
           '  float op = mix(uGlOpen.x, uGlOpen.y, up);',
           '  vec3 room = mix(texture2D(uGlInt, pC.xy + pC.zw * im).rgb, texture2D(uGlInt, pO.xy + pO.zw * im).rgb, op);',
+          '  room *= mix(1.0, mix(0.4, 1.0, smoothstep(0.0, 2.0, hz)), glCeil);',
           '  vec2 mI = texture2D(uGlIntM, pO.xy + pO.zw * im).rg;',
           // the mural on the bar's brick by the doors (its west wall, on the viewer's right), page-drawn on the signs' canvas
           '  if (up < 0.5 && d.x < 0.0 && tx <= min(ty, tz) && hz > 0.4 && hz < 3.6 && H.y > rm.z + 1.5 && H.y < rm.z + 3.3) {',
@@ -14508,30 +14566,6 @@ vec2 wRing(vec2 rc, float tt) {
     GLORY.mat = mat;
     return mat;
   }
-  // the signs' material: the canvas, lit as any painted board is, by the street lamps' map and the two lanterns; never
-  // emissive (the real signs are unlit panels)
-  function glorySignsMat() {
-    if (GLORY.signMat) return GLORY.signMat;
-    const tex = GLORY.signTex || (GLORY.signTex = gloryCanvas());
-    gloryU.uGlSign.value = tex;
-    const m = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, metalness: 0 });
-    m.onBeforeCompile = (sh) => {
-      sh.uniforms.uGlLant = gloryU.uGlLant; sh.uniforms.uLamp = lampUniform; sh.uniforms.uGlY0 = gloryU.uGlY0;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uGlY0; varying vec3 vGsW; varying vec3 vWNorm; varying float vBase;')
-        .replace('#include <project_vertex>', '#include <project_vertex>\nvGsW = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = uGlY0;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uGlLant[2]; uniform float uLamp; varying vec3 vGsW; varying vec3 vWNorm; varying float vBase;')
-        .replace('#include <lights_fragment_end>', ['#include <lights_fragment_end>',
-          'if (uLamp > 0.001) { float glW = 0.0;',
-          '  for (int i = 0; i < 2; i++) { vec3 glL = uGlLant[i] - vGsW; float dl = length(glL);',
-          '    glW += (0.25 + 0.75 * max(dot(vWNorm, glL / max(dl, 1e-3)), 0.0)) / (1.0 + 2.0 * dl * dl) * (1.0 - smoothstep(2.0, 3.5, dl)); }',
-          '  reflectedLight.directDiffuse += diffuseColor.rgb * vec3(1.0, 0.62, 0.32) * 0.7 * glW * uLamp; }'].join('\n'));
-      lampLightPatch(sh, 'vGsW', 'wall');
-      if (REAL) wxSurfacePatch(sh);
-    };
-    m.customProgramCacheKey = () => 'glory-signs';
-    GLORY.signMat = m;
-    return m;
-  }
   // the hours into the shader (once a model minute): the bar's room eases over ten minutes either way, the room upstairs is
   // open from 5 PM (the board-game nights), the cafe while the bar is; a jump of the clock (a link, the time panel) snaps
   function gloryHoursStep() {
@@ -14557,20 +14591,19 @@ vec2 wRing(vec2 rc, float tt) {
     else if (GLORY.lod === 'far' && d < 170) GLORY.lod = 'near';
     GLORY.near.visible = GLORY.lod === 'near';
     GLORY.far.visible = GLORY.lod === 'far';
-    GLORY.signs.visible = d < 140;
+    if (GLORY.pend && PERF.enterT && d < GLORY_DECODE_R) { const go = GLORY.pend; GLORY.pend = null; go(); }   // a phone's art, decoded at last
   }
   function gloryApi() {
     if (!GLORY.on) return null;
     return {
       art: GLORY.art,
       facade: gloryFacadeMat,
-      signs: glorySignsMat,
       hoursU: gloryU.uGlOpen,
-      lod: (near, far, signs, c) => {
-        GLORY.near = near; GLORY.far = far; GLORY.signs = signs; GLORY.c.set(c[0], c[1], c[2]);
+      lod: (near, far, c) => {
+        GLORY.near = near; GLORY.far = far; GLORY.c.set(c[0], c[1], c[2]);
         if (GLORY.depth) { near.customDepthMaterial = GLORY.depth; far.customDepthMaterial = GLORY.depth; }
         const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
-        GLORY.tris = { near: tri(near), far: tri(far), signs: tri(signs) };
+        GLORY.tris = { near: tri(near), far: tri(far) };
       },
       lamps: (list) => { GLORY.lamps = list.slice(); },
       ref: (r) => { GLORY.ref = r; },
@@ -14615,9 +14648,10 @@ vec2 wRing(vec2 rc, float tt) {
       log: dev ? (...a) => console.log('[rebuild]', ...a) : () => {},
     };
     api.lampU = LAMP_RB_U;   // the realism round: the far map's uniforms with its box at the realistic strength (lampNightFx keeps it; ?real=0 the same box)
-    api.glory = gloryApi();   // Round 190: Glory's facade, signs, hours and levels of detail (rebuilds/glory.js)
+    api.glory = gloryApi();   // Round 191: Glory's facade, signs, hours and levels of detail (rebuilds/glory.js)
     for (const d of REBUILDS) {
-      if (d.real && !GLORY_ON) continue;   // a def of the realistic look's alone (?real=0, ?glory=0: the old Glory on 120 stands)
+      if (d.real && !REAL) continue;   // a def of the realistic look's alone (?real=0)
+      if (d.id === 'glory' && !GLORY_ON) continue;   // Glory's A/B (?glory=0: the old Glory on 120 stands); its own id, so another def's real stays REAL's alone
       const t0 = performance.now();
       try {
         const obj = d.build(api);
@@ -21033,7 +21067,7 @@ vec2 wRing(vec2 rc, float tt) {
       rows.map((t) => '<div class="vmeta">' + septaEsc(t) + '</div>').join('') +
       '<div class="vmeta">City of Philadelphia: OPA, PWD, Historical Commission, L&amp;I</div>' + link;
   }
-  // Round 190: Glory's own card, open or shut by the model clock (its hours, gloryHours), then what it is and where, and
+  // Round 191: Glory's own card, open or shut by the model clock (its hours, gloryHours), then what it is and where, and
   // under them the city's register and district rows and its permits once the property lookup answers
   function gloryCard(st) {
     const g = gloryCardHead(), rows = g.lines.slice(), r = st.row;
@@ -21065,11 +21099,15 @@ vec2 wRing(vec2 rc, float tt) {
     if (bfbNear(p[0], p[2], 25) || wwbNear(p[0], p[2], 25)) return false;
     { const dk = ovpDeckY(p[0], p[2]); if (dk !== null && Math.abs(dk - p[1]) < 4) return false; }
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
-    bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(x, z, 1) ? GLORY.ref : null);   // Round 190: on Glory's lot (a metre's pad), its own card
+    bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(x, z, 0) ? GLORY.ref : null);   // Round 191: on Glory's lot (no pad: the point is already 1.5 m into the building hit, and a metre's pad gave a tap on 128's party wall Glory's card), its own card
     return true;
   }
-  // a building's card at (ax, ay, az), filled from the parcel under (x, z); biz a business the page knows there (Glory)
+  // a building's card at (ax, ay, az), filled from the parcel under (x, z); biz a business the page knows there (Glory),
+  // whose own point inside its lot (biz.parcel, the OPA address point) is asked instead: Old City's OSM fronts stand about
+  // 4 m north of the PWD parcels, so a point at the front or on the walk finds no lot (Round 191's review: Glory's card
+  // never had its property rows)
   function bldgOpen(ax, ay, az, x, z, biz) {
+    if (biz && biz.parcel) { x = biz.parcel[0]; z = biz.parcel[1]; }
     pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
     pickedStop = null; pickedCivic = null; pickedNear = null;
     const seq = ++BPICK.seq, st = { loading: true, biz };
@@ -22735,7 +22773,7 @@ float pinOccGate() {
   // districts, the named buildings and towers, and the painted street names, all
   // already in scene metres. Built once, on the first search.
   let nameIx = null;
-  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, library: 3, bridge: 3, nature: 3, bar: 2, building: 4, street: 5 };   // Round 190: a bar the page knows by name (Glory) before the churches that share its first word
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, library: 3, bridge: 3, nature: 3, bar: 2, building: 4, street: 5 };   // Round 191: a bar the page knows by name (Glory) before the churches that share its first word
   const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art',
     school: 'School', college: 'College', worship: 'Place of Worship', hospital: 'Hospital', park: 'Park', rec: 'Recreation Center', cemetery: 'Cemetery', museum: 'Museum', site: 'Historic Site',
     venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', library: 'Free Library', bridge: 'Bridge', nature: 'Natural Feature', bar: 'Bar', building: 'Building', street: 'Street' };
@@ -22762,7 +22800,7 @@ float pinOccGate() {
     for (const r of STOPS.rail) add(r.n.replace(/\s+Station$/i, '') + ' Station', r.x, r.z, 'rail', r);
     for (const r of CIVIC_S.lib) add(r.n, r.x, r.z, 'library', r);   // Round 134
     for (const r of CIVIC_S.rec) add(r.n, r.x, r.z, 'rec', r);   // Regional Rail stations open their departure board (Round 133)
-    if (GLORY.ref) add(GLORY.ref.name, GLORY.ref.door[0], GLORY.ref.door[1], 'bar', GLORY.ref);   // Round 190: Glory, at its door, arriving with its card
+    if (GLORY.ref) add(GLORY.ref.name, GLORY.ref.door[0], GLORY.ref.door[1], 'bar', GLORY.ref);   // Round 191: Glory, at its door, arriving with its card
     for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
     for (const lm of META_L) {
       const b = lm && lm.name ? findBuilding(lm.name) : null;
@@ -22820,7 +22858,7 @@ float pinOccGate() {
     if ((e.kind === 'library' || e.kind === 'rec') && e.ref && e.ref.kind) openCivicCard(e.ref);   // a branch or a center arrives with its card (Round 134)
     if (isTouch) toggleSearch(false);
   }
-  // Round 190: a search for Glory lands on the far sidewalk of Chestnut Street looking at its front, the street-level view
+  // Round 191: a search for Glory lands on the far sidewalk of Chestnut Street looking at its front, the street-level view
   // Mike knows it by (no circle: a 30 m orbit at that height would run through the buildings across the street), with the
   // mark at its door and its card open
   function gloryGoTo(r) {
@@ -28240,7 +28278,7 @@ float pinOccGate() {
     };
     postRaw(poleMat);
     {   // the light map's splats: one soft point per lamp, its radius from its mounting height (a lot mast casts widest)
-      const nGl = GLORY.lamps.length;   // Round 190: Glory's two lanterns
+      const nGl = GLORY.lamps.length;   // Round 191: Glory's two lanterns
       const lp = new Float32Array((nAll + nGl) * 3), lc = new Float32Array((nAll + nGl) * 3), lr = new Float32Array(nAll + nGl);
       let m = 0;
       for (let i = 0; i < nAll; i++) {
@@ -28254,7 +28292,7 @@ float pinOccGate() {
         lr[m] = mast ? 56 : pier ? 20 : clamp(HM[i] * 3.4, 14, 42);   // Round 144 (Mike: "diffuse all of the lamposts more and have that light stretch a bit further"): 1.4 times the Round 140 reach
         m++;
       }
-      // Round 190: Glory's lanterns on the piers either side of its door, a warm 2700 K pool of 7 m on the stoop and the walk
+      // Round 191: Glory's lanterns on the piers either side of its door, a warm 2700 K pool of 7 m on the stoop and the walk
       // (their own radius: a pole's HM times 3.4 would floor it at 14)
       for (const q of GLORY.lamps) {
         lp[m * 3] = q[0]; lp[m * 3 + 1] = Math.max(1, q[1] - siteY(q[0], q[2], 'ground')); lp[m * 3 + 2] = q[2];
@@ -34445,7 +34483,7 @@ float pinOccGate() {
     updateRoofKit(now);   // Round 150
     updateFronts(now);   // Round 181
     sfStep(now);   // Round 189: the storefronts' clock and names
-    gloryStep(now);   // Round 190: Glory's levels of detail and its hours
+    gloryStep(now);   // Round 191: Glory's levels of detail and its hours
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
@@ -34565,7 +34603,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), signs: !!(GLORY.signs && GLORY.signs.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) + (GLORY.signs.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

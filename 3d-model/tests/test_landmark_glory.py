@@ -1,14 +1,17 @@
-"""Round 190: Glory Beer Bar & Kitchen, 126 Chestnut Street (rebuilds/glory.js, bake_glory_art.py, the app's api.glory).
+"""Round 191: Glory Beer Bar & Kitchen, 126 Chestnut Street (rebuilds/glory.js, bake_glory_art.py, the app's api.glory).
 
 - the lot: the OPA address point for 126 lies in it, and exactly one core footprint's area-weighted centroid does, scene
   building 2541 (the old builder stood on 120, two lots east);
 - the realistic look holds 2541 back under a key that is not 'glory' (the old builder would run on it), and ?real=0 and
   ?glory=0 keep the old entry exactly;
-- under Node the def builds a near level, a far level and the signs inside their budgets, every stream finite and a
-  multiple of four bytes (Round 158), aGl four normalized bytes, the index 16-bit;
+- under Node the def builds a near level (the signs among its faces since the review) and a far level inside their
+  budgets, every stream finite and a multiple of four bytes (Round 158), aGl four normalized bytes, the index 16-bit;
 - the manifest's files are there with their phone halves, the masks opaque RGB PNGs, the rooms each with a back wall;
 - the app's wiring: the def skipped unless GLORY_ON, the lamps in the light map at their own 7 m, the search's bar kind, the
-  card's lines, the frame step, and no em dash or middot in anything a person reads."""
+  card's lines, the frame step, and no em dash or middot in anything a person reads;
+- Round 191's review: the second storey's low arch (the chosen frame's key-measured rise at most 0.5 m), a jointless granite
+  swatch at its real coursing, the bar's glass and the rooms told apart by position (not by the mask's mipped codes), the
+  signs on the near mesh, the trade fitted inside the sign's border, a phone's art decoded only near Glory after Enter."""
 import json
 from pathlib import Path
 import re
@@ -60,7 +63,7 @@ for (const withArt of [false, true]) {
   const calls = { lod: 0, lamps: 0, ref: null, occupy: 0, frame: null };
   const mat = new THREE.MeshStandardMaterial();
   const api = { THREE, K: RB.kit(THREE), where: 'app', ground: () => 0.25, occupy: () => { calls.occupy++; }, pinAt: () => {}, log: () => {} };
-  if (withArt) api.glory = { art, facade: (f) => { calls.frame = f; return mat; }, signs: () => mat, lod: () => { calls.lod++; }, lamps: (l) => { calls.lamps = l.length; }, ref: (r) => { calls.ref = r; } };
+  if (withArt) api.glory = { art, facade: (f) => { calls.frame = f; return mat; }, lod: (n, f, c) => { calls.lod++; calls.lodArgs = [!!n, !!f, Array.isArray(c)]; }, lamps: (l) => { calls.lamps = l.length; }, ref: (r) => { calls.ref = r; } };
   const t0 = Date.now();
   const obj = RB.defs.find((d) => d.id === 'glory').build(api);
   const r = { ms: Date.now() - t0, calls, meshes: {} };
@@ -115,8 +118,11 @@ class Gating(unittest.TestCase):
     def test_the_rebuild_step_hands_it_over(self):
         a = self.app
         self.assertIn('api.glory = gloryApi();', a)
-        self.assertIn('if (d.real && !GLORY_ON) continue;', a)
-        self.assertIn('gloryStep(now);   // Round 190', a)
+        self.assertIn('if (d.real && !REAL) continue;', a)
+        # ?glory=0 by Glory's own id, never by real (Round 191's review: a City Hall def marked real would have gone with it)
+        self.assertIn("if (d.id === 'glory' && !GLORY_ON) continue;", a)
+        self.assertNotIn('d.real && !GLORY_ON', a)
+        self.assertIn('gloryStep(now);   // Round 191', a)
         steps = re.findall(r"step\('([^']+)'", a)
         self.assertLess(steps.index('Rebuilding the landmarks'), steps.index('Lighting the streetlamps'))   # the lanterns are known before the light map
 
@@ -134,7 +140,10 @@ class Gating(unittest.TestCase):
         self.assertIn("bar: 'Bar'", a)
         self.assertIn("if (GLORY.ref) add(GLORY.ref.name, GLORY.ref.door[0], GLORY.ref.door[1], 'bar', GLORY.ref);", a)
         self.assertIn("if (e.kind === 'bar' && e.ref) { gloryGoTo(e.ref);", a)
-        self.assertIn("bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(x, z, 1) ? GLORY.ref : null);", a)
+        # no pad (Round 191's review: a metre's pad round a point already 1.5 m into the building hit gave a tap on 128's party
+        # wall Glory's card), and the card asks for the parcel at the business's own point inside its lot
+        self.assertIn("bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(x, z, 0) ? GLORY.ref : null);", a)
+        self.assertIn("if (biz && biz.parcel) { x = biz.parcel[0]; z = biz.parcel[1]; }", a)
         self.assertIn("if (st.biz) { gloryCard(st); return; }", a)
         self.assertIn("const GLORY_OPENS = [720, 960, 960, 960, 720, 720, 720], GLORY_SHUT = 120;", a)
         card = a[a.index('  function gloryCardHead() {'):a.index('  function gloryAt(x, z, pad) {')]
@@ -156,6 +165,33 @@ class Gating(unittest.TestCase):
         g = (ROOT / 'rebuilds' / 'glory.js').read_text()
         self.assertIn("name: 'Glory Beer Bar & Kitchen'", g)
         self.assertNotIn('·', g)
+
+    def test_the_reviews_shader_fixes(self):
+        a = self.app
+        mat = a[a.index('  function gloryFacadeMat(fr) {'):a.index('  function gloryHoursStep() {')]
+        # the bar's glass, the flats' and the two rooms by the face's place in the frame: a mip averages the mask's codes with
+        # the frames' zeros (the bar went black from about 100 m, and the panes flipped between rooms across the street)
+        self.assertIn("'glBar = frMask.r * glLow * (1.0 - step(0.5, glMode));'", mat)
+        self.assertIn("'  float up = step(4.6, glPf.y);'", mat)
+        self.assertNotIn('step(196.0, glB)', mat)
+        self.assertNotIn('step(208.0, glB)', mat)
+        # the numbers (a window's, the height inside it) at the mask's full size; a GL_ macro name is reserved
+        self.assertIn("#define GLMASK0(p) textureGrad(uGlMask, p, vec2(0.0), vec2(0.0))", mat)
+        self.assertNotIn('GL_MASK0', a)
+        # the signs: faces of the near mesh (mode 4), no material of their own
+        self.assertIn("'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv); glRgh = 0.6; }',", mat)
+        self.assertNotIn('function glorySignsMat', a)
+        self.assertNotIn('GLORY.signs', a)
+        # the cafe's chairs a metal, the lanterns' bulb seen through their glass, a recess's shade
+        self.assertIn('metalnessFactor = max(metalnessFactor, glMet);', mat)
+        self.assertIn("'glTex.rgb *= 1.0 - vGl.w / 255.0;',", mat)
+        self.assertIn('glBl = min(glBl, length(glQ - glRd * dot(glQ, glRd)));', mat)
+        # the trade measured and fitted inside the border before it is drawn
+        cv = a[a.index('  function gloryCanvas() {'):a.index('  // an image into a placeholder texture')]
+        self.assertIn('if (wsub > 0.82 * 512) { fs = Math.floor(fs * 0.82 * 512 / wsub); wsub = subW(fs); }', cv)
+        self.assertIn('const gap = 3, total =', cv)
+        # the narrowed one-way block of Chestnut carries no centre line
+        self.assertIn('cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (r.glWalk ||', a)
 
     def test_the_old_look_is_untouched(self):
         a = self.app
@@ -179,11 +215,10 @@ class Def(unittest.TestCase):
     def test_budgets_with_and_without_the_app(self):
         for k in ('stub', 'art'):
             m = self.r[k]['meshes']
-            self.assertEqual(sorted(m), ['glory-far', 'glory-near', 'glory-signs'], k)
-            self.assertLessEqual(m['glory-near']['tris'], 6000, k)
+            self.assertEqual(sorted(m), ['glory-far', 'glory-near'], k)   # one draw near, one far: the signs are near faces
+            self.assertLessEqual(m['glory-near']['tris'] + m['glory-far']['tris'], 6000, k)
             self.assertGreater(m['glory-near']['tris'], 2500, k)
             self.assertLessEqual(m['glory-far']['tris'], 150, k)
-            self.assertLessEqual(m['glory-signs']['tris'], 60, k)
             self.assertLess(self.r[k]['ms'], 300, k)
 
     def test_streams(self):
@@ -195,7 +230,6 @@ class Def(unittest.TestCase):
                 self.assertEqual(m['attrs']['position'][:2], ['Float32Array', 3])
             for name in ('glory-near', 'glory-far'):
                 self.assertEqual(self.r[k]['meshes'][name]['attrs']['aGl'], ['Uint8Array', 4, True])
-            self.assertNotIn('aGl', self.r[k]['meshes']['glory-signs']['attrs'])
 
     def test_it_stands_on_its_lot(self):
         for k in ('stub', 'art'):
@@ -207,6 +241,9 @@ class Def(unittest.TestCase):
     def test_the_app_handles(self):
         c = self.r['art']['calls']
         self.assertEqual(c['lod'], 1)
+        self.assertEqual(c['lodArgs'], [True, True, True])
+        self.assertEqual(c['ref']['parcel'], list(OPA_126))
+        self.assertTrue(inside(*c['ref']['parcel'], LOT))
         self.assertEqual(c['lamps'], 2)
         self.assertEqual(c['occupy'], 1)
         self.assertEqual(c['ref']['name'], 'Glory Beer Bar & Kitchen')
@@ -257,6 +294,28 @@ class Art(unittest.TestCase):
             x0, y0, x1, y1 = p['back']
             self.assertTrue(0 < x0 < x1 < 1 and 0 < y0 < y1 < 1, k)
         self.assertEqual(len(self.m['swatches']), 7)
+        # Round 191's review: the second storey's arches are the real low ones (lower-b's lancets rose 0.58 m), and the
+        # granite swatch tiles at its own coursing, not the 0.45 m ladder
+        self.assertEqual(self.m['gen']['chosen']['lower'], 'lower-e')
+        self.assertLessEqual(L['crown'] - L['spring'], 0.5)
+        self.assertGreaterEqual(self.m['swatches']['granite']['m'], 0.6)
+
+    def test_the_granite_swatch_has_no_joint(self):
+        try:
+            from PIL import Image, ImageFilter
+            import numpy as np
+        except ImportError:
+            raise unittest.SkipTest('PIL or numpy unavailable')
+        with Image.open(ROOT / self.m['img']) as im:
+            a = im.convert('L')
+            W, H = a.size
+            u0, v0, du, dv = self.m['swatches']['granite']['rect']
+            box = (round(u0 * W), round((1 - v0 - dv) * H), round((u0 + du) * W), round((1 - v0) * H))
+            sw = np.asarray(a.crop(box), np.float32) / 255
+        # a joint is a line: a row (or column) whose mean departs from the swatch's by a joint's contrast (the old swatch's
+        # joint and shadow: 0.10 and more)
+        self.assertLess(float(np.abs(sw.mean(1) - sw.mean()).max()), 0.05)
+        self.assertLess(float(np.abs(sw.mean(0) - sw.mean()).max()), 0.05)
 
 
 if __name__ == '__main__':

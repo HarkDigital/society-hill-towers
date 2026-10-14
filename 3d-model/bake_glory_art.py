@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake Glory Beer Bar & Kitchen's art (Round 190) into glory_art.json, which build.py inlines as GLORY_ART, and the images
+"""Bake Glory Beer Bar & Kitchen's art (Round 191) into glory_art.json, which build.py inlines as GLORY_ART, and the images
 themselves into art/glory/ (art_files.py: files the page loads on demand, a phone's half copies beside them).
 
 fetch_glory_art.py makes the two elevations of 126 Chestnut Street with every pane a flat chroma-key green (frames/), the
@@ -10,11 +10,14 @@ upper one again with real glass painted into the key (glass/upper.png), and the 
             projection (BACK below), less the ceiling and the bar's shelving on the right wall;
   (default) finds the key (hue 100 to 140 degrees, saturation over 0.55, value over 0.5, closed by a pixel), measures the
             openings the model must cut from it (the four doors, the four arches and their columns, the twelve windows,
-            in metres on the wall; a measure that fails falls back to the research's nominal numbers WITH A WARNING),
-            fills the key with the frames' own colour pushed in from round it (so no green reaches a mip), pastes the
+            in metres on the wall; a measure that fails falls back to the research's nominal numbers WITH A WARNING, and
+            arches rising more than ARCH_RISE_MAX are refused), fills the lower key and its rim from the dark frames round
+            it and the upper's with the frames' own colour pushed in from round it (so no green and no pale rim reaches a
+            mip), tints the granite toward the street's warm buff (STONE_TINT), pastes the
             glass edit back inside the upper key only, and lays the facade atlas (the lower elevation left, the upper
-            right, both at the same pixels a metre, and a row of tileable swatches under them: granite, brick, concrete,
-            iron, the old sign box's rusty blue, the lanterns' glow and the roof), its mask at half size (an opaque RGB
+            right, both at the same pixels a metre, and a row of tileable swatches under them: granite (jointless patches
+            of the piers' faces, granite_swatch), brick, concrete, iron, the old sign box's peeling blue paint
+            (peel_swatch), the lanterns' glow and the roof), its mask at half size (an opaque RGB
             PNG, never RGBA: bake_fronts.py), the interior atlas (the open rooms at 1024 wide, the closed at 512) and its
             mask, and every half copy.
 The mask: r the glass; g a number per pane (lower) or per window (upper: both sashes); b the upper windows' height inside
@@ -126,6 +129,118 @@ def crowd_zone(kind, W, H):
     return z
 
 
+# Round 191's review: lower-b's second storey was four steep pointed lancets (a church front from across the street). The
+# real storey's soffit dips between the capitals in a low arch of about 0.3 to 0.5 m: a frame whose key-measured rise is
+# over ARCH_RISE_MAX is refused
+ARCH_RISE_MAX = 0.5
+# the granite as the street sees it (refs, gloryphilly IMG6: a warm buff, about (206, 193, 181), hue 30, HSV saturation
+# 0.12): the chosen frame's piers came out at (220, 200, 175), hue 33, and the render's warm sun, its sky fill and the filmic
+# grade carry a stone toward yellow and take half its saturation (rendered with the frame as it came, 0.07 at hue 40 to 46;
+# the first build's 0.04 read as marble), so the stone is tinted a little toward red by STONE_TINT (the frames, the doors
+# and the key are near black or keyed and barely move)
+STONE_TINT = (1.0, 0.965, 0.985)
+
+
+def toward_stone(a, k):
+    return np.where(k[..., None], a, np.clip(a * np.array(STONE_TINT, np.float32), 0, 1))
+
+
+def fill_dark(a, k):
+    """The keyed panes and their anti-aliased rim filled from the dark frame round them only (Round 191's review: filled
+    from every pixel round it, the rim came out a light lavender that traced every pane of the doors and transoms in
+    dashes within about 6 m): the push-pull fill takes only frame pixels (luminance under 0.35) as known, and whatever no
+    frame pixel reaches falls back to fill_key."""
+    dark = (~k) & (lum(a) < 0.35)
+    out = a.copy()
+    known = dark.astype(np.float32)
+    todo = k.copy()
+    for rad in (2, 6, 18):
+        if not todo.any():
+            break
+        w = to_img(np.repeat(known[..., None], 3, -1)).filter(ImageFilter.GaussianBlur(rad))
+        c = to_img(out * known[..., None]).filter(ImageFilter.GaussianBlur(rad))
+        wv = np.asarray(w, np.float32)[..., :1] / 255.0
+        cv = np.asarray(c, np.float32) / 255.0
+        ok = (wv[..., 0] > 0.02) & todo
+        out[ok] = np.clip(cv / np.maximum(wv, 1e-3), 0, 1)[ok]
+        known = np.where(ok, 1.0, known); todo &= ~ok
+    return fill_key(out, todo) if todo.any() else out
+
+
+def granite_swatch(lo, k, meas):
+    """The granite every side, jamb, reveal and soffit wears: four jointless patches of the piers' faces in a 2 by 2 quilt,
+    each with its low frequencies flattened to the stone's mean (no baked shading), so a face tiled with it carries the
+    piers' grain and nothing else. Round 191's review: cut from the band over the doors, the old swatch held a stone joint
+    and its shadow, and tiled at 0.45 m it drew a ladder up every pier side and jamb. A window is jointless when no row's
+    and no column's mean departs from the window's own by a joint's contrast. Returns (image, metres a tile)."""
+    H, W = k.shape
+    pxm = H / H_M
+    side = 0.34
+    n = int(side * pxm)
+    edges = [[0.0, meas['bays'][0][0]]] + [[meas['bays'][i][1], meas['bays'][i + 1][0]] for i in range(3)] + [[meas['bays'][3][1], W_M]]
+    L = lum(lo)
+    cands = []
+    for pi, (e0, e1) in enumerate(edges):
+        if e1 - e0 < side + 0.12:
+            continue
+        cxp = int((e0 + e1) / 2 / W_M * W)
+        for y in np.arange(1.0, meas['doorTop'] - 0.6, 0.08):
+            yy = int(H - (y + side) * pxm)
+            win = L[yy:yy + n, cxp - n // 2:cxp - n // 2 + n]
+            if win.shape != (n, n) or k[yy:yy + n, cxp - n // 2:cxp - n // 2 + n].any():
+                continue
+            hp = win - np.asarray(Image.fromarray((win * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(n / 3)), np.float32) / 255
+            score = max(np.abs(hp.mean(1)).max(), np.abs(hp.mean(0)).max())
+            cands.append((score, pi, y, yy, cxp))
+    cands.sort()
+    pick, used = [], set()
+    for c in cands:
+        if c[1] in used:
+            continue
+        pick.append(c); used.add(c[1])
+        if len(pick) == 4:
+            break
+    while len(pick) < 4:
+        pick.append(cands[len(pick)])
+    mean = np.mean([lo[yy:yy + n, cx - n // 2:cx - n // 2 + n].reshape(-1, 3).mean(0) for _, _, _, yy, cx in pick], 0)
+    q = SW // 2
+    out = np.zeros((SW, SW, 3), np.float32)
+    for i, (_, _, _, yy, cx) in enumerate(pick):
+        p = lo[yy:yy + n, cx - n // 2:cx - n // 2 + n]
+        lowf = np.asarray(to_img(p).filter(ImageFilter.GaussianBlur(n / 4)), np.float32) / 255
+        flat = np.clip(p - lowf + mean, 0, 1)
+        t = np.asarray(tileable(to_img(flat).resize((q, q), Image.LANCZOS)), np.float32) / 255
+        out[(i // 2) * q:(i // 2) * q + q, (i % 2) * q:(i % 2) * q + q] = t
+    print('granite swatch: patches at', [(int(c[1]), round(float(c[2]), 2), round(float(c[0]), 4)) for c in pick])
+    return to_img(out), round(2 * side, 3)
+
+
+def peel_swatch(seed):
+    """The old projecting sign box's face (refs, wanderlog: a pale, faded-blue painted sheet-metal box): the faded blue,
+    blotches where the paint has peeled to a white primer, and rust run down from its seams (the old 'rustblue' was streaky
+    noise and read as stone). Every field is periodic, so the swatch tiles without a cross-fade cutting the blotches."""
+    rs = np.random.RandomState(seed)
+    n = SW
+    def smooth(cells, blur, shape=None):   # periodic value noise: the cells tiled three by three, upsampled, the middle kept
+        z = rs.rand(*(shape or (cells, cells)))
+        big = np.tile(z, (3, 3))
+        h, w = big.shape
+        im = Image.fromarray((big * 255).astype(np.uint8)).resize((3 * n, 3 * n), Image.BICUBIC).filter(ImageFilter.GaussianBlur(blur))
+        z = np.asarray(im, np.float32)[n:2 * n, n:2 * n] / 255
+        return (z - z.min()) / max(z.max() - z.min(), 1e-3)
+    base = np.array([138, 168, 188], np.float32) / 255
+    lo_n, mid = smooth(4, 6), smooth(12, 3)
+    out = base[None, None, :] * (0.9 + 0.18 * lo_n[..., None]) * (0.96 + 0.08 * mid[..., None])
+    peel = (lo_n * 0.6 + mid * 0.4) > 0.68
+    out = np.where(peel[..., None], np.array([226, 226, 216], np.float32) / 255 * (0.92 + 0.08 * mid[..., None]), out)
+    edge = np.roll(peel, 1, 0) | np.roll(peel, -1, 0) | np.roll(peel, 1, 1) | np.roll(peel, -1, 1)
+    out = np.where((edge & ~peel)[..., None], out * 0.8, out)
+    cols = np.clip((smooth(0, 0.6, (1, 23)) - 0.8) / 0.2, 0, 1)   # a few thin runs, strongest under a seam
+    runs = cols * (0.3 + 0.7 * smooth(0, 4, (3, 1)))
+    out = out * (1 - runs[..., None] * 0.6) + np.array([120, 70, 42], np.float32) / 255 * runs[..., None] * 0.6
+    return to_img(out)
+
+
 # the brick's colour on the street (the research: an orange red, #bf856c in an overcast photo): the generated brick came out
 # more saturated (#a86444), and beside the procedural walls of the block it read as painted orange. Its saturation is taken
 # down by BRICK_DESAT about its own luminance (the glass edit gets the same, pasted inside the key afterwards)
@@ -228,20 +343,21 @@ def measure_lower(a, k):
         for g in gh:
             y0, x0, y1, x1 = grow(L, union(g), True)
             arc.append([U(x0), U(x1 + 1)]); sills.append(Y(y1 + 1))
-            # the arch: the topmost dark row at the bay's middle is the crown; the spring the highest row still dark across
-            # nine tenths of the opening
+            # the arch: the topmost dark row at the bay's middle is the crown, and the spring the top of the frame's own stile
+            # 4% of the opening in from either side (Round 191: the old spring, the highest row dark across nine tenths of the
+            # opening, fell 0.6 m down a low arch whose grown box took in a sliver of stone at each side)
             cx, wide = (x0 + x1) // 2, x1 - x0
             yc = y0
             while yc > 0 and L[yc - 1, cx - 2:cx + 3].mean() < 0.32:
                 yc -= 1
-            ys, miss = y1, 0
-            for y in range(y1, yc, -1):   # a frame's bar across the opening (the panel's head) is a few rows, not the arch
-                if (L[y, x0:x1 + 1] < 0.32).mean() < 0.9:
-                    miss += 1
-                    if miss > 8:
-                        break
-                    continue
-                ys, miss = y, 0
+            sides = []
+            for xs in (x0 + max(2, int(0.04 * wide)), x1 - max(2, int(0.04 * wide))):
+                y, light = (y0 + y1) // 2, 0
+                while y > 0 and light < 3:   # up the stile, over a light line or two (a fillet, a highlight)
+                    y -= 1
+                    light = light + 1 if L[y, xs - 1:xs + 2].mean() >= 0.32 else 0
+                sides.append(y + 3)
+            ys = int(np.median(sides))
             springs.append(Y(ys)); crowns.append(Y(yc))
         M['arcade'], M['spring'], M['crown'], M['sill2'] = arc, round(float(np.median(springs)), 3), round(float(np.median(crowns)), 3), round(float(np.median(sills)), 3)
         # the columns: a pair in every gap between two arches, a quarter of the gap either side of its middle
@@ -367,6 +483,7 @@ def main():
     lo, up = load(lowp), load(upp)
     klo, kup = key_of(lo), key_of(up)
     up = toward_brick(up, kup)
+    lo = toward_stone(lo, klo)
     sl, su = float(klo.mean()), float(kup.mean())
     if not (0.15 <= sl <= 0.45) or not (0.10 <= su <= 0.22):
         sys.exit('ERROR: the key covers %.3f of the lower elevation and %.3f of the upper (expected 0.15 to 0.45 and 0.10 to 0.22)' % (sl, su))
@@ -376,6 +493,9 @@ def main():
     meas.update(Ml); meas.update(Mu)
     for w in wl + wu:
         print('WARNING:', w, '(the nominal numbers stand in)')
+    rise = meas['crown'] - meas['spring']
+    if rise > ARCH_RISE_MAX:
+        sys.exit('ERROR: %s\'s arches rise %.2f m over their springing (the real storey\'s low arch is 0.3 to 0.5 m; at most %.2f)' % (F.CHOSEN['lower'], rise, ARCH_RISE_MAX))
     meas['cornice'] = CORNICE.get(F.CHOSEN['lower'], NOMINAL['cornice'])
     # the glass: the edit pasted back inside the key only, else dark glass
     gp = os.path.join(RAW, 'glass', 'upper.png')
@@ -393,7 +513,7 @@ def main():
         upf = np.where(kup[..., None], np.array([0.09, 0.10, 0.11], np.float32), upf)
         glass_src = 'dark'
         print('WARNING: no glass edit yet: the upper windows are dark glass')
-    lof = fill_key(lo, dilate(klo, 2))   # over the key's anti-aliased edge too: no green fringe round a pane in any mip
+    lof = fill_dark(lo, dilate(klo, 2))   # over the key's anti-aliased edge too, from the dark frame only: no green fringe and no pale rim round a pane in any mip
     # ---- the facade atlas
     atlas = Image.new('RGB', (AW, AH), (128, 128, 128))
     xl, xu, ye = PAD, PAD * 3 + EW, PAD
@@ -401,14 +521,8 @@ def main():
     atlas = gutter(atlas, to_img(upf).resize((EW, EH), Image.LANCZOS), xu, ye)
     pxm_src = lo.shape[0] / H_M
     sw_imgs = {}
-    # granite from the plain lintel band over the doors (the piers' shafts carry their own shaded arrises), brick from between
-    # the bottom storey's windows
-    gu0, gu1 = 3.0, 3.45
-    gy0 = (meas['doorTop'] + meas['sill2']) / 2 - 0.2
-    gy1 = gy0 + (gu1 - gu0)
-    crop = to_img(lo).crop((int(gu0 / W_M * lo.shape[1]), int(lo.shape[0] - gy1 * pxm_src), int(gu1 / W_M * lo.shape[1]), int(lo.shape[0] - gy0 * pxm_src)))
-    sw_imgs['granite'] = tileable(crop.resize((SW, SW), Image.LANCZOS))
-    SW_M['granite'] = round(gu1 - gu0, 3)
+    # granite from the piers' faces (granite_swatch), brick from between the bottom storey's windows
+    sw_imgs['granite'], SW_M['granite'] = granite_swatch(lo, klo, meas)
     wn = meas['win']
     bu0, bu1 = wn[0][1] + 0.08, wn[1][0] - 0.08
     by0 = wn[0][2] + 0.25
@@ -418,7 +532,7 @@ def main():
     SW_M['brick'] = round(side, 3)
     sw_imgs['concrete'] = noise_swatch((125, 118, 109), 0.12, 1)
     sw_imgs['iron'] = noise_swatch((38, 40, 42), 0.10, 2)
-    sw_imgs['rustblue'] = noise_swatch((85, 107, 127), 0.16, 3, streak=(122, 74, 50))
+    sw_imgs['rustblue'] = peel_swatch(3)
     sw_imgs['glow'] = noise_swatch((255, 207, 138), 0.03, 4)
     sw_imgs['roof'] = noise_swatch((76, 74, 71), 0.14, 5)
     swatches = {}
@@ -449,8 +563,9 @@ def main():
                 t = np.clip((ys - w[2]) / max(w[3] - w[2], 0.1), 0, 1)
                 b[y0:y1, x0:x1] = (t[:, None] * 64 + 0.5).astype(np.uint8)
         img = Image.fromarray(np.stack([r, g, b], -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.NEAREST)
-        # r eased at the edges (a box resize of the glass alone), g and b nearest
-        rr = to_img(np.repeat(dilate(k, 1)[..., None].astype(np.float32), 3, -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.BOX)
+        # r eased at the edges (a box resize of the glass alone, grown two full-size pixels so it covers the pane's rim: at
+        # one, the rim drew the facade's own colour as a pale line round every pane, Round 191's review), g and b nearest
+        rr = to_img(np.repeat(dilate(k, 2)[..., None].astype(np.float32), 3, -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.BOX)
         arr = np.asarray(img).copy()
         arr[..., 0] = np.asarray(rr)[..., 0]
         y = ye // MASK_DIV
@@ -549,7 +664,7 @@ def main():
 
 # the granite cornice over the second storey [y0, y1] in metres over the sidewalk, measured once by hand on the chosen
 # lower elevation (the corona's foot to the image's top)
-CORNICE = {'lower-b': [8.6, 9.3]}
+CORNICE = {'lower-b': [8.6, 9.3], 'lower-e': [8.78, 9.3]}
 
 if __name__ == '__main__':
     main()

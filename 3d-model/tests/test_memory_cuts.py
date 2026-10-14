@@ -318,8 +318,14 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertEqual(cut(s, '  function loadGroundArt() {', '  let tuftTex = null').count('freeTexOnUpload(t);'), 3)
         # the realism pass: the walls', pitched roofs' and snow's atlases, uploaded once (wallArtTex)
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function wallArtTex(im, aniso) {', '  const WALL_ART_ON'))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 24)   # the definition and its twenty-three uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself; Round 190: gloryLoad, Glory's facade atlas and mask and its rooms and their mask)
-        self.assertIn('tex.dispose(); tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function gloryLoad(tex, full, half, then) {', '  function gloryBlank('))
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 25)   # the definition and its twenty-four uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself; Round 191: gloryLoad, Glory's facade atlas and mask and its rooms and their mask, and Glory's signs' canvas, no longer a material's map since the signs joined the facade's mesh)
+        self.assertIn('tex.dispose(); tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function gloryLoad(tex, full, half, then, pre) {', '  function gloryBlank('))
+        self.assertIn('freeTexOnUpload(GLORY.signTex);', cut(s, '  function gloryFacadeMat(fr) {', '  function gloryHoursStep() {'))
+        # Round 191's review: a phone fetches Glory's art as bytes at the step and decodes it only once the eye comes near
+        # after Enter (the Round 189 rule: no art decoded through the far ring's build)
+        mat = cut(s, '  function gloryFacadeMat(fr) {', '  function gloryHoursStep() {')
+        self.assertIn('if (isTouch) GLORY.pend = go; else go();', mat)
+        self.assertIn('if (GLORY.pend && PERF.enterT && d < GLORY_DECODE_R)', cut(s, '  function gloryStep(now) {', '  function gloryApi() {'))
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

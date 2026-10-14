@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate Glory Beer Bar & Kitchen's own art (Round 190, Mike: "I want City hall and Glory Beer Bar and Kitchen to be
+"""Generate Glory Beer Bar & Kitchen's own art (Round 191, Mike: "I want City hall and Glory Beer Bar and Kitchen to be
 totally revamped"): the two straight-on elevations of 126 Chestnut Street (the granite ground floor and second storey, and
 the three brick storeys over them) and the two rooms seen through its glass (the bar on the ground floor, the board-game
 room upstairs), from OpenAI's image API, written to lidar_cache/glory_art_raw/<stage>/<id>.png with a sidecar <id>.json
@@ -7,7 +7,8 @@ room upstairs), from OpenAI's image API, written to lidar_cache/glory_art_raw/<s
 them into the facade atlas, its mask and the interior atlas rebuilds/glory.js wears.
 
 The stages follow fetch_storefront_art.py's, so the glass is found exactly:
-  frames   lower-a/b and upper-a/b: each elevation with every pane of glass a flat chroma-key green (#00FF00);
+  frames   lower-a to lower-f and upper-a/b: each elevation with every pane of glass a flat chroma-key green (#00FF00)
+           (lower-c to lower-f from LOWER2, Round 191's review: lower-b's arches were gothic lancets);
   glass    upper: the chosen upper frame with real window glass painted into the key through /v1/images/edits (the mask is
            bake_glory_art.py --masks's, transparent over the key). The lower frame keeps its key: the page draws the rooms
            behind those panes itself;
@@ -38,7 +39,9 @@ QUALITY = os.environ.get('GLORY_ART_QUALITY', 'high')
 SIZES = {'lower': '1536x1664', 'upper': '1536x1664', 'ground': '1536x784', 'upperroom': '1536x608'}
 FALLBACK = {'1536x1664': '1024x1104', '1536x784': '1024x528', '1536x608': '1024x400'}
 # the variants picked by eye (bake_glory_art.py reads these)
-CHOSEN = {'lower': 'lower-b', 'upper': 'upper-b', 'ground': 'ground-empty-b', 'upperroom': 'upper-empty-a'}
+# Round 191: lower-e (the pairs of plump Tuscan columns, a low arch, two casements a bay, doors glazed to a short kick rail;
+# lower-f's columns were slender, lower-c and lower-d stood single columns)
+CHOSEN = {'lower': 'lower-e', 'upper': 'upper-b', 'ground': 'ground-empty-b', 'upperroom': 'upper-empty-a'}
 
 ENDING = ('Soft even overcast daylight with no cast shadows. No people, no cars, no trees, no signs, no lettering, no '
           'numbers, no logos, no lamps, no awnings, no railings, no planters. Photorealistic, high detail, natural colours.')
@@ -60,6 +63,37 @@ LOWER = ('Architectural front elevation photograph, perfectly orthographic and s
          'pair of tall black steel casement windows with small rectangular panes, three wide and seven tall, the top row '
          'following the arch, above a plain dark painted metal panel about 60 cm tall at the sill. '
          'A projecting moulded granite cornice crowns the second storey. ' + KEY.format(stone='granite') + ' ' + ENDING)
+# Round 191, the review: lower-b's second storey came out as four steep pointed lancets under moulded hood arches on thin
+# ringed colonnettes, a church front from across the street, though LOWER asked for "shallow pointed four-centred" arches.
+# The real storey is a flat granite lintel on plump paired Tuscan columns whose soffit dips between the capitals in a very
+# low arch (a rise of about 0.3 to 0.5 m), two separate black steel casements in each bay with no hood and no tracery; and
+# the doors are glazed nearly to a short kick rail, and the granite is a warm buff. LOWER2 says so in metres, and the bake
+# refuses a frame whose key-measured arch rise is over ARCH_RISE_MAX (bake_glory_art.py). lower-c and lower-d (the first
+# wording) stood single columns between the bays, so the pairs are spelled out for lower-e and lower-f
+LOWER2 = ('Architectural front elevation photograph, perfectly orthographic and straight-on, of the ground floor and the '
+          'second storey of ONE narrow 1853 Greek Revival granite store front on Chestnut Street in Old City, Philadelphia, '
+          '8.6 metres wide and 9.3 metres tall. The facade fills the frame edge to edge: the left and right edges are the '
+          'party walls (no neighbours), the bottom edge is the sidewalk, the top edge is the top of the granite cornice (no '
+          'brick above, no sky). The stone is smooth dressed warm buff-cream granite, a light warm beige (never grey, never '
+          'white), lightly weathered with faint soot, its joints few and far apart. '
+          'GROUND FLOOR, the bottom 45 percent of the image: five plain square granite piers with simple moulded block '
+          'capitals at 4 metres divide four equal bays; the two end piers are narrower. Each bay holds a pair of very tall '
+          'narrow wooden doors painted near-black, each leaf glazed almost to the floor with small panes two wide and six '
+          'tall over only a short solid kick rail about 30 centimetres high, under a two-pane transom, in a dark painted '
+          'wooden frame. A plain smooth granite band runs across the whole width over the capitals, then a thin projecting '
+          'granite sill course at 4.9 metres. '
+          'SECOND STOREY, from 4.9 to 8.6 metres: four tall window bays. Between each two bays stands a COUPLED PAIR of '
+          'engaged round Tuscan columns, two columns side by side almost touching, so the storey has six columns in three '
+          'pairs (plain smooth shafts about 30 centimetres thick, a plain rounded cushion capital under a square abacus, a '
+          'simple base, no rings, no flutes), with a flat plain pilaster at each end. Over the columns a flat plain '
+          'granite lintel runs straight across the whole width. Between each pair of capitals the lintel\'s underside dips '
+          'in one very shallow, nearly flat segmental arch that rises only 35 centimetres over the 1.5 metre bay: it springs '
+          'at the capitals at 7.9 metres and its middle is at 8.25 metres. The arches are NOT pointed and NOT gothic: no '
+          'lancets, no hood mouldings, no tracery, no keystones, no mouldings round the arches. Each bay holds TWO separate '
+          'tall black steel casement windows side by side, meeting at a plain centre mullion, each casement three panes wide '
+          'and seven panes tall with its top edge following the shallow arch, over a plain dark painted metal panel about 50 '
+          'centimetres tall at the sill. '
+          'A projecting moulded granite cornice crowns the second storey from 8.6 to 9.3 metres. ' + KEY.format(stone='granite') + ' ' + ENDING)
 UPPER = ('Architectural front elevation photograph, perfectly orthographic and straight-on, of the third, fourth and fifth '
          'storeys of ONE narrow 1853 Greek Revival commercial building on Chestnut Street in Old City, Philadelphia, 8.6 '
          'metres wide. The facade fills the frame edge to edge: left and right edges are the party walls (no neighbours), '
@@ -97,6 +131,8 @@ def jobs(stage):
     """(id, kind, prompt, size) for a stage."""
     if stage == 'frames':
         return [('lower-a', 'lower', LOWER, SIZES['lower']), ('lower-b', 'lower', LOWER, SIZES['lower']),
+                ('lower-c', 'lower', LOWER2, SIZES['lower']), ('lower-d', 'lower', LOWER2, SIZES['lower']),
+                ('lower-e', 'lower', LOWER2, SIZES['lower']), ('lower-f', 'lower', LOWER2, SIZES['lower']),
                 ('upper-a', 'upper', UPPER, SIZES['upper']), ('upper-b', 'upper', UPPER, SIZES['upper'])]
     if stage == 'rooms':
         g = ROOM_FRAME.format(room=GROUND_ROOM[0], inside=GROUND_ROOM[1])

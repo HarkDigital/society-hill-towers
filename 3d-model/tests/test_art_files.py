@@ -28,7 +28,7 @@ def paths(o):
 
 MANIFESTS += ('vehicle_art.json',)   # the vehicles' (the realism pass)
 MANIFESTS += ('storefront_art.json',)   # the storefronts' shopfronts (Round 189)
-MANIFESTS += ('glory_art.json',)   # Glory Beer Bar & Kitchen's elevations, swatches and rooms (Round 190)
+MANIFESTS += ('glory_art.json',)   # Glory Beer Bar & Kitchen's elevations, swatches and rooms (Round 191)
 
 
 class Files(unittest.TestCase):
