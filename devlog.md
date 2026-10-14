@@ -9121,3 +9121,16 @@ Not done:
     18k triangles in a mirror; tiles would add draw calls to every main pass); the names question above (Mike's); the
     core's walls in the host notes (fronts there). Still waiting on API credit: the 24 borrowed second-set interiors and the
     3 missing frames.
+
+## Round 190 — the pins grow smaller as you come on (Oct 14)
+
+- Mike, with a screenshot of the Langstroth marker's pin filling half the view from the sidewalk on Front Street: "Pins need
+  to scale down in size as you get closer to them." Every pin (SEPTA, Indego, the aircraft, ships, Amtrak, the ferry, PATCO,
+  the closures, the markers and the art, the bus stops and stations, the libraries and rec centres) took the aircraft badge's
+  rule from Round 31, distance / 135 held at 2.2 at least: past 300 m a pin keeps its size on the screen, and from 300 m in
+  it stood at its full 10 by 12.6 m and grew on the screen as the eye came on, fifteen times its far size at 20 m.
+- `pinScaleAt(d, cap)`, the one rule for all eleven: the far size on the screen to `PIN_NEAR_D` 300 m (unchanged there, no
+  jump at the knee), easing down to `PIN_NEAR_K` of it at `PIN_NEAR_D0` 30 m and closer: 0.6 on a computer, 0.75 on a phone,
+  which keeps more to tap. Measured on the Langstroth marker at 1280 by 800: 120 m, about 70 px tall before and 16 after;
+  10 m, a 10 m billboard before and a 13 px badge on top of the post after. `tests/test_pin_scale.py` runs the rule under
+  node (the far size, the knee, the near fraction, never larger closer in, the caps).
