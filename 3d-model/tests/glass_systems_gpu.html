@@ -1,6 +1,6 @@
 <!doctype html><meta charset="utf-8"><title>Curtain Wall Checks</title>
 <style>body{background:#15212c;color:#eee;font:14px/1.5 system-ui;padding:24px}pre{white-space:pre-wrap}</style>
-<h1>Curtain Wall Checks</h1><p>Round 192's curtain-wall shader (glassSysHook) on a real VBuf wall, in both depth modes: the glass gains reflection at grazing angles, reflects the probe bound as its own envMap (never scene.environment), the frame atlas draws mullions where the procedural frame did, the panes bow their own ways near the eye and fold into a smooth mean far off, the rooms light by the clock at night and stay dark by day, and every frame is the same twice.</p><pre id="result">Running…</pre>
+<h1>Curtain Wall Checks</h1><p>Round 192's curtain-wall shader (glassSysHook) on a real VBuf wall, in both depth modes: the glass gains reflection at grazing angles, reflects the probe bound as its own envMap (never scene.environment), the frames' texture array draws mullions where the procedural frame did, a wall two hundred metres off keeps its floor lines (the review's flat slabs), the panes bow their own ways near the eye and fold into a smooth mean far off, the rooms light by the clock at night and stay dark by day, and every frame is the same twice.</p><pre id="result">Running…</pre>
 <script src="../three.min.js"></script><script>
 (async()=>{
  const src=await(await fetch('../app.js',{cache:'no-store'})).text();
@@ -9,7 +9,7 @@
  const VBuf=new Function('THREE','freeOnUpload',cut('  class IdxBuf {','  const groupCity')+'return VBuf;')(THREE,()=>{});
  const loadImg=(u)=>new Promise((res,rej)=>{const im=new Image();im.onload=()=>res(im);im.onerror=rej;im.src='../'+u;});
  const check=(ok,msg)=>{if(!ok)throw Error(msg);},results=[],errors=[];const oldError=console.error;console.error=(...a)=>{errors.push(a.join(' '));oldError(...a);};
- const msk=await loadImg(art.mask);
+ const frames=await loadImg(art.frames);
  for(const logarithmicDepthBuffer of [false,true]){
   const r=new THREE.WebGLRenderer({antialias:false,logarithmicDepthBuffer});r.setSize(128,128);r.outputEncoding=THREE.LinearEncoding;r.setClearColor(0);
   const nightUniform={value:0},sunWUniform={value:new THREE.Vector3(0,1,0)};
@@ -36,16 +36,24 @@
   const lum=(c)=>.2126*c[0]+.7152*c[1]+.0722*c[2];
   // the procedural frame first (no atlas: a tier-2 phone, ?glassart=0); the day rooms off while the reflection is judged
   G.glassU.uGlassOn.value=0;G.glassU.uGlassK.value.y=0;
+  G.CITYENV.u.uGlassIrrS.value.setRGB(0,0,0);G.CITYENV.u.uGlassIrrG.value.setRGB(0,0,0);   // the frames' sky fill off while the glass's reflection is judged
   const face=center(render([0,20,40],[0,20,0])),grazing=center(render([25,20,4],[-20,20,0]));
   check(lum(grazing)>lum(face)*1.6,'no Fresnel gain at grazing '+JSON.stringify({face,grazing}));
   check(face[2]>face[0]*1.5,'the glass does not reflect its own probe (blue) '+face);
   const again=render([0,20,40],[0,20,0]);check(again.every((v,i)=>Math.abs(v-render([0,20,40],[0,20,0])[i])<1e-6),'two identical frames differ');
   // the atlas: a row of pixels across a few bays near the eye holds frames (bright) and glass (dark) where the bays are
-  const tex=(im,srgb)=>{const t=new THREE.Texture(im);if(srgb)t.encoding=THREE.sRGBEncoding;t.needsUpdate=true;return t;};
-  G.glassU.uGlassMsk.value=tex(msk,false);G.glassU.uGlassOn.value=1;
+  const arr=new THREE.DataArrayTexture(frames,art.tile,art.tile,16);arr.format=THREE.RGBAFormat;arr.type=THREE.UnsignedByteType;
+  arr.wrapS=arr.wrapT=THREE.RepeatWrapping;arr.magFilter=THREE.LinearFilter;arr.minFilter=THREE.LinearMipmapLinearFilter;arr.generateMipmaps=true;arr.needsUpdate=true;
+  G.glassU.uGlassArr.value=arr;G.glassU.uGlassOn.value=1;
   const near=render([0,20,6],[0,20,0]);
   const row=[];for(let x=0;x<128;x++){let s=0;for(let y=60;y<68;y++)s+=lum([near[(y*128+x)*4],near[(y*128+x)*4+1],near[(y*128+x)*4+2]]);row.push(s/8);}
   const rmin=Math.min(...row),rmax=Math.max(...row);check(rmax>rmin*1.5,'no frame structure across the bays near the eye '+rmin+' '+rmax);
+  // two hundred metres off a floor is about five pixels and a bay under two: the floor lines stay (each axis its own
+  // footprint), with the array and with the procedural frame
+  const floorLines=()=>{const f=render([0,40,196],[0,40,0]),col=[];for(let y=40;y<88;y++){let s=0;for(let x=56;x<72;x++)s+=lum([f[(y*128+x)*4],f[(y*128+x)*4+1],f[(y*128+x)*4+2]]);col.push(s/16);}
+   const m=col.reduce((a,q)=>a+q,0)/col.length;return Math.sqrt(col.reduce((a,q)=>a+(q-m)*(q-m),0)/col.length)/Math.max(m,1e-6);};
+  const linesArr=floorLines();G.glassU.uGlassOn.value=0;const linesProc=floorLines();G.glassU.uGlassOn.value=1;
+  check(linesArr>0.03&&linesProc>0.03,'a wall 200 m off lost its floor lines '+JSON.stringify({linesArr,linesProc}));
   // the panes: under a striped probe the pane centres near the eye differ (each bows its own way); far off they fold smooth
   G.glassU.uGlassK.value.w=1;
   const nearP=render([0,40,12],[0,40,0]),farP=render([0,40,1500],[0,40,0]);
@@ -57,13 +65,13 @@
   // the rooms: at night with every room taken the glass glows, by day with the rooms dark it does not
   G.glassU.uGlassK.value.y=1.5;
   scene.environment=null;mat.envMap=pm.fromScene(new THREE.Scene(),0).texture;
-  G.occU.uOcc.value.set(1,1,0,1290);nightUniform.value=1;const nightC=center(render([0,20,30],[0,20,0]));
+  G.occU.uOcc.value.set(1,1,0,1290);nightUniform.value=1;G.glassU.uGlassL.value.x=1;const nightC=center(render([0,20,30],[0,20,0]));
   G.occU.uOcc.value.set(0,0,0,1290);const emptyC=center(render([0,20,30],[0,20,0]));
   check(lum(nightC)>lum(emptyC)*3&&lum(nightC)>0.02,'the lit rooms do not glow '+JSON.stringify({nightC,emptyC}));
-  nightUniform.value=0;sunWUniform.value.set(0,1,0);const dayC=center(render([0,20,30],[0,20,0]));
+  nightUniform.value=0;G.glassU.uGlassL.value.x=0;sunWUniform.value.set(0,1,0);const dayC=center(render([0,20,30],[0,20,0]));
   check(lum(dayC)<lum(nightC),'the day rooms outshine the lit night '+JSON.stringify({dayC,nightC}));
   check(errors.length===0,'Shader errors '+errors.join('\n'));check(r.getContext().getError()===0,'WebGL error');
-  results.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',face,grazing,frameRow:[rmin,rmax],bowNear,flatNear,nightC,emptyC,dayC});
+  results.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',face,grazing,frameRow:[rmin,rmax],linesArr,linesProc,bowNear,flatNear,nightC,emptyC,dayC});
   target.dispose();blue.dispose();red.dispose();pm.dispose();mat.dispose();r.dispose();r.forceContextLoss();
  }
  document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);

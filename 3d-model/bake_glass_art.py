@@ -18,16 +18,19 @@ object. The art:
   opaque RGB PNG (never RGBA: WebKit's premultiplied decode), holds r the vision glass, g the secondary glass (the
   spandrel's or the railing's), b the frame's detail (its luminance over twice the frame's mean: the page multiplies the
   system's frame colour by twice it, so a fragment makes one fetch; the albedo itself is written only to --preview). Measured per cell: the vision band's sill and head
-  (fractions of a floor), the vision and secondary coverage and the frame's mean colour (linear), which the page draws in
-  place of the texture where a pane is under three pixels.
+  (fractions of a floor), the vision and secondary coverage and the frame's mean colour (linear).
 - rooms: eight interiors through /v1/images/edits on the one-point perspective template room_template draws (the back wall
   a centred rectangle at B_SCALE of the image, so the page's interior mapping knows where every face lies); each checked
   against the template (the back wall's four edges within 3% of where they were drawn), with its day mean (the picture at a
   quarter, a room by daylight) and its lit mean. The model keeps the view but not the back wall's size, so each room's
   back wall is measured (BACK) and the page projects through its own scale and vanishing point.
 
-Shelf-packed into a 2048 x 1024 frame atlas (gutters filled by wrapping the cell, so a sample past its edge is the
-module's own continuation) and a 1536 x 1152 room atlas (cells 384 x 576), each with a half copy for a phone.
+Round 192's review: the frames are one strip of sixteen square tiles (TILE a side, a system a tile, the module resampled
+periodically, its foot the tile's first row), which the page uploads as a texture array with REPEAT wrapping and a full
+chain of mips, so the hardware filters each axis by its own footprint all the way down to the module's mean (the old
+2048 x 1024 shelf atlas held each cell's gradient inside an 8-pixel gutter and dropped every wall to its flat mean a block
+or two out). A phone takes the half strip. The rooms are one 1536 x 1152 atlas (cells 384 x 576), a computer's only (a
+phone never draws them, so no half copy).
 
 Usage: python3 bake_glass_art.py [--preview DIR] [--template OUT.png]"""
 import argparse, json, math, os, sys
@@ -39,10 +42,9 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 RAW = os.path.join(HERE, 'lidar_cache', 'glass_art_raw')
 SYSTEMS = os.path.join(HERE, 'glass_systems.json')
 OUT = os.path.join(HERE, 'glass_art.json')
-PXM = 64            # atlas pixels a metre
+PXM = 64            # the fold's pixels a metre
 CELL_MAX = 512
-PAD = 8
-AW, AH = 2048, 1024
+TILE = 256          # the frame strip's tile a side (a phone's half strip: 128)
 RW, RH, RCW, RCH = 1536, 1152, 384, 576   # the room atlas and its cells
 B_SCALE = 0.5       # the template's back wall, a fraction of the picture each way
 KEY_LO, KEY_HI = 0.25, 0.6
@@ -284,26 +286,13 @@ def bake_frame(sysd, fr):
     return A, M, info
 
 
-def gutter(arr, pad):
-    """A cell wrapped round by pad pixels each way (the module's own continuation)."""
-    return np.pad(arr, ((pad, pad), (pad, pad), (0, 0)), mode='wrap')
-
-
-def pack(sizes, W, H, pad):
-    """Shelf packing, tallest first: [x, y] of each cell's inner corner (top-left, image rows down), or None."""
-    order = sorted(range(len(sizes)), key=lambda i: -sizes[i][1])
-    pos = [None] * len(sizes)
-    x = y = sh = 0
-    for i in order:
-        w, h = sizes[i][0] + 2 * pad, sizes[i][1] + 2 * pad
-        if x + w > W:
-            x, y, sh = 0, y + sh, 0
-        if y + h > H:
-            return None
-        pos[i] = [x + pad, y + pad]
-        x += w
-        sh = max(sh, h)
-    return pos
+def tile(arr, T):
+    """A module (H, W, 3 uint8, exactly periodic) resampled to T x T periodically (Lanczos over the module tiled three by
+    three, the middle kept), flipped so its foot is the tile's first row (the page uploads the strip with flipY off)."""
+    h, w = arr.shape[:2]
+    big = Image.fromarray(np.tile(arr, (3, 3, 1))).resize((3 * T, 3 * T), Image.LANCZOS)
+    t = np.asarray(big)[T:2 * T, T:2 * T]
+    return np.ascontiguousarray(t[::-1])
 
 
 def room_template(W=1024, H=1536, b=B_SCALE):
@@ -370,18 +359,16 @@ def bake_rooms(preview):
                       'drift': round(worst, 4)})
         if kind not in kinds:
             kinds.append(kind)
-    half = atlas.resize((RW // 2, RH // 2), Image.LANCZOS)
     if preview:
         atlas.save(os.path.join(preview, 'rooms-atlas.jpg'), quality=88)
     return {'rooms': art_files.write(atlas, 'glass', 'rooms', 'WEBP', quality=85, method=6),
-            'roomsHalf': art_files.write(half, 'glass', 'rooms-half', 'WEBP', quality=80, method=6),
             'roomSize': [RW, RH], 'roomCells': cells}, None
 
 
 def bake(preview):
     S = json.load(open(SYSTEMS))
     out = {'v': 1, 'systems': S['systems'], 'towers': S['towers'], 'generic': S['generic'], 'glassKinds': S['glassKinds'],
-           'styleDefault': S['styleDefault'], 'rooms': None, 'mask': None}
+           'styleDefault': S['styleDefault'], 'rooms': None, 'frames': None}
     cells, arts, why = [], [], []
     for sysd in S['systems']:
         fr = os.path.join(RAW, 'frames', 'sys%02d-%s.png' % (sysd['id'], sysd['name']))
@@ -399,27 +386,19 @@ def bake(preview):
         if preview:
             Image.fromarray(A).save(os.path.join(preview, 'sys%02d-alb.png' % sysd['id']))
             Image.fromarray(M).save(os.path.join(preview, 'sys%02d-mask.png' % sysd['id']))
-            tile = np.tile(A, (3, 4, 1))
-            Image.fromarray(tile).save(os.path.join(preview, 'sys%02d-tiled.jpg' % sysd['id']), quality=88)
+            tl = np.tile(A, (3, 4, 1))
+            Image.fromarray(tl).save(os.path.join(preview, 'sys%02d-tiled.jpg' % sysd['id']), quality=88)
     for w in why:
         print('  ' + w)
     if len(cells) == len(S['systems']):
-        pos = pack([c['size'] for c in cells], AW, AH, PAD)
-        if pos is None:
-            sys.exit('ERROR: the frame cells do not fit a %d x %d atlas' % (AW, AH))
-        alb = np.zeros((AH, AW, 3), np.uint8); msk = np.zeros((AH, AW, 3), np.uint8)   # the albedo only for the preview
-        for c, (A, M), (x, y) in zip(cells, arts, pos):
-            w, h = c['size']
-            alb[y - PAD:y + h + PAD, x - PAD:x + w + PAD] = gutter(A, PAD)
-            msk[y - PAD:y + h + PAD, x - PAD:x + w + PAD] = gutter(M, PAD)
-            # in texture uv, as the page samples it (flipY: v from the atlas's foot)
-            c['rect'] = [round(x / AW, 6), round(1 - (y + h) / AH, 6), round(w / AW, 6), round(h / AH, 6)]
-        ai, mi = Image.fromarray(alb), Image.fromarray(msk)
-        out.update({'mask': art_files.write(mi, 'glass', 'glass-mask', 'PNG', optimize=True),
-                    'maskHalf': art_files.write(mi.resize((AW // 2, AH // 2), Image.BILINEAR), 'glass', 'glass-mask-half', 'PNG', optimize=True),
-                    'size': [AW, AH], 'pad': PAD, 'cells': sorted(cells, key=lambda c: c['sys'])})
+        strip = np.concatenate([tile(M, TILE) for (A, M) in arts], axis=0)   # sixteen tiles, system 0 first
+        si = Image.fromarray(strip)
+        half = np.concatenate([tile(M, TILE // 2) for (A, M) in arts], axis=0)
+        out.update({'frames': art_files.write(si, 'glass', 'glass-frames', 'PNG', optimize=True),
+                    'framesHalf': art_files.write(Image.fromarray(half), 'glass', 'glass-frames-half', 'PNG', optimize=True),
+                    'tile': TILE, 'cells': sorted(cells, key=lambda c: c['sys'])})
         if preview:
-            ai.save(os.path.join(preview, 'atlas-alb.png')); mi.save(os.path.join(preview, 'atlas-mask.png'))
+            si.save(os.path.join(preview, 'frames-strip.png'))
         rooms, err = bake_rooms(preview)
         if rooms:
             out['rooms'] = rooms
@@ -431,8 +410,8 @@ def bake(preview):
     with open(OUT, 'w') as f:
         json.dump(out, f, separators=(',', ':'))
         f.write('\n')
-    print('glass_art.json: %d systems, %d towers, atlas %s, rooms %s; pruned %d' % (len(out['systems']), len(out['towers']),
-          'yes' if out['mask'] else 'no', 'yes' if out['rooms'] else 'no', gone))
+    print('glass_art.json: %d systems, %d towers, frames %s, rooms %s; pruned %d' % (len(out['systems']), len(out['towers']),
+          'yes' if out['frames'] else 'no', 'yes' if out['rooms'] else 'no', gone))
 
 
 def main():

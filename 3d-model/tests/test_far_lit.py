@@ -100,14 +100,16 @@ class FarLit(unittest.TestCase):
         self.assertIn('max(log2(max(2.0 * fpx, vec2(1.0e-6))), 0.0)', self.glsl)
 
     def test_the_glass_towers_far_rooms(self):
-        """Round 192: the curtain wall's far rooms (GLASS_SYS_PARS / GLASS_SYS_MAIN) on every device, never FAR_LIT's blocks:
-        an office floor's lit run is its true share under the pixel (gRunCover, the run [0, L) of period n over [a, b]), the
-        floors under two pixels are bands lit at the floor runs' mean (0.675 of a floor's rooms, 12% of them dark: 0.594), and
-        the light is blended finished (the room's colour times the lit share, never the two blended apart, Round 159)."""
+        """Round 192: the curtain wall's far rooms (GLASS_SYS_PARS / GLASS_SYS_MAIN) on every device, never FAR_LIT's blocks
+        nor blocks of its own (the review: lit mosaics 4 to 16 rooms across): an office floor's lit run is its true share under
+        the pixel (gRunCover, the run [0, L) of period n over [a, b]); a pixel over more than half a floor is the mean of three
+        taps across its footprint, each its own floor's run at its suite's level, so the strips stay a floor high until a floor
+        is under a pixel and then give way to the share; a home's specks are the rooms at the pixel's four corners, each at its
+        lamp's own level (mean 0.731), and the light is blended finished (Round 159)."""
         pars = re.search(r'const GLASS_SYS_PARS = `(.*?)`;', self.src, re.S).group(1)
         main = re.search(r'const GLASS_SYS_MAIN = `(.*?)`;', self.src, re.S).group(1)
         self.assertNotIn('farLitCells', pars + main)
-        self.assertIn('max(log2(max(2.0 * fpx, vec2(1.0e-6))), 0.0)', pars)   # the glass's own blocks: two pixels at least
+        self.assertNotIn('gFarBlocks', pars + main)
         def cover(a, b, L, n):
             ia = math.floor(a / n) * L + min(a - math.floor(a / n) * n, L)
             ib = math.floor(b / n) * L + min(b - math.floor(b / n) * n, L)
@@ -116,11 +118,14 @@ class FarLit(unittest.TestCase):
         for L, n in ((3, 10), (7, 9), (1, 4)):
             self.assertAlmostEqual(cover(0.0, float(n), L, n), L / n, places=6)
             self.assertAlmostEqual(cover(0.37, 0.37 + 50 * n, L, n), L / n, places=3)
-        # the run's mean length is mix(0.35, 1.0, u) for a uniform u: 0.675, and 12% of its rooms dark
-        self.assertAlmostEqual((0.35 + 1.0) / 2 * 0.88, 0.594, places=3)
-        self.assertIn('* 0.594 + uOcc.z * 0.08', main)
-        self.assertIn('gRoomN = nightC * lit * uGlassK.x;', main)
-
+        self.assertIn('for (int t = -1; t <= 1; t++) {', main)
+        self.assertIn('float f = floor(yF + float(t) * fy / 3.0), hF = gh(vec2(f, wallSeed * 3.1));', main)
+        self.assertIn('litFar = mix(m / 3.0, share, smoothstep(2.0, 4.0, fy));', main)
+        # a lamp's level (0.18 + 1.05 r^2) / 0.725 over a uniform r: its mean
+        self.assertAlmostEqual((0.18 + 1.05 / 3) / 0.725, 0.731, places=3)
+        self.assertIn('return step(1.0 - share, h) * (0.18 + 1.05 * r2 * r2) / 0.725 * 0.45;', pars)
+        self.assertIn('litFar = mix(litFar, share * 0.731 * 0.45,', main)
+        self.assertIn('gRoomN = mix(farC * litFar, nearC * lit, nearK) * uGlassK.x;', main)
 
 if __name__ == '__main__':
     unittest.main()

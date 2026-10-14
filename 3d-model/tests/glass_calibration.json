@@ -1,0 +1,166 @@
+{
+ "note": "glass_calibrate.py: each researched tower's glass at the standard noon poses against its reference swatch (CIE76 delta E)",
+ "fingerprint": "6c480fc3282f7d62",
+ "swatches": {
+  "Comcast Center": {
+   "hex": "#8FA3AE",
+   "poses": [
+    "skyline-sw-day",
+    "lowflight-day"
+   ],
+   "tol": 15
+  },
+  "Comcast Technology Center": {
+   "hex": "#A9B6BA",
+   "poses": [
+    "skyline-sw-day",
+    "south-day"
+   ],
+   "tol": 15
+  },
+  "One Liberty Place": {
+   "hex": "#5D7F9E",
+   "poses": [
+    "skyline-sw-day",
+    "lowflight-day"
+   ],
+   "tol": 15
+  },
+  "Two Liberty Place": {
+   "hex": "#5D7F9E",
+   "poses": [
+    "skyline-sw-day",
+    "lowflight-day"
+   ],
+   "tol": 15
+  },
+  "Cira Centre": {
+   "hex": "#A7B5C0",
+   "poses": [
+    "south-day"
+   ],
+   "tol": 15
+  },
+  "The Laurel Rittenhouse Square (1911 Walnut)": {
+   "hex": "#8E8A82",
+   "poses": [
+    "skyline-sw-day",
+    "lowflight-day"
+   ],
+   "tol": 15
+  }
+ },
+ "measured": {
+  "Comcast Center": {
+   "skyline-sw-day": {
+    "mean": [
+     125.3,
+     137.3,
+     143.3
+    ],
+    "px": 160,
+    "dE": 10.1
+   },
+   "lowflight-day": {
+    "mean": [
+     123.8,
+     131.6,
+     134.1
+    ],
+    "px": 2681,
+    "dE": 12.9
+   }
+  },
+  "Comcast Technology Center": {
+   "skyline-sw-day": {
+    "mean": [
+     140.1,
+     148.1,
+     151.1
+    ],
+    "px": 929,
+    "dE": 12.5
+   },
+   "south-day": {
+    "mean": [
+     140.6,
+     149.4,
+     153.0
+    ],
+    "px": 901,
+    "dE": 12.0
+   }
+  },
+  "One Liberty Place": {
+   "skyline-sw-day": {
+    "mean": [
+     127.3,
+     145.0,
+     156.6
+    ],
+    "px": 1345,
+    "dE": 14.2
+   },
+   "lowflight-day": {
+    "mean": [
+     115.7,
+     132.4,
+     143.7
+    ],
+    "px": 10393,
+    "dE": 12.6
+   }
+  },
+  "Two Liberty Place": {
+   "skyline-sw-day": {
+    "mean": [
+     123.2,
+     142.5,
+     155.4
+    ],
+    "px": 805,
+    "dE": 12.9
+   },
+   "lowflight-day": {
+    "mean": [
+     109.5,
+     127.5,
+     139.8
+    ],
+    "px": 8567,
+    "dE": 11.6
+   }
+  },
+  "Cira Centre": {
+   "south-day": {
+    "mean": [
+     138.8,
+     154.6,
+     163.0
+    ],
+    "px": 460,
+    "dE": 10.2
+   }
+  },
+  "The Laurel Rittenhouse Square (1911 Walnut)": {
+   "skyline-sw-day": {
+    "mean": [
+     153.8,
+     156.3,
+     154.6
+    ],
+    "px": 2360,
+    "dE": 8.0
+   },
+   "lowflight-day": {
+    "mean": [
+     151.9,
+     150.4,
+     145.4
+    ],
+    "px": 23296,
+    "dE": 5.0
+   }
+  }
+ }
+}

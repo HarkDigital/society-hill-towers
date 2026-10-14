@@ -60,6 +60,8 @@ class Files(unittest.TestCase):
         for p in named:
             if '-half' in p or '-mask' in p:
                 continue
+            if p.startswith('art/glass/rooms.'):   # Round 192's review: the glass's room pictures are a computer's (a phone never draws them)
+                continue
             kind, name = p.split('/')[1], p.split('/')[2].split('.')[0]
             self.assertTrue(any(q.startswith('art/%s/%s-half.' % (kind, name)) for q in named), p)
 
