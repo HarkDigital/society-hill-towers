@@ -9381,8 +9381,9 @@ Not done:
 - Integration: the cut-outs' own program is folded back (under the log depth buffer every program writes gl_FragDepth, so
   it kept no early depth test for the rest; it cost a colour draw, a shadow draw and a program), the cut gated on the
   balustrade's cell, `chCutDepth` the near level's shadow; the near level switches at 400 m on a computer (at 650 it is 40
-  px wide; the 400 m pairs differ by a mean of 0.74 north and 0.49 at 760 m, the far level now keeping the wings' dormers
-  and the flanks' trim); a failed build takes back its meshes, themed parts and ground claims and lets Round 81's block
+  px wide; the far level now keeps the wings' dormers and the flanks' trim, and the levels forced at 400 m differ on 0.5
+  per cent of the pixels by more than 24 from the north and 1.6 from the west, most of it the traffic between the two
+  shots; 0.36 per cent at 760 m); a failed build takes back its meshes, themed parts and ground claims and lets Round 81's block
   stand (`chBuildSafe`: the landmark block in the outer districts' step has the loop's own CH, the chunk size, so it names
   none of City Hall's state); the stale tier 2 comment is gone.
 - Not done: Penn up close is still Round 84's primitives with the arms the photographs show (to offer Mike: the coat's
