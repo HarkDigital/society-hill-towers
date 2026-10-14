@@ -266,7 +266,7 @@ class PinAsync(unittest.TestCase):
         script = r'''
 const THREE = require(THREE_PATH);
 (async () => {
-const window = { innerWidth: 800, innerHeight: 400 }, isTouch = TOUCH, scene = { add() {} };
+const window = { innerWidth: 800, innerHeight: 400 }, isTouch = TOUCH, scene = { add() {} }, zrevDT = () => undefined;   // zrevDT: Round 192's reversed Z, off here
 let frameNo = 1;
 const G = { PIXEL_PACK_BUFFER: 0x88EB, STREAM_READ: 0x88E1, SYNC_GPU_COMMANDS_COMPLETE: 0x9117, SYNC_STATUS: 0x9114, SIGNALED: 0x9119, UNSIGNALED: 0x9118, NO_ERROR: 0,
   bound: null, lost: false, err: 0, signal: false, fences: 0, deleted: 0, log: [], data: null,

@@ -9872,3 +9872,169 @@ Not done:
 ### Renders
 - landmarks/glory/fix3: r1 and r2 (computer), phone (six poses and three of the integration review's), lite2 (tier 2),
   hitch (the trace), g0 and r0 (`?glory=0`, `?real=0`), look/ (crops, pairs, the band prototype).
+
+## Round 192, reversed-Z depth (Oct 14)
+
+- Mike asked for an innovative way to hold about 60 fps. The investigation (four measurements, four designs, two spikes,
+  two independent checks) found that most of each frame went on shading city nobody sees: r149's logarithmic depth buffer
+  writes `gl_FragDepth` from every fragment of every program, and a shader that writes depth loses the GPU's early depth
+  test and, on Apple's tile GPUs, hidden-surface removal, so the 7 to 17 layers each pixel rasterizes are all shaded in
+  full. Phase 1 of its plan ships here: reversed-Z float depth through `EXT_clip_control`, the default wherever it can be
+  had, rebased from perf spike 1 (branch perf/perf-spike1, d144d3f and 83744ca) onto Round 191's main and finished.
+- Nothing changes on the screen: the parity renders below match the old build within the run-to-run noise except a
+  fine, even speckle of 1 to 4 levels on far edges (the four samples of a multisampled pixel each keep their own depth
+  now, where the log buffer handed them the fragment's one), and the frames are 1.1 to 6 times faster (nothing is
+  gained where nothing is hidden: a view of the sky alone).
+
+### The depth mode
+- A throwaway WebGL 2 context must report `EXT_clip_control` AND a complete 4x multisampled `DEPTH32F_STENCIL8`
+  framebuffer over RGBA8 (and over RGBA16F where the post pipeline will own the frame) (`zrevCheck`); the same context also
+  answers the post pipeline's float question, so the load makes no extra context. The real context then passes the same
+  check before anything is built on it; if it does not (never seen), its canvas is swapped for a fresh one and the page
+  builds on log depth, since the phone path's reversed canvas has no depth buffer of its own.
+- Without the extension, or with `?zbuf=log`, the page is r149's log depth as before; `?logdepth=0` is still plain 24-bit
+  depth (it z-fights on the tower skins from the air, the spike measured 8,297 px). `ZPROBE` holds the answers.
+- How it draws (the spike's design, unchanged): inside `renderer.render` every perspective camera's z row is rewritten so
+  the near plane is depth 1 and the far plane 0, the clip control is ZERO_TO_ONE, the depth clears to 0 and every depth
+  function is flipped (LESS to GREATER) through a wrapped `setFunc` whose cache holds the flipped value; outside the call
+  `camera.projectionMatrix` is three's own, so every `.project()`, ray, label and pin gate is untouched. The shadow pass
+  and orthographic cameras keep the standard convention. The render lists' z sorts and the frustum's far plane are put
+  right, r149's PMREM gets a depth clear. The wrappers are one function now, `zrevInstall`, run under Node by the tests.
+- Float depth wherever a perspective camera draws: the post pipeline's multisampled target and the river mirror re-specify
+  three's depth renderbuffer as `DEPTH32F_STENCIL8` (`zrevFloatDepth`), the phone draws into its own 4x RGBA8 +
+  `DEPTH32F_STENCIL8` target blitted to a canvas made without antialias or depth (`zrevPresent`; its depth is invalidated
+  before the resolve so a tiled GPU never stores it), and the pins' capture and both taps take a float depth texture.
+- The far facades' vertex-depth twins (`VDEPTH`, Round 168) exist only under log depth; under reversed Z every program
+  already keeps its early test, so they stay off.
+
+### The spike's loose ends
+- Planes over the clouds: the spike's depth-free deck let an airliner above the cloud base draw in front of the cloud it
+  stands behind. Every aircraft over the lowest base on the screen now gets a rectangle of the drawing buffer round its
+  bounding sphere (`cloudRects`: sixteen at most, merged nearest-together past that; a sphere the near plane cuts takes the
+  screen), the depth-free twin discards inside them, and `cloudDeckZ`, the depth-writing program cut to them
+  (`CLOUD_RECT_IN`) and scissored to their union, draws them exactly as the deck always did. The same pixel test in both
+  programs, so they tile the screen. A held airliner at 1,272 m behind an overcast and a drizzle deck is veiled as before;
+  with the rectangles off (`__dbg.cloudRects(false)`, the spike's behaviour) it shows through (work/plane4-crops.png).
+  All three cloud programs compile behind the veil (`CLOUDZ.warm`), none in flight.
+- The mirror's stencil: the spike gave the river mirror a float depth texture and no stencil, so the vehicle shadows in
+  the reflection could darken twice. It keeps `DEPTH24_STENCIL8`'s stencil as `DEPTH32F_STENCIL8`. The parity renders
+  caught one more thing here: `zrevFloatDepth` makes the target's framebuffers, and three sets a target texture's
+  parameters only then, so called before the mirror's anisotropy it left the mirror without its anisotropic filter and
+  the boathouses' reflections smeared to a blur (the pixel statistics called it a mean of 1.5; the eye caught it). The
+  anisotropy is set first now, and a test holds the order.
+- The mirror with no river in view: when no frustum corner ray climbs from the water the spike set the reversed row to
+  null, and the mirror drew with the plain projection, everything under the water included. The row's slope is floored
+  instead; the water still clips, and nothing over it reaches the image either, which is what such a view reflects.
+- The clear to the near plane: a `renderer.clear()` made outside a render clears to 1, the near plane in reversed Z, so a
+  reversed render that keeps the depth it finds would draw nothing. Every such clear is remembered by its target; a
+  perspective render with `autoClear` (or `autoClearDepth`) off on a target last cleared that way, or under r149's PMREM,
+  clears to 0 first (`ZREV.cleared`, `ZREV.guard`). Today only PMREM needs it (1,128 guarded clears over 40 poses, all
+  of them its probe faces); every other pass clears inside its own render.
+- The direct MSAA-to-canvas blit works only because r149's context is alpha:true (the check's standalone probe failed it
+  with INVALID_OPERATION on an alpha:false canvas), so the two-step fallback stays: the first present checks its blit and
+  falls back to a resolve into a plain RGBA8 renderbuffer and a copy.
+- The camera's projection row was saved in a Float32Array and put back rounded to float32 after every render: doubles now.
+
+### The clouds under both depth modes
+- `CLOUD_NOZ`, the deck's twin that writes no depth and sits on the far plane, is drawn under the low bank's lowest base
+  minus 25 m in both depth modes (`cloudDeckStep`), with the aircraft's rectangles in both. Under log depth it buys less
+  than the measurements promised: on this Mac's GPU (ANGLE over Metal) the depth the other programs wrote from their
+  fragments seems to cost the twin its early rejection too; `?zbuf=log` against the old build gains 14 to 50 ms at
+  Retina only where the deck covers much of the screen behind near walls (City Hall's front, Glory, Sansom), nothing from
+  the air, and 2 to 14 ms on the phone path.
+- `?cloudz=old` still keeps the depth-writing deck everywhere, and plain depth (`?logdepth=0`) always does.
+
+### The Mac's resolution controller
+- frame() abandoned the trial on any frame of 250 ms or more (`dprGap`). Mike's Mac at 1.75 has a 95th percentile of 133
+  to 433 ms, so its controller almost never acted (beacons: it stayed at 1.75, at 1.49 in its best session). A frame of
+  250 ms or more is a slow frame now, judged with the rest (the window's mean leaves out its slowest fifth); only time
+  away from the page is a gap: a page hidden now or since the last frame (`DPR.away`, set by visibilitychange) or a frame
+  over `DPR_AWAY` 4 s. Simulated in `tests/test_dpr_controller.py`: a fill-bound Mac with a tail of 300 ms frames steps
+  from 1.75 to the floor in about 80 s (the old rule never moved it), a 400 ms hitch every 10 s on a fast Mac moves
+  nothing, the minute in the background and a reported two-second absence still abandon the trial.
+
+### The beacon
+- Every beacon carries `zc`: the mode (`rev`, `log` or `std`, a `q` when a flag forced it), the throwaway context's two
+  answers (the extension, then the framebuffer; `-` when not asked), an `x` when the real context refused what the
+  throwaway one granted, and the blit (`d` direct, `t` two-step, `p` the post pipeline's own resolve, `-` none yet), with a
+  trailing `0` if a float depth target came back incomplete. Chrome on this Mac: `rev.11.p` (computer), `rev.11.d` (phone
+  path); `?zbuf=log`: `logq.--.-`. After the TestFlight build, Mike's iPhone will say whether iOS 18.7 has the extension.
+
+### Measured
+- Interleaved A/B/L in one headless Chrome 155 over Metal on the M2 Max (A the old build at b2938ce, B this one, L this
+  one with `?zbuf=log`), rotating blocks of drained frames at each pose, minimum and block-median deltas; other processes
+  held 76 to 92% of the GPU throughout (the Simulator, the Claude app, WindowServer), so only same-run ratios are robust.
+  Draw calls and triangles match pose for pose; where a run's earlier poses left the arms in different states (Spruce at
+  Retina, the waterfront at 1 MP) they differ both ways, and Spruce alone draws 513 calls and 8.07 M triangles in both.
+- Retina (1728 by 1117 at 1.75), minimum ms A / B, B over A: aerial 116 / 73 (0.63), sp90 135 / 75 (0.56), Broad 144 / 43
+  (0.30), Sansom 179 / 30 (0.17), Spruce 134 / 59 (0.44), waterfront 81 / 65 (0.80), night aerial 124 / 78 (0.63), rain
+  sp90 133 / 74 (0.55), close against City Hall's north front 154 / 34 (0.22), Glory 170 / 42 (0.25), storm at 420 m 112 / 69 (0.61),
+  the 64-frame flight 149 / 81 (0.55). Block-median deltas 22 to 161 ms.
+- 1 MP (1280 by 800): aerial 63 / 42 (0.67), sp90 63 / 33 (0.52), Broad 85 / 24 (0.28), Sansom 70 / 21 (0.30), Spruce 70 /
+  28 (0.40), waterfront 27 / 24 (0.88), night aerial 67 / 49 (0.73), rain 50 / 35 (0.70), City Hall 81 / 23 (0.28), Glory
+  76 / 21 (0.28), storm 46 / 42 (0.91), flight 73 / 38 (0.52).
+- Phone path (touch, 925 by 450): aerial 32.5 / 23.9 (0.74), sp90 30.7 / 17.8 (0.58), Broad 34.2 / 14.5 (0.42), Sansom
+  35.1 / 14.0 (0.40), night aerial 48.9 / 34.8 (0.71), rain 45.3 / 17.9 (0.40), City Hall 26.4 / 13.7 (0.52), Glory 37.4 /
+  13.7 (0.37), storm 31.6 / 21.9 (0.69), flight 41.8 / 22.1 (0.53).
+- Real WebKit (a WKWebView on macOS 26, the engine of Safari and of the iOS app; the check's harness, A and B
+  interleaved): `EXT_clip_control` and the framebuffer granted, `rev.11.p` on the computer and `rev.11.d` (the direct blit)
+  on the phone path, no console errors. Retina, minimum ms A / B: aerial 145 / 81 (0.56), sp90 151 / 86 (0.57), Broad
+  196 / 43 (0.22), Sansom 195 / 34 (0.17), Spruce 159 / 63 (0.40), waterfront 94 / 71 (0.76), night aerial 150 / 89
+  (0.59), rain 157 / 90 (0.57), storm 125 / 74 (0.59), the Schuylkill 117 / 74 (0.63), City Hall 161 / 42 (0.26) and at
+  night 210 / 47 (0.22), Glory 186 / 39 (0.21) and at night 188 / 39 (0.21), pins in Old City 149 / 73 (0.49), an
+  airliner behind an overcast (the sky alone) 185 / 198 (1.07). Phone path: aerial 30 / 23, sp90 27 / 19, Broad 30 / 16,
+  Sansom 28 / 16, night aerial 33 / 25, rain 29 / 20, storm 31 / 24, City Hall 29 / 14, Glory 31 / 13 and at night 35 /
+  15, pins 38 / 20, the overcast sky 22 / 14.
+- The sky alone (looking up into the deck from 10 m, Chrome Retina): 166 / 162 overcast, 84 / 89 clear, within this
+  machine's noise either way; nothing is hidden there for the early test to save.
+- Phone memory (the capture skill's measure.mjs: phone emulation on SwiftShader, which grants the extension too,
+  `rev.11.d`): GPU by the hook 873 / 906 / 930 MB at ready, after the first frames and after the look round, against
+  886 / 919 / 943 (+13 MB); live heap 126 / 137 / 138 MB in both, peak 279 MB in both. The hook counts every
+  renderbuffer at 4 bytes a sample and never the canvas: the +13 MB is the phone's own 4x RGBA8 and 4x float depth
+  target, which takes the place of the canvas's 4x backbuffer and its depth that the hook never saw; counted honestly
+  the change is +2 to +7 MB (the float depth at 5 to 8 bytes a sample). The pins' two capture targets' float depth is
+  about 0.4 MB more than their 16-bit renderbuffers.
+- What it means for Mike (estimated from his beacons times these ratios): his Mac's 100 ms median at 1.75 becomes about
+  55 to 65 ms from the air and 20 to 45 ms at street level, and the repaired controller can now trade resolution for the
+  rest. On the iPhone, if iOS 18.7 has the extension, a faster frame shows as sharpness at 30 fps (PACE and the Graphics
+  ladder), not as 60 fps; that is the plan's later phases and Mike's call.
+
+### Parity
+- Chrome, the computer path, 48 poses (day, night, rain, storm, fog, the fifteen hard poses of the check: the climb through
+  the cloud switch at 735 to 775 m, inside and over the deck, the Schuylkill mirror, the Delaware from 8 m, the bridge and
+  Broad Street at night; City Hall and Glory close up, day and night; the mirror at Boathouse Row and the Expressway; pins
+  in Old City, by City Hall, at Reading Terminal and at night; an airliner held behind overcast, drizzle and a clear deck),
+  each in A, B, L and a second A (the noise). B against A: mean 0.1 to 4.1 levels (the aerial poses highest), the second A
+  against A 0.0 to 4.8 (moving traffic). The diff images are a fine speckle on far edges, no structural difference; plain
+  depth's `?logdepth=0` differs from A by more than B does at the same poses (aerial 3.7 against 3.0), which puts the
+  speckle on the per-sample depth and not on reversed Z. L against A is the noise everywhere (the log fallback with the
+  depth-free deck draws the old picture).
+- One-pixel seams resolve differently in places: at Glory across the street at night a single row on the cornice under
+  the sign is the band's lighter face under reversed Z where the log buffer drew the darker one.
+- The phone path, 15 poses: the same picture.
+- The storm at 360 m once came out brighter in B and in L: a synthetic lightning flash (random by design), gone on a rerun.
+- WebKit, 16 computer poses at 3024 by 1954 and 12 on the phone path (lossless PNGs): B against A mean 0.0 to 1.7 on
+  the computer, 0.3 to 2.8 on the phone (traffic and pins coming and going), the same picture. The marker pins in Old
+  City were missing from the second arm of the computer run; rerun with B first and `?zbuf=log` second they show in B
+  and are missing from the second arm again: the harness's second view, not the depth.
+- Picks and taps: `pickAt` at 35 points from the air hits the same object at the same distance and point in A and B;
+  four building taps open the same cards.
+- `?real=0`: eight poses, the old palette under reversed Z against it under log depth: the same fine edge speckle
+  (aerial 4.1, Glory 0.1), the same picture; the only console lines are the old 'Unable to serialize Texture' warnings.
+
+### Not done
+- City Hall's balustrade cut stays in its main program (fix2 folded it back because log depth gave the split nothing);
+  under reversed Z a program that discards keeps its early test only in part on Apple's GPUs, and splitting the cut back
+  out would buy something at City Hall close up. Not measured separately.
+- Anything that ever stands over 400 m (the storm's lowest base) other than an aircraft would need the aircraft's
+  treatment; today the tallest thing in the city stands at about 357 m.
+- iOS: untested on a phone (no device here). The `zc` beacon will answer from Mike's iPhone.
+- Windows (D3D11): `DEPTH32F_STENCIL8` may cost about 95 MB more GPU memory at Retina there (the spike's estimate); untested.
+- Phases 2 to 5 of the plan (visibility, the frame budget, the far picture, the near-first load).
+
+### Renders and data
+- scratchpad perf/phase1/build: work/sheet-desk-1..4.jpg, work/sheet-ch2-1.jpg, work/sheet-phone-1..2.jpg (A, B, L,
+  |B-A| x4, |A2-A| x4 per pose; the statistics in work/parity-*.txt), work/sheet-wk-desk-1..2.jpg and
+  work/sheet-wk-phone-1..2.jpg (WebKit), work/sheet-real0.jpg, work/plane4-crops.png (the aircraft), work/crop2-*.png and
+  work/final-mirror.png (the mirror), timing/*.json and timing/table-chrome.txt, the tools in tools/ (tri.mjs with an arm
+  per page, wk2, shots.sh, parity.py, wksheet.py, table.py, memory/).

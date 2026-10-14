@@ -73,7 +73,7 @@ class Pace(unittest.TestCase):
         i = src.index('  const DPR = { cap: renderer.getPixelRatio()')
         literal = src[i:src.index('\n', i)]
         block = src[src.index('  const DPR_SLOW = '):src.index('  renderer.setSize(window.innerWidth, window.innerHeight);')]
-        h = src.index('    if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);')
+        h = src.index('    if (!once && !DPR.pinned && DPR.live && (document.hidden || DPR.away || rawMs >= DPR_AWAY)) { if (!document.hidden) DPR.away = false; dprGap(now); }')
         hook = src[h:src.index('    if (introSpin && !interacted)', h)]
         hook = 'const paceJudge = true;\n' + hook
         script = HARNESS.replace('DPR.live = true;', 'DPR.live = true;\n' + prelude)

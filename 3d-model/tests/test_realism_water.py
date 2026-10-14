@@ -348,7 +348,7 @@ console.log(JSON.stringify(r));
         body = refl[refl.index('    const C = REFL.cam;'):refl.index('    C.projectionMatrixInverse.copy(C.projectionMatrix).invert();')]
         js = """
 const THREE = require('./three.min.js');
-const W0 = -7.34, REFL_FAR = 3500;
+const W0 = -7.34, REFL_FAR = 3500, ZREV = { on: false };   // ZREV: Round 192's reversed Z, off here
 const REFL = { cam: new THREE.PerspectiveCamera() };
 const waterU = { uReflMat: { value: new THREE.Matrix4() } };
 const _rfA = new THREE.Vector3(), _rfN = new THREE.Vector3(0, 1, 0), _rfP = new THREE.Plane(), _rfV = new THREE.Vector4(), _rfQ = new THREE.Vector4();
@@ -425,7 +425,7 @@ console.log(JSON.stringify({ ms, wet, miss, sch: at(-2950, -1000), grown: at(-27
         body = refl[refl.index('    const C = REFL.cam;'):refl.index('    C.projectionMatrixInverse.copy(C.projectionMatrix).invert();')]
         head = """
 const THREE = require('./three.min.js');
-const W0 = -7.34, REFL_FAR = 3500;
+const W0 = -7.34, REFL_FAR = 3500, ZREV = { on: false };   // ZREV: Round 192's reversed Z, off here
 const REFL = { cam: new THREE.PerspectiveCamera(), box: null };
 const waterU = { uReflMat: { value: new THREE.Matrix4() } };
 const _rfA = new THREE.Vector3(), _rfN = new THREE.Vector3(0, 1, 0), _rfP = new THREE.Plane(), _rfV = new THREE.Vector4(), _rfQ = new THREE.Vector4();

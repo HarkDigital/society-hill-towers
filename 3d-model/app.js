@@ -61,7 +61,7 @@
   const LABEL_FADE = [540, 880];
 
   // ---------------------------------------------------------------- dom
-  const canvas = document.getElementById('gl');
+  let canvas = document.getElementById('gl');   // (let: Round 192's reversed depth swaps it for a fresh one if the real context fails its check)
   const veil = document.getElementById('veil');
   const btnEnter = document.getElementById('btnEnter');
   const loadmsg = document.getElementById('loadmsg');
@@ -149,7 +149,8 @@
       sa: safe(() => (navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches ? 1 : 0), ''),
       nav: nav && nav.type ? String(nav.type)[0] : '', hc: nav && nav.transferSize === 0 && nav.decodedBodySize > 0 ? 1 : 0, sw: nav && nav.workerStart > 0 ? 1 : 0,
       rd: safe(() => DPR.cur.toFixed(2), ''), pv: safe(() => (bootPrev && bootPrev.step ? String(bootPrev.step).slice(0, 24) : ''), ''),
-      pc: safe(() => (bootPrev && bootPrev.ctx ? String(bootPrev.ctx).replace(/[^\w.,:-]/g, '').slice(0, 80) : ''), '') };   // Round 167: what the last session was doing when its crumb was last written
+      pc: safe(() => (bootPrev && bootPrev.ctx ? String(bootPrev.ctx).replace(/[^\w.,:-]/g, '').slice(0, 80) : ''), ''),   // Round 167: what the last session was doing when its crumb was last written
+      zc: safe(() => zcField(), '') };   // Round 192: the depth mode, its probe's answers and the blit that ran (zcField)
     if (extra) for (const k in extra) if (extra[k] != null) q[k] = extra[k];
     const url = BEACON + '?' + new URLSearchParams(q).toString();
     try { fetch(url, { method: 'POST', keepalive: true, referrerPolicy: 'no-referrer', cache: 'no-store' }).catch(() => {}); }
@@ -401,27 +402,273 @@
   }
 
   let renderer;
+  // ---- the depth mode (Round 192, Mike: hold about 60 fps). Reversed-Z float depth is the default wherever it can be had:
+  // a throwaway WebGL 2 context must report EXT_clip_control AND a complete 4x multisampled DEPTH32F_STENCIL8 framebuffer
+  // (over RGBA8, and over RGBA16F where the post pipeline will own the frame), and the real context then passes the same
+  // check before anything is built on it (if it does not, that canvas is swapped for a fresh one and the page builds on
+  // log depth). Without it the page keeps r149's logarithmic depth buffer, the depth every build before Round 192 drew
+  // with. ?zbuf=log forces log depth, ?zbuf=rev is the default spelled out, and ?logdepth=0 is still plain 24-bit depth
+  // (the old escape hatch, which z-fights on the tower skins from the air). ZPROBE holds the answers for the zc beacon
+  const ZPROBE = { mode: '', forced: false, e: '-', f: '-', real: '', why: '' };
+  // a context's answer: the extension, and the multisampled float depth framebuffer complete over each colour format the
+  // frame will use. Raw GL on a context three may already hold: everything bound is put back to nothing, as three left it
+  function zrevCheck(g, post, out) {
+    try {
+      if (!g) return false;
+      const X = g.getExtension('EXT_clip_control');
+      out.e = X ? 1 : 0;
+      if (!X) return false;
+      for (let k = 0; k < 8 && g.getError() !== g.NO_ERROR; k++);   // an error left from before is not this check's
+      const fb = g.createFramebuffer(), c = g.createRenderbuffer(), d = g.createRenderbuffer();
+      const n = Math.min(4, g.getParameter(g.MAX_SAMPLES) || 4);
+      let ok = true;
+      g.bindFramebuffer(g.FRAMEBUFFER, fb);
+      for (const fmt of post ? [g.RGBA8, g.RGBA16F] : [g.RGBA8]) {
+        g.bindRenderbuffer(g.RENDERBUFFER, c); g.renderbufferStorageMultisample(g.RENDERBUFFER, n, fmt, 16, 16);
+        g.bindRenderbuffer(g.RENDERBUFFER, d); g.renderbufferStorageMultisample(g.RENDERBUFFER, n, g.DEPTH32F_STENCIL8, 16, 16);
+        g.framebufferRenderbuffer(g.FRAMEBUFFER, g.COLOR_ATTACHMENT0, g.RENDERBUFFER, c);
+        g.framebufferRenderbuffer(g.FRAMEBUFFER, g.DEPTH_STENCIL_ATTACHMENT, g.RENDERBUFFER, d);
+        if (g.checkFramebufferStatus(g.FRAMEBUFFER) !== g.FRAMEBUFFER_COMPLETE) ok = false;
+      }
+      g.bindFramebuffer(g.FRAMEBUFFER, null); g.bindRenderbuffer(g.RENDERBUFFER, null);
+      g.deleteFramebuffer(fb); g.deleteRenderbuffer(c); g.deleteRenderbuffer(d);
+      for (let k = 0; k < 8 && g.getError() !== g.NO_ERROR; k++) ok = false;   // an error on the way is a refusal too (and leaves none behind)
+      out.f = ok ? 1 : 0;
+      return ok;
+    } catch (e) { out.why = 'check: ' + String(e && e.message || e).slice(0, 40); return false; }
+  }
   try {
-    // Log depth EVERYWHERE. The Aug-24 Safari standard-depth fallback was built
-    // for the "hollow buildings" report, which round 4 proved was an earcut
-    // cap-winding bug, not Safari — and standard depth over a 26 km far plane
-    // quantizes the few-cm flat separations into heavy z-fight shimmer on
-    // phones (every iPhone browser is Safari-engined). Keep ?logdepth=0 as an
-    // escape hatch if a real per-fragment-depth defect ever surfaces.
-    const qsDepth = /[?&]logdepth=(\d)/.exec(location.search);
-    window.__useLogDepth = qsDepth ? qsDepth[1] === '1' : true;
+    const qsDepth = /[?&]logdepth=(\d)/.exec(location.search), qsZ = /[?&]zbuf=(rev|log)\b/.exec(location.search);
+    // log depth (r149's, from Aug 24 to Round 191 everywhere): standard depth over a 26 km far plane quantizes the few-cm flat
+    // separations into heavy z-fight shimmer, which is why ?logdepth=0 stays an escape hatch only
+    let mode = qsZ && qsZ[1] === 'log' ? 'log' : qsDepth ? (qsDepth[1] === '1' ? 'log' : 'std') : 'rev';
+    ZPROBE.forced = !!(qsDepth || (qsZ && qsZ[1] === 'log'));
+    const bloomOff = /[?&]bloom=0/.test(location.search);
+    // one throwaway context answers both questions, before the real one exists
+    const g2 = (!isTouch && !bloomOff) || mode === 'rev' ? (() => { try { return document.createElement('canvas').getContext('webgl2'); } catch (e) { return null; } })() : null;
     // the post pipeline resolves its own 4x multisampled float target, so the canvas skips the
-    // browser's multisampled backbuffer when the pipeline will own the frame (probed on a
-    // throwaway context here, before the real one exists; POST.on repeats the test on it)
-    const postCapable = !isTouch && !/[?&]bloom=0/.test(location.search) && (() => {
-      try { const c2 = document.createElement('canvas'); const g2 = c2.getContext('webgl2'); if (!g2) return false; const ok = !!g2.getExtension('EXT_color_buffer_float'); const lose = g2.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); return ok; } catch (e) { return false; }
-    })();
-    renderer = new THREE.WebGLRenderer({ canvas, antialias: !postCapable, powerPreference: 'high-performance', logarithmicDepthBuffer: window.__useLogDepth });
+    // browser's multisampled backbuffer when the pipeline will own the frame (POST.on repeats the test on the real context)
+    const postCapable = !isTouch && !bloomOff && (() => { try { return !!g2 && !!g2.getExtension('EXT_color_buffer_float'); } catch (e) { return false; } })();
+    if (mode === 'rev' && !zrevCheck(g2, postCapable, ZPROBE)) { mode = 'log'; ZPROBE.why = ZPROBE.why || (ZPROBE.e === 1 ? 'no 4x DEPTH32F_STENCIL8' : g2 ? 'no EXT_clip_control' : 'no WebGL 2'); }
+    try { const lose = g2 && g2.getExtension('WEBGL_lose_context'); if (lose) lose.loseContext(); } catch (e) { /* gone either way */ }
+    const make = (m) => {
+      window.__useLogDepth = m === 'log';
+      window.__zrevWant = m === 'rev';
+      window.__zrevSub = m === 'rev' && !postCapable;   // no post pipeline: the frame goes into ZREV's own multisampled target and is blitted to the canvas
+      return new THREE.WebGLRenderer(window.__zrevSub ? { canvas, antialias: false, depth: false, stencil: false, powerPreference: 'high-performance', logarithmicDepthBuffer: false }
+        : { canvas, antialias: !postCapable, powerPreference: 'high-performance', logarithmicDepthBuffer: window.__useLogDepth });
+    };
+    renderer = make(mode);
     if (!renderer.getContext()) throw new Error('no context');
+    if (mode === 'rev') {
+      const real = { e: '-', f: '-', why: '' };
+      if (!renderer.capabilities.isWebGL2 || !zrevCheck(renderer.getContext(), postCapable, real)) {
+        // the real context refused what the throwaway one granted: this canvas's context was made without a depth buffer (the
+        // phone path), so the page starts again on a fresh canvas with log depth (nothing is built yet, nothing holds the old one)
+        ZPROBE.real = 'x'; ZPROBE.why = 'real context: ' + (real.why || (real.e === 1 ? 'no 4x DEPTH32F_STENCIL8' : 'no EXT_clip_control'));
+        try { renderer.dispose(); renderer.forceContextLoss(); } catch (e2) { /* gone either way */ }
+        const fresh = canvas.cloneNode(false); canvas.replaceWith(fresh); canvas = fresh;
+        mode = 'log';
+        renderer = make(mode);
+        if (!renderer.getContext()) throw new Error('no context');
+      }
+    }
+    ZPROBE.mode = mode;
+    if (ZPROBE.why) console.warn('zbuf: log depth (' + ZPROBE.why + ')');
   } catch (e) {
     document.getElementById('nogl').style.display = 'flex';
     veil.style.display = 'none';
     return;
+  }
+  // ---- reversed-Z depth (Round 192, from perf spike 1). r149's logarithmic depth buffer writes gl_FragDepth from every
+  // fragment of every program, which turns off the early depth test and Apple's hidden-surface removal: each of the 7 to
+  // 17 fragments a pixel rasterizes is shaded in full (measured: ?logdepth=0 took Retina street frames from 147 to 60 ms,
+  // and this mode 2.3 to 4.3 times faster at street level, 1.3 to 1.9 from the air, in Chrome and in WebKit). Reversed Z
+  // keeps the depth in the vertex stage and beats the 24-bit log buffer's precision everywhere past a metre (a float's
+  // mantissa where the depth is near 0, that is, far away): EXT_clip_control puts the clip volume's depth at 0..1, every
+  // perspective camera draws with its z row rewritten so the near plane is depth 1 and the far plane 0 (only inside
+  // renderer.render: camera.projectionMatrix stays three's own everywhere else, so every .project(camera), ray and label
+  // is untouched), the depth clears to 0 and LESS becomes GREATER while that camera draws. Shadow maps and orthographic
+  // passes keep the standard convention (the clip control is switched back for them). The depth must be float to gain
+  // anything: the post pipeline's multisampled target and the river mirror's take DEPTH32F_STENCIL8 renderbuffers in place
+  // of r149's DEPTH24_STENCIL8 (zrevFloatDepth; the stencil is the vehicle shadows'), a phone renders into ZREV's own 4x
+  // multisampled RGBA8 + DEPTH32F_STENCIL8 framebuffer that is blitted to a canvas created without antialias or depth
+  // (zrevFB, zrevPresent, with the two-step blit kept: the direct one works only because r149's context is alpha:true),
+  // and the small targets (the pins' capture, the taps) take a float depth texture (zrevDT). A renderer.clear() made
+  // outside a reversed render clears to 1, the NEAR plane here, so a reversed render that does not clear for itself clears
+  // the depth again to 0 first if the last thing done to its target was such a clear (zrevRender: ZREV.cleared; r149's
+  // PMREM never clears at all and gets the same). Nothing in the page may write gl_FragDepth for a perspective camera but
+  // the cloud deck (cloudFrag), which writes the reversed value itself
+  const ZREV = { on: false, why: ZPROBE.why, ext: null, active: false, sub: false, clip: null, frus: false, fb: null, rbC: null, rbD: null, w: 0, h: 0, samples: 0,
+    status: 0, renders: 0, noClear: 0, guard: 0, cleared: null, presents: 0, blit: '', blitErr: 0, rfb: null, rrb: null, cloud: '', rects: 0,
+    cloudOld: /[?&]cloudz=old\b/.test(location.search) };
+  if (window.__zrevWant) {
+    ZREV.ext = renderer.getContext().getExtension('EXT_clip_control');
+    ZREV.on = !!ZREV.ext;   // (the real context's check above already holds it)
+  }
+  const zrevDT = (w, h) => (ZREV.on ? new THREE.DepthTexture(w, h, THREE.FloatType) : undefined);   // a small target's float depth (DEPTH_COMPONENT32F)
+  // the wrappers that make three draw reversed: run once, on the real renderer (and under Node by tests/test_zbuf.py)
+  function zrevInstall(R) {
+    const X = ZREV.ext, st = R.state, D = st.buffers.depth;
+    const clip = (rev) => { if (ZREV.clip !== rev) { X.clipControlEXT(X.LOWER_LEFT_EXT, rev ? X.ZERO_TO_ONE_EXT : X.NEGATIVE_ONE_TO_ONE_EXT); ZREV.clip = rev; } };
+    clip(false);
+    // three's depth functions: Never 0, Always 1, Less 2, LessEqual 3, Equal 4, GreaterEqual 5, Greater 6, NotEqual 7. Its cache
+    // holds what it was handed, so handing it the flipped value keeps the cache true to the GL state either way (a falsy
+    // function is three's LEQUAL, so GEQUAL)
+    const FLIP = [0, 1, 6, 5, 4, 3, 2, 7], setFunc0 = D.setFunc;
+    D.setFunc = function (f) { return setFunc0.call(this, ZREV.active ? (f ? FLIP[f] : 5) : f); };
+    const enter = () => { ZREV.active = true; clip(true); D.setClear(0); };
+    const leave = () => { ZREV.active = false; ZREV.frus = false; clip(false); D.setClear(1); };
+    // the frustum three culls by: with depth 0 at the far plane its sixth plane is z >= 0, the z row alone (three reads the
+    // -1..1 convention's w + z). One shot: the first frustum a reversed render computes is its own (the shadow pass's come
+    // after it, and leave() has spent the shot by then)
+    const F0 = THREE.Frustum.prototype.setFromProjectionMatrix;
+    THREE.Frustum.prototype.setFromProjectionMatrix = function (m) {
+      F0.call(this, m);
+      if (ZREV.frus) { ZREV.frus = false; const e = m.elements; this.planes[5].setComponents(e[2], e[6], e[10], e[14]).normalize(); }
+      return this;
+    };
+    // the render lists sort on projected z, which a reversed projection turns around: three's own sorts with the sign put back
+    // (the opaque list still draws near to far, the transparent list far to near)
+    R.setOpaqueSort((a, b) => (a.groupOrder !== b.groupOrder ? a.groupOrder - b.groupOrder : a.renderOrder !== b.renderOrder ? a.renderOrder - b.renderOrder
+      : a.material.id !== b.material.id ? a.material.id - b.material.id : a.z !== b.z ? (ZREV.active ? b.z - a.z : a.z - b.z) : a.id - b.id));
+    R.setTransparentSort((a, b) => (a.groupOrder !== b.groupOrder ? a.groupOrder - b.groupOrder : a.renderOrder !== b.renderOrder ? a.renderOrder - b.renderOrder
+      : a.z !== b.z ? (ZREV.active ? a.z - b.z : b.z - a.z) : a.id - b.id));
+    // every clear outside a reversed render is a standard one (to 1): the target it was made on is remembered until the next
+    // render, so a reversed render that does not clear its own depth can put 0 there first (the guard)
+    const clear0 = R.clear, NUL = {};
+    R.clear = function (color = true, depth = true, stencil = true) {
+      if (depth && !ZREV.active) ZREV.cleared = this.getRenderTarget() || NUL;
+      return clear0.call(this, color, depth, stencil);
+    };
+    const _zs = [0, 0, 0, 0], _zInv = new THREE.Matrix4();   // (doubles: a Float32Array rounded three's own row on every render)
+    const render0 = R.render;
+    R.render = function zrevRender(sc, cam) {
+      if (!cam || !cam.isPerspectiveCamera || ZREV.active) { if (!ZREV.active) ZREV.cleared = null; return render0.call(this, sc, cam); }
+      const P = cam.projectionMatrix, e = P.elements;
+      _zs[0] = e[2]; _zs[1] = e[6]; _zs[2] = e[10]; _zs[3] = e[14]; _zInv.copy(cam.projectionMatrixInverse);
+      const row = cam.userData.zrevRow;   // a camera's own reversed z row (the mirror's oblique near plane, reflRender)
+      if (row) { e[2] = row[0]; e[6] = row[1]; e[10] = row[2]; e[14] = row[3]; }
+      else { const n = cam.near, f = cam.far; e[2] = 0; e[6] = 0; e[10] = n / (f - n); e[14] = f * n / (f - n); }   // depth 1 at near, 0 at far
+      cam.projectionMatrixInverse.copy(P).invert();
+      if (ZREV.sub && this.getRenderTarget() === null && ZREV.fbInit) { ZREV.fbInit(); this.setRenderTarget(null); }
+      const own = this.autoClear && this.autoClearDepth, tgt = this.getRenderTarget() || NUL;
+      if (!own) ZREV.noClear++;
+      enter(); ZREV.frus = true; ZREV.renders++;
+      // the guard: a render that keeps the depth it finds, on a target whose depth was last cleared to 1 (the near plane) or
+      // never cleared at all (r149's PMREM leans on a fresh buffer's 1.0), clears it to 0 (the far plane) first
+      if (!own && (ZREV.pmrem || ZREV.cleared === tgt)) { D.setMask(true); this.clearDepth(); ZREV.guard++; }
+      ZREV.cleared = null;
+      try { return render0.call(this, sc, cam); }
+      finally { leave(); e[2] = _zs[0]; e[6] = _zs[1]; e[10] = _zs[2]; e[14] = _zs[3]; cam.projectionMatrixInverse.copy(_zInv); }
+    };
+    const pm0 = THREE.PMREMGenerator.prototype._sceneToCubeUV;
+    THREE.PMREMGenerator.prototype._sceneToCubeUV = function (...a) { ZREV.pmrem = true; try { return pm0.apply(this, a); } finally { ZREV.pmrem = false; } };
+    // three's shadow pass runs inside the scene's render call: standard depth for it
+    const sm = R.shadowMap, smr0 = sm.render;
+    sm.render = function (lights, sc, cam) {
+      if (!ZREV.active) return smr0.call(this, lights, sc, cam);
+      leave();
+      try { return smr0.call(this, lights, sc, cam); } finally { enter(); }
+    };
+  }
+  if (ZREV.on) {
+    const gl = renderer.getContext(), st = renderer.state, _zv2 = new THREE.Vector2();
+    ZREV.sub = !!window.__zrevSub;
+    zrevInstall(renderer);
+    if (ZREV.sub) {
+      // the canvas has no depth and no multisampling: three draws "to the canvas" into ZREV.fb (its cache holds ZREV.fb for
+      // the null target, so every program is the canvas's own, sRGB and tone mapped as before), and zrevPresent resolves it
+      renderer.setRenderTarget(null);   // three's draw-buffer cache takes the canvas's BACK now, before the swap
+      const bf0 = st.bindFramebuffer;
+      st.bindFramebuffer = function (target, fb) { return bf0.call(this, target, fb === null && ZREV.fb ? ZREV.fb : fb); };
+    }
+    ZREV.fbInit = function zrevFB() {
+      const s = renderer.getDrawingBufferSize(_zv2), w = s.x, h = s.y;
+      if (ZREV.fb && w === ZREV.w && h === ZREV.h) return;
+      const first = !ZREV.fb;
+      if (first) { ZREV.fb = gl.createFramebuffer(); ZREV.rbC = gl.createRenderbuffer(); ZREV.rbD = gl.createRenderbuffer(); }
+      ZREV.samples = Math.min(4, renderer.capabilities.maxSamples || 4);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rbC); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, ZREV.samples, gl.RGBA8, w, h);
+      gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rbD); gl.renderbufferStorageMultisample(gl.RENDERBUFFER, ZREV.samples, gl.DEPTH32F_STENCIL8, w, h);
+      if (ZREV.rrb) { gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rrb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h); }
+      gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+      if (first) {
+        const pd = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, ZREV.rbC);
+        gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, ZREV.rbD);
+        ZREV.status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+        gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
+      }
+      ZREV.w = w; ZREV.h = h;
+    };
+  }
+  // the frame drawn into ZREV.fb onto the canvas: one resolving blit (or, where the canvas's format refuses a multisampled
+  // source, a resolve into a plain RGBA8 renderbuffer first: an alpha:false canvas does, measured in WebKit), then the
+  // target's contents are let go (a tiled GPU stores none)
+  function zrevPresent() {
+    if (!ZREV.sub || !ZREV.fb) return;
+    const gl = renderer.getContext(), w = ZREV.w, h = ZREV.h, sc = gl.isEnabled(gl.SCISSOR_TEST);
+    if (sc) gl.disable(gl.SCISSOR_TEST);
+    if (!ZREV.blit) gl.getError();   // the first present checks its own blit
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, ZREV.fb);
+    // the depth is let go before the resolve, while the pass that drew it is still open: a tiled GPU then never stores it
+    gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, [gl.DEPTH_STENCIL_ATTACHMENT]);
+    if (ZREV.rfb) {
+      gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, ZREV.rfb); gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+      gl.bindFramebuffer(gl.READ_FRAMEBUFFER, ZREV.rfb);
+    }
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    gl.blitFramebuffer(0, 0, w, h, 0, 0, w, h, gl.COLOR_BUFFER_BIT, gl.NEAREST);
+    if (!ZREV.blit) {
+      const err = gl.getError();
+      if (err !== gl.NO_ERROR && !ZREV.rfb) {   // the canvas is not the target's format: resolve first, then copy
+        ZREV.blitErr = err;
+        ZREV.rfb = gl.createFramebuffer(); ZREV.rrb = gl.createRenderbuffer();
+        gl.bindRenderbuffer(gl.RENDERBUFFER, ZREV.rrb); gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, w, h); gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.rfb); gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, ZREV.rrb);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);
+        if (sc) gl.enable(gl.SCISSOR_TEST);
+        return zrevPresent();
+      }
+      ZREV.blit = ZREV.rfb ? 'two-step' : 'direct';
+    }
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, ZREV.fb);
+    gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, [gl.COLOR_ATTACHMENT0]);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, ZREV.fb);   // three's cache has it bound for the canvas
+    if (sc) gl.enable(gl.SCISSOR_TEST);
+    ZREV.presents++;
+  }
+  // a render target's depth renderbuffer made float: DEPTH32F_STENCIL8 in place of r149's DEPTH24_STENCIL8 (the stencil is
+  // the vehicle shadows'), or DEPTH_COMPONENT32F in place of its DEPTH_COMPONENT16; the multisampled one of the post
+  // pipeline's scene target is never resolved (nothing reads the resolved copy; the AO blits its own from the samples).
+  // Returns the framebuffer's status (0 when there is nothing to change). It makes the target's framebuffers, and three sets
+  // the target texture's parameters (filters, anisotropy) only then: set them all before the call
+  function zrevFloatDepth(rt) {
+    const prev = renderer.getRenderTarget();
+    renderer.setRenderTarget(rt); renderer.setRenderTarget(prev);   // three makes the framebuffers now
+    const gl = renderer.getContext(), p = renderer.properties.get(rt), ms = !!p.__webglDepthRenderbuffer, rb = ms ? p.__webglDepthRenderbuffer : p.__webglDepthbuffer;
+    if (!rb || !rt.depthBuffer) return 0;
+    const fmt = rt.stencilBuffer ? gl.DEPTH32F_STENCIL8 : gl.DEPTH_COMPONENT32F;
+    gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
+    if (ms) gl.renderbufferStorageMultisample(gl.RENDERBUFFER, Math.min(rt.samples, renderer.capabilities.maxSamples), fmt, rt.width, rt.height);
+    else gl.renderbufferStorage(gl.RENDERBUFFER, fmt, rt.width, rt.height);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    if (ms) p.__ignoreDepthValues = true;
+    const pd = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, ms ? p.__webglMultisampledFramebuffer : p.__webglFramebuffer);
+    const status = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
+    return status;
+  }
+  // the zc beacon field (Round 192): the depth mode (rev, log or std, with a q when a flag forced it), the throwaway context's
+  // answers (EXT_clip_control, then the 4x DEPTH32F_STENCIL8 framebuffer complete: 1 or 0, - when not asked), an x when the
+  // real context refused what the throwaway one granted, and the blit that put the frame on the canvas (d direct, t two-step,
+  // p the post pipeline's own resolve, - none yet), with a 0 after it when a target's float depth came back incomplete
+  function zcField() {
+    const blit = ZREV.blit === 'direct' ? 'd' : ZREV.blit === 'two-step' ? 't' : ZREV.on && !ZREV.sub && POST.on ? 'p' : '-';
+    return ZPROBE.mode + (ZPROBE.forced ? 'q' : '') + '.' + ZPROBE.e + ZPROBE.f + ZPROBE.real + '.' + blit + (ZREV.on && ZREV.status && ZREV.status !== 36053 ? '0' : '');
   }
   // Round 149 raised touch to a 2.0 cap and a 1.0 floor for sharpness (Mike chose it); Round 153 (Mike: "The app is again not
   // working on mobile") puts back Round 74's 1.25 and 0.72: at 2.0 a phone drew 2.6 times the pixels of every frame, with
@@ -442,7 +689,7 @@
   // display's own interval, or once the level has stood DPR_UP_AFTER, and kept inside DPR_KEEP_UP of the budget or at most
   // DPR_COST dearer. A rejected trial holds that step off for DPR_HOLD, doubling up to DPR_HOLD_MAX; a kept step holds the
   // reverse step off at least DPR_STAY, doubling when steps keep reversing, so the ratio never chases the view; a gap (the
-  // app sent to the background, a stall over 250 ms) abandons a trial and forgets the windows. So a phone held back by
+  // app sent to the background; since Round 192 no longer a stall, which is a slow frame) abandons a trial and forgets the windows. So a phone held back by
   // geometry rests at its cap and checks again every few minutes at most. The cap is unchanged (DPR_CAP): no step goes
   // above what the page allocates at the start, so the load's peak is unchanged; but a phone that used to rest at 0.72
   // after Enter now rests at its cap, three times the drawing-buffer pixels (about 15 MB more on a landscape iPhone with the
@@ -452,6 +699,9 @@
     const q = /[?&]dpr=([\d.]+)/.exec(location.search);
     if (q) { DPR.pinned = true; DPR.cur = clamp(+q[1], 0.5, 3); renderer.setPixelRatio(DPR.cur); }
   }
+  // Round 192: time away from the page is the controller's only gap (frame()): a hidden page sets DPR.away, the next frame
+  // drawn while visible abandons the trial and clears it, and a frame over DPR_AWAY ms counts as away whatever was reported
+  document.addEventListener('visibilitychange', () => { if (document.hidden) DPR.away = true; });
   function applyDPR(r) {
     DPR.cur = r;
     renderer.setPixelRatio(r);   // re-applies the drawing-buffer size
@@ -466,6 +716,7 @@
   const DPR_SETTLE = 1, DPR_TRIAL = 2, DPR_RECHECK = 1;   // windows: the one a resize lands in is not judged, then 2 at the trial rung, 1 back
   const DPR_UP_AFTER = 10000, DPR_STAY = 30000, DPR_PROVEN = 60000, DPR_HOLD = 20000, DPR_HOLD_MAX = 320000;   // ms
   const DPR_GAP = 20000, DPR_URGENT = 40;      // ms between trials, unless three windows in a row are over DPR_URGENT ms
+  const DPR_AWAY = 4000;                       // ms: a frame this long is time away from the page (Round 192), never a slow frame
   // Round 168: the budget the trials judge against. Unpaced (desktop) it is the fixed 22 / 13 / 40 ms above; a phone is paced
   // (PACE, frame()): its frames come every 1000 / fps ms when it keeps up, so 'slow' is missing the pace by 30%, 'urgent' is two
   // paced frames, and holding the pace is the headroom that lets a trial climb (the snapped display interval does the rest)
@@ -950,18 +1201,19 @@
   // pixels); twelve taps on three turns of a spiral, rotated per pixel, then a depth-aware blur across and down
   function aoInit(vs) {
     AO.mat = new THREE.ShaderMaterial({ depthTest: false, depthWrite: false,
-      uniforms: { tDepth: { value: null }, uProj: { value: new THREE.Vector2(1, 1) }, uFar: { value: 26000 }, uNear: { value: 1 }, uLog: { value: window.__useLogDepth ? 1 : 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uK: { value: 2.0 } },
+      uniforms: { tDepth: { value: null }, uProj: { value: new THREE.Vector2(1, 1) }, uFar: { value: 26000 }, uNear: { value: 1 }, uLog: { value: window.__useLogDepth ? 1 : ZREV.on ? 2 : 0 }, uRes: { value: new THREE.Vector2(1, 1) }, uK: { value: 2.0 } },
       vertexShader: vs,
       fragmentShader: [
         'uniform sampler2D tDepth; uniform vec2 uProj, uRes; uniform float uFar, uNear, uLog, uK; varying vec2 vUv;',
-        'float linW(float d){ return uLog > 0.5 ? pow(uFar + 1.0, d) - 1.0 : uNear * uFar / (uFar - d * (uFar - uNear)); }',
+        // (Round 192: uLog 2 is reversed Z, depth 1 at near and 0 at far)
+        'float linW(float d){ return uLog > 1.5 ? uNear * uFar / (uNear + d * (uFar - uNear)) : uLog > 0.5 ? pow(uFar + 1.0, d) - 1.0 : uNear * uFar / (uFar - d * (uFar - uNear)); }',
         'vec3 posAt(vec2 uv){ float w = linW(texture2D(tDepth, uv).r); vec2 n = uv * 2.0 - 1.0; return vec3(n.x * w / uProj.x, n.y * w / uProj.y, -w); }',
         'void main(){',
         // a half-res pixel's centre lies on the line between two depth texels: snapped to one, so its neighbours are
         // never the same texel (they were on alternate rows, and the normals there banded every flat in the city)
         '  vec2 tx = 1.0 / uRes, uv0 = (floor(vUv * uRes) + 0.5) * tx;',
         '  float d0 = texture2D(tDepth, uv0).r;',
-        '  if (d0 >= 0.99999) { gl_FragColor = vec4(1.0, 1e5, 0.0, 1.0); return; }',
+        '  if (uLog > 1.5 ? d0 <= 0.0 : d0 >= 0.99999) { gl_FragColor = vec4(1.0, 1e5, 0.0, 1.0); return; }',
         '  vec3 P = posAt(uv0); float w = -P.z;',
         '  vec3 pr = posAt(uv0 + vec2(tx.x, 0.0)) - P, pl = P - posAt(uv0 - vec2(tx.x, 0.0));',
         '  vec3 pu = posAt(uv0 + vec2(0.0, tx.y)) - P, pd = P - posAt(uv0 - vec2(0.0, tx.y));',
@@ -995,22 +1247,46 @@
       ].join('\n') });
   }
   function aoSize(w, h) {
-    if (AO.depthRT && AO.w === w && AO.h === h) return;
+    if ((AO.depthRT || AO.zfb) && AO.w === w && AO.h === h) return;
     if (AO.depthRT) { AO.depthRT.dispose(); AO.depthRT.depthTexture.dispose(); AO.a.dispose(); AO.b.dispose(); }
+    if (AO.zfb) { AO.a.dispose(); AO.b.dispose(); }
     AO.w = w; AO.h = h;
+    if (ZREV.on) zrevAoDepth(w, h);
+    else {
     // the depth copy: DEPTH24_STENCIL8 like the scene target's own renderbuffer, so the blit's formats match
     const dt = new THREE.DepthTexture(w, h, THREE.UnsignedInt248Type); dt.format = THREE.DepthStencilFormat;
     dt.minFilter = dt.magFilter = THREE.NearestFilter;
     AO.depthRT = new THREE.WebGLRenderTarget(w, h, { depthBuffer: true, stencilBuffer: true, depthTexture: dt, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter });
+    }
     const hw = Math.max(32, w >> 1), hh = Math.max(32, h >> 1);
     AO.a = new THREE.WebGLRenderTarget(hw, hh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     AO.b = new THREE.WebGLRenderTarget(hw, hh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
-    renderer.setRenderTarget(AO.depthRT); renderer.setRenderTarget(null);   // three makes its framebuffers now, for the blit
+    if (AO.depthRT) { renderer.setRenderTarget(AO.depthRT); renderer.setRenderTarget(null); }   // three makes its framebuffers now, for the blit
+  }
+  // Round 192: under reversed Z the scene's samples are DEPTH32F_STENCIL8, which r149 cannot make as a texture, so the
+  // AO's copy is a raw texture of that format in a framebuffer of its own (the blit's formats must match), handed to three
+  // as a Texture it never uploads (version 0: three binds the handle it is given)
+  function zrevAoDepth(w, h) {
+    const gl = renderer.getContext(), st = renderer.state;
+    if (AO.zfb) { gl.deleteFramebuffer(AO.zfb); gl.deleteTexture(AO.zg); }
+    const g = gl.createTexture();
+    st.bindTexture(gl.TEXTURE_2D, g);
+    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.DEPTH32F_STENCIL8, w, h);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE); gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    st.bindTexture(gl.TEXTURE_2D, null);
+    const fb = gl.createFramebuffer(), pd = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fb); gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.TEXTURE_2D, g, 0);
+    ZREV.aoStatus = gl.checkFramebufferStatus(gl.FRAMEBUFFER);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, pd); gl.bindFramebuffer(gl.READ_FRAMEBUFFER, pr);
+    if (!AO.zt) AO.zt = new THREE.Texture();
+    const tp = renderer.properties.get(AO.zt); tp.__webglTexture = g; tp.__webglInit = true;
+    AO.zg = g; AO.zfb = fb;
   }
   // called by the pin pass's depth wipe while the scene is drawing into postRT: the city's depth, before the pins clear it
   function aoCopyDepth(r) {
-    if (!AO.on || !AO.depthRT || r.getRenderTarget() !== postRT) return;
-    const gl = r.getContext(), src = r.properties.get(postRT).__webglMultisampledFramebuffer || r.properties.get(postRT).__webglFramebuffer, dst = r.properties.get(AO.depthRT).__webglFramebuffer;
+    if (!AO.on || !(AO.depthRT || AO.zfb) || r.getRenderTarget() !== postRT) return;
+    const gl = r.getContext(), src = r.properties.get(postRT).__webglMultisampledFramebuffer || r.properties.get(postRT).__webglFramebuffer, dst = AO.zfb || r.properties.get(AO.depthRT).__webglFramebuffer;
     if (!src || !dst) return;
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, src); gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, dst);
     gl.blitFramebuffer(0, 0, AO.w, AO.h, 0, 0, AO.w, AO.h, gl.DEPTH_BUFFER_BIT, gl.NEAREST);
@@ -1025,6 +1301,7 @@
     // stencilBuffer on: r149 gives a depth-only target a 16-bit depth renderbuffer, and depth
     // with stencil DEPTH24_STENCIL8, the 24 bits the canvas had (the layered flats need them)
     postRT = new THREE.WebGLRenderTarget(s.x, s.y, { type: THREE.HalfFloatType, samples: 4, depthBuffer: true, stencilBuffer: true, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
+    if (ZREV.on) ZREV.status = zrevFloatDepth(postRT);   // Round 192: the samples' depth DEPTH32F_STENCIL8
     const bw = Math.max(64, Math.round(s.x / 4)), bh = Math.max(64, Math.round(s.y / 4));
     postA = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
     postB = new THREE.WebGLRenderTarget(bw, bh, { type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter });
@@ -1053,7 +1330,7 @@
     if (AO.on && AO.copied) {
       gpuT('ao');
       const m = AO.mat.uniforms;
-      m.tDepth.value = AO.depthRT.depthTexture; m.uProj.value.set(cam.projectionMatrix.elements[0], cam.projectionMatrix.elements[5]);
+      m.tDepth.value = AO.zfb ? AO.zt : AO.depthRT.depthTexture; m.uProj.value.set(cam.projectionMatrix.elements[0], cam.projectionMatrix.elements[5]);
       m.uFar.value = cam.far; m.uNear.value = cam.near; m.uRes.value.set(AO.w, AO.h);
       postQuad.material = AO.mat; renderer.setRenderTarget(AO.a); renderer.render(postScene, postCam);
       postQuad.material = AO.blur;
@@ -1248,7 +1525,7 @@
     };
   }
 
-  const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, window.__useLogDepth ? 0.75 : 1.0, 26000);
+  const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, window.__useLogDepth || ZREV.on ? 0.75 : 1.0, 26000);
 
   // flat surfaces are layered with generous gaps to keep the depth buffer honest
   const LAYER = { park: 0.06, plaza: 0.1, deck: 0.14, sidewalk: 0.16, road: 0.24, footway: 0.32, basin: 0.36, pool: 0.38 };
@@ -3878,7 +4155,7 @@
   // and key, the instance and the world point; a vertex shader's own placement (a billboard card) is not reproduced
   function pickAt(px, py) {
     const W = window.innerWidth, H = window.innerHeight, list = Array.isArray(px) ? px : [[px, py]];
-    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, depthBuffer: true, stencilBuffer: true });
+    const rt = new THREE.WebGLRenderTarget(1, 1, { type: THREE.FloatType, depthBuffer: true, stencilBuffer: !ZREV.on, depthTexture: zrevDT(1, 1) });
     const objs = [];
     const mat = new THREE.ShaderMaterial({ uniforms: { uId: { value: 0 } },
       vertexShader: '#include <common>\n#include <logdepthbuf_pars_vertex>\nflat varying float vInst; varying float vVZ;\nvoid main(){\n#include <begin_vertex>\n#include <project_vertex>\n#include <logdepthbuf_vertex>\nvVZ = -mvPosition.z;\n#ifdef USE_INSTANCING\nvInst = float(gl_InstanceID);\n#else\nvInst = -1.0;\n#endif\n}',
@@ -4023,7 +4300,7 @@
     },
     vertexShader:
       'varying vec3 vDir;\n' +
-      'void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); gl_Position.z = gl_Position.w; }',
+      'void main(){ vDir = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position,1.0); ' + (ZREV.on ? 'gl_Position.z = 0.0; }' : 'gl_Position.z = gl_Position.w; }'),   // on the far plane (reversed Z: depth 0)
     fragmentShader:
       'varying vec3 vDir; uniform vec3 cZenith, cHorizon, cGround, uSun, cSun; uniform float uSunVis, uTwilight;\n' +
       'uniform float uCloud, uCloudLight; uniform vec2 uCloudOff;\n' +
@@ -4375,11 +4652,32 @@
         gl_Position = projectionMatrix * mvPosition;
         #include <logdepthbuf_vertex>
         #include <fog_vertex>
-        gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99999);
+        ${ZREV.on ? 'gl_Position.z = max(gl_Position.z, 0.0);' : 'gl_Position.z = min(gl_Position.z, gl_Position.w * 0.99999);'}
       }
     `,
     fragmentShader: cloudFrag(),
   });
+  // ---- the deck's three programs (Round 192). cloudMat writes the cloud's own depth (gl_FragDepth), which costs the early
+  // depth test: the march ran on every pixel under every building and the depth test threw the result away (31 to 40 ms of
+  // a Retina street frame). While the eye stands under the low bank's lowest possible base (its rain drop taken off) every
+  // cloud sample lies above every roof and behind everything drawn but an aircraft, so the deck's twin cloudMatNoZ writes no
+  // depth and sits on the far plane: the GPU rejects the covered pixels before it marches them. That holds under log depth
+  // too (a program that does not write gl_FragDepth keeps its own early test whatever the others do), so the twin draws in
+  // both depth modes. The aircraft are the exception (an airliner at 900 m over a deck based at 780 m stands behind the
+  // cloud): each one over the base on the screen gets a rectangle (cloudRects), the twin leaves those pixels alone, and
+  // cloudDeckZ, the depth-writing program cut to them (CLOUD_RECT_IN) and scissored to their union, draws them as the deck
+  // always did, so a plane over the base is still veiled by the cloud in front of it. ?cloudz=old keeps the depth-writing
+  // deck everywhere (the A/B), and so does ?logdepth=0's plain depth, where the twin's far plane does not lie behind the far
+  // ring
+  const CLOUD_RECT_N = 16;
+  const CLOUDZ = { old: /[?&]cloudz=old\b/.test(location.search) || ZPROBE.mode === 'std', mode: 'z', n: 0, warm: 3, merged: 0, cand: [],
+    rects: Array.from({ length: CLOUD_RECT_N }, () => new THREE.Vector4()), box: new THREE.Vector4(), none: new THREE.Vector4(0, 0, 0, 0) };
+  cloudMat.uniforms.uZRect = { value: CLOUDZ.rects }; cloudMat.uniforms.uZRectN = { value: 0 };
+  const cloudTwin = (defs, fragDepth) => new THREE.ShaderMaterial({ transparent: true, depthWrite: false, side: THREE.BackSide, fog: true,
+    extensions: { derivatives: true, fragDepth }, defines: Object.assign({ CLOUD_RECT_N }, defs), uniforms: cloudMat.uniforms,
+    vertexShader: cloudMat.vertexShader, fragmentShader: cloudMat.fragmentShader });
+  const cloudMatNoZ = CLOUDZ.old ? null : cloudTwin({ CLOUD_NOZ: '' }, false);
+  const cloudMatRect = CLOUDZ.old ? null : cloudTwin({ CLOUD_RECT_IN: '' }, true);
   // the deck's fragment shader, from CLOUD3D.on as it stands (cloudsPhase1 builds it again without the volumes)
   function cloudFrag() {
     return `
@@ -4398,6 +4696,20 @@
       #include <fog_pars_fragment>
       #include <logdepthbuf_pars_fragment>
       ${INV_GLSL}
+      #ifdef CLOUD_RECT_N
+      // (Round 192) the aircraft over the base: rectangles of the target's pixels, (x0, y0, x1, y1), that the depth-free twin
+      // leaves to the depth-writing program (cloudRects)
+      uniform vec4 uZRect[CLOUD_RECT_N];
+      uniform int uZRectN;
+      bool cloudInRect() {
+        for (int i = 0; i < CLOUD_RECT_N; i++) {
+          if (i >= uZRectN) break;
+          vec4 r = uZRect[i];
+          if (gl_FragCoord.x >= r.x && gl_FragCoord.x < r.z && gl_FragCoord.y >= r.y && gl_FragCoord.y < r.w) return true;
+        }
+        return false;
+      }
+      #endif
       float cdh(vec2 p) { vec3 p3 = fract(vec3(p.xyx) * 0.1031); p3 += dot(p3, p3.yzx + 33.33); return fract((p3.x + p3.y) * p3.z); }
       float cdn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(cdh(i), cdh(i + vec2(1.0, 0.0)), f.x), mix(cdh(i + vec2(0.0, 1.0)), cdh(i + vec2(1.0, 1.0)), f.x), f.y); }
       float cloudNoise(vec2 p, float footprint) {
@@ -4501,6 +4813,11 @@
       }` : ''}
       ${CLOUD_LAYERS.map(cloudLayerShader).join('\n')}
       void main() {
+        #if defined(CLOUD_RECT_IN)
+        if (!cloudInRect()) discard;
+        #elif defined(CLOUD_RECT_N)
+        if (cloudInRect()) discard;
+        #endif
         if (uCloud < 0.003) discard;
         vec3 rd = normalize(vW - cameraPosition);
         float cone = max(length(dFdx(rd)), length(dFdy(rd)));
@@ -4520,11 +4837,12 @@
         vec4 hitView = viewMatrix * vec4(cameraPosition + rd * first, 1.0);
         // Use the cloud's actual depth, not the enclosing draw proxy. Buildings
         // in front remain solid; lower banks can veil the city when flown over.
-        #if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)
+        #if defined(CLOUD_NOZ)
+        #elif defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)
           gl_FragDepthEXT = log2(1.0 + max(0.0, -hitView.z)) * logDepthBufFC * 0.5;
         #elif defined(GL_EXT_frag_depth) || __VERSION__ >= 300
           vec4 hitClip = uCloudProjection * hitView;
-          gl_FragDepthEXT = hitClip.z / hitClip.w * 0.5 + 0.5;
+          gl_FragDepthEXT = hitClip.z / hitClip.w${ZREV.on ? '' : ' * 0.5 + 0.5'};
         #endif
         vec3 col = acc / cover * uCloudLight;
         ${REAL ? `col += (uCityGlow * cGlowAcc + vec3(0.85, 0.9, 1.0) * cFlashAcc) / cover;` : ''}
@@ -4552,6 +4870,98 @@
   const cloudDeck = new THREE.Mesh(new THREE.SphereGeometry(50000, 16, 12), cloudMat);
   cloudDeck.frustumCulled = false; cloudDeck.renderOrder = -5;
   scene.add(cloudDeck);
+  // (Round 192) the depth-writing program cut to the aircraft's rectangles: a child of the deck, so it rides with it and hides
+  // with it, drawn only while there are rectangles. Behind the veil it draws three times with an empty scissor, as cloudMat,
+  // the twin and itself, so all three programs compile in the build's renders and none in flight (CLOUDZ.warm)
+  const cloudDeckZ = CLOUDZ.old ? null : new THREE.Mesh(cloudDeck.geometry, cloudMat);
+  const cloudMain = (cam) => cam === camera && !(cam.view && cam.view.enabled);   // the frame's own render (not a tap's, the mirror's or the pins')
+  if (cloudDeckZ) {
+    cloudDeckZ.frustumCulled = false; cloudDeckZ.renderOrder = -5;
+    cloudDeckZ.onBeforeRender = (r, sc, cam) => { r.state.scissor(CLOUDZ.n > 0 && !CLOUDZ.warm && cloudMain(cam) ? CLOUDZ.box : CLOUDZ.none); r.state.setScissorTest(true); };
+    cloudDeckZ.onAfterRender = (r) => {
+      r.state.setScissorTest(false);
+      if (CLOUDZ.warm > 0) {
+        CLOUDZ.warm--;
+        cloudDeckZ.material = CLOUDZ.warm === 2 ? cloudMatNoZ : cloudMatRect;
+        if (!CLOUDZ.warm) cloudDeckZ.visible = CLOUDZ.n > 0;
+      }
+    };
+    cloudDeck.add(cloudDeckZ);
+    // the twin's holes are the frame's own: any other render of the deck (none today) draws it whole
+    cloudDeck.onBeforeRender = (r, sc, cam) => { const n = cloudMain(cam) ? CLOUDZ.n : 0; if (cloudMat.uniforms.uZRectN.value !== n) { cloudMat.uniforms.uZRectN.value = n; if (cloudDeck.material.isShaderMaterial) cloudDeck.material.uniformsNeedUpdate = true; } };
+  }
+  // which deck draws this frame (see cloudMatNoZ), with 25 m of margin under the lowest base the noise can make, and the
+  // aircraft's rectangles
+  function cloudDeckStep() {
+    if (!cloudMatNoZ) return;
+    const minBase = CLOUD_LAYERS[0].base - (REAL ? cloudMat.uniforms.uWxDeck.value.x : 0);
+    const below = camera.position.y < minBase - 25;
+    const m = below ? cloudMatNoZ : cloudMat;
+    if (cloudDeck.material !== m) cloudDeck.material = m;
+    CLOUDZ.mode = below ? 'noz' : 'z';
+    CLOUDZ.n = below && !CLOUDZ.off && cloudDeck.visible && cloudMat.uniforms.uCloud.value >= 0.003 ? cloudRects(minBase) : 0;   // (off: __dbg.cloudRects(false), the spike's planes over the clouds, for the A/B)
+    if (!CLOUDZ.warm) cloudDeckZ.visible = CLOUDZ.n > 0;
+  }
+  // every aircraft standing over the lowest base, as a rectangle of the drawing buffer round its bounding sphere (the sphere's
+  // projected radius from its nearest point, 15% and 2 px over); a sphere the near plane cuts takes the whole screen; more
+  // than CLOUD_RECT_N are merged, the pair whose union adds the least area first, until they fit. Returns how many
+  const _crV = new THREE.Vector3(), _crS = new THREE.Vector2();
+  function cloudRects(minBase) {
+    const C = CLOUDZ.cand;
+    C.length = 0;
+    if (!flightReady || !FLIGHTS.on) return 0;
+    const s = renderer.getDrawingBufferSize(_crS), W = s.x, H = s.y;
+    camera.updateMatrixWorld();
+    const fy = camera.projectionMatrix.elements[5] * H / 2, near = camera.near;
+    for (const [mesh, kr] of [[flightMesh, 0.75], [heliMesh, 0.95]]) {
+      if (!mesh || !mesh.visible || !mesh.count) continue;
+      const a = mesh.instanceMatrix.array;
+      for (let i = 0; i < mesh.count; i++) {
+        const k = i * 16, r = kr * Math.hypot(a[k], a[k + 1], a[k + 2]) + 1;
+        if (a[k + 13] + r < minBase) continue;   // wholly under the base: in front of every cloud
+        _crV.set(a[k + 12], a[k + 13], a[k + 14]).applyMatrix4(camera.matrixWorldInverse);
+        const w = -_crV.z;
+        if (w + r < near) continue;   // behind the eye
+        let q;
+        if (w - r < near * 2) q = [0, 0, W, H];
+        else {
+          _crV.applyMatrix4(camera.projectionMatrix);   // (x, y) in NDC: three's own matrix, the z row is not read
+          const cx = (_crV.x * 0.5 + 0.5) * W, cy = (_crV.y * 0.5 + 0.5) * H, rp = r / (w - r) * fy * 1.15 + 2;
+          q = [Math.max(0, Math.floor(cx - rp)), Math.max(0, Math.floor(cy - rp)), Math.min(W, Math.ceil(cx + rp)), Math.min(H, Math.ceil(cy + rp))];
+          if (q[0] >= q[2] || q[1] >= q[3]) continue;   // off the screen
+        }
+        C.push(q);
+      }
+    }
+    CLOUDZ.merged = cloudRectsFit(C, CLOUD_RECT_N);
+    const B = [Infinity, Infinity, -Infinity, -Infinity];
+    for (let i = 0; i < C.length; i++) {
+      const q = C[i];
+      CLOUDZ.rects[i].set(q[0], q[1], q[2], q[3]);
+      B[0] = Math.min(B[0], q[0]); B[1] = Math.min(B[1], q[1]); B[2] = Math.max(B[2], q[2]); B[3] = Math.max(B[3], q[3]);
+    }
+    if (C.length) CLOUDZ.box.set(B[0], B[1], B[2] - B[0], B[3] - B[1]);   // the scissor: x, y, width, height
+    return C.length;
+  }
+  // rectangles [x0, y0, x1, y1] merged in place until there are at most n: each merge the pair whose union adds the least
+  // area over the two (so overlapping and neighbouring planes go first). Returns how many merges it made
+  function cloudRectsFit(C, n) {
+    let merges = 0;
+    const area = (q) => (q[2] - q[0]) * (q[3] - q[1]);
+    while (C.length > n) {
+      let bi = 0, bj = 1, best = Infinity;
+      for (let i = 0; i < C.length; i++) for (let j = i + 1; j < C.length; j++) {
+        const a = C[i], b = C[j];
+        const u = (Math.max(a[2], b[2]) - Math.min(a[0], b[0])) * (Math.max(a[3], b[3]) - Math.min(a[1], b[1])) - area(a) - area(b);
+        if (u < best) { best = u; bi = i; bj = j; }
+      }
+      const a = C[bi], b = C[bj];
+      C[bi] = [Math.min(a[0], b[0]), Math.min(a[1], b[1]), Math.max(a[2], b[2]), Math.max(a[3], b[3])];
+      C.splice(bj, 1);
+      merges++;
+    }
+    return merges;
+  }
   // the volumes' deck gives way to the first phase's march (the merge review): a program that failed to compile or link (an
   // ANGLE D3D11 compiler meeting a 128-step loop of volume fetches, say) drew no clouds at all, so the deck's first draw
   // reads its own program's link status and, failing, builds the first phase's shader and frees the volumes
@@ -4559,6 +4969,7 @@
     if (!CLOUD3D.on) return;
     CLOUD3D.on = false; CLOUD3D.why = why;
     cloudMat.fragmentShader = cloudFrag(); cloudMat.needsUpdate = true;
+    for (const m of [cloudMatNoZ, cloudMatRect]) if (m) { m.fragmentShader = cloudMat.fragmentShader; m.needsUpdate = true; }
     delete cloudMat.uniforms.tCloudShape; delete cloudMat.uniforms.tCloudDetail;
     for (const rt of CLOUD3D.rts) rt.dispose();
     CLOUD3D.rts = []; CLOUD3D.shape = CLOUD3D.detail = null;
@@ -4566,7 +4977,7 @@
   }
   if (CLOUD3D.on) {
     cloudDeck.onAfterRender = function () {
-      const pr = renderer.properties.get(cloudMat).currentProgram;
+      const pr = renderer.properties.get(this.material).currentProgram;
       if (!pr) return;
       this.onAfterRender = THREE.Object3D.prototype.onAfterRender;   // once
       let ok = true;
@@ -5953,9 +6364,14 @@ vec2 wRing(vec2 rc, float tt) {
     const w = Math.max(64, Math.min(960, Math.round(s.x / 2))), h = Math.max(64, Math.round(s.y * w / Math.max(1, s.x)));
     if (!REFL.rt || REFL.w !== w || REFL.h !== h) {
       if (REFL.rt) REFL.rt.dispose();
-      // stencil on for a 24-bit depth buffer (postSize's note); mipmapped, the water reads it softened by its roughness
+      // stencil on for a 24-bit depth buffer (postSize's note); mipmapped, the water reads it softened by its roughness. Round 192:
+      // under reversed Z its depth renderbuffer is made DEPTH32F_STENCIL8, keeping the stencil the vehicle shadows draw with (the
+      // spike's float depth texture had none, and a shadow over another in the reflection darkened twice)
       REFL.rt = new THREE.WebGLRenderTarget(w, h, { type: THREE.HalfFloatType, depthBuffer: true, stencilBuffer: true, generateMipmaps: true, minFilter: THREE.LinearMipmapLinearFilter, magFilter: THREE.LinearFilter });
       REFL.rt.texture.anisotropy = renderer.capabilities.getMaxAnisotropy();   // the streak rides the anisotropic filter
+      // (after the anisotropy: three sets a target texture's parameters once, when it makes the framebuffers, and
+      // zrevFloatDepth makes them; the other way round the mirror lost its anisotropic filter and its streaks blurred)
+      if (ZREV.on) REFL.zst = zrevFloatDepth(REFL.rt);
       REFL.w = w; REFL.h = h;
       waterU.uReflTexel.value.set(1 / w, 1 / h);
     }
@@ -5984,6 +6400,21 @@ vec2 wRing(vec2 rc, float tt) {
     const e = C.projectionMatrix.elements;
     _rfQ.set((Math.sign(_rfV.x) + e[8]) / e[0], (Math.sign(_rfV.y) + e[9]) / e[5], -1, (1 + e[10]) / e[14]);
     _rfV.multiplyScalar(2 / _rfV.dot(_rfQ));
+    // Round 192 (from perf spike 1): the reversed form of the same oblique near plane, for zrevRender (which draws with it and
+    // puts three's row back after). With W the water plane in the mirror's view space (W.v >= 0 above the water), row 2 = row 3
+    // - k W, so z = w (depth 1) exactly on the water and the depth falls with distance along every ray; k puts the far surface
+    // (z = 0) at the reach along the frustum's corner ray that climbs from the water fastest, which is Lengyel's choice turned
+    // round. A frustum none of whose corner rays climbs (the river is not in the view) keeps a row all the same, its slope
+    // floored: the water still clips (the spike's null row drew the mirror with the plain projection, everything under the
+    // water included), and with k that large nothing over it reaches the image either, which is what such a view reflects
+    if (ZREV.on) {
+      const nx = _rfP.normal.x, ny = _rfP.normal.y, nz = _rfP.normal.z, cw = _rfP.constant - 0.02;   // 2 cm over the water, as the 0.003 below
+      let m = -1e9;
+      for (const ax of [-1, 1]) for (const ay of [-1, 1]) m = Math.max(m, nx * (ax + e[8]) / e[0] + ny * (ay + e[9]) / e[5] - nz);
+      m = Math.max(m, 1e-6);
+      const k = 1 / Math.max(m + cw / C.far, m * 0.5);
+      C.userData.zrevRow = [-k * nx, -k * ny, -1 - k * nz, -k * cw];
+    }
     e[2] = _rfV.x; e[6] = _rfV.y; e[10] = _rfV.z + 1 - 0.003; e[14] = _rfV.w;
     C.projectionMatrixInverse.copy(C.projectionMatrix).invert();
     waterU.uReflCrop.value.set(REFL.cx, REFL.cy);
@@ -23761,7 +24192,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   const BPICK = { rt: null, buf: new Uint8Array(4), seq: 0 };
   const CARTO_SQL = 'https://phl.carto.com/api/v2/sql?q=';
   function bldgPointAt(cx, cy, maxD = 3000) {
-    if (!BPICK.rt) BPICK.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false });
+    if (!BPICK.rt) BPICK.rt = new THREE.WebGLRenderTarget(1, 1, { depthBuffer: true, stencilBuffer: false, depthTexture: zrevDT(1, 1) });
     const W = window.innerWidth, H = window.innerHeight;
     camera.setViewOffset(W, H, Math.floor(cx), Math.floor(cy), 1, 1); camera.updateProjectionMatrix();
     try { occRender(BPICK.rt, 1, 1, BPICK.buf, true); }
@@ -27757,7 +28188,7 @@ float pinOccGate() {
           'vWM = vec2(-(position.x + 0.5) * wsc.x, position.z * wsc.z); vSog = aSog;',
           'vWW = (modelMatrix * instanceMatrix * vec4(position, 1.0)).xyz;',
         ].join('\n'))
-        .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9995;\n#endif');
+        .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9995;\n#endif' + (ZREV.on ? '\ngl_Position.z /= 0.9995;' : ''));   // Round 192: the same hair toward the eye in reversed Z (a bigger z/w is nearer)
       // metres behind the stern (x) and off the track (z): the propeller's churn down the middle, widening and fading over a
       // few ship lengths, and the two arms of the Kelvin wedge, both broken into foam by a two-octave noise on the water
       sh.fragmentShader = sh.fragmentShader
@@ -29233,7 +29664,7 @@ float pinOccGate() {
           'vShD = -mvPosition.z; vShXZ = wpS.xz;',
         ].join('\n'))
         // a log depth buffer ignores a polygon offset: the flat shade is drawn a hair (0.07% of its distance) toward the eye
-        .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9993;\n#endif');
+        .replace('#include <logdepthbuf_vertex>', '#include <logdepthbuf_vertex>\n#if defined(USE_LOGDEPTHBUF) && defined(USE_LOGDEPTHBUF_EXT)\nvFragDepth = 1.0 + gl_Position.w * 0.9993;\n#endif' + (ZREV.on ? '\ngl_Position.z /= 0.9993;' : ''));   // Round 192: the same hair toward the eye in reversed Z (a bigger z/w is nearer)
       // the shadow map is read where the shade lies, as a road facing up reads it (the body's own normals would push the
       // sample 1.4 m about by the normal bias)
       if (!blob) sh.vertexShader = sh.vertexShader.replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\n#ifdef USE_SHADOWMAP\nworldPosition = wpS;\ntransformedNormal = (viewMatrix * vec4(0.0, 1.0, 0.0, 0.0)).xyz;\n#endif' +
@@ -36566,7 +36997,7 @@ float pinOccGate() {
   const PIN_JUMP = 300;
   const PIN_ASYNC = { pbo: null, bytes: 0, sync: null, chan: null, slot: -1, at: -1e9, age: 0, eye: new THREE.Vector3(1e9, 0, 0), off: false, issued: 0, landed: 0, dropped: 0, checked: false };
   function pinOccSlot(W, H) {   // a target an image is drawn into: NEAREST, for the gate reads its pixels whole
-    return { rt: new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false, minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false }),
+    return { rt: new THREE.WebGLRenderTarget(W, H, { depthBuffer: true, stencilBuffer: false, depthTexture: zrevDT(W, H), minFilter: THREE.NearestFilter, magFilter: THREE.NearestFilter, generateMipmaps: false }),
       view: new THREE.Matrix4(), viewInv: new THREE.Matrix4(), proj: new THREE.Matrix4(), frame: -1e9, read: true, noFlats: false, reach: 0, eye: new THREE.Vector3(), quat: new THREE.Quaternion() };
   }
   const pinOccNoRead = () => false;   // occRender draws; pinOccRead reads
@@ -37137,8 +37568,12 @@ float pinOccGate() {
     pinOccPoll();   // Round 167: the pins' last read lands here once its fence has passed, first thing, before this frame queues any GL work its copy would wait behind
     if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
     // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
-    // of the city is answered in a quarter of a second, not two); a gap over 250 ms (a stall, the app in the background)
-    // is not a slow frame: it abandons a trial and forgets the windows (dprGap)
+    // of the city is answered in a quarter of a second, not two). Round 192: a frame of 250 ms or more is a slow frame and is
+    // judged with the rest (its window's mean leaves out the slowest fifth): Mike's Mac at 1.75 had a 95th percentile of 133
+    // to 433 ms, and while every such frame abandoned the trial its controller almost never acted. Only time the page spent
+    // away is a gap that abandons a trial and forgets the windows (dprGap): hidden now or since the last frame (the app in the
+    // background, another tab; DPR.away), or a frame over DPR_AWAY (a suspended page shows no visibility change on every
+    // platform; nothing the GPU does takes that long)
     // a paced phone judges only frames drawn while active after an active one (the idle cadence says nothing of the load)
     const paceJudge = !PACE.on || (paceActive && PACE.prevActive);
     PACE.prevActive = paceActive;
@@ -37147,7 +37582,7 @@ float pinOccGate() {
     if (!once && rawMs < 500 && paceJudge) { PERF.ring[PERF.ri] = rawMs; PERF.ri = (PERF.ri + 1) % 600; PERF.rn++; }
     // review: a stall or the app's return from the background resets the controller whatever the pace judges (the first frame
     // back is idle: no touch inside the page yet); an idle frame's own 83 ms never trips the 250 ms test
-    if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);
+    if (!once && !DPR.pinned && DPR.live && (document.hidden || DPR.away || rawMs >= DPR_AWAY)) { if (!document.hidden) DPR.away = false; dprGap(now); }
     else if (!once && !DPR.pinned && DPR.live && paceJudge) {
       {
         const win = isTouch ? 15 : 30;
@@ -37275,7 +37710,9 @@ float pinOccGate() {
     updateHash(now);
     pinOccUpdate(dt);
     const tPre = performance.now();
+    cloudDeckStep();   // Round 192: the depth-free deck under the base, the aircraft's rectangles (both depth modes)
     if (POST.on) renderPost(scene, camera); else renderer.render(scene, camera);
+    if (ZREV.sub) zrevPresent();
     if (!once && DPR.live) {   // Round 168: where the frame's time goes on this device (the JS before the draw, the draw call's own CPU, the gap between drawn frames)
       const P = PACE, i = P.pi; P.pre[i] = tPre - tFrame; P.sub[i] = performance.now() - tPre; P.gap[i] = Math.min(rawMs, 999); P.pi = (i + 1) % 120; P.pn++;
     }
@@ -37406,6 +37843,12 @@ float pinOccGate() {
     }
     try { vdepthInit(); } catch (e) { VDEPTH.on = false; PERF.failed.push('vdepth'); }   // Round 168: after the weather's re-hook, so the twins compile the hooks the frames use; a failure leaves every facade on fragment depth
     if (window.__dbg) window.__dbg.vdepth = vdepthDbg;
+    if (window.__dbg) window.__dbg.zbuf = () => ({ mode: ZPROBE.mode, forced: ZPROBE.forced, probe: [ZPROBE.e, ZPROBE.f], real: ZPROBE.real, zc: zcField(), on: ZREV.on, why: ZREV.why,
+      logDepth: !!window.__useLogDepth, near: camera.near, sub: ZREV.sub, samples: ZREV.samples, size: [ZREV.w, ZREV.h], status: ZREV.status, aoStatus: ZREV.aoStatus,
+      mirrorStatus: REFL.zst || 0, renders: ZREV.renders, noClear: ZREV.noClear, guard: ZREV.guard, presents: ZREV.presents, blit: ZREV.blit, blitErr: ZREV.blitErr,
+      cloud: { old: CLOUDZ.old, mode: CLOUDZ.mode, rects: CLOUDZ.n, merged: CLOUDZ.merged, warm: CLOUDZ.warm, box: CLOUDZ.box.toArray(), zVisible: !!(cloudDeckZ && cloudDeckZ.visible), list: CLOUDZ.rects.slice(0, CLOUDZ.n).map((v) => v.toArray()) },
+      mirrorRow: REFL.cam.userData.zrevRow || null });   // Round 192: the depth mode, its probe and the deck's programs
+    if (window.__dbg) window.__dbg.cloudRects = (on) => { if (on !== undefined) CLOUDZ.off = !on; return { off: !!CLOUDZ.off, n: CLOUDZ.n }; };
     if (window.__dbg) window.__dbg.facade = () => ({ wall: wallArtU, occ: occU.uOcc.value.toArray(), snowAsked: snowArtAsked, dayRoom: FAB_DAYROOM });   // the realism pass: the walls' art and the rooms' clock
     if (window.__dbg) { window.__dbg.veg = vegProbe; window.__dbg.vegShow = (on) => (canU.uCanShow.value = on ? 1 : 0); window.__dbg.woods = (on) => { WOOD.off = !on; return WOOD.on; }; }   // the realism pass: the ground's and the trees' state
     if (hashView.p) applyHashView(hashView.p);

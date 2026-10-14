@@ -32,7 +32,7 @@ const T = @@SECONDS@@ * 1000, Q = @@Q@@, J = @@JITTER@@, GAPS = @@GAPS@@;
 let now = 0, below = 0, total = 0, changes = 0, prev = DPR.cur, lastCh = 0, gi = 0, scale = 1;
 const trace = [];
 while (now < T) {
-  if (gi < GAPS.length && now >= GAPS[gi][0]) { const g = GAPS[gi++]; now += g[1]; scale = g[2]; hook(g[1], now); continue; }
+  if (gi < GAPS.length && now >= GAPS[gi][0]) { const g = GAPS[gi++]; now += g[1]; scale = g[2]; if (g[3]) DPR.away = true; hook(g[1], now); continue; }   // g[3]: the page was hidden (visibilitychange)
   const r = DPR.cur, t = now, c = now - lastCh;
   const work = Math.max(4, (@@MODEL@@) * scale);
   let ms = Q ? Math.ceil(work / Q - 1e-9) * Q : work;
@@ -57,12 +57,12 @@ class DprController(unittest.TestCase):
         i = src.index('  const DPR = { cap: renderer.getPixelRatio()')
         cls.literal = src[i:src.index('\n', i)]
         cls.block = src[src.index('  const DPR_SLOW = '):src.index('  renderer.setSize(window.innerWidth, window.innerHeight);')]
-        h = src.index('    if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);')   # Round 168: a paced phone judges only its active frames
+        h = src.index('    if (!once && !DPR.pinned && DPR.live && (document.hidden || DPR.away || rawMs >= DPR_AWAY)) { if (!document.hidden) DPR.away = false; dprGap(now); }')   # Round 168: a paced phone judges only its active frames
         cls.hook = 'const paceJudge = true;\n' + src[h:src.index('    if (introSpin && !interacted)', h)]
 
-    def sim(self, model, seconds=600, touch=True, start=0, q=0, jitter=0.0, gaps=(), seed=7):
+    def sim(self, model, seconds=600, touch=True, start=0, q=0, jitter=0.0, gaps=(), seed=7, hook=None):
         script = HARNESS
-        for k, v in {'@@TOUCH@@': 'true' if touch else 'false', '@@LITERAL@@': self.literal, '@@BLOCK@@': self.block, '@@HOOK@@': self.hook,
+        for k, v in {'@@TOUCH@@': 'true' if touch else 'false', '@@LITERAL@@': self.literal, '@@BLOCK@@': self.block, '@@HOOK@@': hook or self.hook,
                      '@@SEED@@': str(seed), '@@START@@': str(start), '@@SECONDS@@': str(seconds), '@@MODEL@@': model,
                      '@@Q@@': str(q), '@@JITTER@@': str(jitter), '@@GAPS@@': json.dumps([list(g) for g in gaps])}.items():
             script = script.replace(k, v)
@@ -165,6 +165,34 @@ class DprController(unittest.TestCase):
         self.assertEqual(o['end'], 1.25)
         self.assertLess(o['below'], 0.05)
 
+    def test_the_page_hidden_mid_trial(self):
+        # Round 192: a two-second absence the page reported (visibilitychange): abandoned like the minute in the background
+        o = self.sim('29', gaps=[(1600, 2000, 0.55, 1)], q=16.667, jitter=0.03)
+        self.assertEqual(o['end'], 1.25)
+        self.assertLess(o['below'], 0.05)
+
+    # Round 192: a frame of 250 ms or more is a slow frame. Mike's Mac at 1.75 (beacons: p50 100 ms, p95 133 to 433 ms) never
+    # stepped down, because every such frame abandoned the trial; a Mac's frames, fill-bound, with a tail of 300 ms frames
+    STRUGGLING_MAC = '(30 + 23 * r * r) * ((t % 1000) < 180 ? 3.2 : 1)'
+    OLD_HOOK_LINE = '    if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);'
+
+    def test_a_struggling_mac_steps_down(self):
+        o = self.sim(self.STRUGGLING_MAC, seconds=300, touch=False, jitter=0.05)
+        self.assertLessEqual(o['end'], 1.3, o['trace'])
+        self.assertGreater(o['trials'][0], 0)                 # steps down kept
+        # the old rule, every frame of 250 ms or more a gap, never moved it: the defect this round fixes
+        i = self.hook.index('    if (!once && !DPR.pinned')
+        old = self.hook[:i] + self.OLD_HOOK_LINE + self.hook[self.hook.index('\n', i):]
+        o2 = self.sim(self.STRUGGLING_MAC, seconds=300, touch=False, jitter=0.05, hook=old)
+        self.assertEqual(o2['end'], 1.75)
+        self.assertEqual(o2['changes'], 0)
+
+    def test_a_mac_with_rare_long_frames_stays_sharp(self):
+        # fast enough (12 ms), a 400 ms hitch every 10 s (a shader compile, an upload): the slowest fifth leaves them out
+        o = self.sim('(t % 10000) < 400 ? 400 : 12', seconds=300, touch=False, jitter=0.03)
+        self.assertEqual(o['end'], 1.75)
+        self.assertEqual(o['changes'], 0)
+
     def test_low_power_mode_stays_sharp(self):
         # iOS's Low Power Mode paces the page at 30 Hz: no rung can buy anything, so it keeps the cap
         o = self.sim('14', q=33.333, jitter=0.02)
@@ -193,8 +221,8 @@ class DprController(unittest.TestCase):
     def test_wiring(self):
         s = self.src
         self.assertIn('else if (!once && !DPR.pinned && DPR.live && paceJudge) {', s)
-        self.assertIn('if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);', s)   # review: a gap resets the controller whatever the pace judges
-        self.assertIn('if (!once && !DPR.pinned && DPR.live && (rawMs >= 250 || document.hidden)) dprGap(now);', s)
+        self.assertIn('if (!once && !DPR.pinned && DPR.live && (document.hidden || DPR.away || rawMs >= DPR_AWAY)) { if (!document.hidden) DPR.away = false; dprGap(now); }', s)   # review: a gap resets the controller whatever the pace judges
+        self.assertIn('if (!once && !DPR.pinned && DPR.live && (document.hidden || DPR.away || rawMs >= DPR_AWAY)) { if (!document.hidden) DPR.away = false; dprGap(now); }', s)
         self.assertEqual(s.count('dprJudge(sum / n, DPR.tmp[o + 1], now);'), 1)
         self.assertNotIn('DPR.fast', s)
         self.assertIn('const DPR_CAP = isTouch ? 1.25 : 1.75;', s)          # the cap, and so the load's peak, unchanged

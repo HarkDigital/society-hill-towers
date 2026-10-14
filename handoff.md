@@ -81,6 +81,7 @@ Every `ROOT / "..."` input of `build.py` and every `*.py` in the folder is liste
 | `tests/test_street_labels.py` | Runs actual street-label geometry under Node: full-width pavement clearance on slopes, interior crests, custom deck heights, crossing-bridge separation, terrain ridges, complete atlas UVs and upward faces. Round 98 also audited all 3,774 baked placements against road/ground triangles. |
 | `tests/test_pins.py` | Runs production pin rendering/picking helpers under Node: shared scene-depth policy for every family, rejection of blocked pin hits, transparent-corner rejection, Indego atlas tiles, and overlap ordering among unobstructed pins; since Round 169 a pin the gate hides never takes the tap. |
 | `tests/test_pin_fade.py` | Round 169: the pins' state and cadence under Node against scripted images: hidden until an image drawn after the pin came into view clears it, a covered answer hides at once, showing keeps the guard and the fade in, no blink at an edge, an image every 2nd drawn frame on a phone while moving (every frame on a computer) and one the frame the eye stops, near images between complete ones with a far tip in view, a pin the reconcile only moved to another slot keeping its state. |
+| `tests/test_zbuf.py` | Round 192: reversed-Z depth. The default (reversed where a throwaway context has `EXT_clip_control` and a complete 4x `DEPTH32F_STENCIL8` framebuffer, the real context checked again), `zrevCheck` against fake contexts, `zrevInstall` run under Node on a stand-in renderer over the vendored three (the projection swapped only inside render, clear 0, GEQUAL/GREATER, the shadow pass standard, the frustum's far plane, the sorts, the clear-to-near guard), the AO's decode, the mirror's reversed oblique row with and without the river in view, the cloud deck's programs and the aircraft's rectangles (`cloudRects`, `cloudRectsFit`), the page's only `gl_FragDepth` writes and every `gl_Position.z` it sets, and `zc` on every beacon. |
 | `tests/test_pin_gate.py` | Round 169: the CPU's answers under Node against synthetic images (one image, two, reach, arrival, the placards' answer under motion), a tap asking the gate's own images (`pinGateShows`), and the text of the vertex gate. |
 | `tests/environment_gpu.html` | Round 106: production grass, pavement, weather, water and sky GPU checks in four depth/detail configurations; stable filtering, lane paint, wet/snow layering, sky-colour reflections, night brightness and independent river/fountain ripple scales. |
 | `tests/test_traffic.py` / `tests/traffic_checks.js` | Rounds 107/112: production traffic lifecycle and geometry under Node, upstream inflow to empty visible streets, citywide baked coverage and short connectors; population caps, camera/clock changes, visible-car preservation, T-junction connectivity, separated overpasses, route transfers, following gaps, birth spacing and one-way dead ends. |
@@ -275,7 +276,11 @@ python3 -m venv .venv && .venv/bin/pip install -r requirements.txt   # pipeline 
     `__dbg.dpr()` shows the ladder, the open trial and the beacon fields).
   - `?wx=clear|overcast|fog|drizzle|rain|downpour|storm|hail|snow|blizzard|sleet` pins the
     weather (the live Open-Meteo fetch is skipped).
-  - `?logdepth=0` is the depth-buffer escape hatch (logarithmic depth is on everywhere).
+  - Depth (Round 192): reversed-Z float depth is the default wherever the probe grants it (`ZPROBE`, `zcField`, the `zc`
+    beacon field); `?zbuf=log` forces r149's logarithmic depth (the fallback every device without `EXT_clip_control` gets),
+    `?logdepth=0` is still plain 24-bit depth (z-fights on the tower skins), `?cloudz=old` keeps the cloud deck writing its
+    depth everywhere; `__dbg.zbuf()` reports the mode, the probe, the blit, the guard and the deck's programs, and
+    `__dbg.cloudRects(false)` turns the aircraft's rectangles off (the spike's planes drawn over the clouds, for an A/B).
 - **Deploy:** `./deploy_philly3d.sh` ships philly3d.com; `git push` ships GitHub Pages. To
   check Pages is live, grep the *whole* page or its tail: app.js sits after ~20 MB of data,
   so a first-120 KB range check always reports stale.
@@ -402,8 +407,9 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   spans' real deck profiles.
 - **Layering (z-fighting):** flat surfaces use the `LAYER` constants (park .06 / plaza .10 /
   sidewalk .16 / road .24 / footway .32 / pools .38), every ribbon gets a deterministic few-cm
-  lift, and the renderer runs with `logarithmicDepthBuffer: true` everywhere. Never add
-  coplanar flat geometry without picking a layer, and never use polygonOffset on the flats.
+  lift, and the renderer runs reversed-Z float depth (Round 192) or, where that is refused, `logarithmicDepthBuffer: true`.
+  Never add coplanar flat geometry without picking a layer, and never use polygonOffset on the flats (the log fallback
+  ignores it).
 - **Navigation:** fly-only since Round 35. Orbit survives only as the attract loop (the veil
   and the post-Enter glide down to City Hall); the first pointer/wheel/touch/key hands control
   to fly (`autoFly`): WASD, E/Q or Space/C, shift boost, scroll sets cruise speed, clamped
@@ -563,7 +569,7 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   or the sun moves and `frame()` refreshes every 4th frame while vehicles move. `cullFogged`
   hides outer meshes beyond `fog.far` (view depth). `DPR` adapts the pixel ratio on a ladder
   from the display's ratio under `DPR_CAP` (1.75 desktop, 1.25 touch) down to 0.9 / 0.72, judged from Enter on; since
-  Round 166 every step is an A-B-A trial kept only when it pays (`dprJudge`; `tests/test_dpr_controller.py`) (`?dpr=N` pins). `flushInst(m, colorFrom)` is the
+  Round 166 every step is an A-B-A trial kept only when it pays (`dprJudge`; `tests/test_dpr_controller.py`) (`?dpr=N` pins); since Round 192 a frame of 250 ms or more is a slow frame like any other (only a page hidden since the last frame, `DPR.away`, or a frame over `DPR_AWAY` 4 s abandons a trial), so a struggling Mac steps down. `flushInst(m, colorFrom)` is the
   one InstancedMesh upload helper. `PERF`/`__dbg.perf()` and the `?dev` readout carry per-step
   timings and frame p50/p95; `beacon()` posts checkpoints to philly3d.com's `/b` from the site and the
   apps; the `perf` (60 s after Enter) and `settled` (180 s) beacons add frame p50/p95, calls, triangles and the
@@ -792,6 +798,24 @@ More rules the log paid for (details in `devlog.md`):
 - `WX` must be declared before the sky material (`refreshEnv` reads it during init, TDZ crash).
 - Custom shaders that use the logdepthbuf chunks need `#include <common>` for
   `isPerspectiveMatrix` or the program dies silently and the mesh never draws.
+- Reversed Z (Round 192, `ZREV`, `zrevInstall`): inside `renderer.render` a perspective camera's projection has its z row
+  rewritten (near at depth 1, far at 0), the depth clears to 0 and every depth function is flipped; outside it
+  `camera.projectionMatrix` is three's own. So: (1) never write `gl_FragDepth` in a new program (it costs the early depth
+  test the round bought; the cloud deck's depth-writing program is the one exception, `tests/test_zbuf.py` counts the
+  writes) and never set `gl_Position.z` without both conventions (`ZREV.on ? ... : ...`, as the sky dome, the deck's
+  clamp, the wakes' and the vehicle shadows' hair toward the eye do); (2) a perspective render target that holds depth
+  must be float or the gain is gone (`zrevFloatDepth` re-specifies a target's renderbuffer as `DEPTH32F_STENCIL8` /
+  `DEPTH_COMPONENT32F` after three makes it; `zrevDT` hands a small target a float depth texture); (3) a
+  `renderer.clear()` outside a render clears to 1, which is the near plane here: a render that does not clear its own
+  depth is guarded (`ZREV.cleared`), but a new pass that draws a perspective camera with `autoClear` off should clear
+  inside its own render; (4) the shadow pass and every orthographic camera keep the standard convention (the clip
+  control is switched back for them). A program that `discard`s keeps its early depth test only partly on Apple's GPUs:
+  City Hall's balustrade cut (one program since fix2) is the one large case left.
+- The cloud deck (Round 192): under the low bank's lowest base minus 25 m it draws `cloudMatNoZ`, which writes no depth and
+  sits on the far plane, in both depth modes; every aircraft over the base on the screen gets a rectangle (`cloudRects`,
+  sixteen at most) that the twin leaves to `cloudDeckZ`, the depth-writing program cut to them and scissored to their
+  union, so a plane over the base stays veiled by the cloud in front of it. Anything else that ever stands over 400 m
+  (the storm's lowest base) needs the same treatment.
 - Ground/water/sky palette (Round 106): `ROAD_COLORS` is shared by core/wide/far roads and bridge decks; use `COLORS.paving` for concrete walks/aprons. `surfTexPatch` classifies green against **both** red and blue so blue-gray asphalt never becomes meadow. Grass detail fades to its mean. Water's sky uniforms are copied and converted to linear before fog's post conversion; do not mutate the dome palette. `liquify` cache keys include ripple scale/amplitude/speed/touch budget. `uTwilight` must be copied to the reflection dome in `refreshEnv`.
 - Comcast Center (Round 108): one south-facing recess at modeled heights 247–271 m, below the intact 271–297 m crown. These are photographic proportions, not surveyed elevations. `specTopPlan` anchors `comcastFacadePieces` so lower shoulder records cannot fill the opening. Keep lower atria glazed; dark applied panels looked like extra holes. Crown slots 200–201 identify this building; `uComcastSolid` routes both automatic and manually selected Phillies nights to red across the whole crown, including the roof. Custom palettes retain bands; other buildings keep their palettes.
 - Comcast crown grid (Round 111): `aCrownGrid` carries local wall distance, height above the building base and face width through `mergeColored`. `crownPanelPatch` modulates the themed light with mullions, posts and floor bands, aligned with the daytime glass. Keep the footprint-integrated bars to avoid distant shimmer. Zero coordinates on the roof and CTC preserve their lighting. The crown GPU fixture needs an opaque backing like the real building so far-side light panels cannot overwrite the visible grid.
