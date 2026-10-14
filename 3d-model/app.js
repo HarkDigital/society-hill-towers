@@ -9499,6 +9499,10 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // the system's floor byte for appendBuilding (fh is in metres, written as decimetres): -(sys + 1)
   const glassFh = (sys) => -(sys + 1) / 10;
+  // Round 194 (Mike: "The Ryland needs the glass treatment. That entire building is glass."): 'Restoring the landmarks' lays
+  // the Ryland's two bars here under the glass systems, and 'Raising the outer districts' builds them on the glass chunks in
+  // the residential window wall (system 8, homes lit room by room) in the blue the photographs read (#4F7BA1)
+  const RYLAND_GLASS = [], RYLAND_SYS = 8, RYLAND_BODY = 0x4f7ba1;
   // the rooms' light by the ambient light (uGlassL.x, from applyLighting): a lit office is the same lamps at noon and at
   // nine, and what changes is how much of the reflection is left over it, so by day the room is the faint daylit one, and
   // through the dusk the lamps come up well ahead of the night term (the review: at 18:25 on Oct 14 the glass towers stood
@@ -14691,8 +14695,15 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           { v: north * (S / 4), d: S / 2 - 0.4, h: 110.9 },   // north bar, full height
           { v: -north * (S / 4), d: S / 2 - 0.4, h: 84 },      // south bar + amenity deck
         ];
+        const [rcx, rcz] = polyCentroid(b.poly), rBase = siteY(rcx, rcz, 'ground');
         for (const bar of bars) {
           const bx = ob.cx + a.px * bar.v, bz = ob.cz + a.pz * bar.v;
+          if (GLASS_ON) {   // Round 194: the bar is the glass systems' (its frames, reflections and rooms are the system's, no boxed mullions)
+            const hu = L / 2, hd = bar.d / 2;
+            const poly = [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([su, sd]) => [bx + a.ax * su * hu + a.px * sd * hd, bz + a.az * su * hu + a.pz * sd * hd]);
+            RYLAND_GLASS.push({ poly, cx: bx, cz: bz, h: bar.h, base: rBase });
+            continue;
+          }
           glassParts2.push({ geom: box(L, bar.h, bar.d, bx, bar.h / 2, bz, ry), color: new THREE.Color(0x4f7ba1) });
           // mullion grid a shade darker than the glass: verticals every ~3 m,
           // spandrel band every 3 floors — curtain-wall rhythm, not white trim
@@ -17526,6 +17537,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         if (GLASS_ON) glassTowerBody({ name: 'Two Liberty Place' }, gcCrown);
         crown(cx, cz, base, [[34, 207, 228], [22, 224, 253]], gcCrown, cWhite, tlSlot, tFh);
         themeParts.push({ geom: pyr4(cx, cz, 5, base + 253, base + 258, 0.4), color: cWhite, lit: cWhite.clone().multiplyScalar(0.55), mix: 0, slot: tlSlot, style: 3 });   // the finial lit white
+      }
+      // --- The Ryland (1 Dock Street, Round 194): its two bars on the residential window wall, laid in 'Restoring the landmarks'
+      for (const r of RYLAND_GLASS) {
+        c.set(RYLAND_BODY).multiplyScalar(0.66);   // the towers' register (glassTowerBody's)
+        appendBuilding(getGlassChunk(r.cx, r.cz), r.poly, r.base - 1, r.base + r.h, c, 20, r.base, null, glassFh(RYLAND_SYS));
       }
       // --- City Hall: the full Second Empire block (its outline was dropped at pack
       // time for containing part centroids, and the wings were never mapped as parts,

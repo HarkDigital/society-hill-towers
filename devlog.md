@@ -10828,3 +10828,18 @@ place; this is what changed in the code, and what was measured.
   widens as the deck closes (`uGlassW.x` is glintK); `glass_calibrate.py --judge` when the poses or the routing change,
   each tower judged where it stands in the open, its median within delta E 15 and b* 6, `OPEN` for the ones left to
   Mike; the debug views 7 and 8 are each tower's code and 9 the glass alone as a mask.
+
+## Round 194 — the Ryland in glass (Oct 14)
+
+- Mike, after the glass towers: "Keep Penn as is, keep city hall as is. The Ryland needs the glass treatment. That entire
+  building is glass." So Penn keeps Round 191's pose (the right arm out over the city, the charter in the left hand, as the
+  photographs show it) and City Hall's plain night keeps Round 109's amber.
+- The Ryland (1 Dock Street) is a core building built in 'Restoring the landmarks' as two offset blue bars with boxed
+  mullions and spandrel bands on the core's own glass (rylandGlassMat), and Round 193's glass systems never reached it: the
+  live build drew it as a pale flat slab. Under the systems (GLASS_ON) its two bars are laid in RYLAND_GLASS there, with no
+  boxed mullions, and built in 'Raising the outer districts' on the glass chunks (`appendBuilding(getGlassChunk(...))`, the
+  Liberty towers' route) in the residential window wall, system 8 (homes lit room by room, a 6 m lobby), in the blue the
+  photographs read (#4F7BA1 in the towers' register). Its parapet screen and roof pergola stay on the core's pieces. Given in
+  code, not in glass_systems.json, so the calibrated skyline is untouched (glass_calibrate.py's fingerprint). ?real=0 and
+  ?glass=0 build the old bars. Rendered from Dock Street, a low flight, the river and at night: no link failures or console
+  errors. `tests/test_ryland_glass.py`.
