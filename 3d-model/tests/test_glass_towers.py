@@ -232,16 +232,15 @@ class Wiring(unittest.TestCase):
         self.assertEqual('3fec7d8ddb', hashlib.sha256(old.encode()).hexdigest()[:10], 'the pre-Round-191 outer glass hook must stay byte for byte (?real=0, ?glass=0)')
         # every new routing branch asks GLASS_ON
         self.assertIn('const gSys = GLASS_ON && isGlassStyle(style) ? glassSysOfSpec(spec, style) : -1;', s)
-        self.assertIn('if (GLASS_ON && !spec && base + hTop - ys0 >= 30) gRoute = glassGenericSys(skinKindOf(style, null, i, t), i);', s)
-        self.assertIn("if (GLASS_ON && TSKIN_ON && !rplan) { const mk = midSkinKindOf(style, i + 0.11, t, fa); if (mk === 'glass' || mk === 'unitized') gMid = glassGenericSys(mk, i); }", s)
+        self.assertIn('if (GLASS_ON && !spec && t === 10 && base + hTop - ys0 >= 30) gRoute = glassGenericSys(skinKindOf(style, null, i, t), i);', s)
 
     def test_one_draw_per_glass_wall(self):
         s = self.src
-        # a researched glass wall lays no skin; a routed generic wall lays none; its roof stays on the fabric chunk
+        # a researched glass wall lays no skin; a part the research flags as glass (t 10) lays none on its cladding kind's
+        # system; every other wall keeps main's skin (the third review: no routing by the cladding's lottery)
         self.assertIn('if (gSys >= 0) { if (TSKIN_ON && base + hTop - ys0 >= 30 && !(style >= 24 && style <= 29)) GLASS.skinsSkipped++; }', s)
         self.assertIn('if (gRoute < 0) towerSkinNote(poly, mh > 0 ? base + mh : base, base + hTop, style, spec, i, c, mh > 0, t);', s)
-        self.assertIn('appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, glassBody(gs, i, _glBody), 30, base, null, glassFh(gs), capCol, false, chk);', s)
-        self.assertIn('const cch = capCh || ch;', s)
+        self.assertIn("GLASS.routed[gRoute >= 0 ? 'partsSys' : 'parts']++;", s)
         self.assertIn('function skinKindOf(style, spec, seed, t) {', s)
         self.assertIn('const kind = skinKindOf(style, spec, seed, t);', s)
 
@@ -276,7 +275,7 @@ class Wiring(unittest.TestCase):
         s = self.src
         tick = s[s.index('  function cityEnvTick() {'):s.index('  // the curtain wall\'s fragment work.')]
         self.assertNotIn('10000', tick); self.assertNotIn('active', tick); self.assertNotIn('isTouch', tick)
-        self.assertIn('else if (CITYENV.pending) cityEnvBake(0);', tick)
+        self.assertIn('else if (CITYENV.pending && performance.now() - CITYENV.at >= CITYENV_GAP) cityEnvBake(0);', tick)   # the third review: spaced while the clock moves
         self.assertIn('CITYENV.u.uCityEnvK.value = Math.min(1, cityEnvLum() / CITYENV.lumAt);', tick)
         self.assertIn('    applyLighting();\n    if (CITYENV.built) cityEnvTick();', s)
         step = s[s.index("  step('Mirroring the city', () => {"):s.index("  function glassArtTex(im, srgb, aniso) {")]
@@ -325,7 +324,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('float visV = gBand(yF, fy, vs, vh), glU = gBand(uB, fx, B.y, 1.0 - B.y);', main)
         glaze = self.src[self.src.index("  step('Glazing the towers'"):self.src.index('  // the street floors (critic gap 4)')]
         for frag in ('new THREE.DataArrayTexture(im, T, T, 16)', 't.wrapS = t.wrapT = THREE.RepeatWrapping;', 't.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;',
-                     't.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);', 'artImage(artSrc(A.frames, A.framesHalf))'):
+                     't.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);', 'const im = await glassFramesFetch();'):
             self.assertIn(frag, glaze)
         # gBand is the exact box filter of a periodic band (against brute force)
         def band(x, w, a, b):
@@ -357,7 +356,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('glassU.uGlassL.value.x = glassRoomLevel(elAmb, night);', s)
         self.assertIn('if (GLASS_ROOMS && !GLASS.rooms.asked && glassU.uGlassL.value.x > 0.001) glassRoomsLoad();', s)
         hook = s[s.index('  function glassSysHook(sh) {'):s.index('  function glassSamplers(mat) {')]
-        self.assertIn('totalEmissiveRadiance = (gRoomN * uGlassL.x + gRoomD * (1.0 - uGlassL.x)) * gVLT * (1.0 - Fr) * gVis;', hook)
+        self.assertIn('totalEmissiveRadiance = gRoomN * uGlassL.x * uGlassW.y * pow(gVLT / 0.5, 0.35) * tF * gVis + dayR;', hook)
         # the second review: at 18:08 on Oct 14 (the sun 2.5 degrees up, a daylit sky) no room is lit; at 18:25 (0.3 degrees
         # up) they are coming on with the lamps, ahead of the night term; full 4.5 degrees under the horizon
         sm = lambda a, b, x: (lambda t: t * t * (3 - 2 * t))(min(max((x - a) / (b - a), 0), 1))
@@ -375,7 +374,7 @@ class Wiring(unittest.TestCase):
         city's own air; the skins keep the sky probe for their walls."""
         s = self.src
         env = re.search(r'const GLASS_ENV_PARS = `(.*?)`;', s, re.S).group(1)
-        self.assertIn('return PI * gIrrCube(worldNormal) * 0.9;', env)
+        self.assertIn('return PI * (gIrr.x >= 0.0 ? gIrr : gIrrCube(worldNormal)) * 0.9;', env)
         self.assertIn('return PI * envMapColor.rgb * 0.9;', env)
         self.assertNotIn('uGlassIrrS', s)
         self.assertNotIn('uGlassIrrG', s)
@@ -446,7 +445,7 @@ class Wiring(unittest.TestCase):
         s = self.src
         a = s.index('  function glassArtTex(im, srgb, aniso) {'); b = s.index('  function glassRoomsLoad() {')
         self.assertIn('return freeTexOnUpload(t);', s[a:b])
-        self.assertIn('artImage(artSrc(A.frames, A.framesHalf))', s)
+        self.assertIn('artImage(artSrc(GLASS_DATA.frames, GLASS_DATA.framesHalf))', s)
         self.assertIn('glassU.uGlassArr.value = freeTexOnUpload(t);', s)
         self.assertIn("const GLASS_ART = ", (ROOT / 'build.py').read_text().replace('const("GLASS_ART", text_of("glass_art.json", "null"))', 'const GLASS_ART = '))
 
@@ -509,15 +508,13 @@ class SecondReview(unittest.TestCase):
             if c['sys'] not in (0, 14):
                 self.assertNotIn('slim', c)
 
-    def test_the_fill_and_the_sun_inside(self):
+    def test_the_fill_and_the_grime(self):
         s = self.src
-        self.assertIn('gSunInK = uGlassL.z * gVLT * gVLT * gVis * hue;', self.main)
-        self.assertIn('reflectedLight.directDiffuse += saturate(dot(geometry.normal, directLight.direction)) * directLight.color * BRDF_Lambert(gSunInK);', s)
         self.assertIn('#define RE_Direct RE_Direct_Glass', s)
         self.assertIn('+ vec3(uGlassL.w) * gGlass;', self.main)
-        self.assertIn('uGlassL: { value: new THREE.Vector4(0, GLASS_FAR_LUM, 0.40, 0.016) },', s)
-        # the daylit room in the glass's tint
-        self.assertIn('gRoomD = cM.rgb / max(gLum(cM.rgb), 1.0e-3) * hue * 0.3', self.main)
+        self.assertIn('uGlassL: { value: new THREE.Vector4(0, GLASS_FAR_LUM, 0.2, 0.016) },', s)
+        # the sun inside is the third review's (ThirdReview), never a Lambert term on the pane
+        self.assertNotIn('gSunInK', s)
 
     def test_homes_are_lit_by_their_apartments(self):
         """A home's unit of 2 or 4 bays (a hotel room 2 or 3) switches as one, its second room at half or dark, blinds drawn in
@@ -566,6 +563,129 @@ class SecondReview(unittest.TestCase):
         # the office suites' levels from 0.475 to 0.975 (their mean the old 0.725)
         self.assertNotIn('0.35 + 0.75 * fract(', self.main)
         self.assertAlmostEqual(0.475 + 0.25, 0.725, places=6)
+
+
+class ThirdReview(unittest.TestCase):
+    """Round 192's third review: the sun inside drawn inside the room (from above), never a matte term on the pane; the
+    reflection carrying the calibration (the tower's photographed glass as its reflectance, its hue from linear light);
+    the lit rooms at the fabric's level after dark; the curtain wall only on evidence; the glint under a deck; the probe's
+    bakes spaced while the clock moves and one when the lights settle; the frames fetched with the cladding's tiles."""
+    @classmethod
+    def setUpClass(cls):
+        cls.src = (ROOT / 'app.js').read_text()
+        cls.main = re.search(r'const GLASS_SYS_MAIN = `(.*?)`;', cls.src, re.S).group(1)
+        cls.pars = re.search(r'const GLASS_SYS_PARS = `(.*?)`;', cls.src, re.S).group(1)
+        cls.hook = cls.src[cls.src.index('  function glassSysHook(sh) {'):cls.src.index('  // __dbg.glass(): the systems')]
+        cls.S = json.loads((ROOT / 'glass_systems.json').read_text())
+
+    def test_the_sun_inside_is_inside_the_room(self):
+        h = self.hook
+        # the floor the sun lights, seen only where the eye's ray into the room lands on it: from above, by the two profile
+        # angles' tangents; nothing from level or below
+        self.assertIn('float onFl = clamp(Vw.y / max(dot(Vw, gNh), 1.0e-3) * ln / Lw.y, 0.0, 1.0);', h)
+        self.assertIn('if (Lw.y > 0.0 && ln > 0.0) {', h)
+        self.assertIn('reflectedLight.directDiffuse += E * gSunFl * onFl + min(E * gSunCl, gCapRef);', h)
+        self.assertNotIn('BRDF_Lambert(', h)
+        self.assertIn('gSunFl = uGlassL.z * RECIPROCAL_PI * gVLT * gVLT * gVis * hueT;', self.main)
+        self.assertIn('gSunCl = 0.2 * gSunFl;', self.main)
+        # the floor's own share of a pane: none looking level, all looking down more steeply than the sun shines in
+        onfl = lambda vy, vn, ly, ln: min(max(vy / max(vn, 1e-3) * ln / ly, 0.0), 1.0)
+        self.assertEqual(onfl(0.0, 1.0, 0.6, 0.8), 0.0)
+        self.assertEqual(onfl(-0.2, 0.98, 0.6, 0.8), 0.0)
+        self.assertEqual(onfl(0.8, 0.6, 0.6, 0.8), 1.0)
+        self.assertAlmostEqual(onfl(0.1, 0.995, 0.6, 0.8), (0.1 / 0.995) / (0.6 / 0.8), places=6)
+        # every light inside that the view does not choose (the daylit room and the bounce together) at most a quarter of
+        # what the pane reflects at normal view
+        self.assertIn('gIrr = gIrrCube(nn);', self.main)
+        self.assertIn('gCapRef = 0.25 * gSpec * gIrr * 1.1 * gVis;', self.main)
+        self.assertIn('return PI * (gIrr.x >= 0.0 ? gIrr : gIrrCube(worldNormal)) * 0.9;', self.src)   # the cube fetched once
+        self.assertIn('if (gSunFl.g > 0.0 && directLight.color.r + directLight.color.g > 0.0) {', h)
+        self.assertIn('vec3 dayR = min(gRoomD * (1.0 - uGlassL.x) * gVLT * tF * gVis, gCapRef);', h)
+        self.assertIn('gCapRef = max(gCapRef - dayR, vec3(0.0));', h)
+
+    def test_the_daylit_room_takes_the_glass_tint_alone(self):
+        self.assertIn('gRoomD = hueT * 0.3 * (0.06 + 0.13 * max(uSunW.y, 0.0))', self.main)
+        self.assertNotIn('cM.rgb', self.main)
+
+    def test_the_reflection_carries_the_colour(self):
+        m = self.main
+        # the hue from linear light, deepened by uGlassW.w; the reflectance the tower's photographed glass at uGlassW.z,
+        # the system's F0 the share its corners, crown and lobby keep
+        self.assertIn('vec3 bl = pow(max(body, vec3(1.0e-4)), vec3(2.2));', m)
+        self.assertIn('vec3 hue = pow(bl / bLum, vec3(uGlassW.w)); hue /= max(gLum(hue), 1.0e-4);', m)
+        self.assertIn('gF0 = mix(min(uGlassW.z * bLum / 0.401 * gF0 / uGS[k0 + 2].x, 0.9), gF0, uGlassL.x);', m)
+        self.assertAlmostEqual(0.66 ** 2.2, 0.401, places=3)
+        self.assertIn('uGlassW: { value: new THREE.Vector4(1, 0.6, 2.0, 1.6) },', self.src)
+        # every system's own glass takes the body's hue whole (the body is the photographed glass)
+        for s in self.S['systems']:
+            self.assertEqual(s['coatSat'], 1.0, s['name'])
+        # the bodies that carry the calibration's swatches
+        T = self.S['towers']
+        self.assertEqual(T['Cira Centre']['body'], '#A7B5C0')
+        self.assertEqual(T['One Liberty Place']['body'], '#5D7F9E')
+        self.assertEqual(T['Evo at Cira Centre South']['body'], '#4B5762')
+
+    def test_lit_rooms_at_the_fabrics_level(self):
+        h = self.hook
+        # the transmittance's gentle fall after dark (0.75 of a pane of 0.5's at 0.22), the Fresnel past normal view only
+        self.assertIn('float tF = (1.0 - Fr) / (1.0 - gF0);', h)
+        self.assertIn('totalEmissiveRadiance = gRoomN * uGlassL.x * uGlassW.y * pow(gVLT / 0.5, 0.35) * tF * gVis + dayR;', h)
+        self.assertGreaterEqual((0.22 / 0.5) ** 0.35, 0.7)
+        self.assertAlmostEqual((0.5 / 0.5) ** 0.35, 1.0)
+        # the offices' lit share the fabric's (roomLight: the share of zones times the floors on, 0.88)
+        self.assertIn('float fOn = min(uOcc.y * 1.2 + 0.03, 1.0);', self.main)
+        self.assertIn('share = fOn * 0.775 * 0.88 + uOcc.z * 0.08;', self.main)
+        self.assertEqual(2, self.main.count('mix(0.55, 1.0, fract(hF * 31.73))'))
+        self.assertAlmostEqual((0.55 + 1.0) / 2, 0.775)
+        for occ in (0.25, 0.34, 0.5):
+            self.assertLess(abs(min(occ * 1.2 + 0.03, 1.0) * 0.775 - occ) / occ, 0.12, occ)
+
+    def test_the_curtain_wall_only_on_evidence(self):
+        s = self.src
+        a = s.index("  step('Raising the outer districts'") if "  step('Raising the outer districts'" in s else 0
+        # no wall by the cladding's lottery: a researched tower's system, or a part the research flags as glass (t 10)
+        self.assertNotIn('gMid', s)
+        self.assertNotIn("mk === 'glass' || mk === 'unitized'", s)
+        self.assertIn('if (GLASS_ON && !spec && t === 10 && base + hTop - ys0 >= 30) gRoute = glassGenericSys(skinKindOf(style, null, i, t), i);', s)
+        # every other mid-rise keeps main's skin line exactly
+        self.assertIn("poly[0][0], poly[0][1]) < 0)\n          midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, style, i + 0.11, c, t, fa);   // Round 185", s)
+        self.assertIn('    const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao) => {', s)
+
+    def test_the_glint_under_a_deck(self):
+        h = self.hook
+        self.assertIn('m.roughness = mix(0.5, material.roughness, uGlassW.x * uGlassW.x);', h)
+        self.assertIn('RE_Direct_Physical(directLight, geometry, m, reflectedLight);', h)
+        self.assertIn('if (GLASS_ON) glassU.uGlassW.value.x = glintK;', self.src)
+
+    def test_the_probe_bakes_spaced_and_on_the_lights(self):
+        s = self.src
+        self.assertIn('const CITYENV_GAP = 400;', s)
+        self.assertIn('else if (CITYENV.pending && performance.now() - CITYENV.at >= CITYENV_GAP) cityEnvBake(0);', s)
+        a = s.index('  function updateLightsTheme(now, dt) {')
+        self.assertIn('if (THEME.settled && CITYENV.built) CITYENV.pending = true;', s[a:a + 4000])
+
+    def test_the_frames_fetched_with_the_cladding(self):
+        s = self.src
+        a = s.index("  step('Cladding the towers', async () => {")
+        self.assertIn('glassFramesFetch();', s[a:a + 200])
+        self.assertLess(s[a:a + 200].index('glassFramesFetch();'), s[a:a + 200].index('if (!TSKIN_ON'))
+        self.assertIn('const im = await glassFramesFetch();', s)
+        self.assertIn('return GLASS.framesP || (GLASS.framesP = artImage(artSrc(GLASS_DATA.frames, GLASS_DATA.framesHalf)));', s)
+
+    def test_the_proxy_walls_have_a_rhythm(self):
+        f = re.search(r'const CITYENV_GLSL_F = `(.*?)`;', self.src, re.S).group(1)
+        self.assertIn('float pier = band(dot(vW.xz, tg) / 9.0, length(dw.xz) / 9.0, 0.0,', f)
+        self.assertIn('float cellV = 0.82 + 0.36 * ch(floor(vW.xz / 40.0) + 0.71);', f)
+        self.assertAlmostEqual(0.82 + 0.36 / 2, 1.0)   # the turns keep the wall's mean
+        self.assertAlmostEqual(0.8 + 0.2 * 1.0, 1.0)
+
+    def test_the_calibration_views(self):
+        s = self.src
+        self.assertIn('gDbgId = fract(dot(floor(body * 255.0 + 0.5), vec3(0.1371, 0.3791, 0.0937)));', self.main)
+        self.assertIn('if (uGlassK.z > 6.5 && uGlassK.z < 8.5) gl_FragColor = vec4(0.5 * mod(floor(fract(gDbgId * (uGlassK.z > 7.5 ? 8.0 : 1.0)) * 8.0 / vec3(1.0, 2.0, 4.0)), 2.0), 1.0);', s)
+        self.assertIn('totalEmissiveRadiance = uGlassK.z > 8.5 ? (gGlass > 0.5 ? vec3(0.3, 0.0, 0.3) : vec3(0.0, 0.3, 0.0))', s)
+        # the chunk stores a colour by truncation (VBuf: col[k] = r * 255 into a Uint8Array), as tower_code assumes
+        self.assertIn('this.col[k] = r * 255; this.col[k + 1] = g * 255; this.col[k + 2] = b * 255;', s)
 
 
 if __name__ == '__main__':

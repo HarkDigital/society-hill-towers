@@ -1,13 +1,18 @@
 {
- "note": "glass_calibrate.py: each researched tower's glass at the standard noon poses against its reference swatch (CIE76 delta E), and the frames against the glass where CONTRAST bounds it",
- "fingerprint": "6f7497952d5f8135",
+ "note": "glass_calibrate.py: each researched tower's glass at the poses it is judged at against its reference swatch (CIE76 delta E and b*), and the frames against the glass where CONTRAST bounds it",
+ "fingerprint": "b5fca1378b8fb251",
  "swatches": {
   "Comcast Center": {
    "hex": "#8FA3AE",
    "poses": [
     "skyline-sw-day",
     "lowflight-day",
-    "comcast-south-100"
+    "rittenhouse-north",
+    "market-south-low",
+    "comcast-north-150",
+    "comcast-south-100",
+    "rittenhouse-60",
+    "market-west-60"
    ],
    "tol": 15
   },
@@ -15,7 +20,17 @@
    "hex": "#A9B6BA",
    "poses": [
     "skyline-sw-day",
-    "south-day"
+    "lowflight-day",
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "market-north",
+    "ctc-mid",
+    "comcast-north-150",
+    "comcast-south-100",
+    "market-west-60",
+    "chestnut2116-50",
+    "walnut1706-50"
    ],
    "tol": 15
   },
@@ -23,7 +38,13 @@
    "hex": "#5D7F9E",
    "poses": [
     "skyline-sw-day",
-    "lowflight-day"
+    "lowflight-day",
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "market-north",
+    "comcast-north-150",
+    "twopenn-50"
    ],
    "tol": 15
   },
@@ -31,22 +52,238 @@
    "hex": "#5D7F9E",
    "poses": [
     "skyline-sw-day",
-    "lowflight-day"
+    "lowflight-day",
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "market-north",
+    "comcast-north-150",
+    "walnut1706-50"
    ],
    "tol": 15
   },
   "Cira Centre": {
    "hex": "#A7B5C0",
    "poses": [
-    "south-day"
+    "south-day",
+    "rittenhouse-north",
+    "river-60",
+    "chestnut2116-50",
+    "chop-50"
+   ],
+   "tol": 15
+  },
+  "FMC Tower at Cira Centre South": {
+   "hex": "#7F9BB0",
+   "poses": [
+    "univcity-east",
+    "comcast-north-150",
+    "river-60",
+    "chop-50"
+   ],
+   "tol": 15
+  },
+  "Evo at Cira Centre South": {
+   "hex": "#4B5762",
+   "poses": [
+    "south-day",
+    "comcast-north-150",
+    "river-60",
+    "chestnut2116-50",
+    "chop-50"
+   ],
+   "tol": 15
+  },
+  "The W and Element Philadelphia (1441 Chestnut)": {
+   "hex": "#4E78A2",
+   "poses": [
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "twopenn-50"
+   ],
+   "tol": 15
+  },
+  "The Residences at The Ritz-Carlton": {
+   "hex": "#6C93AE",
+   "poses": [
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "comcast-north-150",
+    "twopenn-50"
    ],
    "tol": 15
   },
   "The Laurel Rittenhouse Square (1911 Walnut)": {
    "hex": "#8E8A82",
    "poses": [
-    "skyline-sw-day",
-    "lowflight-day"
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "market-north",
+    "comcast-north-150",
+    "rittenhouse-60",
+    "market-west-60",
+    "chestnut2116-50",
+    "walnut1706-50"
+   ],
+   "tol": 15
+  },
+  "Murano (2101 Market)": {
+   "hex": "#6E9EB4",
+   "poses": [
+    "south-day",
+    "rittenhouse-north",
+    "market-north",
+    "rittenhouse-60",
+    "market-west-60",
+    "chestnut2116-50",
+    "walnut1706-50"
+   ],
+   "tol": 15
+  },
+  "2116 Chestnut": {
+   "hex": "#7D9A90",
+   "poses": [
+    "chestnut2116-50"
+   ],
+   "tol": 15
+  },
+  "G. Fred DiBona Jr. Building (1901 Market, Independence Blue Cross)": {
+   "hex": "#4F6476",
+   "poses": [
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "market-south-low",
+    "comcast-north-150",
+    "chestnut2116-50"
+   ],
+   "tol": 15
+  },
+  "Arthaus (301-311 S Broad)": {
+   "hex": "#8C9AA4",
+   "poses": [
+    "south-day",
+    "broad-south"
+   ],
+   "tol": 15
+  },
+  "PNC Bank Building (1600 Market)": {
+   "hex": "#3A4148",
+   "poses": [
+    "rittenhouse-north",
+    "comcast-north-150",
+    "walnut1706-50"
+   ],
+   "tol": 15
+  },
+  "2000 Market Street": {
+   "hex": "#2F3539",
+   "poses": [
+    "market-south-low",
+    "market-west-60",
+    "chestnut2116-50"
+   ],
+   "tol": 15
+  },
+  "Eleven Penn Center (1835 Market)": {
+   "hex": "#5B748A",
+   "poses": [
+    "market-south-low",
+    "market-west-60",
+    "chestnut2116-50",
+    "walnut1706-50"
+   ],
+   "tol": 15
+  },
+  "10 Rittenhouse Square (1801 Walnut)": {
+   "hex": "#9CAEBB",
+   "poses": [
+    "rittenhouse-60",
+    "market-west-60"
+   ],
+   "tol": 15
+  },
+  "1706 Rittenhouse": {
+   "hex": "#7F95A8",
+   "poses": [
+    "walnut1706-50"
+   ],
+   "tol": 15
+  },
+  "Two Penn Center (1500 JFK)": {
+   "hex": "#9FA6AB",
+   "poses": [],
+   "tol": 15
+  },
+  "Ten Penn Center (1801 Market)": {
+   "hex": "#6F7C85",
+   "poses": [
+    "market-south-low",
+    "rittenhouse-60",
+    "market-west-60",
+    "walnut1706-50"
+   ],
+   "tol": 15
+  },
+  "1650 Arch Street": {
+   "hex": "#4A5056",
+   "poses": [
+    "market-south-low",
+    "comcast-south-100",
+    "market-west-60"
+   ],
+   "tol": 15
+  },
+  "Jefferson Health Honickman Center (1101 Chestnut)": {
+   "hex": "#AAB8C2",
+   "poses": [
+    "honickman-50"
+   ],
+   "tol": 15
+  },
+  "Riverwalk I and II (30 N 23rd / 2200 Arch)": {
+   "hex": "#8E9AA6",
+   "poses": [
+    "market-south-low",
+    "rittenhouse-60"
+   ],
+   "tol": 15
+  },
+  "3025 JFK Boulevard": {
+   "hex": "#8FA5B3",
+   "poses": [
+    "river-60"
+   ],
+   "tol": 15
+  },
+  "The Alexander (1601 Vine)": {
+   "hex": "#9EACB6",
+   "poses": [
+    "comcast-south-100"
+   ],
+   "tol": 15
+  },
+  "CHOP Roberts Center for Pediatric Research": {
+   "hex": "#9DB5C8",
+   "poses": [
+    "chop-50"
+   ],
+   "tol": 15
+  },
+  "1818 Market Street": {
+   "hex": "#3B4246",
+   "poses": [
+    "south-day",
+    "rittenhouse-north",
+    "broad-south",
+    "market-south-low",
+    "rittenhouse-60",
+    "market-west-60",
+    "chestnut2116-50",
+    "walnut1706-50"
    ],
    "tol": 15
   },
@@ -59,6 +296,65 @@
    "tol": 15
   }
  },
+ "hueB": 6.0,
+ "judge": [
+  400,
+  0.4,
+  20.0
+ ],
+ "named": {
+  "Comcast Center": [
+   "comcast-south-100",
+   "market-south-low",
+   "comcast-north-150"
+  ],
+  "Comcast Technology Center": [
+   "ctc-mid",
+   "market-north"
+  ]
+ },
+ "open": {
+  "The W and Element Philadelphia (1441 Chestnut)": [
+   11.0,
+   10.6,
+   "its photographed blue (b* -27) is deeper than a coated pane keeps under Schlick's grazing white and the haze: b* -13 to -19 at its judged poses (the review measured -2 to -8)"
+  ],
+  "Murano (2101 Market)": [
+   14.0,
+   13.5,
+   "five of its seven judged poses see its south faces, which mirror the sky toward the sun, white round the sun's aureole at noon; its north faces from Market's north side and from the west keep its blue"
+  ],
+  "The Laurel Rittenhouse Square (1911 Walnut)": [
+   9.5,
+   -6.9,
+   "a warm greige glass mirroring a blue sky reads a little blue: b* -1 to -3 against the swatch's +4.8, one point past the bound"
+  ],
+  "Eleven Penn Center (1835 Market)": [
+   16.2,
+   4.8,
+   "its west face from 60 m mirrors the dark low city west of it (L* 25); its other faces are within 4"
+  ],
+  "Jefferson Health Honickman Center (1101 Chestnut)": [
+   17.0,
+   -0.4,
+   "judged at one pose, its south face from 50 m mirroring the sky toward the sun (L* 58 against 74)"
+  ],
+  "Riverwalk I and II (30 N 23rd / 2200 Arch)": [
+   17.4,
+   1.1,
+   "both judged poses see it among Center City's towers, which it mirrors (L* 47 to 50 against 63)"
+  ],
+  "Two Penn Center (1500 JFK)": [
+   null,
+   null,
+   "no standard pose sees two fifths of its height: 80 m among Penn Center's towers"
+  ],
+  "1818 Market Street": [
+   20.5,
+   -1.8,
+   "its ribbon windows' dark glass (L* 27 head-on) mirrors the sky at the slant most poses see a ribbon at, L* 45 to 65, and from below it mirrors the sky overhead"
+  ]
+ },
  "contrast": [
   {
    "tower": "Comcast Center",
@@ -70,183 +366,2337 @@
   "Comcast Center": {
    "skyline-sw-day": {
     "mean": [
-     126.6,
-     137.9,
-     142.6
+     128.9,
+     149.1,
+     160.2
     ],
-    "px": 227,
-    "dE": 10.1,
-    "p10": 111.1,
-    "p90": 163.5,
-    "contrast": 1.47
+    "px": 693,
+    "dE": 5.3,
+    "db": -0.2,
+    "p10": 123.0,
+    "p90": 178.7,
+    "contrast": 1.45,
+    "vis": 0.41,
+    "face": [
+     128.9,
+     149.1,
+     160.2
+    ]
    },
    "lowflight-day": {
     "mean": [
-     127.3,
-     135.0,
-     135.5
+     119.4,
+     140.9,
+     153.1
     ],
-    "px": 2695,
-    "dE": 12.3,
-    "p10": 111.8,
-    "p90": 163.2,
-    "contrast": 1.46
+    "px": 3279,
+    "dE": 8.5,
+    "db": -1.0,
+    "p10": 121.8,
+    "p90": 160.3,
+    "contrast": 1.32,
+    "vis": 0.83,
+    "face": [
+     119.4,
+     140.9,
+     153.1
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     124.3,
+     146.3,
+     157.5
+    ],
+    "px": 2831,
+    "dE": 6.5,
+    "db": -0.5,
+    "p10": 129.7,
+    "p90": 164.5,
+    "contrast": 1.27,
+    "vis": 0.5,
+    "face": [
+     124.3,
+     146.3,
+     157.5
+    ]
+   },
+   "market-south-low": {
+    "mean": [
+     113.0,
+     131.4,
+     141.9
+    ],
+    "px": 5362,
+    "dE": 12.0,
+    "db": 0.2,
+    "p10": 119.0,
+    "p90": 138.3,
+    "contrast": 1.16,
+    "vis": 0.73,
+    "face": [
+     113.0,
+     131.4,
+     141.9
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     117.3,
+     143.6,
+     159.0
+    ],
+    "px": 20130,
+    "dE": 8.3,
+    "db": -3.2,
+    "p10": 106.5,
+    "p90": 177.4,
+    "contrast": 1.66,
+    "vis": 0.76,
+    "face": [
+     117.3,
+     143.6,
+     159.0
+    ]
    },
    "comcast-south-100": {
     "mean": [
-     123.2,
-     129.7,
-     129.2
+     133.6,
+     159.8,
+     172.3
     ],
-    "px": 278693,
-    "dE": 14.4,
-    "p10": 98.5,
-    "p90": 160.4,
-    "contrast": 1.63
+    "px": 279013,
+    "dE": 2.7,
+    "db": -1.5,
+    "p10": 117.5,
+    "p90": 192.3,
+    "contrast": 1.64,
+    "vis": 1.0,
+    "face": [
+     133.3,
+     159.4,
+     171.9
+    ]
+   },
+   "rittenhouse-60": {
+    "mean": [
+     152.7,
+     178.4,
+     191.5
+    ],
+    "px": 5371,
+    "dE": 5.8,
+    "db": -1.6,
+    "p10": 153.0,
+    "p90": 189.4,
+    "contrast": 1.24,
+    "vis": 0.78,
+    "face": [
+     152.7,
+     178.3,
+     191.4
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     116.2,
+     140.6,
+     153.1
+    ],
+    "px": 1931,
+    "dE": 9.0,
+    "db": -1.5,
+    "p10": 118.8,
+    "p90": 145.3,
+    "contrast": 1.22,
+    "vis": 0.48,
+    "face": [
+     116.2,
+     140.6,
+     153.1
+    ]
    }
   },
   "Comcast Technology Center": {
    "skyline-sw-day": {
     "mean": [
-     155.4,
-     160.5,
-     159.5
+     166.5,
+     183.1,
+     189.1
     ],
-    "px": 931,
-    "dE": 8.5,
-    "p10": 149.7,
-    "p90": 165.1,
-    "contrast": 1.1
+    "px": 1953,
+    "dE": 1.6,
+    "db": -1.4,
+    "p10": 157.5,
+    "p90": 197.5,
+    "contrast": 1.25,
+    "vis": 0.47,
+    "face": [
+     166.5,
+     183.0,
+     189.1
+    ]
+   },
+   "lowflight-day": {
+    "mean": [
+     139.9,
+     151.1,
+     153.3
+    ],
+    "px": 9108,
+    "dE": 11.5,
+    "db": 1.0,
+    "p10": 144.2,
+    "p90": 152.4,
+    "contrast": 1.06,
+    "vis": 0.48,
+    "face": [
+     139.9,
+     151.1,
+     153.3
+    ]
    },
    "south-day": {
     "mean": [
-     155.7,
-     161.9,
-     161.1
+     173.9,
+     191.9,
+     198.6
     ],
-    "px": 903,
-    "dE": 7.9,
-    "p10": 155.5,
+    "px": 1958,
+    "dE": 4.0,
+    "db": -1.9,
+    "p10": 168.7,
+    "p90": 200.0,
+    "contrast": 1.19,
+    "vis": 0.46,
+    "face": [
+     173.9,
+     191.9,
+     198.6
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     182.3,
+     201.9,
+     208.3
+    ],
+    "px": 3945,
+    "dE": 7.3,
+    "db": -1.9,
+    "p10": 196.3,
+    "p90": 200.9,
+    "contrast": 1.02,
+    "vis": 0.43,
+    "face": [
+     182.3,
+     201.8,
+     208.3
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     144.4,
+     159.8,
+     165.5
+    ],
+    "px": 1477,
+    "dE": 8.5,
+    "db": -1.2,
+    "p10": 147.9,
     "p90": 165.2,
-    "contrast": 1.06
+    "contrast": 1.12,
+    "vis": 0.46,
+    "face": [
+     144.3,
+     159.6,
+     165.2
+    ]
+   },
+   "market-north": {
+    "mean": [
+     156.1,
+     176.8,
+     184.5
+    ],
+    "px": 27068,
+    "dE": 4.1,
+    "db": -2.8,
+    "p10": 142.3,
+    "p90": 193.2,
+    "contrast": 1.36,
+    "vis": 0.77,
+    "face": [
+     156.1,
+     176.8,
+     184.5
+    ]
+   },
+   "ctc-mid": {
+    "mean": [
+     150.7,
+     171.9,
+     177.9
+    ],
+    "px": 400727,
+    "dE": 5.3,
+    "db": -2.0,
+    "p10": 135.2,
+    "p90": 201.4,
+    "contrast": 1.49,
+    "vis": 0.9,
+    "face": [
+     150.6,
+     171.5,
+     177.5
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     141.0,
+     162.1,
+     170.8
+    ],
+    "px": 14039,
+    "dE": 8.7,
+    "db": -3.4,
+    "p10": 143.7,
+    "p90": 178.9,
+    "contrast": 1.25,
+    "vis": 0.54,
+    "face": [
+     141.0,
+     162.1,
+     170.8
+    ]
+   },
+   "comcast-south-100": {
+    "mean": [
+     143.5,
+     168.2,
+     177.0
+    ],
+    "px": 96721,
+    "dE": 7.5,
+    "db": -3.8,
+    "p10": 125.9,
+    "p90": 194.5,
+    "contrast": 1.55,
+    "vis": 1.0,
+    "face": [
+     143.5,
+     168.2,
+     177.0
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     144.8,
+     165.3,
+     174.2
+    ],
+    "px": 3833,
+    "dE": 7.6,
+    "db": -3.4,
+    "p10": 126.7,
+    "p90": 182.4,
+    "contrast": 1.44,
+    "vis": 0.48,
+    "face": [
+     144.8,
+     165.3,
+     174.2
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     177.7,
+     196.8,
+     203.9
+    ],
+    "px": 5465,
+    "dE": 5.7,
+    "db": -2.2,
+    "p10": 169.1,
+    "p90": 203.3,
+    "contrast": 1.2,
+    "vis": 0.42,
+    "face": [
+     177.6,
+     196.8,
+     203.8
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     174.3,
+     198.7,
+     207.9
+    ],
+    "px": 3948,
+    "dE": 7.1,
+    "db": -3.8,
+    "p10": 191.6,
+    "p90": 197.2,
+    "contrast": 1.03,
+    "vis": 0.41,
+    "face": [
+     174.3,
+     198.7,
+     207.9
+    ]
    }
   },
   "One Liberty Place": {
    "skyline-sw-day": {
     "mean": [
-     106.1,
-     123.6,
-     135.9
+     100.4,
+     124.6,
+     148.2
     ],
-    "px": 1481,
-    "dE": 11.6,
-    "p10": 105.5,
-    "p90": 130.0,
-    "contrast": 1.23
+    "px": 1326,
+    "dE": 4.9,
+    "db": 4.8,
+    "p10": 109.1,
+    "p90": 130.3,
+    "contrast": 1.19,
+    "vis": 0.56,
+    "face": [
+     100.6,
+     124.9,
+     148.5
+    ]
    },
    "lowflight-day": {
     "mean": [
-     92.1,
-     107.3,
-     117.4
+     85.3,
+     108.4,
+     134.3
     ],
-    "px": 11068,
-    "dE": 14.8,
-    "p10": 84.7,
-    "p90": 120.8,
-    "contrast": 1.43
+    "px": 7737,
+    "dE": 7.9,
+    "db": 3.4,
+    "p10": 87.6,
+    "p90": 119.6,
+    "contrast": 1.37,
+    "vis": 0.76,
+    "face": [
+     85.7,
+     108.3,
+     132.5
+    ]
+   },
+   "south-day": {
+    "mean": [
+     122.0,
+     152.7,
+     182.5
+    ],
+    "px": 1491,
+    "dE": 10.1,
+    "db": 1.5,
+    "p10": 128.3,
+    "p90": 158.6,
+    "contrast": 1.24,
+    "vis": 0.51,
+    "face": [
+     121.7,
+     152.0,
+     181.3
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     100.7,
+     122.3,
+     144.6
+    ],
+    "px": 3560,
+    "dE": 6.1,
+    "db": 5.8,
+    "p10": 110.6,
+    "p90": 129.4,
+    "contrast": 1.17,
+    "vis": 0.45,
+    "face": [
+     101.9,
+     123.1,
+     144.4
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     122.2,
+     154.3,
+     186.2
+    ],
+    "px": 1371,
+    "dE": 10.6,
+    "db": 0.3,
+    "p10": 136.1,
+    "p90": 157.4,
+    "contrast": 1.16,
+    "vis": 0.43,
+    "face": [
+     122.1,
+     153.8,
+     185.0
+    ]
+   },
+   "market-north": {
+    "mean": [
+     105.5,
+     136.9,
+     171.0
+    ],
+    "px": 2853,
+    "dE": 4.5,
+    "db": -1.1,
+    "p10": 103.5,
+    "p90": 149.7,
+    "contrast": 1.45,
+    "vis": 0.53,
+    "face": [
+     102.8,
+     133.0,
+     165.3
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     102.1,
+     136.2,
+     172.8
+    ],
+    "px": 5006,
+    "dE": 4.8,
+    "db": -2.7,
+    "p10": 99.3,
+    "p90": 143.1,
+    "contrast": 1.44,
+    "vis": 0.53,
+    "face": [
+     98.9,
+     131.1,
+     165.6
+    ]
+   },
+   "twopenn-50": {
+    "mean": [
+     98.9,
+     135.7,
+     181.3
+    ],
+    "px": 13369,
+    "dE": 9.1,
+    "db": -7.6,
+    "p10": 101.6,
+    "p90": 137.1,
+    "contrast": 1.35,
+    "vis": 0.52,
+    "face": [
+     96.2,
+     129.7,
+     170.6
+    ]
    }
   },
   "Two Liberty Place": {
    "skyline-sw-day": {
     "mean": [
-     103.4,
-     123.0,
-     136.1
+     98.6,
+     124.9,
+     150.6
     ],
-    "px": 893,
-    "dE": 11.0,
-    "p10": 105.2,
-    "p90": 130.0,
-    "contrast": 1.24
+    "px": 946,
+    "dE": 3.6,
+    "db": 3.5,
+    "p10": 108.6,
+    "p90": 130.3,
+    "contrast": 1.2,
+    "vis": 0.63,
+    "face": [
+     98.9,
+     125.0,
+     150.3
+    ]
    },
    "lowflight-day": {
     "mean": [
-     88.3,
-     105.1,
-     116.2
+     82.6,
+     107.5,
+     135.3
     ],
-    "px": 9523,
-    "dE": 14.7,
-    "p10": 82.4,
-    "p90": 120.1,
-    "contrast": 1.46
+    "px": 6391,
+    "dE": 7.9,
+    "db": 2.2,
+    "p10": 85.8,
+    "p90": 119.5,
+    "contrast": 1.39,
+    "vis": 0.66,
+    "face": [
+     82.7,
+     106.7,
+     132.3
+    ]
+   },
+   "south-day": {
+    "mean": [
+     123.8,
+     155.7,
+     185.9
+    ],
+    "px": 1510,
+    "dE": 11.2,
+    "db": 1.2,
+    "p10": 133.7,
+    "p90": 159.3,
+    "contrast": 1.19,
+    "vis": 0.52,
+    "face": [
+     123.5,
+     154.9,
+     184.5
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     101.6,
+     125.2,
+     150.8
+    ],
+    "px": 4163,
+    "dE": 4.2,
+    "db": 3.8,
+    "p10": 109.6,
+    "p90": 140.6,
+    "contrast": 1.28,
+    "vis": 0.75,
+    "face": [
+     102.4,
+     125.5,
+     149.0
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     120.4,
+     153.5,
+     186.0
+    ],
+    "px": 1390,
+    "dE": 10.3,
+    "db": -0.1,
+    "p10": 136.4,
+    "p90": 157.3,
+    "contrast": 1.15,
+    "vis": 0.44,
+    "face": [
+     120.8,
+     153.2,
+     184.9
+    ]
+   },
+   "market-north": {
+    "mean": [
+     105.7,
+     137.4,
+     171.9
+    ],
+    "px": 2718,
+    "dE": 4.7,
+    "db": -1.4,
+    "p10": 103.5,
+    "p90": 149.7,
+    "contrast": 1.45,
+    "vis": 0.65,
+    "face": [
+     102.9,
+     133.3,
+     166.0
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     103.8,
+     131.8,
+     161.6
+    ],
+    "px": 3464,
+    "dE": 2.9,
+    "db": 1.3,
+    "p10": 97.4,
+    "p90": 145.3,
+    "contrast": 1.49,
+    "vis": 0.82,
+    "face": [
+     101.2,
+     128.8,
+     158.4
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     106.4,
+     136.3,
+     167.3
+    ],
+    "px": 4820,
+    "dE": 4.0,
+    "db": 0.6,
+    "p10": 109.2,
+    "p90": 154.0,
+    "contrast": 1.41,
+    "vis": 0.44,
+    "face": [
+     108.0,
+     136.5,
+     165.6
+    ]
    }
   },
   "Cira Centre": {
    "south-day": {
     "mean": [
-     126.0,
-     144.0,
-     154.1
+     159.7,
+     182.2,
+     190.2
     ],
-    "px": 463,
-    "dE": 14.3,
-    "p10": 125.1,
-    "p90": 156.0,
-    "contrast": 1.25
+    "px": 821,
+    "dE": 3.5,
+    "db": 0.6,
+    "p10": 155.1,
+    "p90": 196.7,
+    "contrast": 1.27,
+    "vis": 0.69,
+    "face": [
+     159.7,
+     182.1,
+     190.2
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     149.1,
+     171.0,
+     179.0
+    ],
+    "px": 2492,
+    "dE": 5.5,
+    "db": 0.6,
+    "p10": 142.6,
+    "p90": 194.9,
+    "contrast": 1.37,
+    "vis": 0.8,
+    "face": [
+     149.1,
+     171.0,
+     179.0
+    ]
+   },
+   "river-60": {
+    "mean": [
+     145.4,
+     167.1,
+     174.6
+    ],
+    "px": 6332,
+    "dE": 6.7,
+    "db": 0.8,
+    "p10": 128.2,
+    "p90": 191.8,
+    "contrast": 1.5,
+    "vis": 0.53,
+    "face": [
+     145.4,
+     167.1,
+     174.6
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     164.2,
+     191.6,
+     201.9
+    ],
+    "px": 2180,
+    "dE": 5.4,
+    "db": -1.0,
+    "p10": 179.1,
+    "p90": 194.9,
+    "contrast": 1.09,
+    "vis": 0.52,
+    "face": [
+     164.2,
+     191.6,
+     201.9
+    ]
+   },
+   "chop-50": {
+    "mean": [
+     136.8,
+     157.5,
+     170.8
+    ],
+    "px": 1896,
+    "dE": 9.6,
+    "db": -2.1,
+    "p10": 132.0,
+    "p90": 186.4,
+    "contrast": 1.41,
+    "vis": 0.96,
+    "face": [
+     136.8,
+     157.5,
+     170.8
+    ]
+   }
+  },
+  "FMC Tower at Cira Centre South": {
+   "univcity-east": {
+    "mean": [
+     104.3,
+     125.6,
+     139.5
+    ],
+    "px": 10042,
+    "dE": 11.9,
+    "db": 4.0,
+    "p10": 96.8,
+    "p90": 151.9,
+    "contrast": 1.57,
+    "vis": 0.95,
+    "face": [
+     104.2,
+     125.4,
+     139.4
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     133.5,
+     157.2,
+     172.3
+    ],
+    "px": 1521,
+    "dE": 3.6,
+    "db": 3.5,
+    "p10": 133.6,
+    "p90": 171.9,
+    "contrast": 1.29,
+    "vis": 0.67,
+    "face": [
+     133.5,
+     157.2,
+     172.3
+    ]
+   },
+   "river-60": {
+    "mean": [
+     115.6,
+     145.5,
+     165.8
+    ],
+    "px": 31423,
+    "dE": 3.8,
+    "db": 0.0,
+    "p10": 121.5,
+    "p90": 169.1,
+    "contrast": 1.39,
+    "vis": 0.93,
+    "face": [
+     116.0,
+     145.2,
+     165.1
+    ]
+   },
+   "chop-50": {
+    "mean": [
+     143.1,
+     161.7,
+     172.6
+    ],
+    "px": 6421,
+    "dE": 6.9,
+    "db": 6.3,
+    "p10": 131.4,
+    "p90": 185.9,
+    "contrast": 1.41,
+    "vis": 0.84,
+    "face": [
+     143.1,
+     161.7,
+     172.6
+    ]
+   }
+  },
+  "Evo at Cira Centre South": {
+   "south-day": {
+    "mean": [
+     98.9,
+     121.2,
+     137.0
+    ],
+    "px": 1595,
+    "dE": 14.0,
+    "db": -3.4,
+    "p10": 107.1,
+    "p90": 135.8,
+    "contrast": 1.27,
+    "vis": 0.91,
+    "face": [
+     98.9,
+     121.2,
+     137.0
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     96.5,
+     117.4,
+     132.7
+    ],
+    "px": 498,
+    "dE": 12.4,
+    "db": -3.0,
+    "p10": 102.0,
+    "p90": 131.6,
+    "contrast": 1.29,
+    "vis": 0.4,
+    "face": [
+     96.5,
+     117.5,
+     132.7
+    ]
+   },
+   "river-60": {
+    "mean": [
+     75.3,
+     101.4,
+     124.8
+    ],
+    "px": 19588,
+    "dE": 9.9,
+    "db": -8.2,
+    "p10": 86.7,
+    "p90": 106.8,
+    "contrast": 1.23,
+    "vis": 0.63,
+    "face": [
+     75.9,
+     101.2,
+     123.9
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     77.1,
+     103.0,
+     124.4
+    ],
+    "px": 761,
+    "dE": 9.5,
+    "db": -7.1,
+    "p10": 86.0,
+    "p90": 106.8,
+    "contrast": 1.24,
+    "vis": 0.61,
+    "face": [
+     77.1,
+     102.9,
+     124.0
+    ]
+   },
+   "chop-50": {
+    "mean": [
+     144.5,
+     166.4,
+     179.8
+    ],
+    "px": 3659,
+    "dE": 30.8,
+    "db": -1.5,
+    "p10": 133.5,
+    "p90": 187.5,
+    "contrast": 1.4,
+    "vis": 0.86,
+    "face": [
+     144.5,
+     166.4,
+     179.8
+    ]
+   }
+  },
+  "The W and Element Philadelphia (1441 Chestnut)": {
+   "south-day": {
+    "mean": [
+     109.3,
+     127.1,
+     147.3
+    ],
+    "px": 797,
+    "dE": 14.4,
+    "db": 14.0,
+    "p10": 117.2,
+    "p90": 134.0,
+    "contrast": 1.14,
+    "vis": 0.61,
+    "face": [
+     111.1,
+     128.4,
+     147.8
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     97.2,
+     119.3,
+     148.1
+    ],
+    "px": 3405,
+    "dE": 8.9,
+    "db": 8.8,
+    "p10": 106.4,
+    "p90": 134.8,
+    "contrast": 1.27,
+    "vis": 0.56,
+    "face": [
+     103.0,
+     123.8,
+     149.7
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     109.9,
+     129.7,
+     152.9
+    ],
+    "px": 606,
+    "dE": 13.0,
+    "db": 12.2,
+    "p10": 114.8,
+    "p90": 145.7,
+    "contrast": 1.27,
+    "vis": 0.53,
+    "face": [
+     112.6,
+     131.3,
+     153.0
+    ]
+   },
+   "twopenn-50": {
+    "mean": [
+     100.2,
+     129.9,
+     172.1
+    ],
+    "px": 1618,
+    "dE": 5.6,
+    "db": 1.3,
+    "p10": 104.5,
+    "p90": 135.9,
+    "contrast": 1.3,
+    "vis": 0.93,
+    "face": [
+     103.0,
+     130.2,
+     168.4
+    ]
+   }
+  },
+  "The Residences at The Ritz-Carlton": {
+   "south-day": {
+    "mean": [
+     109.4,
+     127.2,
+     147.6
+    ],
+    "px": 588,
+    "dE": 9.7,
+    "db": 5.3,
+    "p10": 116.8,
+    "p90": 134.6,
+    "contrast": 1.15,
+    "vis": 0.56,
+    "face": [
+     110.9,
+     128.1,
+     147.5
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     97.8,
+     130.9,
+     153.7
+    ],
+    "px": 656,
+    "dE": 6.5,
+    "db": 2.5,
+    "p10": 103.7,
+    "p90": 160.3,
+    "contrast": 1.55,
+    "vis": 0.46,
+    "face": [
+     97.1,
+     130.1,
+     153.1
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     133.4,
+     142.8,
+     147.2
+    ],
+    "px": 1487,
+    "dE": 15.4,
+    "db": 14.9,
+    "p10": 133.5,
+    "p90": 166.9,
+    "contrast": 1.25,
+    "vis": 1.0,
+    "face": [
+     138.0,
+     147.1,
+     150.5
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     100.3,
+     131.2,
+     152.1
+    ],
+    "px": 10115,
+    "dE": 6.9,
+    "db": 3.7,
+    "p10": 108.6,
+    "p90": 154.6,
+    "contrast": 1.42,
+    "vis": 0.9,
+    "face": [
+     100.5,
+     130.4,
+     150.7
+    ]
+   },
+   "twopenn-50": {
+    "mean": [
+     125.8,
+     160.5,
+     185.1
+    ],
+    "px": 2931,
+    "dE": 5.6,
+    "db": 1.9,
+    "p10": 128.3,
+    "p90": 170.2,
+    "contrast": 1.33,
+    "vis": 0.89,
+    "face": [
+     123.0,
+     155.6,
+     179.4
+    ]
    }
   },
   "The Laurel Rittenhouse Square (1911 Walnut)": {
-   "skyline-sw-day": {
+   "south-day": {
     "mean": [
-     115.4,
-     118.0,
-     117.1
+     129.9,
+     141.8,
+     143.0
     ],
-    "px": 2387,
-    "dE": 9.5,
-    "p10": 87.2,
-    "p90": 144.9,
-    "contrast": 1.66
+    "px": 1635,
+    "dE": 8.0,
+    "db": -6.9,
+    "p10": 125.4,
+    "p90": 156.3,
+    "contrast": 1.25,
+    "vis": 0.65,
+    "face": [
+     129.6,
+     140.9,
+     142.0
+    ]
    },
-   "lowflight-day": {
+   "rittenhouse-north": {
     "mean": [
-     137.1,
-     134.2,
-     125.3
+     130.2,
+     137.6,
+     135.1
     ],
-    "px": 23302,
-    "dE": 1.7,
-    "p10": 122.2,
-    "p90": 164.1,
-    "contrast": 1.34
+    "px": 4856,
+    "dE": 5.5,
+    "db": -4.4,
+    "p10": 113.4,
+    "p90": 166.9,
+    "contrast": 1.47,
+    "vis": 0.97,
+    "face": [
+     132.8,
+     140.1,
+     137.6
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     130.1,
+     141.6,
+     142.6
+    ],
+    "px": 1699,
+    "dE": 7.8,
+    "db": -6.8,
+    "p10": 127.9,
+    "p90": 157.1,
+    "contrast": 1.23,
+    "vis": 0.74,
+    "face": [
+     131.0,
+     142.6,
+     143.7
+    ]
+   },
+   "market-north": {
+    "mean": [
+     148.5,
+     157.2,
+     157.8
+    ],
+    "px": 760,
+    "dE": 9.5,
+    "db": -6.2,
+    "p10": 133.7,
+    "p90": 171.2,
+    "contrast": 1.28,
+    "vis": 0.51,
+    "face": [
+     147.2,
+     155.7,
+     156.1
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     100.9,
+     121.9,
+     134.4
+    ],
+    "px": 5432,
+    "dE": 16.7,
+    "db": -14.1,
+    "p10": 102.0,
+    "p90": 157.7,
+    "contrast": 1.55,
+    "vis": 1.0,
+    "face": [
+     100.9,
+     121.9,
+     134.4
+    ]
+   },
+   "rittenhouse-60": {
+    "mean": [
+     113.4,
+     126.3,
+     125.5
+    ],
+    "px": 52059,
+    "dE": 9.6,
+    "db": -6.0,
+    "p10": 101.5,
+    "p90": 159.4,
+    "contrast": 1.57,
+    "vis": 0.95,
+    "face": [
+     118.9,
+     130.8,
+     130.1
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     101.7,
+     112.8,
+     115.3
+    ],
+    "px": 12428,
+    "dE": 13.7,
+    "db": -7.6,
+    "p10": 88.4,
+    "p90": 139.9,
+    "contrast": 1.58,
+    "vis": 0.88,
+    "face": [
+     101.4,
+     112.4,
+     114.9
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     124.5,
+     140.6,
+     143.1
+    ],
+    "px": 23051,
+    "dE": 9.7,
+    "db": -8.1,
+    "p10": 111.4,
+    "p90": 170.3,
+    "contrast": 1.53,
+    "vis": 0.79,
+    "face": [
+     126.4,
+     141.2,
+     143.7
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     120.4,
+     133.8,
+     134.9
+    ],
+    "px": 5549,
+    "dE": 8.9,
+    "db": -7.1,
+    "p10": 116.6,
+    "p90": 154.6,
+    "contrast": 1.33,
+    "vis": 0.89,
+    "face": [
+     122.3,
+     135.3,
+     136.4
+    ]
+   }
+  },
+  "Murano (2101 Market)": {
+   "south-day": {
+    "mean": [
+     126.7,
+     137.9,
+     139.1
+    ],
+    "px": 1004,
+    "dE": 17.0,
+    "db": 14.5,
+    "p10": 118.2,
+    "p90": 155.1,
+    "contrast": 1.31,
+    "vis": 0.74,
+    "face": [
+     127.3,
+     137.9,
+     138.8
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     107.2,
+     139.9,
+     153.5
+    ],
+    "px": 1161,
+    "dE": 8.7,
+    "db": 5.6,
+    "p10": 123.3,
+    "p90": 151.1,
+    "contrast": 1.22,
+    "vis": 0.52,
+    "face": [
+     110.1,
+     141.0,
+     154.5
+    ]
+   },
+   "market-north": {
+    "mean": [
+     95.7,
+     129.1,
+     144.4
+    ],
+    "px": 4691,
+    "dE": 11.7,
+    "db": 4.5,
+    "p10": 111.4,
+    "p90": 132.8,
+    "contrast": 1.19,
+    "vis": 0.9,
+    "face": [
+     96.3,
+     128.7,
+     144.0
+    ]
+   },
+   "rittenhouse-60": {
+    "mean": [
+     118.2,
+     127.7,
+     124.9
+    ],
+    "px": 5112,
+    "dE": 20.5,
+    "db": 16.8,
+    "p10": 96.0,
+    "p90": 156.2,
+    "contrast": 1.63,
+    "vis": 1.0,
+    "face": [
+     119.5,
+     128.6,
+     126.2
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     105.4,
+     149.6,
+     169.2
+    ],
+    "px": 13051,
+    "dE": 3.4,
+    "db": 1.5,
+    "p10": 121.3,
+    "p90": 177.7,
+    "contrast": 1.46,
+    "vis": 0.84,
+    "face": [
+     113.2,
+     152.4,
+     169.9
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     132.0,
+     165.6,
+     164.3
+    ],
+    "px": 4919,
+    "dE": 13.8,
+    "db": 13.4,
+    "p10": 121.5,
+    "p90": 177.8,
+    "contrast": 1.46,
+    "vis": 1.0,
+    "face": [
+     133.2,
+     162.7,
+     161.6
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     127.9,
+     140.1,
+     140.0
+    ],
+    "px": 1081,
+    "dE": 17.0,
+    "db": 15.0,
+    "p10": 114.1,
+    "p90": 156.8,
+    "contrast": 1.37,
+    "vis": 1.0,
+    "face": [
+     126.0,
+     138.1,
+     138.0
+    ]
+   }
+  },
+  "2116 Chestnut": {
+   "chestnut2116-50": {
+    "mean": [
+     129.7,
+     166.7,
+     166.3
+    ],
+    "px": 8751,
+    "dE": 7.4,
+    "db": -5.8,
+    "p10": 128.5,
+    "p90": 178.6,
+    "contrast": 1.39,
+    "vis": 0.85,
+    "face": [
+     133.2,
+     165.1,
+     164.7
+    ]
+   }
+  },
+  "G. Fred DiBona Jr. Building (1901 Market, Independence Blue Cross)": {
+   "south-day": {
+    "mean": [
+     107.5,
+     129.3,
+     145.2
+    ],
+    "px": 671,
+    "dE": 11.7,
+    "db": 1.5,
+    "p10": 116.4,
+    "p90": 134.8,
+    "contrast": 1.16,
+    "vis": 0.6,
+    "face": [
+     107.5,
+     129.3,
+     145.2
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     112.8,
+     136.6,
+     155.3
+    ],
+    "px": 2482,
+    "dE": 14.4,
+    "db": -0.1,
+    "p10": 112.0,
+    "p90": 151.6,
+    "contrast": 1.35,
+    "vis": 0.57,
+    "face": [
+     112.8,
+     136.6,
+     155.3
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     105.8,
+     129.5,
+     147.2
+    ],
+    "px": 509,
+    "dE": 11.7,
+    "db": 0.3,
+    "p10": 114.5,
+    "p90": 131.9,
+    "contrast": 1.15,
+    "vis": 0.58,
+    "face": [
+     105.8,
+     129.5,
+     147.2
+    ]
+   },
+   "market-south-low": {
+    "mean": [
+     106.0,
+     135.4,
+     160.1
+    ],
+    "px": 25636,
+    "dE": 14.3,
+    "db": -3.8,
+    "p10": 113.5,
+    "p90": 152.4,
+    "contrast": 1.34,
+    "vis": 0.83,
+    "face": [
+     106.1,
+     135.4,
+     160.0
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     155.1,
+     176.0,
+     182.5
+    ],
+    "px": 1591,
+    "dE": 30.0,
+    "db": 6.9,
+    "p10": 146.2,
+    "p90": 191.5,
+    "contrast": 1.31,
+    "vis": 0.64,
+    "face": [
+     155.1,
+     176.0,
+     182.5
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     108.0,
+     137.0,
+     160.8
+    ],
+    "px": 6420,
+    "dE": 14.8,
+    "db": -3.3,
+    "p10": 109.8,
+    "p90": 148.9,
+    "contrast": 1.36,
+    "vis": 0.48,
+    "face": [
+     108.0,
+     137.0,
+     160.8
+    ]
+   }
+  },
+  "Arthaus (301-311 S Broad)": {
+   "south-day": {
+    "mean": [
+     138.5,
+     149.6,
+     155.1
+    ],
+    "px": 3102,
+    "dE": 3.1,
+    "db": 2.7,
+    "p10": 137.4,
+    "p90": 169.4,
+    "contrast": 1.23,
+    "vis": 0.9,
+    "face": [
+     141.1,
+     151.9,
+     156.9
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     131.6,
+     142.0,
+     147.5
+    ],
+    "px": 5835,
+    "dE": 5.2,
+    "db": 2.7,
+    "p10": 130.9,
+    "p90": 167.4,
+    "contrast": 1.28,
+    "vis": 0.87,
+    "face": [
+     135.8,
+     145.8,
+     150.4
+    ]
+   }
+  },
+  "PNC Bank Building (1600 Market)": {
+   "rittenhouse-north": {
+    "mean": [
+     68.4,
+     81.7,
+     92.5
+    ],
+    "px": 2881,
+    "dE": 7.5,
+    "db": -2.8,
+    "p10": 67.8,
+    "p90": 95.8,
+    "contrast": 1.41,
+    "vis": 0.8,
+    "face": [
+     68.4,
+     81.8,
+     92.5
+    ]
+   },
+   "comcast-north-150": {
+    "mean": [
+     76.0,
+     87.4,
+     97.4
+    ],
+    "px": 4376,
+    "dE": 9.6,
+    "db": -2.0,
+    "p10": 71.6,
+    "p90": 104.5,
+    "contrast": 1.46,
+    "vis": 0.95,
+    "face": [
+     76.0,
+     87.5,
+     97.4
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     68.8,
+     83.4,
+     95.4
+    ],
+    "px": 1235,
+    "dE": 8.5,
+    "db": -3.6,
+    "p10": 64.0,
+    "p90": 105.0,
+    "contrast": 1.64,
+    "vis": 0.55,
+    "face": [
+     68.9,
+     83.5,
+     95.5
+    ]
+   }
+  },
+  "2000 Market Street": {
+   "market-south-low": {
+    "mean": [
+     48.5,
+     57.1,
+     64.8
+    ],
+    "px": 44100,
+    "dE": 3.1,
+    "db": -2.6,
+    "p10": 49.9,
+    "p90": 64.8,
+    "contrast": 1.3,
+    "vis": 0.93,
+    "face": [
+     48.7,
+     57.2,
+     64.6
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     43.4,
+     56.0,
+     66.8
+    ],
+    "px": 11608,
+    "dE": 5.2,
+    "db": -5.0,
+    "p10": 45.9,
+    "p90": 60.9,
+    "contrast": 1.33,
+    "vis": 0.93,
+    "face": [
+     43.4,
+     56.0,
+     66.8
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     59.4,
+     70.8,
+     80.0
+    ],
+    "px": 14862,
+    "dE": 8.5,
+    "db": -3.6,
+    "p10": 59.9,
+    "p90": 76.8,
+    "contrast": 1.28,
+    "vis": 0.87,
+    "face": [
+     59.4,
+     70.8,
+     80.1
+    ]
+   }
+  },
+  "Eleven Penn Center (1835 Market)": {
+   "market-south-low": {
+    "mean": [
+     99.2,
+     124.4,
+     148.6
+    ],
+    "px": 11778,
+    "dE": 3.6,
+    "db": -1.0,
+    "p10": 84.0,
+    "p90": 154.8,
+    "contrast": 1.84,
+    "vis": 0.73,
+    "face": [
+     99.1,
+     124.3,
+     148.3
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     43.3,
+     55.3,
+     65.7
+    ],
+    "px": 7215,
+    "dE": 26.1,
+    "db": 6.9,
+    "p10": 43.6,
+    "p90": 60.9,
+    "contrast": 1.4,
+    "vis": 1.0,
+    "face": [
+     43.3,
+     55.4,
+     65.7
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     125.1,
+     130.4,
+     127.9
+    ],
+    "px": 7077,
+    "dE": 16.9,
+    "db": 15.6,
+    "p10": 100.3,
+    "p90": 165.0,
+    "contrast": 1.65,
+    "vis": 0.97,
+    "face": [
+     125.5,
+     130.9,
+     128.8
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     129.0,
+     155.6,
+     173.6
+    ],
+    "px": 5788,
+    "dE": 15.4,
+    "db": 2.5,
+    "p10": 121.3,
+    "p90": 181.6,
+    "contrast": 1.5,
+    "vis": 1.0,
+    "face": [
+     133.8,
+     156.9,
+     172.2
+    ]
+   }
+  },
+  "10 Rittenhouse Square (1801 Walnut)": {
+   "rittenhouse-60": {
+    "mean": [
+     151.0,
+     171.6,
+     179.1
+    ],
+    "px": 16425,
+    "dE": 3.5,
+    "db": 2.5,
+    "p10": 131.9,
+    "p90": 196.2,
+    "contrast": 1.49,
+    "vis": 0.66,
+    "face": [
+     155.5,
+     173.7,
+     179.9
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     101.9,
+     112.3,
+     114.8
+    ],
+    "px": 2249,
+    "dE": 24.3,
+    "db": 6.0,
+    "p10": 87.5,
+    "p90": 152.2,
+    "contrast": 1.74,
+    "vis": 0.99,
+    "face": [
+     102.4,
+     112.6,
+     115.2
+    ]
+   }
+  },
+  "1706 Rittenhouse": {
+   "walnut1706-50": {
+    "mean": [
+     125.9,
+     153.9,
+     173.4
+    ],
+    "px": 27190,
+    "dE": 2.5,
+    "db": -0.8,
+    "p10": 117.0,
+    "p90": 180.6,
+    "contrast": 1.54,
+    "vis": 0.78,
+    "face": [
+     131.3,
+     156.0,
+     172.7
+    ]
+   }
+  },
+  "Ten Penn Center (1801 Market)": {
+   "market-south-low": {
+    "mean": [
+     89.5,
+     101.3,
+     108.4
+    ],
+    "px": 7258,
+    "dE": 9.1,
+    "db": 1.0,
+    "p10": 78.8,
+    "p90": 133.8,
+    "contrast": 1.7,
+    "vis": 0.7,
+    "face": [
+     89.5,
+     101.3,
+     108.3
+    ]
+   },
+   "rittenhouse-60": {
+    "mean": [
+     139.2,
+     156.2,
+     161.9
+    ],
+    "px": 4944,
+    "dE": 12.3,
+    "db": 1.5,
+    "p10": 128.2,
+    "p90": 193.1,
+    "contrast": 1.51,
+    "vis": 0.97,
+    "face": [
+     146.1,
+     161.1,
+     165.7
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     36.8,
+     47.8,
+     57.3
+    ],
+    "px": 1356,
+    "dE": 32.1,
+    "db": -1.0,
+    "p10": 38.6,
+    "p90": 54.0,
+    "contrast": 1.4,
+    "vis": 1.0,
+    "face": [
+     36.8,
+     47.8,
+     57.3
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     118.0,
+     142.2,
+     159.2
+    ],
+    "px": 3797,
+    "dE": 8.6,
+    "db": -5.3,
+    "p10": 109.1,
+    "p90": 174.1,
+    "contrast": 1.6,
+    "vis": 1.0,
+    "face": [
+     122.3,
+     143.9,
+     158.6
+    ]
+   }
+  },
+  "1650 Arch Street": {
+   "market-south-low": {
+    "mean": [
+     57.2,
+     68.6,
+     78.3
+    ],
+    "px": 8582,
+    "dE": 6.1,
+    "db": -3.0,
+    "p10": 55.9,
+    "p90": 75.5,
+    "contrast": 1.35,
+    "vis": 0.45,
+    "face": [
+     57.2,
+     68.6,
+     78.3
+    ]
+   },
+   "comcast-south-100": {
+    "mean": [
+     52.0,
+     59.4,
+     65.8
+    ],
+    "px": 42379,
+    "dE": 9.1,
+    "db": -0.6,
+    "p10": 43.2,
+    "p90": 72.4,
+    "contrast": 1.67,
+    "vis": 0.93,
+    "face": [
+     49.8,
+     56.9,
+     62.9
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     39.6,
+     53.2,
+     64.8
+    ],
+    "px": 3322,
+    "dE": 13.1,
+    "db": -4.7,
+    "p10": 42.5,
+    "p90": 57.0,
+    "contrast": 1.34,
+    "vis": 1.0,
+    "face": [
+     39.7,
+     53.3,
+     64.9
+    ]
+   }
+  },
+  "Jefferson Health Honickman Center (1101 Chestnut)": {
+   "honickman-50": {
+    "mean": [
+     120.8,
+     140.8,
+     149.5
+    ],
+    "px": 41671,
+    "dE": 16.9,
+    "db": -0.3,
+    "p10": 126.0,
+    "p90": 146.4,
+    "contrast": 1.16,
+    "vis": 0.79,
+    "face": [
+     120.8,
+     140.8,
+     149.5
+    ]
+   }
+  },
+  "Riverwalk I and II (30 N 23rd / 2200 Arch)": {
+   "market-south-low": {
+    "mean": [
+     102.1,
+     121.3,
+     145.0
+    ],
+    "px": 4339,
+    "dE": 14.8,
+    "db": -7.4,
+    "p10": 77.3,
+    "p90": 164.7,
+    "contrast": 2.13,
+    "vis": 1.0,
+    "face": [
+     99.9,
+     116.8,
+     136.8
+    ]
+   },
+   "rittenhouse-60": {
+    "mean": [
+     103.8,
+     109.4,
+     105.2
+    ],
+    "px": 6150,
+    "dE": 19.8,
+    "db": 9.3,
+    "p10": 92.6,
+    "p90": 158.4,
+    "contrast": 1.71,
+    "vis": 1.0,
+    "face": [
+     112.5,
+     117.6,
+     113.8
+    ]
+   }
+  },
+  "3025 JFK Boulevard": {
+   "river-60": {
+    "mean": [
+     128.1,
+     157.2,
+     173.6
+    ],
+    "px": 7587,
+    "dE": 4.3,
+    "db": -2.1,
+    "p10": 119.3,
+    "p90": 178.9,
+    "contrast": 1.5,
+    "vis": 0.85,
+    "face": [
+     128.1,
+     157.2,
+     173.6
+    ]
+   }
+  },
+  "The Alexander (1601 Vine)": {
+   "comcast-south-100": {
+    "mean": [
+     122.2,
+     135.2,
+     142.0
+    ],
+    "px": 2037,
+    "dE": 14.1,
+    "db": 1.5,
+    "p10": 118.7,
+    "p90": 164.0,
+    "contrast": 1.38,
+    "vis": 0.59,
+    "face": [
+     127.3,
+     139.7,
+     145.8
+    ]
+   }
+  },
+  "CHOP Roberts Center for Pediatric Research": {
+   "chop-50": {
+    "mean": [
+     128.2,
+     157.0,
+     165.2
+    ],
+    "px": 68231,
+    "dE": 11.5,
+    "db": 4.8,
+    "p10": 131.8,
+    "p90": 178.3,
+    "contrast": 1.35,
+    "vis": 0.91,
+    "face": [
+     128.4,
+     157.1,
+     165.3
+    ]
+   }
+  },
+  "1818 Market Street": {
+   "south-day": {
+    "mean": [
+     118.6,
+     129.6,
+     135.7
+    ],
+    "px": 1207,
+    "dE": 26.1,
+    "db": -1.3,
+    "p10": 95.0,
+    "p90": 170.0,
+    "contrast": 1.79,
+    "vis": 0.47,
+    "face": [
+     118.6,
+     129.6,
+     135.7
+    ]
+   },
+   "rittenhouse-north": {
+    "mean": [
+     95.8,
+     105.2,
+     109.9
+    ],
+    "px": 408,
+    "dE": 16.4,
+    "db": -0.5,
+    "p10": 80.2,
+    "p90": 185.0,
+    "contrast": 2.31,
+    "vis": 0.68,
+    "face": [
+     127.7,
+     135.2,
+     137.5
+    ]
+   },
+   "broad-south": {
+    "mean": [
+     113.6,
+     125.3,
+     131.6
+    ],
+    "px": 1746,
+    "dE": 24.4,
+    "db": -1.5,
+    "p10": 88.4,
+    "p90": 177.8,
+    "contrast": 2.01,
+    "vis": 0.65,
+    "face": [
+     113.6,
+     125.3,
+     131.6
+    ]
+   },
+   "market-south-low": {
+    "mean": [
+     55.6,
+     65.4,
+     71.9
+    ],
+    "px": 41141,
+    "dE": 2.0,
+    "db": -1.9,
+    "p10": 55.2,
+    "p90": 198.3,
+    "contrast": 3.59,
+    "vis": 0.92,
+    "face": [
+     118.7,
+     123.4,
+     123.3
+    ]
+   },
+   "rittenhouse-60": {
+    "mean": [
+     72.6,
+     86.3,
+     94.6
+    ],
+    "px": 1319,
+    "dE": 9.0,
+    "db": -3.2,
+    "p10": 73.0,
+    "p90": 192.9,
+    "contrast": 2.64,
+    "vis": 0.67,
+    "face": [
+     123.8,
+     132.1,
+     135.4
+    ]
+   },
+   "market-west-60": {
+    "mean": [
+     62.5,
+     79.0,
+     90.4
+    ],
+    "px": 1055,
+    "dE": 7.6,
+    "db": -5.4,
+    "p10": 67.2,
+    "p90": 144.2,
+    "contrast": 2.15,
+    "vis": 0.41,
+    "face": [
+     93.1,
+     106.7,
+     115.2
+    ]
+   },
+   "chestnut2116-50": {
+    "mean": [
+     126.9,
+     132.9,
+     129.7
+    ],
+    "px": 6470,
+    "dE": 27.8,
+    "db": 4.4,
+    "p10": 109.4,
+    "p90": 168.0,
+    "contrast": 1.54,
+    "vis": 0.65,
+    "face": [
+     129.6,
+     135.4,
+     132.3
+    ]
+   },
+   "walnut1706-50": {
+    "mean": [
+     131.9,
+     158.8,
+     177.1
+    ],
+    "px": 8038,
+    "dE": 37.8,
+    "db": -9.2,
+    "p10": 123.2,
+    "p90": 185.0,
+    "contrast": 1.5,
+    "vis": 1.0,
+    "face": [
+     138.3,
+     161.4,
+     176.5
+    ]
    }
   },
   "One Liberty Place (crown)": {
    "onelib-crown": {
     "mean": [
-     92.3,
-     107.4,
-     118.1
+     77.3,
+     101.5,
+     130.1
     ],
-    "px": 74096,
-    "dE": 14.5,
-    "p10": 85.5,
-    "p90": 134.0,
-    "contrast": 1.57
+    "px": 30303,
+    "dE": 10.1,
+    "db": 1.6,
+    "p10": 84.2,
+    "p90": 143.0,
+    "contrast": 1.7,
+    "vis": 0.64,
+    "face": [
+     86.0,
+     106.7,
+     129.5
+    ]
    },
    "skyline-sw-day": {
     "mean": [
-     105.3,
-     126.9,
-     141.5
+     103.3,
+     133.2,
+     163.9
     ],
-    "px": 182,
-    "dE": 10.0,
-    "p10": 115.0,
-    "p90": 129.8,
-    "contrast": 1.13
+    "px": 107,
+    "dE": 2.9,
+    "db": 0.7,
+    "p10": 119.8,
+    "p90": 134.9,
+    "contrast": 1.13,
+    "vis": 0.19,
+    "face": [
+     102.4,
+     132.2,
+     162.8
+    ]
    }
   }
  }

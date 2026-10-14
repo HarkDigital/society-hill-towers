@@ -38,8 +38,14 @@
   // the procedural frame first (no atlas: a tier-2 phone, ?glassart=0); the day rooms off while the reflection is judged
   G.glassU.uGlassOn.value=0;G.glassU.uGlassK.value.y=0;
   G.CITYENV.u.uGlassIrr.value=null;   // the frames' sky fill off (SKYIRR's texels: no sky probe here) while the glass's reflection is judged
+  // the Fresnel's shape at a low-e pane's reflectance (the third review's day reflectance takes this wall's light glass to a
+  // near mirror, where grazing has little left to gain): uGlassW.z at 0.3 puts its F0 near 0.1
+  G.glassU.uGlassW.value.z=0.3;
   const face=center(render([0,20,40],[0,20,0])),grazing=center(render([25,20,4],[-20,20,0]));
   check(lum(grazing)>lum(face)*1.6,'no Fresnel gain at grazing '+JSON.stringify({face,grazing}));
+  G.glassU.uGlassW.value.z=2.0;
+  const mirror=center(render([0,20,40],[0,20,0]));
+  check(lum(mirror)>lum(face)*3,'the day reflectance does not follow the body '+JSON.stringify({face,mirror}));
   check(face[2]>face[0]*1.5,'the glass does not reflect its own probe (blue) '+face);
   const again=render([0,20,40],[0,20,0]);check(again.every((v,i)=>Math.abs(v-render([0,20,40],[0,20,0])[i])<1e-6),'two identical frames differ');
   // the atlas: a row of pixels across a few bays near the eye holds frames (bright) and glass (dark) where the bays are
@@ -72,7 +78,7 @@
   nightUniform.value=0;G.glassU.uGlassL.value.x=0;sunWUniform.value.set(0,1,0);const dayC=center(render([0,20,30],[0,20,0]));
   check(lum(dayC)<lum(nightC),'the day rooms outshine the lit night '+JSON.stringify({dayC,nightC}));
   check(errors.length===0,'Shader errors '+errors.join('\n'));check(r.getContext().getError()===0,'WebGL error');
-  results.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',face,grazing,frameRow:[rmin,rmax],linesArr,linesProc,bowNear,flatNear,nightC,emptyC,dayC});
+  results.push({depth:logarithmicDepthBuffer?'logarithmic':'standard',face,grazing,mirror,frameRow:[rmin,rmax],linesArr,linesProc,bowNear,flatNear,nightC,emptyC,dayC});
   target.dispose();blue.dispose();red.dispose();pm.dispose();mat.dispose();r.dispose();r.forceContextLoss();
  }
  document.getElementById('result').textContent='PASS\n'+JSON.stringify(results,null,2);
