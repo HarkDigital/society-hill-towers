@@ -202,7 +202,7 @@ const("WATER_ART", text_of("water_art.json", "null"))   # the realism pass's pie
 const("FRONTS_DATA", text_of("fronts.json", "null"))   # the house fronts' atlases and the towers' tiles (bake_fronts.py), Round 175 on
 const("STREET_ART", text_of("street_art.json", "null"))   # the streets' generated textures (bake_street_art.py), the realism pass
 const("STOREFRONT_ART", text_of("storefront_art.json", "null"))   # the storefronts' generated shopfronts (bake_storefront_art.py), Round 189
-const("CITYHALL_ART", text_of("cityhall_art.json", "null"))   # City Hall's generated facades (bake_cityhall_art.py), Round 190
+const("CITYHALL_ART", text_of("cityhall_art.json", "null"))   # City Hall's generated facades (bake_cityhall_art.py), Round 191
 
 
 def art_paths(o):

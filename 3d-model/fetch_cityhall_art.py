@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate City Hall's facades (Round 190, Mike: "I want City hall ... to be totally revamped"): one straight-on
+"""Generate City Hall's facades (Round 191, Mike: "I want City hall ... to be totally revamped"): one straight-on
 elevation a cell (a wing section of four bays, a pavilion's front, a tower stage, a dormer), from OpenAI's image API,
 written to lidar_cache/cityhall_art_raw/<id>.png with a sidecar <id>.json (the prompt, the model, the size, when, the
 usage). bake_cityhall_art.py keys the glass, takes each picture's storeys to the building's own heights and packs the
@@ -105,25 +105,38 @@ IMAGES = [
      'Plainer than the outer fronts. A light grey granite basement with a small window in each bay; two marble storeys '
      'each split by a mezzanine, a tall window with a small square window above it in every bay, plain moulded surrounds '
      'and simple pilasters; a third storey of smaller windows; a simple moulded cornice at the top.'),
+    # fix2 (the review: a smooth white field with two small arched windows, where every photograph shows channel-jointed
+    # courses across the whole face, a great tripartite window with arched lunettes a third of the face wide and three slit
+    # windows under it: Philadelphia_City_Hall_tower.jpg, the tower from the courtyard's south entrance, N Broad Street)
     ('ch_tower_low', '1024x1104', 'stone', 'one face of the square tower', 'tower face',
-     'the bottom edge is the top of the tower\'s battered base where it clears the roofs, the top edge is the underside of '
-     'the tower\'s first stone balcony, and the left and right edges are the outer faces of the corner piers',
-     'Heavy rusticated corner piers of marble quoins at both edges. Between them smooth marble ashlar with a pair of tall '
-     'narrow windows low down under a small cornice, a pair of small round-headed windows higher up, a horizontal string '
-     'course between them, and carved brackets at the very top ready to carry a balcony.'),
+     'the bottom edge is where the tower face rises clear of its battered base, the top edge is the underside of the '
+     'tower\'s first stone balcony, and the left and right edges are the outer corners of the tower',
+     'The entire face, edge to edge and top to bottom, is channel-jointed banded marble: level courses about 0.6 metres '
+     'high, about forty of them up the image, every horizontal joint a deep sunk V-shaped channel that casts a thin dark '
+     'shadow line, faint staggered vertical joints between long blocks, the two corners finished as plain quoins in the '
+     'same courses. No columns and no pilasters anywhere. In the lowest fifth, three tall narrow slit windows side by side '
+     'close together in the middle, each about one twentieth of the face wide, deep set in plain reveals. A plain moulded '
+     'string course crosses the whole face at about one third of the height. Above it, centred, one great tripartite '
+     'window about one third of the face wide and nearly half the face tall: three tall rectangular lights side by side '
+     'divided by plain stone mullions and one stone transom, under a semicircular arched head holding three smaller arched '
+     'lights, all in a plain moulded arch of voussoirs with a keystone, on a plain stone sill. Plain banded courses above '
+     'the arch to the top edge.'),
     ('ch_tower_mid', '1024x1056', 'stone', 'one face of the square tower above its first balcony', 'tower face',
      'the bottom edge is the floor of the first balcony, the top edge is the underside of the upper balcony, and the left '
      'and right edges are the outer faces of the rusticated corner piers',
      'Rusticated corner piers at both edges. Low down three tall narrow round-headed windows side by side behind a '
      'balustrade; above them one very tall round-arched window divided by stone mullions into three lights with an arched '
      'head; a frieze of carved round medallions runs across near the top under a moulded cornice.'),
+    # fix2 (the review: the arch was twice the photographs' width against the stage and keyed as a black void; N Broad
+    # Street and the aerial show a narrow glazed arch about an eighth of the face)
     ('ch_belvedere', '1344x832', 'stone', 'one face of the tower\'s belvedere stage under the clock', 'belvedere face',
      'the bottom edge is the floor of the upper balcony, the top edge is the top of the stage\'s carved entablature, and '
      'the left and right edges are the outer faces of the clustered corner columns',
-     'Clusters of three Corinthian columns at both corners. In the middle a tall round-arched opening with a stone '
-     'balustrade across its foot, the whole opening filled with flat pure green; reclining allegorical figures carved in '
-     'the spandrels beside the arch; smaller arched niches between the columns; a richly carved entablature across the '
-     'top.'),
+     'Clusters of three Corinthian columns at both corners, and one pair of engaged Corinthian columns either side of the '
+     'centre. In the middle one tall narrow round-arched window, about one eighth of the width wide and about two thirds '
+     'of the height tall, divided by thin stone mullions into three narrow lights under an arched fanlight, a small stone '
+     'balustrade across its foot. Carved garlands and small panels beside the arch head; between the columns plain marble '
+     'panels with shallow arched niches; a richly carved entablature across the top.'),
     ('ch_dome', '704x1664', 'metal', 'one face of the tower\'s octagonal dome, unrolled flat', 'dome face',
      'the bottom edge is the dome\'s foot, the top edge is where the dome meets the lantern, and the left and right edges '
      'are the plain moulded ribs at the dome\'s corners',
@@ -157,11 +170,47 @@ IMAGES = [
      'Smooth marble ashlar in level courses with two small round-headed windows side by side, a moulded string course '
      'below them, and a corbelled cornice of carved brackets across the top. The pattern must tile horizontally without a '
      'seam.'),
-    ('ch_apse', '1024x1280', 'stone', 'the semicircular apse at the foot of the tower on the courtyard side, unrolled '
-     'flat', 'apse wall', 'the bottom edge is the paved courtyard floor, the top edge is the top of its balustrade, and the '
-     'left and right edges are the outer pilasters',
-     'A light grey granite base; above it three tall round-arched windows between Corinthian pilasters; a carved frieze '
-     'and cornice, then a stone balustrade along the top.'),
+    # fix2 (the review: a columned bay of three huge arched windows under a balustrade, where the photographs show a plain
+    # banded half-drum: Philadelphia_City_Hall_tower.jpg, Tower_Courtyard_Philadelphia_City_Hall.jpg)
+    ('ch_apse', '1024x1264', 'stone', 'the semicircular apse at the foot of the tower on the courtyard side, unrolled '
+     'flat', 'apse wall', 'the bottom edge is the paved courtyard floor, the top edge is the top of its moulded cornice (no '
+     'balustrade, no roof, no sky above it), and the left and right edges are where the half drum meets the tower',
+     'Plain banded marble: level courses about 0.6 metres high with sunk horizontal joints across the whole width. At the '
+     'bottom a light grey granite base about one fifth of the height tall, with one doorway in the exact middle, about one '
+     'sixth of the width wide and one sixth of the height tall, framed by a blocky Gibbs surround of alternating large and '
+     'small projecting stone blocks under a flat lintel of large wedge-shaped blocks; the doorway\'s whole opening is one '
+     'flat uniform pure magenta (#FF00FF) with nothing seen inside it. A plain moulded string course over the base. Above '
+     'it three tall narrow windows evenly spaced, at one sixth, one half and five sixths of the width, each about one '
+     'twelfth of the width wide and a third of the height tall, each in the same blocky Gibbs surround of alternating '
+     'projecting blocks with a flat block lintel. A second plain string course over them, then a plain banded band holding '
+     'three small round oculus windows in moulded rings, one over each tall window, and at the very top a moulded cornice. '
+     'No columns, no pilasters, no balustrade, no sculpture.'),
+    # fix2 (the review: one office grid on every courtyard face, where the photographs show tall sash windows and big arched
+    # windows on the principal floors: Philadelphia_-_Philadelphia_City_Hall_-_20230419181543.jpg and _181701.jpg); the
+    # north face by the tower keeps ch_court
+    ('ch_court_main', '816x1600', 'stone', 'the courtyard face of a wing', 'courtyard wall',
+     'the bottom edge is the paved courtyard floor at the foot of the granite base, the top edge is the top of the '
+     'cornice (no roof, no sky above it), and the left and right edges cut vertically through the middle of the framing '
+     'pilasters, so the section is exactly three window bays wide and repeats side by side',
+     'Plainer than the outer fronts but grand, the marble in level courses with sunk joints. A rusticated light grey granite '
+     'basement storey at the foot, a sixth of the height, with one small square window in each bay. Above it the principal '
+     'storey: in each bay one tall rectangular sash window in a moulded marble surround on a sill course, with a small '
+     'square mezzanine window over it. Then the second principal storey: in each bay one large round-arched window, wide '
+     'and tall, divided by a stone mullion and a transom into lights under a radial fanlight, in a moulded arched surround '
+     'with a keystone, between plain pilasters. Then a third storey of smaller square-headed windows, and a moulded cornice '
+     'on small modillions across the top. Level string courses between the storeys.'),
+    # fix2: the back of the courtyard's south forecourt over the south passage (181701: an arched window over a columned
+    # window over a pedimented door, the passage at the foot)
+    ('ch_court_bay', '704x1584', 'stone', 'the narrow back wall of the small south forecourt of the courtyard', 'bay',
+     'the bottom edge is the paved courtyard floor, the top edge is the top of the cornice (no roof, no sky above it), and '
+     'the left and right edges are the wall\'s own corners, so the bay is one wide bay',
+     'The marble in level courses with sunk joints. A light grey granite basement at the foot, a sixth of the height, with in '
+     'its middle a round-arched passage opening about two fifths of the width wide whose crown is at three tenths of the '
+     'height; the passage opening is one flat uniform pure magenta (#FF00FF) with nothing seen inside it. Above the '
+     'basement, centred, a round-arched doorway in a moulded surround under a triangular pediment on carved consoles, a tall '
+     'narrow window either side of it. Above that a tall window of three lights divided by two free-standing Ionic columns '
+     'carrying a plain entablature. At the top a large round-arched window with a stone mullion, a transom and a radial '
+     'fanlight in a moulded arched surround, under a moulded cornice. Level string courses between the storeys.'),
     ('ch_balustrade', '1536x512', 'stone', 'a straight run of the white marble balustrade along the tower\'s balconies',
      'balustrade', 'the bottom edge is the floor the balustrade stands on, the top edge is the top of its handrail, and the '
      'left and right edges are cut through the middle of two balusters so the run repeats seamlessly side by side',
@@ -172,6 +221,11 @@ TILES = [
     ('ch_ashlar', '1024x1024', 'the smooth white Lee marble ashlar of Philadelphia City Hall, about 4 metres across: '
      'rectangular blocks about 0.6 metres high and 1.4 metres long laid in level courses with staggered vertical joints, '
      'fine grey veining, very thin joints, soft grey weathering'),
+    # fix2: the tower's channel-jointed courses for its battered base (it wore the old shaft picture's foot)
+    ('ch_rustic', '1024x1024', 'the channel-jointed banded white Lee marble of the tower of Philadelphia City Hall, about 4.2 '
+     'metres across: long blocks in level courses, exactly seven courses from the top of the image to the bottom, every '
+     'horizontal joint a deep sunk V-shaped channel casting a thin dark shadow line, thin vertical joints staggered between '
+     'the courses, warm white marble with faint grey veining and soft grey weathering'),
 ]
 
 

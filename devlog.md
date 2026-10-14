@@ -9122,7 +9122,7 @@ Not done:
     core's walls in the host notes (fronts there). Still waiting on API credit: the 24 borrowed second-set interiors and the
     3 missing frames.
 
-## Round 190 — City Hall rebuilt (Oct 13)
+## Round 191 — City Hall rebuilt (Oct 13)
 
 - Mike: "I added more api credits with open AI. I want City hall and Glory Beer Bar and Kitchen to be totally revamped", and
   of the city as a whole, that it "looks better, but it isn't where I want it to be". City Hall was Round 81's block: a
@@ -9218,7 +9218,7 @@ Not done:
   2015; the figure groups and eagles are simple forms; the cresting and the balustrades cast solid shadows (three's own
   depth material knows nothing of the cut); Penn's figure is still Round 84's primitives.
 
-## Round 190, the review's fixes (Oct 14)
+## Round 191, the review's fixes (Oct 14)
 
 - Two reviews of the rebuild (the integration and the realism critics) found it sound in plan and heights but broken in
   ways a Philadelphian sees from the street. Every must-fix is in; the should-fixes are in but two (below).
@@ -9295,3 +9295,85 @@ Not done:
   Budgets 60k and 30k near, 6k far: met. Textures as they were (26.7 MB a computer, 6.7 a phone). No console error in any
   render. ?real=0 matches the pre-fix build but for the live traffic and the tufts. 791 tests, OK with the one expected
   failure.
+
+## Round 191, the second review's fixes (Oct 14)
+
+- Two more reviews (the realism and the integration critics) on the fixed rebuild: the plan and the heights stood, but a
+  Philadelphian from the street saw a buried basement, a blank tower shaft, chess-piece bronzes, glowing passages, blank
+  boxes over the courtyard, a cartoon compass and a viewpoint that did not show the building. Every must-fix is in, and
+  the should-fixes but one (below). The round is renumbered 191: main's Round 190 is the pins' scale.
+- The ground. NOAA's 2022 LiDAR's ground returns put the courtyard at 13.91 m (NAVD88) and the sidewalks round it at 13.06
+  to 13.22 (north), 13.61 (south), 13.39 to 13.51 (east) and 13.58 (west): the courtyard stands 0.3 to 0.8 m OVER the
+  street. NED, which the drawn ground is, had a 2.7 m pit in the courtyard and pulled the fronts 0.4 to 0.7 m down with
+  it, and the building stood on the pit (its datum 2.47, the drawn ground 4.5 to 5.4 at the fronts): 1.75 to 2.9 m of the
+  5.57 m basement was under the pavement on every front. Under the realistic look `demAbs` now takes `CH_GRADE`, a plane
+  fitted to the LiDAR's ground within 4 m of the walls (13.473 m at the centre, 0.00318 a metre to the south and 0.00083 to
+  the west; rms 0.15 m), out to 10 m beyond the building's box and eased back to NED by 40, so the streets, the apron and
+  everything siteY seats move with it; the building stands on the measurements' own datum, 13.57 m (Y0 5.23 against
+  2.47). Measured at the fronts against the datum: north -0.40, south +0.10, east -0.21, west -0.08, the north-east corner
+  -0.42. Every face on the datum is carried 1.2 m under it in its picture's foot row (`foot`), the water table runs from
+  the pavement (it stood 1.5 to 3.0 m up, across the basement's windows), the courtyard is laid flat at its own level
+  (`court0`, 0.34 m over the datum), and the passages run level from the pavement at the mouth to the courtyard's floor.
+  The whole granite storey shows on every front, its arched windows whole and the portals tall.
+- The tower's shaft (40 to 64.5 m, the largest surface on the building) is a new picture: channel-jointed courses across
+  the whole face, three slit windows low, a string course, and the great tripartite window with its arched lunettes a
+  third of the face wide (the photographs from the courtyard's south entrance and N Broad Street). The battered base wears
+  the same courses (`rustic`, a new tile) where it wore the old picture's foot. The belvedere's arch is a narrow glazed
+  window with mullions (it was a black hole twice the photographs' width). The apse is the photographs' plain banded half
+  drum: three oculi under a moulded cornice, three narrow windows in blocky Gibbs surrounds, a granite base with its door
+  in the same surround; the page cuts the door where the picture paints it (2.04 by 5.16 m), builds the surround's jambs,
+  lintel and keystone proud of the two facets either side of the apex, and runs a real cornice round its head.
+- The courtyard: 'court' (the plain office grid) only on the north face by the tower and the forecourt's sides; the east,
+  west and south faces in `court_main`, tall sashes and great arched windows on the principal floors; over each passage's
+  courtyard end the bay (`court_bay`, 14 m: an arched window over a columned one over a pedimented door, the passage's own
+  small arch at its foot, 20230419181543 and _181701). The passages end 0.7 m inside the courtyard's wall in a wall with
+  that small arch and its reveal (the great arch ran straight through). The centre pavilions' bodies over the wings,
+  the blank boxes over every courtyard view: their backs are the mansard the 2019 aerial shows, three framed oculi in it,
+  and their walls below take their picture at its own size to the attic's cornice. The compass is its own canvas
+  (`chCompassCanvas`, 18 m at 57 px a metre, 43 on a phone): the muted steel blue and navy star of thirty-two points, tan
+  points between, a white sawtooth rim, and Holme's 1682 grid between the two rivers in the middle with the year in a
+  roundel (it was a saturated blue disc with a four-point star at 6.4 px a metre); the floor shader's test for the grey
+  granite missed the walks (they drew flat), so they now lay their slabs with their joints and their own tones.
+- The passages: the facade's flood no longer reaches inside (a passage's part carries its shade under 1 in `aCol`'s fourth
+  byte, and the flood is multiplied out by it; it lit the west passage a flat beige on a plain night and teal on a themed
+  one); they have their own dim warm lanterns, strongest by the mouths. By day their walls take the vault's occlusion,
+  darker toward the middle and toward the springing (at the south mouth the wall reads 112 low and 87 high against the
+  vault's 42, where it was 158 against 50), their courses and blocks are drawn by the shader so a phone keeps them, a dark
+  granite base course runs along the floor, and the floor meets the courtyard's level, no step.
+- The bronzes: one group of three draped figures (a man with his arm raised over the city, a woman with a child against
+  her, robes, mantles, heads, arms from shoulder to hand) and one eagle with fanned, notched spread wings, modelled once and
+  laid four times each in the themed mesh's one draw (about 860 and 110 triangles). The bronze is stored lighter, 0x221c15,
+  at metalness 0.82: as 0x0b0906 Penn's coat measured (16, 18, 17) in the sun, flat black; it now shows its form.
+- The lantern (Philadelphia_City_Hall-zoom.jpg; the LiDAR saw nothing under the gallery's overhang): a short neck off the
+  dome's head, the ring wall out to the gallery's line with its mouldings and band, the glazed gallery behind its railing
+  under a projecting roof, the fluted cupola and Penn's pedestal (it was a 7.5 m can with two dark oculi like eyes).
+- Realism: every pane has its dark sash frame, meeting rail and a muntin down a wide one (the bake, none of it glass in
+  the mask) and at night a room behind it (its ceiling lit over a darker floor from the pane's own height, which the mask's
+  blue now carries; a blind part way down in some; they were flat beige cards); the slate is a neutral charcoal and the
+  decks a dark tar (they read blue); the block's marble is weathered, (182, 176, 164) where it was (201, 196, 184), its
+  recesses sooted in the bake and its lower storeys dirtier by the height, the tower cleaner (190, 186, 176); the stone
+  darkens in the rain; the gallery's, the skylights' and the glass houses' glazing has bars.
+- Dilworth Park: the two windowless beige boxes across the lower west front were the concourse's headhouses (OSM's
+  building=roof canopies): skipped in the outer districts' loop like the café (`CH_HEADHOUSE`, wideColK counted) and built
+  in glass (`chCafe`); the west front is paved in granite to the plaza (the lawn ran into the portal's mouth), and no park
+  tuft grows on City Hall's paving.
+- The 'City Hall' viewpoint and the locate fallback stand on Broad Street's axis, 430 m south of the building and 80 m
+  up, aimed at the tower (130 m east of the axis it was a wall of towers).
+- Integration: the cut-outs' own program is folded back (under the log depth buffer every program writes gl_FragDepth, so
+  it kept no early depth test for the rest; it cost a colour draw, a shadow draw and a program), the cut gated on the
+  balustrade's cell, `chCutDepth` the near level's shadow; the near level switches at 400 m on a computer (at 650 it is 40
+  px wide; the 400 m pairs differ by a mean of 0.74 north and 0.49 at 760 m, the far level now keeping the wings' dormers
+  and the flanks' trim); a failed build takes back its meshes, themed parts and ground claims and lets Round 81's block
+  stand (`chBuildSafe`: the landmark block in the outer districts' step has the loop's own CH, the chunk size, so it names
+  none of City Hall's state); the stale tier 2 comment is gone.
+- Not done: Penn up close is still Round 84's primitives with the arms the photographs show (to offer Mike: the coat's
+  skirts, the hat's brim, the charter and the stump); the plain night's amber against the LED system's white is his call;
+  the near and far levels share no LOD for the bronzes (they ride the themed mesh, one draw at any distance, 3.9k
+  triangles).
+- Cost: near 25,458 triangles on a computer (24,194 on a phone) with the café and the headhouses, far 5,817, the dials 144,
+  the floor 252. At d_mid_nw the A/B adds 4 draws near (the near mesh in colour and shadow, the dials, the floor; it was 6)
+  and 2 far, on both devices; 51.2k triangles near on a computer, 48.8k on a phone, both passes. Programs: city-hall-real,
+  its cut depth, the dials, the floor. Art: six gpt-image-2 calls at high (the shaft, the belvedere and the apse made
+  again, the old ones kept in the raw cache's aside/ as _v1; the courtyard's two cells and the courses new), 21 cells at
+  25.1 px/m in the one 2048 atlas; art/cityhall/ 886 KB (a computer 699 KB, a phone 187 KB); textures 26.7 MB on a computer
+  and 6.7 on a phone, as they were. ?real=0 renders as before but for the traffic and the tufts.

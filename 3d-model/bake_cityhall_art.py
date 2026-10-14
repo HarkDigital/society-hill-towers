@@ -1,21 +1,24 @@
 #!/usr/bin/env python3
-"""Bake City Hall's facades (Round 190, Mike: "I want City hall ... to be totally revamped") into cityhall_art.json,
+"""Bake City Hall's facades (Round 191, Mike: "I want City hall ... to be totally revamped") into cityhall_art.json,
 which build.py inlines as CITYHALL_ART, and one atlas with its mask into art/cityhall/ (art_files.py: files the page loads
 on demand, a phone's half copies beside them).
 
 fetch_cityhall_art.py makes one straight-on elevation a cell (lidar_cache/cityhall_art_raw/<id>.png): a wing section of
 four bays, the three bays beside a centre pavilion, a centre pavilion's front, a corner pavilion's face, the courtyard's
-wall, the tower's stages, the clock stage, a face of the dome, the dormers, a turret's top stage, the apse, a balustrade
-and a patch of plain ashlar. Every pane is a flat chroma-key green and the centre pavilion's great arch a flat magenta.
+wall (fix2: the plain north face's, the east, west and south faces' with their great arched windows, and the bay over each
+passage's courtyard end), the tower's stages, the clock stage, a face of the dome, the dormers, a turret's top stage, the
+apse, a balustrade, a patch of plain ashlar and the tower's channel-jointed courses. Every pane is a flat chroma-key green,
+and every opening the page cuts (the centre pavilion's great arch, the bay's small arch, the apse's door) a flat magenta.
 
 Per cell the bake:
 - crops the picture to the part (CELLS: the pavement under a facade, the background beside the clock stage's columns);
 - keys the glass (KEY_*) to the pixel, takes the key's green spill off the frames round it, and fills each pane with dark
-  glass, lighter toward its head, with a meeting rail across a tall sash; the clock's dial (the largest key in the clock
-  cell) is filled with the dial's teal and a gilt ring, the belvedere's great arch with a dark void, the portal's magenta
-  with the passage's shade (the near level cuts the opening there; the far level has no passage, fix1);
-- calibrates the picture's median stone to the photographs' marble (MARBLE), the tower's masonry (TOWER_STONE, fix1) or its
-  painted metal (METAL);
+  glass, lighter toward its head, inside a dark sash frame with a meeting rail across a tall sash and a muntin down a wide
+  one (fix2); the clock's dial (the largest key in the clock cell) is filled with the dial's teal and a gilt ring, every
+  magenta opening with the passage's shade (the near level cuts the opening there; the far level has no passage, fix1);
+- blurs out any carving the image model drew as lettering (SOFTEN), calibrates the picture's median stone to the
+  photographs' weathered marble (MARBLE), the tower's cleaner masonry (TOWER_STONE) or its painted metal (METAL), and
+  takes every recess of the stone darker (SOOT, fix2);
 - takes its storeys to the building's own (rows: a pixel row of the picture to a height in metres, piecewise linear,
   so the string courses meet the cornices the page builds at the measured heights, 5.57, 15.78 and 26.63 m on the wings);
 - is laid at a common pixels-a-metre (the largest that packs every cell into AW by AH with PAD of gutter, times the
@@ -23,10 +26,12 @@ Per cell the bake:
   out across the gutter, wrapped for a cell that tiles (the wings, the courtyard, the turret, the balustrade, the ashlar).
 
 The mask is opaque RGB at MASK_DIV of the atlas (bake_fronts.py's convention: an image with alpha reaches WebGL through a
-premultiplied decode on WebKit): r the glass, g the window's number (1 to 255, for the night's rooms), b 200 the dial's
-glass, 120 a dark void and 60 the sky between the balusters (cut out). The manifest names the files and carries every cell's rect in texture uv (v up, as the page
+premultiplied decode on WebKit): r the glass, g the window's number (1 to 255, for the night's rooms), b on the glass the
+height within its pane (2 at its foot to 117 at its head, fix2), b 200 the dial's glass, 120 a dark void and 60 the sky
+between the balusters (cut out). The manifest names the files and carries every cell's rect in texture uv (v up, as the page
 samples a flipped image), its size in metres, its mean colour (the far level's vertex colours), and what the page builds
-to the picture: the portal's arch on the centre pavilion, the dial's centre and radius on the clock stage.
+to the picture: the portal's arch on the centre pavilion, the small arch on the courtyard's bay and the apse's door
+(fix2), the dial's centre and radius on the clock stage.
 
 Usage: python3 bake_cityhall_art.py [--preview DIR]"""
 import argparse, json, os, sys
@@ -41,10 +46,13 @@ AW, AH = 2048, 2048
 PAD = 16
 MASK_DIV = 2
 FILL = 0.97          # the share of the atlas the packer first tries the cells' area at (it steps down 1% a try until they pack)
-MARBLE = (201, 196, 184)   # the facade's average marble with its soiling, as the photographs read it
-TOWER_STONE = (187, 182, 170)   # the tower's masonry to 102.8 m: warmer and greyer than the painted iron above it (fix1: S Broad
-                                # Street at dusk reads the belvedere (149, 152, 143) under the clock stage's (154, 165, 169) and the
-                                # dome's (155, 168, 176); the Inquirer's two-tone tower; the renders read one white)
+MARBLE = (182, 176, 164)   # the block's marble with its soiling, as the photographs read it (fix2, the review: at (201, 196,
+                           # 184) the block read pristine white, 190 to 220 in the sun and 191 under an overcast, where the
+                           # photographs show a weathered warm grey under a cleaner tower)
+TOWER_STONE = (190, 186, 176)   # the tower's masonry to 102.8 m: cleaner than the block (cleaned with the tower's restoration),
+                                # warmer than the painted iron above it (fix1: S Broad Street at dusk reads the belvedere (149, 152,
+                                # 143) under the clock stage's (154, 165, 169) and the dome's (155, 168, 176): the two-tone tower)
+SOOT = 0.55                # fix2: the recesses' soot, how far a pixel darker than its surroundings is taken darker still
 METAL = (188, 192, 198)    # the tower's paint from the clock stage up (0xc8ccd1 in the photographs' sun; a shade under it here,
                            # where the sun and the sky's specular add their own)
 GLASS_TOP, GLASS_FOOT = (58, 70, 80), (20, 27, 33)   # a pane's sky reflection at its head, its dark foot
@@ -64,8 +72,13 @@ CELLS = {
     'flank': ('ch_flank', (16.0, 26.63), (0, 0, 1024, 1665), [(0, 26.63), (110, 25.23), (760, 15.78), (1370, 5.57), (1665, 0)], 'stone', True, 1.0),
     'centre': ('ch_centre', (27.0, 39.28), (0, 0, 1104, 1550), [(0, 39.28), (1550, 0)], 'stone', False, 1.0),
     'corner': ('ch_corner', (16.5, 38.13), (0, 0, 832, 1828), [(0, 38.13), (650, 26.63), (1190, 15.78), (1645, 5.57), (1828, 0)], 'stone', False, 1.0),
-    'court': ('ch_court', (16.0, 31.5), (0, 0, 816, 1560), [(0, 31.5), (320, 26.63), (900, 15.78), (1390, 5.57), (1560, 0)], 'stone', True, 0.75),
-    'tower_low': ('ch_tower_low', (22.6, 24.5), None, [(0, 24.5), (1104, 0)], 'tower', False, 0.85),
+    'court': ('ch_court', (16.0, 31.5), (0, 0, 816, 1560), [(0, 31.5), (320, 26.63), (900, 15.78), (1390, 5.57), (1560, 0)], 'stone', True, 0.6),
+    # fix2: the courtyard's east, west and south faces (tall sash and great arched windows) and the bay over each passage's
+    # courtyard end (an arched window over a columned one over a pedimented door, the passage's own small arch at its foot);
+    # the north face by the tower and the forecourt's sides keep 'court'
+    'court_main': ('ch_court_main', (16.0, 31.5), (0, 0, 816, 1510), [(0, 31.5), (330, 26.63), (810, 15.78), (1330, 5.57), (1510, 0)], 'stone', True, 0.72),
+    'court_bay': ('ch_court_bay', (14.0, 31.5), (0, 0, 704, 1520), [(0, 31.5), (1290, 5.57), (1520, 0)], 'stone', False, 0.72),
+    'tower_low': ('ch_tower_low', (22.6, 24.5), None, [(0, 24.5), (1104, 0)], 'tower', False, 0.85),   # fix2: the channel-jointed shaft
     'tower_mid': ('ch_tower_mid', (21.0, 21.5), None, [(0, 21.5), (1056, 0)], 'tower', False, 0.85),
     'belvedere': ('ch_belvedere', (21.0, 12.6), None, [(0, 12.6), (832, 0)], 'tower', False, 0.9),
     'clock': ('ch_clock', (20.0, 20.6), (60, 25, 964, 910), [(0, 20.6), (885, 0)], 'metal', False, 0.9),
@@ -77,7 +90,8 @@ LATE = {
     'aedicule': ('ch_aedicule', (8.0, 10.3), None, [(0, 10.3), (1072, 0)], 'stone', False, 1.0),
     'oculus': ('ch_oculus', (2.0, 2.4), None, [(0, 2.4), (912, 0)], 'stone', False, 1.3),
     'turret': ('ch_turret', (8.5, 9.6), None, [(0, 9.6), (1152, 0)], 'stone', True, 0.8),
-    'apse': ('ch_apse', (19.8, 24.5), (0, 0, 1024, 1235), [(0, 24.5), (1235, 0)], 'stone', False, 0.7),
+    'apse': ('ch_apse', (19.8, 24.5), (20, 55, 990, 1180), [(0, 24.5), (1125, 0)], 'stone', False, 0.7),   # fix2: the banded half-drum, its door centred
+    'rustic': ('ch_rustic', (4.65, 3.56), (0, 183, 1024, 967), [(0, 3.56), (784, 0)], 'tower', 'xy', 1.0),   # fix2: four of the tower's courses, for the batter
     'ashlar': ('ch_ashlar', (4.0, 4.0), None, [(0, 4.0), (1024, 0)], 'stone', 'xy', 1.0),
     'balus': ('ch_balustrade', (3.3, 1.1), None, [(0, 1.1), (512, 0)], 'stone', True, 1.4),
 }
@@ -141,6 +155,34 @@ def label(m):
     return lab, boxes
 
 
+def box_blur(L, r):
+    """A box blur of radius r (summed-area table, edges clamped)."""
+    H, W = L.shape
+    P = np.pad(L, ((r + 1, r), (r + 1, r)), mode='edge').astype(np.float64)
+    S = P.cumsum(0).cumsum(1)
+    k = 2 * r + 1
+    return ((S[k:k + H, k:k + W] - S[0:H, k:k + W] - S[k:k + H, 0:W] + S[0:H, 0:W]) / (k * k)).astype(np.float32)
+
+
+# fix2: carving the image model drew as lettering (an inscription round the forecourt bay's arch, illegible but read as
+# letters), blurred out in source pixels: (cell, centre x, centre y, inner radius, outer radius, lowest row)
+SOFTEN = [('court_bay', 350, 317, 126, 158, 330)]
+
+
+def soften(cid, a):
+    from PIL import ImageFilter
+    for c, cx, cy, r0, r1, ymax in SOFTEN:
+        if c != cid:
+            continue
+        H, W = a.shape[:2]
+        yy, xx = np.mgrid[0:H, 0:W]
+        d = np.hypot(xx - cx, yy - cy)
+        m = (d >= r0) & (d <= r1) & (yy <= ymax)
+        bl = np.asarray(Image.fromarray(np.clip(a, 0, 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(5))).astype(np.float32)
+        a[m] = bl[m]
+    return a
+
+
 def keys(a):
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
     mx = np.maximum(r, b)
@@ -175,6 +217,15 @@ def prep(cid, spec):
     med = np.median(a[rest], axis=0)
     tgt = np.array(METAL if kind == 'metal' else TOWER_STONE if kind == 'tower' else MARBLE, np.float32)
     a = np.clip(a * (tgt / np.maximum(med, 1.0)), 0, 255)
+    a = soften(cid, a)
+    # fix2, the soot: a pixel darker than the stone round it (a joint, a reveal, the underside of a cornice, the deep of a
+    # carving) taken darker still, as the photographs' weathered marble holds its dirt in every recess; the painted iron is
+    # cleaner and keeps its picture
+    if kind != 'metal':
+        L = lum(np.where((green | magenta)[..., None], med[None, None], a))
+        Lb = box_blur(L, max(2, int(round(0.35 * W / wm))))
+        f = np.clip(L / np.maximum(Lb, 1.0), 0.35, 1.0) ** SOOT
+        a = a * f[..., None]
     lab, boxes = label(green)
     mask = np.zeros((H, W, 3), np.uint8)
     meta = {}
@@ -182,9 +233,7 @@ def prep(cid, spec):
     if boxes:
         big = 1 + int(np.argmax([bx[4] for bx in boxes]))
         if cid == 'clock':
-            dial = big
-        elif cid == 'belvedere':
-            void = big
+            dial = big   # (fix2: the belvedere's arch is glazed now, a window like any other, no longer a void)
     yy, xx = np.mgrid[0:H, 0:W]
     win = 0
     for k, (y0, x0, y1, x1, c) in enumerate(boxes, start=1):
@@ -218,13 +267,29 @@ def prep(cid, spec):
         a[m] = col[m]
         mask[m, 0] = 255
         mask[m, 1] = 1 + (win - 1) % 255
+        # fix2: the pane's own height in the blue (2 at its foot to 117 at its head, under the dial's 200 and the void's 120),
+        # for the night's rooms: a lamp-lit ceiling over a darker floor, a blind drawn part way
+        mask[m, 2] = np.round(2 + 115 * (1 - t[m])).astype(np.uint8)
         h, w = y1 - y0 + 1, x1 - x0 + 1
+        # fix2 (the review: every pane a flat navy panel): the sash's frame round the glass, its meeting rail, and a muntin
+        # down a wide pane, in the frames' dark bronze, none of it glass in the mask (worked in the pane's own box)
+        ppm_s = W / wm
+        fr = max(2, int(round(0.055 * ppm_s)))
+        by0, by1, bx0, bx1 = max(0, y0 - 1), min(H, y1 + 2), max(0, x0 - 1), min(W, x1 + 2)
+        mb = m[by0:by1, bx0:bx1]
+        inner = ~dilate(~mb, fr) if min(h, w) > 4 * fr else mb
+        bars = mb & ~inner
         if h > 1.6 * w and h > 40:   # a tall sash: the meeting rail across its middle
-            ry = y0 + int(h * 0.52)
-            th = max(2, int(h * 0.022))
-            rail = m & (yy >= ry) & (yy < ry + th)
-            a[rail] = FRAME
-            mask[rail] = 0
+            ry = y0 + int(h * 0.52) - by0
+            th = max(2, int(h * 0.022), fr)
+            bars[ry:ry + th] |= mb[ry:ry + th]
+        if w / ppm_s > 0.9 and h / ppm_s > 1.0:   # a wide pane: one muntin down its middle
+            cx0 = (x0 + x1) // 2 - bx0 - fr // 2
+            bars[:, cx0:cx0 + fr] |= mb[:, cx0:cx0 + fr]
+        reg = a[by0:by1, bx0:bx1]
+        reg[bars] = FRAME
+        mreg = mask[by0:by1, bx0:bx1]
+        mreg[bars] = 0
     if magenta.any():
         a[magenta] = PORTAL   # the far level draws no passage: the arch reads dark there (the near level cuts it open)
         mask[magenta] = (0, 0, 120)
