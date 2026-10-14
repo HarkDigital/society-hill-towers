@@ -318,8 +318,11 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertEqual(cut(s, '  function loadGroundArt() {', '  let tuftTex = null').count('freeTexOnUpload(t);'), 3)
         # the realism pass: the walls', pitched roofs' and snow's atlases, uploaded once (wallArtTex)
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function wallArtTex(im, aniso) {', '  const WALL_ART_ON'))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 25)   # the definition and its twenty-four uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself; Round 191: gloryLoad, Glory's facade atlas and mask and its rooms and their mask, and Glory's signs' canvas, no longer a material's map since the signs joined the facade's mesh)
-        self.assertIn('tex.dispose(); tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function gloryLoad(tex, full, half, then, pre) {', '  function gloryBlank('))
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 25)   # the definition and its twenty-four uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself; Round 191: gloryUpload, Glory's facade atlas and mask and its rooms and their mask, and Glory's signs' canvas, no longer a material's map since the signs joined the facade's mesh)
+        # Round 191's third review: a decoded image waits in GLORY.upq and goes up one a frame (gloryUpload)
+        self.assertIn('q.tex.dispose(); q.tex.image = q.im; q.tex.needsUpdate = true; freeTexOnUpload(q.tex);', cut(s, '  function gloryUpload() {', '  const gloryBytes'))
+        self.assertIn('if (im) GLORY.upq.push({ tex, im, then });', cut(s, '  function gloryLoad(tex, full, half, then, pre) {', '  function gloryUpload() {'))
+        self.assertIn('if (GLORY.upq.length) gloryUpload();', cut(s, '  function gloryStep(now) {', '  function gloryApi() {'))
         self.assertIn('freeTexOnUpload(GLORY.signTex);', cut(s, '  function gloryFacadeMat(fr) {', '  function gloryHoursStep() {'))
         # Round 191's review: a phone fetches Glory's art as bytes at the step and decodes it only once the eye comes near
         # after Enter (the Round 189 rule: no art decoded through the far ring's build); since its second review a computer

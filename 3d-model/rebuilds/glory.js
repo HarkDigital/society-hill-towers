@@ -17,7 +17,7 @@
 //     railing in the east bay, the orange-red brick floors, the corbelled cornice, the faded blue sign box high on the
 //     east edge, the white GLORY blade sign on a black bracket, two caged lanterns, the raised cafe with three steps and
 //     black wrought-iron railings, bistro tables with galvanized chairs); Wanderlog's close-up of both GLORY signs, a pier,
-//     its capital and a lantern; gloryphilly.com's stoop railing (a quatrefoil band under the top rail), the bar (down the
+//     its capital and a lantern; gloryphilly.com's stoop railing (a band of cast fleurons under the top rail), the bar (down the
 //     west wall, a brick mural by the doors: GLORY / BEER BAR & KITCHEN / THIS MUST BE THE PLACE) and the room upstairs
 //     (string lights, a globe cluster, a mantel, farmhouse tables). Hours (Google, Oct 2026): Mon to Wed 4 PM to 2 AM,
 //     Thu to Sun 12 PM to 2 AM.
@@ -41,7 +41,8 @@
   const NOMINAL = {
     lower: { bays: [[0.82, 2.09], [2.72, 4.0], [4.58, 5.86], [6.48, 7.74]], doorTop: 4.04, doorFoot: 0.49,
       arcade: [[0.79, 2.14], [2.75, 4.04], [4.59, 5.86], [6.45, 7.71]], spring: 8.15, crown: 8.19, sill2: 4.79,
-      cols: [2.3, 2.6, 4.17, 4.45, 6.01, 6.3], colR: 0.14, cornice: [8.78, 9.3], capital: { y: [3.94, 4.08], ends: [0.2, 0.15], out: 0.05 }, rect: [0, 0.14, 0.49, 0.85] },
+      cols: [2.3, 2.6, 4.17, 4.45, 6.01, 6.3], colR: 0.14, cornice: [8.78, 9.3], capital: { y: [3.94, 4.08], ends: [0.2, 0.15], out: 0.05 }, rect: [0, 0.14, 0.49, 0.85],
+      leaves: { bays: [[0.94, 1.455, 1.97], [2.84, 3.36, 3.88], [4.7, 5.22, 5.74], [6.6, 7.11, 7.62]], top: 3.41 } },
     upper: { win: [0.69, 3.49, 6.34].flatMap((y) => [[0.75, 1.81], [2.72, 3.81], [4.94, 6.0], [6.92, 7.95]].map((u) => [u[0], u[1], y, y + 1.83])), rect: [0.5, 0.14, 0.49, 0.85] },
   };
   // the swatches' order in the atlas (bake_glory_art.py SWATCHES)
@@ -50,7 +51,7 @@
   // galvanized chair, for a lantern 0 its glass and 1 its bulb, for the cast lace 0 the stoop's band, 1 the balconet's
   // scrolls and 2 a whole railing (the far level's); its fourth: a swatch face's shade in 255ths, the light a recess or an
   // underside does not get, SH below)
-  const M_ELEV = 0, M_SWATCH = 1, M_GLOW = 2, M_CAFE = 3, M_SIGN = 4, M_LACE = 5;
+  const M_ELEV = 0, M_SWATCH = 1, M_GLOW = 2, M_CAFE = 3, M_SIGN = 4, M_LACE = 5, M_LEAF = 6;   // 6: the bar's door leaf standing open
   // Round 191's review: the openings' heads and the caps' undersides, in the light granite swatch, read as cream planks over
   // every door. A head deep in its opening sees a sliver of sky, a jamb half of it, an underside the walk's bounce only
   const SH = { head: 110, jamb: 80, sill: 30, under: 70 };
@@ -75,7 +76,9 @@
       // EAST end. Mirrored here into the frame's u (east from the west corner), every list ordered from the west
       const mir = (r) => [+(FW - r[1]).toFixed(3), +(FW - r[0]).toFixed(3)];
       const L0 = ART ? ART.lower : NOMINAL.lower, U0 = ART ? ART.upper : NOMINAL.upper;
-      const LO = Object.assign({}, L0, { bays: L0.bays.map(mir).reverse(), arcade: L0.arcade.map(mir).reverse(), cols: L0.cols.map((c) => +(FW - c).toFixed(3)).reverse() });
+      const LV0 = L0.leaves || NOMINAL.lower.leaves;   // the door leaves [outer, middle, outer] a bay, from the image's left
+      const LO = Object.assign({}, L0, { bays: L0.bays.map(mir).reverse(), arcade: L0.arcade.map(mir).reverse(), cols: L0.cols.map((c) => +(FW - c).toFixed(3)).reverse(),
+        leaves: { bays: LV0.bays.map((q) => q.map((x) => +(FW - x).toFixed(3)).reverse()).reverse(), top: LV0.top } });
       const UP = Object.assign({}, U0, { win: U0.win.map((w) => mir(w).concat([w[2], w[3]])) });
       const f = K.frameFromEdge(A, B);
       const ux = f.ux, uz = f.uz, vx = f.vx, vz = f.vz;
@@ -112,6 +115,14 @@
             t = t || [[0, 0], [0, 0], [0, 0], [0, 0]];
             if (facing(a, b, c, nn) < 0) { [a, b, c, d] = [d, c, b, a]; t = [t[3], t[2], t[1], t[0]]; }
             const i = push(a, nn, t[0], g), j = push(b, nn, t[1], g), k = push(c, nn, t[2], g), l = push(d, nn, t[3], g);
+            I.push(i, j, k, i, k, l);
+          },
+          // a quad with a normal at each corner (a curved surface's facets shaded smooth), wound by their sum
+          quadN(a, b, c, d, ns, t, g) {
+            t = t || [[0, 0], [0, 0], [0, 0], [0, 0]];
+            const nn = [0, 1, 2].map((k) => ns[0][k] + ns[1][k] + ns[2][k] + ns[3][k]);
+            if (facing(a, b, c, nn) < 0) { [a, b, c, d] = [d, c, b, a]; ns = [ns[3], ns[2], ns[1], ns[0]]; t = [t[3], t[2], t[1], t[0]]; }
+            const i = push(a, ns[0], t[0], g), j = push(b, ns[1], t[1], g), k = push(c, ns[2], t[2], g), l = push(d, ns[3], t[3], g);
             I.push(i, j, k, i, k, l);
           },
           // a face of the front (normal nn) in the frame's (u, y) at depth v, its uv from the elevations
@@ -368,7 +379,7 @@
       };
       // a railing along a path of local (u, v) points, the bottom and top rails' heights over the walk at its two ends: the
       // rails along the path's own pieces, a picket every 12 cm with a post every tenth, and with band the cast band under
-      // the top rail between a second rail and the top: the real one's quatrefoils, lilies and a ring at each post (refs,
+      // the top rail between a second rail and the top: the real one's fleurons and a ring at each post (refs,
       // gloryphilly IMG6), cut in the shader from one strip a piece of the path
       function railing(path, yb, yt, band) {
         const seg = [], tv = [0];
@@ -434,13 +445,18 @@
         const arm = [[-0.13, y + h + 0.27], [-0.22, y + h + 0.33], [-0.31, y + h + 0.32], [-0.37, y + h + 0.26], [-0.39, y + h + 0.17], [v, y + h + 0.1]];
         for (let k = 0; k + 1 < arm.length; k++) near.bar([u, arm[k][0], arm[k][1]], [u, arm[k + 1][0], arm[k + 1][1]], 0.022, IRON);
         const P = (rr, a, yy) => W(u + rr * Math.cos(a), v + rr * Math.sin(a), yy);
-        // the globe: an eight-sided barrel, its foot drawn in, and its cap (a shallow cone over a band)
+        // the globe: an eight-sided barrel, its foot drawn in, and its cap (a shallow cone over a band). Its normals are the
+        // round jar's at every corner, a ring's the mean of the bands either side (Round 191's third review: a flat normal a
+        // facet read as eight flat panes at 1 to 3 m), so it shades round for no more triangles
         const rings = [[r * 0.78, y], [r, y + h * 0.16], [r, y + h * 0.84], [r * 0.82, y + h]];   // a jar: a short shoulder at either end
+        const slope = rings.slice(1).map((q, j) => (rings[j][0] - q[0]) / (q[1] - rings[j][1]));
+        const ringS = rings.map((q, j) => (j === 0 ? slope[0] : j === rings.length - 1 ? slope[j - 1] : (slope[j - 1] + slope[j]) / 2));
         for (let k = 0; k < 8; k++) {
           const a0 = Math.PI * k / 4, a1 = Math.PI * (k + 1) / 4, am = (a0 + a1) / 2;
           for (let j = 0; j + 1 < rings.length; j++) {
             const [r0, y0] = rings[j], [r1, y1] = rings[j + 1];
-            near.quad(P(r0, a0, y0), P(r0, a1, y0), P(r1, a1, y1), P(r1, a0, y1), nrm(Math.cos(am), Math.sin(am), (r0 - r1) / (y1 - y0)), null, GLASS);
+            near.quadN(P(r0, a0, y0), P(r0, a1, y0), P(r1, a1, y1), P(r1, a0, y1),
+              [nrm(Math.cos(a0), Math.sin(a0), ringS[j]), nrm(Math.cos(a1), Math.sin(a1), ringS[j]), nrm(Math.cos(a1), Math.sin(a1), ringS[j + 1]), nrm(Math.cos(a0), Math.sin(a0), ringS[j + 1])], null, GLASS);
           }
           near.tri(P(rings[0][0], a0, y), P(rings[0][0], a1, y), W(u, v, y - 0.03), nrm(Math.cos(am), Math.sin(am), -1.2), null, null, null, IRON);
           near.quad(P(r * 0.82, a0, y + h), P(r * 0.82, a1, y + h), P(r * 1.05, a1, y + h + 0.02), P(r * 1.05, a0, y + h + 0.02), nrm(Math.cos(am), Math.sin(am), -0.4), null, IRON);
@@ -503,25 +519,35 @@
       // bays. aGl (3, 0) the tables' black, (3, 1) the chairs' steel (the shader's metal); folded away while the bar is shut
       // (Round 191's review: board chairs in the concrete swatch read as slabs)
       const CAFE_T = [M_CAFE, 0], CAFE_C = [M_CAFE, 1];
+      // a square's skirt: four strips round (u, v) half side hs, a turned a, w tall centred at y (a pressed steel seat's
+      // edge turned down, a table top's apron: Round 191's third review, the seats and tops read as single flat plates)
+      const skirt = (u, v, hs, a, y, w, g) => {
+        const ca = Math.cos(a), sa = Math.sin(a), L = (du, dv) => [u + du * ca - dv * sa, v + du * sa + dv * ca, y];
+        const c = [L(-hs, -hs), L(hs, -hs), L(hs, hs), L(-hs, hs)];
+        for (let k = 0; k < 4; k++) near.strip(c[k], c[(k + 1) % 4], w, g);
+      };
       const table = (u, v) => {
         near.obox(u, v, PT + 0.74, 0.3, 0.3, 0.012, 0, CAFE_T);
+        skirt(u, v, 0.29, 0, PT + 0.715, 0.035, CAFE_T);
         near.obox(u, v, PT + 0.38, 0.022, 0.022, 0.35, 0, CAFE_T, 'fbwe');
         near.obox(u, v, PT + 0.015, 0.22, 0.025, 0.015, 0.3, CAFE_T, 'fbwet');
         near.obox(u, v, PT + 0.015, 0.22, 0.025, 0.015, 0.3 + Math.PI / 2, CAFE_T, 'fbwet');
       };
       const chair = (u, v, a) => {
         const ca = Math.cos(a), sa = Math.sin(a), L = (du, dv) => [u + du * ca - dv * sa, v + du * sa + dv * ca];
-        near.obox(u, v, PT + 0.45, 0.18, 0.18, 0.01, a, CAFE_C);
+        near.obox(u, v, PT + 0.45, 0.18, 0.18, 0.006, a, CAFE_C);
+        skirt(u, v, 0.18, a, PT + 0.43, 0.035, CAFE_C);
         for (const [du, dv] of [[-0.16, -0.16], [0.16, -0.16], [-0.16, 0.16], [0.16, 0.16]]) {
           const top = L(du, dv), foot = L(du * 1.18, dv * 1.18);
           near.bar([top[0], top[1], PT + 0.44], [foot[0], foot[1], PT], 0.014, CAFE_C);
         }
-        // the back: two uprights raked back and two slats curved round the seat's back, open below
-        for (const du of [-0.14, 0.14]) { const p = L(du, 0.15), q = L(du * 1.04, 0.2); near.bar([p[0], p[1], PT + 0.45], [q[0], q[1], PT + 0.84], 0.014, CAFE_C); }
-        for (const ys of [PT + 0.66, PT + 0.79]) {
-          const arc = [], back = (ys - PT - 0.45) / 0.39 * 0.05;   // the uprights' rake at the slat's height
-          for (let k = 0; k <= 4; k++) { const th = -0.8 + 1.6 * k / 4, rr = 0.2; arc.push(L(rr * Math.sin(th) * 0.98, back + rr * Math.cos(th) - 0.01)); }
-          for (let k = 0; k + 1 < arc.length; k++) near.strip([arc[k][0], arc[k][1], ys], [arc[k + 1][0], arc[k + 1][1], ys], 0.05, CAFE_C);
+        // the back: two uprights raked back and three slats curved round the seat's back, open below (the Tolix-style chair
+        // of the Bright MLS view)
+        for (const du of [-0.15, 0.15]) { const p = L(du, 0.15), q = L(du * 1.05, 0.21); near.bar([p[0], p[1], PT + 0.45], [q[0], q[1], PT + 0.85], 0.014, CAFE_C); }
+        for (const ys of [PT + 0.63, PT + 0.715, PT + 0.8]) {
+          const arc = [], back = (ys - PT - 0.45) / 0.4 * 0.06;   // the uprights' rake at the slat's height
+          for (let k = 0; k <= 6; k++) { const th = -0.95 + 1.9 * k / 6, rr = 0.19; arc.push(L(rr * Math.sin(th), back + rr * Math.cos(th) - 0.02)); }
+          for (let k = 0; k + 1 < arc.length; k++) near.strip([arc[k][0], arc[k][1], ys], [arc[k + 1][0], arc[k + 1][1], ys], 0.055, CAFE_C);
         }
       };
       for (const [tu, tv] of [[5.3, -0.85], [7.3, -0.85]]) {
@@ -531,6 +557,25 @@
       }
       chair(5.3, -1.38, 0); chair(7.3, -1.38, 0);
       chair(6.3, -0.5, Math.PI); chair(4.85, -1.4, 0.4);
+
+      // ---- the bar's own door leaf standing open (aGl mode 6, its elevation's pixels, drawn only while the app says the
+      // door stands open: the hours and fair weather; refs, the Bright MLS view and gloryphilly IMG6, the entrance's east leaf
+      // swung out to the street): hinged at its outer stile, just short of square to the front, both faces from the leaf's
+      // own place in the lower elevation, its edges iron. The shader opens the doorway behind it on the recessed face
+      // (frame.leaf), so the room shows through (Round 191's third review: shut, the entrance was the darkest bay by day)
+      const LV = LO.leaves.bays[1], LEAF = [LV[1], LV[2], LO.doorFoot, LO.leaves.top];
+      {
+        const hu = LV[2], hv = 0.23, wL = LV[2] - LV[1], th = 0.045, ang = 92 * Math.PI / 180;
+        const du = -Math.cos(ang), dv = -Math.sin(ang), nu = Math.sin(ang), nv = -Math.cos(ang);   // to the free edge; the street face's normal
+        const y0 = LO.doorFoot + 0.01, y1 = LO.leaves.top - 0.01, G6 = [M_LEAF, 0];
+        const H0 = (y) => W(hu, hv, y), F0 = (y) => W(hu + du * wL, hv + dv * wL, y);
+        const H1 = (y) => W(hu - nu * th, hv - nv * th, y), F1 = (y) => W(hu + du * wL - nu * th, hv + dv * wL - nv * th, y);
+        const t = [ev(hu, y0), ev(LV[1], y0), ev(LV[1], y1), ev(hu, y1)];
+        near.quad(H0(y0), F0(y0), F0(y1), H0(y1), nrm(nu, nv, 0), t, G6);         // the street face, turned to the east
+        near.quad(H1(y0), F1(y0), F1(y1), H1(y1), nrm(-nu, -nv, 0), t, G6);       // the bar's face, to the west
+        near.quad(F0(y0), F1(y0), F1(y1), F0(y1), nrm(du, dv, 0), null, IRON);    // the free edge
+        near.quad(H0(y1), F0(y1), F1(y1), H1(y1), NY, null, IRON);                // the top
+      }
 
       // ---- the far level: the shell, each elevation as one flat face, the two cornices and the stoop as slabs
       shell(far);
@@ -589,7 +634,9 @@
       };
       // the frame the shader reads: the lanterns, the old sign box's extent [v0, v1, y0, y1], and the stone's drip lines (the
       // capitals' foot, the sill course's, the cornice's), under which the weather has run down the granite
-      const frame = { ax: A[0], az: A[1], ux, uz, vx, vz, y0: Y0, fw: FW, lanterns: LANT, signbox: SIGNBOX, drips: [capY0, LO.sill2 - 0.1, LO.cornice[0]] };
+      // the openings (the bar's light out through its glass after dark) and the open leaf's doorway
+      const frame = { ax: A[0], az: A[1], ux, uz, vx, vz, y0: Y0, fw: FW, lanterns: LANT, signbox: SIGNBOX, drips: [capY0, LO.sill2 - 0.1, LO.cornice[0]],
+        bays: LO.bays, arcade: LO.arcade, bayY: [LO.doorFoot, LO.doorTop, LO.sill2, LO.spring], leaf: LEAF };
       const facadeMat = G ? G.facade(frame) : K.mat('#a8a59c');
       const mNear = mk(near, facadeMat, 'glory-near'), mFar = mk(far, facadeMat, 'glory-far');
       if (G) {
@@ -604,6 +651,10 @@
         // never reaches past the frontage, so a tap on 128's party wall stays out
         const xz = (u, v) => { const q = W(u, v, 0); return [+q[0].toFixed(3), +q[2].toFixed(3)]; };
         G.ref({ name: 'Glory Beer Bar & Kitchen', lot: LOT, apron: [xz(0, -2.4), xz(FW, -2.4), B, A], door: [door[0], door[2]], y0: Y0, c: [CX, Y0 + 8, CZ], n: [-vx, -vz], parcel: [101.01, -284.81] });
+        // the block's walk, from 2707's west end to 2805's east (the core's fronts, -16.8 to 35.5 m along the front's line),
+        // the kerb to under the fronts: paving, where no tuft is sown (Round 191's third review: tufts in the walk at the
+        // stoop's foot, from before Glory, and the meadow before 122 and 124's set-back front, paved by the app's walk)
+        if (G.paved) G.paved([xz(-16.8, -3.6), xz(35.5, -3.6), xz(35.5, 1.4), xz(-16.8, 1.4)]);
       }
       if (api.occupy) api.occupy(LOT, Y0 + TOP, 0);   // its roof for the placards' grid, its ground for the trees, poles and storefronts
       return group;

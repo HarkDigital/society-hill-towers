@@ -15,7 +15,12 @@
 - its second review: the muntins kept at 0 in the mask two texels wide (pane_bars, bar_texels), a tap on the sign from the
   sidewalk naming Glory (the apron over the walk in front of its own frontage, never 128's), the cast lace cut in the shader
   (and in its shadow), the capitals' boxes on the painted ones, the lamps' wash a metal's share, the stone's grain and
-  weather, and the art decoded near Glory on a computer too."""
+  weather, and the art decoded near Glory on a computer too;
+- its third review: the stone's grain smooth value noise (no hashed cells), the lower elevation's lites regular rectangles
+  of whole texels with straight bars (regular_lites) read texel by texel where magnified, every plain swatch periodic, the
+  open bar's light out through its glass, the bar's door leaf standing open (mode 6) with its doorway, the east return
+  painted, a tap under 2 m naming Glory, the search's mark over the parapet and its address in the index, the recovery
+  tier's art at the near level's reach and without the rooms, one upload a frame, and the block's walk paved."""
 import json
 from pathlib import Path
 import re
@@ -67,7 +72,7 @@ for (const withArt of [false, true]) {
   const calls = { lod: 0, lamps: 0, ref: null, occupy: 0, frame: null };
   const mat = new THREE.MeshStandardMaterial();
   const api = { THREE, K: RB.kit(THREE), where: 'app', ground: () => 0.25, occupy: () => { calls.occupy++; }, pinAt: () => {}, log: () => {} };
-  if (withArt) api.glory = { art, facade: (f) => { calls.frame = f; return mat; }, lod: (n, f, c) => { calls.lod++; calls.lodArgs = [!!n, !!f, Array.isArray(c)]; }, lamps: (l) => { calls.lamps = l.length; }, ref: (r) => { calls.ref = r; } };
+  if (withArt) api.glory = { art, facade: (f) => { calls.frame = f; return mat; }, lod: (n, f, c) => { calls.lod++; calls.lodArgs = [!!n, !!f, Array.isArray(c)]; }, lamps: (l) => { calls.lamps = l.length; }, ref: (r) => { calls.ref = r; }, paved: (ring) => { calls.paved = ring; } };
   const t0 = Date.now();
   const obj = RB.defs.find((d) => d.id === 'glory').build(api);
   const r = { ms: Date.now() - t0, calls, meshes: {} };
@@ -147,13 +152,25 @@ class Gating(unittest.TestCase):
         self.assertIn("bar: 'Bar'", a)
         self.assertIn("if (GLORY.ref) add(GLORY.ref.name, GLORY.ref.door[0], GLORY.ref.door[1], 'bar', GLORY.ref);", a)
         self.assertIn("if (e.kind === 'bar' && e.ref) { gloryGoTo(e.ref);", a)
+        # its third review: the search's mark over the parapet (at the door it covered the board and the entrance in the very
+        # view the search lands on), and the address in the index under the bar's own name
+        go = a[a.index('  function gloryGoTo(r) {'):a.index('  function searchLocalSubmit(qy) {')]
+        self.assertIn('placeSearchMark(r.c[0], r.y0 + 20, r.c[2], r.name);', go)
+        self.assertNotIn('placeSearchMark(r.door[0]', go)
+        self.assertIn("if (GLORY.ref) ix.push({ name: GLORY.ref.name, lc: '126 chestnut street',", a)
         # no pad (Round 191's review: a metre's pad round a point already 1.5 m into the building hit gave a tap on 128's party
         # wall Glory's card), and the card asks for the parcel at the business's own point inside its lot
         # its second review: the lot tested 0.3 m past the hit (the parcel's point 1.5 m along an oblique ray from the sidewalk
         # gave a tap on 128's front Glory's card), and the hit itself on the walk in front of its own frontage (the blade sign,
         # the lanterns, the old sign box, tapped from the sidewalk, opened the generic card)
         self.assertIn("const gx = p[0] + dir.x * 0.3, gz = p[2] + dir.z * 0.3;", a)
-        self.assertIn("bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(gx, gz, 0) || gloryApron(p[0], p[2]) ? GLORY.ref : null);", a)
+        # its third review: asked before the ground test, so a tap under 2 m (the door at eye height, a railing, a chair, the
+        # stoop's deck) names it, anything over the walk's own level
+        pick = a[a.index('  function bldgPick(cx, cy) {'):a.index('  function bldgOpen(')]
+        glo = "const glo = !!GLORY.ref && p[1] > GLORY.ref.y0 + 0.1 && (gloryAt(gx, gz, 0) || gloryApron(p[0], p[2]));"
+        self.assertIn(glo, pick)
+        self.assertLess(pick.index(glo), pick.index("if (p[1] < g + 2 && !glo) return false;"))
+        self.assertIn("bldgOpen(p[0], p[1] + 1, p[2], x, z, glo ? GLORY.ref : null);", pick)
         self.assertIn("return !!(r && r.apron && pointInPoly(x, z, r.apron));", a)
         self.assertIn("if (biz && biz.parcel) { x = biz.parcel[0]; z = biz.parcel[1]; }", a)
         self.assertIn("if (st.biz) { gloryCard(st); return; }", a)
@@ -191,7 +208,7 @@ class Gating(unittest.TestCase):
         self.assertIn("#define GLMASK0(p) textureGrad(uGlMask, p, vec2(0.0), vec2(0.0))", mat)
         self.assertNotIn('GL_MASK0', a)
         # the signs: faces of the near mesh (mode 4), no material of their own
-        self.assertIn("'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv); glRgh = 0.6; }',", mat)
+        self.assertIn("'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv, -0.6); glRgh = 0.6; }',", mat)
         self.assertNotIn('function glorySignsMat', a)
         self.assertNotIn('GLORY.signs', a)
         # the cafe's chairs a metal, the lanterns' bulb seen through their glass, a recess's shade
@@ -219,9 +236,12 @@ class Gating(unittest.TestCase):
         self.assertIn("'vec3 glDcKeep = diffuseColor.rgb; diffuseColor.rgb *= glLampK;', '#include <emissivemap_fragment>', 'diffuseColor.rgb = glDcKeep;',", mat)
         self.assertIn('glLampK = 1.0 - glMet;', mat)
         self.assertIn('glRgh = 0.8; glLampK = 0.12;', mat)
-        # the stone's grain on its own plane, faded before a pixel spans a grain, and its weather by its place on the front
-        self.assertIn('glH(floor(glPl / 0.003))', mat)
-        self.assertIn('(1.0 - smoothstep(0.0015, 0.004, glPx))', mat)
+        # the stone's grain on its own plane, faded before a pixel spans its cells, and its weather by its place on the front
+        # (its third review: smooth value noise in turned octaves, never hashed square cells stepped to specks)
+        self.assertNotIn('glH(floor(glPl / 0.003))', mat)
+        self.assertNotIn('floor(glPl /', mat)
+        self.assertIn("'    float glGr = (glVN(mat2(0.83, 0.56, -0.56, 0.83) * glPl / 0.004) - 0.5) * 0.035 * (1.0 - smoothstep(0.002, 0.004, glPx));',", mat)
+        self.assertIn('float glH2(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031);', mat)
         self.assertIn("'  vec2 glFw = fwidth(glPl); float glPx = max(glFw.x, glFw.y);',", mat)   # a derivative in uniform flow
         self.assertIn('if (fr.drips && fr.drips.length === 3) gloryU.uGlDrip.value.set(fr.drips[0], fr.drips[1], fr.drips[2], 1);', mat)
         self.assertIn('if (fr.signbox && fr.signbox.length === 4) gloryU.uGlBox.value.fromArray(fr.signbox);', mat)
@@ -232,6 +252,49 @@ class Gating(unittest.TestCase):
         self.assertIn('const GLORY_SW = %d;' % len(B.SWATCHES), a)
         g = (ROOT / 'rebuilds' / 'glory.js').read_text()
         self.assertIn('const SW = { ' + ', '.join('%s: %d' % (k, i) for i, k in enumerate(B.SWATCHES)) + ' };', g)
+
+    def test_the_third_reviews_fixes(self):
+        a = self.app
+        mat = a[a.index('  function gloryFacadeMat(fr) {'):a.index('  function gloryHoursStep() {')]
+        # the mask's glass read texel by texel where it is magnified (its edges eased over a pixel), the uv's derivatives
+        # taken in uniform flow before any branch
+        self.assertIn("vec2 glUvW = fwidth(vUv), glUdx = dFdx(vUv), glUdy = dFdy(vUv);", mat)
+        self.assertIn("frMask = textureGrad(uGlMask, (glMi + glMf + 0.5) / glMs, glUdx, glUdy);", mat)
+        self.assertLess(mat.index('glUdx = dFdx(vUv)'), mat.index("'if (glMode < 0.5 || glMode > 5.5) { glTex = texture2D(map, vUv);',"))
+        # the open bar's light out through its glass after dark, each opening by its own room's hours
+        self.assertIn("'float glSpill(vec3 P, vec3 N, vec4 o, float dg) {',", mat)
+        self.assertIn("glSp += glSpill(glPf, glNf, vec4(glB4.xy, uGlBayY.xy), 0.25) * uGlOpen.x + glSpill(glPf, glNf, vec4(glB4.zw, uGlBayY.zw), 0.2) * uGlOpen.y; }", mat)
+        self.assertIn("'if (uNight > 0.001 && glPf.z < 0.3 && glPf.z > -3.2 && glPf.y < 9.4) {',", mat)
+        # the bar's door leaf (mode 6) folds with the door in the drawn pass and the shadow pass, and its doorway opens
+        self.assertIn("(abs(vGl.x - 6.0) < 0.5 && uGlDoor < 0.5)) transformed = vec3(0.0);", mat)
+        self.assertIn("(abs(aGl.x * 255.0 - 6.0) < 0.5 && uGlDoor < 0.5)) transformed = vec3(0.0);", mat)
+        self.assertIn("if (glMode < 0.5 && uGlDoor > 0.5 && glPf.z > 0.2) glHo =", mat)
+        self.assertIn("roughnessFactor = mix(roughnessFactor, 1.0, glHo);", mat)
+        hrs = a[a.index('  function gloryHoursStep() {'):a.index('  function gloryStep(now) {')]
+        self.assertIn('const door = GLORY.open && WXFX.rain < 0.15 && WXFX.snow < 0.15 && WXFX.hail < 0.15 && (WX.temp == null || WX.temp > 50);', hrs)
+        # the east return black-painted over the storefront, the board lit after dark and its canvas read sharper, the
+        # lanterns' filament amber, the chairs a dull galvanized metal
+        self.assertIn("glPf.x > uGlFw - 0.12 && dot(vWNorm.xz, uGlF.zw) > 0.5 && glPf.z < 1.6 && glPf.y > 4.1", mat)
+        self.assertIn("if (glMode > 3.5 && glMode < 4.5 && glPf.y > 3.9 && glPf.z > -0.4) reflectedLight.directDiffuse +=", mat)
+        self.assertIn("vec3(1.0, 0.5, 0.17) * (0.05 + 2.4 * exp(", mat)
+        self.assertNotIn('glMet = glCh ? 0.7', mat)
+        self.assertIn('glMet = glCh ? 0.25 : 0.0;', mat)
+        # the room upstairs' ceiling drawn (its plate's top rows drew big diagonals), and no rooms: a plain warm glow
+        self.assertIn("'  if (up > 0.5 && glCeil > 0.5) {", mat)
+        self.assertIn("'} else if (glBar > 0.01) totalEmissiveRadiance += glBar * uNight *", mat)
+        # the stoop's band: heavy fleurons, strokes of about 2 cm, a heavy ring at each post
+        lace = a[a.index('  const GLORY_LACE_GLSL = ['):a.index('  const GLORY_DITHER')]
+        self.assertIn("'  float d = y > 0.072 ? abs(length(vec2(ax + 0.052, y - 0.075)) - 0.1) - 0.0095 : 1.0;',", lace)
+        self.assertIn("'  if (pd < 0.095) d = abs(length(vec2(pd, y - 0.1)) - 0.068) - 0.012;',", lace)
+        self.assertNotIn('abs(q) - 0.0065', lace)   # the old band's 1.3 cm lines
+        # the recovery tier: the art at the near level's reach, no rooms; one image up a frame
+        self.assertIn('const GLORY_DECODE_R = TIER2 ? 200 : 600;', a)
+        self.assertIn('const I = A.interior && A.interior.plates && !TIER2 ? A.interior : null;', mat)
+        # the block's walk: paved to under the set-back fronts, and no tuft sown on a rebuild's paving
+        self.assertIn('const wide = r.glWalk ? 5.0 : 3.0, off = r.w / 2 + 0.05 + wide / 2;', a)
+        grass = a[a.index('  function grassStep() {'):a.index('  function grassStep() {') + 3000]
+        self.assertIn('if (REBUILD_PAVED.length && rebuildPavedAt(x, z)) continue;', grass)
+        self.assertIn('paved: (ring) => { REBUILD_PAVED.push({ ring, bb: rbBox(ring) }); },', a)
 
     def test_the_old_look_is_untouched(self):
         a = self.app
@@ -321,6 +384,28 @@ class Def(unittest.TestCase):
         self.assertLessEqual(near.get('5:0', 0), 64)
         self.assertEqual(far.get('5:2', 0), 32)   # four runs, two faces of two triangles
         self.assertGreater(near.get('1:7', 0), 0)  # the old sign box's rust cap
+
+
+    def test_the_open_leaf_and_the_frame(self):
+        m = self.r['art']['meshes']
+        near, far = m['glory-near']['modes'], m['glory-far']['modes']
+        # the bar's door leaf standing open: two faces of four corners, near only
+        self.assertEqual(near.get('6:0', 0), 8)
+        self.assertFalse(any(k.startswith('6:') for k in far))
+        f = self.r['art']['calls']['frame']
+        self.assertEqual(len(f['bays']), 4); self.assertEqual(len(f['arcade']), 4); self.assertEqual(len(f['bayY']), 4)
+        u0, u1, y0, y1 = f['leaf']
+        b = f['bays'][1]                                   # the entrance, the second bay from the west
+        self.assertTrue(b[0] < u0 < u1 < b[1], (b, f['leaf']))
+        self.assertAlmostEqual(y0, f['bayY'][0], places=3)
+        self.assertTrue(y0 + 2.5 < y1 < f['bayY'][1], f['leaf'])
+        # the block's walk handed over as paving: it holds the apron and the strip before 124's set-back front
+        ring = self.r['art']['calls']['paved']
+        self.assertEqual(len(ring), 4)
+        P = lambda u, v: (LOT[2][0] + u * f['ux'] + v * f['vx'], LOT[2][1] + u * f['uz'] + v * f['vz'])
+        self.assertTrue(inside(*P(4.3, -2.0), ring))
+        self.assertTrue(inside(*P(12.0, 0.6), ring))
+        self.assertFalse(inside(*P(4.3, -5.0), ring))     # the roadway stays the street's
 
 
 class Art(unittest.TestCase):
@@ -425,6 +510,62 @@ class Art(unittest.TestCase):
                 t = B.bar_texels(bars, (60, 100))
                 self.assertEqual(int(t[13, (x0 + 40) // 3:(xa + 5) // 3 + 1].sum()), 2, (gap, x0))              # across the vertical
                 self.assertEqual(int(t[(21 + 40) // 3:(21 + 45 + gap + 5) // 3 + 1, (x0 + 20) // 3].sum()), 2, (gap, x0))   # down the horizontal
+
+    def test_the_lower_lites_are_rectangles(self):
+        # Round 191's third review: the lower elevation's glass is regular_lites', every lite a rectangle of whole texels
+        # and every bar straight, nothing between glass and frame (the image's own bars wobbled a texel, and the filtered
+        # mask rounded every lite)
+        try:
+            from PIL import Image
+            import numpy as np
+        except ImportError:
+            raise unittest.SkipTest('PIL or numpy unavailable')
+        from bake_fronts import blobs
+        with Image.open(ROOT / self.m['mask']) as im:
+            r = np.asarray(im.convert('RGB'))[..., 0]
+        lo = r[4:4 + 545, 4:4 + 504]                       # the lower elevation at the mask's half size, in its gutter
+        self.assertEqual(sorted(np.unique(lo).tolist()), [0, 255])
+        lites = [b for b in blobs(lo == 255) if b[4] > 4]
+        self.assertEqual(len(lites), 232)                  # 8 leaves of 12, 8 transoms, 8 casements of 16
+        for y0, x0, y1, x1, n in lites:
+            self.assertEqual(n, (y1 - y0 + 1) * (x1 - x0 + 1), (y0, x0, y1, x1))
+
+    def test_the_door_leaves(self):
+        L = self.m['lower']
+        lv = L['leaves']
+        self.assertEqual(len(lv['bays']), 4)
+        for (a, mid, b), (u0, u1) in zip(lv['bays'], L['bays']):
+            self.assertTrue(u0 < a < mid < b < u1, (a, mid, b, u0, u1))
+        self.assertTrue(L['doorFoot'] + 2.5 < lv['top'] < L['doorTop'], lv['top'])
+
+    def test_the_plain_swatches_tile(self):
+        # Round 191's third review: noise_swatch's coarse field was resized without wrapping, so every concrete and roof
+        # tile ended at a hard edge (a seam down the stoop and through every step). Without the grain, a tile's wrap is
+        # no harder than any step inside it
+        try:
+            import numpy as np
+        except ImportError:
+            raise unittest.SkipTest('numpy unavailable')
+        import bake_glory_art as B
+        for seed in (1, 5, 7):
+            t = np.asarray(B.noise_swatch((128, 128, 128), 0.5, seed, fine=0), np.float32)[..., 0]
+            self.assertLessEqual(np.abs(t[:, 0] - t[:, -1]).max(), np.abs(np.diff(t, axis=1)).max() + 1)
+            self.assertLessEqual(np.abs(t[0] - t[-1]).max(), np.abs(np.diff(t, axis=0)).max() + 1)
+
+    def test_the_old_sign_box_is_pale(self):
+        # the Bright MLS view's pale worn white-grey enamel (Round 191's third review: the grey-sage read darker and greener)
+        try:
+            from PIL import Image
+            import numpy as np
+        except ImportError:
+            raise unittest.SkipTest('PIL or numpy unavailable')
+        with Image.open(ROOT / self.m['img']) as im:
+            a = np.asarray(im.convert('RGB'), np.float32)
+        H, W = a.shape[:2]
+        u0, v0, du, dv = self.m['swatches']['rustblue']['rect']
+        sw = a[round((1 - v0 - dv) * H):round((1 - v0) * H), round(u0 * W):round((u0 + du) * W)].reshape(-1, 3).mean(0)
+        self.assertGreater(sw.mean(), 150)
+        self.assertLess(abs(sw[1] - sw[0]), 10)            # grey, not sage
 
     def test_the_granite_swatch_has_no_joint(self):
         try:

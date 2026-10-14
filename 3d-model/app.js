@@ -7651,8 +7651,10 @@ vec2 wRing(vec2 rc, float tt) {
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
         if (walks) {
           const walkCol = /residential|tertiary|living_street/.test(r.t) ? cBrickWalk : cConcWalk;
-          // Round 191: the narrowed block of Chestnut keeps its walks to the building line (3.7 m, not 3, from its new kerb)
-          const wide = r.glWalk ? 3.7 : 3.0, off = r.w / 2 + 0.05 + wide / 2;
+          // Round 191: the narrowed block of Chestnut keeps its walks to the building line (3.7 m, not 3, from its new kerb),
+          // and on past it under the fronts (5 m: its third review found the meadow in a strip before 122 and 124, whose front
+          // stands back 1.1 to 1.3 m from the lot line beside Glory's stoop; under a front flush with the line it is unseen)
+          const wide = r.glWalk ? 5.0 : 3.0, off = r.w / 2 + 0.05 + wide / 2;
           for (const s of [-1, 1]) walkJobs.push({ line: offsetPolyline(run, off * s), col: walkCol, w: wide });
         }
       }
@@ -11683,6 +11685,10 @@ vec2 wRing(vec2 rc, float tt) {
   const rbBox = (ring) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const q of ring) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0, x1, z0, z1]; };
   const REBUILD_SKIP = REBUILDS.flatMap((d) => (d.skip || []).map((ring) => ({ id: d.id, ring, bb: rbBox(ring) })));
   const REBUILD_OCC = [], REBUILD_PINS = [], REBUILT = [];   // REBUILT: what each def built, for ?dev's __dbg.rebuilds()
+  // paving a def says is paving, where no grass tuft is sown whatever ring sowed it (Round 191's third review: tufts stood in
+  // the walk at Glory's stoop's foot)
+  const REBUILD_PAVED = [];
+  const rebuildPavedAt = (x, z) => REBUILD_PAVED.some((o) => x >= o.bb[0] && x <= o.bb[1] && z >= o.bb[2] && z <= o.bb[3] && pointInPoly(x, z, o.ring));
   let GROUND_MEADOW_MAT = null;   // the bare ground's meadow material ('Laying out the ground'): Founder's Hall lays its lawn in it
   const rebuildSkipAt = (cx, cz) => {
     for (const s of REBUILD_SKIP) if (cx >= s.bb[0] && cx <= s.bb[1] && cz >= s.bb[2] && cz <= s.bb[3] && pointInPoly(cx, cz, s.ring)) return s.id;
@@ -14250,9 +14256,12 @@ vec2 wRing(vec2 rc, float tt) {
   const GLORY = {
     on: GLORY_ON && typeof GLORY_ART !== 'undefined' && !!GLORY_ART, art: typeof GLORY_ART !== 'undefined' ? GLORY_ART : null,
     near: null, far: null, c: new THREE.Vector3(), lod: 'near', lamps: [], ref: null, mat: null,
-    signTex: null, minute: -1, open: false, artLoaded: 0, roomsLoaded: 0, tris: 0, draws: 0, pend: null,
+    signTex: null, minute: -1, open: false, door: false, artLoaded: 0, roomsLoaded: 0, tris: 0, draws: 0, pend: null, upq: [], uploads: [],
   };
-  const GLORY_DECODE_R = 600;   // every device decodes Glory's art the first time the eye comes this close after Enter
+  // every device decodes Glory's art the first time the eye comes this close after Enter; the phone's recovery tier only at
+  // the near level's reach, and never its rooms (Round 191's third review: tier 2 decoded all of it, about 7 MB never let go,
+  // where every other generated art is off; City Hall narrows its reach the same way)
+  const GLORY_DECODE_R = TIER2 ? 200 : 600;
   const GLORY_PHONE_SAT = 0.62;   // a phone's share of Glory's brick saturation (the facade shader: its fabric's brick is paler)
   const GLORY_SW = 8;
   const gloryU = {
@@ -14269,23 +14278,32 @@ vec2 wRing(vec2 rc, float tt) {
     // the old sign box's extent [v0, v1, y0, y1] in the facade's frame, and the stone's drip lines (the capitals' foot, the
     // sill course's, the cornice's) in metres over the walk
     uGlBox: { value: new THREE.Vector4(0, 0, -99, -99) }, uGlDrip: { value: new THREE.Vector4(-99, -99, -99, 0) },
+    // the front's width (its east return), the openings [door u0, u1, arch u0, u1] from the west and their heights [the
+    // doors' foot and head, the arches' sill and spring] (the bar's light out through its glass after dark), the bar's open
+    // door leaf's doorway [u0, u1, y0, y1] and whether it stands open (the hours and fair weather)
+    uGlFw: { value: 8.59 }, uGlBays: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 0, 0)) }, uGlBayY: { value: new THREE.Vector4(0, 0, 0, 0) },
+    uGlLeaf: { value: new THREE.Vector4(0, 0, 0, 0) }, uGlDoor: { value: 0 },
   };
   // the cast iron's lace (aGl mode 5), cut by discard (Round 191's second review: the stoop band's six-piece rings rendered as
   // plain hexagons and the balconet's bars as a birdcage): st the strip's own coordinates, its run in pickets (kinds 0 and 2)
-  // or metres (kind 1) and its height in metres; kind 0 the stoop's band (refs, gloryphilly IMG6: a quatrefoil a picket pair,
-  // a lily where two meet, a ring round each post), 1 the balconet's scrolls (the Bright MLS view), 2 a whole railing, its
+  // or metres (kind 1) and its height in metres; kind 0 the stoop's band (refs, gloryphilly IMG6: a fleuron a picket, a ring
+  // round each post), 1 the balconet's scrolls (the Bright MLS view), 2 a whole railing, its
   // pickets, rails and band (the far level's). The signed distance to the iron in metres, negative inside; the facade and
   // its depth pass share it, so the shadows are the lace's
   const GLORY_LACE_GLSL = [
     'float glSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }',
+    // the stoop's band (Round 191's third review: its 1.3 cm lines and 6 cm quatrefoils read as a thin chain of rings, where
+    // gloryphilly IMG6's is heavy cast fleurons filling the space between the two rails): a fleuron a picket, a pointed
+    // arch from scrolled feet that meet the next one's, a spade over its point and a drop on a stem inside, every stroke
+    // about 2 cm, and a heavy ring round each post
     'float glBand(vec2 st) {',
-    '  float c = st.x * 0.5; vec2 p = vec2((fract(c) - 0.5) * 0.24, st.y - 0.1);',
-    '  float q = min(min(length(p - vec2(0.03, 0.0)), length(p + vec2(0.03, 0.0))), min(length(p - vec2(0.0, 0.03)), length(p + vec2(0.0, 0.03)))) - 0.034;',
-    '  float d = min(abs(q) - 0.0065, length(p) - 0.012);',
-    '  float kb = floor(c + 0.5) * 2.0; vec2 e = vec2((c - floor(c + 0.5)) * 0.24, st.y - 0.1), el = vec2(abs(e.x), e.y);',
-    '  float lily = min(glSeg(e, vec2(0.0, -0.09), vec2(0.0, 0.035)) - 0.0055, abs(length((e - vec2(0.0, 0.06)) / vec2(0.55, 1.0)) - 0.022) - 0.005);',
-    '  lily = min(lily, max(abs(length(el - vec2(0.026, 0.005)) - 0.022) - 0.005, -(el.y + 0.012)));',
-    '  d = min(d, mod(kb, 10.0) < 0.5 ? abs(length(e) - 0.045) - 0.007 : lily);',
+    '  float k = floor(st.x + 0.5), x = (st.x - k) * 0.12, ax = abs(x), y = st.y;',
+    '  float d = y > 0.072 ? abs(length(vec2(ax + 0.052, y - 0.075)) - 0.1) - 0.0095 : 1.0;',
+    '  d = min(d, max(abs(length(vec2(ax - 0.03, y - 0.047)) - 0.026) - 0.0095, min(0.03 - ax, y - 0.047)));',
+    '  d = min(d, max(length(vec2(x - 0.013, y - 0.172)), length(vec2(x + 0.013, y - 0.172))) - 0.018);',
+    '  d = min(d, min(glSeg(vec2(x, y), vec2(0.0, 0.03), vec2(0.0, 0.1)) - 0.006, length(vec2(x, y - 0.108)) - 0.013));',
+    '  float pd = abs(st.x - floor(st.x / 10.0 + 0.5) * 10.0) * 0.12;',
+    '  if (pd < 0.095) d = abs(length(vec2(pd, y - 0.1)) - 0.068) - 0.012;',
     '  return min(d, min(st.y - 0.008, 0.192 - st.y)); }',
     'float glLace(vec2 st, float kind) {',
     '  if (kind < 0.5) return glBand(st);',
@@ -14403,7 +14421,9 @@ vec2 wRing(vec2 rc, float tt) {
   // placeholder went up behind the veil as WebGL 2 immutable storage of one texel, so the texture is let go first and the
   // image allocates its own (an upload into the old storage fails and leaves the placeholder's grey). pre, a phone's: the
   // file's bytes fetched at the step (gloryBytes), made into the image only now (Round 191's review: decoded at the step,
-  // about 5 MB of half art was held through the far ring's build, the window Round 189 keeps a phone's art out of)
+  // about 5 MB of half art was held through the far ring's build, the window Round 189 keeps a phone's art out of). A
+  // decoded image waits in GLORY.upq and gloryStep uploads one a frame (Round 191's third review: the four landed in
+  // consecutive frames, the 2048 atlas with its mips among them, and the frame they landed in took 134 ms headless)
   function gloryLoad(tex, full, half, then, pre) {
     const src = artSrc(full, half);
     Promise.resolve(pre).then((blob) => {
@@ -14412,11 +14432,16 @@ vec2 wRing(vec2 rc, float tt) {
         const done = () => { if (url) URL.revokeObjectURL(url); return im; };
         return im && im.decode ? im.decode().then(done, done) : done();
       });
-    }).then((im) => {
-      if (!im) return;
-      tex.dispose(); tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);
-      if (then) then();
-    });
+    }).then((im) => { if (im) GLORY.upq.push({ tex, im, then }); });
+  }
+  // one waiting image up to the GPU (gloryStep, once a frame)
+  function gloryUpload() {
+    const q = GLORY.upq.shift();
+    if (!q) return;
+    q.tex.dispose(); q.tex.image = q.im; q.tex.needsUpdate = true; freeTexOnUpload(q.tex);
+    try { renderer.initTexture(q.tex); } catch (e) { }
+    GLORY.uploads.push(frameNo);   // the frames they landed in, for __dbg.glory()
+    if (q.then) q.then();
   }
   const gloryBytes = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));
   function gloryBlank(srgb, rgb) {
@@ -14436,6 +14461,10 @@ vec2 wRing(vec2 rc, float tt) {
     for (let i = 0; i < 2; i++) if (fr.lanterns[i]) gloryU.uGlLant.value[i].set(fr.lanterns[i][0], fr.lanterns[i][1], fr.lanterns[i][2]);
     if (fr.signbox && fr.signbox.length === 4) gloryU.uGlBox.value.fromArray(fr.signbox);
     if (fr.drips && fr.drips.length === 3) gloryU.uGlDrip.value.set(fr.drips[0], fr.drips[1], fr.drips[2], 1);
+    gloryU.uGlFw.value = fr.fw;
+    if (fr.bays && fr.arcade) for (let i = 0; i < 4; i++) gloryU.uGlBays.value[i].set(fr.bays[i][0], fr.bays[i][1], fr.arcade[i][0], fr.arcade[i][1]);
+    if (fr.bayY) gloryU.uGlBayY.value.fromArray(fr.bayY);
+    if (fr.leaf) gloryU.uGlLeaf.value.fromArray(fr.leaf);
     const map = gloryBlank(true, '#8f8a80'), mask = gloryBlank(false, '#000'), rooms = gloryBlank(true, '#1a1410'), roomsM = gloryBlank(false, '#000');
     map.anisotropy = anisoOf(8); mask.anisotropy = anisoOf(4);
     gloryU.uGlMask.value = mask; gloryU.uGlInt.value = rooms; gloryU.uGlIntM.value = roomsM;
@@ -14444,7 +14473,7 @@ vec2 wRing(vec2 rc, float tt) {
     freeTexOnUpload(GLORY.signTex);
     if (A) {
       for (const k in A.swatches) { const s = A.swatches[k]; if (s.i < GLORY_SW) { gloryU.uGlSw.value[s.i].fromArray(s.rect); gloryU.uGlSwM.value[s.i] = s.m; } }
-      const I = A.interior && A.interior.plates ? A.interior : null;
+      const I = A.interior && A.interior.plates && !TIER2 ? A.interior : null;   // the recovery tier: the glass's plain glow, no rooms
       if (I) {
         const P = I.plates, order = ['ground-open', 'upperroom-open', 'ground-closed', 'upperroom-closed'];
         order.forEach((k, i) => { const p = P[k] || P[k.replace('-closed', '-open')]; if (p) gloryU.uGlPl.value[i].fromArray(p.rect); });
@@ -14471,38 +14500,61 @@ vec2 wRing(vec2 rc, float tt) {
       Object.assign(sh.uniforms, gloryU);
       sh.uniforms.uNight = nightUniform; sh.uniforms.uLamp = lampUniform;
       sh.vertexShader = sh.vertexShader
-        .replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen; uniform float uGlY0; uniform vec4 uGlSw[' + GLORY_SW + ']; uniform float uGlSwM[' + GLORY_SW + '];\nvarying vec4 vGl; varying vec4 vGlR; varying vec3 vGlP; varying vec3 vWNorm; varying float vBase;')
+        .replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen; uniform float uGlY0, uGlDoor; uniform vec4 uGlSw[' + GLORY_SW + ']; uniform float uGlSwM[' + GLORY_SW + '];\nvarying vec4 vGl; varying vec4 vGlR; varying vec3 vGlP; varying vec3 vWNorm; varying float vBase;')
         .replace('#include <begin_vertex>', ['#include <begin_vertex>',
           'vGl = aGl * 255.0; vGlR = uGlSw[0]; vGl.z = uGlSwM[0];',
           '{ int glI = int(vGl.y + 0.5); for (int i = 1; i < ' + GLORY_SW + '; i++) if (i == glI) { vGlR = uGlSw[i]; vGl.z = uGlSwM[i]; } }',
-          // the cafe's furniture is taken in when the bar shuts: its triangles fold to a point
-          'if (abs(vGl.x - 3.0) < 0.5 && uGlOpen.z < 0.5) transformed = vec3(0.0);'].join('\n'))
+          // the cafe's furniture is taken in when the bar shuts, and the bar's door leaf is drawn standing open only while it
+          // is: their triangles fold to a point
+          'if ((abs(vGl.x - 3.0) < 0.5 && uGlOpen.z < 0.5) || (abs(vGl.x - 6.0) < 0.5 && uGlDoor < 0.5)) transformed = vec3(0.0);'].join('\n'))
         .replace('#include <project_vertex>', '#include <project_vertex>\nvGlP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = uGlY0;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + [
         'uniform sampler2D uGlMask, uGlInt, uGlIntM, uGlSign; uniform vec4 uGlF, uGlOpen, uGlPl[4], uGlBk[2], uGlRm[2], uGlK, uGlFar, uGlBox, uGlDrip;',
-        'uniform float uGlY0, uGlD, uGlArt, uGlInOn, uNight, uLamp; uniform vec3 uGlLant[2];',
+        'uniform float uGlY0, uGlD, uGlArt, uGlInOn, uNight, uLamp, uGlFw, uGlDoor; uniform vec3 uGlLant[2]; uniform vec4 uGlBays[4], uGlBayY, uGlLeaf;',
         'varying vec4 vGl; varying vec4 vGlR; varying vec3 vGlP; varying vec3 vWNorm; varying float vBase;',
         // frMask: the name lampLightPatchReal looks for to keep the street lamps' wash off the glass; glLampK a face's share
         // of the street lamps' wash (a metal's diffuse is its (1 - metalness) share, the old sign box high on the wall a
         // little); glPl a face's own plane in metres, for the stone's grain
-        'vec4 frMask; float glMode, glBar, glUp, glMet, glRgh, glBl, glLampK; vec3 glDay, glPf; vec2 glPl;',
+        'vec4 frMask; float glMode, glBar, glUp, glMet, glRgh, glBl, glLampK, glHo; vec3 glDay, glPf; vec2 glPl;',
         GLORY_LACE_GLSL,
         'float glH(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }',
+        // a hash without sin (the sin hash's lattice showed through as diagonal rows of cells at 3 mm), and value noise on it,
+        // smooth between its cells
+        'float glH2(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }',
+        'float glVN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+        '  return mix(mix(glH2(i), glH2(i + vec2(1.0, 0.0)), f.x), mix(glH2(i + vec2(0.0, 1.0)), glH2(i + vec2(1.0, 1.0)), f.x), f.y); }',
+        // a lit opening's light on a face at P (normal N, both in the facade's frame): the glass [u0, u1, y0, y1] at depth dg
+        // a warm panel, its light from the nearest point of the glass's middle half (a jamb sees across it, a head and the
+        // stoop up and down into it), falling off with the distance to the glass itself, and none behind the glass's plane
+        'float glSpill(vec3 P, vec3 N, vec4 o, float dg) {',
+        '  vec3 Q = vec3(clamp(P.x, o.x, o.y), clamp(P.y, o.z, o.w), dg), R = vec3(clamp(P.x, mix(o.x, o.y, 0.25), mix(o.x, o.y, 0.75)), clamp(P.y, mix(o.z, o.w, 0.25), mix(o.z, o.w, 0.75)), dg);',
+        '  float d = length(Q - P);',
+        '  return step(P.z, dg - 0.004) * max(dot(N, normalize(R - P)), 0.0) / (1.0 + 1.2 * d * d) * (1.0 - smoothstep(2.0, 3.2, d)); }',
         'float glN1(float x) { float i = floor(x), f = fract(x); return mix(glH(vec2(i, 7.0)), glH(vec2(i + 1.0, 7.0)), f * f * (3.0 - 2.0 * f)); }',
         // the mask's numbers (g a window's number, b the height inside it) read at its full size: a mip averages them with
         // the frames' zeros round them, and they are numbers, not colours (r, the glass's cover, is read filtered)
         gl2 ? '#define GLMASK0(p) textureGrad(uGlMask, p, vec2(0.0), vec2(0.0))' : '#define GLMASK0(p) texture2D(uGlMask, p, -16.0)',
         REAL ? WINDOW_INTERIOR_GLSL : ''].join('\n'))
         .replace('#include <map_fragment>', [
-          'glMode = floor(vGl.x + 0.5); frMask = vec4(0.0); vec4 glTex; glMet = 0.0; glRgh = -1.0; glLampK = 1.0; vec2 glUvW = fwidth(vUv);',
+          'glMode = floor(vGl.x + 0.5); frMask = vec4(0.0); vec4 glTex; glMet = 0.0; glRgh = -1.0; glLampK = 1.0; glHo = 0.0; vec2 glUvW = fwidth(vUv), glUdx = dFdx(vUv), glUdy = dFdy(vUv);',
           // the face's place in the facade's frame (u east, y up over the walk, z into the lot). What a pane is, the bar's
           // glass below the granite cornice (EH, 9.3 m) and the flats' above, and which of the bar's rooms (the second
           // storey's from 4.6 m) is decided here by position, never by the mask's codes, which a mip averages with the frames'
           // zeros: Round 191's review found the bar's lit glass black from about 100 m, and across the street the panes
           // flipping between the two rooms as a mosaic of streaks
           'vec2 glD0 = vGlP.xz - uGlF.xy; glPf = vec3(dot(glD0, uGlF.zw), vGlP.y - uGlY0, dot(glD0, vec2(-uGlF.w, uGlF.z)));',
-          'glPl = glPf.xy;',
-          'if (glMode < 0.5) { glTex = texture2D(map, vUv); frMask = texture2D(uGlMask, vUv); frMask.gb = GLMASK0(vUv).gb; }',
+          'glPl = glPf.xy; vec2 glPw = max(fwidth(glPf.xy), vec2(1e-4));',
+          // the elevation (and the bar's door leaf, mode 6). The mask's glass is read texel by texel where it is magnified, its
+          // edges eased over a pixel (Round 191's third review: read filtered and sharpened, every lite was a rounded rectangle
+          // and every bar followed the filter's contour), and filtered where a pixel spans a texel or more
+          'if (glMode < 0.5 || glMode > 5.5) { glTex = texture2D(map, vUv);',
+          gl2 ? '  vec2 glMs = vec2(textureSize(uGlMask, 0)), glMt = vUv * glMs - 0.5, glMi = floor(glMt), glMf = clamp((glMt - glMi - 0.5) / clamp(glUvW * glMs, 1e-4, 1.0) + 0.5, 0.0, 1.0);\n  frMask = textureGrad(uGlMask, (glMi + glMf + 0.5) / glMs, glUdx, glUdy);' : '  frMask = texture2D(uGlMask, vUv);',
+          '  frMask.gb = GLMASK0(vUv).gb;',
+          // the bar's door leaf standing open: its doorway on the recessed face is all glass, the room seen through it
+          '  if (glMode < 0.5 && uGlDoor > 0.5 && glPf.z > 0.2) glHo = clamp(min(min(glPf.x - uGlLeaf.x, uGlLeaf.y - glPf.x) / glPw.x, min(glPf.y - uGlLeaf.z, uGlLeaf.w - glPf.y) / glPw.y) + 0.5, 0.0, 1.0);',
+          '  frMask.r = max(frMask.r, glHo);',
+          // the open leaf itself: its glass dark and glossy (the stoop and the pier in it), no room behind it
+          '  if (glMode > 5.5) { glTex.rgb = mix(glTex.rgb, vec3(0.02, 0.022, 0.025), frMask.r); glRgh = mix(0.55, 0.07, frMask.r); } }',
           // a lantern: its clear glass (dark and glossy by day, the street in it) and its bulb, a pale filament by day
           // (the globe is drawn opaque, so the bulb inside is drawn on it: the eye's ray through this point passes the bulb,
           // the lantern's own centre uGlLant, at glBl; Round 191's review: an opaque box by day, a flat white panel at night)
@@ -14517,10 +14569,13 @@ vec2 wRing(vec2 rc, float tt) {
           '  if (clamp(0.5 - glLd / glLw, 0.0, 1.0) <= ' + GLORY_DITHER + ') discard;',
           '  glTex = vec4(vec3(0.02), 1.0); glRgh = 0.5; }',
           // the signs: the canvas the page letters (the blade, the board, the plaque, the menu)
-          'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv); glRgh = 0.6; }',
+          // (a sharper mip: from across the street at night the board's thin strokes went, the L's foot and the trade's line)
+          'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv, -0.6); glRgh = 0.6; }',
           // the cafe (Round 191's review: concrete boards read as slabs): the tables black painted steel, the chairs
           // galvanized steel, a metal under the sky's own light
-          'else if (glMode > 2.5) { bool glCh = vGl.y > 0.5; glTex = vec4(glCh ? vec3(0.34, 0.35, 0.36) : vec3(0.022), 1.0); glMet = glCh ? 0.7 : 0.0; glRgh = glCh ? 0.4 : 0.45; glLampK = 1.0 - glMet; }',
+          // galvanized, a dull metal (Round 191's third review: at 0.7 metalness the sky mirrored in the seats as light blue
+          // plastic), and the tables' painted steel a satin black
+          'else if (glMode > 2.5) { bool glCh = vGl.y > 0.5; glTex = vec4(glCh ? vec3(0.25, 0.255, 0.26) : vec3(0.022), 1.0); glMet = glCh ? 0.25 : 0.0; glRgh = glCh ? 0.58 : 0.42; glLampK = 1.0 - glMet; }',
           'else {',
           // a swatch tiled in metres on the face's own plane in the facade's frame (the front, a side or a top), with the
           // unwrapped coordinate's gradients so the tile's wrap is no mip seam
@@ -14535,16 +14590,20 @@ vec2 wRing(vec2 rc, float tt) {
           'if (uGlArt < 0.5 && glMode < 1.5) { float glSw = floor(vGl.y + 0.5); glTex = vec4(glMode < 0.5 ? (glPf.y < 9.3 ? vec3(0.32, 0.28, 0.24) : vec3(0.34, 0.16, 0.10)) : (glSw < 0.5 ? vec3(0.69, 0.60, 0.50) : glSw < 1.5 ? vec3(0.39, 0.18, 0.11) : glSw > 2.5 && glSw < 3.5 ? vec3(0.02) : glSw > 3.5 && glSw < 4.5 ? vec3(0.27, 0.37, 0.45) : glSw > 4.5 && glSw < 5.5 ? vec3(0.99, 0.62, 0.26) : glSw > 6.5 ? vec3(0.07, 0.04, 0.025) : vec3(0.18, 0.17, 0.15)), 1.0); }',
           'glTex.rgb *= 1.0 - vGl.w / 255.0;',   // a recess's or an underside's shade (aGl's fourth byte)
           // Round 191's second review: the granite read as clean cream plaster, and the caps' undersides and the doors' heads
-          // as flat pale planks. The stone (the lower elevation's pale pixels, every granite swatch face) takes a salt and
-          // pepper grain on its own plane, 3 mm grains over a 1 cm mottle, each faded out before a pixel spans it; then the
-          // weather by its place on the front, never by a tile: streaks run down under the capitals, the sill course and the
-          // cornice, the footing darkens to the walk, and a few old anchor holes stand on the piers; then an underside
-          // darkens toward the wall it leaves, a head and a jamb toward the door at the back of its recess
+          // as flat pale planks. The stone (the lower elevation's pale pixels, every granite swatch face) takes a grain on its
+          // own plane: smooth value noise in three turned octaves of 4 mm, 1.2 and 4.5 cm, about 5% all told, each faded
+          // out before a pixel spans its cells (Round 191's third review: the second review's stepped specks in square 3 mm
+          // cells read as digital dither, the sandpaper of terrazzo, where the photographs' stone is smooth and pale and its
+          // only marks close up are the stains, the drips and the old anchor holes); then the weather by its place on the
+          // front, never by a tile: streaks run down under the capitals, the sill course and the cornice, the footing
+          // darkens to the walk, and a few old anchor holes stand on the piers; then an underside darkens toward the wall it
+          // leaves, a head and a jamb toward the door at the back of its recess
           '{ float glSw = floor(vGl.y + 0.5), glStone = glMode < 0.5 ? step(glPf.y, 9.3) * smoothstep(0.1, 0.24, dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))) : (glMode < 1.5 && glSw < 0.5 ? 1.0 : 0.0);',
           '  vec2 glFw = fwidth(glPl); float glPx = max(glFw.x, glFw.y);',   // out of the branch: a derivative in uniform flow
           '  if (glStone > 0.0 && uGlArt > 0.5) {',
-          '    float glG = glH(floor(glPl / 0.003)), glM = glH(floor(glPl / 0.011) + 17.0);',
-          '    float glGr = ((step(0.87, glG) * -0.5 + step(glG, 0.1) * 0.22) * (1.0 - smoothstep(0.0015, 0.004, glPx)) + (glM - 0.5) * 0.14 * (1.0 - smoothstep(0.005, 0.016, glPx)));',
+          '    float glGr = (glVN(mat2(0.83, 0.56, -0.56, 0.83) * glPl / 0.004) - 0.5) * 0.035 * (1.0 - smoothstep(0.002, 0.004, glPx));',
+          '    glGr += (glVN(mat2(0.42, -0.91, 0.91, 0.42) * glPl / 0.012 + 7.3) - 0.5) * 0.05 * (1.0 - smoothstep(0.006, 0.012, glPx));',
+          '    glGr += (glVN(mat2(0.97, 0.26, -0.26, 0.97) * glPl / 0.045 + 3.1) - 0.5) * 0.06 * (1.0 - smoothstep(0.02, 0.045, glPx));',
           '    float glVert = 1.0 - smoothstep(0.5, 0.8, abs(vWNorm.y)), glU = glPl.x, glY = glPf.y, glDr = 0.0;',
           '    for (int i = 0; i < 3; i++) { float glTop = i == 0 ? uGlDrip.x : (i == 1 ? uGlDrip.y : uGlDrip.z), glDy = glTop - glY;',
           '      float glS = glN1(glU * 38.0 + float(i) * 13.1) * glN1(glU * 9.0 + float(i) * 5.3);',
@@ -14568,6 +14627,11 @@ vec2 wRing(vec2 rc, float tt) {
           '    float glRs = smoothstep(0.45, 0.85, glN1(glPl.x * 31.0)) * (0.45 + 0.55 * glN1(glPl.x * 7.0 + 3.0)) * exp(-(uGlBox.w - glPf.y) / (0.5 + 1.2 * glN1(glPl.x * 5.0))) + 0.8 * (1.0 - smoothstep(0.0, 0.18, glPf.y - uGlBox.z - 0.1));',
           '    glTex.rgb *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.1, glE));',
           '    glTex.rgb = mix(glTex.rgb, vec3(0.12, 0.05, 0.022), clamp(glRs, 0.0, 1.0) * 0.75); } } }',
+          // the east return (Round 191's third review: 124's front stands back about a metre, so the party wall shows full
+          // height from the east, drawn red brick): black-painted brick over the storefront, the brick's relief through the
+          // paint, and only the red brick beside the granite base (refs, the Bright MLS view from that sidewalk)
+          '{ float glSw = floor(vGl.y + 0.5); if (glMode > 0.5 && glMode < 1.5 && abs(glSw - 1.0) < 0.5 && glPf.x > uGlFw - 0.12 && dot(vWNorm.xz, uGlF.zw) > 0.5 && glPf.z < 1.6 && glPf.y > 4.1)',
+          '  glTex.rgb = vec3(0.026, 0.026, 0.028) * (0.55 + 1.8 * dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))) * (0.9 + 0.2 * glVN(glPl * 3.0)); }',
           // a phone's brick (Round 191's review): its fabric has no walls' atlas and its neighbours' brick renders at about
           // 0.13 saturation, against the photographs' 0.32 that Glory's carries, which read as pasted in; on a phone the
           // brick (the upper elevation, the brick swatch) keeps GLORY_PHONE_SAT of its saturation, about 0.22 as rendered
@@ -14586,21 +14650,35 @@ vec2 wRing(vec2 rc, float tt) {
           REAL ? 'glTex.rgb = mix(glTex.rgb, glTex.rgb * 0.22, glUp * uNight);' : '',
           'diffuseColor *= glTex;',
         ].join('\n'))
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.22, glUp), 0.06, glBar); if (glRgh >= 0.0) roughnessFactor = glRgh;')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.22, glUp), 0.06, glBar); if (glRgh >= 0.0) roughnessFactor = glRgh; roughnessFactor = mix(roughnessFactor, 1.0, glHo);')   // the open doorway is no glass
         .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = max(metalnessFactor, glMet);')
         // the lanterns' light on what stands round them: the piers, the signs' bracket, the stoop and the walk, within 4 m
         .replace('#include <lights_fragment_end>', ['#include <lights_fragment_end>',
           'if (uLamp > 0.001) { float glW = 0.0;',
           '  for (int i = 0; i < 2; i++) { vec3 glL = uGlLant[i] - vGlP; float dl = length(glL);',
           '    glW += (0.25 + 0.75 * max(dot(vWNorm, glL / max(dl, 1e-3)), 0.0)) / (1.0 + 2.0 * dl * dl) * (1.0 - smoothstep(2.0, 3.5, dl)); }',
-          '  reflectedLight.directDiffuse += diffuseColor.rgb * (1.0 - glMet) * vec3(1.0, 0.62, 0.32) * 0.7 * glW * uLamp; }'].join('\n'))   // a metal's diffuse is its (1 - metalness) share
+          '  reflectedLight.directDiffuse += diffuseColor.rgb * (1.0 - glMet) * vec3(1.0, 0.62, 0.32) * 0.7 * glW * uLamp;',
+          // and the GLORY board over the entrance between them, lit from below (Round 191's third review: across the street at
+          // night its thin strokes went, the L's foot and the trade's line)
+          '  if (glMode > 3.5 && glMode < 4.5 && glPf.y > 3.9 && glPf.z > -0.4) reflectedLight.directDiffuse += diffuseColor.rgb * vec3(1.0, 0.72, 0.45) * (0.3 + 0.25 * (1.0 - smoothstep(4.1, 4.8, glPf.y))) * uLamp; }',
+          // the open bar's light out through its glass after dark (Round 191's third review: from the sidewalks and walking up
+          // Chestnut the deep reveals hid the lit glass, which is right, but nothing warm came out, so the open bar looked shut
+          // beside 128's glowing shop): every lit opening lights its own jambs and head, the stoop, the steps, the railings and
+          // the chairs within about 2.5 m in front of it, warm (2700 K), by the hours (the bar's room, the room upstairs)
+          'if (uNight > 0.001 && glPf.z < 0.3 && glPf.z > -3.2 && glPf.y < 9.4) {',
+          '  vec3 glNf = vec3(dot(vWNorm.xz, uGlF.zw), vWNorm.y, dot(vWNorm.xz, vec2(-uGlF.w, uGlF.z))); float glSp = 0.0;',
+          '  for (int i = 0; i < 4; i++) { vec4 glB4 = uGlBays[i];',
+          '    glSp += glSpill(glPf, glNf, vec4(glB4.xy, uGlBayY.xy), 0.25) * uGlOpen.x + glSpill(glPf, glNf, vec4(glB4.zw, uGlBayY.zw), 0.2) * uGlOpen.y; }',
+          '  reflectedLight.directDiffuse += diffuseColor.rgb * (1.0 - glMet) * vec3(1.0, 0.6, 0.3) * 3.0 * glSp * uNight; }'].join('\n'))   // a metal's diffuse is its (1 - metalness) share
         // the street lamps' wash (lampLightPatch, which lands right after this include) takes a face's glLampK share of its
         // colour: the galvanized chairs read as white plastic under it (Round 191's second review), the old sign box glowed
         .replace('#include <emissivemap_fragment>', ['vec3 glDcKeep = diffuseColor.rgb; diffuseColor.rgb *= glLampK;', '#include <emissivemap_fragment>', 'diffuseColor.rgb = glDcKeep;',
           // a lantern after dark: the bulb hot, the globe's glass glowing round it, brightest where it faces the eye (the
           // bulb seen through it)
+          // (Round 191's third review: it rendered a neutral white, where gloryphilly IMG6's bulb is an amber filament: about
+          // 2700 K, and lower, so the tone curve keeps its colour)
           'if (glMode > 1.5 && glMode < 2.5)',
-          '  totalEmissiveRadiance += vec3(1.0, 0.70, 0.42) * (vGl.y > 0.5 ? 7.0 : 0.06 + 6.0 * exp(-glBl * glBl / (0.02 * 0.02)) + 0.9 * exp(-glBl * glBl / (0.06 * 0.06))) * uLamp;',
+          '  totalEmissiveRadiance += (vGl.y > 0.5 ? vec3(1.0, 0.6, 0.26) * 4.5 : vec3(1.0, 0.5, 0.17) * (0.05 + 2.4 * exp(-glBl * glBl / (0.02 * 0.02)) + 0.45 * exp(-glBl * glBl / (0.06 * 0.06)))) * uLamp;',
           // the rooms behind the bar's glass (interior mapping): the eye's ray in the facade's frame (u east, y up, z into the
           // lot) runs from the pane into the room's box and leaves it through a side wall, the floor, the ceiling or the back
           // wall; that point, in the room's front opening's fractions (s from the viewer's right, the west wall, where the bar
@@ -14625,6 +14703,14 @@ vec2 wRing(vec2 rc, float tt) {
           '  vec3 room = mix(texture2D(uGlInt, pC.xy + pC.zw * im).rgb, texture2D(uGlInt, pO.xy + pO.zw * im).rgb, op);',
           '  room *= mix(1.0, mix(0.4, 1.0, smoothstep(0.0, 2.0, hz)), glCeil);',
           '  vec2 mI = texture2D(uGlIntM, pO.xy + pO.zw * im).rg;',
+          // the room upstairs seen from the street below is mostly its ceiling, which its plate holds only as its top rows run
+          // to the vanishing point: from across the street at night they drew big dark diagonals over every casement, a truss
+          // or a stair (Round 191's third review). Its ceiling is drawn here as gloryphilly IMG4 shows it: slate-grey paint, the
+          // spiral duct down its middle, strings of bulbs across the room
+          '  if (up > 0.5 && glCeil > 0.5) { vec2 glCq = vec2(H.x / 0.55, hz / 1.4), glCf = (fract(glCq) - 0.5) * vec2(0.55, 1.4);',
+          '    room = vec3(0.085, 0.09, 0.095) * (0.85 + 0.3 * glVN(glCq * 0.7));',
+          '    room = mix(room, vec3(0.3, 0.31, 0.32) * (0.8 + 0.2 * sin(hz * 38.0)), 1.0 - smoothstep(0.2, 0.26, abs(H.x - 4.6)));',
+          '    mI = vec2(exp(-dot(glCf, glCf) / (0.035 * 0.035)), 0.0); }',
           // the mural on the bar's brick by the doors (its west wall, on the viewer's right), page-drawn on the signs' canvas
           '  if (up < 0.5 && d.x < 0.0 && tx <= min(ty, tz) && hz > 0.4 && hz < 3.6 && H.y > rm.z + 1.5 && H.y < rm.z + 3.3) {',
           '    float mw = texture2D(uGlSign, vec2(0.5 + 0.5 * (3.6 - hz) / 3.2, 0.5 + 0.5 * (H.y - rm.z - 1.5) / 1.8)).r;',
@@ -14639,7 +14725,8 @@ vec2 wRing(vec2 rc, float tt) {
           // 150 to 170 from 190 m); a warm glow comes in with the distance
           '  em += op * uNight * smoothstep(uGlFar.x, uGlFar.y, distance(cameraPosition, vGlP)) * uGlFar.z * vec3(1.0, 0.7, 0.4);',
           '  totalEmissiveRadiance += glBar * em;',
-          '}',
+          // no rooms (the recovery tier, or before the art lands): the open bar's glass a plain warm glow after dark
+          '} else if (glBar > 0.01) totalEmissiveRadiance += glBar * uNight * mix(uGlOpen.x, uGlOpen.y, step(4.6, glPf.y)) * vec3(0.9, 0.55, 0.26) * 0.42;',
           REAL ? [
             // the flats upstairs after dark: the house fronts' rooms (roomLight, a home's share of them lit by the clock)
             'if (glUp > 0.01 && uNight > 0.001) {',
@@ -14651,12 +14738,12 @@ vec2 wRing(vec2 rc, float tt) {
       if (REAL) wxSurfacePatch(sh);
     };
     mat.customProgramCacheKey = () => 'glory-facade|' + (rich ? 'rich' : 'lite') + (gl2 ? '' : '|gl1');
-    // the shadow pass folds the cafe away with the drawn one (a shut bar's chairs cast nothing)
+    // the shadow pass folds the cafe and the open door leaf away with the drawn ones (a shut bar's chairs cast nothing)
     const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
     depth.onBeforeCompile = (sh) => {
-      sh.uniforms.uGlOpen = gloryU.uGlOpen;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen; varying vec2 vGlUv; varying vec2 vGlMK;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlUv = uv; vGlMK = aGl.xy * 255.0;\nif (abs(aGl.x * 255.0 - 3.0) < 0.5 && uGlOpen.z < 0.5) transformed = vec3(0.0);');
+      sh.uniforms.uGlOpen = gloryU.uGlOpen; sh.uniforms.uGlDoor = gloryU.uGlDoor;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen; uniform float uGlDoor; varying vec2 vGlUv; varying vec2 vGlMK;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlUv = uv; vGlMK = aGl.xy * 255.0;\nif ((abs(aGl.x * 255.0 - 3.0) < 0.5 && uGlOpen.z < 0.5) || (abs(aGl.x * 255.0 - 6.0) < 0.5 && uGlDoor < 0.5)) transformed = vec3(0.0);');
       // and the lace's shadow is the lace's (cut at its line: a shadow map has no use for the dither)
       sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying vec2 vGlUv; varying vec2 vGlMK;\n' + GLORY_LACE_GLSL + '\nvoid main() {\nif (vGlMK.x > 4.5 && glLace(vGlUv, floor(vGlMK.y + 0.5)) > 0.0) discard;');
     };
@@ -14666,16 +14753,22 @@ vec2 wRing(vec2 rc, float tt) {
     return mat;
   }
   // the hours into the shader (once a model minute): the bar's room eases over ten minutes either way, the room upstairs is
-  // open from 5 PM (the board-game nights), the cafe while the bar is; a jump of the clock (a link, the time panel) snaps
+  // open from 5 PM (the board-game nights), the cafe while the bar is; a jump of the clock (a link, the time panel) snaps.
+  // The bar's own door leaf stands open while it is open in fair weather (refs, the Bright MLS view and gloryphilly IMG6:
+  // the east leaf of the entrance swung out to the street; Round 191's third review: shut, the entrance was the darkest bay
+  // on the front by day): no rain or snow falling and over 50 F where the live weather says
   function gloryHoursStep() {
     const mn = Math.floor(clock.minutes);
     const key = clock.y * 535680 + clock.m * 44640 + clock.d * 1440 + mn;
+    const door = GLORY.open && WXFX.rain < 0.15 && WXFX.snow < 0.15 && WXFX.hail < 0.15 && (WX.temp == null || WX.temp > 50);
+    if (door !== GLORY.door) { GLORY.door = door; gloryU.uGlDoor.value = door ? 1 : 0; }
     if (key === GLORY.minute) return;
     const jump = GLORY.minute < 0 || Math.abs(key - GLORY.minute) > 30;
     const dm = jump ? 1e9 : Math.abs(key - GLORY.minute);
     GLORY.minute = key;
     const h = gloryHours(clock.y, clock.m, clock.d, clock.minutes);
     GLORY.open = h.open;
+    if (!h.open && GLORY.door) { GLORY.door = false; gloryU.uGlDoor.value = 0; }
     const up = h.open && (h.late || h.m >= 1020);
     const o = gloryU.uGlOpen.value, step = Math.min(1, dm / 10);
     const ease = (a, b) => a + Math.max(-step, Math.min(step, b - a));
@@ -14690,7 +14783,8 @@ vec2 wRing(vec2 rc, float tt) {
     else if (GLORY.lod === 'far' && d < 170) GLORY.lod = 'near';
     GLORY.near.visible = GLORY.lod === 'near';
     GLORY.far.visible = GLORY.lod === 'far';
-    if (GLORY.pend && PERF.enterT && d < GLORY_DECODE_R) { const go = GLORY.pend; GLORY.pend = null; go(); }   // a phone's art, decoded at last
+    if (GLORY.pend && PERF.enterT && d < GLORY_DECODE_R) { const go = GLORY.pend; GLORY.pend = null; go(); }   // the art, decoded at last
+    if (GLORY.upq.length) gloryUpload();   // and up to the GPU one image a frame
   }
   function gloryApi() {
     if (!GLORY.on) return null;
@@ -14706,6 +14800,7 @@ vec2 wRing(vec2 rc, float tt) {
       },
       lamps: (list) => { GLORY.lamps = list.slice(); },
       ref: (r) => { GLORY.ref = r; },
+      paved: (ring) => { REBUILD_PAVED.push({ ring, bb: rbBox(ring) }); },
     };
   }
   // the card a tap on the building or a search opens: open or shut by the model clock, then what it is and where, with the
@@ -19571,6 +19666,7 @@ vec2 wRing(vec2 rc, float tt) {
         const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
         if (d2 > GRASS_R * GRASS_R) continue;
         if (pg ? !pointInPoly(x, z, pg) : !bareGroundAt(x, z)) continue;
+        if (REBUILD_PAVED.length && rebuildPavedAt(x, z)) continue;
         if (elPortalAt(x, z) || patcoCutAt(x, z)) continue;   // the excavated ground cannot carry floating grass
         if (septaSnapRoad(x, z, 4)) continue;
         if (inWater(x, z) > -2) continue;
@@ -21197,18 +21293,21 @@ vec2 wRing(vec2 rc, float tt) {
     // Round 167: a tap on the building of a dismissed game or show brings its bubble back, and is spent on that
     if ((SCORES.games.some((g) => g.hidden) || CONCERTS.shown.some((s) => s.hidden)) && eventTapRestore(p[0], p[2])) return true;
     if (p[4] > 3000) return false;   // the building card is for what the eye can make out, not the horizon
+    const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
+    // Round 191: Glory's own card for a hit 0.3 m short of its lot (no pad: a metre's pad gave a tap on 128's party wall
+    // Glory's card, and so did the parcel's point 1.5 m along an oblique ray from the sidewalk, Round 191's second review), or
+    // for the hit itself on the walk in front of its frontage (its blade sign, a lantern, the old sign box, the cornices, the
+    // stoop and its railings and chairs), asked before the ground test (its third review: a tap under 2 m, on the door at eye
+    // height, a railing, a chair or the stoop's deck, opened nothing), anything standing over the walk's own level
+    const gx = p[0] + dir.x * 0.3, gz = p[2] + dir.z * 0.3;
+    const glo = !!GLORY.ref && p[1] > GLORY.ref.y0 + 0.1 && (gloryAt(gx, gz, 0) || gloryApron(p[0], p[2]));
     const g = Math.max(groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground'), TERRAIN.water + 0.5);   // a river's sheet stands over its carved bed
-    if (p[1] < g + 2) return false;   // the ground, a road, a lawn, the water: not a building
+    if (p[1] < g + 2 && !glo) return false;   // the ground, a road, a lawn, the water: not a building
     // a bridge or an elevated deck, not a building (review, Sep 22): the two river crossings' corridors, or a mapped deck
     // within a few metres of the hit's height (the roof grid cannot say it: it notes no roof under 250 m2, no rowhouse)
     if (bfbNear(p[0], p[2], 25) || wwbNear(p[0], p[2], 25)) return false;
     { const dk = ovpDeckY(p[0], p[2]); if (dk !== null && Math.abs(dk - p[1]) < 4) return false; }
-    const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
-    // Round 191: Glory's own card for a hit 0.3 m short of its lot (no pad: a metre's pad gave a tap on 128's party wall
-    // Glory's card, and so did the parcel's point 1.5 m along an oblique ray from the sidewalk, Round 191's second review), or
-    // for the hit itself on the walk in front of its frontage (its blade sign, a lantern, the old sign box, the cornices)
-    const gx = p[0] + dir.x * 0.3, gz = p[2] + dir.z * 0.3;
-    bldgOpen(p[0], p[1] + 1, p[2], x, z, gloryAt(gx, gz, 0) || gloryApron(p[0], p[2]) ? GLORY.ref : null);
+    bldgOpen(p[0], p[1] + 1, p[2], x, z, glo ? GLORY.ref : null);
     return true;
   }
   // a building's card at (ax, ay, az), filled from the parcel under (x, z); biz a business the page knows there (Glory),
@@ -22910,6 +23009,9 @@ float pinOccGate() {
     for (const r of CIVIC_S.lib) add(r.n, r.x, r.z, 'library', r);   // Round 134
     for (const r of CIVIC_S.rec) add(r.n, r.x, r.z, 'rec', r);   // Regional Rail stations open their departure board (Round 133)
     if (GLORY.ref) add(GLORY.ref.name, GLORY.ref.door[0], GLORY.ref.door[1], 'bar', GLORY.ref);   // Round 191: Glory, at its door, arriving with its card
+    // and by its address under its own name (Round 191's third review: '126 chestnut' fell through to the address lookup,
+    // which landed without the card)
+    if (GLORY.ref) ix.push({ name: GLORY.ref.name, lc: '126 chestnut street', x: GLORY.ref.door[0], z: GLORY.ref.door[1], kind: 'bar', ref: GLORY.ref });
     for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
     for (const lm of META_L) {
       const b = lm && lm.name ? findBuilding(lm.name) : null;
@@ -22968,8 +23070,10 @@ float pinOccGate() {
     if (isTouch) toggleSearch(false);
   }
   // Round 191: a search for Glory lands on the far sidewalk of Chestnut Street looking at its front, the street-level view
-  // Mike knows it by (no circle: a 30 m orbit at that height would run through the buildings across the street), with the
-  // mark at its door and its card open
+  // Mike knows it by (no circle: a 30 m orbit at that height would run through the buildings across the street), with its
+  // card open and the mark over its parapet (Round 191's third review: at the door, a 5 m pin there for 20 s covered the
+  // GLORY board, the entrance and the middle bays in the very view the search lands on; over the parapet it is above that
+  // frame's top, about 15.5 m up at 13 m, and still marks the place on the way in)
   function gloryGoTo(r) {
     const vx = r.door[0] + r.n[0] * 12, vz = r.door[1] + r.n[1] * 12, vy = r.y0 + 3.0;
     const tx = r.c[0], ty = r.y0 + 6.5, tz = r.c[2];
@@ -22977,7 +23081,7 @@ float pinOccGate() {
     glideCancel();
     if (walk.locked && document.exitPointerLock) document.exitPointerLock();
     glideFly(vx, vy, vz, yaw, pitch, clamp(500 + Math.hypot(vx - camera.position.x, vz - camera.position.z) * 0.3, 900, 2600), null);
-    placeSearchMark(r.door[0], r.y0, r.door[1], r.name);
+    placeSearchMark(r.c[0], r.y0 + 20, r.c[2], r.name);
     bldgOpen(r.door[0], r.y0 + 4.6, r.door[1], r.door[0] - r.n[0] * 2.5, r.door[1] - r.n[1] * 2.5, r);
     setHint();
   }
@@ -34712,7 +34816,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

@@ -16,11 +16,13 @@ upper one again with real glass painted into the key (glass/upper.png), and the 
             mip), tints the granite toward the street's warm buff (STONE_TINT), pastes the
             glass edit back inside the upper key only, and lays the facade atlas (the lower elevation left, the upper
             right, both at the same pixels a metre, and a row of tileable swatches under them: granite (jointless patches
-            of the piers' faces, granite_swatch), brick, concrete, iron, the old sign box's grey-sage paint gone to primer
-            (peel_swatch), the lanterns' glow, the roof and the rust of the box's cap (rust_swatch)), its mask at half size
-            (an opaque RGB PNG, never RGBA: bake_fronts.py; the muntins held at 0 two texels wide, pane_bars and
-            bar_texels), the interior atlas (the open rooms at 1024 wide, the closed at 512) and its mask, and every half
-            copy.
+            of the piers' faces, granite_swatch), brick, concrete, iron, the old sign box's pale enamel chipped to rust
+            (peel_swatch), the lanterns' glow, the roof and the rust of the box's cap (rust_swatch); every plain one
+            periodic, noise_swatch), its mask at half size (an opaque RGB PNG, never RGBA: bake_fronts.py; the lower
+            elevation's lites regular rectangles of whole texels with straight bars, regular_lites, the same bars
+            painted into the atlas, paint_bars; the upper's muntins held at 0 two texels wide, pane_bars and bar_texels),
+            the door leaves for the open door (door_leaves), the interior atlas (the open rooms at 1024 wide, the closed
+            at 512) and its mask, and every half copy.
 The mask: r the glass; g a number per pane (lower) or per window (upper: both sashes); b the upper windows' height inside
 the window, 0 at the sill to 64 at the head (the house fronts' convention, so roomLight reads it as theirs), 200 the bar's
 glass on the ground floor, 216 the second storey's, 240 the glow swatch. The interior mask: r the bulbs, the string lights,
@@ -217,9 +219,9 @@ def granite_swatch(lo, k, meas):
 
 
 def peel_swatch(seed):
-    """The old projecting sign box's face (refs, the Bright MLS street view: a weathered grey-sage painted sheet-metal box in
-    shade, its paint gone to primer in small ragged flakes, brown rust run down its face): the grey-sage, the flakes, a
-    mottle of grime, and thin rust runs. Every field is periodic, so the swatch tiles without a cross-fade cutting the
+    """The old projecting sign box's face (refs, the Bright MLS street view: a weathered pale white-grey enamelled sheet-metal
+    box, its enamel chipped to rust in small ragged flakes, brown rust run down its face): the enamel, the chips, a mottle
+    of grime, and thin rust runs. Every field is periodic, so the swatch tiles without a cross-fade cutting the
     flakes. Round 191's second review: the first swatch's pale sky blue and its big cloud-shaped peels read as a glossy
     glass slab; the grime at its edges and the rust from its top are the shader's, by the box's own frame (uGlBox)."""
     rs = np.random.RandomState(seed)
@@ -230,12 +232,14 @@ def peel_swatch(seed):
         im = Image.fromarray((big * 255).astype(np.uint8)).resize((3 * n, 3 * n), Image.BICUBIC).filter(ImageFilter.GaussianBlur(blur))
         z = np.asarray(im, np.float32)[n:2 * n, n:2 * n] / 255
         return (z - z.min()) / max(z.max() - z.min(), 1e-3)
-    base = np.array([164, 168, 153], np.float32) / 255
+    # Round 191's third review: the grey-sage (164, 168, 153) rendered a mid grey-sage, darker and greener than the Bright
+    # MLS view's pale, worn white-grey enamel; the enamel is now (190, 192, 186) and what shows through a chip is rust
+    base = np.array([190, 192, 186], np.float32) / 255
     lo_n, mid, fine = smooth(5, 5), smooth(14, 2), smooth(38, 0.6)
-    out = base[None, None, :] * (0.86 + 0.2 * lo_n[..., None]) * (0.95 + 0.1 * mid[..., None])
-    # the flakes: small and ragged (a mid field cut by a fine one), the primer a dull warm white
-    flake = (mid * 0.55 + fine * 0.45 + lo_n * 0.2) > 0.78
-    out = np.where(flake[..., None], np.array([198, 195, 182], np.float32) / 255 * (0.9 + 0.1 * fine[..., None]), out)
+    out = base[None, None, :] * (0.88 + 0.16 * lo_n[..., None]) * (0.96 + 0.08 * mid[..., None])
+    # the chips: small and ragged (a mid field cut by a fine one), rusted steel in them
+    flake = (mid * 0.55 + fine * 0.45 + lo_n * 0.2) > 0.8
+    out = np.where(flake[..., None], np.array([118, 82, 58], np.float32) / 255 * (0.85 + 0.25 * fine[..., None]), out)
     lip = (np.roll(flake, 1, 0) | np.roll(flake, 1, 1)) & ~flake   # the paint's broken edge, shaded under and beside a flake
     out = np.where(lip[..., None], out * 0.84, out)
     # grime: a darker mottle settled in the low field
@@ -448,17 +452,30 @@ def tileable(im):
     return Image.fromarray(np.clip(a * (1 - w) + s * w, 0, 255).astype(np.uint8))
 
 
-def noise_swatch(rgb, amp, seed, streak=None):
+def periodic(z, n, blur=0.0):
+    """A field of random cells made into an n by n tile that wraps: the cells tiled three by three, resized and blurred as
+    one, the middle kept (the resize and the blur see the neighbouring tiles, so the tile's edges meet themselves)."""
+    big = np.tile(z, (3, 3))
+    im = Image.fromarray((np.clip(big, 0, 1) * 255).astype(np.uint8)).resize((3 * n, 3 * n), Image.BICUBIC)
+    if blur:
+        im = im.filter(ImageFilter.GaussianBlur(blur))
+    return np.asarray(im, np.float32)[n:2 * n, n:2 * n] / 255
+
+
+def noise_swatch(rgb, amp, seed, streak=None, scales=((8, 0.5), (24, 0.7)), fine=0.45):
+    """A plain material's tile: its colour with value noise at each (cells a tile, share) of scales and a per-texel grain,
+    every field periodic (Round 191's third review: the coarse field was resized without wrapping and never made to tile,
+    so every concrete tile ended at a hard edge, a seam down the stoop's deck and through every tread and riser, and
+    another every 1.5 m along its fascia)."""
     rs = np.random.RandomState(seed)
     n = SW
     base = np.ones((n, n, 3), np.float32) * np.array(rgb, np.float32) / 255
-    nz = rs.rand(n // 8, n // 8)
-    nz = np.asarray(Image.fromarray((nz * 255).astype(np.uint8)).resize((n, n), Image.BICUBIC), np.float32) / 255 - 0.5
-    fine = rs.rand(n, n) - 0.5
-    out = base * (1 + amp * (nz[..., None] * 1.2 + fine[..., None] * 0.6))
+    nz = sum(w * (periodic(rs.rand(c, c), n) - 0.5) for c, w in scales)
+    gr = rs.rand(n, n) - 0.5   # a texel's own grain: no structure to cross the edge
+    out = base * (1 + amp * (nz[..., None] * 1.2 + gr[..., None] * fine))
     if streak is not None:
-        cols = rs.rand(n) ** 6
-        st = np.asarray(Image.fromarray((np.tile(cols, (n, 1)) * 255).astype(np.uint8)).filter(ImageFilter.GaussianBlur(1.5)), np.float32)[..., None] / 255
+        cols = rs.rand(1, n) ** 6
+        st = periodic(np.repeat(cols, 4, 0), n, 1.5)[..., None]
         out = out * (1 - st) + np.array(streak, np.float32) / 255 * st
     return Image.fromarray(np.clip(out * 255, 0, 255).astype(np.uint8))
 
@@ -513,6 +530,94 @@ def bar_texels(bars, shape):
     return out
 
 
+def clusters(bl, axis, gap=12):
+    """Blobs (y0, x0, y1, x1, cnt) grouped by their centres along axis (1 = x, 0 = y): a new group where two centres in
+    order lie more than gap pixels apart."""
+    c = sorted(bl, key=lambda b: (b[axis] + b[axis + 2]) / 2)
+    out = [[c[0]]]
+    for a, b in zip(c, c[1:]):
+        if (b[axis] + b[axis + 2]) / 2 - (a[axis] + a[axis + 2]) / 2 > gap:
+            out.append([])
+        out[-1].append(b)
+    return out
+
+
+def regular_lites(k, shape):
+    """The lower elevation's glass at the mask's size, every lite a rectangle of whole texels, and its muntins straight
+    (Round 191's third review: the bars followed the generated image's hand-drawn ones, a door leaf's vertical bar jogging a
+    texel between lites and bulging at every crossing, and every lite a rounded rectangle). Each sash (the key closed over
+    its muntins) has its lites in columns and rows: a column's sides and a row's head and foot are their lites' medians, the
+    sash grows two source pixels toward its outer frame (the pane's rim, as before), and every muntin is a bar two texels
+    wide on the texel boundary nearest its middle. Returns (glass, bars, sashes): the glass texels, the bars as source pixel
+    rectangles (x0, y0, x1, y1) for the atlas, and each sash's box and its lites' columns and rows."""
+    H, W = k.shape
+    h, w = shape
+    sx, sy = w / W, h / H
+    glass = np.zeros(shape, bool)
+    bars, sashes = [], []
+    lites = [b for b in blobs(k) if b[4] > 30]
+    med = lambda v: float(np.median(v))
+    for s in blobs(erode(dilate(k, 4), 4)):
+        if s[4] < 400:
+            continue
+        y0, x0, y1, x1 = s[:4]
+        inn = [l for l in lites if l[0] >= y0 - 1 and l[2] <= y1 + 1 and l[1] >= x0 - 1 and l[3] <= x1 + 1]
+        if not inn:
+            continue
+        cols, rows = clusters(inn, 1), clusters(inn, 0)
+        L, R = [med([l[1] for l in c]) for c in cols], [med([l[3] + 1 for l in c]) for c in cols]
+        T, B = [med([l[0] for l in r]) for r in rows], [med([l[2] + 1 for l in r]) for r in rows]
+        gx0, gx1 = int(round((L[0] - 2) * sx)), int(round((R[-1] + 2) * sx))
+        gy0, gy1 = int(round((T[0] - 2) * sy)), int(round((B[-1] + 2) * sy))
+        glass[gy0:gy1, gx0:gx1] = True
+        for j in range(len(cols) - 1):
+            c = int(round((R[j] + L[j + 1]) / 2 * sx))
+            glass[gy0:gy1, c - 1:c + 1] = False
+            bars.append(((c - 1) / sx, gy0 / sy, (c + 1) / sx, gy1 / sy))
+        for i in range(len(rows) - 1):
+            c = int(round((B[i] + T[i + 1]) / 2 * sy))
+            glass[c - 1:c + 1, gx0:gx1] = False
+            bars.append((gx0 / sx, (c - 1) / sy, gx1 / sx, (c + 1) / sy))
+        sashes.append({'box': (L[0], T[0], R[-1], B[-1]), 'cols': len(cols), 'rows': len(rows)})
+    return glass, bars, sashes
+
+
+def paint_bars(a, bars, col):
+    """The regular bars painted into the elevation in the frame's colour, each pixel by the share of it a bar covers."""
+    out = a.copy()
+    H, W = a.shape[:2]
+    for x0, y0, x1, y1 in bars:
+        ix0, ix1, iy0, iy1 = max(int(np.floor(x0)), 0), min(int(np.ceil(x1)), W), max(int(np.floor(y0)), 0), min(int(np.ceil(y1)), H)
+        cx = np.clip(np.minimum(np.arange(ix0, ix1) + 1, x1) - np.maximum(np.arange(ix0, ix1), x0), 0, 1)
+        cy = np.clip(np.minimum(np.arange(iy0, iy1) + 1, y1) - np.maximum(np.arange(iy0, iy1), y0), 0, 1)
+        cov = (cy[:, None] * cx[None, :])[..., None]
+        out[iy0:iy1, ix0:ix1] = out[iy0:iy1, ix0:ix1] * (1 - cov) + np.asarray(col, np.float32) * cov
+    return out
+
+
+def door_leaves(sashes, H, W):
+    """The ground floor's door leaves (the sashes of two columns and more than four rows, under the second storey's sill
+    line) in metres from the image's left (its east end): per bay [outer, middle, outer], each outer the leaf's glass less
+    its stile, the middle the meeting stiles' line; and the leaves' head, a transom bar under the transoms' glass (the
+    single-lite sashes over them)."""
+    pxm = H / H_M
+    leaves = sorted([s for s in sashes if s['cols'] == 2 and s['rows'] > 4 and s['box'][1] > 0.5 * H], key=lambda s: s['box'][0])
+    trans = [s for s in sashes if s['cols'] == 1 and s['rows'] == 1 and s['box'][1] > 0.5 * H]
+    if len(leaves) != 8 or not trans:
+        return None
+    U = lambda x: round(x / W * W_M, 3)
+    bays = []
+    for a, b in zip(leaves[0::2], leaves[1::2]):
+        bays.append([U(a['box'][0]) - LEAF_STILE, round((U(a['box'][2]) + U(b['box'][0])) / 2, 3), U(b['box'][2]) + LEAF_STILE])
+    foot = float(np.median([s['box'][3] for s in trans]))
+    return {'bays': [[round(v, 3) for v in q] for q in bays], 'top': round((H - foot) / pxm - TRANSOM_BAR, 3)}
+
+
+# the door leaves' stiles outside their glass and the transom bar under the transoms' glass, metres, measured once by hand on
+# lower-e (the leaf's glass 0.1 m in from its hinge edge, the transom bar 0.11 m)
+LEAF_STILE, TRANSOM_BAR = 0.1, 0.11
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--masks', action='store_true')
@@ -559,6 +664,13 @@ def main():
         glass_src = 'dark'
         print('WARNING: no glass edit yet: the upper windows are dark glass')
     lof = fill_dark(lo, dilate(klo, 2))   # over the key's anti-aliased edge too, from the dark frame only: no green fringe and no pale rim round a pane in any mip
+    # the lower elevation's lites regular at the mask's size, and their straight bars painted in the frame's own colour (the
+    # median of the image's bars as filled), so the bar the mask keeps is the bar the atlas shows
+    glass_lo, bars_lo, sashes_lo = regular_lites(klo, (EH // MASK_DIV, EW // MASK_DIV))
+    lof = paint_bars(lof, bars_lo, np.median(lof[pane_bars(klo)], 0))   # the bars' pixels as filled from the dark frame (lo's carry the key's green rim)
+    leaves = door_leaves(sashes_lo, *klo.shape)
+    if not leaves:
+        sys.exit('ERROR: the ground floor\'s eight door leaves and their transoms were not found')
     # ---- the facade atlas
     atlas = Image.new('RGB', (AW, AH), (128, 128, 128))
     xl, xu, ye = PAD, PAD * 3 + EW, PAD
@@ -575,7 +687,9 @@ def main():
     crop = to_img(up).crop((int(bu0 / W_M * up.shape[1]), int(up.shape[0] - (by0 + side) * pxm_src), int((bu0 + side) / W_M * up.shape[1]), int(up.shape[0] - by0 * pxm_src)))
     sw_imgs['brick'] = tileable(crop.resize((SW, SW), Image.LANCZOS))
     SW_M['brick'] = round(side, 3)
-    sw_imgs['concrete'] = noise_swatch((125, 118, 109), 0.12, 1)
+    # poured concrete: a fine aggregate's grain over a faint mottle, no clouds (Round 191's third review: the 8 cm field at
+    # 14% read as camouflage)
+    sw_imgs['concrete'] = noise_swatch((125, 118, 109), 0.07, 1, scales=((5, 0.25), (18, 0.5), (48, 0.45)), fine=0.6)
     sw_imgs['iron'] = noise_swatch((38, 40, 42), 0.10, 2)
     sw_imgs['rustblue'] = peel_swatch(3)
     sw_imgs['glow'] = noise_swatch((255, 207, 138), 0.03, 4)
@@ -615,10 +729,15 @@ def main():
         # texels wide at the mask's size (bar_texels): grown into from both sides, the muntins were one texel at a third or two
         # thirds of the glass, and the French doors and the casements drew as single dark sheets by day and unbroken glowing
         # panes at night (Round 191's second review)
-        bars = pane_bars(k)
-        rr = to_img(np.repeat((dilate(k, 2) & ~bars)[..., None].astype(np.float32), 3, -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.BOX)
-        rr = np.asarray(rr)[..., 0].copy()
-        rr[bar_texels(bars, (EH // MASK_DIV, EW // MASK_DIV))] = 0
+        # the lower elevation's lites are regular rectangles of whole texels with straight bars (regular_lites, Round 191's
+        # third review: the image's own bars wobbled a texel and every lite was rounded)
+        if kind == 'lower':
+            rr = glass_lo.astype(np.uint8) * 255
+        else:
+            bars = pane_bars(k)
+            rr = to_img(np.repeat((dilate(k, 2) & ~bars)[..., None].astype(np.float32), 3, -1)).resize((EW // MASK_DIV, EH // MASK_DIV), Image.BOX)
+            rr = np.asarray(rr)[..., 0].copy()
+            rr[bar_texels(bars, (EH // MASK_DIV, EW // MASK_DIV))] = 0
         arr = np.asarray(img).copy()
         arr[..., 0] = rr
         y = ye // MASK_DIV
@@ -691,7 +810,7 @@ def main():
     gone = art_files.prune('glory')
     man = {
         'v': 1, **files, 'w': AW, 'h': AH, 'pxm': round(EW / W_M, 3),
-        'lower': {'rect': uv_rect(xl, ye, EW, EH, AW, AH), **{k: meas[k] for k in ('bays', 'doorTop', 'doorFoot', 'arcade', 'spring', 'crown', 'sill2', 'cols', 'colR', 'cornice', 'capital')}},
+        'lower': {'rect': uv_rect(xl, ye, EW, EH, AW, AH), **{k: meas[k] for k in ('bays', 'doorTop', 'doorFoot', 'arcade', 'spring', 'crown', 'sill2', 'cols', 'colR', 'cornice', 'capital')}, 'leaves': leaves},
         'upper': {'rect': uv_rect(xu, ye, EW, EH, AW, AH), 'win': meas['win'], 'glass': glass_src},
         'swatches': swatches,
         'interior': interior,

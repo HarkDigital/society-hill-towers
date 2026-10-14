@@ -51,7 +51,7 @@ class EventDismiss(unittest.TestCase):
         i_pt = pick.index('p = bldgPointAt(cx, cy, 14000);')
         i_restore = pick.index('eventTapRestore(p[0], p[2])) return true;')
         i_far = pick.index('if (p[4] > 3000) return false;')
-        i_ground = pick.index('if (p[1] < g + 2) return false;')
+        i_ground = pick.index('if (p[1] < g + 2 && !glo) return false;')   # Round 191's third review: Glory's own tests come first
         self.assertLess(i_pt, i_restore)
         self.assertLess(i_restore, i_far)                               # a stadium's field or a far hall still counts
         self.assertLess(i_far, i_ground)
