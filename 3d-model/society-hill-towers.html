@@ -7283,7 +7283,7 @@ RB.add({
     if (zrevLost()) return;   // the second review: a lost context's CONTEXT_LOST_WEBGL is no verdict on the blit
     const gl = renderer.getContext(), w = ZREV.w, h = ZREV.h, sc = gl.isEnabled(gl.SCISSOR_TEST);
     if (sc) gl.disable(gl.SCISSOR_TEST);
-    if (!ZREV.blit) gl.getError();   // the first present checks its own blit
+    if (!ZREV.blit) for (let i = 0; i < 8 && gl.getError() !== gl.NO_ERROR; i++);   // the first present checks its own blit (every error left from before drained, as zrevCheck does)
     gl.bindFramebuffer(gl.READ_FRAMEBUFFER, ZREV.fb);
     // the depth is let go before the resolve, while the pass that drew it is still open: a tiled GPU then never stores it
     gl.invalidateFramebuffer(gl.READ_FRAMEBUFFER, [gl.DEPTH_STENCIL_ATTACHMENT]);
@@ -7335,7 +7335,11 @@ RB.add({
     gl.bindRenderbuffer(gl.RENDERBUFFER, rb);
     if (ms) gl.renderbufferStorageMultisample(gl.RENDERBUFFER, Math.min(rt.samples, renderer.capabilities.maxSamples), fmt, rt.width, rt.height);
     else gl.renderbufferStorage(gl.RENDERBUFFER, fmt, rt.width, rt.height);
+    // (the last review: a storage call that fails at full size, out of memory after the 16 by 16 probe passed, leaves three's
+    // DEPTH24_STENCIL8 in place, which completes and would draw reversed Z into 24 bits: the format is read back, -1 if it is not ours)
+    const took = gl.getRenderbufferParameter(gl.RENDERBUFFER, gl.RENDERBUFFER_INTERNAL_FORMAT) === fmt;
     gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    if (!took) return -1;
     if (ms) p.__ignoreDepthValues = true;
     const pd = gl.getParameter(gl.DRAW_FRAMEBUFFER_BINDING), pr = gl.getParameter(gl.READ_FRAMEBUFFER_BINDING);
     gl.bindFramebuffer(gl.FRAMEBUFFER, ms ? p.__webglMultisampledFramebuffer : p.__webglFramebuffer);
@@ -7366,9 +7370,13 @@ RB.add({
     }
     if (!fatal || ZREV.reloading) return;   // a lost frame reloads even after a lost pass
     ZREV.reloading = true;
-    let again = true;
-    try { again = !!sessionStorage.getItem('philly3d.zbufre'); sessionStorage.setItem('philly3d.zbufre', '1'); } catch (e) { again = true; }
-    if (!again) setTimeout(() => location.reload(), 0);
+    // (the last review: with storage blocked the old catch never reloaded, and a lost frame stayed black; then the reload carries
+    // ?zbuf=log in the address instead, which no second failure can repeat)
+    let again = true, viaUrl = false;
+    try { again = !!sessionStorage.getItem('philly3d.zbufre'); sessionStorage.setItem('philly3d.zbufre', '1'); } catch (e) { again = /[?&]zbuf=log\b/.test(location.search); viaUrl = true; }
+    if (again) return;
+    if (viaUrl) setTimeout(() => { try { const u = new URL(location.href); u.searchParams.set('zbuf', 'log'); location.replace(u.toString()); } catch (e2) { /* nothing to do */ } }, 0);
+    else setTimeout(() => location.reload(), 0);
   }
   // the zc beacon field (Round 192): the depth mode (rev, log or std; then q when a flag forced it, c when a crumb kept log
   // depth, a when an Android phone did), the throwaway context's answers (EXT_clip_control, the 4x DEPTH32F_STENCIL8
@@ -7574,7 +7582,9 @@ RB.add({
   // the boot region): Smoother paces at 60 with a lighter ratio and a 9 km view, Auto at 30 up to 1.6, Sharper at 30 from 1.6 to 2.
   const GFX_PERF = {
     touch: { smoother: { fps: 60, top: 1.0, min: 0.72, start: 1.0, far: 9000 }, auto: { fps: 30, top: 1.6, min: 0.72, start: 1.25, far: 0 }, sharper: { fps: 30, top: 2.0, min: 1.0, start: 1.6, far: 0 } },
-    desk: { smoother: { fps: 0, top: 1.25, min: 0.9, start: 1.25, far: 0 }, auto: { fps: 0, top: 1.75, min: 0.9, start: 1.75, far: 0 }, sharper: { fps: 0, top: 2.0, min: 1.25, start: 2.0, far: 0 } },
+    // Mike, Oct 14 (asked with the 60 fps plan): a computer keeps full sharpness always, so Auto and Sharper hold their top
+    // and never step down (min = top); Smoother, the choice of speed over sharpness, keeps its ladder
+    desk: { smoother: { fps: 0, top: 1.25, min: 0.9, start: 1.25, far: 0 }, auto: { fps: 0, top: 1.75, min: 1.75, start: 1.75, far: 0 }, sharper: { fps: 0, top: 2.0, min: 2.0, start: 2.0, far: 0 } },
   };
   const gfxPick = () => (typeof GFX !== 'undefined' && GFX && GFX_PERF.touch[GFX.pick] ? GFX.pick : 'auto');
   const gfxPerf = () => GFX_PERF[isTouch ? 'touch' : 'desk'][gfxPick()];

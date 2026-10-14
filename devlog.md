@@ -10269,3 +10269,20 @@ place; this is what changed in the code, and what was measured.
   blit), out/hitch-retina.json (the compiles), timing/ (Chrome Retina, 1 MP, the phone path and WebKit), mem/meas-f2*.json
   (phone memory), work/vdepth-decision-phone-ov745.png (for Mike), work/fl-lots-strip.png and work/crop-lots2.png (the
   stadium's bowl, from the review).
+
+## Round 192, at the merge (Oct 14)
+
+- Mike's answers to the plan's questions (asked with the investigation): sharpness over smoothness on both devices (the iPhone
+  keeps Auto's 30 fps with headroom spent on resolution; a computer keeps full sharpness always), the city may open before the
+  far ring is built, and the far city as a cached picture may be tried. So `GFX_PERF.desk`'s Auto and Sharper hold their top
+  (min = top): the controller this round freed to count a slow frame never steps a computer down; Smoother keeps its ladder
+  (`tests/test_gfx.py`, DeskSharpness).
+- The phone's VDEPTH look: shipped as the review found it. Under reversed Z a phone's mid-rises 1 to 2 km out lose main's
+  darker pilaster and floor lines and draw as a computer draws them (1.19% of pixels at 745 m); that matches the computer,
+  so it was taken as the answer and named to Mike, who can ask for the old lines back.
+- The last review's three robustness items, fixed at the merge: `zrevPresent` drains every error left from before (up to 8,
+  as `zrevCheck` does) before it judges its first blit; `zrevFloatDepth` reads the renderbuffer's format back and answers -1
+  when the float storage did not take (out of memory at full size left three's 24-bit depth in place, which completed);
+  `zrevFail` with storage blocked reloads once onto `?zbuf=log` in the address instead of leaving a lost frame black.
+- The Android hold stands (log depth on an Android phone until one is measured).
+

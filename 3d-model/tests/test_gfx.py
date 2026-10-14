@@ -293,3 +293,19 @@ console.log(JSON.stringify(out));'''
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DeskSharpness(unittest.TestCase):
+    """Mike, Oct 14 (the 60 fps plan): a computer keeps full sharpness always. Auto and Sharper hold their top (min = top),
+    so the resolution controller, freed in Round 192 to count a slow frame, never steps a computer down; Smoother, the
+    choice of speed, keeps its ladder."""
+
+    def test_auto_and_sharper_hold_their_top_on_a_computer(self):
+        import re as _re
+        s = (Path(__file__).resolve().parent.parent / 'app.js').read_text()
+        desk = _re.search(r"desk: \{ smoother: \{([^}]*)\}, auto: \{([^}]*)\}, sharper: \{([^}]*)\} \}", s)
+        self.assertTrue(desk)
+        num = lambda body, k: float(_re.search(k + r': ([0-9.]+)', body).group(1))
+        for body in (desk.group(2), desk.group(3)):
+            self.assertEqual(num(body, 'min'), num(body, 'top'))
+        self.assertLess(num(desk.group(1), 'min'), num(desk.group(1), 'top'))

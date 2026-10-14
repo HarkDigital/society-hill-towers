@@ -329,6 +329,16 @@ files. The rules that keep it standing:
   Names are drawn by the page, never by the art, within 160 m (90 m on a phone), and a panel under a generated house
   front never shows its name (whether the fronts' boards should carry it is Mike's call).
 
+- Depth (Round 192, the 60 fps plan's first phase): reversed-Z float depth through EXT_clip_control is the default wherever a
+  throwaway WebGL 2 context reports the extension, a complete 4x DEPTH32F_STENCIL8 framebuffer and a clip that works, and the
+  real context agrees; otherwise r149's log depth (also for an Android phone until one is measured, a fortnight after a failed
+  float depth via the `philly3d.zbuf` crumb, and `?zbuf=log`; `?zbuf=rev` forces it). Inside `renderer.render` a perspective
+  camera's z row is reversed, depth clears to 0 and the depth functions flip (`zrevInstall`); outside, `camera.projectionMatrix`
+  is three's own. Never write gl_FragDepth in a new program (the cloud deck's depth-writing program and the mirror's point
+  twins excepted; `tests/test_zbuf.py` counts them); give any target a perspective camera draws into a float depth
+  (`zrevFloatDepth`); a lost context is never a float-depth failure (`zrevLost`). The beacons carry `zc`. A computer's Auto
+  and Sharper hold full resolution (Mike: sharpness always); a phone keeps 30 fps sharper.
+
 ## Where things are
 
 `app.js` reads top to bottom with `// ---- banner` comments (grep them): config, dom,
