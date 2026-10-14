@@ -5,7 +5,14 @@ cityhall_art.json, art/cityhall/), Round 81's block kept byte for byte for ?real
 These checks hold the measured table (NOAA 2022 QL1 LiDAR, OSM relation 4720912, Turner's 1909 booklet), the one themed
 slot taken at Round 81's place in the build order, the realistic-look gate, the old block and its flood patch untouched,
 the manifest's cells, the level's constants, and then run chModel under Node with the vendored three.min.js: both levels'
-triangles within their budgets, every index and normal sound, and the tops within half a metre of the table."""
+triangles within their budgets, every index and normal sound, and the tops within half a metre of the table.
+
+The review's fixes (fix1) are held here too: every wall of the tower faces away from its axis (the clock stage's octagonal
+head faced in and the sky showed under the dome), a ray from round the building (the street, a flight round the tower,
+the skyline) never first meets the back of a face (the open undersides of the upper balcony, the lantern's gallery and
+the crowns, the slots at every mansard's foot and every stage's head), the cut-outs in their own program, the weather
+patched in rather than taken for a flat, the bronzes metallic, the dials' sphere on the dials, the café skipped and
+rebuilt, tier 2's art."""
 import hashlib
 import json
 from pathlib import Path
@@ -69,8 +76,18 @@ class Wiring(unittest.TestCase):
 
     def test_the_realistic_look_gate(self):
         self.assertIn("const CH_ON = REAL && typeof CITYHALL_ART !== 'undefined' && !!CITYHALL_ART && !!CITYHALL_ART.cells;", SRC)
-        # the outer districts' loop leaves the outline's ground to the model only under it
-        self.assertIn('if (CH_ON && cx > -1690 && cx < -1520 && cz > -850 && cz < -680 && rbDist(cx, cz, CITY_HALL.ring) <= 2)', SRC)
+        # fix1: City Hall's outline was dropped at pack and its tower's parts go with BRIDGE_SKIP, so the loop's old skip of
+        # the outline never fired; the café on Dilworth Park is skipped there instead (as DEMOLISHED is: wideColK counted)
+        self.assertNotIn('rbDist(cx, cz, CITY_HALL.ring) <= 2', SRC)
+        self.assertIn('[-1603, -802, 24]', SRC)
+        self.assertIn("if (CH_ON && !CH_CAFE.poly && Math.hypot(cx - CH_CAFE[0], cz - CH_CAFE[1]) < 14) { if (h <= 45 && t <= 6) wideColK++; CH_CAFE.poly = poly; CH_CAFE.h = h; CH_CAFE.c = [cx, cz]; continue; }", SRC)
+        # the loop has a CH of its own (the chunk size), so it never names City Hall's state
+        loop = cut(SRC, "  step('Raising the outer districts'", '      if (ovpStraddle(poly, cx, cz)) continue;')
+        self.assertIn('const CH = 700;', loop)
+        self.assertNotIn('CH.cafe', loop)
+        build = cut(SRC, '  function buildCityHallReal(ctx) {', '  // the atlas and its mask')
+        self.assertIn('chCafe(far.b, CH.cafe, Y0);', build)
+        self.assertIn('chCafe(near.b, CH.cafe, Y0);', build)
 
     def test_the_old_block_stands_for_real_0(self):
         blk = cut(SRC, '      cityHall: {', '      // --- Philadelphia Museum of Art')
@@ -93,19 +110,55 @@ class Wiring(unittest.TestCase):
         self.assertIn('const CH_NEAR_R = isTouch ? 420 : 650, CH_HYST = 40, CH_ART_R = 1000;', SRC)
         step = cut(SRC, '  function cityHallStep() {', '  // ?dev: __dbg.cityHall()')
         self.assertIn("else if (lod === 'near' && d > CH_NEAR_R + CH_HYST) lod = 'far';", step)
-        self.assertIn('if (isTouch && d < CH_ART_R) chLoadArt();', step)
-        self.assertIn("if (CH.art !== 'none' || TIER2) return;", cut(SRC, '  function chLoadArt() {', '  const _chE'))
+        # fix1: tier 2 (the far level alone) takes the half art once the eye is within CH_NEAR_R
+        self.assertIn('if ((isTouch || TIER2) && d < (TIER2 ? CH_NEAR_R : CH_ART_R)) chLoadArt();', step)
+        self.assertIn("if (CH.art !== 'none') return;", cut(SRC, '  function chLoadArt() {', '  const _chE'))
+        self.assertIn('if (!isTouch && !TIER2) chLoadArt();', SRC)
+        self.assertIn("if (CH.cut) CH.cut.visible = lod === 'near' && !CH.off;", step)
 
     def test_phone_streams_and_samplers(self):
         g = cut(SRC, '  function chGeometry(b, Y0) {', '  // the untextured materials')
         # the colour as four normalized bytes (never three), the kind and seed as two floats: no 1- or 3-byte stream
         self.assertIn("g.setAttribute('aCol', new THREE.BufferAttribute(new Uint8Array(b.C), 4, true));", g)
         self.assertIn("g.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(b.K), 2));", g)
-        m = cut(SRC, '  function chMaterial(chSlot, Y0) {', '  // the dials: a canvas a dial')
-        # its own samplers: the atlas, the mask and the pitched roofs' slate (the lamps' maps, the shadows and the weather's
-        # come with the shared patches)
-        self.assertEqual(sorted(set(__import__('re').findall(r'uniform sampler2D ([^;]+);', m))), ['uMask, uPitchArt'])
+        m = cut(SRC, '  function chMaterial(chSlot, Y0, cut) {', '  // the cut-out parts\' shadow')
+        # its own samplers: the atlas, the mask, the pitched roofs' slate and the flat roofs' tar for the decks (fix1; the
+        # lamps' maps, the shadows and the weather's come with the shared patches)
+        self.assertEqual(sorted(set(__import__('re').findall(r'uniform sampler2D ([^;]+);', m))), ['uMask, uPitchArt, uRoofArt'])
         self.assertNotIn('userData.vdepth', cut(SRC, '  // ---- City Hall rebuilt (Round 190', "  step('Restoring the landmarks'"))
+
+    def test_the_cut_outs_have_their_own_program(self):
+        m = cut(SRC, '  function chMaterial(chSlot, Y0, cut) {', '  // the cut-out parts\' shadow')
+        # the discard rides only the cut program, and only on the balustrade's own cell (fix1: on every cell the mask's
+        # filtered void and dial edges holed the walls round the portals, and the whole building lost its early depth test)
+        self.assertEqual(m.count('discard'), 1)
+        self.assertIn("...(cut ? ['if (abs(vChK.x - ' + balusIx.toFixed(1) + ') < 0.5 && frMask.b > 0.16 && frMask.b < 0.33 && frMask.r < 0.5) discard;'] : []),", m)
+        self.assertIn("if (cut) mat.defines = { CH_CUT: 1 };", m)
+        build = cut(SRC, '  function buildCityHallReal(ctx) {', '  // the atlas and its mask')
+        self.assertIn("const { keep, take } = chSplit(near.b, Object.keys(A.cells).sort().indexOf('balus'));", build)
+        self.assertIn("CH.cut = mk(take, CH.matCut, 'city-hall-cut'); CH.cut.customDepthMaterial = chCutDepth();", build)
+        dm = cut(SRC, '  function chCutDepth() {', '  // the dials: a canvas a dial')
+        self.assertIn('depthPacking: THREE.RGBADepthPacking', dm)
+        self.assertIn('discard', dm)
+
+    def test_the_weather_is_patched_in_not_flagged(self):
+        m = cut(SRC, '  function chMaterial(chSlot, Y0, cut) {', '  // the cut-out parts\' shadow')
+        # fix1: as userData.wxSurf the building was taken for a flat on the ground and kept out of the river's mirror
+        self.assertNotIn('userData.wxSurf', m)
+        self.assertIn('      wxSurfacePatch(sh);   // first', m)
+        self.assertIn("+ '|wx';", m)
+        self.assertIn('mat.userData.wxSurf = true;', cut(SRC, '  function chFloor(Y0) {', '  // Dilworth Park'))
+
+    def test_the_bronzes_are_metal(self):
+        b = cut(SRC, '  function chBronze(themeParts, chSlot, Y0) {', '  // the courtyard')
+        self.assertIn('style: 3, gain: -1 });', b)
+        self.assertIn("if (vTheme.z < 0.0) { metalnessFactor = 0.62; roughnessFactor = 0.42; }", SRC)
+        self.assertIn('totalEmissiveRadiance += te * uNight * 2.4 * abs(vTheme.z) * mix(1.0, 0.42, tsat); }', SRC)
+
+    def test_the_dials_sphere_holds_the_dials(self):
+        build = cut(SRC, '  function buildCityHallReal(ctx) {', '  // the atlas and its mask')
+        a = build.index('chHands(clock.minutes);')
+        self.assertLess(a, build.index('CH.dial.geometry.computeBoundingSphere();'))
 
     def test_no_em_dashes_in_its_strings(self):
         blk = cut(SRC, '  // ---- City Hall rebuilt (Round 190', "  step('Restoring the landmarks'")
@@ -157,6 +210,91 @@ class Manifest(unittest.TestCase):
         self.assertEqual(self.m['size'], [2048, 2048])
 
 
+# the geometry checks, in the building frame (U, y, V): a small BVH over the triangles; every ray's first hit (two faces
+# within 2 mm of each other count as one: a two-sided board is two single-sided quads) and whether it is a back face
+GEOM = r'''
+function bvh(P, I) {
+  const n = I.length / 3, cx = new Float32Array(n * 3), bb = new Float32Array(n * 6);
+  for (let t = 0; t < n; t++) {
+    let x0 = 1e9, y0 = 1e9, z0 = 1e9, x1 = -1e9, y1 = -1e9, z1 = -1e9;
+    for (let k = 0; k < 3; k++) { const o = I[t * 3 + k] * 3; x0 = Math.min(x0, P[o]); x1 = Math.max(x1, P[o]); y0 = Math.min(y0, P[o + 1]); y1 = Math.max(y1, P[o + 1]); z0 = Math.min(z0, P[o + 2]); z1 = Math.max(z1, P[o + 2]); }
+    bb.set([x0, y0, z0, x1, y1, z1], t * 6); cx.set([(x0 + x1) / 2, (y0 + y1) / 2, (z0 + z1) / 2], t * 3);
+  }
+  const ids = Array.from({ length: n }, (_, i) => i);
+  const build = (a, b) => {
+    const nd = { box: [1e9, 1e9, 1e9, -1e9, -1e9, -1e9] };
+    for (let i = a; i < b; i++) { const t = ids[i]; for (let k = 0; k < 3; k++) { nd.box[k] = Math.min(nd.box[k], bb[t * 6 + k]); nd.box[k + 3] = Math.max(nd.box[k + 3], bb[t * 6 + k + 3]); } }
+    if (b - a <= 8) { nd.leaf = ids.slice(a, b); return nd; }
+    const ext = [0, 1, 2].map((k) => nd.box[k + 3] - nd.box[k]), ax = ext.indexOf(Math.max(...ext));
+    const sub = ids.slice(a, b).sort((p, q) => cx[p * 3 + ax] - cx[q * 3 + ax]);
+    for (let i = a; i < b; i++) ids[i] = sub[i - a];
+    const m = (a + b) >> 1; nd.l = build(a, m); nd.r = build(m, b); return nd;
+  };
+  const root = build(0, n);
+  const hitBox = (bx, o, d, tmax) => { let t0 = 0, t1 = tmax; for (let k = 0; k < 3; k++) { const inv = 1 / (d[k] || 1e-12); let ta = (bx[k] - o[k]) * inv, tb = (bx[k + 3] - o[k]) * inv; if (ta > tb) { const s = ta; ta = tb; tb = s; } t0 = Math.max(t0, ta); t1 = Math.min(t1, tb); if (t0 > t1) return false; } return true; };
+  return (o, d, tmax) => {
+    const hits = [], st = [root];
+    while (st.length) {
+      const nd = st.pop(); if (!hitBox(nd.box, o, d, tmax)) continue;
+      if (!nd.leaf) { st.push(nd.l, nd.r); continue; }
+      for (const t of nd.leaf) {
+        const a = I[t * 3] * 3, b = I[t * 3 + 1] * 3, c = I[t * 3 + 2] * 3;
+        const e1 = [P[b] - P[a], P[b + 1] - P[a + 1], P[b + 2] - P[a + 2]], e2 = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]];
+        const pv = [d[1] * e2[2] - d[2] * e2[1], d[2] * e2[0] - d[0] * e2[2], d[0] * e2[1] - d[1] * e2[0]], det = e1[0] * pv[0] + e1[1] * pv[1] + e1[2] * pv[2];
+        if (Math.abs(det) < 1e-12) continue;
+        const tv = [o[0] - P[a], o[1] - P[a + 1], o[2] - P[a + 2]], u = (tv[0] * pv[0] + tv[1] * pv[1] + tv[2] * pv[2]) / det; if (u < -1e-7 || u > 1 + 1e-7) continue;
+        const qv = [tv[1] * e1[2] - tv[2] * e1[1], tv[2] * e1[0] - tv[0] * e1[2], tv[0] * e1[1] - tv[1] * e1[0]], v = (d[0] * qv[0] + d[1] * qv[1] + d[2] * qv[2]) / det; if (v < -1e-7 || u + v > 1 + 1e-7) continue;
+        const tt = (e2[0] * qv[0] + e2[1] * qv[1] + e2[2] * qv[2]) / det; if (tt <= 1e-4 || tt > tmax) continue;
+        const nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+        hits.push([tt, Math.sign(nx * d[0] + ny * d[1] + nz * d[2]), P[a + 1]]);
+      }
+    }
+    return hits.sort((p, q) => p[0] - q[0]);
+  };
+}
+function seeThrough(b, N) {
+  const P = b.P, I = b.I, cast = bvh(P, I), n = I.length / 3;
+  let s = 7; const R = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 4294967296);
+  const cum = new Float64Array(n); let tot = 0;
+  for (let t = 0; t < n; t++) { const a = I[t * 3] * 3, c = I[t * 3 + 1] * 3, e = I[t * 3 + 2] * 3; const u = [P[c] - P[a], P[c + 1] - P[a + 1], P[c + 2] - P[a + 2]], v = [P[e] - P[a], P[e + 1] - P[a + 1], P[e + 2] - P[a + 2]]; tot += Math.hypot(u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]) / 2; cum[t] = tot; }
+  const pick = () => { const x = R() * tot; let lo = 0, hi = n - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (cum[m] < x) lo = m + 1; else hi = m; } return lo; };
+  const eyes = [];
+  for (let k = 0; k < 16; k++) { const a = k / 16 * Math.PI * 2; eyes.push([Math.cos(a) * 115, 1.7, Math.sin(a) * 118 - 3], [Math.cos(a) * 200, 30, Math.sin(a) * 200]); }
+  for (let k = 0; k < 12; k++) { const a = (k + 0.5) / 12 * Math.PI * 2; for (const [r, y] of [[40, 118], [30, 146], [45, 95], [60, 64], [24, 160]]) eyes.push([Math.cos(a) * r, y, Math.sin(a) * r - 37.2]); }
+  for (let k = 0; k < 8; k++) { const a = k / 8 * Math.PI * 2; eyes.push([Math.cos(a) * 150, 220, Math.sin(a) * 150]); }
+  const out = { rays: 0, back: 0, backTower: 0 };
+  for (const e of eyes) for (let i = 0; i < N; i++) {
+    const t = pick(), a = I[t * 3] * 3, c = I[t * 3 + 1] * 3, f = I[t * 3 + 2] * 3; let r1 = R(), r2 = R(); if (r1 + r2 > 1) { r1 = 1 - r1; r2 = 1 - r2; }
+    const p = [0, 1, 2].map((k) => P[a + k] + (P[c + k] - P[a + k]) * r1 + (P[f + k] - P[a + k]) * r2);
+    const d = [p[0] - e[0], p[1] - e[1], p[2] - e[2]], L = Math.hypot(d[0], d[1], d[2]); d[0] /= L; d[1] /= L; d[2] /= L;
+    out.rays++;
+    const h = cast(e, d, L + 0.01); if (!h.length) continue;
+    let front = false, back = null; for (const x of h) { if (x[0] > h[0][0] + 0.002) break; if (x[1] < 0) front = true; else back = x; }
+    if (front || !back) continue;
+    out.back++;
+    if (e[1] + d[1] * back[0] > 60) out.backTower++;
+  }
+  return out;
+}
+function towerFacing(b) {
+  const P = b.P, I = b.I, cu = 0, cv = -37.2; let n = 0, bad = 0;
+  for (let t = 0; t < I.length; t += 3) {
+    if (b.K[I[t] * 2] === b.balusK) continue;   // the balustrades are boards seen from both sides
+    const A = I[t] * 3, B2 = I[t + 1] * 3, C = I[t + 2] * 3;
+    const ux = P[B2] - P[A], uy = P[B2 + 1] - P[A + 1], uz = P[B2 + 2] - P[A + 2], vx = P[C] - P[A], vy = P[C + 1] - P[A + 1], vz = P[C + 2] - P[A + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, l = Math.hypot(nx, ny, nz);
+    if (l < 1.0 || Math.abs(ny) / l > 0.3) continue;
+    let w = 0; for (const [p, q] of [[A, B2], [B2, C], [C, A]]) w = Math.max(w, Math.hypot(P[p] - P[q], P[p + 2] - P[q + 2])); if (w < 1.5) continue;   // a column's or a pier's narrow faces
+    const mx = (P[A] + P[B2] + P[C]) / 3, my = (P[A + 1] + P[B2 + 1] + P[C + 1]) / 3, mz = (P[A + 2] + P[B2 + 2] + P[C + 2]) / 3;
+    if (my < 49.5 || Math.hypot(mx - cu, mz - cv) > 15) continue;   // the tower over every roof
+    n++;
+    if ((mx - cu) * nx + (mz - cv) * nz < 0) bad++;
+  }
+  return { n, bad };
+}
+'''
+
+
 class Model(unittest.TestCase):
     def run_model(self, touch):
         if not shutil.which('node'):
@@ -169,21 +307,36 @@ const CITYHALL_ART = MANIFEST;
 const fl = { px: 140, pz: 0, dx: -0.167, dz: 0.986, nx: 0.986, nz: 0.167 };
 function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
 MOD
+GEOM
 const out = {};
 for (const far of [false, true]) {
   const { b, tops } = chModel(CITYHALL_ART, far);
+  const ids = Object.keys(CITYHALL_ART.cells).sort();
+  b.balusK = ids.indexOf('balus');
+  const see = seeThrough(b, 120), tower = towerFacing(b);
+  // the undersides: down-facing faces under the upper balcony, the lantern's gallery and the crowns' cornice boxes
+  const soff = { bal2: 0, gallery: 0, box: 0 };
+  for (let t = 0; t < b.I.length; t += 3) {
+    const A = b.I[t] * 3, B2 = b.I[t + 1] * 3, Cc = b.I[t + 2] * 3, P = b.P;
+    const ux = P[B2] - P[A], uy = P[B2 + 1] - P[A + 1], uz = P[B2 + 2] - P[A + 2], vx = P[Cc] - P[A], vy = P[Cc + 1] - P[A + 1], vz = P[Cc + 2] - P[A + 2];
+    const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx, l = Math.hypot(nx, ny, nz) || 1;
+    if (ny / l > -0.9) continue;
+    const my = (P[A + 1] + P[B2 + 1] + P[Cc + 1]) / 3;
+    if (Math.abs(my - 87.5) < 0.05) soff.bal2++; else if (Math.abs(my - 149.5) < 0.05) soff.gallery++; else if (Math.abs(my - 53.6) < 0.05) soff.box++;
+  }
   let bad = 0, nanP = 0, nanN = 0, short = 0;
   for (const i of b.I) if (!(i >= 0 && i < b.nv)) bad++;
   for (const v of b.P) if (!Number.isFinite(v)) nanP++;
   for (let i = 0; i < b.nv; i++) { const l = Math.hypot(b.N[i * 3], b.N[i * 3 + 1], b.N[i * 3 + 2]); if (!Number.isFinite(l)) nanN++; else if (l < 0.5) short++; }
   let ymax = -1e9, ymin = 1e9; for (let i = 1; i < b.P.length; i += 3) { ymax = Math.max(ymax, b.P[i]); ymin = Math.min(ymin, b.P[i]); }
   const g = chGeometry(b, 2.45);
-  out[far ? 'far' : 'near'] = { tris: b.I.length / 3, verts: b.nv, bad, nanP, nanN, short, ymax, ymin, tops,
+  out[far ? 'far' : 'near'] = { tris: b.I.length / 3, verts: b.nv, bad, nanP, nanN, short, ymax, ymin, tops, see, tower, soff,
+    balus: b.K.filter((k, i) => i % 2 === 0 && k === b.balusK).length,
     attrs: Object.fromEntries(Object.entries(g.attributes).map(([k, a]) => [k, [a.array.constructor.name, a.itemSize, a.array.BYTES_PER_ELEMENT * a.itemSize]])) };
 }
 console.log(JSON.stringify(out));
 '''.replace('THREE_PATH', json.dumps(str(ROOT / 'three.min.js'))).replace('TOUCH', 'true' if touch else 'false') \
-            .replace('MANIFEST', (ROOT / 'cityhall_art.json').read_text()).replace('MOD', mod)
+            .replace('MANIFEST', (ROOT / 'cityhall_art.json').read_text()).replace('MOD', mod).replace('GEOM', GEOM)
         r = subprocess.run(['node', '-e', script], capture_output=True, text=True, timeout=120)
         self.assertEqual(r.returncode, 0, r.stderr[-3000:])
         return json.loads(r.stdout.strip().splitlines()[-1])
@@ -200,8 +353,27 @@ console.log(JSON.stringify(out));
         for k, v in (('centreCrown', 61.8), ('cornerCap', 48.8), ('flankDeck', 39.4), ('centreBody', 49.0), ('crownDeck', 57.0),
                      ('masonry', 102.8), ('clockStage', 123.4), ('dome', 142.0), ('cupola', 155.6), ('turret', 48.5), ('apse', 24.5)):
             self.assertAlmostEqual(t[k], v, delta=0.5, msg=k)
-        # the highest point the model itself builds is the cupola's head, where Penn's feet stand (he rides the themed parts to 167.0)
+        # the highest point the model itself builds is the north crown's flagpole (73.5) under the cupola's head, where Penn's
+        # feet stand (he rides the themed parts to 167.0)
         self.assertAlmostEqual(out['near']['ymax'], 155.6, delta=0.1)
+        for lod in ('near', 'far'):
+            o = out[lod]
+            # fix1: every wall of the tower over the roofs faces away from its axis (the octagonal head faced in)
+            self.assertGreater(o['tower']['n'], 100, lod)
+            self.assertEqual(o['tower']['bad'], 0, lod)
+            # and from round the building no ray first meets the back of a face: none over 60 m (the tower's stages, the
+            # dome's foot, the balconies, the gallery), hardly any at all (a valley's sliver between two roofs)
+            self.assertGreaterEqual(o['see']['rays'], 12000, lod)
+            self.assertEqual(o['see']['backTower'], 0, (lod, o['see']))
+            self.assertLess(o['see']['back'] / o['see']['rays'], 0.001, (lod, o['see']))
+        # the undersides the review found open: the upper balcony's, the lantern gallery's and the crowns' cornice boxes'
+        n = out['near']['soff']
+        self.assertGreaterEqual(n['bal2'], 8)
+        self.assertGreaterEqual(n['gallery'], 8)
+        self.assertGreaterEqual(n['box'], 16)
+        # the balustrades and the cresting ride their own (cut-out) mesh in the near level; the far level has none
+        self.assertGreater(out['near']['balus'], 100)
+        self.assertEqual(out['far']['balus'], 0)
 
     def test_a_computer(self):
         out = self.run_model(False)

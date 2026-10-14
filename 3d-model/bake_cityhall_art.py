@@ -13,8 +13,9 @@ Per cell the bake:
 - keys the glass (KEY_*) to the pixel, takes the key's green spill off the frames round it, and fills each pane with dark
   glass, lighter toward its head, with a meeting rail across a tall sash; the clock's dial (the largest key in the clock
   cell) is filled with the dial's teal and a gilt ring, the belvedere's great arch with a dark void, the portal's magenta
-  with the cell's own stone (the page cuts the opening there);
-- calibrates the picture's median stone to the photographs' marble (MARBLE) or the tower's painted metal (METAL);
+  with the passage's shade (the near level cuts the opening there; the far level has no passage, fix1);
+- calibrates the picture's median stone to the photographs' marble (MARBLE), the tower's masonry (TOWER_STONE, fix1) or its
+  painted metal (METAL);
 - takes its storeys to the building's own (rows: a pixel row of the picture to a height in metres, piecewise linear,
   so the string courses meet the cornices the page builds at the measured heights, 5.57, 15.78 and 26.63 m on the wings);
 - is laid at a common pixels-a-metre (the largest that packs every cell into AW by AH with PAD of gutter, times the
@@ -41,26 +42,32 @@ PAD = 16
 MASK_DIV = 2
 FILL = 0.97          # the share of the atlas the packer first tries the cells' area at (it steps down 1% a try until they pack)
 MARBLE = (201, 196, 184)   # the facade's average marble with its soiling, as the photographs read it
+TOWER_STONE = (187, 182, 170)   # the tower's masonry to 102.8 m: warmer and greyer than the painted iron above it (fix1: S Broad
+                                # Street at dusk reads the belvedere (149, 152, 143) under the clock stage's (154, 165, 169) and the
+                                # dome's (155, 168, 176); the Inquirer's two-tone tower; the renders read one white)
 METAL = (188, 192, 198)    # the tower's paint from the clock stage up (0xc8ccd1 in the photographs' sun; a shade under it here,
                            # where the sun and the sky's specular add their own)
 GLASS_TOP, GLASS_FOOT = (58, 70, 80), (20, 27, 33)   # a pane's sky reflection at its head, its dark foot
 FRAME = (52, 48, 44)       # the meeting rail of a sash
 DIAL, GILT = (90, 144, 138), (213, 193, 152)        # the dial's teal glass and its gilding
 VOID = (16, 17, 19)
-KEY_G, KEY_GAP = 140, 70   # a pane's green: over KEY_G and over the other channels by KEY_GAP (0 to 255)
+PORTAL = (36, 34, 31)      # the portal's arch on the centre pavilion's picture: the passage's shade (fix1: the stone, so the far
+                           # level showed a blank wall where the arch is)
+KEY_GAP, KEY_K = 35, 1.6  # a pane's green: over the other channels by KEY_GAP and KEY_K times the larger (fix1: the old key,
+                          # green over 140 and 70 over the rest, left the shaded green in every arched window's head)
 SPILL = 8                 # a frame pixel by the glass whose green stands this far over red and blue is the key's spill
 
 # id: source, (width, height) in metres, crop (x0, y0, x1, y1) in source pixels or None, rows [(pixel row from the crop's
-# top, metres from the cell's foot)], 'stone' or 'metal', wraps across, density weight
+# top, metres from the cell's foot)], 'stone', 'tower' or 'metal', wraps across, density weight
 CELLS = {
     'curtain': ('ch_curtain', (16.0, 26.63), (0, 0, 1024, 1688), [(0, 26.63), (115, 25.23), (860, 15.78), (1465, 5.57), (1688, 0)], 'stone', True, 1.0),
     'flank': ('ch_flank', (16.0, 26.63), (0, 0, 1024, 1665), [(0, 26.63), (110, 25.23), (760, 15.78), (1370, 5.57), (1665, 0)], 'stone', True, 1.0),
     'centre': ('ch_centre', (27.0, 39.28), (0, 0, 1104, 1550), [(0, 39.28), (1550, 0)], 'stone', False, 1.0),
     'corner': ('ch_corner', (16.5, 38.13), (0, 0, 832, 1828), [(0, 38.13), (650, 26.63), (1190, 15.78), (1645, 5.57), (1828, 0)], 'stone', False, 1.0),
     'court': ('ch_court', (16.0, 31.5), (0, 0, 816, 1560), [(0, 31.5), (320, 26.63), (900, 15.78), (1390, 5.57), (1560, 0)], 'stone', True, 0.75),
-    'tower_low': ('ch_tower_low', (22.6, 24.5), None, [(0, 24.5), (1104, 0)], 'stone', False, 0.85),
-    'tower_mid': ('ch_tower_mid', (21.0, 21.5), None, [(0, 21.5), (1056, 0)], 'stone', False, 0.85),
-    'belvedere': ('ch_belvedere', (21.0, 12.6), None, [(0, 12.6), (832, 0)], 'stone', False, 0.9),
+    'tower_low': ('ch_tower_low', (22.6, 24.5), None, [(0, 24.5), (1104, 0)], 'tower', False, 0.85),
+    'tower_mid': ('ch_tower_mid', (21.0, 21.5), None, [(0, 21.5), (1056, 0)], 'tower', False, 0.85),
+    'belvedere': ('ch_belvedere', (21.0, 12.6), None, [(0, 12.6), (832, 0)], 'tower', False, 0.9),
     'clock': ('ch_clock', (20.0, 20.6), (60, 25, 964, 910), [(0, 20.6), (885, 0)], 'metal', False, 0.9),
 }
 LATE = {
@@ -136,7 +143,8 @@ def label(m):
 
 def keys(a):
     r, g, b = a[..., 0], a[..., 1], a[..., 2]
-    green = (g > KEY_G) & (g - np.maximum(r, b) > KEY_GAP)
+    mx = np.maximum(r, b)
+    green = (g - mx > KEY_GAP) & (g > KEY_K * mx + 8)
     magenta = (r > 170) & (b > 170) & (g < 110)
     return green, magenta
 
@@ -165,7 +173,7 @@ def prep(cid, spec):
     # the stone's calibration: the median of everything that is not a key to the photographs' colour, per channel
     rest = ~(green | magenta)
     med = np.median(a[rest], axis=0)
-    tgt = np.array(METAL if kind == 'metal' else MARBLE, np.float32)
+    tgt = np.array(METAL if kind == 'metal' else TOWER_STONE if kind == 'tower' else MARBLE, np.float32)
     a = np.clip(a * (tgt / np.maximum(med, 1.0)), 0, 255)
     lab, boxes = label(green)
     mask = np.zeros((H, W, 3), np.uint8)
@@ -218,7 +226,7 @@ def prep(cid, spec):
             a[rail] = FRAME
             mask[rail] = 0
     if magenta.any():
-        a[magenta] = np.median(a[rest], axis=0)
+        a[magenta] = PORTAL   # the far level draws no passage: the arch reads dark there (the near level cuts it open)
         mask[magenta] = (0, 0, 120)
         ys, xs = np.nonzero(magenta)
         # the arch: its span and crown, and its springing, the highest row the opening holds 95% of its width

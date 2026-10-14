@@ -9217,3 +9217,81 @@ Not done:
   cafe); the plain night's amber against the LED system's white; the courtyard's lanterns and the ornamental gates of
   2015; the figure groups and eagles are simple forms; the cresting and the balustrades cast solid shadows (three's own
   depth material knows nothing of the cut); Penn's figure is still Round 84's primitives.
+
+## Round 190, the review's fixes (Oct 14)
+
+- Two reviews of the rebuild (the integration and the realism critics) found it sound in plan and heights but broken in
+  ways a Philadelphian sees from the street. Every must-fix is in; the should-fixes are in but two (below).
+- The dome floated. The clock stage's octagonal head (117 to 123.4 m) was walked with its outside on the left: the loop
+  swapped its corner names and swapped them back in the call, so all eight faces looked in, were culled from outside, and a
+  band of sky 4 to 6 m tall showed between the dials and the dome's foot from every street (the eagles and the groups hung
+  in it). `face(A0, B0)` now. A node harness cast 6,000 rays at the model from round it (the street, a flight round the
+  tower, the skyline) and counted every first hit that was a back face: 163 near and 180 far (2.7 and 3.0 per cent). Behind
+  the octagon it found the rest: the upper balcony's slab with no soffit, the lantern's gallery likewise, the 1.5 m band
+  between the shaft's head and the stage of the tall window and the 2.2 m one between the upper balcony and the belvedere
+  (both open all round), the ledges where each narrower stage stands on the one under it, the dome's head under the drum,
+  the clock's columns open at both ends, the dome's ribs standing off its corners with no cheeks, and on the block a slot
+  at the foot of every mansard (each profile started 0.4 to 0.6 m in from the wall, and the cornice under it closes on the
+  wall's line), the courtyard mansard's 0.5 m slot, every cornice's open back where it runs past a wall's end, the passages
+  standing 5 cm proud of both walls, and the north passage crossing the courtyard's north wall and the tower base's south
+  face. All closed (`ledge`, `band`, `cyl`'s soffit, `hipRoof`'s ledge, `moulding`'s back): 3 of 25,000 rays near and 8 far
+  (the far level's flat trims at grazing angles), none over 60 m. tests/test_landmark_cityhall.py runs it on both levels on
+  both devices and also checks that every wall of the tower over the roofs faces away from its axis.
+- The centre pavilions' roofs (the main elevation from Broad and from Market) are rebuilt to the photographs (S Broad at
+  Locust, Market Street, HABS's 1982 elevated view of the north front, the 1965 and 2019 aerials): the crown, a narrow
+  mansard rising straight from the middle bay's cornice (13 m deep, 2.2 m of batter on every face) to a bracketed cornice
+  box at 53.6 to 57.0 m, its pyramid to 59.6 with the cresting round its foot, the finial to 61.8; its hips in broad carved
+  white trim (1.1 m, beaded by the shader); the caryatid aedicule climbing its face to 50.6; either side a segmental
+  shoulder, a quarter-ellipse of slate from the pavilion's edge at the cornice to the crown's face at 46.1, its lunette on
+  the front framed in a 0.95 m carved curve with its oculus; behind them the body's attic in stone with its cornice at 49
+  and the old straight mansard down its sides. The LiDAR's 49.0, 57.0, 59.6 and 61.8 stand. Every other mansard (the
+  wings', the flanks', the corner pavilions', their cap stages) has its hips and its curb in carved trim (`rib`), the corner
+  caps are the white cornice boxes the aerials show, and the curtains carry the hooded bull's-eyes over their dormers
+  (the photographs' green copper bonnets are hoods on small upper dormers, not on the big ones).
+- The bronzes were khaki: as the themed parts' matte paint even 0x150f09 rendered about rgb 115 in the sun. They carry a
+  negative gain now, which the themed mesh's shader takes as patinated bronze (metalness 0.62, roughness 0.42) and every
+  other themed part ignores; stored 0x0b0906. Penn's median in the S Broad telephoto is 60, the haze floor there (the
+  belvedere's black arch at the same distance reads 60); the groups and the eagles near black on the low flight. The night
+  flood is untouched.
+- The portals: the light-blue specks round the east arch were the balustrade's discard firing on the mask's filtered edges
+  of the arch's void (b 120 through the band 0.16 to 0.33); the discard now lives only in a second program for the
+  balustrades and the cresting, gated on their own cell (`chSplit`, `chMaterial(.., true)`), so the building keeps its
+  early depth test, and its shadow cuts the same way (`chCutDepth`: they cast solid boards before). The courtyard's holes
+  stood 0.35 m off their passages (the bay's centre, not the arch's); they are cut to the arch's own centre now, and the
+  string course and the water table stop either side of every opening. The north passage ends at the tower's foot in a
+  wall with a door of 3.26 by 4.2 m, which the apse's two middle facets open on the courtyard through a short passage of
+  its own (it stood out of the apse as a black slab). The passages wear the ashlar on their walls, a coffered vault with
+  a rosette in each coffer, granite setts underfoot, and their shade is now the sky they cannot see (the colour's fourth
+  byte multiplies the indirect light; as an albedo it left the walls at 125). Their floors ride the drawn ground: the
+  ground round the building stands 2.0 to 2.9 m over the courtyard's (Y0, the building's datum) and the apron drawn under
+  the wings showed through them.
+- The courtyard is the photographs' dark red-brown brick (0x6a2f23 on the canvas, about rgb 99, 51, 47 in shade against
+  their 94 to 103, 49, 47 to 52), the shader laying 0.2 by 0.1 m pavers in a running bond with their own shades and sand
+  joints and 1.5 by 0.75 m slabs on the granite walks, both faded by footprint.
+- The rest: the far level keeps the aedicules, the great dormers, the shoulders' oculi, the crowns' and the shoulders' trim
+  and the flag (the switch at 650 m changed the silhouette most there); the decks take the flat roofs' generated tar with
+  a lapped seam every 0.9 m and twelve glazed ridge skylights; the bake keys any green standing 35 over the other channels
+  and 1.6 times the larger (the arched windows' shaded heads kept a band of it: 1,012 pixels in the flank cell, none now),
+  calibrates the tower's masonry to (187, 182, 170) against the paint's (188, 192, 198) (S Broad at dusk reads the
+  belvedere (149, 152, 143) under the clock's (154, 165, 169)), and fills the portal's arch with the passage's shade; the
+  lantern's drum has its ring of framed oculi; the river's mirror draws the building (the weather is `wxSurfacePatch`
+  patched in, not `userData.wxSurf`, which marks a flat and kept the walls out of the mirror while the dials and bronzes
+  stayed in it); the dials' bounding sphere is taken with the hands on the dials (it was 905 m round the origin); tier 2
+  takes the half art within 420 m (it was a windowless cream box from the street); Dilworth Park's café, which OSM's
+  footprint drew as a three-storey house before the south-west pavilion, is skipped in the outer districts' loop (as
+  DEMOLISHED is) and built as a single storey of glass. The loop's old skip of City Hall's outline never fired (the outline
+  was dropped at pack; the tower's parts go with BRIDGE_SKIP) and is gone; it would have thrown had it fired, the loop's
+  own CH being the chunk size.
+- Not done: the 2048 by 1536 atlas (the cells with their gutters fill 85 per cent of the 2048 square; at 1536 the packer
+  reaches 22.3 px/m against 25.9, and a height that is not a power of two is resized to one on WebGL 1); a better Penn and
+  figured groups (to offer Mike: coat skirts, the hat's brim, the charter and the stump; three figures a group). Penn's
+  arms stay as the photographs show them (the right arm out), which changes Round 84's postcard figure: Mike's yes is
+  asked for. The plain night's amber against the LED system's white is still his call. The ground round the building
+  stands 2 to 3 m over its datum, so the water table and part of the basement are under the sidewalk on all four fronts;
+  whether the courtyard is that much lower than Penn Square, or the DEM is wrong under the building, wants a survey.
+- Cost: near 23,853 triangles on a computer and 22,589 on a phone (the trim, the shoulders, the closures and the café),
+  the cut-outs 192, the dials 144, the floor 258; far 4,312. At d_mid_nw the A/B adds 6 draws near (the near mesh, the
+  cut-outs, the dials and the floor; the near mesh and the cut-outs in the shadow pass) and 2 far, on both devices.
+  Budgets 60k and 30k near, 6k far: met. Textures as they were (26.7 MB a computer, 6.7 a phone). No console error in any
+  render. ?real=0 matches the pre-fix build but for the live traffic and the tufts. 791 tests, OK with the one expected
+  failure.
