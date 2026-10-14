@@ -28,27 +28,23 @@ class PinScale(unittest.TestCase):
         self.assertEqual(len(re.findall(r'pinScaleAt\(camera\.position\.distanceTo\(_\w+\), (?:14|190)\)', s)), 11)
 
     @unittest.skipUnless(shutil.which('node'), 'node unavailable')
-    def test_the_screen_size_falls_as_the_eye_comes_on(self):
-        f = cut(self.s, '  const PIN_NEAR_K = ', '  function pinSweep(now) {')
-        out = {}
-        for touch in (False, True):
-            js = 'const isTouch = %s;\n%s\nconst r = [];\nfor (const d of [5, 15, 30, 60, 120, 200, 299, 300, 301, 600, 1800, 3000]) r.push([d, pinScaleAt(d, 14), pinScaleAt(d, 14) / d]);\nconsole.log(JSON.stringify(r));' % ('true' if touch else 'false', f)
-            run = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
-            self.assertEqual(run.returncode, 0, run.stderr)
-            out[touch] = json.loads(run.stdout)
-        for touch, rows in out.items():
-            ang = {d: a for d, s, a in rows}
-            far = 1 / 135
-            self.assertAlmostEqual(ang[600] / far, 1, places=6)                      # far: the old constant size on the screen
-            self.assertAlmostEqual(ang[300] / far, 1, places=6)                      # the knee meets it with no jump
-            k = 0.75 if touch else 0.6
-            self.assertAlmostEqual(ang[15] / far, k, places=6)                       # close in: a fraction of it
-            self.assertAlmostEqual(ang[30] / far, k, places=6)
-            seq = [ang[d] for d in (30, 60, 120, 200, 299, 300)]
-            self.assertEqual(seq, sorted(seq))                                       # never larger closer in
-            self.assertAlmostEqual(dict((d, s) for d, s, a in rows)[3000], 14)      # the cap stands
-            # the old rule at 20 m: 2.2 / 20 against 1 / 135 is about fifteen times the far size; now under one
-            self.assertLess(ang[15] / far, 1)
+    def test_the_half_mile_size_all_the_way_in(self):
+        # Round 190's coda: a pin's minimum size on the screen is its size at half a mile (NEAR_R 804.67 m), on a computer
+        # and a phone alike; the first cut's 0.6 close in was "way too small"
+        f = cut(self.s, '  function pinScaleAt(d, cap) {', '\n')
+        js = '%s\nconst r = [];\nfor (const d of [0.5, 1, 5, 15, 30, 60, 120, 300, 804.67, 1500, 1890, 3000]) r.push([d, pinScaleAt(d, 14), pinScaleAt(d, 190)]);\nconsole.log(JSON.stringify(r));' % f
+        run = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=30)
+        self.assertEqual(run.returncode, 0, run.stderr)
+        rows = json.loads(run.stdout)
+        half = {cap: dict((d, s) for d, *ss in rows for cap2, s in zip((14, 190), ss) if cap2 == cap)[804.67] / 804.67 for cap in (14, 190)}
+        for d, s14, s190 in rows:
+            for cap, s in ((14, s14), (190, s190)):
+                if d <= cap * 135:
+                    self.assertGreaterEqual(s / max(d, 1e-9) + 1e-12, half[cap] * (1 if d >= 1 else 0))   # never smaller on the screen than at half a mile
+                    if d >= 1:
+                        self.assertAlmostEqual(s / d, half[cap], places=9)                                  # and exactly that size
+        self.assertAlmostEqual(dict((d, s) for d, s, _ in rows)[3000], 14)    # the cap still lets the far ones go
+        self.assertNotIn('PIN_NEAR_K', self.s)
 
 
 if __name__ == '__main__':

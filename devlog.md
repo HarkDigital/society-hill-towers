@@ -9134,3 +9134,9 @@ Not done:
   which keeps more to tap. Measured on the Langstroth marker at 1280 by 800: 120 m, about 70 px tall before and 16 after;
   10 m, a 10 m billboard before and a 13 px badge on top of the post after. `tests/test_pin_scale.py` runs the rule under
   node (the far size, the knee, the near fraction, never larger closer in, the caps).
+- Coda, the same day. Mike: "The pins now get way too small when you get very close to them. Their minimum size should be
+  how they look at a half mile away." The first cut eased a pin to 0.6 of its far size inside 30 m (a 13 px badge at 10 m).
+  Past 300 m a pin already held one size on the screen, the size it has at half a mile (NEAR_R), so `pinScaleAt` is now that
+  rule all the way in: distance / 135 under each pin's cap, a pin growing smaller in the world as the eye comes on and never
+  on the screen. Rendered at the Langstroth marker: the badge at 10 m stands the size of the markers seen from 800 m.
+  `tests/test_pin_scale.py` asserts the half-mile size at every distance, computer and phone alike.

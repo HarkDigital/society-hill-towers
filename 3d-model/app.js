@@ -21316,13 +21316,11 @@ float pinOccGate() {
   // Round 190 (Mike, with a screenshot of a historical marker's pin filling half the view from the sidewalk: "Pins need to
   // scale down in size as you get closer to them"). Every pin took the aircraft badge's rule, distance / 135 held at 2.2 at
   // least: past 300 m a pin keeps its size on the screen, and from 300 m in it stood at its full 10 by 12.6 m and grew on the
-  // screen as the eye came on, fifteen times its far size at 20 m. Now it keeps its far size on the screen to PIN_NEAR_D and
-  // eases down from there to PIN_NEAR_K of it at PIN_NEAR_D0 and closer (a phone keeps more of it, to be tapped)
-  const PIN_NEAR_K = isTouch ? 0.75 : 0.6, PIN_NEAR_D0 = 30, PIN_NEAR_D = 300;
-  function pinScaleAt(d, cap) {
-    const t = Math.min(1, Math.max(0, (d - PIN_NEAR_D0) / (PIN_NEAR_D - PIN_NEAR_D0))), k = PIN_NEAR_K + (1 - PIN_NEAR_K) * t * t * (3 - 2 * t);
-    return Math.max(0.01, Math.min(d / 135, cap) * k);
-  }
+  // screen as the eye came on, fifteen times its far size at 20 m. The first cut eased it down to 0.6 of its far size close
+  // in, and Mike: "The pins now get way too small when you get very close to them. Their minimum size should be how they look
+  // at a half mile away." So a pin holds its half-mile size on the screen (distance / 135, the size it has at NEAR_R) all the
+  // way in, growing smaller in the world as the eye comes on and never on the screen; the caps still let the far ones go
+  function pinScaleAt(d, cap) { return Math.min(Math.max(d, 1) / 135, cap); }
   function pinSweep(now) { if (now < pinSweepAt) return; pinSweepAt = now + 5000; for (const [k, e] of pinBorn) if (now - e[1] > 30000) pinBorn.delete(k); }
   const glyphDrum = (g) => {   // a drum: the pale barrel with two dark bands on a base
     g.fillStyle = '#fdfbf6';
