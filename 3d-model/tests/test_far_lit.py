@@ -100,7 +100,7 @@ class FarLit(unittest.TestCase):
         self.assertIn('max(log2(max(2.0 * fpx, vec2(1.0e-6))), 0.0)', self.glsl)
 
     def test_the_glass_towers_far_rooms(self):
-        """Round 191: the curtain wall's far rooms (GLASS_SYS_PARS / GLASS_SYS_MAIN) on every device, never FAR_LIT's blocks:
+        """Round 192: the curtain wall's far rooms (GLASS_SYS_PARS / GLASS_SYS_MAIN) on every device, never FAR_LIT's blocks:
         an office floor's lit run is its true share under the pixel (gRunCover, the run [0, L) of period n over [a, b]), the
         floors under two pixels are bands lit at the floor runs' mean (0.675 of a floor's rooms, 12% of them dark: 0.594), and
         the light is blended finished (the room's colour times the lit share, never the two blended apart, Round 159)."""

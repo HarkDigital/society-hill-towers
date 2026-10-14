@@ -318,8 +318,27 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertEqual(cut(s, '  function loadGroundArt() {', '  let tuftTex = null').count('freeTexOnUpload(t);'), 3)
         # the realism pass: the walls', pitched roofs' and snow's atlases, uploaded once (wallArtTex)
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function wallArtTex(im, aniso) {', '  const WALL_ART_ON'))
-        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function glassArtTex(im, srgb, aniso) {', "  step('Glazing the towers'"))   # Round 191: the glass atlases and rooms
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 24)   # the definition and its twenty-three uses (the realism pass: wallArtTex, vegTex, the land mask, streetTex, vartSet's two, the containers' and the street signs'; Round 189: the storefronts' atlas and mask, through sfBitmapTex, which on a computer closes the ImageBitmap itself; Round 191: glassArtTex)
+        # Round 191: City Hall's atlas and mask (chLoadArt), its dials' two canvases, its courtyard's floor and its compass (fix2)
+        self.assertIn('CH.map.image = im; CH.map.needsUpdate = true; freeTexOnUpload(CH.map);', cut(s, '  function chLoadArt() {', '  const _chE'))
+        self.assertIn('freeTexOnUpload(new THREE.CanvasTexture(dc)), glow = freeTexOnUpload(new THREE.CanvasTexture(gv));', cut(s, '  function chDials(Y0) {', '  function chHands('))
+        # fix3: a phone paints the floor's two canvases on its first near frame, each freed at its upload
+        self.assertIn('const t2 = new THREE.CanvasTexture(chFloorCanvas()); t2.encoding = THREE.sRGBEncoding; t2.anisotropy = anisoOf(8); freeTexOnUpload(t2);', cut(s, '  function chFloor(Y0) {', '  function buildCityHallReal('))
+        self.assertIn('const c2 = new THREE.CanvasTexture(chCompassCanvas()); c2.anisotropy = anisoOf(8); freeTexOnUpload(c2);', cut(s, '  function chFloor(Y0) {', '  function buildCityHallReal('))
+        # Round 191's third review: a decoded image waits in GLORY.upq and goes up one a frame (gloryUpload)
+        self.assertIn('q.tex.dispose(); q.tex.image = q.im; q.tex.needsUpdate = true; freeTexOnUpload(q.tex);', cut(s, '  function gloryUpload() {', '  const gloryBytes'))
+        self.assertIn('if (im) GLORY.upq.push({ tex, im, then });', cut(s, '  function gloryLoad(tex, full, half, then, pre) {', '  function gloryUpload() {'))
+        self.assertIn('if (GLORY.upq.length) gloryUpload();', cut(s, '  function gloryStep(now) {', '  function gloryApi() {'))
+        self.assertIn('freeTexOnUpload(GLORY.signTex);', cut(s, '  function gloryFacadeMat(fr) {', '  function gloryHoursStep() {'))
+        # Round 191's review: a phone fetches Glory's art as bytes at the step and decodes it only once the eye comes near
+        # after Enter (the Round 189 rule: no art decoded through the far ring's build); since its second review a computer
+        # does too (about 29 MB of its GPU with the mips, held in every session though most never come to Old City)
+        mat = cut(s, '  function gloryFacadeMat(fr) {', '  function gloryHoursStep() {')
+        self.assertIn('      GLORY.pend = go;', mat)
+        self.assertNotIn('else go();', mat)
+        self.assertNotIn('const pre = isTouch ?', mat)
+        self.assertIn('if (GLORY.pend && PERF.enterT && d < GLORY_DECODE_R)', cut(s, '  function gloryStep(now) {', '  function gloryApi() {'))
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function glassArtTex(im, srgb, aniso) {', "  step('Glazing the towers'"))   # Round 192: the glass atlases and rooms
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 32)   # the definition and its uses (the realism pass's twenty-one, City Hall's seven, Glory's three: Round 191; glassArtTex: Round 192)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

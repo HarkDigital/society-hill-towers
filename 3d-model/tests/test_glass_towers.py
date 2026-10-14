@@ -1,4 +1,4 @@
-"""Round 191, the glass towers (Mike: "Can we also update the glass textures of the skyscrapers that are glass?").
+"""Round 192, the glass towers (Mike: "Can we also update the glass textures of the skyscrapers that are glass?").
 
 - glass_systems.json: the sixteen curtain-wall systems in range (F0 0.05 to 0.40, transmittance 0.08 to 0.85, bay 0.6 to
   3 m, floor 2.8 to 5 m), every towers.json glass tower named in 'towers' with a real system, every glass cladding kind

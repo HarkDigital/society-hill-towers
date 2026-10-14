@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the glass towers' curtain walls and the rooms behind them (Round 191, Mike: "Can we also update the glass
+"""Generate the glass towers' curtain walls and the rooms behind them (Round 192, Mike: "Can we also update the glass
 textures of the skyscrapers that are glass?"), from OpenAI's image API, written to lidar_cache/glass_art_raw/<stage>/<id>.png
 with a sidecar <id>.json (the prompt, the model, the size, when, the usage, and for an edit the template's sha).
 bake_glass_art.py cuts them into the atlases the curtain-wall shader reads (glass_systems.json names the systems).

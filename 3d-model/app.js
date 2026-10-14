@@ -681,6 +681,9 @@
   // ?real=0 the Cities: Skylines palette it replaces. On the post pipeline it adds ambient occlusion from the city's own
   // depth (AO) and a filmic grade in the composite; on every device a quieter lawn and a city's warm bounce by night
   const REAL = !/[?&]real=0\b/.test(location.search);
+  // Round 191 (Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"): Glory's own building on its
+  // own lot (rebuilds/glory.js), the realistic look's alone; ?glory=0 keeps the old builder on 120 Chestnut (the A/B)
+  const GLORY_ON = REAL && !/[?&]glory=0\b/.test(location.search);
   const AO = { on: REAL && POST.on && !/[?&]ao=0\b/.test(location.search), depthRT: null, a: null, b: null, mat: null, blur: null, copied: false, w: 0, h: 0 };
   const gradeU = { uSat: { value: REAL ? 0.84 : 1 }, uCon: { value: REAL ? 1.05 : 1 }, uSplit: { value: REAL ? 1 : 0 }, uAOK: { value: 1.0 }, uAOShow: { value: /[?&]ao=show\b/.test(location.search) ? 1 : 0 } };
   // the realism pass (gap 3, Mike judges the look on his iPhone): a phone has no post pipeline, so it kept r149's bare ACES
@@ -4695,7 +4698,7 @@
   const _envC = new THREE.Color(), _envH = new THREE.Color();
   let envLamp = 0;   // the lamps' level as realSky last saw it (lampUniform is declared far below this boot call)
   let envRT = null;
-  let cityEnvReady = false;   // Round 191: set once the city's probe (CITYENV, declared with the glass below) is built
+  let cityEnvReady = false;   // Round 192: set once the city's probe (CITYENV, declared with the glass below) is built
   function refreshEnv() {
     for (const k of ['cZenith', 'cHorizon', 'cGround', 'cSun']) envSky.material.uniforms[k].value.copy(skyMat.uniforms[k].value);
     envSky.material.uniforms.uSunVis.value = skyMat.uniforms.uSunVis.value;
@@ -4732,7 +4735,7 @@
     scene.environment = rt.texture;
     if (envRT) envRT.dispose();
     envRT = rt;
-    if (cityEnvReady) CITYENV.pending = true;   // Round 191: the city's probe follows on a frame of its own (cityEnvTick)
+    if (cityEnvReady) CITYENV.pending = true;   // Round 192: the city's probe follows on a frame of its own (cityEnvTick)
     waterEnvBake();   // realism, water: the water's own sky-only probe from the same generator (living water)
   }
   refreshEnv();
@@ -6471,7 +6474,11 @@ vec2 wRing(vec2 rc, float tt) {
     const b = v(r1[i]) * (1 - tx) + v(r1[i + 1]) * tx;
     return a * (1 - tz) + b * tz;
   }
-  function demAbs(x, z) {
+  function demAbs(x, z) {   // (Round 191: City Hall's ground the LiDAR's, chGrade below)
+    if (CH_GRADE) return chGrade(x, z, demAbs0(x, z));
+    return demAbs0(x, z);
+  }
+  function demAbs0(x, z) {
     // null DEM cells (NED voids over made land) must NOT fall back to 0 ASL — that is
     // below the model's water plane and floods whole blocks (the stadium site)
     let v = DEM0 ? sampleDem(DEM0, x, z, 8.34) : null;
@@ -6486,6 +6493,23 @@ vec2 wRing(vec2 rc, float tt) {
       v = sampleDem(G, clamp(x, G.x0, G.x0 + G.cell * (G.nx - 1)), clamp(z, G.z0, G.z0 + G.cell * (G.nz - 1)), 0);
     }
     return v == null ? 8.34 : v;
+  }
+  // Round 191 (City Hall, fix2): NED reads the ground under City Hall 2.4 to 3 m low (its courtyard a pit 2.7 m under
+  // Penn Square's sidewalks, the four fronts pulled 0.4 to 0.7 m down with it), where NOAA's 2022 LiDAR's ground returns
+  // put the courtyard at 13.91 m (NAVD88), 0.3 to 0.8 m OVER the sidewalks round it (13.06 to 13.61): the building stood
+  // 2 to 3 m into the drawn ground, its granite basement half under the pavement on every front. Under the realistic look
+  // the DEM there is a plane fitted to the LiDAR's ground within 4 m of the walls (rms 0.15 m) out to d0 beyond the
+  // building's box, eased back to NED by d1; the building stands on the measurements' own datum (CH_GRADE.datum, 13.57 m),
+  // its courtyard floor 0.34 over it (CITY_HALL.court0)
+  const CH_GRADE = REAL ? { cx: -1608.65, cz: -764.51, box: [-72.0, 72.0, -76.7, 72.1], d0: 10, d1: 40, g: [13.473, -0.00083, 0.00318], datum: 13.57 } : null;
+  function chGrade(x, z, v) {
+    const G = CH_GRADE, dx = x - G.cx, dz = z - G.cz;
+    if (dx > 150 || dx < -150 || dz > 150 || dz < -150) return v;
+    const U = dx * 0.986 + dz * 0.167, V = dx * -0.167 + dz * 0.986, b = G.box;   // the street grid's frame (fl, below)
+    const d = Math.hypot(Math.max(0, b[0] - U, U - b[1]), Math.max(0, b[2] - V, V - b[3]));
+    if (d >= G.d1) return v;
+    const g = G.g[0] + G.g[1] * U + G.g[2] * V, t = d <= G.d0 ? 0 : (d - G.d0) / (G.d1 - G.d0);
+    return g + (v - g) * t * t * (3 - 2 * t);
   }
   const DATUM = demAbs(towersCenter.x, towersCenter.z);
   const beyondDem = DEMC ? ((x, z) => x < DEMC.x0 || x > DEMC.x0 + DEMC.cell * (DEMC.nx - 1) || z < DEMC.z0 || z > DEMC.z0 + DEMC.cell * (DEMC.nz - 1)) : (() => false);
@@ -7614,6 +7638,9 @@ vec2 wRing(vec2 rc, float tt) {
     for (const r of D.roads) {
       if (r.pts.length < 2) continue;
       if (/Delancey|Cypress|American|Philip|Stamper|Addison|Panama|Peter's Way|Naudain|Kenilworth/i.test(r.name || '')) r.w = Math.min(r.w, 6);
+      // Round 191: Chestnut Street between 2nd and Front is a 9 m roadway between sidewalks of about 3.4 m (the facades stand
+      // 15.9 m apart); drawn 13 m it left 1.2 m of walk, and Glory's stoop and steps (2.3 m out from its front) stood in the lane
+      if (GLORY_ON && r.name === 'Chestnut Street' && r.pts.every((q) => q[0] > 50 && q[0] < 200 && q[1] > -330 && q[1] < -290)) { r.w = Math.min(r.w, 9); r.glWalk = true; }
       const openRuns = /motorway/.test(r.t) || /columbus boulevard|front street/i.test(r.name || '')
         ? [r.pts] : capClipRoad(r.pts);
       const tc = /^primary/.test(r.t) ? 2 : /^secondary/.test(r.t) ? 3 : /^tertiary/.test(r.t) ? 4 : /^(residential|living_street|unclassified)$/.test(r.t) ? 5 : /^service$/.test(r.t) ? 7 : 9;
@@ -7630,7 +7657,9 @@ vec2 wRing(vec2 rc, float tt) {
       const y = foot ? LAYER.footway : setts ? LAYER.road - 0.015 : LAYER.road;   // with a 1 cm jitter (below) the setts sit between the sidewalks' 0.16 to 0.22 and the asphalt's 0.24 to 0.30
       // lane class for the paint: divided (no centre yellow) on the highways and their links,
       // no markings on service and pedestrian ways; the brick parts never carry the attribute
-      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (/footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) || (REAL && /^(residential|unclassified)$/.test(r.t) && r.w < RES_UNMARKED_W) ? 2 : 0), jl: coreJX && coreJX[cr].length ? coreJX[cr] : null, noX: true };
+      // Round 191's review: the narrowed block of Chestnut by Glory is one-way (OSM's oneway, which traffic.b64 carries; the
+      // core's scene roads carry no such tag) with one lane between the parked cars, so no double yellow down its middle
+      const lane = foot ? null : { cls: /^(motorway|trunk)(_link)?$|^primary_link$/.test(r.t) ? 1 : (r.glWalk || /footway|path|steps|cycleway|pedestrian|service|living_street/.test(r.t) || (REAL && /^(residential|unclassified)$/.test(r.t) && r.w < RES_UNMARKED_W) ? 2 : 0), jl: coreJX && coreJX[cr].length ? coreJX[cr] : null, noX: true };
       {
         // Round 127 (Mike: "sidewalks/crosswalks overlapping look pretty bad"): the mapped footways and the
         // generated sidewalks wait until every carriageway is known (below)
@@ -7645,8 +7674,11 @@ vec2 wRing(vec2 rc, float tt) {
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
         if (walks) {
           const walkCol = /residential|tertiary|living_street/.test(r.t) ? cBrickWalk : cConcWalk;
-          const off = r.w / 2 + 1.55;
-          for (const s of [-1, 1]) walkJobs.push({ line: offsetPolyline(run, off * s), col: walkCol });
+          // Round 191: the narrowed block of Chestnut keeps its walks to the building line (3.7 m, not 3, from its new kerb),
+          // and on past it under the fronts (5 m: its third review found the meadow in a strip before 122 and 124, whose front
+          // stands back 1.1 to 1.3 m from the lot line beside Glory's stoop; under a front flush with the line it is unseen)
+          const wide = r.glWalk ? 5.0 : 3.0, off = r.w / 2 + 0.05 + wide / 2;
+          for (const s of [-1, 1]) walkJobs.push({ line: offsetPolyline(run, off * s), col: walkCol, w: wide });
         }
       }
     }
@@ -7685,7 +7717,7 @@ vec2 wRing(vec2 rc, float tt) {
     for (const j of walkJobs) {
       const pts = densify(j.line, 1.5), keep = pts.map((q) => !carHit(q[0], q[1], -0.3));
       if (keep.some((k) => !k)) cutWalk++;
-      for (const run of splitRuns(pts, keep)) brickParts.push({ geom: ribbon(run, 3.0, LAYER.sidewalk), color: j.col });
+      for (const run of splitRuns(pts, keep)) brickParts.push({ geom: ribbon(run, j.w || 3.0, LAYER.sidewalk), color: j.col });
     }
     for (const j of footJobs) {
       const pts = densify(j.run, 1.0), n = pts.length, cls = new Array(n);
@@ -8318,7 +8350,20 @@ vec2 wRing(vec2 rc, float tt) {
       // Glory Beer Bar & Kitchen, 126 Chestnut — MID-BLOCK between Front and 2nd
       // (numbers ascend westward from Front): the deep narrow lot whose front
       // hits the address line, area-weighted centroid (115.1, -283.8)
-      { x: 115.1, z: -283.8, r: 5, minArea: 100, spec: { mode: 'custom', key: 'glory' } },
+      ...(GLORY_ON ? [] : [{ x: 115.1, z: -283.8, r: 5, minArea: 100, spec: { mode: 'custom', key: 'glory' } }]),
+      // Round 191: that lot is 120 Chestnut (scene 2806, 4.9 m wide, four storeys), two east of Glory's; the OPA point for 126
+      // lies in 2541, which the Historical Commission's inventory, Sanborn's 1916 plate and the LiDAR all agree is 126 (five
+      // storeys, four bays, 8.6 m). Under the realistic look 2541 is held back for rebuilds/glory.js and 120 goes back to the
+      // generic fabric, whose shuttered four storeys are the real 120's; the key is not 'glory', so the old builder never
+      // runs on it. Its neighbours, which the new front showed up (Round 191's renders): 128-130 Chestnut (2716, the
+      // Flemish-bond Greek Revival of 1851, 8/8 sash over a six-bay shop front) takes the sash and the painted shop floor
+      // in its own dark red brick, and 122-124 (2540, the Neoclassical front of about 1925 over a four-bay shop front) the
+      // painted shop floor
+      ...(GLORY_ON ? [
+        { x: 99.03, z: -288.41, r: 3, minArea: 250, spec: { mode: 'custom', key: 'glory126' } },
+        { x: 88.65, z: -288.51, r: 3, minArea: 150, spec: { style: 5, color: '#86503f' } },
+        { x: 107.12, z: -283.31, r: 3, minArea: 150, spec: { style: 5 } },
+      ] : []),
       // Rotten Ralph's, 201 Chestnut — NW corner of 2nd & Chestnut. OSM maps the
       // lot as two shallow strips front-to-back; both go custom and the builder
       // spans them with one massing. The taller rear mass (the graffiti party
@@ -8588,7 +8633,7 @@ vec2 wRing(vec2 rc, float tt) {
     }
   `;
   let towerGlassMat = null, towerVarMat = null, rylandGlassMat = null, outerGlassMat = null;
-  // ---- the glass towers (Round 191, Mike: "Can we also update the glass textures of the skyscrapers that are glass?").
+  // ---- the glass towers (Round 192, Mike: "Can we also update the glass textures of the skyscrapers that are glass?").
   // Every glass wall is ONE draw now, physically shaded: the outer curtain-wall material (outerGlassMat) draws a curtain-wall
   // system per tower (glass_systems.json's sixteen: each one's bay, floor, module, F0, transmittance, pane bow and rooms, set
   // from the references; GLASS_ART carries them with the bake's atlases) instead of a skin of painted glass laid over a
@@ -8690,7 +8735,7 @@ vec2 wRing(vec2 rc, float tt) {
   }
   // the system's floor byte for appendBuilding (fh is in metres, written as decimetres): -(sys + 1)
   const glassFh = (sys) => -(sys + 1) / 10;
-  // ---- the city's reflection (Round 191, CITYENV). The glass reflected only refreshEnv's probe (a sky dome, a disc and nine
+  // ---- the city's reflection (Round 192, CITYENV). The glass reflected only refreshEnv's probe (a sky dome, a disc and nine
   // boxes), so no tower, street or river ever showed in a curtain wall and the skyline read as blue plastic. This is a PMREM
   // of a proxy of the city built from the data ('Mirroring the city'): every tower the loops raise at 25 m and up as its
   // footprint extruded (an oriented box past 12 vertices), the Liberty Places, City Hall and the Society Hill towers, the
@@ -10865,6 +10910,2509 @@ vec2 wRing(vec2 rc, float tt) {
   // floor, brick and top storey, the brick shaft (32 m square), the pale stage (24) and its attic (21), the lantern's head,
   // its radius and the dome's
   const CH_DIMS = { base0: 7, base1: 21.5, base2: 26, shaftW: 32, shaft1: 58, stageW: 24, stage1: 67, atticW: 21, attic1: 70, lantern1: 80.5, lanternR: 7.2, domeR: 6.6 };
+  // ---- City Hall rebuilt (Round 191, Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped"; he
+  // wants photographic realism and a fast city). The Round 81 block stood 18.5 m too far south (its south wing in South
+  // Penn Square's roadway, lawn where the north wing stands), its wings and pavilions were boxes under white pyramids and
+  // its dome a pointed stack of frustums. Rebuilt under the realistic look to the building as measured: NOAA's 2022 QL1
+  // LiDAR (41 points a square metre), OSM relation 4720912 and Frederick Turner's 1909 booklet. Everything is laid in the
+  // building's own frame: B0 a point of Penn Square, U east along the street grid's fl.n, V south along fl.d, y metres
+  // over its ground (one datum: the 0.7 m fall to the north shows as the plinth's reveal). The facades are generated
+  // photographs (fetch_cityhall_art.py, bake_cityhall_art.py: one atlas, CITYHALL_ART) laid on the walls cell by cell,
+  // and whatever stands proud of a wall (the cornices, the dormers, the pedestals) wears the same picture projected
+  // straight on from its wall, so the relief and the painting agree. One mesh near (the stone, the tower, the roofs, the
+  // portals: one program), one far (the same program: its parts as boxes and two-step mansards, the atlas once it is
+  // up, the cells' mean colours before), the dials apart (their canvas, the hands set to the model's clock); Penn, the
+  // eagles and the four groups at the dome's foot ride the night's themed parts in their bronze. ?real=0 keeps Round 81's
+  // block as it was
+  const CITY_HALL = {
+    B0: [-1608.65, -764.51],
+    // the storeys over the ground: the water table, the basement (granite), the principal storey and the main cornice
+    st: { water: 1.5, base: 5.57, princ: 15.78, main: 26.63 },
+    court0: 0.34,   // the courtyard's floor over the datum (fix2: the LiDAR's 13.91 m against the measurements' 13.57)
+    // the outer fronts' faces (V for the north and south fronts, |U| for the east and west) and their spans
+    N: { curtain: -62.9, flank: -68.9, corner: -67.0, centre: -75.0, bay: -76.7 },
+    S: { curtain: 63.1, flank: 65.5, corner: 67.8, centre: 70.1, bay: 72.1 },
+    E: { curtain: 63.2, flank: 65.6, corner: 67.6, centre: 70.4, bay: 72.0 },
+    spanNS: { centre: 13.5, bay: 6, flank: 30, curtain: 50, corner: 67.6 },        // |U| where each part ends
+    spanEW: { centre: [-13.7, 13.3], bay: [-6.5, 5.5], flank: [-30.5, 29], curtain: [-50.5, 50.5] },
+    cornerV: [-67.0, 67.8],
+    court: [[-34.5, -40.9], [34.5, -40.9], [34.5, 20.8], [7, 20.8], [7, 33], [-7, 33], [-7, 20.8], [-34.5, 20.8]],   // the courtyard, its south forecourt in it
+    courtTop: 31.5,
+    wells: [[24.5, 46.2, 28.6, 45.3], [-46.2, -24.5, 28.6, 45.3]],   // the south wing's two light wells, floored at 5 m
+    turrets: [[33.5, -13.7, 41, 48.5], [-33.5, -13.7, 41, 48.5], [33.5, 11.3, 41, 48.5], [-33.5, 11.3, 41, 48.5], [9.5, 18.8, 40.5, 47.6], [-9.5, 18.8, 40.5, 47.6]],
+    stairs: [[44.7, -42.7, 43.5], [44.7, 45.5, 44.0], [-44.7, 45.5, 44.2], [-44.7, -42.7, 40.5]],
+    apse: { c: [0, -26.0], r: 6.3, top: 24.5 },
+    roofs: { curtainDeck: 36.0, curb: 32.8, flankDeck: 39.4, centreBody: 49.0, crown: [57.0, 59.6, 61.8, 73.5], cornerCurb: 45.4, cornerCap: 48.8, cornerPole: 58.4 },
+    centreTop: 39.28, cornerTop: 38.13,
+    tower: { c: [0, -37.2], base: [-50.9, -26.0, 13.5, 26.6], batter: [26.6, 40, 11.3], shaft: [40, 64.5, 11.3], bal1: [64.5, 66, 12.7, 10], mid: [66, 87.5, 10.5],
+      bal2: [87.5, 90.2, 12.5], belv: [90.2, 102.8, 10.5], clock: [102.8, 123.4, 10, 117, 2.5],
+      dome: [[123.4, 8.6], [127, 8.5], [130, 8.2], [133, 7.6], [136, 6.8], [139, 5.8], [142, 4.6]],
+      // the lantern (fix2, Philadelphia_City_Hall-zoom.jpg; the LiDAR saw nothing under the gallery's overhang): the neck off
+      // the dome's head, the ring wall standing out to the gallery's line, the glazed gallery behind its railing under its
+      // roof (the LiDAR's 149.5 to 150.5 at 5.5), the fluted cupola and Penn's pedestal; [y0, y1, r] and the cupola [y0, y1,
+      // r0, r1]
+      lantern: { neck: [142, 143.3, 4.0], ring: [143.3, 146.6, 5.35], gallery: [146.6, 149.5, 4.85, 5.45], roof: [149.5, 150.2, 5.6], cupola: [150.2, 154.3, 3.05, 1.45], ped: [154.3, 155.6, 1.3] },
+      penn: [155.6, 167.0] },
+    // OSM's outer ring (scene metres): what the outer districts' loop leaves to this model (grown 2 m)
+    ring: [[-1541.9, -754.0], [-1543.9, -741.6], [-1549.1, -742.4], [-1551.3, -728.9], [-1553.2, -729.2], [-1557.0, -705.7], [-1553.2, -705.1], [-1555.7, -689.8], [-1568.9, -691.9], [-1568.0, -697.4], [-1591.7, -701.2], [-1592.0, -699.0], [-1605.4, -701.1], [-1606.4, -695.4], [-1620.9, -697.7], [-1633.2, -699.7], [-1632.2, -705.8], [-1645.8, -708.0], [-1645.5, -709.8], [-1662.4, -712.5], [-1668.6, -713.6], [-1669.2, -710.0], [-1680.8, -711.9], [-1680.5, -713.7], [-1678.9, -723.9], [-1676.7, -723.5], [-1672.5, -749.3], [-1674.4, -749.6], [-1671.9, -764.2], [-1675.5, -764.8], [-1674.4, -771.1], [-1676.2, -771.4], [-1675.5, -775.6], [-1674.4, -781.9], [-1672.9, -781.6], [-1672.0, -786.8], [-1668.2, -786.1], [-1665.6, -801.6], [-1664.1, -801.9], [-1660.8, -824.3], [-1665.6, -825.0], [-1663.1, -841.9], [-1649.6, -839.8], [-1650.2, -835.9], [-1650.7, -833.1], [-1642.9, -831.9], [-1624.6, -829.2], [-1623.9, -834.0], [-1609.3, -831.8], [-1608.5, -836.9], [-1602.4, -836.0], [-1602.1, -837.9], [-1598.1, -837.2], [-1597.2, -837.1], [-1596.7, -837.0], [-1591.6, -836.3], [-1591.9, -834.4], [-1586.3, -833.5], [-1587.1, -828.3], [-1571.6, -825.9], [-1572.4, -820.7], [-1546.4, -816.7], [-1546.0, -819.1], [-1545.6, -821.6], [-1533.8, -819.8], [-1536.1, -805.3], [-1540.8, -806.1], [-1544.6, -782.3], [-1542.6, -782.0], [-1544.9, -767.6], [-1539.9, -766.9]],
+  };
+  // the night's plain-night wash, the photographs' warm amber (Round 109); the 2024 LED system's default is a static
+  // white, about 0xf3ead9 (3500 K): one constant, Mike's call
+  const CH_HOUSE = new THREE.Color(0.38, 0.32, 0.23);
+  // the v the centre pavilions' body walls over the wings start at (26.13 m), so their picture runs at its own size to the
+  // attic's cornice at 39.28 (fix2)
+  const CH_BODY_V = (26.13 - (39.28 - 31.5)) / 31.5;
+  const CH_ON = REAL && typeof CITYHALL_ART !== 'undefined' && !!CITYHALL_ART && !!CITYHALL_ART.cells;
+  // the near level within this of the building's box, the far one beyond, 40 m of hysteresis (fix2, the review: at 650 m
+  // the building is 40 px wide and the forced pairs differed by a mean of 0.15 to 1.07, so a computer switches at 400 as a
+  // phone does at 420, saving the near level's 48k triangles and 4 draws over every Center City flight between); a phone
+  // asks for the art within CH_ART_R, and at tier 2, the far level alone, takes the half art within CH_NEAR_R
+  const CH_NEAR_R = isTouch ? 420 : 400, CH_HYST = 40, CH_ART_R = 1000;
+  // the groups' pedestals at the dome's foot (fix3): their centres d metres along each diagonal axis from the tower's, their
+  // height and radius (the octagon's chamfer stands 12.37 m out along the diagonal)
+  const CH_PED = { d: 7.78, h: 1.5, r: 1.1 };
+  // Dilworth Park's café, the glass pavilion at the plaza's south-west corner (fix1): the wide record whose centroid lies
+  // within 14 m of this point (nothing else stands within 25 m of it); the wide loop leaves its footprint here (.poly, .c)
+  const CH_CAFE = [-1709.0, -716.0];
+  // Dilworth Park's two glass headhouses (fix2): the wide records whose outline holds, or passes within 1.5 m of, a point
+  // the review's taps hit on them (frame U -108, V -11 and +5), and its café (fix3, below); the wide loop leaves them here
+  // (.recs) and chCafe builds them in glass
+  // fix3 (the review: the box at the plaza's north-west corner wore a deli's storefront, red awnings and two boards): OSM's way
+  // 333931838, building=retail, one level, with the Dilworth Park Café's node in it, the north pavilion of glass; taken the
+  // same way, and its ring in REBUILD_OCC keeps the storefronts off it
+  const CH_HEADHOUSE = { pts: [[-1713.6, -793.5], [-1716.0, -777.6], [-1682.7, -860.3]], recs: [] };
+  const CH = { built: false, lod: 'both', near: null, far: null, dial: null, floor: null, mat: null, art: 'none', artOn: { value: 0 },
+    tris: {}, tops: {}, cells: [], bbox: null, minute: -1, hands: null, late: { value: new THREE.Vector2(1, 1) }, err: null };
+  // the building frame to the scene: the world point of (U, y, V) and the world direction of (nu, ny, nv)
+  function chWorld(U, y, V, Y0) { const B = CITY_HALL.B0; return [B[0] + fl.nx * U + fl.dx * V, Y0 + y, B[1] + fl.nz * U + fl.dz * V]; }
+  // the geometry under construction, in the building frame: positions, normals, uv (a cell's own 0 to 1, or metres on an
+  // untextured part), aK (the cell's number, or minus the material's kind; the face's seed for the night's rooms) and the
+  // colour (sRGB bytes: the cell's mean, or the material's own; its fourth byte a shade the picture takes too, the
+  // passages' dark middles: fix1)
+  function chBuf() {
+    const b = { P: [], N: [], T: [], K: [], C: [], I: [], nv: 0 };
+    b.v = (p, n, uv, k, seed, col) => { b.P.push(p[0], p[1], p[2]); b.N.push(n[0], n[1], n[2]); b.T.push(uv[0], uv[1]); b.K.push(k, seed); b.C.push(col[0], col[1], col[2], col[3] == null ? 255 : col[3]); return b.nv++; };
+    // a triangle wound to face `want` (its normal): any helper may hand its corners in either order
+    b.tri = (a, c, d, want) => {
+      const P = b.P, ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2];
+      const ux = P[c * 3] - ax, uy = P[c * 3 + 1] - ay, uz = P[c * 3 + 2] - az, vx = P[d * 3] - ax, vy = P[d * 3 + 1] - ay, vz = P[d * 3 + 2] - az;
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      if (nx * want[0] + ny * want[1] + nz * want[2] < 0) b.I.push(a, d, c); else b.I.push(a, c, d);
+    };
+    b.quad = (a, c, d, e, want) => { b.tri(a, c, d, want); b.tri(a, d, e, want); };
+    return b;
+  }
+  // the buffer to a BufferGeometry in the scene's frame (indexed, every stream a multiple of 4 bytes: the colour as four
+  // normalized bytes, never three, Round 158)
+  function chGeometry(b, Y0) {
+    const n = b.nv, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), B = CITY_HALL.B0;
+    for (let i = 0; i < n; i++) {
+      const U = b.P[i * 3], y = b.P[i * 3 + 1], V = b.P[i * 3 + 2];
+      pos[i * 3] = B[0] + fl.nx * U + fl.dx * V; pos[i * 3 + 1] = Y0 + y; pos[i * 3 + 2] = B[1] + fl.nz * U + fl.dz * V;
+      const nu = b.N[i * 3], ny = b.N[i * 3 + 1], nv = b.N[i * 3 + 2];
+      let x = fl.nx * nu + fl.dx * nv, z = fl.nz * nu + fl.dz * nv; const l = Math.hypot(x, ny, z) || 1;
+      nor[i * 3] = x / l; nor[i * 3 + 1] = ny / l; nor[i * 3 + 2] = z / l;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(b.T), 2));
+    g.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(b.K), 2));
+    g.setAttribute('aCol', new THREE.BufferAttribute(new Uint8Array(b.C), 4, true));
+    g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(b.I, 1) : new THREE.Uint16BufferAttribute(b.I, 1));
+    g.computeBoundingSphere();
+    return g;
+  }
+  // the untextured materials (aK.x = -kind): their sRGB colours and roughness live in the shader by kind
+  // (fix1: trim, the carved white ribs and curbs that frame every slate face, beaded by the shader; glass, the decks'
+  // skylights)
+  // (fix3: the glass pavilions' clear glass with its slim mullions, the statues' bronze, the passages' polished red granite
+  // columns, the black iron of the lamps and railings, and a lamp's lit glass)
+  const CHK = { slate: 1, crest: 2, deck: 3, copper: 4, vault: 5, dial: 6, pave: 7, dark: 8, paint: 9, marble: 10, flag: 11, trim: 12, glass: 13, pglass: 14, bronze: 15, rgranite: 16, iron: 17, lamp: 18 };
+  // (fix2, the review: the slate read blue, (73, 88, 102), and the decks blue-grey, where the photographs read a neutral dark
+  // charcoal slate and dark tar; the vaults' painted iron a shade lighter, as it sees the passage floor's bounce, not the sky)
+  const CH_KCOL = { 1: [0x4a, 0x4b, 0x4d], 2: [0xe4, 0xe1, 0xd8], 3: [0x3c, 0x3c, 0x3b], 4: [0x5f, 0x9a, 0x86], 5: [0x7a, 0x7b, 0x77], 6: [0x5a, 0x90, 0x8a],
+    7: [0x7f, 0x7c, 0x76], 8: [0x4a, 0x47, 0x43], 9: [0xc8, 0xcc, 0xd1], 10: [0xc9, 0xc4, 0xb8], 11: [0xb2, 0x22, 0x34], 12: [0xdc, 0xd8, 0xce], 13: [0x2c, 0x34, 0x3a],
+    14: [0x26, 0x2d, 0x31], 15: [0x3b, 0x31, 0x25], 16: [0x8a, 0x48, 0x38], 17: [0x24, 0x26, 0x25], 18: [0xe4, 0xd6, 0xae] };
+  // ---- City Hall's sculpture (fix3, the review: the groups pawns with ball heads and stick arms on black boxes, the eagles
+  // balls with bat wings on posts, Penn a peg doll of boxes, a sphere and a bowler): forms, not stacked primitives. A shell
+  // is rings round an upright axis (a robe, a coat, a barrel), each ring its depth and width, its centre's offset and the
+  // ripple of its folds; a tube runs along a path of points and radii (a limb, a sleeve, a neck, a scroll); a blob is a
+  // scaled sphere on a basis (a head, a hand). Every form has smooth normals and is laid in its figure's own frame (x
+  // forward, y up, z to its right), then taken where it stands by the figure's matrix
+  const CHS = {
+    // rings [y, rx, rz, ox, oz, fold, k, phase] from the foot up; a0 to a1 the arc (0 forward, toward +z the right), open
+    // between them; o.top / o.bot cap the last and first ring
+    shell(rings, n, o = {}) {
+      const a0 = o.a0 || 0, a1 = o.a1 == null ? Math.PI * 2 : o.a1, closed = a1 - a0 > Math.PI * 2 - 1e-6, cols = closed ? n : n + 1, P = [], I = [];
+      for (const [y, rx, rz, ox = 0, oz = 0, fold = 0, k = 9, ph = 0] of rings) {
+        for (let j = 0; j < cols; j++) {
+          const a = a0 + (a1 - a0) * j / n, f = 1 + fold * Math.cos(k * a + ph);
+          P.push(ox + Math.cos(a) * rx * f, y, oz + Math.sin(a) * rz * f);
+        }
+      }
+      const R = rings.length;
+      for (let i = 0; i + 1 < R; i++) for (let j = 0; j < n; j++) {
+        const a = i * cols + j, b = i * cols + (j + 1) % cols, c = (i + 1) * cols + (j + 1) % cols, d = (i + 1) * cols + j;
+        I.push(a, c, b, a, d, c);
+      }
+      const cap = (ri, up) => {
+        const [y, , , ox = 0, oz = 0] = rings[ri], c = P.length / 3;
+        P.push(ox, y + (up ? 1 : -1) * (o.dome || 0), oz);
+        for (let j = 0; j < n; j++) { const a = ri * cols + j, b = ri * cols + (j + 1) % cols; if (up) I.push(c, b, a); else I.push(c, a, b); }
+      };
+      if (o.top) cap(R - 1, true);
+      if (o.bot) cap(0, false);
+      return CHS.geom(P, I);
+    },
+    // a path [[x, y, z, r] or [x, y, z, r, rb]] (rb: the section's second radius, along the frame's binormal), n sides
+    tube(path, n, o = {}) {
+      const P = [], I = [], V = (a) => new THREE.Vector3(a[0], a[1], a[2]);
+      let N0 = null;
+      path.forEach((p, i) => {
+        const t = V(path[Math.min(i + 1, path.length - 1)]).sub(V(path[Math.max(i - 1, 0)])).normalize();
+        if (!N0) { const ref = Math.abs(t.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0); N0 = ref.clone().sub(t.clone().multiplyScalar(ref.dot(t))).normalize(); }
+        else N0 = N0.clone().sub(t.clone().multiplyScalar(N0.dot(t))).normalize();
+        const Bn = new THREE.Vector3().crossVectors(t, N0), r = p[3], rb = p[4] == null ? r : p[4];
+        for (let j = 0; j < n; j++) {
+          const a = j / n * Math.PI * 2, c = Math.cos(a), s = Math.sin(a);
+          P.push(p[0] + N0.x * c * r + Bn.x * s * rb, p[1] + N0.y * c * r + Bn.y * s * rb, p[2] + N0.z * c * r + Bn.z * s * rb);
+        }
+      });
+      for (let i = 0; i + 1 < path.length; i++) for (let j = 0; j < n; j++) {
+        const a = i * n + j, b = i * n + (j + 1) % n, c = (i + 1) * n + (j + 1) % n, d = (i + 1) * n + j;
+        I.push(a, b, c, a, c, d);
+      }
+      const capAt = (i, end) => {
+        const c = P.length / 3, p = path[i], q = path[end ? i - 1 : i + 1], t = V(p).sub(V(q)).normalize(), ext = (o.round || 0) * p[3];
+        P.push(p[0] + t.x * ext, p[1] + t.y * ext, p[2] + t.z * ext);
+        for (let j = 0; j < n; j++) { const a = i * n + j, b = i * n + (j + 1) % n; if (end) I.push(c, a, b); else I.push(c, b, a); }
+      };
+      if (o.cap0 !== false) capAt(0, false);
+      if (o.cap1 !== false) capAt(path.length - 1, true);
+      return CHS.orient(CHS.geom(P, I));
+    },
+    // a blob: an ellipsoid of radii r (along the basis's x, y, z) at c, the basis given as unit x and y (z follows)
+    blob(c, r, ws, hs, bx, by) {
+      const g = new THREE.SphereGeometry(1, ws, hs);
+      g.scale(r[0], r[1], r[2]);
+      if (bx) { const X = new THREE.Vector3(...bx).normalize(), Y0 = new THREE.Vector3(...(by || [0, 1, 0])), Z = new THREE.Vector3().crossVectors(X, Y0).normalize(), Y = new THREE.Vector3().crossVectors(Z, X); g.applyMatrix4(new THREE.Matrix4().makeBasis(X, Y, Z)); }
+      g.translate(c[0], c[1], c[2]);
+      return g;
+    },
+    // a lathe of [r, y] pairs round the y axis (its normals made unit: r149's lathe leaves its last row's at the last
+    // segment's length)
+    lathe(prof, n) {
+      const g = new THREE.LatheGeometry(prof.map(([r, y]) => new THREE.Vector2(Math.max(r, 1e-3), y)), n), a = g.attributes.normal.array;
+      for (let i = 0; i < a.length; i += 3) { const l = Math.hypot(a[i], a[i + 1], a[i + 2]) || 1; a[i] /= l; a[i + 1] /= l; a[i + 2] /= l; }
+      return g;
+    },
+    // a flat outline [[x, y]] given a thickness d along z (centred), on the xy plane
+    plate(pts, d) {
+      const sh = new THREE.Shape(); pts.forEach(([x, y], i) => (i ? sh.lineTo(x, y) : sh.moveTo(x, y)));
+      const g = new THREE.ExtrudeGeometry(sh, { depth: d, bevelEnabled: false, steps: 1 }); g.translate(0, 0, -d / 2);
+      return g;
+    },
+    geom(P, I) {
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+      g.setIndex(I); g.computeVertexNormals();
+      return g;
+    },
+    // a tube's winding turned so its normals face out from its path (a frame's handedness flips it)
+    orient(g) {
+      const p = g.attributes.position.array, ix = g.index.array, n = g.attributes.normal.array;
+      let out = 0, cx = 0, cy = 0, cz = 0; const nv = p.length / 3;
+      for (let i = 0; i < nv; i++) { cx += p[i * 3]; cy += p[i * 3 + 1]; cz += p[i * 3 + 2]; }
+      cx /= nv; cy /= nv; cz /= nv;
+      for (let i = 0; i < nv; i++) out += (p[i * 3] - cx) * n[i * 3] + (p[i * 3 + 1] - cy) * n[i * 3 + 1] + (p[i * 3 + 2] - cz) * n[i * 3 + 2];
+      if (out < 0) { for (let t = 0; t < ix.length; t += 3) { const s = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = s; } g.computeVertexNormals(); }
+      return g;
+    },
+    // a figure's matrix: it faces f (x, z), stands at (x, y, z), scaled s; right-handed (f, up, f x up), so no mirror
+    at(f, x, y, z, s) {
+      const l = Math.hypot(f[0], f[1]) || 1, F = new THREE.Vector3(f[0] / l, 0, f[1] / l), R = new THREE.Vector3(-F.z, 0, F.x);
+      return new THREE.Matrix4().makeBasis(F, new THREE.Vector3(0, 1, 0), R).scale(new THREE.Vector3(s || 1, s || 1, s || 1)).setPosition(x, y, z);
+    },
+    tris(list) { let t = 0; for (const [g] of list) t += (g.index ? g.index.count : g.attributes.position.count) / 3; return t; },
+  };
+  // the figures, each a list of [form, tone] (tone 0 the bronze, 1 its darker shade) in its own frame, its foot at the origin
+  // William Penn (Alexander Milne Calder, 1892; Williampennfront.jpg, Williampennleftside.jpg, the zoom and the postcard):
+  // the pose Mike approved from the postcard (Round 84; fix1 put the arms as the photographs show them): the right arm out
+  // over the city a little down, the hand open and palm down; the charter rolled in the left hand against the hip; a tree
+  // stump behind the left leg; the low-crowned, broad-brimmed Quaker hat over long hair; the coat to the knee with its full
+  // skirts open over the waistcoat, its sleeves tapered to big turned-back cuffs; breeches, stockings, buckled shoes. Built
+  // at its natural measure (10.98 to the hat's crown) and taken to the statue's 11.4 m
+  function chPennForm(lo) {
+    const n = lo ? 14 : 24, nt = lo ? 7 : 10, out = [], put = (g, t) => out.push([g, t || 0]);
+    // the base drum he stands on, its moulding
+    put(CHS.lathe([[1.62, -0.9], [1.85, -0.85], [1.85, -0.62], [1.68, -0.55], [1.7, 0], [1.52, 0.02], [1.5, 0.3], [0.001, 0.3]], n), 1);
+    // shoes (their buckles a bead on the instep) and legs: stockings to the knee, the breeches' band and thighs into the coat
+    for (const [sz, fw] of [[-1, 0.22], [1, 0]]) {
+      const z = sz * 0.42;
+      put(CHS.blob([0.32 + fw, 0.42, z], [0.66, 0.2, 0.25], lo ? 8 : 12, lo ? 5 : 7), 1);
+      put(CHS.blob([0.72 + fw, 0.56, z], [0.1, 0.07, 0.14], 5, 3), 1);
+      put(CHS.tube([[0.04 + fw * 0.5, 0.48, z, 0.19], [0.06 + fw * 0.4, 1.1, z, 0.27], [0.06 + fw * 0.3, 1.75, z * 1.02, 0.33], [0.06 + fw * 0.2, 2.45, z, 0.27], [0.05, 2.75, z, 0.28], [0.06, 2.95, z, 0.34], [0.06, 3.7, z * 0.97, 0.42], [0.02, 4.5, z * 0.88, 0.48]], nt));
+    }
+    // the stump behind the left leg, its bark in ridges
+    put(CHS.shell([[0, 0.62, 0.6, -0.9, -0.58, 0.07, 7], [1.4, 0.55, 0.54, -0.92, -0.56, 0.07, 7, 0.4], [2.8, 0.5, 0.48, -0.9, -0.54, 0.06, 7, 0.9], [3.75, 0.44, 0.44, -0.86, -0.52, 0.05, 7, 1.3]], lo ? 7 : 10, { top: true, dome: 0.12 }), 1);
+    // the waistcoat inside the coat's open front, to the hips
+    put(CHS.shell([[4.0, 0.7, 0.86, 0.02], [4.6, 0.72, 0.86, 0.02], [5.3, 0.72, 0.9, 0.02], [6.3, 0.8, 0.98, 0.02], [7.3, 0.8, 1.0, 0.01], [8.0, 0.66, 0.98]], lo ? 12 : 18), 0);
+    // the coat's skirts, open in front, flaring to the knee in deep folds behind and at the sides
+    const fold = (y) => (y < 4.6 ? 0.075 : y < 5.4 ? 0.03 : 0.008);
+    put(CHS.shell([[3.0, 1.3, 1.5, -0.16, 0, fold(3.0), 11], [3.5, 1.18, 1.38, -0.13, 0, fold(3.5), 11, 0.15], [4.2, 1.0, 1.18, -0.08, 0, fold(4.2), 11, 0.3], [4.9, 0.84, 1.02, -0.04, 0, fold(4.9), 11, 0.4], [5.4, 0.8, 0.98, -0.03, 0, 0.01, 11, 0.4]], n, { a0: 0.42, a1: Math.PI * 2 - 0.42 }), 0);
+    // its body to the shoulders, open over the waistcoat to the chest, the shoulders' slope to the neck
+    put(CHS.shell([[5.35, 0.8, 0.98, -0.03], [6.2, 0.86, 1.08], [7.0, 0.9, 1.16], [7.7, 0.86, 1.24], [8.25, 0.72, 1.3], [8.6, 0.5, 0.95], [8.8, 0.32, 0.45]], n, { a0: 0.3, a1: Math.PI * 2 - 0.3 }), 0);
+    put(CHS.shell([[7.9, 0.66, 0.98], [8.25, 0.68, 1.1], [8.6, 0.48, 0.9], [8.82, 0.31, 0.44]], n, { a0: -0.32, a1: 0.32 }), 0);   // the coat's collar over the open chest
+    // the cravat, the neck, the head (its nose and chin), the long hair falling to the shoulders behind and at the sides
+    put(CHS.blob([0.62, 8.35, 0], [0.16, 0.34, 0.22], 6, 5), 1);
+    put(CHS.tube([[0.02, 8.6, 0, 0.3], [0.06, 9.2, 0, 0.29]], nt, { cap0: false }));
+    put(CHS.blob([0.08, 9.78, 0], [0.54, 0.7, 0.47], lo ? 10 : 16, lo ? 8 : 12));
+    put(CHS.blob([0.53, 9.7, 0], [0.08, 0.15, 0.065], 5, 4));
+    put(CHS.blob([0.38, 9.32, 0], [0.22, 0.2, 0.3], 6, 4));
+    put(CHS.shell([[8.75, 0.52, 0.66, -0.16, 0, 0.06, 15], [9.2, 0.6, 0.62, -0.12, 0, 0.06, 15, 0.5], [9.8, 0.62, 0.58, -0.08, 0, 0.05, 15, 1.0], [10.25, 0.56, 0.52, -0.04, 0, 0.03, 15, 1.5]], lo ? 10 : 18, { a0: 0.95, a1: Math.PI * 2 - 0.95 }), 1);
+    // the hat: the broad brim, a little turned up at the sides, and the low crown
+    put(CHS.lathe([[0.58, 10.3], [1.3, 10.34], [1.4, 10.43], [1.33, 10.48], [0.62, 10.46]], n).scale(1, 1, 0.95), 1);
+    put(CHS.shell([[10.42, 0.64, 0.6], [10.8, 0.66, 0.62], [10.93, 0.58, 0.55]], n, { top: true, dome: 0.05 }), 1);
+    // the arms: a sleeve from the shoulder tapering to a big turned-back cuff, the hand out of it
+    const arm = (S, d1, l1, d2, l2, handUp) => {
+      const v = (a) => new THREE.Vector3(...a), A = v(S), D1 = v(d1).normalize(), D2 = v(d2).normalize();
+      const E = A.clone().addScaledVector(D1, l1), Wr = E.clone().addScaledVector(D2, l2), C0 = Wr.clone().addScaledVector(D2, -0.5);
+      const p = (q, r) => [q.x, q.y, q.z, r];
+      put(CHS.tube([p(A.clone().addScaledVector(D1, -0.15), 0.4), p(A.clone().addScaledVector(D1, 0.5), 0.37), p(E.clone().addScaledVector(D1, -0.1), 0.31), p(E.clone().addScaledVector(D2, 0.2), 0.3), p(C0, 0.28)], nt, { cap0: false }));
+      put(CHS.tube([p(C0.clone().addScaledVector(D2, -0.02), 0.3), p(C0.clone().addScaledVector(D2, 0.04), 0.43), p(Wr, 0.46)], nt), 1);
+      const H = Wr.clone().addScaledVector(D2, 0.4), side = new THREE.Vector3().crossVectors(D2, v(handUp)).normalize();
+      put(CHS.blob([H.x, H.y, H.z], [0.46, 0.09, 0.24], 8, 5, [D2.x, D2.y, D2.z], handUp));   // the open hand, its fingers together
+      const T = Wr.clone().addScaledVector(D2, 0.16);
+      put(CHS.tube([p(T.clone().addScaledVector(side, -0.2), 0.065), p(T.clone().addScaledVector(side, -0.3).addScaledVector(D2, 0.2), 0.05)], 5));   // its thumb
+      return H;
+    };
+    arm([0.0, 8.25, 1.12], [0.55, -0.22, 0.8], 1.5, [0.88, -0.14, 0.45], 1.3, [0, 1, 0]);            // the right, out over the city, palm down
+    const Hl = arm([0.0, 8.25, -1.12], [-0.02, -1, -0.12], 1.5, [0.8, -0.38, 0.1], 1.0, [0, 0, -1]);   // the left, down to the hip, the hand on edge round the charter
+    // the charter, a rolled scroll gripped at its middle in the left hand, along the thigh and slanting forward and down, its
+    // rolled ends a little proud
+    { const d = new THREE.Vector3(0.8, -0.42, 0.12).normalize(), c = Hl.clone().add(new THREE.Vector3(0.02, -0.04, 0.04)), P = (t, r) => [c.x + d.x * t, c.y + d.y * t, c.z + d.z * t, r];
+      put(CHS.tube([P(-0.75, 0.27), P(-0.65, 0.25), P(0, 0.23), P(0.95, 0.25), P(1.05, 0.27)], nt), 1);   // along the forearm's line, out of the fist
+      // the charter's loose end, a sheet hanging from the roll's far end
+      const e = c.clone().addScaledVector(d, 0.9), sh = CHS.plate([[0, 0], [0.5, 0], [0.46, -1.05], [0.04, -1.0]], 0.04);
+      sh.applyMatrix4(new THREE.Matrix4().makeBasis(d.clone().setY(0).normalize(), new THREE.Vector3(0, 1, 0), new THREE.Vector3().crossVectors(d.clone().setY(0).normalize(), new THREE.Vector3(0, 1, 0))));
+      sh.translate(e.x - d.x * 0.45, e.y - 0.1, e.z - d.z * 0.45 - 0.22); put(sh, 1); }
+    return out;
+  }
+  // a figure of a group at the dome's foot (Calder's groups of the first settlers and the Lenape, dark against the sky in the
+  // photographs: a man with a staff raised, a woman with a child on her hip, a dog at their feet): its robe to the ground in
+  // deep folds, a mantle over a shoulder, its torso into the robe, its sleeves into the arms, a head under hair or a hood
+  function chGroupForm(lo) {
+    const n = lo ? 12 : 30, nt = lo ? 6 : 10, out = [], put = (g, t) => out.push([g, t || 0]);
+    const v = (a) => new THREE.Vector3(...a);
+    // the man, a little to the left and back, his staff raised over the city in his right hand
+    {
+      const X = -0.2, Z = -0.42;
+      put(CHS.shell([[0.0, 0.48, 0.5, X, Z, 0.09, 9], [0.7, 0.42, 0.46, X, Z, 0.08, 9, 0.3], [1.5, 0.38, 0.44, X + 0.02, Z, 0.06, 9, 0.6], [2.1, 0.36, 0.46, X + 0.02, Z, 0.03, 9, 0.8], [2.7, 0.38, 0.55, X + 0.03, Z], [3.05, 0.3, 0.52, X + 0.03, Z], [3.2, 0.16, 0.2, X + 0.04, Z]], n));
+      put(CHS.shell([[1.0, 0.44, 0.5, X - 0.02, Z - 0.02, 0.1, 7], [2.0, 0.42, 0.5, X - 0.02, Z - 0.02, 0.08, 7, 0.5], [2.95, 0.36, 0.56, X, Z, 0.03, 7, 1.0]], n, { a0: Math.PI * 0.55, a1: Math.PI * 1.75 }), 1);   // the mantle over his left shoulder and back
+      put(CHS.blob([X + 0.06, 3.45, Z], [0.2, 0.25, 0.19], lo ? 7 : 14, lo ? 5 : 10));
+      put(CHS.shell([[3.38, 0.22, 0.21, X - 0.02, Z, 0.08, 9], [3.62, 0.21, 0.2, X - 0.01, Z, 0.08, 9], [3.74, 0.15, 0.14, X, Z]], lo ? 7 : 10, { top: true, dome: 0.03 }), 1);   // his hair
+      for (let f = 0; f < 5; f++) { const a = -0.5 + f * 0.25; put(CHS.tube([[X - 0.05, 3.62, Z + a * 0.3, 0.035], [X - 0.12, 4.05, Z + a * 0.6, 0.02]], 4), 1); }   // the feathers
+      const S = v([X + 0.02, 2.9, Z + 0.5]), E = S.clone().add(v([0.35, 0.45, 0.25])), Hd = E.clone().add(v([0.12, 0.6, 0.08]));
+      put(CHS.tube([[S.x, S.y, S.z, 0.13], [E.x, E.y, E.z, 0.11], [Hd.x, Hd.y, Hd.z, 0.09]], nt));
+      put(CHS.blob([Hd.x, Hd.y + 0.08, Hd.z], [0.09, 0.13, 0.08], 6, 4));
+      put(CHS.tube([[Hd.x - 0.25, Hd.y - 1.6, Hd.z - 0.05, 0.045], [Hd.x + 0.12, Hd.y + 1.0, Hd.z + 0.03, 0.04]], 5), 1);   // the staff
+      const S2 = v([X, 2.9, Z - 0.5]), E2 = S2.clone().add(v([0.05, -0.75, -0.1])), H2 = E2.clone().add(v([0.4, -0.35, 0.18]));
+      put(CHS.tube([[S2.x, S2.y, S2.z, 0.13], [E2.x, E2.y, E2.z, 0.11], [H2.x, H2.y, H2.z, 0.09]], nt));
+    }
+    // the woman, forward and to the right, her hood and shawl, the child on her left hip
+    {
+      const X = 0.25, Z = 0.36;
+      put(CHS.shell([[0.0, 0.5, 0.52, X, Z, 0.1, 11], [0.6, 0.44, 0.47, X, Z, 0.09, 11, 0.4], [1.4, 0.36, 0.4, X, Z, 0.07, 11, 0.8], [2.0, 0.33, 0.4, X, Z, 0.03, 11, 1.1], [2.5, 0.36, 0.45, X, Z], [2.8, 0.3, 0.44, X, Z], [2.95, 0.15, 0.18, X, Z]], n));
+      put(CHS.shell([[1.9, 0.42, 0.5, X - 0.03, Z, 0.07, 8], [2.55, 0.42, 0.52, X - 0.02, Z, 0.05, 8, 0.6], [2.95, 0.3, 0.42, X, Z, 0.02, 8], [3.3, 0.24, 0.24, X - 0.02, Z], [3.5, 0.17, 0.17, X - 0.02, Z]], n, { a0: 0.55, a1: Math.PI * 2 - 0.55, top: true, dome: 0.06 }), 1);   // the shawl up over her head
+      put(CHS.blob([X + 0.05, 3.2, Z], [0.17, 0.22, 0.16], lo ? 7 : 14, lo ? 5 : 10));
+      const S = v([X, 2.65, Z - 0.42]), E = S.clone().add(v([0.12, -0.6, -0.1])), H = E.clone().add(v([0.35, 0.1, 0.12]));
+      put(CHS.tube([[S.x, S.y, S.z, 0.12], [E.x, E.y, E.z, 0.1], [H.x, H.y, H.z, 0.08]], nt));
+      const S2 = v([X, 2.65, Z + 0.42]), E2 = S2.clone().add(v([0.25, -0.55, 0.05])), H2 = E2.clone().add(v([0.25, 0.25, -0.2]));
+      put(CHS.tube([[S2.x, S2.y, S2.z, 0.12], [E2.x, E2.y, E2.z, 0.1], [H2.x, H2.y, H2.z, 0.08]], nt));
+      // the child against her, on her left
+      const cX = X + 0.32, cZ = Z - 0.35;
+      put(CHS.shell([[1.55, 0.2, 0.22, cX, cZ, 0.08, 7], [1.95, 0.18, 0.2, cX, cZ, 0.05, 7], [2.35, 0.17, 0.2, cX, cZ], [2.5, 0.08, 0.1, cX, cZ]], lo ? 8 : 12));
+      put(CHS.blob([cX + 0.03, 2.66, cZ], [0.12, 0.14, 0.12], 7, 5));
+      put(CHS.tube([[cX + 0.05, 2.3, cZ + 0.15, 0.06], [cX + 0.02, 2.55, cZ + 0.35, 0.05]], 5));
+    }
+    // the dog at their feet, forward, looking out
+    {
+      const X = 0.8, Z = -0.15, y = 0.62;
+      put(CHS.tube([[X - 0.5, y, Z, 0.17, 0.15], [X - 0.15, y + 0.04, Z, 0.21, 0.17], [X + 0.25, y + 0.1, Z, 0.21, 0.16], [X + 0.4, y + 0.14, Z, 0.16]], nt), 1);
+      put(CHS.tube([[X + 0.38, y + 0.15, Z, 0.11], [X + 0.52, y + 0.42, Z, 0.1], [X + 0.72, y + 0.42, Z, 0.07]], nt), 1);
+      for (const [dx, dz] of [[-0.42, -0.1], [-0.42, 0.1], [0.28, -0.1], [0.28, 0.1]]) put(CHS.tube([[X + dx, y, Z + dz, 0.06], [X + dx + 0.02, 0.0, Z + dz, 0.05]], 5), 1);
+      put(CHS.tube([[X - 0.55, y + 0.05, Z, 0.04], [X - 0.75, y + 0.3, Z, 0.03]], 4), 1);
+    }
+    for (const [g] of out) g.translate(-0.3, 0, 0);   // on its pedestal (1.1 m round)
+    return out;
+  }
+  // an eagle (3 tons and 12 ft across, Calder's; the photographs: perched straight on the stone over each dial, its wings
+  // raised high and spread, the primaries fingered): its body upright on its talons, the head turned a little, the beak
+  // hooked; the wings 0.1 m thick, their outline notched at the tips, rising at 40 degrees to a span of 3.7 m
+  function chEagleForm(lo) {
+    const n = lo ? 10 : 14, out = [], put = (g, t) => out.push([g, t || 0]);
+    put(CHS.shell([[0.25, 0.2, 0.22, -0.18], [0.5, 0.36, 0.34, -0.08], [0.85, 0.44, 0.38, 0.02], [1.15, 0.42, 0.4, 0.04], [1.4, 0.32, 0.36, 0.0], [1.62, 0.2, 0.2, 0.04]], n, { top: true, dome: 0.04, bot: true }));
+    put(CHS.blob([0.14, 1.82, 0], [0.3, 0.24, 0.22], lo ? 8 : 11, lo ? 6 : 8), 0);
+    put(CHS.tube([[0.4, 1.83, 0, 0.1, 0.08], [0.56, 1.78, 0, 0.07, 0.06], [0.64, 1.66, 0, 0.025]], 6), 1);   // the hooked beak
+    // the talons on the stone and the legs into the belly
+    for (const sz of [-1, 1]) {
+      put(CHS.tube([[0.05, 0.42, sz * 0.15, 0.11], [0.12, 0.12, sz * 0.17, 0.08]], 6), 1);
+      for (const a of [-0.5, 0, 0.5]) put(CHS.tube([[0.12, 0.08, sz * 0.17, 0.05], [0.12 + 0.28 * Math.cos(a), 0.02, sz * 0.17 + 0.2 * Math.sin(a), 0.03]], 4), 1);
+    }
+    // the tail, fanned down behind
+    { const t = CHS.plate([[0, -0.14], [-0.75, -0.32], [-0.82, -0.12], [-0.86, 0.08], [-0.76, 0.3], [0, 0.14]], 0.07); t.rotateX(Math.PI / 2); t.rotateZ(0.55); t.translate(-0.22, 0.55, 0); put(t, 1); }
+    // the wings: the outline in the wing's own plane (x along the span from the shoulder, y along the chord, the leading
+    // edge at y 0), stood up to face the front, the leading edge on top and the primaries hanging, raised 46 degrees and its
+    // tip swept a little back (the photographs, from any side: two broad raised wings, never two edges)
+    const W = [[0, 0.1], [0.5, 0.22], [1.1, 0.3], [1.65, 0.28], [2.05, 0.2], [2.0, -0.1], [2.12, -0.22], [1.92, -0.28], [1.98, -0.46], [1.74, -0.48], [1.76, -0.66], [1.52, -0.66], [1.48, -0.86], [1.26, -0.82], [1.1, -0.98], [0.86, -0.86], [0.6, -0.92], [0.4, -0.72], [0.16, -0.66], [0, -0.42]];
+    for (const sz of [-1, 1]) {
+      const g = CHS.plate(W.map(([x, y]) => [x * 0.98, y * 0.95]), 0.1);
+      g.applyMatrix4(new THREE.Matrix4().makeBasis(new THREE.Vector3(0, 0, sz), new THREE.Vector3(0, 1, 0), new THREE.Vector3(-sz, 0, 0)));   // the span to its side, the leading edge up, the face forward
+      g.rotateX(-sz * 0.8);    // raised 46 degrees
+      g.rotateY(-sz * 0.28);   // its tip swept back
+      g.translate(-0.1, 1.38, sz * 0.24);
+      put(g, 0);
+    }
+    return out;
+  }
+  // an equestrian general on his pedestal (McClellan and Reynolds flanking the north portal, 20221005171430.jpg): the horse
+  // walking, a foreleg raised, its rider upright in the saddle in his slouch hat; about 1.2 times life
+  function chHorseForm(lo) {
+    const nt = lo ? 6 : 8, out = [], put = (g, t) => out.push([g, t || 0]);
+    // the barrel along x: rings round x, built round y and laid down
+    const body = CHS.shell([[-1.3, 0.3, 0.26], [-1.05, 0.5, 0.38], [-0.55, 0.5, 0.36], [0, 0.46, 0.34], [0.5, 0.48, 0.36], [0.9, 0.5, 0.33], [1.18, 0.34, 0.25]], lo ? 10 : 14, { top: true, bot: true, dome: 0.1 });
+    body.rotateZ(-Math.PI / 2); body.translate(0, 1.55, 0);   // (laid down: the shell's y is x, a ring's rx its height and rz its width)
+    put(body);
+    put(CHS.tube([[0.85, 1.7, 0, 0.34, 0.26], [1.15, 2.1, 0, 0.27, 0.2], [1.38, 2.45, 0, 0.21, 0.16], [1.48, 2.62, 0, 0.17]], nt, { cap0: false }));
+    put(CHS.tube([[1.42, 2.66, 0, 0.18, 0.15], [1.65, 2.48, 0, 0.15, 0.12], [1.86, 2.2, 0, 0.11, 0.09]], nt, { round: 0.6 }));
+    for (const sz of [-1, 1]) put(CHS.tube([[1.42, 2.75, sz * 0.08, 0.04], [1.38, 2.92, sz * 0.1, 0.015]], 4), 1);   // the ears
+    put(CHS.tube([[1.0, 2.25, 0, 0.05, 0.12], [1.35, 2.7, 0, 0.04, 0.1]], 4), 1);   // the mane's crest
+    // the legs: the near foreleg raised and bent, the others planted
+    const leg = (pts) => put(CHS.tube(pts.map(([x, y, z, r]) => [x, y, z, r]), nt));
+    leg([[0.85, 1.35, 0.2, 0.15], [0.92, 0.85, 0.21, 0.1], [0.95, 0.35, 0.21, 0.07], [0.97, 0.04, 0.21, 0.09]]);
+    leg([[0.85, 1.35, -0.2, 0.15], [1.05, 0.92, -0.21, 0.1], [1.32, 0.95, -0.21, 0.07], [1.36, 0.7, -0.21, 0.09]]);
+    leg([[-0.95, 1.4, 0.22, 0.2], [-1.15, 0.85, 0.22, 0.12], [-1.05, 0.35, 0.21, 0.07], [-1.0, 0.04, 0.21, 0.09]]);
+    leg([[-0.95, 1.4, -0.22, 0.2], [-1.12, 0.85, -0.22, 0.12], [-0.98, 0.35, -0.21, 0.07], [-0.92, 0.04, -0.21, 0.09]]);
+    put(CHS.tube([[-1.3, 1.78, 0, 0.09], [-1.48, 1.35, 0, 0.11], [-1.45, 0.8, 0, 0.06]], 6), 1);   // the tail
+    // the saddle cloth, the rider: his legs down the horse's sides, the coat, the arms to the reins, the head and hat
+    put(CHS.shell([[1.95, 0.42, 0.42, 0.15, 0, 0.03, 6], [2.08, 0.38, 0.4, 0.15]], lo ? 8 : 12, { top: true }), 1);
+    for (const sz of [-1, 1]) put(CHS.tube([[0.15, 2.15, sz * 0.18, 0.15], [0.48, 1.92, sz * 0.42, 0.13], [0.42, 1.35, sz * 0.43, 0.1], [0.55, 1.2, sz * 0.43, 0.08]], nt));
+    put(CHS.shell([[2.05, 0.3, 0.36, 0.12], [2.45, 0.27, 0.33, 0.12], [2.85, 0.27, 0.36, 0.1], [3.05, 0.18, 0.28, 0.1], [3.15, 0.1, 0.12, 0.1]], lo ? 8 : 12, { top: true }));
+    for (const sz of [-1, 1]) put(CHS.tube([[0.12, 2.95, sz * 0.32, 0.09], [0.4, 2.55, sz * 0.33, 0.08], [0.72, 2.45, sz * 0.18, 0.07]], nt));
+    put(CHS.blob([0.13, 3.35, 0], [0.15, 0.18, 0.14], 8, 6));
+    put(CHS.shell([[3.42, 0.33, 0.33, 0.12], [3.47, 0.33, 0.33, 0.12], [3.47, 0.16, 0.16, 0.12], [3.62, 0.14, 0.14, 0.12]], lo ? 8 : 12, { top: true, bot: true }), 1);
+    return out;
+  }
+  // a figure standing in a frock coat (Wanamaker, Bullitt, McKinley on the apron), an arm at his side and one bent
+  function chStandForm(lo) {
+    const n = lo ? 10 : 14, nt = lo ? 6 : 8, out = [], put = (g, t) => out.push([g, t || 0]);
+    for (const sz of [-1, 1]) put(CHS.tube([[0.08, 0.06, sz * 0.13, 0.08], [0.02, 0.5, sz * 0.13, 0.1], [0.02, 1.0, sz * 0.13, 0.12], [0.02, 1.45, sz * 0.12, 0.14]], nt));
+    put(CHS.shell([[0.95, 0.3, 0.36, -0.03, 0, 0.04, 9], [1.35, 0.25, 0.32, -0.02, 0, 0.02, 9], [1.85, 0.25, 0.33], [2.3, 0.27, 0.38], [2.5, 0.2, 0.36], [2.62, 0.1, 0.14]], n, { bot: true, top: true }));   // (closed: the apron's statues are single-sided)
+    put(CHS.blob([0.02, 2.85, 0], [0.13, 0.16, 0.12], 8, 6));
+    put(CHS.tube([[0.0, 2.45, 0.36, 0.08], [0.02, 1.95, 0.4, 0.07], [0.04, 1.55, 0.38, 0.05]], nt));
+    put(CHS.tube([[0.0, 2.45, -0.36, 0.08], [0.06, 2.0, -0.4, 0.07], [0.32, 2.05, -0.18, 0.05]], nt));
+    return out;
+  }
+  // the model, near (far false) or far: every part as one buffer (b), from the atlas manifest A; gnd(U, V) the drawn
+  // ground's height in the frame (over the plaza's apron), for the passages' floors (fix1: the ground outside stands 2 to 3
+  // m over the courtyard's, the building's datum, and the apron drawn there showed through them)
+  function chModel(A, far, gnd) {
+    const b = chBuf(), C = CITY_HALL, S = C.st, cellIx = {}, mean = {};
+    Object.keys(A.cells).sort().forEach((id, i) => { cellIx[id] = i; mean[id] = (A.mean[id] || [0.78, 0.76, 0.72]).map((v) => Math.round(v * 255)); });
+    const wrapCell = { curtain: 1, flank: 1, court: 1, court_main: 1, turret: 1, ashlar: 1, balus: 1, rustic: 1 };   // the cells that tile (the bake wraps their gutters)
+    const M = (id) => A.m[id] || [16, 16];
+    let seedN = 0;
+    const tops = {};
+    const top = (k, y) => { tops[k] = Math.max(tops[k] || 0, Math.round(y * 100) / 100); };
+    // a face: from plan point A to B (U, V), the outside to the right of A to B (so A stands at the viewer's left), y0 to y1,
+    // in cell `cell` from u0 to u1 across and v0 to v1 up
+    const face = (A0, B0, y0, y1, cell, u0, u1, v0, v1) => {
+      const du = B0[0] - A0[0], dv = B0[1] - A0[1], len = Math.hypot(du, dv) || 1e-6, tx = du / len, tz = dv / len;
+      return { A: A0, B: B0, len, tx, tz, nx: -tz, nz: tx, y0, y1, cell, u0: u0 == null ? 0 : u0, u1: u1 == null ? 1 : u1, v0: v0 == null ? 0 : v0, v1: v1 == null ? 1 : v1, seed: (seedN++ * 0.6180339) % 1 };
+    };
+    const at = (F, s, y, d) => [F.A[0] + F.tx * s + F.nx * d, y, F.A[1] + F.tz * s + F.nz * d];
+    // a point's place in its face's cell, projected straight on from the face (relief wears its wall's picture)
+    const uvOf = (F, p) => {
+      const s = ((p[0] - F.A[0]) * F.tx + (p[2] - F.A[1]) * F.tz) / F.len;
+      let u = F.u0 + (F.u1 - F.u0) * s, v = F.v0 + (F.v1 - F.v0) * (p[1] - F.y0) / ((F.y1 - F.y0) || 1);
+      if (!wrapCell[F.cell]) { u = clamp(u, 0.0005, 0.9995); v = clamp(v, 0.0005, 0.9995); }
+      return [u, v];
+    };
+    const kOf = (cell) => (typeof cell === 'number' ? -cell : cellIx[cell]);
+    const colOf = (cell) => (typeof cell === 'number' ? CH_KCOL[cell] : mean[cell] || [200, 196, 188]);
+    // a vertex on face F (textured by projection) or of an untextured kind with metre uv
+    const vF = (F, p, n) => b.v(p, n, uvOf(F, p), kOf(F.cell), F.seed, colOf(F.cell)), vFace = vF;
+    const vK = (kind, p, n, uv, seed, shade) => b.v(p, n, uv, -kind, seed || 0, shade == null ? CH_KCOL[kind] : CH_KCOL[kind].map((c) => Math.round(c * shade)));
+    // a kind's vertex whose shade is the sky it cannot see (the colour's fourth byte: the passages)
+    const vA = (kind, p, n, uv, shade) => b.v(p, n, uv, -kind, 0, [...CH_KCOL[kind], Math.round(255 * shade)]);
+    // a vertex in a tiling cell at uv of its own (the ashlar's metres over 4), its shade in the colour's fourth byte
+    const vC = (cell, p, n, uv, seed, shade) => b.v(p, n, uv, cellIx[cell], seed == null ? 0.29 : seed, [...mean[cell], Math.round(255 * (shade == null ? 1 : shade))]);
+    // either: a kind (a number) or a tiling cell (a name), uv in metres (the cell's tile is M(cell))
+    const vX = (k, p, n, uv, seed, shade) => (typeof k === 'number' ? vK(k, p, n, uv, seed, shade) : vC(k, p, n, [uv[0] / M(k)[0], uv[1] / M(k)[1]], seed, shade));
+    const nF = (F) => [F.nx, 0, F.nz];
+    // a carved rib from p to q (a hip, a curb or a shoulder's curve: the marble trim the photographs show framing every
+    // slate face, fix1): a strip w wide standing o proud along n (perpendicular to the edge: the faces' bisector), its cheeks
+    // back into the faces; uv metres along it, 0 to 1 across (the shader beads it)
+    const rib = (p, q, n, w, o, farToo) => {
+      if (far && !farToo) return;   // the far level keeps the broad ones the silhouette reads (its face alone)
+      const e = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], L = Math.hypot(e[0], e[1], e[2]) || 1e-6;
+      e[0] /= L; e[1] /= L; e[2] /= L;
+      const dn = n[0] * e[0] + n[1] * e[1] + n[2] * e[2];
+      let nn = [n[0] - e[0] * dn, n[1] - e[1] * dn, n[2] - e[2] * dn]; const nl = Math.hypot(nn[0], nn[1], nn[2]) || 1; nn = nn.map((v) => v / nl);
+      let a = [e[1] * nn[2] - e[2] * nn[1], e[2] * nn[0] - e[0] * nn[2], e[0] * nn[1] - e[1] * nn[0]]; const al = Math.hypot(a[0], a[1], a[2]) || 1; a = a.map((v) => v / al);
+      const off = (pt, s, d) => [pt[0] + a[0] * s + nn[0] * d, pt[1] + a[1] * s + nn[1] * d, pt[2] + a[2] * s + nn[2] * d];
+      if (far) o = Math.min(o, 0.03);   // its face alone, laid near enough the slate that its back never shows
+      const h = w / 2, back = -Math.max(0.15, o + 0.12), k = CHK.trim;
+      const q4 = (P0, P1, P2, P3, m, v0, v1) => { const i0 = vK(k, P0, m, [0, v0]), i1 = vK(k, P1, m, [L, v0]), i2 = vK(k, P2, m, [L, v1]), i3 = vK(k, P3, m, [0, v1]); b.quad(i0, i1, i2, i3, m); };
+      q4(off(p, -h, o), off(q, -h, o), off(q, h, o), off(p, h, o), nn, 0, 1);
+      if (far) return;
+      q4(off(p, h, back), off(q, h, back), off(q, h, o), off(p, h, o), a, 1.25, 1);
+      q4(off(p, -h, back), off(q, -h, back), off(q, -h, o), off(p, -h, o), a.map((v) => -v), -0.25, 0);
+    };
+    const nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+    // the base course's granite (fix3), a tile by the metre: along the face (or out of it, on an end), up from the datum
+    const gW = M('granite')[0], gH = M('granite')[1];
+    const vG = (F, p, n) => {
+      const s = (p[0] - F.A[0]) * F.tx + (p[2] - F.A[1]) * F.tz, d = (p[0] - F.A[0]) * F.nx + (p[2] - F.A[1]) * F.nz;
+      return vC('granite', p, n, [(Math.abs(n[0] * F.tx + n[2] * F.tz) > 0.5 ? d + F.seed * 3 : s) / gW, p[1] / gH], F.seed);
+    };
+    // a face on the datum carried 1.2 m under it (fix2: the ground round the building falls 0.34 m to the north front, and
+    // the walls' feet must meet it), but for an opening's span, in the granite (fix3, the review: its picture's foot row
+    // stretched down drew streaks on the plinth)
+    const foot = (F, hole) => {
+      if (F.y0 !== 0) return;
+      const n = nF(F);
+      for (const [a, c] of hole ? [[0, hole[0]], [hole[1], F.len]] : [[0, F.len]]) {
+        if (c - a < 1e-3) continue;
+        const ix = [[a, -1.2], [c, -1.2], [c, 0], [a, 0]].map(([s2, y]) => vG(F, at(F, s2, y, 0), n));
+        b.quad(ix[0], ix[1], ix[2], ix[3], n);
+      }
+    };
+    // the face's own wall, whole, or with an arched opening (hole: [s0, s1, spring, crown] metres along and up)
+    const wall = (F, hole) => {
+      const n = nF(F);
+      foot(F, hole);
+      if (!hole) {
+        const a = vF(F, at(F, 0, F.y0, 0), n), c = vF(F, at(F, F.len, F.y0, 0), n), d = vF(F, at(F, F.len, F.y1, 0), n), e = vF(F, at(F, 0, F.y1, 0), n);
+        b.quad(a, c, d, e, n);
+        return;
+      }
+      const [s0, s1, sp, cr] = hole, r = (s1 - s0) / 2, sc = (s0 + s1) / 2, seg = far ? 4 : 10;
+      const outer = [[0, F.y0], [F.len, F.y0], [F.len, F.y1], [0, F.y1]];
+      const h = [[s0, F.y0]];
+      for (let i = 0; i <= seg; i++) { const t = Math.PI * (1 - i / seg); h.push([sc + Math.cos(t) * r, sp + Math.sin(t) * (cr - sp)]); }
+      h.push([s1, F.y0]);
+      // the outline with the opening cut from its foot: one ring, triangulated in the face's plane
+      const ring = [[0, F.y0], [s0, F.y0], ...h.slice(1, -1), [s1, F.y0], [F.len, F.y0], [F.len, F.y1], [0, F.y1]];
+      const tris = THREE.ShapeUtils.triangulateShape(ring.map((q) => new THREE.Vector2(q[0], q[1])), []);
+      const ix = ring.map((q) => vF(F, at(F, q[0], q[1], 0), n));
+      for (const t of tris) b.tri(ix[t[0]], ix[t[1]], ix[t[2]], n);
+      void outer;
+    };
+    // a box standing proud of face F: s0 to s1 along, y0 to y1 up, d0 to d1 out; every side wears F's picture projected
+    const proud = (F, s0, s1, y0, y1, d0, d1, cell) => {
+      const G = cell ? { ...F, cell } : F;
+      const P = (s, y, d) => at(F, s, y, d), n = nF(F), t = [F.tx, 0, F.tz], up = [0, 1, 0];
+      const q = (p0, p1, p2, p3, nn) => { const a = vF(G, p0, nn), c = vF(G, p1, nn), d = vF(G, p2, nn), e = vF(G, p3, nn); b.quad(a, c, d, e, nn); };
+      q(P(s0, y0, d1), P(s1, y0, d1), P(s1, y1, d1), P(s0, y1, d1), n);                                // front
+      q(P(s0, y1, d0), P(s1, y1, d0), P(s1, y1, d1), P(s0, y1, d1), up);                               // top
+      q(P(s0, y0, d0), P(s0, y0, d1), P(s1, y0, d1), P(s1, y0, d0), [0, -1, 0]);                       // soffit
+      q(P(s0, y0, d0), P(s0, y0, d1), P(s0, y1, d1), P(s0, y1, d0), [-t[0], 0, -t[2]]);               // ends
+      q(P(s1, y0, d0), P(s1, y0, d1), P(s1, y1, d1), P(s1, y1, d0), t);
+    };
+    // a moulding along face F from s0 to s1, its profile [[out, up], ...] from yb (each pair of points a strip); the
+    // picture projected from the face, so the painted cornice lies on the built one
+    const moulding = (F, s0, s1, yb, prof, vf0) => {
+      const t = [F.tx, 0, F.tz], vF = vf0 || vFace;
+      for (let i = 0; i + 1 < prof.length; i++) {
+        const [o0, h0] = prof[i], [o1, h1] = prof[i + 1];
+        const nn = [F.nx * (h1 - h0), -(o1 - o0), F.nz * (h1 - h0)], l = Math.hypot(nn[0], nn[1], nn[2]) || 1;
+        const n = [nn[0] / l, nn[1] / l, nn[2] / l];
+        const a = vF(F, at(F, s0, yb + h0, o0), n), c = vF(F, at(F, s1, yb + h0, o0), n), d = vF(F, at(F, s1, yb + h1, o1), n), e = vF(F, at(F, s0, yb + h1, o1), n);
+        b.quad(a, c, d, e, n);
+      }
+      // the ends, the profile's own outline closed back to the wall
+      const ring = prof.map(([o, h]) => [o, h]);
+      const last = ring[ring.length - 1];
+      if (last[0] > 1e-3) ring.push([0, last[1]]);
+      if (ring[0][0] > 1e-3) ring.unshift([0, ring[0][1]]);
+      let tris;
+      try { tris = THREE.ShapeUtils.triangulateShape(ring.map((q) => new THREE.Vector2(q[0], q[1])), []); } catch (e) { tris = []; }
+      for (const [s, sg] of [[s0, -1], [s1, 1]]) {
+        const n = [t[0] * sg, 0, t[2] * sg], ix = ring.map(([o, h]) => vF(F, at(F, s, yb + h, o), n));
+        for (const tr of tris) b.tri(ix[tr[0]], ix[tr[1]], ix[tr[2]], n);
+      }
+      // its back where it runs past the wall's ends (fix1: round an outside corner the run's open back showed)
+      const hh = Math.max(...prof.map((q) => q[1])), nb = [-F.nx, 0, -F.nz];
+      for (const [a, c] of [[s0, 0], [F.len, s1]]) {
+        if (c - a < 1e-3) continue;
+        const q = [at(F, a, yb, 0), at(F, c, yb, 0), at(F, c, yb + hh, 0), at(F, a, yb + hh, 0)].map((v) => vF(F, v, nb));
+        b.quad(q[0], q[1], q[2], q[3], nb);
+      }
+    };
+    // a free-standing column measured on its wall's picture (bake_cityhall_art.py's COLS): a half-round shaft centred on
+    // the wall s metres along F (so it covers the painted one from any side), its capital and base as boxes, all wearing
+    // the picture projected from the wall
+    const column = (F, s, ct, st, sf, r) => {
+      if (far) return;
+      const seg = isTouch ? 6 : 10, ring = [];
+      for (let i = 0; i <= seg; i++) {
+        const a = Math.PI * i / seg, ca = Math.cos(a), sa = Math.sin(a);
+        const nn = [F.tx * ca + F.nx * sa, 0, F.tz * ca + F.nz * sa];
+        ring.push([vF(F, at(F, s + ca * r, sf, sa * r), nn), vF(F, at(F, s + ca * r, st, sa * r), nn), nn]);
+      }
+      for (let i = 0; i < seg; i++) { const n0 = ring[i][2], n1 = ring[i + 1][2]; b.quad(ring[i][0], ring[i + 1][0], ring[i + 1][1], ring[i][1], [n0[0] + n1[0], 0, n0[2] + n1[2]]); }
+      proud(F, s - r * 1.3, s + r * 1.3, st, ct, 0, r * 1.25);
+      proud(F, s - r * 1.2, s + r * 1.2, sf - 0.45, sf, 0, r * 1.2);
+    };
+    // a cell's measured columns on face F, wherever the cell's repeats put them along it
+    const colsOn = (F, id) => {
+      const cols = A.meta[id] && A.meta[id].cols, W0 = M(id)[0];
+      if (!cols || far) return;
+      for (let k = Math.floor(F.u0); k <= Math.ceil(F.u1); k++) for (const [x0, ct, st, sf, r] of cols) {
+        const u = k + x0 / W0, s = (u - F.u0) / (F.u1 - F.u0) * F.len;
+        if (s > r * 1.4 && s < F.len - r * 1.4) column(F, s, ct, st, sf, r);
+      }
+    };
+    // the cornices' profiles: [[out, up], ...]
+    const PROF = {
+      base: [[0, 0], [0.35, 0.18], [0.35, 0.5], [0, 0.5]],
+      string: [[0, 0], [0.2, 0.1], [0.45, 0.35], [0.45, 0.6], [0, 0.6]],
+      main: [[0, 0], [0.15, 0.35], [0.9, 0.75], [1.1, 1.05], [0.9, 1.4], [0, 1.4]],
+      attic: [[0, 0], [0.2, 0.25], [0.6, 0.55], [0.6, 0.8], [0, 0.8]],
+      top: [[0, 0], [0.2, 0.3], [1.0, 0.7], [1.2, 1.0], [1.0, 1.3], [0, 1.3]],
+      water: [[0, -1.2], [0.25, -1.2], [0.25, 1.3], [0.05, 1.5], [0, 1.5]],   // fix2: from the pavement (it stood 1.5 to 3.0 m up, across the basement's windows) and on under the datum to the ground; fix3: its head under the face's sill (waterTop)
+      box: [[0, 0], [0.12, 0.3], [0.55, 0.62], [0.7, 0.9], [0.55, 1.1], [0, 1.1]],   // the centre crowns' cornice box (fix1)
+    };
+    // the water table's head on a face in its cell: 0.12 m under the picture's lowest sill, at most 1.5 m (fix3)
+    const waterTop = (cell) => { const sl = typeof cell === 'string' && A.meta[cell] && A.meta[cell].sill; return sl ? clamp(sl - 0.12, 0.5, 1.5) : 1.5; };
+    // a cornice on face F, run past both ends by its own depth (a corner's two runs meet; a run into a neighbour's wall is
+    // hidden), stopped either side of an opening it would cross (fix1: the string course ran across the portals' arches)
+    const cornice = (F, y, prof, ext, hole) => {
+      if (far && prof !== PROF.main && prof !== PROF.top) return;
+      let vf = null;
+      // the water table (fix3, the review: it wore the wall's picture, the flanks' and the pavilions' basement windows painted
+      // on a projecting stone band and cut off at its head): the granite's own, its top under the face's lowest sill as the
+      // bake measured it (the flanks' arches come down to 0.81 m, the corner pavilions' to 1.03, the wings' to 1.75)
+      if (prof === PROF.water) { const t = waterTop(F.cell); prof = [[0, -1.2], [0.25, -1.2], [0.25, t - 0.2], [0.05, t], [0, t]]; y = t; vf = vG; }
+      const out = Math.max(...prof.map((q) => q[0])), hh = Math.max(...prof.map((q) => q[1]));
+      const e = ext == null ? out - 0.02 : ext, yb = y - hh;
+      if (hole && yb < hole[3] && yb + hh > F.y0) { moulding(F, -e, hole[0], yb, prof, vf); moulding(F, hole[1], F.len + e, yb, prof, vf); return; }
+      moulding(F, -e, F.len + e, yb, prof, vf);
+    };
+    // a hipped roof over a plan rectangle [u0, u1, v0, v1], its profile [[inset, y], ...] on the sides named in `sides`
+    // ('n', 's', 'e', 'w'), a side not named rising straight; untextured (kind) with the eave's metres for uv; a flat top
+    // at the last level unless noTop. A profile that starts in from the wall gets a ledge back to it (fix1: the cornice
+    // under it closes on the wall's line, and the slot between showed the inside from every height). o: { trim (the
+    // carved ribs up every hip, and along the slope's head where no crest band takes it; trimW and trimO their width and
+    // how far they stand proud), straight (the kind or the tiling cell of the sides that rise straight: an attic's stone) }
+    const hipRoof = (R, prof0, sides, kind, noTop, curbKind0, o) => {
+      const opt = o || {}, led = prof0[0][0] > 1e-3;
+      const prof = led ? [[0, prof0[0][1]], ...prof0] : prof0;
+      const curbKind = curbKind0 && led ? [curbKind0[0] + 1, curbKind0[1]] : curbKind0;
+      const SN = ['n', 'w', 's', 'e'], named = (i) => sides.indexOf(SN[i]) >= 0;   // side i runs ring[i] to ring[i + 1]
+      const lv = prof.map(([ins, y]) => {
+        const i = (s) => (sides.indexOf(s) >= 0 ? ins : 0);
+        return { y, ring: [[R[1] - i('e'), R[2] + i('n')], [R[0] + i('w'), R[2] + i('n')], [R[0] + i('w'), R[3] - i('s')], [R[1] - i('e'), R[3] - i('s')]] };
+      });
+      const NS = [];
+      for (let k = 0; k + 1 < lv.length; k++) {
+        const L0 = lv[k], L1 = lv[k + 1];
+        const kk0 = curbKind && k === curbKind[0] ? curbKind[1] : kind;
+        NS.push([]);
+        for (let i = 0; i < 4; i++) {
+          const j = (i + 1) % 4, p0 = [L0.ring[i][0], L0.y, L0.ring[i][1]], p1 = [L0.ring[j][0], L0.y, L0.ring[j][1]], p2 = [L1.ring[j][0], L1.y, L1.ring[j][1]], p3 = [L1.ring[i][0], L1.y, L1.ring[i][1]];
+          if (Math.hypot(p1[0] - p0[0], p1[2] - p0[2]) < 1e-3 && Math.hypot(p2[0] - p3[0], p2[2] - p3[2]) < 1e-3) { NS[k].push(null); continue; }
+          const ex = p1[0] - p0[0], ez = p1[2] - p0[2], el = Math.hypot(ex, ez) || 1;
+          // the outward normal: the side's outside, tilted by the slope
+          const ox = -ez / el, oz = ex / el;   // the side's outside: the loops run with it on the right
+          const dIn = (p3[0] - p0[0]) * ox + (p3[2] - p0[2]) * oz, dy = p3[1] - p0[1];
+          let nn = [ox * dy, -dIn, oz * dy]; const nl = Math.hypot(nn[0], nn[1], nn[2]);
+          nn = nl > 1e-6 ? [nn[0] / nl, nn[1] / nl, nn[2] / nl] : [ox, 0, oz];
+          if (nn[0] * ox + nn[2] * oz < -1e-6) nn = [-nn[0], -nn[1], -nn[2]];
+          NS[k].push(nn);
+          const kk = !named(i) && opt.straight && dy > 0.05 ? opt.straight : kk0;
+          const sl = Math.hypot(dIn, dy);
+          const proj = (p) => ((p[0] - p0[0]) * ex + (p[2] - p0[2]) * ez) / el;
+          const yb = typeof kk === 'number' ? 0 : p0[1];   // a cell's v from the ground, so its courses run level
+          const a = vX(kk, p0, nn, [0, yb]), c = vX(kk, p1, nn, [el, yb]), d = vX(kk, p2, nn, [proj(p2), yb ? p2[1] : sl]), e = vX(kk, p3, nn, [proj(p3), yb ? p3[1] : sl]);
+          b.quad(a, c, d, e, nn);
+        }
+      }
+      if (opt.trim && (!far || opt.trimFar)) {
+        for (let k = 0; k + 1 < lv.length; k++) {
+          const kk = curbKind && k === curbKind[0] ? curbKind[1] : kind, L0 = lv[k], L1 = lv[k + 1];
+          if (kk !== CHK.slate || L1.y - L0.y < 0.3) continue;   // the slopes, not a ledge or a crest band
+          for (let i = 0; i < 4; i++) {
+            const h = (i + 3) % 4;   // corner i joins side h and side i
+            if (named(i) && named(h) && NS[k][i] && NS[k][h]) {
+              const n = nrm([NS[k][i][0] + NS[k][h][0], NS[k][i][1] + NS[k][h][1], NS[k][i][2] + NS[k][h][2]]);
+              rib([L0.ring[i][0], L0.y, L0.ring[i][1]], [L1.ring[i][0], L1.y, L1.ring[i][1]], n, opt.trimW || 0.34, opt.trimO || 0.07, opt.trimFar);
+            }
+          }
+          // the curb: along the head of the last slope (a crest band above one is its own curb)
+          if (k + 2 >= lv.length) for (let i = 0; i < 4; i++) {
+            if (!named(i) || !NS[k][i]) continue;
+            const j = (i + 1) % 4, n = nrm([NS[k][i][0], NS[k][i][1] + 1, NS[k][i][2]]);
+            if (!far) rib([L1.ring[i][0], L1.y, L1.ring[i][1]], [L1.ring[j][0], L1.y, L1.ring[j][1]], n, 0.3, 0.06);
+          }
+        }
+      }
+      const L = lv[lv.length - 1];
+      if (!noTop) { const up = [0, 1, 0], ix = L.ring.map((q) => vK(CHK.deck, [q[0], L.y, q[1]], up, [q[0], q[1]])); b.quad(ix[0], ix[1], ix[2], ix[3], up); }
+      return L;
+    };
+    // a dormer on a sloping roof: its front on face F (s0 to s1, y0 to y1), its cheeks and its top back `depth`, in slate
+    // or o.cheek (a kind or a tiling cell: the aedicules' and the oculi's stone); the far level keeps those o.far marks
+    // (fix1: the aedicules and the great dormers, the brightest things on the silhouette, popped at the switch)
+    const dormer = (F, s0, s1, y0, y1, d, depth, cell, u0, u1, o) => {
+      if (far && !(o && o.far)) return;
+      const pA = at(F, s0, 0, d), pB = at(F, s1, 0, d);
+      const G = face([pA[0], pA[2]], [pB[0], pB[2]], y0, y1, cell, u0 == null ? 0 : u0, u1 == null ? 1 : u1, 0, 1);
+      wall(G);
+      const P = (s, y, dd) => at(F, s, y, dd), t = [F.tx, 0, F.tz];
+      const sl = (o && o.cheek) || CHK.slate;
+      const q = (p0, p1, p2, p3, nn, k, w, h) => { const a = vX(k, p0, nn, [0, 0]), c = vX(k, p1, nn, [w, 0]), dd = vX(k, p2, nn, [w, h]), e = vX(k, p3, nn, [0, h]); b.quad(a, c, dd, e, nn); };
+      q(P(s0, y0, d - depth), P(s0, y0, d), P(s0, y1, d), P(s0, y1, d - depth), [-t[0], 0, -t[2]], sl, depth, y1 - y0);
+      q(P(s1, y0, d - depth), P(s1, y0, d), P(s1, y1, d), P(s1, y1, d - depth), t, sl, depth, y1 - y0);
+      q(P(s0, y1, d - depth), P(s1, y1, d - depth), P(s1, y1, d), P(s0, y1, d), [0, 1, 0], sl, s1 - s0, depth);
+      if (o && o.soffit) q(P(s0, y0, d - depth), P(s1, y0, d - depth), P(s1, y0, d), P(s0, y0, d), [0, -1, 0], sl, s1 - s0, depth);
+    };
+    // the hooded bull's-eyes high on the wings' mansards (the photographs: a dark green copper bonnet on bronze consoles over
+    // a small round light, one over each dormer): a narrow copper box, its half-round hood standing out over it
+    const bonnet = (F, sc, y0, d) => {
+      if (far) return;
+      const w = 1.25, hh = 1.35, P = (s, y, dd) => at(F, s, y, dd), t = [F.tx, 0, F.tz], n = nF(F), up = [0, 1, 0], k = CHK.copper, seg = isTouch ? 4 : 6;
+      const q = (p0, p1, p2, p3, nn) => { const a = vK(k, p0, nn, [0, 0], 0, 0.62), c = vK(k, p1, nn, [1, 0], 0, 0.62), e = vK(k, p2, nn, [1, 1], 0, 0.62), f = vK(k, p3, nn, [0, 1], 0, 0.62); b.quad(a, c, e, f, nn); };
+      const s0 = sc - w / 2, s1 = sc + w / 2, y1 = y0 + hh, dep = 1.4;
+      q(P(s0, y0, d), P(s1, y0, d), P(s1, y1, d), P(s0, y1, d), n);                                     // its face
+      q(P(s0, y0, d - dep), P(s0, y0, d), P(s0, y1, d), P(s0, y1, d - dep), [-t[0], 0, -t[2]]);
+      q(P(s1, y0, d - dep), P(s1, y0, d), P(s1, y1, d), P(s1, y1, d - dep), t);
+      // the hood: a half-round from the face's head, 0.35 out, back into the roof
+      const r = w / 2 + 0.12, ring = [];
+      for (let i = 0; i <= seg; i++) { const a = Math.PI * i / seg; ring.push([sc + Math.cos(a) * r, y1 + Math.sin(a) * r * 0.9, [Math.cos(a), Math.sin(a)]]); }
+      for (let i = 0; i < seg; i++) {
+        const [sA, yA, nA] = ring[i], [sB, yB, nB] = ring[i + 1], nm = [t[0] * (nA[0] + nB[0]) / 2, (nA[1] + nB[1]) / 2, t[2] * (nA[0] + nB[0]) / 2];
+        q(P(sA, yA, d - dep), P(sA, yA, d + 0.35), P(sB, yB, d + 0.35), P(sB, yB, d - dep), nrm(nm));
+        const c0 = vK(k, P(sc, y1, d + 0.35), n, [0.5, 0], 0, 0.45), cA = vK(k, P(sA, yA, d + 0.35), n, [0, 1], 0, 0.45), cB = vK(k, P(sB, yB, d + 0.35), n, [1, 1], 0, 0.45);
+        b.tri(c0, cA, cB, n);
+      }
+      // its underside, back to the face
+      q(P(s0 - 0.12, y1, d), P(s1 + 0.12, y1, d), P(s1 + 0.12, y1, d + 0.35), P(s0 - 0.12, y1, d + 0.35), [0, -1, 0]);
+      void up;
+    };
+    // a cylinder (columns, turrets, drums): centre (U, V), y0 to y1, radii r0 and r1, segs sides; textured round from u0
+    // by `wraps` cells (or untextured kind), its caps if asked (capBot: a soffit, fix1: the lantern's gallery stood open
+    // underneath)
+    const cyl = (cu, cv, y0, y1, r0, r1, segs, cell, wraps, v0, v1, capTop, a0, capBot) => {
+      if (capBot) {
+        const dn = [0, -1, 0], k = typeof capBot === 'number' ? capBot : CHK.deck, ctr = vK(k, [cu, y0, cv], dn, [0, 0]), rim = [];
+        for (let i = 0; i < segs; i++) { const a = (a0 || 0) + i / segs * Math.PI * 2; rim.push(vK(k, [cu + Math.cos(a) * r0, y0, cv + Math.sin(a) * r0], dn, [Math.cos(a) * r0, Math.sin(a) * r0])); }
+        for (let i = 0; i < segs; i++) b.tri(ctr, rim[i], rim[(i + 1) % segs], dn);
+      }
+      const ring = [];
+      for (let i = 0; i <= segs; i++) {
+        const a = (a0 || 0) + i / segs * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+        const slope = (r0 - r1) / ((y1 - y0) || 1), nl = Math.hypot(1, slope);
+        const n = [ca / nl, slope / nl, sa / nl];
+        const u = i / segs * (wraps || 1);
+        const vv0 = v0 == null ? 0 : v0, vv1 = v1 == null ? 1 : v1;
+        if (typeof cell === 'number') {
+          ring.push([vK(cell, [cu + ca * r0, y0, cv + sa * r0], n, [u * 2 * Math.PI * r0 / (wraps || 1), 0]), vK(cell, [cu + ca * r1, y1, cv + sa * r1], n, [u * 2 * Math.PI * r0 / (wraps || 1), y1 - y0])]);
+        } else {
+          ring.push([b.v([cu + ca * r0, y0, cv + sa * r0], n, [u, vv0], cellIx[cell], 0.37, mean[cell]), b.v([cu + ca * r1, y1, cv + sa * r1], n, [u, vv1], cellIx[cell], 0.37, mean[cell])]);
+        }
+      }
+      for (let i = 0; i < segs; i++) {
+        const am = (a0 || 0) + (i + 0.5) / segs * Math.PI * 2, n = [Math.cos(am), 0, Math.sin(am)];
+        b.quad(ring[i][0], ring[i + 1][0], ring[i + 1][1], ring[i][1], n);
+      }
+      if (capTop) {
+        const up = [0, 1, 0], k = typeof capTop === 'number' ? capTop : CHK.deck, ctr = vK(k, [cu, y1, cv], up, [0, 0]);
+        const rim = [];
+        for (let i = 0; i < segs; i++) { const a = (a0 || 0) + i / segs * Math.PI * 2; rim.push(vK(k, [cu + Math.cos(a) * r1, y1, cv + Math.sin(a) * r1], up, [Math.cos(a) * r1, Math.sin(a) * r1])); }
+        for (let i = 0; i < segs; i++) b.tri(ctr, rim[i], rim[(i + 1) % segs], up);
+      }
+    };
+    // a pyramid or cone of an untextured kind from a square (half-widths hu, hv) at y0 to a point or a smaller square at y1
+    const pyramid = (cu, cv, hu, hv, y0, y1, tu, tv, kind) => {
+      const R0 = [[cu + hu, cv - hv], [cu - hu, cv - hv], [cu - hu, cv + hv], [cu + hu, cv + hv]], R1 = [[cu + tu, cv - tv], [cu - tu, cv - tv], [cu - tu, cv + tv], [cu + tu, cv + tv]];
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4, p0 = [R0[i][0], y0, R0[i][1]], p1 = [R0[j][0], y0, R0[j][1]], p2 = [R1[j][0], y1, R1[j][1]], p3 = [R1[i][0], y1, R1[i][1]];
+        const ex = p1[0] - p0[0], ez = p1[2] - p0[2], el = Math.hypot(ex, ez) || 1, ox = -ez / el, oz = ex / el;
+        const mx = (p2[0] + p3[0]) / 2 - (p0[0] + p1[0]) / 2, mz = (p2[2] + p3[2]) / 2 - (p0[2] + p1[2]) / 2, dIn = -(mx * ox + mz * oz), dy = y1 - y0;
+        const nl = Math.hypot(dy, dIn) || 1, n = [ox * dy / nl, dIn / nl, oz * dy / nl];
+        const sl = Math.hypot(dIn, dy);
+        if (tu < 1e-3 && tv < 1e-3) { const a = vK(kind, p0, n, [0, 0]), c = vK(kind, p1, n, [el, 0]), d = vK(kind, p2, n, [el / 2, sl]); b.tri(a, c, d, n); }
+        else { const a = vK(kind, p0, n, [0, 0]), c = vK(kind, p1, n, [el, 0]), d = vK(kind, p2, n, [el, sl]), e = vK(kind, p3, n, [0, sl]); b.quad(a, c, d, e, n); }
+      }
+      if (tu > 1e-3) { const up = [0, 1, 0], ix = R1.map((q) => vK(CHK.deck, [q[0], y1, q[1]], up, [q[0], q[1]])); b.quad(ix[0], ix[1], ix[2], ix[3], up); }
+    };
+    // the four walls of a plan rectangle [u0, u1, v0, v1] from y0 to y1, each in its cell (f(side) gives [cell, u0, u1,
+    // v0, v1] or null to leave it off)
+    const rectFaces = (R, y0, y1, f) => {
+      const NE = [R[1], R[2]], NW = [R[0], R[2]], SW = [R[0], R[3]], SE = [R[1], R[3]];
+      const out = {};
+      for (const [s, A0, B0] of [['n', NE, NW], ['w', NW, SW], ['s', SW, SE], ['e', SE, NE]]) {
+        const c = f(s, Math.hypot(B0[0] - A0[0], B0[1] - A0[1]));
+        if (!c) continue;
+        out[s] = face(A0, B0, y0, y1, c[0], c[1], c[2], c[3] == null ? 0 : c[3], c[4] == null ? 1 : c[4]);
+      }
+      return out;
+    };
+    const stoneCornices = (F, lines, hole) => { for (const [y, p] of lines) cornice(F, y, p, null, hole); };
+    // an iron cresting round a plan rectangle from y0 to y1: an open band (the balustrade's picture, the sky cut between
+    // its bars) facing out and in; the far level's solid band of the painted iron's colour
+    const cresting = (R, y0, y1, gap) => {
+      const NE = [R[1], R[2]], NW = [R[0], R[2]], SW = [R[0], R[3]], SE = [R[1], R[3]], bw = M('balus')[0];
+      for (const [A1, B1] of [[NE, NW], [NW, SW], [SW, SE], [SE, NE]]) {
+        const L1 = Math.hypot(B1[0] - A1[0], B1[1] - A1[1]), g = gap ? Math.min(gap * L1, L1 - 1) / 2 : 0, tx = (B1[0] - A1[0]) / L1, tz = (B1[1] - A1[1]) / L1;
+        // a run either side of a gap in its middle (fix3: the crowns' pediments), or the whole side
+        const runs = g > 0 ? [[A1, [A1[0] + tx * (L1 / 2 - g), A1[1] + tz * (L1 / 2 - g)]], [[A1[0] + tx * (L1 / 2 + g), A1[1] + tz * (L1 / 2 + g)], B1]] : [[A1, B1]];
+        for (const [A0, B0] of runs) {
+          const L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+          if (far) { for (const [P0, P1] of [[A0, B0], [B0, A0]]) { const F = face(P0, P1, y0, y1, CHK.crest); const n = nF(F); const a = vK(CHK.crest, at(F, 0, y0, 0), n, [0, 0]), c = vK(CHK.crest, at(F, L, y0, 0), n, [L, 0]), d = vK(CHK.crest, at(F, L, y1, 0), n, [L, 1]), e = vK(CHK.crest, at(F, 0, y1, 0), n, [0, 1]); b.quad(a, c, d, e, n); } continue; }
+          for (const [P0, P1] of [[A0, B0], [B0, A0]]) wall(face(P0, P1, y0, y1, 'balus', 0, Math.max(1, Math.round(L / bw))));
+        }
+      }
+    };
+
+    // the portals' arch measured on the centre pavilion's picture, and each passage's centre across its front (U for the
+    // north and south, V for the east and west: the courtyard's holes are cut to it, fix1, where they stood 0.35 m off)
+    const cw0 = M('centre')[0], arch = (A.meta.centre && A.meta.centre.arch) || [10.99, 16.01, 6.4, 9.14];
+    const pMid = (() => {
+      const xc = (arch[0] + arch[1]) / 2 / cw0, sp = C.spanEW.centre, w = 2 * C.spanNS.centre;
+      return { n: C.spanNS.centre - xc * w, s: -C.spanNS.centre + xc * w, e: sp[1] - xc * (sp[1] - sp[0]), w: sp[0] + xc * (sp[1] - sp[0]) };
+    })();
+    // ---------------- the wings: one ring round the courtyard (the curtains' walls, the courtyard's, the mansards, the deck)
+    const OUT = [-63.2, 63.2, -62.9, 63.1];   // the curtains' line all round
+    const wingLines = [[S.water, PROF.water], [S.base, PROF.base], [S.princ, PROF.string], [S.main, PROF.main]];
+    const curW = M('curtain')[0];
+    // the curtains: the exposed runs of the wings' outer wall between the pavilions and flanks
+    const curtainRuns = [
+      [[50, C.N.curtain], [30, C.N.curtain]], [[-30, C.N.curtain], [-50, C.N.curtain]],
+      [[-50, C.S.curtain], [-30, C.S.curtain]], [[30, C.S.curtain], [50, C.S.curtain]],
+      [[C.E.curtain, 50.5], [C.E.curtain, 29]], [[C.E.curtain, -30.5], [C.E.curtain, -50.5]],
+      [[-C.E.curtain, -50.5], [-C.E.curtain, -30.5]], [[-C.E.curtain, 29], [-C.E.curtain, 50.5]],
+    ];
+    for (const [A0, B0] of curtainRuns) {
+      const L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+      const F = face(A0, B0, 0, S.main, 'curtain', 0.5 - L / curW / 2, 0.5 + L / curW / 2);
+      wall(F); stoneCornices(F, wingLines);
+      // a dormer over each bay of the mansard (4 bays a 16 m cell)
+      const bay = curW / 4, nb = Math.round(L / bay);
+      for (let i = 0; i < nb; i++) {
+        const sc = L / 2 + (i - (nb - 1) / 2) * bay;
+        dormer(F, sc - 1.2, sc + 1.2, 27.0, 31.4, -0.75, 1.3, 'dormer_w', 0, 1, { far: true });   // (fix2: the far level's too, they popped at the switch)
+        bonnet(F, sc, 31.3, -0.6 - 1.4 * (31.3 - S.main) / (C.roofs.curb - S.main) + 0.15);
+      }
+    }
+    // the outer mansard all round the wings (hidden where a pavilion or flank stands in front), the deck, the courtyard's
+    // mansard; the deck has the courtyard and the light wells cut from it
+    {
+      const R = OUT, ins = [[0.6, S.main], [2.0, C.roofs.curb], [2.0, C.roofs.curb + 0.5], [5.5, C.roofs.curtainDeck]];
+      hipRoof(R, ins, 'nsew', CHK.slate, true, [1, CHK.crest], { trim: true });
+      const deckOut = [[R[1] - 5.5, R[2] + 5.5], [R[0] + 5.5, R[2] + 5.5], [R[0] + 5.5, R[3] - 5.5], [R[1] - 5.5, R[3] - 5.5]];
+      // the courtyard's ring grown by the inner mansard's 2.5 m (its edges are all on the frame's axes)
+      const grow = (ring, d) => ring.map((p, i) => {
+        const a = ring[(i + ring.length - 1) % ring.length], c = ring[(i + 1) % ring.length];
+        const n1 = [-(p[1] - a[1]), p[0] - a[0]], n2 = [-(c[1] - p[1]), c[0] - p[0]];
+        const l1 = Math.hypot(n1[0], n1[1]) || 1, l2 = Math.hypot(n2[0], n2[1]) || 1;
+        const m = [n1[0] / l1 + n2[0] / l2, n1[1] / l1 + n2[1] / l2], dot = (n1[0] * n2[0] + n1[1] * n2[1]) / l1 / l2;
+        return [p[0] - m[0] * d / (1 + dot), p[1] - m[1] * d / (1 + dot)];
+      });
+      const courtIn = grow(C.court, 2.5);
+      const holes = [courtIn, ...C.wells.map((w) => [[w[1], w[2]], [w[0], w[2]], [w[0], w[3]], [w[1], w[3]]])];
+      const up = [0, 1, 0], y = C.roofs.curtainDeck;
+      const tris = THREE.ShapeUtils.triangulateShape(deckOut.map((q) => new THREE.Vector2(q[0], q[1])), holes.map((h) => h.map((q) => new THREE.Vector2(q[0], q[1]))));
+      const all = deckOut.concat(...holes), ix = all.map((q) => vK(CHK.deck, [q[0], y, q[1]], up, [q[0], q[1]]));
+      for (const t of tris) b.tri(ix[t[0]], ix[t[1]], ix[t[2]], up);
+      // the courtyard's walls and its own mansard to the deck (fix2, the photographs 20230419181543 and _181701: the plain
+      // office grid, 'court', only on the north face by the tower and the forecourt's sides; the east, west and south faces
+      // in 'court_main', with its tall sashes and great arched windows; over each passage's courtyard end the bay,
+      // 'court_bay', 14 m centred on it, the passage's own small arch cut through its foot: the forecourt's back is that bay
+      // whole)
+      const ring = C.court, cw = M('court')[0], cwm = M('court_main')[0], bayW = M('court_bay')[0], arch2 = chBayArch();
+      for (let i = 0; i < ring.length; i++) {
+        const A0 = ring[i], B0 = ring[(i + 1) % ring.length], L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+        const F = face(A0, B0, 0, C.courtTop, 'court', 0, L / cw);
+        // the north wall runs into the tower's base; inside it the north passage would see its back (fix1), so it stops there
+        if (i === 0) {
+          const tb = C.tower.base[2];
+          for (const [ua, ub] of [[A0[0], -tb], [tb, B0[0]]]) { const G2 = face([ua, A0[1]], [ub, A0[1]], 0, C.courtTop, 'court', (ua - A0[0]) / cw, (ub - A0[0]) / cw); wall(G2); cornice(G2, S.base, PROF.base); }
+        } else if (i === 3 || i === 5) { wall(F); cornice(F, S.base, PROF.base); }   // the forecourt's sides
+        else {
+          const mid = chPortalMid(A0, B0, L, pMid), Pt = (s2) => [A0[0] + F.tx * s2, A0[1] + F.tz * s2];
+          const runs = mid == null ? [[0, L, 'court_main']] : [[0, mid - bayW / 2, 'court_main'], [mid - bayW / 2, mid + bayW / 2, 'court_bay'], [mid + bayW / 2, L, 'court_main']];
+          for (const [a, c, cell] of runs) {
+            if (c - a < 0.01) continue;
+            const bay = cell === 'court_bay', G = face(Pt(a), Pt(c), 0, C.courtTop, cell, bay ? 0 : a / cwm, bay ? 1 : c / cwm), h2 = bay && !far ? arch2.slice(0, 4) : null;
+            wall(G, h2); cornice(G, S.base, PROF.base, null, h2);
+          }
+        }
+        cornice(F, C.courtTop, PROF.attic);
+        // the mansard: from the wall's head (on its line, fix1: from 0.5 in it left a slot open to the inside) to 2.5 in at
+        // 35.5, then up to the deck; a dormer every 4 m
+        const G = face(courtIn[i], courtIn[(i + 1) % ring.length], 0, 1, CHK.slate);
+        const p0 = at(F, 0, C.courtTop, 0), p1 = at(F, L, C.courtTop, 0);
+        const q0 = [courtIn[i][0], 35.5, courtIn[i][1]], q1 = [courtIn[(i + 1) % ring.length][0], 35.5, courtIn[(i + 1) % ring.length][1]];
+        const nn = (() => { const dy = 4.0, dIn = 2.5, l = Math.hypot(dy, dIn); return [F.nx * dy / l, dIn / l, F.nz * dy / l]; })();
+        const a = vK(CHK.slate, p0, nn, [0, 0]), c = vK(CHK.slate, p1, nn, [L, 0]), d = vK(CHK.slate, q1, nn, [L, 4.5]), e = vK(CHK.slate, q0, nn, [0, 4.5]);
+        b.quad(a, c, d, e, nn);
+        const r0 = vK(CHK.crest, q0, nF(F), [0, 0]), r1 = vK(CHK.crest, q1, nF(F), [L, 0]), r2 = vK(CHK.crest, [q1[0], 36.0, q1[2]], nF(F), [L, 0.5]), r3 = vK(CHK.crest, [q0[0], 36.0, q0[2]], nF(F), [0, 0.5]);
+        b.quad(r0, r1, r2, r3, nF(F));
+        void G;
+        if (L > 6) for (let s = 3; s < L - 2; s += 4) dormer(F, s - 0.8, s + 0.8, 31.9, 34.8, -0.75, 1.4, 'dormer_w');
+      }
+      // the decks' glazed ridge skylights, a row along each wing as the 1965 aerial shows them (fix1): a painted curb, two
+      // panes of glass to a ridge, the gable ends
+      if (!far) for (const [su, sv, au] of [[22, -49.5, 1], [-22, -49.5, 1], [41, -49.5, 1], [-41, -49.5, 1], [18, 50.5, 1], [-18, 50.5, 1], [54, 40, 0], [-54, 40, 0],
+        [47.5, -28, 0], [-47.5, -28, 0], [47.5, 19, 0], [-47.5, 19, 0]]) {
+        const hl = 3.5, hw = 1.2, y0 = C.roofs.curtainDeck, yc = y0 + 0.4, yr = yc + 0.9;
+        const P = (a, w, y) => (au ? [su + a, y, sv + w] : [su + w, y, sv + a]);
+        const Fc = au ? rectFaces([su - hl, su + hl, sv - hw, sv + hw], y0, yc, () => [CHK.paint]) : rectFaces([su - hw, su + hw, sv - hl, sv + hl], y0, yc, () => [CHK.paint]);
+        for (const k in Fc) { const F = Fc[k], n = nF(F), q = [at(F, 0, y0, 0), at(F, F.len, y0, 0), at(F, F.len, yc, 0), at(F, 0, yc, 0)].map((v) => vK(CHK.paint, v, n, [v[0], v[1]], 0, 0.85)); b.quad(q[0], q[1], q[2], q[3], n); }
+        for (const sg of [-1, 1]) {
+          const n = au ? nrm([0, hw, sg * 0.9]) : nrm([sg * 0.9, hw, 0]);
+          const q = [P(-hl, sg * hw, yc), P(hl, sg * hw, yc), P(hl, 0, yr), P(-hl, 0, yr)].map((v) => vK(CHK.glass, v, n, [v[0], v[2]]));
+          b.quad(q[0], q[1], q[2], q[3], n);
+          const ne = au ? [sg, 0, 0] : [0, 0, sg], e = [P(sg * hl, -hw, yc), P(sg * hl, hw, yc), P(sg * hl, 0, yr)].map((v) => vK(CHK.paint, v, ne, [v[0], v[1]], 0, 0.85));
+          b.tri(e[0], e[1], e[2], ne);
+        }
+      }
+      // the light wells: their walls from the deck down to their floors at 5 m (the court cell), and the floors
+      for (const w of C.wells) {
+        const ring2 = [[w[0], w[2]], [w[1], w[2]], [w[1], w[3]], [w[0], w[3]]];   // walked with the well on the right
+        for (let i = 0; i < 4; i++) {
+          const A0 = ring2[i], B0 = ring2[(i + 1) % 4], L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]);
+          wall(face(A0, B0, 5, 36, 'court', 0, L / cw, 0.16, 1));
+        }
+        if (!far) { const up2 = [0, 1, 0], ix2 = ring2.map((q) => vK(CHK.deck, [q[0], 5, q[1]], up2, [q[0], q[1]])); b.quad(ix2[0], ix2[1], ix2[2], ix2[3], up2); }
+      }
+    }
+    // ---------------- the corner pavilions: every face in the corner cell to the attic's cornice, the concave mansard, the
+    // cap stage and its pyramid, a flagpole
+    for (const [su, sv] of [[1, -1], [-1, -1], [1, 1], [-1, 1]]) {
+      const R = [su > 0 ? 50 : -C.E.corner, su > 0 ? C.E.corner : -50, sv < 0 ? C.N.corner : 50.5, sv < 0 ? -50.5 : C.S.corner];
+      const Fs = rectFaces(R, 0, C.cornerTop, () => ['corner', 0, 1]);
+      for (const k in Fs) {
+        const F = Fs[k];
+        wall(F); stoneCornices(F, [[S.water, PROF.water], [S.base, PROF.base], [S.princ, PROF.string], [S.main, PROF.string], [C.cornerTop, PROF.top]]);
+        // the outer faces' great dormer on the mansard
+        const outer = (k === 'n' && sv < 0) || (k === 's' && sv > 0) || (k === 'e' && su > 0) || (k === 'w' && su < 0);
+        if (outer) dormer(F, F.len / 2 - 1.8, F.len / 2 + 1.8, 38.4, 45.6, -0.55, 2.0, 'dormer_c', 0, 1, { far: true });
+        if (outer) for (const [x0, ct, st, sf, r] of (A.meta.corner && A.meta.corner.cols) || []) column(F, x0 / M('corner')[0] * F.len, ct, st, sf, r);
+      }
+      const cr = C.roofs, prof = [[0.4, C.cornerTop], [1.2, 41], [2.25, cr.cornerCurb], [2.25, cr.cornerCurb + 0.6]];   // from the wall's head (fix1: from 0.3 m over it, a slit)
+      hipRoof(R, prof, 'nsew', CHK.slate, false, [2, CHK.crest], { trim: true });
+      const cu = (R[0] + R[1]) / 2, cv = (R[2] + R[3]) / 2;
+      // the cap stage: a 7.5 m square to 47.0, the white cornice box the photographs show under its pyramid (fix1: it was
+      // slate), the pyramid to 48.8, a flagpole to 58.4
+      const capR = [cu - 3.75, cu + 3.75, cv - 3.75, cv + 3.75];
+      { const Fs = rectFaces(capR, cr.cornerCurb, 47.0, (s2, L2) => ['ashlar', 0, L2 / 4, 0, (47.0 - cr.cornerCurb) / 4]);
+        for (const k in Fs) { wall(Fs[k]); cornice(Fs[k], 47.0, PROF.attic); } }
+      cresting([R[0] + 2.25, R[1] - 2.25, R[2] + 2.25, R[3] - 2.25], cr.cornerCurb + 0.6, cr.cornerCurb + 1.5);
+      pyramid(cu, cv, 3.75, 3.75, 47.0, cr.cornerCap, 0.25, 0.25, CHK.slate);
+      if (!far) cyl(cu, cv, cr.cornerCap, cr.cornerPole, 0.13, 0.08, 6, CHK.paint, 1);
+      top('cornerCap', cr.cornerCap); top('cornerPole', cr.cornerPole);
+    }
+    // ---------------- the flanks: three bays each side of every centre pavilion, the bell mansard over the front and both
+    // ends, its deck at 39.4; three dormers at the foot and three oculi above
+    const flankW = M('flank')[0];
+    const flankBlocks = [
+      { R: [13.5, 30, C.N.flank, -56.0], out: 'n' }, { R: [-30, -13.5, C.N.flank, -56.0], out: 'n' },
+      { R: [13.5, 30, 54.0, C.S.flank], out: 's' }, { R: [-30, -13.5, 54.0, C.S.flank], out: 's' },
+      { R: [54.0, C.E.flank, 13.3, 29], out: 'e' }, { R: [54.0, C.E.flank, -30.5, -13.7], out: 'e' },
+      { R: [-C.E.flank, -54.0, 13.3, 29], out: 'w' }, { R: [-C.E.flank, -54.0, -30.5, -13.7], out: 'w' },
+    ];
+    for (const fb of flankBlocks) {
+      const Fs = rectFaces(fb.R, 0, S.main, (s, L) => (s === fb.out ? ['flank', 0.5 - L / flankW / 2, 0.5 + L / flankW / 2] : ['flank', 0, L / flankW]));
+      const back = { n: 's', s: 'n', e: 'w', w: 'e' }[fb.out];
+      for (const k in Fs) {
+        if (k === back) continue;
+        const F = Fs[k];
+        wall(F); stoneCornices(F, wingLines);
+        if (k === fb.out) {
+          colsOn(F, 'flank');
+          for (let i = 0; i < 3; i++) {
+            const sc = F.len * (i + 0.5) / 3;
+            dormer(F, sc - 1.2, sc + 1.2, 27.0, 31.4, -0.85, 1.3, 'dormer_w', 0, 1, { far: true });
+            dormer(F, sc - 1.0, sc + 1.0, 33.0, 35.4, -2.55, 1.2, 'oculus', 0, 1, { far: true });
+          }
+        }
+      }
+      const sides = 'nsew'.replace(back, '');
+      hipRoof(fb.R, [[0.5, S.main], [1.0, 29.5], [1.9, 32.5], [3.2, 35.3], [4.8, 37.6], [6.5, C.roofs.flankDeck], [6.5, C.roofs.flankDeck + 0.4]], sides, CHK.slate, false, [5, CHK.crest], { trim: true, trimFar: true });
+      top('flankDeck', C.roofs.flankDeck);
+    }
+    // ---------------- the centre pavilions: the centre cell's front (its middle bay standing forward with the portal), the
+    // returns, the shoulders to the body roof at 49, the crown, its cresting, finial and flagpole, the aedicule and oculi
+    const cpav = [
+      { side: 'n', front: C.N.centre, bay: C.N.bay, depth: -50.9, pole: true },
+      { side: 's', front: C.S.centre, bay: C.S.bay, depth: 40.0 },
+      { side: 'e', front: C.E.centre, bay: C.E.bay, depth: 40.0, span: C.spanEW.centre, bspan: C.spanEW.bay },
+      { side: 'w', front: -C.E.centre, bay: -C.E.bay, depth: -40.0, span: C.spanEW.centre, bspan: C.spanEW.bay },
+    ];
+    // (U, V) of a point s metres across the pavilion's front from its left end (as seen from outside) and d out of its
+    // body's line, for each side
+    for (const cp of cpav) {
+      const sg = cp.side === 'n' || cp.side === 'w' ? -1 : 1;
+      const ns = cp.side === 'n' || cp.side === 's';
+      const span = cp.span || [-C.spanNS.centre, C.spanNS.centre], bsp = cp.bspan || [-C.spanNS.bay, C.spanNS.bay];
+      // the plan rectangle of the body (front to depth)
+      const R = ns ? [span[0], span[1], Math.min(cp.front, cp.depth), Math.max(cp.front, cp.depth)] : [Math.min(cp.front, cp.depth), Math.max(cp.front, cp.depth), span[0], span[1]];
+      // the left and right ends as seen from outside: north front seen from the north has east on the left
+      const L0 = ns ? (cp.side === 'n' ? span[1] : span[0]) : (cp.side === 'e' ? span[1] : span[0]);
+      const L1 = ns ? (cp.side === 'n' ? span[0] : span[1]) : (cp.side === 'e' ? span[0] : span[1]);
+      const B0L = ns ? (cp.side === 'n' ? bsp[1] : bsp[0]) : (cp.side === 'e' ? bsp[1] : bsp[0]);
+      const B1L = ns ? (cp.side === 'n' ? bsp[0] : bsp[1]) : (cp.side === 'e' ? bsp[0] : bsp[1]);
+      const P2 = (a, line) => (ns ? [a, line] : [line, a]);
+      const width = Math.abs(L1 - L0), uAt = (a) => Math.abs(a - L0) / width;
+      const H = C.centreTop;
+      // the front in three planes: the side bays on the body's line, the middle bay forward on its own with the portal
+      const Fl = face(P2(L0, cp.front), P2(B0L, cp.front), 0, H, 'centre', 0, uAt(B0L));
+      const Fm = face(P2(B0L, cp.bay), P2(B1L, cp.bay), 0, H, 'centre', uAt(B0L), uAt(B1L));
+      const Fr = face(P2(B1L, cp.front), P2(L1, cp.front), 0, H, 'centre', uAt(B1L), 1);
+      wall(Fl); wall(Fr);
+      // the arch measured on the picture, across the whole front, taken into the middle bay's own metres
+      const aS0 = arch[0] / cw0 * width - Math.abs(B0L - L0), aS1 = arch[1] / cw0 * width - Math.abs(B0L - L0);
+      wall(Fm, [aS0, aS1, arch[2], arch[3]]);
+      // the far level has no passage behind it: its mouth a recess of the passage's own mean tone, a vault's shade with the
+      // courtyard's light at its end (fix3, the review: the picture's dark arch, black, where the near level shows the light
+      // through the passage, flipped at a phone's switch)
+      if (far) {
+        const sc = (aS0 + aS1) / 2, ra = (aS1 - aS0) / 2, nb = nF(Fm), sh = 0.55, pts = [[aS0, 0]];
+        for (let i = 0; i <= 4; i++) { const t = Math.PI * (1 - i / 4); pts.push([sc + Math.cos(t) * ra, arch[2] + Math.sin(t) * (arch[3] - arch[2])]); }
+        pts.push([aS1, 0]);
+        const c0 = vA(CHK.vault, at(Fm, sc, 0, -0.12), nb, [sc, 0], sh), ix = pts.map(([s2, y]) => vA(CHK.vault, at(Fm, s2, y, -0.12), nb, [s2, y], sh * (y > arch[2] ? 0.8 : 1)));
+        for (let i = 0; i + 1 < ix.length; i++) b.tri(c0, ix[i], ix[i + 1], nb);
+      }
+      // the middle bay's two returns back to the body's line
+      wall(face(P2(B0L, cp.front), P2(B0L, cp.bay), 0, H, 'centre', uAt(B0L) - Math.abs(cp.bay - cp.front) / cw0, uAt(B0L)));
+      wall(face(P2(B1L, cp.bay), P2(B1L, cp.front), 0, H, 'centre', uAt(B1L), uAt(B1L) + Math.abs(cp.bay - cp.front) / cw0));
+      // the pavilion's sides back from its front to the flanks' line, in its own outer bay
+      const flankLine = ns ? (cp.side === 'n' ? C.N.flank : C.S.flank) : (cp.side === 'e' ? C.E.flank : -C.E.flank);
+      const ret = Math.abs(cp.front - flankLine) + 0.5;
+      const back = cp.front - sg * ret;
+      wall(face(P2(L1, cp.front), P2(L1, back), 0, H, 'centre', 1 - ret / cw0, 1));
+      wall(face(P2(L0, back), P2(L0, cp.front), 0, H, 'centre', 0, ret / cw0));
+      // the cornices at the picture's own lines (its storeys stand taller than the wings', as on the building)
+      const lines = [[S.water, PROF.water], [9.6, PROF.string], [23.0, PROF.string], [H, PROF.top]];
+      for (const F of [Fl, Fm, Fr]) stoneCornices(F, lines, F === Fm && !far ? [aS0, aS1, arch[2], arch[3]] : null);
+      stoneCornices(face(P2(L1, cp.front), P2(L1, back), 0, H, 'centre', 1 - ret / cw0, 1), lines);
+      stoneCornices(face(P2(L0, back), P2(L0, cp.front), 0, H, 'centre', 0, ret / cw0), lines);
+      // the columns measured on the picture, each on the plane it stands on
+      { const bs = Math.abs(B0L - L0), be = Math.abs(B1L - L0);
+        for (const [x0, ct, st, sf, r] of (A.meta.centre && A.meta.centre.cols) || []) {
+          const x = x0 / cw0 * width;
+          if (x < bs) column(Fl, x, ct, st, sf, r); else if (x < be) column(Fm, x - bs, ct, st, sf, r); else column(Fr, x - be, ct, st, sf, r);
+        } }
+      // the portal's passage to the courtyard: its walls, the cast-iron barrel vault, the floor
+      chPortal(b, { vK, vC, vA, M, gnd: gnd || (() => 0) }, cp, Fm, aS0, aS1, arch, far);
+      // the body's sides from the flanks' line back, and its back, over the wings' roofs (the court cell's head: plain
+      // storeys and a cornice)
+      // (fix2: the picture's own storeys at their own size, its third storey and cornice at the body's head, where the court
+      // cell's head stretched over 13 m read as a blank box from the courtyard)
+      { const cwc = M('court_main')[0], bs = Math.min(cp.front, cp.depth), bd = Math.max(cp.front, cp.depth);
+        const backS = sg < 0 ? back : back, near = Math.min(backS, cp.depth), farV = Math.max(backS, cp.depth);
+        const sidesR = ns ? [[[span[1], farV], [span[1], near]], [[span[0], near], [span[0], farV]]] : [[[near, span[0]], [farV, span[0]]], [[farV, span[1]], [near, span[1]]]];
+        void bs; void bd;
+        for (const [A0, B0] of sidesR) {
+          // walked with the outside on the right: flip a run whose right-hand side faces the body
+          const mx = (A0[0] + B0[0]) / 2, mz = (A0[1] + B0[1]) / 2, du = B0[0] - A0[0], dv = B0[1] - A0[1];
+          const cxB = (R[0] + R[1]) / 2, czB = (R[2] + R[3]) / 2, outward = (-dv) * (mx - cxB) + du * (mz - czB) > 0;
+          const [P0, P1] = outward ? [A0, B0] : [B0, A0], L = Math.hypot(du, dv);
+          const F = face(P0, P1, S.main - 0.5, H, 'court_main', 0, L / cwc, CH_BODY_V, 1);
+          wall(F); cornice(F, H, PROF.attic);
+        }
+        const bk = ns ? [[span[0], cp.depth], [span[1], cp.depth]] : [[cp.depth, span[1]], [cp.depth, span[0]]];
+        const bx = (bk[0][0] + bk[1][0]) / 2, bz = (bk[0][1] + bk[1][1]) / 2, du = bk[1][0] - bk[0][0], dv = bk[1][1] - bk[0][1];
+        const out2 = (-dv) * (bx - (R[0] + R[1]) / 2) + du * (bz - (R[2] + R[3]) / 2) > 0;
+        const [Q0, Q1] = out2 ? bk : [bk[1], bk[0]];
+        if (cp.side !== 'n') { const F = face(Q0, Q1, S.main - 0.5, H, 'court_main', 0, width / cwc, CH_BODY_V, 1); wall(F); cornice(F, H, PROF.attic); }
+      }
+      // the roof (fix1, after the photographs from Broad Street, HABS's 1982 elevated view of the north front, the 1965 and
+      // 2019 aerials): the crown, a tall narrow mansard rising straight from the middle bay's cornice to a bracketed cornice
+      // box at 57.0, its low pyramid to 59.6 with the cresting round its foot, the finial to 61.8; either side of it a
+      // segmental shoulder, a quarter-round slate roof from the front cornice back to the body's attic, its lunette on the
+      // front framed in carved white trim and carrying an oculus; behind them the body's attic, its deck at 49.0 and its
+      // sides a straight mansard. Laid in the pavilion's own frame: x across (to the right as seen from outside) from the
+      // middle bay's centre, z in from the front's line, y up
+      const ax = { n: [-1, 0], s: [1, 0], e: [0, -1], w: [0, 1] }[cp.side], inn = { n: [0, 1], s: [0, -1], e: [-1, 0], w: [1, 0] }[cp.side];
+      const bayMid = (bsp[0] + bsp[1]) / 2, o2 = ns ? [bayMid, cp.front] : [cp.front, bayMid];
+      const LP = (x, y, z) => [o2[0] + ax[0] * x + inn[0] * z, y, o2[1] + ax[1] * x + inn[1] * z];
+      const LN = (x, y, z) => nrm([ax[0] * x + inn[0] * z, y, ax[1] * x + inn[1] * z]);
+      const xOf = (a2) => (ns ? (a2 - o2[0]) * ax[0] : (a2 - o2[1]) * ax[1]);
+      const xL = Math.min(xOf(span[0]), xOf(span[1])), xR = Math.max(xOf(span[0]), xOf(span[1]));
+      const zb = -Math.abs(cp.bay - cp.front), zD = Math.abs(cp.depth - cp.front);
+      const rect = (x0, x1, z0, z1) => { const p = LP(x0, 0, z0), q = LP(x1, 0, z1); return [Math.min(p[0], q[0]), Math.max(p[0], q[0]), Math.min(p[2], q[2]), Math.max(p[2], q[2])]; };
+      const SD = { left: { n: 'e', s: 'w', e: 's', w: 'n' }[cp.side], right: { n: 'w', s: 'e', e: 'n', w: 's' }[cp.side] };
+      const fr = (x0, x1, z) => { const p = LP(x0, 0, z), q = LP(x1, 0, z); return [[p[0], p[2]], [q[0], q[2]]]; };   // a run along z, the outside (-z) on its right
+      const yT = 53.6, ci = 2.2, cwH = (bsp[1] - bsp[0]) / 2, zc0 = zb + 0.35, zc1 = zc0 + 13.0;
+      // the middle bay's head between its cornice and the crown
+      { const up = [0, 1, 0], ix = [LP(-cwH, H, zb), LP(cwH, H, zb), LP(cwH, H, zc0 + 0.02), LP(-cwH, H, zc0 + 0.02)].map((q) => vK(CHK.marble, q, up, [q[0], q[2]])); b.quad(ix[0], ix[1], ix[2], ix[3], up); }
+      // the crown's mansard, its hips in trim
+      hipRoof(rect(-cwH, cwH, zc0, zc1), [[0, H], [ci, yT]], 'nsew', CHK.slate, true, null, { trim: true, trimW: 1.1, trimO: 0.14, trimFar: true });   // the photographs' broad carved borders
+      // the cornice box: white stone walls from the mansard's head to 57.0 on 0.5 m of overhang (its soffit), its cornice
+      // on brackets
+      const bxH = cwH - ci + 0.5, bz0 = zc0 + ci - 0.5, bz1 = zc1 - ci + 0.5, RB = rect(-bxH, bxH, bz0, bz1), RT = rect(-(cwH - ci), cwH - ci, zc0 + ci, zc1 - ci);
+      // its faces in their own picture (fix3, the review against N Broad Street's photograph: plain ashlar with tiny brackets,
+      // where the box has a frieze of heavy carved consoles, dentils and a pediment with a mask on each face): the bracket
+      // frieze, dentils and cornice painted, the consoles built proud where the picture has them, the pediment built on the
+      // cornice to the picture's measure (its tympanum the picture's own, projected)
+      const cr = A.meta.crown || {}, ped = cr.ped || [2.594, 6.006, 3.408, 4.97], crH = M('crown')[1], yC = C.roofs.crown[0], hBox = yC - yT;
+      const box = rectFaces(RB, yT, yC, () => ['crown', 0, 1, 0, hBox / crH]);
+      for (const k in box) {
+        const F = box[k];
+        wall(F); cornice(F, yC, PROF.box); cornice(F, yT + 0.45, PROF.base);
+        if (!far && !isTouch) for (let i = 0; i < 11; i++) { const s2 = (0.043 + i * 0.0911) * F.len; proud(F, s2 - 0.17, s2 + 0.17, yT + 0.92, yT + 2.38, 0, 0.32); }   // (a phone keeps the painted ones)
+        // the pediment: a gable on the cornice's top, its face 0.5 m out over the cornice, its back into the pyramid
+        { const sc0 = F.len / M('crown')[0], s0 = ped[0] * sc0, s1 = ped[1] * sc0, sm = (s0 + s1) / 2, y0 = yC, y1 = yC + (ped[3] - ped[2]);
+          const G = { ...F, y0: yT, y1: yT + crH, v0: 0, v1: 1 };
+          const fr2 = [at(F, s0, y0, 0.5), at(F, s1, y0, 0.5), at(F, sm, y1, 0.5)], bk = [at(F, s0, y0, -0.6), at(F, s1, y0, -0.6), at(F, sm, y1, -0.6)];
+          const nf = nF(F), ix = fr2.map((q) => vF(G, q, nf)); b.tri(ix[0], ix[1], ix[2], nf);
+          if (far) continue;   // (the far level: its face alone)
+          const nb = [-nf[0], 0, -nf[2]], jx = bk.map((q) => vK(CHK.marble, q, nb, [q[0], q[1]])); b.tri(jx[0], jx[1], jx[2], nb);
+          for (const [P0, P1, B0, B1] of [[fr2[0], fr2[2], bk[0], bk[2]], [fr2[2], fr2[1], bk[2], bk[1]]]) {   // the raking tops
+            const e1 = [P1[0] - P0[0], P1[1] - P0[1], P1[2] - P0[2]], e2 = [B0[0] - P0[0], B0[1] - P0[1], B0[2] - P0[2]];
+            let n = nrm([e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]]); if (n[1] < 0) n = n.map((v) => -v);
+            const q = [P0, P1, B1, B0].map((v) => vK(CHK.marble, v, n, [v[0] + v[2], v[1]], 0, 0.92)); b.quad(q[0], q[1], q[2], q[3], n);
+          }
+        }
+      }
+      { const dn = [0, -1, 0], o4 = [[RB[1], RB[2]], [RB[0], RB[2]], [RB[0], RB[3]], [RB[1], RB[3]]], i4 = [[RT[1], RT[2]], [RT[0], RT[2]], [RT[0], RT[3]], [RT[1], RT[3]]];
+        for (let i = 0; i < 4; i++) { const j = (i + 1) % 4, ix = [o4[i], o4[j], i4[j], i4[i]].map((q) => vK(CHK.marble, [q[0], yT, q[1]], dn, [q[0], q[1]])); b.quad(ix[0], ix[1], ix[2], ix[3], dn); } }
+      const cx = (RB[0] + RB[1]) / 2, cz = (RB[2] + RB[3]) / 2, hu = (RB[1] - RB[0]) / 2, hv = (RB[3] - RB[2]) / 2;
+      pyramid(cx, cz, hu, hv, C.roofs.crown[0], C.roofs.crown[1], 0, 0, CHK.slate);
+      cresting([cx - hu + 0.25, cx + hu - 0.25, cz - hv + 0.25, cz + hv - 0.25], C.roofs.crown[0], C.roofs.crown[0] + 0.85, far ? 0 : (ped[1] - ped[0]) / M('crown')[0] + 0.1);   // (fix3: stopped either side of the pediments)
+      if (!far) { cyl(cx, cz, C.roofs.crown[1] - 0.3, C.roofs.crown[2], 0.34, 0.08, 6, CHK.paint, 1); cyl(cx, cz, C.roofs.crown[2], C.roofs.crown[3], 0.14, 0.09, 6, CHK.paint, 1); }
+      top('centreCrown', C.roofs.crown[2]); top('centreBody', C.roofs.centreBody); top('crownDeck', C.roofs.crown[0]);
+      // the caryatid aedicule climbing the crown's face from the middle bay's cornice
+      { const [A2, B2] = fr(-cwH, cwH, zb), Fc = face(A2, B2, H, 50.6, 'aedicule');
+        dormer(Fc, cwH - 4.3, cwH + 4.3, H, 50.6, -0.1, 3.9, 'aedicule', 0, 1, { far: true }); }   // slate cheeks, as the picture's ground
+      // the shoulders, a quarter-ellipse each from the pavilion's edge at the cornice to the crown's face at 46.1
+      const ySh = 6.8, xi = cwH - ci * ySh / (yT - H), Ds = 6.0, nseg = far ? 3 : 8;
+      for (const sx of [-1, 1]) {
+        const xe = sx < 0 ? -xL : xR, ra = xe - xi, pts = [];   // from the side wall's own line (its cornice closes there)
+        for (let i = 0; i <= nseg; i++) { const th = Math.PI / 2 * i / nseg, c = Math.cos(th), s2 = Math.sin(th); pts.push([xi + ra * c, H + ySh * s2, c * ySh, s2 * ra, i ? Math.hypot(ra * c - ra * Math.cos(Math.PI / 2 * (i - 1) / nseg), ySh * (s2 - Math.sin(Math.PI / 2 * (i - 1) / nseg))) : 0]); }
+        let arc = 0;
+        for (let i = 0; i < nseg; i++) {
+          const [x0, y0, n0x, n0y] = pts[i], [x1, y1, n1x, n1y, dl] = pts[i + 1], n = LN(sx * (n0x + n1x), n0y + n1y, 0);
+          const ix = [vK(CHK.slate, LP(sx * x0, y0, 0), n, [0, arc]), vK(CHK.slate, LP(sx * x0, y0, Ds), n, [Ds, arc]), vK(CHK.slate, LP(sx * x1, y1, Ds), n, [Ds, arc + dl]), vK(CHK.slate, LP(sx * x1, y1, 0), n, [0, arc + dl])];
+          b.quad(ix[0], ix[1], ix[2], ix[3], n);
+          rib(LP(sx * x0, y0, 0), LP(sx * x1, y1, 0), nrm([...LN(0, 0, -1)].map((v, q) => v + n[q])), 0.95, 0.14, true);
+          arc += dl;
+        }
+        // the lunettes, front and back
+        for (const [z, nz] of [[0, -1], [Ds, 1]]) {
+          const n = LN(0, 0, nz), c0 = vK(CHK.slate, LP(sx * xi, H, z), n, [0, 0]);
+          for (let i = 0; i < nseg; i++) b.tri(c0, vK(CHK.slate, LP(sx * pts[i][0], pts[i][1], z), n, [pts[i][0] - xi, pts[i][1] - H]), vK(CHK.slate, LP(sx * pts[i + 1][0], pts[i + 1][1], z), n, [pts[i + 1][0] - xi, pts[i + 1][1] - H]), n);
+        }
+        // the framed oculus on the lunette
+        const [A2, B2] = fr(-20, 20, 0), Ff = face(A2, B2, H, H + 4, 'oculus'), xo = 20 + sx * (xi + 0.55 * ra);
+        dormer(Ff, xo - 1.0, xo + 1.0, H + 1.1, H + 3.5, 0.35, 0.45, 'oculus', 0, 1, { soffit: true, far: true });
+      }
+      // the body's attic behind the shoulders (its front in stone, its sides the old straight mansard) and its deck
+      // (fix2, the 2019 aerial: toward the courtyard the body's back is the same mansard, three framed oculi in it, where a
+      // straight 10 m attic of plain ashlar stood as a blank box over every courtyard view; the north one's back is against
+      // the tower and stays straight)
+      const backS = cp.side === 'n' ? '' : { s: 'n', e: 'w', w: 'e' }[cp.side];
+      hipRoof(rect(xL, xR, Ds, zD), [[0.6, H], [1.5, 43.5], [2.4, 46.4], [3.0, 48.0], [3.5, C.roofs.centreBody]], SD.left + SD.right + backS, CHK.slate, false, null, { trim: true, straight: 'ashlar' });
+      if (backS) {
+        const [A2, B2] = fr(xR, xL, zD), Fb = face(A2, B2, H, C.roofs.centreBody, CHK.slate);   // walked with the courtyard on its right
+        for (const xo of [-8.5, 0, 8.5]) dormer(Fb, Fb.len / 2 + xo - 1.0, Fb.len / 2 + xo + 1.0, 41.0, 43.4, -0.8, 1.7, 'oculus', 0, 1, { soffit: true, far: true });
+      }
+      for (const sx of [-1, 1]) {
+        const xa = cwH - ci * (C.roofs.centreBody - H) / (yT - H) - 0.2, xb = (sx < 0 ? -xL : xR) - 3.5;
+        const [A2, B2] = sx < 0 ? fr(-xb, -xa, Ds) : fr(xa, xb, Ds);
+        cornice(face(A2, B2, H, C.roofs.centreBody, 'ashlar', 0, (xb - xa) / 4, H / 4, C.roofs.centreBody / 4), C.roofs.centreBody, PROF.attic);
+      }
+      if (cp.pole) {
+        top('flagN', C.roofs.crown[3]);
+        // the national flag on the north pavilion's pole (Round 191: the only flag the photographs show on the building),
+        // 3.7 by 2.0 m, flying east with a little wave; its stripes and canton are drawn by the shader (kind flag); the far
+        // level's too (fix1: it went at the switch), its pole there a thin box
+        {
+          if (far) pyramid(cx, cz, 0.1, 0.1, C.roofs.crown[1], C.roofs.crown[3], 0.06, 0.06, CHK.paint);
+          const y1 = C.roofs.crown[3] - 0.4, y0 = y1 - 2.0, n = far ? 2 : 4;
+          for (const sg of [1, -1]) {
+            const col = [];
+            for (let i = 0; i <= n; i++) {
+              const t = i / n, x = cx + 0.12 + 3.7 * t, z = cz + 0.25 * Math.sin(t * Math.PI * 1.5) * t, nz = sg;
+              col.push([vK(CHK.flag, [x, y0, z], [0, 0, nz], [t, 0]), vK(CHK.flag, [x, y1, z], [0, 0, nz], [t, 1])]);
+            }
+            for (let i = 0; i < n; i++) b.quad(col[i][0], col[i + 1][0], col[i + 1][1], col[i][1], [0, 0, sg]);
+          }
+        }
+      }
+    }
+    // ---------------- the courtyard: the six round stair turrets, the apse at the tower's foot, the stair blocks on the roof
+    {
+      const segs = far ? 6 : 16, cw2 = M('court')[0];   // (fix3: the far level's turrets in six, its triangles under 6k)
+      for (const [tu, tv, wtop, ctop] of C.turrets) {
+        const circ = 2 * Math.PI * 2.7;
+        cyl(tu, tv, 0, C.courtTop, 2.7, 2.7, segs, 'court', circ / cw2, 0, 1, false);
+        cyl(tu, tv, C.courtTop, wtop, 2.7, 2.7, segs, 'turret', far ? 1 : 2, 0, 1, false);
+        if (!far) cyl(tu, tv, wtop - 0.6, wtop, 3.05, 3.05, segs, CHK.crest, 1, null, null, CHK.deck);
+        cyl(tu, tv, wtop, ctop, far ? 2.7 : 3.0, 0.15, segs, CHK.slate, 1);
+        if (!far) cyl(tu, tv, ctop, ctop + 1.8, 0.12, 0.05, 6, CHK.paint, 1, null, null, CHK.paint);
+        top('turret', ctop);
+      }
+      // the apse: a half drum at the tower's foot into the courtyard (fix2: the photographs' plain banded drum, its door in a
+      // blocky surround, three tall windows and three oculi under a moulded cornice), its roof flat behind the cornice
+      const ap = C.apse, n2 = far ? 6 : 12, rim = [], door = chApseDoor();
+      for (let i = 0; i <= n2; i++) {
+        const a = Math.PI * i / n2, x = ap.c[0] + Math.cos(a) * ap.r, z = ap.c[1] + Math.sin(a) * ap.r, n = [Math.cos(a), 0, Math.sin(a)], u = 1 - i / n2;
+        rim.push([x, z, n, u]);
+      }
+      for (let i = 0; i < n2; i++) {
+        const [x0, z0, n0, u0] = rim[i], [x1, z1, n1, u1] = rim[i + 1];
+        const nm = [(n0[0] + n1[0]) / 2, 0, (n0[2] + n1[2]) / 2];
+        // a strip of the facet from ta to tb along it, ya to yc up (under the datum its picture's foot row)
+        const strip = (ta, tb, ya, yc) => {
+          const Pt = (t, y) => [x0 + (x1 - x0) * t, y, z0 + (z1 - z0) * t], N = (t) => nrm([n0[0] + (n1[0] - n0[0]) * t, 0, n0[2] + (n1[2] - n0[2]) * t]), Uu = (t) => u0 + (u1 - u0) * t;
+          const vv = (y) => clamp(y / ap.top, 0.0005, 0.9995);
+          const ix = [[ta, ya], [tb, ya], [tb, yc], [ta, yc]].map(([t, y]) => b.v(Pt(t, y), N(t), [Uu(t), vv(y)], cellIx.apse, 0.71, mean.apse));
+          b.quad(ix[0], ix[1], ix[2], ix[3], nm);
+        };
+        // the two middle facets open on the north passage's door, the picture's own (fix1: its own short passage)
+        const xa = x0 - ap.c[0], xb = x1 - ap.c[0], open = !far && Math.min(Math.abs(xa), Math.abs(xb)) < door.dw;
+        strip(0, 1, -1.2, 0);
+        if (!open) { strip(0, 1, 0, ap.top); continue; }
+        const tj = (Math.sign(xa + xb) * door.dw - xa) / (xb - xa);   // the jamb, along the facet from rim[i]
+        if (Math.abs(xa) > Math.abs(xb)) { strip(0, tj, 0, ap.top); strip(tj, 1, door.dh, ap.top); } else { strip(0, tj, door.dh, ap.top); strip(tj, 1, 0, ap.top); }
+      }
+      // the door's surround (the review: an untextured box cut): the picture's blocky Gibbs jambs and its lintel of wedges
+      // built proud on the two facets either side of the apex, wearing the picture
+      if (!far) for (const i of [n2 / 2 - 1, n2 / 2]) {
+        const [x0, z0, , u0] = rim[i], [x1, z1, , u1] = rim[i + 1], G = face([x1, z1], [x0, z0], 0, ap.top, 'apse', u1, u0, 0, 1);
+        const apexAt0 = Math.abs(x1 - ap.c[0]) < 1e-3, sd = door.dw / (Math.abs(x0 - x1) / G.len), dir = apexAt0 ? 1 : -1, s0 = apexAt0 ? 0 : G.len;
+        const sAt = (m) => s0 + dir * m, box = (m0, m1, y0, y1, o) => proud(G, Math.min(sAt(m0), sAt(m1)), Math.max(sAt(m0), sAt(m1)), y0, y1, 0, o);
+        for (let k = 0, y = 0; y < door.dh - 0.2; k++, y += door.dh / 5) box(sd, sd + (k % 2 ? 0.34 : 0.58), y + 0.03, y + door.dh / 5 - 0.03, 0.12);
+        box(0, sd + 0.62, door.dh, door.dh + 0.95, 0.16);
+        box(0, 0.28, door.dh - 0.1, door.dh + 1.25, 0.22);   // the keystone
+      }
+      // the moulded cornice round its head (it stood flat under a painted balustrade)
+      if (!far) for (let i = 0; i < n2; i++) { const [x0, z0, , u0] = rim[i], [x1, z1, , u1] = rim[i + 1]; cornice(face([x1, z1], [x0, z0], 0, ap.top, 'apse', u1, u0, 0, 1), ap.top, PROF.attic, 0.06); }
+      { const up = [0, 1, 0], ctr = vK(CHK.deck, [ap.c[0], ap.top - 0.4, ap.c[1]], up, [0, 0]); const ix = rim.map(([x, z]) => vK(CHK.deck, [x, ap.top - 0.4, z], up, [x, z])); for (let i = 0; i < n2; i++) b.tri(ctr, ix[i], ix[i + 1], up);
+        // the parapet's inner face over its roof (fix1: seen from above, its back)
+        for (let i = 0; i < n2; i++) { const [x0, z0, n0] = rim[i], [x1, z1] = rim[i + 1], nn = [-n0[0], 0, -n0[2]], q = [[x0, ap.top - 0.4, z0], [x1, ap.top - 0.4, z1], [x1, ap.top, z1], [x0, ap.top, z0]].map((v) => vK(CHK.marble, v, nn, [v[0], v[1]])); b.quad(q[0], q[1], q[2], q[3], nn); } }
+      top('apse', ap.top);
+      for (const [su, sv, t0] of C.stairs) {
+        const R = [su - 3, su + 3, sv - 3, sv + 3];
+        const Fs = rectFaces(R, 30, t0 - 2.2, (s, L) => ['court', 0, L / cw2, (30 - 0) / C.courtTop * 0 + 0.55, 0.95]);
+        for (const k in Fs) wall(Fs[k]);
+        pyramid(su, sv, 3.2, 3.2, t0 - 2.2, t0, 0, 0, CHK.slate);
+      }
+    }
+    // ---------------- the statues on the apron, the courtyard's lamps, lanterns and railings (fix3)
+    if (!far) chDress(b, { vK, vC, vA, M, gnd: gnd || (() => 0), cellIx, mean });
+    // ---------------- the tower
+    chTower(b, { face, wall, at, proud, moulding, cornice, cyl, pyramid, rectFaces, vK, vF, PROF, cellIx, mean, M, A, far, top, dormer });
+    return { b, tops };
+  }
+  // the apron's statues and the courtyard's furniture (fix3, the review: the apron and the courtyard bare CG; the photographs
+  // show the generals McClellan and Reynolds on horseback flanking the north portal, Wanamaker, Bullitt and McKinley on their
+  // pedestals, and in the courtyard black lamp posts, lanterns on the turrets and iron railings round the areaways by the
+  // passages, 20221005171430, 20230419181543, _181701): the forms of chHorseForm and chStandForm in a bronze, their
+  // pedestals in the base course's granite, the iron in its black, the lamps' glass lit on the street lamps' photocell; all
+  // in the near level's one draw. Their places are OSM's nodes (the scene's metres), taken into the building's frame
+  // the courtyard's lamp posts (by the passages' ends and the apse), and the way a turret's lantern faces (to the courtyard's
+  // middle); the floor takes their pools at night (chFloor)
+  const CH_COURT_POSTS = [[5.2, 19.6], [-5.2, 19.6], [31.2, -6.6], [31.2, 3.6], [-31.2, -6.6], [-31.2, 3.6], [8.8, -21.6], [-8.8, -21.6]];
+  function chTurretOut(tu, tv) { const d = Math.hypot(tu, tv - 3.3) || 1; return [-tu / d, -(tv - 3.3) / d]; }
+  const CH_STATUES = [
+    ['horse', -1610.6, -861.2, [0, -1], 1.2, [4.4, 2.0, 2.7]],    // General George McClellan (Ellicott, 1894)
+    ['horse', -1576.2, -855.8, [0, -1], 1.2, [4.4, 2.0, 2.7]],    // Major General John Fulton Reynolds (Rogers, 1884)
+    ['stand', -1536.6, -794.2, [1, 0], 1.15, [1.7, 1.7, 2.5]],    // John Wanamaker (McKenzie, 1923)
+    ['stand', -1558.4, -836.3, [0.4, -1], 1.15, [1.7, 1.7, 2.3]], // John Christian Bullitt (Grafly, 1907)
+    ['stand', -1580.8, -695.4, [0, 1], 1.2, [2.6, 2.6, 4.2]],     // William McKinley (Niehaus, 1908)
+  ];
+  function chDress(b, H) {
+    const { vK, vC, gnd } = H, lo = isTouch, B = CITY_HALL.B0, [gw, gh] = H.M('granite');
+    const toF = (x, z) => { const dx = x - B[0], dz = z - B[1]; return [dx * fl.nx + dz * fl.nz, dx * fl.dx + dz * fl.dz]; };
+    // a form list into the buffer: its frame's x along (fu, fv) in the building's, scaled s, at (U0, y0, V0), in a kind
+    const form = (forms, U0, y0, V0, fu, fv, s, kind, shades) => {
+      const l = Math.hypot(fu, fv) || 1; fu /= l; fv /= l;
+      for (const [g0, t] of forms) {
+        const g = g0.index ? g0.toNonIndexed() : g0, p = g.attributes.position.array, nn = g.attributes.normal.array, sh = shades[t] || 1;
+        for (let i = 0; i < p.length; i += 9) {
+          const ix = [0, 3, 6].map((o) => {
+            const x = p[i + o], y = p[i + o + 1], z = p[i + o + 2], nx = nn[i + o], ny = nn[i + o + 1], nz = nn[i + o + 2];
+            const P = [U0 + (fu * x - fv * z) * s, y0 + y * s, V0 + (fv * x + fu * z) * s];
+            return vK(kind, P, [fu * nx - fv * nz, ny, fv * nx + fu * nz], [P[0] + P[2], P[1]], 0, sh);
+          });
+          const n0 = [0, 1, 2].map((k) => (nn[i + k] + nn[i + 3 + k] + nn[i + 6 + k]));
+          b.tri(ix[0], ix[1], ix[2], [fu * n0[0] - fv * n0[2], n0[1], fv * n0[0] + fu * n0[2]]);
+        }
+      }
+    };
+    // a box of the granite (or a kind) about (U0, V0) turned to (fu, fv): half-lengths a along it and c across, y0 to y1
+    const box = (U0, V0, fu, fv, a, c, y0, y1, kind) => {
+      const l = Math.hypot(fu, fv) || 1, ux = fu / l, uz = fv / l, rx = -uz, rz = ux;
+      const C4 = [[a, c], [-a, c], [-a, -c], [a, -c]].map(([p, q]) => [U0 + ux * p + rx * q, V0 + uz * p + rz * q]);
+      const v = (q, y, n, s2) => (kind ? vK(kind, [q[0], y, q[1]], n, [q[0] + q[1], y], 0, 1) : vC('granite', [q[0], y, q[1]], n, [s2 / gw, y / gh], 0.41));
+      for (let i = 0; i < 4; i++) {
+        const P0 = C4[i], P1 = C4[(i + 1) % 4], L = Math.hypot(P1[0] - P0[0], P1[1] - P0[1]);
+        const mu = (P0[0] + P1[0]) / 2 - U0, mv = (P0[1] + P1[1]) / 2 - V0, ml = Math.hypot(mu, mv) || 1, n = [mu / ml, 0, mv / ml];   // out from the box's middle
+        const q = [v(P0, y0, n, 0), v(P1, y0, n, L), v(P1, y1, n, L), v(P0, y1, n, 0)];
+        b.quad(q[0], q[1], q[2], q[3], n);
+      }
+      const up = [0, 1, 0], t4 = C4.map((q) => v(q, y1, up, q[0])); b.quad(t4[0], t4[1], t4[2], t4[3], up);
+    };
+    const HORSE = chHorseForm(lo), STAND = chStandForm(lo);
+    for (const [kind, x, z, f, s, [pl, pw, ph]] of CH_STATUES) {
+      const [U0, V0] = toF(x, z), fu = fl.nx * f[0] + fl.nz * f[1], fv = fl.dx * f[0] + fl.dz * f[1], g0 = gnd(U0, V0) - 0.05;
+      // the pedestal: its plinth, its die, its cornice
+      box(U0, V0, fu, fv, pl / 2 + 0.3, pw / 2 + 0.3, g0 - 0.3, g0 + 0.45);
+      box(U0, V0, fu, fv, pl / 2, pw / 2, g0 + 0.45, g0 + ph - 0.4);
+      box(U0, V0, fu, fv, pl / 2 + 0.18, pw / 2 + 0.18, g0 + ph - 0.4, g0 + ph);
+      form(kind === 'horse' ? HORSE : STAND, U0, g0 + ph, V0, fu, fv, s, CHK.bronze, [1, 0.75]);
+    }
+    // the courtyard's lamp posts by the passages' ends and the apse: a fluted iron post, a lantern of four lit panes
+    const post = (U0, V0, hh) => {
+      const y0 = CITY_HALL.court0, seg = lo ? 5 : 7;
+      const g = [[CHS.tube([[0, -0.1, 0, 0.17], [0, 0.55, 0, 0.15], [0, 0.75, 0, 0.09], [0, hh - 0.6, 0, 0.065], [0, hh - 0.45, 0, 0.11]], seg), 0],
+        [CHS.lathe([[0.22, hh - 0.45], [0.18, hh - 0.35], [0.24, hh + 0.15], [0.3, hh + 0.2], [0.04, hh + 0.55]], seg), 0]];
+      form(g, U0, y0, V0, 1, 0, 1, CHK.iron, [1]);
+      form([[CHS.lathe([[0.16, hh - 0.35], [0.21, hh + 0.16]], 4), 0]], U0, y0, V0, 1, 0, 1, CHK.lamp, [1]);
+    };
+    for (const [U0, V0] of CH_COURT_POSTS) post(U0, V0, 3.6);
+    // a lantern on each stair turret's face toward the courtyard's middle, 4.2 m up on a bracket
+    for (const [tu, tv] of CITY_HALL.turrets) {
+      const [ou, ov] = chTurretOut(tu, tv), U0 = tu + ou * 2.7, V0 = tv + ov * 2.7, y = CITY_HALL.court0 + 4.2;
+      form([[CHS.tube([[0, 0.35, 0, 0.035], [0.45, 0.35, 0, 0.035], [0.45, 0.2, 0, 0.03]], 4), 0], [CHS.lathe([[0.04, 0.6], [0.2, 0.52], [0.24, 0.48], [0.14, 0.42]], 5), 0], [CHS.lathe([[0.1, -0.4], [0.16, -0.32]], 4), 0]], U0, y, V0, ou, ov, 1, CHK.iron, [1]);
+      form([[CHS.lathe([[0.15, -0.32], [0.2, 0.42]], 4).translate(0.45, 0, 0), 0]], U0, y, V0, ou, ov, 1, CHK.lamp, [1]);
+    }
+    if (lo) return;
+    // the iron railings round the areaways either side of each passage's courtyard end: rails, posts and pickets
+    const rail = (A0, B0) => {
+      const L = Math.hypot(B0[0] - A0[0], B0[1] - A0[1]), tu = (B0[0] - A0[0]) / L, tv = (B0[1] - A0[1]) / L, y0 = CITY_HALL.court0;
+      for (const [ya, yb] of [[0.12, 0.17], [1.0, 1.07]]) box((A0[0] + B0[0]) / 2, (A0[1] + B0[1]) / 2, tu, tv, L / 2, 0.025, y0 + ya, y0 + yb, CHK.iron);
+      for (let s2 = 0; s2 <= L + 1e-3; s2 += L / Math.max(1, Math.round(L / 1.6))) box(A0[0] + tu * s2, A0[1] + tv * s2, tu, tv, 0.04, 0.04, y0, y0 + 1.15, CHK.iron);
+      for (let s2 = 0.13; s2 < L - 0.05; s2 += 0.13) {
+        const q = [A0[0] + tu * s2, A0[1] + tv * s2], n = [-tv, 0, tu];
+        for (const sg of [1, -1]) { const ix = [[-0.012, 0.12], [0.012, 0.12], [0.012, 1.07], [-0.012, 1.07]].map(([w, y]) => vK(CHK.iron, [q[0] + tu * w + n[0] * sg * 0.008, y0 + y, q[1] + tv * w + n[2] * sg * 0.008], [n[0] * sg, 0, n[2] * sg], [s2, y], 0, 1)); b.quad(ix[0], ix[1], ix[2], ix[3], [n[0] * sg, 0, n[2] * sg]); }
+      }
+    };
+    for (const sg of [-1, 1]) {
+      rail([sg * 2.4, 31.4], [sg * 6.4, 31.4]);                                        // the forecourt's bay
+      rail([sg * 33.1, -0.2 - 2.4], [sg * 33.1, -0.2 - 6.4]); rail([sg * 33.1, -0.2 + 2.4], [sg * 33.1, -0.2 + 6.4]);   // the east and west passages' ends
+    }
+    // the bollards along the north apron's curb, a chain's reach apart, clear of the generals' pedestals
+    for (let U0 = -66; U0 <= 66; U0 += 4.4) {
+      if (Math.abs(Math.abs(U0) - 17) < 4) continue;
+      const V0 = -97.0, g0 = gnd(U0, V0);
+      form([[CHS.lathe([[0.15, -0.1], [0.15, 0.75], [0.17, 0.8], [0.12, 0.95], [0.02, 1.0]], 6), 0]], U0, g0, V0, 1, 0, 1, CHK.iron, [1]);
+    }
+  }
+  // where a passage meets a courtyard wall (the east and west walls at |U| 34.5, the forecourt's back at V 33): its centre
+  // in metres along the wall from A0, or null; pMid the passages' centres (chModel's)
+  function chPortalMid(A0, B0, L, pMid) {
+    let mid = null;
+    if (Math.abs(A0[0] - B0[0]) < 1e-3 && Math.abs(Math.abs(A0[0]) - 34.5) < 0.1) mid = A0[0] > 0 ? pMid.e : pMid.w;
+    else if (Math.abs(A0[1] - B0[1]) < 1e-3 && Math.abs(A0[1] - 33) < 0.1) mid = pMid.s;
+    if (mid == null) return null;
+    const along = Math.abs(A0[0] - B0[0]) < 1e-3 ? (mid - A0[1]) * Math.sign(B0[1] - A0[1]) : (mid - A0[0]) * Math.sign(B0[0] - A0[0]);
+    return along < 0 || along > L ? null : Math.max(7, Math.min(L - 7, along));
+  }
+  // the small arch at a passage's courtyard end, as the bay's picture measures it ([s0, s1, spring, crown] across its 14
+  // m), and the apse's door ([s0, s1, top, top] across its 19.8): fix2
+  function chBayArch() { const a = CITYHALL_ART.meta.court_bay && CITYHALL_ART.meta.court_bay.arch; return a && a.length >= 4 ? a : [5.27, 8.65, 2.54, 4.0]; }
+  function chApseDoor() {
+    const a = CITYHALL_ART.meta.apse && CITYHALL_ART.meta.apse.arch, w = a ? a[1] - a[0] : 2.04;
+    return { dw: Math.min(1.5, w / 2), dh: a ? Math.min(6.0, a[3]) : 5.16 };
+  }
+  // a portal's passage from the middle bay's arch through to the courtyard: its walls in the ashlar, the cast-iron barrel
+  // vault in its coffers and the granite floor (the shader draws both; fix1: flat grey planes before), darker toward the
+  // middle (the colour's fourth byte, which the indirect light takes; the shader knows a passage's part by it and gives it
+  // its lanterns at night, never the facade's flood: fix2). The north one runs under the tower to its foot, where a wall
+  // closes it but for the door the apse opens on the courtyard (fix1: the passage stood out of the apse); the others end
+  // 0.7 m inside the courtyard's wall in a wall with the bay's small arch, its reveal through to the courtyard (fix2: the
+  // photographs' small arch under the bay, where the great arch ran through whole). The floor runs from the pavement at
+  // the mouth to the courtyard's floor, the walls from under it (fix2: the ground's 2 to 3 m pit under the building is
+  // gone, CH_GRADE, and with it the ramp)
+  function chPortal(b, H, cp, Fm, s0, s1, arch, far) {
+    if (far) return;
+    const { vA, vC } = H, vK = (k, p, n, uv, seed, sh) => vA(k, p, n, uv, sh == null ? 1 : sh), C = CITY_HALL, r = (s1 - s0) / 2, spring = arch[2], crown = arch[3];
+    const sideN = { n: [0, 1], s: [0, -1], e: [-1, 0], w: [1, 0] }[cp.side];   // inward
+    // where the passage ends: the north at the tower's foot behind the apse, the south at the forecourt, east and west at
+    // the courtyard's walls
+    const endAt = { n: C.apse.c[1], s: 33.0, e: 34.5, w: -34.5 }[cp.side], shut = cp.side === 'n';
+    const p0 = [Fm.A[0] + Fm.tx * (s0 + r), Fm.A[1] + Fm.tz * (s0 + r)];   // the arch's foot centre on the front
+    const len = Math.abs((cp.side === 'n' || cp.side === 's' ? p0[1] : p0[0]) - endAt);   // flush with both walls' holes (a vault standing proud of one showed its back)
+    const ax = sideN[0], az = sideN[1], px = Fm.tx, pz = Fm.tz;   // inward, and across (the front's own direction)
+    const P = (s, y, d) => [p0[0] + px * s + ax * d, y, p0[1] + pz * s + az * d];
+    const seg = 10, rv = shut ? len : len - 0.7;   // the end wall: the north's at the tower's foot, the others 0.7 m in from the courtyard
+    const fm = (() => { const g = [-r, 0, r].map((sx) => { const q = P(sx, 0, 0); return H.gnd(q[0], q[2]); }); return g.reduce((x, y) => x + y, 0) / 3; })();
+    const fc = C.court0, fy = (d) => fm + (fc - fm) * clamp(d / rv, 0, 1), yb = Math.min(fm, fc) - 0.6;
+    // the passage in five lengths: the daylight reaches a few metres in from each open end (the courtyard's small arch lets
+    // in less of it)
+    const L = [0, 3.0, 7.0, rv - 7.0, rv - 3.0, rv], SH = shut ? [0.72, 0.4, 0.22, 0.2, 0.18, 0.18] : [0.72, 0.4, 0.22, 0.2, 0.26, 0.38];
+    const [vw, vh] = H.M('vest'), shAt = (d) => { for (let k = 0; k < 5; k++) if (d <= L[k + 1] + 1e-6) return SH[k] + (SH[k + 1] - SH[k]) * clamp((d - L[k]) / Math.max(1e-3, L[k + 1] - L[k]), 0, 1); return SH[5]; };
+    for (let k = 0; k < 5; k++) {
+      const d0 = L[k], d1 = L[k + 1], h0 = SH[k], h1 = SH[k + 1];
+      if (d1 <= d0) continue;
+      // the walls, darker toward the springing as the vault is (the review: by day the walls stood bright boards, 133 against
+      // the vault's 34 at one depth); fix3 (the review: a regular grey tile tunnel): the vestibules' rusticated marble over its
+      // granite dado, a bay of it repeating along the passage (vest), its foot on the floor at the mouth
+      for (const sg of [-1, 1]) {
+        const n = [-px * sg, 0, -pz * sg], vv = (y) => (y - fm) / (spring - fm);
+        const a = vC('vest', P(sg * r, yb, d0), n, [d0 / vw, vv(yb)], 0.31, h0), c = vC('vest', P(sg * r, yb, d1), n, [d1 / vw, vv(yb)], 0.31, h1), d = vC('vest', P(sg * r, spring, d1), n, [d1 / vw, 0.999], 0.31, h1 * 0.55), e = vC('vest', P(sg * r, spring, d0), n, [d0 / vw, 0.999], 0.31, h0 * 0.55);
+        b.quad(a, c, d, e, n);
+      }
+      void vh;
+      for (let i = 0; i < seg; i++) {
+        const t0 = Math.PI * i / seg, t1 = Math.PI * (i + 1) / seg;
+        const c0 = [Math.cos(t0), Math.sin(t0)], c1 = [Math.cos(t1), Math.sin(t1)];
+        const n = [-px * (c0[0] + c1[0]) / 2, -(c0[1] + c1[1]) / 2, -pz * (c0[0] + c1[0]) / 2];
+        const y0 = spring + c0[1] * (crown - spring), y1 = spring + c1[1] * (crown - spring);
+        const a = vK(CHK.vault, P(c0[0] * r, y0, d0), n, [t0 * r, d0], 0, h0), c = vK(CHK.vault, P(c1[0] * r, y1, d0), n, [t1 * r, d0], 0, h0);
+        const d = vK(CHK.vault, P(c1[0] * r, y1, d1), n, [t1 * r, d1], 0, h1), e = vK(CHK.vault, P(c0[0] * r, y0, d1), n, [t0 * r, d1], 0, h1);
+        b.quad(a, c, d, e, n);
+      }
+      // the floor from the pavement to the courtyard's floor, hardly a grade (its width in the seed: the shader lays its border
+      // along the walls, fix3)
+      const up = [0, 1, 0], f0 = fy(d0), f1 = fy(d1), vP = (q, uv, sh) => b.v(q, up, uv, -CHK.pave, 2 * r, [...CH_KCOL[CHK.pave], Math.round(255 * sh)]);
+      const a = vP(P(-r, f0, d0), [0, d0], h0), c = vP(P(r, f0, d0), [2 * r, d0], h0), d = vP(P(r, f1, d1), [2 * r, d1], h1), e = vP(P(-r, f1, d1), [0, d1], h1);
+      b.quad(a, c, d, e, up);
+    }
+    // fix3 (the review against the vestibule's photograph, 20231007134150: polished red granite columns with carved capitals
+    // on grey granite bases, and lanterns with no fixture to be seen): a pair of engaged columns every 6 m from 3 m in, a
+    // transverse rib of the vault over each pair, a lantern hung from the crown between them; all in the passage's shade
+    {
+      const sp = isTouch ? 9 : 6, nCol = Math.max(0, Math.floor((rv - 4.5) / sp)), seg = isTouch ? 5 : 8, cr0 = 0.36, ySh = fm + 1.05, yCap = spring - 0.75;   // (a phone's pairs 9 m apart)
+      const nrm3 = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+      for (let i = 0; i < nCol; i++) {
+        const dc = 3.0 + i * sp + (rv - 6.0 - (nCol - 1) * sp - 3.0) / 2, sh = shAt(dc);
+        for (const sg of [-1, 1]) {
+          const nIn = [-px * sg, 0, -pz * sg], wx = sg * r;
+          // the base: a granite block and a torus-like step, then the red shaft as a half round standing off the wall, the
+          // capital a flared marble drum and its abacus block
+          const box = (d0, d1, w0, w1, y0, y1, kind, s2) => {
+            const q = (A0, B0, C0, D0, n) => { const ix = [A0, B0, C0, D0].map((v) => vA(kind, v, n, [v[0] + v[2], v[1]], s2)); b.quad(ix[0], ix[1], ix[2], ix[3], n); };
+            const p1 = (dd, ww, y) => P(wx - sg * ww, y, dd);
+            q(p1(d0, w1, y0), p1(d1, w1, y0), p1(d1, w1, y1), p1(d0, w1, y1), nIn);                                   // its face
+            q(p1(d0, w0, y1), p1(d1, w0, y1), p1(d1, w1, y1), p1(d0, w1, y1), [0, 1, 0]);                             // its top
+            q(p1(d0, w0, y0), p1(d0, w1, y0), p1(d0, w1, y1), p1(d0, w0, y1), [-ax, 0, -az]);                        // its ends
+            q(p1(d1, w0, y0), p1(d1, w1, y0), p1(d1, w1, y1), p1(d1, w0, y1), [ax, 0, az]);
+          };
+          box(dc - 0.55, dc + 0.55, 0, 0.62, fm - 0.3, ySh - 0.25, CHK.dark, sh * 0.9);
+          box(dc - 0.48, dc + 0.48, 0, 0.55, ySh - 0.25, ySh, CHK.marble, sh);
+          const ring = [];
+          for (let j = 0; j <= seg; j++) {
+            const t = Math.PI * j / seg, ca = Math.cos(t), sa = Math.sin(t), n = [ax * ca + nIn[0] * sa, 0, az * ca + nIn[2] * sa];
+            const at2 = (y) => P(wx - sg * (0.06 + sa * cr0), y, dc + ca * cr0);
+            ring.push([vA(CHK.rgranite, at2(ySh), n, [t * cr0, ySh], sh), vA(CHK.rgranite, at2(yCap), n, [t * cr0, yCap], sh), n]);
+          }
+          for (let j = 0; j < seg; j++) { const n0 = ring[j][2], n1 = ring[j + 1][2]; b.quad(ring[j][0], ring[j + 1][0], ring[j + 1][1], ring[j][1], [n0[0] + n1[0], 0, n0[2] + n1[2]]); }
+          box(dc - 0.5, dc + 0.5, 0, 0.62, yCap, yCap + 0.55, CHK.marble, sh * 1.05);
+          box(dc - 0.6, dc + 0.6, 0, 0.7, yCap + 0.55, spring, CHK.marble, sh * 0.95);
+        }
+        // the rib over the pair: a band 0.7 m wide standing 0.14 m off the vault
+        if (!isTouch) for (let j = 0; j < 10; j++) {
+          const t0 = Math.PI * j / 10, t1 = Math.PI * (j + 1) / 10, Q = (t, dd, o) => P(Math.cos(t) * (r - o), spring + Math.sin(t) * (crown - spring - o), dd);
+          const nm = [-px * (Math.cos(t0) + Math.cos(t1)) / 2, -(Math.sin(t0) + Math.sin(t1)) / 2, -pz * (Math.cos(t0) + Math.cos(t1)) / 2];
+          const q = [Q(t0, dc - 0.35, 0.14), Q(t1, dc - 0.35, 0.14), Q(t1, dc + 0.35, 0.14), Q(t0, dc + 0.35, 0.14)].map((v) => vA(CHK.marble, v, nm, [v[0] + v[2], v[1]], sh * 0.8));
+          b.quad(q[0], q[1], q[2], q[3], nm);
+          for (const [dd, nn] of [[dc - 0.35, [-ax, 0, -az]], [dc + 0.35, [ax, 0, az]]]) { const e = [Q(t0, dd, 0), Q(t1, dd, 0), Q(t1, dd, 0.14), Q(t0, dd, 0.14)].map((v) => vA(CHK.marble, v, nn, [v[0] + v[2], v[1]], sh * 0.7)); b.quad(e[0], e[1], e[2], e[3], nn); }
+        }
+        // the lantern between this pair and the next, hung on a rod from the crown: an iron cap and foot over a lit glass body
+        if (i + 1 < nCol || nCol === 1) {
+          const dl = nCol === 1 ? dc + 2.5 : dc + sp / 2, yl = crown - 2.0, c3 = P(0, 0, dl), lr = 0.32, ls = isTouch ? 4 : 6;
+          const ly = [[yl - 0.55, 0.06, CHK.iron], [yl - 0.45, lr * 0.75, CHK.iron], [yl - 0.35, lr, CHK.lamp], [yl + 0.3, lr, CHK.lamp], [yl + 0.4, lr * 1.1, CHK.iron], [yl + 0.62, 0.08, CHK.iron], [crown - 0.02, 0.03, CHK.iron]];
+          for (let k2 = 0; k2 + 1 < ly.length; k2++) {
+            const [y0, r0, kd] = ly[k2], [y1, r1] = ly[k2 + 1], kk = kd === CHK.lamp && ly[k2 + 1][2] === CHK.lamp ? CHK.lamp : CHK.iron;
+            for (let j = 0; j < ls; j++) {
+              const a0 = j / ls * Math.PI * 2, a1 = (j + 1) / ls * Math.PI * 2, am = (a0 + a1) / 2, n = nrm3([Math.cos(am) * (y1 - y0), r0 - r1, Math.sin(am) * (y1 - y0)]);
+              const V = (a, y, rr) => [c3[0] + Math.cos(a) * rr, y, c3[2] + Math.sin(a) * rr];
+              const q = [V(a0, y0, r0), V(a1, y0, r0), V(a1, y1, r1), V(a0, y1, r1)].map((v) => vA(kk, v, n, [v[0], v[1]], kk === CHK.lamp ? 0.85 : sh));
+              b.quad(q[0], q[1], q[2], q[3], n);
+            }
+          }
+        }
+      }
+    }
+    // the end wall across the passage, facing back into it: the passage's own outline with the opening (the apse's door, or
+    // the bay's small arch) a notch in its foot
+    const back = [-ax, 0, -az], opening = shut ? null : chBayArch(), door = chApseDoor();
+    const ow = shut ? door.dw : (opening[1] - opening[0]) / 2, osp = shut ? door.dh : opening[2], ocr = shut ? door.dh : opening[3];
+    const notch = [[-ow, yb]];
+    if (shut) notch.push([-ow, osp], [ow, osp]);
+    else for (let i = 0; i <= seg; i++) { const t = Math.PI * (1 - i / seg); notch.push([Math.cos(t) * ow, osp + Math.sin(t) * (ocr - osp)]); }
+    notch.push([ow, yb]);
+    {
+      const ring = [[-r, yb], ...notch, [r, yb]];
+      for (let i = 0; i <= seg; i++) { const t = Math.PI * i / seg; ring.push([Math.cos(t) * r, spring + Math.sin(t) * (crown - spring)]); }
+      const tr = THREE.ShapeUtils.triangulateShape(ring.map((q) => new THREE.Vector2(q[0], q[1])), []);
+      const ix = ring.map(([s2, y]) => vC('ashlar', P(s2, y, rv), back, [s2 / 4, y / 4], 0.31, 0.3));
+      for (const t of tr) b.tri(ix[t[0]], ix[t[1]], ix[t[2]], back);
+    }
+    if (!shut) {
+      // the small arch's reveal through to the courtyard: its sides, its soffit and the floor on, all in shade
+      for (const sg of [-1, 1]) {
+        const n = [-px * sg, 0, -pz * sg], q = [P(sg * ow, yb, rv), P(sg * ow, yb, len), P(sg * ow, osp, len), P(sg * ow, osp, rv)].map((v) => vC('ashlar', v, n, [0, v[1] / 4], 0.31, 0.3));
+        b.quad(q[0], q[1], q[2], q[3], n);
+      }
+      for (let i = 0; i < seg; i++) {
+        const t0 = Math.PI * i / seg, t1 = Math.PI * (i + 1) / seg, n = [-px * (Math.cos(t0) + Math.cos(t1)) / 2, -(Math.sin(t0) + Math.sin(t1)) / 2, -pz * (Math.cos(t0) + Math.cos(t1)) / 2];
+        const Q = (t, d) => P(Math.cos(t) * ow, osp + Math.sin(t) * (ocr - osp), d);
+        const q = [Q(t0, rv), Q(t1, rv), Q(t1, len), Q(t0, len)].map((v) => vC('ashlar', v, n, [0, v[1] / 4], 0.31, 0.3));
+        b.quad(q[0], q[1], q[2], q[3], n);
+      }
+      const up = [0, 1, 0], q = [P(-ow, fc, rv), P(ow, fc, rv), P(ow, fc, len), P(-ow, fc, len)].map((v) => vK(CHK.pave, v, up, [v[0], v[2]], 0, 0.4));
+      b.quad(q[0], q[1], q[2], q[3], up);
+      return;
+    }
+    // the north passage's end: the door's own short passage through the apse to the courtyard (the apse's two middle facets
+    // open on it), dark in its reveals (the review: an untextured box cut)
+    const ap = C.apse, dw = door.dw, dh = door.dh, R = ap.r, th = Math.PI / 12;   // a facet's angle (the apse in twelve)
+    const Vt = ap.c[1] + R, x1 = R * Math.cos(Math.PI / 2 - th), z1 = R * Math.sin(Math.PI / 2 - th);   // the apex, the middle facets' far corners
+    const Vd = ap.c[1] + R + (z1 - R) * Math.min(1, dw / x1);   // the facets' line at the door's jambs
+    for (const sg of [-1, 1]) {
+      const n = [-sg, 0, 0], U = sg * dw;
+      const q = [[U, yb, ap.c[1]], [U, yb, Vd], [U, dh, Vd], [U, dh, ap.c[1]]].map((v, i2) => vC('ashlar', v, n, [(v[2] - ap.c[1]) / 4, v[1] / 4], 0.31, 0.24 + 0.12 * (i2 === 1 || i2 === 2)));
+      b.quad(q[0], q[1], q[2], q[3], n);
+    }
+    const dn = [0, -1, 0], cl = [[-dw, ap.c[1]], [dw, ap.c[1]], [dw, Vd], [0, Vt], [-dw, Vd]].map(([U, V]) => vK(CHK.vault, [U, dh, V], dn, [U, V], 0, 0.3));
+    b.tri(cl[0], cl[1], cl[2], dn); b.tri(cl[0], cl[2], cl[3], dn); b.tri(cl[0], cl[3], cl[4], dn);
+    const up = [0, 1, 0], fl2 = [[-dw, ap.c[1]], [dw, ap.c[1]], [dw, Vd], [0, Vt], [-dw, Vd]].map(([U, V]) => vK(CHK.pave, [U, fc, V], up, [U, V], 0, 0.4));
+    b.tri(fl2[0], fl2[1], fl2[2], up); b.tri(fl2[0], fl2[2], fl2[3], up); b.tri(fl2[0], fl2[3], fl2[4], up);
+  }
+  // the tower: the base in the courtyard, the batter, the shaft, the first balcony, the stage of the tall window, the
+  // upper balcony, the belvedere, the clock stage (painted metal from 102.8 m), the dome, the lantern, the gallery, the
+  // cupola; Penn rides the themed parts
+  function chTower(b, H) {
+    const { face, wall, at, proud, cornice, cyl, pyramid, rectFaces, vK, PROF, cellIx, mean, M, A, far, top } = H;
+    const T = CITY_HALL.tower, [cu, cv] = T.c, nrm = (v) => { const l = Math.hypot(v[0], v[1], v[2]) || 1; return [v[0] / l, v[1] / l, v[2] / l]; };
+    const sq = (h, c2) => [cu - h, cu + h, (c2 == null ? cv : c2) - h, (c2 == null ? cv : c2) + h];
+    // the base's faces in the courtyard (the court cell to 26.6) and its top under the batter
+    {
+      const Bz = T.base, R = [cu - Bz[2], cu + Bz[2], Bz[0], Bz[1]];
+      const Fs = rectFaces(R, 0, Bz[3], (s, L) => (s === 'n' ? null : ['court', 0, L / M('court')[0], 0, Bz[3] / CITY_HALL.courtTop]));
+      // its south face opens on the north passage's door behind the apse (fix1; fix2: the door the apse's picture paints)
+      const { dw, dh } = chApseDoor();
+      for (const k in Fs) { wall(Fs[k], k === 's' && !far ? [cu - dw - R[0], cu + dw - R[0], dh, dh] : null); cornice(Fs[k], CITY_HALL.st.base, PROF.base); cornice(Fs[k], Bz[3], PROF.string); }
+    }
+    // the batter: the base's plan narrowing to the shaft's square by 40 m, wearing the low stage's foot
+    {
+      const Bz = T.base, b0 = [cu - Bz[2], cu + Bz[2], Bz[0], Bz[1]], b1 = sq(T.batter[2]);
+      const y0 = T.batter[0], y1 = T.batter[1];
+      const c0 = [[b0[1], b0[2]], [b0[0], b0[2]], [b0[0], b0[3]], [b0[1], b0[3]]], c1 = [[b1[1], b1[2]], [b1[0], b1[2]], [b1[0], b1[3]], [b1[1], b1[3]]];
+      for (let i = 0; i < 4; i++) {
+        const j = (i + 1) % 4;
+        const p0 = [c0[i][0], y0, c0[i][1]], p1 = [c0[j][0], y0, c0[j][1]], p2 = [c1[j][0], y1, c1[j][1]], p3 = [c1[i][0], y1, c1[i][1]];
+        const ex = p1[0] - p0[0], ez = p1[2] - p0[2], el = Math.hypot(ex, ez), ox = -ez / el, oz = ex / el;
+        const dIn = -(((p2[0] + p3[0]) - (p0[0] + p1[0])) / 2 * ox + ((p2[2] + p3[2]) - (p0[2] + p1[2])) / 2 * oz), dy = y1 - y0, nl = Math.hypot(dy, dIn);
+        const n = [ox * dy / nl, dIn / nl, oz * dy / nl];
+        // fix2: in the tower's channel-jointed courses (the rustic tile, by the metre, its courses level), not the old shaft
+        // picture's foot
+        const k = cellIx.rustic, mc = mean.rustic, sd = 0.11 * (i + 1), [tw, thh] = M('rustic'), et = Math.hypot(p2[0] - p3[0], p2[2] - p3[2]);
+        const a = b.v(p0, n, [-el / 2 / tw, y0 / thh], k, sd, mc), c = b.v(p1, n, [el / 2 / tw, y0 / thh], k, sd, mc), d = b.v(p2, n, [et / 2 / tw, y1 / thh], k, sd, mc), e = b.v(p3, n, [-et / 2 / tw, y1 / thh], k, sd, mc);
+        b.quad(a, c, d, e, n);
+      }
+    }
+    // a flat ring between two squares about the axis at y, facing up or down (fix1: every stage that stands narrower than
+    // the one under it left the ledge between them open, and the inside showed from any flight above it)
+    const ledge = (h0, h1, y, dir, kind) => {
+      const n = [0, dir, 0], k = kind || CHK.marble, o = sq(h0), i2 = sq(h1);
+      const O = [[o[1], o[2]], [o[0], o[2]], [o[0], o[3]], [o[1], o[3]]], I2 = [[i2[1], i2[2]], [i2[0], i2[2]], [i2[0], i2[3]], [i2[1], i2[3]]];
+      for (let i = 0; i < 4; i++) { const j = (i + 1) % 4, ix = [O[i], O[j], I2[j], I2[i]].map((q) => vK(k, [q[0], y, q[1]], n, [q[0], q[1]])); b.quad(ix[0], ix[1], ix[2], ix[3], n); }
+    };
+    // a plain band of the ashlar all round from y0 to y1 (behind a balcony, under a stage)
+    const band = (h, y0, y1) => { const Fs = rectFaces(sq(h), y0, y1, (s2, L2) => ['ashlar', 0, L2 / 4, y0 / 4, y1 / 4]); for (const k in Fs) wall(Fs[k]); return Fs; };
+    // the square stages: each face in its cell
+    const stage = (h, y0, y1, cell, u0, u1, v0, v1) => {
+      const Fs = rectFaces(sq(h), y0, y1, () => [cell, u0 == null ? 0 : u0, u1 == null ? 1 : u1, v0, v1]);
+      for (const k in Fs) wall(Fs[k]);
+      return Fs;
+    };
+    const sh = stage(T.shaft[2], T.shaft[0], T.shaft[1], 'tower_low');
+    for (const k in sh) {
+      const F = sh[k];
+      // the rusticated corner piers stand 0.4 proud, the first balcony on its brackets in the middle 10 m
+      if (!far) { proud(F, 0, 2.2, T.shaft[0], T.shaft[1], 0, 0.4); proud(F, F.len - 2.2, F.len, T.shaft[0], T.shaft[1], 0, 0.4); }
+      const m = F.len / 2, bw = T.bal1[3] / 2, bo = T.bal1[2] - T.shaft[2];
+      proud(F, m - bw, m + bw, T.bal1[0], T.bal1[0] + 0.45, 0, bo);
+      if (!far) {
+        for (const s of [m - bw + 0.6, m, m + bw - 0.6]) proud(F, s - 0.35, s + 0.35, T.bal1[0] - 2.2, T.bal1[0], 0, bo - 0.2);
+        chBalus(b, H, F, m - bw, m + bw, T.bal1[0] + 0.45, bo - 0.1);
+      }
+    }
+    // the band behind the first balcony between the shaft's head and the stage of the tall window (64.5 to 66), the ledge
+    band(T.shaft[2], T.shaft[1], T.bal1[1]);
+    ledge(T.shaft[2], T.mid[2], T.bal1[1], 1);
+    const mid = stage(T.mid[2], T.mid[0], T.mid[1], 'tower_mid');
+    for (const k in mid) { cornice(mid[k], T.mid[1], PROF.string); }
+    // the upper balcony: a slab all round on the stage's cornice, its balustrade at the edge
+    {
+      const Fs = rectFaces(sq(T.bal2[2]), T.bal2[0], T.bal2[0] + 0.5, () => ['ashlar', 0, 1, 0, 0.2]);
+      for (const k in Fs) wall(Fs[k]);
+      const up = [0, 1, 0], R = sq(T.bal2[2]);
+      const ix = [[R[1], R[2]], [R[0], R[2]], [R[0], R[3]], [R[1], R[3]]].map((q) => vK(CHK.marble, [q[0], T.bal2[0] + 0.5, q[1]], up, [q[0], q[1]]));
+      b.quad(ix[0], ix[1], ix[2], ix[3], up);
+      ledge(T.bal2[2], T.mid[2], T.bal2[0], -1);   // its soffit (fix1: the sky showed through it as a frame round the tower)
+      if (!far) for (const k in Fs) chBalus(b, H, Fs[k], 0, Fs[k].len, T.bal2[0] + 0.5, -0.25);
+      band(T.belv[2], T.bal2[0] + 0.5, T.belv[0]);   // the belvedere's plinth over the balcony (it stood open, 88.0 to 90.2)
+    }
+    // the belvedere: the cell, its clustered corner columns, the granite cap
+    const bel = stage(T.belv[2], T.belv[0], T.belv[1], 'belvedere');
+    for (const k in bel) {
+      const F = bel[k];
+      if (!far) for (const s of [0.55, 1.45, 2.35, F.len - 2.35, F.len - 1.45, F.len - 0.55]) {
+        const p = at(F, s, 0, 0.5);
+        cyl(p[0], p[2], T.belv[0] + 0.6, T.belv[1] - 1.6, 0.36, 0.32, 8, 'belvedere', 0.02, 0.06, 0.82, false);
+        proud(F, s - 0.45, s + 0.45, T.belv[1] - 1.6, T.belv[1] - 1.0, 0.1, 1.0);
+        proud(F, s - 0.45, s + 0.45, T.belv[0], T.belv[0] + 0.6, 0.1, 1.0);
+      }
+      cornice(F, T.belv[1], PROF.top);
+    }
+    ledge(T.belv[2], T.clock[2], T.belv[1], 1);
+    top('masonry', T.belv[1]);
+    // the clock stage: painted metal, square to 117 m and chamfered above, the cell's face (its dial in the picture; the
+    // page's dials stand on it, chDials) with its arched pediment over the dial, the corner columns
+    {
+      const [y0, y1, h, yc, ch] = T.clock;
+      const Fs = rectFaces(sq(h), y0, yc, () => ['clock', 0, 1, 0, (yc - y0) / (y1 - y0)]);
+      for (const k in Fs) {
+        const F = Fs[k];
+        wall(F);
+        if (!far) for (const s of [0.6, 1.7, F.len - 1.7, F.len - 0.6]) {
+          const p = at(F, s, 0, 0.45);
+          cyl(p[0], p[2], y0 + 1.9, yc - 1.9, 0.42, 0.38, 8, 'clock', 0.03, 0.1, 0.64, CHK.paint, 0, CHK.paint);
+        }
+      }
+      // above 117 m: an octagon, its cardinal faces carrying the pediment (the cell's head, squeezed into them), its
+      // diagonals plain plates
+      const oc = [];
+      for (let i = 0; i < 8; i++) {
+        const q = [[h, -h + ch], [h, h - ch], [h - ch, h], [-h + ch, h], [-h, h - ch], [-h, -h + ch], [-h + ch, -h], [h - ch, -h]][i];
+        oc.push([cu + q[0], cv + q[1]]);
+      }
+      // walk with the outside on the right: the ring above runs east side north to south, so each face goes from its
+      // next point back to its own (fix1: the names were swapped and swapped back in the call, which walked it the other
+      // way: all eight faces looked in, were culled from outside, and the sky showed under the dome)
+      for (let i = 0; i < 8; i++) {
+        const A0 = oc[(i + 1) % 8], B0 = oc[i];
+        const card = i % 2 === 0;
+        const F = face(A0, B0, yc, y1, 'clock', card ? 0 : 0.0, card ? 1 : 0.06, (yc - y0) / (y1 - y0), 1);
+        wall(F);
+      }
+      const up = [0, 1, 0], ix = oc.map((q) => vK(CHK.paint, [q[0], y1, q[1]], up, [q[0], q[1]]));
+      for (let i = 1; i < 7; i++) b.tri(ix[0], ix[i], ix[i + 1], up);
+      // the square's corners the chamfers leave at 117 m
+      for (const [qu, qv] of [[1, 1], [-1, 1], [-1, -1], [1, -1]]) {
+        const c0 = vK(CHK.paint, [cu + qu * h, yc, cv + qv * h], up, [0, 0]), c1 = vK(CHK.paint, [cu + qu * h, yc, cv + qv * (h - ch)], up, [0, 1]), c2 = vK(CHK.paint, [cu + qu * (h - ch), yc, cv + qv * h], up, [1, 0]);
+        b.tri(c0, c1, c2, up);
+      }
+      top('clockStage', y1);
+      // the four groups' pedestals on the octagon's chamfered corners at the dome's foot (fix3, the review: each group stood on a
+      // black bronze box, where the photographs show them on white stone drums of the tower's own paint), and the low plinth
+      // under each eagle over its dial
+      for (const [du, dv] of [[1, -1], [1, 1], [-1, 1], [-1, -1]]) {
+        const pu = cu + du * CH_PED.d, pv = cv + dv * CH_PED.d, [p0, p1, pr] = [y1, y1 + CH_PED.h, CH_PED.r], sg = 12;
+        if (far) { cyl(pu, pv, p0, p1, pr + 0.08, pr + 0.08, 6, CHK.paint, 1, null, null, CHK.paint); continue; }   // (the far level's a plain drum)
+        cyl(pu, pv, p0, p0 + 0.3, pr + 0.14, pr + 0.14, sg, CHK.paint, 1, null, null, CHK.paint);
+        cyl(pu, pv, p0 + 0.3, p1 - 0.28, pr, pr, sg, CHK.paint, 1);
+        cyl(pu, pv, p1 - 0.28, p1, pr + 0.16, pr + 0.16, sg, CHK.paint, 1, null, null, CHK.paint, 0, CHK.paint);
+      }
+    }
+    // the dome: an octagonal lathe on the measured profile (half-widths across the flats), each face the dome cell, its
+    // eight ribs, four oculus dormers on the cardinal faces
+    {
+      const prof = T.dome, n8 = 8, k = cellIx.dome, mc = mean.dome;
+      const cosH = Math.cos(Math.PI / 8);
+      let sAcc = 0;
+      const slant = [0];
+      for (let i = 1; i < prof.length; i++) { sAcc += Math.hypot(prof[i][0] - prof[i - 1][0], prof[i][1] - prof[i - 1][1]); slant.push(sAcc); }
+      const rings = far ? [0, 2, 4, 6] : prof.map((_, i) => i);
+      for (let f = 0; f < n8; f++) {
+        const a0 = (f - 0.5) / n8 * Math.PI * 2 - Math.PI / 2, a1 = (f + 0.5) / n8 * Math.PI * 2 - Math.PI / 2, am = (a0 + a1) / 2;
+        for (let ri = 0; ri + 1 < rings.length; ri++) {
+          const i0 = rings[ri], i1 = rings[ri + 1];
+          const [y0, h0] = prof[i0], [y1, h1] = prof[i1], R0 = h0 / cosH, R1 = h1 / cosH;
+          const dIn = h0 - h1, dy = y1 - y0, nl = Math.hypot(dy, dIn), n = [Math.cos(am) * dy / nl, dIn / nl, Math.sin(am) * dy / nl];
+          const v0 = slant[i0] / sAcc, v1 = slant[i1] / sAcc, sd = 0.13 * f;
+          const p = (a, R, y) => [cu + Math.cos(a) * R, y, cv + Math.sin(a) * R];
+          const a = b.v(p(a1, R0, y0), n, [0.0005, Math.max(0.0005, v0)], k, sd, mc), c = b.v(p(a0, R0, y0), n, [0.9995, Math.max(0.0005, v0)], k, sd, mc);
+          const d = b.v(p(a0, R1, y1), n, [0.9995, Math.min(0.9995, v1)], k, sd, mc), e = b.v(p(a1, R1, y1), n, [0.0005, Math.min(0.9995, v1)], k, sd, mc);
+          b.quad(a, c, d, e, n);
+        }
+        // a rib up the corner between this face and the next
+        if (!far) {
+          const ar = a1, cs = Math.cos(ar), sn = Math.sin(ar);
+          for (let i = 0; i + 1 < prof.length; i++) {
+            const R0 = prof[i][1] / cosH + 0.25, R1 = prof[i + 1][1] / cosH + 0.25, y0 = prof[i][0], y1 = prof[i + 1][0];
+            const tx = -sn * 0.22, tz = cs * 0.22, n = [cs, (R0 - R1) / (y1 - y0), sn];
+            const a = vK(CHK.paint, [cu + cs * R0 - tx, y0, cv + sn * R0 - tz], n, [0, y0]), c = vK(CHK.paint, [cu + cs * R0 + tx, y0, cv + sn * R0 + tz], n, [0.4, y0]);
+            const d = vK(CHK.paint, [cu + cs * R1 + tx, y1, cv + sn * R1 + tz], n, [0.4, y1]), e = vK(CHK.paint, [cu + cs * R1 - tx, y1, cv + sn * R1 - tz], n, [0, y1]);
+            b.quad(a, c, d, e, n);
+            // its cheeks back into the dome (fix1: a strip standing off the corner showed its back)
+            for (const sg of [-1, 1]) {
+              const nn = [-sn * sg, 0, cs * sg], q0 = R0 - 0.45, q1 = R1 - 0.45;
+              const f0 = vK(CHK.paint, [cu + cs * q0 + sg * tx, y0, cv + sn * q0 + sg * tz], nn, [0, y0]), f1 = vK(CHK.paint, [cu + cs * R0 + sg * tx, y0, cv + sn * R0 + sg * tz], nn, [0.3, y0]);
+              const f2 = vK(CHK.paint, [cu + cs * R1 + sg * tx, y1, cv + sn * R1 + sg * tz], nn, [0.3, y1]), f3 = vK(CHK.paint, [cu + cs * q1 + sg * tx, y1, cv + sn * q1 + sg * tz], nn, [0, y1]);
+              b.quad(f0, f1, f2, f3, nn);
+            }
+          }
+        }
+      }
+      // its head under the lantern's drum
+      { const [yh, hh] = prof[prof.length - 1], Rh = hh / cosH + 0.02, up = [0, 1, 0], ctr = vK(CHK.paint, [cu, yh, cv], up, [0, 0]), rim = [];
+        for (let f = 0; f < n8; f++) { const a = (f + 0.5) / n8 * Math.PI * 2 - Math.PI / 2; rim.push(vK(CHK.paint, [cu + Math.cos(a) * Rh, yh, cv + Math.sin(a) * Rh], up, [Math.cos(a) * Rh, Math.sin(a) * Rh])); }
+        for (let f = 0; f < n8; f++) b.tri(ctr, rim[f], rim[(f + 1) % n8], up); }
+      top('dome', prof[prof.length - 1][0]);
+    }
+    // the lantern (fix2, Philadelphia_City_Hall-zoom.jpg: a 7.5 m can at 4.2 m with two dark oculi like eyes, where the
+    // photograph has a short neck, the ring wall standing out to the gallery's line, the glazed gallery behind its railing
+    // under a projecting roof, the fluted cupola and Penn's pedestal), all in the tower's paint
+    {
+      const Lt = T.lantern, segs = far ? 12 : 24, P = CHK.paint;
+      const [n0, n1, nr] = Lt.neck, [r0, r1, rr] = Lt.ring, [g0, g1, gr, rl] = Lt.gallery, [f0, f1, fr] = Lt.roof, [c0, c1, cr0, cr1] = Lt.cupola, [p0, p1, pr] = Lt.ped;
+      cyl(cu, cv, n0, n1, nr, nr, segs, P, 1);
+      cyl(cu, cv, r0, r0 + 0.4, rr + 0.22, rr + 0.22, segs, P, 1, null, null, P, 0, P);             // the ring wall's base moulding
+      cyl(cu, cv, r0 + 0.4, r1 - 0.5, rr, rr, segs, P, 1, null, null, false);
+      // its moulded courses and the consoles under the gallery's floor (fix3, the review: an untextured can; the zoom
+      // photograph's ring wall is banded and bracketed under the projecting floor)
+      if (!far) {
+        for (const yb of [r0 + 1.05, r0 + 1.75]) cyl(cu, cv, yb, yb + 0.16, rr + 0.07, rr + 0.07, segs, P, 1, null, null, P, 0, P);
+        const nB = 16, by0 = r1 - 1.25, by1 = r1 - 0.5;
+        for (let i = 0; i < nB; i++) {
+          const a = (i + 0.5) / nB * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), tx = -sa, tz = ca, w = 0.17;
+          const Q = (rad, y, sd) => [cu + ca * rad + tx * w * sd, y, cv + sa * rad + tz * w * sd];
+          const q = (A0, B0, C0, D0, n) => { const ix = [A0, B0, C0, D0].map((v) => vK(P, v, n, [v[0] + v[2], v[1]], 0, 0.93)); b.quad(ix[0], ix[1], ix[2], ix[3], n); };
+          const nOut = nrm([ca * (by1 - by0), -0.28, sa * (by1 - by0)]);
+          q(Q(rr, by0, -1), Q(rr, by0, 1), Q(rr + 0.3, by1, 1), Q(rr + 0.3, by1, -1), nOut);               // its scrolled face, sloping out to the floor
+          for (const sd of [-1, 1]) q(Q(rr, by0, sd), Q(rr + 0.3, by1, sd), Q(rr, by1, sd), Q(rr, by1, sd), [tx * sd, 0, tz * sd]);
+        }
+      }
+      if (!far) cyl(cu, cv, (r0 + r1) / 2 - 0.12, (r0 + r1) / 2 + 0.12, rr + 0.1, rr + 0.1, segs, P, 1, null, null, P, 0, P);   // its band
+      cyl(cu, cv, r1 - 0.5, r1, rr + 0.3, rr + 0.3, segs, P, 1, null, null, P, 0, P);              // its cornice, the gallery's floor
+      // the gallery: piers carrying its roof, the glass set back between them and tinted by the sky (fix3, the review: one
+      // continuous black glazed band with a white grid, an airport's control tower), its railing at the edge
+      cyl(cu, cv, g0, g1, far ? gr : gr - 0.3, far ? gr : gr - 0.3, segs, CHK.glass, 1, null, null, false);
+      if (!far) {
+        const nPi = 12, pw = 0.26;
+        for (let i = 0; i < nPi; i++) {
+          const a = i / nPi * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a), tx = -sa, tz = ca;
+          const Q = (rad, y, sd) => [cu + ca * rad + tx * pw * sd, y, cv + sa * rad + tz * pw * sd];
+          const q = (A0, B0, C0, D0, n) => { const ix = [A0, B0, C0, D0].map((v) => vK(P, v, n, [v[0] + v[2], v[1]], 0, 0.97)); b.quad(ix[0], ix[1], ix[2], ix[3], n); };
+          q(Q(gr + 0.05, g0, -1), Q(gr + 0.05, g0, 1), Q(gr + 0.05, g1, 1), Q(gr + 0.05, g1, -1), [ca, 0, sa]);
+          for (const sd of [-1, 1]) q(Q(gr - 0.32, g0, sd), Q(gr + 0.05, g0, sd), Q(gr + 0.05, g1, sd), Q(gr - 0.32, g1, sd), [tx * sd, 0, tz * sd]);
+        }
+        // the gallery's floor between the glass and the railing
+        const up = [0, 1, 0], rim0 = [], rim1 = [];
+        for (let i = 0; i <= segs; i++) { const a = i / segs * Math.PI * 2; rim0.push(vK(P, [cu + Math.cos(a) * (gr - 0.3), g0 + 0.01, cv + Math.sin(a) * (gr - 0.3)], up, [0, 0], 0, 0.9)); rim1.push(vK(P, [cu + Math.cos(a) * (rr + 0.3), g0 + 0.01, cv + Math.sin(a) * (rr + 0.3)], up, [0, 0], 0, 0.9)); }
+        for (let i = 0; i < segs; i++) b.quad(rim0[i], rim0[i + 1], rim1[i + 1], rim1[i], up);
+      }
+      if (!far) cyl(cu, cv, g0, g0 + 1.05, rl, rl, segs, 'balus', 12, 0.0005, 0.9995, false);
+      cyl(cu, cv, f0, f1, fr, fr - 0.15, segs, P, 1, null, null, P, 0, P);                        // its roof, the soffit under it
+      // the fluted cupola: a bell from the roof to the pedestal, its sixteen flutes in and out round it
+      {
+        const nf = far ? 8 : 16, prof = [[c0, cr0], [c0 + 0.9, cr0 * 0.97], [c0 + 2.0, cr0 * 0.84], [c0 + 3.1, cr0 * 0.62], [c1, cr1]], rings = [];
+        for (const [y, rad] of prof) {
+          const ring = [];
+          for (let j = 0; j <= nf * 2; j++) { const a = j / (nf * 2) * Math.PI * 2, rj = rad * (j % 2 ? 0.9 : 1); ring.push([cu + Math.cos(a) * rj, y, cv + Math.sin(a) * rj, a]); }
+          rings.push(ring);
+        }
+        for (let q = 0; q + 1 < rings.length; q++) for (let j = 0; j < nf * 2; j++) {
+          const A0 = rings[q][j], B0 = rings[q][j + 1], C0 = rings[q + 1][j + 1], D0 = rings[q + 1][j];
+          const am = (A0[3] + B0[3]) / 2, flank = j % 2 ? -1 : 1, dr = prof[q][1] - prof[q + 1][1], dy = prof[q + 1][0] - prof[q][0];
+          const n = nrm([Math.cos(am + flank * 0.35) * dy, dr, Math.sin(am + flank * 0.35) * dy]);   // the flute's two cheeks catch the light apart
+          const ix = [A0, B0, C0, D0].map((v) => vK(P, [v[0], v[1], v[2]], n, [v[3] * cr0, v[1]]));
+          b.quad(ix[0], ix[1], ix[2], ix[3], n);
+        }
+      }
+      cyl(cu, cv, p0, p1 - 0.3, cr1, pr, segs, P, 1);                                             // Penn's pedestal, closing the cupola's head
+      cyl(cu, cv, p1 - 0.3, p1, pr + 0.25, pr + 0.25, segs, P, 1, null, null, P, 0, P);
+      top('cupola', p1);
+    }
+  }
+  // a balustrade along face F from s0 to s1 at y, d out: a board both sides wearing the balustrade's picture (the sky
+  // between the balusters is cut by the shader)
+  function chBalus(b, H, F, s0, s1, y, d) {
+    const { at, cellIx, mean } = H, k = cellIx.balus, mc = mean.balus, hh = 1.1, L = s1 - s0, wrap = L / (H.M('balus')[0] || 3.3);
+    for (const sg of [1, -1]) {
+      const n = [F.nx * sg, 0, F.nz * sg];
+      const a = b.v(at(F, s0, y, d), n, [0, 0.0005], k, 0.5, mc), c = b.v(at(F, s1, y, d), n, [wrap, 0.0005], k, 0.5, mc);
+      const dd = b.v(at(F, s1, y + hh, d), n, [wrap, 0.9995], k, 0.5, mc), e = b.v(at(F, s0, y + hh, d), n, [0, 0.9995], k, 0.5, mc);
+      b.quad(a, c, dd, e, n);
+    }
+  }
+  // the night's flood on the rebuilt block (Round 109's soft pools, moved onto the measured plan): Gaussian pools at the
+  // corner pavilions and the four centre pavilions, and a column of light up the tower from its roofs to Penn's feet,
+  // their soft union times the stone's own colour and never on the glass, nor inside a passage (fix2: a passage's part
+  // carries its shade under 1 in the colour's fourth byte; the flood lit their vaults and walls at full strength, a flat
+  // beige slab on a plain night and a teal one on a themed one); the house colour on a plain night, the theme's on a themed
+  // one, the tower at full strength and the block at 0.8 of it. cityHallFloodPatch stays as it was for ?real=0
+  function cityHallFloodPatchReal(sh, uniforms) {
+    Object.assign(sh.uniforms, uniforms);
+    sh.fragmentShader = sh.fragmentShader
+      .replace('#include <common>', `#include <common>
+        uniform vec3 uHallColor, uHallCenter, uHallHouse;
+        uniform vec4 uHallAxes;
+        uniform float uHallOn;
+        float hallBeamR(vec2 q) { return exp(-.5 * dot(q, q)); }
+        float hallFloodR(vec2 hp, float hy, out float tw) {
+          float spread = 1.0 + .10 * smoothstep(0.0, 32.0, hy);
+          float corner = hallBeamR((abs(hp) - vec2(58.7, 59.0)) / (vec2(18.0) * spread));
+          float cn = hallBeamR((hp - vec2(0.0, -71.0)) / (vec2(21.0, 16.0) * spread));
+          float cs = hallBeamR((hp - vec2(0.0, 66.0)) / (vec2(21.0, 16.0) * spread));
+          float cew = hallBeamR(vec2(abs(hp.x) - 66.0, hp.y + 0.2) / (vec2(16.0, 21.0) * spread));
+          tw = hallBeamR((hp - vec2(0.0, -37.2)) / vec2(14.0)) * smoothstep(24.0, 42.0, hy) * (1.0 - smoothstep(150.0, 158.0, hy));
+          float wash = 1.0 - (1.0 - .90 * corner) * (1.0 - .85 * max(max(cn, cs), cew)) * (1.0 - tw);
+          float rise = .80 + .20 * exp(-max(hy, 0.0) / 32.0);
+          return (.045 + 1.04 * wash) * rise;
+        }
+      `)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+        { vec2 hq = vWPos.xz - uHallCenter.xz;
+          vec2 hp = vec2(dot(hq, uHallAxes.xy), dot(hq, uHallAxes.zw));
+          float tw;
+          float flood = hallFloodR(hp, vWPos.y - uHallCenter.y, tw) * (1.0 - max(vWNorm.y, 0.0)) * (1.0 - frMask.r) * (1.0 - chGl) * smoothstep(0.9, 1.0, vChCol.a);   // (fix2: never inside a passage; fix3: an uplight lights a soffit, where 1 - |ny| drew every cornice's underside a dark stripe)
+          vec3 hc = mix(uHallHouse, uHallColor, uHallOn);
+          totalEmissiveRadiance += hc * diffuseColor.rgb * flood * uNight * 1.7 * mix(0.8, 1.0, tw); }
+      `);
+  }
+  // the material both levels share (one program): the atlas laid by the cells' rects, the mask's glass and rooms, the
+  // untextured kinds (slate with the pitched roofs' generated slate, the cresting, the decks in the flat roofs' generated
+  // tar, the copper, the coffered vaults, the granite setts, the beaded trim, the glazing), the lamps, the weather, the
+  // flood. The sky between the balusters is cut out on the balustrade's own cell (fix1: on any cell the mask's filtered
+  // void and dial edges holed the walls round the portals); fix2 folds the cut-outs' own program back into this one, since
+  // under the log depth buffer every program writes gl_FragDepth and none keeps an early depth test to lose (chCutDepth
+  // still cuts their shadow). The weather is patched in here (fix1: as userData.wxSurf it was taken for a flat on the
+  // ground and kept out of the river's mirror). Fix2, the review's realism: the block's lower storeys weathered darker than
+  // its upper and the tower cleaner (by the height over the datum), the marble darker in the rain, every pane's sash
+  // and glazing bars and at night a room behind it (its lamp-lit ceiling over a darker floor, a blind part way down in some),
+  // the passages' joints and base course drawn in and their own lanterns at night, the gallery's and the skylights' glazing
+  function chMaterial(chSlot, Y0) {
+    const A = CITYHALL_ART;
+    if (!CH.map) {
+      const blank = document.createElement('canvas'); blank.width = blank.height = 1;
+      CH.map = new THREE.Texture(blank); CH.mask = new THREE.Texture(blank);
+      CH.map.encoding = THREE.sRGBEncoding; CH.map.anisotropy = anisoOf(8);
+    }
+    const map = CH.map, mask = CH.mask;
+    const ids = Object.keys(A.cells).sort(), nC = ids.length, balusIx = ids.indexOf('balus'), ashIx = ids.indexOf('ashlar');
+    CH.cells = ids;
+    if (!CH.U) {
+      const cells = ids.map((id) => { const c = A.cells[id]; return new THREE.Vector4(c[0], c[1], c[2] - c[0], c[3] - c[1]); });
+      // a cell's roughness: the tower's painted metal is smoother than the stone
+      const rough = ids.map((id) => (id === 'clock' || id === 'dome' ? 0.55 : 0.78));
+      CH.U = { uMask: { value: mask }, uChCells: { value: cells }, uChRough: { value: rough }, uArtOn: CH.artOn, uNight: nightUniform, uChLamp: lampUniform, uChLate: CH.late,
+        uPitchArt: wallArtU.uPitchArt, uPitchOn: wallArtU.uPitchOn, uPitchPad: wallArtU.uPitchPad, uPitchMean: wallArtU.uPitchMean, uPitchM: wallArtU.uPitchM,
+        uRoofArt: roofArtU.uRoofArt, uRoofOn: roofArtU.uRoofOn, uRoofM: roofArtU.uRoofM, uRoofPad: roofArtU.uRoofPad, uRoofMean: roofArtU.uRoofMean };
+    }
+    const U = CH.U;
+    const mat = new THREE.MeshStandardMaterial({ map, roughness: 0.78, metalness: 0 });
+    mat.extensions = { derivatives: true };
+    const gl2 = !!renderer.capabilities.isWebGL2;
+    const B = CITY_HALL.B0;
+    const flood = { uHallColor: themeU['uTheme' + chSlot], uHallOn: themeU.uThemeOn, uHallCenter: { value: new THREE.Vector3(B[0], Y0, B[1]) },
+      uHallAxes: { value: new THREE.Vector4(fl.nx, fl.nz, fl.dx, fl.dz) }, uHallHouse: { value: CH_HOUSE } };
+    const tg = (t, x, y) => (gl2 ? 'textureGrad(' + t + ', ' + x + ', ' + y + ')' : 'texture2D(' + t + ', ' + x + ')');
+    mat.onBeforeCompile = (sh) => {
+      wxSurfacePatch(sh);   // first: its lines land after the material's own (the later replace lands earlier in the shader)
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute vec2 aK; attribute vec4 aCol; uniform vec4 uChCells[${nC}]; uniform float uChRough[${nC}];
+varying vec4 vChCell; varying vec3 vChK; varying vec2 vChUv; varying vec4 vChCol; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;`)
+        .replace('#include <uv_vertex>', `#include <uv_vertex>
+vChUv = uv; vChCol = vec4(pow(aCol.rgb, vec3(2.2)), aCol.a);
+int chI = int(max(aK.x, 0.0) + 0.5);
+vChCell = aK.x > -0.5 ? uChCells[chI] : vec4(0.0);
+vChK = vec3(aK, aK.x > -0.5 ? uChRough[chI] : 0.0);`)
+        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = ${Y0.toFixed(2)};`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform sampler2D uMask, uPitchArt, uRoofArt; uniform float uArtOn, uNight, uChLamp, uPitchOn, uPitchPad, uRoofOn, uRoofM, uRoofPad; uniform vec2 uChLate; uniform vec3 uPitchMean[4]; uniform vec2 uPitchM[4]; uniform vec3 uRoofMean[4];
+varying vec4 vChCell; varying vec3 vChK; varying vec2 vChUv; varying vec4 vChCol; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;
+vec4 frMask; float chKind; float chPass; float chGl;
+${FAB_ATLAS_FN.join('\n')}`)
+        .replace('#include <map_fragment>', [
+          // the cell's texel: its tile coordinate wrapped, the gradients from the unwrapped one (a seam takes its neighbours' mip)
+          'vec2 chT = vChUv - floor(vChUv), chA = vChCell.xy + chT * vChCell.zw;',
+          'vec2 chGx = dFdx(vChUv) * vChCell.zw, chGy = dFdy(vChUv) * vChCell.zw;',
+          'float chTex = step(-0.5, vChK.x) * uArtOn; chKind = -vChK.x;',
+          'chPass = 1.0 - smoothstep(0.9, 1.0, vChCol.a);',   // a passage's part: its shade under 1 (fix2)
+          'vec4 chC = ' + tg('map', 'chA', 'chGx, chGy') + '; frMask = ' + tg('uMask', 'chA', 'chGx, chGy') + ' * chTex;',
+          // the sky between the balusters, on the balustrade's own cell
+          'if (abs(vChK.x - ' + balusIx.toFixed(1) + ') < 0.5 && frMask.b > 0.16 && frMask.b < 0.33 && frMask.r < 0.5) discard;',
+          'vec3 chAlb = mix(vChCol.rgb, chC.rgb, chTex);',
+          // the reveals' shade on the glass (a computer's, as the house fronts' frAo): the window's own mask, blurred, falls off
+          // toward its jambs and head, and the pane darkens there as it does set back in the stone
+          ...(gl2 && !isTouch ? ['float chAo = textureGrad(uMask, chA, chGx * 4.0 + vec2(0.0025, 0.0), chGy * 4.0 + vec2(0.0, 0.0025)).r;',
+            'chAlb *= mix(1.0, 0.6 + 0.4 * smoothstep(0.45, 0.9, chAo), frMask.r * chTex);'] : []),
+          // the shade a part carries (the passages' dark middles): a little of it as grime, the rest as the sky they cannot
+          // see (the indirect light, below)
+          'chAlb *= mix(1.0, vChCol.a, 0.35);',
+          // the passages' ashlar (fix2: by day flat bright boards, on a phone with no joints left): its courses 0.6 m and
+          // its blocks 1.4 m drawn in, each its own shade, a granite base course along the floor
+          'if (chPass > 0.5 && abs(vChK.x - ' + ashIx.toFixed(1) + ') < 0.5) {',
+          '  vec2 jm = vChUv * 4.0, jw = fwidth(jm); float jr = floor(jm.y / 0.6); vec2 jq = vec2(jm.x / 1.4 + 0.5 * mod(jr, 2.0), jm.y / 0.6), jf = fract(jq);',
+          '  float jd = min(min(jf.x, 1.0 - jf.x) * 1.4 / max(jw.x, 1e-4), min(jf.y, 1.0 - jf.y) * 0.6 / max(jw.y, 1e-4)), jfade = 1.0 - smoothstep(0.05, 0.2, max(jw.x, jw.y));',
+          '  float jh = fract(sin(dot(floor(jq), vec2(17.13, 63.71))) * 43758.5453);',
+          '  chAlb *= mix(1.0, (0.88 + 0.2 * jh) * (1.0 - 0.55 * (1.0 - smoothstep(0.5, 1.6, jd))), jfade);',
+          '  chAlb = mix(chAlb, vec3(0.16, 0.155, 0.15), (1.0 - smoothstep(0.42, 0.47, vWPos.y - vBase - ' + CITY_HALL.court0.toFixed(2) + ')) * 0.8);',
+          '}',
+          // the weathering (fix2, the review: the block read pristine white, 190 to 220 in the sun): the stone's lower storeys
+          // dirtier than its upper, the tower over the roofs cleaner, by the height over the datum; the painted metal keeps
+          // its paint (it starts at 102.8 m)
+          'float chH = vWPos.y - vBase; chAlb *= mix(1.0, mix(0.84, 1.0, smoothstep(0.0, 18.0, chH)) * mix(1.0, 1.06, smoothstep(45.0, 70.0, chH)), chTex * (1.0 - frMask.r));',
+          // the rain darkens the stone a little, the walls as the decks (fix2: it stayed dry-white in a downpour)
+          'chAlb *= 1.0 - 0.22 * uWet * (1.0 - frMask.r) * step(chKind, 12.5);',
+          // the slate: the pitched roofs' generated slate along the slope (u along the eave, v up the slope, in metres),
+          // as detail over the stored colour, with a course line every 0.3 m that fades before it aliases
+          'vec2 slT = vChUv / uPitchM[1], slX = dFdx(slT), slY = dFdy(slT);',
+          // every kind's footprint, taken here where the control flow is uniform
+          'vec2 uvW = fwidth(vChUv);',
+          'vec2 rG = vChUv / uRoofM, rGx = dFdx(rG), rGy = dFdy(rG);',
+          'if (chKind > 0.5 && chKind < 1.5) {',
+          '  if (uPitchOn > 0.5) { vec3 sT = fabAtlasG(uPitchArt, 1.0, 2.0, uPitchPad, slT, slX, slY); float sl = dot(sT, vec3(0.2126, 0.7152, 0.0722)) / max(dot(uPitchMean[1], vec3(0.2126, 0.7152, 0.0722)), 1e-3); chAlb *= clamp(sl, 0.4, 1.8); }',
+          '  float cf = fract(vChUv.y / 0.3), cw = max(uvW.y / 0.3, 1e-4); chAlb *= 1.0 - 0.25 * (1.0 - smoothstep(0.0, 1.5 * cw, cf)) * (1.0 - smoothstep(0.3, 0.6, cw));',
+          '}',
+          // the cast-iron cresting: its bars against the sky's light behind, a soft rhythm at 0.35 m
+          'if (chKind > 1.5 && chKind < 2.5) { float bw = max(uvW.x / 0.35, 1e-4); chAlb *= 1.0 - 0.35 * (1.0 - smoothstep(0.3, 0.6, bw)) * smoothstep(0.35, 0.5, abs(fract(vChUv.x / 0.35) - 0.5)); }',
+          // the decks: the flat roofs' generated tar (the atlas's first kind) as grain over the stored charcoal, with the
+          // membrane's lapped seams every 0.9 m (fix1: flat grey planes from every flight)
+          'if (chKind > 2.5 && chKind < 3.5) {',
+          '  float rSc = 0.5 * (1.0 - 2.0 * uRoofPad); vec2 rUV = vec2(0.0, 0.5) + 0.5 * uRoofPad + fract(rG) * rSc;',
+          '  if (uRoofOn > 0.5) { vec3 rT = ' + tg('uRoofArt', 'rUV', 'rGx * rSc, rGy * rSc') + '.rgb; chAlb *= clamp(rT / max(uRoofMean[0], vec3(1e-3)), 0.5, 1.8); }',
+          '  float sw = max(uvW.x / 0.9, 1e-4), sf = fract(vChUv.x / 0.9); chAlb *= 1.0 + 0.12 * (1.0 - smoothstep(0.0, 2.0 * sw + 0.02, sf)) * (1.0 - smoothstep(0.3, 0.6, sw));',
+          '}',
+          // the portals' cast-iron vaults: coffers 1.05 by 1.2 m between ribs, a rosette in each, faded before they alias
+          'if (chKind > 4.5 && chKind < 5.5) {',
+          '  vec2 cq = fract(vChUv / vec2(1.05, 1.2)), ce = min(cq, 1.0 - cq); float cfw = 1.0 - smoothstep(0.15, 0.4, max(uvW.x / 1.05, uvW.y / 1.2));',
+          '  float rib = 1.0 - smoothstep(0.05, 0.11, min(ce.x, ce.y)), pit = smoothstep(0.14, 0.24, min(ce.x, ce.y)), ros = 1.0 - smoothstep(0.07, 0.13, length(cq - 0.5));',
+          '  chAlb *= mix(1.0, (1.0 + 0.35 * rib) * (1.0 - 0.3 * pit) * (1.0 + 0.6 * ros), cfw);',
+          '}',
+          // the granite setts of the passages' floors: 0.6 by 0.3 m in a running bond, each its own shade, the joints dark
+          'if (chKind > 6.5 && chKind < 7.5) {',
+          '  vec2 sq = vChUv / vec2(0.6, 0.3); float row = floor(sq.y); sq.x += 0.5 * mod(row, 2.0); vec2 sf2 = fract(sq), si = floor(sq);',
+          '  float sh2 = fract(sin(dot(si, vec2(12.9898, 78.233))) * 43758.5453), jt = min(min(sf2.x, 1.0 - sf2.x) * 0.6, min(sf2.y, 1.0 - sf2.y) * 0.3);',
+          '  float sfw = 1.0 - smoothstep(0.02, 0.06, max(uvW.x, uvW.y));',
+          '  chAlb *= mix(1.0, (0.86 + 0.28 * sh2) * (1.0 - 0.45 * (1.0 - smoothstep(0.004, 0.012, jt))), sfw);',
+          '}',
+          // the carved trim: a bead every 0.42 m along it, a sunk line either side of its face
+          'if (chKind > 11.5 && chKind < 12.5) {',
+          '  float bf = abs(fract(vChUv.x / 0.42) - 0.5), bfw = 1.0 - smoothstep(0.3, 0.6, uvW.x / 0.42);',
+          '  float bead = 1.0 - smoothstep(0.16, 0.3, bf), edge = smoothstep(0.08, 0.2, vChUv.y) * (1.0 - smoothstep(0.8, 0.92, vChUv.y));',
+          '  chAlb *= mix(1.0, (0.86 + 0.2 * bead) * mix(0.82, 1.0, edge), bfw);',
+          '}',
+          // the glazing (the lantern's gallery and the skylights: bars every 0.9 m and a rail every 1.2; the glass pavilions:
+          // slim mullions every 3 m), faded before they alias (fix2); fix3 (the review: a cream grid the lamps lit into a
+          // wireframe at night, over black panes): the bars thin dark-grey steel
+          'float chBar = 0.0; chGl = step(12.5, chKind) * step(chKind, 14.5);',
+          'if (chGl > 0.5) { vec2 gs = chKind < 13.5 ? vec2(0.9, 1.2) : vec2(3.0, 40.0), gq = vChUv / gs, gd = min(fract(gq), 1.0 - fract(gq)) * gs, gw = max(uvW, vec2(1e-4));',   // metres to the nearest bar, a pixel's metres
+          '  float bw = chKind < 13.5 ? 0.03 : 0.035;',
+          '  chBar = max(1.0 - smoothstep(bw, bw + gw.x, gd.x), 1.0 - smoothstep(bw, bw + gw.y, gd.y)) * (1.0 - smoothstep(0.06, 0.18, max(gw.x, gw.y)));',
+          '  chAlb = mix(chAlb, vec3(0.105, 0.11, 0.115), chBar); }',
+          // the passages' floors (fix3, the review: a regular grey tile tunnel; the vestibules' floors are patterned, a dark
+          // border of small tesserae along the walls round a field of large slabs laid on the diagonal in two tones)
+          'if (chPass > 0.5 && chKind > 6.5 && chKind < 7.5 && vWNorm.y > 0.7) {',
+          '  vec2 dq = vec2(vChUv.x + vChUv.y, vChUv.x - vChUv.y) / 1.2; vec2 di = floor(dq); float dt = mod(di.x + di.y, 2.0);',
+          '  vec2 de = min(fract(dq), 1.0 - fract(dq)); float dj = 1.0 - smoothstep(0.012, 0.03, min(de.x, de.y)), dfw = 1.0 - smoothstep(0.02, 0.08, max(uvW.x, uvW.y));',
+          '  float edge = vChK.y > 0.5 ? min(vChUv.x, vChK.y - vChUv.x) : 9.0;',   // (the floor's width rides its seed)
+          '  vec3 field = mix(vec3(1.02, 1.0, 0.96), vec3(0.78, 0.7, 0.62), dt) * (1.0 - 0.3 * dj * dfw);',
+          '  vec2 tq = fract(vChUv / 0.12); float tes = 0.82 + 0.3 * fract(sin(dot(floor(vChUv / 0.12), vec2(12.9, 78.2))) * 43758.5);',
+          '  vec3 bord = vec3(0.55, 0.42, 0.34) * mix(1.0, tes, dfw) * mix(1.0, 1.18, step(0.85, fract((edge - 0.08) / 0.62)) * step(edge, 0.62));',
+          '  chAlb *= mix(field, bord, step(edge, 0.7) * step(-0.5, edge));',
+          '}',
+          // the statues' bronze and the passages' polished red granite: a fleck of grain in the granite
+          'if (chKind > 15.5 && chKind < 16.5) { float gr = fract(sin(dot(floor(vChUv * 90.0), vec2(12.9898, 78.233))) * 43758.5453); chAlb *= mix(1.0, 0.82 + 0.36 * gr, 1.0 - smoothstep(0.004, 0.012, max(uvW.x, uvW.y))); }',
+          // the flag: thirteen stripes, the canton's blue over the top seven with its stars as a soft dotted grid
+          'if (chKind > 10.5 && chKind < 11.5) { float fs = step(0.5, fract(vChUv.y * 6.5)); chAlb = mix(vec3(0.445, 0.016, 0.034), vec3(0.85, 0.85, 0.83), fs);',
+          '  if (vChUv.x < 0.4 && vChUv.y > 0.4615) { vec2 st = fract(vec2(vChUv.x * 15.0, (vChUv.y - 0.4615) * 18.0)); float sd = 1.0 - smoothstep(0.18, 0.32, length(st - 0.5)); chAlb = mix(vec3(0.045, 0.043, 0.155), vec3(0.85, 0.85, 0.83), sd * 0.8); } }',
+          'diffuseColor.rgb *= chAlb;',
+        ].join('\n'))
+        // a passage's part sees no sun past its mouths (fix3, the review: the shadow map leaked a jagged sunlit strip the
+        // length of the north passage at the foot of its wall, at 14:00 with the sun south-south-west): the direct light
+        // there goes with its shade, whole at the mouth (0.72), gone by 3 m in (0.4)
+        .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.indirectDiffuse *= vChCol.a; reflectedLight.indirectSpecular *= vChCol.a;\n{ float chSun = mix(1.0, smoothstep(0.42, 0.7, vChCol.a), chPass); reflectedLight.directDiffuse *= chSun; reflectedLight.directSpecular *= chSun; }\n' +
+          // the glass (fix3, the review: black slabs by day, the panes only their 4 per cent of the sky): clear glass shows the
+          // daylit plaza and room beyond it, the share Fresnel's law leaves (the pavilions' clear; the lantern's and the
+          // skylights' a little of it, over their dark rooms), the sky's reflection being the material's own
+          '#if defined( RE_IndirectDiffuse )\n{ float chFr = 0.04 + 0.96 * pow(1.0 - clamp(abs(dot(normalize(vViewPosition), normal)), 0.0, 1.0), 5.0); reflectedLight.indirectDiffuse += chGl * (1.0 - chBar) * (1.0 - chFr) * mix(vec3(0.16, 0.17, 0.18), vec3(0.13, 0.145, 0.155) * (0.55 + 0.6 * smoothstep(0.4, 2.6, vChUv.y)), step(13.5, chKind)) * irradiance * RECIPROCAL_PI; reflectedLight.indirectSpecular *= 1.0 + mix(1.8, 3.5, step(13.5, chKind)) * chGl * (1.0 - chBar); }\n#endif')
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = chTex > 0.5 ? mix(vChK.z, 0.22, frMask.r) : (chKind < 1.5 ? 0.62 : chKind < 2.5 ? 0.45 : chKind < 3.5 ? 0.85 : chKind < 4.5 ? 0.5 : chKind < 5.5 ? 0.55 : chKind < 6.5 ? 0.3 : chKind < 7.5 ? 0.85 : chKind < 8.5 ? 0.9 : chKind < 9.5 ? 0.55 : chKind < 10.5 ? 0.75 : chKind < 11.5 ? 0.9 : chKind < 12.5 ? 0.72 : chKind < 14.5 ? mix(0.06, 0.6, chBar) : chKind < 15.5 ? 0.42 : chKind < 16.5 ? 0.24 : chKind < 17.5 ? 0.5 : 0.3);')
+        // the statues' bronze a metal, as the tower's bronzes are (fix3)
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nif (chKind > 14.5 && chKind < 15.5) metalnessFactor = 0.8;')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+if (uNight > 0.001) {
+  // the night's rooms: a lit office by its window's number and its face's seed, the share the hour keeps lit; behind the
+  // pane (fix2: flat beige cards) its ceiling lit by the lamp over a darker floor, a blind drawn part way in some, the
+  // sash's bars dark (the bake leaves them out of the glass)
+  float chWin = frMask.r * (1.0 - step(0.6, frMask.b));
+  float wid = floor(frMask.g * 255.0 + 0.5);
+  float h1 = fract(sin(wid * 12.9898 + vChK.y * 78.233) * 43758.5453), h2 = fract(h1 * 7.13 + 0.31), h3 = fract(h1 * 3.71 + 0.53);
+  float lit = step(h1, 0.42 * uChLate.x);
+  float pv = clamp((frMask.b * 255.0 - 2.0) / 115.0, 0.0, 1.0);
+  vec3 room = mix(vec3(1.0, 0.70, 0.40), vec3(1.0, 0.86, 0.66), h2) * (0.30 + 0.35 * h2);
+  float blind = step(h3, 0.45) * (0.35 + 0.5 * fract(h3 * 9.7));
+  float inside = mix(0.45, 1.25, smoothstep(0.15, 0.95, pv)) * (0.8 + 0.4 * fract(h2 * 5.3 + pv * 2.0) * step(pv, 0.35));
+  room *= mix(inside, 0.9 + 0.15 * h3, step(1.0 - blind, pv));
+  totalEmissiveRadiance += chWin * lit * room * uNight;
+  // the passages' own lanterns (fix2), warm, strongest by the mouths where the shade is high, on their walls, vault and floor
+  totalEmissiveRadiance += chPass * diffuseColor.rgb * vec3(1.0, 0.78, 0.52) * (0.05 + 0.3 * smoothstep(0.15, 0.75, vChCol.a)) * uNight;   // (fix3: the marble of their new walls is lighter than the ashlar was)
+  // the glass pavilions lit from within (fix3: they stayed black and took nothing from the night), the lantern's gallery and
+  // the skylights a glimmer
+  totalEmissiveRadiance += chGl * (1.0 - chBar) * mix(vec3(0.05, 0.045, 0.04), vec3(0.1, 0.075, 0.045) * (0.35 + 1.0 * smoothstep(0.8, 3.8, vChUv.y)), step(13.5, chKind)) * uNight;   // (the pavilions' ceilings lit, their floors in shadow)
+}
+// a lamp's glass (the passages' lanterns, the courtyard's and the apron's lamps: fix3) on the street lamps' photocell
+totalEmissiveRadiance += step(17.5, chKind) * vec3(1.0, 0.76, 0.46) * 2.2 * uChLamp;
+// the dials' glass in the picture (the far level's: the near level's dials are their own mesh) glow a warm yellow on the
+// lamps' photocell, never themed
+totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) * 0.75 * uChLamp;`);
+      lampLightPatch(sh, 'vWPos', 'wall');
+      cityHallFloodPatchReal(sh, flood);
+    };
+    mat.customProgramCacheKey = () => 'city-hall-real' + (gl2 ? '2' : '1') + '|wx';
+    architecturalBloom(mat, 0.18);
+    return mat;
+  }
+  // the cut-out parts' shadow: the depth pass with the same cut (fix1: three's own depth material cast the balustrades and
+  // the cresting as solid boards)
+  function chCutDepth() {
+    const A = CITYHALL_ART, ids = Object.keys(A.cells).sort(), nC = ids.length, balusIx = ids.indexOf('balus');
+    const m = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    m.onBeforeCompile = (sh) => {
+      sh.uniforms.uMask = CH.U.uMask; sh.uniforms.uChCells = CH.U.uChCells; sh.uniforms.uArtOn = CH.artOn;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aK; uniform vec4 uChCells[' + nC + ']; varying vec2 vChUv; varying vec4 vChCell; varying float vChBal;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvChUv = uv; vChCell = uChCells[int(max(aK.x, 0.0) + 0.5)]; vChBal = 1.0 - step(0.5, abs(aK.x - ' + balusIx.toFixed(1) + '));');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uArtOn; varying vec2 vChUv; varying vec4 vChCell; varying float vChBal;')
+        .replace('void main() {', 'void main() {\n  { vec2 t = vChUv - floor(vChUv); vec4 mk = texture2D(uMask, vChCell.xy + t * vChCell.zw); if (uArtOn > 0.5 && vChBal > 0.5 && mk.b > 0.16 && mk.b < 0.33 && mk.r < 0.5) discard; }');
+    };
+    m.customProgramCacheKey = () => 'city-hall-cut-depth';
+    return m;
+  }
+  // the dials: a canvas a dial (the teal glass of 98 panes, the gilt chapter ring and Roman numerals, the white outer ring,
+  // a gilt patch the hands' uv point at) and its glow (the glass, the numerals and hands dark); drawn by the page, never by
+  // the image model
+  function chDialCanvases() {
+    const S = isTouch ? 256 : 512, cv = document.createElement('canvas'), gv = document.createElement('canvas');
+    cv.width = cv.height = gv.width = gv.height = S;
+    const c = cv.getContext('2d'), g = gv.getContext('2d'), R = S / 2 - 2, O = S / 2;
+    c.fillStyle = '#c9c4b8'; c.fillRect(0, 0, S, S); g.fillStyle = '#000'; g.fillRect(0, 0, S, S);
+    // the white moulded ring, the glass inside it
+    c.fillStyle = '#e8e4da'; c.beginPath(); c.arc(O, O, R, 0, Math.PI * 2); c.fill();
+    const gr = c.createRadialGradient(O, O * 0.8, R * 0.1, O, O, R * 0.92);
+    gr.addColorStop(0, '#6aa29b'); gr.addColorStop(1, '#4c7f7a');
+    c.fillStyle = gr; c.beginPath(); c.arc(O, O, R * 0.92, 0, Math.PI * 2); c.fill();
+    g.fillStyle = '#fff'; g.beginPath(); g.arc(O, O, R * 0.92, 0, Math.PI * 2); g.fill();
+    // the glass's leading: only lit from behind (the glow's), never by day (fix3, the review against the 2025 photograph: the
+    // twelve radial bars and three rings are not on today's face)
+    g.strokeStyle = '#3a3a3a'; g.lineWidth = Math.max(1, S / 340);
+    for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2; g.beginPath(); g.moveTo(O + Math.cos(a) * R * 0.18, O + Math.sin(a) * R * 0.18); g.lineTo(O + Math.cos(a) * R * 0.6, O + Math.sin(a) * R * 0.6); g.stroke(); }
+    for (const rr of [0.18, 0.4]) { g.beginPath(); g.arc(O, O, R * rr, 0, Math.PI * 2); g.stroke(); }
+    // the chapter ring: two gilt circles and between them the numerals filling the band, tall and condensed as the
+    // photograph's are, each on its radius with its foot to the centre (fix3: at 0.07 of the canvas they were half the
+    // photograph's size, in a ring of sixty minute marks the face does not have)
+    const gilt = '#d9c28e', r0 = 0.635, r1 = 0.915;
+    for (const [k, col] of [[c, gilt], [g, '#000']]) {
+      k.strokeStyle = col; k.lineWidth = Math.max(1.5, S / 170);
+      for (const rr of [r0, r1]) { k.beginPath(); k.arc(O, O, R * rr, 0, Math.PI * 2); k.stroke(); }
+    }
+    const NUM = ['XII', 'I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI'];
+    const capH = R * (r1 - r0) * 0.78, F = Math.round(capH / 0.69), slot = 2 * Math.PI * R * (r0 + r1) / 2 / 12 * 0.8;
+    for (const [k, col] of [[c, gilt], [g, '#000']]) {
+      k.fillStyle = col; k.textAlign = 'center'; k.textBaseline = 'alphabetic'; k.font = '600 ' + F + 'px Georgia, serif';
+      NUM.forEach((t, i) => {
+        const a = i / 12 * Math.PI * 2, sx = Math.min(0.62, slot / Math.max(1, k.measureText(t).width));
+        k.save(); k.translate(O + Math.sin(a) * R * (r0 + r1) / 2, O - Math.cos(a) * R * (r0 + r1) / 2); k.rotate(a); k.scale(sx, 1); k.fillText(t, 0, capH / 2); k.restore();
+      });
+    }
+    // the hands' patch, in a corner outside the dial
+    c.fillStyle = '#b39a62'; c.fillRect(2, 2, 10, 10); g.fillStyle = '#000'; g.fillRect(0, 0, 14, 14);
+    return { cv, gv, hand: [7 / S, 1 - 7 / S] };
+  }
+  // the four dials' frames in the building's frame: each face's outward normal (nu, nv), its right as a viewer outside sees
+  // it (ru, rv: the dial's 3 o'clock, the canvas's right and the hands' turning) and its centre (c0), the picture's place
+  // across the 20 m face. Facing the face, the viewer looks along -n with y up, so his right is -n x y = (nv, -nu): III to
+  // the east on the south face (fix3, the review: (-nv, nu) is his LEFT, and every dial read IIX at its head with III at
+  // nine and its hands running backward)
+  function chDialFaces(h, off) {
+    const [cu, cv] = CITY_HALL.tower.c;
+    return [[0, -1], [1, 0], [0, 1], [-1, 0]].map(([nu, nv]) => {   // north, east, south, west
+      const ru = nv, rv = -nu;
+      return { nu, nv, ru, rv, c0: [cu + nu * (h + 0.12) + ru * off, cv + nv * (h + 0.12) + rv * off] };
+    });
+  }
+  // the four dials and their hands (rewritten once a model minute: CH.hands), standing 0.12 m off the clock stage's faces
+  function chDials(Y0) {
+    const A = CITYHALL_ART, T = CITY_HALL.tower, d = (A.meta.clock && A.meta.clock.dial) || [10, 7.2, 3.9, 3.9];
+    const r = Math.max(d[2], d[3]) + 0.06, yc = T.clock[0] + d[1], h = T.clock[2];
+    const { cv: dc, gv, hand } = chDialCanvases();
+    const P = [], N = [], UV = [], I = [], dials = [];
+    const W = (U, y, V) => chWorld(U, y, V, Y0);
+    for (const F of chDialFaces(h, d[0] - 10)) {
+      const { nu, nv, ru, rv, c0 } = F;
+      const wn = [fl.nx * nu + fl.dx * nv, 0, fl.nz * nu + fl.dz * nv];
+      const base = P.length / 3, seg = 32;
+      P.push(...W(c0[0], yc, c0[1])); N.push(...wn); UV.push(0.5, 0.5);
+      for (let i = 0; i <= seg; i++) {
+        const a = i / seg * Math.PI * 2, x = Math.sin(a), y = Math.cos(a);
+        P.push(...W(c0[0] + ru * x * r, yc + y * r, c0[1] + rv * x * r)); N.push(...wn); UV.push(0.5 + x * 0.5 * (1 - 4 / 512), 0.5 + y * 0.5 * (1 - 4 / 512));
+      }
+      for (let i = 0; i < seg; i++) I.push(base, base + 1 + i, base + 2 + i);
+      dials.push({ c0, ru, rv, nu, nv, wn });
+    }
+    // the hands: two quads a dial, laid by chHands
+    const hb = P.length / 3;
+    for (let k = 0; k < dials.length * 2; k++) {
+      for (let j = 0; j < 4; j++) { P.push(0, 0, 0); N.push(...dials[k >> 1].wn); UV.push(hand[0], hand[1]); }
+      const q = hb + k * 4; I.push(q, q + 1, q + 2, q, q + 2, q + 3);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(P), 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(N), 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(UV), 2));
+    g.setIndex(I);
+    // the discs face out: wind every triangle to its own normal
+    const p = g.attributes.position.array, ix = g.index.array;
+    for (let t = 0; t < ix.length; t += 3) {
+      const a = ix[t] * 3, b2 = ix[t + 1] * 3, c2 = ix[t + 2] * 3, nn = [N[a], N[a + 1], N[a + 2]];
+      const ux = p[b2] - p[a], uy = p[b2 + 1] - p[a + 1], uz = p[b2 + 2] - p[a + 2], vx = p[c2] - p[a], vy = p[c2 + 1] - p[a + 1], vz = p[c2 + 2] - p[a + 2];
+      const cx = uy * vz - uz * vy, cy = uz * vx - ux * vz, cz = ux * vy - uy * vx;
+      if (cx * nn[0] + cy * nn[1] + cz * nn[2] < 0 && t < hb * 0 + ix.length) { const s = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = s; }
+    }
+    g.computeBoundingSphere();
+    const map = freeTexOnUpload(new THREE.CanvasTexture(dc)), glow = freeTexOnUpload(new THREE.CanvasTexture(gv));
+    map.encoding = THREE.sRGBEncoding; map.anisotropy = anisoOf(8);
+    // lit, the glass is the photographs' saturated yellow (a camera clips it to 0xfcf94e): a deep amber-yellow emission over
+    // a dial whose own teal goes dark, so the tone curve keeps it yellow rather than cream
+    const mat = new THREE.MeshStandardMaterial({ map, emissiveMap: glow, emissive: new THREE.Color(1.0, 0.5, 0.03), roughness: 0.3, metalness: 0, side: THREE.DoubleSide });
+    mat.onBeforeCompile = (sh) => {
+      sh.uniforms.uChLamp = lampUniform;
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uChLamp;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - 0.85 * uChLamp;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance *= 0.75 * uChLamp;');
+    };
+    mat.customProgramCacheKey = () => 'city-hall-dials';
+    architecturalBloom(mat, 0.5);
+    const m = new THREE.Mesh(g, mat);
+    m.matrixAutoUpdate = false; m.castShadow = false; m.receiveShadow = true; m.userData.noPack = true;
+    CH.hands = { g, hb, dials, r, yc, Y0 };
+    return m;
+  }
+  // the hands to the model's clock: the minute hand 0.86 of the dial, the hour hand 0.62, both from a short tail
+  function chHands(minutes) {
+    const H = CH.hands; if (!H) return;
+    const p = H.g.attributes.position.array, mA = (minutes % 60) / 60 * Math.PI * 2, hA = ((minutes / 60) % 12) / 12 * Math.PI * 2;
+    H.dials.forEach((D, k) => {
+      for (const [j, a, len, w, out] of [[0, hA, 0.62, 0.45, 0.08], [1, mA, 0.86, 0.32, 0.14]]) {
+        const s = Math.sin(a), c = Math.cos(a);   // along the hand: right s, up c
+        const q = (H.hb + (k * 2 + j) * 4) * 3;
+        const pts = [[-w / 2, -0.12 * H.r], [w / 2, -0.12 * H.r], [w * 0.15, len * H.r], [-w * 0.15, len * H.r]];
+        pts.forEach(([x, y], i) => {
+          const ru = x * c + y * s, up = -x * s + y * c;   // the hand's frame turned clockwise by a, as seen from outside
+          const U = D.c0[0] + D.ru * ru + D.nu * out, V = D.c0[1] + D.rv * ru + D.nv * out;
+          const w2 = chWorld(U, H.yc + up, V, H.Y0);
+          p[q + i * 3] = w2[0]; p[q + i * 3 + 1] = w2[1]; p[q + i * 3 + 2] = w2[2];
+        });
+      }
+    });
+    H.g.attributes.position.needsUpdate = true;
+  }
+  // the bronzes on the night's themed parts (one mesh, merged in the step): Calder's William Penn, the four eagles over the
+  // dials and the four groups at the dome's foot (chPennForm, chEagleForm, chGroupForm: fix3), a phone's at fewer facets
+  function chBronze(themeParts, chSlot, Y0) {
+    const T = CITY_HALL.tower, [tcu, tcv] = T.c;
+    const W = chWorld(tcu, 0, tcv, Y0), cx = W[0], cz = W[2];
+    // the photographs' near-black patina (Penn about rgb 40, 55, 78 against the sky): a dark metallic bronze, its gain
+    // negative so the themed mesh's shader gives it metal's response (fix1: as the themed parts' matte paint, even 0x150f09
+    // rendered khaki, about rgb 115, 111, 103, in the sun)
+    // (fix2: stored lighter, 0x221c15, for a metal's sheen: as 0x0b0906 Penn's coat measured (16, 18, 17) in direct sun at
+    // 30 m, flat black with no modelling)
+    const cBronze = new THREE.Color(0x221c15), cBronzeD = new THREE.Color(0x19140f), tone = [cBronze, cBronzeD];
+    const pennFlood = new THREE.Color(0.5, 0.42, 0.3).multiplyScalar(0.35);
+    const parts = [], lo = isTouch;
+    let flood = pennFlood;   // Penn's warm floods; the eagles and the groups at the dome's foot stand in less of them (dark silhouettes, as the night photographs show)
+    const lay = (forms, m) => { for (const [g, t] of forms) { const c2 = g.clone(); c2.applyMatrix4(m); parts.push({ geom: c2, color: tone[t] || cBronze, lit: flood, mix: 0.25, slot: chSlot, style: 3, gain: -1 }); } };
+    // Penn faces north-east on the grid (toward Penn Treaty Park), at the statue's 37 ft from his pedestal's top to his hat
+    { const s2 = Math.SQRT1_2, nex = (fl.nx - fl.dx) * s2, nez = (fl.nz - fl.dz) * s2;
+      lay(chPennForm(lo), CHS.at([nex, nez], cx, Y0 + T.penn[0], cz, (T.penn[1] - T.penn[0]) / 10.98)); }
+    flood = pennFlood.clone().multiplyScalar(0.3);
+    // an eagle perched over each dial at the dome's foot, facing out; a group on each corner's pedestal, facing out along
+    // the diagonal (fix2 laid each modelled once four times; fix3 models them as forms)
+    const h = T.clock[2], E = chEagleForm(lo), G = chGroupForm(lo), F = (ou, ov) => [fl.nx * ou + fl.dx * ov, fl.nz * ou + fl.dz * ov];
+    for (const [ou, ov] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) { const w = chWorld(tcu + ou * (h - 0.62), T.clock[1], tcv + ov * (h - 0.62), Y0); lay(E, CHS.at(F(ou, ov), w[0], w[1], w[2], 1)); }
+    for (const [du, dv] of [[1, -1], [1, 1], [-1, 1], [-1, -1]]) { const w = chWorld(tcu + du * CH_PED.d, T.clock[1] + CH_PED.h, tcv + dv * CH_PED.d, Y0); lay(G, CHS.at(F(du, dv), w[0], w[1], w[2], 1)); }
+    for (const p of parts) themeParts.push(p);
+    return parts.length;
+  }
+  // the courtyard's floor (the red pavers, the grey cross of walks between the portals, the painted compass) and the granite
+  // apron round the building to Penn Square's curbs: one mesh, a canvas, the compass on a canvas of its own (fix2)
+  // the courtyard's and the apron's rings (the courtyard first), made once for both levels: the apron on the drawn ground,
+  // the courtyard laid flat at its own level (fix2: the LiDAR's 13.91 m, 0.34 over the datum, where the drape followed the
+  // DEM's pit 2.7 m down), and the west front's band over Dilworth Park's lawn (fix2: the lawn ran into the west portal's
+  // mouth, where the real ground is the plaza's granite)
+  function chDrapes(Y0) {
+    if (CH.drapes) return CH.drapes;
+    const C = CITY_HALL, W = (U, V) => { const p = chWorld(U, 0, V, 0); return [p[0], p[2]]; };
+    const court = C.court.map(([U, V]) => W(U, V));
+    const bands = [[-72, 76, -97.7, -40.9], [-72, 76, 33, 79.3], [-72, -7, 20.8, 33], [7, 76, 20.8, 33], [-72, -34.5, -40.9, 20.8], [34.5, 76, -40.9, 20.8], [-84, -72, -77.5, 72.5]]
+      .map(([u0, u1, v0, v1]) => [W(u0, v0), W(u1, v0), W(u1, v1), W(u0, v1)]);
+    const out = [];
+    {   // the courtyard, flat
+      const y = Y0 + C.court0 + 0.02, tr = THREE.ShapeUtils.triangulateShape(court.map((q) => new THREE.Vector2(q[0], q[1])), []), pos = [], nor = [];
+      for (const t of tr) {
+        let [A0, B0, C0] = t.map((k) => court[k]);
+        if ((B0[0] - A0[0]) * (C0[1] - A0[1]) - (B0[1] - A0[1]) * (C0[0] - A0[0]) > 0) { const T = B0; B0 = C0; C0 = T; }   // facing up
+        for (const q of [A0, B0, C0]) { pos.push(q[0], y, q[1]); nor.push(0, 1, 0); }
+      }
+      const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3)); g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(nor), 3));
+      g.userData.court = true; out.push(g); noSow(court);
+    }
+    bands.forEach((ring) => { try { const g = conformDrape(ring, LAYER.plaza + 0.03, 10); g.userData.court = false; out.push(g); } catch (e) { /* off the grids */ } noSow(ring); });
+    CH.noTuft = [court, ...bands].map((r) => [r, rbBox(r)]);   // a park's own tufts too (fix2: Dilworth's lawn sowed the west band)
+    return (CH.drapes = out);
+  }
+  // the far level's floor: the same drapes in two plain colours, the courtyard's pavers and the apron's granite
+  function chFloorFar(b, Y0) {
+    const B = CITY_HALL.B0;
+    for (const g of chDrapes(Y0)) {
+      const p = g.attributes.position.array, k = CHK.pave, col = g.userData.court ? [0x6a, 0x2f, 0x23] : [0x9b, 0x96, 0x8d], up = [0, 1, 0];
+      for (let i = 0; i < p.length / 9; i++) {
+        const ix = [0, 1, 2].map((j) => {
+          const o = (i * 3 + j) * 3, dx = p[o] - B[0], dz = p[o + 2] - B[1], U = dx * fl.nx + dz * fl.nz, V = dx * fl.dx + dz * fl.dz;
+          return b.v([U, p[o + 1] - Y0, V], up, [U, V], -k, 0, col);
+        });
+        b.tri(ix[0], ix[1], ix[2], up);
+      }
+    }
+  }
+  // the compass rose in the courtyard (fix2, the photographs 20230419181543 and _181701: a muted steel blue, its many-pointed
+  // star in two blues, cream and a dark navy with tan points between, a white sawtooth rim, and in its middle the grey grid
+  // of Holme's 1682 plan between the two rivers, its five squares pale, the year in a roundel; it was a saturated blue disc
+  // with a four-point star at 6.4 px a metre): its own canvas, 18 m across, 57 px a metre (28 on a phone, fix3), drawn by the page
+  const CH_COMPASS = { c: [0, 3.3], R: 8.75, span: 18 };
+  function chCompassCanvas() {
+    const S = isTouch ? 512 : 1024, cv = document.createElement('canvas'); cv.width = cv.height = S;   // (fix3: 768 on a phone held 3.1 MB for an 18 m disc; 512 is 28 px a metre)
+    const k = cv.getContext('2d'), O = S / 2, R = CH_COMPASS.R / CH_COMPASS.span * S, TAU = Math.PI * 2;
+    const NAVY = '#1f2947', STEEL = '#46759f', CREAM = '#bfb294', TAN = '#c4a15e', WHITE = '#e6e1d4';
+    k.fillStyle = '#6a2f23'; k.fillRect(0, 0, S, S);   // the pavers' brick round it (the floor's own outside the disc)
+    const disc = (r, col) => { k.fillStyle = col; k.beginPath(); k.arc(O, O, r, 0, TAU); k.fill(); };
+    disc(R, NAVY);
+    // the sawtooth rim: white teeth pointing out on the navy
+    k.fillStyle = WHITE;
+    for (let i = 0, n = 132; i < n; i++) {
+      const a0 = i / n * TAU, a1 = (i + 1) / n * TAU, am = (a0 + a1) / 2;
+      k.beginPath(); k.moveTo(O + Math.cos(a0) * R * 0.955, O + Math.sin(a0) * R * 0.955); k.lineTo(O + Math.cos(am) * R * 0.995, O + Math.sin(am) * R * 0.995); k.lineTo(O + Math.cos(a1) * R * 0.955, O + Math.sin(a1) * R * 0.955); k.closePath(); k.fill();
+    }
+    disc(R * 0.95, CREAM);
+    // the star: thirty-two points, each half steel blue and half navy, in four lengths; tan points between the long ones
+    const point = (a, r0, r1, w, ca, cb) => {
+      for (const [sd, col] of [[1, ca], [-1, cb]]) {
+        k.fillStyle = col; k.beginPath(); k.moveTo(O + Math.cos(a) * r1, O + Math.sin(a) * r1);
+        k.lineTo(O + Math.cos(a + sd * w) * r0, O + Math.sin(a + sd * w) * r0); k.lineTo(O, O); k.closePath(); k.fill();
+      }
+    };
+    for (let i = 0; i < 32; i++) {
+      const a = i / 32 * TAU - Math.PI / 2;
+      const len = i % 8 === 0 ? 0.94 : i % 4 === 0 ? 0.86 : i % 2 === 0 ? 0.77 : 0.69;
+      if (i % 2) point(a, R * 0.6, R * len, 0.07, TAN, '#a8854a');
+    }
+    for (let i = 0; i < 32; i += 2) {
+      const a = i / 32 * TAU - Math.PI / 2, len = i % 8 === 0 ? 0.94 : i % 4 === 0 ? 0.86 : 0.77;
+      point(a, R * 0.6, R * len, i % 8 === 0 ? 0.16 : i % 4 === 0 ? 0.14 : 0.12, STEEL, NAVY);
+    }
+    // the inner roundel: a navy ring, the cream field, the rivers and the plan's grid
+    disc(R * 0.6, NAVY); disc(R * 0.565, '#c9bd9c');
+    k.save(); k.beginPath(); k.arc(O, O, R * 0.565, 0, TAU); k.clip();
+    for (const sd of [-1, 1]) {   // the Schuylkill west and the Delaware east, as wavy navy bands
+      k.strokeStyle = NAVY; k.lineWidth = R * 0.07; k.beginPath();
+      for (let j = 0; j <= 40; j++) { const t = j / 40, y = O - R * 0.6 + t * R * 1.2, x = O + sd * R * (0.43 + 0.04 * Math.sin(t * 9 + sd)); j ? k.lineTo(x, y) : k.moveTo(x, y); }
+      k.stroke();
+    }
+    const gx0 = O - R * 0.36, gx1 = O + R * 0.36, gy0 = O - R * 0.2, gy1 = O + R * 0.16, nx = 12, ny = 6;
+    k.fillStyle = '#7b8189'; k.fillRect(gx0, gy0, gx1 - gx0, gy1 - gy0);
+    k.fillStyle = '#c9c8c2';
+    for (const [i, j] of [[5.5, 2.5], [2.5, 1], [8.5, 1], [2.5, 4], [8.5, 4]]) { const w = (gx1 - gx0) / nx, h = (gy1 - gy0) / ny; k.fillRect(gx0 + i * w, gy0 + j * h, w, h); }
+    k.strokeStyle = '#2b2f36'; k.lineWidth = Math.max(1, S / 700);
+    for (let i = 0; i <= nx; i++) { const x = gx0 + (gx1 - gx0) * i / nx; k.beginPath(); k.moveTo(x, gy0); k.lineTo(x, gy1); k.stroke(); }
+    for (let j = 0; j <= ny; j++) { const y = gy0 + (gy1 - gy0) * j / ny; k.beginPath(); k.moveTo(gx0, y); k.lineTo(gx1, y); k.stroke(); }
+    // the year's roundel south of the grid, reading from the north (its head to the south)
+    k.strokeStyle = '#2b2f36'; k.lineWidth = Math.max(1, S / 500); k.beginPath(); k.ellipse(O, O + R * 0.33, R * 0.13, R * 0.07, 0, 0, TAU); k.stroke();
+    k.save(); k.translate(O, O + R * 0.33); k.rotate(Math.PI); k.fillStyle = '#2b2f36'; k.textAlign = 'center'; k.textBaseline = 'middle'; k.font = '600 ' + Math.round(R * 0.08) + 'px Georgia, serif'; k.fillText('1682', 0, 0); k.restore();
+    k.restore();
+    return cv;
+  }
+  const CH_FLOOR_BOX = [-86, 80, -100, 82];   // the floor canvas's reach in the frame: U, then V
+  // the floor's canvas: the apron's granite and the courtyard's pavers and walks
+  function chFloorCanvas() {
+    const C = CITY_HALL, S = isTouch ? 512 : 1024, box = CH_FLOOR_BOX;
+    const cv = document.createElement('canvas'); cv.width = cv.height = S;
+    const k = cv.getContext('2d'), px = (U) => (U - box[0]) / (box[1] - box[0]) * S, pz = (V) => (V - box[2]) / (box[3] - box[2]) * S;
+    k.fillStyle = '#9b968d'; k.fillRect(0, 0, S, S);
+    // the apron's granite: a faint mottling of its slabs (each 1.5 by 3 m a shade apart), the joints the shader's
+    for (let U = box[0], i = 0; U < box[1]; U += 3, i++) for (let V = box[2], j = 0; V < box[3]; V += 1.5, j++) {
+      const t = hash01(i * 31.7 + j * 7.3) - 0.5; k.fillStyle = 'rgba(' + (t > 0 ? '255,250,240' : '40,38,34') + ',' + (Math.abs(t) * 0.12).toFixed(3) + ')';
+      k.fillRect(px(U) + 0.5, pz(V) + 0.5, px(U + 3) - px(U) - 1, pz(V + 1.5) - pz(V) - 1);
+    }
+    // the courtyard: pavers with their own variation, the cross of walks (the compass is its own canvas)
+    k.save(); k.beginPath(); C.court.forEach(([U, V], i) => (i ? k.lineTo(px(U), pz(V)) : k.moveTo(px(U), pz(V)))); k.closePath(); k.clip();
+    // (fix1: the photographs' dark red-brown brick, about rgb 94, 49, 47 in shade, and grey granite walks; the bricks
+    // themselves are the shader's, laid by the metre)
+    k.fillStyle = '#6a2f23'; k.fillRect(0, 0, S, S);
+    for (let i = 0; i < S * 6; i++) { const x = hash01(i * 3.1) * S, y = hash01(i * 7.7 + 1) * S, l = hash01(i * 1.3 + 2); k.fillStyle = 'rgba(' + (l > 0.5 ? '130,66,50' : '72,34,26') + ',0.22)'; k.fillRect(x, y, 3, 2); }
+    k.fillStyle = '#8a8680';
+    k.fillRect(px(-4.5), pz(-41), px(4.5) - px(-4.5), pz(34) - pz(-41));
+    k.fillRect(px(-35), pz(-3.5), px(35) - px(-35), pz(1.5) - pz(-3.5));
+    k.restore();
+    return cv;
+  }
+  // the floor (the apron and the courtyard, one mesh) and its two canvases. A phone paints them on its first near frame (fix3,
+  // the review: uploaded at the build, as the floor is staged behind the veil, they held 4.5 MB on every phone that never came
+  // near City Hall): until then the floor is not drawn and its textures are a pixel each, never uploaded. The painted ones
+  // are new textures (WebGL 2's storage is fixed at a texture's first upload, so a pixel's could never take the canvas)
+  function chFloor(Y0) {
+    const C = CITY_HALL, box = CH_FLOOR_BOX, blank = () => { const c = document.createElement('canvas'); c.width = c.height = 1; return c; };
+    const tex = new THREE.CanvasTexture(blank()), ctex = new THREE.CanvasTexture(blank()); tex.encoding = THREE.sRGBEncoding;   // (the program's decode is the painted one's)
+    const geoms = chDrapes(Y0);
+    let n = 0; for (const g of geoms) n += g.attributes.position.count;
+    const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), uv = new Float32Array(n * 2), B = C.B0;
+    let o = 0;
+    for (const g of geoms) {
+      const p = g.attributes.position.array, q = g.attributes.normal.array;
+      pos.set(p, o * 3); nor.set(q, o * 3);
+      for (let i = 0; i < p.length / 3; i++) {
+        const dx = p[i * 3] - B[0], dz = p[i * 3 + 2] - B[1], U = dx * fl.nx + dz * fl.nz, V = dx * fl.dx + dz * fl.dz;
+        uv[(o + i) * 2] = (U - box[0]) / (box[1] - box[0]); uv[(o + i) * 2 + 1] = 1 - (V - box[2]) / (box[3] - box[2]);
+      }
+      o += p.length / 3;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    freeOnUpload(g);
+    const mat = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.88, metalness: 0 });
+    // the courtyard's lamps' pools on its floor at night (fix3: the courtyard went black after dark, its lamps lighting nothing):
+    // each [U, V, strength, spread], the posts and the turrets' lanterns
+    const pools = CH_COURT_POSTS.map(([U, V]) => new THREE.Vector4(U, V, 1.0, 14.0)).concat(C.turrets.map(([tu, tv]) => { const [ou, ov] = chTurretOut(tu, tv); return new THREE.Vector4(tu + ou * 3.4, tv + ov * 3.4, 0.6, 7.0); }));
+    const CC = CH_COMPASS, FU = { uFlB: { value: new THREE.Vector2(B[0], B[1]) }, uFlAx: { value: new THREE.Vector4(fl.nx, fl.nz, fl.dx, fl.dz) }, uCompass: { value: ctex }, uCmp: { value: new THREE.Vector4(CC.c[0], CC.c[1], CC.R, CC.span) },
+      uChPool: { value: pools }, uChLamp: lampUniform };
+    CH.floorPaint = () => {
+      CH.floorPaint = null;
+      const t2 = new THREE.CanvasTexture(chFloorCanvas()); t2.encoding = THREE.sRGBEncoding; t2.anisotropy = anisoOf(8); freeTexOnUpload(t2);
+      const c2 = new THREE.CanvasTexture(chCompassCanvas()); c2.anisotropy = anisoOf(8); freeTexOnUpload(c2);   // decoded in the shader (a sampler of its own)
+      mat.map = t2; FU.uCompass.value = c2; tex.dispose(); ctex.dispose();
+    };
+    if (!isTouch) CH.floorPaint();
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, FU);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos;').replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying vec3 vWPos; uniform vec2 uFlB; uniform vec4 uFlAx; uniform sampler2D uCompass; uniform vec4 uCmp; uniform vec4 uChPool[' + pools.length + ']; uniform float uChLamp; float chPool;\n' +
+        'float chFh(vec2 i) { return fract(sin(dot(i, vec2(127.1, 311.7))) * 43758.5453); }\n' +
+        'float chFn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(chFh(i), chFh(i + vec2(1.0, 0.0)), f.x), mix(chFh(i + vec2(0.0, 1.0)), chFh(i + vec2(1.0)), f.x), f.y); }')
+        // fix1 (the courtyard was one smooth salmon plane at eye level): on the canvas's brick, a running bond of 0.2 by 0.1 m
+        // pavers, each its own shade, sand in the joints; on its granite (the walks and the apron), slabs, each its own shade
+        // with its joints (fix2: the test for the granite's grey missed the walks, which drew flat); laid on the building's
+        // axes, faded before they alias; the compass from its own canvas over all of it, its rim drawn by the footprint
+        .replace('#include <map_fragment>', [
+          '#include <map_fragment>',
+          '{ vec2 fq = vWPos.xz - uFlB; vec2 fp = vec2(dot(fq, uFlAx.xy), dot(fq, uFlAx.zw)); vec2 fw = fwidth(fp); float fwm = max(fw.x, fw.y);',
+          '  chPool = 0.0; for (int i = 0; i < ' + pools.length + '; i++) { vec2 pd = fp - uChPool[i].xy; chPool += uChPool[i].z * exp(-dot(pd, pd) / uChPool[i].w); }',
+          '  vec3 tc = diffuseColor.rgb; float brick = step(1.7, tc.r / max(tc.g, 1e-3)) * step(1.7, tc.r / max(tc.b, 1e-3));',
+          '  float grey = (1.0 - brick) * step(abs(tc.r - tc.b), 0.3 * tc.r + 0.01) * step(0.05, tc.g);',
+          '  vec2 bq = fp / vec2(0.2, 0.1); bq.x += 0.5 * mod(floor(bq.y), 2.0); vec2 bf = fract(bq), bi = floor(bq);',
+          '  float bh = fract(sin(dot(bi, vec2(12.9898, 78.233))) * 43758.5453), bj = min(min(bf.x, 1.0 - bf.x) * 0.2, min(bf.y, 1.0 - bf.y) * 0.1);',
+          '  vec3 pv = mix(tc * (0.72 + 0.56 * bh), vec3(0.12, 0.105, 0.09), 0.7 * (1.0 - smoothstep(0.004, 0.012, bj)) * (1.0 - smoothstep(0.012, 0.03, fwm)));',
+          // fix3 (the review: uniform slabs with crisp black joints, no grain or wear, the walks flat a few metres out and the
+          // compass a flat vector decal): each slab its own tone out to where slabs are two pixels (not where a joint is), the
+          // joints a softer grey that fades before it aliases, the granite's speckle, and the wear of the plaza's traffic in
+          // broad light and dark patches; the compass painted on the same slabs, through their joints and grain, its paint
+          // a little worn and dulled
+          '  vec2 gq = fp / vec2(1.8, 1.2); gq.x += 0.5 * mod(floor(gq.y), 2.0); vec2 gf = fract(gq), gi = floor(gq);',
+          '  float gh = fract(sin(dot(gi, vec2(39.3468, 11.135))) * 43758.5453), gj = min(min(gf.x, 1.0 - gf.x) * 1.8, min(gf.y, 1.0 - gf.y) * 1.2);',
+          '  float jfade = 1.0 - smoothstep(0.03, 0.12, fwm), tfade = 1.0 - smoothstep(0.35, 0.9, fwm), sfade = 1.0 - smoothstep(0.01, 0.04, fwm);',
+          '  float grain = mix(1.0, 0.86 + 0.28 * chFn(fp * 22.0), sfade), wear = 0.9 + 0.12 * chFn(fp * 0.31) + 0.06 * chFn(fp * 1.7 + 4.1);',
+          '  float joint = 1.0 - 0.32 * (1.0 - smoothstep(0.006, 0.02, gj)) * jfade;',
+          '  vec3 gv = tc * mix(1.0, 0.86 + 0.28 * gh, tfade) * joint * grain * wear;',
+          '  diffuseColor.rgb = mix(tc, pv, brick * (1.0 - smoothstep(0.05, 0.14, fwm)));',
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, gv, grey);',
+          '  diffuseColor.rgb *= mix(1.0, 0.94 + 0.1 * chFn(fp * 0.5), brick);',
+          '  vec2 cq = (fp - uCmp.xy) / uCmp.w; float cr = length(fp - uCmp.xy), cin = 1.0 - smoothstep(uCmp.z - fwm, uCmp.z + fwm, cr);',
+          '  if (cin > 0.0) { vec3 cc = pow(texture2D(uCompass, vec2(cq.x + 0.5, 0.5 - cq.y)).rgb, vec3(2.2)); float cl = dot(cc, vec3(0.2126, 0.7152, 0.0722));',
+          '    vec2 kq = fract(fp / 1.2), kd = min(kq, 1.0 - kq) * 1.2; float kj = 1.0 - 0.3 * (1.0 - smoothstep(0.006, 0.02, min(kd.x, kd.y))) * jfade;',
+          '    cc = mix(cc, vec3(cl), 0.18 + 0.12 * chFn(fp * 0.9)) * kj * grain * mix(0.9, 1.06, chFn(fp * 0.45 + 7.0));',
+          '    diffuseColor.rgb = mix(diffuseColor.rgb, cc, cin); } }',
+        ].join('\n'))
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += (diffuseColor.rgb + 0.03) * vec3(1.0, 0.8, 0.55) * chPool * 3.0 * uChLamp;');
+      lampLightPatch(sh, 'vWPos', 'ground');
+    };
+    mat.customProgramCacheKey = () => 'city-hall-floor';
+    mat.userData.wxSurf = true;
+    return { g, mat, tris: n / 3 };
+  }
+  // Dilworth Park's café on its own footprint (the wide loop's, CH.cafe): a single storey of glass under a white fascia and
+  // a flat roof, as it stands at the plaza's south-west corner (fix1), in both levels; and the two glass headhouses over the
+  // concourse's stairs (CH.heads, fix2), glass to a thin fascia at gh metres
+  function chCafe(b, cafe, Y0, gh, far) {
+    if (!cafe) return;
+    const B = CITY_HALL.B0, [qx, qz] = cafe.c, gy = groundMeshY(qx, qz), y0 = (gy == null || !Number.isFinite(gy) ? siteY(qx, qz, 'ground') : gy) - Y0 - 0.1;
+    let P = cafe.poly.map(([x, z]) => { const dx = x - B[0], dz = z - B[1]; return [dx * fl.nx + dz * fl.nz, dx * fl.dx + dz * fl.dz]; });
+    let area = 0; for (let i = 0; i < P.length; i++) { const p = P[i], q = P[(i + 1) % P.length]; area += p[0] * q[1] - q[0] * p[1]; }
+    if (area < 0) P = P.slice().reverse();   // walked one way round, so every edge's outside is to its right
+    const n = P.length, yg = y0 + (gh || 4.2), yt = yg + 0.28, ov = 0.45;
+    const vk = (k, p, nn, uv, sh) => b.v(p, nn, uv, -k, 0, CH_KCOL[k].map((v) => Math.round(v * (sh || 1))));
+    // fix3 (the review: opaque black boxes under a heavy cream grid, a white fascia and a grey lid): clear glass from the plaza
+    // to a thin roof slab standing out 0.45 m all round, slim steel mullions every 3 m round the walls (the shader's, by the
+    // metre along them), the slab's edge, soffit and top a pale painted steel
+    const out = (i) => { const p = P[i], q = P[(i + 1) % n], L = Math.hypot(q[0] - p[0], q[1] - p[1]) || 1; return [(q[1] - p[1]) / L, -(q[0] - p[0]) / L]; };
+    const G = P.map((p, i) => {
+      const a = out((i + n - 1) % n), c = out(i), m = [a[0] + c[0], a[1] + c[1]], k = Math.max(0.35, 1 + a[0] * c[0] + a[1] * c[1]);
+      return [p[0] + m[0] * ov / k, p[1] + m[1] * ov / k];
+    });
+    let run = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, A0 = P[i], B1 = P[j], L = Math.hypot(B1[0] - A0[0], B1[1] - A0[1]);
+      if (L < 0.05) continue;
+      const o = out(i), nn = [o[0], 0, o[1]];
+      const q = [[A0[0], y0, A0[1]], [B1[0], y0, B1[1]], [B1[0], yg, B1[1]], [A0[0], yg, A0[1]]].map((v, k) => vk(CHK.pglass, v, nn, [run + (k === 1 || k === 2 ? L : 0), v[1] - y0]));
+      b.quad(q[0], q[1], q[2], q[3], nn);
+      run += L;
+      const Ga = G[i], Gb = G[j];
+      if (far) continue;   // (the far level: the glass and the slab's top)
+      const e = [[Ga[0], yg, Ga[1]], [Gb[0], yg, Gb[1]], [Gb[0], yt, Gb[1]], [Ga[0], yt, Ga[1]]].map((v) => vk(CHK.paint, v, nn, [v[0], v[1]], 0.97));
+      b.quad(e[0], e[1], e[2], e[3], nn);
+      const dn = [0, -1, 0], f = [[A0[0], yg, A0[1]], [B1[0], yg, B1[1]], [Gb[0], yg, Gb[1]], [Ga[0], yg, Ga[1]]].map((v) => vk(CHK.paint, v, dn, [v[0], v[2]], 0.8));
+      b.quad(f[0], f[1], f[2], f[3], dn);
+    }
+    const up = [0, 1, 0], tr = THREE.ShapeUtils.triangulateShape(G.map((q) => new THREE.Vector2(q[0], q[1])), []), ix = G.map((q) => vk(CHK.paint, [q[0], yt, q[1]], up, [q[0], q[1]], 0.9));
+    for (const t of tr) b.tri(ix[t[0]], ix[t[1]], ix[t[2]], up);
+  }
+  // the build (in 'Raising the outer districts', at Round 81's place in the build order, its themed slot taken there)
+  // fix2: the building stands on the measurements' own datum (13.57 m, NAVD88, as NED's metres are), the ground round it the
+  // LiDAR's (CH_GRADE); it stood on the DEM's pit in its courtyard, 2.47, 2 to 3 m into the sidewalks
+  function buildCityHallReal(ctx) {
+    const { chSlot, themeParts } = ctx, A = CITYHALL_ART, C = CITY_HALL, B = C.B0;
+    const Y0 = CH_GRADE.datum - DATUM;
+    CH.Y0 = Y0;
+    const mat = chMaterial(chSlot, Y0);
+    CH.mat = mat;
+    // staged as a chunk is (drawn unculled once behind the veil, so it uploads and lets its arrays go), but never one of
+    // outerMeshes: cullFogged sets those visible by the fog every few frames, and the level is cityHallStep's
+    const mk = (b, m2, nm) => {
+      const g = chGeometry(b, Y0); freeOnUpload(g);
+      const m = new THREE.Mesh(g, m2 || mat); m.matrixAutoUpdate = false; m.frustumCulled = false; m.castShadow = m.receiveShadow = true; m.name = nm || 'city-hall';
+      groupCity.add(m); pendingUpload.push(m);
+      return m;
+    };
+    const far = chModel(A, true);
+    if (CH_CAFE.poly) CH.cafe = { poly: CH_CAFE.poly, h: CH_CAFE.h, c: CH_CAFE.c };
+    CH.heads = CH_HEADHOUSE.recs.slice();
+    const glassHouses = (b, lo) => { chCafe(b, CH.cafe, Y0, 0, lo); for (const r of CH.heads) chCafe(b, r, Y0, clamp(r.h - 0.35, 3.2, 5.5), lo); };
+    chFloorFar(far.b, Y0); glassHouses(far.b, true);
+    CH.far = mk(far.b); CH.tris.far = far.b.I.length / 3;
+    if (!TIER2) {
+      const gnd = (U, V) => { const p = chWorld(U, 0, V, 0), g = groundMeshY(p[0], p[2]); return g == null || !Number.isFinite(g) ? 0 : g - Y0 + LAYER.plaza + 0.06; };
+      const near = chModel(A, false, gnd);
+      glassHouses(near.b);
+      // fix2 (the review): one program for all of it, the balustrades' and the cresting's cut gated on their own cell, and
+      // their shadow cut by chCutDepth. Fix1 gave them a program of their own so the rest kept its early depth test, but
+      // under the log depth buffer, on unless ?logdepth=0, every program writes gl_FragDepth and has none to keep: the
+      // split cost a colour draw, a shadow draw and a program for nothing
+      CH.near = mk(near.b); CH.tris.near = near.b.I.length / 3; CH.near.customDepthMaterial = chCutDepth();
+      CH.near.userData.occStandIn = CH.far;   // the pins' depth image takes the far level in its place (fix3: a sixth of the triangles)
+      CH.tops = near.tops;
+      CH.dial = chDials(Y0); CH.dial.updateMatrixWorld(); groupCity.add(CH.dial);
+      chHands(clock.minutes);
+      CH.dial.geometry.computeBoundingSphere();   // with the hands on their dials (fix1: at the origin they made it 905 m wide)
+      const f = chFloor(Y0);
+      CH.floor = new THREE.Mesh(f.g, f.mat); CH.floor.matrixAutoUpdate = false; CH.floor.frustumCulled = false; CH.floor.receiveShadow = true; groupCity.add(CH.floor); pendingUpload.push(CH.floor); CH.tris.floor = f.tris;
+    } else CH.tops = far.tops;
+    CH.drapes = null;   // the drapes' arrays, copied into both levels
+    CH.tops.penn = C.tower.penn[1];
+    CH.bronze = chBronze(themeParts, chSlot, Y0);
+    // the ground it owns: the four wings (no tree, packed pole or storefront there; the courtyard's trees stay), the roof grid
+    const W = (U, V) => { const p = chWorld(U, 0, V, 0); return [p[0], p[2]]; };
+    for (const [u0, u1, v0, v1, t] of [[-68, 68, -77.5, -40.9, 49], [-68, 68, 20.8, 72.5, 49], [34.5, 72.5, -40.9, 20.8, 49], [-72.5, -34.5, -40.9, 20.8, 49]]) {
+      const ring = [W(u0, v0), W(u1, v0), W(u1, v1), W(u0, v1)];
+      REBUILD_OCC.push({ id: 'cityhall', ring, bb: rbBox(ring), pad: 0, top: Y0 + t });
+    }
+    if (CH.cafe) REBUILD_OCC.push({ id: 'cityhall', ring: CH.cafe.poly, bb: rbBox(CH.cafe.poly), pad: 0.5, top: Y0 + 4.8 });   // the café's (fix1)
+    for (const r of CH.heads) REBUILD_OCC.push({ id: 'cityhall', ring: r.poly, bb: rbBox(r.poly), pad: 0.5, top: Y0 + r.h });   // the headhouses' (fix2)
+    if (!TIER2) for (const [, x, z, f, , [pl, pw, ph]] of CH_STATUES) {   // the statues' pedestals (fix3: no tree or pole in one)
+      const l = Math.hypot(f[0], f[1]), ux = f[0] / l, uz = f[1] / l, a = pl / 2 + 0.6, c = pw / 2 + 0.6;
+      const ring = [[a, c], [-a, c], [-a, -c], [a, -c]].map(([p, q]) => [x + ux * p - uz * q, z + uz * p + ux * q]);   // (f is the scene's direction)
+      REBUILD_OCC.push({ id: 'cityhall', ring, bb: rbBox(ring), pad: 0, top: siteY(x, z, 'ground') + ph + 4 });
+    }
+    for (const [U, V, t, a] of [[0, -60, 61.8, 900], [0, 55, 61.8, 900], [55, 0, 61.8, 900], [-55, 0, 61.8, 900], [58, -58, 48.8, 300], [-58, -58, 48.8, 300], [58, 58, 48.8, 300], [-58, 58, 48.8, 300], [0, -37.2, 167, 600]]) {
+      const p = W(U, V); roofNote(p[0], p[1], Y0 + t, a);
+    }
+    if (!isTouch && !TIER2) chLoadArt();
+    CH.built = true;
+  }
+  // the build, and a failed one undone (fix2): its meshes out of the scene and the upload queue, its themed parts and its
+  // ground claims taken back, so Round 81's block stands in its place; false when it failed (called from inside the outer
+  // districts' step, whose own CH is the chunk size: City Hall's state is only ever named out here)
+  function chBuildSafe(ctx) {
+    const { themeParts } = ctx, nTheme = themeParts.length, nOcc = REBUILD_OCC.length, nSow = NO_SOW_RINGS.length;
+    try { buildCityHallReal(ctx); return true; } catch (e) {
+      CH.err = String(e && e.stack || e); console.error('city hall', e);
+      for (const k of ['near', 'far', 'dial', 'floor']) {
+        const m = CH[k]; if (!m) continue;
+        groupCity.remove(m); const i = pendingUpload.indexOf(m); if (i >= 0) pendingUpload.splice(i, 1);
+        CH[k] = null;
+      }
+      themeParts.length = nTheme; REBUILD_OCC.length = nOcc; CH.built = false; CH.hands = null;
+      // and the ground its drapes claimed (fix3, the review: Dilworth's west lawn strip stayed unsown under Round 81's block)
+      NO_SOW_RINGS.length = nSow; NO_SOW_RING_BB.length = nSow; CH.noTuft = null; CH.drapes = null; CH.floorPaint = null;
+      return false;
+    }
+  }
+  // the atlas and its mask: a computer's at the build, a phone's once the eye comes within CH_ART_R; at tier 2, where only
+  // the far level stands, the half copy once the eye is within CH_NEAR_R (fix1: a windowless cream box from the street)
+  function chLoadArt() {
+    if (CH.art !== 'none') return;
+    CH.art = 'loading';
+    const A = CITYHALL_ART;
+    Promise.all([artImage(artSrc(A.img, A.imgHalf)), artImage(artSrc(A.mask, A.maskHalf))]).then(([im, mk]) => {
+      if (!im || !mk) { CH.art = 'failed'; return; }
+      CH.map.image = im; CH.map.needsUpdate = true; freeTexOnUpload(CH.map);
+      CH.mask.image = mk; CH.mask.needsUpdate = true; freeTexOnUpload(CH.mask);
+      CH.bytes = im.width * im.height * 4 * 4 / 3 + mk.width * mk.height * 4 * 4 / 3;
+      CH.artOn.value = 1; CH.art = 'ready';
+    });
+  }
+  // the frame's part: the level by the eye's distance from the building's box (with hysteresis), the art on a phone's
+  // approach, the hands once a model minute, the lit share by the model's hour
+  const _chE = { u: 0, v: 0, y: 0 };
+  function cityHallStep() {
+    if (!CH.built) return;
+    const B = CITY_HALL.B0, p = camera.position, dx = p.x - B[0], dz = p.z - B[1];
+    const U = dx * fl.nx + dz * fl.nz, V = dx * fl.dx + dz * fl.dz, y = p.y - CH.Y0;
+    const du = Math.max(0, -73 - U, U - 77), dv = Math.max(0, -78 - V, V - 74), dy = Math.max(0, y - 167);
+    const d = Math.hypot(du, dv, dy);
+    CH.dist = d;
+    if ((isTouch || TIER2) && d < (TIER2 ? CH_NEAR_R : CH_ART_R)) chLoadArt();
+    let lod = CH.lod;
+    if (CH.force) lod = CH.near ? CH.force : 'far';
+    else if (!CH.near) lod = 'far';
+    else if (lod === 'both') lod = d < CH_NEAR_R ? 'near' : 'far';
+    else if (lod === 'near' && d > CH_NEAR_R + CH_HYST) lod = 'far';
+    else if (lod === 'far' && d < CH_NEAR_R) lod = 'near';
+    CH.lod = lod;
+    if (CH.near) CH.near.visible = lod === 'near' && !CH.off;
+    if (CH.dial) CH.dial.visible = lod === 'near' && !CH.off;
+    if (CH.far) CH.far.visible = lod === 'far' && !CH.off;
+    if (CH.floor) CH.floor.visible = lod === 'near' && !CH.off && !CH.floorPaint;
+    if (CH.floorPaint && lod === 'near' && !CH.off) CH.floorPaint();   // a phone's canvases, on its first near frame (drawn the next)
+    const m = clock.minutes | 0;
+    if (m !== CH.minute) { CH.minute = m; if (CH.dial) chHands(m); const L = skinLateAt(m); CH.late.value.set(L[0], L[1]); }
+  }
+  // ?dev: __dbg.cityHall() - the level, the triangles a mesh, the art, the tops measured against the table
+  function cityHallProbe(what) {
+    if (what === 'off' || what === 'on') CH.off = what === 'off';   // the A/B for its draws: everything of its own hidden (the bronzes ride the themed mesh)
+    if (what === 'near' || what === 'far' || what === 'auto') CH.force = what === 'auto' ? null : what;
+    const info = (m) => (m ? { visible: m.visible, tris: m.geometry.index ? m.geometry.index.count / 3 : m.geometry.attributes.position.count / 3 } : null);
+    return { on: CH_ON, built: CH.built, lod: CH.lod, dist: CH.dist == null ? null : Math.round(CH.dist), near: info(CH.near), far: info(CH.far), dial: info(CH.dial), floor: info(CH.floor),
+      tris: { ...CH.tris }, bronzeParts: CH.bronze || 0, art: CH.art, artOn: CH.artOn.value, texMB: CH.bytes ? +(CH.bytes / 1048576).toFixed(1) : 0, cells: CH.cells.length,
+      tops: { ...CH.tops }, Y0: CH.Y0, cafe: CH.cafe ? { n: CH.cafe.poly.length, h: CH.cafe.h, c: CH.cafe.c.map((v) => +v.toFixed(1)), area: +Math.abs(signedArea(CH.cafe.poly)).toFixed(1) } : null,
+      heads: (CH.heads || []).map((r) => ({ n: r.poly.length, h: r.h, c: r.c.map((v) => +v.toFixed(1)), area: +Math.abs(signedArea(r.poly)).toFixed(1) })), late: CH.late.value.toArray().map((v) => +v.toFixed(3)), err: CH.err,
+      lodR: { near: CH_NEAR_R, hyst: CH_HYST, art: CH_ART_R } };
+  }
   step('Restoring the landmarks', () => {
     const walls = [];   // gets the window shader
     const detail = [];  // roofs, spires, columns, trim — plain material
@@ -12384,6 +14932,10 @@ vec2 wRing(vec2 rc, float tt) {
   const rbBox = (ring) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const q of ring) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0, x1, z0, z1]; };
   const REBUILD_SKIP = REBUILDS.flatMap((d) => (d.skip || []).map((ring) => ({ id: d.id, ring, bb: rbBox(ring) })));
   const REBUILD_OCC = [], REBUILD_PINS = [], REBUILT = [];   // REBUILT: what each def built, for ?dev's __dbg.rebuilds()
+  // paving a def says is paving, where no grass tuft is sown whatever ring sowed it (Round 191's third review: tufts stood in
+  // the walk at Glory's stoop's foot)
+  const REBUILD_PAVED = [];
+  const rebuildPavedAt = (x, z) => REBUILD_PAVED.some((o) => x >= o.bb[0] && x <= o.bb[1] && z >= o.bb[2] && z <= o.bb[3] && pointInPoly(x, z, o.ring));
   let GROUND_MEADOW_MAT = null;   // the bare ground's meadow material ('Laying out the ground'): Founder's Hall lays its lawn in it
   const rebuildSkipAt = (cx, cz) => {
     for (const s of REBUILD_SKIP) if (cx >= s.bb[0] && cx <= s.bb[1] && cz >= s.bb[2] && cz <= s.bb[3] && pointInPoly(cx, cz, s.ring)) return s.id;
@@ -12734,7 +15286,7 @@ vec2 wRing(vec2 rc, float tt) {
     const cCap = new THREE.Color();
     const v2 = [], v2pool = [];   // pooled contour points (2 M Vector2 allocations per ring otherwise)
     const pushV = (ch, x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint, u, len, h) => ch.push(x, y, z, nx, ny, nz, r, g, b, st, base, fh, tint, u, len, h);
-    // capCh (Round 191): the roof cap goes into this chunk instead of the walls' (a generic glass tower's walls draw on the
+    // capCh (Round 192): the roof cap goes into this chunk instead of the walls' (a generic glass tower's walls draw on the
     // curtain-wall material, its roof stays on the fabric with its art, snow, night glow and kit)
     const appendBuilding = (ch, poly, y0, y1, color, st, base, holes, fh, capColor, ao, capCh) => {
       const sign = signedArea(poly) > 0 ? 1 : -1;
@@ -13142,6 +15694,17 @@ vec2 wRing(vec2 rc, float tt) {
       }
       if (boathouseAt(cx,cz)) continue;
       if (BRIDGE_SKIP.some(q => Math.hypot(cx - q[0], cz - q[1]) < q[2])) continue;
+      // Round 191, fix1: the outline OSM gives City Hall was dropped at pack and the tower's parts go with BRIDGE_SKIP, so
+      // nothing of its own is left to skip here; Dilworth Park's café is (OSM's footprint drew it as a three-storey
+      // rowhouse before the south-west pavilion): skipped as DEMOLISHED is, so the record-seeded draws stay put, and built
+      // by City Hall's step as the low glass pavilion it is
+      if (CH_ON && !CH_CAFE.poly && Math.hypot(cx - CH_CAFE[0], cz - CH_CAFE[1]) < 14) { if (h <= 45 && t <= 6) wideColK++; CH_CAFE.poly = poly; CH_CAFE.h = h; CH_CAFE.c = [cx, cz]; continue; }   // (CH is the chunk size in here)
+      // Round 191, fix2: and Dilworth Park's two glass headhouses over the concourse's stairs (OSM's building=roof canopies,
+      // drawn as two windowless beige boxes across the lower west front from the plaza), the same way
+      if (CH_ON && h <= 15 && CH_HEADHOUSE.pts.some((q) => Math.abs(cx - q[0]) < 30 && Math.abs(cz - q[1]) < 30 && rbDist(q[0], q[1], poly) < 1.5)) {
+        if (h <= 45 && t <= 6) wideColK++;
+        CH_HEADHOUSE.recs.push({ poly, h, c: [cx, cz] }); continue;
+      }
       if (ovpStraddle(poly, cx, cz)) continue;   // nothing real stands across a motorway deck
       if (Math.hypot(cx - 996, cz - 663) < 80) {
         // the USS New Jersey berth: capture the 270 m hull outline for the custom
@@ -13193,7 +15756,7 @@ vec2 wRing(vec2 rc, float tt) {
       if (style === 19 && fa) { const masonry = opaWallPool(fa); if (masonry) c.set(masonry[Math.floor(hsh * masonry.length) % masonry.length]); }
       if (style === 24) c.set(0x4d697a).multiplyScalar(0.70);
       if (style === 25) c.set(0x648497).multiplyScalar(0.72);
-      // Round 191: a researched glass tower's curtain-wall system and its glass's colour (glass_systems.json), the system's
+      // Round 192: a researched glass tower's curtain-wall system and its glass's colour (glass_systems.json), the system's
       // own glass with the tower's turn of it where the research names no colour
       const gSys = GLASS_ON && isGlassStyle(style) ? glassSysOfSpec(spec, style) : -1;
       if (gSys >= 0 && !glassTowerBody(spec, c) && !(spec && spec.hex)) glassBody(gSys, i, c);
@@ -13232,7 +15795,7 @@ vec2 wRing(vec2 rc, float tt) {
         }
       }
       const ceN = CITYENV.recs.length;
-      if (CITYENV.on && h >= 25) cityEnvNote(poly, base, base + h, _glc.copy(c).convertSRGBToLinear(), isGlassStyle(style) || t === 10 ? 1 : 0, spec && spec.theme);   // Round 191: the city's reflection
+      if (CITYENV.on && h >= 25) cityEnvNote(poly, base, base + h, _glc.copy(c).convertSRGBToLinear(), isGlassStyle(style) || t === 10 ? 1 : 0, spec && spec.theme);   // Round 192: the city's reflection
       if (spec && /^Cira Centre$/i.test(spec.name)) continue; // one continuous crystal, no rectangular crown block
       if (spec && style!==25) crownTrim.push(...landmarkFacadeDetails(spec, poly, base, hTop, mh));
       if (h >= 60 && !mh && t !== 10 && !spec) {   // a researched landmark never draws a random penthouse or mast
@@ -13254,7 +15817,7 @@ vec2 wRing(vec2 rc, float tt) {
       // ring, which routes nothing here. That was the "disparity between the inner and outer
       // ring" Mike saw, and the distinct look of the unphotographed buildings Round 87 had
       // chased with colour constants (a photographed face with trim keeps variant 0)
-      // Round 191 (one draw per glass wall): a researched glass tower lays no skin over its curtain wall, and an unresearched
+      // Round 192 (one draw per glass wall): a researched glass tower lays no skin over its curtain wall, and an unresearched
       // tower whose cladding would be a glass kind takes that kind's system on its own walls (gRoute) instead of a skin
       let gRoute = -1;
       if (h >= 35 && t !== 8 && t !== 9) {
@@ -13354,7 +15917,7 @@ vec2 wRing(vec2 rc, float tt) {
         if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
         if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style, c);
-        // Round 191: a pitched roof keeps the fabric under it, and its skin; a mid-rise the cladding would dress in glass
+        // Round 192: a pitched roof keeps the fabric under it, and its skin; a mid-rise the cladding would dress in glass
         // takes the curtain wall's material instead, a computer's (the mid-rise skins are)
         if (gRoute >= 0 && rplan) { towerSkinNote(poly, mh > 0 ? base + mh : base, base + hTop, style, spec, i, c, mh > 0, t); gRoute = -1; }
         let gMid = -1;
@@ -13864,7 +16427,7 @@ vec2 wRing(vec2 rc, float tt) {
         c.set(0x9c9186);
         appendBuilding(getChunk(cx, cz), sqPoly(cx, cz, 56, 56), base - 1, base + 12, c, 5, base);
         c.copy(gc);
-        const lFh = GLASS_ON ? glassFh(glassSysOfSpec({ name: 'One Liberty Place' }, 21)) : undefined;   // Round 191: its own system and glass
+        const lFh = GLASS_ON ? glassFh(glassSysOfSpec({ name: 'One Liberty Place' }, 21)) : undefined;   // Round 192: its own system and glass
         if (GLASS_ON) glassTowerBody({ name: 'One Liberty Place' }, c);
         appendBuilding(getGlassChunk(cx, cz), libertyPlan(cx, cz, 48.5, 48.5), base - 1, base + 212, c, 21, base, null, lFh);
         // Round 84: the central bays stand proud of each face, the glass spines of the photo
@@ -13933,7 +16496,7 @@ vec2 wRing(vec2 rc, float tt) {
         const red = new THREE.Color(0xff2a1a);
         themeParts.push({ geom: rg, color: red.clone().multiplyScalar(0.5), lit: red, mix: 1, slot: sC, gain: 1.8, style: 3 });
       }
-      {
+      cityHall: {
         const cx = -1603, cz = -802, base = siteY(cx, cz, 'ground');
         const bx = cx + fl.dx * 55, bz = cz + fl.dz * 55;    // block center: tower on the north face
         const cStone = new THREE.Color(0xb3aa99);
@@ -13943,9 +16506,15 @@ vec2 wRing(vec2 rc, float tt) {
         const cDome = new THREE.Color(0xbfc9d3);
         const cPenn = new THREE.Color(0x4c4536);             // weathered bronze, warm dark
         const chSlot = themeSlotN++ % 4;                     // Round 81: the tower is floodlit in the night's colour
+        // Round 191: rebuilt to the measured building under the realistic look (buildCityHallReal); the slot is taken here as
+        // before; a failed build takes back what it made and falls through to Round 81's block (fix2: the city lost City Hall)
+        if (CH_ON && chBuildSafe({ chSlot, themeParts })) break cityHall;
         const floodlit = (geom, col, k, mix) => themeParts.push({ geom, color: col, lit: col.clone().multiplyScalar(k), mix, slot: chSlot, style: 3 });
         const hallWalls=new VBuf(4096);
         const hallChunk=()=>hallWalls;
+        // a failed rebuild (fix3): Dilworth Park's pavilions the outer districts' loop left to it stand as plain boxes (none are
+        // left to it under ?real=0)
+        for (const r of [...(CH_CAFE.poly ? [{ poly: CH_CAFE.poly, h: CH_CAFE.h, c: CH_CAFE.c }] : []), ...CH_HEADHOUSE.recs]) { const gy = siteY(r.c[0], r.c[1], 'ground'); c.setRGB(0.55, 0.6, 0.62); appendBuilding(hallChunk(), r.poly, gy - 0.5, gy + Math.min(r.h, 6), c, 1, gy); }
         // hollow square around the courtyard, arched-window facade style, mansard wings
         c.copy(cStone);
         appendBuilding(hallChunk(bx, bz), sqPoly(bx, bz, 148, 143), base - 1, base + 27, c, 1, base, [sqPoly(bx, bz, 64, 59)]);
@@ -14418,7 +16987,7 @@ vec2 wRing(vec2 rc, float tt) {
             .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance*=gLamp*gWall*gLit*(1.0-gSpand*.98)*1.8;');
           glassOpticsPatch(sh,{mask:'gGlazing',normal:'vGNm',uv:'gPaneUV',id:'gPaneID',seed:'vGT*7.1',coating:.14,roughness:.075,depth:.86});
         };
-        if (GLASS_ON) glassSysMat(outerGlassMat);   // Round 191: the curtain-wall systems replace the hook above
+        if (GLASS_ON) glassSysMat(outerGlassMat);   // Round 192: the curtain-wall systems replace the hook above
       }
       addChunkMesh(g, outerGlassMat);
     }
@@ -14927,7 +17496,11 @@ vec2 wRing(vec2 rc, float tt) {
           // put (87, 98) of green and blue under a (230) red, the pink; after dark the diffuse of a
           // themed part goes to a tenth, and the emissive stands alone
           .replace('#include <color_fragment>', '#include <color_fragment>\ndiffuseColor.rgb *= 1.0 - uNight * vTheme.x * 0.9;')
-          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float s = vTheme.y; float si = mod(floor(max(s - 4.0, 0.0) + 0.5), max(uStripeN, 1.0)); if(s>=100.0)si=mix(min(uStripeN-1.0,floor((s-100.0)*uStripeN)),0.0,uCrownSolid);\n  vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, s)), mix(uTheme2, uTheme3, step(2.5, s)), step(1.5, s));\n  vec3 sc = mix(mix(uStripe0, uStripe1, step(0.5, si)), mix(uStripe2, uStripe3, step(2.5, si)), step(1.5, si));\n  tc = mix(tc, sc, step(3.5, s));\n  vec3 te = mix(vLit, tc, uThemeOn * vTheme.x); float tm = max(te.r, max(te.g, te.b)); float tsat = tm > 1e-4 ? 1.0 - min(te.r, min(te.g, te.b)) / tm : 0.0;\n  totalEmissiveRadiance += te * uNight * 2.4 * vTheme.z * mix(1.0, 0.42, tsat); }');   // Round 88 (Mike: the red reads as pink): a saturated colour takes 0.42 of the gain a white does. Under the ACES fit a pure red at 2.4 radiance leaks into green and blue through the input matrix and comes out (231, 129, 108), salmon; held near 1.0 it stays (255, 60, 60). The whites keep today's brightness   // aGain: a thin LED line gets the radiance a wash box has (Round 85); a slot of 4 or more is a stripe index into the night's stripe palette (a team's pair), reduced by its length so a two-colour palette alternates and a three-colour one cycles three
+          // fix1 (City Hall's bronzes, Penn, the eagles and the four groups: a negative gain): patinated bronze, dark and
+          // metallic, not the matte paint every other themed part is (in the sun they read khaki, rgb 115 against the
+          // photographs' near black)
+          .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nif (vTheme.z < 0.0) { metalnessFactor = 0.82; roughnessFactor = 0.4; }')   // (fix2: more of a metal's sheen on a lighter bronze, so the form reads in the sun)
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n{ float s = vTheme.y; float si = mod(floor(max(s - 4.0, 0.0) + 0.5), max(uStripeN, 1.0)); if(s>=100.0)si=mix(min(uStripeN-1.0,floor((s-100.0)*uStripeN)),0.0,uCrownSolid);\n  vec3 tc = mix(mix(uTheme0, uTheme1, step(0.5, s)), mix(uTheme2, uTheme3, step(2.5, s)), step(1.5, s));\n  vec3 sc = mix(mix(uStripe0, uStripe1, step(0.5, si)), mix(uStripe2, uStripe3, step(2.5, si)), step(1.5, si));\n  tc = mix(tc, sc, step(3.5, s));\n  vec3 te = mix(vLit, tc, uThemeOn * vTheme.x); float tm = max(te.r, max(te.g, te.b)); float tsat = tm > 1e-4 ? 1.0 - min(te.r, min(te.g, te.b)) / tm : 0.0;\n  totalEmissiveRadiance += te * uNight * 2.4 * abs(vTheme.z) * mix(1.0, 0.42, tsat); }');   // Round 88 (Mike: the red reads as pink): a saturated colour takes 0.42 of the gain a white does. Under the ACES fit a pure red at 2.4 radiance leaks into green and blue through the input matrix and comes out (231, 129, 108), salmon; held near 1.0 it stays (255, 60, 60). The whites keep today's brightness   // aGain: a thin LED line gets the radiance a wash box has (Round 85); a slot of 4 or more is a stripe index into the night's stripe palette (a team's pair), reduced by its length so a two-colour palette alternates and a three-colour one cycles three
       };
       architecturalBloom(themeMat);
       themeMesh = new THREE.Mesh(g, themeMat);
@@ -14974,6 +17547,588 @@ vec2 wRing(vec2 rc, float tt) {
     }
   });
 
+  // ---- Glory Beer Bar & Kitchen (Round 191, Mike: "I want City hall and Glory Beer Bar and Kitchen to be totally revamped").
+  // rebuilds/glory.js models 126 Chestnut Street on its own lot (the core's footprint 2541, held back by REALISM_NEAR) and
+  // draws through the api this section hands it (api.glory): one facade material for its near and far meshes, whose map is
+  // the atlas of its two generated elevations and its swatches (GLORY_ART, bake_glory_art.py) and whose mask says what is
+  // glass; the bar's glass shows the rooms behind it by interior mapping (no geometry behind the panes): the eye's ray
+  // through the pane runs into a box the size of the room, and the point it reaches on the walls, floor, ceiling or back
+  // wall is looked up on a generated one-point photograph of that room (the bar on the ground floor, the board-game room
+  // upstairs, each with people while it is open and empty while it is shut, by the model clock's opening hours); the flats'
+  // windows above take the house fronts' rooms at night (roomLight); the two lanterns glow with the street lamps' photocell
+  // and light the piers, the signs and the stoop round them; and the signs are faces of the near mesh that sample a canvas
+  // the page letters, GLORY in vector glyphs (a slab serif, so every device draws the same), never the image model.
+  // gloryStep, once a frame: the near mesh within 170 m (the far one past 200), the hours once a model minute, and the
+  // art's decode the first time the eye comes within GLORY_DECODE_R after Enter
+  const GLORY = {
+    on: GLORY_ON && typeof GLORY_ART !== 'undefined' && !!GLORY_ART, art: typeof GLORY_ART !== 'undefined' ? GLORY_ART : null,
+    near: null, far: null, c: new THREE.Vector3(), lod: 'near', lamps: [], ref: null, mat: null,
+    signTex: null, minute: -1, open: false, door: false, artLoaded: 0, roomsLoaded: 0, tris: 0, draws: 0, pend: null, upq: [], uploads: [],
+  };
+  // every device decodes Glory's art the first time the eye comes this close after Enter; the phone's recovery tier only at
+  // the near level's reach, and never its rooms (Round 191's third review: tier 2 decoded all of it, about 7 MB never let go,
+  // where every other generated art is off; City Hall narrows its reach the same way)
+  const GLORY_DECODE_R = TIER2 ? 200 : 600;
+  const GLORY_PHONE_SAT = 0.62;   // a phone's share of Glory's brick saturation (the facade shader: its fabric's brick is paler)
+  const GLORY_SW = 8;
+  const gloryU = {
+    uGlMask: { value: null }, uGlInt: { value: null }, uGlIntM: { value: null }, uGlSign: { value: null },
+    uGlF: { value: new THREE.Vector4(0, 0, 1, 0) }, uGlY0: { value: 0 }, uGlOpen: { value: new THREE.Vector4(1, 1, 1, 0) },
+    uGlSw: { value: Array.from({ length: GLORY_SW }, () => new THREE.Vector4(0, 0, 1, 1)) }, uGlSwM: { value: new Array(GLORY_SW).fill(1) },
+    uGlPl: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 1, 1)) }, uGlBk: { value: [new THREE.Vector4(0.45, 0.45, 0.55, 0.55), new THREE.Vector4(0.45, 0.45, 0.55, 0.55)] },
+    uGlRm: { value: [new THREE.Vector4(0.3, 8.3, 0.5, 4.6), new THREE.Vector4(0.3, 8.3, 5.3, 8.5)] }, uGlD: { value: 22 },
+    uGlLant: { value: [new THREE.Vector3(0, -1e4, 0), new THREE.Vector3(0, -1e4, 0)] }, uGlArt: { value: 0 }, uGlInOn: { value: 0 },
+    // the rooms' light: by day (times the open sky), after dark, the bulbs' extra, and a shut room's
+    uGlK: { value: new THREE.Vector4(0.9, 2.6, 0.8, 0.03) },
+    // the open bar's glow seen from afar after dark (GLORY_FAR): from x to y metres it comes in, z its strength
+    uGlFar: { value: new THREE.Vector4(8, 70, 0.75, 0) },
+    // the old sign box's extent [v0, v1, y0, y1] in the facade's frame, and the stone's drip lines (the capitals' foot, the
+    // sill course's, the cornice's) in metres over the walk
+    uGlBox: { value: new THREE.Vector4(0, 0, -99, -99) }, uGlDrip: { value: new THREE.Vector4(-99, -99, -99, 0) },
+    // the front's width (its east return), the openings [door u0, u1, arch u0, u1] from the west and their heights [the
+    // doors' foot and head, the arches' sill and spring] (the bar's light out through its glass after dark), the bar's open
+    // door leaf's doorway [u0, u1, y0, y1] and whether it stands open (the hours and fair weather)
+    uGlFw: { value: 8.59 }, uGlBays: { value: Array.from({ length: 4 }, () => new THREE.Vector4(0, 0, 0, 0)) }, uGlBayY: { value: new THREE.Vector4(0, 0, 0, 0) },
+    uGlLeaf: { value: new THREE.Vector4(0, 0, 0, 0) }, uGlDoor: { value: 0 },
+  };
+  // the cast iron's lace (aGl mode 5), cut by discard (Round 191's second review: the stoop band's six-piece rings rendered as
+  // plain hexagons and the balconet's bars as a birdcage): st the strip's own coordinates, its run in pickets (kinds 0 and 2)
+  // or metres (kind 1) and its height in metres; kind 0 the stoop's band (refs, gloryphilly IMG6: a fleuron a picket, a ring
+  // round each post), 1 the balconet's scrolls (the Bright MLS view), 2 a whole railing, its
+  // pickets, rails and band (the far level's). The signed distance to the iron in metres, negative inside; the facade and
+  // its depth pass share it, so the shadows are the lace's
+  const GLORY_LACE_GLSL = [
+    'float glSeg(vec2 p, vec2 a, vec2 b) { vec2 pa = p - a, ba = b - a; return length(pa - ba * clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0)); }',
+    // the stoop's band (Round 191's third review: its 1.3 cm lines and 6 cm quatrefoils read as a thin chain of rings, where
+    // gloryphilly IMG6's is heavy cast fleurons filling the space between the two rails): a fleuron a picket, a pointed
+    // arch from scrolled feet that meet the next one's, a spade over its point and a drop on a stem inside, every stroke
+    // about 2 cm, and a heavy ring round each post
+    'float glBand(vec2 st) {',
+    '  float k = floor(st.x + 0.5), x = (st.x - k) * 0.12, ax = abs(x), y = st.y;',
+    '  float d = y > 0.072 ? abs(length(vec2(ax + 0.052, y - 0.075)) - 0.1) - 0.0095 : 1.0;',
+    '  d = min(d, max(abs(length(vec2(ax - 0.03, y - 0.047)) - 0.026) - 0.0095, min(0.03 - ax, y - 0.047)));',
+    '  d = min(d, max(length(vec2(x - 0.013, y - 0.172)), length(vec2(x + 0.013, y - 0.172))) - 0.018);',
+    '  d = min(d, min(glSeg(vec2(x, y), vec2(0.0, 0.03), vec2(0.0, 0.1)) - 0.006, length(vec2(x, y - 0.108)) - 0.013));',
+    '  float pd = abs(st.x - floor(st.x / 10.0 + 0.5) * 10.0) * 0.12;',
+    '  if (pd < 0.095) d = abs(length(vec2(pd, y - 0.1)) - 0.068) - 0.012;',
+    '  return min(d, min(st.y - 0.008, 0.192 - st.y)); }',
+    'float glLace(vec2 st, float kind) {',
+    '  if (kind < 0.5) return glBand(st);',
+    '  if (kind < 1.5) {',
+    '    vec2 p = vec2((fract(st.x / 0.15) - 0.5) * 0.15, (fract(st.y / 0.2) - 0.5) * 0.2); p.x *= mod(floor(st.x / 0.15), 2.0) < 0.5 ? 1.0 : -1.0;',
+    '    float d = max(abs(length(p - vec2(0.0, 0.048)) - 0.048) - 0.005, p.x);',
+    '    d = min(d, max(abs(length(p + vec2(0.0, 0.048)) - 0.048) - 0.005, -p.x));',
+    '    d = min(d, min(abs(length(p - vec2(0.0, 0.08)) - 0.014), abs(length(p + vec2(0.0, 0.08)) - 0.014)) - 0.0045);',
+    '    return min(d, 0.0705 - abs(p.x)); }',
+    '  float k = floor(st.x + 0.5), post = mod(k, 10.0) < 0.5 ? 1.0 : 0.0;',
+    '  float d = abs(st.x - k) * 0.12 - mix(0.008, 0.0225, post); d = max(d, mix(st.y - 0.8, -1.0, post));',
+    '  d = min(d, min(min(abs(st.y - 0.02) - 0.015, abs(st.y - 0.8) - 0.011), 0.9775 - st.y));',
+    '  return st.y > 0.8 ? min(d, glBand(vec2(st.x, st.y - 0.8))) : d; }',
+  ].join('\n');
+  // the lace's pixels between two ranks of the iron are kept in proportion by a dither (interleaved gradient noise), so a
+  // thin bar at a distance thins rather than shimmers
+  const GLORY_DITHER = 'fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(0.06711056, 0.00583715))))';
+  // the hours (Google's, Oct 2026), minutes after midnight by weekday from Sunday: Monday to Wednesday 4 PM to 2 AM, Thursday
+  // to Sunday 12 PM to 2 AM; every night runs to 2 AM, so the first two hours of a day are the night before's
+  const GLORY_OPENS = [720, 960, 960, 960, 720, 720, 720], GLORY_SHUT = 120;
+  const GLORY_DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  function gloryHours(y, mo, d, minutes) {
+    const wd = new Date(Date.UTC(y, mo - 1, d)).getUTCDay(), m = ((minutes % 1440) + 1440) % 1440;
+    const open = m < GLORY_SHUT || m >= GLORY_OPENS[wd];
+    return { wd, m, open, opens: GLORY_OPENS[wd], late: m < GLORY_SHUT };
+  }
+  const gloryHour = (mnt) => fmtTime(mnt).replace(':00', '');
+  // the canvas the signs wear: the GLORY panel (both signs), the bronze 126 plaque, the menu sheet, a white and a charcoal
+  // for the boards' edges, and the bar's mural (the facade shader paints it on the bar's west wall). A phone's at half size
+  function gloryCanvas() {
+    const S = isTouch ? 0.5 : 1, cv = document.createElement('canvas');
+    cv.width = 1024 * S; cv.height = 512 * S;
+    const c = cv.getContext('2d');
+    c.scale(S, S);
+    // the panel: white with a thin charcoal line round it, GLORY in crimson slab capitals, the trade under it in a typewriter slab
+    c.fillStyle = '#f0ece7'; c.fillRect(0, 0, 512, 256);
+    c.strokeStyle = '#3a3a3a'; c.lineWidth = 5; c.strokeRect(2.5, 2.5, 507, 251);
+    // the glyphs on a cap height of 100 (y down from the cap line), each a list of shapes painted in turn: '+' adds, '-' cuts
+    // (a counter, the G's mouth), so no two shapes' windings ever meet; advance widths after. A heavy bracketed slab serif of
+    // the Rockwell and Clarendon family the sign is cut in (the research: earlier rounds' geometric sans was wrong)
+    const R_ = (x, y, w, h) => ['r', x, y, w, h], E_ = (cx, cy, rx, ry) => ['e', cx, cy, rx, ry], P_ = (...pts) => ['p', pts];
+    // Round 191's review: the real letters are a heavier, more compact slab, stems about 0.3 of the cap height, small
+    // counters, almost no space between them (the first glyphs had stems of 0.25, wide counters and a gap of 7)
+    const ga = -62 * Math.PI / 180, gb = -8 * Math.PI / 180;
+    const glyphs = [
+      [92, [['+', E_(46, 50, 46, 50)], ['-', E_(47, 50, 15, 25)], ['-', P_([47, 50], [47 + 95 * Math.cos(ga), 50 + 95 * Math.sin(ga)], [47 + 95 * Math.cos(gb), 50 + 95 * Math.sin(gb)])],
+        ['+', R_(50, 50, 42, 15)], ['+', R_(74, 50, 18, 40)], ['+', R_(61, 3, 15, 27)]]],
+      [76, [['+', R_(8, 0, 32, 100)], ['+', R_(0, 0, 48, 11)], ['+', R_(0, 89, 76, 11)], ['+', R_(64, 64, 12, 36)]]],
+      [96, [['+', E_(48, 50, 48, 50)], ['-', E_(48, 50, 16, 27)]]],
+      [94, [['+', R_(8, 0, 32, 100)], ['+', R_(0, 0, 56, 11)], ['+', R_(0, 89, 50, 11)], ['+', E_(55, 28, 29, 28)], ['+', R_(40, 0, 15, 56)],
+        ['-', R_(40, 15, 10, 26)], ['-', E_(51, 28, 9, 13)], ['+', P_([44, 50], [68, 50], [90, 89], [62, 89])], ['+', R_(58, 89, 36, 11)]]],
+      [98, [['+', P_([2, 0], [36, 0], [64, 54], [36, 60])], ['+', P_([62, 0], [96, 0], [62, 60], [36, 54])], ['+', R_(33, 52, 32, 48)],
+        ['+', R_(0, 0, 42, 11)], ['+', R_(56, 0, 42, 11)], ['+', R_(20, 89, 58, 11)]]],
+    ];
+    const gap = 3, total = glyphs.reduce((a, q) => a + q[0], 0) + gap * (glyphs.length - 1);
+    // the word on a canvas of its own (its cuts must not reach what lies under it), in its colour, then laid where it goes
+    const word = (col, sx, sy) => {
+      const w = Math.ceil(total * sx) + 4, h = Math.ceil(100 * sy) + 4, wc = document.createElement('canvas');
+      wc.width = w * S; wc.height = h * S;
+      const q = wc.getContext('2d');
+      q.scale(S * sx, S * sy); q.translate(2 / sx, 2 / sy); q.fillStyle = col;
+      let x = 0;
+      for (const [adv, shapes] of glyphs) {
+        for (const [op, sp] of shapes) {
+          q.globalCompositeOperation = op === '+' ? 'source-over' : 'destination-out';
+          q.beginPath();
+          if (sp[0] === 'r') q.rect(x + sp[1], sp[2], sp[3], sp[4]);
+          else if (sp[0] === 'e') q.ellipse(x + sp[1], sp[2], sp[3], sp[4], 0, 0, 2 * Math.PI);
+          else { q.moveTo(x + sp[1][0][0], sp[1][0][1]); for (const pt of sp[1].slice(1)) q.lineTo(x + pt[0], pt[1]); q.closePath(); }
+          q.fill();
+        }
+        x += adv + gap;
+      }
+      return { c: wc, w, h };
+    };
+    const cap = 0.40 * 256, sxP = Math.min(cap / 100, 0.86 * 512 / total), syP = cap / 100;
+    const wP = word('#c62f4b', sxP, syP);
+    c.drawImage(wP.c, (512 - wP.w) / 2, 0.42 * 256 - wP.h / 2, wP.w, wP.h);
+    c.fillStyle = '#3a3a3a'; c.textBaseline = 'alphabetic';
+    // the trade, measured first and fitted to 0.82 of the panel (Round 191's review: at 41 px its B and its N ran under the
+    // border; Courier New, the fallback where there is no American Typewriter, is wider still)
+    const sub = 'BEER BAR & KITCHEN', subW = (f) => { c.font = '500 ' + f + 'px "American Typewriter", "Courier New", Courier, monospace'; return [...sub].reduce((a, ch) => a + c.measureText(ch).width + 0.06 * f, -0.06 * f); };
+    let fs = Math.round(0.11 * 256 / 0.68), wsub = subW(fs);
+    if (wsub > 0.82 * 512) { fs = Math.floor(fs * 0.82 * 512 / wsub); wsub = subW(fs); }
+    const track = 0.06 * fs;
+    let tx = (512 - wsub) / 2;
+    for (const ch of sub) { c.fillText(ch, tx, 0.76 * 256 + 0.11 * 256 / 2); tx += c.measureText(ch).width + track; }
+    // the plaque
+    c.fillStyle = '#3a2f22'; c.fillRect(0, 256, 256, 128);
+    c.strokeStyle = '#c9a45a'; c.lineWidth = 4; c.strokeRect(10, 266, 236, 108);
+    c.fillStyle = '#c9a45a'; c.font = '700 74px Georgia, "Times New Roman", serif'; c.textAlign = 'center'; c.fillText('126', 128, 346); c.textAlign = 'left';
+    // the menu sheet: cream with grey rules for lines of type (nothing to read at the scale it is seen)
+    c.fillStyle = '#efe6d2'; c.fillRect(256, 256, 192, 256);
+    c.fillStyle = '#9a948a';
+    for (let k = 0; k < 14; k++) { const w = 60 + ((k * 37) % 70); c.fillRect(276, 286 + k * 15, w, 5); c.fillRect(420 - 18, 286 + k * 15, 14, 5); }
+    c.fillStyle = '#f0ece7'; c.fillRect(448, 256, 32, 256);
+    c.fillStyle = '#3a3a3a'; c.fillRect(480, 256, 32, 256);
+    // the mural, white on black for the shader to paint: a ruled box, GLORY / BEER BAR & KITCHEN / THIS MUST BE THE PLACE,
+    // worn back to the brick in specks
+    c.fillStyle = '#000'; c.fillRect(512, 0, 512, 256);
+    c.strokeStyle = '#fff'; c.lineWidth = 5; c.strokeRect(528, 20, 480, 216); c.lineWidth = 3; c.strokeRect(546, 176, 444, 46);
+    const wM = word('#fff', 0.95, 0.95);
+    c.drawImage(wM.c, 768 - wM.w / 2, 32, wM.w, wM.h);
+    c.fillStyle = '#fff'; c.textAlign = 'center';
+    c.font = '700 34px "American Typewriter", "Courier New", Courier, monospace'; c.fillText('BEER BAR & KITCHEN', 768, 166);
+    c.font = '700 24px "American Typewriter", "Courier New", Courier, monospace'; c.fillText('THIS MUST BE THE PLACE', 768, 208);
+    c.textAlign = 'left';
+    c.fillStyle = '#000';
+    for (let k = 0; k < 900; k++) { const r = Math.sin(k * 12.9898) * 43758.5453, u = r - Math.floor(r), r2 = Math.sin(k * 78.233) * 12345.678, v = r2 - Math.floor(r2); c.fillRect(512 + u * 512, v * 256, 1 + (k % 3), 1 + (k % 2)); }
+    const t = new THREE.CanvasTexture(cv);
+    t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8);
+    return t;
+  }
+  // an image into a placeholder texture, once it is decoded; a phone keeps no copy of what the GPU holds (Round 158). The
+  // placeholder went up behind the veil as WebGL 2 immutable storage of one texel, so the texture is let go first and the
+  // image allocates its own (an upload into the old storage fails and leaves the placeholder's grey). pre, a phone's: the
+  // file's bytes fetched at the step (gloryBytes), made into the image only now (Round 191's review: decoded at the step,
+  // about 5 MB of half art was held through the far ring's build, the window Round 189 keeps a phone's art out of). A
+  // decoded image waits in GLORY.upq and gloryStep uploads one a frame (Round 191's third review: the four landed in
+  // consecutive frames, the 2048 atlas with its mips among them, and the frame they landed in took 134 ms headless)
+  function gloryLoad(tex, full, half, then, pre) {
+    const src = artSrc(full, half);
+    Promise.resolve(pre).then((blob) => {
+      const url = blob ? URL.createObjectURL(blob) : null;
+      return artImage(url || src).then((im) => (im || !url ? im : artImage(src))).then((im) => {
+        const done = () => { if (url) URL.revokeObjectURL(url); return im; };
+        return im && im.decode ? im.decode().then(done, done) : done();
+      });
+    }).then((im) => { if (im) GLORY.upq.push({ tex, im, then }); });
+  }
+  // one waiting image up to the GPU (gloryStep, once a frame)
+  function gloryUpload() {
+    const q = GLORY.upq.shift();
+    if (!q) return;
+    q.tex.dispose(); q.tex.image = q.im; q.tex.needsUpdate = true; freeTexOnUpload(q.tex);
+    try { renderer.initTexture(q.tex); } catch (e) { }
+    GLORY.uploads.push(frameNo);   // the frames they landed in, for __dbg.glory()
+    if (q.then) q.then();
+  }
+  const gloryBytes = (src) => (!src || typeof fetch !== 'function' ? Promise.resolve(null) : fetch(src).then((r) => (r.ok ? r.blob() : null)).catch(() => null));
+  function gloryBlank(srgb, rgb) {
+    const cv = document.createElement('canvas'); cv.width = cv.height = 1;
+    const c = cv.getContext('2d'); c.fillStyle = rgb; c.fillRect(0, 0, 1, 1);
+    const t = new THREE.Texture(cv); if (srgb) t.encoding = THREE.sRGBEncoding; t.needsUpdate = true;
+    return t;
+  }
+  // the facade's one material (the near and far meshes share it). Its vertex attribute aGl says how a face is coloured: 0 its
+  // elevation's pixels at its uv; 1 a swatch tiled in metres on the face's own plane (aGl.y which), 2 a lantern's glass, 3 a
+  // cafe table or chair (folded away while the bar is shut), 4 a sign on the page-lettered canvas, 5 the cast lace
+  // (GLORY_LACE_GLSL, aGl.y its kind)
+  function gloryFacadeMat(fr) {
+    if (GLORY.mat) return GLORY.mat;
+    const A = GLORY.art, gl2 = !!renderer.capabilities.isWebGL2, rich = !isTouch;
+    gloryU.uGlF.value.set(fr.ax, fr.az, fr.ux, fr.uz); gloryU.uGlY0.value = fr.y0;
+    for (let i = 0; i < 2; i++) if (fr.lanterns[i]) gloryU.uGlLant.value[i].set(fr.lanterns[i][0], fr.lanterns[i][1], fr.lanterns[i][2]);
+    if (fr.signbox && fr.signbox.length === 4) gloryU.uGlBox.value.fromArray(fr.signbox);
+    if (fr.drips && fr.drips.length === 3) gloryU.uGlDrip.value.set(fr.drips[0], fr.drips[1], fr.drips[2], 1);
+    gloryU.uGlFw.value = fr.fw;
+    if (fr.bays && fr.arcade) for (let i = 0; i < 4; i++) gloryU.uGlBays.value[i].set(fr.bays[i][0], fr.bays[i][1], fr.arcade[i][0], fr.arcade[i][1]);
+    if (fr.bayY) gloryU.uGlBayY.value.fromArray(fr.bayY);
+    if (fr.leaf) gloryU.uGlLeaf.value.fromArray(fr.leaf);
+    const map = gloryBlank(true, '#8f8a80'), mask = gloryBlank(false, '#000'), rooms = gloryBlank(true, '#1a1410'), roomsM = gloryBlank(false, '#000');
+    map.anisotropy = anisoOf(8); mask.anisotropy = anisoOf(4);
+    gloryU.uGlMask.value = mask; gloryU.uGlInt.value = rooms; gloryU.uGlIntM.value = roomsM;
+    // the signs' canvas (the blade, the board, the plaque, the menu and the mural): faces of the near mesh since Round 191
+    gloryU.uGlSign.value = GLORY.signTex || (GLORY.signTex = gloryCanvas());
+    freeTexOnUpload(GLORY.signTex);
+    if (A) {
+      for (const k in A.swatches) { const s = A.swatches[k]; if (s.i < GLORY_SW) { gloryU.uGlSw.value[s.i].fromArray(s.rect); gloryU.uGlSwM.value[s.i] = s.m; } }
+      const I = A.interior && A.interior.plates && !TIER2 ? A.interior : null;   // the recovery tier: the glass's plain glow, no rooms
+      if (I) {
+        const P = I.plates, order = ['ground-open', 'upperroom-open', 'ground-closed', 'upperroom-closed'];
+        order.forEach((k, i) => { const p = P[k] || P[k.replace('-closed', '-open')]; if (p) gloryU.uGlPl.value[i].fromArray(p.rect); });
+        ['ground', 'upperroom'].forEach((k, i) => { const p = P[k + '-open']; if (p) { gloryU.uGlBk.value[i].fromArray(p.back); gloryU.uGlRm.value[i].fromArray(p.room); } });
+        gloryU.uGlD.value = I.depth || 22;
+      }
+      // every device fetches the four images' bytes now and makes the images in gloryStep, the first time the eye comes within
+      // GLORY_DECODE_R after Enter (until then the swatches' means, uGlArt, stand in, and a session that never comes to Old
+      // City never holds them: about 29 MB of a computer's GPU with their mips, 7 MB of a phone's; Round 191's second review
+      // found a computer's decoded at the step in every session)
+      const pre = [gloryBytes(artSrc(A.img, A.imgHalf)), gloryBytes(artSrc(A.mask, A.maskHalf))].concat(I ? [gloryBytes(artSrc(I.img, I.imgHalf)), gloryBytes(artSrc(I.mask, I.maskHalf))] : []);
+      const go = () => {
+        let loaded = 0, r = 0;
+        const both = () => { if (++loaded === 2) { gloryU.uGlArt.value = 1; GLORY.artLoaded = 1; } };
+        gloryLoad(map, A.img, A.imgHalf, both, pre[0]); gloryLoad(mask, A.mask, A.maskHalf, both, pre[1]);
+        const both2 = () => { if (++r === 2) { gloryU.uGlInOn.value = 1; GLORY.roomsLoaded = 1; } };
+        if (I) { gloryLoad(rooms, I.img, I.imgHalf, both2, pre[2]); gloryLoad(roomsM, I.mask, I.maskHalf, both2, pre[3]); }
+      };
+      GLORY.pend = go;
+    }
+    const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(0.88, 0.88, 0.88), roughness: 0.85, metalness: 0 });
+    mat.extensions = { derivatives: true };
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, gloryU);
+      sh.uniforms.uNight = nightUniform; sh.uniforms.uLamp = lampUniform;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen; uniform float uGlY0, uGlDoor; uniform vec4 uGlSw[' + GLORY_SW + ']; uniform float uGlSwM[' + GLORY_SW + '];\nvarying vec4 vGl; varying vec4 vGlR; varying vec3 vGlP; varying vec3 vWNorm; varying float vBase;')
+        .replace('#include <begin_vertex>', ['#include <begin_vertex>',
+          'vGl = aGl * 255.0; vGlR = uGlSw[0]; vGl.z = uGlSwM[0];',
+          '{ int glI = int(vGl.y + 0.5); for (int i = 1; i < ' + GLORY_SW + '; i++) if (i == glI) { vGlR = uGlSw[i]; vGl.z = uGlSwM[i]; } }',
+          // the cafe's furniture is taken in when the bar shuts, and the bar's door leaf is drawn standing open only while it
+          // is: their triangles fold to a point
+          'if ((abs(vGl.x - 3.0) < 0.5 && uGlOpen.z < 0.5) || (abs(vGl.x - 6.0) < 0.5 && uGlDoor < 0.5)) transformed = vec3(0.0);'].join('\n'))
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvGlP = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = uGlY0;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + [
+        'uniform sampler2D uGlMask, uGlInt, uGlIntM, uGlSign; uniform vec4 uGlF, uGlOpen, uGlPl[4], uGlBk[2], uGlRm[2], uGlK, uGlFar, uGlBox, uGlDrip;',
+        'uniform float uGlY0, uGlD, uGlArt, uGlInOn, uNight, uLamp, uGlFw, uGlDoor; uniform vec3 uGlLant[2]; uniform vec4 uGlBays[4], uGlBayY, uGlLeaf;',
+        'varying vec4 vGl; varying vec4 vGlR; varying vec3 vGlP; varying vec3 vWNorm; varying float vBase;',
+        // frMask: the name lampLightPatchReal looks for to keep the street lamps' wash off the glass; glLampK a face's share
+        // of the street lamps' wash (a metal's diffuse is its (1 - metalness) share, the old sign box high on the wall a
+        // little); glPl a face's own plane in metres, for the stone's grain
+        'vec4 frMask; float glMode, glBar, glUp, glMet, glRgh, glBl, glLampK, glHo; vec3 glDay, glPf; vec2 glPl;',
+        GLORY_LACE_GLSL,
+        'float glH(vec2 c) { return fract(sin(dot(c, vec2(127.1, 311.7))) * 43758.5453); }',
+        // a hash without sin (the sin hash's lattice showed through as diagonal rows of cells at 3 mm), and value noise on it,
+        // smooth between its cells
+        'float glH2(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }',
+        'float glVN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+        '  return mix(mix(glH2(i), glH2(i + vec2(1.0, 0.0)), f.x), mix(glH2(i + vec2(0.0, 1.0)), glH2(i + vec2(1.0, 1.0)), f.x), f.y); }',
+        // a lit opening's light on a face at P (normal N, both in the facade's frame): the glass [u0, u1, y0, y1] at depth dg
+        // a warm panel, its light from the nearest point of the glass's middle half (a jamb sees across it, a head and the
+        // stoop up and down into it), falling off with the distance to the glass itself, and none behind the glass's plane
+        'float glSpill(vec3 P, vec3 N, vec4 o, float dg) {',
+        '  vec3 Q = vec3(clamp(P.x, o.x, o.y), clamp(P.y, o.z, o.w), dg), R = vec3(clamp(P.x, mix(o.x, o.y, 0.25), mix(o.x, o.y, 0.75)), clamp(P.y, mix(o.z, o.w, 0.25), mix(o.z, o.w, 0.75)), dg);',
+        '  float d = length(Q - P);',
+        '  return step(P.z, dg - 0.004) * max(dot(N, normalize(R - P)), 0.0) / (1.0 + 1.2 * d * d) * (1.0 - smoothstep(2.0, 3.2, d)); }',
+        'float glN1(float x) { float i = floor(x), f = fract(x); return mix(glH(vec2(i, 7.0)), glH(vec2(i + 1.0, 7.0)), f * f * (3.0 - 2.0 * f)); }',
+        // the mask's numbers (g a window's number, b the height inside it) read at its full size: a mip averages them with
+        // the frames' zeros round them, and they are numbers, not colours (r, the glass's cover, is read filtered)
+        gl2 ? '#define GLMASK0(p) textureGrad(uGlMask, p, vec2(0.0), vec2(0.0))' : '#define GLMASK0(p) texture2D(uGlMask, p, -16.0)',
+        REAL ? WINDOW_INTERIOR_GLSL : ''].join('\n'))
+        .replace('#include <map_fragment>', [
+          'glMode = floor(vGl.x + 0.5); frMask = vec4(0.0); vec4 glTex; glMet = 0.0; glRgh = -1.0; glLampK = 1.0; glHo = 0.0; vec2 glUvW = fwidth(vUv), glUdx = dFdx(vUv), glUdy = dFdy(vUv);',
+          // the face's place in the facade's frame (u east, y up over the walk, z into the lot). What a pane is, the bar's
+          // glass below the granite cornice (EH, 9.3 m) and the flats' above, and which of the bar's rooms (the second
+          // storey's from 4.6 m) is decided here by position, never by the mask's codes, which a mip averages with the frames'
+          // zeros: Round 191's review found the bar's lit glass black from about 100 m, and across the street the panes
+          // flipping between the two rooms as a mosaic of streaks
+          'vec2 glD0 = vGlP.xz - uGlF.xy; glPf = vec3(dot(glD0, uGlF.zw), vGlP.y - uGlY0, dot(glD0, vec2(-uGlF.w, uGlF.z)));',
+          'glPl = glPf.xy; vec2 glPw = max(fwidth(glPf.xy), vec2(1e-4));',
+          // the elevation (and the bar's door leaf, mode 6). The mask's glass is read texel by texel where it is magnified, its
+          // edges eased over a pixel (Round 191's third review: read filtered and sharpened, every lite was a rounded rectangle
+          // and every bar followed the filter's contour), and filtered where a pixel spans a texel or more
+          'if (glMode < 0.5 || glMode > 5.5) { glTex = texture2D(map, vUv);',
+          gl2 ? '  vec2 glMs = vec2(textureSize(uGlMask, 0)), glMt = vUv * glMs - 0.5, glMi = floor(glMt), glMf = clamp((glMt - glMi - 0.5) / clamp(glUvW * glMs, 1e-4, 1.0) + 0.5, 0.0, 1.0);\n  frMask = textureGrad(uGlMask, (glMi + glMf + 0.5) / glMs, glUdx, glUdy);' : '  frMask = texture2D(uGlMask, vUv);',
+          '  frMask.gb = GLMASK0(vUv).gb;',
+          // the bar's door leaf standing open: its doorway on the recessed face is all glass, the room seen through it
+          '  if (glMode < 0.5 && uGlDoor > 0.5 && glPf.z > 0.2) glHo = clamp(min(min(glPf.x - uGlLeaf.x, uGlLeaf.y - glPf.x) / glPw.x, min(glPf.y - uGlLeaf.z, uGlLeaf.w - glPf.y) / glPw.y) + 0.5, 0.0, 1.0);',
+          '  frMask.r = max(frMask.r, glHo);',
+          // the open leaf itself: its glass dark and glossy (the stoop and the pier in it), no room behind it
+          '  if (glMode > 5.5) { glTex.rgb = mix(glTex.rgb, vec3(0.02, 0.022, 0.025), frMask.r); glRgh = mix(0.55, 0.07, frMask.r); } }',
+          // a lantern: its clear glass (dark and glossy by day, the street in it) and its bulb, a pale filament by day
+          // (the globe is drawn opaque, so the bulb inside is drawn on it: the eye's ray through this point passes the bulb,
+          // the lantern's own centre uGlLant, at glBl; Round 191's review: an opaque box by day, a flat white panel at night)
+          'else if (glMode < 2.5 && glMode > 1.5) {',
+          '  vec3 glRd = normalize(vGlP - cameraPosition); glBl = 1e3;',
+          '  for (int i = 0; i < 2; i++) { vec3 glQ = uGlLant[i] - vGlP; glBl = min(glBl, length(glQ - glRd * dot(glQ, glRd))); }',
+          '  float glBulb = exp(-glBl * glBl / (0.022 * 0.022));',
+          '  glTex = vec4(vGl.y > 0.5 ? vec3(0.8, 0.74, 0.62) : mix(vec3(0.06, 0.06, 0.055), vec3(0.78, 0.72, 0.6), glBulb), 1.0); glRgh = vGl.y > 0.5 ? 0.4 : 0.04; frMask = vec4(0.0, 0.0, 240.0 / 255.0, 0.0); }',
+          // the cast lace (GLORY_LACE_GLSL): the iron kept, the rest cut away, the pixels a bar part covers dithered by its share
+          'else if (glMode > 4.5) {',
+          '  float glK = floor(vGl.y + 0.5), glLd = glLace(vUv, glK), glLw = max(length(glUvW * vec2(glK > 0.5 && glK < 1.5 ? 1.0 : 0.12, 1.0)), 1e-5);',
+          '  if (clamp(0.5 - glLd / glLw, 0.0, 1.0) <= ' + GLORY_DITHER + ') discard;',
+          '  glTex = vec4(vec3(0.02), 1.0); glRgh = 0.5; }',
+          // the signs: the canvas the page letters (the blade, the board, the plaque, the menu)
+          // (a sharper mip: from across the street at night the board's thin strokes went, the L's foot and the trade's line)
+          'else if (glMode > 3.5) { glTex = texture2D(uGlSign, vUv, -0.6); glRgh = 0.6; }',
+          // the cafe (Round 191's review: concrete boards read as slabs): the tables black painted steel, the chairs
+          // galvanized steel, a metal under the sky's own light
+          // galvanized, a dull metal (Round 191's third review: at 0.7 metalness the sky mirrored in the seats as light blue
+          // plastic), and the tables' painted steel a satin black
+          'else if (glMode > 2.5) { bool glCh = vGl.y > 0.5; glTex = vec4(glCh ? vec3(0.25, 0.255, 0.26) : vec3(0.022), 1.0); glMet = glCh ? 0.25 : 0.0; glRgh = glCh ? 0.58 : 0.42; glLampK = 1.0 - glMet; }',
+          'else {',
+          // a swatch tiled in metres on the face's own plane in the facade's frame (the front, a side or a top), with the
+          // unwrapped coordinate's gradients so the tile's wrap is no mip seam
+          '  vec3 glN = abs(vec3(dot(vWNorm.xz, uGlF.zw), vWNorm.y, dot(vWNorm.xz, vec2(-uGlF.w, uGlF.z))));',
+          '  vec2 glT = (glN.y > max(glN.x, glN.z) ? glPf.xz : (glN.x > glN.z ? glPf.zy : glPf.xy)) / max(vGl.z, 0.05);',
+          '  vec2 glS = vGlR.xy + vGlR.zw * fract(glT); glPl = glT * max(vGl.z, 0.05);',
+          // the gradients held to the swatch's gutter (8 texels: the third mip), or a face seen edge on (a cornice's soffit from
+          // the walk) reads a mip so coarse that the neighbouring swatches bleed into it as a dark and orange smear
+          gl2 ? '  vec2 glGx = dFdx(glT) * vGlR.zw, glGy = dFdy(glT) * vGlR.zw; float glGm = 8.0 / 2048.0;\n  glGx *= min(1.0, glGm / max(length(glGx), 1e-7)); glGy *= min(1.0, glGm / max(length(glGy), 1e-7));\n  glTex = textureGrad(map, glS, glGx, glGy);' : '  glTex = texture2D(map, glS);',
+          '}',
+          // before the art lands: the photographed colours (granite, brick), stored as the swatches' means
+          'if (uGlArt < 0.5 && glMode < 1.5) { float glSw = floor(vGl.y + 0.5); glTex = vec4(glMode < 0.5 ? (glPf.y < 9.3 ? vec3(0.32, 0.28, 0.24) : vec3(0.34, 0.16, 0.10)) : (glSw < 0.5 ? vec3(0.69, 0.60, 0.50) : glSw < 1.5 ? vec3(0.39, 0.18, 0.11) : glSw > 2.5 && glSw < 3.5 ? vec3(0.02) : glSw > 3.5 && glSw < 4.5 ? vec3(0.27, 0.37, 0.45) : glSw > 4.5 && glSw < 5.5 ? vec3(0.99, 0.62, 0.26) : glSw > 6.5 ? vec3(0.07, 0.04, 0.025) : vec3(0.18, 0.17, 0.15)), 1.0); }',
+          'glTex.rgb *= 1.0 - vGl.w / 255.0;',   // a recess's or an underside's shade (aGl's fourth byte)
+          // Round 191's second review: the granite read as clean cream plaster, and the caps' undersides and the doors' heads
+          // as flat pale planks. The stone (the lower elevation's pale pixels, every granite swatch face) takes a grain on its
+          // own plane: smooth value noise in three turned octaves of 4 mm, 1.2 and 4.5 cm, about 5% all told, each faded
+          // out before a pixel spans its cells (Round 191's third review: the second review's stepped specks in square 3 mm
+          // cells read as digital dither, the sandpaper of terrazzo, where the photographs' stone is smooth and pale and its
+          // only marks close up are the stains, the drips and the old anchor holes); then the weather by its place on the
+          // front, never by a tile: streaks run down under the capitals, the sill course and the cornice, the footing
+          // darkens to the walk, and a few old anchor holes stand on the piers; then an underside darkens toward the wall it
+          // leaves, a head and a jamb toward the door at the back of its recess
+          '{ float glSw = floor(vGl.y + 0.5), glStone = glMode < 0.5 ? step(glPf.y, 9.3) * smoothstep(0.1, 0.24, dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))) : (glMode < 1.5 && glSw < 0.5 ? 1.0 : 0.0);',
+          '  vec2 glFw = fwidth(glPl); float glPx = max(glFw.x, glFw.y);',   // out of the branch: a derivative in uniform flow
+          '  if (glStone > 0.0 && uGlArt > 0.5) {',
+          '    float glGr = (glVN(mat2(0.83, 0.56, -0.56, 0.83) * glPl / 0.004) - 0.5) * 0.035 * (1.0 - smoothstep(0.002, 0.004, glPx));',
+          '    glGr += (glVN(mat2(0.42, -0.91, 0.91, 0.42) * glPl / 0.012 + 7.3) - 0.5) * 0.05 * (1.0 - smoothstep(0.006, 0.012, glPx));',
+          '    glGr += (glVN(mat2(0.97, 0.26, -0.26, 0.97) * glPl / 0.045 + 3.1) - 0.5) * 0.06 * (1.0 - smoothstep(0.02, 0.045, glPx));',
+          '    float glVert = 1.0 - smoothstep(0.5, 0.8, abs(vWNorm.y)), glU = glPl.x, glY = glPf.y, glDr = 0.0;',
+          '    for (int i = 0; i < 3; i++) { float glTop = i == 0 ? uGlDrip.x : (i == 1 ? uGlDrip.y : uGlDrip.z), glDy = glTop - glY;',
+          '      float glS = glN1(glU * 38.0 + float(i) * 13.1) * glN1(glU * 9.0 + float(i) * 5.3);',
+          '      glDr += step(0.0, glDy) * glS * glS * exp(-glDy / (0.25 + 0.9 * glN1(glU * 6.0 + float(i)))); }',
+          '    float glFoot = 1.0 - smoothstep(0.0, 0.45 + 0.25 * glN1(glU * 3.1), glY);',
+          '    vec2 glAc = vec2(floor(glU / 0.7), floor((glY - 1.2) / 0.5)), glAp = vec2(fract(glU / 0.7) * 0.7, fract((glY - 1.2) / 0.5) * 0.5) - (0.15 + 0.4 * vec2(glH(glAc + 3.0), glH(glAc + 9.0) * 0.5));',
+          '    float glHole = step(glH(glAc + 31.0), 0.2) * step(1.2, glY) * step(glY, 3.6) * (1.0 - smoothstep(0.008, 0.014, length(glAp)));',
+          '    float glRun = step(glH(glAc + 31.0), 0.2) * step(abs(glAp.x), 0.006) * step(glAp.y, 0.0) * exp(glAp.y / 0.06);',
+          '    glTex.rgb *= (1.0 + glGr * glStone) * (1.0 - glStone * glVert * (min(glDr, 1.0) * 0.42 + glFoot * 0.3 + glRun * 0.35));',
+          '    glTex.rgb *= 1.0 - (glMode < 0.5 ? glStone : 0.0) * glHole * 0.7; }',
+          '  if (glMode > 0.5 && glMode < 1.5 && glSw < 0.5) {',
+          '    float glDn = smoothstep(0.5, 0.8, -vWNorm.y), glSide = 1.0 - smoothstep(0.3, 0.6, abs(vWNorm.y)), glIn = smoothstep(0.0, 0.25, glPf.z);',
+          '    glTex.rgb *= mix(1.0, glPf.z < 0.0 ? mix(0.55, 1.0, smoothstep(0.0, 0.16, -glPf.z)) : mix(0.85, 0.42, glIn), glDn) * mix(1.0, mix(1.0, 0.7, glIn), glSide * step(0.0, glPf.z)); } }',
+          // the old sign box (the rustblue swatch, its rust cap the rust swatch): grime toward its edges, rust run down its face
+          // from its top and creeping up from its cap, matte, and only a little of the street lamps' wash (Round 191's second
+          // review: it read as a glossy sky blue glass slab by day and glowed teal at night)
+          '{ float glSw = floor(vGl.y + 0.5); if (glMode > 0.5 && glMode < 1.5 && (abs(glSw - 4.0) < 0.5 || glSw > 6.5)) {',
+          '  glRgh = 0.8; glLampK = 0.12;',
+          '  if (glSw < 6.5) {',
+          '    float glV = glPf.z, glE = min(min(glV - uGlBox.x, uGlBox.y - glV), min(glPf.y - uGlBox.z, uGlBox.w - glPf.y));',
+          '    float glRs = smoothstep(0.45, 0.85, glN1(glPl.x * 31.0)) * (0.45 + 0.55 * glN1(glPl.x * 7.0 + 3.0)) * exp(-(uGlBox.w - glPf.y) / (0.5 + 1.2 * glN1(glPl.x * 5.0))) + 0.8 * (1.0 - smoothstep(0.0, 0.18, glPf.y - uGlBox.z - 0.1));',
+          '    glTex.rgb *= 1.0 - 0.35 * (1.0 - smoothstep(0.0, 0.1, glE));',
+          '    glTex.rgb = mix(glTex.rgb, vec3(0.12, 0.05, 0.022), clamp(glRs, 0.0, 1.0) * 0.75); } } }',
+          // the east return (Round 191's third review: 124's front stands back about a metre, so the party wall shows full
+          // height from the east, drawn red brick): black-painted brick over the storefront, the brick's relief through the
+          // paint, and only the red brick beside the granite base (refs, the Bright MLS view from that sidewalk)
+          '{ float glSw = floor(vGl.y + 0.5); if (glMode > 0.5 && glMode < 1.5 && abs(glSw - 1.0) < 0.5 && glPf.x > uGlFw - 0.12 && dot(vWNorm.xz, uGlF.zw) > 0.5 && glPf.z < 1.6 && glPf.y > 4.1)',
+          '  glTex.rgb = vec3(0.026, 0.026, 0.028) * (0.55 + 1.8 * dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))) * (0.9 + 0.2 * glVN(glPl * 3.0)); }',
+          // a phone's brick (Round 191's review): its fabric has no walls' atlas and its neighbours' brick renders at about
+          // 0.13 saturation, against the photographs' 0.32 that Glory's carries, which read as pasted in; on a phone the
+          // brick (the upper elevation, the brick swatch) keeps GLORY_PHONE_SAT of its saturation, about 0.22 as rendered
+          isTouch ? '{ float glBr = (glMode < 0.5 && glPf.y >= 9.3) || (glMode > 0.5 && glMode < 1.5 && abs(vGl.y - 1.0) < 0.5) ? 1.0 : 0.0; glTex.rgb = mix(glTex.rgb, mix(vec3(dot(glTex.rgb, vec3(0.2126, 0.7152, 0.0722))), glTex.rgb, ' + GLORY_PHONE_SAT.toFixed(2) + '), glBr); }' : '',
+          'glDay = glTex.rgb;',
+          'float glB = frMask.b * 255.0, glLow = step(glPf.y, 9.3);',
+          // the glass's cover sharpened where the mask is magnified (a texel is 1.7 cm: close up its eased edge spread over many
+          // pixels and the muntins went soft), left as filtered once a pixel spans a texel or more, so a far pane still
+          // averages its glass and its bars
+          '{ float glRw = fwidth(frMask.r); frMask.r = mix(clamp((frMask.r - 0.5) / max(glRw * 1.5, 1e-3) + 0.5, 0.0, 1.0), frMask.r, smoothstep(0.15, 0.4, glRw)); }',
+          'glBar = frMask.r * glLow * (1.0 - step(0.5, glMode));',
+          'glUp = frMask.r * (1.0 - glLow) * (1.0 - step(0.5, glMode));',
+          // the bar's glass is clear: its own albedo goes to dark glass (the room behind it is added as light); after dark the
+          // flats' painted daylight leaves their glass as the house fronts' does
+          'glTex.rgb = mix(glTex.rgb, vec3(0.03), glBar);',
+          REAL ? 'glTex.rgb = mix(glTex.rgb, glTex.rgb * 0.22, glUp * uNight);' : '',
+          'diffuseColor *= glTex;',
+        ].join('\n'))
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(mix(roughnessFactor, 0.22, glUp), 0.06, glBar); if (glRgh >= 0.0) roughnessFactor = glRgh; roughnessFactor = mix(roughnessFactor, 1.0, glHo);')   // the open doorway is no glass
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = max(metalnessFactor, glMet);')
+        // the lanterns' light on what stands round them: the piers, the signs' bracket, the stoop and the walk, within 4 m
+        .replace('#include <lights_fragment_end>', ['#include <lights_fragment_end>',
+          'if (uLamp > 0.001) { float glW = 0.0;',
+          '  for (int i = 0; i < 2; i++) { vec3 glL = uGlLant[i] - vGlP; float dl = length(glL);',
+          '    glW += (0.25 + 0.75 * max(dot(vWNorm, glL / max(dl, 1e-3)), 0.0)) / (1.0 + 2.0 * dl * dl) * (1.0 - smoothstep(2.0, 3.5, dl)); }',
+          '  reflectedLight.directDiffuse += diffuseColor.rgb * (1.0 - glMet) * vec3(1.0, 0.62, 0.32) * 0.7 * glW * uLamp;',
+          // and the GLORY board over the entrance between them, lit from below (Round 191's third review: across the street at
+          // night its thin strokes went, the L's foot and the trade's line)
+          '  if (glMode > 3.5 && glMode < 4.5 && glPf.y > 3.9 && glPf.z > -0.4) reflectedLight.directDiffuse += diffuseColor.rgb * vec3(1.0, 0.72, 0.45) * (0.3 + 0.25 * (1.0 - smoothstep(4.1, 4.8, glPf.y))) * uLamp; }',
+          // the open bar's light out through its glass after dark (Round 191's third review: from the sidewalks and walking up
+          // Chestnut the deep reveals hid the lit glass, which is right, but nothing warm came out, so the open bar looked shut
+          // beside 128's glowing shop): every lit opening lights its own jambs and head, the stoop, the steps, the railings and
+          // the chairs within about 2.5 m in front of it, warm (2700 K), by the hours (the bar's room, the room upstairs)
+          'if (uNight > 0.001 && glPf.z < 0.3 && glPf.z > -3.2 && glPf.y < 9.4) {',
+          '  vec3 glNf = vec3(dot(vWNorm.xz, uGlF.zw), vWNorm.y, dot(vWNorm.xz, vec2(-uGlF.w, uGlF.z))); float glSp = 0.0;',
+          '  for (int i = 0; i < 4; i++) { vec4 glB4 = uGlBays[i];',
+          '    glSp += glSpill(glPf, glNf, vec4(glB4.xy, uGlBayY.xy), 0.25) * uGlOpen.x + glSpill(glPf, glNf, vec4(glB4.zw, uGlBayY.zw), 0.2) * uGlOpen.y; }',
+          '  reflectedLight.directDiffuse += diffuseColor.rgb * (1.0 - glMet) * vec3(1.0, 0.6, 0.3) * 3.0 * glSp * uNight; }'].join('\n'))   // a metal's diffuse is its (1 - metalness) share
+        // the street lamps' wash (lampLightPatch, which lands right after this include) takes a face's glLampK share of its
+        // colour: the galvanized chairs read as white plastic under it (Round 191's second review), the old sign box glowed
+        .replace('#include <emissivemap_fragment>', ['vec3 glDcKeep = diffuseColor.rgb; diffuseColor.rgb *= glLampK;', '#include <emissivemap_fragment>', 'diffuseColor.rgb = glDcKeep;',
+          // a lantern after dark: the bulb hot, the globe's glass glowing round it, brightest where it faces the eye (the
+          // bulb seen through it)
+          // (Round 191's third review: it rendered a neutral white, where gloryphilly IMG6's bulb is an amber filament: about
+          // 2700 K, and lower, so the tone curve keeps its colour)
+          'if (glMode > 1.5 && glMode < 2.5)',
+          '  totalEmissiveRadiance += (vGl.y > 0.5 ? vec3(1.0, 0.6, 0.26) * 4.5 : vec3(1.0, 0.5, 0.17) * (0.05 + 2.4 * exp(-glBl * glBl / (0.02 * 0.02)) + 0.45 * exp(-glBl * glBl / (0.06 * 0.06)))) * uLamp;',
+          // the rooms behind the bar's glass (interior mapping): the eye's ray in the facade's frame (u east, y up, z into the
+          // lot) runs from the pane into the room's box and leaves it through a side wall, the floor, the ceiling or the back
+          // wall; that point, in the room's front opening's fractions (s from the viewer's right, the west wall, where the bar
+          // runs) and its depth, is the one-point photograph's pixel: each axis scaled toward the vanishing point by e / (e + z)
+          'if (glBar > 0.01 && uGlInOn > 0.5) {',
+          '  float up = step(4.6, glPf.y);',
+          '  vec4 rm = mix(uGlRm[0], uGlRm[1], up), bk = mix(uGlBk[0], uGlBk[1], up), pO = mix(uGlPl[0], uGlPl[1], up), pC = mix(uGlPl[2], uGlPl[3], up);',
+          '  vec2 dcam = cameraPosition.xz - uGlF.xy;',
+          '  vec3 P = glPf, Cm = vec3(dot(dcam, uGlF.zw), cameraPosition.y - uGlY0, dot(dcam, vec2(-uGlF.w, uGlF.z)));',
+          '  vec3 d = normalize(P - Cm); d.z = max(d.z, 1.0e-3);',
+          '  float tx = d.x > 1e-4 ? (rm.y - P.x) / d.x : (d.x < -1e-4 ? (rm.x - P.x) / d.x : 1e5);',
+          '  float ty = d.y > 1e-4 ? (rm.w - P.y) / d.y : (d.y < -1e-4 ? (rm.z - P.y) / d.y : 1e5);',
+          '  float tz = uGlD / d.z, t = max(min(min(tx, ty), tz), 0.0), hz = d.z * t;',
+          // the ceiling near the front: a plate holds it only as its top rows stretched, so a ray from the walk looking up
+          // into the arcade (a few centimetres in) reads it from 1.2 m in, and darker (the review: a smear of streaks)
+          '  float glCeil = (d.y > 1e-4 && ty <= min(tx, tz)) ? 1.0 : 0.0, hzs = mix(hz, max(hz, 1.2), glCeil);',
+          '  vec3 H = P + d * t;',
+          '  vec2 sr = clamp(vec2((rm.y - H.x) / (rm.y - rm.x), (H.y - rm.z) / (rm.w - rm.z)), 0.0, 1.0);',
+          '  vec2 sB = bk.zw - bk.xy, vp = bk.xy / (1.0 - sB), e = sB * uGlD / (1.0 - sB);',
+          '  vec2 im = clamp(vp + (sr - vp) * e / (e + hzs), 0.003, 0.997);',
+          '  float op = mix(uGlOpen.x, uGlOpen.y, up);',
+          '  vec3 room = mix(texture2D(uGlInt, pC.xy + pC.zw * im).rgb, texture2D(uGlInt, pO.xy + pO.zw * im).rgb, op);',
+          '  room *= mix(1.0, mix(0.4, 1.0, smoothstep(0.0, 2.0, hz)), glCeil);',
+          '  vec2 mI = texture2D(uGlIntM, pO.xy + pO.zw * im).rg;',
+          // the room upstairs seen from the street below is mostly its ceiling, which its plate holds only as its top rows run
+          // to the vanishing point: from across the street at night they drew big dark diagonals over every casement, a truss
+          // or a stair (Round 191's third review). Its ceiling is drawn here as gloryphilly IMG4 shows it: slate-grey paint, the
+          // spiral duct down its middle, strings of bulbs across the room
+          '  if (up > 0.5 && glCeil > 0.5) { vec2 glCq = vec2(H.x / 0.55, hz / 1.4), glCf = (fract(glCq) - 0.5) * vec2(0.55, 1.4);',
+          '    room = vec3(0.085, 0.09, 0.095) * (0.85 + 0.3 * glVN(glCq * 0.7));',
+          '    room = mix(room, vec3(0.3, 0.31, 0.32) * (0.8 + 0.2 * sin(hz * 38.0)), 1.0 - smoothstep(0.2, 0.26, abs(H.x - 4.6)));',
+          '    mI = vec2(exp(-dot(glCf, glCf) / (0.035 * 0.035)), 0.0); }',
+          // the mural on the bar's brick by the doors (its west wall, on the viewer's right), page-drawn on the signs' canvas
+          '  if (up < 0.5 && d.x < 0.0 && tx <= min(ty, tz) && hz > 0.4 && hz < 3.6 && H.y > rm.z + 1.5 && H.y < rm.z + 3.3) {',
+          '    float mw = texture2D(uGlSign, vec2(0.5 + 0.5 * (3.6 - hz) / 3.2, 0.5 + 0.5 * (H.y - rm.z - 1.5) / 1.8)).r;',
+          '    room = mix(room, max(room * 2.4, vec3(0.16, 0.14, 0.12)), mw * 0.85); }',
+          '  float dayK = uGlK.x * (1.0 - uNight), lit = mix(dayK, uGlK.y, uNight);',
+          '  vec3 em = room * mix(mix(uGlK.w, dayK * 0.4, 1.0 - uNight), lit, op);',
+          // after dark the bulbs twinkle a little (a string's lamps, the globes), and the back bar's shelves glow warmer
+          '  em += op * uNight * (mI.r * uGlK.z * (0.9 + 0.1 * sin(uGlOpen.w * 1.9 + im.x * 41.0 + im.y * 17.0)) + mI.g * 0.15) * vec3(1.0, 0.78, 0.5);',
+          '  em += (1.0 - op) * uNight * vec3(0.9, 0.05, 0.03) * step(abs(im.x - 0.5), 0.004) * step(abs(im.y - bk.w + 0.012), 0.003);',   // a shut room's exit sign
+          // GLORY_FAR: from afar the plate's mips average its dim walls with its few bright bulbs, and the open bar went to the
+          // darkest glass on the front after dark, under the flats' lit rooms (Round 191's second review: 25 to 40 against
+          // 150 to 170 from 190 m); a warm glow comes in with the distance
+          '  em += op * uNight * smoothstep(uGlFar.x, uGlFar.y, distance(cameraPosition, vGlP)) * uGlFar.z * vec3(1.0, 0.7, 0.4);',
+          '  totalEmissiveRadiance += glBar * em;',
+          // no rooms (the recovery tier, or before the art lands): the open bar's glass a plain warm glow after dark
+          '} else if (glBar > 0.01) totalEmissiveRadiance += glBar * uNight * mix(uGlOpen.x, uGlOpen.y, step(4.6, glPf.y)) * vec3(0.9, 0.55, 0.26) * 0.42;',
+          REAL ? [
+            // the flats upstairs after dark: the house fronts' rooms (roomLight, a home's share of them lit by the clock)
+            'if (glUp > 0.01 && uNight > 0.001) {',
+            '  vec3 lit = roomLight(vec2(0.5, clamp(glB / 64.0, 0.0, 1.0)), vec2(floor(frMask.g * 255.0 + 0.5), 7.0), 0.37, 0.0);',
+            '  totalEmissiveRadiance += glUp * uNight * lit * 0.85; }'].join('\n') : '',
+        ].join('\n'));
+      if (REAL) occBind(sh);
+      lampLightPatch(sh, 'vGlP', 'wall');
+      if (REAL) wxSurfacePatch(sh);
+    };
+    mat.customProgramCacheKey = () => 'glory-facade|' + (rich ? 'rich' : 'lite') + (gl2 ? '' : '|gl1');
+    // the shadow pass folds the cafe and the open door leaf away with the drawn ones (a shut bar's chairs cast nothing)
+    const depth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking });
+    depth.onBeforeCompile = (sh) => {
+      sh.uniforms.uGlOpen = gloryU.uGlOpen; sh.uniforms.uGlDoor = gloryU.uGlDoor;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aGl; uniform vec4 uGlOpen; uniform float uGlDoor; varying vec2 vGlUv; varying vec2 vGlMK;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvGlUv = uv; vGlMK = aGl.xy * 255.0;\nif ((abs(aGl.x * 255.0 - 3.0) < 0.5 && uGlOpen.z < 0.5) || (abs(aGl.x * 255.0 - 6.0) < 0.5 && uGlDoor < 0.5)) transformed = vec3(0.0);');
+      // and the lace's shadow is the lace's (cut at its line: a shadow map has no use for the dither)
+      sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'varying vec2 vGlUv; varying vec2 vGlMK;\n' + GLORY_LACE_GLSL + '\nvoid main() {\nif (vGlMK.x > 4.5 && glLace(vGlUv, floor(vGlMK.y + 0.5)) > 0.0) discard;');
+    };
+    depth.customProgramCacheKey = () => 'glory-depth';
+    GLORY.depth = depth;
+    GLORY.mat = mat;
+    return mat;
+  }
+  // the hours into the shader (once a model minute): the bar's room eases over ten minutes either way, the room upstairs is
+  // open from 5 PM (the board-game nights), the cafe while the bar is; a jump of the clock (a link, the time panel) snaps.
+  // The bar's own door leaf stands open while it is open in fair weather (refs, the Bright MLS view and gloryphilly IMG6:
+  // the east leaf of the entrance swung out to the street; Round 191's third review: shut, the entrance was the darkest bay
+  // on the front by day): no rain or snow falling and over 50 F where the live weather says
+  function gloryHoursStep() {
+    const mn = Math.floor(clock.minutes);
+    const key = clock.y * 535680 + clock.m * 44640 + clock.d * 1440 + mn;
+    const door = GLORY.open && WXFX.rain < 0.15 && WXFX.snow < 0.15 && WXFX.hail < 0.15 && (WX.temp == null || WX.temp > 50);
+    if (door !== GLORY.door) { GLORY.door = door; gloryU.uGlDoor.value = door ? 1 : 0; }
+    if (key === GLORY.minute) return;
+    const jump = GLORY.minute < 0 || Math.abs(key - GLORY.minute) > 30;
+    const dm = jump ? 1e9 : Math.abs(key - GLORY.minute);
+    GLORY.minute = key;
+    const h = gloryHours(clock.y, clock.m, clock.d, clock.minutes);
+    GLORY.open = h.open;
+    if (!h.open && GLORY.door) { GLORY.door = false; gloryU.uGlDoor.value = 0; }
+    const up = h.open && (h.late || h.m >= 1020);
+    const o = gloryU.uGlOpen.value, step = Math.min(1, dm / 10);
+    const ease = (a, b) => a + Math.max(-step, Math.min(step, b - a));
+    o.x = ease(o.x, h.open ? 1 : 0); o.y = ease(o.y, up ? 1 : 0); o.z = h.open ? 1 : 0;
+  }
+  function gloryStep(now) {
+    if (!GLORY.near) return;
+    gloryU.uGlOpen.value.w = (now / 1000) % 1000;
+    gloryHoursStep();
+    const d = camera.position.distanceTo(GLORY.c);
+    if (GLORY.lod === 'near' && d > 200) GLORY.lod = 'far';
+    else if (GLORY.lod === 'far' && d < 170) GLORY.lod = 'near';
+    GLORY.near.visible = GLORY.lod === 'near';
+    GLORY.far.visible = GLORY.lod === 'far';
+    if (GLORY.pend && PERF.enterT && d < GLORY_DECODE_R) { const go = GLORY.pend; GLORY.pend = null; go(); }   // the art, decoded at last
+    if (GLORY.upq.length) gloryUpload();   // and up to the GPU one image a frame
+  }
+  function gloryApi() {
+    if (!GLORY.on) return null;
+    return {
+      art: GLORY.art,
+      facade: gloryFacadeMat,
+      hoursU: gloryU.uGlOpen,
+      lod: (near, far, c) => {
+        GLORY.near = near; GLORY.far = far; GLORY.c.set(c[0], c[1], c[2]);
+        if (GLORY.depth) { near.customDepthMaterial = GLORY.depth; far.customDepthMaterial = GLORY.depth; }
+        const tri = (m) => (m.geometry.index ? m.geometry.index.count : m.geometry.attributes.position.count) / 3;
+        GLORY.tris = { near: tri(near), far: tri(far) };
+      },
+      lamps: (list) => { GLORY.lamps = list.slice(); },
+      ref: (r) => { GLORY.ref = r; },
+      paved: (ring) => { REBUILD_PAVED.push({ ring, bb: rbBox(ring) }); },
+    };
+  }
+  // the card a tap on the building or a search opens: open or shut by the model clock, then what it is and where, with the
+  // city's property rows under it when they arrive (bldgCard)
+  function gloryCardHead() {
+    const h = gloryHours(clock.y, clock.m, clock.d, clock.minutes);
+    const line = h.late ? 'Open until 2 AM' : h.open ? 'Open today ' + gloryHour(h.opens) + ' to 2 AM' : 'Opens today at ' + gloryHour(h.opens);
+    return { open: h.open, lines: [line, 'Craft beer bar and kitchen on two floors', '126 Chestnut St, Old City', 'Built 1853 as a store for James A. Brown'] };
+  }
+  function gloryAt(x, z, pad) {
+    const r = GLORY.ref;
+    if (!r) return false;
+    return rbDist(x, z, r.lot) <= (pad || 0);
+  }
+  // the walk in front of its own frontage, 2.4 m out (ref.apron, rebuilds/glory.js): a tap whose HIT point stands there is on
+  // Glory's signs, lanterns, old sign box, stoop or railings
+  function gloryApron(x, z) {
+    const r = GLORY.ref;
+    return !!(r && r.apron && pointInPoly(x, z, r.apron));
+  }
+
   // ---- the landmark rebuilds (Round 161; see REBUILDS). Right after the outer districts, whose loop skipped the
   // generic footprints: the wide ground grids are registered and nothing later changes them, so a rebuild stands on
   // the ground it was designed on, and it runs before the trees, the storefronts, the lamps and the transit pins read
@@ -15000,7 +18155,10 @@ vec2 wRing(vec2 rc, float tt) {
       log: dev ? (...a) => console.log('[rebuild]', ...a) : () => {},
     };
     api.lampU = LAMP_RB_U;   // the realism round: the far map's uniforms with its box at the realistic strength (lampNightFx keeps it; ?real=0 the same box)
+    api.glory = gloryApi();   // Round 191: Glory's facade, signs, hours and levels of detail (rebuilds/glory.js)
     for (const d of REBUILDS) {
+      if (d.real && !REAL) continue;   // a def of the realistic look's alone (?real=0)
+      if (d.id === 'glory' && !GLORY_ON) continue;   // Glory's A/B (?glory=0: the old Glory on 120 stands); its own id, so another def's real stays REAL's alone
       const t0 = performance.now();
       try {
         const obj = d.build(api);
@@ -15550,7 +18708,7 @@ vec2 wRing(vec2 rc, float tt) {
     return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
   }
   const TSKIN_ON = FRONTS_ON && !!FRONTS_DATA.tiles && Object.keys(FRONTS_DATA.tiles).length > 0;
-  // the kind a tower's cladding takes (Round 191: factored out of towerSkinNote, the same draw, so the glass towers' routing
+  // the kind a tower's cladding takes (Round 192: factored out of towerSkinNote, the same draw, so the glass towers' routing
   // knows which kinds are glass without laying a skin; with no tiles to filter by, a tier-2 phone, the whole list)
   function skinKindOf(style, spec, seed, t) {
     const tiles = typeof FRONTS_DATA !== 'undefined' && FRONTS_DATA && FRONTS_DATA.tiles ? FRONTS_DATA.tiles : null;
@@ -15630,7 +18788,7 @@ vec2 wRing(vec2 rc, float tt) {
   };
   // the wall kinds whose rooms are homes (a flat's lamps and blinds after dark), the rest are offices (suites and floors)
   const SKIN_HOME = new Set(['resi', 'glassresi', 'hotel', 'brick', 'darkbrick', 'aptbrick', 'gardenapt', 'modernapt', 'stucco', 'loftbrick', 'warehouse', 'paintedbrick']);
-  // the mid-rise's kind (Round 191: factored out, the same draw), null where it keeps its own facade
+  // the mid-rise's kind (Round 192: factored out, the same draw), null where it keeps its own facade
   function midSkinKindOf(style, seed, t, fa) {
     const st = style & 31;
     if (st === 1 || st === 3 || st >= 20) return null;   // a church, a blank wall, a researched curtain wall keep theirs
@@ -19827,6 +22985,8 @@ vec2 wRing(vec2 rc, float tt) {
         const dx = x - cx, dz = z - cz, d2 = dx * dx + dz * dz;
         if (d2 > GRASS_R * GRASS_R) continue;
         if (pg ? !pointInPoly(x, z, pg) : !bareGroundAt(x, z)) continue;
+        if (pg && CH.noTuft && CH.noTuft.some(([r, bb]) => x >= bb[0] && x <= bb[1] && z >= bb[2] && z <= bb[3] && pointInPoly(x, z, r))) continue;   // City Hall's paving over a park (Round 191)
+        if (REBUILD_PAVED.length && rebuildPavedAt(x, z)) continue;
         if (elPortalAt(x, z) || patcoCutAt(x, z)) continue;   // the excavated ground cannot carry floating grass
         if (septaSnapRoad(x, z, 4)) continue;
         if (inWater(x, z) > -2) continue;
@@ -21405,6 +24565,7 @@ vec2 wRing(vec2 rc, float tt) {
       .then((r) => (r.ok ? r.json() : null)).then((d) => (d && Array.isArray(d.rows) ? d.rows : null)).catch(() => null);
   }
   function bldgCard(st) {
+    if (st.biz) { gloryCard(st); return; }
     const tag = '<span class="vroute" style="background:#55636b">Property</span>';
     if (st.loading) { vehinfoBody.innerHTML = tag + '<span class="vdest">Looking up this building</span>'; return; }
     if (st.failed) { vehinfoBody.innerHTML = tag + '<span class="vdest">The city\'s property records did not answer</span><div class="vmeta">Tap the building again in a moment.</div>'; return; }
@@ -21427,6 +24588,24 @@ vec2 wRing(vec2 rc, float tt) {
       rows.map((t) => '<div class="vmeta">' + septaEsc(t) + '</div>').join('') +
       '<div class="vmeta">City of Philadelphia: OPA, PWD, Historical Commission, L&amp;I</div>' + link;
   }
+  // Round 191: Glory's own card, open or shut by the model clock (its hours, gloryHours), then what it is and where, and
+  // under them the city's register and district rows and its permits once the property lookup answers
+  function gloryCard(st) {
+    const g = gloryCardHead(), rows = g.lines.slice(), r = st.row;
+    if (r) {
+      if (st.register) rows.push('Philadelphia Register of Historic Places' + (st.district ? ', ' + st.district + ' Historic District' : ''));
+      else if (st.district) rows.push('In the ' + st.district + ' Historic District');
+      for (const p of st.permits || []) {
+        const d = p.permitissuedate ? new Date(p.permitissuedate).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'America/New_York' }) : '';
+        rows.push('Permit' + (d ? ' ' + d : '') + ': ' + bldgTitle(p.typeofwork || p.permittype || 'work'));
+      }
+    }
+    const rec = r && r.parcel_number && /^\d{9}$/.test(r.parcel_number) ? '<a class="vlink" href="https://property.phila.gov/?p=' + r.parcel_number + '" target="_blank" rel="noopener">Property Record</a>' : '';
+    vehinfoBody.innerHTML = '<span class="vroute" style="background:' + (g.open ? '#4aa564' : '#7a8188') + '">' + (g.open ? 'Open' : 'Closed') + '</span>' +
+      '<span class="vdest">' + septaEsc(st.biz.name) + '</span>' +
+      rows.map((t) => '<div class="vmeta">' + septaEsc(t) + '</div>').join('') +
+      '<a class="vlink" href="https://www.gloryphilly.com/" target="_blank" rel="noopener">Website</a>' + rec;
+  }
   function bldgPick(cx, cy) {
     let p = null;
     try { p = bldgPointAt(cx, cy, 14000); } catch (e) { p = null; }   // a placard shows to 14 km: its building answers that far
@@ -21434,17 +24613,33 @@ vec2 wRing(vec2 rc, float tt) {
     // Round 167: a tap on the building of a dismissed game or show brings its bubble back, and is spent on that
     if ((SCORES.games.some((g) => g.hidden) || CONCERTS.shown.some((s) => s.hidden)) && eventTapRestore(p[0], p[2])) return true;
     if (p[4] > 3000) return false;   // the building card is for what the eye can make out, not the horizon
+    const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
+    // Round 191: Glory's own card for a hit 0.3 m short of its lot (no pad: a metre's pad gave a tap on 128's party wall
+    // Glory's card, and so did the parcel's point 1.5 m along an oblique ray from the sidewalk, Round 191's second review), or
+    // for the hit itself on the walk in front of its frontage (its blade sign, a lantern, the old sign box, the cornices, the
+    // stoop and its railings and chairs), asked before the ground test (its third review: a tap under 2 m, on the door at eye
+    // height, a railing, a chair or the stoop's deck, opened nothing), anything standing over the walk's own level
+    const gx = p[0] + dir.x * 0.3, gz = p[2] + dir.z * 0.3;
+    const glo = !!GLORY.ref && p[1] > GLORY.ref.y0 + 0.1 && (gloryAt(gx, gz, 0) || gloryApron(p[0], p[2]));
     const g = Math.max(groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground'), TERRAIN.water + 0.5);   // a river's sheet stands over its carved bed
-    if (p[1] < g + 2) return false;   // the ground, a road, a lawn, the water: not a building
+    if (p[1] < g + 2 && !glo) return false;   // the ground, a road, a lawn, the water: not a building
     // a bridge or an elevated deck, not a building (review, Sep 22): the two river crossings' corridors, or a mapped deck
     // within a few metres of the hit's height (the roof grid cannot say it: it notes no roof under 250 m2, no rowhouse)
     if (bfbNear(p[0], p[2], 25) || wwbNear(p[0], p[2], 25)) return false;
     { const dk = ovpDeckY(p[0], p[2]); if (dk !== null && Math.abs(dk - p[1]) < 4) return false; }
-    const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
+    bldgOpen(p[0], p[1] + 1, p[2], x, z, glo ? GLORY.ref : null);
+    return true;
+  }
+  // a building's card at (ax, ay, az), filled from the parcel under (x, z); biz a business the page knows there (Glory),
+  // whose own point inside its lot (biz.parcel, the OPA address point) is asked instead: Old City's OSM fronts stand about
+  // 4 m north of the PWD parcels, so a point at the front or on the walk finds no lot (Round 191's review: Glory's card
+  // never had its property rows)
+  function bldgOpen(ax, ay, az, x, z, biz) {
+    if (biz && biz.parcel) { x = biz.parcel[0]; z = biz.parcel[1]; }
     pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
     pickedStop = null; pickedCivic = null; pickedNear = null;
-    const seq = ++BPICK.seq, st = { loading: true };
-    pickedBldg = { x: p[0], y: p[1] + 1, z: p[2], seq };
+    const seq = ++BPICK.seq, st = { loading: true, biz };
+    pickedBldg = { x: ax, y: ay, z: az, seq };
     bldgCard(st); vehinfoEl.hidden = false; cardUnlock();
     const lon = SEPTA_GEO.lon0 + x / SEPTA_GEO.mx, lat = SEPTA_GEO.lat0 - z / SEPTA_GEO.mz;
     const mine = () => pickedBldg && pickedBldg.seq === seq && !oldPick();   // an older-style card opened meanwhile owns #vehinfo now
@@ -23104,10 +26299,10 @@ float pinOccGate() {
   // districts, the named buildings and towers, and the painted street names, all
   // already in scene metres. Built once, on the first search.
   let nameIx = null;
-  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, library: 3, bridge: 3, nature: 3, building: 4, street: 5 };
+  const KIND_RANK = { landmark: 0, neighborhood: 1, district: 2, market: 3, marker: 3, art: 3, school: 3, college: 3, worship: 3, hospital: 3, park: 3, rec: 3, cemetery: 3, museum: 3, site: 3, venue: 3, civic: 3, station: 3, rail: 2, library: 3, bridge: 3, nature: 3, bar: 2, building: 4, street: 5 };   // Round 191: a bar the page knows by name (Glory) before the churches that share its first word
   const KIND_LABEL = { landmark: 'Landmark', neighborhood: 'Neighborhood', district: 'Historic District', market: 'Farmers Market', marker: 'Historical Marker', art: 'Public Art',
     school: 'School', college: 'College', worship: 'Place of Worship', hospital: 'Hospital', park: 'Park', rec: 'Recreation Center', cemetery: 'Cemetery', museum: 'Museum', site: 'Historic Site',
-    venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', library: 'Free Library', bridge: 'Bridge', nature: 'Natural Feature', building: 'Building', street: 'Street' };
+    venue: 'Venue', civic: 'Public Building', station: 'Station', rail: 'Regional Rail Station', library: 'Free Library', bridge: 'Bridge', nature: 'Natural Feature', bar: 'Bar', building: 'Building', street: 'Street' };
   let rockySite = null;   // built landmark anchor; search follows the relocated statue
   // the city basemap's named places (LANDMARKS, Round 78): cls in landmarks.json indexes this
   const LM_KIND = ['school', 'college', 'worship', 'hospital', 'park', 'rec', 'cemetery', 'museum', 'site', 'venue', 'civic', 'station', 'bridge', 'building', 'nature'];
@@ -23131,6 +26326,10 @@ float pinOccGate() {
     for (const r of STOPS.rail) add(r.n.replace(/\s+Station$/i, '') + ' Station', r.x, r.z, 'rail', r);
     for (const r of CIVIC_S.lib) add(r.n, r.x, r.z, 'library', r);   // Round 134
     for (const r of CIVIC_S.rec) add(r.n, r.x, r.z, 'rec', r);   // Regional Rail stations open their departure board (Round 133)
+    if (GLORY.ref) add(GLORY.ref.name, GLORY.ref.door[0], GLORY.ref.door[1], 'bar', GLORY.ref);   // Round 191: Glory, at its door, arriving with its card
+    // and by its address under its own name (Round 191's third review: '126 chestnut' fell through to the address lookup,
+    // which landed without the card)
+    if (GLORY.ref) ix.push({ name: GLORY.ref.name, lc: '126 chestnut street', x: GLORY.ref.door[0], z: GLORY.ref.door[1], kind: 'bar', ref: GLORY.ref });
     for (const l of labels) add(l.el.textContent, l.pos.x, l.pos.z, 'landmark');
     for (const lm of META_L) {
       const b = lm && lm.name ? findBuilding(lm.name) : null;
@@ -23171,6 +26370,7 @@ float pinOccGate() {
     return hits.slice(0, 5).map((h) => h[3]);
   }
   function searchGoToLocal(e) {
+    if (e.kind === 'bar' && e.ref) { gloryGoTo(e.ref); if (isTouch) toggleSearch(false); return; }
     const gy = e.ref?.anchorY ?? siteY(e.x, e.z, 'ground');
     const wide = e.kind === 'neighborhood' || e.kind === 'district';   // an area reads from higher up and needs no pin
     const mid = e.kind === 'park' || e.kind === 'cemetery' || e.kind === 'college';   // a campus or a park: back off, keep the pin
@@ -23186,6 +26386,22 @@ float pinOccGate() {
     if (e.kind === 'rail' && e.ref) openStopCard(e.ref);   // a station arrives with its departure board (Round 133)
     if ((e.kind === 'library' || e.kind === 'rec') && e.ref && e.ref.kind) openCivicCard(e.ref);   // a branch or a center arrives with its card (Round 134)
     if (isTouch) toggleSearch(false);
+  }
+  // Round 191: a search for Glory lands on the far sidewalk of Chestnut Street looking at its front, the street-level view
+  // Mike knows it by (no circle: a 30 m orbit at that height would run through the buildings across the street), with its
+  // card open and the mark over its parapet (Round 191's third review: at the door, a 5 m pin there for 20 s covered the
+  // GLORY board, the entrance and the middle bays in the very view the search lands on; over the parapet it is above that
+  // frame's top, about 15.5 m up at 13 m, and still marks the place on the way in)
+  function gloryGoTo(r) {
+    const vx = r.door[0] + r.n[0] * 12, vz = r.door[1] + r.n[1] * 12, vy = r.y0 + 3.0;
+    const tx = r.c[0], ty = r.y0 + 6.5, tz = r.c[2];
+    const yaw = Math.atan2(tx - vx, -(tz - vz)), pitch = Math.atan2(ty - vy, Math.hypot(tx - vx, tz - vz));
+    glideCancel();
+    if (walk.locked && document.exitPointerLock) document.exitPointerLock();
+    glideFly(vx, vy, vz, yaw, pitch, clamp(500 + Math.hypot(vx - camera.position.x, vz - camera.position.z) * 0.3, 900, 2600), null);
+    placeSearchMark(r.c[0], r.y0 + 20, r.c[2], r.name);
+    bldgOpen(r.door[0], r.y0 + 4.6, r.door[1], r.door[0] - r.n[0] * 2.5, r.door[1] - r.n[1] * 2.5, r);
+    setHint();
   }
   function searchLocalSubmit(qy) {
     if (/^\d+$/.test(qy)) return false;      // a bare number is a route or a house number, never a name
@@ -24615,7 +27831,7 @@ float pinOccGate() {
     const ih = geo(39.94883, -75.15003);      // Independence Hall, the label's fix
     const bb = geo(39.93951, -75.13309);      // USS New Jersey at her Camden moorings
     const STOPS = [
-      ['cityhall', 'City Hall', [-1560, -280, 140], [-1603, -802, 95]],                          // up Broad Street from the south
+      ['cityhall', 'City Hall', [-1663.8, -439.1, 300], [-1602.4, -801.2, 40]],                 // up Broad Street from the south, on its axis (Round 191: 130 m east of it, the view was a wall of towers; fix3, the review: 80 m up and 430 m out the canyon's walls filled four fifths of it, the tower a twentieth: 300 m up and 330 m out it looks over the towers at the whole block, 290 m from it, inside the near level)
       ['schuylkill', 'Schuylkill Skyline', [-3150, -900, 80], [-2250, -950, 150]],                // from the river, looking east
       ['ballpark', 'Citizens Bank Park', [-1590, 4655, 230], [-1850, 4380, 18]],
       ['linc', 'Lincoln Financial Field', [-1660, 5290, 230], [-1938, 4939, 20]],
@@ -28593,7 +31809,8 @@ float pinOccGate() {
     };
     postRaw(poleMat);
     {   // the light map's splats: one soft point per lamp, its radius from its mounting height (a lot mast casts widest)
-      const lp = new Float32Array(nAll * 3), lc = new Float32Array(nAll * 3), lr = new Float32Array(nAll);
+      const nGl = GLORY.lamps.length;   // Round 191: Glory's two lanterns
+      const lp = new Float32Array((nAll + nGl) * 3), lc = new Float32Array((nAll + nGl) * 3), lr = new Float32Array(nAll + nGl);
       let m = 0;
       for (let i = 0; i < nAll; i++) {
         if (pos[i * 3 + 1] < -500) continue;   // the cap site's poles are not there
@@ -28604,6 +31821,14 @@ float pinOccGate() {
         const pier = i >= nPoles + nLot && HM[i] < 10, mast = i >= nPoles && !pier, k = mast ? 0.25 : pier ? 0.2 : 1.0;
         lc[m * 3] = pcol[i * 3] * k; lc[m * 3 + 1] = pcol[i * 3 + 1] * k; lc[m * 3 + 2] = pcol[i * 3 + 2] * k;
         lr[m] = mast ? 56 : pier ? 20 : clamp(HM[i] * 3.4, 14, 42);   // Round 144 (Mike: "diffuse all of the lamposts more and have that light stretch a bit further"): 1.4 times the Round 140 reach
+        m++;
+      }
+      // Round 191: Glory's lanterns on the piers either side of its door, a warm 2700 K pool of 7 m on the stoop and the walk
+      // (their own radius: a pole's HM times 3.4 would floor it at 14)
+      for (const q of GLORY.lamps) {
+        lp[m * 3] = q[0]; lp[m * 3 + 1] = Math.max(1, q[1] - siteY(q[0], q[2], 'ground')); lp[m * 3 + 2] = q[2];
+        lc[m * 3] = 0.22; lc[m * 3 + 1] = 0.62 * 0.22; lc[m * 3 + 2] = 0.32 * 0.22;
+        lr[m] = 7;
         m++;
       }
       const g = new THREE.BufferGeometry();
@@ -28844,7 +32069,7 @@ float pinOccGate() {
     for (let i = 0; i < FRONTS.n; i++) { const s = FR_SETS[(FRONTS.buf[i * FR_STRIDE + 9] | 0) & 15]; per[s] = (per[s] || 0) + 1; }
     PERF.fronts = { notes: FRONTS.n, cells: FRONTS.cells.size, per };
   });
-  // Round 191 (the skins that stay: masonry, stone, concrete grids, the far ring's glass kinds): their windows are glass in the
+  // Round 192 (the skins that stay: masonry, stone, concrete grids, the far ring's glass kinds): their windows are glass in the
   // city's reflection too, the probe for their envMap (the same size on a computer, so the same program inputs), the probe's
   // parallax from the fragment's world position, the pane's glass a dielectric at F0 0.08 (never the tile's 0.2 metalness),
   // and the painted glass at three tenths, so the tile's own sky does not double the probe's
@@ -28982,7 +32207,7 @@ float pinOccGate() {
                 '  float win = tsMask.r;',
                 '  tsBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - texture2D(map, vUv, 3.0).rgb, vec3(0.2126, 0.7152, 0.0722)));',
                 '  diffuseColor.rgb *= mix(1.0, 0.88 + 0.2 * tsH, win * (1.0 - tsBar));',
-                // Round 191: the painted glass's own sky must not double the city probe's reflection (SKIN_GLASS)
+                // Round 192: the painted glass's own sky must not double the city probe's reflection (SKIN_GLASS)
                 SKIN_GLASS ? '  diffuseColor.rgb *= mix(1.0, 0.3, win * (1.0 - tsBar));' : '',
                 '  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3, win * uNight); }',
               ].join('\n'))
@@ -29021,7 +32246,7 @@ float pinOccGate() {
               '  totalEmissiveRadiance += tsMask.r * max(glass, ' + (T.glass ? '0.45' : '0.0') + ') * step(0.66, h) * uNight * lc * (0.32 + 0.22 * fract(h * 9.7)); }');
         };
         mat.customProgramCacheKey = () => REAL ? 'tower-skin|real' + (SKIN_GLASS ? '|glass' : '') : 'tower-skin-' + kind;
-        if (SKIN_GLASS) CITYENV.mats.push(mat);   // Round 191: the city probe for its windows
+        if (SKIN_GLASS) CITYENV.mats.push(mat);   // Round 192: the city probe for its windows
         const m = new THREE.Mesh(g, mat);
         m.castShadow = false; m.receiveShadow = true; m.name = 'tower-skin-' + kind;
         m.frustumCulled = false; pendingUpload.push(m);
@@ -29036,7 +32261,7 @@ float pinOccGate() {
     }
     TSKIN.ms = Math.round(performance.now() - t0);
   });
-  // Round 191: the city's reflection (CITYENV): its proxy, with the landmarks the loops build by hand (One and Two Liberty
+  // Round 192: the city's reflection (CITYENV): its proxy, with the landmarks the loops build by hand (One and Two Liberty
   // Place, City Hall's block and tower, the three towers), and its first bake behind the veil
   step('Mirroring the city', () => {
     if (!CITYENV.on) return;
@@ -29059,7 +32284,7 @@ float pinOccGate() {
       PERF.failed.push(['Mirroring the city', CITYENV.error]);
     }
   });
-  // Round 191: the curtain walls' frame atlas and the rooms (bake_glass_art.py), a phone's half copies, no rooms on a phone;
+  // Round 192: the curtain walls' frame atlas and the rooms (bake_glass_art.py), a phone's half copies, no rooms on a phone;
   // until they land (or if they never do) the walls draw the procedural frame from the same systems
   function glassArtTex(im, srgb, aniso) {
     const t = new THREE.Texture(im);
@@ -34374,10 +37599,13 @@ float pinOccGate() {
   // replaces the synchronous read into `buf` and its answer is returned (the pins' async read, Round 167). `noFlats`, the
   // pins' capture: the sheets on the drawn ground and the flat water hidden too (userData.occFlat, Round 168; see occFlatTiles)
   function occRender(rt, W, H, buf, noInstanced, cam = camera, read = null, noFlats = false) {
-    const r = renderer, hid = [];
+    const r = renderer, hid = [], stood = [];
     pinOccMat();
     scene.traverse((o) => {
       if (!o.visible || o === scene) return;
+      // a mesh with a cheaper stand-in for depth alone draws that in its place (Round 191, fix3: City Hall's near level, 39k
+      // triangles a capture on a computer, gives its place to its far level's 6k; the capture is drawn every frame in flight)
+      if (o.userData && o.userData.occStandIn) { o.visible = false; hid.push(o); const q = o.userData.occStandIn; if (!q.visible) { q.visible = true; stood.push(q); } return; }
       const m = o.material, tr = m && (Array.isArray(m) ? m.some((q) => q.transparent) : m.transparent);
       const nd = m && (Array.isArray(m) ? m.some((q) => q.depthWrite === false) : m.depthWrite === false);   // occludes nothing in the real render either
       if (o === sky || o === cloudDeck || nd || o.isPoints || o.isLine || o.isSprite || tr || (o.userData && (o.userData.pinSceneDepth || (noFlats && o.userData.occFlat))) || (noInstanced && o.isInstancedMesh)) { o.visible = false; hid.push(o); }   // the sky dome drawn at its 5.2 km radius hid distant pins and made the sky a building (review, Sep 22)
@@ -34395,6 +37623,7 @@ float pinOccGate() {
     r.setRenderTarget(prevRT); r.setClearColor(_pocc, prevA);
     scene.overrideMaterial = prevOver; scene.background = prevBg;
     r.shadowMap.autoUpdate = prevUp; r.shadowMap.needsUpdate = prevNeed;
+    for (const o of stood) o.visible = false;
     for (const o of hid) o.visible = true;
     return out;
   }
@@ -34772,7 +38001,7 @@ float pinOccGate() {
     last = now;
     frameNo++;
     pinOccPoll();   // Round 167: the pins' last read lands here once its fence has passed, first thing, before this frame queues any GL work its copy would wait behind
-    if (CITYENV.pending || CITYENV.next === 1) cityEnvTick(now, paceActive && !once);   // Round 191: the city's probe, on a phone only when still (a dev frame counts as still)
+    if (CITYENV.pending || CITYENV.next === 1) cityEnvTick(now, paceActive && !once);   // Round 192: the city's probe, on a phone only when still (a dev frame counts as still)
     if (devHud && now - devHudT > 1000) { devHudT = now; devHud.textContent = perfLine(); }
     // adaptive resolution, from Enter on (DPR.live): 30-frame windows, 15 on a phone (Round 74: a turn into the dense half
     // of the city is answered in a quarter of a second, not two); a gap over 250 ms (a stall, the app in the background)
@@ -34881,7 +38110,9 @@ float pinOccGate() {
     updateLights(now);
     updateRoofKit(now);   // Round 150
     updateFronts(now);   // Round 181
+    cityHallStep();   // Round 191: its level, its art on a phone's approach, the dials' hands
     sfStep(now);   // Round 189: the storefronts' clock and names
+    gloryStep(now);   // Round 191: Glory's levels of detail and its hours
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
@@ -35001,7 +38232,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

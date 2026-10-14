@@ -357,7 +357,7 @@ class PageWiring(unittest.TestCase):
         self.assertIn("roomLight(vec2(fract(tsG.x), mix(fract(tsG.y), tsVp, uSkinF.x)), floor(tsG), vSeed * 3.1, uSkinF.y); }", f)
         # every kind shares one program in the realistic look (a program a kind cost the build 8 s of compiling), the
         # old look keeps its own
-        self.assertIn("mat.customProgramCacheKey = () => REAL ? 'tower-skin|real' + (SKIN_GLASS ? '|glass' : '') : 'tower-skin-' + kind;", f)   # Round 191: the city probe's windows
+        self.assertIn("mat.customProgramCacheKey = () => REAL ? 'tower-skin|real' + (SKIN_GLASS ? '|glass' : '') : 'tower-skin-' + kind;", f)   # Round 192: the city probe's windows
         self.assertIn("mat.customProgramCacheKey = () => 'skin-base|wx';", s)
         # the parapet starts where roofClutter's lip stops (h < 60 over the ground): never both
         self.assertIn("const par = REAL && !isTouch && !c.mid && !c.spec && c.y1 - (c.g0 != null ? c.g0 : c.y0) >= 60 ? 1.1 : 0;", f)

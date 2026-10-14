@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Bake the glass towers' curtain walls and rooms (Round 191, Mike: "Can we also update the glass textures of the
+"""Bake the glass towers' curtain walls and rooms (Round 192, Mike: "Can we also update the glass textures of the
 skyscrapers that are glass?") into glass_art.json, which build.py inlines as GLASS_ART, and the atlases themselves into
 art/glass/ (art_files.py: files the page loads on demand, a phone's half copies beside them).
 

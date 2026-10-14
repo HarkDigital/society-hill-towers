@@ -28,7 +28,9 @@ def paths(o):
 
 MANIFESTS += ('vehicle_art.json',)   # the vehicles' (the realism pass)
 MANIFESTS += ('storefront_art.json',)   # the storefronts' shopfronts (Round 189)
-MANIFESTS += ('glass_art.json',)   # the glass towers' frame and room atlases (Round 191)
+MANIFESTS += ('cityhall_art.json',)   # City Hall's facades (Round 191)
+MANIFESTS += ('glory_art.json',)   # Glory Beer Bar & Kitchen's elevations, swatches and rooms (Round 191)
+MANIFESTS += ('glass_art.json',)   # the glass towers' frame and room atlases (Round 192)
 
 
 class Files(unittest.TestCase):
@@ -45,7 +47,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|glass)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 
@@ -68,7 +70,7 @@ class Wiring(unittest.TestCase):
         self.assertIn('const artSrc = (full, half) => (isTouch && half ? half : full);', s)
         self.assertIn('function artImage(src) {', s)
         for call in ('artImage(artSrc(full, half))', 'artImage(artSrc(T.img, T.imgHalf))', 'artImage(artSrc(rec.img, rec.imgHalf))',
-                     'artImage(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf))'):
+                     'artImage(artSrc(GROUND_ART.lawn, GROUND_ART.lawnHalf))', 'artImage(artSrc(A.img, A.imgHalf)), artImage(artSrc(A.mask, A.maskHalf))'):
             self.assertIn(call, s)
         self.assertNotIn('im.src = rec.img', s)
 

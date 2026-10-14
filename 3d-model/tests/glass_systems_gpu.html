@@ -1,6 +1,6 @@
 <!doctype html><meta charset="utf-8"><title>Curtain Wall Checks</title>
 <style>body{background:#15212c;color:#eee;font:14px/1.5 system-ui;padding:24px}pre{white-space:pre-wrap}</style>
-<h1>Curtain Wall Checks</h1><p>Round 191's curtain-wall shader (glassSysHook) on a real VBuf wall, in both depth modes: the glass gains reflection at grazing angles, reflects the probe bound as its own envMap (never scene.environment), the frame atlas draws mullions where the procedural frame did, the panes bow their own ways near the eye and fold into a smooth mean far off, the rooms light by the clock at night and stay dark by day, and every frame is the same twice.</p><pre id="result">Running…</pre>
+<h1>Curtain Wall Checks</h1><p>Round 192's curtain-wall shader (glassSysHook) on a real VBuf wall, in both depth modes: the glass gains reflection at grazing angles, reflects the probe bound as its own envMap (never scene.environment), the frame atlas draws mullions where the procedural frame did, the panes bow their own ways near the eye and fold into a smooth mean far off, the rooms light by the clock at night and stay dark by day, and every frame is the same twice.</p><pre id="result">Running…</pre>
 <script src="../three.min.js"></script><script>
 (async()=>{
  const src=await(await fetch('../app.js',{cache:'no-store'})).text();
@@ -15,7 +15,7 @@
   const nightUniform={value:0},sunWUniform={value:new THREE.Vector3(0,1,0)};
   const G=new Function('THREE','GLASS_ART','REAL','renderer','isTouch','TIER2','location','clamp','hash01','nightUniform','sunWUniform','VDEPTH',
    cut('  const SFT_GLSL = [','  // Round 168 (the phones')+cut('  const occU = {','  // the shares by the clock')+
-   cut('  // ---- the glass towers (Round 191','  // five windows of the South Tower')+
+   cut('  // ---- the glass towers (Round 192','  // five windows of the South Tower')+
    'return {glassSysMat,glassU,CITYENV,GLASS_ON,GLASS_ART_ON,occU,glassFh};')(THREE,art,true,r,false,false,{search:''},(v,a,b)=>v<a?a:v>b?b:v,(n)=>{const s=Math.sin(n*127.1+311.7)*43758.5453;return s-Math.floor(s);},nightUniform,sunWUniform,{twins:new Map()});
   check(G.GLASS_ON&&G.GLASS_ART_ON,'the glass did not switch on');
   const pm=new THREE.PMREMGenerator(r);
