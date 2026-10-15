@@ -10922,8 +10922,82 @@ place; this is what changed in the code, and what was measured.
   poses `poses_pc.json` and `poses_phone.json` there): the promenade bow quarter, the marina, the river at 200 m, Camden at
   830 m, the aerial, over the stern, the stern from the promenade, the open deck at night, at 10:30 and 21:30 Oct 14, an
   Eagles night on the bridge and the ship; the phone at 740 by 360.
-- Not done: the hull takes no light from the promenade's lamps (lampLightPatch's wall mode wants a base and a normal the
-  hull's shader does not carry yet); the canopies are plain black, without fabric; the running rigging is a selection
-  (lifts, braces, footropes), not every buntline and clewline; the marina's floating piers (another landmark's ground)
-  still stand at a fixed pier's height. `tests/test_remodel_moshulu.py` (12 tests) builds her under Node from her outline.
-  The full suite: 920 tests, OK with the one expected failure; `docs_check.py` ok.
+- Not done at the first pass: the hull took no light from the promenade's lamps; the canopies were plain black, without
+  fabric; the running rigging is a selection (lifts, braces, footropes), not every buntline and clewline; the marina's
+  floating piers (another landmark's ground) still stand at a fixed pier's height. `tests/test_remodel_moshulu.py` (12
+  tests then) builds her under Node from her outline. The full suite: 920 tests, OK with the one expected failure.
+
+### The review's fixes (the second pass, Oct 14)
+
+- A shopfront was glued to her hull: a red-framed front with a navy awning, a 'Moshulu' board and a photographed dining
+  room flat on her port side amidships (z 335 to 355), lit at night, in every promenade view. It was Round 189's panel for
+  OSM's restaurant record (storefronts.b64 record 1038, x 310.6, z 345.2, facing west, 12 m wide), and `?real=0` showed
+  the same panel on the old hull, so it predates the remodel. 'Dressing the storefronts' skips the ground the researched
+  models and the rebuilds own, and her outline was in none of it: `moshuluBuild` now keeps her frame's box padded 2 m
+  (`MOSHULU.own`) and the step adds it to that ground before either path tests a panel (outside the old step's bytes, which
+  `test_realism_storefronts` holds). `__dbg.sf('list')` inside her slip: one panel before, none after; the new test decodes
+  storefronts.b64 and puts every record in her slip inside her own ground.
+- The restaurant's windows were a toy row: light frames, 1.2 by 0.8 m panes at an even 2.9 m pitch from 0.27 to 0.84 of
+  her length. Remeasured on Commons PA1, a true broadside (read against her four masts, which the remodel had set from the
+  same picture: jigger 0.13, mizzen 0.31, main 0.55, fore 0.79; a linear fit through the jigger and the fore lands the other
+  two within 0.01): fifteen panes from 0.216 to 0.493 at a 2.2 m pitch under the after tented deck to the main mast, a pair
+  at the main mast (0.5445 and 0.558), and eleven forward from 0.635 to 0.837 at 2.3 m, their centres climbing 4.3 to 5.6 m
+  over the water; the panes 1.45 by 1.2 m (1.6 by 1.36 with the frame), the long run's centres 4.2 m up. The review's
+  figures (0.40 to 0.72, 0.74, 0.80 to 0.92) were read off the May 2024 photograph, taken from nearer her counter: there the
+  jigger stands taller than the fore and her forward half is foreshortened, so its fractions run about 0.2 forward of the
+  broadside's; it shows the same openings (fifteen, a pair, eleven), so the runs are the broadside's. The frames are her
+  navy greyed (#2b3040, under the plating's own detail), the glass dark and glossy, and a port pane whose centre stands
+  within 1.75 m of a door gives way whole. After dark each lit pane shows its room: its ceiling's light at the head, the
+  curtains drawn back to either side, warmer than before. The far level draws the same windows one by one (55 quads, 110
+  triangles, lit by the same hash, `moWinLit`, in plain float steps so the GLSL agrees), so the switch at 470 m changes
+  only the frames.
+- The four floodlights were Points sprites: white moons at 480 m and half-black 'eyeballs' up close, cut by their own
+  housings. Gone: each housing carries a lens plate on its underside facing down (in the painted parts, lit 3.0 after dark),
+  seen only from below, as the lamp is.
+- The festoons were neon tubes on a phone: bulbs every 0.75 m drawn 1.5 to 5.5 px, the pixel ratio frozen at the build.
+  Each bulb now carries the step to the next along its swag (`aMoTan`), the vertex shader projects it and caps the point at
+  0.55 of that step on the screen (a string seen along its length tightens too), floors it at 1.5 px and fades it by the
+  share of the 1.5 px it would take; the gain is 0.95 of the bulb colour (it was 1.2, clamped); `moshuluStep` reads the
+  pixel ratio and the drawing buffer every frame. Separate warm bulbs at 90 m on the phone and the computer, a thin amber
+  line at 300 m, the swag still there from Camden at 830 m as a faint orange line (the fade is by width, not area, so a far
+  string holds about half a bulb's light; by area it vanished from Camden).
+- The tented decks' glass walls glowed as flat cream slabs. The painted parts' attribute is now four floats (lit, kind, and
+  the part's own u and v in metres, from a frame each part may carry: `pp(g, c, e, k, fr)`); a glass wall on a room draws
+  black mullions every 1.6 m, a transom at 1.95 m and a sill, the room brighter under its ceiling, the tables and diners
+  breaking its lower third, at 0.55 of the old gain. The canopies are fabric (ribs of their frame every 1.5 m, the ridge
+  capped, each panel sagging a little, a weave); the umbrellas a twelve-panel canvas drooping to its hem (a lathe) and
+  matte; the lifeboats under a dark hood (Commons 20240529); the gangway's carpet takes its ceiling's light on its own colour.
+- The covered gangway (blog b2): black side panels with a rail, open above between black frames every 1.9 m with a cross
+  beam under the roof at each, a dark carpet lit from the ceiling, the fascia's box behind the WELCOME ABOARD MOSHULU board,
+  now lettered in gold on black, and a red barrel awning over the door in her side, standing out over the gangway's roof
+  (12 panels and a closed end). The door's frame takes the windows' dark frame.
+- The bow (blog b1): gold trailboard scrollwork either side of the stem head, laid along her sheer on the names canvas (now
+  four rows of a 1024 square: the gold name, the white name, the scroll, the board; 512 on a computer, 1.4 MB with mips, a
+  phone's 256); a hawse pipe each bow (a rim and a dark mouth) with its anchor chain hanging from it up over the rail, each
+  link pushed clear of her flare; and the big white MOSHULU high on her port side aft of the covered gangway (b2).
+- The jigger's gaffs, measured on PA1's after half: the boom 15.5 m, level, 2.2 m over the poop; the lower gaff's heel 0.195
+  of the way from the poop to the truck, 15.2 m at 23 degrees; the upper's at 0.42, 12.3 m at 41 degrees (they were at 0.42
+  and 0.64 of the mast and the upper stood out of the topmast).
+- The far spars were brighter and thicker than the near masts at the switch: unlit ribbons at the full buff and the tubes'
+  largest radius. Now 0.52 of the colour and 0.75 of the radius (`MO_SPAR_FAR`). Measured at 465 and 475 m by day (masts
+  against the sky): the summed excess over the sky was 13,345 far against 9,029 near (1.48 times); now 10,397 against 9,269.
+- Her hull was pitch black beside the lit promenade. The lamp maps read nothing at her berth (`__dbg.lampAt` at eight points
+  along her port side and the walk: zero; no pole stands on the promenade there), so sampling them would have changed
+  nothing; the hull's own shader washes her port side warm after dark on the photocell, fading up her side from 1 to 8 m,
+  a fifth of it on her river side, and not her glass.
+- Budget, measured as before (a counting hook on her own draws, eight frames a pose): computer near 5 draws and 20,588
+  triangles a frame (16,470 a pass: hull 6,384, painted 6,900, names 124, rigging 3,062), far 2.5 draws and 725 (the far
+  mesh 522, the spars 58), at night one more draw and 283 points (226 bulbs; the four lamps' points are gone); phone near
+  5.5 draws and 23,174 triangles at the promenade pose (its shadow pass drew the hull, the paint and the names 1.5 times a
+  frame there), far 2 draws and 580, night one more and 226 points. The city around her: 473 to 750 draws and 6.6 to 10.2 M
+  triangles a frame on the computer, 470 to 627 and 5.8 to 7.0 M on the phone path. Textures: the computer 12.6 MB (hull and
+  deck 11.2, the names' 512 square 1.4), the phone 3.2 MB. Programs: 240 on the computer and 144 on the phone path after
+  the full set (the same as the first pass), no link failures, no console errors on either, `PERF.failed` empty.
+- Renders (the session's `scratchpad/remodel/moshulu/fix/`): before (the first pass's build, 7722666) and after at the same
+  25 computer poses and 10 phone poses (`poses_final_pc.json`, `poses_final_phone.json`), side by side in `pairs/`, by day
+  from 10:30 to 15:30, dusk 18:40, night 21:30, a red night and an Eagles night; the level switch at 465 and 475 m by day and at
+  night (`f_sw_*`); measured crops of PA1 and the 2024 photograph in `refs/`.
+- Still not done: the running rigging is a selection; the marina's floating piers stand at a fixed pier's height (another
+  landmark's ground). The tests (`tests/test_remodel_moshulu.py`, 17 now) add the storefront check, the window runs and the
+  far level's windows, the lenses and the bulbs' pitch, the tents' room glass and fabric, and the jigger's spars. The full
+  suite: 925 tests, OK with the one expected failure; `docs_check.py` ok.

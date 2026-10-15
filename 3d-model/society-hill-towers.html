@@ -22271,7 +22271,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   // coverage (the wire's own width over the ribbon's), so a cable never shimmers; the festoons' bulbs one set of points
   // after dark (the photocell, as the bridge's nodes). ?moshulu=0 draws the old model (and ?real=0, with the old berth)
   const MOSHULU = { on: MOSHULU_ON, near: null, far: null, rig: null, bulbs: null, bulbMat: null, c: new THREE.Vector3(), lod: 'near', artAsked: false,
-    art: 0, tris: null, bulbN: 0, ribbons: 0, ms: 0, frame: null, slip: null, error: null, davits: [], spars: null };
+    art: 0, tris: null, bulbN: 0, ribbons: 0, ms: 0, frame: null, slip: null, error: null, davits: [], spars: null, own: null, jig: null, winFar: 0 };
   const MO_DEV = /[?&]dev\b/.test(location.search);
   const moU = {
     uMoHull: { value: null }, uMoDeck: { value: null }, uMoArt: { value: new THREE.Vector4(0, 0, 0, 0) },
@@ -22281,6 +22281,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     uMoW: { value: 0 }, uMoLd: { value: 110 }, uMoWin: { value: new THREE.Vector4(30, 94, 2.9, 4.5) }, uMoDoor: { value: new THREE.Vector4(-99, -99, 2.9, 5.0) },
     uMoP: { value: new THREE.Vector2(1, 0) }, uMoMast: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
     uMoRes: { value: 800 }, uMoDay: { value: 1 }, uMoNight: nightUniform, uMoLamp: lampUniform,
+    uMoRun: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] }, uMoRunB: { value: [new THREE.Vector4(), new THREE.Vector4(), new THREE.Vector4()] },
+    uMoFrame: { value: new THREE.Color() }, uMoView: { value: new THREE.Vector2(1280, 800) },
   };
   // a photograph's colour (sRGB, as the paint reads in daylight) to the stored linear the app's legacy pipeline wants (K.stored's)
   const moCol = (hex) => new THREE.Color(hex).convertSRGBToLinear().multiplyScalar(0.88);
@@ -22288,6 +22290,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     blue: '#1f2748', red: '#7a2c25', white: '#ebe9e2', teak: '#8d6f55', buff: '#d2bf95', black: '#1c1e21', ink: '#2a2c30',
     glass: '#141a1f', wood: '#6e4c33', woodDark: '#3b302a', canvas: '#efede6', alu: '#a7aaab', timber: '#5b4b3c', rope: '#857a68',
     wire: '#3f3b36', rail: '#eeece6', promRail: '#c3c6c6', bulb: '#ffd9a0', lamp: '#fff1d6', lifeboat: '#efefea',
+    winFrame: '#2b3040', cover: '#2a2d33', carpet: '#2c313c', awning: '#8a1f1f', chain: '#2c2b29',
   };
   // her masts from the counter, as fractions of the deck's length (Commons PA1, a broadside), their trucks over the main deck
   // (the brochure's 56 m from the main deck for the main; the broadside's ratios for the rest)
@@ -22301,6 +22304,19 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   // as a fraction of the truck's, length and radius at the slings
   const MO_YARDS = [[0.335, 28.5, 0.31], [0.41, 26.5, 0.29], [0.52, 24.0, 0.26], [0.62, 20.5, 0.21], [0.715, 17.5, 0.18], [0.80, 14.0, 0.15]];
   const MO_BRACE = 20 * Math.PI / 180;   // the yards braced round a little, starboard arms forward (every 2013 to 2024 photograph)
+  // the restaurant's windows, measured on Commons PA1 (a true broadside, read against her four masts; the 2024 photograph,
+  // taken nearer her counter, foreshortens her forward half, so its fractions run 0.2 Ld forward of these, but it shows the
+  // same openings: fifteen, a pair, eleven): [first centre, last centre (fractions of her length from the counter), panes,
+  // the first centre's height over the water, its rise to the last, the pane's half width and half height]. The long run
+  // under the after tented deck to the main mast, the pair at the main mast, the forward run climbing with the sheer
+  const MO_WIN = [[0.216, 0.493, 15, 4.2, 0, 0.72, 0.6], [0.5445, 0.558, 2, 4.1, 0, 0.6, 0.6], [0.635, 0.837, 11, 4.3, 1.3, 0.75, 0.55]];
+  const MO_WIN_FR = 0.08;   // the frame round each pane
+  const MO_SPAR_FAR = [0.52, 0.75];   // the far spars' colour and radius against the near tubes'
+  // the painted parts' kinds (aMoP.y): plain paint; a glass wall on a lit room (mullions, a transom, the diners after dark);
+  // a canopy's fabric (ribs, sag, weave); plain glass; a matte canvas; a floor under a lamp
+  const MO_K = { plain: 0, room: 1, fabric: 2, glass: 3, matte: 4, floor: 5 };   // floor: lit by a lamp over it, its own colour times e
+  // which windows are lit after dark (one hash for both levels, in plain float steps so the GLSL agrees with this)
+  const moWinLit = (i, side) => { const a = (i * 0.618034 + side * 0.2113 + 0.37) % 1, b = (a * a * 23.17 + a * 3.31) % 1; return [a > 0.14 ? 1 : 0, b]; };
   function moshuluBuild(b, ob) {
     const t0 = performance.now(), W = TERRAIN.water, phone = isTouch;
     // ---- her frame: a toward the bow (the outline's sharper end; the counter is round), p to starboard
@@ -22366,6 +22382,13 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       return hbDeck((s - lo) / (hi - lo) * Ld) * f;
     };
     MOSHULU.frame = { O, ax, az, px, pz, Ld, W };
+    {   // her own ground, for 'Dressing the storefronts': OSM's restaurant record (the Moshulu) lies on her outline, and the
+      // Round 189 shopfront stood flat against her port side amidships (the review); her frame's box padded 2 m
+      let hm = 0; for (let i = 0; i < nHB; i++) hm = Math.max(hm, hbT[i]);
+      const ring = [[-2, -hm - 2], [Ld + 2, -hm - 2], [Ld + 2, hm + 2], [-2, hm + 2]].map(([s, t]) => [O[0] + ax * s + px * t, O[1] + az * s + pz * t]);
+      const xs = ring.map((q) => q[0]), zs = ring.map((q) => q[1]);
+      MOSHULU.own = { ring, bb: [Math.min(...xs), Math.max(...xs), Math.min(...zs), Math.max(...zs)] };
+    }
     const C = {}; for (const k in MO_PAL) C[k] = moCol(MO_PAL[k]);
     const U = moU;
     U.uMoBlue.value.copy(C.blue); U.uMoRed.value.copy(C.red); U.uMoWhite.value.copy(C.white); U.uMoTeak.value.copy(C.teak);
@@ -22444,7 +22467,13 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // the gangways' doors in her port side (OSM's two gangways, 1092686622 covered and 922192617), for the hull's shader
     const gang = [[311, 371], [311, 332]].map(([x, z]) => local(x, z)[0]).filter((s) => s > 5 && s < Ld - 5);
     U.uMoDoor.value.set(gang[0] != null ? gang[0] : -99, gang[1] != null ? gang[1] : -99, 2.9, 5.1);
-    U.uMoWin.value.set(0.27 * Ld, 0.84 * Ld, 2.9, 4.5);
+    U.uMoWin.value.set(0, 0, 0, 4.5);   // (w: the counter's portholes' datum, 0.5 m under them)
+    // the window runs (MO_WIN): first centre, pitch, panes, first height; rise, half width, half height, the run's first index
+    let wiOff = 0;
+    const winRuns = MO_WIN.map(([f0, f1, n, y0, rise, hw, hh]) => { const r = { s0: f0 * Ld, p: n > 1 ? (f1 - f0) * Ld / (n - 1) : 0, n, y0, rise, hw, hh, off: wiOff }; wiOff += n; return r; });
+    winRuns.forEach((r, i) => { U.uMoRun.value[i].set(r.s0, r.p, r.n, r.y0); U.uMoRunB.value[i].set(r.rise, r.hw, r.hh, r.off); });
+    U.uMoFrame.value.copy(C.winFrame);
+    const doorClear = (s) => gang.every((g) => Math.abs(s - g) >= 1.75);   // a port window whose centre is this near a door gives way to it
     const hullG = new THREE.BufferGeometry();
     hullG.setAttribute('position', new THREE.Float32BufferAttribute(H.p, 3));
     hullG.setAttribute('normal', new THREE.Float32BufferAttribute(H.n, 3));
@@ -22452,10 +22481,15 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     hullG.setAttribute('aMo', new THREE.Float32BufferAttribute(H.mo, 2));
     hullG.computeBoundingSphere();
     // ======== the painted parts: masts, yards, tops, the canopies, the Deck Bar, the boats, the umbrellas, the gangways
-    const PP = [], FP = [];   // near, far: { g, c, e (lit after dark), gl (glass) }
-    const pp = (g, c, e, gl) => { PP.push({ g, c, e: e || 0, gl: gl || 0 }); return g; };
-    const fp = (g, c, e) => { FP.push({ g, c, e: e || 0, gl: 0 }); return g; };
-    const ribsFar = [], ribF = (A, B, r, c) => ribsFar.push([A, B, r, c]);   // the far level's spars: ribbons, which hold their 0.6 px
+    // near, far: { g, c, e (lit after dark), k (the kind: MO_K), fr (a part's own surface frame, the vertex's [u, v] in
+    // metres: along a glass wall and up from its sill, or along and across a canopy) }
+    const PP = [], FP = [];
+    const pp = (g, c, e, k, fr) => { PP.push({ g, c, e: e || 0, k: k || 0, fr: fr || null }); return g; };
+    const fp = (g, c, e, k, fr) => { FP.push({ g, c, e: e || 0, k: k || 0, fr: fr || null }); return g; };
+    const sOf = (P) => (P.x - O[0]) * ax + (P.z - O[1]) * az, tOf = (P) => (P.x - O[0]) * px + (P.z - O[1]) * pz;
+    // the far level's spars: ribbons, which hold their 0.6 px; unlit, so drawn at the shade a lit buff spar averages over its
+    // round (MO_SPAR_FAR), on the near tubes' mean radius (the review: brighter and thicker than the near masts at the switch)
+    const ribsFar = [], ribF = (A, B, r, c) => ribsFar.push([A, B, r * MO_SPAR_FAR[1], c.clone().multiplyScalar(MO_SPAR_FAR[0])]);
     const tube = (A, B, r0, r1, seg) => {
       const d = new V3().subVectors(B, A), len = d.length();
       const g = new THREE.CylinderGeometry(r1, r0, Math.max(len, 1e-3), seg || 8, 1, false);
@@ -22467,6 +22501,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     const lbox = (s, t, y, ds, dy, dt) => { const g = new THREE.BoxGeometry(ds, dy, dt); g.applyMatrix4(MB); const P = L(s, t, y + dy / 2); g.translate(P.x, P.y, P.z); return g; };
     const place = (g, s, t, y) => { g.applyMatrix4(MB); const P = L(s, t, y); g.translate(P.x, P.y, P.z); return g; };
     const mast = MO_MASTS.map((m) => { const s = m.f * Ld; return Object.assign({}, m, { s, y0: mainY(s), dk: deckY(s) }); });
+    // a floodlight's lens: a plate under its housing facing down, lit after dark, so it shows only to an eye below it (the
+    // review: Round 195's lamps were sprites, white moons at 480 m and half-black 'eyeballs' cut by their housings close to)
+    const lens = (s, y) => pp(place(new THREE.PlaneGeometry(0.4, 0.5).rotateX(Math.PI / 2), s, 0, y - 0.012), C.lamp, 3.0);
     const yardArms = [];   // [mast index, yard index, port arm, starboard arm]
     const braceDir = new V3(px * Math.cos(MO_BRACE) + ax * Math.sin(MO_BRACE), 0, pz * Math.cos(MO_BRACE) + az * Math.sin(MO_BRACE));
     for (let mi = 0; mi < mast.length; mi++) {
@@ -22480,7 +22517,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         pp(lbox(s + 0.35, 0, y0 + Hh * 0.355, 3.0, 0.24, 4.6), C.buff);   // the top
         for (const d of [-0.5, 0.55]) pp(lbox(s + d, 0, y0 + Hh * 0.635, 0.16, 0.16, 3.6), C.buff);   // the crosstrees
         for (const d of [-1.2, 1.2]) { pp(lbox(s, d, m.dk, 2.4, 0.9, 0.14), C.wood); pp(lbox(s + d, 0, m.dk, 0.14, 0.9, 2.4), C.wood); }   // the fife rail
-        pp(lbox(s - 0.5, 0, y0 + Hh * 0.31, 0.5, 0.35, 0.6), C.ink);   // the deck floodlight under the top
+        pp(lbox(s - 0.5, 0, y0 + Hh * 0.31, 0.5, 0.35, 0.6), C.ink); lens(s - 0.5, y0 + Hh * 0.31);   // the deck floodlight under the top
         ribF(L(s, 0, m.dk - 0.3), at(0.37), 0.5, C.buff); ribF(at(0.33), at(1.0), 0.26, C.buff);
         MO_YARDS.forEach(([f, len0, r], yi) => {
           const len = len0 * m.yk, c = L(s + 0.55, 0, y0 + Hh * f), half = braceDir.clone().multiplyScalar(len / 2);
@@ -22494,9 +22531,14 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         pp(tube(at(0.48), at(1.0), 0.22, 0.09, 8), C.buff);
         pp(place(new THREE.CylinderGeometry(0.18, 0.18, 0.16, 8), s, 0, y0 + Hh + 0.08), C.white);
         pp(lbox(s + 0.3, 0, y0 + Hh * 0.5, 2.2, 0.2, 3.0), C.buff);
-        pp(lbox(s - 0.5, 0, y0 + Hh * 0.3, 0.5, 0.35, 0.6), C.ink);
+        pp(lbox(s - 0.5, 0, y0 + Hh * 0.3, 0.5, 0.35, 0.6), C.ink); lens(s - 0.5, y0 + Hh * 0.3);
         const spar = (yf, len, deg, r) => { const A = L(s - 0.6, 0, y0 + yf), d = (deg * Math.PI) / 180, B = L(s - 0.6 - len * Math.cos(d), 0, y0 + yf + len * Math.sin(d)); pp(tube(A, B, r, r * 0.6, 8), C.buff); ribF(A, B, r * 0.85, C.buff); return B; };
-        m.boomEnd = spar(m.dk - y0 + 2.2, 17, 6, 0.24); m.gaff1 = spar(Hh * 0.42, 14.5, 23, 0.2); m.gaff2 = spar(Hh * 0.64, 10.5, 35, 0.17);
+        // measured on Commons PA1 (its after half): the boom 15.5 m, level, 2.2 m over the poop; the lower gaff's heel a fifth
+        // of the way from the poop to the truck, 15.2 m long at 23 degrees; the upper's at 0.42 of it, 12.3 m at 41 degrees
+        // (Round 195 had the gaffs at 0.42 and 0.64 and the upper stood out of the topmast, the review)
+        const hj = Hh - (m.dk - y0);
+        m.boomEnd = spar(m.dk - y0 + 2.2, 15.5, 1, 0.24); m.gaff1 = spar(m.dk - y0 + hj * 0.195, 15.2, 23, 0.2); m.gaff2 = spar(m.dk - y0 + hj * 0.42, 12.3, 41, 0.17);
+        MOSHULU.jig = { deck: W + m.dk, truck: W + y0 + Hh, boom: m.boomEnd.toArray(), gaff1: m.gaff1.toArray(), gaff2: m.gaff2.toArray() };
         ribF(L(s, 0, m.dk - 0.3), at(1.0), 0.28, C.buff);
       }
     }
@@ -22506,36 +22548,36 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     pp(tube(bsA, bsB, 0.42, 0.16, 10), C.buff); ribF(bsA, bsB, 0.3, C.buff);
     const bsAt = (f) => bsA.clone().lerp(bsB, f);
     // ---- the deck's furniture
-    const roofGable = (s0, s1, hw, yE, yR, col) => {   // a low gable along s: two slopes and their ends, as thin plates
-      const out = [];
+    const roofGable = (s0, s1, hw, yE, yR, col, k) => {   // a low gable along s: two slopes and their ends, as thin plates
+      const out = [], fab = k === MO_K.fabric ? (P) => [sOf(P), tOf(P)] : null;
       for (const sg of [1, -1]) {
         const g = new THREE.BufferGeometry(), A = L(s0 - 0.3, 0, yR), B = L(s1 + 0.3, 0, yR), Cc = L(s1 + 0.3, sg * (hw + 0.35), yE), D = L(s0 - 0.3, sg * (hw + 0.35), yE);
         const pts = sg > 0 ? [A, Cc, B, A, D, Cc] : [A, B, Cc, A, Cc, D];
         g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flatMap((v) => [v.x, v.y, v.z]), 3));
         g.computeVertexNormals();
-        out.push(pp(g, col));
+        out.push(pp(g, col, 0, k, fab));
       }
       for (const [s, sg2] of [[s0 - 0.3, -1], [s1 + 0.3, 1]]) {
         const g = new THREE.BufferGeometry(), A = L(s, -(hw + 0.35), yE), B = L(s, hw + 0.35, yE), T = L(s, 0, yR);
         const pts = sg2 > 0 ? [A, T, B] : [A, B, T];
         g.setAttribute('position', new THREE.Float32BufferAttribute(pts.flatMap((v) => [v.x, v.y, v.z]), 3));
         g.computeVertexNormals();
-        pp(g, col);
+        pp(g, col, 0, k, fab);
       }
       return out;
     };
-    const tent = (s0, s1, hw, yE, yR) => {   // a tented deck: black posts and gable, glass walls lit after dark
-      const y0 = mainY((s0 + s1) / 2);
-      roofGable(s0, s1, hw, y0 + yE, y0 + yR, C.black);
+    const tent = (s0, s1, hw, yE, yR) => {   // a tented deck: black posts and a fabric gable, glass walls on a lit room after dark
+      const y0 = mainY((s0 + s1) / 2), sill = W + y0 + 0.35;
+      roofGable(s0, s1, hw, y0 + yE, y0 + yR, C.black, MO_K.fabric);
       const nP = Math.max(2, Math.round((s1 - s0) / 4));
       for (let i = 0; i <= nP; i++) { const s = s0 + (s1 - s0) * i / nP; for (const sg of [1, -1]) pp(lbox(s, sg * hw, y0, 0.16, yE, 0.16), C.black); }
       for (const sg of [1, -1]) {
         pp(lbox((s0 + s1) / 2, sg * hw, y0, s1 - s0, 0.35, 0.1), C.black);
-        pp(lbox((s0 + s1) / 2, sg * (hw - 0.04), y0 + 0.35, s1 - s0 - 0.2, yE - 0.55, 0.06), C.glass, 1, 1);
+        pp(lbox((s0 + s1) / 2, sg * (hw - 0.04), y0 + 0.35, s1 - s0 - 0.2, yE - 0.55, 0.06), C.glass, 1, MO_K.room, (P) => [sOf(P) - s0, P.y - sill]);
         pp(lbox((s0 + s1) / 2, sg * hw, y0 + yE - 0.2, s1 - s0, 0.22, 0.2), C.black);
       }
       for (const s of [s0, s1]) {
-        pp(lbox(s, 0, y0 + 0.35, 0.06, yE - 0.55, 2 * hw - 0.2), C.glass, 1, 1);
+        pp(lbox(s, 0, y0 + 0.35, 0.06, yE - 0.55, 2 * hw - 0.2), C.glass, 1, MO_K.room, (P) => [tOf(P) + hw, P.y - sill]);
         pp(lbox(s, 0, y0, 0.1, 0.35, 2 * hw), C.black);
       }
       pp(lbox((s0 + s1) / 2, 0, y0 + yE - 0.35, s1 - s0 - 0.4, 0.08, 2 * hw - 0.4), C.lamp, 0.5);   // its ceiling's lights
@@ -22560,7 +22602,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       for (const f of [0.455, 0.52]) {
         const s2 = f * Ld, y2 = mainY(s2);
         pp(lbox(s2, 0, y2, 2.4, 0.7, 1.5), C.white);
-        pp(lbox(s2, 0, y2 + 0.7, 2.2, 0.08, 1.3), C.glass, 0.6, 1);
+        pp(lbox(s2, 0, y2 + 0.7, 2.2, 0.08, 1.3), C.glass, 0.6, MO_K.glass);
       }
       pp(place(new THREE.CylinderGeometry(0.45, 0.45, 2.4, 10).rotateX(Math.PI / 2), 0.93 * Ld, 0, deckY(0.93 * Ld) + 0.6), C.ink);
       for (const [f, sg] of [[0.43, 1], [0.43, -1], [0.68, 1], [0.68, -1]]) {
@@ -22569,24 +22611,25 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         pp(place(new THREE.SphereGeometry(0.42, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2).rotateZ(Math.PI / 2), s2, t, y2 + 1.55), C.white);
       }
     }
-    {   // a white lifeboat in davits each side at the poop's break
+    {   // a white lifeboat in davits each side at the poop's break, under a dark cover (Commons 20240529)
       const s = 0.2 * Ld;
       for (const sg of [1, -1]) {
         const t = sg * (inHb(s) - 1.15), y0 = mainY(s) + 2.55;
         const g = new THREE.SphereGeometry(1, 14, 6, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2);
         g.scale(3.6, 0.95, 1.05); pp(place(g, s, t, y0), C.lifeboat);
         pp(lbox(s, t, y0 - 0.02, 7.0, 0.1, 2.0), C.white);
-        pp(lbox(s, t, y0 + 0.06, 6.6, 0.08, 1.7), C.canvas);   // her canvas cover
+        { const cv = new THREE.CylinderGeometry(1.08, 1.08, 6.9, 10, 1, false, 0, Math.PI).rotateZ(Math.PI / 2); cv.scale(1, 0.72, 1); pp(place(cv, s, t, y0 - 0.12), C.cover, 0, MO_K.matte); }   // her cover, a hood over the gunwale
         for (const d of [-2.6, 2.6]) MOSHULU.davits.push([L(s + d, sg * (inHb(s) - 0.05), mainY(s) + 1.25), L(s + d, sg * (inHb(s) - 0.05), y0 + 1.9), L(s + d, t, y0 + 2.1)]);
         fp(lbox(s, t, y0 - 0.8, 7.0, 0.8, 2.0), C.lifeboat);
       }
     }
     // white market umbrellas on the poop, the open deck amidships and the forecastle (the 2017 deck photographs)
+    const UMB_PROFILE = [[0, 0.62], [0.35, 0.58], [0.75, 0.46], [1.1, 0.27], [1.42, 0.02], [1.45, -0.04]].map(([r, y]) => new THREE.Vector2(r, y));   // a canvas that droops to its hem
     const UMB = [[0.115, 3.3], [0.115, -3.3], [0.155, 3.0], [0.155, -3.0], [0.43, 3.4], [0.47, -3.0], [0.505, 3.6], [0.745, 3.5], [0.745, -3.5], [0.9, 1.9], [0.9, -1.9]];
     const umbTops = [];
     for (const [f, t] of UMB) {
-      const s = f * Ld, y0 = deckY(s), g = new THREE.ConeGeometry(1.45, 0.55, 8, 1, true);
-      pp(place(g, s, t, y0 + 2.5), C.canvas);
+      const s = f * Ld, y0 = deckY(s), g = new THREE.LatheGeometry(UMB_PROFILE, 12);
+      pp(place(g, s, t, y0 + 2.2), C.canvas, 0, MO_K.matte);
       umbTops.push([L(s, t, y0), L(s, t, y0 + 2.75)]);
       pp(lbox(s, t, y0, 0.8, 0.75, 0.8), C.woodDark);   // a table
     }
@@ -22613,15 +22656,32 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         const deck = new THREE.BoxGeometry(len, 0.18, gg.w); deck.rotateZ(tilt); deck.rotateY(ry); deck.translate(mid.x, mid.y, mid.z);
         pp(deck, C.alu);
         const nx = Math.sin(ry), nz = Math.cos(ry);   // across the gangway
-        if (gg.covered) {
+        if (gg.covered) {   // (blog b2) black side panels with a rail, open above between black frames, a carpeted walk lit from
+          // the ceiling, the WELCOME ABOARD fascia over its open shore end, a red barrel awning over the door in her side
+          const along = (g, y, dx) => { g.rotateZ(tilt); g.rotateY(ry); g.translate(mid.x + (dx || 0) * nx, mid.y + y, mid.z + (dx || 0) * nz); return g; };
           for (const sg of [1, -1]) {
-            const w2 = new THREE.BoxGeometry(len, 1.1, 0.08); w2.rotateZ(tilt); w2.rotateY(ry); w2.translate(mid.x + nx * sg * gg.w / 2, mid.y + 0.64, mid.z + nz * sg * gg.w / 2); pp(w2, C.black);
-            const gl = new THREE.BoxGeometry(len, 1.1, 0.05); gl.rotateZ(tilt); gl.rotateY(ry); gl.translate(mid.x + nx * sg * gg.w / 2, mid.y + 1.74, mid.z + nz * sg * gg.w / 2); pp(gl, C.glass, 0.7, 1);
+            pp(along(new THREE.BoxGeometry(len, 1.1, 0.08), 0.64, sg * gg.w / 2), C.black);
+            pp(along(new THREE.BoxGeometry(len, 0.07, 0.14), 1.24, sg * (gg.w / 2 - 0.03)), C.black);
+            const nF = Math.max(2, Math.round(len / 1.9));
+            for (let i = 0; i <= nF; i++) { const P = shoreP.clone().lerp(hullP, Math.min(i / nF, 0.97)); pp(new THREE.BoxGeometry(0.12, 1.16, 0.12).translate(P.x + nx * sg * gg.w / 2, P.y + 1.76, P.z + nz * sg * gg.w / 2), C.black); }
           }
-          const roof = new THREE.BoxGeometry(len + 0.6, 0.16, gg.w + 0.5); roof.rotateZ(tilt); roof.rotateY(ry); roof.translate(mid.x, mid.y + 2.42, mid.z); pp(roof, C.black);
-          const lit = new THREE.BoxGeometry(len, 0.04, gg.w - 0.4); lit.rotateZ(tilt); lit.rotateY(ry); lit.translate(mid.x, mid.y + 2.32, mid.z); pp(lit, C.lamp, 0.8);
-          MOSHULU.sign = { at: shoreP.clone().add(new V3(-0.05, 2.95, 0)), ry, nx, nz, w: gg.w + 0.4 };
+          for (let i = 0, nF = Math.max(2, Math.round(len / 1.9)); i <= nF; i++) { const P = shoreP.clone().lerp(hullP, Math.min(i / nF, 0.97)); pp(new THREE.BoxGeometry(0.12, 0.14, gg.w).rotateY(ry).translate(P.x, P.y + 2.28, P.z), C.black); }
+          const roof = along(new THREE.BoxGeometry(len + 0.6, 0.16, gg.w + 0.5), 2.42); pp(roof, C.black);
+          pp(along(new THREE.BoxGeometry(len, 0.04, gg.w - 0.4), 2.32), C.lamp, 0.8);
+          pp(along(new THREE.BoxGeometry(len - 0.1, 0.03, gg.w - 0.3), 0.105), C.carpet, 2.2, MO_K.floor);   // the carpet, in the ceiling's light after dark
+          pp(new THREE.BoxGeometry(0.24, 0.84, gg.w + 0.5).rotateY(ry).translate(shoreP.x + 0.08, shoreP.y + 2.95, shoreP.z), C.black);   // the fascia's box
+          MOSHULU.sign = { at: shoreP.clone().add(new V3(-0.05, 2.95, 0)), ry, nx, nz, w: gg.w + 0.4, s: sH };
           fp(roof.clone(), C.black);
+          {   // the barrel awning: a half round of red canvas over the door, standing out over the gangway's roof (b1, b2)
+            const r = 1.25, out = 1.35, y = 5.55, h0 = hbAt(sH, y + 0.6), P = [], seg = 12;
+            const at = (th, dd) => L(sH + r * Math.cos(th), -(h0 + dd), y + r * Math.sin(th)), cE = L(sH, -(h0 + out), y);
+            for (let i = 0; i < seg; i++) {
+              const a = Math.PI * i / seg, b = Math.PI * (i + 1) / seg, q = [at(a, -0.05), at(b, -0.05), at(b, out), at(a, out)];
+              for (const k of [0, 1, 2, 0, 2, 3, 3, 2, 4]) { const v = k === 4 ? cE : q[k]; P.push(v.x, v.y, v.z); }
+            }
+            const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.computeVertexNormals();
+            pp(g, C.awning, 0, MO_K.matte);
+          }
         } else {
           for (const sg of [1, -1]) for (const hgt of [0.55, 1.05]) rib(shoreP.clone().add(new V3(nx * sg * gg.w / 2, hgt, nz * sg * gg.w / 2)), hullP.clone().add(new V3(nx * sg * gg.w / 2, hgt, nz * sg * gg.w / 2)), 0.025, C.promRail);
           for (let i = 0; i <= 4; i++) for (const sg of [1, -1]) { const P = shoreP.clone().lerp(hullP, i / 4).add(new V3(nx * sg * gg.w / 2, 0, nz * sg * gg.w / 2)); rib(P, P.clone().add(new V3(0, 1.05, 0)), 0.025, C.promRail); }
@@ -22711,6 +22771,23 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       for (const [B0, T] of umbTops) rib(B0, T, 0.03, C.wood);
       for (const [D0, D1, D2] of MOSHULU.davits) { rib(D0, D1, 0.07, C.white); rib(D1, D2, 0.06, C.white); rib(D2, D2.clone().add(new V3(0, -1.0, 0)), 0.015, C.rope); }
     }
+    for (const sg of [1, -1]) {   // a hawse pipe each bow, its rim proud of the plating, the anchor's chain hanging from it up over the rail (b1)
+      const s = Ld - 6.2, y = ys(s) - 3.2, A = L(s - 0.8, sg * hbAt(s - 0.8, y), y), B = L(s + 0.8, sg * hbAt(s + 0.8, y), y);
+      const out = new V3().crossVectors(B.clone().sub(A).normalize(), UPV).normalize();
+      if ((out.x * px + out.z * pz) * sg < 0) out.negate();
+      const H0 = L(s, sg * hbAt(s, y), y), q = new THREE.Quaternion().setFromUnitVectors(new V3(0, 0, 1), out);
+      pp(new THREE.TorusGeometry(0.34, 0.08, 6, 14).applyQuaternion(q).translate(H0.x + out.x * 0.05, H0.y, H0.z + out.z * 0.05), C.ink);
+      pp(new THREE.CircleGeometry(0.31, 14).applyQuaternion(q).translate(H0.x + out.x * 0.03, H0.y, H0.z + out.z * 0.03), C.black);
+      const top = L(s - 4.6, sg * (hbAt(s - 4.6, ys(s - 4.6)) + 0.1), ys(s - 4.6) + 0.12);
+      const c0 = H0.clone().add(out.clone().multiplyScalar(0.12)).add(new V3(0, -0.18, 0));
+      let Pc = c0;
+      for (let i = 1; i <= 10; i++) {   // hanging clear of her flare: a link the chord would put inside her is pushed out to her side
+        const u = i / 10, Q = c0.clone().lerp(top, u); Q.y -= 0.7 * 4 * u * (1 - u);
+        const [qs, qt] = local(Q.x, Q.z), hb = hbAt(qs, Q.y - W) + 0.08;
+        if (Math.abs(qt) < hb) Q.copy(L(qs, sg * hb, Q.y - W));
+        rib(Pc, Q, 0.05, C.chain); Pc = Q;
+      }
+    }
     // pipe rails round the poop and the forecastle, and a single rail over the main deck's bulwarks
     for (const sg of [1, -1]) {
       const run = (s0, s1, hs, posts) => {
@@ -22729,7 +22806,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     for (const s of [sP, sF]) for (let t = -inHb(s); t <= inHb(s) + 0.01; t += inHb(s) / 3) { const P = L(s, t, deckY(s) + 0.02); rib(P, P.clone().add(new V3(0, 1.0, 0)), 0.025, C.rail); }
     for (const s of [sP, sF]) rib(L(s, -inHb(s), deckY(s) + 1.0), L(s, inHb(s), deckY(s) + 1.0), 0.025, C.rail);
     // ======== the festoons: bulbs from the bowsprit's end over every truck to the taffrail (Commons PA1 shows their swags)
-    const bulbs = [], lampPts = [];
+    const bulbs = [], bulbT = [];   // each bulb, and the step to the next along its string (the shader's pitch on the screen)
     {
       const trucks = mast.map((m) => L(m.s, 0, m.y0 + m.H + 0.2));
       const chain = [bsB, trucks[0], trucks[1], trucks[2], trucks[3], L(0.6, 0, ys(0.6) + 1.1)];
@@ -22737,27 +22814,35 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       for (let i = 0; i < chain.length - 1; i++) {
         const A = chain[i], B = chain[i + 1], len = A.distanceTo(B), n = Math.max(4, Math.round(len / 0.75)), pts = [];
         sag(A, B, drops[i], Math.max(6, Math.round(len / 3)), 0.008, C.wire, null);
-        for (let k = 1; k < n; k++) { const u = k / n, Q = A.clone().lerp(B, u); Q.y -= drops[i] * 4 * u * (1 - u); bulbs.push(Q); }
+        for (let k = 1; k < n; k++) {
+          const u = k / n, Q = A.clone().lerp(B, u); Q.y -= drops[i] * 4 * u * (1 - u); bulbs.push(Q);
+          const T = new V3().subVectors(B, A).multiplyScalar(1 / n); T.y -= drops[i] * 4 * (1 - 2 * u) / n; bulbT.push(T);
+        }
       }
-      // the deck floodlights under each top
-      for (let mi = 0; mi < mast.length; mi++) { const m = mast[mi]; lampPts.push(L(m.s - 0.5, 0, m.y0 + m.H * (m.sq ? 0.31 : 0.3) - 0.1)); U.uMoMast.value[mi].set(L(m.s, 0, 0).x, L(m.s, 0, 0).z, 0, m.sq ? 9.0 : 7.0); }
+      // the deck floodlights' pools, for the hull's shader (their lenses are in the painted parts)
+      for (let mi = 0; mi < mast.length; mi++) { const m = mast[mi]; U.uMoMast.value[mi].set(L(m.s, 0, 0).x, L(m.s, 0, 0).z, 0, m.sq ? 9.0 : 7.0); }
     }
     // ======== the meshes
     const paintMat = moshuluPaintMat(), hullMat = moshuluHullMat();
     const mergePaint = (list) => {
       let n = 0;
       const gs = list.map((q) => { let g = q.g.index ? q.g.toNonIndexed() : q.g; if (!g.attributes.normal) g.computeVertexNormals(); n += g.attributes.position.count; return [g, q]; });
-      const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), em = new Float32Array(n * 2);
+      const pos = new Float32Array(n * 3), nor = new Float32Array(n * 3), col = new Float32Array(n * 3), em = new Float32Array(n * 4);
       let o = 0;
+      const P = new V3();
       for (const [g, q] of gs) {
-        const c = g.attributes.position.count;
-        pos.set(g.attributes.position.array.subarray(0, c * 3), o * 3); nor.set(g.attributes.normal.array.subarray(0, c * 3), o * 3);
-        for (let i = 0; i < c; i++) { col[(o + i) * 3] = q.c.r; col[(o + i) * 3 + 1] = q.c.g; col[(o + i) * 3 + 2] = q.c.b; em[(o + i) * 2] = q.e; em[(o + i) * 2 + 1] = q.gl; }
+        const c = g.attributes.position.count, pa = g.attributes.position.array;
+        pos.set(pa.subarray(0, c * 3), o * 3); nor.set(g.attributes.normal.array.subarray(0, c * 3), o * 3);
+        for (let i = 0; i < c; i++) {
+          col[(o + i) * 3] = q.c.r; col[(o + i) * 3 + 1] = q.c.g; col[(o + i) * 3 + 2] = q.c.b;
+          const uv = q.fr ? q.fr(P.set(pa[i * 3], pa[i * 3 + 1], pa[i * 3 + 2])) : null;
+          em[(o + i) * 4] = q.e; em[(o + i) * 4 + 1] = q.k; em[(o + i) * 4 + 2] = uv ? uv[0] : 0; em[(o + i) * 4 + 3] = uv ? uv[1] : 0;
+        }
         o += c;
       }
       const g = new THREE.BufferGeometry();
       g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-      g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('aMoP', new THREE.BufferAttribute(em, 2));
+      g.setAttribute('color', new THREE.BufferAttribute(col, 3)); g.setAttribute('aMoP', new THREE.BufferAttribute(em, 4));   // e, kind, u, v
       g.computeBoundingSphere();
       return g;
     };
@@ -22779,15 +22864,25 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       const boot = (s) => 1.0 + 0.45 * (s / Ld) ** 3;
       const bootB = (s) => Math.max(yBot(s), boot(s));
       band(yBot, bootB, C.red); band(bootB, (s) => ys(s) - 0.12, C.blue); band((s) => ys(s) - 0.12, (s) => ys(s) + 0.07, C.white);
-      {   // the restaurant's windows as one band a side, lit after dark (the near hull draws them one by one)
-        const P = [], s0 = 0.27 * Ld, s1 = 0.84 * Ld, n = 12;
-        for (const sg of [1, -1]) for (let i = 0; i < n; i++) {
-          const sa = s0 + (s1 - s0) * i / n, sb = s0 + (s1 - s0) * (i + 1) / n, ha = hbAt(sa, 4.5) + 0.04, hb2 = hbAt(sb, 4.5) + 0.04;
-          const q = [L(sa, sg * ha, 4.1), L(sb, sg * hb2, 4.1), L(sb, sg * hb2, 4.9), L(sa, sg * ha, 4.9)], tri = sg > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2];
-          for (const k of tri) P.push(q[k].x, q[k].y, q[k].z);
+      {   // the restaurant's windows, each its own quad in the near hull's runs, lit after dark as the near hull lights the
+        // same window (moWinLit), so nothing changes but the frames at the switch (the review: one lit strip a side popped)
+        const lit = [[], []], dark = [];
+        for (const sg of [1, -1]) for (const r of winRuns) for (let k = 0; k < r.n; k++) {
+          const sc = r.s0 + k * r.p, yc = r.y0 + r.rise * k / Math.max(1, r.n - 1);
+          if (sg < 0 && !doorClear(sc)) continue;
+          const sa = sc - r.hw - MO_WIN_FR, sb = sc + r.hw + MO_WIN_FR, ya = yc - r.hh - MO_WIN_FR, yb = yc + r.hh + MO_WIN_FR;
+          const q = [L(sa, sg * (hbAt(sa, yc) + 0.04), ya), L(sb, sg * (hbAt(sb, yc) + 0.04), ya), L(sb, sg * (hbAt(sb, yc) + 0.04), yb), L(sa, sg * (hbAt(sa, yc) + 0.04), yb)];
+          const [on, b] = moWinLit(r.off + k, sg), P = on ? lit[b > 0.5 ? 1 : 0] : dark;
+          for (const j of sg > 0 ? [0, 1, 2, 0, 2, 3] : [0, 2, 1, 0, 3, 2]) P.push(q[j].x, q[j].y, q[j].z);
         }
-        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.computeVertexNormals();
-        fp(g, C.glass, 0.75);
+        // the near hull's lit pane is 1.15 (0.45 + 0.55 b) of the paint's 1.1 a unit, its frame (a fifth of the quad) unlit:
+        // two levels of b
+        MOSHULU.winFar = (lit[0].length + lit[1].length + dark.length) / 18;
+        for (const [P, e] of [[lit[0], 0.5], [lit[1], 0.72], [dark, 0]]) {
+          if (!P.length) continue;
+          const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.computeVertexNormals();
+          fp(g, C.glass, e);
+        }
       }
       const D = [];
       for (let i = 0; i < NSf; i++) {
@@ -22820,21 +22915,35 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     const rigG = ribGeo(ribs), rigM = new THREE.Mesh(rigG, rigMat); rigM.name = 'moshulu-rigging'; rigM.renderOrder = 2;
     const sparG = ribGeo(ribsFar), sparM = new THREE.Mesh(sparG, rigMat); sparM.name = 'moshulu-spars'; sparM.renderOrder = 2;
     // the bulbs and the floodlights' lamps
-    const nB = bulbs.length + lampPts.length, bp = new Float32Array(nB * 3), bc = new Float32Array(nB * 3), bz = new Float32Array(nB);
-    bulbs.concat(lampPts).forEach((P, i) => {
-      const lamp = i >= bulbs.length, k = lamp ? 1.6 : 0.9 + 0.2 * hash01(i * 3.17);
-      bp[i * 3] = P.x; bp[i * 3 + 1] = P.y; bp[i * 3 + 2] = P.z;
-      const c = lamp ? C.lamp : C.bulb; bc[i * 3] = Math.min(1, c.r * 1.2) * k; bc[i * 3 + 1] = Math.min(1, c.g * 1.2) * k; bc[i * 3 + 2] = Math.min(1, c.b * 1.2) * k;
-      bz[i] = lamp ? 2.4 : 1.0;
+    // the bulbs: one point each, never wider than 0.55 of the step to the next bulb as the screen draws it (the string's own
+    // tangent, so a string seen along its length tightens too) nor under 1.5 px, faded by the share of that 1.5 px's width it
+    // would take, so a far string is a line of separate warm bulbs, then a line of even amber light (as bright from Camden
+    // as from 300 m: the overlaps sum to about half a bulb), never a white rope where the points overlap and saturate (the
+    // review: on a phone, with no tone map, a 4 to 7 px rope at 90 and at 300 m)
+    const nB = bulbs.length, bp = new Float32Array(nB * 3), bc = new Float32Array(nB * 3), bz = new Float32Array(nB), bt = new Float32Array(nB * 3);
+    bulbs.forEach((P, i) => {
+      const k = 0.9 + 0.2 * hash01(i * 3.17), T = bulbT[i];
+      bp[i * 3] = P.x; bp[i * 3 + 1] = P.y; bp[i * 3 + 2] = P.z; bt[i * 3] = T.x; bt[i * 3 + 1] = T.y; bt[i * 3 + 2] = T.z;
+      bc[i * 3] = C.bulb.r * 0.95 * k; bc[i * 3 + 1] = C.bulb.g * 0.95 * k; bc[i * 3 + 2] = C.bulb.b * 0.95 * k;
+      bz[i] = 1.0;
     });
     const bulbG = new THREE.BufferGeometry();
-    bulbG.setAttribute('position', new THREE.BufferAttribute(bp, 3)); bulbG.setAttribute('color', new THREE.BufferAttribute(bc, 3)); bulbG.setAttribute('aMoSz', new THREE.BufferAttribute(bz, 1));
+    bulbG.setAttribute('position', new THREE.BufferAttribute(bp, 3)); bulbG.setAttribute('color', new THREE.BufferAttribute(bc, 3));
+    bulbG.setAttribute('aMoSz', new THREE.BufferAttribute(bz, 1)); bulbG.setAttribute('aMoTan', new THREE.BufferAttribute(bt, 3));
     bulbG.computeBoundingSphere();
     const bulbMat = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, sizeAttenuation: false, size: renderer.getPixelRatio() });
     bulbMat.onBeforeCompile = (sh) => {
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aMoSz;')
-        .replace('gl_PointSize = size;', 'gl_PointSize = size * aMoSz * clamp(1500.0 / max(1.0, -mvPosition.z), 1.5, 5.5);');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.a *= smoothstep(0.5, 0.12, length(gl_PointCoord - vec2(0.5)));');
+      sh.uniforms.uMoView = moU.uMoView;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aMoSz; attribute vec3 aMoTan; uniform vec2 uMoView; varying float vMoCov;')
+        .replace('gl_PointSize = size;', [
+          'vec4 moC0 = projectionMatrix * mvPosition, moC1 = projectionMatrix * (modelViewMatrix * vec4(position + aMoTan, 1.0));',
+          'vec2 moQ = (moC1.xy / max(moC1.w, 1e-3) - moC0.xy / max(moC0.w, 1e-3)) * 0.5 * uMoView;',
+          'float moPs = min(size * aMoSz * clamp(1500.0 / max(1.0, -mvPosition.z), 1.5, 5.5), 0.55 * length(moQ));',
+          'vMoCov = clamp(moPs / 1.5, 0.0, 1.0);',
+          'gl_PointSize = max(moPs, 1.5);',
+        ].join('\n'));
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nvarying float vMoCov;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.a *= vMoCov * smoothstep(0.5, 0.1, length(gl_PointCoord - vec2(0.5)));');
     };
     bulbMat.customProgramCacheKey = () => 'moshulu-bulbs';
     postRaw(bulbMat);
@@ -22869,7 +22978,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       sh.fragmentShader = sh.fragmentShader
         .replace('#include <common>', ['#include <common>',
           'uniform sampler2D uMoHull, uMoDeck; uniform vec4 uMoArt, uMoTile, uMoWin, uMoDoor; uniform vec3 uMoHullMean, uMoDeckMean, uMoBlue, uMoRed, uMoWhite, uMoTeak;',
-          'uniform float uMoW, uMoLd, uMoNight, uMoLamp; uniform vec2 uMoP; uniform vec4 uMoMast[4];',
+          'uniform float uMoW, uMoLd, uMoNight, uMoLamp; uniform vec2 uMoP; uniform vec4 uMoMast[4]; uniform vec4 uMoRun[3], uMoRunB[3]; uniform vec3 uMoFrame;',
           'varying vec2 vMo; varying vec2 vMoUv; varying vec3 vMoW; varying vec3 vMoN;',
           'float moHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }',
           'float moLum(vec3 c) { return dot(c, vec3(0.2126, 0.7152, 0.0722)); }',
@@ -22881,31 +22990,44 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           // both pictures sampled outside any branch (a kind changes between neighbouring pixels, and the mips need their derivatives)
           'vec3 moHt = texture2D(uMoHull, moHu).rgb, moDt = texture2D(uMoDeck, moDu).rgb;',
           'vec3 moHd = uMoArt.x > 0.5 ? mix(vec3(1.0), moHt / uMoHullMean, 0.45) : vec3(1.0), moDd = uMoArt.x > 0.5 ? moDt / uMoDeckMean : vec3(1.0);',
-          'float moRough = 0.42, moGlass = 0.0, moLit = 0.0;',
+          'float moRough = 0.42, moGlass = 0.0, moLit = 0.0, moSide = 0.0;',
           'vec3 moAlb;',
           'if (moK < 0.5) {',
           '  float boot = 1.0 + 0.45 * pow(clamp(moS / uMoLd, 0.0, 1.0), 3.0), fy = fwidth(moY) + 1e-4, fs = fwidth(moS) + 1e-4;',
           '  moAlb = mix(uMoRed, uMoBlue, smoothstep(boot - fy, boot + fy, moY)) * moHd;',
-          '  float side = dot(vMoN.xz, uMoP) < 0.0 ? -1.0 : 1.0;',
+          '  float side = dot(vMoN.xz, uMoP) < 0.0 ? -1.0 : 1.0; moSide = side;',
           // the doors on the port side at the gangways, framed; the windows' row along the restaurant, skipped by the doors
           '  float dd = min(abs(moS - uMoDoor.x), abs(moS - uMoDoor.y));',
           '  float door = side < 0.0 ? moBox(vec2(dd, moY - (uMoDoor.z + uMoDoor.w) * 0.5), vec2(0.8, (uMoDoor.w - uMoDoor.z) * 0.5), vec2(fs, fy)) : 0.0;',
           '  float dFr = side < 0.0 ? moBox(vec2(dd, moY - (uMoDoor.z + uMoDoor.w) * 0.5), vec2(0.92, (uMoDoor.w - uMoDoor.z) * 0.5 + 0.12), vec2(fs, fy)) - door : 0.0;',
-          '  float wc = (moS - uMoWin.x) / uMoWin.z, wi = floor(wc), inR = step(uMoWin.x, moS) * step(moS, uMoWin.y) * (side < 0.0 ? step(1.7, dd) : 1.0);',
-          '  vec2 wd = vec2((fract(wc) - 0.5) * uMoWin.z, moY - uMoWin.w);',
-          '  float win = inR * moBox(wd, vec2(0.6, 0.4), vec2(fs, fy)), wFr = inR * moBox(wd, vec2(0.68, 0.48), vec2(fs, fy)) - win;',
+          // the windows in their three runs (MO_WIN), each pane in a frame barely lighter than the navy; a port window whose
+          // centre stands within 1.75 m of a door gives way to it whole
+          '  float win = 0.0, wFr = 0.0, wi = -1.0; vec2 wq = vec2(0.0);',
+          '  for (int r = 0; r < 3; r++) {',
+          '    vec4 R = uMoRun[r], B = uMoRunB[r];',
+          '    float k = clamp(floor((moS - R.x) / max(R.y, 1e-3) + 0.5), 0.0, R.z - 1.0), sc = R.x + k * R.y;',
+          '    float ok = side < 0.0 ? step(1.75, min(abs(sc - uMoDoor.x), abs(sc - uMoDoor.y))) : 1.0;',
+          '    vec2 wd = vec2(moS - sc, moY - R.w - B.x * k / max(R.z - 1.0, 1.0));',
+          '    float wn = ok * moBox(wd, B.yz, vec2(fs, fy)), wo = ok * moBox(wd, B.yz + ' + MO_WIN_FR.toFixed(2) + ', vec2(fs, fy));',
+          '    if (wo > 0.0) { wi = B.w + k; wq = wd / B.yz; }',
+          '    win = max(win, wn); wFr = max(wFr, wo - wn);',
+          '  }',
           // three portholes a side under the poop, brass-rimmed
           '  float pc = (moS - 0.095 * uMoLd) / 2.6, pIn = step(0.0, pc) * step(pc, 3.0);',
           '  float pr = length(vec2((fract(pc) - 0.5) * 2.6, moY - (uMoWin.w + 0.5)));',
           '  float port = pIn * smoothstep(0.24 + fs, 0.24 - fs, pr), pRim = pIn * smoothstep(0.31 + fs, 0.31 - fs, pr) - port;',
           '  float glass = max(win, port);',
-          '  moAlb = mix(moAlb, vec3(0.62, 0.61, 0.58), max(wFr, 0.0));',
+          '  moAlb = mix(moAlb, uMoFrame * moHd, max(wFr, 0.0));',
           '  moAlb = mix(moAlb, vec3(0.42, 0.3, 0.13), max(pRim, 0.0));',
-          '  moAlb = mix(moAlb, vec3(0.6, 0.6, 0.58), max(dFr, 0.0));',
+          '  moAlb = mix(moAlb, uMoFrame * moHd, max(dFr, 0.0));',
           '  moAlb = mix(moAlb, vec3(0.03, 0.035, 0.04), max(glass, door));',
           '  moGlass = glass;',
-          '  float on = step(0.14, moHash(vec2(wi, side * 3.0 + 7.0)));',
-          '  moLit = (win * on * (0.45 + 0.55 * moHash(vec2(wi, side))) + port * 0.6 + door * 0.35) * uMoNight;',
+          // lit or not by moWinLit's hash (the far level's windows take the same), the glass dark tinted by day
+          '  float wa = fract(wi * 0.618034 + side * 0.2113 + 0.37), wb = fract(wa * wa * 23.17 + wa * 3.31);',
+          '  float on = step(0.14, wa) * step(0.0, wi);',
+          // the room through it: its ceiling's light at the head of the pane, its curtains drawn back to either side
+          '  float room = (0.5 + 0.5 * smoothstep(-0.5, 0.75, wq.y)) * (1.0 - 0.55 * smoothstep(0.55, 0.92, abs(wq.x)));',
+          '  moLit = (win * on * (0.45 + 0.55 * wb) * room + port * 0.6 + door * 0.35) * uMoNight;',
           '} else if (moK < 1.5) { moAlb = uMoTeak * moDd; moRough = 0.82; }',
           'else { moAlb = uMoWhite * mix(1.0, moLum(moHd), 0.3); moRough = 0.5; }',
           'diffuseColor.rgb = moAlb;',
@@ -22927,7 +23049,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           '}',
         ].join('\n'))
         .replace('#include <emissivemap_fragment>', ['#include <emissivemap_fragment>',
-          'totalEmissiveRadiance += vec3(1.0, 0.66, 0.36) * moLit * 1.15;',
+          'totalEmissiveRadiance += vec3(1.0, 0.62, 0.32) * moLit * 1.15;',
+          // the promenade's light on her port side after dark, fading up her side, a fifth of it on her river side (the
+          // review: her hull pitch black beside the lit walk; the promenade's lamps are not drawn at her berth and the lamp
+          // maps read nothing there, __dbg.lampAt, so this is her own)
+          'if (uMoLamp > 0.001 && moK < 0.5) totalEmissiveRadiance += diffuseColor.rgb * vec3(1.0, 0.78, 0.52) * (moSide < 0.0 ? 1.0 : 0.2) * (1.0 - smoothstep(1.0, 8.0, moY)) * (0.75 + 0.25 * cos(moS * 0.45)) * (1.0 - moGlass) * uMoLamp * 2.0;',
           // the floodlights under the tops wash her decks and her bulwarks after dark
           'if (uMoLamp > 0.001 && moK > 0.5) {',
           '  float pool = 0.0;',
@@ -22939,16 +23065,45 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     m.customProgramCacheKey = () => 'moshulu-hull';
     return m;
   }
-  // the painted parts' program (near and far): vertex colours, glass that shines (aMoP.y) and parts lit after dark (aMoP.x)
+  // the painted parts' program (near and far): vertex colours, parts lit after dark (aMoP.x) and each part's kind (aMoP.y,
+  // MO_K) on its own surface frame (aMoP.zw, metres): the tented decks' glass walls a lit room behind black mullions every
+  // 1.6 m and a transom, brighter under the ceiling's lights, the tables, the chairs and the diners breaking the lower third
+  // (the review: the walls glowed as flat cream slabs, lampshades); the canopies' fabric between its frame's ribs; glass
   function moshuluPaintMat() {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.04, side: THREE.DoubleSide, dithering: MAT_DITHER });
+    m.extensions = { derivatives: true };
     m.onBeforeCompile = (sh) => {
       sh.uniforms.uMoNight = nightUniform;
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aMoP; varying vec2 vMoP;')
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aMoP; varying vec4 vMoP;')
         .replace('#include <begin_vertex>', '#include <begin_vertex>\nvMoP = aMoP;');
-      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uMoNight; varying vec2 vMoP;')
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, 0.1, vMoP.y);')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += vec3(1.0, 0.72, 0.42) * vMoP.x * uMoNight * 1.1;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', ['#include <common>',
+          'uniform float uMoNight; varying vec4 vMoP;',
+          'float moN1(float x) { float i = floor(x), f = fract(x); return mix(fract(sin(i * 91.73) * 437.585), fract(sin((i + 1.0) * 91.73) * 437.585), f * f * (3.0 - 2.0 * f)); }',
+        ].join('\n'))
+        .replace('#include <color_fragment>', ['#include <color_fragment>',
+          'float moKd = floor(vMoP.y + 0.5), moMul = 0.0, moRoom = 1.0, moRough = roughness;',
+          'if (moKd > 0.5 && moKd < 1.5) {',
+          '  float u = vMoP.z, v = vMoP.w, fu = fwidth(u) + 1e-4, fv = fwidth(v) + 1e-4;',
+          '  float du = abs(fract(u / 1.6 + 0.5) - 0.5) * 1.6;',
+          '  moMul = max(max(1.0 - smoothstep(0.045, 0.045 + fu, du), 1.0 - smoothstep(0.035, 0.035 + fv, abs(v - 1.95))), 1.0 - smoothstep(0.04, 0.04 + fv, v));',
+          '  float tbl = smoothstep(0.5, 0.58, moN1(u * 0.9 + 3.0)) * (1.0 - smoothstep(0.72, 0.8, v));',
+          '  float hd = 1.05 + 0.4 * moN1(u * 3.1 + 5.0), ppl = smoothstep(0.58, 0.66, moN1(u * 1.7 + 11.0)) * (1.0 - smoothstep(hd - 0.06, hd, v));',
+          '  moRoom = mix(0.3 + 0.35 * moN1(u * 2.3), 1.0, smoothstep(0.6, 1.1, v)) * (1.0 - 0.85 * max(tbl, ppl)) * (1.0 + 0.45 * smoothstep(1.5, 2.2, v));',
+          '  diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.012), moMul);',
+          '  moRough = mix(0.1, 0.7, moMul);',
+          '} else if (moKd > 1.5 && moKd < 2.5) {',
+          // the fabric: panels between the frame's ribs every 1.5 m, each sagging a little between them, the ridge capped, a weave
+          '  float u = vMoP.z, v = vMoP.w, fu = fwidth(u) + 1e-4, fv = fwidth(v) + 1e-4;',
+          '  float du = abs(fract(u / 1.5 + 0.5) - 0.5) * 1.5;',
+          '  float rib = max(1.0 - smoothstep(0.05, 0.05 + fu, du), 1.0 - smoothstep(0.07, 0.07 + fv, abs(v)));',
+          '  float sag = 0.82 + 0.3 * smoothstep(0.0, 0.75, du), weave = 0.93 + 0.07 * moN1(u * 7.0 + floor(v * 7.0) * 3.7);',
+          '  diffuseColor.rgb = mix(diffuseColor.rgb * sag * weave, vec3(0.034, 0.036, 0.04), rib);',
+          '  moRough = mix(0.92, 0.5, rib);',
+          '} else if (moKd > 2.5 && moKd < 3.5) moRough = 0.1;',
+          'else if (moKd > 3.5 && moKd < 4.5) moRough = 0.9;',
+        ].join('\n'))
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = moRough;')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += (moKd > 4.5 ? diffuseColor.rgb * vec3(1.0, 0.8, 0.6) : vec3(1.0, 0.72, 0.42)) * vMoP.x * uMoNight * (moKd > 0.5 && moKd < 1.5 ? 0.55 * moRoom * (1.0 - moMul) : moKd > 4.5 ? 1.0 : 1.1);');
     };
     m.customProgramCacheKey = () => 'moshulu-paint';
     return m;
@@ -22977,17 +23132,32 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     return m;
   }
   // her name in gold leaf on both bows and across the counter, and the gangway's WELCOME ABOARD board (lettered by the page)
+  // four rows of one canvas, each a quarter of it: her name in gold, her name in white, the trailboards' scrollwork and the
+  // gangway's board (blog b1, b2: the board black with its letters in gold, the white name high on her port side aft of the
+  // gangway, gold scrolls either side of the stem head)
   function moshuluNames(L, hbAt, ys, Ld, ax, az, px, pz) {
-    const cv = document.createElement('canvas'), cs = isTouch ? 0.25 : 0.5; cv.width = 1024 * cs; cv.height = 512 * cs;   // 512 by 256 (0.7 MB with its mips), a phone's at half that
+    const cv = document.createElement('canvas'), cs = isTouch ? 0.25 : 0.5; cv.width = 1024 * cs; cv.height = 1024 * cs;   // 512 square (1.4 MB with its mips), a phone's at half that
     const g = cv.getContext('2d');
-    g.scale(cs, cs); g.clearRect(0, 0, 1024, 512);
+    g.scale(cs, cs); g.clearRect(0, 0, 1024, 1024);
     g.textAlign = 'center'; g.textBaseline = 'middle';
-    const gold = g.createLinearGradient(0, 40, 0, 216); gold.addColorStop(0, '#f3dc8a'); gold.addColorStop(0.5, '#c99a3c'); gold.addColorStop(1, '#8a6424');
+    const goldAt = (y0, y1) => { const q = g.createLinearGradient(0, y0, 0, y1); q.addColorStop(0, '#f3dc8a'); q.addColorStop(0.5, '#c99a3c'); q.addColorStop(1, '#8a6424'); return q; };
     g.font = '700 168px Georgia, "Times New Roman", serif'; g.lineWidth = 8; g.strokeStyle = 'rgba(40, 26, 6, 0.9)';
-    g.strokeText('MOSHULU', 512, 132, 980); g.fillStyle = gold; g.fillText('MOSHULU', 512, 132, 980);
-    g.fillStyle = '#121315'; g.fillRect(0, 256, 1024, 256);
-    g.fillStyle = '#f2efe6'; g.font = '600 64px Georgia, "Times New Roman", serif'; g.fillText('WELCOME ABOARD', 512, 318, 940);
-    g.font = '700 132px Georgia, "Times New Roman", serif'; g.fillText('MOSHULU', 512, 430, 960);
+    g.strokeText('MOSHULU', 512, 132, 980); g.fillStyle = goldAt(40, 216); g.fillText('MOSHULU', 512, 132, 980);
+    g.font = '700 176px Georgia, "Times New Roman", serif'; g.lineWidth = 6; g.strokeStyle = 'rgba(14, 18, 34, 0.7)';
+    g.strokeText('MOSHULU', 512, 388, 990); g.fillStyle = '#f1efe9'; g.fillText('MOSHULU', 512, 388, 990);
+    {   // the trailboard: a gold vine from the stem head (the row's left) aft, curling off it above and below
+      g.strokeStyle = goldAt(560, 720); g.lineCap = 'round'; g.lineJoin = 'round';
+      const vine = (w) => { g.lineWidth = w; g.beginPath(); g.moveTo(14, 586); g.bezierCurveTo(240, 600, 420, 690, 640, 668); g.bezierCurveTo(800, 652, 900, 690, 1006, 700); g.stroke(); };
+      const curl = (x, y, r, dir, w) => { g.lineWidth = w; g.beginPath(); for (let k = 0; k <= 40; k++) { const a = dir * k * 0.16, rr = r * (1 - k / 48); const X = x + rr * Math.cos(a), Y = y + rr * Math.sin(a); if (k) g.lineTo(X, Y); else g.moveTo(X, Y); } g.stroke(); };
+      g.strokeStyle = 'rgba(40, 26, 6, 0.85)'; vine(34); g.strokeStyle = goldAt(560, 720); vine(22);
+      for (const [x, y, r, d] of [[150, 556, 38, 1], [330, 676, 44, -1], [520, 640, 34, 1], [700, 700, 38, -1], [860, 640, 30, 1]]) {
+        g.strokeStyle = 'rgba(40, 26, 6, 0.85)'; curl(x, y, r, d, 24); g.strokeStyle = goldAt(560, 720); curl(x, y, r, d, 15);
+      }
+      g.fillStyle = goldAt(560, 720); g.beginPath(); g.moveTo(10, 548); g.lineTo(76, 586); g.lineTo(10, 624); g.closePath(); g.fill();   // its head at the stem
+    }
+    g.fillStyle = '#121315'; g.fillRect(0, 768, 1024, 256);
+    g.fillStyle = goldAt(790, 1000); g.font = '600 64px Georgia, "Times New Roman", serif'; g.fillText('WELCOME ABOARD', 512, 828, 940);
+    g.font = '700 132px Georgia, "Times New Roman", serif'; g.fillText('MOSHULU', 512, 940, 960);
     const tex = new THREE.CanvasTexture(cv); tex.encoding = THREE.sRGBEncoding; tex.anisotropy = anisoOf(8);
     freeTexOnUpload(tex);
     const P = [], N = [], UV = [];
@@ -23003,8 +23173,23 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       const out = new V3().crossVectors(along, UP).multiplyScalar(sg).normalize();   // outward
       if ((out.x * px + out.z * pz) * sg < 0) out.negate();
       const right = new V3().crossVectors(out.clone().negate(), UP).normalize();   // the reader's right, facing the hull
-      quad(L(s, sg * hbAt(s, y), y).add(out.clone().multiplyScalar(0.07)), right, UP, 4.6, 1.15, 0.5, 1.0, out);
+      quad(L(s, sg * hbAt(s, y), y).add(out.clone().multiplyScalar(0.07)), right, UP, 4.6, 1.15, 0.75, 1.0, out);
     }
+    // a board laid on her side from s0 aft to s1 forward, its centre at yOf(s), u 0 at the forward end (a port side's
+    // reader's left; on her starboard side the trailboard's design comes out mirrored, as it is)
+    const strip = (s0, s1, yOf, h, v0, v1, sg) => {
+      const n = Math.max(4, Math.ceil((s1 - s0) / 0.5)), pts = [];
+      for (let i = 0; i <= n; i++) { const s = s0 + (s1 - s0) * i / n, y = yOf(s); pts.push(L(s, sg * (hbAt(s, y) + 0.06), y)); }
+      for (let i = 0; i < n; i++) {
+        const A = pts[i], B = pts[i + 1], out = new V3().crossVectors(B.clone().sub(A).normalize(), UP).normalize();
+        if ((out.x * px + out.z * pz) * sg < 0) out.negate();
+        const ua = 1 - i / n, ub = 1 - (i + 1) / n, dh = new V3(0, h / 2, 0);
+        const q = [A.clone().sub(dh), B.clone().sub(dh), B.clone().add(dh), A.clone().add(dh)], uv = [[ua, v0], [ub, v0], [ub, v1], [ua, v1]];
+        for (const k of [0, 1, 2, 0, 2, 3]) { P.push(q[k].x, q[k].y, q[k].z); N.push(out.x, out.y, out.z); UV.push(uv[k][0], uv[k][1]); }
+      }
+    };
+    for (const sg of [1, -1]) strip(Ld - 7.4, Ld - 0.8, (s) => ys(s) - 0.62 - 0.35 * (Ld - s) / 7, 0.62, 0.25, 0.5, sg);   // the trailboards, along the sheer from the stem head
+    if (MOSHULU.sign && MOSHULU.sign.s) strip(MOSHULU.sign.s - 9.4, MOSHULU.sign.s - 2.4, () => 6.15, 0.95, 0.5, 0.75, -1);   // the white name aft of the gangway
     {   // across the counter: a strip following her stern's curve at the name's height
       const y = ys(0) - 1.3, h = 0.72, pts = [];
       for (let k = -24; k <= 24; k++) {   // dense where the round counter turns fastest, so no chord cuts inside her
@@ -23022,14 +23207,14 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         const u0 = clamp((a0 + half) / (2 * half), 0, 1), u1 = clamp((a1 + half) / (2 * half), 0, 1);
         const o0 = P0.clone().add(out.clone().multiplyScalar(0.1)), o1 = P1.clone().add(out.clone().multiplyScalar(0.1));
         const q = [o0.clone().add(new V3(0, -h / 2, 0)), o1.clone().add(new V3(0, -h / 2, 0)), o1.clone().add(new V3(0, h / 2, 0)), o0.clone().add(new V3(0, h / 2, 0))];
-        const uv = [[u0, 0.5], [u1, 0.5], [u1, 1.0], [u0, 1.0]];
+        const uv = [[u0, 0.75], [u1, 0.75], [u1, 1.0], [u0, 1.0]];
         for (const k of [0, 1, 2, 0, 2, 3]) { P.push(q[k].x, q[k].y, q[k].z); N.push(out.x, out.y, out.z); UV.push(uv[k][0], uv[k][1]); }
       }
     }
     const sgn = MOSHULU.sign;
     if (sgn) {   // over the covered gangway's shore end, facing the promenade
       const out = new V3(-1, 0, 0), right = new V3().crossVectors(out.clone().negate(), UP).normalize();   // the promenade lies west
-      quad(sgn.at, right, UP, sgn.w, sgn.w / 4, 0.0, 0.5, out);
+      quad(sgn.at, right, UP, sgn.w, sgn.w / 4, 0.0, 0.25, out);
     }
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); geo.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); geo.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2));
@@ -23038,7 +23223,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uMoNight = nightUniform;
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uMoNight;')
-        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (vUv.y < 0.5) totalEmissiveRadiance += diffuseColor.rgb * uMoNight * 0.8;');
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (vUv.y < 0.25) totalEmissiveRadiance += diffuseColor.rgb * uMoNight * 0.8;');
     };
     mat.customProgramCacheKey = () => 'moshulu-names';
     const mesh = new THREE.Mesh(geo, mat); mesh.name = 'moshulu-names'; mesh.receiveShadow = true;
@@ -23066,6 +23251,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     S.near.visible = S.lod === 'near'; S.far.visible = S.spars.visible = !S.near.visible;
     S.rig.visible = d < (isTouch ? 450 : 600);   // past this a wire's coverage is under a twentieth
     moU.uMoRes.value = renderer.domElement.height || 800;
+    moU.uMoView.value.set(renderer.domElement.width || 1280, renderer.domElement.height || 800);
+    S.bulbMat.size = renderer.getPixelRatio();   // the phone's ladder moves it after the build (1.25 to 2.0)
     moU.uMoDay.value = 0.16 + 1.25 * WXFX.dayF;
     const n = lampUniform.value;
     S.bulbs.visible = n > 0.01; S.bulbMat.opacity = n;
@@ -23076,6 +23263,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     const S = MOSHULU;
     return { on: S.on, built: !!S.near, lod: S.lod, near: !!(S.near && S.near.visible), far: !!(S.far && S.far.visible), rig: !!(S.rig && S.rig.visible),
       bulbs: !!(S.bulbs && S.bulbs.visible), spars: !!(S.spars && S.spars.visible), bulbN: S.bulbN, ribbons: S.ribbons, tris: S.tris, art: S.art, ms: S.ms, slip: S.slip, error: S.error,
+      own: S.own && S.own.bb.map((q) => +q.toFixed(1)), winFar: S.winFar, bulbPx: S.bulbMat ? S.bulbMat.size : null,
       d: S.near ? Math.round(camera.position.distanceTo(S.c)) : null, frame: S.frame && { Ld: +S.frame.Ld.toFixed(2), W: S.frame.W, a: [+S.frame.ax.toFixed(4), +S.frame.az.toFixed(4)] } };
   }
   step('Mooring the ships', () => {
@@ -29460,7 +29648,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     }
     const onBase = (x, z) => { const a = baseCells.get(Math.floor(x / 40) + ':' + Math.floor(z / 40)); if (a) for (const o2 of a) if (x > o2[0] && x < o2[1] && z > o2[2] && z < o2[3] && pointInPoly(x, z, o2[4])) return true; return false; };
     // Round 189: the generated shopfronts (sfBuild) where the realistic look, WebGL 2 and the art allow; the art was asked for
-    // at the top of the build, and waits here at most 10 s more. Anything short of that dresses the old boxes below, as ever
+    // at the top of the build, and waits here at most 10 s more. Anything short of that dresses the old boxes below, as ever.
+    // First the Moshulu's own hull joins the ground the models own, for both (Round 195: OSM's restaurant record put a
+    // shopfront flat on her port side; here, outside the old step's bytes, which test_realism_storefronts holds)
+    if (MOSHULU.own) own.push([...MOSHULU.own.bb, MOSHULU.own.ring]);
     if (SF_ART_ON) {
       let late = 0;
       const got = await Promise.race([sfArtLoad(), new Promise((r) => { late = setTimeout(() => r(null), 10000); })]);
