@@ -17212,6 +17212,1352 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }
   }
 
+  // ---- the USS New Jersey remodelled (Round 195, Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both Comcast
+  // towers, Battleship NJ, The Moshulu, and the bridges"; he wants photographic realism and a fast city). The Round 30
+  // ship was the OSM outline extruded into the facade chunk as a 9 m slab with boxes on it. BB-62 as she lies at 62
+  // Battleship Place, Camden, bow up the river, starboard side to the pier, in her 1980s fit as the museum keeps her:
+  // the hull from HAER HI-62's general plans of her sister Missouri (sheet 2, the outboard profile: the sheer, the stem's
+  // rake, the stern; sheet 4, the main deck: the half-breadths; sheet 3, the 01 and 02 decks), measured at 11.31 px a
+  // metre, and everything over the main deck from the plans and the photographs (Wikimedia Commons, the 2018 to 2024
+  // views from the river, the pier and the drydock): three triple 16-inch turrets (two forward, one aft facing aft, the
+  // guns at the elevations the museum keeps them), six twin 5-inch mounts trained forward, the 1980s tripod foremast with
+  // the SPS-49's mesh, the pole mainmast, the two funnels with their black caps, the Mk 38 and Mk 37 directors, eight
+  // armoured box launchers, four Harpoon quads, four Phalanx, the bow mast, the breakwater, the anchors and their chains,
+  // the hull number, the 2024 drydock's paint (haze grey over a black boot topping over red), the teak, a tent on the
+  // fantail, the visitors' gangways on the pier, and at night the string of lamps along her rails and the floodlit
+  // superstructure the museum shows. Everything is laid in the ship's own frame: x forward from midships, y up from the
+  // river's sheet, z to starboard (njFrame takes it from the OSM outline: its middle, its long axis, the pointier end the
+  // bow). One program for the steel, the teak and the glass (njMaterial: the paint a part's own colour, the generated
+  // atlas's detail over it, fetch_nj_art.py / bake_nj_art.py), one near level and one far (switched by the eye's distance
+  // from the hull's box), the railings and the radar's mesh one alpha-tested draw near, the hull number and the stern's
+  // name one more, the deck lamps a Points draw at night. ?nj=0 keeps the old ship (and ?real=0 does)
+  const NJ_ON = REAL && !/[?&]nj=0\b/.test(location.search);
+  const NJ_ART_ON = NJ_ON && typeof NJ_ART !== 'undefined' && !!NJ_ART && !!NJ_ART.img && !/[?&]njart=0\b/.test(location.search);
+  // the near level within this of the hull's box (60 m of hysteresis); a phone asks for the art within NJ_ART_R
+  const NJ_NEAR_R = isTouch ? 520 : 760, NJ_HYST = 60, NJ_ART_R = 1600;
+  const NJ = { built: false, lod: 'both', near: null, far: null, rails: null, marks: null, lights: null, lightsMat: null, mat: null, map: null,
+    art: 'none', artOn: { value: 0 }, bytes: 0, tris: {}, f: null, dist: null, force: null, off: false, err: null, ms: 0, pier: null, nLights: 0, clutter: 0, lines: 0 };
+  const NJ_LEN = 270.54, NJ_MID = NJ_LEN / 2;
+  // the museum's draught: a metre lighter than the design waterline the plans draw (no fuel, no shells, no stores)
+  const NJ_LIFT = 1.0;
+  const NJ_LV = 2.55;   // a superstructure level, deck to deck
+  // freeboard at the design waterline, s metres from the stern (sheet 2, the outboard profile)
+  const NJ_SHEER = [[0, 6.8], [5, 6.6], [10, 6.45], [15, 6.3], [20, 6.1], [30, 6.0], [40, 5.75], [55, 5.68], [60, 5.65], [160, 5.65], [170, 5.75],
+    [180, 5.8], [190, 5.82], [200, 6.0], [210, 6.4], [220, 6.93], [228, 7.35], [236, 8.0], [245, 8.72], [254, 9.4], [263, 10.3], [270.54, 11.0]];
+  // the deck edge's half-breadth (sheet 4, the main deck plan; the stern's rounded counter is an ellipse to 6 m)
+  const NJ_BEAM = [[6, 7.75], [10, 7.9], [13, 8.9], [16, 9.8], [20, 10.8], [25, 12.0], [30, 13.0], [40, 14.6], [50, 15.6], [60, 16.1], [70, 16.35], [80, 16.47],
+    [148, 16.47], [152, 16.05], [156, 15.8], [160, 15.6], [164, 15.3], [168, 15.05], [172, 14.95], [176, 14.4], [180, 13.95], [184, 13.55], [188, 13.0],
+    [192, 12.4], [196, 11.8], [200, 11.15], [210, 9.4], [220, 7.75], [230, 6.4], [240, 5.5], [250, 4.6], [255, 4.1], [260, 3.65], [264, 3.2], [267, 2.75],
+    [269, 2.3], [270, 1.6], [270.54, 0.35]];
+  const NJ_STEM = 264.4;   // the stem at the waterline (it rakes 6 m forward to the deck)
+  // the paint (photographed sRGB; the fourth byte is how much of the night's floodlight the part takes): haze grey, the
+  // decks' darker grey, the teak, the boot topping's black, the red bottom, the radomes' white, the glass, the gun barrels;
+  // the superstructure's walls a shade under the hull's (the review: in every photograph the block reads darker and
+  // busier than her side), the recessed bays' back walls darker again, the undersides of the decks and platforms in their
+  // own shade and taking no flood, the lockers and boxes on the decks
+  const NJC = {
+    haze: [106, 112, 118, 255], hull: [104, 110, 116, 150], deck: [80, 84, 88, 70], roof: [90, 94, 99, 200], teak: [122, 113, 101, 70],
+    black: [34, 35, 37, 120], canvas: [30, 31, 32, 160], white: [214, 215, 212, 230], glass: [104, 110, 116, 255], gun: [108, 113, 119, 220],
+    conc: [128, 126, 120, 0], pier: [104, 108, 112, 0], tent: [222, 222, 217, 120], boat: [215, 215, 210, 200], anchor: [44, 45, 47, 40],
+    house: [94, 100, 106, 255], bay: [44, 48, 52, 220], soffit: [50, 53, 57, 0], clut: [88, 94, 100, 230], lattice: [46, 48, 51, 90],
+  };
+  // the kinds: 1 the hull's plating (its bands by height), 11 a funnel's and 12 the armour's (the same plating cell), 13 a
+  // 16-inch tampion (its star drawn by the shader)
+  const NJK = { paint: 0, hull: 1, bulk: 2, deck: 3, teak: 4, glass: 5, black: 6, canvas: 7, white: 8, gun: 9, conc: 10, funnel: 11, armor: 12, tamp: 13 };
+  const njTab = (T, s) => {
+    if (s <= T[0][0]) return T[0][1];
+    for (let i = 1; i < T.length; i++) if (s <= T[i][0]) { const a = T[i - 1], b = T[i]; return a[1] + (b[1] - a[1]) * (s - a[0]) / (b[0] - a[0]); }
+    return T[T.length - 1][1];
+  };
+  const njSm = (a, b, x) => { const t = clamp((x - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+  const njDeck = (s) => njTab(NJ_SHEER, s) + NJ_LIFT;   // the deck edge over the river's sheet
+  const njBeam = (s) => (s < 6 ? 7.8 * Math.sqrt(Math.max(0, 1 - (1 - s / 6) ** 2)) : njTab(NJ_BEAM, s));
+  // the waterline's half-breadth: the sides plumb amidships, the bow's flare taking 42 per cent of the deck's breadth off
+  // by the stem, the counter a tenth narrower at the stern
+  const njWl = (s) => njBeam(s) * (s < 20 ? 0.9 + 0.1 * njSm(2, 20, s) : 1 - 0.42 * njSm(186, 258, s));
+  const njCamber = (s) => 0.22 * njBeam(s) / 16.47;
+  const njX = (s) => s - NJ_MID;   // the frame's x of a station
+  const NJ_Y0 = njDeck(132);        // the superstructure's datum: the main deck amidships
+
+  // a section of the hull at station s: n points [y, z] from the deck edge down (z the starboard half-breadth). Amidships
+  // the waterline's breadth flares to the deck's; at the stern the counter rises to the deck at s = 0 and at the bow the
+  // stem rakes up from the waterline to the deck, each a U (the stern) or a V (the stem) closing on the centreline,
+  // blended into the midships form over a few metres so no station jumps
+  function njSec(s, n) {
+    const D = njDeck(s), B = njBeam(s), Bw = njWl(s);
+    const main = [];
+    const fr = n >= 8 ? [1, 0.8, 0.6, 0.4, 0.2, 0, -1.2, -3] : [1, 0.5, 0, -3];
+    for (const f of fr) {
+      const y = f >= 0 ? f * D : f;
+      main.push([y, y >= 0 ? Bw + (B - Bw) * Math.pow(f, 1.6) : Bw * (1 + 0.05 * y / 3)]);
+    }
+    let w = 1, yb = -3, ex = 0.6;
+    if (s < 7) { w = njSm(2.5, 6.5, s); yb = s < 2 ? njDeck(0) * (1 - Math.sqrt(s / 2)) : -3 * njSm(2, 6.5, s); ex = 0.35; }
+    else if (s > 258) { w = 1 - njSm(259, 263, s); yb = s > NJ_STEM ? D * Math.pow((s - NJ_STEM) / (NJ_LEN - NJ_STEM), 0.85) : -3 * (1 - njSm(259, NJ_STEM, s)); ex = 0.62; }
+    if (w >= 0.999) return main;
+    const out = [];
+    for (let j = 0; j < main.length; j++) {
+      const f = 1 - j / (main.length - 1), y = yb + (D - yb) * f, z = B * Math.pow(f, ex);
+      out.push([y + (main[j][0] - y) * w, z + (main[j][1] - z) * w]);
+    }
+    return out;
+  }
+  // the hull's half-breadth at height y at station s (the decals and the anchors lie on it)
+  function njHullZ(s, y) {
+    const sec = njSec(s, 8);
+    for (let j = 1; j < sec.length; j++) if (y >= sec[j][0]) { const a = sec[j - 1], b = sec[j], t = (y - b[0]) / Math.max(1e-6, a[0] - b[0]); return b[1] + (a[1] - b[1]) * t; }
+    return sec[sec.length - 1][1];
+  }
+
+  // the ship's frame from the OSM outline: its oriented box, the bow its pointier end (the outline narrows to the stem)
+  function njFrame(poly) {
+    const ob = orientedBox(poly), a = obbAxis(ob);
+    let wP = 0, nP = 0, wM = 0, nM = 0;
+    for (const q of poly) {
+      const du = (q[0] - ob.cx) * a.ax + (q[1] - ob.cz) * a.az, dv = (q[0] - ob.cx) * a.px + (q[1] - ob.cz) * a.pz;
+      if (du > a.hl * 0.7) { wP += Math.abs(dv); nP++; }
+      if (du < -a.hl * 0.7) { wM += Math.abs(dv); nM++; }
+    }
+    const bow = (wP / Math.max(1, nP)) < (wM / Math.max(1, nM)) ? 1 : -1;
+    const hx = a.ax * bow, hz = a.az * bow;
+    return { cx: ob.cx, cz: ob.cz, hx, hz, sx: -hz, sz: hx, L: a.hl * 2, B: a.hs * 2, W0: TERRAIN.water };
+  }
+  const njW = (f, x, y, z) => [f.cx + f.hx * x + f.sx * z, f.W0 + y, f.cz + f.hz * x + f.sz * z];
+
+  // the geometry under construction, in the ship's frame: positions, normals, uv (metres, or a level's 2.7 m), aK (the
+  // kind and a seed) and the colour (sRGB bytes and the flood's share)
+  function njBuf() {
+    const b = { P: [], N: [], T: [], K: [], C: [], I: [], nv: 0, seed: 0 };
+    b.v = (x, y, z, nx, ny, nz, u, w, k, col) => { b.P.push(x, y, z); b.N.push(nx, ny, nz); b.T.push(u, w); b.K.push(k, b.seed); b.C.push(col[0], col[1], col[2], col[3]); return b.nv++; };
+    // a triangle wound to face `want`
+    b.tri = (a, c, d, want) => {
+      const P = b.P, ax = P[a * 3], ay = P[a * 3 + 1], az = P[a * 3 + 2];
+      const ux = P[c * 3] - ax, uy = P[c * 3 + 1] - ay, uz = P[c * 3 + 2] - az, vx = P[d * 3] - ax, vy = P[d * 3 + 1] - ay, vz = P[d * 3 + 2] - az;
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      if (nx * want[0] + ny * want[1] + nz * want[2] < 0) b.I.push(a, d, c); else b.I.push(a, c, d);
+    };
+    // a flat polygon (convex, points [x, y, z]) facing n, its uv from uvf(p)
+    b.face = (pts, n, k, col, uvf) => {
+      const ix = pts.map((p) => { const t = uvf(p); return b.v(p[0], p[1], p[2], n[0], n[1], n[2], t[0], t[1], k, col); });
+      for (let i = 1; i < ix.length - 1; i++) b.tri(ix[0], ix[i], ix[i + 1], n);
+    };
+    // an extrusion: ring [[x, z]] at y0 to `top` (a ring as long, or the same) at y1; walls flat, each its own normal; the
+    // top capped (o.kt the top's kind, -1 none). The walls' uv: u along the perimeter from o.u0, v by o.uv: 'level' (the
+    // bulkhead's 2.7 m deck to overhead), 'down' (metres under the top: the hull's plating) or metres up. o.seedOf(i) a
+    // wall's own seed (a bulkhead's: the height its floods stand at, njHouses), o.skip(i) a wall left out (one against a
+    // bulkhead), o.colOf(i) a wall's own colour (a recessed bay's), o.bot a floor under it in o.colB (a platform's dark
+    // underside)
+    b.prism = (ring, y0, y1, o) => {
+      const top = o.top || ring, n = ring.length, k = o.k == null ? NJK.paint : o.k, col = o.col || NJC.haze, seed0 = b.seed;
+      let cx = 0, cz = 0; for (const q of ring) { cx += q[0]; cz += q[1]; } cx /= n; cz /= n;
+      let u = o.u0 || 0;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n, a0 = ring[i], a1 = ring[j], t0 = top[i], t1 = top[j];
+        const L = Math.hypot(a1[0] - a0[0], a1[1] - a0[1]);
+        if (L < 1e-4 && Math.hypot(t1[0] - t0[0], t1[1] - t0[1]) < 1e-4) continue;
+        if (o.skip && o.skip(i)) { u += L; continue; }
+        b.seed = o.seedOf ? o.seedOf(i, a0, a1) : seed0;
+        const cw = (o.colOf && o.colOf(i)) || col;
+        // the wall's normal: across the edge, tipped by the batter between the rings
+        const ex = a1[0] - a0[0], ez = a1[1] - a0[1], el = Math.max(1e-6, Math.hypot(ex, ez));
+        let nx = ez / el, nz = -ex / el;
+        if ((nx * ((a0[0] + a1[0]) / 2 - cx) + nz * ((a0[1] + a1[1]) / 2 - cz) < 0) !== !!o.inward) { nx = -nx; nz = -nz; }   // o.inward: the walls face in (a bulwark's inner face)
+        const bat = ((t0[0] + t1[0]) / 2 - (a0[0] + a1[0]) / 2) * nx + ((t0[1] + t1[1]) / 2 - (a0[1] + a1[1]) / 2) * nz;   // inward lean of the top
+        const h = y1 - y0, ln = Math.hypot(h, bat) || 1, ny = -bat / ln, hk = h / ln;
+        const N = [nx * hk, ny, nz * hk];
+        const vf = (y) => (o.uv === 'level' ? (y - y0) / (y1 - y0) * 2.7 : o.uv === 'down' ? (o.vTop == null ? y1 : o.vTop) - y : y - y0);
+        const i0 = b.v(a0[0], y0, a0[1], N[0], N[1], N[2], u, vf(y0), k, cw), i1 = b.v(a1[0], y0, a1[1], N[0], N[1], N[2], u + L, vf(y0), k, cw);
+        const i2 = b.v(t1[0], y1, t1[1], N[0], N[1], N[2], u + L, vf(y1), k, cw), i3 = b.v(t0[0], y1, t0[1], N[0], N[1], N[2], u, vf(y1), k, cw);
+        b.tri(i0, i1, i2, N); b.tri(i0, i2, i3, N);
+        u += L;
+      }
+      b.seed = seed0;
+      if (o.kt !== -1) b.cap(top, y1, 1, o.kt == null ? NJK.deck : o.kt, o.colT || NJC.roof);
+      if (o.bot) b.cap(ring, y0, -1, o.kB == null ? k : o.kB, o.colB || col);
+    };
+    // a flat cap over (up 1) or under (up -1) a ring at y
+    b.cap = (ring, y, up, k, col) => {
+      const tri = THREE.ShapeUtils.triangulateShape(ring.map((q) => new THREE.Vector2(q[0], q[1])), []);
+      const base = ring.map((q) => b.v(q[0], y, q[1], 0, up, 0, q[0], q[1], k, col));
+      for (const t of tri) b.tri(base[t[0]], base[t[1]], base[t[2]], [0, up, 0]);
+    };
+    b.box = (x0, x1, y0, y1, z0, z1, o) => b.prism([[x0, z0], [x1, z0], [x1, z1], [x0, z1]], y0, y1, o || {});
+    // an upright elliptical cylinder (smooth), optionally tapered (o.taper the top's scale), capped flat (o.kt) or with a
+    // half-ellipsoid dome (o.dome its height)
+    b.cyl = (x, z, rx, rz, y0, y1, seg, o) => {
+      const k = o.k == null ? NJK.paint : o.k, col = o.col || NJC.haze, tp = o.taper || 1, rows = [];
+      for (const [y, sc] of [[y0, 1], [y1, tp]]) {
+        const row = [];
+        for (let i = 0; i <= seg; i++) {
+          const a = i / seg * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+          let nx = ca / rx, nz = sa / rz; const nl = Math.hypot(nx, nz); nx /= nl; nz /= nl;
+          const per = i / seg * Math.PI * (rx + rz);
+          row.push(b.v(x + ca * rx * sc, y, z + sa * rz * sc, nx, 0, nz, per, o.uv === 'down' ? (o.vTop == null ? y1 : o.vTop) - y : y - y0, k, col));
+        }
+        rows.push(row);
+      }
+      for (let i = 0; i < seg; i++) {
+        const a = (i + 0.5) / seg * Math.PI * 2;
+        b.tri(rows[0][i], rows[0][i + 1], rows[1][i + 1], [Math.cos(a), 0, Math.sin(a)]); b.tri(rows[0][i], rows[1][i + 1], rows[1][i], [Math.cos(a), 0, Math.sin(a)]);
+      }
+      const kt = o.kt == null ? -1 : o.kt, ct = o.colT || col;
+      if (o.dome) {
+        const R = 4, rr = [];
+        for (let r = 0; r <= R; r++) {
+          const ph = r / R * Math.PI / 2, cp = Math.cos(ph), sp = Math.sin(ph), row = [];
+          for (let i = 0; i <= seg; i++) {
+            const a = i / seg * Math.PI * 2, ca = Math.cos(a), sa = Math.sin(a);
+            const nx = ca * cp / (rx * tp), ny = sp / o.dome, nz = sa * cp / (rz * tp), nl = Math.hypot(nx, ny, nz);
+            row.push(b.v(x + ca * rx * tp * cp, y1 + o.dome * sp, z + sa * rz * tp * cp, nx / nl, ny / nl, nz / nl, i / seg * 3, r, kt < 0 ? k : kt, ct));
+          }
+          rr.push(row);
+        }
+        for (let r = 0; r < R; r++) for (let i = 0; i < seg; i++) {
+          const a = (i + 0.5) / seg * Math.PI * 2, ph = (r + 0.5) / R * Math.PI / 2, want = [Math.cos(a) * Math.cos(ph), Math.sin(ph), Math.sin(a) * Math.cos(ph)];
+          b.tri(rr[r][i], rr[r][i + 1], rr[r + 1][i + 1], want); b.tri(rr[r][i], rr[r + 1][i + 1], rr[r + 1][i], want);
+        }
+      } else if (kt >= 0) {
+        const c = b.v(x, y1, z, 0, 1, 0, x, z, kt, ct), ring = [];
+        for (let i = 0; i < seg; i++) { const a = i / seg * Math.PI * 2; ring.push(b.v(x + Math.cos(a) * rx * tp, y1, z + Math.sin(a) * rz * tp, 0, 1, 0, x + Math.cos(a) * rx * tp, z + Math.sin(a) * rz * tp, kt, ct)); }
+        for (let i = 0; i < seg; i++) b.tri(c, ring[i], ring[(i + 1) % seg], [0, 1, 0]);
+      }
+    };
+    // a lathe along any axis: from p0 along unit d, the profile [[t, r], ...] (t metres along, r the radius), seg sides;
+    // a band a pair of rings, so a step in the profile is its own flat annulus; o.cap closes the far end
+    b.lathe = (p0, d, prof, seg, o) => {
+      const k = o.k == null ? NJK.paint : o.k, col = o.col || NJC.haze;
+      const up = Math.abs(d[1]) > 0.9 ? [1, 0, 0] : [0, 1, 0];
+      let e1 = [d[1] * up[2] - d[2] * up[1], d[2] * up[0] - d[0] * up[2], d[0] * up[1] - d[1] * up[0]];
+      const l1 = Math.hypot(...e1); e1 = e1.map((q) => q / l1);
+      const e2 = [d[1] * e1[2] - d[2] * e1[1], d[2] * e1[0] - d[0] * e1[2], d[0] * e1[1] - d[1] * e1[0]];
+      const at = (t, r, a) => { const ca = Math.cos(a) * r, sa = Math.sin(a) * r; return [p0[0] + d[0] * t + e1[0] * ca + e2[0] * sa, p0[1] + d[1] * t + e1[1] * ca + e2[1] * sa, p0[2] + d[2] * t + e1[2] * ca + e2[2] * sa]; };
+      for (let q = 0; q < prof.length - 1; q++) {
+        const [t0, r0] = prof[q], [t1, r1] = prof[q + 1];
+        const dt = t1 - t0, dr = r1 - r0, sl = Math.hypot(dt, dr) || 1, cr = dt / sl, ca = -dr / sl;   // the band's normal: radial cr, axial ca
+        const rows = [[], []];
+        for (let i = 0; i <= seg; i++) {
+          const a = i / seg * Math.PI * 2, rad = [e1[0] * Math.cos(a) + e2[0] * Math.sin(a), e1[1] * Math.cos(a) + e2[1] * Math.sin(a), e1[2] * Math.cos(a) + e2[2] * Math.sin(a)];
+          const N = [rad[0] * cr + d[0] * ca, rad[1] * cr + d[1] * ca, rad[2] * cr + d[2] * ca];
+          for (const [ri, t, r] of [[0, t0, r0], [1, t1, r1]]) { const p = at(t, r, a); rows[ri].push([b.v(p[0], p[1], p[2], N[0], N[1], N[2], i / seg * Math.PI * 2 * Math.max(r, 0.05), t, k, col), N]); }
+        }
+        for (let i = 0; i < seg; i++) { const want = rows[0][i][1]; b.tri(rows[0][i][0], rows[0][i + 1][0], rows[1][i + 1][0], want); b.tri(rows[0][i][0], rows[1][i + 1][0], rows[1][i][0], want); }
+      }
+      if (o.cap) {   // o.capUv: the cap's uv the unit disc (a tampion's star; v points down the muzzle's face, njTurret)
+        const [tE, rE] = prof[prof.length - 1], c = at(tE, 0, 0), kc = o.capK == null ? k : o.capK, cc = o.capCol || col;
+        const ci = b.v(c[0], c[1], c[2], d[0], d[1], d[2], 0, 0, kc, cc), ring = [];
+        for (let i = 0; i < seg; i++) { const a = i / seg * Math.PI * 2, p = at(tE, rE, a); ring.push(b.v(p[0], p[1], p[2], d[0], d[1], d[2], o.capUv ? Math.cos(a) : 0, o.capUv ? Math.sin(a) : 0, kc, cc)); }
+        for (let i = 0; i < seg; i++) b.tri(ci, ring[i], ring[(i + 1) % seg], d);
+      }
+    };
+    b.tube = (p0, p1, r0, r1, seg, o) => {
+      const dx = p1[0] - p0[0], dy = p1[1] - p0[1], dz = p1[2] - p0[2], L = Math.hypot(dx, dy, dz) || 1e-6;
+      b.lathe(p0, [dx / L, dy / L, dz / L], [[0, r0], [L, r1]], seg, o);
+    };
+    return b;
+  }
+  // the buffer to a BufferGeometry in the scene's frame (indexed; every stream a multiple of 4 bytes: the colour as four
+  // normalized bytes, never three, Round 158)
+  function njGeometry(b, f) {
+    const n = b.nv, pos = new Float32Array(n * 3), nor = new Float32Array(n * 3);
+    for (let i = 0; i < n; i++) {
+      const x = b.P[i * 3], y = b.P[i * 3 + 1], z = b.P[i * 3 + 2];
+      pos[i * 3] = f.cx + f.hx * x + f.sx * z; pos[i * 3 + 1] = f.W0 + y; pos[i * 3 + 2] = f.cz + f.hz * x + f.sz * z;
+      const nx = b.N[i * 3], ny = b.N[i * 3 + 1], nz = b.N[i * 3 + 2], wx = f.hx * nx + f.sx * nz, wz = f.hz * nx + f.sz * nz, l = Math.hypot(wx, ny, wz) || 1;
+      nor[i * 3] = wx / l; nor[i * 3 + 1] = ny / l; nor[i * 3 + 2] = wz / l;
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(b.T), 2));
+    if (b.K) g.setAttribute('aK', new THREE.BufferAttribute(new Float32Array(b.K), 2));
+    if (b.C) g.setAttribute('aCol', new THREE.BufferAttribute(new Uint8Array(b.C), 4, true));
+    g.setIndex(n > 65535 ? new THREE.Uint32BufferAttribute(b.I, 1) : new THREE.Uint16BufferAttribute(b.I, 1));
+    g.computeBoundingSphere();
+    return g;
+  }
+
+  // ---- the hull and the main deck. A grid of stations (denser at the ends), each a section of n points a side; one
+  // vertex a grid point, its normal the mean of the faces round it (the plating is smooth along and round the hull)
+  function njHull(b, lo) {
+    const S = lo ? [0, 0.6, 2, 4, 7, 12, 20, 35, 60, 100, 148, 170, 190, 210, 228, 243, 254, 260, 263, 265.5, 268, 270, NJ_LEN]
+      : [0, 0.15, 0.4, 0.8, 1.3, 2, 2.8, 3.8, 5, 6.5, 8, 10, 12.5, 15, 18, 21, 25, 30, 35, 40, 45, 50, 55, 60, 70, 80, 90, 100, 110, 120, 130, 140, 148, 152, 156,
+        160, 164, 168, 172, 176, 180, 184, 188, 192, 196, 200, 205, 210, 215, 220, 225, 230, 235, 240, 245, 250, 254, 257, 259, 261, 262.5, 263.6, NJ_STEM,
+        265.2, 266.1, 267, 267.9, 268.7, 269.4, 270, 270.35, NJ_LEN];
+    const n = lo ? 4 : 8;
+    b.seed = 0.37;   // the plating's seed (tests/test_remodel_battleship.py finds the hull's grid by it)
+    for (const sd of [1, -1]) {
+      const grid = S.map((s) => njSec(s, n).map(([y, z]) => [njX(s), y, z * sd, s]));
+      const acc = grid.map((row) => row.map(() => [0, 0, 0]));
+      const quads = [];
+      for (let i = 0; i < S.length - 1; i++) for (let j = 0; j < n - 1; j++) {
+        const A = grid[i][j], Bq = grid[i][j + 1], C = grid[i + 1][j + 1], Dq = grid[i + 1][j];
+        // (down) x (forward) faces starboard; the port side the other way
+        const ux = Bq[0] - A[0], uy = Bq[1] - A[1], uz = Bq[2] - A[2], vx = Dq[0] - A[0] + C[0] - Bq[0], vy = Dq[1] - A[1] + C[1] - Bq[1], vz = Dq[2] - A[2] + C[2] - Bq[2];
+        let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+        if (sd < 0) { nx = -nx; ny = -ny; nz = -nz; }
+        for (const [ii, jj] of [[i, j], [i, j + 1], [i + 1, j + 1], [i + 1, j]]) { const a = acc[ii][jj]; a[0] += nx; a[1] += ny; a[2] += nz; }
+        quads.push([i, j, nx, ny, nz]);
+      }
+      const ix = grid.map((row, i) => row.map((p, j) => {
+        let a = acc[i][j], l = Math.hypot(a[0], a[1], a[2]);
+        if (l < 1e-9) { a = [p[3] < NJ_MID ? -1 : 1, 0, 0]; l = 1; }   // the stern's and the stem's points, where the sections close (their faces have no area)
+        return b.v(p[0], p[1], p[2], a[0] / l, a[1] / l, a[2] / l, p[3], njDeck(p[3]) - p[1], NJK.hull, NJC.hull);
+      }));
+      for (const [i, j, nx, ny, nz] of quads) {
+        if (Math.hypot(nx, ny, nz) < 1e-9) continue;
+        b.tri(ix[i][j], ix[i][j + 1], ix[i + 1][j + 1], [nx, ny, nz]); b.tri(ix[i][j], ix[i + 1][j + 1], ix[i + 1][j], [nx, ny, nz]);
+      }
+    }
+    // the main deck: teak from the fantail's steel (aft of 44 m) to the end of the teak (sheet 4: 237 m), the waterway a
+    // strip of painted steel along each edge; a part a grid of its own so a kind never blends across a triangle
+    const deckRow = (s, zs) => zs.map((zf) => { const B = njBeam(s), z = zf * B; return [njX(s), njDeck(s) + njCamber(s) * (1 - zf * zf), z, s]; });
+    const deckGrid = (s0, s1, zs, k, col) => {
+      const St = S.filter((s) => s > s0 && s < s1);
+      const rows = [s0, ...St, s1].map((s) => deckRow(s, zs).map((p) => b.v(p[0], p[1], p[2], 0, 1, 0, p[3], p[2], k, col)));
+      for (let i = 0; i < rows.length - 1; i++) for (let j = 0; j < zs.length - 1; j++) {
+        b.tri(rows[i][j], rows[i][j + 1], rows[i + 1][j + 1], [0, 1, 0]); b.tri(rows[i][j], rows[i + 1][j + 1], rows[i + 1][j], [0, 1, 0]);
+      }
+    };
+    if (lo) { deckGrid(0, NJ_LEN, [-1, -0.5, 0, 0.5, 1], NJK.teak, NJC.teak); return; }
+    const inner = [-0.94, -0.6, -0.3, 0, 0.3, 0.6, 0.94];
+    deckGrid(0, 44, [-1, -0.6, -0.3, 0, 0.3, 0.6, 1], NJK.deck, NJC.deck);
+    deckGrid(44, 237, inner, NJK.teak, NJC.teak);
+    deckGrid(237, NJ_LEN, [-1, -0.6, -0.3, 0, 0.3, 0.6, 1], NJK.deck, NJC.deck);
+    for (const sd of [1, -1]) deckGrid(44, 237, sd > 0 ? [0.94, 1] : [-1, -0.94], NJK.deck, NJC.deck);   // the waterways
+  }
+
+  // ---- a 16-inch turret: the barbette, the gunhouse (its face sloped back 29 degrees, its sides battered, the rear
+  // overhang's corners cut), the three 16-inch/50 Mark 7s with their canvas bloomers at the ports, the roof's hoods.
+  // sC the barbette's centre, dir +1 facing the bow and -1 the stern, yb the gunhouse's foot, el the guns' elevation
+  function njTurret(b, sC, dir, yb, el, lo) {
+    const x0 = njX(sC), yd = njDeck(sC);
+    b.seed = 0.11 * sC;
+    // the barbette from the deck (a turret over the house rises through it)
+    b.cyl(x0, 0, 6.1, 6.1, yd - 0.3, yb + 0.05, lo ? 12 : 32, { k: NJK.paint, col: NJC.haze });
+    const P = (a, z) => [x0 + dir * a, z];
+    const bot = [[6.0, -5.1], [6.0, 5.1], [-5.6, 6.6], [-9.3, 6.4], [-10.2, 5.0], [-10.2, -5.0], [-9.3, -6.4], [-5.6, -6.6]];
+    const H = 3.3;
+    const top = [[6.0 - H * 0.55, -4.8], [6.0 - H * 0.55, 4.8], [-5.6, 6.25], [-9.1, 6.05], [-9.95, 4.75], [-9.95, -4.75], [-9.1, -6.05], [-5.6, -6.25]];
+    const ring = bot.map(([a, z]) => P(a, z)), tring = top.map(([a, z]) => P(a, z));
+    b.prism(ring, yb, yb + H, { top: tring, k: NJK.armor, col: NJC.haze, uv: 'down', kt: NJK.deck, colT: NJC.roof, u0: sC * 3.1 });
+    // the guns: their trunnions 1.6 m behind the face at 1.55 m, 3.6 m apart
+    const ce = Math.cos(el * Math.PI / 180), se = Math.sin(el * Math.PI / 180), d = [dir * ce, se, 0];
+    for (const z of [-3.6, 0, 3.6]) {
+      const p0 = [x0 + dir * 4.4, yb + 1.55, z];
+      // the bloomer: black canvas from the port out round the slide
+      b.lathe(p0, d, [[1.2, 1.05], [1.85, 1.0], [2.9, 0.66], [3.1, 0.6]], lo ? 6 : 14, { k: NJK.canvas, col: NJC.canvas });
+      const prof = lo ? [[2.9, 0.56], [17.7, 0.42]] : [[2.9, 0.58], [6.0, 0.55], [6.05, 0.5], [10.5, 0.46], [16.9, 0.4], [17.0, 0.425], [17.7, 0.425]];
+      // the muzzle's tampion: black with the museum's white star (the 2019 photographs), the star the shader's
+      b.lathe(p0, d, prof, lo ? 6 : 14, { k: NJK.gun, col: NJC.gun, cap: true, capK: lo ? NJK.black : NJK.tamp, capCol: [24, 25, 27, 160], capUv: !lo });
+    }
+    if (lo) return;
+    // the roof: the sight hoods forward, the hatch and the ventilator aft
+    for (const z of [-4.0, 0, 4.0]) { const p = P(2.6, z); b.box(p[0] - 0.7, p[0] + 0.7, yb + H, yb + H + 0.55, z - 0.45, z + 0.45, { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof }); }
+    { const p = P(-7.6, 0); b.box(p[0] - 0.9, p[0] + 0.9, yb + H, yb + H + 0.45, -0.9, 0.9, { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof }); }
+    // the ladder rungs up the rear
+    for (let k = 0; k < 6; k++) { const p = P(-10.27, 0); b.box(p[0] - 0.05, p[0] + 0.05, yb + 0.4 + k * 0.48, yb + 0.46 + k * 0.48, -0.35, 0.35, { k: NJK.paint, col: NJC.haze }); }
+  }
+
+  // ---- a twin 5-inch/38 Mark 28 mount trained forward: its base ring, the shield (the face and the roof's front battered),
+  // the two guns at 28 degrees
+  function njMount5(b, s, z, yb, lo) {
+    const x0 = njX(s);
+    b.seed = 0.07 * s + z;
+    b.cyl(x0, z, 2.25, 2.25, yb - 0.2, yb + 0.35, lo ? 8 : 20, { k: NJK.paint, col: NJC.haze, kt: -1 });
+    const bot = [[-2.7, -2.15], [2.2, -2.15], [2.2, 2.15], [-2.7, 2.15]].map(([a, c]) => [x0 + a, z + c]);
+    const top = [[-2.55, -1.95], [1.0, -1.95], [1.0, 1.95], [-2.55, 1.95]].map(([a, c]) => [x0 + a, z + c]);
+    b.prism(bot, yb + 0.35, yb + 3.0, { top, k: NJK.armor, col: NJC.haze, uv: 'down', kt: NJK.paint, colT: NJC.roof });
+    const el = 28 * Math.PI / 180, d = [Math.cos(el), Math.sin(el), 0];
+    for (const c of [-0.68, 0.68]) b.lathe([x0 + 1.15, yb + 1.45, z + c], d, lo ? [[0.5, 0.15], [6.2, 0.12]] : [[0.5, 0.2], [1.2, 0.2], [1.25, 0.15], [6.2, 0.12]], lo ? 5 : 10, { k: NJK.gun, col: NJC.gun, cap: true, capK: NJK.black, capCol: NJC.black });
+    if (lo) return;
+    b.box(x0 - 2.4, x0 - 1.3, yb + 3.0, yb + 3.35, z - 0.5, z + 0.5, { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof });   // the sight hood
+  }
+
+  // the superstructure's plans: [s, half-breadth] from aft forward, the port side the mirror (sheet 3 and the profile)
+  const NJ_HOUSE = [
+    [[80.6, 1.0], [84.5, 5.6], [92, 11.4], [132.4, 11.4], [133.4, 12.9], [181.2, 12.9], [183.6, 10.8]],   // the main deck's house, round turret 2's barbette
+    [[82, 1.0], [86, 6.0], [94.6, 11.4], [128, 11.4], [129.2, 9.6], [140.5, 9.6], [141.7, 11.4], [157.5, 11.4], [160.5, 8.6], [162, 4.5]],   // 01: flush with the house under it along her sides
+    [[84.5, 1.0], [88.5, 5.5], [94, 7.8], [154, 7.8], [157.5, 6.2], [159.2, 2.5]],   // 02
+    [[99, 1.5], [101, 6.6], [123, 6.6], [124.5, 7.4], [153.5, 7.4], [156.6, 5.0], [157.8, 1.5]],   // 03: the funnels' and the tower's base
+    [[133.5, 2.0], [134.5, 6.0], [153, 6.4], [156, 4.6], [157, 1.5]],   // 04: ahead of the forward funnel, which stands clear of it on the 03
+    [[138, 2.0], [139, 5.8], [151.5, 6.4], [154.5, 5.4], [155.6, 2.0]],   // 05: the pilot house round the conning tower
+    [[137.0, 1.5], [137.6, 3.6], [149.6, 3.6], [150.6, 2.4]],   // 06 to 09: the fire-control tower, narrow and straight up
+    [[137.4, 1.5], [138.0, 3.4], [147.0, 3.4], [148.0, 2.2]],
+    [[137.4, 1.5], [138.0, 3.4], [147.0, 3.4], [148.0, 2.2]],
+    [[137.4, 1.5], [138.0, 3.4], [147.0, 3.4], [148.0, 2.2]],
+  ];
+  const njRing = (pl) => [...pl.map(([s, w]) => [njX(s), w]), ...pl.slice().reverse().map(([s, w]) => [njX(s), -w])];
+  const njLevelY = (n) => NJ_Y0 + n * NJ_LV;
+  // is (x, z) on a plan (a ring)?
+  const njIn = (ring, x, z) => pointInPoly(x, z, ring);
+
+  // the recessed bays in the 01 and 02 levels' sides (the review, from the 2013 view from Philadelphia, the midships
+  // photograph and the 2019 starboard view: between solid runs both levels are cut back into dark bays, the deck over
+  // each standing out over its opening): [level, s0, s1, depth], both sides alike, each on a straight run of its plan
+  const NJ_BAYS = [
+    [1, 96.5, 101.0, 1.6], [1, 106.0, 111.5, 1.4], [1, 116.0, 121.0, 1.6], [1, 123.0, 127.0, 1.2], [1, 144.5, 149.0, 1.5], [1, 151.0, 155.5, 1.3],
+    [2, 95.5, 99.5, 1.4], [2, 102.5, 108.5, 1.5], [2, 120.5, 124.5, 1.2], [2, 130.5, 134.5, 1.4], [2, 137.5, 141.0, 1.2], [2, 147.0, 151.0, 1.4],
+  ];
+  const NJ_SLAB = 0.32;   // a deck's thickness where it overhangs a bay (its fascia and its soffit)
+  // a level's half-plan with its bays cut in: every bay on a run of one half-breadth becomes four points, its back wall
+  // `depth` in; `tag` marks a bay's own points (their walls are the bay's)
+  function njNotched(pl, n) {
+    const bays = NJ_BAYS.filter((q) => q[0] === n), out = [], tag = [];
+    for (let i = 0; i < pl.length; i++) {
+      out.push(pl[i]); tag.push(0);
+      const a = pl[i], c = pl[i + 1];
+      if (!c || Math.abs(a[1] - c[1]) > 1e-6) continue;
+      for (const [, s0, s1, d] of bays) if (s0 > a[0] + 0.5 && s1 < c[0] - 0.5) { out.push([s0, a[1]], [s0, a[1] - d], [s1, a[1] - d], [s1, a[1]]); tag.push(0, 1, 1, 0); }
+    }
+    return { pl: out, tag };
+  }
+  // a small seeded generator (the clutter's places and sizes are the same every load)
+  function njRng(seed) { let t = seed >>> 0; return () => { t = (t + 0x6D2B79F5) >>> 0; let r = Math.imul(t ^ (t >>> 15), 1 | t); r ^= r + Math.imul(r ^ (r >>> 7), 61 | r); return ((r ^ (r >>> 14)) >>> 0) / 4294967296; }; }
+  // what stands on the decks already, so the clutter keeps clear: [s, half-breadth (both sides), radius, the deck: -1
+  // the main deck, n the roof of level n]
+  const NJ_CLEAR = [[143.7, 10.3, 3.2, 1], [126.3, 10.3, 3.2, 1], [135.3, 12.0, 3.2, 0], [128.6, 5.7, 1.9, 3], [98.3, 6.3, 1.9, 2], [107.8, 13.3, 4.4, 0],
+    [93.5, 6.0, 4.2, 2], [115.0, 5.2, 3.0, 3], [117.4, 9.3, 5.2, 1], [123.6, 9.6, 1.4, 1], [129.5, 6.6, 1.2, 3], [86.6, 0, 2.6, 1], [89.9, 0, 4.2, 2],
+    [131.2, 0, 5.4, 3], [105.7, 0, 5.4, 3], [174.2, 0, 10.6, 0], [154.0, 0, 6.0, 1], [100.0, 0, 2.2, 2], [196.3, 0, 7.0, -1], [68.8, 0, 7.0, -1]];
+  // the clutter on the open decks (the review: lockers, vents and cable runs everywhere in the photographs): boxes against
+  // the walls standing on each deck, their backs to the wall (no face drawn there), a cable run along the long outboard
+  // walls of the 01 to 04; the near level only
+  function njClutter(b) {
+    const rnd = njRng(1962), gry = NJC.clut;
+    const deckY = (n, s, z) => (n < 0 ? njDeck(s) + njCamber(s) * (1 - (z / njBeam(s)) ** 2) : njLevelY(n + 1));
+    const onDeck = (n, x, z) => (n < 0 ? Math.abs(z) < njBeam(x + NJ_MID) - 1.2 : njIn(njRing(NJ_HOUSE[n]), x, z));
+    const clear = (n, s, z, r) => NJ_CLEAR.every(([cs, cz, cr, cn]) => cn !== n || Math.min(Math.hypot(s - cs, z - cz), Math.hypot(s - cs, z + cz)) > cr + r);
+    b.seed = 0.43;
+    let nBox = 0;
+    for (let n = -1; n < 5; n++) {
+      const wallN = n + 1, { pl, tag } = njNotched(NJ_HOUSE[wallN], wallN), ring = njRing(pl), m = ring.length;
+      const tg = [...tag, ...tag.slice().reverse()];
+      for (let i = 0; i < m; i++) {
+        const a = ring[i], c = ring[(i + 1) % m], L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+        if (L < 1.6 || tg[i] !== tg[(i + 1) % m]) continue;   // a bay's back wall takes its lockers too, under the deck over it
+        const ex = (c[0] - a[0]) / L, ez = (c[1] - a[1]) / L;
+        let nx = ez, nz = -ex;
+        const mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+        if (njIn(ring, mx + nx * 0.3, mz + nz * 0.3)) { nx = -nx; nz = -nz; }   // outboard of the cut plan (a bay's back wall faces into its bay)
+        for (let t = 0.3 + rnd() * 0.8; t < L - 0.6;) {
+          const w = 0.5 + rnd() * 0.9, dp = 0.35 + rnd() * 0.35, h = 0.7 + rnd() * 1.2;
+          if (t + w > L - 0.3) break;
+          const x0 = a[0] + ex * t, z0 = a[1] + ez * t, x1 = x0 + ex * w, z1 = z0 + ez * w;
+          const s = (x0 + x1) / 2 + NJ_MID, zc = (z0 + z1) / 2;
+          if (onDeck(n, x0 + nx * (dp + 0.5), z0 + nz * (dp + 0.5)) && onDeck(n, x1 + nx * (dp + 0.5), z1 + nz * (dp + 0.5)) && clear(n, s, zc, w)) {
+            const y = deckY(n, s, zc) - 0.05, sh = 0.9 + rnd() * 0.16, col = [gry[0] * sh, gry[1] * sh, gry[2] * sh, gry[3]].map((q, k) => (k < 3 ? Math.round(q) : q));
+            const r4 = [[x0 + nx * 0.02, z0 + nz * 0.02], [x1 + nx * 0.02, z1 + nz * 0.02], [x1 + nx * dp, z1 + nz * dp], [x0 + nx * dp, z0 + nz * dp]];
+            b.prism(r4, y, y + h, { k: NJK.paint, col, kt: NJK.paint, colT: NJC.roof, skip: (q) => q === 0 });
+            nBox++;
+          }
+          t += w + 0.15 + rnd() * 1.1;
+        }
+        // the cable run along a long outboard wall, 2.1 m up
+        if (n >= 0 && n < 4 && L > 6 && Math.abs(nz) > 0.8) {
+          const y = njLevelY(wallN) + 2.05, o0 = 0.02, o1 = 0.14;
+          b.prism([[a[0] + ex * 0.4 + nx * o0, a[1] + ez * 0.4 + nz * o0], [c[0] - ex * 0.4 + nx * o0, c[1] - ez * 0.4 + nz * o0], [c[0] - ex * 0.4 + nx * o1, c[1] - ez * 0.4 + nz * o1], [a[0] + ex * 0.4 + nx * o1, a[1] + ez * 0.4 + nz * o1]],
+            y, y + 0.12, { k: NJK.paint, col: NJC.bay, kt: NJK.paint, colT: NJC.clut, skip: (q) => q === 0, bot: true, colB: NJC.soffit });
+        }
+      }
+    }
+    return nBox;
+  }
+  // the deck over a bay: its fascia on the wall's line and its soffit (dark, no flood) back to the bay's wall
+  function njBayDeck(b, n) {
+    for (const [lv, s0, s1, d] of NJ_BAYS) {
+      if (lv !== n) continue;
+      const pl = NJ_HOUSE[n];
+      let w = null;
+      for (let i = 0; i < pl.length - 1; i++) if (Math.abs(pl[i][1] - pl[i + 1][1]) < 1e-6 && s0 > pl[i][0] && s1 < pl[i + 1][0]) w = pl[i][1];
+      if (w == null) continue;
+      const y1 = njLevelY(n + 1), y = y1 - NJ_SLAB, x0 = njX(s0), x1 = njX(s1);
+      for (const sd of [1, -1]) {
+        b.face([[x0, y, w * sd], [x1, y, w * sd], [x1, y1, w * sd], [x0, y1, w * sd]], [0, 0, sd], NJK.paint, NJC.house, (q) => [q[0], q[1] - y]);
+        b.face([[x0, y, w * sd], [x1, y, w * sd], [x1, y, (w - d) * sd], [x0, y, (w - d) * sd]], [0, -1, 0], NJK.paint, NJC.soffit, (q) => [q[0], q[2]]);
+      }
+    }
+  }
+  // the conning tower: the armoured ellipse at the house's forward end, from the 02 up under the pilot house's windows,
+  // its rounded front standing proud of the 03's and the 04's noses, the vision slits a dark band near its top
+  function njConning(b, lo) {
+    const x = njX(154.0), y0 = njLevelY(2), y1 = njLevelY(5) + 0.6;
+    b.seed = 0.71;
+    b.cyl(x, 0, 5.2, 4.6, y0, y1, lo ? 14 : 30, { k: NJK.armor, col: NJC.house, uv: 'down', kt: NJK.deck, colT: NJC.roof });
+    if (!lo) b.cyl(x, 0, 5.23, 4.63, y1 - 0.72, y1 - 0.5, 30, { k: NJK.black, col: [22, 23, 25, 30] });
+  }
+  // the levels' floods (njMaterial): a bulkhead is lit from the open deck at its own foot when it has one (a per-level
+  // rise from each deck), else from the deck the stack under it stands back from, so a flush wall (the fire-control
+  // tower, the 01 along her sides) runs on with one fall and never a stripe at a level it has no deck at
+  function njFloodBase(n, a, c) {
+    const L = Math.max(1e-6, Math.hypot(c[0] - a[0], c[1] - a[1])), mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+    let nx = (c[1] - a[1]) / L, nz = -(c[0] - a[0]) / L;
+    const own = njRing(NJ_HOUSE[n]);
+    if (njIn(own, mx + nx * 0.05, mz + nz * 0.05)) { nx = -nx; nz = -nz; }
+    for (let k = n - 1; k >= 0; k--) if (njIn(njRing(NJ_HOUSE[k]), mx + nx * 0.7, mz + nz * 0.7)) return njLevelY(k + 1) - NJ_Y0;
+    return n === 0 ? 0 : njLevelY(n) - NJ_Y0;
+  }
+
+  function njHouses(b, lo) {
+    NJ_HOUSE.forEach((pl, n) => {
+      b.seed = 0.19 * n + 0.05;
+      const y0 = n === 0 ? NJ_Y0 - 0.35 : njLevelY(n), y1 = njLevelY(n + 1);
+      if (lo) {
+        // the far level: plain paint, the 01 and the 02 in the bays' mean shade (their dark openings, averaged)
+        b.prism(njRing(pl), y0, y1, { k: NJK.paint, col: n === 1 || n === 2 ? [80, 85, 90, 230] : NJC.house, kt: NJK.deck, colT: NJC.roof });
+        return;
+      }
+      // the walls on the plan with its bays cut in (a bay's back and end walls in their darker shade), the deck over them
+      // the plan uncut, so it overhangs each bay; every wall's seed the height its floods stand at
+      const { pl: cut, tag } = njNotched(pl, n), ring = njRing(cut), tg = [...tag, ...tag.slice().reverse()], m = ring.length;
+      const bayWall = (i) => tg[i] || tg[(i + 1) % m];
+      b.prism(ring, y0, y1, { k: NJK.bulk, col: NJC.house, uv: 'level', kt: -1, u0: n * 7.3, colOf: (i) => (bayWall(i) ? NJC.bay : null),
+        seedOf: (i, a, c) => (bayWall(i) ? njLevelY(n) - NJ_Y0 : njFloodBase(n, a, c)) });
+      b.cap(njRing(pl), y1, 1, NJK.deck, NJC.roof);
+      njBayDeck(b, n);
+    });
+    njConning(b, lo);
+    // the open bridge wings off the pilot house, and the tower's platforms (the lookouts', the signal yards' and the
+    // searchlights'), each a deck on brackets with its bulwark, its underside in shadow
+    for (const sd of [1, -1]) for (const [s0, s1, z0, z1, n] of [[149.0, 153.6, 6.0, 9.6, 4], [140.0, 144.6, 3.0, 5.2, 7], [139.0, 143.5, 2.9, 4.8, 9], [146.0, 149.6, 3.3, 5.0, 6], [138.2, 141.4, 3.2, 4.6, 8]]) {
+      if (lo && n > 7) continue;
+      const y = njLevelY(n + 1);
+      b.box(njX(s0), njX(s1), y - 0.25, y, z0 * sd, z1 * sd, { k: NJK.paint, col: NJC.house, kt: NJK.deck, colT: NJC.roof, bot: !lo, colB: NJC.soffit });
+      if (!lo) {
+        b.box(njX(s0), njX(s1), y, y + 1.0, (z1 - 0.08) * sd, z1 * sd, { k: NJK.paint, col: NJC.house, kt: NJK.paint, colT: NJC.roof });   // the bulwark
+        b.prism([[njX(s0 + 0.3), z0 * sd], [njX(s0 + 0.5), z0 * sd], [njX(s0 + 0.5), (z1 - 0.4) * sd], [njX(s0 + 0.3), (z1 - 0.4) * sd]], y - 1.4, y - 0.25,
+          { top: [[njX(s0 + 0.3), z0 * sd], [njX(s0 + 0.5), z0 * sd], [njX(s0 + 0.5), (z1 - 0.2) * sd], [njX(s0 + 0.3), (z1 - 0.2) * sd]], k: NJK.paint, col: NJC.bay, kt: -1 });   // a bracket
+      }
+    }
+    if (!lo) NJ.clutter = njClutter(b);
+  }
+  // the bridge's windows: a band of glass round the forward faces of the 05 (the pilot house) and the 06 (the flag
+  // bridge), 4 cm proud of the wall
+  function njWindows(b) {
+    for (const [n, sMin, y0, h] of [[5, 146, 0.85, 1.15], [6, 145, 0.95, 1.0], [4, 150, 1.0, 0.9]]) {
+      const ring = njRing(NJ_HOUSE[n]), m = ring.length, yb = njLevelY(n) + y0;
+      let cx = 0, cz = 0; for (const q of ring) { cx += q[0]; cz += q[1]; } cx /= m; cz /= m;
+      b.seed = 0.31 * n;
+      for (let i = 0; i < m; i++) {
+        const a = ring[i], c = ring[(i + 1) % m];
+        if ((a[0] + c[0]) / 2 < njX(sMin)) continue;
+        const ex = c[0] - a[0], ez = c[1] - a[1], L = Math.hypot(ex, ez);
+        if (L < 0.8) continue;
+        let nx = ez / L, nz = -ex / L;
+        if (nx * ((a[0] + c[0]) / 2 - cx) + nz * ((a[1] + c[1]) / 2 - cz) < 0) { nx = -nx; nz = -nz; }
+        const o = 0.04, p = (q, y) => [q[0] + nx * o, y, q[1] + nz * o];
+        const pts = [p(a, yb), p(c, yb), p(c, yb + h), p(a, yb + h)];
+        b.face(pts, [nx, 0, nz], NJK.glass, NJC.glass, (q) => [Math.hypot(q[0] - pts[0][0], q[2] - pts[0][2]), q[1] - yb]);
+      }
+    }
+  }
+  // a Mk 38 main battery director (the box, the rangefinder's arms across it, the Mk 13 radar's dish on top) or a Mk 37
+  // (smaller, its Mk 25 dish forward)
+  function njDirector(b, s, y, big, lo) {
+    const x = njX(s), L = big ? 5.4 : 3.8, W = big ? 2.2 : 1.6, H = big ? 2.4 : 2.1;
+    b.seed = 0.03 * s;
+    b.prism([[x - L / 2, -W], [x + L / 2 - 0.6, -W], [x + L / 2, -W + 0.6], [x + L / 2, W - 0.6], [x + L / 2 - 0.6, W], [x - L / 2, W]], y, y + H,
+      { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof });
+    if (big) b.tube([x + 0.4, y + H - 0.6, -4.4], [x + 0.4, y + H - 0.6, 4.4], 0.36, 0.36, lo ? 6 : 12, { k: NJK.paint, col: NJC.haze, cap: true });
+    if (big) b.box(x - 0.3, x + 0.25, y + H, y + H + 1.25, -2.0, 2.0, { k: NJK.black, col: NJC.black, kt: NJK.black, colT: NJC.black });   // the Mk 13's antenna
+    else b.lathe([x + 1.0, y + H + 0.9, 0], [1, 0, 0], [[0, 1.0], [0.35, 1.0]], lo ? 8 : 16, { k: NJK.paint, col: NJC.haze, cap: true });   // the Mk 25 dish
+  }
+  // the funnels: each its station, its half-length and half-breadth, its cap's height and its platform's over the main
+  // deck, its searchlights (degrees round from her bow) and whether it carries the whistle's platform
+  const NJ_FUNNELS = [
+    { s: 131.2, rx: 4.5, rz: 3.9, top: 20.0, plat: 15.45, lights: [40, -40, 140, -140], whistle: true },
+    { s: 105.7, rx: 4.6, rz: 3.8, top: 18.4, plat: 13.9, lights: [90, -90], whistle: false },
+  ];
+  // a funnel: an elliptical stack from y0, its plating the funnel's own kind (the shader draws its stiffeners and the
+  // soot toward the cap, its seed the stack's height for that, its uv metres up from its foot), its black cap and the dome
+  // over it; near, what the photographs wrap round it (the review: the forward one inside the searchlight platforms and
+  // the foremast's after legs, the after one carrying the mainmast): the platform with its dark underside and its
+  // plated bulwark, the searchlights' tubs, the steam pipes up its after side past the cap, and on the forward one the
+  // whistle's platform
+  function njFunnel(b, F, y0, lo, mesh) {
+    const x = njX(F.s), seg = lo ? 12 : 28, rx = F.rx, rz = F.rz, y1 = NJ_Y0 + F.top;
+    b.seed = y1 - y0;
+    b.cyl(x, 0, rx, rz, y0, y1, seg, { k: NJK.funnel, col: NJC.house, taper: 0.96 });
+    b.seed = 0.013 * F.s;
+    b.cyl(x, 0, rx * 0.985, rz * 0.985, y1 - 0.05, y1 + 1.0, seg, { k: NJK.black, col: NJC.black, dome: 1.5, kt: NJK.black, colT: NJC.black });
+    if (lo) return;
+    b.cyl(x, 0, rx * 1.03, rz * 1.03, y1 - 0.3, y1 - 0.05, seg, { k: NJK.paint, col: NJC.house, kt: NJK.paint, colT: NJC.roof });   // the band under the cap
+    // the platform: an ellipse 1.4 m out from the stack (its taper there), its deck and its underside
+    const yP = NJ_Y0 + F.plat, tp = 1 - 0.04 * (yP - y0) / (y1 - y0), ex = rx * tp + 1.4, ez = rz * tp + 1.4, ring = [];
+    for (let i = 0; i < 20; i++) { const a = i / 20 * Math.PI * 2; ring.push([x + Math.cos(a) * ex, Math.sin(a) * ez]); }
+    b.prism(ring, yP - 0.25, yP, { k: NJK.paint, col: NJC.house, kt: NJK.deck, colT: NJC.roof, bot: true, colB: NJC.soffit });
+    // its splinter shield: a plated bulwark round the rim, both faces (the photographs: a band round the stack, not a rail)
+    b.prism(ring, yP, yP + 1.05, { k: NJK.paint, col: NJC.house, kt: -1 });
+    b.prism(ring.map((q) => [x + (q[0] - x) * 0.985, q[1] * 0.985]), yP, yP + 1.05, { k: NJK.paint, col: NJC.house, kt: -1, inward: true });
+    b.prism(ring, yP + 1.05, yP + 1.12, { top: ring.map((q) => [x + (q[0] - x) * 0.985, q[1] * 0.985]), k: NJK.paint, col: NJC.house, kt: -1 });
+    // the searchlights: a tub on the platform's rim and the lamp in it trained outboard
+    for (const deg of F.lights) {
+      const a = deg * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a), tx = x + ca * (ex - 0.75), tz = sa * (ez - 0.75);
+      b.cyl(tx, tz, 0.7, 0.7, yP, yP + 0.85, 10, { k: NJK.paint, col: NJC.house, kt: -1 });
+      b.lathe([tx, yP + 1.35, tz], [ca, 0, sa], [[-0.45, 0.42], [0.45, 0.42]], 10, { k: NJK.paint, col: NJC.haze, cap: true, capK: NJK.glass, capCol: [60, 64, 70, 255] });
+    }
+    // the steam pipes up the after side, 0.4 m off the plating, past the cap
+    for (const zz of [-1.1, 1.1]) {
+      const xs = x - rx * 0.96 * Math.sqrt(1 - (zz / (rz * 0.96)) ** 2) - 0.4;
+      b.tube([xs, yP, zz], [xs, y1 + 1.5, zz], 0.2, 0.18, 6, { k: NJK.paint, col: NJC.house, cap: true, capK: NJK.black, capCol: NJC.black });
+    }
+    if (F.whistle) {   // the whistle's platform high on the forward face, the whistle on it
+      const xw = x + rx * 0.97, yw = y1 - 1.9;
+      b.box(xw - 0.2, xw + 1.5, yw - 0.2, yw, -1.3, 1.3, { k: NJK.paint, col: NJC.house, kt: NJK.deck, colT: NJC.roof, bot: true, colB: NJC.soffit });
+      b.cyl(xw + 0.8, 0, 0.16, 0.16, yw, yw + 0.9, 8, { k: NJK.gun, col: NJC.gun, kt: NJK.gun, colT: NJC.gun });
+      mesh.push({ t: 'rail', a: [xw + 1.5, -1.3], c: [xw + 1.5, 1.3], y: yw });
+    }
+  }
+  // a braced lattice of four legs from the rectangle foot [s0, s1, half-breadth] at yf to top at yt: near, its four
+  // faces' truss quads into `mesh` (two rows a face, so the trapezoid's across-coordinate stays near true) and its legs
+  // thin tubes; far, a dark trapezoid (the review)
+  function njLattice(b, lo, mesh, f, t) {
+    const corners = (q, y) => [[njX(q[0]), y, -q[2]], [njX(q[1]), y, -q[2]], [njX(q[1]), y, q[2]], [njX(q[0]), y, q[2]]];
+    const A = corners(f, f[3]), B = corners(t, t[3]);
+    if (lo) {
+      b.prism(A.map((p) => [p[0], p[2]]), f[3], t[3], { top: B.map((p) => [p[0], p[2]]), k: NJK.black, col: NJC.lattice, kt: NJK.black, colT: NJC.lattice });
+      return;
+    }
+    for (let i = 0; i < 4; i++) b.tube(A[i], B[i], 0.17, 0.13, 4, { k: NJK.black, col: NJC.black });
+    const H = t[3] - f[3];
+    for (let i = 0; i < 4; i++) {
+      const j = (i + 1) % 4, L = (k) => [A[i][0] + (B[i][0] - A[i][0]) * k, A[i][1] + H * k, A[i][2] + (B[i][2] - A[i][2]) * k], R = (k) => [A[j][0] + (B[j][0] - A[j][0]) * k, A[j][1] + H * k, A[j][2] + (B[j][2] - A[j][2]) * k];
+      for (const [k0, k1] of [[0, 0.5], [0.5, 1]]) mesh.push({ t: 'truss', q: [L(k0), R(k0), R(k1), L(k1)], h: [H * k0, H * k1], w: Math.hypot(R(0)[0] - L(0)[0], R(0)[2] - L(0)[2]) });
+    }
+  }
+  // the masts. The foremast is the 1980s refit's: a braced lattice of black legs from over the forward funnel's cap to
+  // the yard's wide platform (the review: from Philadelphia her signature), its after legs carried down outboard of the
+  // funnel to the 04, the lookouts' platform half way up, the SPS-49's curved open reflector over the platform, the
+  // topmast. The mainmast a lattice kingpost on the after funnel's after side with its platforms and yards. The bow mast;
+  // the jack and ensign staffs. Their platforms' railings and the reflector go into `mesh` (the railings' draw)
+  function njMasts(b, lo, mesh) {
+    const blk = { k: NJK.black, col: NJC.black, kt: NJK.black, colT: NJC.black, bot: !lo, colB: NJC.black }, gry = { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof }, seg = lo ? 4 : 8;
+    b.seed = 0.77;
+    const yP = NJ_Y0 + 31.0;
+    njLattice(b, lo, mesh, [135.4, 139.0, 2.4, NJ_Y0 + 20.6], [136.6, 139.0, 1.3, yP]);
+    if (!lo) for (const sd of [1, -1]) b.tube([njX(135.4), NJ_Y0 + 20.6, 2.4 * sd], [njX(134.6), njLevelY(5), 4.2 * sd], 0.17, 0.17, 6, blk);   // the after legs, down beside the funnel
+    // the yard's platform and the lookouts' platform half way up, their railings
+    const plat = (s0, s1, w, y) => {
+      b.box(njX(s0), njX(s1), y - 0.22, y, -w, w, blk);
+      if (lo) return;
+      const r = [[njX(s0), -w], [njX(s1), -w], [njX(s1), w], [njX(s0), w]];
+      for (let i = 0; i < 4; i++) mesh.push({ t: 'rail', a: r[i], c: r[(i + 1) % 4], y });
+    };
+    plat(135.6, 140.0, 3.1, yP);
+    plat(134.4, 136.9, 2.6, NJ_Y0 + 25.9);
+    b.tube([njX(138.6), yP + 1.3, -7.8], [njX(138.6), yP + 1.3, 7.8], 0.13, 0.13, seg, blk);   // the yard
+    b.tube([njX(139.3), yP, 0], [njX(139.3), NJ_Y0 + 44.0, 0], 0.2, 0.09, seg, blk);   // the topmast
+    if (!lo) {
+      b.tube([njX(139.3), NJ_Y0 + 40.5, -3.0], [njX(139.3), NJ_Y0 + 40.5, 3.0], 0.07, 0.07, 6, blk);
+      b.box(njX(138.7), njX(139.9), NJ_Y0 + 38.0, NJ_Y0 + 38.2, -0.6, 0.6, blk);
+      for (const sd of [1, -1]) b.tube([njX(138.6), yP + 1.3, 7.6 * sd], [njX(138.6), yP - 0.8, 7.6 * sd], 0.05, 0.05, 4, blk);   // the yard's halyard drops
+    }
+    // the SPS-49: its pedestal and its reflector, a parabolic strip 7.3 by 4 m (five quads of the open mesh, its edges
+    // 0.5 m forward of its middle), framed top, bottom and at its edges and its middle
+    const yA = yP + 2.0, xA = njX(137.6), dep = 0.5, half = 3.65, zs = [-1, -0.6, -0.2, 0.2, 0.6, 1].map((q) => q * half);
+    const sx = (z) => xA + dep * (z / half) ** 2;
+    b.tube([xA - 0.1, yP, 0], [xA - 0.1, yA + 0.4, 0], 0.32, 0.32, seg, blk);
+    if (lo) b.prism([[xA, -half], [xA + dep, -half], [xA + dep, half], [xA, half]], yA, yA + 4.0, { k: NJK.black, col: NJC.lattice, kt: -1 });
+    else {
+      for (let i = 0; i < 5; i++) for (const y of [yA + 0.03, yA + 3.97]) b.tube([sx(zs[i]), y, zs[i]], [sx(zs[i + 1]), y, zs[i + 1]], 0.06, 0.06, 4, { k: NJK.black, col: NJC.black });
+      for (const z of [-half, 0, half]) b.tube([sx(z), yA, z], [sx(z), yA + 4.0, z], 0.06, 0.06, 4, { k: NJK.black, col: NJC.black });
+      mesh.push({ t: 'sps', cols: zs.map((z) => [sx(z), z, -2 * dep * z / (half * half)]), y0: yA, y1: yA + 4.0 });
+    }
+    // the mainmast: a lattice kingpost from the 02's roof behind the after funnel, its platforms, its yards, its pole
+    const ym = NJ_Y0 + 24.5;
+    njLattice(b, lo, mesh, [97.8, 100.8, 1.5, njLevelY(3)], [98.8, 100.0, 0.55, ym]);
+    b.tube([njX(99.4), ym - 0.2, 0], [njX(99.4), NJ_Y0 + 29.0, 0], 0.16, 0.08, seg, blk);
+    plat(97.9, 100.9, 1.5, NJ_Y0 + 21.25);
+    if (!lo) plat(97.3, 101.0, 1.9, NJ_Y0 + 16.6);
+    b.tube([njX(99.4), NJ_Y0 + 23.2, -5.0], [njX(99.4), NJ_Y0 + 23.2, 5.0], 0.1, 0.1, seg, blk);
+    if (!lo) b.tube([njX(99.4), NJ_Y0 + 26.6, -2.8], [njX(99.4), NJ_Y0 + 26.6, 2.8], 0.07, 0.07, 6, blk);
+    // the bow mast, the jackstaff, the ensign staff
+    const yB = njDeck(241.5);
+    b.tube([njX(241.5), yB - 0.1, 0], [njX(241.5), yB + 12.5, 0], 0.22, 0.09, seg, gry);
+    b.tube([njX(241.5), yB + 8.5, -3.2], [njX(241.5), yB + 8.5, 3.2], 0.08, 0.08, seg, gry);
+    if (!lo) {
+      b.box(njX(240.9), njX(242.1), yB + 6.0, yB + 6.15, -0.6, 0.6, gry);
+      for (const sd of [1, -1]) b.tube([njX(241.5), yB + 6.0, 0], [njX(239.4), yB, 1.9 * sd], 0.06, 0.06, 5, gry);   // its legs
+      b.tube([njX(270.0), njDeck(270) - 0.05, 0], [njX(270.0), njDeck(270) + 5.5, 0], 0.07, 0.04, 6, gry);
+      b.tube([njX(0.9), njDeck(0.9) - 0.05, 0], [njX(0.9), njDeck(0.9) + 6.0, 0], 0.08, 0.05, 6, gry);
+    }
+  }
+  // the 1980s weapons and fittings over the superstructure: the armoured box launchers, the Harpoon quads, the Phalanx,
+  // the boats and their cranes, the ECM, the whips
+  function njFittings(b, lo) {
+    const gry = { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof };
+    b.seed = 0.53;
+    // the ABLs: two pairs on sponsons abreast the after funnel (where mounts 7 and 8 stood), two pairs on the 02 aft
+    const abl = (s0, z, y) => {
+      const x0 = njX(s0), x1 = x0 + 6.6;
+      b.prism([[x0, z - 0.95], [x1, z - 0.95], [x1, z + 0.95], [x0, z + 0.95]], y, y + 1.0, { k: NJK.paint, col: NJC.haze, kt: -1 });
+      b.prism([[x0, z - 0.95], [x1, z - 0.95], [x1, z + 0.95], [x0, z + 0.95]], y + 1.0, y + 1.75,
+        { top: [[x0 + 0.1, z - 0.9], [x1 - 0.9, z - 0.9], [x1 - 0.9, z + 0.9], [x0 + 0.1, z + 0.9]], k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof });
+    };
+    for (const sd of [1, -1]) {
+      b.box(njX(102), njX(113.5), njLevelY(1) - 0.3, njLevelY(1), 11.2 * sd, 15.2 * sd, { k: NJK.paint, col: NJC.haze, kt: NJK.deck, colT: NJC.roof });   // the sponson
+      for (const z of [12.3, 14.3]) abl(104.5, z * sd, njLevelY(1));
+      for (const z of [5.0, 7.0]) abl(90.2, z * sd, njLevelY(3));
+    }
+    // the Phalanx: a tub, the mount, the white radome and the gun, two forward on the 04, two aft on the 02
+    const ciws = (s, z, y) => {
+      const x = njX(s);
+      b.cyl(x, z, 1.3, 1.3, y, y + 0.9, lo ? 8 : 16, { k: NJK.paint, col: NJC.haze, kt: NJK.deck, colT: NJC.roof });
+      b.box(x - 0.7, x + 0.7, y + 0.9, y + 2.0, z - 0.55, z + 0.55, gry);
+      b.cyl(x - 0.15, z, 0.55, 0.55, y + 2.0, y + 3.1, lo ? 8 : 16, { k: NJK.white, col: NJC.white, dome: 0.5, kt: NJK.white, colT: NJC.white });
+      if (!lo) b.tube([x + 0.6, y + 1.5, z], [x + 2.4, y + 1.55, z], 0.16, 0.15, 8, { k: NJK.gun, col: NJC.gun, cap: true, capK: NJK.black, capCol: NJC.black });
+    };
+    for (const sd of [1, -1]) { ciws(128.6, 5.7 * sd, njLevelY(4)); ciws(98.3, 6.3 * sd, njLevelY(3)); }
+    // the Harpoon quads on the 03 abreast the after funnel, pointing outboard, raised 35 degrees
+    if (!lo) for (const sd of [1, -1]) for (const s of [113.0, 117.0]) {
+      const x = njX(s), z = 5.2 * sd, y = njLevelY(4);
+      b.box(x - 0.5, x + 0.5, y, y + 0.9, z - 0.5, z + 0.5, gry);
+      const el = 35 * Math.PI / 180, d = [0, Math.sin(el), Math.cos(el) * sd];
+      for (const da of [-0.33, 0.33]) for (const dh of [0, 0.62]) {
+        const p0 = [x + da, y + 0.75 + dh * Math.cos(el), z - 1.8 * sd - dh * Math.sin(el) * sd];
+        b.lathe(p0, d, [[0, 0.3], [4.4, 0.3]], 8, { k: NJK.paint, col: NJC.haze, cap: true });
+      }
+    }
+    // the boats on the 02 (a gig a side, white with a grey top) and their cranes
+    for (const sd of [1, -1]) {
+      const x0 = njX(113.2), x1 = njX(121.6), z = 9.3 * sd, y = njLevelY(2) + 0.55, hl = (x1 - x0) / 2, xc = (x0 + x1) / 2;
+      const hullR = [], topR = [];
+      for (let i = 0; i <= 9; i++) { const t = -1 + i / 5; const w = 1.3 * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, t), 2.2))) * (t < -0.85 ? 0.85 + (t + 1) : 1); hullR.push([xc + t * hl, z + w * 0.82]); topR.push([xc + t * hl, z + w]); }
+      hullR.push([xc + hl, z]); topR.push([xc + hl, z]);   // the stem
+      for (let i = 9; i >= 0; i--) { const t = -1 + i / 5; const w = 1.3 * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, t), 2.2))) * (t < -0.85 ? 0.85 + (t + 1) : 1); hullR.push([xc + t * hl, z - w * 0.82]); topR.push([xc + t * hl, z - w]); }
+      b.prism(hullR, y, y + 1.2, { top: topR, k: NJK.white, col: NJC.boat, kt: NJK.paint, colT: NJC.roof });
+      if (!lo) {
+        b.box(xc - 2.4, xc + 1.0, y + 1.2, y + 2.1, z - 0.9, z + 0.9, { k: NJK.white, col: NJC.boat, kt: NJK.paint, colT: NJC.roof });
+        for (const xx of [x0 + 1.6, x1 - 1.6]) b.box(xx - 0.2, xx + 0.2, y - 0.55, y, z - 1.0, z + 1.0, gry);   // the cradles
+        b.tube([njX(123.6), njLevelY(2), 9.6 * sd], [njX(123.6), njLevelY(2) + 6.4, 9.6 * sd], 0.32, 0.26, 8, gry);
+        b.tube([njX(123.6), njLevelY(2) + 6.0, 9.6 * sd], [njX(117.4), njLevelY(2) + 8.2, 11.0 * sd], 0.2, 0.14, 6, gry);
+        b.tube([njX(117.4), njLevelY(2) + 8.2, 11.0 * sd], [njX(117.4), y + 2.3, 9.6 * sd], 0.03, 0.03, 4, gry);   // the fall
+      }
+    }
+    if (lo) return;
+    // the ECM's boxes on the 06's sides, the whips, the searchlights' tubs on the 04
+    for (const sd of [1, -1]) {
+      b.box(njX(144.0), njX(146.4), njLevelY(7) + 0.3, njLevelY(7) + 2.0, 3.4 * sd, 4.8 * sd, gry);
+      for (const s of [111, 119.5]) b.tube([njX(s), njLevelY(4), 6.4 * sd], [njX(s), njLevelY(4) + 11.0, 6.9 * sd], 0.07, 0.04, 5, { k: NJK.paint, col: NJC.haze });
+      b.cyl(njX(129.5), 6.6 * sd, 0.6, 0.6, njLevelY(4), njLevelY(4) + 1.1, 12, { k: NJK.paint, col: NJC.haze, kt: NJK.black, colT: NJC.black });
+    }
+  }
+  // the deck's fittings: the breakwater ahead of turret 1, the bitts along each side, the mushroom vents, the capstans,
+  // the wildcats and the cable from them to the hawse pipes. No anchor stowed in the hawse: at the museum both cables run
+  // out of the pipes to the river's bed (the review: the anchors were drawn home while their cables ran out of the same
+  // pipes)
+  function njDeckGear(b) {
+    const gry = { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof };
+    b.seed = 0.91;
+    for (const sd of [1, -1]) {
+      const a = [njX(212.6), 0], c = [njX(208.4), 8.8 * sd], yd = njDeck(210.5) + njCamber(210.5) * 0.4;
+      const ex = c[0] - a[0], ez = c[1] - a[1], L = Math.hypot(ex, ez), nx = ez / L, nz = -ex / L;
+      b.prism([[a[0], a[1]], [c[0], c[1]], [c[0] + nx * 0.14, c[1] + nz * 0.14], [a[0] + nx * 0.14, a[1] + nz * 0.14]], yd - 0.2, yd + 1.1, gry);
+      for (let s = 12; s < 258; s += 16.5) {
+        if (s > 78 && s < 186) continue;   // the house's own
+        const z = (njBeam(s) - 1.0) * sd, y = njDeck(s) + njCamber(s) * 0.12;
+        for (const ds of [-0.45, 0.45]) b.cyl(njX(s + ds), z, 0.27, 0.27, y - 0.1, y + 0.72, 10, { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof });
+      }
+      for (const s of [22, 34, 48, 214, 223, 232]) {
+        const z = (njBeam(s) - 3.6) * sd, y = njDeck(s) + njCamber(s) * 0.8;
+        b.cyl(njX(s), z, 0.32, 0.32, y - 0.1, y + 0.85, 10, { k: NJK.paint, col: NJC.haze, kt: -1 });
+        b.cyl(njX(s), z, 0.55, 0.55, y + 0.85, y + 1.05, 10, { k: NJK.paint, col: NJC.haze, dome: 0.18, kt: NJK.paint, colT: NJC.haze });
+      }
+      for (const s of [248.4, 252.4]) { const y = njDeck(s) + njCamber(s) * 0.9; b.cyl(njX(s), 2.6 * sd, 0.75, 0.75, y - 0.1, y + 0.85, 16, { k: NJK.gun, col: NJC.anchor, kt: NJK.gun, colT: NJC.anchor }); }
+      { const s = 256, y = njDeck(s) + njCamber(s) * 0.9; b.box(njX(s) - 0.8, njX(s) + 0.8, y - 0.1, y + 1.0, 2.4 * sd - 1.0, 2.4 * sd + 1.0, { k: NJK.gun, col: NJC.anchor, kt: NJK.gun, colT: NJC.anchor }); }
+      // the cable on deck from the wildcat to the hawse pipe
+      { const p0 = [njX(256.8), 0, 2.4 * sd], p1 = [njX(263.2), 0, (njBeam(263.2) - 0.45) * sd];
+        p0[1] = njDeck(256.8) + njCamber(256.8) * 0.9 + 0.08; p1[1] = njDeck(263.2) + njCamber(263.2) * 0.3 + 0.08;
+        b.tube(p0, p1, 0.2, 0.2, 6, { k: NJK.black, col: NJC.anchor }); }
+    }
+    // the chains out of the hawse pipes to the river ahead (the photographs: both cables run from the stem down to the
+    // water some 20 m before her), a catenary of links
+    for (const sd of [1, -1]) {
+      const s = 263.6, y0 = njDeck(s) - 1.5, z0 = (njHullZ(s, y0) + 0.25) * sd, x1 = njX(284), z1 = 6.5 * sd, y1 = -0.3, nS = 10;
+      let prev = null;
+      for (let i = 0; i <= nS; i++) {
+        const t = i / nS, x = njX(s) + (x1 - njX(s)) * t, z = z0 + (z1 - z0) * t, y = y0 + (y1 - y0) * t - 2.2 * Math.sin(Math.PI * t) * 0.6;
+        const p = [x, y, z];
+        if (prev) b.tube(prev, p, 0.12, 0.12, 5, { k: NJK.black, col: NJC.anchor });
+        prev = p;
+      }
+    }
+    // the tent over the fantail (the museum's: a white canopy on a frame, its gable ends closed, its sides open), its posts
+    { const x0 = njX(4.5), x1 = njX(27), yE = njDeck(15) + 3.0, yR = yE + 1.9, w = 6.4, nl = Math.hypot(w, 1.9);
+      b.seed = 0.66;
+      for (const sd of [1, -1]) b.face([[x0, yE, w * sd], [x1, yE, w * sd], [x1, yR, 0], [x0, yR, 0]], [0, w / nl, 1.9 / nl * sd], NJK.white, NJC.tent, (q) => [q[0], q[2]]);
+      b.face([[x0, yE, w], [x0, yR, 0], [x0, yE, -w]], [-1, 0, 0], NJK.white, NJC.tent, (q) => [q[2], q[1]]);
+      b.face([[x1, yE, w], [x1, yR, 0], [x1, yE, -w]], [1, 0, 0], NJK.white, NJC.tent, (q) => [q[2], q[1]]);
+      for (let x = x0; x <= x1 + 0.01; x += (x1 - x0) / 4) for (const sd of [1, -1]) b.tube([x, njDeck(15) - 0.05, w * sd], [x, yE, w * sd], 0.07, 0.07, 5, { k: NJK.white, col: NJC.tent }); }
+  }
+  // the railings: a quad a run (both faces, the railings' texture: stanchions every 1.8 m and three courses), 1.07 m
+  // tall; along the main deck's edges and every level's open edge
+  function njRails(f, mesh) {
+    const r = { P: [], N: [], T: [], I: [], nv: 0 };
+    const quad = (a, c, y0a, y0c, h) => {
+      const L = Math.hypot(c[0] - a[0], c[1] - a[1]);
+      if (L < 0.2) return;
+      const n = [-(c[1] - a[1]) / L, (c[0] - a[0]) / L];   // the winding's own face (both faces drawn, three flips the back's)
+      const u0 = r.u || 0, u1 = u0 + L / 1.8;
+      for (const [p, y, u, v] of [[a, y0a, u0, 0], [c, y0c, u1, 0], [c, y0c + h, u1, 1], [a, y0a + h, u0, 1]]) { r.P.push(p[0], y, p[1]); r.N.push(n[0], 0, n[1]); r.T.push(u, 0.5 + 0.48 * v); }
+      r.I.push(r.nv, r.nv + 1, r.nv + 2, r.nv, r.nv + 2, r.nv + 3); r.nv += 4;
+      r.u = u1;
+    };
+    // the main deck's: one run a side, a gap at each gangway
+    const S = []; for (let s = 1.2; s < 269.6; s += s < 20 || s > 240 ? 2.5 : 6) S.push(s); S.push(269.6);
+    const gaps = (NJ.pier && NJ.pier.gang) || [];
+    for (const sd of [1, -1]) {
+      r.u = 0;
+      for (let i = 0; i < S.length - 1; i++) {
+        const s0 = S[i], s1 = S[i + 1];
+        if (sd > 0 && gaps.some((g) => s1 > g - 1.2 && s0 < g + 1.2)) continue;
+        const a = [njX(s0), (njBeam(s0) - 0.07) * sd], c = [njX(s1), (njBeam(s1) - 0.07) * sd];
+        quad(a, c, njDeck(s0) + 0.02, njDeck(s1) + 0.02, 1.07);
+      }
+    }
+    // the levels' edges, where the level above leaves an open deck (0.6 m or more to its wall)
+    NJ_HOUSE.forEach((pl, n) => {
+      const ring = njRing(pl.map(([s, w]) => [s, w + 0.05])), up = NJ_HOUSE[n + 1] ? njRing(NJ_HOUSE[n + 1].map(([s, w]) => [s, w + 0.6])) : null, y = njLevelY(n + 1);
+      r.u = 0;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], c = ring[(i + 1) % ring.length], mx = (a[0] + c[0]) / 2, mz = (a[1] + c[1]) / 2;
+        if (up && njIn(up, mx, mz)) continue;
+        const L = Math.hypot(c[0] - a[0], c[1] - a[1]); if (L < 0.3) continue;
+        quad(a, c, y, y, 1.0);
+      }
+    });
+    // the gangways' handrails are the towers' own (njPier). What the masts and the funnels hand over (`mesh`): the
+    // platforms' railings; the lattices' truss quads (the texture's truss strip, its legs along the quad's sides and a
+    // bay a texture half, so the bracing keeps its pitch as the faces taper); the SPS-49's reflector, its open mesh
+    for (const e of mesh || []) {
+      if (e.t === 'rail') { r.u = 0; quad(e.a, e.c, e.y, e.y, 1.0); continue; }
+      const nv = r.nv;
+      if (e.t === 'truss') {
+        const [p0, p1, p2, p3] = e.q, ux = p1[0] - p0[0], uz = p1[2] - p0[2], vx = p3[0] - p0[0], vy = p3[1] - p0[1], vz = p3[2] - p0[2];
+        const nx = -uz * vy, ny = uz * vx - ux * vz, nz = ux * vy;
+        const nl = Math.hypot(nx, ny, nz) || 1, bay = clamp(e.w * 0.75, 1.8, 3.2);
+        [p0, p1, p2, p3].forEach((p, i) => { r.P.push(p[0], p[1], p[2]); r.N.push(nx / nl, ny / nl, nz / nl); r.T.push((i < 2 ? e.h[0] : e.h[1]) / bay * 0.5, i === 0 || i === 3 ? 0.025 : 0.235); });
+        r.I.push(nv, nv + 1, nv + 2, nv, nv + 2, nv + 3); r.nv += 4;
+      } else if (e.t === 'sps') {
+        const C = e.cols, span = C[C.length - 1][1] - C[0][1];
+        for (const c of C) for (const y of [e.y0, e.y1]) { const nl = Math.hypot(1, c[2]); r.P.push(c[0], y, c[1]); r.N.push(1 / nl, 0, c[2] / nl); r.T.push((c[1] - C[0][1]) / span * 6.6, y === e.y0 ? 0.27 : 0.47); }
+        for (let i = 0; i < C.length - 1; i++) { const a = nv + i * 2; r.I.push(a, a + 2, a + 3, a, a + 3, a + 1); }
+        r.nv += C.length * 2;
+      }
+    }
+    return r;
+  }
+  // the pier: what the museum stands on its T-head (the OSM pier, a deck on piles: pierDeck) to let visitors aboard: two
+  // gangway towers of grey steel with their stairs and a bridge to the main deck, and the mooring dolphins ahead of the
+  // pier, with the lines from her bitts. Laid only where a pier was found along the starboard side (NJ.pier)
+  function njPier(b, lo) {
+    const P = NJ.pier;
+    if (!P || !P.gang.length) return;
+    const gry = { k: NJK.paint, col: NJC.pier, kt: NJK.deck, colT: NJC.pier };
+    b.seed = 0.29;
+    for (const s of P.gang) {
+      const zH = njBeam(s), zP = P.edge, yP = P.y - TERRAIN.water, yD = njDeck(s) + 0.1, x = njX(s);
+      // the tower: four posts and two landings, the bridge across to the rail's gap
+      const z0 = zP + 0.4, z1 = zP + 4.6;
+      for (const [dx, zz] of [[-2.1, z0], [2.1, z0], [-2.1, z1], [2.1, z1]]) b.box(x + dx - 0.15, x + dx + 0.15, yP, yD + 2.6, zz - 0.15, zz + 0.15, gry);
+      b.box(x - 2.25, x + 2.25, yD - 0.25, yD, z0 - 0.2, z1 + 0.2, gry);
+      b.box(x - 2.7, x + 2.7, yD + 2.6, yD + 2.85, z0 - 0.6, z1 + 0.6, { k: NJK.paint, col: [186, 188, 188, 0], kt: NJK.paint, colT: [170, 172, 172, 0] });   // the canopy
+      for (const zz of [z1]) b.box(x - 2.25, x + 2.25, yD, yD + 1.1, zz - 0.05, zz + 0.05, gry);   // the landing's outer screen
+      b.box(x - 2.25, x + 2.25, yP + (yD - yP) / 2 - 0.2, yP + (yD - yP) / 2, z0 - 0.2, z1 + 0.2, gry);
+      b.box(x - 0.75, x + 0.75, yD - 0.2, yD, zH - 0.2, z0, gry);   // the bridge
+      if (!lo) {
+        for (const zz of [z0, z1]) b.box(x - 2.25, x + 2.25, yD + 1.0, yD + 1.08, zz - 0.04, zz + 0.04, gry);
+        for (const dx of [-0.75, 0.75]) b.box(x + dx - 0.04, x + dx + 0.04, yD + 1.0, yD + 1.08, zH, z0, gry);
+        // the stairs: a flight up each half, a slab with its stringers
+        const flight = (xa, xb, ya, yb2, za, zb) => {
+          const nS = 12;
+          for (let k = 0; k < nS; k++) { const t = k / nS, xx = xa + (xb - xa) * t, yy = ya + (yb2 - ya) * t; b.box(Math.min(xx, xx + (xb - xa) / nS), Math.max(xx, xx + (xb - xa) / nS), yy, yy + 0.06, za, zb, gry); }
+        };
+        flight(x - 2.0, x + 1.6, yP, yP + (yD - yP) / 2, z1 - 1.6, z1 - 0.2);
+        flight(x + 1.6, x - 2.0, yP + (yD - yP) / 2, yD, z0 + 0.2, z0 + 1.6);
+      }
+    }
+    // her lines to the pier (the review, from A636 and the 2019 starboard bow view: a bow line, breast lines and springs
+    // to the pier's bollards along her starboard side): [her station, the bollard's station], each a sagging line from
+    // the fairlead at her deck edge to a bollard on the pier's edge; only those whose bollard stands on the pier
+    if (!lo) {
+      const line = (p0, p1, sag) => { let prev = p0; for (let i = 1; i <= 6; i++) { const t = i / 6, p = [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t - sag * Math.sin(Math.PI * t), p0[2] + (p1[2] - p0[2]) * t]; b.tube(prev, p, 0.06, 0.06, 4, { k: NJK.white, col: [196, 188, 170, 40] }); prev = p; } };
+      const yP = P.y - TERRAIN.water;
+      NJ.lines = 0;
+      for (const [sS, sB] of [[P.s1 + 30, P.s1 - 3], [P.s1 - 6, P.s1 - 9], [P.s0 + (P.s1 - P.s0) * 0.62, P.s0 + (P.s1 - P.s0) * 0.4], [P.s0 + (P.s1 - P.s0) * 0.38, P.s0 + (P.s1 - P.s0) * 0.6], [P.s0 + 7, P.s0 + 4], [P.s0 - 24, P.s0 + 2]]) {
+        if (sB < P.s0 + 1 || sB > P.s1 - 1 || sS < 3 || sS > 262 || P.gang.some((g) => Math.abs(g - sB) < 4)) continue;
+        const zB = P.edge + 0.7, xB = njX(sB);
+        b.cyl(xB, zB, 0.28, 0.28, yP, yP + 0.75, 8, { k: NJK.gun, col: NJC.anchor, kt: NJK.gun, colT: NJC.anchor });
+        b.cyl(xB, zB, 0.4, 0.4, yP + 0.75, yP + 0.9, 8, { k: NJK.gun, col: NJC.anchor, kt: NJK.gun, colT: NJC.anchor });
+        line([njX(sS), njDeck(sS) + 0.35, njBeam(sS) - 0.25], [xB, yP + 0.6, zB], 0.35 + 0.012 * Math.abs(sS - sB));
+        NJ.lines++;
+      }
+    }
+    // the dolphins: a cluster of piles under a concrete cap, ahead of the pier off her starboard bow and quarter
+    for (const s of P.dolphins) {
+      const x = njX(s), z = njBeam(Math.min(s, 262)) + 7.0;
+      b.cyl(x, z, 1.5, 1.5, -1.0, 2.2, lo ? 8 : 16, { k: NJK.conc, col: NJC.conc, kt: NJK.conc, colT: NJC.conc });
+      if (!lo) {
+        b.cyl(x, z, 0.35, 0.35, 2.2, 2.75, 8, { k: NJK.gun, col: NJC.anchor, kt: NJK.gun, colT: NJC.anchor });   // the bollard
+        // the line to her bitts, sagging
+        const s2 = s + (s > 135 ? -6 : 6), p0 = [x, 2.6, z], p1 = [njX(s2), njDeck(s2) + 0.6, (njBeam(s2) - 1.0)];
+        let prev = p0;
+        for (let i = 1; i <= 6; i++) { const t = i / 6, p = [p0[0] + (p1[0] - p0[0]) * t, p0[1] + (p1[1] - p0[1]) * t - 0.9 * Math.sin(Math.PI * t), p0[2] + (p1[2] - p0[2]) * t]; b.tube(prev, p, 0.07, 0.07, 5, { k: NJK.white, col: [196, 188, 170, 40] }); prev = p; }
+      }
+    }
+  }
+  // the hull number on both bows (the white 62 with its black shadow, 3 m tall, its top 2.4 m under the deck edge, about
+  // 18 m aft of the stem) and the stern's NEW JERSEY: a canvas drawn by the page, never the image model, on strips that
+  // follow the hull 6 cm out
+  function njMarks(f) {
+    const m = { P: [], N: [], T: [], I: [], nv: 0 };
+    const tri = (a, c, d, want) => {   // wound to face its normal (the marks draw one face)
+      const P = m.P, ux = P[c * 3] - P[a * 3], uy = P[c * 3 + 1] - P[a * 3 + 1], uz = P[c * 3 + 2] - P[a * 3 + 2], vx = P[d * 3] - P[a * 3], vy = P[d * 3 + 1] - P[a * 3 + 1], vz = P[d * 3 + 2] - P[a * 3 + 2];
+      const nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
+      if (nx * want[0] + ny * want[1] + nz * want[2] < 0) m.I.push(a, d, c); else m.I.push(a, c, d);
+    };
+    const strip = (pts, nrm, uvs) => {   // columns of two points (foot, head)
+      const base = m.nv;
+      pts.forEach((p, i) => { m.P.push(p[0], p[1], p[2]); m.N.push(nrm[i][0], nrm[i][1], nrm[i][2]); m.T.push(uvs[i][0], uvs[i][1]); m.nv++; });
+      const cols = pts.length / 2;
+      for (let i = 0; i < cols - 1; i++) { const a = base + i * 2; tri(a, a + 2, a + 3, nrm[i * 2]); tri(a, a + 3, a + 1, nrm[i * 2]); }
+    };
+    for (const sd of [1, -1]) {
+      const s0 = 249.5, s1 = 254.7, yT = njDeck(252) - 2.4, yB = yT - 3.0, pts = [], nrm = [], uvs = [], K = 6;
+      for (let i = 0; i <= K; i++) {
+        const s = sd > 0 ? s0 + (s1 - s0) * i / K : s1 - (s1 - s0) * i / K;   // the 62 reads left to right from outboard: aft to forward on the starboard side, forward to aft on the port
+        for (const [y, v] of [[yB, 0.5], [yT, 1.0]]) {
+          const z = njHullZ(s, y), zu = njHullZ(s, y + 0.2), slope = (zu - z) / 0.2, nl = Math.hypot(1, slope);
+          pts.push([njX(s), y, (z + 0.06) * sd]); nrm.push([0, -slope / nl, sd / nl]); uvs.push([i / K * 0.5, v]);
+        }
+      }
+      strip(pts, nrm, uvs);
+      // the hawse pipe's dark lip round the anchor
+      { const s = 263.6, y = njDeck(s) - 1.25, pts3 = [], n3 = [], u3 = [];
+        for (let i = 0; i <= 2; i++) { const ss = s + (i - 1) * 1.0; for (const [yy, v] of [[y - 0.7, 0.52], [y + 0.7, 1.0]]) { const z = njHullZ(ss, yy); pts3.push([njX(ss), yy, (z + 0.05) * sd]); n3.push([0, 0, sd]); u3.push([0.55 + i / 2 * 0.2, v]); } }
+        strip(pts3, n3, u3); }
+    }
+    // NEW JERSEY across the counter, 0.75 m tall, 1.4 m under the deck edge
+    { const yT = njDeck(0) - 1.4, yB = yT - 0.75, pts = [], nrm = [], uvs = [], K = 8;
+      for (let i = 0; i <= K; i++) {
+        const z = -3.8 + 7.6 * i / K, s = 6 * (1 - Math.sqrt(Math.max(0, 1 - (z / 7.8) ** 2)));   // from her port quarter: read from astern
+        const nx = -1, nz = (z / 7.8) * 0.9, nl = Math.hypot(nx, nz);
+        for (const [y, v] of [[yB, 0.0], [yT, 0.42]]) { pts.push([njX(s) - 0.06, y, z]); nrm.push([nx / nl, 0, nz / nl]); uvs.push([i / K, v]); }
+      }
+      strip(pts, nrm, uvs); }
+    return m;
+  }
+  function njMarksTex() {
+    const cv = document.createElement('canvas'); cv.width = 512; cv.height = 256;
+    const c = cv.getContext('2d');
+    c.clearRect(0, 0, 512, 256);
+    // the 62 (the top left half: u 0 to 0.5, v 0.5 to 1): the Navy's block numerals, white, a black shadow down and aft
+    c.font = '900 118px "Arial Black", Impact, "Helvetica Neue", Arial, sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = '#16171a'; c.fillText('62', 128 + 7, 64 + 6, 235);
+    c.fillStyle = '#f2f2ee'; c.fillText('62', 128, 64, 235);
+    // the hawse pipe's lip (u 0.55 to 0.75, v 0.55 to 1): a dark oval
+    c.fillStyle = '#1b1c1f'; c.beginPath(); c.ellipse(332, 64, 46, 54, 0, 0, Math.PI * 2); c.fill();
+    // the stern's name (v 0 to 0.42): black capitals, widely spaced
+    c.fillStyle = '#17181b'; c.font = '700 75px "Helvetica Neue", Arial, sans-serif';
+    c.fillText('N E W   J E R S E Y', 256, 256 - 54, 500);
+    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8);
+    return freeTexOnUpload(t);
+  }
+  // the railings' texture: the top half a run of railing (a stanchion at the left, three courses); under it the
+  // SPS-49's mesh (v 0.27 to 0.47); at the foot the lattice masts' truss (v 0.025 to 0.235): its two legs along the
+  // strip's edges, a strut and a crossed pair of braces a bay, two bays across the image
+  function njRailTex() {
+    const cv = document.createElement('canvas'); cv.width = 256; cv.height = 256;
+    const c = cv.getContext('2d');
+    c.clearRect(0, 0, 256, 256);
+    c.fillStyle = '#9aa0a6';
+    c.fillRect(0, 4, 9, 124);                                              // the stanchion
+    for (const y of [5, 45, 86]) c.fillRect(0, y, 256, y === 5 ? 7 : 5);  // the rail and two courses (the top 1.07 m, the image's top)
+    c.fillStyle = '#2a2b2e';
+    for (let x = 0; x < 256; x += 32) c.fillRect(x, 135, 12, 53);    // the mesh: dense enough that its mips hold it (61 per cent)
+    for (let y = 135; y < 188; y += 18) c.fillRect(0, y, 256, 8);
+    c.fillStyle = '#1c1d20';
+    c.fillRect(0, 195, 256, 8); c.fillRect(0, 242, 256, 8);          // the legs
+    for (const x of [0, 128, 256]) c.fillRect(x - 3, 195, 7, 55);    // the struts
+    c.strokeStyle = '#1c1d20'; c.lineWidth = 5; c.lineCap = 'butt';
+    for (const x of [0, 128]) { c.beginPath(); c.moveTo(x, 199); c.lineTo(x + 128, 246); c.moveTo(x, 246); c.lineTo(x + 128, 199); c.stroke(); }
+    const t = new THREE.CanvasTexture(cv); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8);
+    t.wrapS = THREE.RepeatWrapping;
+    return freeTexOnUpload(t);
+  }
+
+  // the steel's program: the part's paint (its sRGB colour, linear, times the kit's 0.88), the hull's bands by height (the
+  // red bottom under the boot topping's black, 0.95 m of it over the waterline at her museum draught), the atlas's cell
+  // as detail over its own mean (the plating's and the bulkheads' luminance and a quarter of their chroma, the teak's
+  // colour whole; a bulkhead tile mirrored or not by its place along the wall, its doors held to a few hundred metres),
+  // the funnels' stiffeners and soot, the tampions' stars, the bridge's glass, the roughness by kind; at night the
+  // museum's floodlights (a part's share of them, its colour's fourth byte), a lit pane or two; the weather (snow on her
+  // decks, wet steel), the street lamps' pools near the pier
+  function njMaterial(f) {
+    if (!NJ.map) {
+      const blank = document.createElement('canvas'); blank.width = blank.height = 1;
+      NJ.map = new THREE.Texture(blank); NJ.map.encoding = THREE.sRGBEncoding; NJ.map.anisotropy = anisoOf(8);
+    }
+    const A = NJ_ART_ON ? NJ_ART : null;
+    const cells = [0, 1, 2, 3].map((k) => {
+      if (!A) return new THREE.Vector4(0, 0, 1, 1);
+      const col = k % 2, row = Math.floor(k / 2), px = A.pad[0] * 0.5, py = A.pad[1] * 0.5;
+      return new THREE.Vector4(col * 0.5 + px, 0.5 - row * 0.5 + py, 0.5 - 2 * px, 0.5 - 2 * py);
+    });
+    const P = NJ.pier;
+    const U = {
+      uNjCell: { value: cells }, uNjM: { value: [0, 1, 2, 3].map((k) => new THREE.Vector2(...(A ? A.m[k] : [10, 10]))) },
+      uNjMean: { value: [0, 1, 2, 3].map((k) => new THREE.Vector3(...(A ? A.mean[k] : [0.5, 0.5, 0.5]))) },
+      uNjArt: NJ.artOn, uNjW0: { value: f.W0 }, uNjLamp: lampUniform, uNjNight: nightUniform,
+      // the ship's frame (her middle, her heading) and the pier's stretch of her starboard side and its deck's height
+      // over the river: the pier's lamps lift her side along it at night
+      uNjFrame: { value: new THREE.Vector4(f.cx, f.cz, f.hx, f.hz) },
+      uNjPier: { value: P ? new THREE.Vector3(P.s0, P.s1, P.y - f.W0) : new THREE.Vector3(1e4, -1e4, 0) },
+    };
+    const mat = new THREE.MeshStandardMaterial({ map: NJ.map, roughness: 0.6, metalness: 0 });
+    mat.extensions = { derivatives: true };
+    const gl2 = !!renderer.capabilities.isWebGL2;
+    const Y0 = NJ_Y0.toFixed(2), LV = NJ_LV.toFixed(2);
+    mat.onBeforeCompile = (sh) => {
+      wxSurfacePatch(sh);   // first: its lines land after the material's own (the snow and the wet over the paint)
+      Object.assign(sh.uniforms, U);
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', `#include <common>
+attribute vec2 aK; attribute vec4 aCol; uniform vec4 uNjCell[4]; uniform vec2 uNjM[4]; uniform vec3 uNjMean[4]; uniform float uNjW0;
+varying vec2 vNjUv; varying vec2 vNjK; varying vec4 vNjCol; varying vec4 vNjCell; varying vec2 vNjM; varying vec3 vNjMean; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;`)
+        .replace('#include <uv_vertex>', `#include <uv_vertex>
+vNjUv = uv; vNjK = aK; vNjCol = vec4(pow(aCol.rgb, vec3(2.2)) * 0.88, aCol.a);
+int njI = aK.x > 10.5 && aK.x < 12.5 ? 0 : int(clamp(aK.x - 1.0, 0.0, 3.0) + 0.5);   // the funnels and the armour on the plating's cell
+vNjCell = uNjCell[njI]; vNjM = uNjM[njI]; vNjMean = uNjMean[njI];`)
+        .replace('#include <worldpos_vertex>', `#include <worldpos_vertex>
+vWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal); vBase = uNjW0 + ${(NJ_Y0 - 0.5).toFixed(2)};`);
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', `#include <common>
+uniform float uNjArt, uNjW0, uNjLamp, uNjNight; uniform vec4 uNjFrame; uniform vec3 uNjPier;
+varying vec2 vNjUv; varying vec2 vNjK; varying vec4 vNjCol; varying vec4 vNjCell; varying vec2 vNjM; varying vec3 vNjMean; varying vec3 vWPos; varying vec3 vWNorm; varying float vBase;
+float njK; float njGlass; vec3 njAlbedo;
+float njH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+float njVN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(njH(i), njH(i + vec2(1.0, 0.0)), f.x), mix(njH(i + vec2(0.0, 1.0)), njH(i + vec2(1.0, 1.0)), f.x), f.y); }
+// a five-pointed star's signed distance (Inigo Quilez's), its points at r, its inner radius r * rf, pointing up
+float njStar(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292); const vec2 k2 = vec2(-k1.x, k1.y);
+  p.x = abs(p.x); p -= 2.0 * max(dot(k1, p), 0.0) * k1; p -= 2.0 * max(dot(k2, p), 0.0) * k2; p.x = abs(p.x); p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0); float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}`)
+        .replace('#include <map_fragment>', [
+          'njK = floor(vNjK.x + 0.5); njGlass = 0.0;',
+          'float njPl = step(0.5, njK) * step(njK, 1.5) + step(10.5, njK) * step(njK, 12.5);   // the plating cell: the hull, the funnels, the armour',
+          'float njBk = step(1.5, njK) * step(njK, 2.5);',
+          'vec3 njAlb = vNjCol.rgb;',
+          'float njFh = vWPos.y - uNjW0 - ' + Y0 + ';   // over the main deck amidships',
+          // the cell's tile coordinate (metres over its span) and its gradients, taken where the control flow is uniform;
+          // the plating's runs down from the deck edge (a funnel's up from its foot), the bulkheads' up a level, both
+          // clamped; the decks' and the teak's wrap. A bulkhead's tile is mirrored or not by a hash of its place along the
+          // wall (the art tiles across, so either way its edges meet; the review: one door every 4.86 m read as a pattern)
+          'vec2 njT = vNjUv / max(vNjM, vec2(0.01)); vec2 njTx = dFdx(njT), njTy = dFdy(njT);',
+          'float njFx = fract(njT.x); if (njBk > 0.5 && njH(vec2(floor(njT.x), 5.17)) > 0.5) njFx = 1.0 - njFx;',
+          'float njFy = njPl > 0.5 ? clamp(njK > 10.5 && njK < 11.5 ? njT.y : 1.0 - njT.y, 0.002, 0.998) : njBk > 0.5 ? clamp(njT.y / 2.7 * vNjM.y, 0.002, 0.998) : fract(njT.y);',
+          'vec2 njA = vNjCell.xy + vec2(njFx, njFy) * vNjCell.zw;',
+          // the hull's paint by height over the river: the red bottom, the boot topping's black to 0.95 m, the haze grey
+          'if (njK > 0.5 && njK < 1.5) {',
+          '  float hy = vWPos.y - uNjW0, aw = max(fwidth(hy), 1e-3);',
+          '  njAlb = mix(mix(vec3(0.145, 0.026, 0.020), vec3(0.016, 0.016, 0.018), smoothstep(-0.45 - aw, -0.45 + aw, hy)), njAlb, smoothstep(0.95 - aw, 0.95 + aw, hy));',
+          '}',
+          'if (((njK > 0.5 && njK < 4.5) || njPl > 0.5) && uNjArt > 0.5) {',
+          '  vec3 tx = ' + (gl2 ? 'textureGrad(map, njA, njTx * vNjCell.zw, njTy * vNjCell.zw).rgb' : 'texture2D(map, njA).rgb') + ';',
+          '  vec3 r = tx / max(vNjMean, vec3(1e-3));',
+          '  float lr = dot(tx, vec3(0.2126, 0.7152, 0.0722)) / max(dot(vNjMean, vec3(0.2126, 0.7152, 0.0722)), 1e-3);',
+          // faded as the cell shrinks past a few texels a pixel: its mips keep its blotches, which tile into a plaid from
+          // the air. A bulkhead's doors, ports and vents are features, not blotches: their contrast raised and held to
+          // a few hundred metres (the review: at a quarter of the chroma and fading from 2 texels a pixel they were gone
+          // past 60 m)
+          '  float fp = max(max(abs(njTx.x), abs(njTy.x)) * 1024.0, max(abs(njTx.y), abs(njTy.y)) * 512.0);',
+          '  lr = mix(lr, 1.0 + (lr - 1.0) * 1.8, njBk);',
+          '  float fade = njBk > 0.5 ? 0.55 * smoothstep(24.0, 140.0, fp) : 0.7 * smoothstep(2.0, 9.0, fp);',
+          '  njAlb *= mix(vec3(1.0), clamp(mix(vec3(lr), r, njK > 3.5 && njK < 4.5 ? 0.6 : 0.25), 0.3, 2.2), 1.0 - fade);',
+          '}',
+          // a funnel: its vertical stiffeners every 1.15 m round it (a shadowed edge and a lit face, gone as they shrink
+          // under a pixel), the soot over its last three metres under the cap (its seed is its height, its uv metres up)
+          'if (njK > 10.5 && njK < 11.5) {',
+          '  float ru = vNjUv.x / 1.15, rw = max(fwidth(ru), 1e-4), rd = fract(ru), rk = 1.0 - smoothstep(0.12, 0.35, rw);',
+          '  njAlb *= 1.0 - rk * (0.2 * (1.0 - smoothstep(0.0, 0.03 + rw, rd)) - 0.07 * smoothstep(0.03, 0.03 + rw, rd) * (1.0 - smoothstep(0.09, 0.09 + rw, rd)));',
+          '  float top = vNjK.y - vNjUv.y, soot = (1.0 - smoothstep(0.0, 4.0, top)) * (0.55 + 0.45 * njVN(vec2(vNjUv.x * 0.6, vNjUv.y * 1.3)));',
+          '  njAlb *= 1.0 - 0.75 * soot;',
+          '}',
+          // a 16-inch tampion: black, the white star the museum paints on it (its uv the unit disc, v down the face)
+          'if (njK > 12.5 && njK < 13.5) {',
+          '  float sd = njStar(vec2(vNjUv.x, -vNjUv.y), 0.8, 0.42), aw = max(fwidth(sd), 1e-4);',
+          '  njAlb = mix(vec3(0.72, 0.72, 0.7), vec3(0.012, 0.012, 0.013), smoothstep(-aw, aw, sd));',
+          '}',
+          // the walls by their level: the shade under the deck over them and a little grime at their feet, on a
+          // bulkhead with a deck of its own at its foot (its seed that deck's height: a flush wall, the fire-control
+          // tower's, runs on unbanded) and on the far level's plain houses
+          'float njWall = 1.0 - step(0.5, abs(normalize(vWNorm).y));',
+          'float njOwn = njBk * (1.0 - step(0.5, abs(vNjK.y - (njFh - vNjUv.y / 2.7 * ' + LV + '))));',
+          'float njLv = njBk > 0.5 ? vNjUv.y / 2.7 : fract(max(njFh, 0.0) / ' + LV + ');',
+          'if (njOwn > 0.5 || (njK < 0.5 && njFh > 0.0)) njAlb *= mix(1.0, (1.0 - 0.32 * smoothstep(0.78, 1.0, njLv)) * (1.0 - 0.12 * (1.0 - smoothstep(0.0, 0.14, njLv))), njWall);',
+          // plain paint: a touch of the weather in it, by place, so a long wall is not one flat grey
+          'if (njK < 0.5 || (njK > 4.5 && njK < 9.5 && njK != 5.0)) njAlb *= 0.93 + 0.12 * njVN(vWPos.xz * 0.35 + vWPos.y * 0.6 + vNjK.y * 17.0);',
+          // the bridge's glass: panes 1.05 m wide between frames, the band's sill and head the frame's
+          'if (njK > 4.5 && njK < 5.5) {',
+          '  vec2 g = vNjUv; vec2 gw = max(fwidth(g), vec2(1e-3));',
+          '  float mul = 1.0 - smoothstep(0.045, 0.045 + gw.x, abs(fract(g.x / 1.05 + 0.5) - 0.5) * 1.05);',
+          '  float fr = max(mul, 1.0 - smoothstep(0.06, 0.06 + gw.y, min(g.y, 1.15 - g.y)));',
+          '  njGlass = 1.0 - fr; njAlb = mix(vec3(0.012, 0.016, 0.02), vNjCol.rgb, fr);',
+          '}',
+          'njAlbedo = njAlb;',
+          'diffuseColor.rgb *= njAlb;',
+        ].join('\n'))
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = njK < 0.5 ? 0.6 : njK < 1.5 ? 0.62 : njK < 2.5 ? 0.62 : njK < 3.5 ? 0.86 : njK < 4.5 ? 0.82 : njK < 5.5 ? mix(0.6, 0.05, njGlass) : njK < 6.5 ? 0.7 : njK < 7.5 ? 0.95 : njK < 8.5 ? 0.4 : njK < 9.5 ? 0.45 : njK < 10.5 ? 0.9 : njK < 12.5 ? 0.62 : 0.5;')
+        .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+if (uNjLamp > 0.001) {
+  // the museum's floods (the review, against the night photograph: lit from below, each wall bright at its foot and
+  // fading up it, dark under the platforms): from the deck edge, the open decks and the pier, a wall by its height over
+  // the deck its flood stands on (a bulkhead's seed: its own deck, or the one the stack it rises in stands back from; a
+  // funnel's foot; the main deck for the rest), so no part shows a stripe at a level it has no deck at; a face that
+  // looks down takes none, a deck a third
+  vec3 nW = normalize(vWNorm);
+  float njHf = njBk > 0.5 ? njFh - vNjK.y : njK > 10.5 && njK < 11.5 ? vNjUv.y : max(njFh, 0.0);
+  float njFall = njBk > 0.5 ? mix(1.0, 0.42, smoothstep(0.0, 7.0, njHf)) : mix(1.0, 0.4, smoothstep(0.5, 12.0, njHf));
+  float njFace = ((1.0 - smoothstep(0.35, 0.8, abs(nW.y))) + 0.32 * smoothstep(0.6, 0.9, nW.y)) * smoothstep(-0.5, -0.2, nW.y);
+  float njFl = njFace * njFall;
+  // the hull: the deck edge's string of lamps and its floods falling down her side, and on her starboard side along the
+  // pier its lamps from the pier's deck down to the water
+  if (njK > 0.5 && njK < 1.5) {
+    vec2 rel = vWPos.xz - uNjFrame.xy;
+    float st = dot(rel, uNjFrame.zw) + ${NJ_MID.toFixed(2)}, sv = dot(rel, vec2(-uNjFrame.w, uNjFrame.z)), hw = vWPos.y - uNjW0;
+    float pier = step(0.0, sv) * smoothstep(uNjPier.x - 14.0, uNjPier.x + 4.0, st) * (1.0 - smoothstep(uNjPier.y - 4.0, uNjPier.y + 14.0, st)) * (1.0 - smoothstep(uNjPier.z, uNjPier.z + 6.0, hw));
+    njFl = (1.0 - smoothstep(0.35, 0.8, abs(nW.y))) * (mix(0.62, 0.3, smoothstep(0.0, 7.0, vNjUv.y)) + 0.8 * pier) / 1.4;
+  }
+  totalEmissiveRadiance += diffuseColor.rgb * vec3(0.98, 0.96, 1.0) * vNjCol.a * njFl * 1.4 * uNjLamp;
+  // the bridge's panes, a few lit
+  float pid = floor(vNjUv.x / 1.05) + vNjK.y * 31.0;
+  totalEmissiveRadiance += njGlass * step(njH(vec2(pid, 3.7)), 0.4) * vec3(1.0, 0.8, 0.55) * 0.5 * uNjLamp;
+}`);
+      lampLightPatch(sh, 'vWPos', 'wall');
+    };
+    mat.customProgramCacheKey = () => 'nj-ship' + (gl2 ? '2' : '1') + '|wx';
+    architecturalBloom(mat, 0.12);
+    return mat;
+  }
+
+  // the atlas, a computer's at the build, a phone's on its approach (njStep)
+  function njLoadArt() {
+    if (NJ.art !== 'none' || !NJ_ART_ON) return;
+    NJ.art = 'loading';
+    artImage(artSrc(NJ_ART.img, NJ_ART.imgHalf)).then((im) => {
+      if (!im) { NJ.art = 'failed'; return; }
+      NJ.map.image = im; NJ.map.needsUpdate = true; freeTexOnUpload(NJ.map);
+      NJ.bytes = im.width * im.height * 4 * 4 / 3;
+      NJ.artOn.value = 1; NJ.art = 'ready';
+    });
+  }
+
+  // a level's model: the hull, the deck, the turrets, the houses, the funnels, the masts, the fittings; the near level
+  // with its railings, its marks and its deck lamps
+  function njModel(lo) {
+    const b = njBuf(), mesh = [];
+    njHull(b, lo);
+    njHouses(b, lo);
+    if (!lo) njWindows(b);
+    // the turrets: 1 on the forecastle, 2 superfiring on its barbette through the house, 3 aft facing aft (sheet 2's
+    // gunhouses; the museum's guns raised as the 2018 and 2019 photographs show them from the river: 1's about 10
+    // degrees, 2's about 17, 3's nearly level)
+    njTurret(b, 196.3, 1, njDeck(196.3) + 0.75, 10, lo);
+    njTurret(b, 174.2, 1, NJ_Y0 + 3.6, 17, lo);
+    njTurret(b, 68.8, -1, njDeck(68.8) + 1.4, 4, lo);
+    // the 5-inch mounts: 1 and 2 and 5 and 6 on the 02 deck, 3 and 4 on the 01 (7 to 10 came off for the launchers)
+    for (const sd of [1, -1]) {
+      njMount5(b, 143.7, 10.3 * sd, njLevelY(2), lo);
+      njMount5(b, 126.3, 10.3 * sd, njLevelY(2), lo);
+      njMount5(b, 135.3, 12.0 * sd, njLevelY(1), lo);
+    }
+    for (const F of NJ_FUNNELS) njFunnel(b, F, njLevelY(4), lo, mesh);
+    // the directors: the Mk 38s on the tower's top and on the after tower, the Mk 37s on the 06 and aft
+    njDirector(b, 142.0, njLevelY(10), true, lo);
+    { const x0 = njX(87.4), x1 = njX(92.4), y0 = njLevelY(3), y1 = NJ_Y0 + 15.6;   // the after director's tower
+      b.seed = 0.17;
+      b.prism([[x0, -3.0], [x1, -3.0], [x1, 3.0], [x0, 3.0]], y0, y1, { top: [[x0 + 0.6, -2.0], [x1 - 0.4, -2.0], [x1 - 0.4, 2.0], [x0 + 0.6, 2.0]], k: lo ? NJK.paint : NJK.armor, col: NJC.house, uv: 'down', kt: NJK.deck, colT: NJC.roof }); }
+    njDirector(b, 90.0, NJ_Y0 + 15.6, true, lo);
+    { const x = njX(152.4), y = njLevelY(6); b.cyl(x, 0, 1.2, 1.2, y, y + 0.9, lo ? 8 : 16, { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof }); njDirector(b, 152.4, y + 0.9, false, lo); }
+    { const x = njX(86.6), y = njLevelY(3); b.cyl(x, 0, 1.2, 1.2, njLevelY(2), y + 0.6, lo ? 8 : 16, { k: NJK.paint, col: NJC.haze, kt: NJK.paint, colT: NJC.roof }); njDirector(b, 86.0, y + 0.6, false, lo); }
+    njMasts(b, lo, mesh);
+    njFittings(b, lo);
+    if (!lo) njDeckGear(b);
+    njPier(b, lo);
+    return { b, mesh };
+  }
+  // the deck lamps: a string along each rail's top, a lamp every 2.4 m (the museum's, the night photographs), the masts'
+  // red lights and the anchor lights; one Points draw. Each sprite a disc of 0.8 m in the world (its bright core about a
+  // third of a metre), never under 2.5 drawn pixels nor over 5 (both scaled up past a 900-pixel-tall drawing buffer):
+  // sized by the drawing buffer the frame has now (njStep: the resolution controller changes the ratio after the build;
+  // the review found a phone's lamps a string of 5-pixel pearls 8.5 pixels apart, sized by the ratio taken at the build,
+  // where a computer's at 115 m were 5-pixel sprites with 3-pixel cores 15 pixels apart); without the post pipeline (a
+  // phone) each is laid over its wall, so the warm colour is not clipped to white
+  const njLampU = { uNjBuf: { value: 800 }, uNjGain: { value: 1 } };
+  function njLights(f) {
+    const pos = [], col = [];
+    const add = (x, y, z, c) => { const p = njW(f, x, y, z); pos.push(p[0], p[1], p[2]); col.push(c[0], c[1], c[2]); };
+    const warm = [1.0, 0.76, 0.46], red = [1.0, 0.12, 0.08], white = [1.0, 0.95, 0.88];
+    for (const sd of [1, -1]) for (let s = 2; s < 268.5; s += 2.4) add(njX(s), njDeck(s) + 1.12, (njBeam(s) - 0.07) * sd, warm);
+    add(njX(139.3), NJ_Y0 + 44.2, 0, red); add(njX(99.4), NJ_Y0 + 29.2, 0, red);
+    add(njX(270.0), njDeck(270) + 5.6, 0, white); add(njX(0.9), njDeck(0.9) + 6.1, 0, white);
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+    g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(col), 3));
+    g.computeBoundingSphere();
+    // without the post pipeline a lamp is laid over what is behind it, not added to it: added, its core clipped to the
+    // floodlit wall's bluish white (the review measured 244, 241, 232 on a phone); laid over, it keeps its own warm colour
+    njLampU.uNjGain.value = POST.on ? 1 : 0.9;
+    const m = new THREE.PointsMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false, blending: POST.on ? THREE.AdditiveBlending : THREE.NormalBlending, toneMapped: false, sizeAttenuation: false, size: 1 });
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, njLampU);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nuniform float uNjBuf;')
+        .replace('gl_PointSize = size;', 'float njPk = max(1.0, uNjBuf / 900.0); gl_PointSize = clamp(0.8 * projectionMatrix[1][1] * 0.5 * uNjBuf / max(1.0, -mvPosition.z), 2.5 * njPk, 5.0 * njPk);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNjGain;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\n\tdiffuseColor.rgb *= uNjGain;\n\tdiffuseColor.a *= ' + (POST.on ? 'smoothstep(0.5, 0.1, length(gl_PointCoord - vec2(0.5)))' : '1.0 - smoothstep(0.3, 0.5, length(gl_PointCoord - vec2(0.5)))') + ';');   // laid over (a phone), a solid core: a soft one blended its colour away into the wall
+    };
+    m.customProgramCacheKey = () => 'nj-lamps';
+    postRaw(m);
+    architecturalBloom(m);
+    const p = new THREE.Points(g, m);
+    // drawn unculled once behind the veil (its program made there, at no opacity), then culled by its sphere like the
+    // rest (the review: unculled for good it cost a draw on every night frame looking anywhere); njStep hides it by day
+    p.frustumCulled = false; pendingUpload.push(p); p.renderOrder = 11; p.name = 'nj-lamps';
+    NJ.nLights = pos.length / 3;
+    return p;
+  }
+  // the pier along her starboard side (the OSM T-head the areas pass decked, PIER_RINGS), in the ship's frame: its deck's
+  // height, its edge's distance from her centreline and the stretch of her side it runs along; the gangways on its
+  // stretch (forward and aft of its middle), the dolphins ahead of it
+  function njFindPier(f) {
+    let best = null;
+    for (const r of PIER_RINGS) {
+      if (r.y == null) continue;
+      let x0 = 1e9, x1 = -1e9, zMin = 1e9, n = 0;
+      for (const q of r.poly) {
+        const dx = q[0] - f.cx, dz = q[1] - f.cz, x = dx * f.hx + dz * f.hz, z = dx * f.sx + dz * f.sz;
+        if (Math.abs(x) > 170 || z < 0 || z > 70) continue;
+        n++; x0 = Math.min(x0, x); x1 = Math.max(x1, x); zMin = Math.min(zMin, z);
+      }
+      if (n < 3 || x1 - x0 < 20 || zMin > 40) continue;
+      if (!best || x1 - x0 > best.x1 - best.x0) best = { x0, x1, edge: zMin, y: r.y };
+    }
+    if (!best) return null;
+    const s0 = best.x0 + NJ_MID, s1 = best.x1 + NJ_MID, gang = [];
+    for (const s of [s0 + (s1 - s0) * 0.22, s0 + (s1 - s0) * 0.78]) if (s > 20 && s < 250) gang.push(+s.toFixed(1));
+    const dolphins = [Math.min(258, s1 + 25), Math.max(14, s0 - 25)].filter((s) => s > s1 + 8 || s < s0 - 8);
+    return { s0, s1, edge: Math.max(best.edge, 17.2), y: best.y, gang, dolphins };
+  }
+  function njBuild(poly) {
+    const t0 = performance.now(), f = njFrame(poly);
+    NJ.f = f; NJ.polyN = poly.length;
+    NJ.pier = njFindPier(f);
+    const mat = njMaterial(f);
+    NJ.mat = mat;
+    const mk = (g, m2, nm) => {
+      freeOnUpload(g);
+      const m = new THREE.Mesh(g, m2); m.matrixAutoUpdate = false; m.frustumCulled = false; m.castShadow = m.receiveShadow = true; m.name = nm;
+      groupCity.add(m); pendingUpload.push(m);
+      return m;
+    };
+    const far = njModel(true);
+    NJ.far = mk(njGeometry(far.b, f), mat, 'nj-far'); NJ.tris.far = far.b.I.length / 3;
+    if (!TIER2) {
+      const near = njModel(false);
+      NJ.near = mk(njGeometry(near.b, f), mat, 'nj-near'); NJ.tris.near = near.b.I.length / 3;
+      NJ.near.userData.occStandIn = NJ.far;   // the pins' depth image takes the far level in its place
+      // the railings and the radar's mesh: one alpha-tested draw, both faces, casting nothing
+      const r = njRails(f, near.mesh);
+      const rTex = njRailTex();
+      const rMat = new THREE.MeshStandardMaterial({ map: rTex, alphaTest: 0.5, side: THREE.DoubleSide, roughness: 0.6, metalness: 0 });
+      // the lattices and the reflector keep their coverage as they shrink (an alpha-tested texture's mips average its
+      // thin members under the test and the mast would melt away from Philadelphia): their alpha raised with the mip
+      // level the texel rate asks for, the railings' half left to fade as it always did
+      rMat.onBeforeCompile = (sh) => {
+        sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n#ifdef USE_MAP\n{ vec2 njTs = vUv * 256.0; float njLod = max(0.0, 0.5 * log2(max(dot(dFdx(njTs), dFdx(njTs)), dot(dFdy(njTs), dFdy(njTs))))); if (vUv.y < 0.49) diffuseColor.a *= 1.0 + 0.32 * njLod; }\n#endif');
+      };
+      rMat.customProgramCacheKey = () => 'nj-rails';
+      NJ.rails = mk(njGeometry({ P: r.P, N: r.N, T: r.T, I: r.I, nv: r.nv }, f), rMat, 'nj-rails'); NJ.rails.castShadow = false; NJ.tris.rails = r.I.length / 3;
+      NJ.rails.userData.occStandIn = NJ.far;
+      const mk2 = njMarks(f);
+      const mMat = new THREE.MeshStandardMaterial({ map: njMarksTex(), alphaTest: 0.5, roughness: 0.55, metalness: 0 });   // 6 cm proud of the plating (a polygon offset means nothing to the log depth)
+      // at night the floods along her deck edge light the 62 with her side (the night photograph: it reads from the river)
+      mMat.onBeforeCompile = (sh) => {
+        sh.uniforms.uNjLamp = lampUniform;
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uNjLamp;')
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += diffuseColor.rgb * 0.42 * uNjLamp;');
+      };
+      mMat.customProgramCacheKey = () => 'nj-marks';
+      NJ.marks = mk(njGeometry({ P: mk2.P, N: mk2.N, T: mk2.T, I: mk2.I, nv: mk2.nv }, f), mMat, 'nj-marks'); NJ.marks.castShadow = false; NJ.tris.marks = mk2.I.length / 3;
+      NJ.marks.userData.occStandIn = NJ.far;
+    }
+    NJ.lights = njLights(f); groupCity.add(NJ.lights);
+    if (!isTouch && !TIER2) njLoadArt();
+    NJ.built = true; NJ.ms = Math.round(performance.now() - t0);
+  }
+  // the build, and a failed one undone: its meshes out of the scene and the upload queue, so the old ship stands
+  function njBuildSafe(poly) {
+    try { njBuild(poly); return true; } catch (e) {
+      NJ.err = String(e && e.stack || e); console.error('uss new jersey', e);
+      for (const k of ['near', 'far', 'rails', 'marks', 'lights']) {
+        const m = NJ[k]; if (!m) continue;
+        groupCity.remove(m); const i = pendingUpload.indexOf(m); if (i >= 0) pendingUpload.splice(i, 1);
+        NJ[k] = null;
+      }
+      NJ.built = false;
+      PERF.failed.push(['USS New Jersey', String((e && e.message) || e)]);
+      return false;
+    }
+  }
+  // the frame's part: the level by the eye's distance from the hull's box (with hysteresis), the art on a phone's
+  // approach, the deck lamps on the streetlamps' photocell
+  const _njBuf = new THREE.Vector2();
+  function njStep() {
+    if (!NJ.built) return;
+    const f = NJ.f, p = camera.position, dx = p.x - f.cx, dz = p.z - f.cz;
+    const u = dx * f.hx + dz * f.hz, v = dx * f.sx + dz * f.sz;
+    const d = Math.hypot(Math.max(0, Math.abs(u) - NJ_MID), Math.max(0, Math.abs(v) - 17), Math.max(0, p.y - f.W0 - 50));
+    NJ.dist = d;
+    if ((isTouch || TIER2) && d < NJ_ART_R) njLoadArt();
+    let lod = NJ.lod;
+    if (NJ.force) lod = NJ.near ? NJ.force : 'far';
+    else if (!NJ.near) lod = 'far';
+    else if (lod === 'both') lod = d < NJ_NEAR_R ? 'near' : 'far';
+    else if (lod === 'near' && d > NJ_NEAR_R + NJ_HYST) lod = 'far';
+    else if (lod === 'far' && d < NJ_NEAR_R) lod = 'near';
+    NJ.lod = lod;
+    const nearOn = lod === 'near' && !NJ.off;
+    if (NJ.near) NJ.near.visible = nearOn;
+    if (NJ.rails) NJ.rails.visible = nearOn;
+    if (NJ.marks) NJ.marks.visible = nearOn;
+    if (NJ.far) NJ.far.visible = lod === 'far' && !NJ.off;
+    const night = lampUniform.value;
+    if (NJ.lights) {
+      NJ.lights.visible = night > 0.01 && d < 7000 && !NJ.off; NJ.lights.material.opacity = night;
+      if (NJ.lights.visible) njLampU.uNjBuf.value = renderer.getDrawingBufferSize(_njBuf).y;
+    }
+  }
+  // is a point (a tap's hit) on her: inside her hull's box in her own frame, from the river to her mastheads
+  function njAt(x, y, z) {
+    if (!NJ.built || NJ.off || !NJ.f) return false;
+    const f = NJ.f, dx = x - f.cx, dz = z - f.cz, u = dx * f.hx + dz * f.hz, v = dx * f.sx + dz * f.sz;
+    return Math.abs(u) < NJ_MID + 1 && Math.abs(v) < 17.5 && y > f.W0 - 1 && y < f.W0 + 52;
+  }
+  // ?dev: __dbg.nj() - the level, the triangles a mesh, the art, the frame, the pier; 'near', 'far', 'auto', 'off', 'on'
+  function njProbe(what) {
+    if (what === 'off' || what === 'on') NJ.off = what === 'off';
+    if (what === 'near' || what === 'far' || what === 'auto') NJ.force = what === 'auto' ? null : what;
+    if (what) njStep();
+    const info = (m) => (m ? { visible: m.visible, tris: m.geometry.index ? m.geometry.index.count / 3 : m.geometry.attributes.position.count / 3 } : null);
+    const f = NJ.f;
+    return { on: NJ_ON, built: NJ.built, lod: NJ.lod, dist: NJ.dist == null ? null : Math.round(NJ.dist), near: info(NJ.near), far: info(NJ.far), rails: info(NJ.rails), marks: info(NJ.marks),
+      lights: NJ.lights ? { visible: NJ.lights.visible, culled: NJ.lights.frustumCulled, n: NJ.nLights, opacity: +NJ.lights.material.opacity.toFixed(3), buf: njLampU.uNjBuf.value, gain: njLampU.uNjGain.value } : null,
+      tris: { ...NJ.tris }, art: NJ.art, artOn: NJ.artOn.value, clutter: NJ.clutter || 0, lines: NJ.lines || 0,
+      texMB: NJ.bytes ? +(NJ.bytes / 1048576).toFixed(2) : 0, ms: NJ.ms, err: NJ.err,
+      frame: f ? { cx: +f.cx.toFixed(1), cz: +f.cz.toFixed(1), hx: +f.hx.toFixed(4), hz: +f.hz.toFixed(4), L: +f.L.toFixed(1), B: +f.B.toFixed(1), W0: +f.W0.toFixed(2) } : null,
+      pier: NJ.pier, deckMid: +NJ_Y0.toFixed(2), polyN: NJ.polyN || 0 };
+  }
+
   // ------------------------------------------------ museum ships
   step('Mooring the ships', () => {
     const parts = [];
@@ -21410,6 +22756,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // -------- landmark rebuilds: City Hall tower + One & Two Liberty Place --------
     // (their OSM parts were skipped above; research-backed massing/colors)
     const lmTrim = [];
+    let njOld = null;   // Round 195: the old ship (?real=0, ?nj=0, or a failed remodel's fallback, after the piers)
     {
       const ryG = Math.atan2(-fl.nz, fl.nx);           // rotate local +x onto the grid's east-west
       const sqPoly = (cx, cz, w, d) => [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]]
@@ -22094,7 +23441,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       // --- Battleship New Jersey (BB-62), moored on the Camden shore: the OSM
       // hull outline is extruded as the real haze-gray hull, then superstructure,
       // three triple 16-inch turrets, funnels, and masts go on in the hull frame
-      if (njPoly) {
+      njOld = () => {
         const ob = orientedBox(njPoly);
         const a = obbAxis(ob);
         const W0 = TERRAIN.water;
@@ -22153,7 +23500,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         shipBox(43, 0, D0 + 1.6, 13, 3.2, 11.5, gray);      // turret 2 barbette
         turretAt(43, D0 + 3.2, 1);                          // turret 2, superfiring
         turretAt(-58, D0, -1);                              // turret 3, facing aft
-      }
+      };
+      if (njPoly && !NJ_ON) njOld();
     }
     // parks, water, piers (water splits out onto the animated river material)
     const areaParts = [], waterAreaParts = [], parkPolys = [];
@@ -22188,6 +23536,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         else { noSow(poly); if (pierWet(poly)) { pierDeck(poly); continue; } areaParts.push({ geom: flatPoly(poly, null, 1.2), color: new THREE.Color(COLORS.pier), style: 3 }); PIER_RINGS.push({ poly, y: null, lift: 1.2 }); }   // realism, water: a pier over the water is a deck on piles (pierDeck)
       } catch (e) { /* degenerate polygon */ }
     }
+    // Round 195: the USS New Jersey remodelled, now the pier along her starboard side is known (PIER_RINGS); a failed
+    // build leaves the old ship
+    if (njPoly && NJ_ON && !njBuildSafe(njPoly) && njOld) njOld();
     setLoadingMessage('Raising the outer districts, uploading');
     await yieldNow();
     for (const ch of glassChunks.values()) {
@@ -30123,6 +31474,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // Round 167: a tap on the building of a dismissed game or show brings its bubble back, and is spent on that
     if ((SCORES.games.some((g) => g.hidden) || CONCERTS.shown.some((s) => s.hidden)) && eventTapRestore(p[0], p[2])) return true;
     if (p[4] > 3000) return false;   // the building card is for what the eye can make out, not the horizon
+    // Round 195's review: a tap on the remodelled USS New Jersey opens her own card (she lies at Camden, where the city's
+    // parcels have nothing to say; the old ship's tap opened a Philadelphia property card for a Camden point), asked
+    // before the ground test so her side under 2 m answers too
+    if (njAt(p[0], p[1], p[2])) { njCard(p[0], p[1] + 1, p[2]); return true; }
     const dir = septaRay.ray.direction, x = p[0] + dir.x * 1.5, z = p[2] + dir.z * 1.5;   // a metre and a half in, off the wall onto the lot
     // Round 191: Glory's own card for a hit 0.3 m short of its lot (no pad: a metre's pad gave a tap on 128's party wall
     // Glory's card, and so did the parcel's point 1.5 m along an oblique ray from the sidewalk, Round 191's second review), or
@@ -30163,6 +31518,18 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         bldgCard(st);
       });
     });
+    return true;
+  }
+  // the USS New Jersey's own card (Round 195's review), anchored where the tap found her like a building's
+  function njCard(ax, ay, az) {
+    pickedVeh = null; pickedStation = null; pickedTree = null; pickedPlane = null; pickedShip = null; pickedMarket = null; pickedMarker = null; pickedArt = null; pickedClosure = null; pickedTrain = null;
+    pickedStop = null; pickedCivic = null; pickedNear = null;
+    pickedBldg = { x: ax, y: ay, z: az, seq: ++BPICK.seq };
+    const rows = ['Iowa class battleship, launched at the Philadelphia Navy Yard on December 7, 1942', 'Served in World War II, Korea, Vietnam and off Lebanon',
+      'A museum ship on the Camden waterfront since 2001', 'Battleship New Jersey Museum and Memorial, Camden, New Jersey'];
+    vehinfoBody.innerHTML = '<span class="vroute" style="background:#5d6a74">Museum Ship</span><span class="vdest">USS New Jersey (BB-62)</span>' +
+      rows.map((t) => '<div class="vmeta">' + septaEsc(t) + '</div>').join('');
+    vehinfoEl.hidden = false; cardUnlock();
     return true;
   }
   function updateBldgPick() {
@@ -43906,6 +45273,7 @@ float pinOccGate() {
     famineStep();   // Round 197: the Irish Famine Memorial's level, its flag on the wind
     libStep();   // Round 195: the Liberty Places' near level, their lobbies' light and their art
     cmrStep();   // Round 195: the Comcast towers' trim, near or far
+    njStep();   // Round 195: the USS New Jersey's level and her deck lamps
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
@@ -44027,7 +45395,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, nj: njProbe, venues: venuesProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: { ...LIB.asked }, ready: { ...LIB.ready }, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name), feet: LIB.feet.map((f) => f.map((v) => +v.toFixed(2))), crowns: LIB.crowns.map((f) => f.map((v) => +v.toFixed(2))) }), sht: shtProbe, famine: famineProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

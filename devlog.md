@@ -11669,3 +11669,137 @@ pull.py, sweep.py), renders in remodel/sht/fix/ (it7 the computer's final set, p
     `?real=0`, `?venues=0` and `?zbuf=log`. Parity: `?real=0` and `?venues=0` against main with traffic, ships and flights off,
     three poses, at most 0.0006% of pixels over 24 levels. The renders: the session's scratchpad `remodel/stadiums/fix/`
     (`it1/` the first pass at 26 poses, `it2/` the second at 13, `phone/` at 9, `parity/`).
+
+## Round 195, Battleship New Jersey (Oct 14)
+
+- Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both Comcast towers, Battleship NJ, The Moshulu, and the
+  bridges." This entry is the battleship's (one of seven agents, one landmark each). He wants photographic realism and a
+  fast city. Round 30's ship was the OSM outline (21 vertices) extruded into the facade chunk as a 9 m slab, with boxes,
+  cylinders and nine 6-sided barrels in lmTrim: about 0.6k triangles inside draws the city makes anyway, and at night a
+  black silhouette.
+- References (viewed, never in the repo, never fed to the image API): HAER HI-62, the general plans of her sister Missouri
+  (sheet 2 the outboard profile, sheet 3 the 01 and 02 decks, sheet 4 the main deck), and 26 Wikimedia Commons photographs
+  of BB-62 at Camden (2007 to 2024: the drone view, the river, the pier, the deck, the night, the 2024 drydock), listed with
+  their URLs in the session's refs/SOURCES.txt.
+- Measured from the plans at 11.31 px a metre (the sheet's 0.45-degree skew taken out): length 270.54 m, beam 32.94 m,
+  design draught 10.9 m (keel to the double waterline line), the stem at the waterline 6.1 m aft of its head, the stern's
+  counter 2 m; freeboard at the design waterline 5.65 m amidships rising to 11.0 at the stem and 6.8 at the stern (NJ_SHEER,
+  22 stations); the deck's half-breadth at 38 stations (NJ_BEAM), the stern's plan an ellipse to 6 m; the gunhouses 16.2 m
+  long, turret 1 at 196.3 m from the stern, turret 2 at 174.2, turret 3 at 68.8 facing aft; the 5-inch mounts at 143.7,
+  135.3 and 126.3 (the three a side the 1980s refit kept: 7 to 10 came off for the launchers); the funnels at 131.2 and
+  105.7; the fire-control tower's top 25.5 m over the main deck, the Mk 38 on it to 28 m. The museum floats a metre lighter
+  than the design (NJ_LIFT): the main deck 6.65 m over the river amidships, 12.0 at the stem.
+- Her place from the outline (njFrame): the oriented box's middle (994.8, 664.5), 268.6 by 35.2 m, the bow the pointier
+  end, up the river 17 degrees west of north, starboard to the Camden pier. njFindPier finds the OSM T-head among the decked
+  piers (PIER_RINGS, so the build waits until after the areas' loop): along her starboard side from 70.2 to 192.5 m, its edge
+  20.4 m off her centreline (3.9 m off the hull), its deck 2.75 m over the river; the gangways at 97.1 and 165.6 m, the
+  dolphins at 45.2 and 217.5.
+- Built (njModel): the hull lofted from 72 stations of 8 points a side (23 of 4 far), smooth, the stern's U and the stem's V
+  blended into the midships form; the main deck teak from 44 to 237 m with painted steel waterways, the fantail and the
+  forecastle steel; the superstructure as ten levels of 2.55 m from the plans (the main deck's house round turret 2's
+  barbette, the 01 flush with it along her sides, the tower straight up from the 06), a lip and a railing only where the
+  level over it stands back; the bridge's glass round the pilot house, the wings and the tower's platforms; three turrets
+  (battered faces, canvas bloomers, lathe-turned 16-inch/50s at 5, 11 and 4 degrees), six 5-inch twins trained forward at
+  28 degrees, the Mk 38s and Mk 37s, the funnels with their black caps, the 1980s tripod foremast (black above the smoke
+  line, its platform, yard, the SPS-49's mesh and a topmast to 50.7 m over the river), the mainmast, the bow mast, the jack
+  and ensign staffs, eight ABLs (two pairs on sponsons abreast the after funnel, two on the 02 aft), four Harpoon quads,
+  four Phalanx, two gigs and their cranes, the ECM boxes, whips, the breakwater, bitts, vents, capstans, wildcats, the
+  cable on deck, the anchors in their hawse and their chains running 20 m ahead into the river, the white tent on the
+  fantail, the hull number on both bows and NEW JERSEY on the counter (a 512 by 256 canvas the page draws), the gangway
+  towers with their canopies, the dolphins and their lines.
+- The paint (njMaterial, one program): haze grey photographed (106, 112, 118) over the 2024 drydock's black boot topping
+  (to 0.95 m over the river) and red bottom, by height in the shader; the generated atlas (fetch_nj_art.py, four gpt-image-2
+  images at high quality, 1536 by 768: the plating, one deck level of bulkhead, the non-skid steel and the teak; all four
+  kept at the first try, each inspected) as detail over the paint, faded once a cell's texels shrink under a few a pixel
+  (from the air its blotches tiled into a plaid); the walls shaded under the deck over them; snow and the wet through
+  wxSurfacePatch; the pier lamps' pools through lampLightPatch. At night (lampUniform) the floods the museum shows: a
+  part's share of them in its colour's fourth byte (the superstructure whole, the turrets most, the hull a sixth), falling
+  up each level and with height; a few panes lit; 228 lamps along both rails, the red mastheads and the anchor lights as
+  one Points draw on the bridge nodes' terms. Every stream four bytes (aCol normalized), no gl_FragDepth, the mirror and
+  the pins' depth image as any mesh (the near level's stand-in the far).
+- Budget, measured (onAfterRender counts at three distances, day and night, after 8 settling frames): a computer near (to
+  760 m from the hull's box, 60 m of hysteresis) 3 draws (the steel 16,022 triangles, the railings and the radar's mesh 394,
+  the marks 48), 3.75 a frame with the river's mirror and 20.6k triangles; far 1 draw, 3,366 triangles, 4.2k a frame with
+  the mirror; at night one more (the lamps). A phone (near to 520 m) 3 draws and 16.5k triangles near, 1 and 3.4k far, 4
+  and 2 at night. Shadow: the near level's 16k (the railings and marks cast nothing). Textures: the atlas 2048 by 1024, 10.7
+  MB with mips on a computer, its half 2.7 MB on a phone (226 KB and 35 KB to download), the marks' canvas 0.7 MB, the
+  railings' 0.35 MB. Programs: the steel, the railings and marks, the lamps (and their mirror twin); no link failure and no
+  console error on either path. The build itself 20 ms.
+- ?real=0 (and ?nj=0, and a failed build) keep Round 30's ship: the old code is the closure njOld, run where it ran.
+  Rendered against the committed build under ?real=0 at two poses: a mean difference of 0.001 and 0.138 levels, no pixel
+  over 24.
+- Rendered before and after at ten poses on a computer (from the river at 280 m, off the bow, from Penn's Landing, a low
+  flight, the stern quarter, the pier, over the forecastle; three at 21:00) and five on a phone, and six close views (the
+  forward and after superstructure, the stern, straight down, bow on, the forward superstructure at night).
+- `tests/test_remodel_battleship.py`: the gate, the old ship's place, the remodel after the piers, the hooks, the manifest,
+  the streams, and njModel run under Node (both levels' budgets, sound indices and normals, her length, beam, deck heights
+  and masthead, the hull's normals outboard, the 62 reading from outboard on both bows, the railings and the mesh).
+  test_art_files.py and test_memory_cuts.py take the new manifest and the three textures. The suite: 924 tests, OK (one
+  expected failure). Proposed for CLAUDE.md's URL flags (Mike's to put in): `?nj=0` the old ship, `?njart=0` the remodel
+  without its atlas, `__dbg.nj()` (and `'near'`, `'far'`, `'auto'`, `'off'`, `'on'`).
+- The review's fixes (the same round; judged against the 2013 view from Philadelphia, the midships photograph, the 2018
+  A636 view, the 2019 starboard, bow and turret views and the night photograph):
+  - The superstructure read as a stack of identical light slabs. The 01 and the 02 are now cut into twelve recessed bays a
+    side (`NJ_BAYS`, 1.2 to 1.6 m deep, between solid runs), their walls in a dark shade (44, 48, 52), the deck over each
+    the plan uncut so it overhangs the opening, with its 0.32 m fascia and a dark soffit that takes no flood; the uniform
+    lip on every edge is gone. The conning tower is its own armoured ellipse (5.2 by 4.6 m half-axes, from the 02 to
+    under the pilot house's windows, its vision slits a dark band), standing proud of the 03's and 04's noses. 274
+    lockers and boxes against the walls on every open deck (the bays' back walls too), their backs undrawn, and cable runs
+    along the long outboard walls (`njClutter`, a seeded generator, clear of the mounts, launchers, boats and funnels).
+    The houses' paint a shade under the hull's (94, 100, 106); two more platform pairs on the tower, every platform's
+    underside dark. The bulkhead art's doors and ports: their contrast raised 1.8 times and held to 140 texels a pixel
+    (about 450 m on a computer) instead of fading from 2 (gone past 60 m), and a tile mirrored or not by a hash of its
+    place along the wall, so the 4.86 m door no longer repeats (the art tiles across, so either way its edges meet). The
+    far level's 01 and 02 in the bays' mean shade (80, 85, 90).
+  - The masts read as twigs. The foremast is now a braced black lattice from over the forward funnel's cap (20.6 m over
+    the main deck) to the yard's platform (31 m): its four faces truss quads (two rows a face, so the tapering face's
+    across-coordinate stays near true) in the railings' draw, its legs thin tubes for a silhouette near, its after
+    legs carried down outboard of the funnel to the 04, a lookouts' platform half way, both platforms railed; the SPS-49 a
+    parabolic strip of five quads (its edges 0.5 m forward of its middle) framed top, bottom and at its edges; the
+    mainmast a lattice kingpost from the 02's roof behind the after funnel to 24.5 m with two platforms, two yards and a
+    pole. An alpha-tested texture's mips average thin members under the test, so the railings' material now raises the
+    truss's and the mesh's alpha by 0.32 a mip level (the railings' half fades as it did); the far level draws each
+    lattice and the reflector as a dark trapezoid. 74 more triangles in the railings' draw (394 to 468), no new draw.
+  - The funnels read as oil drums. Each (`NJ_FUNNELS`) is its own kind (`NJK.funnel`, the plating's cell): vertical
+    stiffeners every 1.15 m drawn by the shader until they shrink under a pixel, soot over its last 4 m under the cap
+    (its seed the stack's height, its uv metres up); a platform 1.4 m out round it with a plated bulwark both faces and
+    a dark underside, four searchlights in tubs on the forward one and two on the after, two steam pipes up the after
+    side past the cap, the whistle's platform high on the forward face.
+  - The night's floods were a flat self-lit grey with a sawtooth every 2.55 m on every face. Now each wall is lit by its
+    height over the deck that carries its flood: a bulkhead's seed is that deck's height (`njFloodBase`: its own open deck
+    at its foot, a per-level rise; or, on a flush wall, the deck the stack stands back from, so the fire-control tower
+    runs from the 06 with one fall), a funnel from its foot, the rest from the main deck; a face that looks down takes
+    none, a deck a third; the hull (its share 40 to 150) from the deck edge's lamps falling down her side, lifted along
+    the pier on her starboard side (`uNjPier`, the frame in `uNjFrame`); the 62 lit with her side (the marks' own small
+    emissive). The superstructure's gain 1.05 to 1.4.
+  - The phone's deck lamps were 5-pixel pearls 8.5 pixels apart, sized by the pixel ratio taken at the build. A sprite is
+    now a 0.8 m disc in the world, between 2.5 and 5 drawn pixels (scaled past a 900-pixel buffer), by the drawing
+    buffer's height in `njLampU.uNjBuf`, set in `njStep` while they show, so a resolution step after the build changes
+    them too. On a phone (no post pipeline) each is laid over its wall with a solid core (added, its core clipped to the
+    floodlit wall's bluish white): at the review's phone pose, a 925 by 450 buffer, 2-pixel cores 9 pixels apart in (203,
+    185, 158), read off the canvas (the JPEG's chroma subsampling greys a 2-pixel dot); a computer's unchanged (4-pixel
+    cores 17 pixels apart, 252, 231, 208).
+  - The guns at 10 and 17 degrees (turret 3 stays nearly level, as the 2019 aft view shows), every 16-inch muzzle a black
+    tampion with the museum's white star (`NJK.tamp`, a five-pointed star's signed distance on the cap's unit disc). Six
+    lines to the pier (`njPier`: a bow line, two breasts, two springs and a stern line, each sagging from her deck edge to a
+    bollard on the pier's edge). No anchor stowed in the hawse: the cables run out of the pipes to the river's bed. The deck
+    lamps are staged in `pendingUpload` and culled by their sphere: with the eye at City Hall looking west at night they
+    cost no draw (they cost 1.33 with the mirror). A tap on her opens her own card (`njAt`, `njCard`: USS New Jersey (BB-62),
+    a museum ship, before the building tap's ground test, so her side under 2 m answers too), never a Philadelphia property
+    card (a probe's taps through `__dbg.bldgTap` on her side at the waterline and on her tower opened it; the sky opened
+    nothing). The dead lens kind and its emissive branch are gone.
+  - Budget, measured as before (onAfterRender counts, 8 settling frames, then 8): the near level's steel 16,022 to 19,576
+    triangles, the far 3,366 to 3,404. A computer near: 3.75 draws a frame (unchanged) and 25.1k triangles with the
+    mirror (20.6k); far 1.25 and 4.3k; night one more near and far, none with the lamps out of view. A phone near 3 draws
+    and 20.1k triangles, far 1 and 3.4k. Textures unchanged (the railings' canvas is the same 256 square). Programs at the
+    review's 17 computer poses 244 (the review counted 244 at the build's commit), at its 6 phone poses 136 (140); no link
+    failure and no console error on either path.
+  - ?real=0 against main's frames: from Philadelphia a mean difference of 0.0 levels (the largest 18); the close view 0.022,
+    its ten pixels over 24 all on a Camden building's windows, none on the ship.
+  - Rendered at the review's 17 computer poses and 6 phone poses (the review's own frames of the build's commit are the
+    befores) plus two close views (the forward turrets' tampions from over the forecastle; the foremast, the tower and the
+    forward funnel). `tests/test_remodel_battleship.py` now 22 tests (the bays and their soffits, the clutter's count, the
+    floods' bases, the funnels' seeds, the lattices and the reflector in the railings' draw under 100 more triangles, the
+    lamps' buffer sizing and staging, the guns and tampions, no anchor in the hawse, the lines, the tap's card). The suite:
+    930 tests, OK (one expected failure).
+  - Not done here: CLAUDE.md's URL flags (the orchestrator's: `?nj=0`, `?njart=0`, `__dbg.nj()` as proposed above).
