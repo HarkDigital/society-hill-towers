@@ -341,7 +341,8 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('glassU.uGlassArr.value = freeTexOnUpload(t);', cut(s, "  step('Glazing the towers'", '  // the street floors (critic gap 4)'))   # and its frames' texture array
         # Round 199: A Man Full of Trouble's atlas, uploaded once when it lands (a phone's only after Enter)
         self.assertIn('const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);', cut(s, '  function tavernMake(b) {', '  // ------------------------------------------------ museum ships'))
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 34)   # the definition and its uses (the realism pass's twenty-one, City Hall's seven, Glory's three: Round 191; glassArtTex and the frames: Round 192; the tavern's atlas: Round 199)
+        self.assertIn('if (isTouch) freeTexOnUpload(t);', cut(s, '  async function townLay(aniso, got) {', '  function townProbe() {'))   # Round 198: the own facades' atlas and mask
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 35)   # the definition and its uses (the realism pass's twenty-one, City Hall's seven, Glory's three: Round 191; the glass's, the tavern's (Round 199) and the City Hall ring's (Round 198))
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

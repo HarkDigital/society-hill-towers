@@ -116,7 +116,7 @@ class Page(unittest.TestCase):
             self.assertIn(line, blk)
         b = C.path('build.py').read_text()
         self.assertIn('const("TAVERN_ART", text_of("tavern_art.json", "null"))', b)
-        self.assertIn('"tavern_art.json"):', b)
+        self.assertIn('"tavern_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's file check
 
     def test_the_material_and_the_mesh(self):
         s = self.sec

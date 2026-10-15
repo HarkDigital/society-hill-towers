@@ -10990,3 +10990,69 @@ place; this is what changed in the code, and what was measured.
   real one is brick, and changing it is the core's walks, not this block); the east side's door, balcony and attic window
   and the tavern's hanging sign (its picture carries lettering) are not modelled. The raw images are not in
   `lidar_cache/tavern_art_raw` (this round wrote them to its scratchpad: copy them there before re-baking).
+
+## Round 198, the buildings round City Hall (Oct 14)
+
+- Mike, with a screenshot from beside City Hall's tower: "The buildings around city hall look too generic. Make them look
+  more like real life." They were: every researched tower round Penn Square wore 'Cladding the towers' tile of its
+  ARCHETYPE drawn by seed (`TOWER_TILE_OF` / `TOWER_TILE_ALT`), so the Widener, Land Title, the Bellevue and the Girard
+  Trust were the same handful of deco and limestone grids, the precast ones white graph paper, and the Wanamaker block
+  (one record of 11,700 m2, which the spec's point 67 m away on the Adelphia House never reached) gold glass from the
+  height-35 lottery. The Masonic Temple and Arch Street Methodist were 70 m and 63 m boxes (LiDAR's tower tops over the
+  whole footprint) with a generic tower and spire.
+- Research: five agents read Wikipedia, Commons, HABS, the NRHP nominations and SkyDB for the 25 non-glass towers.json
+  records within 450 m of City Hall (City Hall, the Liberty Places and the Comcast towers excluded: other rounds remodel
+  them) and wrote a facts file each with Commons photographs they had looked at (scratchpad, never the repo, never fed to
+  the image API): material and photographed colour, bay, storey, base, top, massing.
+- Art: `fetch_tower_art.py` asked gpt-image-2 (quality high) for one straight-on strip a face, a few bays wide from the
+  sidewalk to the cornice, glass green and sky magenta, every prompt written from the facts: 32 strips for 25 buildings
+  (PSFS three faces, the Masonic Temple, the church, the Girard Trust, One Penn Square West and the Land Title two each),
+  33 images made (the Wanamaker's first, written before its research came back, kept in `aside/`), every one looked at.
+  `bake_tower_art.py` keys the glass and paints each building's own, finds the typical storeys as the longest run of
+  window bands at one height and pitch, cuts the top, a shaft of up to three whole storeys and the base at whole bays,
+  takes each to the research's bay and storey, and packs 86 cells into one 4096 by 2048 atlas at 25.5 px/m (a phone's
+  2048 by 1024 half, the masks at half and a quarter): 686 KB, 204, 312 and 150 KB of files.
+- The page (`TOWN_ON`: REAL, the skins, WebGL 2, not `?townart=0`): a wide record is one of the buildings when its spec
+  is by name or one of the building's points stands in it (`townOf`); it lays no lottery skin, house front or mid-rise
+  wall, is never a glass part, takes the building's photographed colour, and `townNote`s its walls. 'Cladding the
+  towers' lays them all in ONE mesh and ONE program (`townLay`, 'tower-own|real'): a wall takes whole bays from its
+  corner, the base from 30 cm under the ground at its own height, the top under the wall's head, whole typical storeys
+  between, a whole wall (the Masonic Temple, the church) from its foot; each vertex carries its cell, grid and room kind
+  as Float32 streams of 4, 4 and 1; the shader wraps the cell by hand (fract, textureGrad on the unwrapped gradients
+  capped at mip 4, inside the 16 px gutter) and draws the lottery skins' realistic look (each pane its own shade, the
+  city's reflection on a computer, the rooms after dark by SKIN_LATE, the weather); a street floor's glass glows as the
+  lottery's street floors do. A cornice (the Wanamaker, the Widener, the Girard, the Land Title, the Bellevue, the
+  Ellington, Wells Fargo) stands proud as a ledge. The bases count as street floors for the storefronts (`baseOwn`), so
+  no box doubles a building's own shopfronts (`test_realism_storefronts`'s legacy hash moved for that one line).
+- Massing (`townMass`, after the outer districts' loop, in the chunks, the trim and the venues' stone material): the
+  Masonic Temple pinned to its 24 m cornice under a slate hip, the great SW tower to 62 m in its own strip with four
+  pinnacles to 71 and the NW belfry to 40; Arch Street Methodist pinned to its 11 m eave under a 22 m slate gable with
+  marble gable ends, its corner tower in its own strip to 29 m, pinnacles and the octagonal marble spire to 64; the
+  Residence Inn's slab pinned to 73 m and its three Mayan tiers to 106; the Girard Trust's copper hip on the 118 m
+  cornice and the banking hall's dome on its rotunda (the records wide.b64 drew as glass parts); the PSFS sign (white
+  strokes on a blue panel by day, red after dark through the venues' lit colour, never themed) on the slab's roof reading
+  east and west, the black spine on its own to 148 m and the 1948 lattice mast on it to 227; the Bellevue's four curved
+  mansard bonnets; the Land Title's 1897 north building pinned to 62 m in its own brick-and-oriel strip; One Parkway and
+  Four Penn Center raised again (wide.b64 held only OSM's 59 m and 88 m parts of them) and Eight Penn Center's lost body in
+  its glass system. 4,486 triangles of massing, 4,402 of facade (596 walls, 194 ledges).
+- towers.json (`bake_towers.py` `REAL_FIX`, applied under REAL only, each with its `why`): 21 records. The Wanamaker's
+  point moved onto its block with the cornice at 71 m; PSFS 140 m to the slab's roof with a flat crown and a 17 m radius
+  (it took the spine); the Girard Trust 118 m and white marble; the Land Title 101 m; the Marriott 76 m in rose-taupe
+  precast, not brick; One Penn Center 100.6 m; One Penn Square West's radius 20 m (it took the Pennsylvania Building);
+  Centre Square I and II, Three Penn, Four Penn and Jefferson Tower to precast bands (ribbon windows); the colours of the
+  rest. Eight Penn Center is a glass curtain wall (silver-grey reflective, mullion caps, a band a floor): glass with
+  bands, so it takes the reflective band system through glass_systems.json's styleDefault, the systems untouched. Two
+  Penn Center, which Round 193 had on the band system, is white enamel bands and blue ribbons, about half glass: it
+  wears its own facade now (Mike: say if it should go back). The others marked glass nearby (the Residences at the
+  Ritz-Carlton, the W, PNC, 1650 Arch, 1213 Walnut, the Honickman) stay on their systems.
+- Measured (Mike's pose, 1280 by 800): 361 draw calls against 360, 5.551 M triangles against 5.542 M, programs 143 both,
+  two textures more; on the phone 321 against 320 and 3.918 M against 3.911 M. GPU memory: the atlas and mask 55.9 MB with
+  mips on a computer, 14.0 MB on a phone. The page grew 56 KB. No link failures and no console errors, computer or phone,
+  day or night; `?real=0` matches HEAD (mean 0.02 to 0.24 of 255 over five poses, the noise); `?townart=0` keeps the
+  lottery on the corrected specs.
+- Renders: scratchpad remodel/chring/before and after (14 computer poses, 6 more after, 6 phone), the pairs side by
+  side in pairs/. Tests: `tests/test_remodel_chring.py`; the art, memory and storefront tests take the new manifest and
+  the one new `freeTexOnUpload`.
+- Open: the gable ends and caps are flat-coloured stone; PSFS's cantilever over its base is not modelled (the slab rides
+  on its footprint as wide.b64 has it); the strips are a few bays repeated, so a long wall repeats every 9 to 13 m, and
+  a building's side and rear walls wear its street front.
