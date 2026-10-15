@@ -23256,7 +23256,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       const rduv = (u, d) => [mirror ? (W - (u - U)) / W : (u - U) / W, d / D];
       quad(roofM, [a0, RF, d0], [a1, RF, d0], [a1, RF, d1], [a0, RF, d1], [rduv(a0, d0), rduv(a1, d0), rduv(a1, d1), rduv(a0, d1)]);
       const pc = 0x9c9e9c;
-      lbox(U, U + W, RF - 0.02, RF, 0, D, 0x8e908e);   // the roof slab's edge under the parapets, in case a gap shows
+      // the roof slab's edge under the parapets, in case a gap shows; its top 3 cm under the roof (Round 196, Mike: the house
+      // flickered: the slab's top lay in the roof's own plane at RF and the membrane and pavers fought it frame by frame)
+      lbox(U, U + W, RF - 0.08, RF - 0.03, 0, D, 0x8e908e);
       lbox(U, U + W, RF, H, 0, t, pc); lbox(U, U + W, RF, H, D - t, D, pc); lbox(U, U + t, RF, H, t, D - t, pc); lbox(U + W - t, U + W, RF, H, t, D - t, pc);
       for (const [u0, u1, dd0, dd1] of [[U - 0.02, U + W + 0.02, -0.03, t + 0.02], [U - 0.02, U + W + 0.02, D - t - 0.02, D + 0.03], [U - 0.02, U + t + 0.02, t, D - t], [U + W - t - 0.02, U + W + 0.02, t, D - t]]) lbox(u0, u1, H, H + 0.05, dd0, dd1, 0xc4c6c3);
       // the pilothouse at the back on the outer side, its glass door onto the deck; the deck rail; the condenser

@@ -121,3 +121,16 @@ class GroundPits(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class WildeyRoof(unittest.TestCase):
+    """Round 196 (Mike, at 209 and 211 E Wildey St: "The house in this view is flickering"). The roof slab under the parapets
+    had its top face at RF, the roof membrane's own plane, and the two fought frame by frame; nothing in buildWildeyRow may
+    put a full-footprint face at RF but the membrane itself."""
+
+    def test_the_slab_stays_under_the_roof(self):
+        s = (ROOT / 'app.js').read_text()
+        f = s[s.index('  function buildWildeyRow() {'):s.index("  step('Raising 209 and 211 East Wildey Street'")]
+        self.assertIn('lbox(U, U + W, RF - 0.08, RF - 0.03, 0, D, 0x8e908e);', f)
+        self.assertNotIn('RF - 0.02, RF, 0, D', f)
+        self.assertEqual(len(re.findall(r'quad\(roofM, ', f)), 1)   # the membrane is the one face in that plane

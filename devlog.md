@@ -10843,3 +10843,12 @@ place; this is what changed in the code, and what was measured.
   code, not in glass_systems.json, so the calibrated skyline is untouched (glass_calibrate.py's fingerprint). ?real=0 and
   ?glass=0 build the old bars. Rendered from Dock Street, a low flight, the river and at night: no link failures or console
   errors. `tests/test_ryland_glass.py`.
+
+## Round 196 — the Wildey pair's roofs stop flickering (Oct 14)
+
+- Mike, with a screenshot over 209 and 211 E Wildey St: "The house in this view is flickering." Five frames 7 cm apart
+  showed it on the roofs, not the walls, in both depth modes (so not Round 192's): the paver decks came and went in big
+  patches. buildWildeyRow (Round 142) laid the membrane and pavers as one textured quad at RF and, under it, a thin slab
+  "in case a gap shows" whose top face lay at RF too, the full footprint in the same plane. The slab now runs 8 to 3 cm
+  under the roof (it is there for its edges, which the walls and parapets cover); the same five frames hold the decks steady.
+  `tests/test_ground_pits.py` (WildeyRoof) keeps the membrane the one face in that plane.
