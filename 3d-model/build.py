@@ -213,6 +213,7 @@ const("COMCAST_ART", text_of("comcast_art.json", "null"))   # the Comcast Techno
 const("STADIUM_ART", text_of("stadium_art.json", "null"))   # the sports complex's generated walls, seat rows, turf and clay (bake_stadium_art.py), Round 195
 const("NJ_ART", text_of("nj_art.json", "null"))   # the USS New Jersey's plating, bulkhead, deck and teak atlas (bake_nj_art.py), Round 195
 const("MOSHULU_ART", text_of("moshulu_art.json", "null"))   # the Moshulu's hull plating and teak deck (bake_moshulu_art.py), Round 195
+const("BRIDGE_ART", text_of("bridge_art.json", "null"))   # the Delaware bridges' steel, granite and concrete and the Ben Franklin's anchorage elevations (bake_bridge_art.py), Round 195
 
 
 def art_paths(o):
@@ -229,7 +230,7 @@ def art_paths(o):
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
 for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
-             "glory_art.json", "storefront_art.json", "glass_art.json", "tavern_art.json", "tower_art.json", "sht_art.json", "liberty_art.json", "comcast_art.json", "stadium_art.json", "nj_art.json", "moshulu_art.json"):
+             "glory_art.json", "storefront_art.json", "glass_art.json", "tavern_art.json", "tower_art.json", "sht_art.json", "liberty_art.json", "comcast_art.json", "stadium_art.json", "nj_art.json", "moshulu_art.json", "bridge_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

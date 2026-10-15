@@ -349,7 +349,9 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('venU.uVenScreen.value = venScreenTex(ims[4]); if (old) old.dispose();', cut(s, '  function venLoadArt() {', '  // ---- the geometry'))
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venDigitsTex() {', '  function venArtTex('))   # the Linc's yard numbers
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venArtTex(', '  function venLoadArt() {'))   # and their walls, seats, turf and clay
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 47)   # the definition and its uses (every round's, counted)
+        self.assertIn('const td = new THREE.Texture(det); td.wrapS = td.wrapT = THREE.RepeatWrapping; td.anisotropy = anisoOf(8); td.needsUpdate = true; freeTexOnUpload(td);', cut(s, '  function brLoadArt() {', '  // a buffer'))   # Round 195: the bridges' art
+        self.assertIn('const t = freeTexOnUpload(new THREE.CanvasTexture(cv));', cut(s, '  function brLatticeCanvas() {', '  // the program:'))   # and their lattice canvas
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 50)   # the definition and its uses (every round's, counted)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')
