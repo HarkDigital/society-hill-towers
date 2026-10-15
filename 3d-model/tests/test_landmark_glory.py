@@ -587,3 +587,12 @@ class Art(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GloryOneSign(unittest.TestCase):
+    """Round 200 (Mike: "Remove the sign to the right on Glory"): the flat board over the entrance is gone, the blade sign stays."""
+
+    def test_the_board_is_gone_and_the_blade_stays(self):
+        g = (Path(__file__).resolve().parent.parent / 'rebuilds' / 'glory.js').read_text()
+        self.assertNotIn('const fb = [W(bu - bw', g)
+        self.assertIn('near.quad(W(BU - t, v0, PAN[0]), W(BU - t, v1, PAN[0]), W(BU - t, v1, PAN[1]), W(BU - t, v0, PAN[1]), NW_, uvq(CV.panel, true), g0);', g)

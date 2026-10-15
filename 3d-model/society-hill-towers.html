@@ -4575,7 +4575,7 @@ RB.kit = (function () {
       // ---- the signs, on the near mesh as aGl mode 4 (the facade material samples the canvas the page letters, so the near
       // level is one draw and the signs come and go with it; Round 191's review: their own mesh was a second draw at street
       // level for 24 triangles, switched at 140 m with no hysteresis): the blade panel square to the street, both faces
-      // carrying the panel (the back's u not mirrored), the board over the entrance tilted out at its top, the bronze 126
+      // carrying the panel (the back's u not mirrored), the bronze 126
       // plaque on the third pier and the menu in its case on the fourth
       {
         const uvq = (r, flip) => flip ? [[r[0] + r[2], r[1]], [r[0], r[1]], [r[0], r[1] + r[3]], [r[0] + r[2], r[1] + r[3]]]
@@ -4586,21 +4586,13 @@ RB.kit = (function () {
         const v0 = -0.38, v1 = -1.58, t = 0.015;
         near.quad(W(BU - t, v0, PAN[0]), W(BU - t, v1, PAN[0]), W(BU - t, v1, PAN[1]), W(BU - t, v0, PAN[1]), NW_, uvq(CV.panel, true), g0);
         near.quad(W(BU + t, v1, PAN[0]), W(BU + t, v0, PAN[0]), W(BU + t, v0, PAN[1]), W(BU + t, v1, PAN[1]), NU, uvq(CV.panel, true), g0);
-        // its edges (white, with the panel's charcoal line) and the board's
+        // its edges (white, with the panel's charcoal line)
         const wq = uvq(CV.white);
         near.quad(W(BU - t, v0, PAN[1]), W(BU + t, v0, PAN[1]), W(BU + t, v1, PAN[1]), W(BU - t, v1, PAN[1]), NY, wq, g0);
         near.quad(W(BU - t, v0, PAN[0]), W(BU + t, v0, PAN[0]), W(BU + t, v1, PAN[0]), W(BU - t, v1, PAN[0]), ND, wq, g0);
         near.quad(W(BU - t, v1, PAN[0]), W(BU + t, v1, PAN[0]), W(BU + t, v1, PAN[1]), W(BU - t, v1, PAN[1]), NF, wq, g0);
-        // the flat board over the entrance, on the plain band between the capitals and the sill course, its top 8 degrees out
-        const bu = (stair[0] + stair[1]) / 2, bw = 1.45 / 2, bh0 = capY1 + 0.04, bh1 = Math.min(LO.sill2 - 0.14, bh0 + 0.66), tilt = Math.tan(8 * Math.PI / 180) * (bh1 - bh0);
-        const fb = [W(bu - bw, -0.05, bh0), W(bu + bw, -0.05, bh0), W(bu + bw, -0.05 - tilt, bh1), W(bu - bw, -0.05 - tilt, bh1)];
-        const nb = nrm(0, -1, tilt / (bh1 - bh0));
-        near.quad(fb[0], fb[1], fb[2], fb[3], nb, uvq(CV.panel, true), g0);   // read from the street, east is on the left
-        const bk = [W(bu - bw, -0.02, bh0), W(bu + bw, -0.02, bh0), W(bu + bw, -0.02 - tilt, bh1), W(bu - bw, -0.02 - tilt, bh1)];
-        near.quad(fb[3], fb[2], bk[2], bk[3], NY, wq, g0);
-        near.quad(fb[0], fb[3], bk[3], bk[0], NW_, wq, g0);
-        near.quad(fb[1], fb[2], bk[2], bk[1], NU, wq, g0);
-        near.quad(fb[0], fb[1], bk[1], bk[0], ND, wq, g0);
+        // (Round 200, Mike: "Remove the sign to the right on Glory": the flat board that stood over the entrance is gone; the
+        // blade sign on its bracket is the bar's one sign)
         // the plaque and the menu
         const pu = pierMid[2], py = PT + 0.85;
         near.quad(W(pu - 0.13, -0.125, py), W(pu + 0.13, -0.125, py), W(pu + 0.13, -0.125, py + 0.17), W(pu - 0.13, -0.125, py + 0.17), NF, uvq(CV.plaque, true), g0);

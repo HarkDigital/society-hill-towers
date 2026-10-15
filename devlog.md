@@ -10852,3 +10852,11 @@ place; this is what changed in the code, and what was measured.
   "in case a gap shows" whose top face lay at RF too, the full footprint in the same plane. The slab now runs 8 to 3 cm
   under the roof (it is there for its edges, which the walls and parapets cover); the same five frames hold the decks steady.
   `tests/test_ground_pits.py` (WildeyRoof) keeps the membrane the one face in that plane.
+
+## Round 200 — Glory keeps one sign (Oct 14)
+
+- Mike, with a close-up of Glory's entrance: "Remove the sign to the right on Glory." Of the two GLORY signs Round 191 hung
+  from Wanderlog's close-up, the flat board tilted out over the entrance (on the plain band between the capitals and the sill
+  course) is gone; the white blade sign on its black bracket off the third pier stays. Both drew from the same lettered
+  canvas on the near mesh (aGl mode 4), so nothing else changes: 18 triangles fewer, still one draw. The board's night term
+  in the facade shader is left in place and now matches nothing. `tests/test_landmark_glory.py` (GloryOneSign).
