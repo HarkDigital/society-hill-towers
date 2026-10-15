@@ -12138,3 +12138,64 @@ pull.py, sweep.py), renders in remodel/sht/fix/ (it7 the computer's final set, p
   rock, Celtic cross and kneeling figures and the ship's prow trade ends. The flag's pole keeps its own place north-east of
   it (FAMINE.pole is in the world frame), still clear of the plinth (the test's local frame takes the same turn). ?real=0's
   Round 129 memorial is unchanged. `tests/test_remodel_famine.py` (Turned).
+
+## Round 202 — pins show past a tenth of a mile; ship pins within a mile (Oct 15)
+
+- Mike: "I want to address the pins that flash. We need to tighten up the distance. they should show regardless unless the
+  user is very close, 0.1 miles. At close range buildings should hide them. Also bring down the distance on boat pins. Make
+  those 1 mile."
+- The near line: `PIN_OCC_NEAR` 160.93 m from the eye. Inside it Round 169's rules stand as they were (the gate hides a pin
+  the frame an image covers it, the CPU's state hides on a covered or unknown answer and shows with the guard and the fade).
+  Past it a pin shows whatever any image says, in all three places that decide: the gate (`pinOccGate` returns 1 first
+  when the tip's view-space distance passes `uPinOccReach.w`; view space through `modelViewMatrix`, because r149 never
+  uploads `cameraPosition` to a MeshBasicMaterial), the CPU's judge (`pinOccJudge`: shown at once, at full the frame it
+  arrives, since its record's `pinRise` already eases a new pin in, and over `PIN_FADE` when it was hidden up close and the
+  eye backs out past the line; crossing in, a pin keeps its state until an image says covered), and the placards and score
+  bubbles (`pinBlocked` runs the same judge; its roof-grid line of sight past the images' range is gone). The search
+  destination's name had a line of sight that hid it only past 150 m, the opposite of the rule: removed (its pin never had one).
+- The images: drawn only while a tip in view stands within `PIN_OCC_PREP` 300 m (or a placard there asks), checked before
+  the capture each frame so the cadence is as it was, and reaching only those tips (`PIN_REACH_MIN` 300 m, the first image
+  included, which reached 30 km). So an image already holds a tip the frame it crosses the line, and flights, ships and
+  placards no longer take every image out as far as they stand; the phone's near images (PIN_NEAR) are no longer drawn.
+  A tap on a post, a bus or a tree past the images asks the building tap's one-pixel render through the tap
+  (`bldgPointAt`, once a tap, every instanced mesh left out) whether a building stands in front (`pickOccluded`).
+- Ships: `SHIP_PIN_R` 1609.34 m. A ship's anchor pin and the RiverLink ferry's draw within the mile and grow in through
+  `pinRise` as they come inside it; the hulls draw as far as they did and still take a tap (`shAct` counts the hulls).
+- Measured with the capture skill's `pin_through.js` (now aware of the line: `through` counts pins inside it only, `farThrough`
+  the ones past it by design, `farNotFull` and `flash`/`flashFar` added) through `render.mjs --eval`, every layer on, the same
+  flight east along Market Street at 40 m (56 s), a 360-degree turn at 14 m and a street-level pass at 9 m, the build before
+  against this one. Phone (740 by 360, 30 fps): pin-frames drawn 5,011 of 121,635 on screen in the flight against 105,929 of
+  109,555; pins hidden and shown again within 10 frames 14 across the three runs against 1 (a pin inside the line at street
+  level); a pin coming out from behind a building shown after a median 367 ms against 0; no pin inside the line through a
+  building in either. Computer (1280 by 800, 60 fps): flashes 18 against 2 (both inside the line), none past it; CPU a frame
+  27.0 to 19.3 ms in the flight, 13.6 to 10.2 in the turn, 16.1 to 9.7 at street level (the images now reach 264 m, not 9 km).
+  `tests/pin_gate_gpu.html` passes on the M2 through Metal (headless Chrome, `--dump-dom`), with two new checks for the line.
+- Tests: test_pin_fade (a far pin shows at once whatever the images say and draws no image; crossing the line; the arrival,
+  slot and carry tests moved inside it; the phone's near-image test retired), test_pin_gate (the gate's text), test_cull
+  (the first image's reach), test_pin_scale (the ships' and ferry's distance-first scale), pin_gate_gpu.html. `render.mjs`
+  takes `--png` for lossless captures.
+
+## Round 203 — the cornices round City Hall no longer flicker (Oct 15)
+
+- Mike, with a link over Broad Street south of City Hall: "the tops of the two large buildings here are flickering." The
+  Wells Fargo Building (123 S Broad) and the Land Title Building, two of Round 198's buildings in their own facades. Three
+  captures 0.5 m apart showed light bars and crosses on their roofs coming and going; five 2 cm apart put the depth fight on
+  the roofs alone (the facades and the traffic change by a pixel's edge in both builds).
+- The cause: `townLay`'s cornice ledge ran its depth (1.4 m) past both ends of every wall, and its coping lies in the roof's
+  own plane. At every inside corner (the light courts) the run-out lay over the building's own roof; wherever two parts of
+  a building meet at one height, each part's wall on the shared line carried a ledge whose coping lay over the other's roof
+  (the crosses); and two ledges' copings overlapped at every corner.
+- Now a ledge runs only where open air stands outside its wall at its head (`townNear`, `townOpen`: neither the building's
+  own outline nor any part of a researched building as high as it, within 30 cm), sampled every half metre from a ledge's
+  depth before the wall to a ledge's depth past it and cut at the boundary to a centimetre. Every wall is walked the same way
+  round (its outward side on its right, whichever way its outline is wound, so two parts meet as one outline's walls do): at
+  a cut, an inside corner of the outline or of two parts, the ledge that ends there stops at the next wall's skin and the one
+  that starts there begins past the next ledge's face; at a free end where the outline turns out, the one that ends runs out
+  to the next ledge's face and closes its end with a cap, the one that starts begins at the wall line; a straight join meets
+  end to end. The coping stands 3 cm over the head, so a roof the research does not know that it still meets lies under it.
+  151 ledge runs where there were 194. What stays: the roof's own painted border along the line where two parts meet
+  (the chunk's roof, as before Round 198), steady.
+- `tests/test_remodel_chring.py` (Cornices): the page's own loop under Node over an L of two parts wound opposite ways, a
+  lower part beside it and a U with a light court: no two copings overlap, none lies over a roof as high as it, the whole
+  outside is covered with every corner closed, the lower part keeps its own. The code before fails it (35 overlapping
+  samples, 119 on a roof).

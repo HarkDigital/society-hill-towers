@@ -11,13 +11,18 @@ buildings round City Hall in their own facades (fetch_tower_art.py, bake_tower_a
 - the excluded buildings' towers.json records carry no fix, and every fix says why;
 - the page: the own facades only under the realistic look on WebGL 2 (?real=0 and ?townart=0 keep the lottery), the
   fixes only under REAL, one program for every building, Float32 streams of 1 and 4 (no 1- or 3-byte stream), no
-  gl_FragDepth, the bases standing in for the storefronts."""
+  gl_FragDepth, the bases standing in for the storefronts.
+- Round 203 (Mike: "the tops of the two large buildings here are flickering"): a cornice ledge runs only where open air
+  stands outside its wall at its head, so no coping lies in a roof's plane and no two overlap, and it still closes every
+  outside and inside corner of the outline the parts make together (Cornices, the page's own code under Node)."""
 import base64
 import json
 import math
 from pathlib import Path
 import re
+import shutil
 import struct
+import subprocess
 import unittest
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -245,6 +250,79 @@ class Page(unittest.TestCase):
         self.assertIn('artImage(artSrc(TOWN_ART.img, TOWN_ART.imgHalf)), artImage(artSrc(TOWN_ART.mask, TOWN_ART.maskHalf))', step)
         self.assertIn('if (townGot) await townLay(aniso, townGot);', step)
         self.assertIn('towerArt: townProbe', self.src)
+
+
+
+class Cornices(unittest.TestCase):
+    # an L of two parts at one height wound opposite ways (A, B), a lower part against A (C), a U with a light court (D)
+    PARTS = {'A': ([[0, 0], [40, 0], [40, 20], [0, 20]], 100), 'B': ([[0, 20], [0, 50], [15, 50], [15, 20]], 100),
+             'C': ([[40, 0], [60, 0], [60, 20], [40, 20]], 80),
+             'D': ([[100, 0], [140, 0], [140, 30], [130, 30], [130, 10], [110, 10], [110, 30], [100, 30]], 100)}
+    # the outside at the copings' height, as walls with their outward normals: A and B's outline (C is lower), and D's
+    OUTSIDE = [((0, 0), (40, 0), (0, -1)), ((40, 0), (40, 20), (1, 0)), ((15, 20), (40, 20), (0, 1)), ((15, 20), (15, 50), (1, 0)),
+               ((0, 50), (15, 50), (0, 1)), ((0, 0), (0, 50), (-1, 0)),
+               ((100, 0), (140, 0), (0, -1)), ((140, 0), (140, 30), (1, 0)), ((130, 30), (140, 30), (0, 1)), ((130, 10), (130, 30), (-1, 0)),
+               ((110, 10), (130, 10), (0, 1)), ((110, 10), (110, 30), (1, 0)), ((100, 30), (110, 30), (0, 1)), ((100, 0), (100, 30), (-1, 0))]
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which('node'):
+            raise unittest.SkipTest('Node.js unavailable')
+        src = (ROOT / 'app.js').read_text()
+        cls.helpers = cut(src, '  function hash01(n) {', '\n') + '\n' + cut(src, '  function signedArea(pts) {', '  function polyCentroid(pts) {') + \
+            cut(src, '  function skinWalls(P) {', '  // the realism pass (critic gap 4)') + cut(src, '  function townStripOf(art, nx, nz) {', '  async function townLay(aniso, got) {')
+        cls.loop = cut(src, '      for (const c of TOWN.cands) {', '      if (!idx.length) return;')
+
+    def test_no_coping_in_a_roofs_plane_none_twice_and_every_corner_closed(self):
+        js = self.helpers + r"""
+const TOWN = { cands: [], ledges: 0, walls: 0, laid: {} }, quads = [];
+const quad = (p4, nx, ny, nz) => { if (ny === 1) quads.push([[p4[0], p4[2]], [p4[3], p4[5]], [p4[6], p4[8]], [p4[9], p4[11]], p4[1]]); };
+const art = { id: 't', home: 0, cornice: [1.5, 1.4], strips: [{ shaft: { m: [9.6, 11.7], nb: 3, nf: 3 }, base: null, top: { m: [9.6, 4] } }] };
+const PARTS = __PARTS__;
+for (const k in PARTS) TOWN.cands.push({ poly: PARTS[k][0], g0: 0, y0: 0, y1: PARTS[k][1], art, seed: 1, strip: null, name: k });
+""" + self.loop + r"""
+// a convex quad holds a point when it is on one side of every edge
+const inQ = (q, x, z) => { let pos = 0, neg = 0; for (let k = 0; k < 4; k++) { const a = q[k], b = q[(k + 1) % 4], c = (b[0] - a[0]) * (z - a[1]) - (b[1] - a[1]) * (x - a[0]); if (c > 1e-9) pos++; else if (c < -1e-9) neg++; } return !(pos && neg); };
+const samples = (q) => { const o = []; for (let i = 1; i < 8; i++) for (let j = 1; j < 8; j++) { const u = i / 8, v = j / 8; const x = (1 - v) * ((1 - u) * q[0][0] + u * q[1][0]) + v * ((1 - u) * q[3][0] + u * q[2][0]), z = (1 - v) * ((1 - u) * q[0][1] + u * q[1][1]) + v * ((1 - u) * q[3][1] + u * q[2][1]); o.push([x, z]); } return o; };
+let overlap = 0, onRoof = 0, holes = [], low = 0;
+quads.forEach((q, i) => {
+  for (const [x, z] of samples(q)) {
+    quads.forEach((r, j) => { if (j !== i && Math.abs(r[4] - q[4]) < 0.01 && inQ(r, x, z)) overlap++; });
+    for (const k in PARTS) if (PARTS[k][1] >= q[4] - 0.33 && pointInPoly(x, z, PARTS[k][0])) onRoof++;
+  }
+  if (q[4] < 90) low++;
+});
+const mid = 0.12 + 0.7;
+for (const [a, b, n] of __OUT__) {
+  const L = Math.hypot(b[0] - a[0], b[1] - a[1]), ux = (b[0] - a[0]) / L, uz = (b[1] - a[1]) / L;
+  for (let s = 0.15; s <= L - 0.15; s += 0.25) {
+    const x = a[0] + ux * s + n[0] * mid, z = a[1] + uz * s + n[1] * mid;
+    if (!quads.some((q) => q[4] > 99 && inQ(q, x, z))) holes.push([+x.toFixed(2), +z.toFixed(2)]);
+  }
+}
+// the outside corners' squares
+for (const [x, z] of [[-mid, -mid], [40 + mid, -mid], [40 + mid, 20 + mid], [15 + mid, 50 + mid], [-mid, 50 + mid], [100 - mid, -mid], [140 + mid, -mid], [140 + mid, 30 + mid], [130 - mid, 30 + mid], [110 + mid, 30 + mid], [100 - mid, 30 + mid]])
+  if (!quads.some((q) => q[4] > 99 && inQ(q, x, z))) holes.push(['corner', x, z]);
+console.log(JSON.stringify({ n: quads.length, ledges: TOWN.ledges, overlap, onRoof, holes: holes.slice(0, 12), nHoles: holes.length, low, y: [...new Set(quads.map((q) => q[4]))] }));
+"""
+        js = js.replace('__PARTS__', json.dumps(self.PARTS)).replace('__OUT__', json.dumps(self.OUTSIDE))
+        r = subprocess.run(['node', '-e', js], capture_output=True, text=True, timeout=60)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        out = json.loads(r.stdout)
+        self.assertGreater(out['n'], 10)
+        self.assertEqual(out['overlap'], 0, out)                  # no two copings in one plane over the same ground
+        self.assertEqual(out['onRoof'], 0, out)                   # none over a roof as high as it (A and B's shared wall, D's court corners)
+        self.assertEqual(out['nHoles'], 0, out)                   # the whole outside of the outline at the head, every corner closed
+        self.assertGreater(out['low'], 0)                         # C, lower, keeps its own cornice
+        self.assertEqual(sorted(out['y']), [80.03, 100.03])       # the coping 3 cm over the head
+
+    def test_the_rule_in_the_page(self):
+        src = (ROOT / 'app.js').read_text()
+        lay = cut(src, '  async function townLay(aniso, got) {', '  function townProbe() {')
+        self.assertIn('const near = townNear(', lay)
+        self.assertIn('yc = yt + 0.03', lay)
+        self.assertIn('const fw = sg > 0;', lay)
+        self.assertNotIn('ex = dx / len * cd', lay)               # the old run past both ends
 
 
 if __name__ == '__main__':

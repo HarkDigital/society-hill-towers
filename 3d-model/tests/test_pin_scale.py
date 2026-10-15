@@ -25,7 +25,10 @@ class PinScale(unittest.TestCase):
     def test_every_pin_takes_the_rule(self):
         s = self.s
         self.assertNotIn('/ 135, 2.2', s)
-        self.assertEqual(len(re.findall(r'pinScaleAt\(camera\.position\.distanceTo\(_\w+\), (?:14|190)\)', s)), 11)
+        self.assertEqual(len(re.findall(r'pinScaleAt\(camera\.position\.distanceTo\(_\w+\), (?:14|190)\)', s)), 9)
+        # Round 202: the ships' anchors and the ferry measure their distance first (their pins show within a mile)
+        self.assertIn('const aps = pinScaleAt(sd, 190) * pinRise(v, now);', s)
+        self.assertIn('const aps = pinScaleAt(fd, 190) * pinRise(p, now);', s)
 
     @unittest.skipUnless(shutil.which('node'), 'node unavailable')
     def test_the_half_mile_size_all_the_way_in(self):

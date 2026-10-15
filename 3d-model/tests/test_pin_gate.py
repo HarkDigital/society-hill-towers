@@ -171,6 +171,11 @@ console.log(JSON.stringify(r));''')
         self.assertIn('vec4(1.0 / 16777216.0, 1.0 / 65536.0, 1.0 / 256.0, 1.0)) * (255.0 / 256.0) * uPinOccInfo.z', g)
         self.assertIn('texture2D(t, (q + 0.5) / uPinOccInfo.xy)', g)
         self.assertEqual(g.count('for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {'), 2)
+        # Round 202: past the near line (uPinOccReach.w, the eye's distance in view space) shown, before any image is asked
+        self.assertIn('vec3 ve = (modelViewMatrix * instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;', g)
+        self.assertIn('if (dot(ve, ve) > uPinOccReach.w * uPinOccReach.w) return 1.0;', g)
+        self.assertLess(g.index('uPinOccReach.w * uPinOccReach.w'), g.index('if (uPinOccReach.y < 0.5) return 0.0;'))
+        self.assertIn('reach: { value: new THREE.Vector4(0, 0, 0, PIN_OCC_NEAR) }', SRC)
         # collapsed with no image, outside it, behind its eye or past its reach
         self.assertIn('if (uPinOccReach.y < 0.5) return 0.0;', g)
         self.assertIn('if (vz <= 1.0 || vz > reach) return 0.0;', g)

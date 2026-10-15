@@ -11,6 +11,7 @@
 //     or { "name", "pos", "look": [x, y, z], "clock" } to aim at a point. clock minutes are Philadelphia local; add
 //     "js": "<expression>" to run in the page before the frames (a weather preset, a toggle).
 //   --eval <file.js> runs that file's expression in the page after the last pose and prints its value (a probe).
+//   --png saves lossless PNGs (for flicker_diff.py) in place of the JPEGs.
 //   --touch emulates a phone (touch points, mobile metrics, pixel ratio 1.25): the page's isTouch path; use --w 740 --h 360.
 //   Prints a JSON summary (files written, PERF.failed, the page's first 40 console warnings and errors, ms per pose).
 import { spawn } from 'node:child_process';
@@ -22,6 +23,7 @@ import net from 'node:net';
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf('--' + k); return i >= 0 ? args[i + 1] : d; };
 const pos0 = args.filter((a, i) => !a.startsWith('--') && !(i > 0 && args[i - 1].startsWith('--')));
+const PNG = args.includes('--png');   // lossless captures (flicker_diff.py: a jpeg's own noise swamps the count)
 const W = +opt('w', 1280), H = +opt('h', 800), gpu = opt('gpu', 'metal'), FR = +opt('frames', 24);
 const freePort = () => new Promise((res) => { const sv = net.createServer(); sv.listen(0, '127.0.0.1', () => { const p = sv.address().port; sv.close(() => res(p)); }); });
 let url = pos0[0], posesPath = pos0[1], outdir = pos0[2], server = null;
@@ -106,9 +108,9 @@ for (const p of poses) {
   if (p.js) await ev(p.js);
   // frames with a task between them, so asynchronous loads (art, readbacks) land
   for (let i = 0; i < FR; i++) { await ev('__dbg.frameOnce(); 1'); await sleep(i < 4 ? 250 : 60); }
-  const data = await ev("(() => { __dbg.frameOnce(); return __dbg.renderer.domElement.toDataURL('image/jpeg', 0.9); })()");
+  const data = await ev(PNG ? "(() => { __dbg.frameOnce(); return __dbg.renderer.domElement.toDataURL('image/png'); })()" : "(() => { __dbg.frameOnce(); return __dbg.renderer.domElement.toDataURL('image/jpeg', 0.9); })()");
   if (typeof data !== 'string') { out.push({ name: p.name, error: data && data.__err }); continue; }
-  const f = path.join(outdir, p.name + '.jpg');
+  const f = path.join(outdir, p.name + (PNG ? '.png' : '.jpg'));
   writeFileSync(f, Buffer.from(data.split(',')[1], 'base64'));
   out.push({ name: p.name, file: f, ms: Date.now() - t1 });
 }
