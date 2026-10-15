@@ -295,6 +295,18 @@ texture-unit limit) and `?canopy=show`; probes `__dbg.gpu()`, `pickAt(px, py)`, 
 `?moshulu=0` draws the old Moshulu and her old berth (Round 195: the remodel, her slip open to the river and the promenade strip
 broken there); `__dbg.moshulu()` reports her level, triangles, ribbons, bulbs and art, `__dbg.moshuluU` holds her uniforms.
 
+## The landmark rounds (Rounds 195 to 200)
+
+Rebuilt from photographs, each with a near and a cheap far level, its own art under `art/<kind>/` and an escape hatch
+that keeps the old model: One and Two Liberty Place (`__dbg.liberty()`), the stadiums and arena (`?venues=0`), both
+Comcast towers (`?comcast=0`, `__dbg.comcast()`), Battleship New Jersey (`?nj=0`, `?njart=0`, `__dbg.nj()`), the Moshulu
+(`?moshulu=0`; her hull is navy with a red boot-top, as she is today), the Delaware bridges (`?bridges=0`,
+`__dbg.bridges()`), the Society Hill Towers (`?sht=0`: one tower modelled, placed three times; the five themed windows of
+Round 137 kept), the buildings round City Hall in their own facades (`?townart=0`; `towers.json` corrections apply under
+REAL only), the Irish Famine Memorial and its tricolour, A Man Full of Trouble (`?tavern=0`), City Hall and Glory (Round
+191). `?real=0` keeps every old model. Every round's art manifest is listed in build.py's art file list, and the tests read
+that list by membership, never by position.
+
 ## The realism pass (Round 188)
 
 Ten workstreams (fronts and skins, post and shadows, sky and air, the facade shader, ground and vegetation, streets,
