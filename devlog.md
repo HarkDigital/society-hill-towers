@@ -10851,68 +10851,114 @@ place; this is what changed in the code, and what was measured.
   3.2 m recess at each corner under nested gable prisms the width of each tier at about 30 degrees, so both read as a blue
   box with a hat; the base was a 56 m style-5 block that the storefront art dressed as a row of corner shops.
 - References, looked at and never sent anywhere: Wikimedia Commons (One_Liberty_Place a to d, OneLibertyPlaceSpire, the
-  Highsmith view LCCN2011630484, Liberty2, Two Liberty Place from Chestnut St, the South Street Bridge skyline A605, the
-  Boathouse Row night A595, the USS New Jersey skyline A602), Wikipedia, archipedia (the base "granite with acid blue
-  trim", the "metallic blue glass"), the walking tours' "three stories of dark blue-gray polished granite". Kept with their
-  URLs in the session's scratchpad (`remodel/liberty/refs/SOURCES.txt`). The massing comes from OSM's building parts
-  already in `parts_wide.json` (One: the notched shaft to 185 m, the central cross to 220, the crown squares 36, 27 and
-  18 m to 228, 240 and 250, the mast to 288; Two: the central cross to 233, the crown to 258) and the photographs, the
-  gables' pitch and Two's bay gables set by eye against A605 scaled by the 288 m needle and the 258.5 m finial; the LiDAR's
-  251.5 m for One is the pyramid's foot.
+  Highsmith view LCCN2011630484, Liberty2, Liberty_place (HDR), Two Liberty Place from Chestnut St, the 2025 view from the
+  CTC's 60th floor, the South Street Bridge skyline A605, the Boathouse Row night A595, the USS New Jersey skyline A602),
+  Wikipedia, archipedia (the base "granite with acid blue trim", the "metallic blue glass"), the walking tours' "three
+  stories of dark blue-gray polished granite". Kept with their URLs in the session's scratchpad
+  (`remodel/liberty/refs/SOURCES.txt`). The massing comes from OSM's building parts already in `parts_wide.json` (One: the
+  notched shaft to 185 m, the central cross to 220, the crown squares 36, 27 and 18 m to 228, 240 and 250, a 9.4 m square
+  to 250 and the mast, 3.8 m across, to 288; Two: the full plan to 149.5 and 159.5, the central cross to 233, the crown to
+  258) and the photographs, the gables' pitch and Two's bay gables and setbacks set by eye against A605, Liberty2 and the
+  HDR, scaled by the 288 m needle, the 240.9 m bay apex and the 258.5 m finial; the LiDAR's 251.5 m for One is the
+  pyramid's foot.
 - The model (`LIB_SPECS`, built under `if (REAL)` in the landmark block of 'Raising the outer districts'; `?real=0` builds
-  Round 84's towers exactly: its two blocks stand under `if (!REAL)`, crowns-day pixel-identical to main, 0.0% of pixels
-  over 24 levels). One Liberty: a 48.6 m square shaft with its corners cut back 6.5 m in three steps to 185 m; a central bay
-  23 m wide on each face, 0.35 m proud, rising through the shoulders into a gable (eave 206.5, apex 220.5, 51 degrees,
-  Round 84's 30) with One's inner granite chevron in it; behind it the crown's three square tiers, each a cross gable with
-  valleys at its corners (35.9 m to 229, 27.4 m to 240, 18.4 m to 248, 47 to 48 degrees), the pyramid from 242 to 258, the
-  mast to 283 with five antenna clusters and the needle to 288. Two Liberty: a 38.4 by 34.4 m shaft cut back 3 m in two
-  steps to 207; its bays 22 m wide to 240.9 (53 degrees) and one crown tier 30.3 m square to 253.5 under the white finial
-  to 258.5. Every wall is a whole quad on the glass chunk (the shader's wall u is 0 or the wall's length), a gabled face two
-  half walls under its slopes; the slopes are lmGlass (style 29, the glazed crowns' sheet) at 0.42 of the crown glass's
-  lightness with half its saturation gone (the photographs' slopes read dark slate under bright caps).
-- The faces wear three of Round 193's systems, none changed (glass_calibrate.py's fingerprint unchanged): the flanks the
-  ribbon system (7: light bands about two fifths of each floor, the photographs' stripes either side of the bays, and the
-  stepped corners turn them into the chevrons on the shaft), the bays the banded system's vertical silver caps (12), the
-  shoulders and the crown Liberty's own (2). The glass is each tower's photographed body (#5D7F9E) on every face.
+  Round 84's towers exactly: its two blocks stand under `if (!REAL)`, crowns-day within 7 levels of main at every pixel).
+  One Liberty: a 48.6 m square shaft with its corners cut back 6.5 m in three steps to 185 m; a central bay 23 m wide on
+  each face, 0.35 m proud, rising through the shoulders into a gable (eave 206.5, apex 220.5, 51 degrees, Round 84's 30)
+  with One's inner granite chevron in it; behind it the crown's three square tiers, each a cross gable with valleys at its
+  corners (35.9 m to 229, 27.4 m to 240, 18.4 m to 248, 47 to 48 degrees); the top tier runs on as a glazed pyramid (9.2 m
+  at 242, 3.25 m at 254: the crown's glass and ribs, its hips steel) into the mast's flared steel foot (3.5 m to 1.06 m
+  square, 253.8 to 257, its middle row pulled in), the mast to 283 with five antenna clusters and the needle to 288. Two
+  Liberty: a 38.4 by 34.4 m shaft cut back 3 m in two steps to 182 m, its flanks set back 1.8 m (1.6 m corner notches) to
+  207 in the same ribbons, then the crown's square; its bays 22 m wide to 240.9 (53 degrees) and one crown tier 30.3 m
+  square to 253.5 under a slender finial (1 m at its foot) in an open frame of four rods from a 3.2 m square, to 258.5.
+  Every wall is a whole quad on the glass chunk (the shader's wall u is 0 or the wall's length), a gabled face two half
+  walls under its slopes; the slopes are lmGlass (style 29, the glazed crowns' sheet).
+- The faces wear three of Round 193's systems, none changed (glass_calibrate.py's fingerprint b5fca1378b8fb251, main's):
+  the flanks the ribbon system (7: light bands about two fifths of each floor, the photographs' stripes either side of the
+  bays, and the stepped corners turn them into the chevrons on the shaft), the bays the banded system's vertical silver caps
+  (12), the shoulders and the crown Liberty's own (2). The glass is each tower's photographed body (#5D7F9E) on every face.
+- The crowns' slopes (the review's first must-fix: at 0.42 of the crown glass's lightness and half its saturation under a
+  white square grid of caps they read as solar panels, sRGB (45, 57, 71) against the gable glass's (106, 155, 198), where the
+  photographs show the slopes the lightest part of the crown): the crown's glass at 1.2 times its register (the reflectance,
+  which the glass takes from the body's linear luminance, half again the walls': an up-facing slope mirrors the deeper sky
+  overhead where a wall mirrors the pale horizon) with its hue 0.55 of the way to the grey of the same linear luminance
+  (`LIB_SLOPE_GREY`, `LIB_SLOPE_LIFT`; at its whole hue a blue coating over a blue sky drew them royal blue, HLS saturation
+  0.36 to 0.47 against the photographs' 0.14 to 0.16). Measured with the slopes and walls rasterised from the builder's own
+  geometry and read off the renders (CIE L* of each kind's visible pixels, two pixels in from every edge), slope against the
+  crown's lightest wall, the first pass then this: One's crown from the south at 130 m 40.2 vs 52.0 -> 56.6 vs 51.1; the
+  crowns from the south-east 44.5 vs 50.9 -> 53.1 vs 50.5; Two's crown 41.1 vs 50.2 -> 50.9 vs 49.8; One's crown from the
+  north-west against the light 44.2 vs 40.2 -> 59.2 vs 39.4; from the south-west 51.2 vs 45.6 -> 53.0 vs 45.7; from 430 m
+  up 42.1 vs 37.0 -> 53.8 vs 36.8; at 300 m from the south-east 51.5 vs 52.7, at 600 m 54.5 vs 54.2. The spread of L*
+  across the slopes' pixels (90th less 10th percentile, the grid) 66.6 -> 18.5 from the south, 59.8 -> 22.7 from the
+  north-west, the walls' own about 22. The glazing is rebaked as ribs along the eave, never a grid: two a 3 m tile (1.5 m
+  courses), each the generated photograph's own horizontal cap (its profile the median along the cap between the
+  crossings, its gaskets kept) drawn at 7 cm with a third of its contrast out, and a faint mullion down the slope every
+  1.5 m (5 cm at a fifth of a rib's cover); cover 0.044 of the tile against the first bake's 0.15; the ribs at 0x8c9399 over
+  the texture (0xd6dadd drew white lines at 300 m). The pyramid's faces map their ribs along their own eaves (slope axis
+  'al').
+- The spire and the edges (the second must-fix: the matte 0x7d868e steel read (229, 234, 228) in the sun and 192 shaded,
+  the mast vanished against the clouds, 12% of One's crown box was near white): the spire's parts (the hips, the foot,
+  the mast, the clusters, the needle) are 0x4e555c on themeMat's metal path (a negative gain: metalness 0.82, roughness
+  0.4, the emission on abs), the mast's darkest pixels 69 to 107 sRGB in the sun against a sky of 140 to 210; the gable
+  edges' tubes 0x6c757c on the same metal (gain -1.5) with Round 84's light after dark (LIB_SILVER at half), the eave,
+  ridge and valley caps 0x7d868d (was 0xa7b7c2); Two's finial and its rods 0x6c757c metal, Round 84's white after dark.
+  Near-white pixels (every channel over 195, a spread under 35) on One's crown below the clouds: 10.8% -> 2.5% from the
+  south, 3.8% -> 0.52% from the north-west.
 - The base: three storeys of polished dark blue-grey granite, the far level a style-6 block in the fabric (no painted shop
   floors: the real base is lobby and granite), the near level (within 1,000 m, 650 on a phone) one mesh of quads laid
   0.12 m off it from the generated base atlas: the lobby picture on the long faces of Market and 17th (One) and Chestnut
-  and 16th (Two), the plainer wall on the rest and the plain granite on the corner steps. Its glass is a smooth dark pane
-  (roughness 0.06, metalness 0.45) that glows warm after dark from its head down (`uLibLit`, the glass rooms' level) and
-  takes no street lamp wash (`frMask` in lampLightPatch); the granite takes the lamps as the fabric's lower storeys do.
-  The crowns' glazing caps (within 2,600 m, 1,600 on a phone) are one blended mesh 7 cm over the slopes, the caps running
-  down each slope at 1.5 m both ways from the generated tile.
+  and 16th (Two), the plainer wall on the rest and the plain granite on the corner steps; the granite takes the street lamps
+  as the fabric's lower storeys do (`frMask` keeps them off the glass). The review: its panes are a coated pane over a dim
+  room (metalness 0.85 at a pale grey, F0 about 0.09, three times the first pass's 0.045), so they mirror the street and the
+  sky; after dark only the lobby cell lights (the plainer wall's windows stay dark), the double-height lobby from its
+  ceiling down (0.2 to 1 up the glass) and pooled under each bay, the office storey over the band at half and about two
+  windows in three, every pane darker by its frames (the picture's own mask read at a mip 2.5 coarser).
 - The night (Round 84, Mike's photo): every sloping edge of every gable end lit in the night's colour (48 bars: One's four
-  bays and three tiers on four faces, Two's bays and tier), gain 1.5 and 0.26 m, the eaves' caps unlit; One's pyramid,
-  mast, clusters and needle steel grey by day and white every night (mix 0) with the red beacon at 288.75 m; Two's finial
-  white. Slots as before (One, then Two). Rendered on a plain night, an Eagles night and a red night: the nested chevrons
-  read from Rittenhouse at 600 m and from 3 km.
+  bays and three tiers on four faces, Two's bays and tier), gain 1.5 and 0.26 m, the eaves' caps unlit; One's pyramid's
+  hips, the foot, the mast, clusters and needle white every night (mix 0) with the red beacon at 288.75 m (the pyramid
+  itself is glass now: its white is the four hips', where the first pass and Round 84 lit a solid cone); Two's finial and
+  frame white. Slots as before (One, then Two). Rendered on a plain night, an Eagles night and a red night, close and from
+  600 m, computer and phone.
 - The art (`fetch_liberty_art.py`, `bake_liberty_art.py`, `liberty_art.json`, `art/liberty/`): three gpt-image-2 images at
-  quality high, 1024 square (base-lobby 1,565 KB, base-wall 2,093 KB, glazing 839 KB raw), each looked at; the bake keys the
-  green, stretches the wall picture's fascia so its acid blue reveal lands on the lobby picture's row (they meet at the
-  corners), cuts the glazing between its caps' centres to a tiling 3 m tile and stores both premultiplied by their alpha:
-  base 2048x1024 WebP 405 KB (half 87 KB), glazing 512 square 3 KB (half 2 KB). Decoded the first time the eye comes within
-  1,600 m after Enter (900 on a phone, never on the recovery tier), a 1 by 1 of the stone's mean until then; a phone's halves
-  let go at upload.
-- The budget (measured with renderer.info through the post pipeline's counts, main's build against this one, clear air,
-  noon; computer 1280x800 at dpr 1, phone 740x360 at 1.25): the towers are 3,268 triangles merged into the city's existing
-  meshes (walls 316, slopes 64, trim 1,408, lit edges 1,152, the white spire and finial 328) plus the near level's 148 (base
-  84, caps 64) in two draws. Computer: from the crowns at 260 m 407 calls 6,337,032 triangles -> 409 and 6,338,626; on
-  Market St 310 / 5,040,709 -> 312 / 5,042,911; from 600 m 414 / 6,616,751 -> 416 / 6,618,345; from 1.5 km 655 /
-  10,731,015 -> 654 / 10,730,355; looking away 426 calls both. Phone: 388 / 4,782,598 -> 390 / 4,784,192 near, 631 /
-  8,342,838 -> 632 / 8,344,348 far. Programs 216 -> 218 (computer), 127 -> 129 (phone): the base's and the caps'. Texture
-  memory: 12.6 MB on a computer (the base 11.2 with its mips, the caps 1.4), 3.2 MB on a phone. No link failures and no
-  console errors on the computer, the phone, `?zbuf=log` and `?real=0` (its two "Unable to serialize Texture" warnings are
-  main's). No new program writes gl_FragDepth; the near level's streams are 4-byte floats.
-- The day colour, re-measured with glass_calibrate.py on this build (21 poses, its tests pass; the committed
-  `tests/glass_calibration.json` is left as main's to merge cleanly, the re-measure kept in the scratchpad): One Liberty's
-  median delta E 7.0 -> 6.8 and b* gap +0.9 -> +1.2 over its 8 poses, Two Liberty's 4.5 -> 7.0 and +1.2 -> +0.9, One's crown
-  6.5 -> 5.2 and +1.1 -> +1.4; within delta E 15 and b* 6. Rerun after the merge.
-- Tests: `tests/test_remodel_liberty.py` (the massing against the references, the builder run under Node with the page's own
-  code: 48 lit edges and one beacon, every wall, slope and base quad facing out, the systems each face wears, the streams;
-  the wiring, `?real=0`'s blocks, the art's halves); `test_art_files.py` and `test_memory_cuts.py` take the new manifest and
-  the two `freeTexOnUpload` uses. `__dbg.liberty()` reports the levels, the art and the triangles.
-- Open for Mike: the flanks' bands are the ribbon system's precast white, a little warmer than the photographed blue-grey
-  granite (a Liberty flank system is a seventeenth glass system, and GLASS_DATA holds sixteen, with a recalibration); the
-  Shops at Liberty Place's glass rotunda and the Westin are not part of this round; a phone's plain night draws the chevrons
-  as faintly as main did.
+  quality high, 1024 square (base-lobby 1,565 KB, base-wall 2,093 KB, glazing 839 KB raw), each looked at; no new image for
+  the review (the ribs come from the glazing picture's own caps). The bake keys the green, stretches the wall picture's
+  fascia so its acid blue reveal lands on the lobby picture's row (they meet at the corners), stores both premultiplied, and
+  resizes them channel by channel (Pillow's RGBA resize premultiplies again and divides back out, which left a cap's full
+  colour on its half-covered edge texels): base 1024x512 WebP 96 KB (half 512x256, 19 KB), glazing 256 square 0.9 KB (half
+  128, 0.7 KB). Each picture decodes the first time after Enter that the eye comes within its own mesh's reach (the base at 1.25
+  times LIB_NEAR_R, the ribs at LIB_FRAME_R, 1,500 m, 1,000 on a phone), and its mesh shows only once it has landed (the
+  review found the frames drawn to 2,600 m over a 1 by 1 placeholder held unpremultiplied, 3.9 times too bright in linear
+  light; the placeholder is now the caps' mean premultiplied in linear light, `libPremul`). The recovery tier (TIER2) builds
+  neither near mesh nor decodes either picture (`?lite=2`: `__dbg.liberty().on` false, no console errors).
+- The budget (renderer.info through the post pipeline's counts, main's build and this one in the same run sequence, clear
+  air, noon; computer 1280x800 at dpr 1, phone 740x360 at 1.25): the towers are 3,462 triangles merged into the city's
+  existing meshes (walls 366, slopes 72, trim 1,408, lit edges 1,152, the spire, hips, foot and finial 464) plus the near
+  level's 156 (base 84, ribs 72) in two draws. Computer, calls and triangles, main -> this: from the crowns at 260 m 406 /
+  6,337,030 -> 408 / 6,338,826; on Market St 309 / 5,034,459 -> 311 / 5,035,323; from 600 m 414 / 6,616,751 -> 416 /
+  6,618,547; from 1.5 km 653 / 10,728,845 -> 654 / 10,730,557; looking away 426 both. Phone: 388 / 4,782,598 -> 390 /
+  4,784,394 near, 315 / 3,581,907 -> 317 / 3,583,467 on the street, 418 -> 420 at 600 m, 631 both far, 375 both away.
+  Programs two more than main on each (the base's and the ribs'). Texture memory with mips: 3.0 MB on a computer (base 2.67,
+  ribs 0.33; the first pass 12.6), 0.75 MB on a phone (0.67 and 0.08; it was 3.2). No link failures and no console errors on
+  the computer, the phone, `?zbuf=log` and `?lite=2`; `?real=0`'s two "Unable to serialize Texture" warnings are main's. No
+  new program writes gl_FragDepth; the near level's streams are 4-byte floats.
+- The day colour, re-measured with glass_calibrate.py on this build (the committed `tests/glass_calibration.json` is left
+  as main's to merge cleanly): One Liberty within delta E 12.8 and b* 5.4 at every pose but Two Penn's 50 m, where main was
+  -7.6 and this is -6.8 (not a judged pose); Two Liberty within 14.0 and 3.7; One's crown 5.3 / -0.0 from its own pose and
+  3.4 / +0.9 from the south-west. Rerun after the merge.
+- Tests: `tests/test_remodel_liberty.py` (the massing against the references and the review's: the glazed pyramid inside
+  the top tier and its 2 to 3.5 m foot on the mast, Two's two setbacks, its slender finial; the builder run under Node with
+  the page's own code: 48 lit edges and one beacon, every wall, slope and base quad facing out, the systems each face wears,
+  the setback stage's plan, the streams; the day colours: the steel and tubes on the metal path and dark, the caps mid
+  silver, the tubes' night Round 84's, the slopes never darker than the crown's glass and their hue halfway to grey; the
+  wiring: `?real=0`'s blocks, the recovery tier, each mesh shown once its picture lands, each picture's own reach, the
+  premultiplied placeholder; the art: the base at 1024x512, the glazing's ribs two a tile and its mullions under a third of
+  their cover); `test_art_files.py` and `test_memory_cuts.py` take the manifest and the two `freeTexOnUpload` uses.
+  `__dbg.liberty()` reports the levels, the art (`asked`, `ready`), the triangles, the feet and the crowns.
+- Open for Mike: the flanks' bands are the ribbon system's precast white (#DCD8CE), where the photographs show a taupe or
+  bronze-grey granite (One_Liberty_Place_a, the HDR), so up close the flanks read as candy stripes against the blue: the
+  band colour is a per-system uniform, the ribbon system is 1818 Market Street's too, and GLASS_DATA holds exactly sixteen
+  systems, so a tint is either a seventeenth system (with its art and a recalibration) or a change to 1818 Market's bands,
+  a system decision left to him; the Shops at Liberty Place's glass rotunda and the Westin keep their generic footprints;
+  a phone's plain night draws the chevrons as faintly as main did; the slopes stay as blue as the sky they mirror under the
+  clear preset (the references' skies are paler).

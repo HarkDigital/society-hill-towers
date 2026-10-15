@@ -1,8 +1,8 @@
 {
  "v": 1,
  "base": {
-  "img": "art/liberty/base.3d087fc644.webp",
-  "imgHalf": "art/liberty/base-half.bfb1845726.webp",
+  "img": "art/liberty/base.dbe0d37727.webp",
+  "imgHalf": "art/liberty/base-half.9083cb4a7c.webp",
   "m": [
    12.0,
    12.0
@@ -43,19 +43,23 @@
   }
  },
  "glazing": {
-  "img": "art/liberty/glazing.fa72380d8a.webp",
-  "imgHalf": "art/liberty/glazing-half.eae1768e55.webp",
+  "img": "art/liberty/glazing.1ad42bfef4.webp",
+  "imgHalf": "art/liberty/glazing-half.f9542a2939.webp",
   "m": 3.0,
   "caps": [
-   184.0,
-   182.7,
-   177.6
+   172.4,
+   170.8,
+   167.2
   ],
-  "cover": 0.1502,
-  "periods": [
-   268.2,
-   248.8
-  ]
+  "cover": 0.0404,
+  "ribs": {
+   "m": 0.07,
+   "course": 1.5
+  },
+  "mullions": {
+   "m": 0.05,
+   "cover": 0.2
+  }
  },
  "refs": [
   "https://commons.wikimedia.org/wiki/Category:One_Liberty_Place",
