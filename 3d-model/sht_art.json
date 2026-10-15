@@ -1,0 +1,15 @@
+{
+ "v": 1,
+ "note": "Round 195: the Society Hill Towers' concrete (fetch_sht_art.py, bake_sht_art.py). img a tile tileM metres across, imgHalf a phone's copy, mean its linear mean colour (the page divides it out).",
+ "concrete": {
+  "id": "concrete-b",
+  "img": "art/sht/concrete.671387c615.webp",
+  "imgHalf": "art/sht/concrete-half.c1323c51cd.webp",
+  "mean": [
+   0.43472,
+   0.38253,
+   0.29736
+  ],
+  "tileM": 4.0
+ }
+}
