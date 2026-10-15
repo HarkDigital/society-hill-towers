@@ -8997,6 +8997,9 @@ vec2 wRing(vec2 rc, float tt) {
     geom.computeVertexNormals();return geom;
   }
   // the researched Center City towers (towers.json): nearest spec within its radius
+  // Round 198: the research's corrections to a spec (its 'real': where it stands, its colour, its archetype, each with its
+  // 'why'), under the realistic look only, so ?real=0 joins and draws every tower as it did
+  if (REAL && typeof TOWERS !== 'undefined' && TOWERS && TOWERS.towers) for (const sp of TOWERS.towers) if (sp.real) Object.assign(sp, sp.real);
   const TOWER_SPECS = (typeof TOWERS !== 'undefined' && TOWERS && TOWERS.towers) ? TOWERS.towers : [];
   const towerGrid = new Map();
   for (const sp of TOWER_SPECS) { const kx = Math.floor(sp.x / 100), kz = Math.floor(sp.z / 100); for (let a = -1; a <= 1; a++) for (let b2 = -1; b2 <= 1; b2++) { const key = (kx + a) + ',' + (kz + b2); if (!towerGrid.has(key)) towerGrid.set(key, []); towerGrid.get(key).push(sp); } }
@@ -16794,6 +16797,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       let lm = null;   // LANDMARK_H row for this footprint, if any
       if (cx > LM_BOX[0] && cx < LM_BOX[1] && cz > LM_BOX[2] && cz < LM_BOX[3]) for (const q of LANDMARK_H) if (Math.hypot(cx - q[0], cz - q[1]) < q[2]) { lm = q; break; }
       if (lm && lm[3] > 0) h = lm[3];
+      // Round 198: a part of a building round City Hall the research gives its own height (art.pin: the Land Title's
+      // 1897 block, a body LiDAR measured to its tower's top)
+      let pinned = false;
+      if (TOWN.pins.length) for (const q of TOWN.pins) if (Math.abs(q[0] - cx) < 150 && Math.abs(q[1] - cz) < 150 && pointInPoly(q[0], q[1], poly)) { h = q[2]; pinned = true; break; }
       const base = siteY(cx, cz, 'ground');
       const sdNear = STADIA.find(sd => Math.hypot(cx - sd.x, cz - sd.z) < sd.r);
       if (sdNear) {
@@ -16833,6 +16840,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       // own glass with the tower's turn of it where the research names no colour
       const gSys = GLASS_ON && isGlassStyle(style) ? glassSysOfSpec(spec, style) : -1;
       if (gSys >= 0 && !glassTowerBody(spec, c) && !(spec && spec.hex)) glassBody(gSys, i, c);
+      // Round 198: a building round City Hall in its own facade (townOf) lays no lottery skin, is never a glass part, and
+      // takes its photographed colour (art.hex) for what its facade does not cover: its roof's edge, its church tower, the
+      // city's reflection of it
+      const own = TOWN_ON && h >= 6 && t !== 8 && t !== 9 && !isGlassStyle(style) ? townOf(spec, poly, cx, cz) : null, ownStrip = own ? TOWN.hit : null;
+      if (own && own.hex) { const hx3 = parseInt(own.hex.slice(1), 16); c.copy(towerInv(hx3 >> 16, (hx3 >> 8) & 255, hx3 & 255)); }
       const rb = roofBits(roofW, roofPacked);
       const capC = rb[0] >= 0 && ROOF_PAL && rb[0] < ROOF_PAL.length ? cCap.copy(ROOF_PAL[rb[0]]).multiplyScalar(0.9 + hsh * 0.18) : null;
       if (h <= 45 && t <= 6) { colStat(capC ? 'wideCap' : 'wideNoCap', capC); colStat('wideSt' + style); colStat(fa ? 'wideFa' : 'wideNoFa'); colStat('wideFh' + (fh > 0 ? 1 : 0)); COL_STAT.wideArea = (COL_STAT.wideArea || 0) + Math.abs(signedArea(poly)); }
@@ -16853,7 +16865,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         // block, keeps its crown on the section that reaches the scene's own top, at that height)
         const cr = spec.crown, cut = cr && CROWN_CUTS[cr.type];
         const near = h >= spec.h * 0.92, top = !specTop.has(spec) || h >= specTop.get(spec) - 0.01;
-        if (near) h = spec.h;
+        if (near && !pinned) h = spec.h;   // Round 198: a pinned part keeps the research's height (One Penn's slab under its attic)
         if (DEV_TOWER_LOG) DEV_TOWER_LOG.push({ name: spec.name, crown: cr ? cr.type : 'none', h: +h.toFixed(1), mh, top, near });
         const ref = top ? h : spec.h;
         const datum = cut ? Math.max(ref * 0.8, ref - (cr.h || 10)) : ref;
@@ -16898,7 +16910,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       let gRoute = -1;
       if (h >= 35 && t !== 8 && t !== 9) {
         const ys0 = mh > 0 ? base + mh : base;
-        if (gSys >= 0) { if (TSKIN_ON && base + hTop - ys0 >= 30 && !(style >= 24 && style <= 29)) GLASS.skinsSkipped++; }
+        if (own) { /* Round 198: its own facade (townNote, with its walls below), no skin */ }
+        else if (gSys >= 0) { if (TSKIN_ON && base + hTop - ys0 >= 30 && !(style >= 24 && style <= 29)) GLASS.skinsSkipped++; }
         else {
           if (GLASS_ON && !spec && t === 10 && base + hTop - ys0 >= 30) gRoute = glassGenericSys(skinKindOf(style, null, i, t), i);
           if (gRoute < 0) towerSkinNote(poly, mh > 0 ? base + mh : base, base + hTop, style, spec, i, c, mh > 0, t);
@@ -16940,7 +16953,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); }
         continue;
       }
-      if (t === 10) { // glass tower parts: reflective material, no painted windows
+      if (t === 10 && !own) { // glass tower parts: reflective material, no painted windows
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
         if (GLASS_ON) GLASS.routed[gRoute >= 0 ? 'partsSys' : 'parts']++;   // a flagged part on its cladding kind's system, or the generic wall
@@ -16992,8 +17005,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         const rplan = mh > 0 || spec ? null : roofPlan(poly, Math.abs(signedArea(poly)), h, t, rb[1], rb[2], i * 3.17 + 0.5, roofLot(style, fa));
         if (PIT_CENTRES.some((q) => Math.abs(q[0] - cx) < 25 && Math.abs(q[1] - cz) < 25)) PIT_NEIGH.push({ poly, eave: rplan ? base + h - rplan.rise : base + hTop });   // Round 139: a pit's party walls
         if (h <= 45 && t <= 6) { colStat('wideForm' + rb[1]); colStat(rplan ? 'widePitched' : 'wideFlat'); if (cz < -3780) { colStat('wideBandForm' + rb[1]); colStat(rplan ? 'wideBandPitched' : 'wideBandFlat'); colStat(capC ? 'wideBandCap' : 'wideBandNoCap', capC); colStat('wideBand', c); } }
-        if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style, c);
-        if (MID_SKIN && !mh && !spec && h >= 9 && h < 35 && t !== 8 && t !== 9 && frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)
+        if (own) townNote(poly, mh > 0 ? null : base, mh > 0 ? base + mh : base, rplan ? base + h - rplan.rise : base + hTop, own, i, ownStrip);
+        else if (!mh && !spec) frontNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, i, fa, t, Math.abs(signedArea(poly)), false, style, c);
+        if (MID_SKIN && !own && !mh && !spec && h >= 9 && h < 35 && t !== 8 && t !== 9 && frontSetOf(fa, t, h, Math.abs(signedArea(poly)), false, style & 31, poly[0][0], poly[0][1]) < 0)
           midSkinNote(poly, base, rplan ? base + h - rplan.rise : base + hTop, style, i + 0.11, c, t, fa);   // Round 185
         if (rplan) raisePitched(chk, poly, base, h, rplan, c, style, fh, capC, appendBuilding);
         else {
@@ -17001,7 +17015,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           if (!mh && hTop === h && !(spec && spec.crown && spec.crown.type !== 'flat') && h < 60) roofClutter((pg, y0, y1, hex, st2, holes) => { cCap.set(hex); appendBuilding(chk, pg, y0, y1, cCap, st2, base, holes); }, poly, base, h, Math.abs(signedArea(poly)), t, fa, i, c, false);
         }
       }
-      if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60) {
+      if (t === 5 && mh === 0 && Math.abs(signedArea(poly)) > 350 && h < 60 && !(own && own.noSpire)) {   // Round 198: a building whose towers are its own (art.mass) raises no generic one
         // church: square tower to h+9, then a pyramidal spire — the districts' skyline is their steeples.
         // A LANDMARK_H spire drives the apex instead: tower to 60% of the rise, pyramid the rest,
         // width scaled to the spire, standing at the facade end when the row gives a front
@@ -17036,6 +17050,15 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       }
       if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); }
     }
+    if (TOWN_ON) townMass(crownTrim, venueParts, appendBuilding, getChunk, (poly, g0, y1, name, bx, bz) => {
+      // a body the packer lost (wide.b64 kept only a part where OSM maps one, Eight Penn's penthouse), raised in its glass system
+      const sp = TOWER_SPECS.find((q) => q.name === name), st = sp ? landmarkFacadeStyle(sp) : 20, sys = GLASS_ON ? glassSysOfSpec(sp, st) : -1, col = new THREE.Color();
+      if (sp && sp.hex) col.set(parseInt(sp.hex.slice(1), 16)).multiplyScalar(0.66);
+      else if (sys >= 0) glassBody(sys, 7, col); else col.set(0x8a97a2);
+      appendBuilding(getGlassChunk(bx, bz), poly, g0 - 1, y1, col, isGlassStyle(st) ? st : 20, g0, null, sys >= 0 ? glassFh(sys) : undefined);
+      roofNote(bx, bz, y1, Math.abs(signedArea(poly)));
+      if (CITYENV.on) cityEnvNote(poly, g0, y1, col, 1, false);
+    });   // Round 198: the massing the buildings round City Hall carry that their footprints miss
     // -------- crowns for the researched towers (towers.json): the body stopped short of
     // the spec's crown height above, and the crown takes the last metres in its own form.
     // Rectangle pyramids and frusta over the footprint's oriented box, stepped tiers that
@@ -19784,6 +19807,202 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     return [a[1] + (b[1] - a[1]) * f, a[2] + (b[2] - a[2]) * f];
   }
   const TSKIN_ON = FRONTS_ON && !!FRONTS_DATA.tiles && Object.keys(FRONTS_DATA.tiles).length > 0;
+  // ---- Round 198 (Mike: "The buildings around city hall look too generic. Make them look more like real life."): the
+  // buildings round City Hall in their own facades (tower_art.json, bake_tower_art.py): each a strip of its own street
+  // face, generated from the research and cut into its base, its typical storeys and its top, all in one atlas. A record
+  // is the building when its towers.json spec is (by name) or one of the building's points stands inside it (a part
+  // under 45 m, the churches, a block the spec's point misses); it lays no lottery skin, house front or mid-rise wall,
+  // and 'Cladding the towers' wraps its walls in its own cells at its own bay and storey (townLay). The realistic look on
+  // WebGL 2 only (every read is textureGrad); ?real=0 and ?townart=0 keep the lottery's skins
+  const TOWN_ART = typeof TOWER_ART !== 'undefined' && TOWER_ART && TOWER_ART.towers ? TOWER_ART : null;
+  const TOWN_ON = REAL && TSKIN_ON && !!TOWN_ART && !!renderer.capabilities.isWebGL2 && !/[?&]townart=0\b/.test(location.search);
+  const TOWN = { cands: [], byName: new Map(), pts: [], pins: [], laid: {}, walls: 0, ledges: 0, mesh: null, tris: 0, massTris: 0, bytes: 0, error: null, ms: 0, mass: [] };
+  if (TOWN_ON) for (const id in TOWN_ART.towers) {
+    const t = TOWN_ART.towers[id];
+    t.id = id; TOWN.byName.set(t.name, t);
+    for (const p of t.pts || []) TOWN.pts.push([p[0], p[1], t, p.length > 2 ? p[2] : null]);   // a point may name the strip its record wears
+    for (const p of t.pin || []) TOWN.pins.push(p);
+  }
+  // the building a wide record is, when it has its own facade (null when it has none)
+  function townOf(spec, poly, cx, cz) {
+    TOWN.hit = null;   // the strip a point names, for townNote
+    if (!TOWN_ON) return null;
+    for (const q of TOWN.pts) if (Math.abs(q[0] - cx) < 150 && Math.abs(q[1] - cz) < 150 && pointInPoly(q[0], q[1], poly)) { TOWN.hit = q[3]; return q[2]; }
+    if (spec && TOWN.byName.has(spec.name)) return TOWN.byName.get(spec.name);
+    return null;
+  }
+  // a record's walls for its own facade: its ground (g0, null for a part that stands on another), where its walls start
+  // and end
+  function townNote(poly, g0, y0, y1, art, seed, strip) {
+    if (y1 - y0 < 3) return;
+    TOWN.cands.push({ poly, g0, y0, y1, art, seed, strip });
+  }
+  // the massing a building's footprints miss (art.mass, from its research), raised once after the outer districts' loop:
+  // 'box' a tower, a wing or a stage on the street grid (w across the grid's east, d along its south, ang a turn off it),
+  // from y0 to y1 over its own ground, in the building's facade (townNote) unless 'plain', with a cap ('pyramid', 'hip'
+  // along its longer side, 'pins' four corner pinnacles) of cap.h metres in cap.hex; 'sign' the PSFS letters (townSign)
+  function townMass(trim0, lit0, appendBuilding, getChunk, glassBox) {
+    const base0 = Math.atan2(-fl.nz, fl.nx), col = new THREE.Color();
+    // the triangles it adds to the merged trim and stone (the boxes ride the chunks: 12 a box and its roof), for the probe
+    const tri = (p) => { const g = p.geom; TOWN.massTris += g.index ? g.index.count / 3 : g.attributes.position.count / 3; };
+    const trim = { push: (...ps) => { for (const p of ps) { tri(p); trim0.push(p); } } }, lit = { push: (...ps) => { for (const p of ps) { tri(p); lit0.push(p); } } };
+    let k = 0;
+    // the buildings' own massing, and the bodies the packer lost of the towers round them (TOWN_ART.bodies: Eight Penn's)
+    const items = [];
+    for (const art of TOWN.byName.values()) for (const m of art.mass || []) items.push([art, m]);
+    for (const b of TOWN_ART.bodies || []) items.push([{ id: 'body', name: b.name }, b]);
+    for (const [art, m] of items) {
+      const [mx, mz] = m.at, g0 = siteY(mx, mz, 'ground'), ry = base0 + (m.ang || 0) * Math.PI / 180;
+      const ux = Math.cos(ry), uz = -Math.sin(ry), vx = Math.sin(ry), vz = Math.cos(ry);
+      const rect = (w, d, cx = mx, cz = mz) => [[-1, -1], [1, -1], [1, 1], [-1, 1]].map(([a, b]) => [cx + ux * a * w / 2 + vx * b * d / 2, cz + uz * a * w / 2 + vz * b * d / 2]);
+      if (m.k === 'sign') { townSign(m, g0, ux, uz, vx, vz, ry, lit, trim); TOWN.mass.push([art.id, 'sign']); continue; }
+      if (m.k === 'mast') {   // a lattice mast (PSFS's 1948 television mast): four legs tapering from w to top, a ring and a brace each 8 m, its sections red and white by turns
+        const bar = (a2, b2, rad, hex) => {
+          const d = new THREE.Vector3(b2[0] - a2[0], b2[1] - a2[1], b2[2] - a2[2]), L = d.length(); d.normalize();
+          const g = new THREE.CylinderGeometry(rad, rad, L, 5);
+          g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), d));
+          g.translate((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, (a2[2] + b2[2]) / 2);
+          trim.push({ geom: g, color: new THREE.Color(hex).convertSRGBToLinear(), style: 3 });
+        };
+        const y0m = g0 + m.y0, nS = Math.max(2, Math.round(m.h / 8));
+        const at = (k2) => { const f = k2 / nS, w2 = (m.w + (m.top - m.w) * f) / 2; return rect(w2 * 2, w2 * 2).map((q) => [q[0], y0m + m.h * f, q[1]]); };
+        for (let k2 = 0; k2 < nS; k2++) {
+          const A = at(k2), B = at(k2 + 1), hex = k2 % 2 ? 0xe8e6e0 : 0xc8302c;
+          for (let q = 0; q < 4; q++) { bar(A[q], B[q], 0.16, hex); bar(B[q], B[(q + 1) % 4], 0.08, hex); bar(A[q], B[(q + 1) % 4], 0.06, hex); }
+        }
+        TOWN.mass.push([art.id, 'mast', +(m.y0 + m.h).toFixed(1)]);
+        continue;
+      }
+      if (m.k === 'glassbox') { glassBox(rect(m.w, m.d), g0, g0 + m.y1, m.name || art.name, mx, mz); TOWN.massTris += 10; TOWN.mass.push([art.id, 'glassbox', m.y1]); continue; }
+      if (m.k !== 'box' && m.k !== 'dome') continue;
+      const hx = parseInt((m.hex || art.hex || '#c8c2b6').slice(1), 16);
+      col.copy(towerInv(hx >> 16, (hx >> 8) & 255, hx & 255));
+      if (m.k === 'dome') {   // a dome on its drum's top, a hemisphere in cap.hex
+        const g = new THREE.SphereGeometry(m.r, 20, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+        g.translate(mx, g0 + m.y0, mz);
+        lit.push({ geom: g, color: new THREE.Color(parseInt((m.hex || '#d9d6cc').slice(1), 16)).convertSRGBToLinear(), lit: new THREE.Color(0, 0, 0), style: 3 });
+        TOWN.mass.push([art.id, 'dome', m.y0 + m.r]);
+        continue;
+      }
+      const poly = rect(m.w, m.d), y0 = g0 + (m.y0 || 0), y1 = g0 + m.y1;
+      if (!m.nobox) {   // a cap alone ('nobox') stands on a record's own roof
+        appendBuilding(getChunk(mx, mz), poly, m.y0 ? y0 : g0 - 1, y1, col, 3, g0);
+        TOWN.massTris += 10;
+        roofNote(mx, mz, y1, m.w * m.d);
+        if (!m.plain) townNote(poly, m.y0 ? null : g0, y0, y1, art, 9001 + k++, m.strip);
+      }
+      const cap = m.cap;
+      if (cap) {
+        const cc = new THREE.Color(parseInt(cap.hex.slice(1), 16)).convertSRGBToLinear(), t = [];   // the photographed colour, shown as such
+        const R = rect(m.w + (cap.over || 0) * 2, m.d + (cap.over || 0) * 2), ya = y1, yb = y1 + cap.h;
+        if (cap.k === 'pyramid') for (let q = 0; q < 4; q++) { const a = R[q], b = R[(q + 1) % 4]; t.push(a[0], ya, a[1], b[0], ya, b[1], mx, yb, mz); }
+        else if (cap.k === 'hip') {   // a ridge along the longer side, its ends hipped at the roof's pitch
+          const long = m.w >= m.d, half = Math.abs((long ? m.w : m.d) - (long ? m.d : m.w)) / 2;
+          const ex = long ? ux : vx, ez = long ? uz : vz, r0 = [mx - ex * half, mz - ez * half], r1 = [mx + ex * half, mz + ez * half];
+          const near = (p) => { const s2 = (p[0] - mx) * ex + (p[1] - mz) * ez; return s2 < 0 ? r0 : r1; };
+          for (let q = 0; q < 4; q++) {
+            const a = R[q], b = R[(q + 1) % 4], ra = near(a), rb = near(b);
+            t.push(a[0], ya, a[1], b[0], ya, b[1], rb[0], yb, rb[1]);
+            if (ra !== rb) t.push(a[0], ya, a[1], rb[0], yb, rb[1], ra[0], yb, ra[1]);
+          }
+        } else if (cap.k === 'gable') {   // a ridge the full length of the longer side, its two ends upright gables (cap.end)
+          const long = m.w >= m.d, L2 = (long ? m.w : m.d) / 2 + (cap.over || 0), ex = long ? ux : vx, ez = long ? uz : vz, px2 = long ? vx : ux, pz2 = long ? vz : uz, S2 = (long ? m.d : m.w) / 2 + (cap.over || 0);
+          const P = (a2, b2, y) => [mx + ex * a2 + px2 * b2, y, mz + ez * a2 + pz2 * b2];
+          const ends = [];
+          for (const sd2 of [-1, 1]) {
+            const a1 = P(-L2, sd2 * S2, ya), a2 = P(L2, sd2 * S2, ya), r1 = P(-L2, 0, yb), r2 = P(L2, 0, yb);
+            t.push(...a1, ...a2, ...r2, ...a1, ...r2, ...r1);
+            const e1 = P(sd2 * L2, -S2, ya), e2 = P(sd2 * L2, S2, ya), e3 = P(sd2 * L2, 0, yb);
+            ends.push(...e1, ...e2, ...e3);   // the venues' material is double-sided
+          }
+          if (cap.end) {
+            const ge = new THREE.BufferGeometry();
+            ge.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ends), 3));
+            ge.computeVertexNormals();
+            lit.push({ geom: ge, color: new THREE.Color(parseInt(cap.end.slice(1), 16)).convertSRGBToLinear(), lit: new THREE.Color(0, 0, 0), style: 3 });
+          }
+        } else if (cap.k === 'mansard') {   // a curved mansard (the Bellevue's bonnets): rings drawn in toward a flat top, steep then easing
+          const rings = [[0, 1], [0.35, 0.93], [0.65, 0.8], [0.88, 0.62], [1, 0.48]].map(([f, sc]) => [ya + (yb - ya) * f, rect(m.w * sc + (cap.over || 0) * 2, m.d * sc + (cap.over || 0) * 2)]);
+          for (let r = 0; r + 1 < rings.length; r++) {
+            const [y1r, A] = rings[r], [y2r, B] = rings[r + 1];
+            for (let q = 0; q < 4; q++) { const a1 = A[q], a2 = A[(q + 1) % 4], b1 = B[q], b2 = B[(q + 1) % 4]; t.push(a1[0], y1r, a1[1], a2[0], y1r, a2[1], b2[0], y2r, b2[1], a1[0], y1r, a1[1], b2[0], y2r, b2[1], b1[0], y2r, b1[1]); }
+          }
+          const T2 = rings[rings.length - 1][1];
+          t.push(T2[0][0], yb, T2[0][1], T2[1][0], yb, T2[1][1], T2[2][0], yb, T2[2][1], T2[0][0], yb, T2[0][1], T2[2][0], yb, T2[2][1], T2[3][0], yb, T2[3][1]);
+        } else if (cap.k === 'spire') {   // an octagonal spire from the box's top to its point
+          const r = Math.min(m.w, m.d) / 2 * 0.86;
+          for (let q = 0; q < 8; q++) {
+            const a1 = (q + 0.5) * Math.PI / 4, a2 = (q + 1.5) * Math.PI / 4;
+            t.push(mx + Math.cos(a1) * r, ya, mz + Math.sin(a1) * r, mx + Math.cos(a2) * r, ya, mz + Math.sin(a2) * r, mx, yb, mz);
+          }
+        } else if (cap.k === 'pins') {   // four corner pinnacles, each a slim square shaft under a pyramid
+          const s2 = cap.w || 1.6;
+          for (const c2 of rect(m.w - s2, m.d - s2)) {
+            const P2 = rect(s2, s2, c2[0], c2[1]), h1 = yb - cap.h * 0.45;
+            for (let q = 0; q < 4; q++) { const a = P2[q], b = P2[(q + 1) % 4]; t.push(a[0], ya, a[1], b[0], ya, b[1], b[0], h1, b[1], a[0], ya, a[1], b[0], h1, b[1], a[0], h1, a[1], a[0], h1, a[1], b[0], h1, b[1], c2[0], yb, c2[1]); }
+          }
+        }
+        // every triangle wound outward (its normal away from the cap's axis, or up)
+        for (let q = 0; q < t.length; q += 9) {
+          const e1x = t[q + 3] - t[q], e1y = t[q + 4] - t[q + 1], e1z = t[q + 5] - t[q + 2], e2x = t[q + 6] - t[q], e2y = t[q + 7] - t[q + 1], e2z = t[q + 8] - t[q + 2];
+          const nx = e1y * e2z - e1z * e2y, ny = e1z * e2x - e1x * e2z, nz = e1x * e2y - e1y * e2x;
+          const ox = (t[q] + t[q + 3] + t[q + 6]) / 3 - mx, oz = (t[q + 2] + t[q + 5] + t[q + 8]) / 3 - mz;
+          if (nx * ox + nz * oz + ny * 0.01 < 0) for (let j = 0; j < 3; j++) { const v = t[q + 3 + j]; t[q + 3 + j] = t[q + 6 + j]; t[q + 6 + j] = v; }
+        }
+        if (t.length) {
+          const g = new THREE.BufferGeometry();
+          g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(t), 3));
+          g.computeVertexNormals();
+          lit.push({ geom: g, color: cc, lit: new THREE.Color(0, 0, 0), style: 3 });   // the venues' stone material: rough, double-sided, unlit
+        }
+      }
+      TOWN.mass.push([art.id, 'box', +(m.y1).toFixed(1)]);
+    }
+  }
+  // the PSFS sign (Round 198): its four letters, white strokes on a blue panel by day (the photographs), the strokes lit
+  // red after dark (the venues' lit parts: aLit, never themed, Round 81's rule for the sign), on the panel's faces; the
+  // panel stands on posts over the roof. A letter is polylines in a box one unit tall (x across, y up), each segment a
+  // stroke a ninth of the letter's height wide
+  const SIGN_GLYPHS = (() => {
+    const arc = (cx, cy, r, a0, a1, n) => { const o = []; for (let k = 0; k <= n; k++) { const a = (a0 + (a1 - a0) * k / n) * Math.PI / 180; o.push([cx + r * Math.cos(a), cy + r * Math.sin(a)]); } return o; };
+    return {
+      P: [[[0, 0], [0, 1]], [[0, 1], [0.3, 1], ...arc(0.3, 0.75, 0.25, 90, -90, 8), [0, 0.5]]],
+      F: [[[0, 0], [0, 1]], [[0, 1], [0.52, 1]], [[0, 0.54], [0.42, 0.54]]],
+      S: [[...arc(0.28, 0.75, 0.25, 25, 270, 10), ...arc(0.28, 0.25, 0.25, 90, -155, 10)]],
+    };
+  })();
+  function townSign(m, g0, ux, uz, vx, vz, ry, lit, trim) {
+    const word = m.text || 'PSFS', H = m.h, sw = H / 9, lw = 0.55 * H, gap = 0.42 * H, W = word.length * lw + (word.length - 1) * gap;
+    const y0 = g0 + m.y0, white = new THREE.Color(m.day || '#f2f2ee').convertSRGBToLinear(), red = new THREE.Color(m.night || '#ff2a1c').convertSRGBToLinear().multiplyScalar(1.6);
+    const blue = new THREE.Color(m.panel || '#1f4f86').convertSRGBToLinear(), steel = new THREE.Color(0x4a4f55);
+    const pw = W + H * 0.7, ph = H * 1.3, pd = m.depth || 1.2;
+    const along = m.axis === 1 ? [vx, vz] : [ux, uz], nrm = m.axis === 1 ? [ux, uz] : [vx, vz], rot = ry - (m.axis === 1 ? Math.PI / 2 : 0);   // a box's x along `along`
+    const cx = m.at[0], cz = m.at[1], yc = y0 + ph / 2;
+    lit.push({ geom: box(pw, ph, pd, cx, yc, cz, rot), color: blue, lit: new THREE.Color(0, 0, 0), style: 3 });   // the panel
+    for (let p = 0; p <= 5; p++) {   // its posts, down to the roof
+      const t = -pw / 2 + p * pw / 5;
+      trim.push({ geom: box(0.35, (m.post || 2) + 0.2, 0.35, cx + along[0] * t, y0 - (m.post || 2) / 2, cz + along[1] * t, rot), color: steel, style: 3 });
+    }
+    for (const side of [1, -1]) {   // the letters on both faces, each reading left to right from in front of its face
+      const dir = m.axis === 1 ? -side : side;   // a reader facing a face has `along` on the right for one face and the other
+      word.split('').forEach((ch, li) => {
+        const strokes = SIGN_GLYPHS[ch];
+        if (!strokes) return;
+        const x0 = -W / 2 + li * (lw + gap);
+        for (const pl of strokes) for (let k = 0; k + 1 < pl.length; k++) {
+          const [ax2, ay2] = pl[k], [bx2, by2] = pl[k + 1], L = Math.hypot(bx2 - ax2, by2 - ay2) * H;
+          if (L < 1e-3) continue;
+          const mxl = (x0 + (ax2 + bx2) / 2 * H) * dir, myl = (ay2 + by2) / 2 * H * 0.86 + ph * 0.07;
+          const g = new THREE.BoxGeometry(L + sw * 0.9, sw, 0.3);
+          g.rotateZ(Math.atan2((by2 - ay2) * 0.86, (bx2 - ax2) * dir));
+          g.rotateY(rot);
+          g.translate(cx + along[0] * mxl + nrm[0] * side * (pd / 2 + 0.16), y0 + myl, cz + along[1] * mxl + nrm[1] * side * (pd / 2 + 0.16));
+          lit.push({ geom: g, color: white, lit: red, style: 3 });
+        }
+      });
+    }
+  }
+
   // the kind a tower's cladding takes (Round 192: factored out of towerSkinNote, the same draw, so the glass towers' routing
   // knows which kinds are glass without laying a skin; with no tiles to filter by, a tier-2 phone, the whole list)
   function skinKindOf(style, spec, seed, t) {
@@ -21974,8 +22193,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     };
     // the walls standing on a generated street floor (critic gap 4): their storefronts are not built
     const baseCells = new Map();
-    if (SKIN_BASES) for (const c of TSKIN.cands) {
-      if (!skinBaseOf(c)) continue;
+    // Round 198: and the own facades' bases (each building's own street floor, its shopfronts and doors drawn in it)
+    const baseOwn = TOWN_ON ? TOWN.cands.filter((c) => c.g0 != null) : [];
+    if (SKIN_BASES || baseOwn.length) for (const c of [...(SKIN_BASES ? TSKIN.cands : []), ...baseOwn]) {
+      if (!c.art && !skinBaseOf(c)) continue;
       let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity;
       for (const q of c.poly) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); }
       const rec = [x0 - 0.5, x1 + 0.5, z0 - 0.5, z1 + 0.5, c.poly];
@@ -33210,6 +33431,8 @@ float pinOccGate() {
   step('Cladding the towers', async () => {
     glassFramesFetch();   // Round 192: the glass's frames asked for with the cladding's tiles, awaited in 'Glazing the towers'
     if (!TSKIN_ON || !TSKIN.cands.length) return;
+    // Round 198: the own facades' atlas asked for with the tiles (a phone takes the half copies)
+    const townGot = TOWN_ON && TOWN.cands.length ? Promise.all([artImage(artSrc(TOWN_ART.img, TOWN_ART.imgHalf)), artImage(artSrc(TOWN_ART.mask, TOWN_ART.maskHalf))]) : null;
     const t0 = performance.now();
     try {
       const aniso = Math.min(8, renderer.capabilities.getMaxAnisotropy() || 1);
@@ -33378,6 +33601,7 @@ float pinOccGate() {
         TSKIN.meshes.push(m);
       }
       if (SKIN_BASES) await skinBasesLay(tex, aniso, baseGot);
+      if (townGot) await townLay(aniso, townGot);   // Round 198: the buildings round City Hall in their own facades
       flushUploads(true);
     } catch (err) {
       TSKIN.error = String((err && err.message) || err);
@@ -33554,6 +33778,196 @@ float pinOccGate() {
       groupCity.add(m);
       TSKIN.meshes.push(m);
     }
+  }
+  // ---- Round 198: the own facades laid. One mesh, one program, one draw: every wall of every record that is one of the
+  // buildings (TOWN.cands) wrapped in its building's cells, 12 cm proud of the wall like the lottery's skins. Across, a wall
+  // (a run of the outline's edges, skinWalls) takes a whole number of the building's bays from its corner; up, the base
+  // from 30 cm under the ground to its own height, the top under the wall's head at its own height, and between them the
+  // typical storeys, a whole number of them (each stretched a little to fill), counted from the base, so both joins fall
+  // on the middle of a spandrel as the cells are cut. A wall too low for all three keeps its base, then its top. Each
+  // vertex carries its cell (aTnCell: its rect in the atlas, v up), its grid (aTnGrid: bays and storeys, pier and
+  // spandrel) and whether its rooms are offices (aTnOff); the shader wraps the cell itself (fract, read with textureGrad on
+  // the unwrapped coordinate's gradients, capped at TOWN_LOD so a read never reaches past the cell's gutter) and draws the
+  // lottery skins' realistic look: the panes each their own shade, the city's reflection on a computer, the rooms after
+  // dark by SKIN_LATE, the weather. A building's cornice (art.cornice: its height and depth) stands proud as a ledge whose
+  // face reads the top cell's head, a soffit under it and a coping over it
+  const TOWN_LOD = 4.0;   // the mip level the reads stop at: the gutter is 16 px at the computer's size, 8 at the phone's
+  // the face a wall wears: of the strips with a direction (s.dir, the face's outward normal), the nearest within its cone
+  // (s.dot, cos 45 degrees by default), else the strip with none; 'only' strips are a box's, by name
+  function townStripOf(art, nx, nz) {
+    let best = null, bd = -2, plain = null;
+    for (const s of art.strips) {
+      if (s.only) continue;
+      if (!s.dir) { if (!plain) plain = s; continue; }
+      const d = s.dir[0] * nx + s.dir[1] * nz;
+      if (d >= (s.dot != null ? s.dot : 0.707) && d > bd) { bd = d; best = s; }
+    }
+    return best || plain || art.strips[0];
+  }
+  async function townLay(aniso, got) {
+    const t0 = performance.now();
+    try {
+      const [im, mk] = await got;
+      if (!im || !mk) { TOWN.error = 'the atlas did not load'; return; }
+      const A = TOWN_ART, AW = A.w, AH = A.h;
+      const mkTex = (src, srgb) => {
+        const t = new THREE.Texture(src);
+        t.wrapS = t.wrapT = THREE.ClampToEdgeWrapping; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+        if (srgb) { t.encoding = THREE.sRGBEncoding; t.anisotropy = aniso; }
+        t.needsUpdate = true;
+        if (isTouch) freeTexOnUpload(t);
+        return t;
+      };
+      const map = mkTex(im, true), mask = mkTex(mk, false);
+      TOWN.bytes = Math.round((im.width * im.height + mk.width * mk.height) * 4 * 4 / 3);
+      const cellUv = (c) => [c.r[0] / AW, 1 - (c.r[1] + c.r[3]) / AH, c.r[2] / AW, c.r[3] / AH];
+      const pos = [], nor = [], uv = [], col = [], seed = [], cell = [], grid = [], off = [], idx = [];
+      const quad = (p4, nx, ny, nz, uv4, C, sd, gain, office) => {
+        const o = pos.length / 3, cu = cellUv(C);
+        for (let q = 0; q < 4; q++) {
+          pos.push(p4[q * 3], p4[q * 3 + 1], p4[q * 3 + 2]); nor.push(nx, ny, nz); uv.push(uv4[q * 2], uv4[q * 2 + 1]);
+          col.push(gain, gain, gain); seed.push(sd); cell.push(cu[0], cu[1], cu[2], cu[3]); grid.push(C.nb, C.nf, C.pier || 0, C.spand || 0); off.push(office);
+        }
+        idx.push(o, o + 1, o + 2, o, o + 2, o + 3);
+      };
+      for (const c of TOWN.cands) {
+        const art = c.art, P = c.poly, n = P.length, sg = signedArea(P) > 0 ? 1 : -1, W = skinWalls(P);
+        const sd = hash01(c.seed * 7.7), gain = (art.gain || 1) * (0.97 + hash01(c.seed * 3.1) * 0.06), office = art.home ? 0 : 1;
+        const g = c.g0, yt = c.y1, foot = g != null ? g : c.y0, H = yt - foot;
+        for (let k = 0; k < n; k++) {
+          const i = (W.start + k) % n, a = P[i], b = P[(i + 1) % n], dx = b[0] - a[0], dz = b[1] - a[1], len = Math.hypot(dx, dz);
+          if (len < 0.3) continue;
+          const nx = dz / len * sg, nz = -dx / len * sg, S = c.strip != null && art.strips[c.strip] ? art.strips[c.strip] : townStripOf(art, nx, nz), Sh = S.shaft, B = S.base, T = S.top;
+          if (!Sh) continue;
+          const bayW = Sh.m[0] / Sh.nb, L = W.len[W.run[i]], kq = Math.max(1, Math.round(L / bayW)) / Sh.nb / L;
+          const uA = W.at[i] * kq, uB = uA + len * kq, o2 = 0.12;
+          const ax = a[0] + nx * o2, az = a[1] + nz * o2, bx = b[0] + nx * o2, bz = b[1] + nz * o2;
+          // the zones: the base and the top at their own heights where the wall has room, the storeys between
+          const flH = Sh.m[1] / Sh.nf;
+          let zB = g != null && B ? B.m[1] : 0, zT = T ? T.m[1] : 0;
+          if (H < zB + zT + 0.5 * flH) {
+            if (zB > 0 && H <= zB + 1.0) { zB = H; zT = 0; }
+            else if (zB + zT > 0) { zT = Math.max(0, H - zB); if (zT < 2) { zB += zT; zT = 0; } }
+          }
+          const ys0 = foot + zB, ys1 = yt - zT, Hs = ys1 - ys0;
+          const wall = (y0, y1, v0, v1, C) => quad([ax, y0, az, bx, y0, bz, bx, y1, bz, ax, y1, az], nx, 0, nz, [uA, v0, uB, v0, uB, v1, uA, v1], C, sd, gain, office);
+          // the cornice's ledge (art.cornice: its height and depth): its face (the cell's head, zT metres of it on the
+          // wall), its soffit and its coping, run out its depth past each end so a convex corner closes
+          const ledge = (T, zT) => {
+            const cor = art.cornice;
+            if (zT < cor[0]) return;
+            const ch = cor[0], cd = cor[1], vC = 1 - ch / zT, ex = dx / len * cd, ez = dz / len * cd, eu = cd * kq;
+            const fx0 = a[0] + nx * (o2 + cd) - ex, fz0 = a[1] + nz * (o2 + cd) - ez, fx1 = b[0] + nx * (o2 + cd) + ex, fz1 = b[1] + nz * (o2 + cd) + ez;
+            const vc = vC;
+            quad([fx0, yt - ch, fz0, fx1, yt - ch, fz1, fx1, yt, fz1, fx0, yt, fz0], nx, 0, nz, [uA - eu, vc, uB + eu, vc, uB + eu, 0.999, uA - eu, 0.999], T, sd, gain, office);
+            quad([ax - ex, yt - ch, az - ez, fx0, yt - ch, fz0, fx1, yt - ch, fz1, bx + ex, yt - ch, bz + ez], 0, -1, 0, [uA - eu, vc + 0.01, uA - eu, vc + 0.01, uB + eu, vc + 0.01, uB + eu, vc + 0.01], T, sd, gain * 0.85, office);
+            quad([ax - ex, yt, az - ez, bx + ex, yt, bz + ez, fx1, yt, fz1, fx0, yt, fz0], 0, 1, 0, [uA - eu, 0.995, uB + eu, 0.995, uB + eu, 0.995, uA - eu, 0.995], T, sd, gain, office);
+            TOWN.ledges++;
+          };
+          if (Sh.whole) {   // a whole wall: the cell from the foot up, as many times as the wall holds it whole, stretched to fit
+            const nR = Math.max(1, Math.round(H / Sh.m[1])), Hr = H / nR, f0 = g != null ? foot - 0.3 : foot;
+            wall(f0, yt, (f0 - foot) / Hr, nR - 0.001, Sh);
+            if (art.cornice) ledge(Sh, Hr);
+            TOWN.walls++;
+            continue;
+          }
+          if (zB > 0) quad([ax, foot - 0.3, az, bx, foot - 0.3, bz, bx, foot + zB, bz, ax, foot + zB, az], nx, 0, nz, [uA, -0.3 / zB, uB, -0.3 / zB, uB, 0.999, uA, 0.999], B, sd, gain, 2);   // a street floor's glass: its shops and lobby (aTnOff 2)
+          if (Hs > 0.05) {
+            const nF = Math.max(1, Math.round(Hs / flH));
+            wall(ys0, ys1, 0, nF / Sh.nf, Sh);
+          }
+          if (zT > 0) {
+            wall(ys1, yt, 0.001, 0.999, T);
+            if (art.cornice) ledge(T, zT);
+          }
+          TOWN.walls++;
+        }
+        TOWN.laid[art.id] = (TOWN.laid[art.id] || 0) + 1;
+      }
+      if (!idx.length) return;
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+      geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+      geo.setAttribute('aSeed', new THREE.Float32BufferAttribute(seed, 1));
+      geo.setAttribute('aTnCell', new THREE.Float32BufferAttribute(cell, 4));
+      geo.setAttribute('aTnGrid', new THREE.Float32BufferAttribute(grid, 4));
+      geo.setAttribute('aTnOff', new THREE.Float32BufferAttribute(off, 1));
+      geo.setIndex(idx);
+      { const p = geo.attributes.position.array, ix = geo.index.array, nn = geo.attributes.normal.array;   // each quad wound to its normal
+        for (let q = 0; q < ix.length; q += 3) {
+          const i0 = ix[q] * 3, i1 = ix[q + 1] * 3, i2 = ix[q + 2] * 3;
+          const e1x = p[i1] - p[i0], e1y = p[i1 + 1] - p[i0 + 1], e1z = p[i1 + 2] - p[i0 + 2], e2x = p[i2] - p[i0], e2y = p[i2 + 1] - p[i0 + 1], e2z = p[i2 + 2] - p[i0 + 2];
+          const fx = e1y * e2z - e1z * e2y, fy = e1z * e2x - e1x * e2z, fz = e1x * e2y - e1y * e2x;
+          if (fx * nn[i0] + fy * nn[i0 + 1] + fz * nn[i0 + 2] < 0) { const t = ix[q + 1]; ix[q + 1] = ix[q + 2]; ix[q + 2] = t; }
+        } }
+      geo.computeBoundingSphere();
+      if (isTouch) for (const k of ['position', 'normal', 'uv', 'color', 'aSeed', 'aTnCell', 'aTnGrid', 'aTnOff']) geo.attributes[k].onUpload(dropUploadedArray);
+      const mat = new THREE.MeshStandardMaterial({ map, vertexColors: true, color: new THREE.Color(0.88, 0.88, 0.88), roughness: 0.88, metalness: 0 });
+      mat.extensions = { derivatives: true };
+      const lodMax = Math.pow(2, TOWN_LOD) / (isTouch ? AW / 2 : AW);   // the longest gradient (atlas uv a pixel) a read may take
+      mat.onBeforeCompile = (sh) => {
+        sh.uniforms.uMask = { value: mask }; sh.uniforms.uNight = nightUniform; sh.uniforms.uSkinLate = skinLateU;
+        sh.uniforms.uTnLod = { value: lodMax };
+        sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aSeed, aTnOff; attribute vec4 aTnCell, aTnGrid; varying float vSeed, vTnOff; varying vec4 vTnCell, vTnGrid;')
+          .replace('#include <uv_vertex>', '#include <uv_vertex>\nvSeed = aSeed; vTnOff = aTnOff; vTnCell = aTnCell; vTnGrid = aTnGrid;');
+        if (SKIN_GLASS) skinGlassPatch(sh);   // first: it marks map_fragment, which the cells' read below replaces
+        sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform sampler2D uMask; uniform float uNight, uTnLod; uniform vec2 uSkinLate; varying float vSeed, vTnOff; varying vec4 vTnCell, vTnGrid; vec4 tsMask; float tsBar, tsH, tsVp;\n' + WINDOW_INTERIOR_GLSL)
+          .replace('#include <map_fragment>', [
+            // the cell wrapped by hand: its own rect in the atlas, the gradients the unwrapped coordinate's (no seam where
+            // fract jumps), capped so the mip a read takes never reaches past the gutter into a neighbour
+            '{ vec2 tnA = vTnCell.xy + fract(vUv) * vTnCell.zw, tnGx = dFdx(vUv) * vTnCell.zw, tnGy = dFdy(vUv) * vTnCell.zw;',
+            '  float tnK = min(1.0, uTnLod / max(max(length(tnGx), length(tnGy)), 1e-7)); tnGx *= tnK; tnGy *= tnK;',
+            '  tsMask = textureGrad(uMask, tnA, tnGx, tnGy);',
+            '  vec4 sampledDiffuseColor = textureGrad(map, tnA, tnGx, tnGy);',
+            '  diffuseColor *= sampledDiffuseColor;',
+            '  vec2 tnBx = tnGx * 8.0, tnBy = tnGy * 8.0; float tnK2 = min(1.0, uTnLod / max(max(length(tnBx), length(tnBy)), 1e-7));',
+            '  vec3 tnBlur = textureGrad(map, tnA, tnBx * tnK2, tnBy * tnK2).rgb;',
+            // each pane its own (a hash of its bay and storey), a shade lighter or darker as real panes catch the sky; after
+            // dark the painted glass leaves the pane, and a bright bar across it (a muntin, a frame) stands dark against the room
+            '  vec2 tsP = floor(vUv * vTnGrid.xy);',
+            '  tsH = fract(sin(dot(tsP, vec2(12.9898, 78.233)) + vSeed * 431.7) * 43758.5453);',
+            '  tsVp = tsMask.b;',
+            '  float win = tsMask.r;',
+            '  tsBar = smoothstep(0.05, 0.16, dot(sampledDiffuseColor.rgb - tnBlur, vec3(0.2126, 0.7152, 0.0722)));',
+            '  diffuseColor.rgb *= mix(1.0, 0.88 + 0.2 * tsH, win * (1.0 - tsBar));',
+            SKIN_GLASS ? '  diffuseColor.rgb *= mix(1.0, 0.6, win * (1.0 - tsBar) * skInR);' : '',
+            '  diffuseColor.rgb = mix(diffuseColor.rgb, diffuseColor.rgb * 0.3, win * uNight); }',
+          ].join('\n'))
+          .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(roughnessFactor, ' + (SKIN_GLASS ? 'mix(0.14 + 0.08 * fract(tsH * 3.3), 0.04 + 0.03 * fract(tsH * 3.3), skInR)' : '0.14 + 0.08 * fract(tsH * 3.3)') + ', tsMask.r);')
+          // after dark the room each pane opens on (roomLight), the cells' own storeys and bays cut at their pier and spandrel,
+          // of the rooms it lights the share SKIN_LATE keeps at the model's hour (an office's suites four bays at a time)
+          .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\nif (uNight > 0.001) { vec2 tsG = vUv * vTnGrid.xy - vTnGrid.zw;\n' +
+            '  float tnOf = min(vTnOff, 1.0), tnShop = step(1.5, vTnOff);\n' +
+            '  vec2 tsK = mix(floor(tsG), floor(tsG / vec2(4.0, 1.0)), tnOf);\n' +
+            '  float late = step(fract(sin(dot(tsK, vec2(17.13, 3.71)) + vSeed * 91.7) * 4375.85), mix(mix(uSkinLate.y, uSkinLate.x, tnOf), 0.75, tnShop));\n' +
+            '  float tsFar = smoothstep(0.12, 0.5, max(fwidth(tsG.x), fwidth(tsG.y)));\n' +
+            // a street floor's glass glows as the lottery's street floors do (skinBasesLay): warm or a cooler white, brighter under
+            // its head, three bays in four through the evening; the storeys over it are rooms
+            '  vec3 tnRoom = mix(roomLight(vec2(fract(tsG.x), tsVp), floor(tsG), vSeed * 3.1, tnOf), mix(vec3(1.0, 0.76, 0.5), vec3(1.0, 0.92, 0.8), step(0.6, fract(tsK.x * 0.37 + vSeed))) * (0.3 + 0.4 * tsVp), tnShop);\n' +
+            '  totalEmissiveRadiance += tsMask.r * (1.0 - 0.85 * tsBar) * uNight * late * mix(0.9, 0.5, tsFar) * tnRoom; }')
+          .replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\nreflectedLight.directDiffuse *= 1.0 - 0.3 * tsMask.r * (1.0 - tsBar);');
+        wxSurfacePatch(sh);   // rain, snow and the clouds' shadows, as on the walls round it
+      };
+      mat.customProgramCacheKey = () => 'tower-own|real' + (SKIN_GLASS ? '|glass' : '');
+      const m = new THREE.Mesh(geo, mat);
+      m.castShadow = false; m.receiveShadow = true; m.name = 'tower-own';
+      m.frustumCulled = false; pendingUpload.push(m);
+      groupCity.add(m);
+      TSKIN.meshes.push(m);
+      TOWN.mesh = m; TOWN.tris = idx.length / 3;
+    } catch (err) {
+      TOWN.error = String((err && err.message) || err);
+      PERF.failed.push(['Cladding the towers (own)', TOWN.error]);
+    }
+    TOWN.ms = Math.round(performance.now() - t0);
+  }
+  function townProbe() {
+    return { on: TOWN_ON, cands: TOWN.cands.length, laid: { ...TOWN.laid }, walls: TOWN.walls, ledges: TOWN.ledges, tris: TOWN.tris, massTris: TOWN.massTris, bytes: TOWN.bytes,
+      ms: TOWN.ms, error: TOWN.error, mass: TOWN.mass.slice(), towers: TOWN_ART ? Object.keys(TOWN_ART.towers).length : 0,
+      missing: TOWN_ON ? [...TOWN.byName.values()].filter((t) => !TOWN.laid[t.id]).map((t) => t.name) : [],
+      program: !!(TOWN.mesh && renderer.properties.get(TOWN.mesh.material).currentProgram) };
   }
   const _frCol = new THREE.Color();
   function frontStored(hex, gain) { return new THREE.Color(hex).convertSRGBToLinear().multiplyScalar(gain || 0.88); }
@@ -39397,7 +39811,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, fronts: frontsProbe, towerArt: townProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

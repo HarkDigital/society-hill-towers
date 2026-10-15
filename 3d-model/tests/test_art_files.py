@@ -31,6 +31,7 @@ MANIFESTS += ('storefront_art.json',)   # the storefronts' shopfronts (Round 189
 MANIFESTS += ('cityhall_art.json',)   # City Hall's facades (Round 191)
 MANIFESTS += ('glory_art.json',)   # Glory Beer Bar & Kitchen's elevations, swatches and rooms (Round 191)
 MANIFESTS += ('glass_art.json',)   # the glass towers' frame and room atlases (Round 192)
+MANIFESTS += ('tower_art.json',)   # the buildings round City Hall in their own facades (Round 198)
 
 
 class Files(unittest.TestCase):
@@ -47,7 +48,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|towers)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 

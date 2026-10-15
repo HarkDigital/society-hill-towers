@@ -125,6 +125,53 @@ OVERRIDES = [
     (r'symphony house|ellington|barclay|carlyle|adelphia house|chancellor', dict(facade='warm', crown=C('flat'))),
     (r'waterfront square', dict(facade='precast_bands', crown=C('flat'))),   # the three sisters share one skin
 ]
+# Round 198: the research's corrections to the towers round City Hall (regex on the lower-cased name, first match wins):
+# the fields the realistic look takes instead (a spec's point that sits on the wrong building, a colour, an archetype),
+# written as the record's 'real' with its 'why'; app.js applies them under REAL only, so ?real=0 draws every tower as it did
+REAL_FIX = [
+    (r'wanamaker', dict(x=-1485.0, z=-655.0, r=60, h=71.0, hex='#BDB6AD'),
+     "the spec's point stood 67 m off the block, on the Adelphia House's records across Juniper Street, so the Wanamaker "
+     "block itself (one record of 11,700 m2) drew as the cladding lottery's gold glass; moved to the block's centroid, its "
+     "radius taking the block's own parts, in its light grey granite, the main cornice at about 71 m (the 82 m of OSM is "
+     "the rooftop structures; Round 198)"),
+    (r'girard trust', dict(h=118.0, hex='#EEEAE2'),
+     "white marble, not buff; 118 m is the crown block's cornice under the copper hipped roof that rises to about 123 m "
+     "(Round 198: the roof is its own, so the band crown stands on the cornice)"),
+    (r'^centre square i', dict(facade='precast_bands', hex='#C2B49C'),
+     "buff precast concrete with continuous ribbon windows (refs: Commons), not a white precast grid (Round 198)"),
+    (r'three penn center', dict(facade='precast_bands', hex='#E3E5E2'),
+     "continuous blue-green ribbon windows between white spandrel bands on every face, not a precast grid (Round 198)"),
+    (r'municipal services', dict(hex='#DDDCD4'), "light grey granite with framed punched windows (Round 198)"),
+    (r'eight penn', dict(facade='glass_bands', glass=True, hex='#8A97A2'),
+     "a reflective silver-grey glass curtain wall with thin projecting mullion caps and a narrow opaque band at each floor "
+     "(refs: Commons), not a precast grid: glass with bands, so it takes the reflective band system (glass_systems.json's "
+     "styleDefault for style 21) (Round 198)"),
+    (r'two penn', dict(facade='precast_bands', glass=False, hex='#E4E0D6'),
+     "white enamel spandrel bands between blue ribbon windows, about half glass, not a curtain wall: its own facade "
+     "(Round 198)"),
+    (r'one penn center at suburban', dict(h=100.6, crown={'type': 'flat'}, hex='#C8C0AE'),
+     "Indiana limestone; 95 m to the slab's toothed parapet and 100.6 m (330 ft) to its attic spine, not 85 (Round 198)"),
+    (r'four penn', dict(facade='precast_bands', hex='#CFC7B8'), "buff stone bands and green ribbon windows (Round 198)"),
+    (r'five penn', dict(hex='#BDB4A4'), "light buff stone piers and spandrels round dark glass, not dark grey (Round 198)"),
+    (r'^one parkway', dict(hex='#A9B0B3'), "a brushed stainless steel skin with fins (Round 198)"),
+    (r'wells fargo', dict(hex='#C4BFB4'), "smooth Indiana limestone (Round 198)"),
+    (r'jefferson tower', dict(facade='precast_bands', hex='#B9A594'),
+     "pink-tan granite bands and dark blue-grey ribbon windows with maroon accent bands, not a precast grid (Round 198)"),
+    (r'psfs|loews', dict(h=140.0, r=17, crown={'type': 'flat'}, hex='#B5B0A6'),
+     "the office slab's roof is about 140 m (150 is the sign's top); its 35 m radius took the black spine (a record 22 m "
+     "off), which now stands on its own to 148 m; the mast and lit box of the generic 'spire' crown give way to the "
+     "page's own sign and the 1948 mast (Round 198)"),
+    (r'land title', dict(h=101.0, hex='#D6D2C8'),
+     "the 1902 south tower is 22 storeys, 101 m (331 ft); the 1897 north building's records, which took this height too, "
+     "stand at 62 m (Round 198)"),
+    (r'marriott downtown', dict(h=76.0, hex='#A8978F'), "76 m (250 ft, CTBUH); rose-taupe precast, not brick (Round 198)"),
+    (r'one penn square west', dict(r=20, hex='#A99B87'),
+     "tan precast with punched windows; its 35 m radius also took the Pennsylvania Building (1530 Chestnut, 68 m) and a "
+     "low neighbour, which now keep their own looks (Round 198)"),
+    (r'residence inn', dict(hex='#A8937A'), "tan-brown face brick with buff and polychrome terra cotta (Round 198)"),
+    (r'^widener', dict(hex='#D3CEC2'), "Indiana limestone over a granite base (NPS nomination; Round 198)"),
+    (r'one south broad', dict(hex='#C9C4B8'), "very light grey limestone (Round 198)"),
+]
 SKIP_NAMES = (r'bridge', r'callowhill edge', r'city hall', r'convention center')   # the last: big-box halls, not a tower
 SKIP_NOTES = ('not built', 'outside bbox', 'demolished')
 
@@ -497,7 +544,15 @@ def main():
             r['lit'] = '#dfe8ff'
             r['theme'] = True
     for r in records:
+        for pat, fix, why in REAL_FIX:
+            if re.search(pat, r['name'].lower()):
+                r['real'] = dict(fix)
+                r['why'] = why
+                break
+    for r in records:
         assert r['facade'] in FACADES, (r['name'], r['facade'])
+        if 'real' in r:
+            assert r['real'].get('facade', r['facade']) in FACADES, (r['name'], r['real'])
         assert r['crown']['type'] in CROWNS, (r['name'], r['crown'])
 
     out = {

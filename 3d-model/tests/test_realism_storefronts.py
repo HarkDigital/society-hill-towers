@@ -25,7 +25,9 @@ import re
 import unittest
 
 # the 'Dressing the storefronts' step as it stood before Round 189 (08350a5), which the step less its new path must still be
-LEGACY_SHA = '300fc5a7cdc04bfd6a13885b4257a92f8ace9eabbc3d290de6457a43c35f9e9c'
+# (Round 198: its base cells take the own facades' bases too, baseOwn, so a box never doubles a building's own shopfronts
+# under ?sfart=0 either; 300fc5a7 before it)
+LEGACY_SHA = 'f10d4354a57284491ddff008e134fb8eed4b1d61759b07123763c15def783a1d'
 
 ROOT = Path(__file__).resolve().parents[1]
 
