@@ -10860,10 +10860,14 @@ place; this is what changed in the code, and what was measured.
     rise, 8.3 m deep at the street to 1 m at 269.6 m (the plan 0.85 at the top), their outer faces on the curtain wall's own
     chunk with the facade's bays laid along them (`cmrWedge`, `cmrGlassQuad`), their side faces the notched corners, their
     two leaning edges the corner lines the other parts' piers draw.
-  - The crown is open: the Fairmount Park and helicopter photographs see the sky through its top. Its glass stops at a deck
-    at 284 m and the top 13 m are a screen of low-iron glass (`cmrScreenMat`: transparent, Fresnel's opacity, a fifth
-    head-on, silver frames on the 1.52 m by 4.15 m module filtered to a pixel) over the damper's two concrete tanks. The
-    crown's panels at night are Round 111's, the roof panel moved down to the deck.
+  - The crown is open: the Fairmount Park and helicopter photographs see the sky through its top. The whole crown piece,
+    from the lintel over the south opening (271 m, level with the wings' tops at 269.6) to the top, 26 m and six storeys,
+    is a cage of low-iron glass (`cmrScreenMat`: transparent, Fresnel's opacity, a fifth head-on) in a bold silver frame,
+    posts every 3.04 m on each face's centre, rails on ten rows (2.6 m) from the lintel and the glass's 1.52 m mullions
+    between, every bar its coverage over the pixel (crownBar's integral) so a far one settles to its share of the face; a
+    rail at its foot and at its top; inside it a grey enclosure 3 m back and 3 m under the top (the damper and the plant),
+    its roof concrete. The crown's panels at night are Round 111's over the whole cage, their roof panel on the enclosure's
+    roof; the crown piece's own floor rails are left to the cage's frame.
   - The north slot Wikipedia names ("two stories tall on the north side"), dark in the Fairmount Park photograph, centred,
     its sill on the south opening's: 13 m by 8.3 m back to the core's face, with the south opening's dark back panel and
     soffit (`cmrNorthSlot`). Round 108 kept "the rear facade closed" against the south opening running through; the slot
@@ -10873,34 +10877,48 @@ place; this is what changed in the code, and what was measured.
     the 277 m roof and the 342 m tip) and the south bar's at about 145 (from the south-west); the design history has the
     north section rising higher. Round 100 raised both to 213.5. Now the north is 190 and the south OSM's 142, so the west
     face steps three times (142, 190, 277) to the spine.
-  - The spine is the core's cladding proud of the west face, silver panels to 240 m and dark grey to 300 m (cc16, cc22,
-    cc46: 232 to 248), the elevator overrun dark grey over the roof, the frosted lantern 300 to 342 m (Thornton
-    Tomasetti's 120 ft lantern, "frosted glass over a cross-braced frame"), all on the remodel's cladding material, and the
-    341 m part's glass is no longer drawn. The lantern is lit at night as the blade was: crownPanels in 0.5 m slices with
-    slots 100 up its height, the house white on a plain night, bands on a several-colour night, the Eagles' green and white.
+  - The spine is the core proud of the west face (OSM's 341 m part, 8.3 m across): a glazed column 3.04 m wide (two of
+    the curtain wall's bays) up its middle from the street into the lantern, on the CTC's own glass system 0.3 m behind the
+    panels (its rooms lit at night), and either side of it silver panels to 240 m and dark grey to 300 m (cc16, cc22, cc46:
+    232 to 248; cc19, cc47 and cc01 from the west show the column running through the dark zone). The elevator overrun is
+    dark grey over the roof, the spine's width from its east end 22 m along the roof (from the west the dark block over the
+    roof is no wider than the spine, cc19 and cc47; from Fairmount Park its depth is what makes it look wider). The lantern,
+    300 to 342 m, stands on the column, the column's width across and the spine's depth along (the old blade's slender
+    fin; from the Liberty deck its west face is the column's two bays): pale sea-green glass in a 1.52 m by 2.21 m grid
+    (Thornton Tomasetti calls it "frosted glass over a cross-braced frame", but no photograph shows the X by day, and cc01,
+    cc16 and cc47 put it a little lighter than the spine's panels, with a fine grid). All on the remodel's cladding
+    material; the 341 m part's glass is no longer drawn. The lantern is lit at night as the blade was: crownPanels in 0.5 m
+    slices with slots 100 up its height, the house white on a plain night, bands on a several-colour night, the Eagles'
+    green and white, and in front of the slices the old themed blade's dark bars every 1.6 m (Round 85's ladder).
   - The braces stand on the bars' east and west ends, not on the broad faces where Round 100 hung its alternating
     diagonals: every photograph from 18th and Arch shows a horizontal across the wing at every third floor and a diagonal
     from its outer end up to the next one's inner end (`cmrBraces`, 13.26 m modules from 26.5 m, members 0.6 m by 0.45 m
     standing 0.35 m off the glass). Round 100's belts at 72, 125, 178 and 212 m and the corner piers gave way to a fascia
     every three floors round every face (the three-storey neighbourhoods, the white lines of the north faces in cc16 and
     cc41), the silver fins framing the central strip on 18th Street and the core's west piece, the dark louvres of the
-    mechanical floors at the bars' tops and under the roof, the bars' green roofs, the studios' louvred podium (5 to 22 m) on
-    the bars' outer faces with the blue columns before it on the north (the 2017 photographs), the podium's two west parts
-    in the tower's glass, and the lobby on 18th Street on the clear system under its cantilevered canopy with a hardwood
-    soffit.
-- The art (gpt-image-2, quality high, two batches of three and two, every image looked at, raw in
-  `lidar_cache/comcast_art_raw/`): five straight-on, repeating elevations, the spine's pale silver panels, the louvres, the
-  frosted lantern with its cross-brace's soft X, the soffit's hardwood slats and the core's dark grey panels.
+    mechanical floors at the bars' tops, the bars' green roofs, the studios' louvred podium (5 to 22 m) on the bars' outer
+    faces with silver columns before it on the north, the podium's two west parts in the tower's glass, and the lobby on
+    18th Street on the clear system under its cantilevered canopy with a hardwood soffit. The top floors of the central bar
+    (the Four Seasons' sky lobby and Jean-Georges) are glazed to the roof's edge: the curtain wall's upper datum, the clearer
+    hotel glass, its rooms lit at night.
+- The art (gpt-image-2, quality high, every image looked at, raw in `lidar_cache/comcast_art_raw/`): five straight-on,
+  repeating elevations, the spine's pale silver panels, the louvres, the lantern's glazing (pale sea-green panes in slim
+  silver mullions, 4 by 4, made again after the review), the soffit's hardwood slats and the core's dark grey panels.
   `bake_comcast_art.py` cuts each between two of its own joints (found by their column and row darkness), divides out the
-  plane of light painted across a plain one, folds 3% of each edge into the opposite and stacks them into one strip of
-  512-pixel layers (50 KB, a phone's 256-pixel half 12 KB). The page uploads it as a texture array with mips
+  plane of light painted across a plain one, folds 3% of each edge into the opposite (not the lantern's: a grid drawn true
+  to its period, cut on its mullions' centres, where a fold only ghosts a mullion mid-pane) and stacks them into one strip
+  of 512-pixel layers (59 KB, a phone's 256-pixel half 13 KB). The page uploads it as a texture array with mips
   (`cmrArtLoad`, freed once on the GPU) and draws each layer's detail over the vertex's calibrated colour, the image over
-  its own linear mean (`cmrTexMat`); the lantern's tiles are fitted whole to every face (one cross-brace across, five up).
+  its own linear mean (`cmrTexMat`, every layer's numbers picked in the vertex shader); the lantern's faces are fitted to
+  whole 1.52 m bays, its rows from its foot.
 - The glass is the systems' (Comcast's and the CTC's, Round 193), its shaders, systems and art untouched (the calibration's
   fingerprint b5fca1378b8fb251 unchanged). `glass_calibrate.py` re-run on the remodel: the Comcast Center over its 8 judged
   poses median delta E 7.4 -> 7.8, b* -1.2 -> -1.4, worst 12.0 -> 11.7; the CTC over its 12, 7.2 -> 6.7, -2.1 -> -2.0, worst
   11.5 -> 11.8; every one of the 20 within delta E 15 and b* 6; the whole calibration's 120 measures 34 outside as before
-  (the towers held open), no other tower's measure moved by more than 2.5.
+  (the towers held open), no other tower's measure moved by more than 2.5. Re-run again after the review's fixes (the
+  spine's glazed column on the CTC's glass, the cage in place of the crown's glass): the Comcast Center median delta E 8.0,
+  b* -1.5, worst 11.4; the CTC 6.8, -2.2, worst 11.7, its b* at most 4.0 from its swatch; still 34 of 120 outside, all the
+  open towers', no other measure moved by more than 0.6.
 - Budget, measured headless on this Mac's GPU (the page's own counters, `renderer.info` over one whole frame, shadow and
   post passes included, the same three poses in the same session order on each build: 300 m over the CTC's crown, the
   north-west aerial at 600 m, the skyline from the south-west at 1.5 km). Computer: draw calls 455 -> 459, 543 -> 542, 655
@@ -10919,7 +10937,47 @@ place; this is what changed in the code, and what was measured.
   shadows are in view.
 - Renders (computer and phone, day and night, plain, Eagles, Phillies and red, white and blue nights, 29 poses and 9):
   `scratchpad/remodel/comcast/before/`, `after/` and the pairs in `pairs/`.
+- The review's fixes (same day):
+  - WebGL 1 failed to link the cladding: its fragment shader indexed the layers' uniform arrays by a varying-derived int
+    (`uCmrRM[li]`), which GLSL ES 1.00 allows only in a vertex shader, and since the old blade was skipped the CTC drew with
+    no spine, overrun or lantern, a flat roof at 277 m. The layer's roughness, metal, tile and mean are picked in the vertex
+    shader and handed down as varyings. With WebGL 2 hidden (the review's `render_gl1.mjs`) the failing programs are back to
+    the one HEAD~1 already had (a basic program, not the remodel's), and the spine, column and lantern draw in plain
+    colours. `tests/test_remodel_comcast.py` now refuses an array indexed by a name in either fragment patch (it flags the
+    old shader).
+  - The lantern read as an opaque white post (the frosted layer's mean 0.80 at 0.55 rough, no metal) and the night as one
+    glowing slab: it is the glazing above (0.32 to 0.40 linear, 0.18 rough, 0.3 metal), and its ladder is back, the old blade's
+    0x50616b bars every 1.6 m in front of the slices, on the crown panels' own night-only mesh so the day shows the glass's
+    transoms and not a second set. A bar's gain is 0.001: mergeColored reads a gain of 0 as 1, which drew the first bars as
+    light lines. Plain, Eagles, Phillies, red and red, white and blue nights rendered.
+  - The spine's full-width dark band read as a dark cross on the west elevation from the Parkway and the river: the glazed
+    column and the overrun at the spine's width above.
+  - The north podium's blue columns were construction film (the November 2017 photographs show the same blue on the spine's
+    panels, silver in every finished photograph; the Inquirer's January 2019 review saw protective blue tape still on the
+    trim; the August 2025 photographs show silver grey columns before dark louvres): the fins' silver.
+  - The 8.84 m louvre band round the main roof read as a black cap by day and a dead band at night: gone, the top floors
+    glazed to the roof (the bars keep their dark tops, cc16).
+  - The Comcast Center's open crown was half its photographed height (the cage above), the spine's silver 0.78 at 0.45 metal
+    read stark white in the sun (0.60, 0.35 metal: rendered 200 against the lantern's 180 to 221 in the sun, the dark
+    flanks 0.6 of the silver, as the photographs' 0.59 to 0.85).
+  - Declined: drawing the CTC's top floors in a taller rhythm (the system's 4.42 m floor is its own; a taller one is a new
+    system and a new calibration, and from outside cc16 shows the top band in the same rhythm); widening the spine past
+    OSM's 8.3 m (from 23rd Street the silver reads about 60% of the hotel's west face, from the Liberty deck about a
+    quarter; a dimensioned drawing would settle it).
+  - Budget after the fixes, the same probes on the builder's commit and this one, alternated, each after the same warm-up
+    pose: computer draw calls 459 / 459 near, 547 and 542 / 547 and 542 mid, 657 / 657 far; triangles 64 fewer at each (the
+    tanks and the crown's glass and rails out; the column, the enclosure and 26 bars in). Phone path: draw calls identical,
+    64 fewer triangles. The remodel's own meshes: trim near 1,650 and far 850 triangles, cladding 98, screen 8, still three
+    drawn at a time. Programs equal (157 or 158 per run on both). Texture memory unchanged (6.99 MB, 1.75 MB a phone); the
+    strip 59 KB and 13 KB. Frame time, the remodel on and off in one session: 4.10 / 3.80 ms over the crown, 2.00 / 2.00 at
+    the street, 3.95 / 4.75 at the skyline (the builder's commit 4.25 / 3.75, 2.05 / 1.90, 4.05 / 4.45), inside the noise.
+    `?real=0` and `?comcast=0` still 0.000% of pixels over 24 levels from Round 194 at the four parity poses.
+  - Renders: `scratchpad/remodel/comcast/fix/` (`before/` is the builder's commit, `after/` this one, 42 computer poses
+    and 12 phone, day and night, the pairs in `pairs/`; `gl1/` the WebGL 1 run).
 - Open for Mike: the Comcast Center's plaza is still the model's lawn (half an acre of paving, the fountain and the cafe in
-  the photographs); the CTC's north bar at 190 m is a photograph measure (the drawings would settle it); the Comcast Center's
-  corner LEDs ("white LEDs on the corner spandrel panels", Wikipedia) are not drawn, so its night is Round 111's.
+  the photographs; the ground system's work); the CTC's north bar at 190 m is a photograph measure (the drawings would
+  settle it); the Comcast Center's corner LEDs ("white LEDs on the corner spandrel panels", Wikipedia) are not drawn, so its
+  night is Round 111's crown panels, which at night fill the open cage too. Outside this remodel: the glass towers' day
+  reflections up close show the city reflection's coarse cells as a blocky mosaic of clouds (the CTC from the south-west,
+  the phone's view of it), the glass owner's to look at.
   `tests/test_remodel_comcast.py`; `__dbg.comcast()` (`false` hides the remodel's own meshes for an A/B).

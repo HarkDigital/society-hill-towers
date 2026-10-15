@@ -3,7 +3,7 @@
 itself into art/comcast/ (art_files.py: a file the page loads on demand, a phone's half copy beside it).
 
 fetch_comcast_art.py makes five straight-on elevations (lidar_cache/comcast_art_raw/): the Comcast Technology Center's
-spine panels, its louvres, its frosted lantern, its canopy's soffit and its dark grey core panels. This bake cuts each to a
+spine panels, its louvres, its glazed lantern, its canopy's soffit and its dark grey core panels. This bake cuts each to a
 whole number of its own modules between two of its joints (CROP: the joints found once on the images by their column and
 row darkness, a module's repeat between the first and last chosen, so the cut tiles with its own joint on the seam), takes
 out the light the model painted falling across a plain one (FLAT), folds
@@ -24,20 +24,23 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(HERE, 'comcast_art.json')
 SIZE = 512
 FOLD = 0.03   # the share of each edge folded into the opposite one
+NOFOLD = {'lantern'}   # a grid the model drew true to its period, cut on its mullions' centres: a fold only ghosts a mullion mid-pane
 # the plain surfaces whose light the model painted falling off across the picture: the plane that fits each channel's
 # light over the crop (least squares in x and y) is divided out round its mean before the fold, so a tile has no gradient
-# to show as a band at its seam (the lantern keeps its: the brace's X is its large scale)
-FLAT = {'spine', 'louvre', 'soffit', 'panel'}
+# to show as a band at its seam
+FLAT = {'spine', 'louvre', 'lantern', 'soffit', 'panel'}
 # per tile: the crop [x0, y0, x1, y1] in the 1024-wide source between two of its joints, and the tile's size in metres
 # [along, up] as the crop holds it. spine: its vertical joints at 280, 512 and 744 and its horizontal at 767 (2 panels by
-# 1, the joint mid-tile); louvre: the mullions at 271 and 751 (one bay) and 48 blades on a 32 px period; lantern: the frames'
-# centres at 10 and 1019 across (4 panels) and 7 and 1531 up (2), the brace's X from corner to corner; soffit: the gaps at 22
+# 1, the joint mid-tile); louvre: the mullions at 271 and 751 (one bay) and 48 blades on a 32 px period; lantern (the
+# review's glazing, 1024 square): the mullions' centres at 5 and 1017 across (4 panes) and the transoms' at 6 and 1018 up
+# (4), laid at 1.52 m by 2.21 m a pane (half the CTC's 4.42 m unit: the transoms the Liberty deck photograph counts, 19 up
+# the lantern's 42 m; drawn square, a 1.38 stretch a plain pane does not show); soffit: the gaps at 22
 # and 1006 (29 slats on a 33.9 px period), the slats' own length folded; panel: the joints at 148 and 637 (2 panels) and
 # 14 and 768 (one)
 CROP = {
     'spine': ([280, 384, 744, 1151], [3.04, 4.42]),
     'louvre': ([271, 0, 751, 1536], [1.52, 4.42]),
-    'lantern': ([10, 7, 1019, 1531], [6.08, 8.84]),
+    'lantern': ([5, 6, 1017, 1018], [6.08, 8.84]),
     'soffit': ([22, 0, 1006, 1024], [2.9, 3.0]),
     'panel': ([148, 14, 637, 768], [3.04, 4.42]),
 }
@@ -87,7 +90,8 @@ def main():
                 coef = np.linalg.lstsq(A, arr[..., ch].ravel(), rcond=None)[0]
                 plane = (A @ coef).reshape(h, w)
                 arr[..., ch] = np.clip(arr[..., ch] / np.maximum(plane, 0.02) * coef[0], 0, 1)
-        arr = fold(arr, FOLD)
+        if tid not in NOFOLD:
+            arr = fold(arr, FOLD)
         t = Image.fromarray(np.clip(arr * 255 + 0.5, 0, 255).astype(np.uint8)).resize((SIZE, SIZE), Image.LANCZOS)
         mean = srgb_to_lin(np.asarray(t, float) / 255.0).reshape(-1, 3).mean(0)
         tiles.append(t)

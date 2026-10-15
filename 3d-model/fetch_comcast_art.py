@@ -2,7 +2,7 @@
 """Generate the Comcast towers' cladding (Round 195, Mike: "Remodel ... both Comcast towers"; photographic realism) from
 OpenAI's image API, written to lidar_cache/comcast_art_raw/<id>.png with a sidecar <id>.json (the prompt, the model, the
 size, when, the usage). bake_comcast_art.py folds each into a seamless tile and packs the strip the page's cladding
-material reads (CMR in app.js: the Comcast Technology Center's spine, its louvres, its frosted lantern, its canopy's soffit
+material reads (CMR in app.js: the Comcast Technology Center's spine, its louvres, its glazed lantern, its canopy's soffit
 and its dark grey panels).
 
 Each image is one straight-on elevation of a surface the photographs show, a whole number of its own modules repeating
@@ -38,11 +38,15 @@ TILES = {
                'blades 15 cm apart, every blade tilted down with a thin dark shadow line beneath it and the dark plant room '
                'barely visible between the blades, held by slim vertical charcoal mullions exactly 1.52 m apart; exactly 2 '
                'mullion bays wide and 4.42 m tall', '1024x1536', [3.04, 4.42]),
-    'lantern': ('the illuminated lantern crowning a 2018 skyscraper, by day: tall panels of acid-etched frosted white glass '
-                '1.52 m wide by 4.42 m tall in slim silver aluminium frames, exactly 4 panels wide and 2 panels tall, and '
-                'behind the frosted glass the soft, blurred pale grey silhouette of a steel cross-brace, one large X from '
-                'corner to corner of the whole picture; the glass otherwise an even milky white with a faint cool tint, '
-                'nothing clear and nothing behind it in focus', '1024x1536', [6.08, 8.84]),
+    # the review (Round 195): the first lantern, frosted white with an X behind it, read as an opaque white post; the
+    # photographs from the Parkway, Fairmount Park and the Liberty deck show pale sea-green glass in a fine grid (the
+    # bake lays this one's square panes at 1.52 by 2.21 m, its CROP)
+    'lantern': ('the glazed lantern crowning a 2018 skyscraper, by day: a curtain wall of pale sea-green grey laminated '
+                'glass, every pane 1.52 m wide by 1.6 m tall and all the same size, exactly 4 panes wide and 4 panes tall, '
+                'in slim straight silver-grey aluminium mullions and transoms of equal width in a perfectly regular grid; '
+                'the glass slightly milky and satin, a cool green-grey with a very slight tonal variation from pane to pane '
+                'and a faint soft sheen, nothing behind it in focus; no diagonal members, no cross-bracing, no '
+                'frosted white', '1024x1024', [6.08, 6.4]),
     'soffit': ('the underside of a building\'s cantilevered entrance canopy, looking straight up: a ceiling of long warm '
                'brown hardwood slats 8 cm wide with dark 2 cm gaps between them, all running the same way, exactly 30 slats '
                'across, the wood with a natural grain and a slight tonal variation from slat to slat; no lights, no fixtures',

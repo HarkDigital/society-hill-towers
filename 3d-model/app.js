@@ -9039,24 +9039,27 @@ vec2 wRing(vec2 rc, float tt) {
   // - the Comcast Center (Robert A.M. Stern, 2008, 297 m), RAMSA's "faceted obelisk": its east and west wings lean in as
   //   they rise, 8 m deep at the street and 1 m at their tops at 269.6 m (RAMSA gives the plates as 28,000 and 23,000 gsf,
   //   0.82; the leaning wings make the plan 0.85 at the top), the notched corners and the south opening under the crown as
-  //   Rounds 103 and 108 drew them, the crown's top 13 m an open screen of low-iron glass over a deck at 284 m (the
-  //   Fairmount Park and helicopter photographs see the sky through it) carrying the damper's two concrete tanks, the
+  //   Rounds 103 and 108 drew them, the crown an open cage of low-iron glass in a bold frame from the lintel over the south
+  //   opening (271 m, level with the wings' tops) to the top, round a grey enclosure set back inside it (the review, on the
+  //   photographs from Fairmount Park and from the north-west: the cage is five to six storeys, not the top 13 m), the
   //   winter garden on the clear system
   // - the Comcast Technology Center (Foster + Partners, 2018, 342 m): its north and south office bars stop at 190 and 142 m
   //   (measured on five photographs: from the north-west the north bar's top sits 176 to 205 m up, from the south-west the
   //   south's 145; the design history has the north section rising higher; Round 100's 213.5 m raised both), the central bar
-  //   and the core's west piece to the roof at 277 m, the core's spine proud of the west face in silver panels to 240 m and
-  //   dark grey to 300 m, the elevator overrun dark grey over the roof, the frosted lantern from 300 to 342 m lit at night as
-  //   the blade was (crownPanels, slots 100 up); the Z braces on the bars' east and west ends only (Round 100 hung its
+  //   and the core's west piece to the roof at 277 m glazed to its edge, the core's spine proud of the west face, a glazed
+  //   column up its middle between silver panels to 240 m and dark grey to 300 m, the elevator overrun dark grey over the
+  //   roof, the lantern of pale sea-green glass from 300 to 342 m on the column, lit at night as the blade was (crownPanels,
+  //   slots 100 up, behind the old blade's dark bars every 1.6 m); the Z braces on the bars' east and west ends only (Round 100 hung its
   //   diagonals on the broad faces), a horizontal every three floors and a diagonal from its outer end up to the next one's
   //   inner end, as every photograph from 18th and Arch shows them; a light fascia every three floors round every face (the
-  //   three-storey neighbourhoods); the glass lobby on 18th Street under its cantilevered canopy
+  //   three-storey neighbourhoods); the louvred podium and its silver columns; the glass lobby on 18th Street under its
+  //   cantilevered canopy
   // Everything new merges into the batches the towers already drew in (the curtain wall's chunk, the crown panels) or into
   // the remodel's own four meshes: its trim near and far (one drawn at a time, switched at CMR_FAR by cmrStep), its
   // cladding (the spine, the louvres, the lantern and the soffit on one material) and the crown's open screen
   const CMR_ON = REAL && !/[?&]comcast=0\b/.test(location.search);
-  const CC_DIMS = { wingD1: 1.0, deck: 284, top: 297, slotW: 13, slotH: 8.3 };
-  const CTC_DIMS = { nBar: 190, silver: 240, overrun: 300, top: 342, module: 13.26, braceFrom: 26.52, lobby: 19.5 };   // the south bar keeps OSM's 142 m, the roof its 277
+  const CC_DIMS = { wingD1: 1.0, slotW: 13, slotH: 8.3, inset: 3.0, encGap: 3.0, bay: 3.04, rows: 10, cage: 26 };   // the cage from the lintel (cp.lintel, comcastCrownPlan's, cage under the top: 271 m): its enclosure's set-back and its gap under the top, its frames' bays and rows
+  const CTC_DIMS = { nBar: 190, silver: 240, overrun: 300, top: 342, module: 13.26, braceFrom: 26.52, lobby: 19.5, strip: 3.04, ladder: 1.6 };   // the south bar keeps OSM's 142 m, the roof its 277; the spine's glazed column, the lantern's bars
   const CMR_FAR = 1100;   // m: past it the trim's far level (flat members, no stand-offs or fins)
   // the Z braces on one end wall a -> b ([x, z]) whose inner end (beside the central bar) is b: a horizontal across the wall
   // at every module from y0 to y1 and a diagonal from each horizontal's outer end up to the next one's inner end, `off`
@@ -9161,18 +9164,14 @@ vec2 wRing(vec2 rc, float tt) {
     };
     // a prism over a footprint ring ([x, z], round it) from y0 to y1: its walls, uv in metres along the ring and up, and
     // (a four-cornered ring) its top
-    // fit [w, h, tw, th]: each wall about w wide a tile and the height about h a tile, whole tiles of the layer's art
-    // (tw by th in its uv) on every face (the lantern's cross-braces whole on each)
-    A.prism = (ring, y0, y1, c, layer, noTop, fit) => {
+    A.prism = (ring, y0, y1, c, layer, noTop) => {
       const sg = signedArea(ring) > 0 ? 1 : -1;
       let u = 0;
       for (let i = 0; i < ring.length; i++) {
         const a = ring[i], b = ring[(i + 1) % ring.length], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
         if (L < 1e-3) continue;
         const n = [dz / L * sg, 0, -dx / L * sg];
-        let u0 = u, u1 = u + L, v0 = y0, v1 = y1;
-        if (fit) { u0 = 0; u1 = Math.max(1, Math.round(L / fit[0])) * fit[2]; v0 = 0; v1 = Math.max(1, Math.round((y1 - y0) / fit[1])) * fit[3]; }
-        A.quad([[a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]]], n, c, [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], layer);
+        A.quad([[a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]]], n, c, [[u, y0], [u + L, y0], [u + L, y1], [u, y1]], layer);
         u += L;
       }
       if (!noTop && ring.length === 4) A.quad(ring.map((q) => [q[0], y1, q[1]]), [0, 1, 0], c, ring.map((q) => [q[0], q[1]]), layer);
@@ -9213,7 +9212,7 @@ vec2 wRing(vec2 rc, float tt) {
     if (CMR.screen) { CMR.screen.renderOrder = 2; CMR.screen.receiveShadow = false; }
     if (CMR.far) CMR.far.visible = false;
     for (const sp of [W.cc, W.ctc]) if (sp) CMR.at.push([sp.x, siteY(sp.x, sp.z, 'ground') + sp.h * 0.6, sp.z]);
-    CMR.n = { wedges: W.wedges, winter: W.winter, podium: W.podium, lobby: !!W.ctcLobby, spine: !!W.ctcSpine, ctcParts: W.ctcParts.length };
+    CMR.n = { wedges: W.wedges, winter: W.winter, podium: W.podium, lobby: !!W.ctcLobby, spine: !!W.ctcSpine, ctcParts: W.ctcParts.length, ladder: W.ladder || 0, cage: !!W.cage };
     if (CMR.tex) cmrArtLoad();
   }
   // the trim's level by the eye's distance to the nearer tower (100 m of hysteresis either side of CMR_FAR); __dbg.comcast(false)
@@ -9229,12 +9228,16 @@ vec2 wRing(vec2 rc, float tt) {
     CMR.near.visible = CMR.lod === 'near';
     CMR.far.visible = CMR.lod === 'far';
   }
-  // the cladding: the CTC's spine panels (0), the louvres (1), the lantern's frosted glass (2), the canopy's soffit (3) and
+  // the cladding: the CTC's spine panels (0), the louvres (1), the lantern's glazing (2), the canopy's soffit (3) and
   // the dark grey core panels (4), each its own roughness and metal; their art (COMCAST_ART, bake_comcast_art.py: one strip
   // of square layers, a texture array) lays each layer's detail over the vertex's calibrated colour, the image over its own
   // mean in linear light, at the tile's size in metres (the uv is metres along the face and up it). Until it lands, or on
-  // WebGL 1, the plain colours
-  const CMR_LAYERS = [{ rough: 0.38, metal: 0.45 }, { rough: 0.6, metal: 0.35 }, { rough: 0.55, metal: 0.0 }, { rough: 0.8, metal: 0.0 }, { rough: 0.45, metal: 0.4 }];
+  // WebGL 1, the plain colours. A layer's numbers are picked in the VERTEX shader and handed down as varyings (the review:
+  // WebGL 1 allows a fragment shader only constant indexes into a uniform array, and `uCmrRM[li]` there failed the link, so
+  // the CTC drew with no spine, overrun or lantern; a vertex shader may index one by anything, tests/test_remodel_comcast.py)
+  // the review: the spine's silver at 0.78 and 0.45 metal read stark white in the sun (0.60 now, and 0.35); the lantern is
+  // glass (its pale sea-green grid, 0.18 rough and 0.3 metal for the sky it mirrors)
+  const CMR_LAYERS = [{ rough: 0.4, metal: 0.35 }, { rough: 0.6, metal: 0.35 }, { rough: 0.18, metal: 0.3 }, { rough: 0.8, metal: 0.0 }, { rough: 0.45, metal: 0.4 }];
   const CMR_ART = typeof COMCAST_ART !== 'undefined' && COMCAST_ART && Array.isArray(COMCAST_ART.layers) && COMCAST_ART.layers.length === CMR_LAYERS.length ? COMCAST_ART : null;
   const CMR_U = { uCmrArt: { value: null }, uCmrOn: { value: 0 }, uCmrRM: { value: CMR_LAYERS.map((q) => new THREE.Vector2(q.rough, q.metal)) },
     uCmrTile: { value: CMR_LAYERS.map((q, i) => new THREE.Vector2(...(CMR_ART ? CMR_ART.layers[i].tile : [3, 4.4]))) },
@@ -9242,26 +9245,27 @@ vec2 wRing(vec2 rc, float tt) {
   function cmrTexMat() {
     const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 });
     const arr = !!CMR_ART && renderer.capabilities.isWebGL2;
+    const n = CMR_LAYERS.length;
     m.onBeforeCompile = (sh) => {
       Object.assign(sh.uniforms, CMR_U);
-      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aLayer; varying float vCmrL; varying vec2 vCmrUv;')
-        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCmrL = aLayer; vCmrUv = uv;');
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+        attribute float aLayer; uniform vec2 uCmrRM[${n}], uCmrTile[${n}]; uniform vec3 uCmrMean[${n}];
+        varying float vCmrL; varying vec2 vCmrUv; varying vec2 vCmrRM; varying vec3 vCmrMean;`)
+        .replace('#include <begin_vertex>', `#include <begin_vertex>
+        { int li = int(clamp(aLayer, 0.0, ${n - 1}.0) + 0.5);
+          vCmrL = float(li); vCmrRM = uCmrRM[li]; vCmrUv = uv / uCmrTile[li]; vCmrMean = max(uCmrMean[li], vec3(0.01)); }`);
       sh.fragmentShader = (arr ? '#define CMR_ARR\n' : '') + sh.fragmentShader.replace('#include <common>', `#include <common>
-        uniform vec2 uCmrRM[${CMR_LAYERS.length}], uCmrTile[${CMR_LAYERS.length}]; uniform vec3 uCmrMean[${CMR_LAYERS.length}]; uniform float uCmrOn;
+        uniform float uCmrOn;
         #ifdef CMR_ARR
         uniform mediump sampler2DArray uCmrArt;
         #endif
-        varying float vCmrL; varying vec2 vCmrUv;`)
+        varying float vCmrL; varying vec2 vCmrUv; varying vec2 vCmrRM; varying vec3 vCmrMean;`)
         .replace('#include <color_fragment>', `#include <color_fragment>
         #ifdef CMR_ARR
-        if (uCmrOn > 0.5) {
-          int li = int(vCmrL + 0.5);
-          vec3 t = texture(uCmrArt, vec3(vCmrUv / uCmrTile[li], vCmrL)).rgb;
-          diffuseColor.rgb *= pow(t, vec3(2.2)) / max(uCmrMean[li], vec3(0.01));
-        }
+        if (uCmrOn > 0.5) diffuseColor.rgb *= pow(texture(uCmrArt, vec3(vCmrUv, vCmrL)).rgb, vec3(2.2)) / vCmrMean;
         #endif`)
-        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n{ int li = int(vCmrL + 0.5); roughnessFactor = uCmrRM[li].x; }')
-        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n{ int li = int(vCmrL + 0.5); metalnessFactor = uCmrRM[li].y; }');
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = vCmrRM.x;')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = vCmrRM.y;');
     };
     m.customProgramCacheKey = () => 'cmr-tex' + (arr ? '-arr' : '');
     return m;
@@ -9286,23 +9290,32 @@ vec2 wRing(vec2 rc, float tt) {
     });
   }
   // the Comcast Center's open crown: low-iron glass that shows what stands behind it and mirrors the sky at a slant (its
-  // opacity Fresnel's, a fifth head-on), its silver frames on the module (1.52 m bays, 4.15 m floors) to a pixel
+  // opacity Fresnel's, a fifth head-on), in a bold frame: posts every CC_DIMS.bay, rails on CC_DIMS.rows rows from the lintel
+  // to the top and the glass's own mullions between (the photographs from the north-west and Fairmount Park; the review: the
+  // 1.52 m and 4.15 m hairlines read as an empty box at mid range). Every bar is its coverage over the pixel (crownBar's
+  // integral), so a far one settles to its share of the face and neither shimmers nor fades away
   function cmrScreenMat() {
     const m = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.06, metalness: 0.0, transparent: true, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.0 });
     m.extensions = { derivatives: true };   // the frames' pixel footprint (fwidth) on WebGL 1 too
+    const row = (CC_DIMS.cage / CC_DIMS.rows).toFixed(4);
     m.onBeforeCompile = (sh) => {
       sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vScr;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvScr = uv;');
       sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
         varying vec2 vScr;
-        float scrBar(float p, float pitch, float hw) { float fw = max(fwidth(p), 1.0e-4); float d = abs(fract(p / pitch + 0.5) - 0.5) * pitch; return clamp((hw + fw - d) / (2.0 * fw), 0.0, 1.0) * clamp(hw / fw, 0.0, 1.0); }`)
+        float scrBar(float p, float pitch, float hw) {
+          float w = hw / pitch, fp = max(fwidth(p) / pitch, 1.0e-4);
+          vec2 q = vec2(p / pitch - fp * 0.5, p / pitch + fp * 0.5), f = fract(q);   // the bars on whole pitches (the cage's corners, its foot and top)
+          vec2 I = floor(q) * (2.0 * w) + min(f, vec2(w)) + max(f - (1.0 - w), vec2(0.0));
+          return clamp((I.y - I.x) / fp, 0.0, 1.0);
+        }`)
         .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
-        { float frame = max(scrBar(vScr.x, 1.52, 0.04), scrBar(vScr.y, 4.15, 0.08));
+        { float frame = max(max(scrBar(vScr.x, ${CC_DIMS.bay.toFixed(2)}, 0.11), scrBar(vScr.y, ${row}, 0.13)), scrBar(vScr.x, 1.52, 0.035) * 0.8);
           float cosV = abs(dot(normal, normalize(vViewPosition)));
           float fr = 0.2 + 0.7 * pow(1.0 - cosV, 4.0);
-          diffuseColor.rgb = mix(diffuseColor.rgb * 0.18, vec3(0.62, 0.66, 0.68), frame);
-          diffuseColor.a = mix(fr, 0.95, frame); }`);
+          diffuseColor.rgb = mix(diffuseColor.rgb * 0.18, vec3(0.62, 0.66, 0.68), frame);   // the frames silver against the grey box (Fairmount Park's overcast photograph)
+          diffuseColor.a = mix(fr, 0.97, frame); }`);
     };
-    m.customProgramCacheKey = () => 'cmr-screen';
+    m.customProgramCacheKey = () => 'cmr-screen2';
     return m;
   }
   // buildings with researched custom models skip the generic extruder;
@@ -17398,8 +17411,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       // the 341 m part): the frame is its office bars' (u east along them, v south across), the bars' tops the remodel's
       // (190 and 142 m, set in the loop), the roof 277 m
       const cmrCol = (r, g, b) => ({ r, g, b });
-      const CMR_C = { silver: cmrCol(0.60, 0.64, 0.66), fin: cmrCol(0.66, 0.70, 0.72), band: cmrCol(0.58, 0.62, 0.64), bandFar: cmrCol(0.42, 0.45, 0.47), blue: cmrCol(0.03, 0.16, 0.55), podium: cmrCol(0.30, 0.32, 0.34), green: cmrCol(0.30, 0.38, 0.22), concrete: cmrCol(0.30, 0.30, 0.29), dark: cmrCol(0.10, 0.11, 0.12),
-        spine: cmrCol(0.78, 0.80, 0.80), grey: cmrCol(0.19, 0.21, 0.23), lantern: cmrCol(0.64, 0.67, 0.68), soffit: cmrCol(0.36, 0.24, 0.15), louvre: cmrCol(0.12, 0.13, 0.14) };
+      // (the review: the spine's silver 0.60, not the 0.78 that read stark white in the sun; the lantern pale sea-green glass at
+      // 0.38, not frosted white; the enclosure in the Comcast Center's cage)
+      const CMR_C = { silver: cmrCol(0.60, 0.64, 0.66), fin: cmrCol(0.66, 0.70, 0.72), band: cmrCol(0.58, 0.62, 0.64), bandFar: cmrCol(0.42, 0.45, 0.47), podium: cmrCol(0.30, 0.32, 0.34), green: cmrCol(0.30, 0.38, 0.22), concrete: cmrCol(0.30, 0.30, 0.29), dark: cmrCol(0.10, 0.11, 0.12),
+        spine: cmrCol(0.60, 0.60, 0.58), grey: cmrCol(0.19, 0.21, 0.23), lantern: cmrCol(0.32, 0.40, 0.39), screen: cmrCol(0.64, 0.67, 0.68), soffit: cmrCol(0.36, 0.24, 0.15), louvre: cmrCol(0.12, 0.13, 0.14),
+        enclosure: cmrCol(0.30, 0.32, 0.33) };
       // a band of outer faces `off` proud of a ring at y, `hgt` tall, into an accumulator (the fascias, the louvre bands)
       const cmrRibbon = (A, ring, y, hgt, off, col, layer) => {
         const sg = signedArea(ring) > 0 ? 1 : -1;
@@ -17447,8 +17463,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           const r = insetRing(p.poly, 1.2);
           for (const A of [W.near, W.far]) A.quad(r.map((q) => [q[0], base + p.top + 0.12, q[1]]), [0, 1, 0], CMR_C.green);
           cmrRibbon(W.tex, p.poly, base + p.top - 4.42, 8.84, 0.08, CMR_C.louvre, 1);
-          // the studios' louvred podium on the bar's outer long face, 5 to 22 m, and on the north the blue columns before it
-          // (the 2017 photographs from 18th Street and Cherry)
+          // the studios' louvred podium on the bar's outer long face, 5 to 22 m, and on the north the columns before it in the
+          // fins' silver (the review: their blue in the November 2017 photographs from 18th Street and Cherry was the
+          // protective film, on the spine's panels too, and the Inquirer's January 2019 review still saw blue tape on the trim;
+          // the August 2025 photographs show them silver grey before dark louvres)
           const sg = signedArea(p.poly) > 0 ? 1 : -1, north = vCen(p) < vMid;
           for (let j = 0; j < p.poly.length; j++) {
             const a2 = p.poly[j], b2 = p.poly[(j + 1) % p.poly.length], dx = b2[0] - a2[0], dz = b2[1] - a2[1], len = Math.hypot(dx, dz);
@@ -17459,13 +17477,13 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
             W.tex.quad([[q0[0], base + 5, q0[1]], [q1[0], base + 5, q1[1]], [q1[0], base + 22, q1[1]], [q0[0], base + 22, q0[1]]], [nx, 0, nz], CMR_C.podium, [[0, 5], [len, 5], [len, 22], [0, 22]], 1);
             if (north) for (let t = 4.56; t < len - 2; t += 9.12) {
               const x = a2[0] + dx / len * t + nx * 1.6, z = a2[1] + dz / len * t + nz * 1.6;
-              for (const A of [W.near, W.far]) A.beam([x, base - 0.5, z], [x, base + 22.5, z], 0.9, 0.9, [nx, 0, nz], CMR_C.blue, A === W.far);
+              for (const A of [W.near, W.far]) A.beam([x, base - 0.5, z], [x, base + 22.5, z], 0.9, 0.9, [nx, 0, nz], CMR_C.fin, A === W.far);
             }
           }
         }
-        // the open mechanical floors under the roof (the dark band the photographs from the north-west and the south-west show
-        // at the top of the hotel), the bars' own at their tops above
-        cmrRibbon(W.tex, main.poly, base + main.top - 4.42, 8.84, 0.08, CMR_C.louvre, 1);
+        // (the review: no louvre band under the main roof. The photographs from Fairmount Park and the Liberty deck, and the one
+        // taken inside them, show the top floors, the Four Seasons' sky lobby and Jean-Georges, glazed to the roof's edge: the
+        // curtain wall's upper datum, the clearer hotel glass, its rooms lit at night. The bars keep their dark tops)
         // the silver fins framing the central strip on 18th Street and the core's west piece
         {
           const lv = main.poly.map(L), uMax = Math.max(...lv.map((q) => q[0])), uMin = Math.min(...lv.map((q) => q[0]));
@@ -17476,17 +17494,42 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
             W.near.beam([q[0], base + D.lobby + 2, q[1]], [q[0], base + main.top - 0.3, q[1]], 1.0, 0.7, n, CMR_C.fin);
           }
         }
-        // the spine (the core proud of the west face): silver panels to 240 m, dark grey to 300; the overrun dark grey over
-        // the roof; the frosted lantern 300 to 342 m
+        // the spine (the core proud of the west face), as the photographs from 23rd Street, the Parkway, the river and the
+        // Liberty deck show it (the review: one prism read as a dark cross on the west elevation): a glazed column D.strip wide
+        // (two of the curtain wall's bays) up its middle from the street into the lantern, on the CTC's own glass 0.3 m behind
+        // the panels (its rooms lit at night); either side of it silver panels to 240 m and dark grey to 300. The overrun dark
+        // grey over the roof, the spine's width (from the west the dark block over the roof is no wider than the spine, cc19
+        // and cc47; from Fairmount Park its 22 m of depth is what makes it look wider) from the spine's east end
         const sp = W.ctcSpine ? W.ctcSpine.poly : th.poly;
-        W.tex.prism(sp, base - 1, base + D.silver, CMR_C.spine, 0, true);
-        W.tex.prism(sp, base + D.silver, base + D.overrun, CMR_C.grey, 4, false);
-        const sl = sp.map(L), su0 = Math.min(...sl.map((q) => q[0])), sv0 = Math.min(...sl.map((q) => q[1])), sv1 = Math.max(...sl.map((q) => q[1])), svc = (sv0 + sv1) / 2;
-        W.tex.prism([P(su0 + 0.3, svc - 8), P(su0 + 22, svc - 8), P(su0 + 22, svc + 8), P(su0 + 0.3, svc + 8)], base + main.top - 0.5, base + D.overrun - 0.6, CMR_C.grey, 1, false);
-        const lan = insetRing(sp, 0.25);
-        W.tex.prism(lan, base + D.overrun, base + D.top, CMR_C.lantern, 2, false, CMR_ART ? [12, 8.5, ...CMR_ART.layers[2].tile] : null);
+        const sl = sp.map(L), su0 = Math.min(...sl.map((q) => q[0])), su1 = Math.max(...sl.map((q) => q[0])), sv0 = Math.min(...sl.map((q) => q[1])), sv1 = Math.max(...sl.map((q) => q[1])), svc = (sv0 + sv1) / 2;
+        const hw = D.strip / 2, rec = 0.3;
+        for (const [va, vb] of [[sv0, svc - hw], [svc + hw, sv1]]) {
+          const fl = [P(su0, va), P(su1, va), P(su1, vb), P(su0, vb)];
+          W.tex.prism(fl, base - 1, base + D.silver, CMR_C.spine, 0, true);
+          W.tex.prism(fl, base + D.silver, base + D.overrun, CMR_C.grey, 4, false);
+        }
+        c.copy(th.color);
+        if (GLASS_ON) glassTowerBody(W.ctc, c);
+        appendBuilding(getGlassChunk(th.cx, th.cz), [P(su0 + rec, svc - hw), P(su1, svc - hw), P(su1, svc + hw), P(su0 + rec, svc + hw)], base - 1, base + D.overrun, c, 24, base, null, GLASS_ON ? glassFh(1) : undefined);
+        W.tex.prism([P(su1 - 0.2, sv0 - 0.3), P(su0 + 22, sv0 - 0.3), P(su0 + 22, sv1 + 0.3), P(su1 - 0.2, sv1 + 0.3)], base + main.top - 0.5, base + D.overrun, CMR_C.grey, 4, false);
+        // the lantern 300 to 342 m over the glazed column, its width across and the spine's depth along (the old blade's
+        // slender fin; from the Liberty deck its west face is the column's two bays and its south face the spine's depth):
+        // pale sea-green glass in a 1.52 by 2.21 m grid (the art's layer 2, each face fitted to whole bays, its rows from the
+        // lantern's foot), a dark cap on it
+        const lan = [P(su0 + rec, svc - hw), P(su1 - rec, svc - hw), P(su1 - rec, svc + hw), P(su0 + rec, svc + hw)], ly0 = base + D.overrun, ly1 = base + D.top;
+        {
+          const sg = signedArea(lan) > 0 ? 1 : -1;
+          for (let j = 0; j < 4; j++) {
+            const a2 = lan[j], b2 = lan[(j + 1) % 4], dx = b2[0] - a2[0], dz = b2[1] - a2[1], Lq = Math.hypot(dx, dz), uw = Math.max(1, Math.round(Lq / 1.52)) * 1.52;
+            W.tex.quad([[a2[0], ly0, a2[1]], [b2[0], ly0, b2[1]], [b2[0], ly1, b2[1]], [a2[0], ly1, a2[1]]], [dz / Lq * sg, 0, -dx / Lq * sg], CMR_C.lantern, [[0, 0], [uw, 0], [uw, ly1 - ly0], [0, ly1 - ly0]], 2);
+          }
+          W.tex.quad(lan.map((q) => [q[0], ly1, q[1]]), [0, 1, 0], CMR_C.grey, lan.map((q) => [q[0], q[1]]), 4);
+        }
         for (const A of [W.near, W.far]) cmrRibbon(A, sp, base + D.overrun, 0.5, 0.05, CMR_C.grey);
-        // its light at night: the blade's own panels (crownPanels, slots 100 up the lantern's height), over the frosted glass
+        // its light at night: the blade's own panels (crownPanels, slots 100 up the lantern's height) round the glass, and in
+        // front of them the old themed blade's dark bars every 1.6 m (the review: without them the slices glowed as one slab
+        // and Round 85's ladder, Mike's photograph, was gone). The bars ride the same night-only mesh at next to no gain (black,
+        // at the night's opacity), so by day the glass shows its own transoms and not a second set
         {
           const ob = orientedBox(lan), ax2 = obbAxis(ob), ry2 = Math.atan2(-ax2.az, ax2.ax), hb = D.top - D.overrun;
           const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);
@@ -17494,6 +17537,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
             const dh = Math.min(0.5, hb - y);
             crownPanels.push({ geom: box(ax2.hl * 2 + 0.2, dh + 0.002, ax2.hs * 2 + 0.2, ob.cx, base + D.overrun + y + dh / 2, ob.cz, ry2), color: new THREE.Color(0x8a9da6), lit: gl, mix: 1, slot: 100 + (y + dh / 2) / hb, gain: 0.9, style: 3 });
           }
+          W.ladder = 0;
+          for (let y = D.ladder; y < hb - 0.3; y += D.ladder, W.ladder++) crownPanels.push({ geom: box(ax2.hl * 2 + 0.32, 0.10, ax2.hs * 2 + 0.32, ob.cx, ly0 + y, ob.cz, ry2), color: new THREE.Color(0x50616b), lit: new THREE.Color(0), mix: 1, slot: 100 + y / hb, gain: 0.001, style: 3 });   // (mergeColored reads a gain of 0 as 1)
         }
         // the lobby on 18th Street under its canopy
         if (W.ctcLobby) {
@@ -17506,22 +17551,25 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         }
         return true;
       };
-      // the Comcast Center's open crown (cp, comcastCrownPlan): the screen of low-iron glass from the deck to the top on the
-      // crown's four faces (cmrScreenMat), its cap rail, and on the deck the damper's two concrete tanks
+      // the Comcast Center's open crown (cp, comcastCrownPlan): the cage of low-iron glass from the lintel (cp.lintel, 271 m,
+      // the wings' tops) to the top on the crown's four faces (cmrScreenMat: the frames in its shader, the uv's rows from the
+      // lintel), its cap and base rails, and inside it the grey enclosure CC_DIMS.inset back, CC_DIMS.encGap under the top (the
+      // photographs from Fairmount Park and the north-west: the frame grid stands in front of a grey box, the damper's tanks
+      // and the plant inside it)
       const cmrCcCrown = (th, cp) => {
-        const W = CMRW, b = th.base, ring = cp.crown.poly, sg = signedArea(ring) > 0 ? 1 : -1;
-        let u = 0;
+        const W = CMRW, b = th.base, ring = cp.crown.poly, sg = signedArea(ring) > 0 ? 1 : -1, y0 = cp.lintel, y1 = cp.top;
         for (let j = 0; j < ring.length; j++) {
           const a2 = ring[j], b2 = ring[(j + 1) % ring.length], dx = b2[0] - a2[0], dz = b2[1] - a2[1], Lq = Math.hypot(dx, dz);
           const nx = (dz / Lq) * sg, nz = (-dx / Lq) * sg, o = 0.03;
-          W.screen.quad([[a2[0] + nx * o, b + CC_DIMS.deck, a2[1] + nz * o], [b2[0] + nx * o, b + CC_DIMS.deck, b2[1] + nz * o], [b2[0] + nx * o, b + CC_DIMS.top, b2[1] + nz * o], [a2[0] + nx * o, b + CC_DIMS.top, a2[1] + nz * o]],
-            [nx, 0, nz], CMR_C.lantern, [[u, CC_DIMS.deck], [u + Lq, CC_DIMS.deck], [u + Lq, CC_DIMS.top], [u, CC_DIMS.top]], 0);
-          u += Lq;
+          W.screen.quad([[a2[0] + nx * o, b + y0, a2[1] + nz * o], [b2[0] + nx * o, b + y0, b2[1] + nz * o], [b2[0] + nx * o, b + y1, b2[1] + nz * o], [a2[0] + nx * o, b + y1, a2[1] + nz * o]],
+            [nx, 0, nz], CMR_C.screen, [[-Lq / 2, 0], [Lq / 2, 0], [Lq / 2, y1 - y0], [-Lq / 2, y1 - y0]], 0);   // a post on each face's centre
         }
-        for (const A of [W.near, W.far]) {
-          cmrRibbon(A, ring, b + CC_DIMS.top - 0.3, 0.6, 0.06, CMR_C.fin);
-          for (const vs of [-1, 1]) A.prism([cp.P(-15, vs * 3), cp.P(15, vs * 3), cp.P(15, vs * 9.5), cp.P(-15, vs * 9.5)], b + CC_DIMS.deck, b + CC_DIMS.deck + 5, CMR_C.concrete);
-        }
+        for (const A of [W.near, W.far]) for (const y of [y0 + 0.3, y1 - 0.3]) cmrRibbon(A, ring, b + y, 0.6, 0.06, CMR_C.fin);
+        const enc = insetRing(ring, CC_DIMS.inset), et = b + y1 - CC_DIMS.encGap;
+        W.tex.prism(enc, b + y0, et, CMR_C.enclosure, 0, true);
+        W.tex.quad(enc.map((q) => [q[0], et, q[1]]), [0, 1, 0], CMR_C.concrete, enc.map((q) => [q[0], q[1]]), 4);
+        W.cage = true;
+        return et;
       };
       let nCrowns = 0;
       for (const th of towerHits) {
@@ -17631,9 +17679,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           }
           case 'comcast-notch': {
             const cp=comcastCrownPlan(th.poly,th.h),glass=getGlassChunk(th.cx,th.cz);
-            // Round 195 (CMR): the crown's glass stops at the deck (284 m) and its top 13 m is the open screen (cmrCcCrown)
-            for(const part of cp.pieces)appendBuilding(glass,part.poly,th.base+part.y0,th.base+(CMR_ON&&part===cp.crown?CC_DIMS.deck:part.y1),th.color,25,th.base,null,th.sys>=0?glassFh(th.sys):undefined);
-            if (CMR_ON) cmrCcCrown(th, cp);
+            // Round 195 (CMR): the crown piece is the open cage (cmrCcCrown) round its enclosure, no glass box
+            for(const part of cp.pieces)if(!(CMR_ON&&part===cp.crown))appendBuilding(glass,part.poly,th.base+part.y0,th.base+part.y1,th.color,25,th.base,null,th.sys>=0?glassFh(th.sys):undefined);
+            const encTop = CMR_ON ? cmrCcCrown(th, cp) : 0;
             // Darken only the interior face. Tinting its whole backing block
             // produced another apparent opening on the intact north facade.
             const inner=[[-cp.cut+.04,cp.back+.025],[cp.cut-.04,cp.back+.025],[cp.cut-.04,cp.back+.055],[-cp.cut+.04,cp.back+.055]].map(q=>cp.P(...q));
@@ -17660,9 +17708,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
                 crownPanels.push({geom:g,color:crownColor,lit:house,mix:1,slot:sl,gain:1,style:3});
               }
             }
-            crownPanels.push({geom:box(cp.w*2+.36,.035,cp.d*2+.36,ob.cx,th.base+(CMR_ON?CC_DIMS.deck:cp.top)+.12,ob.cz,ry),color:crownColor,lit:house,mix:1,slot:200.999,gain:1,style:3});   // Round 195: on the open crown's deck
+            const ri = CMR_ON ? CC_DIMS.inset : 0;   // Round 195: the roof's panel on the cage's enclosure
+            crownPanels.push({geom:box((cp.w-ri)*2+.36,.035,(cp.d-ri)*2+.36,ob.cx,(CMR_ON?encTop:th.base+cp.top)+.12,ob.cz,ry),color:crownColor,lit:house,mix:1,slot:200.999,gain:1,style:3});
             // Rails follow the solid pieces; none bridges the open facade.
-            for(const piece of cp.pieces)for(let y=piece.y0;y<=piece.y1+.01;y+=4.15)crownTrim.push({geom:ledRing(piece.poly,th.base+y,.10,.10),color:new THREE.Color(0x718b9a),style:3});
+            for(const piece of cp.pieces)if(!(CMR_ON&&piece===cp.crown))for(let y=piece.y0;y<=piece.y1+.01;y+=4.15)crownTrim.push({geom:ledRing(piece.poly,th.base+y,.10,.10),color:new THREE.Color(0x718b9a),style:3});   // Round 195: the cage's frames are its own
             for(const u of [-cp.w,-cp.cut,cp.cut,cp.w])for(const v of [-cp.d,cp.d]) {
               const q=cp.P(u,v),h=cp.top-cp.bottom;crownTrim.push({geom:box(.14,h,.14,q[0],th.base+cp.bottom+h/2,q[1],ry),color:new THREE.Color(0x9aafb9),style:3});
             }

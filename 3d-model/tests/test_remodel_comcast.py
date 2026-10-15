@@ -1,11 +1,15 @@
 """Round 195 (Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both Comcast towers, ..."): the two Comcast towers
 remodelled under the realistic look (CMR). The Comcast Center's end wings lean in as they rise (the faceted obelisk) and its
 east wing, 39 m from its spec's point, is its glass again (it was drawn as an unresearched tower in a precast skin), its crown
-is an open screen of low-iron glass over a deck carrying the damper's tanks, its winter garden on the clear system; the
-CTC's bars stop at 190 (north) and 142 m (south), its spine is silver and dark grey cladding, its lantern frosted and lit at
-night as the blade was (crownPanels, slots 100 up), its Z braces on the bars' east and west ends (not the broad faces), a
-fascia every three floors, the louvred podium and blue columns, the lobby and its canopy. The remodel's trim has a near and
-a far level (cmrStep), its cladding one art strip (COMCAST_ART), and ?real=0 and ?comcast=0 build Round 194's towers."""
+is an open cage of low-iron glass in a bold frame from the lintel (the wings' tops) to the top round a grey enclosure, its
+winter garden on the clear system; the CTC's bars stop at 190 (north) and 142 m (south), its spine is a glazed column up the
+middle on the tower's own glass between silver and dark grey cladding, its lantern pale sea-green glass on the column, lit at
+night as the blade was (crownPanels, slots 100 up) behind the old blade's dark bars every 1.6 m, its Z braces on the bars'
+east and west ends (not the broad faces), a fascia every three floors, the top floors glazed to the roof, the louvred podium
+and its silver columns (the blue of the 2017 photographs was protective film), the lobby and its canopy. The remodel's trim
+has a near and a far level (cmrStep), its cladding one art strip (COMCAST_ART) whose numbers the vertex shader picks (WebGL 1
+indexes a uniform array in a fragment shader only by a constant), and ?real=0 and ?comcast=0 build Round 194's towers."""
+import re
 import base64
 import json
 from pathlib import Path
@@ -38,8 +42,10 @@ class Wiring(unittest.TestCase):
         self.assertIn('if (spec && style!==25 && !(CMR_ON && style === 24)) crownTrim.push(...landmarkFacadeDetails(spec, poly, base, hTop, mh));', s)
         self.assertIn('const wing = CMR_ON && h < spec.h - 5 ? cmrWingOf(poly, cp) : null;', s)
         self.assertIn('} else if (CMR_ON && style === 24 && h > 300 && Math.abs(signedArea(poly)) < 200) CMRW.ctcSpine = { poly, base };', s)
-        self.assertIn('th.base+(CMR_ON&&part===cp.crown?CC_DIMS.deck:part.y1)', s)
-        self.assertIn('th.base+(CMR_ON?CC_DIMS.deck:cp.top)+.12', s)
+        self.assertIn('for(const part of cp.pieces)if(!(CMR_ON&&part===cp.crown))appendBuilding(glass,part.poly,th.base+part.y0,th.base+part.y1,', s)
+        self.assertIn('const ri = CMR_ON ? CC_DIMS.inset : 0;', s)
+        self.assertIn('(CMR_ON?encTop:th.base+cp.top)+.12', s)
+        self.assertIn('if(!(CMR_ON&&piece===cp.crown))for(let y=piece.y0;', s)
         self.assertIn('if (CMR_ON && cmrCtcBuild(th, lit, themed, tslot)) break;', s)
         self.assertIn('if (!spec && CMRW && CMRW.cc && h > 45 && Math.hypot(cx - CMRW.cc.x, cz - CMRW.cc.z) < 45) spec = CMRW.cc;', s)
         self.assertIn('if (CMRW) cmrFinish(CMRW);', s)
@@ -54,10 +60,57 @@ class Wiring(unittest.TestCase):
         low = cut(s, '        const low = cmrLow(cx, cz, h, t);', '        appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, 3, base, null, lowFh);')
         self.assertIn("if (low === 'winter') { CMRW.winter++; if (GLASS_ON) lowFh = glassFh(5); }", low)
         self.assertIn("glassTowerBody(CMRW.ctc, c); lowFh = glassFh(1);", low)
+        # the spine's glazed column on the CTC's own system, between its two flanks of cladding
+        b = cut(s, '      const cmrCtcBuild = (th, lit, themed, tslot) => {', '      let nCrowns = 0;')
+        self.assertIn('for (const [va, vb] of [[sv0, svc - hw], [svc + hw, sv1]]) {', b)
+        self.assertIn('if (GLASS_ON) glassTowerBody(W.ctc, c);', b)
+        self.assertIn('appendBuilding(getGlassChunk(th.cx, th.cz), [P(su0 + rec, svc - hw), P(su1, svc - hw), P(su1, svc + hw), P(su0 + rec, svc + hw)], base - 1, base + D.overrun, c, 24, base, null, GLASS_ON ? glassFh(1) : undefined);', b)
         # no new depth writes, no new samplers beyond the cladding's array
         block = cut(s, '  // ---- the two Comcast towers remodelled', '  // buildings with researched custom models skip the generic extruder;')
         self.assertNotIn('gl_FragDepth', block)
         self.assertEqual(block.count('sampler2DArray'), 1)
+
+    def test_the_review_fixes(self):
+        s = self.s
+        b = cut(s, '      const cmrCtcBuild = (th, lit, themed, tslot) => {', '      let nCrowns = 0;')
+        # the columns before the north podium in the fins' silver, no blue anywhere in the palette
+        self.assertNotIn('CMR_C.blue', s)
+        self.assertNotIn('blue: cmrCol', s)
+        self.assertIn("A.beam([x, base - 0.5, z], [x, base + 22.5, z], 0.9, 0.9, [nx, 0, nz], CMR_C.fin, A === W.far)", b)
+        # no louvre cap under the main roof (the bars keep theirs)
+        self.assertNotIn('cmrRibbon(W.tex, main.poly', b)
+        self.assertIn('cmrRibbon(W.tex, p.poly, base + p.top - 4.42, 8.84, 0.08, CMR_C.louvre, 1);', b)
+        # the spine's silver brought down from the 0.78 that read stark white, the lantern glass well under the frosted 0.8
+        pal = cut(s, '      const CMR_C = {', '      // a band of outer faces')
+        sp = re.search(r'spine: cmrCol\(([\d.]+), ([\d.]+), ([\d.]+)\)', pal)
+        self.assertTrue(sp and max(float(v) for v in sp.groups()) <= 0.62, pal)
+        ln = re.search(r'lantern: cmrCol\(([\d.]+), ([\d.]+), ([\d.]+)\)', pal)
+        self.assertTrue(ln and max(float(v) for v in ln.groups()) <= 0.5 and float(ln.group(2)) > float(ln.group(1)), pal)
+        # the overrun as wide as the spine, from its east end over the roof
+        self.assertIn('W.tex.prism([P(su1 - 0.2, sv0 - 0.3), P(su0 + 22, sv0 - 0.3), P(su0 + 22, sv1 + 0.3), P(su1 - 0.2, sv1 + 0.3)]', b)
+        # the cage: from the lintel to the plan's top round the enclosure, no tanks
+        cc = cut(s, '      const cmrCcCrown = (th, cp) => {', '      let nCrowns = 0;')
+        self.assertIn('y0 = cp.lintel, y1 = cp.top;', cc)
+        self.assertIn('const enc = insetRing(ring, CC_DIMS.inset), et = b + y1 - CC_DIMS.encGap;', cc)
+        self.assertNotIn('CMR_C.concrete);\n        }', cc)
+        self.assertNotIn('deck', cut(s, '  const CC_DIMS =', '\n'))
+
+    def test_no_dynamic_uniform_index_in_a_fragment_shader(self):
+        # WebGL 1 (GLSL ES 1.00, appendix A) allows a fragment shader only constant indexes into a uniform array: the
+        # first cladding read uCmrRM[li] there, failed the link, and the CTC drew with no spine, overrun or lantern. The
+        # layer's numbers are picked in the vertex shader, which may index by anything, and handed down as varyings
+        s = self.s
+        tex = cut(s, '  function cmrTexMat() {', '  // the strip, asked for once the cladding is laid')
+        frag = cut(tex, 'sh.fragmentShader = ', "m.customProgramCacheKey")
+        vert = cut(tex, 'sh.vertexShader = ', 'sh.fragmentShader = ')
+        scr = cut(s, '  function cmrScreenMat() {', '  // buildings with researched custom models skip the generic extruder;')
+        for f in (frag, cut(scr, 'sh.fragmentShader = ', 'm.customProgramCacheKey')):
+            glsl = re.sub(r'\$\{[^}]*\}', '0', f)
+            self.assertIsNone(re.search(r'\b[A-Za-z_]\w*\s*\[\s*[A-Za-z_]', glsl), glsl)   # no array indexed by a name
+            self.assertNotIn('uniform vec2 uCmrRM', glsl)
+        self.assertIn('vCmrRM = uCmrRM[li]; vCmrUv = uv / uCmrTile[li]; vCmrMean = max(uCmrMean[li], vec3(0.01));', vert)
+        self.assertIn('roughnessFactor = vCmrRM.x;', frag)
+        self.assertIn('metalnessFactor = vCmrRM.y;', frag)
 
     def test_the_night_lights_are_kept(self):
         s = self.s
@@ -65,6 +118,11 @@ class Wiring(unittest.TestCase):
         # the lantern lit as the blade was: crownPanels slices with slots 100 up its height, the same gain and house colour
         self.assertIn("crownPanels.push({ geom: box(ax2.hl * 2 + 0.2, dh + 0.002, ax2.hs * 2 + 0.2, ob.cx, base + D.overrun + y + dh / 2, ob.cz, ry2), color: new THREE.Color(0x8a9da6), lit: gl, mix: 1, slot: 100 + (y + dh / 2) / hb, gain: 0.9, style: 3 });", b)
         self.assertIn('const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);', b)
+        # and in front of the slices the old themed blade's dark bars every 1.6 m (Round 85's ladder), on the same
+        # night-only mesh at next to no gain (mergeColored reads a gain of 0 as 1, which drew them as light lines)
+        self.assertIn('ladder: 1.6', s)
+        self.assertIn("for (let y = D.ladder; y < hb - 0.3; y += D.ladder, W.ladder++) crownPanels.push({ geom: box(ax2.hl * 2 + 0.32, 0.10, ax2.hs * 2 + 0.32, ob.cx, ly0 + y, ob.cz, ry2), color: new THREE.Color(0x50616b), lit: new THREE.Color(0), mix: 1, slot: 100 + y / hb, gain: 0.001, style: 3 });", b)
+        self.assertIn('tg.fill(parts[pi].gain || 1, o, o + vc)', s)
         # the Comcast Center's crown panels untouched (slots 200 up, the Phillies' solid red)
         n = cut(s, "          case 'comcast-notch': {", "          case 'notch':")
         self.assertIn('sl=200+(y+dh/2-part.y0)/(part.y1-part.y0);', n)
@@ -93,6 +151,12 @@ class Wiring(unittest.TestCase):
         for q in man['layers']:
             self.assertEqual(len(q['tile']), 2)
             self.assertTrue(all(0 < v < 1 for v in q['mean']), q)
+        # the lantern's glazing (the review: the frosted white with its X read as an opaque white post): sea-green, under
+        # the old layer's 0.80, laid at 1.52 by 2.21 m a pane
+        lan = man['layers'][2]
+        self.assertEqual(lan['tile'], [6.08, 8.84])
+        self.assertLess(max(lan['mean']), 0.6)
+        self.assertGreater(lan['mean'][1], lan['mean'][0])
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("COMCAST_ART", text_of("comcast_art.json", "null"))', b)
         self.assertIn('"comcast_art.json"):', b)
@@ -154,9 +218,11 @@ const A=cmrAcc(true);
 A.quad([[0,0,0],[1,0,0],[1,1,0],[0,1,0]],[0,0,1],{r:1,g:1,b:1});A.quad([[0,0,0],[1,0,0],[1,1,0],[0,1,0]],[0,0,-1],{r:1,g:1,b:1});
 let wound=true;for(let t=0;t<2;t++){const p=A.pos.slice(t*18,t*18+9),n=A.nor.slice(t*18,t*18+3);const e1=[p[3]-p[0],p[4]-p[1],p[5]-p[2]],e2=[p[6]-p[0],p[7]-p[1],p[8]-p[2]];wound&&=(e1[1]*e2[2]-e1[2]*e2[1])*n[0]+(e1[2]*e2[0]-e1[0]*e2[2])*n[1]+(e1[0]*e2[1]-e1[1]*e2[0])*n[2]>0;}
 const B=cmrAcc(),Cf=cmrAcc();B.beam([0,0,0],[0,10,0],0.6,0.45,[1,0,0],{r:1,g:1,b:1});Cf.beam([0,0,0],[0,10,0],0.6,0.45,[1,0,0],{r:1,g:1,b:1},true);
-const P=cmrAcc(true);P.prism([[0,0],[10,0],[10,8],[0,8]],300,342,{r:1,g:1,b:1},2,false,[12,8.5,6.08,8.84]);
+const P=cmrAcc(true);P.prism([[0,0],[10,0],[10,8],[0,8]],300,342,{r:1,g:1,b:1},2,false);
 const wuv=P.uv.slice(0,48);   // the four walls' six corners each (the top's uv is its plan)
-out.acc={wound,beam:B.tris,flat:Cf.tris,prism:P.tris,fitU:Math.max(...wuv.filter((v,i)=>i%2===0)),fitV:Math.max(...wuv.filter((v,i)=>i%2===1))};
+out.acc={wound,beam:B.tris,flat:Cf.tris,prism:P.tris,uMax:Math.max(...wuv.filter((v,i)=>i%2===0)),vMin:Math.min(...wuv.filter((v,i)=>i%2===1)),vMax:Math.max(...wuv.filter((v,i)=>i%2===1))};
+// the cage: comcastCrownPlan's lintel the cage's depth under the top
+out.cage={depth:cp.top-cp.lintel,cage:CC_DIMS.cage};
 const g=B.geometry();out.attrs=Object.keys(g.attributes).sort();out.released=B.pos===null;
 console.log(JSON.stringify(out));
 '''
@@ -188,6 +254,9 @@ console.log(JSON.stringify(out));
         self.assertAlmostEqual(sl['depth'], 7.0, delta=0.6)   # back to the core's face, the north wing's depth
         self.assertTrue(sl['open'] and sl['above'] and sl['beside'] and sl['below'], sl)
 
+    def test_the_cage_runs_from_the_lintel(self):
+        self.assertEqual(self.r['cage']['depth'], self.r['cage']['cage'])   # the screen's rows are laid on CC_DIMS.cage
+
     def test_the_z_braces(self):
         b = self.r['braces']
         self.assertEqual((b['n'], b['h']), (17, 9))   # nine horizontals, 26.52 to 132.6 m, and eight diagonals between them
@@ -198,8 +267,8 @@ console.log(JSON.stringify(out));
         self.assertTrue(a['wound'])
         self.assertEqual((a['beam'], a['flat']), (10, 2))
         self.assertEqual(a['prism'], 10)
-        self.assertAlmostEqual(a['fitU'], 6.08, places=3)   # one cross-brace across each face
-        self.assertAlmostEqual(a['fitV'], 5 * 8.84, places=2)   # five up the lantern
+        self.assertAlmostEqual(a['uMax'], 36, places=3)   # metres along the ring (the art's tile divides in the vertex shader)
+        self.assertEqual((a['vMin'], a['vMax']), (300, 342))   # and up it
         self.assertEqual(self.r['attrs'], ['color', 'normal', 'position'])   # 4-byte aligned float streams only
         self.assertTrue(self.r['released'])
 
