@@ -15,7 +15,18 @@ venues built from the arena's OSM outline, and what it makes is checked against 
 - the integration: ?real=0 and ?venues=0 keep Round 92's builders (buildStadium, buildArenaOld), the arena's slot is dealt
   where the loop meets its record whichever builds it, a failed remodel puts Round 92's back, the frame steps the levels,
   no new program writes gl_FragDepth, and no program samples more than four of its own textures;
-- the art: six wall strips in VEN_STRIP's order, the half copies, the seat tile lossless (it is data, not a picture).
+- the art: eight wall strips in VEN_STRIP's order, the half copies, the seat tile lossless (it is data, not a picture).
+
+The review's round (Round 195's fixes) adds:
+- the warning track: the outfield fence and the foul ground's wall reach the field's shader (nothing filled the fence's
+  uniform at first, and the track shrank to a disc at home plate), their arrays sized as the shader loops them;
+- the walls stand on their feet (the first cut read each strip from its top: every wall stood on its cornice), the panes
+  are the atlas's alpha (the bake's mask, never under 128 for the wall), and the lit share, rows and bays come per strip;
+- the lines box-filtered (a ten centimetre line never covers more of a pixel than its width), the numbers faded out;
+- no floodlight on the faces seen from outside where the stands end (the ballpark's two ends, the Linc's steps), each end
+  its own polygons in brick, concrete and steel;
+- the Linc's office block in its own strip, the ballpark's gates in theirs, open bays between the pavilions;
+- the arena's roof one smooth dome: no position on it carries two normals (the flat cap was an oculus from the air).
 """
 import json
 from pathlib import Path
@@ -66,7 +77,21 @@ for (let i = 0; i < I.length; i += 3) { const a = I[i] * 3, b = I[i + 1] * 3, c 
 const ctl = CBP.control.flatMap((q, j, a) => j + 1 < a.length ? [q, [(q[0] + a[j + 1][0]) / 2, (q[1] + a[j + 1][1]) / 2]] : [q]);
 const ring = ctl.concat([[72, 76]], CBP.fence.slice().reverse(), [[72, -76]]);
 let ringA = 0; for (let i = 0; i < ring.length; i++) { const p = ring[i], q = ring[(i + 1) % ring.length]; ringA += p[0] * q[1] - q[0] * p[1]; }
-console.log(JSON.stringify({ ok, err: VEN.err, probe: venuesProbe(), meshes, flood: flood.length / 3, rings: REBUILD_OCC.length, sow: NO_SOW_RINGS.length,
+// the arena's roof: every position over the eyebrow's lip with the normals it carries
+const arenaM = groupCity.kids.find((m) => m.name === 'venue-arena-shell'), ag = arenaM.geometry, AP = ag.attributes.position.array, AN = ag.attributes.normal.array;
+const y0a = VEN.list.find((V) => V.id === 'arena').y0, byPos = new Map();
+for (let i = 0; i < AP.length / 3; i++) {
+  if (AP[i * 3 + 1] - y0a < 35.8) continue;
+  const k = AP.slice(i * 3, i * 3 + 3).map((x) => x.toFixed(2)).join(','), nk = AN.slice(i * 3, i * 3 + 3).map((x) => x.toFixed(3)).join(',');
+  if (!byPos.has(k)) byPos.set(k, new Set()); byPos.get(k).add(nk);
+}
+const roofSplit = [...byPos.values()].filter((v) => v.size > 1).length;
+// the shell's strips by venue: how many vertices wear each (aCol.a 3, a wall of the atlas; aLit.a its strip), and the
+// floodlight (aLit.rgb) on the matte faces
+const stripsOf = (nm) => { const g = groupCity.kids.find((m) => m.name === nm).geometry, C = g.attributes.aCol.array, L = g.attributes.aLit.array, o = {}; for (let i = 0; i < C.length / 4; i++) if (C[i * 4 + 3] === 3) o[L[i * 4 + 3]] = (o[L[i * 4 + 3]] || 0) + 1; return o; };
+console.log(JSON.stringify({ ok, err: VEN.err, probe: venuesProbe(), meshes, flood: flood.length / 3, roofSplit, roofPositions: byPos.size,
+  fence: venU.uVenFence.value.map((q) => [q.x, q.y]), foul: venU.uVenFoul.value.map((q) => [q.x, q.y]), cbpFence: CBP.fence, cbpFoul: cbpFoul(),
+  cbpStrips: stripsOf('venue-cbp-shell'), lincStrips: stripsOf('venue-linc-shell'), arenaStrips: stripsOf('venue-arena-shell'), winGlsl: VEN_WIN_GLSL, rings: REBUILD_OCC.length, sow: NO_SOW_RINGS.length,
   theme: themeParts.map((p) => p.slot), sheets: themeSheets.map((s) => [s.slot, s.grad]), fieldArea: triA, ringArea: Math.abs(ringA) / 2,
   strips: VEN_STRIP, classes: [0, 6, 12, 23, 24, 30, 41, 42, 48, 59, 60, 66, 71].map((j) => lincClass(j)) }));
 '''
@@ -130,6 +155,33 @@ class Build(unittest.TestCase):
         self.assertEqual(self.out['rings'], 3)
         self.assertEqual(self.out['sow'], 3)
 
+    def test_the_warning_track_reaches_the_shader(self):
+        # the fence's uniform and the foul ground's are filled from the ballpark's own outlines (the first cut left the fence's
+        # at the origin and the track was a 4.6 m disc at home plate)
+        self.assertEqual(self.out['fence'], self.out['cbpFence'])
+        self.assertEqual(len(self.out['foul']), 17)
+        self.assertEqual(self.out['foul'], self.out['cbpFoul'])
+        self.assertTrue(all(abs(x) + abs(y) > 50 for x, y in self.out['fence']))
+        # the arrays as the shader declares and loops them
+        self.assertIn('uniform vec2 uVenFence[8]; uniform vec2 uVenFoul[17];', SECTION)
+        self.assertIn("for (int i = 0; i < 7; i++) wt = min(wt, venSeg(p, uVenFence[i], uVenFence[i + 1]));", SECTION)
+        self.assertIn("for (int i = 0; i < 16; i++) wt = min(wt, venSeg(p, uVenFoul[i], uVenFoul[i + 1]));", SECTION)
+
+    def test_the_arena_roof_is_one_smooth_dome(self):
+        self.assertGreater(self.out['roofPositions'], 300)
+        self.assertEqual(self.out['roofSplit'], 0)
+        self.assertNotIn('K.cap(drum(lipS * 0.4)', SECTION)
+
+    def test_each_venue_wears_its_strips(self):
+        st = {int(k): v for k, v in self.out['cbpStrips'].items()}
+        self.assertEqual(set(st), {0, 7})                          # the brick and the gates' atriums
+        lt = {int(k): v for k, v in self.out['lincStrips'].items()}
+        self.assertEqual(set(lt), {1, 2, 6})                       # the glazed sides, the braced ends, the office block
+        self.assertGreater(lt[6], 40)
+        self.assertEqual({int(k) for k in self.out['arenaStrips']}, {3, 4, 5})
+        # one entry a strip in the panes' expression, eight strips
+        self.assertEqual(self.out['winGlsl'].count('vec4('), 9)
+
     def test_linc_classes(self):
         self.assertEqual(self.out['classes'], ['E', 'C', 'S', 'S', 'C', 'E', 'E', 'C', 'S', 'S', 'C', 'E', 'E'])
 
@@ -149,6 +201,31 @@ class Integration(unittest.TestCase):
     def test_the_frame_and_the_probe(self):
         self.assertIn('    venuesStep();   // Round 195', SRC)
         self.assertIn('venues: venuesProbe, ', SRC)
+
+    def test_walls_stand_on_their_feet(self):
+        # sv 0 is a wall's foot: the strip's last row (the first cut read it from the top)
+        self.assertIn("'  float v = (st + uVenStrip.y + (1.0 - sv) * (1.0 - 2.0 * uVenStrip.y)) / uVenStrip.x;',", SECTION)
+        self.assertIn("float gl = uVenArt * smoothstep(0.6, 0.95, t4.a);", SECTION)
+        self.assertIn('VEN_ART.strips.length', SECTION)
+
+    def test_lines_are_box_filtered(self):
+        self.assertIn('min(1.0, w / max(2.0 * fw, 1e-4))', SECTION)
+        self.assertIn('float venLineP(float d, float w, float fw) { return mix(venLine(d, w, fw), w, smoothstep(0.15, 0.45, fw)); }', SECTION)
+        self.assertIn('num * (1.0 - smoothstep(0.12, 0.35, fw))', SECTION)
+
+    def test_no_floodlight_on_the_stands_ends(self):
+        ends = SECTION[SECTION.index('    const ends = (K, plain) => {'):SECTION.index('    ends(near, false); ends(far, true);')]
+        self.assertNotIn('VL.soffit', ends)
+        self.assertNotIn('near.quad(pts[0], pts[k], pts[k + 1], pts[k + 1]', SECTION)
+        steps = SECTION[SECTION.index("    // where the classes meet:"):SECTION.index('    // the goal posts on the end lines')]
+        self.assertNotIn('VL.soffit', steps)
+        self.assertNotIn('near.quad(P[0], P[k], P[k + 1], P[k + 1], m)', steps)
+
+    def test_the_board_is_a_photograph(self):
+        body = SECTION[SECTION.index('  function venScreenTex(boardIm) {'):SECTION.index('  // the yard numbers')]
+        self.assertIn('c.drawImage(boardIm', body)
+        self.assertNotIn('#b06c42', body)                         # the cartoon's tan diamond
+        self.assertIn("'  vb = t * 0.12; vEm = t * mix(0.9, 0.62, uVenNight); vRough = 0.25;',", SECTION)
 
     def test_no_new_program_writes_depth(self):
         self.assertNotIn('gl_FragDepth', SECTION)
@@ -173,14 +250,29 @@ class Art(unittest.TestCase):
 
     def test_strips_in_order(self):
         ids = [s['id'] for s in self.m['strips']]
-        self.assertEqual(ids, ['cbp-brick', 'linc-glass', 'linc-screen', 'arena-fins', 'arena-podium', 'arena-drum'])
+        self.assertEqual(ids, ['cbp-brick', 'linc-glass', 'linc-screen', 'arena-fins', 'arena-podium', 'arena-drum', 'linc-office', 'cbp-atrium'])
         order = re.search(r'const VEN_STRIP = \{([^}]+)\}', SECTION).group(1)
-        self.assertEqual([int(x) for x in re.findall(r': (\d)', order)], list(range(6)))
+        self.assertEqual([int(x) for x in re.findall(r': (\d)', order)], list(range(8)))
         for s in self.m['strips']:
             self.assertGreater(s['aspect'], 1.5)
+            self.assertIn(s['rows'], (1, 2, 3))
+            self.assertTrue(0 <= s['lit'] <= 1)
+            self.assertEqual(s['glass'] > 0, s['lit'] > 0, s['id'])   # a strip lit after dark has panes to light
+
+    def test_the_atlas_carries_its_glass(self):
+        try:
+            from PIL import Image
+        except ImportError:
+            self.skipTest('PIL unavailable')
+        im = Image.open(ROOT / self.m['walls'])
+        self.assertEqual(im.mode, 'RGBA')
+        lo, hi = im.getchannel('A').getextrema()
+        self.assertGreaterEqual(lo, 120)                            # never under 128 (a premultiplying decoder keeps the colour)
+        self.assertEqual(hi, 255)
+        self.assertEqual(im.size, (1024, 256 * len(self.m['strips'])))
 
     def test_files_and_half_copies(self):
-        for k in ('walls', 'seats', 'grass', 'clay'):
+        for k in ('walls', 'seats', 'grass', 'clay', 'board'):
             self.assertTrue((ROOT / self.m[k]).exists(), k)
             self.assertTrue((ROOT / self.m[k + 'Half']).exists(), k)
             self.assertRegex(self.m[k + 'Half'], r'^art/stadiums/%s-half\.[0-9a-f]{10}\.webp$' % k)

@@ -1,6 +1,6 @@
 {
- "walls": "art/stadiums/walls.292e5699c2.webp",
- "wallsHalf": "art/stadiums/walls-half.1a9486d285.webp",
+ "walls": "art/stadiums/walls.b7269ecb73.webp",
+ "wallsHalf": "art/stadiums/walls-half.144278369f.webp",
  "stripH": 256,
  "pad": 8,
  "strips": [
@@ -13,7 +13,11 @@
     122,
     96,
     80
-   ]
+   ],
+   "rows": 2,
+   "off": -0.16,
+   "lit": 0.45,
+   "glass": 0.139
   },
   {
    "id": "linc-glass",
@@ -24,7 +28,11 @@
     90,
     93,
     90
-   ]
+   ],
+   "rows": 2,
+   "off": 0.0,
+   "lit": 0.8,
+   "glass": 0.521
   },
   {
    "id": "linc-screen",
@@ -35,7 +43,11 @@
     59,
     61,
     66
-   ]
+   ],
+   "rows": 1,
+   "off": 0.0,
+   "lit": 0,
+   "glass": 0.0
   },
   {
    "id": "arena-fins",
@@ -46,18 +58,26 @@
     70,
     73,
     78
-   ]
+   ],
+   "rows": 1,
+   "off": 0.0,
+   "lit": 0,
+   "glass": 0.0
   },
   {
    "id": "arena-podium",
-   "bays": 11,
-   "period": 137.34,
-   "aspect": 2.9512,
+   "bays": 14,
+   "period": 106.16,
+   "aspect": 2.9023,
    "mean": [
-    79,
-    81,
-    86
-   ]
+    54,
+    59,
+    64
+   ],
+   "rows": 2,
+   "off": 0.1,
+   "lit": 0.85,
+   "glass": 0.611
   },
   {
    "id": "arena-drum",
@@ -68,9 +88,45 @@
     234,
     234,
     233
-   ]
+   ],
+   "rows": 1,
+   "off": 0.0,
+   "lit": 0,
+   "glass": 0.0
+  },
+  {
+   "id": "linc-office",
+   "bays": 15,
+   "period": 100.32,
+   "aspect": 2.9395,
+   "mean": [
+    74,
+    79,
+    85
+   ],
+   "rows": 3,
+   "off": 0.04,
+   "lit": 0.55,
+   "glass": 0.292
+  },
+  {
+   "id": "cbp-atrium",
+   "bays": 5,
+   "period": 274.15,
+   "aspect": 2.6777,
+   "mean": [
+    90,
+    94,
+    95
+   ],
+   "rows": 2,
+   "off": 0.06,
+   "lit": 0.9,
+   "glass": 0.588
   }
  ],
+ "board": "art/stadiums/board.78612394a7.webp",
+ "boardHalf": "art/stadiums/board-half.00313d78e8.webp",
  "seats": "art/stadiums/seats.73b5a004b1.webp",
  "seatsHalf": "art/stadiums/seats-half.d5f8599865.webp",
  "seatRows": 4,

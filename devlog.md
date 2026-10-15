@@ -10946,6 +10946,95 @@ place; this is what changed in the code, and what was measured.
   1.25, touch), with the side-by-side pairs, in the session's scratchpad `remodel/stadiums/` (`before/`, `after/`,
   `pairs/`, the poses in `poses/after_computer.json` and `poses/after_phone.json`).
 - **Left for a later round**: the ballpark's seats rake as planes with the picture on them, so close to a section's side
-  the rows read flat; no crowd and no game-day state (the stands are empty every day); the Linc's wings are a single curved
-  sheet without the real canopy's secondary trusses; the arena's corner blocks are boxes where the real ones are canted;
-  the Xfinity Live! block and the lots' solar canopies are the wide tier's as before. `tests/test_remodel_stadiums.py`.
+  the rows read flat; no crowd and no game-day state (the stands are empty every day); the arena's corner blocks are boxes
+  where the real ones are canted; the Xfinity Live! block and the lots' solar canopies are the wide tier's as before.
+  `tests/test_remodel_stadiums.py`.
+- **The review's fixes** (the same round, after a review against the photographs and the renders):
+  - *The warning track was never drawn*: nothing wrote `uVenFence`, so all eight points sat at the origin and the track was
+    a 4.6 m disc at home plate (turf ran to the wall in every render). `venCbp` now fills it from `CBP.fence` and a second
+    array, `uVenFoul` (17 points: the left field pole, the field's corner, the horseshoe's thirteen control points, the right
+    corner and pole), carries the foul ground's wall, so the crushed-brick track runs all the way round as the satellite
+    shows it, a soft edge of one pixel's footprint. The test reads both uniforms back after the build.
+  - *Every wall stood on its cornice*: the shell read a strip from its top row at the wall's foot (the brick's granite
+    base was at the head of each storey in every street render, the Linc glass's truss band at its foot). The strip is now
+    read from its last row up (`(1.0 - sv)`).
+  - *The ballpark's ends*: one concrete fan over each foul corner's non-convex section, lit with the soffits' light, read as
+    two grey slabs from the outfield and glowed at night. Each end is now its own polygons on the end's vertical plane
+    (`K.vpoly`, earcut in the plane, wound to its normal): the lower deck's end wall to a rail a metre over its seats, the
+    brick returned round from the outer line in its two storeys (to 27 m), the Terrace's end slab in dark concrete with the
+    green frame carried across it, the frame's bays across the upper concourse, the canopy's edge; no floodlight on any of
+    them. The bleachers' and right field decks' ends, open underneath before, are brick in 13 m storeys (`venClipY`).
+  - *The ballpark at street level*: the outer ring was one brick strip with identical windows all round and a flat dark wall
+    behind the frame. It is now brick pavilions (the two ends, the Third Base gate on segments 4 to 6, Home Plate on 11 and
+    12, the First Base gate on 17 to 19) and open steel bays between them: green columns at the outer line and halfway,
+    the slab at 11.2 m with its fascia, its rail and its underside, the level over it behind the 47 m line (its slab at
+    19.4 m, the concourse's fascia at 27), the back walls at 40 and 30 m with the stands' glazed fronts along the lower one,
+    a stair flight from the street in each run's middle bay, the concourse light warm on the undersides after dark. The
+    upper concourse behind the frame is the Terrace's concrete underside on its raker beams over its floor, under the top
+    row's rail (the flat wall is gone). Each gate is a glazed atrium proud of the brick (the generated `cbp-atrium` strip:
+    green steel mullions between brick piers on granite) under an entrance canopy on two posts, its underside lit; the Left
+    Field gate stands on the stands' left field end facing the plaza by the bleachers.
+  - *The windows after dark*: every dark pixel of a strip was glass and every pane of a venue lit alike (the podium's
+    spandrels lit as two cream stripes, the office block's pale panes never lit). The atlas's alpha is now its glass: the
+    bake finds each picture's panes by its own colours (`glass_mask`: the brick's dark panes under the cornice, the Linc's
+    grey-green panes between the piers, the podium's and the office's blue-grey glass against their charcoal panels, the
+    atrium's panes but not its brick, steel or granite), opened by a 3 pixel window, at 255 against the wall's 128 (never
+    under 128: a premultiplying decoder keeps the colour). Each strip's entry carries its rows of panes, their offset (so a
+    row boundary falls between panes, as each picture was measured) and the share lit (the brick 45%, the Linc's glass 80%,
+    the podium 85%, the office 55%, the atriums 90%); the shader lights a bay and a row at a time by a hash, at 0.15 of the
+    lit colour (the first try at 0.42 blew the panes out to flat cream). Panes are smooth and take 2.4 times the sky's
+    reflection (`vRefl`, scaling the probe's radiance after `lights_fragment_maps`); glass is a dielectric now, never the
+    0.85 metal that made the suites' band a black void from the field (its tint lighter, 0x3d4d57).
+  - *The Linc's steps*: the blank faces where the sidelines' 40 m wall meets the corners' 22 m roof and the ends' 26 m are clad
+    as the wall they turn from (the glazing's second band round the corner; the braced panels on the ends), the decks' ends
+    in the braced panels with a rail along the rake, none lit by the floods.
+  - *The Linc's field from afar*: the lines' smoothstep widened with the pixel at full strength, so from 450 m the yard lines
+    and the hashes painted a third of the field white (a white rectangle at night). `venLine` is box-filtered (a line covers
+    at most its width over the footprint), `venLineP` takes the periodic lines to their mean coverage as the footprint nears
+    a period, the hashes fade by 0.3 m a pixel and the numbers by 0.35 (their sample moved out of the branch, so its
+    derivatives are defined). Checked from the complex at 450 m by day and night, from 1 km, and on the phone path.
+  - *The Linc's office block* was a pale untextured box: it is the generated `linc-office` strip (dark charcoal metal
+    panels, tall dark panes between slim piers) in three bands of three storeys, a parapet, its far level the strip's mean
+    (74, 79, 85); the picture panel a dark glass sheet.
+  - *The left field board* was a drawn cartoon, the brightest thing in the park at night: it is a generated photograph
+    (`board`: an empty ballpark under the lights from high behind home plate; no people, no lettering) set into the screens'
+    canvas, now 1024x512 with cells as wide as the boards, between a dim side panel and ribbon; until the photograph lands the
+    board is dark. A board's own light is 0.9 of its picture by day and 0.62 after dark (2.25 before).
+  - *The arena's oculus*: the roof's bands stopped at 0.4 of the lip and a flat cap closed them at 37.5 m; its straight-up
+    normal shaded lighter than the bands, and from the air the arena had an open roof. `venDome` builds one surface from the
+    lip to a single crown vertex (ten rings, 35.7 m at the lip to 37.65 at the crown), each vertex's normal from its
+    neighbours across and along the rings; the test finds no position on the roof with two normals. The far level samples
+    every second point.
+  - *Should-fix items done*: the turf's mowing is a view-dependent sheen (a stripe mown toward the eye darker, 3.5% at
+    overhead rising to 9.5% along the mowing), the outfield in 3.5 m stripes along the third base line and the infield's
+    grass in a faint check, soft-edged and faded as the stripes go under a pixel; the turf's own patchiness; the skin as a
+    signed distance with darker, wetter edges and a dragged unevenness; the arena's podium regenerated with its two glazed
+    club levels (`arena-podium-glass`; the opaque first picture stays on disk); dugouts sunk along the field wall on each
+    side (their padded roofs, the dark of them, a pipe rail); the Linc's team benches between the 32s and a players' tunnel
+    portal at each end's middle; the Liberty Bell a solid bronze bell with a flared lip under its red neon outline, the
+    band and the crack in neon, its blue yoke and crown, on a braced frame; the Linc's secondary trusses (two chords and
+    the diagonals in each bay between the masts); the light towers now rise from the upper concourse behind the Terrace
+    through the canopy's back edge to their heads at 63 to 70.5 m (they stood on the lower roof in front of the frame with
+    their heads at the canopy), their lattices 5.2 to 5.6 m wide like the photographs'.
+  - *Declined*: the floodlights still come on every night with the streetlamps (Round 47, Mike's call; a game-day switch is
+    his to make); the seating rakes stay planes (stepping every row would multiply the bowls' triangles some fifty times for
+    a difference seen only close beside a section); the arena's corner blocks stay upright (no photograph at hand gives the
+    cant, and the boards and strut lines hang on those faces).
+  - *Art*: four more `gpt-image-2` pictures at high quality, one batch, each looked at (`arena-podium-glass`, `linc-office`,
+    `cbp-atrium` at 1536x512, `board` at 1536x1024). The atlas is eight strips, 1024x2048 RGBA (the office 15 bays of 100.3
+    px, the atrium 5 of 274.1, the new podium 14 of 106.2; glass 14%, 52%, 0, 0, 61%, 0, 29%, 59% of each strip); the board
+    1024x576. Ten files, 690 KB with the half copies.
+  - *Measured*: triangles near (shell, seats and field) and far (with the field), in the browser: the ballpark 10,611 and
+    767, the Linc 5,026 and 1,144, the arena 2,220 and 1,008 (8,849 / 683, 4,106 / 1,104 and 1,834 / 1,166 before the fixes);
+    draws unchanged (3, 3, 1 near; 2, 2, 1 far). A frame's venue cost with `venbudget.js`, the builder's commit against
+    this one in the same session: behind home plate 8,849 to 10,611 triangles (3 calls each), over the Linc 14,789 to
+    17,857 (7), over the arena 5,548 to 6,672 or 7,216 (2), inside the Linc 4,106 to 5,026 (3), the complex at night from
+    450 m 11,119 to 12,031 or 12,763 (6), from 2.2 km south 2,953 to 2,919 (5), over City Hall 0 (the day pair of the
+    complex and the arena's street come out at minus 1.35 to 1.42 M in every run, the builder's commit too: the probe's
+    shown and hidden frames alternate in step with a two-frame cadence of the city's, so those two are not a measure).
+    Textures: a computer's art 15.4 MB with mips (the atlas 11.2, the tiles 4.2; the board's photograph is drawn into the
+    canvas and let go) and the canvases 3.1 MB; a phone's 3.9 MB and 0.8 MB (12.6 + 1.7 and 2.9 + 0.4 before). Programs:
+    the same three; no link failures and no console errors on the computer path, the phone path (740x360 at 1.25, touch),
+    `?real=0`, `?venues=0` and `?zbuf=log`. Parity: `?real=0` and `?venues=0` against main with traffic, ships and flights off,
+    three poses, at most 0.0006% of pixels over 24 levels. The renders: the session's scratchpad `remodel/stadiums/fix/`
+    (`it1/` the first pass at 26 poses, `it2/` the second at 13, `phone/` at 9, `parity/`).

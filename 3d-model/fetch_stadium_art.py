@@ -33,6 +33,8 @@ WALL = ('Seamless horizontally tileable facade texture for a 3D city model: a pe
         'to side (what leaves the right edge comes back at the left), every bay identical and evenly spaced. Photographed in '
         'flat, even overcast daylight with no cast shadows, at its true colours. No perspective, no building corners, no '
         'people, no vehicles, no trees, no lettering, no signs, no logos, no screens.')
+PHOTO = ('A photograph for a 3D city model: {what} Photographic, natural colour. No people, no players, no lettering, no numbers, '
+         'no logos, no scoreboard graphics, no advertising.')
 TILE = ('Seamless tileable texture for a 3D city model: {what} Repeating seamlessly in both directions (what leaves the right '
         'edge comes back at the left, what leaves the top comes back at the bottom). Flat, even overcast daylight with no cast '
         'shadows. No people, no lettering, no logos, no lines painted on it.')
@@ -63,6 +65,30 @@ ITEMS = {
                    'white, insulated metal panels 1.5 metres wide by 3 metres tall in a precise grid with thin dark shadow '
                    'joints, a faint tone variation from panel to panel, a slim horizontal reveal band two thirds of the way up',
                    '1536x512'),
+    # the review's round (Round 195's fixes): the arena's podium glazed as the 2024 photographs show it (the first strip was
+    # opaque panels with two black bands; 'arena-podium' stays on disk), the Linc's office block, the ballpark's gate atriums
+    # and a picture for the left field board (the canvas cartoon read as a children's game)
+    'arena-podium-glass': ('wall', 'the lower podium of an indoor sports arena after its 2024 renovation, 14 metres tall and 8 '
+                           'bays wide: two long continuous horizontal bands of floor-to-ceiling dark tinted glazing, the club '
+                           'level above and the concourse below, each about 4.5 metres tall, in slim black aluminium mullions '
+                           'every 1.5 metres, the glass dark grey-blue with faint reflections, a band of dark charcoal metal '
+                           'panels at each floor slab between them, dark charcoal metal panel cladding along the top, a '
+                           'recessed dark base at the foot', '1536x512'),
+    'linc-office': ('wall', 'three storeys of the office block of a 2003 American football stadium, 14 metres tall and 8 bays '
+                    'wide, cut from the middle of a taller facade so the pattern continues seamlessly from the top edge to the '
+                    'bottom edge: dark charcoal grey metal panel cladding, tall vertical strips of dark tinted glass between '
+                    'slim dark grey metal piers in every bay, a thin dark metal spandrel band at every floor, the glass dark grey '
+                    'with faint sky reflections', '1536x512'),
+    'cbp-atrium': ('wall', 'the glazed entrance atrium of a 2004 brick ballpark, 18 metres tall and 8 bays wide: a tall glass '
+                   'curtain wall of slightly green-grey glass in a grid of dark green painted steel mullions and transoms, '
+                   'divided into bays by deep red brick piers about 1.5 metres wide standing on pale grey granite bases 1.2 '
+                   'metres tall, a dark green steel band across the whole wall at 6 metres, a pale precast stone coping along '
+                   'the top', '1536x512'),
+    'board': ('photo', 'the picture on a ballpark\'s giant outdoor video board between innings, filling the frame edge to edge: '
+              'a wide high view of an empty major league baseball field at dusk under the lights, from high behind home plate '
+              'looking toward centre field, the green outfield with mowing stripes, the brown infield dirt, the pitcher\'s '
+              'mound, the outfield wall and empty dark blue seats beyond under a deep blue evening sky, slightly soft as on a '
+              'large LED screen.', '1536x1024'),
     'seats': ('tile', 'a straight-on view perpendicular to a sloped stadium seating tier: rows of empty dark navy blue plastic '
               'folding stadium seats with their backs up, standing on pale grey concrete treads, exactly 6 rows top to bottom '
               'and 12 seats side by side, every row and every seat identical and evenly spaced, the narrow grey concrete '
@@ -77,7 +103,7 @@ ITEMS = {
 
 def prompt_of(cid):
     kind, what, size = ITEMS[cid]
-    return (WALL if kind == 'wall' else TILE).format(what=what), size
+    return {'wall': WALL, 'tile': TILE, 'photo': PHOTO}[kind].format(what=what), size
 
 
 def make(key, cid, force):
