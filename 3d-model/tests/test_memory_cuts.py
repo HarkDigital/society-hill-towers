@@ -344,7 +344,12 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('if (isTouch) freeTexOnUpload(t);', cut(s, '  async function townLay(aniso, got) {', '  function townProbe() {'))   # Round 198: the own facades' atlas and mask
         self.assertIn('tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function shtLoadArt() {', '  function shtBuf() {'))   # Round 195: the Society Hill Towers' concrete
         self.assertIn('CMR_U.uCmrArt.value = freeTexOnUpload(t);', cut(s, '  function cmrArtLoad() {', '  // the Comcast Center\'s open crown'))   # Round 195: the Comcast towers' cladding array
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 39)   # the definition and its uses (every round's, counted)
+        # Round 195: the venues' boards (the board's photograph makes a new texture when it lands, never redraws a freed one)
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venScreenTex(boardIm) {', '  function venDigitsTex('))
+        self.assertIn('venU.uVenScreen.value = venScreenTex(ims[4]); if (old) old.dispose();', cut(s, '  function venLoadArt() {', '  // ---- the geometry'))
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venDigitsTex() {', '  function venArtTex('))   # the Linc's yard numbers
+        self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venArtTex(', '  function venLoadArt() {'))   # and their walls, seats, turf and clay
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 42)   # the definition and its uses (every round's, counted)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

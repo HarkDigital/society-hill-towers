@@ -11474,3 +11474,198 @@ pull.py, sweep.py), renders in remodel/sht/fix/ (it7 the computer's final set, p
   reflections up close show the city reflection's coarse cells as a blocky mosaic of clouds (the CTC from the south-west,
   the phone's view of it), the glass owner's to look at.
   `tests/test_remodel_comcast.py`; `__dbg.comcast()` (`false` hides the remodel's own meshes for an A/B).
+
+## Round 195, the stadiums and the arena (Oct 14)
+
+- Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both Comcast towers, Battleship NJ, The Moshulu, and the
+  bridges." This entry is the sports complex's share. Round 92's bowls were stepped quads a row on a low brick ring,
+  open underneath (from the street the seats' undersides showed over the ring), the Linc's canopies flat slabs and the
+  arena a dark rounded box under a pale lid. Under the realistic look the three venues are rebuilt as closed buildings
+  (`// ---- the sports complex remodelled`, `buildVenuesReal`), in the frames the research gave Round 92 (home plate at
+  (-1861, 4429) with centre field 5 degrees east of north; the Linc's field N8W about (-1938.4, 4939.4); the arena's court
+  N15E about its outline's box), so the fence, the diamond and the field stand where they stood.
+- References looked at (never sent to the image API; kept in the session's scratchpad, not the repo): Wikimedia Commons,
+  `Citizens_Bank_Park_satellite_view.png`, `Citizensbankparkside.jpg`, `CitizensBankSkyline.JPG`,
+  `Northwest_Gate-_Citizens_Bank_Park.jpeg`, `Citizens_Bank_Park_-_Wide_View.jpg`, `Lincoln_Financial_Field_(Aerial_view).jpg`,
+  `Lincoln_Financial_Field_and_Wells_Fargo_Center_from_airplane_approaching_PHL.jpeg`,
+  `Lincoln_Financial_Field,_Philadelphia,_2024.jpg`, `TheLinc-outside.jpg`, `Wachovia_Center_satellite_view.png`,
+  `WellsFargoCenter-atDay.jpg`, `Wells_Fargo_Center_night.jpg`, `Wells_Fargo_Center,_January_4,_2023.jpg`; and the arena's own
+  news page of Apr 8, 2024 ("The New Xfinity Mobile Arena Lights Up New Exterior Upgrades": the three ANC boards on the
+  north-east and north-west corners and the south front, the strut lighting on all four corners, the eyebrow's uplight).
+- **Citizens Bank Park.** The horseshoe from foul pole to foul pole: the padded field wall, the lower deck (1.6 to 11.2 m,
+  23 m deep) with an aisle every other section, the walk, the suites' glass under a ribbon fascia (lit after dark), the
+  Terrace overhanging them (21.8 to 40.5 m), the patina canopy over its top rows on columns and struts, the upper concourse
+  behind an open green steel frame (the photographs' dark band over the brick), and the brick outer wall in two storeys
+  (14.5 m and 27 m) wearing the generated brick strip (granite base, stone bands, tall green-framed windows; their glass lit
+  warm after dark). Six lattice light towers (165 ft) behind the Terrace with their lamp banks turned to the infield, the
+  left-field board (152 by 86 ft) on two lattice legs and the tall light tower beside it, the bleachers under it, right
+  field's two decks under a patina roof, the batter's eye as a dark planted bank, Ashburn Alley's brick pavilions under
+  patina roofs behind centre field, the neon bell on its posts, the foul poles. The field is one polygon (the horseshoe's
+  wall, the corners and the fence; the triangles' area is the ring's, 13,081 m2) whose shader draws the mown diamond, the
+  skin from the rules (the 95 ft arc from the rubber, the base paths, the plate's circle, the mound, the bases' cut-outs),
+  the warning track from the fence's own segments (`uVenFence`), the lines and the boxes, over the generated turf and clay.
+- **Lincoln Financial Field.** Every ring a rounded rectangle of the same steps (`venRRect`: 6 a corner, 6 a half side), so
+  each segment has a class (`lincClass`): the sidelines carry the club glass, the ribbon and the upper deck to 49.5 m under
+  their wing; the ends a fascia, the end deck to 33 m and the board (96 by 27 ft) over it; the corners stay open at the
+  plaza (22 m), as the photographs show (the three open corners NBBJ drew to the skyline). The outer wall: the sides the
+  generated glass between rust brick piers to 40 m, the ends and corners the braced dark panels. The wings: a curved leading
+  edge rising to the ends (54.5 to 61 m), a membrane top over a steel underside, the talons sweeping in to their points,
+  raking masts with stays and tie-backs every 16 m, trusses under the roof, the lamp band along the edge (24 flood points).
+  The field: the rules' 120 by 53 1/3 yards, stripes every five, midnight green end zones, the six-foot border, the yard
+  lines and hash marks, and the numbers every ten yards drawn by the shader from a canvas of figures (they read from their
+  own sideline), the goal posts on the end lines. The south-east office block and the south-west stair tower.
+- **The Xfinity Mobile Arena as renovated.** A white drum (a superellipse, exponent 2.6, the generated light panels) under
+  its eyebrow and a gently domed membrane roof, on a dark glazed podium of two club levels (the generated podium; its glass
+  warm after dark); the four finned corner blocks (the generated fins) with the boards on the north-east and north-west
+  blocks and the south front, the glass rotunda at the Broad Street side and the three entrance canopies (their undersides
+  lit). Round 84's night: the eyebrow's uplight (64 bars on the drum's lip) and the corner struts (a strip a fin, every
+  1.4 m up the outer faces) are themed parts in the arena's own slot, which the wide loop still deals where it meets the
+  record (`themeSlotN++` in the `t === 9` branch whichever builder runs), and the drum takes an uplight wash sheet (weight
+  0.32) in the same slot. Rendered on a plain night, under `?lights=eagles` (green) and `?lights=red`.
+- **The night.** The floodlight sprites ride Round 47's `flood` points (45 of them: the ballpark's towers three a head, the
+  board's tower, the Linc's edges), on with the streetlamps; the fields, the stands and the inner walls take the floods'
+  light as their own colour times a per-vertex light (`aLit`), never an additive sheet (Round 85's neutral white kept); the
+  boards glow with their pictures (never a score or lettering, Round 92's rule).
+- **The art** (`fetch_stadium_art.py`, `bake_stadium_art.py`, `stadium_art.json`, `art/stadiums/`): nine `gpt-image-2`
+  pictures at high quality, three at a time and every one looked at: six walls at 1536x512 (2,345 to 2,402 tokens each) and
+  three tiles at 1024x1024 (the seats, the turf, the clay; 7,136 to 7,193). The bake finds each wall's bay by
+  autocorrelation (the brick 8 bays of 192 px, the Linc's glass 9 of 170.7, its braced ends 5 of 293.1, the fins 6 of 256,
+  the podium 11 of 137.3, the drum 16 of 94.6) and lays whole bays across a strip of a 1024x1536 atlas; the seat tile is the
+  median of 66 seats laid over each other at their measured pitch (90.6 by 169.2 px), eight by four in 512 px, kept as
+  luminance and mask, lossless (the first lossy cut bled the mask into the luminance: a seat's grey edge read as a tread).
+  Eight files, 431 KB, with the phone's half copies.
+- **Three programs**: the shell (`venShellPatch`: matte, metal, glass, an atlas wall, a board, a lamp bank, an LED line, a
+  membrane, patina, a planted bank, by aCol's fourth byte), the seats (`venSeatPatch`: the tile tinted the venue's navy or
+  midnight green seat by seat, the stairs' risers; seen low across the rake the seat backs take the picture), the fields
+  (`venFieldPatch`). At most four samplers of their own each; no new program writes `gl_FragDepth`
+  (`tests/test_zbuf.py`); every stream a multiple of 4 bytes (aCol and aLit four normalized bytes), the indices 16 bits.
+- **The datum.** The first cut probed the ground at five points of each field and the ground behind home plate stood
+  through the turf (a dark wedge round the plate from above): each venue now reads the drawn ground on a 10 m grid over its
+  whole radius, stands its turf 0.45 m over the highest point, and takes its walls' foot under the lowest (`F.foot`).
+- **The levels.** A near level (the shell and the seats: two draws) within `VEN_NEAR_R` (820 m on a computer, 560 on a
+  phone, 40 m of hysteresis) of each venue, a far one past it (one draw: the bowls as bands, the canopies, the walls in
+  their means), the field at both (one draw); the near level's shell gives the pins' depth image the far level in its place
+  (`occStandIn`); the phone's recovery tier builds the far level alone. `venuesStep` in the frame; `__dbg.venues(force)`.
+- **The budget, measured** (`budget.js` and `venbudget.js`, headless Chrome on this Mac's GPU, 1280x800 at dpr 1; the
+  venues' own cost a frame is the median of five frames with their meshes shown less five with them hidden, every pass of
+  the frame counted, the shadows and the pins' capture included):
+  - Triangles a venue, near (shell + seats + field) and far (+ field): the ballpark 8,849 and 683, the Linc 4,106 and
+    1,104, the arena 1,834 and 1,166; draws 3, 3, 1 near and 2, 2, 1 far. Round 92 drew all three as one merged mesh of
+    83,286 triangles (58,062 the venues', 25,224 Boathouse Row's, which shared it and never culled) plus eight canvas-mapped
+    fields and screens.
+  - A frame's venue cost, before and after: behind home plate 166,602 to 9,532 triangles (6 to 5 calls), over the Linc
+    166,626 to 17,742 (18 to 12), over the arena 83,292 to 5,548 (4 to 2), inside the Linc 83,292 to 4,106 (4 to 3), the
+    complex at night from 450 m 82,029 to 10,017 (9 to 6), from 2.2 km to the south 83,313 to 2,953 (9 to 5), and from
+    over City Hall 83,286 to 0 (1 to 0: the old merged mesh was always drawn).
+  - Whole frames at the venue views moved by under 1% either way (city churn, traffic and the shadow schedule dominate):
+    behind home plate 16.38 M triangles and 1,095 calls before, 16.38 M and 1,092 after.
+  - Textures: a computer 12.6 MB for the art with mips (the atlas 8.4, the three tiles 4.2) and 1.7 MB for the boards' and
+    figures' canvases; a phone the half copies, 2.9 MB, and canvases at half, 0.4 MB. Round 92's eight canvases were about
+    19.6 MB on every device (three 1024x512 screens and two 1024x1024 fields with mips). Programs: 206 by day and 220 at
+    night against 207 and 220 (the venues' three replace Round 92's three). No link failures and no console errors on the
+    computer path or the phone path (render.mjs, every run).
+- **Parity.** `?real=0` against main and `?venues=0` against main, everything that moves switched off, three poses (the
+  ballpark and the Linc from the air by day, the arena on an Eagles night): at most 0.0002% of pixels over 24 levels (the
+  pins' sub-pixel churn), so Round 92's builders (`buildStadium`, and the arena's body moved into `buildArenaOld` unchanged)
+  draw exactly what they did. A failed remodel builds them instead (`venuesBuildSafe` takes its themed parts, sheets,
+  floods and ground back).
+- **Kept working**: the score bubbles and concert placards (`SCORE_VENUES`, `VENUE_NAMED`, the arena's roof note from the
+  loop), the viewpoints ('ballpark', 'linc', 'arena'), the lots and their masts, Round 84's arena band and wash in the
+  night's colours, the floods. Each venue's outline is ground it owns (`REBUILD_OCC`, `NO_SOW_RINGS`): no tuft, tree, pole
+  or storefront in it.
+- **Renders**: before and after at 33 computer poses (day, a plain night, Eagles nights) and 16 phone poses (740x360 at
+  1.25, touch), with the side-by-side pairs, in the session's scratchpad `remodel/stadiums/` (`before/`, `after/`,
+  `pairs/`, the poses in `poses/after_computer.json` and `poses/after_phone.json`).
+- **Left for a later round**: the ballpark's seats rake as planes with the picture on them, so close to a section's side
+  the rows read flat; no crowd and no game-day state (the stands are empty every day); the arena's corner blocks are boxes
+  where the real ones are canted; the Xfinity Live! block and the lots' solar canopies are the wide tier's as before.
+  `tests/test_remodel_stadiums.py`.
+- **The review's fixes** (the same round, after a review against the photographs and the renders):
+  - *The warning track was never drawn*: nothing wrote `uVenFence`, so all eight points sat at the origin and the track was
+    a 4.6 m disc at home plate (turf ran to the wall in every render). `venCbp` now fills it from `CBP.fence` and a second
+    array, `uVenFoul` (17 points: the left field pole, the field's corner, the horseshoe's thirteen control points, the right
+    corner and pole), carries the foul ground's wall, so the crushed-brick track runs all the way round as the satellite
+    shows it, a soft edge of one pixel's footprint. The test reads both uniforms back after the build.
+  - *Every wall stood on its cornice*: the shell read a strip from its top row at the wall's foot (the brick's granite
+    base was at the head of each storey in every street render, the Linc glass's truss band at its foot). The strip is now
+    read from its last row up (`(1.0 - sv)`).
+  - *The ballpark's ends*: one concrete fan over each foul corner's non-convex section, lit with the soffits' light, read as
+    two grey slabs from the outfield and glowed at night. Each end is now its own polygons on the end's vertical plane
+    (`K.vpoly`, earcut in the plane, wound to its normal): the lower deck's end wall to a rail a metre over its seats, the
+    brick returned round from the outer line in its two storeys (to 27 m), the Terrace's end slab in dark concrete with the
+    green frame carried across it, the frame's bays across the upper concourse, the canopy's edge; no floodlight on any of
+    them. The bleachers' and right field decks' ends, open underneath before, are brick in 13 m storeys (`venClipY`).
+  - *The ballpark at street level*: the outer ring was one brick strip with identical windows all round and a flat dark wall
+    behind the frame. It is now brick pavilions (the two ends, the Third Base gate on segments 4 to 6, Home Plate on 11 and
+    12, the First Base gate on 17 to 19) and open steel bays between them: green columns at the outer line and halfway,
+    the slab at 11.2 m with its fascia, its rail and its underside, the level over it behind the 47 m line (its slab at
+    19.4 m, the concourse's fascia at 27), the back walls at 40 and 30 m with the stands' glazed fronts along the lower one,
+    a stair flight from the street in each run's middle bay, the concourse light warm on the undersides after dark. The
+    upper concourse behind the frame is the Terrace's concrete underside on its raker beams over its floor, under the top
+    row's rail (the flat wall is gone). Each gate is a glazed atrium proud of the brick (the generated `cbp-atrium` strip:
+    green steel mullions between brick piers on granite) under an entrance canopy on two posts, its underside lit; the Left
+    Field gate stands on the stands' left field end facing the plaza by the bleachers.
+  - *The windows after dark*: every dark pixel of a strip was glass and every pane of a venue lit alike (the podium's
+    spandrels lit as two cream stripes, the office block's pale panes never lit). The atlas's alpha is now its glass: the
+    bake finds each picture's panes by its own colours (`glass_mask`: the brick's dark panes under the cornice, the Linc's
+    grey-green panes between the piers, the podium's and the office's blue-grey glass against their charcoal panels, the
+    atrium's panes but not its brick, steel or granite), opened by a 3 pixel window, at 255 against the wall's 128 (never
+    under 128: a premultiplying decoder keeps the colour). Each strip's entry carries its rows of panes, their offset (so a
+    row boundary falls between panes, as each picture was measured) and the share lit (the brick 45%, the Linc's glass 80%,
+    the podium 85%, the office 55%, the atriums 90%); the shader lights a bay and a row at a time by a hash, at 0.15 of the
+    lit colour (the first try at 0.42 blew the panes out to flat cream). Panes are smooth and take 2.4 times the sky's
+    reflection (`vRefl`, scaling the probe's radiance after `lights_fragment_maps`); glass is a dielectric now, never the
+    0.85 metal that made the suites' band a black void from the field (its tint lighter, 0x3d4d57).
+  - *The Linc's steps*: the blank faces where the sidelines' 40 m wall meets the corners' 22 m roof and the ends' 26 m are clad
+    as the wall they turn from (the glazing's second band round the corner; the braced panels on the ends), the decks' ends
+    in the braced panels with a rail along the rake, none lit by the floods.
+  - *The Linc's field from afar*: the lines' smoothstep widened with the pixel at full strength, so from 450 m the yard lines
+    and the hashes painted a third of the field white (a white rectangle at night). `venLine` is box-filtered (a line covers
+    at most its width over the footprint), `venLineP` takes the periodic lines to their mean coverage as the footprint nears
+    a period, the hashes fade by 0.3 m a pixel and the numbers by 0.35 (their sample moved out of the branch, so its
+    derivatives are defined). Checked from the complex at 450 m by day and night, from 1 km, and on the phone path.
+  - *The Linc's office block* was a pale untextured box: it is the generated `linc-office` strip (dark charcoal metal
+    panels, tall dark panes between slim piers) in three bands of three storeys, a parapet, its far level the strip's mean
+    (74, 79, 85); the picture panel a dark glass sheet.
+  - *The left field board* was a drawn cartoon, the brightest thing in the park at night: it is a generated photograph
+    (`board`: an empty ballpark under the lights from high behind home plate; no people, no lettering) set into the screens'
+    canvas, now 1024x512 with cells as wide as the boards, between a dim side panel and ribbon; until the photograph lands the
+    board is dark. A board's own light is 0.9 of its picture by day and 0.62 after dark (2.25 before).
+  - *The arena's oculus*: the roof's bands stopped at 0.4 of the lip and a flat cap closed them at 37.5 m; its straight-up
+    normal shaded lighter than the bands, and from the air the arena had an open roof. `venDome` builds one surface from the
+    lip to a single crown vertex (ten rings, 35.7 m at the lip to 37.65 at the crown), each vertex's normal from its
+    neighbours across and along the rings; the test finds no position on the roof with two normals. The far level samples
+    every second point.
+  - *Should-fix items done*: the turf's mowing is a view-dependent sheen (a stripe mown toward the eye darker, 3.5% at
+    overhead rising to 9.5% along the mowing), the outfield in 3.5 m stripes along the third base line and the infield's
+    grass in a faint check, soft-edged and faded as the stripes go under a pixel; the turf's own patchiness; the skin as a
+    signed distance with darker, wetter edges and a dragged unevenness; the arena's podium regenerated with its two glazed
+    club levels (`arena-podium-glass`; the opaque first picture stays on disk); dugouts sunk along the field wall on each
+    side (their padded roofs, the dark of them, a pipe rail); the Linc's team benches between the 32s and a players' tunnel
+    portal at each end's middle; the Liberty Bell a solid bronze bell with a flared lip under its red neon outline, the
+    band and the crack in neon, its blue yoke and crown, on a braced frame; the Linc's secondary trusses (two chords and
+    the diagonals in each bay between the masts); the light towers now rise from the upper concourse behind the Terrace
+    through the canopy's back edge to their heads at 63 to 70.5 m (they stood on the lower roof in front of the frame with
+    their heads at the canopy), their lattices 5.2 to 5.6 m wide like the photographs'.
+  - *Declined*: the floodlights still come on every night with the streetlamps (Round 47, Mike's call; a game-day switch is
+    his to make); the seating rakes stay planes (stepping every row would multiply the bowls' triangles some fifty times for
+    a difference seen only close beside a section); the arena's corner blocks stay upright (no photograph at hand gives the
+    cant, and the boards and strut lines hang on those faces).
+  - *Art*: four more `gpt-image-2` pictures at high quality, one batch, each looked at (`arena-podium-glass`, `linc-office`,
+    `cbp-atrium` at 1536x512, `board` at 1536x1024). The atlas is eight strips, 1024x2048 RGBA (the office 15 bays of 100.3
+    px, the atrium 5 of 274.1, the new podium 14 of 106.2; glass 14%, 52%, 0, 0, 61%, 0, 29%, 59% of each strip); the board
+    1024x576. Ten files, 690 KB with the half copies.
+  - *Measured*: triangles near (shell, seats and field) and far (with the field), in the browser: the ballpark 10,611 and
+    767, the Linc 5,026 and 1,144, the arena 2,220 and 1,008 (8,849 / 683, 4,106 / 1,104 and 1,834 / 1,166 before the fixes);
+    draws unchanged (3, 3, 1 near; 2, 2, 1 far). A frame's venue cost with `venbudget.js`, the builder's commit against
+    this one in the same session: behind home plate 8,849 to 10,611 triangles (3 calls each), over the Linc 14,789 to
+    17,857 (7), over the arena 5,548 to 6,672 or 7,216 (2), inside the Linc 4,106 to 5,026 (3), the complex at night from
+    450 m 11,119 to 12,031 or 12,763 (6), from 2.2 km south 2,953 to 2,919 (5), over City Hall 0 (the day pair of the
+    complex and the arena's street come out at minus 1.35 to 1.42 M in every run, the builder's commit too: the probe's
+    shown and hidden frames alternate in step with a two-frame cadence of the city's, so those two are not a measure).
+    Textures: a computer's art 15.4 MB with mips (the atlas 11.2, the tiles 4.2; the board's photograph is drawn into the
+    canvas and let go) and the canvases 3.1 MB; a phone's 3.9 MB and 0.8 MB (12.6 + 1.7 and 2.9 + 0.4 before). Programs:
+    the same three; no link failures and no console errors on the computer path, the phone path (740x360 at 1.25, touch),
+    `?real=0`, `?venues=0` and `?zbuf=log`. Parity: `?real=0` and `?venues=0` against main with traffic, ships and flights off,
+    three poses, at most 0.0006% of pixels over 24 levels. The renders: the session's scratchpad `remodel/stadiums/fix/`
+    (`it1/` the first pass at 26 poses, `it2/` the second at 13, `phone/` at 9, `parity/`).

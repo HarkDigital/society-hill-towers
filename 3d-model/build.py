@@ -210,6 +210,7 @@ const("TOWER_ART", text_of("tower_art.json", "null"))   # the buildings round Ci
 const("SHT_ART", text_of("sht_art.json", "null"))   # the Society Hill Towers' concrete (bake_sht_art.py), Round 195
 const("LIBERTY_ART", text_of("liberty_art.json", "null"))   # One and Two Liberty Place's granite base and crown glazing (bake_liberty_art.py), Round 195
 const("COMCAST_ART", text_of("comcast_art.json", "null"))   # the Comcast Technology Center's cladding strip (bake_comcast_art.py), Round 195
+const("STADIUM_ART", text_of("stadium_art.json", "null"))   # the sports complex's generated walls, seat rows, turf and clay (bake_stadium_art.py), Round 195
 
 
 def art_paths(o):
@@ -226,7 +227,7 @@ def art_paths(o):
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
 for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
-             "glory_art.json", "storefront_art.json", "glass_art.json", "tavern_art.json", "tower_art.json", "sht_art.json", "liberty_art.json", "comcast_art.json"):
+             "glory_art.json", "storefront_art.json", "glass_art.json", "tavern_art.json", "tower_art.json", "sht_art.json", "liberty_art.json", "comcast_art.json", "stadium_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):
