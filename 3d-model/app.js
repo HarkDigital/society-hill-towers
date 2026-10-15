@@ -8319,6 +8319,25 @@ vec2 wRing(vec2 rc, float tt) {
     freeOnUpload(m.geometry);
   });
 
+  // Round 195's review round: the motor court round the Society Hill Towers' fountain and the drive in from Locust Street are
+  // pale concrete paving in the city's 2022 orthophoto (asphalt only in the car park east of the court), laid by shtPlaza as
+  // this ring; OSM's service ways over it (the loop round the fountain, the drive) were painted on it as a black loop. With
+  // the remodel on, a service way's segment whose midpoint falls inside the ring lays no ribbon; it keeps every other
+  // registration (the kerbs the walks stop at, the trees' and the posts' clearance). No typical traffic drives a service
+  // way (bake_traffic.py's classes), so nothing drives where the asphalt was. Model metres
+  const SHT_COURT = [[-15.5, -20], [-5, -27.1], [16.1, -23.2], [14.6, -11], [13.6, -11], [13.6, 17], [2, 17], [2, 40], [-5, 40], [-5, 11.5], [-20.9, 11.5]];
+  const SHT_COURT_N = { skipped: 0 };
+  const shtCourtAt = (x, z) => x > -21 && x < 16.2 && z > -27.2 && z < 40 && pointInPoly(x, z, SHT_COURT);
+  // a run cut into the pieces that stand outside the court (the whole run when none of it is inside)
+  function shtCourtRuns(run) {
+    const out = []; let cur = [run[0]];
+    for (let i = 1; i < run.length; i++) {
+      if (shtCourtAt((run[i][0] + run[i - 1][0]) / 2, (run[i][1] + run[i - 1][1]) / 2)) { SHT_COURT_N.skipped++; if (cur.length > 1) out.push(cur); cur = [run[i]]; }
+      else cur.push(run[i]);
+    }
+    if (cur.length > 1) out.push(cur);
+    return out.length === 1 && out[0].length === run.length ? [run] : out;
+  }
   step('Paving the streets', () => {
     loadStreetArt();   // the realism pass: the streets' generated textures, each as it comes
     const asphaltParts = [], brickParts = [];
@@ -8397,13 +8416,15 @@ vec2 wRing(vec2 rc, float tt) {
         // Round 127 (Mike: "sidewalks/crosswalks overlapping look pretty bad"): the mapped footways and the
         // generated sidewalks wait until every carriageway is known (below)
         if (/footway|path|steps|cycleway/.test(r.t)) { footJobs.push({ run, w: r.w }); continue; }
-        const g = ribbon(run, r.w, y, mot ? motY : null, lane, true, true, setts ? 0.01 : 0.06);
+        // Round 195's review round: the towers' motor court is paving (SHT_COURT), so a service way's segments over it lay no asphalt
+        const paint = SHT_ON && r.t === 'service' ? shtCourtRuns(run) : [run];
+        const gs = paint.map((pr) => ribbon(pr, r.w, y, mot ? motY : null, pr === run ? lane : lane && { ...lane, jl: null }, true, true, setts ? 0.01 : 0.06));
         const walks = /^(residential|tertiary|living_street|unclassified|secondary|primary)$/.test(r.t);
         for (let i = 0; i < run.length - 1; i++) {
           addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);
           if (!/pedestrian/.test(r.t)) { septaRoadAdd(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1]); if (!mot) carAdd(run[i], run[i + 1], r.w / 2, walks); }   // the core's I-95 runs in its trench or under the deck: nothing crosses it at grade (review, Sep 22)
         }
-        (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)).multiplyScalar(foot || setts ? 1 : streetAge(cr + 3)) });
+        for (const g of gs) (foot ? brickParts : asphaltParts).push({ geom: g, color: new THREE.Color(foot ? COLORS.footway : (setts ? 0x4d4a46 : COLORS.asphalt)).multiplyScalar(foot || setts ? 1 : streetAge(cr + 3)) });
         // sidewalks flanking real streets: brick in the rowhouse core, concrete on arterials
         if (walks) {
           const walkCol = /residential|tertiary|living_street/.test(r.t) ? cBrickWalk : cConcWalk;
@@ -15697,8 +15718,11 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   // does; __dbg.sht() reports the level, the triangles, the art and the five windows.
   const SHT_ON = REAL && !/[?&]sht=0\b/.test(location.search);
   const SHT_D = (() => {
-    const d = { H: 94.2, floors: 30, bays: [18, 12], bayP: 1.83, mw: 0.36, cw: 0.55, dep: 0.5, sh: 0.55, lobbyH: 6.4, beamH: 2.15, parapetH: 3.35,
-      lobbyIn: 3.0, pilW: 0.75, pilD: 1.6, cornerP: 1.1, deck: 1.1, coping: 0.32, pent: [0.68, 0.48, 1.6], cool: [0.84, 2.5] };
+    // (the review's round: the solid band over the top heads is a floor, 2.68 m, from row profiles of three photographs
+    // (lccn.jpg's near tower 1.0 floor, korean.jpg 0.97, pa1.jpg 0.77; it was 3.6 m, 1.3 floors), and the penthouse
+    // stands 1.1 floors over the coping in pa1.jpg's near-level view (it was 1.6 m); the cooling tower 1 m over it)
+    const d = { H: 94.2, floors: 30, bays: [18, 12], bayP: 1.83, mw: 0.36, cw: 0.55, dep: 0.5, sh: 0.55, lobbyH: 6.4, beamH: 2.15, parapetH: 2.4,
+      lobbyIn: 3.0, pilW: 0.75, pilD: 1.6, cornerP: 1.1, deck: 1.1, coping: 0.32, pent: [0.68, 0.48, 3.0], cool: [0.84, 1.0] };
     // the transfer girder's top is the first sill, the parapet's foot the last head: thirty floors between them
     d.fh = (d.H - d.parapetH - d.lobbyH - d.beamH + d.sh) / d.floors;
     d.gridBot = d.lobbyH + d.beamH - d.sh / 2;
@@ -15715,10 +15739,31 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // sunlit face reads about (205, 199, 184), a shaded one (150, 148, 140)), and its texture's metres a tile
     uShtC: { value: new THREE.Vector4(0.27, 0.257, 0.229, 4.0) },
     uShtSun: sunWUniform,
-    // x the key light's share of a sunlit face's light (shtStep), y the day rooms' gain, z a dev view (1 the cells' means
-    // everywhere, -1 the exact ray-cast everywhere, 0 by the pixel's size), w the rain's wetting
-    uShtL: { value: new THREE.Vector4(0.6, 0.6, 0, 0) },
+    // x the key light's share of a sunlit face's light (shtStep, the probe's keyShare: the means take the material's own
+    // lights since the review's round), y the day rooms' gain, z a dev view (1 the cells' means everywhere, -1 the exact
+    // ray-cast everywhere, 0 by the pixel's size), w the rain's wetting
+    uShtL: { value: new THREE.Vector4(0.6, 0.12, 0, 0) },
+    // the review's round, every number measured against the photographs (devlog Round 195): the panes' body (uShtGl.rgb,
+    // the 1960s glass with the dark room behind it), their reflectance at normal view (w) and its hue (uShtGT: the
+    // photographs' panes are the sky's navy from the street, lccn.jpg's darkest quarter (24, 35, 60), and the probe's sky
+    // the pane mirrors is paler than the dome; the day rooms' gain went to 0.12, uShtL.y: the photographs' rooms are near
+    // black); uShtF: the fabric seen through the glass as a share of the concrete's albedo (x), the weathering's strength
+    // (z), the dusk's and the night's share of the light (w, the street lamps' photocell, shtStep; y spare); uShtN: the
+    // night's light on the concrete (rgb, the city's sky glow) and its lift toward the street (w)
+    uShtGl: { value: new THREE.Vector4(0.0018, 0.0036, 0.0145, 0.06) }, uShtGT: { value: new THREE.Vector3(0.6, 0.9, 1.55) },
+    uShtF: { value: new THREE.Vector4(0.40, 0, 1.0, 0) },
+    uShtN: { value: new THREE.Vector4(0.13, 0.115, 0.1, 1.0) },
+    // the means' shade on the fill of the opening's parts, the exact view's own means: a jamb's (its 0.5 to 0.3), a sill's
+    // (0.7 to 0.45), a head's (0.45 to 0.25), the pane's (its reveal shade, 0.74 to 1)
+    uShtM: { value: new THREE.Vector4(0.4, 0.575, 0.35, 0.9) },
+    // the screen's mean (the means, below), fitted to the exact view at three faces by morning, noon, dusk and night
+    // (devlog Round 195, the review's round): the pane's mirror of the sky as a share of the fill's radiance (x: 0 fits best,
+    // the dark glass's own mirror is a share the parts' estimates already carry), and the lit room's spread across its pane
+    // (y: the curve's mean over a lamp's pool and its bands sits under the curve of the pane's mean)
+    uShtK: { value: new THREE.Vector4(0.0, 0.93, 0, 0) },
     uShtNight: nightUniform,
+    uShtDbg: { value: new THREE.Vector4(1, 1, 1, 0) },   // ?dev: the rooms', the night fill's and the day rooms' shares (__dbg.sht('u'))
+    uShtExp: postU.uExposure, uShtCon: gradeU.uCon,   // the screen's own curve (the means' display mean, below)
     uShtTex: { value: null }, uShtTexOn: { value: 0 }, uShtTexMean: { value: new THREE.Vector3(0.43, 0.38, 0.3) },
     uShtBase: { value: 0 },
   };
@@ -15727,14 +15772,75 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   // the tower glass's hook (its emissive block lands before the lamps' light), then the ray-cast and the hook's varyings made
   // per-pixel values
   const SHT_GLSL_DECL = `
-    uniform vec4 uShtG, uShtV, uShtC, uShtL; uniform vec3 uShtSun, uShtTexMean; uniform float uShtNight, uShtTexOn; uniform sampler2D uShtTex;
+    uniform vec4 uShtG, uShtV, uShtC, uShtL, uShtGl, uShtF, uShtN, uShtM, uShtK, uShtDbg; uniform vec3 uShtSun, uShtTexMean, uShtGT; uniform float uShtNight, uShtTexOn, uShtExp, uShtCon; uniform sampler2D uShtTex;
     varying vec3 vShtWP, vShtWN; varying float vShtK; varying vec3 vWNorm; varying float vBase;
     float shtGlass = 0.0;
-    float shtSunVis = 1.0, shtThemeK = 1.0, shtRough = 0.9, shtMetal = 0.0, shtSpecOcc = 1.0, shtSharp = 1.0;
-    vec3 shtN = vec3(0.0, 1.0, 0.0), shtDay = vec3(0.0);
+    float shtSunVis = 1.0, shtThemeK = 1.0, shtRough = 0.9, shtMetal = 0.0, shtSpecOcc = 1.0, shtSharp = 1.0, shtRoomK = 1.0, shtHzo = 0.12;
+    vec3 shtN = vec3(0.0, 1.0, 0.0), shtDay = vec3(0.0), shtConA = vec3(0.0);
     float shtH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+    float shtVN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+      return mix(mix(shtH(i), shtH(i + vec2(1.0, 0.0)), f.x), mix(shtH(i + vec2(0.0, 1.0)), shtH(i + vec2(1.0, 1.0)), f.x), f.y); }
+    // a band's coverage of a pixel along one axis: [t0, t1] repeating every p, the pixel's footprint t - w to t + w (w under
+    // a third of p), the exact box filter
+    float shtBand(float t, float t0, float t1, float p, float w) {
+      float c = 0.0;
+      for (int k = -1; k <= 1; k++) { float o = float(k) * p; c += max(0.0, min(t + w, t1 + o) - max(t - w, t0 + o)); }
+      return clamp(c / (2.0 * w), 0.0, 1.0);
+    }
+    // the screen's curve on a grey of scene luminance L, as the light the screen gives off (the computer's composite: ACES,
+    // sRGB and the grade's contrast about 0.42; a phone's CustomToneMapping: ACES and the contrast about 0.18 in linear
+    // light), and its inverse (the composite's pInvRRT)
+    float shtDisp(float L) {
+      float v = max(L, 0.0) * uShtExp / 0.6;
+      float y = clamp((v * (v + 0.0245786) - 0.000090537) / (v * (0.983729 * v + 0.4329510) + 0.238081), 0.0, 1.0);
+      #ifdef SHT_POST
+      float c = y < 0.0031308 ? y * 12.92 : 1.055 * pow(y, 1.0 / 2.4) - 0.055;
+      c = clamp((c - 0.42) * uShtCon + 0.42, 0.0, 1.0);
+      return c < 0.04045 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+      #else
+      return clamp(pow(y / 0.18, 1.05) * 0.18, 0.0, 1.0);
+      #endif
+    }
+    float shtUndisp(float D) {
+      #ifdef SHT_POST
+      float c = D < 0.0031308 ? D * 12.92 : 1.055 * pow(max(D, 0.0), 1.0 / 2.4) - 0.055;
+      c = (c - 0.42) / uShtCon + 0.42;
+      float y = c < 0.04045 ? max(c, 0.0) / 12.92 : pow((c + 0.055) / 1.055, 2.4);
+      #else
+      float y = 0.18 * pow(max(D, 0.0) / 0.18, 1.0 / 1.05);
+      #endif
+      y = min(y, 0.985);
+      float A = 1.0 - 0.983729 * y, B = 0.0245786 - 0.432951 * y, C = -(0.000090537 + 0.238081 * y);
+      return (-B + sqrt(max(B * B - 4.0 * A * C, 0.0))) / (2.0 * A) * 0.6 / max(uShtExp, 1.0e-3);
+    }
     // a box's coverage of a pixel: p inside [lo, hi], each edge drawn over w either side
     float shtBox(vec2 p, vec2 lo, vec2 hi, vec2 w) { vec2 a = smoothstep(lo - w, lo + w, p) * (1.0 - smoothstep(hi - w, hi + w, p)); return a.x * a.y; }
+    // the lobby behind its glass by day (the review's round, a computer's): a hall 7 m deep to the core under a 4.6 m ceiling, a
+    // travertine floor with a rug at each seating group, a plaster ceiling with its downlights, the core's walnut boards and
+    // its bronze lift doors; lp the glass's own metres (along it, over the floor), d the eye's ray in its frame (across, up,
+    // in). An albedo the host lights by the day, falling off from the glass
+    vec3 shtLobbyRoom(vec2 lp, vec3 d) {
+      const float cH = 4.6, dB = 7.0;
+      if (lp.y > cH) return vec3(0.05, 0.05, 0.055);   // the plenum behind the glass's head
+      float tB = dB / max(d.z, 0.05);
+      float tY = d.y > 1.0e-4 ? (cH - lp.y) / d.y : (d.y < -1.0e-4 ? -lp.y / d.y : 1.0e9);
+      float t = min(tB, tY);
+      vec3 h = vec3(lp + d.xy * t, d.z * t);
+      vec3 col;
+      if (tB <= tY) {
+        float fu = fract(h.x / 4.6);
+        col = vec3(0.24, 0.16, 0.10) * (0.85 + 0.3 * shtH(vec2(floor(h.x / 0.9), 3.3)));
+        col = mix(col, vec3(0.16, 0.12, 0.08), step(0.32, fu) * step(fu, 0.58) * step(h.y, 2.4));
+        col = mix(col, vec3(0.62, 0.58, 0.5), step(cH - 0.35, h.y));
+      } else if (d.y > 0.0) {
+        vec2 q = fract(vec2(h.x, h.z) / 1.83) - 0.5;
+        col = vec3(0.6, 0.58, 0.54) + vec3(1.0, 0.85, 0.6) * 0.8 * exp(-dot(q, q) * 90.0);
+      } else {
+        col = vec3(0.46, 0.41, 0.33) * (0.9 + 0.2 * shtH(floor(vec2(h.x, h.z) / vec2(1.2, 0.6)) + 5.1));
+        col = mix(col, vec3(0.2, 0.12, 0.09), step(abs(h.z - 3.2), 1.4) * step(abs(fract(h.x / 9.15) - 0.5) * 9.15, 2.0));
+      }
+      return col * (1.0 - 0.5 * clamp(h.z / dB, 0.0, 1.0));
+    }
   `;
   // the pixel's surface: K the part's kind (0 the shell's faces, 1 plain concrete, 2 the lobby's glass, 3 the roof's deck, 4 the
   // cooling tower's louvres, 5 steel, 6 the colonnade's pavers, 7 the fountain's granite)
@@ -15743,14 +15849,14 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       float K = floor(vShtK + 0.5);
       vec3 wn = normalize(vShtWN), V = normalize(vShtWP - cameraPosition), Ls = normalize(uShtSun), UP = vec3(0.0, 1.0, 0.0);
       vec3 tg = normalize(vec3(wn.z, 0.0, -wn.x) + vec3(1.0e-5, 0.0, 0.0));   // across the face, rightward seen from outside
-      vec3 con = uShtC.rgb * (1.0 - 0.2 * uShtL.w);
+      vec3 con = uShtC.rgb * (1.0 - 0.3 * uShtL.w);   // wet concrete a third darker (the review's round: a fifth did not read)
       vec3 alb = con, nrm = wn;
       vec2 tuv = abs(wn.y) > 0.5 ? vShtWP.xz : vec2(dot(vShtWP.xz, tg.xz), vShtWP.y);
       vec2 tdx = dFdx(tuv), tdy = dFdy(tuv);
       float glassK = 0.0, conK = 1.0, aoK = 1.0, dayK = 0.0, emK = -1.0;   // emK: the share of a room's light the pixel shows (the glass's, else)
       vec3 dayRoom = vec3(0.3);
       vec4 rI = vec4(0.0, 0.0, vInteriorV.z, 0.0);
-      shtRough = 0.9; shtMetal = 0.0;
+      shtRough = mix(0.9, 0.62, uShtL.w); shtMetal = 0.0;
       if (K < 0.5) {
         float P = uShtG.x, mw = uShtG.y, cwp = uShtG.z, dep = uShtG.w, gb = uShtV.x, fh = uShtV.y, sh = uShtV.z, nF = uShtV.w;
         float Lf = vInteriorV.w, nB = floor((Lf - 2.0 * cwp + mw) / P + 0.5);
@@ -15758,6 +15864,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         tuv = fp; tdx = dFdx(fp); tdy = dFdy(fp);
         float xc = fp.x - (cwp - 0.5 * mw), yc = fp.y - gb;
         vec2 pw = vec2(fwidth(xc), fwidth(yc)) + 1.0e-4;   // a pixel's metres across and up
+        float fpx = max(pw.x, pw.y);
         float ci = floor(xc / P), cj = floor(yc / fh), a = xc - ci * P, b = yc - cj * fh;
         float a0 = 0.5 * mw, a1 = P - 0.5 * mw, b0 = 0.5 * sh, b1 = fh - 0.5 * sh, ow = a1 - a0, oh = b1 - b0;
         float inG = step(0.0, xc) * step(xc, nB * P) * step(0.0, yc) * step(yc, nF * fh);
@@ -15765,6 +15872,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         vec3 d = vec3(dot(V, tg), V.y, max(-dot(V, wn), 0.02));   // the eye's ray in the face's frame: across, up, into the wall
         vec3 s = vec3(dot(Ls, tg), Ls.y, -dot(Ls, wn));          // toward the key light (s.z < 0: it stands in front of the face)
         float cellPx = max(pw.x / P, pw.y / fh);                   // cells a pixel
+        shtHzo = mix(0.12, 0.0, smoothstep(10.0, 45.0, vShtWP.y - vBase));   // a high pane sees over the city's roofs to its horizon
         // the cell's room and its fabric: the night's own hashes (roomLight's r, r2, r3), so a blind down by day is down at night
         vec2 rid = vec2(ci, cj), key = rid + vec2(rI.z * 113.7, rI.z * 39.1);
         float rr = roomHash(key), r2 = roomHash(key + 17.3), r3 = roomHash(key + 61.7);
@@ -15773,22 +15881,33 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         plain = 1.0 - step(abs(rI.z - uLitWin.x), .005) * step(abs(rid.y - uLitWin.y), .5) * step(uLitWin.z - .5, rid.x) * step(rid.x, uLitWin.w + .5);   // Round 137's five: plain glass
         #endif
         float blindOn = step(.58, r2) * plain, curtOn = step(.65, r3) * plain, blindTo = .30 + .38 * r3, curtW = .11 + .15 * rr;
-        float fabS = max(blindOn * (1.0 - blindTo), curtOn * 2.0 * curtW);   // the pane's share behind fabric
         // under about a pixel a cell, the facade's own means (a cell's own fabric past that is noise, not a pattern)
         float farK = smoothstep(0.35, 0.9, cellPx);
-        fabS = mix(fabS, 0.24, farK);
-        vec3 fabC = vec3(0.262, 0.251, 0.228) * mix((0.86 + 0.26 * rr) * mix(vec3(1.0), vec3(1.02, 0.97, 0.9), step(0.5, r2)), vec3(0.99, 0.985, 0.97), farK);
-        vec3 glassD = vec3(0.011, 0.012, 0.015);
-        // the front: each floor's pour and each bay's column a shade apart, a grey film under the coping and on the girder's
-        // foot, rain's dirt down from each sill's ends across the spandrel below; all gone to their means past a pixel
-        float wFade = 1.0 - smoothstep(0.08, 0.3, max(pw.x, pw.y));
-        float pour = 1.0 + (0.045 * (shtH(vec2(cj, 3.1)) - 0.5) + 0.025 * (shtH(vec2(ci, 7.7)) - 0.5)) * inG;
-        float under = b < b0 ? 1.0 : 0.0;
+        // the fabric as the eye sees it through the glass (the review's round: drawn at the concrete's own value in the full sun it
+        // made the grid read light grey with dark specks, where the photographs' blinds stand at about six tenths of the
+        // sunlit concrete's value and cooler, behind the pane's own reflection)
+        vec3 fabC = con * vec3(0.86, 0.96, 1.16) * uShtF.x * mix((0.86 + 0.26 * rr) * mix(vec3(1.0), vec3(1.03, 0.99, 0.94), step(0.5, r2)), vec3(0.99), farK);
+        vec3 glassD = uShtGl.rgb, frC = vec3(0.03, 0.027, 0.023);
+        // the weathering. Coarse, held at every distance: the pours' lifts three floors at a time a shade apart, a mottle of
+        // stains across the face, soot under the coping down the top two floors in drips, a film on the girder's foot.
+        // Fine, gone to its mean past a pixel: each floor's pour and each column a shade apart, the spandrel under each sill
+        // darker, rain's dirt down from each sill's ends
+        float sd = rI.z * 17.3, wk = uShtF.z, gTop = gb + nF * fh;
+        float lift = 1.0 + wk * 0.05 * (shtH(vec2(floor(cj / 3.0), sd + 3.1)) - 0.5) * inG * (1.0 - smoothstep(1.2, 2.4, pw.y / fh));
+        float mott = 1.0 + wk * 0.07 * (shtVN(fp / vec2(7.0, 11.0) + sd) - 0.5) * (1.0 - smoothstep(4.0, 9.0, fpx));
+        float drip = mix(0.5, shtVN(vec2(fp.x / 0.9, sd)), 1.0 - smoothstep(0.25, 0.6, pw.x));
+        float soot = 1.0 - wk * (0.06 * smoothstep(gTop - 2.0 * fh, ${SHT_D.H.toFixed(2)}, fp.y) + 0.08 * smoothstep(${(SHT_D.H - 0.8).toFixed(2)}, ${(SHT_D.H - 0.05).toFixed(2)}, fp.y)) * (0.6 + 0.8 * drip);
+        float foot = 1.0 - 0.08 * (1.0 - smoothstep(${SHT_D.lobbyH.toFixed(2)}, ${(SHT_D.lobbyH + 0.9).toFixed(2)}, fp.y));
+        vec3 conR = con * (lift * mott * soot * foot);   // the coarse terms: the reveals take these alone
+        float wFade = 1.0 - smoothstep(0.08, 0.3, fpx);
+        float pour = 1.0 + (0.04 * (shtH(vec2(cj, sd + 7.1)) - 0.5) * (1.0 - smoothstep(0.45, 0.9, pw.y / fh)) + 0.025 * (shtH(vec2(ci, sd + 7.7)) - 0.5) * (1.0 - smoothstep(0.45, 0.9, pw.x / P))) * inG;
+        float under = b < b0 ? inG : 0.0;
         float qa = (a - a0) / 0.07, qb = (a - a1) / 0.07;
-        float streak = under * inG * (exp(-qa * qa) + exp(-qb * qb)) * (0.5 + 0.5 * shtH(rid + 0.37));
-        float top = smoothstep(${(SHT_D.H - 1.4).toFixed(2)}, ${(SHT_D.H - 0.05).toFixed(2)}, fp.y), foot = 1.0 - smoothstep(${(SHT_D.lobbyH).toFixed(2)}, ${(SHT_D.lobbyH + 0.9).toFixed(2)}, fp.y);
-        float wf = mix(1.0, pour * (1.0 - 0.07 * streak) * (1.0 - 0.06 * top - 0.08 * foot), wFade) * (1.0 - 0.015 * (1.0 - wFade));
-        vec3 conF = con * wf;
+        float streak = under * (exp(-qa * qa) + exp(-qb * qb)) * (0.5 + 0.5 * shtH(rid + 0.37));
+        vec3 conF = conR * pour * (1.0 - 0.1 * wk * under) * mix(1.0 - 0.007 * under, 1.0 - 0.07 * streak, wFade);
+        // the front's means: the spandrel under the sills is this share of a cell's front
+        float spS = P * b0 / max(P * fh - ow * oh, 1.0e-3);
+        vec3 conM = conR * (1.0 - (0.1 * wk + 0.007) * spS * inG);
         // the exact view: the ray through the opening to the jamb, the sill, the head or the pane
         vec3 colX = conF, nX = wn; float svX = 1.0, gX = 0.0, conX = 1.0, spX = 0.0;
         vec2 puv = fract(vec2(xc / P, yc / fh));
@@ -15806,73 +15925,142 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
             if (face > 1.5) { if (dy > 0.0) hi.y += 9.0; else lo.y -= 9.0; }
             sv = shtBox(e, lo, hi, vec2(0.012) + 0.5 * pw);
           }
-          vec3 cI = conF; vec3 nI = wn; float gI = 0.0, aoI = 1.0;
+          vec3 cI = conR; vec3 nI = wn; float gI = 0.0, aoI = 1.0;
           if (face < 0.5) {
             puv = clamp((h.xy - vec2(a0, b0)) / vec2(ow, oh), 0.0, 0.999);
             vec2 pm = h.xy - vec2(a0, b0);
-            float edge = min(min(pm.x, ow - pm.x), min(pm.y, oh - pm.y)), fpx = max(pw.x, pw.y);
+            float edge = min(min(pm.x, ow - pm.x), min(pm.y, oh - pm.y));
             aoI = 0.74 + 0.26 * smoothstep(0.0, 0.4, edge);   // the reveal's own shade on the pane, deepest at its edges
             // the frame: dark bronze anodised aluminium 5 cm round the pane, a transom at a third of its height; under a pixel,
             // its share of the pane
             float fr = max(1.0 - smoothstep(0.05, 0.05 + fpx, edge), 1.0 - smoothstep(0.022, 0.022 + fpx, abs(pm.y - 0.32 * oh)));
-            fr = mix(fr, 0.12, smoothstep(0.03, 0.09, fpx));
-            // the blind from the pane's head down, the curtains at its sides (slats a hint while they span pixels)
+            fr = mix(fr, 0.13, smoothstep(0.03, 0.09, fpx));
+            // the blind from the pane's head down, the curtains at its sides (slats a hint while they span pixels), kept a
+            // pixel inside the visible pane's own edge (where the near jamb, sill or head cuts it off, or the pane ends), so a
+            // dark line of glass stands round every opening at any distance (the review's round: a blind met its jambs unseen)
+            vec2 vlo = vec2(a0, b0) + max(vec2(dx, dy), 0.0) * (dep / d.z), vhi = vec2(a1, b1) + min(vec2(dx, dy), 0.0) * (dep / d.z);
+            float ev = min(min(h.x - vlo.x, vhi.x - h.x), min(h.y - vlo.y, vhi.y - h.y));
             float bl = max(blindOn * smoothstep(blindTo, blindTo + 0.02, puv.y), curtOn * (1.0 - smoothstep(curtW, curtW + 0.03, min(puv.x, 1.0 - puv.x))));
             bl *= mix(1.0, 0.86 + 0.14 * cos(pm.y * 75.4), (1.0 - smoothstep(0.004, 0.012, fpx)) * blindOn);
+            bl *= smoothstep(fpx, 2.0 * fpx, ev);
             gI = 1.0 - fr;
-            cI = mix(mix(glassD, fabC, bl), vec3(0.03, 0.027, 0.023), fr);
+            cI = mix(mix(glassD, fabC, bl), frC, fr);
             // what the pane mirrors: the sky only where its mirrored ray leaves through the opening, else the reveal's concrete
             shtSpecOcc = mix(0.22, 1.0, shtBox(h.xy + vec2(dx, dy) * (dep / d.z), vec2(a0, b0), vec2(a1, b1), vec2(0.02) + 0.5 * pw));
             dayK = 1.0 - bl;
             shtRough = mix(0.9, 0.42, fr); shtMetal = 0.55 * fr;
-            ${rich ? 'roomRay = vec3(dx / ow, dy / oh, d.z / ow); roomPar = 1.0;' : ''}
+            ${rich ? 'roomRay = vec3(dx / ow, dy / oh, d.z / ow);' : ''}
           } else if (face < 1.5) {
-            nI = dx > 0.0 ? -tg : tg; aoI = mix(0.96, 0.66, h.z / dep); shtSpecOcc = 0.6;
+            nI = dx > 0.0 ? -tg : tg; aoI = mix(0.5, 0.3, h.z / dep); shtSpecOcc = 0.6;
             puv = clamp((h.xy - vec2(a0, b0)) / vec2(ow, oh), 0.0, 0.999); spX = 0.14 * (0.35 + 0.65 * h.z / dep);   // a lit room lights its own reveal
             tuv = vec2(h.z + ci * 1.37, fp.y + (h.y - b));
           } else {
-            nI = dy > 0.0 ? -UP : UP; aoI = dy > 0.0 ? mix(0.8, 0.6, h.z / dep) : mix(1.0, 0.82, h.z / dep);
+            nI = dy > 0.0 ? -UP : UP; aoI = dy > 0.0 ? mix(0.45, 0.25, h.z / dep) : mix(0.7, 0.45, h.z / dep);
             puv = clamp((h.xy - vec2(a0, b0)) / vec2(ow, oh), 0.0, 0.999); spX = (dy > 0.0 ? 0.1 : 0.18) * (0.35 + 0.65 * h.z / dep);
             tuv = vec2(fp.x + (h.x - a), h.z + cj * 1.71);
           }
+          // a reveal's own shade is the sky it cannot see: on its ambient light alone, the key light kept where it reaches
+          // (the review's round: the jambs and the heads' soffits stood as light as the front, and from the street every opening
+          // read as a narrow slit in a light frame where the photographs' heads are dark lines)
+          if (face > 0.5) { float kd = dot(shtKey(nI), vec3(0.2126, 0.7152, 0.0722)) * sv, ka = dot(shtFill(nI), vec3(0.2126, 0.7152, 0.0722)); aoI = mix(aoI, 1.0, kd / max(kd + ka, 1.0e-5)); }
           colX = mix(conF, cI * aoI, mOpen); nX = normalize(mix(wn, nI, mOpen)); svX = mix(1.0, sv, mOpen); gX = gI * mOpen; conX = 1.0 - mOpen * (face < 0.5 ? 1.0 : 0.0); spX *= mOpen;
         }
         // the cell by its means: the front, the jamb and the sill or head the eye can see in their own light against the
         // front's, and the pane it can see, lit only where the sun comes through the opening
         float O = ow * oh / (P * fh);
         float gx = clamp(1.0 - dep * abs(d.x) / (d.z * ow), 0.0, 1.0), gy = clamp(1.0 - dep * abs(d.y) / (d.z * oh), 0.0, 1.0);
-        // each surface's light against the front's: the key light where the opening lets it reach, and the sky's by the way it
-        // faces (a jamb a vertical face's, a sill more of it, a head the ground's bounce), each under the reveal's own shade
-        float kS = uShtL.x, sunF = s.z < 0.0 ? 1.0 : 0.0, sz = max(-s.z, 1.0e-3);
-        float sx = sunF * clamp(1.0 - dep * abs(s.x) / (sz * ow), 0.0, 1.0), sy = sunF * clamp(1.0 - dep * abs(s.y) / (sz * oh), 0.0, 1.0);
-        vec3 nj = d.x > 0.0 ? -tg : tg;
-        float jLit = sunF * clamp(ow * sz / max(abs(s.x) * dep, 1.0e-3), 0.0, 1.0) * clamp(1.0 - 0.5 * dep * abs(s.y) / (sz * oh), 0.0, 1.0);
-        float hLit = sunF * clamp(1.0 - 0.5 * dep * abs(s.x) / (sz * ow), 0.0, 1.0) * clamp(oh * sz / max(abs(s.y) * dep, 1.0e-3), 0.0, 1.0);
-        float eF = kS * max(dot(wn, Ls), 0.0) + (1.0 - kS) * 0.5;
-        float eJ = (kS * max(dot(nj, Ls), 0.0) * jLit + (1.0 - kS) * 0.56) * 0.81;
-        float eH = d.y < 0.0 ? (kS * max(Ls.y, 0.0) * hLit + (1.0 - kS) * 0.8) * 0.91 : (1.0 - kS) * 0.2 * 0.7;
-        float eG = (kS * max(dot(wn, Ls), 0.0) * sx * sy + (1.0 - kS) * 0.52) * 0.88;
-        float jS = 1.0 - gx, hS = (1.0 - gy) * gx, gV = gx * gy, iF = 1.0 / max(eF, 0.05);
-        vec3 paneA = mix(mix(glassD, fabC, fabS), vec3(0.03, 0.027, 0.023), 0.13);   // the frames' share of the pane
-        // held to the exact view's own mean by measure (__dbg.sht('means' | 'exact') at three faces, 13:00 and 10:00 clear):
-        // the opening's light runs high on a sunlit face, where the exact view's head shadows the blinds and the sill
-        float kOpen = 1.0 - 0.32 * clamp(kS * max(dot(wn, Ls), 0.0) * 1.8, 0.0, 1.0);
-        vec3 colA = conF * (1.0 - O) + O * kOpen * (conF * (jS * eJ + hS * eH) * iF + paneA * gV * eG * iF);
-        float wA = smoothstep(0.28, 0.62, cellPx) * inG;
-        if (uShtL.z > 0.5) wA = inG; else if (uShtL.z < -0.5) wA = 0.0;   // __dbg.sht('means' | 'exact'): one regime alone, to hold the two to one look
+        float jS = 1.0 - gx, hS = (1.0 - gy) * gx, gV = gx * gy;
+        // the means by axis (the review's round): the bays and the floors go under a pixel apart, so a face seen at a slant keeps
+        // its floors' bands (the window rows dark, the spandrels light) once its bays are under a pixel, and the other way;
+        // sO the opening's share of the pixel: the cell's, its window row's (box-filtered over the pixel) or its column's
+        float wx = smoothstep(0.28, 0.62, pw.x / P), wy = smoothstep(0.28, 0.62, pw.y / fh), wAll = 1.0 - (1.0 - wx) * (1.0 - wy);
+        float sO = (wx * wy * O + wx * (1.0 - wy) * shtBand(b, b0, b1, fh, 0.5 * pw.y) * (ow / P) + (1.0 - wx) * wy * shtBand(a, a0, a1, P, 0.5 * pw.x) * (oh / fh)) / max(wAll, 1.0e-4);
+        // (a cell at a time, each by its own threshold, kept the band's mean but drew a patchwork of flat and patterned cells
+        // at 400 m; the two views blend in each pixel, the band some 7 per cent over either view at its middle, 560 m)
+        float wA = wAll * inG;
+        if (uShtL.z > 0.5) { wA = inG; sO = O; } else if (uShtL.z < -0.5) wA = 0.0;   // __dbg.sht('means' | 'exact'): one regime alone, to hold the two to one look
+        sO *= inG;
+        // the pane's mean: its glass, the fabric a pixel clear of the visible edge (as the exact view keeps it), the frames
+        // (the blind loses the ring along the head and both sides, a curtain along its own side, so most of its width at range)
+        float bTo = mix(blindTo, 0.49, farK), cW = mix(curtW, 0.185, farK);
+        float bS = mix(blindOn * (1.0 - blindTo), 0.214, farK), cS = mix(curtOn * 2.0 * curtW, 0.13, farK);
+        float kB = clamp(1.0 - 3.0 * fpx / ow, 0.0, 1.0) * clamp(1.0 - 1.5 * fpx / max((1.0 - bTo) * oh, 1.0e-3), 0.0, 1.0);
+        float kC = clamp(1.0 - 1.5 * fpx / max(cW * ow, 1.0e-3), 0.0, 1.0) * clamp(1.0 - 3.0 * fpx / oh, 0.0, 1.0);
+        float fabA = 1.0 - (1.0 - bS * kB) * (1.0 - cS * kC);
+        // the night's rooms at one mean at every distance (the review's round: the exact view's room box seen through the
+        // opening averaged 0.1 to 0.52 by the ray, the means' flat pane 0.375 and roomLight's constant past its detail 0.51,
+        // so the tower brightened as the eye drew back and the means ran 1.2 to 1.4 times the exact view at night): the
+        // rooms take the flat pane in both views (roomPar 0, as Round 194's towers and the fabric's far windows did; the
+        // day's rooms keep their box) and the flat pane's mean is taken to the far constant as far as its detail stands
+        float detE = 1.0 - smoothstep(0.08, 0.30, max(pw.x / ow, pw.y / oh)), detM = 1.0 - smoothstep(0.08, 0.30, cellPx);
+        float kRm = mix(1.0, 1.36, detM);
+        vec3 colO = vec3(0.0); float kD = 1.0;
+        if (wAll > 0.001 || uShtL.z > 0.5) {
+          // each part's light against the front's, from the material's own lights (the review's round: shtKey, shtFill; the fitted
+          // shares of a key light and a sky were off by up to 14 per cent at a shaded or a sunlit face): the key light where
+          // the opening lets it reach (the pane's share the part of it the eye sees that the sun reaches too), the fill under
+          // each part's own shade as the exact view gives it (uShtM: a jamb's, a sill's, a head's and the pane's means)
+          float sunF = s.z < 0.0 ? 1.0 : 0.0, sz = max(-s.z, 1.0e-3);
+          vec3 nj = d.x > 0.0 ? -tg : tg;
+          // the sunlit share of the jamb or the sill the eye sees: both run in from the mouth, the eye's to its depth, the
+          // sun's to where the opposite jamb's or the head's shadow begins
+          float zvJ = min(dep, ow * d.z / max(abs(d.x), 1.0e-4)), zvH = min(dep, oh * d.z / max(abs(d.y), 1.0e-4));
+          float jLit = sunF * clamp(ow * sz / max(abs(s.x) * zvJ, 1.0e-4), 0.0, 1.0) * clamp(1.0 - 0.5 * dep * abs(s.y) / (sz * oh), 0.0, 1.0);
+          float hLit = sunF * clamp(1.0 - 0.5 * dep * abs(s.x) / (sz * ow), 0.0, 1.0) * clamp(oh * sz / max(abs(s.y) * zvH, 1.0e-4), 0.0, 1.0);
+          vec2 v0 = max(d.xy, 0.0) * dep / (d.z * vec2(ow, oh)), v1 = 1.0 + min(d.xy, 0.0) * dep / (d.z * vec2(ow, oh));
+          vec2 l0 = max(vec2(0.0), -s.xy * dep / (sz * vec2(ow, oh))), l1 = min(vec2(1.0), 1.0 - s.xy * dep / (sz * vec2(ow, oh)));
+          vec2 ov = max(vec2(0.0), min(v1, l1) - max(v0, l0)) / max(v1 - v0, vec2(1.0e-3));
+          vec3 kF = shtKey(wn), fF = shtFill(wn);
+          vec3 EF = kF + fF;
+          vec3 EJ = shtKey(nj) * jLit + shtFill(nj) * uShtM.x;
+          vec3 EH = d.y < 0.0 ? shtKey(UP) * hLit + shtFill(UP) * uShtM.y : shtFill(-UP) * uShtM.z;
+          vec3 EG = (kF * sunF * ov.x * ov.y + fF) * uShtM.w;
+          // the fabric's own share of the sun: a blind hangs from the head, where the head's shadow falls first, and the
+          // curtains at the sides, where the jambs' do (the builder's means ran a sunlit face bright for want of it)
+          float fbY = max(0.0, min(1.0, l1.y) - max(bTo, l0.y)) / max(1.0 - bTo, 1.0e-3);
+          float fcX = (max(0.0, min(cW, l1.x) - max(0.0, l0.x)) + max(0.0, min(1.0, l1.x) - max(1.0 - cW, l0.x))) / max(2.0 * cW, 1.0e-3);
+          vec3 EB = (kF * sunF * (bS * kB * fbY * ov.x + cS * kC * fcX * ov.y) / max(bS * kB + cS * kC, 1.0e-4) + fF) * uShtM.w;
+          vec3 paneA = (mix(glassD * EG, fabC * EB, fabA) * 0.87 + frC * EG * 0.13) / max(EG, vec3(1.0e-5));   // the pane's albedo as lit by EG
+          // the opening's mean; the pane's mirror of the sky (its glass's and its frames') goes in as the fill's own colour,
+          // so the means' brightness is the model's alone (its glass optics are off: a rough glass blend never matched it)
+          colO = (conR * (jS * EJ + hS * EH) + paneA * gV * EG + gV * uShtK.x * fF) / max(EF, vec3(1.0e-5));
+          // the screen's own mean (the review's round): the exact view's parts are each put through the screen's curve and the
+          // eye averages the light the screen gives off, where a mean in the scene's light went through the curve once (the
+          // ACES shoulder and the grade's contrast ran it 18 per cent bright on a sunlit face and 13 per cent dark on a
+          // shaded one, and dark at night, where the grade's foot takes the dimmest levels): each part's luminance (its
+          // albedo in its light, the night's light on the concrete, the pane's mirror of the sky, the lit room on its glass
+          // and its reveals) through shtDisp, their mean back through shtUndisp, and the cell taken to it
+          vec3 Lw = vec3(0.2126, 0.7152, 0.0722);
+          float nf = uShtF.w * uShtDbg.y * dot(uShtN.rgb, Lw) * (1.0 + uShtN.w * (1.0 - smoothstep(4.0, 30.0, vShtWP.y - vBase))) * (0.8 + 0.4 * max(wn.y, 0.0));
+          float cM = dot(conM, Lw), cR = dot(conR, Lw), iP = 1.0 / PI, sky = uShtK.x * dot(fF, Lw) * iP, eGl = dot(EG, Lw) * iP;
+          float room = 0.0;
+          if (dot(emissive, vec3(1.0)) > 0.001) room = dot(emissive * roomLight(fract(vec2(xc / P, yc / fh)), rid, rI.z, 0.0), Lw) * kRm * uShtK.y * uShtDbg.x;
+          float LF = cM * (dot(EF, Lw) * iP + nf);
+          float LJ = cR * (dot(EJ, Lw) * iP + uShtM.x * nf) + 0.1 * room;
+          float LH = cR * (dot(EH, Lw) * iP + (d.y < 0.0 ? uShtM.y : uShtM.z) * nf) + 0.1 * room;
+          float LG = dot(glassD, Lw) * eGl + sky + room, LB = dot(fabC, Lw) * dot(EB, Lw) * iP + sky + room, LR = dot(frC, Lw) * eGl + sky;
+          // (on the whole cell's parts, whatever the axis: a row's or a column's view then keeps the cell's own mean)
+          float wP = O * gV, wJ = O * jS, wH = O * hS;
+          float Llin = (1.0 - O) * LF + wJ * LJ + wH * LH + wP * (0.87 * mix(LG, LB, fabA) + 0.13 * LR);
+          float Dm = (1.0 - O) * shtDisp(LF) + wJ * shtDisp(LJ) + wH * shtDisp(LH) + wP * (0.87 * mix(shtDisp(LG), shtDisp(LB), fabA) + 0.13 * shtDisp(LR));
+          kD = clamp(shtUndisp(Dm) / max(Llin, 1.0e-6), 0.5, 2.0);
+        }
+        vec3 colA = (conM * (1.0 - sO) + sO * colO) * kD;
         alb = mix(colX, colA, wA);
         nrm = normalize(mix(nX, wn, wA));
         shtSharp = 1.0 - wA;   // a cell by its means keeps the concrete's roughness: a glossy blend of the two lit whole faces with the sun's lobe
         shtSunVis = mix(svX, 1.0, wA);
-        glassK = mix(gX, O * gV * (1.0 - 0.12), wA);
+        glassK = gX * (1.0 - wA);
         float escA = clamp((1.0 - 2.0 * dep * abs(d.x) / (d.z * ow)) * (1.0 - 2.0 * dep * abs(d.y) / (d.z * oh)) / max(gV, 1.0e-3), 0.0, 1.0);
         shtSpecOcc = mix(shtSpecOcc, mix(0.22, 1.0, escA), wA);
-        conK = mix(conX, 1.0 - O * gV, wA);
-        emK = mix(gX + spX, O * (gV * 0.88 + (1.0 - gV) * 0.12), wA);
-        dayK = mix(dayK * gX, O * gV * (1.0 - fabS), wA);
+        conK = mix(conX, 1.0 - sO * gV, wA);
+        emK = mix(gX + spX, sO * (gV * 0.87 + (1.0 - gV) * 0.12), wA);
+        dayK = mix(dayK * gX, sO * gV * (1.0 - fabA), wA);
+        // the concrete's albedo by its share of the pixel, for the night's light on it (below)
+        shtConA = mix(colX * conX, (conM * (1.0 - sO) + conR * sO * (1.0 - gV) * 0.42) * kD, wA);
+        shtRoomK = mix(mix(1.0, 1.36, detE), kRm * uShtK.y * kD, wA);
         // the room the pixel shows: the pane's own coordinates near, the cell's beyond (roomLight then takes its mean)
         rI.xy = rid + (wA < 0.5 ? puv : fract(vec2(xc / P, yc / fh)));
-        ${rich ? 'if (wA > 0.5) roomPar = 0.0;' : ''}
         if (glassK > 0.001 && wA < 0.999) { ${rich ? 'dayRoom = mix(roomDay(puv, rid, rI.z, 0.0), vec3(0.3), wA);' : 'dayRoom = vec3(0.3);'} }
       } else if (K < 1.5) {
         alb = con * (wn.y < -0.5 ? 0.82 : 0.96);   // the colonnade's soffit in its own shade
@@ -15883,17 +16071,22 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         float fr = max(1.0 - smoothstep(0.035, 0.035 + fpx, mq), 1.0 - smoothstep(0.03, 0.03 + fpx, abs(lp.y - 2.7)));
         fr = mix(fr, 0.06, smoothstep(0.03, 0.09, fpx));
         glassK = 1.0 - fr; conK = 0.0;
-        alb = mix(vec3(0.012, 0.013, 0.015), vec3(0.03, 0.027, 0.023), fr);
+        alb = mix(vec3(0.006, 0.007, 0.009), vec3(0.03, 0.027, 0.023), fr);
         rI = vec4(lp.x / 3.2, lp.y / ${SHT_D.lobbyH.toFixed(2)}, vInteriorV.z, 1.0);
-        dayK = glassK; dayRoom = vec3(0.34, 0.3, 0.25); shtSpecOcc = 0.3;   // under the soffit, between the blades: little sky to mirror
+        // by day the hall behind the glass (a computer's: shtLobbyRoom), and the glass mirroring the plaza and what sky the
+        // soffit leaves it (the review's round: flat grey panels, the mirror at 0.3)
+        vec3 dL = vec3(dot(V, tg), V.y, max(-dot(V, wn), 0.05));
+        dayK = glassK; dayRoom = ${rich ? 'mix(shtLobbyRoom(lp, dL), vec3(0.32, 0.27, 0.21), smoothstep(0.06, 0.25, fpx))' : 'vec3(0.32, 0.27, 0.21)'}; shtSpecOcc = 0.45;
         shtRough = mix(0.9, 0.42, fr); shtMetal = 0.55 * fr;
       } else if (K < 3.5) {
         alb = vec3(0.24, 0.236, 0.226);   // the roof's pale membrane and its ballast
         tuv = vShtWP.xz * 1.7; tdx = dFdx(tuv); tdy = dFdy(tuv);
       } else if (K < 4.5) {
-        float lv = fract(vShtWP.y / 0.14), lw = fwidth(vShtWP.y) / 0.14;   // the louvres' blades, faded before they alias
-        alb = vec3(0.034, 0.036, 0.04) * mix(1.0, 0.55 + 0.9 * smoothstep(0.35, 0.65, lv), 1.0 - smoothstep(0.25, 0.6, lw));
-        conK = 0.0; shtRough = 0.6; shtMetal = 0.3;
+        // the louvres' blades in a galvanised casing, pale grey in the orthophoto (the review's round: a near-black metal read as
+        // a blue box on every roof, its mirror of the sky), the blades' shadowed slots faded before they alias
+        float lv = fract(vShtWP.y / 0.14), lw = fwidth(vShtWP.y) / 0.14;
+        alb = vec3(0.25, 0.255, 0.26) * mix(0.72, 0.45 + 0.55 * smoothstep(0.35, 0.65, lv), 1.0 - smoothstep(0.25, 0.6, lw));
+        conK = 0.0; shtRough = 0.55; shtMetal = 0.15;
       } else if (K < 5.5) {
         alb = vec3(0.16, 0.165, 0.17); conK = 0.0; shtRough = 0.45; shtMetal = 0.6;
       } else if (K < 6.5) {
@@ -15908,26 +16101,33 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         alb = vec3(0.045, 0.045, 0.05); conK = 0.0; shtRough = 0.36;   // the fountain's polished dark granite
       }
       // the concrete's grain: the generated photograph over its own mean, on the concrete alone
+      vec3 grain = vec3(1.0);
       if (uShtTexOn > 0.5 && conK > 0.001) {
         vec2 q = tuv / uShtC.w;
         vec3 tx = ${gl2 ? 'textureGrad(uShtTex, q, tdx / uShtC.w, tdy / uShtC.w).rgb' : 'texture2D(uShtTex, q).rgb'};
-        alb *= mix(vec3(1.0), clamp(tx / max(uShtTexMean, vec3(1.0e-3)), 0.55, 1.6), conK);
+        grain = mix(vec3(1.0), clamp(tx / max(uShtTexMean, vec3(1.0e-3)), 0.55, 1.6), conK);
+        alb *= grain;
       }
+      shtConA = K < 0.5 ? shtConA * grain : (K < 1.5 || (K > 2.5 && K < 3.5) ? alb : vec3(0.0));
       diffuseColor.rgb = alb;
       shtN = nrm;
       shtGlass = glassK;
       if (emK < 0.0) emK = glassK;
-      shtThemeK = emK;
+      shtThemeK = emK;   // the five themed rooms on their glass alone, never taken to the rooms' mean
       vInterior = rI;
       vInteriorNormal = emK > 0.001 ? wn : UP;
-      totalEmissiveRadiance *= emK;
+      totalEmissiveRadiance *= emK * shtRoomK * uShtDbg.x;
       // by day the room behind the pane, lit through it (the fabric's fabRoomDay: the daylight's share and what the pane does
       // not reflect), where no blind hangs
       float cosV = clamp(-dot(V, wn), 0.0, 1.0), frs = 0.04 + 0.96 * pow(1.0 - cosV, 5.0);
-      shtDay = dayRoom * dayK * (0.06 + 0.13 * max(Ls.y, 0.0)) * (1.0 - frs) * uShtL.y * (1.0 - uShtNight);
+      shtDay = dayRoom * dayK * (0.06 + 0.13 * max(Ls.y, 0.0)) * (1.0 - frs) * (K > 1.5 && K < 2.5 ? 1.0 : uShtL.y) * (1.0 - uShtNight) * uShtDbg.z;   // (the lobby's hall behind its full-height glass at the rooms' full gain, where the rooms behind their blinds take 0.12)
       if (K > 1.5 && K < 2.5) shtDay += vec3(1.0, 0.82, 0.6) * 0.03 * dayK * (1.0 - uShtNight);   // the lobby is lit by day too
       // after dark the lobby's light spills on the colonnade: its pilotis, its soffit and its pavers, falling off outward
       if ((K > 0.5 && K < 1.5) || (K > 5.5 && K < 6.5)) shtDay += vec3(1.0, 0.8, 0.55) * 0.05 * uShtNight * (1.0 - smoothstep(${SHT_D.lobbyH.toFixed(1)}, ${(SHT_D.lobbyH + 0.5).toFixed(1)}, vShtWP.y - vBase)) * (0.5 + 0.5 * smoothstep(-0.2, 0.6, -wn.y + 0.4)) * alb / max(con, vec3(1.0e-3));
+      // after dark the city's light on the concrete: the glow of the sky over it and the streets' warm bounce, the most on the
+      // colonnade and the lowest floors (the review's round: the concrete went black at night, darker than the sky beside it, where
+      // main's towers stood a grey above it)
+      shtDay += shtConA * uShtF.w * uShtDbg.y * uShtN.rgb * (1.0 + uShtN.w * (1.0 - smoothstep(4.0, 30.0, vShtWP.y - vBase))) * (0.8 + 0.4 * max(wn.y, 0.0));
     }
   `;
   function shtHook(sh) {
@@ -15950,7 +16150,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     fs = rep(fs, 'opticalGlass=clamp(1.0-step(.35,abs(vInteriorNormal.y)),0.0,1.0);', 'opticalGlass=clamp(shtGlass,0.0,1.0);');
     fs = rep(fs, 'material.diffuseColor*=1.0-opticalGlass*0.600;', '');
     fs = rep(fs, 'roughnessFactor=mix(roughnessFactor,0.105+.025*glassHash(floor(vInterior.xy)+vInterior.z),opticalGlass);', 'roughnessFactor=mix(roughnessFactor,0.105+.025*glassHash(floor(vInterior.xy)+vInterior.z),opticalGlass*shtSharp);');
-    fs = rep(fs, 'vec3(0.095)*vec3(.96,1.0,1.04)', 'vec3(0.055)*vec3(.98,1.0,1.02)');   // the 1960s float glass's own reflectance (the photographs' windows are near black)
+    fs = rep(fs, 'vec3(0.095)*vec3(.96,1.0,1.04)', 'uShtGl.w*uShtGT');   // the 1960s float glass's own reflectance (the photographs' windows are near black, the sky's navy on them)
+    fs = rep(fs, 'float hzo = 0.12;', 'float hzo = shtHzo;');   // the city the pane mirrors under its own horizon: a high pane sees over it (the review's round)
     fs = rep(fs, '#include <lights_fragment_maps>', '#include <lights_fragment_maps>\n#if defined( RE_IndirectSpecular )\nradiance *= shtSpecOcc;\n#endif');
     fs = rep(fs, 'themedRoom=1.0;', 'themedRoom=1.0; totalEmissiveRadiance*=shtThemeK;');   // the five glow on their glass, not on a frame
     fs = rep(fs, '#include <map_fragment>', '#include <map_fragment>\n' + shtMainGLSL(gl2, gl2 && !isTouch));   // a phone: flat rooms by day
@@ -15959,6 +16160,25 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     fs = rep(fs, '#include <normal_fragment_maps>', '#include <normal_fragment_maps>\nnormal = normalize(mat3(viewMatrix) * shtN);');
     // the sun stopped by the reveal: every direct light through it (the moon is the same key light; the far map's light is black)
     fs = rep(fs, '#include <lights_physical_pars_fragment>', `#include <lights_physical_pars_fragment>
+      // the means' light on a face of a world orientation (the review's round): the key light unshadowed, and the fill as this
+      // material takes it (the ambient, the hemisphere and the sky probe's irradiance)
+      vec3 shtKey(vec3 nW) {
+        #if NUM_DIR_LIGHTS > 0
+        return directionalLights[0].color * max(dot(normalize(mat3(viewMatrix) * nW), directionalLights[0].direction), 0.0);
+        #else
+        return vec3(0.0);
+        #endif
+      }
+      vec3 shtFill(vec3 nW) {
+        vec3 nV = normalize(mat3(viewMatrix) * nW), irr = getAmbientLightIrradiance(ambientLightColor);
+        #if NUM_HEMI_LIGHTS > 0
+        for (int i = 0; i < NUM_HEMI_LIGHTS; i++) irr += getHemisphereLightIrradiance(hemisphereLights[i], nV);
+        #endif
+        #if defined( USE_ENVMAP ) && defined( ENVMAP_TYPE_CUBE_UV )
+        irr += getIBLIrradiance(nV);
+        #endif
+        return irr;
+      }
       void RE_Direct_Sht(const in IncidentLight directLight, const in GeometricContext geometry, const in PhysicalMaterial material, inout ReflectedLight reflectedLight) {
         IncidentLight dl = directLight; dl.color *= shtSunVis;
         RE_Direct_Physical(dl, geometry, material, reflectedLight);
@@ -15973,7 +16193,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     mat.extensions = { derivatives: true };
     mat.emissive = new THREE.Color(0xffffff);
     mat.emissiveIntensity = 0;
-    mat.defines = { THEMED_ROOMS: '', ...(POST.on ? { THEMED_BLOOM: '' } : {}) };
+    mat.defines = { THEMED_ROOMS: '', ...(POST.on ? { THEMED_BLOOM: '', SHT_POST: '' } : {}) };
     mat.onBeforeCompile = shtHook;
     mat.customProgramCacheKey = () => 'sht-r195';
     return mat;
@@ -16031,9 +16251,46 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       if (top) { const c = [x, y1, z]; shtQuad(B, [c, [x + r * Math.cos(a1), y1, z + r * Math.sin(a1)], [x + r * Math.cos(a0), y1, z + r * Math.sin(a0)], c], [0, 1, 0], k, -1); }
     }
   }
+  // the colonnade's pilotis: a blade every second mullion line (0.75 m on the face, 1.6 m deep), a square pier at each
+  // corner. Near, each a box's four sides; far (the review's round: the colonnade turned into a dark lobby band at the switch),
+  // a blade's outer end and its two broad sides, a pier's two outer faces
+  function shtPilotis(B, near) {
+    const D = SHT_D, hw = D.L[0] / 2, hd = D.L[1] / 2, off = D.cw - D.mw / 2, pw = D.pilW / 2, pd = D.pilD, cp = D.cornerP, y0 = -0.4, y1 = D.lobbyH;
+    // a box's chosen sides in shtBox3's own winding (+z, +x, -z, -x: each wall's normal the left of its run, turned out)
+    const sides = (x0, x1, z0, z1, f) => {
+      if (f.pz) shtWall(B, [x0, z1], [x1, z1], y0, y1, 1, -1);
+      if (f.px) shtWall(B, [x1, z1], [x1, z0], y0, y1, 1, -1);
+      if (f.nz) shtWall(B, [x1, z0], [x0, z0], y0, y1, 1, -1);
+      if (f.nx) shtWall(B, [x0, z0], [x0, z1], y0, y1, 1, -1);
+    };
+    for (const [len, nB, axis] of [[D.L[0], D.bays[0], 'x'], [D.L[1], D.bays[1], 'z']]) {
+      for (let kk = 2; kk < nB; kk += 2) {
+        const u = -len / 2 + off + kk * D.bayP;
+        for (const sg of [-1, 1]) {
+          const bx = axis === 'x' ? [u - pw, u + pw, sg > 0 ? hd - pd : -hd, sg > 0 ? hd : -hd + pd] : [sg > 0 ? hw - pd : -hw, sg > 0 ? hw : -hw + pd, u - pw, u + pw];
+          if (near) { shtBox3(B, bx[0], bx[1], bx[2], bx[3], y0, y1, 1); continue; }
+          sides(bx[0], bx[1], bx[2], bx[3], axis === 'x' ? { px: 1, nx: 1, pz: sg > 0, nz: sg < 0 } : { pz: 1, nz: 1, px: sg > 0, nx: sg < 0 });
+        }
+      }
+    }
+    for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+      const x0 = sx > 0 ? hw - cp : -hw, x1 = sx > 0 ? hw : -hw + cp, z0 = sz > 0 ? hd - cp : -hd, z1 = sz > 0 ? hd : -hd + cp;
+      if (near) shtBox3(B, x0, x1, z0, z1, y0, y1, 1);
+      else sides(x0, x1, z0, z1, { pz: sz > 0, nz: sz < 0, px: sx > 0, nx: sx < 0 });   // the two faces that look out of the colonnade
+    }
+  }
+  // the cooling tower at the kit's end of the penthouse: its louvred box and its fans in a row across it (near: 14-sided
+  // cowls; far: 6, the same box)
+  function shtCooling(B, kit, near) {
+    const D = SHT_D, hw = D.L[0] / 2, hd = D.L[1] / 2, H = D.H;
+    const px = hw * D.pent[0], pz = hd * D.pent[1], pt = H + D.pent[2];
+    const e = kit.fanEnd, r = kit.fanR, cl = 2 * r + 1.0, cz = pz * D.cool[0], x0 = e > 0 ? px - cl : -px, x1 = e > 0 ? px : -px + cl, ct = pt + D.cool[1];
+    shtBox3(B, x0, x1, -cz, cz, pt - 0.2, ct, 4, 3);
+    for (let f = 0; f < kit.fans; f++) shtCyl(B, (x0 + x1) / 2, -cz + (2 * f + 1) * cz / kit.fans, Math.min(r, cz / kit.fans - 0.1), ct, ct + 0.6, 5, near ? 14 : 6, true);
+  }
   // ONE tower in its own frame: x along the wide faces, z along the narrow, y over the podium. near: the colonnade's pilotis,
-  // the parapet and the deck within it, the cooling tower (at the kit's end) and its fans; far: the shell, a lobby
-  // box, the roof as one cap and the penthouse box
+  // the parapet and the deck within it, the penthouse, the cooling tower (at the kit's end) and its fans; far: the shell, a
+  // lobby box, the pilotis' outer faces, the roof as one cap, the penthouse box and the cooling tower
   function shtTowerParts(near, kit) {
     const D = SHT_D, B = shtBuf(), hw = D.L[0] / 2, hd = D.L[1] / 2, H = D.H, li = D.lobbyIn;
     // the shell's four faces, in Round 137's order (its sides: +z, -z, +x, -x), each from its left end seen from outside
@@ -16044,35 +16301,20 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     const gw = hw - li, gd = hd - li;
     [[[-gw, gd], [gw, gd]], [[gw, -gd], [-gw, -gd]], [[gw, gd], [gw, -gd]], [[-gw, -gd], [-gw, gd]]].forEach(([A, Bp]) => shtWall(B, A, Bp, -0.4, D.lobbyH, 2, 4));
     shtRing(B, hw + 3.0, hd + 3.0, gw, gd, 0.16, [0, 1, 0], 6);
+    shtPilotis(B, near);
+    const px = hw * D.pent[0], pz = hd * D.pent[1], pt = H + D.pent[2];
     if (near) {
-      // the pilotis: a blade every second mullion line (0.75 m on the face, 1.6 m deep), a square pier at each corner
-      const off = D.cw - D.mw / 2, pw = D.pilW / 2, pd = D.pilD, cp = D.cornerP;
-      for (const [len, nB, axis] of [[D.L[0], D.bays[0], 'x'], [D.L[1], D.bays[1], 'z']]) {
-        for (let kk = 2; kk < nB; kk += 2) {
-          const u = -len / 2 + off + kk * D.bayP;
-          for (const sg of [-1, 1]) {
-            if (axis === 'x') shtBox3(B, u - pw, u + pw, sg > 0 ? hd - pd : -hd, sg > 0 ? hd : -hd + pd, -0.4, D.lobbyH, 1);
-            else shtBox3(B, sg > 0 ? hw - pd : -hw, sg > 0 ? hw : -hw + pd, u - pw, u + pw, -0.4, D.lobbyH, 1);
-          }
-        }
-      }
-      for (const sx of [-1, 1]) for (const sz of [-1, 1]) shtBox3(B, sx > 0 ? hw - cp : -hw, sx > 0 ? hw : -hw + cp, sz > 0 ? hd - cp : -hd, sz > 0 ? hd : -hd + cp, -0.4, D.lobbyH, 1);
       // the parapet: its inner faces down to the deck, its coping, the deck
       const ci = D.coping, yd = H - D.deck;
       shtRing(B, hw, hd, hw - ci, hd - ci, H, [0, 1, 0], 1);
       [[[hw - ci, hd - ci], [-hw + ci, hd - ci]], [[-hw + ci, -hd + ci], [hw - ci, -hd + ci]], [[-hw + ci, hd - ci], [-hw + ci, -hd + ci]], [[hw - ci, -hd + ci], [hw - ci, hd - ci]]].forEach(([A, Bp]) => shtWall(B, A, Bp, yd, H, 1, -1));
       shtQuad(B, [[-hw + ci, yd, -hd + ci], [hw - ci, yd, -hd + ci], [hw - ci, yd, hd - ci], [-hw + ci, yd, hd - ci]], [0, 1, 0], 3, -1);
-      // the penthouse, and the cooling tower within its end: its louvred box and its fans in a row across it
-      const px = hw * D.pent[0], pz = hd * D.pent[1], pt = H + D.pent[2];
       shtBox3(B, -px, px, -pz, pz, yd, pt, 1, 3);
-      const e = kit.fanEnd, r = kit.fanR, cl = 2 * r + 1.0, cz = pz * D.cool[0], x0 = e > 0 ? px - cl : -px, x1 = e > 0 ? px : -px + cl, ct = H + D.cool[1];
-      shtBox3(B, x0, x1, -cz, cz, pt - 0.2, ct, 4, 3);
-      for (let f = 0; f < kit.fans; f++) shtCyl(B, (x0 + x1) / 2, -cz + (2 * f + 1) * cz / kit.fans, Math.min(r, cz / kit.fans - 0.1), ct, ct + 0.6, 5, 14, true);
     } else {
       shtQuad(B, [[-hw, H, -hd], [hw, H, -hd], [hw, H, hd], [-hw, H, hd]], [0, 1, 0], 3, -1);
-      const px = hw * D.pent[0], pz = hd * D.pent[1];
-      shtBox3(B, -px, px, -pz, pz, H - 0.2, H + D.pent[2], 1, 3);
+      shtBox3(B, -px, px, -pz, pz, H - 0.2, pt, 1, 3);
     }
+    shtCooling(B, kit, near);
     return B;
   }
   // three placements into one geometry: each vertex turned and set on its tower's footprint, each shell face given its room
@@ -16184,7 +16426,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   const SHT_FOUNTAIN = { x: 2.2, z: 0.0, r: 8.25, ri: 7.45 };
   function shtPlaza(podium) {
     const y = podium + LAYER.plaza + 0.02, F = SHT_FOUNTAIN;
-    const court = [[-15.5, -20], [-5, -27.1], [16.1, -23.2], [14.6, -11], [13.6, -11], [13.6, 17], [2, 17], [2, 40], [-5, 40], [-5, 11.5], [-20.9, 11.5]];
+    const court = SHT_COURT;   // (the ring 'Paving the streets' keeps the service ways' asphalt off)
     const swTerrace = [[-20.6, 11.6], [-5.1, 11.6], [-5.1, 37.5], [-20.0, 37.5]];
     const seTerrace = [[2.1, 17.1], [13.6, 17.1], [13.6, 19.5], [34.5, 19.5], [34.5, 32.4], [2.1, 32.4]];
     const lot = [[13.7, -11], [34.5, -11], [34.5, 19.4], [13.7, 19.4]];
@@ -16265,10 +16507,12 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     const kI = sun.intensity * Math.max(0, sunDir.y > 0 ? 1 : 0.4), hI = hemi.intensity;
     shtU.uShtL.value.x = clamp(kI / Math.max(kI + 1.25 * hI, 1e-3), 0, 0.9);
     shtU.uShtL.value.w = wxSurfU.uWet.value;
+    shtU.uShtF.value.w = lampUniform.value;   // the night's light on the concrete comes up with the street lamps (dusk included)
     if (isTouch && SHT.art === 'none' && d < 1500) shtLoadArt();   // a phone's half picture on its approach
   }
   // ?dev: __dbg.sht() - the level, the triangles, the art, the five windows' face and seed; 'near', 'far', 'auto', 'off', 'on'
-  function shtProbe(what) {
+  function shtProbe(what, set) {
+    if (what === 'u') { if (set) for (const k in set) { const u = shtU[k]; if (u && u.value && u.value.fromArray) u.value.fromArray(set[k]); else if (u) u.value = set[k]; } return shtU; }   // ?dev tuning: __dbg.sht('u', { uShtN: [r, g, b, w] })
     if (what === 'off' || what === 'on') SHT.off = what === 'off';
     if (what === 'near' || what === 'far' || what === 'auto') SHT.force = what === 'auto' ? null : what;
     if (what === 'means' || what === 'exact' || what === 'pixel') shtU.uShtL.value.z = what === 'means' ? 1 : what === 'exact' ? -1 : 0;
@@ -16276,7 +16520,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     return { on: SHT_ON, built: SHT.built, err: SHT.err, hookOk: SHT.hookOk, hookMiss: SHT.hookMiss.slice(), lod: SHT.lod, dist: SHT.dist == null ? null : Math.round(SHT.dist),
       near: info(SHT.near), far: info(SHT.far), plaza: SHT.plaza.length, tris: { ...SHT.tris }, art: SHT.art, texMB: SHT.bytes ? +(SHT.bytes / 1048576).toFixed(2) : 0,
       themed: SHT.themed, litWin: shtWinU.uLitWin.value.toArray().map((v) => +v.toFixed(4)), dims: { fh: +SHT_D.fh.toFixed(3), L: SHT_D.L.map((v) => +v.toFixed(2)), gridBot: +SHT_D.gridBot.toFixed(2) },
-      lodR: { near: SHT_NEAR_R, hyst: SHT_HYST }, keyShare: +shtU.uShtL.value.x.toFixed(3) };
+      lodR: { near: SHT_NEAR_R, hyst: SHT_HYST }, keyShare: +shtU.uShtL.value.x.toFixed(3), court: { ...SHT_COURT_N } };
   }
   // ------------------------------------------------ the three towers
   step('Casting the concrete grid', () => {

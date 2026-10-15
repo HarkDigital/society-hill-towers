@@ -1,5 +1,10 @@
 """Round 195: the Society Hill Towers remodelled (app.js 'the three towers remodelled', fetch_sht_art.py, bake_sht_art.py).
 
+The review's round: the band over the top heads a floor and the penthouse 1.1 floors over the coping, the far
+level carrying the colonnade's pilotis and the cooling tower (no change at the switch), the motor court's service ways
+laying no asphalt over the court, the means built from the material's own lights and the screen's own curve, the night's
+rooms on one mean (the flat pane, roomPar never set), the concrete's light after dark.
+
 - the tower as built: 94.2 m, thirty floors of 2.76 m over the colonnade and the transfer girder, 18 bays by 12 on the
   six-foot module, its faces 33.68 by 22.70 m (inside the three OSM footprints' spread), one tower placed three times;
 - under Node the builder makes a near and a far level inside their budgets: every quad wound to its own normal, every
@@ -32,6 +37,7 @@ global.THREE = THREE;
 const REAL = true, isTouch = false, POST = { on: true }, location = { search: '' };
 const LAYER = { park: 0.06, plaza: 0.1, deck: 0.14, sidewalk: 0.16, road: 0.24, footway: 0.32, basin: 0.36, pool: 0.38 };
 const nightUniform = { value: 0 }, sunWUniform = { value: new THREE.Vector3(0, 1, 0) };
+const postU = { uExposure: { value: 1.06 } }, gradeU = { uCon: { value: 1.05 } };
 const renderer = { capabilities: { isWebGL2: true } };
 let lampCalls = 0;
 function lampLightPatch(sh, w, mode) { lampCalls++; sh.fragmentShader = sh.fragmentShader.replace('void main() {', 'uniform float uLampOn;\nvoid main() {'); }
@@ -117,7 +123,7 @@ class Remodel(unittest.TestCase):
         o = self.need()
         d = o['dims']
         self.assertAlmostEqual(d['H'], 94.2)
-        self.assertAlmostEqual(d['fh'], 2.762, places=3)   # thirty floors, close on nine feet
+        self.assertAlmostEqual(d['fh'], 2.793, places=3)   # thirty floors, close on nine feet (the review's round's band over the top heads)
         self.assertAlmostEqual(d['L'][0], 33.68, places=2)
         self.assertAlmostEqual(d['L'][1], 22.70, places=2)
         # the one tower against the three OSM footprints (mapping noise of about a metre either way)
@@ -130,7 +136,7 @@ class Remodel(unittest.TestCase):
 
     def test_levels_and_streams(self):
         o = self.need()
-        for lvl, cap in (('nearG', 2000), ('farG', 500)):
+        for lvl, cap in (('nearG', 2000), ('farG', 2000)):
             g = o[lvl]
             self.assertLessEqual(g['tris'], cap, lvl)
             self.assertTrue(g['finite'], lvl)
@@ -147,7 +153,11 @@ class Remodel(unittest.TestCase):
                 self.assertAlmostEqual(f['u0'], 0, places=3); self.assertAlmostEqual(f['u1'], f['L'], places=2)
                 self.assertAlmostEqual(f['y0'], 6.4, places=3); self.assertAlmostEqual(f['y1'], 94.2, places=3)
         self.assertEqual(o['nearG']['kinds'], [0, 1, 2, 3, 4, 5, 6, 7])
-        self.assertGreater(o['nearG']['tris'], 3 * o['farG']['tris'])
+        # the review's round: the far level carries the pilotis' outer faces and the cooling tower and its fans, so nothing at the
+        # base or on the roof changes at the switch (the review's pop at 520 m and 320 m), and stays under the near's cost
+        self.assertEqual(o['farG']['kinds'], [0, 1, 2, 3, 4, 5, 6, 7])
+        self.assertLess(o['farG']['tris'], o['nearG']['tris'])
+        self.assertGreater(o['farG']['tris'] - 3 * 140, 500)   # the old far level (420 for the three) plus the colonnade's faces
 
     def test_the_five_windows(self):
         o = self.need()
@@ -166,7 +176,7 @@ class Remodel(unittest.TestCase):
         b = self.src
         self.assertIn("shtWinU.uLitWin.value.set(seeds[fi], SHT_THEMED.floor, SHT_THEMED.from, SHT_THEMED.to);", b)
         self.assertIn('apartmentWindowHook(sh);                 // the rooms, the themed five', b)
-        self.assertIn("mat.defines = { THEMED_ROOMS: '', ...(POST.on ? { THEMED_BLOOM: '' } : {}) };", b)
+        self.assertIn("mat.defines = { THEMED_ROOMS: '', ...(POST.on ? { THEMED_BLOOM: '', SHT_POST: '' } : {}) };", b)
         self.assertIn('towerGlassMat = mat;', b)   # the night's emission and updateLightsTheme's reach
         # by day the five carry no blind or curtain (Round 137: plain glass), on the hook's own test
         self.assertIn('plain = 1.0 - step(abs(rI.z - uLitWin.x), .005) * step(abs(rid.y - uLitWin.y), .5) * step(uLitWin.z - .5, rid.x) * step(rid.x, uLitWin.w + .5);', b)
@@ -223,6 +233,69 @@ class Remodel(unittest.TestCase):
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("SHT_ART", text_of("sht_art.json", "null"))', b)
         self.assertIn('"sht_art.json"):', b)
+
+    def test_proportions_at_the_top(self):
+        # the review's round: the band over the top heads is a floor (row profiles: lccn.jpg 1.0, korean.jpg 0.97, pa1.jpg 0.77
+        # of a floor; it was 3.6 m, 1.3 floors) and the penthouse stands 1.1 floors over the coping (pa1.jpg; it was 1.6 m)
+        m = re.search(r"parapetH: ([0-9.]+),", cut(self.src, '  const SHT_D = ', '  const SHT_NEAR_R'))
+        pent = re.search(r"pent: \[([0-9.]+), ([0-9.]+), ([0-9.]+)\]", self.src)
+        parapet, fh = float(m.group(1)), (94.2 - float(m.group(1)) - 6.4 - 2.15 + 0.55) / 30
+        band = parapet + 0.55 / 2
+        self.assertTrue(0.9 <= band / fh <= 1.0, band / fh)
+        self.assertTrue(1.0 <= float(pent.group(3)) / fh <= 1.2)
+
+    def test_the_motor_court_is_paving(self):
+        # OSM's service ways round the fountain and the drive in from Locust Street lay no asphalt over the court, the car
+        # park east of it keeps its own; every registration stays (the kerbs, the trees' clearance), traffic drives no
+        # service way
+        s = self.src
+        ring = json.loads(re.search(r"const SHT_COURT = (\[\[.*?\]\]);", s).group(1))
+        def inside(x, z):
+            c = False
+            for i in range(len(ring)):
+                (x1, z1), (x2, z2) = ring[i], ring[i - 1]
+                if (z1 > z) != (z2 > z) and x < (x2 - x1) * (z - z1) / (z2 - z1) + x1:
+                    c = not c
+            return c
+        roads = json.loads((ROOT / 'scene.json').read_text())['roads']
+        loop = [r for r in roads if r.get('t') == 'service' and all(abs(p[0] - 2) < 13 and abs(p[1]) < 13 for p in r['pts'])]
+        self.assertEqual(len(loop), 1)   # the loop round the fountain
+        drive = [r for r in roads if r.get('t') == 'service' and [round(v, 1) for v in r['pts'][0]] == [-4.7, 42.7]]
+        self.assertEqual(len(drive), 1)   # the drive in from Locust Street
+        mids = lambda r: [((a[0] + b[0]) / 2, (a[1] + b[1]) / 2) for a, b in zip(r['pts'], r['pts'][1:])]
+        for r in loop + drive:
+            self.assertTrue(all(inside(x, z) for x, z in mids(r)))
+        lot = [(x, z) for r in roads if r.get('t') == 'service' for x, z in mids(r) if 14 < x < 34 and -11 < z < 19]
+        self.assertTrue(lot)
+        self.assertFalse(any(inside(x, z) for x, z in lot))   # the car park's aisles keep their asphalt
+        paving = cut(s, "  step('Paving the streets', () => {", "    // ---- sidewalks and crossings")
+        self.assertIn("const paint = SHT_ON && r.t === 'service' ? shtCourtRuns(run) : [run];", paving)
+        self.assertIn('addRoadSeg(run[i][0], run[i][1], run[i + 1][0], run[i + 1][1], r.w / 2);', paving)   # registered whole
+        self.assertIn('const court = SHT_COURT;', s)
+        self.assertNotIn("'service'", (ROOT / 'bake_traffic.py').read_text().split('RT = ')[1].split('}')[0])
+
+    def test_the_means_and_the_night(self):
+        o = self.need()
+        fs = o['hook']['fs']
+        # the means take each part's light from the material's own lights, defined after three's light pars
+        self.assertLess(fs.index('#include <lights_physical_pars_fragment>'), fs.index('vec3 shtFill(vec3 nW)'))
+        self.assertIn('getHemisphereLightIrradiance(hemisphereLights[i], nV)', fs)
+        self.assertIn('irr += getIBLIrradiance(nV);', fs)
+        # and the cell's mean on the screen's own curve, its inverse the composite's
+        self.assertIn('float shtDisp(float L)', fs); self.assertIn('float shtUndisp(float D)', fs)
+        self.assertIn('kD = clamp(shtUndisp(Dm) / max(Llin, 1.0e-6), 0.5, 2.0);', fs)
+        # the night's rooms on the flat pane in both views, at one mean (roomLight's room box is never asked for)
+        self.assertNotIn('roomPar = 1.0', fs)
+        self.assertIn('shtRoomK = mix(mix(1.0, 1.36, detE), kRm * uShtK.y * kD, wA);', fs)
+        self.assertIn('totalEmissiveRadiance *= emK * shtRoomK * uShtDbg.x;', fs)
+        self.assertIn('shtThemeK = emK;', fs)   # the five themed rooms never take the rooms' mean
+        # the concrete's light after dark by the lamps' photocell, on the concrete alone
+        self.assertIn('shtDay += shtConA * uShtF.w * uShtDbg.y * uShtN.rgb', fs)
+        self.assertIn('shtU.uShtF.value.w = lampUniform.value;', self.src)
+        for u in ('uShtGl', 'uShtGT', 'uShtF', 'uShtN', 'uShtM', 'uShtK', 'uShtExp', 'uShtCon'):
+            self.assertIn(u, o['hook']['uniforms'])
+        # no sampler of its own beyond the concrete's (sixteen units a program)
+        self.assertEqual(len(re.findall(r'uniform sampler2D uSht', fs)), 1)
 
     def test_no_dashes_in_what_a_person_reads(self):
         block = cut(self.src, '  // ------------------------------------------------ the three towers remodelled (Round 195)', "  step('Casting the concrete grid'")

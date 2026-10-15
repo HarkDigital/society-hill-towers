@@ -356,15 +356,25 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   flats ~2.5×; roof colours pass through the `roofInv` power curve).
 - **The towers:** since Round 195 (the realistic look; `?sht=0` and `?real=0` keep Round 194's boxes from `TOWER`) one
   tower modelled from `SHT_D` and placed three times on the OSM records' centroids and turns ('the three towers
-  remodelled', `shtBuild`): 18×12 bays on the 6 ft module, faces 33.68 by 22.70 m, thirty floors of 2.762 m over a
-  6.4 m colonnade and a 2.15 m girder, 94.2 m (CTBUH 309 ft; OSM says 89). Each face is ONE quad and the facade shader
-  ray-casts the egg crate in its own frame (`shtMainGLSL`: jambs, sills, heads and the pane 0.5 m back, the sun's own
-  visibility through the opening, the blinds by roomLight's hashes), drawn by the cells' means (calibrated to the exact
-  view within 5% at three faces: `__dbg.sht('means' | 'exact')`) once a cell is under about three pixels. The rooms are
-  the tower glass's own hook (`apartmentWindowHook`, unchanged, its varyings made the ray's per-pixel values), so
-  Round 137's five windows (`SHT_THEMED`, the seeds from the OSM records) are found as before. A near level within
-  `SHT_NEAR_R` (520 m, a phone's 320) and a far one (`shtStep`, the far level the pins' `occStandIn`); one program for
-  both; `__dbg.sht()`.
+  remodelled', `shtBuild`): 18×12 bays on the 6 ft module, faces 33.68 by 22.70 m, thirty floors of 2.793 m over a
+  6.4 m colonnade and a 2.15 m girder, a 2.4 m parapet (the band over the top heads a floor) and a penthouse 3 m over
+  the coping, 94.2 m (CTBUH 309 ft; OSM says 89). Each face is ONE quad and the facade shader ray-casts the egg crate in
+  its own frame (`shtMainGLSL`: jambs, sills, heads and the pane 0.5 m back, the sun's own visibility through the
+  opening, a reveal's shade on its fill alone, the blinds by roomLight's hashes as fabric seen through the glass, kept a
+  pixel inside the visible pane's edge), drawn by the cells' means once a cell is under about three pixels, by axis (a
+  face at a slant keeps its floors' bands once its bays are under a pixel: `shtBand`, `sO`). The means take each part's
+  light from the material's own lights (`shtKey`, `shtFill`, defined after three's light pars) and the cell's mean on
+  the screen's own curve (`shtDisp`, `shtUndisp`: ACES, sRGB and the grade on a computer, `SHT_POST`; a phone's
+  CustomToneMapping), held to the exact view within 5% at three faces by morning, noon, dusk and night
+  (`__dbg.sht('means' | 'exact')`, the fix round's `uShtK` fit; recheck after any change to the grade, the exposure or the
+  sky probe). The rooms are the tower glass's own hook (`apartmentWindowHook`, unchanged, its varyings made the ray's
+  per-pixel values) on the flat pane at night (`roomPar` never set, `shtRoomK` takes it and roomLight's far constant to
+  one mean), so Round 137's five windows (`SHT_THEMED`, the seeds from the OSM records) are found as before; the
+  concrete takes the city's light after dark (`uShtN` by the lamps' photocell). A near level within `SHT_NEAR_R` (520 m,
+  a phone's 320) and a far one (`shtStep`, the far level the pins' `occStandIn`, with the colonnade's pilotis and the
+  cooling tower, so nothing changes at the switch); one program for both; `__dbg.sht()`, `__dbg.sht('u', {...})` sets
+  its uniforms. The motor court round the fountain is paving: 'Paving the streets' lays no ribbon for a service way's
+  segment inside `SHT_COURT` (`shtCourtRuns`).
 - **Landmarks:** `REALISM` (exact OSM names) and `REALISM_NEAR` (centroid + area matches for
   unnamed footprints) mark buildings `custom` (rebuilt in "Restoring the landmarks") or
   `recolor`; City Hall, the Liberty Places, the Art Museum, the stadiums, the Custom House,
