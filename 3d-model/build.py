@@ -205,6 +205,7 @@ const("STOREFRONT_ART", text_of("storefront_art.json", "null"))   # the storefro
 const("CITYHALL_ART", text_of("cityhall_art.json", "null"))   # City Hall's generated facades (bake_cityhall_art.py), Round 191
 const("GLORY_ART", text_of("glory_art.json", "null"))   # Glory Beer Bar & Kitchen's elevations, swatches and rooms (bake_glory_art.py), Round 191
 const("GLASS_ART", text_of("glass_art.json", "null"))   # the glass towers' curtain-wall systems, frame and room atlases (bake_glass_art.py over glass_systems.json), Round 192
+const("MOSHULU_ART", text_of("moshulu_art.json", "null"))   # the Moshulu's hull plating and teak deck (bake_moshulu_art.py), Round 195
 
 
 def art_paths(o):
@@ -221,7 +222,7 @@ def art_paths(o):
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
 for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
-             "glory_art.json", "storefront_art.json", "glass_art.json"):
+             "glory_art.json", "storefront_art.json", "glass_art.json", "moshulu_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

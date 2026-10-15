@@ -292,6 +292,8 @@ textures), `?vart=0` (the old box vehicles), `?parked=0`, `?furniture=0`, `?carp
 texture-unit limit) and `?canopy=show`; probes `__dbg.gpu()`, `pickAt(px, py)`, `keyLight(f)`, `clouds3d()`, `facade()`,
 `fronts()`, `veg()`, `water()`, `vehicles()`, `lampNear()`, `lampReal(k)`, `lampAt(x, z)`, and after the first frame
 `wxTune({...})` and `wxFx()`.
+`?moshulu=0` draws the old Moshulu and her old berth (Round 195: the remodel, her slip open to the river and the promenade strip
+broken there); `__dbg.moshulu()` reports her level, triangles, ribbons, bulbs and art, `__dbg.moshuluU` holds her uniforms.
 
 ## The realism pass (Round 188)
 
