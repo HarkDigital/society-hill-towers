@@ -21090,6 +21090,714 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       heads: (CH.heads || []).map((r) => ({ n: r.poly.length, h: r.h, c: r.c.map((v) => +v.toFixed(1)), area: +Math.abs(signedArea(r.poly)).toFixed(1) })), late: CH.late.value.toArray().map((v) => +v.toFixed(3)), err: CH.err,
       lodR: { near: CH_NEAR_R, hyst: CH_HYST, art: CH_ART_R } };
   }
+  // ---- The Irish Famine Memorial (Round 197, Mike with a screenshot of Round 129's: "The irish famine memorial needs to look
+  // more realistic. lookup photos of it. There is a boat. Also put an irish flag on a flagpole to the northeast of it."). Glenna
+  // Goodacre's bronze (2003, Front and Chestnut) from Wikimedia Commons' photographs (Irish_Memorial_in_Philadelphia_1 and 2,
+  // Irish_Famine_Memorial_-_Philadelphia_(2642935112), The_Irish_Memorial_(2003)_(3118931304), The_Irish_Memorial_at_Penn's
+  // _Landing): a long faceted plinth of speckled grey granite panels on a dark paved circle; on it a planked ship's hull with its
+  // gunwale, a raked stem and a porthole, the emigrants crowded at its rail from the waist up; a gangway down its side, canvas
+  // hung from a rope between its posts, people climbing it and barrels, a trunk, a crate and sacks under it; at the far end the
+  // famine on a mass of rough rock, a Celtic cross and gravestones, a mother on her knees over her child, a woman sitting with
+  // her face in her hand, a boy crouched in a brimmed hat, a gaunt man bowed on a staff; and alone at the near tip a man with his
+  // hat raised, waving to the ship. Mike's place and heading are kept (84, 104, the long axis with Spruce Street, the famine at
+  // the west end and the ship's bow to the east), as are Round 184's floods after dark. Every form is smooth (CHS's rings, tubes,
+  // blobs and lathes); the bronze is a metal with a patina lighter on what stands proud and darker in the folds, worked over in
+  // the shader by a modelled clay grain. The Irish tricolour flies from a 9.5 m aluminium pole to the north-east, on the wind the
+  // weather reports. One near mesh and one far past FAMINE.nearR, and the flag: two draws at most. ?real=0 keeps Round 129's.
+  const FAMINE = { c: [84, 104], sp0: [63.3, 119.3], sp1: [121, 128], H0: 0.95, pole: [95.5, 98.5], poleH: 9.5, flagL: 2.0, flagH: 1.0,
+    flag: [0x169b62, 0xffffff, 0xff883e], nearR: 250, hyst: 30, flagR: 900 };
+  // kinds (aFm.x): 0 bronze, 1 its darker shade (hats, hair, shoes), 2 the granite (the plinth, the pole's drum), 3 the dark
+  // paving, 4 its pale border, 5 the pole's aluminium, 6 the gilt ball, 7 a lamp's lens, 8 the hull's planking, 9 the deck's,
+  // 10 the gangway's canvas, 11 the rock
+  const FAM_K = { bronze: 0, dark: 1, granite: 2, pave: 3, border: 4, alu: 5, gilt: 6, lens: 7, hull: 8, deck: 9, canvas: 10, rock: 11 };
+  // smooth value noise in three dimensions (the rock's lumps, the canvas' creases)
+  function famN3(x, y, z) {
+    const ix = Math.floor(x), iy = Math.floor(y), iz = Math.floor(z), fx = x - ix, fy = y - iy, fz = z - iz;
+    const sx = fx * fx * (3 - 2 * fx), sy = fy * fy * (3 - 2 * fy), sz = fz * fz * (3 - 2 * fz);
+    const h = (a, b, c) => hash01((ix + a) * 57.13 + (iy + b) * 113.71 + (iz + c) * 31.97);
+    const l = (a, b, t) => a + (b - a) * t;
+    return l(l(l(h(0, 0, 0), h(1, 0, 0), sx), l(h(0, 1, 0), h(1, 1, 0), sx), sy), l(l(h(0, 0, 1), h(1, 0, 1), sx), l(h(0, 1, 1), h(1, 1, 1), sx), sy), sz);
+  }
+  // the plinth's edge at angle a in the memorial's frame (u with Spruce Street, eastward; v toward it): a rounded oblong of
+  // flat panels with the lobe toward the street the mother stands on (the photographs' plan)
+  function famOutline(a) {
+    const c = Math.cos(a), s = Math.sin(a), e = 2 / 2.7;
+    const u = 7.2 * Math.sign(c) * Math.pow(Math.abs(c), e);
+    let v = 4.3 * Math.sign(s) * Math.pow(Math.abs(s), e);
+    if (v > 0) v += 0.45 * Math.exp(-Math.pow((u - 0.2) / 2.4, 2));
+    return [u, v];
+  }
+  // the ship: its sheer (the gunwale rising to the bow and the stern), the deck under it, the stem's rake, the plan's taper to
+  // the bow and the section's bilge with a little tumblehome; t runs from the plinth (0) to the gunwale (1)
+  const FAM_HULL = { B0: 1.5, uA: -1.0, uT: 2.2 };
+  const famGun = (u) => FAMINE.H0 + 2.15 + 0.3 * Math.pow((u - 1.2) / 4.0, 2);
+  const famDeck = (u) => famGun(u) - 0.72;
+  const famBow = (t) => 4.4 + 0.8 * t;
+  const famPlan = (u, t) => { if (u <= FAM_HULL.uT) return 1; const q = Math.min(1, Math.max(0, (u - FAM_HULL.uT) / (famBow(t) - FAM_HULL.uT))); return Math.pow(Math.max(0, 1 - q * q), 0.62); };
+  const famSect = (t) => 0.66 + 0.34 * Math.sin(Math.min(1, t / 0.78) * Math.PI / 2) - 0.05 * Math.max(0, (t - 0.78) / 0.22);
+  const famHullY = (u, t) => FAMINE.H0 + t * (famGun(u) - FAMINE.H0);
+  const famHalfW = (u, t) => FAM_HULL.B0 * famPlan(u, t) * famSect(t);
+  // the gangway down the ship's south side: its foot on the plinth by the bow, its head at the gunwale amidships
+  const FAM_GW = { u0: 4.5, u1: 0.7, v: 2.12, w: 0.95 };
+  const famRampY = (u) => FAMINE.H0 + 0.05 + (FAM_GW.u0 - u) / (FAM_GW.u0 - FAM_GW.u1) * (famGun(FAM_GW.u1) - 0.08 - FAMINE.H0);
+  // the rock at the famine end: lumps of an ellipsoid each, pushed out by the noise (centre u, y, v; radii; seed)
+  const FAM_ROCK = [[-4.1, -0.15, 0.1, 2.9, 1.0, 2.5, 1], [-1.75, -0.25, 0.0, 1.5, 1.55, 2.1, 2], [-5.95, -0.1, -0.5, 1.12, 0.7, 1.45, 3],
+    [-3.4, -0.1, -2.2, 1.7, 0.55, 1.2, 4], [-3.2, -0.1, 2.3, 1.6, 0.5, 1.2, 5]];
+  const famRockF = (dx, dy, dz, sd) => 1 + 0.17 * (2 * famN3(dx * 1.9 + sd * 7.1, dy * 1.9, dz * 1.9) - 1) + 0.09 * (2 * famN3(dx * 4.7, dy * 4.7 + sd * 3.3, dz * 4.7) - 1) + 0.04 * (2 * famN3(dx * 11.0 + sd, dy * 11.0, dz * 11.0) - 1);
+  // the rock's top at (u, v) above the plinth's foot (the plinth's top where there is none)
+  function famRockTop(u, v) {
+    let best = FAMINE.H0;
+    for (const [cu, cy, cv, ru, ry, rv, sd] of FAM_ROCK) {
+      const pu = (u - cu) / ru, pv = (v - cv) / rv;
+      if (pu * pu + pv * pv > 1.6) continue;
+      for (let k = 0; k <= 60; k++) {
+        const py = 1.3 - k * 0.0217, L = Math.hypot(pu, py, pv);
+        if (L < 1e-6 || L <= famRockF(pu / L, py / L, pv / L, sd)) { best = Math.max(best, FAMINE.H0 + cy + py * ry); break; }
+      }
+    }
+    return best;
+  }
+  // an indexed grid of points (i along, j across), each with its kind's two coordinates
+  function famGrid(ni, nj, pt, ab) {
+    const P = [], A = [], I = [];
+    for (let j = 0; j <= nj; j++) for (let i = 0; i <= ni; i++) { const p = pt(i / ni, j / nj); P.push(p[0], p[1], p[2]); const q = ab ? ab(i / ni, j / nj, p) : [0, 0]; A.push(q[0], q[1]); }
+    for (let j = 0; j < nj; j++) for (let i = 0; i < ni; i++) { const a = j * (ni + 1) + i; I.push(a, a + 1, a + ni + 2, a, a + ni + 2, a + ni + 1); }
+    const g = CHS.geom(P, I);
+    g.setAttribute('aFmAB', new THREE.Float32BufferAttribute(A, 2));
+    return g;
+  }
+  // turn a geometry's winding so its normals agree with out(p) on the whole (the grids' handedness flips with a side)
+  function famFace(g, out) {
+    const p = g.attributes.position.array, n = g.attributes.normal.array;
+    let s = 0;
+    for (let i = 0; i < p.length; i += 3) { const o = out(p[i], p[i + 1], p[i + 2]); s += o[0] * n[i] + o[1] * n[i + 1] + o[2] * n[i + 2]; }
+    if (s < 0) { const ix = g.index.array; for (let t = 0; t < ix.length; t += 3) { const q = ix[t + 1]; ix[t + 1] = ix[t + 2]; ix[t + 2] = q; } g.computeVertexNormals(); }
+    return g;
+  }
+  // a figure in its own frame (x forward, y up, z to its right), 1.75 m tall, its feet at the origin. s: d the dress ('skirt'
+  // to the ground, 'coat' to the knee over trousers, 'cloak' hooded to the ground); p the pose ('stand', 'kneel', 'sit',
+  // 'crouch'); b the bow at the waist (radians); hat 0 bare, 1 a brimmed hat, 2 a shawl over the head, 3 a cap, 4 a top hat;
+  // r and l the arms (FAM_ARMS); g gaunt; kid 'hip', 'lap' or 'shoulders'; pack a bundle on the back; sack one in the left
+  // hand; trunk one on the right shoulder; held a hat in the right hand; cane; legs false where the bulwark hides them.
+  // Returns [form, tone] pairs (tone 1 the darker bronze)
+  const FAM_ARMS = {
+    down: [[0.0, -0.27, 0.05], [0.05, -0.52, 0.05]], front: [[0.12, -0.25, 0.03], [0.3, -0.34, -0.1]], wave: [[0.04, 0.21, 0.17], [0.07, 0.47, 0.21]],
+    up: [[0.17, 0.14, 0.06], [0.36, 0.33, 0.04]], reach: [[0.24, -0.12, 0.03], [0.5, -0.16, 0.0]], rail: [[0.13, -0.25, 0.08], [0.36, -0.44, 0.03]],
+    face: [[0.22, -0.18, -0.06], [0.15, 0.17, -0.13]], hold: [[0.1, -0.26, 0.05], [0.27, -0.15, -0.12]], cane: [[0.07, -0.26, 0.06], [0.24, -0.45, 0.08]],
+    knees: [[0.2, -0.22, 0.04], [0.42, -0.3, 0.03]], legs: [[0.13, -0.06, 0.1], [0.15, 0.07, 0.13]], shoulder: [[0.06, 0.13, 0.06], [0.01, 0.31, -0.03]],
+    pray: [[0.17, -0.2, 0.06], [0.27, -0.02, -0.02]],
+  };
+  function famFigure(s, lo) {
+    const out = [], n = lo ? 8 : 10, nt = lo ? 5 : 6, hw = lo ? [7, 5] : [8, 6], put = (g, t) => out.push([g, t || 0]);
+    const gw = s.g ? 0.85 : 1;
+    let W = 1.0;
+    // the lower body
+    if (s.legs === false) {
+      put(CHS.shell([[0.5, 0.2, 0.25 * gw, 0, 0, 0.05, 7], [W + 0.02, 0.15, 0.2 * gw]], n));   // on the deck: the bulwark hides the rest
+    } else if (s.p === 'kneel') {
+      W = 0.56;
+      put(CHS.shell([[0.0, 0.44, 0.35 * gw, 0.15, 0, 0.09, 7], [0.16, 0.4, 0.33 * gw, 0.11, 0, 0.08, 7, 0.6], [0.36, 0.25, 0.25 * gw, 0.03, 0, 0.05, 7, 1.2], [W + 0.02, 0.16, 0.2 * gw]], n));
+    } else if (s.p === 'sit') {
+      W = 0.5;
+      put(CHS.shell([[0.0, 0.26, 0.3 * gw, 0.36, 0, 0.08, 7], [0.2, 0.36, 0.31 * gw, 0.24, 0, 0.07, 7, 0.5], [0.4, 0.24, 0.25 * gw, 0.06, 0, 0.04, 7, 1.0], [W + 0.02, 0.16, 0.2 * gw]], n));
+      if (s.drop) for (const z of [-0.11, 0.11]) {   // on a seat: the shins down from the knees to the ground
+        put(CHS.tube([[0.5, 0.12, z, 0.07], [0.52, -s.drop * 0.5, z, 0.064], [0.5, 0.05 - s.drop, z, 0.06]], nt));
+        put(CHS.blob([0.57, 0.05 - s.drop, z], [0.14, 0.055, 0.065], hw[0], 4), 1);
+      }
+    } else if (s.p === 'crouch') {
+      W = 0.6;
+      for (const z of [-0.11, 0.11]) {
+        put(CHS.tube([[-0.05, W - 0.02, z, 0.085], [0.24, W + 0.05, z * 1.1, 0.075], [0.3, 0.3, z * 1.15, 0.065], [0.2, 0.06, z, 0.055]], nt));
+        put(CHS.blob([0.27, 0.05, z], [0.14, 0.055, 0.065], hw[0], 4), 1);
+      }
+      put(CHS.shell([[W - 0.12, 0.18, 0.21, -0.04, 0, 0.05, 6], [W + 0.06, 0.16, 0.2]], n, { bot: true }));
+    } else if (s.d === 'coat') {
+      if (s.legs !== false) for (const z of [-0.1, 0.1]) {
+        put(CHS.tube([[0.0, 0.05, z, 0.068 * gw], [0.0, 0.3, z, 0.066 * gw], [0.0, 0.5, z, 0.075 * gw]], nt, { cap0: false }));
+        put(CHS.blob([0.07, 0.05, z], [0.14, 0.055, 0.065], hw[0], 4), 1);
+      }
+      put(CHS.shell([[0.42, 0.21, 0.26 * gw, -0.02, 0, 0.07, 7], [0.7, 0.18, 0.235 * gw, -0.01, 0, 0.05, 7, 0.5], [W + 0.02, 0.15, 0.2 * gw]], n, { bot: true }));
+    } else {
+      const wide = s.d === 'cloak' ? 1.08 : 1;
+      put(CHS.shell([[0.0, 0.31 * wide, 0.35 * gw * wide, 0.02, 0, 0.12, 9], [0.3, 0.27 * wide, 0.31 * gw * wide, 0.01, 0, 0.1, 9, 0.35], [0.62, 0.215, 0.265 * gw, 0, 0, 0.07, 9, 0.7], [0.9, 0.165, 0.215 * gw, 0, 0, 0.035, 9, 0.9], [W + 0.02, 0.145, 0.185 * gw]], n));
+    }
+    // the upper body, built at the waist and bowed about it
+    const up = [], U = (g, t) => up.push([g, t || 0]);
+    U(CHS.shell([[W - 0.04, 0.15, 0.19 * gw], [W + 0.18, 0.14, 0.205 * gw, 0.01, 0, 0.025, 5], [W + 0.36, 0.13, 0.23 * gw], [W + 0.45, 0.08, 0.13], [W + 0.49, 0.05, 0.055]], n, { top: true }));
+    const shawl = s.d === 'skirt' || s.d === 'cloak';
+    if (shawl) U(CHS.shell([[W + 0.02, 0.19, 0.25 * gw, -0.01, 0, 0.07, 8], [W + 0.24, 0.17, 0.255 * gw, -0.01, 0, 0.05, 8, 0.5], [W + 0.39, 0.145, 0.245 * gw, -0.01, 0, 0.02, 8], [W + 0.47, 0.09, 0.13, -0.01]], n, { a0: 0.6, a1: Math.PI * 2 - 0.6 }));
+    else U(CHS.shell([[W + 0.3, 0.14, 0.15, 0.03], [W + 0.44, 0.1, 0.12, 0.0], [W + 0.47, 0.075, 0.09]], n, { a0: -0.7, a1: 0.7 }), 1);   // a coat's collar turned up at the throat
+    if (s.pack) { U(CHS.blob([-0.22, W + 0.3, 0.0], [0.13, 0.18, 0.17], hw[0], hw[1])); U(CHS.tube([[0.02, W + 0.43, -0.15, 0.022], [-0.15, W + 0.42, 0.0, 0.022], [0.02, W + 0.43, 0.15, 0.022]], 4), 1); }
+    // the head (turned by t), its nose, and what is on it
+    const head = [], Hd = (g, t) => head.push([g, t || 0]), hy = W + 0.64;
+    Hd(CHS.tube([[0.0, W + 0.45, 0, 0.052 * gw], [0.012, W + 0.57, 0, 0.05 * gw]], nt, { cap0: false, cap1: false }));
+    Hd(CHS.blob([0.005, hy + 0.005, 0], [0.1, 0.118, 0.087], hw[0] + 1, hw[1]));
+    Hd(CHS.blob([0.1, hy - 0.015, 0], [0.032, 0.032, 0.021], 4, 3));
+    if (!lo && s.hat !== 2) Hd(CHS.blob([0.05, hy - 0.07, 0], [0.065, 0.05, 0.068], 5, 3));   // the jaw (a shawl hides it)
+    if (s.hat === 1 || s.hat === 4) {
+      const y = hy + 0.075, top = s.hat === 4;
+      Hd(CHS.lathe([[0.08, y], [top ? 0.17 : 0.2, y + 0.006], [top ? 0.18 : 0.21, y + 0.028], [0.1, y + 0.032]], n), 1);
+      Hd(CHS.shell([[y + 0.02, 0.105, 0.098], [y + (top ? 0.2 : 0.1), top ? 0.108 : 0.1, top ? 0.1 : 0.094, 0, 0, top ? 0 : 0.03, 2], [y + (top ? 0.215 : 0.125), top ? 0.106 : 0.083, top ? 0.098 : 0.078]], n, { top: true, dome: 0.01 }), 1);
+    } else if (s.hat === 3) {
+      Hd(CHS.blob([-0.005, hy + 0.085, 0], [0.122, 0.05, 0.104], hw[0], 4), 1);
+      Hd(CHS.blob([0.11, hy + 0.07, 0], [0.07, 0.013, 0.085], 6, 3), 1);
+    } else if (s.hat === 2) {
+      Hd(CHS.shell([[W + 0.38, 0.19, 0.22 * gw, -0.03, 0, 0.06, 7], [W + 0.55, 0.155, 0.155, -0.03, 0, 0.05, 7, 0.4], [hy + 0.06, 0.137, 0.127, -0.02, 0, 0.03, 7, 0.8], [hy + 0.14, 0.09, 0.085, -0.03]], n, { a0: 0.78, a1: Math.PI * 2 - 0.78, top: true, dome: 0.03 }));
+    } else Hd(CHS.shell([[hy - 0.02, 0.112, 0.099, -0.012, 0, 0.05, 9], [hy + 0.07, 0.1, 0.088, -0.016], [hy + 0.118, 0.05, 0.048, -0.02]], n, { top: true, dome: 0.01 }), 1);   // bare: the hair
+    if (s.t) { const R = new THREE.Matrix4().makeTranslation(0, W + 0.5, 0).multiply(new THREE.Matrix4().makeRotationY(s.t)).multiply(new THREE.Matrix4().makeTranslation(0, -W - 0.5, 0)); for (const [g] of head) g.applyMatrix4(R); }
+    for (const h of head) up.push(h);
+    // the arms: sleeves to the wrist, a hand along the forearm
+    const arm = (side, key) => {
+      if (!key) return;
+      const [e, h] = FAM_ARMS[key], z0 = side * 0.2 * gw, S = new THREE.Vector3(0, W + 0.4, z0), E = S.clone().add(new THREE.Vector3(e[0], e[1], e[2] * side)), H = S.clone().add(new THREE.Vector3(h[0], h[1], h[2] * side));
+      const sl = s.d === 'coat' ? 1.12 : 1, M = S.clone().lerp(E, 0.5), p = (q, r) => [q.x, q.y, q.z, r * gw];
+      U(CHS.tube([p(S.clone().add(new THREE.Vector3(0, 0.02, -side * 0.03)), 0.07 * sl), p(M, 0.064 * sl), p(E, 0.055 * sl), p(H, 0.045 * sl)], nt));
+      const d = H.clone().sub(E).normalize(), C = H.clone().addScaledVector(d, 0.06);
+      U(CHS.blob([C.x, C.y, C.z], [0.078, 0.034, 0.052], 5, 3, [d.x, d.y, d.z], Math.abs(d.y) > 0.9 ? [1, 0, 0] : [0, 1, 0]));
+      if (key === 'cane') { const T = C.clone().addScaledVector(d, 0.05); U(CHS.tube([[T.x, T.y + 0.08, T.z, 0.018], [T.x + 0.1, 0.0, T.z + 0.02 * side, 0.016]], 5), 1); }
+      return C;
+    };
+    const Cr = arm(1, s.r), Cl = arm(-1, s.l);
+    if (s.held && Cr) { U(CHS.lathe([[0.07, 0], [0.19, 0.005], [0.2, 0.025], [0.1, 0.03]], n).translate(Cr.x + 0.02, Cr.y + 0.05, Cr.z), 1); U(CHS.shell([[Cr.y + 0.07, 0.1, 0.095], [Cr.y + 0.16, 0.095, 0.09]], n, { top: true }).translate(Cr.x + 0.02, 0, Cr.z), 1); }
+    if (s.sack && Cl) U(CHS.blob([Cl.x + 0.02, Cl.y - 0.15, Cl.z], [0.13, 0.17, 0.12], hw[0], hw[1]));
+    if (s.trunk) { const g = new THREE.BoxGeometry(0.7, 0.32, 0.42); g.rotateX(0.2); g.translate(0.02, W + 0.6, 0.3); U(g, 1); }
+    // the children: on the left hip, across the lap, on the shoulders
+    if (s.kid === 'hip') {
+      U(CHS.blob([0.07, W + 0.13, -0.25], [0.1, 0.17, 0.1], hw[0], hw[1]));
+      U(CHS.blob([0.08, W + 0.37, -0.25], [0.072, 0.082, 0.066], hw[0], hw[1]));
+      U(CHS.tube([[0.14, W + 0.0, -0.2, 0.042], [0.2, W - 0.1, -0.06, 0.036]], nt));
+      U(CHS.tube([[0.0, W + 0.0, -0.32, 0.042], [-0.09, W - 0.1, -0.2, 0.036]], nt));
+      U(CHS.tube([[0.1, W + 0.25, -0.17, 0.033], [0.12, W + 0.3, -0.04, 0.03]], 5));
+    } else if (s.kid === 'lap') {
+      U(CHS.blob([0.28, W - 0.04, 0.02], [0.11, 0.09, 0.3], hw[0], hw[1], [1, 0, 0], [0, 1, 0]));
+      U(CHS.blob([0.3, W + 0.03, 0.3], [0.072, 0.075, 0.068], hw[0], hw[1]));
+    } else if (s.kid === 'shoulders') {
+      U(CHS.blob([-0.01, W + 0.8, 0], [0.09, 0.15, 0.11], hw[0], hw[1]));
+      U(CHS.blob([0.0, W + 1.01, 0], [0.072, 0.08, 0.066], hw[0], hw[1]));
+      for (const z of [-1, 1]) U(CHS.tube([[0.0, W + 0.68, z * 0.07, 0.042], [0.11, W + 0.6, z * 0.15, 0.036], [0.14, W + 0.42, z * 0.17, 0.032]], nt));
+    }
+    if (s.b) { const R = new THREE.Matrix4().makeTranslation(0, W, 0).multiply(new THREE.Matrix4().makeRotationZ(-s.b)).multiply(new THREE.Matrix4().makeTranslation(0, -W, 0)); for (const [g] of up) g.applyMatrix4(R); }
+    for (const q of up) out.push(q);
+    return out;
+  }
+  // the figures: [u, v, stands on ('p' the plinth, 'r' the rock, 'd' the deck, 'g' the gangway, or a height), facing (radians
+  // in the memorial's frame, 0 toward the bow, pi/2 toward Spruce Street), height, spec]. Thirty-one people and four
+  // children, the story read from west to east
+  const FAM_FIGS = [
+    // the famine: a mother on her knees over her child, a woman sitting with her face in her hand (the Commons close-up), a boy
+    // crouched in a brimmed hat, a gaunt man bowed on a staff, a man praying at the cross, an old woman wrapped in her shawl,
+    // and two climbing from the rock toward the ship
+    [-4.6, 1.55, 'r', 1.75, 1.72, { d: 'skirt', p: 'kneel', hat: 2, b: 0.5, r: 'hold', l: 'hold', kid: 'lap' }],
+    [-3.3, -1.25, 'r', -1.45, 1.7, { d: 'skirt', p: 'sit', hat: 2, b: 0.32, r: 'face', l: 'knees', g: 1 }],
+    [-2.95, 0.35, 'r', 0.55, 1.35, { d: 'coat', p: 'crouch', hat: 1, b: 0.25, r: 'knees', l: 'knees' }],
+    [-6.55, 1.3, 'r', 2.55, 1.78, { d: 'cloak', hat: 2, b: 0.48, r: 'cane', l: 'down', g: 1 }],
+    [-5.15, -0.45, 'r', -2.85, 1.78, { d: 'coat', p: 'kneel', hat: 0, b: 0.22, r: 'pray', l: 'pray', g: 1 }],
+    [-4.25, -2.35, 'r', -0.35, 1.62, { d: 'skirt', p: 'sit', hat: 2, b: 0.15, r: 'hold', l: 'hold', g: 1 }],
+    [-1.75, 1.45, 'r', 0.45, 1.8, { d: 'coat', hat: 3, b: 0.28, r: 'reach', l: 'up' }],
+    [-2.6, 1.95, 'r', 0.3, 1.65, { d: 'skirt', hat: 2, b: 0.35, r: 'up', l: 'down', sack: 1 }],
+    // the deck: the emigrants at the rail, waving, weeping, a child on a hip and one on a father's shoulders, a man at the
+    // bow pointing the way, one looking back at Ireland
+    [-0.45, -0.98, 'd', -1.45, 1.82, { d: 'coat', hat: 1, b: 0.2, r: 'rail', l: 'rail', legs: false }],
+    [0.15, 0.82, 'd', 1.5, 1.72, { d: 'skirt', hat: 2, r: 'down', l: 'hold', kid: 'hip' }],
+    [0.0, -0.05, 'd', 2.9, 1.7, { d: 'skirt', hat: 2, b: 0.1, r: 'hold', l: 'hold', t: 0.3 }],
+    [0.85, -0.2, 'd', 0.2, 1.88, { d: 'coat', hat: 4, r: 'down', l: 'down', legs: false }],
+    [1.4, 0.92, 'd', 1.3, 1.8, { d: 'coat', hat: 3, r: 'wave', l: 'rail', legs: false }],
+    [1.85, -0.88, 'd', -1.2, 1.7, { d: 'skirt', hat: 2, b: 0.2, r: 'face', l: 'hold' }],
+    [2.45, 0.28, 'd', 0.5, 1.84, { d: 'coat', hat: 0, r: 'legs', l: 'legs', kid: 'shoulders', legs: false }],
+    [2.95, -0.9, 'd', -1.1, 1.76, { d: 'coat', hat: 1, b: 0.22, r: 'rail', l: 'rail', legs: false }],
+    [3.35, 0.72, 'd', 1.1, 1.7, { d: 'skirt', hat: 2, r: 'down', l: 'wave' }],
+    [3.8, -0.25, 'd', 0.1, 1.4, { d: 'coat', hat: 3, r: 'rail', l: 'rail', legs: false }],
+    [4.15, 0.35, 'd', 0.25, 1.82, { d: 'coat', hat: 1, b: 0.15, r: 'reach', l: 'rail', legs: false }],
+    [0.55, 0.5, 'd', 1.2, 1.66, { d: 'skirt', hat: 2, r: 'face', l: 'down' }],
+    [1.15, -1.0, 'd', -1.5, 1.8, { d: 'coat', hat: 3, b: 0.2, r: 'rail', l: 'down', legs: false }],
+    [2.05, 0.92, 'd', 1.0, 1.84, { d: 'coat', hat: 1, r: 'down', l: 'wave', legs: false }],
+    [-0.65, 0.95, 'd', 1.75, 1.8, { d: 'coat', hat: 4, b: 0.2, r: 'rail', l: 'rail', legs: false }],
+    // the gangway: a boy reaching for the rope, a woman with her bundle, a man with a trunk on his shoulder at the top
+    [4.0, 2.18, 'g', Math.PI, 1.35, { d: 'coat', hat: 3, b: 0.2, r: 'down', l: 'up' }],
+    [2.85, 2.12, 'g', Math.PI, 1.68, { d: 'skirt', hat: 2, b: 0.22, r: 'down', l: 'up', pack: 1 }],
+    [1.45, 2.06, 'g', Math.PI, 1.82, { d: 'coat', hat: 1, b: 0.18, r: 'shoulder', l: 'down', trunk: 1 }],
+    // arriving: the mother and child before the hull, the man in the top hat at the gangway's foot, the man alone at the tip
+    // waving his hat to the ship; and on the north side a man on a trunk and a girl looking east
+    [-0.3, 2.85, 'p', 1.45, 1.8, { d: 'skirt', hat: 2, r: 'down', l: 'hold', kid: 'hip', sack: 0 }],
+    [5.2, 2.45, 'p', 2.65, 1.86, { d: 'coat', hat: 4, r: 'reach', l: 'down' }],
+    [6.6, 0.3, 'p', 2.95, 1.88, { d: 'coat', hat: 0, r: 'wave', l: 'cane', held: 1 }],
+    [1.8, -2.65, FAMINE.H0 + 0.46, -1.6, 1.78, { d: 'coat', p: 'sit', drop: 0.46, hat: 1, b: 0.25, r: 'knees', l: 'knees' }],
+    [3.65, -2.5, 'p', -0.2, 1.62, { d: 'skirt', hat: 2, r: 'hold', l: 'hold' }],
+  ];
+  const FAM_KIDS = FAM_FIGS.filter((f) => f[5].kid).length;
+  // the base a figure stands on
+  function famBase(f) {
+    const [u, v, on] = f;
+    if (typeof on === 'number') return on;
+    if (on === 'r') return famRockTop(u, v) - 0.04;
+    if (on === 'd') return famDeck(u);
+    if (on === 'g') return famRampY(u) + 0.04;
+    return FAMINE.H0;
+  }
+  // the parts list: { g, kind, cav } in the memorial's frame (u, y over the plinth's foot, v), every vertex given aFmAB (for the
+  // bronzes the occlusion of its height on the figure, and a seed); near (lo for a phone) or far
+  function famineForms(lo, far, ground) {
+    const H0 = FAMINE.H0, parts = [], put = (g, kind, cav) => { parts.push({ g, kind, cav: !!cav }); return g; };
+    const ab = (g, fn) => { const p = g.attributes.position.array, A = new Float32Array(p.length / 3 * 2); for (let i = 0; i < p.length / 3; i++) { const q = fn(p[i * 3], p[i * 3 + 1], p[i * 3 + 2]); A[i * 2] = q[0]; A[i * 2 + 1] = q[1]; } g.setAttribute('aFmAB', new THREE.BufferAttribute(A, 2)); return g; };
+    const gy = ground || (() => 0);
+    // the plinth: flat granite panels round the outline, a cap slab a little proud, its top
+    const NP = far ? 22 : lo ? 30 : 40, out = [];
+    for (let k = 0; k < NP; k++) out.push(famOutline(k / NP * Math.PI * 2));
+    let yLow = 0;
+    for (const [u, v] of out) yLow = Math.min(yLow, gy(u * 1.6, v * 1.9), gy(u, v));
+    const yBot = yLow - 0.35, capY = H0 - 0.12;
+    {
+      const P = [], A = [], I = [];
+      let per = 0;
+      for (let k = 0; k < NP; k++) {
+        const a = out[k], b = out[(k + 1) % NP], L = Math.hypot(b[0] - a[0], b[1] - a[1]), o = P.length / 3;
+        // the skirt's panel, then the cap's face proud of it by 3.5 cm and the chamfer onto the top
+        const nx = (b[1] - a[1]) / L, nz = -(b[0] - a[0]) / L, ex = nx * 0.035, ez = nz * 0.035;
+        P.push(a[0], yBot, a[1], b[0], yBot, b[1], b[0], capY, b[1], a[0], capY, a[1]);
+        A.push(per, yBot, per + L, yBot, per + L, capY, per, capY);
+        if (!far) {
+          P.push(a[0] + ex, capY - 0.01, a[1] + ez, b[0] + ex, capY - 0.01, b[1] + ez, b[0] + ex, H0 - 0.025, b[1] + ez, a[0] + ex, H0 - 0.025, a[1] + ez);
+          A.push(per, capY, per + L, capY, per + L, H0, per, H0);
+          P.push(a[0] + ex, H0 - 0.025, a[1] + ez, b[0] + ex, H0 - 0.025, b[1] + ez, b[0] - ex * 0.3, H0, b[1] - ez * 0.3, a[0] - ex * 0.3, H0, a[1] - ez * 0.3);
+          A.push(per, H0, per + L, H0, per + L, H0, per, H0);
+        }
+        for (let q = 0; q < (far ? 1 : 3); q++) { const c = o + q * 4; I.push(c, c + 1, c + 2, c, c + 2, c + 3); }
+        per += L;
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setIndex(I); g.computeVertexNormals();
+      famFace(g, (x, y, z) => [x, 0, z]);
+      g.setAttribute('aFmAB', new THREE.Float32BufferAttribute(A, 2));
+      put(g, FAM_K.granite);
+      const T = [0, H0, 0], TA = [0, 0], TI = [];
+      for (let k = 0; k < NP; k++) { const [u, v] = out[k]; T.push(u * 0.996, H0, v * 0.996); TA.push(u, v); TI.push(0, ((k + 1) % NP) + 1, k + 1); }
+      const tg = CHS.geom(T, TI); famFace(tg, () => [0, 1, 0]); tg.setAttribute('aFmAB', new THREE.Float32BufferAttribute(TA, 2));
+      put(tg, FAM_K.granite);
+    }
+    // the dark paved circle round it, on the ground, its pale border, and a kerb face down into the lawn
+    {
+      const NA = far ? 24 : lo ? 32 : 40, fr = [0, 0.3, 0.6, 0.86, 0.925, 0.925, 1.0], P = [], A = [], K = [], I = [];
+      for (let j = 0; j < fr.length; j++) for (let k = 0; k <= NA; k++) {
+        const a = k / NA * Math.PI * 2, [iu, iv] = famOutline(a), ou = 11.5 * Math.cos(a), ov = 8.2 * Math.sin(a);
+        const u = iu * 0.97 + (ou - iu * 0.97) * fr[j], v = iv * 0.97 + (ov - iv * 0.97) * fr[j];
+        P.push(u, gy(u, v) + 0.1, v); A.push(u, v); K.push(j >= 5 ? 1 : 0);
+      }
+      const row = NA + 1;
+      for (let j = 0; j + 1 < fr.length; j++) { if (j === 4) continue; for (let k = 0; k < NA; k++) { const a = j * row + k; I.push(a, a + 1, a + row + 1, a, a + row + 1, a + row); } }
+      // the kerb
+      const o = P.length / 3;
+      for (let k = 0; k <= NA; k++) { const q = (fr.length - 1) * row + k; P.push(P[q * 3], P[q * 3 + 1] - 0.25, P[q * 3 + 2]); A.push(A[q * 2], A[q * 2 + 1]); K.push(1); }
+      for (let k = 0; k < NA; k++) { const a = (fr.length - 1) * row + k, b = o + k; I.push(a, a + 1, b + 1, a, b + 1, b); }
+      // two kinds in one grid: split by the duplicated ring, as two geometries sharing nothing
+      const g = CHS.geom(P, I);   // wound up, the kerb out
+      g.setAttribute('aFmAB', new THREE.Float32BufferAttribute(A, 2));
+      g.userData.kinds = K;
+      put(g, FAM_K.pave);
+    }
+    const B = (g, kind, cav) => put(g, kind, cav);
+    // the rock
+    for (const [cu, cy, cv, ru, ry, rv, sd] of FAM_ROCK) {
+      const g = new THREE.SphereGeometry(1, far ? 9 : lo ? 12 : 15, far ? 4 : lo ? 6 : 7, 0, Math.PI * 2, 0, Math.PI * 0.62);
+      const p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) {
+        const x = p.getX(i), y = p.getY(i), z = p.getZ(i), f = famRockF(x, y, z, sd);
+        let u = cu + x * f * ru, v = cv + z * f * rv;
+        const [eu, ev] = famOutline(Math.atan2(v, u)), lim = 0.94 * Math.hypot(eu, ev), r = Math.hypot(u, v);
+        if (r > lim) { u *= lim / r; v *= lim / r; }   // the rock stays on the plinth's top
+        p.setXYZ(i, u, H0 + cy + y * f * ry, v);
+      }
+      g.deleteAttribute('uv'); g.computeVertexNormals();
+      ab(g, () => [1, sd]);
+      B(g, FAM_K.rock, !far);
+      if (far && sd > 2) break;
+    }
+    // stones and boulders loose on it, each a lump of its own
+    if (!far) for (let k = 0; k < 11; k++) {
+      const u = -6.3 + 5.0 * hash01(k * 3.17 + 0.4), v = -2.6 + 5.2 * hash01(k * 5.31 + 1.7), r = 0.18 + 0.26 * hash01(k * 7.7 + 2.2), y = famRockTop(u, v);
+      if (y < H0 + 0.15) continue;
+      const g = new THREE.SphereGeometry(1, lo ? 5 : 7, lo ? 3 : 5), p = g.attributes.position;
+      for (let i = 0; i < p.count; i++) { const x = p.getX(i), yy = p.getY(i), z = p.getZ(i), f = 1 + 0.3 * (2 * famN3(x * 2.1 + k * 3.3, yy * 2.1, z * 2.1) - 1); p.setXYZ(i, u + x * r * f * 1.3, y - 0.08 + Math.max(yy, -0.4) * r * f * 0.7, v + z * r * f); }
+      g.deleteAttribute('uv'); g.computeVertexNormals(); ab(g, () => [0.9, k]);
+      B(g, FAM_K.rock, true);
+    }
+    // the hull: its two planked sides from the plinth to the gunwale, the bulwarks' inner faces and the deck, the gunwale's
+    // rail, two wales, the stem, a porthole each side; west of the planking its ribs stand out of the rock
+    const HA = FAM_HULL.uA, nu = far ? 6 : lo ? 16 : 26, nv = far ? 2 : lo ? 5 : 8;
+    for (const sg of [1, -1]) {
+      const side = famGrid(nu, nv, (s, t) => { const u = HA + s * (famBow(t) - HA); return [u, famHullY(u, t), sg * famHalfW(u, t)]; }, (s, t, p) => [p[1] - H0, p[0]]);
+      B(famFace(side, (x, y, z) => [0, 0, sg]), FAM_K.hull);
+      if (far) continue;
+      const td = (u) => (famDeck(u) - H0) / (famGun(u) - H0);
+      const inner = famGrid(Math.ceil(nu / 2), 2, (s, t) => { const u = HA + s * (famBow(0.62) - HA - 0.05), tt = td(u) + t * (1 - td(u)); return [u, famHullY(u, tt), sg * (famHalfW(u, tt) - 0.07)]; }, (s, t, p) => [p[1] - H0, p[0]]);
+      B(famFace(inner, (x, y, z) => [0, 0, -sg]), FAM_K.hull);
+      const rail = [], wale1 = [], wale2 = [];
+      const nr = Math.ceil(nu / 2);
+      for (let i = 0; i <= nr; i++) {
+        const s = i / nr, u1 = HA - 0.05 + s * (famBow(1) - HA + 0.05), u2 = HA + s * (famBow(0.55) - HA), u3 = HA + s * (famBow(0.86) - HA);
+        rail.push([u1, famGun(u1) + 0.03, sg * Math.max(0.02, famHalfW(u1, 1) - 0.035), 0.075]);
+        wale1.push([u2, famHullY(u2, 0.55), sg * (famHalfW(u2, 0.55) + 0.012), 0.042]);
+        wale2.push([u3, famHullY(u3, 0.86), sg * (famHalfW(u3, 0.86) + 0.012), 0.04]);
+      }
+      B(CHS.tube(rail, lo ? 5 : 7), FAM_K.bronze, true);
+      B(CHS.tube(wale1.slice(0, -1), lo ? 4 : 5), FAM_K.bronze, true);
+      B(CHS.tube(wale2.slice(0, -1), lo ? 4 : 5), FAM_K.bronze, true);
+      // a porthole near the bow: a ring and its dark glass
+      const pu = 3.55, pt = 0.62, pv = famHalfW(pu, pt), py = famHullY(pu, pt);
+      const ring = new THREE.TorusGeometry(0.15, 0.035, lo ? 4 : 6, lo ? 10 : 16);   // its axis across the hull
+      ring.translate(pu, py, sg * (pv + 0.035)); ab(ring, () => [1, 0]); B(ring, FAM_K.bronze, true);
+      const gl = new THREE.CircleGeometry(0.13, lo ? 10 : 14); gl.rotateY(sg > 0 ? 0 : Math.PI); gl.translate(pu, py, sg * (pv + 0.004)); ab(gl, () => [0.6, 0]); B(gl, FAM_K.dark);
+      // the ribs at the west end
+      for (const ru of [-1.45, -1.9, -2.35]) {
+        const path = [];
+        for (let j = 0; j <= 5; j++) { const t = 0.12 + j / 5 * 0.88; path.push([ru, famHullY(ru, t), sg * famHalfW(ru, t), 0.075 - j * 0.004]); }
+        B(CHS.tube(path, 5), FAM_K.bronze, true);
+      }
+    }
+    if (far) {
+      const deck = famGrid(4, 1, (s, t) => { const u = HA + s * (famBow(1) - HA); return [u, famGun(u), (t * 2 - 1) * famHalfW(u, 1)]; }, (s, t, p) => [p[2], p[0]]);
+      B(famFace(deck, () => [0, 1, 0]), FAM_K.deck);
+    } else {
+      const deck = famGrid(nu, 4, (s, t) => { const u = HA + s * (famBow(0.62) - HA - 0.05), td = (famDeck(u) - H0) / (famGun(u) - H0); return [u, famDeck(u), (t * 2 - 1) * Math.max(0.01, famHalfW(u, td) - 0.06)]; }, (s, t, p) => [p[2], p[0]]);
+      B(famFace(deck, () => [0, 1, 0]), FAM_K.deck);
+      // the planking's west end closed by its frame, under the deck
+      const cap = [], CI = [];
+      for (let j = 0; j <= 6; j++) { const t = j / 6, td = (famDeck(HA) - H0) / (famGun(HA) - H0), tt = t * td; cap.push(HA, famHullY(HA, tt), famHalfW(HA, tt), HA, famHullY(HA, tt), -famHalfW(HA, tt)); }
+      for (let j = 0; j < 6; j++) { const a = j * 2; CI.push(a, a + 2, a + 1, a + 1, a + 2, a + 3); }
+      const cg = CHS.geom(cap, CI); famFace(cg, () => [-1, 0, 0]); ab(cg, (x, y) => [y - H0, x]); B(cg, FAM_K.hull);
+      // the stem, raked, its head a little over the gunwale, and the rails' meeting
+      B(CHS.tube([[famBow(0) + 0.02, H0 - 0.02, 0, 0.1], [famBow(0.5) + 0.05, famHullY(famBow(0.5), 0.5), 0, 0.1], [famBow(1) + 0.06, famGun(famBow(1)) + 0.05, 0, 0.1], [famBow(1) + 0.16, famGun(famBow(1)) + 0.32, 0, 0.085]], lo ? 5 : 7), FAM_K.bronze, true);
+      // the gunwale's rail over the ribs, the last rib's cross beam
+      B(CHS.tube([[-2.35, famGun(-2.35) + 0.03, famHalfW(-2.35, 1), 0.06], [HA, famGun(HA) + 0.03, famHalfW(HA, 1) - 0.03, 0.065]], 5), FAM_K.bronze, true);
+      B(CHS.tube([[-2.35, famGun(-2.35) + 0.03, -famHalfW(-2.35, 1), 0.06], [HA, famGun(HA) + 0.03, -famHalfW(HA, 1) + 0.03, 0.065]], 5), FAM_K.bronze, true);
+      B(CHS.tube([[-1.45, famDeck(-1.45), famHalfW(-1.45, 0.62) - 0.02, 0.06], [-1.45, famDeck(-1.45), -famHalfW(-1.45, 0.62) + 0.02, 0.06]], 5), FAM_K.bronze, true);
+    }
+    // the gangway: its ramp and cleats, posts on the outer edge, a rope sagging between them and canvas hung from it
+    const GW = FAM_GW, gdx = GW.u1 - GW.u0, gdy = famRampY(GW.u1) - famRampY(GW.u0), gL = Math.hypot(gdx, gdy), ga = Math.atan2(-gdy, -gdx);
+    {
+      const r = new THREE.BoxGeometry(gL, 0.08, GW.w); r.rotateZ(ga); r.translate((GW.u0 + GW.u1) / 2, (famRampY(GW.u0) + famRampY(GW.u1)) / 2 - 0.04, GW.v);
+      ab(r, () => [1, 0]); B(r, FAM_K.bronze, !far);
+      if (!far) {
+        for (let k = 1; k < 9; k++) { const u = GW.u0 + gdx * k / 9, c = new THREE.BoxGeometry(0.05, 0.04, GW.w - 0.08); c.translate(u, famRampY(u) + 0.02, GW.v); ab(c, () => [1, 0]); B(c, FAM_K.bronze); }
+        const posts = [4.45, 3.5, 2.55, 1.6, 0.75], vo = GW.v + GW.w / 2 - 0.03, rope = [], cloth = [];
+        for (const u of posts) { B(CHS.tube([[u, famRampY(u) - 0.05, vo, 0.04], [u, famRampY(u) + 1.05, vo, 0.035]], 5), FAM_K.bronze, true); B(CHS.blob([u, famRampY(u) + 1.07, vo], [0.05, 0.04, 0.05], 6, 4), FAM_K.bronze, true); }
+        for (let k = 0; k <= 32; k++) {
+          const u = posts[0] + (posts[4] - posts[0]) * k / 32;
+          let seg = 0; while (seg < 3 && u < posts[seg + 1]) seg++;
+          const f = (posts[seg] - u) / (posts[seg] - posts[seg + 1]), sag = 0.1 * Math.sin(Math.PI * f), y = famRampY(u) + 1.03 - sag;
+          rope.push([u, y, vo + 0.01, 0.026]);
+          cloth.push([u, y - 0.04, sag]);
+        }
+        B(CHS.tube(rope.filter((q, k) => k % 2 === 0), 5), FAM_K.bronze, true);
+        const cg = famGrid(32, 3, (s, t) => { const [u, y, sag] = cloth[Math.round(s * 32)], yb = famRampY(u) + 0.02, w = 0.03 * Math.sin(s * 37) * Math.sin(t * Math.PI) + 0.05 * sag * Math.sin(t * Math.PI); return [u, yb + (y - yb) * t, vo + 0.015 + w]; }, (s, t, p) => [1, p[0]]);
+        B(famFace(cg, () => [0, 0, 1]), FAM_K.canvas);
+        // its supports under the ramp, standing on the plinth
+        for (const u of [3.0, 1.75]) { const p = new THREE.BoxGeometry(0.1, famRampY(u) - H0, 0.1); p.translate(u, (famRampY(u) + H0) / 2, GW.v); ab(p, () => [0.6, 0]); B(p, FAM_K.dark); }
+      }
+    }
+    // the luggage on the plinth by the gangway: barrels with their hoops, a trunk with a rounded lid, a crate, sacks
+    if (!far) {
+      const barrel = (u, v, y) => { const g = CHS.lathe([[0.001, 0], [0.26, 0], [0.3, 0.12], [0.318, 0.42], [0.3, 0.72], [0.26, 0.84], [0.001, 0.84]], lo ? 7 : 9); g.translate(u, y, v); ab(g, (x, yy) => [0.75 + 0.25 * Math.min(1, (yy - y) / 0.8), 3]); B(g, FAM_K.bronze, true); };
+      barrel(2.35, 2.62, H0); barrel(1.75, 3.15, H0); barrel(2.2, 3.45, H0);
+      const tr = new THREE.BoxGeometry(0.85, 0.42, 0.5); tr.translate(3.95, H0 + 0.21, 3.15); ab(tr, () => [0.8, 0]); B(tr, FAM_K.bronze);
+      const lid = new THREE.CylinderGeometry(0.25, 0.25, 0.85, lo ? 6 : 10, 1, false, 0, Math.PI); lid.rotateZ(Math.PI / 2); lid.scale(1, 0.5, 1); lid.translate(3.95, H0 + 0.42, 3.15); ab(lid, () => [1, 0]); B(lid, FAM_K.dark);
+      const cr = new THREE.BoxGeometry(0.62, 0.55, 0.62); cr.rotateY(0.3); cr.translate(1.05, H0 + 0.275, 2.75); ab(cr, () => [0.8, 0]); B(cr, FAM_K.bronze);
+      for (const [u, v, s] of [[2.9, 3.3, 1], [4.55, 2.95, 0.85], [1.25, 3.35, 0.9]]) B(ab(CHS.blob([u, H0 + 0.17 * s, v], [0.32 * s, 0.22 * s, 0.26 * s], 8, 6), () => [0.85, 1]), FAM_K.bronze, true);
+      // the trunk the man on the north side sits on
+      const t2 = new THREE.BoxGeometry(0.75, 0.45, 0.48); t2.rotateY(0.15); t2.translate(1.8, H0 + 0.225, -2.7); ab(t2, () => [0.8, 0]); B(t2, FAM_K.bronze);
+    }
+    // the Celtic cross on the rock at the famine end, and the gravestones
+    {
+      const cu = -6.1, cv = -0.7, cyb = famRockTop(cu, cv) - 0.08, h = 2.3;
+      const bx = (w, hh, d, y) => { const g = new THREE.BoxGeometry(w, hh, d); g.translate(cu, cyb + y, cv); ab(g, () => [0.9, 2]); return g; };
+      B(bx(0.6, 0.42, 0.42, 0.21), FAM_K.bronze); B(bx(0.22, h - 0.4, 0.16, 0.42 + (h - 0.4) / 2), FAM_K.bronze);
+      if (!far) {
+        B(bx(0.86, 0.2, 0.16, h - 0.55), FAM_K.bronze);
+        const ring = new THREE.TorusGeometry(0.3, 0.045, lo ? 4 : 6, lo ? 12 : 18); ring.translate(cu, cyb + h - 0.55, cv); ab(ring, () => [0.9, 2]); B(ring, FAM_K.bronze, true);
+        for (const [u, v, w, hh, r] of [[-5.25, -2.05, 0.55, 0.85, 0.3], [-6.7, 0.95, 0.5, 0.75, -0.2]]) {
+          const y0 = famRockTop(u, v) - 0.1, g = CHS.plate([[-w / 2, 0], [w / 2, 0], [w / 2, hh - w / 2], [w * 0.35, hh - w * 0.15], [0, hh], [-w * 0.35, hh - w * 0.15], [-w / 2, hh - w / 2]], 0.12);
+          g.rotateX(-0.1); g.rotateY(r); g.translate(u, y0, v); ab(g, () => [0.85, 2]); B(g, FAM_K.dark);
+        }
+      }
+    }
+    // the people
+    let figs = 0;
+    for (const f of FAM_FIGS) {
+      const [u, v, , a, h, s] = f, y = famBase(f), M = CHS.at([Math.cos(a), Math.sin(a)], u, y, v, h / 1.75);
+      figs++; if (s.kid) figs++;
+      if (far) {
+        const top = s.p === 'kneel' || s.p === 'sit' ? 1.15 : s.p === 'crouch' ? 1.2 : 1.66, g = new THREE.CylinderGeometry(0.17, 0.27, top, 5, 1);
+        g.translate(0, top / 2, 0); g.applyMatrix4(M); ab(g, () => [0.8, 0]); B(g, FAM_K.bronze);
+        const hd = new THREE.OctahedronGeometry(0.13, 0); hd.translate(0, top + 0.1, 0); hd.applyMatrix4(M); ab(hd, () => [1, 0]); B(hd, FAM_K.bronze);
+        continue;
+      }
+      for (const [g, t] of famFigure(s, lo || f[2] === 'd')) {
+        ab(g, (x, yy) => [0.5 + 0.5 * Math.min(1, Math.max(0, yy / 1.3)), u * 0.37 + v]);
+        g.applyMatrix4(M);
+        B(g, t ? FAM_K.dark : FAM_K.bronze, true);
+      }
+    }
+    return { parts, figs };
+  }
+  // the pole in the memorial's frame (its foot at gy over the plinth's datum): a granite drum, the tapered aluminium pole,
+  // its truck and gilt ball, a cleat, two lamps in the drum aimed up at the flag
+  function famPoleForms(pu, pv, gy, lo, far) {
+    const parts = [], P = FAMINE.poleH, n = far ? 6 : lo ? 10 : 14;
+    const ab = (g, a, b) => { const c = g.attributes.position.count, A = new Float32Array(c * 2); for (let i = 0; i < c; i++) { A[i * 2] = a; A[i * 2 + 1] = b; } g.setAttribute('aFmAB', new THREE.BufferAttribute(A, 2)); return g; };
+    const at = (g) => g.translate(pu, gy, pv);
+    if (!far) parts.push({ g: ab(at(CHS.lathe([[0.001, 0.3], [0.68, 0.3], [0.75, 0.24], [0.75, -0.35]], lo ? 16 : 24)), 0, 0.3), kind: FAM_K.granite });
+    parts.push({ g: ab(at(CHS.lathe([[0.12, far ? 0 : 0.3], [0.115, 0.36], [0.1, 1.2], [0.058, P + 0.15], [0.07, P + 0.17], [0.07, P + 0.25], [0.001, P + 0.25]], n)), 0, 0), kind: FAM_K.alu });
+    if (!far) {
+      parts.push({ g: ab(at(CHS.blob([0, P + 0.36, 0], [0.11, 0.11, 0.11], 10, 7)), 0, 0), kind: FAM_K.gilt });
+      const cl = new THREE.BoxGeometry(0.04, 0.2, 0.05); cl.translate(0.1, 1.35, 0); parts.push({ g: ab(at(cl), 0, 0), kind: FAM_K.alu });
+      for (const sgn of [-1, 1]) {
+        const hx = sgn * 0.42, hz = 0.2;
+        const hs = CHS.lathe([[0.001, 0], [0.085, 0], [0.085, 0.11], [0.07, 0.13], [0.001, 0.13]], 10); hs.translate(hx, 0.3, hz); parts.push({ g: ab(at(hs), 0.8, 0), kind: FAM_K.dark });
+        const ln = new THREE.CircleGeometry(0.066, 10); ln.rotateX(-Math.PI / 2); ln.translate(hx, 0.435, hz); parts.push({ g: ab(at(ln), 0, 0), kind: FAM_K.lens });
+      }
+    }
+    return parts;
+  }
+  // a vertex's cavity: how far its neighbours stand over its tangent plane, along their edges (a fold's trough over 0, a
+  // ridge, a nose, a knuckle under it): the patina is lighter where a hand or the weather rubs the bronze, darker in the folds
+  function famCavity(g) {
+    const p = g.attributes.position.array, n = g.attributes.normal.array, ix = g.index ? g.index.array : null, nv = p.length / 3;
+    const sum = new Float32Array(nv), cnt = new Float32Array(nv);
+    const edge = (i, j) => { const dx = p[j * 3] - p[i * 3], dy = p[j * 3 + 1] - p[i * 3 + 1], dz = p[j * 3 + 2] - p[i * 3 + 2], L = Math.hypot(dx, dy, dz); if (L < 1e-6) return; sum[i] += (dx * n[i * 3] + dy * n[i * 3 + 1] + dz * n[i * 3 + 2]) / L; cnt[i]++; };
+    const T = ix ? ix.length : nv;
+    for (let t = 0; t < T; t += 3) { const a = ix ? ix[t] : t, b = ix ? ix[t + 1] : t + 1, c = ix ? ix[t + 2] : t + 2; edge(a, b); edge(a, c); edge(b, a); edge(b, c); edge(c, a); edge(c, b); }
+    for (let i = 0; i < nv; i++) sum[i] = cnt[i] ? Math.max(-1, Math.min(1, sum[i] / cnt[i])) : 0;
+    return sum;
+  }
+  // the parts merged into one indexed geometry: position, normal, and aFm (the kind, the cavity, the kind's two coordinates)
+  function famMerge(parts) {
+    let nv = 0, ni = 0;
+    for (const p of parts) { nv += p.g.attributes.position.count; ni += p.g.index ? p.g.index.count : p.g.attributes.position.count; }
+    const pos = new Float32Array(nv * 3), nor = new Float32Array(nv * 3), fm = new Float32Array(nv * 4), idx = nv > 65535 ? new Uint32Array(ni) : new Uint16Array(ni);
+    let o = 0, oi = 0;
+    for (const p of parts) {
+      const g = p.g, c = g.attributes.position.count, A = g.attributes.aFmAB, K = g.userData.kinds, cav = p.cav ? famCavity(g) : null;
+      pos.set(g.attributes.position.array, o * 3); nor.set(g.attributes.normal.array, o * 3);
+      for (let i = o * 3; i < (o + c) * 3; i += 3) if (!(Math.hypot(nor[i], nor[i + 1], nor[i + 2]) > 0.5)) { nor[i] = 0; nor[i + 1] = 1; nor[i + 2] = 0; }   // a sphere's pole left without a face
+      for (let i = 0; i < c; i++) { const q = (o + i) * 4; fm[q] = K ? p.kind + K[i] : p.kind; fm[q + 1] = cav ? cav[i] : 0; fm[q + 2] = A ? A.getX(i) : 1; fm[q + 3] = A ? A.getY(i) : 0; }   // a bronze given none is unshaded (1)
+      if (g.index) { const I = g.index.array; for (let k = 0; k < I.length; k++) idx[oi + k] = I[k] + o; oi += I.length; }
+      else { for (let k = 0; k < c; k++) idx[oi + k] = o + k; oi += c; }
+      o += c;
+    }
+    const out = new THREE.BufferGeometry();
+    out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    out.setAttribute('aFm', new THREE.BufferAttribute(fm, 4));
+    out.setIndex(new THREE.BufferAttribute(idx, 1));
+    return out;
+  }
+  // the flag's cloth: a grid of (along the fly from the hoist, up from the foot), its shape the vertex shader's
+  function famFlagGeom(lo) {
+    const ni = lo ? 12 : 18, nj = lo ? 5 : 7, P = [], A = [], I = [];
+    for (let j = 0; j <= nj; j++) for (let i = 0; i <= ni; i++) { P.push(i / ni * FAMINE.flagL, -(1 - j / nj) * FAMINE.flagH, 0); A.push(i / ni, j / nj); }
+    for (let j = 0; j < nj; j++) for (let i = 0; i < ni; i++) { const a = j * (ni + 1) + i; I.push(a, a + 1, a + ni + 2, a, a + ni + 2, a + ni + 1); }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(new Array(P.length).fill(0).map((_, k) => (k % 3 === 2 ? 1 : 0)), 3));
+    g.setAttribute('aFlag', new THREE.Float32BufferAttribute(A, 2));
+    g.setIndex(I);
+    g.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, -0.6, 0), FAMINE.flagL + 0.6);   // the cloth turns with the wind round the pole
+    return g;
+  }
+  // the memorial's material: one program for the bronze, the granite, the paving and the pole, told apart by aFm.x. The bronze
+  // is a metal whose albedo carries a patina: mottled, paler where a form stands proud (the cavity, aFm.y) and on its tops,
+  // dark in the folds and toward a figure's feet (aFm.z), its surface worked by a modelled clay grain (a bump from value
+  // noise, faded before a pixel spans it); the hull's planking and the deck's are grooves of the same bump; the granite is
+  // speckled and polished, the paving dark with its joints. After dark Round 184's warm floods in the paving light the plinth
+  // and the bronze from below, and two lamps in the pole's drum light the pole
+  const famU = { uMemC: { value: new THREE.Vector3() }, uFamA: { value: new THREE.Vector4(1.6, 1.5, 0.55, 0) }, uFamPole: { value: new THREE.Vector4(0, 0, 0, 0.35) },
+    uFamM: { value: new THREE.Vector4(0.72, 0.48, 0.88, 0.3) },
+    uFamBr: { value: new THREE.Color(0x2a221c) }, uFamBrD: { value: new THREE.Color(0x181310) }, uFamPat: { value: new THREE.Color(0x5c4c40) },
+    uFamGr: { value: new THREE.Color(0x29292b) }, uFamPv: { value: new THREE.Color(0x1a1a1c) }, uFamPb: { value: new THREE.Color(0x403f3c) } };
+  const FAM_GLSL = [
+    'float fmH3(vec3 p) { p = fract(p * 0.1031); p += dot(p, p.zyx + 31.32); return fract((p.x + p.y) * p.z); }',
+    'float fmN3(vec3 x) { vec3 i = floor(x), f = fract(x); f = f * f * (3.0 - 2.0 * f);',
+    '  return mix(mix(mix(fmH3(i), fmH3(i + vec3(1.0, 0.0, 0.0)), f.x), mix(fmH3(i + vec3(0.0, 1.0, 0.0)), fmH3(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),',
+    '    mix(mix(fmH3(i + vec3(0.0, 0.0, 1.0)), fmH3(i + vec3(1.0, 0.0, 1.0)), f.x), mix(fmH3(i + vec3(0.0, 1.0, 1.0)), fmH3(i + vec3(1.0, 1.0, 1.0)), f.x), f.y), f.z); }',
+    // a line every p along x, a pixel's width eased, faded once the lines crowd under two pixels
+    'float fmLine(float x, float p, float w) { float fw = max(fwidth(x), 1e-5), d = abs(fract(x / p + 0.5) - 0.5) * p; return (1.0 - smoothstep(w - fw * 0.5, w + fw * 0.5, d)) * (1.0 - smoothstep(p * 0.25, p * 0.5, fw)); }',
+  ].join('\n');
+  function famMat() {
+    const m = new THREE.MeshStandardMaterial({ roughness: 0.5, metalness: 0, side: THREE.DoubleSide });
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, famU, { uLamp: lampUniform });
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aFm; varying vec4 vFm; varying vec3 vFmW, vFmN;')
+        .replace('#include <project_vertex>', '#include <project_vertex>\nvFm = aFm; vFmW = (modelMatrix * vec4(transformed, 1.0)).xyz; vFmN = normalize(mat3(modelMatrix) * objectNormal);');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform float uLamp; uniform vec3 uMemC, uFamBr, uFamBrD, uFamPat, uFamGr, uFamPv, uFamPb; uniform vec4 uFamA, uFamPole, uFamM; varying vec4 vFm; varying vec3 vFmW, vFmN;\nfloat fmRgh = 0.5, fmMet = 0.0, fmHt = 0.0;\n' + FAM_GLSL)
+        .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+          'float fmK = floor(vFm.x + 0.5);',
+          'float fmPx = max(length(fwidth(vFmW)), 1e-5);',
+          'float fmN1 = fmN3(vFmW * 1.6), fmN2 = fmN3(vFmW * 6.0 + 3.1), fmN4 = fmN3(vFmW * 23.0 + 7.7), fmN5 = fmN3(vFmW * 61.0 + 1.3);',
+          'float fmF2 = 1.0 - smoothstep(0.05, 0.2, fmPx), fmF4 = 1.0 - smoothstep(0.012, 0.05, fmPx), fmF5 = 1.0 - smoothstep(0.004, 0.018, fmPx);',
+          'float fmPlank = fmLine(vFm.z, 0.24, 0.012), fmButt = fmLine(vFm.w + floor(vFm.z / 0.24) * 0.83, 2.2, 0.012) * (1.0 - fmPlank);',
+          'float fmDeckL = fmLine(vFm.z, 0.19, 0.01);',
+          'vec2 fmPq = vFm.zw * vec2(0.72, 1.0); float fmR = length(fmPq), fmRing = fmLine(fmR, 0.9, 0.012), fmRad = fmLine(atan(fmPq.y, fmPq.x) * fmR, 1.1, 0.012) * step(0.5, fmR);',
+          'float fmTile = max(fmLine(vFm.z, 0.75, 0.006), fmLine(vFm.w, 0.75, 0.006));',
+          'vec3 fmAlb;',
+          'if (fmK < 1.5 || fmK > 7.5) {',   // the bronzes
+          '  vec3 b = fmK > 0.5 && fmK < 1.5 ? uFamBrD : uFamBr;',
+          '  b *= mix(0.8, 1.2, fmN1) * mix(1.0, mix(0.86, 1.14, fmN2), fmF2);',
+          '  float occ = fmK < 1.5 || fmK > 9.5 ? vFm.z : 1.0, raised = clamp(-vFm.y * 1.7, 0.0, 1.0), hollow = clamp(vFm.y * 2.4, 0.0, 1.0);',
+          '  b = mix(b, uFamPat * mix(0.85, 1.15, fmN4), raised * uFamA.z);',
+          '  b = mix(b, uFamPat * 1.05, smoothstep(0.5, 0.95, vFmN.y) * 0.3 * uFamA.z);',
+          '  b *= (1.0 - 0.5 * hollow) * occ;',
+          '  fmHt = ((fmN4 - 0.5) * 0.007 * fmF4 + (fmN2 - 0.5) * 0.012 * fmF2 + (fmN5 - 0.5) * 0.0025 * fmF5) * uFamA.y;',
+          '  fmRgh = mix(uFamM.y, uFamM.w, raised) + 0.12 * (fmN2 - 0.5) + 0.15 * hollow; fmMet = mix(uFamM.x, uFamM.z, raised);',
+          '  if (fmK > 7.5 && fmK < 8.5) { b *= 1.0 - 0.45 * fmPlank - 0.35 * fmButt; fmHt -= 0.01 * (fmPlank + fmButt) * fmF2; }',
+          '  else if (fmK > 8.5 && fmK < 9.5) { b *= 1.0 - 0.4 * fmDeckL; fmHt -= 0.008 * fmDeckL * fmF2; }',
+          '  else if (fmK > 9.5 && fmK < 10.5) { fmHt += 0.012 * sin(vFm.w * 11.0 + fmN1 * 6.0) * fmF2; }',
+          '  else if (fmK > 10.5) { b *= 0.82; fmHt *= 2.6; fmHt += ((fmN2 - 0.5) * 0.03 + (0.5 - abs(fmN3(vFmW * 2.7 + 5.0) - 0.5)) * 0.06) * fmF2; b *= 1.0 - 0.3 * smoothstep(0.3, 0.5, abs(fmN3(vFmW * 2.7 + 5.0) - 0.5)); fmRgh += 0.12; fmMet = 0.62; }',
+          '  fmAlb = b;',
+          '} else if (fmK < 2.5) {',   // the granite, speckled, its top in slabs
+          '  fmAlb = uFamGr * mix(0.92, 1.08, fmN2) * mix(1.0, mix(0.8, 1.22, smoothstep(0.45, 0.75, fmN5)), fmF5);',
+          '  fmAlb *= 1.0 - 0.5 * fmTile * step(0.7, vFmN.y) * step(0.5, length(vFm.zw));',
+          '  fmRgh = 0.3 + 0.1 * fmN2; fmHt = -0.002 * fmTile * step(0.7, vFmN.y);',
+          '} else if (fmK < 3.5) {',   // the dark paved circle, in rings and radial joints
+          '  fmAlb = uFamPv * mix(0.85, 1.15, fmN2) * mix(1.0, mix(0.7, 1.3, smoothstep(0.4, 0.8, fmN5)), fmF5) * (1.0 - 0.45 * max(fmRing, fmRad));',
+          '  fmRgh = 0.82; fmHt = -0.003 * max(fmRing, fmRad);',
+          '} else if (fmK < 4.5) {',   // its pale border
+          '  fmAlb = uFamPb * mix(0.88, 1.12, fmN2) * mix(1.0, mix(0.75, 1.25, smoothstep(0.4, 0.8, fmN5)), fmF5) * (1.0 - 0.4 * fmRad);',
+          '  fmRgh = 0.78;',
+          '} else if (fmK < 5.5) { fmAlb = vec3(0.78, 0.8, 0.82) * mix(0.94, 1.06, fmN5); fmRgh = 0.28 + 0.08 * fmN4; fmMet = 0.85; }',   // the pole's brushed aluminium
+          'else if (fmK < 6.5) { fmAlb = vec3(0.92, 0.7, 0.32); fmRgh = 0.25; fmMet = 1.0; }',   // the gilt ball
+          'else { fmAlb = vec3(0.9, 0.86, 0.78); fmRgh = 0.15; }',   // a lamp's lens
+          'diffuseColor.rgb = fmAlb;',
+        ].join('\n'))
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = clamp(fmRgh, 0.08, 1.0);')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = fmMet;')
+        // the bump (three's perturbNormalArb, on the grain's height in metres), every derivative taken in uniform flow
+        .replace('#include <normal_fragment_maps>', '#include <normal_fragment_maps>\n{ vec3 sx = dFdx(-vViewPosition), sy = dFdy(-vViewPosition), r1 = cross(sy, normal), r2 = cross(normal, sx); float det = dot(sx, r1) * faceDirection;\n  vec2 dh = vec2(dFdx(fmHt), dFdy(fmHt)); vec3 gr = sign(det) * (dh.x * r1 + dh.y * r2); normal = normalize(abs(det) * normal - gr); }')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n' + [
+          'if (uLamp > 0.001) {',
+          '  vec3 mWN = normalize(inverseTransformDirection(normal, viewMatrix));',
+          '  vec3 mD = vFmW - uMemC; vec2 mR = normalize(mD.xz + vec2(1e-4));',
+          '  float mFace = clamp(dot(mWN.xz, mR) * 0.9 + 0.06 - 0.3 * mWN.y, 0.0, 1.0); mFace *= mFace;',
+          '  float mFall = exp(-max(mD.y - 0.4, 0.0) * 0.5) * (1.0 - smoothstep(9.0, 11.0, length(mD.xz)));',
+          '  totalEmissiveRadiance += uLamp * (diffuseColor.rgb * vec3(1.0, 0.78, 0.5) * mFace * mFall * uFamA.x + vec3(0.018, 0.012, 0.006) * mFace * mFall);',
+          // the pole's two lamps: a wash up the pole and the drum, the lenses lit
+          '  vec3 pD = vFmW - uFamPole.xyz; float pR = length(pD.xz);',
+          '  totalEmissiveRadiance += uLamp * diffuseColor.rgb * vec3(1.0, 0.92, 0.8) * (1.0 - smoothstep(0.3, 1.4, pR)) * (0.25 + 0.5 * exp(-max(pD.y, 0.0) * 0.12)) * uFamPole.w;',
+          '  if (fmK > 6.5 && fmK < 7.5) totalEmissiveRadiance += uLamp * vec3(1.0, 0.86, 0.62) * 2.2;',
+          '}',
+        ].join('\n'));
+    };
+    m.customProgramCacheKey = () => 'famine-memorial-r197';
+    return m;
+  }
+  // the flag: green at the hoist, white, orange (the Constitution of Ireland's tricolour, 2:1), drawn by its position along
+  // the fly; the cloth's shape is the vertex shader's, a wave running from the hoist to the fly whose height, pace and droop
+  // follow the wind's speed, the whole turned to the wind's heading (famineStep), on the water's clock (still under reduced
+  // motion). Both faces are one surface, so its back shows the green at the pole as a real flag's does. After dark the drum's
+  // lamps light it from below
+  // (a stripe's albedo is its colour in linear light, 15 per cent more saturated and at 0.85: as given, the sun and the tone
+  // curve washed the green to (106, 194, 143) and the orange to (246, 196, 131); measured on the rendered flag at 2 pm)
+  const famFlagC = (hex) => { const c = new THREE.Color(hex).convertSRGBToLinear(), l = 0.2126 * c.r + 0.7152 * c.g + 0.0722 * c.b, f = (x) => Math.max(0, l + (x - l) * 1.15) * 0.85; return c.setRGB(f(c.r), f(c.g), f(c.b)); };
+  const famFlagU = { uFlagW: { value: new THREE.Vector4(0, 0.1, 0.5, 0) }, uFlagDir: { value: new THREE.Vector2(1, 0) },
+    uFlagC0: { value: famFlagC(FAMINE.flag[0]) }, uFlagC1: { value: famFlagC(FAMINE.flag[1]) }, uFlagC2: { value: famFlagC(FAMINE.flag[2]) }, uFlagLit: { value: 0.6 } };
+  function famFlagMat() {
+    const m = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0, side: THREE.DoubleSide, envMapIntensity: 0.35 });   // a cloth: little of the sky's sheen
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, famFlagU, { uLamp: lampUniform });
+      const L = FAMINE.flagL.toFixed(2), H = FAMINE.flagH.toFixed(2);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec2 aFlag; uniform vec4 uFlagW; uniform vec2 uFlagDir; varying vec2 vFlag;\n' + [
+        'vec3 fmFlagP(vec2 st) {',
+        '  float s = st.x, t = st.y, a = uFlagW.y * pow(max(s, 0.0), 1.25), ph = uFlagW.x - s * 6.5 - t * 1.1;',
+        '  float w = a * (sin(ph) + 0.3 * sin(ph * 2.3 + 1.7 + t * 2.0));',
+        '  float x = s * ' + L + ' * (1.0 - 0.06 * uFlagW.z), y = -(1.0 - t) * ' + H + ' - uFlagW.z * s * s * ' + L + ' * 0.42 - 0.05 * a * cos(ph);',
+        '  vec2 d = uFlagDir, sd = vec2(-d.y, d.x);',
+        '  return vec3(d.x * x + sd.x * w, y, d.y * x + sd.y * w);',
+        '}',
+      ].join('\n'))
+        .replace('#include <beginnormal_vertex>', 'vec3 fmFP = fmFlagP(aFlag);\nvec3 objectNormal = normalize(cross(fmFlagP(aFlag + vec2(0.02, 0.0)) - fmFlagP(aFlag - vec2(0.02, 0.0)), fmFlagP(aFlag + vec2(0.0, 0.02)) - fmFlagP(aFlag - vec2(0.0, 0.02))));')
+        .replace('#include <begin_vertex>', 'vec3 transformed = fmFP; vFlag = aFlag;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\nuniform vec3 uFlagC0, uFlagC1, uFlagC2; uniform float uLamp, uFlagLit; varying vec2 vFlag;')
+        .replace('#include <color_fragment>', '#include <color_fragment>\n' + [
+          'float fS = vFlag.x * 3.0, fW = max(fwidth(fS), 1e-4) * 0.75;',
+          'vec3 fC = mix(uFlagC0, uFlagC1, smoothstep(1.0 - fW, 1.0 + fW, fS));',
+          'fC = mix(fC, uFlagC2, smoothstep(2.0 - fW, 2.0 + fW, fS));',
+          'diffuseColor.rgb *= fC * (1.0 - 0.12 * (1.0 - smoothstep(0.0, 0.03, vFlag.x)));',   // the hoist's sleeve a shade darker
+        ].join('\n'))
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += uLamp * diffuseColor.rgb * uFlagLit * (1.0 - 0.3 * vFlag.x) * (0.75 + 0.25 * (1.0 - vFlag.y));');
+    };
+    m.customProgramCacheKey = () => 'famine-flag-r197';
+    return m;
+  }
+  const FAM = { near: null, far: null, flag: null, lod: 'near', force: null, tris: {}, figs: 0, c: new THREE.Vector3(), pole: null, phase: 0, t: null, spd: 3, ang: 0 };
+  // 'Restoring the landmarks' (REAL): the near level (a phone's at fewer facets) and the far one, the flag, and what keeps
+  // the trees, the tufts and the walker off them
+  function famineBuild(cx, cz, ux, uz, ry, yG) {
+    const lo = isTouch || TIER2;
+    const MW = new THREE.Matrix4().makeTranslation(cx, yG, cz).multiply(new THREE.Matrix4().makeRotationY(ry));
+    const toW = (u, v) => [cx + ux * u - uz * v, cz + uz * u + ux * v];
+    const ground = (u, v) => { const [x, z] = toW(u, v); return drapeY(x, z, 'ground') - yG; };
+    const [px, pz] = FAMINE.pole, pu = (px - cx) * ux + (pz - cz) * uz, pv = -(px - cx) * uz + (pz - cz) * ux, pg = siteY(px, pz, 'ground') - yG;
+    const mk = (far) => {
+      const r = famineForms(lo && !far, far, ground), parts = r.parts.concat(famPoleForms(pu, pv, pg, lo, far));
+      for (const p of parts) p.g.applyMatrix4(MW);
+      FAM.figs = r.figs;
+      return famMerge(parts);
+    };
+    const mat = famMat(), gN = mk(false), gF = mk(true);
+    famU.uMemC.value.set(cx, yG, cz);
+    famU.uFamPole.value.set(px, yG + pg + 0.3, pz, 0.35);   // the pole's wash: a lit pole, not a lamp of its own
+    FAM.near = new THREE.Mesh(gN, mat); FAM.far = new THREE.Mesh(gF, mat);
+    FAM.near.name = 'famine-memorial'; FAM.far.name = 'famine-memorial-far';
+    for (const m of [FAM.near, FAM.far]) { m.castShadow = m.receiveShadow = true; groupCity.add(m); }
+    FAM.far.visible = false;
+    FAM.flag = new THREE.Mesh(famFlagGeom(lo), famFlagMat());
+    FAM.flag.name = 'famine-flag'; FAM.flag.position.set(px, yG + pg + FAMINE.poleH + 0.1, pz); FAM.flag.receiveShadow = true;
+    groupCity.add(FAM.flag);
+    FAM.c.set(cx, yG + 2, cz); FAM.pole = [px, pz];
+    const tri = (g) => g.index.count / 3;
+    FAM.tris = { near: tri(gN), far: tri(gF), flag: tri(FAM.flag.geometry) };
+    freeOnUpload(gN); freeOnUpload(gF);   // never raycast: the arrays go once the GPU holds them
+    // the occupancy: the plinth's ring for the trees and the walker, the paved circle and the drum for the tufts (bare
+    // ground and the park's alike), a ring round the pole that keeps a crown out of the flag
+    const ringAt = (fn, n) => { const o = []; for (let k = 0; k < n; k++) { const [u, v] = fn(k / n * Math.PI * 2); o.push(toW(u, v)); } return o; };
+    const plinth = ringAt((a) => { const [u, v] = famOutline(a), l = Math.hypot(u, v) || 1; return [u * (1 + 0.25 / l), v * (1 + 0.25 / l)]; }, 32);
+    const apron = ringAt((a) => [11.7 * Math.cos(a), 8.4 * Math.sin(a)], 32);
+    const circ = (r, n) => { const o = []; for (let k = 0; k < n; k++) { const a = k / n * Math.PI * 2; o.push([px + Math.cos(a) * r, pz + Math.sin(a) * r]); } return o; };
+    registerPoly(plinth); registerPoly(circ(2.4, 12));
+    noSow(apron); noSow(circ(0.8, 12));
+    REBUILD_PAVED.push({ ring: apron, bb: rbBox(apron) }, { ring: circ(0.8, 12), bb: rbBox(circ(0.8, 12)) });
+    for (const r of [plinth, circ(0.78, 8)]) for (let k = 0; k < r.length; k++) { const p0 = r[k], p1 = r[(k + 1) % r.length]; addColSeg(p0[0], p0[1], p1[0], p1[1]); }
+  }
+  // the frame's part: the level by the eye's distance (with hysteresis; a change asks for one depth pass, so the shadow is the
+  // drawn level's), the flag's heading eased to the wind's (at most 0.6 radians a second), its wave's pace and height by the
+  // wind's speed, its droop in a calm
+  function famineStep() {
+    if (!FAM.near) return;
+    const p = camera.position, d = p.distanceTo(FAM.c);
+    let lod = FAM.lod;
+    if (FAM.force) lod = FAM.force;
+    else if (lod === 'near' && d > FAMINE.nearR + FAMINE.hyst) lod = 'far';
+    else if (lod === 'far' && d < FAMINE.nearR) lod = 'near';
+    if (lod !== FAM.lod) { FAM.lod = lod; if (!shadowFrozen) renderer.shadowMap.needsUpdate = true; }
+    FAM.near.visible = lod === 'near'; FAM.far.visible = lod === 'far';
+    const fl = FAM.flag, t = waterU.uTime.value, dt = FAM.t == null ? 0 : Math.min(0.25, Math.max(0, t - FAM.t));
+    FAM.t = t;
+    fl.visible = Math.hypot(p.x - FAM.pole[0], p.z - FAM.pole[1]) < FAMINE.flagR;
+    if (!fl.visible) return;
+    const wx = WX.windX || 0, wz = WX.windZ || 0, spd = Math.hypot(wx, wz);
+    if (WX.ok) FAM.spd += (Math.min(spd, 14) - FAM.spd) * Math.min(1, dt / 3);
+    if (WX.ok && spd > 0.3) { let da = Math.atan2(wz, wx) - FAM.ang; da = Math.atan2(Math.sin(da), Math.cos(da)); FAM.ang += Math.max(-0.6 * dt, Math.min(0.6 * dt, da)); }
+    const s = FAM.spd;
+    FAM.phase = (FAM.phase + dt * (2.0 + 0.45 * s)) % (Math.PI * 200);
+    famFlagU.uFlagDir.value.set(Math.cos(FAM.ang), Math.sin(FAM.ang));
+    famFlagU.uFlagW.value.set(FAM.phase, 0.05 + 0.014 * Math.min(s, 10), 1 - smooth(1, 7, s), 0);
+  }
+  // ?dev: __dbg.famine() - the level, the triangles and draws, the flag's state; 'near' / 'far' / 'auto' pin the level
+  function famineProbe(what) {
+    if (what === 'near' || what === 'far' || what === 'auto') FAM.force = what === 'auto' ? null : what;
+    const vis = (m) => !!(m && m.visible);
+    return { built: !!FAM.near, lod: FAM.lod, figs: FAM.figs, tris: { ...FAM.tris }, draws: vis(FAM.near) + vis(FAM.far) + vis(FAM.flag),
+      flag: FAM.flag ? { visible: FAM.flag.visible, dir: famFlagU.uFlagDir.value.toArray().map((v) => +v.toFixed(3)), w: famFlagU.uFlagW.value.toArray().map((v) => +v.toFixed(3)), y: +FAM.flag.position.y.toFixed(2) } : null,
+      dist: FAM.near ? Math.round(camera.position.distanceTo(FAM.c)) : null, u: famU };
+  }
   step('Restoring the landmarks', () => {
     const walls = [];   // gets the window shader
     const detail = [];  // roofs, spires, columns, trim — plain material
@@ -21567,8 +22275,12 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // a rounded granite plinth carrying a low bronze rock that rises to a prow, some twenty cloaked figures
     // on and around it (hats, bundles, a few kneeling at the famine end), two Celtic crosses and gravestones
     // at the west end. Representative, not a survey of Glenna Goodacre's thirty-five figures. Colours are
-    // stored very dark for the detail material's lift (the tavern's calibration).
-    {
+    // stored very dark for the detail material's lift (the tavern's calibration). Round 197 rebuilt it from the photographs
+    // with the tricolour on its pole (FAMINE, famineBuild); ?real=0 keeps this one.
+    if (REAL) {
+      const [cx, cz] = FAMINE.c, [ax, az] = FAMINE.sp0, [bx, bz] = FAMINE.sp1, L0 = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / L0, uz = (bz - az) / L0;
+      famineBuild(cx, cz, ux, uz, ryAlign(ux, uz), siteY(cx, cz, 'ground'));
+    } else {
       const cx = 84, cz = 104;
       const sp0 = [63.3, 119.3], sp1 = [121, 128];   // Spruce Street's line here: the long axis runs with it
       const L0 = Math.hypot(sp1[0] - sp0[0], sp1[1] - sp0[1]), ux = (sp1[0] - sp0[0]) / L0, uz = (sp1[1] - sp0[1]) / L0;
@@ -45884,6 +46596,7 @@ float pinOccGate() {
     cityHallStep();   // Round 191: its level, its art on a phone's approach, the dials' hands
     sfStep(now);   // Round 189: the storefronts' clock and names
     gloryStep(now);   // Round 191: Glory's levels of detail and its hours
+    famineStep();   // Round 197: the Irish Famine Memorial's level, its flag on the wind
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
@@ -46005,7 +46718,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, famine: famineProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

@@ -408,6 +408,21 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   north-west corner (OSM way 333931838) is a third `CH_HEADHOUSE`; a phone paints the floor's canvases on its first near frame
   (`CH.floorPaint`); the pins' depth image and the building tap draw the far level in the near one's place
   (`userData.occStandIn` in `occRender`).
+- **The Irish Famine Memorial (Round 197):** under the realistic look 'Restoring the landmarks' calls `famineBuild` at
+  Mike's place and heading (`FAMINE.c` 84, 104, the long axis with Spruce Street, the famine at the west end, the bow east);
+  `?real=0` builds Round 129's block untouched and no flag. `famineForms(lo, far, ground)` lays every part in the memorial's
+  own frame (u with Spruce Street, v toward it, y over the plinth's foot): the plinth's flat granite panels round
+  `famOutline`, the dark paved circle on the ground (`ground` is `drapeY` there), the planked hull (`famGun`, `famDeck`,
+  `famBow`, `famPlan`, `famSect`), the gangway (`FAM_GW`), the rock (`FAM_ROCK`, kept on the plinth), the cross, the luggage
+  and the people (`FAM_FIGS` through `famFigure`, CHS's forms: thirty-one and four children); `famPoleForms` the pole;
+  `famMerge` one indexed buffer of float position, normal and `aFm` (the kind, the cavity, the kind's two coordinates). One
+  program for both levels (`famMat`, `famU`: the bronze's patina, metal and grain, the granite, the paving, the pole; Round
+  184's floods and the pole's wash after dark), near and far meshes switched in `famineStep` (`FAMINE.nearR` 250 m, 30 m
+  hysteresis, a depth pass asked at each switch); the flag is its own mesh (`famFlagGeom`, `famFlagMat`: the cloth's shape
+  in the vertex shader, its heading eased to `WX.windX/Z`, its wave on `waterU.uTime`, never a shadow caster). The trees are
+  kept off the plinth and 2.4 m off the pole (`registerPoly`), the tufts off the paved circle and the drum (`noSow` and
+  `REBUILD_PAVED`, which the park's sow reads), the walker off both (`addColSeg`). `__dbg.famine()` ('near', 'far', 'auto'
+  pin the level); `tests/test_remodel_famine.py` builds the forms under Node.
 - **Terrain:** `demAbs()` samples the DEM grids (datum: the towers' site at 8.34 m ASL stays
   y = 0); `siteY(x,z,'ground'|'road')` is the one function everything sits on. East of Front
   St the I-95 trench drops to −8 between `TERRAIN.trenchW/E`, Penn's Landing shelf −6.5…−7.5,

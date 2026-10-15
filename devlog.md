@@ -10852,3 +10852,71 @@ place; this is what changed in the code, and what was measured.
   "in case a gap shows" whose top face lay at RF too, the full footprint in the same plane. The slab now runs 8 to 3 cm
   under the roof (it is there for its edges, which the walls and parapets cover); the same five frames hold the decks steady.
   `tests/test_ground_pits.py` (WildeyRoof) keeps the membrane the one face in that plane.
+
+## Round 197, the Irish Famine Memorial and its flag (Oct 14)
+
+- Mike, with a screenshot of Round 129's memorial (crude black pawns on a lump): "The irish famine memorial needs to look more
+  realistic. lookup photos of it. There is a boat. Also put an irish flag on a flagpole to the northeast of it."
+- The references, Wikimedia Commons: Irish_Memorial_in_Philadelphia_1.jpg and _2.jpg (CC BY-SA 4.0: the entrance stone and
+  the walk), Irish_Famine_Memorial_-_Philadelphia_(2642935112).jpg (CC BY 2.0: the gangway side in sun),
+  The_Irish_Memorial_(2003)_(3118931304).jpg (CC BY 2.0: the whole length, overcast) and The_Irish_Memorial_at_Penn's_
+  Landing.jpg (CC BY-SA 4.0: the famine end close, the seated woman with her face in her hand, the crouched boy, the cross).
+  Viewed only; nothing from them is in the repo.
+- Under the realistic look 'Restoring the landmarks' calls `famineBuild` at Mike's place (84, 104) and heading; `?real=0`
+  builds Round 129's block as it was, and no flag. The forms (`famineForms`, all CHS's smooth shells, tubes, blobs and lathes
+  but the boxes of a crate, a trunk and the cross): a plinth of 40 flat granite panels round a rounded oblong 14.4 by 8.6 m
+  with a lobe toward Spruce Street (`famOutline`), its cap 3.5 cm proud with a chamfer, 0.95 m high, its top in 0.75 m slabs;
+  the dark paved circle 11.5 by 8.2 m laid on the ground (`drapeY` + 0.1 m) in 0.9 m rings and 1.1 m radial joints inside a
+  pale border, a kerb face into the lawn; the ship, its planked sides from the plinth to a gunwale 2.15 to 2.45 m up (the
+  sheer rising to bow and stern), a raked stem, a bilge and a little tumblehome, the bulwarks' inner faces and the deck
+  0.72 m under the gunwale (the emigrants show from the waist, as the photographs have them), the gunwale's rail, two wales,
+  a porthole each side and, west of the planking, three ribs rising out of the rock; the gangway down the south side (ramp,
+  cleats, five posts, a sagging rope, canvas hung from it, two supports), three barrels, a trunk with its lid, a crate and
+  sacks under it; the rock at the famine end (five noise-pushed lumps kept on the plinth's top, eleven loose stones), a
+  Celtic cross with its ring and two gravestones; and the people (`FAM_FIGS`, `famFigure`): thirty-one and four children.
+  The famine: a mother on her knees with her child across her lap, the woman sitting with her face in her hand, the boy
+  crouched in a brimmed hat, a gaunt man bowed on a staff, a man kneeling at the cross, an old woman wrapped in her shawl,
+  two climbing from the rock toward the ship. The deck: fifteen at the rail, waving, weeping, a child on a hip and one on a
+  father's shoulders, a man at the bow pointing the way, one woman looking back at Ireland. The gangway: a boy reaching for
+  the rope, a woman with her bundle, a man with a trunk on his shoulder. The plinth: the mother and child before the hull,
+  the man in the top hat at the gangway's foot, a man on a trunk and a girl on the north side, and alone at the east tip the
+  man with his hat raised, waving to the ship. A figure is a dress (a skirt to the ground, a coat to the knee over trousers,
+  a hooded cloak) with folds, a pose (standing, kneeling, sitting, crouched, bowed at the waist), a head with a nose and a
+  jaw under a brimmed hat, a top hat, a cap, a shawl or hair, sleeves to hands from thirteen arm presets; the deck's are at a
+  phone's facets and stop where the bulwark hides them.
+- The bronze (`famMat`, one program for the bronze, the granite, the paving and the pole, told apart by `aFm`): a metal
+  whose patina is mottled, paler and more metallic where a form stands proud (each vertex's cavity: its neighbours over its
+  tangent plane, from the merged mesh) and on its tops, darker in the folds and toward a figure's feet, worked over by a
+  modelled clay grain (a bump from value noise at 4.5 and 17 cm, faded before a pixel spans it); the hull's 0.24 m strakes
+  and their butts and the deck's planks are grooves of the same bump; the rock creased by a ridged noise. Measured against
+  the photographs: the first pass (albedo 0x4a3220, granite 0x5a5c5f) rendered a tan figure (104, 90, 77) on a white plinth
+  (171 to 235); at 0x2a221c, metalness 0.72 to 0.88 and roughness 0.48 to 0.3, the overcast hull reads (55, 50, 44) and a
+  figure (67, 61, 56) against the overcast photograph's (70 to 80, 66 to 76, 62 to 73), the sunlit hull 77 to 90, a figure
+  (99, 91, 78) and the canvas (107, 93, 76) against the sunny one's (106 to 116, 93 to 102, 88 to 96); the plinth's skirt
+  (116, 117, 121) against 130 and the paving (125, 128, 137) against (128, 125, 126). Round 184's floods are kept (their
+  gain 1.6 for the lighter bronze, and only within the paved circle).
+- The flag: the tricolour (#169B62, #FFFFFF, #FF883E, green at the hoist), 2 by 1 m, on a 9.5 m brushed aluminium pole
+  tapering from 12 to 5.8 cm, a truck and a gilt ball 9.97 m up, on a granite drum with two lamps aimed up; at (95.5, 98.5),
+  12.7 m from the memorial's centre on a bearing of 64 degrees, outside the paved circle and 6.1 m from the plinth, 4.9 m off
+  the low building's south wall, 6.5 m from the footway's end, the nearest crowns about 5 m off (the plan render). The trees are kept 2.4 m off
+  it (`registerPoly`), the tufts off its drum, the walker round it. The cloth's shape is the vertex shader's (`fmFlagP`): a
+  wave from the hoist to the fly (0.05 m plus 0.014 m a metre a second at the fly, a pace of 2 plus 0.45 radians a second a
+  metre a second), a droop in a calm (up to 0.84 m at the fly corner, gone by 7 m/s), its normal by differences, the whole
+  turned to the weather's heading at most 0.6 radians a second (`famineStep`), on the water's clock, so it stands still
+  under reduced motion; one double-sided surface, so its back has the green at the pole too. Its stripes are their colours in
+  linear light, 15 per cent more saturated and at 0.85 (as given the sun washed them to (106, 194, 143) and (246, 196, 131));
+  overcast the green renders (29, 153, 105) against #169B62's (22, 155, 98). After dark the drum's lamps light it and wash
+  the pole. It casts no shadow (nothing that moves does under REAL).
+- The cost: 24,679 triangles near and the flag's 252 (24,931; a phone 20,178 and 120), 1,575 in the far level past 280 m
+  (back at 250); two draws at most, the memorial and the flag, and the memorial in the depth pass (619 calls a frame at the
+  close pose before and after). One indexed buffer of four-byte streams (float position, normal and `aFm`), Uint16 indices.
+  No `gl_FragDepth`; the programs keyed 'famine-memorial-r197' and 'famine-flag-r197'.
+- Also fixed: the park's tufts grew through Round 129's paved apron (the park's sow reads `REBUILD_PAVED`, never `noSow`);
+  the new circle and the drum are in it.
+- Rendered (headless, `render.mjs`, Oct 14 at 14:00 overcast and clear, 18:25 and 21:10) from the south-east, the
+  north-west, Spruce Street, the east tip, the famine end, a low flight, under the flag, the north-east at dusk, at night,
+  the deck close, and a phone from the south-east: no console errors, no link failures. Not done: the people are
+  representative, not a survey of Goodacre's thirty-five, and their faces carry only a nose and a jaw; the pole has no
+  halyard (a 1 cm line aliases). `tests/test_remodel_famine.py` (14: the figure count, the budget, the streams, the bronze
+  on the plinth, the pole north-east and clear, the flag's colours and order, the wind, no fragment depth, `?real=0`);
+  the suite 923 tests, one expected failure.
