@@ -423,9 +423,10 @@ out.dbg = vdepthDbg().hosts;
                      '      const g = mergeColored(lmTrim); freeOnUpload(g);\n      vdepthNoteOverlay(g);',
                      '      const g = mergeColored(themeParts); freeOnUpload(g);\n      vdepthNoteOverlay(g);',
                      '      const g=mergeColored(crownPanels);freeOnUpload(g);\n      vdepthNoteOverlay(g);',
-                     '      const g = themeWashGeometry(themeSheets);\n      vdepthNoteOverlay(g);'):
+                     '      const g = themeWashGeometry(themeSheets);\n      vdepthNoteOverlay(g);',
+                     '      freeOnUpload(g);\n      vdepthNoteOverlay(g);   // Round 168: the facades under it keep fragment depth (vdepthHosts)\n      const m = new THREE.Mesh(g, mat);'):   # Round 195: the Comcast towers' trim, cladding and screen (cmrFinish)
             self.assertIn(site, SRC)
-        self.assertEqual(SRC.count('vdepthNoteOverlay(g);'), 5)
+        self.assertEqual(SRC.count('vdepthNoteOverlay(g);'), 6)
         self.assertIn('const far = !q.host && vdepthFar(', SRC)
 
 

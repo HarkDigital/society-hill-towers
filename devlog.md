@@ -10843,3 +10843,83 @@ place; this is what changed in the code, and what was measured.
   code, not in glass_systems.json, so the calibrated skyline is untouched (glass_calibrate.py's fingerprint). ?real=0 and
   ?glass=0 build the old bars. Rendered from Dock Street, a low flight, the river and at night: no link failures or console
   errors. `tests/test_ryland_glass.py`.
+
+## Round 195, the Comcast towers (Oct 14)
+
+- Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both Comcast towers, Battleship NJ, The Moshulu, and the
+  bridges." This round is the two Comcast towers, built as one workstream on `remodel/comcast`, under the realistic look
+  (`CMR_ON`: `?real=0` and `?comcast=0` build Round 194's towers; both measured identical to HEAD, 0.000% of pixels over 24
+  levels at four poses each, day, street, an Eagles night and the aerial).
+- The references (Wikimedia Commons, 45 photographs from the street, the Parkway, Fairmount Park, City Hall and a
+  helicopter; RAMSA's and Enclos' project pages, Wikipedia, PhillyYIMBY's design history, Thornton Tomasetti) are in the
+  session's `scratchpad/remodel/comcast/refs/` with `urls.txt`. What the photographs showed that the model did not:
+  - The Comcast Center's east wing (OSM's 269.6 m part, 39 m from the spec's point, past its 35 m radius) was never matched
+    to the tower: it drew as an unresearched tower in a precast skin, the white striped slab standing against the east face
+    in every view from City Hall. It is the tower's glass again (the spec match takes 45 m for the Comcast Center's parts).
+  - RAMSA's "faceted obelisk": the floor plates go from 28,000 to 23,000 gsf. The east and west wings now lean in as they
+    rise, 8.3 m deep at the street to 1 m at 269.6 m (the plan 0.85 at the top), their outer faces on the curtain wall's own
+    chunk with the facade's bays laid along them (`cmrWedge`, `cmrGlassQuad`), their side faces the notched corners, their
+    two leaning edges the corner lines the other parts' piers draw.
+  - The crown is open: the Fairmount Park and helicopter photographs see the sky through its top. Its glass stops at a deck
+    at 284 m and the top 13 m are a screen of low-iron glass (`cmrScreenMat`: transparent, Fresnel's opacity, a fifth
+    head-on, silver frames on the 1.52 m by 4.15 m module filtered to a pixel) over the damper's two concrete tanks. The
+    crown's panels at night are Round 111's, the roof panel moved down to the deck.
+  - The north slot Wikipedia names ("two stories tall on the north side"), dark in the Fairmount Park photograph, centred,
+    its sill on the south opening's: 13 m by 8.3 m back to the core's face, with the south opening's dark back panel and
+    soffit (`cmrNorthSlot`). Round 108 kept "the rear facade closed" against the south opening running through; the slot
+    is its own recess.
+  - The winter garden (OSM's 34 m glass part on the plaza) on the clear low-iron system.
+  - The CTC's office bars: five photographs measured the north bar's top at 176 to 205 m (from the north-west, scaled on
+    the 277 m roof and the 342 m tip) and the south bar's at about 145 (from the south-west); the design history has the
+    north section rising higher. Round 100 raised both to 213.5. Now the north is 190 and the south OSM's 142, so the west
+    face steps three times (142, 190, 277) to the spine.
+  - The spine is the core's cladding proud of the west face, silver panels to 240 m and dark grey to 300 m (cc16, cc22,
+    cc46: 232 to 248), the elevator overrun dark grey over the roof, the frosted lantern 300 to 342 m (Thornton
+    Tomasetti's 120 ft lantern, "frosted glass over a cross-braced frame"), all on the remodel's cladding material, and the
+    341 m part's glass is no longer drawn. The lantern is lit at night as the blade was: crownPanels in 0.5 m slices with
+    slots 100 up its height, the house white on a plain night, bands on a several-colour night, the Eagles' green and white.
+  - The braces stand on the bars' east and west ends, not on the broad faces where Round 100 hung its alternating
+    diagonals: every photograph from 18th and Arch shows a horizontal across the wing at every third floor and a diagonal
+    from its outer end up to the next one's inner end (`cmrBraces`, 13.26 m modules from 26.5 m, members 0.6 m by 0.45 m
+    standing 0.35 m off the glass). Round 100's belts at 72, 125, 178 and 212 m and the corner piers gave way to a fascia
+    every three floors round every face (the three-storey neighbourhoods, the white lines of the north faces in cc16 and
+    cc41), the silver fins framing the central strip on 18th Street and the core's west piece, the dark louvres of the
+    mechanical floors at the bars' tops and under the roof, the bars' green roofs, the studios' louvred podium (5 to 22 m) on
+    the bars' outer faces with the blue columns before it on the north (the 2017 photographs), the podium's two west parts
+    in the tower's glass, and the lobby on 18th Street on the clear system under its cantilevered canopy with a hardwood
+    soffit.
+- The art (gpt-image-2, quality high, two batches of three and two, every image looked at, raw in
+  `lidar_cache/comcast_art_raw/`): five straight-on, repeating elevations, the spine's pale silver panels, the louvres, the
+  frosted lantern with its cross-brace's soft X, the soffit's hardwood slats and the core's dark grey panels.
+  `bake_comcast_art.py` cuts each between two of its own joints (found by their column and row darkness), divides out the
+  plane of light painted across a plain one, folds 3% of each edge into the opposite and stacks them into one strip of
+  512-pixel layers (50 KB, a phone's 256-pixel half 12 KB). The page uploads it as a texture array with mips
+  (`cmrArtLoad`, freed once on the GPU) and draws each layer's detail over the vertex's calibrated colour, the image over
+  its own linear mean (`cmrTexMat`); the lantern's tiles are fitted whole to every face (one cross-brace across, five up).
+- The glass is the systems' (Comcast's and the CTC's, Round 193), its shaders, systems and art untouched (the calibration's
+  fingerprint b5fca1378b8fb251 unchanged). `glass_calibrate.py` re-run on the remodel: the Comcast Center over its 8 judged
+  poses median delta E 7.4 -> 7.8, b* -1.2 -> -1.4, worst 12.0 -> 11.7; the CTC over its 12, 7.2 -> 6.7, -2.1 -> -2.0, worst
+  11.5 -> 11.8; every one of the 20 within delta E 15 and b* 6; the whole calibration's 120 measures 34 outside as before
+  (the towers held open), no other tower's measure moved by more than 2.5.
+- Budget, measured headless on this Mac's GPU (the page's own counters, `renderer.info` over one whole frame, shadow and
+  post passes included, the same three poses in the same session order on each build: 300 m over the CTC's crown, the
+  north-west aerial at 600 m, the skyline from the south-west at 1.5 km). Computer: draw calls 455 -> 459, 543 -> 542, 655
+  -> 657; triangles 6,797,386 -> 6,792,800, 7,586,836 -> 7,579,644, 10,511,114 -> 10,502,690 (Round 100's blade slices and
+  frame, its cylinder braces and its piers came out). Phone path (740 by 360 at 1.25, touch): 427 -> 431, 471 -> 475 and 480
+  over two runs, 645 -> 649; 5,346,719 -> 5,342,157, 5,185,513 -> 5,182,985, 8,565,409 -> 8,560,047. The remodel's own
+  meshes: the trim's near level 1,662 triangles and its far level 862 (flat members, a metre-tall darker fascia in place of
+  a sub-pixel line, no fins or stand-offs; one drawn at a time, switched by `cmrStep` at 1,100 m with 100 m of hysteresis),
+  the cladding 94, the screen 8; everything else merges into the batches the towers drew in (the curtain wall's chunk, the
+  crown panels, the landmark trim). Programs 154 -> 157 on a computer, 124 -> 129 on the phone path; no link failures (every
+  program runnable, no console errors in any run). Texture memory: the cladding array 6.99 MB with its mips on a computer,
+  1.75 MB on a phone; download 50 KB and 12 KB. Frame time, the remodel's own meshes on and off in one session
+  (`__dbg.comcast(false)`, medians of six blocks of 30 frames, gl.finish each frame, other agents rendering on the same GPU):
+  computer 3.85 / 3.55 ms over the crown, 1.75 / 1.90 at the street, 3.75 / 4.70 at the skyline; phone path 1.90 / 1.75,
+  1.20 / 1.30, 3.0 / 3.0: inside the noise, at most 0.3 ms at the crown, where the screen, the trim's and the cladding's
+  shadows are in view.
+- Renders (computer and phone, day and night, plain, Eagles, Phillies and red, white and blue nights, 29 poses and 9):
+  `scratchpad/remodel/comcast/before/`, `after/` and the pairs in `pairs/`.
+- Open for Mike: the Comcast Center's plaza is still the model's lawn (half an acre of paving, the fountain and the cafe in
+  the photographs); the CTC's north bar at 190 m is a photograph measure (the drawings would settle it); the Comcast Center's
+  corner LEDs ("white LEDs on the corner spandrel panels", Wikipedia) are not drawn, so its night is Round 111's.
+  `tests/test_remodel_comcast.py`; `__dbg.comcast()` (`false` hides the remodel's own meshes for an A/B).

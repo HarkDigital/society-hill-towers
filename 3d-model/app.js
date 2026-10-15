@@ -9031,6 +9031,280 @@ vec2 wRing(vec2 rc, float tt) {
     return base.multiplyScalar(l);
   }
 
+  // ---- the two Comcast towers remodelled (Round 195, Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both
+  // Comcast towers, ..."; photographic realism, and the city as fast as Round 192 left it). CMR, under the realistic look
+  // only (?real=0 and ?comcast=0 build Round 194's towers exactly). The bodies stay OSM's parts on their curtain-wall
+  // systems (glass_systems.json's comcast and ctc, in the glass the calibration holds to its swatches); what changes is the
+  // form the photographs show and the parts do not:
+  // - the Comcast Center (Robert A.M. Stern, 2008, 297 m), RAMSA's "faceted obelisk": its east and west wings lean in as
+  //   they rise, 8 m deep at the street and 1 m at their tops at 269.6 m (RAMSA gives the plates as 28,000 and 23,000 gsf,
+  //   0.82; the leaning wings make the plan 0.85 at the top), the notched corners and the south opening under the crown as
+  //   Rounds 103 and 108 drew them, the crown's top 13 m an open screen of low-iron glass over a deck at 284 m (the
+  //   Fairmount Park and helicopter photographs see the sky through it) carrying the damper's two concrete tanks, the
+  //   winter garden on the clear system
+  // - the Comcast Technology Center (Foster + Partners, 2018, 342 m): its north and south office bars stop at 190 and 142 m
+  //   (measured on five photographs: from the north-west the north bar's top sits 176 to 205 m up, from the south-west the
+  //   south's 145; the design history has the north section rising higher; Round 100's 213.5 m raised both), the central bar
+  //   and the core's west piece to the roof at 277 m, the core's spine proud of the west face in silver panels to 240 m and
+  //   dark grey to 300 m, the elevator overrun dark grey over the roof, the frosted lantern from 300 to 342 m lit at night as
+  //   the blade was (crownPanels, slots 100 up); the Z braces on the bars' east and west ends only (Round 100 hung its
+  //   diagonals on the broad faces), a horizontal every three floors and a diagonal from its outer end up to the next one's
+  //   inner end, as every photograph from 18th and Arch shows them; a light fascia every three floors round every face (the
+  //   three-storey neighbourhoods); the glass lobby on 18th Street under its cantilevered canopy
+  // Everything new merges into the batches the towers already drew in (the curtain wall's chunk, the crown panels) or into
+  // the remodel's own four meshes: its trim near and far (one drawn at a time, switched at CMR_FAR by cmrStep), its
+  // cladding (the spine, the louvres, the lantern and the soffit on one material) and the crown's open screen
+  const CMR_ON = REAL && !/[?&]comcast=0\b/.test(location.search);
+  const CC_DIMS = { wingD1: 1.0, deck: 284, top: 297, slotW: 13, slotH: 8.3 };
+  const CTC_DIMS = { nBar: 190, silver: 240, overrun: 300, top: 342, module: 13.26, braceFrom: 26.52, lobby: 19.5 };   // the south bar keeps OSM's 142 m, the roof its 277
+  const CMR_FAR = 1100;   // m: past it the trim's far level (flat members, no stand-offs or fins)
+  // the Z braces on one end wall a -> b ([x, z]) whose inner end (beside the central bar) is b: a horizontal across the wall
+  // at every module from y0 to y1 and a diagonal from each horizontal's outer end up to the next one's inner end, `off`
+  // proud of the wall along its outward normal (nx, nz). Members as [x0, y0, z0, x1, y1, z1]
+  function cmrBraces(a, b, nx, nz, y0, y1, module, off) {
+    const out = [], P = (t, y) => [a[0] + (b[0] - a[0]) * t + nx * off, y, a[1] + (b[1] - a[1]) * t + nz * off];
+    for (let y = y0; y <= y1 + 1e-6; y += module) {
+      out.push([...P(0, y), ...P(1, y)]);
+      if (y + module <= y1 + 1e-6) out.push([...P(0, y), ...P(1, y + module)]);
+    }
+    return out;
+  }
+  // the Comcast Center's leaning end wing in its tower's frame F (F.P(u, v) -> [x, z]; u along the long axis (F.ax, F.az),
+  // v across it (F.px, F.pz)): the wing's footprint [ui, uo] x [v0, v1] (ui on the core's face, uo its outer face at the
+  // street), its outer face leaning in to d1 deep at y1. Quads as { p: four [x, y, z] corners round the face (the first
+  // and last on the facade's start edge), n: the outward normal, facade: the wall's width (0: the bays by world position) }
+  function cmrWedge(F, ui, uo, v0, v1, y0, y1, d1) {
+    const s = Math.sign(uo - ui), ut = ui + s * d1, H = y1 - y0, D = Math.abs(uo - ut), nl = Math.hypot(H, D);
+    const q = (u, v, y) => { const p = F.P(u, v); return [p[0], y, p[1]]; };
+    const N = (nu, ny, nv) => [nu * F.ax + nv * F.px, ny, nu * F.az + nv * F.pz];
+    return [
+      // the outer face, its normal along +-u tilted up by the lean
+      { p: [q(uo, v0, y0), q(uo, v1, y0), q(ut, v1, y1), q(ut, v0, y1)], n: N(s * H / nl, D / nl, 0), facade: Math.abs(v1 - v0) },
+      // the two side faces (the notched corner's walls), trapezoids in their vertical planes
+      { p: [q(ui, v0, y0), q(uo, v0, y0), q(ut, v0, y1), q(ui, v0, y1)], n: N(0, 0, Math.sign(v0 - v1)), facade: 0 },
+      { p: [q(uo, v1, y0), q(ui, v1, y0), q(ui, v1, y1), q(ut, v1, y1)], n: N(0, 0, Math.sign(v1 - v0)), facade: 0 },
+      // the top, d1 deep
+      { p: [q(ui, v0, y1), q(ut, v0, y1), q(ut, v1, y1), q(ui, v1, y1)], n: [0, 1, 0], facade: 0, cap: true },
+    ];
+  }
+  // a Comcast Center part that is one of its end wings: its centroid past the end of the core (cp, comcastCrownPlan of the
+  // tallest part) and no deeper than a wing; its footprint in the tower's frame (ui on the core's face, uo the outer face,
+  // v0 to v1 across), else null
+  function cmrWingOf(poly, cp) {
+    let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity, uc = 0;
+    for (const q of poly) {
+      const dx = q[0] - cp.ob.cx, dz = q[1] - cp.ob.cz, u = dx * cp.a.ax + dz * cp.a.az, v = dx * cp.a.px + dz * cp.a.pz;
+      u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); uc += u / poly.length;
+    }
+    if (Math.abs(uc) < cp.w - 0.5 || u1 - u0 < 3 || u1 - u0 > 14) return null;
+    return uc > 0 ? { ui: u0, uo: u1, v0, v1 } : { ui: u1, uo: u0, v0, v1 };
+  }
+  // the Comcast Center's north slot (Wikipedia's "two stories tall on the north side"; the Fairmount Park and helicopter
+  // photographs show it dark, centred on the north face, its sill on the south opening's): the north wing's pieces from the
+  // opening's bottom (cp.bottom) cut back to the core's face over slotW across and slotH up. pieces: comcastFacadePieces'
+  // output; a north wing's middle piece over that band becomes its two sides, the first carrying the slot's depth (for the
+  // page's back panel and soffit)
+  function cmrNorthSlot(pieces, cp) {
+    const out = [], uOf = (q) => (q[0] - cp.ob.cx) * cp.a.ax + (q[1] - cp.ob.cz) * cp.a.az, vOf = (q) => (q[0] - cp.ob.cx) * cp.a.px + (q[1] - cp.ob.cz) * cp.a.pz;
+    const clip = (p, limit, less) => {
+      const r = [];
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length], va = uOf(a), vb = uOf(b), ia = less ? va <= limit : va >= limit, ib = less ? vb <= limit : vb >= limit;
+        if (ia) r.push(a);
+        if (ia !== ib) { const t = (limit - va) / (vb - va); r.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+      }
+      return r.length >= 3 ? r : null;
+    };
+    const hw = CC_DIMS.slotW / 2, y1s = cp.bottom + CC_DIMS.slotH;
+    for (const pc of pieces) {
+      const vs = pc.poly.map(vOf), us = pc.poly.map(uOf), north = Math.max(...vs) < -cp.d + 0.5;
+      if (!north || pc.y0 < cp.bottom - 0.01 || pc.y0 >= y1s || Math.min(...us) > -hw || Math.max(...us) < hw) { out.push(pc); continue; }
+      const depth = -cp.d - Math.min(...vs);
+      const l = clip(pc.poly, -hw, true), r = clip(pc.poly, hw, false);
+      if (l) out.push({ poly: l, y0: pc.y0, y1: Math.min(pc.y1, y1s), slot: depth });
+      if (r) out.push({ poly: r, y0: pc.y0, y1: Math.min(pc.y1, y1s) });
+      if (pc.y1 > y1s) out.push({ poly: pc.poly, y0: y1s, y1: pc.y1 });
+    }
+    return out;
+  }
+  // the remodel's own meshes are built in plain arrays: position, normal and colour, and for the cladding and the screen a
+  // uv in metres along the face and up it, and the art layer (cmrTexMat)
+  function cmrAcc(tex) {
+    const A = { pos: [], nor: [], col: [], uv: tex ? [] : null, lay: tex ? [] : null, tris: 0 };
+    // a quad: four corners round it, its outward normal n, a colour {r, g, b}, the corners' uv and the layer; wound so its
+    // front faces n whatever the corners' turn
+    A.quad = (p, n, c, uv, layer) => {
+      const e1x = p[1][0] - p[0][0], e1y = p[1][1] - p[0][1], e1z = p[1][2] - p[0][2], e2x = p[2][0] - p[0][0], e2y = p[2][1] - p[0][1], e2z = p[2][2] - p[0][2];
+      const flip = (e1y * e2z - e1z * e2y) * n[0] + (e1z * e2x - e1x * e2z) * n[1] + (e1x * e2y - e1y * e2x) * n[2] < 0;
+      for (const k of flip ? [0, 2, 1, 0, 3, 2] : [0, 1, 2, 0, 2, 3]) {
+        A.pos.push(p[k][0], p[k][1], p[k][2]); A.nor.push(n[0], n[1], n[2]); A.col.push(c.r, c.g, c.b);
+        if (A.uv) { A.uv.push(uv ? uv[k][0] : 0, uv ? uv[k][1] : 0); A.lay.push(layer || 0); }
+      }
+      A.tris += 2;
+    };
+    // a member from p to q ([x, y, z]) standing on a face whose outward normal is n (unit): w wide across the
+    // face, d deep out of it from p and q; flat, only its outer face (the far level)
+    A.beam = (p, q, w, d, n, c, flat) => {
+      let ex = q[0] - p[0], ey = q[1] - p[1], ez = q[2] - p[2];
+      const L = Math.hypot(ex, ey, ez); if (L < 1e-3) return;
+      ex /= L; ey /= L; ez /= L;
+      let sx = n[1] * ez - n[2] * ey, sy = n[2] * ex - n[0] * ez, sz = n[0] * ey - n[1] * ex;
+      const sl = Math.hypot(sx, sy, sz) || 1; sx *= w / 2 / sl; sy *= w / 2 / sl; sz *= w / 2 / sl;
+      const at = (o, k, j) => [o[0] + sx * k + n[0] * d * j, o[1] + sy * k + n[1] * d * j, o[2] + sz * k + n[2] * d * j];
+      const s = [sx / (w / 2), sy / (w / 2), sz / (w / 2)];
+      A.quad([at(p, -1, 1), at(q, -1, 1), at(q, 1, 1), at(p, 1, 1)], n, c);
+      if (flat) return;
+      A.quad([at(p, 1, 0), at(q, 1, 0), at(q, 1, 1), at(p, 1, 1)], s, c);
+      A.quad([at(p, -1, 0), at(p, -1, 1), at(q, -1, 1), at(q, -1, 0)], [-s[0], -s[1], -s[2]], c);
+      A.quad([at(p, -1, 0), at(p, 1, 0), at(p, 1, 1), at(p, -1, 1)], [-ex, -ey, -ez], c);
+      A.quad([at(q, -1, 0), at(q, -1, 1), at(q, 1, 1), at(q, 1, 0)], [ex, ey, ez], c);
+    };
+    // a prism over a footprint ring ([x, z], round it) from y0 to y1: its walls, uv in metres along the ring and up, and
+    // (a four-cornered ring) its top
+    // fit [w, h, tw, th]: each wall about w wide a tile and the height about h a tile, whole tiles of the layer's art
+    // (tw by th in its uv) on every face (the lantern's cross-braces whole on each)
+    A.prism = (ring, y0, y1, c, layer, noTop, fit) => {
+      const sg = signedArea(ring) > 0 ? 1 : -1;
+      let u = 0;
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length], dx = b[0] - a[0], dz = b[1] - a[1], L = Math.hypot(dx, dz);
+        if (L < 1e-3) continue;
+        const n = [dz / L * sg, 0, -dx / L * sg];
+        let u0 = u, u1 = u + L, v0 = y0, v1 = y1;
+        if (fit) { u0 = 0; u1 = Math.max(1, Math.round(L / fit[0])) * fit[2]; v0 = 0; v1 = Math.max(1, Math.round((y1 - y0) / fit[1])) * fit[3]; }
+        A.quad([[a[0], y0, a[1]], [b[0], y0, b[1]], [b[0], y1, b[1]], [a[0], y1, a[1]]], n, c, [[u0, v0], [u1, v0], [u1, v1], [u0, v1]], layer);
+        u += L;
+      }
+      if (!noTop && ring.length === 4) A.quad(ring.map((q) => [q[0], y1, q[1]]), [0, 1, 0], c, ring.map((q) => [q[0], q[1]]), layer);
+    };
+    A.geometry = () => {
+      if (!A.tris) return null;
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(A.pos), 3));
+      g.setAttribute('normal', new THREE.BufferAttribute(new Float32Array(A.nor), 3));
+      g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(A.col), 3));
+      if (A.uv) { g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(A.uv), 2)); g.setAttribute('aLayer', new THREE.BufferAttribute(new Float32Array(A.lay), 1)); }
+      g.computeBoundingSphere();
+      A.pos = A.nor = A.col = A.uv = A.lay = null;
+      return g;
+    };
+    return A;
+  }
+  // the remodel's meshes and what __dbg.comcast() reports: the trim's two levels (cmrStep shows one), the cladding, the screen
+  const CMR = { on: CMR_ON, near: null, far: null, tex: null, screen: null, lod: 'near', at: [], tris: {}, n: {}, hidden: false, shown: false };
+  function cmrFinish(W) {
+    const mk = (A, mat, cast) => {
+      const g = A.geometry();
+      if (!g) return null;
+      freeOnUpload(g);
+      vdepthNoteOverlay(g);   // Round 168: the facades under it keep fragment depth (vdepthHosts)
+      const m = new THREE.Mesh(g, mat);
+      m.castShadow = !!cast; m.receiveShadow = true;
+      groupCity.add(m);
+      return m;
+    };
+    const tri = (A) => A.tris;
+    CMR.tris = { near: tri(W.near), far: tri(W.far), tex: tri(W.tex), screen: tri(W.screen) };
+    const trimMat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.3 });
+    CMR.near = mk(W.near, trimMat, true);
+    CMR.far = mk(W.far, trimMat, false);
+    CMR.tex = mk(W.tex, cmrTexMat(), true);
+    CMR.screen = mk(W.screen, cmrScreenMat(), false);
+    if (CMR.screen) { CMR.screen.renderOrder = 2; CMR.screen.receiveShadow = false; }
+    if (CMR.far) CMR.far.visible = false;
+    for (const sp of [W.cc, W.ctc]) if (sp) CMR.at.push([sp.x, siteY(sp.x, sp.z, 'ground') + sp.h * 0.6, sp.z]);
+    CMR.n = { wedges: W.wedges, winter: W.winter, podium: W.podium, lobby: !!W.ctcLobby, spine: !!W.ctcSpine, ctcParts: W.ctcParts.length };
+    if (CMR.tex) cmrArtLoad();
+  }
+  // the trim's level by the eye's distance to the nearer tower (100 m of hysteresis either side of CMR_FAR); __dbg.comcast(false)
+  // hides the remodel's own meshes for an A/B (the glass it laid on the curtain wall's chunks stays)
+  function cmrStep() {
+    if (CMR.hidden !== CMR.shown) { CMR.shown = CMR.hidden; for (const m of [CMR.tex, CMR.screen]) if (m) m.visible = !CMR.hidden; }
+    if (!CMR.near || !CMR.far || !CMR.at.length) return;
+    if (CMR.hidden) { CMR.near.visible = CMR.far.visible = false; return; }
+    let d = Infinity;
+    for (const q of CMR.at) d = Math.min(d, Math.hypot(camera.position.x - q[0], camera.position.y - q[1], camera.position.z - q[2]));
+    if (CMR.lod === 'near' && d > CMR_FAR + 100) CMR.lod = 'far';
+    else if (CMR.lod === 'far' && d < CMR_FAR - 100) CMR.lod = 'near';
+    CMR.near.visible = CMR.lod === 'near';
+    CMR.far.visible = CMR.lod === 'far';
+  }
+  // the cladding: the CTC's spine panels (0), the louvres (1), the lantern's frosted glass (2), the canopy's soffit (3) and
+  // the dark grey core panels (4), each its own roughness and metal; their art (COMCAST_ART, bake_comcast_art.py: one strip
+  // of square layers, a texture array) lays each layer's detail over the vertex's calibrated colour, the image over its own
+  // mean in linear light, at the tile's size in metres (the uv is metres along the face and up it). Until it lands, or on
+  // WebGL 1, the plain colours
+  const CMR_LAYERS = [{ rough: 0.38, metal: 0.45 }, { rough: 0.6, metal: 0.35 }, { rough: 0.55, metal: 0.0 }, { rough: 0.8, metal: 0.0 }, { rough: 0.45, metal: 0.4 }];
+  const CMR_ART = typeof COMCAST_ART !== 'undefined' && COMCAST_ART && Array.isArray(COMCAST_ART.layers) && COMCAST_ART.layers.length === CMR_LAYERS.length ? COMCAST_ART : null;
+  const CMR_U = { uCmrArt: { value: null }, uCmrOn: { value: 0 }, uCmrRM: { value: CMR_LAYERS.map((q) => new THREE.Vector2(q.rough, q.metal)) },
+    uCmrTile: { value: CMR_LAYERS.map((q, i) => new THREE.Vector2(...(CMR_ART ? CMR_ART.layers[i].tile : [3, 4.4]))) },
+    uCmrMean: { value: CMR_LAYERS.map((q, i) => new THREE.Vector3(...(CMR_ART ? CMR_ART.layers[i].mean : [1, 1, 1]))) } };
+  function cmrTexMat() {
+    const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.5, metalness: 0.3 });
+    const arr = !!CMR_ART && renderer.capabilities.isWebGL2;
+    m.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, CMR_U);
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute float aLayer; varying float vCmrL; varying vec2 vCmrUv;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvCmrL = aLayer; vCmrUv = uv;');
+      sh.fragmentShader = (arr ? '#define CMR_ARR\n' : '') + sh.fragmentShader.replace('#include <common>', `#include <common>
+        uniform vec2 uCmrRM[${CMR_LAYERS.length}], uCmrTile[${CMR_LAYERS.length}]; uniform vec3 uCmrMean[${CMR_LAYERS.length}]; uniform float uCmrOn;
+        #ifdef CMR_ARR
+        uniform mediump sampler2DArray uCmrArt;
+        #endif
+        varying float vCmrL; varying vec2 vCmrUv;`)
+        .replace('#include <color_fragment>', `#include <color_fragment>
+        #ifdef CMR_ARR
+        if (uCmrOn > 0.5) {
+          int li = int(vCmrL + 0.5);
+          vec3 t = texture(uCmrArt, vec3(vCmrUv / uCmrTile[li], vCmrL)).rgb;
+          diffuseColor.rgb *= pow(t, vec3(2.2)) / max(uCmrMean[li], vec3(0.01));
+        }
+        #endif`)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n{ int li = int(vCmrL + 0.5); roughnessFactor = uCmrRM[li].x; }')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n{ int li = int(vCmrL + 0.5); metalnessFactor = uCmrRM[li].y; }');
+    };
+    m.customProgramCacheKey = () => 'cmr-tex' + (arr ? '-arr' : '');
+    return m;
+  }
+  // the strip, asked for once the cladding is laid (a phone's half copy), uploaded as a texture array with its mips, its
+  // image let go once it is on the GPU (freeTexOnUpload)
+  function cmrArtLoad() {
+    if (!CMR_ART || !renderer.capabilities.isWebGL2 || CMR.art) return;
+    CMR.art = { asked: true, loaded: false };
+    artImage(artSrc(CMR_ART.strip, CMR_ART.stripHalf)).then((im) => {
+      const n = CMR_LAYERS.length, T = im && im.width;
+      if (!im || im.height !== T * n) { CMR.art.error = 'the cladding strip did not load'; return; }
+      const t = new THREE.DataArrayTexture(im, T, T, n);   // the strip's squares are the layers in turn
+      t.format = THREE.RGBAFormat; t.type = THREE.UnsignedByteType;
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.magFilter = THREE.LinearFilter; t.minFilter = THREE.LinearMipmapLinearFilter; t.generateMipmaps = true;
+      t.anisotropy = Math.min(4, renderer.capabilities.getMaxAnisotropy() || 1);
+      t.needsUpdate = true;
+      CMR_U.uCmrArt.value = freeTexOnUpload(t);
+      CMR_U.uCmrOn.value = 1;
+      Object.assign(CMR.art, { loaded: true, tile: T, bytes: Math.round(T * T * n * 4 * 4 / 3) });
+    });
+  }
+  // the Comcast Center's open crown: low-iron glass that shows what stands behind it and mirrors the sky at a slant (its
+  // opacity Fresnel's, a fifth head-on), its silver frames on the module (1.52 m bays, 4.15 m floors) to a pixel
+  function cmrScreenMat() {
+    const m = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, roughness: 0.06, metalness: 0.0, transparent: true, side: THREE.DoubleSide, depthWrite: false, envMapIntensity: 1.0 });
+    m.extensions = { derivatives: true };   // the frames' pixel footprint (fwidth) on WebGL 1 too
+    m.onBeforeCompile = (sh) => {
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nvarying vec2 vScr;').replace('#include <begin_vertex>', '#include <begin_vertex>\nvScr = uv;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+        varying vec2 vScr;
+        float scrBar(float p, float pitch, float hw) { float fw = max(fwidth(p), 1.0e-4); float d = abs(fract(p / pitch + 0.5) - 0.5) * pitch; return clamp((hw + fw - d) / (2.0 * fw), 0.0, 1.0) * clamp(hw / fw, 0.0, 1.0); }`)
+        .replace('#include <normal_fragment_begin>', `#include <normal_fragment_begin>
+        { float frame = max(scrBar(vScr.x, 1.52, 0.04), scrBar(vScr.y, 4.15, 0.08));
+          float cosV = abs(dot(normal, normalize(vViewPosition)));
+          float fr = 0.2 + 0.7 * pow(1.0 - cosV, 4.0);
+          diffuseColor.rgb = mix(diffuseColor.rgb * 0.18, vec3(0.62, 0.66, 0.68), frame);
+          diffuseColor.a = mix(fr, 0.95, frame); }`);
+    };
+    m.customProgramCacheKey = () => 'cmr-screen';
+    return m;
+  }
   // buildings with researched custom models skip the generic extruder;
   // 'recolor' specs keep generic geometry with corrected colors/heights
   const REALISM = {
@@ -16749,6 +17023,32 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         k2 += n * 2;
       }
     }
+    // Round 195 (CMR): the remodel's state in this step: the two specs, the CTC's parts as the loop meets them (the crowns'
+    // section builds on them), its spine's and its lobby's footprints, and the remodel's own meshes as they are laid
+    const CMRW = CMR_ON ? {
+      cc: TOWER_SPECS.find((sp) => /^Comcast Center$/.test(sp.name)) || null,
+      ctc: TOWER_SPECS.find((sp) => /^Comcast Technology Center$/.test(sp.name)) || null,
+      ctcParts: [], ctcSpine: null, ctcLobby: null, ctcBase: 0, wedges: 0, winter: 0, podium: 0,
+      near: cmrAcc(), far: cmrAcc(), tex: cmrAcc(true), screen: cmrAcc(true),
+    } : null;
+    // which of the remodel's low parts a footprint the research names no tower for is: the Comcast Center's winter garden
+    // (OSM's 34 m glass part on the plaza) or the CTC's podium (its 13 m glass parts)
+    const cmrLow = (cx, cz, h, t) => {
+      if (!CMRW || t !== 10) return null;
+      if (CMRW.cc && h < 40 && Math.hypot(cx - CMRW.cc.x, cz - CMRW.cc.z) < 30) return 'winter';
+      if (CMRW.ctc && h < 20 && Math.hypot(cx - CMRW.ctc.x, cz - CMRW.ctc.z) < 60) return 'podium';
+      return null;
+    };
+    // a quad on a curtain wall's chunk: four corners round the face, its outward normal, the facade's width (its bays laid
+    // from the start edge, the first and last corners, as appendBuilding's walls; 0 lays them by world position, as a crown's
+    // glass), wound to face the normal
+    const cmrGlassQuad = (ch, p, n, col, st, base, fh, facade) => {
+      const tint = glassTintKey(col, st), H = Math.max(p[2][1], p[3][1]) - base, us = [0, facade, facade, 0], i0 = ch.n;
+      for (let k = 0; k < 4; k++) pushV(ch, p[k][0], p[k][1], p[k][2], n[0], n[1], n[2], col.r, col.g, col.b, st, base, fh, tint, facade > 0 ? us[k] : 0, facade, facade > 0 ? H : 0);
+      const e1x = p[1][0] - p[0][0], e1y = p[1][1] - p[0][1], e1z = p[1][2] - p[0][2], e2x = p[2][0] - p[0][0], e2y = p[2][1] - p[0][1], e2z = p[2][2] - p[0][2];
+      if ((e1y * e2z - e1z * e2y) * n[0] + (e1z * e2x - e1x * e2z) * n[1] + (e1x * e2y - e1y * e2x) * n[2] >= 0) ch.idx.push(i0, i0 + 1, i0 + 2, i0, i0 + 2, i0 + 3);
+      else ch.idx.push(i0, i0 + 2, i0 + 1, i0, i0 + 3, i0 + 2);
+    };
     let njPoly = null;   // USS New Jersey hull outline — custom battleship below
     for (let i = 0; i < nb; i++) {
       const n = body[k++]; let h = body[k++] / 5; const mh = body[k++] / 5, t = body[k++];
@@ -16818,7 +17118,10 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       if (WALLS && h <= 45 && t <= 6) { const wi = WALLS.idx[i]; if (wi < WALLS.pal.length) { c.lerp(WALLS.pal[wi], 0.75).multiplyScalar(0.94 + hash01(i * 7.9) * 0.12); WALL_N++; photo = true; } }
       if (h <= 45 && t <= 6) { wideColSample(c, i); colStat('wide', c); colStat(photo ? 'widePhoto' : 'widePlain', c); }   // the tier's colours, for the far ring's draw (Round 57)
       const hint = WALLS && WALLS.hint ? WALLS.hint[i] : 0;
-      const spec = h > 45 ? towerAt(cx, cz, h) : null;   // glass-tagged parts join the matching too (Round 54)
+      let spec = h > 45 ? towerAt(cx, cz, h) : null;   // glass-tagged parts join the matching too (Round 54)
+      // Round 195 (CMR): the Comcast Center's east wing sits 39 m from its spec's point, past its 35 m radius, and was drawn
+      // as an unresearched tower in a precast skin (the white striped slab in front of its east face)
+      if (!spec && CMRW && CMRW.cc && h > 45 && Math.hypot(cx - CMRW.cc.x, cz - CMRW.cc.z) < 45) spec = CMRW.cc;
       let style;
       if (spec) { style = landmarkFacadeStyle(spec); if (spec.hex) { const hx2 = parseInt(spec.hex.slice(1), 16); if (style >= 20) c.set(hx2).multiplyScalar(0.66); else c.copy(towerInv(hx2 >> 16, (hx2 >> 8) & 255, hx2 & 255)); } }
       else if (h > 30) style = towerStyle(fa, t, i);
@@ -16839,8 +17142,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       // CTC's broad office wings terminate below the hotel, not halfway up it.
       // 213.5 m is a modeled terrace datum from the facade/section references; the
       // surveyed plans and 277 m hotel / 342 m architectural top remain in place.
-      if (style === 24 && h > 135 && h < 150 && t === 10) {
-        h = 213.5;
+      // Round 195 (CMR): the photographs' bars, the north to 190 m and the south kept at OSM's 142
+      if (style === 24 && h > 135 && h < 150 && t === 10 && !(CMR_ON && spec && cz > spec.z)) {
+        h = CMR_ON ? CTC_DIMS.nBar : 213.5;
         roofNote(cx, cz, base + h, Math.abs(signedArea(poly)));
         const tg = tallGlow[tallGlow.length - 1]; if (tg && tg.x === cx && tg.z === cz) tg.h = h;
       }
@@ -16870,7 +17174,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       const ceN = CITYENV.recs.length;
       if (CITYENV.on && h >= 25) cityEnvNote(poly, base, base + h, c, isGlassStyle(style) || t === 10 ? 1 : 0, spec && spec.theme);   // Round 192: the city's reflection
       if (spec && /^Cira Centre$/i.test(spec.name)) continue; // one continuous crystal, no rectangular crown block
-      if (spec && style!==25) crownTrim.push(...landmarkFacadeDetails(spec, poly, base, hTop, mh));
+      if (spec && style!==25 && !(CMR_ON && style === 24)) crownTrim.push(...landmarkFacadeDetails(spec, poly, base, hTop, mh));   // Round 195: the CTC's own trim is the remodel's
       if (h >= 60 && !mh && t !== 10 && !spec) {   // a researched landmark never draws a random penthouse or mast
         // the flat roof of a real tower carries a mechanical penthouse and often a mast; without
         // them every tower is a sheer box. The penthouse takes a third of the plan, set toward
@@ -16910,12 +17214,30 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         if (gSys >= 0) GLASS.routed.researched++;
         if(style===25) {
           const cp=comcastCrownPlan(specTopPlan.get(spec)||poly,spec.h);
-          for(const part of comcastFacadePieces(poly,mh>0?mh:-1,hTop,cp)) {
+          // Round 195 (CMR): an end wing leans in as it rises (cmrWedge), on the curtain wall's own chunk
+          const wing = CMR_ON && h < spec.h - 5 ? cmrWingOf(poly, cp) : null;
+          if (wing) {
+            const F = { P: cp.P, ax: cp.a.ax, az: cp.a.az, px: cp.a.px, pz: cp.a.pz }, chG = getGlassChunk(cx, cz);
+            const wq = cmrWedge(F, wing.ui, wing.uo, wing.v0, wing.v1, mh > 0 ? base + mh : base - 1.0, base + hTop, CC_DIMS.wingD1);
+            for (const q of wq) cmrGlassQuad(chG, q.p, q.n, c, style, base, gFh, q.facade);
+            // the leaning face's two corner lines (the notched corners' mullions, as landmarkFacadeDetails stands on the others)
+            for (const [k0, k1] of [[0, 3], [1, 2]]) for (const A of [CMRW.near, CMRW.far]) A.beam(wq[0].p[k0], wq[0].p[k1], 0.24, 0.3, wq[0].n, { r: 0.39, g: 0.45, b: 0.49 }, A === CMRW.far);
+            CMRW.wedges++;
+          }
+          else for(const part of (CMR_ON ? cmrNorthSlot(comcastFacadePieces(poly,mh>0?mh:-1,hTop,cp), cp) : comcastFacadePieces(poly,mh>0?mh:-1,hTop,cp))) {
             appendBuilding(getGlassChunk(cx,cz),part.poly,base+part.y0,base+part.y1,c,style,base,null,gFh);
+            if (part.slot) {   // Round 195: the north slot's dark back (its interior face only, as the south opening's) and soffit
+              const sb = [[-CC_DIMS.slotW / 2 + .04, -cp.d - .055], [CC_DIMS.slotW / 2 - .04, -cp.d - .055], [CC_DIMS.slotW / 2 - .04, -cp.d - .025], [-CC_DIMS.slotW / 2 + .04, -cp.d - .025]].map((q) => cp.P(...q));
+              appendBuilding(getGlassChunk(cx,cz),sb,base+cp.bottom+.08,base+cp.bottom+CC_DIMS.slotH-.08,c.clone().multiplyScalar(.35),29,base,null,GLASS_ON?glassFh(5):undefined);
+              const so = cp.P(0, -cp.d - part.slot / 2);
+              crownTrim.push({ geom: box(CC_DIMS.slotW, .2, part.slot, so[0], base + cp.bottom + CC_DIMS.slotH - .1, so[1], Math.atan2(-cp.a.az, cp.a.ax)), color: new THREE.Color(0x14252e), style: 3 });
+            }
             crownTrim.push(...landmarkFacadeDetails(spec,part.poly,base,part.y1,Math.max(0,part.y0)));
           }
-        } else appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, gFh);
-        if (style === 24 && hTop > 130 && Math.abs(signedArea(poly)) > 650) {
+        } else if (CMR_ON && style === 24 && h > 300 && Math.abs(signedArea(poly)) < 200) CMRW.ctcSpine = { poly, base };   // Round 195: the spine is the remodel's cladding, not glass
+        else appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, style, base, null, gFh);
+        if (CMR_ON && style === 24 && h <= 300) { CMRW.ctcParts.push({ poly, base, top: hTop }); CMRW.ctcBase = base; }
+        if (style === 24 && hTop > 130 && Math.abs(signedArea(poly)) > 650 && !CMR_ON) {
           const sg = signedArea(poly) > 0 ? 1 : -1;
           for (let j = 0; j < poly.length; j++) {
             const a = poly[j], b = poly[(j + 1) % poly.length], dx = b[0]-a[0], dz = b[1]-a[1], len = Math.hypot(dx,dz);
@@ -16944,7 +17266,14 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         c.set(glassPal[Math.floor(hsh * glassPal.length) % glassPal.length]);
         for (const gt of GLASS_TINTS) if (Math.hypot(cx - gt[0], cz - gt[1]) < gt[2]) { c.set(gt[3]); break; }
         if (GLASS_ON) GLASS.routed[gRoute >= 0 ? 'partsSys' : 'parts']++;   // a flagged part on its cladding kind's system, or the generic wall
-        appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, 3, base, null, GLASS_ON ? glassFh(gRoute >= 0 ? gRoute : 14) : undefined);   // hTop, not h: a researched crown's datum cuts this section too (Round 81: BNY Mellon's lattice stood inside its shaft)
+        // Round 195 (CMR): the Comcast Center's winter garden on the clear low-iron system, the CTC's podium in its tower's
+        // glass, and its lobby on 18th Street built with its canopy in the crowns' section
+        const low = cmrLow(cx, cz, h, t);
+        if (low === 'podium' && Math.abs(signedArea(poly)) > 1000) { CMRW.ctcLobby = { poly, base, h }; continue; }
+        let lowFh = GLASS_ON ? glassFh(gRoute >= 0 ? gRoute : 14) : undefined;
+        if (low === 'winter') { CMRW.winter++; if (GLASS_ON) lowFh = glassFh(5); }
+        else if (low === 'podium') { CMRW.podium++; if (GLASS_ON) { glassTowerBody(CMRW.ctc, c); lowFh = glassFh(1); } }
+        appendBuilding(getGlassChunk(cx, cz), poly, mh > 0 ? base + mh : base - 1.0, base + hTop, c, 3, base, null, lowFh);   // hTop, not h: a researched crown's datum cuts this section too (Round 81: BNY Mellon's lattice stood inside its shaft)
         if ((i & 4095) === 4095) { setLoadingMessage('Raising the outer districts, ' + Math.round(i / nb * 100) + '%'); flushUploads(); await yieldNow(); }
         continue;
       }
@@ -17065,6 +17394,135 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         g.translate((a2[0] + b2[0]) / 2, (a2[1] + b2[1]) / 2, (a2[2] + b2[2]) / 2);
         return g;
       };
+      // Round 195 (CMR): the CTC's top and its trim, built once its parts are all known (the crown's tower hit is its spine,
+      // the 341 m part): the frame is its office bars' (u east along them, v south across), the bars' tops the remodel's
+      // (190 and 142 m, set in the loop), the roof 277 m
+      const cmrCol = (r, g, b) => ({ r, g, b });
+      const CMR_C = { silver: cmrCol(0.60, 0.64, 0.66), fin: cmrCol(0.66, 0.70, 0.72), band: cmrCol(0.58, 0.62, 0.64), bandFar: cmrCol(0.42, 0.45, 0.47), blue: cmrCol(0.03, 0.16, 0.55), podium: cmrCol(0.30, 0.32, 0.34), green: cmrCol(0.30, 0.38, 0.22), concrete: cmrCol(0.30, 0.30, 0.29), dark: cmrCol(0.10, 0.11, 0.12),
+        spine: cmrCol(0.78, 0.80, 0.80), grey: cmrCol(0.19, 0.21, 0.23), lantern: cmrCol(0.64, 0.67, 0.68), soffit: cmrCol(0.36, 0.24, 0.15), louvre: cmrCol(0.12, 0.13, 0.14) };
+      // a band of outer faces `off` proud of a ring at y, `hgt` tall, into an accumulator (the fascias, the louvre bands)
+      const cmrRibbon = (A, ring, y, hgt, off, col, layer) => {
+        const sg = signedArea(ring) > 0 ? 1 : -1;
+        let u = 0;
+        for (let j = 0; j < ring.length; j++) {
+          const a2 = ring[j], b2 = ring[(j + 1) % ring.length], dx = b2[0] - a2[0], dz = b2[1] - a2[1], L = Math.hypot(dx, dz);
+          if (L < 0.05) continue;
+          const nx = (dz / L) * sg, nz = (-dx / L) * sg, ex = dx / L * off, ez = dz / L * off;
+          const x0 = a2[0] + nx * off - ex, z0 = a2[1] + nz * off - ez, x1 = b2[0] + nx * off + ex, z1 = b2[1] + nz * off + ez;
+          A.quad([[x0, y - hgt / 2, z0], [x1, y - hgt / 2, z1], [x1, y + hgt / 2, z1], [x0, y + hgt / 2, z0]], [nx, 0, nz], col,
+            [[u, y - hgt / 2], [u + L, y - hgt / 2], [u + L, y + hgt / 2], [u, y + hgt / 2]], layer);
+          u += L;
+        }
+      };
+      const cmrCtcBuild = (th, lit, themed, tslot) => {
+        const W = CMRW, D = CTC_DIMS, base = th.base;
+        const bars = W.ctcParts.filter((p) => p.top > 120 && p.top < 220), main = W.ctcParts.reduce((a, p) => (!a || p.top > a.top ? p : a), null);
+        if (bars.length < 2 || !main || !W.ctc) return false;
+        const ob0 = orientedBox(bars[0].poly), a0 = obbAxis(ob0), sgx = a0.ax < 0 ? -1 : 1, ax = a0.ax * sgx, az = a0.az * sgx, Ox = W.ctc.x, Oz = W.ctc.z;
+        const L = (q) => [(q[0] - Ox) * ax + (q[1] - Oz) * az, -(q[0] - Ox) * az + (q[1] - Oz) * ax];
+        const P = (u, v) => [Ox + u * ax - v * az, Oz + u * az + v * ax];
+        const vCen = (p) => p.poly.reduce((s, q) => s + L(q)[1], 0) / p.poly.length, uCen = (p) => p.poly.reduce((s, q) => s + L(q)[0], 0) / p.poly.length;
+        const vMid = bars.reduce((s, p) => s + vCen(p), 0) / bars.length;
+        // the three-storey fascias round every face, both levels
+        // (the far level's a metre tall and darker: the same light over the pixel, without a sub-pixel line's shimmer)
+        for (const p of W.ctcParts) for (let k = 2; k * D.module < p.top - 1.5; k++) {
+          cmrRibbon(W.near, p.poly, base + k * D.module, 0.6, 0.12, CMR_C.band);
+          cmrRibbon(W.far, p.poly, base + k * D.module, 1.0, 0.12, CMR_C.bandFar);
+        }
+        // the Z braces on each bar's east and west ends, the green roofs on the bars, the mechanical louvres at their tops
+        for (const p of bars) {
+          const uc = uCen(p), y1 = base + Math.floor((p.top - 3) / D.module) * D.module;
+          for (let j = 0; j < p.poly.length; j++) {
+            let a2 = p.poly[j], b2 = p.poly[(j + 1) % p.poly.length];
+            const la = L(a2), lb = L(b2), len = Math.hypot(b2[0] - a2[0], b2[1] - a2[1]);
+            if (len < 9 || len > 22 || Math.abs(lb[1] - la[1]) < 0.85 * len) continue;   // an end wall runs across the bar
+            if (Math.abs(la[1] - vMid) < Math.abs(lb[1] - vMid)) { const t2 = a2; a2 = b2; b2 = t2; }   // b on the inner end
+            const s = Math.sign((la[0] + lb[0]) / 2 - uc), n = [s * ax, 0, s * az];
+            for (const m of cmrBraces(a2, b2, n[0], n[2], base + D.braceFrom, y1, D.module, 0.35)) {
+              const p0 = [m[0], m[1], m[2]], p1 = [m[3], m[4], m[5]];
+              W.near.beam(p0, p1, 0.6, 0.45, n, CMR_C.silver);
+              W.far.beam(p0, p1, 0.6, 0.45, n, CMR_C.silver, true);
+            }
+          }
+          const r = insetRing(p.poly, 1.2);
+          for (const A of [W.near, W.far]) A.quad(r.map((q) => [q[0], base + p.top + 0.12, q[1]]), [0, 1, 0], CMR_C.green);
+          cmrRibbon(W.tex, p.poly, base + p.top - 4.42, 8.84, 0.08, CMR_C.louvre, 1);
+          // the studios' louvred podium on the bar's outer long face, 5 to 22 m, and on the north the blue columns before it
+          // (the 2017 photographs from 18th Street and Cherry)
+          const sg = signedArea(p.poly) > 0 ? 1 : -1, north = vCen(p) < vMid;
+          for (let j = 0; j < p.poly.length; j++) {
+            const a2 = p.poly[j], b2 = p.poly[(j + 1) % p.poly.length], dx = b2[0] - a2[0], dz = b2[1] - a2[1], len = Math.hypot(dx, dz);
+            if (len < 40) continue;
+            const nx = (dz / len) * sg, nz = (-dx / len) * sg, la = L([a2[0] + nx, a2[1] + nz]), lc = L(a2);
+            if (Math.abs(la[1] - vMid) < Math.abs(lc[1] - vMid)) continue;   // the face toward the central bar
+            const o = 0.6, q0 = [a2[0] + nx * o, a2[1] + nz * o], q1 = [b2[0] + nx * o, b2[1] + nz * o];
+            W.tex.quad([[q0[0], base + 5, q0[1]], [q1[0], base + 5, q1[1]], [q1[0], base + 22, q1[1]], [q0[0], base + 22, q0[1]]], [nx, 0, nz], CMR_C.podium, [[0, 5], [len, 5], [len, 22], [0, 22]], 1);
+            if (north) for (let t = 4.56; t < len - 2; t += 9.12) {
+              const x = a2[0] + dx / len * t + nx * 1.6, z = a2[1] + dz / len * t + nz * 1.6;
+              for (const A of [W.near, W.far]) A.beam([x, base - 0.5, z], [x, base + 22.5, z], 0.9, 0.9, [nx, 0, nz], CMR_C.blue, A === W.far);
+            }
+          }
+        }
+        // the open mechanical floors under the roof (the dark band the photographs from the north-west and the south-west show
+        // at the top of the hotel), the bars' own at their tops above
+        cmrRibbon(W.tex, main.poly, base + main.top - 4.42, 8.84, 0.08, CMR_C.louvre, 1);
+        // the silver fins framing the central strip on 18th Street and the core's west piece
+        {
+          const lv = main.poly.map(L), uMax = Math.max(...lv.map((q) => q[0])), uMin = Math.min(...lv.map((q) => q[0]));
+          const east = lv.filter((q) => q[0] > uMax - 1.5), west = lv.filter((q) => q[0] < uMin + 1.5);
+          const vs = (arr) => [Math.min(...arr.map((q) => q[1])), Math.max(...arr.map((q) => q[1]))];
+          for (const [ends, uu, s] of [[vs(east), uMax, 1], [vs(west), uMin, -1]]) for (const v of ends) {
+            const q = P(uu, v), n = [s * ax, 0, s * az];
+            W.near.beam([q[0], base + D.lobby + 2, q[1]], [q[0], base + main.top - 0.3, q[1]], 1.0, 0.7, n, CMR_C.fin);
+          }
+        }
+        // the spine (the core proud of the west face): silver panels to 240 m, dark grey to 300; the overrun dark grey over
+        // the roof; the frosted lantern 300 to 342 m
+        const sp = W.ctcSpine ? W.ctcSpine.poly : th.poly;
+        W.tex.prism(sp, base - 1, base + D.silver, CMR_C.spine, 0, true);
+        W.tex.prism(sp, base + D.silver, base + D.overrun, CMR_C.grey, 4, false);
+        const sl = sp.map(L), su0 = Math.min(...sl.map((q) => q[0])), sv0 = Math.min(...sl.map((q) => q[1])), sv1 = Math.max(...sl.map((q) => q[1])), svc = (sv0 + sv1) / 2;
+        W.tex.prism([P(su0 + 0.3, svc - 8), P(su0 + 22, svc - 8), P(su0 + 22, svc + 8), P(su0 + 0.3, svc + 8)], base + main.top - 0.5, base + D.overrun - 0.6, CMR_C.grey, 1, false);
+        const lan = insetRing(sp, 0.25);
+        W.tex.prism(lan, base + D.overrun, base + D.top, CMR_C.lantern, 2, false, CMR_ART ? [12, 8.5, ...CMR_ART.layers[2].tile] : null);
+        for (const A of [W.near, W.far]) cmrRibbon(A, sp, base + D.overrun, 0.5, 0.05, CMR_C.grey);
+        // its light at night: the blade's own panels (crownPanels, slots 100 up the lantern's height), over the frosted glass
+        {
+          const ob = orientedBox(lan), ax2 = obbAxis(ob), ry2 = Math.atan2(-ax2.az, ax2.ax), hb = D.top - D.overrun;
+          const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);
+          for (let y = 0; y < hb; y += 0.5) {
+            const dh = Math.min(0.5, hb - y);
+            crownPanels.push({ geom: box(ax2.hl * 2 + 0.2, dh + 0.002, ax2.hs * 2 + 0.2, ob.cx, base + D.overrun + y + dh / 2, ob.cz, ry2), color: new THREE.Color(0x8a9da6), lit: gl, mix: 1, slot: 100 + (y + dh / 2) / hb, gain: 0.9, style: 3 });
+          }
+        }
+        // the lobby on 18th Street under its canopy
+        if (W.ctcLobby) {
+          const lp = W.ctcLobby.poly, ll = lp.map(L), u0 = Math.min(...ll.map((q) => q[0])), u1 = Math.max(...ll.map((q) => q[0])), v0 = Math.min(...ll.map((q) => q[1])), v1 = Math.max(...ll.map((q) => q[1]));
+          c.set(GLASS_ON ? GLASS_DATA.systems[5].body : 0xb9c6cb).multiplyScalar(0.66);
+          appendBuilding(getGlassChunk(th.cx, th.cz), lp, base - 1, base + D.lobby, c, 3, base, null, GLASS_ON ? glassFh(5) : undefined);
+          const can = [P(u0 - 1, v0 - 3.5), P(u1 + 4, v0 - 3.5), P(u1 + 4, v1 + 3.5), P(u0 - 1, v1 + 3.5)];
+          W.tex.prism(can, base + D.lobby, base + D.lobby + 2.2, CMR_C.grey, 4, false);
+          W.tex.quad(can.map((q) => [q[0], base + D.lobby - 0.02, q[1]]), [0, -1, 0], CMR_C.soffit, can.map((q) => [q[0], q[1]]), 3);
+        }
+        return true;
+      };
+      // the Comcast Center's open crown (cp, comcastCrownPlan): the screen of low-iron glass from the deck to the top on the
+      // crown's four faces (cmrScreenMat), its cap rail, and on the deck the damper's two concrete tanks
+      const cmrCcCrown = (th, cp) => {
+        const W = CMRW, b = th.base, ring = cp.crown.poly, sg = signedArea(ring) > 0 ? 1 : -1;
+        let u = 0;
+        for (let j = 0; j < ring.length; j++) {
+          const a2 = ring[j], b2 = ring[(j + 1) % ring.length], dx = b2[0] - a2[0], dz = b2[1] - a2[1], Lq = Math.hypot(dx, dz);
+          const nx = (dz / Lq) * sg, nz = (-dx / Lq) * sg, o = 0.03;
+          W.screen.quad([[a2[0] + nx * o, b + CC_DIMS.deck, a2[1] + nz * o], [b2[0] + nx * o, b + CC_DIMS.deck, b2[1] + nz * o], [b2[0] + nx * o, b + CC_DIMS.top, b2[1] + nz * o], [a2[0] + nx * o, b + CC_DIMS.top, a2[1] + nz * o]],
+            [nx, 0, nz], CMR_C.lantern, [[u, CC_DIMS.deck], [u + Lq, CC_DIMS.deck], [u + Lq, CC_DIMS.top], [u, CC_DIMS.top]], 0);
+          u += Lq;
+        }
+        for (const A of [W.near, W.far]) {
+          cmrRibbon(A, ring, b + CC_DIMS.top - 0.3, 0.6, 0.06, CMR_C.fin);
+          for (const vs of [-1, 1]) A.prism([cp.P(-15, vs * 3), cp.P(15, vs * 3), cp.P(15, vs * 9.5), cp.P(-15, vs * 9.5)], b + CC_DIMS.deck, b + CC_DIMS.deck + 5, CMR_C.concrete);
+        }
+      };
       let nCrowns = 0;
       for (const th of towerHits) {
         const cr = th.spec.crown;
@@ -17152,6 +17610,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
             break;
           }
           case 'blade': {   // the Comcast Technology Center: a narrow lit blade standing in a dark frame
+            if (CMR_ON && cmrCtcBuild(th, lit, themed, tslot)) break;   // Round 195: the spine, the overrun and the frosted lantern
             const gl = lit ? lit.clone().multiplyScalar(0.55) : new THREE.Color(0x8fa0ad);
             const bw = ax.hl * 2 * (themed ? 0.72 : 0.86), bt = themed ? Math.max(2.6, ax.hs * 2 * 0.08) : Math.max(3, ax.hs * 2 * 0.16), fr = new THREE.Color(0x3a4046);   // themed (Round 85): a slender fin, 0.72 of the long axis and 0.08 of the short
             if (themed) {
@@ -17172,7 +17631,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
           }
           case 'comcast-notch': {
             const cp=comcastCrownPlan(th.poly,th.h),glass=getGlassChunk(th.cx,th.cz);
-            for(const part of cp.pieces)appendBuilding(glass,part.poly,th.base+part.y0,th.base+part.y1,th.color,25,th.base,null,th.sys>=0?glassFh(th.sys):undefined);
+            // Round 195 (CMR): the crown's glass stops at the deck (284 m) and its top 13 m is the open screen (cmrCcCrown)
+            for(const part of cp.pieces)appendBuilding(glass,part.poly,th.base+part.y0,th.base+(CMR_ON&&part===cp.crown?CC_DIMS.deck:part.y1),th.color,25,th.base,null,th.sys>=0?glassFh(th.sys):undefined);
+            if (CMR_ON) cmrCcCrown(th, cp);
             // Darken only the interior face. Tinting its whole backing block
             // produced another apparent opening on the intact north facade.
             const inner=[[-cp.cut+.04,cp.back+.025],[cp.cut-.04,cp.back+.025],[cp.cut-.04,cp.back+.055],[-cp.cut+.04,cp.back+.055]].map(q=>cp.P(...q));
@@ -17199,7 +17660,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
                 crownPanels.push({geom:g,color:crownColor,lit:house,mix:1,slot:sl,gain:1,style:3});
               }
             }
-            crownPanels.push({geom:box(cp.w*2+.36,.035,cp.d*2+.36,ob.cx,th.base+cp.top+.12,ob.cz,ry),color:crownColor,lit:house,mix:1,slot:200.999,gain:1,style:3});
+            crownPanels.push({geom:box(cp.w*2+.36,.035,cp.d*2+.36,ob.cx,th.base+(CMR_ON?CC_DIMS.deck:cp.top)+.12,ob.cz,ry),color:crownColor,lit:house,mix:1,slot:200.999,gain:1,style:3});   // Round 195: on the open crown's deck
             // Rails follow the solid pieces; none bridges the open facade.
             for(const piece of cp.pieces)for(let y=piece.y0;y<=piece.y1+.01;y+=4.15)crownTrim.push({geom:ledRing(piece.poly,th.base+y,.10,.10),color:new THREE.Color(0x718b9a),style:3});
             for(const u of [-cp.w,-cp.cut,cp.cut,cp.w])for(const v of [-cp.d,cp.d]) {
@@ -17267,6 +17728,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       }
       TOWER_CROWN_N = nCrowns;
     }
+    if (CMRW) cmrFinish(CMRW);   // Round 195: the remodel's own meshes
     // The venue bowls are built once the surrounding building records have been filtered.
     for (const sd of stadia) buildStadium(sd);
     for(const spec of BOATHOUSE_PLANS) {
@@ -39274,6 +39736,7 @@ float pinOccGate() {
     cityHallStep();   // Round 191: its level, its art on a phone's approach, the dials' hands
     sfStep(now);   // Round 189: the storefronts' clock and names
     gloryStep(now);   // Round 191: Glory's levels of detail and its hours
+    cmrStep();   // Round 195: the Comcast towers' trim, near or far
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
@@ -39395,7 +39858,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), comcast: (show) => ({ ...(show != null ? (CMR.hidden = !show, {}) : {}), on: CMR.on, hidden: CMR.hidden, lod: CMR.lod, tris: { ...CMR.tris }, n: { ...CMR.n }, draws: (CMR.near && CMR.near.visible ? 1 : 0) + (CMR.far && CMR.far.visible ? 1 : 0) + (CMR.tex ? 1 : 0) + (CMR.screen ? 1 : 0), art: CMR.art || null }), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],
