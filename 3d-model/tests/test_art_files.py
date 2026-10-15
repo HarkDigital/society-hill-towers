@@ -38,6 +38,7 @@ MANIFESTS += ('liberty_art.json',)   # One and Two Liberty Place's granite base 
 MANIFESTS += ('comcast_art.json',)   # the Comcast Technology Center's cladding strip (Round 195)
 MANIFESTS += ('stadium_art.json',)   # the sports complex's walls, seat rows, turf and clay (Round 195)
 MANIFESTS += ('nj_art.json',)   # the USS New Jersey's plating, bulkhead, deck and teak (Round 195)
+MANIFESTS += ('moshulu_art.json',)   # the Moshulu's hull plating and teak deck (Round 195)
 
 
 class Files(unittest.TestCase):
@@ -54,7 +55,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|towers|sht|liberty|comcast|stadiums|nj)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|towers|sht|liberty|comcast|stadiums|nj|moshulu)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 

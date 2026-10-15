@@ -349,7 +349,7 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         self.assertIn('venU.uVenScreen.value = venScreenTex(ims[4]); if (old) old.dispose();', cut(s, '  function venLoadArt() {', '  // ---- the geometry'))
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venDigitsTex() {', '  function venArtTex('))   # the Linc's yard numbers
         self.assertIn('return freeTexOnUpload(t);', cut(s, '  function venArtTex(', '  function venLoadArt() {'))   # and their walls, seats, turf and clay
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 45)   # the definition and its uses (every round's, counted)
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 47)   # the definition and its uses (every round's, counted)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')
