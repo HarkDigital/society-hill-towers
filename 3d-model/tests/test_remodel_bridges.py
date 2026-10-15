@@ -10,7 +10,14 @@ four bytes), and then run brBuildBfb and brBuildWwb under Node with the vendored
 its budget, every index and normal sound, nothing the Ben Franklin builds inside the envelope a PATCO car runs through
 between the anchorages (the bed at deckY + 1, the car 3.1 m wide at 17.75 m either side and 4.42 m tall over the bed),
 the walkway's underside where Round 141 put it, the anchorages on OSM's footprints, west of Columbus Boulevard, and the
-traffic decks (BRIDGE_DECKS) at Round 66's and Round 12's heights."""
+traffic decks (BRIDGE_DECKS) at Round 66's and Round 12's heights.
+
+The review's fixes: the lattice canvas read with its first row at v 0 (three's flipY had swapped the lacing and the
+girder's panel), the Ben Franklin's roadway carried on west and east of its anchorages to where OSM's carriageways reach
+grade (the approaches, registered for the traffic past the anchorages only, clear of PATCO's viaducts), the Walt Whitman's
+deck centred between its two carriageways, seven painted lanes and a zipper on both decks with the traffic fitted to them,
+the Tacony-Palmyra's bascule as deck trusses between towered granite piers, the bridges' own lamp standards alone on the
+raised chains with their arms over the lanes, and the overpasses' piers standing down only under those chains."""
 import json
 from pathlib import Path
 import shutil
@@ -44,7 +51,7 @@ class Gates(unittest.TestCase):
         self.assertIn("bridges: bridgesProbe, ", SRC)
         self.assertIn("if (bfbNear(p[0], p[2], 25) || wwbNear(p[0], p[2], 25) || brOwns(p[0], p[2])) return false;", SRC)
         piers = cut(SRC, "      // piers wherever there is clearance and no street crossing beneath", "    // ---------------- the Vine Street cut")
-        self.assertIn("if (brOvpSkip(x, z)) continue;", piers)
+        self.assertIn("if (c.br && brOvpSkip(x, z)) continue;", piers)   # only under the bridges' own raised chains (review)
         # the chains are raised in 'Raising the outer districts', before 'Raising the overpasses' densifies and indexes them
         self.assertLess(SRC.index("step('Raising the outer districts'"), SRC.index("step('Raising the overpasses'"))
 
@@ -57,6 +64,31 @@ class Gates(unittest.TestCase):
         self.assertIn("'#ifdef BR_LAT_ON',", m)   # the discard only in the lattice's own program
         self.assertEqual(m.count('sampler2D'), 1)  # three samplers in one declaration: the detail, the elevations, the lattice
         self.assertIn('uniform sampler2D tBrDet, tBrElev, tBrLat;', m)
+        self.assertIn("m.extensions = { derivatives: true };", m)   # the lanes' and the lattice's fwidth on WebGL 1
+        self.assertIn("t.flipY = false;", m)                        # the canvas's lacing at v 0 to 0.5, the girder's panel above
+        self.assertIn("lampLightPatch(sh, 'vBrW', 'ground');", m)   # the decks take their lamps' pools
+
+    def test_the_review_hooks(self):
+        # the cross streets keep their own height under a deck (Columbus Boulevard climbed onto the Ben Franklin)
+        self.assertIn("function bridgeDeckLift(x, z, ux, uz) {", SRC)
+        self.assertIn("const bY = bridgeDeckLift(x, z, ux, uz);   // the custom spans", SRC)
+        # the traffic onto the Ben Franklin's painted lanes, the approaches' at-grade twins gone from both road loops
+        self.assertIn("pts = brLaneFit(densify(pts, 20));", SRC)
+        self.assertEqual(SRC.count("bfbUnder(mx, mz, dx, dz)) continue;"), 2)
+        # the overpasses' 12 m standards leave the raised chains to the bridges' own, and none stands through an approach
+        self.assertIn("if (OVP.el[chain] && OVP.el[chain].br) continue;", SRC)
+        self.assertIn("if (bridgesOccAt(x, z)) continue;", SRC)
+        m = cut(SRC, MOD_START, MOD_END)
+        # the arms over the lanes (the first cut turned them out over the river)
+        self.assertIn("at.push([x - dz * hw * s, y, z + dx * hw * s, Math.atan2(-dz, dx) + (s > 0 ? Math.PI / 2 : -Math.PI / 2)]);", m)
+        # the Tacony-Palmyra's bascule: deck trusses under the floor, no truss over it
+        self.assertIn("const bTop = (a) => yd(a) - 0.6, bBot", m)
+        self.assertNotIn("bTop = (a) => yd(a) + 7.5", m)
+        # the Betsy Ross: solid members and inclined end posts
+        self.assertIn("C.steel, null, { chord: 1.1, chordH: 1.2, web: 0.8, webH: 0.9, endPosts: true }", m)
+        # the Whitman's deck between its carriageways
+        self.assertIn("const WWB_N0 = -7.6;", m)
+        self.assertIn("const P = (sv, n, y) => { const q = at(sv), nn = n + WWB_N0;", m)
 
 
 class Art(unittest.TestCase):
@@ -69,7 +101,15 @@ class Art(unittest.TestCase):
         for r in A['rects'].values():
             self.assertTrue(0 <= r[0] < r[2] <= 1 and 0 <= r[1] < r[3] <= 1, r)
         self.assertEqual(A['pylonM'], [8.0, 16.0])
-        self.assertAlmostEqual(A['friezeM'][0] / A['friezeM'][1], 0.625, delta=0.01)
+        # the review: the 1024 square atlas was 37% blank; 1024 by 512, the pylon and a strip of two bays side by side
+        self.assertAlmostEqual(A['friezeM'][0] / A['friezeM'][1], 1.5, delta=0.02)
+        self.assertEqual(A['friezeM'][1], 3.4)
+        self.assertLess(A['rects']['pylon'][2], A['rects']['frieze'][0])
+        self.assertGreater(A['rects']['frieze'][2] - A['rects']['frieze'][0], 0.7)
+        with open(ROOT / A['elev'], 'rb') as f:   # the WebP's VP8 or VP8L header: the canvas 1024 by 512
+            head = f.read(64)
+        self.assertEqual(head[:4], b'RIFF')
+        self.assertIn(head[12:16], (b'VP8 ', b'VP8L', b'VP8X'))
         self.assertLess(sum(A['bytes'].values()), 1_000_000)
         build = (ROOT / 'build.py').read_text()
         self.assertIn('const("BRIDGE_ART", text_of("bridge_art.json", "null"))', build)
@@ -100,6 +140,9 @@ const labels = [], labelsRoot = { appendChild() {} }, V3 = THREE.Vector3;
 const BRIDGE_DECKS = [], bfbLampPts = [];
 let bfbLampMesh = null, bfbNodes = null, bfbNodesMat = null, WWB_LAMP_N = 0;
 const OVP = { el: [] }; function ovpIndex() {}
+const REBUILD_OCC = [];
+const rbBox = (ring) => { let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9; for (const q of ring) { x0 = Math.min(x0, q[0]); x1 = Math.max(x1, q[0]); z0 = Math.min(z0, q[1]); z1 = Math.max(z1, q[1]); } return [x0, x1, z0, z1]; };
+function pointInPoly(x, z, poly) { let c = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
 __DENSIFY__
 __BFB__
 __MOD__
@@ -140,9 +183,21 @@ for (const r of BR.list) {
 out.theme = scan(themeParts.map((q) => q.geom), patco);
 out.themeSlots = [...new Set(themeParts.map((q) => q.slot))].sort();
 out.nodeSlots = bfbNodes ? [...new Set(Array.from(bfbNodes.userData.slot))].sort() : null;
-out.decks = BRIDGE_DECKS.map((d) => ({ L: d.cum[d.cum.length - 1], halfW: d.halfW, y0: d.yAt(0), yMid: d.yAt(d.cum[d.cum.length - 1] / 2) }));
+out.decks = BRIDGE_DECKS.map((d) => ({ L: d.cum[d.cum.length - 1], halfW: d.halfW, y0: d.yAt(0), yMid: d.yAt(d.cum[d.cum.length - 1] / 2), yEnd: d.yAt(d.cum[d.cum.length - 1]) }));
 out.deckMid = bfbDeckY(0.5); out.deck0 = bfbDeckY(0);
 out.lamps = bfbLampPts.length / 3; out.wwbLamps = WWB_LAMP_N; out.sheets = sheets.length; out.remembered = REMEMBERED;
+// the approaches: every vertex of the Ben Franklin's past its anchorages within 13.6 m of the roadway's centre line, and
+// PATCO's viaducts (their tracks eased as patcoTracks eases them, 2.2 m either side) clear of it by 0.9 m
+{
+  const nGeoms = BR.list[0].chunks.flatMap((c) => c.near.map((m) => m.geometry)).concat([BR.list[0].far.geometry]);
+  let wide = 0, n = 0, first = null;
+  for (const g of nGeoms) { const p = g.attributes.position.array; for (let i = 0; i < p.length; i += 3) { const a = (p[i] - A[0]) * ux + (p[i + 2] - A[1]) * uz, nn = (p[i] - A[0]) * -uz + (p[i + 2] - A[1]) * ux; if (a < -56 || a > L + 27) { n++; if (Math.abs(nn - bfbCentreN(a)) > 13.6) { wide++; if (!first) first = [a, nn]; } } } }
+  const sm = (e0, e1, v) => { const q = clamp((v - e0) / (e1 - e0), 0, 1); return q * q * (3 - 2 * q); };
+  let gap = 1e9;
+  for (let a = -553; a <= -30.5; a += 2) { const w = sm(-150.5, -30.5, a), pN = -10.6 * (1 - w) - 17.75 * w, pS = 22.6 * (1 - w) + 17.75 * w, c = bfbCentreN(a); gap = Math.min(gap, (c - 13.5) - (pN + 2.2), (pS - 2.2) - (c + 13.5)); }
+  for (let a = L + 30.5; a <= L + 470; a += 2) { const v = sm(L + 30.5, L + 180.5, a), pN = -17.75 + 4.25 * v, pS = 17.75 + 2.75 * v, c = bfbCentreN(a); gap = Math.min(gap, (c - 13.5) - (pN + 2.2), (pS - 2.2) - (c + 13.5)); }
+  out.approach = { verts: n, wide, first, patcoGap: gap };
+}
 out.owns = BR.owns;
 console.log(JSON.stringify(out));
 '''
@@ -199,17 +254,28 @@ class Model(unittest.TestCase):
 
     def test_traffic_rides_the_old_decks(self):
         d = self.out['decks']
-        self.assertEqual(len(d), 2)
+        self.assertEqual(len(d), 4)   # the Ben Franklin, its two approaches (stations past the anchorages only), the Whitman
         self.assertAlmostEqual(d[0]['y0'], self.out['deck0'] + 1.3, places=6)          # Round 66: deckY + 1.3
         self.assertAlmostEqual(d[0]['yMid'], self.out['deckMid'] + 1.3, places=6)
         self.assertEqual(d[0]['halfW'], 20)
-        self.assertEqual(d[1]['halfW'], 16)                                            # Round 12's Whitman
+        self.assertEqual(d[3]['halfW'], 16)                                            # Round 12's Whitman
+        # the approaches meet the span's deck at its own height (the asphalt's top, Round 66's 1.3 over the floor's centre)
+        self.assertAlmostEqual(d[1]['yEnd'], self.out['deck0'] + 1.3, places=2)        # the west one ends at the anchorage
+        self.assertAlmostEqual(d[2]['y0'], self.out['deck0'] + 1.3, places=2)          # the east one starts at Camden's
+        self.assertEqual((d[1]['halfW'], d[2]['halfW']), (15, 15))
         self.assertGreater(len(self.out['remembered']), 0)
 
+    def test_the_approaches_clear_patco(self):
+        ap = self.out['approach']
+        self.assertGreater(ap['verts'], 1000)
+        self.assertEqual(ap['wide'], 0, ap['first'])
+        self.assertGreater(ap['patcoGap'], 0.85)   # 0.9 m at the west end, between the viaducts' edges and the parapets
+
     def test_the_lamps_and_the_night(self):
-        # Round 81's walkway lamps (two a panel outside the anchorages' runs, 144), the four over the saddles, Round 88's 196
+        # Round 81's walkway lamps (two a panel outside the anchorages' runs, 144), the four over the saddles, the approaches'
+        # standards (every 36 m a side off the anchorages' tops, 52), Round 88's 196
         self.assertEqual(self.out['wwbLamps'], 196)
-        self.assertEqual(self.out["lamps"], 144 + 4 + 196)
+        self.assertEqual(self.out["lamps"], 144 + 4 + 52 + 196)
         self.assertEqual(self.out['sheets'], 6)   # each tower's pier and its two legs washed
 
     def test_the_anchorages_stand_where_osm_has_them(self):

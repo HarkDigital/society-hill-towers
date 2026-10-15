@@ -10877,38 +10877,41 @@ place; this is what changed in the code, and what was measured.
     arched soffit. The stiffening trusses stand over the roadway (Warren, latticed web, the top chord dropping under the
     cable toward the anchorages), the floor beams every 6.15 m, five stringers and the lateral X show from the water; the
     walkways ride on brackets behind latticed railings. The anchorages stand where OSM has them (ways 334628511 and
-    334628517, bridge:support=pier: a -54 to -7 and L - 22 to L + 25, `ANCH`), west of Columbus Boulevard: rock-faced walls,
-    the photographed band of grilled windows between pilasters under a cornice, four pylons in the photograph a side, the
-    cables entering granite hoods. The cables (0.84 m tubes, 8 sides), their bands and paired suspenders are the night's
+    334628517, bridge:support=pier: a -54 to -7 and L - 22 to L + 25, `ANCH`), west of Columbus Boulevard: battered
+    rock-faced walls under a thin band of grilled windows between pilasters and a cornice, four corner pylons rising from
+    the ground, the cables entering granite hoods; the roadway runs on past both on the approaches (the review, below). The cables (0.84 m tubes, 8 sides), their bands and paired suspenders are the night's
     themed parts (12,944 triangles against Round 66's 3,840), in Round 81's slots.
   - The Whitman keeps Round 12's straightened crossing and profile and Round 88's lamps. Its stiffening truss is a deck
     truss UNDER the roadway, open (a plate girder where the deck runs low), floor beams and the lateral X; the towers two
     plain legs with a deep portal under the saddles and a strut under the deck, both with arched soffits; concrete piers,
-    anchorages under the roadway, 30 concrete bents on the approaches, the photographs' green (stored #0f2c22), red
-    aviation beacons over the legs on the lamps' photocell.
+    anchorages under the roadway, 30 concrete bents on the approaches, the photographs' green (stored #122a2b since the
+    review), red aviation beacons over the legs on the lamps' photocell.
   - The Betsy Ross and the Tacony-Palmyra keep their overpass chains as the roadway, raised in place before 'Raising the
     overpasses' densifies and indexes them (`brRaiseChain`, densified to 13 m first: OSM's nodes stand 360 m apart over
     the water), so ovpDeckY, the traffic and the parapets follow; the overpasses' piers stand down under them
     (`brOvpSkip`). The Betsy Ross: the truss's axis the chord of the chain's run over the river's outline (delawareAt),
     a 520 m continuous through truss in three spans, the main 222 m, its bottom chord dropping in haunches to the river
-    piers, concrete portal piers, the roadway 43 m over the water (lifted up to 29.8 m), 64 approach piers and deck girders,
-    204 lamp standards. The Tacony-Palmyra: the 168 m trussed arch on OSM's way 43032037, hangers every 7 m to the tie, wind
-    bracing over the middle, the bascule's camelback through truss to the east, granite piers with their arched passages,
-    the deck 20.6 m over the water at the arch, 10 approach piers, 50 lamp standards.
+    piers, concrete portal piers, the roadway 43 m over the water (lifted up to 29.8 m), 64 approach piers under deck
+    trusses, 204 lamp standards. The Tacony-Palmyra: the 168 m trussed arch on OSM's way 43032037, hangers every 7 m to the
+    tie, wind bracing over the middle, the bascule to the east, granite piers with their arched passages, the deck 20.6 m
+    over the water at the arch, 8 approach piers, 50 lamp standards.
 - The art (fetch_bridge_art.py, bake_bridge_art.py, bridge_art.json, art/bridges/): five gpt-image-2 pictures at high
   quality, each read before baking and all five kept at the first call: riveted steel painted a neutral grey (1024),
   rock-faced granite in eight 0.6 m courses (1024), weathered concrete (1024), the Ben Franklin's pylon face (768 by 1536)
   and the anchorage's windowed top band (1536 by 768). The bake makes `detail` (each surface's luminance over its mean in a
-  channel, made periodic) and `elev` (the pylon and one bay of the band, cut at two pilasters' middles): 588 KB on a
-  computer, 107 KB on a phone. Texture memory: 11.3 MB on a computer, 3.3 MB on a phone (with the lattice canvas, 0.67 MB);
-  the art is asked for as the eye comes within 2.6 km of a bridge on a computer, a phone's halves within 1.4 km.
-- Budget, measured (the Node harness and `__dbg.bridges()`): the Ben Franklin 22,604 near + 2,584 lattice in 4 chunks, far
-  9,436 (Round 66's was one mesh of 14,040); the Whitman 41,168 + 3,648 in 12 chunks, far 15,620 (Round 12's 4,860); the
-  Betsy Ross 9,368 + 1,720 in 8, far 10,416; the Tacony-Palmyra 4,558 + 516 in 3, far 4,746. Frames averaged over 24 at
-  seven views, main against this build (calls, triangles): a computer +3 / +28k at the Ben Franklin's tower, +13 / +63k on
-  its deck, +8 / +46k from the skyline, +19 / +72k under the Whitman, +1 / +76k far off it, +11 / +58k at the Betsy Ross,
-  +8 / +62k at the Tacony-Palmyra, on frames of 3.3 M to 10.6 M; a phone +5 to +14 calls and +17k to +41k. Programs 227 to
-  234 on a computer and 134 to 138 on a phone, no link failure or console error in any render. The build step takes 133 ms.
+  channel, made periodic) and `elev` (since the review 1024 by 512: the pylon and a strip of two bays of the band, cut at
+  the first and third pilasters' middles and cropped at the moulding under the windows): 545 KB on a computer, 101 KB on
+  a phone. Texture memory: 8.67 MB on a computer, 2.67 MB on a phone (with the lattice canvas, 0.67 MB; the first cut's
+  square atlas held 11.33 and 3.33); the art is asked for as the eye comes within 2.6 km of a bridge on a computer, a
+  phone's halves within 1.4 km.
+- Budget, measured (the Node harness and `__dbg.bridges()`; these are the first cut's, the review's are below): the Ben
+  Franklin 22,604 near + 2,584 lattice in 4 chunks, far 9,436 (Round 66's was one mesh of 14,040); the Whitman 41,168 +
+  3,648 in 12 chunks, far 15,620 (Round 12's 4,860); the Betsy Ross 9,368 + 1,720 in 8, far 10,416; the Tacony-Palmyra
+  4,558 + 516 in 3, far 4,746. Frames averaged over 24 at seven views, main against this build (calls, triangles): a
+  computer +3 / +28k at the Ben Franklin's tower, +13 / +63k on its deck, +8 / +46k from the skyline, +19 / +72k under the
+  Whitman, +1 / +76k far off it, +11 / +58k at the Betsy Ross, +8 / +62k at the Tacony-Palmyra, on frames of 3.3 M to
+  10.6 M; a phone +5 to +14 calls and +17k to +41k. Programs 227 to 234 on a computer and 134 to 138 on a phone, no link
+  failure or console error in any render. The build step takes 133 ms.
 - Integration: traffic rides BRIDGE_DECKS at Round 66's and Round 12's heights (the tests compare them), PATCO's
   `patcoCheck` reads the same (bed deviation 0, walkway clearance 0.205 m both tracks, as before) and the harness proves
   nothing stands in a PATCO car's envelope between the anchorages (the first cut's walkway brackets did: 948 triangles,
@@ -10920,7 +10923,92 @@ place; this is what changed in the code, and what was measured.
 - Renders: scratchpad remodel/bridges/before and after (26 computer views day, night, an Eagles night and a red night; 8
   phone views), pairs side by side in pairs/. `tests/test_remodel_bridges.py`; test_art_files and test_memory_cuts follow
   the new art and canvas. 919 tests, OK with the one expected failure.
-- Not done, to offer Mike: the Ben Franklin's approach viaducts beyond the anchorages and the toll plaza are still the
-  overpasses'; the Betsy Ross's approach girders are flat latticed faces, not trusses; the Tacony-Palmyra's bascule leaves
-  do not open; no LED or aesthetic lighting on the other three bridges (only the Ben Franklin has it); the Betsy Ross's
-  colour is the photographs' pale grey, not checked against DRPA's paint record.
+- The review (seven must-fixes, eleven should-fixes), fixed in this commit, each checked by a render or a probe (scratchpad
+  remodel/bridges/fix: before/ is the first cut, 1b31684, and after/ this one, 32 computer views at 14:00 and 21:30 under a
+  pinned clear sky (?wx=clear), an Eagles night and a red night, 7 phone views, pairs/ side by side; modes/ for ?real=0, ?bridges=0 and
+  ?zbuf=log):
+  - The lattice: three's CanvasTexture keeps flipY, so the canvas's lacing (rows 0 to 255) landed at v 0.5 to 1 and every
+    laced member wore the girder's boxed X; `flipY` is off. The girder under the saddles is a 3.6 m band of eight square X
+    panels (3.41 m) between solid flanges (the photographs' row of eight; it was four 6.8 m panels a 7.4 m girder deep),
+    the girders under the floor seven; the X members' broad faces are plate and their flanges laced (`lat.u`), the struts
+    laced on their faces.
+  - The approaches: the Ben Franklin's roadway dead-ended on the anchorages' tops and the cars snapped from grade to the
+    deck at a -20 (bridgeDeckLift clamps to the line's ends). OSM's carriageways (ways 45333099 and 62154291, bridge=yes,
+    layer 3) run from a -553 to L + 467; the roadway now runs on along them (`BFB_APP`), seven lanes and the zipper as on
+    the span, its centre line eased with PATCO's own eases to the middle of the room between PATCO's viaducts (6.0 m south
+    of the axis to the west, 3.25 to the east), clear of both by 0.9 m or more (the harness). West: from the anchorage's
+    6.94 it climbs over the anchorage's top in granite walls (with PATCO, whose bed climbs to 9.7 over I-95) to 10.0 by
+    a -95, holds it over I-95 (at about 3.2: 4.6 m clear under a 1.5 m deck), 2nd Street (6.6 m) and 3rd Street (5.7 m),
+    then falls at about 4% under a deck thinned to 0.9 m over 4th Street's dip (2.2 m clear) to the ground at a -553. East:
+    it falls at 2% from 6.94 to 0.6 at L + 331 (4.7 m over Camden's cross street) and meets the ground short of the one at
+    L + 452, where they cross at grade. A steel deck with granite parapets on granite bents every 27 m (moved up to 8 m
+    off any crossing street, `BFB_CROSS`), granite walls where it runs on the ground; 52 lamp standards. Registered as two
+    new BRIDGE_DECKS entries past the anchorages only (Round 66's heights unchanged, the tests compare them); both road
+    loops cede Camden's at-grade twin of the viaduct (`bfbUnder`); the approaches and the anchorages are REBUILD_OCC rings,
+    so no tree, packed pole or 12 m deck standard stands up through them (the deck standards fell from 3,869 to 3,726
+    with the raised chains'). A timed three-frame sequence over the west anchorage (bfb-westtop-0 to -2) shows the cars
+    running on and off it; in the first cut two appeared on the open granite.
+  - The cross streets: bridgeDeckLift took no direction, so a street under a deck rode it: Columbus Boulevard's cars
+    measured 8.5 to 10.3 m for the 40 m under the Ben Franklin, against -6.3 beside it. Given the way's direction (the
+    traffic step and closureY pass it) a crossing way keeps its height: -6.1 to -6.6 now, 3rd Street 3.2, 2nd 2.2.
+  - The Walt Whitman's traffic: the deck, barriers and truss were centred on WWB_PTS, OSM's eastbound carriageway alone;
+    the westbound runs 15.2 m north of it (traffic.b64's ways 5981 and 6333, measured along the whole crossing), so its
+    cars rode the north barrier. The deck is centred `WWB_N0` -7.6 m: of 840 lane positions on the deck (every lane of
+    every run, a car's 0.95 m half width) none touches a barrier or the zipper. The Ben Franklin: OSM's lines run 1 m north
+    and 10.5 m south of Round 66's axis (the eastbound's outer lane rode the kerb); the traffic step fits them to the
+    painted lanes (`brLaneFit`: the westbound's middle 7.32 m north of the centre line, the eastbound's 3.66 south),
+    eased back to OSM's lines over the approaches' last 60 m, where the zipper stops: 600 lane positions, none on a kerb or
+    the zipper (one 1.1 m inside where the zipper would be at L + 450, past its end at L + 400).
+  - The lanes: both decks were blank pale slabs. `BRK.lanes` paints seven 3.66 m lanes in the deck's own uv (v the metres
+    from the centre line): solid edge lines at 12.81 m, dashes 3 m in 12 between, none at the zipper (between the third and
+    the fourth lane from the north, -1.83 m), the city's paint (LANE_REAL's white, its far rule); a zipper barrier 0.8 m
+    tall rides both decks and the approaches; the asphalt is the streets' tone (stored #0f1011, it was #1c1b1a, which
+    rendered at about 150 of 255 against the streets' 60). The decks take the lamps' pools: every bridge lamp (646: the
+    walkways', the Whitman's, the standards') is a source in the lamp map (`BR.lampSrc`) and the bridges' program reads
+    it (`lampLightPatch`), so the approaches no longer run dark.
+  - The Tacony-Palmyra's bascule: the camelback through truss is gone; two leaves of deck truss under the floor, 6 m deep
+    at their heels and 3 m where they meet, with a latticed railing over the deck's edge, between the two granite piers,
+    which now carry a tower either side of the roadway 9 m over the deck with an operator's house on top (a window band
+    under a low roof): the 2010 and Palmyra Nature Cove photographs.
+  - The lamps: the overpasses' DECK_LAMPS skipped only the Ben Franklin and the Whitman, so the raised chains kept their
+    12 m standards beside the 9 m ones, whose arms all faced the river (atan2 minus a half turn on the +n side); the
+    raised chains are the bridge's own (`c.br`), DECK_LAMPS leaves them, the arms turn in over the lanes. The bridges' lamp
+    heads went from 598 to 650 (the approaches' 52).
+  - The steel: the 3 m plate tile laid at 0.55 in world metres on every face drew a regular grid of strap seams 1.5 m
+    apart. The tile is now stretched 4 to 1 along each member (a leg's uv runs up it), each member's joints staggered,
+    the seams at 0.38, and the weather is world-space streaks running down (two crossed directions) and patches a few
+    tens of metres across; the granite's rock face is raised 2.6 times (the texture spreads +-12%).
+  - Should-fixes: the Ben Franklin blue's chroma halved round its luminance (rendered saturation 0.14 sunlit and 0.25 in
+    shade at a hue of 201 to 204, against the photographs' 0.10 to 0.24 at 196 to 203; it was 0.24 to 0.47); the
+    Whitman toward the 2010 photograph's blue-green (hue 185, saturation 0.39 shaded and 0.17 sunlit, against 182 to 184
+    and 0.43 and 0.26; it was 167 and 0.45). The anchorages: the band 3.4 m (it was 6) over battered walls, the granite a
+    third darker and weathered, the pylons rising from the ground (rock-faced to the coping, dressed above), the door only
+    on the face toward the roadway, the others the windows and corbels over plain ashlar. Round 66's bfbDeckY holds the
+    deck at the ground plus 12 m at the anchorages against about 25 to 30 m on the real bridge, which caps the anchorages'
+    height: for Mike. The floor's sides over the anchorages are granite. The Tacony-Palmyra's Philadelphia approach and
+    the Betsy Ross's approaches are deck trusses (chords, Warren diagonals, posts), the Tacony's deepening in a curve to
+    6 m over tall twin granite shafts on a web wall (the 2022 photograph from Philadelphia). The Betsy Ross's members are
+    solid (a welded truss) and inclined end posts carry its ends (the Pennsauken photograph). The far levels: the
+    truss's far level is its chords and diagonals, open-ended, the approach a face a side: the Betsy Ross's far 4,088 to
+    its near's 25,040 (the first cut's 10,416 to 11,088), the Tacony-Palmyra's 2,718 to 8,104 (4,746 to 5,074). The elev
+    atlas repacked (above). `brOvpSkip` stands down only the raised chains' piers. The materials ask for derivatives.
+  - Not taken: the red box of the pier wash on a themed night (Round 81's, for the record); CLAUDE.md (the orchestrator's).
+- Budget after the review, measured on a computer (`__dbg.bridges()`, the frame probe against the first cut at the same
+  nine views, calls and triangles averaged over 24 frames): triangles near + lattice / far: the Ben Franklin 30,980 + 2,584
+  in 7 chunks / 11,070 (the first cut's 22,604 / 9,436, without the approaches), the Whitman 44,024 + 3,648 in 12 / 15,620, the Betsy Ross 25,040 in
+  8 / 4,088, the Tacony-Palmyra 7,380 + 724 in 3 / 2,718. Frames, first cut to now: the Ben Franklin's tower 611 / 8.42 M
+  to 616 / 8.45 M, its deck 477 / 5.84 M to 479 / 5.89 M, the skyline 640 / 10.38 M to 641 / 10.38 M, the west approach
+  494 / 6.76 M to 498 / 6.80 M, over it 402 / 6.48 M to 408 / 6.52 M, under the Whitman 708 / 9.74 M to 707 / 9.76 M, far
+  off it 371 / 6.10 M both, the Betsy Ross 289 / 3.65 M to 290 / 3.62 M, the Tacony-Palmyra 232 / 3.03 M to 229 /
+  3.03 M; the bridges' own share 6 to 15 calls. Geometry: the far level is one mesh drawn as groups (a run of chunks a
+  draw), never held twice: 54 meshes, 7.63 MB of attributes and 0.85 MB of indices (8.48 MB, on a phone's GPU the same,
+  its copies freed after the upload), against the first cut's 85 meshes and 9.54 MB, the approaches included. Textures
+  8.67 MB and 2.67 MB. Programs 239 on a computer (the first cut 239), 143 on a phone; no link failure or console error in
+  any render (computer, phone, ?real=0, ?bridges=0, ?zbuf=log); ?real=0 against the first cut, five views with traffic,
+  ships and flights off: 0.000 to 0.002 per cent of pixels over 24 levels. `__dbg.riverCheck()` as main (the one 4 cm
+  sample far up the Schuylkill), `patcoCheck` unchanged (bed deviation 0, walkway clearance 0.205 m). The build step
+  takes about 150 ms.
+- Not done, to offer Mike: the Tacony-Palmyra's bascule leaves do not open; no LED or aesthetic lighting on the other three
+  bridges (only the Ben Franklin has it); the Betsy Ross's colour is the photographs' pale grey, not checked against
+  DRPA's paint record; the approaches' structure is a model (OSM's carriageways and the photographs, not a survey of the
+  viaducts); the anchorages' height waits on Round 66's deck.

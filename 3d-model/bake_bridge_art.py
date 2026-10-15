@@ -10,10 +10,12 @@ fetch_bridge_art.py makes five pictures in lidar_cache/bridge_art_raw/. This bak
           half a tile both ways, the copy showing only in a band round the edges (BLEND), so the seam the model left at
           the border falls where the copy is drawn and the copy's own seam falls in the middle of the original, where the
           original is drawn. The granite keeps its courses level: the copy is moved by a whole number of courses.
-  elev    1024 square sRGB: the Ben Franklin's anchorage pylon above the deck (8 by 16 m, the left half) and one bay of the
-          anchorage wall's top band (cut at the middle of two pilasters, so the page lays bay after bay along a wall, with
-          a cross-fade at the cut for the rock-faced course under it), each in a gutter of its own edge pixels (PAD) so a
-          mip never reads its neighbour. Their rects are in the manifest as [u0, v0, u1, v1], v up from the bottom.
+  elev    1024 by 512 sRGB (the review: the first cut's 1024 square was 37% blank): the Ben Franklin's anchorage pylon
+          above the deck (8 by 16 m, the left quarter) and a strip of two bays of the anchorage wall's top band beside it
+          (cut at the middles of the first and third pilasters, so the page lays strip after strip along a wall, with a
+          cross-fade at the cut; cropped at the moulding under the windows, the rock-faced wall below it being the
+          granite's own), each in a gutter of its own edge pixels (PAD) so a mip never reads its neighbour. Their rects are
+          in the manifest as [u0, v0, u1, v1], v up from the bottom.
 Every half copy is the same image at half the size (a phone's).
 
 Usage: python3 bake_bridge_art.py [--preview DIR]"""
@@ -30,12 +32,13 @@ DET = 1024                    # the detail texture's side
 BLEND = 0.16                  # the copy's band at the border, a fraction of the side
 TILE_M = {'steel': 3.0, 'granite': 4.8, 'concrete': 4.0}   # metres a tile (the prompts' own)
 COURSES = 8                   # the granite's courses in a tile
-EL = 1024                     # the elevation atlas's side
+EL = (1024, 512)              # the elevation atlas, width by height
 PAD = 8
 PYLON_M = (8.0, 16.0)         # the pylon face, metres (the prompt's)
-FRIEZE_M = 7.5                # the wall band's height, metres (the prompt's); its bay's width follows from the cut
-FRIEZE_CUT = (525, 1005)      # the frieze picture's x span of one bay, measured by hand on frieze.png (1536 by 768): the
-                              # middles of its second and third pilasters (440 to 610 and 920 to 1090 px)
+FRIEZE_M = 3.4                # the wall band's height on the page, metres (app.js: yF1 - yF0); the strip's width follows
+FRIEZE_CUT = (65, 1005)       # the frieze picture's x span of two bays, measured by hand on frieze.png (1536 by 768): the
+                              # middles of its first and third pilasters (0 to 130 and 920 to 1090 px)
+FRIEZE_ROWS = 608             # its rows down to the moulding under the windows (the rock-faced course below it dropped)
 SEAM_PX = 18                  # the cross-fade at the frieze's cut
 
 
@@ -86,33 +89,33 @@ def bake(preview=None):
     out['detailHalf'] = art_files.write(D.resize((DET // 2, DET // 2), Image.LANCZOS), 'bridges', 'detail-half', 'WEBP', quality=90, method=6)
     out['detailTile'] = [TILE_M['steel'], TILE_M['granite'], TILE_M['concrete']]
     out['detailMean'] = [means['steel'], means['granite'], means['concrete']]
-    # the elevations
-    A = Image.new('RGB', (EL, EL), (128, 128, 128))
+    # the elevations: the pylon (its 1:2) and the band's strip (the rest of the width) side by side
+    EW, EH = EL
+    A = Image.new('RGB', (EW, EH), (128, 128, 128))
     py = Image.open(os.path.join(RAW, 'pylon.png')).convert('RGB')
-    pw, ph = EL // 2 - 2 * PAD, EL - 2 * PAD
+    ph = EH - 2 * PAD
+    pw = ph // 2
     A.paste(pad(py.resize((pw, ph), Image.LANCZOS), PAD), (0, 0))
-    rects = {'pylon': [PAD / EL, PAD / EL, (PAD + pw) / EL, (PAD + ph) / EL]}
-    fz = np.asarray(Image.open(os.path.join(RAW, 'frieze.png')).convert('RGB'), dtype=np.float32)
+    fz = np.asarray(Image.open(os.path.join(RAW, 'frieze.png')).convert('RGB'), dtype=np.float32)[:FRIEZE_ROWS]
     x0, x1 = FRIEZE_CUT
     bay = fz[:, x0:x1].copy()
-    # the cut's cross-fade: the bay's last SEAM_PX columns blend into the columns just past its first edge, so the right
-    # edge of one bay runs on into the left edge of the next
+    # the cut's cross-fade: the strip's last SEAM_PX columns blend into the columns just past its first edge, so the right
+    # edge of one strip runs on into the left edge of the next
     for j in range(SEAM_PX):
         w = (j + 1) / (SEAM_PX + 1)
         bay[:, -SEAM_PX + j] = bay[:, -SEAM_PX + j] * (1 - w) + fz[:, x0 + j] * w
-    bh = EL // 2 - 2 * PAD
-    bw = int(round(bh * bay.shape[1] / bay.shape[0]))
+    ox = pw + 2 * PAD
+    bh, bw = EH - 2 * PAD, EW - ox - 2 * PAD
     bayIm = Image.fromarray(np.clip(bay, 0, 255).astype(np.uint8)).resize((bw, bh), Image.LANCZOS)
-    ox, oy = EL // 2, 0
-    A.paste(pad(bayIm, PAD), (ox, oy))
-    # v up from the bottom: the frieze sits in the image's top half
-    rects['frieze'] = [(ox + PAD) / EL, 1 - (oy + PAD + bh) / EL, (ox + PAD + bw) / EL, 1 - (oy + PAD) / EL]
-    rects['pylon'] = [PAD / EL, 1 - (PAD + ph) / EL, (PAD + pw) / EL, 1 - PAD / EL]
+    A.paste(pad(bayIm, PAD), (ox, 0))
+    # v up from the bottom
+    rects = {'pylon': [PAD / EW, PAD / EH, (PAD + pw) / EW, (PAD + ph) / EH],
+             'frieze': [(ox + PAD) / EW, PAD / EH, (ox + PAD + bw) / EW, (PAD + bh) / EH]}
     out['elev'] = art_files.write(A, 'bridges', 'elev', 'WEBP', quality=90, method=6)
-    out['elevHalf'] = art_files.write(A.resize((EL // 2, EL // 2), Image.LANCZOS), 'bridges', 'elev-half', 'WEBP', quality=88, method=6)
+    out['elevHalf'] = art_files.write(A.resize((EW // 2, EH // 2), Image.LANCZOS), 'bridges', 'elev-half', 'WEBP', quality=88, method=6)
     out['rects'] = {k: [round(v, 5) for v in r] for k, r in rects.items()}
     out['pylonM'] = list(PYLON_M)
-    out['friezeM'] = [round(FRIEZE_M * bay.shape[1] / bay.shape[0], 3), FRIEZE_M]   # one bay's width and the band's height
+    out['friezeM'] = [round(FRIEZE_M * bw / bh, 3), FRIEZE_M]   # the strip's width and the band's height (the strip as laid in the atlas)
     out['bytes'] = {k: art_files.size(out[k]) for k in ('detail', 'detailHalf', 'elev', 'elevHalf')}
     gone = art_files.prune('bridges')
     json.dump(out, open(OUT, 'w'), separators=(',', ':'))

@@ -1590,22 +1590,25 @@
     for (const k of Object.keys(THREE.ShaderLib)) { const u = THREE.ShaderLib[k].uniforms; if (u && u.fogColor) for (const n of Object.keys(apU)) u[n] = apU[n]; }
   }
   // custom river spans register their true deck profiles here so the traffic
-  // layer can ride the actual roadway instead of a flat guess under the bridge
+  // layer can ride the actual roadway instead of a flat guess under the bridge.
+  // Given the way's direction (ux, uz), a way crossing under a deck keeps its own
+  // height (Round 195's review: Columbus Boulevard's cars climbed 15 m onto the
+  // Ben Franklin's deck for the 40 m they ran under it; the remodel's only, BR_ON)
   const BRIDGE_DECKS = [];
-  function bridgeDeckLift(x, z) {
+  function bridgeDeckLift(x, z, ux, uz) {
     let best = null;
     for (const b of BRIDGE_DECKS) {
       if (x < b.minX - 30 || x > b.maxX + 30 || z < b.minZ - 30 || z > b.maxZ + 30) continue;
-      let bd = Infinity, bs = 0;
+      let bd = Infinity, bs = 0, bdot = 1;
       for (let i = 0; i + 1 < b.pts.length; i++) {
         const ax = b.pts[i][0], az = b.pts[i][1];
         const dx = b.pts[i + 1][0] - ax, dz = b.pts[i + 1][1] - az;
         const L2 = dx * dx + dz * dz || 1e-6;
         const t = clamp(((x - ax) * dx + (z - az) * dz) / L2, 0, 1);
         const d = Math.hypot(x - (ax + dx * t), z - (az + dz * t));
-        if (d < bd) { bd = d; bs = b.cum[i] + Math.sqrt(L2) * t; }
+        if (d < bd) { bd = d; bs = b.cum[i] + Math.sqrt(L2) * t; if (BR_ON && ux !== undefined) bdot = Math.abs((dx * ux + dz * uz) / Math.sqrt(L2)); }   // ?real=0 keeps the old rule
       }
-      if (bd > b.halfW) continue;
+      if (bd > b.halfW || bdot < 0.7) continue;
       const y = b.yAt(bs);
       if (best === null || y > best) best = y;
     }
@@ -5643,9 +5646,9 @@
   // BR_ART_R of any bridge (a phone's half copies)
   const BR_NEAR_R = isTouch ? 520 : 820, BR_HYST = 60, BR_ART_R = isTouch ? 1400 : 2600;
   const BR = { built: false, list: [], art: 'none', artOn: { value: 0 }, force: null, off: false, err: null, bytes: 0, latBytes: 0,
-    mats: null, u: null, owns: [] };
+    mats: null, u: null, owns: [], lampSrc: [] };   // lampSrc: x, z, the head's height over its deck, a gain (the lamp map's pools, 'Lighting the streetlamps')
   // the kinds a vertex's fourth colour byte names: the shader's switch (BR_GLSL)
-  const BRK = { paint: 0, steel: 1, granite: 2, concrete: 3, elev: 4, lacing: 5, girder: 6, asphalt: 7, ashlar: 8 };
+  const BRK = { paint: 0, steel: 1, granite: 2, concrete: 3, elev: 4, lacing: 5, girder: 6, asphalt: 7, ashlar: 8, lanes: 9 };
   // a colour: the stored (linear, legacy pipeline) bytes of a hex and the kind
   const brC = (hex, k) => { const c = new THREE.Color(hex); return [Math.round(c.r * 255), Math.round(c.g * 255), Math.round(c.b * 255), k]; };
   const v3sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
@@ -5702,6 +5705,10 @@
       if (Math.abs(nr[1]) > 0.7) { b.quad(p0, p1, p2, p3, [p0[0], p0[2]], [p1[0], p1[2]], [p2[0], p2[2]], [p3[0], p3[2]], col, out); return; }
       const e = v3norm([p1[0] - p0[0], 0, p1[2] - p0[2]]);
       const u = (p) => (p[0] - p0[0]) * e[0] + (p[2] - p0[2]) * e[2] + (opt.u0 || 0);
+      // a steel face taller than it is wide (a leg) lays u up it: the plates run along a member's length (the shader
+      // stretches u); masonry keeps v the world's height, so its courses run level round its corners
+      const fh = Math.max(p0[1], p1[1], p2[1], p3[1]) - Math.min(p0[1], p1[1], p2[1], p3[1]), fw = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]);
+      if (col[3] === BRK.steel && fh > 1.3 * fw) { b.quad(p0, p1, p2, p3, [p0[1], u(p0)], [p1[1], u(p1)], [p2[1], u(p2)], [p3[1], u(p3)], col, out); return; }
       b.quad(p0, p1, p2, p3, [u(p0), p0[1]], [u(p1), p1[1]], [u(p2), p2[1]], [u(p3), p3[1]], col, out);
     };
     if (!opt.noBottom) face(c[0], c[3], c[2], c[1]);
@@ -5709,8 +5716,11 @@
     for (let i = 0; i < 4; i++) { const j = (i + 1) % 4; if (opt.skipSide && opt.skipSide.includes(i)) continue; face(c[i], c[j], c[j + 4], c[i + 4]); }
   }
   // a beam from p0 to p1: its cross-section w along s = cross(d, upHint) and h along u2 = cross(s, d). uv in metres along
-  // the beam and across its face. opt.lat ({ b, k }) lays the two faces facing +-s in that buffer as a lattice kind (uv in
-  // lattice periods of the face's own height h), opt.caps false leaves the ends open
+  // the beam and across its face, from a station of its own (the riveted plates' joints staggered member to member).
+  // opt.lat ({ b, col, pitch }) lays the two faces facing +-s in that buffer as a lattice kind (uv in lattice periods of
+  // the face's own height h), or with opt.lat.u the two facing +-u2 (a member whose broad faces are plate and whose
+  // flanges are laced: the towers' X), opt.caps false leaves the ends open
+  const brStag = (p) => { const h = Math.sin(p[0] * 12.9898 + p[1] * 4.1414 + p[2] * 78.233) * 43758.5453; return (h - Math.floor(h)) * 12; };
   function brBeam(b, p0, p1, upHint, w, h, col, opt) {
     opt = opt || {};
     const d0 = v3sub(p1, p0), len = Math.hypot(d0[0], d0[1], d0[2]);
@@ -5724,17 +5734,18 @@
     const corner = (p, a, bb) => v3add(v3add(p, v3mul(hs, a)), v3mul(hu, bb));
     const q = [[1, 1], [-1, 1], [-1, -1], [1, -1]].map(([a, bb]) => [corner(p0, a, bb), corner(p1, a, bb)]);
     // the long faces: +u2 (q0,q1), -s (q1,q2), -u2 (q2,q3), +s (q3,q0)
+    const u0 = brStag(p0);
     for (let i = 0; i < 4; i++) {
       const j = (i + 1) % 4, A0 = q[i][0], B0 = q[j][0], A1 = q[i][1], B1 = q[j][1];
       const out = v3sub(v3mul(v3add(A0, B0), 0.5), p0);
       const sideFace = i === 1 || i === 3;   // normal +-s
       const wid = sideFace ? h : w;
-      if (sideFace && opt.lat) {
-        const pp = opt.lat.pitch || h;
+      if (opt.lat && sideFace !== !!opt.lat.u) {
+        const pp = opt.lat.pitch || wid;
         opt.lat.b.quad(A0, B0, B1, A1, [0, 0], [0, 1], [len / pp, 1], [len / pp, 0], opt.lat.col || col, out);
         continue;
       }
-      b.quad(A0, B0, B1, A1, [0, 0], [0, wid], [len, wid], [len, 0], col, out);
+      b.quad(A0, B0, B1, A1, [u0, 0], [u0, wid], [u0 + len, wid], [u0 + len, 0], col, out);
     }
     if (opt.caps !== false) {
       b.quad(q[0][0], q[1][0], q[2][0], q[3][0], [0, 0], [w, 0], [w, h], [0, h], col, v3mul(d, -1));
@@ -5820,6 +5831,9 @@
       rivets(p, y0 + c * 0.5, S - p, y0 + c * 0.5, 9); rivets(p, y0 + S - c * 0.5, S - p, y0 + S - c * 0.5, 9);
     }
     const t = freeTexOnUpload(new THREE.CanvasTexture(cv));   // drawn once, never redrawn
+    // the canvas's first row at v 0, as BR_COLOR reads it (the lacing at v 0.015 to 0.485, the girder's panel at 0.515 to
+    // 0.985): with three's default flipY the two bands came out swapped, every laced member wearing the girder's boxed X
+    t.flipY = false;
     t.wrapS = THREE.RepeatWrapping; t.wrapT = THREE.ClampToEdgeWrapping; t.anisotropy = anisoOf(4);
     BR.latBytes = S * S * 2 * 4 * 4 / 3;
     return t;
@@ -5829,33 +5843,60 @@
   const BR_GLSL_V = 'attribute vec4 aBrC; attribute vec2 aBrUv; varying vec4 vBrC; varying vec2 vBrUv; varying vec3 vBrW;';
   const BR_GLSL_F = ['uniform sampler2D tBrDet, tBrElev, tBrLat; uniform float uBrArt; uniform vec3 uBrTile;',
     'varying vec4 vBrC; varying vec2 vBrUv; varying vec3 vBrW;'].join('\n');
+  // the seven lanes (BRK.lanes, v the metres from the deck's centre line): 3.66 m each, a solid edge line inside either
+  // curb (+-12.81), dashed lines between (3 m in 12), none where the zipper barrier stands (between the third lane from
+  // the north and the fourth, BR_ZIP); the city's own paint (LANE_REAL) and its rule for a far line (never under a pixel,
+  // its coverage kept, gone past 3 m a pixel)
+  const BR_LANE = 3.66, BR_LANE_HW = 12.81, BR_ZIP = -1.83;
   const BR_COLOR = [
     '{',
     '  float brK = floor(vBrC.a * 255.0 + 0.5);',
     '  vec3 brCol = vBrC.rgb;',
+    '  vec2 brFw = fwidth(vBrUv) + 1e-4;',   // outside every branch (derivatives are defined only in uniform control flow)
     '  float brMacro = mix(1.0, texture2D(tBrDet, vBrW.xz * 0.0071 + vBrW.y * 0.003).b * 2.0, 0.22 * uBrArt);',
-    '  if (brK > 0.5 && brK < 1.5) { float d = texture2D(tBrDet, vBrUv / uBrTile.x).r; brCol *= mix(1.0, 2.0 * d, 0.55 * uBrArt) * brMacro; }',
-    '  else if (brK > 1.5 && brK < 2.5) { float d = texture2D(tBrDet, vBrUv / uBrTile.y).g; brCol *= mix(1.0, 2.0 * d, uBrArt) * brMacro; }',
-    '  else if (brK > 2.5 && brK < 3.5) { float d = texture2D(tBrDet, vBrUv / uBrTile.z).b; brCol *= mix(1.0, 2.0 * d, 0.85 * uBrArt) * brMacro; }',
-    '  else if (brK > 3.5 && brK < 4.5) { brCol = mix(brCol, texture2D(tBrElev, vBrUv).rgb * 0.55, uBrArt); }',
-    '  else if (brK > 6.5 && brK < 7.5) { float d = texture2D(tBrDet, vBrUv / (uBrTile.z * 2.0)).b; brCol *= mix(1.0, 0.6 + 0.8 * d, uBrArt) * brMacro; }',
-    '  else if (brK > 7.5 && brK < 8.5) { float d = texture2D(tBrDet, vBrUv / uBrTile.z).b; brCol *= mix(1.0, 0.7 + 0.6 * d, uBrArt) * brMacro; }',
+    // the weather on paint and stone (the photographs: stains run down from every course, band and crossing, the wall dirtier
+    // in patches): the concrete's grain pulled 150 m tall in the world for the streaks (two crossed directions, so no face
+    // runs along both) and the granite's at 75 m for the patches, their contrast raised from the texture's few per cent,
+    // so no tile repeats at 20 to 80 m
+    '  vec2 brSu = vec2(dot(vBrW.xz, vec2(0.61, 0.79)), dot(vBrW.xz, vec2(0.79, -0.61))) * 0.05;',
+    '  float brStreak = (texture2D(tBrDet, vec2(brSu.x, vBrW.y * 0.0067)).b + texture2D(tBrDet, vec2(brSu.y + 0.37, vBrW.y * 0.0067 + 0.41)).b - 1.0) * 6.0;',
+    '  float brPatch = (texture2D(tBrDet, vec2(brSu.y, vBrW.y * 0.085) * 0.155).g * 2.0 - 1.0) * 2.5;',
+    '  float brWeath = mix(1.0, clamp(1.0 - 0.38 * smoothstep(0.05, 0.9, -brStreak) + 0.2 * brPatch, 0.55, 1.15), uBrArt);',
+    // steel: long plates along the member (u stretched 4 to 1), the joints and rivets a whisper, the weather over them
+    '  if (brK > 0.5 && brK < 1.5) { float d = texture2D(tBrDet, vec2(vBrUv.x / (uBrTile.x * 4.0), vBrUv.y / uBrTile.x)).r; brCol *= mix(1.0, 2.0 * d, 0.38 * uBrArt) * brMacro * brWeath; }',
+    '  else if (brK > 1.5 && brK < 2.5) { float d = texture2D(tBrDet, vBrUv / uBrTile.y).g; brCol *= clamp(mix(1.0, 1.0 + 2.6 * (2.0 * d - 1.0), uBrArt), 0.35, 1.5) * brMacro * brWeath; }',   // the rock face's relief raised 2.6 times (the texture spreads +-12 %)
+    '  else if (brK > 2.5 && brK < 3.5) { float d = texture2D(tBrDet, vBrUv / uBrTile.z).b; brCol *= mix(1.0, 2.0 * d, 0.85 * uBrArt) * brMacro * mix(1.0, brWeath, 0.6); }',
+    '  else if (brK > 3.5 && brK < 4.5) { brCol = mix(brCol, texture2D(tBrElev, vBrUv).rgb * 0.55, uBrArt) * mix(1.0, brWeath, 0.7); }',
+    '  else if (brK > 6.5 && brK < 7.5) { float d = texture2D(tBrDet, vBrUv / (uBrTile.z * 2.0)).b; brCol *= mix(1.0, 0.75 + 0.5 * d, uBrArt) * brMacro; }',
+    '  else if (brK > 7.5 && brK < 8.5) { float d = texture2D(tBrDet, vBrUv / uBrTile.z).b; brCol *= mix(1.0, 0.7 + 0.6 * d, uBrArt) * brMacro * brWeath; }',
+    '  else if (brK > 8.5 && brK < 9.5) {',
+    '    float d = texture2D(tBrDet, vBrUv / (uBrTile.z * 2.0)).b;',
+    '    brCol *= mix(1.0, 0.75 + 0.5 * d, uBrArt) * brMacro;',
+    '    float lx = vBrUv.y + ' + BR_LANE_HW.toFixed(2) + ', lk = floor(lx / ' + BR_LANE.toFixed(2) + ' + 0.5), ld = abs(lx - lk * ' + BR_LANE.toFixed(2) + ');',
+    '    float lhw = max(0.06, 0.45 * brFw.y);',
+    '    float lline = (1.0 - smoothstep(lhw - 0.5 * brFw.y, lhw + 0.5 * brFw.y, ld)) * step(-0.5, lk) * step(lk, 7.5);',
+    '    float lzip = step(abs(lk - ' + ((BR_ZIP + BR_LANE_HW) / BR_LANE).toFixed(3) + '), 0.25);',
+    '    float lsolid = step(lk, 0.5) + step(6.5, lk);',
+    '    float ldash = mix(step(fract(vBrUv.x / 12.0), 0.25), 0.25, smoothstep(1.5, 4.5, brFw.x));',
+    '    float lpaint = lline * mix(ldash, 1.0, lsolid) * (1.0 - lzip) * clamp(0.12 / (2.0 * lhw), 0.5, 1.0) * (1.0 - smoothstep(1.2, 3.0, brFw.y));',
+    '    brCol = mix(brCol, vec3(0.58, 0.58, 0.55), 0.9 * lpaint);',
+    '  }',
     '#ifdef BR_LAT_ON',
     '  if (brK > 4.5 && brK < 6.5) {',
     '    vec2 lu = vec2(vBrUv.x, clamp(vBrUv.y, 0.02, 0.98) * 0.47 + (brK > 5.5 ? 0.515 : 0.015));',
     '    vec4 lt = texture2D(tBrLat, lu);',
-    '    vec2 fw = fwidth(vBrUv) * ' + BR_LAT.toFixed(1) + ';',
+    '    vec2 fw = brFw * ' + BR_LAT.toFixed(1) + ';',
     '    float solid = smoothstep(12.0, 32.0, max(fw.x, fw.y));',
     '    if (mix(lt.a, 1.0, solid) < 0.5) discard;',
     '    float ds = texture2D(tBrDet, vBrW.xz / uBrTile.x + vBrW.y * 0.31).r;',
-    '    brCol *= mix(lt.a > 0.01 ? lt.r / lt.a * 1.9 : 1.0, 0.82, solid) * mix(1.0, 2.0 * ds, 0.5 * uBrArt);',
+    '    brCol *= mix(lt.a > 0.01 ? lt.r / lt.a * 1.9 : 1.0, 0.82, solid) * mix(1.0, 2.0 * ds, 0.3 * uBrArt) * brWeath;',
     '  }',
     '#endif',
     '  diffuseColor.rgb *= brCol;',
     '}'].join('\n');
   // roughness and metalness by kind: painted steel a satin, stone and concrete matte, the asphalt duller still
   const BR_ROUGH = ['{ float brK2 = floor(vBrC.a * 255.0 + 0.5);',
-    '  roughnessFactor = brK2 < 0.5 ? 0.6 : brK2 < 1.5 ? 0.52 : brK2 < 3.5 ? 0.9 : brK2 < 4.5 ? 0.86 : brK2 < 6.5 ? 0.55 : brK2 < 7.5 ? 0.95 : 0.88; }'].join('\n');
+    '  roughnessFactor = brK2 < 0.5 ? 0.6 : brK2 < 1.5 ? 0.52 : brK2 < 3.5 ? 0.9 : brK2 < 4.5 ? 0.86 : brK2 < 6.5 ? 0.55 : brK2 < 7.5 ? 1.0 : brK2 < 8.5 ? 0.88 : 1.0; }'].join('\n');
   const BR_METAL = '{ float brK3 = floor(vBrC.a * 255.0 + 0.5); metalnessFactor = (brK3 < 1.5 || (brK3 > 4.5 && brK3 < 6.5)) ? 0.18 : 0.0; }';
   function brMats() {
     if (BR.mats) return BR.mats;
@@ -5867,6 +5908,7 @@
     if (BR_ART_ON && BRIDGE_ART.detailTile) U.uBrTile.value.fromArray(BRIDGE_ART.detailTile);
     const mk = (lat) => {
       const m = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.6, metalness: 0.1, side: lat ? THREE.DoubleSide : THREE.FrontSide });
+      m.extensions = { derivatives: true };   // the lanes' and the lattice's fwidth (WebGL 1; a no-op on 2)
       m.onBeforeCompile = (sh) => {
         Object.assign(sh.uniforms, U);
         if (lat) sh.defines = Object.assign(sh.defines || {}, { BR_LAT_ON: '' });
@@ -5876,6 +5918,7 @@
           .replace('#include <color_fragment>', '#include <color_fragment>\n' + BR_COLOR)
           .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n' + BR_ROUGH)
           .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n' + BR_METAL);
+        lampLightPatch(sh, 'vBrW', 'ground');   // the deck lamps' pools (BR.lampSrc in the lamp map) on its upward faces, the city's rule
       };
       m.customProgramCacheKey = () => (lat ? 'bridges-lat' : 'bridges');
       return m;
@@ -5916,7 +5959,9 @@
   // a bridge's levels into the city: the whole far level (one draw, beyond BR_NEAR_R of the bridge's box) and, nearer, a
   // chunk every CHUNK metres along it, each its near level (solid and lattice) within BR_NEAR_R of the chunk's box and
   // its far level beyond it, so the passes that draw it (the shadows, the river's mirror, the pins' depth images) cull
-  // the chunks out of their view and only the chunks near the eye pay for their detail
+  // the chunks out of their view and only the chunks near the eye pay for their detail. The far level is one mesh, its
+  // chunks laid one after another in its index and drawn as groups (a run of chunks a draw): the review measured the far
+  // level held twice, whole and in chunks, 1.9 MB of the bridges' 10.4
   const BR_CHUNK = 320;
   function brAdd(name, nearB, latB, farB, box, extra, line) {
     const M = brMats(), rec = { name, chunks: [], far: null, box, mode: 'far', lod: 'far', dist: null, tris: { near: 0, lat: 0, far: 0 }, extra: extra || {} };
@@ -5933,19 +5978,28 @@
     const tri = (b) => (b ? b.I.length / 3 : 0);
     rec.tris = { near: tri(nearB), lat: tri(latB), far: tri(farB) };
     const o = line.o, d = line.d, n = Math.max(1, Math.ceil((line.s1 - line.s0) / BR_CHUNK)), len = (line.s1 - line.s0) / n;
-    const sn = brSplit(nearB, o, d, line.s0, len, n), sl = brSplit(latB, o, d, line.s0, len, n), sf = n > 1 ? brSplit(farB, o, d, line.s0, len, n) : [null];
-    rec.far = mesh(farB.geom(), M.solid, true);
+    const sn = brSplit(nearB, o, d, line.s0, len, n), sl = brSplit(latB, o, d, line.s0, len, n), sf = brSplit(farB, o, d, line.s0, len, n);
+    // the far level in chunk order, each chunk's run of the index and its box
+    const fb = brBuf(), runs = [], fbox = [];
+    for (const q of sf) {
+      const v0 = fb.n, i0 = fb.I.length, bb = new THREE.Box3();
+      for (let i = 0; i < q.n; i++) bb.expandByPoint(new THREE.Vector3(q.P[i * 3], q.P[i * 3 + 1], q.P[i * 3 + 2]));
+      for (const v of q.P) fb.P.push(v); for (const v of q.N) fb.N.push(v); for (const v of q.T) fb.T.push(v); for (const v of q.C) fb.C.push(v);
+      for (const ix of q.I) fb.I.push(ix + v0);
+      fb.n += q.n; runs.push([i0, fb.I.length - i0]); fbox.push(bb);
+    }
+    rec.far = mesh(fb.geom(), [M.solid], true);
+    if (rec.far) { rec.far.geometry.addGroup(0, Infinity, 0); rec.farKey = 'all'; }
     for (let k = 0; k < n; k++) {
-      const c = { near: [], far: null, box: null, lod: 'far' };
-      const gn = sn[k].geom(), gl = sl[k].geom(), gf = n > 1 ? sf[k].geom() : null;
-      const bb = new THREE.Box3();
-      for (const g of [gn, gl, gf]) if (g) bb.union(g.boundingBox);
+      const c = { near: [], run: runs[k], box: null, lod: 'far' };
+      const gn = sn[k].geom(), gl = sl[k].geom();
+      const bb = fbox[k].clone();
+      for (const g of [gn, gl]) if (g) bb.union(g.boundingBox);
       if (bb.isEmpty()) continue;
       c.box = [bb.min.x, bb.max.x, bb.min.y, bb.max.y, bb.min.z, bb.max.z];
       const m0 = mesh(gn, M.solid, true), m1 = mesh(gl, M.lat, false);
       if (m0) c.near.push(m0);
       if (m1) c.near.push(m1);
-      c.far = n > 1 ? mesh(gf, M.solid, true) : null;
       rec.chunks.push(c);
     }
     nearB.P = latB.P = farB.P = null;
@@ -5967,22 +6021,40 @@
       else if (mode === 'near' && d > BR_NEAR_R + BR_HYST) mode = 'far';
       else if (mode !== 'near' && d < BR_NEAR_R) mode = 'near';
       r.mode = mode;
-      if (r.far) r.far.visible = mode === 'far' && !BR.off;
       let nNear = 0;
+      const farRuns = [];   // the far level's runs to draw: every chunk's in far mode, the chunks past BR_NEAR_R of the eye in near
       for (const c of r.chunks) {
         let lod = c.lod;
         if (mode === 'far') lod = 'off';
-        else if (BR.force === 'near' || !c.far) lod = 'near';
+        else if (BR.force === 'near' || r.chunks.length < 2) lod = 'near';
         else { const dc = brBoxDist(c.box, p); lod = lod === 'near' ? (dc > BR_NEAR_R + BR_HYST ? 'far' : 'near') : (dc < BR_NEAR_R ? 'near' : 'far'); }
         c.lod = lod;
         for (const m of c.near) m.visible = lod === 'near' && !BR.off;
-        if (c.far) c.far.visible = lod === 'far' && !BR.off;
+        if (lod !== 'near' && c.run[1]) farRuns.push(c.run);
         if (lod === 'near') nNear++;
+      }
+      if (r.far) {
+        // the groups: contiguous runs merged, rebuilt only when the set changes
+        const key = mode === 'far' ? 'all' : farRuns.map((q) => q[0]).join(',');
+        if (key !== r.farKey) {
+          const g = r.far.geometry;
+          g.clearGroups();
+          if (mode === 'far') g.addGroup(0, Infinity, 0);
+          else for (let i = 0; i < farRuns.length;) { let j = i; while (j + 1 < farRuns.length && farRuns[j + 1][0] === farRuns[j][0] + farRuns[j][1]) j++; g.addGroup(farRuns[i][0], farRuns[j][0] + farRuns[j][1] - farRuns[i][0], 0); i = j + 1; }
+          r.farKey = key;
+        }
+        r.far.visible = !BR.off && (mode === 'far' || farRuns.length > 0);
       }
       r.lod = mode === 'far' ? 'far' : 'near:' + nNear + '/' + r.chunks.length;
     }
     if (dmin < BR_ART_R) brLoadArt();
     if (BR.beacons) { const nt = lampUniform.value; BR.beacons.visible = nt > 0.01 && !BR.off; BR.beacons.material.opacity = nt; }
+  }
+  // the ground under the Ben Franklin's approaches and anchorages (their REBUILD_OCC rings)
+  function bridgesOccAt(x, z) {
+    if (!BR_ON) return false;
+    for (const o of REBUILD_OCC) if (o.id === 'bridges' && x >= o.bb[0] && x <= o.bb[1] && z >= o.bb[2] && z <= o.bb[3] && pointInPoly(x, z, o.ring)) return true;
+    return false;
   }
   // a tap's test (bldgPick): a point on a remodelled bridge's ground, not a building
   function brOwns(x, z) {
@@ -5997,9 +6069,15 @@
   function bridgesProbe(what) {
     if (what === 'near' || what === 'far' || what === 'auto') BR.force = what === 'auto' ? null : what;
     if (what === 'off' || what === 'on') BR.off = what === 'off';
-    return { on: BR_ON, built: BR.built, ms: BR.ms, art: BR.art, artOn: BR.artOn.value, texMB: +((BR.bytes + BR.latBytes) / 1048576).toFixed(2), err: BR.err,
+    // the geometry's bytes as uploaded (each buffer once, the packed normals' four bytes; a phone frees its copies after the
+    // upload, so this reads on a computer): the near level's chunks and the far level
+    const gB = (m) => { if (!m) return 0; const g = m.geometry, seen = new Set(); let b = 0; for (const k in g.attributes) { const a = g.attributes[k], arr = a.isInterleavedBufferAttribute ? a.data.array : a.array; if (!arr || seen.has(arr)) continue; seen.add(arr); b += arr.byteLength; } return b + (g.index && g.index.array ? g.index.array.byteLength : 0); };
+    const MB = (v) => +(v / 1048576).toFixed(2);
+    return { on: BR_ON, built: BR.built, ms: BR.ms, art: BR.art, artOn: BR.artOn.value, texMB: +((BR.bytes + BR.latBytes) / 1048576).toFixed(2), err: BR.err, lampSrc: BR.lampSrc.length / 4,
+      geoMB: MB(BR.list.reduce((t, r) => t + gB(r.far) + r.chunks.reduce((u, c) => u + c.near.reduce((v, m) => v + gB(m), 0), 0), 0)),
       nearR: BR_NEAR_R, list: BR.list.map((r) => ({ name: r.name, lod: r.lod, dist: r.dist == null ? null : Math.round(r.dist), tris: { ...r.tris },
-        chunks: r.chunks.length, drawn: r.chunks.reduce((n, c) => n + c.near.filter((m) => m.visible).length + (c.far && c.far.visible ? 1 : 0), 0) + (r.far && r.far.visible ? 1 : 0), box: r.box.map(Math.round), ...r.extra })) };
+        geoMB: { near: MB(r.chunks.reduce((u, c) => u + c.near.reduce((v, m) => v + gB(m), 0), 0)), far: MB(gB(r.far)) },
+        chunks: r.chunks.length, drawn: r.chunks.reduce((n, c) => n + c.near.filter((m) => m.visible).length, 0) + (r.far && r.far.visible ? r.far.geometry.groups.length : 0), box: r.box.map(Math.round), ...r.extra })) };
   }
   // a box in a bridge's frame: a along it [a0, a1], n across [n0, n1], y [y0, y1]; the top [n0t, n1t] and [a0t, a1t]
   // when it tapers (a leg's batter); P(a, n, y) the frame's point
@@ -6009,12 +6087,13 @@
     brHex(b, [P(a0, n0, y0), P(a1, n0, y0), P(a1, n1, y0), P(a0, n1, y0), P(ta[0], tn[0], y1), P(ta[1], tn[0], y1), P(ta[1], tn[1], y1), P(ta[0], tn[1], y1)], col, opt);
   }
   // a cross-section swept from station s0 to s1 (heights y0, y1 of the profile there): each edge [n0, dy0, n1, dy1, col,
-  // on, oy] a quad facing (on across, oy up); uv: u the station in metres, v along the edge
+  // on, oy, v0] a quad facing (on across, oy up); uv: u the station in metres, v along the edge from v0 (0 unless given:
+  // the lanes' asphalt starts at its own offset from the deck's centre line)
   function brSweep(b, P, s0, s1, y0, y1, edges, NA) {
     for (const e of edges) {
-      const [n0, e0, n1, e1, col, on, oy] = e, el = Math.hypot(n1 - n0, e1 - e0);
+      const [n0, e0, n1, e1, col, on, oy] = e, el = Math.hypot(n1 - n0, e1 - e0), v0 = e[7] || 0;
       const out = [NA[0] * on, oy, NA[2] * on];
-      b.quad(P(s0, n0, y0 + e0), P(s1, n0, y1 + e0), P(s1, n1, y1 + e1), P(s0, n1, y0 + e1), [s0, 0], [s1, 0], [s1, el], [s0, el], col, out);
+      b.quad(P(s0, n0, y0 + e0), P(s1, n0, y1 + e0), P(s1, n1, y1 + e1), P(s0, n1, y0 + e1), [s0, v0], [s1, v0], [s1, v0 + el], [s0, v0 + el], col, out);
     }
   }
   // the asphalt's tops for the street labels and the terrain's clearance (rememberStreetGeometry, as Round 66's box was)
@@ -6044,8 +6123,75 @@
   // four pylons (the photographs' pylon: cornice, four grilled windows, corbels, a bronze door), the cables entering
   // granite hoods at the river ends. Everything keeps Round 66's frame: BFB_A to BFB_B, bfbDeckY, the cable planes at
   // 15.5 m, PATCO's tracks at 17.75 under the walkways (deckY + 5.8), the towers at 0.23 and 0.78 of the span
-  const BFB_COL = { steel: '#1b3a60', steelLo: '#0c1c33', cable: '#21436a', asphalt: '#1c1b1a', bed: '#1e1f20', curb: '#3a3833', walk: '#3d3a35',
-    granite: '#3a3731', ashlar: '#3f3b35' };
+  // Ben Franklin blue as the photographs show it in daylight (the Race Street Pier's leg sampled at (141, 155, 167), a
+  // saturation of 0.13; the 2019 underside's 0.10 to 0.24 under a grey sky): Round 195's first cut rendered it twice as
+  // saturated, so its chroma is about halved round the same luminance
+  const BFB_COL = { steel: '#29384a', steelLo: '#131b26', cable: '#304153', asphalt: '#0f1011', bed: '#1e1f20', curb: '#3a3833', walk: '#3d3a35',
+    granite: '#23211d', ashlar: '#2b2925', zip: '#2a2926' };   // the granite weathered grey (the 2012 photograph), a third darker than the first cut's
+  // ---- the Ben Franklin's approaches (the review: the roadway dead-ended on the relocated anchorages and the cars rose
+  // from grade to the deck in plain view on the open granite). OSM's carriageways (ways 45333099 westbound and 62154291
+  // eastbound, bridge=yes, layer 3) run on west from the Philadelphia anchorage over I-95 and 2nd, 3rd and 4th Streets to
+  // a -553, where I-676 carries them on at grade, and east from Camden's to L + 467. The roadway's centre line across the
+  // frame (n, + to the south): Round 66's on the span and the anchorages, eased with PATCO's own eases (patcoTracks) to
+  // the middle of the room between PATCO's two viaducts (west of a -150.5 they stand at -10.6 and 22.6, east of L + 180.5
+  // at about -13.5 and 20.5), so the 27 m roadway clears both viaducts by 0.9 m or more
+  const BFB_L = Math.hypot(BFB_B[0] - BFB_A[0], BFB_B[1] - BFB_A[1]);
+  const BFB_APP = { w0: -553, w1: -30.5, e0: BFB_L + 25, e1: BFB_L + 470, nW: 6.0, nE: 3.25 };
+  const brSm = (e0, e1, v) => { const q = clamp((v - e0) / (e1 - e0), 0, 1); return q * q * (3 - 2 * q); };
+  function bfbCentreN(a) {
+    if (a < -30.5) return BFB_APP.nW * (1 - brSm(-150.5, -30.5, a));
+    if (a > BFB_L + 30.5) return BFB_APP.nE * brSm(BFB_L + 30.5, BFB_L + 180.5, a);
+    return 0;
+  }
+  const bfbFrame = (x, z) => { const ux = (BFB_B[0] - BFB_A[0]) / BFB_L, uz = (BFB_B[1] - BFB_A[1]) / BFB_L, dx = x - BFB_A[0], dz = z - BFB_A[1]; return [dx * ux + dz * uz, dx * -uz + dz * ux, ux, uz]; };
+  // the streets that cross under the approaches (OSM, the typical traffic's ways): [a0, n0, a1, n1, half width], no bent
+  // stands on one. West: 4th, 3rd and 2nd Streets, I-95's ramps and its two carriageways, a service road; east: Camden's
+  // three cross streets
+  const BFB_CROSS = [[-541, -19, -538, 25, 5], [-403.8, 24.8, -408.7, -56.6, 5], [-243, -72, -236, 25, 5], [-157, 31, -129, -7, 4],
+    [-136, -4, -116, 70, 9], [-97, -14, -92, 24, 6], [-76, 94, -90, -34, 8], [-67, 56, -78, -47, 9], [-118, -4, -127, 18, 3],
+    [1167.1, 35.6, 1169.4, -80.5, 5], [1315.1, 36.5, 1317.9, -77.6, 5], [1435.6, 39.3, 1437.9, -17.2, 5]];
+  const bfbCrossAt = (a, n, r) => BFB_CROSS.some(([a0, n0, a1, n1, hw]) => {
+    const da = a1 - a0, dn = n1 - n0, l2 = da * da + dn * dn || 1e-9, t = clamp(((a - a0) * da + (n - n0) * dn) / l2, 0, 1);
+    return Math.hypot(a0 + da * t - a, n0 + dn * t - n) < hw + r;
+  });
+  // a packed road lying along an approach or under an anchorage (Camden's at-grade twin of the viaduct): the approaches
+  // own it (the road loops, as wwbUnder does for the Whitman's Jersey viaduct); dx, dz the segment's unit direction
+  function bfbUnder(x, z, dx, dz) {
+    if (!BR_ON) return false;
+    const [a, n, ux, uz] = bfbFrame(x, z);
+    if (!((a > BFB_APP.w0 && a < -7) || (a > BFB_L - 22 && a < BFB_APP.e1))) return false;
+    return Math.abs(n - bfbCentreN(a)) < 14 && Math.abs(dx * ux + dz * uz) > 0.8;
+  }
+  // the traffic's two carriageways onto the painted lanes ('Setting the traffic flowing', after densify): OSM's lines run
+  // 1 m north and 10.5 m south of Round 66's axis, so the eastbound's outer lane rode the kerb. On the deck and the
+  // approaches the westbound takes the three lanes north of the zipper (its middle 2 lanes north of the centre line), the
+  // eastbound the three south of it (its middle a lane south), eased back to OSM's lines over the approaches' last 60 m,
+  // where the ways run on at grade; a street crossing under keeps its line
+  function brLaneFit(pts) {
+    if (!BR_ON || pts.length < 2) return pts;
+    let out = null;
+    for (let i = 0; i < pts.length; i++) {
+      const p = pts[i], [a, n, ux, uz] = bfbFrame(p[0], p[1]);
+      if (a < BFB_APP.w0 || a > BFB_APP.e1 || Math.abs(n - 5) > 11) continue;
+      const q = pts[Math.min(i + 1, pts.length - 1)], r = pts[Math.max(i - 1, 0)], tx = q[0] - r[0], tz = q[1] - r[1];
+      if (Math.abs((tx * ux + tz * uz) / (Math.hypot(tx, tz) || 1)) < 0.85) continue;
+      const w = brSm(BFB_APP.w0, BFB_APP.w0 + 60, a) * (1 - brSm(BFB_APP.e1 - 60, BFB_APP.e1, a));
+      const nn = n + (bfbCentreN(a) + (n < 5 ? -2 * BR_LANE : BR_LANE) - n) * w;
+      if (!out) out = pts.map((v) => v.slice());
+      out[i] = [BFB_A[0] + ux * a - uz * nn, BFB_A[1] + uz * a + ux * nn];
+    }
+    return out || pts;
+  }
+  // a profile through control points [[a, y], ...] (a rising), sampled every 3 m and rounded into vertical curves by
+  // three passes of a 21 m mean, its two ends held (the joints with the floor and with the ground)
+  function brProfile(ctrl, a0, a1) {
+    const piece = (a) => { if (a <= ctrl[0][0]) return ctrl[0][1]; for (let i = 1; i < ctrl.length; i++) if (a <= ctrl[i][0]) return ctrl[i - 1][1] + (ctrl[i][1] - ctrl[i - 1][1]) * (a - ctrl[i - 1][0]) / (ctrl[i][0] - ctrl[i - 1][0]); return ctrl[ctrl.length - 1][1]; };
+    const n = Math.max(8, Math.ceil((a1 - a0) / 3)), as = new Float64Array(n + 1), ys = new Float64Array(n + 1);
+    for (let i = 0; i <= n; i++) { as[i] = a0 + (a1 - a0) * i / n; ys[i] = piece(as[i]); }
+    for (let pass = 0; pass < 3; pass++) { const y0 = ys.slice(); for (let i = 3; i <= n - 3; i++) { let m = 0; for (let j = -3; j <= 3; j++) m += y0[i + j]; ys[i] = m / 7; } }
+    const at = (a) => { const f = clamp((a - a0) / (a1 - a0), 0, 1) * n, i = Math.min(n - 1, Math.floor(f)); return ys[i] + (ys[i + 1] - ys[i]) * (f - i); };
+    return { a0, a1, at };
+  }
   function brBuildBfb(ctx) {
     const { themeParts, sheetOf } = ctx;
     const A = BFB_A, B = BFB_B, dx = B[0] - A[0], dz = B[1] - A[1], L = Math.hypot(dx, dz), ux = dx / L, uz = dz / L, nx = -uz, nz = ux;
@@ -6057,6 +6203,7 @@
     C.asphalt = brC(BFB_COL.asphalt, BRK.asphalt); C.bed = brC(BFB_COL.bed, BRK.concrete); C.curb = brC(BFB_COL.curb, BRK.concrete); C.walk = brC(BFB_COL.walk, BRK.concrete);
     C.granite = brC(BFB_COL.granite, BRK.granite); C.ashlar = brC(BFB_COL.ashlar, BRK.ashlar); C.elev = brC(BFB_COL.ashlar, BRK.elev);
     C.lace = brC(BFB_COL.steel, BRK.lacing); C.girder = brC(BFB_COL.steel, BRK.girder);
+    C.lanes = brC(BFB_COL.asphalt, BRK.lanes); C.zip = brC(BFB_COL.zip, BRK.concrete);
     const CAB = 15.5, aT = [0.23 * L, 0.78 * L], topY = W + 112.5, pierTop = W + 10, ySad = W + 115;
     const aM = (aT[0] + aT[1]) / 2, half = (aT[1] - aT[0]) / 2;
     const yMidC = dY(aM) + 9.8 + 2.4;            // mid-span: the cable just over the trusses' top chord (Round 66)
@@ -6073,14 +6220,19 @@
     const bcY = (a) => dY(a) + 1.6, tcY = (a) => Math.min(dY(a) + 9.8, cabY(a) - 1.3);
     const near = brBuf(), lat = brBuf(), far = brBuf();
     const asph = [];
-    // ---- the floor, over the anchorages too (Round 141: PATCO runs on it there)
+    // ---- the floor, over the anchorages too (Round 141: PATCO runs on it there): the seven lanes (BRK.lanes, v from the
+    // centre line) with the zipper barrier between the third and the fourth (BR_ZIP), and over the anchorages' granite
+    // its sides in granite (the review: a blue strip of floor lay on top of the anchorage)
+    const zipE = (z0) => [[z0 - 0.3, 1.25, z0 - 0.12, 2.07, C.zip, -1, 0.22], [z0 + 0.12, 2.07, z0 + 0.3, 1.25, C.zip, 1, 0.22], [z0 - 0.12, 2.07, z0 + 0.12, 2.07, C.zip, 0, 1]];
     const floor = (b, step, isNear) => {
       const a0 = -30.5, a1 = ANCH[1][1], n = Math.ceil((a1 - a0) / step);   // from where PATCO's bed levels out (Round 141) to Camden's landward face
       for (let i = 0; i < n; i++) {
         const s0 = a0 + (a1 - a0) * i / n, s1 = a0 + (a1 - a0) * (i + 1) / n, y0 = dY(s0), y1 = dY(s1);
-        const E = [[-19.5, -1, 19.5, -1, C.steelLo, 0, -1], [19.5, -1, 19.5, 1, C.steel, 1, 0], [-19.5, 1, -19.5, -1, C.steel, -1, 0],
-          [14.5, 1, 19.5, 1, C.bed, 0, 1], [-19.5, 1, -14.5, 1, C.bed, 0, 1], [-13.5, 1.25, 13.5, 1.25, C.asphalt, 0, 1]];
+        const onA = s1 <= ANCH[0][1] + 0.01 || s0 >= ANCH[1][0] - 0.01, side = onA ? C.ashlar : C.steel;
+        const E = [[-19.5, -1, 19.5, -1, onA ? C.ashlar : C.steelLo, 0, -1], [19.5, -1, 19.5, 1, side, 1, 0], [-19.5, 1, -19.5, -1, side, -1, 0],
+          [14.5, 1, 19.5, 1, C.bed, 0, 1], [-19.5, 1, -14.5, 1, C.bed, 0, 1], [-13.5, 1.25, 13.5, 1.25, C.lanes, 0, 1, -13.5]];
         for (const s of [-1, 1]) E.push([s * 13.5, 1.5, s * 14.5, 1.5, C.curb, 0, 1], [s * 13.5, 1.25, s * 13.5, 1.5, C.curb, -s, 0], [s * 14.5, 1.0, s * 14.5, 1.5, C.curb, s, 0]);
+        if (isNear) E.push(...zipE(BR_ZIP));
         brSweep(b, P, s0, s1, y0, y1, E, NA);
         if (isNear) asph.push([P(s0, -13.5, y0 + 1.25), P(s1, -13.5, y1 + 1.25), P(s1, 13.5, y1 + 1.25)], [P(s0, -13.5, y0 + 1.25), P(s1, 13.5, y1 + 1.25), P(s0, 13.5, y0 + 1.25)]);
       }
@@ -6099,6 +6251,70 @@
       const y0 = dY(a) - 2.5, y1 = dY(a + 12.3) - 2.5;
       brBeam(near, P(a, -15.5, y0), P(a + 12.3, 15.5, y1), UP, 0.35, 0.35, C.steelLo, { caps: false });
       brBeam(near, P(a, 15.5, y0), P(a + 12.3, -15.5, y1), UP, 0.35, 0.35, C.steelLo, { caps: false });
+    }
+    // ---- the approaches (BFB_APP): the roadway on west off the Philadelphia anchorage and east off Camden's to where
+    // OSM's carriageways reach grade, the seven lanes and the zipper as on the span. Over the Philadelphia anchorage's top
+    // the roadway climbs in granite walls (with PATCO, whose bed climbs from a -30.5 to hold 9.7 over I-95, patcoBedY),
+    // then a steel deck on granite bents where it stands clear of the ground, its last metres walled down to it. The
+    // heights: over I-95 and 2nd and 3rd Streets the asphalt holds 10.0 (a deck 1.5 m deep over 4.6 m and more of
+    // clearance), descending at about 4% to 4th Street, under which a 0.9 m deck still leaves a car 2.2 m, and to the
+    // ground at a -553; at Camden it falls at 2% to clear the cross street at L + 331 by 4.7 m and meets the ground short
+    // of the one at L + 452, where they cross at grade
+    const yT0 = yA + 1.25;   // the asphalt's top over the anchorages (the floor's)
+    const gAtA = (a) => { const p = P(a, bfbCentreN(a), 0); return groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground'); };
+    const APP = [
+      brProfile([[BFB_APP.w0, gAtA(BFB_APP.w0) + 0.15], [-395, 10.0], [-95, 10.0], [-30.5, yT0]], BFB_APP.w0, -30.5),
+      brProfile([[L + 25, yT0], [L + 331, 0.6], [L + 440, gAtA(L + 440) + 0.15], [BFB_APP.e1, gAtA(BFB_APP.e1) + 0.15]], L + 25, BFB_APP.e1),
+    ];
+    const Pc = (a, n, y) => P(a, n + bfbCentreN(a), y);   // the approaches' own frame: n from the centre line
+    const appLamps = [];
+    for (const pr of APP) {
+      const depth = (a) => clamp(pr.at(a) - gAtA(a) - 2.2, 0.7, 1.5);   // the deck's depth: thinner where it runs low over a street
+      const mode = (a) => (a > ANCH[0][0] - 0.5 && a < ANCH[0][1] + 0.5) ? 'anch' : (pr.at(a) - depth(a) - gAtA(a) > 0.6 ? 'deck' : 'fill');
+      const wallTo = (a, md) => md === 'anch' ? yA - 0.6 : gAtA(a) - 1.0;
+      for (const [b, step, isNear] of [[near, 6, true], [far, 24, false]]) {
+        const n = Math.ceil((pr.a1 - pr.a0) / step);
+        for (let i = 0; i < n; i++) {
+          const s0 = pr.a0 + (pr.a1 - pr.a0) * i / n, s1 = pr.a0 + (pr.a1 - pr.a0) * (i + 1) / n, y0 = pr.at(s0), y1 = pr.at(s1), am = (s0 + s1) / 2, md = mode(am);
+          const E = [[-13.0, 0, 13.0, 0, C.lanes, 0, 1, -13.0]];
+          for (const s of [-1, 1]) E.push([s * 13.0, 0, s * 13.0, 1.05, C.ashlar, -s, 0], [s * 13.0, 1.05, s * 13.5, 1.05, C.ashlar, 0, 1]);
+          if (isNear && s0 > BFB_APP.w0 + 70 && s1 < BFB_APP.e1 - 70) E.push(...zipE(BR_ZIP).map((e) => [e[0], e[1] - 1.25, e[2], e[3] - 1.25, e[4], e[5], e[6]]));   // the zipper ends where the lanes ease back to OSM's
+          if (md === 'deck') {
+            const d0 = depth(s0), d1 = depth(s1);
+            for (const s of [-1, 1]) {
+              b.quad(Pc(s0, s * 13.5, y0 + 1.05), Pc(s1, s * 13.5, y1 + 1.05), Pc(s1, s * 13.5, y1 - 0.25), Pc(s0, s * 13.5, y0 - 0.25), [s0, 0], [s1, 0], [s1, 1.3], [s0, 1.3], C.ashlar, v3mul(NA, s));
+              b.quad(Pc(s0, s * 13.5, y0 - 0.25), Pc(s1, s * 13.5, y1 - 0.25), Pc(s1, s * 13.5, y1 - d1), Pc(s0, s * 13.5, y0 - d0), [s0, 0], [s1, 0], [s1, d1], [s0, d0], C.steel, v3mul(NA, s));
+            }
+            b.quad(Pc(s0, -13.5, y0 - d0), Pc(s1, -13.5, y1 - d1), Pc(s1, 13.5, y1 - d1), Pc(s0, 13.5, y0 - d0), [s0, -13.5], [s1, -13.5], [s1, 13.5], [s0, 13.5], C.steelLo, [0, -1, 0]);
+            if (isNear) for (const gn of [-9, -3, 3, 9]) for (const e of [-0.2, 0.2]) {   // the girders under it
+              const g0 = Math.max(0.5, d0 - 1.1), g1 = Math.max(0.5, d1 - 1.1);
+              b.quad(Pc(s0, gn + e, y0 - d0), Pc(s1, gn + e, y1 - d1), Pc(s1, gn + e, y1 - d1 - g1 + 0.4), Pc(s0, gn + e, y0 - d0 - g0 + 0.4), [s0, 0], [s1, 0], [s1, 1], [s0, 1], C.steelLo, v3mul(NA, e));
+            }
+          } else {
+            const w0 = wallTo(s0, md), w1 = wallTo(s1, md);
+            for (const s of [-1, 1]) b.quad(Pc(s0, s * 13.5, y0 + 1.05), Pc(s1, s * 13.5, y1 + 1.05), Pc(s1, s * 13.5, w1), Pc(s0, s * 13.5, w0), [s0, y0 + 1.05], [s1, y1 + 1.05], [s1, w1], [s0, w0], md === 'anch' ? C.ashlar : C.granite, v3mul(NA, s));
+          }
+          brSweep(b, Pc, s0, s1, y0, y1, E, NA);
+          if (isNear) asph.push([Pc(s0, -13, y0), Pc(s1, -13, y1), Pc(s1, 13, y1)], [Pc(s0, -13, y0), Pc(s1, 13, y1), Pc(s0, 13, y0)]);
+        }
+      }
+      // the bents: two granite columns and a cap, every 27 m or so where the deck stands clear, never on a crossing street
+      for (let a = pr.a0 + 14; a < pr.a1 - 6; a += 27) {
+        let ab = a;
+        for (const dd of [0, 4, -4, 8, -8]) { const q = a + dd, nc = bfbCentreN(q); if (!bfbCrossAt(q, nc - 7.5, 2.5) && !bfbCrossAt(q, nc + 7.5, 2.5)) { ab = q; break; } ab = null; }
+        if (ab === null || mode(ab) !== 'deck') continue;
+        const top = pr.at(ab) - depth(ab), g = Math.min(gAtA(ab), ...[-7.5, 7.5].map((cn) => { const p = Pc(ab, cn, 0); return groundMeshY(p[0], p[2]) ?? siteY(p[0], p[2], 'ground'); }));
+        if (top - 0.9 - g < 1.0) continue;
+        for (const b of [near, far]) for (const cn of [-7.5, 7.5]) brFBox(b, Pc, ab - 1.1, ab + 1.1, cn - 1.3, cn + 1.3, g - 1.5, top - 0.9, C.ashlar, { noBottom: true, noTop: true });
+        brFBox(near, Pc, ab - 0.9, ab + 0.9, -11.6, 11.6, top - 0.9, top, C.ashlar, { noTop: true });
+        brFBox(far, Pc, ab - 0.9, ab + 0.9, -11.6, 11.6, top - 0.9, top, C.ashlar, { noTop: true, noBottom: true });
+      }
+      // the lamp standards on the parapets every 36 m a side, the arms over the lanes
+      for (let a = pr.a0 + 18; a < pr.a1 - 4; a += 36) {
+        if (mode(a) === 'anch') continue;
+        const y = pr.at(a), ry = Math.atan2(-uz, ux);
+        for (const s of [-1, 1]) { const p = Pc(a, s * 13.25, y + 1.05); appLamps.push([p[0], p[1], p[2], ry + (s > 0 ? Math.PI / 2 : -Math.PI / 2)]); }
+      }
     }
     // ---- the stiffening trusses: panel points in three runs (the side spans and the main span, stopping at the towers'
     // legs and short of the anchorages), a panel about 12.3 m
@@ -6176,19 +6392,25 @@
           }
         }
       }
-      // the bracing above the roadway, in the tower's plane: a latticed girder under the saddles, three X panels with a strut
-      // through each crossing and between them; members 1.8 m thick along the bridge
-      const iN = 13.65, H0 = yd + 11.5, G0 = topY - 8.2, G1 = topY - 0.8;
+      // the bracing above the roadway, in the tower's plane: a deep plate girder under the saddles pierced by a row of eight
+      // X panels (the photographs: boxed X openings between solid flanges, about as tall as they are wide), three X panels
+      // with a strut through each crossing and between them; members 1.8 m thick along the bridge, the X's broad faces
+      // plate and their flanges laced (the 2019 underside)
+      const iN = 13.65, H0 = yd + 11.5, G0 = topY - 8.2, G1 = topY - 0.8, gB0 = G0 + 1.9, gB1 = G1 - 1.9;
       const zl = [H0, H0 + (G0 - H0) / 3, H0 + 2 * (G0 - H0) / 3, G0];
-      const memb = (b, n0, y0, n1, y1, h, isNear, kind) => brBeam(b, P(at, n0, y0), P(at, n1, y1), UP, 1.8, h, C.steel, isNear ? { lat: { b: lat, col: kind === 'girder' ? C.girder : C.lace, pitch: kind === 'girder' ? (2 * iN) / 4 : h } } : null);
+      const memb = (b, n0, y0, n1, y1, h, isNear, kind) => brBeam(b, P(at, n0, y0), P(at, n1, y1), UP, 1.8, h, C.steel, !isNear ? null : kind === 'girder' ? { lat: { b: lat, col: C.girder, pitch: (2 * iN) / 8 } }
+        : kind === 'strut' ? { lat: { b: lat, col: C.lace } } : { lat: { b: lat, col: C.lace, u: true } });   // the struts laced on their faces (the photographs)
       for (const [b, isNear] of [[near, true], [far, false]]) {
-        memb(b, -iN, (G0 + G1) / 2, iN, (G0 + G1) / 2, G1 - G0, isNear, 'girder');
+        if (isNear) {
+          memb(b, -iN, (gB0 + gB1) / 2, iN, (gB0 + gB1) / 2, gB1 - gB0, isNear, 'girder');
+          for (const [y0, y1] of [[G0, gB0], [gB1, G1]]) brBeam(b, P(at, -iN, (y0 + y1) / 2), P(at, iN, (y0 + y1) / 2), UP, 1.8, y1 - y0, C.steel);
+        } else memb(b, -iN, (G0 + G1) / 2, iN, (G0 + G1) / 2, G1 - G0, false);
         if (isNear) for (const yy of [G0 + 0.45, G1 - 0.45]) brBeam(b, P(at, -iN, yy), P(at, iN, yy), UP, 2.3, 0.9, C.steel, { caps: false });
         for (let k = 0; k < 3; k++) {
           const lo = zl[k], hi = zl[k + 1], mid = (lo + hi) / 2;
           memb(b, -iN, hi, iN, lo, 2.2, isNear); memb(b, iN, hi, -iN, lo, 2.2, isNear);
-          memb(b, -iN, mid, iN, mid, 1.3, isNear);
-          if (k) memb(b, -iN, lo, iN, lo, 1.6, isNear);
+          memb(b, -iN, mid, iN, mid, 1.3, isNear, 'strut');
+          if (k) memb(b, -iN, lo, iN, lo, 1.6, isNear, 'strut');
         }
       }
       // the gussets (near): the openings' corners where a diagonal leaves a leg, and the diamond at each crossing
@@ -6205,10 +6427,10 @@
       // below the floor: a latticed girder under the deck, one X, a latticed girder over the arched soffit
       const iL = 13.1, Ga = yd - 6.0, Gb = yd - 2.0, Ba = pierTop + 8.5, Bb = pierTop + 12.5, xt = Ga - 0.6, xb = Bb + 0.1;
       for (const [b, isNear] of [[near, true], [far, false]]) {
-        brBeam(b, P(at, -iL, (Ga + Gb) / 2), P(at, iL, (Ga + Gb) / 2), UP, 2.0, Gb - Ga, C.steel, isNear ? { lat: { b: lat, col: C.girder, pitch: (2 * iL) / 6 } } : null);
-        brBeam(b, P(at, -iL, (Ba + Bb) / 2), P(at, iL, (Ba + Bb) / 2), UP, 2.0, Bb - Ba, C.steel, isNear ? { lat: { b: lat, col: C.girder, pitch: (2 * iL) / 6 } } : null);
-        brBeam(b, P(at, -iL, xt), P(at, iL, xb), UP, 1.8, 2.4, C.steel, isNear ? { lat: { b: lat, col: C.lace, pitch: 2.4 } } : null);
-        brBeam(b, P(at, iL, xt), P(at, -iL, xb), UP, 1.8, 2.4, C.steel, isNear ? { lat: { b: lat, col: C.lace, pitch: 2.4 } } : null);
+        brBeam(b, P(at, -iL, (Ga + Gb) / 2), P(at, iL, (Ga + Gb) / 2), UP, 2.0, Gb - Ga, C.steel, isNear ? { lat: { b: lat, col: C.girder, pitch: (2 * iL) / 7 } } : null);
+        brBeam(b, P(at, -iL, (Ba + Bb) / 2), P(at, iL, (Ba + Bb) / 2), UP, 2.0, Bb - Ba, C.steel, isNear ? { lat: { b: lat, col: C.girder, pitch: (2 * iL) / 7 } } : null);
+        brBeam(b, P(at, -iL, xt), P(at, iL, xb), UP, 1.8, 2.4, C.steel, isNear ? { lat: { b: lat, col: C.lace, u: true } } : null);
+        brBeam(b, P(at, iL, xt), P(at, -iL, xb), UP, 1.8, 2.4, C.steel, isNear ? { lat: { b: lat, col: C.lace, u: true } } : null);
         if (isNear) for (const yy of [Ga + 0.4, Gb - 0.4, Ba + 0.4, Bb - 0.4]) brBeam(b, P(at, -iL, yy), P(at, iL, yy), UP, 2.2, 0.8, C.steel, { caps: false });
         // the arched soffit under the bottom girder: strips of plate from the arch up to the girder
         const S = 8, arc = (n) => pierTop + 4.0 + 3.2 * (1 - (n / iL) * (n / iL));
@@ -6228,10 +6450,16 @@
         sheetOf(g, ti, 0.45, true);
       }
     });
-    // ---- the anchorages: Cret's granite, the roadway over them between four pylons
+    // ---- the anchorages: Cret's granite (the 2012 photograph from the south): a massive battered wall of weathered,
+    // rock-faced granite under a thin band of grilled windows between pilasters and its cornice, the roadway passing over
+    // between four corner pylons that rise from the ground, rock-faced to the coping and dressed above it (the pylon's
+    // picture: the cornice, four grilled windows, corbels, and the bronze door only on the face toward the roadway; its
+    // other faces the windows and corbels over plain ashlar). Round 66's bfbDeckY holds the deck at the ground plus 12 m at
+    // the anchorages, against about 25 to 30 m on the real bridge, so the walls stand at about half their height
     const pyl = BR_ART_ON && BRIDGE_ART.rects ? BRIDGE_ART.rects.pylon : [0, 0, 1, 1], frz = BR_ART_ON && BRIDGE_ART.rects ? BRIDGE_ART.rects.frieze : [0, 0, 1, 1];
-    const bayW0 = BR_ART_ON && BRIDGE_ART.friezeM ? BRIDGE_ART.friezeM[0] / BRIDGE_ART.friezeM[1] : 0.625;
-    // a wall face from p to q (the frame's [a, n] at its two ends) laid with the band's bays between heights y0 and y1
+    const bayW0 = BR_ART_ON && BRIDGE_ART.friezeM ? BRIDGE_ART.friezeM[0] / BRIDGE_ART.friezeM[1] : 1.5;
+    const PYL_DOOR = 0.52;   // the pylon picture's door and its surround, the bottom 52% (bake_bridge_art.py's pylon)
+    // a wall face from p to q (the frame's [a, n] at its two ends) laid with the band's strip of bays between heights y0 and y1
     const frieze = (b, pa, pb, y0, y1, out) => {
       const len = Math.hypot(pb[0] - pa[0], pb[1] - pa[1]), nb = Math.max(1, Math.round(len / ((y1 - y0) * bayW0)));
       for (let i = 0; i < nb; i++) {
@@ -6240,22 +6468,29 @@
       }
     };
     for (const [q0, q1, rs] of [[ANCH[0][0], ANCH[0][1], 1], [ANCH[1][0], ANCH[1][1], -1]]) {
-      const ac = (q0 + q1) / 2, gp = P(ac, 0, 0), g0 = siteY(gp[0], gp[2], 'ground'), yF0 = yA - 7.2, yF1 = yA - 1.2, AW = 27.5;
+      const ac = (q0 + q1) / 2, gp = P(ac, 0, 0), g0 = siteY(gp[0], gp[2], 'ground'), yF1 = yA - 1.2, yF0 = yF1 - 3.4, AW = 27.5, BAT = 0.7;
       for (const b of [near, far]) {
-        brFBox(b, P, q0, q1, -AW, AW, g0 - 2, yF0, C.granite, { noTop: true });
-        // the band: its four faces in bays, the corner pylons standing on it
-        frieze(b, [q0, -AW], [q1, -AW], yF0, yF1, v3mul(NA, -1));
-        frieze(b, [q1, AW], [q0, AW], yF0, yF1, NA);
-        frieze(b, [q1, -AW], [q1, AW], yF0, yF1, UA);
-        frieze(b, [q0, AW], [q0, -AW], yF0, yF1, v3mul(UA, -1));
-        brFBox(b, P, q0 - 0.6, q1 + 0.6, -AW - 0.6, AW + 0.6, yF1, yA - 0.6, C.ashlar);
+        brFBox(b, P, q0, q1, -AW, AW, g0 - 2, yF0, C.granite, { noTop: true, ta: [q0 + BAT, q1 - BAT], tn: [-AW + BAT, AW - BAT] });
+        // the band: its four faces in bays over the batter's top
+        const a0 = q0 + BAT, a1 = q1 - BAT, w = AW - BAT;
+        frieze(b, [a0, -w], [a1, -w], yF0, yF1, v3mul(NA, -1));
+        frieze(b, [a1, w], [a0, w], yF0, yF1, NA);
+        frieze(b, [a1, -w], [a1, w], yF0, yF1, UA);
+        frieze(b, [a0, w], [a0, -w], yF0, yF1, v3mul(UA, -1));
+        brFBox(b, P, a0 - 0.5, a1 + 0.5, -w - 0.5, w + 0.5, yF1, yA - 0.6, C.ashlar);
         for (const sa of [-1, 1]) for (const sn of [-1, 1]) {
-          const pa0 = sa > 0 ? q1 - 8 : q0, pa1 = pa0 + 8, pn0 = sn > 0 ? AW - 8 : -AW, pn1 = pn0 + 8, yb = yA - 0.6, y0 = yA + 1, y1 = yA + 17;
-          brFBox(b, P, pa0, pa1, pn0, pn1, yb, y0, C.ashlar, { noBottom: true, noTop: true });
-          const cs = [[pa0, pn0], [pa1, pn0], [pa1, pn1], [pa0, pn1]];
+          const pa0 = sa > 0 ? q1 - 7.2 : q0 - 0.8, pa1 = pa0 + 8, pn0 = sn > 0 ? AW - 7.2 : -AW - 0.8, pn1 = pn0 + 8, yb = yA - 0.6, y0 = yA + 1, y1 = yA + 17;
+          brFBox(b, P, pa0, pa1, pn0, pn1, g0 - 2, yb, C.granite, { noBottom: true, noTop: true, ta: [pa0 + 0.25, pa1 - 0.25], tn: [pn0 + 0.25, pn1 - 0.25] });
+          brFBox(b, P, pa0 - 0.1, pa1 + 0.1, pn0 - 0.1, pn1 + 0.1, yb, yb + 0.5, C.ashlar, { noBottom: true, noTop: true });
+          brFBox(b, P, pa0, pa1, pn0, pn1, yb + 0.5, y0, C.ashlar, { noBottom: true, noTop: true });
+          const cs = [[pa0, pn0], [pa1, pn0], [pa1, pn1], [pa0, pn1]], ys = y0 + (y1 - y0) * PYL_DOOR, vs = pyl[1] + (pyl[3] - pyl[1]) * PYL_DOOR;
           for (let i = 0; i < 4; i++) {
-            const p0 = cs[i], p1 = cs[(i + 1) % 4], mid = [(p0[0] + p1[0]) / 2 - (pa0 + 4), (p0[1] + p1[1]) / 2 - (pn0 + 4)];
-            b.quad(P(p0[0], p0[1], y0), P(p1[0], p1[1], y0), P(p1[0], p1[1], y1), P(p0[0], p0[1], y1), [pyl[0], pyl[1]], [pyl[2], pyl[1]], [pyl[2], pyl[3]], [pyl[0], pyl[3]], C.elev, v3add(v3mul(UA, mid[0]), v3mul(NA, mid[1])));
+            const p0 = cs[i], p1 = cs[(i + 1) % 4], mid = [(p0[0] + p1[0]) / 2 - (pa0 + 4), (p0[1] + p1[1]) / 2 - (pn0 + 4)], out = v3add(v3mul(UA, mid[0]), v3mul(NA, mid[1]));
+            const inner = mid[1] * sn < -1;   // the face toward the roadway: the door
+            if (inner) { b.quad(P(p0[0], p0[1], y0), P(p1[0], p1[1], y0), P(p1[0], p1[1], y1), P(p0[0], p0[1], y1), [pyl[0], pyl[1]], [pyl[2], pyl[1]], [pyl[2], pyl[3]], [pyl[0], pyl[3]], C.elev, out); continue; }
+            b.quad(P(p0[0], p0[1], ys), P(p1[0], p1[1], ys), P(p1[0], p1[1], y1), P(p0[0], p0[1], y1), [pyl[0], vs], [pyl[2], vs], [pyl[2], pyl[3]], [pyl[0], pyl[3]], C.elev, out);
+            const l = Math.hypot(p1[0] - p0[0], p1[1] - p0[1]);
+            b.quad(P(p0[0], p0[1], y0), P(p1[0], p1[1], y0), P(p1[0], p1[1], ys), P(p0[0], p0[1], ys), [0, y0], [l, y0], [l, ys], [0, ys], C.ashlar, out);
           }
           brFBox(b, P, pa0 - 0.3, pa1 + 0.3, pn0 - 0.3, pn1 + 0.3, y1, y1 + 0.6, C.ashlar);
         }
@@ -6315,7 +6550,7 @@
       lampAt.forEach((p, i) => { mtx.makeRotationY(ry); mtx.setPosition(p[0], p[1], p[2]); bfbLampMesh.setMatrixAt(i, mtx); });
       bfbLampMesh.castShadow = true; bfbLampMesh.frustumCulled = false;
       groupCity.add(bfbLampMesh);
-      for (const p of lampAt) bfbLampPts.push(p[0], p[1] + 4.4, p[2]);
+      for (const p of lampAt) { bfbLampPts.push(p[0], p[1] + 4.4, p[2]); BR.lampSrc.push(p[0], p[2], 4.4, 0.8); }
       for (const at of aT) for (const s of [-1, 1]) { const q = P(at, s * CAB, topY + 4.9); bfbLampPts.push(q[0], q[1], q[2]); }   // the lamp over each saddle (the night photographs)
       const nodePos = [], nodeSlot = [], nN = Math.round((aE[1] - aE[0]) / 6);
       for (let i = 0; i <= nN; i++) {
@@ -6345,9 +6580,32 @@
     BRIDGE_DECKS.push({ pts: [[A[0], A[1]], [B[0], B[1]]], cum: [0, L], halfW: 20, minX: Math.min(A[0], B[0]), maxX: Math.max(A[0], B[0]), minZ: Math.min(A[1], B[1]), maxZ: Math.max(A[1], B[1]),
       yAt: (s) => bfbDeckY(clamp(s / L, 0, 1)) + 1.3 });
     BR.owns.push({ a: A, u: [ux, uz], L, ext: 55, r: 29 });
-    const cs = [P(ANCH[0][0] - 1, -29.5, 0), P(ANCH[0][0] - 1, 29.5, 0), P(ANCH[1][1] + 1, -29.5, 0), P(ANCH[1][1] + 1, 29.5, 0)];
+    // and the approaches, new stations past the anchorages only (the asphalt's top and Round 66's 0.05); a tap there is the
+    // bridge's, and no tree, street tree's crown or packed pole stands under them (REBUILD_OCC, the rebuilds' rule)
+    for (const pr of APP) {
+      const pts = [], as = [], cum = [];
+      for (let k = 0, nk = Math.ceil((pr.a1 - pr.a0) / 10); k <= nk; k++) { const a = pr.a0 + (pr.a1 - pr.a0) * k / nk, p = Pc(a, 0, 0); pts.push([p[0], p[2]]); as.push(a); cum.push(k ? cum[k - 1] + Math.hypot(p[0] - pts[k - 1][0], p[2] - pts[k - 1][1]) : 0); }
+      const aOf = (s) => { let i = 1; while (i < cum.length - 1 && cum[i] < s) i++; const t = clamp((s - cum[i - 1]) / ((cum[i] - cum[i - 1]) || 1), 0, 1); return as[i - 1] + (as[i] - as[i - 1]) * t; };
+      BRIDGE_DECKS.push({ pts, cum, halfW: 15, minX: Math.min(...pts.map((q) => q[0])), maxX: Math.max(...pts.map((q) => q[0])), minZ: Math.min(...pts.map((q) => q[1])), maxZ: Math.max(...pts.map((q) => q[1])),
+        yAt: (s) => pr.at(aOf(s)) + 0.05, approach: true });
+      const p0 = Pc(pr.a0, 0, 0), p1 = Pc(pr.a1, 0, 0), lu = Math.hypot(p1[0] - p0[0], p1[2] - p0[2]);
+      BR.owns.push({ a: [p0[0], p0[2]], u: [(p1[0] - p0[0]) / lu, (p1[2] - p0[2]) / lu], L: lu, ext: 0, r: 15 });
+      const ring = [];
+      for (let k = 0, nk = Math.ceil((pr.a1 - pr.a0) / 20); k <= nk; k++) { const a = pr.a0 + (pr.a1 - pr.a0) * k / nk, p = Pc(a, -15, 0); ring.push([p[0], p[2]]); }
+      for (let k = Math.ceil((pr.a1 - pr.a0) / 20); k >= 0; k--) { const a = pr.a0 + (pr.a1 - pr.a0) * k / Math.ceil((pr.a1 - pr.a0) / 20), p = Pc(a, 15, 0); ring.push([p[0], p[2]]); }
+      REBUILD_OCC.push({ id: 'bridges', ring, bb: rbBox(ring), pad: 0, top: Math.max(pr.at(pr.a0), pr.at(pr.a1), pr.at((pr.a0 + pr.a1) / 2)) + 2 });
+    }
+    for (const [q0, q1] of ANCH) {   // and the anchorages' granite
+      const ring = [P(q0 - 1, -29, 0), P(q1 + 1, -29, 0), P(q1 + 1, 29, 0), P(q0 - 1, 29, 0)].map((p) => [p[0], p[2]]);
+      REBUILD_OCC.push({ id: 'bridges', ring, bb: rbBox(ring), pad: 0, top: yA + 18 });
+    }
+    BR.appLamps = brLampMesh(appLamps, 'bfb-approaches');
+    const cs = [P(ANCH[0][0] - 1, -29.5, 0), P(ANCH[0][0] - 1, 29.5, 0), P(ANCH[1][1] + 1, -29.5, 0), P(ANCH[1][1] + 1, 29.5, 0),
+      Pc(BFB_APP.w0, -14, 0), Pc(BFB_APP.w0, 14, 0), Pc(BFB_APP.e1, -14, 0), Pc(BFB_APP.e1, 14, 0)];
     const bx = [Math.min(...cs.map((c) => c[0])), Math.max(...cs.map((c) => c[0])), W - 6, W + 118, Math.min(...cs.map((c) => c[2])), Math.max(...cs.map((c) => c[2]))];
-    return brAdd('Ben Franklin', near, lat, far, bx, { cableTop: +cabY(aT[0]).toFixed(2), ySad: +ySad.toFixed(2), deckMid: +dY(aM).toFixed(2) }, { o: A, d: [ux, uz], s0: ANCH[0][0] - 2, s1: ANCH[1][1] + 2 });
+    return brAdd('Ben Franklin', near, lat, far, bx, { cableTop: +cabY(aT[0]).toFixed(2), ySad: +ySad.toFixed(2), deckMid: +dY(aM).toFixed(2),
+      approaches: APP.map((pr) => [Math.round(pr.a0), Math.round(pr.a1), +pr.at(pr.a0).toFixed(2), +Math.max(pr.at(pr.a0), pr.at((pr.a0 + pr.a1) / 2), pr.at(pr.a1)).toFixed(2), +pr.at(pr.a1).toFixed(2)]) },
+      { o: A, d: [ux, uz], s0: BFB_APP.w0 - 2, s1: BFB_APP.e1 + 2 });
   }
   // ---- the Walt Whitman (1957). The photographs (the 2010 underside from the water, Gloucester City's 2019 view, the
   // night skyline): a green suspension bridge whose stiffening truss is a deck truss UNDER the roadway, open between its
@@ -6356,7 +6614,13 @@
   // trusses over concrete bents. Its colour is the photographs' green (Round 12's 0x75a889 rendered near white in the
   // realistic look). The deck's profile, the straightened crossing, the lamps every 36 m and the traffic's heights are
   // Round 12's and Round 88's, computed as they were
-  const WWB_COL = { steel: '#0f2c22', steelLo: '#0b231b', cable: '#12301f', asphalt: '#1c1b1a', barrier: '#33312d', concrete: '#2f2c27', anchor: '#2c2621' };
+  // the green toward the 2010 photograph's (its legs sampled at a hue of 182 to 184 and a saturation of 0.26 to 0.43: a
+  // blue-green; the first cut's 167 and 0.45 read a deeper, yellower teal)
+  const WWB_COL = { steel: '#122a2b', steelLo: '#0e2122', cable: '#132e2f', asphalt: '#0f1011', barrier: '#33312d', concrete: '#2f2c27', anchor: '#2c2621' };
+  // the deck's centre line off WWB_PTS (wwb.json is OSM's eastbound carriageway; the westbound runs 15.2 m north of it,
+  // traffic.b64's ways 5981 and 6333): the first cut centred the deck, its barriers and the truss on the eastbound alone,
+  // and the westbound's cars drove along the north barrier
+  const WWB_N0 = -7.6;
   function brBuildWwb() {
     const line = densify(WWB_PTS, 20);
     const cum = [0];
@@ -6399,11 +6663,12 @@
       return { x: a[0] + (b[0] - a[0]) * tt, z: a[1] + (b[1] - a[1]) * tt, ux, uz, ry: Math.atan2(-uz, ux) };
     };
     const yr = (sv) => { const q = at(clamp(sv, 0, sEnd)); return deckYAt(clamp(sv, 0, sEnd), q.x, q.z); };   // the roadway's top
-    const P = (sv, n, y) => { const q = at(sv); return [q.x - q.uz * n, y, q.z + q.ux * n]; };
+    const P = (sv, n, y) => { const q = at(sv), nn = n + WWB_N0; return [q.x - q.uz * nn, y, q.z + q.ux * nn]; };   // n from the deck's centre line
     const NAt = (sv) => { const q = at(sv); return [-q.uz, 0, q.ux]; }, UAt = (sv) => { const q = at(sv); return [q.ux, 0, q.uz]; };
     const UP = [0, 1, 0], topY = W0 + 115.2, WC = 15.0;
     const C = {}; for (const k in WWB_COL) C[k] = brC(WWB_COL[k], BRK.steel);
     C.asphalt = brC(WWB_COL.asphalt, BRK.asphalt); C.barrier = brC(WWB_COL.barrier, BRK.concrete); C.concrete = brC(WWB_COL.concrete, BRK.concrete); C.anchor = brC(WWB_COL.anchor, BRK.concrete);
+    C.lanes = brC(WWB_COL.asphalt, BRK.lanes);
     C.lace = brC(WWB_COL.steel, BRK.lacing);
     const near = brBuf(), lat = brBuf(), far = brBuf(), asph = [];
     const groundAt = (sv) => { const q = at(sv); return Math.max(groundMeshY(q.x, q.z) ?? siteY(q.x, q.z, 'ground'), W0 - 3); };
@@ -6415,8 +6680,11 @@
       for (let i = 0; i < n; i++) {
         const s0 = sEnd * i / n, s1 = sEnd * (i + 1) / n, y0 = yr(s0), y1 = yr(s1);
         const NA = NAt((s0 + s1) / 2);
-        const E = [[-14, 0, 14, 0, C.asphalt, 0, 1], [-14, -0.8, 14, -0.8, C.steelLo, 0, -1], [14, -0.8, 14, 0, C.steel, 1, 0], [-14, 0, -14, -0.8, C.steel, -1, 0]];
+        // the seven lanes between the barriers, the zipper between the third and the fourth from the north (as on the Ben
+        // Franklin: the westbound's three lanes north of it, the eastbound's south)
+        const E = [[-13.1, 0, 13.1, 0, C.lanes, 0, 1, -13.1], [-14, -0.8, 14, -0.8, C.steelLo, 0, -1], [14, -0.8, 14, 0, C.steel, 1, 0], [-14, 0, -14, -0.8, C.steel, -1, 0]];
         for (const s of [-1, 1]) E.push([s * 13.1, 1.0, s * 14, 1.0, C.barrier, 0, 1], [s * 13.1, 0, s * 13.1, 1.0, C.barrier, -s, 0], [s * 14, 0, s * 14, 1.0, C.barrier, s, 0]);
+        if (isNear) E.push([BR_ZIP - 0.3, 0, BR_ZIP - 0.12, 0.82, C.barrier, -1, 0.22], [BR_ZIP + 0.12, 0.82, BR_ZIP + 0.3, 0, C.barrier, 1, 0.22], [BR_ZIP - 0.12, 0.82, BR_ZIP + 0.12, 0.82, C.barrier, 0, 1]);
         brSweep(b, P, s0, s1, y0, y1, E, NA);
         if (isNear) asph.push([P(s0, -13.1, y0), P(s1, -13.1, y1), P(s1, 13.1, y1)], [P(s0, -13.1, y0), P(s1, 13.1, y1), P(s0, 13.1, y0)]);
       }
@@ -6544,14 +6812,14 @@
       const lampAt = [];
       for (let sv = 30; sv < sEnd - 30; sv += 36) {
         const q = at(sv), yD = deckYAt(sv, q.x, q.z);
-        for (const sg of [-1, 1]) lampAt.push([q.x - q.uz * sg * 13.2, yD, q.z + q.ux * sg * 13.2, q.ry]);
+        for (const sg of [-1, 1]) { const nn = sg * 13.2 + WWB_N0; lampAt.push([q.x - q.uz * nn, yD, q.z + q.ux * nn, q.ry]); }
       }
       const lm = new THREE.InstancedMesh(lampG, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.2 }), lampAt.length);
       const mtx = new THREE.Matrix4();
       lampAt.forEach((p, i) => { mtx.makeRotationY(p[3]); mtx.setPosition(p[0], p[1], p[2]); lm.setMatrixAt(i, mtx); });
       lm.castShadow = true; lm.frustumCulled = false;
       groupCity.add(lm);
-      for (const p of lampAt) bfbLampPts.push(p[0], p[1] + 4.4, p[2]);
+      for (const p of lampAt) { bfbLampPts.push(p[0], p[1] + 4.4, p[2]); BR.lampSrc.push(p[0], p[2], 4.4, 0.8); }
       WWB_LAMP_N = lampAt.length;
     }
     {   // the red aviation beacons over the legs (the night photographs), with the lamps' photocell
@@ -6636,9 +6904,12 @@
     }
     return best;
   }
-  // raise a chain to a profile: every point's y to at least prof(t), t its station along the axis (a, u)
+  // raise a chain to a profile: every point's y to at least prof(t), t its station along the axis (a, u). The chain is the
+  // bridge's own from here on (c.br): only its piers stand down under the spans, and the overpasses' 12 m standards leave
+  // it to the bridge's (DECK_LAMPS)
   function brRaiseChain(c, a, u, prof) {
     let lifted = 0;
+    c.br = true;
     {   // densified to 13 m first (as the overpasses' step would), so the deck follows the profile between OSM's far-apart nodes
       const out = [c.p[0].slice()];
       for (let i = 0; i + 1 < c.p.length; i++) {
@@ -6653,68 +6924,88 @@
     }
     return lifted;
   }
-  // a continuous truss's members between panel points: chords (tops and bottoms given), Warren diagonals and verticals;
-  // near with latticed web faces, far solid
+  // a continuous truss's members between panel points: chords (tops and bottoms given), Warren diagonals and verticals.
+  // dims.endPosts: an inclined end post from each bearing up to the first top panel point, with no top chord or post over
+  // the end panels (the Betsy Ross: the Pennsauken photograph); lace null: solid members (a welded truss). The far level is
+  // the chords and the diagonals alone, open-ended: past BR_NEAR_R a post is under a pixel
   function brTruss(near, lat, far, P, pts, n, topAt, botAt, col, lace, dims) {
-    const up = [0, 1, 0];
+    const up = [0, 1, 0], N = pts.length, ends = !!dims.endPosts;
     for (const [b, isNear] of [[near, true], [far, false]]) {
-      for (let i = 0; i + 1 < pts.length; i++) {
+      const op = isNear ? undefined : { caps: false };
+      for (let i = 0; i + 1 < N; i++) {
         const a0 = pts[i], a1 = pts[i + 1];
         brBeam(b, P(a0, n, botAt(a0)), P(a1, n, botAt(a1)), up, dims.chord, dims.chordH, col, { caps: false });
+        if (ends && (i === 0 || i === N - 2)) {
+          const pb = i === 0 ? a0 : a1, pt = i === 0 ? a1 : a0;
+          brBeam(b, P(pb, n, botAt(pb)), P(pt, n, topAt(pt)), up, dims.chord * 1.1, dims.chordH * 1.1, col, op);
+          continue;
+        }
         brBeam(b, P(a0, n, topAt(a0)), P(a1, n, topAt(a1)), up, dims.chord, dims.chordH, col, { caps: false });
         const g = (i & 1) === 0;
-        brBeam(b, P(a0, n, g ? botAt(a0) : topAt(a0)), P(a1, n, g ? topAt(a1) : botAt(a1)), up, dims.web, dims.webH, col, isNear ? { lat: { b: lat, col: lace } } : null);
+        brBeam(b, P(a0, n, g ? botAt(a0) : topAt(a0)), P(a1, n, g ? topAt(a1) : botAt(a1)), up, dims.web, dims.webH, col, isNear && lace ? { lat: { b: lat, col: lace } } : op);
       }
-      for (let i = 0; i < pts.length; i++) {
-        const a0 = pts[i];
-        const q0 = P(a0, n, botAt(a0)), q1 = P(a0, n, topAt(a0)), ua = v3norm(v3sub(P(a0 + 1, n, 0), P(a0, n, 0)));
-        brBeam(b, q0, q1, ua, dims.web, dims.webH * 0.85, col, isNear && i && i < pts.length - 1 ? { lat: { b: lat, col: lace } } : null);
+      if (!isNear) continue;
+      for (let i = ends ? 1 : 0; i < (ends ? N - 1 : N); i++) {
+        const a0 = pts[i], q0 = P(a0, n, botAt(a0)), q1 = P(a0, n, topAt(a0)), ua = v3norm(v3sub(P(a0 + 1, n, 0), P(a0, n, 0)));
+        brBeam(b, q0, q1, ua, dims.web, dims.webH * 0.85, col, lace && i && i < N - 1 ? { lat: { b: lat, col: lace } } : null);
       }
     }
   }
 
   // the approach spans on a raised chain, outside [t0, t1] (the main structure) and wherever its deck stands 4 m or more
-  // clear: a deck truss (near: latticed faces under the deck's edges; far: plates) and a pier under the chain's own deck
-  // every `every` metres (a hammerhead in concrete, or a granite block); the overpasses' generic piers stand down over the
-  // stations it covers (BR_OVP_SKIP). Returns that range of stations
+  // clear: a deck truss under each edge of the chain's deck (the near level its chords, Warren diagonals and posts, laced
+  // with o.lace; the far level one solid face a side), o.haunch deepening it toward the piers in a curve (the
+  // Tacony-Palmyra's cantilevers, the 2022 photograph from Philadelphia); a pier under the chain's own deck every `every`
+  // metres (a concrete portal, or with o.granite two tall granite shafts on a web wall); the overpasses' generic piers
+  // stand down over the stations it covers (BR_OVP_SKIP). Returns that range of stations
   function brApproach(near, lat, far, ch, A, u, t0, t1, o) {
-    const W = TERRAIN.water, n = [-u[1], u[0]];
+    const W = TERRAIN.water, UP = [0, 1, 0];
     let tMin = Infinity, tMax = -Infinity, piers = 0;
     const gAt = (x, z) => Math.max(siteY(x, z, 'ground'), delawareAt(x, z) ? W - 3 : -Infinity);
+    const dep = (s) => { if (!o.haunch) return o.depth; const f = s / o.every - 0.5, d = Math.abs(f - Math.round(f)); return o.depth * (0.42 + 0.78 * (1 - 2 * d) * (1 - 2 * d)); };
     for (const q of ch) {
       const c = q.c, hw = Math.max(1.6, c.w / 2), P = c.p;
-      let acc = 0, next = o.every * 0.5;
+      let acc = 0, next = o.every * 0.5, panel = 0;
       for (let i = 0; i + 1 < P.length; i++) {
         const a = P[i], b = P[i + 1], ta = (a[0] - A[0]) * u[0] + (a[1] - A[1]) * u[1], tb = (b[0] - A[0]) * u[0] + (b[1] - A[1]) * u[1];
-        const seg = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        const seg = Math.hypot(b[0] - a[0], b[1] - a[1]), accA = acc;
         acc += seg;
         const ga = gAt(a[0], a[1]), gb = gAt(b[0], b[1]), ca = a[2] - 1.7 - ga, cb = b[2] - 1.7 - gb;
         if ((Math.max(ta, tb) > t0 && Math.min(ta, tb) < t1) || Math.min(ca, cb) < 4) { while (next <= acc) next += o.every; continue; }
         tMin = Math.min(tMin, ta, tb); tMax = Math.max(tMax, ta, tb);
         const dx = (b[0] - a[0]) / (seg || 1), dz = (b[1] - a[1]) / (seg || 1), nx = -dz, nz = dx;
-        const da = clamp(ca - 2.5, 1.5, o.depth), db = clamp(cb - 2.5, 1.5, o.depth);
+        const da = clamp(Math.min(ca - 2.5, dep(accA)), 1.5, o.depth * 1.25), db = clamp(Math.min(cb - 2.5, dep(acc)), 1.5, o.depth * 1.25);
         for (const s of [-1, 1]) {
           const ax = a[0] + nx * hw * s, az = a[1] + nz * hw * s, bx = b[0] + nx * hw * s, bz = b[1] + nz * hw * s;
           const out = [nx * s, 0, nz * s], y0 = a[2] - 1.7, y1 = b[2] - 1.7;
-          lat.quad([ax, y0, az], [bx, y1, bz], [bx, y1 - db, bz], [ax, y0 - da, az], [acc / o.depth, 1], [(acc + seg) / o.depth, 1], [(acc + seg) / o.depth, 0], [acc / o.depth, 0], o.girder, out);
-          far.quad([ax, y0, az], [bx, y1, bz], [bx, y1 - db, bz], [ax, y0 - da, az], [acc, 0], [acc + seg, 0], [acc + seg, db], [acc, da], o.col, out);
-          for (const b2 of [near, far]) brBeam(b2, [ax - nx * s * 0.3, y0 - da, az - nz * s * 0.3], [bx - nx * s * 0.3, y1 - db, bz - nz * s * 0.3], [0, 1, 0], 0.7, 0.8, o.col, { caps: false });
+          far.quad([ax, y0, az], [bx, y1, bz], [bx, y1 - db, bz], [ax, y0 - da, az], [accA, 0], [acc, 0], [acc, db], [accA, da], o.col, out);
+          const ix = -nx * s * 0.35, iz = -nz * s * 0.35;   // the truss's plane just inside the deck's edge
+          brBeam(near, [ax + ix, y0 - 0.35, az + iz], [bx + ix, y1 - 0.35, bz + iz], UP, 0.55, 0.7, o.col, { caps: false });
+          brBeam(near, [ax + ix, y0 - da + 0.35, az + iz], [bx + ix, y1 - db + 0.35, bz + iz], UP, 0.55, 0.7, o.col, { caps: false });
+          const g = (panel & 1) === 0;
+          brBeam(near, g ? [ax + ix, y0 - da + 0.35, az + iz] : [ax + ix, y0 - 0.35, az + iz], g ? [bx + ix, y1 - 0.35, bz + iz] : [bx + ix, y1 - db + 0.35, bz + iz], UP, 0.42, 0.5, o.col, o.lace ? { lat: { b: lat, col: o.lace } } : { caps: false });
+          brBeam(near, [ax + ix, y0 - da + 0.35, az + iz], [ax + ix, y0 - 0.35, az + iz], [dx, 0, dz], 0.38, 0.42, o.col, { caps: false });
         }
+        panel++;
         while (acc >= next) {
           const f = clamp(1 - (acc - next) / (seg || 1), 0, 1), x = a[0] + (b[0] - a[0]) * f, z = a[1] + (b[1] - a[1]) * f, y = a[2] + (b[2] - a[2]) * f, g = gAt(x, z);
-          const d = clamp(y - 1.7 - g - 2.5, 1.5, o.depth), top = y - 1.7 - d, ry = Math.atan2(-dz, dx);
+          const d = clamp(Math.min(y - 1.7 - g - 2.5, dep(next)), 1.5, o.depth * 1.25), top = y - 1.7 - d;
           if (top - g > 3) {
+            const col = (pa, pn) => [x + dx * pa + nx * pn, 0, z + dz * pa + nz * pn];
             for (const b2 of [near, far]) {
-              if (o.granite) {
-                const ring = (h, y) => [[-h, -hw - h + 2], [h, -hw - h + 2], [h, hw + h - 2], [-h, hw + h - 2]].map(([pa, pn]) => [x + dx * pa + nx * pn, y, z + dz * pa + nz * pn]);
-                brHex(b2, ring(3.2, g - 2).concat(ring(2.6, top)), o.pier, { noBottom: true });
-              }
-              else {
-                const col = (pa, pn) => [x + dx * pa + nx * pn, 0, z + dz * pa + nz * pn];
+              if (o.granite) {   // two tall dressed shafts, tapering, on a web wall a third of their height
+                for (const sn of [-1, 1]) {
+                  const pn = sn * Math.max(1.6, hw - 1.2), r0 = 1.6, r1 = 1.3;
+                  const lo = [col(-r0, pn - r0), col(r0, pn - r0), col(r0, pn + r0), col(-r0, pn + r0)], hi = [col(-r1, pn - r1), col(r1, pn - r1), col(r1, pn + r1), col(-r1, pn + r1)];
+                  brHex(b2, lo.map((p) => [p[0], g - 2, p[2]]).concat(hi.map((p) => [p[0], top, p[2]])), o.pier, { noBottom: true });
+                }
+                const wl = [col(-1.0, -hw + 1.2), col(1.0, -hw + 1.2), col(1.0, hw - 1.2), col(-1.0, hw - 1.2)];
+                brHex(b2, wl.map((p) => [p[0], g - 2, p[2]]).concat(wl.map((p) => [p[0], g + (top - g) * 0.33, p[2]])), o.pier, { noBottom: true });
+              } else {
                 const cc = [col(-1.5, -1.8), col(1.5, -1.8), col(1.5, 1.8), col(-1.5, 1.8)];
                 brHex(b2, cc.map((p) => [p[0], g - 2, p[2]]).concat(cc.map((p) => [p[0], top - 1.3, p[2]])), o.pier, { noBottom: true });
                 const cap = [col(-1.2, -hw - 0.5), col(1.2, -hw - 0.5), col(1.2, hw + 0.5), col(-1.2, hw + 0.5)];
-                brHex(b2, cap.map((p) => [p[0], top - 1.3, p[2]]).concat(cap.map((p) => [p[0], top, p[2]])), o.pier);
+                brHex(b2, cap.map((p) => [p[0], top - 1.3, p[2]]).concat(cap.map((p) => [p[0], top, p[2]])), o.pier, b2 === far ? { noBottom: true } : undefined);
               }
             }
             piers++;
@@ -6726,15 +7017,29 @@
     if (tMax > tMin) BR_OVP_SKIP.push({ a: [A[0] + u[0] * tMin, A[1] + u[1] * tMin], u, L: tMax - tMin, r: 26 });
     return { tMin, tMax, piers };
   }
-  // the highway lamp standards along a raised chain's two edges, every `every` metres where the deck stands clear of the
-  // ground: one instanced mesh, their heads on the streetlamps' points (Round 88's rule for the Whitman)
+  // the highway lamp standards: one instanced mesh a run (at: [x, y, z, rotation], the arm along its local +x), their heads
+  // on the streetlamps' points (Round 88's rule for the Whitman)
   let BR_LAMP_G = null;
-  function brDeckLamps(ch, every, name) {
+  function brLampMesh(at, name) {
+    if (!at.length) return 0;
     if (!BR_LAMP_G) BR_LAMP_G = mergeColored([
       { geom: new THREE.CylinderGeometry(0.09, 0.16, 9.0, 6).translate(0, 4.5, 0), color: new THREE.Color(0x3a3c3e), style: 3 },
       { geom: new THREE.BoxGeometry(1.8, 0.14, 0.14).translate(0.9, 8.9, 0), color: new THREE.Color(0x3a3c3e), style: 3 },
       { geom: new THREE.BoxGeometry(0.7, 0.22, 0.35).translate(1.75, 8.8, 0), color: new THREE.Color(0x4a4c4e), style: 3 },
     ]);
+    const lm = new THREE.InstancedMesh(BR_LAMP_G, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.2 }), at.length);
+    const mtx = new THREE.Matrix4(), hd = new THREE.Vector3();
+    at.forEach((p, i) => {
+      mtx.makeRotationY(p[3]); mtx.setPosition(p[0], p[1], p[2]); lm.setMatrixAt(i, mtx);
+      hd.set(1.75, 8.65, 0).applyMatrix4(mtx); bfbLampPts.push(hd.x, hd.y, hd.z); BR.lampSrc.push(hd.x, hd.z, 8.65, 1);
+    });
+    lm.castShadow = false; lm.name = 'bridge-lamps-' + name;
+    groupCity.add(lm);
+    return at.length;
+  }
+  // along a raised chain's two edges, every `every` metres where the deck stands clear of the ground, the arm over the
+  // lanes (the review: Round 195's first cut turned every arm out over the river)
+  function brDeckLamps(ch, every, name) {
     const at = [], W = TERRAIN.water;
     for (const q of ch) {
       const c = q.c, P = c.p, hw = Math.max(1.6, c.w / 2) - 0.45;
@@ -6745,28 +7050,20 @@
           const f = (next - acc) / (seg || 1), x = a[0] + (b[0] - a[0]) * f, z = a[1] + (b[1] - a[1]) * f, y = a[2] + (b[2] - a[2]) * f;
           if (y - Math.max(siteY(x, z, 'ground'), W) > 6) {
             const dx = (b[0] - a[0]) / (seg || 1), dz = (b[1] - a[1]) / (seg || 1);
-            for (const s of [-1, 1]) at.push([x - dz * hw * s, y, z + dx * hw * s, Math.atan2(-dz, dx) + (s > 0 ? -Math.PI / 2 : Math.PI / 2)]);
+            for (const s of [-1, 1]) at.push([x - dz * hw * s, y, z + dx * hw * s, Math.atan2(-dz, dx) + (s > 0 ? Math.PI / 2 : -Math.PI / 2)]);
           }
           next += every;
         }
         acc += seg;
       }
     }
-    if (!at.length) return 0;
-    const lm = new THREE.InstancedMesh(BR_LAMP_G, new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.2 }), at.length);
-    const mtx = new THREE.Matrix4(), hd = new THREE.Vector3();
-    at.forEach((p, i) => {
-      mtx.makeRotationY(p[3]); mtx.setPosition(p[0], p[1], p[2]); lm.setMatrixAt(i, mtx);
-      hd.set(1.75, 8.65, 0).applyMatrix4(mtx); bfbLampPts.push(hd.x, hd.y, hd.z);
-    });
-    lm.castShadow = false; lm.name = 'bridge-lamps-' + name;
-    groupCity.add(lm);
-    return at.length;
+    return brLampMesh(at, name);
   }
-  // ---- the Betsy Ross (1976): a continuous steel through truss, painted white, over three spans (the main span 222 m,
-  // its clearance 41 m), the bottom chord dropping in deep haunches to the two river piers, the deck between the trusses;
-  // concrete portal piers (Commons: Betsy_Ross_Bridge_20100603, the Pennsauken boat ramp). OSM's two carriageways are
-  // overpass chains 10 m apart; the trusses enclose both
+  // ---- the Betsy Ross (1976): a continuous welded steel through truss, painted white, over three spans (the main span
+  // 222 m, its clearance 41 m), its members solid (no lacing: a welded truss), the bottom chord dropping in deep haunches
+  // to the two river piers, inclined end posts at either end (the Pennsauken photograph), the deck between the trusses;
+  // concrete portal piers, deck-truss approaches on concrete portals (Commons: Betsy_Ross_Bridge_20100603, the Pennsauken
+  // boat ramp). OSM's two carriageways are overpass chains 10 m apart; the trusses enclose both
   const BETSY_COL = { steel: '#3c4144', steelLo: '#303437', concrete: '#33302b' };
   function brBuildBetsy() {
     const W = TERRAIN.water;
@@ -6777,7 +7074,7 @@
     // centred on that run (750 m of water, the channel in its middle)
     const dp = [];
     { const c0p = ch[0].c.p; for (let i = 0; i + 1 < c0p.length; i++) { const p = c0p[i], q = c0p[i + 1], k = Math.max(1, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 5)); for (let j = 0; j < k; j++) dp.push([p[0] + (q[0] - p[0]) * j / k, p[1] + (q[1] - p[1]) * j / k]); } }
-    let r0 = -1, r1 = -1, b0 = -1, b1 = -1;
+    let r0 = -1, b0 = -1, b1 = -1;
     for (let i = 0; i <= dp.length; i++) {
       const w = i < dp.length && delawareAt(dp[i][0], dp[i][1]);
       if (w && r0 < 0) r0 = i;
@@ -6806,33 +7103,38 @@
     const nrmA = [ux, uz];
     for (const q of ch) lift = Math.max(lift, brRaiseChain(q.c, A, nrmA, prof));
     BR_OVP_SKIP.push({ a: P(tA - 6, 0, 0).filter((v, i) => i !== 1), u: [ux, uz], L: Lt + 12, r: 22 });
-    const C = { steel: brC(BETSY_COL.steel, BRK.steel), steelLo: brC(BETSY_COL.steelLo, BRK.steel), concrete: brC(BETSY_COL.concrete, BRK.concrete), lace: brC(BETSY_COL.steel, BRK.lacing) };
+    const C = { steel: brC(BETSY_COL.steel, BRK.steel), steelLo: brC(BETSY_COL.steelLo, BRK.steel), concrete: brC(BETSY_COL.concrete, BRK.concrete) };
     const near = brBuf(), lat = brBuf(), far = brBuf();
-    // panel points ~18.5 m a span; the bottom chord under the floor, its haunch down to the two river piers
+    // panel points ~18.5 m a span; the bottom chord under the floor, its haunch down to the two river piers; the top chord a
+    // gentle arch between the end posts
     const pts = [];
     for (let k = 0; k < 3; k++) { const s0 = piers[k], s1 = piers[k + 1], N = Math.max(2, Math.round((s1 - s0) / 18.5)); for (let i = k ? 1 : 0; i <= N; i++) pts.push(s0 + (s1 - s0) * i / N); }
     const haunch = (a) => { let h = 0; for (const p of [piers[1], piers[2]]) { const q = Math.max(0, 1 - Math.abs(a - p) / 62); h = Math.max(h, 11 * q * q * (3 - 2 * q)); } return h; };
-    const botAt = (a) => yDeck(a) - 2.2 - haunch(a), topAt = (a) => yDeck(a) + 12.5 - 3.5 * Math.pow(Math.abs((a - (tA + tB) / 2) / (Lt / 2)), 6);
-    for (const s of [-1, 1]) brTruss(near, lat, far, P, pts, s * 16.5, topAt, botAt, C.steel, C.lace, { chord: 1.1, chordH: 1.2, web: 0.8, webH: 0.9 });
-    // the top lateral bracing and the floor beams (near), the portals at the ends
-    for (let i = 0; i + 1 < pts.length; i++) {
+    const botAt = (a) => yDeck(a) - 2.2 - haunch(a), topAt = (a) => yDeck(a) + 12.5 - 1.2 * Math.pow((a - (tA + tB) / 2) / (Lt / 2), 2);
+    for (const s of [-1, 1]) brTruss(near, lat, far, P, pts, s * 16.5, topAt, botAt, C.steel, null, { chord: 1.1, chordH: 1.2, web: 0.8, webH: 0.9, endPosts: true });
+    // the top lateral bracing and its struts between the end posts, the floor beams (near); the far level a strut at every
+    // other panel point
+    const NP = pts.length;
+    for (let i = 1; i + 2 < NP; i++) {
       const s0 = pts[i], s1 = pts[i + 1];
       brBeam(near, P(s0, -16.5, topAt(s0)), P(s1, 16.5, topAt(s1)), UP, 0.4, 0.4, C.steel, { caps: false });
       brBeam(near, P(s0, 16.5, topAt(s0)), P(s1, -16.5, topAt(s1)), UP, 0.4, 0.4, C.steel, { caps: false });
-      brBeam(near, P(s0, -16.5, yDeck(s0) - 2.3), P(s0, 16.5, yDeck(s0) - 2.3), UP, 0.6, 1.4, C.steelLo, { caps: false });
     }
-    for (const s0 of pts) brBeam(far, P(s0, -16.5, topAt(s0)), P(s0, 16.5, topAt(s0)), UP, 0.6, 0.6, C.steel, { caps: false });
-    for (const s0 of pts) brBeam(near, P(s0, -16.5, topAt(s0)), P(s0, 16.5, topAt(s0)), UP, 0.5, 0.7, C.steel, { caps: false });
+    for (let i = 0; i + 1 < NP; i++) brBeam(near, P(pts[i], -16.5, yDeck(pts[i]) - 2.3), P(pts[i], 16.5, yDeck(pts[i]) - 2.3), UP, 0.6, 1.4, C.steelLo, { caps: false });
+    for (let i = 1; i < NP - 1; i++) {
+      brBeam(near, P(pts[i], -16.5, topAt(pts[i])), P(pts[i], 16.5, topAt(pts[i])), UP, 0.5, 0.7, C.steel, { caps: false });
+      if (i % 2 === 1 || i === NP - 2) brBeam(far, P(pts[i], -16.5, topAt(pts[i])), P(pts[i], 16.5, topAt(pts[i])), UP, 0.6, 0.6, C.steel, { caps: false });
+    }
     // the piers: concrete portals, two columns and a cap under each truss bearing
     for (const pa2 of piers) {
       const g = Math.max(W - 4, groundMeshY(...P(pa2, 0, 0).filter((v, i) => i !== 1)) ?? siteY(P(pa2, 0, 0)[0], P(pa2, 0, 0)[2], 'ground'));
       const yb = botAt(pa2) - 0.6;
       for (const b of [near, far]) {
         for (const s of [-1, 1]) brFBox(b, P, pa2 - 2.6, pa2 + 2.6, s * 16.5 - 2.6, s * 16.5 + 2.6, g - 2, yb - 2.2, C.concrete, { noBottom: true, noTop: true, ta: [pa2 - 2.2, pa2 + 2.2], tn: [s * 16.5 - 2.2, s * 16.5 + 2.2] });
-        brFBox(b, P, pa2 - 2.8, pa2 + 2.8, -19.5, 19.5, yb - 2.2, yb, C.concrete);
+        brFBox(b, P, pa2 - 2.8, pa2 + 2.8, -19.5, 19.5, yb - 2.2, yb, C.concrete, b === far ? { noBottom: true } : undefined);
       }
     }
-    const appr = brApproach(near, lat, far, ch, A, [ux, uz], tA - 3, tB + 3, { every: 52, depth: 5.5, col: C.steel, girder: brC(BETSY_COL.steel, BRK.girder), pier: C.concrete });
+    const appr = brApproach(near, lat, far, ch, A, [ux, uz], tA - 3, tB + 3, { every: 52, depth: 5.0, col: C.steel, pier: C.concrete });
     const lamps = brDeckLamps(ch, 48, 'betsy');
     const ea = Number.isFinite(appr.tMin) ? Math.min(tA - 20, appr.tMin) : tA - 20, eb = Number.isFinite(appr.tMax) ? Math.max(tB + 20, appr.tMax) : tB + 20;
     const cs = [P(ea, -25, 0), P(ea, 25, 0), P(eb, -25, 0), P(eb, 25, 0)];
@@ -6841,11 +7143,13 @@
       { chains: ch.length, lift: +lift.toFixed(1), span: Math.round(Lt), deck: +deck.toFixed(1), wet: wet.map(Math.round), approach: [Math.round(appr.tMin), Math.round(appr.tMax)], approachPiers: appr.piers, lamps }, { o: A, d: [ux, uz], s0: ea - 5, s1: eb + 5 });
   }
 
-  // ---- the Tacony-Palmyra (1929, Ralph Modjeski): a green steel tied arch of 170 m (61 ft clear under it), a
-  // double-leaf bascule beside it to the east in a short through truss between granite piers, deck-truss approaches
-  // (Commons: Tacony_Palmyra_Bridge_20100604, Tacony-Palmyra_Bridge_from_Philadelphia, Aug 2022). OSM's arch is way
-  // 43032037 (8687, -7357 to 8604, -7503 in the scene); the one trunk chain carries the roadway
-  const TACONY_COL = { steel: '#1a3a26', steelLo: '#14301f', granite: '#2c2925' };
+  // ---- the Tacony-Palmyra (1929, Ralph Modjeski): a green steel tied arch of 170 m (61 ft clear under it) and, beside it
+  // to the east, a double-leaf bascule whose leaves are deck trusses under the roadway (only a railing above it), between
+  // two granite piers whose towers rise 9 m over the deck with the operators' houses on top; deck-truss approaches, the
+  // Philadelphia side's cantilevers deepening in a curve to tall granite piers of two shafts (Commons:
+  // Tacony_Palmyra_Bridge_20100604, Tacony-Palmyra_Bridge_from_Palmyra_Nature_Cove, Tacony-Palmyra_Bridge_from_Philadelphia,
+  // Aug 2022). OSM's arch is way 43032037 (8687, -7357 to 8604, -7503 in the scene); the one trunk chain carries the roadway
+  const TACONY_COL = { steel: '#1a3a26', steelLo: '#14301f', granite: '#25231f', house: '#1d2a22' };
   const TACONY_ARCH = [[8687, -7357], [8604, -7503]];
   function brBuildTacony() {
     const W = TERRAIN.water;
@@ -6856,12 +7160,11 @@
     const La = Math.hypot(ux, uz); ux /= La; uz /= La;   // from the east springing to the west: a 0 at E
     const nx = -uz, nz = ux;
     // the chain's own offset from OSM's arch line, so the arch stands over the roadway
-    let off = 0;
-    off = brLateral(ch[0].c, E, [ux, uz], [(E[0] + F[0]) / 2, (E[1] + F[1]) / 2]);
+    const off = brLateral(ch[0].c, E, [ux, uz], [(E[0] + F[0]) / 2, (E[1] + F[1]) / 2]);
     const A = [E[0] + nx * off, E[1] + nz * off];
     const P = (a, n, y) => [A[0] + ux * a + nx * n, y, A[1] + uz * a + nz * n];
-    const UP = [0, 1, 0];
-    const deckArch = W + 20.6, deckBasc = W + 18.6, bascA = -86, bascB = -6;   // the bascule's truss east of the arch (a < 0)
+    const UP = [0, 1, 0], UA = [ux, 0, uz], NA = [nx, 0, nz];
+    const deckArch = W + 20.6, deckBasc = W + 18.6, bascA = -86, bascB = -6;   // the bascule east of the arch (a < 0)
     const prof = (t) => {
       if (t >= -6 && t <= La + 6) return deckArch + 0.8 * Math.sin(Math.PI * clamp(t / La, 0, 1));
       if (t < -6 && t >= bascA) return deckBasc + (deckArch - deckBasc) * clamp((t - bascA) / (-6 - bascA), 0, 1);
@@ -6871,11 +7174,12 @@
     for (const q of ch) lift = Math.max(lift, brRaiseChain(q.c, A, [ux, uz], prof));
     BR_OVP_SKIP.push({ a: [A[0] + ux * (bascA - 10), A[1] + uz * (bascA - 10)], u: [ux, uz], L: La - bascA + 20, r: 16 });
     const C = { steel: brC(TACONY_COL.steel, BRK.steel), steelLo: brC(TACONY_COL.steelLo, BRK.steel), granite: brC(TACONY_COL.granite, BRK.granite), lace: brC(TACONY_COL.steel, BRK.lacing),
-      dark: brC('#121314', BRK.paint) };
+      ashlar: brC(TACONY_COL.granite, BRK.ashlar), dark: brC('#121314', BRK.paint), house: brC(TACONY_COL.house, BRK.paint), glass: brC('#0d1012', BRK.paint) };
     const near = brBuf(), lat = brBuf(), far = brBuf();
     const RISE = 38, RN = 7.6, yd = (a) => prof(a);
     // the arch's two trussed ribs: the lower chord a parabola springing at the deck, the upper 4 m over it at the crown
-    // and 6 m at the springings; hangers every 8.5 m to the tie at the deck's edge
+    // and 6 m at the springings; hangers every 8.5 m to the tie at the deck's edge. The far level: the chords, the
+    // diagonals and the ties (the rib's posts and the hangers are under a pixel there)
     const lowY = (a) => yd(a) - 0.6 + RISE * (1 - Math.pow(2 * a / La - 1, 2));
     const upY = (a) => lowY(a) + 4.0 + 2.0 * Math.pow(2 * a / La - 1, 2);
     const NS = 24, aS = [];
@@ -6888,49 +7192,71 @@
           brBeam(b, P(a0, n, lowY(a0)), P(a1, n, lowY(a1)), UP, 1.0, 1.0, C.steel, { caps: false });
           brBeam(b, P(a0, n, upY(a0)), P(a1, n, upY(a1)), UP, 1.0, 1.0, C.steel, { caps: false });
           const g = (i & 1) === 0;
-          brBeam(b, P(a0, n, g ? lowY(a0) : upY(a0)), P(a1, n, g ? upY(a1) : lowY(a1)), UP, 0.55, 0.6, C.steel, isNear ? { lat: { b: lat, col: C.lace } } : null);
-          brBeam(b, P(a0, n, lowY(a0)), P(a0, n, upY(a0)), [ux, 0, uz], 0.55, 0.55, C.steel);
-          // the tie at the deck's edge
-          brBeam(b, P(a0, n, yd(a0) - 0.7), P(a1, n, yd(a1) - 0.7), UP, 0.9, 1.6, C.steel, { caps: false });
-          if (i) brBeam(b, P(a0, n, yd(a0) + 0.2), P(a0, n, lowY(a0)), [ux, 0, uz], isNear ? 0.25 : 0.35, isNear ? 0.25 : 0.35, C.steel, { caps: false });
+          brBeam(b, P(a0, n, g ? lowY(a0) : upY(a0)), P(a1, n, g ? upY(a1) : lowY(a1)), UP, 0.55, 0.6, C.steel, isNear ? { lat: { b: lat, col: C.lace } } : { caps: false });
+          brBeam(b, P(a0, n, yd(a0) - 0.7), P(a1, n, yd(a1) - 0.7), UP, 0.9, 1.6, C.steel, { caps: false });   // the tie at the deck's edge
+          if (!isNear) continue;
+          brBeam(b, P(a0, n, lowY(a0)), P(a0, n, upY(a0)), UA, 0.55, 0.55, C.steel);
+          if (i) brBeam(b, P(a0, n, yd(a0) + 0.2), P(a0, n, lowY(a0)), UA, 0.25, 0.25, C.steel, { caps: false });
         }
       }
     }
     // the wind bracing between the ribs over the middle, an X a panel and a strut a panel point
     for (let i = 4; i < NS - 4; i++) {
       const a0 = aS[i], a1 = aS[i + 1];
-      for (const b of [near, far]) brBeam(b, P(a0, -RN, upY(a0)), P(a0, RN, upY(a0)), UP, 0.6, 0.9, C.steel, { caps: false });
+      brBeam(near, P(a0, -RN, upY(a0)), P(a0, RN, upY(a0)), UP, 0.6, 0.9, C.steel, { caps: false });
+      if (i % 2 === 0) brBeam(far, P(a0, -RN, upY(a0)), P(a0, RN, upY(a0)), UP, 0.6, 0.9, C.steel, { caps: false });
       brBeam(near, P(a0, -RN, upY(a0)), P(a1, RN, upY(a1)), UP, 0.35, 0.35, C.steel, { caps: false });
       brBeam(near, P(a0, RN, upY(a0)), P(a1, -RN, upY(a1)), UP, 0.35, 0.35, C.steel, { caps: false });
     }
-    // the bascule's through truss (a < 0): 80 m, its top chord a camelback
+    // the bascule (a < 0): two leaves of deck truss under the floor, deepest at their heels on the piers (6 m) and 3 m where
+    // they meet mid-span, laced posts and diagonals; a latticed railing over the deck's edge and nothing else above it
     const bp = [];
     for (let i = 0; i <= 8; i++) bp.push(bascA + (bascB - bascA) * i / 8);
-    const bTop = (a) => yd(a) + 7.5 + 3.0 * Math.sin(Math.PI * (a - bascA) / (bascB - bascA)), bBot = (a) => yd(a) - 1.2;
-    for (const s of [-1, 1]) brTruss(near, lat, far, P, bp, s * RN, bTop, bBot, C.steel, C.lace, { chord: 0.9, chordH: 1.0, web: 0.6, webH: 0.7 });
-    for (const a of bp) brBeam(near, P(a, -RN, bTop(a)), P(a, RN, bTop(a)), UP, 0.5, 0.6, C.steel, { caps: false });
+    const bMid = (bascA + bascB) / 2, bHalf = (bascB - bascA) / 2;
+    const bTop = (a) => yd(a) - 0.6, bBot = (a) => yd(a) - 0.6 - (3.0 + 3.0 * Math.pow(Math.abs(a - bMid) / bHalf, 1.6));
+    for (const s of [-1, 1]) brTruss(near, lat, far, P, bp, s * (RN - 0.6), bTop, bBot, C.steel, C.lace, { chord: 0.9, chordH: 1.0, web: 0.6, webH: 0.7 });
+    for (const a of bp) brBeam(near, P(a, -(RN - 0.6), bBot(a) + 0.4), P(a, RN - 0.6, bBot(a) + 0.4), UP, 0.4, 0.5, C.steelLo, { caps: false });   // the cross frames at the bottom chords
+    for (const s of [-1, 1]) {
+      const n = s * (RN - 0.2), y0 = yd(bascA) + 0.05, y1 = yd(bascB) + 0.05;
+      lat.quad(P(bascA, n, y0), P(bascB, n, y1), P(bascB, n, y1 + 1.1), P(bascA, n, y0 + 1.1), [0, 0], [(bascB - bascA) / 1.1, 0], [(bascB - bascA) / 1.1, 1], [0, 1], C.lace, v3mul(NA, s));
+      brBeam(near, P(bascA, n, y0 + 1.15), P(bascB, n, y1 + 1.15), UP, 0.18, 0.12, C.steel, { caps: false });
+      far.quad(P(bascA, n, y0), P(bascB, n, y1), P(bascB, n, y1 + 1.1), P(bascA, n, y0 + 1.1), [0, 0], [80, 0], [80, 1.1], [0, 1.1], C.steel, v3mul(NA, s));
+    }
     // the granite piers: the arch's springings and the bascule's far end, massive to the deck, a dark arched passage
-    // painted on each face along the river (the photographs' arches through the bascule piers)
-    for (const [pa, wa] of [[-3, 16], [La + 3, 14], [bascA - 7, 16]]) {
-      const g = W - 4, top = yd(pa) - 1.6;
+    // painted on each face along the river (the photographs' arches through the bascule piers); the two bascule piers carry
+    // a tower either side of the roadway, 9 m over the deck, its top a small house with a window band under a low roof
+    for (const [pa, wa, towers] of [[-3, 16, true], [La + 3, 14, false], [bascA - 7, 16, true]]) {
+      const g = W - 4, top = yd(pa) - 1.6, wn = towers ? 14.2 : 11;
       for (const b of [near, far]) {
-        brFBox(b, P, pa - wa / 2, pa + wa / 2, -11, 11, g, top, C.granite);
-        brFBox(b, P, pa - wa / 2 - 0.5, pa + wa / 2 + 0.5, -11.5, 11.5, top - 1.0, top, C.granite, { noBottom: true });
+        brFBox(b, P, pa - wa / 2, pa + wa / 2, -wn, wn, g, top, C.granite, { noBottom: true });
+        brFBox(b, P, pa - wa / 2 - 0.5, pa + wa / 2 + 0.5, -wn - 0.5, wn + 0.5, top - 1.0, top, C.granite, { noBottom: true, noTop: b === far });
         for (const s of [-1, 1]) {
-          const nn = s * 11.02, K = 8, cx = pa, w2 = wa * 0.28, y0 = W + 0.3, y1 = y0 + (top - y0) * 0.55;
+          const nn = s * (wn + 0.02), K = b === far ? 4 : 8, cx = pa, w2 = wa * 0.28, y0 = W + 0.3, y1 = y0 + (top - y0) * 0.55;
           for (let k = 0; k < K; k++) {
             const t0 = Math.PI * k / K, t1 = Math.PI * (k + 1) / K;
             const p0 = [cx - w2 * Math.cos(t0), y1 + w2 * Math.sin(t0)], p1 = [cx - w2 * Math.cos(t1), y1 + w2 * Math.sin(t1)];
-            b.quad(P(p0[0], nn, y0), P(p1[0], nn, y0), P(p1[0], nn, p1[1]), P(p0[0], nn, p0[1]), [0, 0], [1, 0], [1, 1], [0, 1], C.dark, v3mul([nx, 0, nz], s));
+            b.quad(P(p0[0], nn, y0), P(p1[0], nn, y0), P(p1[0], nn, p1[1]), P(p0[0], nn, p0[1]), [0, 0], [1, 0], [1, 1], [0, 1], C.dark, v3mul(NA, s));
           }
+        }
+        if (!towers) continue;
+        const yt = yd(pa) + 9.0;
+        for (const s of [-1, 1]) {
+          const n0 = s > 0 ? RN + 0.6 : -RN - 5.6, n1 = n0 + 5.0, ha = 2.8;
+          brFBox(b, P, pa - 3.0, pa + 3.0, n0, n1, top, yt, C.granite, { noBottom: true, noTop: true, ta: [pa - 2.7, pa + 2.7], tn: [n0 + 0.3, n1 - 0.3] });
+          brFBox(b, P, pa - 3.1, pa + 3.1, n0 - 0.1, n1 + 0.1, yt, yt + 0.45, C.ashlar, { noBottom: b === far });
+          // the house: its walls, a window band all round, a low hipped roof
+          brFBox(b, P, pa - 2.3, pa + 2.3, n0 + 0.6, n1 - 0.6, yt + 0.45, yt + 1.4, C.house, { noBottom: true, noTop: true });
+          if (b === near) brFBox(b, P, pa - 2.25, pa + 2.25, n0 + 0.65, n1 - 0.65, yt + 1.4, yt + 2.5, C.glass, { noBottom: true, noTop: true });
+          brFBox(b, P, pa - 2.3, pa + 2.3, n0 + 0.6, n1 - 0.6, b === near ? yt + 2.5 : yt + 1.4, yt + ha + 0.2, C.house, { noBottom: true, noTop: true });
+          brFBox(b, P, pa - 2.7, pa + 2.7, n0 + 0.2, n1 - 0.2, yt + ha + 0.2, yt + ha + 1.4, C.steelLo, { noBottom: false, ta: [pa - 0.4, pa + 0.4], tn: [(n0 + n1) / 2 - 0.4, (n0 + n1) / 2 + 0.4] });
         }
       }
     }
-    const appr = brApproach(near, lat, far, ch, A, [ux, uz], bascA - 14, La + 10, { every: 46, depth: 4.0, col: C.steel, girder: brC(TACONY_COL.steel, BRK.girder), pier: C.granite, granite: true });
+    const appr = brApproach(near, lat, far, ch, A, [ux, uz], bascA - 14, La + 10, { every: 46, depth: 5.0, col: C.steel, lace: C.lace, pier: C.ashlar, granite: true, haunch: true });
     const lamps = brDeckLamps(ch, 36, 'tacony');
     const ea = Number.isFinite(appr.tMin) ? Math.min(bascA - 20, appr.tMin) : bascA - 20, eb = Number.isFinite(appr.tMax) ? Math.max(La + 20, appr.tMax) : La + 20;
     const cs = [P(ea, -20, 0), P(ea, 20, 0), P(eb, -20, 0), P(eb, 20, 0)];
-    BR.owns.push({ a: [A[0] + ux * (bascA - 15), A[1] + uz * (bascA - 15)], u: [ux, uz], L: La - bascA + 30, ext: 6, r: 14 });
+    BR.owns.push({ a: [A[0] + ux * (bascA - 15), A[1] + uz * (bascA - 15)], u: [ux, uz], L: La - bascA + 30, ext: 6, r: 15 });
     return brAdd('Tacony-Palmyra', near, lat, far, [Math.min(...cs.map((c) => c[0])), Math.max(...cs.map((c) => c[0])), W - 4, deckArch + RISE + 8, Math.min(...cs.map((c) => c[2])), Math.max(...cs.map((c) => c[2]))],
       { chains: ch.length, lift: +lift.toFixed(1), arch: Math.round(La), offset: +off.toFixed(1), approach: [Math.round(appr.tMin), Math.round(appr.tMax)], approachPiers: appr.piers, lamps }, { o: A, d: [ux, uz], s0: ea - 5, s1: eb + 5 });
   }
@@ -18702,6 +19028,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
             else deck = t === 0 ? 20 : 13;                     // major roads become bridge decks
           }
           if (deck && (wwbNear(mx, mz) || bfbNear(mx, mz))) continue;   // the custom WWB and BFB decks own their crossings
+          if (t <= 1 && bfbUnder(mx, mz, dx, dz)) continue;   // and the Ben Franklin's approaches their at-grade twin (Round 195)
           if (ovpOwned(a[0], a[1], q[0], q[1])) continue;      // a baked overpass deck or sunken roadway owns it
           if (hw < 4 && patcoCutAt(mx, mz)) continue;          // a footway over PATCO's open cut at 5th Street (Round 141 review)
           // a wide segment lying ALONG a core street is a duplicate and would z-fight it
@@ -21477,6 +21804,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         }
         if (deck && (wwbNear(mx, mz) || bfbNear(mx, mz))) continue;   // the custom WWB and BFB decks own their crossings
         if (t <= 1 && wwbUnder(mx, mz)) continue;      // and its Jersey viaduct: no flat twin beneath
+        if (t <= 1 && bfbUnder(mx, mz, dx, dz)) continue;   // nor under the Ben Franklin's approaches (Round 195)
         if (wideSeam && inWide(a) && inWide(q) && ((inWideBox(a) && inWideBox(q)) || wideOwned(a[0], a[1], q[0], q[1]))) continue;   // the wide set paves there (the far ring only: the outskirts packer already cedes the wide box, and the wide data ends at lat 39.890 while this margin runs to z 6600)
         if (ovpOwned(a[0], a[1], q[0], q[1])) continue; // a baked overpass deck owns it
         const px = -dz * hw, pz = dx * hw;
@@ -23716,7 +24044,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         if (capBot - gy < 2.0) continue;
         if (crossingRoadNear(x, z, 7.5, ux, uz)) continue;
         if (deckBetween(x, z, gy + 0.5, capBot - 0.2, ci)) continue;
-        if (brOvpSkip(x, z)) continue;   // a remodelled bridge's span carries the deck there (Round 195)
+        if (c.br && brOvpSkip(x, z)) continue;   // a remodelled bridge's span carries its own chain's deck there (Round 195)
         const ps = wet ? 1.6 : 1;
         if (c.c <= 1) {
           boxAt(x, z, ux, uz, 2.3, c.w * 0.92, y - dep - 1.35, y - dep + 0.15, tint(cCap, jit));
@@ -33493,7 +33821,7 @@ float pinOccGate() {
       const cls = flags & 7, oneway = !!(flags & 8);
       let pts = new Array(n);
       for (let j = 0; j < n; j++) pts[j] = [body[k++] * unit, body[k++] * unit];
-      pts = densify(pts, 20);
+      pts = brLaneFit(densify(pts, 20));   // Round 195: the Ben Franklin's carriageways onto its painted lanes
       // per-vertex height with the full terrain story — trench, bridge decks,
       // viaducts, sunken carriageways — split into sub-runs at dead water
       let cur = null;
@@ -33521,7 +33849,7 @@ float pinOccGate() {
           }
         }
         let lift = core ? LAYER.road + 0.04 : LAYER.road + (6 - Math.min(cls, 6)) * 0.055 + 0.05;
-        const bY = bridgeDeckLift(x, z);   // the custom spans (BFB, WWB) carry traffic on their real decks
+        const bY = bridgeDeckLift(x, z, ux, uz);   // the custom spans (BFB, WWB) carry traffic on their real decks (a way crossing under keeps its own height)
         if (bY !== null && bY > y) { y = bY; lift = 0.12; }
         else if (!core) {
           const low = demY(x, z) < TERRAIN.water + 0.6;
@@ -34047,6 +34375,8 @@ float pinOccGate() {
           next += STEP;
           const gy = groundMeshY(x, z) ?? siteY(x, z, 'ground');
           if (y - gy < 4.5 || wwbNear(x, z, 40) || bfbNear(x, z, 40)) continue;
+          if (OVP.el[chain] && OVP.el[chain].br) continue;   // the Betsy Ross's and the Tacony-Palmyra's chains carry the bridges' own standards (Round 195)
+          if (bridgesOccAt(x, z)) continue;                   // nor a 12 m standard up through the Ben Franklin's approaches
           for (const sg of hw >= 11 ? [-1, 1] : [(k & 1) ? 1 : -1]) {
             const off = Math.max(0.5, hw - 0.45);
             DECK_LAMPS.push(x + nx * sg * off, z + nz * sg * off, y, Math.atan2(nz * sg, -nx * sg), 12);   // the arm (local +x) turned to -n*sg, over the lanes; 12 m
@@ -34214,7 +34544,8 @@ float pinOccGate() {
     postRaw(poleMat);
     {   // the light map's splats: one soft point per lamp, its radius from its mounting height (a lot mast casts widest)
       const nGl = GLORY.lamps.length;   // Round 191: Glory's two lanterns
-      const lp = new Float32Array((nAll + nGl) * 3), lc = new Float32Array((nAll + nGl) * 3), lr = new Float32Array(nAll + nGl);
+      const nBr = BR.lampSrc.length / 4;   // Round 195: the remodelled bridges' own lamps
+      const lp = new Float32Array((nAll + nGl + nBr) * 3), lc = new Float32Array((nAll + nGl + nBr) * 3), lr = new Float32Array(nAll + nGl + nBr);
       let m = 0;
       for (let i = 0; i < nAll; i++) {
         if (pos[i * 3 + 1] < -500) continue;   // the cap site's poles are not there
@@ -34233,6 +34564,15 @@ float pinOccGate() {
         lp[m * 3] = q[0]; lp[m * 3 + 1] = Math.max(1, q[1] - siteY(q[0], q[2], 'ground')); lp[m * 3 + 2] = q[2];
         lc[m * 3] = 0.22; lc[m * 3 + 1] = 0.62 * 0.22; lc[m * 3 + 2] = 0.32 * 0.22;
         lr[m] = 7;
+        m++;
+      }
+      // Round 195: the bridges' standards and walkway lamps light their own decks (the review: the approaches ran dark),
+      // LED white at a deck standard's brightness, the head's height over its deck for the pool's shape
+      for (let k = 0; k < nBr; k++) {
+        const o = k * 4, h = BR.lampSrc[o + 2], kk = BR.lampSrc[o + 3];
+        lp[m * 3] = BR.lampSrc[o]; lp[m * 3 + 1] = h; lp[m * 3 + 2] = BR.lampSrc[o + 1];
+        lc[m * 3] = 1.3 * kk; lc[m * 3 + 1] = 1.08 * kk; lc[m * 3 + 2] = 0.78 * kk;
+        lr[m] = clamp(h * 3.4, 14, 42);
         m++;
       }
       const g = new THREE.BufferGeometry();
@@ -35732,7 +36072,7 @@ float pinOccGate() {
   }
   function closureY(x, z, ux, uz) {   // the traffic layer's road height (its trench aside): the bridge decks and the overpasses lift it
     let y = Math.max(siteY(x, z, 'road'), bankFloor(x, z)), lift = inCore(x, z) ? LAYER.road + 0.04 : LAYER.road + 2 * 0.055 + 0.05;
-    const bY = bridgeDeckLift(x, z);
+    const bY = bridgeDeckLift(x, z, ux, uz);
     if (bY !== null && bY > y) { y = bY; lift = 0.12; }
     const oy = ovpDeckY(x, z, ux, uz);
     if (oy !== null) { y = oy; lift = 0.1; }

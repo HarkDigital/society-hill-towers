@@ -109,6 +109,7 @@ const inCapSite = (x, z) => Math.abs(x + 300) < 120 && Math.abs(z - 200) < 120;
 const inCore = (x, z) => Math.abs(x) < 1200 && Math.abs(z) < 900;
 const frontOff = (x, z) => x * 0.98 + z * 0.17;
 const bridgeDeckLift = (x, z) => Math.abs(x - 4200) < 60 && Math.abs(z + 900) < 400 ? 25 : null;
+const brLaneFit = (pts) => pts;   // Round 195: the Ben Franklin's lanes (the identity here: this test reads the linker)
 // elevated decks: an east-west street inside a 60 m band every 1,400 m rides 8 m up, so the cross streets under it
 // meet it in plan but not in height
 const ovpDeckY = (x, z, ux, uz) => Math.abs(ux) > 0.85 && Math.abs((((z % 1400) + 1400) % 1400) - 700) < 30 ? hill(x, z) + 8 : null;
