@@ -14879,7 +14879,8 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // windows above, each in cream shutters. The walls are blank (style 3), so every opening is applied.
     {
       const b = get('Man Full of Troubles Tavern');
-      if (b) {
+      if (b && TAVERN_ON) tavernMake(b);   // Round 199: textured, in a mesh of its own (tavernMake); ?real=0 keeps this one
+      else if (b) {
         const m0 = mark();
         const ob = orientedBox(b.poly), a = obbAxis(ob), ry = ryAlign(a.ax, a.az);
         const EAVE = 6.5, RIDGE = 10.2, OVH = 0.35, K = a.hl / 5.9;   // the photo's 11.8 m front, scaled to the footprint
@@ -15604,6 +15605,409 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       };
     }
   });
+
+  // ---- A Man Full of Trouble textured (Round 199, Mike, with a screenshot from across Spruce Street: "Man Full of Trouble
+  // needs to look like the other newer textures"). The Round 127 model stood in flat colours among the photographed fronts
+  // (brick-red walls, a brown roof and pent, cream boxes for the trim, the shutters and the doors, grey glass). It is built
+  // again here as one mesh on one material of its own, on the same footprint, massing and openings Mike approved from his
+  // photo, and dressed from tavern_art.json (fetch_tavern_art.py, bake_tavern_art.py: one atlas, TAVERN_ART): the walls
+  // in the house's Flemish bond, the roof, the pent and the dormers' cheeks in weathered cedar shingles, the trim, the
+  // cornice and the fascias in old cream paint, the steps in marble, and the openings as generated photographs at their
+  // casings' own proportions: the six-panel doors under their four-light transoms, the ground floor's windows shut behind
+  // their board shutters (refs: every photograph of the house shows them closed), the nine-over-nine sashes upstairs
+  // between raised-panel shutters, the dormers' six-over-six sashes. The walls are cut round the openings and each opening
+  // sits back in a brick reveal; the cornice and the pent are swept profiles (a crown, a fascia, a soffit and a bed
+  // moulding; the pent's shingled slope over a fascia and a cove), the cornice returning round both gable ends under cream
+  // rake boards. The glass is the page's own (the bake repaints each sash's panes on a regular grid and hands the grid to the
+  // shader): glassOpticsPatch's reflections over a dim room by day (roomDay, the facade's rooms) and a lit one after dark
+  // (roomLight, by the clock's shares), the street lamps' wash off it. A face's kind rides aTv (four bytes: the mode, its
+  // swatch or element, a shade for a reveal or a soffit, the window's number), every swatch tiled in metres on its own face
+  // with the unwrapped coordinate's gradients (no seam at the wrap) held to its gutter, its mean past that. ?real=0 and the
+  // phone's recovery tier keep the Round 127 model exactly; ?tavern=0 is the A/B under the realistic look
+  const TAVERN_ON = REAL && !TIER2 && typeof TAVERN_ART !== 'undefined' && !!TAVERN_ART && !!TAVERN_ART.el && !!TAVERN_ART.sw && !/[?&]tavern=0\b/.test(location.search);
+  const TAVERN = { mesh: null, tris: 0, verts: 0, art: 0, err: null };
+  const TV_SW = ['brick', 'shingle', 'paint', 'marble'], TV_EL = ['door', 'sash', 'dsash', 'winshut', 'shutL', 'shutR'];   // the first three glazed
+  const tavernU = {
+    uTvArt: { value: 0 }, uTvY0: { value: 0 }, uTvE: { value: new THREE.Vector2(1, 0) }, uTvAtW: { value: 2048 },
+    uTvEv: { value: new THREE.Vector2(2.96, 5.92) },   // the feet of the pent's cove and of the cornice's bed moulding over the walls (tavernBuild)
+    uTvSw: { value: TV_SW.map(() => new THREE.Vector4(0, 0, 1, 1)) }, uTvSwM: { value: TV_SW.map(() => new THREE.Vector2(1, 1)) },
+    uTvSwC: { value: TV_SW.map(() => new THREE.Vector3(0.2, 0.2, 0.2)) },   // a swatch's linear mean: before the atlas, and past its gutter
+    uTvEl: { value: TV_EL.map(() => new THREE.Vector4(0, 0, 1, 1)) }, uTvElC: { value: TV_EL.map(() => new THREE.Vector3(0.6, 0.58, 0.5)) },
+    // the glazed elements: their size in metres, each sash's glass [u0, v0, u1, v1] in the element's own [0, 1] (the panes'
+    // outer edges), the two sashes' columns and rows, and the bars across and up
+    uTvElM: { value: [0, 1, 2].map(() => new THREE.Vector2(1, 1)) }, uTvGA: { value: [0, 1, 2].map(() => new THREE.Vector4()) },
+    uTvGB: { value: [0, 1, 2].map(() => new THREE.Vector4()) }, uTvGG: { value: [0, 1, 2].map(() => new THREE.Vector4()) },
+    uTvGW: { value: [0, 1, 2].map(() => new THREE.Vector4()) },
+    // the flats with no swatch, linear: the glass's own dark, a flue's soot, the lead of a cap, the iron
+    uTvFlat: { value: [new THREE.Vector3(0.012, 0.014, 0.016), new THREE.Vector3(0.012, 0.010, 0.009), new THREE.Vector3(0.09, 0.095, 0.10), new THREE.Vector3(0.015, 0.015, 0.015)] },
+  };
+  const TAVERN_GLSL = [
+    'uniform float uTvArt, uTvY0, uTvAtW, uNight; uniform vec2 uTvE, uTvEv; uniform vec3 uTvSun;',
+    'uniform vec4 uTvSw[4]; uniform vec2 uTvSwM[4]; uniform vec3 uTvSwC[4]; uniform vec4 uTvEl[6]; uniform vec3 uTvElC[6];',
+    'uniform vec2 uTvElM[3]; uniform vec4 uTvGA[3], uTvGB[3], uTvGG[3], uTvGW[3]; uniform vec3 uTvFlat[4];',
+    'varying vec4 vTv;',
+    // frMask: the name lampLightPatchReal looks for to keep the street lamps' wash off the glass; its wall gate reads vWNorm
+    // and vBase, which are the face's world normal and the house's foot here
+    'vec4 frMask; float tvGlass, tvRough; vec2 tvPuv, tvPid, tvRuv, tvPane; vec3 tvWN, tvWP;',
+    '#define vWNorm tvWN',
+    '#define vBase uTvY0',
+    'float tvH(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }',
+    'float tvVN(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);',
+    '  return mix(mix(tvH(i), tvH(i + vec2(1.0, 0.0)), f.x), mix(tvH(i + vec2(0.0, 1.0)), tvH(i + vec2(1.0, 1.0)), f.x), f.y); }',
+    // one sash's panes at q (the element's own [0, 1]): R the glass's outer edges, g its columns and rows, b the bars, aa a
+    // pixel; the coverage, and the pane's number and its own [0, 1] where it has any (a bar's middle splits two panes)
+    'float tvSash(vec2 q, vec4 R, vec2 g, vec2 b, vec2 aa, inout vec2 pid, inout vec2 puv) {',
+    '  if (g.x < 0.5) return 0.0;',
+    '  vec2 d = q - R.xy, p = (R.zw - R.xy - (g - 1.0) * b) / g, P = p + b;',
+    '  vec2 k = clamp(floor((d + 0.5 * b) / P), vec2(0.0), g - 1.0), f = d - k * P;',
+    '  vec2 c = clamp(min(f, p - f) / max(aa, vec2(1.0e-5)) + 0.5, 0.0, 1.0);',
+    '  float cov = c.x * c.y;',
+    '  if (cov > 0.0) { pid = k; puv = clamp(f / p, 0.0, 1.0); }',
+    '  return cov; }',
+  ].join('\n');
+  function tavernMat(gl2) {
+    const blank = document.createElement('canvas'); blank.width = blank.height = 1;
+    const c2 = blank.getContext('2d'); c2.fillStyle = '#8a7a66'; c2.fillRect(0, 0, 1, 1);
+    const map = new THREE.Texture(blank); map.encoding = THREE.sRGBEncoding; map.anisotropy = anisoOf(8); map.needsUpdate = true;
+    const mat = new THREE.MeshStandardMaterial({ map, color: new THREE.Color(0.88, 0.88, 0.88), roughness: 1, metalness: 0 });
+    mat.extensions = { derivatives: true };
+    mat.onBeforeCompile = (sh) => {
+      Object.assign(sh.uniforms, tavernU);
+      sh.uniforms.uNight = nightUniform; sh.uniforms.uTvSun = sunWUniform;
+      sh.vertexShader = sh.vertexShader.replace('#include <common>', '#include <common>\nattribute vec4 aTv; varying vec4 vTv;')
+        .replace('#include <begin_vertex>', '#include <begin_vertex>\nvTv = aTv * 255.0;');
+      sh.fragmentShader = sh.fragmentShader.replace('#include <common>', '#include <common>\n' + TAVERN_GLSL + '\n' + WINDOW_INTERIOR_GLSL)
+        .replace('#include <map_fragment>', [
+          'float tvMd = floor(vTv.x + 0.5), tvId = floor(vTv.y + 0.5); bool tvIsEl = tvMd < 0.5;',
+          'tvWN = inverseTransformDirection(normalize(vNormal), viewMatrix); tvWP = cameraPosition - vViewPosition * mat3(viewMatrix);',
+          // the swatch (its rect in the atlas, its size in metres, its mean) and the element (its rect, its mean; a glazed one's
+          // glass), picked by the face's own number in loops a WebGL 1 fragment shader may index in
+          'vec4 tvR = uTvSw[0]; vec2 tvM = uTvSwM[0]; vec3 tvMean = uTvSwC[0];',
+          'for (int i = 1; i < 4; i++) if (float(i) == tvId) { tvR = uTvSw[i]; tvM = uTvSwM[i]; tvMean = uTvSwC[i]; }',
+          'vec4 tvE = uTvEl[0]; vec3 tvEc = uTvElC[0];',
+          'for (int i = 1; i < 6; i++) if (float(i) == tvId) { tvE = uTvEl[i]; tvEc = uTvElC[i]; }',
+          'vec2 tvEm = uTvElM[0]; vec4 tvA = uTvGA[0], tvB = uTvGB[0], tvG = uTvGG[0], tvW = uTvGW[0];',
+          'for (int i = 1; i < 3; i++) if (float(i) == tvId) { tvEm = uTvElM[i]; tvA = uTvGA[i]; tvB = uTvGB[i]; tvG = uTvGG[i]; tvW = uTvGW[i]; }',
+          // every derivative here, in uniform control flow: the tile coordinate unwrapped (so the wrap is no mip seam), the
+          // element's own coordinate, a pixel of each
+          'vec2 tvT = vUv / tvM, tvQ = (vUv - tvE.xy) / tvE.zw, tvAa = fwidth(tvQ);',
+          'vec2 tvGx = tvIsEl ? dFdx(vUv) : dFdx(tvT) * tvR.zw, tvGy = tvIsEl ? dFdy(vUv) : dFdy(tvT) * tvR.zw;',
+          'vec2 tvUv = tvIsEl ? vUv : tvR.xy + tvR.zw * fract(tvT);',
+          'if (tvIsEl) tvMean = tvEc;',
+          // held to the gutter (a swatch's 32 texels, an element's 8: the third and the second mip), and the face takes its
+          // mean as a pixel grows past it, so a far house neither bleeds its neighbours in nor shimmers
+          'float tvGm = (tvIsEl ? 6.0 : 24.0) / uTvAtW, tvGl = max(length(tvGx), length(tvGy));',
+          'tvGx *= min(1.0, tvGm / max(length(tvGx), 1.0e-7)); tvGy *= min(1.0, tvGm / max(length(tvGy), 1.0e-7));',
+          gl2 ? 'vec3 tvCol = textureGrad(map, tvUv, tvGx, tvGy).rgb;' : 'vec3 tvCol = texture2D(map, tvUv).rgb;',
+          'tvCol = mix(tvCol, tvMean, smoothstep(1.2, 3.0, tvGl / tvGm));',
+          'if (uTvArt < 0.5) tvCol = tvMean;',
+          'if (tvMd > 1.5) { tvCol = uTvFlat[0]; for (int i = 1; i < 4; i++) if (float(i) == tvId) tvCol = uTvFlat[i]; }',
+          // the glass: a glazed element's panes on the bake's grid (the upper sash, the lower), the room's [0, 1] over both
+          'tvGlass = 0.0; tvPid = vec2(0.0); tvPuv = vec2(0.5); tvRuv = vec2(0.5); tvPane = vec2(1.0);',
+          'if (tvIsEl && tvId < 2.5) {',
+          '  float tvCa = tvSash(tvQ, tvA, tvG.xy, tvW.xy, tvAa, tvPid, tvPuv);',
+          '  vec2 tvPb = vec2(0.0), tvUb = vec2(0.5); float tvCb = tvSash(tvQ, tvB, tvG.zw, tvW.xy, tvAa, tvPb, tvUb);',
+          '  if (tvCb > tvCa) { tvPid = tvPb + vec2(0.0, 10.0); tvPuv = tvUb; }',
+          '  tvGlass = max(tvCa, tvCb);',
+          '  vec4 tvU = tvG.z > 0.5 ? vec4(min(tvA.xy, tvB.xy), max(tvA.zw, tvB.zw)) : tvA;',
+          '  tvRuv = (tvQ - tvU.xy) / max(tvU.zw - tvU.xy, vec2(1.0e-4)); tvPane = max((tvU.zw - tvU.xy) * tvEm, vec2(0.05));',
+          '}',
+          'tvPid += vec2(floor(vTv.w + 0.5) * 7.0, 0.0);',
+          'frMask = vec4(tvGlass, 0.0, 0.0, 0.0);',
+          'tvCol = mix(tvCol, uTvFlat[0], tvGlass);',
+          // the weather by its place on the house, never by a tile: broad blotches over the brick and the shingles (a tile
+          // repeats every metre and a half), the splash and the damp at the foot, the soot at the chimneys' heads, and the
+          // rain's streaks down the roof
+          '{ float tvY = tvWP.y - uTvY0, tvK = tvMd > 0.5 && tvMd < 1.5 ? 1.0 : 0.0;',
+          '  vec2 tvPl = vec2(dot(tvWP.xz, uTvE) + tvWP.y * 0.2, tvWP.y);',
+          '  float tvBl = tvVN(tvPl * 0.55 + tvId * 7.1) * 0.6 + tvVN(tvPl * 1.9 + 3.3) * 0.4;',
+          '  if (tvId < 0.5) tvCol *= mix(1.0, (0.90 + 0.2 * tvBl) * (1.0 - 0.2 * (1.0 - smoothstep(0.0, 0.8 + 0.4 * tvVN(tvPl * 1.3), tvY))) * (1.0 - 0.4 * smoothstep(10.0, 11.6, tvY)), tvK);',
+          // the brick in the lee of the pent (the front) and of the cornice (the front and the rear): the sky it does not see,
+          // which the near shadow map's bias leaves to the ambient (a phone has no occlusion pass)
+          '  float tvFw = dot(tvWN.xz, vec2(-uTvE.y, uTvE.x));',
+          '  float tvLee = (1.0 - smoothstep(0.0, 0.7, uTvEv.x - tvY)) * step(tvY, uTvEv.x + 0.01) * step(0.7, tvFw) + (1.0 - smoothstep(0.0, 0.4, uTvEv.y - tvY)) * step(tvY, uTvEv.y + 0.01) * step(0.7, abs(tvFw));',
+          '  if (tvId < 0.5) tvCol *= 1.0 - 0.45 * min(tvLee, 1.0) * tvK;',
+          '  if (tvId > 0.5 && tvId < 1.5) tvCol *= mix(1.0, (0.88 + 0.24 * tvBl) * (0.92 + 0.16 * tvVN(vec2(tvPl.x * 2.3, tvY * 0.35))), tvK);',
+          '}',
+          'tvCol *= 1.0 - vTv.z / 255.0;',   // a reveal's, a soffit's or a cheek's shade
+          'diffuseColor.rgb *= tvCol;',
+          'tvRough = tvIsEl ? 0.62 : (tvMd > 1.5 ? 0.7 : (tvId < 0.5 ? 0.9 : (tvId < 1.5 ? 0.94 : (tvId < 2.5 ? 0.6 : 0.42))));',
+          // the room behind the glass, read where its rays are known (WINDOW_INTERIOR_GLSL): the eye's ray in the window's
+          // frame, across with the front's run, up, into the house, in the glass's own widths and heights
+          '{ vec3 tvRv = normalize(tvWP - cameraPosition);',
+          '  roomRay = vec3(dot(tvRv.xz, uTvE) / tvPane.x, tvRv.y / tvPane.y, max(-dot(tvRv, normalize(tvWN)), 0.02) / tvPane.x); roomPar = 1.0; }',
+        ].join('\n'))
+        .replace('#include <emissivemap_fragment>', ['#include <emissivemap_fragment>',
+          // after dark the rooms behind the glass (a home's share of them lit by the clock), by day the room lit through its
+          // own window, an emission under the glass's reflection (both branches on uniforms: roomLight takes derivatives)
+          '{ vec2 tvRid = vec2(floor(vTv.w + 0.5), 7.0); vec2 tvRw = fwidth(tvRuv);',
+          '  if (uNight > 0.001) totalEmissiveRadiance += tvGlass * uNight * roomLight(tvRuv, tvRid, 0.37, 0.0) * 0.95;',
+          '  if (uNight < 0.999) {',
+          '    float tvRes = 1.0 - smoothstep(0.08, 0.3, max(tvRw.x, tvRw.y));',
+          '    vec3 tvRd = mix(vec3(0.30), roomDay(tvRuv, tvRid, 0.37, 0.0), tvRes);',
+          '    float tvCv = clamp(dot(normalize(cameraPosition - tvWP), normalize(tvWN)), 0.0, 1.0), tvFr = 0.04 + 0.96 * pow(1.0 - tvCv, 5.0);',
+          '    totalEmissiveRadiance += tvRd * (0.06 + 0.13 * max(uTvSun.y, 0.0)) * tvGlass * (1.0 - tvFr) * (1.0 - uNight); } }',
+        ].join('\n'));
+      glassOpticsPatch(sh, { mask: 'tvGlass', normal: 'tvWN', uv: 'tvPuv', id: 'tvPid', seed: 'vTv.w * 0.37', coating: 0.09, roughness: 0.09, depth: 0.85,
+        horizon: 'clamp((24.0 - (tvWP.y - uTvY0)) / 55.0, 0.0, 0.42)' });
+      occBind(sh);
+      lampLightPatch(sh, 'tvWP', 'wall');
+      wxSurfacePatch(sh);
+      // last, so its line runs first after the chunk: the face's own roughness, which the weather's wet and the glass then take
+      sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = tvRough;');
+    };
+    mat.customProgramCacheKey = () => 'tavern' + (gl2 ? '' : '|gl1');
+    return mat;
+  }
+  // the house in its own frame: x along the front, left to right for someone on Spruce, y up from its foot, o out of the
+  // front wall (the rear wall at -2 hs), as the Round 127 model's P3 put it (the frame is right-handed: x by y is o)
+  function tavernBuild(b) {
+    const A = TAVERN_ART;
+    const ob = orientedBox(b.poly), a = obbAxis(ob);
+    const sv = a.pz > 0 ? 1 : -1, nx = a.px * sv, nz = a.pz * sv;   // Spruce Street lies south (+z) of the house
+    const su = Math.sign(a.ax * nz - a.az * nx) || 1, ex = a.ax * su, ez = a.az * su;
+    const hl = a.hl, hs = a.hs, D = 2 * hs, K = hl / 5.9;   // the photo's 11.8 m front, scaled to the footprint
+    const [gcx, gcz] = polyCentroid(b.poly), y0 = siteY(gcx, gcz, 'ground');
+    const EAVE = 6.5, RIDGE = 10.2, OVH = 0.35, SL = (RIDGE - EAVE) / (OVH + hs);
+    const OE = 0.43, YE = EAVE - (OE - OVH) * SL;   // the roof's eave carried 8 cm past Round 127's, over the cornice's crown
+    const yR = (o) => (o >= -hs ? EAVE + (OVH - o) * SL : EAVE + (o + D + OVH) * SL);   // the roof's top over a point o out
+    const pos = [], nor = [], uvs = [], tvs = [];
+    const T = (mode, id, shade, win) => [mode, id, Math.round(shade || 0), win || 0];
+    const BRICK = 0, SHINGLE = 1, PAINT = 2, MARBLE = 3;
+    const sw = (id, shade) => T(1, id, shade);
+    // a face of three or four local points [x, y, o], its uvs, the side it faces (a local vector) and its kind; the winding
+    // follows the side, whatever order the points come in
+    const face = (P, UV, n, t) => {
+      const [p0, p1, p2] = P;
+      const ux = p1[0] - p0[0], uy = p1[1] - p0[1], uo = p1[2] - p0[2], vx = p2[0] - p0[0], vy = p2[1] - p0[1], vo = p2[2] - p0[2];
+      const cx = uy * vo - uo * vy, cy = uo * vx - ux * vo, co = ux * vy - uy * vx;
+      const flip = cx * n[0] + cy * n[1] + co * n[2] < 0;
+      const L = Math.hypot(n[0], n[1], n[2]) || 1, wn = [(ex * n[0] + nx * n[2]) / L, n[1] / L, (ez * n[0] + nz * n[2]) / L];
+      const emit = (i) => {
+        const p = P[i];
+        pos.push(ob.cx + ex * p[0] + nx * (hs + p[2]), y0 + p[1], ob.cz + ez * p[0] + nz * (hs + p[2]));
+        nor.push(wn[0], wn[1], wn[2]); uvs.push(UV[i][0], UV[i][1]); tvs.push(t[0], t[1], t[2], t[3]);
+      };
+      const tris = P.length === 4 ? [[0, 1, 2], [0, 2, 3]] : [[0, 1, 2]];
+      for (const [i, j, k] of tris) { emit(i); if (flip) { emit(k); emit(j); } else { emit(j); emit(k); } }
+    };
+    // a swatch face: its uvs in metres from the face's own plane (map) with an offset
+    const swFace = (P, n, t, map) => face(P, P.map(map), n, t);
+    const XY = (p) => [p[0] + 0.37, p[1]], OY = (p) => [p[2] + 0.61, p[1]], XO = (p) => [p[0], p[2]], YX = (p) => [p[1], p[0]], YO = (p) => [p[1], p[2]];
+    // an axis-aligned box [x0, x1] by [y0, y1] by [o0, o1]; skin(side) gives a face's kind and uv map, or null to leave it out
+    const boxL = (x0, x1, yA, yB, o0, o1, skin) => {
+      const S = [
+        ['+o', [0, 0, 1], [[x0, yA, o1], [x1, yA, o1], [x1, yB, o1], [x0, yB, o1]]],
+        ['-o', [0, 0, -1], [[x1, yA, o0], [x0, yA, o0], [x0, yB, o0], [x1, yB, o0]]],
+        ['+x', [1, 0, 0], [[x1, yA, o1], [x1, yA, o0], [x1, yB, o0], [x1, yB, o1]]],
+        ['-x', [-1, 0, 0], [[x0, yA, o0], [x0, yA, o1], [x0, yB, o1], [x0, yB, o0]]],
+        ['+y', [0, 1, 0], [[x0, yB, o1], [x1, yB, o1], [x1, yB, o0], [x0, yB, o0]]],
+        ['-y', [0, -1, 0], [[x0, yA, o0], [x1, yA, o0], [x1, yA, o1], [x0, yA, o1]]],
+      ];
+      for (const [side, n, P] of S) {
+        const s = skin(side, P);
+        if (!s) continue;
+        if (s.el) {   // an element on the face: its atlas rect over the face's extent (mirrored across for a hinge's side)
+          const r = A.el[s.el].rect, xs = P.map((p) => p[0]), ys = P.map((p) => p[1]);
+          const xa = Math.min(...xs), xb = Math.max(...xs), ya = Math.min(...ys), yb = Math.max(...ys);
+          face(P, P.map((p) => { const u = (p[0] - xa) / (xb - xa); return [r[0] + (s.mirror ? 1 - u : u) * r[2], r[1] + (p[1] - ya) / (yb - ya) * r[3]]; }), n, s.t);
+        } else swFace(P, n, s.t, s.map || (side[1] === 'o' ? XY : side[1] === 'x' ? OY : XO));
+      }
+    };
+    const paint = (shade, vert) => (side) => ({ t: sw(PAINT, side === '-y' ? Math.max(shade || 0, 70) : shade), map: vert && side[1] !== 'y' ? (side[1] === 'o' ? YX : YO) : null });
+    const brick = (side) => (side === '-y' ? null : { t: sw(BRICK, 0) });
+    // ---- the walls: the front cut round its openings, each opening back in a brick reveal; the rear; the gable ends
+    const WTOP = yR(0) - 0.03;
+    const holes = [];
+    for (const x of [-4.0, 1.15]) holes.push({ x0: x * K - 0.575, x1: x * K + 0.575, y0: 0.85, y1: 2.80, el: 'winshut', d: 0.08, win: 0 });
+    [-1.97, 4.0].forEach((x, i) => holes.push({ x0: x * K - 0.575, x1: x * K + 0.575, y0: 0.15, y1: 2.85, el: 'door', d: 0.12, win: 7 + i, door: true }));
+    [-4.0, -1.97, 1.15, 4.04].forEach((x, i) => holes.push({ x0: x * K - 0.55, x1: x * K + 0.55, y0: 3.85, y1: 5.80, el: 'sash', d: 0.07, win: 1 + i }));
+    const cutWall = (X0, X1, Y0, Y1, o, n, hs2, t, map) => {   // a wall plane at o with rectangular holes
+      const ys = [...new Set([Y0, Y1, ...hs2.flatMap((h) => [h.y0, h.y1])])].sort((p, q) => p - q);
+      for (let i = 0; i + 1 < ys.length; i++) {
+        const ya = ys[i], yb = ys[i + 1], cut = hs2.filter((h) => h.y0 <= ya + 1e-6 && h.y1 >= yb - 1e-6).sort((p, q) => p.x0 - q.x0);
+        let xa = X0;
+        for (const h of [...cut, { x0: X1, x1: X1 }]) {
+          if (h.x0 > xa + 1e-6) swFace([[xa, ya, o], [h.x0, ya, o], [h.x0, yb, o], [xa, yb, o]], n, t, map);
+          xa = Math.max(xa, h.x1);
+        }
+      }
+    };
+    cutWall(-hl, hl, -1.5, WTOP, 0, [0, 0, 1], holes, sw(BRICK, 0), XY);
+    for (const h of holes) {
+      const { x0, x1, y0: ya, y1: yb, d } = h;
+      swFace([[x0, ya, 0], [x0, yb, 0], [x0, yb, -d], [x0, ya, -d]], [1, 0, 0], sw(BRICK, 70), OY);    // the jambs
+      swFace([[x1, ya, 0], [x1, yb, 0], [x1, yb, -d], [x1, ya, -d]], [-1, 0, 0], sw(BRICK, 70), OY);
+      swFace([[x0, yb, 0], [x1, yb, 0], [x1, yb, -d], [x0, yb, -d]], [0, -1, 0], sw(BRICK, 95), XO);   // the head
+      swFace([[x0, ya, 0], [x1, ya, 0], [x1, ya, -d], [x0, ya, -d]], [0, 1, 0], h.door ? sw(MARBLE, 30) : sw(PAINT, 20), XO);   // the sill (a door's marble)
+      const r = A.el[h.el].rect;
+      face([[x0, ya, -d], [x1, ya, -d], [x1, yb, -d], [x0, yb, -d]], [[r[0], r[1]], [r[0] + r[2], r[1]], [r[0] + r[2], r[1] + r[3]], [r[0], r[1] + r[3]]], [0, 0, 1], T(0, TV_EL.indexOf(h.el), 0, h.win));
+    }
+    swFace([[-hl, -1.5, -D], [hl, -1.5, -D], [hl, WTOP, -D], [-hl, WTOP, -D]], [0, 0, -1], sw(BRICK, 0), (p) => [-p[0], p[1]]);
+    for (const s of [-1, 1]) {   // the gable ends, up under the roof's slab
+      const x = s * hl, top = (o) => yR(o) - 0.03;
+      const P = [[x, -1.5, 0], [x, top(0), 0], [x, top(-hs), -hs], [x, top(-D), -D], [x, -1.5, -D]];
+      swFace([P[0], P[1], P[2]], [s, 0, 0], sw(BRICK, 0), OY); swFace([P[0], P[2], P[3]], [s, 0, 0], sw(BRICK, 0), OY); swFace([P[0], P[3], P[4]], [s, 0, 0], sw(BRICK, 0), OY);
+    }
+    // ---- the sills under the windows, the shutters beside the sashes, the downspouts and their boxed feet, the steps
+    for (const h of holes) {
+      if (h.door) continue;
+      boxL(h.x0 - 0.05, h.x1 + 0.05, h.y0 - 0.06, h.y0 + 0.01, -0.02, 0.06, paint(0));
+      if (h.el !== 'sash') continue;
+      for (const [sgn, el] of [[-1, 'shutL'], [1, 'shutR']]) {   // open against the wall: the leaf's inside face, its hinges by the casing
+        const xa = sgn < 0 ? h.x0 - 0.44 : h.x1 + 0.02, xb = xa + 0.42;
+        boxL(xa, xb, 3.90, 5.75, 0.012, 0.045, (side) => (side === '+o' ? { el, mirror: true, t: T(0, TV_EL.indexOf(el), 0, 0) } : side === '-o' ? null : paint(25)(side)));
+      }
+    }
+    for (const x of [-0.9 * K, 5.45 * K]) {
+      boxL(x - 0.055, x + 0.055, 0.9, 6.0, 0.06, 0.17, paint(10, true));
+      boxL(x - 0.13, x + 0.13, -0.3, 0.9, 0.02, 0.28, paint(0, true));
+    }
+    for (const h of holes) if (h.door) boxL((h.x0 + h.x1) / 2 - 0.68, (h.x0 + h.x1) / 2 + 0.68, -0.35, 0.15, 0, 0.42, (side) => (side === '-o' || side === '-y' ? null : { t: sw(MARBLE, 0) }));
+    // the cellar hatches under the ground floor's windows (refs: in every photograph, two leaves sloping off the wall)
+    for (const h of holes) {
+      if (h.el !== 'winshut') continue;
+      const xa = h.x0 - 0.1, xb = h.x1 + 0.1, oF = 0.95, yW = 0.5, yF = 0.12, yB = -0.3;
+      const P = [[xa, yF, oF], [xb, yF, oF], [xb, yW, 0], [xa, yW, 0]];
+      const r = A.el.winshut.rect;   // the two board leaves and their strap hinges: the closed shutters' own picture, laid down the slope
+      face(P, [[r[0], r[1]], [r[0] + r[2], r[1]], [r[0] + r[2], r[1] + r[3]], [r[0], r[1] + r[3]]], [0, oF, yW - yF], T(0, TV_EL.indexOf('winshut'), 20, 0));
+      swFace([[xa, yB, oF], [xb, yB, oF], [xb, yF, oF], [xa, yF, oF]], [0, 0, 1], sw(PAINT, 25), XY);
+      for (const [x, g] of [[xa, -1], [xb, 1]]) swFace([[x, yB, 0], [x, yB, oF], [x, yF, oF], [x, yW, 0]], [g, 0, 0], sw(PAINT, 35), OY);
+    }
+    // ---- the swept profiles: [d out of the path, y] round the section; a face for each edge but the one against the wall,
+    // its kind by the edge (k), the path a polyline in plan with each leg's outward normal, mitred at its corners
+    const sweep = (path, prof, kinds, caps) => {
+      const Lc = [0];
+      for (let i = 1; i < path.length; i++) Lc.push(Lc[i - 1] + Math.hypot(path[i].x - path[i - 1].x, path[i].o - path[i - 1].o));
+      const at = (i, d, y) => {   // the profile point (d, y) at the path's vertex i
+        const pv = path[i], nA = i > 0 ? path[i - 1].n : pv.n, nB = i < path.length - 1 ? pv.n : nA;
+        let mx = nA[0] + nB[0], mo = nA[1] + nB[1]; const dot = nA[0] * nB[0] + nA[1] * nB[1], k = 1 / (1 + dot);
+        if (i === 0) { mx = pv.n[0]; mo = pv.n[1]; } else if (i === path.length - 1) { mx = nA[0]; mo = nA[1]; } else { mx *= k; mo *= k; }
+        return [pv.x + mx * d, y, pv.o + mo * d];
+      };
+      const sL = [0];
+      for (let j = 1; j < prof.length; j++) sL.push(sL[j - 1] + Math.hypot(prof[j][0] - prof[j - 1][0], prof[j][1] - prof[j - 1][1]));
+      for (let i = 0; i + 1 < path.length; i++) {
+        const n2 = path[i].n;
+        for (let j = 0; j + 1 < prof.length; j++) {
+          const [d0, y0b] = prof[j], [d1, y1b] = prof[j + 1], kd = kinds[j];
+          if (!kd) continue;
+          // the edge's outward side: the profile's own normal (it runs round the section counter-clockwise, out on the right)
+          const ed = d1 - d0, ey = y1b - y0b, ndd = ey, ndy = -ed, nl = Math.hypot(ndd, ndy) || 1;
+          const n = [n2[0] * ndd / nl, ndy / nl, n2[1] * ndd / nl];
+          const P = [at(i, d0, y0b), at(i + 1, d0, y0b), at(i + 1, d1, y1b), at(i, d1, y1b)];
+          face(P, [[Lc[i], sL[j]], [Lc[i + 1], sL[j]], [Lc[i + 1], sL[j + 1]], [Lc[i], sL[j + 1]]], n, kd);
+        }
+      }
+      if (caps) for (const [i, sgn] of [[0, -1], [path.length - 1, 1]]) {   // the ends: the section itself, facing along the path
+        const pv = path[i], tl = i === 0 ? [path[1].x - pv.x, path[1].o - pv.o] : [pv.x - path[i - 1].x, pv.o - path[i - 1].o], tL = Math.hypot(tl[0], tl[1]) || 1;
+        const n = [tl[0] / tL * sgn, 0, tl[1] / tL * sgn];
+        const ring = prof.map(([d, y]) => new THREE.Vector2(d, y));
+        for (const [p, q, r] of THREE.ShapeUtils.triangulateShape(ring, [])) {
+          const P = [p, q, r].map((k) => at(i, prof[k][0], prof[k][1]));
+          face(P, [p, q, r].map((k) => [prof[k][0], prof[k][1]]), n, sw(PAINT, 30));
+        }
+      }
+    };
+    // the cornice (a crown, a fillet, the fascia, the soffit, a bed moulding), along the front and the rear and returning
+    // 0.55 m round each gable end
+    const COR = [[0.0, 6.40], [0.41, 6.40], [0.41, 6.36], [0.38, 6.31], [0.34, 6.25], [0.30, 6.22], [0.29, 6.21], [0.29, 6.03], [0.12, 6.0], [0.09, 5.97], [0.05, 5.93], [0.0, 5.92]];
+    const corK = COR.slice(0, -1).map((_, j) => (j === 0 ? sw(PAINT, 40) : j >= 7 ? sw(PAINT, 95 + 15 * (j - 7)) : sw(PAINT, j === 1 ? 10 : j === 5 ? 35 : 0)));
+    // (profiles run clockwise in [d, y] as listed, so they are reversed into the sweep's counter-clockwise order)
+    const ccw = (pr, k) => [pr.slice().reverse(), k.slice().reverse()];
+    const [corP, corKs] = ccw(COR, corK);
+    sweep([{ x: -hl, o: -0.55, n: [-1, 0] }, { x: -hl, o: 0, n: [0, 1] }, { x: hl, o: 0, n: [1, 0] }, { x: hl, o: -0.55, n: [1, 0] }], corP, corKs, true);
+    sweep([{ x: hl, o: -D + 0.55, n: [1, 0] }, { x: hl, o: -D, n: [0, -1] }, { x: -hl, o: -D, n: [-1, 0] }, { x: -hl, o: -D + 0.55, n: [-1, 0] }], corP, corKs, true);
+    // the pent between the floors: its shingled slope off the wall, a drip, the fascia, the cove back to the wall
+    const PENT = [[0.0, 3.78], [0.90, 3.40], [0.93, 3.38], [0.93, 3.15], [0.88, 3.11], [0.70, 3.05], [0.42, 3.0], [0.14, 2.97], [0.0, 2.96]];
+    const pentK = [sw(SHINGLE, 0), sw(PAINT, 30), sw(PAINT, 0), sw(PAINT, 55), sw(PAINT, 90), sw(PAINT, 115), sw(PAINT, 135), sw(PAINT, 150)];
+    const [penP, penKs] = ccw(PENT, pentK);
+    sweep([{ x: -hl, o: 0, n: [0, 1] }, { x: hl, o: 0, n: [0, 1] }], penP, penKs, true);
+    // ---- the roof: its two slopes, the eaves' edges and undersides, the rake boards and the soffits over the gable
+    // overhangs, the ridge
+    const XR = hl + OVH;
+    for (const s of [1, -1]) {   // the front slope (s 1) from its eave at OE, the rear (s -1) from -D - OE
+      const oE = s > 0 ? OE : -D - OE, nUp = [0, 1, s * SL], vAt = (o) => Math.hypot(oE - o, yR(o) - YE);
+      const P = [[-XR, YE, oE], [XR, YE, oE], [XR, RIDGE, -hs], [-XR, RIDGE, -hs]];
+      face(P, P.map((p) => [p[0], vAt(p[2])]), nUp, sw(SHINGLE, 0));
+      face([[-XR, YE - 0.06, oE], [XR, YE - 0.06, oE], [XR, YE, oE], [-XR, YE, oE]], [[-XR, 0], [XR, 0], [XR, 0.06], [-XR, 0.06]], [0, 0, s], sw(SHINGLE, 110));
+      face([[-XR, YE - 0.06, oE], [XR, YE - 0.06, oE], [XR, YE - 0.06, oE - s * 0.18], [-XR, YE - 0.06, oE - s * 0.18]], [[-XR, 0], [XR, 0], [XR, 0.18], [-XR, 0.18]], [0, -1, 0], sw(PAINT, 120));
+      for (const g of [-1, 1]) {   // the rake board on the gable's edge and the soffit behind it
+        const xg = g * XR, xi = g * hl;
+        const Pr = [[xg, YE, oE], [xg, RIDGE, -hs], [xg, RIDGE - 0.22, -hs], [xg, YE - 0.22, oE]];
+        face(Pr, Pr.map((p) => [vAt(p[2]), p[1] - (p[2] === -hs ? RIDGE : YE)]), [g, 0, 0], sw(PAINT, 0));
+        const Ps = [[xi, YE - 0.22, oE], [xg, YE - 0.22, oE], [xg, RIDGE - 0.22, -hs], [xi, RIDGE - 0.22, -hs]];
+        face(Ps, Ps.map((p) => [vAt(p[2]), p[0]]), [0, -1, -s * SL], sw(PAINT, 110));
+        face([[xg, YE - 0.22, oE], [xi, YE - 0.22, oE], [xi, YE - 0.06, oE], [xg, YE - 0.06, oE]], [[0, 0], [OVH, 0], [OVH, 0.16], [0, 0.16]], [0, 0, s], sw(PAINT, 20));
+      }
+    }
+    boxL(-XR - 0.03, XR + 0.03, RIDGE - 0.05, RIDGE + 0.06, -hs - 0.09, -hs + 0.09, (side) => (side === '-y' ? null : { t: sw(SHINGLE, side[1] === 'x' ? 40 : 15), map: side === '+y' ? XO : XY }));   // the ridge board, its ends 3 cm past the rake boards (never in their plane)
+    // ---- the dormers: the cream front round its sash, cheeks of shingles, a gabled roof and its pediment
+    for (const dx of [-3.0 * K, 2.6 * K]) {
+      const fo = -0.35, Y0 = EAVE + 0.35, Y1 = EAVE + 2.1, w = 0.75, ob2 = -2.75, wy = Y1 - 0.7;
+      const dh = { x0: dx - 0.475, x1: dx + 0.475, y0: wy - 0.56, y1: wy + 0.56 };
+      cutWall(dx - w, dx + w, Y0, Y1, fo, [0, 0, 1], [dh], sw(PAINT, 0), XY);
+      for (const [x, n] of [[dh.x0, [1, 0, 0]], [dh.x1, [-1, 0, 0]]]) swFace([[x, dh.y0, fo], [x, dh.y1, fo], [x, dh.y1, fo - 0.05], [x, dh.y0, fo - 0.05]], n, sw(PAINT, 60), OY);
+      swFace([[dh.x0, dh.y1, fo], [dh.x1, dh.y1, fo], [dh.x1, dh.y1, fo - 0.05], [dh.x0, dh.y1, fo - 0.05]], [0, -1, 0], sw(PAINT, 80), XO);
+      swFace([[dh.x0, dh.y0, fo], [dh.x1, dh.y0, fo], [dh.x1, dh.y0, fo - 0.05], [dh.x0, dh.y0, fo - 0.05]], [0, 1, 0], sw(PAINT, 10), XO);
+      const r = A.el.dsash.rect;
+      face([[dh.x0, dh.y0, fo - 0.05], [dh.x1, dh.y0, fo - 0.05], [dh.x1, dh.y1, fo - 0.05], [dh.x0, dh.y1, fo - 0.05]], [[r[0], r[1]], [r[0] + r[2], r[1]], [r[0] + r[2], r[1] + r[3]], [r[0], r[1] + r[3]]], [0, 0, 1], T(0, TV_EL.indexOf('dsash'), 0, 5 + (dx > 0 ? 1 : 0)));
+      boxL(dh.x0 - 0.04, dh.x1 + 0.04, dh.y0 - 0.05, dh.y0 + 0.01, fo - 0.01, fo + 0.05, paint(0));
+      for (const [x, n] of [[dx - w, [-1, 0, 0]], [dx + w, [1, 0, 0]]]) swFace([[x, Y0, fo], [x, Y1, fo], [x, Y1, ob2], [x, Y0, ob2]], n, sw(SHINGLE, 35), (p) => [p[2], p[1]]);
+      const fe = fo + 0.12, RW = w + 0.15, RY = Y1 + 0.75;
+      for (const g of [-1, 1]) {
+        const P = [[dx + g * RW, Y1, fe], [dx, RY, fe], [dx, RY, ob2], [dx + g * RW, Y1, ob2]];
+        face(P, P.map((p) => [p[2], Math.hypot(p[0] - dx - g * RW, p[1] - Y1)]), [g * (RY - Y1), RW, 0], sw(SHINGLE, 0));
+        face([[dx + g * RW, Y1 - 0.05, fe], [dx + g * w, Y1 - 0.05, fe], [dx + g * w, Y1 - 0.05, ob2], [dx + g * RW, Y1 - 0.05, ob2]], [[0, 0], [0.15, 0], [0.15, 3], [0, 3]], [0, -1, 0], sw(PAINT, 110));
+        face([[dx + g * RW, Y1 - 0.05, fe], [dx + g * RW, Y1, fe], [dx + g * RW, Y1, ob2], [dx + g * RW, Y1 - 0.05, ob2]], [[0, 0], [0, 0.05], [3, 0.05], [3, 0]], [g, 0, 0], sw(PAINT, 20));
+      }
+      face([[dx - RW, Y1, fe], [dx + RW, Y1, fe], [dx, RY, fe]], [[0, 0], [2 * RW, 0], [RW, 0.75]], [0, 0, 1], sw(PAINT, 0));
+      face([[dx - RW, Y1 - 0.05, fe], [dx + RW, Y1 - 0.05, fe], [dx + RW, Y1, fe], [dx - RW, Y1, fe]], [[0, 0], [2 * RW, 0], [2 * RW, 0.05], [0, 0.05]], [0, 0, 1], sw(PAINT, 15));
+      face([[dx - w, Y1 - 0.05, fo], [dx + w, Y1 - 0.05, fo], [dx + w, Y1 - 0.05, fe], [dx - w, Y1 - 0.05, fe]], [[0, 0], [2 * w, 0], [2 * w, 0.12], [0, 0.12]], [0, -1, 0], sw(PAINT, 110));   // between the side soffits, never over them
+    }
+    // ---- the chimneys: brick stacks with a corbelled band under the head and a lead cap over the flue
+    for (const [cx, co, w, dp, ya, yb] of [[-hl + 0.9, -hs, 1.1, 0.9, 8.2, 11.6], [-0.4 * K, -hs - 1.3, 0.9, 0.9, 8.7, 11.3]]) {
+      const xa = cx - w / 2, xb = cx + w / 2, oa = co - dp / 2, obk = co + dp / 2;
+      boxL(xa, xb, ya, yb, oa, obk, (side) => (side === '-y' ? null : { t: sw(BRICK, side === '+y' ? 60 : 0), map: side === '+y' ? XO : null }));
+      boxL(xa - 0.06, xb + 0.06, yb - 0.45, yb - 0.30, oa - 0.06, obk + 0.06, (side) => ({ t: sw(BRICK, side === '-y' ? 90 : 10), map: side[1] === 'y' ? XO : null }));
+      boxL(cx - 0.24, cx + 0.24, yb, yb + 0.1, co - 0.2, co + 0.2, (side) => (side === '-y' ? null : { t: T(2, side === '+y' ? 2 : 1, side === '+y' ? 0 : 20) }));
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+    g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+    g.setAttribute('aTv', new THREE.BufferAttribute(new Uint8Array(tvs), 4, true));   // four bytes a vertex (never a 1- or 3-byte stream, Round 158)
+    g.computeBoundingSphere();
+    tavernU.uTvY0.value = y0; tavernU.uTvE.value.set(ex, ez); tavernU.uTvEv.value.set(PENT[PENT.length - 1][1], COR[COR.length - 1][1]);
+    return g;
+  }
+  // the house built and its atlas asked for (a phone only after Enter: its art is never decoded during the build)
+  function tavernMake(b) {
+    const A = TAVERN_ART, U = tavernU, gl2 = !!renderer.capabilities.isWebGL2;
+    U.uTvAtW.value = A.w || 2048;
+    TV_SW.forEach((k, i) => { const s = A.sw[k]; if (!s) return; U.uTvSw.value[i].fromArray(s.rect); U.uTvSwM.value[i].fromArray(s.m); U.uTvSwC.value[i].fromArray(s.mean); });
+    TV_EL.forEach((k, i) => {
+      const e = A.el[k]; if (!e) return;
+      U.uTvEl.value[i].fromArray(e.rect); U.uTvElC.value[i].fromArray(e.mean);
+      if (i > 2 || !e.glass) return;
+      U.uTvElM.value[i].fromArray(e.size); U.uTvGA.value[i].fromArray(e.glass[0]); if (e.glass[1]) U.uTvGB.value[i].fromArray(e.glass[1]);
+      U.uTvGG.value[i].set(e.grid[0][0], e.grid[0][1], e.grid[1] ? e.grid[1][0] : 0, e.grid[1] ? e.grid[1][1] : 0); U.uTvGW.value[i].set(e.bar[0], e.bar[1], 0, 0);
+    });
+    const geo = tavernBuild(b), mat = tavernMat(gl2);
+    const m = new THREE.Mesh(geo, mat);
+    m.name = 'tavern-127-spruce'; m.castShadow = m.receiveShadow = true;
+    freeShadingOnUpload(geo);   // a raycast target keeps its positions and uvs
+    groupCity.add(m); rayTargets.push(m);
+    TAVERN.mesh = m; TAVERN.verts = geo.attributes.position.count; TAVERN.tris = TAVERN.verts / 3;
+    m.userData.tavern = { state: TAVERN, u: tavernU };   // the probe's way in (__dbg.scene)
+    const go = () => artImage(artSrc(A.img, A.imgHalf)).then((im) => {
+      if (!im) { TAVERN.err = 'atlas did not load'; return; }   // the faces keep their means
+      const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);
+      U.uTvArt.value = 1; TAVERN.art = 1;
+    });
+    if (!isTouch) go();
+    else { const wait = () => (PERF.enterT ? go() : setTimeout(wait, 400)); wait(); }
+  }
 
   // ------------------------------------------------ museum ships
   step('Mooring the ships', () => {

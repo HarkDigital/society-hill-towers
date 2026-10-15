@@ -10852,3 +10852,65 @@ place; this is what changed in the code, and what was measured.
   "in case a gap shows" whose top face lay at RF too, the full footprint in the same plane. The slab now runs 8 to 3 cm
   under the roof (it is there for its edges, which the walls and parapets cover); the same five frames hold the decks steady.
   `tests/test_ground_pits.py` (WildeyRoof) keeps the membrane the one face in that plane.
+
+## Round 199, A Man Full of Trouble textured (Oct 14)
+
+- Mike, with a screenshot from across Spruce Street: "Man Full of Trouble needs to look like the other newer textures." The
+  Round 127 model (two brick floors, a shingled pent, a cream cornice, a steep gable with two dormers, window, door, window,
+  door below and four windows above in cream shutters) stood in flat colours among Rounds 184 to 193's photographed fronts:
+  `walls` on cityMat at style 3 and every trim, shutter, door and pane an applied box on the plain detail material.
+- References (looked at, never sent to the image API; kept in the session's scratchpad with their URLs): Wikimedia Commons
+  'A Man Full of Trouble Tavern' (CC BY-SA 4.0), 'Man Full of Trouble Tavern - Philadelphia (2642072807)' (CC BY 2.0),
+  'Vernacular - 18th Century - Philadelphia, PA - A Man Full of Trouble Tavern (1)' and '(2)' (CC BY 4.0), and the tavern's
+  sign ('ManFullofTrouble.jpg'). What they settled: the upper sashes are nine over nine and their shutters have three raised
+  panels (a short one at the top); the ground floor's two windows are shut behind board shutters in every photograph; the
+  doors are six-panel under four-light transoms; the brick is Flemish bond whose glazed headers read only a little darker
+  than the stretchers; the roof, the pent and the dormers' cheeks are weathered cedar shingles; the cornice returns round
+  both gable ends under cream rake boards; two cellar hatches slope off the wall under the ground floor's windows.
+- The art: `fetch_tavern_art.py`, nineteen gpt-image-2 calls at quality high: four swatches (brick, shingles, paint,
+  marble) and the openings at their casings' own proportions with chroma-key panes (two variants each; sash-c, sash-d and
+  shutpair-c after the first look). The model drew every sash nine over six, however the prompt put it; the bake makes the
+  two sashes equal (`equalise`: the meeting rail's pixels moved to the middle, the panes repainted three by three).
+  `bake_tavern_art.py`: the brick and shingles cut on their own courses (`bake_wall_art.course_tile`: 18 courses, 1.23 by
+  1.26 m a tile; 12 courses, 1.45 by 1.52 m), the headers eased 0.7 of the way to the stretchers (26% of the tile was header,
+  stretchers rgb 129, 81, 65 against 61, 57, 60), each swatch's light flattened at its own scale (repeated up the west gable
+  it banded the wall every 1.3 m) and toned (`SW_GAIN`: the shingles' pale silver read as asphalt in the sun); every glazed
+  element's panes measured from its key and repainted on a regular grid that the page draws again (the door's 4 by 1, the
+  sash's two 3 by 3, the dormer's two 3 by 2), the bars in the casing's own paint; one 2048x1024 atlas at 320 px a metre
+  (181 KB webp, its phone half 44 KB), `tavern_art.json` inlined as `TAVERN_ART`.
+- The model (`tavernMake`, `tavernBuild`, `tavernMat`; 'Restoring the landmarks' calls it where the Round 127 block stood,
+  which stays whole behind `else` for ?real=0 and the recovery tier, `TIER2`; ?tavern=0 is the A/B): one mesh on one
+  MeshStandardMaterial, built in the house's own frame on the same footprint, eave, ridge and openings. The front wall is cut
+  round its eight openings and each sits back in a brick reveal (8 cm, the doors 12, the sashes 7); the cornice and the pent
+  are profiles swept along mitred paths (crown, fillet, fascia, soffit, bed moulding; the pent's shingled slope over a drip,
+  its fascia and a cove), the cornice returning 0.55 m round both gables; the roof a slab with its eave edge, the rake
+  boards and their soffits and a ridge board, its eave carried 8 cm past Round 127's (to 0.43 m) to clear the cornice's
+  crown; the dormers' cream fronts round their sashes, shingled cheeks, gabled roofs and pediments; the chimneys with a
+  corbelled band and a lead cap; the open shutters upstairs (their inside faces, the hinges by the casing), the sills, the
+  downspouts and their boxed feet, marble steps, and the cellar hatches (the closed shutters' picture laid down the slope).
+  A face's kind is aTv, four normalized bytes (mode, swatch or element, a shade for a reveal, a soffit or a cheek, the
+  window's number); a swatch is tiled in metres on its own face with the unwrapped coordinate's gradients, held to its
+  gutter, its mean past that; the weather by place (blotches, the splash at the foot, soot at the chimneys' heads, streaks
+  down the roof, the brick darker in the lee of the pent and the cornice). The glass is the page's, from the bake's grid:
+  glassOpticsPatch's reflections (the wavy panes), the facade's day room behind it (roomDay) and after dark its lit room
+  (roomLight on the clock's shares, `occBind`), the street lamps' wash kept off it (`frMask`), the weather's wet and snow
+  (`wxSurfacePatch`). A computer loads the atlas at the step, a phone only after Enter; before it lands every face takes
+  its mean.
+- Measured: 772 triangles in 2,316 vertices (the Round 127 model was 962 in the shared walls and detail meshes), one draw
+  call of its own (a computer's frame 600 to 601 with it; a phone's 568 to 569, 1,088 to 1,090 on the frames that draw the
+  pins' depth image, which it hides pins in), one program ('tavern'), about 11 MB of a computer's GPU with mips and 2.8 MB
+  of a phone's. No link failures or console errors on the computer or the phone path. ?real=0 against main: the same frames
+  within the noise (0.007 to 0.09% of pixels over 24 levels at three poses), the tavern not built.
+- Rendered from across Spruce at eye level (Mike's view), from the south-east and south-west, at the door and under the
+  cornice, the east corner, a low flight, the rear from the north-west, the roof from the north-east, at 9 pm and at dusk, and
+  on the phone path in daylight and at night.
+- `tests/test_remodel_tavern.py`: the manifest (hashes, halves, rects apart, the house's grids, the atlas's panes dark and
+  bars light where the grid says), the page (the gate, the Round 127 model kept, one 4-byte stream, the program key, no
+  depth written, a raycast target, a phone's art after Enter) and the geometry built for real under JavaScriptCore on the
+  house's footprint (within budget, every triangle wound to its normal, nothing past the eaves' reach, and no two faces
+  turned the same way overlapping in one plane: it found the ridge board's ends in the rake boards' plane and the dormer
+  pediments' soffits over their side soffits, both fixed). `test_art_files.py` and `test_memory_cuts.py` know the atlas.
+- Not done: the sidewalk in front is the core's concrete walk (Spruce is drawn as a street whose walks are concrete; the
+  real one is brick, and changing it is the core's walks, not this block); the east side's door, balcony and attic window
+  and the tavern's hanging sign (its picture carries lettering) are not modelled. The raw images are not in
+  `lidar_cache/tavern_art_raw` (this round wrote them to its scratchpad: copy them there before re-baking).
