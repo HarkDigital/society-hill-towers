@@ -224,8 +224,7 @@ def art_paths(o):
 # the art the page will ask for must all be there: deploy_philly3d.sh ships art/ beside the page, the app copies it in
 ART_FILES = []
 for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
-             "glory_art.json", "storefront_art.json", "glass_art.json", "tavern_art.json", "tower_art.json"):
-             "glory_art.json", "storefront_art.json", "glass_art.json", "sht_art.json"):
+             "glory_art.json", "storefront_art.json", "glass_art.json", "tavern_art.json", "tower_art.json", "sht_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):
