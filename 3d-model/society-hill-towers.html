@@ -23540,7 +23540,9 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
   // blobs and lathes); the bronze is a metal with a patina lighter on what stands proud and darker in the folds, worked over in
   // the shader by a modelled clay grain. The Irish tricolour flies from a 9.5 m aluminium pole to the north-east, on the wind the
   // weather reports. One near mesh and one far past FAMINE.nearR, and the flag: two draws at most. ?real=0 keeps Round 129's.
-  const FAMINE = { c: [84, 104], sp0: [63.3, 119.3], sp1: [121, 128], H0: 0.95, pole: [95.5, 98.5], poleH: 9.5, flagL: 2.0, flagH: 1.0,
+  // (Round 201, Mike: "The irish famine memorial needs to be rotated 180 degrees": turn, the heading's sign; the flag's pole
+  // keeps its own place north-east of it)
+  const FAMINE = { c: [84, 104], sp0: [63.3, 119.3], sp1: [121, 128], turn: -1, H0: 0.95, pole: [95.5, 98.5], poleH: 9.5, flagL: 2.0, flagH: 1.0,
     flag: [0x169b62, 0xffffff, 0xff883e], nearR: 250, hyst: 30, flagR: 900 };
   // kinds (aFm.x): 0 bronze, 1 its darker shade (hats, hair, shoes), 2 the granite (the plinth, the pole's drum), 3 the dark
   // paving, 4 its pale border, 5 the pole's aluminium, 6 the gilt ball, 7 a lamp's lens, 8 the hull's planking, 9 the deck's,
@@ -24715,7 +24717,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
     // stored very dark for the detail material's lift (the tavern's calibration). Round 197 rebuilt it from the photographs
     // with the tricolour on its pole (FAMINE, famineBuild); ?real=0 keeps this one.
     if (REAL) {
-      const [cx, cz] = FAMINE.c, [ax, az] = FAMINE.sp0, [bx, bz] = FAMINE.sp1, L0 = Math.hypot(bx - ax, bz - az), ux = (bx - ax) / L0, uz = (bz - az) / L0;
+      const [cx, cz] = FAMINE.c, [ax, az] = FAMINE.sp0, [bx, bz] = FAMINE.sp1, L0 = Math.hypot(bx - ax, bz - az), ux = FAMINE.turn * (bx - ax) / L0, uz = FAMINE.turn * (bz - az) / L0;
       famineBuild(cx, cz, ux, uz, ryAlign(ux, uz), siteY(cx, cz, 'ground'));
     } else {
       const cx = 84, cz = 104;

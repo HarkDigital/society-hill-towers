@@ -12130,3 +12130,11 @@ pull.py, sweep.py), renders in remodel/sht/fix/ (it7 the computer's final set, p
   bridges (only the Ben Franklin has it); the Betsy Ross's colour is the photographs' pale grey, not checked against
   DRPA's paint record; the approaches' structure is a model (OSM's carriageways and the photographs, not a survey of the
   viaducts); the anchorages' height waits on Round 66's deck.
+
+## Round 201 — the Irish Famine Memorial turned round (Oct 14)
+
+- Mike: "The irish famine memorial needs to be rotated 180 degrees." Round 197's memorial now faces the other way about its
+  centre (84, 104): `FAMINE.turn` -1 flips the heading the build takes from Spruce Street's line, so the famine end with its
+  rock, Celtic cross and kneeling figures and the ship's prow trade ends. The flag's pole keeps its own place north-east of
+  it (FAMINE.pole is in the world frame), still clear of the plinth (the test's local frame takes the same turn). ?real=0's
+  Round 129 memorial is unchanged. `tests/test_remodel_famine.py` (Turned).

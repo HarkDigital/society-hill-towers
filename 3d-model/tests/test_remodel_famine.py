@@ -30,7 +30,7 @@ __HASH__
 __CHS__
 __FORMS__
 const tri = (g) => (g.index ? g.index.count : g.attributes.position.count) / 3;
-const F = FAMINE, L0 = Math.hypot(F.sp1[0] - F.sp0[0], F.sp1[1] - F.sp0[1]), ux = (F.sp1[0] - F.sp0[0]) / L0, uz = (F.sp1[1] - F.sp0[1]) / L0;
+const F = FAMINE, L0 = Math.hypot(F.sp1[0] - F.sp0[0], F.sp1[1] - F.sp0[1]), ux = F.turn * (F.sp1[0] - F.sp0[0]) / L0, uz = F.turn * (F.sp1[1] - F.sp0[1]) / L0;
 const pu = (F.pole[0] - F.c[0]) * ux + (F.pole[1] - F.c[1]) * uz, pv = -(F.pole[0] - F.c[0]) * uz + (F.pole[1] - F.c[1]) * ux;
 const ground = (u, v) => 0.04 * Math.sin(u * 0.4) - 0.02 * v;
 const out = { pu, pv, ux, uz, figsList: FAM_FIGS.length, kids: FAM_KIDS };
@@ -224,3 +224,14 @@ class Shader(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class Turned(unittest.TestCase):
+    """Round 201 (Mike: "The irish famine memorial needs to be rotated 180 degrees"): the heading turned by FAMINE.turn, the
+    flag's pole left where it stood."""
+
+    def test_turned_half_round(self):
+        self.assertIn('sp1: [121, 128], turn: -1,', A)
+        self.assertIn('ux = FAMINE.turn * (bx - ax) / L0, uz = FAMINE.turn * (bz - az) / L0;', A)
+        self.assertIn('pole: [95.5, 98.5]', A)
+
