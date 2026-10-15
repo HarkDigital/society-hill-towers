@@ -232,7 +232,7 @@ class Remodel(unittest.TestCase):
         self.assertGreater(a['tileM'], 1)
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("SHT_ART", text_of("sht_art.json", "null"))', b)
-        self.assertIn('"sht_art.json"):', b)
+        self.assertIn('"sht_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's art file list
 
     def test_proportions_at_the_top(self):
         # the review's round: the band over the top heads is a floor (row profiles: lccn.jpg 1.0, korean.jpg 0.97, pa1.jpg 0.77

@@ -113,7 +113,7 @@ class Art(unittest.TestCase):
         self.assertLess(sum(A['bytes'].values()), 1_000_000)
         build = (ROOT / 'build.py').read_text()
         self.assertIn('const("BRIDGE_ART", text_of("bridge_art.json", "null"))', build)
-        self.assertIn('"glass_art.json", "bridge_art.json"):', build)
+        self.assertIn('"bridge_art.json"', build[build.index('for name in ("tree_art.json"'):build.index('    if (ROOT / name).exists():')])   # in build.py's art file list
 
 
 HARNESS = r'''

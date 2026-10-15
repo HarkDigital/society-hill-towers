@@ -330,7 +330,7 @@ class Wiring(unittest.TestCase):
         self.assertEqual(int((on & ~np.roll(on, 1)).sum()), 2)   # two ribs a 3 m tile: 1.5 m courses
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("LIBERTY_ART", text_of("liberty_art.json", "null"))', b)
-        self.assertIn('"glass_art.json", "liberty_art.json"):', b)
+        self.assertIn('"liberty_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's art file list
 
 
 if __name__ == '__main__':

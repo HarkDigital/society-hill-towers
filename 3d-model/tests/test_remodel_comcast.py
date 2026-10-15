@@ -159,7 +159,7 @@ class Wiring(unittest.TestCase):
         self.assertGreater(lan['mean'][1], lan['mean'][0])
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("COMCAST_ART", text_of("comcast_art.json", "null"))', b)
-        self.assertIn('"comcast_art.json"):', b)
+        self.assertIn('"comcast_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's art file list
         s = (ROOT / 'app.js').read_text()
         load = cut(s, '  function cmrArtLoad() {', '  // the Comcast Center\'s open crown')
         self.assertIn('artImage(artSrc(CMR_ART.strip, CMR_ART.stripHalf))', load)

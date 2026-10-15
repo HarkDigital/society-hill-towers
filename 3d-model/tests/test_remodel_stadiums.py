@@ -285,7 +285,7 @@ class Art(unittest.TestCase):
     def test_build_inlines_it(self):
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("STADIUM_ART", text_of("stadium_art.json", "null"))', b)
-        self.assertIn('"stadium_art.json"):', b)
+        self.assertIn('"stadium_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's art file list
 
 
 if __name__ == '__main__':

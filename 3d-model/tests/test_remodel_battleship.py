@@ -64,7 +64,7 @@ class Gate(unittest.TestCase):
     def test_the_build_inlines_the_manifest(self):
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("NJ_ART", text_of("nj_art.json", "null"))', b)
-        self.assertRegex(b, r'"glass_art.json", "nj_art.json"\):')
+        self.assertIn('"nj_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's art file list
 
     def test_the_manifest(self):
         m = json.loads((ROOT / 'nj_art.json').read_text())

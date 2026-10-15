@@ -139,7 +139,7 @@ class Scope(unittest.TestCase):
     def test_build_inlines_and_checks_it(self):
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("TOWER_ART", text_of("tower_art.json", "null"))', b)
-        self.assertIn('"tower_art.json"):', b)
+        self.assertIn('"tower_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's art file list
 
 
 class Ownership(unittest.TestCase):

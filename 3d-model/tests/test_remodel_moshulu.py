@@ -308,7 +308,7 @@ class Wiring(unittest.TestCase):
             self.assertEqual(len(man['m'][k]), 2); self.assertEqual(len(man['mean'][k]), 3)
         b = (ROOT / 'build.py').read_text()
         self.assertIn('const("MOSHULU_ART", text_of("moshulu_art.json", "null"))', b)
-        self.assertIn('"moshulu_art.json"):', b)
+        self.assertIn('"moshulu_art.json"', b[b.index('for name in ("tree_art.json"'):b.index('    if (ROOT / name).exists():')])   # in build.py's art file list
         self.assertIn('Promise.all([artImage(artSrc(A.hull, A.hullHalf)), artImage(artSrc(A.deck, A.deckHalf))])', self.src)
 
     def test_the_fetch_script_keeps_the_key_private(self):
