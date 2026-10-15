@@ -1,0 +1,66 @@
+{
+ "v": 1,
+ "base": {
+  "img": "art/liberty/base.3d087fc644.webp",
+  "imgHalf": "art/liberty/base-half.bfb1845726.webp",
+  "m": [
+   12.0,
+   12.0
+  ],
+  "cells": {
+   "lobby": [
+    0,
+    0,
+    0.5,
+    1
+   ],
+   "wall": [
+    0.5,
+    0,
+    1,
+    1
+   ]
+  },
+  "means": {
+   "lobby": {
+    "glass": 0.4733,
+    "stone": [
+     64.8,
+     75.8,
+     82.8
+    ],
+    "reveal": 0.9561
+   },
+   "wall": {
+    "glass": 0.1649,
+    "stone": [
+     58.7,
+     64.8,
+     69.9
+    ],
+    "reveal": 0.9561
+   }
+  }
+ },
+ "glazing": {
+  "img": "art/liberty/glazing.fa72380d8a.webp",
+  "imgHalf": "art/liberty/glazing-half.eae1768e55.webp",
+  "m": 3.0,
+  "caps": [
+   184.0,
+   182.7,
+   177.6
+  ],
+  "cover": 0.1502,
+  "periods": [
+   268.2,
+   248.8
+  ]
+ },
+ "refs": [
+  "https://commons.wikimedia.org/wiki/Category:One_Liberty_Place",
+  "https://commons.wikimedia.org/wiki/Category:Two_Liberty_Place",
+  "https://archipediavm.upress.virginia.edu/buildings/PA-02-PH112",
+  "https://www.loc.gov/item/2011630484/"
+ ]
+}

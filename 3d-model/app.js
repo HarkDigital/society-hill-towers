@@ -9503,6 +9503,132 @@ vec2 wRing(vec2 rc, float tt) {
   // the Ryland's two bars here under the glass systems, and 'Raising the outer districts' builds them on the glass chunks in
   // the residential window wall (system 8, homes lit room by room) in the blue the photographs read (#4F7BA1)
   const RYLAND_GLASS = [], RYLAND_SYS = 8, RYLAND_BODY = 0x4f7ba1;
+  // ---- One and Two Liberty Place remodelled (Round 195, Mike: "Remodel Liberty One, Liberty 2, ..."; he wants photographic
+  // realism and the frames kept fast). Round 84's towers were square shafts under nested gable prisms the width of each tier,
+  // so both read as a blue box with a hat. Rebuilt under the realistic look (?real=0 builds Round 84's exactly) to the
+  // photographs (Wikimedia Commons, the Library of Congress's Highsmith view of One Liberty's crown, skyline views from the
+  // South Street Bridge and the river measured against the spire's 288 m and the LiDAR's 251.5 m crown top) and OSM's building
+  // parts (parts_wide.json: One Liberty's notched shaft to 185 m, its central bays' cross to 220, its crown's squares to 228,
+  // 240 and 250, the mast to 288; Two Liberty's central cross to 233 and its crown to 258). What makes them read as
+  // themselves: the shaft's corners cut back in steps, a central bay on every face, proud of it and glazed in vertical silver
+  // caps instead of the flanks' granite bands, running up through the shoulders into a steep gable (about 50 degrees, the
+  // photographs' pitch, where Round 84's were 30), and behind it the crown's own square tiers, each a cross gable with valleys
+  // at the corners: four nested gables a face on One Liberty and two on Two Liberty, then One's pyramid and mast with its
+  // antenna clusters and Two's sharp finial. A three-storey granite base (the walking tours' dark blue-grey polished granite
+  // with its acid blue reveal) at the street. Local metres: u east along the street grid (fl.n), v south (fl.d), y over the
+  // tower's ground; a face's direction 0 +u (east), 1 +v (south), 2 -u (west), 3 -v (north).
+  //   shaft: the notched plan to `top` (its corners cut `notch` metres each way in `steps`); arms: the central bays, `a` half
+  //   wide, each face's end (a face's outer plane plus its proud), its eave and the gable's apex; chevron: One's inner
+  //   chevron in each bay (its feet and apex); tiers: the crown's squares (half width, eave, apex); lobby: the base's faces
+  //   with the lobby's tall glass (One on Market and 17th, Two on Chestnut and 16th), the rest the plainer wall
+  const LIB_SPECS = [
+    { name: 'One Liberty Place', c: [-1994.96, -785.44], base: 12,
+      shaft: { u: [-24.3, 24.3], v: [-24.3, 24.3], notch: 6.5, steps: 3, top: 185, full: true },
+      arms: { a: 11.5, ends: [24.65, 24.65, 24.65, 24.65], eave: 206.5, apex: 220.5, chevron: [188, 200.8] },
+      tiers: [{ hw: 17.95, eave: 210, apex: 229 }, { hw: 13.7, eave: 225, apex: 240 }, { hw: 9.2, eave: 238, apex: 248 }],
+      lobby: [3, 2], glass: 0x254d70, crown: 0x244f77,
+      spire: { pyr: [242, 258, 9.2, 0.9], mast: [257, 283, 0.75, 0.42], clusters: [261, 265.5, 270, 274.5, 278.5], needle: 288 } },
+    { name: 'Two Liberty Place', c: [-1937.2, -688.0], base: 12,
+      shaft: { u: [-19.2, 19.2], v: [-15.2, 19.2], notch: 3, steps: 2, top: 207 },
+      arms: { a: 11, ends: [19.6, 19.65, 19.6, 20.75], eave: 226.2, apex: 240.9 },
+      tiers: [{ hw: 15.15, eave: 234.7, apex: 253.5 }],
+      lobby: [1, 0], glass: 0x2c5678, crown: 0x244f77,
+      spire: { finial: [251.5, 258.5, 3.4] } },
+  ];
+  // the systems the faces wear (the tower's own glass, its body, on every one): the flanks' ribbons of light granite under each
+  // floor's glass (the photographs' stripes either side of the bays, and the bands that turn the stepped corners into
+  // chevrons: the ribbon system, its bands about two fifths of a floor), the central bays' vertical silver caps on spandrels of
+  // their own glass (the banded system), the shoulders and the crown Liberty's own (sys 2, a granite band every third floor)
+  const LIB_FLANK_SYS = 7, LIB_PANEL_SYS = 12;
+  const LIB_STONE = 0x55595e, LIB_SILVER = 0xa7b7c2, LIB_ROD = 0x3a3e42, LIB_STEEL = 0x7d868e;   // the bays' granite surrounds, the crowns' caps, the rods, the spire's steel by day
+  // the crowns' slopes: the crown's glass at this share of its lightness, half its saturation gone (the photographs' slopes
+  // read a dark slate grey-blue under bright silver caps, darker and greyer than the faces under them)
+  const LIB_SLOPE_K = 0.42, LIB_SLOPE_GREY = 0.5;
+  // the near level (LIB.base: the base's granite and lobby glass from its picture; LIB.frames: the crowns' sloped glazing
+  // caps, a few centimetres over the glass) within these of a tower's foot and crown; past them the base is the fabric's dark
+  // granite block under it and the slopes their glass alone, the frames' mean already a few per cent of a slope's light
+  const LIB_NEAR_R = isTouch ? 650 : 1000, LIB_FRAME_R = isTouch ? 1600 : 2600;
+  const LIB_DECODE_R = TIER2 ? 0 : (isTouch ? 900 : 1600);   // the art decodes the first time the eye comes this close after Enter
+  const LIB = { on: REAL && typeof LIBERTY_ART !== 'undefined' && !!LIBERTY_ART && !!LIBERTY_ART.base, base: null, frames: null,
+    baseMat: null, frameMat: null, baseTex: null, glzTex: null, asked: false, loaded: 0, near: false, framesOn: false,
+    feet: [], crowns: [], tris: { base: 0, frames: 0, shared: 0 }, parts: { walls: 0, roofs: 0, trims: 0, neon: 0, lit: 0 } };
+  const libU = { uLibLit: { value: 0 }, uLibBase: { value: 0 } };   // the lobbies' light after dark (the glass rooms' level, glassU.uGlassL.x); the bases' foot
+  // a 1 by 1 picture of a texture's mean until the art lands (so the programs compile behind the veil with their maps)
+  function libTexOf(rgba) {
+    const t = new THREE.DataTexture(new Uint8Array(rgba), 1, 1);
+    t.encoding = THREE.sRGBEncoding; t.needsUpdate = true;
+    return t;
+  }
+  function libMaterials() {
+    if (LIB.baseMat) return;
+    const A = LIBERTY_ART, ms = A.base.means.lobby.stone;
+    LIB.baseTex = libTexOf([ms[0], ms[1], ms[2], 255]);
+    LIB.glzTex = libTexOf([200, 202, 204, 38]);   // the caps' share of a slope (the bake's cover, 0.15)
+    LIB.glzTex.wrapS = LIB.glzTex.wrapT = THREE.RepeatWrapping;
+    // the base: the picture's colour premultiplied by its alpha, the alpha the stone (1) against the glass (0): polished granite
+    // (a hex is the photograph's colour at 0.88, as the rebuilds' kit takes it) and a smooth dark pane that lights after dark
+    const bm = new THREE.MeshStandardMaterial({ map: LIB.baseTex, color: 0xe0e0e0, roughness: 0.32, metalness: 0.0 });
+    // after dark the lobbies glow from their ceilings down (brighter up the picture), and the street lamps wash the granite
+    // as they wash the fabric's lower storeys (lampLightPatch: frMask.r keeps the wash off the glass)
+    bm.onBeforeCompile = (sh) => {
+      sh.uniforms.uLibLit = libU.uLibLit; sh.uniforms.vBase = libU.uLibBase;
+      sh.vertexShader = sh.vertexShader
+        .replace('#include <common>', '#include <common>\nvarying vec3 vWPos; varying vec3 vWNorm;')
+        .replace('#include <worldpos_vertex>', '#include <worldpos_vertex>\nvWPos = (modelMatrix * vec4(transformed, 1.0)).xyz; vWNorm = normalize(mat3(modelMatrix) * objectNormal);');
+      sh.fragmentShader = sh.fragmentShader
+        .replace('#include <common>', '#include <common>\nuniform float uLibLit, vBase;\nvarying vec3 vWPos; varying vec3 vWNorm;\nfloat libStone;\nvec4 frMask;')
+        .replace('#include <map_fragment>', `vec4 libT = texture2D(map, vUv);
+          libStone = smoothstep(0.3, 0.7, libT.a);
+          frMask = vec4(1.0 - libStone, 0.0, 0.0, 0.0);
+          diffuseColor.rgb *= mix(vec3(0.045, 0.05, 0.06), libT.rgb / max(libT.a, 0.004), libStone);`)
+        .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\nroughnessFactor = mix(0.06, roughnessFactor, libStone);')
+        .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\nmetalnessFactor = mix(0.45, metalnessFactor, libStone);')
+        .replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\ntotalEmissiveRadiance += (1.0 - libStone) * vec3(1.0, 0.8, 0.58) * (0.14 + 0.24 * clamp(vUv.y, 0.0, 1.0)) * uLibLit;');
+      lampLightPatch(sh, 'vWPos', 'wall');
+    };
+    LIB.baseMat = bm;
+    // the crowns' caps: their silver over the glass, blended (a far slope keeps the caps' mean, never a pixel's flicker)
+    const fm = new THREE.MeshStandardMaterial({ map: LIB.glzTex, color: 0xd6dadd, roughness: 0.4, metalness: 0.25, transparent: true, depthWrite: false });
+    fm.onBeforeCompile = (sh) => {
+      sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', `vec4 libC = texture2D(map, vUv);
+          diffuseColor.rgb *= libC.rgb / max(libC.a, 0.004);
+          diffuseColor.a *= libC.a * 0.85;`);
+    };
+    LIB.frameMat = fm;
+  }
+  // the art, decoded and handed to the two textures (a phone takes the half pictures and lets them go at upload)
+  function libLoadArt() {
+    if (LIB.asked) return;
+    LIB.asked = true;
+    const A = LIBERTY_ART;
+    artImage(artSrc(A.base.img, A.base.imgHalf)).then((im) => {
+      if (!im) return;
+      const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8); t.premultiplyAlpha = false; t.needsUpdate = true;
+      freeTexOnUpload(t);
+      LIB.baseMat.map = t; LIB.baseTex.dispose(); LIB.baseTex = t; LIB.loaded++;
+    });
+    artImage(artSrc(A.glazing.img, A.glazing.imgHalf)).then((im) => {
+      if (!im) return;
+      const t = new THREE.Texture(im); t.encoding = THREE.sRGBEncoding; t.anisotropy = anisoOf(8); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.needsUpdate = true;
+      freeTexOnUpload(t);
+      LIB.frameMat.map = t; LIB.glzTex.dispose(); LIB.glzTex = t; LIB.loaded++;
+    });
+  }
+  // once a frame: the near level by the eye's distance to the nearer tower's foot (the base) and crown (the caps), with a
+  // tenth of hysteresis; the lobbies' light; the art the first time the eye comes within LIB_DECODE_R after Enter
+  function libStep() {
+    if (!LIB.base) return;
+    const p = camera.position;
+    let dF = Infinity, dC = Infinity;
+    for (const f of LIB.feet) dF = Math.min(dF, Math.hypot(p.x - f[0], p.y - f[1], p.z - f[2]));
+    for (const c of LIB.crowns) dC = Math.min(dC, Math.hypot(p.x - c[0], p.y - c[1], p.z - c[2]));
+    LIB.near = LIB.near ? dF < LIB_NEAR_R * 1.1 : dF < LIB_NEAR_R;
+    LIB.framesOn = LIB.framesOn ? dC < LIB_FRAME_R * 1.1 : dC < LIB_FRAME_R;
+    LIB.base.visible = LIB.near;
+    LIB.frames.visible = LIB.framesOn;
+    libU.uLibLit.value = glassU.uGlassL.value.x;
+    if (!LIB.asked && PERF.enterT && Math.min(dF, dC) < LIB_DECODE_R) libLoadArt();
+  }
   // the rooms' light by the ambient light (uGlassL.x, from applyLighting): a lit office is the same lamps at noon and at
   // nine, and what changes is how much of the reflection is left over it, so by day the room is the faint daylit one, and
   // through the dusk the lamps come up well ahead of the night term (the review: at 18:25 on Oct 14 the glass towers stood
@@ -17489,8 +17615,226 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
       };
       const cWhite = new THREE.Color(0xa7b7c2), cSilver = new THREE.Color(0xc1cbd2);
       const libertyPlan=(cx,cz,w,d)=>recessedTowerPlan(cx,cz,w,d,3.2,fl.nx,fl.nz,fl.dx,fl.dz);
+      // --- Round 195: One and Two Liberty Place remodelled under the realistic look (LIB_SPECS); ?real=0 builds Round 84's below.
+      // The walls are the glass chunk's curtain walls (the shaft and the crown in Liberty's own system, the central bays in the
+      // banded system's silver caps), every wall a whole quad (the shader's wall u runs 0 to L across a quad) and a gabled face
+      // two half walls under its two slopes; the crowns' slopes are the glazed crowns' sheets (lmGlass, style 29); the caps,
+      // surrounds, valleys and rods the landmarks' trim; the gable edges the chevrons' neon (Round 84, Mike's photo: every
+      // sloping edge of every gable end lit, the eaves not); the spire white every night with its red beacon
+      if (REAL) {
+        const DIRS = [[1, 0], [0, 1], [-1, 0], [0, -1]];   // a face's outward direction in (u, v): east, south, west, north
+        const baseParts = [], frameTris = [];               // the near level's granite base and glazing caps (both towers)
+        const nGeo = (g) => (g.index ? g.index.count : g.attributes.position.count) / 3;
+        const cStone = new THREE.Color(LIB_STONE), cCap = new THREE.Color(LIB_SILVER), cRod = new THREE.Color(LIB_ROD);
+        const cGranite = new THREE.Color(0x59616a);   // the far level's base in the fabric: the granite's dark blue grey
+        for (const T of LIB_SPECS) {
+          const slot = themeSlotN++ % 4;   // Round 84's order: One Liberty, then Two
+          const [cx, cz] = T.c, base = siteY(cx, cz, 'ground'), S = T.shaft, A = T.arms;
+          const P = (u, v) => [cx + fl.nx * u + fl.dx * v, cz + fl.nz * u + fl.dz * v];
+          const P3 = (u, v, y) => { const q = P(u, v); return [q[0], base + y, q[1]]; };
+          // face k's point `al` along its outward axis and `ac` across it, in (u, v)
+          const F = (k, al, ac) => { const o = DIRS[k]; return [o[0] * al - o[1] * ac, o[1] * al + o[0] * ac]; };
+          const F3 = (k, al, ac, y) => { const q = F(k, al, ac); return P3(q[0], q[1], y); };
+          const body = new THREE.Color(T.glass), crownC = new THREE.Color(T.crown);
+          if (GLASS_ON) { glassTowerBody({ name: T.name }, body); glassTowerBody({ name: T.name }, crownC); }
+          const fhM = GLASS_ON ? glassFh(glassSysOfSpec({ name: T.name }, 21)) : undefined;   // Round 192: its own system and glass
+          const fhP = GLASS_ON ? glassFh(LIB_PANEL_SYS) : undefined;
+          const gch = getGlassChunk(cx, cz);
+          // a wall quad on the glass chunk: local a to q, its foot at y0 and its top at ya over a and yq over q (metres over the
+          // ground), outward along local n
+          const wallQ = (a, q, y0, ya, yq, n, st, fh, col) => {
+            const A0 = P(a[0], a[1]), Q0 = P(q[0], q[1]), L = Math.hypot(Q0[0] - A0[0], Q0[1] - A0[1]);
+            if (L < 0.05 || (ya <= y0 && yq <= y0)) return;
+            const nx = fl.nx * n[0] + fl.dx * n[1], nz = fl.nz * n[0] + fl.dz * n[1], tk = glassTintKey(col, st), H = Math.max(ya, yq);
+            const i0 = pushV(gch, A0[0], base + y0, A0[1], nx, 0, nz, col.r, col.g, col.b, st, base, fh, tk, 0, L, H);
+            const i1 = pushV(gch, Q0[0], base + y0, Q0[1], nx, 0, nz, col.r, col.g, col.b, st, base, fh, tk, L, L, H);
+            const i2 = pushV(gch, Q0[0], base + yq, Q0[1], nx, 0, nz, col.r, col.g, col.b, st, base, fh, tk, L, L, H);
+            const i3 = pushV(gch, A0[0], base + ya, A0[1], nx, 0, nz, col.r, col.g, col.b, st, base, fh, tk, 0, L, H);
+            const tx = (Q0[0] - A0[0]) / L, tz = (Q0[1] - A0[1]) / L;
+            if (-tz * nx + tx * nz >= 0) gch.idx.push(i0, i1, i2, i0, i2, i3); else gch.idx.push(i0, i2, i1, i0, i3, i2);
+            LIB.parts.walls += 2;
+          };
+          // a gabled face k at `al` from the axis, `hw` half wide: its wall from y0 to the eave (style lo) and its gable (style
+          // hi) as two half walls up to the apex
+          const gableFace = (k, al, hw, y0, eave, apex, lo, hi, fh, col) => {
+            const o = DIRS[k], c0 = F(k, al, -hw), m = F(k, al, 0), c1 = F(k, al, hw);
+            if (lo === hi) { wallQ(c0, m, y0, eave, apex, o, lo, fh, col); wallQ(m, c1, y0, apex, eave, o, lo, fh, col); return; }
+            wallQ(c0, c1, y0, eave, eave, o, lo, fh, col);
+            wallQ(c0, m, eave, eave, apex, o, hi, fh, col); wallQ(m, c1, eave, apex, eave, o, hi, fh, col);
+          };
+          // the slopes: lmGlass triangles (each faced up) and, for the near level, their glazing caps a few centimetres over
+          // them, the tile's caps running down the slope (uv: metres along the ridge, metres down the slope, over the tile's 3)
+          const roof = [];
+          const slope = (k, a3, b3, c3, s) => {
+            const pts = [a3, b3, c3], e1 = [b3[0] - a3[0], b3[1] - a3[1], b3[2] - a3[2]], e2 = [c3[0] - a3[0], c3[1] - a3[1], c3[2] - a3[2]];
+            if (e1[2] * e2[0] - e1[0] * e2[2] < 0) { pts[1] = c3; pts[2] = b3; }   // the normal's y: (e1 x e2).y = e1.z e2.x - e1.x e2.z
+            for (const p of pts) roof.push(p[0], p[1], p[2]);
+            if (!LIB.on) return;
+            const m = 1 / ((LIBERTY_ART.glazing && LIBERTY_ART.glazing.m) || 3), kk = Math.sqrt(1 + s * s);
+            const q = pts.map((p) => { const dx = p[0] - cx, dz = p[2] - cz, u = dx * fl.nx + dz * fl.nz, v = dx * fl.dx + dz * fl.dz;
+              const o = DIRS[k], al = u * o[0] + v * o[1], ac = -u * o[1] + v * o[0];
+              return [al * m, Math.abs(ac) * kk * m]; });
+            frameTris.push({ pts, uv: q });
+          };
+          // ---- the base: three storeys of granite (the far level's block in the fabric; the near level's picture over it)
+          const notched = (u0, u1, v0, v1, n, s) => {
+            const C = [[u1, v0, [1, 0], [0, -1]], [u1, v1, [0, 1], [1, 0]], [u0, v1, [-1, 0], [0, 1]], [u0, v0, [0, -1], [-1, 0]]], out = [];
+            for (const [cu, cv, t, o] of C) {
+              if (!(n > 0)) { out.push([cu, cv]); continue; }
+              const k = n / s;
+              out.push([cu - t[0] * n, cv - t[1] * n]);
+              for (let i = 0; i < s; i++) {
+                out.push([cu - t[0] * (n - i * k) - o[0] * (i + 1) * k, cv - t[1] * (n - i * k) - o[1] * (i + 1) * k]);
+                out.push([cu - t[0] * (n - (i + 1) * k) - o[0] * (i + 1) * k, cv - t[1] * (n - (i + 1) * k) - o[1] * (i + 1) * k]);
+              }
+            }
+            return out;
+          };
+          const shaftL = notched(S.u[0], S.u[1], S.v[0], S.v[1], S.notch, S.steps);
+          const baseL = S.full ? notched(S.u[0], S.u[1], S.v[0], S.v[1], 0, 1) : shaftL;
+          appendBuilding(getChunk(cx, cz), baseL.map((q) => P(q[0], q[1])), base - 1, base + T.base, cGranite, 6, base);
+          if (LIB.on) {
+            const cells = LIBERTY_ART.base.cells, sgA = signedArea(baseL) > 0 ? 1 : -1;
+            for (let i = 0; i < baseL.length; i++) {
+              const a = baseL[i], q = baseL[(i + 1) % baseL.length], du = q[0] - a[0], dv = q[1] - a[1], L = Math.hypot(du, dv);
+              if (L < 0.05) continue;
+              const nu = dv / L * sgA, nv = -du / L * sgA;   // outward (signedArea's sense, as appendBuilding takes it)
+              const k = Math.abs(nu) > Math.abs(nv) ? (nu > 0 ? 0 : 2) : (nv > 0 ? 1 : 3);
+              const cell = cells[T.lobby.includes(k) && L > 20 ? 'lobby' : 'wall'], cw = cell[2] - cell[0], ucen = (cell[0] + cell[2]) / 2;
+              const nT = Math.max(1, Math.round(L / 12)), tw = L / nT;
+              // a tile of 9 m and over takes the whole picture, a step the plain granite at the wall picture's left edge
+              const uA = tw >= 9 ? ucen - cw / 2 : cells.wall[0] + 0.01, uB = tw >= 9 ? ucen + cw / 2 : uA + cw * tw / 12;
+              for (let t = 0; t < nT; t++) {
+                const p0 = [a[0] + du * t / nT + nu * 0.12, a[1] + dv * t / nT + nv * 0.12], p1 = [a[0] + du * (t + 1) / nT + nu * 0.12, a[1] + dv * (t + 1) / nT + nv * 0.12];
+                baseParts.push({ q: [P3(p0[0], p0[1], -0.4), P3(p1[0], p1[1], -0.4), P3(p1[0], p1[1], T.base), P3(p0[0], p0[1], T.base)],
+                  uv: [[uA, -0.4 / 12], [uB, -0.4 / 12], [uB, 1], [uA, 1]], n: [fl.nx * nu + fl.dx * nv, fl.nz * nu + fl.dz * nv] });
+              }
+            }
+            LIB.feet.push([cx, base + 6, cz]); libU.uLibBase.value = LIB.feet.length > 1 ? Math.min(libU.uLibBase.value, base) : base;
+          }
+          // ---- the shaft: the notched plan in the flanks' ribbons to its top (its flat roof the shoulders' terraces)
+          appendBuilding(gch, shaftL.map((q) => P(q[0], q[1])), base + T.base, base + S.top, body, 21, base, null, GLASS_ON ? glassFh(LIB_FLANK_SYS) : undefined);
+          LIB.parts.walls += shaftL.length * 2 + shaftL.length - 2;
+          // ---- the central bays: proud of each face, in the caps' glass, up through the shoulders into a steep gable
+          const sA = (A.apex - A.eave) / A.a, tierIn = T.tiers[0].hw - 0.3, a = A.a;
+          const shaftFace = [S.u[1], S.v[1], -S.u[0], -S.v[0]];
+          for (let k = 0; k < 4; k++) {
+            const e = A.ends[k], sh = shaftFace[k];
+            gableFace(k, e, a, T.base, A.eave, A.apex, 26, 26, fhP, body);
+            for (const sg of [-1, 1]) {
+              const n = F(k, 0, sg), lo = sg < 0 ? [F(k, sh, -a), F(k, e, -a)] : [F(k, e, a), F(k, sh, a)], hi = sg < 0 ? [F(k, tierIn, -a), F(k, e, -a)] : [F(k, e, a), F(k, tierIn, a)];
+              if (e - sh > 0.05) wallQ(lo[0], lo[1], T.base, S.top, S.top, n, 26, fhP, body);
+              wallQ(hi[0], hi[1], S.top, A.eave, A.eave, n, 26, fhP, body);
+              slope(k, F3(k, tierIn, sg * a, A.eave), F3(k, e, sg * a, A.eave), F3(k, e, 0, A.apex), sA);
+              slope(k, F3(k, tierIn, sg * a, A.eave), F3(k, e, 0, A.apex), F3(k, tierIn, 0, A.apex), sA);
+            }
+          }
+          // ---- the crown: each tier a square under a cross gable (valleys at its corners), its walls from the tier below
+          T.tiers.forEach((t, i) => {
+            const y0 = i ? T.tiers[i - 1].eave : S.top, s = (t.apex - t.eave) / t.hw;
+            for (let k = 0; k < 4; k++) {
+              gableFace(k, t.hw, t.hw, y0, t.eave, t.apex, i ? 29 : 21, 29, fhM, i ? crownC : body);
+              for (const sg of [-1, 1]) slope(k, F3(k, 0, 0, t.apex), F3(k, t.hw, 0, t.apex), F3(k, t.hw, sg * t.hw, t.eave), s);
+            }
+          });
+          if (roof.length) {
+            const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(roof, 3)); g.computeVertexNormals();
+            const sc = crownC.clone(), sl = (sc.r + sc.g + sc.b) / 3;
+            sc.lerp(new THREE.Color(sl, sl, sl), LIB_SLOPE_GREY).multiplyScalar(LIB_SLOPE_K);
+            lmGlass.push({ geom: g, color: sc, style: 29, baseY: base, flh: GLASS_ON ? fhM : 0 });
+            LIB.parts.roofs += nGeo(g);
+          }
+          // ---- the trim: the caps along the eaves, ridges and valleys, the bays' granite surrounds, One's inner chevrons, the
+          // lightning rods at the tiers' corners
+          const trim = (geom, col) => { lmTrim.push({ geom, color: col, style: 3 }); LIB.parts.trims += nGeo(geom); };
+          const bar = (p, q, r, col, sides) => {
+            const d = new V3(q[0] - p[0], q[1] - p[1], q[2] - p[2]), L = d.length(); d.normalize();
+            const g = new THREE.CylinderGeometry(r, r, L, sides || 4, 1);
+            g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(new V3(0, 1, 0), d));
+            g.translate((p[0] + q[0]) / 2, (p[1] + q[1]) / 2, (p[2] + q[2]) / 2);
+            return g;
+          };
+          const lit = (geom, col, k, mix, gain, night) => { themeParts.push({ geom, color: col, lit: (night || col).clone().multiplyScalar(k), mix, slot, style: 3, gain: gain || 1 }); LIB.parts[mix ? 'neon' : 'lit'] += nGeo(geom); };
+          const cSteel = new THREE.Color(LIB_STEEL), spire = (geom) => lit(geom, cSteel, 0.55, 0, 1, cSilver);   // steel by day, white every night
+          const chev = (p, q) => lit(bar(p, q, 0.26, null, 6), cCap, 0.5, 1, 1.5);   // a gable's lit edge (the night's colour)
+          for (let k = 0; k < 4; k++) {
+            const e = A.ends[k] + 0.18;
+            for (const sg of [-1, 1]) {
+              const sb = box(k % 2 ? 0.7 : 0.25, A.eave - T.base - 0.6, k % 2 ? 0.25 : 0.7, 0, 0, 0, ryG), sq = F(k, e - 0.05, sg * (a - 0.3));
+              sb.translate(...P3(sq[0], sq[1], (A.eave + T.base + 0.6) / 2)); trim(sb, cStone);   // the bay's granite surround
+              chev(F3(k, e + 0.05, sg * a, A.eave + 0.25), F3(k, e + 0.05, 0, A.apex - 0.1));
+              if (A.chevron) trim(bar(F3(k, e - 0.05, sg * (a - 0.3), A.chevron[0]), F3(k, e - 0.05, 0, A.chevron[1]), 0.3, null, 4), cStone);   // One's inner chevron
+            }
+            trim(bar(F3(k, tierIn, 0, A.apex + 0.15), F3(k, A.ends[k] + 0.1, 0, A.apex + 0.15), 0.22, null, 4), cCap);   // the bay's ridge
+          }
+          T.tiers.forEach((t) => {
+            for (let k = 0; k < 4; k++) {
+              const along = k % 2 === 0;
+              const ec = F(k, t.hw + 0.12, 0), ew = 2 * t.hw + 0.3;
+              const eb = box(along ? 0.3 : ew, 0.32, along ? ew : 0.3, 0, 0, 0, ryG); eb.translate(...P3(ec[0], ec[1], t.eave + 0.1));
+              trim(eb, cCap);   // the eave's unlit cap
+              trim(bar(F3(k, t.hw, t.hw, t.eave + 0.15), P3(0, 0, t.apex + 0.1), 0.2, null, 4), cCap);   // the valley
+              trim(bar(P3(0, 0, t.apex + 0.12), F3(k, t.hw + 0.05, 0, t.apex + 0.12), 0.22, null, 4), cCap);   // the ridge
+              for (const sg of [-1, 1]) chev(F3(k, t.hw + 0.2, sg * t.hw, t.eave + 0.3), F3(k, t.hw + 0.2, 0, t.apex - 0.1));
+              trim(bar(F3(k, t.hw, t.hw, t.eave + 0.2), F3(k, t.hw, t.hw, t.eave + 4.6), 0.07, null, 4), cRod);   // a rod
+            }
+          });
+          // ---- the top: One Liberty's pyramid, mast, antenna clusters and needle, white every night with the red beacon on
+          // top; Two Liberty's sharp finial, white every night
+          const W = T.spire;
+          if (W.pyr) {
+            spire(pyr4(cx, cz, W.pyr[2], base + W.pyr[0], base + W.pyr[1], W.pyr[3]));
+            const mast = new THREE.CylinderGeometry(W.mast[3], W.mast[2], W.mast[1] - W.mast[0], 8); mast.translate(cx, base + (W.mast[0] + W.mast[1]) / 2, cz);
+            spire(mast);
+            W.clusters.forEach((y, j) => {
+              const r = W.mast[2] + (W.mast[3] - W.mast[2]) * (y - W.mast[0]) / (W.mast[1] - W.mast[0]) + 0.16;
+              for (let k = 0; k < 4; k++) {
+                const q = F(k, r, 0), g = box(k % 2 ? 0.95 : 0.3, 2.4 - j * 0.25, k % 2 ? 0.3 : 0.95, 0, 0, 0, ryG);
+                g.translate(...P3(q[0], q[1], y)); spire(g);
+              }
+            });
+            const ndl = new THREE.CylinderGeometry(0.03, 0.3, W.needle - W.mast[1], 6); ndl.translate(cx, base + (W.mast[1] + W.needle) / 2, cz);
+            spire(ndl);
+            const beacon = new THREE.SphereGeometry(0.55, 8, 6); beacon.translate(cx, base + W.needle + 0.2, cz);
+            themeParts.push({ geom: beacon, color: new THREE.Color(0xff3020), lit: new THREE.Color(0.9, 0.08, 0.05), mix: 0, slot, style: 3 });
+          }
+          if (W.finial) lit(pyr4(cx, cz, W.finial[2], base + W.finial[0], base + W.finial[1], 0.04), cWhite, 0.55, 0);
+          LIB.crowns.push([cx, base + T.tiers[0].eave, cz]);
+        }
+        // the near level's two meshes: the bases' granite and lobby glass, the crowns' glazing caps
+        if (LIB.on) {
+          libMaterials();
+          const quadGeo = (parts) => {
+            const pos = [], nor = [], uv = [], idx = [];
+            for (const p of parts) {
+              const o = pos.length / 3;
+              for (let j = 0; j < 4; j++) { pos.push(...p.q[j]); nor.push(p.n[0], 0, p.n[1]); uv.push(...p.uv[j]); }
+              const t = [p.q[1][0] - p.q[0][0], p.q[1][2] - p.q[0][2]];   // the foot's direction; its outward normal must be on the triangle's front
+              if (-t[1] * p.n[0] + t[0] * p.n[1] >= 0) idx.push(o, o + 1, o + 2, o, o + 2, o + 3); else idx.push(o, o + 2, o + 1, o, o + 3, o + 2);
+            }
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+            g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+            return g;
+          };
+          const bg = quadGeo(baseParts); freeOnUpload(bg);
+          LIB.base = addChunkMesh(bg, LIB.baseMat); LIB.base.castShadow = true; LIB.base.receiveShadow = true;
+          const fp = [], fu = [];
+          for (const t of frameTris) {
+            const [a, b, q] = t.pts, e1 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]], e2 = [q[0] - a[0], q[1] - a[1], q[2] - a[2]];
+            const n = [e1[1] * e2[2] - e1[2] * e2[1], e1[2] * e2[0] - e1[0] * e2[2], e1[0] * e2[1] - e1[1] * e2[0]], nl = Math.hypot(...n) || 1;
+            for (let j = 0; j < 3; j++) { const p = t.pts[j]; fp.push(p[0] + n[0] / nl * 0.07, p[1] + n[1] / nl * 0.07, p[2] + n[2] / nl * 0.07); fu.push(...t.uv[j]); }
+          }
+          const fg = new THREE.BufferGeometry();
+          fg.setAttribute('position', new THREE.Float32BufferAttribute(fp, 3)); fg.setAttribute('uv', new THREE.Float32BufferAttribute(fu, 2));
+          fg.computeVertexNormals(); vdepthNoteOverlay(fg); freeOnUpload(fg);
+          LIB.frames = addChunkMesh(fg, LIB.frameMat);
+          LIB.tris.base = nGeo(bg); LIB.tris.frames = nGeo(fg);
+        }
+        LIB.tris.shared = LIB.parts.walls + LIB.parts.roofs + LIB.parts.trims + LIB.parts.neon + LIB.parts.lit;
+      }
       // --- One Liberty Place (17th & Market): sheer blue shaft, four gabled tiers, needle spire
-      {
+      if (!REAL) {
         const cx = -1995, cz = -785, base = siteY(cx, cz, 'ground');
         const gc = new THREE.Color(0x254d70), gcCrown = new THREE.Color(0x244f77);
         c.set(0x9c9186);
@@ -17519,7 +17863,7 @@ totalEmissiveRadiance += step(0.6, frMask.b) * frMask.r * vec3(1.0, 0.5, 0.03) *
         themeParts.push({ geom: beacon, color: new THREE.Color(0xff3020), lit: new THREE.Color(0.9, 0.08, 0.05), mix: 0, slot: olSlot, style: 3 });
       }
       // --- Two Liberty Place (16th & Chestnut): squatter, two big gable tiers, white finial
-      {
+      if (!REAL) {
         const cx = -1937, cz = -689, base = siteY(cx, cz, 'ground');
         const gc = new THREE.Color(0x2c5678), gcCrown = new THREE.Color(0x244f77);
         c.copy(gc);
@@ -39274,6 +39618,7 @@ float pinOccGate() {
     cityHallStep();   // Round 191: its level, its art on a phone's approach, the dials' hands
     sfStep(now);   // Round 189: the storefronts' clock and names
     gloryStep(now);   // Round 191: Glory's levels of detail and its hours
+    libStep();   // Round 195: the Liberty Places' near level, their lobbies' light and their art
     if (TREEART.side) { TREEART.uResH.value = renderer.domElement.height || 900; updateTreeArt(now); }   // the trees' cards (TREE_ART)
     vegUpdate(now);   // the realism pass: the lawn's season, the leaf fall, the woods' season, the canopy map
     updateLightsTheme(now, dt);
@@ -39395,7 +39740,7 @@ float pinOccGate() {
       devHud.id = 'devhud';
       devHud.style.cssText = 'position:fixed;right:8px;bottom:8px;z-index:30;padding:4px 8px;font:11px/1.4 ui-monospace,Menlo,monospace;color:#efe9dc;background:rgba(23,21,18,.72);border-radius:3px;pointer-events:none;white-space:pre';
       document.body.appendChild(devHud);
-      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
+      window.__dbg = { glass: glassProbe, real: () => ({ REAL, ao: AO.on, copied: AO.copied, w: AO.w, h: AO.h, grade: gradeU, aoU: AO.mat && AO.mat.uniforms, roof: roofArtU, yard: { on: texU.uYardOn.value, tone: texU.uYardTone.value } }), bootCtx, kept: () => ({ on: KEPT.on, ready: KEPT.ready, pending: [...KEPT.pending], restored: KEPT.restored.slice(), copied: KEPT.copied.slice(), reloaded: KEPT.reloaded, failed: KEPT.failed }), paceBeacon, paceState: () => ({ on: PACE.on, fps: PACE.fps, pick: gfxPick(), drawn: PACE.drawn, refreshes: PACE.refreshes, idleMs: Math.round(PACE.idleMs), liveMs: Math.round(PACE.liveMs), lastInput: Math.round(PACE.lastInput), moved: Math.round(PACE.moved) }), events: () => ({ hidden: { ...hiddenEv }, games: SCORES.games.map((g) => ({ id: g.id, k: g.k, hidden: !!g.hidden, y: g.y })), shows: CONCERTS.shown.map((q) => ({ venue: q.venue, hidden: q.hidden, x: Math.round(q.x), z: Math.round(q.z), r: q.r, y: Math.round(q.y) })) }), eventHide, eventTapRestore, concertsSetTest: (evs) => { CONCERTS.events = evs; CONCERTS.tick = -1; CONCERTS.shownKey = null; concertsRefresh(); return CONCERTS.shown.length; }, dpr: () => ({ cur: DPR.cur, k: DPR.k, levels: DPR.levels.slice(), live: DPR.live, trial: DPR.trial && { ...DPR.trial }, hist: DPR.hist.slice(), ...dprBeacon() }), dprJudge, rebuilds: () => REBUILT.map((r) => ({ ...r })), gloryGo: () => { if (!GLORY.ref) return false; const e = searchLocal('glory beer').find((q) => q.kind === 'bar'); if (!e) return false; searchGoToLocal(e); return vehinfoBody.innerHTML; }, glory: () => ({ on: GLORY.on, lod: GLORY.lod, near: !!(GLORY.near && GLORY.near.visible), open: GLORY.open, openU: gloryU.uGlOpen.value.toArray().map((v) => +v.toFixed(3)), tris: GLORY.tris, draws: GLORY.near ? (GLORY.near.visible ? 1 : 0) + (GLORY.far.visible ? 1 : 0) : 0, artLoaded: GLORY.artLoaded, roomsLoaded: GLORY.roomsLoaded, pending: !!GLORY.pend, door: GLORY.door, uploads: GLORY.uploads.slice(), queued: GLORY.upq.length, paved: REBUILD_PAVED.length, hours: gloryHours(clock.y, clock.m, clock.d, clock.minutes), card: gloryCardHead(), lamps: GLORY.lamps, ref: GLORY.ref && { door: GLORY.ref.door, y0: GLORY.ref.y0 }, u: gloryU }), cityHall: cityHallProbe, liberty: () => ({ on: LIB.on, near: LIB.near, framesOn: LIB.framesOn, asked: LIB.asked, loaded: LIB.loaded, tris: { ...LIB.tris }, parts: { ...LIB.parts }, base: !!(LIB.base && LIB.base.visible), frames: !!(LIB.frames && LIB.frames.visible), lit: libU.uLibLit.value, specs: LIB_SPECS.map((t) => t.name) }), fronts: frontsProbe, frontsRadius: (r) => { if (r != null) { FRONTS.r = +r; frR.value = Math.max(1, +r); FRONTS.at = 0; } return FRONTS.r; }, frontNear: (x, z, set) => { if (!FRONTS.side) return null; let best = null, bd = 1e18; const B = FRONTS.buf; for (let k = 0; k < FRONTS.n; k++) { const o = k * FR_STRIDE; if (set != null && FR_SETS[(B[o + 9] | 0) & 15] !== set) continue; const d = (B[o] - x) ** 2 + (B[o + 1] - z) ** 2; if (d >= bd) continue; let s2 = FRONTS.side[k]; if (s2 === -2) s2 = FRONTS.side[k] = frontSide(k); if (s2 < 0) continue; bd = d; best = k; } if (best == null) return null; const o = best * FR_STRIDE, ux = B[o + 2], uz = B[o + 3], s2 = FRONTS.side[best], nx = s2 === 0 ? ux : s2 === 1 ? -ux : s2 === 2 ? -uz : uz, nz = s2 === 0 ? uz : s2 === 1 ? -uz : s2 === 2 ? ux : -ux, h = s2 < 2 ? B[o + 4] : B[o + 5]; return { set: FR_SETS[(B[o + 9] | 0) & 15], x: B[o] + nx * h, z: B[o + 1] + nz * h, nx, nz, base: B[o + 6], top: B[o + 7] }; },rebuildOcc: () => REBUILD_OCC.map((o) => ({ id: o.id, n: o.ring.length, top: o.top, pad: o.pad, bb: o.bb.map(Math.round) })), rebuildAt, rebuildCrownAt, orbit, walk, fly, camera, renderer, scene, WX, WXFX, detFar: detFarUniform, storefronts: () => STOREFRONT_N, sf: sfProbe, sfU: SF_U, walls: () => WALL_N, towers: () => ({ specs: TOWER_SPECS.length, crowns: TOWER_CROWN_N, log: TOWER_MATCH_LOG }), roofPlan, roofQuad, scores: () => ({ games: SCORES.games, fails: SCORES.fails }), scoreTest: () => { SCORES.nextT = performance.now() + 600000; scoresSet([{ id: 'mlb:t1', start: Date.now() - 3600000, k: 'mlb', live: true, us: 'PHI', uscore: '4', them: 'NYM', tscore: '2', color: 'e81828', logo: 'https://a.espncdn.com/i/teamlogos/mlb/500/phi.png', at: 'Away', detail: 'Bot 7th, Away' }, { id: 'nfl:t2', start: Date.now() - 3600000, k: 'nfl', live: true, us: 'PHI', uscore: '17', them: 'DAL', tscore: '10', color: '06424d', logo: 'https://a.espncdn.com/i/teamlogos/nfl/500/phi.png', at: 'Home', detail: '3rd 8:41, Home' }, { id: 'nhl:t3', start: Date.now() - 3600000, k: 'nhl', live: false, us: 'PHI', uscore: '2', them: 'PIT', tscore: '3', color: 'f74902', logo: 'https://a.espncdn.com/i/teamlogos/nhl/500/phi.png', at: 'Home', detail: 'Final/OT, Home' }, { id: 'nba:t4', start: Date.now() - 3600000, k: 'nba', live: false, pre: true, us: 'PHI', uscore: '', them: 'BOS', tscore: '', color: '006bb6', logo: 'https://a.espncdn.com/i/teamlogos/nba/500/phi.png', at: 'Away', detail: '7:30 PM ET, Away' }]); }, scoreDayStart, los: losClear, lunar, solar, moon: () => moonNow, colStats: () => { const o = {}; for (const k in COL_STAT) { const a = COL_STAT[k]; if (typeof a === 'number') { o[k] = a; continue; } o[k] = { n: a[3], mean: a[3] ? [a[0] / a[3], a[1] / a[3], a[2] / a[3]].map((v) => +v.toFixed(3)) : null }; } o.reservoir = WIDE_COLS.length; return o; }, markets: () => ({ n: markets.length, tents: marketTentN, open: marketOpenList.map((m) => m.n) }), markers: () => ({ markers: markerRecs.length, posts: markerMeshes.reduce((a, m) => a + m.count, 0), art: artRecs.length, plinths: artMeshes.reduce((a, m) => a + m.count, 0), first: markerRecs.slice(0, 3).map((r) => [r.name, Math.round(r.x), Math.round(r.z)]) }), setClock: (y, m, d, min) => { applyClock(y, m, d, min); refreshTimeUI(); }, nameIx: () => (nameIx || (nameIx = buildNameIx())), search: searchLocal, closures: () => ({ on: CLOSURES.on, ok: CLOSURES.ok, fails: CLOSURES.fails, recs: CLOSURES.recs.length, full: CLOSURES.recs.filter((r) => r.o >= 3).length, posted: closureInv.X.length, drawn: (barrelMesh ? barrelMesh.count : 0) + (coneMesh ? coneMesh.count : 0), paving: CLOSURES.paving.length, runsClosed: CLOSURES.runsClosed, first: CLOSURES.recs.slice(0, 6).map((r) => [r.addr, r.o, Math.round(r.mx), Math.round(r.mz)]) }), closureNear: (x, z, o) => { let best = null, bd = Infinity; for (const r of CLOSURES.recs) { if (o && r.o !== o) continue; const d = Math.hypot(r.mx - x, r.mz - z); if (d < bd) { bd = d; best = r; } } if (!best) return null; const inv = closureInv; let i0 = -1, i1 = -1; for (let i = 0; i < inv.R.length; i++) if (inv.R[i] === best) { if (i0 < 0) i0 = i; i1 = i; } return { addr: best.addr, id: best.id, o: best.o, x: Math.round(best.mx), z: Math.round(best.mz), y: +best.my.toFixed(1), d: Math.round(bd), permits: best.permits.length, p0: i0 >= 0 ? [Math.round(inv.X[i0]), +inv.Y[i0].toFixed(1), Math.round(inv.Z[i0])] : null, p1: i1 >= 0 ? [Math.round(inv.X[i1]), +inv.Y[i1].toFixed(1), Math.round(inv.Z[i1])] : null }; }, pavingNear: (x, z) => { let best = null, bd = Infinity; for (const p of CLOSURES.paving) { const d = Math.hypot(p.mx - x, p.mz - z); if (d < bd) { bd = d; best = p; } } return best && { addr: best.addr, k: best.k, x: Math.round(best.mx), z: Math.round(best.mz), d: Math.round(bd) }; }, closureTest: () => { CLOSURES.nextT = performance.now() + 600000; CLOSURES.ok = true; const t0 = Date.now() / 1000; closuresProject({ closures: [
         { id: 't1', o: 3, addr: '300 Block of Locust St', g: [[-75.14680, 39.94540], [-75.14830, 39.94570]], permits: [{ n: '2026-00001', type: 'Utility Work Excavation', why: 'Trench and Install Water Main', from: t0 - 86400, until: t0 + 30 * 86400, url: '' }] },
         { id: 't2', o: 2, addr: '300 Block of Spruce St', g: [[-75.14700, 39.94430], [-75.14850, 39.94460]], permits: [{ n: '2026-00002', type: 'Equipment Placement', why: 'Crane Placement', from: t0, until: t0 + 5 * 86400, url: '' }] },
         { id: 't3', o: 1, addr: '200 Block of S 3rd St', g: [[-75.14640, 39.94480], [-75.14610, 39.94600]], permits: [{ n: '2026-00003', type: 'Equipment Placement', why: 'Sidewalk Shed', from: t0, until: t0 + 60 * 86400, url: '' }] }],

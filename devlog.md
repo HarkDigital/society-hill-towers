@@ -10843,3 +10843,76 @@ place; this is what changed in the code, and what was measured.
   code, not in glass_systems.json, so the calibrated skyline is untouched (glass_calibrate.py's fingerprint). ?real=0 and
   ?glass=0 build the old bars. Rendered from Dock Street, a low flight, the river and at night: no link failures or console
   errors. `tests/test_ryland_glass.py`.
+
+## Round 195, One and Two Liberty Place (Oct 14)
+
+- Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both Comcast towers, Battleship NJ, The Moshulu, and the
+  bridges." This entry is the Liberty Places' (one of seven landmark branches). Round 84's towers were square shafts with a
+  3.2 m recess at each corner under nested gable prisms the width of each tier at about 30 degrees, so both read as a blue
+  box with a hat; the base was a 56 m style-5 block that the storefront art dressed as a row of corner shops.
+- References, looked at and never sent anywhere: Wikimedia Commons (One_Liberty_Place a to d, OneLibertyPlaceSpire, the
+  Highsmith view LCCN2011630484, Liberty2, Two Liberty Place from Chestnut St, the South Street Bridge skyline A605, the
+  Boathouse Row night A595, the USS New Jersey skyline A602), Wikipedia, archipedia (the base "granite with acid blue
+  trim", the "metallic blue glass"), the walking tours' "three stories of dark blue-gray polished granite". Kept with their
+  URLs in the session's scratchpad (`remodel/liberty/refs/SOURCES.txt`). The massing comes from OSM's building parts
+  already in `parts_wide.json` (One: the notched shaft to 185 m, the central cross to 220, the crown squares 36, 27 and
+  18 m to 228, 240 and 250, the mast to 288; Two: the central cross to 233, the crown to 258) and the photographs, the
+  gables' pitch and Two's bay gables set by eye against A605 scaled by the 288 m needle and the 258.5 m finial; the LiDAR's
+  251.5 m for One is the pyramid's foot.
+- The model (`LIB_SPECS`, built under `if (REAL)` in the landmark block of 'Raising the outer districts'; `?real=0` builds
+  Round 84's towers exactly: its two blocks stand under `if (!REAL)`, crowns-day pixel-identical to main, 0.0% of pixels
+  over 24 levels). One Liberty: a 48.6 m square shaft with its corners cut back 6.5 m in three steps to 185 m; a central bay
+  23 m wide on each face, 0.35 m proud, rising through the shoulders into a gable (eave 206.5, apex 220.5, 51 degrees,
+  Round 84's 30) with One's inner granite chevron in it; behind it the crown's three square tiers, each a cross gable with
+  valleys at its corners (35.9 m to 229, 27.4 m to 240, 18.4 m to 248, 47 to 48 degrees), the pyramid from 242 to 258, the
+  mast to 283 with five antenna clusters and the needle to 288. Two Liberty: a 38.4 by 34.4 m shaft cut back 3 m in two
+  steps to 207; its bays 22 m wide to 240.9 (53 degrees) and one crown tier 30.3 m square to 253.5 under the white finial
+  to 258.5. Every wall is a whole quad on the glass chunk (the shader's wall u is 0 or the wall's length), a gabled face two
+  half walls under its slopes; the slopes are lmGlass (style 29, the glazed crowns' sheet) at 0.42 of the crown glass's
+  lightness with half its saturation gone (the photographs' slopes read dark slate under bright caps).
+- The faces wear three of Round 193's systems, none changed (glass_calibrate.py's fingerprint unchanged): the flanks the
+  ribbon system (7: light bands about two fifths of each floor, the photographs' stripes either side of the bays, and the
+  stepped corners turn them into the chevrons on the shaft), the bays the banded system's vertical silver caps (12), the
+  shoulders and the crown Liberty's own (2). The glass is each tower's photographed body (#5D7F9E) on every face.
+- The base: three storeys of polished dark blue-grey granite, the far level a style-6 block in the fabric (no painted shop
+  floors: the real base is lobby and granite), the near level (within 1,000 m, 650 on a phone) one mesh of quads laid
+  0.12 m off it from the generated base atlas: the lobby picture on the long faces of Market and 17th (One) and Chestnut
+  and 16th (Two), the plainer wall on the rest and the plain granite on the corner steps. Its glass is a smooth dark pane
+  (roughness 0.06, metalness 0.45) that glows warm after dark from its head down (`uLibLit`, the glass rooms' level) and
+  takes no street lamp wash (`frMask` in lampLightPatch); the granite takes the lamps as the fabric's lower storeys do.
+  The crowns' glazing caps (within 2,600 m, 1,600 on a phone) are one blended mesh 7 cm over the slopes, the caps running
+  down each slope at 1.5 m both ways from the generated tile.
+- The night (Round 84, Mike's photo): every sloping edge of every gable end lit in the night's colour (48 bars: One's four
+  bays and three tiers on four faces, Two's bays and tier), gain 1.5 and 0.26 m, the eaves' caps unlit; One's pyramid,
+  mast, clusters and needle steel grey by day and white every night (mix 0) with the red beacon at 288.75 m; Two's finial
+  white. Slots as before (One, then Two). Rendered on a plain night, an Eagles night and a red night: the nested chevrons
+  read from Rittenhouse at 600 m and from 3 km.
+- The art (`fetch_liberty_art.py`, `bake_liberty_art.py`, `liberty_art.json`, `art/liberty/`): three gpt-image-2 images at
+  quality high, 1024 square (base-lobby 1,565 KB, base-wall 2,093 KB, glazing 839 KB raw), each looked at; the bake keys the
+  green, stretches the wall picture's fascia so its acid blue reveal lands on the lobby picture's row (they meet at the
+  corners), cuts the glazing between its caps' centres to a tiling 3 m tile and stores both premultiplied by their alpha:
+  base 2048x1024 WebP 405 KB (half 87 KB), glazing 512 square 3 KB (half 2 KB). Decoded the first time the eye comes within
+  1,600 m after Enter (900 on a phone, never on the recovery tier), a 1 by 1 of the stone's mean until then; a phone's halves
+  let go at upload.
+- The budget (measured with renderer.info through the post pipeline's counts, main's build against this one, clear air,
+  noon; computer 1280x800 at dpr 1, phone 740x360 at 1.25): the towers are 3,268 triangles merged into the city's existing
+  meshes (walls 316, slopes 64, trim 1,408, lit edges 1,152, the white spire and finial 328) plus the near level's 148 (base
+  84, caps 64) in two draws. Computer: from the crowns at 260 m 407 calls 6,337,032 triangles -> 409 and 6,338,626; on
+  Market St 310 / 5,040,709 -> 312 / 5,042,911; from 600 m 414 / 6,616,751 -> 416 / 6,618,345; from 1.5 km 655 /
+  10,731,015 -> 654 / 10,730,355; looking away 426 calls both. Phone: 388 / 4,782,598 -> 390 / 4,784,192 near, 631 /
+  8,342,838 -> 632 / 8,344,348 far. Programs 216 -> 218 (computer), 127 -> 129 (phone): the base's and the caps'. Texture
+  memory: 12.6 MB on a computer (the base 11.2 with its mips, the caps 1.4), 3.2 MB on a phone. No link failures and no
+  console errors on the computer, the phone, `?zbuf=log` and `?real=0` (its two "Unable to serialize Texture" warnings are
+  main's). No new program writes gl_FragDepth; the near level's streams are 4-byte floats.
+- The day colour, re-measured with glass_calibrate.py on this build (21 poses, its tests pass; the committed
+  `tests/glass_calibration.json` is left as main's to merge cleanly, the re-measure kept in the scratchpad): One Liberty's
+  median delta E 7.0 -> 6.8 and b* gap +0.9 -> +1.2 over its 8 poses, Two Liberty's 4.5 -> 7.0 and +1.2 -> +0.9, One's crown
+  6.5 -> 5.2 and +1.1 -> +1.4; within delta E 15 and b* 6. Rerun after the merge.
+- Tests: `tests/test_remodel_liberty.py` (the massing against the references, the builder run under Node with the page's own
+  code: 48 lit edges and one beacon, every wall, slope and base quad facing out, the systems each face wears, the streams;
+  the wiring, `?real=0`'s blocks, the art's halves); `test_art_files.py` and `test_memory_cuts.py` take the new manifest and
+  the two `freeTexOnUpload` uses. `__dbg.liberty()` reports the levels, the art and the triangles.
+- Open for Mike: the flanks' bands are the ribbon system's precast white, a little warmer than the photographed blue-grey
+  granite (a Liberty flank system is a seventeenth glass system, and GLASS_DATA holds sixteen, with a recalibration); the
+  Shops at Liberty Place's glass rotunda and the Westin are not part of this round; a phone's plain night draws the chevrons
+  as faintly as main did.
