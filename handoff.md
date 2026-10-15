@@ -418,7 +418,17 @@ One IIFE, top to bottom, with `// ------- banner` comments you can grep for. In 
   the paint by part, the hull's bands by height, `NJ_ART`'s atlas as detail, the floods by night on `lampUniform`), a near
   level and a far one switched in `njStep` by the distance from the hull's box (`NJ_NEAR_R`), the railings with the SPS-49's
   mesh and the hull number in two alpha-tested draws near, the deck lamps a Points draw at night. `?real=0`, `?nj=0` and a
-  failed build (`njBuildSafe`) run Round 30's ship (`njOld`) where it always ran; `__dbg.nj()`.
+  failed build (`njBuildSafe`) run Round 30's ship (`njOld`) where it always ran; `__dbg.nj()`. The review's fixes (same
+  round): the 01 and 02 are cut into recessed bays (`NJ_BAYS`, `njNotched`: the wall's ring notched, the deck over it the
+  plan uncut, `njBayDeck` its fascia and dark soffit), the conning tower (`njConning`), 274 lockers and cable runs
+  (`njClutter`, a seeded `njRng`, kept off `NJ_CLEAR`), the lattice foremast and mainmast (`njLattice`: truss quads in the
+  railings' draw, whose material raises an alpha-tested texel's coverage with its mip level so the lattice holds from
+  Philadelphia; the far level a dark trapezoid) and the SPS-49 a curved strip; the funnels (`NJ_FUNNELS`) with plated
+  platforms, searchlights, steam pipes and the whistle, their own kind (`NJK.funnel`: stiffeners and soot in the shader,
+  its seed the stack's height); a bulkhead's seed is the height its floods stand at (`njFloodBase`: its own open deck, or
+  the deck the flush stack stands back from), so the night's floods rise from each deck, never as a stripe a level on a
+  funnel, a turret or the tower; the deck lamps are sized by the drawing buffer (`njLampU`, set in `njStep`), staged in
+  `pendingUpload` and culled; a tap on her opens her own card (`njAt`, `njCard`) before the building tap's ground test.
 - **Terrain:** `demAbs()` samples the DEM grids (datum: the towers' site at 8.34 m ASL stays
   y = 0); `siteY(x,z,'ground'|'road')` is the one function everything sits on. East of Front
   St the I-95 trench drops to −8 between `TERRAIN.trenchW/E`, Penn's Landing shelf −6.5…−7.5,
