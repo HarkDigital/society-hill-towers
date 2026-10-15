@@ -207,6 +207,7 @@ const("GLORY_ART", text_of("glory_art.json", "null"))   # Glory Beer Bar & Kitch
 const("GLASS_ART", text_of("glass_art.json", "null"))   # the glass towers' curtain-wall systems, frame and room atlases (bake_glass_art.py over glass_systems.json), Round 192
 const("TAVERN_ART", text_of("tavern_art.json", "null"))   # A Man Full of Trouble's atlas: its brick, shingles, paint, marble and openings (bake_tavern_art.py), Round 199
 const("TOWER_ART", text_of("tower_art.json", "null"))   # the buildings round City Hall in their own facades: the atlas and each building's cells (bake_tower_art.py), Round 198
+const("SHT_ART", text_of("sht_art.json", "null"))   # the Society Hill Towers' concrete (bake_sht_art.py), Round 195
 
 
 def art_paths(o):
@@ -224,6 +225,7 @@ def art_paths(o):
 ART_FILES = []
 for name in ("tree_art.json", "ground_art.json", "fronts.json", "wall_art.json", "land_mask.json", "water_art.json", "cityhall_art.json",
              "glory_art.json", "storefront_art.json", "glass_art.json", "tavern_art.json", "tower_art.json"):
+             "glory_art.json", "storefront_art.json", "glass_art.json", "sht_art.json"):
     if (ROOT / name).exists():
         man = json.loads((ROOT / name).read_text())
         if re.search(r'"data:image/', (ROOT / name).read_text()):

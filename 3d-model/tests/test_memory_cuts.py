@@ -342,7 +342,8 @@ console.log(JSON.stringify({ hook, dataHook, w: canvas.width, h: canvas.height, 
         # Round 199: A Man Full of Trouble's atlas, uploaded once when it lands (a phone's only after Enter)
         self.assertIn('const t = mat.map; t.dispose(); t.image = im; t.needsUpdate = true; freeTexOnUpload(t);', cut(s, '  function tavernMake(b) {', '  // ------------------------------------------------ museum ships'))
         self.assertIn('if (isTouch) freeTexOnUpload(t);', cut(s, '  async function townLay(aniso, got) {', '  function townProbe() {'))   # Round 198: the own facades' atlas and mask
-        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 35)   # the definition and its uses (the realism pass's twenty-one, City Hall's seven, Glory's three: Round 191; the glass's, the tavern's (Round 199) and the City Hall ring's (Round 198))
+        self.assertIn('tex.image = im; tex.needsUpdate = true; freeTexOnUpload(tex);', cut(s, '  function shtLoadArt() {', '  function shtBuf() {'))   # Round 195: the Society Hill Towers' concrete
+        self.assertEqual(len(re.findall(r'\bfreeTexOnUpload\(', s)), 36)   # the definition and its uses (every round's, counted)
 
     def test_venue_screens_share_textures(self):
         s = cut(self.src, '    const venueScreenTex = new Map();', '    const buildStadium = ')

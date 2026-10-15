@@ -11056,3 +11056,164 @@ place; this is what changed in the code, and what was measured.
 - Open: the gable ends and caps are flat-coloured stone; PSFS's cantilever over its base is not modelled (the slab rides
   on its footprint as wide.b64 has it); the strips are a few bays repeated, so a long wall repeats every 9 to 13 m, and
   a building's side and rear walls wear its street front.
+
+## Round 195, the Society Hill Towers (Oct 14)
+
+- Mike: "Remodel Liberty One, Liberty 2, The stadiums/arena, both Comcast towers, Battleship NJ, The Moshulu, and the
+  bridges. Remodel the Society Hill Towers, where this all started. All 3 towers are identical, so you only need to model
+  one." This entry is the towers' share (branch remodel/sht); the other landmarks are their own entries.
+- References, viewed for reference only and kept out of the repo (scratchpad remodel/sht/refs, SOURCES.txt): Wikimedia
+  Commons' Society Hill Towers category (Society_Hill_Towers_PA1 and PA2, _closeup, the LCCN2011631588 Highsmith photograph,
+  the Korean War Memorial view A408, the two 1960s "Secretary of the Interior riding in a helicopter" frames, which show the
+  colonnade's blade pilotis and the transfer girder plainly, and the HABS Delaware Avenue aerial), Wikipedia and CTBUH (94.2 m,
+  31 storeys, cast-in-place concrete, 1964), fenestration_research.json's own entry, and the city's 2022 orthophoto (PASDA's
+  PhiladelphiaImagery2022, a 320 m and a 120 m square at the origin), which settled the roofs and the plaza.
+- The tower as built: 18 bays by 12 on the six-foot module (Round 4's count), faces 33.68 by 22.70 m (the three OSM records
+  are 32.2 to 34.1 by 21.5 to 22.9: mapping noise), thirty floors of 2.762 m from the girder's top to the parapet's foot, a
+  6.4 m colonnade, a 2.15 m transfer girder, a 3.35 m parapet band, openings 1.47 by 2.21 m between 0.36 m mullions and
+  0.55 m spandrels, the glass 0.5 m back in dark bronze frames with a transom at a third. Blade pilotis every second
+  mullion line, square piers at the corners, the lobby's glass 3 m in, a brick apron 3 m round each tower. On the roof,
+  from the orthophoto: a penthouse about two thirds of the roof's length by half its width, centred, and a louvred
+  cooling tower in its end with its fans across it (the North tower's two at its north end, the West's three at its south
+  end, the South's one at its east end). No masts: the first cut had invented two and the orthophoto shows none.
+- The grid is not geometry. Each face is one quad (aInterior: metres along the face, metres up, Round 137's room seed, the
+  face's length) and the facade shader ray-casts the egg crate in the face's own frame (`shtMainGLSL` in `shtHook`): the eye's
+  ray enters the opening under the pixel and meets a jamb, the sill, the head or the pane, each lit by its own normal, and
+  the key light reaches that point only where its ray back out leaves through the opening (`RE_Direct_Sht` scales every
+  direct light by it), so the reveals' shadows are exact at every distance and never a shadow map's texel. The pane mirrors
+  the sky only where its mirrored ray leaves the opening (`shtSpecOcc`, else the reveal's concrete), at the 1960s float
+  glass's 0.055 rather than the hook's 0.095: the photographs' windows are near black. Once a cell is under about three
+  pixels it is drawn by its means (the front, the jamb and the sill or head the eye can see, each in its own light, the
+  pane it can see with its blind), held to the exact view by measure: `__dbg.sht('means' | 'exact')` at the south, west
+  and east faces at 13:00 and 10:00 under a clear sky read the means at 1.054, 0.970 and 1.038 of the exact view's linear
+  mean (the first cut was 1.13, 0.92 and 1.15; the opening's light ran high on a sunlit face, `kOpen`), so nothing pops as a
+  face recedes. Past about a pixel a cell, the cells' own blinds go to their mean too (the first far renders were a speckle).
+- The rooms are the tower glass's own hook, run unchanged (`apartmentWindowHook`); its varyings are renamed in the vertex
+  stage and made per-pixel values the ray-cast sets (the room the pixel shows, the pane's coordinates, the face's seed), its
+  optics mask is the pixel's share of glass, and the themed rooms' emission takes the same share. So the night's rooms by
+  OCC_HOME and Round 137's five windows are found exactly as before: the seeds are computed from the same OSM records'
+  sizes (2.8968, the South tower's south face, `lightsState().windows.at` [2.8968, 16, 5, 9] on main and on the branch),
+  floor 16, bays 5 to 9; plain night white, Eagles green, `?lights=red` red, all rendered. By day the blinds and curtains
+  behind the glass are the night's own (roomLight's r2 and r3), so a window's blind is the same day and night, and the five
+  carry none (Round 137: plain glass); the room behind is roomDay through the opening on a computer, its mean on a phone. A
+  lit room lights its own reveal a little (`spX`), and after dark the lobby's light spills on its pilotis, soffit and pavers.
+- One tower is built (`shtTowerParts`) and placed three times on the records' centroids and turns (`shtMerge`): one mesh near
+  (the shell, the pilotis, the lobby, the parapet and deck, the penthouse, the cooling tower and fans, the fountain's coping)
+  within `SHT_NEAR_R` 520 m (a phone's 320, 40 m hysteresis, `shtStep`) and one far (the shell, a lobby box, the roof and the
+  penthouse box), one material and one program for both, the far level the pins' depth stand-in (`occStandIn`); the near
+  level is a raycast target, the footprints are the flight's walls and the trees' keep-out as before. The plaza from the
+  orthophoto (`shtPlaza`, one mesh on the ground's surface material): the grey court round the fountain, the brick
+  terraces south of it, the car park east; Round 4's berms and the Baskin bronze stand where they stood (`shtLandscape`).
+  The old radial brick disc and its step ring are gone (the orthophoto has lawn there).
+- The art: `fetch_sht_art.py` made three candidates (gpt-image-2, quality high, 1024x1024, about 7,000 image tokens
+  each) of a 4 m patch of the towers' buff concrete; concrete-a drew two form lines across the patch (stripes every 4 m once
+  tiled) and concrete-c read sandy and speckled, so `bake_sht_art.py --pick concrete-b` flattened its broad light and made it
+  tile: 111 KB (1024) and 9 KB (512) of WebP under art/sht/, 5.33 MB of GPU memory with mips on a computer, 1.33 MB on a
+  phone (a phone loads it within 1.5 km of the towers, freed on upload). Laid by each face's own metres as grain over the
+  calibrated colour (texel over its linear mean).
+- Budget, measured (an onBeforeRender count of the towers' and the plaza's own meshes, `probe_budget.js`): main drew the
+  three towers and the plaza in 20 draws and 50,864 triangles a frame, near or far (the towers' boxes 24,804 of them, 7,836
+  casting), whatever the distance; the branch draws 5 near (2,210 triangles: the near mesh 1,554, the plaza 412, the berms
+  196, the bronze 48) and 5 far (1,076: the far mesh 420), 1,602 triangles in the shadow pass near and 468 far, the same on
+  the phone path. The towers' vertex data went from about 2.6 MB of non-indexed boxes (once packResident has packed them) to under 0.2 MB indexed. Programs at the
+  end of an identical probe: 165 on main, 163 on the branch (the towers' two old programs are one). Link failures: none on
+  either path (every render's console empty, `__dbg.sht().hookOk` true, every anchor of the hook landing on r149's chunks,
+  tests/test_remodel_sht.py runs the hook on ShaderLib.standard). No gl_FragDepth in it; `?zbuf=log` renders cleanly.
+- `?real=0` against main at the same two poses: a mean difference of 0.006 and 0.021 levels and no pixel over 24 (the old
+  towers exactly). `?sht=0` against main: 0.56% of pixels over 24 by day (the traffic and the clouds) and 0.02% at night.
+- Renders (before = main's build, after = this branch, `?wx=clear`, Oct 14 at 10:00, 12:00 to 15:00 and 21:30): scratchpad
+  remodel/sht/before/{pc,phone}/ and after/{pc,phone}/, poses_pc.json (17 poses) and poses_phone.json (8): Penn's Landing
+  by day and night, the plaza from Spruce Street, the aerial from the south east, the south face, a close-up at the 14th
+  row, the West tower's colonnade by day and night, the motor court, the roofs, the river, the skyline from the south west,
+  the south face on a plain night, an Eagles night and a red night.
+- `tests/test_remodel_sht.py` (the tower's numbers, both levels' streams and winding under Node, the five windows' seed and
+  face, the hook on three's program, the wiring and the art); test_memory_cuts' freeTexOnUpload count is 34;
+  test_art_files names sht_art.json; handoff.md's file table has the two scripts and the manifest.
+- Left for Mike: the 37 Pei townhouses round the towers are still the core's generic rows (the motor court was fixed in
+  the review's round, below).
+
+### The review's round (Oct 14)
+
+The review measured the facade's dark share (the share of a facade crop's pixels under the midpoint of its p5 and p95):
+the six references 0.48 to 0.66, the branch 0.39 to 0.40 near and 0.23 from Penn's Landing; the concrete black after dark;
+a pop at the level switch; the court drawn as asphalt. Every number below is from renders of `?dev=1&dpr=1&wx=clear` at
+1280x800 (the phone's at 740x360, touch), measured by scratchpad remodel/sht/fix/tools (measure.py, glassq.py, calib.py,
+pull.py, sweep.py), renders in remodel/sht/fix/ (it7 the computer's final set, phone/, rain/, flag-*).
+
+- The facade's value. The fabric behind the glass drew at the concrete's own albedo in full sun; it is now the concrete's
+  at `uShtF.x` 0.40 in a cooler hue (0.86, 0.96, 1.16): at the close-up the blinds read (111, 113, 111) against the sunlit
+  concrete's (205, 202, 190), 0.55 of its value. The blinds and curtains are kept a pixel inside the visible pane's own
+  edge (where the near jamb, sill or head cuts it off, or the pane ends), so a dark line of glass stands round every
+  opening at any distance. A reveal's own shade (a jamb 0.5 to 0.3, a head 0.45 to 0.25, a sill 0.7 to 0.45) falls on its
+  fill alone, the key light kept where it reaches (from the street the jambs and the heads' soffits had stood as light as
+  the front, every opening a slit in a light frame). The glass: a dark body (0.0018, 0.0036, 0.0145), a reflectance of
+  0.06 in the hue of the photographs' panes (`uShtGT` 0.6, 0.9, 1.55: the sky probe the pane mirrors is paler than the
+  dome), the day rooms behind it at 0.12 of the old gain, a high pane mirroring to its own horizon (`shtHzo`). Dark share:
+  street-up-day 0.395 to 0.591, southface-day 0.394 to 0.540, closeup-day 0.374 to 0.552 (references 0.48 to 0.66; my own
+  measure of lccn.jpg 0.53 and 0.64). The glass's darkest quarter at midday: (18, 23, 33) at the south face, (19, 24, 34)
+  from the street, (11, 18, 34) at the close-up, blue less red +15, +15 and +23, where it was (26, 28, 30); lccn.jpg's is
+  (24, 35, 60).
+- Penn's Landing (10:00) went 0.227 to 0.304 and does not reach the review's 0.45. The two faces it sees stand 54 and 36
+  degrees off its view with the morning sun 49 degrees east of the south face, on the viewer's side: the opening the eye
+  sees on the south face is half the sunlit jamb, so a window row is about 0.6 of the front's light and the face reads
+  light (pa1.jpg's oblique faces read lighter too; pa1 is overcast and near square on). The east face reads as dark glass
+  in a light grid. A per-cell dissolve between the two views was tried and dropped: it kept the band's mean but drew a
+  patchwork of flat and patterned cells there.
+- The means. Each part's light now comes from the material's own lights (`shtKey`: the key light, `shtFill`: the ambient,
+  the hemisphere and the sky probe's irradiance, defined after three's light pars), the pane's lit share as the overlap of
+  what the eye sees and the sun reaches (the blinds hang where the head's shadow falls first), the sunlit share of the jamb
+  or sill the eye sees, and a reveal's shade on its fill. The rest was the screen: the exact view's light concrete and
+  dark glass are each put through ACES and the grade, and the eye averages the light the screen gives off, while the means
+  went through the curve once (18 per cent bright on a sunlit face, 13 per cent dark on a shaded one, and dark at night,
+  where the grade's contrast takes the dimmest five levels). `shtDisp` and `shtUndisp` put each part's luminance through
+  the screen's curve (the computer's composite, `SHT_POST`, or a phone's CustomToneMapping) and the cell is taken to their
+  mean (`kD`). The means' glass optics are off (a rough glass blend never matched; `uShtK.x` 0 fits best), and the means
+  are by axis: a face at a slant keeps its floors' bands once its bays are under a pixel (`shtBand`, the row's opening
+  share box-filtered). Means over exact at three faces (the south, the west, the east) at 09:30, 13:00, 18:30 and 21:30:
+  0.952 to 1.046, the worst 4.8 per cent (the review's at the south face: 0.945 at 09:30, 1.15 at 18:30, 1.40 at 21:30;
+  this round's first cut, with the new fabric and glass on the old means: 0.857 to 1.206).
+- The night. The rooms take the flat pane in both views (roomLight's room box, by the ray, averaged 0.1 to 0.52 against the
+  flat pane's 0.375 and its far constant's 0.51, numerically, roommean.py; the tower brightened as the eye drew back), its
+  mean taken to the far constant as far as its detail stands (`shtRoomK`, 1.36), with a 0.93 for a lit room's spread under
+  the curve (`uShtK.y`); the five themed rooms keep `shtThemeK`. The concrete takes the city's light after dark
+  (`uShtN` 0.13, 0.115, 0.1, twice that at the street, by the lamps' photocell, `uShtF.w`), on the concrete's share of a
+  pixel alone (`shtConA`). The concrete's mode: southface-night 11 to 35 (main 30, the sky beside it 37), street-up-night 11
+  to 36 (main 30); closeup-dusk's median 22.9 to 33.6 (main 34.3). A plain night, an Eagles night and `?lights=red` render
+  the five white, green and red; `lightsState().windows.at` is still [2.8968, 16, 5, 9].
+- The pull-back (the South tower's south face along its normal, the pixel's own mode): by day the facade's linear mean
+  0.227 at 120 m, 0.232 at 300, 0.239 at 420, 0.267 at 600 and 850, by night 0.079, 0.074, 0.071, 0.071, 0.072; the blend of
+  the two views runs about 7 per cent over either at its middle (560 m) by day, where an albedo blend lifts the exact view's
+  glass, mostly its mirror, toward the mean.
+- The switch. The far level carries the colonnade's pilotis (a blade's outer end and broad sides, a pier's two outer faces)
+  and the cooling tower and its fans (six-sided), `shtPilotis` and `shtCooling` shared with the near: 1,110 triangles for
+  the three towers and the fountain (it was 420), the near's 1,554 unchanged, one draw each. The review's A/B pose: tower
+  pixels over 24 levels between `__dbg.sht('near')` and `('far')` 1.21 to 0.05 per cent on a computer about 516 m off,
+  1.40 to 0.03 per cent on a phone about 330 m off.
+- The motor court. `SHT_COURT` (shtPlaza's court slab) is defined before 'Paving the streets', and with the remodel on a
+  service way's segment whose midpoint falls inside it lays no ribbon (`shtCourtRuns`): 22 segments, the loop round the
+  fountain and the drive from Locust Street, the car park's aisles kept. Each segment keeps its registrations (the kerbs
+  the walks stop at, the trees' and posts' clearance); no typical traffic drives a service way (bake_traffic.py's classes).
+  `?sht=0` paves them as before.
+- The weathering, coarse and held at every distance: each three floors' lift a shade apart, a mottle of stains across the
+  face at 7 by 11 m, soot under the coping down the top two floors in drips, the girder's foot; fine, to its mean past a
+  pixel: each floor's pour and column, the spandrel under each sill 10 per cent darker, the dirt down from the sills' ends.
+- The top, re-measured from row profiles: the band over the top heads is a floor (lccn.jpg's near tower 1.0 floor, korean.jpg
+  0.97, pa1.jpg 0.77), so the parapet is 2.4 m (the band 2.68 m, it was 3.6) and the floors 2.793 m; the penthouse stands
+  3 m over the coping (pa1.jpg 1.1 floors, it was 1.6 m) and the cooling tower 1 m over it, its casing a pale galvanised grey
+  (the near-black louvres had read as a blue box on every roof).
+- The lobby mirrors the plaza and what sky the soffit leaves at 0.45 (it was 0.3) and, on a computer, shows a hall behind
+  its glass (`shtLobbyRoom`: a 7 m deep hall to the core under a 4.6 m ceiling, travertine and rugs, downlights, walnut and
+  bronze lift doors) at the rooms' full day gain.
+- Rain: `uShtL.w` reached 0.74 under `?wx=rain` (wxSurfU.uWet, seeded on the first report; it eases with a 25 s time
+  constant, so 24 frames at 0.05 s reach only 5 per cent of a change, which is why the review's closeup-rain looked dry);
+  the concrete's albedo is now taken down a third of the wetting (0.78 at 0.74) and its roughness to 0.69.
+- Budget (`probe_budget.js`, the towers' and plaza's own meshes): near 5 draws, 2,210 triangles, 1,602 in the shadow pass;
+  far 5 draws, 1,766 triangles (the far level 1,110), 1,158 in the shadow pass; the same on the phone path. Headless frame
+  time at 1280x800 with the towers on and hidden (`__dbg.sht('off')`, the city behind them drawn instead): the close-up
+  23.6 and 28.5 ms, Penn's Landing 27.2 and 29.1, far 30.7 and 29.9, the south face at night 24.9 and 26.4: no measurable
+  cost. The means band reads the probe's irradiance five times a pixel and roomLight once at night; the exact view's
+  reveals twice. Texture: unchanged (5.33 MB a computer, 1.33 a phone). Link failures: none on either path; no
+  gl_FragDepth; `?zbuf=log` renders identical to the default at the close-up. `?real=0` and `?sht=0` against main: means
+  of 0.005 to 0.096 levels, no pixel over 24.
+- Not done: the 37 Pei townhouses (their own references, footprints and a rebuild: a round of their own); frame time on a
+  real phone (none here: measure on a device before an App Store build).
