@@ -35,6 +35,7 @@ MANIFESTS += ('tavern_art.json',)   # A Man Full of Trouble's atlas (Round 199)
 MANIFESTS += ('tower_art.json',)   # the buildings round City Hall in their own facades (Round 198)
 MANIFESTS += ('sht_art.json',)   # the Society Hill Towers' concrete (Round 195)
 MANIFESTS += ('liberty_art.json',)   # One and Two Liberty Place's granite base and crown glazing (Round 195)
+MANIFESTS += ('comcast_art.json',)   # the Comcast Technology Center's cladding strip (Round 195)
 
 
 class Files(unittest.TestCase):
@@ -51,7 +52,7 @@ class Files(unittest.TestCase):
         for p in self.named:
             f = ROOT / p
             self.assertTrue(f.exists(), p)
-            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|towers|sht|liberty)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
+            m = re.fullmatch(r'art/(fronts|tiles|trees|ground|walls|land|water|streets|vehicles|storefronts|cityhall|glory|glass|tavern|towers|sht|liberty|comcast)/[a-z0-9-]+\.([0-9a-f]{10})\.(webp|png)', p)
             self.assertTrue(m, p)
             self.assertEqual(hashlib.sha256(f.read_bytes()).hexdigest()[:10], m.group(2), p)
 
