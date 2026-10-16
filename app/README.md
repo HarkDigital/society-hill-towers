@@ -92,8 +92,9 @@ accounts and Xcode, and it is the same every upload after the first:
    TestFlight chores go through the App Store Connect API: `python3 app/scripts/asc.py status` (every build's beta state
    and every group's testers) and `python3 app/scripts/asc.py invite <email>` (send or resend an invitation). It reads
    `~/.appstoreconnect/philly3d.json` and `~/.appstoreconnect/private_keys/AuthKey_<id>.p8` (App Manager, QuincySoft
-   LLC), never anything in the repo; the same key uploads without Xcode's sign-in through `-authenticationKeyPath`,
-   `-authenticationKeyID` and `-authenticationKeyIssuerID` on the export.
+   LLC), never anything in the repo. That key can archive, but it cannot export (Oct 16, build 10: App Manager has no access
+   to cloud-managed distribution certificates, "Cloud signing permission error"), so the export runs without the
+   `-authentication*` flags, through the Apple ID signed in to Xcode. An Admin-role key would export on its own.
 8. When the build finishes processing (about 15 minutes), add yourself and your team as internal testers in TestFlight:
    they can install at once. External testers need Beta App Review: add review notes saying the city is bundled in the
    app (not loaded from the web) and is an interactive 3D model with live transit (guideline 4.2), with a short screen
