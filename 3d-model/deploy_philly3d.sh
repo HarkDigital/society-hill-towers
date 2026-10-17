@@ -8,6 +8,11 @@
 #                                    -> rsync art/ -> rsync --delay-updates -> verify live
 #   ./deploy_philly3d.sh --rollback  put the previous index.html + .gz pair back
 #                                    and verify the live site serves it
+#   ./deploy_philly3d.sh --no-testflight   the deploy alone, without the app upload below
+#
+# The app follows the site (Round 204, Mike: every deploy goes to TestFlight too): once the live site verifies, a Mac with
+# Xcode runs ../app/scripts/testflight.sh (sync, bump, archive, upload, commit the bump). A failed upload is a warning, never
+# a failed deploy: the site is already live. PHILLY3D_TESTFLIGHT=0 skips it the same as the flag.
 #
 # Atomic:     rsync --delay-updates lands index.html and its gzip twin in one
 #             final rename pass instead of one file at a time.
@@ -86,7 +91,9 @@ if [ "${1:-}" = "--rollback" ]; then
   echo "note: $PREV now equals what is live — a second --rollback is a no-op until the next deploy."
   exit 0
 fi
-[ -z "${1:-}" ] || fatal "unknown argument: $1 (only --rollback is understood)"
+TESTFLIGHT=${PHILLY3D_TESTFLIGHT:-1}
+if [ "${1:-}" = "--no-testflight" ]; then TESTFLIGHT=0; shift; fi
+[ -z "${1:-}" ] || fatal "unknown argument: $1 (only --rollback and --no-testflight are understood)"
 
 # 1. tests first — nothing is built, let alone shipped, on a red suite
 if [ -d tests ]; then
@@ -170,3 +177,13 @@ for kind in fronts tiles trees ground; do
 done
 echo "deployed: $URL serves the new build (gzip $GZ bytes, sha256 $WANT) and its $ART_N art files"
 echo "previous pair kept in $HOST:$PREV — '$0 --rollback' restores it"
+
+# 5. the app follows the site (Round 204)
+if [ "$TESTFLIGHT" = 1 ]; then
+  if command -v xcodebuild >/dev/null 2>&1 && [ -x ../app/scripts/testflight.sh ]; then
+    echo "== TestFlight: the same page to the iOS app"
+    ../app/scripts/testflight.sh || echo "WARNING: the TestFlight upload failed (the site is live); run app/scripts/testflight.sh again" >&2
+  else
+    echo "note: no Xcode here, so no TestFlight upload; run app/scripts/testflight.sh on the Mac"
+  fi
+fi

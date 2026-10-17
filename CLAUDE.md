@@ -379,7 +379,8 @@ off their ground (`__dbg.rebuilds()`; a scratch build: `SHT_BUILD_OUT=<path> SHT
 
 ## Deploy
 
-`3d-model/deploy_philly3d.sh` builds and rsyncs to the VPS (the `art/` folder first, Round 184) and verifies philly3d.com against
+`3d-model/deploy_philly3d.sh` builds and rsyncs to the VPS, then (Round 204, Mike: every deploy goes to TestFlight too) runs
+`app/scripts/testflight.sh` on a Mac with Xcode, a failed upload a warning and never a failed deploy (`--no-testflight` skips it); it (the `art/` folder first, Round 184) and verifies philly3d.com against
 the local sha256 (stages + chmods 644 because this checkout's files are 0600). **philly3d.com is
 the site.** Mike retired the GitHub Pages copy on Sep 17, 2026: do not deploy to it, wait on it
 or verify it. `git push` is now only for the history, and the built page is still committed as

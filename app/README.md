@@ -71,6 +71,9 @@ accounts and Xcode, and it is the same every upload after the first:
    refuse to run. Sep 28: done, and the unsigned device build succeeds.
 2. Build the page and put it in the app: `cd 3d-model && python3 build.py`, then `cd ../app && npm install && npm run sync`.
    `npm run sync` must run after every page build; the app ships whatever `ios/App/App/public` holds.
+**Since Round 204 one command does all of it, and `3d-model/deploy_philly3d.sh` runs it after every verified deploy:**
+   `app/scripts/testflight.sh` (sync, bump, archive, upload through Xcode's account, commit the bump; a failed upload puts the
+   number back; `deploy_philly3d.sh --no-testflight` skips it). The steps it automates:
 3. For every upload after the first: `npm run bump` (TestFlight refuses a build number it has seen; it raises iOS's
    `CURRENT_PROJECT_VERSION` and Android's `versionCode` together and leaves the version, 1.0, alone).
 4. `npm run open:ios`. The App target signs automatically as QuincySoft LLC (team 72U2ZL3GVM, Mike's team for every app;
